@@ -2,7 +2,8 @@ import { ipcMain } from 'electron'
 import { promises as fs } from 'node:fs'
 import { resolve } from 'node:path'
 import { MAX_MARKDOWN_BYTES, type MarkdownDenyCode } from './markdown-core'
-import { checkMarkdownReadAllowed, markdownKnownRoots } from './markdown-read'
+import { checkMarkdownReadAllowed, isExactPathSymlink, markdownKnownRoots } from './markdown-read'
+import { keybindingsFilePath } from './keybindings'
 import { suppressNextChange } from './markdown-watch'
 
 /**
@@ -53,7 +54,8 @@ const DENY_MESSAGE: Record<MarkdownDenyCode, string> = {
   'too-large': 'refusing to write a file this large',
   'not-found': 'file not found',
   'read-failed': 'failed to read file',
-  'write-failed': 'failed to write file'
+  'write-failed': 'failed to write file',
+  symlink: 'refusing to write through a symlink at this path'
 }
 
 function deny(code: MarkdownDenyCode): MarkdownWriteErr {
@@ -69,14 +71,16 @@ function deny(code: MarkdownDenyCode): MarkdownWriteErr {
  */
 export async function writeMarkdownFile(
   rawPath: string,
-  content: string
+  content: string,
+  allowExact?: string | null
 ): Promise<MarkdownWriteResult> {
   if (typeof rawPath !== 'string' || rawPath.length === 0) return deny('invalid-path')
   if (typeof content !== 'string') return deny('invalid-path')
   const resolved = resolve(rawPath)
 
-  const gate = checkMarkdownReadAllowed(resolved, await markdownKnownRoots())
+  const gate = checkMarkdownReadAllowed(resolved, await markdownKnownRoots(), allowExact)
   if (!gate.ok) return deny(gate.code)
+  if (await isExactPathSymlink(resolved, allowExact)) return deny('symlink')
 
   const bytes = Buffer.byteLength(content, 'utf8')
   if (bytes > MAX_MARKDOWN_BYTES) return deny('too-large')
@@ -100,7 +104,9 @@ export function registerMarkdownWriteHandlers(): void {
     'markdown:write',
     (_e, args: { path: string; content: string }): Promise<MarkdownWriteResult> => {
       const { path, content } = args ?? ({} as { path: string; content: string })
-      return writeMarkdownFile(path, content)
+      // T1 P5: same exact-path exception as `markdown:read` — the editor pane
+      // saves `keybindings.json` back through this channel.
+      return writeMarkdownFile(path, content, keybindingsFilePath())
     }
   )
 }

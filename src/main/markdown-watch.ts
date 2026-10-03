@@ -16,6 +16,7 @@ import chokidar, { type FSWatcher } from 'chokidar'
 import { ipcMain, type BrowserWindow } from 'electron'
 import { resolve } from 'node:path'
 import { checkMarkdownReadAllowed, markdownKnownRoots } from './markdown-read'
+import { keybindingsFilePath } from './keybindings'
 
 const refCounts = new Map<string, number>()
 const suppressed = new Set<string>()
@@ -97,7 +98,13 @@ function ensureWatcher(): FSWatcher {
 export async function notifyMarkdownChanged(
   resolvedPath: string
 ): Promise<'ok' | 'not-open' | 'outside-roots'> {
-  const gate = checkMarkdownReadAllowed(resolve(resolvedPath), await markdownKnownRoots())
+  // T1 P5: `keybindings.json` (the editor pane's target) lives outside every
+  // known root — the same exact-path exception `markdown:read` / `:write` take.
+  const gate = checkMarkdownReadAllowed(
+    resolve(resolvedPath),
+    await markdownKnownRoots(),
+    keybindingsFilePath()
+  )
   if (!gate.ok) return 'outside-roots'
   if (refCount(resolvedPath) <= 0) return 'not-open'
   if (consumeSuppression(resolvedPath)) return 'ok' // self-write: swallow, still "ok" (no error to the caller)
@@ -119,8 +126,10 @@ export function registerMarkdownWatchHandlers(getWindow: () => BrowserWindow | n
     const p = resolve(raw)
     // IPC payloads cross the trust boundary (renderer is untrusted from main's
     // perspective) — confine against the SAME known roots as markdown:read
-    // before ever subscribing chokidar to a renderer-supplied path.
-    const gate = checkMarkdownReadAllowed(p, await markdownKnownRoots())
+    // before ever subscribing chokidar to a renderer-supplied path. T1 P5:
+    // plus the `keybindings.json` exact-path exception, so the editor pane can
+    // watch the one file that lives outside those roots.
+    const gate = checkMarkdownReadAllowed(p, await markdownKnownRoots(), keybindingsFilePath())
     if (!gate.ok) return
     if (addRef(p) === 'first') ensureWatcher().add(p)
   })

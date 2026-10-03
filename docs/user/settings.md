@@ -3,6 +3,7 @@
 Settings is organized into tabs. Most are covered in depth on their own pages — this page is the map, plus the tabs that don't have a home elsewhere.
 
 - **General** — app-wide preferences that don't fit a more specific tab.
+- **Keyboard Shortcuts** — covered below.
 - **Appearance** — pick a theme. Harnu ships 13: nine dark (including Tokyo Night, Dracula, Catppuccin Mocha, One Dark, GitHub Dark, Gruvbox Dark, Nord) and four light (Light, Catppuccin Latte, GitHub Light, Gruvbox Light), plus a Monospace theme. Your choice is remembered across restarts. A theme installed via an [extension](extensions.md) shows up in the same grid, marked with a small puzzle-piece badge.
 - **Startup** — your global [Claude Boot](claude-boot.md) defaults (model, effort, flags) applied to every session unless a folder or session overrides them.
 - **Claude config** — a focused editor for your global `~/.claude/settings.json`: the handful of settings Harnu understands (model, cleanup period, permission defaults, and a few others) get real form controls with Set/Default indicators; anything else already in the file is still shown, just read-only, so an unfamiliar or newer setting is never silently dropped or overwritten.
@@ -32,6 +33,20 @@ Under the switch you may see the folder the mod is loaded from (with a **Reveal 
 **The statusLine switch.** The mod can supply a session's cost, context and plan limits, but not eight figures: lines added and removed, thinking on or off, output style, the pull request, the model's display name, the session duration and the effort level. **Settings → General → Session telemetry (statusLine)** is still where those come from, so turning it off blanks them. The details are under [Where the figures come from](usage.md#where-the-figures-come-from).
 
 The per-session state is in the hover preview and in the [System Monitor](system-monitor.md#what-you-see). If a session says `legacy` and you want to know why, see [Troubleshooting](troubleshooting.md#harnu-mod-legacy).
+
+## Keyboard Shortcuts
+
+**Settings → Keyboard Shortcuts** is a point-and-click editor for the same `keybindings.json` covered in [Sessions → Customizing shortcuts](sessions.md#customizing-shortcuts) — you never have to open the file by hand.
+
+- One row per rebindable action, showing its current chord. **Click the chord, then press the keys you want.** `Esc` cancels the recording, `Backspace` unbinds the action.
+- **Reset** on a row drops your override and restores the built-in default; **Unbind** clears the chord entirely. A row already at its default hides **Reset** (nothing to reset) but still offers **Unbind**.
+- **Reset all** (top right) clears every override at once.
+- If two actions end up on the same chord, both get a **conflict** badge naming the other. The chord still fires once — the first-registered action wins and the other stays inert — so nothing breaks silently, but you'll want to rebind one.
+- Actions marked **not in terminal** have no native menu item, so a custom chord for them won't fire while the terminal pane has keyboard focus.
+- Five actions — quit, reload, toggle DevTools, fullscreen, and "open Keyboard Shortcuts" (`Cmd/Ctrl+Alt+K`) — are reserved and aren't listed. Session back/forward isn't listed either; it can't be rebound yet.
+- **Open keybindings.json** (top right, or **View → Keyboard Shortcuts…**, or `Cmd/Ctrl+Alt+K`) opens the raw file in a split-pane editor when you'd rather edit the JSON directly. It needs an active folder to open the pane in.
+
+Every edit writes `keybindings.json` immediately and applies live, so this pane and a hand-edited file always agree.
 
 ## Sidebar
 

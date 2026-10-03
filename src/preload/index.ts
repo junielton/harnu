@@ -58,6 +58,7 @@ import type {
   BlastRadiusConfig
 } from '../main/review-ipc'
 import type { PushChannel, PushConfig, PushSendPayload, PushTestResult } from '../main/push'
+import type { ResolvedKeybindings } from '../main/keybindings-core'
 import type {
   ClaudeSettingsRead,
   ClaudeSettingsWire,
@@ -1792,6 +1793,21 @@ const api = {
    */
   onSettingsChanged: (cb: (p: { data?: SettingsData; error?: boolean }) => void): (() => void) =>
     subscribe('settings:changed', cb),
+
+  // ---- Keybindings (T1 — keybindings.json override layer) ------------------
+  // Main owns the file (next to settings.json, follows its relocation) + the
+  // chokidar watch. `keybindingsLoad` reads + resolves it and (re)starts the
+  // watch; `onKeybindingsChanged` streams a re-resolved table after a hand-edit;
+  // `keybindingsSave` writes a body verbatim (the Settings pane serializes it).
+  /** Read + resolve keybindings.json (defaults ← overrides) and start the watch. */
+  keybindingsLoad: (): Promise<{ path: string; resolved: ResolvedKeybindings }> =>
+    ipcRenderer.invoke('keybindings:load'),
+  /** Overwrite keybindings.json with `body` verbatim. */
+  keybindingsSave: (body: string): Promise<void> =>
+    ipcRenderer.invoke('keybindings:save', { body }),
+  /** Subscribe to re-resolved keybindings after an external edit. */
+  onKeybindingsChanged: (cb: (p: { resolved: ResolvedKeybindings }) => void): (() => void) =>
+    subscribe('keybindings:changed', cb),
 
   // ---- Plan usage (claude -p "/usage" poller) ------------------------------
   // Main spawns the official client and parses its panel; the renderer store

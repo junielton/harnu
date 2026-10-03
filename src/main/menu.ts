@@ -1,13 +1,21 @@
 import { Menu, app, BrowserWindow } from 'electron'
 import type { MenuItemConstructorOptions } from 'electron'
+import {
+  DESCRIPTOR_BY_ID,
+  parseChord,
+  toAccelerator,
+  type ResolvedKeybindings,
+  type ShortcutActionId as KeybindingActionId
+} from './keybindings-core'
 
 /**
- * Canonical action IDs emitted over the `shortcut:fired` IPC channel.
- *
- * Each menu item's `click` handler emits exactly one of these IDs to the
- * renderer, which then dispatches the work via `useShortcuts` (T-4.2/T-4.4).
- * Keep this union in sync with `findings/07-shortcuts-palette.md` §2 and
- * the table in T-4.1.
+ * Canonical action IDs emitted over the `shortcut:fired` IPC channel. The
+ * rebindable + reserved ids live in `keybindings-core.ts` (shared with the
+ * renderer + the `keybindings.json` layer, T1). `nav.back` / `nav.forward`
+ * (session navigation history) are added here and are NOT in that table yet:
+ * their default chord is platform-split (⌘[ vs Alt+←) and the Linux/Windows
+ * chord is caught by a capture-phase handler in `App.vue` (`onNavKeydown`), so
+ * they keep fixed accelerators until the table can express both.
  *
  * Two items short-circuit the IPC roundtrip:
  *   - `app.reload` calls `webContents.reload()` directly (special case — the
@@ -15,27 +23,42 @@ import type { MenuItemConstructorOptions } from 'electron'
  *   - `app.devtools` toggles devtools on the main window directly for the
  *     same reason — the renderer has no privileged handle to do so.
  *
- * Everything else is emitted as `shortcut:fired` so T-4.4 wires a single
- * dispatch table in the renderer.
+ * Everything else is emitted as `shortcut:fired` so the renderer's
+ * `useShortcuts` dispatch table handles it.
  */
-export type ShortcutActionId =
-  | 'session.new'
-  | 'app.search'
-  | 'project.switch'
-  | 'folder.add'
-  | 'session.resumeLast'
-  | 'session.rename'
-  | 'session.close'
-  | 'view.toggleSidebar'
-  | 'view.toggleHelper'
-  | 'app.reload'
-  | 'app.devtools'
-  | 'app.quit'
-  | 'app.fullscreen'
-  | 'nav.back'
-  | 'nav.forward'
+export type ShortcutActionId = KeybindingActionId | 'nav.back' | 'nav.forward'
 
 const isMac = process.platform === 'darwin'
+
+/**
+ * The Electron `accelerator:` string for an action, resolved against the user's
+ * `keybindings.json` when a `resolved` table is passed (T1 P3) and falling back
+ * to the canonical default from `keybindings-core.ts` otherwise. Reserved ids
+ * (`app.*`) are never in the resolved map, so they always take their default.
+ *
+ * Returns `undefined` when the action is unbound (`"key": null`) so the menu
+ * item is built without an accelerator — the OS-level chord goes away, matching
+ * the renderer.
+ *
+ * Throws only on a programming error: a chord that does not parse / is not an
+ * accelerator. Default chords are asserted by `keybindings-core.test.ts`; a
+ * resolved override that reaches here has already passed the identical
+ * `not-accelerator` check inside `resolveKeybindings`.
+ */
+export function accel(
+  id: KeybindingActionId,
+  resolved?: ResolvedKeybindings | null
+): string | undefined {
+  const rb = resolved?.byId[id]
+  const keys = rb ? rb.keys : DESCRIPTOR_BY_ID[id].defaultKeys
+  if (keys === null) return undefined
+  if (!keys) throw new Error(`[menu] ${id} has no default chord`)
+  const parsed = parseChord(keys)
+  if (!parsed.ok) throw new Error(`[menu] ${id} chord "${keys}" does not parse`)
+  const a = toAccelerator(parsed.chord)
+  if (!a) throw new Error(`[menu] ${id} chord "${keys}" is not an Electron accelerator`)
+  return a
+}
 
 /**
  * Build the application menu template. Each entry that maps to a known
@@ -51,11 +74,18 @@ const isMac = process.platform === 'darwin'
  * ⌘C/⌘V/⌘X/⌘A/⌘Z work inside `<input>` and `<textarea>` (without these
  * macOS strips them in packaged builds).
  */
-export function buildAppMenu(getWindow: () => BrowserWindow | null): Menu {
+export function buildAppMenu(
+  getWindow: () => BrowserWindow | null,
+  resolved?: ResolvedKeybindings | null
+): Menu {
   function emit(actionId: ShortcutActionId): void {
     const win = getWindow()
     win?.webContents.send('shortcut:fired', actionId)
   }
+
+  // Override-aware accelerator for this build (T1 P3). `undefined` for an
+  // unbound action drops the `accelerator` key entirely.
+  const a = (id: KeybindingActionId): string | undefined => accel(id, resolved)
 
   const template: MenuItemConstructorOptions[] = [
     // macOS application menu — only present on darwin. The `appMenu` role
@@ -76,7 +106,7 @@ export function buildAppMenu(getWindow: () => BrowserWindow | null): Menu {
               { type: 'separator' },
               {
                 label: `Quit ${app.name}`,
-                accelerator: 'CmdOrCtrl+Q',
+                accelerator: a('app.quit'),
                 click: (): void => {
                   emit('app.quit')
                   app.quit()
@@ -92,18 +122,18 @@ export function buildAppMenu(getWindow: () => BrowserWindow | null): Menu {
       submenu: [
         {
           label: 'New Session',
-          accelerator: 'CmdOrCtrl+N',
+          accelerator: a('session.new'),
           click: (): void => emit('session.new')
         },
         {
           label: 'Add Folder…',
-          accelerator: 'CmdOrCtrl+O',
+          accelerator: a('folder.add'),
           click: (): void => emit('folder.add')
         },
         { type: 'separator' },
         {
           label: 'Close Session',
-          accelerator: 'CmdOrCtrl+W',
+          accelerator: a('session.close'),
           // Soft-handled: T-4.5 will conditionally suppress this in the
           // renderer when the terminal pane has focus so xterm/Ctrl+W
           // forwards through to the PTY. Until then the renderer simply
@@ -117,7 +147,7 @@ export function buildAppMenu(getWindow: () => BrowserWindow | null): Menu {
               { type: 'separator' },
               {
                 label: 'Quit',
-                accelerator: 'CmdOrCtrl+Q',
+                accelerator: a('app.quit'),
                 click: (): void => {
                   emit('app.quit')
                   app.quit()
@@ -138,24 +168,24 @@ export function buildAppMenu(getWindow: () => BrowserWindow | null): Menu {
       submenu: [
         {
           label: 'Resume Last Session',
-          accelerator: 'CmdOrCtrl+Shift+R',
+          accelerator: a('session.resumeLast'),
           click: (): void => emit('session.resumeLast')
         },
         {
           label: 'Rename',
-          accelerator: 'CmdOrCtrl+R',
+          accelerator: a('session.rename'),
           // The menu accelerator overrides the default Electron `reload`
           // binding for ⌘R, so we move reload to F5 in the View menu.
           click: (): void => emit('session.rename')
         },
         {
           label: 'Search',
-          accelerator: 'CmdOrCtrl+K',
+          accelerator: a('app.search'),
           click: (): void => emit('app.search')
         },
         {
           label: 'Switch Project…',
-          accelerator: 'CmdOrCtrl+Shift+P',
+          accelerator: a('project.switch'),
           click: (): void => emit('project.switch')
         },
         { type: 'separator' },
@@ -189,18 +219,27 @@ export function buildAppMenu(getWindow: () => BrowserWindow | null): Menu {
         // fallback for WMs that drop accelerators.
         {
           label: 'Toggle Sidebar',
-          accelerator: 'CmdOrCtrl+B',
+          accelerator: a('view.toggleSidebar'),
           click: (): void => emit('view.toggleSidebar')
         },
         {
           label: 'Toggle Panel',
-          accelerator: 'CmdOrCtrl+Alt+B',
+          accelerator: a('view.toggleHelper'),
           click: (): void => emit('view.toggleHelper')
         },
         { type: 'separator' },
         {
+          // T1 P5 — opens keybindings.json in the MarkdownPane helper pane. The
+          // renderer's `useShortcuts` handler does the actual open; this item
+          // just owns the ⌘⌥K / Ctrl+Alt+K accelerator at the OS level.
+          label: 'Keyboard Shortcuts…',
+          accelerator: a('app.openKeybindings'),
+          click: (): void => emit('app.openKeybindings')
+        },
+        { type: 'separator' },
+        {
           label: 'Reload',
-          accelerator: 'F5',
+          accelerator: a('app.reload'),
           // Special case: also reload the renderer immediately. The IPC emit
           // lets the renderer log/snapshot before the actual reload happens.
           click: (): void => {
@@ -218,7 +257,7 @@ export function buildAppMenu(getWindow: () => BrowserWindow | null): Menu {
           // `Cmd+Option+I` chord which Electron binds by default on the
           // `toggleDevTools` role. Since we're not using that role here, we
           // also need a click handler.
-          accelerator: 'F12',
+          accelerator: a('app.devtools'),
           click: (): void => {
             emit('app.devtools')
             const win = getWindow()
@@ -228,7 +267,7 @@ export function buildAppMenu(getWindow: () => BrowserWindow | null): Menu {
         { type: 'separator' },
         {
           label: 'Toggle Fullscreen',
-          accelerator: 'F11',
+          accelerator: a('app.fullscreen'),
           click: (): void => {
             emit('app.fullscreen')
             const win = getWindow()
@@ -257,7 +296,27 @@ export function buildAppMenu(getWindow: () => BrowserWindow | null): Menu {
  *
  * Do not pass `null` to `Menu.setApplicationMenu` on Linux/Windows just to
  * hide the bar — that also discards every accelerator binding.
+ *
+ * `resolved` is the `keybindings.json`-merged table (T1 P3). Pass it so the
+ * OS-level accelerators match the user's overrides; omit it and the menu is
+ * built from the canonical defaults.
  */
-export function registerAppMenu(getWindow: () => BrowserWindow | null): void {
-  Menu.setApplicationMenu(buildAppMenu(getWindow))
+export function registerAppMenu(
+  getWindow: () => BrowserWindow | null,
+  resolved?: ResolvedKeybindings | null
+): void {
+  rebuildAppMenu(getWindow, resolved)
+}
+
+/**
+ * Re-install the application menu from a fresh resolved table. Called on every
+ * `keybindings:changed` (T1 P3) so a hand-edit to `keybindings.json` re-binds
+ * the native accelerators without a restart — `Menu.setApplicationMenu`
+ * replaces the previous menu and its OS-level bindings wholesale.
+ */
+export function rebuildAppMenu(
+  getWindow: () => BrowserWindow | null,
+  resolved?: ResolvedKeybindings | null
+): void {
+  Menu.setApplicationMenu(buildAppMenu(getWindow, resolved))
 }

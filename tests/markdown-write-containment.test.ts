@@ -136,6 +136,44 @@ describe('writeMarkdownFile — extension + size + shape', () => {
   })
 })
 
+describe('writeMarkdownFile — exact-path exception wiring (T1 P5)', () => {
+  it('admits the one exact out-of-root path, refuses a sibling, refuses it without the exception', async () => {
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-kb-'))
+    try {
+      const kb = path.join(outside, 'keybindings.json')
+      const sibling = path.join(outside, 'settings.json')
+
+      expect((await writeMarkdownFile(kb, '[]\n', kb)).ok).toBe(true)
+      expect(await fs.readFile(kb, 'utf8')).toBe('[]\n')
+
+      expect(await writeMarkdownFile(sibling, 'x', kb)).toMatchObject({
+        ok: false,
+        code: 'outside-roots'
+      })
+      expect(await writeMarkdownFile(kb, 'x')).toMatchObject({ ok: false, code: 'outside-roots' })
+    } finally {
+      await fs.rm(outside, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+
+  it('refuses to write through a symlink at the exact path', async () => {
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-kb-'))
+    try {
+      const real = path.join(outside, 'real.json')
+      const link = path.join(outside, 'keybindings.json')
+      await fs.writeFile(real, '[]\n')
+      await fs.symlink(real, link)
+      expect(await writeMarkdownFile(link, 'pwned', link)).toMatchObject({
+        ok: false,
+        code: 'symlink'
+      })
+      expect(await fs.readFile(real, 'utf8')).toBe('[]\n') // target untouched
+    } finally {
+      await fs.rm(outside, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+})
+
 describe('writeMarkdownFile — self-write suppression', () => {
   beforeEach(() => {
     __resetMarkdownWatchStateForTests()

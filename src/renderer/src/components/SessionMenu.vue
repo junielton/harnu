@@ -23,8 +23,11 @@ import { useUiStore } from '../stores/ui'
 import { useSessionsStore } from '../stores/sessions'
 import { sessionTitle } from '../lib/session-label'
 import { useHelpersStore } from '../stores/helpers'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { buildContextDigest } from '../lib/context-digest'
 import { shouldShowRestart } from './session-menu-core'
+import { DESCRIPTOR_BY_ID, renderKeysString } from '../../../main/keybindings-core'
+import { isMac } from '../lib/platform'
 
 /**
  * Session right-click context menu — see `design.md` §3.8 (anatomy) and §6
@@ -51,6 +54,7 @@ import { shouldShowRestart } from './session-menu-core'
 const ui = useUiStore()
 const sessions = useSessionsStore()
 const helpers = useHelpersStore()
+const keybindings = useKeybindingsStore()
 const { t } = useI18n()
 
 const menuState = computed(() => ui.menu)
@@ -451,12 +455,17 @@ function isOrchestratorOn(sessionId: string): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * Rename accelerator. macOS uses `⌘R`; every other platform uses `F2`.
- * Cross-platform detection isn't wired yet (no `os.platform()` IPC), so we
- * show `F2` for now per the task spec. Switch this to a platform-aware
- * computed in T-4.x when the shortcuts subsystem lands.
+ * Rename accelerator hint, derived from the one canonical chord table
+ * (`keybindings-core.ts`) and rendered for the current platform — `⌘R` on
+ * macOS, `Ctrl+R` elsewhere. Reads the RESOLVED table from the keybindings
+ * store (T1 P3), so a `keybindings.json` rebind updates it live; `''` when the
+ * action is unbound (the hint is then hidden).
  */
-const renameAccelerator = 'F2'
+const renameAccelerator = computed(() => {
+  const rb = keybindings.resolved.byId['session.rename']
+  const chord = rb ? rb.keys : DESCRIPTOR_BY_ID['session.rename'].defaultKeys
+  return renderKeysString(chord, { mac: isMac }).join(isMac ? '' : '+')
+})
 
 /**
  * The session this menu currently targets, looked up against the live store.
@@ -500,7 +509,7 @@ const entries = computed<MenuEntry[]>(() => {
       kind: 'item',
       label: t('actions.rename'),
       icon: Edit3,
-      shortcut: renameAccelerator,
+      shortcut: renameAccelerator.value || undefined,
       onSelect: onRename
     },
     {

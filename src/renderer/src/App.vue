@@ -42,6 +42,8 @@ import { useClaudeChangelogStore } from './stores/claudeChangelog'
 import { useCompanionStore } from './stores/companion'
 import { useShortcuts, pushScope, popScope, activeScope } from './composables/useShortcuts'
 import { isMac } from './lib/platform'
+import { useKeybindingsStore } from './stores/keybindings'
+import { DESCRIPTOR_BY_ID, type ShortcutActionId } from '../../main/keybindings-core'
 import { useTerminalFocus } from './composables/useTerminalFocus'
 import type { Session } from './stores/sessions'
 import type { UserProject } from '../../preload'
@@ -55,6 +57,10 @@ const helpers = useHelpersStore()
 const layout = useLayoutStore()
 const claudeChangelog = useClaudeChangelogStore()
 const companion = useCompanionStore()
+// T1 P2: resolved keybindings (defaults ← keybindings.json). Seeded with
+// defaults synchronously; `keybindings.init()` (main.ts) loads the file, and
+// `useShortcuts` below re-keys its renderer watchers whenever `resolved` changes.
+const keybindings = useKeybindingsStore()
 
 // T22: any interactive overlay shadows global shortcuts. One aggregate boolean
 // (NOT per-surface pushes) so exactly one 'modal' is ever on the stack — the
@@ -457,219 +463,245 @@ function mostRecentSession(): Session | null {
  * in case the menu fails to fire — e.g. on Linux WMs that drop accelerators,
  * or under HMR where the menu briefly detaches.
  *
- * The action IDs match the union in `src/main/menu.ts#ShortcutActionId` 1:1.
- * `app.reload`, `app.devtools`, `app.fullscreen`, and `app.quit` are NOT
+ * The action IDs match the `ShortcutActionId` union in `keybindings-core.ts`
+ * 1:1. `app.reload`, `app.devtools`, `app.fullscreen`, and `app.quit` are NOT
  * listed here — they're handled directly in the main process (see menu.ts
- * `click:` blocks) and the renderer has nothing useful to add.
+ * `click:` blocks) and the renderer has nothing useful to add. `app.openKeybindings`
+ * IS listed (T1 P5): it is reserved, but opening a helper pane is renderer work,
+ * so the menu item / ⌘⌥K chord routes here.
+ *
+ * Every `keys:` below comes from `kb(id)` — the resolved (override-aware) chord
+ * from the keybindings store, which is seeded with the canonical defaults from
+ * `keybindings-core.ts` so this is correct even before `keybindings.json` loads.
+ * The second argument to `useShortcuts` keeps the renderer-level chord watchers
+ * re-keyed as overrides change at runtime.
  */
-useShortcuts([
-  {
-    id: 'session.new',
-    scope: 'global',
-    keys: 'Cmd+N',
-    // U-1.5: spawn a synthetic session entry whose terminal pane will run
-    // `claude` (no args) in the resolved worktree's cwd. The store helper
-    // picks the worktree of the current selection, falling back to the main
-    // worktree of the first project. CommandPalette's `session.new` action
-    // calls the same helper so the two routes stay in lockstep. Silent
-    // no-op (with a console.warn) when the sidebar is empty.
-    handler: () => {
-      sessions.newSessionInCurrentContext()
+function kb(id: ShortcutActionId): string | undefined {
+  return keybindings.chordFor(id) ?? DESCRIPTOR_BY_ID[id].defaultKeys ?? undefined
+}
+
+useShortcuts(
+  [
+    {
+      id: 'session.new',
+      scope: 'global',
+      keys: kb('session.new'),
+      // U-1.5: spawn a synthetic session entry whose terminal pane will run
+      // `claude` (no args) in the resolved worktree's cwd. The store helper
+      // picks the worktree of the current selection, falling back to the main
+      // worktree of the first project. CommandPalette's `session.new` action
+      // calls the same helper so the two routes stay in lockstep. Silent
+      // no-op (with a console.warn) when the sidebar is empty.
+      handler: () => {
+        sessions.newSessionInCurrentContext()
+      }
+    },
+    {
+      id: 'app.search',
+      scope: 'global',
+      keys: kb('app.search'),
+      handler: () => ui.openPalette()
+    },
+    {
+      // T1 P5 — open keybindings.json in a MarkdownPane helper pane. Reserved
+      // (its chord can't be rebound), but the open is renderer work. The native
+      // View → "Keyboard Shortcuts…" item emits the same id over `shortcut:fired`.
+      id: 'app.openKeybindings',
+      scope: 'global',
+      keys: kb('app.openKeybindings'),
+      handler: () => keybindings.openInEditor()
+    },
+    {
+      id: 'inbox.toggle',
+      scope: 'global',
+      keys: kb('inbox.toggle'),
+      // Expand/minimize the Inbox rail (T83 §5.6). Same helper the Topbar button +
+      // the palette action call. Never hides the rail — see `nextInboxRailStateOnToggle`.
+      handler: () => layout.toggleInboxRail()
+    },
+    {
+      id: 'view.fleetRail',
+      scope: 'global',
+      keys: kb('view.fleetRail'),
+      // T153: the sidebar's folders↔board toggle was removed — retarget this
+      // shortcut to the Fleet rail (same helper `⌘⇧A`/`inbox.toggle` calls).
+      handler: () => layout.toggleInboxRail()
+    },
+    {
+      id: 'view.toggleSidebar',
+      scope: 'global',
+      // Collapse/expand the left folder/session sidebar ("full screen for the
+      // terminal"). ⌘B / Ctrl+B, mirroring VS Code's primary-sidebar toggle.
+      // Owned by the OS menu (menu.ts `&View`) so the accelerator is consumed
+      // BEFORE xterm sees it — ⌘/Ctrl chords bound at the menu level are the
+      // only ones the terminal pane can't intercept (see menu.ts header). This
+      // `keys` entry is the defensive renderer fallback for WMs that drop the
+      // accelerator, exactly like `session.new` / `app.search`.
+      keys: kb('view.toggleSidebar'),
+      handler: () => layout.toggleSidebar()
+    },
+    {
+      id: 'view.toggleHelper',
+      scope: 'global',
+      // Collapse/expand the right helper panel (VS Code's "secondary side bar"
+      // → ⌘⌥B / Ctrl+Alt+B). Same OS-menu-owned + renderer-fallback shape as
+      // above. No-op visually when the worktree has no panes; the flag still
+      // flips and takes effect once panes exist.
+      keys: kb('view.toggleHelper'),
+      handler: () => layout.toggleHelper()
+    },
+    {
+      // Session navigation history (docs/specs/2026-10-06-session-nav-history.md
+      // §5.4). The OS menu (menu.ts `&Session`) emits these ids. On macOS `keys`
+      // is the renderer fallback for a dropped accelerator, like
+      // `view.toggleSidebar`. On Linux/Windows there is no `keys` fallback:
+      // `onNavKeydown` below stops `Alt+←/→` in the capture phase (so xterm never
+      // sees it), which also hides it from `useMagicKeys`.
+      // The mouse side buttons are wired separately (`onNavMouseButton`).
+      // Not in the T1 keybindings table yet (see menu.ts `ShortcutActionId`), so
+      // the chord is fixed rather than read through `kb()`.
+      id: 'nav.back',
+      scope: 'global',
+      keys: isMac ? 'Cmd+[' : undefined,
+      handler: () => sessions.goBack()
+    },
+    {
+      id: 'nav.forward',
+      scope: 'global',
+      keys: isMac ? 'Cmd+]' : undefined,
+      handler: () => sessions.goForward()
+    },
+    {
+      id: 'project.switch',
+      scope: 'global',
+      keys: kb('project.switch'),
+      // v1: open the plain palette. v1.1 will pre-fill `>p ` so the palette
+      // filters to the Projects section per finding 07 §2.
+      handler: () => ui.openPalette()
+    },
+    {
+      id: 'folder.add',
+      scope: 'global',
+      keys: kb('folder.add'),
+      handler: () => ui.openDialog('addFolder')
+    },
+    {
+      // T164 — review the active folder's branch. PRD §9 Q3 (where the "review
+      // this branch" affordance lives) was answered at the screen and NOT with
+      // the row/folder menus: the pane is reached from the Topbar's per-repo
+      // takeover row and from each PR Stack card, both of which are already
+      // branch-scoped the way the pane is (PRD D2). All three call the same door.
+      id: 'view.review',
+      scope: 'global',
+      keys: kb('view.review'),
+      enabled: () => !!sessions.activeFolderPath,
+      handler: () => {
+        const folder = sessions.activeFolderPath
+        if (folder) ui.toggleReview(folder)
+      }
+    },
+    {
+      id: 'session.resumeLast',
+      scope: 'global',
+      keys: kb('session.resumeLast'),
+      handler: () => {
+        const target = mostRecentSession()
+        if (target) sessions.select(target.sessionId)
+      }
+    },
+    {
+      id: 'session.rename',
+      scope: 'global',
+      // Defensive double-bind: the OS menu owns Cmd+R (and reroutes Electron's
+      // default reload to F5), but we also bind it in the renderer in case a
+      // webview-controlled element swallows the menu accelerator. The store
+      // flips `requestRenameFocus`, the Topbar watches and focuses the title.
+      keys: kb('session.rename'),
+      enabled: () => !!sessions.selectedId,
+      handler: () => ui.triggerRenameFocus()
+    },
+    {
+      id: 'session.close',
+      scope: 'global',
+      keys: kb('session.close'),
+      // T-4.5: suppress when the xterm pane currently owns focus so the
+      // keystroke falls through to xterm.js, which sends `\u0017` (Ctrl+W)
+      // to the PTY. Programs like `nano` listen for that to delete the word
+      // before the cursor — overriding it at the app level would break
+      // muscle memory inside the terminal. When the sidebar or topbar own
+      // focus, this binding does fire and the selection is cleared.
+      enabled: () => !!sessions.selectedId && !terminalFocused.value,
+      // Clears the selection (back to the empty/idle pane). We do NOT
+      // delete the session — the JSONL on disk and the sessions store
+      // model entry stay intact; ⌘W is "close current tab", not "delete".
+      handler: () => sessions.clearSelection()
+    },
+    // --- Sidebar arrow-key navigation (T-4.6). ---
+    // The four arrow keys + Enter walk the flattened visible tree
+    // (`folders → worktrees → sessions`). Scope stays `'global'` rather than
+    // a dedicated `'sidebar'` scope because the bindings naturally no-op when
+    // the model is empty, and the alternative — pushing `'sidebar'` on focus
+    // — would shadow Cmd+K / Cmd+N which the user still expects to fire
+    // while the sidebar has focus. See finding 07 §2 (arrow nav row).
+    //
+    // The cursor is separate from `selectedId`: arrows only move the visual
+    // focus ring, Enter activates (selects a session, toggles a project /
+    // worktree). This matches Finder / VS Code's explorer behaviour and keeps
+    // the terminal from re-mounting on every keystroke.
+    //
+    // The store no-ops on `null` cursors and on out-of-tree ids, so the
+    // bindings are safe to fire whenever the renderer has focus. ArrowUp /
+    // ArrowDown / ArrowLeft / ArrowRight inside the xterm-hosted div get
+    // swallowed by xterm before useMagicKeys sees them (xterm calls
+    // `preventDefault()` on cursor keys), so the user can still scroll the
+    // terminal contents without interference. Inputs inside the palette /
+    // dialog push their own scope (`'modal'`), shadowing these.
+    //
+    // TODO(v1.1): scroll the focused row into view after each cursor move.
+    // For now the user must scroll manually; the visible ring is enough to
+    // confirm the cursor moved even when off-screen.
+    {
+      id: 'sidebar.cursor.down',
+      scope: 'global',
+      keys: kb('sidebar.cursor.down'),
+      enabled: () => !isTextEntryTarget() && sidebarCursorNavAllowed(),
+      handler: () => sessions.cursorDown()
+    },
+    {
+      id: 'sidebar.cursor.up',
+      scope: 'global',
+      keys: kb('sidebar.cursor.up'),
+      enabled: () => !isTextEntryTarget() && sidebarCursorNavAllowed(),
+      handler: () => sessions.cursorUp()
+    },
+    {
+      id: 'sidebar.cursor.right',
+      scope: 'global',
+      keys: kb('sidebar.cursor.right'),
+      enabled: () => !isTextEntryTarget() && sidebarCursorNavAllowed(),
+      handler: () => sessions.cursorRight()
+    },
+    {
+      id: 'sidebar.cursor.left',
+      scope: 'global',
+      keys: kb('sidebar.cursor.left'),
+      enabled: () => !isTextEntryTarget() && sidebarCursorNavAllowed(),
+      handler: () => sessions.cursorLeft()
+    },
+    {
+      id: 'sidebar.cursor.activate',
+      scope: 'global',
+      keys: kb('sidebar.cursor.activate'),
+      // Only fire when the cursor is on a row AND no text-entry surface owns focus
+      // (T22 — the Topbar inline-rename contenteditable pushes no scope, so scope
+      // gating alone wouldn't catch it). The store also no-ops on a null cursor.
+      enabled: () =>
+        sessions.keyboardCursor !== null && !isTextEntryTarget() && sidebarCursorNavAllowed(),
+      handler: () => sessions.cursorActivate()
     }
-  },
-  {
-    id: 'app.search',
-    scope: 'global',
-    keys: 'Cmd+K',
-    handler: () => ui.openPalette()
-  },
-  {
-    id: 'inbox.toggle',
-    scope: 'global',
-    keys: 'Cmd+Shift+A',
-    // Expand/minimize the Inbox rail (T83 §5.6). Same helper the Topbar button +
-    // the palette action call. Never hides the rail — see `nextInboxRailStateOnToggle`.
-    handler: () => layout.toggleInboxRail()
-  },
-  {
-    id: 'view.fleetRail',
-    scope: 'global',
-    keys: 'Cmd+Shift+B',
-    // T153: the sidebar's folders↔board toggle was removed — retarget this
-    // shortcut to the Fleet rail (same helper `⌘⇧A`/`inbox.toggle` calls).
-    handler: () => layout.toggleInboxRail()
-  },
-  {
-    id: 'view.toggleSidebar',
-    scope: 'global',
-    // Collapse/expand the left folder/session sidebar ("full screen for the
-    // terminal"). ⌘B / Ctrl+B, mirroring VS Code's primary-sidebar toggle.
-    // Owned by the OS menu (menu.ts `&View`) so the accelerator is consumed
-    // BEFORE xterm sees it — ⌘/Ctrl chords bound at the menu level are the
-    // only ones the terminal pane can't intercept (see menu.ts header). This
-    // `keys` entry is the defensive renderer fallback for WMs that drop the
-    // accelerator, exactly like `session.new` / `app.search`.
-    keys: 'Cmd+B',
-    handler: () => layout.toggleSidebar()
-  },
-  {
-    id: 'view.toggleHelper',
-    scope: 'global',
-    // Collapse/expand the right helper panel (VS Code's "secondary side bar"
-    // → ⌘⌥B / Ctrl+Alt+B). Same OS-menu-owned + renderer-fallback shape as
-    // above. No-op visually when the worktree has no panes; the flag still
-    // flips and takes effect once panes exist.
-    keys: 'Cmd+Alt+B',
-    handler: () => layout.toggleHelper()
-  },
-  {
-    // Session navigation history (docs/specs/2026-10-06-session-nav-history.md
-    // §5.4). The OS menu (menu.ts `&Session`) emits these ids. On macOS `keys`
-    // is the renderer fallback for a dropped accelerator, like
-    // `view.toggleSidebar`. On Linux/Windows there is no `keys` fallback:
-    // `onNavKeydown` below stops `Alt+←/→` in the capture phase (so xterm never
-    // sees it), which also hides it from `useMagicKeys`.
-    // The mouse side buttons are wired separately (`onNavMouseButton`).
-    id: 'nav.back',
-    scope: 'global',
-    keys: isMac ? 'Cmd+[' : undefined,
-    handler: () => sessions.goBack()
-  },
-  {
-    id: 'nav.forward',
-    scope: 'global',
-    keys: isMac ? 'Cmd+]' : undefined,
-    handler: () => sessions.goForward()
-  },
-  {
-    id: 'project.switch',
-    scope: 'global',
-    keys: 'Cmd+Shift+P',
-    // v1: open the plain palette. v1.1 will pre-fill `>p ` so the palette
-    // filters to the Projects section per finding 07 §2.
-    handler: () => ui.openPalette()
-  },
-  {
-    id: 'folder.add',
-    scope: 'global',
-    keys: 'Cmd+O',
-    handler: () => ui.openDialog('addFolder')
-  },
-  {
-    // T164 — review the active folder's branch. PRD §9 Q3 (where the "review
-    // this branch" affordance lives) was answered at the screen and NOT with
-    // the row/folder menus: the pane is reached from the Topbar's per-repo
-    // takeover row and from each PR Stack card, both of which are already
-    // branch-scoped the way the pane is (PRD D2). All three call the same door.
-    id: 'view.review',
-    scope: 'global',
-    keys: 'Cmd+Shift+D',
-    enabled: () => !!sessions.activeFolderPath,
-    handler: () => {
-      const folder = sessions.activeFolderPath
-      if (folder) ui.toggleReview(folder)
-    }
-  },
-  {
-    id: 'session.resumeLast',
-    scope: 'global',
-    keys: 'Cmd+Shift+R',
-    handler: () => {
-      const target = mostRecentSession()
-      if (target) sessions.select(target.sessionId)
-    }
-  },
-  {
-    id: 'session.rename',
-    scope: 'global',
-    // Defensive double-bind: the OS menu owns Cmd+R (and reroutes Electron's
-    // default reload to F5), but we also bind it in the renderer in case a
-    // webview-controlled element swallows the menu accelerator. The store
-    // flips `requestRenameFocus`, the Topbar watches and focuses the title.
-    keys: 'Cmd+R',
-    enabled: () => !!sessions.selectedId,
-    handler: () => ui.triggerRenameFocus()
-  },
-  {
-    id: 'session.close',
-    scope: 'global',
-    keys: 'Cmd+W',
-    // T-4.5: suppress when the xterm pane currently owns focus so the
-    // keystroke falls through to xterm.js, which sends `\u0017` (Ctrl+W)
-    // to the PTY. Programs like `nano` listen for that to delete the word
-    // before the cursor — overriding it at the app level would break
-    // muscle memory inside the terminal. When the sidebar or topbar own
-    // focus, this binding does fire and the selection is cleared.
-    enabled: () => !!sessions.selectedId && !terminalFocused.value,
-    // Clears the selection (back to the empty/idle pane). We do NOT
-    // delete the session — the JSONL on disk and the sessions store
-    // model entry stay intact; ⌘W is "close current tab", not "delete".
-    handler: () => sessions.clearSelection()
-  },
-  // --- Sidebar arrow-key navigation (T-4.6). ---
-  // The four arrow keys + Enter walk the flattened visible tree
-  // (`folders → worktrees → sessions`). Scope stays `'global'` rather than
-  // a dedicated `'sidebar'` scope because the bindings naturally no-op when
-  // the model is empty, and the alternative — pushing `'sidebar'` on focus
-  // — would shadow Cmd+K / Cmd+N which the user still expects to fire
-  // while the sidebar has focus. See finding 07 §2 (arrow nav row).
-  //
-  // The cursor is separate from `selectedId`: arrows only move the visual
-  // focus ring, Enter activates (selects a session, toggles a project /
-  // worktree). This matches Finder / VS Code's explorer behaviour and keeps
-  // the terminal from re-mounting on every keystroke.
-  //
-  // The store no-ops on `null` cursors and on out-of-tree ids, so the
-  // bindings are safe to fire whenever the renderer has focus. ArrowUp /
-  // ArrowDown / ArrowLeft / ArrowRight inside the xterm-hosted div get
-  // swallowed by xterm before useMagicKeys sees them (xterm calls
-  // `preventDefault()` on cursor keys), so the user can still scroll the
-  // terminal contents without interference. Inputs inside the palette /
-  // dialog push their own scope (`'modal'`), shadowing these.
-  //
-  // TODO(v1.1): scroll the focused row into view after each cursor move.
-  // For now the user must scroll manually; the visible ring is enough to
-  // confirm the cursor moved even when off-screen.
-  {
-    id: 'sidebar.cursor.down',
-    scope: 'global',
-    keys: 'ArrowDown',
-    enabled: () => !isTextEntryTarget() && sidebarCursorNavAllowed(),
-    handler: () => sessions.cursorDown()
-  },
-  {
-    id: 'sidebar.cursor.up',
-    scope: 'global',
-    keys: 'ArrowUp',
-    enabled: () => !isTextEntryTarget() && sidebarCursorNavAllowed(),
-    handler: () => sessions.cursorUp()
-  },
-  {
-    id: 'sidebar.cursor.right',
-    scope: 'global',
-    keys: 'ArrowRight',
-    enabled: () => !isTextEntryTarget() && sidebarCursorNavAllowed(),
-    handler: () => sessions.cursorRight()
-  },
-  {
-    id: 'sidebar.cursor.left',
-    scope: 'global',
-    keys: 'ArrowLeft',
-    enabled: () => !isTextEntryTarget() && sidebarCursorNavAllowed(),
-    handler: () => sessions.cursorLeft()
-  },
-  {
-    id: 'sidebar.cursor.activate',
-    scope: 'global',
-    keys: 'Enter',
-    // Only fire when the cursor is on a row AND no text-entry surface owns focus
-    // (T22 — the Topbar inline-rename contenteditable pushes no scope, so scope
-    // gating alone wouldn't catch it). The store also no-ops on a null cursor.
-    enabled: () =>
-      sessions.keyboardCursor !== null && !isTextEntryTarget() && sidebarCursorNavAllowed(),
-    handler: () => sessions.cursorActivate()
-  }
-])
+  ],
+  () => keybindings.resolved
+)
 
 /**
  * Mouse back / forward side buttons (DOM buttons 3 / 4) drive the session
