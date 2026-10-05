@@ -407,7 +407,14 @@ export function buildAnalysis(
     hashKind: meta.hashKind,
     analysedAt: meta.now,
     cliVersion: meta.cliVersion,
-    ...(previous && previous.hash !== meta.hash ? { changedSince: previous.analysedAt } : {})
+    ...(previous
+      ? previous.hash !== meta.hash
+        ? { changedSince: previous.analysedAt }
+        : // same bytes (a forced refresh): the earlier change is still the last one
+          previous.changedSince !== undefined
+          ? { changedSince: previous.changedSince }
+          : {}
+      : {})
   }
   if (!parsed || !parsed.ok) {
     return {

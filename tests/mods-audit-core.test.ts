@@ -380,6 +380,10 @@ describe('mods-audit-core', () => {
     expect(changed.hash).toBe('h2')
     expect(changed.changedSince).toBe(1000)
     expect(changed.analysedAt).toBe(3000)
+
+    // a forced refresh of the same bytes keeps the earlier change on record
+    const refreshed = buildAnalysis(parsed, { ...META, hash: 'h2', now: 4000 }, changed)
+    expect(refreshed.changedSince).toBe(1000)
   })
 
   it('classifies run outcomes without a report', () => {
