@@ -1,0 +1,6 @@
+{
+  "top": ["contents", "manifest", "strict", "success", "target"],
+  "manifest": ["errors", "file", "notes", "type", "warnings"],
+  "content": ["errors", "file", "notes", "type", "warnings"],
+  "noteLabels": ["calls", "hooks"]
+}
