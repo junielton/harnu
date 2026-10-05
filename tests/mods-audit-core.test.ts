@@ -198,7 +198,7 @@ describe('mods-audit-core', () => {
   })
 
   it('de-duplicates installed rows per folder', () => {
-    const raw = fixture('plugin-list-202.json')
+    const raw = fixture('plugin-list-many.json')
     expect((raw as unknown[]).length).toBe(202)
 
     const global = normalizeInstalled(raw, null)
@@ -210,7 +210,7 @@ describe('mods-audit-core', () => {
     const expectedGlobal = Array.from({ length: 16 }, (_, i) => i)
       .filter((i) => i % 4 !== 0)
       .concat([17])
-      .map((i) => `plugin-${String(i).padStart(2, '0')}@market-${i % 3}`)
+      .map((i) => `plugin-${String.fromCharCode(97 + i)}@market-${i % 3}`)
     expect(loadingGlobal.sort()).toEqual(expectedGlobal.sort())
 
     // a folder adds the ids installed for that projectPath
@@ -219,13 +219,13 @@ describe('mods-audit-core', () => {
     expect(forProj.length).toBe(18)
     const loads = (id: string): string | undefined =>
       forProj.find((r) => r.id === id)?.loadsInFolder
-    expect(loads('plugin-16@market-1')).toBe('yes') // local row for proj-0 only
+    expect(loads('plugin-q@market-1')).toBe('yes') // local row for proj-0 only
     const elsewhere = normalizeInstalled(raw, '/home/user/Workspace/org/other')!
-    expect(elsewhere.find((r) => r.id === 'plugin-16@market-1')?.loadsInFolder).toBe('no')
+    expect(elsewhere.find((r) => r.id === 'plugin-q@market-1')?.loadsInFolder).toBe('no')
     // user-scope rows keep loading in every folder
-    expect(elsewhere.find((r) => r.id === 'plugin-01@market-1')?.loadsInFolder).toBe('yes')
+    expect(elsewhere.find((r) => r.id === 'plugin-b@market-1')?.loadsInFolder).toBe('yes')
     // a disabled user-scope plugin does not load anywhere by itself
-    expect(elsewhere.find((r) => r.id === 'plugin-04@market-1')?.loadsInFolder).not.toBe('yes')
+    expect(elsewhere.find((r) => r.id === 'plugin-e@market-1')?.loadsInFolder).not.toBe('yes')
 
     // every kept row carries a root and the CLI's own scope word
     for (const r of forProj) {
