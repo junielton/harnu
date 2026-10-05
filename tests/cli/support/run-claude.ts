@@ -170,3 +170,20 @@ export async function runClaude(opts: RunOptions = {}): Promise<RunResult> {
     cleanup: () => rm(work, { recursive: true, force: true }).catch(() => {})
   }
 }
+
+/**
+ * OQ-5: a run that needed a sign-in before `session.start` is `blocked-by-auth`, a FAILURE under
+ * `--with-cli`, never a skip. No credential file is ever copied by this harness; the zero-model
+ * driver needs none (verified on claude 2.1.289 with an empty HOME).
+ */
+export function assertNotBlockedByAuth(r: RunResult): void {
+  if (
+    r.probe === null &&
+    /not logged in|please run \/login|invalid api key|authenticat/i.test(`${r.stdout}\n${r.stderr}`)
+  ) {
+    throw new Error(`blocked-by-auth: the run needed a sign-in\n${r.stdout}\n${r.stderr}`)
+  }
+}
+
+export const COMPANION_LOADED =
+  /hooks module harnu-companion@inline loaded \(worker, [^)]*tier user\)/
