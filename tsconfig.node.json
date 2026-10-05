@@ -1,13 +1,6 @@
 {
   "extends": "@electron-toolkit/tsconfig/tsconfig.node.json",
-  "include": [
-    "electron.vite.config.*",
-    "src/main/**/*",
-    "src/preload/**/*",
-    "src/shared/**/*",
-    "resources/companion/hooks/contract.ts",
-    "resources/companion/tests/fixtures/**/*.ts"
-  ],
+  "include": ["electron.vite.config.*", "src/main/**/*", "src/preload/**/*", "src/shared/**/*", "resources/companion/hooks/lib/**/*.ts"],
   "compilerOptions": {
     "composite": true,
     "types": [
