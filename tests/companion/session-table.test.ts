@@ -14,6 +14,7 @@ import {
   type HelloRequest
 } from '../../src/main/companion/contract'
 import { helloSpawnRequest } from '../../resources/companion/tests/fixtures/hello'
+import { createCompanionHost } from '../../src/main/companion/host-core'
 
 let t = 0
 let n = 0
@@ -413,5 +414,30 @@ describe('stamp verification (P2W5 consumer)', () => {
     expect(table.verifyStamp('000000000000', 'n3', 't', mac)).toBe('unknown-binding')
     const result = table.verifyStamp(handle, 'n9', 't', 'x') as { binding: object }
     expect(JSON.stringify(result.binding)).not.toContain(binding.conn)
+  })
+})
+
+describe('host down', () => {
+  it('host down mints nothing', async () => {
+    // a listener that failed to start: every spawn is a legacy spawn
+    const host = createCompanionHost({
+      dir: '/nowhere',
+      mode: {
+        getMode: () => 'shadow',
+        listenerWanted: () => true,
+        hydrate: async () => undefined,
+        onChange: () => () => undefined
+      },
+      start: async () => {
+        throw Object.assign(new Error('listen EACCES'), { code: 'EACCES' })
+      },
+      log: () => undefined
+    })
+    await host.register()
+    expect(host.facade.mintSpawnToken(meta)).toBeNull()
+    expect(host.facade.diagnostics().listener).toEqual({ state: 'failed', reason: 'EACCES' })
+    expect(host.facade.diagnostics().pendingSpawns).toBe(0)
+    expect(host.facade.spawnRecord(owner)).toBeNull() // nothing was recorded either
+    await host.close()
   })
 })

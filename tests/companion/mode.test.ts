@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -25,6 +25,8 @@ afterEach(() => {
   setCompanionPrefsPath(null)
   rmSync(dir, { recursive: true, force: true })
 })
+
+import { createCompanionHost } from '../../src/main/companion/host-core'
 
 describe('companion mode seam', () => {
   it('default off starts nothing', async () => {
@@ -103,5 +105,38 @@ describe('companion mode seam', () => {
     expect(parseCompanionPrefs('')).toBe('off')
     expect(parseCompanionPrefs('null')).toBe('off')
     expect(parseCompanionPrefs('{"mode":1}')).toBe('off')
+  })
+})
+
+describe('default off starts nothing', () => {
+  it('default off starts nothing: the host creates no directory and no socket', async () => {
+    const companionDir = join(dir, 'companion')
+    let started = 0
+    const host = createCompanionHost({
+      dir: companionDir,
+      mode: {
+        getMode: getCompanionMode,
+        listenerWanted,
+        hydrate: hydrateCompanionMode,
+        onChange: onModeChange
+      },
+      start: async () => {
+        started++
+        throw new Error('must not start')
+      }
+    })
+    await host.register() // no companion-prefs.json at <dir>
+    expect(getCompanionMode()).toBe('off')
+    expect(started).toBe(0)
+    expect(existsSync(companionDir)).toBe(false)
+    expect(existsSync(join(companionDir, 'c.sock'))).toBe(false)
+    expect(
+      host.facade.mintSpawnToken({
+        owner: { kind: 'pty', ptyId: 'p' },
+        trust: 'operator',
+        cwd: '/x'
+      })
+    ).toBeNull()
+    await host.close()
   })
 })

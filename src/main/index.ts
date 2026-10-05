@@ -124,6 +124,7 @@ import {
   hookSettingsBlobJson,
   getTaskStates
 } from './hook-bridge'
+import { registerCompanionHost, closeCompanionHost } from './companion/host'
 import {
   initTerminalLedger,
   startTerminalLedgerObserver,
@@ -599,6 +600,11 @@ app.whenReady().then(async () => {
   void registerHookBridge(() => mainWindow).catch((err) =>
     console.error('[hook-bridge] register failed', err)
   )
+  // Harnu mod host (T389). Dark by default: it only listens when the developer mode file asks for
+  // it, so a default install opens no socket and creates no directory.
+  void registerCompanionHost(() => mainWindow).catch((err) =>
+    console.error('[companion] register failed', err)
+  )
   // BUG-54: the terminal ledger subscribes to the same in-main observer seam
   // the digest engine below uses (`hook-bridge.addTaskEventObserver`), so
   // `errored`/`done` survive a restart. Started once the disk load
@@ -1042,6 +1048,7 @@ app.on('before-quit', async (event) => {
   closeClaudeChangelog()
   closeClaudeStatus()
   void closeHookBridge()
+  void closeCompanionHost()
   closeDigestEngine()
   void sessionRegistryWatcher?.close()
   void closeRoadmapWatcher()

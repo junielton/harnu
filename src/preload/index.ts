@@ -37,6 +37,7 @@ import type { ClaudeStatusSnapshot } from '../main/claude-status-parse'
 import type { ClaudeBootConfig, EndpointProfile } from '../main/claude-args'
 import type { Worker, Run } from '../main/scheduler-core'
 import type { SchedulerState } from '../main/scheduler-shell'
+import type { CompanionDiagnostics } from '../main/companion/host-core'
 import type { RoutingTable, ResolvedRouting } from '../main/routing-policy'
 import type { PrStackSnapshot, WorktreeNode as PrStackWorktree } from '../main/pr-stack-core'
 import type { PrStackPrefs } from '../main/pr-stack-prefs'
@@ -2542,7 +2543,16 @@ const api = {
   schedulerRuns: (id: string): Promise<Run[]> => ipcRenderer.invoke('scheduler:runs', id),
   /** Fires whenever the definitions or the running set change. */
   onSchedulerChanged: (cb: (state: SchedulerState) => void): (() => void) =>
-    subscribe('scheduler:changed', cb)
+    subscribe('scheduler:changed', cb),
+  /** Harnu mod host snapshot (T389): listener state, totals and bindings. Token-free. */
+  companionDiagnostics: (): Promise<CompanionDiagnostics> =>
+    ipcRenderer.invoke('companion:diagnostics'),
+  /**
+   * Dev only: mints a spawn token for a throwaway owner so a recipe can drive the real socket.
+   * A packaged build registers no handler, so this rejects there.
+   */
+  companionDevMintSpawn: (): Promise<{ spawnToken: string; runId: string } | null> =>
+    ipcRenderer.invoke('companion:devMintSpawn')
 }
 
 if (process.contextIsolated) {
