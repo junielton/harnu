@@ -342,6 +342,11 @@ describe('the stager (real fs, temp dirs)', () => {
     expect(packaged).not.toBe(source)
   })
 
+  it('garbage collection never stages anything itself', async () => {
+    await stager().gc()
+    expect(await readdir(userData)).toEqual([])
+  })
+
   it('garbage collection removes only old, unpinned, non-current stages', async () => {
     const s = stager()
     const current = (await s.ensureStaged())!

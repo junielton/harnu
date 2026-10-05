@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { promisify } from 'node:util'
 
-type Cb = (err: Error | null, out?: { stdout: string; stderr: string }) => void
 const h = vi.hoisted(() => ({
   calls: [] as { cmd: string; args: string[] }[],
   existing: new Set<string>(['/fake/bin/claude']) as Set<string>,

@@ -138,3 +138,20 @@ describe('closeHaiku', () => {
     expect(spawnedChildren[0].kill).toHaveBeenCalled()
   })
 })
+
+describe('probes are never injected', () => {
+  it('probes are never injected', async () => {
+    const a = runHaiku('p', { key: 'probe', cacheTtlMs: 0 })
+    await tick()
+    const [, argv, opts] = execFileMock.mock.calls[0] as unknown as [
+      string,
+      string[],
+      { env: Record<string, string> }
+    ]
+    expect(argv).not.toContain('--plugin-dir')
+    expect(argv.join(' ')).not.toContain('plugin-dir')
+    expect(opts.env.HARNU_SPAWN_TOKEN).toBeUndefined()
+    flush()
+    await a
+  })
+})

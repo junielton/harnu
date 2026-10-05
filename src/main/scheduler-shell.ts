@@ -33,6 +33,12 @@ import { resolveClaudePath } from './claude-cli'
 import { stageSkillsForFolder } from './bundled-skills'
 import { hookSettingsBlobJson } from './hook-bridge'
 import {
+  releaseCompanionSpawn,
+  tickEnv,
+  type CompanionSpawnProvider
+} from './companion/spawn-inject'
+import type { SpawnOwner } from './companion/session-table'
+import {
   capResult,
   dueWorkers,
   newWorker,
@@ -164,6 +170,22 @@ interface LiveTick {
   /** Set right before `kill()` so the exit handler knows why it died. */
   outcome: 'timeout' | 'stopped' | null
   settled: boolean
+  /** T389: the spawn-ledger owner of this tick's token; released when the child closes. */
+  companionOwner?: SpawnOwner
+}
+
+/**
+ * T389: the companion mod's spawn provider for ticks (the same one `pty.ts` uses). `null` — the
+ * default and the answer whenever the mod is off — leaves a tick's argv and env as they were.
+ */
+let companionPlanProvider: CompanionSpawnProvider = async () => null
+
+export function setSchedulerCompanionProvider(fn: CompanionSpawnProvider): void {
+  companionPlanProvider = fn
+}
+
+function releaseTickSpawn(live: LiveTick): void {
+  if (live.companionOwner) releaseCompanionSpawn(live.companionOwner, 'tick-done')
 }
 
 let workersCache: Worker[] = []
@@ -368,6 +390,7 @@ function finishLiveTick(id: string, exitCode: number | null): void {
   if (!live || live.settled) return
   live.settled = true
   clearTimeout(live.timeoutHandle)
+  releaseTickSpawn(live)
   const endedAt = Date.now()
 
   let run: Run
@@ -435,7 +458,12 @@ async function startTick(worker: Worker): Promise<void> {
   // in which case the tick simply spawns without them, as it always did.
   const hookSettingsJson = hookSettingsBlobJson()
 
+  // T389: the companion mod rides a tick as the first `--plugin-dir`, with a token owned by this
+  // run. Sensor-only (trust `tick`).
+  const companionPlan = await companionPlanProvider({ cwd: worker.folder, trust: 'tick' })
+
   const ctx: TickContext = {
+    ...(companionPlan ? { companionPluginDir: companionPlan.pluginDir } : {}),
     ...(staged ? { pluginDir: staged.dir } : {}),
     ...(mcpConfigPath ? { mcpConfigPath } : {}),
     ...(lastResult ? { lastResult } : {}),
@@ -443,9 +471,17 @@ async function startTick(worker: Worker): Promise<void> {
   }
 
   const argv = tickArgv(worker, ctx)
+  const companionOwner: SpawnOwner | undefined = companionPlan
+    ? { kind: 'tick', workerId: worker.id, runId: `${worker.id}-${startedAt}` }
+    : undefined
+  const env = tickEnv(
+    process.env,
+    companionPlan && companionOwner ? companionPlan.mintToken(companionOwner) : null
+  )
   const child = spawn(claudePath, argv, {
     cwd: worker.folder,
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: ['ignore', 'pipe', 'pipe'],
+    ...(env ? { env } : {})
   })
 
   const timeoutHandle = setTimeout(() => {
@@ -462,7 +498,8 @@ async function startTick(worker: Worker): Promise<void> {
     stdout: '',
     outcome: null,
     settled: false,
-    timeoutHandle
+    timeoutHandle,
+    ...(companionOwner ? { companionOwner } : {})
   }
   liveTicks.set(worker.id, live)
   emitChanged()
@@ -478,6 +515,7 @@ async function startTick(worker: Worker): Promise<void> {
     if (!l || l.settled) return
     l.settled = true
     clearTimeout(l.timeoutHandle)
+    releaseTickSpawn(l)
     void completeTick(worker, runForOutcome(worker.id, startedAt, Date.now(), 'error', String(err)))
   })
   child.on('exit', (code) => {

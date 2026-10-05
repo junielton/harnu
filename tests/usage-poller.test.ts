@@ -224,3 +224,22 @@ describe('closeUsagePoller', () => {
     expect(h.removeListener).toHaveBeenCalledWith('browser-window-blur', expect.any(Function))
   })
 })
+
+describe('probes are never injected', () => {
+  it('probes are never injected', async () => {
+    // The /usage probe is a bare `claude -p /usage`: no Harnu plugin dir, no spawn token.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mod.registerUsageHandlers(getWindow as any)
+    const p = h.ipcHandlers.get('usage:refresh')!()
+    await resolveSpawn(FULL)
+    await p
+    const [, argv, opts] = h.execFile.mock.calls[0] as [
+      string,
+      string[],
+      { env: NodeJS.ProcessEnv }
+    ]
+    expect(argv).not.toContain('--plugin-dir')
+    expect(argv.join(' ')).not.toContain('plugin-dir')
+    expect(opts.env.HARNU_SPAWN_TOKEN).toBeUndefined()
+  })
+})

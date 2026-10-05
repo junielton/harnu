@@ -53,7 +53,8 @@ import {
   foregroundProcessForSession,
   setHarnuPreambleProvider,
   setHookSettingsProvider,
-  setBundledSkillsArgsProvider
+  setBundledSkillsArgsProvider,
+  setCompanionSpawnProvider
 } from './pty'
 import { registerMonitorHandlers, stopHeartbeat, stopFullSamplerForced } from './monitor/sampler'
 import { registerHarnuFeaturesHandlers, harnuPreamble } from './harnu-features'
@@ -178,7 +179,9 @@ import { registerMcpConfirm, closeMcpConfirm } from './mcp/confirm-resolver'
 import { registerWorktreeHandlers, adoptExistingFolder } from './worktree-ipc'
 import { registerReaperHandlers } from './reaper/reaper-ipc'
 import { registerContainersHandlers } from './containers/containers-ipc'
-import { registerScheduler } from './scheduler-shell'
+import { registerScheduler, setSchedulerCompanionProvider } from './scheduler-shell'
+import { companionSpawnProvider } from './companion/spawn-inject'
+import { gcStagedDirs } from './companion/staging'
 import { registerPrStack } from './pr-stack'
 import { registerMissionIpc } from './mission-ipc'
 import { registerReviewHandlers } from './review-ipc'
@@ -625,6 +628,14 @@ app.whenReady().then(async () => {
   // Drop the dead pre-rename `<hash>/capy/` staging dirs the userData migration carried over.
   void cleanStaleLegacyStaging().catch(() => {})
   setBundledSkillsArgsProvider((args, cwd) => injectBundledSkillArgs(args, cwd))
+  // T389: the companion mod — the second, unconditional `--plugin-dir` plus a spawn token. The
+  // provider answers null (spawn exactly as before) unless the mode is on, the CLI version is
+  // known and supported, and staging worked. A spawn token in Harnu's OWN env came from a parent
+  // Harnu/Claude session and is spent: it must never reach a child (SEC-8).
+  delete process.env.HARNU_SPAWN_TOKEN
+  setCompanionSpawnProvider(companionSpawnProvider)
+  setSchedulerCompanionProvider(companionSpawnProvider)
+  void gcStagedDirs()
   // T92: PID session-registry watcher (`~/.claude/sessions/<pid>.json`). A cheap
   // third fleet signal for EXTERNAL sessions Harnu never injected hooks into;
   // fail-open + feature-gated (skips silently if the dir/status field is absent).

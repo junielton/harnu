@@ -154,7 +154,12 @@ export function createStager(deps: StagerDeps): {
     }
   }
 
-  async function stage(): Promise<string> {
+  /**
+   * Picks the stage directory for the current source and coordinates. With `create` false it
+   * only LOOKS (garbage collection must not stage anything, least of all with the mode off) and
+   * answers null when no valid directory exists yet.
+   */
+  async function select(create: boolean): Promise<string | null> {
     const { modVersion, files } = await readSource()
     // The digest covers the files and the coordinates; STAGED_AT is a timestamp, so it is
     // fixed at 0 here: otherwise every spawn would look like a changed stage.
@@ -176,11 +181,13 @@ export function createStager(deps: StagerDeps): {
       const state = await inspect(dir, wanted)
       if (state === 'valid') return (chosen = { dir, wanted }).dir
       if (state === 'absent') {
+        if (!create) return null
         await build(key, wanted, modVersion, files)
         if ((await inspect(dir, wanted)) === 'valid') return (chosen = { dir, wanted }).dir
         // lost a rename race against another process: try the next key
       }
     }
+    if (!create) return null
     throw new Error('no usable stage directory')
   }
 
@@ -224,7 +231,7 @@ export function createStager(deps: StagerDeps): {
           const dev = await devRepoFolder()
           if (dev) return dev
         }
-        return await stage()
+        return await select(true)
       } catch (err) {
         return fail(err)
       } finally {
@@ -236,7 +243,7 @@ export function createStager(deps: StagerDeps): {
 
   async function gc(): Promise<void> {
     try {
-      const current = await ensureStaged()
+      const current = deps.devFlag && !deps.isPackaged && devDir ? devDir : await select(false)
       const names = (await fs.readdir(root, { withFileTypes: true }).catch(() => []))
         .filter((e) => e.isDirectory() && KEY_RE.test(e.name))
         .map((e) => e.name)

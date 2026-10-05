@@ -456,3 +456,24 @@ describe('READ_COMMANDS — verbs that write with an ordinary argument are absen
     expect(isReadCommandRule('Bash(find . -fprintf out.txt %p)')).toBe(false)
   })
 })
+
+describe('tickArgv — companion mod', () => {
+  it('companion plugin dir on ticks', () => {
+    const plain = tickArgv(worker(), { pluginDir: '/skills' })
+    const withCompanion = tickArgv(worker(), {
+      pluginDir: '/skills',
+      companionPluginDir: '/ud/companion/0.1.0/harnu-companion'
+    })
+    const dirs = (argv: string[]): string[] =>
+      argv.flatMap((a, i) => (a === '--plugin-dir' ? [argv[i + 1]] : []))
+    // the companion is emitted first, before the skills dir, and both are option-portion flags
+    expect(dirs(withCompanion)).toEqual(['/ud/companion/0.1.0/harnu-companion', '/skills'])
+    expect(withCompanion.indexOf('--plugin-dir')).toBeLessThan(withCompanion.indexOf('--'))
+    // without it the argv equals today's
+    expect(dirs(plain)).toEqual(['/skills'])
+    expect(tickArgv(worker(), { companionPluginDir: undefined })).toEqual(tickArgv(worker(), {}))
+    const removed = [...withCompanion]
+    removed.splice(withCompanion.indexOf('--plugin-dir'), 2)
+    expect(removed).toEqual(plain)
+  })
+})
