@@ -3,6 +3,8 @@ import { promisify } from 'util'
 import { existsSync } from 'fs'
 import { homedir } from 'os'
 import { dirname, join } from 'path'
+import { sanitizeSpawnEnv } from './appimage-env'
+import { parseClaudeVersion, type ClaudeVersion } from './claude-cli-version'
 
 const execFileP = promisify(execFile)
 
@@ -20,6 +22,13 @@ const execFileP = promisify(execFile)
  */
 
 let cached: string | null | undefined
+
+// Version probe (T200 §3.2). Reset together with `cached` in clearClaudePathCache:
+// a re-resolved path can point at a different install, and a version must never
+// outlive the path it was read from.
+let versionCache: ClaudeVersion | null | undefined
+let versionProbe: Promise<ClaudeVersion | null> | null = null
+let versionFailureLogged = false
 
 const COMMON_PATHS_POSIX = ['/usr/local/bin/claude', '/opt/homebrew/bin/claude', '/usr/bin/claude']
 
@@ -119,4 +128,57 @@ export async function resolveClaudePath(): Promise<string | null> {
 
 export function clearClaudePathCache(): void {
   cached = undefined
+  versionCache = undefined
+  versionProbe = null
+  versionFailureLogged = false
+}
+
+function noteVersionFailure(why: string): null {
+  if (!versionFailureLogged) {
+    versionFailureLogged = true
+    console.warn(`[claude-cli] version probe failed (${why})`)
+  }
+  return null
+}
+
+async function probeClaudeVersion(): Promise<ClaudeVersion | null> {
+  try {
+    const bin = await resolveClaudePath()
+    if (!bin) return noteVersionFailure('claude not found')
+    const { stdout } = await execFileP(bin, ['--version'], {
+      cwd: homedir(),
+      timeout: 3000,
+      maxBuffer: 1 << 16,
+      env: sanitizeSpawnEnv(process.env, { execPath: process.execPath })
+    })
+    const parsed = parseClaudeVersion(String(stdout))
+    return parsed ?? noteVersionFailure('unparseable output')
+  } catch (err) {
+    return noteVersionFailure(err instanceof Error ? err.message : 'error')
+  }
+}
+
+/**
+ * The installed CLI's own answer to `--version`, probed at most once per cache
+ * generation (single-flight). Never rejects. Never await it on a spawn path:
+ * spawn code reads {@link claudeVersionSync} (T200 §3.3).
+ */
+export function resolveClaudeVersion(): Promise<ClaudeVersion | null> {
+  if (versionCache !== undefined) return Promise.resolve(versionCache)
+  if (versionProbe) return versionProbe
+  const probe = probeClaudeVersion().then((v) => {
+    // A clear while the probe was in flight starts a new generation: drop this result.
+    if (versionProbe === probe) {
+      versionCache = v
+      versionProbe = null
+    }
+    return v
+  })
+  versionProbe = probe
+  return probe
+}
+
+/** Cached-or-null. NEVER spawns. */
+export function claudeVersionSync(): ClaudeVersion | null {
+  return versionCache ?? null
 }

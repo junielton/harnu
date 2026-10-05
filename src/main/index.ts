@@ -165,6 +165,7 @@ import {
   registerKokoroScheme
 } from './speech-kokoro'
 import { registerClaudeChangelog, closeClaudeChangelog } from './claude-changelog'
+import { resolveClaudeVersion } from './claude-cli'
 import { registerClaudeStatus, closeClaudeStatus } from './claude-status'
 import { registerExternal } from './external'
 // Harnu MCP control server (agent-drives-Harnu, 2026-06-25). OFF by default.
@@ -749,6 +750,8 @@ app.whenReady().then(async () => {
   // from GitHub; lights the Settings-gear dot + fires one OS notification per new
   // version. Reuses the same app icon as the notifier. Runs in dev too.
   registerClaudeChangelog(() => mainWindow, icon)
+  // T200 §3.2: warm the version cache off the critical path; spawn code reads it sync.
+  void resolveClaudeVersion()
   // Claude service-status poller (issue #17). Polls the Statuspage summary for
   // status.claude.com → footer health dot + incident panel + native alerts on
   // state transitions. Background-polls (60s focused / 5min blurred) so the

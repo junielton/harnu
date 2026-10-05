@@ -28,7 +28,11 @@ const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 vi.mock('node:child_process', () => ({
   execFile: (...a: unknown[]) => execFileMock(...(a as [string, string[], unknown, Cb]))
 }))
-vi.mock('../src/main/claude-cli', () => ({ resolveClaudePath: vi.fn(async () => '/bin/claude') }))
+vi.mock('../src/main/claude-cli', () => ({
+  resolveClaudePath: vi.fn(async () => '/bin/claude'),
+  resolveClaudeVersion: vi.fn(async () => null),
+  claudeVersionSync: vi.fn(() => null)
+}))
 const sanitizeSpawnEnv = vi.fn(() => ({ SANITIZED: '1' }))
 vi.mock('../src/main/appimage-env', () => ({
   sanitizeSpawnEnv: (e: unknown) => sanitizeSpawnEnv(e)

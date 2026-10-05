@@ -39,7 +39,11 @@ vi.mock('electron', () => ({
 // this test `execFile` is a no-op mock, so `resolveClaudePath` (which shells out)
 // would hang — stub it to null (→ bare `claude`, preserving the asserted spawn)
 // and pass the env through unchanged.
-vi.mock('../src/main/claude-cli', () => ({ resolveClaudePath: vi.fn(async () => null) }))
+vi.mock('../src/main/claude-cli', () => ({
+  resolveClaudePath: vi.fn(async () => null),
+  resolveClaudeVersion: vi.fn(async () => null),
+  claudeVersionSync: vi.fn(() => null)
+}))
 vi.mock('../src/main/appimage-env', () => ({
   sanitizeSpawnEnv: (e: NodeJS.ProcessEnv) => e
 }))
