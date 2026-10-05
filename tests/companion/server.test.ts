@@ -530,14 +530,20 @@ describe('events', () => {
     const { conn, sid } = await rig.bind()
     const body = { ...rig.env(conn, sid), events: [] }
     // the hello above is exempt: the whole budget is still there
-    let last: Reply | null = null
+    let firstSlow: Reply | null = null
     let slow = 0
     for (let i = 0; i < RATE_MAX_REQUESTS + 5; i++) {
-      last = await rig.send('events', body)
-      if (last.json.code === 'SLOW_DOWN') slow++
+      const r = await rig.send('events', body)
+      if (r.json.code === 'SLOW_DOWN') {
+        slow++
+        firstSlow ??= r
+      }
     }
+    // The bucket refills continuously (one token per 50 ms), so how many of the extra requests
+    // are refused depends on the loop's speed; the exact 201st boundary is pinned in wire-core.
     expect(slow).toBeGreaterThanOrEqual(1)
-    expect(last?.json).toEqual({ ok: false, code: 'SLOW_DOWN', retryAfterMs: 1000 })
+    expect(firstSlow?.json).toEqual({ ok: false, code: 'SLOW_DOWN', retryAfterMs: 1000 })
+    expect(firstSlow?.status).toBe(200)
     expect(rig.table.all()[0].counters.refused).toBeGreaterThanOrEqual(1)
     // a hello in the same window is served
     const token = rig.table.mint({
