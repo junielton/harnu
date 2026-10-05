@@ -1,0 +1,24 @@
+{
+  "success": true,
+  "strict": false,
+  "target": "/plugins/sec-default/.claude-plugin/plugin.json",
+  "manifest": {
+    "file": "/plugins/sec-default/.claude-plugin/plugin.json",
+    "type": "plugin",
+    "errors": [],
+    "warnings": [],
+    "notes": []
+  },
+  "contents": [
+    {
+      "file": "/plugins/sec-default/hooks/hooks.json",
+      "type": "hooks",
+      "errors": [],
+      "warnings": [],
+      "notes": [
+        "./register.ts hooks: classic.*, prompt.section, prompt.context, prompt.compose, skill.prompt, attribution.text, settings.read, tool.describe, command.describe, agent.offer, agent.spawn, tool.register, tool.list, tool.check, plugin.register{tier=user}",
+        "./register.ts calls: $.settings.read, $.ui.log, next.to:append"
+      ]
+    }
+  ]
+}
