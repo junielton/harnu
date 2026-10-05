@@ -1,0 +1,77 @@
+{
+  "mode": "instr",
+  "wallS": 60,
+  "cpu": [
+    {
+      "pid": 3176776,
+      "type": "main",
+      "cpuPct": 5.7
+    },
+    {
+      "pid": 3176778,
+      "type": "zygote",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3176779,
+      "type": "zygote",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3176811,
+      "type": "zygote",
+      "cpuPct": 4.9
+    },
+    {
+      "pid": 3176817,
+      "type": "utilitynetwork.mojom.NetworkService",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3176831,
+      "type": "renderer",
+      "cpuPct": 42.5
+    },
+    {
+      "pid": 3178083,
+      "type": "utilityaudio.mojom.AudioService",
+      "cpuPct": 0.2
+    },
+    {
+      "pid": 3184514,
+      "type": "?",
+      "cpuPct": -0.3
+    }
+  ],
+  "renderer": {
+    "upd": 1,
+    "updBytes": 6595,
+    "add": 0,
+    "rem": 0,
+    "sub": 19,
+    "subBytes": 132464,
+    "idx": 0,
+    "proj": 0,
+    "sessions": 1
+  },
+  "main": {
+    "slugPasses": 20,
+    "passesPerS": 0.33,
+    "passMs": {
+      "p50": 5.4,
+      "p90": 28.1,
+      "max": 39.8,
+      "sum": 166
+    },
+    "slugsPerPass": 1,
+    "fullRescansMs": [],
+    "notifySlug": 19,
+    "jsonlHeaderMisses": 1,
+    "subagentHeaderReads": 19,
+    "gitRevParseSpawns": 6,
+    "gitStatusSpawns": 0,
+    "sessionUpdatedSends": 0,
+    "sessionUpdatedNewLinesBytes": 0,
+    "subagentUpdatedSends": 19
+  }
+}

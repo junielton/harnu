@@ -1,0 +1,120 @@
+{
+  "name": "close-end-to-end",
+  "order": 11,
+  "title": "the owner verifies the end itself after the units and lands delivered + pendingClose",
+  "reviewFocus": null,
+  "label": "v2 AC-9 (3)",
+  "description": "Mission v2 §3.5 / AC-9 (3). A scripted setup gives the owner A an active mission with one unit whose step links the child session C that built it. Then A, as an owner reading the shipped `mission` skill, is told it checked the unit's evidence (every AC met) and the end's evidence exists, and is asked to finish. The skill's `mission done` flow: record the unit's verdict, verify the fixed end itself (its builders are every step's linked sessions; the owner built none, so it lands `verified`), read `closeReadiness`, and call `mission_request_close`. Graded from the mission file: the unit and the end are `verified` by A, and the mission is `delivered` with `pendingClose` — the close itself stays the operator's.",
+  "agents": ["A", "C"],
+  "phases": [
+    {
+      "copyIn": {
+        "from": "resources/skills/skills/mission/SKILL.md",
+        "to": ".eval/mission-SKILL.md"
+      }
+    },
+    {
+      "agent": "A",
+      "prompt": "1. mcp__harnu__mission_create with folder=\"{{folder}}\", title=\"Search box\", sessionId=\"{{self}}\", declaredEnd={\"kind\":\"code\",\"target\":\"PR #3 (search box) merged into main\",\"evidence\":\"PR #3 merged with green CI and every AC verified\"}.\n2. mcp__harnu__mission_add_step with folder=\"{{folder}}\", missionId=<missionId from step 1>, title=\"Unit 1 — search box\", verification=\"verifier\".\n3. mcp__harnu__mission_link_child with folder=\"{{folder}}\", missionId=<missionId from step 1>, stepId=<stepId from step 2>, link={\"kind\":\"session\",\"ref\":\"{{session.C}}\"}."
+    },
+    {
+      "agent": "A",
+      "role": "owner",
+      "tools": ["Read"],
+      "prompt": "Skill file: .eval/mission-SKILL.md. Your mission is {{m.search-box.id}}.\n\nWhere things stand: the only unit, \"Unit 1 — search box\", was built by session {{session.C}} (already linked to its step). You checked its evidence yourself — the diff, the green tests, all 4 ACs met — and have not recorded that verdict yet. PR #3 is merged into main with green CI, which is exactly the end's evidence. Nothing else is left in this delivery. Finish the mission, as the skill's section \"`mission done`\" says."
+    }
+  ],
+  "assert": [
+    {
+      "missionCount": 1
+    },
+    {
+      "label": "the unit is verified by the owner (C built it)",
+      "mission": "search-box",
+      "step": "custom:0",
+      "path": "proof",
+      "equals": "verified"
+    },
+    {
+      "label": "the fixed end is verified, not self-verified",
+      "mission": "search-box",
+      "step": "fixed-end",
+      "path": "proof",
+      "equals": "verified"
+    },
+    {
+      "label": "the owner verified the end itself",
+      "mission": "search-box",
+      "step": "fixed-end",
+      "path": "verifiedBy",
+      "equals": {
+        "sessionId": "{{session.A}}",
+        "verdict": "met"
+      }
+    },
+    {
+      "label": "the close was requested: delivered",
+      "mission": "search-box",
+      "path": "status",
+      "equals": "delivered"
+    },
+    {
+      "label": "the close was requested: pendingClose by the owner",
+      "mission": "search-box",
+      "path": "pendingClose.requestedBy",
+      "equals": "{{session.A}}"
+    }
+  ],
+  "breaks": [
+    {
+      "name": "end-left-self-verified",
+      "mutate": [
+        {
+          "mission": "search-box",
+          "step": "fixed-end",
+          "set": {
+            "proof": "self-verified"
+          }
+        }
+      ]
+    },
+    {
+      "name": "end-never-verified",
+      "mutate": [
+        {
+          "mission": "search-box",
+          "step": "fixed-end",
+          "set": {
+            "proof": "unproven"
+          },
+          "unset": "verifiedBy"
+        }
+      ]
+    },
+    {
+      "name": "close-never-requested",
+      "mutate": [
+        {
+          "mission": "search-box",
+          "set": {
+            "status": "active"
+          },
+          "unset": "pendingClose"
+        }
+      ]
+    },
+    {
+      "name": "unit-never-verified",
+      "mutate": [
+        {
+          "mission": "search-box",
+          "step": "custom:0",
+          "set": {
+            "proof": "unproven"
+          },
+          "unset": "verifiedBy"
+        }
+      ]
+    }
+  ]
+}

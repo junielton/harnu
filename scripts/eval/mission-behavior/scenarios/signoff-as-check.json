@@ -1,0 +1,248 @@
+{
+  "name": "signoff-as-check",
+  "order": 13,
+  "title": "an owner told a sign-off is required adds a check on the step, not a new step",
+  "reviewFocus": null,
+  "label": "v3 AC-11 (sign-off)",
+  "description": "Mission v3 §3.6 / §3.11 / AC-11. A scripted setup gives the owner A an active mission declared in ONE call with its plan (`mission_create { steps }`): one unit, the landing page's hero section, linked to the child session C that is building it. Then A runs ONE tick as an owner — it reads the shipped `mission` skill and decides its own calls — after the operator says the designer must sign off the hero section before it counts. The skill's rule: sign-offs become checks, not steps — `mission_add_check` on the step whose deliverable it confirms; only the operator ticks it. Graded from the mission file: the unit's step carries an agent-created, unticked check; the plan did not grow (no new step, no `human` step); the end carries no check; the mission is still active.",
+  "agents": ["A", "C"],
+  "phases": [
+    {
+      "copyIn": {
+        "from": "resources/skills/skills/mission/SKILL.md",
+        "to": ".eval/mission-SKILL.md"
+      }
+    },
+    {
+      "agent": "A",
+      "prompt": "1. mcp__harnu__mission_create with folder=\"{{folder}}\", title=\"Landing hero\", sessionId=\"{{self}}\", declaredEnd={\"kind\":\"ui\",\"target\":\"PR #5 (landing hero section) open, green and verified\",\"evidence\":\"green CI, a capture of the rendered hero, and every AC verified\"}, steps=[{\"title\":\"Unit 1 — landing hero section\",\"verification\":\"verifier\"}].\n2. mcp__harnu__mission_link_child with folder=\"{{folder}}\", missionId=<missionId from step 1>, stepId=<the id of the step titled \"Unit 1 — landing hero section\" from step 1>, link={\"kind\":\"session\",\"ref\":\"{{session.C}}\"}."
+    },
+    {
+      "agent": "A",
+      "role": "owner",
+      "tools": ["Read"],
+      "prompt": "Skill file: .eval/mission-SKILL.md — run ONE tick, as its section \"`mission` — one tick\" says, on your mission {{m.landing-hero.id}}.\n\nWhat changed since your last tick: the executor of \"Unit 1 — landing hero section\" (session {{session.C}}) is still building it. The operator just told you: \"The designer must sign off the hero section before it counts as done. They'll look at it once the PR is up.\" Nothing else changed."
+    }
+  ],
+  "assert": [
+    {
+      "missionCount": 1
+    },
+    {
+      "label": "the unit's step carries an agent check that names the sign-off",
+      "mission": "landing-hero",
+      "step": "custom:0",
+      "path": "checks",
+      "includes": {
+        "source": "agent",
+        "label": {
+          "$match": "sign|design",
+          "$flags": "i"
+        }
+      }
+    },
+    {
+      "label": "no check is ticked in any form — only the operator ticks",
+      "mission": "landing-hero",
+      "step": "custom:0",
+      "path": "checks",
+      "excludes": {
+        "ticked": {
+          "$truthy": true
+        }
+      }
+    },
+    {
+      "label": "the plan did not grow: the unit and the end, nothing else",
+      "mission": "landing-hero",
+      "path": "steps",
+      "length": 2
+    },
+    {
+      "label": "no human step was added for the sign-off",
+      "mission": "landing-hero",
+      "path": "steps",
+      "excludes": {
+        "verification": "human"
+      }
+    },
+    {
+      "label": "the check sits on the section's step, not on the end",
+      "mission": "landing-hero",
+      "step": "fixed-end",
+      "path": "checks",
+      "exists": false
+    },
+    {
+      "label": "the child's link stands",
+      "mission": "landing-hero",
+      "step": "custom:0",
+      "path": "links",
+      "includes": {
+        "kind": "session",
+        "ref": "{{session.C}}"
+      }
+    },
+    {
+      "label": "still active",
+      "mission": "landing-hero",
+      "path": "status",
+      "equals": "active"
+    }
+  ],
+  "breaks": [
+    {
+      "name": "signoff-as-step",
+      "mutate": [
+        {
+          "mission": "landing-hero",
+          "step": "custom:0",
+          "unset": "checks"
+        },
+        {
+          "mission": "landing-hero",
+          "set": {
+            "steps.2": {
+              "id": "stp-3",
+              "kind": "custom",
+              "title": "Designer signs off the hero section",
+              "verification": "human",
+              "proof": "unproven",
+              "links": [],
+              "blockers": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "signoff-ignored",
+      "mutate": [
+        {
+          "mission": "landing-hero",
+          "step": "custom:0",
+          "unset": "checks"
+        }
+      ]
+    },
+    {
+      "name": "check-on-the-end",
+      "mutate": [
+        {
+          "mission": "landing-hero",
+          "step": "custom:0",
+          "unset": "checks"
+        },
+        {
+          "mission": "landing-hero",
+          "step": "fixed-end",
+          "set": {
+            "checks": [
+              {
+                "id": "chk-1",
+                "label": "Designer sign-off on the hero section",
+                "source": "agent",
+                "createdAt": "2026-01-01T00:00:00.000Z"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "agent-ticked-the-check",
+      "mutate": [
+        {
+          "mission": "landing-hero",
+          "step": "custom:0",
+          "set": {
+            "checks": [
+              {
+                "id": "chk-1",
+                "label": "Designer sign-off on the hero section",
+                "source": "agent",
+                "createdAt": "2026-01-01T00:00:00.000Z",
+                "ticked": {
+                  "at": "2026-01-01T00:00:00.000Z"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "child-unlinked",
+      "mutate": [
+        {
+          "mission": "landing-hero",
+          "eachLink": {
+            "match": {
+              "ref": "{{session.C}}"
+            },
+            "remove": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "check-label-names-nothing",
+      "mutate": [
+        {
+          "mission": "landing-hero",
+          "step": "custom:0",
+          "set": {
+            "checks": [
+              {
+                "id": "chk-1",
+                "label": "Looks good",
+                "source": "agent",
+                "createdAt": "2026-01-01T00:00:00.000Z"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "ticked-as-a-boolean",
+      "mutate": [
+        {
+          "mission": "landing-hero",
+          "step": "custom:0",
+          "set": {
+            "checks": [
+              {
+                "id": "chk-1",
+                "label": "Designer sign-off on the hero section",
+                "source": "agent",
+                "createdAt": "2026-01-01T00:00:00.000Z",
+                "ticked": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "ticked-as-a-date-string",
+      "mutate": [
+        {
+          "mission": "landing-hero",
+          "step": "custom:0",
+          "set": {
+            "checks": [
+              {
+                "id": "chk-1",
+                "label": "Designer sign-off on the hero section",
+                "source": "agent",
+                "createdAt": "2026-01-01T00:00:00.000Z",
+                "ticked": "2026-01-01T00:00:00.000Z"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

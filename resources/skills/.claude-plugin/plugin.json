@@ -1,0 +1,9 @@
+{
+  "name": "harnu",
+  "version": "1.0.0",
+  "description": "Skills Harnu ships for driving its own delivery loop: decompose an objective into board cards, dispatch a session per unit, coordinate the fan-out, and verify every acceptance criterion from evidence.",
+  "author": {
+    "name": "Harnu",
+    "url": "https://harnu.dev"
+  }
+}

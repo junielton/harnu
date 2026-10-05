@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      - name: Cache Electron download
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: ${{ runner.os }}-electron-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Never publish a build whose tests fail. Run once, on Linux, where CI runs them.
+      - name: Test
+        if: runner.os == 'Linux'
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Build and publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --publish always

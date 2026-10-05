@@ -1,0 +1,97 @@
+{
+  "name": "added-mid-flight",
+  "mission": {
+    "owner": {
+      "sessionId": "00000000-0000-4000-8000-000000000001",
+      "folder": "/repo"
+    },
+    "steps": [
+      {
+        "id": "stp-1",
+        "kind": "fixed-start",
+        "verification": "existence",
+        "proof": "unproven",
+        "links": [
+          {
+            "kind": "worktree",
+            "ref": "docs/specs/feature/spec.md"
+          }
+        ],
+        "blockers": []
+      },
+      {
+        "id": "stp-2",
+        "kind": "custom",
+        "verification": "verifier",
+        "proof": "verified",
+        "links": [],
+        "blockers": [],
+        "verifiedBy": {
+          "sessionId": "00000000-0000-4000-8000-0000000000aa",
+          "at": "2026-09-30T01:00:00.000Z",
+          "verdict": "met"
+        }
+      },
+      {
+        "id": "stp-3",
+        "kind": "custom",
+        "verification": "verifier",
+        "proof": "unproven",
+        "links": [],
+        "blockers": [],
+        "addedAt": "2026-09-30T10:00:00.000Z"
+      },
+      {
+        "id": "stp-4",
+        "kind": "custom",
+        "verification": "verifier",
+        "proof": "verified",
+        "links": [],
+        "blockers": [],
+        "verifiedBy": {
+          "sessionId": "00000000-0000-4000-8000-0000000000aa",
+          "at": "2026-09-30T03:00:00.000Z",
+          "verdict": "met"
+        }
+      },
+      {
+        "id": "stp-5",
+        "kind": "fixed-end",
+        "verification": "verifier",
+        "proof": "unproven",
+        "links": [],
+        "blockers": []
+      }
+    ]
+  },
+  "signals": [
+    {
+      "stepId": "stp-1",
+      "children": [],
+      "existenceProven": false
+    },
+    {
+      "stepId": "stp-2",
+      "children": [],
+      "existenceProven": false
+    },
+    {
+      "stepId": "stp-3",
+      "children": [],
+      "existenceProven": false
+    },
+    {
+      "stepId": "stp-4",
+      "children": [],
+      "existenceProven": false
+    },
+    {
+      "stepId": "stp-5",
+      "children": [],
+      "existenceProven": false
+    }
+  ],
+  "expect": {
+    "leftBehind": []
+  }
+}

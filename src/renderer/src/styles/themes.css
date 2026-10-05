@@ -1,0 +1,754 @@
+/* Source of truth for tokens: design.md §9.
+ * Tailwind v4 picks the `--color-*` tokens up via @theme; components must only
+ * consume them through utility classes (bg-bg, text-text-3, border-border-2, …).
+ * Adding/removing any token here requires the matching entry in design.md.
+ *
+ * Terminal ANSI palette (`--term-ansi-*`) is NOT a Tailwind namespace — it is
+ * read at runtime by `lib/terminalTheme.ts` (`themeFromCss`) and pushed into
+ * xterm's 16-colour theme. Documented in design.md §9 "Terminal ANSI (xterm)".
+ * Every theme block below MUST define the full token set (20 UI colours + 16
+ * ANSI + 2 diff-word) — no theme-specific tokens, no gaps.
+ */
+@theme {
+  /* core surfaces — Ink ramp (warm neutral) */
+  --color-bg: #17120e;
+  --color-sidebar: #211c18;
+  --color-surface: #251f1b;
+  --color-surface-2: #29231f;
+  --color-border: #302a25;
+  --color-border-2: #38312c;
+
+  /* text scale — Ink ramp (warm neutral) */
+  --color-text: #faf8f6;
+  --color-text-2: #ada59d;
+  --color-text-3: #948b80;
+  --color-text-4: #8e867e;
+  --color-text-disabled: #4a423c;
+
+  /* accent + semantic — Dusk accent, desaturated status hues */
+  --color-accent: #8090b4;
+  --color-accent-soft: rgba(128, 144, 180, 0.12);
+  --color-accent-line: rgba(128, 144, 180, 0.35);
+  --color-accent-ink: #17120e;
+  --color-green: #7a9455;
+  --color-green-soft: rgba(122, 148, 85, 0.18);
+  --color-red: #d1717c;
+  --color-red-soft: rgba(209, 113, 124, 0.1);
+  --color-warning: #c08a3e;
+  --color-green-line: rgba(122, 148, 85, 0.35);
+  --color-red-line: rgba(209, 113, 124, 0.3);
+  --color-warning-soft: rgba(192, 138, 62, 0.1);
+  --color-warning-line: rgba(192, 138, 62, 0.3);
+
+  /* shape */
+  --radius-sm: 5px;
+  --radius: 7px;
+  --radius-lg: 10px;
+
+  /* Folder View scroll caps (design.md §6 "Folder View → Height caps"). The
+   * two long lists cap their own height and scroll inside themselves instead of
+   * running off the bottom of the page: measured on a 102-worktree, 128-card
+   * repo, the fan-out alone pushed the Sessions block three screens down.
+   * Theme-invariant, like the shape and motion tokens above — they are read by
+   * three components, and a height that lives in one of them is a height the
+   * other two can drift from. */
+  --fv-fanout-max-h: 380px;
+  --fv-rail-list-max-h: 280px;
+
+  /* motion */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 100ms;
+  --dur: 140ms;
+  --dur-slow: 220ms;
+
+  /* shadow (popovers only) */
+  --shadow-pop:
+    0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 12px 32px rgba(0, 0, 0, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Terminal ANSI palette for the default (Harnu / default-dark) theme. Kept out
+ * of @theme so it is always emitted to :root regardless of Tailwind usage.
+ * Theme variants override these in their data-theme blocks below.
+ */
+:root {
+  /* diff surfaces (design.md §6 "Review pane", §9) — word-level intra-line
+   * marks. Kept here rather than in @theme for the same reason as the ANSI
+   * palette: they are consumed through the .diff-* / .t-* helper classes in
+   * main.css, not through Tailwind utilities. The LINE backgrounds reuse
+   * --color-green-soft/--color-red-soft; only the word marks need their own
+   * weight, since anything soft enough to be a line background disappears
+   * when painted on top of one. */
+  --diff-add-word: rgba(122, 148, 85, 0.34);
+  --diff-del-word: rgba(209, 113, 124, 0.26);
+
+  --term-ansi-black: #302a25;
+  --term-ansi-red: #c6675a;
+  --term-ansi-green: #7a9455;
+  --term-ansi-yellow: #c08a3e;
+  --term-ansi-blue: #8090b4;
+  --term-ansi-magenta: #a384a5;
+  --term-ansi-cyan: #639c9f;
+  --term-ansi-white: #ada59d;
+  --term-ansi-bright-black: #5d554e;
+  --term-ansi-bright-red: #ef8c7d;
+  --term-ansi-bright-green: #a7c382;
+  --term-ansi-bright-yellow: #ebb368;
+  --term-ansi-bright-blue: #c3cadd;
+  --term-ansi-bright-magenta: #d3b2d5;
+  --term-ansi-bright-cyan: #91cbce;
+  --term-ansi-bright-white: #faf8f6;
+}
+
+/* Theme variants override the same set of tokens via :root[data-theme="…"]
+ * for runtime switching. Every token defined above MUST be defined in
+ * every theme block (no theme-specific tokens).
+ */
+
+:root[data-theme='light'] {
+  --color-bg: #fafafa;
+  --color-sidebar: #ffffff;
+  --color-surface: #f4f4f5;
+  --color-surface-2: #ececef;
+  --color-border: #e4e4e7;
+  --color-border-2: #d4d4d8;
+
+  --color-text: #18181b;
+  --color-text-2: #3f3f46;
+  --color-text-3: #71717a;
+  --color-text-4: #a1a1aa;
+  --color-text-disabled: #d4d4d8;
+
+  --color-accent: #c2410c;
+  --color-accent-soft: rgba(194, 65, 12, 0.1);
+  --color-accent-line: rgba(194, 65, 12, 0.3);
+  --color-accent-ink: #fff7ed;
+
+  --color-green: #16a34a;
+  --color-green-soft: rgba(22, 163, 74, 0.15);
+  --color-red: #dc2626;
+  --color-red-soft: rgba(220, 38, 38, 0.1);
+  --color-warning: #ca8a04;
+  --color-green-line: rgba(22, 163, 74, 0.35);
+  --color-red-line: rgba(220, 38, 38, 0.3);
+  --color-warning-soft: rgba(202, 138, 4, 0.1);
+  --color-warning-line: rgba(202, 138, 4, 0.3);
+
+  /* diff surfaces (design.md §6 "Review pane", §9) — word-level intra-line
+   * marks. The LINE backgrounds reuse --color-green-soft/--color-red-soft;
+   * only the word marks need their own weight, since anything soft enough
+   * to be a line background disappears when painted on top of one. */
+  --diff-add-word: rgba(22, 163, 74, 0.3);
+  --diff-del-word: rgba(220, 38, 38, 0.22);
+
+  --term-ansi-black: #18181b;
+  --term-ansi-red: #dc2626;
+  --term-ansi-green: #16a34a;
+  --term-ansi-yellow: #ca8a04;
+  --term-ansi-blue: #2563eb;
+  --term-ansi-magenta: #9333ea;
+  --term-ansi-cyan: #0891b2;
+  --term-ansi-white: #71717a;
+  --term-ansi-bright-black: #3f3f46;
+  --term-ansi-bright-red: #ef4444;
+  --term-ansi-bright-green: #22c55e;
+  --term-ansi-bright-yellow: #eab308;
+  --term-ansi-bright-blue: #3b82f6;
+  --term-ansi-bright-magenta: #a855f7;
+  --term-ansi-bright-cyan: #06b6d4;
+  --term-ansi-bright-white: #18181b;
+}
+
+:root[data-theme='tokyo-night'] {
+  --color-bg: #1a1b26;
+  --color-sidebar: #16161e;
+  --color-surface: #1f2335;
+  --color-surface-2: #24283b;
+  --color-border: #2f3349;
+  --color-border-2: #3b4261;
+
+  --color-text: #c0caf5;
+  --color-text-2: #9aa5ce;
+  --color-text-3: #565f89;
+  --color-text-4: #414868;
+  --color-text-disabled: #2f3349;
+
+  --color-accent: #7aa2f7;
+  --color-accent-soft: rgba(122, 162, 247, 0.12);
+  --color-accent-line: rgba(122, 162, 247, 0.35);
+  --color-accent-ink: #0b0e1a;
+
+  --color-green: #9ece6a;
+  --color-green-soft: rgba(158, 206, 106, 0.2);
+  --color-red: #f7768e;
+  --color-red-soft: rgba(247, 118, 142, 0.12);
+  --color-warning: #e0af68;
+  --color-green-line: rgba(158, 206, 106, 0.35);
+  --color-red-line: rgba(247, 118, 142, 0.3);
+  --color-warning-soft: rgba(224, 175, 104, 0.1);
+  --color-warning-line: rgba(224, 175, 104, 0.3);
+
+  /* diff surfaces (design.md §6 "Review pane", §9) — word-level intra-line
+   * marks. The LINE backgrounds reuse --color-green-soft/--color-red-soft;
+   * only the word marks need their own weight, since anything soft enough
+   * to be a line background disappears when painted on top of one. */
+  --diff-add-word: rgba(158, 206, 106, 0.34);
+  --diff-del-word: rgba(247, 118, 142, 0.26);
+
+  --term-ansi-black: #15161e;
+  --term-ansi-red: #f7768e;
+  --term-ansi-green: #9ece6a;
+  --term-ansi-yellow: #e0af68;
+  --term-ansi-blue: #7aa2f7;
+  --term-ansi-magenta: #bb9af7;
+  --term-ansi-cyan: #7dcfff;
+  --term-ansi-white: #a9b1d6;
+  --term-ansi-bright-black: #414868;
+  --term-ansi-bright-red: #f7768e;
+  --term-ansi-bright-green: #9ece6a;
+  --term-ansi-bright-yellow: #e0af68;
+  --term-ansi-bright-blue: #7aa2f7;
+  --term-ansi-bright-magenta: #bb9af7;
+  --term-ansi-bright-cyan: #7dcfff;
+  --term-ansi-bright-white: #c0caf5;
+}
+
+:root[data-theme='dracula'] {
+  --color-bg: #282a36;
+  --color-sidebar: #21222c;
+  --color-surface: #343746;
+  --color-surface-2: #44475a;
+  --color-border: #44475a;
+  --color-border-2: #4f536a;
+
+  --color-text: #f8f8f2;
+  --color-text-2: #bd93f9;
+  --color-text-3: #6272a4;
+  --color-text-4: #4a526e;
+  --color-text-disabled: #3a4055;
+
+  --color-accent: #ff79c6;
+  --color-accent-soft: rgba(255, 121, 198, 0.12);
+  --color-accent-line: rgba(255, 121, 198, 0.35);
+  --color-accent-ink: #1f0a18;
+
+  --color-green: #50fa7b;
+  --color-green-soft: rgba(80, 250, 123, 0.2);
+  --color-red: #ff5555;
+  --color-red-soft: rgba(255, 85, 85, 0.12);
+  --color-warning: #f1fa8c;
+  --color-green-line: rgba(80, 250, 123, 0.35);
+  --color-red-line: rgba(255, 85, 85, 0.3);
+  --color-warning-soft: rgba(241, 250, 140, 0.1);
+  --color-warning-line: rgba(241, 250, 140, 0.3);
+
+  /* diff surfaces (design.md §6 "Review pane", §9) — word-level intra-line
+   * marks. The LINE backgrounds reuse --color-green-soft/--color-red-soft;
+   * only the word marks need their own weight, since anything soft enough
+   * to be a line background disappears when painted on top of one. */
+  --diff-add-word: rgba(80, 250, 123, 0.34);
+  --diff-del-word: rgba(255, 85, 85, 0.26);
+
+  --term-ansi-black: #21222c;
+  --term-ansi-red: #ff5555;
+  --term-ansi-green: #50fa7b;
+  --term-ansi-yellow: #f1fa8c;
+  --term-ansi-blue: #bd93f9;
+  --term-ansi-magenta: #ff79c6;
+  --term-ansi-cyan: #8be9fd;
+  --term-ansi-white: #f8f8f2;
+  --term-ansi-bright-black: #6272a4;
+  --term-ansi-bright-red: #ff6e6e;
+  --term-ansi-bright-green: #69ff94;
+  --term-ansi-bright-yellow: #ffffa5;
+  --term-ansi-bright-blue: #d6acff;
+  --term-ansi-bright-magenta: #ff92df;
+  --term-ansi-bright-cyan: #a4ffff;
+  --term-ansi-bright-white: #ffffff;
+}
+
+:root[data-theme='catppuccin-mocha'] {
+  --color-bg: #1e1e2e;
+  --color-sidebar: #181825;
+  --color-surface: #313244;
+  --color-surface-2: #45475a;
+  --color-border: #45475a;
+  --color-border-2: #585b70;
+
+  --color-text: #cdd6f4;
+  --color-text-2: #bac2de;
+  --color-text-3: #9399b2;
+  --color-text-4: #7f849c;
+  --color-text-disabled: #6c7086;
+
+  --color-accent: #fab387;
+  --color-accent-soft: rgba(250, 179, 135, 0.12);
+  --color-accent-line: rgba(250, 179, 135, 0.35);
+  --color-accent-ink: #1e1e2e;
+
+  --color-green: #a6e3a1;
+  --color-green-soft: rgba(166, 227, 161, 0.18);
+  --color-red: #f38ba8;
+  --color-red-soft: rgba(243, 139, 168, 0.1);
+  --color-warning: #f9e2af;
+  --color-green-line: rgba(166, 227, 161, 0.35);
+  --color-red-line: rgba(243, 139, 168, 0.3);
+  --color-warning-soft: rgba(249, 226, 175, 0.1);
+  --color-warning-line: rgba(249, 226, 175, 0.3);
+
+  /* diff surfaces (design.md §6 "Review pane", §9) — word-level intra-line
+   * marks. The LINE backgrounds reuse --color-green-soft/--color-red-soft;
+   * only the word marks need their own weight, since anything soft enough
+   * to be a line background disappears when painted on top of one. */
+  --diff-add-word: rgba(166, 227, 161, 0.34);
+  --diff-del-word: rgba(243, 139, 168, 0.26);
+
+  --term-ansi-black: #45475a;
+  --term-ansi-red: #f38ba8;
+  --term-ansi-green: #a6e3a1;
+  --term-ansi-yellow: #f9e2af;
+  --term-ansi-blue: #89b4fa;
+  --term-ansi-magenta: #f5c2e7;
+  --term-ansi-cyan: #94e2d5;
+  --term-ansi-white: #bac2de;
+  --term-ansi-bright-black: #585b70;
+  --term-ansi-bright-red: #f38ba8;
+  --term-ansi-bright-green: #a6e3a1;
+  --term-ansi-bright-yellow: #f9e2af;
+  --term-ansi-bright-blue: #89b4fa;
+  --term-ansi-bright-magenta: #f5c2e7;
+  --term-ansi-bright-cyan: #94e2d5;
+  --term-ansi-bright-white: #a6adc8;
+}
+
+:root[data-theme='catppuccin-latte'] {
+  --color-bg: #eff1f5;
+  --color-sidebar: #e6e9ef;
+  --color-surface: #e6e9ef;
+  --color-surface-2: #dce0e8;
+  --color-border: #ccd0da;
+  --color-border-2: #bcc0cc;
+
+  --color-text: #4c4f69;
+  --color-text-2: #5c5f77;
+  --color-text-3: #6c6f85;
+  --color-text-4: #7c7f93;
+  --color-text-disabled: #9ca0b0;
+
+  --color-accent: #fe640b;
+  --color-accent-soft: rgba(254, 100, 11, 0.1);
+  --color-accent-line: rgba(254, 100, 11, 0.3);
+  --color-accent-ink: #eff1f5;
+
+  --color-green: #40a02b;
+  --color-green-soft: rgba(64, 160, 43, 0.15);
+  --color-red: #d20f39;
+  --color-red-soft: rgba(210, 15, 57, 0.1);
+  --color-warning: #df8e1d;
+  --color-green-line: rgba(64, 160, 43, 0.35);
+  --color-red-line: rgba(210, 15, 57, 0.3);
+  --color-warning-soft: rgba(223, 142, 29, 0.1);
+  --color-warning-line: rgba(223, 142, 29, 0.3);
+
+  /* diff surfaces (design.md §6 "Review pane", §9) — word-level intra-line
+   * marks. The LINE backgrounds reuse --color-green-soft/--color-red-soft;
+   * only the word marks need their own weight, since anything soft enough
+   * to be a line background disappears when painted on top of one. */
+  --diff-add-word: rgba(64, 160, 43, 0.3);
+  --diff-del-word: rgba(210, 15, 57, 0.22);
+
+  --term-ansi-black: #5c5f77;
+  --term-ansi-red: #d20f39;
+  --term-ansi-green: #40a02b;
+  --term-ansi-yellow: #df8e1d;
+  --term-ansi-blue: #1e66f5;
+  --term-ansi-magenta: #ea76cb;
+  --term-ansi-cyan: #179299;
+  --term-ansi-white: #acb0be;
+  --term-ansi-bright-black: #6c6f85;
+  --term-ansi-bright-red: #d20f39;
+  --term-ansi-bright-green: #40a02b;
+  --term-ansi-bright-yellow: #df8e1d;
+  --term-ansi-bright-blue: #1e66f5;
+  --term-ansi-bright-magenta: #ea76cb;
+  --term-ansi-bright-cyan: #179299;
+  --term-ansi-bright-white: #bcc0cc;
+}
+
+:root[data-theme='one-dark'] {
+  --color-bg: #282c34;
+  --color-sidebar: #21252b;
+  --color-surface: #2c313a;
+  --color-surface-2: #353b45;
+  --color-border: #3b4048;
+  --color-border-2: #4b5263;
+
+  --color-text: #abb2bf;
+  --color-text-2: #9da5b4;
+  --color-text-3: #7f848e;
+  --color-text-4: #5c6370;
+  --color-text-disabled: #4b5263;
+
+  --color-accent: #d19a66;
+  --color-accent-soft: rgba(209, 154, 102, 0.12);
+  --color-accent-line: rgba(209, 154, 102, 0.35);
+  --color-accent-ink: #282c34;
+
+  --color-green: #98c379;
+  --color-green-soft: rgba(152, 195, 121, 0.18);
+  --color-red: #e06c75;
+  --color-red-soft: rgba(224, 108, 117, 0.1);
+  --color-warning: #e5c07b;
+  --color-green-line: rgba(152, 195, 121, 0.35);
+  --color-red-line: rgba(224, 108, 117, 0.3);
+  --color-warning-soft: rgba(229, 192, 123, 0.1);
+  --color-warning-line: rgba(229, 192, 123, 0.3);
+
+  /* diff surfaces (design.md §6 "Review pane", §9) — word-level intra-line
+   * marks. The LINE backgrounds reuse --color-green-soft/--color-red-soft;
+   * only the word marks need their own weight, since anything soft enough
+   * to be a line background disappears when painted on top of one. */
+  --diff-add-word: rgba(152, 195, 121, 0.34);
+  --diff-del-word: rgba(224, 108, 117, 0.26);
+
+  --term-ansi-black: #282c34;
+  --term-ansi-red: #e06c75;
+  --term-ansi-green: #98c379;
+  --term-ansi-yellow: #e5c07b;
+  --term-ansi-blue: #61afef;
+  --term-ansi-magenta: #c678dd;
+  --term-ansi-cyan: #56b6c2;
+  --term-ansi-white: #abb2bf;
+  --term-ansi-bright-black: #5c6370;
+  --term-ansi-bright-red: #e06c75;
+  --term-ansi-bright-green: #98c379;
+  --term-ansi-bright-yellow: #e5c07b;
+  --term-ansi-bright-blue: #61afef;
+  --term-ansi-bright-magenta: #c678dd;
+  --term-ansi-bright-cyan: #56b6c2;
+  --term-ansi-bright-white: #ffffff;
+}
+
+:root[data-theme='github-dark'] {
+  --color-bg: #0d1117;
+  --color-sidebar: #010409;
+  --color-surface: #161b22;
+  --color-surface-2: #21262d;
+  --color-border: #30363d;
+  --color-border-2: #3d444d;
+
+  --color-text: #e6edf3;
+  --color-text-2: #c9d1d9;
+  --color-text-3: #8b949e;
+  --color-text-4: #6e7681;
+  --color-text-disabled: #484f58;
+
+  --color-accent: #58a6ff;
+  --color-accent-soft: rgba(88, 166, 255, 0.12);
+  --color-accent-line: rgba(88, 166, 255, 0.35);
+  --color-accent-ink: #0d1117;
+
+  --color-green: #3fb950;
+  --color-green-soft: rgba(63, 185, 80, 0.18);
+  --color-red: #f85149;
+  --color-red-soft: rgba(248, 81, 73, 0.1);
+  --color-warning: #d29922;
+  --color-green-line: rgba(63, 185, 80, 0.35);
+  --color-red-line: rgba(248, 81, 73, 0.3);
+  --color-warning-soft: rgba(210, 153, 34, 0.1);
+  --color-warning-line: rgba(210, 153, 34, 0.3);
+
+  /* diff surfaces (design.md §6 "Review pane", §9) — word-level intra-line
+   * marks. The LINE backgrounds reuse --color-green-soft/--color-red-soft;
+   * only the word marks need their own weight, since anything soft enough
+   * to be a line background disappears when painted on top of one. */
+  --diff-add-word: rgba(63, 185, 80, 0.34);
+  --diff-del-word: rgba(248, 81, 73, 0.26);
+
+  --term-ansi-black: #484f58;
+  --term-ansi-red: #ff7b72;
+  --term-ansi-green: #3fb950;
+  --term-ansi-yellow: #d29922;
+  --term-ansi-blue: #58a6ff;
+  --term-ansi-magenta: #bc8cff;
+  --term-ansi-cyan: #39c5cf;
+  --term-ansi-white: #b1bac4;
+  --term-ansi-bright-black: #6e7681;
+  --term-ansi-bright-red: #ffa198;
+  --term-ansi-bright-green: #56d364;
+  --term-ansi-bright-yellow: #e3b341;
+  --term-ansi-bright-blue: #79c0ff;
+  --term-ansi-bright-magenta: #d2a8ff;
+  --term-ansi-bright-cyan: #56d4dd;
+  --term-ansi-bright-white: #f0f6fc;
+}
+
+:root[data-theme='github-light'] {
+  --color-bg: #ffffff;
+  --color-sidebar: #f6f8fa;
+  --color-surface: #f6f8fa;
+  --color-surface-2: #eaeef2;
+  --color-border: #d0d7de;
+  --color-border-2: #afb8c1;
+
+  --color-text: #1f2328;
+  --color-text-2: #424a53;
+  --color-text-3: #656d76;
+  --color-text-4: #818b98;
+  --color-text-disabled: #afb8c1;
+
+  --color-accent: #0969da;
+  --color-accent-soft: rgba(9, 105, 218, 0.1);
+  --color-accent-line: rgba(9, 105, 218, 0.3);
+  --color-accent-ink: #ffffff;
+
+  --color-green: #1a7f37;
+  --color-green-soft: rgba(26, 127, 55, 0.15);
+  --color-red: #cf222e;
+  --color-red-soft: rgba(207, 34, 46, 0.1);
+  --color-warning: #9a6700;
+  --color-green-line: rgba(26, 127, 55, 0.35);
+  --color-red-line: rgba(207, 34, 46, 0.3);
+  --color-warning-soft: rgba(154, 103, 0, 0.1);
+  --color-warning-line: rgba(154, 103, 0, 0.3);
+
+  /* diff surfaces (design.md §6 "Review pane", §9) — word-level intra-line
+   * marks. The LINE backgrounds reuse --color-green-soft/--color-red-soft;
+   * only the word marks need their own weight, since anything soft enough
+   * to be a line background disappears when painted on top of one. */
+  --diff-add-word: rgba(26, 127, 55, 0.3);
+  --diff-del-word: rgba(207, 34, 46, 0.22);
+
+  --term-ansi-black: #24292f;
+  --term-ansi-red: #cf222e;
+  --term-ansi-green: #116329;
+  --term-ansi-yellow: #4d2d00;
+  --term-ansi-blue: #0969da;
+  --term-ansi-magenta: #8250df;
+  --term-ansi-cyan: #1b7c83;
+  --term-ansi-white: #6e7781;
+  --term-ansi-bright-black: #57606a;
+  --term-ansi-bright-red: #a40e26;
+  --term-ansi-bright-green: #1a7f37;
+  --term-ansi-bright-yellow: #633c01;
+  --term-ansi-bright-blue: #218bff;
+  --term-ansi-bright-magenta: #a475f9;
+  --term-ansi-bright-cyan: #3192aa;
+  --term-ansi-bright-white: #8c959f;
+}
+
+:root[data-theme='gruvbox-dark'] {
+  --color-bg: #282828;
+  --color-sidebar: #1d2021;
+  --color-surface: #32302f;
+  --color-surface-2: #3c3836;
+  --color-border: #504945;
+  --color-border-2: #665c54;
+
+  --color-text: #ebdbb2;
+  --color-text-2: #d5c4a1;
+  --color-text-3: #bdae93;
+  --color-text-4: #a89984;
+  --color-text-disabled: #665c54;
+
+  --color-accent: #fe8019;
+  --color-accent-soft: rgba(254, 128, 25, 0.12);
+  --color-accent-line: rgba(254, 128, 25, 0.35);
+  --color-accent-ink: #282828;
+
+  --color-green: #b8bb26;
+  --color-green-soft: rgba(184, 187, 38, 0.18);
+  --color-red: #fb4934;
+  --color-red-soft: rgba(251, 73, 52, 0.1);
+  --color-warning: #fabd2f;
+  --color-green-line: rgba(184, 187, 38, 0.35);
+  --color-red-line: rgba(251, 73, 52, 0.3);
+  --color-warning-soft: rgba(250, 189, 47, 0.1);
+  --color-warning-line: rgba(250, 189, 47, 0.3);
+
+  /* diff surfaces (design.md §6 "Review pane", §9) — word-level intra-line
+   * marks. The LINE backgrounds reuse --color-green-soft/--color-red-soft;
+   * only the word marks need their own weight, since anything soft enough
+   * to be a line background disappears when painted on top of one. */
+  --diff-add-word: rgba(184, 187, 38, 0.34);
+  --diff-del-word: rgba(251, 73, 52, 0.26);
+
+  --term-ansi-black: #282828;
+  --term-ansi-red: #cc241d;
+  --term-ansi-green: #98971a;
+  --term-ansi-yellow: #d79921;
+  --term-ansi-blue: #458588;
+  --term-ansi-magenta: #b16286;
+  --term-ansi-cyan: #689d6a;
+  --term-ansi-white: #a89984;
+  --term-ansi-bright-black: #928374;
+  --term-ansi-bright-red: #fb4934;
+  --term-ansi-bright-green: #b8bb26;
+  --term-ansi-bright-yellow: #fabd2f;
+  --term-ansi-bright-blue: #83a598;
+  --term-ansi-bright-magenta: #d3869b;
+  --term-ansi-bright-cyan: #8ec07c;
+  --term-ansi-bright-white: #ebdbb2;
+}
+
+:root[data-theme='gruvbox-light'] {
+  --color-bg: #fbf1c7;
+  --color-sidebar: #f9f5d7;
+  --color-surface: #f2e5bc;
+  --color-surface-2: #ebdbb2;
+  --color-border: #d5c4a1;
+  --color-border-2: #bdae93;
+
+  --color-text: #3c3836;
+  --color-text-2: #504945;
+  --color-text-3: #665c54;
+  --color-text-4: #7c6f64;
+  --color-text-disabled: #a89984;
+
+  --color-accent: #d65d0e;
+  --color-accent-soft: rgba(214, 93, 14, 0.1);
+  --color-accent-line: rgba(214, 93, 14, 0.3);
+  --color-accent-ink: #fbf1c7;
+
+  --color-green: #79740e;
+  --color-green-soft: rgba(121, 116, 14, 0.15);
+  --color-red: #9d0006;
+  --color-red-soft: rgba(157, 0, 6, 0.1);
+  --color-warning: #b57614;
+  --color-green-line: rgba(121, 116, 14, 0.35);
+  --color-red-line: rgba(157, 0, 6, 0.3);
+  --color-warning-soft: rgba(181, 118, 20, 0.1);
+  --color-warning-line: rgba(181, 118, 20, 0.3);
+
+  /* diff surfaces (design.md §6 "Review pane", §9) — word-level intra-line
+   * marks. The LINE backgrounds reuse --color-green-soft/--color-red-soft;
+   * only the word marks need their own weight, since anything soft enough
+   * to be a line background disappears when painted on top of one. */
+  --diff-add-word: rgba(121, 116, 14, 0.3);
+  --diff-del-word: rgba(157, 0, 6, 0.22);
+
+  --term-ansi-black: #fbf1c7;
+  --term-ansi-red: #cc241d;
+  --term-ansi-green: #98971a;
+  --term-ansi-yellow: #d79921;
+  --term-ansi-blue: #458588;
+  --term-ansi-magenta: #b16286;
+  --term-ansi-cyan: #689d6a;
+  --term-ansi-white: #7c6f64;
+  --term-ansi-bright-black: #928374;
+  --term-ansi-bright-red: #9d0006;
+  --term-ansi-bright-green: #79740e;
+  --term-ansi-bright-yellow: #b57614;
+  --term-ansi-bright-blue: #076678;
+  --term-ansi-bright-magenta: #8f3f71;
+  --term-ansi-bright-cyan: #427b58;
+  --term-ansi-bright-white: #3c3836;
+}
+
+:root[data-theme='nord'] {
+  --color-bg: #2e3440;
+  --color-sidebar: #272b35;
+  --color-surface: #3b4252;
+  --color-surface-2: #434c5e;
+  --color-border: #434c5e;
+  --color-border-2: #4c566a;
+
+  --color-text: #eceff4;
+  --color-text-2: #d8dee9;
+  --color-text-3: #97a0b5;
+  --color-text-4: #6e7790;
+  --color-text-disabled: #4c566a;
+
+  --color-accent: #88c0d0;
+  --color-accent-soft: rgba(136, 192, 208, 0.12);
+  --color-accent-line: rgba(136, 192, 208, 0.35);
+  --color-accent-ink: #2e3440;
+
+  --color-green: #a3be8c;
+  --color-green-soft: rgba(163, 190, 140, 0.18);
+  --color-red: #bf616a;
+  --color-red-soft: rgba(191, 97, 106, 0.1);
+  --color-warning: #ebcb8b;
+  --color-green-line: rgba(163, 190, 140, 0.35);
+  --color-red-line: rgba(191, 97, 106, 0.3);
+  --color-warning-soft: rgba(235, 203, 139, 0.1);
+  --color-warning-line: rgba(235, 203, 139, 0.3);
+
+  /* diff surfaces (design.md §6 "Review pane", §9) — word-level intra-line
+   * marks. The LINE backgrounds reuse --color-green-soft/--color-red-soft;
+   * only the word marks need their own weight, since anything soft enough
+   * to be a line background disappears when painted on top of one. */
+  --diff-add-word: rgba(163, 190, 140, 0.34);
+  --diff-del-word: rgba(191, 97, 106, 0.26);
+
+  --term-ansi-black: #3b4252;
+  --term-ansi-red: #bf616a;
+  --term-ansi-green: #a3be8c;
+  --term-ansi-yellow: #ebcb8b;
+  --term-ansi-blue: #81a1c1;
+  --term-ansi-magenta: #b48ead;
+  --term-ansi-cyan: #88c0d0;
+  --term-ansi-white: #e5e9f0;
+  --term-ansi-bright-black: #4c566a;
+  --term-ansi-bright-red: #bf616a;
+  --term-ansi-bright-green: #a3be8c;
+  --term-ansi-bright-yellow: #ebcb8b;
+  --term-ansi-bright-blue: #81a1c1;
+  --term-ansi-bright-magenta: #b48ead;
+  --term-ansi-bright-cyan: #8fbcbb;
+  --term-ansi-bright-white: #eceff4;
+}
+
+:root[data-theme='monospace'] {
+  --color-bg: #0c0c0c;
+  --color-sidebar: #141414;
+  --color-surface: #1a1a1a;
+  --color-surface-2: #222222;
+  --color-border: #2a2a2a;
+  --color-border-2: #333333;
+
+  --color-text: #e8e8e8;
+  --color-text-2: #b4b4b4;
+  --color-text-3: #808080;
+  --color-text-4: #5a5a5a;
+  --color-text-disabled: #3a3a3a;
+
+  --color-accent: #cfcfcf;
+  --color-accent-soft: rgba(207, 207, 207, 0.1);
+  --color-accent-line: rgba(207, 207, 207, 0.3);
+  --color-accent-ink: #0c0c0c;
+
+  --color-green: #8faf8f;
+  --color-green-soft: rgba(143, 175, 143, 0.16);
+  --color-red: #c08f8f;
+  --color-red-soft: rgba(192, 143, 143, 0.1);
+  --color-warning: #c0b48f;
+  --color-green-line: rgba(143, 175, 143, 0.35);
+  --color-red-line: rgba(192, 143, 143, 0.3);
+  --color-warning-soft: rgba(192, 180, 143, 0.1);
+  --color-warning-line: rgba(192, 180, 143, 0.3);
+
+  /* diff surfaces (design.md §6 "Review pane", §9) — word-level intra-line
+   * marks. The LINE backgrounds reuse --color-green-soft/--color-red-soft;
+   * only the word marks need their own weight, since anything soft enough
+   * to be a line background disappears when painted on top of one. */
+  --diff-add-word: rgba(143, 175, 143, 0.34);
+  --diff-del-word: rgba(192, 143, 143, 0.26);
+
+  --term-ansi-black: #1a1a1a;
+  --term-ansi-red: #b08a8a;
+  --term-ansi-green: #8faf8f;
+  --term-ansi-yellow: #bcb18f;
+  --term-ansi-blue: #8f9fb0;
+  --term-ansi-magenta: #a89aae;
+  --term-ansi-cyan: #8fb0b0;
+  --term-ansi-white: #b4b4b4;
+  --term-ansi-bright-black: #5a5a5a;
+  --term-ansi-bright-red: #c8a0a0;
+  --term-ansi-bright-green: #a4c2a4;
+  --term-ansi-bright-yellow: #d0c4a0;
+  --term-ansi-bright-blue: #a0b2c8;
+  --term-ansi-bright-magenta: #bcaebf;
+  --term-ansi-bright-cyan: #a0c8c8;
+  --term-ansi-bright-white: #e8e8e8;
+}

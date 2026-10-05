@@ -1,0 +1,170 @@
+{
+  "name": "happy-path",
+  "order": 0,
+  "title": "create → link child → add step (started: reason) → independent verify → request close",
+  "reviewFocus": null,
+  "description": "The owner (A) creates a mission with a code-kind declared end — born `active` (Mission v3 §3.4: no draft, no approval door). A links a child session C to the fixed end, which STARTS the mission, then adds a custom step: once started, `reason` is required and stored (§3.4's started-based reason rule). A different session B verifies the fixed end; A requests the close. B differs from the linked C, so the fixed end must land on `verified`, never `self-verified`.",
+  "agents": ["A", "B", "C"],
+  "phases": [
+    {
+      "agent": "A",
+      "prompt": "1. mcp__harnu__mission_create with folder=\"{{folder}}\", title=\"Happy path\", sessionId=\"{{self}}\", declaredEnd={\"kind\":\"code\",\"target\":\"src/feature.ts exports feature()\",\"evidence\":\"the unit test for feature() passes\"}."
+    },
+    {
+      "agent": "A",
+      "prompt": "1. mcp__harnu__mission_link_child with folder=\"{{folder}}\", missionId=\"{{m.happy-path.id}}\", stepId=\"{{m.happy-path.end}}\", link={\"kind\":\"session\",\"ref\":\"{{session.C}}\"}.\n2. mcp__harnu__mission_add_step with folder=\"{{folder}}\", missionId=\"{{m.happy-path.id}}\", title=\"Write the unit test\", verification=\"verifier\", reason=\"the declared end cites a unit test that does not exist yet\"."
+    },
+    {
+      "agent": "B",
+      "prompt": "1. mcp__harnu__mission_verify_step with folder=\"{{folder}}\", missionId=\"{{m.happy-path.id}}\", stepId=\"{{m.happy-path.end}}\", verdict=\"met\", evidence=\"EVAL-HAPPY-EVIDENCE: ran the test, it passes\", sessionId=\"{{self}}\"."
+    },
+    {
+      "agent": "A",
+      "prompt": "1. mcp__harnu__mission_request_close with folder=\"{{folder}}\", missionId=\"{{m.happy-path.id}}\", sessionId=\"{{self}}\"."
+    }
+  ],
+  "assert": [
+    {
+      "missionCount": 1
+    },
+    {
+      "mission": "happy-path",
+      "path": "owner.sessionId",
+      "equals": "{{session.A}}"
+    },
+    {
+      "mission": "happy-path",
+      "path": "declaredEnd.kind",
+      "equals": "code"
+    },
+    {
+      "label": "born active — no draft (v3)",
+      "mission": "happy-path",
+      "path": "declaredEndApproval.via",
+      "equals": "chat"
+    },
+    {
+      "mission": "happy-path",
+      "path": "status",
+      "equals": "delivered"
+    },
+    {
+      "mission": "happy-path",
+      "path": "pendingClose.requestedBy",
+      "equals": "{{session.A}}"
+    },
+    {
+      "mission": "happy-path",
+      "path": "steps",
+      "length": 2
+    },
+    {
+      "mission": "happy-path",
+      "step": "custom:0",
+      "path": "title",
+      "equals": "Write the unit test"
+    },
+    {
+      "mission": "happy-path",
+      "step": "custom:0",
+      "path": "verification",
+      "equals": "verifier"
+    },
+    {
+      "mission": "happy-path",
+      "step": "custom:0",
+      "path": "addedReason",
+      "exists": true
+    },
+    {
+      "mission": "happy-path",
+      "step": "fixed-end",
+      "path": "links",
+      "includes": {
+        "kind": "session",
+        "ref": "{{session.C}}"
+      }
+    },
+    {
+      "mission": "happy-path",
+      "step": "fixed-end",
+      "path": "proof",
+      "equals": "verified"
+    },
+    {
+      "mission": "happy-path",
+      "step": "fixed-end",
+      "path": "verifiedBy.sessionId",
+      "equals": "{{session.B}}"
+    },
+    {
+      "mission": "happy-path",
+      "logContains": "EVAL-HAPPY-EVIDENCE"
+    }
+  ],
+  "breaks": [
+    {
+      "name": "end-self-verified",
+      "mutate": [
+        {
+          "mission": "happy-path",
+          "step": "fixed-end",
+          "set": {
+            "proof": "self-verified"
+          }
+        }
+      ]
+    },
+    {
+      "name": "close-never-requested",
+      "mutate": [
+        {
+          "mission": "happy-path",
+          "set": {
+            "status": "active"
+          },
+          "unset": "pendingClose"
+        }
+      ]
+    },
+    {
+      "name": "child-link-lost",
+      "mutate": [
+        {
+          "mission": "happy-path",
+          "step": "fixed-end",
+          "set": {
+            "links": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "step-reason-dropped",
+      "mutate": [
+        {
+          "mission": "happy-path",
+          "step": "custom:0",
+          "unset": "addedReason"
+        }
+      ]
+    },
+    {
+      "name": "mission-file-gone",
+      "mutate": [
+        {
+          "drop": "happy-path"
+        }
+      ]
+    },
+    {
+      "name": "born-draft-unstamped",
+      "mutate": [
+        {
+          "mission": "happy-path",
+          "unset": "declaredEndApproval"
+        }
+      ]
+    }
+  ]
+}

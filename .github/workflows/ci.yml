@@ -1,0 +1,204 @@
+name: CI
+
+# Verify the build on every PR and on pushes to main: typecheck, lint, tests,
+# and a full production build. Any failing step fails the job.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel a superseded run of the same ref: a new push to a PR branch (or to
+# main) cancels the in-flight run instead of stacking them (T65 AC4).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only token: CI checks code, it never writes to the repo. A pull request from
+# a fork gets a read-only token anyway; this makes pushes to main match it.
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          # Full history so the CHANGELOG gate can diff against the PR base sha.
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      # Electron's prebuilt binary download dominates `npm ci` (the postinstall
+      # electron-builder install-app-deps step). Cache it across runs (T65 AC4).
+      - name: Cache Electron binaries
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/electron
+          key: ${{ runner.os }}-electron-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-
+
+      # `npm ci` runs the postinstall hook (electron-builder install-app-deps),
+      # which rebuilds node-pty for Electron. That's expected on CI.
+      - name: Install dependencies
+        run: npm ci
+
+      # Contract gate (T65 AC3): `prettier --check .` — formatting drift fails
+      # the gate here instead of silently landing and dirtying review diffs.
+      - name: Format check
+        run: npm run format:check
+
+      # Contract gate (T65 AC2): en.json and pt-BR.json must carry the exact
+      # same deep-flattened key set. Fails in seconds listing the missing keys
+      # by name + file — instead of the cryptic vue-tsc schema error.
+      - name: i18n key parity (en ↔ pt-BR)
+        run: node scripts/ci/i18n-parity.mjs
+
+      # Contract gate: no Portuguese prose outside the i18n exception (CLAUDE.md
+      # § Language policy). Runs on every push, not only PRs.
+      - name: English only (no Portuguese outside i18n)
+        run: node scripts/ci/english-gate.mjs
+
+      # Contract gate (T65 AC1): a PR that changes src/** must also update
+      # CHANGELOG.md, unless it carries the `no-changelog` label. Pure node, no
+      # third-party action. Only meaningful on PRs (needs a base ref to diff).
+      - name: CHANGELOG updated
+        if: github.event_name == 'pull_request'
+        run: node scripts/ci/changelog-gate.mjs
+        env:
+          CHANGELOG_GATE_BASE: ${{ github.event.pull_request.base.sha }}
+          GATE_PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+
+      # Contract gate (T81): a PR that changes the agent-facing MCP surface
+      # (tool-catalog.ts / harnu-features.ts) must also update docs/harnu-features.md,
+      # unless it carries the `no-awareness` label. Narrowly scoped clone of the
+      # CHANGELOG gate — keeps the self-awareness doc true to what agents can do.
+      - name: Self-awareness doc updated
+        if: github.event_name == 'pull_request'
+        run: node scripts/ci/awareness-gate.mjs
+        env:
+          AWARENESS_GATE_BASE: ${{ github.event.pull_request.base.sha }}
+          GATE_PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+
+      # Contract gate (T124): a PR that adds a new top-level component
+      # (src/renderer/src/components/*.vue), a new top-level main-process file
+      # (src/main/*.ts), or changes the MCP verb catalog must also touch
+      # docs/user/**, unless it carries the `no-user-docs` label. Third clone of
+      # the CHANGELOG gate shape — keeps the user-facing guide true to what
+      # actually ships.
+      - name: User docs updated
+        if: github.event_name == 'pull_request'
+        run: node scripts/ci/user-docs-gate.mjs
+        env:
+          USER_DOCS_GATE_BASE: ${{ github.event.pull_request.base.sha }}
+          GATE_PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # Run with coverage so the `thresholds` in vitest.config.mts are enforced:
+      # if a tested surface (esp. the pure security cores) melts below the floor,
+      # this step fails the gate (lesson 004 — a referenced safety net must run).
+      - name: Test
+        run: npm run test:coverage
+
+      - name: Build
+        run: npm run build
+
+      # Contract gate (T241, ADR-0012 option C): the packaged artifact must
+      # contain no `kokoro-js` and no `phonemizer` — the latter inlines a GPLv3
+      # espeak-ng, and shipping it would relicense Harnu's MIT binary. Runs AFTER
+      # the build so it scans `out/**`, the tree electron-builder packs, not the
+      # source. REQUIRE_ARTIFACT makes "nothing to scan" a failure rather than a
+      # pass.
+      - name: Voice licence gate (no GPL payload in the build)
+        run: node scripts/ci/voice-licence-gate.mjs
+        env:
+          VOICE_LICENCE_REQUIRE_ARTIFACT: '1'
+
+      # ntfy.sh push via the CI_FAIL_NTFY_TOPIC secret; a no-op until that secret
+      # exists (empty topic short-circuits the curl).
+      - name: Notify main failure
+        if: failure() && github.ref == 'refs/heads/main'
+        env:
+          NTFY_TOPIC: ${{ secrets.CI_FAIL_NTFY_TOPIC }}
+        run: |
+          [ -n "$NTFY_TOPIC" ] && curl -fsS -m 10 \
+            -H "Title: CI failed on main" -H "Priority: high" -H "Tags: rotating_light" \
+            -d "${{ github.workflow }}/${{ github.job }} failed on main @ ${{ github.sha }} — https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "https://ntfy.sh/$NTFY_TOPIC" || true
+
+  # Separate, slower job (kept off the fast `verify` gate): boot the built app
+  # headless under xvfb and run the subscription-free e2e (T05 track 2). Exercises
+  # the MCP server + prefs shells in the real process — the env-bound glue that
+  # ADR-0001 keeps out of unit tests. Only the specs under tests/e2e/ci/ run here
+  # (the `ci` project); the interactive connectOverCDP specs are local-only smoke.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      # Same Electron binary cache as the verify job (T65 AC4).
+      - name: Cache Electron binaries
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/electron
+          key: ${{ runner.os }}-electron-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Needs out/main/index.js + out/renderer (served file://). No
+      # --remote-debugging-port at launch, so the packaged renderer loads locally.
+      - name: Build
+        run: npm run build
+
+      # Electron needs a display; xvfb-run provides a virtual one. --no-sandbox is
+      # set in the launch args (CI runs as root). No `playwright install` needed —
+      # the `_electron` path uses the Electron from node_modules, not a browser.
+      - name: E2E (headless Electron)
+        run: xvfb-run -a npm run e2e:ci
+
+      # When the e2e fails, surface it instead of leaving the failure blind:
+      # upload the Playwright HTML report + the per-test trace/screenshot the
+      # spec captures on failure (T65 AC4).
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-e2e-failure
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # ntfy.sh push via the CI_FAIL_NTFY_TOPIC secret; a no-op until that secret
+      # exists (empty topic short-circuits the curl).
+      - name: Notify main failure
+        if: failure() && github.ref == 'refs/heads/main'
+        env:
+          NTFY_TOPIC: ${{ secrets.CI_FAIL_NTFY_TOPIC }}
+        run: |
+          [ -n "$NTFY_TOPIC" ] && curl -fsS -m 10 \
+            -H "Title: CI failed on main" -H "Priority: high" -H "Tags: rotating_light" \
+            -d "${{ github.workflow }}/${{ github.job }} failed on main @ ${{ github.sha }} — https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "https://ntfy.sh/$NTFY_TOPIC" || true

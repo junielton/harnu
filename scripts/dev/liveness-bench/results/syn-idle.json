@@ -1,0 +1,47 @@
+{
+  "mode": "cpu",
+  "wallS": 20,
+  "cpu": [
+    {
+      "pid": 3242256,
+      "type": "main",
+      "cpuPct": 0.6
+    },
+    {
+      "pid": 3242275,
+      "type": "zygote",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3242276,
+      "type": "zygote",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3242332,
+      "type": "zygote",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3242337,
+      "type": "utilitynetwork.mojom.NetworkService",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3242352,
+      "type": "renderer",
+      "cpuPct": 2.1
+    }
+  ],
+  "renderer": {
+    "upd": 0,
+    "updBytes": 0,
+    "add": 0,
+    "rem": 0,
+    "sub": 0,
+    "subBytes": 0,
+    "idx": 0,
+    "proj": 0,
+    "sessions": 0
+  }
+}

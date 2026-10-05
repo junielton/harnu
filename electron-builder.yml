@@ -1,0 +1,116 @@
+appId: dev.harnu.app
+productName: Harnu
+copyright: Copyright © 2026 Junielton
+asar: true
+asarUnpack:
+  - '**/node_modules/node-pty/**/*'
+
+directories:
+  buildResources: build
+  output: dist
+
+# `resources/icon.png` is loaded at runtime via `?asset` (src/main/index.ts) for
+# the Linux window icon + notification/changelog/status icons. `files` is an
+# explicit allowlist once set, so without this entry the asar never contained
+# it and those icons rendered as a broken image in packaged builds.
+files:
+  - 'out/**/*'
+  - 'package.json'
+  - 'resources/icon.png'
+  - '!**/*.map'
+  - '!**/{.DS_Store,.git,.gitignore,.vscode,.idea}'
+  - '!memories/**/*'
+  - '!scripts/**/*'
+  - '!test/**/*'
+  - '!docs/**/*'
+
+# T105: the per-kind board-templates are a human-owned product asset read at
+# runtime (not bundled into the JS) — ship them unpacked next to the app so
+# `create_card`'s template seeding works in a packaged build too.
+extraResources:
+  # The project license and the third-party notices (scripts/gen-third-party-notices.mjs)
+  # travel with every build: MIT, OFL and BSD all require the notice to be redistributed.
+  - from: 'LICENSE'
+    to: 'LICENSE'
+  - from: 'THIRD-PARTY-NOTICES.md'
+    to: 'THIRD-PARTY-NOTICES.md'
+  - from: 'resources/board-templates'
+    to: 'board-templates'
+  # T109: the orchestrator guard hook script is a human-owned product asset read
+  # at runtime (installOrchestratorGuard copies it into <userData>), not bundled
+  # into the JS — ship it unpacked so it's copyable in a packaged build too.
+  - from: 'resources/orchestrator-guard'
+    to: 'orchestrator-guard'
+  # T217: the bundled-skill catalog is a human-owned product asset read at runtime
+  # (stageSkillsForFolder copies the ENABLED subset into <userData>), not bundled
+  # into the JS — ship it unpacked so a packaged build can stage it too.
+  - from: 'resources/skills'
+    to: 'skills'
+
+linux:
+  category: Development
+  icon: build/icon.png
+  target:
+    - target: deb
+      arch: x64
+    - target: AppImage
+      arch: x64
+  maintainer: junyellton@gmail.com
+  desktop:
+    entry:
+      StartupWMClass: harnu
+      Keywords: terminal;claude;ai;coding;
+      Comment: Harnu — manage every Claude Code session in one place
+
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icon.icns
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: false
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+win:
+  target:
+    - target: nsis
+      arch: x64
+  icon: build/icon.ico
+  # publisherName removed: deprecated in electron-builder 26.
+  # When we sign in v2 we'll set the CN via the signtoolOptions.publisherName field instead.
+  signtoolOptions:
+    sign: null
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  shortcutName: Harnu
+
+publish:
+  provider: github
+  # Keep in sync with UPDATER_OWNER/UPDATER_REPO in src/main/updater-policy.ts.
+  owner: junielton
+  repo: harnu
+  # The GitHub release for the tag is already published (non-draft) by the
+  # time this workflow's build-and-publish step runs. electron-builder
+  # defaults to `releaseType: draft` and silently skips uploading assets when
+  # the existing release's type doesn't match — see
+  # docs/lessons/framework/006-electron-builder-skips-publish-when-release-type-mismatches.md
+  releaseType: release

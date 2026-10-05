@@ -1,0 +1,18 @@
+root = true
+
+[*]
+charset = utf-8
+indent_style = space
+indent_size = 2
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+max_line_length = 100
+
+# Markdown relies on trailing whitespace for hard line breaks — don't trim it.
+[*.md]
+trim_trailing_whitespace = false
+# Legacy goal-file fixtures (T358 S7): byte-exact on purpose — see .prettierignore.
+[tests/fixtures/mission-migration/**]
+insert_final_newline = unset
+trim_trailing_whitespace = unset

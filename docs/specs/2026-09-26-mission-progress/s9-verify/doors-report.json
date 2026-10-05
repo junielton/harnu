@@ -1,0 +1,15 @@
+{
+  "approve": {
+    "pill": "topbar-pill--accent",
+    "fileStatus": "active",
+    "approval": "2026-09-28T17:26:40.643Z"
+  },
+  "tick": {
+    "proof": "verified",
+    "untick": true
+  },
+  "close": {
+    "fileStatus": "closed",
+    "pillAfter": "none"
+  }
+}

@@ -1,0 +1,165 @@
+{
+  "name": "self-verification",
+  "order": 1,
+  "title": "mission_verify_step labels verified vs self-verified, never refuses",
+  "reviewFocus": 1,
+  "description": "Review Focus #1. Three verifier-level steps, three outcomes: the fixed end is linked to the owner A and verified BY A (caller matches a link → self-verified); a custom step with no session link is verified by B (no link → self-verified); a custom step linked to C is verified by B (differs from every link → verified). None of the calls may be refused, so all three carry verifiedBy. A asks to close it: a self-verified end is not proven, so the close must NOT land.",
+  "agents": ["A", "B", "C"],
+  "phases": [
+    {
+      "agent": "A",
+      "prompt": "1. mcp__harnu__mission_create with folder=\"{{folder}}\", title=\"Self verification\", sessionId=\"{{self}}\", declaredEnd={\"kind\":\"research\",\"target\":\"a written answer\",\"evidence\":\"the answer file exists\"}. Call its returned missionId MID and the returned fixed-end step id (the step with kind fixed-end) END.\n2. mcp__harnu__mission_add_step with folder=\"{{folder}}\", missionId=MID, title=\"Unlinked check\", verification=\"verifier\".\n3. mcp__harnu__mission_add_step with folder=\"{{folder}}\", missionId=MID, title=\"Check built by C\", verification=\"verifier\". Call its returned stepId S2.\n4. mcp__harnu__mission_link_child with folder=\"{{folder}}\", missionId=MID, stepId=S2, link={\"kind\":\"session\",\"ref\":\"{{session.C}}\"}.\n5. mcp__harnu__mission_link_child with folder=\"{{folder}}\", missionId=MID, stepId=END, link={\"kind\":\"session\",\"ref\":\"{{self}}\"}.\n6. mcp__harnu__mission_verify_step with folder=\"{{folder}}\", missionId=MID, stepId=END, verdict=\"met\", evidence=\"EVAL-SELF-END: I checked my own work\", sessionId=\"{{self}}\"."
+    },
+    {
+      "agent": "B",
+      "prompt": "1. mcp__harnu__mission_verify_step with folder=\"{{folder}}\", missionId=\"{{m.self-verification.id}}\", stepId=\"{{m.self-verification.custom.0}}\", verdict=\"met\", evidence=\"EVAL-SELF-UNLINKED: checked it\", sessionId=\"{{self}}\".\n2. mcp__harnu__mission_verify_step with folder=\"{{folder}}\", missionId=\"{{m.self-verification.id}}\", stepId=\"{{m.self-verification.custom.1}}\", verdict=\"met\", evidence=\"EVAL-SELF-INDEPENDENT: checked C's work\", sessionId=\"{{self}}\"."
+    },
+    {
+      "agent": "A",
+      "prompt": "1. mcp__harnu__mission_request_close with folder=\"{{folder}}\", missionId=\"{{m.self-verification.id}}\", sessionId=\"{{self}}\"."
+    }
+  ],
+  "assert": [
+    {
+      "missionCount": 1
+    },
+    {
+      "label": "end: caller matches its session link → self-verified",
+      "mission": "self-verification",
+      "step": "fixed-end",
+      "path": "proof",
+      "equals": "self-verified"
+    },
+    {
+      "label": "end: verifiedBy recorded (the call was not refused)",
+      "mission": "self-verification",
+      "step": "fixed-end",
+      "path": "verifiedBy",
+      "equals": {
+        "sessionId": "{{session.A}}",
+        "verdict": "met"
+      }
+    },
+    {
+      "label": "unlinked step verified by B → self-verified",
+      "mission": "self-verification",
+      "step": "title:Unlinked check",
+      "path": "proof",
+      "equals": "self-verified"
+    },
+    {
+      "label": "unlinked step: verifiedBy recorded",
+      "mission": "self-verification",
+      "step": "title:Unlinked check",
+      "path": "verifiedBy",
+      "equals": {
+        "sessionId": "{{session.B}}",
+        "verdict": "met"
+      }
+    },
+    {
+      "label": "step linked to C verified by B → verified",
+      "mission": "self-verification",
+      "step": "title:Check built by C",
+      "path": "proof",
+      "equals": "verified"
+    },
+    {
+      "label": "independent step: verifiedBy is B",
+      "mission": "self-verification",
+      "step": "title:Check built by C",
+      "path": "verifiedBy.sessionId",
+      "equals": "{{session.B}}"
+    },
+    {
+      "label": "a self-verified end cannot close: no pendingClose",
+      "mission": "self-verification",
+      "path": "pendingClose",
+      "exists": false
+    },
+    {
+      "label": "a self-verified end cannot close: still active",
+      "mission": "self-verification",
+      "path": "status",
+      "equals": "active"
+    },
+    {
+      "mission": "self-verification",
+      "logContains": "EVAL-SELF-END"
+    },
+    {
+      "mission": "self-verification",
+      "logContains": "EVAL-SELF-UNLINKED"
+    },
+    {
+      "mission": "self-verification",
+      "logContains": "EVAL-SELF-INDEPENDENT"
+    }
+  ],
+  "breaks": [
+    {
+      "name": "self-check-promoted-to-verified",
+      "mutate": [
+        {
+          "mission": "self-verification",
+          "step": "fixed-end",
+          "set": {
+            "proof": "verified"
+          }
+        }
+      ]
+    },
+    {
+      "name": "unlinked-promoted-to-verified",
+      "mutate": [
+        {
+          "mission": "self-verification",
+          "step": "title:Unlinked check",
+          "set": {
+            "proof": "verified"
+          }
+        }
+      ]
+    },
+    {
+      "name": "independent-demoted-to-self",
+      "mutate": [
+        {
+          "mission": "self-verification",
+          "step": "title:Check built by C",
+          "set": {
+            "proof": "self-verified"
+          }
+        }
+      ]
+    },
+    {
+      "name": "self-verification-refused",
+      "mutate": [
+        {
+          "mission": "self-verification",
+          "step": "fixed-end",
+          "set": {
+            "proof": "unproven"
+          },
+          "unset": "verifiedBy"
+        }
+      ]
+    },
+    {
+      "name": "closed-on-self-verified-end",
+      "mutate": [
+        {
+          "mission": "self-verification",
+          "set": {
+            "status": "delivered",
+            "pendingClose": {
+              "at": "2026-01-01T00:00:00.000Z",
+              "requestedBy": "{{session.A}}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,146 @@
+{
+  "mode": "profile",
+  "wallS": 30.1,
+  "cpu": [
+    {
+      "pid": 3176776,
+      "type": "main",
+      "cpuPct": 15.9
+    },
+    {
+      "pid": 3176778,
+      "type": "zygote",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3176779,
+      "type": "zygote",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3176811,
+      "type": "zygote",
+      "cpuPct": 5.3
+    },
+    {
+      "pid": 3176817,
+      "type": "utilitynetwork.mojom.NetworkService",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3176831,
+      "type": "renderer",
+      "cpuPct": 51.4
+    },
+    {
+      "pid": 3178083,
+      "type": "utilityaudio.mojom.AudioService",
+      "cpuPct": 0
+    }
+  ],
+  "renderer": {
+    "upd": 6,
+    "updBytes": 616179,
+    "add": 0,
+    "rem": 0,
+    "sub": 8,
+    "subBytes": 41480,
+    "idx": 0,
+    "proj": 0,
+    "sessions": 2
+  },
+  "mainProfile": {
+    "totalUs": 30127841,
+    "top": [
+      ["(idle) :0", 28440145],
+      ["spawn :0", 381547],
+      ["scrapeSubagentHeader main/index.js:2755", 219903],
+      ["(program) :0", 127067],
+      ["(garbage collector) :0", 125444],
+      ["normalizeString node:path:93", 106246],
+      ["slice node:buffer:640", 79781],
+      ["resolve node:path:1260", 79541],
+      ["stripMetaWrappers main/index.js:1938", 32173],
+      ["relative node:path:1371", 31704],
+      ["statSync node:fs:1745", 31651],
+      ["lstat :0", 29036],
+      ["join node:path:1347", 21204],
+      ["scrapeJsonlHeader main/index.js:2451", 19759],
+      ["matchPatterns chokidar/index.js:57", 18921],
+      ["sanitizeSpawnEnv main/index.js:7911", 13908],
+      ["stat :0", 13594],
+      ["(anon) readline/interface:578", 13287],
+      ["handleErrorFromBinding fs/promises:146", 11797],
+      ["(anon) main/index.js:12565", 11291],
+      ["write node:string_decoder:94", 9632],
+      ["_formatEntry readdirp/index.js:170", 9242],
+      ["FSReqCallback :0", 8954],
+      ["_read readdirp/index.js:105", 8379],
+      ["openFileHandle :0", 7957]
+    ],
+    "inclusive": [
+      ["drainRefresh", 51272],
+      ["scanFoldersUncached", 20749],
+      ["scrapeJsonlHeader", 25500],
+      ["scrapeSubagentHeader", 370186],
+      ["attachSubagents", 6713],
+      ["readProjectFromJsonls", 1683],
+      ["readTailEntries", 0],
+      ["tailFile", 1139],
+      ["probeGitMetaBatch", 17334],
+      ["buildFolderEntries", 1115],
+      ["mergeSlugSessions", 50128],
+      ["deriveFolders", 3317]
+    ],
+    "idle": [
+      ["(program)", 127067],
+      ["(idle)", 28440145],
+      ["(garbage", 125444]
+    ]
+  },
+  "rendererProfile": {
+    "totalUs": 30104345,
+    "top": [
+      ["(idle) :0", 19209018],
+      ["(program) :0", 10334240],
+      ["(garbage collector) :0", 148722],
+      ["track assets/index-DANFSlal.js:768", 61568],
+      ["prepareDeps assets/index-DANFSlal.js:534", 23984],
+      ["track assets/index-DANFSlal.js:686", 23673],
+      ["get assets/index-DANFSlal.js:1076", 22064],
+      ["recentKey assets/index-DANFSlal.js:15281", 20459],
+      ["wrappedAction assets/index-DANFSlal.js:7490", 15057],
+      ["(anon) assets/index-DANFSlal.js:17122", 13924],
+      ["setStyle assets/index-DANFSlal.js:6742", 13804],
+      ["patchStyle assets/index-DANFSlal.js:6681", 11843],
+      ["activityOf assets/index-DANFSlal.js:17051", 11669],
+      ["isRef assets/index-DANFSlal.js:1525", 11035],
+      ["cleanupDeps assets/index-DANFSlal.js:541", 10539],
+      ["(anon) assets/index-DANFSlal.js:5", 9374],
+      ["(anon) assets/index-DANFSlal.js:21171", 8267],
+      ["createReactiveObject assets/index-DANFSlal.js:1467", 7785],
+      ["(anon) assets/index-DANFSlal.js:1379", 5534],
+      ["isLiveSignal assets/index-DANFSlal.js:17022", 5022],
+      ["(anon) assets/index-DANFSlal.js:17266", 4966],
+      ["(anon) :0", 4565],
+      ["(anon) :4", 4491],
+      ["friendlyJSONstringify assets/index-DANFSlal.js:7640", 4439],
+      ["mergeProps assets/index-DANFSlal.js:6201", 4022]
+    ],
+    "inclusive": [
+      ["reloadModelOnce", 0],
+      ["reloadModel", 0],
+      ["commitFolders", 0],
+      ["mergeFolders", 0],
+      ["flushJobs", 380611],
+      ["flushPreFlushCbs", 554],
+      ["triggerEffects", 0],
+      ["refreshComputed", 207221]
+    ],
+    "idle": [
+      ["(program)", 10334240],
+      ["(idle)", 19209018],
+      ["(garbage", 148722]
+    ]
+  }
+}

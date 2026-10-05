@@ -1,0 +1,346 @@
+{
+  "name": "concurrent-writes",
+  "order": 2,
+  "title": "concurrent writes to one mission all land",
+  "reviewFocus": 2,
+  "description": "Review Focus #2. After the owner A creates a mission, five writers hit it AT THE SAME TIME: three scripted agents (P, Q, R — each links three cards to the fixed end, then logs a marker) and two bursts fired straight through the transport (8 concurrent mission_log calls, 6 concurrent mission_link_child calls — the only way to guarantee overlapping read-modify-writes, since scripted agents land seconds apart). A lock keyed by repo instead of mission id, or no lock, loses writes; every one of the 9 + 6 links and 3 + 8 log markers must be on disk.",
+  "agents": ["A", "P", "Q", "R"],
+  "phases": [
+    {
+      "agent": "A",
+      "prompt": "1. mcp__harnu__mission_create with folder=\"{{folder}}\", title=\"Concurrent writes\", sessionId=\"{{self}}\", declaredEnd={\"kind\":\"other\",\"target\":\"every write lands\",\"evidence\":\"the mission file lists all of them\"}."
+    },
+    {
+      "parallel": [
+        {
+          "agent": "P",
+          "prompt": "1. mcp__harnu__mission_link_child with folder=\"{{folder}}\", missionId=\"{{m.concurrent-writes.id}}\", stepId=\"{{m.concurrent-writes.end}}\", link={\"kind\":\"card\",\"ref\":\"race-p-1\"}.\n2. mcp__harnu__mission_link_child with folder=\"{{folder}}\", missionId=\"{{m.concurrent-writes.id}}\", stepId=\"{{m.concurrent-writes.end}}\", link={\"kind\":\"card\",\"ref\":\"race-p-2\"}.\n3. mcp__harnu__mission_link_child with folder=\"{{folder}}\", missionId=\"{{m.concurrent-writes.id}}\", stepId=\"{{m.concurrent-writes.end}}\", link={\"kind\":\"card\",\"ref\":\"race-p-3\"}.\n4. mcp__harnu__mission_log with folder=\"{{folder}}\", missionId=\"{{m.concurrent-writes.id}}\", note=\"EVAL-RACE-AGENT-P\"."
+        },
+        {
+          "agent": "Q",
+          "prompt": "1. mcp__harnu__mission_link_child with folder=\"{{folder}}\", missionId=\"{{m.concurrent-writes.id}}\", stepId=\"{{m.concurrent-writes.end}}\", link={\"kind\":\"card\",\"ref\":\"race-q-1\"}.\n2. mcp__harnu__mission_link_child with folder=\"{{folder}}\", missionId=\"{{m.concurrent-writes.id}}\", stepId=\"{{m.concurrent-writes.end}}\", link={\"kind\":\"card\",\"ref\":\"race-q-2\"}.\n3. mcp__harnu__mission_link_child with folder=\"{{folder}}\", missionId=\"{{m.concurrent-writes.id}}\", stepId=\"{{m.concurrent-writes.end}}\", link={\"kind\":\"card\",\"ref\":\"race-q-3\"}.\n4. mcp__harnu__mission_log with folder=\"{{folder}}\", missionId=\"{{m.concurrent-writes.id}}\", note=\"EVAL-RACE-AGENT-Q\"."
+        },
+        {
+          "agent": "R",
+          "prompt": "1. mcp__harnu__mission_link_child with folder=\"{{folder}}\", missionId=\"{{m.concurrent-writes.id}}\", stepId=\"{{m.concurrent-writes.end}}\", link={\"kind\":\"card\",\"ref\":\"race-r-1\"}.\n2. mcp__harnu__mission_link_child with folder=\"{{folder}}\", missionId=\"{{m.concurrent-writes.id}}\", stepId=\"{{m.concurrent-writes.end}}\", link={\"kind\":\"card\",\"ref\":\"race-r-2\"}.\n3. mcp__harnu__mission_link_child with folder=\"{{folder}}\", missionId=\"{{m.concurrent-writes.id}}\", stepId=\"{{m.concurrent-writes.end}}\", link={\"kind\":\"card\",\"ref\":\"race-r-3\"}.\n4. mcp__harnu__mission_log with folder=\"{{folder}}\", missionId=\"{{m.concurrent-writes.id}}\", note=\"EVAL-RACE-AGENT-R\"."
+        },
+        {
+          "burst": {
+            "tool": "mission_log",
+            "count": 8,
+            "args": {
+              "folder": "{{folder}}",
+              "missionId": "{{m.concurrent-writes.id}}",
+              "note": "EVAL-RACE-BURST-{{i}}."
+            }
+          }
+        },
+        {
+          "burst": {
+            "tool": "mission_link_child",
+            "count": 6,
+            "args": {
+              "folder": "{{folder}}",
+              "missionId": "{{m.concurrent-writes.id}}",
+              "stepId": "{{m.concurrent-writes.end}}",
+              "link": {
+                "kind": "card",
+                "ref": "burst-{{i}}"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "assert": [
+    {
+      "missionCount": 1
+    },
+    {
+      "label": "all 9 agent card links landed",
+      "mission": "concurrent-writes",
+      "step": "fixed-end",
+      "path": "links",
+      "includes": [
+        {
+          "kind": "card",
+          "ref": "race-p-1"
+        },
+        {
+          "kind": "card",
+          "ref": "race-p-2"
+        },
+        {
+          "kind": "card",
+          "ref": "race-p-3"
+        },
+        {
+          "kind": "card",
+          "ref": "race-q-1"
+        },
+        {
+          "kind": "card",
+          "ref": "race-q-2"
+        },
+        {
+          "kind": "card",
+          "ref": "race-q-3"
+        },
+        {
+          "kind": "card",
+          "ref": "race-r-1"
+        },
+        {
+          "kind": "card",
+          "ref": "race-r-2"
+        },
+        {
+          "kind": "card",
+          "ref": "race-r-3"
+        }
+      ]
+    },
+    {
+      "label": "all 6 burst card links landed",
+      "mission": "concurrent-writes",
+      "step": "fixed-end",
+      "path": "links",
+      "includes": [
+        {
+          "kind": "card",
+          "ref": "burst-1"
+        },
+        {
+          "kind": "card",
+          "ref": "burst-2"
+        },
+        {
+          "kind": "card",
+          "ref": "burst-3"
+        },
+        {
+          "kind": "card",
+          "ref": "burst-4"
+        },
+        {
+          "kind": "card",
+          "ref": "burst-5"
+        },
+        {
+          "kind": "card",
+          "ref": "burst-6"
+        }
+      ]
+    },
+    {
+      "label": "no duplicate or stray link",
+      "mission": "concurrent-writes",
+      "step": "fixed-end",
+      "path": "links",
+      "length": 15
+    },
+    {
+      "mission": "concurrent-writes",
+      "logContains": "EVAL-RACE-AGENT-P"
+    },
+    {
+      "mission": "concurrent-writes",
+      "logContains": "EVAL-RACE-AGENT-Q"
+    },
+    {
+      "mission": "concurrent-writes",
+      "logContains": "EVAL-RACE-AGENT-R"
+    },
+    {
+      "mission": "concurrent-writes",
+      "logContains": "EVAL-RACE-BURST-1."
+    },
+    {
+      "mission": "concurrent-writes",
+      "logContains": "EVAL-RACE-BURST-2."
+    },
+    {
+      "mission": "concurrent-writes",
+      "logContains": "EVAL-RACE-BURST-3."
+    },
+    {
+      "mission": "concurrent-writes",
+      "logContains": "EVAL-RACE-BURST-4."
+    },
+    {
+      "mission": "concurrent-writes",
+      "logContains": "EVAL-RACE-BURST-5."
+    },
+    {
+      "mission": "concurrent-writes",
+      "logContains": "EVAL-RACE-BURST-6."
+    },
+    {
+      "mission": "concurrent-writes",
+      "logContains": "EVAL-RACE-BURST-7."
+    },
+    {
+      "mission": "concurrent-writes",
+      "logContains": "EVAL-RACE-BURST-8."
+    }
+  ],
+  "breaks": [
+    {
+      "name": "one-burst-link-lost",
+      "mutate": [
+        {
+          "mission": "concurrent-writes",
+          "step": "fixed-end",
+          "set": {
+            "links": [
+              {
+                "kind": "card",
+                "ref": "race-p-1"
+              },
+              {
+                "kind": "card",
+                "ref": "race-p-2"
+              },
+              {
+                "kind": "card",
+                "ref": "race-p-3"
+              },
+              {
+                "kind": "card",
+                "ref": "race-q-1"
+              },
+              {
+                "kind": "card",
+                "ref": "race-q-2"
+              },
+              {
+                "kind": "card",
+                "ref": "race-q-3"
+              },
+              {
+                "kind": "card",
+                "ref": "race-r-1"
+              },
+              {
+                "kind": "card",
+                "ref": "race-r-2"
+              },
+              {
+                "kind": "card",
+                "ref": "race-r-3"
+              },
+              {
+                "kind": "card",
+                "ref": "burst-2"
+              },
+              {
+                "kind": "card",
+                "ref": "burst-3"
+              },
+              {
+                "kind": "card",
+                "ref": "burst-4"
+              },
+              {
+                "kind": "card",
+                "ref": "burst-5"
+              },
+              {
+                "kind": "card",
+                "ref": "burst-6"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-agent-link-lost",
+      "mutate": [
+        {
+          "mission": "concurrent-writes",
+          "step": "fixed-end",
+          "set": {
+            "links": [
+              {
+                "kind": "card",
+                "ref": "race-p-1"
+              },
+              {
+                "kind": "card",
+                "ref": "race-p-2"
+              },
+              {
+                "kind": "card",
+                "ref": "race-p-3"
+              },
+              {
+                "kind": "card",
+                "ref": "race-q-1"
+              },
+              {
+                "kind": "card",
+                "ref": "race-q-2"
+              },
+              {
+                "kind": "card",
+                "ref": "race-q-3"
+              },
+              {
+                "kind": "card",
+                "ref": "race-r-1"
+              },
+              {
+                "kind": "card",
+                "ref": "race-r-2"
+              },
+              {
+                "kind": "card",
+                "ref": "burst-1"
+              },
+              {
+                "kind": "card",
+                "ref": "burst-2"
+              },
+              {
+                "kind": "card",
+                "ref": "burst-3"
+              },
+              {
+                "kind": "card",
+                "ref": "burst-4"
+              },
+              {
+                "kind": "card",
+                "ref": "burst-5"
+              },
+              {
+                "kind": "card",
+                "ref": "burst-6"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-burst-log-lost",
+      "mutate": [
+        {
+          "mission": "concurrent-writes",
+          "logRemove": "EVAL-RACE-BURST-5."
+        }
+      ]
+    },
+    {
+      "name": "one-agent-log-lost",
+      "mutate": [
+        {
+          "mission": "concurrent-writes",
+          "logRemove": "EVAL-RACE-AGENT-Q"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "name": "mcp-withholding",
+  "order": 5,
+  "title": "an agentControlled child gets no mission_* verb; a manifest-dispatched child does",
+  "reviewFocus": 5,
+  "description": "Review Focus #5, through Harnu's REAL spawn paths. After A creates a mission, the harness (as an agent would) calls create_session: Harnu spawns that child agentControlled, which must be withheld the Harnu MCP server, so its attempt to write a marker into the mission Log must leave no trace. Then a board card is dispatched through the manifest door: Harnu spawns that child with spawnedBy 'agent', which KEEPS the server by design, so its marker must land. The second half is the positive control that proves the first half is not vacuous (same prompt, same mission, same folder — only the spawn shape differs). Both children run in the eval's throwaway repo, where the harness answers Claude Code's workspace-trust dialog as the operator. The readOnly (review companion) shape is covered by the pty.ts unit suite only: no agent verb spawns one.",
+  "agents": ["A"],
+  "phases": [
+    {
+      "agent": "A",
+      "prompt": "1. mcp__harnu__mission_create with folder=\"{{folder}}\", title=\"Withholding\", sessionId=\"{{self}}\", declaredEnd={\"kind\":\"other\",\"target\":\"spawn shapes hold\",\"evidence\":\"the Log shows who could write\"}."
+    },
+    {
+      "spawn": "agent-controlled",
+      "prompt": "You are a scripted test agent. If a tool named mcp__harnu__mission_log is available to you (check with ToolSearch, query \"select:mcp__harnu__mission_log\"), call it once with folder=\"{{folder}}\", missionId=\"{{m.withholding.id}}\", note=\"EVAL-WITHHELD-CHILD-WROTE\". If it is not available, reply NO_HARNU_TOOLS. Use no other tool, do not edit any file, then stop."
+    },
+    {
+      "spawn": "manifest",
+      "title": "Eval withholding control",
+      "prompt": "You are a scripted test agent. If a tool named mcp__harnu__mission_log is available to you (check with ToolSearch, query \"select:mcp__harnu__mission_log\"), call it once with folder=\"{{folder}}\", missionId=\"{{m.withholding.id}}\", note=\"EVAL-MANIFEST-CHILD-WROTE\". If it is not available, reply NO_HARNU_TOOLS. Use no other tool, do not edit any file, then stop.",
+      "waitFor": { "mission": "withholding", "logContains": "EVAL-MANIFEST-CHILD-WROTE" }
+    }
+  ],
+  "assert": [
+    { "missionCount": 1 },
+    {
+      "label": "agentControlled child could not write",
+      "mission": "withholding",
+      "logNotContains": "EVAL-WITHHELD-CHILD-WROTE"
+    },
+    {
+      "label": "manifest-dispatched child could (positive control)",
+      "mission": "withholding",
+      "logContains": "EVAL-MANIFEST-CHILD-WROTE"
+    }
+  ],
+  "breaks": [
+    {
+      "name": "withheld-child-reached-server",
+      "mutate": [{ "mission": "withholding", "logAppend": "EVAL-WITHHELD-CHILD-WROTE" }]
+    },
+    {
+      "name": "manifest-child-over-withheld",
+      "mutate": [{ "mission": "withholding", "logRemove": "EVAL-MANIFEST-CHILD-WROTE" }]
+    }
+  ]
+}

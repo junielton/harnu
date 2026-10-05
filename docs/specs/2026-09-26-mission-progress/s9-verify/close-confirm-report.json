@@ -1,0 +1,19 @@
+{
+  "title": "Capy",
+  "pill": "topbar-pill--success",
+  "popover": "mission-popover--delivered",
+  "dialogOpen": true,
+  "popoverStillOpen": true,
+  "focused": "mission-close-cancel",
+  "fileAfterOpen": "delivered",
+  "afterCancel": {
+    "dialogOpen": false,
+    "popoverOpen": true,
+    "file": "delivered"
+  },
+  "afterConfirm": {
+    "dialogOpen": false,
+    "pill": false,
+    "file": "closed"
+  }
+}

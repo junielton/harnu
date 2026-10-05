@@ -1,0 +1,45 @@
+{
+  "mode": "cpu",
+  "wallS": 20,
+  "cpu": [
+    {
+      "pid": 3541380,
+      "type": "Browser",
+      "cpuPct": 1.6
+    },
+    {
+      "pid": 3541432,
+      "type": "GPU",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3541441,
+      "type": "Utility",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3541456,
+      "type": "Tab",
+      "cpuPct": 2.4
+    }
+  ],
+  "renderer": {
+    "upd": 0,
+    "updBytes": 0,
+    "add": 0,
+    "rem": 0,
+    "sub": 0,
+    "subBytes": 0,
+    "idx": 0,
+    "proj": 0,
+    "sessions": 0,
+    "sessionUpdated": {
+      "perS": 0,
+      "bytesPerEvent": null
+    },
+    "subagentUpdated": {
+      "perS": 0,
+      "bytesPerEvent": null
+    }
+  }
+}

@@ -1,0 +1,4 @@
+gpu_compositing "enabled"
+all-on {"wallS":30,"cpu":[["Browser",30.5],["GPU",7.6],["Tab",26.1]]} pulse-dot,pulse-dot,pulse-dot,pulse-dot,fade-in,spin,spin
+no-anim {"wallS":30,"cpu":[["Browser",31.1],["GPU",1.2],["Tab",9.5]]} 
+all-on-again {"wallS":30,"cpu":[["Browser",29.6],["GPU",7.7],["Tab",24.9]]} pulse-dot,pulse-dot,pulse-dot,pulse-dot,fade-in,spin,spin

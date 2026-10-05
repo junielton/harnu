@@ -1,0 +1,68 @@
+[
+  {
+    "state": "none",
+    "tone": "none",
+    "pillState": "no-mission",
+    "popover": null
+  },
+  {
+    "state": "draft",
+    "tone": "topbar-pill--neutral",
+    "pillState": "draft",
+    "popover": "mission-popover--draft"
+  },
+  {
+    "state": "active",
+    "tone": "topbar-pill--accent",
+    "pillState": "active",
+    "popover": "mission-popover--active"
+  },
+  {
+    "state": "blocked",
+    "tone": "topbar-pill--warning",
+    "pillState": "blocked",
+    "popover": "mission-popover--blocked"
+  },
+  {
+    "state": "needs-you",
+    "tone": "topbar-pill--warning",
+    "pillState": "needs-you",
+    "popover": "mission-popover--needs-you"
+  },
+  {
+    "state": "stale",
+    "tone": "topbar-pill--warning",
+    "pillState": "stale",
+    "popover": "mission-popover--stale"
+  },
+  {
+    "state": "total-changed",
+    "tone": "topbar-pill--accent",
+    "pillState": "total-changed",
+    "popover": "mission-popover--total-changed"
+  },
+  {
+    "state": "rescope-pending",
+    "tone": "topbar-pill--warning",
+    "pillState": "rescope-pending",
+    "popover": "mission-popover--rescope-pending"
+  },
+  {
+    "state": "delivered",
+    "tone": "topbar-pill--success",
+    "pillState": "delivered",
+    "popover": "mission-popover--delivered"
+  },
+  {
+    "sidebar": [
+      ["sidebar-mission-chip--flag", "5/5", "1"],
+      ["sidebar-mission-chip--flag", "4/5", "1"],
+      ["sidebar-mission-chip", "4/6", "0"],
+      ["sidebar-mission-chip", "3/5", "0"],
+      ["sidebar-mission-chip--flag", "2/5", "1"],
+      ["sidebar-mission-chip", "3/5", "0"],
+      ["sidebar-mission-chip", "4/8", "1"],
+      ["sidebar-mission-chip--flag", "0/5", "1"]
+    ]
+  }
+]

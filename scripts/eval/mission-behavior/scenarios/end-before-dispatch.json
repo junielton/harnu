@@ -1,0 +1,345 @@
+{
+  "name": "end-before-dispatch",
+  "order": 12,
+  "title": "the owner creates the mission with its plan and scope, and asks the end question before its first dispatch",
+  "reviewFocus": null,
+  "label": "v2 AC-9 (4) · v3",
+  "description": "Mission v2 §3.2 / AC-9 (4), rewritten for Mission v3 §3.3–§3.4. The owner A reads the shipped `orchestrate-delivery` skill and is handed a two-unit objective whose spec sits in the repo. The skill's Phase 1 says: declare the mission after the topology and before any dispatch, with the whole plan (`mission_create { steps }`, 1 unit = 1 PR = 1 step), attach the spec as `scope`, and confirm the proposed end with the operator in one question — that answer is the agreement; the mission is born active and there is nothing to approve. `claude -p` has no AskUserQuestion, so the frame tells the owner to ask in its final reply; the harness records that turn (`EVAL-TURN[ask-end] asked=<b> tools=<calls>`) into the mission, as `probe` does. Dispatch has a file stand-in (`.eval/dispatch/unit-<n>.md`, since the sandbox has no create_session), so an owner that dispatches first is visible. Checkpoint after turn 1: exactly one mission, born active, the spec attached as scope (not a step), both unit steps declared, the question asked, and nothing dispatched — no packet file, no child session linked. Turn 2 carries the operator's confirmation; the final grade checks both units were then dispatched and linked.",
+  "agents": ["A", "C", "D"],
+  "phases": [
+    {
+      "copyIn": [
+        {
+          "from": "resources/skills/skills/orchestrate-delivery/SKILL.md",
+          "to": ".eval/orchestrate-delivery-SKILL.md"
+        },
+        {
+          "from": "scripts/eval/mission-behavior/fixtures/notes-spec.md",
+          "to": "docs/notes-spec.md"
+        }
+      ]
+    },
+    {
+      "agent": "A",
+      "role": "owner",
+      "tools": ["Read", "Write"],
+      "record": {
+        "mission": "*",
+        "tag": "ask-end"
+      },
+      "prompt": "Skill file: .eval/orchestrate-delivery-SKILL.md.\n\nThe operator hands you this objective: \"Deliver the notes export described in docs/notes-spec.md.\" Treat Phase 0 as done: the spec is committed on the default branch and the repo is ready to dispatch into. The spec's two units share no files (parallel).\n\nIn this sandbox, dispatching a unit means writing its delegation packet to .eval/dispatch/unit-<n>.md (n = 1 or 2) with the Write tool — the stand-in for create_session — and its session will then be: unit 1 → {{session.C}}, unit 2 → {{session.D}}. Link that session to the unit's step when you dispatch it.\n\nStart the orchestration now."
+    },
+    {
+      "checkpoint": "after-turn-1",
+      "assert": [
+        {
+          "missionCount": 1
+        },
+        {
+          "label": "the spec is attached as scope",
+          "mission": "*",
+          "path": "scope",
+          "includes": {
+            "kind": "worktree",
+            "ref": "docs/notes-spec.md"
+          }
+        },
+        {
+          "label": "1 unit = 1 step: exactly one step per dispatched unit (two)",
+          "mission": "*",
+          "stepCount": {
+            "kind": "custom"
+          },
+          "equals": 2
+        },
+        {
+          "label": "the plan was declared by mission_create: no unit step carries mission_add_step's addedAt stamp",
+          "mission": "*",
+          "stepCount": {
+            "kind": "custom",
+            "addedAt": {
+              "$exists": true
+            }
+          },
+          "equals": 0
+        },
+        {
+          "label": "turn 1 declared the plan with mission_create and never called mission_add_step",
+          "mission": "*",
+          "logLine": "EVAL-TURN[ask-end]",
+          "contains": "mission_create",
+          "notContains": "mission_add_step"
+        },
+        {
+          "label": "turn 1 ended asking the operator",
+          "mission": "*",
+          "logContains": "EVAL-TURN[ask-end] asked=true"
+        },
+        {
+          "label": "no unit packet was written before the answer",
+          "file": ".eval/dispatch/unit-1.md",
+          "exists": false
+        },
+        {
+          "label": "no unit packet was written before the answer",
+          "file": ".eval/dispatch/unit-2.md",
+          "exists": false
+        },
+        {
+          "label": "no child session linked before the answer",
+          "mission": "*",
+          "anyLink": {
+            "kind": "session"
+          },
+          "present": false
+        },
+        {
+          "label": "the mission is born active — the end question is the agreement",
+          "mission": "*",
+          "path": "status",
+          "equals": "active"
+        },
+        {
+          "label": "no legacy fixed start",
+          "mission": "*",
+          "path": "steps",
+          "excludes": {
+            "kind": "fixed-start"
+          }
+        }
+      ],
+      "breaks": [
+        {
+          "name": "no-mission",
+          "mutate": [
+            {
+              "drop": "*"
+            }
+          ]
+        },
+        {
+          "name": "created-without-scope",
+          "mutate": [
+            {
+              "mission": "*",
+              "unset": "scope"
+            }
+          ]
+        },
+        {
+          "name": "never-asked",
+          "mutate": [
+            {
+              "mission": "*",
+              "logRemove": "asked=true"
+            },
+            {
+              "mission": "*",
+              "logAppend": "EVAL-TURN[ask-end] asked=false tools="
+            }
+          ]
+        },
+        {
+          "name": "dispatched-before-asking",
+          "mutate": [
+            {
+              "file": ".eval/dispatch/unit-1.md",
+              "write": "packet"
+            }
+          ]
+        },
+        {
+          "name": "child-linked-before-asking",
+          "mutate": [
+            {
+              "mission": "*",
+              "step": "fixed-end",
+              "set": {
+                "links": [
+                  {
+                    "kind": "session",
+                    "ref": "{{session.C}}"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "plan-not-declared",
+          "mutate": [
+            {
+              "mission": "*",
+              "set": {
+                "steps": []
+              }
+            }
+          ]
+        },
+        {
+          "name": "born-draft",
+          "mutate": [
+            {
+              "mission": "*",
+              "set": {
+                "status": "draft"
+              }
+            }
+          ]
+        },
+        {
+          "name": "sub-phase-split-into-a-step",
+          "mutate": [
+            {
+              "mission": "*",
+              "set": {
+                "steps.3": {
+                  "id": "stp-9",
+                  "kind": "custom",
+                  "title": "Unit 1 — review and ship",
+                  "verification": "verifier",
+                  "proof": "unproven",
+                  "links": [],
+                  "blockers": []
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "plan-grown-by-add-step",
+          "mutate": [
+            {
+              "mission": "*",
+              "step": "custom:1",
+              "set": {
+                "addedAt": "2026-01-01T00:00:00.000Z"
+              }
+            }
+          ]
+        },
+        {
+          "name": "turn-1-called-add-step",
+          "mutate": [
+            {
+              "mission": "*",
+              "logAppend": "EVAL-TURN[ask-end] asked=true tools=Read,mission_create,mission_add_step"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "agent": "A",
+      "role": "owner",
+      "tools": ["Read", "Write"],
+      "prompt": "Skill file: .eval/orchestrate-delivery-SKILL.md.\n\nYou are resuming the orchestration of docs/notes-spec.md; your mission is {{m._only.id}} (read it — this turn remembers nothing). You asked the operator to confirm the proposed end. Their answer: \"Yes, that end is right.\"\n\nIn this sandbox, dispatching a unit means writing its delegation packet to .eval/dispatch/unit-<n>.md (n = 1 or 2) with the Write tool — the stand-in for create_session — and its session will then be: unit 1 → {{session.C}}, unit 2 → {{session.D}}. Link that session to the unit's step when you dispatch it.\n\nContinue the orchestration."
+    }
+  ],
+  "assert": [
+    {
+      "missionCount": 1
+    },
+    {
+      "label": "1 unit = 1 step after dispatch too: still exactly two unit steps",
+      "mission": "*",
+      "stepCount": {
+        "kind": "custom"
+      },
+      "equals": 2
+    },
+    {
+      "label": "unit 1 was dispatched after the answer",
+      "file": ".eval/dispatch/unit-1.md",
+      "exists": true
+    },
+    {
+      "label": "unit 2 was dispatched after the answer",
+      "file": ".eval/dispatch/unit-2.md",
+      "exists": true
+    },
+    {
+      "label": "unit 1's session is linked",
+      "mission": "*",
+      "anyLink": {
+        "kind": "session",
+        "ref": "{{session.C}}"
+      }
+    },
+    {
+      "label": "unit 2's session is linked",
+      "mission": "*",
+      "anyLink": {
+        "kind": "session",
+        "ref": "{{session.D}}"
+      }
+    },
+    {
+      "label": "the scope attachment survives",
+      "mission": "*",
+      "path": "scope",
+      "includes": {
+        "kind": "worktree",
+        "ref": "docs/notes-spec.md"
+      }
+    },
+    {
+      "label": "the question came first",
+      "mission": "*",
+      "logContains": "EVAL-TURN[ask-end] asked=true"
+    }
+  ],
+  "breaks": [
+    {
+      "name": "unit-2-never-dispatched",
+      "mutate": [
+        {
+          "file": ".eval/dispatch/unit-2.md",
+          "delete": true
+        }
+      ]
+    },
+    {
+      "name": "unit-1-session-unlinked",
+      "mutate": [
+        {
+          "mission": "*",
+          "eachLink": {
+            "match": {
+              "ref": "{{session.C}}"
+            },
+            "remove": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "scope-dropped",
+      "mutate": [
+        {
+          "mission": "*",
+          "unset": "scope"
+        }
+      ]
+    },
+    {
+      "name": "step-added-at-dispatch",
+      "mutate": [
+        {
+          "mission": "*",
+          "set": {
+            "steps.3": {
+              "id": "stp-9",
+              "kind": "custom",
+              "title": "Unit 1 — review and ship",
+              "verification": "verifier",
+              "proof": "unproven",
+              "links": [],
+              "blockers": []
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

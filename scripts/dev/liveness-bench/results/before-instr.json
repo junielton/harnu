@@ -1,0 +1,65 @@
+{
+  "mode": "instr",
+  "wallS": 60,
+  "cpu": [
+    {
+      "pid": 3541380,
+      "type": "Browser",
+      "cpuPct": 38.8
+    },
+    {
+      "pid": 3541432,
+      "type": "GPU",
+      "cpuPct": 6.9
+    },
+    {
+      "pid": 3541441,
+      "type": "Utility",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3541456,
+      "type": "Tab",
+      "cpuPct": 33
+    }
+  ],
+  "renderer": {
+    "upd": 242,
+    "updBytes": 398878,
+    "add": 0,
+    "rem": 0,
+    "sub": 242,
+    "subBytes": 332508,
+    "idx": 0,
+    "proj": 0,
+    "sessions": 2,
+    "sessionUpdated": {
+      "perS": 4.03,
+      "bytesPerEvent": 1648
+    },
+    "subagentUpdated": {
+      "perS": 4.03,
+      "bytesPerEvent": 1374
+    }
+  },
+  "main": {
+    "slugPasses": 120,
+    "passesPerS": 2,
+    "passMs": {
+      "p50": 81.7,
+      "p90": 119.8,
+      "max": 148.8,
+      "sum": 10143
+    },
+    "slugsPerPass": 1,
+    "fullRescansMs": [],
+    "notifySlug": 480,
+    "jsonlHeaderMisses": 240,
+    "subagentHeaderReads": 48000,
+    "gitRevParseSpawns": 1,
+    "gitStatusSpawns": 0,
+    "sessionUpdatedSends": 238,
+    "sessionUpdatedNewLinesBytes": 328502,
+    "subagentUpdatedSends": 238
+  }
+}

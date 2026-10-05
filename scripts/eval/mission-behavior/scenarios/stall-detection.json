@@ -1,0 +1,226 @@
+{
+  "name": "stall-detection",
+  "order": 6,
+  "label": "S6 stall rule",
+  "title": "mission_get flags an old, idle active mission stale — derived only, never written; a dead legacy draft reads active and stale",
+  "reviewFocus": null,
+  "description": "T358 S6, design §8: stale := status == 'active' && now - lastEvidenceAt > 1h && no linked session working — and design §3: that flag is DERIVED, never written back to the stored status. Mission v3 §3.4: a legacy `draft` file reads `active` everywhere, so a dead one (no children, last write hours ago) reads active AND stale — and the read still never writes the file. Missions are SEEDED (a scripted session cannot wait out an hour, and no verb writes a legacy file): stall-old (active, 2 h old, fixed end linked to a child C that is not running), stall-fresh (active, 5 min old, same link), stall-draft (a LEGACY draft — fixed start, no approval stamp — 5 h old), stall-recovers (active, 3 h old) and stall-ledger (active, only records probes). Agent A reads the missions through the real transport and writes one mission_log entry on stall-recovers. Because `derived.stale` has no file state, `probe` phases have the HARNESS call mission_get itself and log `EVAL-PROBE[<tag>] <slug> stale=<b> status=<s>` into the ledger — graded from the files, no model transcribing the value. The grade then requires: stall-old flagged stale while its file still says `active` with the seeded `updatedAt` (a read never writes), fresh not flagged, the legacy draft read as active and stale while its file still says `draft` (normalization happens on read, not by rewriting), and stall-recovers flagged before its log entry and clear after it. The 'a linked session is working' branch needs a live hook FSM and is pinned by the unit suite (tests/mission-derived-signals.test.ts).",
+  "agents": ["A", "C"],
+  "phases": [
+    {
+      "seed": [
+        {
+          "slug": "stall-old",
+          "status": "active",
+          "ageMinutes": 120,
+          "links": [
+            {
+              "step": "fixed-end",
+              "kind": "session",
+              "ref": "{{session.C}}"
+            }
+          ]
+        },
+        {
+          "slug": "stall-fresh",
+          "status": "active",
+          "ageMinutes": 5,
+          "links": [
+            {
+              "step": "fixed-end",
+              "kind": "session",
+              "ref": "{{session.C}}"
+            }
+          ]
+        },
+        {
+          "slug": "stall-draft",
+          "status": "draft",
+          "ageMinutes": 300,
+          "legacy": true
+        },
+        {
+          "slug": "stall-recovers",
+          "status": "active",
+          "ageMinutes": 180
+        },
+        {
+          "slug": "stall-ledger",
+          "status": "active",
+          "ageMinutes": 0
+        }
+      ]
+    },
+    {
+      "probe": {
+        "missions": ["stall-recovers"],
+        "into": "stall-ledger",
+        "tag": "before"
+      }
+    },
+    {
+      "agent": "A",
+      "prompt": "1. mcp__harnu__mission_get with folder=\"{{folder}}\", missionId=\"{{m.stall-old.id}}\".\n2. mcp__harnu__mission_get with folder=\"{{folder}}\", missionId=\"{{m.stall-fresh.id}}\".\n3. mcp__harnu__mission_get with folder=\"{{folder}}\", missionId=\"{{m.stall-draft.id}}\".\n4. mcp__harnu__mission_log with folder=\"{{folder}}\", missionId=\"{{m.stall-recovers.id}}\", note=\"EVAL-STALL-RECOVERED: back on it\"."
+    },
+    {
+      "probe": {
+        "missions": ["stall-old", "stall-fresh", "stall-draft", "stall-recovers"],
+        "into": "stall-ledger",
+        "tag": "after"
+      }
+    }
+  ],
+  "assert": [
+    {
+      "missionCount": 5
+    },
+    {
+      "label": "old + idle-linked active mission is flagged stale",
+      "mission": "stall-ledger",
+      "logContains": "EVAL-PROBE[after] stall-old stale=true status=active"
+    },
+    {
+      "label": "a read never writes the flag: stored status stays active",
+      "mission": "stall-old",
+      "path": "status",
+      "equals": "active"
+    },
+    {
+      "label": "a read never writes the flag: updatedAt untouched",
+      "mission": "stall-old",
+      "path": "updatedAt",
+      "equals": "{{seeded.stall-old.updatedAt}}"
+    },
+    {
+      "label": "a read never writes the flag: the Log is untouched",
+      "mission": "stall-old",
+      "logNotContains": "###"
+    },
+    {
+      "label": "a mission with fresh evidence is not flagged",
+      "mission": "stall-ledger",
+      "logContains": "EVAL-PROBE[after] stall-fresh stale=false status=active"
+    },
+    {
+      "label": "a dead legacy draft reads active — and stale (v3 §3.4)",
+      "mission": "stall-ledger",
+      "logContains": "EVAL-PROBE[after] stall-draft stale=true status=active"
+    },
+    {
+      "label": "stall-recovers was stale before its log entry",
+      "mission": "stall-ledger",
+      "logContains": "EVAL-PROBE[before] stall-recovers stale=true status=active"
+    },
+    {
+      "label": "a new mission_log entry clears the flag on the next read",
+      "mission": "stall-ledger",
+      "logContains": "EVAL-PROBE[after] stall-recovers stale=false status=active"
+    },
+    {
+      "mission": "stall-recovers",
+      "logContains": "EVAL-STALL-RECOVERED"
+    },
+    {
+      "mission": "stall-recovers",
+      "path": "status",
+      "equals": "active"
+    },
+    {
+      "label": "a read never rewrites the legacy draft: its file still says draft",
+      "mission": "stall-draft",
+      "path": "status",
+      "equals": "draft"
+    },
+    {
+      "label": "a read never rewrites the legacy draft: updatedAt untouched",
+      "mission": "stall-draft",
+      "path": "updatedAt",
+      "equals": "{{seeded.stall-draft.updatedAt}}"
+    }
+  ],
+  "breaks": [
+    {
+      "name": "old-never-flagged",
+      "mutate": [
+        {
+          "mission": "stall-ledger",
+          "logRemove": "EVAL-PROBE[after] stall-old stale=true",
+          "logAppend": "EVAL-PROBE[after] stall-old stale=false status=active"
+        }
+      ]
+    },
+    {
+      "name": "flag-written-back-to-status",
+      "mutate": [
+        {
+          "mission": "stall-old",
+          "set": {
+            "status": "stale"
+          }
+        }
+      ]
+    },
+    {
+      "name": "read-bumped-updatedAt",
+      "mutate": [
+        {
+          "mission": "stall-old",
+          "set": {
+            "updatedAt": "2099-01-01T00:00:00.000Z"
+          }
+        }
+      ]
+    },
+    {
+      "name": "fresh-flagged-stale",
+      "mutate": [
+        {
+          "mission": "stall-ledger",
+          "logRemove": "EVAL-PROBE[after] stall-fresh stale=false",
+          "logAppend": "EVAL-PROBE[after] stall-fresh stale=true status=active"
+        }
+      ]
+    },
+    {
+      "name": "legacy-draft-not-normalized",
+      "mutate": [
+        {
+          "mission": "stall-ledger",
+          "logRemove": "EVAL-PROBE[after] stall-draft stale=true status=active",
+          "logAppend": "EVAL-PROBE[after] stall-draft stale=false status=draft"
+        }
+      ]
+    },
+    {
+      "name": "never-recovered",
+      "mutate": [
+        {
+          "mission": "stall-ledger",
+          "logRemove": "EVAL-PROBE[after] stall-recovers stale=false",
+          "logAppend": "EVAL-PROBE[after] stall-recovers stale=true status=active"
+        }
+      ]
+    },
+    {
+      "name": "recovery-log-lost",
+      "mutate": [
+        {
+          "mission": "stall-recovers",
+          "logRemove": "EVAL-STALL-RECOVERED"
+        }
+      ]
+    },
+    {
+      "name": "read-rewrote-legacy-draft",
+      "mutate": [
+        {
+          "mission": "stall-draft",
+          "set": {
+            "status": "active",
+            "updatedAt": "2099-01-01T00:00:00.000Z"
+          }
+        }
+      ]
+    }
+  ]
+}

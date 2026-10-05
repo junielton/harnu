@@ -1,0 +1,52 @@
+{
+  "mode": "cpu",
+  "wallS": 30,
+  "cpu": [
+    {
+      "pid": 3176776,
+      "type": "main",
+      "cpuPct": 3.1
+    },
+    {
+      "pid": 3176778,
+      "type": "zygote",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3176779,
+      "type": "zygote",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3176811,
+      "type": "zygote",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3176817,
+      "type": "utilitynetwork.mojom.NetworkService",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3176831,
+      "type": "renderer",
+      "cpuPct": 1.4
+    },
+    {
+      "pid": 3178083,
+      "type": "utilityaudio.mojom.AudioService",
+      "cpuPct": 0
+    }
+  ],
+  "renderer": {
+    "upd": 1,
+    "updBytes": 767,
+    "add": 0,
+    "rem": 0,
+    "sub": 6,
+    "subBytes": 34064,
+    "idx": 0,
+    "proj": 0,
+    "sessions": 1
+  }
+}

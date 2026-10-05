@@ -1,0 +1,3 @@
+# Default owner for everything in the repo.
+# Requested for review on every pull request unless a more specific rule below matches.
+*       @junielton

@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Electron</title>
+    <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
+    <!-- `capy-voice:` is the legacy alias of `harnu-voice:` (offline voice installs from before the rename). -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' harnu-voice: capy-voice:; connect-src 'self' harnu-voice: capy-voice:; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    />
+  </head>
+
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

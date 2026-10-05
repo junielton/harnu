@@ -1,0 +1,6 @@
+{
+  "rescanResolvedMs": 282,
+  "fullScanMs": [66.3],
+  "uncachedScans": 31,
+  "concurrentFullScansAtRescan": 2
+}

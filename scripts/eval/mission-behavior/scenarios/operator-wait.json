@@ -1,0 +1,101 @@
+{
+  "name": "operator-wait",
+  "order": 9,
+  "title": "an owner whose next move is the operator's merge raises an operator-owned blocker",
+  "reviewFocus": null,
+  "label": "v2 AC-9 (1)",
+  "description": "Mission v2 §3.4 / AC-9 (1). A scripted setup gives the owner A an active mission with one unit built by C and already verified by B. Then A runs ONE tick as an owner — it reads the shipped `mission` skill and decides its own calls — after being told the unit's PR is open and green and only the operator's merge can move the delivery. The skill's hard rule says a turn that ends waiting on the operator raises `mission_set_blocker { owner: 'operator' }` (that is what makes Harnu chime and re-nudge); text in the transcript is not a signal. Graded from the mission file: an operator-owned blocker is open somewhere on the mission, and the mission was not pushed toward a close it cannot have.",
+  "agents": ["A", "B", "C"],
+  "phases": [
+    {
+      "copyIn": {
+        "from": "resources/skills/skills/mission/SKILL.md",
+        "to": ".eval/mission-SKILL.md"
+      }
+    },
+    {
+      "agent": "A",
+      "prompt": "1. mcp__harnu__mission_create with folder=\"{{folder}}\", title=\"Notes export\", sessionId=\"{{self}}\", declaredEnd={\"kind\":\"code\",\"target\":\"PR #1 (notes export) merged into main\",\"evidence\":\"green CI and every AC verified\"}.\n2. mcp__harnu__mission_add_step with folder=\"{{folder}}\", missionId=<missionId from step 1>, title=\"Unit 1 — export command\", verification=\"verifier\".\n3. mcp__harnu__mission_link_child with folder=\"{{folder}}\", missionId=<missionId from step 1>, stepId=<stepId from step 2>, link={\"kind\":\"session\",\"ref\":\"{{session.C}}\"}."
+    },
+    {
+      "agent": "B",
+      "prompt": "1. mcp__harnu__mission_verify_step with folder=\"{{folder}}\", missionId=\"{{m.notes-export.id}}\", stepId=\"{{m.notes-export.custom.0}}\", verdict=\"met\", evidence=\"EVAL-WAIT-VERIFIED: all ACs met on PR #1\", sessionId=\"{{self}}\"."
+    },
+    {
+      "agent": "A",
+      "role": "owner",
+      "tools": ["Read"],
+      "prompt": "Skill file: .eval/mission-SKILL.md — run ONE tick, as its section \"`mission` — one tick\" says, on your mission {{m.notes-export.id}}.\n\nWhat changed since your last tick: the executor of \"Unit 1 — export command\" (session {{session.C}}) finished, its PR #1 is open and green, and the step is already verified. In this delivery the operator merges every PR themselves — you never merge. PR #1 has not been merged yet, and nothing else in the delivery can move until it is. The operator is away from the screen right now."
+    }
+  ],
+  "assert": [
+    {
+      "missionCount": 1
+    },
+    {
+      "label": "an operator-owned blocker is open (mission- or step-level)",
+      "mission": "notes-export",
+      "anyBlocker": {
+        "owner": "operator"
+      }
+    },
+    {
+      "label": "the unit's verification stands",
+      "mission": "notes-export",
+      "step": "custom:0",
+      "path": "proof",
+      "equals": "verified"
+    },
+    {
+      "label": "still active: waiting is not delivering",
+      "mission": "notes-export",
+      "path": "status",
+      "equals": "active"
+    },
+    {
+      "label": "no close requested while the merge is outstanding",
+      "mission": "notes-export",
+      "path": "pendingClose",
+      "exists": false
+    }
+  ],
+  "breaks": [
+    {
+      "name": "wait-left-in-the-transcript",
+      "mutate": [
+        {
+          "mission": "notes-export",
+          "clearBlockers": true
+        }
+      ]
+    },
+    {
+      "name": "blocker-owned-by-agent",
+      "mutate": [
+        {
+          "mission": "notes-export",
+          "eachBlocker": {
+            "set": {
+              "owner": "agent"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "close-requested-while-waiting",
+      "mutate": [
+        {
+          "mission": "notes-export",
+          "set": {
+            "status": "delivered",
+            "pendingClose": {
+              "at": "2026-01-01T00:00:00.000Z",
+              "requestedBy": "{{session.A}}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

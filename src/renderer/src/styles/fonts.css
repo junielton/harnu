@@ -1,0 +1,47 @@
+/**
+ * Bundled terminal font — JetBrainsMono Nerd Font Mono.
+ *
+ * The plain "JetBrains Mono" lacks the Nerd Font glyph ranges (Powerline,
+ * Devicons, Codicons, etc.), so TUIs like `claude` render icons as tofu.
+ * We ship the patched Mono variant locally so the app works offline (design.md §3).
+ * Licenses: JetBrains Mono is under the SIL Open Font License 1.1
+ * (assets/fonts/OFL.txt); the Nerd Fonts patch and its glyph sets are covered by
+ * assets/fonts/LICENSE-NerdFonts.txt. Both are reproduced in THIRD-PARTY-NOTICES.md.
+ * The family name matches the
+ * system-installed name so it resolves either way.
+ *
+ * `font-display: block` avoids a fallback flash that would also poison the
+ * xterm cell-width measurement (see TerminalPane `createLiveTerminal`, which
+ * awaits `document.fonts.load` before measuring).
+ */
+@font-face {
+  font-family: 'JetBrainsMono Nerd Font Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('../assets/fonts/JetBrainsMonoNerdFontMono-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrainsMono Nerd Font Mono';
+  font-style: italic;
+  font-weight: 400;
+  font-display: block;
+  src: url('../assets/fonts/JetBrainsMonoNerdFontMono-Italic.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrainsMono Nerd Font Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url('../assets/fonts/JetBrainsMonoNerdFontMono-Bold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrainsMono Nerd Font Mono';
+  font-style: italic;
+  font-weight: 700;
+  font-display: block;
+  src: url('../assets/fonts/JetBrainsMonoNerdFontMono-BoldItalic.woff2') format('woff2');
+}

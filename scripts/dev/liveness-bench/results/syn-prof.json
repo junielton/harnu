@@ -1,0 +1,141 @@
+{
+  "mode": "profile",
+  "wallS": 30.1,
+  "cpu": [
+    {
+      "pid": 3242256,
+      "type": "main",
+      "cpuPct": 32.1
+    },
+    {
+      "pid": 3242275,
+      "type": "zygote",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3242276,
+      "type": "zygote",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3242332,
+      "type": "zygote",
+      "cpuPct": 0.2
+    },
+    {
+      "pid": 3242337,
+      "type": "utilitynetwork.mojom.NetworkService",
+      "cpuPct": 0
+    },
+    {
+      "pid": 3242352,
+      "type": "renderer",
+      "cpuPct": 7.9
+    }
+  ],
+  "renderer": {
+    "upd": 120,
+    "updBytes": 197160,
+    "add": 0,
+    "rem": 0,
+    "sub": 120,
+    "subBytes": 164520,
+    "idx": 0,
+    "proj": 0,
+    "sessions": 2
+  },
+  "mainProfile": {
+    "totalUs": 30116143,
+    "top": [
+      ["(idle) :0", 25715120],
+      ["scrapeSubagentHeader main/index.js:2755", 1170684],
+      ["normalizeString node:path:93", 603503],
+      ["resolve node:path:1260", 408464],
+      ["(garbage collector) :0", 301783],
+      ["(program) :0", 258357],
+      ["relative node:path:1371", 184540],
+      ["slice node:buffer:640", 167020],
+      ["scrapeJsonlHeader main/index.js:2451", 83491],
+      ["matchPatterns chokidar/index.js:57", 79133],
+      ["stat :0", 61876],
+      ["lstat :0", 53019],
+      ["openFileHandle :0", 52587],
+      ["(anon) :0", 43412],
+      ["FSReqCallback :0", 42985],
+      ["(anon) main/index.js:2839", 40542],
+      ["(anon) main/index.js:2668", 36045],
+      ["open fs/promises:632", 35305],
+      ["join node:path:1347", 35013],
+      ["read fs/promises:643", 33612],
+      ["fstat :0", 29513],
+      ["fstat fs/promises:1010", 28799],
+      ["splitPath js2c/node_init:2", 27310],
+      ["(anon) chokidar/handler.js:465", 26156],
+      ["close :0", 24982]
+    ],
+    "inclusive": [
+      ["drainRefresh", 170802],
+      ["scanFoldersUncached", 17863],
+      ["scrapeJsonlHeader", 136452],
+      ["scrapeSubagentHeader", 1618904],
+      ["attachSubagents", 18761],
+      ["readProjectFromJsonls", 10525],
+      ["readTailEntries", 0],
+      ["tailFile", 7174],
+      ["probeGitMetaBatch", 6237],
+      ["buildFolderEntries", 0],
+      ["mergeSlugSessions", 165858],
+      ["deriveFolders", 558]
+    ],
+    "idle": [
+      ["(program)", 258357],
+      ["(idle)", 25715120],
+      ["(garbage", 301783]
+    ]
+  },
+  "rendererProfile": {
+    "totalUs": 30085081,
+    "top": [
+      ["(idle) :0", 28567767],
+      ["track assets/index-DANFSlal.js:768", 219631],
+      ["(program) :0", 203325],
+      ["get assets/index-DANFSlal.js:1076", 89468],
+      ["(anon) assets/index-DANFSlal.js:17122", 61958],
+      ["track assets/index-DANFSlal.js:686", 60436],
+      ["isDirty assets/index-DANFSlal.js:561", 56843],
+      ["createReactiveObject assets/index-DANFSlal.js:1467", 56765],
+      ["folderActivity assets/index-DANFSlal.js:15310", 54505],
+      ["isRef assets/index-DANFSlal.js:1525", 52219],
+      ["prepareDeps assets/index-DANFSlal.js:534", 45860],
+      ["activityOf assets/index-DANFSlal.js:17051", 43718],
+      ["wrappedAction assets/index-DANFSlal.js:7490", 38271],
+      ["cleanupDeps assets/index-DANFSlal.js:541", 28878],
+      ["(anon) assets/index-DANFSlal.js:1379", 24448],
+      ["(anon) assets/index-DANFSlal.js:17266", 24434],
+      ["isReadonly assets/index-DANFSlal.js:1500", 24413],
+      ["(anon) assets/index-DANFSlal.js:5", 22260],
+      ["relativeTime assets/index-DANFSlal.js:19566", 20460],
+      ["setStyle assets/index-DANFSlal.js:6742", 20045],
+      ["(anon) assets/index-DANFSlal.js:41621", 17237],
+      ["has assets/index-DANFSlal.js:1272", 15981],
+      ["runningAgentCount assets/index-DANFSlal.js:17013", 14987],
+      ["recentKey assets/index-DANFSlal.js:15281", 14422],
+      ["toRaw assets/index-DANFSlal.js:1512", 13890]
+    ],
+    "inclusive": [
+      ["reloadModelOnce", 0],
+      ["reloadModel", 0],
+      ["commitFolders", 0],
+      ["mergeFolders", 0],
+      ["flushJobs", 1250997],
+      ["flushPreFlushCbs", 0],
+      ["triggerEffects", 0],
+      ["refreshComputed", 1060822]
+    ],
+    "idle": [
+      ["(program)", 203325],
+      ["(idle)", 28567767],
+      ["(garbage", 10587]
+    ]
+  }
+}

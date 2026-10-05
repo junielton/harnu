@@ -1,0 +1,144 @@
+{
+  "name": "rescope-voids-proof",
+  "order": 4,
+  "title": "an approved re-scope voids the fixed end's proof, from verified and from self-verified",
+  "reviewFocus": 4,
+  "description": "Review Focus #4. Two missions whose fixed ends reach the two proven states: rescope-verified (linked to A, verified by B → verified) and rescope-self (linked to A, verified by A → self-verified). A proposes a new declared end on both with mission_set_end — which must only stage pendingRescope, never touch declaredEnd or the proof (checkpoint). The operator then approves both re-scopes through mission-core's own applyApprovedRescope (the UI door's transition): both fixed ends must drop back to unproven with verifiedBy cleared, under the new declared end and a fresh approval stamp.",
+  "agents": ["A", "B"],
+  "phases": [
+    {
+      "agent": "A",
+      "prompt": "Do this for NAME=\"Rescope verified\" and then for NAME=\"Rescope self\":\n1. mcp__harnu__mission_create with folder=\"{{folder}}\", title=NAME, sessionId=\"{{self}}\", declaredEnd={\"kind\":\"code\",\"target\":\"EVAL-OLD-TARGET\",\"evidence\":\"the old test passes\"}. Note its missionId and its fixed-end step id.\n2. mcp__harnu__mission_link_child on that mission's fixed-end step with folder=\"{{folder}}\", link={\"kind\":\"session\",\"ref\":\"{{self}}\"}.\nThen, for \"Rescope self\" only:\n3. mcp__harnu__mission_verify_step on its fixed-end step with folder=\"{{folder}}\", verdict=\"met\", evidence=\"checked my own work\", sessionId=\"{{self}}\"."
+    },
+    {
+      "agent": "B",
+      "prompt": "1. mcp__harnu__mission_verify_step with folder=\"{{folder}}\", missionId=\"{{m.rescope-verified.id}}\", stepId=\"{{m.rescope-verified.end}}\", verdict=\"met\", evidence=\"ran the old test, it passes\", sessionId=\"{{self}}\"."
+    },
+    {
+      "agent": "A",
+      "prompt": "For MID=\"{{m.rescope-verified.id}}\" and then for MID=\"{{m.rescope-self.id}}\":\n1. mcp__harnu__mission_set_end with folder=\"{{folder}}\", missionId=MID, declaredEnd={\"kind\":\"code\",\"target\":\"EVAL-NEW-TARGET\",\"evidence\":\"the new test passes\"}, reason=\"the target moved\"."
+    },
+    {
+      "checkpoint": "rescope-staged",
+      "assert": [
+        {
+          "label": "verified end still verified before approval",
+          "mission": "rescope-verified",
+          "step": "fixed-end",
+          "path": "proof",
+          "equals": "verified"
+        },
+        {
+          "label": "self-verified end still self-verified before approval",
+          "mission": "rescope-self",
+          "step": "fixed-end",
+          "path": "proof",
+          "equals": "self-verified"
+        },
+        {
+          "label": "set_end staged the new end",
+          "mission": "rescope-verified",
+          "path": "pendingRescope.target",
+          "equals": "EVAL-NEW-TARGET"
+        },
+        {
+          "label": "set_end staged the new end",
+          "mission": "rescope-self",
+          "path": "pendingRescope.target",
+          "equals": "EVAL-NEW-TARGET"
+        },
+        {
+          "label": "set_end never wrote declaredEnd",
+          "mission": "rescope-verified",
+          "path": "declaredEnd.target",
+          "equals": "EVAL-OLD-TARGET"
+        },
+        {
+          "label": "set_end never wrote declaredEnd",
+          "mission": "rescope-self",
+          "path": "declaredEnd.target",
+          "equals": "EVAL-OLD-TARGET"
+        }
+      ],
+      "breaks": [
+        {
+          "name": "set-end-wrote-declared-end",
+          "mutate": [
+            {
+              "mission": "rescope-verified",
+              "set": { "declaredEnd.target": "EVAL-NEW-TARGET" },
+              "unset": "pendingRescope"
+            }
+          ]
+        },
+        {
+          "name": "set-end-voided-proof-early",
+          "mutate": [
+            { "mission": "rescope-self", "step": "fixed-end", "set": { "proof": "unproven" } }
+          ]
+        }
+      ]
+    },
+    { "operator": "approve-rescope", "mission": ["rescope-verified", "rescope-self"] }
+  ],
+  "assert": [
+    { "missionCount": 2 },
+    {
+      "label": "verified → unproven after approval",
+      "mission": "rescope-verified",
+      "step": "fixed-end",
+      "path": "proof",
+      "equals": "unproven"
+    },
+    {
+      "label": "self-verified → unproven after approval",
+      "mission": "rescope-self",
+      "step": "fixed-end",
+      "path": "proof",
+      "equals": "unproven"
+    },
+    {
+      "mission": "rescope-verified",
+      "step": "fixed-end",
+      "path": "verifiedBy",
+      "exists": false
+    },
+    { "mission": "rescope-self", "step": "fixed-end", "path": "verifiedBy", "exists": false },
+    { "mission": "rescope-verified", "path": "declaredEnd.target", "equals": "EVAL-NEW-TARGET" },
+    { "mission": "rescope-self", "path": "declaredEnd.target", "equals": "EVAL-NEW-TARGET" },
+    { "mission": "rescope-verified", "path": "pendingRescope", "exists": false },
+    { "mission": "rescope-self", "path": "pendingRescope", "exists": false },
+    { "mission": "rescope-verified", "path": "declaredEndApproval.bodyHash", "exists": true },
+    { "mission": "rescope-self", "path": "declaredEndApproval.bodyHash", "exists": true }
+  ],
+  "breaks": [
+    {
+      "name": "verified-proof-survived",
+      "mutate": [
+        { "mission": "rescope-verified", "step": "fixed-end", "set": { "proof": "verified" } }
+      ]
+    },
+    {
+      "name": "self-verified-proof-survived",
+      "mutate": [
+        { "mission": "rescope-self", "step": "fixed-end", "set": { "proof": "self-verified" } }
+      ]
+    },
+    {
+      "name": "stale-verifier-kept",
+      "mutate": [
+        {
+          "mission": "rescope-verified",
+          "step": "fixed-end",
+          "set": {
+            "verifiedBy": { "sessionId": "{{session.B}}", "at": "2026-01-01T00:00:00.000Z" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "old-target-kept",
+      "mutate": [{ "mission": "rescope-self", "set": { "declaredEnd.target": "EVAL-OLD-TARGET" } }]
+    }
+  ]
+}

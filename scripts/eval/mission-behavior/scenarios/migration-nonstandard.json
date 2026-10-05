@@ -1,0 +1,247 @@
+{
+  "name": "migration-nonstandard",
+  "order": 3,
+  "title": "importing a goal file with no recognized heading never crashes, loses nothing, touches nothing",
+  "reviewFocus": 3,
+  "description": "Review Focus #3, T358 S7 (design §9). Two legacy goal files are planted from the unit suite's SYNTHETIC fixtures (the real corpus holds client identifiers): one with NONE of the recognized headings (trailing whitespace, a tab, no final newline) and one in the partial shape (Objective/Topology/Units plus the Portuguese Executores). Agent A imports both through the real transport, then imports the first one again. The grade requires: both imported as active missions in the v3 shape (no draft, no fixed start — Mission v3 §3.4), the unrecognized one with declaredEnd flagged needs-review, each mission's legacyRaw hashing to the source's exact bytes, the partial one's Units row and Executores bullet merged into one step, the second import refused (still two missions), and both source files byte-identical afterwards.",
+  "agents": ["A"],
+  "phases": [
+    {
+      "legacyFile": [
+        {
+          "name": "unrecognized",
+          "fixture": "unrecognized.md",
+          "path": ".harnu/goals/c0ffee12-field-notes.md"
+        },
+        {
+          "name": "partial",
+          "fixture": "partial.md",
+          "path": ".harnu/goals/wave-2.md"
+        }
+      ]
+    },
+    {
+      "agent": "A",
+      "prompt": "1. mcp__harnu__mission_import_legacy with folder=\"{{folder}}\", legacyPath=\".harnu/goals/c0ffee12-field-notes.md\", sessionId=\"{{self}}\".\n2. mcp__harnu__mission_import_legacy with folder=\"{{folder}}\", legacyPath=\".harnu/goals/wave-2.md\", sessionId=\"{{self}}\".\n3. mcp__harnu__mission_import_legacy with folder=\"{{folder}}\", legacyPath=\".harnu/goals/c0ffee12-field-notes.md\", sessionId=\"{{self}}\" — the same file again; it is expected to be refused."
+    }
+  ],
+  "assert": [
+    {
+      "label": "two imports landed, the repeated one did not",
+      "missionCount": 2
+    },
+    {
+      "label": "the unrecognized file still imports, born active (v3: no draft)",
+      "mission": "field-notes",
+      "path": "status",
+      "equals": "active"
+    },
+    {
+      "label": "its declared end is flagged needs-review",
+      "mission": "field-notes",
+      "path": "legacy.needsReview",
+      "includes": "declaredEnd"
+    },
+    {
+      "label": "its declared end is still complete (placeholder, kind other)",
+      "mission": "field-notes",
+      "path": "declaredEnd.kind",
+      "equals": "other"
+    },
+    {
+      "label": "unrecognized: raw body preserved byte-for-byte",
+      "mission": "field-notes",
+      "path": "legacyRaw",
+      "sha256": "{{legacy.unrecognized.sha256}}"
+    },
+    {
+      "mission": "field-notes",
+      "path": "legacy",
+      "equals": {
+        "source": "{{legacy.unrecognized.abs}}",
+        "sha256": "sha256:{{legacy.unrecognized.sha256}}"
+      }
+    },
+    {
+      "mission": "field-notes",
+      "path": "owner.sessionId",
+      "equals": "{{session.A}}"
+    },
+    {
+      "label": "unrecognized: source file untouched",
+      "file": ".harnu/goals/c0ffee12-field-notes.md",
+      "sha256": "{{legacy.unrecognized.sha256}}"
+    },
+    {
+      "label": "partial: raw body preserved byte-for-byte",
+      "mission": "wave-2-projectalpha-importer",
+      "path": "legacyRaw",
+      "sha256": "{{legacy.partial.sha256}}"
+    },
+    {
+      "label": "partial: Objective extracted as the target",
+      "mission": "wave-2-projectalpha-importer",
+      "path": "declaredEnd.target",
+      "equals": "Land the ProjectAlpha importer rewrite as two stacked PRs on org/proj/www, each with green CI, before the Acme demo."
+    },
+    {
+      "label": "partial: no Done criteria, so the end needs review",
+      "mission": "wave-2-projectalpha-importer",
+      "path": "legacy.needsReview",
+      "includes": "declaredEnd"
+    },
+    {
+      "label": "partial: the Units row and the Executores bullet merge into one step",
+      "mission": "wave-2-projectalpha-importer",
+      "step": "custom:1",
+      "path": "links",
+      "includes": [
+        {
+          "kind": "card",
+          "ref": "T402-importer-writer"
+        },
+        {
+          "kind": "pr",
+          "ref": "owner/repo#91"
+        },
+        {
+          "kind": "session",
+          "ref": "5d4c3b2a-1f0e-4d9c-8b7a-6e5f4d3c2b1a"
+        }
+      ]
+    },
+    {
+      "mission": "wave-2-projectalpha-importer",
+      "path": "steps",
+      "length": 3,
+      "label": "partial: two imported units then the fixed end — no fixed start (v3)"
+    },
+    {
+      "label": "partial: source file untouched",
+      "file": ".harnu/goals/wave-2.md",
+      "sha256": "{{legacy.partial.sha256}}"
+    },
+    {
+      "label": "unrecognized: v3 shape, the fixed end only",
+      "mission": "field-notes",
+      "path": "steps",
+      "excludes": {
+        "kind": "fixed-start"
+      }
+    }
+  ],
+  "breaks": [
+    {
+      "name": "unrecognized-file-not-imported",
+      "mutate": [
+        {
+          "drop": "field-notes"
+        }
+      ]
+    },
+    {
+      "name": "raw-body-dropped",
+      "mutate": [
+        {
+          "mission": "field-notes",
+          "unset": "legacyRaw"
+        }
+      ]
+    },
+    {
+      "name": "raw-body-truncated",
+      "mutate": [
+        {
+          "mission": "field-notes",
+          "set": {
+            "legacyRaw": "Field notes from the Acme sync, kept here while the plan settles."
+          }
+        }
+      ]
+    },
+    {
+      "name": "needs-review-flag-lost",
+      "mutate": [
+        {
+          "mission": "field-notes",
+          "set": {
+            "legacy.needsReview": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "source-rewritten",
+      "mutate": [
+        {
+          "file": ".harnu/goals/c0ffee12-field-notes.md",
+          "write": "rewritten by the importer\n"
+        }
+      ]
+    },
+    {
+      "name": "source-deleted",
+      "mutate": [
+        {
+          "file": ".harnu/goals/wave-2.md",
+          "delete": true
+        }
+      ]
+    },
+    {
+      "name": "imported-twice",
+      "mutate": [
+        {
+          "duplicate": "field-notes"
+        }
+      ]
+    },
+    {
+      "name": "executores-session-lost",
+      "mutate": [
+        {
+          "mission": "wave-2-projectalpha-importer",
+          "step": "custom:1",
+          "set": {
+            "links": [
+              {
+                "kind": "card",
+                "ref": "T402-importer-writer"
+              },
+              {
+                "kind": "pr",
+                "ref": "owner/repo#91"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "imported-as-draft",
+      "mutate": [
+        {
+          "mission": "field-notes",
+          "set": {
+            "status": "draft"
+          }
+        }
+      ]
+    },
+    {
+      "name": "legacy-fixed-start-written",
+      "mutate": [
+        {
+          "mission": "field-notes",
+          "set": {
+            "steps.1": {
+              "id": "stp-0",
+              "kind": "fixed-start",
+              "title": "Scope confirmed"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

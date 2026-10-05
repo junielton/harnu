@@ -1,0 +1,90 @@
+{
+  "name": "rule-change",
+  "order": 10,
+  "title": "an operator who changes the merge rule gets a staged re-scope in the same turn",
+  "reviewFocus": null,
+  "label": "v2 AC-9 (2)",
+  "description": "Mission v2 §3.3 / AC-9 (2). A scripted setup gives the owner A an active mission whose declared end says the owner lands the work in main. Then A, as an owner reading the shipped `mission` skill, is told the operator changed the rule: every phase becomes a stacked PR and the owner never merges. The skill says a changed rule is a re-scope in the same turn: `mission_set_end` stages the new end for the operator's approval and never rewrites the approved one. Graded from the mission file: `pendingRescope` is staged with a target different from the original, and `declaredEnd` still holds the original.",
+  "agents": ["A", "C"],
+  "phases": [
+    {
+      "copyIn": {
+        "from": "resources/skills/skills/mission/SKILL.md",
+        "to": ".eval/mission-SKILL.md"
+      }
+    },
+    {
+      "agent": "A",
+      "prompt": "1. mcp__harnu__mission_create with folder=\"{{folder}}\", title=\"Report builder\", sessionId=\"{{self}}\", declaredEnd={\"kind\":\"code\",\"target\":\"EVAL-OLD-END: one PR with the report builder, merged into main by the orchestrator\",\"evidence\":\"green CI and every AC verified\"}.\n2. mcp__harnu__mission_add_step with folder=\"{{folder}}\", missionId=<missionId from step 1>, title=\"Unit 1 — report builder\", verification=\"verifier\".\n3. mcp__harnu__mission_link_child with folder=\"{{folder}}\", missionId=<missionId from step 1>, stepId=<stepId from step 2>, link={\"kind\":\"session\",\"ref\":\"{{session.C}}\"}."
+    },
+    {
+      "agent": "A",
+      "role": "owner",
+      "tools": ["Read"],
+      "prompt": "Skill file: .eval/mission-SKILL.md. Your mission is {{m.report-builder.id}}; its unit is still being built by session {{session.C}}.\n\nThe operator just told you: \"Change of plan. Every phase becomes its own stacked PR, and you never merge anything — I review and merge the stack myself. You're done when the whole stack is open, green and verified.\"\n\nHandle this message as the skill says."
+    }
+  ],
+  "assert": [
+    {
+      "missionCount": 1
+    },
+    {
+      "label": "a re-scope is staged",
+      "mission": "report-builder",
+      "path": "pendingRescope",
+      "exists": true
+    },
+    {
+      "label": "the staged end differs from the approved one",
+      "mission": "report-builder",
+      "path": "pendingRescope.target",
+      "notEquals": "EVAL-OLD-END: one PR with the report builder, merged into main by the orchestrator"
+    },
+    {
+      "label": "the approved end is untouched until the operator approves",
+      "mission": "report-builder",
+      "path": "declaredEnd.target",
+      "equals": "EVAL-OLD-END: one PR with the report builder, merged into main by the orchestrator"
+    },
+    {
+      "label": "still active",
+      "mission": "report-builder",
+      "path": "status",
+      "equals": "active"
+    }
+  ],
+  "breaks": [
+    {
+      "name": "rule-change-ignored",
+      "mutate": [
+        {
+          "mission": "report-builder",
+          "unset": "pendingRescope"
+        }
+      ]
+    },
+    {
+      "name": "end-rewritten-without-approval",
+      "mutate": [
+        {
+          "mission": "report-builder",
+          "set": {
+            "declaredEnd.target": "a stacked PR train the operator merges"
+          },
+          "unset": "pendingRescope"
+        }
+      ]
+    },
+    {
+      "name": "rescope-keeps-the-old-end",
+      "mutate": [
+        {
+          "mission": "report-builder",
+          "set": {
+            "pendingRescope.target": "EVAL-OLD-END: one PR with the report builder, merged into main by the orchestrator"
+          }
+        }
+      ]
+    }
+  ]
+}

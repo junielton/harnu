@@ -1,0 +1,68 @@
+name: Claude Code
+
+# Interactive @claude bot.
+# Mention "@claude" in an issue, an issue/PR comment, or a PR review and Claude
+# will respond, implement changes, and open PRs. No `push` trigger by design.
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  issues:
+    types: [opened, assigned]
+
+jobs:
+  claude:
+    # Two gates, ANDed together:
+    #   1. The triggering user must be a trusted collaborator (OWNER, MEMBER, or
+    #      COLLABORATOR). This blocks arbitrary outside contributors from
+    #      invoking the bot — and burning Anthropic credits / write tokens — on a
+    #      public repo. The association field lives in a different place per
+    #      event, so each branch is explicit.
+    #   2. The triggering text must actually mention @claude.
+    if: |
+      (
+        (github.event_name == 'issue_comment' && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)) ||
+        (github.event_name == 'pull_request_review_comment' && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)) ||
+        (github.event_name == 'pull_request_review' && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)) ||
+        (github.event_name == 'issues' && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association))
+      ) && (
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+        (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      )
+    runs-on: ubuntu-latest
+    # Least-privilege permissions for the job's GITHUB_TOKEN.
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
+        with:
+          # Authenticate with an Anthropic API key stored in repo secrets.
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Alternative: a Claude Pro/Max OAuth token instead of an API key.
+          # claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # v1 input style: optional `prompt` + `claude_args`. No `prompt` is
+          # set here — in bot mode the action reads the @claude mention from the
+          # triggering event and uses it as the prompt.
+          #
+          # claude_args scopes Bash auto-approval to this project's safe npm
+          # scripts, blocks destructive commands, and appends CI-only notes.
+          claude_args: |
+            --allowedTools "Bash(npm ci),Bash(npm install),Bash(npm run test),Bash(npm run test:*),Bash(npm run lint),Bash(npm run lint:*),Bash(npm run typecheck),Bash(npm run typecheck:node),Bash(npm run typecheck:web),Bash(npm run format),Bash(npm run build)"
+            --disallowedTools "Bash(rm:*),Bash(sudo:*),Bash(git push --force:*),Bash(git push -f:*),Bash(git reset --hard:*)"
+            --append-system-prompt "Harnu is an Electron + Vue 3 + TypeScript app managed with npm. CI verification: install with `npm ci`; run tests with `npm run test` (Vitest); lint with `npm run lint` (ESLint); typecheck with `npm run typecheck` (tsc + vue-tsc); build with `npm run build`; format with `npm run format` (Prettier). Follow CLAUDE.md, and read design.md before changing any UI under src/renderer/. Do NOT run packaging builds (build:linux / build:mac / build:win) in CI."

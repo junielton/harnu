@@ -1,0 +1,67 @@
+{
+  "mode": "instr",
+  "wallS": 60,
+  "cpu": [
+    {
+      "pid": 25881,
+      "type": "Browser",
+      "cpuPct": 10.9
+    },
+    {
+      "pid": 25956,
+      "type": "GPU",
+      "cpuPct": 4.1
+    },
+    {
+      "pid": 25966,
+      "type": "Utility",
+      "cpuPct": 0
+    },
+    {
+      "pid": 26014,
+      "type": "Tab",
+      "cpuPct": 26.4
+    }
+  ],
+  "renderer": {
+    "upd": 238,
+    "updBytes": 62676,
+    "add": 0,
+    "rem": 0,
+    "sub": 238,
+    "subBytes": 70980,
+    "idx": 0,
+    "proj": 0,
+    "sessions": 2,
+    "sessionUpdated": {
+      "perS": 3.97,
+      "bytesPerEvent": 263
+    },
+    "subagentUpdated": {
+      "perS": 3.97,
+      "bytesPerEvent": 298
+    }
+  },
+  "main": {
+    "slugPasses": 30,
+    "passesPerS": 0.5,
+    "passMs": {
+      "p50": 21.2,
+      "p90": 58,
+      "max": 71.2,
+      "sum": 830
+    },
+    "slugsPerPass": 1,
+    "fullRescansMs": [],
+    "notifySlug": 480,
+    "notifySlugAppend": 476,
+    "jsonlHeaderMisses": 2,
+    "jsonlHeaderAppendReads": 58,
+    "subagentHeaderReads": 0,
+    "gitRevParseSpawns": 1,
+    "gitStatusSpawns": 0,
+    "sessionUpdatedSends": 238,
+    "sessionUpdatedPayloadBytes": 62676,
+    "subagentUpdatedSends": 238
+  }
+}

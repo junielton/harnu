@@ -1,0 +1,4 @@
+gpu "enabled"
+all-on [["main",26.3],["zygote",6.4],["renderer",20.6]] pulse-dot,pulse-dot,pulse-dot,pulse-dot,fade-in,spin,spin
+no-anim [["main",30.6],["zygote",0.8],["renderer",6.4]] 
+all-on-again [["main",35.1],["zygote",8.8],["renderer",26.9]] pulse-dot,pulse-dot,pulse-dot,pulse-dot,fade-in,spin,spin
