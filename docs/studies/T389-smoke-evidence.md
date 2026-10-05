@@ -1842,3 +1842,40 @@ These were outside R1 to R6 as scoped:
 - `$.command.run` and `session.compact`
 - `@file` through `$.prompt.submit`
 - the resume picker
+
+## 12. Addendum: T389 P1W1 live verification (2026-10-05, CLI 2.1.289)
+
+Run against the real host (an isolated Harnu instance with `mode: shadow`, started from `out/`,
+Unix socket under a short `--user-data-dir`), with throwaway mods loaded through `--plugin-dir`.
+
+### 12.1 CQ5: is a `socketPath` fetch visible to sibling mods? (LV-P1W1-b)
+
+**Yes, in both load orders.** A spy mod with `on('http.fetch', …)`, loaded before and after the
+caller, saw every request the caller sent over the socket: the URL (`http://harnu/v1/hello`,
+`http://harnu/v1/events`), `init.socketPath` present, the `authorization` header present, and the
+body length. Its `e.init.headers` also holds the header value, so a sibling can read the bearer,
+which is what smoke D6 already established. The design already assumes "visible": the endpoint
+token and `conn` are correlation only. The spy also saw the CLI's own `https://api.anthropic.com`
+telemetry fetch, with no `socketPath`.
+
+### 12.2 Hello and events over the real socket (LV-P1W1-a)
+
+The caller's `session.start` hook read `HARNU_SPAWN_TOKEN`, posted `hello`, then `events`
+heartbeats, and timed each `$.http.fetch` from inside the mod (so the figure includes the engine's
+own overhead, not only the host).
+
+| Run                  | hello             | first events    | warm events (ms)                |
+| -------------------- | ----------------- | --------------- | ------------------------------- |
+| interactive (PTY) #1 | 200, 257 ms       | 200, 51 ms      | not sampled                     |
+| interactive (PTY) #2 | 200, 29 ms        | 200, 9 ms       | 21, 93, 10, 19, 14              |
+| interactive (PTY) #3 | 200, 161 ms       | 200, 14 ms      | 27, 77, 38, 22, 22              |
+| `-p "/exit"` #1      | 200, 4 ms         | 200, 7 ms       | 2, 1, 0, 1, 1                   |
+| `-p` with the spy x2 | 200, 22 and 13 ms | 200, 8 and 3 ms | 4, 2, 1, 2, 2 and 6, 5, 1, 2, 2 |
+
+Every request answered 200. In an interactive session the figures are noisy (the terminal UI is
+rendering at the same moment) and the first hello is above 50 ms in two of three runs; headless
+runs are 0 to 7 ms. The host's own work is sub-millisecond (the contract tests measure a hello
+under 10 ms end to end), and `HELLO_SLA_MS` is 2 000 ms, so the noise costs nothing the design
+depends on. The lease read `live` right after each run and `lost` once 20 s had passed
+(`companionDiagnostics()`), the diagnostics carried no token, and quitting the isolated instance
+removed `c.sock` and `endpoint.json`.
