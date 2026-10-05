@@ -16,6 +16,7 @@ means the same thing a green `verify` means, with the exceptions listed under
 scripts/ci/local-pipeline.sh                      # full verify parity
 scripts/ci/local-pipeline.sh --fast               # skips coverage thresholds
 scripts/ci/local-pipeline.sh --with-e2e           # + build + headless e2e job
+scripts/ci/local-pipeline.sh --with-cli           # + real-`claude` suites (tests/cli), needs `claude`
 scripts/ci/local-pipeline.sh --base origin/main --labels no-user-docs
 scripts/ci/local-pipeline.sh --json /tmp/ci.json  # machine-readable summary
 ```
@@ -31,16 +32,20 @@ judge your diff against an old base and give you a wrong answer.
 
 ## What it actually checks
 
-| Step        | Command                              | What red means                                                                                              |
-| ----------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `format`    | `npm run format:check`               | Prettier drift. Fix with `npm run format`.                                                                  |
-| `i18n`      | `node scripts/ci/i18n-parity.mjs`    | A key exists in `en.json` but not `pt-BR.json` (or vice versa). The script names the missing keys per file. |
-| `changelog` | `node scripts/ci/changelog-gate.mjs` | Behavior changed without a `CHANGELOG.md` entry.                                                            |
-| `awareness` | `node scripts/ci/awareness-gate.mjs` | Agent-facing surface changed without updating `docs/harnu-features.md` + its version marker.                |
-| `user-docs` | `node scripts/ci/user-docs-gate.mjs` | New component / main-process file / MCP verb without a `docs/user/` update.                                 |
-| `typecheck` | `npm run typecheck`                  | `tsc` (node) or `vue-tsc` (web).                                                                            |
-| `lint`      | `npm run lint`                       | ESLint.                                                                                                     |
-| `test`      | `npm run test:coverage`              | Vitest, **with coverage thresholds enforced** per `vitest.config.mts`.                                      |
+| Step        | Command                              | What red means                                                                                                                                                                                                                                                                     |
+| ----------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `format`    | `npm run format:check`               | Prettier drift. Fix with `npm run format`.                                                                                                                                                                                                                                         |
+| `i18n`      | `node scripts/ci/i18n-parity.mjs`    | A key exists in `en.json` but not `pt-BR.json` (or vice versa). The script names the missing keys per file.                                                                                                                                                                        |
+| `changelog` | `node scripts/ci/changelog-gate.mjs` | Behavior changed without a `CHANGELOG.md` entry.                                                                                                                                                                                                                                   |
+| `awareness` | `node scripts/ci/awareness-gate.mjs` | Agent-facing surface changed without updating `docs/harnu-features.md` + its version marker.                                                                                                                                                                                       |
+| `user-docs` | `node scripts/ci/user-docs-gate.mjs` | New component / main-process file / MCP verb without a `docs/user/` update.                                                                                                                                                                                                        |
+| `typecheck` | `npm run typecheck`                  | `tsc` (node) or `vue-tsc` (web).                                                                                                                                                                                                                                                   |
+| `lint`      | `npm run lint`                       | ESLint.                                                                                                                                                                                                                                                                            |
+| `mod`       | `node scripts/ci/mod-step.mjs`       | The companion mod (T389): `claude plugin validate --strict` + `claude plugin test` in a temp copy. Needs `claude` >= 2.1.287; a missing or old CLI is a **failure**, `--skip mod` records `skipped`, and `blocked-by-policy` (managed settings turned hook modules off) fails too. |
+| `test`      | `npm run test:coverage`              | Vitest, **with coverage thresholds enforced** per `vitest.config.mts`.                                                                                                                                                                                                             |
+
+`--with-cli` adds a `cli` step (`tests/cli`: the real `claude` against the companion skeleton in a
+hermetic temp HOME, zero model calls); its log starts with `claude --version`.
 
 The three contract gates run _before_ the slow steps on purpose — a missing
 CHANGELOG entry should cost 2 seconds, not 4 minutes.
