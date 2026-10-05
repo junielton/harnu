@@ -103,7 +103,7 @@
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^26.1.1",
     "@vitejs/plugin-vue": "^6.0.2",
-    "@vitest/coverage-v8": "^2.1.9",
+    "@vitest/coverage-v8": "^5.0.3",
     "@vue/test-utils": "^2.4.11",
     "electron": "^39.2.6",
     "electron-builder": "^26.15.3",
