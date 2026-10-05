@@ -1879,3 +1879,23 @@ under 10 ms end to end), and `HELLO_SLA_MS` is 2 000 ms, so the noise costs noth
 depends on. The lease read `live` right after each run and `lost` once 20 s had passed
 (`companionDiagnostics()`), the diagnostics carried no token, and quitting the isolated instance
 removed `c.sock` and `endpoint.json`.
+
+## 13. Addendum: P1W2 outcomes (2026-10-05, CLI 2.1.289)
+
+Recorded by the P1W2 executor. Every run used the skeleton companion (one pass-through `session.start`) and a
+hermetic temp `HOME` with no credentials. Integration rows come from `scripts/ci/local-pipeline.sh --with-cli`
+(`tests/cli`), live rows from a second isolated Harnu instance under `xvfb-run`
+(`--user-data-dir`, own CDP port, a private renderer URL through `ELECTRON_RENDERER_URL`).
+
+| Item                | Verdict   | Outcome                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-P1W2-16 (Q5)     | CONFIRMED | `claude -p "/harnu-probe"` with an empty `HOME` needs **no sign-in**: the debug file has `hooks module harnu-companion@inline loaded (worker, environment 1, tier user); events: session.start`, no `hook skipped`, and the JSON result says `num_turns: 0`, `total_cost_usd: 0`, `modelUsage: {}`.                                                                                             |
+| AC-P1W2-17 (Q3)     | CONFIRMED | `--plugin-dir` order is load order for `plugin.register`: with the companion first the probe sees nothing for it; with the order swapped the probe's `plugin.register` reports `harnu-companion`. Marketplace and personal-folder order stays with P4W1.                                                                                                                                        |
+| AC-P1W2-19 (Q2)     | CONFIRMED | A hooks module **loads under `--setting-sources ''`** with `--strict-mcp-config` and `--no-session-persistence`: ticks can carry the mod.                                                                                                                                                                                                                                                       |
+| LV-P1W2-b (Q1)      | CONFIRMED | Interactive, folder never trusted: the CLI shows the **trust prompt only** (no separate plugin consent prompt), its default selection is **"No, exit"**, and the companion was **not loaded 9 s after spawn**. Harnu typed nothing. After the operator picked "Yes, I trust this folder" the "loaded" line appeared **0.74 s later**. P2W2 can treat "loaded" as proof the prompt was answered. |
+| LV-P1W2-c (OQ-3)    | RECORDED  | With the staged tree made read-only (`dr-x------`, files `0400`), the mod **still loads**; the engine logs `type root of harnu-companion not laid: EACCES: permission denied, mkdir '.../types'` and goes on. A follow-up may harden the tree to read-only; the generated typings simply will not exist there.                                                                                  |
+| Engine side effects | NOTE      | On load the engine writes `.claude-plugin/types/` **and a `tsconfig.json` at the plugin root** when none exists. The staged tree therefore changes after its first load: the per-spawn re-hash covers only the allowlisted files and the generated coordinates, never these (a first LV run staged a sibling directory because it did).                                                         |
+
+Caveat on the live rows: they ran on a build whose mode seam and host were thin local shims (P1W1's `mode.ts` and
+`companionHost` land at the join), so `pendingSpawns` was observed as the shim's mint and release log lines, not
+through `companionDiagnostics()`.
