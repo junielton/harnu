@@ -6,6 +6,7 @@ import {
   devModeDecision,
   gcVictims,
   renderCoords,
+  isStageable,
   stageFileList,
   stageKeyFor,
   stageManifest,
@@ -24,7 +25,7 @@ import {
 
 const PLUGIN_DIR = 'harnu-companion'
 const STAMP = '.stamp'
-const TYPES_DIR = '.claude-plugin/types'
+const GENERATED = 'hooks/coords.gen.ts'
 const KEY_RE = /^\d+\.\d+\.\d+(\.[0-9a-f]{8}(-\d+)?)?$/
 const MAX_SIBLINGS = 8
 
@@ -54,9 +55,13 @@ async function walk(dir: string, base = dir): Promise<string[]> {
   return out
 }
 
-/** Files of a STAGED tree that count toward its content digest (typings and stamp excluded). */
+/**
+ * Files of a STAGED tree that count toward its content digest: exactly the allowlist plus the
+ * generated coordinates. Whatever the engine writes beside a loaded mod (`.claude-plugin/types/`,
+ * a root `tsconfig.json`) is not part of the tree and must never read as tampering (LV-P1W2-a).
+ */
 async function stagedFiles(dir: string): Promise<{ rel: string; sha256: string }[]> {
-  const rels = (await walk(dir)).filter((r) => r !== STAMP && !r.startsWith(`${TYPES_DIR}/`))
+  const rels = (await walk(dir)).filter((r) => r === GENERATED || isStageable(r))
   return Promise.all(
     rels.map(async (rel) => ({ rel, sha256: sha(await fs.readFile(path.join(dir, rel))) }))
   )

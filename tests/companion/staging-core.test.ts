@@ -299,7 +299,19 @@ describe('the stager (real fs, temp dirs)', () => {
     const first = (await stager().ensureStaged())!
     await mkdir(join(first, '.claude-plugin', 'types', 'claude-code'), { recursive: true })
     await writeFile(join(first, '.claude-plugin', 'types', 'claude-code', 'index.d.ts'), 'x')
+    // a real load also lays a tsconfig.json at the plugin root (seen in LV-P1W2-a): not an edit
+    await writeFile(
+      join(first, 'tsconfig.json'),
+      '{ "extends": "./.claude-plugin/types/tsconfig.json" }'
+    )
     expect(await stager().ensureStaged()).toBe(first)
+  })
+
+  it('still catches a file added or changed inside an allowed directory', async () => {
+    const first = (await stager().ensureStaged())!
+    await writeFile(join(first, 'hooks', 'extra.ts'), 'export const x = 1\n')
+    const second = (await stager().ensureStaged())!
+    expect(second).not.toBe(first)
   })
 
   it('a changed rendezvous path (data directory) stages a new directory', async () => {
