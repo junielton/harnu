@@ -1,0 +1,6 @@
+{
+  "name": "harnu-probe",
+  "version": "0.0.1",
+  "description": "Test-only zero-model driver for the real-CLI suites: answers /harnu-probe with what it observes.",
+  "author": { "name": "Harnu" }
+}

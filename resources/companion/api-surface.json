@@ -1,0 +1,10 @@
+{
+  "v": 1,
+  "plugin": "harnu-companion",
+  "minCli": "2.1.287",
+  "lastVerifiedCli": "2.1.289",
+  "hooks": ["session.start"],
+  "calls": [],
+  "envReads": [],
+  "stateKeys": []
+}
