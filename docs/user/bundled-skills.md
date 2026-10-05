@@ -199,3 +199,5 @@ Two caveats, both stated on the switch:
 - [Roadmap board](roadmap-board.md) — the cards `orchestrate-delivery` creates and
   dispatches.
 - [Settings](settings.md) — the rest of the Settings tabs.
+
+Skills are not mods: a skill is an instruction file, while a mod runs code inside `claude`. To see what the mods your sessions can load are able to do, open **Settings → Mods** — see [Mods](mods.md).

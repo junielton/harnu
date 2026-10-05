@@ -459,6 +459,9 @@ export interface InstalledMod {
   loadsInFolder: 'yes' | 'no'
 }
 
+/** Pseudo-marketplaces `plugin list --json` reports for plugins that were not installed from one. */
+const NOT_INSTALLED_MARKETS = ['skills-dir', 'inline']
+
 const SCOPE_PREFERENCE: readonly ModScope[] = ['user', 'synced', 'project', 'local']
 
 function asScope(v: unknown): ModScope | undefined {
@@ -480,6 +483,9 @@ export function normalizeInstalled(raw: unknown, folder: string | null): Install
     if (!item || typeof item !== 'object') continue
     const r = item as Record<string, unknown>
     if (typeof r['id'] !== 'string' || typeof r['installPath'] !== 'string') continue
+    // not marketplace installs: a skills-folder plugin and a --plugin-dir one are listed
+    // by the CLI too, but each is read from its own source (§7.2)
+    if (NOT_INSTALLED_MARKETS.some((m) => (r['id'] as string).endsWith(`@${m}`))) continue
     const k = `${r['id']}\u0000${r['installPath']}`
     const list = groups.get(k)
     if (list) list.push(r)

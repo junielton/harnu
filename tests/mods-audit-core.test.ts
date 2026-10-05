@@ -253,6 +253,39 @@ describe('mods-audit-core', () => {
     expect(extra).toHaveLength(1)
   })
 
+  it('does not treat skills-folder and inline plugins as marketplace installs', () => {
+    // Measured on CLI 2.1.289: `plugin list --json` also reports a skills-folder plugin as
+    // `<name>@skills-dir` (scope user) and a --plugin-dir one as `<name>@inline` (scope
+    // session). Both are found from their own source; neither is an installed plugin.
+    const rows = normalizeInstalled(
+      [
+        {
+          id: 'mine@skills-dir',
+          version: '1.0.0',
+          scope: 'user',
+          enabled: true,
+          installPath: '/s/mine'
+        },
+        {
+          id: 'dev@inline',
+          version: '0.1.0',
+          scope: 'session',
+          enabled: true,
+          installPath: '/d/dev'
+        },
+        {
+          id: 'real@market',
+          version: '1.0.0',
+          scope: 'user',
+          enabled: true,
+          installPath: '/c/real'
+        }
+      ],
+      null
+    )
+    expect(rows!.map((r) => r.id)).toEqual(['real@market'])
+  })
+
   it('maps facts to capability chips', () => {
     const hook = (
       event: string,

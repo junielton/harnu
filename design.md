@@ -5620,6 +5620,9 @@ content, the card was widened to `min(92vw, 940px)`.
 - **Claude config:** GUI editor for the global `~/.claude/settings.json` — see "### Claude config (settings.json)" below.
 - **Endpoints:** the **global** registry of Anthropic-compatible custom endpoints (`EndpointsPane.vue`)
   — see "### Endpoints (registry)" below.
+- **Mods:** read-only audit of the mods a session can load and what each can do
+  (`ModsAuditPane.vue`, T389) — placed directly after **Skills** — see
+  "### Mods (Settings → Mods, T389)" below.
 - **Memory:** the **global default location** for project memory (`MemoryLocationPane.vue`, T89)
   — `in-project` (default) or a **central root** outside the repo — see "### Memory (Settings → Memory)" below.
 - **Changelog:** renders the root `CHANGELOG.md` (pure parser `changelog-parse.ts`,
@@ -6070,6 +6073,94 @@ A refusal (the folder exists and Harnu did not create it) surfaces as a `danger`
 
 **Restart notice** — a `SettingHint` under the list: _"Changes apply to sessions
 started from now on."_ No toast: this is a standing property of the pane, not an event.
+
+### Mods (Settings → Mods, T389)
+
+Dedicated **Mods** tab of the Settings dialog (`ModsAuditPane.vue`), entering the `tabs`
+array **directly after Skills**. A mod is a Claude Code plugin with a hooks module; it
+runs unsandboxed inside `claude`. The pane lists every mod a session started in a
+folder can load and says what each one's source **declares** it can do. **The list is a
+disclosure, never a control and never a verdict**: it has no switch for anyone else's
+mod, and no copy anywhere in it says a mod is safe, verified, trusted or approved. **No
+new token, no new component**: `SegmentedControl`, `SettingHint`, the bordered
+`--surface` row of the Skills and MCP panes, and the **Default** badge above.
+
+```
++----------------------------------------------------------------------+
+| MODS                                                   [ Refresh ]   |
+| Mods run unsandboxed inside Claude Code. This list shows what each    |
+| one can do, from a static read of its source.          <- SettingHint |
+| [ Global ][ my-repo ]                             <- SegmentedControl |
+| (#mods-companion: the Harnu mod switches, mounted by later waves)     |
+|                                                                      |
+|  harnu-companion                                   Harnu mod · 0.1.0 > |
+|  (can use the network) (can decide permissions) (draws in the term…)  |
+|                                                                      |
+|  token-chart                                 installed · user    >    |
+|  (can run processes) (can read every prompt)                          |
+|  Changed since 28 Sep.                                                |
+|                                                                      |
+| 12 plugins without a mod are not listed.                              |
+| Not shown: where data goes, which commands run, which files are       |
+| read. To allow only your organization's mods, an administrator sets   |
+| allowManagedModsOnly.                                  <- SettingHint |
++----------------------------------------------------------------------+
+```
+
+**Row shape** — the Skills pane's: one bordered `--surface` row (`padding: 8px 10px`,
+`border-radius: 6px`, `gap: 4px` between rows). The whole header line is one button
+(`aria-expanded`, hover `bg-surface-2`).
+
+- **Name** — `font-mono` 12.5px, `--text`: the plugin's own `name`, verbatim and never
+  translated. The Harnu mod is the row named `harnu-companion`, **row 1**, produced by
+  the same code path as every other row: nothing about it is special-cased but its
+  position and its source label.
+- **Right side** — source label and version, 11px `--text-3` (`Harnu mod · 0.1.0`,
+  `installed · user`, `skills folder`, `--plugin-dir`), then a chevron (`chevron-right`
+  collapsed, `chevron-down` expanded, 12px).
+- **Chips** — wrap under the name, `gap: 4px`. Every chip is the **Default** badge
+  variant (`--surface` bg, `--text-3` text, `--border` border; `padding 2px 8px`,
+  radius `999px`, 11px). **Colour would read as a verdict, so no chip is ever Accent,
+  Warning or Danger.** A chip is a fact in the form "can …" ("can run processes", "can
+  read every prompt"); the closed set and its source facts are in the spec table
+  (15 chips). Order is fixed.
+- **Status lines** (under the chips, 11px): `Analysing…` in `--text-4` while the read is
+  pending; `Changed since {date}.` in `--text-3` when the content hash differs from the
+  previous analysis; for a failed read, `triangle-alert` 12px + `--text-3` text and a
+  **Retry** text button (`--text-2`, hover `--text`). Rows never blank each other: one
+  failure leaves every other row's chips in place.
+- **Expanded row** — hooks (event plus matcher), calls (with `via {helper}`), environment
+  names read and written, state keys, notes the parser did not recognise **verbatim**,
+  errors and warnings; all `font-mono` 11px `--text-2` under 11px `--text-3` captions. Then
+  the folder path in `font-mono` 11px `--text-4`, `{hash8} · Last analysed {time}`, a
+  **Reveal folder** action (Ghost button, 28px high — `showItemInFolder`) and one
+  `SettingHint` naming the mechanism that **owns** the mod (`/plugin`, Settings → Skills,
+  "remove its folder", the folder's startup arguments). The pane points at that mechanism;
+  it never replaces it.
+
+**Scope** — a **`SegmentedControl`**, the Skills pane's rule: **Global** / **the folder
+of the selected session**; with nothing selected the folder pill takes the per-option
+disabled treatment and a `SettingHint` says why. Global lists the Harnu mod, user-scope
+installed plugins, `~/.claude/skills` and the settings `env` plugin directories; a folder
+adds its own installed plugins, `.claude/skills`, staged skills and Claude Boot
+`--plugin-dir` arguments.
+
+**Settings region (`#mods-companion`)** — an element directly above the list, empty on a
+build without the Harnu mod switches (it takes no space then). The Harnu mod's own
+switches mount there; they are controls of Harnu's mod and never of anyone else's.
+
+**Banners and hints** — the same pattern as the Skills collision hint: `triangle-alert`
+12px + 11px `--text-3` text, no fill, no colour. Policy off (`Turned off by a setting or
+by your organization's policy.`; it names no cause, because the probe shows that mods are
+off, not why), a folder started with `--safe-mode` or `--bare`, installed plugins that
+could not be read, a CLI that cannot analyse mods, and **CLI not found** (no rows, nothing
+spawned). The pane states its blind spots in place, in the footer: no destinations, no
+arguments, no paths, a static read only, and not what a running session actually loaded.
+A skills-folder mod carries one more line, "Harnu cannot tell whether this one is allowed
+to load", because its approval state is not readable from outside.
+
+**Plugins without a mod** are not rows: one count line under the list ("{n} plugins
+without a mod are not listed."). **No toast** on refresh; the standing state is the page.
 
 ### Memory (Settings → Memory)
 
@@ -10593,6 +10684,9 @@ equal.** No artificial enthusiasm, no emoji, no exclamation marks.
   off reads the neutral "turned off by a setting or by your organization's policy", and
   anything else reads "the mod did not load". Never promise protection, and never imply
   the user did something wrong.
+- **Mods audit chips** — facts in the form "can …": "can run processes", "can read every
+  prompt". Never a verdict: no "safe", "verified", "trusted", "secure", "malicious" or
+  "approved", in any language, and never a colour that grades a mod.
 - **Non-affiliation line** — "Harnu is an independent project, not affiliated with
   or endorsed by Anthropic." One complete sentence, so it ends with a period. It sits
   at the bottom of the Onboarding hero (`text-text-4`, 11px, 24px above it), the one
