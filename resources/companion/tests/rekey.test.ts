@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- test code reads wire bodies loosely */
 import { expect, test } from 'claude-code/testing'
 import { DRIFT_CHECK_MIN_MS, HEARTBEAT_MS } from '../hooks/contract'
 import { FIXTURE_CONN, FIXTURE_SID } from './fixtures/hello'
