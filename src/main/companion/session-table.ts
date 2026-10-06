@@ -54,6 +54,7 @@ export interface Binding {
   seq: SeqState
   parked: number // poll/ask requests currently held; always 0 in P1W1
   lastRequestAt: number
+  helloAfterSpawnMs: number // monotonic ms from minting the spawn token to its first redemption
   leaseLostAt: number | null // set once, by the sweep; never cleared (ARB-4c is P1W4's rule)
   state: 'bound' | 'ended' | 'closed'
   revoked: boolean // set by revoke(); cleared by the resume hello that follows
@@ -85,6 +86,8 @@ export interface BindingView {
   proven: FeatureId[]
   lease: 'live' | 'lost'
   state: 'bound' | 'ended' | 'closed'
+  /** P1W3: how long after the spawn the first hello landed (parity evidence; gate p95 < 2 000). */
+  helloAfterSpawnMs: number
   corroborated?: boolean // P4W3
 }
 
@@ -350,7 +353,8 @@ export class SessionTable {
       enabled: [...b.enabled],
       proven: [...b.proven],
       lease: this.leaseOf(b),
-      state: b.state
+      state: b.state,
+      helloAfterSpawnMs: b.helloAfterSpawnMs
     }
   }
 
@@ -417,6 +421,7 @@ export class SessionTable {
       seq: { last: 0 },
       parked: 0,
       lastRequestAt: now,
+      helloAfterSpawnMs: Math.max(0, now - entry.mintedAt),
       leaseLostAt: null,
       state: 'bound',
       revoked: false,

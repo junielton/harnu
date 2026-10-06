@@ -350,7 +350,10 @@ describe('electron shell', () => {
     const electron = {
       app: { getPath: () => userData, isPackaged: false },
       powerMonitor: { on: vi.fn(), removeListener: vi.fn() },
-      ipcMain: { handle: vi.fn((ch: string, fn: unknown) => void handlers.set(ch, fn)) }
+      ipcMain: {
+        handle: vi.fn((ch: string, fn: unknown) => void handlers.set(ch, fn)),
+        on: vi.fn()
+      }
     }
     vi.doMock('electron', () => electron)
     vi.resetModules()
@@ -377,7 +380,7 @@ describe('electron shell', () => {
     vi.doMock('electron', () => ({
       app: { getPath: () => tmpdir(), isPackaged: true },
       powerMonitor: { on: vi.fn(), removeListener: vi.fn() },
-      ipcMain: { handle: (ch: string) => void handlers.add(ch) }
+      ipcMain: { handle: (ch: string) => void handlers.add(ch), on: vi.fn() }
     }))
     vi.resetModules()
     const { registerCompanionIpc } = await import('../../src/main/companion/companion-ipc')

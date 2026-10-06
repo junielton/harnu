@@ -8,6 +8,7 @@
  */
 
 import type { Sid } from './contract'
+import type { IdentityParityRecord, IdentityVerdict } from './identity-parity-core'
 import type { CompanionMode } from './mode'
 import type { CliGate } from './version-gate'
 
@@ -60,4 +61,17 @@ export interface IdentityDiagnostics {
   conflicts: number
   reboundGap: number
   rebounds: number
+  /** The parity sink (P1W3 §13): counters never roll off, `recent` is the newest 20 records. */
+  parity: {
+    total: number
+    byVerdict: Partial<Record<IdentityVerdict, number>>
+    recent: IdentityParityRecord[]
+  }
+}
+
+/** What the renderer reports after a migration (`fireMigrate`): which binder moved which row. */
+export interface IdentityOutcome {
+  fromKey: string
+  sid: Sid
+  via: 'companion' | 'agent-correlation' | 'collapse' | 'resolved-window'
 }

@@ -21,8 +21,15 @@ import {
   type IdentityCause,
   type IdentityClaim,
   type IdentityDiagnostics,
-  type IdentityFact
+  type IdentityFact,
+  type IdentityOutcome
 } from './identity-core'
+import {
+  compareIdentity,
+  createParitySink,
+  type IdentityShape,
+  type LegacyVia
+} from './identity-parity-core'
 import type { CompanionMode } from './mode'
 import type { BindingView } from './session-table'
 import type { CliGate } from './version-gate'
@@ -37,10 +44,18 @@ export interface IdentityAdapterDeps {
   gateOf(b: BindingView): CliGate
   /** Full-list push to the renderer. Called only when the list changed. */
   push(claims: IdentityClaim[]): void
+  /** Monotonic ms; injected so the parity timings are testable. Default `performance.now()`. */
+  now?(): number
+  /** Epoch ms for a record's `at`. Default `Date.now()`. */
+  epochNow?(): number
+  /** What the PTY was spawned as (`claude-new`, `claude-fork`, `claude-resume`), if known. */
+  spawnKind?(owner: NonNullable<BindingView['owner']>): string | null
 }
 
 export interface IdentityAdapter {
   claims(): IdentityClaim[]
+  /** The renderer's report after a migration: feeds the parity record (spec §7.7, §13). */
+  recordOutcome(o: IdentityOutcome): void
   diagnostics(): IdentityDiagnostics
   dispose(): void
 }
@@ -53,7 +68,45 @@ export function createIdentityAdapter(deps: IdentityAdapterDeps): IdentityAdapte
   const claims = new Map<number, IdentityClaim>()
   const conflicted = new Map<number, Sid>() // binding → the sid already counted as a conflict
   const stats = { conflicts: 0, reboundGap: 0, rebounds: 0 }
+  const now = deps.now ?? ((): number => performance.now())
+  const epochNow = deps.epochNow ?? ((): number => Date.now())
+  const sink = createParitySink(500)
   let lastPushed = '[]'
+
+  /** A companion fact waiting for the legacy side (or the end of its binding). */
+  interface Seen {
+    binding: number
+    shape: IdentityShape
+    key: string
+    sid: Sid
+    helloAfterSpawnMs: number
+    spawnAt: number // monotonic
+  }
+  const seen = new Set<Seen>()
+  const shapeOf = (b: BindingView, cause: IdentityCause): IdentityShape => {
+    if (b.owner?.kind === 'tick') return 'tick'
+    if (cause === 'clear') return 'clear'
+    if (cause === 'resume' || cause === 'unknown') return 'in-session-resume'
+    if (b.trust === 'agent') return 'agent'
+    const kind = b.owner ? deps.spawnKind?.(b.owner) : null
+    if (kind === 'claude-fork') return 'fork'
+    if (kind === 'claude-resume' || b.sessionKey === b.sid) return 'resume'
+    return 'new'
+  }
+
+  /** Records what the companion saw for a claim, once per (binding, key, sid). */
+  function noteSeen(b: BindingView, fact: Extract<IdentityFact, { kind: 'claim' }>): void {
+    for (const s of seen)
+      if (s.binding === b.key && s.key === fact.key && s.sid === fact.sid) return
+    seen.add({
+      binding: b.key,
+      shape: shapeOf(b, fact.cause),
+      key: fact.key,
+      sid: fact.sid,
+      helloAfterSpawnMs: fact.cause === 'spawn' ? b.helloAfterSpawnMs : 0,
+      spawnAt: now() - (fact.cause === 'spawn' ? b.helloAfterSpawnMs : 0)
+    })
+  }
 
   const list = (): IdentityClaim[] => [...claims.values()].map((c) => ({ ...c }))
 
@@ -83,11 +136,68 @@ export function createIdentityAdapter(deps: IdentityAdapterDeps): IdentityAdapte
     return null
   }
 
+  /** A binding ended with companion facts nobody compared: the legacy side never bound. */
+  function flushSeen(binding: number): void {
+    for (const s of [...seen]) {
+      if (s.binding !== binding) continue
+      seen.delete(s)
+      sink.add(
+        compareIdentity(
+          {
+            shape: s.shape,
+            companion: { key: s.key, sid: s.sid, helloAfterSpawnMs: s.helloAfterSpawnMs },
+            legacy: null
+          },
+          epochNow()
+        )
+      )
+    }
+  }
+
+  function recordOutcome(o: IdentityOutcome): void {
+    // The companion fact is found by the transcript first (a crossed legacy binder moved another
+    // row to it: a mismatch), then by the row (the same row bound to another transcript).
+    const target =
+      [...seen].find((s) => s.sid === o.sid) ?? [...seen].find((s) => s.key === o.fromKey)
+    const legacy =
+      o.via === 'companion'
+        ? null
+        : {
+            key: o.fromKey,
+            sid: o.sid,
+            via: o.via as LegacyVia,
+            afterSpawnMs: target ? Math.max(0, Math.round(now() - target.spawnAt)) : 0
+          }
+    if (!target) {
+      // No hello for this session. In `off` nothing is expected from the mod: not a record.
+      if (deps.getMode() !== 'off' && legacy) {
+        sink.add(compareIdentity({ shape: 'new', companion: null, legacy }, epochNow()))
+      }
+      return
+    }
+    seen.delete(target)
+    sink.add(
+      compareIdentity(
+        {
+          shape: target.shape,
+          companion: {
+            key: target.key,
+            sid: target.sid,
+            helloAfterSpawnMs: target.helloAfterSpawnMs
+          },
+          legacy
+        },
+        epochNow()
+      )
+    )
+  }
+
   function recompute(b: BindingView): void {
     views.set(b.key, b)
     if (b.state !== 'bound' || b.owner === null) {
       claims.delete(b.key)
       conflicted.delete(b.key)
+      flushSeen(b.key)
       return
     }
     const fact: IdentityFact = classifyIdentity({
@@ -98,6 +208,7 @@ export function createIdentityAdapter(deps: IdentityAdapterDeps): IdentityAdapte
       liveKeyForSid: liveKeyForSid(b.sid, b.key)
     })
     if (fact.kind === 'claim') {
+      noteSeen(b, fact)
       conflicted.delete(b.key)
       claims.set(b.key, {
         key: fact.key,
@@ -114,6 +225,17 @@ export function createIdentityAdapter(deps: IdentityAdapterDeps): IdentityAdapte
       if (conflicted.get(b.key) !== fact.sid) {
         conflicted.set(b.key, fact.sid)
         stats.conflicts++
+        sink.add(
+          compareIdentity(
+            {
+              shape: shapeOf(b, causes.get(b.key) ?? 'resume'),
+              companion: { key: fact.key, sid: fact.sid, helloAfterSpawnMs: 0 },
+              legacy: null,
+              conflict: true
+            },
+            epochNow()
+          )
+        )
       }
     } else {
       conflicted.delete(b.key)
@@ -166,7 +288,12 @@ export function createIdentityAdapter(deps: IdentityAdapterDeps): IdentityAdapte
 
   return {
     claims: list,
-    diagnostics: () => ({ claims: list(), ...stats }),
+    recordOutcome,
+    diagnostics: () => ({
+      claims: list(),
+      ...stats,
+      parity: { ...sink.summary(), recent: sink.list().slice(-20) }
+    }),
     dispose() {
       for (const off of offs) off()
     }

@@ -55,6 +55,14 @@ export function setCompanionSessionKeyResolver(
 }
 
 let identity: IdentityAdapter | null = null
+let spawnKindOf: ((owner: SpawnOwner) => string | null) | null = null
+
+/** What a PTY owner was spawned as (`claude-new`, `claude-fork`, ...): the shape of a parity record. */
+export function setCompanionSpawnKindResolver(
+  fn: ((owner: SpawnOwner) => string | null) | null
+): void {
+  spawnKindOf = fn
+}
 
 /** Called once from `src/main/index.ts` beside `registerHookBridge`. */
 export async function registerCompanionHost(getWindow: () => BrowserWindow | null): Promise<void> {
@@ -70,11 +78,13 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
     host: core.facade,
     getMode: getCompanionMode,
     gateOf: (b) => gateForCli(b.cliVersion, surface.lastVerifiedCli),
+    spawnKind: (owner) => spawnKindOf?.(owner) ?? null,
     push: (claims) => getWindow()?.webContents.send('companion:identity', { claims })
   })
   core.facade.setIdentityDiagnostics(identity.diagnostics)
   registerCompanionIpc(core.facade, {
     identityClaims: () => identity?.claims() ?? [],
+    identityOutcome: (o) => identity?.recordOutcome(o),
     restartListener: core.restartListener
   })
   await core.register()

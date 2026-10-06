@@ -38,7 +38,7 @@ import type { ClaudeBootConfig, EndpointProfile } from '../main/claude-args'
 import type { Worker, Run } from '../main/scheduler-core'
 import type { SchedulerState } from '../main/scheduler-shell'
 import type { CompanionDiagnostics } from '../main/companion/host-core'
-import type { IdentityClaim } from '../main/companion/identity-core'
+import type { IdentityClaim, IdentityOutcome } from '../main/companion/identity-core'
 import type { RoutingTable, ResolvedRouting } from '../main/routing-policy'
 import type { PrStackSnapshot, WorktreeNode as PrStackWorktree } from '../main/pr-stack-core'
 import type { PrStackPrefs } from '../main/pr-stack-prefs'
@@ -2560,6 +2560,12 @@ const api = {
    */
   companionIdentityClaims: (): Promise<{ claims: IdentityClaim[] }> =>
     ipcRenderer.invoke('companion:identityClaims'),
+  /**
+   * Reports which binder migrated which row (`fireMigrate`), so main can compare it with the
+   * claim. Evidence only: it changes nothing.
+   */
+  companionIdentityOutcome: (o: IdentityOutcome): void =>
+    ipcRenderer.send('companion:identityOutcome', o),
   /** The full claim list again, whenever it changes (main pushes the whole list). */
   onCompanionIdentity: (cb: (payload: { claims: IdentityClaim[] }) => void): (() => void) =>
     subscribe('companion:identity', cb),

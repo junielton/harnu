@@ -41,7 +41,11 @@ import { forceDowngradePermission } from './mcp/agent-boot'
 import { orderMcpArgs } from './mcp/config-file'
 import type { SpawnOwner } from './companion/session-table'
 import { PtySessionIndex } from './pty-session-index'
-import { companionHost, setCompanionSessionKeyResolver } from './companion/host'
+import {
+  companionHost,
+  setCompanionSessionKeyResolver,
+  setCompanionSpawnKindResolver
+} from './companion/host'
 import { pruneTaskState } from './hook-bridge'
 import { RingBuffer } from './pty-ring-buffer'
 import { foregroundProcessName } from './detect/foreground-process'
@@ -536,6 +540,9 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
   // now, so a `pty:rekey` below moves it without any bookkeeping of the companion's own.
   setCompanionSessionKeyResolver((owner) =>
     owner.kind === 'pty' ? (sessionIndex.getSessionKey(owner.ptyId) ?? null) : null
+  )
+  setCompanionSpawnKindResolver((owner) =>
+    owner.kind === 'pty' ? (ptys.get(owner.ptyId)?.kind ?? null) : null
   )
 
   function flushNow(id: string): void {

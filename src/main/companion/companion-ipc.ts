@@ -9,11 +9,13 @@
 import { randomUUID } from 'node:crypto'
 import { app, ipcMain } from 'electron'
 import type { CompanionHostFacade } from './host-core'
-import type { IdentityClaim } from './identity-core'
+import type { IdentityClaim, IdentityOutcome } from './identity-core'
 
 export interface CompanionIpcExtras {
   /** The renderer pulls the claim list at store init, so a window reload loses nothing (P1W3). */
   identityClaims(): IdentityClaim[]
+  /** The renderer's report after a migration (`fireMigrate`): parity evidence only. */
+  identityOutcome(o: IdentityOutcome): void
   /** Developer aid (LV-P1W3-g): stops and starts the listener. */
   restartListener(): Promise<void>
 }
@@ -24,6 +26,16 @@ export function registerCompanionIpc(
 ): void {
   ipcMain.handle('companion:diagnostics', () => host.diagnostics())
   ipcMain.handle('companion:identityClaims', () => ({ claims: extras.identityClaims() }))
+  ipcMain.on('companion:identityOutcome', (_e, o: unknown) => {
+    const r = o as Partial<IdentityOutcome> | null
+    if (!r || typeof r.fromKey !== 'string' || typeof r.sid !== 'string') return
+    if (
+      !['companion', 'agent-correlation', 'collapse', 'resolved-window'].includes(String(r.via))
+    ) {
+      return
+    }
+    extras.identityOutcome({ fromKey: r.fromKey, sid: r.sid, via: r.via as IdentityOutcome['via'] })
+  })
 
   // The dev mint hands a spawn token to the renderer, so it is registered only in an unpackaged
   // run. A packaged build has no handler at all: the preload call rejects.

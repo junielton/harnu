@@ -30,6 +30,7 @@ async function rig(opts: { mode?: CompanionMode; gate?: CliGate } = {}) {
   const gate = { value: opts.gate ?? ('ok' as CliGate) }
   /** What `pty:rekey` would have moved: ptyId → row key. */
   const keys = new Map<string, string>()
+  const kinds = new Map<string, string>()
   const host = createCompanionHost({
     dir,
     mode: m.mode,
@@ -41,8 +42,12 @@ async function rig(opts: { mode?: CompanionMode; gate?: CliGate } = {}) {
   await host.register()
   host.facade.setEnablePolicy((b) => enableFor(b, m.mode.getMode(), gate.value))
   const pushes: IdentityClaim[][] = []
+  let mono = 0
   const adapter = createIdentityAdapter({
     host: host.facade,
+    now: () => mono,
+    epochNow: () => 1_790_000_000_000,
+    spawnKind: (o) => (o.kind === 'pty' ? (kinds.get(o.ptyId) ?? null) : null),
     getMode: m.mode.getMode,
     gateOf: () => gate.value,
     push: (c) => void pushes.push(c)
@@ -78,6 +83,10 @@ async function rig(opts: { mode?: CompanionMode; gate?: CliGate } = {}) {
     rebound,
     pushes,
     keys,
+    kinds,
+    advance: (ms: number) => {
+      mono += ms
+    },
     mode: m,
     gate,
     tick: (ms: number) => {
@@ -226,5 +235,79 @@ describe('identity adapter (IA)', () => {
     const d = x.host.facade.diagnostics()
     expect(d.identity).toMatchObject({ conflicts: 0, reboundGap: 0, rebounds: 0 })
     expect(JSON.stringify(d)).not.toMatch(/sp_|c_[0-9a-f]{32}/) // SEC-8: no token, no conn
+  })
+
+  describe('parity records', () => {
+    it('the legacy binder agreeing with the claim is a match, with timings', async () => {
+      const x = await rig()
+      await x.bind('pty-1', 'synthetic-aaaa')
+      x.advance(2_400)
+      x.adapter.recordOutcome({ fromKey: 'synthetic-aaaa', sid: S1, via: 'collapse' })
+      const d = x.adapter.diagnostics().parity
+      expect(d.total).toBe(1)
+      expect(d.byVerdict).toEqual({ match: 1 })
+      expect(d.recent[0]).toMatchObject({
+        shape: 'new',
+        verdict: 'match',
+        legacy: { via: 'collapse', afterSpawnMs: 2_400 }
+      })
+      expect(JSON.stringify(d)).not.toContain('synthetic-aaaa') // hashes only
+    })
+
+    it('a claim-driven migration (via companion) is companion-only, legacy null', async () => {
+      const x = await rig()
+      await x.bind('pty-1', 'synthetic-aaaa')
+      x.adapter.recordOutcome({ fromKey: 'synthetic-aaaa', sid: S1, via: 'companion' })
+      expect(x.adapter.diagnostics().parity.recent[0]).toMatchObject({
+        verdict: 'companion-only',
+        legacy: null
+      })
+    })
+
+    it('crossed binders are a mismatch; the same outcome is never counted twice', async () => {
+      const x = await rig({ mode: 'shadow' })
+      await x.bind('pty-1', 'synthetic-aaaa')
+      x.adapter.recordOutcome({ fromKey: 'synthetic-zzzz', sid: S1, via: 'agent-correlation' })
+      x.adapter.recordOutcome({ fromKey: 'synthetic-zzzz', sid: S1, via: 'agent-correlation' })
+      expect(x.adapter.diagnostics().parity.byVerdict).toEqual({ mismatch: 1, 'legacy-only': 1 })
+    })
+
+    it('no hello for the row: legacy-only, except in mode off where nothing is expected', async () => {
+      const x = await rig({ mode: 'shadow' })
+      x.adapter.recordOutcome({ fromKey: 'synthetic-nohello', sid: S3, via: 'collapse' })
+      expect(x.adapter.diagnostics().parity.byVerdict).toEqual({ 'legacy-only': 1 })
+      const off = await rig({ mode: 'shadow' })
+      off.mode.set('off') // the listener stays up; the family reads off
+      off.adapter.recordOutcome({ fromKey: 'synthetic-nohello', sid: S3, via: 'collapse' })
+      expect(off.adapter.diagnostics().parity.total).toBe(0)
+    })
+
+    it('a binding that ends before any legacy bind records companion-only', async () => {
+      const x = await rig()
+      await x.bind('pty-1', 'synthetic-aaaa')
+      x.host.facade.releaseSpawn({ kind: 'pty', ptyId: 'pty-1' }, 'pty-exit')
+      expect(x.adapter.diagnostics().parity.byVerdict).toEqual({ 'companion-only': 1 })
+    })
+
+    it('shape follows the spawn: agent, fork, resume, clear and in-session resume', async () => {
+      const x = await rig()
+      x.kinds.set('pty-f', 'claude-fork')
+      const fork = await x.bind('pty-f', 'synthetic-fork', S1)
+      void fork
+      x.adapter.recordOutcome({ fromKey: 'synthetic-fork', sid: S1, via: 'collapse' })
+      await x.bind('pty-r', S2, S2) // key === sid: a resumed or woken session
+      x.host.facade.releaseSpawn({ kind: 'pty', ptyId: 'pty-r' }, 'pty-exit')
+      const shapes = x.adapter.diagnostics().parity.recent.map((r) => r.shape)
+      expect(shapes).toContain('fork')
+    })
+
+    it('a conflict records one conflict verdict and no claim', async () => {
+      const x = await rig()
+      await x.bind('pty-1', 'row-one', S1)
+      const second = await x.bind('pty-2', 'row-two', S2)
+      await x.rebound({ conn: second.conn }, S2, S1, 'resume')
+      await tick()
+      expect(x.adapter.diagnostics().parity.byVerdict).toMatchObject({ conflict: 1 })
+    })
   })
 })
