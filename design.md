@@ -6091,7 +6091,7 @@ new token, no new component**: `SegmentedControl`, `SettingHint`, the bordered
 | Mods run unsandboxed inside Claude Code. This list shows what each    |
 | one can do, from a static read of its source.          <- SettingHint |
 | [ Global ][ my-repo ]                             <- SegmentedControl |
-| (#mods-companion: the Harnu mod switches, mounted by later waves)     |
+| (#mods-companion: the Harnu mod switches; "Harnu mod outside Harnu")  |
 |                                                                      |
 |  harnu-companion                                   Harnu mod · 0.1.0 > |
 |  (can use the network) (can decide permissions) (draws in the term…)  |
@@ -6147,7 +6147,60 @@ adds its own installed plugins, `.claude/skills`, staged skills and Claude Boot
 
 **Settings region (`#mods-companion`)** — an element directly above the list, empty on a
 build without the Harnu mod switches (it takes no space then). The Harnu mod's own
-switches mount there; they are controls of Harnu's mod and never of anyone else's.
+switches mount there; they are controls of Harnu's mod and never of anyone else's. Today
+it holds one block, "Harnu mod outside Harnu" (next section).
+
+### Harnu mod outside Harnu (T389)
+
+The one switch of the settings region (`HarnuModExternal.vue`, mounted in `#mods-companion`):
+it lets `claude` sessions started in the operator's **own terminal** load the Harnu mod too.
+It is **not** the Skills tab's "Also outside Harnu" switch, which copies a `SKILL.md`; this
+one adds one folder to `env.CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`. Default
+**off**. **No new token and no new component**: `ToggleSwitch`, `SettingHint`, the bordered
+`--surface` row of the Skills Advanced block, the confirm-dialog anatomy of
+`MissionCloseConfirmDialog` (Teleport, overlay-fade backdrop, fade-in-scale card, focus trap,
+Esc and backdrop close), the canonical `Button`, and a `danger` toast for a refusal.
+
+```
+> ADVANCED
+  Sessions you start in your own terminal can load the Harnu mod too. They
+  report their state to Harnu on this machine. Harnu never starts prompts in
+  them and does not hold their approvals.                       <- SettingHint
+  +------------------------------------------------------------------+
+  | Harnu mod outside Harnu                                     [ o--] |
+  | ~/.claude/settings.json · env.CLAUDE_CODE_PLUGIN_DIRS            |
+  +------------------------------------------------------------------+
+  Last outside session seen: 2 min ago                          <- SettingHint
+```
+
+- **Block** — a collapsed **Advanced** button first (the Skills pane's eyebrow button:
+  `chevron-right` / `chevron-down` 12px, 11px / 500 uppercase `--text-3`, `gap: 5px`). Opened,
+  one `SettingHint`, then one bordered `--surface` row (`padding: 8px 10px`, radius 6px): the
+  label in `--text-2` 12px, the settings path in `font-mono` 11px `--text-4` (verbatim, never
+  translated), the `ToggleSwitch` on the right. Under the row one `SettingHint`:
+  `Last outside session seen: {time}` or `No outside session has reported yet.`
+- **The switch is the key.** It reads **on** only while the entry is in the file: a user who
+  removes the path by hand sees it **off** on the next read. It is disabled (the toggle's
+  per-option disabled treatment) while the Harnu mod itself is off, with the one hint
+  `The Harnu mod is off. Turn it on first.`
+- **Turning it on** opens the confirm dialog, always, every time: nothing is written before
+  **Turn on**; **Cancel** and Esc leave everything untouched. Initial focus is **Cancel**.
+  The dialog is the disclosure and names: the file that changes, that every `claude` session
+  started in any terminal is affected, that it runs unsandboxed and talks only to Harnu on this
+  machine, and that turning the switch off removes exactly that entry. The path of the entry
+  is shown in `font-mono` 11px `--text-3`. The confirm button is the **default** variant
+  (never `danger`, never `success`: it is an opt-in, not a verdict).
+- **Turning it off** needs no dialog; it undoes exactly what was written.
+- **A refusal** is a `danger` toast with one sentence and nothing else (`harnuMod.external.refused.*`),
+  and the switch stays where it was. When the undo cannot run because the file no longer
+  parses, the toast adds `To remove it by hand, delete {path} from CLAUDE_CODE_PLUGIN_DIRS.`
+- **Wording** (§8): a managed cause is named only when a managed settings file was found
+  (`Blocked by your organization's policy.`); when only the probe shows mods are off the
+  sentence is the neutral `Turned off by a setting or by your organization's policy.` No
+  workaround is ever offered on a managed machine.
+- **Sidebar** — no chip, no marker. An outside session with a corroborated live binding
+  simply has real state: its dot and the "Active elsewhere" zone follow turn events instead of
+  the registry guess. The Harnu mod line of the hover preview gains the suffix below.
 
 **Banners and hints** — the same pattern as the Skills collision hint: `triangle-alert`
 12px + 11px `--text-3` text, no fill, no colour. Policy off (`Turned off by a setting or
@@ -6527,8 +6580,9 @@ the transcript JSONL itself (no longer just from the statusLine):
 `--text-4` 11px, `margin-bottom: 6px`, the same anatomy as the mode line. It reads **Harnu
 mod: live**, **Harnu mod: off** or **Harnu mod: legacy — {reason}** (`harnuMod.state.*`,
 `harnuMod.reason.*`); `live`, `off` and `legacy` stay untranslated state nouns. It is absent
-when the state is `null` (a parked or shell row, an external session, a spawn still inside
-its 15 s grace). `legacy` is the same quiet `--text-4` as the rest of the line: never
+when the state is `null` (a parked or shell row, an outside session that is not corroborated
+yet, a spawn still inside its 15 s grace). A corroborated outside session reads **Harnu mod:
+live · outside Harnu** (`harnuMod.state.live` + `harnuMod.state.outside`, joined by `·`). `legacy` is the same quiet `--text-4` as the rest of the line: never
 `--warning`, never `--red`, no icon. The line states a fact and never implies protection.
 
 **Footer: messages · agents.** `--text-4` `11px` mono, `tabular-nums`: message count

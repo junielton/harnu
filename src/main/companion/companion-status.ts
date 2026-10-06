@@ -17,6 +17,7 @@ import {
 import {
   HELLO_GRACE_MS,
   deriveCompanionState,
+  deriveOutsideState,
   type CompanionState,
   type StateFacts
 } from './companion-state-core'
@@ -64,7 +65,9 @@ export interface StatusDeps {
   host: Pick<
     CompanionHostFacade,
     'bindingForSession' | 'bindingForSid' | 'spawnRecord' | 'helloRefusalFor'
-  >
+  > &
+    /** P4W3: the live outside bindings; absent in a host that has none. */
+    Partial<Pick<CompanionHostFacade, 'externalBindings'>>
   sessionKeyOf(owner: SpawnOwner): string | null
   /** What the PTY behind this owner was spawned as, or null when none runs. */
   kindOf(owner: SpawnOwner): string | null
@@ -142,6 +145,24 @@ export function buildCompanionStatus(deps: StatusDeps): CompanionStatus {
     if (view && view.sid !== key) sessions[view.sid] = status
   }
   if (probeWanted && deps.probe() === null) deps.requestProbe()
+
+  // P4W3: an outside session is keyed by its `sid`, which is its row key once the transcript
+  // watcher created the row. An uncorroborated binding gets no entry at all (P4W3-S2).
+  for (const view of deps.host.externalBindings?.() ?? []) {
+    const state = deriveOutsideState({
+      corroborated: view.corroborated === true,
+      leaseLive: view.lease === 'live',
+      ended: view.state !== 'bound',
+      enabledEmpty: view.enabled.length === 0
+    })
+    if (state === null) continue
+    sessions[view.sid] = {
+      state,
+      ownership: Object.fromEntries(
+        FAMILIES.map((f) => [f, deps.arbiter.ownerFor(view.sid, f)])
+      ) as SessionStatus['ownership']
+    }
+  }
 
   return {
     enabled: deps.enabled(),

@@ -25,7 +25,8 @@ export type LegacyReason =
   | 'notInjected'
 
 export type CompanionState =
-  { state: 'live' } | { state: 'off' } | { state: 'legacy'; reason: LegacyReason }
+  /** `outside`: a session Harnu did not spawn, corroborated by Harnu's own watchers (P4W3). */
+  { state: 'live'; outside?: true } | { state: 'off' } | { state: 'legacy'; reason: LegacyReason }
 
 /** Host-only (not a contract constant): how long a spawn may take to say hello. */
 export const HELLO_GRACE_MS = 15_000
@@ -61,6 +62,21 @@ export function sideloadRefusalMatches(output: string | null, texts: readonly st
 }
 
 const legacy = (reason: LegacyReason): CompanionState => ({ state: 'legacy', reason })
+
+/**
+ * The state of an outside session (P4W3): `live` only for a binding that Harnu's watchers
+ * corroborated and whose lease is live; otherwise no line. An outside session is never `legacy`
+ * or `off`: Harnu did not start it, so it has no expectation to fail (§10).
+ */
+export function deriveOutsideState(b: {
+  corroborated: boolean
+  leaseLive: boolean
+  ended: boolean
+  enabledEmpty: boolean
+}): CompanionState | null {
+  if (!b.corroborated || b.ended || b.enabledEmpty || !b.leaseLive) return null
+  return { state: 'live', outside: true }
+}
 
 export function deriveCompanionState(f: StateFacts): CompanionState | null {
   // 1

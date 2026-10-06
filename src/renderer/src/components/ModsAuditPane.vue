@@ -21,6 +21,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, ChevronRight, TriangleAlert } from 'lucide-vue-next'
 import { useSessionsStore } from '../stores/sessions'
+import HarnuModExternal from './HarnuModExternal.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
 import SettingHint from './ui/SettingHint.vue'
 import type { ModRow, ModsAuditView } from '../../../preload'
@@ -215,8 +216,10 @@ const captionStyle = 'font-size: 11px; margin-top: 8px; margin-bottom: 2px'
         {{ $t('modsAudit.scope.projectDisabledHint') }}
       </SettingHint>
 
-      <!-- Settings region: the Harnu mod's own switches mount here (later waves). -->
-      <div id="mods-companion" class="empty:hidden" style="margin-bottom: 12px" />
+      <!-- Settings region: the Harnu mod's own switches mount here (design §6 → Mods). -->
+      <div id="mods-companion" class="empty:hidden" style="margin-bottom: 12px">
+        <HarnuModExternal />
+      </div>
 
       <!-- Banners: a hint line, no fill and no colour (design §6 → Mods) -->
       <div

@@ -1601,6 +1601,9 @@
       "toggleAria": "Show or hide {state} cards",
       "hiddenAttention": "{count} hidden by the filter",
       "allHidden": "All fleet cards are hidden by your filter — tap to show all"
+    },
+    "row": {
+      "outside": "outside Harnu"
     }
   },
   "activityBell": {
@@ -3279,7 +3282,8 @@
     "state": {
       "live": "Harnu mod: live",
       "off": "Harnu mod: off",
-      "legacy": "Harnu mod: legacy — {reason}"
+      "legacy": "Harnu mod: legacy — {reason}",
+      "outside": "outside Harnu"
     },
     "reason": {
       "cliTooOld": "Claude Code older than 2.1.287",
@@ -3303,6 +3307,32 @@
       },
       "openSettings": "Open Settings",
       "unloaded": "Harnu mod unloaded in {session}. Running on hooks."
+    },
+    "external": {
+      "title": "Advanced",
+      "hint": "Sessions you start in your own terminal can load the Harnu mod too. They report their state to Harnu on this machine. Harnu never starts prompts in them and does not hold their approvals.",
+      "label": "Harnu mod outside Harnu",
+      "path": "~/.claude/settings.json · env.CLAUDE_CODE_PLUGIN_DIRS",
+      "lastSeen": "Last outside session seen: {time}",
+      "neverSeen": "No outside session has reported yet.",
+      "needsMod": "The Harnu mod is off. Turn it on first.",
+      "confirm": {
+        "title": "Load the Harnu mod outside Harnu?",
+        "body": "Harnu adds one folder to `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`. Every `claude` session you start in any terminal then loads the Harnu mod. It runs unsandboxed inside `claude` and talks only to Harnu on this machine. Turning this off removes exactly that entry.",
+        "entry": "Folder to add",
+        "cancel": "Cancel",
+        "accept": "Turn on"
+      },
+      "refused": {
+        "unparseable": "`~/.claude/settings.json` is not valid JSON. Nothing was changed.",
+        "occupied": "`env.CLAUDE_CODE_PLUGIN_DIRS` has a shape Harnu does not edit. Nothing was changed.",
+        "symlink": "`~/.claude/settings.json` is a symlink. Harnu does not replace it. Nothing was changed.",
+        "modsOff": "Turned off by a setting or by your organization's policy.",
+        "policy": "Blocked by your organization's policy.",
+        "noCompanion": "The Harnu mod is off. Turn it on first.",
+        "failed": "Could not update `~/.claude/settings.json`."
+      },
+      "manualRemove": "To remove it by hand, delete {path} from `CLAUDE_CODE_PLUGIN_DIRS`."
     }
   }
 }

@@ -40,6 +40,7 @@ function view(over: Partial<BindingView> = {}): BindingView {
 function rig(
   over: {
     bindings?: BindingView[]
+    external?: BindingView[]
     kinds?: Record<string, string | null>
     probe?: StatusDeps['probe']
     r?: RolloutView
@@ -75,7 +76,8 @@ function rig(
         spawned.some((x) => JSON.stringify(x.owner) === JSON.stringify(o))
           ? { cwd: '/x', trust: 'operator', state: 'redeemed' }
           : null,
-      helloRefusalFor: () => null
+      helloRefusalFor: () => null,
+      externalBindings: () => over.external ?? []
     },
     sessionKeyOf: (o) => (o.kind === 'pty' ? `row-${o.ptyId.slice(1)}` : null),
     kindOf: (o) => (o.kind === 'pty' ? (over.kinds?.[o.ptyId] ?? 'claude-new') : null),
@@ -192,5 +194,46 @@ describe('buildCompanionStatus', () => {
     const s = buildCompanionStatus(deps)
     expect(s.sessions['row-1'].state).toEqual({ state: 'live' })
     expect(s.sessions['row-2'].state).toEqual({ state: 'legacy', reason: 'notInjected' })
+  })
+})
+
+describe('an outside session (P4W3)', () => {
+  const outside = (over: Partial<BindingView> = {}): BindingView =>
+    view({
+      key: 9,
+      owner: null,
+      trust: 'read-only',
+      sid: 'outside-sid',
+      sessionKey: null,
+      profile: 'external',
+      corroborated: true,
+      ...over
+    })
+
+  it('has a "live · outside" state only once corroborated, keyed by its sid', () => {
+    const { deps } = rig({ spawned: [], external: [outside()] })
+    const s = buildCompanionStatus(deps)
+    expect(s.sessions['outside-sid'].state).toEqual({ state: 'live', outside: true })
+    expect(Object.keys(s.sessions['outside-sid'].ownership)).toHaveLength(8)
+  })
+
+  it('an uncorroborated, ended, inert or lease-lost binding has no line at all', () => {
+    for (const over of [
+      { corroborated: false },
+      { state: 'ended' as const },
+      { enabled: [] },
+      { lease: 'lost' as const }
+    ]) {
+      const { deps } = rig({ spawned: [], external: [outside(over)] })
+      expect(buildCompanionStatus(deps).sessions['outside-sid']).toBeUndefined()
+    }
+  })
+
+  it('never owns a family in this wave: the arbiter keeps it legacy', () => {
+    const { deps } = rig({ spawned: [], external: [outside({ proven: ['sense.identity'] })] })
+    const s = buildCompanionStatus(deps)
+    for (const o of Object.values(s.sessions['outside-sid'].ownership)) {
+      expect(o.owner).toBe('legacy')
+    }
   })
 })

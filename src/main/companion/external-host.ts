@@ -24,6 +24,8 @@ export interface ExternalPaneState {
   path: string
   /** What Harnu added to `CLAUDE_CODE_PLUGIN_DIRS`, for the manual-removal sentence. */
   entry: string | null
+  /** The folder the next "on" would add: what the confirm dialog shows, exactly. */
+  candidate: string | null
   /** Epoch ms of the last outside session Harnu corroborated, or null (never, this run). */
   lastSeenAt: number | null
   /** The Harnu mod itself is on (the kill switch): the switch cannot be turned on without it. */
@@ -69,10 +71,12 @@ export function createExternalHost(deps: ExternalHostDeps): ExternalHost {
       deps.key.set(false)
       binding.setSwitch(false)
     }
+    const candidate = st.entry ?? (await deps.install.ensureStaged().catch(() => null))
     return {
       on: deps.key.get(),
       path: st.path,
       entry: st.entry,
+      candidate,
       lastSeenAt: binding.lastSeenAt(),
       companionOn: deps.companionOn(),
       live: binding.counts().live

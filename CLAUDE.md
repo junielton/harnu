@@ -307,6 +307,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Agent-action confirm overlay (§6)                 | `src/renderer/src/components/McpConfirmOverlay.vue`                              |
 | Bundled skills pane (Settings tab, T217)          | `src/renderer/src/components/BundledSkillsPane.vue`                              |
 | Mods audit pane (Settings tab, T389)              | `src/renderer/src/components/ModsAuditPane.vue`                                  |
+| Harnu mod outside Harnu switch (Mods tab, T389)   | `src/renderer/src/components/HarnuModExternal.vue` + `lib/external-view.ts`      |
 | Usage Dashboard (takeover, §6 — T47 P6)           | `src/renderer/src/components/UsageDashboard.vue`                                 |
 | Usage Dashboard KPI strip (§6)                    | `src/renderer/src/components/UsageDashboardKpiStrip.vue`                         |
 | Usage Dashboard stacked chart (§6)                | `src/renderer/src/components/UsageDashboardStackChart.vue`                       |
