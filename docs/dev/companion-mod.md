@@ -107,3 +107,19 @@ The spawn path talks to P1W1's host only through `companionHost.mintSpawnToken(m
 `TrustClass` types. With the mode `off` none of them is called. To watch the ledger from a live
 instance use `window.api.companionDiagnostics()` (`pendingSpawns` is 1 while a minted token has not
 been released, 0 after the PTY exits); see `live-verify-second-instance.md`.
+
+## The Harnu mod state, the probe and the kill switch (P1W4)
+
+`companion-prefs.json` (in `<userData>`) holds the kill switch (`enabled`), the per-family modes (`families`), the
+developer default (`mode`), the ramp escape hatch (`allFolders`) and the feature keys (`keys`); only overrides are
+written, and the shipped default is `shadow` for every family behind the one-time notice. `projects.json` carries the
+per-folder ramp (`companionActive`). `parity/<stream>.ndjson` under `<userData>/companion/` is the persisted parity
+ledger; `scripts/dev/companion-parity-export.mjs --user-data <dir> --stream <name>` turns it into a scrubbed fixture.
+
+To drive an isolated instance from a recipe, launch `electron <repo>` (the repository as the app path), not
+`electron out/main/index.js`: with the latter `app.getAppPath()` is `out/main` and the mod cannot be staged. Rebuild
+with `npx electron-vite build` after a main-process change, because the instance runs `out/`.
+
+`claude-policy-probe.ts` runs `claude plugin test <staged dir>` once per boot and CLI binary, lazily, and only when a
+spawn carried the mod and never said hello; `classifyPolicyProbe` maps its output (smoke addendum §15.1). In dev mode
+the staged directory is the repository folder, whose `tests/` the probe would run when mods load.
