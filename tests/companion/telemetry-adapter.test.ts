@@ -8,6 +8,12 @@ import {
   createTelemetryAdapter,
   type TelemetryParityDetail
 } from '../../src/main/companion/ingest/telemetry-adapter'
+import {
+  clearPlanUsageGate,
+  latestPlanReading,
+  noteLeasedReading,
+  planUsagePollAllowed
+} from '../../src/main/companion/ingest/plan-usage-gate'
 import { createSessionArbiter } from '../../src/main/companion/session-arbiter'
 import type { SessionTelemetry } from '../../src/main/statusline-parse'
 import { createTelemetryStore } from '../../src/main/telemetry-store'
@@ -97,13 +103,15 @@ async function rig(opts: RigOpts = {}) {
     send: () => undefined
   })
   const facts: { source: string; sid: string; k: string; d: TelemetryParityDetail }[] = []
+  clearPlanUsageGate()
   const adapter = createTelemetryAdapter({
     host: host.facade,
-    owns: (sid) => arbiter.owns(sid, 'telemetry'),
+    owns: (sid, family) => arbiter.owns(sid, family),
     onOwnershipChange: (fn) => arbiter.onOwnershipChange(fn),
     onModeChange: (fn) => mode.mode.onChange(fn),
     store,
     now: () => 1_790_000_050_000,
+    planGate: { note: noteLeasedReading, clear: clearPlanUsageGate },
     recordFact: (source, sid, k, d) => void facts.push({ source, sid, k, d }),
     isBound: () => opts.bound ?? true
   })
@@ -281,5 +289,69 @@ describe('telemetry adapter', () => {
     const x = await rig()
     vi.spyOn(x.store, 'ingestCompanion')
     await expect(x.send(A3)).resolves.toBeDefined()
+  })
+
+  describe('plan-usage gate (S2)', () => {
+    const NOW = 1_790_000_050_000
+
+    it('an owned reading with a window closes the gate for 90 s, then it reopens', async () => {
+      const x = await rig()
+      expect(planUsagePollAllowed(NOW)).toBe(true)
+      await x.send(A3)
+      expect(planUsagePollAllowed(NOW + 30_000)).toBe(false)
+      expect(planUsagePollAllowed(NOW + 91_000)).toBe(true)
+    })
+
+    it('a reading in shadow never closes it (AC-P1W6-13, through the adapter)', async () => {
+      const x = await rig({ family: 'shadow' })
+      await x.send(A3)
+      expect(planUsagePollAllowed(NOW + 1_000)).toBe(true)
+    })
+
+    it('a reading with no window does not close it (API-key user, resume handshake)', async () => {
+      const x = await rig()
+      await x.send({ ...A3, rateLimits: [] })
+      expect(planUsagePollAllowed(NOW + 1_000)).toBe(true)
+    })
+
+    it('planUsage and telemetry are separate families: one active, one shadow', async () => {
+      const x = await rig()
+      x.rollout.families = { telemetry: 'shadow', planUsage: 'active' }
+      x.store.ingestStatusline(SL)
+      await x.send(A3)
+      expect(mine(x)).toEqual(SL) // telemetry did not write
+      expect(planUsagePollAllowed(NOW + 1_000)).toBe(false) // planUsage did count
+    })
+
+    it('kill switch mid-session: the gate is cleared and shouldPoll returns true (AC-P1W6-26)', async () => {
+      const x = await rig()
+      x.store.ingestStatusline(SL)
+      await x.send(A3)
+      expect(planUsagePollAllowed(NOW + 1_000)).toBe(false)
+      x.rollout.enabled = false
+      x.host.facade.revoke(x.view())
+      expect(mine(x)).toEqual(SL)
+      expect(planUsagePollAllowed(NOW + 1_000)).toBe(true)
+    })
+
+    it('the only owning session losing its lease reopens the gate at once', async () => {
+      const x = await rig()
+      await x.send(A3)
+      expect(planUsagePollAllowed(NOW + 1_000)).toBe(false)
+      x.advance(LEASE_TTL_MS + 1)
+      expect(planUsagePollAllowed(NOW + 1_000)).toBe(true)
+    })
+
+    it('records the poll-side comparison input: the newest owned reading', async () => {
+      const x = await rig()
+      await x.send(A3)
+      expect(latestPlanReading()).toEqual({
+        at: NOW,
+        h5: 21,
+        d7: 54,
+        r5: Date.parse('2026-10-02T18:00:00.000Z'),
+        r7: Date.parse('2026-10-05T19:00:00.000Z')
+      })
+    })
   })
 })

@@ -60,7 +60,7 @@ async function realHost() {
   })
   const adapter = createTelemetryAdapter({
     host: host.facade,
-    owns: (sid) => arbiter.owns(sid, 'telemetry'),
+    owns: (sid, family) => arbiter.owns(sid, family),
     onOwnershipChange: (fn) => arbiter.onOwnershipChange(fn),
     onModeChange: () => () => undefined,
     store

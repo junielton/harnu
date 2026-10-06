@@ -22,13 +22,21 @@ import type { SessionTelemetry } from '../../statusline-parse'
 import type { TelemetryStore } from '../../telemetry-store'
 import { mapUsageMeasured, type MappedUsage } from './usage-map-core'
 import './parity-telemetry-rule' // registers the `telemetry` rule
+import './parity-planusage-rule' // registers the `planUsage` rule
+
+export interface PlanDetail {
+  h5: number | null
+  d7: number | null
+  r5: number | null
+  r7: number | null
+}
 
 export type TelemetryParityDetail = Record<string, string | number | boolean | null>
 
 export interface TelemetryAdapterDeps {
   host: Pick<CompanionHostFacade, 'bus' | 'onBindingChange' | 'markProven' | 'registerEventTypes'>
-  /** `owns(sid, 'telemetry')`. */
-  owns(sid: string): boolean
+  /** The arbiter's answer for one family of this session. */
+  owns(sid: string, family: 'telemetry' | 'planUsage'): boolean
   onOwnershipChange(fn: () => void): () => void
   /** The mode seam's change listener (a flip to or from `off`, `shadow` or `active`). */
   onModeChange(fn: () => void): () => void
@@ -38,6 +46,11 @@ export interface TelemetryAdapterDeps {
   >
   /** Host receive time, epoch ms: freshness is never the mod's clock. */
   now?(): number
+  /** The plan-usage gate (S2): an owned reading with a window closes it for 90 s. */
+  planGate?: {
+    note(r: { owned: boolean; windows: number; hostNow: number }, detail?: PlanDetail): void
+    clear(): void
+  }
   /** The parity ledger (`recordFact`); a no-op until the app configures it. */
   recordFact?(
     source: FactSource,
@@ -94,17 +107,47 @@ const hasReading = (m: MappedUsage): boolean =>
 export function createTelemetryAdapter(deps: TelemetryAdapterDeps): TelemetryAdapter {
   const now = deps.now ?? ((): number => Date.now())
 
-  /** Re-asks the arbiter for every session the companion writes for. */
+  const ownsSafe = (sid: string, family: 'telemetry' | 'planUsage'): boolean => {
+    try {
+      return deps.owns(sid, family)
+    } catch {
+      return false // fail-safe: legacy writes
+    }
+  }
+
+  /** Sessions whose owned reading is what keeps the plan-usage gate closed. */
+  const planSids = new Set<string>()
+
+  /**
+   * Re-asks the arbiter for every session the companion writes for, and for every session that
+   * counts toward the plan-usage gate. When the last of those stops owning `planUsage` (the kill
+   * switch, a lease lost, a mode flip) the gate is cleared at once: the next tick polls.
+   */
   function reconcile(): void {
     for (const sid of deps.store.companionSids()) {
-      let owned = false
-      try {
-        owned = deps.owns(sid)
-      } catch {
-        owned = false // fail-safe: legacy writes
-      }
-      if (!owned) deps.store.dropCompanion(sid)
+      if (!ownsSafe(sid, 'telemetry')) deps.store.dropCompanion(sid)
     }
+    if (planSids.size === 0) return
+    for (const sid of [...planSids]) if (!ownsSafe(sid, 'planUsage')) planSids.delete(sid)
+    if (planSids.size === 0) deps.planGate?.clear()
+  }
+
+  /** The `planUsage` family: an owned reading with a known window keeps the poll from spawning. */
+  function noteGate(sid: string, m: MappedUsage): void {
+    if (!deps.planGate) return
+    const rl = m.part.rateLimits
+    const windows = (rl?.fiveHour ? 1 : 0) + (rl?.sevenDay ? 1 : 0)
+    const owned = ownsSafe(sid, 'planUsage')
+    deps.planGate.note(
+      { owned, windows, hostNow: now() },
+      {
+        h5: rl?.fiveHour?.usedPercent ?? null,
+        d7: rl?.sevenDay?.usedPercent ?? null,
+        r5: rl?.fiveHour?.resetsAtMs ?? null,
+        r7: rl?.sevenDay?.resetsAtMs ?? null
+      }
+    )
+    if (owned && windows > 0) planSids.add(sid)
   }
 
   function onUsage(b: BindingView, ev: WireEvent): void {
@@ -113,13 +156,8 @@ export function createTelemetryAdapter(deps: TelemetryAdapterDeps): TelemetryAda
     if (!mapped) return
     // Proof before admission: the event that proves the feature may itself be applied.
     if (hasReading(mapped)) deps.host.markProven(b, FEATURE)
-    let owned = false
-    try {
-      owned = deps.owns(b.sid)
-    } catch {
-      owned = false
-    }
-    deps.store.ingestCompanion(b.sid, mapped.part, owned)
+    deps.store.ingestCompanion(b.sid, mapped.part, ownsSafe(b.sid, 'telemetry'))
+    noteGate(b.sid, mapped)
     try {
       deps.recordFact?.(
         'companion',

@@ -33,6 +33,11 @@ import { createTaskStateAdapter, type TaskStateAdapter } from './ingest/task-sta
 import { createTelemetryAdapter, type TelemetryAdapter } from './ingest/telemetry-adapter'
 import { telemetryStore } from '../telemetry-store'
 import {
+  clearPlanUsageGate,
+  noteLeasedReading,
+  setPlanUsagePollObserver
+} from './ingest/plan-usage-gate'
+import {
   familyMode,
   getCompanionMode,
   hydrateCompanionMode,
@@ -205,12 +210,29 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
   telemetry?.dispose()
   telemetry = createTelemetryAdapter({
     host: core.facade,
-    owns: (sid) => sessionArbiter().owns(sid, 'telemetry'),
+    owns: (sid, family) => sessionArbiter().owns(sid, family),
+    planGate: { note: noteLeasedReading, clear: clearPlanUsageGate },
     onOwnershipChange: (fn) => sessionArbiter().onOwnershipChange(() => fn()),
     onModeChange,
     store: telemetryStore(),
     recordFact: (source, sid, k, d, ctx) => recordFact('telemetry', source, sid, k, d, ctx),
     isBound: (sid) => core.facade.bindingForSid(sid) !== null
+  })
+  // The `planUsage` parity rule compares each poll with the freshest owned reading. A poll with
+  // no reading is no comparison, so nothing is recorded for it.
+  setPlanUsagePollObserver((poll, reading, now) => {
+    if (!reading) return
+    recordFact('planUsage', 'legacy', 'plan-usage', 'poll', {
+      s: poll.session?.usedPercent ?? null,
+      w: poll.weekAll?.usedPercent ?? null,
+      rs: poll.session?.resetsAtMs ?? null,
+      rw: poll.weekAll?.resetsAtMs ?? null,
+      h5: reading.h5,
+      d7: reading.d7,
+      r5: reading.r5,
+      r7: reading.r7,
+      age: Math.max(0, now - reading.at)
+    })
   })
   // The shared policy probe: one run per boot and CLI binary, lazily, off the spawn path.
   const probe = createAppPolicyProbe(companionStagedDir)
@@ -259,6 +281,7 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
 
 /** Joins the `before-quit` list beside `closeHookBridge()`. */
 export function closeCompanionHost(): Promise<void> {
+  setPlanUsagePollObserver(null)
   telemetry?.dispose()
   telemetry = null
   flushParityLedger()
