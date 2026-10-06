@@ -53,6 +53,12 @@ A session whose hover preview says **Harnu mod: legacy — …** is running on h
 
 If you do not want the mod at all, turn off **Settings → General → Integrations → Harnu mod**.
 
+## A leftover Harnu mod entry in my Claude settings
+
+If you turned on **Harnu mod outside Harnu** ([Mods](mods.md#harnu-mod-outside-harnu)) and then uninstalled Harnu without turning it off, `~/.claude/settings.json` still names Harnu's mod folder in `env.CLAUDE_CODE_PLUGIN_DIRS`. Claude Code skips a folder that is not there, so nothing breaks, but you should remove it: open `~/.claude/settings.json` and delete that one path (it ends in `harnu-companion`) from the `CLAUDE_CODE_PLUGIN_DIRS` list, keeping any other paths. If you have no other paths, delete the whole `CLAUDE_CODE_PLUGIN_DIRS` line, and the `env` block if it is then empty.
+
+The same applies when turning the switch off says **To remove it by hand, delete … from `CLAUDE_CODE_PLUGIN_DIRS`**: your settings file stopped parsing, so Harnu would not edit it. Fix the file, then turn the switch off again, or delete the path yourself.
+
 ## Custom endpoint credentials
 
 If you've registered a custom Claude-compatible endpoint under **Settings → Endpoints**, its auth token is stored in plaintext on disk (`claude-boot.json` in Harnu's app data directory) — this isn't a bug, but it is worth knowing if that machine or file is shared. See [Claude Boot](claude-boot.md#custom-endpoints) for the exact location.

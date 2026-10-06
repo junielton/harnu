@@ -58,6 +58,16 @@ Separately from Harnu's own control-server verbs, Harnu can optionally act as a 
 
 In other words: the interceptor is a separate, opt-in layer on top of Claude Code's own permission system, with its own confidence ramp (shadow first, then active per-folder, then trust-all) — it's not required for, and doesn't change, how the [MCP control-server](agent-control.md) approvals above work.
 
+## Sessions you start in your own terminal
+
+A session you started outside Harnu is **not** held in the Inbox. With **Harnu mod outside
+Harnu** on ([Mods](mods.md#harnu-mod-outside-harnu)), the native permission dialog in that
+terminal and any Claude Code hook behave exactly as they did before; the Inbox is not a gate
+for them. The one exception is a folder you have already put **on the ramp** (Settings →
+Interceptor): there Harnu's interceptor parks the call whoever started the session, the
+dialog in the terminal stays usable, the first answer wins, and the Inbox row says **outside
+Harnu**. If Harnu is not running, the session is unaffected.
+
 ## Where this fits together
 
 The Approval Inbox is the human side of the gate described in more detail in [Agent control](agent-control.md) — that page explains what a session can actually do and why each action is or isn't gated; this page is about how you act on what it's asking for.

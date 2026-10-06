@@ -91,6 +91,65 @@ banner for it.
 chips, same words. It is always the first row. It appears only when Harnu's mod is
 staged by this build of Harnu; when none is staged there is simply no row.
 
+## Harnu mod outside Harnu
+
+By default only the sessions **Harnu starts** carry the Harnu mod. **Harnu mod outside Harnu**
+(**Settings → Mods → Advanced**) lets the `claude` sessions you start in your **own terminal**
+load it too, so Harnu can show their real state instead of guessing. It is **off** until you
+turn it on, and it is not the **Also outside Harnu** switch of the Skills tab, which copies a
+skill file and nothing else.
+
+**What turning it on writes.** One folder, added to `env.CLAUDE_CODE_PLUGIN_DIRS` in
+`~/.claude/settings.json`: the same folder Harnu's own sessions load the mod from. Every other
+key and every other item of that list stays exactly as it was. Before anything is written a
+dialog names the file, the folder and what it does, and **Cancel** leaves everything
+untouched. The setting then applies to **every** `claude` session you start in any terminal,
+and it also reaches the sessions Harnu starts and Harnu's own `claude` probes (which stay
+silent: a probe never says hello).
+
+**What it shows.** A session outside Harnu reports to Harnu on this machine. Harnu shows it
+only after its **own** watchers (the transcript of the session, or Claude Code's process
+registry) report the same session, so a session that merely claims to exist is never shown.
+Once it is, the session's hover preview reads **Harnu mod: live · outside Harnu**, and the
+session counts under **Active elsewhere** with its real state. The block shows when the last
+outside session was seen, or "No outside session has reported yet." A session whose first
+turn never appears in Harnu's watchers is dropped after about half a minute and may report
+again.
+
+**What it never does.** Harnu never starts a prompt in an outside session, never sends it a
+message, never aborts or compacts it and never writes into its terminal. It does **not** hold
+its approvals either: the native dialog and any hook behave exactly as before, unless that
+folder is already on the interceptor ramp (see [Approval Inbox](approval-inbox.md)).
+
+**Turning it off** removes exactly the folder Harnu added. If Harnu had to create the `env`
+object or the key, it removes those too; if you added other folders to the list, they stay.
+Every outside session that is already running is cut off at once and goes quiet; new ones
+load nothing. Two cases need you: if `~/.claude/settings.json` no longer parses, Harnu
+cannot edit it and says which folder to delete from `CLAUDE_CODE_PLUGIN_DIRS` by hand; and if
+you uninstall Harnu while the switch is on, the entry points at a folder that no longer
+exists, which Claude Code skips, but you should delete it (see
+[Troubleshooting](troubleshooting.md#a-leftover-harnu-mod-entry-in-my-claude-settings)).
+
+**When it refuses** (a toast, one sentence, nothing written):
+
+- **Blocked by your organization's policy.** A managed settings file exists on this machine.
+  Harnu does not try another route. If the policy is delivered another way (a registry key or
+  a device-management profile), Harnu adds the entry, runs one check, and removes it again
+  when Claude Code's own refusal blames managed settings.
+- **Turned off by a setting or by your organization's policy.** Claude Code reports that mods
+  are off here; Harnu cannot tell why, and says so.
+- `~/.claude/settings.json` is not valid JSON, is a symlink, or has an `env` or a
+  `CLAUDE_CODE_PLUGIN_DIRS` of a shape Harnu does not edit. Harnu never repairs, replaces or
+  follows these: nothing is changed.
+- **The Harnu mod is off.** Turn it on first (Settings → General → Integrations).
+
+This was tried on Linux with Claude Code 2.1.290. It has **not** been tried on a machine with
+managed settings, on Windows or on macOS. Desktop, the VS Code extension, the SDK and cloud
+sessions are not covered, and a session that starts in a folder Claude Code does not yet
+trust loads no mod until you accept the trust prompt. With a Claude Code newer than the last
+version Harnu was tested with, the switch still writes its entry but Harnu refuses outside
+sessions until a Harnu update covers that version.
+
 ## Banners you may see
 
 - **Turned off by a setting or by your organization's policy.** Mods are off in this

@@ -198,10 +198,13 @@ export function listHasEntry(
 // ---- managed settings (OD-5) ----------------------------------------------------------------
 
 /**
- * Where the CLI reads organisation-managed settings. These come from the CLI's settings reference,
- * not from the evidence pack, and are confirmed on a managed machine only (Q-P4W3-c): a managed
- * cause that is not a file here is caught by the post-install check instead. A directory named
- * `managed-settings.d` next to the file counts too (drop-in files).
+ * Where the CLI reads organisation-managed settings from a FILE. Confirmed at implementation
+ * (Q-P4W3-c) from the CLI's own strings and debug log on 2.1.290: `/etc/claude-code` on Linux,
+ * `/Library/Application Support/ClaudeCode` on macOS, `C:\Program Files\ClaudeCode` on Windows,
+ * each holding `managed-settings.json` and a `managed-settings.d` directory of drop-ins. NOT
+ * confirmed on a managed machine: no run has happened on one. A policy delivered as a Windows
+ * registry key (`HKLM\SOFTWARE\Policies\ClaudeCode`), a macOS MDM profile or a remote
+ * managed-settings fetch is not a file here, so only the post-install check can catch it.
  */
 export function managedSettingsPaths(platform: NodeJS.Platform): string[] {
   switch (platform) {
@@ -220,7 +223,11 @@ export function managedSettingsPaths(platform: NodeJS.Platform): string[] {
   }
 }
 
-/** The post-install check's second net: a failing `claude plugin list` that blames managed settings. */
+/**
+ * The post-install check's second net: a failing `claude plugin list` that blames managed
+ * settings. The CLI's own refusal reads "disabled by your organization's managed settings
+ * (disableSideloadFlags)" (2.1.290 strings; not observed from a managed machine).
+ */
 export function namesManagedSettings(output: string): boolean {
   return /managed[\s-]+(settings?|polic)/i.test(output) || /disableSideloadFlags/i.test(output)
 }
