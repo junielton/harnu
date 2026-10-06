@@ -9,6 +9,7 @@
 import { randomUUID } from 'node:crypto'
 import { app, ipcMain, shell } from 'electron'
 import { markDisclosureShown, setCompanionEnabled, setRampFolders } from './companion-prefs'
+import type { ExternalPaneState, ExternalSetResult } from './external-host'
 import type { CompanionHostFacade } from './host-core'
 import type { IdentityClaim, IdentityOutcome } from './identity-core'
 import type { CompanionStatus } from './companion-status'
@@ -26,6 +27,10 @@ export interface CompanionIpcExtras {
   status(): CompanionStatus
   /** P1W4: the directory the sessions load the mod from, staged on demand (the reveal button). */
   stagedDir(): Promise<string | null>
+  /** P4W3: the "Harnu mod outside Harnu" switch, its path line and the last outside session seen. */
+  externalGet(): Promise<ExternalPaneState>
+  /** P4W3: turns it on (the settings write, after the renderer's confirm) or off (the exact undo). */
+  externalSet(on: boolean): Promise<ExternalSetResult>
 }
 
 /** The streams `companionParityReport` answers for: a fact family, or a feature key. */
@@ -68,6 +73,14 @@ export function registerCompanionIpc(
     return { ok: true }
   })
   ipcMain.handle('companion:status', () => extras.status())
+  // P4W3: renderer IPC only; no MCP verb reaches the switch (SEC-9). The renderer shows the
+  // disclosure before it calls `externalSet(true)`; main refuses anything but a boolean.
+  ipcMain.handle('companion:externalGet', () => extras.externalGet())
+  ipcMain.handle('companion:externalSet', (_e, on: unknown) =>
+    typeof on === 'boolean'
+      ? extras.externalSet(on)
+      : ({ ok: false, reason: 'failed' } satisfies ExternalSetResult)
+  )
   ipcMain.handle('companion:reveal', async () => {
     const dir = await extras.stagedDir()
     if (dir) shell.showItemInFolder(dir)

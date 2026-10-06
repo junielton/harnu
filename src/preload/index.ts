@@ -40,6 +40,7 @@ import type { Worker, Run } from '../main/scheduler-core'
 import type { SchedulerState } from '../main/scheduler-shell'
 import type { CompanionDiagnostics } from '../main/companion/host-core'
 import type { CompanionStatus } from '../main/companion/companion-status'
+import type { ExternalPaneState, ExternalSetResult } from '../main/companion/external-host'
 import type { ParityReport } from '../main/companion/parity-core'
 import type { IdentityClaim, IdentityOutcome } from '../main/companion/identity-core'
 import type { RoutingTable, ResolvedRouting } from '../main/routing-policy'
@@ -2614,6 +2615,12 @@ const api = {
   companionDisclosureShown: (): Promise<void> => ipcRenderer.invoke('companion:disclosureShown'),
   /** Opens the folder the sessions load the mod from. */
   companionReveal: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('companion:reveal'),
+  /** P4W3: the "Harnu mod outside Harnu" switch state: path line, last outside session seen. */
+  companionExternalGet: (): Promise<ExternalPaneState> =>
+    ipcRenderer.invoke('companion:externalGet'),
+  /** P4W3: on writes one entry into the user's Claude settings (call after the confirm); off undoes it. */
+  companionExternalSet: (on: boolean): Promise<ExternalSetResult> =>
+    ipcRenderer.invoke('companion:externalSet', on),
   /** The parity ledger's report for a stream (evidence for a family's flip). */
   companionParityReport: (stream: string): Promise<ParityReport | null> =>
     ipcRenderer.invoke('companion:parityReport', stream),

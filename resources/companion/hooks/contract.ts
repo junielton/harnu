@@ -60,6 +60,10 @@ export const CMD_DONE_MAX = 64
 export const ASK_ORPHAN_MS = 45_000
 export const STAMP_NONCE_RING = 512
 export const PLAN_USAGE_STALE_MS = 90_000
+/** Live external bindings the host keeps; a tokenless hello over it is SLOW_DOWN (§21 item 2). */
+export const EXTERNAL_MAX_BINDINGS = 32
+/** An external binding not corroborated this long after its first `turn.started` is dropped (§21 item 6). */
+export const EXTERNAL_CORROBORATE_MS = 30_000
 
 export const STAMP_ARG = '_harnuCaller'
 export const STAMP_PROOF_VERSION = 'v1'

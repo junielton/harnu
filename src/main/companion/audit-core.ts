@@ -25,8 +25,22 @@ export interface BindingAuditRecord {
   trust: TrustClass
 }
 
+/**
+ * P4W3: the host refused to hand a command to an outside session. The command NAME only: never
+ * its arguments, never any text (SEC-8).
+ */
+export interface CommandRefusedAuditRecord {
+  kind: 'command-refused'
+  ts: number
+  command: string
+  sid: Sid
+  sessionKey: string | null
+  /** Outside facts are attributable, not authenticated (P4W3-S7). */
+  profile: 'external'
+}
+
 /** Later waves add `command` (P2W1), `native-message` (P2W3), `ask` (P3W1) and `focus` (P4W2). */
-export type AuditRecord = BindingAuditRecord
+export type AuditRecord = BindingAuditRecord | CommandRefusedAuditRecord
 
 export class AuditForbiddenError extends Error {
   constructor(key: string) {

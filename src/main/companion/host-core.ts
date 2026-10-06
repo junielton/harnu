@@ -20,6 +20,7 @@ import {
   type Command,
   type Conn,
   type FeatureId,
+  type HelloRequest,
   type PollRequest,
   type PollResponse,
   type Sid,
@@ -31,6 +32,7 @@ import type { CompanionMode } from './mode'
 import {
   startCompanionServer,
   type AskHandler,
+  type ExternalHelloDecision,
   type CompanionServer,
   type PollHandler,
   type ServerHooks,
@@ -113,6 +115,35 @@ export interface CompanionHostFacade {
     fn: (b: BindingView, req: AskRequest<K>, reply: (r: AskResponse<K>) => void) => void
   ): void
   setCommandSource(fn: (b: BindingView, cursor?: number) => Command[]): void
+  /**
+   * P4W3: who decides a tokenless hello (contract §21 item 2). Unset, the claim is
+   * `FEATURE_DISABLED`. The handler is synchronous: it runs on the hello's path.
+   */
+  setExternalHello(fn: ((req: HelloRequest) => ExternalHelloDecision) | null): void
+  /**
+   * P4W3: an uncorroborated external binding's events are held, not emitted (contract §21 item 6).
+   * The handler returns true when it took the event; the bus never sees it until `replayEvents`.
+   */
+  setExternalEventHold(fn: ((b: BindingView, ev: WireEvent) => boolean) | null): void
+  /**
+   * P4W3: emits held events on the bus, in order, for a binding that was just corroborated. It
+   * stops as soon as the binding stops being corroborated (a rebound inside the buffer) and
+   * returns what it did not emit.
+   */
+  replayEvents(b: BindingView, events: readonly WireEvent[]): WireEvent[]
+  /**
+   * P4W3: the origin gate on what the host hands to a binding. Whatever a command source
+   * queued, the gate decides what leaves (an outside session gets three commands only).
+   */
+  setCommandGate(fn: ((b: BindingView, cmds: Command[]) => Command[]) | null): void
+  /** P4W3: live external bindings (bound, not revoked). */
+  externalBindings(): BindingView[]
+  /** P4W3: a live binding that a spawn token redeemed carries this `sid`. */
+  spawnedBindingForSid(sid: Sid): BindingView | null
+  /** P4W3: Harnu's own watchers reported this external session. Fires `onBindingChange`. */
+  corroborate(b: BindingView, on?: boolean): void
+  /** P4W3: closes an external binding; its next request answers `STALE_CONN`. */
+  dropBinding(b: BindingView): void
   beforeHello(fn: (b: BindingView, kind: HelloKind) => void): () => void
   hold(b: BindingView): () => void
   revoke(b: BindingView): void
@@ -205,6 +236,9 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
   let enablePolicy: EnablePolicy = () => []
   let pollHandler: PollHandler | undefined
   let commandSource: ((b: BindingView, cursor?: number) => Command[]) | undefined
+  let externalHello: ((req: HelloRequest) => ExternalHelloDecision) | null = null
+  let externalHold: ((b: BindingView, ev: WireEvent) => boolean) | null = null
+  let commandGate: ((b: BindingView, cmds: Command[]) => Command[]) | null = null
   const askKinds = new Map<string, AskHandler>()
   const known = new Set<string>()
   const beforeHello = new Set<(b: BindingView, kind: HelloKind) => void>()
@@ -280,7 +314,17 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
   const hooks: ServerHooks = {
     enablePolicy: () => killedAwarePolicy,
     known: () => known,
-    commandSource: (b, cursor) => commandSource?.(b, cursor) ?? [],
+    commandSource: (b, cursor) => {
+      const cmds = commandSource?.(b, cursor) ?? []
+      if (!commandGate || cmds.length === 0) return cmds
+      try {
+        return commandGate(b, cmds)
+      } catch {
+        return [] // a failing gate lets nothing through
+      }
+    },
+    externalHello: (req) =>
+      externalHello ? externalHello(req) : { ok: false, code: 'FEATURE_DISABLED' },
     get pollHandler() {
       return pollHandler
     },
@@ -299,7 +343,19 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
       emit('hello', b, kind)
       notifyChange(b)
     },
-    onEvent: (b, ev) => emit('event', b, ev),
+    onEvent: (b, ev) => {
+      // An uncorroborated outside session feeds no consumer (contract §21 item 6).
+      if (b.profile === 'external' && !b.corroborated) {
+        let held = true // fail closed: a failing hold handler never leaks an unproven fact
+        try {
+          held = externalHold ? externalHold(b, ev) : true
+        } catch {
+          held = true
+        }
+        if (held) return
+      }
+      emit('event', b, ev)
+    },
     onEnd: (b, reason) => {
       audit('ended', b)
       emit('end', b, reason)
@@ -406,6 +462,7 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
     if (live) emit('proof', table.viewOf(live), feature, change)
   }
   const keyOf = (b: BindingView): Binding | null => table.byKey(b.key)
+  const isRevoked = (v: BindingView): boolean => table.byKey(v.key)?.revoked === true
 
   const views = (): BindingView[] => table.view()
   /** A live binding wins over an ended or closed one that kept the same key or sid. */
@@ -443,6 +500,46 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
     },
     setCommandSource(fn) {
       commandSource = fn
+    },
+    setExternalHello(fn) {
+      externalHello = fn
+    },
+    setExternalEventHold(fn) {
+      externalHold = fn
+    },
+    setCommandGate(fn) {
+      commandGate = fn
+    },
+    replayEvents(b, events) {
+      const live = keyOf(b)
+      if (!live) return [...events]
+      for (let i = 0; i < events.length; i++) {
+        // Re-read every time: an event may rebind the binding, which needs corroborating again.
+        if (live.state !== 'bound' || (live.profile === 'external' && !live.corroborated)) {
+          return events.slice(i)
+        }
+        emit('event', table.viewOf(live), events[i])
+      }
+      return []
+    },
+    externalBindings: () =>
+      views().filter((v) => v.profile === 'external' && v.state === 'bound' && !isRevoked(v)),
+    spawnedBindingForSid: (sid) =>
+      views().find((v) => v.sid === sid && v.profile !== 'external' && v.state === 'bound') ?? null,
+    corroborate(b, on = true) {
+      const live = keyOf(b)
+      if (!live) return
+      table.corroborate(b, on)
+      notifyChange(table.viewOf(live))
+    },
+    dropBinding(b) {
+      const live = keyOf(b)
+      if (!live || live.state !== 'bound') return
+      table.drop(b)
+      const view = table.viewOf(live)
+      audit('ended', view)
+      emit('end', view, 'dropped')
+      notifyChange(view)
     },
     beforeHello(fn) {
       beforeHello.add(fn)
