@@ -41,6 +41,7 @@ import { forceDowngradePermission } from './mcp/agent-boot'
 import { orderMcpArgs } from './mcp/config-file'
 import type { SpawnOwner } from './companion/session-table'
 import { PtySessionIndex } from './pty-session-index'
+import { companionHost, setCompanionSessionKeyResolver } from './companion/host'
 import { pruneTaskState } from './hook-bridge'
 import { RingBuffer } from './pty-ring-buffer'
 import { foregroundProcessName } from './detect/foreground-process'
@@ -531,6 +532,12 @@ export function stopHibernationSweep(): void {
 }
 
 export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void {
+  // T389 P1W3: a PTY binding's `sessionKey` is whatever key the index holds for its ptyId right
+  // now, so a `pty:rekey` below moves it without any bookkeeping of the companion's own.
+  setCompanionSessionKeyResolver((owner) =>
+    owner.kind === 'pty' ? (sessionIndex.getSessionKey(owner.ptyId) ?? null) : null
+  )
+
   function flushNow(id: string): void {
     const rec = ptys.get(id)
     if (!rec) return
@@ -1146,6 +1153,8 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     // recognizes) — and the System Monitor keeps showing `synthetic-<uuid>` forever.
     const rec = ptyId ? ptys.get(ptyId) : undefined
     if (rec) applyRekeyToRecord(rec, toKey)
+    // T389 P1W3: the binding of this PTY now reads the new key; a claim for it is satisfied.
+    if (ptyId) companionHost.notifySessionKeyChange({ kind: 'pty', ptyId })
   })
 
   /**

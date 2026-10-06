@@ -12,6 +12,8 @@ import { join } from 'node:path'
 import { appendAudit, configureAuditDir } from './audit-log'
 import { registerCompanionIpc } from './companion-ipc'
 import { createCompanionHost } from './host-core'
+import { gateForCli, identityEnablePolicy } from './enable-policy'
+import { createIdentityAdapter, type IdentityAdapter } from './identity-adapter'
 import {
   getCompanionMode,
   hydrateCompanionMode,
@@ -20,6 +22,7 @@ import {
   setCompanionPrefsPath
 } from './mode'
 import type { SpawnOwner } from './session-table'
+import surface from '../../../resources/companion/api-surface.json'
 
 export type { CompanionBus, CompanionDiagnostics, CompanionHostFacade } from './host-core'
 
@@ -51,12 +54,29 @@ export function setCompanionSessionKeyResolver(
   core.setSessionKeyResolver(fn)
 }
 
+let identity: IdentityAdapter | null = null
+
 /** Called once from `src/main/index.ts` beside `registerHookBridge`. */
-export async function registerCompanionHost(_getWindow: () => BrowserWindow | null): Promise<void> {
+export async function registerCompanionHost(getWindow: () => BrowserWindow | null): Promise<void> {
   const userData = app.getPath('userData')
   setCompanionPrefsPath(join(userData, 'companion-prefs.json'))
   configureAuditDir(join(userData, 'companion'))
-  registerCompanionIpc(core.facade)
+  // P1W3: the first enable policy (`sense.identity` only) and the identity adapter. P1W4 replaces
+  // the policy through the same call; nothing here is edited then.
+  core.facade.setEnablePolicy(
+    identityEnablePolicy({ getMode: getCompanionMode, ceiling: surface.lastVerifiedCli })
+  )
+  identity = createIdentityAdapter({
+    host: core.facade,
+    getMode: getCompanionMode,
+    gateOf: (b) => gateForCli(b.cliVersion, surface.lastVerifiedCli),
+    push: (claims) => getWindow()?.webContents.send('companion:identity', { claims })
+  })
+  core.facade.setIdentityDiagnostics(identity.diagnostics)
+  registerCompanionIpc(core.facade, {
+    identityClaims: () => identity?.claims() ?? [],
+    restartListener: core.restartListener
+  })
   await core.register()
 }
 

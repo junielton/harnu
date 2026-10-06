@@ -9,15 +9,27 @@
 import { randomUUID } from 'node:crypto'
 import { app, ipcMain } from 'electron'
 import type { CompanionHostFacade } from './host-core'
+import type { IdentityClaim } from './identity-core'
+
+export interface CompanionIpcExtras {
+  /** The renderer pulls the claim list at store init, so a window reload loses nothing (P1W3). */
+  identityClaims(): IdentityClaim[]
+  /** Developer aid (LV-P1W3-g): stops and starts the listener. */
+  restartListener(): Promise<void>
+}
 
 export function registerCompanionIpc(
-  host: Pick<CompanionHostFacade, 'diagnostics' | 'mintSpawnToken'>
+  host: Pick<CompanionHostFacade, 'diagnostics' | 'mintSpawnToken'>,
+  extras: CompanionIpcExtras
 ): void {
   ipcMain.handle('companion:diagnostics', () => host.diagnostics())
+  ipcMain.handle('companion:identityClaims', () => ({ claims: extras.identityClaims() }))
 
   // The dev mint hands a spawn token to the renderer, so it is registered only in an unpackaged
   // run. A packaged build has no handler at all: the preload call rejects.
   if (!app.isPackaged) {
+    // Not the kill switch: that revokes `conn`s and leaves the listener up (contract §3 item 9).
+    ipcMain.handle('companion:devRestartListener', () => extras.restartListener())
     ipcMain.handle('companion:devMintSpawn', () => {
       const runId = randomUUID()
       const spawnToken = host.mintSpawnToken({

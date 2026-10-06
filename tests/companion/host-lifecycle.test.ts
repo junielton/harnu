@@ -382,8 +382,12 @@ describe('electron shell', () => {
     vi.resetModules()
     const { registerCompanionIpc } = await import('../../src/main/companion/companion-ipc')
     const { companionHost } = await import('../../src/main/companion/host')
-    registerCompanionIpc(companionHost)
-    expect([...handlers]).toEqual(['companion:diagnostics'])
+    registerCompanionIpc(companionHost, {
+      identityClaims: () => [],
+      restartListener: async () => undefined
+    })
+    // the diagnostics read and the claim pull (P1W3); no dev mint, no dev restart
+    expect([...handlers]).toEqual(['companion:diagnostics', 'companion:identityClaims'])
     vi.doUnmock('electron')
   })
 })

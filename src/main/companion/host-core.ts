@@ -26,6 +26,7 @@ import {
   type SpawnToken,
   type WireEvent
 } from './contract'
+import type { IdentityDiagnostics } from './identity-core'
 import type { CompanionMode } from './mode'
 import {
   startCompanionServer,
@@ -62,6 +63,8 @@ export interface CompanionDiagnostics {
     | { state: 'listening'; transport: 'unix' | 'tcp'; bootId: BootId; startedAt: number }
   totals: { helloOk: number; helloRefused: Record<string, number>; http4xx: Record<string, number> }
   pendingSpawns: number
+  /** P1W3: claims and counters of the identity adapter; absent until it registers. */
+  identity?: IdentityDiagnostics
   bindings: {
     sessionKey: string | null
     sid: Sid
@@ -113,6 +116,15 @@ export interface CompanionHostFacade {
   registerEventTypes(names: readonly string[]): void
   /** Only caller: the `session.rebound` handler (P1W3), through the table's `rebind`. */
   rebind(b: BindingView, sid: Sid): void
+  /** Harnu's row key of the binding whose bound `sid` this is (claimed or bound), or null. */
+  sessionKeyForSid(sid: Sid): string | null
+  /**
+   * The row key of a PTY owner changed (`pty:rekey` moved the index): the binding of that owner
+   * now reads the new `sessionKey`. Fires `onBindingChange`; a no-op for an owner with no binding.
+   */
+  notifySessionKeyChange(owner: SpawnOwner): void
+  /** The identity adapter's contribution to `diagnostics()`. */
+  setIdentityDiagnostics(fn: (() => IdentityDiagnostics) | null): void
   bus: CompanionBus
   diagnostics(): CompanionDiagnostics
 }
@@ -146,6 +158,8 @@ export interface CompanionHostCore {
   /** One lease sweep, now. The interval calls it every `LEASE_SWEEP_MS`. */
   sweepNow(): void
   setSessionKeyResolver(fn: ((owner: SpawnOwner) => string | null) | null): void
+  /** Developer aid (LV-P1W3-g): stops and starts the listener; the table stays in memory. */
+  restartListener(): Promise<void>
   close(): Promise<void>
 }
 
@@ -163,6 +177,7 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
   const dirOf = (): string => (typeof deps.dir === 'function' ? deps.dir() : deps.dir)
 
   let resolveKey: ((owner: SpawnOwner) => string | null) | null = deps.sessionKeyOf ?? null
+  let identityDiagnostics: (() => IdentityDiagnostics) | null = null
   const table = new SessionTable({
     now,
     mintConn: () => `c_${randomBytes(16).toString('hex')}` as Conn,
@@ -322,6 +337,14 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
     await reconcileListener()
   }
 
+  async function restartListener(): Promise<void> {
+    await starting
+    const s = server
+    server = null
+    if (s) await s.stop().catch(() => undefined)
+    await reconcileListener()
+  }
+
   async function close(): Promise<void> {
     registered = false
     if (timer) clearInterval(timer)
@@ -391,6 +414,16 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
     registerEventTypes(names) {
       for (const n of names) known.add(n)
     },
+    sessionKeyForSid: (sid) => pick(views().filter((v) => v.sid === sid))?.sessionKey ?? null,
+    notifySessionKeyChange(owner) {
+      for (const view of views()) {
+        if (!view.owner || JSON.stringify(view.owner) !== JSON.stringify(owner)) continue
+        notifyChange(view)
+      }
+    },
+    setIdentityDiagnostics(fn) {
+      identityDiagnostics = fn
+    },
     rebind(b, sid) {
       const live = keyOf(b)
       if (!live) return
@@ -421,6 +454,7 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
           http4xx: { ...totals.http4xx }
         },
         pendingSpawns: table.pendingSpawns(),
+        ...(identityDiagnostics ? { identity: identityDiagnostics() } : {}),
         bindings: table.all().map((b) => ({
           sessionKey: table.viewOf(b).sessionKey,
           sid: b.sid,
@@ -448,6 +482,7 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
     setSessionKeyResolver: (fn) => {
       resolveKey = fn
     },
+    restartListener,
     close
   }
 }

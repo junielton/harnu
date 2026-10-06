@@ -93,6 +93,19 @@ describe('spawn-token ledger', () => {
     })
   })
 
+  it('redeem window', () => {
+    // exactly at the window it is still redeemable; one millisecond later it is dead (P1W3 AC-17)
+    const inside = table.mint({ ...meta, owner: { kind: 'pty', ptyId: 'pty-win-1' } })
+    t += SPAWN_REDEEM_WINDOW_MS
+    expect(table.hello({ ...helloSpawnRequest, spawn: inside }, enableIdentity).ok).toBe(true)
+    const late = table.mint({ ...meta, owner: { kind: 'pty', ptyId: 'pty-win-2' } })
+    t += SPAWN_REDEEM_WINDOW_MS + 1
+    expect(table.hello({ ...helloSpawnRequest, spawn: late }, enableIdentity)).toEqual({
+      ok: false,
+      code: 'UNAUTHORIZED'
+    })
+  })
+
   it('a hello with neither spawn nor resume is refused by the table', () => {
     const { spawn: _spawn, ...rest } = helloSpawnRequest
     expect(table.hello(rest, enableIdentity)).toEqual({ ok: false, code: 'UNAUTHORIZED' })

@@ -38,6 +38,7 @@ import type { ClaudeBootConfig, EndpointProfile } from '../main/claude-args'
 import type { Worker, Run } from '../main/scheduler-core'
 import type { SchedulerState } from '../main/scheduler-shell'
 import type { CompanionDiagnostics } from '../main/companion/host-core'
+import type { IdentityClaim } from '../main/companion/identity-core'
 import type { RoutingTable, ResolvedRouting } from '../main/routing-policy'
 import type { PrStackSnapshot, WorktreeNode as PrStackWorktree } from '../main/pr-stack-core'
 import type { PrStackPrefs } from '../main/pr-stack-prefs'
@@ -2552,7 +2553,19 @@ const api = {
    * A packaged build registers no handler, so this rejects there.
    */
   companionDevMintSpawn: (): Promise<{ spawnToken: string; runId: string } | null> =>
-    ipcRenderer.invoke('companion:devMintSpawn')
+    ipcRenderer.invoke('companion:devMintSpawn'),
+  /**
+   * T389 P1W3: the identity claims ("PTY row `key` is session `sid`"), pulled at store init so a
+   * window reload loses nothing. A claim never re-keys a row by itself (spec §7.1).
+   */
+  companionIdentityClaims: (): Promise<{ claims: IdentityClaim[] }> =>
+    ipcRenderer.invoke('companion:identityClaims'),
+  /** The full claim list again, whenever it changes (main pushes the whole list). */
+  onCompanionIdentity: (cb: (payload: { claims: IdentityClaim[] }) => void): (() => void) =>
+    subscribe('companion:identity', cb),
+  /** Dev only: stops and starts the companion listener (LV-P1W3-g). Rejects in a packaged build. */
+  companionDevRestartListener: (): Promise<void> =>
+    ipcRenderer.invoke('companion:devRestartListener')
 }
 
 if (process.contextIsolated) {
