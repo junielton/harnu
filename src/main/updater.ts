@@ -60,6 +60,10 @@ export function registerUpdater(getWindow: () => BrowserWindow | null): void {
   // only and resolves at runtime.
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- main-only, see note above
   if (!require('electron').app.isPackaged) return
+  // verify build only: the t389 test AppImage must never replace itself with a GitHub release
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- same as above
+  if (require('electron').app.getVersion().includes('-t389'))
+    return void console.info('[updater] skipped: verify build (-t389)')
 
   // electron-updater builds its AppUpdater lazily on first `autoUpdater` access
   // and VALIDATES app.version as strict semver in the constructor — an invalid
