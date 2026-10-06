@@ -53,6 +53,11 @@ export interface CompanionBus {
   on(type: 'event', fn: (b: BindingView, ev: WireEvent) => void): () => void
   on(type: 'lease', fn: (b: BindingView, state: 'lost') => void): () => void
   on(type: 'end', fn: (b: BindingView, reason: string) => void): () => void
+  /** P1W4: an adapter proved a feature, or its proof was revoked (the arbiter's stickiness). */
+  on(
+    type: 'proof',
+    fn: (b: BindingView, feature: FeatureId, change: 'proven' | 'revoked') => void
+  ): () => void
 }
 
 export interface CompanionDiagnostics {
@@ -361,6 +366,10 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
   }
 
   // ---- facade -----------------------------------------------------------------------------
+  function emitProof(b: BindingView, feature: FeatureId, change: 'proven' | 'revoked'): void {
+    const live = table.byKey(b.key)
+    if (live) emit('proof', table.viewOf(live), feature, change)
+  }
   const keyOf = (b: BindingView): Binding | null => table.byKey(b.key)
 
   const views = (): BindingView[] => table.view()
@@ -412,8 +421,14 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
       audit('revoked', view)
       notifyChange(view)
     },
-    markProven: (b, f) => table.markProven(b, f),
-    revokeProof: (b, f) => table.revokeProof(b, f),
+    markProven(b, f) {
+      table.markProven(b, f)
+      emitProof(b, f, 'proven')
+    },
+    revokeProof(b, f) {
+      table.revokeProof(b, f)
+      emitProof(b, f, 'revoked')
+    },
     verifyStamp: (handle, nonce, tool, mac) => table.verifyStamp(handle, nonce, tool, mac),
     registerEventTypes(names) {
       for (const n of names) known.add(n)
