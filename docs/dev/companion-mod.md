@@ -92,7 +92,7 @@ holding the owner's pid) makes the second one log a warning and stage normally.
 
 ## The tested CLI window and how to move it
 
-`api-surface.json` holds `minCli` (2.1.287) and `lastVerifiedCli` (the tested ceiling, 2.1.289). Below
+`api-surface.json` holds `minCli` (2.1.287) and `lastVerifiedCli` (the tested ceiling, 2.1.290). Below
 `minCli`, or with the version unknown, Harnu injects nothing. Above the ceiling it injects and the
 session is forced to `shadow` (P1W4). To move the ceiling, change `lastVerifiedCli` by hand in a PR
 of its own, and attach: the `mod` step log, the `--with-cli` log (both print `claude --version`) and
