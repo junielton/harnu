@@ -987,6 +987,7 @@
       "push": "Remote notifications",
       "mcp": "MCP",
       "skills": "Skills",
+      "mods": "Mods",
       "memory": "Memory",
       "hibernationPolicy": "Hibernation policy",
       "usageHistory": "Usage history",
@@ -1672,6 +1673,87 @@
       "label": "Also outside Harnu",
       "occupied": "A skill folder for {name} already exists and was not created by Harnu. Nothing was changed.",
       "failed": "Could not install {name} outside Harnu."
+    }
+  },
+  "modsAudit": {
+    "title": "Mods",
+    "hint": "Mods run unsandboxed inside Claude Code. This list shows what each one can do, from a static read of its source.",
+    "refresh": "Refresh",
+    "scope": {
+      "label": "Scope",
+      "global": "Global",
+      "project": "{folder}",
+      "projectNone": "This project",
+      "projectDisabledHint": "Select a session to list the mods its project can load."
+    },
+    "source": {
+      "harnu": "Harnu mod",
+      "harnuSkills": "Harnu skills",
+      "installed": "installed · {scope}",
+      "skillsDir": "skills folder",
+      "bootArg": "--plugin-dir"
+    },
+    "cap": {
+      "process": "can run processes",
+      "network": "can use the network",
+      "files": "can read and write files",
+      "prompts": "can read every prompt",
+      "system-prompt": "can change the system prompt",
+      "tool-calls": "can rewrite or block tool calls",
+      "permissions": "can decide permissions",
+      "submit": "can submit prompts",
+      "model": "can call the model",
+      "mcp": "can call MCP tools",
+      "other-mods": "can read other mods’ calls",
+      "gate": "can refuse other mods",
+      "env": "can read environment variables",
+      "terminal": "draws in the terminal",
+      "opaque": "has matchers Harnu cannot read"
+    },
+    "analysing": "Analysing…",
+    "status": {
+      "invalid": "The CLI reported errors in this mod.",
+      "failed": "Could not analyse this mod.",
+      "unsupported": "This Claude Code version cannot analyse mods."
+    },
+    "retry": "Retry",
+    "lastAnalysed": "{hash} · Last analysed {time}",
+    "changedSince": "Changed since {date}.",
+    "loads": {
+      "unknown": "Harnu cannot tell whether this one is allowed to load."
+    },
+    "withoutModule": "{n} plugin without a mod is not listed. | {n} plugins without a mod are not listed.",
+    "blindSpots": "Not shown: where data goes, which commands run, which files are read.",
+    "managedHint": "To allow only your organization’s mods, an administrator sets {option}.",
+    "reveal": "Reveal folder",
+    "toggle": "Show details for {name}",
+    "manage": {
+      "installed": "Turn it on or off with {slash} in a session, or {command}.",
+      "harnuSkills": "Managed in Settings → Skills.",
+      "skillsDir": "Remove its folder to stop it loading.",
+      "bootArg": "Loaded by this folder’s startup arguments."
+    },
+    "policy": {
+      "offHere": "Turned off by a setting or by your organization’s policy.",
+      "offRemote": "Mods are turned off remotely by Anthropic."
+    },
+    "safeMode": "This folder starts sessions with {flag}, so no mod loads there.",
+    "noCli": "Claude Code CLI not found. Nothing to analyse.",
+    "empty": "No mods found.",
+    "installedUnreadable": "Installed plugins could not be read.",
+    "detail": {
+      "hooks": "Hooks",
+      "calls": "Calls",
+      "via": "via {helper}",
+      "envReads": "Reads environment",
+      "envWrites": "Writes environment",
+      "stateReads": "Reads state",
+      "stateWrites": "Writes state",
+      "stateForeign": "State of other plugins, not checked",
+      "unparsed": "Not recognised",
+      "errors": "Errors",
+      "warnings": "Warnings",
+      "nothing": "Nothing declared."
     }
   },
   "agentConfirm": {

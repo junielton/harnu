@@ -128,7 +128,7 @@ describe.skipIf(!WITH_CLI)('the handshake against the real host (L4)', () => {
     const binding = h.host.facade.bindingForSid(r.probe!.sessionId)
     expect(binding, JSON.stringify(h.host.facade.diagnostics().bindings)).not.toBeNull()
     expect(binding?.sessionKey).toBe('row:pty-1')
-    // P1W5 added the three fleet sensors, P1W6 `sense.usage`, P2W1 the four actuators the channel carries
+    // P1W5 added the three fleet sensors, P1W6 `sense.usage`, P2W1 the four actuators the channel carries, P4W1 `sense.mods`
     expect(binding?.declared).toEqual([
       'sense.identity',
       'act.channel',
@@ -138,7 +138,8 @@ describe.skipIf(!WITH_CLI)('the handshake against the real host (L4)', () => {
       'sense.turn',
       'sense.attention',
       'sense.subagent',
-      'sense.usage'
+      'sense.usage',
+      'sense.mods'
     ])
     expect(h.seen.hellos[0]).toMatchObject({ kind: 'spawn', sid: r.probe!.sessionId })
     expect(binding?.proven).toContain('sense.identity')

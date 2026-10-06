@@ -178,6 +178,16 @@ export function sideloadBlockedLastOutput(): string {
 let lastStagedDir: string | null = null
 export const companionStagedDir = (): string | null => lastStagedDir
 
+/**
+ * `ensureStaged()` that remembers its answer for `companionStagedDir`: the spawn path and the
+ * Mods pane (P4W1) share it, so the policy probe finds a directory even before the first spawn.
+ */
+export async function ensureStagedRemembered(): Promise<string | null> {
+  const dir = await ensureStaged()
+  if (dir) lastStagedDir = dir
+  return dir
+}
+
 // ---- The app's one injector ------------------------------------------------------------
 
 const injector = createCompanionSpawnProvider({
@@ -190,11 +200,7 @@ const injector = createCompanionSpawnProvider({
   decide: (c) => companionInjectDecision(c),
   recordDecision: (o, d) => sessionArbiter().recordInjectDecision(o, d),
   recordMinted: (o) => sessionArbiter().noteMinted(o),
-  ensureStaged: async () => {
-    const dir = await ensureStaged()
-    if (dir) lastStagedDir = dir
-    return dir
-  },
+  ensureStaged: ensureStagedRemembered,
   mintSpawnToken: (m) => companionHost.mintSpawnToken(m),
   releaseSpawn: (o, r) => companionHost.releaseSpawn(o, r),
   pinStagedDir

@@ -10,6 +10,7 @@ Harnu is a desktop app that turns the sprawl of running and idle Claude Code ses
 - [Fleet rail](approval-inbox.md) — the fleet's live state at a glance, confirms, "always allow this verb here", mission grants (budget + TTL), the hook interceptor, and the Topbar Activity bell.
 - [Agent control](agent-control.md) — what a session can do from inside Harnu via its MCP server (the human-readable counterpart to `docs/harnu-features.md`, which is written for the agent, not for you).
 - [Bundled skills](bundled-skills.md) — the skills Harnu ships, the per-skill on/off panel, per-project overrides, and the opt-in install outside Harnu.
+- [Mods](mods.md) — Settings → Mods: the mods your sessions can load and what each one can do, read from its source. Read-only; it points at where each mod is switched on or off.
 - [Project memory](project-memory.md) — `.harnu/memory/`, the hot/decisions/roadmap pages, the memory pane.
 - [Roadmap board](roadmap-board.md) — the kanban, card kinds, dispatch, the manifest gate, substrate, model routing.
 - [Review pane](review-pane.md) — the branch diff plus its receipts, side by side

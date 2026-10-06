@@ -11,6 +11,12 @@ describe('classifyPolicyProbe', () => {
       )
     ).toBe('loads')
     expect(classifyPolicyProbe('3 passed')).toBe('loads')
+    // an empty directory (CLI 2.1.291, read from a live run)
+    expect(
+      classifyPolicyProbe(
+        'claude plugin test: /tmp/x: no hooks module to load; there is no hooks/hooks.json naming one in "modules"'
+      )
+    ).toBe('loads')
   })
 
   it('off here: a setting or a policy, which the line cannot tell apart', () => {

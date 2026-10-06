@@ -1,0 +1,26 @@
+{
+  "success": true,
+  "strict": false,
+  "target": "/plugins/diff/.claude-plugin/plugin.json",
+  "manifest": {
+    "file": "/plugins/diff/.claude-plugin/plugin.json",
+    "type": "plugin",
+    "errors": [],
+    "warnings": [],
+    "notes": []
+  },
+  "contents": [
+    {
+      "file": "/plugins/diff/hooks/hooks.json",
+      "type": "hooks",
+      "errors": [],
+      "warnings": [],
+      "notes": [
+        "./register.ts hooks: session.start, ui.render{component=PromptHint}, ui.render{component=Pane}, command.run{command=diff}, ui.close{id=?}, ui.focus{plugin=?}, ui.scroll{requestId=?}, command.run{command=clear|resume}, tool.call{tool=?|?}, prompt.submit",
+        "./register.ts calls: $.clock.after, $.clock.every, $.clock.now, $.command.register, $.env.get, $.fs.list, $.fs.read, $.fs.stat, $.process.run, $.session.id, $.session.messages, $.session.usage, $.settings.read, $.store.get, $.store.set, $.telemetry.log, $.telemetry.mark, $.ui.close, $.ui.invalidate, $.ui.log, $.ui.open, $.ui.resolve, $.ui.status",
+        "./register.ts env writes: nothing",
+        "./register.ts env reads: CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING"
+      ]
+    }
+  ]
+}

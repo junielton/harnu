@@ -63,6 +63,7 @@ import {
   injectBundledSkillArgs,
   cleanStaleLegacyStaging
 } from './bundled-skills'
+import { registerModsAuditHandlers } from './mods-audit'
 import { registerAppLocaleHandlers } from './app-locale'
 import { registerDialogHandlers } from './dialog'
 import { scanFolders } from './claude-reader'
@@ -625,6 +626,8 @@ app.whenReady().then(async () => {
   // appends `--plugin-dir <staged>`. Nothing is enabled on a fresh install, so the
   // provider is a pass-through until the operator turns a skill on in the panel.
   registerBundledSkillsHandlers()
+  // T389 P4W1: Settings → Mods. Read-only; spawns nothing until the tab is opened.
+  registerModsAuditHandlers()
   // Drop the dead pre-rename `<hash>/capy/` staging dirs the userData migration carried over.
   void cleanStaleLegacyStaging().catch(() => {})
   setBundledSkillsArgsProvider((args, cwd) => injectBundledSkillArgs(args, cwd))

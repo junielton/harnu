@@ -24,7 +24,8 @@ import type { IdentityParityRecord } from './identity-parity-core'
 import { createAppPolicyProbe } from '../claude-policy-probe'
 import { buildCompanionStatus } from './companion-status'
 import { HELLO_GRACE_MS } from './companion-state-core'
-import { companionStagedDir } from './spawn-inject'
+import { companionStagedDir, ensureStagedRemembered } from './spawn-inject'
+import { setModsAuditCompanionProvider, setModsAuditPolicyProvider } from '../mods-audit'
 import { ensureStaged } from './staging'
 import { getCompanionPrefs, prefsKey } from './companion-prefs'
 import manifest from '../../../resources/companion/.claude-plugin/plugin.json'
@@ -40,6 +41,7 @@ import {
   noteLeasedReading,
   setPlanUsagePollObserver
 } from './ingest/plan-usage-gate'
+import { registerModsObserved, type ModsObserved } from './mods-observed'
 import {
   familyMode,
   getCompanionMode,
@@ -98,6 +100,15 @@ let taskState: TaskStateAdapter | null = null
 let telemetry: TelemetryAdapter | null = null
 let turnLedger: TurnLedger | null = null
 let ledgerTimer: ReturnType<typeof setInterval> | null = null
+let modsObserved: ModsObserved | null = null
+
+/**
+ * P4W1 part B: the mods the companion saw admitted in sessions with a live lease, for the Mods
+ * pane's "Loaded in" line. Empty until `registerCompanionHost` ran, and while `modsLive` is off.
+ */
+export function observedMods(folder: string | null): ReturnType<ModsObserved['sessions']> {
+  return modsObserved?.sessions(folder) ?? []
+}
 let sessionKeyResolver: ((owner: SpawnOwner) => string | null) | null = null
 
 /**
@@ -289,8 +300,20 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
       age: Math.max(0, now - reading.at)
     })
   })
+
+  // P4W1 part B: the `modsLive` key (default off), the `sense.mods` rule and the observation store.
+  modsObserved = registerModsObserved({ host: core.facade })
   // The shared policy probe: one run per boot and CLI binary, lazily, off the spawn path.
   const probe = createAppPolicyProbe(companionStagedDir)
+  // The Mods pane (P4W1) reads the same staged directory and the same probe: row 1 is the staged
+  // mod, and the policy banner is the probe's class. The pane never runs a second probe.
+  setModsAuditCompanionProvider(ensureStagedRemembered)
+  setModsAuditPolicyProvider(async () => {
+    await ensureStagedRemembered()
+    // The probe is single-flight and cached; the pane never waits on it past a few seconds.
+    const wait = new Promise<null>((r) => setTimeout(() => r(null), 5_000).unref?.())
+    return (await Promise.race([probe.ensure(), wait])) ?? 'unknown'
+  })
   // Everything the Harnu mod surfaces show is derived on demand; main only says "re-read".
   let updateTimer: ReturnType<typeof setTimeout> | null = null
   const pushUpdated = (): void => {

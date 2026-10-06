@@ -7,6 +7,7 @@ import type {
   BundledSkillsView,
   UserLevelInstallResult
 } from '../main/bundled-skills'
+import type { ModRow, ModsAuditView } from '../main/mods-audit-core'
 import type {
   DegradedCode,
   SessionUpdatePayload,
@@ -184,6 +185,16 @@ export type {
   UserLevelInstallResult
 } from '../main/bundled-skills'
 export type { BundledSkill } from '../main/bundled-skills-core'
+
+// Mods audit (T389 P4W1). The pure core owns the wire types; type-only here.
+export type {
+  CapabilityId,
+  ModAnalysis,
+  ModRow,
+  ModSource,
+  ModsAuditView,
+  PolicyState
+} from '../main/mods-audit-core'
 
 // Folder-ops wire types (T69). `folder-ops.ts` is a node module (fs), so the
 // renderer imports these as type-only — the shape of the "Open subfolder" picker
@@ -2096,6 +2107,20 @@ const api = {
     ipcRenderer.invoke('bundledSkills:setFolder', folder, name, enabled),
   bundledSkillsSetUserLevel: (name: string, install: boolean): Promise<UserLevelInstallResult> =>
     ipcRenderer.invoke('bundledSkills:setUserLevel', name, install),
+
+  // ---- Mods audit (T389 P4W1) ----------------------------------------------
+  // Read-only list of the mods a session in `folder` (null = global) can load, with
+  // what each declares it can do. `analyse` takes ROW KEYS from the last listing,
+  // never paths; each settled analysis arrives as one `modsAudit:row` event.
+  modsAuditList: (folder: string | null): Promise<ModsAuditView> =>
+    ipcRenderer.invoke('modsAudit:list', folder),
+  modsAuditAnalyse: (req: {
+    folder: string | null
+    keys?: string[]
+    force?: boolean
+  }): Promise<{ queued: number }> => ipcRenderer.invoke('modsAudit:analyse', req),
+  onModsAuditRow: (cb: (row: ModRow) => void): (() => void) =>
+    subscribe<ModRow>('modsAudit:row', cb),
 
   // ---- Skills a tick could stage (T305) ------------------------------------
   // Every skill a scheduler tick in `folder` can be told to stage, tagged with

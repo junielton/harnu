@@ -13,6 +13,7 @@
     "classic.StopFailure",
     "classic.SubagentStart",
     "classic.SubagentStop",
+    "plugin.register",
     "prompt.submit",
     "session.end",
     "session.measure",

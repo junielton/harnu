@@ -1,0 +1,15 @@
+{
+  "rowKeys": [
+    "enabled",
+    "id",
+    "installPath",
+    "installedAt",
+    "lastUpdated",
+    "mcpServers",
+    "projectEnabled",
+    "projectPath",
+    "scope",
+    "version"
+  ],
+  "scopes": ["local", "project", "synced", "user"]
+}

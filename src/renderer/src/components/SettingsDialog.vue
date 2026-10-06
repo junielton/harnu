@@ -29,6 +29,7 @@ import PushChannelsPane from './PushChannelsPane.vue'
 import VoicePane from './VoicePane.vue'
 import McpServerPane from './McpServerPane.vue'
 import BundledSkillsPane from './BundledSkillsPane.vue'
+import ModsAuditPane from './ModsAuditPane.vue'
 import MemoryLocationPane from './MemoryLocationPane.vue'
 import HibernationPolicyPane from './HibernationPolicyPane.vue'
 import CleanupSettingsPane from './CleanupSettingsPane.vue'
@@ -231,6 +232,11 @@ const tabs: Array<{ id: SettingsTabId; labelKey: string; keywords: string[] }> =
       'conductor',
       'plugin'
     ]
+  },
+  {
+    id: 'mods',
+    labelKey: 'settings.tabs.mods',
+    keywords: ['mod', 'mods', 'plugin', 'plugins', 'hooks', 'audit', 'capabilities', 'companion']
   },
   {
     id: 'memory',
@@ -1049,6 +1055,7 @@ onBeforeUnmount(() => {
             <VoicePane v-else-if="activeTab === 'voice'" />
             <McpServerPane v-else-if="activeTab === 'mcp'" />
             <BundledSkillsPane v-else-if="activeTab === 'skills'" />
+            <ModsAuditPane v-else-if="activeTab === 'mods'" />
             <MemoryLocationPane v-else-if="activeTab === 'memory'" />
             <HibernationPolicyPane v-else-if="activeTab === 'hibernationPolicy'" />
             <CleanupSettingsPane v-else-if="activeTab === 'cleanup'" />
