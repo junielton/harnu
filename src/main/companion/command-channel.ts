@@ -32,8 +32,7 @@ import {
   profileRefusal,
   shadowRefusal,
   validateArgs,
-  type ChannelMode,
-  type GateRow
+  type ChannelMode
 } from './command-gate-core'
 import type {
   CommandCause,
@@ -454,7 +453,7 @@ export function createCommandChannel(deps: ChannelDeps): CommandChannel {
     const args = validateArgs(req.name, req.args)
     if (!args.ok) return refuse(req, b, args.reason)
     // 7. Audit, then queue.
-    return queueIt(req, b, st, origin.row)
+    return queueIt(req, b, st)
   }
 
   function targetRefusal(
@@ -473,10 +472,8 @@ export function createCommandChannel(deps: ChannelDeps): CommandChannel {
   function queueIt(
     req: EnqueueRequest<CommandName>,
     b: BindingView,
-    st: BindingState,
-    row: GateRow
+    st: BindingState
   ): EnqueueResult {
-    void row
     const t = now()
     const plan = planEnqueue(
       st.queue,

@@ -176,9 +176,6 @@ export async function channelRig(opts: ChannelRigOptions = {}) {
     view,
     bootId,
     close,
-    setMode: (m: CompanionMode) => {
-      void m
-    },
     killSwitch: () => {
       state.enabledFlag = false
       for (const l of [...listeners]) l()

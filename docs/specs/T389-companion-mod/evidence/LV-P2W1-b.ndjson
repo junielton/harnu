@@ -1,0 +1,8 @@
+{"note": "The run started 2026-10-06T05:13:11Z (5 sessions, 3 folders, 30 min). A second launch of the same script at 05:34:43Z truncated this file and was stopped at once; its 'start' line and one 5-minute 'progress' line (minutes 5) are the only lines of it here. The lines with minutes 25 and 30, the per-session holds, the summary and the final pings are the original run's, which finished at 05:43:12Z."}
+{"t":"2026-10-06T05:34:43.420Z","step":"start","sessions":5,"folders":3,"minutes":30,"claude":"2.1.290"}
+{"t":"2026-10-06T05:38:12.435Z","step":"progress","minutes":25,"pollRecords":295}
+{"t":"2026-10-06T05:39:43.520Z","step":"progress","minutes":5,"pollRecords":55,"timeoutHolds":55,"minHeldMs":24999,"maxHeldMs":25006,"superseded":0,"leaseLost":0}
+{"t":"2026-10-06T05:43:12.536Z","step":"progress","minutes":30,"pollRecords":355}
+{"t":"2026-10-06T05:43:12.537Z","step":"per-session holds","per":[{"session":"59e1ecf1cff7","polls":71,"timeouts":71,"minHeldMs":24999,"maxHeldMs":25024,"superseded":0,"command":0},{"session":"fea4af935005","polls":71,"timeouts":71,"minHeldMs":24999,"maxHeldMs":25024,"superseded":0,"command":0},{"session":"a76a894c6bfb","polls":71,"timeouts":71,"minHeldMs":24999,"maxHeldMs":25025,"superseded":0,"command":0},{"session":"4746c653bb53","polls":71,"timeouts":71,"minHeldMs":24999,"maxHeldMs":25024,"superseded":0,"command":0},{"session":"083ddd8cdf6b","polls":71,"timeouts":71,"minHeldMs":24999,"maxHeldMs":25023,"superseded":0,"command":0}]}
+{"t":"2026-10-06T05:43:12.538Z","step":"summary","sessionsWithPolls":5,"timeoutHolds":355,"holdsOutside25sPlusMinus500ms":0,"outsideSample":[],"bindingRows":{"bound":5},"leaseLost":0}
+{"t":"2026-10-06T05:43:12.611Z","step":"final pings","ok":[true,true,true,true,true]}
