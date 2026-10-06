@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { channelRig } from '../companion/support/channel-rig'
 import { uiText } from '../../src/main/companion/command-gate-core'
 import { startFakeHost, type FakeHost, type RecordedRequest } from './support/fake-host'
-import { startInteractive, type Interactive } from './support/run-interactive'
+import { startInteractive, type Interactive } from './support/run-interactive-pty'
 import { WITH_CLI } from './support/run-claude'
 
 // P2W1 L4: a real, interactive `claude` on a pseudo-terminal, hermetic, no model turn. Interactive

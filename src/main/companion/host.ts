@@ -9,16 +9,31 @@
  */
 
 import { app, powerMonitor, type BrowserWindow } from 'electron'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { claudeVersionSync, resolveClaudeVersion } from '../claude-cli'
+import { sanitizeSpawnEnv } from '../appimage-env'
+import { claudeVersionSync, resolveClaudePath, resolveClaudeVersion } from '../claude-cli'
+import { claudeSettingsPath } from '../claude-settings'
 import { appendAudit, configureAuditDir } from './audit-log'
-import { rolloutView, setCompanionCliGate, setRampFolders } from './companion-prefs'
+import {
+  getCompanionPrefs,
+  prefsKey,
+  registerPrefsKey,
+  rolloutView,
+  setCompanionCliGate,
+  setPrefsKey,
+  setRampFolders
+} from './companion-prefs'
+import { createCorroborator } from './external-corroboration'
+import { createExternalHost, type ExternalHost } from './external-host'
+import { managedSettingsPaths } from './external-install-core'
+import { sessionsRegistryDir } from '../session-registry-watch'
 import { registerCompanionIpc } from './companion-ipc'
 import { createCompanionHost } from './host-core'
 import { gateForCli } from './enable-policy'
 import { createEnablePolicy } from './feature-policy'
 import { configureHub, getTaskState, ingest as hubIngest } from '../detect/task-state-hub'
-import { admit, FAMILY_FEATURES, type FactSource } from './arbitration-core'
+import { admit, FAMILY_FEATURES, normalizeFolder, type FactSource } from './arbitration-core'
 import { configureParityLedger, flushParityLedger, recordFact } from './parity-ledger'
 import type { IdentityParityRecord } from './identity-parity-core'
 import { createAppPolicyProbe } from '../claude-policy-probe'
@@ -26,8 +41,7 @@ import { buildCompanionStatus } from './companion-status'
 import { HELLO_GRACE_MS } from './companion-state-core'
 import { companionStagedDir, ensureStagedRemembered } from './spawn-inject'
 import { setModsAuditCompanionProvider, setModsAuditPolicyProvider } from '../mods-audit'
-import { ensureStaged } from './staging'
-import { getCompanionPrefs, prefsKey } from './companion-prefs'
+import { ensureStaged, pinStagedDir } from './staging'
 import manifest from '../../../resources/companion/.claude-plugin/plugin.json'
 import { createIdentityAdapter, type IdentityAdapter } from './identity-adapter'
 import { createTaskStateAdapter, type TaskStateAdapter } from './ingest/task-state-adapter'
@@ -109,6 +123,15 @@ let modsObserved: ModsObserved | null = null
 export function observedMods(folder: string | null): ReturnType<ModsObserved['sessions']> {
   return modsObserved?.sessions(folder) ?? []
 }
+
+let external: ExternalHost | null = null
+let sessionOwned: ((sid: string) => boolean) | null = null
+let interceptRamp: ReadonlySet<string> = new Set()
+
+/** `pty.ts` tells the host which session ids Harnu spawned (live or parked): a claim never takes one. */
+export function setCompanionSessionOwnedResolver(fn: ((sid: string) => boolean) | null): void {
+  sessionOwned = fn
+}
 let sessionKeyResolver: ((owner: SpawnOwner) => string | null) | null = null
 
 /**
@@ -142,6 +165,30 @@ function recordIdentityParity(rec: IdentityParityRecord): void {
     },
     { ts: rec.at }
   )
+}
+
+/** The post-install check (OD-5's second net): `claude plugin list --json`, 10 s, the user's settings. */
+async function runPluginList(): Promise<{ exitCode: number; output: string } | null> {
+  const bin = await resolveClaudePath()
+  if (!bin) return null
+  const { execFile } = await import('node:child_process')
+  return new Promise((resolve) => {
+    execFile(
+      bin,
+      ['plugin', 'list', '--json'],
+      {
+        cwd: homedir(),
+        timeout: 10_000,
+        maxBuffer: 1 << 20,
+        env: sanitizeSpawnEnv(process.env, { execPath: process.execPath })
+      },
+      (err, stdout, stderr) =>
+        resolve({
+          exitCode: err ? (typeof err.code === 'number' ? err.code : 1) : 0,
+          output: String(stdout) + String(stderr)
+        })
+    )
+  })
 }
 
 /** Called once from `src/main/index.ts` beside `registerHookBridge`. */
@@ -208,10 +255,10 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
       )
     }
   })
-  // P1W4 replaces P1W3's first policy (`sense.identity` only) with `computeEnable`.
-  core.facade.setEnablePolicy(
-    createEnablePolicy({ rollout: rolloutView, ceiling: surface.lastVerifiedCli })
-  )
+  // P1W4 replaces P1W3's first policy (`sense.identity` only) with `computeEnable`. P4W3 wraps it
+  // below, once the outside-session host exists.
+  const basePolicy = createEnablePolicy({ rollout: rolloutView, ceiling: surface.lastVerifiedCli })
+  core.facade.setEnablePolicy(basePolicy)
   // P1W5: created BEFORE the identity adapter, so on a `/clear` its bus handler runs while the
   // binding still answers to the old sid (the hub finds a binding by sid).
   taskState = createTaskStateAdapter({
@@ -314,6 +361,61 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
     const wait = new Promise<null>((r) => setTimeout(() => r(null), 5_000).unref?.())
     return (await Promise.race([probe.ensure(), wait])) ?? 'unknown'
   })
+  // P4W3: the Harnu mod outside Harnu. Default OFF; nothing is written until the operator turns
+  // the switch on in Settings → Mods and confirms the disclosure.
+  registerPrefsKey<boolean>('external', {
+    default: false,
+    observeCap: false,
+    parse: (v) => v === true
+  })
+  // The ramp of §7.7 is the existing per-folder interceptor flag, read from `projects.json`.
+  const refreshIntercept = (): void => {
+    void import('../user-projects')
+      .then((m) => m.interceptActivePaths())
+      .then((paths) => void (interceptRamp = new Set(paths.map(normalizeFolder))))
+      .catch(() => undefined)
+  }
+  refreshIntercept()
+  setInterval(refreshIntercept, 30_000).unref?.()
+  external = createExternalHost({
+    install: {
+      settingsPath: claudeSettingsPath,
+      recordPath: () => join(userData, 'companion', 'external-install.json'),
+      managedPaths: () => managedSettingsPaths(process.platform),
+      ensureStaged: ensureStagedRemembered,
+      ensureProbe: async () => {
+        const wait = new Promise<null>((r) => setTimeout(() => r(null), 5_000).unref?.())
+        return (await Promise.race([probe.ensure(), wait])) ?? null
+      },
+      postInstallCheck: runPluginList,
+      modVersion: () => manifest.version,
+      now: () => Date.now(),
+      log: (l) => console.info(`[companion] ${l}`)
+    },
+    binding: {
+      host: core.facade,
+      mode: getCompanionMode,
+      // Fail closed: until `pty.ts` is loaded every claim is treated as a Harnu session.
+      sessionOwnedByHarnu: (sid) => sessionOwned?.(sid) ?? true,
+      corroborates: createCorroborator({
+        projectsDir: () => join(homedir(), '.claude', 'projects'),
+        registryDir: sessionsRegistryDir
+      }).corroborates,
+      now: () => performance.now(),
+      appendAudit,
+      onRamp: (cwd) => interceptRamp.has(normalizeFolder(cwd)),
+      approvalActive: (cwd) => familyMode('approval', cwd) === 'active',
+      log: (l) => console.info(`[companion] ${l}`)
+    },
+    key: {
+      get: () => prefsKey<boolean>('external'),
+      stored: () => getCompanionPrefs().keys.external === true,
+      set: (on) => setPrefsKey('external', on)
+    },
+    companionOn: () => getCompanionPrefs().enabled && getCompanionMode() !== 'off',
+    pin: pinStagedDir
+  })
+  core.facade.setEnablePolicy(external.binding.wrapPolicy(basePolicy))
   // Everything the Harnu mod surfaces show is derived on demand; main only says "re-read".
   let updateTimer: ReturnType<typeof setTimeout> | null = null
   const pushUpdated = (): void => {
@@ -350,12 +452,19 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
         refusalTexts: SIDELOAD_REFUSAL_TEXTS
       }),
     stagedDir: async () => companionStagedDir() ?? (await ensureStaged()),
+    externalGet: () => external!.get(),
+    externalSet: async (on) => {
+      const r = await external!.set(on)
+      pushUpdated()
+      return r
+    },
     identityClaims: () => identity?.claims() ?? [],
     identityOutcome: (o) => identity?.recordOutcome(o),
     restartListener: core.restartListener,
     debug
   })
   await core.register()
+  await external.start()
 }
 
 /** Joins the `before-quit` list beside `closeHookBridge()`. */
@@ -372,5 +481,6 @@ export function closeCompanionHost(): Promise<void> {
   telemetry?.dispose()
   telemetry = null
   flushParityLedger()
+  external?.stop()
   return core.close()
 }

@@ -45,6 +45,7 @@ import { PtySessionIndex } from './pty-session-index'
 import {
   companionHost,
   setCompanionSessionKeyResolver,
+  setCompanionSessionOwnedResolver,
   setCompanionSpawnKindResolver
 } from './companion/host'
 import { pruneTaskState } from './hook-bridge'
@@ -545,6 +546,8 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
   setCompanionSpawnKindResolver((owner) =>
     owner.kind === 'pty' ? (ptys.get(owner.ptyId)?.kind ?? null) : null
   )
+  // T389 P4W3: a tokenless claim for a session Harnu spawned (live or parked) is UNAUTHORIZED.
+  setCompanionSessionOwnedResolver((sid) => sessionOwnedByHarnu(sid))
 
   function flushNow(id: string): void {
     const rec = ptys.get(id)

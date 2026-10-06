@@ -43,7 +43,7 @@ export interface Binding {
   connUsed: boolean
   sid: Sid
   proto: number
-  profile: HelloProfile // 'external' is set by P4W3 only
+  profile: HelloProfile // 'external' is set by `helloExternal` only (P4W3)
   cliVersion: string
   modVersion: string
   surface: string | null
@@ -58,6 +58,7 @@ export interface Binding {
   leaseLostAt: number | null // set once, by the sweep; never cleared (ARB-4c is P1W4's rule)
   state: 'bound' | 'ended' | 'closed'
   revoked: boolean // set by revoke(); cleared by the resume hello that follows
+  corroborated: boolean // P4W3: Harnu's own watchers reported this session (external bindings only)
   rate: RateBucket
   counters: {
     requests: number
@@ -88,7 +89,8 @@ export interface BindingView {
   state: 'bound' | 'ended' | 'closed'
   /** P1W3: how long after the spawn the first hello landed (parity evidence; gate p95 < 2 000). */
   helloAfterSpawnMs: number
-  corroborated?: boolean // P4W3
+  /** P4W3: present on an external binding only; false until Harnu's own watchers corroborate it. */
+  corroborated?: boolean
 }
 
 /** No token (SEC-8). */
@@ -105,7 +107,7 @@ export type EnablePolicy = (b: Readonly<BindingView>) => FeatureId[]
 export type ReleaseReason = 'pty-exit' | 'spawn-aborted' | 'tick-done'
 
 export type HelloOutcome =
-  | { ok: true; binding: Binding; kind: 'spawn' | 'resume' }
+  | { ok: true; binding: Binding; kind: 'spawn' | 'resume' | 'external' }
   | { ok: false; code: 'UNAUTHORIZED' | 'UNKNOWN_SESSION' }
 
 export interface SessionTableDeps {
@@ -188,6 +190,48 @@ export class SessionTable {
     if (req.spawn !== undefined) return this.helloSpawn(req, enable)
     if (req.resume !== undefined) return this.helloResume(req, enable)
     return { ok: false, code: 'UNAUTHORIZED' }
+  }
+
+  /**
+   * The tokenless claim of an outside session (P4W3, contract §21). The caller has already decided
+   * to accept it (`external-binding.ts`); the table only binds. A second claim for a `sid` that
+   * already has a live external binding supersedes it: the mod restarted and lost its `conn`.
+   */
+  helloExternal(req: HelloRequest, enable: EnablePolicy): Binding {
+    for (const old of this.bindings.values()) {
+      if (old.profile === 'external' && old.sid === req.sid && old.state === 'bound') {
+        old.state = 'closed'
+        old.leaseLostAt ??= this.deps.now()
+      }
+    }
+    const b = this.createBinding(null, req)
+    this.refresh(b, req, enable)
+    this.pruneDead()
+    return b
+  }
+
+  /** Live external bindings: bound, not revoked. The bound the host enforces. */
+  externalCount(): number {
+    let n = 0
+    for (const b of this.bindings.values()) {
+      if (b.profile === 'external' && b.state === 'bound' && !b.revoked) n++
+    }
+    return n
+  }
+
+  /** Harnu's own watchers corroborated this binding (P4W3 §7.5). */
+  corroborate(view: Pick<BindingView, 'key'>, on = true): void {
+    const b = this.bindings.get(view.key)
+    if (b && b.profile === 'external') b.corroborated = on
+  }
+
+  /** Closes a binding the host no longer wants (an uncorroborated claim): its `conn` goes stale. */
+  drop(view: Pick<BindingView, 'key'>): void {
+    const b = this.bindings.get(view.key)
+    if (!b || b.state !== 'bound') return
+    b.state = 'closed'
+    b.leaseLostAt ??= this.deps.now()
+    this.pruneDead()
   }
 
   /** Who a spawn token was minted for (a refused hello names its owner, never the token). */
@@ -359,7 +403,8 @@ export class SessionTable {
       proven: [...b.proven],
       lease: this.leaseOf(b),
       state: b.state,
-      helloAfterSpawnMs: b.helloAfterSpawnMs
+      helloAfterSpawnMs: b.helloAfterSpawnMs,
+      ...(b.profile === 'external' ? { corroborated: b.corroborated } : {})
     }
   }
 
@@ -404,18 +449,19 @@ export class SessionTable {
     return { ok: true, binding: b, kind: 'resume' }
   }
 
-  private createBinding(entry: LedgerEntry, req: HelloRequest): Binding {
+  private createBinding(entry: LedgerEntry | null, req: HelloRequest): Binding {
     const now = this.deps.now()
     const b: Binding = {
       key: this.nextKey++,
-      owner: entry.meta.owner,
-      trust: entry.meta.trust,
+      owner: entry ? entry.meta.owner : null,
+      // An outside session is a claim: it never acts, so its trust is the lowest class.
+      trust: entry ? entry.meta.trust : 'read-only',
       conn: this.deps.mintConn(),
       prevConn: null,
       connUsed: false,
       sid: req.sid,
       proto: 1,
-      profile: 'interactive',
+      profile: entry ? 'interactive' : 'external',
       cliVersion: '',
       modVersion: '',
       surface: null,
@@ -426,10 +472,11 @@ export class SessionTable {
       seq: { last: 0 },
       parked: 0,
       lastRequestAt: now,
-      helloAfterSpawnMs: Math.max(0, now - entry.mintedAt),
+      helloAfterSpawnMs: entry ? Math.max(0, now - entry.mintedAt) : 0,
       leaseLostAt: null,
       state: 'bound',
       revoked: false,
+      corroborated: false,
       rate: createRateBucket(now),
       counters: {
         requests: 0,
@@ -461,7 +508,9 @@ export class SessionTable {
   /** What every accepted hello re-reads from the request; trust and owner never change. */
   private refresh(b: Binding, req: HelloRequest, enable: EnablePolicy): void {
     b.proto = negotiate(req.protoMin, req.protoMax) ?? b.proto
-    b.profile = req.isInteractive === false ? 'headless' : 'interactive'
+    // An external binding keeps its profile for life; the others read it from `isInteractive`.
+    if (b.profile !== 'external')
+      b.profile = req.isInteractive === false ? 'headless' : 'interactive'
     b.cliVersion = req.cli.version
     b.modVersion = req.mod.version
     b.surface = req.surface

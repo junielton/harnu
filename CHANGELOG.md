@@ -25,6 +25,14 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   Off stops Harnu from using the mod right away, switches it off in running sessions and
   keeps it out of new ones; on again reaches new sessions only. Off means the hooks and
   polling Harnu used before.
+- **Harnu mod outside Harnu (opt-in).** Settings → Mods → Advanced has a new switch that lets
+  `claude` sessions you start in your own terminal load the Harnu mod too, so Harnu can show
+  their real state instead of guessing. It is off by default and asks first: turning it on adds
+  one folder to `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`, and turning it off
+  removes exactly that entry. Harnu shows an outside session only once its own watchers confirm
+  it, never starts prompts in it, never writes into its terminal and does not hold its
+  approvals. On a machine with managed settings the switch refuses and writes nothing.
+
 - **The state of the mod, per session.** The hover preview shows one quiet line (`Harnu
 mod: live`, `off`, or `legacy` with the reason), and the System Monitor shows the same
   state next to each live session. `legacy` is not an error: it means the session runs

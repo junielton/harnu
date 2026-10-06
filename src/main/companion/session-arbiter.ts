@@ -29,6 +29,12 @@ export interface SessionArbiterDeps {
   rollout(): RolloutView
   /** Epoch ms of a spawn decision; default `Date.now()`. */
   now?(): number
+  /**
+   * P4W3 §13 (QA-9): outside sessions flip with their family only after 10 of them sit in the
+   * ledger with zero unexplained divergences. Until the operator's flip PR says so this is false
+   * and an outside binding is never an owner, whatever the family mode.
+   */
+  externalMayOwn?(): boolean
 }
 
 export interface SessionArbiter {
@@ -133,12 +139,16 @@ export function createSessionArbiter(deps: SessionArbiterDeps): SessionArbiter {
   const viewOf = (x: string): BindingView | null => host?.getBinding(x) ?? null
 
   function arbiterBinding(v: BindingView): ArbiterBinding {
+    // An outside binding is a claim: it owns nothing until Harnu's watchers corroborated it, and
+    // nothing at all until the external flip gate opens (QA-9). It stays in `shadow`.
+    const external = v.profile === 'external'
+    const mayOwn = !external || (v.corroborated === true && deps.externalMayOwn?.() === true)
     return {
       sessionKey: v.sessionKey,
       folder: v.cwd ? normalizeFolder(v.cwd) : null,
-      leaseLive: v.state === 'bound' && v.lease === 'live',
+      leaseLive: v.state === 'bound' && v.lease === 'live' && mayOwn,
       enabled: new Set(v.enabled),
-      proven: new Set(v.proven),
+      proven: new Set(mayOwn ? v.proven : []),
       revoked: new Set(revoked.get(v.key) ?? [])
     }
   }

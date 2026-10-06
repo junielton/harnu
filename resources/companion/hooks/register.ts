@@ -111,6 +111,8 @@ let probes: Probes = { classic: false, toolCheck: false }
 let declared: FeatureId[] = []
 let dormant = false
 let inert = false
+/** P4W3: no spawn token, so Harnu did not start this process: the external claim (contract §21). */
+let tokenless = false
 let helloFlight: Promise<void> | null = null
 let retryBlocked = false
 let retryTimer: Timer | null = null
@@ -154,6 +156,7 @@ function resetState(): void {
   declared = []
   dormant = false
   inert = false
+  tokenless = false
   helloFlight = null
   retryBlocked = false
   retryTimer = null
@@ -466,19 +469,32 @@ function startHeartbeatOnce($: Dollar): void {
   heartbeat = $.clock.every(Math.max(1, config.heartbeatMs || HEARTBEAT_MS), () => void beat($))
 }
 
-/** Single flight. `resumeConn` is the conn a STALE_CONN just invalidated. Never rejects. */
-async function doHello($: Dollar, resumeConn?: Conn): Promise<void> {
+/**
+ * Single flight. `resumeConn` is the conn a STALE_CONN just invalidated; `fresh` skips every
+ * resume (a tokenless claim after the host forgot us). Never rejects.
+ */
+async function doHello($: Dollar, resumeConn?: Conn, fresh = false): Promise<void> {
   try {
-    let resume: Conn | undefined = resumeConn
-    if (resume === undefined) {
-      const saved = await $.state.get(CONN)
-      if (saved.value) resume = saved.value
-    }
+    let resume: Conn | undefined = fresh ? undefined : resumeConn
     if (boot === null) {
       const b = await $.state.get(BOOT)
       if (b.value) boot = b.value
     }
+    // Who claims (contract §21 item 1): decided once per load, from the env and `isInteractive`.
+    const token = await $.env.get('HARNU_SPAWN_TOKEN')
+    tokenless = typeof token !== 'string' || token === ''
+    if (tokenless && boot !== null && !boot.isInteractive) {
+      // Harnu's own `claude -p` probes, CI and scripts: not one request, and no delay at exit
+      // (smoke C2, ADR C6).
+      goDormant()
+      return
+    }
+    tokenBacked = !tokenless
     await loadFleet($) // a reload re-sends a correct snapshot (MOD-4)
+    if (resume === undefined && !fresh) {
+      const saved = await $.state.get(CONN)
+      if (saved.value) resume = saved.value
+    }
     const request: Partial<HelloRequest> = {}
     let sid: Sid | null
     if (resume !== undefined) {
@@ -491,19 +507,24 @@ async function doHello($: Dollar, resumeConn?: Conn): Promise<void> {
           toolCheck: probes.toolCheck || p.value.toolCheck
         }
       request.resume = { conn: resume }
-      const spawned = await $.env.get('HARNU_SPAWN_TOKEN')
-      tokenBacked = typeof spawned === 'string' && spawned !== ''
     } else {
-      const token = await $.env.get('HARNU_SPAWN_TOKEN')
-      if (typeof token !== 'string' || token === '') {
-        goDormant() // not spawned by Harnu (the external profile is P4W3)
-        return
+      if (tokenless) {
+        // The external claim: neither `spawn` nor `resume`. A claim proves nothing; the host
+        // shows it only once its own watchers corroborate the session.
+        sid = await $.session.id()
+      } else {
+        sid = await $.session.id()
+        request.spawn = token as `sp_${string}`
       }
-      sid = await $.session.id()
-      request.spawn = token as `sp_${string}`
-      tokenBacked = true
     }
     if (boot === null) return // no session.start yet: the next hook tries again
+    // The headless guard again, now that `boot` is known for certain: `classic.SessionStart`
+    // dispatches BEFORE `session.start` on a real CLI, so an early `doHello` can pass the first
+    // check with `boot` still null and find it set by the time it reaches the network.
+    if (tokenless && !boot.isInteractive) {
+      goDormant()
+      return
+    }
     const cli = await $.session.version()
     const hello: HelloRequest = {
       protoMin: PROTOCOL_VERSION,
@@ -526,7 +547,14 @@ async function doHello($: Dollar, resumeConn?: Conn): Promise<void> {
     const b = r.body
     if (b.ok !== true) {
       const code = typeof b.code === 'string' ? b.code : ''
-      if (DORMANT_CODES.has(code)) {
+      if (tokenless && code === 'UNKNOWN_SESSION' && request.resume !== undefined) {
+        // Harnu restarted (it does on every update): a tokenless mod has no token to protect, so
+        // it claims again, once, instead of going dormant (contract §21 item 7).
+        await $.state.set(CONN, undefined as never).catch(() => undefined)
+        return doHello($, undefined, true)
+      }
+      // An invalid claim never becomes valid: stop asking (SEC-3c).
+      if (DORMANT_CODES.has(code) || (tokenless && code === 'BAD_ENVELOPE')) {
         goDormant()
         return
       }
@@ -663,8 +691,8 @@ async function pumpLoop($: Dollar, beat: boolean): Promise<void> {
       sentAt: Date.now(),
       events: batch,
       ...(dropped > 0 ? { dropped } : {}),
-      // A profile that does not poll receives its commands on this response (contract §5.2).
-      ...(boot?.isInteractive === false && bootId !== null
+      // A profile that does not poll receives its commands on this response (contract §5.2, §21 item 4).
+      ...((boot?.isInteractive === false || tokenless) && bootId !== null
         ? { bootId: bootId as EventsRequest['bootId'], cursor: (await ensureChannel($)).cursor }
         : {})
     }

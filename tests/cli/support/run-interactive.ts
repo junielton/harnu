@@ -1,164 +1,207 @@
-import { createRequire } from 'node:module'
+import { execFile, spawn } from 'node:child_process'
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { promisify } from 'node:util'
 import { renderCoords } from '../../../scripts/ci/render-coords.mjs'
 
+const run = promisify(execFile)
+
 /**
- * A real interactive `claude` on a pseudo-terminal, hermetic like `runClaude` (P2W1 §7.9, QA-8):
- * temp HOME and CLAUDE_CONFIG_DIR, a temp cwd that is already trusted, onboarding marked done, a
- * temp copy of the companion, `CLAUDE*`/`HARNU_*`/`ANTHROPIC_*` stripped from the environment,
- * `--debug-file`. No credential is copied in: the session needs no sign-in to load its mods, poll,
- * `/clear` or reload, which is everything the channel's L4 asks of it. A model turn cannot run.
+ * Hermetic launcher for an INTERACTIVE `claude` in tmux (T389 P4W3 L4 and live-verify): a temp
+ * HOME, a temp CLAUDE_CONFIG_DIR, a temp cwd, a temp copy of the companion, a seeded
+ * `.claude.json` that skips the onboarding and accepts the temp folder's trust, `--debug-file`,
+ * and a stripped environment (`env -i`). No credential is ever copied in: the session starts
+ * "Not logged in", which is enough for `session.start` to fire and for a mod to say hello.
  *
- * Interactive is the one profile that polls; `claude -p` never does (contract §16).
+ * SAFETY (P4W3 writes a user's Claude settings): `assertThrowaway` aborts before anything is
+ * written when a resolved settings path is under the real home's `.claude`.
  */
 
 const REPO = resolve(import.meta.dirname, '..', '..', '..')
 const COMPANION_SRC = join(REPO, 'resources', 'companion')
-const requireHere = createRequire(import.meta.url)
+const EXCLUDE = ['.claude-plugin/types', 'hooks/coords.gen.ts', '.dev-lock']
+const filter = (src: string) => (p: string) =>
+  !EXCLUDE.some((x) => p.replace(/\\/g, '/').endsWith(`/${x}`) || p === join(src, x))
 
-interface Pty {
-  onData(cb: (d: string) => void): void
-  onExit(cb: (e: { exitCode: number }) => void): void
-  write(data: string): void
-  kill(signal?: string): void
-  pid: number
+/** Throws when `path` is the operator's real Claude configuration. Called before every write. */
+export function assertThrowaway(path: string): void {
+  const real = join(homedir(), '.claude')
+  const realJson = join(homedir(), '.claude.json')
+  const abs = resolve(path)
+  if (abs === realJson || abs === real || abs.startsWith(real + '/')) {
+    throw new Error(`refusing to touch the real Claude configuration: ${abs}`)
+  }
+}
+
+export async function hasTmux(): Promise<boolean> {
+  try {
+    await run('tmux', ['-V'])
+    return true
+  } catch {
+    return false
+  }
 }
 
 export interface InteractiveOptions {
   /** Absolute rendezvous path baked into the companion's coordinates. */
   rendezvous: string
-  spawnToken: string
-  cols?: number
-  rows?: number
+  /** `env.CLAUDE_CODE_PLUGIN_DIRS` of the temp settings.json: the companion copy is added. */
+  viaSettingsEnv?: boolean
+  /** Also name the companion with `--plugin-dir` (a Harnu-spawned session). */
+  viaFlag?: boolean
+  /** Extra process env (e.g. `HARNU_SPAWN_TOKEN`). `CLAUDE*`, `ANTHROPIC_*`, `HARNU_*` are never inherited. */
+  env?: Record<string, string>
+  /** The PATH to find `claude` on; default: the current PATH. */
+  claudePath?: string
+  /** Other `settings.json` content merged under `env`. */
+  settings?: Record<string, unknown>
+  /** Runs after the temp dirs exist and before `claude` starts. */
+  prepare?(ctx: InteractiveCtx): Promise<void>
+  /**
+   * A second session in the SAME temp HOME as an earlier one (`Interactive.work`, stopped with
+   * `stop({ keep: true })`): nothing is re-created or re-written, the settings are whatever the
+   * first session's life left behind.
+   */
+  reuseWork?: string
 }
 
-export interface Interactive {
-  pid: number
+export interface InteractiveCtx {
   work: string
+  home: string
+  configDir: string
+  settingsPath: string
+  cwd: string
   companionDir: string
-  /** The terminal's text so far, escape sequences stripped. */
-  screen(): string
-  /** The CLI's `--debug-file`. */
-  debug(): Promise<string>
-  type(text: string): void
-  /** Types a line, waits a moment so it is not read as a paste, then presses Enter. */
-  submit(text: string): Promise<void>
-  /** Appends a comment to the mod's source: the plugin-dir watch reloads it. */
-  touchMod(): Promise<void>
-  /** Resolves when `test` is true, polling; rejects with the screen and the debug on timeout. */
-  until(what: string, test: () => boolean | Promise<boolean>, timeoutMs?: number): Promise<void>
-  stop(): Promise<void>
 }
 
-// eslint-disable-next-line no-control-regex
-const ANSI = /\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07/g
+export interface Interactive extends InteractiveCtx {
+  debugFile: string
+  session: string
+  debug(): Promise<string>
+  pane(): Promise<string>
+  /** Resolves when `re` shows in the debug file; rejects after `ms`. */
+  waitDebug(re: RegExp, ms?: number): Promise<string>
+  waitPane(re: RegExp, ms?: number): Promise<string>
+  type(text: string): Promise<void>
+  press(key: string): Promise<void>
+  stop(opts?: { keep?: boolean }): Promise<void>
+}
+
+let counter = 0
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 export async function startInteractive(opts: InteractiveOptions): Promise<Interactive> {
-  const pty = requireHere('node-pty') as {
-    spawn(
-      file: string,
-      args: string[],
-      o: { name: string; cols: number; rows: number; cwd: string; env: Record<string, string> }
-    ): Pty
-  }
-  const work = await mkdtemp(join(tmpdir(), 'harnu-ix-'))
+  const work = opts.reuseWork ?? (await mkdtemp(join(tmpdir(), 'harnu-lv-')))
   const home = join(work, 'home')
+  const configDir = join(home, '.claude')
   const cwd = join(work, 'cwd')
-  await mkdir(join(home, '.claude'), { recursive: true })
-  await mkdir(cwd, { recursive: true })
-  await writeFile(
-    join(home, '.claude', '.claude.json'),
-    JSON.stringify({
-      hasCompletedOnboarding: true,
-      theme: 'dark',
-      numStartups: 5,
-      projects: { [cwd]: { hasTrustDialogAccepted: true, allowedTools: [] } }
-    })
-  )
+  const settingsPath = join(configDir, 'settings.json')
   const companionDir = join(work, 'harnu-companion')
-  await cp(COMPANION_SRC, companionDir, {
-    recursive: true,
-    filter: (p) =>
-      !p.replace(/\\/g, '/').includes('.claude-plugin/types') && !p.endsWith('coords.gen.ts')
-  })
-  await writeFile(
-    join(companionDir, 'hooks', 'coords.gen.ts'),
-    renderCoords({
-      RENDEZVOUS_PATH: opts.rendezvous,
-      MOD_VERSION: JSON.parse(
-        await readFile(join(companionDir, '.claude-plugin', 'plugin.json'), 'utf8')
-      ).version,
-      STAGED_AT: 0
-    })
-  )
-  const debugFile = join(work, 'debug.log')
-
-  const env: Record<string, string> = {}
-  for (const [k, v] of Object.entries(process.env)) {
-    if (
-      v !== undefined &&
-      !k.startsWith('HARNU_') &&
-      !k.startsWith('ANTHROPIC_') &&
-      !k.startsWith('CLAUDE')
-    ) {
-      env[k] = v
-    }
-  }
-  Object.assign(env, {
-    HOME: home,
-    CLAUDE_CONFIG_DIR: join(home, '.claude'),
-    HARNU_SPAWN_TOKEN: opts.spawnToken,
-    TERM: 'xterm-256color'
-  })
-
-  const term = pty.spawn('claude', ['--plugin-dir', companionDir, '--debug-file', debugFile], {
-    name: 'xterm-256color',
-    cols: opts.cols ?? 160,
-    rows: opts.rows ?? 50,
-    cwd,
-    env
-  })
-  let raw = ''
-  let exited = false
-  term.onData((d) => (raw += d))
-  term.onExit(() => (exited = true))
-  const readDebug = (): Promise<string> => readFile(debugFile, 'utf8').catch(() => '')
-
-  const self: Interactive = {
-    pid: term.pid,
-    work,
-    companionDir,
-    screen: () => raw.replace(ANSI, ''),
-    debug: readDebug,
-    type: (text) => term.write(text),
-    async submit(text) {
-      term.write(text)
-      await new Promise((r) => setTimeout(r, 600))
-      term.write('\r')
-    },
-    async touchMod() {
-      const file = join(companionDir, 'hooks', 'register.ts')
-      await writeFile(file, `${await readFile(file, 'utf8')}\n// touched ${Date.now()}\n`)
-    },
-    async until(what, test, timeoutMs = 20_000) {
-      const end = Date.now() + timeoutMs
-      while (Date.now() < end) {
-        if (await test()) return
-        if (exited) break
-        await new Promise((r) => setTimeout(r, 100))
+  for (const p of [home, configDir, settingsPath, cwd, companionDir]) assertThrowaway(p)
+  if (!opts.reuseWork) {
+    await mkdir(configDir, { recursive: true })
+    await mkdir(cwd, { recursive: true })
+    await cp(COMPANION_SRC, companionDir, { recursive: true, filter: filter(COMPANION_SRC) })
+    await writeFile(
+      join(companionDir, 'hooks', 'coords.gen.ts'),
+      renderCoords({
+        RENDEZVOUS_PATH: opts.rendezvous,
+        MOD_VERSION: JSON.parse(
+          await readFile(join(companionDir, '.claude-plugin', 'plugin.json'), 'utf8')
+        ).version,
+        STAGED_AT: 0
+      })
+    )
+    const settings: Record<string, unknown> = { ...(opts.settings ?? {}) }
+    if (opts.viaSettingsEnv) {
+      settings.env = {
+        ...((settings.env as Record<string, string> | undefined) ?? {}),
+        CLAUDE_CODE_PLUGIN_DIRS: companionDir
       }
-      throw new Error(
-        `timed out waiting for ${what}\n--- screen ---\n${self.screen().slice(-1500)}\n--- debug ---\n${(await readDebug()).split('\n').slice(-40).join('\n')}`
-      )
-    },
-    async stop() {
-      // Only the process this call started, by its recorded pid.
-      if (!exited) term.kill()
-      await new Promise((r) => setTimeout(r, 300))
-      await rm(work, { recursive: true, force: true }).catch(() => undefined)
+    }
+    if (Object.keys(settings).length > 0) {
+      await writeFile(settingsPath, JSON.stringify(settings, null, 2) + '\n')
+    }
+    // Skip the onboarding and accept the trust of the temp folder (a fresh HOME stops at both).
+    await writeFile(
+      join(configDir, '.claude.json'),
+      JSON.stringify({
+        hasCompletedOnboarding: true,
+        theme: 'dark',
+        numStartups: 5,
+        projects: { [cwd]: { hasTrustDialogAccepted: true, allowedTools: [] } }
+      })
+    )
+  }
+  const ctx: InteractiveCtx = { work, home, configDir, settingsPath, cwd, companionDir }
+  if (opts.prepare) await opts.prepare(ctx)
+
+  const debugFile = join(work, opts.reuseWork ? `debug-${++counter}.log` : 'debug.log')
+  const session = `harnu-lv-${process.pid}-${++counter}`
+  const envPairs: Record<string, string> = {
+    PATH: opts.claudePath ?? process.env.PATH ?? '',
+    HOME: home,
+    CLAUDE_CONFIG_DIR: configDir,
+    TERM: 'xterm-256color',
+    DISABLE_AUTOUPDATER: '1',
+    ...opts.env
+  }
+  const args = ['--debug-file', debugFile]
+  if (opts.viaFlag) args.push('--plugin-dir', companionDir)
+  const cmd = [
+    'env -i',
+    ...Object.entries(envPairs).map(([k, v]) => `${k}='${v.replace(/'/g, `'\\''`)}'`),
+    'claude',
+    ...args.map((a) => `'${a}'`)
+  ].join(' ')
+  // The window is wide enough that a path is never wrapped inside an assertion.
+  await run('tmux', ['new-session', '-d', '-s', session, '-x', '200', '-y', '50', '-c', cwd, cmd])
+
+  const debug = (): Promise<string> => readFile(debugFile, 'utf8').catch(() => '')
+  const pane = async (): Promise<string> =>
+    (await run('tmux', ['capture-pane', '-t', session, '-p'])).stdout
+  const waitFor = async (get: () => Promise<string>, re: RegExp, ms: number): Promise<string> => {
+    const end = Date.now() + ms
+    for (;;) {
+      const text = await get()
+      if (re.test(text)) return text
+      if (Date.now() > end)
+        throw new Error(`timed out waiting for ${re}\n--- tail ---\n${text.slice(-1500)}`)
+      await sleep(150)
     }
   }
-  return self
+  return {
+    ...ctx,
+    debugFile,
+    session,
+    debug,
+    pane,
+    waitDebug: (re, ms = 20_000) => waitFor(debug, re, ms),
+    waitPane: (re, ms = 20_000) => waitFor(pane, re, ms),
+    async type(text) {
+      await run('tmux', ['send-keys', '-t', session, '-l', text])
+    },
+    async press(key) {
+      await run('tmux', ['send-keys', '-t', session, key])
+    },
+    async stop(stopOpts) {
+      await run('tmux', ['kill-session', '-t', session]).catch(() => undefined)
+      if (!stopOpts?.keep) await rm(work, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }
+}
+
+/** `claude --version` of the PATH the suite uses. */
+export function claudeVersionOn(path: string): Promise<string> {
+  return new Promise((res) => {
+    const c = spawn('claude', ['--version'], {
+      env: { PATH: path },
+      stdio: ['ignore', 'pipe', 'ignore']
+    })
+    let out = ''
+    c.stdout.on('data', (d: Buffer) => (out += d))
+    c.on('error', () => res('unavailable'))
+    c.on('close', () => res(out.trim() || 'unavailable'))
+  })
 }

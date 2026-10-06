@@ -6,7 +6,9 @@
  * the session's tab (the inspection escape hatch). All copy via `$t`; colors are
  * tokens only (`bg-green-soft`/`text-green`, `bg-red-soft`/`text-red`).
  */
+import { computed } from 'vue'
 import { Check, X } from 'lucide-vue-next'
+import { useCompanionStore } from '../stores/companion'
 import { useSessionsStore } from '../stores/sessions'
 import type { PendingApprovalWire } from '../../../preload'
 
@@ -15,6 +17,13 @@ type EnrichedApproval = PendingApprovalWire & { folderAlias: string; sessionSumm
 const props = defineProps<{ approval: EnrichedApproval }>()
 
 const sessions = useSessionsStore()
+const companion = useCompanionStore()
+
+/** T389 P4W3: the session was not started by Harnu (a corroborated outside binding). */
+const outside = computed(() => {
+  const st = companion.stateFor(props.approval.sessionId)
+  return st?.state === 'live' && st.outside === true
+})
 
 function allow(): void {
   void sessions.resolveApproval(props.approval.requestId, 'allow')
@@ -48,13 +57,17 @@ function openSession(): void {
         >{{ approval.summary }}</span
       >
       <span
-        v-if="approval.folderAlias || approval.sessionSummary"
+        v-if="approval.folderAlias || approval.sessionSummary || outside"
         class="max-w-full line-clamp-2 text-text-4"
         style="font-size: 11px; line-height: 1.4"
       >
         <template v-if="approval.folderAlias">{{ approval.folderAlias }}</template>
         <template v-if="approval.folderAlias && approval.sessionSummary"> · </template>
         <template v-if="approval.sessionSummary">{{ approval.sessionSummary }}</template>
+        <template v-if="outside">
+          <template v-if="approval.folderAlias || approval.sessionSummary"> · </template
+          >{{ $t('approvalInbox.row.outside') }}
+        </template>
       </span>
     </button>
     <div class="flex shrink-0" style="gap: 6px; margin-top: 2px">

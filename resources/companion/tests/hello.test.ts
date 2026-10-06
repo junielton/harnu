@@ -79,9 +79,12 @@ test('dormant after an unrecoverable failure', async ($, on) => {
   expect(rig.sent.length).toBe(1)
 })
 
-test('not spawned by Harnu: dormant', async ($, on) => {
+test('not spawned by Harnu and not interactive: dormant', async ($, on) => {
+  // P4W3 (contract §21 item 1): an interactive tokenless mod claims as an outside session; only
+  // `claude -p` and the like stay silent. The outside path is in external.test.ts.
   const rig = installRig(on, { token: false })
-  expect(await $.session.start(START)).toEqual({ cwd: START.cwd })
+  const headless = { ...START, isInteractive: false }
+  expect(await $.session.start(headless)).toEqual({ cwd: START.cwd })
   await $.classic.SessionStart({ source: 'clear', session_id: OTHER_SID })
   await $.session.end(end('other'))
   await rig.clock.advance(HEARTBEAT_MS * 3)

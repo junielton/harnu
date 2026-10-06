@@ -21,7 +21,13 @@ export interface StateLine {
 
 export function stateLine(state: CompanionState | null, t: Translate): StateLine | null {
   if (state === null) return null
-  if (state.state === 'live') return { text: t('harnuMod.state.live'), reason: null }
+  if (state.state === 'live') {
+    // P4W3: a corroborated session Harnu did not start reads "live · outside Harnu".
+    const text = state.outside
+      ? `${t('harnuMod.state.live')} · ${t('harnuMod.state.outside')}`
+      : t('harnuMod.state.live')
+    return { text, reason: null }
+  }
   if (state.state === 'off') return { text: t('harnuMod.state.off'), reason: null }
   const reason = t(`harnuMod.reason.${state.reason}`)
   return { text: t('harnuMod.state.legacy', { reason }), reason }

@@ -30,6 +30,7 @@ import {
   type EndpointFile,
   type EndpointName,
   type ErrorCode,
+  type HelloRequest,
   type PollRequest,
   type PollResponse,
   type WireEvent
@@ -57,6 +58,9 @@ import {
   validateHello
 } from './wire-core'
 
+export type ExternalHelloDecision =
+  { ok: true } | { ok: false; code: ErrorCode; message?: string; retryAfterMs?: number }
+
 export type PollHandler = (
   b: BindingView,
   req: PollRequest,
@@ -78,6 +82,11 @@ export interface ServerStat {
  * `try/catch`: a consumer's failure never reaches the mod.
  */
 export interface ServerHooks {
+  /**
+   * P4W3: the decision on a tokenless hello (the external claim, contract §21 item 2). With no
+   * handler the claim is `FEATURE_DISABLED`, which is what every build before P4W3 answered.
+   */
+  externalHello?: (req: HelloRequest) => ExternalHelloDecision
   /** P1W4: a hello was refused; `owner` is known only for a spawn token the ledger holds. */
   onHelloRefused?: (owner: SpawnOwner | null, code: string) => void
   enablePolicy?: () => EnablePolicy
@@ -391,11 +400,26 @@ export async function startCompanionServer(opts: StartOptions): Promise<Companio
     if (req.spawn !== undefined && req.resume !== undefined) {
       return { body: failure('BAD_ENVELOPE', 'spawn and resume are exclusive') }
     }
-    // Neither: the external claim, off until P4W3 registers its handler (contract §5.1, §21).
-    if (req.spawn === undefined && req.resume === undefined) {
-      return { body: failure('FEATURE_DISABLED') }
+    // Neither: the external claim (contract §5.1, §21). Off unless the host registered a handler.
+    const external = req.spawn === undefined && req.resume === undefined
+    let decision: ExternalHelloDecision = { ok: false, code: 'FEATURE_DISABLED' }
+    if (external) {
+      try {
+        decision = hooks.externalHello?.(req) ?? decision
+      } catch {
+        decision = { ok: false, code: 'FEATURE_DISABLED' } // a failing handler refuses
+      }
+      if (!decision.ok) {
+        return { body: failure(decision.code, decision.message, decision.retryAfterMs) }
+      }
     }
-    const out = table.hello(req, hooks.enablePolicy?.() ?? (() => []))
+    const out: ReturnType<SessionTable['hello']> = external
+      ? {
+          ok: true,
+          binding: table.helloExternal(req, hooks.enablePolicy?.() ?? (() => [])),
+          kind: 'external'
+        }
+      : table.hello(req, hooks.enablePolicy?.() ?? (() => []))
     if (!out.ok) {
       const owner = req.spawn !== undefined ? table.ownerOfSpawn(req.spawn) : null
       safe(() => hooks.onHelloRefused?.(owner, out.code))
@@ -496,8 +520,10 @@ export async function startCompanionServer(opts: StartOptions): Promise<Companio
     if ('fail' in auth) return { body: auth.fail }
     const b = auth.b
     const handler = hooks.pollHandler
-    // A headless binding never polls (contract §16).
-    if (!handler || b.profile === 'headless') return { body: failure('FEATURE_DISABLED') }
+    // A headless binding never polls (contract §16), and neither does an outside one (§21 item 4).
+    if (!handler || b.profile === 'headless' || b.profile === 'external') {
+      return { body: failure('FEATURE_DISABLED') }
+    }
     if (typeof raw.bootId !== 'string' || typeof raw.cursor !== 'number' || raw.cursor < 0) {
       return { body: failure('BAD_ENVELOPE', 'poll needs bootId and cursor') }
     }
@@ -524,6 +550,16 @@ export async function startCompanionServer(opts: StartOptions): Promise<Companio
     const auth = authenticate('ask', v.value.conn)
     if ('fail' in auth) return { body: auth.fail }
     const b = auth.b
+    if (b.profile === 'external') {
+      // Contract §21 items 4 and 6: an outside binding asks `status` (and `permission` only with
+      // `gate.approval` enabled), and an uncorroborated one is answered `abstain` and nothing else.
+      if (!b.corroborated) {
+        return { body: { ok: true, state: 'released', reason: 'abstain' } }
+      }
+      const allowed =
+        raw.kind === 'status' || (raw.kind === 'permission' && b.enabled.includes('gate.approval'))
+      if (!allowed) return { body: failure('FEATURE_DISABLED') }
+    }
     const handler = b.profile === 'headless' ? undefined : hooks.askHandler?.(raw.kind)
     if (!handler) return { body: failure('FEATURE_DISABLED') }
     const req = { ...v.value, askId: raw.askId, kind: raw.kind, d: raw.d } as unknown as AskRequest

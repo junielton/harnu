@@ -1601,6 +1601,9 @@
       "toggleAria": "Mostrar ou esconder cards de {state}",
       "hiddenAttention": "{count} escondidos pelo filtro",
       "allHidden": "Todos os cards do fleet estão escondidos pelo seu filtro — toque para mostrar tudo"
+    },
+    "row": {
+      "outside": "fora do Harnu"
     }
   },
   "activityBell": {
@@ -3279,7 +3282,8 @@
     "state": {
       "live": "Harnu mod: live",
       "off": "Harnu mod: off",
-      "legacy": "Harnu mod: legacy — {reason}"
+      "legacy": "Harnu mod: legacy — {reason}",
+      "outside": "fora do Harnu"
     },
     "reason": {
       "cliTooOld": "Claude Code anterior à 2.1.287",
@@ -3314,6 +3318,32 @@
         "shadow": "o canal só está observando",
         "headless": "esta é uma sessão headless"
       }
+    },
+    "external": {
+      "title": "Avançado",
+      "hint": "Sessões que você inicia no seu próprio terminal também podem carregar o Harnu mod. Elas reportam o estado para o Harnu nesta máquina. O Harnu nunca inicia prompts nelas e não segura as aprovações delas.",
+      "label": "Harnu mod fora do Harnu",
+      "path": "~/.claude/settings.json · env.CLAUDE_CODE_PLUGIN_DIRS",
+      "lastSeen": "Última sessão externa vista: {time}",
+      "neverSeen": "Nenhuma sessão externa reportou ainda.",
+      "needsMod": "O Harnu mod está desligado. Ligue-o primeiro.",
+      "confirm": {
+        "title": "Carregar o Harnu mod fora do Harnu?",
+        "body": "O Harnu adiciona uma pasta a `CLAUDE_CODE_PLUGIN_DIRS` em `~/.claude/settings.json`. Toda sessão `claude` que você iniciar em qualquer terminal passa a carregar o Harnu mod. Ele roda sem sandbox dentro do `claude` e fala só com o Harnu nesta máquina. Desligar isto remove exatamente essa entrada.",
+        "entry": "Pasta a adicionar",
+        "cancel": "Cancelar",
+        "accept": "Ligar"
+      },
+      "refused": {
+        "unparseable": "`~/.claude/settings.json` não é um JSON válido. Nada foi alterado.",
+        "occupied": "`env.CLAUDE_CODE_PLUGIN_DIRS` tem um formato que o Harnu não edita. Nada foi alterado.",
+        "symlink": "`~/.claude/settings.json` é um symlink. O Harnu não o substitui. Nada foi alterado.",
+        "modsOff": "Desligado por uma configuração ou pela política da sua organização.",
+        "policy": "Bloqueado pela política da sua organização.",
+        "noCompanion": "O Harnu mod está desligado. Ligue-o primeiro.",
+        "failed": "Não foi possível atualizar `~/.claude/settings.json`."
+      },
+      "manualRemove": "Para remover à mão, apague {path} de `CLAUDE_CODE_PLUGIN_DIRS`."
     }
   }
 }
