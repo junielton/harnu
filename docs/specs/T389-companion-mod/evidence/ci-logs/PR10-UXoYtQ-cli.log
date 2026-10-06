@@ -1,0 +1,34 @@
+2.1.290 (Claude Code)
+
+ RUN  v2.1.9 ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p1w3-handshake-identity
+
+ ✓ tests/cli-folder-arg.test.ts (6 tests) 3ms
+ ✓ tests/cli/tick.cli.test.ts (1 test) 751ms
+   ✓ a tick-shaped run > a mod loads under --setting-sources '' 751ms
+ ✓ tests/cli/types.cli.test.ts (1 test) 1105ms
+   ✓ the mod type-checks against the installed CLI > types compile against the installed CLI (drift way 3) 1105ms
+ ✓ tests/cli/load.cli.test.ts (3 tests) 2742ms
+   ✓ the companion loads in a real claude > skeleton loads, zero model calls 781ms
+   ✓ the companion loads in a real claude > the first plugin dir loads first 1363ms
+   ✓ the companion loads in a real claude > a spawn token in the environment is readable by a mod, and only by name 597ms
+stdout | tests/cli/handshake.cli.test.ts > the handshake against the real host (L4) > records CQ1, CQ2 and the startup permission_mode
+[P1W3 evidence] {"claude":"2.1.290 (Claude Code)","surface":"claude -p","cq2_startupClassicFired":true,"cq2_probesClassicAtHello":true,"classicSources":["startup"],"startupHasPermissionMode":true,"startupKeys":["agent_id","agent_type","cwd","effort","hook_event_name","model","permission_mode","prompt_id","scratchpad_dir","session_id","session_title","source","transcript_path"],"cq1_sessionEndBudgetMs":1498}
+
+stdout | tests/cli/handshake.cli.test.ts > the handshake against the real host (L4) > fork id at hello
+[P1W3 evidence] fork {"claude":"2.1.290 (Claude Code)","exit":0,"sourceId":"5a5a5a5a","helloSid":"e1a4b7a2","probeSessionId":"e1a4b7a2","helloIsSource":false,"resumeFailed":false,"stderr":""}
+
+ ✓ tests/cli/handshake.cli.test.ts (8 tests) 7861ms
+   ✓ the handshake against the real host (L4) > binds the real id 704ms
+   ✓ the handshake against the real host (L4) > host failures never surface in the session > host failures never surface in the session: garbage 691ms
+   ✓ the handshake against the real host (L4) > host failures never surface in the session > host failures never surface in the session: a closed socket 622ms
+   ✓ the handshake against the real host (L4) > host failures never surface in the session > host failures never surface in the session: a host that answers never 3149ms
+   ✓ the handshake against the real host (L4) > host failures never surface in the session > host failures never surface in the session: nothing at all (no rendezvous file) 763ms
+   ✓ the handshake against the real host (L4) > records CQ1, CQ2 and the startup permission_mode 633ms
+   ✓ the handshake against the real host (L4) > tick binds without a row 617ms
+   ✓ the handshake against the real host (L4) > fork id at hello 681ms
+
+ Test Files  5 passed (5)
+      Tests  19 passed (19)
+   Start at  23:57:00
+   Duration  8.21s (transform 203ms, setup 0ms, collect 293ms, tests 12.46s, environment 1ms, prepare 231ms)
+

@@ -1,0 +1,9 @@
+mod: claude 2.1.290 (Claude Code)
+tests/skeleton.test.ts:
+(pass) session.start passes through [22.95ms]
+
+ 1 pass
+ 0 fail
+Ran 1 test across 1 file. [0.11s]
+mod: validate and test passed
+mod: state=pass

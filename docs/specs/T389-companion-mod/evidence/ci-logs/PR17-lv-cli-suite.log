@@ -1,0 +1,16 @@
+settings path (throwaway): /tmp/harnu-lv-rmK0WF/home/.claude/settings.json
+claude --version: 2.1.290 (Claude Code)
+LV-a(a): loaded lines=1, hellos=[["external","external"]]
+settings path (throwaway): /tmp/harnu-lv-ausYxl/home/.claude/settings.json
+LV-a(b): loaded lines=1, hellos=[["spawn","interactive"]], helloOk=1, refused={}
+settings path (throwaway): /tmp/harnu-lv-yDu9mp/home/.claude/settings.json
+AC-14: asks=0, enabled=["sense.identity"]
+settings path (throwaway): /tmp/harnu-lv-B97Q3H/home/.claude/settings.json
+AC-15: harnu-companion debug lines=11, skipped-or-failed=0
+LV-c: before {"permissions":{"allow":["Read"]},"cleanupPeriodDays":30,"tui":"fullscreen"}
+LV-c: on    {"permissions":{"allow":["Read"]},"cleanupPeriodDays":30,"tui":"fullscreen","env":{"CLAUDE_CODE_PLUGIN_DIRS":"/tmp/harnu-lv-i9CKap/harnu-companion"}}
+settings path (throwaway): /tmp/harnu-lv-i9CKap/home/.claude/settings.json
+LV-c: off   {"permissions":{"allow":["Read"]},"cleanupPeriodDays":30,"tui":"fullscreen"}
+LV-c: second session: harnu-companion lines=0, new hellos=0
+tick: loaded lines=1, hellos=0
+AC-16: baseline median=1050ms, with key median=1149ms, hellos=0
