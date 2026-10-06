@@ -40,6 +40,12 @@ export interface FleetSensorState {
   pendingFailure: string | null
   /** Per-agent facts, keyed on the agent id: the subagents this sensor counted. */
   agents: Record<string, string>
+  /**
+   * The ids of subagents that already stopped (the newest `STOPPED_MAX`). The CLI still lists a
+   * finished agent as `running` in the `background_tasks` of the next main `Stop` (observed on
+   * 2.1.291: the task id is the agent id), so a hold must not count it.
+   */
+  stopped: string[]
 }
 
 export type SensorInput =
@@ -57,7 +63,7 @@ export type SensorInput =
   | { k: 'permission.request'; tool: string; agentId?: string }
   | { k: 'notification'; type: string }
   | { k: 'post-tool'; toolUseId?: string; tool?: string; agentId?: string; failed: boolean }
-  | { k: 'stop'; tasks: readonly { type: string; status?: string }[] | undefined }
+  | { k: 'stop'; tasks: readonly { type: string; status?: string; id?: string }[] | undefined }
   | { k: 'stop-failure'; error: string }
   | {
       k: 'turn.complete'
@@ -82,6 +88,7 @@ export type OutEvent =
 
 /** The host treats counters as untrusted and clamps at 256 (§9); the sensor never exceeds it. */
 const COUNT_MAX = 256
+const STOPPED_MAX = 64
 
 /** Statuses of a background task that has stopped running (types L641 name the field; Q12 the values). */
 const FINISHED = new Set(['completed', 'failed', 'killed', 'stopped', 'cancelled', 'error'])
@@ -95,7 +102,8 @@ export function neutralFleet(): FleetSensorState {
     runningSubagents: 0,
     lastStop: null,
     pendingFailure: null,
-    agents: {}
+    agents: {},
+    stopped: []
   }
 }
 
@@ -151,6 +159,9 @@ export function sanitizeFleet(raw: unknown): FleetSensorState {
         out.agents[id] = type
       }
     }
+  }
+  if (Array.isArray(r.stopped)) {
+    out.stopped = r.stopped.filter((x): x is string => typeof x === 'string').slice(-STOPPED_MAX)
   }
   return out
 }
@@ -222,7 +233,8 @@ export function step(
     ...s,
     open: [...s.open],
     checks: [...s.checks],
-    agents: { ...s.agents }
+    agents: { ...s.agents },
+    stopped: [...s.stopped]
   }
 
   switch (input.k) {
@@ -343,9 +355,14 @@ export function step(
       const tasks = Array.isArray(input.tasks) ? input.tasks : []
       next.lastStop = {
         all: tasks.length,
-        // `type === 'subagent'` only (spec §7.1, Q12); a task that already finished does not hold
-        subagents: tasks.filter((t) => t.type === 'subagent' && !FINISHED.has(String(t.status)))
-          .length
+        // `type === 'subagent'` only (spec §7.1, Q12). A task that finished, or whose agent this
+        // sensor already saw stop, does not hold: the CLI keeps listing it as `running`
+        subagents: tasks.filter(
+          (t) =>
+            t.type === 'subagent' &&
+            !FINISHED.has(String(t.status)) &&
+            !(typeof t.id === 'string' && next.stopped.includes(t.id))
+        ).length
       }
       break
     }
@@ -416,6 +433,9 @@ export function step(
         if (known === undefined) break // an agent this sensor never counted moves nothing
         agentType = known
         delete next.agents[input.agentId]
+        next.stopped.push(input.agentId)
+        if (next.stopped.length > STOPPED_MAX)
+          next.stopped.splice(0, next.stopped.length - STOPPED_MAX)
       }
       next.runningSubagents = Math.max(0, next.runningSubagents - 1)
       events.push({

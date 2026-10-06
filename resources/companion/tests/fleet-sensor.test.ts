@@ -100,7 +100,8 @@ test('rebound resets fleet', async ($, on) => {
     runningSubagents: 0,
     lastStop: null,
     pendingFailure: null,
-    agents: {}
+    agents: {},
+    stopped: []
   })
   expect(rig.state.get('permissionMode')).toBe('acceptEdits')
 })
@@ -185,6 +186,55 @@ test('a teammate never counts as a background subagent', async ($, on) => {
   const done = fleetWire(rig).find((e) => e.t === 'turn.completed') as any
   expect(done.d.backgroundSubagents).toBe(0)
   expect(done.d.backgroundTasks).toBe(2)
+})
+
+test('a subagent that stopped before the main Stop does not hold the turn (real CLI 2.1.291)', async ($, on) => {
+  const rig = await boot($, on)
+  await $.turn.start({ text: 'p', turnId: 't1' })
+  await $.classic.SubagentStart({ ...base, agent_id: 'a1', agent_type: 'general-purpose' })
+  await $.classic.SubagentStop({
+    ...base,
+    agent_id: 'a1',
+    agent_type: 'general-purpose',
+    stop_hook_active: false
+  })
+  // the CLI still lists the finished agent as `running` in the main Stop (task id = agent id)
+  await $.classic.Stop({
+    ...base,
+    stop_hook_active: false,
+    background_tasks: [{ id: 'a1', type: 'subagent', status: 'running', description: 'd' }]
+  })
+  await $.turn.complete({
+    answer: '',
+    durationMs: 1,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer'
+  })
+  await rig.clock.settle()
+  const done = fleetWire(rig).find((e) => e.t === 'turn.completed') as any
+  expect(done.d.backgroundTasks).toBe(1)
+  expect(done.d.backgroundSubagents).toBe(0)
+})
+
+test('a running subagent the sensor never saw start still holds the turn', async ($, on) => {
+  const rig = await boot($, on)
+  await $.turn.start({ text: 'p', turnId: 't1' })
+  await $.classic.Stop({
+    ...base,
+    stop_hook_active: false,
+    background_tasks: [{ id: 'z9', type: 'subagent', status: 'running', description: 'd' }]
+  })
+  await $.turn.complete({
+    answer: '',
+    durationMs: 1,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer'
+  })
+  await rig.clock.settle()
+  const done = fleetWire(rig).find((e) => e.t === 'turn.completed') as any
+  expect(done.d.backgroundSubagents).toBe(1)
 })
 
 test('a failure reaches the completion of the same turn', async ($, on) => {

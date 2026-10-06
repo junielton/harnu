@@ -42,6 +42,8 @@ declare module 'claude-code' {
         lastStop: { all: number; subagents: number } | null
         pendingFailure: string | null
         agents: Record<string, string>
+        /** The ids of subagents that already stopped: the CLI still lists them as `running`. */
+        stopped: string[]
       }
     }
   }
