@@ -292,6 +292,7 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
     },
     key: {
       get: () => prefsKey<boolean>('external'),
+      stored: () => getCompanionPrefs().keys.external === true,
       set: (on) => setPrefsKey('external', on)
     },
     companionOn: () => getCompanionPrefs().enabled && getCompanionMode() !== 'off',

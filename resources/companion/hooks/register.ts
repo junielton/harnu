@@ -346,6 +346,13 @@ async function doHello($: Dollar, resumeConn?: Conn, fresh = false): Promise<voi
       }
     }
     if (boot === null) return // no session.start yet: the next hook tries again
+    // The headless guard again, now that `boot` is known for certain: `classic.SessionStart`
+    // dispatches BEFORE `session.start` on a real CLI, so an early `doHello` can pass the first
+    // check with `boot` still null and find it set by the time it reaches the network.
+    if (tokenless && !boot.isInteractive) {
+      goDormant()
+      return
+    }
     const cli = await $.session.version()
     const hello: HelloRequest = {
       protoMin: PROTOCOL_VERSION,

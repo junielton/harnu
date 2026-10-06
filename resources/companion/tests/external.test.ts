@@ -57,6 +57,18 @@ test('headless outside run is silent (conformance row 26)', async ($, on) => {
   expect(rig.sent.length).toBe(0)
 })
 
+test('a headless outside run stays silent when classic.SessionStart races session.start (real CLI order)', async ($, on) => {
+  const rig = installRig(on, { token: false })
+  // The real CLI dispatches `classic.SessionStart` before `session.start` and the two overlap: the
+  // hello that the first one starts must not reach the network once `session.start` says the run
+  // is not interactive. The rig cannot interleave the two the way the real CLI does, so the
+  // regression guard that bites is the L4 "probes stay silent" (AC-P4W3-16) against a real CLI.
+  await Promise.all([$.classic.SessionStart({ source: 'startup' }), $.session.start(HEADLESS)])
+  await rig.clock.settle()
+  await rig.clock.advance(HEARTBEAT_MS * 3)
+  expect(rig.sent.length).toBe(0)
+})
+
 test('a tokenless interactive mod sends one external hello: neither spawn nor resume', async ($, on) => {
   const rig = installRig(on, { token: false, script: externalHello() })
   await $.session.start(OUTSIDE)

@@ -39,8 +39,12 @@ export type ExternalSetResult =
 export interface ExternalHostDeps {
   install: ExternalInstallDeps
   binding: Omit<ExternalBindingDeps, 'isOn'>
-  /** The `external` prefs key. */
-  key: { get(): boolean; set(on: boolean): void }
+  /**
+   * The `external` prefs key. `get` is what the host acts on (capped at off when the CLI is above
+   * the tested ceiling, contract §11.5); `stored` is what the switch last wrote, which is what
+   * the pane shows: the entry is in the file whatever the cap says.
+   */
+  key: { get(): boolean; stored(): boolean; set(on: boolean): void }
   /** The kill switch and the CLI gate: the Harnu mod is on at all. */
   companionOn(): boolean
   /** Staging keeps what this names (the install record's entry). */
@@ -67,13 +71,13 @@ export function createExternalHost(deps: ExternalHostDeps): ExternalHost {
     const st = await install.status()
     // The key follows the file: a user who removed the entry by hand reads off, and the host
     // stops accepting claims the settings no longer explain.
-    if (!st.installed && deps.key.get()) {
+    if (!st.installed && deps.key.stored()) {
       deps.key.set(false)
       binding.setSwitch(false)
     }
     const candidate = st.entry ?? (await deps.install.ensureStaged().catch(() => null))
     return {
-      on: deps.key.get(),
+      on: deps.key.stored(),
       path: st.path,
       entry: st.entry,
       candidate,

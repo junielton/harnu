@@ -36,7 +36,7 @@ async function make(): Promise<ExternalHost> {
       corroborates: async () => false,
       now: () => 1
     },
-    key: { get: () => on, set: (v) => void (on = v) },
+    key: { get: () => on, stored: () => on, set: (v) => void (on = v) },
     companionOn: () => companionOn,
     pin: (fn) => void pinned.push(fn),
     sweepMs: 10_000
