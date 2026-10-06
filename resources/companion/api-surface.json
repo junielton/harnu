@@ -15,6 +15,7 @@
     "classic.SubagentStop",
     "prompt.submit",
     "session.end",
+    "session.measure",
     "session.start",
     "tool.check",
     "turn.complete",
@@ -27,6 +28,8 @@
     "$.fs.read",
     "$.http.fetch",
     "$.session.id",
+    "$.session.model",
+    "$.session.usage",
     "$.session.version",
     "$.state.get",
     "$.state.set"

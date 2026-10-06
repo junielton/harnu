@@ -32,6 +32,7 @@ import {
   type SensorInput
 } from './lib/fleet-sensor'
 import { createRing } from './lib/ring'
+import { measurePayload, readPayload } from './lib/usage-sensor'
 import { endpointUrl, parseEndpoint, type Endpoint } from './lib/rendezvous-parse'
 
 /**
@@ -68,6 +69,7 @@ const EVENT_FEATURE: Partial<Record<EventName, FeatureId | null>> = {
   'attention.cleared': 'sense.attention',
   'subagent.started': 'sense.subagent',
   'subagent.stopped': 'sense.subagent',
+  'usage.measured': 'sense.usage',
   'mod.error': null
 }
 
@@ -296,6 +298,22 @@ function snapshot($: Dollar, reason: EventPayloads['session.snapshot']['reason']
       probes: { classic: probes.classic, toolCheck: probes.toolCheck }
     }
   })
+  // A state re-send after a hello, a resync or a flush (`sense.usage`, P1W6 §7.1). Un-awaited.
+  if (reason !== 'probe') void readUsage($)
+}
+
+/**
+ * `$.session.usage()` and `$.session.model()` as one `usage.measured {source: 'read'}`. Never on a
+ * turn's path (MOD-6): callers do not await it. A rejected call is a `mod.error`, not a retry.
+ */
+async function readUsage($: Dollar): Promise<void> {
+  if (!enabled('sense.usage')) return
+  try {
+    const [usage, model] = await Promise.all([$.session.usage(), $.session.model()])
+    emit($, { t: 'usage.measured', d: readPayload(usage, model) })
+  } catch (err) {
+    reportModError('session.usage', err)
+  }
 }
 
 // ---- fleet sensors (P1W5) ---------------------------------------------------------------------
@@ -908,6 +926,18 @@ export const register: Register = (on) => {
     })
   })
 
+  hook('session.measure', () => {
+    on('session.measure', async ($, e, next) => {
+      try {
+        void ensureHello($) // not awaited: a measure is never on the first prompt's path
+        emit($, { t: 'usage.measured', d: measurePayload(e) })
+      } catch (err) {
+        reportModError('session.measure', err)
+      }
+      return next(e)
+    })
+  })
+
   const all = (...names: string[]): boolean => names.every((n) => registered[n] === true)
   const features: FeatureId[] = []
   if (all('session.start', 'session.end', 'classic.SessionStart')) features.push('sense.identity')
@@ -924,6 +954,7 @@ export const register: Register = (on) => {
     features.push('sense.attention')
   }
   if (all('classic.SubagentStart', 'classic.SubagentStop')) features.push('sense.subagent')
+  if (all('session.measure')) features.push('sense.usage')
   declared = features
 }
 
