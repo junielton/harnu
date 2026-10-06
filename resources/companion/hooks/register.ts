@@ -11,6 +11,7 @@ import {
   RING_MAX,
   type ByeRequest,
   type CmdId,
+  type Command,
   type Config,
   type Conn,
   type EndpointName,
@@ -22,6 +23,7 @@ import {
   type Sid
 } from './contract'
 import { MOD_VERSION, RENDEZVOUS_PATH } from './coords.gen'
+import { boundedConfig, freshCommands, judgeCommand } from './lib/commands'
 import { createRing } from './lib/ring'
 import { endpointUrl, parseEndpoint, type Endpoint } from './lib/rendezvous-parse'
 
@@ -50,7 +52,8 @@ const EVENT_FEATURE: Partial<Record<EventName, FeatureId | null>> = {
   'session.snapshot': 'sense.identity',
   'session.rebound': 'sense.identity',
   'session.end': 'sense.identity',
-  'mod.error': null
+  'mod.error': null,
+  'command.result': null
 }
 
 // ---- module state: wiped by a reload; the durable twins live in `$.state` ---------------------
@@ -66,6 +69,10 @@ let probes: Probes = { classic: false, toolCheck: false }
 let declared: FeatureId[] = []
 let dormant = false
 let inert = false
+/** P4W3: no spawn token, so Harnu did not start this process: the external claim (contract §21). */
+let tokenless = false
+/** The highest Command.n recorded for this boot; a non-polling profile sends it back (§21 item 4). */
+let cmdCursor = 0
 let helloFlight: Promise<void> | null = null
 let retryBlocked = false
 let retryTimer: Timer | null = null
@@ -90,6 +97,8 @@ function resetState(): void {
   declared = []
   dormant = false
   inert = false
+  tokenless = false
+  cmdCursor = 0
   helloFlight = null
   retryBlocked = false
   retryTimer = null
@@ -290,17 +299,29 @@ function startHeartbeatOnce($: Dollar): void {
   heartbeat = $.clock.every(Math.max(1, config.heartbeatMs || HEARTBEAT_MS), () => void beat($))
 }
 
-/** Single flight. `resumeConn` is the conn a STALE_CONN just invalidated. Never rejects. */
-async function doHello($: Dollar, resumeConn?: Conn): Promise<void> {
+/**
+ * Single flight. `resumeConn` is the conn a STALE_CONN just invalidated; `fresh` skips every
+ * resume (a tokenless claim after the host forgot us). Never rejects.
+ */
+async function doHello($: Dollar, resumeConn?: Conn, fresh = false): Promise<void> {
   try {
-    let resume: Conn | undefined = resumeConn
-    if (resume === undefined) {
-      const saved = await $.state.get(CONN)
-      if (saved.value) resume = saved.value
-    }
+    let resume: Conn | undefined = fresh ? undefined : resumeConn
     if (boot === null) {
       const b = await $.state.get(BOOT)
       if (b.value) boot = b.value
+    }
+    // Who claims (contract §21 item 1): decided once per load, from the env and `isInteractive`.
+    const token = await $.env.get('HARNU_SPAWN_TOKEN')
+    tokenless = typeof token !== 'string' || token === ''
+    if (tokenless && boot !== null && !boot.isInteractive) {
+      // Harnu's own `claude -p` probes, CI and scripts: not one request, and no delay at exit
+      // (smoke C2, ADR C6).
+      goDormant()
+      return
+    }
+    if (resume === undefined && !fresh) {
+      const saved = await $.state.get(CONN)
+      if (saved.value) resume = saved.value
     }
     const request: Partial<HelloRequest> = {}
     let sid: Sid | null
@@ -315,13 +336,14 @@ async function doHello($: Dollar, resumeConn?: Conn): Promise<void> {
         }
       request.resume = { conn: resume }
     } else {
-      const token = await $.env.get('HARNU_SPAWN_TOKEN')
-      if (typeof token !== 'string' || token === '') {
-        goDormant() // not spawned by Harnu (the external profile is P4W3)
-        return
+      if (tokenless) {
+        // The external claim: neither `spawn` nor `resume`. A claim proves nothing; the host
+        // shows it only once its own watchers corroborate the session.
+        sid = await $.session.id()
+      } else {
+        sid = await $.session.id()
+        request.spawn = token as `sp_${string}`
       }
-      sid = await $.session.id()
-      request.spawn = token as `sp_${string}`
     }
     if (boot === null) return // no session.start yet: the next hook tries again
     const cli = await $.session.version()
@@ -346,7 +368,14 @@ async function doHello($: Dollar, resumeConn?: Conn): Promise<void> {
     const b = r.body
     if (b.ok !== true) {
       const code = typeof b.code === 'string' ? b.code : ''
-      if (DORMANT_CODES.has(code)) {
+      if (tokenless && code === 'UNKNOWN_SESSION' && request.resume !== undefined) {
+        // Harnu restarted (it does on every update): a tokenless mod has no token to protect, so
+        // it claims again, once, instead of going dormant (contract §21 item 7).
+        await $.state.set(CONN, undefined as never).catch(() => undefined)
+        return doHello($, undefined, true)
+      }
+      // An invalid claim never becomes valid: stop asking (SEC-3c).
+      if (DORMANT_CODES.has(code) || (tokenless && code === 'BAD_ENVELOPE')) {
         goDormant()
         return
       }
@@ -363,6 +392,7 @@ async function doHello($: Dollar, resumeConn?: Conn): Promise<void> {
       return
     }
     conn = b.conn as Conn
+    if (bootId !== b.bootId) cmdCursor = 0 // the cursor belongs to one host boot
     bootId = b.bootId
     proto = b.proto
     enabledSet = (b.enable as unknown[]).filter((f): f is string => typeof f === 'string')
@@ -390,6 +420,7 @@ async function doHello($: Dollar, resumeConn?: Conn): Promise<void> {
     }
     snapshot($, 'hello')
     startHeartbeatOnce($)
+    runCommands($, b.commands)
     pump($)
   } catch (err) {
     scheduleRetry($)
@@ -464,7 +495,9 @@ async function pumpLoop($: Dollar, beat: boolean): Promise<void> {
       conn,
       sentAt: Date.now(),
       events: batch,
-      ...(dropped > 0 ? { dropped } : {})
+      ...(dropped > 0 ? { dropped } : {}),
+      // A non-polling profile gets its commands on the events response (§21 item 4).
+      ...(tokenless && bootId !== null ? { bootId: bootId as never, cursor: cmdCursor } : {})
     }
     sentSinceBeat = true
     const r = await post($, 'events', request, false)
@@ -483,6 +516,7 @@ async function pumpLoop($: Dollar, beat: boolean): Promise<void> {
       ring.settleDropped(dropped)
       backoffMs = BACKOFF_MIN_MS
       if (body.resync === true) snapshot($, 'resync')
+      runCommands($, body.commands)
       // no progress (the host acknowledged nothing we sent): do not spin
       if (batch.length > 0 && ring.batch(1, Infinity)[0]?.seq === batch[0]?.seq) return
       continue
@@ -522,6 +556,58 @@ async function beat($: Dollar): Promise<void> {
   } catch (err) {
     void err
   }
+}
+
+// ---- commands ---------------------------------------------------------------------------------
+
+/**
+ * Runs the commands of a response, in order, once each (the cursor moves past them). This build
+ * of the mod can run `flush` and `config.update`; everything else is answered `CMD_UNSUPPORTED`,
+ * and a tokenless mod answers every command outside the external three the same way without ever
+ * looking at `enable` (the second lock of contract §9 and §21 item 5).
+ */
+function runCommands($: Dollar, raw: unknown): void {
+  const list: Command[] = freshCommands(raw, cmdCursor)
+  for (const c of list) {
+    cmdCursor = Math.max(cmdCursor, c.n)
+    const verdict = judgeCommand(c, tokenless, Date.now())
+    if (!verdict.run) {
+      commandResult($, c, { ok: false, code: verdict.code, message: verdict.message })
+      continue
+    }
+    if (c.name === 'flush') {
+      commandResult($, c, { ok: true })
+      pump($, true)
+    } else if (c.name === 'config.update') {
+      const patch = boundedConfig((c.args as { config?: unknown } | undefined)?.config)
+      if (patch === null) {
+        commandResult($, c, { ok: false, code: 'CMD_PRECONDITION', message: 'outside the bounds' })
+        continue
+      }
+      config = { ...config, ...patch }
+      commandResult($, c, { ok: true })
+    }
+  }
+}
+
+function commandResult(
+  $: Dollar,
+  c: Command,
+  r: {
+    ok: boolean
+    code?: 'CMD_UNSUPPORTED' | 'CMD_EXPIRED' | 'CMD_PRECONDITION'
+    message?: string
+  }
+): void {
+  emit($, {
+    t: 'command.result',
+    d: {
+      cmd: c.cmd,
+      ok: r.ok,
+      ...(r.code !== undefined ? { code: r.code as never } : {}),
+      ...(r.message !== undefined ? { message: r.message.slice(0, 120) } : {})
+    }
+  })
 }
 
 // ---- identity: rebound ------------------------------------------------------------------------
