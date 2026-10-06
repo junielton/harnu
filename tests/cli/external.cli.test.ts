@@ -303,6 +303,33 @@ suite('an outside session against the real host (P4W3 L4, live-verify)', () => {
     claudeOnPath = ''
   }, 90_000)
 
+  it('a scheduler tick (setting sources dropped) with the env key loads the mod once, through its own flag', async () => {
+    // Master Q2, spec §8 "Scheduler tick": `--setting-sources ''` drops the user's `env`, so a tick
+    // names the directory once (its own flag). If the env key were honoured as well, a tick would
+    // name it twice (CQ18, R24).
+    const h = await realHost()
+    const r = await runClaude({
+      order: ['companion', 'probe'],
+      tick: true,
+      rendezvous: h.endpoint,
+      env: { PATH: CLI_PATH },
+      prepare: async ({ work, configDir }) => {
+        const settings = join(configDir, 'settings.json')
+        assertThrowaway(settings)
+        mkdirSync(configDir, { recursive: true })
+        writeFileSync(
+          settings,
+          JSON.stringify({ env: { CLAUDE_CODE_PLUGIN_DIRS: join(work, 'harnu-companion') } })
+        )
+      }
+    })
+    cleanups.push(() => r.cleanup())
+    const loaded = r.debug.match(LOADED)?.length ?? 0
+    log(`tick: loaded lines=${loaded}, hellos=${h.hellos.length}`)
+    expect(loaded).toBe(1)
+    expect(h.hellos).toEqual([]) // no spawn token and not interactive: dormant
+  }, 60_000)
+
   it('probes stay silent (AC-P4W3-16)', async () => {
     // Harnu's own `claude -p` probes (usage, the policy probe, the post-install check) run with the
     // settings env key active and no spawn token: the mod is dormant, so no hello reaches the host.

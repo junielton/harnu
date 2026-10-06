@@ -93,14 +93,15 @@ test('a tokenless interactive mod sends one external hello: neither spawn nor re
 test('an outside session refuses actuators (conformance row 26)', async ($, on) => {
   const submitted: unknown[] = []
   const appended: unknown[] = []
-  on('prompt.submit' as never, async (_$: unknown, e: unknown) => {
+  // The engine's own calls beneath the mod: if an actuator ran, one of these would see it.
+  on('prompt.submit', (async (_$: unknown, e: unknown) => {
     submitted.push(e)
-    return {} as never
-  })
-  on('session.append' as never, async (_$: unknown, e: unknown) => {
+    return {}
+  }) as never)
+  on('session.append', (async (_$: unknown, e: unknown) => {
     appended.push(e)
-    return {} as never
-  })
+    return {}
+  }) as never)
   const rig = installRig(on, {
     token: false,
     script: externalHello([

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/explicit-function-return-type -- evidence driver script, not product code */
 // P4W3 live-verify driver: a SECOND, isolated Harnu (own userData, throwaway HOME and Claude config
 // dir, own CDP port) driven over CDP, with one real interactive `claude` in tmux against it.
 //
