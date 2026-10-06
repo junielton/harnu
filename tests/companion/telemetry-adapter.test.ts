@@ -190,7 +190,9 @@ describe('telemetry adapter', () => {
       pct: 25,
       usd: 0.19372685,
       h5: 21,
-      d7: 54
+      d7: 54,
+      // CQ14: which units the CLI said moved, so a window moving on its own is visible in the ledger
+      chg: 'context+rateLimits+cost'
     })
   })
 

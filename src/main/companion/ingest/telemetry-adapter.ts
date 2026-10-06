@@ -74,6 +74,7 @@ function companionDetail(m: MappedUsage, extra: { source: string }): TelemetryPa
   const rl = m.part.rateLimits
   return {
     src: extra.source,
+    chg: m.changed.join('+'),
     pct: m.part.context?.percent ?? null,
     window: m.part.context?.window ?? null,
     usd: m.part.cost?.usd ?? null,
