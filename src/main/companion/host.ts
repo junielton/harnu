@@ -30,6 +30,7 @@ import { ensureStaged } from './staging'
 import { getCompanionPrefs } from './companion-prefs'
 import manifest from '../../../resources/companion/.claude-plugin/plugin.json'
 import { createIdentityAdapter, type IdentityAdapter } from './identity-adapter'
+import { registerModsObserved, type ModsObserved } from './mods-observed'
 import {
   familyMode,
   getCompanionMode,
@@ -77,6 +78,15 @@ export function setCompanionSessionKeyResolver(
 }
 
 let identity: IdentityAdapter | null = null
+let modsObserved: ModsObserved | null = null
+
+/**
+ * P4W1 part B: the mods the companion saw admitted in sessions with a live lease, for the Mods
+ * pane's "Loaded in" line. Empty until `registerCompanionHost` ran, and while `modsLive` is off.
+ */
+export function observedMods(folder: string | null): ReturnType<ModsObserved['sessions']> {
+  return modsObserved?.sessions(folder) ?? []
+}
 let sessionKeyResolver: ((owner: SpawnOwner) => string | null) | null = null
 
 /**
@@ -187,6 +197,8 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
     onParity: recordIdentityParity
   })
   core.facade.setIdentityDiagnostics(identity.diagnostics)
+  // P4W1 part B: the `modsLive` key (default off), the `sense.mods` rule and the observation store.
+  modsObserved = registerModsObserved({ host: core.facade })
   // The shared policy probe: one run per boot and CLI binary, lazily, off the spawn path.
   const probe = createAppPolicyProbe(companionStagedDir)
   // The Mods pane (P4W1) reads the same staged directory and the same probe: row 1 is the staged
