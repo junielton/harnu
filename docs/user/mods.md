@@ -89,14 +89,17 @@ banner for it.
 
 `harnu-companion` is Harnu's own mod, and it is listed like any other: same read, same
 chips, same words. It is always the first row. It appears only when Harnu's mod is
-installed in your build; without it there is simply no row.
+staged by this build of Harnu; when none is staged there is simply no row.
 
 ## Banners you may see
 
 - **Turned off by a setting or by your organization's policy.** Mods are off in this
   environment (for example `disableAllHooks` in your settings). Rows are still listed,
-  because the read is static. In this version Harnu does not yet check this, so no banner
-  means "unknown", not "mods will load".
+  because the read is static. Harnu checks this once per launch and Claude Code version,
+  by running `claude plugin test` in an empty folder. When the answer is unclear there is
+  no banner, which means "unknown", not "mods will load".
+- **Mods are turned off remotely by Anthropic.** The same check found Claude Code's
+  remote switch off.
 - **This folder starts sessions with `--safe-mode`, so no mod loads there.** From the
   folder's Claude Boot settings.
 - **Claude Code CLI not found.** Without the `claude` binary there is nothing to read,

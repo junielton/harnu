@@ -41,7 +41,8 @@ mod: live`, `off`, or `legacy` with the reason), and the System Monitor shows th
   decides permissions, …) from a static read of its source, plus its hooks and calls on
   expand, and points at where that mod is switched on or off. It never enables, disables
   or installs anything, and it states what it cannot show (destinations, arguments,
-  paths, what a session actually loaded).
+  paths, what a session actually loaded). The Harnu mod is always its first row, and a
+  banner tells you when Claude Code has mods turned off here or remotely.
 - **Third-party notices ship with the app.** Every build now carries `LICENSE` and a
   generated `THIRD-PARTY-NOTICES.md` with the license text of each bundled package and
   of the terminal font (JetBrains Mono under the SIL Open Font License, plus the Nerd

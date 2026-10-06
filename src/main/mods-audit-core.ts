@@ -230,14 +230,26 @@ function emptyParsed(): ParsedReport {
   }
 }
 
+/**
+ * CLI 2.1.291 adds an advisory for a gating hook with no `.catch`, and prints `calls: nothing on $`
+ * for a module that makes no call. The advisory repeats hooks already listed, so it is kept as a
+ * warning (shown verbatim in the row's details) rather than lost or reported as unparsed.
+ */
+const GATING_NOTE_RE = /^\S+ gating hook without \.catch: /
+const NOTHING_RE = /^nothing(?: on \$)?$/
+
 function parseNote(note: string, out: ParsedReport): boolean {
+  if (GATING_NOTE_RE.test(note)) {
+    if (out.warnings.length < MAX_MESSAGES) out.warnings.push(note)
+    return false
+  }
   const m = NOTE_RE.exec(note)
   if (!m?.groups) {
     out.unparsed.push(note)
     return false
   }
   const { file, label, list } = m.groups as { file: string; label: string; list: string }
-  const items = list.trim() === 'nothing' ? [] : splitList(list)
+  const items = NOTHING_RE.test(list.trim()) ? [] : splitList(list)
   switch (label) {
     case 'hooks':
       for (const item of items) {

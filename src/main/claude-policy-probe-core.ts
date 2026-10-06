@@ -26,7 +26,13 @@ const OFF_HERE = [
   /Safe mode: installed plugins are disabled/i,
   /installed plugins that are not managed load no hooks module/i
 ]
-const LOADS = [/no \*\.test\.ts or \*\.test\.tsx under/i, /\b\d+ (tests? )?(passed|ok)\b/i]
+const LOADS = [
+  /no \*\.test\.ts or \*\.test\.tsx under/i,
+  // A directory with no hooks module at all (the Mods pane probes an empty one, P4W1): the CLI
+  // reaches this line only after it decided mods are on, since the "turned off" lines print first.
+  /no hooks module to load/i,
+  /\b\d+ (tests? )?(passed|ok)\b/i
+]
 
 /** Only the tail matters: a long run prints its verdict last. */
 const TAIL_CHARS = 8_192

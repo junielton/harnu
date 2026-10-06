@@ -24,7 +24,8 @@ import type { IdentityParityRecord } from './identity-parity-core'
 import { createAppPolicyProbe } from '../claude-policy-probe'
 import { buildCompanionStatus } from './companion-status'
 import { HELLO_GRACE_MS } from './companion-state-core'
-import { companionStagedDir } from './spawn-inject'
+import { companionStagedDir, ensureStagedRemembered } from './spawn-inject'
+import { setModsAuditCompanionProvider, setModsAuditPolicyProvider } from '../mods-audit'
 import { ensureStaged } from './staging'
 import { getCompanionPrefs } from './companion-prefs'
 import manifest from '../../../resources/companion/.claude-plugin/plugin.json'
@@ -188,6 +189,15 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
   core.facade.setIdentityDiagnostics(identity.diagnostics)
   // The shared policy probe: one run per boot and CLI binary, lazily, off the spawn path.
   const probe = createAppPolicyProbe(companionStagedDir)
+  // The Mods pane (P4W1) reads the same staged directory and the same probe: row 1 is the staged
+  // mod, and the policy banner is the probe's class. The pane never runs a second probe.
+  setModsAuditCompanionProvider(ensureStagedRemembered)
+  setModsAuditPolicyProvider(async () => {
+    await ensureStagedRemembered()
+    // The probe is single-flight and cached; the pane never waits on it past a few seconds.
+    const wait = new Promise<null>((r) => setTimeout(() => r(null), 5_000).unref?.())
+    return (await Promise.race([probe.ensure(), wait])) ?? 'unknown'
+  })
   // Everything the Harnu mod surfaces show is derived on demand; main only says "re-read".
   let updateTimer: ReturnType<typeof setTimeout> | null = null
   const pushUpdated = (): void => {

@@ -15,6 +15,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { parseValidateReport } from '../../src/main/mods-audit-core'
+import { classifyPolicyProbe } from '../../src/main/claude-policy-probe-core'
 
 const WITH_CLI = process.env['HARNU_WITH_CLI'] === '1'
 const RECORD = process.env['HARNU_RECORD_SHAPES'] === '1'
@@ -138,6 +139,46 @@ describe.skipIf(!WITH_CLI)('mods-audit CLI shapes', () => {
       expect(known.rowKeys).toEqual(expect.arrayContaining(required))
       for (const k of seen.rowKeys) expect(known.rowKeys, `new key ${k}`).toContain(k)
       for (const s of seen.scopes) expect(known.scopes, `new scope ${s}`).toContain(s)
+    }
+  })
+})
+
+/** `claude plugin test` in an empty directory under a given HOME; no inherited CLAUDE_* variables. */
+function probeOutput(home: string): string {
+  const empty = mkdtempSync(path.join(os.tmpdir(), 'mods-audit-probe-'))
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([k]) => !k.startsWith('CLAUDE_'))
+  )
+  try {
+    return execFileSync('claude', ['plugin', 'test'], {
+      cwd: empty,
+      env: { ...env, HOME: home },
+      encoding: 'utf8',
+      timeout: 30_000,
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+  } catch (e) {
+    const err = e as { stdout?: string; stderr?: string }
+    return `${err.stdout ?? ''}${err.stderr ?? ''}`
+  } finally {
+    rmSync(empty, { recursive: true, force: true })
+  }
+}
+
+describe.skipIf(!WITH_CLI)('mods-audit policy probe (AC-P4W1-9)', () => {
+  it('policy probe message is recognised', () => {
+    // A throwaway HOME with no settings: mods are on, unless the machine's own managed policy
+    // says otherwise, so any known class is accepted; `unknown` is the failure (it shows no banner).
+    const clean = mkdtempSync(path.join(os.tmpdir(), 'mods-audit-home-'))
+    const off = mkdtempSync(path.join(os.tmpdir(), 'mods-audit-home-'))
+    try {
+      mkdirSync(path.join(off, '.claude'), { recursive: true })
+      writeFileSync(path.join(off, '.claude', 'settings.json'), '{"disableAllHooks":true}')
+      expect(['loads', 'off-here', 'off-remote']).toContain(classifyPolicyProbe(probeOutput(clean)))
+      expect(classifyPolicyProbe(probeOutput(off))).toBe('off-here')
+    } finally {
+      rmSync(clean, { recursive: true, force: true })
+      rmSync(off, { recursive: true, force: true })
     }
   })
 })

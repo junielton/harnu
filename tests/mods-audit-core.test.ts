@@ -119,6 +119,34 @@ describe('mods-audit-core', () => {
     expect(Array.isArray(pane.warnings)).toBe(true)
   })
 
+  it('reads the notes CLI 2.1.291 added: a gating advisory and "nothing on $"', () => {
+    const parsed = parseValidateReport({
+      success: true,
+      manifest: { type: 'plugin', errors: [], warnings: [], notes: [], gatingHooks: [] },
+      contents: [
+        {
+          file: '/p/hooks/hooks.json',
+          type: 'hooks',
+          errors: [],
+          warnings: [],
+          notes: [
+            './register.ts hooks: tool.call{tool=Edit}',
+            './register.ts gating hook without .catch: tool.call{tool=Edit}',
+            './register.ts calls: nothing on $'
+          ],
+          gatingHooks: []
+        }
+      ]
+    })
+    expect(parsed.unparsed).toEqual([])
+    expect(parsed.hasModule).toBe(true)
+    expect(parsed.calls).toEqual([])
+    expect(parsed.hooks.map((h) => h.event)).toEqual(['tool.call'])
+    expect(parsed.warnings).toEqual([
+      './register.ts gating hook without .catch: tool.call{tool=Edit}'
+    ])
+  })
+
   it('keeps what it cannot parse', () => {
     const report = {
       success: true,
