@@ -107,6 +107,14 @@ describe('telemetry parity rule (spec P1W6 §13)', () => {
     expect(withAbort[0]!.class).toBe('T2')
   })
 
+  it('the committed live trace of LV-P1W6-b: the companion and the statusLine agree', () => {
+    const live = join(FIXTURE, '..', 'lv-p1w6-b-live.ndjson')
+    const records = parseParityLines(readFileSync(live, 'utf8'))
+    const report = parityReport('telemetry', records)
+    expect(report.facts).toBe(records.length)
+    expect(report.unexplained).toEqual([])
+  })
+
   it('the committed A3 trace: two sessions of readings, all pairs equal or T1', () => {
     const records = parseParityLines(readFileSync(FIXTURE, 'utf8'))
     expect(records.length).toBe(5)
