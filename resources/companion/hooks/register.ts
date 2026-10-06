@@ -22,11 +22,21 @@ import {
   type Sid
 } from './contract'
 import { MOD_VERSION, RENDEZVOUS_PATH } from './coords.gen'
+import {
+  neutralFleet,
+  originOf,
+  sanitizeFleet,
+  snapshotFields,
+  step as fleetStep,
+  type FleetSensorState,
+  type SensorInput
+} from './lib/fleet-sensor'
 import { createRing } from './lib/ring'
 import { endpointUrl, parseEndpoint, type Endpoint } from './lib/rendezvous-parse'
 
 /**
- * The Harnu companion mod, wave P1W3: the handshake and the identity facts (spec P1W3).
+ * The Harnu companion mod: the handshake and the identity facts (spec P1W3) and the fleet
+ * sensors (spec P1W5: turns, attention, subagents; the cores are in `lib/fleet-sensor.ts`).
  *
  * Every function that takes `$` is declared here, at the top of the module (MOD-1); helpers under
  * `lib/` are `$`-free. Every hook body is wrapped and ends in `next(e)`: a failure here must never
@@ -44,12 +54,20 @@ const BOOT_ID = { plugin: 'harnu-companion', key: 'bootId' } as const
 const SID = { plugin: 'harnu-companion', key: 'sid' } as const
 const BOOT = { plugin: 'harnu-companion', key: 'boot' } as const
 const PROBES = { plugin: 'harnu-companion', key: 'probes' } as const
+const FLEET = { plugin: 'harnu-companion', key: 'fleet' } as const
+const PERMISSION_MODE = { plugin: 'harnu-companion', key: 'permissionMode' } as const
 
 /** The feature an event type belongs to. `null`: reportable whenever the channel is alive. */
 const EVENT_FEATURE: Partial<Record<EventName, FeatureId | null>> = {
   'session.snapshot': 'sense.identity',
   'session.rebound': 'sense.identity',
   'session.end': 'sense.identity',
+  'turn.started': 'sense.turn',
+  'turn.completed': 'sense.turn',
+  'attention.raised': 'sense.attention',
+  'attention.cleared': 'sense.attention',
+  'subagent.started': 'sense.subagent',
+  'subagent.stopped': 'sense.subagent',
   'mod.error': null
 }
 
@@ -75,8 +93,12 @@ let sentSinceBeat = false
 let driftBlocked = false
 let endpoint: Endpoint | null = null
 let pumpFlight: Promise<void> | null = null
+let pumpKick = false
 let registrationErrors: string[] = []
 let ring = createRing(RING_MAX)
+let fleet: FleetSensorState = neutralFleet()
+let fleetLoaded = false
+let lastMode: string | null = null
 
 function resetState(): void {
   conn = null
@@ -99,8 +121,12 @@ function resetState(): void {
   driftBlocked = false
   endpoint = null
   pumpFlight = null
+  pumpKick = false
   registrationErrors = []
   ring = createRing(RING_MAX)
+  fleet = neutralFleet()
+  fleetLoaded = false
+  lastMode = null
 }
 
 // ---- runtime helpers other waves call ---------------------------------------------------------
@@ -266,12 +292,67 @@ function snapshot($: Dollar, reason: EventPayloads['session.snapshot']['reason']
     t: 'session.snapshot',
     d: {
       reason,
-      activeTurnId: null,
-      openAttention: [],
-      runningSubagents: 0,
+      ...snapshotFields(fleet),
       probes: { classic: probes.classic, toolCheck: probes.toolCheck }
     }
   })
+}
+
+// ---- fleet sensors (P1W5) ---------------------------------------------------------------------
+
+const noop = (): void => undefined
+
+/** Once per load: what a reload left in `$.state`, made safe. In-memory changes always win. */
+async function loadFleet($: Dollar): Promise<void> {
+  if (fleetLoaded) return
+  fleetLoaded = true
+  try {
+    const saved = await $.state.get(FLEET)
+    fleet = sanitizeFleet(saved.value)
+  } catch {
+    // an unreadable key reads as the neutral state
+  }
+}
+
+function persistFleet($: Dollar): void {
+  void Promise.resolve($.state.set(FLEET, fleet)).catch(noop)
+}
+
+/** True while at least one of the three sensor features is enabled. */
+function senseOn(): boolean {
+  return enabled('sense.turn') || enabled('sense.attention') || enabled('sense.subagent')
+}
+
+/** Runs one step of the core and emits what it returns. A throw is the caller's to catch (MOD-2). */
+function feed($: Dollar, input: SensorInput): void {
+  if (!senseOn()) return
+  const before = JSON.stringify(fleet)
+  const out = fleetStep(fleet, input)
+  fleet = out.state
+  if (JSON.stringify(fleet) !== before) persistFleet($)
+  for (const ev of out.events) emit($, ev as never)
+}
+
+/** The first step of every `classic.*` body: the probe, and the last `permission_mode` (§11.4). */
+function noteClassic($: Dollar, e: { permission_mode?: string }): void {
+  if (!probes.classic) {
+    probes = { ...probes, classic: true }
+    void Promise.resolve($.state.set(PROBES, probes)).catch(noop)
+    if (conn !== null) snapshot($, 'probe')
+  }
+  const mode = e.permission_mode
+  if (typeof mode === 'string' && mode !== '' && mode !== lastMode) {
+    lastMode = mode
+    void Promise.resolve($.state.set(PERMISSION_MODE, mode)).catch(noop)
+  }
+}
+
+/** `tool.check` was dispatched for a real call (one with an id), whatever its verdict. */
+function noteToolCheck($: Dollar): void {
+  if (probes.toolCheck) return
+  probes = { ...probes, toolCheck: true }
+  void Promise.resolve($.state.set(PROBES, probes)).catch(noop)
+  if (conn !== null) snapshot($, 'probe')
 }
 
 async function persistConn($: Dollar): Promise<void> {
@@ -302,6 +383,7 @@ async function doHello($: Dollar, resumeConn?: Conn): Promise<void> {
       const b = await $.state.get(BOOT)
       if (b.value) boot = b.value
     }
+    await loadFleet($) // a reload re-sends a correct snapshot (MOD-4)
     const request: Partial<HelloRequest> = {}
     let sid: Sid | null
     if (resume !== undefined) {
@@ -438,13 +520,24 @@ async function rehello($: Dollar): Promise<void> {
 
 /** Single flight; never awaited by a hook. With `beat`, an empty batch is sent as a heartbeat. */
 function pump($: Dollar, beat = false): void {
-  if (pumpFlight !== null || conn === null || dormant || inert) return
+  if (conn === null || dormant || inert) return
+  if (pumpFlight !== null) {
+    // an event pushed while the loop is on its way out would wait for the heartbeat: ask for one
+    // more pass once the flight is over (found by the Esc trace of P1W5: `turn.completed` is the
+    // event the sidebar waits for)
+    pumpKick = true
+    return
+  }
   if (ring.size() === 0 && !beat) return
   if (retryBlocked) return
   pumpFlight = pumpLoop($, beat)
     .catch(() => scheduleRetry($))
     .finally(() => {
       pumpFlight = null
+      if (pumpKick) {
+        pumpKick = false
+        pump($)
+      }
     })
 }
 
@@ -570,13 +663,65 @@ async function sayBye($: Dollar, reason: string): Promise<void> {
   await raceWithTimer($, post($, 'bye', request, false), BYE_BUDGET_MS)
 }
 
+/** A sensor body: never throws, never awaited beyond the first hello (and the first state read). */
+async function sense($: Dollar, where: string, run: () => void): Promise<void> {
+  try {
+    await ensureHello($)
+    await loadFleet($)
+    run()
+  } catch (err) {
+    reportModError(where, err)
+  }
+}
+
+/** `classic.*` bodies start with the probe and the permission mode, then sense (§11.4). */
+async function classic(
+  $: Dollar,
+  where: string,
+  e: { permission_mode?: string },
+  run: () => void
+): Promise<void> {
+  try {
+    noteClassic($, e)
+  } catch (err) {
+    reportModError(where, err)
+  }
+  await sense($, where, run)
+}
+
+/** `classic.PostToolUse` and the optional `classic.PostToolUseFailure`: a tool settled. */
+function settled(
+  $: Dollar,
+  failed: boolean,
+  e: { permission_mode?: string; tool_use_id: string; tool_name: string; agent_id?: string }
+): Promise<void> {
+  return classic($, failed ? 'classic.PostToolUseFailure' : 'classic.PostToolUse', e, () =>
+    feed($, {
+      k: 'post-tool',
+      toolUseId: e.tool_use_id,
+      tool: e.tool_name,
+      failed,
+      ...(e.agent_id !== undefined ? { agentId: e.agent_id } : {})
+    })
+  )
+}
+
 // ---- the module -------------------------------------------------------------------------------
 
 export const register: Register = (on) => {
   resetState()
-  const registered = { start: false, end: false, classic: false }
+  const registered: Record<string, boolean> = {}
+  /** One registration: a failure is reported later as `mod.error` and drops its features (§11.2). */
+  const hook = (name: string, add: () => void): void => {
+    try {
+      add()
+      registered[name] = true
+    } catch {
+      registrationErrors.push(name)
+    }
+  }
 
-  try {
+  hook('session.start', () => {
     on('session.start', async ($, e, next) => {
       try {
         boot = { cwd: e.cwd, surface: e.surface, isInteractive: e.isInteractive }
@@ -587,35 +732,27 @@ export const register: Register = (on) => {
       }
       return next(e)
     })
-    registered.start = true
-  } catch {
-    registrationErrors.push('session.start')
-  }
+  })
 
-  try {
+  hook('classic.SessionStart', () => {
     on('classic.SessionStart', async ($, e, next) => {
       try {
-        const first = !probes.classic
-        probes = { ...probes, classic: true }
+        noteClassic($, e) // first: the drift check of ensureHello must see `probes.classic` (C10)
         void ensureHello($) // not awaited: this hook is not on the first prompt's path
-        if (first && conn !== null) {
-          await $.state.set(PROBES, probes).catch(() => undefined)
-          snapshot($, 'probe')
-        }
         if ((e.source === 'clear' || e.source === 'resume') && e.session_id !== sidBound) {
           await rebound($, e.session_id, e.source)
+          // a new conversation has no turn, no open item and no record (contract §22)
+          fleet = neutralFleet()
+          persistFleet($)
         }
       } catch (err) {
         reportModError('classic.SessionStart', err)
       }
       return next(e)
     })
-    registered.classic = true
-  } catch {
-    registrationErrors.push('classic.SessionStart')
-  }
+  })
 
-  try {
+  hook('session.end', () => {
     on('session.end', async ($, e, next) => {
       try {
         // `clear` and `resume` are followed by a classic.SessionStart: not a goodbye. No hello
@@ -626,12 +763,168 @@ export const register: Register = (on) => {
       }
       return next(e)
     })
-    registered.end = true
-  } catch {
-    registrationErrors.push('session.end')
-  }
+  })
 
-  declared = registered.start && registered.end && registered.classic ? ['sense.identity'] : []
+  // ---- the shared fleet registrations (contract §11.4). Each body: ensureHello, the sensor
+  // step, then `next(e)` unchanged. The steps other waves add (P2W1 `channel.turnId`, P2W2 own
+  // submits, P3W1 the hold, P3W2 the sentinel) go at the marked places, never in a second `on()`.
+
+  hook('prompt.submit', () => {
+    on('prompt.submit', async ($, e, next) => {
+      await sense($, 'prompt.submit', () => {
+        // (1) sense.turn: remember the origin; (2) sense.attention: clear what is open
+        feed($, { k: 'prompt', originKind: e.origin?.kind })
+        // (3) P2W2 / P2W3: pop the mod's own queue of submits (insertion point)
+      })
+      return next(e)
+    })
+  })
+
+  hook('turn.start', () => {
+    on('turn.start', async ($, e, next) => {
+      // (1) P2W1: store `turnId` in `channel.turnId` (insertion point)
+      await sense($, 'turn.start', () => feed($, { k: 'turn.start', turnId: e.turnId }))
+      return next(e)
+    })
+  })
+
+  hook('turn.complete', () => {
+    on('turn.complete', async ($, e, next) => {
+      await sense($, 'turn.complete', () => {
+        // (1) sense.attention clears what is open and (3) sense.turn completes, in the core;
+        // (2) P3W1: `ask.settled {turn-ended}` goes between them (insertion point)
+        feed($, {
+          k: 'turn.complete',
+          turnId: e.turnId,
+          reason: e.reason,
+          isAborted: e.isAborted,
+          durationMs: e.durationMs,
+          usage: e.usage,
+          ...(e.agentId !== undefined ? { agentId: e.agentId } : {})
+        })
+      })
+      return next(e)
+    })
+  })
+
+  hook('tool.check', () => {
+    on('tool.check', async ($, e, next) => {
+      try {
+        await ensureHello($)
+      } catch (err) {
+        reportModError('tool.check', err)
+      }
+      const r = await next(e) // (1) the verdict is the engine's; this wave never alters it
+      try {
+        if (e.tool_use_id !== undefined) noteToolCheck($)
+        // (2) P3W2: the sentinel ask for a watched tool (insertion point)
+        await loadFleet($)
+        feed($, {
+          k: 'tool.check',
+          tool: e.tool,
+          decision: r.decision,
+          at: Date.now(),
+          ...(e.tool_use_id !== undefined ? { toolUseId: e.tool_use_id } : {}),
+          ...(e.agentId !== undefined ? { agentId: e.agentId } : {}),
+          ...(typeof r.hook === 'string' ? { hook: r.hook } : {})
+        })
+      } catch (err) {
+        reportModError('tool.check', err)
+      }
+      return r
+    })
+  })
+
+  hook('classic.PermissionRequest', () => {
+    on('classic.PermissionRequest', async ($, e, next) => {
+      await classic($, 'classic.PermissionRequest', e, () =>
+        feed($, {
+          k: 'permission.request',
+          tool: e.tool_name,
+          ...(e.agent_id !== undefined ? { agentId: e.agent_id } : {})
+        })
+      )
+      // (2) P3W1: the hold of contract §10.1 returns the decision here (insertion point)
+      return next(e)
+    })
+  })
+
+  hook('classic.Notification', () => {
+    on('classic.Notification', async ($, e, next) => {
+      await classic($, 'classic.Notification', e, () =>
+        feed($, { k: 'notification', type: e.notification_type })
+      )
+      return next(e)
+    })
+  })
+
+  hook('classic.PostToolUse', () => {
+    on('classic.PostToolUse', async ($, e, next) => {
+      await settled($, false, e)
+      // (2) P3W1: `ask.settled {tool-ran}` and `attention.cleared {ask-resolved}` (insertion point)
+      return next(e)
+    })
+  })
+
+  hook('classic.Stop', () => {
+    on('classic.Stop', async ($, e, next) => {
+      await classic($, 'classic.Stop', e, () => feed($, { k: 'stop', tasks: e.background_tasks }))
+      return next(e)
+    })
+  })
+
+  hook('classic.SubagentStart', () => {
+    on('classic.SubagentStart', async ($, e, next) => {
+      await classic($, 'classic.SubagentStart', e, () =>
+        feed($, { k: 'subagent.start', agentType: e.agent_type, agentId: e.agent_id })
+      )
+      return next(e)
+    })
+  })
+
+  hook('classic.SubagentStop', () => {
+    on('classic.SubagentStop', async ($, e, next) => {
+      await classic($, 'classic.SubagentStop', e, () =>
+        feed($, { k: 'subagent.stop', agentType: e.agent_type, agentId: e.agent_id })
+      )
+      return next(e)
+    })
+  })
+
+  // Optional hooks (contract §11.1): a failed registration is reported and removes no feature.
+  hook('classic.PostToolUseFailure', () => {
+    on('classic.PostToolUseFailure', async ($, e, next) => {
+      await settled($, true, e) // never relied on: it was never observed firing (C3)
+      return next(e)
+    })
+  })
+
+  hook('classic.StopFailure', () => {
+    on('classic.StopFailure', async ($, e, next) => {
+      await classic($, 'classic.StopFailure', e, () =>
+        feed($, { k: 'stop-failure', error: String(e.error) })
+      )
+      return next(e)
+    })
+  })
+
+  const all = (...names: string[]): boolean => names.every((n) => registered[n] === true)
+  const features: FeatureId[] = []
+  if (all('session.start', 'session.end', 'classic.SessionStart')) features.push('sense.identity')
+  if (all('prompt.submit', 'turn.start', 'turn.complete')) features.push('sense.turn')
+  if (
+    all(
+      'tool.check',
+      'classic.PermissionRequest',
+      'classic.Notification',
+      'classic.PostToolUse',
+      'classic.Stop'
+    )
+  ) {
+    features.push('sense.attention')
+  }
+  if (all('classic.SubagentStart', 'classic.SubagentStop')) features.push('sense.subagent')
+  declared = features
 }
 
-export { boundSid, enabled, emit, reportModError }
+export { boundSid, enabled, emit, reportModError, originOf }

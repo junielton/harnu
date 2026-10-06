@@ -71,6 +71,33 @@ describe('drift way 1: source equals the manifest', () => {
   })
 })
 
+describe('fleet sensors (P1W5)', () => {
+  it('fleet sensors add no forbidden hook', async () => {
+    const sources = await realSources()
+    const hooks = scanSurface(sources.map((s) => s.text)).hooks
+    expect(hooks).toEqual([...manifest.hooks].sort())
+    // the twelve P1W5 hooks, and none of the ones the CLI breaks or that cost a turn (issue 92533)
+    for (const h of [
+      'prompt.submit',
+      'turn.start',
+      'turn.complete',
+      'tool.check',
+      'classic.PermissionRequest',
+      'classic.Notification',
+      'classic.PostToolUse',
+      'classic.PostToolUseFailure',
+      'classic.Stop',
+      'classic.StopFailure',
+      'classic.SubagentStart',
+      'classic.SubagentStop'
+    ]) {
+      expect(hooks).toContain(h)
+    }
+    for (const h of ['tool.call', 'turn.step', '*']) expect(hooks).not.toContain(h)
+    expect(checkForbidden(sources)).toEqual([])
+  })
+})
+
 describe('forbidden constructions', () => {
   it('the real source has none', async () => {
     expect(checkForbidden(await realSources())).toEqual([])

@@ -3,7 +3,23 @@
   "plugin": "harnu-companion",
   "minCli": "2.1.287",
   "lastVerifiedCli": "2.1.290",
-  "hooks": ["classic.SessionStart", "session.end", "session.start"],
+  "hooks": [
+    "classic.Notification",
+    "classic.PermissionRequest",
+    "classic.PostToolUse",
+    "classic.PostToolUseFailure",
+    "classic.SessionStart",
+    "classic.Stop",
+    "classic.StopFailure",
+    "classic.SubagentStart",
+    "classic.SubagentStop",
+    "prompt.submit",
+    "session.end",
+    "session.start",
+    "tool.check",
+    "turn.complete",
+    "turn.start"
+  ],
   "calls": [
     "$.clock.after",
     "$.clock.every",
@@ -16,5 +32,5 @@
     "$.state.set"
   ],
   "envReads": ["HARNU_SPAWN_TOKEN"],
-  "stateKeys": ["boot", "bootId", "conn", "probes", "sid"]
+  "stateKeys": ["boot", "bootId", "conn", "fleet", "permissionMode", "probes", "sid"]
 }

@@ -74,6 +74,8 @@ export interface Rig {
   state: Map<string, unknown>
   /** What `$.session.id()` answers; change it to simulate a drift. */
   sid: { value: string }
+  /** What the engine's own `tool.check` answers (P1W5). */
+  verdict: { value: 'allow' | 'ask' | 'deny' }
   script: { fn: Script }
   /** The rendezvous file's content; null makes the read fail. */
   endpoint: { text: string | null }
@@ -109,6 +111,7 @@ export function installRig(on: On, opts: RigOptions = {}): Rig {
     sent: [],
     state: new Map(Object.entries(opts.savedState ?? {})),
     sid: { value: FIXTURE_SID },
+    verdict: { value: 'allow' },
     script: { fn: opts.script ?? defaultScript },
     endpoint: { text: endpointText() },
     of: (route) => rig.sent.filter((s) => s.route === route),
@@ -153,6 +156,19 @@ export function installRig(on: On, opts: RigOptions = {}): Rig {
   on('session.start', async (_$, e) => ({ cwd: e.cwd }))
   on('session.end', async (_$, e) => ({ sessionId: e.sessionId }))
   on('classic.SessionStart', async () => ({}))
+  // P1W5: the engine's answers beneath the fleet sensors.
+  on('prompt.submit', async (_$, e) => ({ text: e.text }))
+  on('turn.start', async (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', async () => ({ text: '' }))
+  on('tool.check', async () => ({ decision: rig.verdict.value }))
+  on('classic.PermissionRequest', async () => ({}))
+  on('classic.Notification', async () => ({}))
+  on('classic.PostToolUse', async () => ({}))
+  on('classic.PostToolUseFailure', async () => ({}))
+  on('classic.Stop', async () => ({}))
+  on('classic.StopFailure', async () => ({}))
+  on('classic.SubagentStart', async () => ({}))
+  on('classic.SubagentStop', async () => ({}))
   on('session.id', async () => ({ value: rig.sid.value }))
   on('session.version', async () => ({ value: { version: '2.1.290' } }))
   return rig
@@ -163,6 +179,14 @@ export function must<T>(v: T | undefined, what = 'element'): T {
   if (v === undefined) throw new Error(`missing ${what}`)
   return v
 }
+
+/** The features a hello enables for the fleet sensors (P1W5). */
+export const FLEET_FEATURES = [
+  'sense.identity',
+  'sense.turn',
+  'sense.attention',
+  'sense.subagent'
+] as const
 
 export const START = {
   cwd: '/tmp/example-project',

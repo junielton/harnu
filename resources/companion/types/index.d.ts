@@ -13,6 +13,36 @@ declare module 'claude-code' {
       boot: { cwd: string; surface: string | null; isInteractive: boolean }
       /** P1W3: facts about the process; `classic` flips on the first `classic.*` dispatch. */
       probes: { classic: boolean; toolCheck: boolean }
+      /** P1W5: the last `permission_mode` of any `classic.*` payload; absent until one is seen. */
+      permissionMode: string
+      /**
+       * P1W5: the fleet sensors' state (contract §22), read back after a reload so the re-sent
+       * `session.snapshot` is correct. Reset to the neutral state by a rebound. `agents` holds the
+       * per-agent facts, keyed on the agent id (the subagents this sensor counted).
+       */
+      fleet: {
+        activeTurnId: string | null
+        nextOrigin: 'human' | 'plugin' | 'peer' | 'unknown'
+        open: {
+          kind: 'permission' | 'idle' | 'input'
+          toolUseId?: string
+          tool?: string
+          agentId?: string
+        }[]
+        checks: {
+          toolUseId: string
+          tool: string
+          inputKey?: string
+          at: number
+          claimedBy?: string
+          agentId?: string
+          hook?: string
+        }[]
+        runningSubagents: number
+        lastStop: { all: number; subagents: number } | null
+        pendingFailure: string | null
+        agents: Record<string, string>
+      }
     }
   }
 }

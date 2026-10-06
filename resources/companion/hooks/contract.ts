@@ -59,6 +59,7 @@ export const CMD_QUEUE_MAX = 64
 export const CMD_DONE_MAX = 64
 export const ASK_ORPHAN_MS = 45_000
 export const STAMP_NONCE_RING = 512
+export const ASK_RECORD_MAX = 64
 export const PLAN_USAGE_STALE_MS = 90_000
 
 export const STAMP_ARG = '_harnuCaller'
