@@ -198,6 +198,16 @@ describe('session arbiter', () => {
     expect(a.injectDecisionFor(owner)).toBeNull()
   })
 
+  it('tells a listener when a spawn decision is recorded, so the state line can age past its grace', () => {
+    const a = createSessionArbiter({ host: null, rollout: () => rolloutOf() })
+    const seen: string[] = []
+    const off = a.onSpawnDecision((o, d) => void seen.push(`${JSON.stringify(o)}:${d.inject}`))
+    a.recordInjectDecision(owner, { inject: true })
+    off()
+    a.recordInjectDecision({ kind: 'pty', ptyId: 'pty-2' }, { inject: false, skip: 'off' })
+    expect(seen).toEqual([`${JSON.stringify(owner)}:true`])
+  })
+
   it('with no host wired every answer is legacy / no-binding', () => {
     const a = createSessionArbiter({ host: null, rollout: () => rolloutOf() })
     expect(a.ownerFor('k', 'taskState')).toEqual({ owner: 'legacy', reason: 'no-binding' })

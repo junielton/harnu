@@ -23,6 +23,7 @@ import { configureParityLedger, flushParityLedger, recordFact } from './parity-l
 import type { IdentityParityRecord } from './identity-parity-core'
 import { createAppPolicyProbe } from '../claude-policy-probe'
 import { buildCompanionStatus } from './companion-status'
+import { HELLO_GRACE_MS } from './companion-state-core'
 import { companionStagedDir } from './spawn-inject'
 import { ensureStaged } from './staging'
 import { getCompanionPrefs } from './companion-prefs'
@@ -198,6 +199,12 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
   }
   core.facade.onBindingChange(pushUpdated)
   sessionArbiter().onOwnershipChange(pushUpdated)
+  // A spawn shows up at once, and again once its hello grace ran out: that move from "no line" to
+  // "the mod did not load" is time-based, so nothing else would tell the renderer to re-read.
+  sessionArbiter().onSpawnDecision((_owner, d) => {
+    pushUpdated()
+    if (d.inject) setTimeout(pushUpdated, HELLO_GRACE_MS + 500).unref?.()
+  })
   onModeChange(pushUpdated)
   registerCompanionIpc(core.facade, {
     status: () =>

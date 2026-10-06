@@ -163,6 +163,24 @@ describe('buildCompanionStatus', () => {
     }
   })
 
+  it('a lease lost once reads unloaded for good, even when the lease is live again (sticky)', () => {
+    const { deps } = rig({ bindings: [view()] })
+    const losses = { leaseLosses: 1, modErrors: 0 }
+    const sticky = {
+      ...deps,
+      arbiter: { ...deps.arbiter, bindingCounters: () => losses }
+    }
+    expect(buildCompanionStatus(sticky).sessions['row-1'].state).toEqual({
+      state: 'legacy',
+      reason: 'unloaded'
+    })
+    const clean = {
+      ...deps,
+      arbiter: { ...deps.arbiter, bindingCounters: () => ({ leaseLosses: 0, modErrors: 0 }) }
+    }
+    expect(buildCompanionStatus(clean).sessions['row-1'].state).toEqual({ state: 'live' })
+  })
+
   it('two sessions are two rows', () => {
     const { deps } = rig({
       spawned: [

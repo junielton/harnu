@@ -54,7 +54,12 @@ export interface StatusDeps {
   rollout(): RolloutView
   arbiter: Pick<
     SessionArbiter,
-    'ownerFor' | 'injectDecisionFor' | 'sideloadExitFor' | 'wasMinted' | 'spawnOwners'
+    | 'ownerFor'
+    | 'injectDecisionFor'
+    | 'sideloadExitFor'
+    | 'wasMinted'
+    | 'spawnOwners'
+    | 'bindingCounters'
   >
   host: Pick<
     CompanionHostFacade,
@@ -101,7 +106,12 @@ export function buildCompanionStatus(deps: StatusDeps): CompanionStatus {
       binding: view
         ? {
             enabledEmpty: view.enabled.length === 0,
-            leaseLive: view.state === 'bound' && view.lease === 'live',
+            // Sticky (ARB-4c): a lease lost once is the mod unloaded for the life of the binding, even
+            // when requests flow again, because ownership never comes back either.
+            leaseLive:
+              view.state === 'bound' &&
+              view.lease === 'live' &&
+              deps.arbiter.bindingCounters(key).leaseLosses === 0,
             ended: view.state !== 'bound'
           }
         : null,

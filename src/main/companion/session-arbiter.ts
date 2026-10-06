@@ -48,6 +48,8 @@ export interface SessionArbiter {
   wasMinted(owner: SpawnOwner): boolean
   reportSideloadExit(owner: SpawnOwner, output: string): void
   sideloadExitFor(owner: SpawnOwner): string | null
+  /** Fires when a spawn decision is recorded: the state line has a time-based row to age into. */
+  onSpawnDecision(fn: (owner: SpawnOwner, d: CompanionInjectDecision) => void): () => void
   forgetSpawn(owner: SpawnOwner): void
   /** The owners with a recorded decision (a live `claude` PTY) and when each was decided. */
   spawnOwners(): { owner: SpawnOwner; at: number }[]
@@ -73,6 +75,7 @@ export function createSessionArbiter(deps: SessionArbiterDeps): SessionArbiter {
   const now = deps.now ?? ((): number => Date.now())
   const sideloadExits = new Map<string, string>()
   const minted = new Set<string>()
+  const spawnListeners = new Set<(owner: SpawnOwner, d: CompanionInjectDecision) => void>()
   const listeners = new Set<(sessionKey: string | null, sid: Sid) => void>()
 
   const revokedOf = (key: number): Set<FactFamily> => {
@@ -170,8 +173,20 @@ export function createSessionArbiter(deps: SessionArbiterDeps): SessionArbiter {
       return { modErrors: c?.modErrors ?? 0, leaseLosses: c?.leaseLosses ?? 0 }
     },
     arbiterBinding,
-    recordInjectDecision: (owner, d) =>
-      void injectDecisions.set(ownerKey(owner), { owner, d, at: now() }),
+    recordInjectDecision(owner, d) {
+      injectDecisions.set(ownerKey(owner), { owner, d, at: now() })
+      for (const fn of [...spawnListeners]) {
+        try {
+          fn(owner, d)
+        } catch {
+          // one listener's failure never stops the others
+        }
+      }
+    },
+    onSpawnDecision(fn) {
+      spawnListeners.add(fn)
+      return () => void spawnListeners.delete(fn)
+    },
     injectDecisionFor: (owner) => injectDecisions.get(ownerKey(owner))?.d ?? null,
     spawnOwners: () => [...injectDecisions.values()].map(({ owner, at }) => ({ owner, at })),
     reportSideloadExit: (owner, output) =>
@@ -187,6 +202,7 @@ export function createSessionArbiter(deps: SessionArbiterDeps): SessionArbiter {
     dispose() {
       for (const off of unsubscribers.splice(0)) off()
       listeners.clear()
+      spawnListeners.clear()
     }
   }
 }
