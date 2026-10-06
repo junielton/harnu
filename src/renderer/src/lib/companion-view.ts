@@ -40,6 +40,38 @@ export function monitorCell(
   }
 }
 
+/** `companion:diagnostics:ping`'s answer, as far as the toast needs it (P2W1 §10). */
+export interface PingAnswer {
+  ok: boolean
+  roundTripMs: number
+  refusal?: string
+}
+
+/** The fixed map of refusals that are worth a reason; every other one reads as no answer. */
+const PING_REASONS: Readonly<Record<string, 'legacy' | 'shadow' | 'headless'>> = {
+  STICKY_LEGACY: 'legacy',
+  MODE_SHADOW: 'shadow',
+  FEATURE_OFF: 'shadow',
+  HEADLESS: 'headless'
+}
+
+/** The toast "Test Harnu mod channel" ends in: info when answered, warning otherwise. */
+export function pingToast(
+  r: PingAnswer,
+  t: Translate
+): { kind: 'info' | 'warning'; title: string } {
+  if (r.ok)
+    return { kind: 'info', title: t('harnuMod.channel.ok', { ms: Math.round(r.roundTripMs) }) }
+  const reason = r.refusal !== undefined ? PING_REASONS[r.refusal] : undefined
+  if (reason) {
+    return {
+      kind: 'warning',
+      title: t('harnuMod.channel.refused', { reason: t(`harnuMod.channel.reason.${reason}`) })
+    }
+  }
+  return { kind: 'warning', title: t('harnuMod.channel.noAnswer') }
+}
+
 /**
  * The single status line under the settings block, or null. First match wins; none is a warning.
  * `policy` needs a session that was positively identified as blocked (DOC-8).

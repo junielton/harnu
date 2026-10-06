@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   monitorCell,
+  pingToast,
   ownsAnyFamily,
   settingsStatusKey,
   stateLine,
@@ -144,5 +145,40 @@ describe('unloadedNotices', () => {
       }
     })
     expect(unloadedNotices(owned, other, new Set())).toEqual([])
+  })
+})
+
+describe('pingToast (the "Test Harnu mod channel" answer)', () => {
+  it('an answered channel is an info toast with the round trip', () => {
+    expect(pingToast({ ok: true, roundTripMs: 41.6, outcomes: [] }, t)).toEqual({
+      kind: 'info',
+      title: 'Harnu mod channel answered in 42 ms'
+    })
+  })
+
+  it('a refusal names its reason from a fixed map', () => {
+    const refused = (refusal: string) =>
+      pingToast({ ok: false, roundTripMs: 0, refusal, outcomes: [] } as never, t)
+    expect(refused('STICKY_LEGACY')).toEqual({
+      kind: 'warning',
+      title: 'Harnu mod channel is not available: this session runs on hooks'
+    })
+    expect(refused('MODE_SHADOW').title).toBe(
+      'Harnu mod channel is not available: the channel is observing only'
+    )
+    expect(refused('FEATURE_OFF').title).toBe(refused('MODE_SHADOW').title)
+    expect(refused('HEADLESS').title).toBe(
+      'Harnu mod channel is not available: this is a headless session'
+    )
+  })
+
+  it('any other refusal, and no answer at all, read as no answer', () => {
+    expect(pingToast({ ok: false, roundTripMs: 0, outcomes: [] }, t)).toEqual({
+      kind: 'warning',
+      title: 'Harnu mod channel did not answer'
+    })
+    expect(
+      pingToast({ ok: false, roundTripMs: 0, refusal: 'NO_LEASE', outcomes: [] } as never, t).title
+    ).toBe('Harnu mod channel did not answer')
   })
 })
