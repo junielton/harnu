@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -343,9 +343,10 @@ describe('facade, bus and extension points', () => {
 })
 
 describe('electron shell', () => {
-  it('registerCompanionHost with no prefs file creates no directory and no socket', async () => {
+  it('registerCompanionHost with the kill switch off creates no directory and no socket', async () => {
     const userData = mkdtempSync(join(tmpdir(), 'hc-ud-'))
     dirs.push(userData)
+    writeFileSync(join(userData, 'companion-prefs.json'), JSON.stringify({ v: 1, enabled: false }))
     const handlers = new Map<string, unknown>()
     const electron = {
       app: { getPath: () => userData, isPackaged: false },
@@ -389,8 +390,18 @@ describe('electron shell', () => {
       identityClaims: () => [],
       restartListener: async () => undefined
     })
-    // the diagnostics read and the claim pull (P1W3); no dev mint, no dev restart
-    expect([...handlers]).toEqual(['companion:diagnostics', 'companion:identityClaims'])
+    // the diagnostics read, the claim pull (P1W3) and the P1W4 settings channels; no dev mint, no
+    // dev restart
+    expect([...handlers].filter((h) => h.startsWith('companion:dev'))).toEqual([])
+    expect([...handlers]).toEqual(
+      expect.arrayContaining([
+        'companion:diagnostics',
+        'companion:identityClaims',
+        'companion:setEnabled',
+        'companion:disclosureShown',
+        'companion:setFolderActive'
+      ])
+    )
     vi.doUnmock('electron')
   })
 })

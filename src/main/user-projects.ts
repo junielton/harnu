@@ -68,6 +68,12 @@ export interface UserProject {
    */
   interceptActive?: boolean
   /**
+   * Whether the Harnu mod's families that are configured `active` act in this folder (T389 P1W4
+   * per-folder ramp). Optional + fail-safe: a missing value is `false`, so a configured-`active`
+   * family stays `shadow` here. Read through {@link companionActivePaths}.
+   */
+  companionActive?: boolean
+  /**
    * Whether this folder's sidebar label should fall back to its git branch when
    * the directory basename differs from the branch (T52 auto-alias). Optional +
    * default OFF: a missing value shows the basename (or a custom alias, which
@@ -996,6 +1002,37 @@ export async function setUserProjectAliasFromBranch(
     await writeUserProjects(next)
     return next
   })
+}
+
+/**
+ * Set the `companionActive` flag (T389 P1W4 per-folder ramp) on a pinned project by `path`.
+ * Same contract as {@link setUserProjectInterceptActive}: normalized lookup, idempotent, pinned
+ * projects only.
+ */
+export async function setCompanionActive(
+  targetPath: string,
+  on: boolean
+): Promise<UserProjectsFile> {
+  return withFileLock(userProjectsPath(), async () => {
+    const file = await readUserProjects()
+    const normalizedPath = await normalizePath(targetPath)
+    const idx = file.projects.findIndex((p) => p.path === normalizedPath)
+    if (idx === -1) return file // not a tracked project — nothing to flag
+    if ((file.projects[idx].companionActive ?? false) === on) return file // unchanged
+    const next: UserProjectsFile = {
+      version: 1,
+      projects: file.projects.map((p, i) => (i === idx ? { ...p, companionActive: on } : p)),
+      hiddenPaths: file.hiddenPaths ?? []
+    }
+    await writeUserProjects(next)
+    return next
+  })
+}
+
+/** The normalized paths of pinned folders on the Harnu mod ramp (T389 P1W4). */
+export async function companionActivePaths(): Promise<string[]> {
+  const file = await readUserProjects()
+  return file.projects.filter((p) => p.companionActive === true).map((p) => p.path)
 }
 
 /** The normalized paths of pinned folders currently on the intercept ramp (T30). */

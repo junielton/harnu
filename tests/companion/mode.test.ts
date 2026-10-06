@@ -8,9 +8,10 @@ import {
   hydrateCompanionMode,
   listenerWanted,
   onModeChange,
-  parseCompanionPrefs,
   setCompanionPrefsPath
 } from '../../src/main/companion/mode'
+import { setCompanionCliGate } from '../../src/main/companion/companion-prefs'
+import { createCompanionHost } from '../../src/main/companion/host-core'
 
 let dir: string
 let file: string
@@ -19,6 +20,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'hc-mode-'))
   file = join(dir, 'companion-prefs.json')
   setCompanionPrefsPath(file)
+  setCompanionCliGate('ok')
 })
 
 afterEach(() => {
@@ -26,12 +28,9 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-import { createCompanionHost } from '../../src/main/companion/host-core'
-
 describe('companion mode seam', () => {
-  it('default off starts nothing', async () => {
-    // before any hydrate, and with no file at all
-    expect(getCompanionMode()).toBe('off')
+  it('the kill switch off at boot starts nothing and reads off', async () => {
+    writeFileSync(file, JSON.stringify({ v: 1, enabled: false }))
     await hydrateCompanionMode()
     expect(getCompanionMode()).toBe('off')
     expect(listenerWanted()).toBe(false)
@@ -39,48 +38,50 @@ describe('companion mode seam', () => {
     expect(familyMode('approval', '/some/folder')).toBe('off')
   })
 
-  it('with no prefs path configured the mode is off', async () => {
+  it('with no prefs path configured nothing is read and the shipped default applies', async () => {
     setCompanionPrefsPath(null)
     await hydrateCompanionMode()
-    expect(getCompanionMode()).toBe('off')
+    expect(getCompanionMode()).toBe('shadow')
   })
 
-  it('reads the developer key `mode` from the file', async () => {
+  it('reads the developer key `mode` from the file as the default of every family', async () => {
+    setCompanionCliGate('ok')
     writeFileSync(file, JSON.stringify({ v: 1, mode: 'shadow' }))
     await hydrateCompanionMode()
     expect(getCompanionMode()).toBe('shadow')
     expect(listenerWanted()).toBe(true)
-    // P1W1: every family follows the global mode
     expect(familyMode('taskState', '/x')).toBe('shadow')
-    writeFileSync(file, JSON.stringify({ v: 1, mode: 'active' }))
+    writeFileSync(file, JSON.stringify({ v: 1, mode: 'active', allFolders: true }))
     await hydrateCompanionMode()
     expect(getCompanionMode()).toBe('active')
+    expect(familyMode('taskState', '/x')).toBe('active')
   })
 
-  it('an unreadable or invalid file reads off until a disclosure exists (P1W4)', async () => {
+  it('an unreadable or invalid file reads the shipped defaults (OD-1: shadow)', async () => {
     writeFileSync(file, '{ not json')
     await hydrateCompanionMode()
-    expect(getCompanionMode()).toBe('off')
+    expect(getCompanionMode()).toBe('shadow')
     writeFileSync(file, JSON.stringify({ v: 1, mode: 'sideways' }))
     await hydrateCompanionMode()
-    expect(getCompanionMode()).toBe('off')
+    expect(getCompanionMode()).toBe('shadow') // an invalid mode reads shadow (ARB-6a)
     writeFileSync(file, JSON.stringify([]))
     await hydrateCompanionMode()
-    expect(getCompanionMode()).toBe('off')
+    expect(getCompanionMode()).toBe('shadow')
   })
 
   it('onModeChange fires when a hydrate changes the answer, not when it does not', async () => {
     let fired = 0
+    await hydrateCompanionMode()
     const off = onModeChange(() => fired++)
-    await hydrateCompanionMode() // off → off
+    await hydrateCompanionMode() // shadow → shadow
     expect(fired).toBe(0)
-    writeFileSync(file, JSON.stringify({ v: 1, mode: 'shadow' }))
+    writeFileSync(file, JSON.stringify({ v: 1, enabled: false }))
     await hydrateCompanionMode()
     expect(fired).toBe(1)
     await hydrateCompanionMode() // unchanged
     expect(fired).toBe(1)
     off()
-    writeFileSync(file, JSON.stringify({ v: 1, mode: 'off' }))
+    writeFileSync(file, JSON.stringify({ v: 1 }))
     await hydrateCompanionMode()
     expect(fired).toBe(1) // unsubscribed
   })
@@ -91,25 +92,17 @@ describe('companion mode seam', () => {
       throw new Error('boom')
     })
     const b = onModeChange(() => fired++)
-    writeFileSync(file, JSON.stringify({ v: 1, mode: 'shadow' }))
+    writeFileSync(file, JSON.stringify({ v: 1, enabled: false }))
     await hydrateCompanionMode()
     expect(fired).toBe(1)
     a()
     b()
   })
-
-  it('parseCompanionPrefs is pure', () => {
-    expect(parseCompanionPrefs('{"v":1,"mode":"shadow"}')).toBe('shadow')
-    expect(parseCompanionPrefs('{"mode":"active"}')).toBe('active')
-    expect(parseCompanionPrefs('{"mode":"off"}')).toBe('off')
-    expect(parseCompanionPrefs('')).toBe('off')
-    expect(parseCompanionPrefs('null')).toBe('off')
-    expect(parseCompanionPrefs('{"mode":1}')).toBe('off')
-  })
 })
 
-describe('default off starts nothing', () => {
-  it('default off starts nothing: the host creates no directory and no socket', async () => {
+describe('the kill switch off at boot starts nothing', () => {
+  it('the host creates no directory and no socket, and mints no spawn token', async () => {
+    writeFileSync(file, JSON.stringify({ v: 1, enabled: false }))
     const companionDir = join(dir, 'companion')
     let started = 0
     const host = createCompanionHost({
@@ -125,7 +118,7 @@ describe('default off starts nothing', () => {
         throw new Error('must not start')
       }
     })
-    await host.register() // no companion-prefs.json at <dir>
+    await host.register()
     expect(getCompanionMode()).toBe('off')
     expect(started).toBe(0)
     expect(existsSync(companionDir)).toBe(false)

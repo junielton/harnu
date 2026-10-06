@@ -8,6 +8,8 @@
 
 import { randomUUID } from 'node:crypto'
 import { app, ipcMain } from 'electron'
+import { companionActivePaths, setCompanionActive } from '../user-projects'
+import { markDisclosureShown, setCompanionEnabled, setRampFolders } from './companion-prefs'
 import type { CompanionHostFacade } from './host-core'
 import type { IdentityClaim, IdentityOutcome } from './identity-core'
 
@@ -26,6 +28,21 @@ export function registerCompanionIpc(
 ): void {
   ipcMain.handle('companion:diagnostics', () => host.diagnostics())
   ipcMain.handle('companion:identityClaims', () => ({ claims: extras.identityClaims() }))
+  // P1W4: the kill switch, the one-time disclosure and the per-folder ramp. Renderer IPC only: no
+  // MCP verb reaches any of them (SEC-9).
+  ipcMain.handle('companion:setEnabled', async (_e, on: unknown) => {
+    await setCompanionEnabled(on === true)
+    return { enabled: on === true }
+  })
+  ipcMain.handle('companion:disclosureShown', async () => {
+    await markDisclosureShown()
+  })
+  ipcMain.handle('companion:setFolderActive', async (_e, path: unknown, on: unknown) => {
+    if (typeof path !== 'string' || path === '') return { ok: false }
+    await setCompanionActive(path, on === true)
+    setRampFolders(await companionActivePaths())
+    return { ok: true }
+  })
   ipcMain.on('companion:identityOutcome', (_e, o: unknown) => {
     const r = o as Partial<IdentityOutcome> | null
     if (!r || typeof r.fromKey !== 'string' || typeof r.sid !== 'string') return

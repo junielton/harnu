@@ -2,7 +2,10 @@ import { claudeVersionSync } from '../claude-cli'
 import { insertCompanionPluginDir } from './staging-core'
 import { cliGate, gateAllowsInjection, type CliGate } from './version-gate'
 import { companionHost } from './host'
+import type { CompanionInjectDecision } from './arbitration-core'
+import { companionInjectDecision } from './companion-prefs'
 import { getCompanionMode, type CompanionMode } from './mode'
+import { sessionArbiter } from './session-arbiter'
 import { ensureStaged, pinStagedDir } from './staging'
 import type { ReleaseReason, SpawnMeta, SpawnOwner, TrustClass } from './session-table'
 import type { ClaudeVersion } from '../claude-cli-version'
@@ -26,6 +29,10 @@ export interface CompanionSpawnPlan {
 export type CompanionSpawnProvider = (ctx: {
   cwd: string
   trust: TrustClass
+  /** P1W4: the PTY kind (`claude-new`, ...). A scheduler tick passes none and reads as `claude-tick`. */
+  kind?: string
+  /** P1W4: who the spawn is for, so the decision can be kept for the state line. */
+  owner?: SpawnOwner
 }) => Promise<CompanionSpawnPlan | null>
 
 export interface SpawnInjectDeps {
@@ -35,6 +42,10 @@ export interface SpawnInjectDeps {
   /** `api-surface.json`'s `lastVerifiedCli`. */
   ceiling: string
   isSideloadBlocked(): boolean
+  /** P1W4 (`companionInjectDecision`): enabled, noticed, a usable gate, a `claude-*` kind. */
+  decide?(ctx: { kind: string; cliGate: CliGate }): CompanionInjectDecision
+  /** P1W4: the arbiter keeps the decision per spawn owner; the state line reads it. */
+  recordDecision?(owner: SpawnOwner, d: CompanionInjectDecision): void
   ensureStaged(): Promise<string | null>
   mintSpawnToken(meta: SpawnMeta): string | null
   releaseSpawn(owner: SpawnOwner, reason: ReleaseReason): void
@@ -58,6 +69,11 @@ export function createCompanionSpawnProvider(deps: SpawnInjectDeps): {
 
   const provider: CompanionSpawnProvider = async (ctx) => {
     try {
+      if (deps.decide) {
+        const d = deps.decide({ kind: ctx.kind ?? 'claude-tick', cliGate: gate() })
+        if (ctx.owner) deps.recordDecision?.(ctx.owner, d)
+        if (!d.inject) return null
+      }
       if (deps.getMode() === 'off') return null
       if (!gateAllowsInjection(gate())) return null
       if (deps.isSideloadBlocked()) return null
@@ -163,6 +179,8 @@ const injector = createCompanionSpawnProvider({
   cliVersion: () => claudeVersionSync(),
   ceiling: surface.lastVerifiedCli,
   isSideloadBlocked,
+  decide: (c) => companionInjectDecision(c),
+  recordDecision: (o, d) => sessionArbiter().recordInjectDecision(o, d),
   ensureStaged,
   mintSpawnToken: (m) => companionHost.mintSpawnToken(m),
   releaseSpawn: (o, r) => companionHost.releaseSpawn(o, r),
@@ -180,9 +198,19 @@ export function companionHelloSeen(owner: SpawnOwner): boolean {
   return rec !== null && rec.state !== 'minted'
 }
 
+/**
+ * P1W4: the first process of a spawn exited early and was respawned bare. Its kept output feeds
+ * the Harnu mod state (row 5 of the state table); it is never logged.
+ */
+export function reportCompanionSideloadExit(owner: SpawnOwner, output: string): void {
+  sessionArbiter().reportSideloadExit(owner, output)
+}
+
 /** Drops the spawn record and tells the host; a no-op for an owner that never recorded. */
 export function releaseCompanionSpawn(owner: SpawnOwner, reason: ReleaseReason): void {
   injector.release(owner, reason)
+  // The decision and the sideload exit outlive a retry's `spawn-aborted`; only the end drops them.
+  if (reason !== 'spawn-aborted') sessionArbiter().forgetSpawn(owner)
 }
 
 export function companionCliGate(): CliGate {

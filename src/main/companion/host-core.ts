@@ -146,6 +146,11 @@ export interface HostCoreDeps {
     listenerWanted(): boolean
     hydrate(): Promise<void>
     onChange(fn: () => void): () => void
+    /**
+     * P1W4: the kill switch (`false` means off). When it turns off the host revokes every
+     * binding's `conn` and answers each re-hello with `enable: []` (contract §3 item 9, §11.2).
+     */
+    enabled?(): boolean
   }
   start?: (opts: StartOptions) => Promise<CompanionServer>
   /** Monotonic: the lease clock (never wall time). */
@@ -261,9 +266,14 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
     else if (s.code) totals.helloRefused[s.code] = (totals.helloRefused[s.code] ?? 0) + 1
   }
 
+  // Bindings the kill switch revoked: their re-hello is answered `enable: []` even after the
+  // switch is back on, because turning it back on reaches new sessions only (ARB-7d).
+  const killed = new Set<number>()
+  const killedAwarePolicy: EnablePolicy = (v) => (killed.has(v.key) ? [] : enablePolicy(v))
+
   // The server reads these at request time, so a later `setPollHandler` needs no restart.
   const hooks: ServerHooks = {
-    enablePolicy: () => enablePolicy,
+    enablePolicy: () => killedAwarePolicy,
     known: () => known,
     commandSource: (b, cursor) => commandSource?.(b, cursor) ?? [],
     get pollHandler() {
@@ -331,6 +341,18 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
     }
   }
 
+  /** The kill switch turned off: revoke every live binding at once, spawned or external. */
+  function revokeAll(): void {
+    for (const b of table.all()) {
+      if (b.state !== 'bound') continue
+      killed.add(b.key)
+      table.revoke(table.viewOf(b))
+      const view = table.viewOf(b)
+      audit('revoked', view)
+      notifyChange(view)
+    }
+  }
+
   let timer: ReturnType<typeof setInterval> | null = null
   const unsubscribers: (() => void)[] = []
   let registered = false
@@ -342,7 +364,12 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
     timer = setInterval(sweepNow, LEASE_SWEEP_MS)
     timer.unref?.()
     if (deps.onResume) unsubscribers.push(deps.onResume(() => table.grace(LEASE_TTL_MS)))
-    unsubscribers.push(deps.mode.onChange(() => void reconcileListener()))
+    unsubscribers.push(
+      deps.mode.onChange(() => {
+        if (deps.mode.enabled && !deps.mode.enabled()) revokeAll()
+        void reconcileListener()
+      })
+    )
     await reconcileListener()
   }
 

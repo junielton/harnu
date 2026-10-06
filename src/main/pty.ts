@@ -12,6 +12,7 @@ import {
   isSideloadBlocked,
   markSideloadBlocked,
   releaseCompanionSpawn,
+  reportCompanionSideloadExit,
   trustFor,
   type CompanionSpawnPlan,
   type CompanionSpawnProvider
@@ -828,6 +829,8 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
       // worked. Add the NEXT injector inside this callback, never after it.
       companionPlan = await companionSpawnProvider({
         cwd: opts.cwd ?? '',
+        kind,
+        owner: { kind: 'pty', ptyId: id },
         trust: trustFor({
           readOnly: opts.readOnly,
           agentControlled: opts.agentControlled,
@@ -1007,6 +1010,7 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
           })
         ) {
           try {
+            reportCompanionSideloadExit(companionOwner, firstTail)
             releaseCompanionSpawn(companionOwner, 'spawn-aborted')
             rec.flush.buf += '\x1b[2mHarnu: restarted without bundled plugins.\x1b[0m\r\n'
             flushNow(id)

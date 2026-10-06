@@ -3,16 +3,21 @@
  * the app data directory, the real mode seam, the audit log and the power-monitor `resume` event.
  * Every decision is in the tested cores (`host-core`, `server`, `session-table`, `wire-core`).
  *
- * Nothing listens in a default install: the mode file does not exist, so `listenerWanted()` is
- * false and `registerCompanionHost` only hydrates the mode and registers the IPC read.
+ * P1W4: the shipped default is `shadow` (OD-1), so a default install listens; sessions carry the
+ * mod only after the one-time disclosure was rendered (`companionInjectDecision`), and the kill
+ * switch (`companion-prefs.json` `enabled`) stops the listener from being wanted at all.
  */
 
 import { app, powerMonitor, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
+import { claudeVersionSync, resolveClaudeVersion } from '../claude-cli'
+import { companionActivePaths } from '../user-projects'
 import { appendAudit, configureAuditDir } from './audit-log'
+import { rolloutView, setCompanionCliGate, setRampFolders } from './companion-prefs'
 import { registerCompanionIpc } from './companion-ipc'
 import { createCompanionHost } from './host-core'
-import { gateForCli, identityEnablePolicy } from './enable-policy'
+import { gateForCli } from './enable-policy'
+import { createEnablePolicy } from './feature-policy'
 import { createIdentityAdapter, type IdentityAdapter } from './identity-adapter'
 import {
   getCompanionMode,
@@ -21,6 +26,8 @@ import {
   onModeChange,
   setCompanionPrefsPath
 } from './mode'
+import { configureSessionArbiter } from './session-arbiter'
+import { cliGate } from './version-gate'
 import type { SpawnOwner } from './session-table'
 import surface from '../../../resources/companion/api-surface.json'
 
@@ -32,7 +39,8 @@ const core = createCompanionHost({
     getMode: getCompanionMode,
     listenerWanted,
     hydrate: hydrateCompanionMode,
-    onChange: onModeChange
+    onChange: onModeChange,
+    enabled: () => rolloutView().enabled
   },
   appendAudit,
   onResume: (fn) => {
@@ -69,10 +77,16 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
   const userData = app.getPath('userData')
   setCompanionPrefsPath(join(userData, 'companion-prefs.json'))
   configureAuditDir(join(userData, 'companion'))
-  // P1W3: the first enable policy (`sense.identity` only) and the identity adapter. P1W4 replaces
-  // the policy through the same call; nothing here is edited then.
+  // P1W4: the CLI gate and the ramp are inputs of the mode. The version is cached-or-null on the
+  // spawn path (T200), so the first answer is `unknown` and the settled probe fires `onModeChange`.
+  setCompanionCliGate(cliGate(claudeVersionSync(), surface.lastVerifiedCli))
+  void resolveClaudeVersion().then((v) => setCompanionCliGate(cliGate(v, surface.lastVerifiedCli)))
+  setRampFolders(await companionActivePaths().catch(() => []))
+  // The arbiter reads the rollout view and the binding table; every consumer asks it.
+  configureSessionArbiter({ host: core.facade, rollout: rolloutView })
+  // P1W4 replaces P1W3's first policy (`sense.identity` only) with `computeEnable`.
   core.facade.setEnablePolicy(
-    identityEnablePolicy({ getMode: getCompanionMode, ceiling: surface.lastVerifiedCli })
+    createEnablePolicy({ rollout: rolloutView, ceiling: surface.lastVerifiedCli })
   )
   identity = createIdentityAdapter({
     host: core.facade,
