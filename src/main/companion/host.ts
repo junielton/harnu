@@ -30,6 +30,8 @@ import { getCompanionPrefs } from './companion-prefs'
 import manifest from '../../../resources/companion/.claude-plugin/plugin.json'
 import { createIdentityAdapter, type IdentityAdapter } from './identity-adapter'
 import { createTaskStateAdapter, type TaskStateAdapter } from './ingest/task-state-adapter'
+import { createTelemetryAdapter, type TelemetryAdapter } from './ingest/telemetry-adapter'
+import { telemetryStore } from '../telemetry-store'
 import {
   familyMode,
   getCompanionMode,
@@ -78,6 +80,7 @@ export function setCompanionSessionKeyResolver(
 
 let identity: IdentityAdapter | null = null
 let taskState: TaskStateAdapter | null = null
+let telemetry: TelemetryAdapter | null = null
 let sessionKeyResolver: ((owner: SpawnOwner) => string | null) | null = null
 
 /**
@@ -198,6 +201,17 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
     onParity: recordIdentityParity
   })
   core.facade.setIdentityDiagnostics(identity.diagnostics)
+  // P1W6: `usage.measured` writes the cost, context and rate-limit groups of the neutral store.
+  telemetry?.dispose()
+  telemetry = createTelemetryAdapter({
+    host: core.facade,
+    owns: (sid) => sessionArbiter().owns(sid, 'telemetry'),
+    onOwnershipChange: (fn) => sessionArbiter().onOwnershipChange(() => fn()),
+    onModeChange,
+    store: telemetryStore(),
+    recordFact: (source, sid, k, d, ctx) => recordFact('telemetry', source, sid, k, d, ctx),
+    isBound: (sid) => core.facade.bindingForSid(sid) !== null
+  })
   // The shared policy probe: one run per boot and CLI binary, lazily, off the spawn path.
   const probe = createAppPolicyProbe(companionStagedDir)
   // Everything the Harnu mod surfaces show is derived on demand; main only says "re-read".
@@ -245,6 +259,8 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
 
 /** Joins the `before-quit` list beside `closeHookBridge()`. */
 export function closeCompanionHost(): Promise<void> {
+  telemetry?.dispose()
+  telemetry = null
   flushParityLedger()
   return core.close()
 }
