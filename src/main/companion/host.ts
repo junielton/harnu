@@ -17,7 +17,7 @@ import { registerCompanionIpc } from './companion-ipc'
 import { createCompanionHost } from './host-core'
 import { gateForCli } from './enable-policy'
 import { createEnablePolicy } from './feature-policy'
-import { configureHub } from '../detect/task-state-hub'
+import { configureHub, getTaskState, ingest as hubIngest } from '../detect/task-state-hub'
 import { admit, FAMILY_FEATURES, type FactSource } from './arbitration-core'
 import { configureParityLedger, flushParityLedger, recordFact } from './parity-ledger'
 import type { IdentityParityRecord } from './identity-parity-core'
@@ -29,6 +29,7 @@ import { ensureStaged } from './staging'
 import { getCompanionPrefs } from './companion-prefs'
 import manifest from '../../../resources/companion/.claude-plugin/plugin.json'
 import { createIdentityAdapter, type IdentityAdapter } from './identity-adapter'
+import { createTaskStateAdapter, type TaskStateAdapter } from './ingest/task-state-adapter'
 import {
   familyMode,
   getCompanionMode,
@@ -76,6 +77,7 @@ export function setCompanionSessionKeyResolver(
 }
 
 let identity: IdentityAdapter | null = null
+let taskState: TaskStateAdapter | null = null
 let sessionKeyResolver: ((owner: SpawnOwner) => string | null) | null = null
 
 /**
@@ -161,6 +163,8 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
     // Companion events are always evidence; a legacy event is worth a record only for a session
     // the mod is bound to, so a machine where the mod never loaded writes nothing per hook.
     record: (ev, disposition) => {
+      // P1W5: the shadow folds of both sources see every event, whatever became of it
+      taskState?.observe(ev)
       const source: FactSource = ev.source === 'hook' ? 'legacy' : 'companion'
       if (source === 'legacy' && !core.facade.bindingForSid(ev.sessionId)) return
       recordFact(
@@ -177,6 +181,14 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
   core.facade.setEnablePolicy(
     createEnablePolicy({ rollout: rolloutView, ceiling: surface.lastVerifiedCli })
   )
+  // P1W5: created BEFORE the identity adapter, so on a `/clear` its bus handler runs while the
+  // binding still answers to the old sid (the hub finds a binding by sid).
+  taskState = createTaskStateAdapter({
+    host: core.facade,
+    ingest: (ev) => hubIngest(ev, getWindow),
+    currentState: getTaskState,
+    recordFact: (source, sid, k, d, ts) => recordFact('taskState', source, sid, k, d, { ts })
+  })
   identity = createIdentityAdapter({
     host: core.facade,
     getMode: getCompanionMode,
