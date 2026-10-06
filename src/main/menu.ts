@@ -161,9 +161,11 @@ export function buildAppMenu(getWindow: () => BrowserWindow | null): Menu {
         { type: 'separator' },
         // Session navigation history (docs/specs/2026-10-06-session-nav-history.md
         // §5.3). The browser convention per platform: ⌘[ / ⌘] on macOS (⌥← is
-        // word-jump in every macOS text field), Alt+← / Alt+→ elsewhere. Bound at
-        // the menu level so the accelerator is consumed before xterm sees it —
-        // accepted trade-off D-4: Alt+← / Alt+→ no longer reach the terminal.
+        // word-jump in every macOS text field), Alt+← / Alt+→ elsewhere. On
+        // Linux/Windows this accelerator only fires for a key the page left
+        // unhandled, and xterm handles Alt+← / Alt+→, so the renderer stops the
+        // chord in the capture phase before xterm sees it (App.vue `onNavKeydown`)
+        // — accepted trade-off D-4: Alt+← / Alt+→ no longer reach the terminal.
         {
           label: 'Back',
           accelerator: isMac ? 'Cmd+[' : 'Alt+Left',
