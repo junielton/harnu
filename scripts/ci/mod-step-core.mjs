@@ -23,8 +23,11 @@ const NOTE = /^(\S+) (hooks|calls|env reads): (.*)$/
 
 // A hook entry may carry its matcher: `command.run{command=harnu-probe}`. Only the event name
 // is compared: the matcher is checked by the source assertions of way 1 (AC-P1W2-12).
+// Newer CLIs (2.1.290) annotate a call or env read with the functions that reach it:
+// `$.state.get (via doHello, maybeDriftCheck)`. The annotation is dropped before splitting, since
+// its commas would otherwise cut the entry in pieces.
 function listOf(value) {
-  const v = value.trim()
+  const v = value.replace(/\s*\(via [^)]*\)/g, '').trim()
   if (v === '' || v === 'nothing' || v.startsWith('nothing ')) return []
   return v
     .split(/,\s*(?![^{]*})/)

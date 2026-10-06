@@ -15,4 +15,4 @@ tests/fixtures/mission-migration
 THIRD-PARTY-NOTICES.md
 
 # Engine-written typings next to a loaded mod (T389 companion; generated, never hand-edited)
-.claude-plugin/types
+**/.claude-plugin/types

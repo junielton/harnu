@@ -35,6 +35,27 @@ describe('parseValidateNotes', () => {
     })
   })
 
+  it('ignores the "(via fn, fn)" call-site annotations of claude 2.1.290', () => {
+    const annotated = {
+      success: true,
+      contents: [
+        {
+          type: 'hooks',
+          notes: [
+            './register.ts hooks: session.start, classic.SessionStart',
+            './register.ts calls: $.clock.after (via maybeDriftCheck, raceWithTimer, scheduleRetry), $.clock.every (via startHeartbeatOnce), $.http.fetch (via post), $.state.get (via doHello, maybeDriftCheck)',
+            './register.ts env reads: HARNU_SPAWN_TOKEN (via doHello)'
+          ]
+        }
+      ]
+    }
+    expect(parseValidateNotes(annotated)).toEqual({
+      hooks: ['classic.SessionStart', 'session.start'],
+      calls: ['$.clock.after', '$.clock.every', '$.http.fetch', '$.state.get'],
+      envReads: ['HARNU_SPAWN_TOKEN']
+    })
+  })
+
   it('the marketplace trap', () => {
     expect(() => parseValidateNotes({ success: true, contents: [] })).toThrow(
       'validated as a marketplace'

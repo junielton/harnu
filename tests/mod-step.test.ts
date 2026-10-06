@@ -2,10 +2,30 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { runModStep } from '../scripts/ci/mod-step.mjs'
 
-const recorded = readFileSync(
-  new URL('./companion/fixtures/validate-skeleton.json', import.meta.url),
-  'utf8'
+const skeleton = JSON.parse(
+  readFileSync(new URL('./companion/fixtures/validate-skeleton.json', import.meta.url), 'utf8')
 )
+const manifest = JSON.parse(
+  readFileSync(new URL('../resources/companion/api-surface.json', import.meta.url), 'utf8')
+)
+
+// What the CLI prints for the checked-in mod: the manifest's lists as notes, the first call
+// carrying the `(via fn, fn)` annotation of claude 2.1.290.
+const recorded = JSON.stringify({
+  ...skeleton,
+  contents: [
+    {
+      ...skeleton.contents[0],
+      notes: [
+        `./register.ts hooks: ${manifest.hooks.join(', ')}`,
+        `./register.ts calls: ${manifest.calls
+          .map((c: string, i: number) => (i === 0 ? `${c} (via doHello, post)` : c))
+          .join(', ')}`,
+        `./register.ts env reads: ${manifest.envReads.join(', ')}`
+      ]
+    }
+  ]
+})
 
 type Result = { code: number; stdout: string; stderr: string }
 type Exec = (cmd: string, args: string[]) => Promise<Result>
@@ -91,12 +111,12 @@ describe('mod step', () => {
 
     const drift = JSON.parse(recorded)
     drift.contents[0].notes = [
-      './register.ts hooks: session.start, session.end',
+      './register.ts hooks: session.start, session.end, session.other',
       './register.ts calls: nothing on $'
     ]
     const d = await runModStep({ exec: fakeExec({ validate: ok(JSON.stringify(drift)) }).exec })
     expect(d.state).toBe('fail')
-    expect(d.lines.join('\n')).toContain('session.end')
+    expect(d.lines.join('\n')).toContain('session.other')
   })
 
   it('fails when claude plugin test fails', async () => {
