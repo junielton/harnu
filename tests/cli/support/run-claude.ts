@@ -32,6 +32,8 @@ export interface RunOptions {
   /** Absolute rendezvous path baked into the companion's coordinates. */
   rendezvous?: string
   timeoutMs?: number
+  /** Runs after the temp HOME, config dir and cwd exist and before `claude` starts (P1W3). */
+  prepare?(ctx: { work: string; home: string; configDir: string; cwd: string }): Promise<void>
 }
 
 export interface ProbeReport {
@@ -88,6 +90,10 @@ export async function runClaude(opts: RunOptions = {}): Promise<RunResult> {
   const cwd = join(work, 'cwd')
   await mkdir(home, { recursive: true })
   await mkdir(cwd, { recursive: true })
+
+  if (opts.prepare) {
+    await opts.prepare({ work, home, configDir: join(home, '.claude'), cwd })
+  }
 
   const companionDir = join(work, 'harnu-companion')
   await cp(COMPANION_SRC, companionDir, { recursive: true, filter: copyFilter(COMPANION_SRC) })
