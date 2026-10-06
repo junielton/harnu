@@ -128,7 +128,13 @@ describe.skipIf(!WITH_CLI)('the handshake against the real host (L4)', () => {
     const binding = h.host.facade.bindingForSid(r.probe!.sessionId)
     expect(binding, JSON.stringify(h.host.facade.diagnostics().bindings)).not.toBeNull()
     expect(binding?.sessionKey).toBe('row:pty-1')
-    expect(binding?.declared).toEqual(['sense.identity'])
+    // P1W5 added the three fleet sensors to what the mod declares
+    expect(binding?.declared).toEqual([
+      'sense.identity',
+      'sense.turn',
+      'sense.attention',
+      'sense.subagent'
+    ])
     expect(h.seen.hellos[0]).toMatchObject({ kind: 'spawn', sid: r.probe!.sessionId })
     expect(binding?.proven).toContain('sense.identity')
     // the hello landed before the engine finished `session.start`, which runs before any command

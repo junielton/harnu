@@ -58,7 +58,13 @@ test('stray SubagentStop is dropped', async ($, on) => {
     agent_id: 'a1',
     agent_type: 'general-purpose'
   })
-  await $.classic.SubagentStop({ ...base, agent_id: '', agent_type: '', stop_hook_active: false })
+  await $.classic.SubagentStop({
+    agent_transcript_path: '',
+    ...base,
+    agent_id: '',
+    agent_type: '',
+    stop_hook_active: false
+  })
   await rig.clock.settle()
   expect(fleetWire(rig).map((e) => e.t)).toEqual(['subagent.started'])
   expect((rig.state.get('fleet') as any).runningSubagents).toBe(1)
@@ -70,7 +76,7 @@ test('sensor failure is pass-through', async ($, on) => {
   const out = await $.classic.Stop({
     ...base,
     stop_hook_active: false,
-    background_tasks: [null]
+    background_tasks: [null as never]
   })
   await rig.clock.settle()
   expect(out).toEqual({})
@@ -144,6 +150,7 @@ test('per-agent facts keyed on agent id', async ($, on) => {
   await $.classic.SubagentStart({ ...base, agent_id: 'a1', agent_type: 'general-purpose' })
   // a stop for an id the sensor never counted (a teammate, say) moves nothing
   await $.classic.SubagentStop({
+    agent_transcript_path: '',
     ...base,
     agent_id: 'mate@team',
     agent_type: 'teammate',
@@ -155,6 +162,7 @@ test('per-agent facts keyed on agent id', async ($, on) => {
   expect(fleet.agents).toEqual({ a1: 'general-purpose' })
   expect(fleetWire(rig).map((e) => e.t)).toEqual(['subagent.started'])
   await $.classic.SubagentStop({
+    agent_transcript_path: '',
     ...base,
     agent_id: 'a1',
     agent_type: 'general-purpose',
@@ -193,6 +201,7 @@ test('a subagent that stopped before the main Stop does not hold the turn (real 
   await $.turn.start({ text: 'p', turnId: 't1' })
   await $.classic.SubagentStart({ ...base, agent_id: 'a1', agent_type: 'general-purpose' })
   await $.classic.SubagentStop({
+    agent_transcript_path: '',
     ...base,
     agent_id: 'a1',
     agent_type: 'general-purpose',
@@ -240,7 +249,7 @@ test('a running subagent the sensor never saw start still holds the turn', async
 test('a failure reaches the completion of the same turn', async ($, on) => {
   const rig = await boot($, on)
   await $.turn.start({ text: 'p', turnId: 't1' })
-  await $.classic.StopFailure({ ...base, stop_hook_active: false, error: 'rate_limit' })
+  await $.classic.StopFailure({ ...base, error: 'rate_limit' })
   await $.turn.complete({
     answer: '',
     durationMs: 1,
@@ -259,7 +268,7 @@ test('a notification raises its kind and the prompt clears every open item', asy
   await $.classic.Notification({ ...base, message: 'm', notification_type: 'elicitation_dialog' })
   await $.classic.Notification({ ...base, message: 'm', notification_type: 'idle_prompt' })
   await $.classic.Notification({ ...base, message: 'm', notification_type: 'auth_success' })
-  await $.prompt.submit({ text: 'p', origin: { kind: 'composer' } })
+  await $.prompt.submit({ text: 'p', wait: false, origin: { kind: 'composer' } })
   await rig.clock.settle()
   const w = fleetWire(rig)
   expect(w.map((e) => e.t)).toEqual([
@@ -292,7 +301,7 @@ test('PostToolUseFailure settles like PostToolUse', async ($, on) => {
 
 test('the next turn origin comes from the preceding prompt', async ($, on) => {
   const rig = await boot($, on)
-  await $.prompt.submit({ text: 'p', origin: { kind: 'peer' } })
+  await $.prompt.submit({ text: 'p', wait: false, origin: { kind: 'peer' } })
   await $.turn.start({ text: 'p', turnId: 't1' })
   await $.turn.start({ text: 'p', turnId: 't2' }) // no prompt in between: unknown
   await rig.clock.settle()
