@@ -62,6 +62,16 @@ The status dot follows what Claude Code reports. Two things can leave it behind,
 
 What the mod cannot see, and neither can the hooks: a permission you approve at the terminal still shows **needs input** until the tool finishes, because Claude Code sends nothing when you press the approve key. A long tool call that prints nothing still turns red as "stuck" after the usual wait.
 
+## Test Harnu mod channel: "did not answer"
+
+The **Test Harnu mod channel** button in the [System Monitor](system-monitor.md) sends a session a quick check and waits up to five seconds. **Harnu mod channel did not answer** means the check was sent but the session did not reply in time. The usual causes:
+
+- The session is busy loading, compacting or wedged. Try again in a few seconds; a session that stays silent is on its way to `legacy — unloaded mid-session`.
+- The mod was reloaded or lost its connection to Harnu a moment ago. It reconnects by itself, so a second try normally works.
+- Harnu was restarted and the session is not talking to it yet.
+
+**Harnu mod channel is not available: …** is not an error. `this session runs on hooks` means the session fell back to the old path (see above), `the channel is observing only` means the channel is still in its measuring stage, and `this is a headless session` means the session is a background run that never listens for checks.
+
 ## Custom endpoint credentials
 
 If you've registered a custom Claude-compatible endpoint under **Settings → Endpoints**, its auth token is stored in plaintext on disk (`claude-boot.json` in Harnu's app data directory) — this isn't a bug, but it is worth knowing if that machine or file is shared. See [Claude Boot](claude-boot.md#custom-endpoints) for the exact location.
