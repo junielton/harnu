@@ -1,0 +1,48 @@
+{
+  "base": "feat/t389-p1w4-arbitration-rollout",
+  "failed": 0,
+  "logDir": "/tmp/harnu-local-ci-gnORpR",
+  "steps": [
+    {
+      "id": "format",
+      "state": "pass",
+      "seconds": 19,
+      "log": "/tmp/harnu-local-ci-gnORpR/format.log"
+    },
+    { "id": "i18n", "state": "pass", "seconds": 0, "log": "/tmp/harnu-local-ci-gnORpR/i18n.log" },
+    {
+      "id": "english",
+      "state": "pass",
+      "seconds": 0,
+      "log": "/tmp/harnu-local-ci-gnORpR/english.log"
+    },
+    {
+      "id": "changelog",
+      "state": "pass",
+      "seconds": 0,
+      "log": "/tmp/harnu-local-ci-gnORpR/changelog.log"
+    },
+    {
+      "id": "awareness",
+      "state": "pass",
+      "seconds": 0,
+      "log": "/tmp/harnu-local-ci-gnORpR/awareness.log"
+    },
+    {
+      "id": "user-docs",
+      "state": "pass",
+      "seconds": 1,
+      "log": "/tmp/harnu-local-ci-gnORpR/user-docs.log"
+    },
+    {
+      "id": "typecheck",
+      "state": "pass",
+      "seconds": 11,
+      "log": "/tmp/harnu-local-ci-gnORpR/typecheck.log"
+    },
+    { "id": "lint", "state": "pass", "seconds": 27, "log": "/tmp/harnu-local-ci-gnORpR/lint.log" },
+    { "id": "mod", "state": "pass", "seconds": 1, "log": "/tmp/harnu-local-ci-gnORpR/mod.log" },
+    { "id": "test", "state": "pass", "seconds": 44, "log": "/tmp/harnu-local-ci-gnORpR/test.log" },
+    { "id": "cli", "state": "pass", "seconds": 14, "log": "/tmp/harnu-local-ci-gnORpR/cli.log" }
+  ]
+}
