@@ -97,7 +97,9 @@ test(
 test('a session not spawned by Harnu sends nothing', { plugins: [TOKEN_CHART] }, async ($, on) => {
   on('plugin.register', async () => ({ allow: true as const }))
   const rig = installRig(on, { script: withMods, token: false })
-  await $.session.start(START)
+  // P4W3 (contract §21 item 1): an interactive tokenless mod claims as an outside session; only a
+  // non-interactive run stays silent.
+  await $.session.start({ ...START, isInteractive: false })
   await rig.clock.settle()
   expect(rig.sent.length).toBe(0) // dormant: no hello, so no admission leaves the process
   expect(rig.state.get('ran')).toBe(true) // and the module still joined
@@ -108,7 +110,9 @@ test('declares sense.mods once its hook registered', async ($, on) => {
   const rig = installRig(on)
   await $.session.start(START)
   await rig.clock.settle()
-  expect(must(rig.of('hello')[0]).body.declared).toEqual(['sense.identity', 'sense.mods'])
+  const declared = must(rig.of('hello')[0]).body.declared
+  expect(declared).toContain('sense.identity')
+  expect(declared.at(-1)).toBe('sense.mods') // the other sensors and actuators come before it
 })
 
 test(

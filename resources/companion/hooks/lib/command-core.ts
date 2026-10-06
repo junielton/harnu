@@ -145,7 +145,9 @@ export function classifyCommand(c: Command, ctx: ClassifyContext): Disposition {
   if (!known) return { kind: 'answer', code: 'CMD_UNSUPPORTED' }
   if (!ctx.tokenBacked && !TOKENLESS_OK.has(c.name))
     return { kind: 'answer', code: 'CMD_UNSUPPORTED' }
-  if (!ctx.featureEnabled(COMMAND_FEATURE[c.name]))
+  // A tokenless mod runs its three commands without looking at `enable` (contract §21 item 5): the
+  // external enable set carries no `act.*`, and the host decides what it sends.
+  if (ctx.tokenBacked && !ctx.featureEnabled(COMMAND_FEATURE[c.name]))
     return { kind: 'answer', code: 'FEATURE_DISABLED' }
   return { kind: 'run' }
 }

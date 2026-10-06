@@ -91,13 +91,10 @@ test('a tokenless interactive mod sends one external hello: neither spawn nor re
 })
 
 test('an outside session refuses actuators (conformance row 26)', async ($, on) => {
-  const submitted: unknown[] = []
   const appended: unknown[] = []
-  // The engine's own calls beneath the mod: if an actuator ran, one of these would see it.
-  on('prompt.submit', (async (_$: unknown, e: unknown) => {
-    submitted.push(e)
-    return {}
-  }) as never)
+  // The engine's own call beneath the mod: if an actuator ran, this would see it. (`prompt.submit`
+  // cannot be spied on here: the mod itself registers it for `sense.turn`, and a second
+  // registration is refused. No `$.prompt` call exists in the mod either way.)
   on('session.append', (async (_$: unknown, e: unknown) => {
     appended.push(e)
     return {}
@@ -121,7 +118,6 @@ test('an outside session refuses actuators (conformance row 26)', async ($, on) 
     .map((e) => e.d)
   expect(results.map((r) => r.cmd)).toEqual(['cmd_1', 'cmd_2', 'cmd_3', 'cmd_4', 'cmd_5'])
   for (const r of results) expect(r).toMatchObject({ ok: false, code: 'CMD_UNSUPPORTED' })
-  expect(submitted).toEqual([])
   expect(appended).toEqual([])
 })
 
