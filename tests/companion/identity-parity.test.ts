@@ -22,7 +22,9 @@ const fixtures: FixtureLine[] = readdirSync(DIR)
     readFileSync(join(DIR, f), 'utf8')
       .split('\n')
       .filter((l) => l.trim().length > 0)
-      .map((l) => JSON.parse(l) as FixtureLine)
+      .map((l) => JSON.parse(l) as FixtureLine & { v?: number })
+      // P1W4's persisted-ledger traces share this folder; their rows carry `v` and no `expect`
+      .filter((l) => l.v === undefined)
   )
 
 describe('identity comparator (IP)', () => {

@@ -27,8 +27,10 @@ import {
 import {
   compareIdentity,
   createParitySink,
+  type IdentityParityRecord,
   type IdentityShape,
-  type LegacyVia
+  type LegacyVia,
+  type ParitySink
 } from './identity-parity-core'
 import type { CompanionMode } from './mode'
 import type { BindingView } from './session-table'
@@ -50,6 +52,8 @@ export interface IdentityAdapterDeps {
   epochNow?(): number
   /** What the PTY was spawned as (`claude-new`, `claude-fork`, `claude-resume`), if known. */
   spawnKind?(owner: NonNullable<BindingView['owner']>): string | null
+  /** P1W4: every comparison also goes to the persisted parity ledger (the in-memory ring stays). */
+  onParity?(rec: IdentityParityRecord): void
 }
 
 export interface IdentityAdapter {
@@ -70,7 +74,18 @@ export function createIdentityAdapter(deps: IdentityAdapterDeps): IdentityAdapte
   const stats = { conflicts: 0, reboundGap: 0, rebounds: 0 }
   const now = deps.now ?? ((): number => performance.now())
   const epochNow = deps.epochNow ?? ((): number => Date.now())
-  const sink = createParitySink(500)
+  const ring = createParitySink(500)
+  const sink: ParitySink = {
+    ...ring,
+    add(rec) {
+      ring.add(rec)
+      try {
+        deps.onParity?.(rec)
+      } catch {
+        // the ledger is evidence, never a dependency of identity
+      }
+    }
+  }
   let lastPushed = '[]'
 
   /** A companion fact waiting for the legacy side (or the end of its binding). */

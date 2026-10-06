@@ -19,11 +19,15 @@ import { createCompanionHost } from './host-core'
 import { gateForCli } from './enable-policy'
 import { createEnablePolicy } from './feature-policy'
 import { configureHub } from '../detect/task-state-hub'
-import { admit } from './arbitration-core'
+import { admit, FAMILY_FEATURES, type FactSource } from './arbitration-core'
+import { configureParityLedger, flushParityLedger, recordFact } from './parity-ledger'
+import type { IdentityParityRecord } from './identity-parity-core'
 import { createIdentityAdapter, type IdentityAdapter } from './identity-adapter'
 import {
+  familyMode,
   getCompanionMode,
   hydrateCompanionMode,
+  type FactFamily,
   listenerWanted,
   onModeChange,
   setCompanionPrefsPath
@@ -74,6 +78,25 @@ export function setCompanionSpawnKindResolver(
   spawnKindOf = fn
 }
 
+/** One identity comparison (P1W3's `IdentityParityRecord`) as a ledger row; hashes only. */
+function recordIdentityParity(rec: IdentityParityRecord): void {
+  const label = rec.companion?.sidHash ?? rec.legacy?.keyHash ?? 'none'
+  recordFact(
+    'identity',
+    'companion',
+    `identity:${label}`,
+    `bind:${rec.verdict}`,
+    {
+      shape: rec.shape,
+      verdict: rec.verdict,
+      via: rec.legacy?.via ?? null,
+      helloAfterSpawnMs: rec.companion?.helloAfterSpawnMs ?? null,
+      legacyAfterSpawnMs: rec.legacy?.afterSpawnMs ?? null
+    },
+    { ts: rec.at }
+  )
+}
+
 /** Called once from `src/main/index.ts` beside `registerHookBridge`. */
 export async function registerCompanionHost(getWindow: () => BrowserWindow | null): Promise<void> {
   const userData = app.getPath('userData')
@@ -86,6 +109,26 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
   setRampFolders(await companionActivePaths().catch(() => []))
   // The arbiter reads the rollout view and the binding table; every consumer asks it.
   configureSessionArbiter({ host: core.facade, rollout: rolloutView })
+  // The persisted parity ledger: it asks the arbiter who owned each stream when a fact arrived.
+  configureParityLedger({
+    dir: join(userData, 'companion'),
+    now: () => Date.now(),
+    cli: () => {
+      const v = claudeVersionSync()
+      return v ? `${v.major}.${v.minor}.${v.patch}` : 'unknown'
+    },
+    modVersion: (sid) => core.facade.bindingForSid(sid)?.modVersion ?? null,
+    context: (stream, sid) => {
+      const view = core.facade.bindingForSid(sid)
+      if (stream in FAMILY_FEATURES) {
+        const family = stream as FactFamily
+        const o = sessionArbiter().ownerFor(sid, family)
+        return { ...o, mode: familyMode(family, view?.cwd ?? null) }
+      }
+      // A feature key has no legacy rival to own it against (contract §11.5).
+      return { owner: 'legacy', reason: 'mode-shadow', mode: getCompanionMode() }
+    }
+  })
   // The task-state hub asks the arbiter before it folds an event (ARB-2). With no binding for the
   // session, or any failure, the answer is the legacy one: every hook event applies.
   configureHub({
@@ -96,6 +139,20 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
         ev.source === 'hook' ? 'legacy' : 'companion',
         view ? sessionArbiter().arbiterBinding(view) : null,
         rolloutView()
+      )
+    },
+    // Companion events are always evidence; a legacy event is worth a record only for a session
+    // the mod is bound to, so a machine where the mod never loaded writes nothing per hook.
+    record: (ev, disposition) => {
+      const source: FactSource = ev.source === 'hook' ? 'legacy' : 'companion'
+      if (source === 'legacy' && !core.facade.bindingForSid(ev.sessionId)) return
+      recordFact(
+        'taskState',
+        source,
+        ev.sessionId,
+        `event:${ev.event}`,
+        { state: ev.matcher ?? null },
+        { disposition, ts: ev.ts }
       )
     }
   })
@@ -108,7 +165,8 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
     getMode: getCompanionMode,
     gateOf: (b) => gateForCli(b.cliVersion, surface.lastVerifiedCli),
     spawnKind: (owner) => spawnKindOf?.(owner) ?? null,
-    push: (claims) => getWindow()?.webContents.send('companion:identity', { claims })
+    push: (claims) => getWindow()?.webContents.send('companion:identity', { claims }),
+    onParity: recordIdentityParity
   })
   core.facade.setIdentityDiagnostics(identity.diagnostics)
   registerCompanionIpc(core.facade, {
@@ -121,5 +179,6 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
 
 /** Joins the `before-quit` list beside `closeHookBridge()`. */
 export function closeCompanionHost(): Promise<void> {
+  flushParityLedger()
   return core.close()
 }
