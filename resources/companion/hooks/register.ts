@@ -22,6 +22,7 @@ import {
   type Sid
 } from './contract'
 import { MOD_VERSION, RENDEZVOUS_PATH } from './coords.gen'
+import { toAdmitted, type Admitted } from './lib/admitted'
 import { createRing } from './lib/ring'
 import { endpointUrl, parseEndpoint, type Endpoint } from './lib/rendezvous-parse'
 
@@ -50,6 +51,7 @@ const EVENT_FEATURE: Partial<Record<EventName, FeatureId | null>> = {
   'session.snapshot': 'sense.identity',
   'session.rebound': 'sense.identity',
   'session.end': 'sense.identity',
+  'mod.admitted': 'sense.mods',
   'mod.error': null
 }
 
@@ -77,6 +79,11 @@ let endpoint: Endpoint | null = null
 let pumpFlight: Promise<void> | null = null
 let registrationErrors: string[] = []
 let ring = createRing(RING_MAX)
+/** Modules admitted before the hello answered (the usual case: they load before `session.start`). */
+let pendingAdmitted: Admitted[] = []
+
+/** At most this many admissions wait for the first hello; a session loads a handful of mods. */
+const PENDING_ADMITTED_MAX = 64
 
 function resetState(): void {
   conn = null
@@ -101,6 +108,7 @@ function resetState(): void {
   pumpFlight = null
   registrationErrors = []
   ring = createRing(RING_MAX)
+  pendingAdmitted = []
 }
 
 // ---- runtime helpers other waves call ---------------------------------------------------------
@@ -250,6 +258,7 @@ function goDormant(): void {
   heartbeat?.cancel()
   heartbeat = null
   ring.clear()
+  pendingAdmitted = []
 }
 
 // ---- hello ------------------------------------------------------------------------------------
@@ -272,6 +281,31 @@ function snapshot($: Dollar, reason: EventPayloads['session.snapshot']['reason']
       probes: { classic: probes.classic, toolCheck: probes.toolCheck }
     }
   })
+}
+
+/** Sends what waited for the hello, when `sense.mods` is enabled; otherwise forgets it. */
+function flushAdmitted($: Dollar): void {
+  const held = pendingAdmitted
+  pendingAdmitted = []
+  if (!enabledSet.includes('sense.mods')) return
+  for (const d of held) emit($, { t: 'mod.admitted', d })
+}
+
+/**
+ * One module the engine admitted after this one. Sent at once when the channel is already up,
+ * otherwise held for the first hello. Never throws and never needs a conn.
+ */
+function noteAdmitted($: Dollar, input: unknown): void {
+  if (dormant || inert) return
+  const d = toAdmitted(input)
+  if (d === null) return
+  if (conn !== null) {
+    emit($, { t: 'mod.admitted', d })
+    return
+  }
+  pendingAdmitted = pendingAdmitted.filter((p) => p.root !== d.root)
+  pendingAdmitted.push(d)
+  if (pendingAdmitted.length > PENDING_ADMITTED_MAX) pendingAdmitted.shift()
 }
 
 async function persistConn($: Dollar): Promise<void> {
@@ -380,6 +414,7 @@ async function doHello($: Dollar, resumeConn?: Conn): Promise<void> {
       heartbeat?.cancel()
       heartbeat = null
       ring.clear()
+      pendingAdmitted = []
       return
     }
     for (const where of registrationErrors.splice(0)) {
@@ -389,6 +424,7 @@ async function doHello($: Dollar, resumeConn?: Conn): Promise<void> {
       })
     }
     snapshot($, 'hello')
+    flushAdmitted($)
     startHeartbeatOnce($)
     pump($)
   } catch (err) {
@@ -574,7 +610,7 @@ async function sayBye($: Dollar, reason: string): Promise<void> {
 
 export const register: Register = (on) => {
   resetState()
-  const registered = { start: false, end: false, classic: false }
+  const registered = { start: false, end: false, classic: false, mods: false }
 
   try {
     on('session.start', async ($, e, next) => {
@@ -631,7 +667,29 @@ export const register: Register = (on) => {
     registrationErrors.push('session.end')
   }
 
-  declared = registered.start && registered.end && registered.classic ? ['sense.identity'] : []
+  // P4W1 part B, `sense.mods`: the only `plugin.register` registration the companion may have
+  // (MOD-3, R25). A pure observer: it asks the rest of the chain first, reports a module only if
+  // that allowed it, and always returns what `next(e)` returned. It does not wait for the hello:
+  // a module is admitted at load, before `session.start`, so the admission is held until then.
+  try {
+    on('plugin.register', async ($, e, next) => {
+      const result = await next(e)
+      try {
+        if (result.allow === true) noteAdmitted($, e)
+      } catch {
+        // observing is best effort: a failure here must not touch the verdict
+      }
+      return result
+    })
+    registered.mods = true
+  } catch {
+    registrationErrors.push('plugin.register')
+  }
+
+  declared = [
+    ...(registered.start && registered.end && registered.classic ? ['sense.identity'] : []),
+    ...(registered.mods ? ['sense.mods'] : [])
+  ]
 }
 
 export { boundSid, enabled, emit, reportModError }

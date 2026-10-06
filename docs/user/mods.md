@@ -91,6 +91,11 @@ banner for it.
 chips, same words. It is always the first row. It appears only when Harnu's mod is
 staged by this build of Harnu; when none is staged there is simply no row.
 
+Its row carries the chip **can refuse other mods**, because the mod hooks mod
+registration. That hook only watches which mods a session admits; it never refuses one,
+and a test in Harnu's repository fails if it ever does. The static read cannot tell a
+watcher from a gate, so the chip is shown anyway, the same as for any mod with that hook.
+
 ## Banners you may see
 
 - **Turned off by a setting or by your organization's policy.** Mods are off in this

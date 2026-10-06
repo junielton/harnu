@@ -3,7 +3,7 @@
   "plugin": "harnu-companion",
   "minCli": "2.1.287",
   "lastVerifiedCli": "2.1.290",
-  "hooks": ["classic.SessionStart", "session.end", "session.start"],
+  "hooks": ["classic.SessionStart", "plugin.register", "session.end", "session.start"],
   "calls": [
     "$.clock.after",
     "$.clock.every",
