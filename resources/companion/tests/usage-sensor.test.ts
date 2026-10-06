@@ -12,7 +12,7 @@ const A3_MEASURE = {
   ],
   cost: { usd: 0.0185783 },
   changed: ['context', 'cost']
-} as const
+}
 
 /** `$.session.usage()` of smoke A3. */
 const A3_USAGE = {
