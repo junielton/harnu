@@ -37,6 +37,7 @@ import {
   type ParityStream
 } from './parity-core'
 import './parity-identity-rule' // registers the `identity` rule
+import './parity-taskstate-rule' // registers the `taskState` rule
 
 export interface LedgerDeps {
   /** `<userData>/companion`. */
