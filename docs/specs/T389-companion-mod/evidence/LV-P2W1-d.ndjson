@@ -1,0 +1,5 @@
+{"t":"2026-10-06T05:32:32.086Z","step":"1. session live","claudePids":[1605628]}
+{"t":"2026-10-06T05:32:59.702Z","step":"2. ui.status enqueued while the session cannot poll","enqueued":true,"reason":null,"settledBeforeQuit":null}
+{"t":"2026-10-06T05:33:00.013Z","step":"3. audit after quit","rows":[{"phase":"decision","decision":"queued","outcome":null,"sid":"present"},{"phase":"outcome","decision":null,"outcome":{"state":"dropped","why":"host-shutdown","delivered":false},"sid":"present"}]}
+{"t":"2026-10-06T05:33:05.385Z","step":"4. after the restart","newSessionLive":true,"statusLineAppeared":false,"oldCommandRowsAfterRestart":1}
+{"t":"2026-10-06T05:33:05.386Z","step":"result","droppedHostShutdown":true,"statusLineNeverAppears":true}
