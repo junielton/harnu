@@ -28,22 +28,35 @@ Result: **PASS.** No row has `data-source="harnu"` and there is no placeholder r
 read "1 plugin without a mod is not listed." (the folder with no hooks module). No policy banner
 (policy `unknown` on this base, as the spec says).
 
-## LV-P4W1-a (row 1) and LV-P4W1-c (policy) — blocked
+## Rerun after the join rebase (2026-10-06, `claude --version` = `2.1.291 (Claude Code)`)
 
-- **LV-P4W1-a** needs `ensureStaged()` from P1W2 and `resources/companion/api-surface.json`; neither is in
-  this base. **Blocked, not passed.** AC-P4W1-14 is open until the join rebase.
-- **LV-P4W1-c** needs P1W4's `classifyPolicyProbe` and its shell. **Blocked, not passed.** The pane
-  renders the banner from `ModsAuditView.policy` (component test `tests/mods-audit-pane.test.ts`
-  › "shows the policy banner and still lists the rows"), and `setModsAuditPolicyProvider` is the
-  seam P1W4 registers into. For when the probe lands, the raw `claude plugin test` outputs on
-  2.1.289 were recorded here:
+Base: this branch rebased onto `feat/t389-p1w4-arbitration-rollout` (P1W2 `ensureStaged`, P1W4
+policy probe in the base). Second isolated instance per run: `electron .` (so `app.getAppPath()` is the
+repo root and the stager finds `resources/companion`), `--user-data-dir=/tmp/p4w1a-ud-<run>`, own CDP
+port, under `xvfb-run`, an `env -i` environment (no inherited `CLAUDE_*`), a throwaway `HOME` with one
+`skills-dir` mod (`demo-gate`). Torn down by PID afterwards. Driver: open Settings → Mods, read
+`[data-testid="mods-row"]` and `window.api.modsAuditList(null)` over CDP.
 
-  ```
-  # empty directory, normal HOME
-  claude plugin test: <dir>: no hooks module to load; there is no hooks/hooks.json naming one in "modules"
-  # empty directory, HOME whose .claude/settings.json is {"disableAllHooks": true}
-  claude plugin test: hooks modules are turned off here (disableAllHooks, allowManagedHooksOnly or a policy)
-  ```
+### LV-P4W1-a (row 1, AC-P4W1-14) — PASS
+
+`HOME=/tmp/p4w1a-home-a` (`settings.json` is `{}`). Rows, in order:
+
+| source       | name              | label         | chips                                                                         |
+| ------------ | ----------------- | ------------- | ----------------------------------------------------------------------------- |
+| `harnu`      | `harnu-companion` | Harnu mod     | can use the network, can read and write files, can read environment variables |
+| `skills-dir` | `demo-gate`       | skills folder | can rewrite or block tool calls                                               |
+
+Chip ids `network, files, env` equal what `resources/companion/api-surface.json` implies
+(`$.http.fetch` → network, `$.fs.read` → files, `envReads: [HARNU_SPAWN_TOKEN]` → env; none of its
+three hooks maps to a chip). `unparsed` is empty. App log: `[companion] policy probe: loads`.
+Screenshot: `P4W1-lv-a-row1.png`.
+
+### LV-P4W1-c (policy, AC-P4W1-15) — PASS
+
+`HOME=/tmp/p4w1a-home-c` whose `.claude/settings.json` is `{"disableAllHooks": true}`. The banner
+`[data-testid="mods-policy-banner"]` read "Turned off by a setting or by your organization's policy."
+(`policy: off-here`), and both rows were still listed. App log: `[companion] policy probe: off-here`.
+Screenshot: `P4W1-lv-c-policy.png`.
 
 ## Findings about the CLI that the spec did not have
 
@@ -60,3 +73,13 @@ with them enabled): <list>`, with a parenthetical before the colon.
 - A hook event can be a wildcard: `classic.*`.
 
 Each one is handled in `mods-audit-core.ts` and pinned by a test.
+
+## Findings from the join rebase (CLI 2.1.291)
+
+- `claude plugin test` in an **empty** directory prints `no hooks module to load; …` when mods
+  are on. P1W4's classifier knew only the staged directory's line (`no *.test.ts …`), so AC-P4W1-9, which
+  probes an empty directory, would have read `unknown`. `classifyPolicyProbe` now also maps it to `loads`.
+- `plugin validate --json` on 2.1.291 adds a `gatingHooks` key to `manifest` and every `contents[]`
+  entry, a note `<file> gating hook without .catch: <hooks>`, and `<file> calls: nothing on $` for a
+  module that makes no call. The first was an unparsed note; the parser now keeps the advisory as a
+  warning and reads `nothing on $` as an empty list. The shape snapshot was re-recorded (additive key).
