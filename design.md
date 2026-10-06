@@ -4295,8 +4295,10 @@ stack and is confined to that worktree's root. **Dedup by `root`** in
 `addExplorerHelper` → exactly ONE explorer pane per root (reopening focuses/returns the
 existing one, never stacks).
 
-**Reveal from the transcript.** Option+clicking a path printed in a session's
-transcript opens (or reuses) this pane and **reveals** that path: search mode is
+**Reveal from the transcript.** Option/Alt+clicking — or Ctrl+clicking — a path
+printed in a session's transcript (main terminal or a helper-pane terminal; the
+underline and pointer cursor appear while either modifier is held) opens
+(or reuses) this pane and **reveals** that path: search mode is
 left, every ancestor directory is expanded in order (each listed lazily, exactly
 as a manual click would), and the row is **selected** — `bg-accent-soft` +
 `text-text`, `aria-current="true"` — and scrolled into view. Selection is
@@ -4306,6 +4308,15 @@ goes through the same `openFile` seam the `eye` icon uses, so the `markdown:read
 gate decides whether a viewer pane opens (and refuses a non-image binary /
 oversized file with its usual toast). A **directory** is expanded instead;
 nothing opens.
+
+**`.harnu/` is always visible.** The agent's data dir — the root-level `.harnu/`
+and everything under it, `.harnu/out/` deliverables included — is exempt from
+`.gitignore` in all three gates (tree listing, finder walk, transcript
+resolve), so a path an agent prints is reachable even though the repo ignores
+it. Nothing else is exempt: every other gitignored path (`node_modules`, build
+output) stays hidden, `.git` stays excluded, and root confinement is unchanged.
+There is no legacy `.capy/` alias. The affordance itself is unchanged — same
+rows, same selection — only more rows exist.
 
 **Header (title bar, 24px).** Fully reuses the "Pane header" (`h-6`, `--surface`,
 `border-bottom --border`, header = resize handle). Left to right: `folder-tree` icon

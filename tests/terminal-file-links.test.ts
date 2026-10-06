@@ -4,6 +4,7 @@ import {
   extractPathCandidates,
   readLogicalLine,
   createFileLinkProvider,
+  isFileLinkModifier,
   type FileLinkContext
 } from '../src/renderer/src/lib/terminal-file-links'
 
@@ -108,6 +109,22 @@ function provide(term: Terminal, ctx: FileLinkContext, y: number): Promise<ILink
   return new Promise((res) => provider.provideLinks(y, res))
 }
 
+describe('isFileLinkModifier', () => {
+  it('is true for Alt/Option or Ctrl, alone or together', () => {
+    expect(isFileLinkModifier({ altKey: true, ctrlKey: false })).toBe(true)
+    expect(isFileLinkModifier({ altKey: false, ctrlKey: true })).toBe(true)
+    expect(isFileLinkModifier({ altKey: true, ctrlKey: true })).toBe(true)
+  })
+
+  it('is false for no modifier, and for shift/meta alone', () => {
+    expect(isFileLinkModifier({})).toBe(false)
+    expect(isFileLinkModifier({ altKey: false, ctrlKey: false })).toBe(false)
+    expect(
+      isFileLinkModifier({ shiftKey: true, metaKey: true } as unknown as { altKey?: boolean })
+    ).toBe(false)
+  })
+})
+
 describe('readLogicalLine', () => {
   it('reads a single unwrapped row', () => {
     const logical = readLogicalLine(fakeBuffer(['abc']), 1)
@@ -165,10 +182,51 @@ describe('file link provider', () => {
     expect(ctx.onReveal).toHaveBeenCalledWith('/repo/src/a.ts', false)
   })
 
+  it('reveals on ctrl+click, exactly like option+click', async () => {
+    const ctx = ctxFor({}, [{ text: 'src/a.ts', path: '/repo/src/a.ts', isDir: false }])
+    const links = await provide(fakeTerm(fakeBuffer(['src/a.ts'])), ctx, 1)
+    links?.[0].activate({ altKey: false, ctrlKey: true } as MouseEvent, 'src/a.ts')
+    expect(ctx.onReveal).toHaveBeenCalledWith('/repo/src/a.ts', false)
+  })
+
+  it('reveals a directory on ctrl+click (the caller expands it)', async () => {
+    const ctx = ctxFor({}, [{ text: 'src/main', path: '/repo/src/main', isDir: true }])
+    const links = await provide(fakeTerm(fakeBuffer(['src/main'])), ctx, 1)
+    links?.[0].activate({ altKey: false, ctrlKey: true } as MouseEvent, 'src/main')
+    expect(ctx.onReveal).toHaveBeenCalledWith('/repo/src/main', true)
+  })
+
+  it('links the motivating .harnu/out line in prose with trailing punctuation', async () => {
+    const line = 'Abri o roteiro: .harnu/out/T389-roteiro-operador.md, fora do git.'
+    const ctx = ctxFor({}, [
+      {
+        text: '.harnu/out/T389-roteiro-operador.md',
+        path: '/repo/.harnu/out/T389-roteiro-operador.md',
+        isDir: false
+      }
+    ])
+    const links = await provide(fakeTerm(fakeBuffer([line])), ctx, 1)
+    expect(ctx.resolve).toHaveBeenCalledWith('/repo', '/repo', [
+      '.harnu/out/T389-roteiro-operador.md'
+    ])
+    expect(links).toHaveLength(1)
+    // The comma is shaved off the underline.
+    expect(links?.[0].text).toBe('.harnu/out/T389-roteiro-operador.md')
+    links?.[0].activate({ ctrlKey: true } as MouseEvent, links[0].text)
+    expect(ctx.onReveal).toHaveBeenCalledWith('/repo/.harnu/out/T389-roteiro-operador.md', false)
+  })
+
   it('does nothing on a plain click', async () => {
     const ctx = ctxFor({}, [{ text: 'src/a.ts', path: '/repo/src/a.ts', isDir: false }])
     const links = await provide(fakeTerm(fakeBuffer(['src/a.ts'])), ctx, 1)
     links?.[0].activate({ altKey: false } as MouseEvent, 'src/a.ts')
+    expect(ctx.onReveal).not.toHaveBeenCalled()
+  })
+
+  it('does nothing on a shift/meta-only click', async () => {
+    const ctx = ctxFor({}, [{ text: 'src/a.ts', path: '/repo/src/a.ts', isDir: false }])
+    const links = await provide(fakeTerm(fakeBuffer(['src/a.ts'])), ctx, 1)
+    links?.[0].activate({ shiftKey: true, metaKey: true } as MouseEvent, 'src/a.ts')
     expect(ctx.onReveal).not.toHaveBeenCalled()
   })
 

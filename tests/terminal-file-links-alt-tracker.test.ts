@@ -32,6 +32,26 @@ describe('acquireAltTracker', () => {
     tracker.release()
   })
 
+  it('also reflects Ctrl press and release (Ctrl+click opens links too)', () => {
+    const tracker = acquireAltTracker()
+    expect(tracker.isAltHeld()).toBe(false)
+    window.dispatchEvent(new KeyboardEvent('keydown', { ctrlKey: true }))
+    expect(tracker.isAltHeld()).toBe(true)
+    window.dispatchEvent(new KeyboardEvent('keyup', { ctrlKey: false }))
+    expect(tracker.isAltHeld()).toBe(false)
+    tracker.release()
+  })
+
+  it('stays held while one of Alt/Ctrl is released but the other is still down', () => {
+    const tracker = acquireAltTracker()
+    window.dispatchEvent(new KeyboardEvent('keydown', { altKey: true, ctrlKey: true }))
+    window.dispatchEvent(new KeyboardEvent('keyup', { altKey: false, ctrlKey: true }))
+    expect(tracker.isAltHeld()).toBe(true)
+    window.dispatchEvent(new KeyboardEvent('keyup', { altKey: false, ctrlKey: false }))
+    expect(tracker.isAltHeld()).toBe(false)
+    tracker.release()
+  })
+
   it('shares one tracker across concurrent acquisitions and only tears down at zero refcount', () => {
     const a = acquireAltTracker()
     const b = acquireAltTracker()
