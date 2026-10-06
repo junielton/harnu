@@ -45,6 +45,17 @@ declare module 'claude-code' {
         /** The ids of subagents that already stopped: the CLI still lists them as `running`. */
         stopped: string[]
       }
+      /**
+       * P2W1: the command dedupe (contract §22). `cursor` acknowledges delivery, `resulted` execution;
+       * the two id lists are capped at `CMD_DONE_MAX`; `turnId` is the last `turn.start` id.
+       */
+      channel: {
+        bootId: string
+        cursor: number
+        started: string[]
+        resulted: string[]
+        turnId: string | null
+      }
     }
   }
 }
