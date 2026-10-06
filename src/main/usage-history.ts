@@ -182,6 +182,18 @@ async function ensureLoaded(): Promise<void> {
   return loadPromise
 }
 
+/**
+ * The two settings other per-instance ledgers honour (T389 P1W6 turn ledger): the capture opt-out
+ * and the retention window. Read-only; never touches the history's own files.
+ */
+export async function getUsageHistoryPolicy(): Promise<{
+  enabled: boolean
+  retentionDays: number | 'forever'
+}> {
+  await ensureLoaded()
+  return { enabled: prefs.enabled, retentionDays: prefs.retentionDays }
+}
+
 // ---- Retention / compaction ------------------------------------------------
 
 /** Delete sample files older than the retention window. `'forever'` never deletes. */

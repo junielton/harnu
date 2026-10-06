@@ -20,7 +20,8 @@ import type { CompanionHostFacade } from '../host-core'
 import type { BindingView } from '../session-table'
 import type { SessionTelemetry } from '../../statusline-parse'
 import type { TelemetryStore } from '../../telemetry-store'
-import { mapUsageMeasured, type MappedUsage } from './usage-map-core'
+import type { TurnLedger } from '../turn-ledger'
+import { mapTurnCompleted, mapUsageMeasured, type MappedUsage } from './usage-map-core'
 import './parity-telemetry-rule' // registers the `telemetry` rule
 import './parity-planusage-rule' // registers the `planUsage` rule
 
@@ -34,7 +35,10 @@ export interface PlanDetail {
 export type TelemetryParityDetail = Record<string, string | number | boolean | null>
 
 export interface TelemetryAdapterDeps {
-  host: Pick<CompanionHostFacade, 'bus' | 'onBindingChange' | 'markProven' | 'registerEventTypes'>
+  host: Pick<
+    CompanionHostFacade,
+    'bus' | 'onBindingChange' | 'markProven' | 'registerEventTypes' | 'diagnostics'
+  >
   /** The arbiter's answer for one family of this session. */
   owns(sid: string, family: 'telemetry' | 'planUsage'): boolean
   onOwnershipChange(fn: () => void): () => void
@@ -46,6 +50,8 @@ export interface TelemetryAdapterDeps {
   >
   /** Host receive time, epoch ms: freshness is never the mod's clock. */
   now?(): number
+  /** The per-turn ledger (S3): written in `shadow` and `active`, never applied. */
+  ledger?: Pick<TurnLedger, 'usage' | 'turnStarted' | 'turnCompleted' | 'gap' | 'close'>
   /** The plan-usage gate (S2): an owned reading with a window closes it for 90 s. */
   planGate?: {
     note(r: { owned: boolean; windows: number; hostNow: number }, detail?: PlanDetail): void
@@ -68,6 +74,7 @@ export interface TelemetryAdapter {
 }
 
 const FEATURE = 'sense.usage'
+const HANDLED: ReadonlySet<string> = new Set(['usage.measured', 'turn.started', 'turn.completed'])
 
 /** One ledger detail of a mapped reading (§13: `ctx`, `cost`, `rl`), scrubbed by the ledger. */
 function companionDetail(m: MappedUsage, extra: { source: string }): TelemetryParityDetail {
@@ -116,6 +123,30 @@ export function createTelemetryAdapter(deps: TelemetryAdapterDeps): TelemetryAda
     }
   }
 
+  /** The ledger is evidence: a fault in it never reaches telemetry or the host's bus. */
+  const ledgerDo = (fn: (l: NonNullable<TelemetryAdapterDeps['ledger']>) => void): void => {
+    if (!deps.ledger) return
+    try {
+      fn(deps.ledger)
+    } catch {
+      // see above
+    }
+  }
+
+  /** Per binding: the `dropped` count already turned into a gap. */
+  const droppedSeen = new Map<number, number>()
+
+  /** The mod discarded events (its ring overflowed): the ledger is not whole for this session. */
+  function noteDropped(b: BindingView): void {
+    const dropped =
+      deps.host.diagnostics().bindings.find((x) => x.sid === b.sid && x.state === 'bound')?.counters
+        .dropped ?? 0
+    if (dropped > (droppedSeen.get(b.key) ?? 0)) {
+      droppedSeen.set(b.key, dropped)
+      ledgerDo((l) => l.gap(b.sid, now(), 'dropped'))
+    }
+  }
+
   /** Sessions whose owned reading is what keeps the plan-usage gate closed. */
   const planSids = new Set<string>()
 
@@ -159,6 +190,13 @@ export function createTelemetryAdapter(deps: TelemetryAdapterDeps): TelemetryAda
     if (hasReading(mapped)) deps.host.markProven(b, FEATURE)
     deps.store.ingestCompanion(b.sid, mapped.part, ownsSafe(b.sid, 'telemetry'))
     noteGate(b.sid, mapped)
+    ledgerDo((l) =>
+      l.usage(b.sid, now(), {
+        costUsd: mapped.part.cost?.usd ?? null,
+        projectPath: b.cwd,
+        ...(mapped.startedAt !== undefined ? { startedAt: mapped.startedAt } : {})
+      })
+    )
     try {
       deps.recordFact?.(
         'companion',
@@ -174,16 +212,63 @@ export function createTelemetryAdapter(deps: TelemetryAdapterDeps): TelemetryAda
     }
   }
 
+  /** `turn.started` and `turn.completed` (S3): the ledger's edges, and the `model` group. */
+  function onTurn(b: BindingView, ev: WireEvent): void {
+    if (b.state !== 'bound' || !b.enabled.includes('sense.turn')) return
+    if (typeof ev.turnId !== 'string' || ev.turnId === '') return
+    if (ev.t === 'turn.started') {
+      ledgerDo((l) => l.turnStarted(b.sid, now(), ev.turnId!, ev.agentId))
+      return
+    }
+    const m = mapTurnCompleted(ev.d)
+    if (!m) return
+    ledgerDo((l) =>
+      l.turnCompleted(b.sid, now(), {
+        turnId: ev.turnId!,
+        ...(ev.agentId !== undefined ? { agentId: ev.agentId } : {}),
+        durationMs: m.durationMs,
+        reason: m.reason,
+        ...(m.usage ? { usage: m.usage } : {}),
+        ...(m.failure ? { failure: m.failure } : {})
+      })
+    )
+    // The model group: the last MAIN-loop turn's model, never a subagent's (contract §8). Owned
+    // only once `sense.usage` is proven and the family is active; `modelName` stays the statusLine's.
+    if (ev.agentId === undefined && m.usage) {
+      deps.store.ingestCompanion(
+        b.sid,
+        { cwd: b.cwd || null, model: { id: m.usage.model, atMs: now() } },
+        ownsSafe(b.sid, 'telemetry')
+      )
+    }
+  }
+
   // The server delivers only event types a wave registered (contract §8).
-  deps.host.registerEventTypes(['usage.measured'])
+  deps.host.registerEventTypes([
+    'usage.measured',
+    'turn.started',
+    'turn.completed',
+    'session.rebound'
+  ])
 
   const offs = [
     deps.host.bus.on('event', (b, ev) => {
+      if (deps.ledger && HANDLED.has(ev.t)) noteDropped(b)
       if (ev.t === 'usage.measured') onUsage(b, ev)
+      else if (ev.t === 'turn.started' || ev.t === 'turn.completed') onTurn(b, ev)
+      else if (ev.t === 'session.rebound') {
+        const prev = (ev.d as { prevSid?: unknown } | null)?.prevSid
+        if (typeof prev === 'string') ledgerDo((l) => l.close(prev, now()))
+      }
     }),
-    deps.host.bus.on('lease', () => reconcile()),
+    deps.host.bus.on('lease', (b) => {
+      ledgerDo((l) => l.gap(b.sid, now(), 'lease-lost'))
+      reconcile()
+    }),
     deps.host.bus.on('end', (b) => {
       // the session is over: nothing of the companion's outlives it
+      ledgerDo((l) => l.close(b.sid, now()))
+      droppedSeen.delete(b.key)
       deps.store.dropCompanion(b.sid)
       reconcile()
     }),

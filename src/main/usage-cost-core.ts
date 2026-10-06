@@ -784,3 +784,61 @@ export function buildSessionCostRollup(buckets: readonly CostBucket[]): SessionC
     })
     .sort((a, b) => b.costUsd - a.costUsd)
 }
+
+// ---- Calibration by the CLI's own total (T389 P1W6 §7.5) ---------------------------------------
+
+/** The factor a scan price may be moved by: outside it, the scan value stands. */
+export const CALIBRATION_FACTOR_MIN = 0.5
+export const CALIBRATION_FACTOR_MAX = 2
+
+/** `sessionId` and local `YYYY-MM-DD`: the unit the measured total and the scan share. */
+export const calibrationKey = (sessionId: string, day: string): string => `${sessionId} ${day}`
+
+export interface CalibrationSkip {
+  sessionId: string
+  day: string
+  scanUsd: number
+  measuredUsd: number
+  reason: 'zero-scan' | 'factor-out-of-range'
+}
+
+/**
+ * Replaces the scan's price of a COVERED session-day by the CLI's own total for it. For each
+ * `(sessionId, day)` in `measured`, `factor = measuredUsd / scanUsd` and each of that pair's
+ * buckets gets `costUsd × factor`: the split across models stays the scan's (list-price weights),
+ * the session-day total becomes the CLI's. Tokens, `requestCount`, `tierLabel` and `estimated` are
+ * untouched. A zero scan cost or a factor outside [0.5, 2] is not applied and is reported through
+ * `onSkip` (the host records it as a parity fact); the scan value stands. Pure; never mutates.
+ */
+export function calibrateBuckets(
+  buckets: readonly CostBucket[],
+  measured: ReadonlyMap<string, number>,
+  onSkip?: (s: CalibrationSkip) => void
+): CostBucket[] {
+  if (measured.size === 0) return buckets as CostBucket[]
+  const scan = new Map<string, number>()
+  for (const b of buckets) {
+    const k = calibrationKey(b.sessionId, b.day)
+    if (measured.has(k)) scan.set(k, (scan.get(k) ?? 0) + b.costUsd)
+  }
+  const factors = new Map<string, number>()
+  for (const [k, scanUsd] of scan) {
+    const measuredUsd = measured.get(k)!
+    const [sessionId, day] = [k.slice(0, k.lastIndexOf(' ')), k.slice(k.lastIndexOf(' ') + 1)]
+    if (!(scanUsd > 0) || !Number.isFinite(measuredUsd) || measuredUsd < 0) {
+      onSkip?.({ sessionId, day, scanUsd, measuredUsd, reason: 'zero-scan' })
+      continue
+    }
+    const factor = measuredUsd / scanUsd
+    if (factor < CALIBRATION_FACTOR_MIN || factor > CALIBRATION_FACTOR_MAX) {
+      onSkip?.({ sessionId, day, scanUsd, measuredUsd, reason: 'factor-out-of-range' })
+      continue
+    }
+    factors.set(k, factor)
+  }
+  if (factors.size === 0) return buckets as CostBucket[]
+  return buckets.map((b) => {
+    const f = factors.get(calibrationKey(b.sessionId, b.day))
+    return f === undefined ? b : { ...b, costUsd: b.costUsd * f }
+  })
+}

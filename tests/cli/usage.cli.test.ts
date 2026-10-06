@@ -1,5 +1,5 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import surface from '../../resources/companion/api-surface.json'
@@ -23,7 +23,11 @@ import {
 // Gated like every real-CLI suite by `HARNU_WITH_CLI=1`. The turn test spends tokens, so it also
 // needs `HARNU_CLI_LIVE=1` (QA-8): haiku, one prompt, `--max-turns 1`, a 0.03 USD cap.
 
-const LIVE = Boolean(process.env.HARNU_CLI_LIVE)
+// The live turn needs a signed-in CLI. Nothing here reads the developer's own credentials: the
+// operator names a credentials file explicitly (`HARNU_CLI_LIVE_CREDENTIALS`), or the turn is
+// "not run — needs operator".
+const CREDENTIALS = process.env.HARNU_CLI_LIVE_CREDENTIALS
+const LIVE = Boolean(process.env.HARNU_CLI_LIVE && CREDENTIALS)
 const CAP_USD = 0.03
 
 const cleanups: (() => Promise<void> | void)[] = []
@@ -130,58 +134,75 @@ describe.skipIf(!WITH_CLI)('usage against the real host (L4)', () => {
     expect(surface.hooks).toContain('session.measure')
   })
 
-  describe.skipIf(!LIVE)('with one real model turn (HARNU_CLI_LIVE=1)', () => {
-    it('measure equals the CLI total', async () => {
-      const h = await realHost()
-      const home = mkdtempSync(join(tmpdir(), 'hc-cred-'))
-      cleanups.push(() => rmSync(home, { recursive: true, force: true }))
-      const r = await run({
-        env: { HARNU_SPAWN_TOKEN: h.mint() },
-        rendezvous: h.endpoint,
-        extraArgs: ['--model', 'haiku', '--max-turns', '1'],
-        prompt: 'Reply with the single word: ok',
-        timeoutMs: 90_000,
-        // The live run needs a signed-in CLI. The throwaway HOME gets a 0600 file holding ONLY the
-        // account's OAuth block, for this run only; it is deleted with the HOME. A token close to
-        // expiry is refused: the copy would refresh it and rotate the refresh token under the
-        // original.
-        async prepare({ configDir }) {
-          mkdirSync(configDir, { recursive: true })
-          const all = JSON.parse(
-            readFileSync(join(homedir(), '.claude', '.credentials.json'), 'utf8')
-          )
-          const oauth = all?.claudeAiOauth
-          if (!oauth || !(oauth.expiresAt > Date.now() + 30 * 60_000)) {
-            throw new Error('the OAuth token expires within 30 minutes: sign in again, then re-run')
-          }
-          writeFileSync(
-            join(configDir, '.credentials.json'),
-            JSON.stringify({ claudeAiOauth: oauth }),
-            { mode: 0o600 }
-          )
-        }
-      })
-      expect(r.code, r.stderr).toBe(0)
-      assertCleanLoad(r.debug)
-      const total = r.json?.total_cost_usd
-      expect(typeof total, r.stdout).toBe('number')
-      expect(total as number).toBeLessThanOrEqual(CAP_USD)
-      const measures = h.usage()
-      const last = [...measures].reverse().find((e) => typeof e.d.costUsd === 'number')
-      console.info(
-        `[P1W6 evidence] ${JSON.stringify({
-          claude: r.claudeVersion,
-          resultTotalCostUsd: total,
-          events: measures.length,
-          sources: measures.map((e) => e.d.source),
-          lastCostUsd: last?.d.costUsd ?? null,
-          sessionModel: measures.find((e) => e.d.source === 'read')?.d.model ?? null
-        })}`
-      )
-      expect(last, 'the host received a usage.measured with a cost').toBeDefined()
-      expect(last!.d.costUsd).toBeCloseTo(total as number, 6)
-      // and the store served the same figure while the session was live (its end drops the part)
-      expect(h.served.at(-1)).toBeCloseTo(total as number, 6)
-    })
+  it('session.model value (Q13a)', async () => {
+    const h = await realHost()
+    const r = await run({ env: { HARNU_SPAWN_TOKEN: h.mint() }, rendezvous: h.endpoint })
+    expect(r.code, r.stderr).toBe(0)
+    const reads = h.usage().filter((e) => e.d.source === 'read')
+    const model = reads[0]?.d.model
+    // the evidence file: what `$.session.model()` answers (an id or a display name?)
+    console.info(
+      `[P1W6 evidence] ${JSON.stringify({ claude: r.claudeVersion, q13a_sessionModel: model ?? null })}`
+    )
+    expect(typeof model).toBe('string')
+    expect((model as string).length).toBeGreaterThan(0)
   })
+
+  describe.skipIf(!LIVE)(
+    'with one real model turn (HARNU_CLI_LIVE=1 and HARNU_CLI_LIVE_CREDENTIALS)',
+    () => {
+      it('measure equals the CLI total', async () => {
+        const h = await realHost()
+        const home = mkdtempSync(join(tmpdir(), 'hc-cred-'))
+        cleanups.push(() => rmSync(home, { recursive: true, force: true }))
+        const r = await run({
+          env: { HARNU_SPAWN_TOKEN: h.mint() },
+          rendezvous: h.endpoint,
+          extraArgs: ['--model', 'haiku', '--max-turns', '1'],
+          prompt: 'Reply with the single word: ok',
+          timeoutMs: 90_000,
+          // The live run needs a signed-in CLI. The throwaway HOME gets a 0600 file holding ONLY the
+          // account's OAuth block, for this run only; it is deleted with the HOME. A token close to
+          // expiry is refused: the copy would refresh it and rotate the refresh token under the
+          // original.
+          async prepare({ configDir }) {
+            mkdirSync(configDir, { recursive: true })
+            const all = JSON.parse(readFileSync(CREDENTIALS!, 'utf8'))
+            const oauth = all?.claudeAiOauth
+            if (!oauth || !(oauth.expiresAt > Date.now() + 30 * 60_000)) {
+              throw new Error(
+                'the OAuth token expires within 30 minutes: sign in again, then re-run'
+              )
+            }
+            writeFileSync(
+              join(configDir, '.credentials.json'),
+              JSON.stringify({ claudeAiOauth: oauth }),
+              { mode: 0o600 }
+            )
+          }
+        })
+        expect(r.code, r.stderr).toBe(0)
+        assertCleanLoad(r.debug)
+        const total = r.json?.total_cost_usd
+        expect(typeof total, r.stdout).toBe('number')
+        expect(total as number).toBeLessThanOrEqual(CAP_USD)
+        const measures = h.usage()
+        const last = [...measures].reverse().find((e) => typeof e.d.costUsd === 'number')
+        console.info(
+          `[P1W6 evidence] ${JSON.stringify({
+            claude: r.claudeVersion,
+            resultTotalCostUsd: total,
+            events: measures.length,
+            sources: measures.map((e) => e.d.source),
+            lastCostUsd: last?.d.costUsd ?? null,
+            sessionModel: measures.find((e) => e.d.source === 'read')?.d.model ?? null
+          })}`
+        )
+        expect(last, 'the host received a usage.measured with a cost').toBeDefined()
+        expect(last!.d.costUsd).toBeCloseTo(total as number, 6)
+        // and the store served the same figure while the session was live (its end drops the part)
+        expect(h.served.at(-1)).toBeCloseTo(total as number, 6)
+      })
+    }
+  )
 })

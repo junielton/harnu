@@ -8,6 +8,7 @@
  * context produces a part without that group, and the merge keeps the last value.
  */
 
+import type { TurnUsage } from '../contract'
 import type { RateWindow } from '../../statusline-parse'
 import type { CompanionPart } from '../../telemetry-compose-core'
 
@@ -89,5 +90,57 @@ export function mapUsageMeasured(d: unknown, atMs: number, cwd: string | null): 
 
   if (finite(w.startedAt)) out.startedAt = w.startedAt
   if (typeof w.model === 'string' && w.model !== '') out.model = w.model.slice(0, 128)
+  return out
+}
+
+// ---- turn.completed ----------------------------------------------------------------------------
+
+export interface MappedTurn {
+  reason: string
+  durationMs: number
+  /** Absent when the CLI counted nothing (an interrupt, an API error: types L12479). */
+  usage?: TurnUsage
+  failure?: { type: string }
+}
+
+const MODEL_RE = /^[A-Za-z0-9._:+/-]{1,128}$/
+
+/**
+ * One `turn.completed` payload, validated: figures finite and non-negative, the model a short
+ * identifier. A usage block that fails is dropped (the record then says `tokens: null`), never
+ * repaired. Nothing but ids, counts and the model name survives.
+ */
+export function mapTurnCompleted(d: unknown): MappedTurn | null {
+  if (typeof d !== 'object' || d === null || Array.isArray(d)) return null
+  const w = d as Record<string, unknown>
+  const out: MappedTurn = {
+    reason: typeof w.reason === 'string' && /^[a-z_-]{1,32}$/.test(w.reason) ? w.reason : 'unknown',
+    durationMs: finite(w.durationMs) && w.durationMs >= 0 ? w.durationMs : 0
+  }
+  const u = w.usage
+  if (typeof u === 'object' && u !== null) {
+    const x = u as Record<string, unknown>
+    const ok = (v: unknown): v is number => finite(v) && v >= 0
+    if (
+      ok(x.inputTokens) &&
+      ok(x.outputTokens) &&
+      ok(x.cacheReadTokens) &&
+      ok(x.cacheCreationTokens) &&
+      typeof x.model === 'string' &&
+      MODEL_RE.test(x.model)
+    ) {
+      out.usage = {
+        inputTokens: x.inputTokens,
+        outputTokens: x.outputTokens,
+        cacheReadTokens: x.cacheReadTokens,
+        cacheCreationTokens: x.cacheCreationTokens,
+        model: x.model
+      }
+    }
+  }
+  const f = w.failure
+  if (typeof f === 'object' && f !== null && typeof (f as { type?: unknown }).type === 'string') {
+    out.failure = { type: (f as { type: string }).type.slice(0, 64) }
+  }
   return out
 }

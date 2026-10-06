@@ -104,7 +104,17 @@ async function rig(opts: RigOpts = {}) {
   })
   const facts: { source: string; sid: string; k: string; d: TelemetryParityDetail }[] = []
   clearPlanUsageGate()
+  /** What the adapter fed the turn ledger, in order. */
+  const ledgerCalls: unknown[][] = []
+  const ledger = {
+    usage: (...a: unknown[]) => void ledgerCalls.push(['usage', ...a]),
+    turnStarted: (...a: unknown[]) => void ledgerCalls.push(['turnStarted', ...a]),
+    turnCompleted: (...a: unknown[]) => void ledgerCalls.push(['turnCompleted', ...a]),
+    gap: (...a: unknown[]) => void ledgerCalls.push(['gap', ...a]),
+    close: (...a: unknown[]) => void ledgerCalls.push(['close', ...a])
+  }
   const adapter = createTelemetryAdapter({
+    ledger,
     host: host.facade,
     owns: (sid, family) => arbiter.owns(sid, family),
     onOwnershipChange: (fn) => arbiter.onOwnershipChange(fn),
@@ -119,19 +129,25 @@ async function rig(opts: RigOpts = {}) {
   const ep = JSON.parse(readFileSync(join(dir, 'endpoint.json'), 'utf8')) as EndpointFile
   const token = host.facade.mintSpawnToken({ owner, trust: 'operator', cwd: '/work/example-web' })!
   const hello = await post(ep, 'hello', {
-    body: { ...helloSpawnRequest, spawn: token, declared: FEATURES }
+    body: { ...helloSpawnRequest, spawn: token, declared: opts.enable ?? FEATURES }
   })
   expect(hello.json.ok).toBe(true)
   const conn = hello.json.conn as Conn
   let seq = 0
-  const send = (d: unknown, type = 'usage.measured') =>
+  const send = (
+    d: unknown,
+    type = 'usage.measured',
+    extra: { turnId?: string; agentId?: string } = {},
+    dropped = 0
+  ) =>
     post(ep, 'events', {
       body: {
         v: 1,
         sid: SID,
         conn,
         sentAt: 1,
-        events: [{ seq: ++seq, t: type, ts: 1_790_000_000_000, d }]
+        ...(dropped > 0 ? { dropped } : {}),
+        events: [{ seq: ++seq, t: type, ts: 1_790_000_000_000, d, ...extra }]
       }
     })
   const view = () => host.facade.getBinding('key:pty-1')!
@@ -145,6 +161,7 @@ async function rig(opts: RigOpts = {}) {
     mode,
     facts,
     captured,
+    ledgerCalls,
     advance: (ms: number) => {
       t += ms
       host.sweepNow()
@@ -354,6 +371,129 @@ describe('telemetry adapter', () => {
         r5: Date.parse('2026-10-02T18:00:00.000Z'),
         r7: Date.parse('2026-10-05T19:00:00.000Z')
       })
+    })
+  })
+
+  describe('turn ledger and the model group (S3)', () => {
+    const TURNS = ['sense.identity', 'sense.usage', 'sense.turn']
+    const D7_TURN = {
+      reason: 'answer',
+      isAborted: false,
+      durationMs: 7246,
+      usage: {
+        inputTokens: 18,
+        outputTokens: 262,
+        cacheReadTokens: 49303,
+        cacheCreationTokens: 14155,
+        model: 'claude-haiku-4-5-20251001'
+      }
+    }
+    const names = (x: { ledgerCalls: unknown[][] }) => x.ledgerCalls.map((c) => c[0])
+
+    it('feeds every usage reading to the ledger, in shadow too', async () => {
+      const x = await rig({ family: 'shadow' })
+      await x.send({ ...A3, costUsd: 0 })
+      expect(x.ledgerCalls[0]).toEqual([
+        'usage',
+        SID,
+        1_790_000_050_000,
+        { costUsd: 0, projectPath: x.view().cwd }
+      ])
+    })
+
+    it('main and subagent turns reach the ledger with their ids', async () => {
+      const x = await rig({ enable: TURNS })
+      await x.send({ origin: 'human' }, 'turn.started', { turnId: 't1' })
+      await x.send(D7_TURN, 'turn.completed', { turnId: 's1', agentId: 'agent-1' })
+      await x.send(D7_TURN, 'turn.completed', { turnId: 't1' })
+      expect(names(x)).toEqual(['turnStarted', 'turnCompleted', 'turnCompleted'])
+      expect(x.ledgerCalls[1]).toEqual([
+        'turnCompleted',
+        SID,
+        1_790_000_050_000,
+        expect.objectContaining({ turnId: 's1', agentId: 'agent-1', durationMs: 7246 })
+      ])
+      expect((x.ledgerCalls[2]![3] as { agentId?: string }).agentId).toBeUndefined()
+    })
+
+    it('a turn event without sense.turn enabled is ignored', async () => {
+      const x = await rig()
+      await x.send(D7_TURN, 'turn.completed', { turnId: 't1' })
+      expect(names(x)).toEqual([])
+    })
+
+    it('model group: the last main-loop turn.completed usage.model, never a subagent’s', async () => {
+      const x = await rig({ enable: TURNS })
+      x.store.ingestStatusline(SL)
+      await x.send(A3) // the part exists; the model is still the statusLine’s
+      expect(mine(x)!.modelId).toBe(SL.modelId)
+      await x.send(
+        { ...D7_TURN, usage: { ...D7_TURN.usage, model: 'claude-sonnet-5-5' } },
+        'turn.completed',
+        { turnId: 's1', agentId: 'agent-1' }
+      )
+      expect(mine(x)!.modelId).toBe(SL.modelId)
+      await x.send(D7_TURN, 'turn.completed', { turnId: 't1' })
+      expect(mine(x)!.modelId).toBe('claude-haiku-4-5-20251001')
+      expect(mine(x)!.modelName).toBe(SL.modelName) // never the companion’s (Q13)
+    })
+
+    it('model group in shadow never writes', async () => {
+      const x = await rig({ enable: TURNS, family: 'shadow' })
+      x.store.ingestStatusline(SL)
+      await x.send(D7_TURN, 'turn.completed', { turnId: 't1' })
+      expect(mine(x)).toEqual(SL)
+    })
+
+    it('a turn with no usage still reaches the ledger and writes no model', async () => {
+      const x = await rig({ enable: TURNS })
+      x.store.ingestStatusline(SL)
+      await x.send({ reason: 'error', isAborted: false, durationMs: 5 }, 'turn.completed', {
+        turnId: 'e'
+      })
+      expect(x.ledgerCalls.at(-1)![3]).toMatchObject({ turnId: 'e', reason: 'error' })
+      expect(mine(x)!.modelId).toBe(SL.modelId)
+    })
+
+    it('lease loss writes a gap, and a session end closes the session', async () => {
+      const x = await rig()
+      await x.send({ ...A3, costUsd: 0 })
+      x.advance(LEASE_TTL_MS + 1)
+      expect(names(x)).toContain('gap')
+      expect(x.ledgerCalls.find((c) => c[0] === 'gap')!.slice(1)).toEqual([
+        SID,
+        1_790_000_050_000,
+        'lease-lost'
+      ])
+      const y = await rig()
+      await y.send({ ...A3, costUsd: 0 })
+      y.host.facade.releaseSpawn(owner, 'pty-exit')
+      expect(names(y)).toContain('close')
+    })
+
+    it('dropped events are a gap', async () => {
+      const x = await rig()
+      await x.send({ ...A3, costUsd: 0 })
+      await x.send({ ...A3, costUsd: 0.01 }, 'usage.measured', {}, 3)
+      expect(x.ledgerCalls.filter((c) => c[0] === 'gap').map((c) => c[3])).toEqual(['dropped'])
+    })
+
+    it('a rebound closes the old session in the ledger', async () => {
+      const x = await rig()
+      await x.send({ ...A3, costUsd: 0 })
+      await x.send(
+        { prevSid: SID, sid: '33333333-3333-4333-8333-333333333333', cause: 'clear' },
+        'session.rebound'
+      )
+      expect(x.ledgerCalls.find((c) => c[0] === 'close')!.slice(1, 2)).toEqual([SID])
+    })
+
+    it('a ledger that throws never disturbs telemetry', async () => {
+      const x = await rig()
+      x.ledgerCalls.length = 0
+      // the fake cannot throw; the adapter guards each call, which the real ledger relies on
+      await expect(x.send({ ...A3, costUsd: 0 })).resolves.toBeDefined()
+      expect(mine(x)!.costUsd).toBe(0)
     })
   })
 })

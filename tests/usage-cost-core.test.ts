@@ -13,6 +13,9 @@ import {
   buildModelCostRollup,
   buildProjectCostRollup,
   buildSessionCostRollup,
+  calibrateBuckets,
+  calibrationKey,
+  type CostBucket,
   localDayKey,
   TIER_SONNET,
   TIER_SONNET_5,
@@ -683,5 +686,103 @@ describe('extractFirstCwd', () => {
   it('returns null when no line carries a usable cwd (incl. garbage lines)', () => {
     expect(extractFirstCwd([])).toBeNull()
     expect(extractFirstCwd(['{broken "cwd"', '', JSON.stringify({ type: 'user' })])).toBeNull()
+  })
+})
+
+// ---- Calibration by the CLI's own total (T389 P1W6 §7.5) ---------------------------------------
+
+describe('calibrateBuckets', () => {
+  const bucket = (over: Partial<CostBucket>): CostBucket => ({
+    day: '2026-10-02',
+    model: 'claude-haiku-4-5',
+    tierLabel: 'haiku-4.5',
+    estimated: false,
+    projectPath: '/tmp/example-project',
+    sessionId: 'sess-a',
+    isSubagent: false,
+    requestCount: 3,
+    tokens: { inputTokens: 10, outputTokens: 20, cacheReadTokens: 30, cacheWriteTokens: 5 },
+    webSearchRequests: 0,
+    costUsd: 0.5,
+    ...over
+  })
+  const key = (sessionId: string, day: string): string => calibrationKey(sessionId, day)
+
+  it('calibration', () => {
+    // a covered session-day: the scan says 1.00 over two models and a subagent file, the CLI 1.10
+    const buckets = [
+      bucket({ costUsd: 0.6 }),
+      bucket({ model: 'claude-sonnet-4-5', costUsd: 0.3 }),
+      bucket({ isSubagent: true, costUsd: 0.1 }),
+      bucket({ sessionId: 'other', costUsd: 2 })
+    ]
+    const out = calibrateBuckets(buckets, new Map([[key('sess-a', '2026-10-02'), 1.1]]))
+    const mine = out.filter((b) => b.sessionId === 'sess-a')
+    expect(mine.reduce((a, b) => a + b.costUsd, 0)).toBeCloseTo(1.1, 9)
+    // the split across models stays the scan's (list-price weights)
+    expect(mine[0]!.costUsd / mine[1]!.costUsd).toBeCloseTo(2, 9)
+    // tokens, request counts, tier labels and the estimated flag are untouched
+    for (const [i, b] of mine.entries()) {
+      expect(b.tokens).toEqual(buckets[i]!.tokens)
+      expect(b.requestCount).toBe(buckets[i]!.requestCount)
+      expect(b.tierLabel).toBe(buckets[i]!.tierLabel)
+      expect(b.estimated).toBe(buckets[i]!.estimated)
+    }
+    // another session is not touched, and the input is not mutated
+    expect(out.find((b) => b.sessionId === 'other')!.costUsd).toBe(2)
+    expect(buckets[0]!.costUsd).toBe(0.6)
+  })
+
+  it('calibration guard', () => {
+    const buckets = [bucket({ costUsd: 0.6 }), bucket({ model: 'claude-sonnet-4-5', costUsd: 0.4 })]
+    const skipped: unknown[] = []
+    // a factor of 3 is outside [0.5, 2]: the scan value stands and the skip is reported
+    const out = calibrateBuckets(buckets, new Map([[key('sess-a', '2026-10-02'), 3]]), (s) =>
+      skipped.push(s)
+    )
+    expect(out.map((b) => b.costUsd)).toEqual([0.6, 0.4])
+    expect(skipped).toEqual([
+      {
+        sessionId: 'sess-a',
+        day: '2026-10-02',
+        scanUsd: 1,
+        measuredUsd: 3,
+        reason: 'factor-out-of-range'
+      }
+    ])
+    // the edges of the range are applied
+    expect(
+      calibrateBuckets(buckets, new Map([[key('sess-a', '2026-10-02'), 0.5]])).reduce(
+        (a, b) => a + b.costUsd,
+        0
+      )
+    ).toBeCloseTo(0.5, 9)
+    expect(
+      calibrateBuckets(buckets, new Map([[key('sess-a', '2026-10-02'), 2]])).reduce(
+        (a, b) => a + b.costUsd,
+        0
+      )
+    ).toBeCloseTo(2, 9)
+  })
+
+  it('a zero scan cost is not applied and is reported', () => {
+    const skipped: unknown[] = []
+    const out = calibrateBuckets(
+      [bucket({ costUsd: 0 })],
+      new Map([[key('sess-a', '2026-10-02'), 0.2]]),
+      (s) => skipped.push(s)
+    )
+    expect(out[0]!.costUsd).toBe(0)
+    expect(skipped).toEqual([expect.objectContaining({ reason: 'zero-scan' })])
+  })
+
+  it('a session-day the scan does not know is left alone', () => {
+    const out = calibrateBuckets([bucket({})], new Map([[key('sess-a', '2026-10-03'), 5]]))
+    expect(out[0]!.costUsd).toBe(0.5)
+  })
+
+  it('no measured totals returns the very same list', () => {
+    const buckets = [bucket({})]
+    expect(calibrateBuckets(buckets, new Map())).toBe(buckets)
   })
 })

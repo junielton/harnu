@@ -32,6 +32,9 @@ import { createIdentityAdapter, type IdentityAdapter } from './identity-adapter'
 import { createTaskStateAdapter, type TaskStateAdapter } from './ingest/task-state-adapter'
 import { createTelemetryAdapter, type TelemetryAdapter } from './ingest/telemetry-adapter'
 import { telemetryStore } from '../telemetry-store'
+import { getUsageHistoryPolicy } from '../usage-history'
+import { setUsageCostCalibration } from '../usage-cost'
+import { configureTurnLedger, createTurnLedger, type TurnLedger } from './turn-ledger'
 import {
   clearPlanUsageGate,
   noteLeasedReading,
@@ -86,6 +89,8 @@ export function setCompanionSessionKeyResolver(
 let identity: IdentityAdapter | null = null
 let taskState: TaskStateAdapter | null = null
 let telemetry: TelemetryAdapter | null = null
+let turnLedger: TurnLedger | null = null
+let ledgerTimer: ReturnType<typeof setInterval> | null = null
 let sessionKeyResolver: ((owner: SpawnOwner) => string | null) | null = null
 
 /**
@@ -206,9 +211,33 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
     onParity: recordIdentityParity
   })
   core.facade.setIdentityDiagnostics(identity.diagnostics)
+  // P1W6 S3: the per-turn ledger, one per instance under <userData>/companion/turns/. It honours
+  // usage history's opt-out and retention, and it is written in `shadow` and `active` alike.
+  turnLedger = createTurnLedger({
+    userData,
+    now: () => Date.now(),
+    policy: getUsageHistoryPolicy
+  })
+  configureTurnLedger(turnLedger)
+  void turnLedger.sweep()
+  if (ledgerTimer) clearInterval(ledgerTimer)
+  ledgerTimer = setInterval(() => turnLedger?.tick(), 500)
+  ledgerTimer.unref?.()
+  // The Usage Dashboard's scan stays the structure and the history; for a session the ledger fully
+  // covers (and whose project has `telemetry` active) the CLI's own total replaces the scan price.
+  setUsageCostCalibration({
+    totals: () => turnLedger!.calibrationTotals((p) => familyMode('telemetry', p) === 'active'),
+    onSkip: (x) =>
+      recordFact('telemetry', 'legacy', x.sessionId, 'calibration:skip', {
+        reason: x.reason,
+        scan: x.scanUsd,
+        measured: x.measuredUsd
+      })
+  })
   // P1W6: `usage.measured` writes the cost, context and rate-limit groups of the neutral store.
   telemetry?.dispose()
   telemetry = createTelemetryAdapter({
+    ledger: turnLedger,
     host: core.facade,
     owns: (sid, family) => sessionArbiter().owns(sid, family),
     planGate: { note: noteLeasedReading, clear: clearPlanUsageGate },
@@ -281,6 +310,11 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
 
 /** Joins the `before-quit` list beside `closeHookBridge()`. */
 export function closeCompanionHost(): Promise<void> {
+  if (ledgerTimer) clearInterval(ledgerTimer)
+  ledgerTimer = null
+  void turnLedger?.flush()
+  configureTurnLedger(null)
+  setUsageCostCalibration(null)
   setPlanUsagePollObserver(null)
   telemetry?.dispose()
   telemetry = null

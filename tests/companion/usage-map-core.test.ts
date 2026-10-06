@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mapUsageMeasured } from '../../src/main/companion/ingest/usage-map-core'
+import { mapTurnCompleted, mapUsageMeasured } from '../../src/main/companion/ingest/usage-map-core'
 import { parseStatusLineBlob } from '../../src/main/statusline-parse'
 
 /** Smoke A3 (docs/studies/T389-smoke-evidence.md): the mod's reading and the statusLine blob. */
@@ -137,5 +137,54 @@ describe('usage map (AC-P1W6-3)', () => {
     expect(m.startedAt).toBe(5)
     expect(m.model).toBe('m')
     expect(m.tokens).toBe(37302)
+  })
+})
+
+describe('turn.completed mapping (spec P1W6 §7.5)', () => {
+  const D7_TURN = {
+    reason: 'answer',
+    isAborted: false,
+    durationMs: 7246,
+    usage: {
+      inputTokens: 18,
+      outputTokens: 262,
+      cacheReadTokens: 49303,
+      cacheCreationTokens: 14155,
+      model: 'claude-haiku-4-5-20251001'
+    }
+  }
+
+  it('maps the smoke D7 turn', () => {
+    expect(mapTurnCompleted(D7_TURN)).toEqual({
+      reason: 'answer',
+      durationMs: 7246,
+      usage: D7_TURN.usage
+    })
+  })
+
+  it('an error turn carries no usage and says so', () => {
+    const m = mapTurnCompleted({
+      reason: 'error',
+      isAborted: false,
+      durationMs: 800,
+      failure: { type: 'api_error' }
+    })!
+    expect(m.usage).toBeUndefined()
+    expect(m.failure).toEqual({ type: 'api_error' })
+  })
+
+  it('refuses non-finite or negative figures and unsafe model names (SEC-3c)', () => {
+    expect(
+      mapTurnCompleted({ ...D7_TURN, usage: { ...D7_TURN.usage, inputTokens: -1 } })!.usage
+    ).toBeUndefined()
+    expect(
+      mapTurnCompleted({ ...D7_TURN, usage: { ...D7_TURN.usage, outputTokens: Infinity } })!.usage
+    ).toBeUndefined()
+    expect(
+      mapTurnCompleted({ ...D7_TURN, usage: { ...D7_TURN.usage, model: 'x'.repeat(200) } })!.usage
+    ).toBeUndefined()
+    expect(mapTurnCompleted({ ...D7_TURN, durationMs: Number.NaN })!.durationMs).toBe(0)
+    expect(mapTurnCompleted(null)).toBeNull()
+    expect(mapTurnCompleted('x')).toBeNull()
   })
 })
