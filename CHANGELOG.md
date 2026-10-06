@@ -46,6 +46,20 @@ mod: live`, `off`, or `legacy` with the reason), and the System Monitor shows th
   changes, and Harnu has no abort or compact button: the channel behind this one only
   carries the check for now.
 
+### Fixed
+
+- **Files an agent saves in `.harnu/` are now reachable.** The `.harnu/` folder is
+  usually gitignored, so Browse files hid it and a path like
+  `.harnu/out/roteiro.md` printed in the transcript never became a link. `.harnu/`
+  and everything in it now shows in the file tree, turns up when you search, and
+  opens from the transcript. Every other gitignored folder (`node_modules`, build
+  output) stays hidden.
+- **Ctrl+click opens a path from the transcript**, the same as Option/Alt+click: a
+  file opens in the viewer pane and a folder is revealed in Browse files. Holding
+  either key underlines the paths under the pointer, in the main terminal and in
+  helper-pane terminals. Links to web addresses behave as before. (On a Mac,
+  Ctrl+click is the system right-click — keep using Option there.)
+
 ## 2026-10-05
 
 ### Added

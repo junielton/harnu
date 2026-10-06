@@ -43,15 +43,22 @@ Harnu caps how many `claude` processes it keeps alive at once (each one holds re
 ## Jump from the transcript to a file
 
 When Claude mentions a file — `src/main/pty.ts`, or `src/main/pty.ts:42` — you
-can jump straight to it. Hold **Option** (**Alt** on Windows and Linux) and the
-paths under your pointer become clickable; click one and Harnu opens the **Browse
-files** pane, expands the folders down to that file, highlights it, and opens it
-in a viewer pane. Option+clicking a folder reveals and expands it instead.
+can jump straight to it. Hold **Option** (**Alt** on Windows and Linux) or
+**Ctrl** and the paths under your pointer become clickable; click one and Harnu
+opens the **Browse files** pane, expands the folders down to that file,
+highlights it, and opens it in a viewer pane. Clicking a folder this way reveals
+and expands it instead. It works the same in the helper-pane terminals next to a
+session. (On a Mac, Ctrl+click is the system right-click, so use Option there.)
 
-Nothing underlines until you hold Option, so it stays out of your way while you
-read. A path is only clickable when it actually exists inside the project folder
-and isn't ignored by `.gitignore` — the file tree can't show those either, so
-Harnu doesn't pretend they're reachable. A bare filename with no folder in it
+Nothing underlines until you hold the modifier, so it stays out of your way while
+you read. A path is only clickable when it actually exists inside the project
+folder and isn't ignored by `.gitignore` — the file tree can't show those
+either, so Harnu doesn't pretend they're reachable. The one exception is
+Harnu's own **`.harnu/`** folder: even though it's usually gitignored, it shows
+up in Browse files and its paths are clickable, because that's where agents put
+the reports and diagrams they hand you (for example
+`.harnu/out/roadmap-notes.md`). Everything else that's gitignored — `node_modules`,
+build output — stays hidden. Links to web addresses behave as before. A bare filename with no folder in it
 (just `pty.ts`) isn't clickable, because there's no way to tell which one it
 means.
 
