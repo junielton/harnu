@@ -20,6 +20,17 @@ The row hides itself entirely, hairline included, whenever there is nothing hone
 
 Which days count, and the optional alert at 80% and 100% of the day's budget, are configured in [Settings](settings.md#daily-budget).
 
+## Where the figures come from
+
+Each session's cost, context fill and plan limits can come from two places: the statusLine Harnu installs for Claude Code (**Settings → General → Session telemetry (statusLine)**), or the [Harnu mod](settings.md#harnu-mod) running inside the session. Harnu keeps a neutral record per session and decides, per group of figures, which source writes it. A group is never a blend of the two.
+
+- **Today the mod only compares.** In the shipped setting the mod's readings are recorded next to the statusLine's so Harnu can check they agree, and the footer, the hover preview and the usage panel keep showing the statusLine's figures. Nothing you see changes yet.
+- **When the mod is the source** for a session, it writes cost, context (percent, window size, over 200k) and the 5-hour and 7-day limits. If it stops reporting for that session — the session is lost, the mod is switched off — the statusLine takes all of them back at once.
+- **Eight figures always need the statusLine**, because the mod has no source for them: lines added, lines removed, thinking on or off, output style, the pull request, the model's display name, the session duration and the effort level. Turn the statusLine switch off and these go blank, whoever supplies the rest. A session started with your own statusLine gets cost, context and limits from the mod for the first time, and the same eight stay empty.
+- **Usage history keeps filling** whichever source wrote the figures.
+- **Plan limits and the `/usage` check.** Harnu's periodic `claude -p "/usage"` check is still the only source of the per-model weekly rows, and it still runs on its usual schedule. The mod can already supply the 5-hour and 7-day numbers from any live session, and the footer shows whichever reading is freshest; a later change lets the `/usage` check skip its run while a session has reported recently. Until then it runs as before.
+- **Dashboard cost** still comes from Harnu's scan of your session transcripts. Making it follow Claude Code's own total for new sessions is a later change.
+
 ## Usage history (Settings tab)
 
 **Settings → Usage history** gives you trajectory charts of your 5-hour and 7-day windows, cost, and session count over a range you choose (24 hours up to "all"), a "right now" strip, and a weekday-by-hour heatmap of when you actually use Claude. It's explicit about the difference between your **account-wide plan percentage** and **local-machine cost** — the two are tracked separately, so a number here that looks off is worth checking against which of those two it actually is. This tab also holds the feature's own configuration: whether it captures data at all, your plan tier, and how long history is retained.

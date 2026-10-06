@@ -27,6 +27,8 @@ Settings is organized into tabs. Most are covered in depth on their own pages �
 
 Under the switch you may see the folder the mod is loaded from (with a **Reveal folder** button) and at most one plain status line, for example that your Claude Code is older than 2.1.287 or newer than the last version Harnu tested (the mod then only observes), or that mods are turned off by a setting or by your organization's policy. None of these is a warning.
 
+**The statusLine switch.** The mod can supply a session's cost, context and plan limits, but not eight figures: lines added and removed, thinking on or off, output style, the pull request, the model's display name, the session duration and the effort level. **Settings → General → Session telemetry (statusLine)** is still where those come from, so turning it off blanks them. The details are under [Where the figures come from](usage.md#where-the-figures-come-from).
+
 The per-session state is in the hover preview and in the [System Monitor](system-monitor.md#what-you-see). If a session says `legacy` and you want to know why, see [Troubleshooting](troubleshooting.md#harnu-mod-legacy).
 
 ## Sidebar
