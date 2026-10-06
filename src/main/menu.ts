@@ -32,6 +32,8 @@ export type ShortcutActionId =
   | 'app.devtools'
   | 'app.quit'
   | 'app.fullscreen'
+  | 'nav.back'
+  | 'nav.forward'
 
 const isMac = process.platform === 'darwin'
 
@@ -155,6 +157,22 @@ export function buildAppMenu(getWindow: () => BrowserWindow | null): Menu {
           label: 'Switch Project…',
           accelerator: 'CmdOrCtrl+Shift+P',
           click: (): void => emit('project.switch')
+        },
+        { type: 'separator' },
+        // Session navigation history (docs/specs/2026-10-06-session-nav-history.md
+        // §5.3). The browser convention per platform: ⌘[ / ⌘] on macOS (⌥← is
+        // word-jump in every macOS text field), Alt+← / Alt+→ elsewhere. Bound at
+        // the menu level so the accelerator is consumed before xterm sees it —
+        // accepted trade-off D-4: Alt+← / Alt+→ no longer reach the terminal.
+        {
+          label: 'Back',
+          accelerator: isMac ? 'Cmd+[' : 'Alt+Left',
+          click: (): void => emit('nav.back')
+        },
+        {
+          label: 'Forward',
+          accelerator: isMac ? 'Cmd+]' : 'Alt+Right',
+          click: (): void => emit('nav.forward')
         }
       ]
     },

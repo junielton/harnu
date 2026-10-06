@@ -38,7 +38,8 @@ import { useUiStore } from './stores/ui'
 import { useHelpersStore } from './stores/helpers'
 import { useLayoutStore, helperPanelVisible, inboxRailWidthFor } from './stores/layout'
 import { useClaudeChangelogStore } from './stores/claudeChangelog'
-import { useShortcuts, pushScope, popScope } from './composables/useShortcuts'
+import { useShortcuts, pushScope, popScope, activeScope } from './composables/useShortcuts'
+import { isMac } from './lib/platform'
 import { useTerminalFocus } from './composables/useTerminalFocus'
 import type { Session } from './stores/sessions'
 import type { UserProject } from '../../preload'
@@ -519,6 +520,23 @@ useShortcuts([
     handler: () => layout.toggleHelper()
   },
   {
+    // Session navigation history (docs/specs/2026-10-06-session-nav-history.md
+    // §5.4). Owned by the OS menu (menu.ts `&Session`) so the accelerator is
+    // consumed before xterm; `keys` is the renderer fallback for WMs that drop
+    // accelerators, like `view.toggleSidebar`. The mouse side buttons are wired
+    // separately below (`onNavMouseButton`).
+    id: 'nav.back',
+    scope: 'global',
+    keys: isMac ? 'Cmd+[' : 'Alt+Left',
+    handler: () => sessions.goBack()
+  },
+  {
+    id: 'nav.forward',
+    scope: 'global',
+    keys: isMac ? 'Cmd+]' : 'Alt+Right',
+    handler: () => sessions.goForward()
+  },
+  {
     id: 'project.switch',
     scope: 'global',
     keys: 'Cmd+Shift+P',
@@ -647,6 +665,36 @@ useShortcuts([
     handler: () => sessions.cursorActivate()
   }
 ])
+
+/**
+ * Mouse back / forward side buttons (DOM buttons 3 / 4) drive the session
+ * navigation history (docs/specs/2026-10-06-session-nav-history.md §5.4).
+ *
+ * Bound on `window` in the CAPTURE phase so it runs before xterm, which forwards
+ * mouse events to the PTY when the TUI enables mouse tracking: every
+ * mousedown / mouseup / auxclick of those two buttons is swallowed, so the TUI
+ * never receives them. Navigation fires once, on `mouseup`, and only while no
+ * overlay holds the `'modal'` scope (the same gate as every global shortcut).
+ *
+ * Electron's `app-command` (`browser-backward` / `browser-forward`) is
+ * deliberately NOT subscribed: Chromium already delivers the side buttons as
+ * DOM button 3 / 4 events, and listening to both would navigate twice.
+ */
+const NAV_MOUSE_EVENTS = ['mousedown', 'mouseup', 'auxclick'] as const
+function onNavMouseButton(e: MouseEvent): void {
+  if (e.button !== 3 && e.button !== 4) return
+  e.preventDefault()
+  e.stopPropagation()
+  if (e.type !== 'mouseup' || activeScope() !== 'global') return
+  if (e.button === 3) sessions.goBack()
+  else sessions.goForward()
+}
+onMounted(() => {
+  for (const type of NAV_MOUSE_EVENTS) window.addEventListener(type, onNavMouseButton, true)
+})
+onUnmounted(() => {
+  for (const type of NAV_MOUSE_EVENTS) window.removeEventListener(type, onNavMouseButton, true)
+})
 
 /**
  * Add-folder submit handler (U-2.4).
