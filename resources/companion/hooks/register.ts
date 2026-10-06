@@ -667,6 +667,7 @@ export const register: Register = (on) => {
     registrationErrors.push('session.end')
   }
 
+  // sense.mods:begin (the CLI suite of P4W1 strips exactly this block to price the hook, AC-P4W1-16)
   // P4W1 part B, `sense.mods`: the only `plugin.register` registration the companion may have
   // (MOD-3, R25). A pure observer: it asks the rest of the chain first, reports a module only if
   // that allowed it, and always returns what `next(e)` returned. It does not wait for the hello:
@@ -685,6 +686,7 @@ export const register: Register = (on) => {
   } catch {
     registrationErrors.push('plugin.register')
   }
+  // sense.mods:end
 
   declared = [
     ...(registered.start && registered.end && registered.classic ? ['sense.identity'] : []),

@@ -128,7 +128,7 @@ describe.skipIf(!WITH_CLI)('the handshake against the real host (L4)', () => {
     const binding = h.host.facade.bindingForSid(r.probe!.sessionId)
     expect(binding, JSON.stringify(h.host.facade.diagnostics().bindings)).not.toBeNull()
     expect(binding?.sessionKey).toBe('row:pty-1')
-    expect(binding?.declared).toEqual(['sense.identity'])
+    expect(binding?.declared).toEqual(['sense.identity', 'sense.mods'])
     expect(h.seen.hellos[0]).toMatchObject({ kind: 'spawn', sid: r.probe!.sessionId })
     expect(binding?.proven).toContain('sense.identity')
     // the hello landed before the engine finished `session.start`, which runs before any command
