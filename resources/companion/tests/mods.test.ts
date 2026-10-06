@@ -21,7 +21,8 @@ const TOKEN_CHART = {
   name: 'token-chart',
   register(on: import('claude-code').On) {
     on('session.start', async ($, e, next) => {
-      await $.state.set({ plugin: 'token-chart', key: 'ran' }, true)
+      // an inline plugin has no state contract of its own: the reference is literal, the type is not
+      await $.state.set({ plugin: 'token-chart', key: 'ran' } as never, true as never)
       return next(e)
     })
   }
