@@ -973,3 +973,11 @@ Grouped by what it needs. Ids are spec AC ids; `LV` ids are recipe ids.
 - [ ] Evaluate K1 to K5 from §5 and sign the Gate K decision in project memory.
 
 Overall: P1 and the waves allowed before Gate K are delivered and consistent, but not clean: of 294 ACs, 270 are met (41 of them only on uncommitted `/tmp` logs), 1 is unmet (AC-P1W1-28), 15 are not-run and 8 need the operator, so per PR eleven are met with gaps and #8 is unmet; six PRs have red GitHub CI (one missing label on #10, one late label on #18, three legacy-flake re-runs on #9, #13 and #15, and one latent flake in new code on #8), no flip is bundled, no PR touches main, no client identifier appears in any diff, and Gate K cannot be decided yet because it needs real shadow-mode usage that does not exist, so the operator signs it.
+
+## Addendum 2026-10-06 — AC-P1W1-28 amended
+
+The operator decided on 2026-10-06 (option A) to amend the bound. AC-P1W1-28 now requires hello under 50 ms for headless (`-p`) sessions only. Interactive sessions are held to `HELLO_SLA_MS` (2 000 ms) under the new AC-P1W1-37, appended without renumbering. The host's own work is sub-millisecond, so the interactive spread is terminal UI and engine fetch overhead on the mod side, not host latency.
+
+The recorded measurements meet the amended bounds: headless 0 to 7 ms is under 50 ms, and interactive 29, 161 and 257 ms are under 2 000 ms. The findings above are left as written; they describe the AC as it stood at verification time.
+
+PR #8 verdict becomes **met with gaps**. The remaining gap is the wall-clock dependent SLOW_DOWN test (`tests/companion/server.test.ts` › "floods are answered SLOW_DOWN, and hello is exempt"), which makes GitHub CI flaky at the tip.
