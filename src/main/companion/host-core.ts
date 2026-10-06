@@ -78,6 +78,10 @@ export interface CompanionDiagnostics {
     modVersion: string
     declared: FeatureId[]
     enabled: FeatureId[]
+    /** P1W3: features a hello that redeemed a spawn token has proven. */
+    proven: FeatureId[]
+    /** P1W3: ms from the spawn to the first hello (the parity gate's p95 input). */
+    helloAfterSpawnMs: number
     counters: Binding['counters']
   }[]
 }
@@ -468,6 +472,8 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
           modVersion: b.modVersion,
           declared: [...b.declared],
           enabled: [...b.enabled],
+          proven: [...b.proven],
+          helloAfterSpawnMs: Math.round(b.helloAfterSpawnMs),
           counters: { ...b.counters }
         }))
       }

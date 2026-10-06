@@ -103,7 +103,7 @@ export function createIdentityAdapter(deps: IdentityAdapterDeps): IdentityAdapte
       shape: shapeOf(b, fact.cause),
       key: fact.key,
       sid: fact.sid,
-      helloAfterSpawnMs: fact.cause === 'spawn' ? b.helloAfterSpawnMs : 0,
+      helloAfterSpawnMs: fact.cause === 'spawn' ? Math.round(b.helloAfterSpawnMs) : 0,
       spawnAt: now() - (fact.cause === 'spawn' ? b.helloAfterSpawnMs : 0)
     })
   }

@@ -33,6 +33,18 @@ session. A changed source or coordinate stages a sibling `<modVersion>.<hash8>` 
 tree is re-hashed on every spawn. `ensureStaged()` is the one function other code calls for the
 directory.
 
+## The runtime (P1W3)
+
+`hooks/register.ts` holds the handshake: `ensureHello($)` (lazy, idempotent, single flight, bounded by
+`HELLO_WAIT_MS`), the event ring and its pump, the heartbeat, the re-hello after a reload or a `STALE_CONN`, the
+rebound rules and `bye`. Helpers other waves call, all declared at the top of the module: `ensureHello($)`,
+`emit($, event)`, `enabled(feature)`, `boundSid()` and `reportModError(where, err, cmd?)`.
+`reportModError` takes no `$`: `$` may not be stored in a module variable (`claude plugin validate` refuses it),
+so the event goes into the ring and the next pump or heartbeat sends it. Pure helpers live in `hooks/lib/`
+(`ring.ts`, `rendezvous-parse.ts`). The L3 tests (`resources/companion/tests/*.test.ts`) run against a scripted
+host from `tests/support/rig.ts`: a held clock, an in-memory `$.state`, the rendezvous file and `$.http.fetch`
+answered by a script. The L4 suite `tests/cli/handshake.cli.test.ts` runs a real `claude` against the real host.
+
 ## Authoring rules that make a module silently not load
 
 Hot reload and a bad module look alike from the terminal: the CLI runs without the mod and says
