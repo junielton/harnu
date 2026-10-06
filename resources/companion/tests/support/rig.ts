@@ -23,6 +23,10 @@ export type Answer =
   | { kind: 'text'; text: string }
   | { kind: 'hang' }
   | { kind: 'throw' }
+  /** Answers `body` after `ms` of the held clock: a poll the host parks. */
+  | { kind: 'after'; ms: number; body: unknown }
+  /** The engine's hard cap: no answer for 30 s, then the fetch rejects (smoke C2, B1.1). */
+  | { kind: 'abort' }
 
 export interface Sent {
   route: EndpointName
@@ -61,10 +65,11 @@ export const ackAll = (body: any): Answer => ({
   }
 })
 
-/** Hello ok with identity enabled; events acknowledged in full; bye ok. */
+/** Hello ok with identity enabled; events acknowledged in full; bye ok; a poll is parked. */
 export const defaultScript: Script = (route, body) => {
   if (route === 'hello') return helloOk()
   if (route === 'events') return ackAll(body)
+  if (route === 'poll') return { kind: 'after', ms: 25_000, body: { ok: true, commands: [] } }
   return { kind: 'body', body: { ok: true } }
 }
 
@@ -135,7 +140,15 @@ export function installRig(on: On, opts: RigOptions = {}): Rig {
     counts[route] = (counts[route] ?? 0) + 1
     const a = rig.script.fn(route, body, counts[route])
     if (a.kind === 'hang') await clock.sleep(3_600_000)
+    if (a.kind === 'abort') {
+      await clock.sleep(30_000)
+      throw new Error('no complete answer within 30000ms')
+    }
     if (a.kind === 'throw' || a.kind === 'hang') throw new Error('transport failure')
+    if (a.kind === 'after') {
+      await clock.sleep(a.ms)
+      return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify(a.body) } }
+    }
     if (a.kind === 'status')
       return { value: { status: a.status, ok: false, headers: {}, text: a.text ?? '' } }
     const text = a.kind === 'text' ? a.text : JSON.stringify(a.body)

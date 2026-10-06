@@ -6,6 +6,7 @@ import { useUiStore } from '../stores/ui'
 import { useMonitorStore } from '../stores/monitor'
 import { useSessionsStore } from '../stores/sessions'
 import { useCompanionStore } from '../stores/companion'
+import { pingToast } from '../lib/companion-view'
 import SystemMonitorRow from './SystemMonitorRow.vue'
 import { formatBytes, heapPercent, heapBarClass, selfSample } from './system-monitor-format'
 import { projectBasename } from './usage-dashboard-format'
@@ -71,6 +72,17 @@ function onEditPolicy(): void {
  */
 async function onPark(sessionKey: string): Promise<void> {
   await window.api.ptyPark(sessionKey)
+}
+
+/**
+ * "Test Harnu mod channel" (T389 P2W1): a `flush` and a terminal toast to one session, answered
+ * by one Harnu toast. Main builds the cause; the renderer only names the session.
+ */
+async function onPingChannel(sessionKey: string): Promise<void> {
+  const answer = await window.api
+    .companionPing(sessionKey)
+    .catch(() => ({ ok: false, roundTripMs: 0 }))
+  ui.pushToast({ ...pingToast(answer, t), sessionId: sessionKey })
 }
 
 /** Close a row's session — reuses the sidebar's own close, no new verb (spec §3). */
@@ -231,6 +243,7 @@ const headerHeapFillClass = computed(() => heapBarClass(monitor.lastHeap?.status
             @toggle="toggleExpanded(row.sessionKey)"
             @park="onPark(row.sessionKey)"
             @close="onCloseRow(row.sessionKey)"
+            @ping-channel="onPingChannel(row.sessionKey)"
           />
           <template v-if="expandedKeys.has(row.sessionKey)">
             <SystemMonitorRow

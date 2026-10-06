@@ -1,0 +1,9 @@
+{"t":"2026-10-06T05:11:50.071Z","step":"start","claude":"2.1.290 (Claude Code)","userData":"throwaway","harnuPid":1422759}
+{"t":"2026-10-06T05:11:51.157Z","step":"1. mod state live","key":"synthetic-7d3a46dd-9a48-4b71-820d-562a481b693c"}
+{"t":"2026-10-06T05:11:51.172Z","step":"2. ping before /clear","ok":true,"roundTripMs":6,"refusal":null,"outcomes":["resulted:true","resulted:true"]}
+{"t":"2026-10-06T05:11:53.636Z","step":"3. ping after /clear","ok":true,"roundTripMs":5,"refusal":null,"outcomes":["resulted:true","resulted:true"]}
+{"t":"2026-10-06T05:11:53.636Z","step":"3b. audit","commandSids":2,"sessionKeys":["synthetic-7d3a46dd-9a48-4b71-820d-562a481b693c"],"rebound":1}
+{"t":"2026-10-06T05:11:53.636Z","step":"4. touched the staged mod","file":"<userData>/companion/0.1.0/harnu-companion/hooks/register.ts"}
+{"t":"2026-10-06T05:11:59.651Z","step":"4b. ping after the reload","ok":true,"roundTripMs":4,"refusal":null,"outcomes":["resulted:true","resulted:true"]}
+{"t":"2026-10-06T05:12:01.653Z","step":"5. host-side poll ledger","pollRecords":4,"byHow":{"command":3,"superseded":1},"heldMs":[177,2465,535,5472],"note":"one superseded record per reload is the old, closed poll being replaced by the new one"}
+{"t":"2026-10-06T05:12:01.653Z","step":"result","pings":[true,true,true],"distinctSidsInAudit":2,"oneSessionKey":true}

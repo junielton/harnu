@@ -39,6 +39,7 @@ import type { Worker, Run } from '../main/scheduler-core'
 import type { SchedulerState } from '../main/scheduler-shell'
 import type { CompanionDiagnostics } from '../main/companion/host-core'
 import type { CompanionStatus } from '../main/companion/companion-status'
+import type { PingResult as CompanionPingResult } from '../main/companion/companion-ipc'
 import type { ParityReport } from '../main/companion/parity-core'
 import type { IdentityClaim, IdentityOutcome } from '../main/companion/identity-core'
 import type { RoutingTable, ResolvedRouting } from '../main/routing-policy'
@@ -2599,7 +2600,21 @@ const api = {
   onCompanionUpdated: (cb: () => void): (() => void) => subscribe('companion:updated', cb),
   /** Dev only: stops and starts the companion listener (LV-P1W3-g). Rejects in a packaged build. */
   companionDevRestartListener: (): Promise<void> =>
-    ipcRenderer.invoke('companion:devRestartListener')
+    ipcRenderer.invoke('companion:devRestartListener'),
+  /**
+   * T389 P2W1: "Test Harnu mod channel". Sends a `flush` and a terminal toast to one session and
+   * reports the round trip. The refusal is a fixed enum, never text.
+   */
+  companionPing: (sessionKey: string): Promise<CompanionPingResult> =>
+    ipcRenderer.invoke('companion:diagnostics:ping', sessionKey),
+  /** Dev only (`HARNU_COMPANION_DEBUG=1`): enqueues through the same gate. Rejects otherwise. */
+  companionDebugEnqueue: (req: {
+    sessionKey: string
+    name: string
+    args?: unknown
+    textId?: string
+    waitMs?: number
+  }): Promise<unknown> => ipcRenderer.invoke('companion:debug:enqueue', req)
 }
 
 if (process.contextIsolated) {

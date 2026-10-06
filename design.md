@@ -7249,6 +7249,16 @@ parked — always sorts last, never mixed with real numbers):
   the hover preview: `legacy` is quiet, never `--warning` or `--red`; nothing renders when
   the state is `null`. `SystemMonitorRow` takes it as an optional `companion` prop and
   `SystemMonitor` reads `stores/companion.ts`; parked rows show none.
+- **Test Harnu mod channel (T389 P2W1).** A live row whose Harnu mod state is `live` gains one
+  more per-row action beside Park now and Close: a `RadioTower`-icon button, `22×22px`,
+  `hover:bg-surface-2`, `--text-3` glyph, revealed on row hover like the other two (a `22×22px`
+  placeholder keeps the pip aligned on rows without it). It sends the session a `flush` and a
+  terminal toast and answers with one Harnu toast: `info` "Harnu mod channel answered in {ms} ms",
+  or `warning` "Harnu mod channel did not answer" / "…is not available: {reason}". The reason
+  comes from a fixed three-word map (`legacy`, `shadow`, `headless`), never from text the session
+  sent. In the terminal the session shows the line `harnu-companion: Harnu mod channel check`
+  for the default 4 s; the engine draws the prefix. There is no abort or compact control: none is
+  designed yet. No new token, size or motion.
 - **Sessions group** — one row per live-or-parked session. **Live**, expandable
   (`ChevronRight`/`ChevronDown`) into its real `/proc` descendants (flat list, `└`
   prefix, no further nesting) when it has any. Name is the owning folder's alias (or a

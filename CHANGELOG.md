@@ -31,6 +31,12 @@ mod: live`, `off`, or `legacy` with the reason), and the System Monitor shows th
   on hooks and polling, for example because it was started before the notice, because the
   installed Claude Code is older than 2.1.287, or because mods are turned off by a
   setting or by your organization's policy. Harnu only names a cause it actually saw.
+- **Test Harnu mod channel.** In the System Monitor, a session whose Harnu mod is `live`
+  has a new button on hover, **Test Harnu mod channel**. It sends that session a quick
+  check through the mod and tells you how long the round trip took, and the session shows
+  a short `Harnu mod channel check` line in its own terminal. Nothing else in the session
+  changes, and Harnu has no abort or compact button: the channel behind this one only
+  carries the check for now.
 
 ## 2026-10-05
 

@@ -4,6 +4,7 @@ import {
   BACKOFF_MIN_MS,
   BYE_BUDGET_MS,
   DEFAULT_CONFIG,
+  FETCH_HARD_CAP_MS,
   HEARTBEAT_MS,
   HELLO_WAIT_MS,
   DRIFT_CHECK_MIN_MS,
@@ -11,12 +12,15 @@ import {
   RING_MAX,
   type ByeRequest,
   type CmdId,
+  type Command,
+  type CommandResultData,
   type Config,
   type Conn,
   type EndpointName,
   type EventName,
   type EventPayloads,
   type EventsRequest,
+  type ErrorCode,
   type FeatureId,
   type HelloRequest,
   type Sid
@@ -31,6 +35,22 @@ import {
   type FleetSensorState,
   type SensorInput
 } from './lib/fleet-sensor'
+import {
+  classifyCommand,
+  compactData,
+  forBoot,
+  isHardCapAbort,
+  mapEngineRejection,
+  markResulted,
+  markStarted,
+  parseChannel,
+  parseCommands,
+  parseConfigUpdate,
+  IMPLEMENTED_COMMANDS,
+  UI_TEXT_MAX,
+  withCursor,
+  type ChannelState
+} from './lib/command-core'
 import { createRing } from './lib/ring'
 import { measurePayload, readPayload } from './lib/usage-sensor'
 import { endpointUrl, parseEndpoint, type Endpoint } from './lib/rendezvous-parse'
@@ -57,6 +77,7 @@ const BOOT = { plugin: 'harnu-companion', key: 'boot' } as const
 const PROBES = { plugin: 'harnu-companion', key: 'probes' } as const
 const FLEET = { plugin: 'harnu-companion', key: 'fleet' } as const
 const PERMISSION_MODE = { plugin: 'harnu-companion', key: 'permissionMode' } as const
+const CHANNEL = { plugin: 'harnu-companion', key: 'channel' } as const
 
 /** The feature an event type belongs to. `null`: reportable whenever the channel is alive. */
 const EVENT_FEATURE: Partial<Record<EventName, FeatureId | null>> = {
@@ -70,7 +91,9 @@ const EVENT_FEATURE: Partial<Record<EventName, FeatureId | null>> = {
   'subagent.started': 'sense.subagent',
   'subagent.stopped': 'sense.subagent',
   'usage.measured': 'sense.usage',
-  'mod.error': null
+  'mod.error': null,
+  // The answer to a command is owed whatever the command's own feature says (also FEATURE_DISABLED).
+  'command.result': null
 }
 
 // ---- module state: wiped by a reload; the durable twins live in `$.state` ---------------------
@@ -101,6 +124,15 @@ let ring = createRing(RING_MAX)
 let fleet: FleetSensorState = neutralFleet()
 let fleetLoaded = false
 let lastMode: string | null = null
+/** P2W1: the poll loop's generation; a re-hello starts a new loop and retires the old one. */
+let loopGen = 0
+/** True when this process was spawned by Harnu with a token (the tokenless second lock). */
+let tokenBacked = false
+/** The in-memory twin of `$.state.channel`; null until first read. */
+let channel: ChannelState | null = null
+let stateChain: Promise<unknown> = Promise.resolve()
+/** Command ids a running call of THIS load will answer. */
+const inFlight = new Set<string>()
 
 function resetState(): void {
   conn = null
@@ -129,6 +161,12 @@ function resetState(): void {
   fleet = neutralFleet()
   fleetLoaded = false
   lastMode = null
+  loopGen = 0
+  tokenBacked = false
+  channel = null
+  stateChain = Promise.resolve()
+  inFlight.clear()
+  pollStale = 0
 }
 
 // ---- runtime helpers other waves call ---------------------------------------------------------
@@ -179,7 +217,9 @@ function reportModError(where: string, err: unknown, cmd?: CmdId): void {
 // ---- transport --------------------------------------------------------------------------------
 
 type Posted =
-  { kind: 'answer'; body: Record<string, unknown> } | { kind: 'transport' } | { kind: 'rebooted' }
+  | { kind: 'answer'; body: Record<string, unknown> }
+  | { kind: 'transport'; aborted?: boolean }
+  | { kind: 'rebooted' }
 
 async function readEndpoint($: Dollar): Promise<Endpoint | null> {
   try {
@@ -232,7 +272,9 @@ async function post(
       return { kind: 'transport' }
     }
     return { kind: 'answer', body: parsed as Record<string, unknown> }
-  } catch {
+  } catch (err) {
+    // The engine's 30 s fetch cap on a held poll is a normal reconnect: the coordinates are fine.
+    if (isHardCapAbort(err)) return { kind: 'transport', aborted: true }
     endpoint = null
     return { kind: 'transport' }
   }
@@ -414,6 +456,8 @@ async function doHello($: Dollar, resumeConn?: Conn): Promise<void> {
           toolCheck: probes.toolCheck || p.value.toolCheck
         }
       request.resume = { conn: resume }
+      const spawned = await $.env.get('HARNU_SPAWN_TOKEN')
+      tokenBacked = typeof spawned === 'string' && spawned !== ''
     } else {
       const token = await $.env.get('HARNU_SPAWN_TOKEN')
       if (typeof token !== 'string' || token === '') {
@@ -422,6 +466,7 @@ async function doHello($: Dollar, resumeConn?: Conn): Promise<void> {
       }
       sid = await $.session.id()
       request.spawn = token as `sp_${string}`
+      tokenBacked = true
     }
     if (boot === null) return // no session.start yet: the next hook tries again
     const cli = await $.session.version()
@@ -491,6 +536,11 @@ async function doHello($: Dollar, resumeConn?: Conn): Promise<void> {
     snapshot($, 'hello')
     startHeartbeatOnce($)
     pump($)
+    // P2W1: the cursor belongs to this boot; the loop starts (or restarts) under a new generation.
+    channel = forBoot(await ensureChannel($), bootId)
+    void writeChannel($)
+    restartPollLoop($)
+    await acceptCommands($, parseCommands(b.commands))
   } catch (err) {
     scheduleRetry($)
     void err
@@ -575,7 +625,11 @@ async function pumpLoop($: Dollar, beat: boolean): Promise<void> {
       conn,
       sentAt: Date.now(),
       events: batch,
-      ...(dropped > 0 ? { dropped } : {})
+      ...(dropped > 0 ? { dropped } : {}),
+      // A profile that does not poll receives its commands on this response (contract §5.2).
+      ...(boot?.isInteractive === false && bootId !== null
+        ? { bootId: bootId as EventsRequest['bootId'], cursor: (await ensureChannel($)).cursor }
+        : {})
     }
     sentSinceBeat = true
     const r = await post($, 'events', request, false)
@@ -594,6 +648,7 @@ async function pumpLoop($: Dollar, beat: boolean): Promise<void> {
       ring.settleDropped(dropped)
       backoffMs = BACKOFF_MIN_MS
       if (body.resync === true) snapshot($, 'resync')
+      await acceptCommands($, parseCommands(body.commands))
       // no progress (the host acknowledged nothing we sent): do not spin
       if (batch.length > 0 && ring.batch(1, Infinity)[0]?.seq === batch[0]?.seq) return
       continue
@@ -668,6 +723,7 @@ async function rebound(
 
 /** Best effort and never retried: the ring's contents plus `session.end`, within BYE_BUDGET_MS. */
 async function sayBye($: Dollar, reason: string): Promise<void> {
+  loopGen++ // the poll loop ends with the session
   if (dormant || inert || conn === null || sidBound === null) return
   ring.push({ t: 'session.end', ts: Date.now(), d: { reason } })
   const request: ByeRequest = {
@@ -722,6 +778,283 @@ function settled(
       ...(e.agent_id !== undefined ? { agentId: e.agent_id } : {})
     })
   )
+}
+
+// ---- command channel (P2W1) ---------------------------------------------------------------------
+
+/** What a command handler answers; the executor wraps it in the one `command.result`. */
+type HandlerResult =
+  { ok: true; data?: unknown } | { ok: false; code: ErrorCode; message?: string; data?: unknown }
+/** What a command handler returns (the executor wraps it in the one `command.result`). */
+type Handled = HandlerResult | Promise<HandlerResult>
+
+/** A poll answered faster than this with nothing is not a hold: wait before asking again. */
+const IMMEDIATE_MS = 200
+let pollStale = 0 // consecutive STALE_CONN answers across loops: a host that keeps refusing
+
+const okResult = (data?: unknown): HandlerResult =>
+  data === undefined ? { ok: true } : { ok: true, data }
+const precondition = (message: string): HandlerResult => ({
+  ok: false,
+  code: 'CMD_PRECONDITION',
+  message
+})
+
+async function ensureChannel($: Dollar): Promise<ChannelState> {
+  if (channel !== null) return channel
+  const saved = await $.state.get(CHANNEL)
+  if (channel !== null) return channel // another caller read it while this one waited
+  channel = parseChannel(saved.value)
+  return channel
+}
+
+/** Writes the mirror to `$.state`, in order; a failed write only costs a reload its dedupe. */
+function writeChannel($: Dollar): Promise<unknown> {
+  if (channel === null || channel.bootId === null) return Promise.resolve()
+  const snap = {
+    ...channel,
+    bootId: channel.bootId,
+    started: [...channel.started],
+    resulted: [...channel.resulted]
+  }
+  stateChain = stateChain.then(() => $.state.set(CHANNEL, snap)).catch(() => undefined)
+  return stateChain
+}
+
+/**
+ * The cursor is written BEFORE a command starts (delivery), the `started` id before its `$` call
+ * (execution), and the loop never awaits a command (MOD-6, contract §6).
+ */
+async function acceptCommands($: Dollar, commands: Command[]): Promise<void> {
+  for (const c of commands) {
+    channel = withCursor(await ensureChannel($), c.n)
+    await writeChannel($)
+    void runCommand($, c)
+  }
+}
+
+function sendResult($: Dollar, c: Command, r: HandlerResult): void {
+  channel = markResulted(channel ?? parseChannel(null), c.cmd)
+  emit($, {
+    t: 'command.result',
+    d: {
+      cmd: c.cmd,
+      ok: r.ok,
+      ...(r.ok ? {} : { code: r.code }),
+      ...(r.ok ? {} : r.message !== undefined ? { message: r.message } : {}),
+      ...(r.data !== undefined
+        ? { data: r.data as CommandResultData[keyof CommandResultData] }
+        : {})
+    }
+  })
+  void writeChannel($)
+}
+
+/** Exactly one `command.result` per `cmd` (spec §7.7 executor table). Never rejects. */
+async function runCommand($: Dollar, c: Command): Promise<void> {
+  try {
+    const state = await ensureChannel($)
+    const d = classifyCommand(c, {
+      state,
+      inFlight,
+      now: await $.clock.now(),
+      tokenBacked,
+      featureEnabled: enabled,
+      known: (name) => IMPLEMENTED_COMMANDS.has(name)
+    })
+    if (d.kind === 'skip') return
+    if (d.kind === 'answer') {
+      sendResult($, c, {
+        ok: false,
+        code: d.code,
+        ...(d.message !== undefined ? { message: d.message } : {}),
+        ...(d.data !== undefined ? { data: d.data } : {})
+      })
+      return
+    }
+    // Everything from here to the `$` call is synchronous: two deliveries of one `cmd` cannot both pass.
+    channel = markStarted(state, c.cmd)
+    inFlight.add(c.cmd)
+    await writeChannel($)
+    let out: HandlerResult
+    try {
+      out = await runHandler($, c)
+    } catch (err) {
+      out = { ok: false, ...mapEngineRejection(err) }
+    }
+    inFlight.delete(c.cmd)
+    sendResult($, c, out)
+  } catch (err) {
+    inFlight.delete(c.cmd)
+    reportModError('command', err, c.cmd)
+  }
+}
+
+function runFlush($: Dollar): Handled {
+  snapshot($, 'flush')
+  return okResult()
+}
+
+function runConfigUpdate($: Dollar, c: Command<'config.update'>): Handled {
+  const next = parseConfigUpdate(c.args)
+  if (next === null) return precondition('a config value is outside its bounds')
+  const beat = config.heartbeatMs
+  config = { ...config, ...next }
+  if (next.heartbeatMs !== undefined && next.heartbeatMs !== beat) {
+    heartbeat?.cancel()
+    heartbeat = null
+    startHeartbeatOnce($)
+  }
+  return okResult()
+}
+
+async function runTurnAbort($: Dollar, c: Command<'turn.abort'>): Promise<HandlerResult> {
+  const own = typeof c.args.turnId === 'string' && c.args.turnId !== '' ? c.args.turnId : null
+  const turnId = own ?? channel?.turnId ?? null
+  if (turnId === null) return precondition('no turn id is known')
+  await $.turn.abort({ turnId }) // an engine rejection is mapped by the executor
+  return okResult()
+}
+
+async function runCompact($: Dollar): Promise<HandlerResult> {
+  const r = await $.session.compact()
+  return okResult(compactData(r))
+}
+
+function runToast($: Dollar, c: Command<'ui.toast'>): Handled {
+  const text = c.args.text
+  if (typeof text !== 'string' || text === '' || text.length > UI_TEXT_MAX) {
+    return precondition('toast text must be 1 to 200 characters')
+  }
+  $.ui.toast(text)
+  return okResult()
+}
+
+function runStatus($: Dollar, c: Command<'ui.status'>): Handled {
+  const text = c.args.text
+  if (text !== null && (typeof text !== 'string' || text.length > UI_TEXT_MAX)) {
+    return precondition('status text must be at most 200 characters, or null')
+  }
+  $.ui.status(text === null ? undefined : text)
+  return okResult()
+}
+
+/**
+ * The closed switch (SEC-5, contract §9): the only place a command name becomes a `$` call. The
+ * engine refuses a `$` passed through a dynamic callee, so a later wave adds its `case` here, and
+ * its name to `IMPLEMENTED_COMMANDS`, instead of registering a function.
+ */
+function runHandler($: Dollar, c: Command): Handled {
+  switch (c.name) {
+    case 'flush':
+      return runFlush($)
+    case 'config.update':
+      return runConfigUpdate($, c as Command<'config.update'>)
+    case 'turn.abort':
+      return runTurnAbort($, c as Command<'turn.abort'>)
+    case 'session.compact':
+      return runCompact($)
+    case 'ui.toast':
+      return runToast($, c as Command<'ui.toast'>)
+    case 'ui.status':
+      return runStatus($, c as Command<'ui.status'>)
+    default:
+      return { ok: false, code: 'CMD_UNSUPPORTED' }
+  }
+}
+
+// ---- the poll loop ------------------------------------------------------------------------------
+
+function pollEligible(): boolean {
+  return (
+    !dormant &&
+    !inert &&
+    conn !== null &&
+    boot?.isInteractive === true &&
+    enabledSet.includes('act.channel')
+  )
+}
+
+/**
+ * Starts a poll loop under a new generation and retires the old one: a hello (the first, or a
+ * re-hello) is the only caller, so there is one loop per load, never awaited by a hook.
+ */
+function restartPollLoop($: Dollar): void {
+  const gen = ++loopGen
+  if (pollEligible()) void pollLoop($, gen)
+}
+
+async function pollLoop($: Dollar, gen: number): Promise<void> {
+  let backoff = BACKOFF_MIN_MS
+  try {
+    while (gen === loopGen && pollEligible()) {
+      const sid = sidBound
+      const boot0 = bootId
+      if (sid === null || conn === null || boot0 === null) return
+      channel = forBoot(await ensureChannel($), boot0)
+      const cursor = channel.cursor
+      const t0 = await $.clock.now()
+      const r = await post(
+        $,
+        'poll',
+        { v: proto, sid, conn, sentAt: Date.now(), bootId: boot0, cursor },
+        false
+      )
+      if (gen !== loopGen) return
+      if (r.kind === 'transport') {
+        // The engine's 30 s cap on a held request is a reconnect: ask again at once. The message is
+        // the engine's, so the time it took counts too. Any other failure backs off.
+        if (r.aborted || (await $.clock.now()) - t0 >= FETCH_HARD_CAP_MS - 500) continue
+        await $.clock.sleep(backoff)
+        backoff = Math.min(backoff * 2, BACKOFF_MAX_MS)
+        continue
+      }
+      if (r.kind === 'rebooted') {
+        if (++pollStale > 2) await $.clock.sleep(backoff)
+        backoff = Math.min(backoff * 2, BACKOFF_MAX_MS)
+        await rehello($)
+        continue
+      }
+      const body = r.body
+      if (body.ok === true) {
+        backoff = BACKOFF_MIN_MS
+        pollStale = 0
+        const commands = parseCommands(body.commands)
+        if (body.resync === true) {
+          channel = { ...(await ensureChannel($)), bootId: boot0, cursor: 0 }
+          void writeChannel($)
+          snapshot($, 'resync')
+          // A resync from a host that restarted under a live `conn` is the only way this mod learns
+          // the new boot: the next request re-reads the rendezvous file and, seeing another
+          // `bootId`, says hello again. For any other resync the re-read changes nothing.
+          endpoint = null
+        }
+        await acceptCommands($, commands)
+        // A host that answers at once with nothing (a resync, a supersede) is not holding: do not spin.
+        if (commands.length === 0 && (await $.clock.now()) - t0 < IMMEDIATE_MS) {
+          await $.clock.sleep(body.resync === true ? 500 : 250)
+        }
+        continue
+      }
+      const code = typeof body.code === 'string' ? body.code : ''
+      if (code === 'FEATURE_DISABLED') return // the loop ends until the next hello
+      if (code === 'STALE_CONN') {
+        if (++pollStale > 2) {
+          await $.clock.sleep(backoff)
+          backoff = Math.min(backoff * 2, BACKOFF_MAX_MS)
+        }
+        await rehello($)
+        continue
+      }
+      if (DORMANT_CODES.has(code)) return goDormant()
+      const wait =
+        code === 'SLOW_DOWN' && typeof body.retryAfterMs === 'number' ? body.retryAfterMs : backoff
+      await $.clock.sleep(Math.min(Math.max(wait, 0), 60_000))
+      backoff = Math.min(backoff * 2, BACKOFF_MAX_MS)
+    }
+  } catch (err) {
+    reportModError('poll', err) // a failure ends this loop; the next hello starts another
+  }
 }
 
 // ---- the module -------------------------------------------------------------------------------
@@ -800,7 +1133,17 @@ export const register: Register = (on) => {
 
   hook('turn.start', () => {
     on('turn.start', async ($, e, next) => {
-      // (1) P2W1: store `turnId` in `channel.turnId` (insertion point)
+      try {
+        await ensureHello($)
+        // (1) act.turn (P2W1): the id of the running turn, for `turn.abort`. Nothing clears it: a
+        // stale id is answered by the engine's own rejection, the source of truth for "no turn".
+        if (enabled('act.turn')) {
+          channel = { ...(await ensureChannel($)), turnId: e.turnId }
+          void writeChannel($)
+        }
+      } catch (err) {
+        reportModError('turn.start', err)
+      }
       await sense($, 'turn.start', () => feed($, { k: 'turn.start', turnId: e.turnId }))
       return next(e)
     })
@@ -940,7 +1283,11 @@ export const register: Register = (on) => {
 
   const all = (...names: string[]): boolean => names.every((n) => registered[n] === true)
   const features: FeatureId[] = []
-  if (all('session.start', 'session.end', 'classic.SessionStart')) features.push('sense.identity')
+  if (all('session.start', 'session.end', 'classic.SessionStart')) {
+    // `act.channel`, `act.compact` and `act.ui` need no hook of their own: the poll loop and `$`.
+    features.push('sense.identity', 'act.channel', 'act.compact', 'act.ui')
+    if (all('turn.start')) features.push('act.turn')
+  }
   if (all('prompt.submit', 'turn.start', 'turn.complete')) features.push('sense.turn')
   if (
     all(

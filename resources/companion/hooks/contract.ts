@@ -57,6 +57,15 @@ export const WEDGE_MS = 5_000
 export const CMD_TTL_MS = 30_000
 export const CMD_QUEUE_MAX = 64
 export const CMD_DONE_MAX = 64
+/** Host wait for a result after `expiresAt`, unless the command has its own (§7.2). */
+export const CMD_RESULT_GRACE_DEFAULT_MS = 5_000
+/**
+ * Per command name: an idle compaction answers after 14 to 37 s (smoke C2), and the engine may be
+ * slower on a long session. Commands not listed use `CMD_RESULT_GRACE_DEFAULT_MS`.
+ */
+export const CMD_RESULT_GRACE_MS: Readonly<Partial<Record<CommandName, number>>> = {
+  'session.compact': 120_000
+}
 export const ASK_ORPHAN_MS = 45_000
 export const STAMP_NONCE_RING = 512
 export const ASK_RECORD_MAX = 64

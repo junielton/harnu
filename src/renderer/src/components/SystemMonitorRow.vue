@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown, ChevronRight, TriangleAlert, Pause, X } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, TriangleAlert, Pause, RadioTower, X } from 'lucide-vue-next'
 import Button from './ui/Button.vue'
 import type { HeapSample } from '../../../preload'
 import type { CompanionState } from '../../../main/companion/companion-state-core'
@@ -73,7 +73,7 @@ const props = withDefaults(
   }
 )
 
-const emit = defineEmits<{ toggle: []; park: []; close: [] }>()
+const emit = defineEmits<{ toggle: []; park: []; close: []; pingChannel: [] }>()
 
 const { t } = useI18n()
 
@@ -97,6 +97,10 @@ const showParkAction = computed(
   () => props.rowKind === 'session' && props.state === 'live' && props.parkable
 )
 const showCloseAction = computed(() => props.rowKind === 'session')
+/** "Test Harnu mod channel" (T389 P2W1): only for a live row whose Harnu mod is live too. */
+const showPingAction = computed(
+  () => props.rowKind === 'session' && props.state === 'live' && props.companion?.state === 'live'
+)
 </script>
 
 <template>
@@ -207,6 +211,17 @@ const showCloseAction = computed(() => props.rowKind === 'session')
           v-if="showParkAction || showCloseAction"
           class="flex items-center gap-1 opacity-0 transition group-hover:opacity-100"
         >
+          <Button
+            v-if="showPingAction"
+            variant="ghost"
+            size="icon"
+            :title="t('harnuMod.channel.test')"
+            :aria-label="t('harnuMod.channel.test')"
+            @click.stop="emit('pingChannel')"
+          >
+            <RadioTower :size="12" :stroke-width="2" class="text-text-3" />
+          </Button>
+          <span v-else style="width: 22px; height: 22px" aria-hidden="true" />
           <Button
             v-if="showParkAction"
             variant="ghost"

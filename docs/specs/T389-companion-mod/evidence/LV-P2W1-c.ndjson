@@ -1,0 +1,8 @@
+{"t":"2026-10-06T05:20:49.298Z","step":"start","claude":"2.1.290","model":"local stand-in for the Messages API (zero real model calls)"}
+{"t":"2026-10-06T05:20:54.261Z","step":"1. idle: turn.abort","command":"turn.abort","enqueued":true,"refusal":null,"state":"resulted","ok":false,"code":"CMD_PRECONDITION","message":"harnu-companion: $.turn.abort: no turn is running (asked for 8b41127f-caca-410d-9e45-01a6f71cbe79)","data":null,"ms":8}
+{"t":"2026-10-06T05:20:56.724Z","step":"2. mid-turn: turn.abort","command":"turn.abort","enqueued":true,"refusal":null,"state":"resulted","ok":true,"code":null,"message":null,"data":null,"ms":10}
+{"t":"2026-10-06T05:20:56.724Z","step":"2b. the abort closed the model request"}
+{"t":"2026-10-06T05:21:01.187Z","step":"3. mid-turn: session.compact","command":"session.compact","enqueued":true,"refusal":null,"state":"resulted","ok":false,"code":"CMD_PRECONDITION","message":"harnu-companion: $.session.compact: a turn is running (c64bb6cf-2f47-4587-9ec6-ddafc1a70aa2); the conversation compacts between turns, so call it from turn.complete or later","data":null,"ms":6}
+{"t":"2026-10-06T05:21:01.194Z","step":"3b. cleanup: turn.abort","command":"turn.abort","enqueued":true,"refusal":null,"state":"resulted","ok":true,"code":null,"message":null,"data":null,"ms":7}
+{"t":"2026-10-06T05:21:04.251Z","step":"4. idle: session.compact","command":"session.compact","enqueued":true,"refusal":null,"state":"resulted","ok":true,"code":null,"message":null,"data":{"tokensBefore":77,"tokensAfter":1653},"ms":54}
+{"t":"2026-10-06T05:21:04.252Z","step":"result","AC38_idleAbortPrecondition":true,"AC25_midTurnAbortOk":true,"AC39_midTurnCompactPrecondition":true,"AC26_idleCompactOk":true,"modelRequests":6}

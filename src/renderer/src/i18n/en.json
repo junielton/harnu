@@ -3221,6 +3221,17 @@
       },
       "openSettings": "Open Settings",
       "unloaded": "Harnu mod unloaded in {session}. Running on hooks."
+    },
+    "channel": {
+      "test": "Test Harnu mod channel",
+      "ok": "Harnu mod channel answered in {ms} ms",
+      "noAnswer": "Harnu mod channel did not answer",
+      "refused": "Harnu mod channel is not available: {reason}",
+      "reason": {
+        "legacy": "this session runs on hooks",
+        "shadow": "the channel is observing only",
+        "headless": "this is a headless session"
+      }
     }
   }
 }

@@ -24,16 +24,22 @@
   "calls": [
     "$.clock.after",
     "$.clock.every",
+    "$.clock.now",
+    "$.clock.sleep",
     "$.env.get",
     "$.fs.read",
     "$.http.fetch",
+    "$.session.compact",
     "$.session.id",
     "$.session.model",
     "$.session.usage",
     "$.session.version",
     "$.state.get",
-    "$.state.set"
+    "$.state.set",
+    "$.turn.abort",
+    "$.ui.status",
+    "$.ui.toast"
   ],
   "envReads": ["HARNU_SPAWN_TOKEN"],
-  "stateKeys": ["boot", "bootId", "conn", "fleet", "permissionMode", "probes", "sid"]
+  "stateKeys": ["boot", "bootId", "channel", "conn", "fleet", "permissionMode", "probes", "sid"]
 }

@@ -20,7 +20,7 @@ export interface RecordedRequest {
 }
 
 export type FakeAnswer =
-  | { kind: 'ok'; body?: unknown }
+  | { kind: 'ok'; body?: unknown; delayMs?: number }
   | { kind: 'failure'; body: unknown }
   | { kind: 'garbage' }
   | { kind: 'hang' }
@@ -29,6 +29,8 @@ export type FakeAnswer =
 export type FakeScript = (req: RecordedRequest) => FakeAnswer
 
 export interface FakeHost {
+  /** Requests the host has received and not yet answered or lost (a held poll counts). */
+  open(): number
   dir: string
   socketPath: string
   endpointPath: string
@@ -44,6 +46,7 @@ export async function startFakeHost(
   const endpointPath = join(dir, 'endpoint.json')
   const requests: RecordedRequest[] = []
   const hung = new Set<import('node:http').ServerResponse>()
+  const live = new Set<import('node:http').ServerResponse>()
   const started = Date.now()
 
   const server: Server = createServer((req, res) => {
@@ -58,6 +61,8 @@ export async function startFakeHost(
         atMs: Date.now() - started
       }
       requests.push(rec)
+      live.add(res)
+      res.once('close', () => live.delete(res))
       const answer = script(rec)
       if (answer.kind === 'hang') {
         hung.add(res)
@@ -72,8 +77,13 @@ export async function startFakeHost(
         res.end(Buffer.from([0xff, 0xfe, 0x00, 0x7b]))
         return
       }
-      res.writeHead(200, { 'content-type': 'application/json' })
-      res.end(JSON.stringify(answer.kind === 'ok' ? (answer.body ?? { ok: true }) : answer.body))
+      const send = (): void => {
+        if (res.destroyed || res.writableEnded) return
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify(answer.kind === 'ok' ? (answer.body ?? { ok: true }) : answer.body))
+      }
+      if (answer.kind === 'ok' && answer.delayMs) setTimeout(send, answer.delayMs).unref()
+      else send()
     })
   })
   await new Promise<void>((resolve, reject) => {
@@ -96,6 +106,7 @@ export async function startFakeHost(
   await rename(tmp, endpointPath)
 
   return {
+    open: () => live.size,
     dir,
     socketPath,
     endpointPath,

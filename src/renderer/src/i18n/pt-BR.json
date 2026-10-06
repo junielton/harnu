@@ -3221,6 +3221,17 @@
       },
       "openSettings": "Abrir Configurações",
       "unloaded": "Harnu mod descarregado em {session}. Rodando em hooks."
+    },
+    "channel": {
+      "test": "Testar o canal do mod do Harnu",
+      "ok": "O canal do mod do Harnu respondeu em {ms} ms",
+      "noAnswer": "O canal do mod do Harnu não respondeu",
+      "refused": "O canal do mod do Harnu não está disponível: {reason}",
+      "reason": {
+        "legacy": "esta sessão roda nos hooks",
+        "shadow": "o canal só está observando",
+        "headless": "esta é uma sessão headless"
+      }
     }
   }
 }
