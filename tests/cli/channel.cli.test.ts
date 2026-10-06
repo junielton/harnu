@@ -161,4 +161,54 @@ describe.skipIf(!WITH_CLI)('the command channel against a real interactive claud
     const debug = await ix.debug()
     expect(debug.match(/\$\.ui\.toast \(harnu-companion\)/g)?.length).toBe(1)
   }, 90_000)
+
+  it('survives /clear and a reload on one binding, one parked poll at each step', async () => {
+    const rig = await channelRig({ realClock: true, pollHoldMs: 3_000 })
+    cleanups.push(() => rig.close())
+    const token = rig.core.facade.mintSpawnToken({
+      owner: { kind: 'pty', ptyId: 'pty-1' },
+      trust: 'operator',
+      cwd: '/tmp/example-project'
+    })
+    if (!token) throw new Error('no spawn token: the listener is not up')
+    const ix = await startInteractive({ rendezvous: `${rig.dir}/endpoint.json`, spawnToken: token })
+    cleanups.push(() => ix.stop())
+    const toast = async (): Promise<unknown> => {
+      const out = rig.channel.enqueue({
+        sessionKey: 'key:pty-1',
+        name: 'ui.toast',
+        args: { text: uiText('channel-ok') },
+        cause: { kind: 'operator', gesture: 'diagnostics.ping' }
+      })
+      if (!out.ok) throw new Error(`refused: ${out.reason}`)
+      return Promise.race([out.settled, new Promise((r) => setTimeout(r, 10_000, 'timeout'))])
+    }
+    const parked = (): boolean => rig.channel.inspect().parked === 1
+
+    await ix.until('a parked poll', parked)
+    const sidBefore = rig.view().sid
+    expect(await toast()).toMatchObject({ state: 'resulted', ok: true })
+
+    await ix.submit('/clear') // a new conversation: the mod rebounds, the binding stays
+    await ix.until('a new sid on the same binding', () => rig.view().sid !== sidBefore)
+    await ix.until('a parked poll after /clear', parked)
+    expect(rig.view().sessionKey).toBe('key:pty-1')
+    expect(await toast()).toMatchObject({ state: 'resulted', ok: true })
+
+    await ix.touchMod()
+    await ix.until('the reload', async () => /reloaded in/.test(await ix.debug()))
+    await ix.until('a parked poll after the reload', parked)
+    expect(await toast()).toMatchObject({ state: 'resulted', ok: true })
+    expect(rig.view().sid).not.toBe(sidBefore)
+    // the audit trail names two sids under one session key
+    const sids = new Set(
+      rig.rows.flatMap((r) =>
+        r.kind === 'command' && r.phase === 'decision' && r.sid ? [r.sid] : []
+      )
+    )
+    expect(sids.size).toBe(2)
+    expect(new Set(rig.rows.flatMap((r) => (r.kind === 'command' ? [r.sessionKey] : [])))).toEqual(
+      new Set(['key:pty-1'])
+    )
+  }, 90_000)
 })

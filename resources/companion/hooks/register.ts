@@ -13,7 +13,6 @@ import {
   type ByeRequest,
   type CmdId,
   type Command,
-  type CommandName,
   type CommandResultData,
   type Config,
   type Conn,

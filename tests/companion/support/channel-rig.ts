@@ -111,6 +111,11 @@ export async function channelRig(opts: ChannelRigOptions = {}) {
       })
   }
   const channel: CommandChannel = createCommandChannel({ ...deps, host: recording })
+  // The identity adapter's job in the app: a `session.rebound` moves the binding to the new sid.
+  core.facade.registerEventTypes(['session.rebound'])
+  core.facade.bus.on('event', (b, ev) => {
+    if (ev.t === 'session.rebound') core.facade.rebind(b, (ev.d as { sid: string }).sid)
+  })
 
   const sid = helloSpawnRequest.sid
   const connOf = new Map<string, string>()

@@ -83,7 +83,7 @@ test('writes the cursor and the started id before the $ call', async ($, on) => 
   let seen: any = null
   on('ui.toast', async () => {
     seen = structuredClone(rig.state.get('channel'))
-    return {}
+    return { value: undefined }
   })
   await boot($, rig)
   expect(seen).toMatchObject({ bootId: BOOT, cursor: c.n, started: [c.cmd], resulted: [] })

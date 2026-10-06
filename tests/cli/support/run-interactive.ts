@@ -43,6 +43,8 @@ export interface Interactive {
   /** The CLI's `--debug-file`. */
   debug(): Promise<string>
   type(text: string): void
+  /** Types a line, waits a moment so it is not read as a paste, then presses Enter. */
+  submit(text: string): Promise<void>
   /** Appends a comment to the mod's source: the plugin-dir watch reloads it. */
   touchMod(): Promise<void>
   /** Resolves when `test` is true, polling; rejects with the screen and the debug on timeout. */
@@ -131,6 +133,11 @@ export async function startInteractive(opts: InteractiveOptions): Promise<Intera
     screen: () => raw.replace(ANSI, ''),
     debug: readDebug,
     type: (text) => term.write(text),
+    async submit(text) {
+      term.write(text)
+      await new Promise((r) => setTimeout(r, 600))
+      term.write('\r')
+    },
     async touchMod() {
       const file = join(companionDir, 'hooks', 'register.ts')
       await writeFile(file, `${await readFile(file, 'utf8')}\n// touched ${Date.now()}\n`)
