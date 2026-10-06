@@ -91,10 +91,14 @@ banner for it.
 chips, same words. It is always the first row. It appears only when Harnu's mod is
 staged by this build of Harnu; when none is staged there is simply no row.
 
-Its row carries the chip **can refuse other mods**, because the mod hooks mod
-registration. That hook only watches which mods a session admits; it never refuses one,
-and a test in Harnu's repository fails if it ever does. The static read cannot tell a
-watcher from a gate, so the chip is shown anyway, the same as for any mod with that hook.
+Its row carries the chips **can use the network**, **can read and write files**, **can
+read every prompt**, **can decide permissions**, **can refuse other mods** and **can read
+environment variables**. They are what the source declares: it talks to Harnu on this
+machine, reads session state, and watches prompts, permission requests and mod
+registration. The registration hook only watches which mods a session admits; it never
+refuses one, and a test in Harnu's repository fails if it ever does. The static read
+cannot tell a watcher from a gate, so the chips are shown anyway, the same as for any mod
+with those hooks.
 
 ## Harnu mod outside Harnu
 

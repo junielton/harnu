@@ -21,10 +21,11 @@ describe('the Harnu mod row', () => {
       calls: surface.calls.map((c) => ({ op: c.replace(/^\$\./, '') })),
       env: { reads: surface.envReads }
     })
-    // $.http.fetch, $.fs.read, the env read, and the `plugin.register` hook of P4W1 part B: the
-    // static read cannot tell an observer from a gate, so the row says "can refuse other mods"
-    // like it would for any module with that hook (P4W1-S4: no special case for the Harnu mod).
-    expect(chips).toEqual(['network', 'files', 'gate', 'env'])
+    // $.http.fetch, $.fs.read, `prompt.submit`, the permission hooks of the fleet sensors, the
+    // `plugin.register` hook of P4W1 part B and the env read: the static read cannot tell an
+    // observer from a gate, so the row says "can refuse other mods" like it would for any module
+    // with that hook (P4W1-S4: no special case for the Harnu mod).
+    expect(chips).toEqual(['network', 'files', 'prompts', 'permissions', 'gate', 'env'])
   })
 
   it('is first, labelled harnu, and absent when nothing is staged', async () => {
