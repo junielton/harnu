@@ -5483,6 +5483,10 @@ export const useSessionsStore = defineStore('sessions', () => {
         applyTaskState(sessionId, taskState, { failureReason, resetsAt })
       })
     )
+    // T389 P1W4: a legacy hook the arbiter dropped is still a sign of life (ARB-2b).
+    // Optional call: an older preload (and every test double of `window.api`) has no such channel.
+    const offLiveness = window.api.onLiveness?.(({ sessionId, ts }) => bumpLastEvent(sessionId, ts))
+    if (offLiveness) cleanupFns.push(offLiveness)
 
     // T92: PID session-registry overlay (`~/.claude/sessions/`). A cheap task-state
     // for EXTERNAL sessions Harnu never injected hooks into; applied BELOW hook

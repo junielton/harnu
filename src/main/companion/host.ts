@@ -18,6 +18,8 @@ import { registerCompanionIpc } from './companion-ipc'
 import { createCompanionHost } from './host-core'
 import { gateForCli } from './enable-policy'
 import { createEnablePolicy } from './feature-policy'
+import { configureHub } from '../detect/task-state-hub'
+import { admit } from './arbitration-core'
 import { createIdentityAdapter, type IdentityAdapter } from './identity-adapter'
 import {
   getCompanionMode,
@@ -26,7 +28,7 @@ import {
   onModeChange,
   setCompanionPrefsPath
 } from './mode'
-import { configureSessionArbiter } from './session-arbiter'
+import { configureSessionArbiter, sessionArbiter } from './session-arbiter'
 import { cliGate } from './version-gate'
 import type { SpawnOwner } from './session-table'
 import surface from '../../../resources/companion/api-surface.json'
@@ -84,6 +86,19 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
   setRampFolders(await companionActivePaths().catch(() => []))
   // The arbiter reads the rollout view and the binding table; every consumer asks it.
   configureSessionArbiter({ host: core.facade, rollout: rolloutView })
+  // The task-state hub asks the arbiter before it folds an event (ARB-2). With no binding for the
+  // session, or any failure, the answer is the legacy one: every hook event applies.
+  configureHub({
+    admit: (ev) => {
+      const view = core.facade.bindingForSid(ev.sessionId)
+      return admit(
+        'taskState',
+        ev.source === 'hook' ? 'legacy' : 'companion',
+        view ? sessionArbiter().arbiterBinding(view) : null,
+        rolloutView()
+      )
+    }
+  })
   // P1W4 replaces P1W3's first policy (`sense.identity` only) with `computeEnable`.
   core.facade.setEnablePolicy(
     createEnablePolicy({ rollout: rolloutView, ceiling: surface.lastVerifiedCli })

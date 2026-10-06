@@ -726,6 +726,8 @@ interface HookEvent {
   failureReason?: FailureReason
   /** Epoch-ms of the rate-limit reset, when the StopFailure body carries it. */
   resetsAt?: number
+  /** T389 P1W4: which writer produced the event (additive; absent from an older main). */
+  source?: 'hook' | 'companion'
 }
 
 /**
@@ -1844,6 +1846,10 @@ const api = {
   // session's `taskState` (working / needs-input / idle / failed / …). The
   // status pair lets a settings toggle opt out of the global-config hooks.
   onHook: (cb: (ev: HookEvent) => void): (() => void) => subscribe('claude:hook', cb),
+  // T389 P1W4: a legacy hook event the arbiter dropped for a session the Harnu mod owns is still
+  // a sign of life; the store bumps its `lastEvent` anchor so the stuck timer is not starved.
+  onLiveness: (cb: (ev: { sessionId: string; ts: number }) => void): (() => void) =>
+    subscribe('claude:liveness', cb),
   // Pull main's current folded hook state for a uuid (T13/BUG-1 half a): called at
   // synthetic→real migration to resync the state whose early hooks were dropped.
   hooksStateFor: (sessionId: string): Promise<TaskState | null> =>
