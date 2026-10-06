@@ -219,7 +219,10 @@ describe('the default wiring never spawns a process', () => {
     vi.doMock('electron', () => ({
       app: { isPackaged: false, getAppPath: () => '/nowhere', getPath: () => '/nowhere' }
     }))
-    vi.doMock('../../src/main/companion/mode', () => ({ getCompanionMode: () => 'shadow' }))
+    vi.doMock('../../src/main/companion/mode', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('../../src/main/companion/mode')>()),
+      getCompanionMode: () => 'shadow' as const
+    }))
     const mod = await import('../../src/main/companion/spawn-inject')
     expect(await mod.companionSpawnProvider({ cwd: '/w', trust: 'operator' })).toBeNull()
     expect(execFile).not.toHaveBeenCalled()
