@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FleetTelemetry, SessionTelemetry } from '../src/main/statusline-parse'
@@ -213,7 +213,7 @@ describe('telemetry store', () => {
     expect(only(sent[0]!)?.costUsd).toBe(0.7)
   })
 
-  it('persists the composed map and restores it, TTL-filtered', () => {
+  it('persists the composed map and restores it, TTL-filtered', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'harnu-ts-'))
     dirs.push(dir)
     const path = join(dir, 'telemetry-cache.json')
@@ -221,10 +221,14 @@ describe('telemetry store', () => {
     a.ingestStatusline(sl())
     a.ingestCompanion(SID, reading(), true)
     a.ingestStatusline(sl({ sessionId: OTHER, updatedAtMs: NOW - 25 * 3_600_000 }))
-    vi.advanceTimersByTime(1_500)
-    expect(existsSync(path)).toBe(true)
+    vi.advanceTimersByTime(1_500) // the debounce fired: an async write is now in flight
+    vi.useRealTimers()
+    // complete and parseable, not merely present: the write truncates before it fills
+    await vi.waitFor(() => expect(JSON.parse(readFileSync(path, 'utf8'))).toHaveLength(2), {
+      timeout: 3_000
+    })
     const b = rig({ cachePath: path })
-    return b.hydrate().then(() => {
+    await b.hydrate().then(() => {
       const p = b.getTelemetryPayload()
       expect(only(p)?.costUsd).toBe(0.5) // the composed value, not the blob's
       expect(only(p, OTHER)).toBeUndefined() // older than the TTL
