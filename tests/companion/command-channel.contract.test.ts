@@ -175,3 +175,21 @@ describe('profiles', () => {
     expect((await r.poll(conn)).json).toMatchObject({ ok: false, code: 'FEATURE_DISABLED' })
   })
 })
+
+describe('host restart', () => {
+  it('a new boot id drops what was queued, and the first poll under it gets nothing', async () => {
+    const r = await rig({ pollHoldMs: 300 })
+    const { conn } = await r.hello()
+    const out = flush(r) // no poll is parked: it stays queued
+    if (!out.ok) throw new Error('refused')
+    const before = r.bootId()
+    await r.core.restartListener() // the table, and the conn, stay; the boot id changes
+    expect(r.bootId()).not.toBe(before)
+    const answer = await r.poll(conn, { cursor: 0 })
+    expect(answer.json).toEqual({ ok: true, commands: [] })
+    expect(await out.settled).toEqual({ state: 'dropped', why: 'host-shutdown', delivered: false })
+    // the old boot id is now stale: the poll is told to resync, never handed a command
+    const stale = await r.poll(conn, { bootId: before, cursor: 9 })
+    expect(stale.json).toEqual({ ok: true, commands: [], resync: true })
+  })
+})

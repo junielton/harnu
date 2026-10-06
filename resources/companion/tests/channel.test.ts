@@ -14,6 +14,7 @@ import {
   BOOT,
   START,
   defaultScript,
+  endpointText,
   helloOk,
   installRig,
   must,
@@ -431,7 +432,7 @@ test('resync resets the cursor and sends a snapshot', async ($, on) => {
   })
   on('ui.toast', async () => ({ value: undefined }))
   await boot($, rig)
-  await rig.clock.advance(1_500) // the host answered at once with a resync: the loop waits a second
+  await rig.clock.advance(1_500) // the host answered at once with a resync: the loop waits half a second
   expect(must(rig.of('poll')[1]).body.cursor).toBe(c.n)
   expect(
     rig
@@ -507,4 +508,33 @@ test('the two classes of command that need no token', () => {
   expect(classifyCommand(c('flush'), base)).toEqual({ kind: 'run' })
   expect(classifyCommand(c('config.update'), base)).toEqual({ kind: 'run' })
   expect(classifyCommand(c('ui.band.set'), { ...base, tokenBacked: true })).toEqual({ kind: 'run' })
+})
+
+test('a resync from a restarted host re-reads the rendezvous file and says hello again', async ($, on) => {
+  const NEW_BOOT = 'b_00000000-0000-4000-8000-0000000000b2'
+  let restarted = false
+  const rig = installRig(on, {
+    script: (route, body, n) => {
+      if (route === 'hello') {
+        const base = helloOk(ENABLE)
+        return restarted && base.kind === 'body'
+          ? { kind: 'body', body: { ...(base.body as object), bootId: NEW_BOOT } }
+          : base
+      }
+      if (route === 'poll' && n === 1)
+        return { kind: 'body', body: { ok: true, commands: [], resync: true } }
+      return defaultScript(route, body, n)
+    }
+  })
+  await boot($, rig)
+  // the host restarts under the live conn: the rendezvous file names the new boot
+  restarted = true
+  rig.endpoint.text = endpointText({ bootId: NEW_BOOT })
+  await rig.clock.advance(1_000)
+  const hellos = rig.of('hello')
+  expect(hellos.length).toBe(2)
+  expect(must(hellos[1]).body.resume).toBeDefined()
+  const after = rig.of('poll').filter((p) => p.body.bootId === NEW_BOOT)
+  expect(after.length).toBeGreaterThanOrEqual(1)
+  expect(must(after[0]).body.cursor).toBe(0)
 })

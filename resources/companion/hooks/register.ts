@@ -1007,11 +1007,15 @@ async function pollLoop($: Dollar, gen: number): Promise<void> {
           channel = { ...(await ensureChannel($)), bootId: boot0, cursor: 0 }
           void writeChannel($)
           snapshot($, 'resync')
+          // A resync from a host that restarted under a live `conn` is the only way this mod learns
+          // the new boot: the next request re-reads the rendezvous file and, seeing another
+          // `bootId`, says hello again. For any other resync the re-read changes nothing.
+          endpoint = null
         }
         await acceptCommands($, commands)
         // A host that answers at once with nothing (a resync, a supersede) is not holding: do not spin.
         if (commands.length === 0 && (await $.clock.now()) - t0 < IMMEDIATE_MS) {
-          await $.clock.sleep(body.resync === true ? 1_000 : 250)
+          await $.clock.sleep(body.resync === true ? 500 : 250)
         }
         continue
       }

@@ -9,7 +9,12 @@ import {
   type CommandChannel
 } from '../../../src/main/companion/command-channel'
 import type { ChannelMode } from '../../../src/main/companion/command-gate-core'
-import type { BootId, EndpointFile, FeatureId } from '../../../src/main/companion/contract'
+import type {
+  BootId,
+  EndpointFile,
+  FeatureId,
+  PollRequest
+} from '../../../src/main/companion/contract'
 import { createCompanionHost } from '../../../src/main/companion/host-core'
 import type { CompanionMode } from '../../../src/main/companion/mode'
 import type { BindingView } from '../../../src/main/companion/session-table'
@@ -31,6 +36,8 @@ export interface ChannelRigOptions {
   interactive?: boolean
   pollHoldMs?: number
   debug?: boolean
+  /** Real wall clock for `issuedAt` and every deadline: an L4 run's mod reads the real one. */
+  realClock?: boolean
 }
 
 /**
@@ -65,7 +72,7 @@ export async function channelRig(opts: ChannelRigOptions = {}) {
       },
       enabled: () => state.enabledFlag
     },
-    now: () => clock.lease,
+    now: () => (opts.realClock ? performance.now() : clock.lease),
     sessionKeyOf: (o) => (o.kind === 'pty' ? `key:${o.ptyId}` : null),
     log: () => undefined
   })
@@ -84,7 +91,7 @@ export async function channelRig(opts: ChannelRigOptions = {}) {
       if (state.auditFails) throw new Error('disk full')
       rows.push(r)
     },
-    now: () => clock.epoch,
+    now: () => (opts.realClock ? Date.now() : clock.epoch),
     isStickyLegacy: (x) => state.sticky.has(x),
     reportFailedProof: (key, feature) => void state.failedProofs.push({ key, feature }),
     agentTarget: () => state.verbTarget,
@@ -92,7 +99,18 @@ export async function channelRig(opts: ChannelRigOptions = {}) {
     pollHoldMs: () => opts.pollHoldMs ?? 25_000,
     debug: opts.debug === true
   }
-  const channel: CommandChannel = createCommandChannel(deps)
+  // Records every poll the channel is asked to answer (a proxy on `setPollHandler`).
+  const polls: PollRequest[] = []
+  const recording: ChannelDeps['host'] = {
+    ...core.facade,
+    bus: core.facade.bus,
+    setPollHandler: (fn) =>
+      core.facade.setPollHandler((b, req, reply) => {
+        polls.push(req)
+        fn(b, req, reply)
+      })
+  }
+  const channel: CommandChannel = createCommandChannel({ ...deps, host: recording })
 
   const sid = helloSpawnRequest.sid
   const connOf = new Map<string, string>()
@@ -138,6 +156,8 @@ export async function channelRig(opts: ChannelRigOptions = {}) {
   }
 
   return {
+    dir,
+    polls,
     clock,
     rows,
     state,
