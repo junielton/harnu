@@ -1,3 +1,4 @@
 .claude-plugin/types/
 hooks/coords.gen.ts
 .dev-lock
+tsconfig.json

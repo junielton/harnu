@@ -19,7 +19,8 @@ resources/companion/                 source of the plugin `harnu-companion`
   hooks/lib/*.ts                     `$`-free pure helpers; relative imports only
   api-surface.json                   the checked-in surface manifest (hooks, `$` calls, env reads, state keys)
   tests/*.test.ts                    `claude plugin test` suites (import `claude-code/testing`)
-  tsconfig.json  .gitignore          not staged
+  .gitignore                         not staged
+  tsconfig.json                      NOT checked in: the engine lays it (next to .claude-plugin/types/) on load
 src/main/companion/                  staging-core (pure), staging (fs), version-gate, spawn-inject, sideload-retry-core
 scripts/ci/mod-step.mjs              the `mod` step; render-coords.mjs is the twin of `renderCoords`
 tests/cli/                           real-`claude` suites; support/{fake-host,run-claude}.ts; fixtures/probe-mod
@@ -87,10 +88,10 @@ recipe LV-P1W2-a on the new version. The three drift checks are: way 1 the stati
 `npm test`, way 2 the validate notes in the `mod` step, way 3 `tsc` against the types the engine
 writes after a real load (`--with-cli`).
 
-## Joining P1W1
+## Relation to the host (P1W1)
 
-P1W2 compiles against stubs of P1W1's files at the same paths: `src/main/companion/mode.ts` (mode is
-`off`), `host.ts` (never listening, mints nothing), `session-table.ts` (types only) and
-`resources/companion/hooks/contract.ts`. At the join rebase take P1W1's version of those four files;
-the call sites in `pty.ts`, `scheduler-shell.ts` and `spawn-inject.ts` use the signatures P1W1
-specifies and do not change.
+The spawn path talks to P1W1's host only through `companionHost.mintSpawnToken(meta)` /
+`releaseSpawn(owner, reason)` / `spawnRecord(owner)`, `getCompanionMode()` and the `SpawnOwner` /
+`TrustClass` types. With the mode `off` none of them is called. To watch the ledger from a live
+instance use `window.api.companionDiagnostics()` (`pendingSpawns` is 1 while a minted token has not
+been released, 0 after the PTY exits); see `live-verify-second-instance.md`.
