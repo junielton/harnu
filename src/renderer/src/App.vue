@@ -38,7 +38,8 @@ import { useUiStore } from './stores/ui'
 import { useHelpersStore } from './stores/helpers'
 import { useLayoutStore, helperPanelVisible, inboxRailWidthFor } from './stores/layout'
 import { useClaudeChangelogStore } from './stores/claudeChangelog'
-import { useShortcuts, pushScope, popScope } from './composables/useShortcuts'
+import { useShortcuts, pushScope, popScope, activeScope } from './composables/useShortcuts'
+import { isMac } from './lib/platform'
 import { useTerminalFocus } from './composables/useTerminalFocus'
 import type { Session } from './stores/sessions'
 import type { UserProject } from '../../preload'
@@ -519,6 +520,25 @@ useShortcuts([
     handler: () => layout.toggleHelper()
   },
   {
+    // Session navigation history (docs/specs/2026-10-06-session-nav-history.md
+    // §5.4). The OS menu (menu.ts `&Session`) emits these ids. On macOS `keys`
+    // is the renderer fallback for a dropped accelerator, like
+    // `view.toggleSidebar`. On Linux/Windows there is no `keys` fallback:
+    // `onNavKeydown` below stops `Alt+←/→` in the capture phase (so xterm never
+    // sees it), which also hides it from `useMagicKeys`.
+    // The mouse side buttons are wired separately (`onNavMouseButton`).
+    id: 'nav.back',
+    scope: 'global',
+    keys: isMac ? 'Cmd+[' : undefined,
+    handler: () => sessions.goBack()
+  },
+  {
+    id: 'nav.forward',
+    scope: 'global',
+    keys: isMac ? 'Cmd+]' : undefined,
+    handler: () => sessions.goForward()
+  },
+  {
     id: 'project.switch',
     scope: 'global',
     keys: 'Cmd+Shift+P',
@@ -647,6 +667,59 @@ useShortcuts([
     handler: () => sessions.cursorActivate()
   }
 ])
+
+/**
+ * Mouse back / forward side buttons (DOM buttons 3 / 4) drive the session
+ * navigation history (docs/specs/2026-10-06-session-nav-history.md §5.4).
+ *
+ * Bound on `window` in the CAPTURE phase so it runs before xterm, which forwards
+ * mouse events to the PTY when the TUI enables mouse tracking: every
+ * mousedown / mouseup / auxclick of those two buttons is swallowed, so the TUI
+ * never receives them. Navigation fires once, on `mouseup`, and only while no
+ * overlay holds the `'modal'` scope (the same gate as every global shortcut).
+ *
+ * Electron's `app-command` (`browser-backward` / `browser-forward`) is
+ * deliberately NOT subscribed: Chromium already delivers the side buttons as
+ * DOM button 3 / 4 events, and listening to both would navigate twice.
+ */
+const NAV_MOUSE_EVENTS = ['mousedown', 'mouseup', 'auxclick'] as const
+function onNavMouseButton(e: MouseEvent): void {
+  if (e.button !== 3 && e.button !== 4) return
+  e.preventDefault()
+  e.stopPropagation()
+  if (e.type !== 'mouseup' || activeScope() !== 'global') return
+  if (e.button === 3) sessions.goBack()
+  else sessions.goForward()
+}
+/**
+ * Shield `Alt+←` / `Alt+→` from xterm on Linux and Windows, on `window` in the
+ * CAPTURE phase.
+ *
+ * Electron's views-based windows run a menu accelerator only for a key event the
+ * page left UNHANDLED. xterm handles `Alt+←/→` itself (word-jump bytes to the
+ * PTY), so with the terminal focused the `&Session` accelerator never fired.
+ * Stopping propagation here keeps xterm from ever seeing the key, while leaving
+ * it unhandled (no `preventDefault`), so the accelerator fires and drives the
+ * navigation through `shortcut:fired`, once. Handling the key here instead would
+ * hide the arrow from Electron's menu-bar logic, which then reads the Alt
+ * release as a lone Alt press and toggles the auto-hidden menu bar.
+ * Spec D-4: the chord no longer reaches the terminal. macOS (`⌘[` / `⌘]`) keeps
+ * the plain menu path. Not shielded while an overlay holds the `'modal'` scope.
+ */
+function onNavKeydown(e: KeyboardEvent): void {
+  if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+  if (activeScope() !== 'global') return
+  e.stopPropagation()
+}
+onMounted(() => {
+  for (const type of NAV_MOUSE_EVENTS) window.addEventListener(type, onNavMouseButton, true)
+  if (!isMac) window.addEventListener('keydown', onNavKeydown, true)
+})
+onUnmounted(() => {
+  for (const type of NAV_MOUSE_EVENTS) window.removeEventListener(type, onNavMouseButton, true)
+  if (!isMac) window.removeEventListener('keydown', onNavKeydown, true)
+})
 
 /**
  * Add-folder submit handler (U-2.4).

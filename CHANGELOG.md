@@ -10,6 +10,19 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-06
+
+### Added
+
+- **Back and forward between sessions.** The mouse's back / forward side buttons, and
+  `Alt+←` / `Alt+→` (`⌘[` / `⌘]` on macOS), now walk the sessions you viewed, like a
+  browser: Back returns to the session you were just in, Forward undoes it, and opening
+  a new session clears the forward history. From Folder View or a takeover (Board, PR
+  Stack, Cleanup, …), the first Back returns to the session you left. Closed sessions
+  are skipped, and the history is kept in memory only, so it starts empty after a
+  restart. `Alt+←` / `Alt+→` no longer reach the terminal (use `Ctrl+←` / `Ctrl+→` to
+  jump words there). Verified live on Linux only; macOS and Windows are untested.
+
 ## 2026-10-05
 
 ### Added
