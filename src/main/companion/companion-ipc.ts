@@ -14,6 +14,10 @@ import type { IdentityClaim, IdentityOutcome } from './identity-core'
 import type { CompanionStatus } from './companion-status'
 import { parityReport, type ParityReport, type ParityStream } from './parity-core'
 import { parityLedger } from './parity-ledger'
+import { enqueue, type EnqueueResult } from './command-channel'
+import { COMMAND_NAMES, UI_TEXTS, type UiTextId } from './command-gate-core'
+import type { CommandOutcome, EnqueueRefusal } from './command-types'
+import type { CommandName } from './contract'
 
 export interface CompanionIpcExtras {
   /** The renderer pulls the claim list at store init, so a window reload loses nothing (P1W3). */
@@ -26,6 +30,116 @@ export interface CompanionIpcExtras {
   status(): CompanionStatus
   /** P1W4: the directory the sessions load the mod from, staged on demand (the reveal button). */
   stagedDir(): Promise<string | null>
+  /** P2W1: `HARNU_COMPANION_DEBUG=1`, read once by `host.ts`; registers `companion:debug:enqueue`. */
+  debug?: boolean
+}
+
+/** What `companion:diagnostics:ping` answers (P2W1 §7.6). */
+export interface PingResult {
+  ok: boolean
+  roundTripMs: number
+  refusal?: EnqueueRefusal | 'AUDIT_FAILED'
+  outcomes: CommandOutcome[]
+}
+
+export const PING_WAIT_MS = 5_000
+/** A compaction answers after 14 to 37 s on an idle session (smoke C2); the route waits this long. */
+export const DEBUG_WAIT_MAX_MS = 150_000
+
+const timeoutAfter = (ms: number): Promise<null> =>
+  new Promise((resolve) => setTimeout(() => resolve(null), ms).unref?.())
+
+/**
+ * "Test Harnu mod channel": a `flush` and a `ui.toast` to one session, the round trip measured to
+ * the `flush` result. The cause is built here, inside an `ipcMain` handler, and nowhere else.
+ */
+export async function pingSession(
+  sessionKey: unknown,
+  send: typeof enqueue = enqueue,
+  now: () => number = Date.now
+): Promise<PingResult> {
+  if (typeof sessionKey !== 'string' || sessionKey === '') {
+    return { ok: false, roundTripMs: 0, refusal: 'NO_BINDING', outcomes: [] }
+  }
+  const cause = { kind: 'operator', gesture: 'diagnostics.ping' } as const
+  const started = now()
+  const flush = send({ sessionKey, name: 'flush', args: {}, cause })
+  if (!flush.ok) return { ok: false, roundTripMs: 0, refusal: flush.reason, outcomes: [] }
+  const toast = send({
+    sessionKey,
+    name: 'ui.toast',
+    args: { text: UI_TEXTS['channel-ok'] },
+    cause
+  })
+  const flushDone = flush.settled.then((o) => ({ o, at: now() }))
+  const both = Promise.all([flushDone, toast.ok ? toast.settled : Promise.resolve(null)])
+  const got = await Promise.race([both, timeoutAfter(PING_WAIT_MS)])
+  if (got === null) return { ok: false, roundTripMs: 0, outcomes: [] }
+  const [first, second] = got
+  const outcomes = [first.o, ...(second ? [second] : [])]
+  const good = (o: CommandOutcome | null): boolean => o?.state === 'resulted' && o.ok
+  return {
+    ok: good(first.o) && good(second),
+    roundTripMs: Math.max(0, first.at - started),
+    ...(toast.ok ? {} : { refusal: toast.reason }),
+    outcomes
+  }
+}
+
+export interface DebugEnqueueRequest {
+  sessionKey?: unknown
+  name?: unknown
+  args?: unknown
+  textId?: unknown
+  waitMs?: unknown
+}
+
+export interface DebugEnqueueResult {
+  ok: boolean
+  reason?: EnqueueRefusal | 'AUDIT_FAILED' | 'BAD_REQUEST'
+  cmd?: string
+  n?: number
+  /** Null when the wait ran out before the command settled. */
+  outcome?: CommandOutcome | null
+}
+
+/** The dev route's body, exported so a test can call it without Electron (SEC-5: same gate). */
+export async function debugEnqueue(
+  req: DebugEnqueueRequest,
+  send: (r: {
+    sessionKey: string
+    name: CommandName
+    args: never
+    cause: { kind: 'operator'; gesture: 'debug' }
+  }) => EnqueueResult = enqueue as never
+): Promise<DebugEnqueueResult> {
+  if (typeof req?.sessionKey !== 'string' || req.sessionKey === '') {
+    return { ok: false, reason: 'BAD_REQUEST' }
+  }
+  if (typeof req.name !== 'string' || !(COMMAND_NAMES as readonly string[]).includes(req.name)) {
+    return { ok: false, reason: 'BAD_REQUEST' }
+  }
+  // Text never travels: a text id names a line of the constant table.
+  let args: unknown = req.args ?? {}
+  if (req.textId !== undefined) {
+    if (typeof req.textId !== 'string' || !(req.textId in UI_TEXTS)) {
+      return { ok: false, reason: 'BAD_REQUEST' }
+    }
+    args = { text: UI_TEXTS[req.textId as UiTextId] }
+  }
+  const out = send({
+    sessionKey: req.sessionKey,
+    name: req.name as CommandName,
+    args: args as never,
+    cause: { kind: 'operator', gesture: 'debug' }
+  })
+  if (!out.ok) return { ok: false, reason: out.reason }
+  const wait = Math.min(
+    DEBUG_WAIT_MAX_MS,
+    typeof req.waitMs === 'number' && req.waitMs > 0 ? req.waitMs : PING_WAIT_MS
+  )
+  const outcome = await Promise.race([out.settled, timeoutAfter(wait)])
+  return { ok: true, cmd: out.cmd, n: out.n, outcome }
 }
 
 /** The streams `companionParityReport` answers for: a fact family, or a feature key. */
@@ -68,6 +182,12 @@ export function registerCompanionIpc(
     return { ok: true }
   })
   ipcMain.handle('companion:status', () => extras.status())
+  ipcMain.handle('companion:diagnostics:ping', (_e, sessionKey: unknown) => pingSession(sessionKey))
+  // Developer aid for the live-verify recipes: registered only when Harnu main started with
+  // `HARNU_COMPANION_DEBUG=1`. It admits the `debug` gesture of the origin gate, nothing more.
+  if (extras.debug === true) {
+    ipcMain.handle('companion:debug:enqueue', (_e, req: DebugEnqueueRequest) => debugEnqueue(req))
+  }
   ipcMain.handle('companion:reveal', async () => {
     const dir = await extras.stagedDir()
     if (dir) shell.showItemInFolder(dir)

@@ -26,7 +26,7 @@ import { buildCompanionStatus } from './companion-status'
 import { HELLO_GRACE_MS } from './companion-state-core'
 import { companionStagedDir } from './spawn-inject'
 import { ensureStaged } from './staging'
-import { getCompanionPrefs } from './companion-prefs'
+import { getCompanionPrefs, prefsKey } from './companion-prefs'
 import manifest from '../../../resources/companion/.claude-plugin/plugin.json'
 import { createIdentityAdapter, type IdentityAdapter } from './identity-adapter'
 import { createTaskStateAdapter, type TaskStateAdapter } from './ingest/task-state-adapter'
@@ -39,7 +39,14 @@ import {
   onModeChange,
   setCompanionPrefsPath
 } from './mode'
-import { configureSessionArbiter, sessionArbiter } from './session-arbiter'
+import {
+  configureSessionArbiter,
+  isStickyLegacy,
+  reportFailedProof,
+  sessionArbiter
+} from './session-arbiter'
+import { closeCommandChannel, configureCommandChannel } from './command-channel'
+import type { ChannelMode } from './command-gate-core'
 import { cliGate } from './version-gate'
 import type { SpawnOwner } from './session-table'
 import surface from '../../../resources/companion/api-surface.json'
@@ -189,6 +196,25 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
     currentState: getTaskState,
     recordFact: (source, sid, k, d, ts) => recordFact('taskState', source, sid, k, d, { ts })
   })
+  // P2W1: the command channel. The debug route and the `debug` gesture exist together or not at
+  // all, and only when Harnu main itself was started with the variable (§7.6); the mod never reads it.
+  const debug = process.env.HARNU_COMPANION_DEBUG === '1'
+  configureCommandChannel({
+    host: core.facade,
+    bootId: () => {
+      const l = core.facade.diagnostics().listener
+      return l.state === 'listening' ? l.bootId : null
+    },
+    channelMode: () => prefsKey<ChannelMode>('channel'),
+    appendAudit,
+    isStickyLegacy: (x) => isStickyLegacy(x),
+    reportFailedProof: (x, f) => reportFailedProof(x, f),
+    // No verb enqueues a command in P2W1, so `agentTarget` and `folderBlocked` stay unwired: a
+    // verb cause is refused `TARGET_DENIED`, which is the safe side. The first wave that registers
+    // a verb row wires them to `resolveAgentTarget` and the MCP deny list.
+    debug,
+    record: (sid, k, d) => recordFact('channel', 'companion', sid, k, d)
+  })
   identity = createIdentityAdapter({
     host: core.facade,
     getMode: getCompanionMode,
@@ -238,13 +264,17 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
     stagedDir: async () => companionStagedDir() ?? (await ensureStaged()),
     identityClaims: () => identity?.claims() ?? [],
     identityOutcome: (o) => identity?.recordOutcome(o),
-    restartListener: core.restartListener
+    restartListener: core.restartListener,
+    debug
   })
   await core.register()
 }
 
 /** Joins the `before-quit` list beside `closeHookBridge()`. */
 export function closeCompanionHost(): Promise<void> {
+  // Parked polls are answered and every queue settles `dropped: host-shutdown` before the audit
+  // and the ledger are flushed (LV-P2W1-d).
+  closeCommandChannel()
   flushParityLedger()
   return core.close()
 }
