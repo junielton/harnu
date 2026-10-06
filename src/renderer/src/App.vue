@@ -38,6 +38,7 @@ import { useUiStore } from './stores/ui'
 import { useHelpersStore } from './stores/helpers'
 import { useLayoutStore, helperPanelVisible, inboxRailWidthFor } from './stores/layout'
 import { useClaudeChangelogStore } from './stores/claudeChangelog'
+import { useCompanionStore } from './stores/companion'
 import { useShortcuts, pushScope, popScope } from './composables/useShortcuts'
 import { useTerminalFocus } from './composables/useTerminalFocus'
 import type { Session } from './stores/sessions'
@@ -51,6 +52,7 @@ const ui = useUiStore()
 const helpers = useHelpersStore()
 const layout = useLayoutStore()
 const claudeChangelog = useClaudeChangelogStore()
+const companion = useCompanionStore()
 
 // T22: any interactive overlay shadows global shortcuts. One aggregate boolean
 // (NOT per-surface pushes) so exactly one 'modal' is ever on the stack — the
@@ -768,6 +770,8 @@ onMounted(() => {
     })
   })
   void claudeChangelog.init()
+  // T389 P1W4: the Harnu mod state, and the one-time notice that precedes loading it.
+  void companion.init()
   unsubscribeChangelogActivate = window.api.onClaudeChangelogActivate(() => {
     ui.openSettings('claudeCode')
   })
@@ -781,6 +785,7 @@ onUnmounted(() => {
   unsubscribeUpdateManualAvailable?.()
   unsubscribeUpdateManualAvailable = null
   claudeChangelog.dispose()
+  companion.dispose()
   unsubscribeChangelogActivate?.()
   unsubscribeChangelogActivate = null
 })

@@ -3181,5 +3181,46 @@
       "one": "Mission “{title}” needs you: {what}",
       "many": "{n} missions need you"
     }
+  },
+  "harnuMod": {
+    "settings": {
+      "label": "Harnu mod",
+      "description": "Harnu loads a small mod into the sessions it starts. It runs unsandboxed inside the `claude` process and talks only to Harnu on this machine.",
+      "offHint": "Off stops Harnu from using it now and from loading it into new sessions. Off means hooks and polling.",
+      "reveal": "Reveal folder",
+      "policy": "Blocked by your organization's policy.",
+      "modsOff": "Turned off by a setting or by your organization's policy.",
+      "remoteOff": "Mods are turned off remotely for this Claude Code install.",
+      "cliTooOld": "Needs Claude Code 2.1.287 or newer.",
+      "cliUntested": "This Claude Code version is newer than the last one tested. The mod only observes."
+    },
+    "state": {
+      "live": "Harnu mod: live",
+      "off": "Harnu mod: off",
+      "legacy": "Harnu mod: legacy — {reason}"
+    },
+    "reason": {
+      "cliTooOld": "Claude Code older than 2.1.287",
+      "cliUnknown": "Claude Code version not checked yet",
+      "policy": "blocked by your organization's policy",
+      "modsOff": "turned off by a setting or by your organization's policy",
+      "remoteOff": "mods turned off remotely",
+      "noHello": "the mod did not load",
+      "refused": "handshake refused",
+      "unloaded": "unloaded mid-session",
+      "hostRestart": "lost when Harnu restarted",
+      "notInjected": "started without it"
+    },
+    "monitor": {
+      "state": "Harnu mod {state}"
+    },
+    "toast": {
+      "disclosure": {
+        "title": "Harnu now loads the Harnu mod",
+        "body": "It runs unsandboxed inside the `claude` process of the sessions Harnu starts and talks only to Harnu on this machine."
+      },
+      "openSettings": "Open Settings",
+      "unloaded": "Harnu mod unloaded in {session}. Running on hooks."
+    }
   }
 }

@@ -5,6 +5,8 @@ import { useUiStore } from '../stores/ui'
 import { useSessionsStore } from '../stores/sessions'
 import { useUsageStore } from '../stores/usage'
 import { useModesStore } from '../stores/modes'
+import { useCompanionStore } from '../stores/companion'
+import { stateLine } from '../lib/companion-view'
 import { useHoverPreview } from '../composables/useHoverPreview'
 import { contextTextClass, formatCostUsd, formatLines } from './usage-format'
 import { relativeTime } from '../composables/useRelativeTime'
@@ -74,6 +76,10 @@ const awaySummary = computed<string>(() => session.value?.awaySummary || '')
 // mode's origin is never indistinguishable from a builtin's.
 const modes = useModesStore()
 const sessionMode = computed(() => modes.findMode(session.value?.mode))
+
+// Harnu mod state (T389 P1W4): one quiet line, absent when main has no state for the row.
+const companion = useCompanionStore()
+const companionLine = computed(() => stateLine(companion.stateFor(session.value?.sessionId), t))
 
 // Stagnation tally (T175/T176): the evidence behind a `stuck` verdict — calls
 // in the window, distinct targets, and the top repeated one. Shown whenever
@@ -235,6 +241,16 @@ const anchorStyle = computed<Record<string, string>>(() => {
                 label: sessionMode?.labelKey ? $t(sessionMode.labelKey) : session.mode
               })
         }}
+      </div>
+
+      <!-- Harnu mod state (T389 P1W4): the same quiet mono line as the mode above — `legacy` is a
+           fact, not an error, so it never takes a warning colour. Absent when the state is null. -->
+      <div
+        v-if="companionLine"
+        class="font-mono text-text-4"
+        style="font-size: 11px; margin-bottom: 6px"
+      >
+        {{ companionLine.text }}
       </div>
 
       <!-- Stagnation tally (T175/T176): the evidence behind a `stuck` verdict —

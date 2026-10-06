@@ -8,7 +8,6 @@
 
 import { randomUUID } from 'node:crypto'
 import { app, ipcMain, shell } from 'electron'
-import { companionActivePaths, setCompanionActive } from '../user-projects'
 import { markDisclosureShown, setCompanionEnabled, setRampFolders } from './companion-prefs'
 import type { CompanionHostFacade } from './host-core'
 import type { IdentityClaim, IdentityOutcome } from './identity-core'
@@ -62,8 +61,10 @@ export function registerCompanionIpc(
   })
   ipcMain.handle('companion:setFolderActive', async (_e, path: unknown, on: unknown) => {
     if (typeof path !== 'string' || path === '') return { ok: false }
-    await setCompanionActive(path, on === true)
-    setRampFolders(await companionActivePaths())
+    // Lazy for the same reason as in `host.ts`: `user-projects` pulls the git probe in.
+    const projects = await import('../user-projects')
+    await projects.setCompanionActive(path, on === true)
+    setRampFolders(await projects.companionActivePaths())
     return { ok: true }
   })
   ipcMain.handle('companion:status', () => extras.status())

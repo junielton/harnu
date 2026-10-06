@@ -18,6 +18,17 @@ Settings is organized into tabs. Most are covered in depth on their own pages �
 - **Containers** — the background scan, the zombie threshold and the new-zombie notification behind the [Containers](containers.md#settings) view.
 - **Claude Code** — renders Claude Code's own official changelog (fetched from Anthropic, separate from Harnu's own Changelog tab above). Claude's live service status (incidents, scheduled maintenance) is shown in the footer popover alongside your [usage](usage.md#the-footer-popover), not here.
 
+## Harnu mod
+
+**Settings → General → Integrations → Harnu mod** is the switch for the small mod Harnu loads into the `claude` sessions it starts. It runs unsandboxed inside the `claude` process and talks only to Harnu on this machine; today it only observes, and Harnu still reads every fact the old way (hooks, the transcript, polling) as well.
+
+- **On (default).** New sessions carry the mod once Harnu has shown you the one-time notice. A session you started before you saw it runs without the mod and says so in its state line.
+- **Off.** Harnu stops using the mod at once: every running mod is switched off, and new sessions start without it. Turning the switch back on reaches new sessions only; running ones stay off until they restart. Off means hooks and polling, as before.
+
+Under the switch you may see the folder the mod is loaded from (with a **Reveal folder** button) and at most one plain status line, for example that your Claude Code is older than 2.1.287 or newer than the last version Harnu tested (the mod then only observes), or that mods are turned off by a setting or by your organization's policy. None of these is a warning.
+
+The per-session state is in the hover preview and in the [System Monitor](system-monitor.md#what-you-see). If a session says `legacy` and you want to know why, see [Troubleshooting](troubleshooting.md#harnu-mod-legacy).
+
 ## Sidebar
 
 The **General** tab has a SIDEBAR section that controls how the folder/session list looks and behaves:

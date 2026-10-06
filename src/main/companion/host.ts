@@ -11,7 +11,6 @@
 import { app, powerMonitor, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { claudeVersionSync, resolveClaudeVersion } from '../claude-cli'
-import { companionActivePaths } from '../user-projects'
 import { appendAudit, configureAuditDir } from './audit-log'
 import { rolloutView, setCompanionCliGate, setRampFolders } from './companion-prefs'
 import { registerCompanionIpc } from './companion-ipc'
@@ -120,7 +119,10 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
   // spawn path (T200), so the first answer is `unknown` and the settled probe fires `onModeChange`.
   setCompanionCliGate(cliGate(claudeVersionSync(), surface.lastVerifiedCli))
   void resolveClaudeVersion().then((v) => setCompanionCliGate(cliGate(v, surface.lastVerifiedCli)))
-  setRampFolders(await companionActivePaths().catch(() => []))
+  // Lazy: `user-projects` pulls the git probe in, and this module is on the scheduler's spawn path.
+  setRampFolders(
+    await import('../user-projects').then((m) => m.companionActivePaths()).catch(() => [])
+  )
   // The arbiter reads the rollout view and the binding table; every consumer asks it.
   configureSessionArbiter({ host: core.facade, rollout: rolloutView })
   // The persisted parity ledger: it asks the arbiter who owned each stream when a fact arrived.

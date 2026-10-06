@@ -6,7 +6,6 @@
  * output is never logged, only its class.
  */
 
-import { execFile } from 'node:child_process'
 import { homedir } from 'node:os'
 import { sanitizeSpawnEnv } from './appimage-env'
 import { claudeVersionSync, resolveClaudePath } from './claude-cli'
@@ -74,7 +73,10 @@ export function createPolicyProbe(deps: PolicyProbeDeps): PolicyProbe {
   }
 }
 
-function runClaude(bin: string, args: string[]): Promise<string> {
+async function runClaude(bin: string, args: string[]): Promise<string> {
+  // Imported lazily: a module that merely imports this file (through the spawn path) must not
+  // touch `child_process` until a probe really runs.
+  const { execFile } = await import('node:child_process')
   return new Promise((resolve) => {
     execFile(
       bin,

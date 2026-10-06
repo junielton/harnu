@@ -3181,5 +3181,46 @@
       "one": "A missão “{title}” precisa de você: {what}",
       "many": "{n} missões precisam de você"
     }
+  },
+  "harnuMod": {
+    "settings": {
+      "label": "Harnu mod",
+      "description": "O Harnu carrega um mod pequeno nas sessões que ele inicia. Ele roda sem sandbox dentro do processo `claude` e fala apenas com o Harnu nesta máquina.",
+      "offHint": "Desligado impede o Harnu de usá-lo agora e de carregá-lo em novas sessões. Desligado significa hooks e polling.",
+      "reveal": "Mostrar pasta",
+      "policy": "Bloqueado pela política da sua organização.",
+      "modsOff": "Desligado por uma configuração ou pela política da sua organização.",
+      "remoteOff": "Os mods estão desligados remotamente nesta instalação do Claude Code.",
+      "cliTooOld": "Requer o Claude Code 2.1.287 ou mais recente.",
+      "cliUntested": "Esta versão do Claude Code é mais nova que a última testada. O mod apenas observa."
+    },
+    "state": {
+      "live": "Harnu mod: live",
+      "off": "Harnu mod: off",
+      "legacy": "Harnu mod: legacy — {reason}"
+    },
+    "reason": {
+      "cliTooOld": "Claude Code anterior à 2.1.287",
+      "cliUnknown": "versão do Claude Code ainda não verificada",
+      "policy": "bloqueado pela política da sua organização",
+      "modsOff": "desligado por uma configuração ou pela política da sua organização",
+      "remoteOff": "mods desligados remotamente",
+      "noHello": "o mod não carregou",
+      "refused": "handshake recusado",
+      "unloaded": "descarregado no meio da sessão",
+      "hostRestart": "perdido quando o Harnu reiniciou",
+      "notInjected": "iniciada sem ele"
+    },
+    "monitor": {
+      "state": "Harnu mod {state}"
+    },
+    "toast": {
+      "disclosure": {
+        "title": "O Harnu agora carrega o Harnu mod",
+        "body": "Ele roda sem sandbox dentro do processo `claude` das sessões que o Harnu inicia e fala apenas com o Harnu nesta máquina."
+      },
+      "openSettings": "Abrir Configurações",
+      "unloaded": "Harnu mod descarregado em {session}. Rodando em hooks."
+    }
   }
 }

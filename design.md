@@ -1242,6 +1242,23 @@ user through the UI. The hint is **honest** about the cost (a few hundred
 tokens per session, cached as system prompt). No new design token. Searchable
 via "harnu", "awareness", "self", "mcp".
 
+**Harnu mod (T389 P1W4).** One more block in Settings → General → Integrations, right
+below the self-awareness switch (anchor `id="set-companion"`, same anatomy: `--text-2` 12px
+label + `ToggleSwitch`, `flex items-start justify-between`, `margin-top: 14px`, the
+`anim-setting-flash` jump). The label reads **Harnu mod**; the user-facing noun is never
+"companion". Under the label, two `SettingHint` lines: what it is ("Harnu loads a small mod
+into the sessions it starts. It runs unsandboxed inside the `claude` process and talks only
+to Harnu on this machine.") and what **off** means ("Off stops Harnu from using it now and
+from loading it into new sessions. Off means hooks and polling."). Below them: the staged
+folder path (`font-mono`, 11px, `--text-4`, `truncate`, selectable) with a **Reveal folder**
+ghost `Button`, and **at most one** status line (`--text-3`, 11px, no icon, **no warning
+colour**: `legacy` is not an error). Which line: the CLI is older than the minimum, the CLI
+is newer than the last version tested (the mod only observes), or nothing. The block hosts a
+region `id="set-companion-keys"` at its end, where later waves mount their own feature
+switches; the Mods tab moves the whole block when it lands. Searchable via "harnu mod",
+"mod", "mods", "plugin". The kill switch is renderer IPC only: nothing an agent can call
+reaches it. No new design token.
+
 **Three display states:**
 
 - **`ready`** — data available. Shows the `UsageMeter`s. If the last poll
@@ -5062,6 +5079,17 @@ directly in another component is a contract violation.
   default 6s **or** a longer window (8s) when the message needs to
   be read calmly — a call-site choice.
 
+**Harnu mod uses (T389 P1W4).** No new variant. (1) The **one-time disclosure**: a sticky
+`info` toast with an action (`timeoutMs: 0`), pushed once while the kill switch is on and
+the notice has not been shown; mounting it stamps the notice as shown. The title and body
+say the three facts (the mod runs unsandboxed, inside the `claude` process, and talks only
+to Harnu on this machine); the action **Open Settings** opens General at `set-companion`.
+It reads as a notice, never as a prompt: nothing waits on a click. (2) The **unloaded
+notice**: a `warning` toast, once per session, only when the session owned at least one
+fact family at the moment the mod was lost ("Harnu mod unloaded in {session}. Running on
+hooks."). In plain `shadow` nothing changed for the operator, so the state line changes
+silently instead.
+
 **Animation**
 
 - Entry: `.anim-fade-in` from `main.css` (fade + translateY 2px → 0,
@@ -6404,6 +6432,14 @@ the transcript JSONL itself (no longer just from the statusLine):
   uppercase label (`preview.awayLabel`) + `--text-2` 12px body. Only appears when the transcript
   brought the recap. Uses existing tokens — no new color/radius/spacing.
 
+**Harnu mod line (T389 P1W4).** One line right after the boot-mode line: `font-mono`
+`--text-4` 11px, `margin-bottom: 6px`, the same anatomy as the mode line. It reads **Harnu
+mod: live**, **Harnu mod: off** or **Harnu mod: legacy — {reason}** (`harnuMod.state.*`,
+`harnuMod.reason.*`); `live`, `off` and `legacy` stay untranslated state nouns. It is absent
+when the state is `null` (a parked or shell row, an external session, a spawn still inside
+its 15 s grace). `legacy` is the same quiet `--text-4` as the rest of the line: never
+`--warning`, never `--red`, no icon. The line states a fact and never implies protection.
+
 **Footer: messages · agents.** `--text-4` `11px` mono, `tabular-nums`: message count
 (`preview.messages`) and, when the session has subagents (`session.agents`),
 `· {{ $t('agent.count', { n }) }}` in sequence — same wording as the row's `bot` chip
@@ -7207,6 +7243,12 @@ parked — always sorts last, never mixed with real numbers):
   `main` row alone carries the inline heap gauge (track + %, `--warning` at `warn`,
   `--red` at `critical`, a `TriangleAlert` icon when non-`ok`) — this is the exact
   2026-07-14 OOM signal made visible.
+- **Harnu mod cell (T389 P1W4).** A live session row's state-detail column gains one
+  `text-[11px] text-text-3` span after the state pip: **Harnu mod live** / **off** /
+  **legacy**, with the reason in the `title` tooltip (`harnuMod.reason.*`). Same rule as
+  the hover preview: `legacy` is quiet, never `--warning` or `--red`; nothing renders when
+  the state is `null`. `SystemMonitorRow` takes it as an optional `companion` prop and
+  `SystemMonitor` reads `stores/companion.ts`; parked rows show none.
 - **Sessions group** — one row per live-or-parked session. **Live**, expandable
   (`ChevronRight`/`ChevronDown`) into its real `/proc` descendants (flat list, `└`
   prefix, no further nesting) when it has any. Name is the owning folder's alias (or a
@@ -10542,6 +10584,15 @@ equal.** No artificial enthusiasm, no emoji, no exclamation marks.
   mission, and none promises a guarantee the code does not enforce. Ending a
   mission is a choice, "Close as delivered" or "Discard", and its warnings say
   what is still open without refusing ("Checks not ticked").
+- **Harnu mod** — the user-facing name is "Harnu mod" ("the Harnu mod", "mods"), never
+  "companion". State lines are short and lowercase-led, with no trailing period:
+  "Harnu mod: live", "Harnu mod: legacy — turned off by a setting or by your
+  organization's policy". `live`, `legacy` and `off` stay in English (state nouns, like
+  the fleet board's). A cause is named **only when it was observed**: "blocked by your
+  organization's policy" needs the CLI's own refusal text, a probe that only shows mods are
+  off reads the neutral "turned off by a setting or by your organization's policy", and
+  anything else reads "the mod did not load". Never promise protection, and never imply
+  the user did something wrong.
 - **Non-affiliation line** — "Harnu is an independent project, not affiliated with
   or endorsed by Anthropic." One complete sentence, so it ends with a period. It sits
   at the bottom of the Onboarding hero (`text-text-4`, 11px, 24px above it), the one

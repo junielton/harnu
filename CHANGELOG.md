@@ -10,6 +10,28 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-06
+
+### Added
+
+- **The Harnu mod.** Harnu now loads a small mod into the `claude` sessions it starts, so
+  it can read what a session is doing from the inside instead of guessing from hooks and
+  files. For now it only watches: your sessions behave exactly as before, and every fact
+  Harnu already read the old way is still read that way. The mod runs unsandboxed inside
+  the `claude` process and talks only to Harnu on this machine. A one-time notice
+  explains this the first time you open Harnu after the update; sessions you started
+  before you saw it keep running without the mod.
+- **A switch for it.** Settings → General → Integrations has a new **Harnu mod** switch.
+  Off stops Harnu from using the mod right away, switches it off in running sessions and
+  keeps it out of new ones; on again reaches new sessions only. Off means the hooks and
+  polling Harnu used before.
+- **The state of the mod, per session.** The hover preview shows one quiet line (`Harnu
+mod: live`, `off`, or `legacy` with the reason), and the System Monitor shows the same
+  state next to each live session. `legacy` is not an error: it means the session runs
+  on hooks and polling, for example because it was started before the notice, because the
+  installed Claude Code is older than 2.1.287, or because mods are turned off by a
+  setting or by your organization's policy. Harnu only names a cause it actually saw.
+
 ## 2026-10-05
 
 ### Added

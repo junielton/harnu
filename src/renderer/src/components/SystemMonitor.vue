@@ -5,6 +5,7 @@ import { Cpu, Info } from 'lucide-vue-next'
 import { useUiStore } from '../stores/ui'
 import { useMonitorStore } from '../stores/monitor'
 import { useSessionsStore } from '../stores/sessions'
+import { useCompanionStore } from '../stores/companion'
 import SystemMonitorRow from './SystemMonitorRow.vue'
 import { formatBytes, heapPercent, heapBarClass, selfSample } from './system-monitor-format'
 import { projectBasename } from './usage-dashboard-format'
@@ -27,6 +28,7 @@ import type { SessionSample } from '../../../preload'
 const ui = useUiStore()
 const monitor = useMonitorStore()
 const sessions = useSessionsStore()
+const companion = useCompanionStore()
 const { t } = useI18n()
 
 let acquired = false
@@ -225,6 +227,7 @@ const headerHeapFillClass = computed(() => heapBarClass(monitor.lastHeap?.status
             :has-children="row.procs.length > 0"
             :expanded="expandedKeys.has(row.sessionKey)"
             :parkable="row.parkable"
+            :companion="companion.stateFor(row.sessionKey)"
             @toggle="toggleExpanded(row.sessionKey)"
             @park="onPark(row.sessionKey)"
             @close="onCloseRow(row.sessionKey)"

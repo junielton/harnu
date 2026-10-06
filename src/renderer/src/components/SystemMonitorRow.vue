@@ -4,6 +4,8 @@ import { useI18n } from 'vue-i18n'
 import { ChevronDown, ChevronRight, TriangleAlert, Pause, X } from 'lucide-vue-next'
 import Button from './ui/Button.vue'
 import type { HeapSample } from '../../../preload'
+import type { CompanionState } from '../../../main/companion/companion-state-core'
+import { monitorCell } from '../lib/companion-view'
 import {
   formatBytes,
   formatPct,
@@ -52,6 +54,8 @@ const props = withDefaults(
      *  not a real `/proc` pid. Gets a distinct marker + muted italic label so it doesn't
      *  read as just another process in the list. */
     isSelf?: boolean
+    /** Session rows only — the Harnu mod state (T389 P1W4); null/absent renders nothing. */
+    companion?: CompanionState | null
   }>(),
   {
     path: null,
@@ -64,7 +68,8 @@ const props = withDefaults(
     hasChildren: false,
     expanded: false,
     parkable: false,
-    isSelf: false
+    isSelf: false,
+    companion: null
   }
 )
 
@@ -78,6 +83,10 @@ const heapFillClass = computed(() => heapBarClass(props.heap?.status))
 /** Live rows only: a chip worth surfacing next to the state pip — see `isNoteworthyLiveReason`. */
 const showLiveReasonChip = computed(
   () => props.state === 'live' && !!props.reason && isNoteworthyLiveReason(props.reason)
+)
+/** Live rows only: `Harnu mod live`, the reason in the tooltip. Quiet: never a warning colour. */
+const companionCell = computed(() =>
+  props.state === 'live' ? monitorCell(props.companion, t) : null
 )
 const showNextSweepNote = computed(() => props.state === 'live' && props.sweepRank === 1)
 
@@ -176,6 +185,9 @@ const showCloseAction = computed(() => props.rowKind === 'session')
           />
           {{ state === 'live' ? t('systemMonitor.stateLive') : t('systemMonitor.stateParked') }}
         </span>
+        <span v-if="companionCell" class="text-[11px] text-text-3" :title="companionCell.title">{{
+          companionCell.text
+        }}</span>
         <span v-if="showLiveReasonChip" class="flex items-center gap-1 text-[11px] text-text-3">
           <span class="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-text-2">{{
             reason
