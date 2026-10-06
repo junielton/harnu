@@ -12,6 +12,8 @@ There are three ways a session comes into existence, and they behave differently
 
 Every session row carries a status dot so you can tell what's going on without opening it: **green** (pulsing) means Claude is actively working, **amber** means it's waiting on you (a question, or an approval), **red** means it failed or has gone quiet mid-task ("stuck"), **gray** is idle, and a **checkmark** means it finished. A session that's been quiet a while may also get parked to reclaim memory — see "Hibernated sessions" below.
 
+A session whose own turn has ended but whose background **subagent** is still running keeps the green "working" dot until the last subagent finishes (once the Harnu mod's task state switch is on; see [Troubleshooting](troubleshooting.md#a-sessions-dot-stays-working-or-needs-input-after-it-stopped)). Background shell commands and monitors do not hold it.
+
 ## The terminal pane
 
 Each session's terminal is a real xterm.js terminal, not a log viewer — it behaves like the terminal you already know:

@@ -53,6 +53,15 @@ A session whose hover preview says **Harnu mod: legacy — …** is running on h
 
 If you do not want the mod at all, turn off **Settings → General → Integrations → Harnu mod**.
 
+## A session's dot stays "working" or "needs input" after it stopped
+
+The status dot follows what Claude Code reports. Two things can leave it behind, and the [Harnu mod](settings.md#harnu-mod) changes both once its **task state** switch is on (today it only watches, so nothing below changes yet):
+
+- **You pressed Esc, or answered "No" to a permission.** Claude Code ends the turn but sends no "stopped" hook, so the dot keeps its last colour until the next event or the "stuck" timer. With the mod's task state switch on, the dot goes to idle within a couple of seconds.
+- **A subagent is still running when the main turn ends.** The parent stays **working** until the last subagent finishes, so a session that is only waiting for its helpers does not look idle. Background shell commands, monitors and workflows do not hold the dot: Claude Code gives Harnu no signal when they end.
+
+What the mod cannot see, and neither can the hooks: a permission you approve at the terminal still shows **needs input** until the tool finishes, because Claude Code sends nothing when you press the approve key. A long tool call that prints nothing still turns red as "stuck" after the usual wait.
+
 ## Custom endpoint credentials
 
 If you've registered a custom Claude-compatible endpoint under **Settings → Endpoints**, its auth token is stored in plaintext on disk (`claude-boot.json` in Harnu's app data directory) — this isn't a bug, but it is worth knowing if that machine or file is shared. See [Claude Boot](claude-boot.md#custom-endpoints) for the exact location.
