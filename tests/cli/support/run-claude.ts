@@ -121,7 +121,16 @@ export async function runClaude(opts: RunOptions = {}): Promise<RunResult> {
 
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined && !k.startsWith('HARNU_') && !k.startsWith('ANTHROPIC_')) env[k] = v
+    // `CLAUDE*` is stripped too (a P1W3 finding): a suite launched from inside a Claude Code
+    // session would otherwise inherit its entrypoint, session and config variables.
+    if (
+      v !== undefined &&
+      !k.startsWith('HARNU_') &&
+      !k.startsWith('ANTHROPIC_') &&
+      !k.startsWith('CLAUDE')
+    ) {
+      env[k] = v
+    }
   }
   Object.assign(env, { HOME: home, CLAUDE_CONFIG_DIR: join(home, '.claude'), ...opts.env })
 
