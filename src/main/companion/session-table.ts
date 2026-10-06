@@ -190,6 +190,11 @@ export class SessionTable {
     return { ok: false, code: 'UNAUTHORIZED' }
   }
 
+  /** Who a spawn token was minted for (a refused hello names its owner, never the token). */
+  ownerOfSpawn(token: string): SpawnOwner | null {
+    return this.tokens.get(token)?.meta.owner ?? null
+  }
+
   resolve(conn: Conn): Binding | 'STALE_CONN' {
     const b = this.conns.get(conn)
     if (!b || b.state !== 'bound' || b.revoked) return 'STALE_CONN'

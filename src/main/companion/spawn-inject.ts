@@ -46,6 +46,8 @@ export interface SpawnInjectDeps {
   decide?(ctx: { kind: string; cliGate: CliGate }): CompanionInjectDecision
   /** P1W4: the arbiter keeps the decision per spawn owner; the state line reads it. */
   recordDecision?(owner: SpawnOwner, d: CompanionInjectDecision): void
+  /** P1W4: a token was really minted (the host was listening), for the `hostRestart` reading. */
+  recordMinted?(owner: SpawnOwner): void
   ensureStaged(): Promise<string | null>
   mintSpawnToken(meta: SpawnMeta): string | null
   releaseSpawn(owner: SpawnOwner, reason: ReleaseReason): void
@@ -83,7 +85,9 @@ export function createCompanionSpawnProvider(deps: SpawnInjectDeps): {
         pluginDir,
         mintToken(owner) {
           records.set(ownerKey(owner), pluginDir)
-          return deps.mintSpawnToken({ owner, trust: ctx.trust, cwd: ctx.cwd })
+          const token = deps.mintSpawnToken({ owner, trust: ctx.trust, cwd: ctx.cwd })
+          if (token) deps.recordMinted?.(owner)
+          return token
         }
       }
     } catch {
@@ -170,6 +174,10 @@ export function sideloadBlockedLastOutput(): string {
   return sideloadBlockedOutput
 }
 
+/** The directory the last staging answered with: the Settings block shows it without staging. */
+let lastStagedDir: string | null = null
+export const companionStagedDir = (): string | null => lastStagedDir
+
 // ---- The app's one injector ------------------------------------------------------------
 
 const injector = createCompanionSpawnProvider({
@@ -181,7 +189,12 @@ const injector = createCompanionSpawnProvider({
   isSideloadBlocked,
   decide: (c) => companionInjectDecision(c),
   recordDecision: (o, d) => sessionArbiter().recordInjectDecision(o, d),
-  ensureStaged,
+  recordMinted: (o) => sessionArbiter().noteMinted(o),
+  ensureStaged: async () => {
+    const dir = await ensureStaged()
+    if (dir) lastStagedDir = dir
+    return dir
+  },
   mintSpawnToken: (m) => companionHost.mintSpawnToken(m),
   releaseSpawn: (o, r) => companionHost.releaseSpawn(o, r),
   pinStagedDir

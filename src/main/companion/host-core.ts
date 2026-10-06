@@ -102,6 +102,8 @@ export interface CompanionHostFacade {
   getBinding(sidOrSessionKey: string): BindingView | null
   onBindingChange(fn: (b: BindingView) => void): () => void
   spawnRecord(owner: SpawnOwner): SpawnRecordView | null
+  /** P1W4: the last hello the host refused for this spawn owner (never the token), if any. */
+  helloRefusalFor(owner: SpawnOwner): { code: string; at: number } | null
   setEnablePolicy(fn: EnablePolicy): void
   setPollHandler(
     fn: (b: BindingView, req: PollRequest, reply: (r: PollResponse) => void) => void
@@ -252,6 +254,9 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
     }
   }
 
+  /** Keyed by the spawn owner; capped like the dead-binding list so it cannot grow unbounded. */
+  const helloRefusals = new Map<string, { code: string; at: number }>()
+
   // ---- totals -----------------------------------------------------------------------------
   const totals = {
     helloOk: 0,
@@ -300,7 +305,10 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
       emit('end', b, reason)
       notifyChange(b)
     },
-    onStat
+    onStat,
+    onHelloRefused: (owner, code) => {
+      if (owner) helloRefusals.set(JSON.stringify(owner), { code, at: epochNow() })
+    }
   }
 
   // ---- listener lifecycle -----------------------------------------------------------------
@@ -423,6 +431,7 @@ export function createCompanionHost(deps: HostCoreDeps): CompanionHostCore {
       return () => void changeListeners.delete(fn)
     },
     spawnRecord: (owner) => table.spawnRecord(owner),
+    helloRefusalFor: (owner) => helloRefusals.get(JSON.stringify(owner)) ?? null,
     setEnablePolicy(fn) {
       enablePolicy = fn
     },

@@ -42,7 +42,7 @@ import {
   socketPathOf,
   writeEndpoint
 } from './rendezvous'
-import type { Binding, BindingView, EnablePolicy, SessionTable } from './session-table'
+import type { Binding, BindingView, EnablePolicy, SessionTable, SpawnOwner } from './session-table'
 import {
   acceptEvents,
   HOST_PROTO_MAX,
@@ -78,6 +78,8 @@ export interface ServerStat {
  * `try/catch`: a consumer's failure never reaches the mod.
  */
 export interface ServerHooks {
+  /** P1W4: a hello was refused; `owner` is known only for a spawn token the ledger holds. */
+  onHelloRefused?: (owner: SpawnOwner | null, code: string) => void
   enablePolicy?: () => EnablePolicy
   known?: () => ReadonlySet<string>
   /** Fills `commands` of the hello and events responses. */
@@ -394,7 +396,11 @@ export async function startCompanionServer(opts: StartOptions): Promise<Companio
       return { body: failure('FEATURE_DISABLED') }
     }
     const out = table.hello(req, hooks.enablePolicy?.() ?? (() => []))
-    if (!out.ok) return { body: failure(out.code) }
+    if (!out.ok) {
+      const owner = req.spawn !== undefined ? table.ownerOfSpawn(req.spawn) : null
+      safe(() => hooks.onHelloRefused?.(owner, out.code))
+      return { body: failure(out.code) }
+    }
     const b = out.binding
     safe(() => hooks.beforeHello?.(table.viewOf(b), out.kind))
     let commands: Command[] | undefined

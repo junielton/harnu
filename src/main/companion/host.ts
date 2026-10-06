@@ -22,6 +22,12 @@ import { configureHub } from '../detect/task-state-hub'
 import { admit, FAMILY_FEATURES, type FactSource } from './arbitration-core'
 import { configureParityLedger, flushParityLedger, recordFact } from './parity-ledger'
 import type { IdentityParityRecord } from './identity-parity-core'
+import { createAppPolicyProbe } from '../claude-policy-probe'
+import { buildCompanionStatus } from './companion-status'
+import { companionStagedDir } from './spawn-inject'
+import { ensureStaged } from './staging'
+import { getCompanionPrefs } from './companion-prefs'
+import manifest from '../../../resources/companion/.claude-plugin/plugin.json'
 import { createIdentityAdapter, type IdentityAdapter } from './identity-adapter'
 import {
   familyMode,
@@ -65,10 +71,18 @@ export const companionHost = core.facade
 export function setCompanionSessionKeyResolver(
   fn: ((owner: SpawnOwner) => string | null) | null
 ): void {
+  sessionKeyResolver = fn
   core.setSessionKeyResolver(fn)
 }
 
 let identity: IdentityAdapter | null = null
+let sessionKeyResolver: ((owner: SpawnOwner) => string | null) | null = null
+
+/**
+ * The CLI's sideload-refusal texts recorded from a managed machine (LV-P1W4-e, Q6). Empty until
+ * that run happens, so the early-exit reading is never worded as a policy on a guess (DOC-8).
+ */
+const SIDELOAD_REFUSAL_TEXTS: readonly string[] = []
 let spawnKindOf: ((owner: SpawnOwner) => string | null) | null = null
 
 /** What a PTY owner was spawned as (`claude-new`, `claude-fork`, ...): the shape of a parity record. */
@@ -169,7 +183,38 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
     onParity: recordIdentityParity
   })
   core.facade.setIdentityDiagnostics(identity.diagnostics)
+  // The shared policy probe: one run per boot and CLI binary, lazily, off the spawn path.
+  const probe = createAppPolicyProbe(companionStagedDir)
+  // Everything the Harnu mod surfaces show is derived on demand; main only says "re-read".
+  let updateTimer: ReturnType<typeof setTimeout> | null = null
+  const pushUpdated = (): void => {
+    if (updateTimer) return
+    updateTimer = setTimeout(() => {
+      updateTimer = null
+      getWindow()?.webContents.send('companion:updated')
+    }, 150)
+  }
+  core.facade.onBindingChange(pushUpdated)
+  sessionArbiter().onOwnershipChange(pushUpdated)
+  onModeChange(pushUpdated)
   registerCompanionIpc(core.facade, {
+    status: () =>
+      buildCompanionStatus({
+        enabled: () => getCompanionPrefs().enabled,
+        disclosureShownAt: () => getCompanionPrefs().disclosureShownAt ?? null,
+        stagedDir: companionStagedDir,
+        modVersion: () => manifest.version,
+        rollout: rolloutView,
+        arbiter: sessionArbiter(),
+        host: core.facade,
+        sessionKeyOf: (o) => sessionKeyResolver?.(o) ?? null,
+        kindOf: (o) => spawnKindOf?.(o) ?? null,
+        now: () => Date.now(),
+        probe: () => probe.result(),
+        requestProbe: () => void probe.ensure().then(pushUpdated),
+        refusalTexts: SIDELOAD_REFUSAL_TEXTS
+      }),
+    stagedDir: async () => companionStagedDir() ?? (await ensureStaged()),
     identityClaims: () => identity?.claims() ?? [],
     identityOutcome: (o) => identity?.recordOutcome(o),
     restartListener: core.restartListener

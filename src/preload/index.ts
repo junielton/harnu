@@ -38,6 +38,8 @@ import type { ClaudeBootConfig, EndpointProfile } from '../main/claude-args'
 import type { Worker, Run } from '../main/scheduler-core'
 import type { SchedulerState } from '../main/scheduler-shell'
 import type { CompanionDiagnostics } from '../main/companion/host-core'
+import type { CompanionStatus } from '../main/companion/companion-status'
+import type { ParityReport } from '../main/companion/parity-core'
 import type { IdentityClaim, IdentityOutcome } from '../main/companion/identity-core'
 import type { RoutingTable, ResolvedRouting } from '../main/routing-policy'
 import type { PrStackSnapshot, WorktreeNode as PrStackWorktree } from '../main/pr-stack-core'
@@ -2575,6 +2577,26 @@ const api = {
   /** The full claim list again, whenever it changes (main pushes the whole list). */
   onCompanionIdentity: (cb: (payload: { claims: IdentityClaim[] }) => void): (() => void) =>
     subscribe('companion:identity', cb),
+  /**
+   * T389 P1W4: what the Harnu mod surfaces read: the kill switch, whether the notice was shown,
+   * and per row its state and the owner of each fact family. Token-free.
+   */
+  companionStatus: (): Promise<CompanionStatus> => ipcRenderer.invoke('companion:status'),
+  /** The kill switch. Off revokes every running mod at once; on reaches new sessions only. */
+  companionSetEnabled: (on: boolean): Promise<{ enabled: boolean }> =>
+    ipcRenderer.invoke('companion:setEnabled', on),
+  /** Stamps that the one-time notice was rendered; sessions spawned after it carry the mod. */
+  companionDisclosureShown: (): Promise<void> => ipcRenderer.invoke('companion:disclosureShown'),
+  /** Opens the folder the sessions load the mod from. */
+  companionReveal: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('companion:reveal'),
+  /** The parity ledger's report for a stream (evidence for a family's flip). */
+  companionParityReport: (stream: string): Promise<ParityReport | null> =>
+    ipcRenderer.invoke('companion:parityReport', stream),
+  /** Puts a folder on (or off) the Harnu mod's per-folder ramp. IPC only; the file is editable. */
+  companionSetFolderActive: (path: string, on: boolean): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('companion:setFolderActive', path, on),
+  /** Something the status shows changed (debounced in main). Re-read `companionStatus()`. */
+  onCompanionUpdated: (cb: () => void): (() => void) => subscribe('companion:updated', cb),
   /** Dev only: stops and starts the companion listener (LV-P1W3-g). Rejects in a packaged build. */
   companionDevRestartListener: (): Promise<void> =>
     ipcRenderer.invoke('companion:devRestartListener')

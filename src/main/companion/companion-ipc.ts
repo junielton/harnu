@@ -7,11 +7,14 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { app, ipcMain } from 'electron'
+import { app, ipcMain, shell } from 'electron'
 import { companionActivePaths, setCompanionActive } from '../user-projects'
 import { markDisclosureShown, setCompanionEnabled, setRampFolders } from './companion-prefs'
 import type { CompanionHostFacade } from './host-core'
 import type { IdentityClaim, IdentityOutcome } from './identity-core'
+import type { CompanionStatus } from './companion-status'
+import { parityReport, type ParityReport, type ParityStream } from './parity-core'
+import { parityLedger } from './parity-ledger'
 
 export interface CompanionIpcExtras {
   /** The renderer pulls the claim list at store init, so a window reload loses nothing (P1W3). */
@@ -20,7 +23,27 @@ export interface CompanionIpcExtras {
   identityOutcome(o: IdentityOutcome): void
   /** Developer aid (LV-P1W3-g): stops and starts the listener. */
   restartListener(): Promise<void>
+  /** P1W4: the Harnu mod status the settings block, the hover preview and the monitor read. */
+  status(): CompanionStatus
+  /** P1W4: the directory the sessions load the mod from, staged on demand (the reveal button). */
+  stagedDir(): Promise<string | null>
 }
+
+/** The streams `companionParityReport` answers for: a fact family, or a feature key. */
+export const PARITY_STREAMS: readonly ParityStream[] = [
+  'identity',
+  'taskState',
+  'telemetry',
+  'planUsage',
+  'approval',
+  'guard',
+  'startPrompt',
+  'message',
+  'channel',
+  'stamp',
+  'sentinel',
+  'external'
+]
 
 export function registerCompanionIpc(
   host: Pick<CompanionHostFacade, 'diagnostics' | 'mintSpawnToken'>,
@@ -42,6 +65,16 @@ export function registerCompanionIpc(
     await setCompanionActive(path, on === true)
     setRampFolders(await companionActivePaths())
     return { ok: true }
+  })
+  ipcMain.handle('companion:status', () => extras.status())
+  ipcMain.handle('companion:reveal', async () => {
+    const dir = await extras.stagedDir()
+    if (dir) shell.showItemInFolder(dir)
+    return { ok: dir !== null }
+  })
+  ipcMain.handle('companion:parityReport', (_e, stream: unknown): ParityReport | null => {
+    if (typeof stream !== 'string' || !PARITY_STREAMS.includes(stream as ParityStream)) return null
+    return parityReport(stream as ParityStream, parityLedger()?.read(stream as ParityStream) ?? [])
   })
   ipcMain.on('companion:identityOutcome', (_e, o: unknown) => {
     const r = o as Partial<IdentityOutcome> | null

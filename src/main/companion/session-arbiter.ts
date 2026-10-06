@@ -27,6 +27,8 @@ export type ArbiterHost = Pick<CompanionHostFacade, 'getBinding' | 'onBindingCha
 export interface SessionArbiterDeps {
   host: ArbiterHost | null
   rollout(): RolloutView
+  /** Epoch ms of a spawn decision; default `Date.now()`. */
+  now?(): number
 }
 
 export interface SessionArbiter {
@@ -41,9 +43,14 @@ export interface SessionArbiter {
   /** The spawn-owner keyed facts that P1W1's spawn record does not carry. */
   recordInjectDecision(owner: SpawnOwner, d: CompanionInjectDecision): void
   injectDecisionFor(owner: SpawnOwner): CompanionInjectDecision | null
+  /** A spawn token was really minted for this owner (the listener was up). */
+  noteMinted(owner: SpawnOwner): void
+  wasMinted(owner: SpawnOwner): boolean
   reportSideloadExit(owner: SpawnOwner, output: string): void
   sideloadExitFor(owner: SpawnOwner): string | null
   forgetSpawn(owner: SpawnOwner): void
+  /** The owners with a recorded decision (a live `claude` PTY) and when each was decided. */
+  spawnOwners(): { owner: SpawnOwner; at: number }[]
   dispose(): void
 }
 
@@ -59,8 +66,13 @@ export function createSessionArbiter(deps: SessionArbiterDeps): SessionArbiter {
   /** Keyed by the binding's table-local ordinal: it follows a re-key, never a sid. */
   const revoked = new Map<number, Set<FactFamily>>()
   const counters = new Map<number, { modErrors: number; leaseLosses: number }>()
-  const injectDecisions = new Map<string, CompanionInjectDecision>()
+  const injectDecisions = new Map<
+    string,
+    { owner: SpawnOwner; d: CompanionInjectDecision; at: number }
+  >()
+  const now = deps.now ?? ((): number => Date.now())
   const sideloadExits = new Map<string, string>()
+  const minted = new Set<string>()
   const listeners = new Set<(sessionKey: string | null, sid: Sid) => void>()
 
   const revokedOf = (key: number): Set<FactFamily> => {
@@ -158,12 +170,17 @@ export function createSessionArbiter(deps: SessionArbiterDeps): SessionArbiter {
       return { modErrors: c?.modErrors ?? 0, leaseLosses: c?.leaseLosses ?? 0 }
     },
     arbiterBinding,
-    recordInjectDecision: (owner, d) => void injectDecisions.set(ownerKey(owner), d),
-    injectDecisionFor: (owner) => injectDecisions.get(ownerKey(owner)) ?? null,
+    recordInjectDecision: (owner, d) =>
+      void injectDecisions.set(ownerKey(owner), { owner, d, at: now() }),
+    injectDecisionFor: (owner) => injectDecisions.get(ownerKey(owner))?.d ?? null,
+    spawnOwners: () => [...injectDecisions.values()].map(({ owner, at }) => ({ owner, at })),
     reportSideloadExit: (owner, output) =>
       void sideloadExits.set(ownerKey(owner), output.slice(-SIDELOAD_OUTPUT_CAP)),
     sideloadExitFor: (owner) => sideloadExits.get(ownerKey(owner)) ?? null,
+    noteMinted: (owner) => void minted.add(ownerKey(owner)),
+    wasMinted: (owner) => minted.has(ownerKey(owner)),
     forgetSpawn(owner) {
+      minted.delete(ownerKey(owner))
       injectDecisions.delete(ownerKey(owner))
       sideloadExits.delete(ownerKey(owner))
     },
