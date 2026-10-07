@@ -144,8 +144,10 @@ function harness(
   )
   const isProtectedNow = vi.fn((): boolean | Promise<boolean> => over.protectedNow ?? false)
   const probeStatus = vi.fn(async () => ({
-    trackedDirty: over.trackedDirty === undefined ? false : over.trackedDirty,
-    untracked: []
+    // WorktreeStatus types this as a boolean; null models a probe that gave no real answer,
+    // which the reprobe must refuse rather than read as clean.
+    trackedDirty: (over.trackedDirty === undefined ? false : over.trackedDirty) as boolean,
+    untracked: [] as string[]
   }))
   const gitCalls: string[][] = []
   const git = vi.fn(async (_repo: string, args: string[]) => {
