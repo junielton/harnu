@@ -276,7 +276,7 @@ export async function defaultGcShellDeps(
     docker: shell.dockerActions,
     listStacks: async () => {
       try {
-        return { stacks: groupStacks(await shell.inspectAll()) }
+        return { stacks: groupStacks(await shell.inspectAll({ strict: true })) }
       } catch (err) {
         // No docker means no stacks to stop. A bundle that had stacks then fails the
         // reprobe's stack comparison and is skipped; one that had none still cleans. Any

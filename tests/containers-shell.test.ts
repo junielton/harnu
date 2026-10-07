@@ -35,7 +35,7 @@ vi.mock('../src/main/pty', () => ({
   liveSessionKeys: (): Set<string> => h.live
 }))
 
-import { dockerActions, scanContainers } from '../src/main/containers/containers-shell'
+import { dockerActions, inspectAll, scanContainers } from '../src/main/containers/containers-shell'
 import type { ContainersSnapshotAvailable } from '../src/main/containers/containers-wire'
 import { DAY, HOUR, NOW } from './containers-fixtures'
 
@@ -348,6 +348,20 @@ describe.skipIf(process.platform === 'win32')('containers-shell (fake docker)', 
       now: NOW
     })) as ContainersSnapshotAvailable
     expect(snap.stacks).toHaveLength(7)
+  })
+
+  it('inspectAll() tolerates a failed inspect chunk and returns the survivors', async () => {
+    h.env = { ...h.env, FAKE_DOCKER_MODE: 'inspect-partial' }
+    expect(await inspectAll()).toHaveLength(7)
+  })
+
+  it('inspectAll({ strict: true }) rethrows a failed inspect chunk, since the listing is incomplete', async () => {
+    h.env = { ...h.env, FAKE_DOCKER_MODE: 'inspect-partial' }
+    await expect(inspectAll({ strict: true })).rejects.toThrow()
+  })
+
+  it('inspectAll({ strict: true }) still returns everything when no chunk fails', async () => {
+    expect(await inspectAll({ strict: true })).toHaveLength(7)
   })
 
   it('shows no RAM figure rather than a wrong one when stats fails', async () => {

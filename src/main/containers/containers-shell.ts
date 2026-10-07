@@ -118,7 +118,13 @@ async function probeDocker(): Promise<string | null> {
   }
 }
 
-export async function inspectAll(): Promise<InspectedContainer[]> {
+/**
+ * Every container on the machine, inspected. By default a failed `docker inspect` chunk is
+ * tolerated and its survivors kept (the Containers scan relies on that). With `strict` the
+ * error is rethrown instead: the listing is then incomplete, and a caller that must not act
+ * on a partial picture has to treat it as unknown.
+ */
+export async function inspectAll(opts: { strict?: boolean } = {}): Promise<InspectedContainer[]> {
   const { stdout } = await runDocker(['ps', '-aq', '--no-trunc'], SCAN_OPTS)
   const ids = stdout
     .split('\n')
@@ -130,6 +136,7 @@ export async function inspectAll(): Promise<InspectedContainer[]> {
     try {
       out.push(...parseInspect((await runDocker(['inspect', ...chunk], SCAN_OPTS)).stdout))
     } catch (err) {
+      if (opts.strict) throw err
       // A container removed between `ps` and `inspect` fails the call, but
       // docker still prints the ones it found.
       out.push(...parseInspect(stdoutOf(err)))
