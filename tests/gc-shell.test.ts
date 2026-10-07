@@ -8,20 +8,24 @@ vi.mock('../src/main/reaper/executor-core', async (importOriginal) => {
 })
 
 import { createGcOps, presenceFromSets, type GcShellDeps } from '../src/main/gc/gc-shell'
-import { GcStepError } from '../src/main/gc/pipeline-core'
-import type { SessionPresence, WorktreeBundle } from '../src/main/gc/bundle-core'
+import { GcStepError, runBundle } from '../src/main/gc/pipeline-core'
+import { buildBundles, type SessionPresence, type WorktreeBundle } from '../src/main/gc/bundle-core'
 import { cleanItem, type ExecutorDeps } from '../src/main/reaper/executor-core'
 import type { DehydrateDeps } from '../src/main/reaper/dehydrate-core'
-import type { ReapItem } from '../src/main/reaper/reaper-core'
+import type { BranchFacts, ReapItem } from '../src/main/reaper/reaper-core'
 import type { DockerBatchResult } from '../src/main/containers/containers-actions'
 import {
+  COMPOSE_PROJECT_LABEL,
   COMPOSE_WORKING_DIR_LABEL,
+  groupStacks,
   type InspectedContainer,
   type StackGroup
 } from '../src/main/containers/containers-core'
 
 const REPO = '/ws/org/proj/www'
 const WT = '/ws/org/proj/worktrees/PROJ-0000-slug'
+const WT_B = '/ws/org/proj/worktrees/PROJ-0000-slug-b'
+const ELSEWHERE = '/ws/org/other/api-gateway'
 
 function reapItem(over: Partial<ReapItem> = {}): ReapItem {
   return {
@@ -90,6 +94,8 @@ interface Harness {
   removeContainers: ReturnType<typeof vi.fn>
   removeVolumes: ReturnType<typeof vi.fn>
   listStacks: ReturnType<typeof vi.fn>
+  /** Replaces what the next listing returns, to model docker changing between calls. */
+  setStacks(stacks: StackGroup[]): void
   presenceOf: ReturnType<typeof vi.fn>
   probeStatus: ReturnType<typeof vi.fn>
   git: ReturnType<typeof vi.fn>
@@ -111,7 +117,7 @@ function harness(
   const stop = vi.fn(async (ids: string[]) => ok(ids))
   const removeContainers = vi.fn(async (ids: string[]) => ok(ids))
   const removeVolumes = vi.fn(async (names: string[]) => ok(names))
-  const stacks = over.stacks ?? [stack('app', [container('c1', `${WT}/api`)])]
+  let stacks = over.stacks ?? [stack('app', [container('c1', `${WT}/api`)])]
   const listStacks = vi.fn(async () => ({ stacks }))
   const presenceOf = vi.fn(async () => over.presence ?? ('none' as SessionPresence))
   const probeStatus = vi.fn(async () => ({
@@ -159,6 +165,9 @@ function harness(
     removeContainers,
     removeVolumes,
     listStacks,
+    setStacks: (next) => {
+      stacks = next
+    },
     presenceOf,
     probeStatus,
     git,
@@ -303,6 +312,24 @@ describe('reprobe (AC-5)', () => {
     expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: true })
   })
 
+  it('refuses when a container of an exclusive stack now runs from outside the worktree', async () => {
+    const h = harness({
+      stacks: [stack('app', [container('c1', `${WT}/api`), container('c2', WT_B)])]
+    })
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+      ok: false,
+      reason: 'changed-since-scan'
+    })
+  })
+
+  it('refuses when a container of an exclusive stack has no folder at all', async () => {
+    const h = harness({ stacks: [stack('app', [container('c1', `${WT}/api`), container('c2')])] })
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+      ok: false,
+      reason: 'changed-since-scan'
+    })
+  })
+
   it('reports a throwing status probe as probe-failed', async () => {
     const h = harness({
       executor: {
@@ -333,16 +360,127 @@ describe('reprobe (AC-5)', () => {
   })
 })
 
+// ---- the scan and the run through the real builder ------------------------------
+
+const MERGED_FACTS: BranchFacts = {
+  kind: 'worktree',
+  repoPath: REPO,
+  branch: 'feat/PROJ-0000-slug',
+  path: WT,
+  hidden: false,
+  sessionLive: false,
+  trackedDirty: false,
+  untracked: [],
+  unpushed: false,
+  remoteExists: false,
+  ancestorOfDefault: true,
+  patchIdContained: null,
+  lastCommitAt: null,
+  pr: null,
+  ghAvailable: true,
+  prSetComplete: true,
+  prProvenance: 'own-name'
+}
+
+/** The bundle the real builder makes for the worktree at WT from this container listing. */
+function scanned(containers: InspectedContainer[]): WorktreeBundle {
+  const item = reapItem()
+  const out = buildBundles({
+    items: [item],
+    fateInputs: new Map([[item.id, { facts: MERGED_FACTS, localTip: null }]]),
+    stacks: groupStacks(containers),
+    stackPaths: new Map(),
+    containers,
+    sessions: new Map(),
+    keep: new Set(),
+    neverClean: new Set(),
+    now: Date.parse('2026-10-07T12:00:00Z'),
+    graceDays: 2
+  })
+  expect(out).toHaveLength(1)
+  return out[0]!
+}
+
+function composeIn(
+  id: string,
+  project: string,
+  workingDir: string,
+  mounts: InspectedContainer['mounts'] = []
+): InspectedContainer {
+  return {
+    ...container(id),
+    labels: { [COMPOSE_PROJECT_LABEL]: project, [COMPOSE_WORKING_DIR_LABEL]: workingDir },
+    mounts
+  }
+}
+
+/** A labelless `docker run -v <folder>:/app` container. */
+function runWithBind(id: string, folder: string): InspectedContainer {
+  return {
+    ...container(id),
+    name: id,
+    mounts: [{ type: 'bind', source: folder, name: null }]
+  }
+}
+
+const PG = { type: 'volume', source: '/var/lib/docker/volumes/deploy_pg/_data', name: 'deploy_pg' }
+
+describe('reprobe through the real builder', () => {
+  it('C1: a compose project that another worktree joined after the scan is never torn down', async () => {
+    // At the scan, `deploy` runs only from this worktree and owns deploy_pg.
+    const webA = composeIn('webA', 'deploy', `${WT}/deploy`, [PG])
+    const b = scanned([webA])
+    expect(b.stackIds).toEqual(['deploy'])
+    expect(b.ownedVolumes).toEqual(['deploy_pg'])
+
+    // Then `docker compose up db` in another worktree, same project name, same volume.
+    const dbB = composeIn('dbB', 'deploy', `${WT_B}/deploy`, [PG])
+    const h = harness({ stacks: groupStacks([webA, dbB]) })
+    const r = await runBundle(b, createGcOps(h.deps), { removeVolumes: true })
+
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'changed-since-scan' })
+    expect(h.stop).not.toHaveBeenCalled()
+    expect(h.removeContainers).not.toHaveBeenCalled()
+    expect(h.removeVolumes).not.toHaveBeenCalled()
+  })
+
+  it('I2: a labelless stack the scan attributed through a bind mount passes the reprobe', async () => {
+    const web = runWithBind('web', `${WT}/src`)
+    const b = scanned([web])
+    expect(b.stackIds).toEqual(['web'])
+    const h = harness({ stacks: groupStacks([web]) })
+    expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: true })
+  })
+
+  it('I2: a labelless container bind-mounting the worktree after the scan refuses the clean', async () => {
+    const b = scanned([])
+    expect(b.stackIds).toEqual([])
+    const h = harness({ stacks: groupStacks([runWithBind('web', WT)]) })
+    expect(await createGcOps(h.deps).reprobe(b)).toEqual({
+      ok: false,
+      reason: 'changed-since-scan'
+    })
+  })
+})
+
 describe('stopStacks / removeContainers', () => {
   const stacks = [
-    stack('app', [container('c1'), container('c2')]),
-    stack('web', [container('c3')]),
-    stack('other', [container('c4')])
+    stack('app', [container('c1', `${WT}/api`), container('c2', `${WT}/api`)]),
+    stack('web', [container('c3', `${WT}/web`)]),
+    stack('other', [container('c4', ELSEWHERE)])
   ]
+
+  /** Ops whose reprobe already passed for a bundle owning `app` and `web`. */
+  async function reprobed(h: Harness): Promise<ReturnType<typeof createGcOps>> {
+    const ops = createGcOps(h.deps)
+    expect(await ops.reprobe(bundle({ stackIds: ['app', 'web'] }))).toEqual({ ok: true })
+    h.listStacks.mockClear()
+    return ops
+  }
 
   it('stops only the containers of the given stacks, resolved from a fresh listing', async () => {
     const h = harness({ stacks })
-    await createGcOps(h.deps).stopStacks(['app', 'web'])
+    await (await reprobed(h)).stopStacks(['app', 'web'])
     expect(h.listStacks).toHaveBeenCalledTimes(1)
     expect(h.stop).toHaveBeenCalledTimes(1)
     expect(h.stop).toHaveBeenCalledWith(['c1', 'c2', 'c3'])
@@ -350,20 +488,20 @@ describe('stopStacks / removeContainers', () => {
 
   it('removes only the containers of the given stacks', async () => {
     const h = harness({ stacks })
-    await createGcOps(h.deps).removeContainers(['web'])
+    await (await reprobed(h)).removeContainers(['web'])
     expect(h.removeContainers).toHaveBeenCalledWith(['c3'])
   })
 
   it('throws when docker reports an error', async () => {
     const h = harness({ stacks })
     h.stop.mockResolvedValueOnce({ done: ['c1', 'c2', 'c3'], error: 'daemon said no' })
-    await expect(createGcOps(h.deps).stopStacks(['app', 'web'])).rejects.toThrow('daemon said no')
+    await expect((await reprobed(h)).stopStacks(['app', 'web'])).rejects.toThrow('daemon said no')
   })
 
   it('throws when fewer containers finished than were targeted', async () => {
     const h = harness({ stacks })
     h.removeContainers.mockResolvedValueOnce({ done: ['c1'], error: null })
-    await expect(createGcOps(h.deps).removeContainers(['app'])).rejects.toThrow(/1 of 2/)
+    await expect((await reprobed(h)).removeContainers(['app'])).rejects.toThrow(/1 of 2/)
   })
 
   it('makes no docker call for an empty target list', async () => {
@@ -375,9 +513,45 @@ describe('stopStacks / removeContainers', () => {
     expect(h.removeContainers).not.toHaveBeenCalled()
   })
 
-  it('makes no docker call when the named stacks no longer exist', async () => {
+  it('throws, with no docker call, for a stack no reprobe has passed', async () => {
     const h = harness({ stacks })
-    await createGcOps(h.deps).stopStacks(['vanished'])
+    await expect(createGcOps(h.deps).stopStacks(['app'])).rejects.toThrow('stack was not reprobed')
+    await expect(createGcOps(h.deps).removeContainers(['app'])).rejects.toThrow(
+      'stack was not reprobed'
+    )
+    expect(h.stop).not.toHaveBeenCalled()
+    expect(h.removeContainers).not.toHaveBeenCalled()
+  })
+
+  it('a failed reprobe withdraws an earlier pass for the same stacks', async () => {
+    const h = harness({ stacks })
+    const ops = await reprobed(h)
+    h.probeStatus.mockResolvedValueOnce({ trackedDirty: true, untracked: [] })
+    expect((await ops.reprobe(bundle({ stackIds: ['app', 'web'] }))).ok).toBe(false)
+    await expect(ops.stopStacks(['app'])).rejects.toThrow('stack was not reprobed')
+    expect(h.stop).not.toHaveBeenCalled()
+  })
+
+  it('C1: throws, with no docker call, when a container started between the reprobe and the stop', async () => {
+    const h = harness({ stacks })
+    const ops = await reprobed(h)
+    h.setStacks([
+      stack('app', [
+        container('c1', `${WT}/api`),
+        container('c2', `${WT}/api`),
+        container('c9', WT_B)
+      ]),
+      ...stacks.slice(1)
+    ])
+    await expect(ops.stopStacks(['app', 'web'])).rejects.toThrow(/changed since the reprobe/)
+    expect(h.stop).not.toHaveBeenCalled()
+  })
+
+  it('throws, with no docker call, when a reprobed stack vanished before the stop', async () => {
+    const h = harness({ stacks })
+    const ops = await reprobed(h)
+    h.setStacks(stacks.slice(1))
+    await expect(ops.stopStacks(['app'])).rejects.toThrow(/changed since the reprobe/)
     expect(h.stop).not.toHaveBeenCalled()
   })
 })

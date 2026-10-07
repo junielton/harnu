@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildBundles,
   bucketOf,
+  containerFolders,
   ownedVolumes,
   type BundleFacts,
   type SessionPresence
@@ -349,6 +350,44 @@ describe('bucketOf — rule precedence', () => {
   })
 })
 
+// ---- containerFolders -------------------------------------------------------------
+
+function bindMount(source: string): InspectedContainer['mounts'][number] {
+  return { type: 'bind', source, name: null }
+}
+
+describe('containerFolders', () => {
+  it('is the normalized compose working dir when the container has one', () => {
+    const c = composeContainer('web', 'app', `${WT_A}/deploy/`, {
+      mounts: [bindMount(ELSEWHERE)]
+    })
+    expect(containerFolders(c, 'linux')).toEqual([`${WT_A}/deploy`])
+  })
+
+  it('falls back to the normalized bind mount sources of a labelless container', () => {
+    const c = container('web', {
+      mounts: [bindMount(`${WT_A}/src/`), volumeMount('pgdata'), bindMount(ELSEWHERE)]
+    })
+    expect(containerFolders(c, 'linux')).toEqual([`${WT_A}/src`, ELSEWHERE])
+  })
+
+  it('skips a bind mount with an empty source', () => {
+    const c = container('web', { mounts: [bindMount(''), bindMount(WT_A)] })
+    expect(containerFolders(c, 'linux')).toEqual([WT_A])
+  })
+
+  it('is empty for a container with neither a label nor a bind mount', () => {
+    expect(
+      containerFolders(container('web', { mounts: [volumeMount('pgdata')] }), 'linux')
+    ).toEqual([])
+  })
+
+  it('normalizes Windows paths', () => {
+    const c = container('web', { mounts: [bindMount('C:\\Work\\Proj\\')] })
+    expect(containerFolders(c, 'win32')).toEqual(['c:/work/proj'])
+  })
+})
+
 // ---- ownedVolumes -----------------------------------------------------------------
 
 describe('ownedVolumes', () => {
@@ -676,6 +715,25 @@ describe('buildBundles — stack attribution', () => {
     )
     expect(b.stackIds).toEqual(['svc'])
     expect(b.sharedStackIds).toEqual([])
+  })
+
+  it('a labelless stack is attributed through its bind mount sources (the reprobe rule)', () => {
+    const web = container('web', { mounts: [{ type: 'bind', source: `${WT_A}/src`, name: null }] })
+    const b = only(build({ stacks: [stack('web', [web])], containers: [web] }))
+    expect(b.stackIds).toEqual(['web'])
+    expect(b.sharedStackIds).toEqual([])
+  })
+
+  it('a labelless stack that also bind-mounts a folder outside the bundle is shared', () => {
+    const web = container('web', {
+      mounts: [
+        { type: 'bind', source: `${WT_A}/src`, name: null },
+        { type: 'bind', source: ELSEWHERE, name: null }
+      ]
+    })
+    const b = only(build({ stacks: [stack('web', [web])], containers: [web] }))
+    expect(b.stackIds).toEqual([])
+    expect(b.sharedStackIds).toEqual(['web'])
   })
 
   it('a stack that runs from elsewhere belongs to no bundle', () => {
