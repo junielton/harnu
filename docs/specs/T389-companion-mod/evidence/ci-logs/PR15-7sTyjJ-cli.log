@@ -1,0 +1,88 @@
+2.1.291 (Claude Code)
+
+ RUN  v2.1.9 ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p1w6-telemetry-s1
+
+ ✓ tests/cli-folder-arg.test.ts (6 tests) 3ms
+ ✓ tests/cli/tick.cli.test.ts (1 test) 875ms
+   ✓ a tick-shaped run > a mod loads under --setting-sources '' 875ms
+ ✓ tests/cli/companion-state.cli.test.ts (1 test) 849ms
+   ✓ Harnu mod state against a real claude (L4) > live after hello 848ms
+stdout | tests/cli/fleet-state.cli.test.ts > fleet sensors against a real claude, no model turn (L4) > classic events without settings hooks
+[evidence] cq13-classic-without-settings-hooks: /tmp/p1w5-cq13-classic-without-settings-hooks.json
+{"claudeVersion":"2.1.291 (Claude Code)","declared":["sense.identity","sense.turn","sense.attention","sense.subagent","sense.usage"],"proven":["sense.attention","sense.subagent"],"snapshotReasons":["hello"]}
+
+stdout | tests/cli/usage.cli.test.ts > usage against the real host (L4) > a zero-model run reads the session once and proves sense.usage
+[P1W6 evidence] {"claude":"2.1.291 (Claude Code)","zeroModel":true,"reads":1,"events":[{"source":"read","context":{"window":1000000},"rateLimits":[],"costUsd":0,"changed":["context","cost"],"startedAt":1791264029912,"model":"claude-opus-5-5"}],"sessionModel":"claude-opus-5-5","provenAfterRun":["sense.usage"]}
+
+ ✓ tests/cli/usage.cli.test.ts (2 tests | 1 skipped) 1067ms
+   ✓ usage against the real host (L4) > a zero-model run reads the session once and proves sense.usage 1066ms
+ ✓ tests/cli/types.cli.test.ts (1 test) 1622ms
+   ✓ the mod type-checks against the installed CLI > types compile against the installed CLI (drift way 3) 1621ms
+ ✓ tests/cli/load.cli.test.ts (3 tests) 3483ms
+   ✓ the companion loads in a real claude > skeleton loads, zero model calls 999ms
+   ✓ the companion loads in a real claude > the first plugin dir loads first 1614ms
+   ✓ the companion loads in a real claude > a spawn token in the environment is readable by a mod, and only by name 869ms
+stdout | tests/cli/fleet-state.cli.test.ts > fleet sensors against a real claude, real turns, scripted endpoint (L4) > classic events without settings hooks (a turn with a tool call)
+[evidence] ac16-turn-with-tool-call: /tmp/p1w5-ac16-turn-with-tool-call.json
+{"claudeVersion":"2.1.291 (Claude Code)","apiRequests":2,"wire":[["session.snapshot",null],["turn.started","182dbcdd"],["session.snapshot",null],["turn.completed","182dbcdd"],["session.end",null]]}
+
+stdout | tests/cli/fleet-state.cli.test.ts > fleet sensors against a real claude, real turns, scripted endpoint (L4) > failing tool settles the turn
+[evidence] cq12-post-tool-use-failure: /tmp/p1w5-cq12-post-tool-use-failure.json
+{"claudeVersion":"2.1.291 (Claude Code)","postToolUseFailureFired":true,"postToolUseFired":false,"attentionEvents":[],"finalState":"idle"}
+
+stdout | tests/cli/fleet-state.cli.test.ts > fleet sensors against a real claude, real turns, scripted endpoint (L4) > background_tasks shape
+[evidence] q12-background-tasks: /tmp/p1w5-q12-background-tasks.json
+{"claudeVersion":"2.1.291 (Claude Code)","stopCount":2,"types":["subagent"],"statuses":["running"],"keys":["agent_type","description","id","status","type"],"taskIds":["ac1e84d69379fdcdd"],"subagentHooks":[["classic.SubagentStart",{"hasId":true,"agent_type":"general-purpose","id":"ac1e84d69379fdcdd"}],["classic.SubagentStop",{"hasId":true,"agent_type":"general-purpose","id":"ac1e84d69379fdcdd"}]],"wire":[["turn.started","6f5852dc",null,{"origin":"human"}],["subagent.started",null,null,{"agentType":"general-purpose","agentId":"ac1e84d69379fdcdd"}],["subagent.stopped",null,null,{"agentType":"general-purpose","agentId":"ac1e84d69379fdcdd"}],["turn.completed","5833c0bc","ac1e84d69379fdcdd",{"reason":"answer","isAborted":false,"durationMs":38,"usage":{"model":"claude-haiku-4-5-20251001","inputTokens":10,"outputTokens":5,"cacheReadTokens":0,"cacheCreationTokens":0}}],["turn.completed","6f5852dc",null,{"reason":"answer","isAborted":false,"durationMs":130,"usage":{"model":"claude-haiku-4-5-20251001","inputTokens":10,"outputTokens":5,"cacheReadTokens":0,"cacheCreationTokens":0},"backgroundTasks":1,"backgroundSubagents":0}],["turn.started","91939909",null,{"origin":"unknown"}],["turn.completed","91939909",null,{"reason":"answer","isAborted":false,"durationMs":18,"usage":{"model":"claude-haiku-4-5-20251001","inputTokens":10,"outputTokens":5,"cacheReadTokens":0,"cacheCreationTokens":0},"backgroundTasks":0,"backgroundSubagents":0}]],"finalState":"idle"}
+
+stdout | tests/cli/fleet-state.cli.test.ts > fleet sensors against a real claude, real turns, scripted endpoint (L4) > notice turn has an abortable turnId
+[evidence] q24-notice-turn: /tmp/p1w5-q24-notice-turn.json
+{"claudeVersion":"2.1.291 (Claude Code)","turnStarts":[{"ms":132,"hasId":true},{"ms":257,"hasId":true}],"turnCompletes":[{"ms":225,"agent":"a6c747c017a942a43","reason":"answer"},{"ms":247,"agent":null,"reason":"answer"},{"ms":276,"agent":null,"reason":"answer"}],"wireTurns":[["turn.started","b0ed5b61"],["turn.completed","a1ce430a"],["turn.completed","b0ed5b61"],["turn.started","6be12f93"],["turn.completed","6be12f93"]]}
+
+stdout | tests/cli/handshake.cli.test.ts > the handshake against the real host (L4) > records CQ1, CQ2 and the startup permission_mode
+[P1W3 evidence] {"claude":"2.1.291 (Claude Code)","surface":"claude -p","cq2_startupClassicFired":true,"cq2_probesClassicAtHello":true,"classicSources":["startup"],"startupHasPermissionMode":true,"startupKeys":["agent_id","agent_type","cwd","effort","hook_event_name","model","permission_mode","prompt_id","scratchpad_dir","session_id","session_title","source","transcript_path"],"cq1_sessionEndBudgetMs":1497}
+
+stdout | tests/cli/fleet-state.cli.test.ts > fleet sensors against a real claude, real turns, scripted endpoint (L4) > teammate is not a subagent
+[evidence] oq-c-subagent-payloads: /tmp/p1w5-oq-c-subagent-payloads.json
+{"claudeVersion":"2.1.291 (Claude Code)","subagentHooks":[{"name":"classic.SubagentStart","keys":["agent_id","agent_type","cwd","effort","hook_event_name","permission_mode","prompt_id","scratchpad_dir","session_id","transcript_path"],"agent":{"hasId":true,"agent_type":"general-purpose","id":"a0c43a9fb07b1981a"}},{"name":"classic.SubagentStop","keys":["agent_id","agent_transcript_path","agent_type","background_tasks","cwd","effort","hook_event_name","last_assistant_message","permission_mode","prompt_id","scratchpad_dir","session_crons","session_id","stop_hook_active","transcript_path"],"agent":{"hasId":true,"agent_type":"general-purpose","id":"a0c43a9fb07b1981a"}}],"wire":[["turn.started","cf967e03",null,{"origin":"human"}],["subagent.started",null,null,{"agentType":"general-purpose","agentId":"a0c43a9fb07b1981a"}],["subagent.stopped",null,null,{"agentType":"general-purpose","agentId":"a0c43a9fb07b1981a"}],["turn.completed","aac72c2b","a0c43a9fb07b1981a",{"reason":"answer","isAborted":false,"durationMs":38,"usage":{"model":"claude-haiku-4-5-20251001","inputTokens":10,"outputTokens":5,"cacheReadTokens":0,"cacheCreationTokens":0}}],["turn.completed","cf967e03",null,{"reason":"answer","isAborted":false,"durationMs":132,"usage":{"model":"claude-haiku-4-5-20251001","inputTokens":10,"outputTokens":5,"cacheReadTokens":0,"cacheCreationTokens":0},"backgroundTasks":1,"backgroundSubagents":0}],["turn.started","b4408b82",null,{"origin":"unknown"}],["turn.completed","b4408b82",null,{"reason":"answer","isAborted":false,"durationMs":24,"usage":{"model":"claude-haiku-4-5-20251001","inputTokens":10,"outputTokens":5,"cacheReadTokens":0,"cacheCreationTokens":0},"backgroundTasks":0,"backgroundSubagents":0}]]}
+
+stdout | tests/cli/handshake.cli.test.ts > the handshake against the real host (L4) > fork id at hello
+[P1W3 evidence] fork {"claude":"2.1.291 (Claude Code)","exit":0,"sourceId":"5a5a5a5a","helloSid":"18290d0b","probeSessionId":"18290d0b","helloIsSource":false,"resumeFailed":false,"stderr":""}
+
+ ✓ tests/cli/handshake.cli.test.ts (8 tests) 9640ms
+   ✓ the handshake against the real host (L4) > binds the real id 984ms
+   ✓ the handshake against the real host (L4) > host failures never surface in the session > host failures never surface in the session: garbage 1022ms
+   ✓ the handshake against the real host (L4) > host failures never surface in the session > host failures never surface in the session: a closed socket 898ms
+   ✓ the handshake against the real host (L4) > host failures never surface in the session > host failures never surface in the session: a host that answers never 3175ms
+   ✓ the handshake against the real host (L4) > host failures never surface in the session > host failures never surface in the session: nothing at all (no rendezvous file) 1017ms
+   ✓ the handshake against the real host (L4) > records CQ1, CQ2 and the startup permission_mode 896ms
+   ✓ the handshake against the real host (L4) > tick binds without a row 907ms
+   ✓ the handshake against the real host (L4) > fork id at hello 740ms
+stdout | tests/cli/fleet-state.cli.test.ts > fleet sensors against a real claude, real turns, scripted endpoint (L4) > a failed turn: overloaded
+[evidence] lv-d-stopfailure-overloaded: /tmp/p1w5-lv-d-stopfailure-overloaded.json
+{"claudeVersion":"2.1.291 (Claude Code)","exitCode":1,"stopFailureFired":true,"moduleKeys":["agent_id","agent_type","cwd","effort","error","error_details","hook_event_name","last_assistant_message","permission_mode","prompt_id","scratchpad_dir","session_id","transcript_path"],"errorValue":"server_error","httpHookBodyKeys":[["cwd","error","hook_event_name","last_assistant_message","prompt_id","session_id","transcript_path"]],"orderAgainstTurnComplete":["classic.StopFailure","turn.complete"],"wire":[["turn.started",{"origin":"human"}],["turn.completed",{"reason":"error","isAborted":false,"durationMs":63,"backgroundTasks":0,"backgroundSubagents":0,"failure":{"type":"server_error"}}]],"finalState":"failed"}
+
+stdout | tests/cli/fleet-state.cli.test.ts > fleet sensors against a real claude, real turns, scripted endpoint (L4) > a failed turn: rate-limit
+[evidence] lv-d-stopfailure-rate-limit: /tmp/p1w5-lv-d-stopfailure-rate-limit.json
+{"claudeVersion":"2.1.291 (Claude Code)","exitCode":1,"stopFailureFired":true,"moduleKeys":["agent_id","agent_type","cwd","effort","error","error_details","hook_event_name","last_assistant_message","permission_mode","prompt_id","scratchpad_dir","session_id","transcript_path"],"errorValue":"rate_limit","httpHookBodyKeys":[["cwd","error","hook_event_name","last_assistant_message","prompt_id","session_id","transcript_path"]],"orderAgainstTurnComplete":["classic.StopFailure","turn.complete"],"wire":[["turn.started",{"origin":"human"}],["turn.completed",{"reason":"error","isAborted":false,"durationMs":65,"backgroundTasks":0,"backgroundSubagents":0,"failure":{"type":"rate_limit"}}]],"finalState":"failed"}
+
+stdout | tests/cli/fleet-state.cli.test.ts > fleet sensors against a real claude, real turns, scripted endpoint (L4) > a failed turn: server-error
+[evidence] lv-d-stopfailure-server-error: /tmp/p1w5-lv-d-stopfailure-server-error.json
+{"claudeVersion":"2.1.291 (Claude Code)","exitCode":1,"stopFailureFired":true,"moduleKeys":["agent_id","agent_type","cwd","effort","error","error_details","hook_event_name","last_assistant_message","permission_mode","prompt_id","scratchpad_dir","session_id","transcript_path"],"errorValue":"server_error","httpHookBodyKeys":[["cwd","error","hook_event_name","last_assistant_message","prompt_id","session_id","transcript_path"]],"orderAgainstTurnComplete":["classic.StopFailure","turn.complete"],"wire":[["turn.started",{"origin":"human"}],["turn.completed",{"reason":"error","isAborted":false,"durationMs":59,"backgroundTasks":0,"backgroundSubagents":0,"failure":{"type":"server_error"}}]],"finalState":"failed"}
+
+ ✓ tests/cli/fleet-state.cli.test.ts (10 tests) 13006ms
+   ✓ fleet sensors against a real claude, no model turn (L4) > classic events without settings hooks 1043ms
+   ✓ fleet sensors against a real claude, no model turn (L4) > the debug file shows no skipped fleet hook and no registration error 824ms
+   ✓ fleet sensors against a real claude, real turns, scripted endpoint (L4) > classic events without settings hooks (a turn with a tool call) 1405ms
+   ✓ fleet sensors against a real claude, real turns, scripted endpoint (L4) > failing tool settles the turn 1460ms
+   ✓ fleet sensors against a real claude, real turns, scripted endpoint (L4) > background_tasks shape 1428ms
+   ✓ fleet sensors against a real claude, real turns, scripted endpoint (L4) > notice turn has an abortable turnId 1447ms
+   ✓ fleet sensors against a real claude, real turns, scripted endpoint (L4) > teammate is not a subagent 1449ms
+   ✓ fleet sensors against a real claude, real turns, scripted endpoint (L4) > a failed turn: overloaded 1312ms
+   ✓ fleet sensors against a real claude, real turns, scripted endpoint (L4) > a failed turn: rate-limit 1317ms
+   ✓ fleet sensors against a real claude, real turns, scripted endpoint (L4) > a failed turn: server-error 1319ms
+
+ Test Files  8 passed (8)
+      Tests  31 passed | 1 skipped (32)
+   Start at  02:20:29
+   Duration  13.55s (transform 668ms, setup 0ms, collect 1.27s, tests 30.55s, environment 1ms, prepare 541ms)
+

@@ -15,7 +15,7 @@ Test-file shorthand in the specs is expanded here: SC, SI, VG, AS, SR, VN in P1W
 | Branch | `feat/t389-p1w1-host-server`                                                   |
 | Base   | P0 docs tip (`docs/t389-harnu-mod-specs`, or `main` once it merges)            |
 | Spec   | `docs/specs/T389-companion-mod/P1W1-host-server.md` · contract §2 to §8, §11.3 |
-| Size   | L: 36 ACs (2 live-verify), ten new modules, `contract.ts`                      |
+| Size   | L: 37 ACs (3 live-verify), ten new modules, `contract.ts`                      |
 | Labels | `no-changelog` (no behaviour change: mode `off`, nothing listens)              |
 
 **Files.** Create `resources/companion/hooks/contract.ts` (types and constants of protocol 1, zero imports), the first golden fixtures under `resources/companion/tests/fixtures/` and `tests/companion/contract.test.ts` (the host-side fixture replay that later waves extend); under `src/main/companion/`: `contract.ts` (re-export), `mode.ts`, `wire-core.ts`, `rendezvous.ts`, `session-table.ts`, `server.ts`, `host.ts`, `companion-ipc.ts`, `audit-core.ts`, `audit-log.ts`. Change `src/main/index.ts` (register and close the host), `src/preload/index.ts` (`companionDiagnostics`; a dev-only mint helper served only when `!app.isPackaged`), `tsconfig.node.json` (`include` the contract and fixtures), `vitest.config.mts` (`exclude` `host.ts` and `companion-ipc.ts` with a justification), `docs/dev/live-verify-second-instance.md` (one paragraph).
@@ -31,9 +31,9 @@ Test-file shorthand in the specs is expanded here: SC, SI, VG, AS, SR, VN in P1W
 | 5   | rendezvous                  | `rendezvous.test.ts` → AC-P1W1-3                                                                                                                                                                            | `rendezvous.ts`: `chooseTransport`, `EndpointFile`, stale-socket probe                                                                   |
 | 6   | server on a real socket     | `server.test.ts` → AC-P1W1-1, -2, -4, -5, -6, -15, -16, -17, -19, -20, -22, -27, -31, -32, -36                                                                                                              | `server.ts` (`startCompanionServer`): listener modes `0600`/`0700`, body read, dispatch, `poll` and `ask` answer `FEATURE_DISABLED`      |
 | 7   | facade, bus, lifecycle, IPC | `host-static.test.ts` → AC-P1W1-23, -24; `host-lifecycle.test.ts` → AC-P1W1-34                                                                                                                              | `host.ts` (`companionHost` facade and the extension points of master §12.1), `companion-ipc.ts`, preload, `index.ts`, coverage `exclude` |
-| 8   | live-verify and docs        | LV-P1W1-a → AC-P1W1-28; LV-P1W1-b → AC-P1W1-29                                                                                                                                                              | `docs/dev` paragraph; attach host log excerpts and `claude --version`                                                                    |
+| 8   | live-verify and docs        | LV-P1W1-a → AC-P1W1-28, -37; LV-P1W1-b → AC-P1W1-29                                                                                                                                                         | `docs/dev` paragraph; attach host log excerpts and `claude --version`                                                                    |
 
-**Live-verify.** Run after step 7 on a build from `out/` (an unpackaged run; a `build:unpack` build refuses the dev mint). LV-P1W1-a: real CLI over the real socket, interactive and `-p`, both 200 in under 50 ms. LV-P1W1-b: whether a sibling mod sees a `socketPath` fetch (either outcome passes; record it in the smoke evidence addendum).
+**Live-verify.** Run after step 7 on a build from `out/` (an unpackaged run; a `build:unpack` build refuses the dev mint). LV-P1W1-a: real CLI over the real socket, interactive and `-p`: the headless hello is 200 in under 50 ms (AC-P1W1-28), the interactive hello is 200 within `HELLO_SLA_MS`, 2 000 ms (AC-P1W1-37). LV-P1W1-b: whether a sibling mod sees a `socketPath` fetch (either outcome passes; record it in the smoke evidence addendum).
 
 **Docs.** None for users. The PR states why `no-changelog` applies.
 
@@ -46,7 +46,7 @@ Objective: build the T389 host server in Harnu main (spec P1W1): Unix-socket HTT
 Setup: new worktree from docs/t389-harnu-mod-specs, branch feat/t389-p1w1-host-server; npm ci; npm run typecheck.
 Read first: docs/specs/T389-companion-mod/P1W1-host-server.md, then 01-contract.md sections 2 to 8 and 11.3; docs/plans/T389-companion-mod/P1-sensor.md (P1W1) and 00-master-plan.md section 9.
 May touch: src/main/companion/**, resources/companion/hooks/contract.ts, resources/companion/tests/fixtures/**, tests/companion/*.test.ts (including contract.test.ts, which this wave creates), src/main/index.ts, src/preload/index.ts, tsconfig.node.json, vitest.config.mts, docs/dev/live-verify-second-instance.md.
-Satisfy: AC-P1W1-1 to -36; recipes LV-P1W1-a and -b.
+Satisfy: AC-P1W1-1 to -37; recipes LV-P1W1-a and -b.
 Skills: /local-ci, superpowers:test-driven-development (if available; otherwise follow test-first as listed).
 Out of scope: any consumer, adapter, staging, --plugin-dir, pty.ts changes, enable policy beyond enable: [].
 Return: pipeline JSON path and log, an AC to test-title table, recipe logs with claude --version, git rev-list --count of the branch, a "Spec defects" list.

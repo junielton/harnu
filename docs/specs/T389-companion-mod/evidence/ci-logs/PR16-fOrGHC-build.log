@@ -1,0 +1,64 @@
+
+> harnu@0.3.46 build
+> npm run typecheck && electron-vite build
+
+
+> harnu@0.3.46 typecheck
+> npm run typecheck:node && npm run typecheck:web
+
+
+> harnu@0.3.46 typecheck:node
+> tsc --noEmit -p tsconfig.node.json --composite false
+
+
+> harnu@0.3.46 typecheck:web
+> vue-tsc --noEmit -p tsconfig.web.json --composite false
+
+vite v7.3.6 building ssr environment for production...
+transforming...
+✓ 277 modules transformed.
+[plugin vite:reporter] 
+(!) ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/migrations/data-dir.ts is dynamically imported by ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/data-dir.ts but also statically imported by ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/migrations/data-dir-boot.ts, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/user-projects.ts is dynamically imported by ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/companion/companion-ipc.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/companion/host.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/migrations/data-dir-boot.ts but also statically imported by ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/bundled-skills.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/containers/containers-shell.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/folder-ops.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/hook-bridge.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/index.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/markdown-read.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/mcp/server.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/mcp/tool-handlers.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/memory-ipc.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/memory-location-ipc.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/memory-location.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/pty.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/reaper/reaper-ipc.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/reaper/scanner-shell.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/worktree-ipc.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/worktree-tracker-wiring.ts, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/fleet-model.ts is dynamically imported by ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/claude-reader.ts but also statically imported by ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/containers/containers-shell.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/index.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/reaper/scanner-shell.ts, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/worktree-ipc.ts is dynamically imported by ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/migrations/data-dir-boot.ts but also statically imported by ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/index.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/manifest-drain-shell.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/mcp/server.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/mcp/tool-handlers.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/reaper/reaper-ipc.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/reaper/scanner-shell.ts, ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-b/src/main/worktree-tracker-wiring.ts, dynamic import will not move module into another chunk.
+
+rendering chunks...
+out/main/index.js  1,705.19 kB
+✓ built in 1.16s
+vite v7.3.6 building ssr environment for production...
+transforming...
+✓ 1 modules transformed.
+rendering chunks...
+out/preload/index.js  74.69 kB
+✓ built in 59ms
+vite v7.3.6 building client environment for production...
+transforming...
+node_modules/@vueuse/core/dist/index.js (3362:0): A comment
+
+"/* #__PURE__ */"
+
+in "node_modules/@vueuse/core/dist/index.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@vueuse/core/dist/index.js (5780:22): A comment
+
+"/* #__PURE__ */"
+
+in "node_modules/@vueuse/core/dist/index.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+✓ 3394 modules transformed.
+rendering chunks...
+../../out/renderer/index.html                                                      0.75 kB
+../../out/renderer/assets/speech-kokoro-worker-DaxIPtye.js                         2.04 kB
+../../out/renderer/assets/notify-Vh0p6WNb.wav                                     18.57 kB
+../../out/renderer/assets/JetBrainsMonoNerdFontMono-Regular-BYahnD1h.woff2     1,043.96 kB
+../../out/renderer/assets/JetBrainsMonoNerdFontMono-Bold-B7ywYFQR.woff2        1,046.02 kB
+../../out/renderer/assets/JetBrainsMonoNerdFontMono-Italic-DeFFS91I.woff2      1,047.59 kB
+../../out/renderer/assets/JetBrainsMonoNerdFontMono-BoldItalic-r1OIk94p.woff2  1,049.81 kB
+../../out/renderer/assets/index-Bd9nuuQT.css                                     132.98 kB
+../../out/renderer/assets/index-DOx7x8Bi.js                                    5,422.02 kB
+✓ built in 5.05s

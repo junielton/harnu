@@ -724,8 +724,10 @@ AC-P1W1-27 [contract] Given bye with a final events batch, Then the events are a
   Evidence: S › "bye ends the binding"
 
 AC-P1W1-28 [live-verify] Given the isolated instance with mode shadow, When a throwaway mod posts
-  hello over the real socket from an interactive PTY and from -p, Then both get 200 in under 50 ms.
+  hello over the real socket from a headless -p session, Then it gets 200 in under 50 ms.
   Evidence: LV-P1W1-a (host log excerpt, claude --version)
+  Amended 2026-10-06 by operator decision after LV-P1W1-a measured 29–257 ms interactive.
+  The 50 ms bound applies to headless (-p) sessions only; the interactive bound is AC-P1W1-37.
 
 AC-P1W1-29 [live-verify] Given a spy mod and a caller mod loaded together, When the caller
   fetches with socketPath, Then the recipe records whether the spy observed the request (CQ5).
@@ -740,6 +742,12 @@ AC-P1W1-35 [contract] Given hello with protoMin 1 and protoMax 3, Then proto is 
 
 AC-P1W1-36 [contract] Given a socket with a live listener, Then boot leaves it and announces tcp.
   Evidence: S › "a live socket is left alone"
+
+AC-P1W1-37 [live-verify] Given the isolated instance with mode shadow, When a throwaway mod posts
+  hello over the real socket from an interactive PTY, Then it gets 200 within HELLO_SLA_MS
+  (2 000 ms).
+  Evidence: LV-P1W1-a (host log excerpt, claude --version)
+  Added 2026-10-06 by operator decision after LV-P1W1-a measured 29–257 ms interactive.
 ```
 
 **Live-verify recipes** (second isolated instance per `docs/dev/live-verify-second-instance.md`;
@@ -756,7 +764,8 @@ its data directory is separate, so its socket and rendezvous file are too).
    the rendezvous path baked as a literal, POSTs `hello`, then one `events` heartbeat, and logs
    status and elapsed ms with `$.fs`.
 5. Run it interactively and with `-p "/exit" < /dev/null`, each with a fresh token.
-6. Pass: both log 200 for hello and for events; `window.api.companionDiagnostics()` shows two
+6. Pass: both log 200 for hello and for events, the headless hello in under 50 ms (AC-P1W1-28) and
+   the interactive hello within `HELLO_SLA_MS` (AC-P1W1-37); `window.api.companionDiagnostics()` shows two
    bindings, `lease: 'live'` then `lost` 20 s after the process ends. Record `claude --version`.
 
 **LV-P1W1-b — sibling visibility of a socket fetch (CQ5).**
@@ -786,7 +795,7 @@ its data directory is separate, so its socket and rendezvous file are too).
 No fact family, no shadow comparison, no parity gate. The wave ships dark: the mode file does not
 exist in any install, so nothing listens. It **demotes nothing**. Merge bar: QA-4 with the base
 `docs/t389-harnu-mod-specs` tip (or `main`); `--with-cli` is not required (no CLI-dependent
-vitest suite; the two live-verify ACs are attached as evidence).
+vitest suite; the three live-verify ACs are attached as evidence).
 
 ## 14. Open questions
 
