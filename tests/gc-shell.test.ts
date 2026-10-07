@@ -9,7 +9,10 @@ vi.mock('../src/main/reaper/executor-core', async (importOriginal) => {
 
 import {
   createGcOps,
+  dockerCliAbsent,
+  dockerDaemonDown,
   dockerIsUnavailable,
+  DockerUnavailableError,
   presenceFromSets,
   type GcShellDeps
 } from '../src/main/gc/gc-shell'
@@ -309,6 +312,33 @@ describe('dockerIsUnavailable', () => {
   })
 })
 
+describe('dockerCliAbsent / dockerDaemonDown', () => {
+  const enoent = Object.assign(new Error('spawn docker ENOENT'), { code: 'ENOENT' })
+  const down = Object.assign(new Error('Command failed: docker ps'), {
+    code: 1,
+    stderr: 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock.'
+  })
+
+  it('tells a missing CLI apart from a stopped daemon', () => {
+    expect(dockerCliAbsent(enoent)).toBe(true)
+    expect(dockerDaemonDown(enoent)).toBe(false)
+    expect(dockerCliAbsent(down)).toBe(false)
+    expect(dockerDaemonDown(down)).toBe(true)
+  })
+
+  it('reads neither into a killed call or a plain error', () => {
+    const killed = Object.assign(new Error('x'), {
+      killed: true,
+      signal: 'SIGTERM',
+      stderr: 'Cannot connect to the Docker daemon'
+    })
+    for (const e of [killed, new Error('boom'), null]) {
+      expect(dockerCliAbsent(e)).toBe(false)
+      expect(dockerDaemonDown(e)).toBe(false)
+    }
+  })
+})
+
 describe('reprobe (AC-5)', () => {
   it('returns ok when every fact still matches the scan', async () => {
     const h = harness()
@@ -604,6 +634,16 @@ describe('reprobe (AC-5)', () => {
     const r = await createGcOps(h.deps).reprobe(bundle())
     expect(r.ok).toBe(false)
     expect(r.ok === false && r.reason).toMatch(/^probe-failed/)
+  })
+
+  it('refuses as docker-unavailable when the listing says the daemon is down', async () => {
+    const h = harness()
+    h.listStacks.mockRejectedValueOnce(new DockerUnavailableError('daemon down'))
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+      ok: false,
+      reason: 'docker-unavailable'
+    })
+    expect(h.stop).not.toHaveBeenCalled()
   })
 
   it('reports a throwing stack listing as probe-failed', async () => {

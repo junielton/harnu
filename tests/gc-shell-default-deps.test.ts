@@ -27,7 +27,7 @@ vi.mock('../src/main/reaper/reaper-ipc', () => ({
   buildHydrationDeps: () => ({ dehydrate: {} })
 }))
 
-import { createGcOps, defaultGcShellDeps } from '../src/main/gc/gc-shell'
+import { createGcOps, defaultGcShellDeps, DockerUnavailableError } from '../src/main/gc/gc-shell'
 import type { WorktreeBundle } from '../src/main/gc/bundle-core'
 import type { ReapItem } from '../src/main/reaper/reaper-core'
 
@@ -74,6 +74,14 @@ function harvestable(): WorktreeBundle {
 }
 
 /** What execFile rejects with when its timeout kills the docker call. */
+/** What the CLI reports when it is installed but the daemon is stopped (Docker 29 wording). */
+const daemonDownError = (): Error =>
+  Object.assign(new Error('Command failed: docker ps'), {
+    code: 1,
+    stderr:
+      'failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory'
+  })
+
 const timeoutError = (): Error =>
   Object.assign(new Error('Command failed: docker inspect'), {
     killed: true,
@@ -113,6 +121,14 @@ describe('defaultGcShellDeps.listStacks', () => {
     const deps = await defaultGcShellDeps(() => null)
     expect(await deps.listStacks()).toEqual({ stacks: [] })
   })
+
+  // A stopped daemon may come back with the same containers, so it proves nothing about
+  // what runs from the worktree: it must refuse, not read as "no stacks".
+  it('rejects with DockerUnavailableError when the daemon is down', async () => {
+    h.inspectAll.mockRejectedValue(daemonDownError())
+    const deps = await defaultGcShellDeps(() => null)
+    await expect(deps.listStacks()).rejects.toBeInstanceOf(DockerUnavailableError)
+  })
 })
 
 describe('reprobe over the default deps', () => {
@@ -122,5 +138,19 @@ describe('reprobe over the default deps', () => {
     const r = await ops.reprobe(harvestable())
     expect(r.ok).toBe(false)
     expect(r.ok === false && r.reason).toMatch(/^probe-failed/)
+  })
+
+  it('refuses as docker-unavailable when the daemon is down', async () => {
+    h.inspectAll.mockRejectedValue(daemonDownError())
+    const ops = createGcOps(await defaultGcShellDeps(() => null))
+    expect(await ops.reprobe(harvestable())).toEqual({ ok: false, reason: 'docker-unavailable' })
+  })
+
+  it('still cleans a stackless bundle when the docker CLI is not installed', async () => {
+    h.inspectAll.mockRejectedValue(
+      Object.assign(new Error('spawn docker ENOENT'), { code: 'ENOENT' })
+    )
+    const ops = createGcOps(await defaultGcShellDeps(() => null))
+    expect(await ops.reprobe(harvestable())).toEqual({ ok: true })
   })
 })
