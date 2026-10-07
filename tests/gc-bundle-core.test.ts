@@ -44,6 +44,9 @@ function mergedCheckpoint(at: string | null = OLD_MERGE): Checkpoint {
     : { id: 'pr-merged', state: 'green', detail: at }
 }
 
+/** What the Reaper records for a worktree whose tracked files were probed clean. */
+const LOCAL_CLEAN: Checkpoint = { id: 'local-clean', state: 'green' }
+
 function item(over: Partial<ReapItem> = {}): ReapItem {
   const path = over.path ?? WT_A
   return {
@@ -55,7 +58,7 @@ function item(over: Partial<ReapItem> = {}): ReapItem {
     hidden: false,
     ageDays: 12,
     diskBytes: 1_000_000,
-    checkpoints: [mergedCheckpoint()],
+    checkpoints: [mergedCheckpoint(), LOCAL_CLEAN],
     verdict: 'harvestable',
     blockers: [],
     needsRemoteDelete: false,
@@ -305,6 +308,61 @@ describe('bucketOf — rules 1 to 11', () => {
   })
 })
 
+describe('bucketOf — fails closed on unknown inputs (delta 2, item 3)', () => {
+  it('(a) no local-clean checkpoint is decide dirty: the tree was never shown clean', () => {
+    const r = bucketOf(
+      corpseFacts({ item: item({ checkpoints: [mergedCheckpoint()] }) }),
+      NOW,
+      GRACE_DAYS
+    )
+    expect(r.bucket).toBe('decide')
+    expect(r.reason?.code).toBe('dirty')
+    expect(r.reason?.detail).toMatch(/could not be verified clean/)
+  })
+
+  it.each(['unknown', 'red', 'na'] as const)(
+    '(a) a local-clean checkpoint in state %s is decide dirty',
+    (state) => {
+      const unclean = item({ checkpoints: [mergedCheckpoint(), { id: 'local-clean', state }] })
+      const r = bucketOf(corpseFacts({ item: unclean }), NOW, GRACE_DAYS)
+      expect(r.bucket).toBe('decide')
+      expect(r.reason?.code).toBe('dirty')
+    }
+  )
+
+  it.each([undefined, 'hibernated'])(
+    '(b) a session that is not exactly none (%s) is never a corpse',
+    (session) => {
+      const r = bucketOf(
+        corpseFacts({ session: session as unknown as SessionPresence }),
+        NOW,
+        GRACE_DAYS
+      )
+      expect(r.bucket).toBe('decide')
+      expect(r.reason?.code).toBe('open-idle-session')
+      expect(r.reason?.detail).toMatch(/unknown/)
+    }
+  )
+
+  it.each([NaN, Infinity, -Infinity, -1])(
+    '(c) a lastSignOfLifeAt of %s is alive, never old enough',
+    (at) => {
+      expect(bucketOf(corpseFacts({ lastSignOfLifeAt: at }), NOW, GRACE_DAYS)).toEqual({
+        bucket: 'alive',
+        reason: null
+      })
+    }
+  )
+
+  it.each([NaN, Infinity, -1])('(c) a grace window of %s days is alive', (grace) => {
+    expect(bucketOf(corpseFacts(), NOW, grace)).toEqual({ bucket: 'alive', reason: null })
+  })
+
+  it('(c) a clock that is not a number is alive', () => {
+    expect(bucketOf(corpseFacts(), NaN, GRACE_DAYS)).toEqual({ bucket: 'alive', reason: null })
+  })
+})
+
 describe('bucketOf — rule precedence', () => {
   it('alive beats shared-stack', () => {
     const r = bucketOf(
@@ -319,6 +377,12 @@ describe('bucketOf — rule precedence', () => {
     const closed: FateResult = { fate: 'closed-unmerged', signal: null, strong: false }
     const r = bucketOf(corpseFacts({ fate: closed, lastSignOfLifeAt: NOW - HOUR }), NOW, GRACE_DAYS)
     expect(r.bucket).toBe('alive')
+  })
+
+  it('an open branch with an open-idle session is alive: rule 3 comes before rule 6', () => {
+    const open: FateResult = { fate: 'open', signal: null, strong: false }
+    const r = bucketOf(corpseFacts({ fate: open, session: 'open-idle' }), NOW, GRACE_DAYS)
+    expect(r).toEqual({ bucket: 'alive', reason: null })
   })
 
   it('open-idle-session beats shared-stack', () => {
@@ -903,6 +967,40 @@ describe('buildBundles — stack attribution', () => {
       expect(b.stackIds).toEqual([])
       expect(b.sharedStackIds).toEqual(['app'])
       expect(b.ownedVolumes).toEqual([])
+      expect(b.bucket).toBe('decide')
+      expect(b.reason?.code).toBe('shared-stack')
+    }
+  })
+
+  it('nested worktrees that both fully contain one stack share it, so neither owns it', () => {
+    const nestedPath = `${WT_A}/nested`
+    const outer = item()
+    const nested = item({
+      path: nestedPath,
+      id: `${REPO}::worktree::${nestedPath}`,
+      branch: 'feat/slug-nested'
+    })
+    // Inside the nested worktree, and therefore inside the outer one too.
+    const db = composeContainer('db', 'app', `${nestedPath}/deploy`)
+    const out = build({
+      items: [outer, nested],
+      fateInputs: new Map([
+        [outer.id, { facts: facts({ ancestorOfDefault: true }), localTip: TIP_A }],
+        [
+          nested.id,
+          {
+            facts: facts({ path: nestedPath, branch: 'feat/slug-nested', ancestorOfDefault: true }),
+            localTip: TIP_B
+          }
+        ]
+      ]),
+      stacks: [stack('app', [db])],
+      containers: [db]
+    })
+    expect(out).toHaveLength(2)
+    for (const b of out) {
+      expect(b.stackIds).toEqual([])
+      expect(b.sharedStackIds).toContain('app')
       expect(b.bucket).toBe('decide')
       expect(b.reason?.code).toBe('shared-stack')
     }

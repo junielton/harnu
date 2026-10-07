@@ -25,12 +25,22 @@ export interface GcShellDeps {
     removeContainers(ids: string[]): Promise<DockerBatchResult>
     removeVolumes(names: string[]): Promise<DockerBatchResult>
   }
-  /** Fresh listing for resolving stack ids to container ids and for the reprobe. */
+  /**
+   * Fresh listing for resolving stack ids to container ids and for the reprobe. Resolves
+   * `{ stacks: [] }` only when nothing can be running (the docker CLI is not installed).
+   * Rejects with {@link DockerUnavailableError} when the daemon is down or unreachable, and
+   * with any other error when the listing failed: neither may read as "no stacks".
+   */
   listStacks(): Promise<{ stacks: StackGroup[] }>
   /** Presence of a session in a folder, from the same sets the Reaper reads. */
   presenceOf(path: string): Promise<SessionPresence>
   /** The commit checked out in a folder now, or null when there is none. */
   headOf(path: string): Promise<string | null>
+  /**
+   * Whether the bundle is keep, neverClean or the main checkout NOW, not at the scan: a
+   * worktree marked Keep after the scan must not be cleaned. The reprobe asks it first.
+   */
+  isProtectedNow(b: WorktreeBundle): boolean | Promise<boolean>
 }
 
 /**
@@ -54,23 +64,47 @@ const DAEMON_DOWN =
   /cannot connect to the docker daemon|is the docker daemon running|error during connect|failed to connect to the docker API/i
 
 /**
- * Whether a failed docker call means docker is genuinely absent, so nothing can be running:
- * the CLI is not installed (ENOENT) or the daemon is down. Anything else, a timeout above
- * all, says nothing about what runs, so the listing must fail and the reprobe refuse.
+ * The docker daemon is down or unreachable. Its containers may come back with it, so this
+ * says nothing about what runs from a worktree, and the reprobe refuses on it.
  */
-export function dockerIsUnavailable(err: unknown): boolean {
-  const e = err as {
-    code?: unknown
-    killed?: unknown
-    signal?: unknown
-    stderr?: unknown
-    message?: unknown
-  } | null
+export class DockerUnavailableError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'DockerUnavailableError'
+  }
+}
+
+type ExecError = {
+  code?: unknown
+  killed?: unknown
+  signal?: unknown
+  stderr?: unknown
+  message?: unknown
+} | null
+
+/** The docker CLI is not installed (ENOENT), so nothing can be running on this machine. */
+export function dockerCliAbsent(err: unknown): boolean {
+  const e = err as ExecError
+  return !!e && typeof e === 'object' && e.code === 'ENOENT'
+}
+
+/**
+ * The CLI ran but could not reach the daemon. A killed call (execFile's timeout) can carry
+ * partial output that reads the same way; it never counts.
+ */
+export function dockerDaemonDown(err: unknown): boolean {
+  const e = err as ExecError
   if (!e || typeof e !== 'object') return false
-  if (e.code === 'ENOENT') return true
-  // A killed call (execFile's timeout) can carry partial output; it never proves absence.
   if (e.killed === true || (typeof e.signal === 'string' && e.signal)) return false
   return [e.stderr, e.message].some((t) => typeof t === 'string' && DAEMON_DOWN.test(t))
+}
+
+/**
+ * Either of the two above. Anything else, a timeout above all, says nothing about what
+ * runs, so the listing must fail and the reprobe refuse.
+ */
+export function dockerIsUnavailable(err: unknown): boolean {
+  return dockerCliAbsent(err) || dockerDaemonDown(err)
 }
 
 /** `working` and `needs-input` are one state to the fresh probe, so neither is a change from the other. */
@@ -107,9 +141,13 @@ function assertBatch(what: string, result: DockerBatchResult, wanted: number): v
   }
 }
 
-/** Which pipeline step a failed executor step belongs to. `remote-delete` cannot run here. */
+/**
+ * Which pipeline step a failed executor step belongs to. `remote-delete` cannot run here.
+ * cleanItem's guard runs at the start of the archive phase, after the docker steps and
+ * drop-deps already ran, so it maps to `archive`: `reprobe` would claim nothing was touched.
+ */
 const STEP_OF: Record<CleanStepId, GcStep> = {
-  guard: 'reprobe',
+  guard: 'archive',
   archive: 'archive',
   'trash-folder': 'trash',
   'worktree-prune': 'prune',
@@ -158,6 +196,14 @@ export function createGcOps(deps: GcShellDeps): GcOps {
     async reprobe(b: WorktreeBundle) {
       // Whatever an earlier pass vetted for these stacks no longer stands once we re-ask.
       for (const id of b.stackIds) vetted.delete(id)
+      // Protection first, before any probe or docker call. A read that fails is no answer.
+      try {
+        if (b.isMainCheckout || (await deps.isProtectedNow(b))) {
+          return { ok: false, reason: 'protected-now' }
+        }
+      } catch (err) {
+        return { ok: false, reason: `probe-failed: ${messageOf(err)}` }
+      }
       const item = b.item
       // cleanItem refuses a non-harvestable item at its first guard, after the docker steps
       // would already have run, so refuse here before anything destructive.
@@ -167,10 +213,13 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       if (typeof b.localTip !== 'string') return { ok: false, reason: 'tip-unknown' }
       // Re-check the grace against the clock now, not the one the bucket was decided on: a
       // bundle bucketed long ago, or built by hand, must not clean on a stale decision. No
-      // sign of life, or no recorded grace window, cannot show the window elapsed either.
+      // sign of life, or no recorded grace window, cannot show the window elapsed either,
+      // and neither can a NaN, infinite or negative one (each makes the comparison false).
+      const known = (n: number | null | undefined): n is number =>
+        Number.isFinite(n) && (n as number) >= 0
       if (
-        b.lastSignOfLifeAt === null ||
-        b.graceDays === undefined ||
+        !known(b.lastSignOfLifeAt) ||
+        !known(b.graceDays) ||
         deps.executor.now() - b.lastSignOfLifeAt < b.graceDays * 86_400_000
       ) {
         return { ok: false, reason: 'grace-not-elapsed' }
@@ -179,9 +228,18 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       if (!path) return { ok: false, reason: 'changed-since-scan' }
       const root = normalizePath(path, platform)
       try {
+        // Pre-flight everything cleanItem's guard would refuse: that guard runs only after
+        // the docker steps and drop-deps, so refusing there is too late. Dirty or unknown
+        // now refuses even when the scan already saw it dirty.
         const status = await deps.executor.probeStatus(path)
-        if (status.trackedDirty !== item.blockers.includes('dirty')) {
-          return { ok: false, reason: 'changed-since-scan' }
+        const scanDirty = item.blockers.includes('dirty')
+        if (status.trackedDirty !== false || scanDirty) {
+          const same = status.trackedDirty === scanDirty
+          return { ok: false, reason: same ? 'dirty' : 'changed-since-scan' }
+        }
+        // Same rule as cleanItem: only a merge signal waives the unpushed re-probe.
+        if (item.justifiedBy === null && (await deps.executor.hasUnpushed(path))) {
+          return { ok: false, reason: 'unpushed' }
         }
         // Any running session refuses, even one the scan already saw idle: dehydrateItem
         // refuses a live worktree, which would halt the run after the docker steps.
@@ -213,6 +271,8 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         for (const [id, seen] of pass) vetted.set(id, seen)
         return { ok: true }
       } catch (err) {
+        if (err instanceof DockerUnavailableError)
+          return { ok: false, reason: 'docker-unavailable' }
         // Fail closed: a probe that cannot answer is not a green light.
         return { ok: false, reason: `probe-failed: ${messageOf(err)}` }
       }
@@ -253,6 +313,19 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       throw new Error(`drop deps: ${parts.join('; ') || 'failed'}`)
     },
 
+    async recheck(b) {
+      const path = b.item.path
+      if (!path) return { ok: false, reason: 'changed-mid-run' }
+      try {
+        // Fail closed: a probe that cannot answer is not a green light either.
+        if ((await deps.presenceOf(path)) !== 'none') return { ok: false, reason: 'session-open' }
+        if ((await deps.headOf(path)) !== b.localTip) return { ok: false, reason: 'head-moved' }
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, reason: `probe-failed: ${messageOf(err)}` }
+      }
+    },
+
     async cleanGit(b) {
       // Remote branch deletion never happens through the cleanup pipeline, so the flag is a
       // literal rather than anything read from settings or from the item.
@@ -289,14 +362,18 @@ export async function defaultGcShellDeps(
       try {
         return { stacks: groupStacks(await shell.inspectAll({ strict: true })) }
       } catch (err) {
-        // No docker means no stacks to stop. A bundle that had stacks then fails the
-        // reprobe's stack comparison and is skipped; one that had none still cleans. Any
-        // other failure rethrows, so the reprobe reports probe-failed instead of "none".
-        if (dockerIsUnavailable(err)) return { stacks: [] }
+        // No docker CLI means no stacks to stop: a bundle that had stacks then fails the
+        // reprobe's stack comparison, one that had none still cleans. A stopped daemon is
+        // not "none" (its containers come back with it), so the reprobe refuses it. Any
+        // other failure rethrows, so the reprobe reports probe-failed.
+        if (dockerCliAbsent(err)) return { stacks: [] }
+        if (dockerDaemonDown(err)) throw new DockerUnavailableError(messageOf(err))
         throw err
       }
     },
     presenceOf: async (path) => presenceFromSets(path, await computeFolderSets()),
-    headOf: async (path) => (await executor.git(path, ['rev-parse', 'HEAD'])).trim() || null
+    headOf: async (path) => (await executor.git(path, ['rev-parse', 'HEAD'])).trim() || null,
+    // The scan-time flags for now; S3 replaces this with a live read of the prefs.
+    isProtectedNow: (b) => b.keep || b.neverClean || b.isMainCheckout
   }
 }

@@ -9,7 +9,10 @@ vi.mock('../src/main/reaper/executor-core', async (importOriginal) => {
 
 import {
   createGcOps,
+  dockerCliAbsent,
+  dockerDaemonDown,
   dockerIsUnavailable,
+  DockerUnavailableError,
   presenceFromSets,
   type GcShellDeps
 } from '../src/main/gc/gc-shell'
@@ -110,6 +113,7 @@ interface Harness {
   setStacks(stacks: StackGroup[]): void
   presenceOf: ReturnType<typeof vi.fn>
   headOf: ReturnType<typeof vi.fn>
+  isProtectedNow: ReturnType<typeof vi.fn>
   probeStatus: ReturnType<typeof vi.fn>
   git: ReturnType<typeof vi.fn>
   gitCalls: string[][]
@@ -122,8 +126,9 @@ function harness(
   over: {
     stacks?: StackGroup[]
     presence?: SessionPresence
-    trackedDirty?: boolean
+    trackedDirty?: boolean | null
     head?: string | null
+    protectedNow?: boolean
     executor?: Partial<ExecutorDeps>
     dehydrate?: Partial<DehydrateDeps>
   } = {}
@@ -137,9 +142,12 @@ function harness(
   const headOf = vi.fn(async (): Promise<string | null> =>
     over.head === undefined ? TIP : over.head
   )
+  const isProtectedNow = vi.fn((): boolean | Promise<boolean> => over.protectedNow ?? false)
   const probeStatus = vi.fn(async () => ({
-    trackedDirty: over.trackedDirty ?? false,
-    untracked: []
+    // WorktreeStatus types this as a boolean; null models a probe that gave no real answer,
+    // which the reprobe must refuse rather than read as clean.
+    trackedDirty: (over.trackedDirty === undefined ? false : over.trackedDirty) as boolean,
+    untracked: [] as string[]
   }))
   const gitCalls: string[][] = []
   const git = vi.fn(async (_repo: string, args: string[]) => {
@@ -177,7 +185,8 @@ function harness(
       docker: { stop, removeContainers, removeVolumes },
       listStacks,
       presenceOf,
-      headOf
+      headOf,
+      isProtectedNow
     },
     stop,
     removeContainers,
@@ -188,6 +197,7 @@ function harness(
     },
     presenceOf,
     headOf,
+    isProtectedNow,
     probeStatus,
     git,
     gitCalls,
@@ -309,6 +319,33 @@ describe('dockerIsUnavailable', () => {
   })
 })
 
+describe('dockerCliAbsent / dockerDaemonDown', () => {
+  const enoent = Object.assign(new Error('spawn docker ENOENT'), { code: 'ENOENT' })
+  const down = Object.assign(new Error('Command failed: docker ps'), {
+    code: 1,
+    stderr: 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock.'
+  })
+
+  it('tells a missing CLI apart from a stopped daemon', () => {
+    expect(dockerCliAbsent(enoent)).toBe(true)
+    expect(dockerDaemonDown(enoent)).toBe(false)
+    expect(dockerCliAbsent(down)).toBe(false)
+    expect(dockerDaemonDown(down)).toBe(true)
+  })
+
+  it('reads neither into a killed call or a plain error', () => {
+    const killed = Object.assign(new Error('x'), {
+      killed: true,
+      signal: 'SIGTERM',
+      stderr: 'Cannot connect to the Docker daemon'
+    })
+    for (const e of [killed, new Error('boom'), null]) {
+      expect(dockerCliAbsent(e)).toBe(false)
+      expect(dockerDaemonDown(e)).toBe(false)
+    }
+  })
+})
+
 describe('reprobe (AC-5)', () => {
   it('returns ok when every fact still matches the scan', async () => {
     const h = harness()
@@ -339,10 +376,19 @@ describe('reprobe (AC-5)', () => {
     })
   })
 
-  it('accepts a worktree that was dirty at the scan and still is (the executor guard decides)', async () => {
+  // cleanItem's guard would refuse it anyway, but only after the docker steps had run.
+  it('refuses a worktree that was dirty at the scan and still is, as dirty', async () => {
     const h = harness({ trackedDirty: true })
     const b = bundle({ item: reapItem({ blockers: ['dirty'] }) })
-    expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: true })
+    expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: false, reason: 'dirty' })
+    expect(h.listStacks).not.toHaveBeenCalled()
+  })
+
+  it('refuses when the status probe cannot tell whether tracked files changed', async () => {
+    const h = harness({ trackedDirty: null })
+    const r = await createGcOps(h.deps).reprobe(bundle())
+    expect(r.ok).toBe(false)
+    expect(h.listStacks).not.toHaveBeenCalled()
   })
 
   it('refuses when a session opened since the scan (none to open-idle)', async () => {
@@ -550,6 +596,21 @@ describe('reprobe (AC-5)', () => {
       })
     })
 
+    it.each<[string, Partial<WorktreeBundle>]>([
+      ['a NaN sign of life', { lastSignOfLifeAt: NaN }],
+      ['a negative sign of life', { lastSignOfLifeAt: -1 }],
+      ['a NaN grace', { graceDays: NaN }],
+      ['a negative grace', { graceDays: -1 }],
+      ['an infinite grace', { graceDays: Infinity }]
+    ])('refuses %s as grace-not-elapsed', async (_label, over) => {
+      const h = harness()
+      expect(await createGcOps(h.deps).reprobe(bundle(over))).toEqual({
+        ok: false,
+        reason: 'grace-not-elapsed'
+      })
+      expect(h.probeStatus).not.toHaveBeenCalled()
+    })
+
     it('refuses before any probe runs', async () => {
       const h = harness()
       await createGcOps(h.deps).reprobe(bundle({ lastSignOfLifeAt: null }))
@@ -582,11 +643,178 @@ describe('reprobe (AC-5)', () => {
     expect(r.ok === false && r.reason).toMatch(/^probe-failed/)
   })
 
+  it('refuses as docker-unavailable when the listing says the daemon is down', async () => {
+    const h = harness()
+    h.listStacks.mockRejectedValueOnce(new DockerUnavailableError('daemon down'))
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+      ok: false,
+      reason: 'docker-unavailable'
+    })
+    expect(h.stop).not.toHaveBeenCalled()
+  })
+
   it('reports a throwing stack listing as probe-failed', async () => {
     const h = harness()
     h.listStacks.mockRejectedValueOnce(new Error('docker gone'))
     const r = await createGcOps(h.deps).reprobe(bundle())
     expect(r.ok === false && r.reason).toMatch(/^probe-failed/)
+  })
+})
+
+describe('reprobe pre-flights the cleanItem guard (delta 2, item 1)', () => {
+  const opts = { removeVolumes: true }
+
+  /** A recording dehydrate, so a test can prove drop-deps never started. */
+  const watchedDeps = (): { readManifest: ReturnType<typeof vi.fn> } => ({
+    readManifest: vi.fn(async () => ({ ephemeral: ['node_modules'], setup: [] }))
+  })
+
+  it('a still-dirty bundle halts at the reprobe and never reaches docker or drop-deps', async () => {
+    const dehydrate = watchedDeps()
+    const h = harness({ trackedDirty: true, dehydrate })
+    const b = bundle({ item: reapItem({ blockers: ['dirty'] }) })
+    const r = await runBundle(b, createGcOps(h.deps), opts)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'dirty', freedBytes: 0 })
+    expect(h.stop).not.toHaveBeenCalled()
+    expect(h.removeContainers).not.toHaveBeenCalled()
+    expect(h.removeVolumes).not.toHaveBeenCalled()
+    expect(dehydrate.readManifest).not.toHaveBeenCalled()
+  })
+
+  it('an unknown tracked-dirty state halts at the reprobe before any docker step', async () => {
+    const dehydrate = watchedDeps()
+    const h = harness({ trackedDirty: null, dehydrate })
+    const r = await runBundle(bundle(), createGcOps(h.deps), opts)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe' })
+    expect(h.stop).not.toHaveBeenCalled()
+    expect(dehydrate.readManifest).not.toHaveBeenCalled()
+  })
+
+  it('a still-unpushed bundle with no merge signal halts at the reprobe, before stopStacks', async () => {
+    const hasUnpushed = vi.fn(async () => true)
+    const h = harness({ executor: { hasUnpushed } })
+    const b = bundle({ item: reapItem({ justifiedBy: null }) })
+    const r = await runBundle(b, createGcOps(h.deps), opts)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'unpushed', freedBytes: 0 })
+    expect(hasUnpushed).toHaveBeenCalledWith(WT)
+    expect(h.stop).not.toHaveBeenCalled()
+    expect(h.removeContainers).not.toHaveBeenCalled()
+  })
+
+  it('reports a throwing unpushed probe as probe-failed', async () => {
+    const h = harness({
+      executor: {
+        hasUnpushed: async () => {
+          throw new Error('no upstream')
+        }
+      }
+    })
+    const b = bundle({ item: reapItem({ justifiedBy: null }) })
+    expect(await createGcOps(h.deps).reprobe(b)).toEqual({
+      ok: false,
+      reason: 'probe-failed: no upstream'
+    })
+  })
+
+  it('skips the unpushed probe when a merge signal justifies the item, as cleanItem does', async () => {
+    const hasUnpushed = vi.fn(async () => true)
+    const h = harness({ executor: { hasUnpushed } })
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({ ok: true })
+    expect(hasUnpushed).not.toHaveBeenCalled()
+  })
+})
+
+describe('recheck before cleanGit (delta 2, item 4)', () => {
+  const opts = { removeVolumes: true }
+
+  it('passes while the worktree is still idle on the scanned tip', async () => {
+    const h = harness()
+    expect(await createGcOps(h.deps).recheck(bundle())).toEqual({ ok: true })
+  })
+
+  it('a session that appears after drop-deps halts at archive before cleanGit', async () => {
+    const h = harness()
+    // The reprobe still sees nobody; the session opens while the deps are being dropped.
+    h.presenceOf.mockResolvedValueOnce('none').mockResolvedValue('working')
+    const r = await runBundle(bundle(), createGcOps(h.deps), opts)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'changed-mid-run' })
+    expect(r.freedBytes).toBe(4096)
+    expect(h.stop).toHaveBeenCalled()
+    expect(cleanItem).not.toHaveBeenCalled()
+  })
+
+  it('HEAD moving after drop-deps halts at archive before cleanGit', async () => {
+    const h = harness()
+    h.headOf.mockResolvedValueOnce(TIP).mockResolvedValue('c'.repeat(40))
+    const r = await runBundle(bundle(), createGcOps(h.deps), opts)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'changed-mid-run' })
+    expect(cleanItem).not.toHaveBeenCalled()
+  })
+
+  it('refuses when presence or HEAD cannot be read', async () => {
+    const h = harness()
+    h.presenceOf.mockRejectedValueOnce(new Error('fleet unavailable'))
+    expect((await createGcOps(h.deps).recheck(bundle())).ok).toBe(false)
+    h.headOf.mockRejectedValueOnce(new Error('not a git repository'))
+    expect((await createGcOps(h.deps).recheck(bundle())).ok).toBe(false)
+  })
+})
+
+describe('reprobe re-reads protection at execution time (delta 2, item 8)', () => {
+  const opts = { removeVolumes: true }
+
+  it('a bundle marked Keep after the scan is refused as protected-now before any op', async () => {
+    const hasUnpushed = vi.fn(async () => false)
+    const h = harness({ protectedNow: true, executor: { hasUnpushed } })
+    const b = bundle({ keep: false })
+    const r = await runBundle(b, createGcOps(h.deps), opts)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'protected-now' })
+    expect(h.isProtectedNow).toHaveBeenCalledWith(b)
+    for (const fn of [h.probeStatus, h.presenceOf, h.headOf, h.listStacks, hasUnpushed]) {
+      expect(fn).not.toHaveBeenCalled()
+    }
+    expect(h.stop).not.toHaveBeenCalled()
+    expect(h.removeContainers).not.toHaveBeenCalled()
+    expect(h.removeVolumes).not.toHaveBeenCalled()
+    expect(cleanItem).not.toHaveBeenCalled()
+  })
+
+  it('accepts an asynchronous answer', async () => {
+    const h = harness()
+    h.isProtectedNow.mockResolvedValueOnce(true)
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+      ok: false,
+      reason: 'protected-now'
+    })
+  })
+
+  it('refuses as probe-failed when the protection read throws', async () => {
+    const h = harness()
+    h.isProtectedNow.mockImplementationOnce(() => {
+      throw new Error('prefs unreadable')
+    })
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+      ok: false,
+      reason: 'probe-failed: prefs unreadable'
+    })
+    expect(h.probeStatus).not.toHaveBeenCalled()
+    expect(h.listStacks).not.toHaveBeenCalled()
+  })
+
+  it('still refuses on the scan-time main-checkout flag, whatever the live read says', async () => {
+    const h = harness({ protectedNow: false })
+    expect(await createGcOps(h.deps).reprobe(bundle({ isMainCheckout: true }))).toEqual({
+      ok: false,
+      reason: 'protected-now'
+    })
+    expect(h.probeStatus).not.toHaveBeenCalled()
+  })
+
+  it('lets an unprotected bundle proceed', async () => {
+    const h = harness({ protectedNow: false })
+    const r = await runBundle(bundle(), createGcOps(h.deps), opts)
+    expect(r.ok).toBe(true)
+    expect(h.isProtectedNow).toHaveBeenCalled()
   })
 })
 
@@ -621,7 +849,8 @@ function scanned(containers: InspectedContainer[]): WorktreeBundle {
         id: 'pr-merged',
         state: 'green',
         detail: new Date(EXEC_NOW - 10 * DAY).toISOString()
-      }
+      },
+      { id: 'local-clean', state: 'green' }
     ]
   })
   const out = buildBundles({
@@ -884,7 +1113,9 @@ describe('cleanGit', () => {
   })
 
   const failing: Array<[string, Partial<ExecutorDeps>, string]> = [
-    ['guard', { probeStatus: async () => ({ trackedDirty: true, untracked: [] }) }, 'reprobe'],
+    // The guard runs at the start of the archive phase, after docker and drop-deps already
+    // ran, so naming the reprobe would claim nothing destructive had happened.
+    ['guard', { probeStatus: async () => ({ trackedDirty: true, untracked: [] }) }, 'archive'],
     [
       'archive',
       {
@@ -958,6 +1189,38 @@ describe('cleanGit', () => {
       expect((err as GcStepError).message.length).toBeGreaterThan(0)
     }
   )
+
+  it.each<[string, Partial<ReapItem>, Partial<ExecutorDeps>]>([
+    ['a non-harvestable verdict', { verdict: 'blocked' }, {}],
+    ['dirty on re-probe', {}, { probeStatus: async () => ({ trackedDirty: true, untracked: [] }) }],
+    ['unpushed on re-probe', { justifiedBy: null }, { hasUnpushed: async () => true }]
+  ])(
+    'a cleanItem guard refusal for %s halts at archive, never at reprobe',
+    async (_label, itemOver, executorOver) => {
+      const h = harness({ executor: executorOver })
+      const err = await createGcOps(h.deps)
+        .cleanGit(bundle({ item: reapItem(itemOver) }))
+        .then(
+          () => null,
+          (e: unknown) => e
+        )
+      expect(err).toBeInstanceOf(GcStepError)
+      expect((err as GcStepError).step).toBe('archive')
+      expect((err as GcStepError).message).toMatch(/^guard:/)
+    }
+  )
+
+  it('through runBundle, a guard refusal after the docker steps reports archive, not reprobe', async () => {
+    const h = harness()
+    // Clean at the reprobe, dirty by the time cleanItem's own guard re-probes.
+    h.probeStatus
+      .mockResolvedValueOnce({ trackedDirty: false, untracked: [] })
+      .mockResolvedValue({ trackedDirty: true, untracked: [] })
+    const r = await runBundle(bundle(), createGcOps(h.deps), { removeVolumes: true })
+    expect(h.stop).toHaveBeenCalled()
+    expect(r).toMatchObject({ ok: false, haltedAt: 'archive', freedBytes: 4096 })
+    expect(r.error).toMatch(/dirty on re-probe/)
+  })
 
   it('carries the failing step message through', async () => {
     const h = harness({

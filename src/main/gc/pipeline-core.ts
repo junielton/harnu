@@ -24,6 +24,11 @@ export interface GcOps {
   removeVolumes(names: string[]): Promise<void>
   /** Resolves to the bytes freed. */
   dropDeps(b: WorktreeBundle): Promise<number>
+  /**
+   * Re-reads presence and HEAD right before `cleanGit`: the docker steps and drop-deps take
+   * time, and a session opened or a commit made meanwhile must stop the archive and trash.
+   */
+  recheck(b: WorktreeBundle): Promise<{ ok: true } | { ok: false; reason: string }>
   /** archive → trash → prune → branch-delete → detach, remote branch deletion forced off. */
   cleanGit(b: WorktreeBundle): Promise<void>
 }
@@ -52,23 +57,39 @@ export class GcStepError extends Error {
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
+export interface GcRunOptions {
+  removeVolumes: boolean
+  /** The operator explicitly chose to clean `decide` bundles too. Never set by default. */
+  confirmDecide?: boolean
+}
+
+/**
+ * Only a proven corpse runs, or a `decide` bundle the operator explicitly confirmed. A
+ * protection flag refuses whatever the bucket says, since a stale or hand-built bundle can
+ * carry a corpse bucket next to a flag set after the scan.
+ */
+function mayRun(b: WorktreeBundle, opts: GcRunOptions): boolean {
+  if (b.isMainCheckout || b.neverClean || b.keep) return false
+  return b.bucket === 'corpse' || (opts.confirmDecide === true && b.bucket === 'decide')
+}
+
 /**
  * Clean one bundle in a fixed order: reprobe, stop stacks, remove containers, remove
- * volumes, drop deps, then the git side. The order is what makes it safe: nothing under
- * the checkout is touched until the stack running from it is gone, and nothing is removed
- * at all unless the reprobe still agrees with the scan.
+ * volumes, drop deps, recheck, then the git side. The order is what makes it safe: nothing
+ * under the checkout is touched until the stack running from it is gone, and nothing is
+ * removed at all unless the reprobe still agrees with the scan.
  *
- * Dropping deps runs before `cleanGit` (which contains the archive) because cleanItem is
- * one call. That is safe: dehydration removes only git-ignored directories and the archive
- * excludes ignored files.
- *
+ * Anything but a proven corpse (or a confirmed `decide`) is refused before any op runs.
  * The first failing step halts this bundle; later steps never run. Never rejects.
  */
 export async function runBundle(
   b: WorktreeBundle,
   ops: GcOps,
-  opts: { removeVolumes: boolean }
+  opts: GcRunOptions
 ): Promise<GcItemResult> {
+  if (!mayRun(b, opts)) {
+    return { id: b.item.id, ok: false, haltedAt: 'reprobe', error: 'not-a-corpse', freedBytes: 0 }
+  }
   let freedBytes = 0
   const fail = (haltedAt: GcStep, error: string): GcItemResult => ({
     id: b.item.id,
@@ -107,10 +128,20 @@ export async function runBundle(
     }
   }
 
+  // Accepted spec §4 deviation: cleanItem is one call, and its archive skips the ignored dirs.
   halted = await step('drop-deps', async () => {
     freedBytes = await ops.dropDeps(b)
   })
   if (halted) return halted
+
+  // The deps are already gone, so their bytes stay counted whatever the recheck says.
+  let still: Awaited<ReturnType<GcOps['recheck']>> | null = null
+  try {
+    still = await ops.recheck(b)
+  } catch {
+    // A recheck that cannot answer is not a green light.
+  }
+  if (!still?.ok) return fail('archive', 'changed-mid-run')
 
   try {
     await ops.cleanGit(b)
@@ -131,7 +162,7 @@ export interface BatchHooks {
 export async function runBatch(
   bs: WorktreeBundle[],
   ops: GcOps,
-  opts: { removeVolumes: boolean },
+  opts: GcRunOptions,
   hooks: BatchHooks = {}
 ): Promise<GcItemResult[]> {
   const results: GcItemResult[] = []
