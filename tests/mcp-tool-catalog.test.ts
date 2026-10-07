@@ -262,6 +262,8 @@ describe('T120 declarative gate fields — the def is the single source of truth
     'memory_append',
     'open_file',
     'notify',
+    // T445: release_worktree deletes nothing, so it runs free like the board verbs.
+    'release_worktree',
     // T238: free like every other mutating verb, but NOT grantable and NOT
     // always-allowable — its real gate is the operator's voice switch, which
     // nothing may buy on their behalf.

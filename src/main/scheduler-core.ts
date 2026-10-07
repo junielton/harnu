@@ -300,6 +300,9 @@ const OBSERVE_ALLOW_VERBS: readonly string[] = [
   // T328: read-only, so an observe worker can watch for zombie containers.
   // Its stop/start/remove siblings (T329) belong on the deny list below.
   'list_containers',
+  // T445: read-only, so a delivery-watchdog can report accumulated corpses. Its sibling
+  // `release_worktree` writes a mark and belongs on the deny list below.
+  'list_cleanup',
   // T369 (Mission progress S8): the two Mission READ verbs, so an observe-mode
   // `delivery-watchdog` can read a mission's stored state and its derived
   // `stale` flag. Every mission WRITE verb is on the deny list below.
@@ -343,6 +346,9 @@ const OBSERVE_DENY_VERBS: readonly string[] = [
   'stop_containers',
   'start_containers',
   'remove_containers',
+  // T445: an observe worker may read the cleanup list (list_cleanup above) but never
+  // release a worktree — that is a write, and it changes what the autopilot may clean.
+  'release_worktree',
   // T369: an observe worker may read missions (mission_get/mission_list above)
   // but never write one — a watchdog that could log, verify, block or close a
   // mission would be acting on the delivery it exists only to watch.

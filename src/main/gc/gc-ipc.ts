@@ -4,7 +4,8 @@
  * Request/response channels `gc:snapshot/clean/keep/unkeep/prefs:get/prefs:set/
  * ackFirstReport/jobs`, plus the `gc:progress`, `gc:done` and `gc:cycle` pushes. There is no
  * timer here: the cycle rides the Reaper tick through `ReaperControl.setAfterScan`, so the
- * scan and the clean share one clock. Cleaning is UI-only on purpose: no MCP verb reaches it.
+ * scan and the clean share one clock. Cleaning is UI-only on purpose: no MCP verb reaches it
+ * (the agent seam, `gc-service-registry`, can read the snapshot and release a bundle, nothing more).
  *
  * Every decision lives in a tested core (`planCycle`, `refusalFor`, the job queue, the cycle
  * and manual-clean orchestrators). This file only wires them to electron, docker and disk.
@@ -29,7 +30,9 @@ import {
   readGcPrefs,
   withAcknowledged,
   withKeep,
+  withReleased,
   withoutKeep,
+  withoutReleased,
   writeGcPrefs,
   type GcPrefs
 } from './gc-prefs'
@@ -37,6 +40,7 @@ import type { GcCleanAck, GcCleanOptions, GcSnapshot } from './gc-wire'
 import { createGcOps, defaultGcShellDeps, type GcShellDeps } from './gc-shell'
 import { createForcedGcOps } from './gc-forced-ops'
 import { runHousekeeping } from './housekeeping-shell'
+import { setGcService } from './gc-service-registry'
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
@@ -101,6 +105,7 @@ export async function registerGcHandlers(
         cache = g
         setInheritedBuckets(bucketFeed(g.bundles))
         if (g.staleKeeps.length > 0) await persist(withoutKeep(prefs, g.staleKeeps))
+        if (g.staleReleases.length > 0) await persist(withoutReleased(prefs, g.staleReleases))
         return g
       } finally {
         gathering = null
@@ -220,6 +225,16 @@ export async function registerGcHandlers(
     ackFirstReport: () => persist(withAcknowledged(prefs)),
     jobs: () => queue.jobs()
   }
+
+  // The agent-facing seam (T445). Deliberately narrow: no clean, keep or prefs method.
+  setGcService({
+    snapshot: (opts) => service.snapshot(opts),
+    release: async (bundleId, atMs) => {
+      await persist(withReleased(prefs, bundleId, atMs))
+      // The release changes the bucket, so refresh what the Cleanup surface reads.
+      void gather().catch((err) => console.error('[gc] refresh after release failed', err))
+    }
+  })
 
   ipcMain.handle('gc:snapshot', (_e, opts?: { refresh?: boolean }) =>
     service.snapshot({ refresh: opts?.refresh === true })

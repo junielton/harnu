@@ -1,4 +1,4 @@
-<!-- harnu-features v71 (2026-10-06) -->
+<!-- harnu-features v72 (2026-10-07) -->
 
 # You are running inside Harnu
 
@@ -29,7 +29,7 @@ same verbs, old name; call the `mcp__harnu__` one). The core verbs are available
 `move_card`, `archive_card`, `delete_card`, `submit_manifest`, `draw_canvas`,
 `notify`, `speak`, `message_session`, `create_worker`, `list_workers`,
 `list_containers`, `stop_containers`, `start_containers`, `remove_containers`,
-`update_worker`, `delete_worker`, `orchestrator_arm`, `orchestrator_disarm`,
+`list_cleanup`, `release_worktree`, `update_worker`, `delete_worker`, `orchestrator_arm`, `orchestrator_disarm`,
 `mission_create`, `mission_get`, `mission_list`, `mission_add_step`,
 `mission_update_step`, `mission_link_child`, `mission_log`, `mission_set_blocker`,
 `mission_clear_blocker`, `mission_set_end`, `mission_verify_step`,
@@ -524,6 +524,39 @@ where `restoreHint` is the compose recreate command with the directory shown as
 journal entry with `actor: "agent"`, which the operator sees in their history and
 you see in `list_containers.recent`. None of the three is open to a Scheduler
 `observe` worker.
+
+**Workspace cleanup — `list_cleanup`, `release_worktree`.** Harnu's Cleanup surface
+judges every worktree into one bucket: `corpse` (branch strongly merged, clean, no
+running session, past its grace window — cleanable), `decide` (needs the operator, with a
+one-sentence reason) or `alive`. You can read that picture and tell Harnu you are done
+with a worktree. **You cannot remove anything**: removal is the operator's click or the
+autopilot's, and no verb reaches it.
+
+- `list_cleanup({ folder? })` reads the picture. ACK
+  `{ ok, scannedAt, bundles: [{ id, folderAlias, branch, bucket, reason, bytes, depsBytes,
+released, agentControllable }], orphanVolumes, totals, autopilot: { enabled, reportOnly,
+graceDays }, nextCycleAt }`. Read `bucket` and `reason`; never re-derive them. Every call
+  runs a fresh gather. Paths are redacted like `list_containers`: `folderAlias` is a
+  basename and `id` a readable label, never a path. A worktree in a folder the operator
+  blocked still lists with `agentControllable: false` — report it, leave it alone. `folder`
+  narrows `bundles` and `totals` to that repo and its worktrees (and leaves out
+  `orphanVolumes`, which belong to no folder); a blocked `folder` is refused
+  `FOLDER_NOT_ALLOWED`. `autopilot.reportOnly` is true until the operator acknowledges the
+  first report. `GC_NOT_READY` right after Harnu starts means retry in a moment. It is on
+  the Scheduler `observe` allowlist, so a read-only worker can report accumulated corpses.
+- `release_worktree({ folder })` says "this worktree's PR merged and I am done with it":
+  its grace window stops applying, so it becomes a `corpse` on the next scan **if every
+  other rule still holds**. It runs free and deletes nothing. Call it for the worktree you
+  worked in once its PR merged, not before. A release never overrides a safety rule: dirty
+  tracked files or unpushed commits, an open idle session, a stack shared with another
+  worktree, a Keep mark or a never-clean path keep the bundle out of `corpse` — the ACK
+  `{ ok, op, folderAlias, branch, released, alreadyReleased, bucketAfter, reason, deleted:
+false, message }` says where it landed (`bucketAfter`) and why (`reason`), so tell the
+  operator instead of promising a cleanup. It is idempotent (`alreadyReleased`). Refusals:
+  `FATE_NOT_MERGED` (the branch is not merged with a strong proof), `FOLDER_NOT_ALLOWED`
+  (blocked folder), `IS_MAIN_CHECKOUT` (a repo's main checkout is never cleaned) and
+  `NOT_A_WORKTREE` (the cleanup scan does not know that folder — call `list_cleanup` for
+  the exact path). Not open to a Scheduler `observe` worker.
 
 **Worktrees.** You can create and list git worktrees (`create_worktree` /
 `list_worktrees`). Harnu reads a repo's `WORKTREE.md` manifest so fresh worktrees are

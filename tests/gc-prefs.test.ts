@@ -24,7 +24,8 @@ describe('defaultGcPrefs', () => {
       removeVolumes: true,
       cacheMaxAgeDays: 7,
       neverClean: [],
-      keep: {}
+      keep: {},
+      released: {}
     })
   })
 

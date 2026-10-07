@@ -50,6 +50,8 @@ export interface GcGathered extends GcGather {
   orphanVolumes: OrphanVolumeItem[]
   /** Keep marks whose branch fate has changed since; the caller clears them from the prefs. */
   staleKeeps: string[]
+  /** Releases whose bundle is gone or no longer strongly merged; the caller clears them. */
+  staleReleases: string[]
 }
 
 const COMPOSE_FILES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml']
@@ -180,7 +182,8 @@ export async function gatherGc(prefs: GcPrefs, now: number): Promise<GcGathered>
     harnuStoppedAt: harnuStopTimes(journal),
     now,
     graceDays: prefs.graceDays,
-    volumes: df
+    volumes: df,
+    released: new Map(Object.entries(prefs.released))
   }
   // A Keep mark holds only while the fate it was made under still holds: judge the fates
   // first, then rebuild with the marks that are still valid.
@@ -194,6 +197,13 @@ export async function gatherGc(prefs: GcPrefs, now: number): Promise<GcGathered>
     else staleKeeps.push(b.item.id)
   }
   if (keep.size > 0) bundles = buildBundles({ ...input, keep })
+
+  // A release holds while the bundle is there and its merge proof stays strong; otherwise
+  // the mark is dropped, so a branch that later reopens does not come back pre-released.
+  const stillReleased = new Set(
+    bundles.filter((b) => b.fate.fate === 'merged' && b.fate.strong).map((b) => b.item.id)
+  )
+  const staleReleases = Object.keys(prefs.released).filter((id) => !stillReleased.has(id))
 
   // Housekeeping facts. Existence fails closed; explicit project names come from the files.
   const workingDirs = containers.flatMap((c) => c.labels[COMPOSE_WORKING_DIR_LABEL] ?? [])
@@ -235,6 +245,7 @@ export async function gatherGc(prefs: GcPrefs, now: number): Promise<GcGathered>
     scannedAt: now,
     df,
     orphanVolumes: orphanVolumeItems(orphanNames, df),
-    staleKeeps
+    staleKeeps,
+    staleReleases
   }
 }

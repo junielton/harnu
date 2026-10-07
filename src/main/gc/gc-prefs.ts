@@ -22,6 +22,12 @@ export interface GcPrefs {
   neverClean: string[]
   /** Bundle id → the fate it had when the operator pressed Keep. */
   keep: Record<string, string>
+  /**
+   * Bundle id → when an agent released it (`release_worktree`). A released bundle skips the
+   * grace window and nothing else: `buildBundles` honors it only for a strongly merged fate,
+   * and every other rule (dirty, session, shared stack, keep, neverClean) still applies.
+   */
+  released: Record<string, number>
 }
 
 export const PREFS_FILE = 'gc-prefs.json'
@@ -48,7 +54,8 @@ export function defaultGcPrefs(): GcPrefs {
     removeVolumes: true,
     cacheMaxAgeDays: 7,
     neverClean: [],
-    keep: {}
+    keep: {},
+    released: {}
   }
 }
 
@@ -100,6 +107,14 @@ export function normalizeGcPrefs(raw: unknown, legacy: LegacyPrefs = {}): GcPref
     }
   }
 
+  const released: Record<string, number> = {}
+  if (isRecord(r.released)) {
+    for (const [id, at] of Object.entries(r.released)) {
+      const t = finite(at)
+      if (id && t !== null && t >= 0) released[id] = t
+    }
+  }
+
   return {
     version: 1,
     autopilot: bool(r.autopilot) ?? d.autopilot,
@@ -122,7 +137,8 @@ export function normalizeGcPrefs(raw: unknown, legacy: LegacyPrefs = {}): GcPref
     removeVolumes: bool(r.removeVolumes) ?? d.removeVolumes,
     cacheMaxAgeDays: clamped(r.cacheMaxAgeDays, 1, MAX_CACHE_AGE_DAYS) ?? d.cacheMaxAgeDays,
     neverClean,
-    keep
+    keep,
+    released
   }
 }
 
@@ -163,13 +179,18 @@ export async function writeGcPrefs(file: string, prefs: GcPrefs): Promise<void> 
 // ---- reducers behind the IPC channels ------------------------------------------------------
 
 /**
- * A whole-object write from the renderer. `keep` and the acknowledgement have their own
- * channels, so a stale settings form can neither wipe the operator's Keep marks nor
- * acknowledge a report it never showed.
+ * A whole-object write from the renderer. `keep`, `released` and the acknowledgement have
+ * their own channels, so a stale settings form can neither wipe the operator's Keep marks or
+ * an agent's releases nor acknowledge a report it never showed.
  */
 export function mergeIncomingPrefs(current: GcPrefs, raw: unknown): GcPrefs {
   const next = normalizeGcPrefs(raw, { reaper: { intervalMs: current.intervalMs } })
-  return { ...next, keep: current.keep, firstReportAcknowledged: current.firstReportAcknowledged }
+  return {
+    ...next,
+    keep: current.keep,
+    released: current.released,
+    firstReportAcknowledged: current.firstReportAcknowledged
+  }
 }
 
 export function withKeep(prefs: GcPrefs, id: string, fate: string): GcPrefs {
@@ -180,6 +201,16 @@ export function withoutKeep(prefs: GcPrefs, ids: readonly string[]): GcPrefs {
   const keep = { ...prefs.keep }
   for (const id of ids) delete keep[id]
   return { ...prefs, keep }
+}
+
+export function withReleased(prefs: GcPrefs, id: string, at: number): GcPrefs {
+  return { ...prefs, released: { ...prefs.released, [id]: at } }
+}
+
+export function withoutReleased(prefs: GcPrefs, ids: readonly string[]): GcPrefs {
+  const released = { ...prefs.released }
+  for (const id of ids) delete released[id]
+  return { ...prefs, released }
 }
 
 export function withAcknowledged(prefs: GcPrefs): GcPrefs {

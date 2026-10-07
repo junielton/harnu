@@ -898,6 +898,14 @@ export function parseListContainers(input: unknown): ParseResult<ListContainersA
   return parseListWorkers(input)
 }
 
+/** Validated args for the `list_cleanup` read tool (T445). */
+export type ListCleanupArgs = ListWorkersArgs
+
+/** Validate `list_cleanup` args (T445) — the same optional `{ folder }` shape as `list_workers`. */
+export function parseListCleanup(input: unknown): ParseResult<ListCleanupArgs> {
+  return parseListWorkers(input)
+}
+
 /** Stack ids from `list_containers`: a non-empty list of non-empty strings. */
 const StackIdsSchema = z.array(z.string().min(1)).min(1)
 
@@ -1145,6 +1153,9 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   create_worker: parseCreateWorker,
   list_workers: parseListWorkers,
   list_containers: parseListContainers,
+  // T445: list_cleanup takes the optional folder; release_worktree requires it.
+  list_cleanup: parseListCleanup,
+  release_worktree: parseAdoptFolder,
   stop_containers: parseStopContainers,
   start_containers: parseStartContainers,
   remove_containers: parseRemoveContainers,

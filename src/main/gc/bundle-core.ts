@@ -214,6 +214,11 @@ export interface BuildBundlesInput {
   harnuStoppedAt?: ReadonlyMap<string, number>
   /** Volume facts from `docker system df -v`, for the cross-project rule in ownedVolumes. */
   volumes?: ReadonlyMap<string, VolumeFact>
+  /**
+   * Bundle id → when an agent released it. A release lifts the grace window and nothing else,
+   * and only for a strongly merged fate; every other bucket rule still decides.
+   */
+  released?: ReadonlyMap<string, number>
 }
 
 /** Merge time from the `pr-merged` checkpoint detail; anything that is not a date is ignored. */
@@ -308,12 +313,20 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
     const signs = [mergedAtOf(item), session?.lastActivityAt ?? null, events].filter(
       (t): t is number => t !== null
     )
+    // A release is an agent saying it is done with the worktree: the grace no longer applies,
+    // and with no other sign of life the release time stands in for one. The facts record the
+    // grace actually used, so the execution-time reprobe agrees with the bucket.
+    // It applies only to a strongly merged fate: any weaker proof keeps the normal window.
+    const mark = input.released?.get(item.id)
+    const releasedAt =
+      mark !== undefined && fate.fate === 'merged' && fate.strong ? mark : undefined
+    const graceDays = releasedAt !== undefined ? 0 : input.graceDays
 
     const facts: BundleFacts = {
       item,
       fate,
       session: session?.presence ?? 'none',
-      lastSignOfLifeAt: signs.length > 0 ? Math.max(...signs) : null,
+      lastSignOfLifeAt: signs.length > 0 ? Math.max(...signs) : (releasedAt ?? null),
       stackIds: stacks.map((s) => s.id),
       sharedStackIds: shared.get(item.id) ?? [],
       ownedVolumes: ownedVolumes(stacks, input.containers, input.volumes),
@@ -323,8 +336,8 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
       isMainCheckout: path === normalizePath(item.repoPath, platform),
       localTip:
         item.kind === 'detached-worktree' ? (item.headSha ?? null) : (fateInput?.localTip ?? null),
-      graceDays: input.graceDays
+      graceDays
     }
-    return { ...facts, ...bucketOf(facts, input.now, input.graceDays) }
+    return { ...facts, ...bucketOf(facts, input.now, graceDays) }
   })
 }
