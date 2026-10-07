@@ -149,12 +149,18 @@ export function bucketOf(
   if (f.isMainCheckout || f.neverClean) return alive
   if (f.session === 'working' || f.session === 'needs-input') return alive
   if (f.fate.fate === 'open') return alive
-  // No sign of life at all is "unknown age", which must not read as "old enough".
-  if (f.lastSignOfLifeAt === null || now - f.lastSignOfLifeAt < graceDays * DAY_MS) return alive
+  // No sign of life at all is "unknown age", which must not read as "old enough". Neither
+  // is a NaN, infinite or negative input: each would make the comparison below false.
+  const known = (n: number | null): n is number => Number.isFinite(n) && (n as number) >= 0
+  if (!known(f.lastSignOfLifeAt) || !known(graceDays) || !known(now)) return alive
+  if (now - f.lastSignOfLifeAt < graceDays * DAY_MS) return alive
   if (f.keep) return alive
 
   if (f.session === 'open-idle')
     return decide('open-idle-session', 'A session is still open in this worktree, though idle.')
+  // Only a session read as exactly `none` can be a corpse; anything else is not proven idle.
+  if (f.session !== 'none')
+    return decide('open-idle-session', 'The session state of this worktree is unknown.')
 
   if (f.sharedStackIds.length > 0) {
     const n = f.sharedStackIds.length
@@ -183,6 +189,10 @@ export function bucketOf(
     const detail = `${plural(hit.length, 'blocker')}: ${hit.join(', ')}.`
     return decide(hit[0] === 'dirty' ? 'dirty' : 'unpushed', detail)
   }
+  // No blocker is not proof of clean: a status probe that failed leaves no blocker either.
+  // Only a green local-clean checkpoint shows the tracked files were read and clean.
+  if (f.item.checkpoints.find((c) => c.id === 'local-clean')?.state !== 'green')
+    return decide('dirty', 'The working tree could not be verified clean.')
 
   return { bucket: 'corpse', reason: null }
 }
