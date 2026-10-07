@@ -1244,6 +1244,23 @@ user through the UI. The hint is **honest** about the cost (a few hundred
 tokens per session, cached as system prompt). No new design token. Searchable
 via "harnu", "awareness", "self", "mcp".
 
+**Harnu mod (T389 P1W4).** One more block in Settings → General → Integrations, right
+below the self-awareness switch (anchor `id="set-companion"`, same anatomy: `--text-2` 12px
+label + `ToggleSwitch`, `flex items-start justify-between`, `margin-top: 14px`, the
+`anim-setting-flash` jump). The label reads **Harnu mod**; the user-facing noun is never
+"companion". Under the label, two `SettingHint` lines: what it is ("Harnu loads a small mod
+into the sessions it starts. It runs unsandboxed inside the `claude` process and talks only
+to Harnu on this machine.") and what **off** means ("Off stops Harnu from using it now and
+from loading it into new sessions. Off means hooks and polling."). Below them: the staged
+folder path (`font-mono`, 11px, `--text-4`, `truncate`, selectable) with a **Reveal folder**
+ghost `Button`, and **at most one** status line (`--text-3`, 11px, no icon, **no warning
+colour**: `legacy` is not an error). Which line: the CLI is older than the minimum, the CLI
+is newer than the last version tested (the mod only observes), or nothing. The block hosts a
+region `id="set-companion-keys"` at its end, where later waves mount their own feature
+switches; the Mods tab moves the whole block when it lands. Searchable via "harnu mod",
+"mod", "mods", "plugin". The kill switch is renderer IPC only: nothing an agent can call
+reaches it. No new design token.
+
 **Three display states:**
 
 - **`ready`** — data available. Shows the `UsageMeter`s. If the last poll
@@ -4297,8 +4314,10 @@ stack and is confined to that worktree's root. **Dedup by `root`** in
 `addExplorerHelper` → exactly ONE explorer pane per root (reopening focuses/returns the
 existing one, never stacks).
 
-**Reveal from the transcript.** Option+clicking a path printed in a session's
-transcript opens (or reuses) this pane and **reveals** that path: search mode is
+**Reveal from the transcript.** Option/Alt+clicking — or Ctrl+clicking — a path
+printed in a session's transcript (main terminal or a helper-pane terminal; the
+underline and pointer cursor appear while either modifier is held) opens
+(or reuses) this pane and **reveals** that path: search mode is
 left, every ancestor directory is expanded in order (each listed lazily, exactly
 as a manual click would), and the row is **selected** — `bg-accent-soft` +
 `text-text`, `aria-current="true"` — and scrolled into view. Selection is
@@ -4308,6 +4327,15 @@ goes through the same `openFile` seam the `eye` icon uses, so the `markdown:read
 gate decides whether a viewer pane opens (and refuses a non-image binary /
 oversized file with its usual toast). A **directory** is expanded instead;
 nothing opens.
+
+**`.harnu/` is always visible.** The agent's data dir — the root-level `.harnu/`
+and everything under it, `.harnu/out/` deliverables included — is exempt from
+`.gitignore` in all three gates (tree listing, finder walk, transcript
+resolve), so a path an agent prints is reachable even though the repo ignores
+it. Nothing else is exempt: every other gitignored path (`node_modules`, build
+output) stays hidden, `.git` stays excluded, and root confinement is unchanged.
+There is no legacy `.capy/` alias. The affordance itself is unchanged — same
+rows, same selection — only more rows exist.
 
 **Header (title bar, 24px).** Fully reuses the "Pane header" (`h-6`, `--surface`,
 `border-bottom --border`, header = resize handle). Left to right: `folder-tree` icon
@@ -5064,6 +5092,17 @@ directly in another component is a contract violation.
   default 6s **or** a longer window (8s) when the message needs to
   be read calmly — a call-site choice.
 
+**Harnu mod uses (T389 P1W4).** No new variant. (1) The **one-time disclosure**: a sticky
+`info` toast with an action (`timeoutMs: 0`), pushed once while the kill switch is on and
+the notice has not been shown; mounting it stamps the notice as shown. The title and body
+say the three facts (the mod runs unsandboxed, inside the `claude` process, and talks only
+to Harnu on this machine); the action **Open Settings** opens General at `set-companion`.
+It reads as a notice, never as a prompt: nothing waits on a click. (2) The **unloaded
+notice**: a `warning` toast, once per session, only when the session owned at least one
+fact family at the moment the mod was lost ("Harnu mod unloaded in {session}. Running on
+hooks."). In plain `shadow` nothing changed for the operator, so the state line changes
+silently instead.
+
 **Animation**
 
 - Entry: `.anim-fade-in` from `main.css` (fade + translateY 2px → 0,
@@ -5594,6 +5633,9 @@ content, the card was widened to `min(92vw, 940px)`.
 - **Claude config:** GUI editor for the global `~/.claude/settings.json` — see "### Claude config (settings.json)" below.
 - **Endpoints:** the **global** registry of Anthropic-compatible custom endpoints (`EndpointsPane.vue`)
   — see "### Endpoints (registry)" below.
+- **Mods:** read-only audit of the mods a session can load and what each can do
+  (`ModsAuditPane.vue`, T389) — placed directly after **Skills** — see
+  "### Mods (Settings → Mods, T389)" below.
 - **Memory:** the **global default location** for project memory (`MemoryLocationPane.vue`, T89)
   — `in-project` (default) or a **central root** outside the repo — see "### Memory (Settings → Memory)" below.
 - **Changelog:** renders the root `CHANGELOG.md` (pure parser `changelog-parse.ts`,
@@ -6045,6 +6087,147 @@ A refusal (the folder exists and Harnu did not create it) surfaces as a `danger`
 **Restart notice** — a `SettingHint` under the list: _"Changes apply to sessions
 started from now on."_ No toast: this is a standing property of the pane, not an event.
 
+### Mods (Settings → Mods, T389)
+
+Dedicated **Mods** tab of the Settings dialog (`ModsAuditPane.vue`), entering the `tabs`
+array **directly after Skills**. A mod is a Claude Code plugin with a hooks module; it
+runs unsandboxed inside `claude`. The pane lists every mod a session started in a
+folder can load and says what each one's source **declares** it can do. **The list is a
+disclosure, never a control and never a verdict**: it has no switch for anyone else's
+mod, and no copy anywhere in it says a mod is safe, verified, trusted or approved. **No
+new token, no new component**: `SegmentedControl`, `SettingHint`, the bordered
+`--surface` row of the Skills and MCP panes, and the **Default** badge above.
+
+```
++----------------------------------------------------------------------+
+| MODS                                                   [ Refresh ]   |
+| Mods run unsandboxed inside Claude Code. This list shows what each    |
+| one can do, from a static read of its source.          <- SettingHint |
+| [ Global ][ my-repo ]                             <- SegmentedControl |
+| (#mods-companion: the Harnu mod switches; "Harnu mod outside Harnu")  |
+|                                                                      |
+|  harnu-companion                                   Harnu mod · 0.1.0 > |
+|  (can use the network) (can decide permissions) (draws in the term…)  |
+|                                                                      |
+|  token-chart                                 installed · user    >    |
+|  (can run processes) (can read every prompt)                          |
+|  Changed since 28 Sep.                                                |
+|                                                                      |
+| 12 plugins without a mod are not listed.                              |
+| Not shown: where data goes, which commands run, which files are       |
+| read. To allow only your organization's mods, an administrator sets   |
+| allowManagedModsOnly.                                  <- SettingHint |
++----------------------------------------------------------------------+
+```
+
+**Row shape** — the Skills pane's: one bordered `--surface` row (`padding: 8px 10px`,
+`border-radius: 6px`, `gap: 4px` between rows). The whole header line is one button
+(`aria-expanded`, hover `bg-surface-2`).
+
+- **Name** — `font-mono` 12.5px, `--text`: the plugin's own `name`, verbatim and never
+  translated. The Harnu mod is the row named `harnu-companion`, **row 1**, produced by
+  the same code path as every other row: nothing about it is special-cased but its
+  position and its source label.
+- **Right side** — source label and version, 11px `--text-3` (`Harnu mod · 0.1.0`,
+  `installed · user`, `skills folder`, `--plugin-dir`), then a chevron (`chevron-right`
+  collapsed, `chevron-down` expanded, 12px).
+- **Chips** — wrap under the name, `gap: 4px`. Every chip is the **Default** badge
+  variant (`--surface` bg, `--text-3` text, `--border` border; `padding 2px 8px`,
+  radius `999px`, 11px). **Colour would read as a verdict, so no chip is ever Accent,
+  Warning or Danger.** A chip is a fact in the form "can …" ("can run processes", "can
+  read every prompt"); the closed set and its source facts are in the spec table
+  (15 chips). Order is fixed.
+- **Status lines** (under the chips, 11px): `Analysing…` in `--text-4` while the read is
+  pending; `Changed since {date}.` in `--text-3` when the content hash differs from the
+  previous analysis; for a failed read, `triangle-alert` 12px + `--text-3` text and a
+  **Retry** text button (`--text-2`, hover `--text`). Rows never blank each other: one
+  failure leaves every other row's chips in place.
+- **Expanded row** — hooks (event plus matcher), calls (with `via {helper}`), environment
+  names read and written, state keys, notes the parser did not recognise **verbatim**,
+  errors and warnings; all `font-mono` 11px `--text-2` under 11px `--text-3` captions. Then
+  the folder path in `font-mono` 11px `--text-4`, `{hash8} · Last analysed {time}`, a
+  **Reveal folder** action (Ghost button, 28px high — `showItemInFolder`) and one
+  `SettingHint` naming the mechanism that **owns** the mod (`/plugin`, Settings → Skills,
+  "remove its folder", the folder's startup arguments). The pane points at that mechanism;
+  it never replaces it.
+
+**Scope** — a **`SegmentedControl`**, the Skills pane's rule: **Global** / **the folder
+of the selected session**; with nothing selected the folder pill takes the per-option
+disabled treatment and a `SettingHint` says why. Global lists the Harnu mod, user-scope
+installed plugins, `~/.claude/skills` and the settings `env` plugin directories; a folder
+adds its own installed plugins, `.claude/skills`, staged skills and Claude Boot
+`--plugin-dir` arguments.
+
+**Settings region (`#mods-companion`)** — an element directly above the list, empty on a
+build without the Harnu mod switches (it takes no space then). The Harnu mod's own
+switches mount there; they are controls of Harnu's mod and never of anyone else's. Today
+it holds one block, "Harnu mod outside Harnu" (next section).
+
+### Harnu mod outside Harnu (T389)
+
+The one switch of the settings region (`HarnuModExternal.vue`, mounted in `#mods-companion`):
+it lets `claude` sessions started in the operator's **own terminal** load the Harnu mod too.
+It is **not** the Skills tab's "Also outside Harnu" switch, which copies a `SKILL.md`; this
+one adds one folder to `env.CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`. Default
+**off**. **No new token and no new component**: `ToggleSwitch`, `SettingHint`, the bordered
+`--surface` row of the Skills Advanced block, the confirm-dialog anatomy of
+`MissionCloseConfirmDialog` (Teleport, overlay-fade backdrop, fade-in-scale card, focus trap,
+Esc and backdrop close), the canonical `Button`, and a `danger` toast for a refusal.
+
+```
+> ADVANCED
+  Sessions you start in your own terminal can load the Harnu mod too. They
+  report their state to Harnu on this machine. Harnu never starts prompts in
+  them and does not hold their approvals.                       <- SettingHint
+  +------------------------------------------------------------------+
+  | Harnu mod outside Harnu                                     [ o--] |
+  | ~/.claude/settings.json · env.CLAUDE_CODE_PLUGIN_DIRS            |
+  +------------------------------------------------------------------+
+  Last outside session seen: 2 min ago                          <- SettingHint
+```
+
+- **Block** — a collapsed **Advanced** button first (the Skills pane's eyebrow button:
+  `chevron-right` / `chevron-down` 12px, 11px / 500 uppercase `--text-3`, `gap: 5px`). Opened,
+  one `SettingHint`, then one bordered `--surface` row (`padding: 8px 10px`, radius 6px): the
+  label in `--text-2` 12px, the settings path in `font-mono` 11px `--text-4` (verbatim, never
+  translated), the `ToggleSwitch` on the right. Under the row one `SettingHint`:
+  `Last outside session seen: {time}` or `No outside session has reported yet.`
+- **The switch is the key.** It reads **on** only while the entry is in the file: a user who
+  removes the path by hand sees it **off** on the next read. It is disabled (the toggle's
+  per-option disabled treatment) while the Harnu mod itself is off, with the one hint
+  `The Harnu mod is off. Turn it on first.`
+- **Turning it on** opens the confirm dialog, always, every time: nothing is written before
+  **Turn on**; **Cancel** and Esc leave everything untouched. Initial focus is **Cancel**.
+  The dialog is the disclosure and names: the file that changes, that every `claude` session
+  started in any terminal is affected, that it runs unsandboxed and talks only to Harnu on this
+  machine, and that turning the switch off removes exactly that entry. The path of the entry
+  is shown in `font-mono` 11px `--text-3`. The confirm button is the **default** variant
+  (never `danger`, never `success`: it is an opt-in, not a verdict).
+- **Turning it off** needs no dialog; it undoes exactly what was written.
+- **A refusal** is a `danger` toast with one sentence and nothing else (`harnuMod.external.refused.*`),
+  and the switch stays where it was. When the undo cannot run because the file no longer
+  parses, the toast adds `To remove it by hand, delete {path} from CLAUDE_CODE_PLUGIN_DIRS.`
+- **Wording** (§8): a managed cause is named only when a managed settings file was found
+  (`Blocked by your organization's policy.`); when only the probe shows mods are off the
+  sentence is the neutral `Turned off by a setting or by your organization's policy.` No
+  workaround is ever offered on a managed machine.
+- **Sidebar** — no chip, no marker. An outside session with a corroborated live binding
+  simply has real state: its dot and the "Active elsewhere" zone follow turn events instead of
+  the registry guess. The Harnu mod line of the hover preview gains the suffix below.
+
+**Banners and hints** — the same pattern as the Skills collision hint: `triangle-alert`
+12px + 11px `--text-3` text, no fill, no colour. Policy off (`Turned off by a setting or
+by your organization's policy.`; it names no cause, because the probe shows that mods are
+off, not why), a folder started with `--safe-mode` or `--bare`, installed plugins that
+could not be read, a CLI that cannot analyse mods, and **CLI not found** (no rows, nothing
+spawned). The pane states its blind spots in place, in the footer: no destinations, no
+arguments, no paths, a static read only, and not what a running session actually loaded.
+A skills-folder mod carries one more line, "Harnu cannot tell whether this one is allowed
+to load", because its approval state is not readable from outside.
+
+**Plugins without a mod** are not rows: one count line under the list ("{n} plugins
+without a mod are not listed."). **No toast** on refresh; the standing state is the page.
+
 ### Memory (Settings → Memory)
 
 Settings dialog tab (`MemoryLocationPane.vue`, T89) that defines **where** Harnu
@@ -6405,6 +6588,15 @@ the transcript JSONL itself (no longer just from the statusLine):
   with a left border `--accent-line` over `--accent-soft`, `--text-4` 10px
   uppercase label (`preview.awayLabel`) + `--text-2` 12px body. Only appears when the transcript
   brought the recap. Uses existing tokens — no new color/radius/spacing.
+
+**Harnu mod line (T389 P1W4).** One line right after the boot-mode line: `font-mono`
+`--text-4` 11px, `margin-bottom: 6px`, the same anatomy as the mode line. It reads **Harnu
+mod: live**, **Harnu mod: off** or **Harnu mod: legacy — {reason}** (`harnuMod.state.*`,
+`harnuMod.reason.*`); `live`, `off` and `legacy` stay untranslated state nouns. It is absent
+when the state is `null` (a parked or shell row, an outside session that is not corroborated
+yet, a spawn still inside its 15 s grace). A corroborated outside session reads **Harnu mod:
+live · outside Harnu** (`harnuMod.state.live` + `harnuMod.state.outside`, joined by `·`). `legacy` is the same quiet `--text-4` as the rest of the line: never
+`--warning`, never `--red`, no icon. The line states a fact and never implies protection.
 
 **Footer: messages · agents.** `--text-4` `11px` mono, `tabular-nums`: message count
 (`preview.messages`) and, when the session has subagents (`session.agents`),
@@ -7209,6 +7401,22 @@ parked — always sorts last, never mixed with real numbers):
   `main` row alone carries the inline heap gauge (track + %, `--warning` at `warn`,
   `--red` at `critical`, a `TriangleAlert` icon when non-`ok`) — this is the exact
   2026-07-14 OOM signal made visible.
+- **Harnu mod cell (T389 P1W4).** A live session row's state-detail column gains one
+  `text-[11px] text-text-3` span after the state pip: **Harnu mod live** / **off** /
+  **legacy**, with the reason in the `title` tooltip (`harnuMod.reason.*`). Same rule as
+  the hover preview: `legacy` is quiet, never `--warning` or `--red`; nothing renders when
+  the state is `null`. `SystemMonitorRow` takes it as an optional `companion` prop and
+  `SystemMonitor` reads `stores/companion.ts`; parked rows show none.
+- **Test Harnu mod channel (T389 P2W1).** A live row whose Harnu mod state is `live` gains one
+  more per-row action beside Park now and Close: a `RadioTower`-icon button, `22×22px`,
+  `hover:bg-surface-2`, `--text-3` glyph, revealed on row hover like the other two (a `22×22px`
+  placeholder keeps the pip aligned on rows without it). It sends the session a `flush` and a
+  terminal toast and answers with one Harnu toast: `info` "Harnu mod channel answered in {ms} ms",
+  or `warning` "Harnu mod channel did not answer" / "…is not available: {reason}". The reason
+  comes from a fixed three-word map (`legacy`, `shadow`, `headless`), never from text the session
+  sent. In the terminal the session shows the line `harnu-companion: Harnu mod channel check`
+  for the default 4 s; the engine draws the prefix. There is no abort or compact control: none is
+  designed yet. No new token, size or motion.
 - **Sessions group** — one row per live-or-parked session. **Live**, expandable
   (`ChevronRight`/`ChevronDown`) into its real `/proc` descendants (flat list, `└`
   prefix, no further nesting) when it has any. Name is the owning folder's alias (or a
@@ -10544,6 +10752,18 @@ equal.** No artificial enthusiasm, no emoji, no exclamation marks.
   mission, and none promises a guarantee the code does not enforce. Ending a
   mission is a choice, "Close as delivered" or "Discard", and its warnings say
   what is still open without refusing ("Checks not ticked").
+- **Harnu mod** — the user-facing name is "Harnu mod" ("the Harnu mod", "mods"), never
+  "companion". State lines are short and lowercase-led, with no trailing period:
+  "Harnu mod: live", "Harnu mod: legacy — turned off by a setting or by your
+  organization's policy". `live`, `legacy` and `off` stay in English (state nouns, like
+  the fleet board's). A cause is named **only when it was observed**: "blocked by your
+  organization's policy" needs the CLI's own refusal text, a probe that only shows mods are
+  off reads the neutral "turned off by a setting or by your organization's policy", and
+  anything else reads "the mod did not load". Never promise protection, and never imply
+  the user did something wrong.
+- **Mods audit chips** — facts in the form "can …": "can run processes", "can read every
+  prompt". Never a verdict: no "safe", "verified", "trusted", "secure", "malicious" or
+  "approved", in any language, and never a colour that grades a mod.
 - **Non-affiliation line** — "Harnu is an independent project, not affiliated with
   or endorsed by Anthropic." One complete sentence, so it ends with a period. It sits
   at the bottom of the Onboarding hero (`text-text-4`, 11px, 24px above it), the one

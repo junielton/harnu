@@ -987,6 +987,7 @@
       "push": "Remote notifications",
       "mcp": "MCP",
       "skills": "Skills",
+      "mods": "Mods",
       "memory": "Memory",
       "hibernationPolicy": "Hibernation policy",
       "usageHistory": "Usage history",
@@ -1600,6 +1601,9 @@
       "toggleAria": "Show or hide {state} cards",
       "hiddenAttention": "{count} hidden by the filter",
       "allHidden": "All fleet cards are hidden by your filter — tap to show all"
+    },
+    "row": {
+      "outside": "outside Harnu"
     }
   },
   "activityBell": {
@@ -1672,6 +1676,87 @@
       "label": "Also outside Harnu",
       "occupied": "A skill folder for {name} already exists and was not created by Harnu. Nothing was changed.",
       "failed": "Could not install {name} outside Harnu."
+    }
+  },
+  "modsAudit": {
+    "title": "Mods",
+    "hint": "Mods run unsandboxed inside Claude Code. This list shows what each one can do, from a static read of its source.",
+    "refresh": "Refresh",
+    "scope": {
+      "label": "Scope",
+      "global": "Global",
+      "project": "{folder}",
+      "projectNone": "This project",
+      "projectDisabledHint": "Select a session to list the mods its project can load."
+    },
+    "source": {
+      "harnu": "Harnu mod",
+      "harnuSkills": "Harnu skills",
+      "installed": "installed · {scope}",
+      "skillsDir": "skills folder",
+      "bootArg": "--plugin-dir"
+    },
+    "cap": {
+      "process": "can run processes",
+      "network": "can use the network",
+      "files": "can read and write files",
+      "prompts": "can read every prompt",
+      "system-prompt": "can change the system prompt",
+      "tool-calls": "can rewrite or block tool calls",
+      "permissions": "can decide permissions",
+      "submit": "can submit prompts",
+      "model": "can call the model",
+      "mcp": "can call MCP tools",
+      "other-mods": "can read other mods’ calls",
+      "gate": "can refuse other mods",
+      "env": "can read environment variables",
+      "terminal": "draws in the terminal",
+      "opaque": "has matchers Harnu cannot read"
+    },
+    "analysing": "Analysing…",
+    "status": {
+      "invalid": "The CLI reported errors in this mod.",
+      "failed": "Could not analyse this mod.",
+      "unsupported": "This Claude Code version cannot analyse mods."
+    },
+    "retry": "Retry",
+    "lastAnalysed": "{hash} · Last analysed {time}",
+    "changedSince": "Changed since {date}.",
+    "loads": {
+      "unknown": "Harnu cannot tell whether this one is allowed to load."
+    },
+    "withoutModule": "{n} plugin without a mod is not listed. | {n} plugins without a mod are not listed.",
+    "blindSpots": "Not shown: where data goes, which commands run, which files are read.",
+    "managedHint": "To allow only your organization’s mods, an administrator sets {option}.",
+    "reveal": "Reveal folder",
+    "toggle": "Show details for {name}",
+    "manage": {
+      "installed": "Turn it on or off with {slash} in a session, or {command}.",
+      "harnuSkills": "Managed in Settings → Skills.",
+      "skillsDir": "Remove its folder to stop it loading.",
+      "bootArg": "Loaded by this folder’s startup arguments."
+    },
+    "policy": {
+      "offHere": "Turned off by a setting or by your organization’s policy.",
+      "offRemote": "Mods are turned off remotely by Anthropic."
+    },
+    "safeMode": "This folder starts sessions with {flag}, so no mod loads there.",
+    "noCli": "Claude Code CLI not found. Nothing to analyse.",
+    "empty": "No mods found.",
+    "installedUnreadable": "Installed plugins could not be read.",
+    "detail": {
+      "hooks": "Hooks",
+      "calls": "Calls",
+      "via": "via {helper}",
+      "envReads": "Reads environment",
+      "envWrites": "Writes environment",
+      "stateReads": "Reads state",
+      "stateWrites": "Writes state",
+      "stateForeign": "State of other plugins, not checked",
+      "unparsed": "Not recognised",
+      "errors": "Errors",
+      "warnings": "Warnings",
+      "nothing": "Nothing declared."
     }
   },
   "agentConfirm": {
@@ -3180,6 +3265,85 @@
     "cue": {
       "one": "Mission “{title}” needs you: {what}",
       "many": "{n} missions need you"
+    }
+  },
+  "harnuMod": {
+    "settings": {
+      "label": "Harnu mod",
+      "description": "Harnu loads a small mod into the sessions it starts. It runs unsandboxed inside the `claude` process and talks only to Harnu on this machine.",
+      "offHint": "Off stops Harnu from using it now and from loading it into new sessions. Off means hooks and polling.",
+      "reveal": "Reveal folder",
+      "policy": "Blocked by your organization's policy.",
+      "modsOff": "Turned off by a setting or by your organization's policy.",
+      "remoteOff": "Mods are turned off remotely for this Claude Code install.",
+      "cliTooOld": "Needs Claude Code 2.1.287 or newer.",
+      "cliUntested": "This Claude Code version is newer than the last one tested. The mod only observes."
+    },
+    "state": {
+      "live": "Harnu mod: live",
+      "off": "Harnu mod: off",
+      "legacy": "Harnu mod: legacy — {reason}",
+      "outside": "outside Harnu"
+    },
+    "reason": {
+      "cliTooOld": "Claude Code older than 2.1.287",
+      "cliUnknown": "Claude Code version not checked yet",
+      "policy": "blocked by your organization's policy",
+      "modsOff": "turned off by a setting or by your organization's policy",
+      "remoteOff": "mods turned off remotely",
+      "noHello": "the mod did not load",
+      "refused": "handshake refused",
+      "unloaded": "unloaded mid-session",
+      "hostRestart": "lost when Harnu restarted",
+      "notInjected": "started without it"
+    },
+    "monitor": {
+      "state": "Harnu mod {state}"
+    },
+    "toast": {
+      "disclosure": {
+        "title": "Harnu now loads the Harnu mod",
+        "body": "It runs unsandboxed inside the `claude` process of the sessions Harnu starts and talks only to Harnu on this machine."
+      },
+      "openSettings": "Open Settings",
+      "unloaded": "Harnu mod unloaded in {session}. Running on hooks."
+    },
+    "channel": {
+      "test": "Test Harnu mod channel",
+      "ok": "Harnu mod channel answered in {ms} ms",
+      "noAnswer": "Harnu mod channel did not answer",
+      "refused": "Harnu mod channel is not available: {reason}",
+      "reason": {
+        "legacy": "this session runs on hooks",
+        "shadow": "the channel is observing only",
+        "headless": "this is a headless session"
+      }
+    },
+    "external": {
+      "title": "Advanced",
+      "hint": "Sessions you start in your own terminal can load the Harnu mod too. They report their state to Harnu on this machine. Harnu never starts prompts in them and does not hold their approvals.",
+      "label": "Harnu mod outside Harnu",
+      "path": "~/.claude/settings.json · env.CLAUDE_CODE_PLUGIN_DIRS",
+      "lastSeen": "Last outside session seen: {time}",
+      "neverSeen": "No outside session has reported yet.",
+      "needsMod": "The Harnu mod is off. Turn it on first.",
+      "confirm": {
+        "title": "Load the Harnu mod outside Harnu?",
+        "body": "Harnu adds one folder to `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`. Every `claude` session you start in any terminal then loads the Harnu mod. It runs unsandboxed inside `claude` and talks only to Harnu on this machine. Turning this off removes exactly that entry.",
+        "entry": "Folder to add",
+        "cancel": "Cancel",
+        "accept": "Turn on"
+      },
+      "refused": {
+        "unparseable": "`~/.claude/settings.json` is not valid JSON. Nothing was changed.",
+        "occupied": "`env.CLAUDE_CODE_PLUGIN_DIRS` has a shape Harnu does not edit. Nothing was changed.",
+        "symlink": "`~/.claude/settings.json` is a symlink. Harnu does not replace it. Nothing was changed.",
+        "modsOff": "Turned off by a setting or by your organization's policy.",
+        "policy": "Blocked by your organization's policy.",
+        "noCompanion": "The Harnu mod is off. Turn it on first.",
+        "failed": "Could not update `~/.claude/settings.json`."
+      },
+      "manualRemove": "To remove it by hand, delete {path} from `CLAUDE_CODE_PLUGIN_DIRS`."
     }
   }
 }

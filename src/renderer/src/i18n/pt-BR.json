@@ -987,6 +987,7 @@
       "push": "Notificações remotas",
       "mcp": "MCP",
       "skills": "Skills",
+      "mods": "Mods",
       "memory": "Memória",
       "hibernationPolicy": "Política de hibernação",
       "usageHistory": "Histórico de uso",
@@ -1600,6 +1601,9 @@
       "toggleAria": "Mostrar ou esconder cards de {state}",
       "hiddenAttention": "{count} escondidos pelo filtro",
       "allHidden": "Todos os cards do fleet estão escondidos pelo seu filtro — toque para mostrar tudo"
+    },
+    "row": {
+      "outside": "fora do Harnu"
     }
   },
   "activityBell": {
@@ -1672,6 +1676,87 @@
       "label": "Também fora do Harnu",
       "occupied": "Já existe uma pasta de skill para {name} e ela não foi criada pelo Harnu. Nada foi alterado.",
       "failed": "Não foi possível instalar {name} fora do Harnu."
+    }
+  },
+  "modsAudit": {
+    "title": "Mods",
+    "hint": "Mods rodam sem sandbox dentro do Claude Code. Esta lista mostra o que cada um pode fazer, a partir de uma leitura estática do código-fonte.",
+    "refresh": "Atualizar",
+    "scope": {
+      "label": "Escopo",
+      "global": "Global",
+      "project": "{folder}",
+      "projectNone": "Este projeto",
+      "projectDisabledHint": "Selecione uma sessão para listar os mods que o projeto dela pode carregar."
+    },
+    "source": {
+      "harnu": "Mod do Harnu",
+      "harnuSkills": "Skills do Harnu",
+      "installed": "instalado · {scope}",
+      "skillsDir": "pasta de skills",
+      "bootArg": "--plugin-dir"
+    },
+    "cap": {
+      "process": "pode executar processos",
+      "network": "pode usar a rede",
+      "files": "pode ler e gravar arquivos",
+      "prompts": "pode ler todo prompt",
+      "system-prompt": "pode alterar o system prompt",
+      "tool-calls": "pode reescrever ou bloquear tool calls",
+      "permissions": "pode decidir permissões",
+      "submit": "pode enviar prompts",
+      "model": "pode chamar o modelo",
+      "mcp": "pode chamar ferramentas MCP",
+      "other-mods": "pode ler as chamadas de outros mods",
+      "gate": "pode recusar outros mods",
+      "env": "pode ler variáveis de ambiente",
+      "terminal": "desenha no terminal",
+      "opaque": "tem matchers que o Harnu não consegue ler"
+    },
+    "analysing": "Analisando…",
+    "status": {
+      "invalid": "A CLI reportou erros neste mod.",
+      "failed": "Não foi possível analisar este mod.",
+      "unsupported": "Esta versão do Claude Code não consegue analisar mods."
+    },
+    "retry": "Tentar de novo",
+    "lastAnalysed": "{hash} · Última análise {time}",
+    "changedSince": "Alterado desde {date}.",
+    "loads": {
+      "unknown": "O Harnu não sabe dizer se este mod tem permissão para carregar."
+    },
+    "withoutModule": "{n} plugin sem mod não é listado. | {n} plugins sem mod não são listados.",
+    "blindSpots": "Não mostrado: para onde os dados vão, quais comandos rodam, quais arquivos são lidos.",
+    "managedHint": "Para permitir só os mods da sua organização, um administrador define {option}.",
+    "reveal": "Mostrar pasta",
+    "toggle": "Mostrar detalhes de {name}",
+    "manage": {
+      "installed": "Ligue ou desligue com {slash} numa sessão, ou {command}.",
+      "harnuSkills": "Gerenciado em Configurações → Skills.",
+      "skillsDir": "Remova a pasta dele para parar de carregar.",
+      "bootArg": "Carregado pelos argumentos de inicialização desta pasta."
+    },
+    "policy": {
+      "offHere": "Desligados por uma configuração ou pela política da sua organização.",
+      "offRemote": "Os mods estão desligados remotamente pela Anthropic."
+    },
+    "safeMode": "Esta pasta inicia sessões com {flag}, então nenhum mod carrega nela.",
+    "noCli": "CLI do Claude Code não encontrada. Nada para analisar.",
+    "empty": "Nenhum mod encontrado.",
+    "installedUnreadable": "Não foi possível ler os plugins instalados.",
+    "detail": {
+      "hooks": "Hooks",
+      "calls": "Chamadas",
+      "via": "via {helper}",
+      "envReads": "Lê o ambiente",
+      "envWrites": "Grava no ambiente",
+      "stateReads": "Lê estado",
+      "stateWrites": "Grava estado",
+      "stateForeign": "Estado de outros plugins, não conferido",
+      "unparsed": "Não reconhecido",
+      "errors": "Erros",
+      "warnings": "Avisos",
+      "nothing": "Nada declarado."
     }
   },
   "agentConfirm": {
@@ -3180,6 +3265,85 @@
     "cue": {
       "one": "A missão “{title}” precisa de você: {what}",
       "many": "{n} missões precisam de você"
+    }
+  },
+  "harnuMod": {
+    "settings": {
+      "label": "Harnu mod",
+      "description": "O Harnu carrega um mod pequeno nas sessões que ele inicia. Ele roda sem sandbox dentro do processo `claude` e fala apenas com o Harnu nesta máquina.",
+      "offHint": "Desligado impede o Harnu de usá-lo agora e de carregá-lo em novas sessões. Desligado significa hooks e polling.",
+      "reveal": "Mostrar pasta",
+      "policy": "Bloqueado pela política da sua organização.",
+      "modsOff": "Desligado por uma configuração ou pela política da sua organização.",
+      "remoteOff": "Os mods estão desligados remotamente nesta instalação do Claude Code.",
+      "cliTooOld": "Requer o Claude Code 2.1.287 ou mais recente.",
+      "cliUntested": "Esta versão do Claude Code é mais nova que a última testada. O mod apenas observa."
+    },
+    "state": {
+      "live": "Harnu mod: live",
+      "off": "Harnu mod: off",
+      "legacy": "Harnu mod: legacy — {reason}",
+      "outside": "fora do Harnu"
+    },
+    "reason": {
+      "cliTooOld": "Claude Code anterior à 2.1.287",
+      "cliUnknown": "versão do Claude Code ainda não verificada",
+      "policy": "bloqueado pela política da sua organização",
+      "modsOff": "desligado por uma configuração ou pela política da sua organização",
+      "remoteOff": "mods desligados remotamente",
+      "noHello": "o mod não carregou",
+      "refused": "handshake recusado",
+      "unloaded": "descarregado no meio da sessão",
+      "hostRestart": "perdido quando o Harnu reiniciou",
+      "notInjected": "iniciada sem ele"
+    },
+    "monitor": {
+      "state": "Harnu mod {state}"
+    },
+    "toast": {
+      "disclosure": {
+        "title": "O Harnu agora carrega o Harnu mod",
+        "body": "Ele roda sem sandbox dentro do processo `claude` das sessões que o Harnu inicia e fala apenas com o Harnu nesta máquina."
+      },
+      "openSettings": "Abrir Configurações",
+      "unloaded": "Harnu mod descarregado em {session}. Rodando em hooks."
+    },
+    "channel": {
+      "test": "Testar o canal do mod do Harnu",
+      "ok": "O canal do mod do Harnu respondeu em {ms} ms",
+      "noAnswer": "O canal do mod do Harnu não respondeu",
+      "refused": "O canal do mod do Harnu não está disponível: {reason}",
+      "reason": {
+        "legacy": "esta sessão roda nos hooks",
+        "shadow": "o canal só está observando",
+        "headless": "esta é uma sessão headless"
+      }
+    },
+    "external": {
+      "title": "Avançado",
+      "hint": "Sessões que você inicia no seu próprio terminal também podem carregar o Harnu mod. Elas reportam o estado para o Harnu nesta máquina. O Harnu nunca inicia prompts nelas e não segura as aprovações delas.",
+      "label": "Harnu mod fora do Harnu",
+      "path": "~/.claude/settings.json · env.CLAUDE_CODE_PLUGIN_DIRS",
+      "lastSeen": "Última sessão externa vista: {time}",
+      "neverSeen": "Nenhuma sessão externa reportou ainda.",
+      "needsMod": "O Harnu mod está desligado. Ligue-o primeiro.",
+      "confirm": {
+        "title": "Carregar o Harnu mod fora do Harnu?",
+        "body": "O Harnu adiciona uma pasta a `CLAUDE_CODE_PLUGIN_DIRS` em `~/.claude/settings.json`. Toda sessão `claude` que você iniciar em qualquer terminal passa a carregar o Harnu mod. Ele roda sem sandbox dentro do `claude` e fala só com o Harnu nesta máquina. Desligar isto remove exatamente essa entrada.",
+        "entry": "Pasta a adicionar",
+        "cancel": "Cancelar",
+        "accept": "Ligar"
+      },
+      "refused": {
+        "unparseable": "`~/.claude/settings.json` não é um JSON válido. Nada foi alterado.",
+        "occupied": "`env.CLAUDE_CODE_PLUGIN_DIRS` tem um formato que o Harnu não edita. Nada foi alterado.",
+        "symlink": "`~/.claude/settings.json` é um symlink. O Harnu não o substitui. Nada foi alterado.",
+        "modsOff": "Desligado por uma configuração ou pela política da sua organização.",
+        "policy": "Bloqueado pela política da sua organização.",
+        "noCompanion": "O Harnu mod está desligado. Ligue-o primeiro.",
+        "failed": "Não foi possível atualizar `~/.claude/settings.json`."
+      },
+      "manualRemove": "Para remover à mão, apague {path} de `CLAUDE_CODE_PLUGIN_DIRS`."
     }
   }
 }

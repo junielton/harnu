@@ -1,0 +1,45 @@
+{
+  "claude": "2.1.291 (Claude Code)",
+  "testedCeiling": "2.1.290",
+  "question": "CQ21: a mod saved while the companion hooks plugin.register",
+  "saved": "the second of two plain user mods, in a headless session that watches --plugin-dir folders",
+  "results": {
+    "with-hook": {
+      "reloaded": [
+        {
+          "module": "live-b@inline",
+          "ms": 8.8,
+          "atMs": 1065
+        }
+      ],
+      "sessionStartRefires": 1,
+      "sessionStartModules": ["live-b@inline"],
+      "freshLoadsAfterSave": 0,
+      "companionReloaded": false,
+      "companionRehellos": 0,
+      "modAdmittedAfterSave": 1,
+      "saveToFirstReloadMs": 1065,
+      "saveToSettledMs": 1097
+    },
+    "without-hook": {
+      "reloaded": [
+        {
+          "module": "live-b@inline",
+          "ms": 8.1,
+          "atMs": 1090
+        }
+      ],
+      "sessionStartRefires": 1,
+      "sessionStartModules": ["live-b@inline"],
+      "freshLoadsAfterSave": 0,
+      "companionReloaded": false,
+      "companionRehellos": 0,
+      "modAdmittedAfterSave": 0,
+      "saveToFirstReloadMs": 1090,
+      "saveToSettledMs": 1119
+    }
+  },
+  "companionRehellosPerSave": 0,
+  "specRuleKeepsItOff": false,
+  "shippedDefault": false
+}

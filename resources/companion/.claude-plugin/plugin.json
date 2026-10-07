@@ -1,0 +1,9 @@
+{
+  "name": "harnu-companion",
+  "version": "0.1.0",
+  "description": "Harnu's companion mod: a sensor that reports session facts to the Harnu app on this machine.",
+  "author": {
+    "name": "Harnu"
+  },
+  "types": "./types/index.d.ts"
+}

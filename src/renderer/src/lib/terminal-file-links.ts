@@ -1,5 +1,6 @@
 /**
- * Option+click a path in a transcript → reveal it in the Explorer pane.
+ * Option/Alt+click or Ctrl+click a path in a transcript → reveal it in the
+ * Explorer pane (a file also opens in the read-only viewer pane).
  *
  * This module is the terminal half of that feature: it finds path-SHAPED tokens
  * on a line and (later, in `registerFileLinkProvider`) turns the ones that
@@ -123,17 +124,29 @@ export function readLogicalLine(buffer: IBuffer, bufferLineNumber: number): Logi
   return { text: text.join(''), rows, cols }
 }
 
+/**
+ * Does this mouse/keyboard event carry a modifier that turns a transcript path
+ * into a link — Option/Alt (the original gesture) or Ctrl? Both open the path
+ * the same way, and both light up the hover underline. Pure; takes only the
+ * two flags so it works on a `MouseEvent` and a `KeyboardEvent` alike. (On
+ * macOS Ctrl+click is the system right-click, so Option stays the Mac gesture.)
+ */
+export function isFileLinkModifier(e: { altKey?: boolean; ctrlKey?: boolean }): boolean {
+  return e.altKey === true || e.ctrlKey === true
+}
+
 /** Everything the provider needs from its host, injected so it stays testable. */
 export interface FileLinkContext {
   /** Absolute project root links are confined to (the Explorer pane's root). */
   root(): string
   /** Absolute cwd relative paths resolve against. */
   cwd(): string
-  /** Is Option/Alt currently held? Links only exist while it is. */
+  /** Is a link modifier (Option/Alt or Ctrl) currently held? Links only exist
+   *  while one is. The name is historical — Alt was the first modifier. */
   isAltHeld(): boolean
   /** Existence + confinement + gitignore gate (`window.api.explorerResolve`). */
   resolve(root: string, cwd: string, candidates: string[]): Promise<ResolvedPath[]>
-  /** Option+click landed on a resolved entry. */
+  /** Option/Alt+click or Ctrl+click landed on a resolved entry. */
   onReveal(path: string, isDir: boolean): void
 }
 
@@ -152,16 +165,17 @@ const CACHE_LIMIT = 200
 const CACHE_TTL_MS = 2000
 
 /**
- * Build the xterm link provider that turns transcript paths into option+click
- * targets.
+ * Build the xterm link provider that turns transcript paths into
+ * modifier+click targets.
  *
  * Two deliberate behaviours:
  *
- *  - **Nothing is provided unless Option is held.** Underlining every path
- *    while the operator reads output would be noise, so the affordance is the
- *    IDE one: hold the modifier, the paths under the pointer light up.
- *  - **`activate` re-checks `altKey`.** xterm calls `activate` on any click of
- *    a link it currently knows about; the modifier check is ours to make.
+ *  - **Nothing is provided unless Option/Alt or Ctrl is held.** Underlining
+ *    every path while the operator reads output would be noise, so the
+ *    affordance is the IDE one: hold the modifier, the paths under the pointer
+ *    light up.
+ *  - **`activate` re-checks the modifier.** xterm calls `activate` on any click
+ *    of a link it currently knows about; the modifier check is ours to make.
  */
 export function createFileLinkProvider(term: Terminal, ctx: FileLinkContext): ILinkProvider {
   // Keyed by root + cwd + the line's text, so an identical line resolves once
@@ -251,7 +265,7 @@ export function createFileLinkProvider(term: Terminal, ctx: FileLinkContext): IL
               end: { x: logical.cols[lastIndex], y: logical.rows[lastIndex] }
             },
             activate: (event: MouseEvent): void => {
-              if (!event.altKey) return
+              if (!isFileLinkModifier(event)) return
               ctx.onReveal(hit.path, hit.isDir)
             }
           })
@@ -262,7 +276,7 @@ export function createFileLinkProvider(term: Terminal, ctx: FileLinkContext): IL
   }
 }
 
-// ── Alt tracker ─────────────────────────────────────────────────────────────
+// ── Modifier tracker (Option/Alt or Ctrl; named for the original Alt) ──────────────────────────────────────────────────────────────
 // xterm only re-runs link providers on `mousemove`, and only when the buffer
 // cell or active line actually changes — so pressing or releasing Option with
 // a still pointer would leave the underline stale (see `resyncHoveredLink`
@@ -345,7 +359,7 @@ function installAltListeners(): () => void {
     lastClientY = e.clientY
   }
   const onKey = (e: KeyboardEvent): void => {
-    const held = e.altKey
+    const held = isFileLinkModifier(e)
     if (held === altHeld) return
     altHeld = held
     resyncHoveredLink()
@@ -368,7 +382,7 @@ function installAltListeners(): () => void {
   }
 }
 
-/** Acquire the shared Option-held tracker. Release when the terminal goes. */
+/** Acquire the shared Option/Alt-or-Ctrl-held tracker. Release when the terminal goes. */
 export function acquireAltTracker(): { isAltHeld(): boolean; release(): void } {
   if (altRefCount === 0) altListeners = installAltListeners()
   altRefCount++

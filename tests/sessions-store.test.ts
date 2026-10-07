@@ -2628,3 +2628,431 @@ describe('reaper surfaces prompt_undelivered for a live PTY that never got its p
     expect(s.failureReason).toBeUndefined()
   })
 })
+
+/**
+ * T389 P1W3: the renderer honours the host's identity CLAIM at the existing `session:added`
+ * migration instead of guessing (oldest correlation, newest synthetic, the five-minute window).
+ * A claim never re-keys a row before its transcript exists (lesson synthetic-sessions/004).
+ */
+describe('useSessionsStore identity claims (T389 P1W3)', () => {
+  type DiskSession = FolderEntry['sessions'][number]
+
+  function session(over: Partial<DiskSession> = {}): DiskSession {
+    return {
+      sessionId: 'unused',
+      fullPath: '',
+      fileMtime: 1,
+      firstPrompt: '',
+      summary: '',
+      messageCount: 0,
+      created: '2026-01-01T00:00:00.000Z',
+      modified: '2026-01-01T00:00:00.000Z',
+      gitBranch: '',
+      projectPath: '',
+      isSidechain: false,
+      status: 'idle',
+      agents: [],
+      resumable: true,
+      bridged: false,
+      ...over
+    } as DiskSession
+  }
+
+  function folder(path: string, sessions: DiskSession[]): FolderEntry {
+    return { path, alias: path.split('/').pop() ?? path, gitBranch: '', sessions }
+  }
+
+  const ALPHA = '/repos/alpha'
+  let cb: Record<string, ((...a: unknown[]) => void) | undefined>
+  let disk: FolderEntry[]
+  let api: Record<string, ReturnType<typeof vi.fn>>
+
+  function installWindow(): void {
+    cb = {}
+    const on =
+      (name: string) =>
+      (fn: (...a: unknown[]) => void): (() => void) => {
+        cb[name] = fn
+        return () => {}
+      }
+    api = {
+      ptyRekey: vi.fn(),
+      notifySessionMaterialized: vi.fn(),
+      companionIdentityOutcome: vi.fn(),
+      companionIdentityClaims: vi.fn(async () => ({ claims: [] }))
+    }
+    ;(globalThis as unknown as { window: unknown }).window = {
+      api: {
+        ...api,
+        foldersLoad: vi.fn(async () =>
+          disk.map((f) => ({ ...f, sessions: f.sessions.map((s) => ({ ...s })) }))
+        ),
+        userProjectsList: vi.fn(async () => ({ projects: [], hiddenPaths: [] })),
+        orchestratorListArmed: vi.fn(async () => []),
+        onProjectAdded: on('onProjectAdded'),
+        onProjectRemoved: on('onProjectRemoved'),
+        onSessionAdded: on('onSessionAdded'),
+        onSessionRemoved: on('onSessionRemoved'),
+        onSessionUpdated: on('onSessionUpdated'),
+        onHook: on('onHook'),
+        onScreenState: on('onScreenState'),
+        onSessionRegistry: on('onSessionRegistry'),
+        fleetReportShellSessions: vi.fn(),
+        onApprovalPending: on('onApprovalPending'),
+        onApprovalResolved: on('onApprovalResolved'),
+        approvalsList: vi.fn(async () => []),
+        onNotifyActivate: on('onNotifyActivate'),
+        onIndexUpdated: on('onIndexUpdated'),
+        onWatcherDegraded: on('onWatcherDegraded'),
+        onSubagentUpdated: on('onSubagentUpdated'),
+        onSubagentRemoved: on('onSubagentRemoved'),
+        onFleetChanged: on('onFleetChanged'),
+        onCompanionIdentity: on('onCompanionIdentity')
+      }
+    }
+  }
+
+  const flush = async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
+  }
+  const flushDebounce = async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 300))
+    await flush()
+  }
+
+  const w = (): typeof api => (globalThis as unknown as { window: { api: typeof api } }).window.api
+  const claim = (key: string, sid: string, act = true, cause = 'spawn'): unknown => ({
+    key,
+    sid,
+    act,
+    cause
+  })
+  const push = (...claims: unknown[]): void => cb.onCompanionIdentity!({ claims })
+  const added = (sessionId: string, slug = encodePathToSlug(ALPHA)): void =>
+    cb.onSessionAdded!({ slug, sessionId })
+  const rowsOf = (store: ReturnType<typeof useSessionsStore>, path = ALPHA): string[] =>
+    store.folders.find((f) => f.path === path)!.sessions.map((s) => s.sessionId)
+
+  function agent(n: number): AgentSession {
+    return {
+      syntheticId: `synthetic-agent-${n}`,
+      correlationId: `corr-${n}`,
+      folderPath: ALPHA
+    }
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    disk = [folder(ALPHA, [])]
+    installWindow()
+  })
+
+  afterEach(async () => {
+    const { replaceAll } = await import('../src/renderer/src/lib/identity-claims')
+    replaceAll([])
+    delete (globalThis as unknown as { window?: unknown }).window
+  })
+
+  it('claim binds the exact synthetic in place', async () => {
+    const store = useSessionsStore()
+    await store.init()
+    const s1 = store.createNewSession(ALPHA)!
+    const synthRow = store.folders.find((f) => f.path === ALPHA)!.sessions[0]!
+    const migrated: [string, string][] = []
+    store.registerMigrateHandler((from, to) => {
+      migrated.push([from, to])
+      w().ptyRekey!(from, to) // what TerminalPane's migrate handler does
+    })
+    push(claim(s1, 'R1'))
+    disk = [
+      folder(ALPHA, [
+        session({ sessionId: 'R1', fullPath: `${ALPHA}/R1.jsonl`, projectPath: ALPHA })
+      ])
+    ]
+    added('R1')
+    await flush()
+    expect(rowsOf(store)).toEqual(['R1']) // no second row beside it
+    expect(store.folders.find((f) => f.path === ALPHA)!.sessions[0]).toBe(synthRow)
+    expect(synthRow.synthetic).toBeFalsy()
+    expect(migrated).toEqual([[s1, 'R1']])
+    expect(w().ptyRekey).toHaveBeenCalledTimes(1)
+    expect(w().ptyRekey).toHaveBeenCalledWith(s1, 'R1')
+    expect(w().companionIdentityOutcome).toHaveBeenCalledWith({
+      fromKey: s1,
+      sid: 'R1',
+      via: 'companion'
+    })
+  })
+
+  it('claims beat the oldest-correlation order', async () => {
+    const store = useSessionsStore()
+    await store.init()
+    store.insertAgentSession(agent(1))
+    store.armAgentCorrelationForBoot('synthetic-agent-1')
+    store.insertAgentSession(agent(2))
+    store.armAgentCorrelationForBoot('synthetic-agent-2')
+    push(claim('synthetic-agent-1', 'R1'), claim('synthetic-agent-2', 'R2'))
+    disk = [
+      folder(ALPHA, [
+        session({ sessionId: 'R2', fullPath: `${ALPHA}/R2.jsonl`, projectPath: ALPHA }),
+        session({ sessionId: 'R1', fullPath: `${ALPHA}/R1.jsonl`, projectPath: ALPHA })
+      ])
+    ]
+    added('R2') // the SECOND agent's transcript lands first
+    await flush()
+    const row = (id: string) =>
+      store.folders.find((f) => f.path === ALPHA)!.sessions.find((s) => s.sessionId === id)
+    expect(row('R2')).toBeDefined()
+    expect(row('synthetic-agent-1')?.synthetic).toBe(true) // S1 untouched
+    expect(row('synthetic-agent-2')).toBeUndefined() // S2 became R2
+    added('R1')
+    await flush()
+    expect(row('synthetic-agent-1')).toBeUndefined()
+    expect(rowsOf(store).sort()).toEqual(['R1', 'R2'])
+  })
+
+  it('no early re-key: the row survives a reload before the transcript exists', async () => {
+    const store = useSessionsStore()
+    await store.init()
+    const s1 = store.createNewSession(ALPHA)!
+    push(claim(s1, 'R1')) // hello landed, nothing on disk yet
+    cb.onIndexUpdated!({ slug: encodePathToSlug(ALPHA) })
+    await flushDebounce()
+    const row = store.folders
+      .find((f) => f.path === ALPHA)!
+      .sessions.find((s) => s.sessionId === s1)
+    expect(row).toBeDefined()
+    expect(row?.synthetic).toBe(true)
+    expect(w().ptyRekey).not.toHaveBeenCalled()
+  })
+
+  it('claim migration backfills metadata', async () => {
+    const store = useSessionsStore()
+    await store.init()
+    const s1 = store.createNewSession(ALPHA)!
+    push(claim(s1, 'R1'))
+    disk = [
+      folder(ALPHA, [
+        session({
+          sessionId: 'R1',
+          fullPath: `${ALPHA}/R1.jsonl`,
+          summary: 'refactor auth',
+          firstPrompt: 'refactor the auth flow',
+          messageCount: 3,
+          projectPath: ALPHA
+        })
+      ])
+    ]
+    added('R1')
+    await flush()
+    const row = store.folders.find((f) => f.path === ALPHA)!.sessions[0]!
+    expect(row.sessionId).toBe('R1')
+    expect(row.fullPath).toBe(`${ALPHA}/R1.jsonl`)
+    expect(row.firstPrompt).toBe('refactor the auth flow')
+    expect(row.summary).toBe('refactor auth')
+  })
+
+  it('claim needs no slug resolution', async () => {
+    // A folder whose dashed name does not decode from its slug (lesson synthetic-sessions/003)
+    const dashed = '/repos/PROJ-231-feature-alpha'
+    disk = [folder(dashed, [])]
+    const store = useSessionsStore()
+    await store.init()
+    const s1 = store.createNewSession(dashed)!
+    push(claim(s1, 'R1'))
+    disk = [
+      folder(dashed, [
+        session({ sessionId: 'R1', fullPath: `${dashed}/R1.jsonl`, projectPath: dashed })
+      ])
+    ]
+    added('R1', '-repos-PROJ-231-feature-alpha') // the lossy slug: it resolves to no folder
+    await flush()
+    expect(rowsOf(store, dashed)).toEqual(['R1'])
+    expect(w().ptyRekey).not.toHaveBeenCalledWith(s1, 'nothing') // sanity: the row, not the slug, decided
+  })
+
+  it('claim migration reports materialization', async () => {
+    const store = useSessionsStore()
+    await store.init()
+    store.insertAgentSession(agent(1))
+    store.armAgentCorrelationForBoot('synthetic-agent-1')
+    push(claim('synthetic-agent-1', 'R1'))
+    disk = [
+      folder(ALPHA, [
+        session({ sessionId: 'R1', fullPath: `${ALPHA}/R1.jsonl`, projectPath: ALPHA })
+      ])
+    ]
+    added('R1')
+    await flush()
+    expect(w().notifySessionMaterialized).toHaveBeenCalledTimes(1)
+    expect(w().notifySessionMaterialized).toHaveBeenCalledWith({
+      syntheticId: 'synthetic-agent-1',
+      sessionId: 'R1',
+      folder: ALPHA
+    })
+  })
+
+  it('shadow never acts, always reports', async () => {
+    const store = useSessionsStore()
+    await store.init()
+    const s1 = store.createNewSession(ALPHA)!
+    push(claim(s1, 'R-other', false)) // a shadow claim names another transcript: ignored
+    disk = [
+      folder(ALPHA, [
+        session({ sessionId: 'R1', fullPath: `${ALPHA}/R1.jsonl`, projectPath: ALPHA })
+      ])
+    ]
+    added('R1')
+    await flush()
+    expect(rowsOf(store)).toEqual(['R1']) // the legacy binder ran, unchanged
+    expect(w().companionIdentityOutcome).toHaveBeenCalledWith({
+      fromKey: s1,
+      sid: 'R1',
+      via: 'collapse'
+    })
+  })
+
+  it('a legacy agent-correlation bind is labelled as such', async () => {
+    const store = useSessionsStore()
+    await store.init()
+    store.insertAgentSession(agent(1))
+    store.armAgentCorrelationForBoot('synthetic-agent-1')
+    disk = [
+      folder(ALPHA, [
+        session({ sessionId: 'R1', fullPath: `${ALPHA}/R1.jsonl`, projectPath: ALPHA })
+      ])
+    ]
+    added('R1')
+    await flush()
+    expect(w().companionIdentityOutcome).toHaveBeenCalledWith({
+      fromKey: 'synthetic-agent-1',
+      sid: 'R1',
+      via: 'agent-correlation'
+    })
+  })
+
+  it('/clear moves the live session to the new id', async () => {
+    // R1 is a real, finished conversation whose PTY the host now says is R2
+    disk = [
+      folder(ALPHA, [
+        session({ sessionId: 'R1', fullPath: `${ALPHA}/R1.jsonl`, projectPath: ALPHA })
+      ])
+    ]
+    const store = useSessionsStore()
+    await store.init()
+    store.selectedId = 'R1'
+    const migrated: [string, string][] = []
+    store.registerMigrateHandler((from, to) => void migrated.push([from, to]))
+    push(claim('R1', 'R2', true, 'clear'))
+    disk = [
+      folder(ALPHA, [
+        session({ sessionId: 'R1', fullPath: `${ALPHA}/R1.jsonl`, projectPath: ALPHA }),
+        session({ sessionId: 'R2', fullPath: `${ALPHA}/R2.jsonl`, projectPath: ALPHA })
+      ])
+    ]
+    added('R2')
+    await flush()
+    expect(migrated).toEqual([['R1', 'R2']]) // the live terminal is keyed R2 now
+    expect(rowsOf(store).sort()).toEqual(['R1', 'R2']) // R1 stays, as a cold row
+    expect(store.selectedId).toBe('R2')
+    expect(w().companionIdentityOutcome).toHaveBeenCalledWith({
+      fromKey: 'R1',
+      sid: 'R2',
+      via: 'companion'
+    })
+  })
+
+  it('a resume claim onto a session already on disk migrates when the list arrives', async () => {
+    disk = [
+      folder(ALPHA, [
+        session({ sessionId: 'R0', fullPath: `${ALPHA}/R0.jsonl`, projectPath: ALPHA }),
+        session({ sessionId: 'R1', fullPath: `${ALPHA}/R1.jsonl`, projectPath: ALPHA })
+      ])
+    ]
+    const store = useSessionsStore()
+    await store.init()
+    store.selectedId = 'R0'
+    const migrated: [string, string][] = []
+    store.registerMigrateHandler((from, to) => void migrated.push([from, to]))
+    push(claim('R0', 'R1', true, 'resume')) // no session:added will ever fire for R1
+    expect(migrated).toEqual([['R0', 'R1']])
+    expect(store.selectedId).toBe('R1')
+    push(claim('R0', 'R1', true, 'resume')) // the same list again: once is enough
+    expect(migrated).toHaveLength(1)
+    // a shadow claim never acts
+    push(claim('R1', 'R0', false, 'resume'))
+    expect(migrated).toHaveLength(1)
+  })
+
+  it('an acting claim narrows the heuristics; shadow leaves them as they are', async () => {
+    const store = useSessionsStore()
+    await store.init()
+    store.insertAgentSession(agent(1))
+    store.armAgentCorrelationForBoot('synthetic-agent-1')
+    store.insertAgentSession(agent(2))
+    store.armAgentCorrelationForBoot('synthetic-agent-2')
+    push(claim('synthetic-agent-1', 'R1'), claim('synthetic-agent-2', 'R2'))
+    disk = [
+      folder(ALPHA, [
+        session({ sessionId: 'R3', fullPath: `${ALPHA}/R3.jsonl`, projectPath: ALPHA })
+      ])
+    ]
+    added('R3') // a transcript nobody claimed: no synthetic may be handed to it
+    await flush()
+    const synthetics = (): string[] =>
+      store.folders
+        .find((f) => f.path === ALPHA)!
+        .sessions.filter((s) => s.synthetic === true)
+        .map((s) => s.sessionId)
+        .sort()
+    expect(synthetics()).toEqual(['synthetic-agent-1', 'synthetic-agent-2'])
+    // control: with only SHADOW claims the legacy binders pick as they always did
+    push(claim('synthetic-agent-1', 'R1', false), claim('synthetic-agent-2', 'R2', false))
+    added('R3')
+    await flush()
+    expect(synthetics()).toHaveLength(1)
+  })
+
+  it('collapseResolvedSynthetics does not hand a claimed transcript to another synthetic', async () => {
+    const store = useSessionsStore()
+    await store.init()
+    const a = store.createNewSession(ALPHA)!
+    store.insertAgentSession(agent(1))
+    // R1 is on disk already and belongs to the agent's row by claim; the user's synthetic `a` must
+    // not collapse into it by creation-time proximity.
+    const now = new Date().toISOString()
+    push(claim('synthetic-agent-1', 'R1'))
+    disk = [
+      folder(ALPHA, [
+        session({
+          sessionId: 'R1',
+          created: now,
+          fullPath: `${ALPHA}/R1.jsonl`,
+          projectPath: ALPHA
+        })
+      ])
+    ]
+    cb.onIndexUpdated!({ slug: encodePathToSlug(ALPHA) })
+    await flushDebounce()
+    const synths = store.folders
+      .find((f) => f.path === ALPHA)!
+      .sessions.filter((s) => s.synthetic === true)
+      .map((s) => s.sessionId)
+    expect(synths).toContain(a) // the user's synthetic was not collapsed into R1
+  })
+
+  it('the claim list is pulled at init, so a window reload loses nothing', async () => {
+    const pulled = vi.fn(async () => ({ claims: [claim('synthetic-x', 'R1')] }))
+    const store = useSessionsStore()
+    ;(
+      globalThis as unknown as { window: { api: Record<string, unknown> } }
+    ).window.api.companionIdentityClaims = pulled
+    await store.init()
+    await flush()
+    expect(pulled).toHaveBeenCalledTimes(1)
+    const { claimFor } = await import('../src/renderer/src/lib/identity-claims')
+    expect(claimFor('R1')).toMatchObject({ key: 'synthetic-x', act: true })
+  })
+})

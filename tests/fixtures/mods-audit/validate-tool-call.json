@@ -1,0 +1,30 @@
+{
+  "success": true,
+  "strict": false,
+  "target": "/plugins/guard/.claude-plugin/plugin.json",
+  "manifest": {
+    "file": "/plugins/guard/.claude-plugin/plugin.json",
+    "type": "plugin",
+    "errors": [],
+    "warnings": [
+      {
+        "path": "author",
+        "message": "No author information provided. Consider adding author details for plugin attribution",
+        "code": null
+      }
+    ],
+    "notes": []
+  },
+  "contents": [
+    {
+      "file": "/plugins/guard/hooks/hooks.json",
+      "type": "hooks",
+      "errors": [],
+      "warnings": [],
+      "notes": [
+        "./register.ts hooks: tool.call{tool=Edit}, tool.call{tool=Bash}",
+        "./register.ts calls: $.ui.status"
+      ]
+    }
+  ]
+}

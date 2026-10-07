@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown, ChevronRight, TriangleAlert, Pause, X } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, TriangleAlert, Pause, RadioTower, X } from 'lucide-vue-next'
 import Button from './ui/Button.vue'
 import type { HeapSample } from '../../../preload'
+import type { CompanionState } from '../../../main/companion/companion-state-core'
+import { monitorCell } from '../lib/companion-view'
 import {
   formatBytes,
   formatPct,
@@ -52,6 +54,8 @@ const props = withDefaults(
      *  not a real `/proc` pid. Gets a distinct marker + muted italic label so it doesn't
      *  read as just another process in the list. */
     isSelf?: boolean
+    /** Session rows only — the Harnu mod state (T389 P1W4); null/absent renders nothing. */
+    companion?: CompanionState | null
   }>(),
   {
     path: null,
@@ -64,11 +68,12 @@ const props = withDefaults(
     hasChildren: false,
     expanded: false,
     parkable: false,
-    isSelf: false
+    isSelf: false,
+    companion: null
   }
 )
 
-const emit = defineEmits<{ toggle: []; park: []; close: [] }>()
+const emit = defineEmits<{ toggle: []; park: []; close: []; pingChannel: [] }>()
 
 const { t } = useI18n()
 
@@ -79,6 +84,10 @@ const heapFillClass = computed(() => heapBarClass(props.heap?.status))
 const showLiveReasonChip = computed(
   () => props.state === 'live' && !!props.reason && isNoteworthyLiveReason(props.reason)
 )
+/** Live rows only: `Harnu mod live`, the reason in the tooltip. Quiet: never a warning colour. */
+const companionCell = computed(() =>
+  props.state === 'live' ? monitorCell(props.companion, t) : null
+)
 const showNextSweepNote = computed(() => props.state === 'live' && props.sweepRank === 1)
 
 /** Park now (T127 S4) only makes sense for a live, resumable session — a parked
@@ -88,6 +97,10 @@ const showParkAction = computed(
   () => props.rowKind === 'session' && props.state === 'live' && props.parkable
 )
 const showCloseAction = computed(() => props.rowKind === 'session')
+/** "Test Harnu mod channel" (T389 P2W1): only for a live row whose Harnu mod is live too. */
+const showPingAction = computed(
+  () => props.rowKind === 'session' && props.state === 'live' && props.companion?.state === 'live'
+)
 </script>
 
 <template>
@@ -176,6 +189,9 @@ const showCloseAction = computed(() => props.rowKind === 'session')
           />
           {{ state === 'live' ? t('systemMonitor.stateLive') : t('systemMonitor.stateParked') }}
         </span>
+        <span v-if="companionCell" class="text-[11px] text-text-3" :title="companionCell.title">{{
+          companionCell.text
+        }}</span>
         <span v-if="showLiveReasonChip" class="flex items-center gap-1 text-[11px] text-text-3">
           <span class="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-text-2">{{
             reason
@@ -195,6 +211,17 @@ const showCloseAction = computed(() => props.rowKind === 'session')
           v-if="showParkAction || showCloseAction"
           class="flex items-center gap-1 opacity-0 transition group-hover:opacity-100"
         >
+          <Button
+            v-if="showPingAction"
+            variant="ghost"
+            size="icon"
+            :title="t('harnuMod.channel.test')"
+            :aria-label="t('harnuMod.channel.test')"
+            @click.stop="emit('pingChannel')"
+          >
+            <RadioTower :size="12" :stroke-width="2" class="text-text-3" />
+          </Button>
+          <span v-else style="width: 22px; height: 22px" aria-hidden="true" />
           <Button
             v-if="showParkAction"
             variant="ghost"

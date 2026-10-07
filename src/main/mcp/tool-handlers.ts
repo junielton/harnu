@@ -63,6 +63,7 @@ import {
   messageAuditSummary
 } from '../messaging-socket'
 import { arm, disarm, listArmedSessionIds } from '../orchestrator-guard'
+import { resolveAgentTarget } from './target-scope'
 import {
   DATA_DIR,
   LEGACY_DATA_DIRS,
@@ -2199,37 +2200,16 @@ const deleteWorkerHandler: Handler = async (args) => {
 // ---- T309 `orchestrator_arm` / `orchestrator_disarm` -----------------------
 
 /**
- * Shared target predicate (ADR-0013): resolve whether `sessionId` is known to
- * Harnu at all, and — if so — whether it is a session Harnu itself spawned for
- * an agent. Mirrors `message_session`'s steps 1/3/4 exactly (same imports, same
- * order), because the addressing decision this card made IS "reuse that
- * boundary" — see the ADR for why a second implementation was rejected.
- */
-function resolveArmTarget(
-  sessionId: string,
-  folders: FolderEntry[]
-): 'not_found' | 'not_harnu_spawned' | 'operator_owned' | 'ok' {
-  const onDisk = folders.some((f) => f.sessions.some((sn) => sn.sessionId === sessionId))
-  const inflight =
-    listInflightSessions().some((e) => e.syntheticId === sessionId) ||
-    inFlightFolderFor(sessionId) !== undefined
-  if (!onDisk && !inflight) return 'not_found'
-  if (!sessionOwnedByHarnu(sessionId)) return 'not_harnu_spawned'
-  if (!isMessageableOwner(spawnOriginForSession(sessionId))) return 'operator_owned'
-  return 'ok'
-}
-
-/**
  * T309: arm the orchestrator drift-brake guard for a session, live (ADR-0013).
  * Target scope is IDENTICAL to `message_session`'s recipient scope — see
- * {@link resolveArmTarget}. `arm()` itself is idempotent (orchestrator-guard.ts):
+ * {@link resolveAgentTarget}. `arm()` itself is idempotent (orchestrator-guard.ts):
  * re-arming an already-armed session just re-confirms the hook registration.
  */
 const orchestratorArmHandler: Handler = async (args, ctx) => {
   const sessionId = strField(args, 'sessionId') ?? ''
   if (!sessionId) return steerError('SESSION_NOT_FOUND', ctx.folder)
 
-  switch (resolveArmTarget(sessionId, ctx.folders)) {
+  switch (resolveAgentTarget(sessionId, ctx.folders)) {
     case 'not_found':
       return steerError('SESSION_NOT_FOUND', ctx.folder)
     case 'not_harnu_spawned':
@@ -2268,7 +2248,7 @@ const orchestratorDisarmHandler: Handler = async (args, ctx) => {
   const sessionId = strField(args, 'sessionId') ?? ''
   if (!sessionId) return steerError('SESSION_NOT_FOUND', ctx.folder)
 
-  switch (resolveArmTarget(sessionId, ctx.folders)) {
+  switch (resolveAgentTarget(sessionId, ctx.folders)) {
     case 'not_found':
       return steerError('SESSION_NOT_FOUND', ctx.folder)
     case 'not_harnu_spawned':

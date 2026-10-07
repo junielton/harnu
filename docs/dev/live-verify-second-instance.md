@@ -192,3 +192,16 @@ See [`scripts/dev/liveness-bench/README.md`](../../scripts/dev/liveness-bench/RE
   two together cover the whole chain.
 - Don't fight port `9222` or kill the user's electron; always isolate on an alt
   port + fresh `userData` and tear down only the PIDs you spawned.
+
+## The Harnu mod host in the isolated instance (T389)
+
+The Harnu mod host keeps everything under `<userData>/companion/` (`c.sock`, `endpoint.json`,
+`audit.ndjson`) and reads its mode from `<userData>/companion-prefs.json`. The isolated instance
+has its own `--user-data-dir`, so its socket, rendezvous file and audit log are separate from the
+user's: running your recipe never touches theirs. The host stays dark until the prefs file says
+otherwise, so write `{ "v": 1, "mode": "shadow" }` to the throwaway `companion-prefs.json` before
+launch. Launch from `out/` (an unpackaged run): `window.api.companionDevMintSpawn()` mints a spawn
+token for a throwaway owner only when `!app.isPackaged`, so a `build:unpack` build refuses it.
+`window.api.companionDiagnostics()` shows the listener, the totals and each binding, never a token.
+The socket path must stay under 90 bytes, so keep the `--user-data-dir` short (for example
+`/tmp/hv1`); a longer one makes the host announce TCP loopback instead.

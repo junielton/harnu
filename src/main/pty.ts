@@ -5,6 +5,24 @@ import os from 'os'
 import { existsSync } from 'fs'
 import { dirname } from 'path'
 import { resolveClaudePath } from './claude-cli'
+import {
+  applyCompanionArgv,
+  applyCompanionEnv,
+  companionHelloSeen,
+  isSideloadBlocked,
+  markSideloadBlocked,
+  releaseCompanionSpawn,
+  reportCompanionSideloadExit,
+  trustFor,
+  type CompanionSpawnPlan,
+  type CompanionSpawnProvider
+} from './companion/spawn-inject'
+import {
+  injectedPluginDirs,
+  shouldRetryWithoutSideload,
+  stripInjectedPluginDirs,
+  RETRY_WINDOW_MS
+} from './companion/sideload-retry-core'
 import { defaultShell } from './shell-resolve'
 import { resolveClaudeBootArgs, getResolvedConfig } from './claude-config'
 import {
@@ -22,7 +40,14 @@ import {
 import { injectHookSettings } from './hook-settings-blob'
 import { forceDowngradePermission } from './mcp/agent-boot'
 import { orderMcpArgs } from './mcp/config-file'
+import type { SpawnOwner } from './companion/session-table'
 import { PtySessionIndex } from './pty-session-index'
+import {
+  companionHost,
+  setCompanionSessionKeyResolver,
+  setCompanionSessionOwnedResolver,
+  setCompanionSpawnKindResolver
+} from './companion/host'
 import { pruneTaskState } from './hook-bridge'
 import { RingBuffer } from './pty-ring-buffer'
 import { foregroundProcessName } from './detect/foreground-process'
@@ -453,6 +478,19 @@ export function setBundledSkillsArgsProvider(
 }
 
 /**
+ * T389: the companion mod's spawn provider — the second, unconditional `--plugin-dir` and the
+ * spawn token. `null` (the default, and the answer whenever the mode is off, the CLI version is
+ * unknown or too old, the machine is sideload-blocked or staging failed) leaves the spawn
+ * exactly as it was. Same shape as {@link setBundledSkillsArgsProvider}; NEVER applied to `shell`.
+ */
+let companionSpawnProvider: CompanionSpawnProvider = async () => null
+
+/** Wire the companion spawn provider (called once by the integrator). */
+export function setCompanionSpawnProvider(fn: CompanionSpawnProvider): void {
+  companionSpawnProvider = fn
+}
+
+/**
  * session key -> live ptyId. Source of truth for "1 session = 1 process"
  * (I1/I5). Survives renderer reloads because it lives in the main process;
  * the renderer's `liveTerminals` map does not. See the 2026-06-01 spec.
@@ -500,6 +538,17 @@ export function stopHibernationSweep(): void {
 }
 
 export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void {
+  // T389 P1W3: a PTY binding's `sessionKey` is whatever key the index holds for its ptyId right
+  // now, so a `pty:rekey` below moves it without any bookkeeping of the companion's own.
+  setCompanionSessionKeyResolver((owner) =>
+    owner.kind === 'pty' ? (sessionIndex.getSessionKey(owner.ptyId) ?? null) : null
+  )
+  setCompanionSpawnKindResolver((owner) =>
+    owner.kind === 'pty' ? (ptys.get(owner.ptyId)?.kind ?? null) : null
+  )
+  // T389 P4W3: a tokenless claim for a session Harnu spawned (live or parked) is UNAUTHORIZED.
+  setCompanionSessionOwnedResolver((sid) => sessionOwnedByHarnu(sid))
+
   function flushNow(id: string): void {
     const rec = ptys.get(id)
     if (!rec) return
@@ -631,6 +680,10 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     // model fallback). Empty for the Anthropic default; merged into the spawn
     // env below. Only `claude-*` kinds carry a provider.
     let providerEnv: Record<string, string> = {}
+    // T389: the companion mod's plan for THIS spawn (null → exactly as before), and the plugin
+    // dirs Harnu itself put on the argv (what the sideload retry may take off again).
+    let companionPlan: CompanionSpawnPlan | null = null
+    let injectedDirs: string[] = []
     if (kind === 'claude-new' || kind === 'claude-resume' || kind === 'claude-fork') {
       const claudePath = await resolveClaudePath()
       if (!claudePath) {
@@ -777,7 +830,18 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
       // was exactly this — a freshly spawned session got neither `--settings` nor
       // `--plugin-dir`, while resumed sessions (no pre-prompt, so no separator)
       // worked. Add the NEXT injector inside this callback, never after it.
+      companionPlan = await companionSpawnProvider({
+        cwd: opts.cwd ?? '',
+        kind,
+        owner: { kind: 'pty', ptyId: id },
+        trust: trustFor({
+          readOnly: opts.readOnly,
+          agentControlled: opts.agentControlled,
+          spawnedBy: opts.spawnedBy
+        })
+      })
       args = await withOptionArgs(args, async (optionArgs) => {
+        const before = [...optionArgs]
         let out = optionArgs
         // T92: inject per-session hook `--settings` so this Claude session POSTs its
         // lifecycle to the Hook Bridge (event-driven fleet state) and Harnu owns
@@ -788,7 +852,12 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
         // T217: emit `--plugin-dir <staged>` for the bundled skills this FOLDER has
         // switched on. A skill that is off is never staged, so it is absent from the
         // session's catalog by construction; an empty enabled set emits nothing.
-        out = await bundledSkillsArgsProvider(out, opts.cwd ?? '')
+        // T389: the companion is the FIRST `--plugin-dir`, inserted before the bundled-skills
+        // one (and before a user's own), inside this callback so it stays before the `--`.
+        out = applyCompanionArgv(out, companionPlan)
+        // A machine that blocks sideloaded plugins gets neither Harnu flag (§7.8).
+        if (!isSideloadBlocked()) out = await bundledSkillsArgsProvider(out, opts.cwd ?? '')
+        injectedDirs = injectedPluginDirs(before, out)
         return out
       })
     } else {
@@ -839,13 +908,26 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
       runCwd = os.homedir()
     }
 
-    const pty = spawn(runCommand, runArgs, {
+    // T389: the spawn token. It never survives from the parent env, and is minted only when
+    // `claude` really runs (the missing-directory notice replaces the command, so it gets none).
+    const companionOwner: SpawnOwner = { kind: 'pty', ptyId: id }
+    applyCompanionEnv(env, {
+      plan: companionPlan,
+      owner: companionOwner,
+      dirMissing: wantedDirMissing
+    })
+    // The retry below only ever applies to a spawn that carried the COMPANION's plugin dir.
+    const companionInjected =
+      !!companionPlan && !wantedDirMissing && injectedDirs.includes(companionPlan.pluginDir)
+    const spawnOpts = {
       name: 'xterm-256color',
       cwd: runCwd,
       cols: opts.cols,
       rows: opts.rows,
       env
-    })
+    }
+
+    const pty = spawn(runCommand, runArgs, spawnOpts)
 
     const spawnedAt = Date.now()
     const rec: PtyRec = {
@@ -888,42 +970,97 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
       resolveSessionReadyWaiters(opts.sessionKey)
     }
 
-    pty.onData((data) => {
-      const s = rec.flush
-      s.buf += data
-      s.size += Buffer.byteLength(data, 'utf8')
-      if (s.size >= HIGH_WATERMARK) {
-        flushNow(id)
-      } else if (!s.timer) {
-        s.timer = setTimeout(() => flushNow(id), COALESCE_MS)
-      }
-    })
+    // T389: the process behind `rec.pty` can be replaced ONCE by the sideload retry (below), so
+    // the data and exit handlers are attached per process rather than once per record.
+    let launchedAt = spawnedAt
+    let firstTail = ''
+    let blockedTimer: ReturnType<typeof setTimeout> | null = null
 
-    pty.onExit((evt) => {
-      // Drain any buffered bytes before the exit event so the renderer sees
-      // every byte the child produced.
-      flushNow(id)
-      // BUG-70 §3.2: the fact travels WITH the event rather than suppressing it —
-      // other `pty:exit` consumers (pre-prompt gate, prompt submitter, helper-pane
-      // watch) still need the cancel signal on a park. `reason` absent on the wire
-      // means natural (a stale preload/renderer pair keeps today's behavior).
-      const reason: PtyExitReason = isParking(id) ? 'park' : 'natural'
-      clearParking(id)
-      getWindow()?.webContents.send('pty:exit', {
-        id,
-        exitCode: evt.exitCode,
-        signal: evt.signal,
-        reason
+    const wire = (proc: IPty, isRetry: boolean): void => {
+      proc.onData((data) => {
+        if (!isRetry && companionInjected) firstTail = (firstTail + data).slice(-2048)
+        const s = rec.flush
+        s.buf += data
+        s.size += Buffer.byteLength(data, 'utf8')
+        if (s.size >= HIGH_WATERMARK) {
+          flushNow(id)
+        } else if (!s.timer) {
+          s.timer = setTimeout(() => flushNow(id), COALESCE_MS)
+        }
       })
-      const r = ptys.get(id)
-      if (r?.flush.timer) clearTimeout(r.flush.timer)
-      ptys.delete(id)
-      // Prune the dead session's hook state (T13/BUG-1) before dropping the index
-      // entry — resolve the key while the reverse lookup still holds it.
-      const exitedKey = sessionIndex.getSessionKey(id)
-      if (exitedKey) pruneTaskState(exitedKey)
-      sessionIndex.removeByPtyId(id)
-    })
+
+      proc.onExit((evt) => {
+        // Drain any buffered bytes before the exit event so the renderer sees
+        // every byte the child produced.
+        flushNow(id)
+        if (blockedTimer) clearTimeout(blockedTimer)
+
+        // T389 §7.8: a spawn that carried Harnu's plugin dir and died at once without the mod
+        // ever saying hello is retried ONCE without Harnu's own `--plugin-dir` flags and without
+        // the token; `pty:exit` is not forwarded for the first process. Never for a spawn that
+        // was not injected, a park or a destroy.
+        if (
+          !isRetry &&
+          companionInjected &&
+          ptys.get(id) === rec &&
+          !isParking(id) &&
+          shouldRetryWithoutSideload({
+            injected: true,
+            exitCode: evt.exitCode,
+            livedMs: Date.now() - launchedAt,
+            helloSeen: companionHelloSeen(companionOwner),
+            retried: false
+          })
+        ) {
+          try {
+            reportCompanionSideloadExit(companionOwner, firstTail)
+            releaseCompanionSpawn(companionOwner, 'spawn-aborted')
+            rec.flush.buf += '\x1b[2mHarnu: restarted without bundled plugins.\x1b[0m\r\n'
+            flushNow(id)
+            const retryEnv = { ...env }
+            delete retryEnv.HARNU_SPAWN_TOKEN
+            const second = spawn(runCommand, stripInjectedPluginDirs(runArgs, injectedDirs), {
+              ...spawnOpts,
+              env: retryEnv
+            })
+            launchedAt = Date.now()
+            rec.pty = second
+            wire(second, true)
+            // Living past the window means the CLI ran without the flags: this machine blocks
+            // sideloaded plugins. In memory for the app run; later spawns skip both flags.
+            blockedTimer = setTimeout(() => {
+              if (ptys.get(id) === rec && rec.pty === second) markSideloadBlocked(firstTail)
+            }, RETRY_WINDOW_MS)
+            return
+          } catch {
+            // could not respawn: forward the first process's exit as today
+          }
+        }
+
+        releaseCompanionSpawn(companionOwner, 'pty-exit')
+        // BUG-70 §3.2: the fact travels WITH the event rather than suppressing it —
+        // other `pty:exit` consumers (pre-prompt gate, prompt submitter, helper-pane
+        // watch) still need the cancel signal on a park. `reason` absent on the wire
+        // means natural (a stale preload/renderer pair keeps today's behavior).
+        const reason: PtyExitReason = isParking(id) ? 'park' : 'natural'
+        clearParking(id)
+        getWindow()?.webContents.send('pty:exit', {
+          id,
+          exitCode: evt.exitCode,
+          signal: evt.signal,
+          reason
+        })
+        const r = ptys.get(id)
+        if (r?.flush.timer) clearTimeout(r.flush.timer)
+        ptys.delete(id)
+        // Prune the dead session's hook state (T13/BUG-1) before dropping the index
+        // entry — resolve the key while the reverse lookup still holds it.
+        const exitedKey = sessionIndex.getSessionKey(id)
+        if (exitedKey) pruneTaskState(exitedKey)
+        sessionIndex.removeByPtyId(id)
+      })
+    }
+    wire(pty, false)
 
     return id
   })
@@ -1030,6 +1167,8 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     // recognizes) — and the System Monitor keeps showing `synthetic-<uuid>` forever.
     const rec = ptyId ? ptys.get(ptyId) : undefined
     if (rec) applyRekeyToRecord(rec, toKey)
+    // T389 P1W3: the binding of this PTY now reads the new key; a claim for it is satisfied.
+    if (ptyId) companionHost.notifySessionKeyChange({ kind: 'pty', ptyId })
   })
 
   /**

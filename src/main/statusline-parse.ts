@@ -35,6 +35,12 @@ export interface SessionTelemetry {
   rateLimits: { fiveHour: RateWindow | null; sevenDay: RateWindow | null }
   /** Epoch ms when THIS blob was written (the inbox file mtime). */
   updatedAtMs: number
+  /**
+   * Epoch ms of the reading that produced `rateLimits`, when it is not `updatedAtMs`: set only
+   * on a record the telemetry store composed (T389 P1W6), where another writer can move
+   * `updatedAtMs` without refreshing the windows. Absent on a parsed blob.
+   */
+  rateLimitsAtMs?: number
 }
 
 export interface RateWindow {
@@ -166,13 +172,16 @@ export function foldFleetTelemetry(
     if (nowMs - t.updatedAtMs > TELEMETRY_TTL_MS) continue
     sessionCount++
     if (t.costUsd !== null) totalCostUsd += t.costUsd
-    if (t.rateLimits.fiveHour && t.updatedAtMs > fiveHourAt) {
+    // The windows' own stamp: a blob that only moved `linesAdded` must not re-stamp a window the
+    // companion read an hour ago as fresh (lesson framework/005, "preferred source, no bound").
+    const windowsAt = t.rateLimitsAtMs ?? t.updatedAtMs
+    if (t.rateLimits.fiveHour && windowsAt > fiveHourAt) {
       fiveHour = t.rateLimits.fiveHour
-      fiveHourAt = t.updatedAtMs
+      fiveHourAt = windowsAt
     }
-    if (t.rateLimits.sevenDay && t.updatedAtMs > sevenDayAt) {
+    if (t.rateLimits.sevenDay && windowsAt > sevenDayAt) {
       sevenDay = t.rateLimits.sevenDay
-      sevenDayAt = t.updatedAtMs
+      sevenDayAt = windowsAt
     }
   }
 

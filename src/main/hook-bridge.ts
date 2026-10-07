@@ -18,9 +18,9 @@ import {
   isLoopbackHostname,
   isAllowedOrigin
 } from './mcp/http-guard'
-import { classifyFailure, type TaskState, type FailureReason } from './hook-state'
+import { classifyFailure, type FailureReason } from './hook-state'
 import { buildHookSettingsBlobJson } from './hook-settings-blob'
-import { TaskStateRegistry } from './detect/task-state-registry'
+import { getTaskState, ingest, type BridgeEvent as HubBridgeEvent } from './detect/task-state-hub'
 import {
   isDispatchable,
   parseHookRequest,
@@ -45,7 +45,14 @@ import {
 import { interceptActivePaths } from './user-projects'
 import { registerApprovalResolver, closeApprovals } from './approval-resolver'
 import { registerSentinel } from './sentinel-resolver'
-import { isHibernated } from './hibernation'
+
+// The public surface moved to the hub; re-exported so no importer changes (ARB-5).
+export {
+  addTaskEventObserver,
+  getTaskStates,
+  pruneTaskState,
+  type HookTaskEvent
+} from './detect/task-state-hub'
 
 /** Internal dispatch deadline. STRICTLY < HOOK_TIMEOUT_S*1000 (hook-installer.ts:22 = 5s). */
 const RESPONDER_DEADLINE_MS = 3500
@@ -61,16 +68,11 @@ const RESPONDER_DEADLINE_MS = 3500
  * installer, and the opt-out preference.
  */
 
-export interface BridgeEvent {
-  sessionId: string
-  event: string
-  matcher?: string
-  ts: number
-  /** Only on StopFailure: the classified `error_type`. */
-  failureReason?: FailureReason
-  /** Only on StopFailure: the rate-limit reset, normalized to epoch-ms. */
-  resetsAt?: number
-}
+/**
+ * The event as the hook server emits it: no `source` yet. `handleBridgeEvent` stamps
+ * `source: 'hook'` and hands it to the task-state hub (T389 P1W4 §7.4).
+ */
+export type BridgeEvent = Omit<HubBridgeEvent, 'source'> & { source?: HubBridgeEvent['source'] }
 
 interface StartedServer {
   port: number
@@ -207,69 +209,6 @@ export function startHookServer(
 let serverClose: (() => Promise<void>) | null = null
 let currentPort = 0
 let currentToken = ''
-// Per-session task-state, folded in main so the renderer never imports the
-// reducer from src/main — the store just applies the resolved state. The
-// registry adds the liveness axis (T13): `pruneTaskState` drops a dead session's
-// state and the MCP disclosure filters to live sessions only.
-const registry = new TaskStateRegistry()
-
-/**
- * Read-only view of the per-session hook FSM state. Exposed so the MCP server
- * (`mcp/server.ts`) can fold the same sidebar-dot truth into the redacted fleet
- * snapshot it discloses to agents. Returns the LIVE map (read-only typed) — the
- * caller iterates it into a plain record; it must never mutate it.
- */
-export function getTaskStates(): ReadonlyMap<string, TaskState> {
-  return registry.entries()
-}
-
-/**
- * Drop a session's folded hook state — called by `pty.ts` on every PTY teardown
- * (`onExit` / `pty:destroy` / `killAllPtys`) so a dead session stops being
- * disclosed as `working`/`needs-input` and the map can't grow unbounded (T13/BUG-1).
- */
-export function pruneTaskState(sessionId: string): void {
-  registry.prune(sessionId)
-}
-
-/**
- * A folded per-session task-state edge, forwarded to in-main observers (T79 S2).
- * DISTINCT from the renderer `claude:hook` wire: observers run inside the main
- * process, so a feature (the auto-digest engine) can react to a session going
- * idle / ending WITHOUT round-tripping through the renderer — and thus survive a
- * renderer reload, like the hook bridge itself.
- */
-export interface HookTaskEvent {
-  sessionId: string
-  /** The folded state AFTER this event (`reduceTaskState`). */
-  taskState: TaskState
-  /** The raw hook event name (`Stop`, `SessionEnd`, `UserPromptSubmit`, …). */
-  event: string
-  /** Event timestamp (epoch ms). */
-  ts: number
-  /** Only when `taskState === 'failed'` (BUG-54 terminal ledger): the classified reason. */
-  failureReason?: FailureReason
-  /** Only when `taskState === 'failed'`: the rate-limit reset, epoch-ms. */
-  resetsAt?: number
-}
-
-/** In-main observers of the folded task-state edge (T79 S2 digest engine, …). */
-type TaskEventObserver = (ev: HookTaskEvent) => void
-const taskEventObservers = new Set<TaskEventObserver>()
-
-/**
- * Subscribe to the folded per-session task-state edge in the MAIN process
- * (T79 S2). Returns an unsubscribe. An observer that throws is swallowed so it
- * can never break the hook fold or the renderer forward. Multiple observers are
- * supported; each receives every event.
- */
-export function addTaskEventObserver(cb: TaskEventObserver): () => void {
-  taskEventObservers.add(cb)
-  return () => {
-    taskEventObservers.delete(cb)
-  }
-}
-
 function prefsPath(): string {
   return join(app.getPath('userData'), 'hook-prefs.json')
 }
@@ -395,56 +334,13 @@ function registerExitCleanup(): void {
 }
 
 /**
- * Fold a raw hook POST into the per-session task-state FSM and fan it out to
- * in-main observers + the renderer — UNLESS the session is parked (T178 row
- * #8, the one surface in the audit needing a real new guard): a `Stop`/
- * `SessionEnd` POSTed by a dying (or already-dead) process can land AFTER the
- * kill and, unguarded, both notify and re-animate a parked row's `taskState`.
- * Guarded in MAIN (not the renderer) — beside the existing `pruneTaskState`
- * liveness convention — so the MCP disclosure (`getTaskStates`) and the
- * in-main digest observers (`addTaskEventObserver`) see the same truth as the
- * renderer. Exported so `registerHookBridge`'s wiring is unit-testable without
- * spinning up the HTTP server or an electron `BrowserWindow`.
+ * A raw hook POST enters the task-state hub stamped `source: 'hook'`. The fold, the T178 row #8
+ * `isHibernated` guard and the fan-out live in `detect/task-state-hub.ts` (T389 P1W4); this stays
+ * exported so `registerHookBridge`'s wiring is unit-testable without the HTTP server or a
+ * `BrowserWindow`, and so every importer keeps its import.
  */
 export function handleBridgeEvent(ev: BridgeEvent, getWindow: () => BrowserWindow | null): void {
-  if (isHibernated(ev.sessionId)) return
-  const next = registry.fold(ev.sessionId, {
-    hookEventName: ev.event,
-    matcher: ev.matcher,
-    sessionId: ev.sessionId
-  })
-  // T79 S2: forward the folded edge to in-main observers (the auto-digest
-  // engine) BEFORE the renderer send. An observer throw never breaks the fold.
-  if (taskEventObservers.size > 0) {
-    const edge: HookTaskEvent = {
-      sessionId: ev.sessionId,
-      taskState: next,
-      event: ev.event,
-      ts: ev.ts,
-      ...(next === 'failed'
-        ? { failureReason: ev.failureReason ?? 'unknown', resetsAt: ev.resetsAt }
-        : {})
-    }
-    for (const obs of taskEventObservers) {
-      try {
-        obs(edge)
-      } catch (err) {
-        console.error('[hook-bridge] task-event observer threw', err)
-      }
-    }
-  }
-  const win = getWindow()
-  if (win && !win.isDestroyed()) {
-    win.webContents.send('claude:hook', {
-      sessionId: ev.sessionId,
-      taskState: next,
-      event: ev.event,
-      ts: ev.ts,
-      ...(next === 'failed'
-        ? { failureReason: ev.failureReason ?? 'unknown', resetsAt: ev.resetsAt }
-        : {})
-    })
-  }
+  ingest({ ...ev, source: 'hook' }, getWindow)
 }
 
 export async function registerHookBridge(getWindow: () => BrowserWindow | null): Promise<void> {
@@ -491,7 +387,7 @@ export async function registerHookBridge(getWindow: () => BrowserWindow | null):
   // Half (a) migration resync (T13): let the renderer pull main's current folded
   // state for a uuid, so a synthetic→real migrated row reflects the hooks that
   // fired while it was still keyed synthetic-<uuid> (and thus dropped by onHook).
-  ipcMain.handle('hooks:stateFor', (_e, sessionId: string) => registry.get(sessionId) ?? null)
+  ipcMain.handle('hooks:stateFor', (_e, sessionId: string) => getTaskState(sessionId) ?? null)
   ipcMain.handle('hooks:setEnabled', async (_e, enabled: boolean) => {
     await writeEnabled(enabled)
     try {

@@ -28,7 +28,11 @@ const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 vi.mock('node:child_process', () => ({
   execFile: (...a: unknown[]) => execFileMock(...(a as [string, string[], unknown, Cb]))
 }))
-vi.mock('../src/main/claude-cli', () => ({ resolveClaudePath: vi.fn(async () => '/bin/claude') }))
+vi.mock('../src/main/claude-cli', () => ({
+  resolveClaudePath: vi.fn(async () => '/bin/claude'),
+  resolveClaudeVersion: vi.fn(async () => null),
+  claudeVersionSync: vi.fn(() => null)
+}))
 const sanitizeSpawnEnv = vi.fn(() => ({ SANITIZED: '1' }))
 vi.mock('../src/main/appimage-env', () => ({
   sanitizeSpawnEnv: (e: unknown) => sanitizeSpawnEnv(e)
@@ -132,5 +136,22 @@ describe('closeHaiku', () => {
     await tick()
     closeHaiku()
     expect(spawnedChildren[0].kill).toHaveBeenCalled()
+  })
+})
+
+describe('probes are never injected', () => {
+  it('probes are never injected', async () => {
+    const a = runHaiku('p', { key: 'probe', cacheTtlMs: 0 })
+    await tick()
+    const [, argv, opts] = execFileMock.mock.calls[0] as unknown as [
+      string,
+      string[],
+      { env: Record<string, string> }
+    ]
+    expect(argv).not.toContain('--plugin-dir')
+    expect(argv.join(' ')).not.toContain('plugin-dir')
+    expect(opts.env.HARNU_SPAWN_TOKEN).toBeUndefined()
+    flush()
+    await a
   })
 })

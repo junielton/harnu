@@ -1,0 +1,39 @@
+{
+  "success": false,
+  "strict": false,
+  "target": "/plugins/tool-calls/.claude-plugin/plugin.json",
+  "manifest": {
+    "file": "/plugins/tool-calls/.claude-plugin/plugin.json",
+    "type": "plugin",
+    "errors": [
+      {
+        "path": "json",
+        "message": "Invalid JSON syntax: JSON Parse error: Unrecognized token '\\'",
+        "code": null
+      }
+    ],
+    "warnings": [],
+    "notes": []
+  },
+  "contents": [
+    {
+      "file": "/plugins/tool-calls/hooks/hooks.json",
+      "type": "hooks",
+      "errors": [
+        {
+          "path": "modules../register.tsx",
+          "message": "$.state.set refers to tool-calls.calls, which tool-calls owns: only a value's owner writes it (to change what is written, hook tool-calls's state.set and rewrite e.value)",
+          "code": null
+        }
+      ],
+      "warnings": [],
+      "notes": [
+        "./register.tsx hooks: session.start, command.run{command=tool-calls}, tool.call, ui.render{component=Pane, requestId=tool-calls}",
+        "./register.tsx calls: $.command.register, $.state.get, $.state.set, $.ui.open, $.ui.resolve",
+        "./register.tsx state writes: tool-calls.calls",
+        "./register.tsx state reads: tool-calls.calls",
+        "./register.tsx state of other plugins, not checked (run validate in a session with them enabled): tool-calls.calls"
+      ]
+    }
+  ]
+}

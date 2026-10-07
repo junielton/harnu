@@ -10,6 +10,7 @@ Settings is organized into tabs. Most are covered in depth on their own pages �
 - **Remote notifications** — push channels for session events (needs input, finished, failed): either an [ntfy](https://ntfy.sh) topic to your phone, or a generic webhook (which also happens to work directly with Slack/Discord incoming webhooks). You can pause notifications for a set period, and there's a "send test" button per channel so you're not guessing whether it's wired up correctly. This is separate from the OS notifications Harnu also shows locally.
 - **MCP** — the agent [control server](agent-control.md), which is **on by default**. This is where the three ways to rein it in live: the server's master kill switch, the global **Ask before agent actions** toggle (off by default — agents act without confirmations), and the per-folder list where you can block agents in a specific folder. It also shows the audit log of everything agents have done.
 - **Skills** — the skills Harnu ships and a per-skill on/off switch, globally or per project. Everything is off until you turn it on; see [Bundled skills](bundled-skills.md).
+- **Mods** — a read-only list of the mods (Claude Code plugins with a hooks module) your sessions can load, and what each can do. It never switches anyone's mod; see [Mods](mods.md).
 - **Interceptor** — an optional, separate layer that lets Harnu answer Claude Code's own permission prompts (not to be confused with the MCP approvals above) — see [Intercepting Claude Code's own prompts](approval-inbox.md#intercepting-claude-codes-own-prompts) for how its shadow/active modes work.
 - **Memory** — where [project memory](project-memory.md) behavior is configured.
 - **Hibernation policy** — covered below.
@@ -17,6 +18,19 @@ Settings is organized into tabs. Most are covered in depth on their own pages �
 - **Changelog** — renders this repo's `CHANGELOG.md` in-app, so you can see what shipped without leaving Harnu.
 - **Containers** — the background scan, the zombie threshold and the new-zombie notification behind the [Containers](containers.md#settings) view.
 - **Claude Code** — renders Claude Code's own official changelog (fetched from Anthropic, separate from Harnu's own Changelog tab above). Claude's live service status (incidents, scheduled maintenance) is shown in the footer popover alongside your [usage](usage.md#the-footer-popover), not here.
+
+## Harnu mod
+
+**Settings → General → Integrations → Harnu mod** is the switch for the small mod Harnu loads into the `claude` sessions it starts. It runs unsandboxed inside the `claude` process and talks only to Harnu on this machine; today it only observes, and Harnu still reads every fact the old way (hooks, the transcript, polling) as well.
+
+- **On (default).** New sessions carry the mod once Harnu has shown you the one-time notice. A session you started before you saw it runs without the mod and says so in its state line.
+- **Off.** Harnu stops using the mod at once: every running mod is switched off, and new sessions start without it. Turning the switch back on reaches new sessions only; running ones stay off until they restart. Off means hooks and polling, as before.
+
+Under the switch you may see the folder the mod is loaded from (with a **Reveal folder** button) and at most one plain status line, for example that your Claude Code is older than 2.1.287 or newer than the last version Harnu tested (the mod then only observes), or that mods are turned off by a setting or by your organization's policy. None of these is a warning.
+
+**The statusLine switch.** The mod can supply a session's cost, context and plan limits, but not eight figures: lines added and removed, thinking on or off, output style, the pull request, the model's display name, the session duration and the effort level. **Settings → General → Session telemetry (statusLine)** is still where those come from, so turning it off blanks them. The details are under [Where the figures come from](usage.md#where-the-figures-come-from).
+
+The per-session state is in the hover preview and in the [System Monitor](system-monitor.md#what-you-see). If a session says `legacy` and you want to know why, see [Troubleshooting](troubleshooting.md#harnu-mod-legacy).
 
 ## Sidebar
 

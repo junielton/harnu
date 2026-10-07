@@ -19,6 +19,10 @@ Two groups, both sorted by RAM used (highest first):
 - **Harnu** — one row per Electron process (`main`, `renderer`, `GPU`, `network`, …). The `main` row carries a small heap gauge — the number that matters most, since that's the process that can run out of memory. It turns amber as it climbs, red near the limit.
 - **Sessions** — one row per session you have open. A live session with running subprocesses (like the Claude process itself, or an MCP server) can be expanded to see each one's own RAM and CPU. A **parked** session — one Harnu hibernated to save memory — shows a dash instead of a number (its cost is genuinely unknown while parked, not zero) plus a short line explaining why it was parked and roughly how much RAM that freed up. Wake a parked session the normal way: select it in the sidebar.
 
+Each live session also shows the state of the [Harnu mod](settings.md#harnu-mod) in its state column — `Harnu mod live`, `off` or `legacy` — with the reason in the tooltip. `legacy` is a quiet fact, not a warning: the session simply runs on hooks and polling. A parked session shows none.
+
+Hover a live session whose Harnu mod is `live` and a **Test Harnu mod channel** button appears beside Park now and Close. It sends the session a quick check through the mod: you get a toast with the round trip ("Harnu mod channel answered in 42 ms"), and the session shows a short `harnu-companion: Harnu mod channel check` line in its own terminal for a few seconds. The line is drawn by Claude Code and its prefix cannot be changed. If the channel is not available the toast says why — `this session runs on hooks`, `the channel is observing only` or `this is a headless session` — and if nothing answers it says so. The check changes nothing in the session and carries no text from you or from an agent.
+
 A session that's live but getting cold enough to be the next one hibernated gets a small "next to be swept" note, so you're never surprised by a session disappearing from the live list.
 
 ## Acting on a row

@@ -11,6 +11,8 @@ import {
   buildModelCostRollup,
   buildProjectCostRollup,
   buildSessionCostRollup,
+  calibrateBuckets,
+  type CalibrationSkip,
   type CostBucket,
   type DailyCostRollup,
   type ModelCostRollup,
@@ -348,12 +350,36 @@ async function ensureScanned(): Promise<ScannedState> {
   return { tasks, scanMs: Date.now() - startedAt }
 }
 
+// ---- Calibration by the CLI's own total (T389 P1W6 §7.5) -------------------------------------
+
+/** What the host hands us: measured USD per `(session, day)` for the sessions it fully covers. */
+interface CostCalibration {
+  totals(): Promise<ReadonlyMap<string, number>>
+  onSkip?(s: CalibrationSkip): void
+}
+let calibration: CostCalibration | null = null
+
+/** Called once by the companion host; `null` removes it. The scan stays the structure and history. */
+export function setUsageCostCalibration(c: CostCalibration | null): void {
+  calibration = c
+}
+
+/** Applied after the per-file cache merge; any failure leaves the scan's price standing. */
+async function calibrated(buckets: CostBucket[]): Promise<CostBucket[]> {
+  if (!calibration) return buckets
+  try {
+    return calibrateBuckets(buckets, await calibration.totals(), calibration.onSkip)
+  } catch {
+    return buckets
+  }
+}
+
 let inFlight: Promise<UsageCostSummary> | null = null
 
 async function computeSummary(): Promise<UsageCostSummary> {
   const { tasks, scanMs } = await ensureScanned()
 
-  const merged = mergeCostBuckets([...fileCache.values()].map((c) => c.buckets))
+  const merged = await calibrated(mergeCostBuckets([...fileCache.values()].map((c) => c.buckets)))
   const sessionRollup = buildSessionCostRollup(merged)
 
   return {
@@ -408,7 +434,9 @@ let biInFlight: Promise<UsageBiRawData> | null = null
 async function computeBiRawData(): Promise<UsageBiRawData> {
   const { tasks, scanMs } = await ensureScanned()
 
-  const mergedBuckets = mergeCostBuckets([...fileCache.values()].map((c) => c.buckets))
+  const mergedBuckets = await calibrated(
+    mergeCostBuckets([...fileCache.values()].map((c) => c.buckets))
+  )
 
   const bySession = new Map<string, { projectPath: string; files: FileAnatomySignals[] }>()
   const subagentCounts = new Map<string, number>()

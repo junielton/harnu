@@ -1,0 +1,13 @@
+{
+  "success": true,
+  "strict": false,
+  "target": "/plugins/market",
+  "manifest": {
+    "file": "/plugins/market/.claude-plugin/marketplace.json",
+    "type": "marketplace",
+    "errors": [],
+    "warnings": [],
+    "notes": []
+  },
+  "contents": []
+}

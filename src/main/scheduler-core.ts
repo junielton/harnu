@@ -380,6 +380,11 @@ export const OBSERVE_MCP_ALLOW: readonly string[] = underAllServerNames(OBSERVE_
 export const OBSERVE_MCP_DENY: readonly string[] = underAllServerNames(OBSERVE_DENY_VERBS)
 
 export interface TickContext {
+  /**
+   * T389: the staged companion mod directory, when the mod is on for this tick. Emitted BEFORE
+   * the skills `--plugin-dir` so the companion is always the first plugin dir.
+   */
+  companionPluginDir?: string
   /** The folder's staged bundled-skills dir, when it has any enabled. */
   pluginDir?: string
   /** Harnu's own `--mcp-config` document, when the control server is up. */
@@ -651,6 +656,7 @@ export function tickArgv(worker: Worker, ctx: TickContext): string[] {
 
   const argv: string[] = ['-p', '--model', worker.model, '--effort', worker.effort]
 
+  if (ctx.companionPluginDir) argv.push('--plugin-dir', ctx.companionPluginDir)
   if (ctx.pluginDir) argv.push('--plugin-dir', ctx.pluginDir)
 
   // Born lean: the user's MCP servers and settings are dropped, and the Harnu

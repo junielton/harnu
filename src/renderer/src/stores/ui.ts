@@ -112,6 +112,7 @@ export type SettingsTabId =
   | 'voice'
   | 'mcp'
   | 'skills'
+  | 'mods'
   | 'memory'
   | 'hibernationPolicy'
   | 'usageHistory'

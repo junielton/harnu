@@ -20,6 +20,8 @@ export default defineConfig(
       '**/dist',
       '**/out',
       '.claude/**',
+      // The engine writes these next to a loaded mod (companion mod, T389); never hand-edited.
+      '**/.claude-plugin/types/**',
       'coverage/**',
       'playwright-report/**',
       'test-results/**'

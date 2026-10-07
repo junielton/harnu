@@ -1,0 +1,55 @@
+{
+  "base": "feat/t389-p1w5-fleet-state",
+  "failed": 0,
+  "logDir": "/tmp/harnu-local-ci-EZ6oCW",
+  "steps": [
+    {
+      "id": "format",
+      "state": "pass",
+      "seconds": 23,
+      "log": "/tmp/harnu-local-ci-EZ6oCW/format.log"
+    },
+    { "id": "i18n", "state": "pass", "seconds": 0, "log": "/tmp/harnu-local-ci-EZ6oCW/i18n.log" },
+    {
+      "id": "english",
+      "state": "pass",
+      "seconds": 0,
+      "log": "/tmp/harnu-local-ci-EZ6oCW/english.log"
+    },
+    {
+      "id": "changelog",
+      "state": "pass",
+      "seconds": 0,
+      "log": "/tmp/harnu-local-ci-EZ6oCW/changelog.log"
+    },
+    {
+      "id": "awareness",
+      "state": "pass",
+      "seconds": 0,
+      "log": "/tmp/harnu-local-ci-EZ6oCW/awareness.log"
+    },
+    {
+      "id": "user-docs",
+      "state": "pass",
+      "seconds": 0,
+      "log": "/tmp/harnu-local-ci-EZ6oCW/user-docs.log"
+    },
+    {
+      "id": "typecheck",
+      "state": "pass",
+      "seconds": 12,
+      "log": "/tmp/harnu-local-ci-EZ6oCW/typecheck.log"
+    },
+    { "id": "lint", "state": "pass", "seconds": 29, "log": "/tmp/harnu-local-ci-EZ6oCW/lint.log" },
+    { "id": "mod", "state": "pass", "seconds": 2, "log": "/tmp/harnu-local-ci-EZ6oCW/mod.log" },
+    { "id": "test", "state": "pass", "seconds": 42, "log": "/tmp/harnu-local-ci-EZ6oCW/test.log" },
+    { "id": "cli", "state": "pass", "seconds": 14, "log": "/tmp/harnu-local-ci-EZ6oCW/cli.log" },
+    {
+      "id": "build",
+      "state": "pass",
+      "seconds": 19,
+      "log": "/tmp/harnu-local-ci-EZ6oCW/build.log"
+    },
+    { "id": "e2e", "state": "pass", "seconds": 4, "log": "/tmp/harnu-local-ci-EZ6oCW/e2e.log" }
+  ]
+}
