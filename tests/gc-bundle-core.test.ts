@@ -663,6 +663,29 @@ describe('buildBundles — flags', () => {
     expect(b.reason?.code).toBe('open-idle-session')
   })
 
+  it('finds the session by the normalized path when the item path has a trailing slash', () => {
+    const b = only(
+      build({
+        items: [item({ path: `${WT_A}/` })],
+        sessions: new Map([[WT_A, { presence: 'open-idle', lastActivityAt: null }]])
+      })
+    )
+    expect(b.session).toBe('open-idle')
+  })
+
+  it('prefers the session keyed by the raw item path over the normalized one', () => {
+    const b = only(
+      build({
+        items: [item({ path: `${WT_A}/` })],
+        sessions: new Map([
+          [`${WT_A}/`, { presence: 'working', lastActivityAt: null }],
+          [WT_A, { presence: 'open-idle', lastActivityAt: null }]
+        ])
+      })
+    )
+    expect(b.session).toBe('working')
+  })
+
   it('depsBytes comes from the hydration reclaimable bytes', () => {
     const hydrated = item({
       hydration: {
