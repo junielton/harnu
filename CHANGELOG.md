@@ -10,6 +10,57 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-07
+
+### Added
+
+- **The Harnu mod.** Harnu now loads a small mod into the `claude` sessions it starts, so
+  it can read what a session is doing from the inside instead of guessing from hooks and
+  files. For now it only watches: your sessions behave exactly as before, and every fact
+  Harnu already read the old way is still read that way. The mod runs unsandboxed inside
+  the `claude` process and talks only to Harnu on this machine. A one-time notice
+  explains this the first time you open Harnu after the update; sessions you started
+  before you saw it keep running without the mod. For now the
+  commands Harnu can send through the mod are housekeeping only (a channel check),
+  nothing that steers or approves a session.
+- **A switch for it.** Settings → General → Integrations has a new **Harnu mod** switch.
+  Off stops Harnu from using the mod right away, switches it off in running sessions and
+  keeps it out of new ones; on again reaches new sessions only. Off means the hooks and
+  polling Harnu used before.
+- **Harnu mod outside Harnu (opt-in).** Settings → Mods → Advanced has a new switch that lets
+  `claude` sessions you start in your own terminal load the Harnu mod too, so Harnu can show
+  their real state instead of guessing. It is off by default and asks first: turning it on adds
+  one folder to `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`, and turning it off
+  removes exactly that entry. Harnu shows an outside session only once its own watchers confirm
+  it, never starts prompts in it, never writes into its terminal and does not hold its
+  approvals. On a machine with managed settings the switch refuses and writes nothing.
+- **The state of the mod, per session.** The hover preview shows one quiet line (`Harnu
+mod: live`, `off`, or `legacy` with the reason), and the System Monitor shows the same
+  state next to each live session. `legacy` is not an error: it means the session runs
+  on hooks and polling, for example because it was started before the notice, because the
+  installed Claude Code is older than 2.1.287, or because mods are turned off by a
+  setting or by your organization's policy. Harnu only names a cause it actually saw.
+- **Test Harnu mod channel.** In the System Monitor, a session whose Harnu mod is `live`
+  has a new button on hover, **Test Harnu mod channel**. It sends that session a quick
+  check through the mod and tells you how long the round trip took, and the session shows
+  a short `Harnu mod channel check` line in its own terminal. Nothing else in the session
+  changes, and Harnu has no abort or compact button: the channel behind this one only
+  carries the check for now.
+
+### Fixed
+
+- **Files an agent saves in `.harnu/` are now reachable.** The `.harnu/` folder is
+  usually gitignored, so Browse files hid it and a path like
+  `.harnu/out/roteiro.md` printed in the transcript never became a link. `.harnu/`
+  and everything in it now shows in the file tree, turns up when you search, and
+  opens from the transcript. Every other gitignored folder (`node_modules`, build
+  output) stays hidden.
+- **Ctrl+click opens a path from the transcript**, the same as Option/Alt+click: a
+  file opens in the viewer pane and a folder is revealed in Browse files. Holding
+  either key underlines the paths under the pointer, in the main terminal and in
+  helper-pane terminals. Links to web addresses behave as before. (On a Mac,
+  Ctrl+click is the system right-click — keep using Option there.)
+
 ## 2026-10-06
 
 ### Added
@@ -27,6 +78,13 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Added
 
+- **Settings → Mods lists the mods your sessions can load and what each one can do.** It is
+  read-only: each mod shows neutral "can …" chips (runs processes, reads every prompt,
+  decides permissions, …) from a static read of its source, plus its hooks and calls on
+  expand, and points at where that mod is switched on or off. It never enables, disables
+  or installs anything, and it states what it cannot show (destinations, arguments,
+  paths, what a session actually loaded). The Harnu mod is always its first row, and a
+  banner tells you when Claude Code has mods turned off here or remotely.
 - **Third-party notices ship with the app.** Every build now carries `LICENSE` and a
   generated `THIRD-PARTY-NOTICES.md` with the license text of each bundled package and
   of the terminal font (JetBrains Mono under the SIL Open Font License, plus the Nerd

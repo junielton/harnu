@@ -29,6 +29,7 @@ import PushChannelsPane from './PushChannelsPane.vue'
 import VoicePane from './VoicePane.vue'
 import McpServerPane from './McpServerPane.vue'
 import BundledSkillsPane from './BundledSkillsPane.vue'
+import ModsAuditPane from './ModsAuditPane.vue'
 import MemoryLocationPane from './MemoryLocationPane.vue'
 import HibernationPolicyPane from './HibernationPolicyPane.vue'
 import CleanupSettingsPane from './CleanupSettingsPane.vue'
@@ -37,6 +38,9 @@ import PrStackSettingsPane from './PrStackSettingsPane.vue'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
 import SettingHint from './ui/SettingHint.vue'
+import Button from './ui/Button.vue'
+import { useCompanionStore } from '../stores/companion'
+import { settingsStatusKey } from '../lib/companion-view'
 import { useClaudeChangelogStore } from '../stores/claudeChangelog'
 import { useClaudeStatusStore } from '../stores/claude-status'
 import { useClaudeBootStore } from '../stores/claudeBoot'
@@ -55,6 +59,11 @@ const ui = useUiStore()
 const layout = useLayoutStore()
 const settings = useSettingsStore()
 const sessions = useSessionsStore()
+const companion = useCompanionStore()
+// T389 P1W4: the Harnu mod block (set-companion). The store mirrors main; the switch is IPC only.
+const companionEnabled = computed(() => companion.status?.enabled ?? true)
+const companionStagedDir = computed(() => companion.status?.stagedDir ?? null)
+const companionStatusKey = computed(() => settingsStatusKey(companion.status))
 // T239: the voice master switch shown under Sound. The full pane is its own tab.
 const voiceStore = useVoiceStore()
 const theme = useThemeStore()
@@ -223,6 +232,11 @@ const tabs: Array<{ id: SettingsTabId; labelKey: string; keywords: string[] }> =
       'conductor',
       'plugin'
     ]
+  },
+  {
+    id: 'mods',
+    labelKey: 'settings.tabs.mods',
+    keywords: ['mod', 'mods', 'plugin', 'plugins', 'hooks', 'audit', 'capabilities', 'companion']
   },
   {
     id: 'memory',
@@ -412,6 +426,12 @@ const settingsIndex: Array<{
       'consciência'
     ],
     anchor: 'set-harnu-awareness'
+  },
+  {
+    tabId: 'general',
+    labelKey: 'harnuMod.settings.label',
+    keywords: ['harnu mod', 'mod', 'mods', 'plugin', 'plugins', 'hooks'],
+    anchor: 'set-companion'
   },
   {
     tabId: 'general',
@@ -1035,6 +1055,7 @@ onBeforeUnmount(() => {
             <VoicePane v-else-if="activeTab === 'voice'" />
             <McpServerPane v-else-if="activeTab === 'mcp'" />
             <BundledSkillsPane v-else-if="activeTab === 'skills'" />
+            <ModsAuditPane v-else-if="activeTab === 'mods'" />
             <MemoryLocationPane v-else-if="activeTab === 'memory'" />
             <HibernationPolicyPane v-else-if="activeTab === 'hibernationPolicy'" />
             <CleanupSettingsPane v-else-if="activeTab === 'cleanup'" />
@@ -1518,6 +1539,51 @@ onBeforeUnmount(() => {
                     :model-value="harnuAwarenessEnabled"
                     :aria-label="$t('settings.harnuAwareness.label')"
                     @update:model-value="toggleHarnuAwareness()"
+                  />
+                </div>
+
+                <!-- Harnu mod (T389 P1W4): the kill switch of the mod loaded into sessions -->
+                <div
+                  id="set-companion"
+                  class="flex items-start justify-between"
+                  :class="highlightedAnchor === 'set-companion' ? 'anim-setting-flash' : ''"
+                  style="gap: 12px; margin-top: 14px"
+                >
+                  <div style="flex: 1; min-width: 0">
+                    <div class="text-text-2" style="font-size: 12px">
+                      {{ $t('harnuMod.settings.label') }}
+                    </div>
+                    <SettingHint>{{ $t('harnuMod.settings.description') }}</SettingHint>
+                    <SettingHint>{{ $t('harnuMod.settings.offHint') }}</SettingHint>
+                    <div
+                      v-if="companionStagedDir"
+                      class="flex items-center"
+                      style="gap: 8px; margin-top: 6px"
+                    >
+                      <span
+                        class="font-mono text-text-4 truncate select-text"
+                        style="font-size: 11px; min-width: 0"
+                        :title="companionStagedDir"
+                        >{{ companionStagedDir }}</span
+                      >
+                      <Button variant="ghost" @click="companion.reveal()">
+                        {{ $t('harnuMod.settings.reveal') }}
+                      </Button>
+                    </div>
+                    <div
+                      v-if="companionStatusKey"
+                      class="text-text-3"
+                      style="font-size: 11px; line-height: 1.5; margin-top: 4px"
+                    >
+                      {{ $t(companionStatusKey) }}
+                    </div>
+                    <!-- Later waves mount their own feature switches here; the Mods tab moves the block. -->
+                    <div id="set-companion-keys" />
+                  </div>
+                  <ToggleSwitch
+                    :model-value="companionEnabled"
+                    :aria-label="$t('harnuMod.settings.label')"
+                    @update:model-value="companion.setEnabled($event)"
                   />
                 </div>
 

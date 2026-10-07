@@ -1,0 +1,19 @@
+
+> harnu@0.3.46 lint
+> eslint --cache .
+
+
+~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-a/src/main/pty.ts
+  107:7  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+  114:3  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-a/tests/containers-sweep-dialog.test.ts
+  395:34  warning  There is more than one component in this file  vue/one-component-per-file
+  512:34  warning  There is more than one component in this file  vue/one-component-per-file
+
+~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w1-mods-tab-a/tests/session-sort.test.ts
+  21:1  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+
+✖ 5 problems (0 errors, 5 warnings)
+  0 errors and 3 warnings potentially fixable with the `--fix` option.
+

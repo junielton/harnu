@@ -39,7 +39,11 @@ vi.mock('electron', () => ({
 // this test `execFile` is a no-op mock, so `resolveClaudePath` (which shells out)
 // would hang — stub it to null (→ bare `claude`, preserving the asserted spawn)
 // and pass the env through unchanged.
-vi.mock('../src/main/claude-cli', () => ({ resolveClaudePath: vi.fn(async () => null) }))
+vi.mock('../src/main/claude-cli', () => ({
+  resolveClaudePath: vi.fn(async () => null),
+  resolveClaudeVersion: vi.fn(async () => null),
+  claudeVersionSync: vi.fn(() => null)
+}))
 vi.mock('../src/main/appimage-env', () => ({
   sanitizeSpawnEnv: (e: NodeJS.ProcessEnv) => e
 }))
@@ -218,5 +222,144 @@ describe('closeUsagePoller', () => {
     expect(killSpy).toHaveBeenCalled()
     expect(h.removeListener).toHaveBeenCalledWith('browser-window-focus', expect.any(Function))
     expect(h.removeListener).toHaveBeenCalledWith('browser-window-blur', expect.any(Function))
+  })
+})
+
+describe('probes are never injected', () => {
+  it('probes are never injected', async () => {
+    // The /usage probe is a bare `claude -p /usage`: no Harnu plugin dir, no spawn token.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mod.registerUsageHandlers(getWindow as any)
+    const p = h.ipcHandlers.get('usage:refresh')!()
+    await resolveSpawn(FULL)
+    await p
+    const [, argv, opts] = h.execFile.mock.calls[0] as [
+      string,
+      string[],
+      { env: NodeJS.ProcessEnv }
+    ]
+    expect(argv).not.toContain('--plugin-dir')
+    expect(argv.join(' ')).not.toContain('plugin-dir')
+    expect(opts.env.HARNU_SPAWN_TOKEN).toBeUndefined()
+  })
+})
+
+// ---- T389 P1W6 S2: the plan-usage gate in front of the timer and the focus refresh -----------
+// A session whose binding owns `planUsage` reported a window within 90 s: the spawn would only
+// repeat it. `usage:refresh` and the cold-start `usage:get` never ask the gate.
+
+describe('plan-usage gate (spec P1W6 §7.4)', () => {
+  const T = 1_790_000_000_000
+  const POLL_MS = 90_000
+  let gate: typeof import('../src/main/companion/ingest/plan-usage-gate')
+
+  /** The spawn starts a few microtasks after the tick (the `resolveClaudePath` await). */
+  const flush = async (): Promise<void> => {
+    for (let i = 0; i < 20; i++) await Promise.resolve()
+  }
+  const focus = async (): Promise<void> => {
+    h.appHandlers.get('browser-window-focus')!()
+    await flush()
+  }
+
+  beforeEach(async () => {
+    // Same module registry as `mod` (the outer beforeEach reset it): the very gate `usage.ts` reads.
+    gate = await import('../src/main/companion/ingest/plan-usage-gate')
+    gate.clearPlanUsageGate()
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    vi.setSystemTime(T)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mod.registerUsageHandlers(getWindow as any)
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('with no leased reading the poll runs as it always did: on focus, then every 90 s', async () => {
+    await focus()
+    expect(h.execFile).toHaveBeenCalledTimes(1)
+    await resolveSpawn(FULL)
+    await vi.advanceTimersByTimeAsync(POLL_MS)
+    await flush()
+    expect(h.execFile).toHaveBeenCalledTimes(2)
+  })
+
+  it('a fresh leased reading suppresses the poll', async () => {
+    gate.noteLeasedReading({ owned: true, windows: 2, hostNow: T })
+    await focus() // the immediate refresh on focus is gated too
+    expect(h.execFile).not.toHaveBeenCalled()
+    // a session reports again 60 s in: at the 90 s tick the reading is 30 s old
+    await vi.advanceTimersByTimeAsync(60_000)
+    gate.noteLeasedReading({ owned: true, windows: 2, hostNow: Date.now() })
+    await vi.advanceTimersByTimeAsync(30_000)
+    await flush()
+    expect(h.execFile).not.toHaveBeenCalled()
+  })
+
+  it('a stale leased reading lets the poll run', async () => {
+    gate.noteLeasedReading({ owned: true, windows: 2, hostNow: T - 1_000 })
+    await focus()
+    expect(h.execFile).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(POLL_MS) // the reading is now 91 s old
+    await flush()
+    expect(h.execFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('a reading from a session that does not own planUsage never suppresses', async () => {
+    gate.noteLeasedReading({ owned: false, windows: 2, hostNow: T })
+    await focus()
+    expect(h.execFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('manual refresh bypasses the gate', async () => {
+    gate.noteLeasedReading({ owned: true, windows: 2, hostNow: T })
+    await focus()
+    expect(h.execFile).not.toHaveBeenCalled()
+    const p = h.ipcHandlers.get('usage:refresh')!()
+    await resolveSpawn(FULL)
+    await p
+    expect(h.execFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('usage:get still spawns once when no snapshot exists, gate closed or not (cold start)', async () => {
+    gate.noteLeasedReading({ owned: true, windows: 2, hostNow: T })
+    const p = h.ipcHandlers.get('usage:get')!()
+    await resolveSpawn(FULL)
+    const snap = (await p) as { status: string }
+    expect(h.execFile).toHaveBeenCalledTimes(1)
+    expect(snap.status).toBe('ready')
+  })
+
+  it('clearing the gate (the kill switch) makes the next tick spawn again', async () => {
+    gate.noteLeasedReading({ owned: true, windows: 2, hostNow: T })
+    await focus()
+    expect(h.execFile).not.toHaveBeenCalled()
+    gate.clearPlanUsageGate() // what the adapter does when no session owns planUsage any more
+    await vi.advanceTimersByTimeAsync(POLL_MS)
+    await flush()
+    expect(h.execFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports each poll result to the parity observer and never throws into the poller', async () => {
+    const seen: unknown[] = []
+    gate.setPlanUsagePollObserver((poll, reading) => void seen.push({ poll, reading }))
+    gate.noteLeasedReading(
+      { owned: true, windows: 2, hostNow: T },
+      { h5: 7, d7: 13, r5: 1_791_275_400_000, r7: 1_791_831_600_000 }
+    )
+    const p = h.ipcHandlers.get('usage:refresh')!()
+    await resolveSpawn(FULL)
+    await p
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toMatchObject({
+      poll: { session: { usedPercent: 39 }, weekAll: { usedPercent: 11 } },
+      reading: { at: T, h5: 7, d7: 13 }
+    })
+    gate.setPlanUsagePollObserver(() => {
+      throw new Error('ledger down')
+    })
+    const q = h.ipcHandlers.get('usage:refresh')!()
+    await resolveSpawn(FULL)
+    await expect(q).resolves.toMatchObject({ available: true })
   })
 })

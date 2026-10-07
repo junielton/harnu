@@ -67,6 +67,15 @@ Open the palette without typing anything and you get history instead: your **rec
 
 Keys: `↑`/`↓` move through the results, `↵` jumps, `Esc` closes, and `⇥` falls back to the old behaviour — it takes what you typed and uses it to filter the tree itself, for when a narrowed list really is what you wanted. `⌘K` is unrelated and unchanged: it still opens the app-wide command palette.
 
+## Active elsewhere: sessions you start in your own terminal
+
+Folders where a `claude` session is running that Harnu did not start show up under **Active
+elsewhere**. By default Harnu guesses their state from Claude Code's own files. With **Harnu
+mod outside Harnu** on ([Mods](mods.md#harnu-mod-outside-harnu)), a session that Harnu's own
+watchers have confirmed reports its real state, and its hover preview reads **Harnu mod: live ·
+outside Harnu**. A session that has not been confirmed yet is not shown differently, and Harnu
+never creates a row for it: the row comes from the session's own transcript, as before.
+
 ## Creating a worktree
 
 Right-click any git-tracked folder and choose **New worktree…**. The dialog has two phases:

@@ -1,6 +1,6 @@
 # T200 — Detect the installed Claude Code version at boot
 
-**Date:** 2026-08-05 · **Status:** specified (not implemented) · **Card:** `.capy/memory/roadmap/T200-detect-the-installed-claude-code-version-at-boot-nothing-in.md`
+**Date:** 2026-08-05 · **Status:** core and probe implemented by T389 P1W2 (`claude-cli-version.ts`, `resolveClaudeVersion`, `claudeVersionSync`); UI row pending · **Card:** `.capy/memory/roadmap/T200-detect-the-installed-claude-code-version-at-boot-nothing-in.md`
 **Audit:** `.capy/out/claude-code-sync-audit.md` §3.7 (gate), §2 (the five version-coupled breakages it unblocks).
 
 ## 1. Problem

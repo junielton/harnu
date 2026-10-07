@@ -1,0 +1,71 @@
+{
+  "claude": "2.1.291 (Claude Code)",
+  "testedCeiling": "2.1.290",
+  "loadedWith": {
+    "order": "--plugin-dir companion, --plugin-dir inline mod; plus a user-scope installed mod and a skills-dir mod",
+    "companionFirstAmongPluginDirs": true
+  },
+  "cliDebugOrder": [
+    {
+      "name": "cc-plugin-agents-md",
+      "tier": "builtin",
+      "provenance": "cc-plugin-agents-md@builtin",
+      "kind": "builtin"
+    },
+    {
+      "name": "cc-plugin-telemetry",
+      "tier": "builtin",
+      "provenance": "cc-plugin-telemetry@builtin",
+      "kind": "builtin"
+    },
+    {
+      "name": "harnu-companion",
+      "tier": "user",
+      "provenance": "harnu-companion@inline",
+      "kind": "inline"
+    },
+    {
+      "name": "live-inline",
+      "tier": "user",
+      "provenance": "live-inline@inline",
+      "kind": "inline"
+    },
+    {
+      "name": "live-installed",
+      "tier": "user",
+      "provenance": "live-installed@live-mkt",
+      "kind": "installed"
+    },
+    {
+      "name": "live-skills",
+      "tier": "user",
+      "provenance": "live-skills@skills-dir",
+      "kind": "skills-dir"
+    }
+  ],
+  "companionSaw": [
+    {
+      "order": 1,
+      "name": "live-inline",
+      "tier": "user",
+      "provenance": "live-inline@inline",
+      "kind": "inline"
+    },
+    {
+      "order": 2,
+      "name": "live-installed",
+      "tier": "user",
+      "provenance": "live-installed@live-mkt",
+      "kind": "installed"
+    },
+    {
+      "order": 3,
+      "name": "live-skills",
+      "tier": "user",
+      "provenance": "live-skills@skills-dir",
+      "kind": "skills-dir"
+    }
+  ],
+  "admittedBeforeTheCompanion": ["cc-plugin-agents-md@builtin", "cc-plugin-telemetry@builtin"],
+  "kindsInOrder": ["inline", "installed", "skills-dir"]
+}

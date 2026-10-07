@@ -212,6 +212,37 @@ describe('foldFleetTelemetry', () => {
     expect(f.sessionCount).toBe(1)
   })
 
+  it('window freshness follows the reading', () => {
+    // A companion window stamped T, then a statusLine blob that changed only linesAdded: the
+    // record's updatedAtMs moved, the windows did not (lesson framework/005).
+    const T = NOW - 600_000
+    const w = { usedPercent: 21, resetsAtMs: NOW + 3_600_000 }
+    const moved = tele({
+      sessionId: 'a',
+      rateLimits: { fiveHour: w, sevenDay: w },
+      rateLimitsAtMs: T,
+      updatedAtMs: NOW
+    })
+    const f = foldFleetTelemetry(new Map([['a', moved]]), NOW)
+    expect(f.fiveHourAtMs).toBe(T)
+    expect(f.sevenDayAtMs).toBe(T)
+    // across sessions the window stamp, not the record stamp, picks the freshest
+    const other = tele({
+      sessionId: 'b',
+      rateLimits: { fiveHour: { usedPercent: 30, resetsAtMs: null }, sevenDay: null },
+      updatedAtMs: NOW - 300_000
+    })
+    const both = foldFleetTelemetry(
+      new Map([
+        ['a', moved],
+        ['b', other]
+      ]),
+      NOW
+    )
+    expect(both.fiveHour?.usedPercent).toBe(30)
+    expect(both.fiveHourAtMs).toBe(NOW - 300_000)
+  })
+
   it('returns a zeroed aggregate for an empty map', () => {
     expect(foldFleetTelemetry(new Map(), NOW)).toEqual({
       totalCostUsd: 0,

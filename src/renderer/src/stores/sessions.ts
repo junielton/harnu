@@ -68,6 +68,14 @@ import { isForkSyntheticLike, sessionTitle } from '../lib/session-label'
 import { injectionLedger } from './injection-ledger'
 import { createNavHistory } from '../lib/nav-history'
 import {
+  claimedAway,
+  claimFor,
+  claimOfKey,
+  replaceAll as replaceIdentityClaims,
+  sidClaimedByOther,
+  type IdentityClaim
+} from '../lib/identity-claims'
+import {
   clampSessionWindow,
   keepSession,
   DEFAULT_SESSION_WINDOW_MS,
@@ -686,6 +694,12 @@ interface Coverage {
 function coverageJudges(coverage: Coverage, slug: string, entrySeq: number): boolean {
   return coverage.full > entrySeq || (coverage.slugs.get(slug) ?? 0) > entrySeq
 }
+
+/**
+ * Which binder moved a row from its synthetic key to its real one (T389 P1W3). The three legacy
+ * binders are the heuristics a companion claim replaces; `companion` is a bind by claim.
+ */
+export type MigrateVia = 'agent-correlation' | 'collapse' | 'resolved-window' | 'companion'
 
 export const useSessionsStore = defineStore('sessions', () => {
   // Empty until `init()` populates it from the main process. While
@@ -1724,7 +1738,7 @@ export const useSessionsStore = defineStore('sessions', () => {
    * does NOT restart — each pane just re-keys its `liveTerminals` map. A handler
    * throwing must never break the model, hence the per-handler try/catch.
    */
-  function fireMigrate(fromId: string, toId: string): void {
+  function fireMigrate(fromId: string, toId: string, via: MigrateVia): void {
     if (fromId === toId) return
     // A migrated synthetic booted successfully (it wrote a JSONL) — retire its
     // background-boot bookkeeping so a stale reaper timer never fires on the old id.
@@ -1760,6 +1774,13 @@ export const useSessionsStore = defineStore('sessions', () => {
           if (st) applyTaskState(toId, st)
         })
         .catch(() => {})
+    }
+    // T389 P1W3: which binder moved which row. Main compares it with the companion's claim
+    // (parity evidence only: it changes nothing). Best-effort, like every report to main.
+    try {
+      window.api.companionIdentityOutcome?.({ fromKey: fromId, sid: toId, via })
+    } catch {
+      /* an old preload, or main not listening: the migration itself is unaffected */
     }
   }
 
@@ -3273,10 +3294,12 @@ export const useSessionsStore = defineStore('sessions', () => {
     // Oldest armed correlation for this folder (Map preserves insertion order).
     let correlationId: string | null = null
     for (const [cid, entry] of agentCorrelations) {
-      if (entry.folderPath === folder.path) {
-        correlationId = cid
-        break
-      }
+      if (entry.folderPath !== folder.path) continue
+      // T389 P1W3: a row the host already placed (an acting claim for another transcript) is
+      // not offered this one; the claim path binds it when ITS transcript lands.
+      if (claimedAway(entry.syntheticId, realUuid)) continue
+      correlationId = cid
+      break
     }
     if (!correlationId) return false
 
@@ -3295,30 +3318,49 @@ export const useSessionsStore = defineStore('sessions', () => {
 
     const synth = folder.sessions.find((s) => s.sessionId === bound.boundSyntheticId)
     if (!synth) return false
+    migrateSyntheticInPlace(synth, realUuid, folder.path, 'agent-correlation', true)
+    return true
+  }
+
+  /**
+   * The in-place swap shared by the correlation binder and the claim binder (T389 P1W3): the
+   * synthetic row BECOMES `realId` (same object, same slot, same live PTY re-keyed by
+   * `fireMigrate`). `folderPath` comes from the caller, never from a slug (lesson 003).
+   * `report`: tell main this create_session materialized (ADR-0003).
+   */
+  function migrateSyntheticInPlace(
+    synth: Session,
+    realId: string,
+    folderPath: string,
+    via: MigrateVia,
+    report: boolean
+  ): void {
     const oldId = synth.sessionId
-    synth.sessionId = realUuid
+    synth.sessionId = realId
     synth.synthetic = false
     synth.forkSourceId = undefined
     agentCorrelationMeta.delete(oldId)
-    if (selectedId.value === oldId) selectedId.value = realUuid
-    fireMigrate(oldId, realUuid)
+    for (const [cid, entry] of agentCorrelations) {
+      if (entry.syntheticId === oldId) clearAgentCorrelation(cid)
+    }
+    if (selectedId.value === oldId) selectedId.value = realId
+    fireMigrate(oldId, realId, via)
     // D8: same in-place swap as `collapseSyntheticInto` — wait for model evidence.
-    awaitingConfirm.set(realUuid, {
-      folderPath: folder.path,
+    awaitingConfirm.set(realId, {
+      folderPath,
       since: Date.now(),
       seq: ++coverageSeq
     })
     // BUG-88: same in-place identity swap as `collapseSyntheticInto` — the
     // row's disk metadata (fullPath/summary/firstPrompt/messageCount) is
     // still blank at this point, backfill it immediately.
-    void backfillMigratedSessionMeta(realUuid)
+    void backfillMigratedSessionMeta(realId)
     // This card (ADR-0003): this is THE materialization moment for an MCP
     // `create_session` — a real, on-disk session (the reader already found
-    // `realUuid` via the disk-scan reconciliation that triggered this call) now
+    // `realId` via the disk-scan reconciliation that triggered this call) now
     // exists for the agent's own synthetic. Report it to main so `create_session`'s
     // ACK — parked in `awaitMaterialization` — can finally claim `ok:true`.
-    reportMaterialized(oldId, realUuid, folder.path)
-    return true
+    if (report) reportMaterialized(oldId, realId, folderPath)
   }
 
   /**
@@ -4539,13 +4581,17 @@ export const useSessionsStore = defineStore('sessions', () => {
     return pendingCollapse.size
   }
 
-  /** Newest still-open, non-terminal synthetic in a live folder, or null. */
-  function newestOpenSynthetic(folderPath: string): Session | null {
+  /**
+   * Newest still-open, non-terminal synthetic in a live folder, or null. For `realId`'s transcript:
+   * T389 P1W3, a row the host already placed (an acting claim for another transcript) is skipped.
+   */
+  function newestOpenSynthetic(folderPath: string, realId: string): Session | null {
     const folder = folders.value.find((f) => f.path === folderPath)
     if (!folder) return null
     let synth: Session | null = null
     for (const s of folder.sessions) {
       if (s.synthetic !== true || s.isShellTerminal) continue
+      if (claimedAway(s.sessionId, realId)) continue
       if (!synth || s.created > synth.created) synth = s
     }
     return synth
@@ -4581,10 +4627,10 @@ export const useSessionsStore = defineStore('sessions', () => {
       }
       pendingCollapse.delete(realId)
       if (bornSyntheticIds.has(realId)) continue // already collapsed — never re-grab
-      const synth = newestOpenSynthetic(target.path)
+      const synth = newestOpenSynthetic(target.path, realId)
       if (!synth) continue
       absorbed.add(synth.sessionId)
-      absorbSyntheticIntoRealRow(synth, realRow, target.path)
+      absorbSyntheticIntoRealRow(synth, realRow, target.path, 'collapse')
     }
     return absorbed
   }
@@ -4991,12 +5037,15 @@ export const useSessionsStore = defineStore('sessions', () => {
       // A folder terminal has no JSONL — never the on-disk twin of a Claude
       // synthetic (lesson 003 guard).
       if (s.isShellTerminal) continue
+      // T389 P1W3: a row the host already placed (an acting claim for another transcript) is
+      // never the newest-synthetic guess for this one. With no acting claim this is a no-op.
+      if (claimedAway(s.sessionId, realId)) continue
       if (!synth || s.created > synth.created) synth = s
     }
     if (!synth) return realRow !== null // nothing to absorb
 
     if (realRow && realRow !== synth) {
-      absorbSyntheticIntoRealRow(synth, realRow, folder.path)
+      absorbSyntheticIntoRealRow(synth, realRow, folder.path, 'collapse')
       return true
     }
     // In-place: no separate real row yet — the synthetic becomes the real
@@ -5008,7 +5057,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     synth.synthetic = false
     synth.forkSourceId = undefined
     if (selectedId.value === synthId) selectedId.value = realId
-    fireMigrate(synthId, realId)
+    fireMigrate(synthId, realId, 'collapse')
     // D8: the model has not seen this id yet — keep the row across reloads
     // until the model confirms it or looks at this folder's slug and omits it.
     awaitingConfirm.set(realId, { folderPath: folder.path, since: Date.now(), seq: ++coverageSeq })
@@ -5025,7 +5074,12 @@ export const useSessionsStore = defineStore('sessions', () => {
    * summary/metadata), drop the synthetic from its live folder if it is still
    * there, and re-key its PTY + selection to R's id.
    */
-  function absorbSyntheticIntoRealRow(synth: Session, realRow: Session, folderPath: string): void {
+  function absorbSyntheticIntoRealRow(
+    synth: Session,
+    realRow: Session,
+    folderPath: string,
+    via: MigrateVia
+  ): void {
     const synthId = synth.sessionId
     const realId = realRow.sessionId
     const wasAgentControlled = synth.agentControlled === true
@@ -5042,7 +5096,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     const idx = live ? live.sessions.indexOf(synth) : -1
     if (live && idx !== -1) live.sessions.splice(idx, 1)
     if (selectedId.value === synthId) selectedId.value = realId
-    fireMigrate(synthId, realId)
+    fireMigrate(synthId, realId, via)
     if (wasAgentControlled) reportMaterialized(synthId, realId, folderPath)
   }
 
@@ -5071,7 +5125,80 @@ export const useSessionsStore = defineStore('sessions', () => {
     return false
   }
 
+  /**
+   * T389 P1W3: honour the host's CLAIM at `session:added`. The key comes from the PTY that carried
+   * the spawn token, never from the request, so the claim names Harnu's own row; the transcript
+   * existing on disk (this very event) is what makes the migration safe (lesson 004). Returns
+   * `false` to fall through to the legacy binders (no such row, nothing to do).
+   */
+  function bindByClaim(c: IdentityClaim, sessionId: string): boolean {
+    const row = findSessionById(c.key)
+    if (!row) return false
+    // Already done: the transcript's id is the row's, or a collapse already took it.
+    if (row.sessionId === sessionId || bornSyntheticIds.has(sessionId)) return true
+    const folder = folders.value.find((f) => f.sessions.includes(row))
+    if (!folder) return false
+    if (row.synthetic === true) {
+      const realRow = folder.sessions.find((s) => s.sessionId === sessionId && s.synthetic !== true)
+      if (realRow && realRow !== row) {
+        // The reader surfaced the real row first: keep it, drop the synthetic, re-key the PTY.
+        absorbSyntheticIntoRealRow(row, realRow, folder.path, 'companion')
+        return true
+      }
+      migrateSyntheticInPlace(
+        row,
+        sessionId,
+        folder.path,
+        'companion',
+        row.agentControlled === true
+      )
+      return true
+    }
+    // A real session whose PTY now belongs to another transcript (`/clear`, `/resume`): no row is
+    // renamed. The new transcript surfaces as its own row, then the live PTY moves to it.
+    void (async () => {
+      try {
+        await reloadModel()
+      } catch {
+        /* the re-key below does not depend on the reload */
+      }
+      fireMigrate(c.key, sessionId, 'companion')
+      if (selectedId.value === c.key) selectedId.value = sessionId
+    })()
+    return true
+  }
+
+  // Claims already applied by `applyIdentityClaims` (a full list is pushed on every change).
+  const appliedResumeClaims = new Set<string>()
+
+  /**
+   * The host's full claim list arrived (push or the pull at init). A `resume` claim whose target
+   * already exists on disk fires no `session:added`, so it migrates here at once: the live row
+   * moves to that session. Only acting claims act; every other case waits for `session:added`.
+   */
+  function applyIdentityClaims(list: readonly unknown[] | null | undefined): void {
+    replaceIdentityClaims(list)
+    const keys = new Set<string>()
+    for (const raw of Array.isArray(list) ? list : []) {
+      const c = raw as Partial<IdentityClaim> | null
+      if (!c || !c.act || c.cause !== 'resume' || !c.key || !c.sid) continue
+      const id = `${c.key}\u0000${c.sid}`
+      keys.add(id)
+      if (appliedResumeClaims.has(id) || c.key === c.sid) continue
+      const target = findSessionById(c.sid)
+      if (!target || target.synthetic === true) continue
+      if (!findSessionById(c.key)) continue
+      appliedResumeClaims.add(id)
+      fireMigrate(c.key, c.sid, 'companion')
+      if (selectedId.value === c.key) selectedId.value = c.sid
+    }
+    for (const id of [...appliedResumeClaims]) if (!keys.has(id)) appliedResumeClaims.delete(id)
+  }
+
   function reconcileSessionAdded(slug: string, sessionId: string): void {
+    // T389 P1W3: a claim names which row this transcript belongs to; honour it before any guess.
+    const claim = claimFor(sessionId)
+    if (claim?.act && bindByClaim(claim, sessionId)) return
     const folder = findFolderBySlugOrPath(slug)
     if (folder) {
       // A session already resolved to a DIFFERENT folder is a cross-slug
@@ -5131,6 +5258,9 @@ export const useSessionsStore = defineStore('sessions', () => {
       for (const synth of synths) {
         const synthMs = Date.parse(synth.created)
         if (!Number.isFinite(synthMs)) continue
+        // T389 P1W3: a row with an acting claim has its transcript named; only that one is its twin.
+        const own = claimOfKey(synth.sessionId)
+        const owned = own?.act ? own.sid : null
 
         let twin: Session | null = null
         let bestDelta = Infinity
@@ -5143,6 +5273,9 @@ export const useSessionsStore = defineStore('sessions', () => {
           // both rows (re-introduces the lesson-003 duplication class).
           if (s.isShellTerminal) continue
           if (claimed.has(s.sessionId)) continue
+          if (owned !== null && s.sessionId !== owned) continue
+          // ...and a transcript that some other row's acting claim names is nobody else's twin.
+          if (owned === null && sidClaimedByOther(s.sessionId, synth.sessionId)) continue
           const ms = Date.parse(s.created)
           if (!Number.isFinite(ms)) continue
           if (ms < synthMs - SYNTH_RESOLVE_SKEW_MS) continue
@@ -5162,7 +5295,7 @@ export const useSessionsStore = defineStore('sessions', () => {
         if (slot === -1) folder.sessions.push(twin)
         else folder.sessions.splice(slot, 1, twin)
         if (selectedId.value === synthId) selectedId.value = twin.sessionId
-        fireMigrate(synthId, twin.sessionId)
+        fireMigrate(synthId, twin.sessionId, 'resolved-window')
       }
     }
   }
@@ -5303,6 +5436,18 @@ export const useSessionsStore = defineStore('sessions', () => {
       })
     )
 
+    // T389 P1W3: the host's identity claims. Pulled once so a window reload loses nothing, then
+    // pushed whole on every change. Both are absent on an old preload, and that changes nothing.
+    if (typeof window.api.companionIdentityClaims === 'function') {
+      void window.api
+        .companionIdentityClaims()
+        .then((r) => applyIdentityClaims(r?.claims))
+        .catch(() => {})
+    }
+    if (typeof window.api.onCompanionIdentity === 'function') {
+      cleanupFns.push(window.api.onCompanionIdentity((p) => applyIdentityClaims(p?.claims)))
+    }
+
     cleanupFns.push(
       window.api.onSessionRemoved(({ slug, sessionId }) => {
         // A transcript gone before its refresh (a crashed `claude` start) must
@@ -5391,6 +5536,10 @@ export const useSessionsStore = defineStore('sessions', () => {
         applyTaskState(sessionId, taskState, { failureReason, resetsAt })
       })
     )
+    // T389 P1W4: a legacy hook the arbiter dropped is still a sign of life (ARB-2b).
+    // Optional call: an older preload (and every test double of `window.api`) has no such channel.
+    const offLiveness = window.api.onLiveness?.(({ sessionId, ts }) => bumpLastEvent(sessionId, ts))
+    if (offLiveness) cleanupFns.push(offLiveness)
 
     // T92: PID session-registry overlay (`~/.claude/sessions/`). A cheap task-state
     // for EXTERNAL sessions Harnu never injected hooks into; applied BELOW hook

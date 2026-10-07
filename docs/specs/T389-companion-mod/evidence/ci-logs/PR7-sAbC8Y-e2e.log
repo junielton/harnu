@@ -1,0 +1,18 @@
+
+> harnu@0.3.46 e2e:ci
+> playwright test --project=ci
+
+
+Running 9 tests using 1 worker
+
+  ✓  1 [ci] › tests/e2e/ci/app-boot-mcp.spec.ts:20:5 › boots headless; MCP toggles on; get_fleet redaction holds (1.8s)
+  ✓  2 [ci] › tests/e2e/ci/scheduler-result-css.spec.ts:300:7 › scheduler run-result block — layout guards (T312) › a wide table scrolls inside its own wrapper, never the block or the runs column (49ms)
+  ✓  3 [ci] › tests/e2e/ci/scheduler-result-css.spec.ts:446:7 › scheduler run-result block — layout guards (T312) › a multi-line result renders one rendered line per source line (9ms)
+  ✓  4 [ci] › tests/e2e/ci/scheduler-result-css.spec.ts:495:7 › scheduler run-result block — layout guards (T312) › the takeover ends above the footer, which stays visible and clickable (10ms)
+  ✓  5 [ci] › tests/e2e/ci/scheduler-result-css.spec.ts:658:7 › scheduler run-result block — layout guards (T312) › the takeover does not end in a second bar above the status footer (5ms)
+  ✓  6 [ci] › tests/e2e/ci/scheduler-result-css.spec.ts:776:7 › scheduler run-result block — layout guards (T312) › the takeover renders exactly one header, one title and one close button (4ms)
+  ✓  7 [ci] › tests/e2e/ci/scheduler-result-css.spec.ts:809:7 › scheduler run-result block — layout guards (T312) › markdown lists render their list markers (9ms)
+  ✓  8 [ci] › tests/e2e/ci/scheduler-result-css.spec.ts:849:7 › scheduler run-result block — layout guards (T312) › each nested list level renders a distinguishable marker (9ms)
+  ✓  9 [ci] › tests/e2e/ci/scheduler-result-css.spec.ts:911:7 › scheduler run-result block — layout guards (T312) › no other prose element changed appearance (AC-7) (8ms)
+
+  9 passed (3.7s)

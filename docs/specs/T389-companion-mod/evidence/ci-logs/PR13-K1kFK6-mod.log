@@ -1,0 +1,44 @@
+mod: claude 2.1.291 (Claude Code)
+tests/hello.test.ts:
+(pass) ensureHello is a no-op with a conn (conformance row 4) [82.28ms]
+(pass) re-hello with resume after a reload (conformance row 4) [34.57ms]
+(pass) a hung host does not hold the prompt [34.10ms]
+(pass) dormant after an unrecoverable failure [22.37ms]
+(pass) not spawned by Harnu: dormant [17.03ms]
+(pass) single flight [33.46ms]
+(pass) no bye on clear [17.44ms]
+(pass) endpoint outside the rendezvous directory is refused [24.88ms]
+(pass) inert after an empty enable [20.58ms]
+(pass) dormant on FEATURE_DISABLED [16.65ms]
+(pass) bye on a real end [16.63ms]
+(pass) bye within budget [53.66ms]
+(pass) inert keeps conn [16.20ms]
+(pass) revoked conn resumes [17.47ms]
+
+tests/rekey.test.ts:
+(pass) /clear rebounds from the payload (conformance row 15) [78.73ms]
+(pass) /resume uses the payload id, not $.session.id() (conformance row 15) [44.29ms]
+(pass) no drift check with classic [23.94ms]
+(pass) drift check without classic [31.86ms]
+
+tests/ring.test.ts:
+(pass) ring keeps events until acknowledged (conformance row 6) [90.39ms]
+(pass) stale conn re-hello and renumber [35.57ms]
+
+tests/skeleton.test.ts:
+(pass) session.start passes through [83.80ms]
+
+tests/usage-sensor.test.ts:
+(pass) measure is forwarded (AC-P1W6-1) [59.44ms]
+(pass) a measure before the first response has no tokens and still goes out (smoke A3) [30.93ms]
+(pass) read on resync (AC-P1W6-2) [23.02ms]
+(pass) a read of a session with no cost ledger and no windows names only what it has [24.94ms]
+(pass) a rejected read is a mod.error, not a retry loop [32.60ms]
+(pass) usage is neither read nor sent while sense.usage is not enabled [30.37ms]
+(pass) a throwing sensor never changes the answer of session.measure [31.82ms]
+
+ 28 pass
+ 0 fail
+Ran 28 tests across 5 files. [0.56s]
+mod: validate and test passed
+mod: state=pass

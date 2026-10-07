@@ -1,0 +1,47 @@
+mod: claude 2.1.291 (Claude Code)
+tests/hello.test.ts:
+(pass) ensureHello is a no-op with a conn (conformance row 4) [70.32ms]
+(pass) re-hello with resume after a reload (conformance row 4) [30.85ms]
+(pass) a hung host does not hold the prompt [39.17ms]
+(pass) dormant after an unrecoverable failure [35.65ms]
+(pass) not spawned by Harnu: dormant [24.84ms]
+(pass) single flight [30.62ms]
+(pass) no bye on clear [29.14ms]
+(pass) endpoint outside the rendezvous directory is refused [43.04ms]
+(pass) inert after an empty enable [31.69ms]
+(pass) dormant on FEATURE_DISABLED [30.21ms]
+(pass) bye on a real end [45.09ms]
+(pass) bye within budget [71.00ms]
+(pass) inert keeps conn [30.09ms]
+(pass) revoked conn resumes [21.80ms]
+
+tests/mods.test.ts:
+(pass) observes, never refuses [82.19ms]
+(pass) a refusal from beneath is passed up unchanged and nothing is queued [43.43ms]
+(pass) a feature the host did not enable sends nothing [31.21ms]
+(pass) a session not spawned by Harnu sends nothing [23.58ms]
+(pass) declares sense.mods once its hook registered [21.97ms]
+(pass) admissions keep their arrival order [32.23ms]
+(pass) toAdmitted: a module with no env and no state gets empty lists [0.50ms]
+(pass) toAdmitted: keeps version, state keys and env names [0.30ms]
+(pass) toAdmitted: a malformed input is not an admission [0.29ms]
+(pass) toAdmitted: lists are bounded so one admission always fits a batch [0.39ms]
+
+tests/rekey.test.ts:
+(pass) /clear rebounds from the payload (conformance row 15) [99.55ms]
+(pass) /resume uses the payload id, not $.session.id() (conformance row 15) [49.13ms]
+(pass) no drift check with classic [34.63ms]
+(pass) drift check without classic [25.81ms]
+
+tests/ring.test.ts:
+(pass) ring keeps events until acknowledged (conformance row 6) [96.91ms]
+(pass) stale conn re-hello and renumber [50.96ms]
+
+tests/skeleton.test.ts:
+(pass) session.start passes through [92.61ms]
+
+ 31 pass
+ 0 fail
+Ran 31 tests across 5 files. [0.70s]
+mod: validate and test passed
+mod: state=pass

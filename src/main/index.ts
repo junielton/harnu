@@ -53,7 +53,8 @@ import {
   foregroundProcessForSession,
   setHarnuPreambleProvider,
   setHookSettingsProvider,
-  setBundledSkillsArgsProvider
+  setBundledSkillsArgsProvider,
+  setCompanionSpawnProvider
 } from './pty'
 import { registerMonitorHandlers, stopHeartbeat, stopFullSamplerForced } from './monitor/sampler'
 import { registerHarnuFeaturesHandlers, harnuPreamble } from './harnu-features'
@@ -62,6 +63,7 @@ import {
   injectBundledSkillArgs,
   cleanStaleLegacyStaging
 } from './bundled-skills'
+import { registerModsAuditHandlers } from './mods-audit'
 import { registerAppLocaleHandlers } from './app-locale'
 import { registerDialogHandlers } from './dialog'
 import { scanFolders } from './claude-reader'
@@ -124,6 +126,7 @@ import {
   hookSettingsBlobJson,
   getTaskStates
 } from './hook-bridge'
+import { registerCompanionHost, closeCompanionHost } from './companion/host'
 import {
   initTerminalLedger,
   startTerminalLedgerObserver,
@@ -164,6 +167,7 @@ import {
   registerKokoroScheme
 } from './speech-kokoro'
 import { registerClaudeChangelog, closeClaudeChangelog } from './claude-changelog'
+import { resolveClaudeVersion } from './claude-cli'
 import { registerClaudeStatus, closeClaudeStatus } from './claude-status'
 import { registerExternal } from './external'
 // Harnu MCP control server (agent-drives-Harnu, 2026-06-25). OFF by default.
@@ -176,7 +180,9 @@ import { registerMcpConfirm, closeMcpConfirm } from './mcp/confirm-resolver'
 import { registerWorktreeHandlers, adoptExistingFolder } from './worktree-ipc'
 import { registerReaperHandlers } from './reaper/reaper-ipc'
 import { registerContainersHandlers } from './containers/containers-ipc'
-import { registerScheduler } from './scheduler-shell'
+import { registerScheduler, setSchedulerCompanionProvider } from './scheduler-shell'
+import { companionSpawnProvider } from './companion/spawn-inject'
+import { gcStagedDirs } from './companion/staging'
 import { registerPrStack } from './pr-stack'
 import { registerMissionIpc } from './mission-ipc'
 import { registerReviewHandlers } from './review-ipc'
@@ -599,6 +605,11 @@ app.whenReady().then(async () => {
   void registerHookBridge(() => mainWindow).catch((err) =>
     console.error('[hook-bridge] register failed', err)
   )
+  // Harnu mod host (T389). Dark by default: it only listens when the developer mode file asks for
+  // it, so a default install opens no socket and creates no directory.
+  void registerCompanionHost(() => mainWindow).catch((err) =>
+    console.error('[companion] register failed', err)
+  )
   // BUG-54: the terminal ledger subscribes to the same in-main observer seam
   // the digest engine below uses (`hook-bridge.addTaskEventObserver`), so
   // `errored`/`done` survive a restart. Started once the disk load
@@ -615,9 +626,19 @@ app.whenReady().then(async () => {
   // appends `--plugin-dir <staged>`. Nothing is enabled on a fresh install, so the
   // provider is a pass-through until the operator turns a skill on in the panel.
   registerBundledSkillsHandlers()
+  // T389 P4W1: Settings → Mods. Read-only; spawns nothing until the tab is opened.
+  registerModsAuditHandlers()
   // Drop the dead pre-rename `<hash>/capy/` staging dirs the userData migration carried over.
   void cleanStaleLegacyStaging().catch(() => {})
   setBundledSkillsArgsProvider((args, cwd) => injectBundledSkillArgs(args, cwd))
+  // T389: the companion mod — the second, unconditional `--plugin-dir` plus a spawn token. The
+  // provider answers null (spawn exactly as before) unless the mode is on, the CLI version is
+  // known and supported, and staging worked. A spawn token in Harnu's OWN env came from a parent
+  // Harnu/Claude session and is spent: it must never reach a child (SEC-8).
+  delete process.env.HARNU_SPAWN_TOKEN
+  setCompanionSpawnProvider(companionSpawnProvider)
+  setSchedulerCompanionProvider(companionSpawnProvider)
+  void gcStagedDirs()
   // T92: PID session-registry watcher (`~/.claude/sessions/<pid>.json`). A cheap
   // third fleet signal for EXTERNAL sessions Harnu never injected hooks into;
   // fail-open + feature-gated (skips silently if the dir/status field is absent).
@@ -743,6 +764,8 @@ app.whenReady().then(async () => {
   // from GitHub; lights the Settings-gear dot + fires one OS notification per new
   // version. Reuses the same app icon as the notifier. Runs in dev too.
   registerClaudeChangelog(() => mainWindow, icon)
+  // T200 §3.2: warm the version cache off the critical path; spawn code reads it sync.
+  void resolveClaudeVersion()
   // Claude service-status poller (issue #17). Polls the Statuspage summary for
   // status.claude.com → footer health dot + incident panel + native alerts on
   // state transitions. Background-polls (60s focused / 5min blurred) so the
@@ -1042,6 +1065,7 @@ app.on('before-quit', async (event) => {
   closeClaudeChangelog()
   closeClaudeStatus()
   void closeHookBridge()
+  void closeCompanionHost()
   closeDigestEngine()
   void sessionRegistryWatcher?.close()
   void closeRoadmapWatcher()

@@ -12,6 +12,8 @@ There are three ways a session comes into existence, and they behave differently
 
 Every session row carries a status dot so you can tell what's going on without opening it: **green** (pulsing) means Claude is actively working, **amber** means it's waiting on you (a question, or an approval), **red** means it failed or has gone quiet mid-task ("stuck"), **gray** is idle, and a **checkmark** means it finished. A session that's been quiet a while may also get parked to reclaim memory — see "Hibernated sessions" below.
 
+A session whose own turn has ended but whose background **subagent** is still running keeps the green "working" dot until the last subagent finishes (once the Harnu mod's task state switch is on; see [Troubleshooting](troubleshooting.md#a-sessions-dot-stays-working-or-needs-input-after-it-stopped)). Background shell commands and monitors do not hold it.
+
 ## The terminal pane
 
 Each session's terminal is a real xterm.js terminal, not a log viewer — it behaves like the terminal you already know:
@@ -41,15 +43,22 @@ Harnu caps how many `claude` processes it keeps alive at once (each one holds re
 ## Jump from the transcript to a file
 
 When Claude mentions a file — `src/main/pty.ts`, or `src/main/pty.ts:42` — you
-can jump straight to it. Hold **Option** (**Alt** on Windows and Linux) and the
-paths under your pointer become clickable; click one and Harnu opens the **Browse
-files** pane, expands the folders down to that file, highlights it, and opens it
-in a viewer pane. Option+clicking a folder reveals and expands it instead.
+can jump straight to it. Hold **Option** (**Alt** on Windows and Linux) or
+**Ctrl** and the paths under your pointer become clickable; click one and Harnu
+opens the **Browse files** pane, expands the folders down to that file,
+highlights it, and opens it in a viewer pane. Clicking a folder this way reveals
+and expands it instead. It works the same in the helper-pane terminals next to a
+session. (On a Mac, Ctrl+click is the system right-click, so use Option there.)
 
-Nothing underlines until you hold Option, so it stays out of your way while you
-read. A path is only clickable when it actually exists inside the project folder
-and isn't ignored by `.gitignore` — the file tree can't show those either, so
-Harnu doesn't pretend they're reachable. A bare filename with no folder in it
+Nothing underlines until you hold the modifier, so it stays out of your way while
+you read. A path is only clickable when it actually exists inside the project
+folder and isn't ignored by `.gitignore` — the file tree can't show those
+either, so Harnu doesn't pretend they're reachable. The one exception is
+Harnu's own **`.harnu/`** folder: even though it's usually gitignored, it shows
+up in Browse files and its paths are clickable, because that's where agents put
+the reports and diagrams they hand you (for example
+`.harnu/out/roadmap-notes.md`). Everything else that's gitignored — `node_modules`,
+build output — stays hidden. Links to web addresses behave as before. A bare filename with no folder in it
 (just `pty.ts`) isn't clickable, because there's no way to tell which one it
 means.
 

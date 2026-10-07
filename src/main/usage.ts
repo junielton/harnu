@@ -4,6 +4,7 @@ import { homedir } from 'node:os'
 import { buildSnapshot, type UsageSnapshot, type UsageRunOutcome } from './usage-parse'
 import { resolveClaudePath } from './claude-cli'
 import { sanitizeSpawnEnv } from './appimage-env'
+import { planUsagePollAllowed, reportPlanUsagePoll } from './companion/ingest/plan-usage-gate'
 
 /**
  * Plan-usage poller (plan-usage-widget spec). Spawns the official Claude Code
@@ -72,6 +73,11 @@ function refresh(getWindow: () => BrowserWindow | null): Promise<UsageSnapshot> 
   inFlight = (async () => {
     const outcome = await runUsageOnce()
     lastSnapshot = buildSnapshot(lastSnapshot, outcome, Date.now())
+    // Only a poll that produced its own figures is a comparison point for the `planUsage` parity
+    // rule; a failed or incomplete one only kept the last-good snapshot.
+    if (outcome.ok && !lastSnapshot.stale && lastSnapshot.available) {
+      reportPlanUsagePoll({ session: lastSnapshot.session, weekAll: lastSnapshot.weekAll })
+    }
     const win = getWindow()
     if (win && !win.isDestroyed()) win.webContents.send('usage:updated', lastSnapshot)
     return lastSnapshot
@@ -81,10 +87,21 @@ function refresh(getWindow: () => BrowserWindow | null): Promise<UsageSnapshot> 
   })
 }
 
+/**
+ * The timer tick and the refresh on focus (T389 P1W6): a session whose binding owns `planUsage`
+ * reported a window within `PLAN_USAGE_STALE_MS`, so the spawn would only repeat it. The timer,
+ * `refresh`, single-flight and `buildSnapshot` are unchanged; `usage:refresh` and the cold-start
+ * `usage:get` never come through here and always spawn.
+ */
+function refreshIfDue(getWindow: () => BrowserWindow | null): void {
+  if (!planUsagePollAllowed()) return
+  void refresh(getWindow)
+}
+
 function startPolling(getWindow: () => BrowserWindow | null): void {
   stopPolling()
-  void refresh(getWindow) // immediate refresh on focus
-  pollTimer = setInterval(() => void refresh(getWindow), POLL_INTERVAL_MS)
+  refreshIfDue(getWindow) // immediate refresh on focus
+  pollTimer = setInterval(() => refreshIfDue(getWindow), POLL_INTERVAL_MS)
 }
 
 function stopPolling(): void {

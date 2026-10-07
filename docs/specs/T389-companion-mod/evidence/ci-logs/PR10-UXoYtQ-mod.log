@@ -1,0 +1,35 @@
+mod: claude 2.1.290 (Claude Code)
+tests/hello.test.ts:
+(pass) ensureHello is a no-op with a conn (conformance row 4) [46.00ms]
+(pass) re-hello with resume after a reload (conformance row 4) [25.91ms]
+(pass) a hung host does not hold the prompt [30.50ms]
+(pass) dormant after an unrecoverable failure [20.65ms]
+(pass) not spawned by Harnu: dormant [16.44ms]
+(pass) single flight [25.09ms]
+(pass) no bye on clear [16.86ms]
+(pass) endpoint outside the rendezvous directory is refused [15.13ms]
+(pass) inert after an empty enable [22.70ms]
+(pass) dormant on FEATURE_DISABLED [15.33ms]
+(pass) bye on a real end [16.27ms]
+(pass) bye within budget [55.38ms]
+(pass) inert keeps conn [16.46ms]
+(pass) revoked conn resumes [18.47ms]
+
+tests/rekey.test.ts:
+(pass) /clear rebounds from the payload (conformance row 15) [52.25ms]
+(pass) /resume uses the payload id, not $.session.id() (conformance row 15) [22.66ms]
+(pass) no drift check with classic [23.69ms]
+(pass) drift check without classic [32.93ms]
+
+tests/ring.test.ts:
+(pass) ring keeps events until acknowledged (conformance row 6) [50.32ms]
+(pass) stale conn re-hello and renumber [24.12ms]
+
+tests/skeleton.test.ts:
+(pass) session.start passes through [44.28ms]
+
+ 21 pass
+ 0 fail
+Ran 21 tests across 4 files. [0.45s]
+mod: validate and test passed
+mod: state=pass

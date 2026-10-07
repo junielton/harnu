@@ -7,6 +7,7 @@ import type {
   BundledSkillsView,
   UserLevelInstallResult
 } from '../main/bundled-skills'
+import type { ModRow, ModsAuditView } from '../main/mods-audit-core'
 import type {
   DegradedCode,
   SessionUpdatePayload,
@@ -37,6 +38,12 @@ import type { ClaudeStatusSnapshot } from '../main/claude-status-parse'
 import type { ClaudeBootConfig, EndpointProfile } from '../main/claude-args'
 import type { Worker, Run } from '../main/scheduler-core'
 import type { SchedulerState } from '../main/scheduler-shell'
+import type { CompanionDiagnostics } from '../main/companion/host-core'
+import type { CompanionStatus } from '../main/companion/companion-status'
+import type { PingResult as CompanionPingResult } from '../main/companion/companion-ipc'
+import type { ExternalPaneState, ExternalSetResult } from '../main/companion/external-host'
+import type { ParityReport } from '../main/companion/parity-core'
+import type { IdentityClaim, IdentityOutcome } from '../main/companion/identity-core'
 import type { RoutingTable, ResolvedRouting } from '../main/routing-policy'
 import type { PrStackSnapshot, WorktreeNode as PrStackWorktree } from '../main/pr-stack-core'
 import type { PrStackPrefs } from '../main/pr-stack-prefs'
@@ -179,6 +186,16 @@ export type {
   UserLevelInstallResult
 } from '../main/bundled-skills'
 export type { BundledSkill } from '../main/bundled-skills-core'
+
+// Mods audit (T389 P4W1). The pure core owns the wire types; type-only here.
+export type {
+  CapabilityId,
+  ModAnalysis,
+  ModRow,
+  ModSource,
+  ModsAuditView,
+  PolicyState
+} from '../main/mods-audit-core'
 
 // Folder-ops wire types (T69). `folder-ops.ts` is a node module (fs), so the
 // renderer imports these as type-only — the shape of the "Open subfolder" picker
@@ -724,6 +741,8 @@ interface HookEvent {
   failureReason?: FailureReason
   /** Epoch-ms of the rate-limit reset, when the StopFailure body carries it. */
   resetsAt?: number
+  /** T389 P1W4: which writer produced the event (additive; absent from an older main). */
+  source?: 'hook' | 'companion'
 }
 
 /**
@@ -1842,6 +1861,10 @@ const api = {
   // session's `taskState` (working / needs-input / idle / failed / …). The
   // status pair lets a settings toggle opt out of the global-config hooks.
   onHook: (cb: (ev: HookEvent) => void): (() => void) => subscribe('claude:hook', cb),
+  // T389 P1W4: a legacy hook event the arbiter dropped for a session the Harnu mod owns is still
+  // a sign of life; the store bumps its `lastEvent` anchor so the stuck timer is not starved.
+  onLiveness: (cb: (ev: { sessionId: string; ts: number }) => void): (() => void) =>
+    subscribe('claude:liveness', cb),
   // Pull main's current folded hook state for a uuid (T13/BUG-1 half a): called at
   // synthetic→real migration to resync the state whose early hooks were dropped.
   hooksStateFor: (sessionId: string): Promise<TaskState | null> =>
@@ -2085,6 +2108,20 @@ const api = {
     ipcRenderer.invoke('bundledSkills:setFolder', folder, name, enabled),
   bundledSkillsSetUserLevel: (name: string, install: boolean): Promise<UserLevelInstallResult> =>
     ipcRenderer.invoke('bundledSkills:setUserLevel', name, install),
+
+  // ---- Mods audit (T389 P4W1) ----------------------------------------------
+  // Read-only list of the mods a session in `folder` (null = global) can load, with
+  // what each declares it can do. `analyse` takes ROW KEYS from the last listing,
+  // never paths; each settled analysis arrives as one `modsAudit:row` event.
+  modsAuditList: (folder: string | null): Promise<ModsAuditView> =>
+    ipcRenderer.invoke('modsAudit:list', folder),
+  modsAuditAnalyse: (req: {
+    folder: string | null
+    keys?: string[]
+    force?: boolean
+  }): Promise<{ queued: number }> => ipcRenderer.invoke('modsAudit:analyse', req),
+  onModsAuditRow: (cb: (row: ModRow) => void): (() => void) =>
+    subscribe<ModRow>('modsAudit:row', cb),
 
   // ---- Skills a tick could stage (T305) ------------------------------------
   // Every skill a scheduler tick in `folder` can be told to stage, tagged with
@@ -2542,7 +2579,74 @@ const api = {
   schedulerRuns: (id: string): Promise<Run[]> => ipcRenderer.invoke('scheduler:runs', id),
   /** Fires whenever the definitions or the running set change. */
   onSchedulerChanged: (cb: (state: SchedulerState) => void): (() => void) =>
-    subscribe('scheduler:changed', cb)
+    subscribe('scheduler:changed', cb),
+  /** Harnu mod host snapshot (T389): listener state, totals and bindings. Token-free. */
+  companionDiagnostics: (): Promise<CompanionDiagnostics> =>
+    ipcRenderer.invoke('companion:diagnostics'),
+  /**
+   * Dev only: mints a spawn token for a throwaway owner so a recipe can drive the real socket.
+   * A packaged build registers no handler, so this rejects there.
+   */
+  companionDevMintSpawn: (): Promise<{ spawnToken: string; runId: string } | null> =>
+    ipcRenderer.invoke('companion:devMintSpawn'),
+  /**
+   * T389 P1W3: the identity claims ("PTY row `key` is session `sid`"), pulled at store init so a
+   * window reload loses nothing. A claim never re-keys a row by itself (spec §7.1).
+   */
+  companionIdentityClaims: (): Promise<{ claims: IdentityClaim[] }> =>
+    ipcRenderer.invoke('companion:identityClaims'),
+  /**
+   * Reports which binder migrated which row (`fireMigrate`), so main can compare it with the
+   * claim. Evidence only: it changes nothing.
+   */
+  companionIdentityOutcome: (o: IdentityOutcome): void =>
+    ipcRenderer.send('companion:identityOutcome', o),
+  /** The full claim list again, whenever it changes (main pushes the whole list). */
+  onCompanionIdentity: (cb: (payload: { claims: IdentityClaim[] }) => void): (() => void) =>
+    subscribe('companion:identity', cb),
+  /**
+   * T389 P1W4: what the Harnu mod surfaces read: the kill switch, whether the notice was shown,
+   * and per row its state and the owner of each fact family. Token-free.
+   */
+  companionStatus: (): Promise<CompanionStatus> => ipcRenderer.invoke('companion:status'),
+  /** The kill switch. Off revokes every running mod at once; on reaches new sessions only. */
+  companionSetEnabled: (on: boolean): Promise<{ enabled: boolean }> =>
+    ipcRenderer.invoke('companion:setEnabled', on),
+  /** Stamps that the one-time notice was rendered; sessions spawned after it carry the mod. */
+  companionDisclosureShown: (): Promise<void> => ipcRenderer.invoke('companion:disclosureShown'),
+  /** Opens the folder the sessions load the mod from. */
+  companionReveal: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('companion:reveal'),
+  /** P4W3: the "Harnu mod outside Harnu" switch state: path line, last outside session seen. */
+  companionExternalGet: (): Promise<ExternalPaneState> =>
+    ipcRenderer.invoke('companion:externalGet'),
+  /** P4W3: on writes one entry into the user's Claude settings (call after the confirm); off undoes it. */
+  companionExternalSet: (on: boolean): Promise<ExternalSetResult> =>
+    ipcRenderer.invoke('companion:externalSet', on),
+  /** The parity ledger's report for a stream (evidence for a family's flip). */
+  companionParityReport: (stream: string): Promise<ParityReport | null> =>
+    ipcRenderer.invoke('companion:parityReport', stream),
+  /** Puts a folder on (or off) the Harnu mod's per-folder ramp. IPC only; the file is editable. */
+  companionSetFolderActive: (path: string, on: boolean): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('companion:setFolderActive', path, on),
+  /** Something the status shows changed (debounced in main). Re-read `companionStatus()`. */
+  onCompanionUpdated: (cb: () => void): (() => void) => subscribe('companion:updated', cb),
+  /** Dev only: stops and starts the companion listener (LV-P1W3-g). Rejects in a packaged build. */
+  companionDevRestartListener: (): Promise<void> =>
+    ipcRenderer.invoke('companion:devRestartListener'),
+  /**
+   * T389 P2W1: "Test Harnu mod channel". Sends a `flush` and a terminal toast to one session and
+   * reports the round trip. The refusal is a fixed enum, never text.
+   */
+  companionPing: (sessionKey: string): Promise<CompanionPingResult> =>
+    ipcRenderer.invoke('companion:diagnostics:ping', sessionKey),
+  /** Dev only (`HARNU_COMPANION_DEBUG=1`): enqueues through the same gate. Rejects otherwise. */
+  companionDebugEnqueue: (req: {
+    sessionKey: string
+    name: string
+    args?: unknown
+    textId?: string
+    waitMs?: number
+  }): Promise<unknown> => ipcRenderer.invoke('companion:debug:enqueue', req)
 }
 
 if (process.contextIsolated) {

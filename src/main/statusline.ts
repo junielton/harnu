@@ -4,14 +4,14 @@ import { readFile, writeFile, mkdir, chmod, rm, unlink } from 'node:fs/promises'
 import { copyFileSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { updateClaudeSettings, claudeSettingsPath } from './claude-settings'
+import { parseStatusLineBlob } from './statusline-parse'
 import {
-  parseStatusLineBlob,
-  foldFleetTelemetry,
-  TELEMETRY_TTL_MS,
-  type SessionTelemetry,
-  type FleetTelemetry
-} from './statusline-parse'
-import { captureFleet } from './usage-history'
+  configureTelemetryStore,
+  getTelemetryPayload,
+  ingestStatusline,
+  telemetryStore,
+  type TelemetryPayload
+} from './telemetry-store'
 import {
   mergeStatusLine,
   stripStatusLine,
@@ -30,14 +30,17 @@ import {
  * Mirrors `hook-bridge.ts`: pure logic lives in `statusline-parse.ts` /
  * `statusline-install.ts` (unit-tested); this is the electron/chokidar shell
  * (register/close + opt-out + exit-cleanup), verified by build + e2e.
+ *
+ * T389 P1W6: the per-session map, the cache and the renderer push moved to the neutral
+ * `telemetry-store.ts`, which this module and the companion adapter both write into. This file
+ * keeps install, self-heal, exit cleanup and the inbox watcher, and imports nothing under
+ * `src/main/companion`: install and cleanup cannot be conditioned on companion state
+ * (lesson framework/005, `tests/companion/statusline-independence.test.ts`).
  */
 
-export interface TelemetryPayload {
-  perSession: SessionTelemetry[]
-  fleet: FleetTelemetry
-}
+export type { TelemetryPayload }
+export { getTelemetryPayload }
 
-const DEBOUNCE_MS = 150
 /**
  * Self-heal cadence. The installed `statusLine` key can vanish while we run —
  * historically another Harnu instance (dev / verify, different userData) quitting
@@ -47,14 +50,9 @@ const DEBOUNCE_MS = 150
  * instance's writer).
  */
 const SELF_HEAL_MS = 60_000
-/** Debounce for persisting the telemetry map to disk (survives app restarts). */
-const CACHE_WRITE_MS = 1_000
 
-const telemetry = new Map<string, SessionTelemetry>()
 let watcher: FSWatcher | null = null
-let debounceTimer: NodeJS.Timeout | null = null
 let healTimer: NodeJS.Timeout | null = null
-let cacheTimer: NodeJS.Timeout | null = null
 let lastForeignPreserved = false
 
 function statuslineDir(): string {
@@ -187,65 +185,11 @@ async function selfHealTick(): Promise<void> {
   }
 }
 
-function payload(): TelemetryPayload {
-  return { perSession: [...telemetry.values()], fleet: foldFleetTelemetry(telemetry, Date.now()) }
-}
-
-/**
- * Read-only accessor for the live telemetry payload, for modules that need
- * "right now" fleet state without going through IPC (e.g. `usage-bi.ts`'s
- * `now` block, T47 P6 S1). Same data `telemetry:get` returns.
- */
-export function getTelemetryPayload(): TelemetryPayload {
-  return payload()
-}
-
-/**
- * Seed the in-memory map from the persisted cache (TTL-filtered). Without this,
- * every restart blanked the per-session HUD until each session's NEXT turn — a
- * session idle since app launch showed only its name in the footer.
- */
-async function loadTelemetryCache(): Promise<void> {
-  try {
-    const arr: unknown = JSON.parse(await readFile(cachePath(), 'utf8'))
-    if (!Array.isArray(arr)) return
-    const now = Date.now()
-    for (const entry of arr) {
-      if (!entry || typeof entry !== 'object') continue
-      const t = entry as SessionTelemetry
-      if (typeof t.sessionId !== 'string' || typeof t.updatedAtMs !== 'number') continue
-      if (now - t.updatedAtMs > TELEMETRY_TTL_MS) continue
-      telemetry.set(t.sessionId, t)
-    }
-  } catch {
-    /* no/unreadable cache — cold start */
-  }
-}
-
-function serializeCache(): string {
-  return JSON.stringify([...telemetry.values()])
-}
-
-function scheduleCacheWrite(): void {
-  if (cacheTimer) clearTimeout(cacheTimer)
-  cacheTimer = setTimeout(() => {
-    cacheTimer = null
-    void writeFile(cachePath(), serializeCache(), 'utf8').catch(() => {})
-  }, CACHE_WRITE_MS)
-}
-
 async function processInboxFile(path: string): Promise<void> {
   try {
     const t = parseStatusLineBlob(await readFile(path, 'utf8'), Date.now())
-    if (t) {
-      telemetry.set(t.sessionId, t)
-      scheduleCacheWrite()
-      // Persist the fleet aggregate for the usage-history / BI feature (issue
-      // #19). Fire-and-forget + fail-safe: the capture layer swallows its own
-      // errors so it can never block or break the statusLine ingest.
-      const now = Date.now()
-      void captureFleet(foldFleetTelemetry(telemetry, now), now)
-    }
+    // The store composes, persists, feeds usage history and schedules the renderer push.
+    if (t) ingestStatusline(t)
   } catch {
     /* unreadable/partial blob — skip; the next turn rewrites it */
   } finally {
@@ -253,19 +197,10 @@ async function processInboxFile(path: string): Promise<void> {
   }
 }
 
-function scheduleEmit(getWindow: () => BrowserWindow | null): void {
-  if (debounceTimer) clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(() => {
-    debounceTimer = null
-    const win = getWindow()
-    if (win && !win.isDestroyed()) win.webContents.send('telemetry:updated', payload())
-  }, DEBOUNCE_MS)
-}
-
-function startWatcher(getWindow: () => BrowserWindow | null): void {
+function startWatcher(): void {
   watcher = chokidar.watch(inboxDir(), { ignoreInitial: true, depth: 0 })
   watcher.on('add', (p) => {
-    void processInboxFile(p).then(() => scheduleEmit(getWindow))
+    void processInboxFile(p)
   })
 }
 
@@ -282,6 +217,13 @@ function registerExitCleanup(): void {
 export async function registerStatusLineHandlers(
   getWindow: () => BrowserWindow | null
 ): Promise<void> {
+  configureTelemetryStore({
+    cachePath,
+    send: (payload) => {
+      const win = getWindow()
+      if (win && !win.isDestroyed()) win.webContents.send('telemetry:updated', payload)
+    }
+  })
   try {
     await rm(inboxDir(), { recursive: true, force: true }) // drop stale blobs from a prior run
     await ensureWriterScript()
@@ -289,12 +231,12 @@ export async function registerStatusLineHandlers(
   } catch (err) {
     console.error('[statusline] setup failed (degrading to /usage):', err)
   }
-  await loadTelemetryCache() // last-known HUD data survives the restart (TTL-filtered)
-  startWatcher(getWindow)
+  await telemetryStore().hydrate() // last-known HUD data survives the restart (TTL-filtered)
+  startWatcher()
   registerExitCleanup()
   healTimer = setInterval(() => void selfHealTick(), SELF_HEAL_MS)
 
-  ipcMain.handle('telemetry:get', (): TelemetryPayload => payload())
+  ipcMain.handle('telemetry:get', (): TelemetryPayload => getTelemetryPayload())
   ipcMain.handle('statusline:status', async () => ({
     enabled: await readEnabled(),
     foreignPreserved: lastForeignPreserved
@@ -318,24 +260,13 @@ export async function registerStatusLineHandlers(
 /** Close the watcher and remove our statusLine on quit (sync, best-effort). */
 export async function closeStatusLine(): Promise<void> {
   removeOwnStatusLineSync()
-  if (debounceTimer) {
-    clearTimeout(debounceTimer)
-    debounceTimer = null
-  }
   if (healTimer) {
     clearInterval(healTimer)
     healTimer = null
   }
-  if (cacheTimer) {
-    clearTimeout(cacheTimer)
-    cacheTimer = null
-  }
   // Flush the last-known telemetry synchronously so the next launch restores it.
-  try {
-    writeFileSync(cachePath(), serializeCache(), 'utf8')
-  } catch {
-    /* best-effort cache */
-  }
+  telemetryStore().flushSync()
+  telemetryStore().close()
   if (watcher) {
     const w = watcher
     watcher = null

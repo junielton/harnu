@@ -1,0 +1,19 @@
+2.1.290 (Claude Code)
+
+ RUN  v2.1.9 ~/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p1w2-mod-skeleton
+
+ ✓ tests/cli-folder-arg.test.ts (6 tests) 2ms
+ ✓ tests/cli/tick.cli.test.ts (1 test) 598ms
+   ✓ a tick-shaped run > a mod loads under --setting-sources '' 598ms
+ ✓ tests/cli/types.cli.test.ts (1 test) 906ms
+   ✓ the mod type-checks against the installed CLI > types compile against the installed CLI (drift way 3) 906ms
+ ✓ tests/cli/load.cli.test.ts (3 tests) 2517ms
+   ✓ the companion loads in a real claude > skeleton loads, zero model calls 594ms
+   ✓ the companion loads in a real claude > the first plugin dir loads first 1290ms
+   ✓ the companion loads in a real claude > a spawn token in the environment is readable by a mod, and only by name 633ms
+
+ Test Files  4 passed (4)
+      Tests  11 passed (11)
+   Start at  22:05:04
+   Duration  2.71s (transform 70ms, setup 0ms, collect 101ms, tests 4.02s, environment 1ms, prepare 231ms)
+

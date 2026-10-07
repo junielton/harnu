@@ -45,6 +45,39 @@ export const MIN_SEARCH_QUERY = 2
  *  — a user's plans may live in `.docs/` etc. */
 const ALWAYS_EXCLUDE = new Set(['.git'])
 
+/** The agent's data dir, relative to the Explorer root. Deliverables land in
+ *  `.harnu/out/`, and the dir is gitignored in most repos — without an
+ *  exemption the tree, the finder and the transcript links could never reach
+ *  the very files an agent prints (BUG-128). */
+const HARNU_DATA_DIR = '.harnu'
+
+/**
+ * Is `relPosix` (a path RELATIVE TO THE EXPLORER ROOT, `/`-separated) the
+ * `.harnu/` data dir or anything under it? Such an entry is exempt from every
+ * `.gitignore` rule — and from nothing else (`.git` and root confinement are
+ * checked separately and unchanged). Pure and deliberately narrow: only the
+ * root-level `.harnu`, no nested copies, no legacy `.capy/` alias, and no path
+ * that is absolute or climbs out with `..`. Exported for unit tests; the single
+ * place the exemption is decided, shared by all three gates.
+ */
+export function isHarnuDataPath(relPosix: string): boolean {
+  if (relPosix !== HARNU_DATA_DIR && !relPosix.startsWith(`${HARNU_DATA_DIR}/`)) return false
+  return !relPosix.split('/').includes('..')
+}
+
+/** Gitignore verdict for `entryAbs` as the Explorer applies it: the `.harnu/`
+ *  data dir is never ignored, everything else defers to the layer chain. */
+function isHiddenByGitignore(
+  layers: IgnoreLayer[],
+  root: string,
+  entryAbs: string,
+  isDir: boolean
+): boolean {
+  const rel = relative(root, resolve(entryAbs)).split(sep).join('/')
+  if (isHarnuDataPath(rel)) return false
+  return isIgnoredByLayers(layers, entryAbs, isDir)
+}
+
 /** One row of a directory listing. */
 export interface ExplorerEntry {
   /** File or directory name (last path segment). */
@@ -195,7 +228,7 @@ export async function listDir(root: string, dir: string): Promise<ExplorerListin
     const isDir =
       d.isDirectory() || (d.isSymbolicLink() && (await isDirSymlink(resolvedDir, d.name)))
     const abs = join(resolvedDir, d.name)
-    if (isIgnoredByLayers(layers, abs, isDir)) continue
+    if (isHiddenByGitignore(layers, resolvedRoot, abs, isDir)) continue
     kept.push({ name: d.name, path: abs, isDir })
   }
 
@@ -311,7 +344,7 @@ export async function searchFiles(root: string, query: string): Promise<Explorer
       // but never emit/descend into anything that resolves outside it.
       if (!isPathWithinRoot(abs, resolvedRoot)) continue
       const isDir = d.isDirectory() || (d.isSymbolicLink() && (await isDirSymlink(dir, d.name)))
-      if (isIgnoredByLayers(layers, abs, isDir)) continue
+      if (isHiddenByGitignore(layers, resolvedRoot, abs, isDir)) continue
 
       const rel = relative(resolvedRoot, abs).split(sep).join('/')
       const score = fuzzyScore(rel.toLowerCase(), needle)
@@ -367,6 +400,8 @@ export const MAX_RESOLVE_CANDIDATES = 32
  * at all. A candidate survives only if it EXISTS, sits INSIDE `root`, and is
  * NOT gitignored — the last rule matters because the Explorer tree prunes
  * gitignored entries, so a link to one could be clicked but never revealed.
+ * The one exception is the `.harnu/` data dir ({@link isHarnuDataPath}), which
+ * the tree shows even though it is gitignored.
  *
  * Confinement reuses the same pure `isPathWithinRoot` that guards `listDir`,
  * so `..` traversal and absolute re-roots are rejected without a bespoke check.
@@ -432,7 +467,7 @@ export async function resolvePaths(
       layers = await readIgnoreChain(resolvedRoot, parentDir)
       ignoreChainCache.set(parentDir, layers)
     }
-    if (isIgnoredByLayers(layers, abs, isDir)) continue
+    if (isHiddenByGitignore(layers, resolvedRoot, abs, isDir)) continue
 
     out.push({ text, path: abs, isDir })
   }

@@ -69,7 +69,7 @@ async function runTool(
   })
 }
 
-function runDocker(
+export function runDocker(
   args: readonly string[],
   opts: Omit<ExecFileOptions, 'env'>
 ): Promise<{ stdout: string }> {

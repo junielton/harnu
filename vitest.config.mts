@@ -46,6 +46,8 @@ export default defineConfig({
         'src/main/harnu-features.ts', // <userData>/harnu-features.json I/O + doc ?raw (pure logic in composeAppendSystemPrompt, tested)
         'src/main/bundled-skills.ts', // T217: resources/skills → <userData> staging + ~/.claude install + catalog ?raw (every decision is pure in bundled-skills-core, tested)
         'src/main/mcp/worktree-inherit-prefs.ts', // <userData>/worktree-inherit.json I/O (pure decision in worktree-core/policy-assemble, tested)
+        'src/main/companion/staging.ts', // T389 P1W2: fs + Electron `app` glue for the immutable staging (every decision — allowlist, digest, stage key, GC, dev-mode lock — is pure in staging-core.ts, tested; the shell is also exercised against real temp dirs in staging-core.test.ts)
+        'src/main/companion/spawn-inject.ts', // T389 P1W2: wires mode + version gate + staging + the host's token minting into the spawn path (the gate is pure in version-gate.ts, argv insertion in staging-core.ts, the retry decision in sideload-retry-core.ts, all tested)
         'src/main/command-bridge-ipc.ts', // CommandBridge ↔ webContents/ipcMain
         'src/main/manifest-drain-shell.ts', // T113: real drain deps (webContents + fs + git); the pure driver in manifest-drain.ts is tested
         'src/main/worktree-ipc.ts', // execFile git worktree add + adopt + IPC
@@ -61,6 +63,9 @@ export default defineConfig({
         'src/main/messaging.ts', // T215: AF_UNIX connect/write + fs stat against a peer's cc-socks socket (every decision — candidates, predicate, rung classifier, envelope, audit summary — is pure in messaging-socket.ts, tested)
         'src/main/scheduler-store.ts', // T294 (T291 U4): <userData>/schedulers.json + scheduler-runs/<id>.jsonl fs shell (every parse/serialize/trim decision is pure and tested directly)
         'src/main/scheduler-shell.ts', // T294 (T291 U4): the tick runner — spawn/timers/fs/ipc/notify shell (dueWorkers/tickArgv/nextFailureState are pure in scheduler-core.ts, tested; runFromResult is pure and tested in this file's own test)
+        'src/main/companion/host.ts', // T389 P1W1: Electron glue (app.getPath, powerMonitor, ipcMain wiring) around host-core.ts; every decision — facade, bus, lease sweep, listener lifecycle, diagnostics — is in host-core / server / session-table / wire-core (all in coverage, tested with real sockets)
+        'src/main/companion/companion-ipc.ts', // T389 P1W1: two ipcMain.handle registrations; the diagnostics they return is built in host-core (tested), and a static test pins the dev mint behind !app.isPackaged
+        'src/main/companion/audit-log.ts', // T389 P1W1: the one append-only fs writer; the record shape, the forbidden keys and the rotation rule are pure in audit-core (tested; the writer itself also has its own test)
         'src/renderer/src/stores/command-dispatch.ts', // onRendererCommand ↔ router/store
         'src/renderer/src/lib/speech-kokoro-worker.ts' // BUG-117: `self`/`postMessage` Worker entry — no jsdom Worker in this project's `node`-environment tests; the request/response logic it wires up is pure in speech-kokoro-worker-core.ts (tested)
       ],

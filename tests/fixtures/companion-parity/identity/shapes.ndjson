@@ -1,0 +1,8 @@
+{"name":"new session, both sides agree","shape":"new","companion":{"key":"synthetic-1","sid":"real-1","helloAfterSpawnMs":812},"legacy":{"key":"synthetic-1","sid":"real-1","via":"collapse","afterSpawnMs":2430},"expect":"match"}
+{"name":"agent session, legacy bound by oldest correlation","shape":"agent","companion":{"key":"synthetic-2","sid":"real-2","helloAfterSpawnMs":701},"legacy":{"key":"synthetic-2","sid":"real-2","via":"agent-correlation","afterSpawnMs":1904},"expect":"match"}
+{"name":"crossed agent sessions: legacy bound another row to the same transcript","shape":"agent","companion":{"key":"synthetic-3","sid":"real-3","helloAfterSpawnMs":690},"legacy":{"key":"synthetic-4","sid":"real-3","via":"agent-correlation","afterSpawnMs":2210},"expect":"mismatch"}
+{"name":"same row, a different transcript","shape":"new","companion":{"key":"synthetic-5","sid":"real-5","helloAfterSpawnMs":655},"legacy":{"key":"synthetic-5","sid":"real-6","via":"resolved-window","afterSpawnMs":3010},"expect":"mismatch"}
+{"name":"the companion bound it, no legacy binder ran","shape":"new","companion":{"key":"synthetic-7","sid":"real-7","helloAfterSpawnMs":744},"legacy":null,"expect":"companion-only"}
+{"name":"no hello: a session the mod never reached","shape":"new","companion":null,"legacy":{"key":"synthetic-8","sid":"real-8","via":"collapse","afterSpawnMs":2100},"expect":"legacy-only"}
+{"name":"clear moves a live session to a new id","shape":"clear","companion":{"key":"real-9","sid":"real-10","helloAfterSpawnMs":0},"legacy":null,"expect":"companion-only"}
+{"name":"in-session resume to a session live elsewhere","shape":"in-session-resume","companion":{"key":"real-11","sid":"real-12","helloAfterSpawnMs":0},"legacy":null,"conflict":true,"expect":"conflict"}

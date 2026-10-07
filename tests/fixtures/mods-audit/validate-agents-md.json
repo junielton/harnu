@@ -1,0 +1,26 @@
+{
+  "success": true,
+  "strict": false,
+  "target": "/plugins/agents-md/.claude-plugin/plugin.json",
+  "manifest": {
+    "file": "/plugins/agents-md/.claude-plugin/plugin.json",
+    "type": "plugin",
+    "errors": [],
+    "warnings": [],
+    "notes": []
+  },
+  "contents": [
+    {
+      "file": "/plugins/agents-md/hooks/hooks.json",
+      "type": "hooks",
+      "errors": [],
+      "warnings": [],
+      "notes": [
+        "./register.ts hooks: session.start, prompt.context{instructionFiles has {kind=?}}, prompt.context, agent.spawn{fork=true}, tool.call{tool=Read}",
+        "./register.ts calls: $.env.get (via attachesOnRead, homeOf), $.fs.ancestors, $.session.cwd, $.session.root, $.telemetry.log, $.telemetry.mark, $.ui.log",
+        "./register.ts env writes: nothing",
+        "./register.ts env reads: CLAUDE_CODE_DISABLE_ATTACHMENTS, CLAUDE_CODE_SIMPLE, HOME, USERPROFILE"
+      ]
+    }
+  ]
+}

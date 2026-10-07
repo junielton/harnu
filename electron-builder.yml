@@ -46,6 +46,15 @@ extraResources:
   # into the JS — ship it unpacked so a packaged build can stage it too.
   - from: 'resources/skills'
     to: 'skills'
+  # T389: the companion mod's plugin tree (staged into <userData> at spawn time, never loaded
+  # from here). Tests, fixtures, api-surface.json and generated files are never shipped (MOD-9).
+  - from: 'resources/companion'
+    to: 'companion'
+    filter:
+      - '.claude-plugin/plugin.json'
+      - 'types/**'
+      - 'hooks/**'
+      - '!hooks/coords.gen.ts'
 
 linux:
   category: Development

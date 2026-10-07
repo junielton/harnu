@@ -1,0 +1,72 @@
+mod: claude 2.1.291 (Claude Code)
+tests/fleet-sensor.test.ts:
+(pass) approved permission [119.26ms]
+(pass) golden trace: answer [53.06ms]
+(pass) golden trace: auto-allowed tool [54.69ms]
+(pass) golden trace: approved permission [58.22ms]
+(pass) golden trace: denied permission [52.50ms]
+(pass) golden trace: background subagent [46.32ms]
+(pass) golden trace: Esc mid-turn [31.94ms]
+(pass) golden trace: idle notification [29.53ms]
+(pass) user No ends the turn [34.38ms]
+(pass) stray SubagentStop is dropped [26.13ms]
+(pass) sensor failure is pass-through [25.49ms]
+(pass) rebound resets fleet [26.89ms]
+(pass) toolCheck probe is verdict-independent [26.26ms]
+(pass) a tool.check without a tool_use_id is not a real dispatch [21.89ms]
+(pass) permission mode is recorded [21.84ms]
+(pass) per-agent facts keyed on agent id [26.36ms]
+(pass) a teammate never counts as a background subagent [24.48ms]
+(pass) a subagent that stopped before the main Stop does not hold the turn (real CLI 2.1.291) [25.62ms]
+(pass) a running subagent the sensor never saw start still holds the turn [25.57ms]
+(pass) a failure reaches the completion of the same turn [24.51ms]
+(pass) a notification raises its kind and the prompt clears every open item [22.39ms]
+(pass) PostToolUseFailure settles like PostToolUse [29.81ms]
+(pass) the next turn origin comes from the preceding prompt [21.90ms]
+(pass) a hot reload restores the sensor state and the snapshot is correct [18.91ms]
+(pass) the same trace twice leaves no leftover state [41.02ms]
+(pass) inert and dormant sensors send nothing [22.10ms]
+
+tests/hello.test.ts:
+(pass) ensureHello is a no-op with a conn (conformance row 4) [94.12ms]
+(pass) re-hello with resume after a reload (conformance row 4) [37.38ms]
+(pass) a hung host does not hold the prompt [47.77ms]
+(pass) dormant after an unrecoverable failure [39.95ms]
+(pass) not spawned by Harnu: dormant [37.52ms]
+(pass) single flight [33.29ms]
+(pass) no bye on clear [26.12ms]
+(pass) endpoint outside the rendezvous directory is refused [41.41ms]
+(pass) inert after an empty enable [25.00ms]
+(pass) dormant on FEATURE_DISABLED [23.30ms]
+(pass) bye on a real end [23.01ms]
+(pass) bye within budget [74.79ms]
+(pass) inert keeps conn [29.42ms]
+(pass) revoked conn resumes [43.58ms]
+
+tests/rekey.test.ts:
+(pass) /clear rebounds from the payload (conformance row 15) [100.83ms]
+(pass) /resume uses the payload id, not $.session.id() (conformance row 15) [33.24ms]
+(pass) no drift check with classic [30.60ms]
+(pass) drift check without classic [27.37ms]
+
+tests/ring.test.ts:
+(pass) ring keeps events until acknowledged (conformance row 6) [89.46ms]
+(pass) stale conn re-hello and renumber [46.55ms]
+
+tests/skeleton.test.ts:
+(pass) session.start passes through [127.87ms]
+
+tests/usage-sensor.test.ts:
+(pass) measure is forwarded (AC-P1W6-1) [116.45ms]
+(pass) a measure before the first response has no tokens and still goes out (smoke A3) [33.91ms]
+(pass) read on resync (AC-P1W6-2) [27.26ms]
+(pass) a read of a session with no cost ledger and no windows names only what it has [27.13ms]
+(pass) a rejected read is a mod.error, not a retry loop [42.23ms]
+(pass) usage is neither read nor sent while sense.usage is not enabled [32.67ms]
+(pass) a throwing sensor never changes the answer of session.measure [28.72ms]
+
+ 54 pass
+ 0 fail
+Ran 54 tests across 6 files. [1.08s]
+mod: validate and test passed
+mod: state=pass

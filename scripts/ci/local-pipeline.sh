@@ -21,8 +21,12 @@
 #                    (skips coverage-threshold enforcement — NOT CI parity).
 #   --with-e2e       also run the `e2e` job: `npm run build` + xvfb-run npm run e2e:ci.
 #                    Implies a build, since e2e loads out/.
-#   --skip <step>    skip a step by id (repeatable). Ids: format, i18n, changelog,
-#                    awareness, user-docs, typecheck, lint, test.
+#   --with-cli       also run the real-CLI integration suites (tests/cli) as step `cli`,
+#                    with HARNU_WITH_CLI=1. Needs `claude` on PATH.
+#   --skip <step>    skip a step by id (repeatable). Ids: format, i18n, english,
+#                    changelog, awareness, user-docs, typecheck, lint, mod, test, cli.
+#                    `mod` is the companion plugin's validate + test (needs `claude`);
+#                    skipping it is recorded as `skipped`, never as a pass.
 #   --json <path>    write a machine-readable summary for an orchestrator to read.
 #
 # Exit code: 0 only when every step that ran passed.
@@ -35,6 +39,7 @@ BASE="origin/main"
 LABELS=""
 FAST=0
 WITH_E2E=0
+WITH_CLI=0
 JSON_OUT=""
 SKIPPED=""
 
@@ -44,9 +49,10 @@ while [[ $# -gt 0 ]]; do
     --labels) LABELS="$2"; shift 2 ;;
     --fast) FAST=1; shift ;;
     --with-e2e) WITH_E2E=1; shift ;;
+    --with-cli) WITH_CLI=1; shift ;;
     --skip) SKIPPED="$SKIPPED,$2"; shift 2 ;;
     --json) JSON_OUT="$2"; shift 2 ;;
-    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -80,12 +86,18 @@ run_step() {
 
   printf '%s▶  %-22s%s %s…%s' "$BOLD" "$label" "$OFF" "$DIM" "$OFF"
   local start; start=$SECONDS
-  if "$@" >"$log" 2>&1; then
-    local secs=$((SECONDS - start))
+  local rc=0
+  "$@" >"$log" 2>&1 || rc=$?
+  local secs=$((SECONDS - start))
+  if [[ $rc -eq 0 ]]; then
     printf '\r%s✅ %-22s%s %s%ss%s\033[K\n' "$GREEN" "$label" "$OFF" "$DIM" "$secs" "$OFF"
     RESULT_IDS+=("$id"); RESULT_STATES+=("pass"); RESULT_SECS+=("$secs"); RESULT_LOGS+=("$log")
+  elif [[ "$id" == "mod" && $rc -eq 3 ]]; then
+    # The mod step's own exit code for "managed policy turned hook modules off": a FAILING
+    # state with its own name, so a machine that cannot load the mod never reads as green.
+    printf '\r%s❌ %-22s%s %s%ss — blocked-by-policy — %s%s\033[K\n' "$RED" "$label" "$OFF" "$DIM" "$secs" "$log" "$OFF"
+    RESULT_IDS+=("$id"); RESULT_STATES+=("blocked-by-policy"); RESULT_SECS+=("$secs"); RESULT_LOGS+=("$log")
   else
-    local secs=$((SECONDS - start))
     printf '\r%s❌ %-22s%s %s%ss — %s%s\033[K\n' "$RED" "$label" "$OFF" "$DIM" "$secs" "$log" "$OFF"
     RESULT_IDS+=("$id"); RESULT_STATES+=("fail"); RESULT_SECS+=("$secs"); RESULT_LOGS+=("$log")
   fi
@@ -105,11 +117,17 @@ run_step awareness "self-awareness"    node scripts/ci/awareness-gate.mjs
 run_step user-docs "user-docs gate"    node scripts/ci/user-docs-gate.mjs
 run_step typecheck "typecheck"         npm run typecheck
 run_step lint      "lint"              npm run lint
+run_step mod       "mod (validate+test)" node scripts/ci/mod-step.mjs
 
 if [[ $FAST -eq 1 ]]; then
   run_step test "test (no coverage)" npm run test
 else
   run_step test "test:coverage" npm run test:coverage
+fi
+
+if [[ $WITH_CLI -eq 1 ]]; then
+  # Real `claude` against a fake host (tests/cli). The step log starts with the CLI version.
+  run_step cli "cli (real claude)" bash -c 'claude --version; HARNU_WITH_CLI=1 npx vitest run tests/cli'
 fi
 
 if [[ $WITH_E2E -eq 1 ]]; then
@@ -123,7 +141,7 @@ fi
 
 FAILED=0
 for state in "${RESULT_STATES[@]}"; do
-  [[ "$state" == "fail" ]] && FAILED=$((FAILED + 1))
+  [[ "$state" != "pass" && "$state" != "skipped" ]] && FAILED=$((FAILED + 1))
 done
 
 echo

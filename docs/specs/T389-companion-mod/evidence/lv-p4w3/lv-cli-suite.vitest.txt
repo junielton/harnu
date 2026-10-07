@@ -1,0 +1,18 @@
+
+ RUN  v2.1.9 /home/junielton/Workspace/jnieltn/harnu/.claude/worktrees/feat-t389-p4w3-outside-harnu
+
+ ✓ tests/cli/external.cli.test.ts (7 tests) 24949ms
+   ✓ an outside session against the real host (P4W3 L4, live-verify) > LV-P4W3-a (a): a plain terminal loads the mod from the settings env alone and says one external hello 973ms
+   ✓ an outside session against the real host (P4W3 L4, live-verify) > LV-P4W3-a (b): a Harnu-spawned session with the flag AND the env key loads one module and says one spawned hello 4265ms
+   ✓ an outside session against the real host (P4W3 L4, live-verify) > approvals are not held by default (AC-P4W3-14) 3519ms
+   ✓ an outside session against the real host (P4W3 L4, live-verify) > Harnu absent is a no-op (AC-P4W3-15) 3822ms
+   ✓ an outside session against the real host (P4W3 L4, live-verify) > LV-P4W3-c: on then off restores the settings, and a new outside session says nothing 4428ms
+   ✓ an outside session against the real host (P4W3 L4, live-verify) > a scheduler tick (setting sources dropped) with the env key loads the mod once, through its own flag 1321ms
+   ✓ an outside session against the real host (P4W3 L4, live-verify) > probes stay silent (AC-P4W3-16) 6620ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  02:19:36
+   Duration  25.63s (transform 312ms, setup 0ms, collect 364ms, tests 24.95s, environment 0ms, prepare 111ms)
+
+exit=0

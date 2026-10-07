@@ -1,0 +1,12 @@
+
+> harnu@0.3.46 typecheck
+> npm run typecheck:node && npm run typecheck:web
+
+
+> harnu@0.3.46 typecheck:node
+> tsc --noEmit -p tsconfig.node.json --composite false
+
+
+> harnu@0.3.46 typecheck:web
+> vue-tsc --noEmit -p tsconfig.web.json --composite false
+
