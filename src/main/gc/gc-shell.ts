@@ -5,14 +5,14 @@
 
 import type { BrowserWindow } from 'electron'
 import { GcStepError, type GcOps, type GcStep } from './pipeline-core'
-import type { SessionPresence, WorktreeBundle } from './bundle-core'
+import { containerFolders, type SessionPresence, type WorktreeBundle } from './bundle-core'
 import { cleanItem, type CleanStepId, type ExecutorDeps } from '../reaper/executor-core'
 import { dehydrateItem, type DehydrateDeps } from '../reaper/dehydrate-core'
 import {
-  COMPOSE_WORKING_DIR_LABEL,
   groupStacks,
   isInside,
   normalizePath,
+  type InspectedContainer,
   type StackGroup
 } from '../containers/containers-core'
 import type { DockerBatchResult } from '../containers/containers-actions'
@@ -52,20 +52,27 @@ const messageOf = (err: unknown): string => (err instanceof Error ? err.message 
 const sameState = (p: SessionPresence): 'busy' | SessionPresence =>
   p === 'working' || p === 'needs-input' ? 'busy' : p
 
-/** Stacks with any container whose compose working dir lies inside `folder`, as a sorted id list. */
-function stackIdsInside(stacks: readonly StackGroup[], folder: string): string[] {
-  const platform = process.platform
-  const root = normalizePath(folder, platform)
+/** True when every folder the container runs from lies inside `root`; false when it has none. */
+function containedIn(c: InspectedContainer, root: string, platform: string): boolean {
+  const dirs = containerFolders(c, platform)
+  return dirs.length > 0 && dirs.every((d) => isInside(d, root))
+}
+
+/**
+ * Stacks with any container folder inside `root`, as a sorted id list. Same attribution as
+ * the builder (`containerFolders`), so a stack the scan saw is seen here by the same rule.
+ */
+function stackIdsInside(stacks: readonly StackGroup[], root: string, platform: string): string[] {
   return stacks
     .filter((s) =>
-      s.containers.some((c) => {
-        const dir = c.labels[COMPOSE_WORKING_DIR_LABEL]
-        return !!dir && isInside(normalizePath(dir, platform), root)
-      })
+      s.containers.some((c) => containerFolders(c, platform).some((d) => isInside(d, root)))
     )
     .map((s) => s.id)
     .sort()
 }
+
+const sameSet = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean =>
+  a.size === b.size && [...a].every((x) => b.has(x))
 
 /** A batch that errored, or finished fewer targets than asked, is a failed step. */
 function assertBatch(what: string, result: DockerBatchResult, wanted: number): void {
@@ -88,23 +95,51 @@ const STEP_OF: Record<CleanStepId, GcStep> = {
 }
 
 export function createGcOps(deps: GcShellDeps): GcOps {
-  /** Container ids of the named stacks, from a listing taken now rather than at scan time. */
+  const platform = process.platform
+  /**
+   * What the last passing reprobe saw for each exclusive stack: the worktree it runs from
+   * and its container ids. Ops receive only stack ids, so this is how stop and rm know the
+   * containers they are about to touch are the ones the reprobe vetted.
+   */
+  const vetted = new Map<string, { root: string; ids: Set<string> }>()
+
+  /**
+   * Container ids of the named stacks, from a listing taken now rather than at scan time.
+   * Throws before any docker call unless each stack passed a reprobe and still has exactly
+   * the containers that reprobe saw, all inside its worktree: a container that started in
+   * between, perhaps from another worktree with the same compose project, is never touched.
+   */
   const containersOf = async (stackIds: string[]): Promise<string[]> => {
     if (stackIds.length === 0) return []
-    const wanted = new Set(stackIds)
     const { stacks } = await deps.listStacks()
-    const ids = stacks.filter((s) => wanted.has(s.id)).flatMap((s) => s.containers.map((c) => c.id))
-    return [...new Set(ids)]
+    const out: string[] = []
+    for (const id of stackIds) {
+      const seen = vetted.get(id)
+      if (!seen) throw new Error(`stack was not reprobed: ${id}`)
+      const containers = stacks.find((s) => s.id === id)?.containers ?? []
+      const fresh = new Set(containers.map((c) => c.id))
+      if (
+        !sameSet(fresh, seen.ids) ||
+        !containers.every((c) => containedIn(c, seen.root, platform))
+      ) {
+        throw new Error(`stack ${id} changed since the reprobe`)
+      }
+      out.push(...fresh)
+    }
+    return [...new Set(out)]
   }
 
   return {
     async reprobe(b: WorktreeBundle) {
+      // Whatever an earlier pass vetted for these stacks no longer stands once we re-ask.
+      for (const id of b.stackIds) vetted.delete(id)
       const item = b.item
       // cleanItem refuses a non-harvestable item at its first guard, after the docker steps
       // would already have run, so refuse here before anything destructive.
       if (item.verdict !== 'harvestable') return { ok: false, reason: 'not-harvestable' }
       const path = item.path
       if (!path) return { ok: false, reason: 'changed-since-scan' }
+      const root = normalizePath(path, platform)
       try {
         const status = await deps.executor.probeStatus(path)
         if (status.trackedDirty !== item.blockers.includes('dirty')) {
@@ -113,11 +148,23 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         if (sameState(await deps.presenceOf(path)) !== sameState(b.session)) {
           return { ok: false, reason: 'changed-since-scan' }
         }
-        const fresh = stackIdsInside((await deps.listStacks()).stacks, path)
+        const { stacks } = await deps.listStacks()
+        // Exclusivity is recomputed, not trusted: every container of every stack we are
+        // about to remove must still run from inside this worktree and nowhere else.
+        const pass = new Map<string, { root: string; ids: Set<string> }>()
+        for (const id of b.stackIds) {
+          const s = stacks.find((x) => x.id === id)
+          if (!s || !s.containers.every((c) => containedIn(c, root, platform))) {
+            return { ok: false, reason: 'changed-since-scan' }
+          }
+          pass.set(id, { root, ids: new Set(s.containers.map((c) => c.id)) })
+        }
+        const fresh = stackIdsInside(stacks, root, platform)
         const scanned = [...b.stackIds, ...b.sharedStackIds].sort()
         if (fresh.length !== scanned.length || fresh.some((id, i) => id !== scanned[i])) {
           return { ok: false, reason: 'changed-since-scan' }
         }
+        for (const [id, seen] of pass) vetted.set(id, seen)
         return { ok: true }
       } catch (err) {
         // Fail closed: a probe that cannot answer is not a green light.

@@ -188,9 +188,25 @@ function mergedAtOf(item: ReapItem): number | null {
 }
 
 /**
- * Every folder a stack runs from: its containers' compose working dirs plus the path the
- * shell attributed it to. `groupStacks` merges by compose project NAME, so two worktrees
- * with the same project name arrive as one stack with several working dirs.
+ * The folders one container runs from: its compose working dir when it has one, otherwise
+ * the sources of its bind mounts. The builder and the execution-time reprobe both call this,
+ * so a stack the scan attributed to a worktree is seen by the reprobe through the same rule.
+ * Empty means nothing ties the container to a folder.
+ */
+export function containerFolders(c: InspectedContainer, platform: string): string[] {
+  const dir = c.labels[COMPOSE_WORKING_DIR_LABEL]
+  if (dir) return [normalizePath(dir, platform)]
+  const out = new Set<string>()
+  for (const m of c.mounts) {
+    if (m.type === 'bind' && m.source) out.add(normalizePath(m.source, platform))
+  }
+  return [...out]
+}
+
+/**
+ * Every folder a stack runs from: each container's folders plus the path the shell
+ * attributed it to. `groupStacks` merges by compose project NAME, so two worktrees with
+ * the same project name arrive as one stack with several working dirs.
  */
 function stackFolders(
   stack: StackGroup,
@@ -198,10 +214,7 @@ function stackFolders(
   platform: string
 ): string[] {
   const out = new Set<string>()
-  for (const c of stack.containers) {
-    const dir = c.labels[COMPOSE_WORKING_DIR_LABEL]
-    if (dir) out.add(normalizePath(dir, platform))
-  }
+  for (const c of stack.containers) for (const d of containerFolders(c, platform)) out.add(d)
   const attributed = stackPaths.get(stack.id)
   if (attributed) out.add(normalizePath(attributed, platform))
   return [...out]
