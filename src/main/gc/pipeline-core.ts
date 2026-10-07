@@ -121,13 +121,25 @@ export async function runBundle(
   return { id: b.item.id, ok: true, haltedAt: null, freedBytes }
 }
 
+/** Observers for a batch in flight: progress streams from these, the batch itself is unchanged. */
+export interface BatchHooks {
+  onStart?(b: WorktreeBundle): void
+  onItem?(result: GcItemResult, b: WorktreeBundle): void
+}
+
 /** Sequential on purpose: docker and git are shared resources, and one failure never stops the rest. */
 export async function runBatch(
   bs: WorktreeBundle[],
   ops: GcOps,
-  opts: { removeVolumes: boolean }
+  opts: { removeVolumes: boolean },
+  hooks: BatchHooks = {}
 ): Promise<GcItemResult[]> {
   const results: GcItemResult[] = []
-  for (const b of bs) results.push(await runBundle(b, ops, opts))
+  for (const b of bs) {
+    hooks.onStart?.(b)
+    const result = await runBundle(b, ops, opts)
+    results.push(result)
+    hooks.onItem?.(result, b)
+  }
   return results
 }
