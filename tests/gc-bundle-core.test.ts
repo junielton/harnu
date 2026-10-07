@@ -424,10 +424,22 @@ function bindMount(source: string): InspectedContainer['mounts'][number] {
 }
 
 describe('containerFolders', () => {
-  it('is the normalized compose working dir when the container has one', () => {
+  it('is the normalized compose working dir plus every bind mount source (delta 3, item 2)', () => {
     const c = composeContainer('web', 'app', `${WT_A}/deploy/`, {
       mounts: [bindMount(ELSEWHERE)]
     })
+    expect(containerFolders(c, 'linux')).toEqual([`${WT_A}/deploy`, ELSEWHERE])
+  })
+
+  it('lists a bind mount under the working dir once, de-duplicated after normalizing', () => {
+    const c = composeContainer('web', 'app', `${WT_A}/`, {
+      mounts: [bindMount(WT_A), bindMount(`${WT_A}/data/`), bindMount(`${WT_A}//data`)]
+    })
+    expect(containerFolders(c, 'linux')).toEqual([WT_A, `${WT_A}/data`])
+  })
+
+  it('is just the working dir when the container has no bind mount', () => {
+    const c = composeContainer('web', 'app', `${WT_A}/deploy`, { mounts: [volumeMount('pg')] })
     expect(containerFolders(c, 'linux')).toEqual([`${WT_A}/deploy`])
   })
 
@@ -992,6 +1004,48 @@ describe('buildBundles — stack attribution', () => {
     const b = only(build({ stacks: [stack('web', [web])], containers: [web] }))
     expect(b.stackIds).toEqual([])
     expect(b.sharedStackIds).toEqual(['web'])
+  })
+
+  describe('bind-mounted stacks count (delta 3, item 2)', () => {
+    it('a stack run from elsewhere that bind-mounts a folder in the worktree is shared, never a corpse', () => {
+      const web = composeContainer('web', 'other', ELSEWHERE, {
+        mounts: [bindMount(`${WT_A}/data`)]
+      })
+      const b = only(build({ stacks: [stack('other', [web])], containers: [web] }))
+      expect(b.stackIds).toEqual([])
+      expect(b.sharedStackIds).toEqual(['other'])
+      expect(b.bucket).toBe('decide')
+      expect(b.reason?.code).toBe('shared-stack')
+    })
+
+    it('a stack run from the worktree that bind-mounts a system path outside it is shared', () => {
+      const web = composeContainer('web', 'app', WT_A, {
+        mounts: [bindMount('/var/run/docker.sock')]
+      })
+      const b = only(build({ stacks: [stack('app', [web])], containers: [web] }))
+      expect(b.stackIds).toEqual([])
+      expect(b.sharedStackIds).toEqual(['app'])
+      expect(b.bucket).toBe('decide')
+    })
+
+    it('a stack run from the worktree whose bind mounts all stay inside it is exclusive', () => {
+      const web = composeContainer('web', 'app', WT_A, {
+        mounts: [bindMount(`${WT_A}/src`), bindMount(`${WT_A}/data`)]
+      })
+      const b = only(build({ stacks: [stack('app', [web])], containers: [web] }))
+      expect(b.stackIds).toEqual(['app'])
+      expect(b.sharedStackIds).toEqual([])
+    })
+
+    it('a bind mount of a parent folder of the worktree does not tie the stack to it', () => {
+      const web = composeContainer('web', 'other', ELSEWHERE, {
+        mounts: [bindMount('/ws/org/proj')]
+      })
+      const b = only(build({ stacks: [stack('other', [web])], containers: [web] }))
+      expect(b.stackIds).toEqual([])
+      expect(b.sharedStackIds).toEqual([])
+      expect(b.bucket).toBe('corpse')
+    })
   })
 
   it('a stack that runs from elsewhere belongs to no bundle', () => {
