@@ -1008,7 +1008,9 @@ describe('cleanGit', () => {
   })
 
   const failing: Array<[string, Partial<ExecutorDeps>, string]> = [
-    ['guard', { probeStatus: async () => ({ trackedDirty: true, untracked: [] }) }, 'reprobe'],
+    // The guard runs at the start of the archive phase, after docker and drop-deps already
+    // ran, so naming the reprobe would claim nothing destructive had happened.
+    ['guard', { probeStatus: async () => ({ trackedDirty: true, untracked: [] }) }, 'archive'],
     [
       'archive',
       {
@@ -1082,6 +1084,38 @@ describe('cleanGit', () => {
       expect((err as GcStepError).message.length).toBeGreaterThan(0)
     }
   )
+
+  it.each<[string, Partial<ReapItem>, Partial<ExecutorDeps>]>([
+    ['a non-harvestable verdict', { verdict: 'blocked' }, {}],
+    ['dirty on re-probe', {}, { probeStatus: async () => ({ trackedDirty: true, untracked: [] }) }],
+    ['unpushed on re-probe', { justifiedBy: null }, { hasUnpushed: async () => true }]
+  ])(
+    'a cleanItem guard refusal for %s halts at archive, never at reprobe',
+    async (_label, itemOver, executorOver) => {
+      const h = harness({ executor: executorOver })
+      const err = await createGcOps(h.deps)
+        .cleanGit(bundle({ item: reapItem(itemOver) }))
+        .then(
+          () => null,
+          (e: unknown) => e
+        )
+      expect(err).toBeInstanceOf(GcStepError)
+      expect((err as GcStepError).step).toBe('archive')
+      expect((err as GcStepError).message).toMatch(/^guard:/)
+    }
+  )
+
+  it('through runBundle, a guard refusal after the docker steps reports archive, not reprobe', async () => {
+    const h = harness()
+    // Clean at the reprobe, dirty by the time cleanItem's own guard re-probes.
+    h.probeStatus
+      .mockResolvedValueOnce({ trackedDirty: false, untracked: [] })
+      .mockResolvedValue({ trackedDirty: true, untracked: [] })
+    const r = await runBundle(bundle(), createGcOps(h.deps), { removeVolumes: true })
+    expect(h.stop).toHaveBeenCalled()
+    expect(r).toMatchObject({ ok: false, haltedAt: 'archive', freedBytes: 4096 })
+    expect(r.error).toMatch(/dirty on re-probe/)
+  })
 
   it('carries the failing step message through', async () => {
     const h = harness({

@@ -107,9 +107,13 @@ function assertBatch(what: string, result: DockerBatchResult, wanted: number): v
   }
 }
 
-/** Which pipeline step a failed executor step belongs to. `remote-delete` cannot run here. */
+/**
+ * Which pipeline step a failed executor step belongs to. `remote-delete` cannot run here.
+ * cleanItem's guard runs at the start of the archive phase, after the docker steps and
+ * drop-deps already ran, so it maps to `archive`: `reprobe` would claim nothing was touched.
+ */
 const STEP_OF: Record<CleanStepId, GcStep> = {
-  guard: 'reprobe',
+  guard: 'archive',
   archive: 'archive',
   'trash-folder': 'trash',
   'worktree-prune': 'prune',
