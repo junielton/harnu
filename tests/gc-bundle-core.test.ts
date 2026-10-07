@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildBundles,
   bucketOf,
+  composeDefaultProject,
   containerFolders,
   ownedVolumes,
   type BundleFacts,
@@ -171,6 +172,7 @@ interface BuildOver {
   neverClean?: Set<string>
   harnuStoppedAt?: ReadonlyMap<string, number>
   volumes?: ReadonlyMap<string, VolumeFact>
+  knownFolders?: string[]
 }
 
 /** Inputs for a single worktree at WT_A whose branch is merged by ancestry. */
@@ -196,7 +198,8 @@ function build(over: BuildOver = {}): ReturnType<typeof buildBundles> {
     now: NOW,
     graceDays: GRACE_DAYS,
     ...(over.harnuStoppedAt ? { harnuStoppedAt: over.harnuStoppedAt } : {}),
-    ...(over.volumes ? { volumes: over.volumes } : {})
+    ...(over.volumes ? { volumes: over.volumes } : {}),
+    ...(over.knownFolders ? { knownFolders: over.knownFolders } : {})
   })
 }
 
@@ -467,6 +470,26 @@ describe('containerFolders', () => {
   })
 })
 
+// ---- composeDefaultProject --------------------------------------------------------
+
+describe('composeDefaultProject', () => {
+  it('is the folder basename, lowercased, as Compose names a project by default', () => {
+    expect(composeDefaultProject(REPO)).toBe('www')
+    expect(composeDefaultProject(WT_A)).toBe('proj-0000-slug-a')
+  })
+
+  it('drops every character Compose does not allow, and ignores a trailing slash', () => {
+    expect(composeDefaultProject('/ws/org/proj/worktrees/PROJ-0000-Slug.v2 (old)/')).toBe(
+      'proj-0000-slugv2old'
+    )
+    expect(composeDefaultProject('/ws/org/my_app')).toBe('my_app')
+  })
+
+  it('reads a Windows path by its last segment', () => {
+    expect(composeDefaultProject('C:\\Work\\Api-Gateway')).toBe('api-gateway')
+  })
+})
+
 // ---- ownedVolumes -----------------------------------------------------------------
 
 describe('ownedVolumes', () => {
@@ -559,6 +582,45 @@ describe('ownedVolumes', () => {
           facts([['app_pg', 'app']])
         )
       ).toEqual(['loose', 'projb_pg'])
+    })
+  })
+
+  describe('a project shared with another folder is never owned (delta 3, item 5a)', () => {
+    const facts = (entries: Array<[string, string | null]>): Map<string, VolumeFact> =>
+      new Map(entries.map(([name, project]) => [name, { sizeBytes: 1, project }]))
+
+    it('drops a volume whose project is the compose default name of another known folder', () => {
+      // The worktree runs `-p www`, the main checkout's default; the main checkout ran
+      // `compose down`, so nothing of it is left running or stopped.
+      const db = composeContainer('db', 'www', WT_A, { mounts: [volumeMount('www_pg')] })
+      expect(
+        ownedVolumes([stack('www', [db])], [db], facts([['www_pg', 'www']]), [REPO, WT_B])
+      ).toEqual([])
+    })
+
+    it('uses the mounting stack project when the volume has no fact', () => {
+      const db = composeContainer('db', 'www', WT_A, { mounts: [volumeMount('www_pg')] })
+      expect(ownedVolumes([stack('www', [db])], [db], undefined, [REPO])).toEqual([])
+    })
+
+    it('drops a volume whose project a stopped container outside the bundle carries', () => {
+      const db = composeContainer('db', 'app', WT_A, { mounts: [volumeMount('app_pg')] })
+      const stopped = composeContainer('old-db', 'app', REPO, { state: 'exited' })
+      expect(
+        ownedVolumes([stack('app', [db])], [db, stopped], facts([['app_pg', 'app']]), [REPO])
+      ).toEqual([])
+    })
+
+    it('keeps a volume whose project is unique to the bundle stacks', () => {
+      const db = composeContainer('db', 'app', WT_A, { mounts: [volumeMount('app_pg')] })
+      const other = composeContainer('other-web', 'other', ELSEWHERE, { state: 'exited' })
+      expect(
+        ownedVolumes([stack('app', [db])], [db, other], facts([['app_pg', 'app']]), [
+          REPO,
+          WT_B,
+          ELSEWHERE
+        ])
+      ).toEqual(['app_pg'])
     })
   })
 
@@ -1192,6 +1254,58 @@ describe('buildBundles — stack attribution', () => {
     )
     expect(b.stackIds).toEqual(['app'])
     expect(b.ownedVolumes).toEqual(['app_pg'])
+  })
+
+  describe('a project shared with another known folder through the builder (delta 3, item 5a)', () => {
+    const wwwDb = composeContainer('db', 'www', WT_A, { mounts: [volumeMount('www_pg')] })
+
+    it('a worktree sharing the main checkout project, after the main checkout ran compose down, owns no volume', () => {
+      const b = only(
+        build({
+          stacks: [stack('www', [wwwDb])],
+          containers: [wwwDb],
+          volumes: new Map([['www_pg', { sizeBytes: 1, project: 'www' }]])
+        })
+      )
+      expect(b.stackIds).toEqual(['www'])
+      expect(b.ownedVolumes).toEqual([])
+    })
+
+    it('a known folder passed in knownFolders counts the same way', () => {
+      const db = composeContainer('db', 'api-gateway', WT_A, {
+        mounts: [volumeMount('api-gateway_pg')]
+      })
+      const b = only(
+        build({
+          stacks: [stack('api-gateway', [db])],
+          containers: [db],
+          volumes: new Map([['api-gateway_pg', { sizeBytes: 1, project: 'api-gateway' }]]),
+          knownFolders: [ELSEWHERE]
+        })
+      )
+      expect(b.ownedVolumes).toEqual([])
+    })
+
+    it('another worktree item counts as a known folder', () => {
+      const wtB = item({ path: WT_B, id: `${REPO}::worktree::${WT_B}`, branch: 'feat/slug-b' })
+      const db = composeContainer('db', 'proj-0000-slug-b', WT_A, {
+        mounts: [volumeMount('proj-0000-slug-b_pg')]
+      })
+      const out = build({
+        items: [item(), wtB],
+        stacks: [stack('proj-0000-slug-b', [db])],
+        containers: [db]
+      })
+      expect(out.find((b) => b.item.path === WT_A)?.ownedVolumes).toEqual([])
+    })
+
+    it('the bundle own folder name does not count against it', () => {
+      const db = composeContainer('db', 'proj-0000-slug-a', WT_A, {
+        mounts: [volumeMount('proj-0000-slug-a_pg')]
+      })
+      const b = only(build({ stacks: [stack('proj-0000-slug-a', [db])], containers: [db] }))
+      expect(b.ownedVolumes).toEqual(['proj-0000-slug-a_pg'])
+    })
   })
 
   it('Review Focus 3 through the builder: a volume also mounted outside the bundle is not owned', () => {
