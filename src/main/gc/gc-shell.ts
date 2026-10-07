@@ -48,13 +48,21 @@ export interface GcShellDeps {
  * a running PTY, `inUse` is any running PTY. `live` cannot tell `working` from `needs-input`,
  * and the bucket treats both as alive, so one answer covers both. History-only and
  * hibernated sessions have no PTY, so they read `none`.
+ *
+ * A session in a folder under `path` counts as one in `path` itself: the worktree is live
+ * whichever subfolder the session was started from. Containment is by path segment, so a
+ * sibling `WT-other` never counts, and neither does a parent folder.
  */
 export function presenceFromSets(
   path: string,
   sets: { live: Set<string>; inUse: Set<string> }
 ): SessionPresence {
-  if (sets.live.has(path)) return 'working'
-  if (sets.inUse.has(path)) return 'open-idle'
+  const platform = process.platform
+  const root = normalizePath(path, platform)
+  const touches = (folders: Set<string>): boolean =>
+    [...folders].some((f) => isInside(normalizePath(f, platform), root))
+  if (touches(sets.live)) return 'working'
+  if (touches(sets.inUse)) return 'open-idle'
   return 'none'
 }
 
