@@ -327,6 +327,32 @@ describe('runBundle — only a proven corpse runs (delta 2, item 2)', () => {
     expect(f.calls).toEqual([])
   })
 
+  describe('confirmDecide never overrides a shared stack (delta 3, item 4)', () => {
+    const shared = { ok: false, haltedAt: 'reprobe', error: 'shared-stack', freedBytes: 0 }
+
+    it('refuses a decide shared-stack bundle the operator confirmed, with zero ops called', async () => {
+      const b = bundle('a', {
+        bucket: 'decide',
+        reason: { code: 'shared-stack', detail: '1 other stack also uses this worktree: app.' },
+        stackIds: [],
+        sharedStackIds: ['app']
+      })
+      const f = fakeOps()
+      expect(await runBundle(b, f.ops, { ...OPTS, confirmDecide: true })).toEqual({
+        id: b.item.id,
+        ...shared
+      })
+      expect(f.calls).toEqual([])
+    })
+
+    it('refuses a hand-built corpse that still lists a shared stack', async () => {
+      const f = fakeOps()
+      const r = await runBundle(bundle('a', { sharedStackIds: ['cache'] }), f.ops, OPTS)
+      expect(r).toMatchObject(shared)
+      expect(f.calls).toEqual([])
+    })
+  })
+
   it('runBatch passes confirmDecide through to every bundle', async () => {
     const f = fakeOps()
     const bs = [bundle('a', { bucket: 'decide' }), bundle('b', { bucket: 'decide' })]

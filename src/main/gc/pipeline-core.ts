@@ -68,10 +68,16 @@ export interface GcRunOptions {
  * Only a proven corpse runs, or a `decide` bundle the operator explicitly confirmed. A
  * protection flag refuses whatever the bucket says, since a stale or hand-built bundle can
  * carry a corpse bucket next to a flag set after the scan.
+ *
+ * A shared stack refuses even a confirmed `decide`: the pipeline stops only the exclusive
+ * stacks, so the folder would be trashed under a foreign stack that still runs from it.
+ * Returns the refusal, or null when the bundle may run.
  */
-function mayRun(b: WorktreeBundle, opts: GcRunOptions): boolean {
-  if (b.isMainCheckout || b.neverClean || b.keep) return false
-  return b.bucket === 'corpse' || (opts.confirmDecide === true && b.bucket === 'decide')
+function refusalOf(b: WorktreeBundle, opts: GcRunOptions): string | null {
+  if (b.isMainCheckout || b.neverClean || b.keep) return 'not-a-corpse'
+  if (b.sharedStackIds.length > 0) return 'shared-stack'
+  const runs = b.bucket === 'corpse' || (opts.confirmDecide === true && b.bucket === 'decide')
+  return runs ? null : 'not-a-corpse'
 }
 
 /**
@@ -80,7 +86,8 @@ function mayRun(b: WorktreeBundle, opts: GcRunOptions): boolean {
  * under the checkout is touched until the stack running from it is gone, and nothing is
  * removed at all unless the reprobe still agrees with the scan.
  *
- * Anything but a proven corpse (or a confirmed `decide`) is refused before any op runs.
+ * Anything but a proven corpse (or a confirmed `decide`), and anything with a shared stack,
+ * is refused before any op runs.
  * The first failing step halts this bundle; later steps never run. Never rejects.
  */
 export async function runBundle(
@@ -88,8 +95,9 @@ export async function runBundle(
   ops: GcOps,
   opts: GcRunOptions
 ): Promise<GcItemResult> {
-  if (!mayRun(b, opts)) {
-    return { id: b.item.id, ok: false, haltedAt: 'reprobe', error: 'not-a-corpse', freedBytes: 0 }
+  const refused = refusalOf(b, opts)
+  if (refused) {
+    return { id: b.item.id, ok: false, haltedAt: 'reprobe', error: refused, freedBytes: 0 }
   }
   let freedBytes = 0
   const fail = (haltedAt: GcStep, error: string): GcItemResult => ({
