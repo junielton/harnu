@@ -303,8 +303,23 @@ export function createGcOps(deps: GcShellDeps): GcOps {
 
     async removeVolumes(names) {
       if (names.length === 0) return
-      // Docker refuses a volume a container still mounts, which is the last safety net.
-      assertBatch('docker volume rm', await deps.docker.removeVolumes(names), names.length)
+      // The owned list is from the scan. By now the bundle's own containers are removed, so
+      // any container still mounting a volume (running or stopped, which docker would not
+      // refuse) is someone else's: skip it. A listing that fails throws, so nothing goes.
+      const { stacks } = await deps.listStacks()
+      const mounted = new Set<string>()
+      for (const s of stacks) {
+        for (const c of s.containers) for (const m of c.mounts) if (m.name) mounted.add(m.name)
+      }
+      const skipped = names
+        .filter((name) => mounted.has(name))
+        .map((name) => ({ name, reason: 'volume-in-use' as const }))
+      const free = names.filter((name) => !mounted.has(name))
+      if (free.length > 0) {
+        // Docker refuses a volume a container still mounts, which is the last safety net.
+        assertBatch('docker volume rm', await deps.docker.removeVolumes(free), free.length)
+      }
+      return skipped.length > 0 ? { skipped } : undefined
     },
 
     async dropDeps(b) {

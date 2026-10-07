@@ -1156,6 +1156,87 @@ describe('stopStacks / removeContainers', () => {
 })
 
 describe('removeVolumes', () => {
+  describe('re-lists who mounts each volume right before removing it (delta 3, item 5b)', () => {
+    const mount = (name: string): InspectedContainer['mounts'][number] => ({
+      type: 'volume',
+      source: `/var/lib/docker/volumes/${name}/_data`,
+      name
+    })
+    const foreign = (state: string): StackGroup =>
+      stack('other', [{ ...container('c9', ELSEWHERE), state, mounts: [mount('pgdata')] }])
+
+    it.each(['running', 'exited'])(
+      'skips a volume a %s container still mounts, and removes the rest',
+      async (state) => {
+        const h = harness({ stacks: [foreign(state)] })
+        expect(await createGcOps(h.deps).removeVolumes(['pgdata', 'cache'])).toEqual({
+          skipped: [{ name: 'pgdata', reason: 'volume-in-use' }]
+        })
+        expect(h.listStacks).toHaveBeenCalledTimes(1)
+        expect(h.removeVolumes).toHaveBeenCalledTimes(1)
+        expect(h.removeVolumes).toHaveBeenCalledWith(['cache'])
+      }
+    )
+
+    it('makes no docker call when every volume is still in use', async () => {
+      const h = harness({ stacks: [foreign('running')] })
+      expect(await createGcOps(h.deps).removeVolumes(['pgdata'])).toEqual({
+        skipped: [{ name: 'pgdata', reason: 'volume-in-use' }]
+      })
+      expect(h.removeVolumes).not.toHaveBeenCalled()
+    })
+
+    it.each([new Error('docker gone'), new DockerUnavailableError('daemon down')])(
+      'throws, with no docker call, when the listing fails (%s)',
+      async (err) => {
+        const h = harness()
+        h.listStacks.mockRejectedValueOnce(err)
+        await expect(createGcOps(h.deps).removeVolumes(['pgdata'])).rejects.toThrow()
+        expect(h.removeVolumes).not.toHaveBeenCalled()
+      }
+    )
+
+    it('through runBundle: a volume a foreign container took up is skipped and the item continues', async () => {
+      const h = harness({
+        stacks: [stack('app', [container('c1', `${WT}/api`)]), foreign('running')]
+      })
+      const r = await runBundle(
+        bundle({ ownedVolumes: ['cache', 'pgdata'] }),
+        createGcOps(h.deps),
+        { removeVolumes: true }
+      )
+      expect(r).toMatchObject({
+        ok: true,
+        haltedAt: null,
+        skippedVolumes: [{ name: 'pgdata', reason: 'volume-in-use' }]
+      })
+      expect(h.removeVolumes).toHaveBeenCalledWith(['cache'])
+      expect(h.removeVolumes.mock.calls.flat(2)).not.toContain('pgdata')
+      expect(cleanItem).toHaveBeenCalled()
+    })
+
+    it('through runBundle: a listing that fails halts at rm-volumes', async () => {
+      const h = harness()
+      const ops = createGcOps(h.deps)
+      // reprobe, stop and rm list fine; the volume step's own listing fails.
+      h.listStacks
+        .mockImplementationOnce(async () => ({
+          stacks: [stack('app', [container('c1', `${WT}/api`)])]
+        }))
+        .mockImplementationOnce(async () => ({
+          stacks: [stack('app', [container('c1', `${WT}/api`)])]
+        }))
+        .mockImplementationOnce(async () => ({
+          stacks: [stack('app', [container('c1', `${WT}/api`)])]
+        }))
+        .mockRejectedValueOnce(new Error('docker gone'))
+      const r = await runBundle(bundle(), ops, { removeVolumes: true })
+      expect(r).toMatchObject({ ok: false, haltedAt: 'rm-volumes' })
+      expect(h.removeVolumes).not.toHaveBeenCalled()
+      expect(cleanItem).not.toHaveBeenCalled()
+    })
+  })
+
   it('passes the volume names to docker', async () => {
     const h = harness()
     await createGcOps(h.deps).removeVolumes(['pgdata', 'cache'])

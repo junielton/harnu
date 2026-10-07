@@ -21,7 +21,11 @@ export interface GcOps {
   reprobe(b: WorktreeBundle): Promise<{ ok: true } | { ok: false; reason: string }>
   stopStacks(ids: string[]): Promise<void>
   removeContainers(ids: string[]): Promise<void>
-  removeVolumes(names: string[]): Promise<void>
+  /**
+   * Re-lists who mounts each volume first: one a remaining container still mounts is
+   * skipped, not removed, and reported so the operator sees what was left behind.
+   */
+  removeVolumes(names: string[]): Promise<void | { skipped: SkippedVolume[] }>
   /** Resolves to the bytes freed. */
   dropDeps(b: WorktreeBundle): Promise<number>
   /**
@@ -34,12 +38,20 @@ export interface GcOps {
   cleanGit(b: WorktreeBundle): Promise<void>
 }
 
+/** A volume the run left in place because a container still mounted it at execution time. */
+export interface SkippedVolume {
+  name: string
+  reason: 'volume-in-use'
+}
+
 export interface GcItemResult {
   id: string
   ok: boolean
   haltedAt: GcStep | null
   error?: string
   freedBytes: number
+  /** Present only when non-empty, on success and on a later failure alike. */
+  skippedVolumes?: SkippedVolume[]
 }
 
 /**
@@ -100,12 +112,16 @@ export async function runBundle(
     return { id: b.item.id, ok: false, haltedAt: 'reprobe', error: refused, freedBytes: 0 }
   }
   let freedBytes = 0
+  let skippedVolumes: SkippedVolume[] = []
+  const skipped = (): Pick<GcItemResult, 'skippedVolumes'> =>
+    skippedVolumes.length > 0 ? { skippedVolumes } : {}
   const fail = (haltedAt: GcStep, error: string): GcItemResult => ({
     id: b.item.id,
     ok: false,
     haltedAt,
     error,
-    freedBytes
+    freedBytes,
+    ...skipped()
   })
   /** Runs one step; returns the failure when it throws, null otherwise. */
   const step = async (name: GcStep, fn: () => Promise<void>): Promise<GcItemResult | null> => {
@@ -132,7 +148,10 @@ export async function runBundle(
     halted = await step('rm-containers', () => ops.removeContainers(b.stackIds))
     if (halted) return halted
     if (opts.removeVolumes && b.ownedVolumes.length > 0) {
-      halted = await step('rm-volumes', () => ops.removeVolumes(b.ownedVolumes))
+      halted = await step('rm-volumes', async () => {
+        const r = await ops.removeVolumes(b.ownedVolumes)
+        if (r) skippedVolumes = r.skipped
+      })
       if (halted) return halted
     }
   }
@@ -158,7 +177,7 @@ export async function runBundle(
     // The deps are already gone, so their bytes stay counted.
     return fail(err instanceof GcStepError ? err.step : 'archive', messageOf(err))
   }
-  return { id: b.item.id, ok: true, haltedAt: null, freedBytes }
+  return { id: b.item.id, ok: true, haltedAt: null, freedBytes, ...skipped() }
 }
 
 /** Sequential on purpose: docker and git are shared resources, and one failure never stops the rest. */
