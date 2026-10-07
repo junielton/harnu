@@ -919,6 +919,41 @@ describe('reprobe re-reads protection at execution time (delta 2, item 8)', () =
     expect(h.probeStatus).not.toHaveBeenCalled()
   })
 
+  describe('a main checkout told by its path (delta 3, item 6)', () => {
+    /** Hand-built: every flag says "clean me", only the path says it is the main checkout. */
+    const mainByPath = (path = REPO): WorktreeBundle =>
+      bundle({
+        item: reapItem({ path }),
+        isMainCheckout: false,
+        neverClean: false,
+        keep: false
+      })
+
+    it.each([REPO, `${REPO}/`])(
+      'the reprobe refuses %s as protected-now before any probe',
+      async (path) => {
+        const h = harness({ protectedNow: false })
+        expect(await createGcOps(h.deps).reprobe(mainByPath(path))).toEqual({
+          ok: false,
+          reason: 'protected-now'
+        })
+        for (const fn of [h.probeStatus, h.presenceOf, h.headOf, h.listStacks]) {
+          expect(fn).not.toHaveBeenCalled()
+        }
+      }
+    )
+
+    it('runBundle refuses it with zero ops', async () => {
+      const h = harness({ protectedNow: false })
+      const r = await runBundle(mainByPath(), createGcOps(h.deps), opts)
+      expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', freedBytes: 0 })
+      expect(h.isProtectedNow).not.toHaveBeenCalled()
+      expect(h.listStacks).not.toHaveBeenCalled()
+      expect(h.stop).not.toHaveBeenCalled()
+      expect(cleanItem).not.toHaveBeenCalled()
+    })
+  })
+
   it('lets an unprotected bundle proceed', async () => {
     const h = harness({ protectedNow: false })
     const r = await runBundle(bundle(), createGcOps(h.deps), opts)

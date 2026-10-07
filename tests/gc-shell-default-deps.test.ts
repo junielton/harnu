@@ -153,6 +153,16 @@ describe('reprobe over the default deps', () => {
     }
   )
 
+  it('isProtectedNow reads a bundle whose path is its repo path as the main checkout (delta 3, item 6)', async () => {
+    const deps = await defaultGcShellDeps(() => null)
+    const base = harvestable()
+    expect(await deps.isProtectedNow(base)).toBe(false)
+    for (const path of [REPO, `${REPO}/`]) {
+      const main = { ...base, item: { ...base.item, path }, isMainCheckout: false }
+      expect(await deps.isProtectedNow(main)).toBe(true)
+    }
+  })
+
   it('refuses as docker-unavailable when the daemon is down', async () => {
     h.inspectAll.mockRejectedValue(daemonDownError())
     const ops = createGcOps(await defaultGcShellDeps(() => null))
