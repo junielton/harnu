@@ -28,6 +28,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   soon as the branch is merged instead of waiting for the idle clock. For now there is no
   settings screen for it: the options live in `gc-prefs.json` in Harnu's settings folder and
   the screen arrives with the next Cleanup update (see [Cleanup](docs/user/cleanup.md)).
+  A volume is removed with its worktree only when nothing else can be using it: if another
+  folder you have (a sibling worktree or the main checkout) has the same Docker Compose project
+  name, whether by folder name or by `COMPOSE_PROJECT_NAME`, the volume stays. A worktree whose
+  cleanup stopped partway shows as a decision, not as ready to clean, everywhere in Harnu.
 - **Docker housekeeping in the same cycle.** When automatic cleanup is on, each cycle also
   clears Docker build cache older than a week and dangling images, and reports how much it
   freed. It never touches images a stack uses and never removes a volume that does not belong
@@ -37,7 +41,9 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   starts a job, reports progress item by item, survives a reload of the window, and a second
   request waits for the first instead of running beside it. Worktrees that Cleanup is not
   sure about (an unmerged or dirty branch, say) can be removed on purpose after an explicit
-  confirmation; their code and uncommitted work are archived to `refs/archive/…` first.
+  confirmation; their code and uncommitted work are archived to `refs/archive/…` first. The confirmation is for what you were
+  looking at: if the worktree changed after you clicked (a new commit, a Docker stack that
+  started), Harnu refuses it and you look again.
 
 - **The Harnu mod.** Harnu now loads a small mod into the `claude` sessions it starts, so
   it can read what a session is doing from the inside instead of guessing from hooks and

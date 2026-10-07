@@ -209,7 +209,7 @@ For each worktree, one at a time, stopping at the first problem for that worktre
 
 1. Check again that nothing changed since the scan (a session started, the branch got a new commit, a container came up, the grace period no longer holds). If it did, the worktree is skipped and shows up again on the next scan.
 2. Stop and remove the Docker containers that run only from this worktree. A stack that also runs from somewhere else is never touched, and the worktree moves to Decide.
-3. Remove the named volumes only those containers used (the **Remove volumes** setting; on by default).
+3. Remove the named volumes only those containers used (the **Remove volumes** setting; on by default). A volume stays if Harnu cannot prove it is the worktree's alone: it carries no Compose project label, another container mounts it, or another folder Harnu knows has the same Compose project name (the same folder name, or the same `COMPOSE_PROJECT_NAME` or `name:`). A sibling worktree or the main checkout that shares the project therefore keeps its data even when it has no containers running. A worktree that pins its own project name leaves that volume behind too; it then shows up under orphan volumes for you to decide.
 4. Remove installed dependencies.
 5. Archive the branch tip and the working state, then move the folder to the system trash, prune the worktree entry and delete the local branch.
 
