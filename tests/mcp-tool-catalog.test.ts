@@ -39,6 +39,7 @@ const READ_TOOLS = [
   'memory_query',
   'list_workers',
   'list_containers',
+  'list_cleanup',
   // T358 S3: the Mission reads (design §4 "read, no gate").
   'mission_get',
   'mission_list'
@@ -64,6 +65,7 @@ const MUTATE_TOOLS = [
   'stop_containers',
   'start_containers',
   'remove_containers',
+  'release_worktree',
   'orchestrator_arm',
   'orchestrator_disarm',
   // T358 S3: the Mission verb family's writes.
@@ -348,10 +350,11 @@ describe('T120 declarative gate fields — the def is the single source of truth
     expect([...actual].sort()).toEqual([...bootstrapExpected].sort())
   })
 
-  it('discloses is get_session:transcript, get_fleet/list_containers:paths, everything else undefined', () => {
+  it('discloses is get_session:transcript, get_fleet/list_containers/list_cleanup:paths, everything else undefined', () => {
     for (const t of MCP_TOOLS) {
       if (t.op === 'get_session') expect(t.discloses).toBe('transcript')
-      else if (t.op === 'get_fleet' || t.op === 'list_containers') expect(t.discloses).toBe('paths')
+      else if (t.op === 'get_fleet' || t.op === 'list_containers' || t.op === 'list_cleanup')
+        expect(t.discloses).toBe('paths')
       else expect(t.discloses).toBeUndefined()
     }
   })
@@ -539,6 +542,62 @@ describe('list_containers (T328)', () => {
 
   it('the description names the DOCKER_UNAVAILABLE refusal', () => {
     expect(toolByName('list_containers')!.description).toContain('DOCKER_UNAVAILABLE')
+  })
+})
+
+describe('list_cleanup / release_worktree (T445)', () => {
+  it('list_cleanup is a deferred read that discloses paths, with no mutation gate field', () => {
+    const def = toolByName('list_cleanup')
+    expect(def?.op).toBe('list_cleanup')
+    expect(def?.mutates).toBe(false)
+    expect(def?.discloses).toBe('paths')
+    expect(def?.grantable ?? false).toBe(false)
+    expect(def?.alwaysAllowable ?? false).toBe(false)
+    expect(def?.silentAllowInAgentFolder ?? false).toBe(false)
+    expect(isAlwaysLoadOp('list_cleanup')).toBe(false)
+  })
+
+  it('list_cleanup takes only an optional folder', () => {
+    const schema = toolByName('list_cleanup')!.inputSchema
+    expect(schema.safeParse({}).success).toBe(true)
+    expect(schema.safeParse({ folder: '/abs' }).success).toBe(true)
+    expect(schema.safeParse({ folder: '' }).success).toBe(false)
+  })
+
+  it('release_worktree runs free — silent-allowed, not grantable, not always-allowable, no force-confirm', () => {
+    const def = toolByName('release_worktree')
+    expect(def?.mutates).toBe(true)
+    expect(def?.silentAllowInAgentFolder).toBe(true)
+    expect(def?.forceConfirmFor).toBeUndefined()
+    expect(def?.grantable ?? false).toBe(false)
+    expect(def?.alwaysAllowable ?? false).toBe(false)
+    expect(isAlwaysLoadOp('release_worktree')).toBe(false)
+    expect((SAFE_GRANT_VERBS as readonly string[]).includes('release_worktree')).toBe(false)
+  })
+
+  it('release_worktree requires a folder', () => {
+    const schema = toolByName('release_worktree')!.inputSchema
+    expect(schema.safeParse({}).success).toBe(false)
+    expect(schema.safeParse({ folder: '/abs' }).success).toBe(true)
+  })
+
+  it('the descriptions name the refusal codes and say nothing is deleted', () => {
+    const d = toolByName('release_worktree')!.description
+    for (const code of [
+      'FATE_NOT_MERGED',
+      'FOLDER_NOT_ALLOWED',
+      'IS_MAIN_CHECKOUT',
+      'NOT_A_WORKTREE'
+    ])
+      expect(d).toContain(code)
+    expect(d).toMatch(/deletes nothing/i)
+  })
+
+  it('AC-5: no verb that removes a worktree, bundle or volume exists', () => {
+    const names = MCP_TOOLS.map((t) => t.name)
+    expect(names.filter((n) => /clean|remove_worktree|sweep|prune/.test(n))).toEqual([
+      'list_cleanup'
+    ])
   })
 })
 

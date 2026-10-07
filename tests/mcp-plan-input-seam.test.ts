@@ -73,6 +73,9 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
   },
   list_workers: { folder: ALLOWED },
   list_containers: { folder: ALLOWED },
+  // T445: the cleanup read and the release both gate on the `folder` arg.
+  list_cleanup: { folder: ALLOWED },
+  release_worktree: { folder: ALLOWED },
   // T329: stacks are addressed by id; there is no folder to carry.
   stop_containers: { stacks: ['wave-1'], force: true },
   start_containers: { stacks: ['wave-1'] },

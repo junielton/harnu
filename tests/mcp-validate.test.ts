@@ -922,6 +922,23 @@ describe('parseToolInput routes list_containers (T328)', () => {
   })
 })
 
+describe('parseToolInput routes the cleanup verbs (T445)', () => {
+  it('list_cleanup accepts no args or an absolute folder, refuses a relative one', () => {
+    expect(parseToolInput('list_cleanup', {}).ok).toBe(true)
+    expect(parseToolInput('list_cleanup', { folder: '/abs' }).ok).toBe(true)
+    expect(parseToolInput('list_cleanup', { folder: 'relative/dir' }).ok).toBe(false)
+  })
+
+  it('release_worktree needs an absolute folder', () => {
+    expect(parseToolInput('release_worktree', { folder: '/abs/wt' })).toEqual({
+      ok: true,
+      value: { folder: '/abs/wt' }
+    })
+    expect(parseToolInput('release_worktree', {}).ok).toBe(false)
+    expect(parseToolInput('release_worktree', { folder: 'relative/dir' }).ok).toBe(false)
+  })
+})
+
 describe('parseToolInput routes the Containers actions (T329)', () => {
   it('stop_containers keeps force, so forceConfirmFor reads what the caller sent', () => {
     expect(parseToolInput('stop_containers', { stacks: ['a', 'b'], force: true })).toEqual({

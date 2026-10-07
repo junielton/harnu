@@ -1,0 +1,88 @@
+/**
+ * Shared fixtures for the cleanup verbs' tests (T445). Not a test file itself —
+ * `vitest.config.mts` only collects `*.test.ts`. Paths use the neutral vocabulary
+ * from CLAUDE.md (`org/proj/www`, `PROJ-231`).
+ */
+import type { WorktreeBundle } from '../src/main/gc/bundle-core'
+import { defaultGcPrefs, type GcPrefs } from '../src/main/gc/gc-prefs'
+import type { GcSnapshot } from '../src/main/gc/gc-wire'
+import type { ReapItem } from '../src/main/reaper/reaper-core'
+
+export const DAY = 86_400_000
+export const NOW = Date.parse('2026-10-07T12:00:00Z')
+
+export const MAIN = '/home/dev/org/proj/www'
+export const WT_CORPSE = `${MAIN}/.claude/worktrees/PROJ-231-wave-1`
+export const WT_DIRTY = `${MAIN}/.claude/worktrees/PROJ-231-wave-2`
+export const WT_OPEN = `${MAIN}/.claude/worktrees/PROJ-347-wave-3`
+export const WT_WEAK = `${MAIN}/.claude/worktrees/PROJ-347-wave-4`
+export const OTHER_MAIN = '/home/dev/org/api-gateway'
+export const OTHER_WT = `${OTHER_MAIN}/.claude/worktrees/PROJ-500-hotfix`
+
+export function reapItem(path: string, over: Partial<ReapItem> = {}): ReapItem {
+  const repoPath = over.repoPath ?? MAIN
+  return {
+    id: `${repoPath}::worktree::${path}`,
+    repoPath,
+    kind: 'worktree',
+    branch: `feat/${path.split('/').pop()}`,
+    path,
+    hidden: false,
+    ageDays: 12,
+    diskBytes: 1_000_000,
+    checkpoints: [
+      { id: 'pr-merged', state: 'green', detail: new Date(NOW - 10 * DAY).toISOString() },
+      { id: 'local-clean', state: 'green' }
+    ],
+    verdict: 'harvestable',
+    blockers: [],
+    needsRemoteDelete: false,
+    untracked: [],
+    justifiedBy: 'ancestor',
+    hydration: null,
+    ...over
+  }
+}
+
+export interface BundleOver extends Partial<Omit<WorktreeBundle, 'item'>> {
+  item?: Partial<ReapItem>
+}
+
+/** A bundle that is a corpse; each test changes the respect it is about. */
+export function bundle(path: string, over: BundleOver = {}): WorktreeBundle {
+  const { item: itemOver, ...rest } = over
+  return {
+    item: reapItem(path, itemOver),
+    fate: { fate: 'merged', signal: 'ancestor', strong: true },
+    session: 'none',
+    lastSignOfLifeAt: NOW - 10 * DAY,
+    stackIds: [],
+    sharedStackIds: [],
+    ownedVolumes: [],
+    depsBytes: null,
+    keep: false,
+    neverClean: false,
+    isMainCheckout: false,
+    localTip: 'a'.repeat(40),
+    graceDays: 2,
+    bucket: 'corpse',
+    reason: null,
+    ...rest
+  }
+}
+
+export function snapshot(
+  bundles: WorktreeBundle[],
+  over: Partial<Omit<GcSnapshot, 'prefs'>> & { prefs?: Partial<GcPrefs> } = {}
+): GcSnapshot {
+  const { prefs, ...rest } = over
+  return {
+    scannedAt: NOW,
+    bundles,
+    orphanVolumes: [],
+    prefs: { ...defaultGcPrefs(), ...prefs },
+    lastCycle: null,
+    nextCycleAt: NOW + 3_600_000,
+    ...rest
+  }
+}
