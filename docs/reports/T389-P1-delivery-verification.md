@@ -981,3 +981,5 @@ The operator decided on 2026-10-06 (option A) to amend the bound. AC-P1W1-28 now
 The recorded measurements meet the amended bounds: headless 0 to 7 ms is under 50 ms, and interactive 29, 161 and 257 ms are under 2 000 ms. The findings above are left as written; they describe the AC as it stood at verification time.
 
 PR #8 verdict becomes **met with gaps**. The remaining gap is the wall-clock dependent SLOW_DOWN test (`tests/companion/server.test.ts` › "floods are answered SLOW_DOWN, and hello is exempt"), which makes GitHub CI flaky at the tip.
+
+Landed 2026-10-07: PRs #7–#19 squash-merged as #23 (7446534); CLI ceiling 2.1.292.
