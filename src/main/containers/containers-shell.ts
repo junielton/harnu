@@ -34,6 +34,7 @@ import {
   type InspectedContainer,
   type KnownFolder
 } from './containers-core'
+import { inheritedBucketFor } from '../gc/gc-buckets'
 import type { DockerBatchResult } from './containers-actions'
 import type { ContainersSnapshot, Tombstone } from './containers-wire'
 
@@ -157,7 +158,7 @@ async function memoryById(): Promise<Map<string, number>> {
   }
 }
 
-async function volumeFacts(): Promise<ReturnType<typeof parseDfVolumes>> {
+export async function volumeFacts(): Promise<ReturnType<typeof parseDfVolumes>> {
   try {
     const { stdout } = await runDocker(
       ['system', 'df', '-v', '--format', '{{json .Volumes}}'],
@@ -275,7 +276,9 @@ export async function scanContainers(req: ScanRequest): Promise<ContainersSnapsh
     now: req.now,
     zombieAfterDays: req.zombieAfterDays,
     recent,
-    platform: process.platform
+    platform: process.platform,
+    // The last GC snapshot's bucket: a worktree stack reads zombie as soon as its branch is dead.
+    inheritedBucketOf: inheritedBucketFor
   })
 }
 

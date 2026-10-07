@@ -119,3 +119,21 @@ describe('restoreHintFor', () => {
     expect(restoreHintFor("feat/o'brien", 'abc123')).toBe("git branch 'feat/o'\\''brien' abc123")
   })
 })
+
+describe('tombstone actor (T441)', () => {
+  it('round-trips an autopilot actor', () => {
+    const t = tombstone({ actor: 'autopilot' })
+    expect(parseJournal(serializeTombstone(t), 50)).toEqual([t])
+  })
+
+  it('reads a line written before the actor existed as having none', () => {
+    const t = tombstone()
+    const [parsed] = parseJournal(serializeTombstone(t), 50)
+    expect(parsed!.actor).toBeUndefined()
+  })
+
+  it('drops a line whose actor is not a known value', () => {
+    const line = JSON.stringify({ ...tombstone(), actor: 'robot' }) + '\n'
+    expect(parseJournal(line, 50)).toEqual([])
+  })
+})
