@@ -25,7 +25,12 @@ export interface GcShellDeps {
     removeContainers(ids: string[]): Promise<DockerBatchResult>
     removeVolumes(names: string[]): Promise<DockerBatchResult>
   }
-  /** Fresh listing for resolving stack ids to container ids and for the reprobe. */
+  /**
+   * Fresh listing for resolving stack ids to container ids and for the reprobe. Resolves
+   * `{ stacks: [] }` only when nothing can be running (the docker CLI is not installed).
+   * Rejects with {@link DockerUnavailableError} when the daemon is down or unreachable, and
+   * with any other error when the listing failed: neither may read as "no stacks".
+   */
   listStacks(): Promise<{ stacks: StackGroup[] }>
   /** Presence of a session in a folder, from the same sets the Reaper reads. */
   presenceOf(path: string): Promise<SessionPresence>
@@ -54,23 +59,47 @@ const DAEMON_DOWN =
   /cannot connect to the docker daemon|is the docker daemon running|error during connect|failed to connect to the docker API/i
 
 /**
- * Whether a failed docker call means docker is genuinely absent, so nothing can be running:
- * the CLI is not installed (ENOENT) or the daemon is down. Anything else, a timeout above
- * all, says nothing about what runs, so the listing must fail and the reprobe refuse.
+ * The docker daemon is down or unreachable. Its containers may come back with it, so this
+ * says nothing about what runs from a worktree, and the reprobe refuses on it.
  */
-export function dockerIsUnavailable(err: unknown): boolean {
-  const e = err as {
-    code?: unknown
-    killed?: unknown
-    signal?: unknown
-    stderr?: unknown
-    message?: unknown
-  } | null
+export class DockerUnavailableError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'DockerUnavailableError'
+  }
+}
+
+type ExecError = {
+  code?: unknown
+  killed?: unknown
+  signal?: unknown
+  stderr?: unknown
+  message?: unknown
+} | null
+
+/** The docker CLI is not installed (ENOENT), so nothing can be running on this machine. */
+export function dockerCliAbsent(err: unknown): boolean {
+  const e = err as ExecError
+  return !!e && typeof e === 'object' && e.code === 'ENOENT'
+}
+
+/**
+ * The CLI ran but could not reach the daemon. A killed call (execFile's timeout) can carry
+ * partial output that reads the same way; it never counts.
+ */
+export function dockerDaemonDown(err: unknown): boolean {
+  const e = err as ExecError
   if (!e || typeof e !== 'object') return false
-  if (e.code === 'ENOENT') return true
-  // A killed call (execFile's timeout) can carry partial output; it never proves absence.
   if (e.killed === true || (typeof e.signal === 'string' && e.signal)) return false
   return [e.stderr, e.message].some((t) => typeof t === 'string' && DAEMON_DOWN.test(t))
+}
+
+/**
+ * Either of the two above. Anything else, a timeout above all, says nothing about what
+ * runs, so the listing must fail and the reprobe refuse.
+ */
+export function dockerIsUnavailable(err: unknown): boolean {
+  return dockerCliAbsent(err) || dockerDaemonDown(err)
 }
 
 /** `working` and `needs-input` are one state to the fresh probe, so neither is a change from the other. */
@@ -229,6 +258,8 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         for (const [id, seen] of pass) vetted.set(id, seen)
         return { ok: true }
       } catch (err) {
+        if (err instanceof DockerUnavailableError)
+          return { ok: false, reason: 'docker-unavailable' }
         // Fail closed: a probe that cannot answer is not a green light.
         return { ok: false, reason: `probe-failed: ${messageOf(err)}` }
       }
@@ -318,10 +349,12 @@ export async function defaultGcShellDeps(
       try {
         return { stacks: groupStacks(await shell.inspectAll({ strict: true })) }
       } catch (err) {
-        // No docker means no stacks to stop. A bundle that had stacks then fails the
-        // reprobe's stack comparison and is skipped; one that had none still cleans. Any
-        // other failure rethrows, so the reprobe reports probe-failed instead of "none".
-        if (dockerIsUnavailable(err)) return { stacks: [] }
+        // No docker CLI means no stacks to stop: a bundle that had stacks then fails the
+        // reprobe's stack comparison, one that had none still cleans. A stopped daemon is
+        // not "none" (its containers come back with it), so the reprobe refuses it. Any
+        // other failure rethrows, so the reprobe reports probe-failed.
+        if (dockerCliAbsent(err)) return { stacks: [] }
+        if (dockerDaemonDown(err)) throw new DockerUnavailableError(messageOf(err))
         throw err
       }
     },
