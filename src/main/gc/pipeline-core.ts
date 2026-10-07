@@ -52,6 +52,22 @@ export class GcStepError extends Error {
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
+export interface GcRunOptions {
+  removeVolumes: boolean
+  /** The operator explicitly chose to clean `decide` bundles too. Never set by default. */
+  confirmDecide?: boolean
+}
+
+/**
+ * Only a proven corpse runs, or a `decide` bundle the operator explicitly confirmed. A
+ * protection flag refuses whatever the bucket says, since a stale or hand-built bundle can
+ * carry a corpse bucket next to a flag set after the scan.
+ */
+function mayRun(b: WorktreeBundle, opts: GcRunOptions): boolean {
+  if (b.isMainCheckout || b.neverClean || b.keep) return false
+  return b.bucket === 'corpse' || (opts.confirmDecide === true && b.bucket === 'decide')
+}
+
 /**
  * Clean one bundle in a fixed order: reprobe, stop stacks, remove containers, remove
  * volumes, drop deps, then the git side. The order is what makes it safe: nothing under
@@ -62,13 +78,17 @@ const messageOf = (err: unknown): string => (err instanceof Error ? err.message 
  * one call. That is safe: dehydration removes only git-ignored directories and the archive
  * excludes ignored files.
  *
+ * Anything but a proven corpse (or a confirmed `decide`) is refused before any op runs.
  * The first failing step halts this bundle; later steps never run. Never rejects.
  */
 export async function runBundle(
   b: WorktreeBundle,
   ops: GcOps,
-  opts: { removeVolumes: boolean }
+  opts: GcRunOptions
 ): Promise<GcItemResult> {
+  if (!mayRun(b, opts)) {
+    return { id: b.item.id, ok: false, haltedAt: 'reprobe', error: 'not-a-corpse', freedBytes: 0 }
+  }
   let freedBytes = 0
   const fail = (haltedAt: GcStep, error: string): GcItemResult => ({
     id: b.item.id,
@@ -125,7 +145,7 @@ export async function runBundle(
 export async function runBatch(
   bs: WorktreeBundle[],
   ops: GcOps,
-  opts: { removeVolumes: boolean }
+  opts: GcRunOptions
 ): Promise<GcItemResult[]> {
   const results: GcItemResult[] = []
   for (const b of bs) results.push(await runBundle(b, ops, opts))

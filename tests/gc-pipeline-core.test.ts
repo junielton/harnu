@@ -232,6 +232,71 @@ describe('runBundle — reprobe (Review Focus 4)', () => {
   })
 })
 
+describe('runBundle — only a proven corpse runs (delta 2, item 2)', () => {
+  const refused = { ok: false, haltedAt: 'reprobe', error: 'not-a-corpse', freedBytes: 0 }
+
+  it.each<[string, Partial<WorktreeBundle>]>([
+    ['alive', { bucket: 'alive' }],
+    ['keep', { keep: true }],
+    ['neverClean', { neverClean: true }],
+    ['a main checkout', { isMainCheckout: true }],
+    ['decide without confirmDecide', { bucket: 'decide' }]
+  ])('refuses %s with zero ops called', async (_label, over) => {
+    // A corpse base, so keep / neverClean / main checkout are refused for the flag itself:
+    // a hand-built or stale bundle can carry a corpse bucket next to a protection flag.
+    const b = bundle('a', over)
+    const f = fakeOps()
+    expect(await runBundle(b, f.ops, OPTS)).toEqual({ id: b.item.id, ...refused })
+    expect(f.calls).toEqual([])
+  })
+
+  it('refuses a decide bundle when confirmDecide is false', async () => {
+    const f = fakeOps()
+    const r = await runBundle(bundle('a', { bucket: 'decide' }), f.ops, {
+      ...OPTS,
+      confirmDecide: false
+    })
+    expect(r).toMatchObject(refused)
+    expect(f.calls).toEqual([])
+  })
+
+  it('runs a decide bundle when the operator confirmed it', async () => {
+    const f = fakeOps()
+    const r = await runBundle(bundle('a', { bucket: 'decide' }), f.ops, {
+      ...OPTS,
+      confirmDecide: true
+    })
+    expect(r.ok).toBe(true)
+    expect(f.calls[0]).toBe('reprobe')
+    expect(f.calls).toContain('cleanGit')
+  })
+
+  it.each<[string, Partial<WorktreeBundle>]>([
+    ['alive', { bucket: 'alive' }],
+    ['keep', { keep: true }],
+    ['neverClean', { neverClean: true }],
+    ['a main checkout', { isMainCheckout: true }]
+  ])('confirmDecide still refuses %s', async (_label, over) => {
+    const f = fakeOps()
+    const r = await runBundle(bundle('a', { bucket: 'decide', ...over }), f.ops, {
+      ...OPTS,
+      confirmDecide: true
+    })
+    expect(r).toMatchObject(refused)
+    expect(f.calls).toEqual([])
+  })
+
+  it('runBatch passes confirmDecide through to every bundle', async () => {
+    const f = fakeOps()
+    const bs = [bundle('a', { bucket: 'decide' }), bundle('b', { bucket: 'decide' })]
+    const refusedAll = await runBatch(bs, f.ops, OPTS)
+    expect(refusedAll.every((r) => r.error === 'not-a-corpse')).toBe(true)
+    expect(f.calls).toEqual([])
+    const ran = await runBatch(bs, f.ops, { ...OPTS, confirmDecide: true })
+    expect(ran.every((r) => r.ok)).toBe(true)
+  })
+})
+
 describe('runBundle — skipped steps', () => {
   it('removeVolumes:false skips the volume step and runs everything else', async () => {
     const f = fakeOps()
