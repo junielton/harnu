@@ -79,10 +79,6 @@ function mayRun(b: WorktreeBundle, opts: GcRunOptions): boolean {
  * under the checkout is touched until the stack running from it is gone, and nothing is
  * removed at all unless the reprobe still agrees with the scan.
  *
- * Dropping deps runs before `cleanGit` (which contains the archive) because cleanItem is
- * one call. That is safe: dehydration removes only git-ignored directories and the archive
- * excludes ignored files.
- *
  * Anything but a proven corpse (or a confirmed `decide`) is refused before any op runs.
  * The first failing step halts this bundle; later steps never run. Never rejects.
  */
@@ -132,6 +128,7 @@ export async function runBundle(
     }
   }
 
+  // Accepted spec §4 deviation: cleanItem is one call, and its archive skips the ignored dirs.
   halted = await step('drop-deps', async () => {
     freedBytes = await ops.dropDeps(b)
   })
