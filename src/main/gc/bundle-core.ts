@@ -284,7 +284,8 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
           : { fate: 'unknown', signal: null, strong: false }
 
     const stacks = exclusive.get(item.id) ?? []
-    const session = input.sessions.get(item.path as string)
+    // Every other comparison here is normalized; a trailing slash must not hide a session.
+    const session = input.sessions.get(item.path as string) ?? input.sessions.get(path)
     const events = lastContainerEvent(
       stacks.flatMap((s) => s.containers),
       stoppedByHarnu
