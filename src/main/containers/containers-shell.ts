@@ -158,7 +158,7 @@ async function memoryById(): Promise<Map<string, number>> {
   }
 }
 
-export async function volumeFacts(): Promise<ReturnType<typeof parseDfVolumes>> {
+async function volumeFacts(): Promise<ReturnType<typeof parseDfVolumes>> {
   try {
     const { stdout } = await runDocker(
       ['system', 'df', '-v', '--format', '{{json .Volumes}}'],
