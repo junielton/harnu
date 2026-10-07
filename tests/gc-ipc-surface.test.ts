@@ -45,6 +45,6 @@ describe('workspace GC IPC surface (AC-10)', () => {
   })
 
   it("answers the reprobe's protection question from the live prefs, not the scan-time flags", () => {
-    expect(ipc).toMatch(/isProtectedNow: \(b\) => isProtectedNow\(b, prefs\)/)
+    expect(ipc).toMatch(/withActor\(shellDeps, actor, \(\) => prefs\)/)
   })
 })

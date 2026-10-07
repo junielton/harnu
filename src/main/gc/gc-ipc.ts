@@ -16,8 +16,9 @@ import { buildNotificationOptions } from '../notifications'
 import { prefsFile as containersPrefsFile } from '../containers/containers-prefs'
 import { prefsPath as reaperPrefsPath } from '../reaper/prefs'
 import type { ReaperControl } from '../reaper/reaper-ipc'
+import { scanIdle } from '../reaper/scanner-shell'
 import { bucketFeed, setInheritedBuckets } from './gc-buckets'
-import { isProtectedNow } from './autopilot-core'
+import { withActor } from './gc-actor'
 import { createCycleState, runGcCycle, type GcCycleDeps, type GcGather } from './gc-cycle'
 import { gatherGc, type GcGathered } from './gc-scan-shell'
 import { createJobQueue, type GcJobInfo } from './gc-jobs-core'
@@ -110,6 +111,8 @@ export async function registerGcHandlers(
 
   const queue = createJobQueue({
     newId: () => randomUUID(),
+    // A Reaper scan walks these trees; a removal must not start while one is still reading.
+    beforeRun: () => scanIdle(),
     emitProgress: (p) => send('gc:progress', p),
     emitDone: (d) => {
       send('gc:done', d)
@@ -119,18 +122,8 @@ export async function registerGcHandlers(
   })
 
   const shellDeps = await defaultGcShellDeps(getWindow)
-  /** The actor lands in the journal line cleanItem writes, which is how an unattended run is told apart. */
-  const withActor = (actor: 'operator' | 'autopilot'): GcShellDeps => ({
-    ...shellDeps,
-    // The live prefs, not the flags the bundle was built with: the operator may have pressed
-    // Keep or listed a path since the scan, and the reprobe asks this before it does anything.
-    isProtectedNow: (b) => isProtectedNow(b, prefs),
-    executor: {
-      ...shellDeps.executor,
-      appendTombstone: (t: Parameters<typeof shellDeps.executor.appendTombstone>[0]) =>
-        shellDeps.executor.appendTombstone({ ...t, actor })
-    }
-  })
+  const withRun = (actor: 'operator' | 'autopilot'): GcShellDeps =>
+    withActor(shellDeps, actor, () => prefs)
 
   const notify = (n: { title: string; body: string }): void => {
     try {
@@ -152,7 +145,7 @@ export async function registerGcHandlers(
   const cycleDeps: GcCycleDeps = {
     prefs: () => prefs,
     gather: async (): Promise<GcGather> => gather(),
-    opsFor: () => createGcOps(withActor('autopilot')),
+    opsFor: () => createGcOps(withRun('autopilot')),
     queue,
     housekeeping: (plan) => runHousekeeping(plan),
     notify,
@@ -186,7 +179,7 @@ export async function registerGcHandlers(
           prefs: () => prefs,
           gather,
           opsFor: (_actor, forced) =>
-            forced ? createForcedGcOps(withActor('operator')) : createGcOps(withActor('operator')),
+            forced ? createForcedGcOps(withRun('operator')) : createGcOps(withRun('operator')),
           // S4's runner builds the argv itself (`docker volume rm <name>`, name-checked).
           removeOrphanVolumes: (names) =>
             runHousekeeping({

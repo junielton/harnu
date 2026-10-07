@@ -19,9 +19,20 @@ export function clearInheritedBuckets(): void {
   buckets = new Map()
 }
 
-/** The bucket recorded for a worktree path, or undefined when the GC has not judged it. */
+/**
+ * The bucket recorded for a worktree path, or undefined when the GC has not judged it. A
+ * stack usually runs from a subfolder of its worktree (`<worktree>/api`), so the lookup walks
+ * up to the deepest recorded ancestor; a sibling that only shares a name prefix never matches.
+ */
 export function inheritedBucketFor(path: string): Bucket | undefined {
-  return buckets.get(normalizePath(path, process.platform))
+  let p = normalizePath(path, process.platform)
+  for (;;) {
+    const hit = buckets.get(p)
+    if (hit !== undefined) return hit
+    const cut = p.lastIndexOf('/')
+    if (cut <= 0) return undefined
+    p = p.slice(0, cut)
+  }
 }
 
 /** The feed for one gather: each bundle's bucket by worktree path. */

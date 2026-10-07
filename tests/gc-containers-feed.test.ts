@@ -116,3 +116,38 @@ describe('bucketFeed: the path → bucket map built from a gather', () => {
     ])
   })
 })
+
+describe('a stack run from a subfolder of the worktree inherits the worktree bucket', () => {
+  it('walks up to the deepest recorded ancestor', () => {
+    setInheritedBuckets(new Map([[WT, 'corpse']]))
+    expect(inheritedBucketFor(`${WT}/api/docker`)).toBe('corpse')
+  })
+
+  it('does not match a sibling that merely shares a name prefix', () => {
+    setInheritedBuckets(new Map([[WT, 'corpse']]))
+    expect(inheritedBucketFor(`${WT}-2/api`)).toBeUndefined()
+  })
+
+  it('prefers the deepest recorded folder', () => {
+    setInheritedBuckets(
+      new Map([
+        [WT, 'corpse'],
+        [`${WT}/nested`, 'alive']
+      ])
+    )
+    expect(inheritedBucketFor(`${WT}/nested/x`)).toBe('alive')
+  })
+
+  it('makes the stack a zombie when only a subfolder is attributed', () => {
+    setInheritedBuckets(new Map([[WT, 'corpse']]))
+    const sub = composeContainer('proj-231', `${WT}/api`, { startedAt: NOW - 12 * 3_600_000 })
+    const snap = buildSnapshot(
+      scanInput({
+        containers: [sub],
+        folders: [knownFolder(MAIN), knownFolder(WT)],
+        inheritedBucketOf: inheritedBucketFor
+      })
+    )
+    expect(snap.stacks[0]!.verdict).toBe('zombie')
+  })
+})
