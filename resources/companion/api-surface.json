@@ -2,7 +2,7 @@
   "v": 1,
   "plugin": "harnu-companion",
   "minCli": "2.1.287",
-  "lastVerifiedCli": "2.1.291",
+  "lastVerifiedCli": "2.1.292",
   "hooks": [
     "classic.Notification",
     "classic.PermissionRequest",
