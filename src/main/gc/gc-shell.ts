@@ -4,7 +4,7 @@
 // real modules, and it loads them lazily so importing this file never pulls in electron.
 
 import type { BrowserWindow } from 'electron'
-import { GcStepError, type GcOps, type GcStep } from './pipeline-core'
+import { GcStepError, isMainCheckoutByPath, type GcOps, type GcStep } from './pipeline-core'
 import { containerFolders, type SessionPresence, type WorktreeBundle } from './bundle-core'
 import { cleanItem, type CleanStepId, type ExecutorDeps } from '../reaper/executor-core'
 import { dehydrateItem, type DehydrateDeps } from '../reaper/dehydrate-core'
@@ -48,13 +48,21 @@ export interface GcShellDeps {
  * a running PTY, `inUse` is any running PTY. `live` cannot tell `working` from `needs-input`,
  * and the bucket treats both as alive, so one answer covers both. History-only and
  * hibernated sessions have no PTY, so they read `none`.
+ *
+ * A session in a folder under `path` counts as one in `path` itself: the worktree is live
+ * whichever subfolder the session was started from. Containment is by path segment, so a
+ * sibling `WT-other` never counts, and neither does a parent folder.
  */
 export function presenceFromSets(
   path: string,
   sets: { live: Set<string>; inUse: Set<string> }
 ): SessionPresence {
-  if (sets.live.has(path)) return 'working'
-  if (sets.inUse.has(path)) return 'open-idle'
+  const platform = process.platform
+  const root = normalizePath(path, platform)
+  const touches = (folders: Set<string>): boolean =>
+    [...folders].some((f) => isInside(normalizePath(f, platform), root))
+  if (touches(sets.live)) return 'working'
+  if (touches(sets.inUse)) return 'open-idle'
   return 'none'
 }
 
@@ -111,7 +119,10 @@ export function dockerIsUnavailable(err: unknown): boolean {
 const sameState = (p: SessionPresence): 'busy' | SessionPresence =>
   p === 'working' || p === 'needs-input' ? 'busy' : p
 
-/** True when every folder the container runs from lies inside `root`; false when it has none. */
+/**
+ * True when every folder the container touches (working dir and bind mount sources) lies
+ * inside `root`; false when it has none.
+ */
 function containedIn(c: InspectedContainer, root: string, platform: string): boolean {
   const dirs = containerFolders(c, platform)
   return dirs.length > 0 && dirs.every((d) => isInside(d, root))
@@ -198,7 +209,8 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       for (const id of b.stackIds) vetted.delete(id)
       // Protection first, before any probe or docker call. A read that fails is no answer.
       try {
-        if (b.isMainCheckout || (await deps.isProtectedNow(b))) {
+        // The path decides too, so a bundle whose flag says otherwise is still refused.
+        if (b.isMainCheckout || isMainCheckoutByPath(b) || (await deps.isProtectedNow(b))) {
           return { ok: false, reason: 'protected-now' }
         }
       } catch (err) {
@@ -292,8 +304,23 @@ export function createGcOps(deps: GcShellDeps): GcOps {
 
     async removeVolumes(names) {
       if (names.length === 0) return
-      // Docker refuses a volume a container still mounts, which is the last safety net.
-      assertBatch('docker volume rm', await deps.docker.removeVolumes(names), names.length)
+      // The owned list is from the scan. By now the bundle's own containers are removed, so
+      // any container still mounting a volume (running or stopped, which docker would not
+      // refuse) is someone else's: skip it. A listing that fails throws, so nothing goes.
+      const { stacks } = await deps.listStacks()
+      const mounted = new Set<string>()
+      for (const s of stacks) {
+        for (const c of s.containers) for (const m of c.mounts) if (m.name) mounted.add(m.name)
+      }
+      const skipped = names
+        .filter((name) => mounted.has(name))
+        .map((name) => ({ name, reason: 'volume-in-use' as const }))
+      const free = names.filter((name) => !mounted.has(name))
+      if (free.length > 0) {
+        // Docker refuses a volume a container still mounts, which is the last safety net.
+        assertBatch('docker volume rm', await deps.docker.removeVolumes(free), free.length)
+      }
+      return skipped.length > 0 ? { skipped } : undefined
     },
 
     async dropDeps(b) {
@@ -320,6 +347,15 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         // Fail closed: a probe that cannot answer is not a green light either.
         if ((await deps.presenceOf(path)) !== 'none') return { ok: false, reason: 'session-open' }
         if ((await deps.headOf(path)) !== b.localTip) return { ok: false, reason: 'head-moved' }
+        // A stack started from the worktree during the docker steps or drop-deps would run
+        // from a folder about to be trashed. Same attribution as the scan and the reprobe; a
+        // scanned stack that is gone by now (we just removed it) is fine.
+        const { stacks } = await deps.listStacks()
+        const scanned = new Set([...b.stackIds, ...b.sharedStackIds])
+        const root = normalizePath(path, platform)
+        if (stackIdsInside(stacks, root, platform).some((id) => !scanned.has(id))) {
+          return { ok: false, reason: 'new-stack' }
+        }
         return { ok: true }
       } catch (err) {
         return { ok: false, reason: `probe-failed: ${messageOf(err)}` }
@@ -374,6 +410,6 @@ export async function defaultGcShellDeps(
     presenceOf: async (path) => presenceFromSets(path, await computeFolderSets()),
     headOf: async (path) => (await executor.git(path, ['rev-parse', 'HEAD'])).trim() || null,
     // The scan-time flags for now; S3 replaces this with a live read of the prefs.
-    isProtectedNow: (b) => b.keep || b.neverClean || b.isMainCheckout
+    isProtectedNow: (b) => b.keep || b.neverClean || b.isMainCheckout || isMainCheckoutByPath(b)
   }
 }

@@ -3,6 +3,7 @@
 // unit-tested in tests/gc-pipeline-core.test.ts without touching docker, git or disk.
 
 import type { WorktreeBundle } from './bundle-core'
+import { normalizePath } from '../containers/containers-core'
 
 export type GcStep =
   | 'reprobe'
@@ -21,16 +22,27 @@ export interface GcOps {
   reprobe(b: WorktreeBundle): Promise<{ ok: true } | { ok: false; reason: string }>
   stopStacks(ids: string[]): Promise<void>
   removeContainers(ids: string[]): Promise<void>
-  removeVolumes(names: string[]): Promise<void>
+  /**
+   * Re-lists who mounts each volume first: one a remaining container still mounts is
+   * skipped, not removed, and reported so the operator sees what was left behind.
+   */
+  removeVolumes(names: string[]): Promise<void | { skipped: SkippedVolume[] }>
   /** Resolves to the bytes freed. */
   dropDeps(b: WorktreeBundle): Promise<number>
   /**
-   * Re-reads presence and HEAD right before `cleanGit`: the docker steps and drop-deps take
-   * time, and a session opened or a commit made meanwhile must stop the archive and trash.
+   * Re-reads presence, HEAD and the stacks touching the worktree right before `cleanGit`: the
+   * docker steps and drop-deps take time, and a session opened, a commit made or a stack
+   * started meanwhile must stop the archive and trash.
    */
   recheck(b: WorktreeBundle): Promise<{ ok: true } | { ok: false; reason: string }>
   /** archive → trash → prune → branch-delete → detach, remote branch deletion forced off. */
   cleanGit(b: WorktreeBundle): Promise<void>
+}
+
+/** A volume the run left in place because a container still mounted it at execution time. */
+export interface SkippedVolume {
+  name: string
+  reason: 'volume-in-use'
 }
 
 export interface GcItemResult {
@@ -39,6 +51,8 @@ export interface GcItemResult {
   haltedAt: GcStep | null
   error?: string
   freedBytes: number
+  /** Present only when non-empty, on success and on a later failure alike. */
+  skippedVolumes?: SkippedVolume[]
 }
 
 /**
@@ -64,13 +78,29 @@ export interface GcRunOptions {
 }
 
 /**
+ * The main checkout told by its path rather than by the flag the scan set: a hand-built or
+ * stale bundle can carry `isMainCheckout: false` for the repo's own folder.
+ */
+export function isMainCheckoutByPath(b: WorktreeBundle): boolean {
+  const path = b.item.path
+  if (!path) return false
+  return normalizePath(path, process.platform) === normalizePath(b.item.repoPath, process.platform)
+}
+
+/**
  * Only a proven corpse runs, or a `decide` bundle the operator explicitly confirmed. A
  * protection flag refuses whatever the bucket says, since a stale or hand-built bundle can
  * carry a corpse bucket next to a flag set after the scan.
+ *
+ * A shared stack refuses even a confirmed `decide`: the pipeline stops only the exclusive
+ * stacks, so the folder would be trashed under a foreign stack that still runs from it.
+ * Returns the refusal, or null when the bundle may run.
  */
-function mayRun(b: WorktreeBundle, opts: GcRunOptions): boolean {
-  if (b.isMainCheckout || b.neverClean || b.keep) return false
-  return b.bucket === 'corpse' || (opts.confirmDecide === true && b.bucket === 'decide')
+function refusalOf(b: WorktreeBundle, opts: GcRunOptions): string | null {
+  if (b.isMainCheckout || b.neverClean || b.keep || isMainCheckoutByPath(b)) return 'not-a-corpse'
+  if (b.sharedStackIds.length > 0) return 'shared-stack'
+  const runs = b.bucket === 'corpse' || (opts.confirmDecide === true && b.bucket === 'decide')
+  return runs ? null : 'not-a-corpse'
 }
 
 /**
@@ -79,7 +109,8 @@ function mayRun(b: WorktreeBundle, opts: GcRunOptions): boolean {
  * under the checkout is touched until the stack running from it is gone, and nothing is
  * removed at all unless the reprobe still agrees with the scan.
  *
- * Anything but a proven corpse (or a confirmed `decide`) is refused before any op runs.
+ * Anything but a proven corpse (or a confirmed `decide`), and anything with a shared stack,
+ * is refused before any op runs.
  * The first failing step halts this bundle; later steps never run. Never rejects.
  */
 export async function runBundle(
@@ -87,16 +118,21 @@ export async function runBundle(
   ops: GcOps,
   opts: GcRunOptions
 ): Promise<GcItemResult> {
-  if (!mayRun(b, opts)) {
-    return { id: b.item.id, ok: false, haltedAt: 'reprobe', error: 'not-a-corpse', freedBytes: 0 }
+  const refused = refusalOf(b, opts)
+  if (refused) {
+    return { id: b.item.id, ok: false, haltedAt: 'reprobe', error: refused, freedBytes: 0 }
   }
   let freedBytes = 0
+  let skippedVolumes: SkippedVolume[] = []
+  const skipped = (): Pick<GcItemResult, 'skippedVolumes'> =>
+    skippedVolumes.length > 0 ? { skippedVolumes } : {}
   const fail = (haltedAt: GcStep, error: string): GcItemResult => ({
     id: b.item.id,
     ok: false,
     haltedAt,
     error,
-    freedBytes
+    freedBytes,
+    ...skipped()
   })
   /** Runs one step; returns the failure when it throws, null otherwise. */
   const step = async (name: GcStep, fn: () => Promise<void>): Promise<GcItemResult | null> => {
@@ -123,7 +159,10 @@ export async function runBundle(
     halted = await step('rm-containers', () => ops.removeContainers(b.stackIds))
     if (halted) return halted
     if (opts.removeVolumes && b.ownedVolumes.length > 0) {
-      halted = await step('rm-volumes', () => ops.removeVolumes(b.ownedVolumes))
+      halted = await step('rm-volumes', async () => {
+        const r = await ops.removeVolumes(b.ownedVolumes)
+        if (r) skippedVolumes = r.skipped
+      })
       if (halted) return halted
     }
   }
@@ -149,7 +188,7 @@ export async function runBundle(
     // The deps are already gone, so their bytes stay counted.
     return fail(err instanceof GcStepError ? err.step : 'archive', messageOf(err))
   }
-  return { id: b.item.id, ok: true, haltedAt: null, freedBytes }
+  return { id: b.item.id, ok: true, haltedAt: null, freedBytes, ...skipped() }
 }
 
 /** Observers for a batch in flight: progress streams from these, the batch itself is unchanged. */
