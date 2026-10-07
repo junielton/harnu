@@ -113,6 +113,7 @@ interface Harness {
   setStacks(stacks: StackGroup[]): void
   presenceOf: ReturnType<typeof vi.fn>
   headOf: ReturnType<typeof vi.fn>
+  isProtectedNow: ReturnType<typeof vi.fn>
   probeStatus: ReturnType<typeof vi.fn>
   git: ReturnType<typeof vi.fn>
   gitCalls: string[][]
@@ -127,6 +128,7 @@ function harness(
     presence?: SessionPresence
     trackedDirty?: boolean | null
     head?: string | null
+    protectedNow?: boolean
     executor?: Partial<ExecutorDeps>
     dehydrate?: Partial<DehydrateDeps>
   } = {}
@@ -140,6 +142,7 @@ function harness(
   const headOf = vi.fn(async (): Promise<string | null> =>
     over.head === undefined ? TIP : over.head
   )
+  const isProtectedNow = vi.fn((): boolean | Promise<boolean> => over.protectedNow ?? false)
   const probeStatus = vi.fn(async () => ({
     trackedDirty: over.trackedDirty === undefined ? false : over.trackedDirty,
     untracked: []
@@ -180,7 +183,8 @@ function harness(
       docker: { stop, removeContainers, removeVolumes },
       listStacks,
       presenceOf,
-      headOf
+      headOf,
+      isProtectedNow
     },
     stop,
     removeContainers,
@@ -191,6 +195,7 @@ function harness(
     },
     presenceOf,
     headOf,
+    isProtectedNow,
     probeStatus,
     git,
     gitCalls,
@@ -750,6 +755,64 @@ describe('recheck before cleanGit (delta 2, item 4)', () => {
     expect((await createGcOps(h.deps).recheck(bundle())).ok).toBe(false)
     h.headOf.mockRejectedValueOnce(new Error('not a git repository'))
     expect((await createGcOps(h.deps).recheck(bundle())).ok).toBe(false)
+  })
+})
+
+describe('reprobe re-reads protection at execution time (delta 2, item 8)', () => {
+  const opts = { removeVolumes: true }
+
+  it('a bundle marked Keep after the scan is refused as protected-now before any op', async () => {
+    const hasUnpushed = vi.fn(async () => false)
+    const h = harness({ protectedNow: true, executor: { hasUnpushed } })
+    const b = bundle({ keep: false })
+    const r = await runBundle(b, createGcOps(h.deps), opts)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'protected-now' })
+    expect(h.isProtectedNow).toHaveBeenCalledWith(b)
+    for (const fn of [h.probeStatus, h.presenceOf, h.headOf, h.listStacks, hasUnpushed]) {
+      expect(fn).not.toHaveBeenCalled()
+    }
+    expect(h.stop).not.toHaveBeenCalled()
+    expect(h.removeContainers).not.toHaveBeenCalled()
+    expect(h.removeVolumes).not.toHaveBeenCalled()
+    expect(cleanItem).not.toHaveBeenCalled()
+  })
+
+  it('accepts an asynchronous answer', async () => {
+    const h = harness()
+    h.isProtectedNow.mockResolvedValueOnce(true)
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+      ok: false,
+      reason: 'protected-now'
+    })
+  })
+
+  it('refuses as probe-failed when the protection read throws', async () => {
+    const h = harness()
+    h.isProtectedNow.mockImplementationOnce(() => {
+      throw new Error('prefs unreadable')
+    })
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+      ok: false,
+      reason: 'probe-failed: prefs unreadable'
+    })
+    expect(h.probeStatus).not.toHaveBeenCalled()
+    expect(h.listStacks).not.toHaveBeenCalled()
+  })
+
+  it('still refuses on the scan-time main-checkout flag, whatever the live read says', async () => {
+    const h = harness({ protectedNow: false })
+    expect(await createGcOps(h.deps).reprobe(bundle({ isMainCheckout: true }))).toEqual({
+      ok: false,
+      reason: 'protected-now'
+    })
+    expect(h.probeStatus).not.toHaveBeenCalled()
+  })
+
+  it('lets an unprotected bundle proceed', async () => {
+    const h = harness({ protectedNow: false })
+    const r = await runBundle(bundle(), createGcOps(h.deps), opts)
+    expect(r.ok).toBe(true)
+    expect(h.isProtectedNow).toHaveBeenCalled()
   })
 })
 

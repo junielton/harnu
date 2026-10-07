@@ -36,6 +36,11 @@ export interface GcShellDeps {
   presenceOf(path: string): Promise<SessionPresence>
   /** The commit checked out in a folder now, or null when there is none. */
   headOf(path: string): Promise<string | null>
+  /**
+   * Whether the bundle is keep, neverClean or the main checkout NOW, not at the scan: a
+   * worktree marked Keep after the scan must not be cleaned. The reprobe asks it first.
+   */
+  isProtectedNow(b: WorktreeBundle): boolean | Promise<boolean>
 }
 
 /**
@@ -191,6 +196,14 @@ export function createGcOps(deps: GcShellDeps): GcOps {
     async reprobe(b: WorktreeBundle) {
       // Whatever an earlier pass vetted for these stacks no longer stands once we re-ask.
       for (const id of b.stackIds) vetted.delete(id)
+      // Protection first, before any probe or docker call. A read that fails is no answer.
+      try {
+        if (b.isMainCheckout || (await deps.isProtectedNow(b))) {
+          return { ok: false, reason: 'protected-now' }
+        }
+      } catch (err) {
+        return { ok: false, reason: `probe-failed: ${messageOf(err)}` }
+      }
       const item = b.item
       // cleanItem refuses a non-harvestable item at its first guard, after the docker steps
       // would already have run, so refuse here before anything destructive.
@@ -359,6 +372,8 @@ export async function defaultGcShellDeps(
       }
     },
     presenceOf: async (path) => presenceFromSets(path, await computeFolderSets()),
-    headOf: async (path) => (await executor.git(path, ['rev-parse', 'HEAD'])).trim() || null
+    headOf: async (path) => (await executor.git(path, ['rev-parse', 'HEAD'])).trim() || null,
+    // The scan-time flags for now; S3 replaces this with a live read of the prefs.
+    isProtectedNow: (b) => b.keep || b.neverClean || b.isMainCheckout
   }
 }
