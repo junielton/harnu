@@ -179,9 +179,18 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       if (!path) return { ok: false, reason: 'changed-since-scan' }
       const root = normalizePath(path, platform)
       try {
+        // Pre-flight everything cleanItem's guard would refuse: that guard runs only after
+        // the docker steps and drop-deps, so refusing there is too late. Dirty or unknown
+        // now refuses even when the scan already saw it dirty.
         const status = await deps.executor.probeStatus(path)
-        if (status.trackedDirty !== item.blockers.includes('dirty')) {
-          return { ok: false, reason: 'changed-since-scan' }
+        const scanDirty = item.blockers.includes('dirty')
+        if (status.trackedDirty !== false || scanDirty) {
+          const same = status.trackedDirty === scanDirty
+          return { ok: false, reason: same ? 'dirty' : 'changed-since-scan' }
+        }
+        // Same rule as cleanItem: only a merge signal waives the unpushed re-probe.
+        if (item.justifiedBy === null && (await deps.executor.hasUnpushed(path))) {
+          return { ok: false, reason: 'unpushed' }
         }
         // Any running session refuses, even one the scan already saw idle: dehydrateItem
         // refuses a live worktree, which would halt the run after the docker steps.
