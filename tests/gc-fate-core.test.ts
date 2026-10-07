@@ -145,6 +145,26 @@ describe('resolveFate — Review Focus', () => {
     expect(r).toEqual({ fate: 'merged', signal: 'gh-merged', strong: false })
   })
 
+  it('a null headRefOid is not strong even when the local tip is known', () => {
+    const r = resolveFate(facts({ pr: pr({ headRefOid: null }) }), TIP)
+    expect(r).toEqual({ fate: 'merged', signal: 'gh-merged', strong: false })
+  })
+
+  it('a null local tip is not strong even when the PR head is known', () => {
+    const r = resolveFate(facts({ pr: pr({ headRefOid: TIP }) }), null)
+    expect(r).toEqual({ fate: 'merged', signal: 'gh-merged', strong: false })
+  })
+
+  it('a merge signal beats open: a merged branch whose remote was never deleted', () => {
+    const r = resolveFate(facts({ ancestorOfDefault: true, remoteExists: true }), TIP)
+    expect(r).toEqual({ fate: 'merged', signal: 'ancestor', strong: true })
+  })
+
+  it('a merge signal beats an OPEN PR on the same branch', () => {
+    const r = resolveFate(facts({ pr: pr({ state: 'OPEN' }), ancestorOfDefault: true }), TIP)
+    expect(r).toEqual({ fate: 'merged', signal: 'ancestor', strong: true })
+  })
+
   it('a git-local proof still wins when gh is unavailable', () => {
     const r = resolveFate(
       facts({
