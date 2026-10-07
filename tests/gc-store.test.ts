@@ -316,6 +316,16 @@ describe('gc store', () => {
     expect(api.gcSnapshot.mock.calls.length).toBeGreaterThanOrEqual(3)
   })
 
+  it('keepMany keeps every id and refreshes once at the end', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    const before = api.gcSnapshot.mock.calls.length
+    await gc.keepMany(['a', 'b', 'c'])
+    expect(api.gcKeep.mock.calls.map((c) => c[0])).toEqual(['a', 'b', 'c'])
+    expect(api.gcSnapshot.mock.calls.length).toBe(before + 1)
+  })
+
   it('init is idempotent: one set of subscriptions', async () => {
     const api = installApi()
     const gc = useGcStore()

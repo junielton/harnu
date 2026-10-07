@@ -72,6 +72,36 @@ mod: live`, `off`, or `legacy` with the reason), and the System Monitor shows th
   changes, and Harnu has no abort or compact button: the channel behind this one only
   carries the check for now.
 
+- **One Cleanup screen for worktrees, Docker stacks and Docker housekeeping.** Cleanup is
+  now a disk-first map: every worktree is a block sized by what it takes on disk, grouped by
+  repository and colored by what Harnu thinks of it - cleaned automatically (proven merged),
+  needs you, or untouched. A summary line shows what could be reclaimed, whether autopilot is
+  on and when the next cycle runs. **Clean N corpses** cleans every proven corpse behind one
+  confirmation that lists each one and says plainly that volumes cannot be restored. Click a
+  block for its reason, size and what removing it takes with it, then Remove, Dehydrate or
+  Keep; Shift+click, or **Select all in repo**, picks several at once. Cleaning runs in the
+  background: the button turns into a progress chip, cleaned blocks fade out and the map
+  re-flows, you can keep working (or close and reopen the screen), and a toast reports how
+  much was freed - or which items still need you. A Docker card and a ranked "Needs you" list
+  sit under the map, and the first autopilot run offers to turn it on. "Ask for an opinion"
+  is visible but not available yet. See [Cleanup](docs/user/cleanup.md).
+- **Cleanup settings for everything automatic.** Settings -> Cleanup now holds every
+  autopilot option: on/off, how often it runs, the grace period, the per-cycle cap, which
+  categories it cleans, whether volumes go with a worktree (they cannot be restored), the
+  build-cache age and a never-clean list.
+
+### Changed
+
+- **One footer pill instead of two.** The separate Cleanup and Containers pills in the footer
+  are now one recycle pill showing how much can be reclaimed; it reads "Cleaning 3/12" while a
+  clean runs and "1 needs you" when an item could not be cleaned. Click it to open Cleanup.
+- **The Containers view sends cleaning to Cleanup.** Containers stays the place to inspect and
+  start or stop stacks; its clean-up button now opens Cleanup, so there is one place to clean.
+  Its settings keep only the stack scan options and the idle clock for stacks that belong to no
+  worktree.
+- **Branches and folders that are not worktrees** (local and remote branches, hidden folders)
+  now appear under "Other leftovers" on the Cleanup screen instead of in the old row list.
+
 ### Fixed
 
 - **Files an agent saves in `.harnu/` are now reachable.** The `.harnu/` folder is

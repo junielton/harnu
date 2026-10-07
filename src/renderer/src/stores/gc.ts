@@ -251,6 +251,12 @@ export const useGcStore = defineStore('gc', () => {
     await refresh()
   }
 
+  /** Keep several at once (the selection bar): one refresh at the end, not one per id. */
+  async function keepMany(ids: readonly string[]): Promise<void> {
+    for (const id of ids) await window.api.gcKeep(id)
+    await refresh()
+  }
+
   async function unkeep(id: string): Promise<void> {
     await window.api.gcUnkeep(id)
     await refresh()
@@ -304,6 +310,7 @@ export const useGcStore = defineStore('gc', () => {
     cleanCorpses,
     cleanSelected,
     keep,
+    keepMany,
     unkeep,
     enableAutopilot,
     dismissFirstReport,

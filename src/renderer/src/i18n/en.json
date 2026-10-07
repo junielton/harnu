@@ -2290,6 +2290,252 @@
       "totalsUnknown": "{worktrees} worktrees · {size} back · {unknown} not measured",
       "failed": "{path}: {error}",
       "trackedChanged": "Tracked files changed during removal — nothing tracked should ever be touched: {files}"
+    },
+    "gc": {
+      "bucket": {
+        "corpse": "Corpse",
+        "decide": "Decide",
+        "alive": "Alive",
+        "header": {
+          "corpse": "Cleaned automatically",
+          "decide": "Needs you",
+          "alive": "Untouched"
+        }
+      },
+      "map": {
+        "canvasLabel": "Disk usage map",
+        "blockLabel": "{name}, {bucket}, {size}",
+        "blockLabelState": "{name}, {bucket}, {size}, {state}",
+        "state": {
+          "busy": "cleaning",
+          "done": "freed",
+          "failed": "failed"
+        },
+        "freed": "freed",
+        "aggregate": "{count} smaller",
+        "aggregateLabel": "{count} smaller worktrees, {bucket}, {size}",
+        "selectAll": "Select all in repo",
+        "selectAllAria": "Select all Decide worktrees in {repo}",
+        "repoMeta": "{count} worktree · {size} | {count} worktrees · {size}",
+        "drillRepo": "Open {repo} on its own",
+        "drillBack": "All repos",
+        "filterLabel": "Show bucket",
+        "filterAll": "All",
+        "noBytes": "This system cannot measure disk sizes, so there is nothing to draw. Use the list view.",
+        "empty": "No worktrees to show."
+      },
+      "reason": {
+        "corpse": "Merged, clean and idle past the grace period.",
+        "dirty": "Merged, but it has uncommitted changes to tracked files.",
+        "unpushed": "Merged, but it has commits that were never pushed.",
+        "openIdleSession": "A session is still open here, though idle.",
+        "closedUnmerged": "The pull request was closed without being merged.",
+        "remoteGone": "The remote branch is gone and no pull request records a merge.",
+        "detached": "Detached HEAD, so there is no branch to judge.",
+        "unknownFate": "Harnu could not tell what became of this branch.",
+        "weakMergeSignal": "Looks merged, but the local tip differs from the merged one.",
+        "sharedStack": "Another Docker stack also runs from this worktree.",
+        "cleanupFailed": "The last cleanup stopped before it finished.",
+        "noKnownWorktree": "No known worktree uses this volume."
+      },
+      "step": {
+        "stopStack": "Stop the stack",
+        "rmContainers": "Remove containers",
+        "rmVolumes": "Remove volumes",
+        "archive": "Archive the code",
+        "dropDeps": "Remove dependencies",
+        "trash": "Trash the checkout",
+        "prune": "Prune the worktree",
+        "branchDelete": "Delete the branch"
+      },
+      "panel": {
+        "close": "Close panel",
+        "project": "Compose project {project}",
+        "projectUnknown": "Unknown project",
+        "compositionLabel": "Size composition",
+        "deps": "Dependencies",
+        "checkout": "Checkout",
+        "volumesNoSize": "Volumes (size not reported): {names}",
+        "whyTitle": "Why it is here",
+        "corpseNote": "Cleaned on the next cycle, or now with Clean now.",
+        "aliveNote": "Untouched while a session works here or its pull request is open.",
+        "takesTitle": "Takes with it",
+        "takes": {
+          "stack": "Its Docker stack | {count} Docker stacks",
+          "volume": "Volumes: {names}",
+          "deps": "Its dependency folders",
+          "checkout": "The checkout",
+          "branch": "The local branch {branch}"
+        },
+        "volumesCannotRestore": "Volumes cannot be restored.",
+        "ranTitle": "What ran",
+        "stepState": {
+          "ok": "done",
+          "failed": "failed",
+          "todo": "did not run"
+        },
+        "nothingRan": "Nothing destructive ran.",
+        "changedSinceConfirm": "Changed since you confirmed — review again.",
+        "copyError": "Copy error",
+        "copied": "Copied",
+        "cleaning": "Cleaning…",
+        "cleanNow": "Clean now",
+        "retry": "Retry",
+        "remove": "Remove",
+        "dehydrate": "Dehydrate",
+        "rehydrate": "Rehydrate",
+        "keep": "Keep",
+        "ask": "Ask for an opinion",
+        "askSoon": "coming in S6"
+      },
+      "needsYou": {
+        "title": "Needs you",
+        "askAll": "Ask for an opinion on all {count}",
+        "askSoon": "coming in S6",
+        "empty": "Nothing needs you.",
+        "showAll": "Show all {count}",
+        "rowAria": "{name}, {size}",
+        "selectRow": "Select {name}",
+        "removeAria": "Remove {name}",
+        "dehydrateAria": "Dehydrate {name}",
+        "keepAria": "Keep {name}",
+        "volumeProject": "Docker volume · {project}",
+        "volumeUnknown": "Docker volume · unknown project",
+        "changedSinceConfirm": "Changed since you confirmed — review again.",
+        "hintShift": "click selects several",
+        "hintOpen": "opens the panel"
+      },
+      "list": {
+        "label": "Worktrees by bucket",
+        "empty": "No worktrees to show."
+      },
+      "hero": {
+        "clean": "Clean {n} corpse · {size} | Clean {n} corpses · {size}",
+        "empty": "Nothing to clean",
+        "chip": "Cleaning {done}/{total} · {size} freed"
+      },
+      "selection": {
+        "label": "Selection",
+        "count": "{count} selected · {size}",
+        "remove": "Remove selected",
+        "dehydrate": "Dehydrate",
+        "keep": "Keep",
+        "ask": "Ask for an opinion",
+        "askSoon": "coming in S6",
+        "shiftHint": "click to add more",
+        "clear": "Clear selection"
+      },
+      "confirm": {
+        "titleCorpses": "Clean {n} corpse? | Clean {n} corpses?",
+        "titleWorktrees": "Remove {n} worktree? | Remove {n} worktrees?",
+        "titleItems": "Remove {n} item? | Remove {n} items?",
+        "subtitleCorpses": "Each one is merged, clean and idle past its grace period. Everything listed below is removed.",
+        "subtitleDecide": "You picked these yourself, so Harnu could not prove they are safe. Everything listed below is removed.",
+        "summary": "{n} item · {size} | {n} items · {size}",
+        "listLabel": "Items to remove",
+        "worktreeRow": "{repo} › {name}",
+        "volumeRow": "Docker volume {name}",
+        "volumeProject": "Project {project}",
+        "noWorktree": "No known worktree",
+        "riskMarker": "May hold work that no other branch has",
+        "warnRisk": "{n} of these holds work that no other branch has. Its code stays recoverable from the archive refs and the OS trash. | {n} of these hold work that no other branch has. Their code stays recoverable from the archive refs and the OS trash.",
+        "warnVolumesLost": "Volumes cannot be restored.",
+        "warnVolumesKept": "Docker volumes are kept.",
+        "warnRecover": "Code and branch come back from the archive refs and the OS trash, and dependencies come back through the repo's setup.",
+        "total": "Total {size}",
+        "cancel": "Cancel",
+        "confirmCorpses": "Clean {n} corpse | Clean {n} corpses",
+        "confirmWorktrees": "Remove {n} worktree | Remove {n} worktrees",
+        "confirmItems": "Remove {n} item | Remove {n} items"
+      },
+      "chip": {
+        "stack": "stack",
+        "volume": "volume",
+        "deps": "deps",
+        "checkout": "checkout",
+        "branch": "branch",
+        "title": {
+          "stack": "The Docker stack is stopped and its containers removed",
+          "volume": "Docker volumes owned by this worktree are removed and cannot be restored",
+          "deps": "Dependency folders are deleted; the repo's setup brings them back",
+          "checkout": "The checkout goes to the OS trash",
+          "branch": "The local branch is deleted after it is archived"
+        }
+      },
+      "firstCycle": {
+        "label": "First cleanup report",
+        "title": "Found {n} corpse, {size} — enable autopilot? | Found {n} corpses, {size} — enable autopilot?",
+        "sub": "The first cycle only reports; nothing is deleted until you turn it on.",
+        "enable": "Enable autopilot",
+        "dismiss": "Not now"
+      },
+      "docker": {
+        "title": "Docker",
+        "buildCache": "Build cache",
+        "danglingImages": "Dangling images",
+        "orphanVolumes": "Orphan volumes",
+        "reclaimed": "Last cycle reclaimed {size}",
+        "unavailable": "Size unavailable until the next cycle",
+        "olderThan": "Older than {n} day | Older than {n} days",
+        "danglingSub": "Untagged images that no container uses",
+        "volumesCount": "{n} volume · {size} | {n} volumes · {size}",
+        "cantRestore": "Can't be restored",
+        "projects": "Projects: {names}",
+        "more": "+{n} more",
+        "toggleCache": "Clean build cache automatically",
+        "toggleImages": "Clean dangling images automatically",
+        "toggleVolumes": "Include orphan volumes in cleaning"
+      },
+      "split": {
+        "label": "Disk split",
+        "auto": "Cleaned automatically",
+        "needsYou": "Needs you",
+        "untouched": "Untouched",
+        "count": "{n} item | {n} items",
+        "lastCycle": "Last cycle {ago}: cleaned {n}, freed {size}",
+        "lastCycleReport": "Last cycle {ago}: found {n} corpse, {size} (report only) | Last cycle {ago}: found {n} corpses, {size} (report only)"
+      },
+      "summary": {
+        "reclaimable": "{size} reclaimable",
+        "autopilotOn": "autopilot on",
+        "autopilotOff": "autopilot off",
+        "next": {
+          "minute": "next cycle in {n} min",
+          "hour": "next cycle in {n} h",
+          "day": "next cycle in {n} d"
+        },
+        "badgeOn": "Autopilot on · every {every}",
+        "badgeOff": "Autopilot off",
+        "everyMinutes": "{n} min",
+        "everyHours": "{n} h",
+        "everyDay": "day"
+      },
+      "view": {
+        "map": "Map",
+        "list": "List",
+        "label": "Cleanup view",
+        "noBytes": "Disk sizes are not available on this system, so only the list can be shown."
+      },
+      "toolbar": {
+        "autopilotSettings": "Autopilot settings"
+      },
+      "empty": {
+        "title": "All clean",
+        "subtitle": "Nothing to reclaim.",
+        "subtitleAgo": "Nothing to reclaim. Autopilot checked {ago}."
+      },
+      "loading": "Looking at your worktrees and Docker…",
+      "loadError": "Could not load the cleanup report: {error}",
+      "other": {
+        "title": "Other leftovers",
+        "intro": "Branches and folders that are not worktrees."
+      },
+      "toast": {
+        "success": "Freed {size} · {count} corpse cleaned | Freed {size} · {count} corpses cleaned",
+        "partial": "{cleaned} cleaned · {failed} needs you",
+        "review": "Review"
+      },
+      "changedSinceConfirm": "Changed since you confirmed — review again."
     }
   },
   "containers": {

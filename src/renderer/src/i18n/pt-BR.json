@@ -2290,6 +2290,252 @@
       "totalsUnknown": "{worktrees} worktrees · {size} de volta · {unknown} sem medição",
       "failed": "{path}: {error}",
       "trackedChanged": "Arquivos rastreados mudaram durante a remoção — nada rastreado deveria ser tocado: {files}"
+    },
+    "gc": {
+      "bucket": {
+        "corpse": "Corpse",
+        "decide": "Decidir",
+        "alive": "Ativo",
+        "header": {
+          "corpse": "Limpo automaticamente",
+          "decide": "Precisa de você",
+          "alive": "Intocado"
+        }
+      },
+      "map": {
+        "canvasLabel": "Mapa de uso de disco",
+        "blockLabel": "{name}, {bucket}, {size}",
+        "blockLabelState": "{name}, {bucket}, {size}, {state}",
+        "state": {
+          "busy": "limpando",
+          "done": "liberado",
+          "failed": "falhou"
+        },
+        "freed": "liberado",
+        "aggregate": "{count} menores",
+        "aggregateLabel": "{count} worktrees menores, {bucket}, {size}",
+        "selectAll": "Selecionar tudo no repo",
+        "selectAllAria": "Selecionar todos os worktrees a decidir em {repo}",
+        "repoMeta": "{count} worktree · {size} | {count} worktrees · {size}",
+        "drillRepo": "Abrir {repo} sozinho",
+        "drillBack": "Todos os repos",
+        "filterLabel": "Mostrar grupo",
+        "filterAll": "Todos",
+        "noBytes": "Este sistema não mede o tamanho em disco, então não há o que desenhar. Use a visão em lista.",
+        "empty": "Nenhum worktree para mostrar."
+      },
+      "reason": {
+        "corpse": "Mesclado, limpo e parado além do período de carência.",
+        "dirty": "Mesclado, mas tem alterações não commitadas em arquivos rastreados.",
+        "unpushed": "Mesclado, mas tem commits que nunca foram enviados.",
+        "openIdleSession": "Uma sessão ainda está aberta aqui, embora parada.",
+        "closedUnmerged": "O pull request foi fechado sem ser mesclado.",
+        "remoteGone": "A branch remota sumiu e nenhum pull request registra um merge.",
+        "detached": "HEAD solto, então não há branch para avaliar.",
+        "unknownFate": "O Harnu não conseguiu saber o que aconteceu com esta branch.",
+        "weakMergeSignal": "Parece mesclado, mas a ponta local difere da mesclada.",
+        "sharedStack": "Outra stack Docker também roda a partir deste worktree.",
+        "cleanupFailed": "A última limpeza parou antes de terminar.",
+        "noKnownWorktree": "Nenhum worktree conhecido usa este volume."
+      },
+      "step": {
+        "stopStack": "Parar a stack",
+        "rmContainers": "Remover containers",
+        "rmVolumes": "Remover volumes",
+        "archive": "Arquivar o código",
+        "dropDeps": "Remover dependências",
+        "trash": "Enviar o checkout à lixeira",
+        "prune": "Podar o worktree",
+        "branchDelete": "Apagar a branch"
+      },
+      "panel": {
+        "close": "Fechar painel",
+        "project": "Projeto compose {project}",
+        "projectUnknown": "Projeto desconhecido",
+        "compositionLabel": "Composição do tamanho",
+        "deps": "Dependências",
+        "checkout": "Checkout",
+        "volumesNoSize": "Volumes (tamanho não informado): {names}",
+        "whyTitle": "Por que está aqui",
+        "corpseNote": "Limpo no próximo ciclo, ou agora com Limpar agora.",
+        "aliveNote": "Intocado enquanto uma sessão trabalha aqui ou o pull request está aberto.",
+        "takesTitle": "Leva junto",
+        "takes": {
+          "stack": "Sua stack Docker | {count} stacks Docker",
+          "volume": "Volumes: {names}",
+          "deps": "Suas pastas de dependências",
+          "checkout": "O checkout",
+          "branch": "A branch local {branch}"
+        },
+        "volumesCannotRestore": "Volumes não podem ser restaurados.",
+        "ranTitle": "O que rodou",
+        "stepState": {
+          "ok": "feito",
+          "failed": "falhou",
+          "todo": "não rodou"
+        },
+        "nothingRan": "Nada destrutivo rodou.",
+        "changedSinceConfirm": "Mudou desde que você confirmou — revise de novo.",
+        "copyError": "Copiar erro",
+        "copied": "Copiado",
+        "cleaning": "Limpando…",
+        "cleanNow": "Limpar agora",
+        "retry": "Tentar de novo",
+        "remove": "Remover",
+        "dehydrate": "Dehydrate",
+        "rehydrate": "Rehydrate",
+        "keep": "Manter",
+        "ask": "Pedir uma opinião",
+        "askSoon": "chega na S6"
+      },
+      "needsYou": {
+        "title": "Precisa de você",
+        "askAll": "Pedir uma opinião sobre todos os {count}",
+        "askSoon": "chega na S6",
+        "empty": "Nada precisa de você.",
+        "showAll": "Mostrar todos os {count}",
+        "rowAria": "{name}, {size}",
+        "selectRow": "Selecionar {name}",
+        "removeAria": "Remover {name}",
+        "dehydrateAria": "Dehydrate {name}",
+        "keepAria": "Manter {name}",
+        "volumeProject": "Volume Docker · {project}",
+        "volumeUnknown": "Volume Docker · projeto desconhecido",
+        "changedSinceConfirm": "Mudou desde que você confirmou — revise de novo.",
+        "hintShift": "clique seleciona vários",
+        "hintOpen": "abre o painel"
+      },
+      "list": {
+        "label": "Worktrees por grupo",
+        "empty": "Nenhum worktree para mostrar."
+      },
+      "hero": {
+        "clean": "Limpar {n} corpse · {size} | Limpar {n} corpses · {size}",
+        "empty": "Nada para limpar",
+        "chip": "Limpando {done}/{total} · {size} liberados"
+      },
+      "selection": {
+        "label": "Seleção",
+        "count": "{count} selecionados · {size}",
+        "remove": "Remover selecionados",
+        "dehydrate": "Dehydrate",
+        "keep": "Manter",
+        "ask": "Pedir uma opinião",
+        "askSoon": "chega no S6",
+        "shiftHint": "clique para adicionar mais",
+        "clear": "Limpar seleção"
+      },
+      "confirm": {
+        "titleCorpses": "Limpar {n} corpse? | Limpar {n} corpses?",
+        "titleWorktrees": "Remover {n} worktree? | Remover {n} worktrees?",
+        "titleItems": "Remover {n} item? | Remover {n} itens?",
+        "subtitleCorpses": "Cada um está merged, limpo e ocioso além do período de carência. Tudo o que está listado abaixo será removido.",
+        "subtitleDecide": "Você escolheu estes itens, então o Harnu não pôde provar que são seguros. Tudo o que está listado abaixo será removido.",
+        "summary": "{n} item · {size} | {n} itens · {size}",
+        "listLabel": "Itens a remover",
+        "worktreeRow": "{repo} › {name}",
+        "volumeRow": "Volume Docker {name}",
+        "volumeProject": "Projeto {project}",
+        "noWorktree": "Nenhum worktree conhecido",
+        "riskMarker": "Pode conter trabalho que nenhuma outra branch tem",
+        "warnRisk": "{n} destes contém trabalho que nenhuma outra branch tem. O código continua recuperável pelas refs de arquivo e pela lixeira do sistema. | {n} destes contêm trabalho que nenhuma outra branch tem. O código continua recuperável pelas refs de arquivo e pela lixeira do sistema.",
+        "warnVolumesLost": "Volumes não podem ser restaurados.",
+        "warnVolumesKept": "Os volumes do Docker são mantidos.",
+        "warnRecover": "O código e a branch voltam pelas refs de arquivo e pela lixeira do sistema, e as dependências voltam pelo setup do repositório.",
+        "total": "Total {size}",
+        "cancel": "Cancelar",
+        "confirmCorpses": "Limpar {n} corpse | Limpar {n} corpses",
+        "confirmWorktrees": "Remover {n} worktree | Remover {n} worktrees",
+        "confirmItems": "Remover {n} item | Remover {n} itens"
+      },
+      "chip": {
+        "stack": "stack",
+        "volume": "volume",
+        "deps": "deps",
+        "checkout": "checkout",
+        "branch": "branch",
+        "title": {
+          "stack": "A stack do Docker é parada e seus containers são removidos",
+          "volume": "Os volumes do Docker deste worktree são removidos e não podem ser restaurados",
+          "deps": "As pastas de dependências são apagadas; o setup do repositório as traz de volta",
+          "checkout": "O checkout vai para a lixeira do sistema",
+          "branch": "A branch local é apagada depois de arquivada"
+        }
+      },
+      "firstCycle": {
+        "label": "Primeiro relatório de limpeza",
+        "title": "Encontrei {n} corpse, {size} — ativar o autopilot? | Encontrei {n} corpses, {size} — ativar o autopilot?",
+        "sub": "O primeiro ciclo só reporta; nada é apagado até você ativar.",
+        "enable": "Ativar autopilot",
+        "dismiss": "Agora não"
+      },
+      "docker": {
+        "title": "Docker",
+        "buildCache": "Build cache",
+        "danglingImages": "Imagens dangling",
+        "orphanVolumes": "Volumes órfãos",
+        "reclaimed": "Último ciclo recuperou {size}",
+        "unavailable": "Tamanho indisponível até o próximo ciclo",
+        "olderThan": "Mais antigo que {n} dia | Mais antigo que {n} dias",
+        "danglingSub": "Imagens sem tag que nenhum container usa",
+        "volumesCount": "{n} volume · {size} | {n} volumes · {size}",
+        "cantRestore": "Não pode ser restaurado",
+        "projects": "Projetos: {names}",
+        "more": "+{n} outros",
+        "toggleCache": "Limpar o build cache automaticamente",
+        "toggleImages": "Limpar imagens dangling automaticamente",
+        "toggleVolumes": "Incluir volumes órfãos na limpeza"
+      },
+      "split": {
+        "label": "Divisão do disco",
+        "auto": "Limpo automaticamente",
+        "needsYou": "Precisa de você",
+        "untouched": "Intocado",
+        "count": "{n} item | {n} itens",
+        "lastCycle": "Último ciclo {ago}: {n} limpos, {size} liberados",
+        "lastCycleReport": "Último ciclo {ago}: {n} corpse encontrado, {size} (só relatório) | Último ciclo {ago}: {n} corpses encontrados, {size} (só relatório)"
+      },
+      "summary": {
+        "reclaimable": "{size} recuperáveis",
+        "autopilotOn": "piloto automático ligado",
+        "autopilotOff": "piloto automático desligado",
+        "next": {
+          "minute": "próximo ciclo em {n} min",
+          "hour": "próximo ciclo em {n} h",
+          "day": "próximo ciclo em {n} d"
+        },
+        "badgeOn": "Piloto automático ligado · a cada {every}",
+        "badgeOff": "Piloto automático desligado",
+        "everyMinutes": "{n} min",
+        "everyHours": "{n} h",
+        "everyDay": "dia"
+      },
+      "view": {
+        "map": "Mapa",
+        "list": "Lista",
+        "label": "Visão da limpeza",
+        "noBytes": "Os tamanhos em disco não estão disponíveis neste sistema, então só a lista pode ser mostrada."
+      },
+      "toolbar": {
+        "autopilotSettings": "Configurar piloto automático"
+      },
+      "empty": {
+        "title": "Tudo limpo",
+        "subtitle": "Nada para recuperar.",
+        "subtitleAgo": "Nada para recuperar. O piloto automático verificou {ago}."
+      },
+      "loading": "Analisando seus worktrees e o Docker…",
+      "loadError": "Não foi possível carregar o relatório de limpeza: {error}",
+      "other": {
+        "title": "Outros resíduos",
+        "intro": "Branches e pastas que não são worktrees."
+      },
+      "toast": {
+        "success": "{size} liberados · {count} corpse limpo | {size} liberados · {count} corpses limpos",
+        "partial": "{cleaned} limpos · {failed} precisa de você",
+        "review": "Revisar"
+      },
+      "changedSinceConfirm": "Mudou desde que você confirmou — revise de novo."
     }
   },
   "containers": {
