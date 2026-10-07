@@ -9,6 +9,11 @@ export interface HousekeepingParams {
   /** Build cache older than this is pruned. Zero or negative disables the prune. */
   cacheMaxAgeDays: number
   danglingImages: boolean
+  /**
+   * Plan orphan-volume removal. Volumes cannot be restored, so this means "this
+   * is a manual, operator-confirmed run": the autopilot never sets it, and
+   * orphan volumes reach the Decide bucket for a human click instead.
+   */
   orphanVolumes: boolean
 }
 export interface HousekeepingPlan {
@@ -38,44 +43,80 @@ function untilHours(days: number): number | null {
 /**
  * Decide what housekeeping to run: the build-cache age cutoff (null when
  * disabled), whether to prune dangling images, and the orphan volume names.
+ *
+ * Orphan volumes are only planned when `p.orphanVolumes` is set, which means a
+ * manual, operator-confirmed run. The autopilot never removes volumes.
+ *
+ * `knownFolders` is every folder Harnu knows; a volume whose compose project
+ * name matches the default project name of one that still exists is never
+ * planned (see {@link composeProjectName}).
  */
 export function planHousekeeping(
   p: HousekeepingParams,
   volumes: readonly HousekeepingVolume[],
   containers: readonly InspectedContainer[],
-  dirExists: (path: string) => boolean
+  dirExists: (path: string) => boolean,
+  knownFolders: readonly string[]
 ): HousekeepingPlan {
   return {
     builderPruneUntilHours: untilHours(p.cacheMaxAgeDays),
     danglingImages: p.danglingImages,
-    orphanVolumes: p.orphanVolumes ? orphanVolumeNames(volumes, containers, dirExists) : []
+    orphanVolumes: p.orphanVolumes
+      ? orphanVolumeNames(volumes, containers, dirExists, knownFolders)
+      : []
   }
 }
 
 /**
+ * The default compose project name of a folder: its basename, lowercased, with
+ * every character outside `[a-z0-9_-]` removed. Two checkouts that share a
+ * basename therefore share a project, and so share volume names.
+ */
+function composeProjectName(folder: string): string {
+  const base =
+    folder
+      .split(/[\\/]+/)
+      .filter(Boolean)
+      .pop() ?? ''
+  return base.toLowerCase().replace(/[^a-z0-9_-]/g, '')
+}
+
+/**
  * Orphan = labeled with a compose project, referenced by no container (running
- * or stopped), and every working dir known for that project is gone. A project
- * whose dir cannot be learned from any container is unprovable, hence kept.
+ * or stopped), and every working dir known for that project is gone. Kept, never
+ * planned, when:
+ * - the project's dir cannot be learned: no container carries it, or any
+ *   container of the project lacks the working-dir label (unprovable);
+ * - an existing known folder has the same default project name, because that
+ *   checkout may own the volume even though it has no containers right now.
  */
 function orphanVolumeNames(
   volumes: readonly HousekeepingVolume[],
   containers: readonly InspectedContainer[],
-  dirExists: (path: string) => boolean
+  dirExists: (path: string) => boolean,
+  knownFolders: readonly string[]
 ): string[] {
   const referenced = new Set<string>()
   const dirsByProject = new Map<string, Set<string>>()
+  const unknownDirProjects = new Set<string>()
   for (const c of containers) {
     for (const m of c.mounts) if (m.name) referenced.add(m.name)
     const project = c.labels[COMPOSE_PROJECT_LABEL]
+    if (!project) continue
     const dir = c.labels[COMPOSE_WORKING_DIR_LABEL]
-    if (!project || !dir) continue
+    if (!dir) {
+      unknownDirProjects.add(project)
+      continue
+    }
     const dirs = dirsByProject.get(project) ?? new Set<string>()
     dirs.add(dir)
     dirsByProject.set(project, dirs)
   }
+  const liveProjects = new Set(knownFolders.filter(dirExists).map(composeProjectName))
   return volumes
     .filter((v) => {
       if (!SAFE_VOLUME_NAME.test(v.name) || referenced.has(v.name) || !v.project) return false
+      if (unknownDirProjects.has(v.project) || liveProjects.has(v.project)) return false
       const dirs = dirsByProject.get(v.project)
       return !!dirs && dirs.size > 0 && [...dirs].every((d) => !dirExists(d))
     })
