@@ -118,7 +118,7 @@ async function probeDocker(): Promise<string | null> {
   }
 }
 
-async function inspectAll(): Promise<InspectedContainer[]> {
+export async function inspectAll(): Promise<InspectedContainer[]> {
   const { stdout } = await runDocker(['ps', '-aq', '--no-trunc'], SCAN_OPTS)
   const ids = stdout
     .split('\n')

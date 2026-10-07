@@ -174,7 +174,7 @@ async function discoverRepos(): Promise<Array<{ repoPath: string }>> {
  *   next `npm test` would find its `node_modules` gone, so "no live session"
  *   for a removal means no process at all, not merely no work in flight.
  */
-async function computeFolderSets(): Promise<{ live: Set<string>; inUse: Set<string> }> {
+export async function computeFolderSets(): Promise<{ live: Set<string>; inUse: Set<string> }> {
   const taskStates = getTaskStates()
   const running = liveSessionKeys()
   const folders = await getFleetFolders()
