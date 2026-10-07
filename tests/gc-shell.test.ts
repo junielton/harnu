@@ -319,9 +319,33 @@ describe('reprobe (AC-5)', () => {
     })
   })
 
-  it('treats a scanned needs-input session as the working the fresh probe reports', async () => {
+  // I5: a running session, however idle, makes dehydrateItem refuse after the docker steps
+  // already ran, so the reprobe refuses it up front. The reason names whether it is new.
+  it('treats a scanned needs-input session as the working the fresh probe reports, and refuses it', async () => {
     const h = harness({ presence: 'working' })
     const b = bundle({ session: 'needs-input' })
+    expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: false, reason: 'session-open' })
+  })
+
+  it('refuses a session that was open-idle at the scan and still is', async () => {
+    const h = harness({ presence: 'open-idle' })
+    const b = bundle({ session: 'open-idle' })
+    expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: false, reason: 'session-open' })
+    expect(h.listStacks).not.toHaveBeenCalled()
+  })
+
+  it('refuses a scanned open-idle session that is working now as changed-since-scan', async () => {
+    const h = harness({ presence: 'working' })
+    const b = bundle({ session: 'open-idle' })
+    expect(await createGcOps(h.deps).reprobe(b)).toEqual({
+      ok: false,
+      reason: 'changed-since-scan'
+    })
+  })
+
+  it('accepts a session that was open-idle at the scan and has closed since', async () => {
+    const h = harness({ presence: 'none' })
+    const b = bundle({ session: 'open-idle' })
     expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: true })
   })
 
