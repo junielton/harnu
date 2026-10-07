@@ -98,7 +98,8 @@ mod: live`, `off`, or `legacy` with the reason), and the System Monitor shows th
 - **The Containers view sends cleaning to Cleanup.** Containers stays the place to inspect and
   start or stop stacks; its clean-up button now opens Cleanup, so there is one place to clean.
   Its settings keep only the stack scan options and the idle clock for stacks that belong to no
-  worktree.
+  worktree. Containers now opens from the **Inspect stacks** link in the Cleanup screen's Docker
+  card.
 - **Branches and folders that are not worktrees** (local and remote branches, hidden folders)
   now appear under "Other leftovers" on the Cleanup screen instead of in the old row list.
 

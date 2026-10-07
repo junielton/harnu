@@ -476,6 +476,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             :volumes="gc.snapshot?.orphanVolumes ?? []"
             :last-cycle="gc.snapshot?.lastCycle ?? null"
             :prefs="prefs"
+            @inspect="ui.openContainers()"
             @toggle="
               (category, value) =>
                 gc.savePrefs({ categories: { ...prefs!.categories, [category]: value } })

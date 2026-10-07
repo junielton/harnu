@@ -8449,7 +8449,8 @@ bucket icon, `repo › worktree` + branch (11px mono `--text-4`), the **removal 
 #### Docker card
 
 Its own region under the map (`.dk`, `border-border`, radius 7, `bg-surface`): header `container` icon,
-title, "{n} stacks in use, never touched" note. Three blocks (Corpse triple, `min-width: 200px`): **build
+title, and an **Inspect stacks** text link (11px/500 `--text-2`, right-aligned) that opens the Containers
+inspector — the only in-app door to it now that the Containers footer pill is gone. (The mockup's "{n} stacks in use, never touched" note is omitted: the snapshot carries no such count.) Three blocks (Corpse triple, `min-width: 200px`): **build
 cache**, **dangling images**, **orphan volumes** — name, size right, a one-line sub, a toggle
 (`ToggleSwitch`) bound to `categories.dockerCache` / `categories.volumes`. The orphan-volumes block
 carries the Warning badge "can't be restored" and the project name of each volume. The engine reports the

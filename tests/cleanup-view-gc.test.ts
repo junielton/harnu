@@ -4,6 +4,7 @@ import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import CleanupView from '../src/renderer/src/components/CleanupView.vue'
 import { i18n } from '@renderer/i18n'
+import { useUiStore } from '../src/renderer/src/stores/ui'
 import { defaultGcPrefs, type GcPrefs } from '../src/main/gc/gc-prefs'
 import type { GcJobInfo, GcSnapshot } from '../src/main/gc/gc-wire'
 import { GIB, MIB, decideReason, snapshotOf, volume, wt } from './helpers/cleanup-gc-fixtures'
@@ -327,5 +328,14 @@ describe('Cleanup screen — all clean', () => {
     await mountView()
     expect(dom('[data-testid="cleanup-all-clean"]').exists()).toBe(true)
     expect(dom('[data-testid="hero-empty"]').exists()).toBe(true)
+  })
+})
+
+describe('Cleanup screen — one door', () => {
+  it('"Inspect stacks" in the Docker card opens the Containers inspector', async () => {
+    install(snap())
+    await mountView()
+    await dom('[data-testid="docker-inspect"]').trigger('click')
+    expect(useUiStore().activeView?.id).toBe('containers')
   })
 })
