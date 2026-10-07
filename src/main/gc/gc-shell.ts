@@ -162,6 +162,19 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       // cleanItem refuses a non-harvestable item at its first guard, after the docker steps
       // would already have run, so refuse here before anything destructive.
       if (item.verdict !== 'harvestable') return { ok: false, reason: 'not-harvestable' }
+      // A strong merge proof covers the scanned tip only. With no tip recorded there is
+      // nothing to hold HEAD against, so the clean cannot be shown to match the proof.
+      if (typeof b.localTip !== 'string') return { ok: false, reason: 'tip-unknown' }
+      // Re-check the grace against the clock now, not the one the bucket was decided on: a
+      // bundle bucketed long ago, or built by hand, must not clean on a stale decision. No
+      // sign of life, or no recorded grace window, cannot show the window elapsed either.
+      if (
+        b.lastSignOfLifeAt === null ||
+        b.graceDays === undefined ||
+        deps.executor.now() - b.lastSignOfLifeAt < b.graceDays * 86_400_000
+      ) {
+        return { ok: false, reason: 'grace-not-elapsed' }
+      }
       const path = item.path
       if (!path) return { ok: false, reason: 'changed-since-scan' }
       const root = normalizePath(path, platform)
@@ -177,12 +190,10 @@ export function createGcOps(deps: GcShellDeps): GcOps {
           const changed = sameState(presence) !== sameState(b.session)
           return { ok: false, reason: changed ? 'changed-since-scan' : 'session-open' }
         }
-        // A strong merge proof covers the scanned tip only. New commits since then, or a
-        // HEAD we cannot read, mean the proof no longer describes what we would archive.
-        if (typeof b.localTip === 'string') {
-          const head = await deps.headOf(path).catch(() => null)
-          if (head !== b.localTip) return { ok: false, reason: 'changed-since-scan' }
-        }
+        // New commits since the scan, or a HEAD we cannot read, mean the merge proof no
+        // longer describes what we would archive.
+        const head = await deps.headOf(path).catch(() => null)
+        if (head !== b.localTip) return { ok: false, reason: 'changed-since-scan' }
         const { stacks } = await deps.listStacks()
         // Exclusivity is recomputed, not trusted: every container of every stack we are
         // about to remove must still run from inside this worktree and nowhere else.
