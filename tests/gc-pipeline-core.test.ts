@@ -364,6 +364,35 @@ describe('runBundle — only a proven corpse runs (delta 2, item 2)', () => {
   })
 })
 
+describe('runBundle — volumes skipped at execution time (delta 3, item 5b)', () => {
+  const inUse = [{ name: 'pgdata', reason: 'volume-in-use' as const }]
+
+  it('reports the volumes removeVolumes skipped, and the item still cleans', async () => {
+    const f = fakeOps({ removeVolumes: async () => ({ skipped: inUse }) })
+    const r = await runBundle(bundle('a', { ownedVolumes: ['pgdata', 'redis'] }), f.ops, OPTS)
+    expect(r).toMatchObject({ ok: true, haltedAt: null, skippedVolumes: inUse })
+    expect(f.calls).toEqual(FULL)
+  })
+
+  it('keeps the skipped volumes on a later failure', async () => {
+    const f = fakeOps({
+      removeVolumes: async () => ({ skipped: inUse }),
+      cleanGit: boom('disk full')
+    })
+    const r = await runBundle(bundle('a'), f.ops, OPTS)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'archive', skippedVolumes: inUse })
+  })
+
+  it('leaves skippedVolumes out when nothing was skipped', async () => {
+    for (const result of [undefined, { skipped: [] }]) {
+      const f = fakeOps({ removeVolumes: async () => result })
+      const r = await runBundle(bundle('a'), f.ops, OPTS)
+      expect(r.ok).toBe(true)
+      expect('skippedVolumes' in r).toBe(false)
+    }
+  })
+})
+
 describe('runBundle — skipped steps', () => {
   it('removeVolumes:false skips the volume step and runs everything else', async () => {
     const f = fakeOps()
