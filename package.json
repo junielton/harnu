@@ -1,6 +1,6 @@
 {
   "name": "harnu",
-  "version": "0.3.46-t389.1",
+  "version": "0.3.46",
   "description": "Harnu — manage every Claude Code session in one place. A desktop GUI for Claude Code.",
   "main": "./out/main/index.js",
   "author": "Junielton",
