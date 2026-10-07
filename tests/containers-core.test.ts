@@ -463,6 +463,97 @@ describe('verdicts (PRD §3.3)', () => {
       expect(s.liveSessionId).toBeNull()
     })
   })
+
+  describe('inheritedBucket (workspace GC): a worktree stack inherits its worktree bucket', () => {
+    const attr = (folderKind: Attribution['folderKind']): Attribution => ({
+      rung: 'compose-label',
+      path: WT,
+      folderPath: WT,
+      folderKind
+    })
+    const idle = { liveSession: false, unusedForMs: 0, zombieAfterDays: 2 }
+
+    it('corpse → zombie immediately, even with a zero idle clock', () => {
+      expect(
+        classifyStack({ ...idle, attribution: attr('worktree'), inheritedBucket: 'corpse' })
+      ).toBe('zombie')
+    })
+
+    it('corpse → zombie even when the idle clock is unmeasurable', () => {
+      expect(
+        classifyStack({
+          ...idle,
+          unusedForMs: null,
+          attribution: attr('worktree'),
+          inheritedBucket: 'corpse'
+        })
+      ).toBe('zombie')
+    })
+
+    it('alive → active, even when the idle clock is long past the threshold', () => {
+      expect(
+        classifyStack({
+          ...idle,
+          unusedForMs: 30 * DAY,
+          attribution: attr('worktree'),
+          inheritedBucket: 'alive'
+        })
+      ).toBe('active')
+    })
+
+    it('decide → pending, even when the idle clock is long past the threshold', () => {
+      expect(
+        classifyStack({
+          ...idle,
+          unusedForMs: 30 * DAY,
+          attribution: attr('worktree'),
+          inheritedBucket: 'decide'
+        })
+      ).toBe('pending')
+    })
+
+    it('a plain folder ignores it', () => {
+      for (const inheritedBucket of ['corpse', 'decide', 'alive'] as const) {
+        expect(classifyStack({ ...idle, attribution: attr('plain'), inheritedBucket })).toBe(
+          'protected'
+        )
+      }
+    })
+
+    it('a main checkout ignores it too', () => {
+      expect(
+        classifyStack({ ...idle, attribution: attr('main-checkout'), inheritedBucket: 'corpse' })
+      ).toBe('protected')
+    })
+
+    it('unknown and orphan still beat it', () => {
+      const none: Attribution = { rung: 'none', path: null, folderPath: null, folderKind: null }
+      expect(classifyStack({ ...idle, attribution: none, inheritedBucket: 'corpse' })).toBe(
+        'unknown'
+      )
+      expect(classifyStack({ ...idle, attribution: attr('gone'), inheritedBucket: 'corpse' })).toBe(
+        'orphan'
+      )
+    })
+
+    it('a live session still wins over a corpse bucket (alive beats everything)', () => {
+      expect(
+        classifyStack({
+          ...idle,
+          liveSession: true,
+          attribution: attr('worktree'),
+          inheritedBucket: 'corpse'
+        })
+      ).toBe('active')
+    })
+
+    it('no inheritedBucket leaves the idle clock in charge (existing behavior)', () => {
+      expect(classifyStack({ ...idle, attribution: attr('worktree') })).toBe('pending')
+      expect(classifyStack({ ...idle, unusedForMs: 3 * DAY, attribution: attr('worktree') })).toBe(
+        'zombie'
+      )
+    })
+  })
 })
 
 describe('the "unused for" clock (PRD §3.3, provisional)', () => {

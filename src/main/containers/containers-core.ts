@@ -479,11 +479,18 @@ export interface VerdictFacts {
   liveSession: boolean
   unusedForMs: number | null
   zombieAfterDays: number
+  /**
+   * The attributed worktree's workspace-GC bucket. Applies to `worktree` folders
+   * only: it replaces the idle clock, which stays in charge of every other stack.
+   */
+  inheritedBucket?: 'corpse' | 'decide' | 'alive'
 }
 
 /**
  * PRD §3.3, evaluated in order; the first verdict that applies wins. A stack
  * with no measurable clock stays `pending`: an unproven zombie is left alone.
+ * A worktree stack with an `inheritedBucket` takes its verdict from that bucket
+ * instead of the idle clock.
  */
 export function classifyStack(f: VerdictFacts): Verdict {
   const kind = f.attribution.folderKind
@@ -491,6 +498,10 @@ export function classifyStack(f: VerdictFacts): Verdict {
   if (kind === 'gone') return 'orphan'
   if (f.liveSession) return 'active'
   if (kind === 'main-checkout' || kind === 'plain') return 'protected'
+  if (kind === 'worktree' && f.inheritedBucket !== undefined) {
+    if (f.inheritedBucket === 'alive') return 'active'
+    return f.inheritedBucket === 'corpse' ? 'zombie' : 'pending'
+  }
   if (f.unusedForMs === null || f.unusedForMs < f.zombieAfterDays * DAY_MS) return 'pending'
   return 'zombie'
 }
