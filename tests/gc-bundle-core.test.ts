@@ -379,6 +379,12 @@ describe('bucketOf — rule precedence', () => {
     expect(r.bucket).toBe('alive')
   })
 
+  it('an open branch with an open-idle session is alive: rule 3 comes before rule 6', () => {
+    const open: FateResult = { fate: 'open', signal: null, strong: false }
+    const r = bucketOf(corpseFacts({ fate: open, session: 'open-idle' }), NOW, GRACE_DAYS)
+    expect(r).toEqual({ bucket: 'alive', reason: null })
+  })
+
   it('open-idle-session beats shared-stack', () => {
     const r = bucketOf(
       corpseFacts({ session: 'open-idle', sharedStackIds: ['app'] }),
@@ -961,6 +967,40 @@ describe('buildBundles — stack attribution', () => {
       expect(b.stackIds).toEqual([])
       expect(b.sharedStackIds).toEqual(['app'])
       expect(b.ownedVolumes).toEqual([])
+      expect(b.bucket).toBe('decide')
+      expect(b.reason?.code).toBe('shared-stack')
+    }
+  })
+
+  it('nested worktrees that both fully contain one stack share it, so neither owns it', () => {
+    const nestedPath = `${WT_A}/nested`
+    const outer = item()
+    const nested = item({
+      path: nestedPath,
+      id: `${REPO}::worktree::${nestedPath}`,
+      branch: 'feat/slug-nested'
+    })
+    // Inside the nested worktree, and therefore inside the outer one too.
+    const db = composeContainer('db', 'app', `${nestedPath}/deploy`)
+    const out = build({
+      items: [outer, nested],
+      fateInputs: new Map([
+        [outer.id, { facts: facts({ ancestorOfDefault: true }), localTip: TIP_A }],
+        [
+          nested.id,
+          {
+            facts: facts({ path: nestedPath, branch: 'feat/slug-nested', ancestorOfDefault: true }),
+            localTip: TIP_B
+          }
+        ]
+      ]),
+      stacks: [stack('app', [db])],
+      containers: [db]
+    })
+    expect(out).toHaveLength(2)
+    for (const b of out) {
+      expect(b.stackIds).toEqual([])
+      expect(b.sharedStackIds).toContain('app')
       expect(b.bucket).toBe('decide')
       expect(b.reason?.code).toBe('shared-stack')
     }
