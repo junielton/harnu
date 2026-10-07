@@ -7,7 +7,12 @@ vi.mock('../src/main/reaper/executor-core', async (importOriginal) => {
   return { ...real, cleanItem: vi.fn(real.cleanItem) }
 })
 
-import { createGcOps, presenceFromSets, type GcShellDeps } from '../src/main/gc/gc-shell'
+import {
+  createGcOps,
+  dockerIsUnavailable,
+  presenceFromSets,
+  type GcShellDeps
+} from '../src/main/gc/gc-shell'
 import { GcStepError, runBundle } from '../src/main/gc/pipeline-core'
 import { buildBundles, type SessionPresence, type WorktreeBundle } from '../src/main/gc/bundle-core'
 import { cleanItem, type ExecutorDeps } from '../src/main/reaper/executor-core'
@@ -197,6 +202,60 @@ describe('presenceFromSets', () => {
 
   it('maps a folder with no PTY to none', () => {
     expect(presenceFromSets('/nobody', sets)).toBe('none')
+  })
+})
+
+describe('dockerIsUnavailable', () => {
+  const withProps = (message: string, props: Record<string, unknown>): Error =>
+    Object.assign(new Error(message), props)
+
+  it('is true when the docker CLI is not installed', () => {
+    expect(dockerIsUnavailable(withProps('spawn docker ENOENT', { code: 'ENOENT' }))).toBe(true)
+  })
+
+  it.each([
+    'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?',
+    'error during connect: Get "http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/v1.47/containers/json": open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.'
+  ])('is true when the daemon is down, read from stderr: %s', (stderr) => {
+    expect(dockerIsUnavailable(withProps('Command failed: docker ps', { code: 1, stderr }))).toBe(
+      true
+    )
+  })
+
+  it('is true when the daemon-down text is only in the message', () => {
+    expect(
+      dockerIsUnavailable(new Error('Command failed: docker ps\nIs the docker daemon running?'))
+    ).toBe(true)
+  })
+
+  it('is false for a killed (timed out) call, even when its stderr reads like a daemon-down error', () => {
+    expect(
+      dockerIsUnavailable(
+        withProps('Command failed: docker inspect', {
+          killed: true,
+          signal: 'SIGTERM',
+          code: null,
+          stderr: 'error during connect: context deadline exceeded'
+        })
+      )
+    ).toBe(false)
+  })
+
+  it('is false for any other docker failure', () => {
+    expect(
+      dockerIsUnavailable(
+        withProps('Command failed', {
+          code: 1,
+          stderr: 'permission denied while trying to connect'
+        })
+      )
+    ).toBe(false)
+  })
+
+  it('is false for a plain Error and for a non-error value', () => {
+    expect(dockerIsUnavailable(new Error('boom'))).toBe(false)
+    expect(dockerIsUnavailable('boom')).toBe(false)
+    expect(dockerIsUnavailable(null)).toBe(false)
   })
 })
 

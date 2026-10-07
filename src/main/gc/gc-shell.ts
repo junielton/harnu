@@ -48,6 +48,29 @@ export function presenceFromSets(
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
+const DAEMON_DOWN =
+  /cannot connect to the docker daemon|is the docker daemon running|error during connect/i
+
+/**
+ * Whether a failed docker call means docker is genuinely absent, so nothing can be running:
+ * the CLI is not installed (ENOENT) or the daemon is down. Anything else, a timeout above
+ * all, says nothing about what runs, so the listing must fail and the reprobe refuse.
+ */
+export function dockerIsUnavailable(err: unknown): boolean {
+  const e = err as {
+    code?: unknown
+    killed?: unknown
+    signal?: unknown
+    stderr?: unknown
+    message?: unknown
+  } | null
+  if (!e || typeof e !== 'object') return false
+  if (e.code === 'ENOENT') return true
+  // A killed call (execFile's timeout) can carry partial output; it never proves absence.
+  if (e.killed === true || (typeof e.signal === 'string' && e.signal)) return false
+  return [e.stderr, e.message].some((t) => typeof t === 'string' && DAEMON_DOWN.test(t))
+}
+
 /** `working` and `needs-input` are one state to the fresh probe, so the scan's either matches. */
 const sameState = (p: SessionPresence): 'busy' | SessionPresence =>
   p === 'working' || p === 'needs-input' ? 'busy' : p
@@ -241,10 +264,12 @@ export async function defaultGcShellDeps(
     listStacks: async () => {
       try {
         return { stacks: groupStacks(await shell.inspectAll()) }
-      } catch {
+      } catch (err) {
         // No docker means no stacks to stop. A bundle that had stacks then fails the
-        // reprobe's stack comparison and is skipped; one that had none still cleans.
-        return { stacks: [] }
+        // reprobe's stack comparison and is skipped; one that had none still cleans. Any
+        // other failure rethrows, so the reprobe reports probe-failed instead of "none".
+        if (dockerIsUnavailable(err)) return { stacks: [] }
+        throw err
       }
     },
     presenceOf: async (path) => presenceFromSets(path, await computeFolderSets())
