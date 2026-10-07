@@ -140,6 +140,19 @@ describe('reprobe over the default deps', () => {
     expect(r.ok === false && r.reason).toMatch(/^probe-failed/)
   })
 
+  it.each(['keep', 'neverClean'] as const)(
+    'refuses a bundle with %s set as protected-now, before any docker call',
+    async (flag) => {
+      h.inspectAll.mockResolvedValue([])
+      const ops = createGcOps(await defaultGcShellDeps(() => null))
+      expect(await ops.reprobe({ ...harvestable(), [flag]: true })).toEqual({
+        ok: false,
+        reason: 'protected-now'
+      })
+      expect(h.inspectAll).not.toHaveBeenCalled()
+    }
+  )
+
   it('refuses as docker-unavailable when the daemon is down', async () => {
     h.inspectAll.mockRejectedValue(daemonDownError())
     const ops = createGcOps(await defaultGcShellDeps(() => null))
