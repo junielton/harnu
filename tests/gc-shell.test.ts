@@ -230,6 +230,42 @@ describe('dockerIsUnavailable', () => {
     )
   })
 
+  const DOCKER_29_DOWN =
+    'failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory'
+
+  it('is true for the Docker 29 stopped-daemon wording, read from stderr', () => {
+    expect(
+      dockerIsUnavailable(
+        withProps('Command failed: docker ps', { code: 1, stderr: DOCKER_29_DOWN })
+      )
+    ).toBe(true)
+  })
+
+  it('is true for the Docker 29 stopped-daemon wording, read from the message', () => {
+    expect(dockerIsUnavailable(new Error(`Command failed: docker ps\n${DOCKER_29_DOWN}`))).toBe(
+      true
+    )
+  })
+
+  it('matches the Docker 29 wording case-insensitively', () => {
+    expect(
+      dockerIsUnavailable(withProps('x', { code: 1, stderr: DOCKER_29_DOWN.toUpperCase() }))
+    ).toBe(true)
+  })
+
+  it('is false for a killed call even when it carries the Docker 29 wording', () => {
+    expect(
+      dockerIsUnavailable(
+        withProps('Command failed: docker ps', {
+          killed: true,
+          signal: 'SIGTERM',
+          code: null,
+          stderr: DOCKER_29_DOWN
+        })
+      )
+    ).toBe(false)
+  })
+
   it('is true when the daemon-down text is only in the message', () => {
     expect(
       dockerIsUnavailable(new Error('Command failed: docker ps\nIs the docker daemon running?'))

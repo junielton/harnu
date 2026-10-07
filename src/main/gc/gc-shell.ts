@@ -51,7 +51,7 @@ export function presenceFromSets(
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
 const DAEMON_DOWN =
-  /cannot connect to the docker daemon|is the docker daemon running|error during connect/i
+  /cannot connect to the docker daemon|is the docker daemon running|error during connect|failed to connect to the docker API/i
 
 /**
  * Whether a failed docker call means docker is genuinely absent, so nothing can be running:
