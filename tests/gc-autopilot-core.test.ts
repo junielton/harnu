@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { planCycle } from '../src/main/gc/autopilot-core'
+import {
+  FAILURE_TTL_MS,
+  applyFailures,
+  planCycle,
+  pruneFailures,
+  refusalFor
+} from '../src/main/gc/autopilot-core'
 import { defaultGcPrefs, type GcPrefs } from '../src/main/gc/gc-prefs'
 import { bundle, DAY, NOW, reapItem } from './gc-fixtures'
 
@@ -141,5 +147,84 @@ describe('planCycle: clean mode', () => {
     const input = [corpse('new', 3), corpse('old', 30)]
     planCycle(input, prefs())
     expect(input.map((b) => b.item.path)).toEqual(['/ws/wt/new', '/ws/wt/old'])
+  })
+})
+
+describe('refusalFor: what a manual clean may take (AC-8)', () => {
+  const confirm = { confirmDecide: true }
+  const none = { confirmDecide: false }
+
+  it('lets a corpse through without a confirmation', () => {
+    expect(refusalFor(corpse('a', 5), prefs(), none)).toBeNull()
+  })
+
+  it('refuses a decide item until the operator confirms', () => {
+    const d = bundle('/ws/wt/d', 'decide')
+    expect(refusalFor(d, prefs(), none)).toBe('needs-confirmation')
+    expect(refusalFor(d, prefs(), confirm)).toBeNull()
+  })
+
+  it('refuses an alive bundle, confirmed or not', () => {
+    const l = bundle('/ws/wt/l', 'alive')
+    expect(refusalFor(l, prefs(), none)).toBe('alive')
+    expect(refusalFor(l, prefs(), confirm)).toBe('alive')
+  })
+
+  it('refuses a main checkout, even a confirmed decide', () => {
+    const m = bundle('/ws/wt/m', 'decide', { isMainCheckout: true })
+    expect(refusalFor(m, prefs(), confirm)).toBe('main-checkout')
+  })
+
+  it('refuses a neverClean path by the CURRENT prefs, not the ones at scan time', () => {
+    const b = corpse('a', 5)
+    expect(refusalFor(b, prefs({ neverClean: ['/ws/wt/a'] }), confirm)).toBe('never-clean')
+    expect(refusalFor(bundle('/ws/wt/b', 'decide', { neverClean: true }), prefs(), confirm)).toBe(
+      'never-clean'
+    )
+  })
+
+  it('refuses a kept bundle until it is un-kept', () => {
+    expect(refusalFor(bundle('/ws/wt/k', 'alive', { keep: true }), prefs(), confirm)).toBe('kept')
+  })
+
+  it('refuses a detached worktree: the executor cannot clean one', () => {
+    const d = bundle('/ws/wt/x', 'decide', {
+      item: reapItem('/ws/wt/x', { kind: 'detached-worktree' })
+    })
+    expect(refusalFor(d, prefs(), confirm)).toBe('unsupported-kind')
+  })
+})
+
+describe('applyFailures / pruneFailures (spec §4)', () => {
+  const failure = { step: 'trash', error: 'EBUSY', at: NOW }
+
+  it('turns a failed corpse into a cleanup-failed decision', () => {
+    const [b] = applyFailures([corpse('a', 5)], new Map([[corpse('a', 5).item.id, failure]]))
+    expect(b).toMatchObject({
+      bucket: 'decide',
+      reason: { code: 'cleanup-failed', detail: 'Cleanup stopped at trash: EBUSY' }
+    })
+  })
+
+  it('leaves other bundles and non-corpses alone', () => {
+    const a = corpse('a', 5)
+    const d = bundle('/ws/wt/d', 'decide')
+    const failures = new Map([
+      [d.item.id, failure],
+      ['unrelated', failure]
+    ])
+    expect(applyFailures([a, d], failures)).toEqual([a, d])
+  })
+
+  it('prunes missing worktrees and failures older than a day', () => {
+    const a = corpse('a', 5)
+    const b = corpse('b', 5)
+    const failures = new Map([
+      [a.item.id, { ...failure, at: NOW - FAILURE_TTL_MS - 1 }],
+      [b.item.id, failure],
+      ['gone', failure]
+    ])
+    pruneFailures(failures, [a, b], NOW)
+    expect([...failures.keys()]).toEqual([b.item.id])
   })
 })

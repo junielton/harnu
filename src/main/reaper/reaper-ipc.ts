@@ -170,8 +170,25 @@ export interface HarvestableAlert {
   reclaimableBytes: number
 }
 
+/**
+ * The handle the workspace GC uses to ride the Reaper timer instead of owning a second one:
+ * one clock, one scan, then the cycle in the same tick.
+ */
+export interface ReaperControl {
+  /** Runs after every scheduled scan, inside the same tick (single-flighted with it). */
+  setAfterScan(hook: (() => Promise<void>) | null): void
+  /** While this answers true, a scheduled tick is skipped (a cleaning job is running). */
+  setBusy(check: (() => boolean) | null): void
+  /** Clamped and persisted like any Reaper pref; reschedules the timer. */
+  setIntervalMs(intervalMs: number): Promise<void>
+  /** Epoch ms of the next scheduled tick, or null while the background scan is off. */
+  nextTickAt(): number | null
+  /** Whether the background scan (and with it the autopilot) is switched on. */
+  autoScan(): boolean
+}
+
 /** Register the Reaper IPC handlers. */
-export function registerReaperHandlers(getWindow: () => BrowserWindow | null): void {
+export function registerReaperHandlers(getWindow: () => BrowserWindow | null): ReaperControl {
   const deps = buildDeps(getWindow)
   const hydrationDeps = buildHydrationDeps()
   // Dehydrate/rehydrate run one at a time, and never while a scan walks the same
@@ -199,6 +216,9 @@ export function registerReaperHandlers(getWindow: () => BrowserWindow | null): v
   let initialTimer: ReturnType<typeof setTimeout> | null = null
   let intervalTimer: ReturnType<typeof setInterval> | null = null
   let tickRunning = false
+  let afterScan: (() => Promise<void>) | null = null
+  let gcBusy: (() => boolean) | null = null
+  let nextAt: number | null = null
 
   const pushUpdate = (snap: ReaperSnapshot): void => {
     const win = getWindow()
@@ -240,6 +260,7 @@ export function registerReaperHandlers(getWindow: () => BrowserWindow | null): v
   const runScheduledTick = async (): Promise<void> => {
     if (tickRunning) return // single-flight: never stack a tick on a slow scan
     if (opsPending > 0) return // a dehydrate/rehydrate is walking these trees; next tick
+    if (gcBusy?.()) return // a cleaning job is removing worktrees; scan after it
     tickRunning = true
     try {
       const prev = lastSnapshot()
@@ -252,6 +273,15 @@ export function registerReaperHandlers(getWindow: () => BrowserWindow | null): v
         const reclaimableBytes = grown.reduce((sum, item) => sum + (item.diskBytes ?? 0), 0)
         pushHarvestable({ count: grown.length, reclaimableBytes })
       }
+      // Workspace GC: the cycle rides this tick, so there is still exactly one timer. A
+      // failing cycle must never take the scan schedule down with it.
+      if (afterScan) {
+        try {
+          await afterScan()
+        } catch (err) {
+          console.error('[reaper] post-scan hook failed', err)
+        }
+      }
     } finally {
       tickRunning = false
     }
@@ -260,11 +290,17 @@ export function registerReaperHandlers(getWindow: () => BrowserWindow | null): v
   /** (Re)arms the timer pair from `currentPrefs`. A no-op scan schedule when `autoScan` is off. */
   const scheduleTicks = (): void => {
     clearSchedule()
+    nextAt = null
     if (!currentPrefs.autoScan) return
+    nextAt = Date.now() + INITIAL_DELAY_MS
     initialTimer = setTimeout(() => {
       initialTimer = null
       void runScheduledTick()
-      intervalTimer = setInterval(() => void runScheduledTick(), currentPrefs.intervalMs)
+      nextAt = Date.now() + currentPrefs.intervalMs
+      intervalTimer = setInterval(() => {
+        nextAt = Date.now() + currentPrefs.intervalMs
+        void runScheduledTick()
+      }, currentPrefs.intervalMs)
     }, INITIAL_DELAY_MS)
   }
 
@@ -377,4 +413,20 @@ export function registerReaperHandlers(getWindow: () => BrowserWindow | null): v
     currentPrefs = await readPrefs()
     scheduleTicks()
   })()
+
+  return {
+    setAfterScan: (hook) => {
+      afterScan = hook
+    },
+    setBusy: (check) => {
+      gcBusy = check
+    },
+    setIntervalMs: async (intervalMs) => {
+      currentPrefs = normalizePrefs({ ...currentPrefs, intervalMs })
+      await writePrefs(currentPrefs)
+      scheduleTicks()
+    },
+    nextTickAt: () => nextAt,
+    autoScan: () => currentPrefs.autoScan
+  }
 }

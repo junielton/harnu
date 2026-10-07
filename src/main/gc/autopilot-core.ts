@@ -108,3 +108,29 @@ export function applyFailures(
     }
   })
 }
+
+// ---- manual cleaning: what the operator's click may take -----------------------------------
+
+export type RefusalCode =
+  'main-checkout' | 'never-clean' | 'alive' | 'kept' | 'needs-confirmation' | 'unsupported-kind'
+
+/**
+ * Why a manual `gc:clean` must not touch this bundle, or null when it may proceed. Judged
+ * against the CURRENT prefs, because `neverClean` can change after the snapshot the operator
+ * is looking at. A confirmed Decide item passes; Alive, a main checkout, a neverClean path and
+ * a kept bundle never do. The live-session and changed-stack refusals are the reprobe's.
+ */
+export function refusalFor(
+  b: WorktreeBundle,
+  prefs: GcPrefs,
+  opts: { confirmDecide: boolean }
+): RefusalCode | null {
+  if (b.isMainCheckout) return 'main-checkout'
+  if (isNeverClean(b, prefs)) return 'never-clean'
+  if (b.keep) return 'kept'
+  if (b.bucket === 'alive') return 'alive'
+  // The cleanup executor skips the folder of a detached worktree, so "success" would be a lie.
+  if (b.item.kind !== 'worktree' && b.item.kind !== 'hidden-folder') return 'unsupported-kind'
+  if (b.bucket === 'decide' && !opts.confirmDecide) return 'needs-confirmation'
+  return null
+}
