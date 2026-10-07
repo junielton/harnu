@@ -157,6 +157,11 @@ function volumeMount(name: string): InspectedContainer['mounts'][number] {
   return { type: 'volume', source: `/var/lib/docker/volumes/${name}/_data`, name }
 }
 
+/** Volume facts labelling every named volume with one compose project. */
+function labelled(project: string, ...names: string[]): Map<string, VolumeFact> {
+  return new Map(names.map((name) => [name, { sizeBytes: 1, project }]))
+}
+
 function stack(id: string, containers: InspectedContainer[]): StackGroup {
   return { id, name: id, kind: 'compose', project: id, containers }
 }
@@ -173,6 +178,7 @@ interface BuildOver {
   harnuStoppedAt?: ReadonlyMap<string, number>
   volumes?: ReadonlyMap<string, VolumeFact>
   knownFolders?: string[]
+  protectedProjects?: Set<string>
 }
 
 /** Inputs for a single worktree at WT_A whose branch is merged by ancestry. */
@@ -198,8 +204,9 @@ function build(over: BuildOver = {}): ReturnType<typeof buildBundles> {
     now: NOW,
     graceDays: GRACE_DAYS,
     ...(over.harnuStoppedAt ? { harnuStoppedAt: over.harnuStoppedAt } : {}),
-    ...(over.volumes ? { volumes: over.volumes } : {}),
-    ...(over.knownFolders ? { knownFolders: over.knownFolders } : {})
+    volumes: over.volumes ?? new Map(),
+    knownFolders: over.knownFolders ?? [],
+    protectedProjects: over.protectedProjects ?? new Set()
   })
 }
 
@@ -495,7 +502,7 @@ describe('composeDefaultProject', () => {
 describe('ownedVolumes', () => {
   it('lists the named volumes the bundle stacks mount', () => {
     const db = composeContainer('db', 'app', WT_A, { mounts: [volumeMount('pgdata')] })
-    expect(ownedVolumes([stack('app', [db])], [db])).toEqual(['pgdata'])
+    expect(ownedVolumes([stack('app', [db])], [db], labelled('app', 'pgdata'))).toEqual(['pgdata'])
   })
 
   it('excludes a volume also mounted by a container outside the bundle (Review Focus 3)', () => {
@@ -505,27 +512,31 @@ describe('ownedVolumes', () => {
     const other = composeContainer('other-web', 'other', ELSEWHERE, {
       mounts: [volumeMount('shared-cache')]
     })
-    expect(ownedVolumes([stack('app', [db])], [db, other])).toEqual(['pgdata'])
+    expect(
+      ownedVolumes([stack('app', [db])], [db, other], labelled('app', 'pgdata', 'shared-cache'))
+    ).toEqual(['pgdata'])
   })
 
   it('keeps a volume shared only between containers inside the bundle', () => {
     const db = composeContainer('db', 'app', WT_A, { mounts: [volumeMount('data')] })
     const web = composeContainer('web', 'app', WT_A, { mounts: [volumeMount('data')] })
-    expect(ownedVolumes([stack('app', [db, web])], [db, web])).toEqual(['data'])
+    expect(ownedVolumes([stack('app', [db, web])], [db, web], labelled('app', 'data'))).toEqual([
+      'data'
+    ])
   })
 
   it('never reports a bind mount as a volume', () => {
     const db = composeContainer('db', 'app', WT_A, {
       mounts: [{ type: 'bind', source: '/ws/org/proj/data', name: null }, volumeMount('pgdata')]
     })
-    expect(ownedVolumes([stack('app', [db])], [db])).toEqual(['pgdata'])
+    expect(ownedVolumes([stack('app', [db])], [db], labelled('app', 'pgdata'))).toEqual(['pgdata'])
   })
 
   it('returns nothing for a stack with only bind mounts', () => {
     const web = composeContainer('web', 'app', WT_A, {
       mounts: [{ type: 'bind', source: '/ws/org/proj/code', name: null }]
     })
-    expect(ownedVolumes([stack('app', [web])], [web])).toEqual([])
+    expect(ownedVolumes([stack('app', [web])], [web], new Map())).toEqual([])
   })
 
   it('sorts and de-duplicates', () => {
@@ -535,30 +546,29 @@ describe('ownedVolumes', () => {
     const b = composeContainer('b', 'app', WT_A, {
       mounts: [volumeMount('alpha'), volumeMount('mid')]
     })
-    expect(ownedVolumes([stack('app', [a, b])], [a, b])).toEqual(['alpha', 'mid', 'zeta'])
+    expect(
+      ownedVolumes([stack('app', [a, b])], [a, b], labelled('app', 'alpha', 'mid', 'zeta'))
+    ).toEqual(['alpha', 'mid', 'zeta'])
   })
 
-  describe('with volume facts (the cross-project rule buildSnapshot applies)', () => {
+  describe('volume facts (fail closed on the project label, delta 3 addendum)', () => {
     const db = composeContainer('db', 'app', WT_A, {
       mounts: [volumeMount('app_pg'), volumeMount('projb_pg'), volumeMount('loose')]
     })
     const facts = (entries: Array<[string, string | null]>): Map<string, VolumeFact> =>
       new Map(entries.map(([name, project]) => [name, { sizeBytes: 1, project }]))
 
-    it('drops a volume another compose project created (declared external here)', () => {
+    it('drops a volume another compose project created (declared external here) and an unlabelled one', () => {
       const vols = facts([
         ['app_pg', 'app'],
         ['projb_pg', 'projb'],
         ['loose', null]
       ])
-      expect(ownedVolumes([stack('app', [db])], [db], vols)).toEqual(['app_pg', 'loose'])
+      expect(ownedVolumes([stack('app', [db])], [db], vols)).toEqual(['app_pg'])
     })
 
-    it('keeps a volume with no fact, as buildSnapshot does', () => {
-      expect(ownedVolumes([stack('app', [db])], [db], facts([['projb_pg', 'projb']]))).toEqual([
-        'app_pg',
-        'loose'
-      ])
+    it('drops a volume with no fact, unlike buildSnapshot, which keeps it', () => {
+      expect(ownedVolumes([stack('app', [db])], [db], facts([['projb_pg', 'projb']]))).toEqual([])
     })
 
     it('drops a labelled volume a standalone (project-less) stack mounts', () => {
@@ -579,9 +589,13 @@ describe('ownedVolumes', () => {
         ownedVolumes(
           [stack('app', [db]), stack('web', [web])],
           [db, web],
-          facts([['app_pg', 'app']])
+          facts([
+            ['app_pg', 'app'],
+            ['loose', 'app'],
+            ['projb_pg', 'projb']
+          ])
         )
-      ).toEqual(['loose', 'projb_pg'])
+      ).toEqual(['loose'])
     })
   })
 
@@ -598,9 +612,9 @@ describe('ownedVolumes', () => {
       ).toEqual([])
     })
 
-    it('uses the mounting stack project when the volume has no fact', () => {
+    it('drops a volume with no fact, whatever the other folders are', () => {
       const db = composeContainer('db', 'www', WT_A, { mounts: [volumeMount('www_pg')] })
-      expect(ownedVolumes([stack('www', [db])], [db], undefined, [REPO])).toEqual([])
+      expect(ownedVolumes([stack('www', [db])], [db], new Map(), [REPO])).toEqual([])
     })
 
     it('drops a volume whose project a stopped container outside the bundle carries', () => {
@@ -624,11 +638,43 @@ describe('ownedVolumes', () => {
     })
   })
 
+  describe('only a labelled volume of an unprotected project is owned (delta 3, addendum)', () => {
+    const facts = (entries: Array<[string, string | null]>): Map<string, VolumeFact> =>
+      new Map(entries.map(([name, project]) => [name, { sizeBytes: 1, project }]))
+    const db = composeContainer('db', 'app', WT_A, { mounts: [volumeMount('app_pg')] })
+
+    it('drops a volume whose project is protected', () => {
+      expect(
+        ownedVolumes([stack('app', [db])], [db], facts([['app_pg', 'app']]), [], new Set(['app']))
+      ).toEqual([])
+    })
+
+    it('drops an unlabelled volume, even one only the bundle stack mounts', () => {
+      expect(ownedVolumes([stack('app', [db])], [db], facts([['app_pg', null]]))).toEqual([])
+    })
+
+    it('drops a volume with no fact at all', () => {
+      expect(ownedVolumes([stack('app', [db])], [db], new Map())).toEqual([])
+    })
+
+    it('keeps a labelled volume of a unique, unprotected project', () => {
+      expect(
+        ownedVolumes(
+          [stack('app', [db])],
+          [db],
+          facts([['app_pg', 'app']]),
+          [REPO],
+          new Set(['www'])
+        )
+      ).toEqual(['app_pg'])
+    })
+  })
+
   it('returns nothing when the bundle has no stacks', () => {
     const other = composeContainer('other-web', 'other', ELSEWHERE, {
       mounts: [volumeMount('pgdata')]
     })
-    expect(ownedVolumes([], [other])).toEqual([])
+    expect(ownedVolumes([], [other], labelled('other', 'pgdata'))).toEqual([])
   })
 })
 
@@ -1029,7 +1075,13 @@ describe('buildBundles — stack attribution', () => {
   it('a stack whose containers all run from the bundle path is exclusive, with its owned volumes', () => {
     const db = composeContainer('db', 'app', WT_A, { mounts: [volumeMount('pgdata')] })
     const web = composeContainer('web', 'app', `${WT_A}/deploy`)
-    const b = only(build({ stacks: [stack('app', [db, web])], containers: [db, web] }))
+    const b = only(
+      build({
+        stacks: [stack('app', [db, web])],
+        containers: [db, web],
+        volumes: labelled('app', 'pgdata')
+      })
+    )
     expect(b.stackIds).toEqual(['app'])
     expect(b.sharedStackIds).toEqual([])
     expect(b.ownedVolumes).toEqual(['pgdata'])
@@ -1256,6 +1308,34 @@ describe('buildBundles — stack attribution', () => {
     expect(b.ownedVolumes).toEqual(['app_pg'])
   })
 
+  describe('protected projects and unlabelled volumes through the builder (delta 3, addendum)', () => {
+    const db = composeContainer('db', 'app', WT_A, {
+      mounts: [volumeMount('app_pg'), volumeMount('loose')]
+    })
+    const volumes = new Map<string, VolumeFact>([
+      ['app_pg', { sizeBytes: 1, project: 'app' }],
+      ['loose', { sizeBytes: 1, project: null }]
+    ])
+
+    it('a volume whose project is protected is not owned', () => {
+      const b = only(
+        build({
+          stacks: [stack('app', [db])],
+          containers: [db],
+          volumes,
+          protectedProjects: new Set(['app'])
+        })
+      )
+      expect(b.stackIds).toEqual(['app'])
+      expect(b.ownedVolumes).toEqual([])
+    })
+
+    it('an unlabelled volume is not owned, a labelled unique one is', () => {
+      const b = only(build({ stacks: [stack('app', [db])], containers: [db], volumes }))
+      expect(b.ownedVolumes).toEqual(['app_pg'])
+    })
+  })
+
   describe('a project shared with another known folder through the builder (delta 3, item 5a)', () => {
     const wwwDb = composeContainer('db', 'www', WT_A, { mounts: [volumeMount('www_pg')] })
 
@@ -1294,7 +1374,8 @@ describe('buildBundles — stack attribution', () => {
       const out = build({
         items: [item(), wtB],
         stacks: [stack('proj-0000-slug-b', [db])],
-        containers: [db]
+        containers: [db],
+        volumes: labelled('proj-0000-slug-b', 'proj-0000-slug-b_pg')
       })
       expect(out.find((b) => b.item.path === WT_A)?.ownedVolumes).toEqual([])
     })
@@ -1303,7 +1384,13 @@ describe('buildBundles — stack attribution', () => {
       const db = composeContainer('db', 'proj-0000-slug-a', WT_A, {
         mounts: [volumeMount('proj-0000-slug-a_pg')]
       })
-      const b = only(build({ stacks: [stack('proj-0000-slug-a', [db])], containers: [db] }))
+      const b = only(
+        build({
+          stacks: [stack('proj-0000-slug-a', [db])],
+          containers: [db],
+          volumes: labelled('proj-0000-slug-a', 'proj-0000-slug-a_pg')
+        })
+      )
       expect(b.ownedVolumes).toEqual(['proj-0000-slug-a_pg'])
     })
   })
@@ -1318,7 +1405,8 @@ describe('buildBundles — stack attribution', () => {
     const b = only(
       build({
         stacks: [stack('app', [db]), stack('other', [other])],
-        containers: [db, other]
+        containers: [db, other],
+        volumes: labelled('app', 'pgdata', 'shared-cache')
       })
     )
     expect(b.stackIds).toEqual(['app'])

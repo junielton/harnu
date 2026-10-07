@@ -1007,7 +1007,10 @@ function scanned(containers: InspectedContainer[]): WorktreeBundle {
     keep: new Set(),
     neverClean: new Set(),
     now: EXEC_NOW,
-    graceDays: GRACE_DAYS
+    graceDays: GRACE_DAYS,
+    volumes: new Map([['deploy_pg', { sizeBytes: 1, project: 'deploy' }]]),
+    knownFolders: [],
+    protectedProjects: new Set()
   })
   expect(out).toHaveLength(1)
   return out[0]!
