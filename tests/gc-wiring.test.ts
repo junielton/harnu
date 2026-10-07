@@ -6,7 +6,6 @@ import { describe, it, expect } from 'vitest'
 // the mutation it exists to catch.
 const read = (p: string): string => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8')
 const ipc = read('src/main/gc/gc-ipc.ts')
-const cycle = read('src/main/gc/gc-cycle.ts')
 const scan = read('src/main/gc/gc-scan-shell.ts')
 const reaper = read('src/main/reaper/reaper-ipc.ts')
 const containersShell = read('src/main/containers/containers-shell.ts')
