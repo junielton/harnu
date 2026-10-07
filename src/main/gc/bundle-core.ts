@@ -11,7 +11,8 @@ import {
   lastContainerEvent,
   normalizePath,
   type InspectedContainer,
-  type StackGroup
+  type StackGroup,
+  type VolumeFact
 } from '../containers/containers-core'
 
 const DAY_MS = 86_400_000
@@ -69,19 +70,32 @@ const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n =
  * Named volumes only the bundle's stacks use. A volume that a container outside the bundle
  * also mounts is never listed: removing it would pull data from under a stack we do not own.
  * Bind mounts have no volume name, so they never qualify.
+ *
+ * With `volumes`, the rule buildSnapshot applies also holds: a volume whose own compose
+ * project label differs from the project of a bundle stack mounting it belongs to that other
+ * project (declared `external` here), even while that project's containers are down. A
+ * missing fact or an unlabelled volume is kept, as buildSnapshot keeps it.
  */
 export function ownedVolumes(
   bundleStacks: readonly StackGroup[],
-  allContainers: readonly InspectedContainer[]
+  allContainers: readonly InspectedContainer[],
+  volumes?: ReadonlyMap<string, VolumeFact>
 ): string[] {
   const inBundle = new Set<string>()
   const names = new Set<string>()
+  const otherProject = new Set<string>()
   for (const s of bundleStacks) {
     for (const c of s.containers) {
       inBundle.add(c.id)
-      for (const m of c.mounts) if (m.type === 'volume' && m.name) names.add(m.name)
+      for (const m of c.mounts) {
+        if (m.type !== 'volume' || !m.name) continue
+        names.add(m.name)
+        const project = volumes?.get(m.name)?.project
+        if (project != null && project !== s.project) otherProject.add(m.name)
+      }
     }
   }
+  for (const name of otherProject) names.delete(name)
   for (const c of allContainers) {
     if (inBundle.has(c.id)) continue
     for (const m of c.mounts) if (m.name) names.delete(m.name)
@@ -183,6 +197,8 @@ export interface BuildBundlesInput {
   graceDays: number
   /** Containers Harnu itself stopped; their stop is not a sign of life. */
   harnuStoppedAt?: ReadonlyMap<string, number>
+  /** Volume facts from `docker system df -v`, for the cross-project rule in ownedVolumes. */
+  volumes?: ReadonlyMap<string, VolumeFact>
 }
 
 /** Merge time from the `pr-merged` checkpoint detail; anything that is not a date is ignored. */
@@ -284,7 +300,7 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
       lastSignOfLifeAt: signs.length > 0 ? Math.max(...signs) : null,
       stackIds: stacks.map((s) => s.id),
       sharedStackIds: shared.get(item.id) ?? [],
-      ownedVolumes: ownedVolumes(stacks, input.containers),
+      ownedVolumes: ownedVolumes(stacks, input.containers, input.volumes),
       depsBytes: item.hydration?.reclaimableBytes ?? null,
       keep: input.keep.has(item.id),
       neverClean: neverClean.has(path) || neverClean.has(normalizePath(item.repoPath, platform)),
