@@ -52,6 +52,26 @@ The **General** tab has a SIDEBAR section that controls how the folder/session l
 
 The alert lives in the other tab: **Settings → General**, in the **OS notifications** group, as **Daily budget alerts**. It is **on by default** and fires at most twice a day — once when you cross 80% of the day's budget, while it is still correctable, and once when you cross 100%. It does not repeat: the crossing is remembered across restarts, so relaunching Harnu mid-afternoon will not replay an alert you already saw, and a new day re-arms both steps. Turning the master **OS notifications** switch off silences it along with everything else.
 
+## Automatic cleanup
+
+The autopilot behind [Cleanup](cleanup.md#automatic-cleanup-the-autopilot) has no settings screen yet; it will join the Cleanup tab in the next Cleanup update. Until then its options are in `gc-prefs.json` in Harnu's settings folder (next to `reaper-prefs.json`), read when Harnu starts and written by Harnu. Edit it with Harnu closed. Values outside a range are clamped; anything unreadable falls back to the default.
+
+| Option                    | Default | Range                 | What it does                                                                                                                            |
+| ------------------------- | ------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `autopilot`               | off     | on / off              | Turns automatic cleaning on. The first cycle after turning it on only reports.                                                          |
+| `firstReportAcknowledged` | no      | yes / no              | Set once you acknowledge the first report; automatic cleaning starts after that.                                                        |
+| `intervalMs`              | 1 hour  | 30 minutes - 24 hours | How often the cycle runs. It is the Cleanup background-scan interval; there is one timer.                                               |
+| `graceDays`               | 2       | 0 - 30                | How long a worktree must be quiet (no session activity, no container start or stop that Harnu did not cause) before it can be a corpse. |
+| `maxItemsPerCycle`        | 20      | 1 - 200               | The most worktrees one cycle cleans.                                                                                                    |
+| `categories.worktrees`    | on      | on / off              | Off: the autopilot cleans no worktrees.                                                                                                 |
+| `categories.volumes`      | on      | on / off              | Off: the autopilot leaves the volumes of a cleaned worktree.                                                                            |
+| `categories.dockerCache`  | on      | on / off              | Off: no build-cache or dangling-image pruning.                                                                                          |
+| `removeVolumes`           | on      | on / off              | Remove the named volumes only a cleaned worktree's stack used. **A removed volume cannot be restored.**                                 |
+| `cacheMaxAgeDays`         | 7       | 1 - 365               | Build cache older than this is pruned.                                                                                                  |
+| `neverClean`              | none    | list of paths         | Repos or worktrees that are never cleaned, automatically or by hand.                                                                    |
+
+The autopilot rides the Cleanup background scan, so it needs **Automatic background scan** (Settings → Cleanup) to stay on. The first time Harnu reads `gc-prefs.json` without one, it starts from your existing Cleanup interval and from the Containers zombie threshold (which becomes the grace period).
+
 ## Hibernation policy
 
 Harnu automatically parks (hibernates) idle sessions to keep memory use in check — see [System Monitor](system-monitor.md) for what a parked session looks like and how to park one on demand. This tab controls the policy behind that:

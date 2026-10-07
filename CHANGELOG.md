@@ -14,6 +14,31 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Added
 
+- **Automatic cleanup of merged worktrees and their Docker stacks.** Harnu can now clear
+  worktrees whose branch is proven merged, together with the Docker stack running from
+  each one, on the same hourly timer as the Cleanup scan. It cleans only worktrees it can
+  prove are finished: merged for real (the pull request's last commit is the worktree's
+  commit, or git itself shows the work is in main), clean, past a grace period, and with no
+  Harnu session running in them. It is off by default, and the first run only reports what
+  it found ("Found N corpses, X GiB - enable automatic cleanup?") and deletes nothing. A
+  stack's containers, the volumes only that stack used, the code (kept as `refs/archive/…`
+  refs), the dependencies, the folder and the local branch go in a fixed order, one worktree
+  at a time, and a failure stops that worktree only. A cycle that cleaned something posts one
+  notification. The Containers view now marks a stack from a merged worktree as a zombie as
+  soon as the branch is merged instead of waiting for the idle clock. For now there is no
+  settings screen for it: the options live in `gc-prefs.json` in Harnu's settings folder and
+  the screen arrives with the next Cleanup update (see [Cleanup](docs/user/cleanup.md)).
+- **Docker housekeeping in the same cycle.** When automatic cleanup is on, each cycle also
+  clears Docker build cache older than a week and dangling images, and reports how much it
+  freed. It never touches images a stack uses and never removes a volume that does not belong
+  to a cleaned worktree: volumes nobody uses any more are listed for you to remove yourself,
+  and **a removed volume cannot be restored**.
+- **Cleaning in the background.** Removing worktrees by hand no longer holds the window: it
+  starts a job, reports progress item by item, survives a reload of the window, and a second
+  request waits for the first instead of running beside it. Worktrees that Cleanup is not
+  sure about (an unmerged or dirty branch, say) can be removed on purpose after an explicit
+  confirmation; their code and uncommitted work are archived to `refs/archive/…` first.
+
 - **The Harnu mod.** Harnu now loads a small mod into the `claude` sessions it starts, so
   it can read what a session is doing from the inside instead of guessing from hooks and
   files. For now it only watches: your sessions behave exactly as before, and every fact

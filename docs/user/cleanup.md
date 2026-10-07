@@ -181,6 +181,61 @@ Now:
 
 A branch stuck at "PR list was capped" resolves itself on a later scan, or immediately if you hit **Scan now** — which also re-asks about branches it had previously concluded had no PR, in case one has since been opened.
 
+## Automatic cleanup (the autopilot)
+
+> **Half-built, on purpose.** The engine below ships and runs, but its screen does not exist yet. Today there is no button for it: the autopilot is off, and you turn it on by editing `gc-prefs.json` in Harnu's settings folder (see [Settings](settings.md#automatic-cleanup)). The unified Cleanup screen that shows the three groups below, a progress bar for background cleaning and the controls arrives in the next Cleanup update.
+
+Cleanup used to sort a worktree by one question, "is the branch merged?". The autopilot sorts every worktree into one of three groups by what the branch is and what is happening in the folder, and only ever acts on the first.
+
+| Group      | What it means                                                                                                                                                                                                                                                                                                               | What happens                                                                                     |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| **Corpse** | The branch is merged for real, nothing in the folder is uncommitted or unpushed, no Harnu session is running in it, and it has been quiet for the grace period (2 days by default).                                                                                                                                         | The autopilot removes it, with the Docker stack running from it. You can also remove it by hand. |
+| **Decide** | Something is unclear: the branch was closed without merging, the remote branch is gone, the worktree has a detached HEAD, GitHub could not be reached, it has uncommitted or unpushed work, the merge is only inferred, a session is open but idle, another stack shares the folder, or an earlier cleanup stopped partway. | Nothing is touched. The reason is one sentence. You decide.                                      |
+| **Alive**  | The pull request is still open, a session is working or waiting for you, or the worktree is within its grace period. Also: a main checkout, anything on your never-clean list, anything you marked Keep.                                                                                                                    | Never touched.                                                                                   |
+
+**"Merged for real"** is stricter than a green merged checkpoint. It means git itself shows the branch's work is in the default branch (as an ancestor, or as the same change squashed), or GitHub says the pull request merged **and** that pull request's last commit is the commit the worktree has checked out. A branch that kept getting commits after its pull request merged therefore lands in Decide, not Corpse. A branch whose remote was deleted after a closed pull request is also Decide, never Corpse.
+
+**"No session"** means no running process. A past conversation in that folder, or a parked session, does not block cleaning. A session that is open but idle moves the worktree to Decide, because Harnu never ends a process on its own.
+
+### The first run only reports
+
+Turning the autopilot on does not clean anything. The first cycle runs the same checks and stops at the count: _"Found 12 corpses, 6.0 GiB - enable automatic cleanup?"_ Nothing is deleted until you acknowledge that report, and acknowledging is a separate action from turning the autopilot on. From the next cycle on, it cleans, at most **20 worktrees per cycle** (the oldest first; the rest wait for the next cycle). A cycle that cleaned something posts one notification with how much it freed.
+
+The cycle runs on the same timer as the background scan, right after it, so switching the background scan off also stops the autopilot. A cleaning job you started by hand takes priority: a cycle that comes due waits for it, and a manual request made during a cycle waits for the cycle.
+
+### What a worktree cleanup does, in order
+
+For each worktree, one at a time, stopping at the first problem for that worktree only:
+
+1. Check again that nothing changed since the scan (a session started, the branch got a new commit, a container came up, the grace period no longer holds). If it did, the worktree is skipped and shows up again on the next scan.
+2. Stop and remove the Docker containers that run only from this worktree. A stack that also runs from somewhere else is never touched, and the worktree moves to Decide.
+3. Remove the named volumes only those containers used (the **Remove volumes** setting; on by default).
+4. Remove installed dependencies.
+5. Archive the branch tip and the working state, then move the folder to the system trash, prune the worktree entry and delete the local branch.
+
+Remote branches are never deleted by the autopilot. If a step fails, the worktree appears in Decide as _"Cleanup stopped at trash: …"_ and the autopilot leaves it alone for a day.
+
+### Docker housekeeping
+
+In the same cycle, when the Docker cache setting is on, Harnu runs `docker builder prune` for build cache older than 7 days and `docker image prune` for dangling images, and adds the bytes they report to the cycle's total. It never runs `-a` variants, so an image a stack uses is never removed.
+
+**Orphan volumes are not cleaned automatically.** A volume that no container uses and whose compose project's folder no longer exists is listed in Decide with its size, its compose project and the reason "no known worktree". It is removed only when you ask for it and confirm. Harnu keeps a volume when it cannot tell whether it is orphaned: a folder that still exists pins the compose project name (by its folder name, by `COMPOSE_PROJECT_NAME` in its `.env`, or by a `name:` in its compose file), a folder it cannot read counts as existing, and a project whose folder it cannot learn is left alone.
+
+### Removing a Decide item on purpose
+
+Decide items are removed only after you confirm. Before anything is stopped or deleted, Harnu writes the branch tip and the working state (tracked and untracked files) to `refs/archive/…`; if that fails, nothing is touched. It still refuses a worktree with a running session, a folder whose Docker stacks changed since the scan, a main checkout, a path on your never-clean list and a worktree with a detached HEAD (there is no branch to preserve or delete). The branch is then deleted even though git does not consider it merged, because its tip is archived.
+
+### What you can get back
+
+| What                                        | Restorable? | How                                                                                                                                                                                                                            |
+| ------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Code, uncommitted work and the local branch | Yes         | The `refs/archive/…` refs and the system trash. The cleanup journal line carries the command.                                                                                                                                  |
+| Containers                                  | Yes         | `docker compose -p <project> --project-directory <folder> up -d`, while the folder exists.                                                                                                                                     |
+| Dependencies                                | Yes         | Rehydrate, which re-runs the repo's `setup`.                                                                                                                                                                                   |
+| **Volumes**                                 | **No**      | A removed volume and its data are gone. This is the only step that cannot be undone, and it is the reason the autopilot only removes volumes that belong to a worktree it is cleaning, and only when **Remove volumes** is on. |
+
+On Windows, sizes are not measured, so the report shows counts without a byte total. pnpm's hard-linked store means removing `node_modules` frees less than the figure shown until the store is pruned.
+
 ## Automatic background scans
 
 Cleanup doesn't need to be open to keep working. By default it re-scans every known repo once an hour and quietly records a notification-center entry — no toast, no sound, no OS alert — whenever the scan finds items that just became harvestable. Open the notification to jump into Cleanup and sweep.
