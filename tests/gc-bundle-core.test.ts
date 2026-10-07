@@ -496,6 +496,45 @@ describe('buildBundles — fate, including AC-6', () => {
     expect(b.reason?.code).toBe('detached')
   })
 
+  it('a detached-worktree item with facts present still gets fate detached, ignoring the facts', () => {
+    const detached = item({
+      kind: 'detached-worktree',
+      branch: undefined,
+      id: `${REPO}::detached-worktree::${WT_A}`,
+      headSha: TIP_B
+    })
+    const b = only(
+      build({
+        items: [detached],
+        fateInputs: new Map([
+          [detached.id, { facts: facts({ ancestorOfDefault: true }), localTip: TIP_A }]
+        ])
+      })
+    )
+    expect(b.fate).toEqual({ fate: 'detached', signal: null, strong: false })
+    expect(b.bucket).toBe('decide')
+    expect(b.reason?.code).toBe('detached')
+    // The checked-out commit, not the facts' tip, is what the reprobe re-checks.
+    expect(b.localTip).toBe(TIP_B)
+  })
+
+  it('carries the scanned local tip so the reprobe can re-check it', () => {
+    expect(only(build()).localTip).toBe(TIP_A)
+  })
+
+  it('has a null local tip when the facts are missing', () => {
+    expect(only(build({ fateInputs: new Map() })).localTip).toBeNull()
+  })
+
+  it('has a null local tip for a detached worktree with no recorded head', () => {
+    const detached = item({
+      kind: 'detached-worktree',
+      branch: undefined,
+      id: `${REPO}::detached-worktree::${WT_A}`
+    })
+    expect(only(build({ items: [detached], fateInputs: new Map() })).localTip).toBeNull()
+  })
+
   it('a plain merged-by-ancestry worktree past grace is a corpse', () => {
     const b = only(build())
     expect(b.fate).toEqual({ fate: 'merged', signal: 'ancestor', strong: true })

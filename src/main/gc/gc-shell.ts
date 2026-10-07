@@ -29,6 +29,8 @@ export interface GcShellDeps {
   listStacks(): Promise<{ stacks: StackGroup[] }>
   /** Presence of a session in a folder, from the same sets the Reaper reads. */
   presenceOf(path: string): Promise<SessionPresence>
+  /** The commit checked out in a folder now, or null when there is none. */
+  headOf(path: string): Promise<string | null>
 }
 
 /**
@@ -171,6 +173,12 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         if (sameState(await deps.presenceOf(path)) !== sameState(b.session)) {
           return { ok: false, reason: 'changed-since-scan' }
         }
+        // A strong merge proof covers the scanned tip only. New commits since then, or a
+        // HEAD we cannot read, mean the proof no longer describes what we would archive.
+        if (typeof b.localTip === 'string') {
+          const head = await deps.headOf(path).catch(() => null)
+          if (head !== b.localTip) return { ok: false, reason: 'changed-since-scan' }
+        }
         const { stacks } = await deps.listStacks()
         // Exclusivity is recomputed, not trusted: every container of every stack we are
         // about to remove must still run from inside this worktree and nowhere else.
@@ -257,8 +265,9 @@ export async function defaultGcShellDeps(
     import('../reaper/reaper-ipc'),
     import('../containers/containers-shell')
   ])
+  const executor = buildDeps(getWindow)
   return {
-    executor: buildDeps(getWindow),
+    executor,
     dehydrate: buildHydrationDeps().dehydrate,
     docker: shell.dockerActions,
     listStacks: async () => {
@@ -272,6 +281,7 @@ export async function defaultGcShellDeps(
         throw err
       }
     },
-    presenceOf: async (path) => presenceFromSets(path, await computeFolderSets())
+    presenceOf: async (path) => presenceFromSets(path, await computeFolderSets()),
+    headOf: async (path) => (await executor.git(path, ['rev-parse', 'HEAD'])).trim() || null
   }
 }

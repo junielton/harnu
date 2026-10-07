@@ -50,6 +50,12 @@ export interface BundleFacts {
   keep: boolean
   neverClean: boolean
   isMainCheckout: boolean
+  /**
+   * The local tip the fate was judged on (the checked-out commit for a detached worktree).
+   * The reprobe refuses if HEAD moved since, because a strong merge proof covers only this
+   * commit. Null or absent when unknown, and then nothing is re-checked.
+   */
+  localTip?: string | null
 }
 
 export interface WorktreeBundle extends BundleFacts {
@@ -282,7 +288,9 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
       depsBytes: item.hydration?.reclaimableBytes ?? null,
       keep: input.keep.has(item.id),
       neverClean: neverClean.has(path) || neverClean.has(normalizePath(item.repoPath, platform)),
-      isMainCheckout: path === normalizePath(item.repoPath, platform)
+      isMainCheckout: path === normalizePath(item.repoPath, platform),
+      localTip:
+        item.kind === 'detached-worktree' ? (item.headSha ?? null) : (fateInput?.localTip ?? null)
     }
     return { ...facts, ...bucketOf(facts, input.now, input.graceDays) }
   })
