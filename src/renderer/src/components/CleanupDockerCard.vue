@@ -19,7 +19,10 @@ const props = defineProps<{
   lastCycle: CycleRecord | null
   prefs: GcPrefs
 }>()
-const emit = defineEmits<{ toggle: [category: 'dockerCache' | 'volumes', value: boolean] }>()
+const emit = defineEmits<{
+  toggle: [category: 'dockerCache' | 'volumes', value: boolean]
+  inspect: []
+}>()
 const { t } = useI18n()
 
 const housekeeping = computed(() => props.lastCycle?.housekeeping ?? null)
@@ -46,6 +49,15 @@ const blockClass = (on: boolean): string =>
     <header class="flex items-center gap-2 px-3 py-2 text-text-2">
       <Container :size="14" :stroke-width="1.6" class="shrink-0" aria-hidden="true" />
       <span class="text-[12.5px] font-medium text-text">{{ t('cleanup.gc.docker.title') }}</span>
+      <!-- The Containers takeover stays the inspector (per-stack start/stop); this is its door. -->
+      <button
+        type="button"
+        class="ml-auto text-[11px] font-medium text-text-2 transition hover:text-text"
+        data-testid="docker-inspect"
+        @click="emit('inspect')"
+      >
+        {{ t('cleanup.gc.docker.inspect') }}
+      </button>
     </header>
     <div class="flex flex-wrap gap-2 px-3 pb-3">
       <div :class="blockClass(prefs.categories.dockerCache)" data-testid="docker-cache">

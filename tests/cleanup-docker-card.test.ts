@@ -113,3 +113,11 @@ describe('CleanupDockerCard', () => {
     expect(w.get('[data-testid="docker-toggle-cache"]').attributes('aria-checked')).toBe('true')
   })
 })
+
+describe('CleanupDockerCard — inspector door', () => {
+  it('offers an Inspect stacks link that asks to open the Containers inspector', async () => {
+    const w = mountCard()
+    await w.get('[data-testid="docker-inspect"]').trigger('click')
+    expect(w.emitted('inspect')).toHaveLength(1)
+  })
+})

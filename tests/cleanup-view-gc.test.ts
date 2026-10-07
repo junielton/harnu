@@ -132,7 +132,7 @@ const body = (id: string): HTMLElement | null =>
 describe('Cleanup screen — hero and the one confirm', () => {
   it('shows the corpse count in the hero and opens ONE dialog that lists every corpse', async () => {
     install(snap())
-    const w = await mountView()
+    await mountView()
     const hero = domGet('[data-testid="hero-clean"]')
     expect(hero.text()).toContain('2')
     await hero.trigger('click')
@@ -143,7 +143,7 @@ describe('Cleanup screen — hero and the one confirm', () => {
 
   it('confirming sends the corpse ids with expected facts and NO confirmed list', async () => {
     const api = install(snap())
-    const w = await mountView()
+    await mountView()
     await domGet('[data-testid="hero-clean"]').trigger('click')
     await flushPromises()
     ;(body('bulk-confirm') as HTMLButtonElement).click()
@@ -159,7 +159,7 @@ describe('Cleanup screen — hero and the one confirm', () => {
 
   it('cancelling the dialog sends nothing', async () => {
     const api = install(snap())
-    const w = await mountView()
+    await mountView()
     await domGet('[data-testid="hero-clean"]').trigger('click')
     await flushPromises()
     ;(body('bulk-cancel') as HTMLButtonElement).click()
@@ -170,7 +170,7 @@ describe('Cleanup screen — hero and the one confirm', () => {
 
   it('with nothing to clean the hero is disabled and says so', async () => {
     install(snap({ bundles: [wt('d1', 'decide', GIB, {}, { reason: decideReason('dirty') })] }))
-    const w = await mountView()
+    await mountView()
     const hero = domGet('[data-testid="hero-empty"]')
     expect(hero.attributes('disabled')).toBeDefined()
     expect(hero.text()).toBe(t('cleanup.gc.hero.empty'))
@@ -180,7 +180,7 @@ describe('Cleanup screen — hero and the one confirm', () => {
 describe('Cleanup screen — multi-select on Decide', () => {
   it('checking rows shows the selection bar; Remove selected confirms every id explicitly', async () => {
     const api = install(snap())
-    const w = await mountView()
+    await mountView()
     expect(dom('[data-testid="sel-remove"]').exists()).toBe(false)
     const checks = domAll('[data-testid="needs-you-check"]')
     expect(checks.length).toBeGreaterThanOrEqual(2)
@@ -201,7 +201,7 @@ describe('Cleanup screen — multi-select on Decide', () => {
 
   it('"Ask for an opinion" is visible but disabled', async () => {
     install(snap())
-    const w = await mountView()
+    await mountView()
     await domAll('[data-testid="needs-you-check"]')[0].setValue(true)
     await flushPromises()
     expect(domGet('[data-testid="sel-ask"]').attributes('disabled')).toBeDefined()
@@ -209,7 +209,7 @@ describe('Cleanup screen — multi-select on Decide', () => {
 
   it('Shift+click on a Decide block checks it; a plain click opens its panel instead', async () => {
     install(snap())
-    const w = await mountView()
+    await mountView()
     const decide = domAll('[data-testid="treemap-block"][data-bucket="decide"]')[0]
     await decide.trigger('click', { shiftKey: true })
     await flushPromises()
@@ -223,7 +223,7 @@ describe('Cleanup screen — multi-select on Decide', () => {
 
   it('Esc clears the selection first, then closes the panel', async () => {
     install(snap())
-    const w = await mountView()
+    await mountView()
     const decide = domAll('[data-testid="treemap-block"][data-bucket="decide"]')
     await decide[0].trigger('click', { shiftKey: true })
     await decide[1].trigger('click')
@@ -241,7 +241,7 @@ describe('Cleanup screen — multi-select on Decide', () => {
 describe('Cleanup screen — panel', () => {
   it('a Decide block opens its panel with the reason; Keep goes to the engine', async () => {
     const api = install(snap())
-    const w = await mountView()
+    await mountView()
     await domAll('[data-testid="treemap-block"][data-bucket="decide"]')[0].trigger('click')
     await flushPromises()
     expect(dom('[data-testid="panel-reason"]').exists()).toBe(true)
@@ -253,7 +253,7 @@ describe('Cleanup screen — panel', () => {
 
   it('an orphan volume shows its project and "no known worktree"', async () => {
     install(snap())
-    const w = await mountView()
+    await mountView()
     const rows = domAll('[data-testid="needs-you-row"]')
     const volumeRow = rows.find((r) => r.text().includes('pg_old'))!
     expect(volumeRow.text()).toContain('old-app')
@@ -266,7 +266,7 @@ describe('Cleanup screen — panel', () => {
 
   it('Remove in the panel uses the same dialog, in Decide mode', async () => {
     const api = install(snap())
-    const w = await mountView()
+    await mountView()
     await domAll('[data-testid="treemap-block"][data-bucket="decide"]')[0].trigger('click')
     await flushPromises()
     await domGet('[data-testid="panel-remove"]').trigger('click')
@@ -280,7 +280,7 @@ describe('Cleanup screen — panel', () => {
 describe('Cleanup screen — first cycle and background run', () => {
   it('the first-cycle banner enables autopilot: acknowledges AND sets the pref', async () => {
     const api = install(snap({}, { autopilot: false, firstReportAcknowledged: false }))
-    const w = await mountView()
+    await mountView()
     expect(dom('[data-testid="first-enable"]').exists()).toBe(true)
     await domGet('[data-testid="first-enable"]').trigger('click')
     await flushPromises()
@@ -290,7 +290,7 @@ describe('Cleanup screen — first cycle and background run', () => {
 
   it('no banner once the first report is acknowledged', async () => {
     install(snap())
-    const w = await mountView()
+    await mountView()
     expect(dom('[data-testid="first-enable"]').exists()).toBe(false)
   })
 
@@ -307,7 +307,7 @@ describe('Cleanup screen — first cycle and background run', () => {
       error: null
     }
     install(snap(), [running])
-    const w = await mountView()
+    await mountView()
     expect(dom('[data-testid="hero-clean"]').exists()).toBe(false)
     expect(domGet('[data-testid="hero-chip"]').text()).toContain('3')
     expect(domGet('[data-testid="hero-chip"]').text()).toContain('12')
@@ -315,16 +315,16 @@ describe('Cleanup screen — first cycle and background run', () => {
 
   it('summary line shows the reclaimable total and the autopilot state', async () => {
     install(snap())
-    const w = await mountView()
+    await mountView()
     const text = domGet('[data-testid="cleanup-summary"]').text()
-    expect(text).toContain(t('cleanup.gc.summary.autopilotOn'))
+    expect(text).toContain(t('cleanup.gc.status.autopilotOn'))
   })
 })
 
 describe('Cleanup screen — all clean', () => {
   it('shows "All clean" with the hero disabled', async () => {
     install(snap({ bundles: [wt('a1', 'alive', GIB)], orphanVolumes: [] }))
-    const w = await mountView()
+    await mountView()
     expect(dom('[data-testid="cleanup-all-clean"]').exists()).toBe(true)
     expect(dom('[data-testid="hero-empty"]').exists()).toBe(true)
   })

@@ -2293,7 +2293,7 @@
     },
     "gc": {
       "bucket": {
-        "corpse": "Corpse",
+        "corpse": "Cadáver",
         "decide": "Decidir",
         "alive": "Ativo",
         "header": {
@@ -2410,7 +2410,7 @@
         "empty": "Nenhum worktree para mostrar."
       },
       "hero": {
-        "clean": "Limpar {n} corpse · {size} | Limpar {n} corpses · {size}",
+        "clean": "Limpar {n} cadáver · {size} | Limpar {n} cadáveres · {size}",
         "empty": "Nada para limpar",
         "chip": "Limpando {done}/{total} · {size} liberados"
       },
@@ -2426,7 +2426,7 @@
         "clear": "Limpar seleção"
       },
       "confirm": {
-        "titleCorpses": "Limpar {n} corpse? | Limpar {n} corpses?",
+        "titleCorpses": "Limpar {n} cadáver? | Limpar {n} cadáveres?",
         "titleWorktrees": "Remover {n} worktree? | Remover {n} worktrees?",
         "titleItems": "Remover {n} item? | Remover {n} itens?",
         "subtitleCorpses": "Cada um está merged, limpo e ocioso além do período de carência. Tudo o que está listado abaixo será removido.",
@@ -2444,7 +2444,7 @@
         "warnRecover": "O código e a branch voltam pelas refs de arquivo e pela lixeira do sistema, e as dependências voltam pelo setup do repositório.",
         "total": "Total {size}",
         "cancel": "Cancelar",
-        "confirmCorpses": "Limpar {n} corpse | Limpar {n} corpses",
+        "confirmCorpses": "Limpar {n} cadáver | Limpar {n} cadáveres",
         "confirmWorktrees": "Remover {n} worktree | Remover {n} worktrees",
         "confirmItems": "Remover {n} item | Remover {n} itens"
       },
@@ -2464,7 +2464,7 @@
       },
       "firstCycle": {
         "label": "Primeiro relatório de limpeza",
-        "title": "Encontrei {n} corpse, {size} — ativar o autopilot? | Encontrei {n} corpses, {size} — ativar o autopilot?",
+        "title": "Encontrei {n} cadáver, {size} — ativar o autopilot? | Encontrei {n} cadáveres, {size} — ativar o autopilot?",
         "sub": "O primeiro ciclo só reporta; nada é apagado até você ativar.",
         "enable": "Ativar autopilot",
         "dismiss": "Agora não"
@@ -2484,7 +2484,8 @@
         "more": "+{n} outros",
         "toggleCache": "Limpar o build cache automaticamente",
         "toggleImages": "Limpar imagens dangling automaticamente",
-        "toggleVolumes": "Incluir volumes órfãos na limpeza"
+        "toggleVolumes": "Incluir volumes órfãos na limpeza",
+        "inspect": "Inspecionar stacks"
       },
       "split": {
         "label": "Divisão do disco",
@@ -2493,19 +2494,19 @@
         "untouched": "Intocado",
         "count": "{n} item | {n} itens",
         "lastCycle": "Último ciclo {ago}: {n} limpos, {size} liberados",
-        "lastCycleReport": "Último ciclo {ago}: {n} corpse encontrado, {size} (só relatório) | Último ciclo {ago}: {n} corpses encontrados, {size} (só relatório)"
+        "lastCycleReport": "Último ciclo {ago}: {n} cadáver encontrado, {size} (só relatório) | Último ciclo {ago}: {n} cadáveres encontrados, {size} (só relatório)"
       },
-      "summary": {
+      "status": {
         "reclaimable": "{size} recuperáveis",
-        "autopilotOn": "piloto automático ligado",
-        "autopilotOff": "piloto automático desligado",
+        "autopilotOn": "autopilot ligado",
+        "autopilotOff": "autopilot desligado",
         "next": {
           "minute": "próximo ciclo em {n} min",
           "hour": "próximo ciclo em {n} h",
           "day": "próximo ciclo em {n} d"
         },
-        "badgeOn": "Piloto automático ligado · a cada {every}",
-        "badgeOff": "Piloto automático desligado",
+        "badgeOn": "Autopilot ligado · a cada {every}",
+        "badgeOff": "Autopilot desligado",
         "everyMinutes": "{n} min",
         "everyHours": "{n} h",
         "everyDay": "dia"
@@ -2517,12 +2518,12 @@
         "noBytes": "Os tamanhos em disco não estão disponíveis neste sistema, então só a lista pode ser mostrada."
       },
       "toolbar": {
-        "autopilotSettings": "Configurar piloto automático"
+        "autopilotSettings": "Configurações do autopilot"
       },
       "empty": {
         "title": "Tudo limpo",
         "subtitle": "Nada para recuperar.",
-        "subtitleAgo": "Nada para recuperar. O piloto automático verificou {ago}."
+        "subtitleAgo": "Nada para recuperar. O autopilot verificou {ago}."
       },
       "loading": "Analisando seus worktrees e o Docker…",
       "loadError": "Não foi possível carregar o relatório de limpeza: {error}",
@@ -2531,11 +2532,83 @@
         "intro": "Branches e pastas que não são worktrees."
       },
       "toast": {
-        "success": "{size} liberados · {count} corpse limpo | {size} liberados · {count} corpses limpos",
+        "success": "{size} liberados · {count} cadáver limpo | {size} liberados · {count} cadáveres limpos",
         "partial": "{cleaned} limpos · {failed} precisa de você",
         "review": "Revisar"
       },
-      "changedSinceConfirm": "Mudou desde que você confirmou — revise de novo."
+      "changedSinceConfirm": "Mudou desde que você confirmou — revise de novo.",
+      "footer": {
+        "running": "Limpando {done}/{total}",
+        "attention": "{n} precisa de você | {n} precisam de você",
+        "a11yRunning": "Limpando: {done} de {total} concluídos. Abrir Limpeza",
+        "a11yAttention": "{n} item precisa de você. Abrir Limpeza | {n} itens precisam de você. Abrir Limpeza",
+        "a11yIdle": "Abrir Limpeza — {size} recuperáveis"
+      },
+      "settings": {
+        "autopilot": {
+          "eyebrow": "Autopilot",
+          "intro": "Limpa cadáveres comprovados (worktrees mergeadas, limpas e ociosas) no timer em segundo plano. O primeiro ciclo depois de ligar só reporta o que encontrou; a limpeza automática começa quando você confirma esse relatório na Limpeza.",
+          "label": "Limpar cadáveres automaticamente",
+          "hint": "Precisa do escaneamento em segundo plano abaixo ligado: a limpeza roda no mesmo timer."
+        },
+        "interval": {
+          "label": "Rodar a cada",
+          "hint": "Um único timer comanda o escaneamento e a limpeza."
+        },
+        "grace": {
+          "label": "Período de carência",
+          "hint": "Uma worktree precisa ficar quieta por esse tempo, sem atividade de sessão e sem start ou stop de container, antes de contar como cadáver."
+        },
+        "cap": {
+          "label": "Limite por ciclo",
+          "hint": "O máximo de worktrees que um ciclo automático limpa. O resto espera o próximo ciclo.",
+          "suffix": "worktrees"
+        },
+        "daysSuffix": "dias",
+        "clean": {
+          "eyebrow": "O que ela limpa",
+          "intro": "Estes botões governam o autopilot. Limpar à mão na tela de Limpeza sempre pergunta antes."
+        },
+        "categories": {
+          "worktrees": {
+            "label": "Worktrees",
+            "hint": "Worktrees mergeadas, limpas e ociosas, e os stacks do Docker que rodam a partir delas."
+          },
+          "volumes": {
+            "label": "Volumes",
+            "hint": "Desligado: o autopilot deixa os volumes de uma worktree limpa."
+          },
+          "dockerCache": {
+            "label": "Cache de build do Docker e imagens órfãs",
+            "hint": "Remove cache de build mais antigo que a idade abaixo e imagens que nenhum container usa. Nunca toca em uma imagem que um stack usa."
+          }
+        },
+        "removeVolumes": {
+          "label": "Remover volumes junto com a worktree",
+          "hint": "Ao limpar uma worktree, remove também os volumes nomeados que só o stack dela usava. Vale para a limpeza manual também.",
+          "warning": "Volumes não podem ser restaurados: um volume removido e seus dados somem."
+        },
+        "cacheMaxAge": {
+          "label": "Idade máxima do cache de build",
+          "hint": "Cache de build mais antigo que isso é removido."
+        },
+        "never": {
+          "eyebrow": "Nunca limpar",
+          "intro": "Repos ou worktrees listados aqui nunca são limpos, nem automaticamente nem à mão. Use caminhos absolutos.",
+          "label": "Adicionar um caminho para nunca limpar",
+          "empty": "Nada está protegido ainda.",
+          "placeholder": "/caminho/do/repo",
+          "add": "Adicionar",
+          "removeLabel": "Remover",
+          "remove": "Remover {path} da lista de nunca limpar",
+          "invalid": "Digite um caminho absoluto, como /work/meu-repo."
+        },
+        "scan": {
+          "eyebrow": "Escaneamento em segundo plano e branches",
+          "intro": "A Limpeza escaneia todo repo conhecido em um timer e registra o que fica seguro para limpar. Estas configurações também cobrem branches locais e remotas.",
+          "autoScanHint": "Roda o escaneamento em um timer sem abrir a Limpeza. O autopilot pega carona nesse escaneamento, então desligá-lo também para o autopilot."
+        }
+      }
     }
   },
   "containers": {
@@ -2564,6 +2637,12 @@
       "notify": {
         "label": "Me avisar sobre novos zumbis",
         "hint": "Na primeira vez que um stack vira zumbi, adiciona uma entrada na central de notificações — sem toast, sem som."
+      },
+      "gcNote": {
+        "intro": "Estas configurações comandam o inspetor de Containers: o escaneamento próprio e o relógio de inatividade dele.",
+        "text": "Um stack que roda a partir de uma worktree recebe o veredito da Limpeza, então os controles desses ficam lá.",
+        "link": "Abrir configurações de Limpeza",
+        "zombieHint": "Um stack que a Limpeza não julgou e que ninguém usa há esse número de dias é um zumbi. Stacks que rodam a partir de uma worktree seguem o estado da worktree na Limpeza. As linhas se reorganizam assim que você muda o valor."
       }
     },
     "newZombies": {
@@ -2814,7 +2893,9 @@
       "failedStack": "{name} — {reason}",
       "changed": "A lista mudou enquanto este diálogo estava aberto, então nada foi apagado. Confira o que a limpeza levaria agora e confirme de novo.",
       "moved": "A lista mudou enquanto este diálogo estava aberto, então ela foi atualizada e nada foi removido. Confira o que a limpeza levaria agora e confirme de novo."
-    }
+    },
+    "openCleanup": "Abrir Limpeza · {n} stack | Abrir Limpeza · {n} stacks",
+    "openCleanupTitle": "Limpar stacks agora acontece na Limpeza"
   },
   "prStack": {
     "title": "PR Stack",

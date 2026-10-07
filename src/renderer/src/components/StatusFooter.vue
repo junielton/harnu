@@ -50,9 +50,8 @@ import {
   TriangleAlert,
   Image,
   ExternalLink,
-  Trash2,
-  Clock,
-  Container
+  Recycle,
+  Clock
 } from 'lucide-vue-next'
 import { useUsageStore } from '../stores/usage'
 import { useSessionsStore } from '../stores/sessions'
@@ -61,6 +60,7 @@ import { useClaudeStatusStore } from '../stores/claude-status'
 import { useReaperStore } from '../stores/reaper'
 import { useSchedulerStore } from '../stores/scheduler'
 import { useContainersStore } from '../stores/containers'
+import { useGcStore } from '../stores/gc'
 import { useUiStore } from '../stores/ui'
 import { useSessionImages } from '../composables/useSessionImages'
 import UsagePanel from './UsagePanel.vue'
@@ -76,6 +76,7 @@ import {
   type FooterChipKey
 } from './footer-format'
 import { footerPctClass, footerWindowCountdown, formatCostUsd } from './usage-format'
+import { formatBytes } from './system-monitor-format'
 
 const { t } = useI18n()
 const usage = useUsageStore()
@@ -84,29 +85,74 @@ const status = useClaudeStatusStore()
 const reaper = useReaperStore()
 const scheduler = useSchedulerStore()
 const containers = useContainersStore()
+const gc = useGcStore()
 const ui = useUiStore()
 
-// Cleanup footer pill (Reaper PR4, design.md "Cleanup footer pill"). Inits the
-// reaper store here too — the footer needs `totals.harvestable` regardless of
-// whether the Cleanup takeover has ever been opened this session; `init()` is
-// idempotent (CleanupView also calls it on mount).
+// Cleanup footer pill (T443, design.md "Workspace GC — unified Cleanup / Footer pill"): ONE pill
+// replaces the old Cleanup and Containers pills and is fed by the Workspace GC store, so the footer
+// needs it live even when the takeover has never been opened; `gc.init()` is idempotent.
+//
+// The Reaper and Containers stores are still initialised here, because their `init()` also
+// subscribes the quiet Activity-bell alerts (new harvestable items, new zombie stacks) that must
+// fire while the takeovers are closed. Only their footer pills are gone.
 //
 // Scheduler footer pill (T295, design.md "Scheduler footer pill") — same
 // reasoning: the footer needs `runningIds` live even when the takeover has
 // never been opened, so it inits the store here too. `init()` re-subscribes
 // (rather than double-subscribing) on a second call, so SchedulerView.vue
 // calling it again on its own mount is harmless.
-//
-// Containers footer pill (T331, design.md "Containers footer pill") — same
-// reasoning again: background scans in main feed it while the takeover is
-// closed. `init()` only reads the last snapshot and subscribes; it never scans.
 onMounted(() => {
   reaper.init()
   void scheduler.init()
   void containers.init()
+  void gc.init()
 })
-const cleanupCount = computed(() => reaper.totals.harvestable)
-const containersCount = computed(() => containers.needsYouCount)
+
+/** The single Cleanup pill's content; null hides it (nothing to reclaim, nothing running or failed). */
+const cleanupPill = computed(() => {
+  const pill = gc.pill
+  if (pill.kind === 'running') {
+    return {
+      kind: 'running' as const,
+      text: t('cleanup.gc.footer.running', { done: pill.done, total: pill.total }),
+      aria: t('cleanup.gc.footer.a11yRunning', { done: pill.done, total: pill.total })
+    }
+  }
+  if (pill.kind === 'attention') {
+    return {
+      kind: 'attention' as const,
+      text: t('cleanup.gc.footer.attention', pill.count, { named: { n: pill.count } }),
+      aria: t('cleanup.gc.footer.a11yAttention', pill.count, { named: { n: pill.count } })
+    }
+  }
+  if (gc.reclaimableBytes <= 0) return null
+  const size = formatBytes(gc.reclaimableBytes)
+  return {
+    kind: 'idle' as const,
+    text: size,
+    aria: t('cleanup.gc.footer.a11yIdle', { size })
+  }
+})
+
+/**
+ * What a screen reader hears: only a CHANGE of pill state is announced (design.md: "one
+ * announcement per finished item"), so the live region holds the last announced text and is
+ * updated when the running count or the state moves, never on a mere size refresh.
+ */
+const cleanupAnnouncement = ref('')
+watch(
+  () => {
+    const p = gc.pill
+    return p.kind === 'running'
+      ? `running:${p.done}/${p.total}`
+      : p.kind === 'attention'
+        ? `attention:${p.count}`
+        : 'idle'
+  },
+  () => {
+    cleanupAnnouncement.value = cleanupPill.value?.aria ?? ''
+  }
+)
 const schedulerRunningCount = computed(() => scheduler.runningIds.length)
 
 const sess = computed(() => sessions.selectedSession)
@@ -465,46 +511,42 @@ function openFullDashboard(): void {
            into the fleet pill; opens the System Monitor takeover on click -->
       <HeapGauge />
 
-      <!-- Cleanup pill (Reaper PR4) — hidden when there's nothing harvestable -->
+      <!-- Cleanup pill (T443) — ONE pill for Workspace GC, replacing the old Cleanup and
+           Containers pills. Idle shows what is reclaimable, running mirrors the hero's progress
+           chip, attention counts the items that need the operator. Hidden when there is nothing
+           to reclaim, nothing running and nothing failed. -->
       <button
-        v-if="cleanupCount > 0"
+        v-if="cleanupPill"
         type="button"
-        class="flex items-center gap-1.5 whitespace-nowrap rounded transition-colors"
-        :class="ui.cleanupOpen ? 'text-accent' : 'text-text-2 hover:text-text'"
-        :aria-label="t('cleanup.a11yFooterPill', { count: cleanupCount })"
-        :title="t('cleanup.a11yFooterPill', { count: cleanupCount })"
+        data-dsqa="cleanup-footer-pill"
+        :data-state="cleanupPill.kind"
+        class="flex h-5 items-center gap-1.5 whitespace-nowrap rounded-sm px-1.5 text-[11px] transition-colors"
+        :class="
+          ui.cleanupOpen
+            ? 'text-accent'
+            : cleanupPill.kind === 'running'
+              ? 'text-accent'
+              : cleanupPill.kind === 'attention'
+                ? 'text-warning'
+                : 'text-text-2 hover:bg-surface-2 hover:text-text'
+        "
+        :aria-label="cleanupPill.aria"
+        :title="cleanupPill.aria"
         :aria-pressed="ui.cleanupOpen"
         @click="ui.toggleCleanup()"
       >
-        <Trash2 :size="12" :stroke-width="1.6" class="shrink-0" />
-        <span>{{ t('cleanup.footerPill') }}</span>
+        <Recycle :size="12" :stroke-width="1.6" class="shrink-0" />
         <span
-          class="rounded-full bg-green-soft px-1.5 text-[10.5px] font-bold tabular-nums text-green"
-          >{{ cleanupCount }}</span
-        >
+          v-if="cleanupPill.kind === 'running'"
+          class="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+          style="box-shadow: 0 0 0 3px var(--color-accent-soft)"
+          aria-hidden="true"
+        />
+        <span class="tabular-nums">{{ cleanupPill.text }}</span>
       </button>
-
-      <!-- Containers pill (T331) — zombie + orphan stacks; hidden at 0 -->
-      <button
-        v-if="containersCount > 0"
-        type="button"
-        data-dsqa="containers-footer-pill"
-        class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap transition-colors"
-        :class="ui.containersOpen ? 'text-accent' : 'text-text-2 hover:text-text'"
-        :aria-label="
-          t('containers.a11yFooterPill', containersCount, { named: { n: containersCount } })
-        "
-        :title="t('containers.a11yFooterPill', containersCount, { named: { n: containersCount } })"
-        :aria-pressed="ui.containersOpen"
-        @click="ui.toggleContainers()"
-      >
-        <Container :size="12" :stroke-width="1.6" class="shrink-0" />
-        <span>{{ t('containers.footerPill') }}</span>
-        <span
-          class="rounded-full bg-green-soft px-1.5 text-[10.5px] font-bold tabular-nums text-green"
-          >{{ containersCount }}</span
-        >
-      </button>
+      <span class="sr-only" aria-live="polite" data-testid="cleanup-footer-live">{{
+        cleanupAnnouncement
+      }}</span>
 
       <!-- Scheduler pill (T295, design.md "Scheduler footer pill") — always visible
            (no hide-when-zero): quiet with a Clock glyph when nothing is running, a

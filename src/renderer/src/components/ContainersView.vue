@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useNow } from '@vueuse/core'
-import { Check, Container, Loader2, Minus, Play, RefreshCw, Square, Trash2 } from 'lucide-vue-next'
+import { Container, Loader2, Play, RefreshCw, Recycle, Square } from 'lucide-vue-next'
 import { useContainersStore } from '../stores/containers'
+import { useUiStore } from '../stores/ui'
 import { useContainersCopy } from './containers-copy'
 import Button from './ui/Button.vue'
 import {
@@ -12,26 +13,17 @@ import {
   formatDisk,
   formatRam,
   hasQuickStop,
-  isTicked,
   meterLegend,
   meterSegments,
-  pruneSelection,
   recentVerbKey,
   resolveSelection,
   stoppedByHarnu,
-  sweepProgress,
-  sweepSelectionState,
   sweepTargets,
-  tickedStacks,
-  toggleAllTicked,
-  toggleTicked,
   tombstoneKey,
   zombieInDays,
-  type Selection,
-  type SweepSelection
+  type Selection
 } from './containers-format'
 import ContainersDetail from './ContainersDetail.vue'
-import ContainersSweepDialog from './ContainersSweepDialog.vue'
 import type { ContainersTombstone, StackRow } from '../../../preload'
 
 /**
@@ -45,6 +37,7 @@ import type { ContainersTombstone, StackRow } from '../../../preload'
  * takeover (design.md "TakeoverShell — shared chrome").
  */
 const store = useContainersStore()
+const ui = useUiStore()
 const { t, ago } = useContainersCopy()
 const now = useNow({ interval: 30_000 })
 const nowMs = computed(() => now.value.getTime())
@@ -143,52 +136,17 @@ function stopRunning(): void {
 
 const bulkStopping = computed(() => store.pending?.bulk === true)
 
-// ---- the mass clean (T341) ------------------------------------------------------------
+// ---- the mass clean, now Cleanup's (T443) ---------------------------------------------
 
 /**
- * The stacks a sweep COULD take: every zombie and orphan, running or exited.
- * Display only — main picks the real set from the same tier table (T340).
+ * The stacks a clean-up COULD take: every zombie and orphan, running or exited. Display only — the
+ * count on the button. The clean-up itself moved to Cleanup (one cleanup door, spec §9), so this
+ * view no longer opens a dialog or keeps a tick-list: the button just routes there.
  */
 const sweepable = computed(() => sweepTargets(store.stacks))
-const sweepOpen = ref(false)
-const sweeping = computed(() => store.pending?.verb === 'sweep')
-const sweepDone = computed(() => sweepProgress(store.pending?.stacks ?? [], store.stacks))
 
-/**
- * The stacks the operator left ticked (T342). `null` is pristine — everything
- * eligible — so the clean-up stays one click until they untick something; from
- * then on it is the explicit list they kept, and a stack that shows up in a later
- * scan arrives unticked. A rescan prunes ids that are gone.
- */
-const sweepSelection = ref<SweepSelection>(null)
-watch(snap, () => {
-  sweepSelection.value = pruneSelection(store.stacks, sweepSelection.value)
-})
-
-const ticked = computed(() => tickedStacks(store.stacks, sweepSelection.value))
-const tickedIds = computed(() => ticked.value.map((s) => s.id))
-const selectState = computed(() => sweepSelectionState(store.stacks, sweepSelection.value))
-
-function isPicked(id: string): boolean {
-  return isTicked(store.stacks, sweepSelection.value, id)
-}
-
-function togglePick(id: string): void {
-  sweepSelection.value = toggleTicked(store.stacks, sweepSelection.value, id)
-}
-
-function toggleAll(): void {
-  sweepSelection.value = toggleAllTicked(store.stacks, sweepSelection.value)
-}
-
-function openSweep(): void {
-  if (store.pending || ticked.value.length === 0) return
-  sweepOpen.value = true
-}
-
-function onSweepClose(key: string | null): void {
-  sweepOpen.value = false
-  if (key) selectRecent(key)
+function openCleanup(): void {
+  ui.openCleanup()
 }
 
 function recentWho(tb: ContainersTombstone): string {
@@ -203,26 +161,14 @@ function recentVerb(tb: ContainersTombstone): string {
 
 const ROW_BASE =
   "relative grid w-full cursor-pointer items-center gap-2.5 rounded-sm py-[7px] pl-2.5 pr-2 before:absolute before:bottom-[7px] before:left-0 before:top-[7px] before:w-0.5 before:rounded-[2px] before:content-['']"
-/** "Leave alone" rows and the skeletons: no clean-up checkbox, so four tracks. */
+/** Every stack row and the skeletons: name, verdict chip, RAM, quick-stop. */
 const ROW_COLS = 'grid-cols-[1fr_auto_56px_22px]'
-/** A "Needs you" row leads with its 14px clean-up checkbox (T342). */
-const ROW_COLS_PICK = 'grid-cols-[14px_1fr_auto_56px_22px]'
-/**
- * The 14px selection box: the dialogs' checkbox anatomy, inked `--accent`
- * because this is a selection, not a destructive opt-in (design.md).
- */
-const CHECKBOX_CLASS =
-  'absolute inset-0 m-0 h-3.5 w-3.5 cursor-pointer appearance-none rounded-[3px] border border-border-2 bg-surface checked:border-accent checked:bg-accent indeterminate:border-accent indeterminate:bg-accent focus-visible:ring-1 focus-visible:ring-accent focus-visible:ring-offset-1 focus-visible:ring-offset-bg'
-const CHECK_GLYPH_CLASS = 'pointer-events-none absolute left-0.5 top-0.5 text-accent-ink'
 const RECENT_BASE =
   "relative grid w-full cursor-pointer grid-cols-[14px_1fr_auto] items-center gap-2.5 rounded-sm py-1.5 pl-2.5 pr-2 text-[11.5px] text-text-4 before:absolute before:bottom-[6px] before:left-0 before:top-[6px] before:w-0.5 before:rounded-[2px] before:content-['']"
 const ON = 'bg-surface-2 before:bg-accent'
 const OFF = 'hover:bg-surface before:bg-transparent'
 const EYEBROW =
   'px-2 pb-1.5 pt-2.5 text-[10.5px] font-medium uppercase tracking-[0.07em] text-text-4'
-/** "Needs you": the same type, laid out so its select-all sits in the rows' checkbox column. */
-const EYEBROW_PICK =
-  'flex items-center gap-2.5 pb-1.5 pl-2.5 pr-2 pt-2.5 text-[10.5px] font-medium uppercase tracking-[0.07em] text-text-4'
 const SKELETON_ROWS: Array<{ name: number; chip: number; ram: number }> = [
   { name: 96, chip: 56, ram: 40 },
   { name: 120, chip: 56, ram: 40 },
@@ -353,24 +299,17 @@ const SKELETON_ROWS_2: Array<{ name: number; chip: number; ram: number }> = [
                   : t('containers.stopRunning', { n: totals?.stoppable ?? 0 })
               }}
             </Button>
+            <!-- One cleanup door (T443): the mass clean lives in Cleanup. This only routes there. -->
             <Button
               v-if="!firstScan && sweepable.length > 0"
-              variant="danger"
+              variant="soft"
               data-testid="containers-sweep"
-              :disabled="store.pending !== null || ticked.length === 0"
-              @click="openSweep()"
+              :title="t('containers.openCleanupTitle')"
+              @click="openCleanup()"
             >
-              <Loader2
-                v-if="sweeping"
-                :size="11"
-                :stroke-width="1.8"
-                class="shrink-0 animate-spin"
-              />
-              <Trash2 v-else :size="12" :stroke-width="1.7" class="shrink-0" />
+              <Recycle :size="12" :stroke-width="1.7" class="shrink-0" />
               {{
-                sweeping
-                  ? t('containers.sweeping', { done: sweepDone.done, total: sweepDone.total })
-                  : t('containers.sweep', ticked.length, { named: { n: ticked.length } })
+                t('containers.openCleanup', sweepable.length, { named: { n: sweepable.length } })
               }}
             </Button>
           </div>
@@ -460,40 +399,7 @@ const SKELETON_ROWS_2: Array<{ name: number; chip: number; ram: number }> = [
           <template v-else>
             <template v-for="section in ['needsYou', 'leaveAlone'] as const" :key="section">
               <template v-if="(section === 'needsYou' ? store.needsYou : store.leaveAlone).length">
-                <!-- "Needs you" carries the select-all / none control (T342); the
-                     other sections hold nothing a clean-up can take. -->
-                <div v-if="section === 'needsYou'" :class="EYEBROW_PICK">
-                  <span class="relative h-3.5 w-3.5 shrink-0">
-                    <input
-                      type="checkbox"
-                      data-testid="containers-select-all"
-                      :data-state="selectState"
-                      :class="CHECKBOX_CLASS"
-                      :checked="selectState === 'all'"
-                      :indeterminate="selectState === 'mixed'"
-                      :aria-label="
-                        selectState === 'all'
-                          ? t('containers.select.none')
-                          : t('containers.select.all')
-                      "
-                      @change="toggleAll()"
-                    />
-                    <Check
-                      v-if="selectState === 'all'"
-                      :size="10"
-                      :stroke-width="3"
-                      :class="CHECK_GLYPH_CLASS"
-                    />
-                    <Minus
-                      v-else-if="selectState === 'mixed'"
-                      :size="10"
-                      :stroke-width="3"
-                      :class="CHECK_GLYPH_CLASS"
-                    />
-                  </span>
-                  <span>{{ t('containers.section.needsYou') }}</span>
-                </div>
-                <div v-else :class="EYEBROW">{{ t(`containers.section.${section}`) }}</div>
+                <div :class="EYEBROW">{{ t(`containers.section.${section}`) }}</div>
                 <div
                   v-for="s in section === 'needsYou' ? store.needsYou : store.leaveAlone"
                   :key="s.id"
@@ -501,37 +407,12 @@ const SKELETON_ROWS_2: Array<{ name: number; chip: number; ram: number }> = [
                   tabindex="0"
                   :data-stack="s.id"
                   class="group/row"
-                  :class="[
-                    ROW_BASE,
-                    section === 'needsYou' ? ROW_COLS_PICK : ROW_COLS,
-                    isStackOn(s.id) ? ON : OFF
-                  ]"
+                  :class="[ROW_BASE, ROW_COLS, isStackOn(s.id) ? ON : OFF]"
                   :aria-pressed="isStackOn(s.id)"
                   @click="selectStack(s.id)"
                   @keydown.enter.self.prevent="selectStack(s.id)"
                   @keydown.space.self.prevent="selectStack(s.id)"
                 >
-                  <!-- Ticked = this stack is part of the next clean-up. Clicking it
-                       toggles the selection and never selects the row, exactly like
-                       the quick-stop button beside it. -->
-                  <span v-if="section === 'needsYou'" class="relative h-3.5 w-3.5 shrink-0">
-                    <input
-                      type="checkbox"
-                      data-testid="containers-select-stack"
-                      :data-stack-pick="s.id"
-                      :class="CHECKBOX_CLASS"
-                      :checked="isPicked(s.id)"
-                      :aria-label="t('containers.select.stack', { name: s.name })"
-                      @click.stop
-                      @change="togglePick(s.id)"
-                    />
-                    <Check
-                      v-if="isPicked(s.id)"
-                      :size="10"
-                      :stroke-width="3"
-                      :class="CHECK_GLYPH_CLASS"
-                    />
-                  </span>
                   <span class="truncate font-mono text-[12px] text-text" :title="s.name">{{
                     s.name
                   }}</span>
@@ -610,15 +491,6 @@ const SKELETON_ROWS_2: Array<{ name: number; chip: number; ram: number }> = [
           :tombstone="selectedTomb"
           :zombie-after-days="snap?.zombieAfterDays ?? 2"
           @select-recent="selectRecent"
-        />
-        <!-- The WHOLE snapshot plus the ticked ids: the plan needs the stacks
-             outside the clean-up — unticked ones included — to know which volumes
-             survive it (T342). -->
-        <ContainersSweepDialog
-          v-if="sweepOpen"
-          :stacks="store.stacks"
-          :selected="tickedIds"
-          @close="onSweepClose"
         />
       </div>
     </template>

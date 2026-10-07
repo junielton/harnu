@@ -2484,7 +2484,8 @@
         "more": "+{n} more",
         "toggleCache": "Clean build cache automatically",
         "toggleImages": "Clean dangling images automatically",
-        "toggleVolumes": "Include orphan volumes in cleaning"
+        "toggleVolumes": "Include orphan volumes in cleaning",
+        "inspect": "Inspect stacks"
       },
       "split": {
         "label": "Disk split",
@@ -2495,7 +2496,7 @@
         "lastCycle": "Last cycle {ago}: cleaned {n}, freed {size}",
         "lastCycleReport": "Last cycle {ago}: found {n} corpse, {size} (report only) | Last cycle {ago}: found {n} corpses, {size} (report only)"
       },
-      "summary": {
+      "status": {
         "reclaimable": "{size} reclaimable",
         "autopilotOn": "autopilot on",
         "autopilotOff": "autopilot off",
@@ -2535,7 +2536,79 @@
         "partial": "{cleaned} cleaned · {failed} needs you",
         "review": "Review"
       },
-      "changedSinceConfirm": "Changed since you confirmed — review again."
+      "changedSinceConfirm": "Changed since you confirmed — review again.",
+      "footer": {
+        "running": "Cleaning {done}/{total}",
+        "attention": "{n} needs you | {n} need you",
+        "a11yRunning": "Cleaning: {done} of {total} done. Open Cleanup",
+        "a11yAttention": "{n} item needs you. Open Cleanup | {n} items need you. Open Cleanup",
+        "a11yIdle": "Open Cleanup — {size} reclaimable"
+      },
+      "settings": {
+        "autopilot": {
+          "eyebrow": "Autopilot",
+          "intro": "Cleans proven corpses (merged, clean, idle worktrees) on the background timer. The first cycle after you turn it on only reports what it found; automatic cleaning starts once you acknowledge that report in Cleanup.",
+          "label": "Clean corpses automatically",
+          "hint": "Needs the background scan below to stay on: the cleanup runs on the same timer."
+        },
+        "interval": {
+          "label": "Run every",
+          "hint": "One timer drives both the scan and the cleanup."
+        },
+        "grace": {
+          "label": "Grace period",
+          "hint": "A worktree must be quiet this long, with no session activity and no container start or stop, before it counts as a corpse."
+        },
+        "cap": {
+          "label": "Per-cycle cap",
+          "hint": "The most worktrees one automatic cycle cleans. The rest wait for the next cycle.",
+          "suffix": "worktrees"
+        },
+        "daysSuffix": "days",
+        "clean": {
+          "eyebrow": "What it cleans",
+          "intro": "These switches govern the autopilot. Cleaning by hand from the Cleanup screen always asks you first."
+        },
+        "categories": {
+          "worktrees": {
+            "label": "Worktrees",
+            "hint": "Merged, clean, idle worktrees, and the Docker stacks that run from them."
+          },
+          "volumes": {
+            "label": "Volumes",
+            "hint": "Off: the autopilot leaves the volumes of a cleaned worktree."
+          },
+          "dockerCache": {
+            "label": "Docker build cache and dangling images",
+            "hint": "Prunes build cache older than the age below and images no container uses. Never touches an image a stack uses."
+          }
+        },
+        "removeVolumes": {
+          "label": "Remove volumes with a worktree",
+          "hint": "When a worktree is cleaned, also remove the named volumes only its stack used. Applies to cleaning by hand too.",
+          "warning": "Volumes cannot be restored: a removed volume and its data are gone."
+        },
+        "cacheMaxAge": {
+          "label": "Build cache max age",
+          "hint": "Build cache older than this is pruned."
+        },
+        "never": {
+          "eyebrow": "Never clean",
+          "intro": "Repos or worktrees listed here are never cleaned, automatically or by hand. Use absolute paths.",
+          "label": "Add a path to never clean",
+          "empty": "Nothing is protected yet.",
+          "placeholder": "/path/to/repo",
+          "add": "Add",
+          "removeLabel": "Remove",
+          "remove": "Remove {path} from the never-clean list",
+          "invalid": "Enter an absolute path, such as /work/my-repo."
+        },
+        "scan": {
+          "eyebrow": "Background scan and branches",
+          "intro": "Cleanup scans every known repo on a timer and logs what becomes safe to clean. These settings also cover local and remote branches.",
+          "autoScanHint": "Runs the scan on a timer without opening Cleanup. The autopilot rides this scan, so turning it off also stops the autopilot."
+        }
+      }
     }
   },
   "containers": {
@@ -2564,6 +2637,12 @@
       "notify": {
         "label": "Notify me about new zombies",
         "hint": "The first time a stack becomes a zombie, adds one entry to the notification center — no toast, no sound."
+      },
+      "gcNote": {
+        "intro": "These settings drive the Containers inspector: its own scan, and how long a stack waits before it counts as a zombie.",
+        "text": "A stack that runs from a worktree takes its verdict from Cleanup, so the controls for those live there.",
+        "link": "Open Cleanup settings",
+        "zombieHint": "A stack that Cleanup has not judged and that nobody has used for this many days is a zombie. Stacks that run from a worktree follow that worktree's state in Cleanup instead. The rows re-sort as soon as you change it."
       }
     },
     "newZombies": {
@@ -2814,7 +2893,9 @@
       "failedStack": "{name} — {reason}",
       "changed": "The list changed while this dialog was open, so nothing was deleted. Check what the clean-up would take now and confirm again.",
       "moved": "The list changed while this dialog was open, so it was refreshed and nothing was removed. Check what the clean-up would take now and confirm again."
-    }
+    },
+    "openCleanup": "Open Cleanup · {n} stack | Open Cleanup · {n} stacks",
+    "openCleanupTitle": "Cleaning up stacks now happens in Cleanup"
   },
   "prStack": {
     "title": "PR Stack",

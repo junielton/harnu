@@ -16,7 +16,8 @@ Settings is organized into tabs. Most are covered in depth on their own pages �
 - **Hibernation policy** — covered below.
 - **Usage history** — covered in [Usage](usage.md#usage-history-settings-tab); the working-days control for the daily budget is [below](#daily-budget).
 - **Changelog** — renders this repo's `CHANGELOG.md` in-app, so you can see what shipped without leaving Harnu.
-- **Containers** — the background scan, the zombie threshold and the new-zombie notification behind the [Containers](containers.md#settings) view.
+- **Cleanup** — the autopilot, what it cleans, the never-clean list and the background scan behind the [Cleanup](cleanup.md) screen; covered [below](#cleanup).
+- **Containers** — the inspector's own background scan, its idle clock and the new-zombie notification behind the [Containers](containers.md#settings) view.
 - **Claude Code** — renders Claude Code's own official changelog (fetched from Anthropic, separate from Harnu's own Changelog tab above). Claude's live service status (incidents, scheduled maintenance) is shown in the footer popover alongside your [usage](usage.md#the-footer-popover), not here.
 
 ## Harnu mod
@@ -52,25 +53,48 @@ The **General** tab has a SIDEBAR section that controls how the folder/session l
 
 The alert lives in the other tab: **Settings → General**, in the **OS notifications** group, as **Daily budget alerts**. It is **on by default** and fires at most twice a day — once when you cross 80% of the day's budget, while it is still correctable, and once when you cross 100%. It does not repeat: the crossing is remembered across restarts, so relaunching Harnu mid-afternoon will not replay an alert you already saw, and a new day re-arms both steps. Turning the master **OS notifications** switch off silences it along with everything else.
 
-## Automatic cleanup
+## Cleanup
 
-The autopilot behind [Cleanup](cleanup.md#automatic-cleanup-the-autopilot) has no settings screen yet; it will join the Cleanup tab in the next Cleanup update. Until then its options are in `gc-prefs.json` in Harnu's settings folder (next to `reaper-prefs.json`), read when Harnu starts and written by Harnu. Edit it with Harnu closed. Values outside a range are clamped; anything unreadable falls back to the default.
+**Settings → Cleanup** is the one place that controls how Harnu cleans up after finished work. Every change saves as you make it, and the numbers you type are applied about half a second after you stop typing. If you type a value outside the allowed range, Harnu keeps the nearest allowed one and the field shows what it kept. The tab is the settings behind the [Cleanup](cleanup.md) screen, in four groups.
 
-| Option                    | Default | Range                 | What it does                                                                                                                            |
-| ------------------------- | ------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `autopilot`               | off     | on / off              | Turns automatic cleaning on. The first cycle after turning it on only reports.                                                          |
-| `firstReportAcknowledged` | no      | yes / no              | Set once you acknowledge the first report; automatic cleaning starts after that.                                                        |
-| `intervalMs`              | 1 hour  | 30 minutes - 24 hours | How often the cycle runs. It is the Cleanup background-scan interval; there is one timer.                                               |
-| `graceDays`               | 2       | 0 - 30                | How long a worktree must be quiet (no session activity, no container start or stop that Harnu did not cause) before it can be a corpse. |
-| `maxItemsPerCycle`        | 20      | 1 - 200               | The most worktrees one cycle cleans.                                                                                                    |
-| `categories.worktrees`    | on      | on / off              | Off: the autopilot cleans no worktrees.                                                                                                 |
-| `categories.volumes`      | on      | on / off              | Off: the autopilot leaves the volumes of a cleaned worktree.                                                                            |
-| `categories.dockerCache`  | on      | on / off              | Off: no build-cache or dangling-image pruning.                                                                                          |
-| `removeVolumes`           | on      | on / off              | Remove the named volumes only a cleaned worktree's stack used. **A removed volume cannot be restored.**                                 |
-| `cacheMaxAgeDays`         | 7       | 1 - 365               | Build cache older than this is pruned.                                                                                                  |
-| `neverClean`              | none    | list of paths         | Repos or worktrees that are never cleaned, automatically or by hand.                                                                    |
+**Autopilot**
 
-The autopilot rides the Cleanup background scan, so it needs **Automatic background scan** (Settings → Cleanup) to stay on. The first time Harnu reads `gc-prefs.json` without one, it starts from your existing Cleanup interval and from the Containers zombie threshold (which becomes the grace period).
+| Setting                     | Default | Range                      | What it does                                                                                                                                                     |
+| --------------------------- | ------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Clean corpses automatically | off     | on / off                   | Turns automatic cleaning on. The first cycle after turning it on only reports; automatic cleaning starts once you acknowledge that report on the Cleanup screen. |
+| Run every                   | 1 hour  | 30 min / 1 h / 6 h / daily | How often the cycle runs. It is the same timer as the background scan, so this is the one interval setting for both.                                             |
+| Grace period                | 2 days  | 0 - 30 days                | How long a worktree must be quiet (no session activity, no container start or stop that Harnu did not cause) before it can count as a corpse.                    |
+| Per-cycle cap               | 20      | 1 - 200 worktrees          | The most worktrees one automatic cycle cleans. The rest wait for the next cycle. Cleaning by hand is not limited by it.                                          |
+
+The autopilot rides the background scan, so it needs **Automatic background scan** (in the Scan group below) to stay on.
+
+**What it cleans** (these switches govern the autopilot; cleaning by hand always asks first)
+
+| Setting                                | Default | What it does                                                                                                                                                                                                                                 |
+| -------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Worktrees                              | on      | Off: the autopilot cleans no worktrees.                                                                                                                                                                                                      |
+| Volumes                                | on      | Off: the autopilot leaves the volumes of a worktree it cleans.                                                                                                                                                                               |
+| Docker build cache and dangling images | on      | Off: no build-cache or dangling-image pruning. It never removes an image a stack uses.                                                                                                                                                       |
+| Remove volumes with a worktree         | on      | When a worktree is cleaned, also remove the named volumes only its stack used. Applies to cleaning by hand as well. **Volumes cannot be restored**: this is the one step that cannot be undone, and the warning sits right under the switch. |
+| Build cache max age                    | 7 days  | Build cache older than this is pruned (1 - 365 days).                                                                                                                                                                                        |
+
+**Never clean**
+
+A list of absolute paths (a repo or a single worktree) that Cleanup never touches, automatically or by hand. Type a path and press Enter or **Add**; click **Remove** beside a path to take it off. A relative path is refused, because it would protect nothing, and a path already on the list is ignored.
+
+**Scan** (the settings of the older background scan, which also cover leftover branches and folders)
+
+- **Automatic background scan** — on by default. Turning it off also stops the autopilot.
+- **Notify when items become harvestable** — a quiet entry in the notification center.
+- **Never delete remote branches** — a kill switch; Harnu refuses any remote deletion while it is on.
+- **Protected branches** — extra branch names, comma-separated, that are never scanned.
+- **Minimum age** — days to wait after a branch becomes harvestable before it is flagged.
+
+The marks you set with **Keep**, and whether you have acknowledged the first report, are not settings: they are set from the Cleanup screen. Behind this tab is one file, `gc-prefs.json` in Harnu's settings folder (next to `reaper-prefs.json`); you do not need to edit it. The first time Harnu starts without it, it takes your earlier Cleanup interval and the Containers zombie threshold (which becomes the grace period) so nothing you configured is lost, and it never turns the autopilot on by itself.
+
+## Containers
+
+**Settings → Containers** now holds only what the [Containers](containers.md#settings) inspector needs for itself: its own background scan, the idle clock for stacks that do not run from a worktree, and the new-zombie notification. A stack that runs from a worktree is judged by Cleanup, so there is no setting for it here. A note at the top of the tab says so and has an **Open Cleanup settings** link.
 
 ## Hibernation policy
 

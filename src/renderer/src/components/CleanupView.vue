@@ -241,15 +241,15 @@ const next = computed(() =>
 const intervalText = computed(() => {
   const ms = prefs.value?.intervalMs ?? 3_600_000
   return ms >= 86_400_000
-    ? t('cleanup.gc.summary.everyDay')
+    ? t('cleanup.gc.status.everyDay')
     : ms >= 3_600_000
-      ? t('cleanup.gc.summary.everyHours', { n: Math.round(ms / 3_600_000) })
-      : t('cleanup.gc.summary.everyMinutes', { n: Math.round(ms / 60_000) })
+      ? t('cleanup.gc.status.everyHours', { n: Math.round(ms / 3_600_000) })
+      : t('cleanup.gc.status.everyMinutes', { n: Math.round(ms / 60_000) })
 })
 const nextText = computed(() => {
   const n = next.value
   if (!n) return null
-  return t(`cleanup.gc.summary.next.${n.unit}`, { n: n.n })
+  return t(`cleanup.gc.status.next.${n.unit}`, { n: n.n })
 })
 
 const showFirstCycle = computed(
@@ -322,16 +322,14 @@ async function copyRestoreHint(hint: string): Promise<void> {
       data-testid="cleanup-summary"
     >
       <Recycle :size="14" :stroke-width="1.6" class="shrink-0 text-green" />
-      <i18n-t keypath="cleanup.gc.summary.reclaimable" scope="global">
+      <i18n-t keypath="cleanup.gc.status.reclaimable" scope="global">
         <template #size>
           <b class="font-semibold text-text">{{ formatBytes(gc.reclaimableBytes) }}</b>
         </template>
       </i18n-t>
       <span class="text-text-4">·</span>
       <span>{{
-        prefs?.autopilot
-          ? t('cleanup.gc.summary.autopilotOn')
-          : t('cleanup.gc.summary.autopilotOff')
+        prefs?.autopilot ? t('cleanup.gc.status.autopilotOn') : t('cleanup.gc.status.autopilotOff')
       }}</span>
       <template v-if="nextText">
         <span class="text-text-4">·</span>
@@ -352,8 +350,8 @@ async function copyRestoreHint(hint: string): Promise<void> {
     >
       {{
         prefs?.autopilot
-          ? t('cleanup.gc.summary.badgeOn', { every: intervalText })
-          : t('cleanup.gc.summary.badgeOff')
+          ? t('cleanup.gc.status.badgeOn', { every: intervalText })
+          : t('cleanup.gc.status.badgeOff')
       }}
     </span>
     <Button
