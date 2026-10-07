@@ -18,7 +18,8 @@ import type {
 import {
   COMPOSE_WORKING_DIR_LABEL,
   type InspectedContainer,
-  type StackGroup
+  type StackGroup,
+  type VolumeFact
 } from '../src/main/containers/containers-core'
 
 const DAY = 86_400_000
@@ -166,6 +167,7 @@ interface BuildOver {
   keep?: Set<string>
   neverClean?: Set<string>
   harnuStoppedAt?: ReadonlyMap<string, number>
+  volumes?: ReadonlyMap<string, VolumeFact>
 }
 
 /** Inputs for a single worktree at WT_A whose branch is merged by ancestry. */
@@ -190,7 +192,8 @@ function build(over: BuildOver = {}): ReturnType<typeof buildBundles> {
     neverClean: over.neverClean ?? new Set(),
     now: NOW,
     graceDays: GRACE_DAYS,
-    ...(over.harnuStoppedAt ? { harnuStoppedAt: over.harnuStoppedAt } : {})
+    ...(over.harnuStoppedAt ? { harnuStoppedAt: over.harnuStoppedAt } : {}),
+    ...(over.volumes ? { volumes: over.volumes } : {})
   })
 }
 
@@ -434,6 +437,53 @@ describe('ownedVolumes', () => {
       mounts: [volumeMount('alpha'), volumeMount('mid')]
     })
     expect(ownedVolumes([stack('app', [a, b])], [a, b])).toEqual(['alpha', 'mid', 'zeta'])
+  })
+
+  describe('with volume facts (the cross-project rule buildSnapshot applies)', () => {
+    const db = composeContainer('db', 'app', WT_A, {
+      mounts: [volumeMount('app_pg'), volumeMount('projb_pg'), volumeMount('loose')]
+    })
+    const facts = (entries: Array<[string, string | null]>): Map<string, VolumeFact> =>
+      new Map(entries.map(([name, project]) => [name, { sizeBytes: 1, project }]))
+
+    it('drops a volume another compose project created (declared external here)', () => {
+      const vols = facts([
+        ['app_pg', 'app'],
+        ['projb_pg', 'projb'],
+        ['loose', null]
+      ])
+      expect(ownedVolumes([stack('app', [db])], [db], vols)).toEqual(['app_pg', 'loose'])
+    })
+
+    it('keeps a volume with no fact, as buildSnapshot does', () => {
+      expect(ownedVolumes([stack('app', [db])], [db], facts([['projb_pg', 'projb']]))).toEqual([
+        'app_pg',
+        'loose'
+      ])
+    })
+
+    it('drops a labelled volume a standalone (project-less) stack mounts', () => {
+      const run = container('runner', { mounts: [volumeMount('app_pg')] })
+      const standalone: StackGroup = {
+        id: 'runner',
+        name: 'runner',
+        kind: 'container',
+        project: null,
+        containers: [run]
+      }
+      expect(ownedVolumes([standalone], [run], facts([['app_pg', 'app']]))).toEqual([])
+    })
+
+    it('drops a volume when any bundle stack mounting it belongs to another project', () => {
+      const web = composeContainer('web', 'web', WT_A, { mounts: [volumeMount('app_pg')] })
+      expect(
+        ownedVolumes(
+          [stack('app', [db]), stack('web', [web])],
+          [db, web],
+          facts([['app_pg', 'app']])
+        )
+      ).toEqual(['loose', 'projb_pg'])
+    })
   })
 
   it('returns nothing when the bundle has no stacks', () => {
@@ -867,6 +917,24 @@ describe('buildBundles — stack attribution', () => {
     expect(out.find((b) => b.item.path === WT_A)?.stackIds).toEqual(['proja'])
     expect(out.find((b) => b.item.path === WT_B)?.stackIds).toEqual(['projb'])
     expect(out.every((b) => b.sharedStackIds.length === 0)).toBe(true)
+  })
+
+  it('I4 through the builder: a volume labelled with another compose project is not owned', () => {
+    const db = composeContainer('db', 'app', WT_A, {
+      mounts: [volumeMount('app_pg'), volumeMount('projb_pg')]
+    })
+    const b = only(
+      build({
+        stacks: [stack('app', [db])],
+        containers: [db],
+        volumes: new Map([
+          ['app_pg', { sizeBytes: 1, project: 'app' }],
+          ['projb_pg', { sizeBytes: 1, project: 'projb' }]
+        ])
+      })
+    )
+    expect(b.stackIds).toEqual(['app'])
+    expect(b.ownedVolumes).toEqual(['app_pg'])
   })
 
   it('Review Focus 3 through the builder: a volume also mounted outside the bundle is not owned', () => {
