@@ -3,6 +3,7 @@
 // unit-tested in tests/gc-pipeline-core.test.ts without touching docker, git or disk.
 
 import type { WorktreeBundle } from './bundle-core'
+import { normalizePath } from '../containers/containers-core'
 
 export type GcStep =
   | 'reprobe'
@@ -77,6 +78,16 @@ export interface GcRunOptions {
 }
 
 /**
+ * The main checkout told by its path rather than by the flag the scan set: a hand-built or
+ * stale bundle can carry `isMainCheckout: false` for the repo's own folder.
+ */
+export function isMainCheckoutByPath(b: WorktreeBundle): boolean {
+  const path = b.item.path
+  if (!path) return false
+  return normalizePath(path, process.platform) === normalizePath(b.item.repoPath, process.platform)
+}
+
+/**
  * Only a proven corpse runs, or a `decide` bundle the operator explicitly confirmed. A
  * protection flag refuses whatever the bucket says, since a stale or hand-built bundle can
  * carry a corpse bucket next to a flag set after the scan.
@@ -86,7 +97,7 @@ export interface GcRunOptions {
  * Returns the refusal, or null when the bundle may run.
  */
 function refusalOf(b: WorktreeBundle, opts: GcRunOptions): string | null {
-  if (b.isMainCheckout || b.neverClean || b.keep) return 'not-a-corpse'
+  if (b.isMainCheckout || b.neverClean || b.keep || isMainCheckoutByPath(b)) return 'not-a-corpse'
   if (b.sharedStackIds.length > 0) return 'shared-stack'
   const runs = b.bucket === 'corpse' || (opts.confirmDecide === true && b.bucket === 'decide')
   return runs ? null : 'not-a-corpse'

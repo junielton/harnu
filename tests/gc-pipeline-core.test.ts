@@ -291,6 +291,20 @@ describe('runBundle — only a proven corpse runs (delta 2, item 2)', () => {
     expect(f.calls).toEqual([])
   })
 
+  it.each([REPO, `${REPO}/`, '/ws/org/proj//www'])(
+    'refuses a main checkout told by its path (%s), whatever its flag says (delta 3, item 6)',
+    async (path) => {
+      const base = bundle('a')
+      const b = bundle('a', { item: { ...base.item, path }, isMainCheckout: false })
+      const f = fakeOps()
+      expect(await runBundle(b, f.ops, { ...OPTS, confirmDecide: true })).toEqual({
+        id: b.item.id,
+        ...refused
+      })
+      expect(f.calls).toEqual([])
+    }
+  )
+
   it('refuses a decide bundle when confirmDecide is false', async () => {
     const f = fakeOps()
     const r = await runBundle(bundle('a', { bucket: 'decide' }), f.ops, {

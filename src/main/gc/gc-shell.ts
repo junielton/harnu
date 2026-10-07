@@ -4,7 +4,7 @@
 // real modules, and it loads them lazily so importing this file never pulls in electron.
 
 import type { BrowserWindow } from 'electron'
-import { GcStepError, type GcOps, type GcStep } from './pipeline-core'
+import { GcStepError, isMainCheckoutByPath, type GcOps, type GcStep } from './pipeline-core'
 import { containerFolders, type SessionPresence, type WorktreeBundle } from './bundle-core'
 import { cleanItem, type CleanStepId, type ExecutorDeps } from '../reaper/executor-core'
 import { dehydrateItem, type DehydrateDeps } from '../reaper/dehydrate-core'
@@ -209,7 +209,8 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       for (const id of b.stackIds) vetted.delete(id)
       // Protection first, before any probe or docker call. A read that fails is no answer.
       try {
-        if (b.isMainCheckout || (await deps.isProtectedNow(b))) {
+        // The path decides too, so a bundle whose flag says otherwise is still refused.
+        if (b.isMainCheckout || isMainCheckoutByPath(b) || (await deps.isProtectedNow(b))) {
           return { ok: false, reason: 'protected-now' }
         }
       } catch (err) {
@@ -409,6 +410,6 @@ export async function defaultGcShellDeps(
     presenceOf: async (path) => presenceFromSets(path, await computeFolderSets()),
     headOf: async (path) => (await executor.git(path, ['rev-parse', 'HEAD'])).trim() || null,
     // The scan-time flags for now; S3 replaces this with a live read of the prefs.
-    isProtectedNow: (b) => b.keep || b.neverClean || b.isMainCheckout
+    isProtectedNow: (b) => b.keep || b.neverClean || b.isMainCheckout || isMainCheckoutByPath(b)
   }
 }
