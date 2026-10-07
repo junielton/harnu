@@ -62,3 +62,49 @@ export function planCycle(bundles: readonly WorktreeBundle[], prefs: GcPrefs): C
     reportBytes
   }
 }
+
+// ---- failures: a corpse that keeps failing is a decision, not a retry loop -----------------
+
+/** A halted cleanup, remembered in memory until it succeeds, the worktree is gone, or a day passes. */
+export interface CycleFailure {
+  step: string
+  error: string
+  at: number
+}
+
+/** How long a failed cleanup stays a decision before the autopilot may try it again. */
+export const FAILURE_TTL_MS = 86_400_000
+
+/** Drops failures for worktrees that no longer exist and those old enough to retry. */
+export function pruneFailures(
+  failures: Map<string, CycleFailure>,
+  bundles: readonly WorktreeBundle[],
+  now: number
+): void {
+  const present = new Set(bundles.map((b) => b.item.id))
+  for (const [id, f] of failures) {
+    if (!present.has(id) || now - f.at >= FAILURE_TTL_MS) failures.delete(id)
+  }
+}
+
+/**
+ * Spec §4: a halted item reappears in Decide with the step and the error. Only a corpse is
+ * rewritten; anything else is already a decision or off limits.
+ */
+export function applyFailures(
+  bundles: readonly WorktreeBundle[],
+  failures: ReadonlyMap<string, CycleFailure>
+): WorktreeBundle[] {
+  return bundles.map((b) => {
+    const f = b.bucket === 'corpse' ? failures.get(b.item.id) : undefined
+    if (!f) return b
+    return {
+      ...b,
+      bucket: 'decide' as const,
+      reason: {
+        code: 'cleanup-failed' as const,
+        detail: `Cleanup stopped at ${f.step}: ${f.error}`
+      }
+    }
+  })
+}
