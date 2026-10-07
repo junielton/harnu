@@ -66,6 +66,7 @@ import { isSidebarDensity, type SidebarDensity } from '../components/sidebar-den
 import { teamHex } from '../components/teammate-grouping'
 import { isForkSyntheticLike, sessionTitle } from '../lib/session-label'
 import { injectionLedger } from './injection-ledger'
+import { createNavHistory } from '../lib/nav-history'
 import {
   claimedAway,
   claimFor,
@@ -2625,6 +2626,58 @@ export const useSessionsStore = defineStore('sessions', () => {
   function clearSelection(): void {
     selectedId.value = null
     selectedFolderPath.value = null
+  }
+
+  // ---- Session navigation history (back / forward) ----
+  // docs/specs/2026-10-06-session-nav-history.md §5.2. In memory only (D-2).
+  const navHistory = createNavHistory()
+  // True while goBack / goForward write `selectedId`, so the recording watcher
+  // does not push the walk's own target. Cleared on the next tick, after the
+  // (pre-flush) watcher below has run.
+  let navigating = false
+
+  // Record every non-null selection: the user-intent path (`select`) plus the
+  // programmatic writes the operator also experiences as navigation (spawn,
+  // close-fallback). The synth→real migration is not recorded: `fireMigrate`
+  // renames the entry first, so the real id already equals `current()` by the
+  // time this (async) watcher sees it, and the push is a no-op.
+  watch(selectedId, (id) => {
+    if (id && !navigating) navHistory.push(id)
+  })
+
+  // Live = the id is still in the model (same set as `allSessions`). A parked
+  // (hibernated) session counts: showing it resumes it like a sidebar click.
+  const isNavLive = (id: string): boolean => findSessionById(id) !== null
+
+  /** Show `id` through the same path as `select()`, without recording it. */
+  function showFromHistory(id: string): void {
+    navigating = true
+    select(id)
+    void nextTick(() => {
+      navigating = false
+    })
+  }
+
+  /**
+   * Back: the previous session you viewed. From Folder View or an open takeover,
+   * the first Back returns to the session you left without moving the cursor
+   * (spec §4 row 4). Silent no-op at the start of the history.
+   */
+  function goBack(): void {
+    const showingSession = selectedId.value !== null && !useUiStore().anyTakeoverOpen
+    const here = navHistory.current()
+    if (!showingSession && here !== null && isNavLive(here)) {
+      showFromHistory(here)
+      return
+    }
+    const target = navHistory.back(isNavLive)
+    if (target !== null) showFromHistory(target)
+  }
+
+  /** Forward: the next session in the history, only after a Back. Silent no-op at the end. */
+  function goForward(): void {
+    const target = navHistory.forward(isNavLive)
+    if (target !== null) showFromHistory(target)
   }
 
   /**
@@ -5696,6 +5749,8 @@ export const useSessionsStore = defineStore('sessions', () => {
     selectedId,
     selectedFolderPath,
     activeFolderPath,
+    goBack,
+    goForward,
     selectedSession,
     selectedPath,
     allSessions,

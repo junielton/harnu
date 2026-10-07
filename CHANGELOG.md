@@ -10,7 +10,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
-## 2026-10-06
+## 2026-10-07
 
 ### Added
 
@@ -20,7 +20,9 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   Harnu already read the old way is still read that way. The mod runs unsandboxed inside
   the `claude` process and talks only to Harnu on this machine. A one-time notice
   explains this the first time you open Harnu after the update; sessions you started
-  before you saw it keep running without the mod.
+  before you saw it keep running without the mod. For now the
+  commands Harnu can send through the mod are housekeeping only (a channel check),
+  nothing that steers or approves a session.
 - **A switch for it.** Settings → General → Integrations has a new **Harnu mod** switch.
   Off stops Harnu from using the mod right away, switches it off in running sessions and
   keeps it out of new ones; on again reaches new sessions only. Off means the hooks and
@@ -32,7 +34,6 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   removes exactly that entry. Harnu shows an outside session only once its own watchers confirm
   it, never starts prompts in it, never writes into its terminal and does not hold its
   approvals. On a machine with managed settings the switch refuses and writes nothing.
-
 - **The state of the mod, per session.** The hover preview shows one quiet line (`Harnu
 mod: live`, `off`, or `legacy` with the reason), and the System Monitor shows the same
   state next to each live session. `legacy` is not an error: it means the session runs
@@ -59,6 +60,19 @@ mod: live`, `off`, or `legacy` with the reason), and the System Monitor shows th
   either key underlines the paths under the pointer, in the main terminal and in
   helper-pane terminals. Links to web addresses behave as before. (On a Mac,
   Ctrl+click is the system right-click — keep using Option there.)
+
+## 2026-10-06
+
+### Added
+
+- **Back and forward between sessions.** The mouse's back / forward side buttons, and
+  `Alt+←` / `Alt+→` (`⌘[` / `⌘]` on macOS), now walk the sessions you viewed, like a
+  browser: Back returns to the session you were just in, Forward undoes it, and opening
+  a new session clears the forward history. From Folder View or a takeover (Board, PR
+  Stack, Cleanup, …), the first Back returns to the session you left. Closed sessions
+  are skipped, and the history is kept in memory only, so it starts empty after a
+  restart. `Alt+←` / `Alt+→` no longer reach the terminal (use `Ctrl+←` / `Ctrl+→` to
+  jump words there). Verified live on Linux only; macOS and Windows are untested.
 
 ## 2026-10-05
 

@@ -90,6 +90,21 @@ Drag a pane's header to resize it. Split panes follow the same rule as the main 
 
 `Cmd/Ctrl+K` opens a spotlight-style search over your recent sessions, folders, and available actions. It's the fastest way to jump around once you have more than a couple of folders pinned. It shows your most recent sessions first, then fuzzy-matches everything else as you type — folders by name, sessions by their summary or first prompt, and a fixed set of actions (new session, add folder, resume your last session, toggle the Fleet rail, open the Approval Inbox). Arrow keys move the selection, Enter activates it, Esc closes it.
 
+## Going back and forward
+
+Harnu remembers the sessions you viewed, like a browser's history. Press the mouse's **back** side button, or `Alt+←` (`Cmd+[` on macOS), to return to the session you were just in; the **forward** side button, or `Alt+→` (`Cmd+]` on macOS), goes the other way after a Back. It works whether or not the terminal has focus, and the side-button clicks never reach the running program.
+
+- Opening a session after going back clears the forward history, exactly like following a new link in a browser.
+- Only sessions are in the history. If you're on a folder's Folder View or a takeover (Board, PR Stack, Cleanup, Usage Dashboard, System Monitor), the first Back takes you to the session you left.
+- Sessions you closed or deleted are skipped. At either end, the key or button simply does nothing.
+- A parked (hibernated) session resumes when you land on it, like clicking its row.
+- Nothing navigates while a dialog or the command palette is open.
+- The history lives in memory: it holds your last 50 sessions and starts empty after a restart.
+
+> **Trade-off:** `Alt+←` / `Alt+→` are taken by navigation, so they no longer reach the terminal (where they would jump a word left/right). `Ctrl+←` / `Ctrl+→` usually do the same word jump and are unaffected.
+>
+> **Only verified on Linux.** macOS and Windows haven't been tested live yet. On Windows, a mouse driver that sends the side buttons only as system "browser back/forward" commands won't navigate (the keyboard still will); on macOS, a mouse whose side buttons aren't exposed as standard back/forward buttons relies on its vendor tool mapping them to `Cmd+[` / `Cmd+]`.
+
 ## Shortcuts
 
 | Shortcut           | Action                                               |
@@ -104,6 +119,8 @@ Drag a pane's header to resize it. Split panes follow the same rule as the main 
 | `Cmd/Ctrl+Alt+B`   | Toggle the right split panel                         |
 | `Cmd/Ctrl+Shift+A` | Toggle the Fleet rail                                |
 | `Cmd/Ctrl+Shift+B` | Toggle the Fleet rail                                |
+| `Alt+←` / `Cmd+[`  | Back to the previous session you viewed              |
+| `Alt+→` / `Cmd+]`  | Forward again after going back                       |
 | Arrow keys / Enter | Move and activate the keyboard cursor in the sidebar |
 
 ### Terminal shortcuts
