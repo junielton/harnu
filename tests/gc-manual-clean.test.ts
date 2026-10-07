@@ -8,7 +8,7 @@ import { defaultGcPrefs, type GcPrefs } from '../src/main/gc/gc-prefs'
 import { GcStepError, type GcOps } from '../src/main/gc/pipeline-core'
 import type { WorktreeBundle } from '../src/main/gc/bundle-core'
 import type { OrphanVolumeItem } from '../src/main/gc/gc-housekeeping-input'
-import { bundle, NOW, reapItem } from './gc-fixtures'
+import { bundle, NOW } from './gc-fixtures'
 
 const prefs = (over: Partial<GcPrefs> = {}): GcPrefs => ({ ...defaultGcPrefs(), ...over })
 
@@ -99,7 +99,6 @@ function rig(
   return { deps, normal, forced, progress, done, removedVolumes, gather }
 }
 
-const idOf = (path: string): string => reapItem(path).id
 const settle = (r: Rig): Promise<void> => r.deps.queue.idle()
 
 /**

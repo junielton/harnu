@@ -133,7 +133,7 @@ export type RefusalCode =
 export function refusalFor(
   b: WorktreeBundle,
   prefs: GcPrefs,
-  opts: { confirmDecide: boolean }
+  opts: { confirmed: boolean }
 ): RefusalCode | null {
   if (b.isMainCheckout) return 'main-checkout'
   if (isNeverClean(b, prefs)) return 'never-clean'
@@ -141,6 +141,6 @@ export function refusalFor(
   if (b.bucket === 'alive') return 'alive'
   // The cleanup executor skips the folder of a detached worktree, so "success" would be a lie.
   if (b.item.kind !== 'worktree' && b.item.kind !== 'hidden-folder') return 'unsupported-kind'
-  if (b.bucket === 'decide' && !opts.confirmDecide) return 'needs-confirmation'
+  if (b.bucket === 'decide' && !opts.confirmed) return 'needs-confirmation'
   return null
 }
