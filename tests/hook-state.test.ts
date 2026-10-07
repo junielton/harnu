@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { reduceTaskState, type TaskState } from '../src/main/hook-state'
+import { reduceTaskState, type HookEvent, type TaskState } from '../src/main/hook-state'
 
 /**
  * Hook reducer FSM (session-state real-state spec §3.3/§6.1). Pure transition
@@ -81,6 +81,37 @@ describe('reduceTaskState', () => {
   it('needs-input survives an informational event (does not decay)', () => {
     expect(reduceTaskState('needs-input', ev('PreCompact'))).toBe('needs-input')
     expect(reduceTaskState('needs-input', ev('SubagentStop'))).toBe('needs-input')
+  })
+
+  describe('a background subagent never clears a block the main thread raised', () => {
+    const agentEv = (hookEventName: string, blockRaisedByAgent = false): HookEvent => ({
+      hookEventName,
+      sessionId: 'X',
+      agentId: 'agent-1',
+      ...(blockRaisedByAgent ? { blockRaisedByAgent } : {})
+    })
+
+    it("a subagent's PreToolUse / PostToolUse leave a main-thread needs-input intact", () => {
+      expect(reduceTaskState('needs-input', agentEv('PreToolUse'))).toBe('needs-input')
+      expect(reduceTaskState('needs-input', agentEv('PostToolUse'))).toBe('needs-input')
+    })
+
+    it("the main thread's own PostToolUse still clears needs-input", () => {
+      expect(reduceTaskState('needs-input', ev('PostToolUse'))).toBe('working')
+    })
+
+    it("a subagent's tool event still shows working from idle (turn ended, agents running)", () => {
+      expect(reduceTaskState('idle', agentEv('PreToolUse'))).toBe('working')
+      expect(reduceTaskState('working', agentEv('PostToolUse'))).toBe('working')
+    })
+
+    it("a block the subagent itself raised is cleared by that subagent's next tool event", () => {
+      expect(reduceTaskState('needs-input', agentEv('PostToolUse', true))).toBe('working')
+    })
+
+    it("a subagent's own PermissionRequest still raises needs-input", () => {
+      expect(reduceTaskState('working', agentEv('PermissionRequest'))).toBe('needs-input')
+    })
   })
 
   it('unknown events leave the state unchanged', () => {

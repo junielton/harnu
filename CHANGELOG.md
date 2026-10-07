@@ -49,6 +49,13 @@ mod: live`, `off`, or `legacy` with the reason), and the System Monitor shows th
 
 ### Fixed
 
+- **A question no longer stays green because a background agent is running.** When a
+  session opened a question or approval dialog while a background agent kept working, the
+  agent's own tool calls turned the session back to working, so the row stayed green
+  instead of orange "needs you". The agent's activity now never clears a dialog the main
+  conversation opened; answering it does. A plain turn that ended while agents still run
+  keeps showing as working.
+
 - **Files an agent saves in `.harnu/` are now reachable.** The `.harnu/` folder is
   usually gitignored, so Browse files hid it and a path like
   `.harnu/out/roteiro.md` printed in the transcript never became a link. `.harnu/`

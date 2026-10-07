@@ -17,8 +17,9 @@
 import type { FeatureId, WireEvent } from '../contract'
 import type { CompanionHostFacade } from '../host-core'
 import type { FactSource } from '../arbitration-core'
-import { reduceTaskState, type TaskState } from '../../hook-state'
+import type { TaskState } from '../../hook-state'
 import type { BridgeEvent } from '../../detect/task-state-hub'
+import { TaskStateRegistry } from '../../detect/task-state-registry'
 import type { BindingView } from '../session-table'
 import { initialMapState, mapWire, type MapState } from './task-state-map-core'
 
@@ -75,8 +76,11 @@ function proofsFor(b: BindingView, ev: WireEvent): FeatureId[] {
 export function createTaskStateAdapter(deps: TaskStateAdapterDeps): TaskStateAdapter {
   /** Per binding (the table's ordinal follows a re-key, never a sid). */
   const maps = new Map<number, MapState>()
-  /** The two shadow folds, per sid. */
-  const shadow = new Map<string, { legacy: TaskState; companion: TaskState }>()
+  /** The two shadow folds, per sid: the same fold the hub runs, so they cannot drift from it. */
+  const shadow: Record<FactSource, TaskStateRegistry> = {
+    legacy: new TaskStateRegistry(),
+    companion: new TaskStateRegistry()
+  }
 
   deps.host.registerEventTypes(TASK_STATE_EVENT_TYPES)
 
@@ -84,15 +88,13 @@ export function createTaskStateAdapter(deps: TaskStateAdapterDeps): TaskStateAda
     // a legacy event is worth a fact only for a session the mod is bound to (the ledger's rule)
     if (!deps.host.bindingForSid(ev.sessionId)) return
     const source: FactSource = ev.source === 'hook' ? 'legacy' : 'companion'
-    const folds = shadow.get(ev.sessionId) ?? { legacy: 'idle', companion: 'idle' }
-    const before = folds[source]
-    const after = reduceTaskState(before, {
+    const before = shadow[source].get(ev.sessionId) ?? 'idle'
+    const after = shadow[source].fold(ev.sessionId, {
       hookEventName: ev.event,
       matcher: ev.matcher,
-      sessionId: ev.sessionId
+      sessionId: ev.sessionId,
+      ...(ev.agentId !== undefined ? { agentId: ev.agentId } : {})
     })
-    folds[source] = after
-    shadow.set(ev.sessionId, folds)
     if (after === before) return
     deps.recordFact(
       source,
@@ -158,7 +160,8 @@ export function createTaskStateAdapter(deps: TaskStateAdapterDeps): TaskStateAda
     }),
     deps.host.bus.on('end', (b) => {
       maps.delete(b.key)
-      shadow.delete(b.sid)
+      shadow.legacy.prune(b.sid)
+      shadow.companion.prune(b.sid)
     })
   ]
 

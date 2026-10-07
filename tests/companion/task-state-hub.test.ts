@@ -57,6 +57,26 @@ const ev = (over: Partial<BridgeEvent> = {}): BridgeEvent => ({
 beforeEach(() => resetHubForTests())
 afterEach(() => resetHubForTests())
 
+describe('an open question wins over a running background subagent (hub)', () => {
+  it('the renderer and observers keep seeing needs-input while the subagent works', () => {
+    const r = rig()
+    // Order captured from a live session: the main thread opens a dialog, a background agent
+    // keeps calling tools meanwhile.
+    ingest(ev({ event: 'UserPromptSubmit' }), r.win)
+    ingest(ev({ event: 'PreToolUse' }), r.win)
+    ingest(ev({ event: 'PermissionRequest' }), r.win)
+    ingest(ev({ event: 'PostToolUse', agentId: 'agent-1' }), r.win)
+    ingest(ev({ event: 'PreToolUse', agentId: 'agent-1' }), r.win)
+    expect(getTaskState('s1')).toBe('needs-input')
+    expect(r.observed.slice(-2).map((o) => o.taskState)).toEqual(['needs-input', 'needs-input'])
+    const last = r.sends[r.sends.length - 1]
+    expect(last.payload.taskState).toBe('needs-input')
+    // answering the dialog is a main-thread event: back to working
+    ingest(ev({ event: 'PostToolUse' }), r.win)
+    expect(getTaskState('s1')).toBe('working')
+  })
+})
+
 describe('task-state hub', () => {
   it('with no companion wired every hook event is applied: fold, observers, renderer', () => {
     resetHubForTests() // no configureHub: the defaults
