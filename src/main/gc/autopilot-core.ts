@@ -4,6 +4,7 @@
 import type { WorktreeBundle } from './bundle-core'
 import type { GcPrefs } from './gc-prefs'
 import { normalizePath } from '../containers/containers-core'
+import { isMainCheckoutByPath } from './pipeline-core'
 
 export type CycleMode = 'off' | 'report' | 'clean'
 
@@ -39,7 +40,13 @@ export function isNeverClean(b: WorktreeBundle, prefs: GcPrefs): boolean {
  * mark is cleared by the next gather, and until then refusing is the safe side.
  */
 export function isProtectedNow(b: WorktreeBundle, prefs: GcPrefs): boolean {
-  return b.isMainCheckout || b.keep || prefs.keep[b.item.id] !== undefined || isNeverClean(b, prefs)
+  return (
+    b.isMainCheckout ||
+    isMainCheckoutByPath(b) ||
+    b.keep ||
+    prefs.keep[b.item.id] !== undefined ||
+    isNeverClean(b, prefs)
+  )
 }
 
 const bySignOfLife = (a: WorktreeBundle, b: WorktreeBundle): number => {
@@ -145,7 +152,7 @@ export function refusalFor(
   prefs: GcPrefs,
   opts: { confirmed: boolean }
 ): RefusalCode | null {
-  if (b.isMainCheckout) return 'main-checkout'
+  if (b.isMainCheckout || isMainCheckoutByPath(b)) return 'main-checkout'
   if (isNeverClean(b, prefs)) return 'never-clean'
   if (b.keep) return 'kept'
   if (b.bucket === 'alive') return 'alive'

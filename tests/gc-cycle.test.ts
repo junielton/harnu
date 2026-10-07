@@ -560,7 +560,10 @@ describe('detached worktrees are never a corpse for the autopilot (delta 1, item
       keep: new Set(),
       neverClean: new Set(),
       now: NOW,
-      graceDays: 2
+      graceDays: 2,
+      volumes: new Map(),
+      knownFolders: [],
+      protectedProjects: new Set()
     })
     expect(b!.bucket).not.toBe('corpse')
     expect(planCycle([b!], live()).toClean).toEqual([])

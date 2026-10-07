@@ -72,7 +72,9 @@ export function bundlesOf(input: RepoScanInput) {
     neverClean: new Set(),
     now: NOW,
     graceDays: 2,
-    volumes: new Map()
+    volumes: new Map(),
+    knownFolders: [],
+    protectedProjects: new Set()
   }
   return buildBundles(args)
 }

@@ -31,12 +31,11 @@ import {
 import { buildBundles, type SessionPresence } from './bundle-core'
 import { presenceFromSets, dockerIsUnavailable } from './gc-shell'
 import {
-  explicitProjectNames,
   makeDirExists,
   orphanVolumeItems,
-  protectedProjects,
   statExistence,
   toHousekeepingVolumes,
+  volumeGuards,
   type OrphanVolumeItem
 } from './gc-housekeeping-input'
 import { planHousekeeping } from './housekeeping-core'
@@ -157,6 +156,22 @@ export async function gatherGc(prefs: GcPrefs, now: number): Promise<GcGathered>
     })
   }
 
+  // Housekeeping facts first: the bundle builder needs them too. Existence fails closed and
+  // explicit project names come from the files, exactly as for the orphan planner.
+  const workingDirs = containers.flatMap((c) => c.labels[COMPOSE_WORKING_DIR_LABEL] ?? [])
+  const { checked, existing } = await statExistence([...known, ...workingDirs], (p) => fs.stat(p))
+  const dirExists = makeDirExists(checked, existing)
+  const sources = await Promise.all(
+    known
+      .filter((p) => existing.has(p))
+      .map(async (p) => ({
+        path: p,
+        env: await readSmall(path.join(p, '.env')),
+        compose: await readComposeFile(p)
+      }))
+  )
+  const guards = volumeGuards(sources, dirExists)
+
   const stacks = groupStacks(containers)
   const knownForStacks: KnownFolder[] = itemPaths.map((p) => ({
     path: p,
@@ -180,7 +195,10 @@ export async function gatherGc(prefs: GcPrefs, now: number): Promise<GcGathered>
     harnuStoppedAt: harnuStopTimes(journal),
     now,
     graceDays: prefs.graceDays,
-    volumes: df
+    volumes: df,
+    // A volume is owned only when no other folder may share its project (delta 1, item 1).
+    knownFolders: guards.knownFolders,
+    protectedProjects: guards.protectedProjects
   }
   // A Keep mark holds only while the fate it was made under still holds: judge the fates
   // first, then rebuild with the marks that are still valid.
@@ -195,30 +213,13 @@ export async function gatherGc(prefs: GcPrefs, now: number): Promise<GcGathered>
   }
   if (keep.size > 0) bundles = buildBundles({ ...input, keep })
 
-  // Housekeeping facts. Existence fails closed; explicit project names come from the files.
-  const workingDirs = containers.flatMap((c) => c.labels[COMPOSE_WORKING_DIR_LABEL] ?? [])
-  const { checked, existing } = await statExistence([...known, ...workingDirs], (p) => fs.stat(p))
-  const dirExists = makeDirExists(checked, existing)
-  const sources = await Promise.all(
-    known
-      .filter((p) => existing.has(p))
-      .map(async (p) => ({
-        path: p,
-        env: await readSmall(path.join(p, '.env')),
-        compose: await readComposeFile(p)
-      }))
-  )
-  const pinned = protectedProjects(
-    sources.filter((s) => explicitProjectNames(s).length > 0),
-    dirExists
-  )
   const volumes = toHousekeepingVolumes(df)
   const housekeeping = {
     volumes,
     containers,
     dirExists,
     knownFolders: known,
-    protectedProjects: pinned
+    protectedProjects: guards.protectedProjects
   }
   const orphanNames = planHousekeeping(
     { cacheMaxAgeDays: 0, danglingImages: false, orphanVolumes: true },
@@ -226,7 +227,7 @@ export async function gatherGc(prefs: GcPrefs, now: number): Promise<GcGathered>
     containers,
     dirExists,
     known,
-    pinned
+    guards.protectedProjects
   ).orphanVolumes
 
   return {
