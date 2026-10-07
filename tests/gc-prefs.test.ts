@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { defaultGcPrefs, normalizeGcPrefs } from '../src/main/gc/gc-prefs'
+import {
+  defaultGcPrefs,
+  mergeIncomingPrefs,
+  normalizeGcPrefs,
+  withAcknowledged,
+  withKeep,
+  withoutKeep,
+  type GcPrefs
+} from '../src/main/gc/gc-prefs'
 
 const HOUR = 3_600_000
 
@@ -193,5 +201,55 @@ describe('normalizeGcPrefs: migration from the Reaper and Containers prefs', () 
 
   it('survives junk legacy input', () => {
     expect(normalizeGcPrefs(null, { reaper: 'x', containers: [1] })).toEqual(defaultGcPrefs())
+  })
+})
+
+describe('prefs reducers behind the IPC channels', () => {
+  const base = (): GcPrefs => ({
+    ...defaultGcPrefs(),
+    autopilot: true,
+    firstReportAcknowledged: true,
+    keep: { a: 'merged' }
+  })
+
+  it('a whole-object write never changes keep or the acknowledgement', () => {
+    const out = mergeIncomingPrefs(base(), {
+      autopilot: false,
+      graceDays: 9,
+      keep: { b: 'open' },
+      firstReportAcknowledged: false
+    })
+    expect(out.autopilot).toBe(false)
+    expect(out.graceDays).toBe(9)
+    expect(out.keep).toEqual({ a: 'merged' })
+    expect(out.firstReportAcknowledged).toBe(true)
+  })
+
+  it('cannot acknowledge the first report through a write', () => {
+    const fresh = { ...defaultGcPrefs(), autopilot: true }
+    expect(
+      mergeIncomingPrefs(fresh, { firstReportAcknowledged: true }).firstReportAcknowledged
+    ).toBe(false)
+  })
+
+  it('normalizes what a write brings', () => {
+    expect(mergeIncomingPrefs(base(), { cacheMaxAgeDays: 99999 }).cacheMaxAgeDays).toBe(365)
+  })
+
+  it('withKeep / withoutKeep add and drop one mark without touching the rest', () => {
+    const kept = withKeep(base(), 'b', 'closed-unmerged')
+    expect(kept.keep).toEqual({ a: 'merged', b: 'closed-unmerged' })
+    expect(withoutKeep(kept, ['a']).keep).toEqual({ b: 'closed-unmerged' })
+    expect(base().keep).toEqual({ a: 'merged' })
+  })
+
+  it('withoutKeep ignores an id that is not marked', () => {
+    expect(withoutKeep(base(), ['zzz']).keep).toEqual({ a: 'merged' })
+  })
+
+  it('withAcknowledged sets the flag and nothing else', () => {
+    const out = withAcknowledged({ ...defaultGcPrefs(), autopilot: true })
+    expect(out.firstReportAcknowledged).toBe(true)
+    expect(out.autopilot).toBe(true)
   })
 })

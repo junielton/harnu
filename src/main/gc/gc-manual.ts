@@ -90,7 +90,8 @@ export function submitManualClean(
           freedBytes: 0
         }
       }
-      return { id, ok: true, haltedAt: null, freedBytes: r.volumeBytes }
+      // `docker volume rm` prints no size, so the size the operator saw is what was freed.
+      return { id, ok: true, haltedAt: null, freedBytes: item.sizeBytes ?? 0 }
     }
 
     for (const id of unique) {

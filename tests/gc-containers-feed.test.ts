@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { buildSnapshot } from '../src/main/containers/containers-core'
 import {
+  bucketFeed,
   clearInheritedBuckets,
   inheritedBucketFor,
   setInheritedBuckets
@@ -99,5 +100,19 @@ describe('Containers snapshot inherits the worktree bucket (AC-9)', () => {
   it('does not change a snapshot built without the feed', () => {
     const snap = buildSnapshot(scanInput({ containers: [recent], folders }))
     expect(snap.stacks[0]!.verdict).toBe('pending')
+  })
+})
+
+describe('bucketFeed: the path → bucket map built from a gather', () => {
+  it('maps each bundle with a path to its bucket', () => {
+    const feed = bucketFeed([
+      { item: { path: '/ws/a' }, bucket: 'corpse' },
+      { item: { path: '/ws/b' }, bucket: 'alive' },
+      { item: {}, bucket: 'decide' }
+    ] as never)
+    expect([...feed]).toEqual([
+      ['/ws/a', 'corpse'],
+      ['/ws/b', 'alive']
+    ])
   })
 })

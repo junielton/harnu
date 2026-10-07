@@ -159,3 +159,29 @@ export async function writeGcPrefs(file: string, prefs: GcPrefs): Promise<void> 
   await fs.writeFile(tmp, JSON.stringify(normalizeGcPrefs(prefs), null, 2) + '\n', 'utf8')
   await fs.rename(tmp, file)
 }
+
+// ---- reducers behind the IPC channels ------------------------------------------------------
+
+/**
+ * A whole-object write from the renderer. `keep` and the acknowledgement have their own
+ * channels, so a stale settings form can neither wipe the operator's Keep marks nor
+ * acknowledge a report it never showed.
+ */
+export function mergeIncomingPrefs(current: GcPrefs, raw: unknown): GcPrefs {
+  const next = normalizeGcPrefs(raw, { reaper: { intervalMs: current.intervalMs } })
+  return { ...next, keep: current.keep, firstReportAcknowledged: current.firstReportAcknowledged }
+}
+
+export function withKeep(prefs: GcPrefs, id: string, fate: string): GcPrefs {
+  return { ...prefs, keep: { ...prefs.keep, [id]: fate } }
+}
+
+export function withoutKeep(prefs: GcPrefs, ids: readonly string[]): GcPrefs {
+  const keep = { ...prefs.keep }
+  for (const id of ids) delete keep[id]
+  return { ...prefs, keep }
+}
+
+export function withAcknowledged(prefs: GcPrefs): GcPrefs {
+  return { ...prefs, firstReportAcknowledged: true }
+}

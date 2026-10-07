@@ -23,3 +23,12 @@ export function clearInheritedBuckets(): void {
 export function inheritedBucketFor(path: string): Bucket | undefined {
   return buckets.get(normalizePath(path, process.platform))
 }
+
+/** The feed for one gather: each bundle's bucket by worktree path. */
+export function bucketFeed(
+  bundles: ReadonlyArray<{ item: { path?: string }; bucket: Bucket }>
+): Map<string, Bucket> {
+  const out = new Map<string, Bucket>()
+  for (const b of bundles) if (b.item.path) out.set(b.item.path, b.bucket)
+  return out
+}

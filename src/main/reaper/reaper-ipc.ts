@@ -185,6 +185,8 @@ export interface ReaperControl {
   nextTickAt(): number | null
   /** Whether the background scan (and with it the autopilot) is switched on. */
   autoScan(): boolean
+  /** The interval the timer runs at now. */
+  intervalMs(): number
 }
 
 /** Register the Reaper IPC handlers. */
@@ -427,6 +429,7 @@ export function registerReaperHandlers(getWindow: () => BrowserWindow | null): R
       scheduleTicks()
     },
     nextTickAt: () => nextAt,
-    autoScan: () => currentPrefs.autoScan
+    autoScan: () => currentPrefs.autoScan,
+    intervalMs: () => currentPrefs.intervalMs
   }
 }

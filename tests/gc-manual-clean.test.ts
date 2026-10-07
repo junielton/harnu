@@ -273,7 +273,7 @@ describe('orphan volumes are removed only by a confirmed manual action (AC-7)', 
     expect(r.done[0]!.results[0]).toMatchObject({
       id: 'volume:lost_data',
       ok: true,
-      freedBytes: 4_096
+      freedBytes: 9_000
     })
   })
 
