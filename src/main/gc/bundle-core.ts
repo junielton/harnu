@@ -257,6 +257,40 @@ function stackFolders(
   return [...out]
 }
 
+const PRESENCE_RANK: Record<SessionPresence, number> = {
+  none: 0,
+  'open-idle': 1,
+  'needs-input': 2,
+  working: 2
+}
+
+type SessionEntry = BuildBundlesInput['sessions'] extends Map<string, infer V> ? V : never
+
+/**
+ * Every session that works in the worktree or in any folder under it: a session started in
+ * `WT/api` is as alive as one in `WT`. The strongest presence wins and the latest activity
+ * is kept. Containment is by path segment, so a sibling `WT-other` never counts.
+ */
+function sessionOf(
+  sessions: BuildBundlesInput['sessions'],
+  path: string,
+  platform: string
+): SessionEntry | undefined {
+  let out: SessionEntry | undefined
+  for (const [folder, s] of sessions) {
+    if (!isInside(normalizePath(folder, platform), path)) continue
+    const activity = [out?.lastActivityAt ?? null, s.lastActivityAt].filter(
+      (t): t is number => t !== null
+    )
+    out = {
+      presence:
+        out && PRESENCE_RANK[out.presence] >= PRESENCE_RANK[s.presence] ? out.presence : s.presence,
+      lastActivityAt: activity.length > 0 ? Math.max(...activity) : null
+    }
+  }
+  return out
+}
+
 export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
   const platform = process.platform
   const stoppedByHarnu = input.harnuStoppedAt ?? new Map<string, number>()
@@ -299,8 +333,9 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
           : { fate: 'unknown', signal: null, strong: false }
 
     const stacks = exclusive.get(item.id) ?? []
-    // Every other comparison here is normalized; a trailing slash must not hide a session.
-    const session = input.sessions.get(item.path as string) ?? input.sessions.get(path)
+    // Normalized, so a trailing slash must not hide a session, and a session in a subfolder
+    // counts too.
+    const session = sessionOf(input.sessions, path, platform)
     const events = lastContainerEvent(
       stacks.flatMap((s) => s.containers),
       stoppedByHarnu

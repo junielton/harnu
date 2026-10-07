@@ -227,6 +227,35 @@ describe('presenceFromSets', () => {
   it('maps a folder with no PTY to none', () => {
     expect(presenceFromSets('/nobody', sets)).toBe('none')
   })
+
+  describe('sessions in a subfolder (delta 3, item 1)', () => {
+    const sub = {
+      live: new Set([`${WT}/api`]),
+      inUse: new Set([`${WT}/api`, `${WT_B}/web/`])
+    }
+
+    it('a working session in a subfolder of the worktree reads working', () => {
+      expect(presenceFromSets(WT, sub)).toBe('working')
+    })
+
+    it('an idle PTY in a subfolder of the worktree reads open-idle', () => {
+      expect(presenceFromSets(WT_B, sub)).toBe('open-idle')
+    })
+
+    it('a sibling folder that only shares a name prefix does not count', () => {
+      const sibling = { live: new Set([`${WT}-other`]), inUse: new Set([`${WT}-other/api`]) }
+      expect(presenceFromSets(WT, sibling)).toBe('none')
+    })
+
+    it('a session in the worktree itself still counts, trailing slashes aside', () => {
+      expect(presenceFromSets(`${WT}/`, { live: new Set([WT]), inUse: new Set() })).toBe('working')
+    })
+
+    it('a session in a parent folder of the worktree does not count', () => {
+      const parent = { live: new Set(['/ws/org/proj']), inUse: new Set(['/ws/org/proj']) }
+      expect(presenceFromSets(WT, parent)).toBe('none')
+    })
+  })
 })
 
 describe('dockerIsUnavailable', () => {
@@ -429,6 +458,16 @@ describe('reprobe (AC-5)', () => {
       ok: false,
       reason: 'changed-since-scan'
     })
+  })
+
+  it('refuses a working session in a subfolder, read through the real folder sets (delta 3, item 1)', async () => {
+    const h = harness()
+    const sets = { live: new Set([`${WT}/api`]), inUse: new Set([`${WT}/api`]) }
+    h.presenceOf.mockImplementation(async (path: string) => presenceFromSets(path, sets))
+    const r = await runBundle(bundle(), createGcOps(h.deps), { removeVolumes: true })
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'changed-since-scan' })
+    expect(h.stop).not.toHaveBeenCalled()
+    expect(cleanItem).not.toHaveBeenCalled()
   })
 
   it('accepts a session that was open-idle at the scan and has closed since', async () => {

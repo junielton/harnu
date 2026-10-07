@@ -750,6 +750,74 @@ describe('buildBundles — flags', () => {
     expect(b.session).toBe('working')
   })
 
+  describe('sessions in a subfolder count (delta 3, item 1)', () => {
+    it('a working session in a subfolder keeps the bundle alive and dates its sign of life', () => {
+      const activity = NOW - HOUR
+      const b = only(
+        build({
+          sessions: new Map([
+            [WT_A, { presence: 'none', lastActivityAt: NOW - 20 * DAY }],
+            [`${WT_A}/api`, { presence: 'working', lastActivityAt: activity }]
+          ])
+        })
+      )
+      expect(b.session).toBe('working')
+      expect(b.lastSignOfLifeAt).toBe(activity)
+      expect(b.bucket).toBe('alive')
+    })
+
+    it('an idle session in a subfolder sends the bundle to decide, with no exact-path entry', () => {
+      const b = only(
+        build({
+          sessions: new Map([[`${WT_A}/web/`, { presence: 'open-idle', lastActivityAt: null }]])
+        })
+      )
+      expect(b.session).toBe('open-idle')
+      expect(b.bucket).toBe('decide')
+      expect(b.reason?.code).toBe('open-idle-session')
+    })
+
+    it('the strongest presence wins, and the latest activity is kept', () => {
+      const later = NOW - 3 * DAY
+      const b = only(
+        build({
+          sessions: new Map([
+            [WT_A, { presence: 'open-idle', lastActivityAt: NOW - 9 * DAY }],
+            [`${WT_A}/a`, { presence: 'needs-input', lastActivityAt: null }],
+            [`${WT_A}/b`, { presence: 'none', lastActivityAt: later }]
+          ])
+        })
+      )
+      expect(b.session).toBe('needs-input')
+      expect(b.lastSignOfLifeAt).toBe(later)
+    })
+
+    it('a sibling folder that only shares a name prefix does not count', () => {
+      const b = only(
+        build({
+          sessions: new Map([
+            [WT_A, { presence: 'none', lastActivityAt: null }],
+            [`${WT_A}-other`, { presence: 'working', lastActivityAt: NOW - HOUR }],
+            [`${WT_A}-other/api`, { presence: 'open-idle', lastActivityAt: NOW - HOUR }]
+          ])
+        })
+      )
+      expect(b.session).toBe('none')
+      expect(b.lastSignOfLifeAt).toBe(Date.parse(OLD_MERGE))
+      expect(b.bucket).toBe('corpse')
+    })
+
+    it('a session in a parent folder of the worktree does not count', () => {
+      const b = only(
+        build({
+          sessions: new Map([['/ws/org/proj', { presence: 'working', lastActivityAt: NOW }]])
+        })
+      )
+      expect(b.session).toBe('none')
+      expect(b.bucket).toBe('corpse')
+    })
+  })
+
   it('depsBytes comes from the hydration reclaimable bytes', () => {
     const hydrated = item({
       hydration: {
