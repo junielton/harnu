@@ -65,6 +65,10 @@ describe('parseReclaimed', () => {
     expect(parseReclaimed('0B')).toBe(0)
   })
 
+  it('parses a bare byte count', () => {
+    expect(parseReclaimed('512B')).toBe(512)
+  })
+
   it('parses decimal units as powers of 1000', () => {
     expect(parseReclaimed('512kB')).toBe(512_000)
     expect(parseReclaimed('1.2GB')).toBe(1.2e9)
@@ -100,14 +104,14 @@ describe('parseReclaimed', () => {
 
 describe('planHousekeeping: orphan volumes', () => {
   it('never plans a volume that carries no compose project label', () => {
-    const plan = planHousekeeping(ALL_ON, [volume('scratch-data', null)], [], dirGone)
+    const plan = planHousekeeping(ALL_ON, [volume('scratch-data', null)], [], dirGone, [])
     expect(plan.orphanVolumes).toEqual([])
   })
 
   it('never plans a labeled volume whose project working dir still exists', () => {
     const volumes = [volume('proj_db', 'proj')]
     const containers = [composeContainer('proj', DIR)]
-    const plan = planHousekeeping(ALL_ON, volumes, containers, dirAlive)
+    const plan = planHousekeeping(ALL_ON, volumes, containers, dirAlive, [])
     expect(plan.orphanVolumes).toEqual([])
   })
 
@@ -116,7 +120,7 @@ describe('planHousekeeping: orphan volumes', () => {
     const containers = [
       composeContainer('proj', DIR, { state: 'running', mounts: [mountOf('proj_db')] })
     ]
-    const plan = planHousekeeping(ALL_ON, volumes, containers, dirGone)
+    const plan = planHousekeeping(ALL_ON, volumes, containers, dirGone, [])
     expect(plan.orphanVolumes).toEqual([])
   })
 
@@ -129,32 +133,65 @@ describe('planHousekeeping: orphan volumes', () => {
         mounts: [mountOf('proj_db')]
       })
     ]
-    const plan = planHousekeeping(ALL_ON, volumes, containers, dirGone)
+    const plan = planHousekeeping(ALL_ON, volumes, containers, dirGone, [])
     expect(plan.orphanVolumes).toEqual([])
   })
 
   it('plans a labeled, unreferenced volume whose working dir is gone', () => {
     const volumes = [volume('proj_db', 'proj')]
     const containers = [composeContainer('proj', DIR, { mounts: [mountOf('proj_cache')] })]
-    const plan = planHousekeeping(ALL_ON, volumes, containers, dirGone)
+    const plan = planHousekeeping(ALL_ON, volumes, containers, dirGone, [])
     expect(plan.orphanVolumes).toEqual(['proj_db'])
   })
 
   it('plans only the unreferenced volumes of a project when siblings are still mounted', () => {
     const volumes = [volume('proj_db', 'proj'), volume('proj_cache', 'proj')]
     const containers = [composeContainer('proj', DIR, { mounts: [mountOf('proj_cache')] })]
-    const plan = planHousekeeping(ALL_ON, volumes, containers, dirGone)
+    const plan = planHousekeeping(ALL_ON, volumes, containers, dirGone, [])
     expect(plan.orphanVolumes).toEqual(['proj_db'])
   })
 
-  it('does not plan a project with several working dirs while one of them still exists', () => {
+  it.each([
+    ['live dir listed last', [DIR, DIR_B]],
+    ['live dir listed first', [DIR_B, DIR]]
+  ])(
+    'does not plan a project with several working dirs while one of them still exists (%s)',
+    (_label, dirs) => {
+      const volumes = [volume('proj_db', 'proj')]
+      const containers = dirs.map((d, i) => composeContainer('proj', d, { id: `c0ffee00000${i}` }))
+      const aliveOnlyB = (p: string): boolean => p === DIR_B
+      const plan = planHousekeeping(ALL_ON, volumes, containers, aliveOnlyB, [])
+      expect(plan.orphanVolumes).toEqual([])
+    }
+  )
+
+  it('never plans a volume mounted by a plain docker run container with no compose labels', () => {
     const volumes = [volume('proj_db', 'proj')]
     const containers = [
-      composeContainer('proj', DIR, { id: 'c0ffee000001' }),
-      composeContainer('proj', DIR_B, { id: 'c0ffee000002' })
+      composeContainer('proj', DIR, { mounts: [] }),
+      container({ id: 'c0ffee000009', labels: {}, mounts: [mountOf('proj_db')] })
     ]
-    const aliveOnlyB = (p: string): boolean => p === DIR_B
-    const plan = planHousekeeping(ALL_ON, volumes, containers, aliveOnlyB)
+    const plan = planHousekeeping(ALL_ON, volumes, containers, dirGone, [])
+    expect(plan.orphanVolumes).toEqual([])
+  })
+
+  it('does not plan a project when one of its containers carries no working dir label', () => {
+    const volumes = [volume('proj_db', 'proj')]
+    const containers = [
+      composeContainer('proj', DIR, { id: 'c0ffee000001', mounts: [] }),
+      composeContainer('proj', null, { id: 'c0ffee000002', mounts: [] })
+    ]
+    const plan = planHousekeeping(ALL_ON, volumes, containers, dirGone, [])
+    expect(plan.orphanVolumes).toEqual([])
+  })
+
+  it('does not plan a project whose unlabeled container is listed before the labeled one', () => {
+    const volumes = [volume('proj_db', 'proj')]
+    const containers = [
+      composeContainer('proj', null, { id: 'c0ffee000002', mounts: [] }),
+      composeContainer('proj', DIR, { id: 'c0ffee000001', mounts: [] })
+    ]
+    const plan = planHousekeeping(ALL_ON, volumes, containers, dirGone, [])
     expect(plan.orphanVolumes).toEqual([])
   })
 
@@ -164,7 +201,7 @@ describe('planHousekeeping: orphan volumes', () => {
       composeContainer('proj', DIR, { id: 'c0ffee000001' }),
       composeContainer('proj', DIR_B, { id: 'c0ffee000002' })
     ]
-    const plan = planHousekeeping(ALL_ON, volumes, containers, dirGone)
+    const plan = planHousekeeping(ALL_ON, volumes, containers, dirGone, [])
     expect(plan.orphanVolumes).toEqual(['proj_db'])
   })
 
@@ -175,12 +212,12 @@ describe('planHousekeeping: orphan volumes', () => {
       container({ labels: {}, mounts: [] }),
       composeContainer('unrelated', DIR)
     ]
-    const plan = planHousekeeping(ALL_ON, volumes, containers, dirGone)
+    const plan = planHousekeeping(ALL_ON, volumes, containers, dirGone, [])
     expect(plan.orphanVolumes).toEqual([])
   })
 
   it('does not plan a labeled volume when there are no containers at all', () => {
-    const plan = planHousekeeping(ALL_ON, [volume('proj_db', 'proj')], [], dirGone)
+    const plan = planHousekeeping(ALL_ON, [volume('proj_db', 'proj')], [], dirGone, [])
     expect(plan.orphanVolumes).toEqual([])
   })
 
@@ -194,37 +231,89 @@ describe('planHousekeeping: orphan volumes', () => {
       volume('proj_db', 'proj')
     ]
     const containers = [composeContainer('proj', DIR, { mounts: [] })]
-    const plan = planHousekeeping(ALL_ON, volumes, containers, dirGone)
+    const plan = planHousekeeping(ALL_ON, volumes, containers, dirGone, [])
     expect(plan.orphanVolumes).toEqual(['proj_db'])
   })
 
   it('returns no volumes when orphanVolumes is off', () => {
     const volumes = [volume('proj_db', 'proj')]
     const containers = [composeContainer('proj', DIR, { mounts: [] })]
-    const plan = planHousekeeping({ ...ALL_ON, orphanVolumes: false }, volumes, containers, dirGone)
+    const plan = planHousekeeping(
+      { ...ALL_ON, orphanVolumes: false },
+      volumes,
+      containers,
+      dirGone,
+      []
+    )
+    expect(plan.orphanVolumes).toEqual([])
+  })
+})
+
+describe('planHousekeeping: a project name shared with a live checkout', () => {
+  // Compose names a project after its folder, so /w/a/www and /w/b/www are both `www`.
+  const LIVE = '/w/a/www'
+  const DELETED = '/w/b/www'
+  const volumes = [volume('www_pgdata', 'www')]
+  // The live checkout ran `compose down`: only a leftover container of the deleted one remains.
+  const containers = [composeContainer('www', DELETED, { mounts: [] })]
+  const onlyLive = (p: string): boolean => p === LIVE
+
+  it('never plans the volume of a live checkout that has no containers', () => {
+    const plan = planHousekeeping(ALL_ON, volumes, containers, onlyLive, [LIVE])
+    expect(plan.orphanVolumes).toEqual([])
+  })
+
+  it('plans it once no existing known folder shares the project name', () => {
+    const plan = planHousekeeping(ALL_ON, volumes, containers, dirGone, [LIVE])
+    expect(plan.orphanVolumes).toEqual(['www_pgdata'])
+  })
+
+  it('ignores known folders whose compose project name differs', () => {
+    const plan = planHousekeeping(ALL_ON, volumes, containers, (p) => p === '/w/a/api-gateway', [
+      '/w/a/api-gateway'
+    ])
+    expect(plan.orphanVolumes).toEqual(['www_pgdata'])
+  })
+
+  it('normalizes the folder name the way compose does: lowercase, only [a-z0-9_-]', () => {
+    const vols = [volume('mywebapp_db', 'mywebapp'), volume('my-app_db', 'my-app')]
+    const ctrs = [
+      composeContainer('mywebapp', '/w/gone/mywebapp', { mounts: [] }),
+      composeContainer('my-app', '/w/gone/my-app', { mounts: [] })
+    ]
+    const folders = ['/w/a/My Web.App', '/w/a/My-App/']
+    const plan = planHousekeeping(ALL_ON, vols, ctrs, (p) => !p.startsWith('/w/gone'), folders)
+    expect(plan.orphanVolumes).toEqual([])
+  })
+
+  it('reads the folder name from a Windows-style path too', () => {
+    const plan = planHousekeeping(ALL_ON, volumes, containers, (p) => p === 'C:\\work\\WWW', [
+      'C:\\work\\WWW'
+    ])
     expect(plan.orphanVolumes).toEqual([])
   })
 })
 
 describe('planHousekeeping: build cache and images', () => {
   it('converts cacheMaxAgeDays to hours', () => {
-    expect(planHousekeeping(ALL_ON, [], [], dirGone).builderPruneUntilHours).toBe(168)
+    expect(planHousekeeping(ALL_ON, [], [], dirGone, []).builderPruneUntilHours).toBe(168)
     expect(
-      planHousekeeping({ ...ALL_ON, cacheMaxAgeDays: 1 }, [], [], dirGone).builderPruneUntilHours
+      planHousekeeping({ ...ALL_ON, cacheMaxAgeDays: 1 }, [], [], dirGone, [])
+        .builderPruneUntilHours
     ).toBe(24)
   })
 
   it('disables the builder prune for zero, negative and NaN ages instead of pruning everything', () => {
     for (const days of [0, -1, Number.NaN]) {
-      const plan = planHousekeeping({ ...ALL_ON, cacheMaxAgeDays: days }, [], [], dirGone)
+      const plan = planHousekeeping({ ...ALL_ON, cacheMaxAgeDays: days }, [], [], dirGone, [])
       expect(plan.builderPruneUntilHours).toBeNull()
     }
   })
 
   it('passes danglingImages through unchanged', () => {
-    expect(planHousekeeping(ALL_ON, [], [], dirGone).danglingImages).toBe(true)
+    expect(planHousekeeping(ALL_ON, [], [], dirGone, []).danglingImages).toBe(true)
     expect(
-      planHousekeeping({ ...ALL_ON, danglingImages: false }, [], [], dirGone).danglingImages
+      planHousekeeping({ ...ALL_ON, danglingImages: false }, [], [], dirGone, []).danglingImages
     ).toBe(false)
   })
 })
