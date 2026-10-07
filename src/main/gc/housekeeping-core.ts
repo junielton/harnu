@@ -56,21 +56,33 @@ export function planHousekeeping(
   volumes: readonly HousekeepingVolume[],
   containers: readonly InspectedContainer[],
   dirExists: (path: string) => boolean,
-  knownFolders: readonly string[]
+  knownFolders: readonly string[],
+  protectedProjects: ReadonlySet<string> = new Set()
 ): HousekeepingPlan {
   return {
     builderPruneUntilHours: untilHours(p.cacheMaxAgeDays),
     danglingImages: p.danglingImages,
     orphanVolumes: p.orphanVolumes
-      ? orphanVolumeNames(volumes, containers, dirExists, knownFolders)
+      ? orphanVolumeNames(volumes, containers, dirExists, knownFolders, protectedProjects)
       : []
   }
 }
 
 /**
- * The default compose project name of a folder: its basename, lowercased, with
- * every character outside `[a-z0-9_-]` removed. Two checkouts that share a
- * basename therefore share a project, and so share volume names.
+ * A compose project name the way compose normalizes it: lowercased, every character outside
+ * `[a-z0-9_-]` removed, and any leading `_` or `-` trimmed (a project name must start with a
+ * letter or a digit). Applied to a folder's basename and to an explicit name alike.
+ */
+export function normalizeComposeProjectName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '')
+    .replace(/^[_-]+/, '')
+}
+
+/**
+ * The default compose project name of a folder: its basename, normalized. Two checkouts that
+ * share a basename therefore share a project, and so share volume names.
  */
 function composeProjectName(folder: string): string {
   const base =
@@ -78,7 +90,7 @@ function composeProjectName(folder: string): string {
       .split(/[\\/]+/)
       .filter(Boolean)
       .pop() ?? ''
-  return base.toLowerCase().replace(/[^a-z0-9_-]/g, '')
+  return normalizeComposeProjectName(base)
 }
 
 /**
@@ -88,13 +100,16 @@ function composeProjectName(folder: string): string {
  * - the project's dir cannot be learned: no container carries it, or any
  *   container of the project lacks the working-dir label (unprovable);
  * - an existing known folder has the same default project name, because that
- *   checkout may own the volume even though it has no containers right now.
+ *   checkout may own the volume even though it has no containers right now;
+ * - `protectedProjects` names it: a live folder pins that project name explicitly
+ *   (`COMPOSE_PROJECT_NAME` or a compose `name:`), which no basename comparison can see.
  */
 function orphanVolumeNames(
   volumes: readonly HousekeepingVolume[],
   containers: readonly InspectedContainer[],
   dirExists: (path: string) => boolean,
-  knownFolders: readonly string[]
+  knownFolders: readonly string[],
+  protectedProjects: ReadonlySet<string>
 ): string[] {
   const referenced = new Set<string>()
   const dirsByProject = new Map<string, Set<string>>()
@@ -116,7 +131,13 @@ function orphanVolumeNames(
   return volumes
     .filter((v) => {
       if (!SAFE_VOLUME_NAME.test(v.name) || referenced.has(v.name) || !v.project) return false
-      if (unknownDirProjects.has(v.project) || liveProjects.has(v.project)) return false
+      if (
+        unknownDirProjects.has(v.project) ||
+        liveProjects.has(v.project) ||
+        protectedProjects.has(v.project)
+      ) {
+        return false
+      }
       const dirs = dirsByProject.get(v.project)
       return !!dirs && dirs.size > 0 && [...dirs].every((d) => !dirExists(d))
     })
