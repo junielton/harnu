@@ -677,6 +677,42 @@ describe('reprobe pre-flights the cleanItem guard (delta 2, item 1)', () => {
   })
 })
 
+describe('recheck before cleanGit (delta 2, item 4)', () => {
+  const opts = { removeVolumes: true }
+
+  it('passes while the worktree is still idle on the scanned tip', async () => {
+    const h = harness()
+    expect(await createGcOps(h.deps).recheck(bundle())).toEqual({ ok: true })
+  })
+
+  it('a session that appears after drop-deps halts at archive before cleanGit', async () => {
+    const h = harness()
+    // The reprobe still sees nobody; the session opens while the deps are being dropped.
+    h.presenceOf.mockResolvedValueOnce('none').mockResolvedValue('working')
+    const r = await runBundle(bundle(), createGcOps(h.deps), opts)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'changed-mid-run' })
+    expect(r.freedBytes).toBe(4096)
+    expect(h.stop).toHaveBeenCalled()
+    expect(cleanItem).not.toHaveBeenCalled()
+  })
+
+  it('HEAD moving after drop-deps halts at archive before cleanGit', async () => {
+    const h = harness()
+    h.headOf.mockResolvedValueOnce(TIP).mockResolvedValue('c'.repeat(40))
+    const r = await runBundle(bundle(), createGcOps(h.deps), opts)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'changed-mid-run' })
+    expect(cleanItem).not.toHaveBeenCalled()
+  })
+
+  it('refuses when presence or HEAD cannot be read', async () => {
+    const h = harness()
+    h.presenceOf.mockRejectedValueOnce(new Error('fleet unavailable'))
+    expect((await createGcOps(h.deps).recheck(bundle())).ok).toBe(false)
+    h.headOf.mockRejectedValueOnce(new Error('not a git repository'))
+    expect((await createGcOps(h.deps).recheck(bundle())).ok).toBe(false)
+  })
+})
+
 // ---- the scan and the run through the real builder ------------------------------
 
 const MERGED_FACTS: BranchFacts = {

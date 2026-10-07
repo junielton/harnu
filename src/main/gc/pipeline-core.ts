@@ -24,6 +24,11 @@ export interface GcOps {
   removeVolumes(names: string[]): Promise<void>
   /** Resolves to the bytes freed. */
   dropDeps(b: WorktreeBundle): Promise<number>
+  /**
+   * Re-reads presence and HEAD right before `cleanGit`: the docker steps and drop-deps take
+   * time, and a session opened or a commit made meanwhile must stop the archive and trash.
+   */
+  recheck(b: WorktreeBundle): Promise<{ ok: true } | { ok: false; reason: string }>
   /** archive → trash → prune → branch-delete → detach, remote branch deletion forced off. */
   cleanGit(b: WorktreeBundle): Promise<void>
 }
@@ -70,9 +75,9 @@ function mayRun(b: WorktreeBundle, opts: GcRunOptions): boolean {
 
 /**
  * Clean one bundle in a fixed order: reprobe, stop stacks, remove containers, remove
- * volumes, drop deps, then the git side. The order is what makes it safe: nothing under
- * the checkout is touched until the stack running from it is gone, and nothing is removed
- * at all unless the reprobe still agrees with the scan.
+ * volumes, drop deps, recheck, then the git side. The order is what makes it safe: nothing
+ * under the checkout is touched until the stack running from it is gone, and nothing is
+ * removed at all unless the reprobe still agrees with the scan.
  *
  * Dropping deps runs before `cleanGit` (which contains the archive) because cleanItem is
  * one call. That is safe: dehydration removes only git-ignored directories and the archive
@@ -131,6 +136,15 @@ export async function runBundle(
     freedBytes = await ops.dropDeps(b)
   })
   if (halted) return halted
+
+  // The deps are already gone, so their bytes stay counted whatever the recheck says.
+  let still: Awaited<ReturnType<GcOps['recheck']>> | null = null
+  try {
+    still = await ops.recheck(b)
+  } catch {
+    // A recheck that cannot answer is not a green light.
+  }
+  if (!still?.ok) return fail('archive', 'changed-mid-run')
 
   try {
     await ops.cleanGit(b)
