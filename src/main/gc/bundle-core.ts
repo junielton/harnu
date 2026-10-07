@@ -91,57 +91,54 @@ export function composeDefaultProject(path: string): string {
  * also mounts is never listed: removing it would pull data from under a stack we do not own.
  * Bind mounts have no volume name, so they never qualify.
  *
- * With `volumes`, the rule buildSnapshot applies also holds: a volume whose own compose
- * project label differs from the project of a bundle stack mounting it belongs to that other
- * project (declared `external` here), even while that project's containers are down. A
- * missing fact or an unlabelled volume is kept, as buildSnapshot keeps it.
+ * Fail closed on the volume's own compose project label: it must be present and equal the
+ * project of every bundle stack mounting it. An unlabelled volume, or one with no fact at
+ * all, may be anyone's (an `external` volume, a `docker volume create`), so it is never
+ * owned; one labelled with another project belongs to that project, even while its
+ * containers are down.
  *
- * A volume's project (its own label, else the project of the bundle stack mounting it) must
- * also be unique to the bundle. It is not when a container outside the bundle, running or
- * stopped, carries that project, nor when the project is the Compose default name of one of
- * `otherFolders`: a main checkout that shares the project and ran `compose down` has no
- * container left, yet the volume is still its data.
+ * That project must also be unique to the bundle. It is not when it is in
+ * `protectedProjects`, when a container outside the bundle (running or stopped) carries it,
+ * or when it is the Compose default name of one of `otherFolders`: a main checkout that
+ * shares the project and ran `compose down` has no container left, yet the volume is still
+ * its data.
  */
 export function ownedVolumes(
   bundleStacks: readonly StackGroup[],
   allContainers: readonly InspectedContainer[],
-  volumes?: ReadonlyMap<string, VolumeFact>,
-  otherFolders: readonly string[] = []
+  volumes: ReadonlyMap<string, VolumeFact>,
+  otherFolders: readonly string[] = [],
+  protectedProjects: ReadonlySet<string> = new Set()
 ): string[] {
   const inBundle = new Set<string>()
-  const projectsOf = new Map<string, Set<string>>()
-  const otherProject = new Set<string>()
+  const projectOf = new Map<string, string>()
+  const rejected = new Set<string>()
   for (const s of bundleStacks) {
     for (const c of s.containers) {
       inBundle.add(c.id)
       for (const m of c.mounts) {
         if (m.type !== 'volume' || !m.name) continue
-        const projects = projectsOf.get(m.name) ?? new Set<string>()
-        projectsOf.set(m.name, projects)
-        const project = volumes?.get(m.name)?.project
-        if (project != null && project !== s.project) otherProject.add(m.name)
-        const own = project ?? s.project
-        if (own) projects.add(own)
+        const project = volumes.get(m.name)?.project
+        if (project == null || project !== s.project) rejected.add(m.name)
+        else projectOf.set(m.name, project)
       }
     }
   }
-  const names = new Set(projectsOf.keys())
-  for (const name of otherProject) names.delete(name)
-  const foreignProjects = new Set<string>()
+  const foreignProjects = new Set(protectedProjects)
   for (const folder of otherFolders) {
     const project = composeDefaultProject(folder)
     if (project) foreignProjects.add(project)
   }
   for (const c of allContainers) {
     if (inBundle.has(c.id)) continue
-    for (const m of c.mounts) if (m.name) names.delete(m.name)
+    for (const m of c.mounts) if (m.name) rejected.add(m.name)
     const project = c.labels[COMPOSE_PROJECT_LABEL]
     if (project) foreignProjects.add(project)
   }
-  for (const name of [...names]) {
-    if ([...projectsOf.get(name)!].some((p) => foreignProjects.has(p))) names.delete(name)
-  }
-  return [...names].sort()
+  return [...projectOf]
+    .filter(([name, project]) => !rejected.has(name) && !foreignProjects.has(project))
+    .map(([name]) => name)
+    .sort()
 }
 
 const FATE_DECISIONS: Record<
@@ -248,13 +245,21 @@ export interface BuildBundlesInput {
   graceDays: number
   /** Containers Harnu itself stopped; their stop is not a sign of life. */
   harnuStoppedAt?: ReadonlyMap<string, number>
-  /** Volume facts from `docker system df -v`, for the cross-project rule in ownedVolumes. */
-  volumes?: ReadonlyMap<string, VolumeFact>
+  /**
+   * Volume facts from `docker system df -v`. Required: a volume is owned only when its fact
+   * carries the project label of the stack mounting it, so no map would mean none is owned.
+   */
+  volumes: ReadonlyMap<string, VolumeFact>
   /**
    * Folders Harnu knows besides the items' own paths and repo paths (sidebar folders, say).
    * A volume whose project is the Compose default name of any of them is never owned.
    */
-  knownFolders?: string[]
+  knownFolders: string[]
+  /**
+   * Compose project names no bundle may own a volume of: explicit `COMPOSE_PROJECT_NAME` or
+   * `name:` values, and the default name of every other existing known folder.
+   */
+  protectedProjects: Set<string>
 }
 
 /** Merge time from the `pr-merged` checkpoint detail; anything that is not a date is ignored. */
@@ -370,7 +375,7 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
   const knownFolders = new Set(
     [
       ...input.items.flatMap((i) => (i.path ? [i.path, i.repoPath] : [i.repoPath])),
-      ...(input.knownFolders ?? [])
+      ...input.knownFolders
     ].map((p) => normalizePath(p, platform))
   )
 
@@ -406,7 +411,8 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
         stacks,
         input.containers,
         input.volumes,
-        [...knownFolders].filter((f) => f !== path)
+        [...knownFolders].filter((f) => f !== path),
+        input.protectedProjects
       ),
       depsBytes: item.hydration?.reclaimableBytes ?? null,
       keep: input.keep.has(item.id),
