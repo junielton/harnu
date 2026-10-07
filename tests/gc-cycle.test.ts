@@ -87,6 +87,7 @@ function rig(
       log.push(`removeVolumes ${names.join(',')}`)
     },
     dropDeps: async () => 100,
+    recheck: async () => ({ ok: true }),
     cleanGit,
     ...opts.ops
   }

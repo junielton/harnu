@@ -17,6 +17,7 @@ import { prefsFile as containersPrefsFile } from '../containers/containers-prefs
 import { prefsPath as reaperPrefsPath } from '../reaper/prefs'
 import type { ReaperControl } from '../reaper/reaper-ipc'
 import { bucketFeed, setInheritedBuckets } from './gc-buckets'
+import { isProtectedNow } from './autopilot-core'
 import { createCycleState, runGcCycle, type GcCycleDeps, type GcGather } from './gc-cycle'
 import { gatherGc, type GcGathered } from './gc-scan-shell'
 import { createJobQueue, type GcJobInfo } from './gc-jobs-core'
@@ -121,6 +122,9 @@ export async function registerGcHandlers(
   /** The actor lands in the journal line cleanItem writes, which is how an unattended run is told apart. */
   const withActor = (actor: 'operator' | 'autopilot'): GcShellDeps => ({
     ...shellDeps,
+    // The live prefs, not the flags the bundle was built with: the operator may have pressed
+    // Keep or listed a path since the scan, and the reprobe asks this before it does anything.
+    isProtectedNow: (b) => isProtectedNow(b, prefs),
     executor: {
       ...shellDeps.executor,
       appendTombstone: (t: Parameters<typeof shellDeps.executor.appendTombstone>[0]) =>

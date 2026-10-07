@@ -43,6 +43,7 @@ function fakeOps(log: string[], over: Partial<GcOps> = {}): GcOps {
       log.push(`removeVolumes ${names.join(',')}`)
     },
     dropDeps: async () => 7,
+    recheck: async () => ({ ok: true }),
     cleanGit: async (b) => {
       log.push(`cleanGit ${b.item.path}`)
     },

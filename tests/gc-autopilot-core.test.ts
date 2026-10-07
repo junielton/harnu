@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   FAILURE_TTL_MS,
   applyFailures,
+  isProtectedNow,
   planCycle,
   pruneFailures,
   refusalFor
@@ -226,5 +227,28 @@ describe('applyFailures / pruneFailures (spec §4)', () => {
     ])
     pruneFailures(failures, [a, b], NOW)
     expect([...failures.keys()]).toEqual([b.item.id])
+  })
+})
+
+describe('isProtectedNow: the live-prefs answer the reprobe asks (AC-8)', () => {
+  it('protects a bundle marked Keep after the scan', () => {
+    const b = corpse('a', 5)
+    expect(isProtectedNow(b, prefs({ keep: { [b.item.id]: 'merged' } }))).toBe(true)
+  })
+
+  it('protects a path added to neverClean after the scan, by worktree or by repo', () => {
+    const b = corpse('a', 5)
+    expect(isProtectedNow(b, prefs({ neverClean: ['/ws/wt/a'] }))).toBe(true)
+    expect(isProtectedNow(b, prefs({ neverClean: [b.item.repoPath] }))).toBe(true)
+  })
+
+  it('protects a main checkout', () => {
+    expect(isProtectedNow(bundle('/ws/wt/m', 'corpse', { isMainCheckout: true }), prefs())).toBe(
+      true
+    )
+  })
+
+  it('protects nothing else', () => {
+    expect(isProtectedNow(corpse('a', 5), prefs())).toBe(false)
   })
 })

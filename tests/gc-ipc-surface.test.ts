@@ -43,4 +43,8 @@ describe('workspace GC IPC surface (AC-10)', () => {
     expect(index).toMatch(/const reaperControl = registerReaperHandlers\(/)
     expect(index).toMatch(/registerGcHandlers\(\(\) => mainWindow, reaperControl, icon\)/)
   })
+
+  it("answers the reprobe's protection question from the live prefs, not the scan-time flags", () => {
+    expect(ipc).toMatch(/isProtectedNow: \(b\) => isProtectedNow\(b, prefs\)/)
+  })
 })

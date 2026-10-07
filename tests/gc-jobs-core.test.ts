@@ -230,6 +230,7 @@ describe('runBatch hooks: the per-item progress source', () => {
     removeContainers: async () => undefined,
     removeVolumes: async () => undefined,
     dropDeps: async () => 5,
+    recheck: async () => ({ ok: true }),
     cleanGit: async () => undefined
   }
 

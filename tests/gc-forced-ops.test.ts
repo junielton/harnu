@@ -139,7 +139,8 @@ function rig(
       },
       listStacks: async () => ({ stacks }),
       presenceOf: async () => over.presence ?? 'none',
-      headOf: async () => (over.head === undefined ? TIP : over.head)
+      headOf: async () => (over.head === undefined ? TIP : over.head),
+      isProtectedNow: () => false
     },
     order,
     git,

@@ -29,6 +29,16 @@ export function isNeverClean(b: WorktreeBundle, prefs: GcPrefs): boolean {
   return candidates.some((p) => listed.has(normalizePath(p, platform)))
 }
 
+/**
+ * The reprobe's question, answered from the CURRENT prefs rather than the scan-time flags: a
+ * Keep mark or a neverClean path added after the scan, or a main checkout, protects the
+ * bundle from any clean. Any Keep mark counts, whatever fate it was made under: a stale
+ * mark is cleared by the next gather, and until then refusing is the safe side.
+ */
+export function isProtectedNow(b: WorktreeBundle, prefs: GcPrefs): boolean {
+  return b.isMainCheckout || b.keep || prefs.keep[b.item.id] !== undefined || isNeverClean(b, prefs)
+}
+
 const bySignOfLife = (a: WorktreeBundle, b: WorktreeBundle): number => {
   // No sign of life sorts last: its age is unknown, so it is the least certain to take first.
   if (a.lastSignOfLifeAt === b.lastSignOfLifeAt) return 0
