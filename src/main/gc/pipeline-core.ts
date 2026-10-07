@@ -25,8 +25,9 @@ export interface GcOps {
   /** Resolves to the bytes freed. */
   dropDeps(b: WorktreeBundle): Promise<number>
   /**
-   * Re-reads presence and HEAD right before `cleanGit`: the docker steps and drop-deps take
-   * time, and a session opened or a commit made meanwhile must stop the archive and trash.
+   * Re-reads presence, HEAD and the stacks touching the worktree right before `cleanGit`: the
+   * docker steps and drop-deps take time, and a session opened, a commit made or a stack
+   * started meanwhile must stop the archive and trash.
    */
   recheck(b: WorktreeBundle): Promise<{ ok: true } | { ok: false; reason: string }>
   /** archive → trash → prune → branch-delete → detach, remote branch deletion forced off. */

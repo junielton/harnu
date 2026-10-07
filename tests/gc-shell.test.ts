@@ -790,6 +790,76 @@ describe('recheck before cleanGit (delta 2, item 4)', () => {
     expect(cleanItem).not.toHaveBeenCalled()
   })
 
+  describe('re-lists the stacks touching the worktree (delta 3, item 3)', () => {
+    it('a new stack started from the worktree during drop-deps halts at archive before cleanGit', async () => {
+      let h: Harness | null = null
+      h = harness({
+        dehydrate: {
+          // Someone runs `docker compose up` in the worktree while its deps are dropped.
+          removeDir: async () => {
+            h!.setStacks([
+              stack('app', [container('c1', `${WT}/api`)]),
+              stack('fresh', [container('c7', `${WT}/worker`)])
+            ])
+          }
+        }
+      })
+      const r = await runBundle(bundle(), createGcOps(h.deps), opts)
+      expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'changed-mid-run' })
+      expect(r.freedBytes).toBe(4096)
+      expect(cleanItem).not.toHaveBeenCalled()
+    })
+
+    it('names the new stack as the reason', async () => {
+      const h = harness({
+        stacks: [
+          stack('app', [container('c1', `${WT}/api`)]),
+          stack('fresh', [runWithBind('c7', `${WT}/data`)])
+        ]
+      })
+      expect(await createGcOps(h.deps).recheck(bundle())).toEqual({
+        ok: false,
+        reason: 'new-stack'
+      })
+    })
+
+    it('a scanned stack still present is fine, exclusive or shared', async () => {
+      const h = harness({
+        stacks: [
+          stack('app', [container('c1', `${WT}/api`)]),
+          stack('shared', [container('c3', WT), container('c4', REPO)])
+        ]
+      })
+      expect(await createGcOps(h.deps).recheck(bundle({ sharedStackIds: ['shared'] }))).toEqual({
+        ok: true
+      })
+    })
+
+    it('a scanned stack that already vanished is fine', async () => {
+      const h = harness({ stacks: [] })
+      expect(await createGcOps(h.deps).recheck(bundle())).toEqual({ ok: true })
+    })
+
+    it('a new stack that runs from somewhere else is fine', async () => {
+      const h = harness({
+        stacks: [
+          stack('app', [container('c1', `${WT}/api`)]),
+          stack('other', [container('c9', `${WT}-other`)])
+        ]
+      })
+      expect(await createGcOps(h.deps).recheck(bundle())).toEqual({ ok: true })
+    })
+
+    it.each([new Error('docker gone'), new DockerUnavailableError('daemon down')])(
+      'refuses when the stack listing fails (%s)',
+      async (err) => {
+        const h = harness()
+        h.listStacks.mockRejectedValueOnce(err)
+        expect((await createGcOps(h.deps).recheck(bundle())).ok).toBe(false)
+      }
+    )
+  })
+
   it('refuses when presence or HEAD cannot be read', async () => {
     const h = harness()
     h.presenceOf.mockRejectedValueOnce(new Error('fleet unavailable'))

@@ -331,6 +331,15 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         // Fail closed: a probe that cannot answer is not a green light either.
         if ((await deps.presenceOf(path)) !== 'none') return { ok: false, reason: 'session-open' }
         if ((await deps.headOf(path)) !== b.localTip) return { ok: false, reason: 'head-moved' }
+        // A stack started from the worktree during the docker steps or drop-deps would run
+        // from a folder about to be trashed. Same attribution as the scan and the reprobe; a
+        // scanned stack that is gone by now (we just removed it) is fine.
+        const { stacks } = await deps.listStacks()
+        const scanned = new Set([...b.stackIds, ...b.sharedStackIds])
+        const root = normalizePath(path, platform)
+        if (stackIdsInside(stacks, root, platform).some((id) => !scanned.has(id))) {
+          return { ok: false, reason: 'new-stack' }
+        }
         return { ok: true }
       } catch (err) {
         return { ok: false, reason: `probe-failed: ${messageOf(err)}` }
