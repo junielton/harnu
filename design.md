@@ -312,6 +312,9 @@ Everything outside the sidebar (topbar, buttons, inputs, menus) is density-indep
 | Footer / status bar — height       | 24px (`h-6`)                                         | Full-width footer, fixed to the bottom of the shell                                                                                                                                   |
 | Settings dialog — size             | width `min(92vw, 940px)` · height `min(80vh, 720px)` | **Fixed-size** dialog derived from the window — switching tabs or searching does not resize it (nav + pane scroll independently)                                                      |
 | Settings pane — bounded list       | max-height `280px`                                   | A long row list inside a settings pane scrolls in place (`.scrollable overflow-y-auto`) instead of pushing the sections below it off the pane — see §6 "Bounded list (settings pane)" |
+| Cleanup side panel — width         | 320px                                                | Docked detail panel beside the treemap (§6 "Workspace GC — unified Cleanup"); overlays the map below 1100px instead of docking                                                        |
+| Cleanup treemap canvas — height    | 372px overview · 520px drilled into one repo         | Fixed-height drawing area of the map; same status as the Folder View scroll caps                                                                                                      |
+| Cleanup list dialog — width        | `min(720px, 90vw)`                                   | The bulk-clean / remove-selected confirm: wider than the 560px Dialog so a row holds name + chips; its list is capped at `--fv-rail-list-max-h`                                       |
 | macOS window-controls inset        | 78px (macOS only; 0 elsewhere)                       | Left inset on the corner header (sidebar always; topbar when sidebar collapsed) so content clears the macOS traffic lights                                                            |
 
 Sidebar width is **state persisted globally** (`localStorage`,
@@ -346,72 +349,78 @@ _another_ folder.
 
 ### Key app icons
 
-| Name                                     | Use                                                                                                                                                                               |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `folder`                                 | Folder                                                                                                                                                                            |
-| `folder-plus`                            | Create subfolder (FolderMenu → "New folder…" / `NewFolderDialog`)                                                                                                                 |
-| `folder-search`                          | Open an existing subfolder (FolderMenu → "Open subfolder…" / `OpenSubfolderDialog`)                                                                                               |
-| `folder-tree`                            | Browse project files (Topbar button + Explorer pane header, T100)                                                                                                                 |
-| `kanban-square`                          | Roadmap board (FolderMenu + session Context menu + Topbar button)                                                                                                                 |
-| `git-pull-request`                       | PR Stack Canvas (FolderMenu + Topbar button + the canvas' own header)                                                                                                             |
-| `git-pull-request-arrow`                 | Open the repo's Pull requests page on GitHub (Topbar button, only when `origin` is on github.com)                                                                                 |
-| `message-square`                         | Unresolved review threads on a PR Stack card (T275 — readiness chip at `full`, identity-row badge at `compact`); Review pane companion link                                       |
-| `git-branch`                             | Branch badge (git folder) / repo-group header                                                                                                                                     |
-| `chevron-right`                          | Collapse folder / repo-group (rotates 90° when open)                                                                                                                              |
-| `plus`                                   | New session, add folder / add file-folder to chat (Explorer pane row, T100)                                                                                                       |
-| `search`                                 | Global search / Explorer pane search bar (recursive finder, Cluster F)                                                                                                            |
-| `loader-2`                               | Loading spinner (in-flight search in the Explorer pane, `animate-spin` — Cluster F)                                                                                               |
-| `terminal`                               | CWD indicator                                                                                                                                                                     |
-| `square-terminal`                        | New folder terminal (FolderMenu + rows of the "Terminals" subgroup) / Copy --resume command                                                                                       |
-| `split-square-vertical`                  | Split the terminal                                                                                                                                                                |
-| `maximize-2`                             | Fullscreen / maximize a helper-stack pane (pane header, §6 Pane header)                                                                                                           |
-| `minimize-2`                             | Restore a maximized helper-stack pane back to the normal split (pane header, §6 Pane header)                                                                                      |
-| `panel-left-close` / `panel-left-open`   | Collapse / show the left sidebar (Topbar button — §6 Collapse sidebars)                                                                                                           |
-| `panel-right-close` / `panel-right-open` | Collapse / show the right auxiliary panel (Topbar button — §6 Collapse sidebars)                                                                                                  |
-| `x`                                      | Close                                                                                                                                                                             |
-| `more-horizontal`                        | Overflow menu                                                                                                                                                                     |
-| `edit-3`                                 | Rename                                                                                                                                                                            |
-| `pencil-line`                            | Rename folder alias (FolderMenu → "Rename…" / `RenameFolderDialog`)                                                                                                               |
-| `tag`                                    | Auto-alias from branch (FolderMenu → "Use branch as name" toggle)                                                                                                                 |
-| `copy`                                   | Duplicate / per-code-block copy button (Markdown viewer, hover-revealed) / "Copy file" toolbar action (Markdown pane)                                                             |
-| `external-link`                          | Open in new tab                                                                                                                                                                   |
-| `file-text`                              | Markdown pane header / file row in the Explorer pane / "Copy transcript path" (§6)                                                                                                |
-| `notebook-text`                          | Memory pane header / "Project memory" item (FolderMenu)                                                                                                                           |
-| `arrow-up-right`                         | Open the source session of a digest (Memory pane timeline, T79)                                                                                                                   |
-| `file-plus`                              | New markdown file (Explorer pane header — Cluster E, creates + opens in edit mode)                                                                                                |
-| `pencil`                                 | Markdown pane → enter edit mode (view→edit toggle)                                                                                                                                |
-| `save`                                   | Markdown pane → explicit save (edit mode; ⌘/Ctrl-S)                                                                                                                               |
-| `rotate-ccw`                             | Restart session (context menu — kills and respawns the `claude` process)                                                                                                          |
-| `archive`                                | Archive                                                                                                                                                                           |
-| `archive-restore`                        | Unarchive (restore an archived session)                                                                                                                                           |
-| `trash-2`                                | Delete                                                                                                                                                                            |
-| `clock`                                  | History, recents                                                                                                                                                                  |
-| `cloud`                                  | Cloud/bridge session (conversation lives on claude.ai, no resumable local transcript)                                                                                             |
-| `check`                                  | Confirmation, checkbox, agent completed (`done`) / transient "copied" state on a `copy` button                                                                                    |
-| `bot`                                    | Subagent (agent row nested under the session) / agent-control badge on the folder row                                                                                             |
-| `puzzle`                                 | Extension-origin badge (theme picker swatch, T137)                                                                                                                                |
-| `users`                                  | Teammate count chip (leader row) / icon on the synthetic "Team session-… · N" header                                                                                              |
-| `corner-down-right`                      | Nesting connector (agent → parent session / teammate → leader)                                                                                                                    |
-| `eye`                                    | Visibility state (filters, hide toggles) / Markdown pane → exit edit mode (edit→view toggle) / file row in the Explorer pane → "View file" (Cluster G, opens/edits any text file) |
-| `corner-down-left`                       | Enter / return hint                                                                                                                                                               |
-| `settings`                               | Settings                                                                                                                                                                          |
-| `cpu`                                    | Model (footer / status bar)                                                                                                                                                       |
-| `gauge`                                  | Context % (footer / status bar)                                                                                                                                                   |
-| `zap`                                    | Effort (footer / status bar) · PR Stack card: the staging-tip chip                                                                                                                |
-| `timer`                                  | PR Stack card: the bare auto-merge armed marker beside the age                                                                                                                    |
-| `dollar-sign`                            | Session cost (footer / status bar)                                                                                                                                                |
-| `triangle-alert`                         | Near `/compact` (footer — `exceeds200k` or context ≥95)                                                                                                                           |
-| `inbox`                                  | Inbox rail ("Needs you" queue — minimized strip of the 4th column + "Open approvals" palette action)                                                                              |
-| `image`                                  | Pasted-images pill/popover (footer — gallery of screenshots pasted into the session)                                                                                              |
-| `reply`                                  | Re-attach an image (re-injects the screenshot into the running session's prompt)                                                                                                  |
-| `volume-2`                               | Preview a voice (Settings → Voice → VOICES row — speaks the phrase in the voice already in use)                                                                                   |
-| `volume-x`                               | Nothing was spoken (Settings → Voice — the `dropped` / `stopped` outcome of a Test or a per-voice preview)                                                                        |
-| `list-checks`                            | Mission progress — the Topbar "Step N of M" pill's leading glyph (T370, Mission v3, §6 "Mission progress"); swaps to `check` once the headline is done or the mission delivered   |
-| `log-in`                                 | Mission progress — a child session row's in-app "Go to session" action (Mission v3, §6 "Mission progress"; replaces `external-link` there)                                        |
-| `contrast`                               | Mission progress — the step rail's `waiting` glyph (◐, Mission v3)                                                                                                                |
-| `undo-2`                                 | Mission progress — the step rail's `left-behind` glyph (↩, Mission v3)                                                                                                            |
-| `circle-check`                           | Mission progress — the step rail's `done` glyph (✓ hollow, Mission v3)                                                                                                            |
-| `flag`                                   | Mission progress — the popover footer's "End mission…" button (Mission v3)                                                                                                        |
+| Name                                     | Use                                                                                                                                                                                                                                    |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `folder`                                 | Folder                                                                                                                                                                                                                                 |
+| `folder-plus`                            | Create subfolder (FolderMenu → "New folder…" / `NewFolderDialog`)                                                                                                                                                                      |
+| `folder-search`                          | Open an existing subfolder (FolderMenu → "Open subfolder…" / `OpenSubfolderDialog`)                                                                                                                                                    |
+| `folder-tree`                            | Browse project files (Topbar button + Explorer pane header, T100)                                                                                                                                                                      |
+| `kanban-square`                          | Roadmap board (FolderMenu + session Context menu + Topbar button)                                                                                                                                                                      |
+| `git-pull-request`                       | PR Stack Canvas (FolderMenu + Topbar button + the canvas' own header)                                                                                                                                                                  |
+| `git-pull-request-arrow`                 | Open the repo's Pull requests page on GitHub (Topbar button, only when `origin` is on github.com)                                                                                                                                      |
+| `message-square`                         | Unresolved review threads on a PR Stack card (T275 — readiness chip at `full`, identity-row badge at `compact`); Review pane companion link                                                                                            |
+| `git-branch`                             | Branch badge (git folder) / repo-group header                                                                                                                                                                                          |
+| `chevron-right`                          | Collapse folder / repo-group (rotates 90° when open)                                                                                                                                                                                   |
+| `recycle`                                | Workspace GC: the Cleanup summary line, the single footer pill (replaces `trash-2` + `container` there) and the first-cycle banner. The spec's ♻ glyph, as a Lucide icon (§5 forbids text glyphs); the takeover header keeps `trash-2` |
+| `circle-check` / `circle-help` / `lock`  | Cleanup bucket icons: Corpse / Decide / Alive — repeated in the legend, group headers, badges and list rows so a bucket never relies on colour alone                                                                                   |
+| `check` · `square-check` · `list-checks` | Checked-block badge (`check`, 16px badge) · checked list row (`square-check`) · "Select all in repo" on narrow regions (`list-checks`, icon-only 22px Ghost)                                                                           |
+| `triangle-alert` · `rotate-ccw`          | Failed block / partial-failure pill / warning callouts (`triangle-alert`) · Retry a failed item (`rotate-ccw`)                                                                                                                         |
+| `bookmark` · `sparkles`                  | Keep (`bookmark`) and Ask for an opinion (`sparkles`) on the Cleanup surface — new there; `package-minus` stays Dehydrate and `trash-2` stays Remove                                                                                   |
+| `layout-grid` / `list`                   | Cleanup Map / List toggle                                                                                                                                                                                                              |
+| `plus`                                   | New session, add folder / add file-folder to chat (Explorer pane row, T100)                                                                                                                                                            |
+| `search`                                 | Global search / Explorer pane search bar (recursive finder, Cluster F)                                                                                                                                                                 |
+| `loader-2`                               | Loading spinner (in-flight search in the Explorer pane, `animate-spin` — Cluster F)                                                                                                                                                    |
+| `terminal`                               | CWD indicator                                                                                                                                                                                                                          |
+| `square-terminal`                        | New folder terminal (FolderMenu + rows of the "Terminals" subgroup) / Copy --resume command                                                                                                                                            |
+| `split-square-vertical`                  | Split the terminal                                                                                                                                                                                                                     |
+| `maximize-2`                             | Fullscreen / maximize a helper-stack pane (pane header, §6 Pane header)                                                                                                                                                                |
+| `minimize-2`                             | Restore a maximized helper-stack pane back to the normal split (pane header, §6 Pane header)                                                                                                                                           |
+| `panel-left-close` / `panel-left-open`   | Collapse / show the left sidebar (Topbar button — §6 Collapse sidebars)                                                                                                                                                                |
+| `panel-right-close` / `panel-right-open` | Collapse / show the right auxiliary panel (Topbar button — §6 Collapse sidebars)                                                                                                                                                       |
+| `x`                                      | Close                                                                                                                                                                                                                                  |
+| `more-horizontal`                        | Overflow menu                                                                                                                                                                                                                          |
+| `edit-3`                                 | Rename                                                                                                                                                                                                                                 |
+| `pencil-line`                            | Rename folder alias (FolderMenu → "Rename…" / `RenameFolderDialog`)                                                                                                                                                                    |
+| `tag`                                    | Auto-alias from branch (FolderMenu → "Use branch as name" toggle)                                                                                                                                                                      |
+| `copy`                                   | Duplicate / per-code-block copy button (Markdown viewer, hover-revealed) / "Copy file" toolbar action (Markdown pane)                                                                                                                  |
+| `external-link`                          | Open in new tab                                                                                                                                                                                                                        |
+| `file-text`                              | Markdown pane header / file row in the Explorer pane / "Copy transcript path" (§6)                                                                                                                                                     |
+| `notebook-text`                          | Memory pane header / "Project memory" item (FolderMenu)                                                                                                                                                                                |
+| `arrow-up-right`                         | Open the source session of a digest (Memory pane timeline, T79)                                                                                                                                                                        |
+| `file-plus`                              | New markdown file (Explorer pane header — Cluster E, creates + opens in edit mode)                                                                                                                                                     |
+| `pencil`                                 | Markdown pane → enter edit mode (view→edit toggle)                                                                                                                                                                                     |
+| `save`                                   | Markdown pane → explicit save (edit mode; ⌘/Ctrl-S)                                                                                                                                                                                    |
+| `rotate-ccw`                             | Restart session (context menu — kills and respawns the `claude` process)                                                                                                                                                               |
+| `archive`                                | Archive                                                                                                                                                                                                                                |
+| `archive-restore`                        | Unarchive (restore an archived session)                                                                                                                                                                                                |
+| `trash-2`                                | Delete                                                                                                                                                                                                                                 |
+| `clock`                                  | History, recents                                                                                                                                                                                                                       |
+| `cloud`                                  | Cloud/bridge session (conversation lives on claude.ai, no resumable local transcript)                                                                                                                                                  |
+| `check`                                  | Confirmation, checkbox, agent completed (`done`) / transient "copied" state on a `copy` button                                                                                                                                         |
+| `bot`                                    | Subagent (agent row nested under the session) / agent-control badge on the folder row                                                                                                                                                  |
+| `puzzle`                                 | Extension-origin badge (theme picker swatch, T137)                                                                                                                                                                                     |
+| `users`                                  | Teammate count chip (leader row) / icon on the synthetic "Team session-… · N" header                                                                                                                                                   |
+| `corner-down-right`                      | Nesting connector (agent → parent session / teammate → leader)                                                                                                                                                                         |
+| `eye`                                    | Visibility state (filters, hide toggles) / Markdown pane → exit edit mode (edit→view toggle) / file row in the Explorer pane → "View file" (Cluster G, opens/edits any text file)                                                      |
+| `corner-down-left`                       | Enter / return hint                                                                                                                                                                                                                    |
+| `settings`                               | Settings                                                                                                                                                                                                                               |
+| `cpu`                                    | Model (footer / status bar)                                                                                                                                                                                                            |
+| `gauge`                                  | Context % (footer / status bar)                                                                                                                                                                                                        |
+| `zap`                                    | Effort (footer / status bar) · PR Stack card: the staging-tip chip                                                                                                                                                                     |
+| `timer`                                  | PR Stack card: the bare auto-merge armed marker beside the age                                                                                                                                                                         |
+| `dollar-sign`                            | Session cost (footer / status bar)                                                                                                                                                                                                     |
+| `triangle-alert`                         | Near `/compact` (footer — `exceeds200k` or context ≥95)                                                                                                                                                                                |
+| `inbox`                                  | Inbox rail ("Needs you" queue — minimized strip of the 4th column + "Open approvals" palette action)                                                                                                                                   |
+| `image`                                  | Pasted-images pill/popover (footer — gallery of screenshots pasted into the session)                                                                                                                                                   |
+| `reply`                                  | Re-attach an image (re-injects the screenshot into the running session's prompt)                                                                                                                                                       |
+| `volume-2`                               | Preview a voice (Settings → Voice → VOICES row — speaks the phrase in the voice already in use)                                                                                                                                        |
+| `volume-x`                               | Nothing was spoken (Settings → Voice — the `dropped` / `stopped` outcome of a Test or a per-voice preview)                                                                                                                             |
+| `list-checks`                            | Mission progress — the Topbar "Step N of M" pill's leading glyph (T370, Mission v3, §6 "Mission progress"); swaps to `check` once the headline is done or the mission delivered                                                        |
+| `log-in`                                 | Mission progress — a child session row's in-app "Go to session" action (Mission v3, §6 "Mission progress"; replaces `external-link` there)                                                                                             |
+| `contrast`                               | Mission progress — the step rail's `waiting` glyph (◐, Mission v3)                                                                                                                                                                     |
+| `undo-2`                                 | Mission progress — the step rail's `left-behind` glyph (↩, Mission v3)                                                                                                                                                                 |
+| `circle-check`                           | Mission progress — the step rail's `done` glyph (✓ hollow, Mission v3)                                                                                                                                                                 |
+| `flag`                                   | Mission progress — the popover footer's "End mission…" button (Mission v3)                                                                                                                                                             |
 
 ### Novelty dot (on an icon button)
 
@@ -8257,6 +8266,8 @@ except while a confirm is open.
 
 ### Cleanup footer pill (StatusFooter.vue, lands in Reaper PR4)
 
+> **Superseded by T443** — see "Workspace GC — unified Cleanup / Footer pill": one `Recycle` pill replaces this pill and the Containers pill. The text below is the history of the Trash2 pill.
+
 Contract only — the pill itself is wired in a later PR. Right
 cluster of the footer, before the fleet pill: a `Trash2` icon (12px,
 `currentColor`) + `$t('cleanup.footerPill')` + a count badge
@@ -8264,6 +8275,261 @@ cluster of the footer, before the fleet pill: a `Trash2` icon (12px,
 while `reaper.totals.harvestable > 0`. Click **toggles** the Cleanup takeover
 (`ui.toggleCleanup()`); while it is open the pill inks `--accent` and carries
 `aria-pressed` (footer active state — see "Takeover dismissal").
+
+### Workspace GC — unified Cleanup (T443)
+
+**Source of truth:** the operator-approved mockup 3, revision 1 (disk-first treemap), promoted to
+`docs/specs/2026-10-07-workspace-gc/spec.html`, and the Workspace GC spec §3/§6/§9. This section is
+the contract the components are built against; where it says "supersedes", the older Cleanup and
+Containers sections above and below keep their text for the parts it does not name.
+
+One engine, one door. The Cleanup takeover (`CleanupView.vue`) is the **single home** of cleaning:
+worktrees, the Docker stacks hanging off them, orphan volumes and Docker housekeeping. The Containers
+takeover stays as an **inspector**; its sweep button routes here. One footer pill, one Settings tab.
+
+**Supersedes** (named, not implied): the toolbar KPI line, the global "Sweep N green" button, the
+per-repo "Sweep N" pill and the worktree rows of "Cleanup takeover" / "Cleanup row" for `worktree`
+and `detached-worktree` kinds; "Cleanup footer pill"; "Containers footer pill"; the background-scan
+and zombie controls of "Containers settings pane" that the GC prefs now cover. `local-branch`,
+`remote-branch` and `hidden-folder` rows keep the old row UI, in the "Other leftovers" section.
+
+#### Buckets — three encodings, never colour alone
+
+| Bucket | Colour triple (fill / line / ink)                                   | Pattern                                                                                                                                            | Icon           | Word                    |
+| ------ | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ----------------------- |
+| Corpse | `--color-green-soft` / `--color-green-line` / `--color-green`       | solid fill                                                                                                                                         | `circle-check` | "Cleaned automatically" |
+| Decide | `--color-warning-soft` / `--color-warning-line` / `--color-warning` | **hatch**: `repeating-linear-gradient(135deg, transparent 0 4px, var(--color-warning-soft) 4px 8px)` over the soft fill (4px = spacing step `s-1`) | `circle-help`  | "Needs you"             |
+| Alive  | `--color-surface-2` / `--color-border-2` / `--color-text-3`         | plain neutral fill                                                                                                                                 | `lock`         | "Untouched"             |
+
+A block that is **planned, not done** (first-cycle report-only) takes a dashed border. An aggregate
+("N smaller") takes a dotted border and an italic label. The hatch may also be reused by the existing
+`blocked` chip; it is defined here once.
+
+#### Page anatomy (top to bottom)
+
+1. **TakeoverShell header** — `Trash2` icon, title, close (unchanged, see "TakeoverShell").
+2. **Toolbar row** (`padding: 12px 22px`, `border-b border-border`, wraps): the **summary line**, the
+   **hero button / progress chip**, the autopilot badge, the "Autopilot settings" Ghost button (opens
+   Settings → Cleanup), the Map/List `SegmentedControl` (`layout-grid` / `list`, `size="sm"`) and a
+   rescan icon button.
+   - Summary line: `Recycle` icon (`--green`), 13px/20px `--text-2`, then
+     `{n} GiB reclaimable · autopilot on|off · next cycle in {t}`; the size is 600-weight `--text`.
+     "Reclaimable" is everything not Alive plus orphan volumes (corpse + decide + orphan volumes);
+     Docker build cache is added only when the engine reports it (see "Docker card").
+   - Autopilot badge: Badge Success "Autopilot on · every {interval}" or Default "Autopilot off".
+3. **Selection bar** (only with ≥1 checked block) — the takeover's existing selection band
+   (`border-b border-border bg-surface-2`, `padding: 8px 22px`): `square-check` icon (`--accent`), the
+   count `N selected · X GiB` (13px; numbers 600-weight `--text`), then **Remove selected** (Danger),
+   **Dehydrate** (Soft), **Keep** (Ghost), **Ask for an opinion** (Soft, `sparkles`, disabled, tooltip
+   "coming in S6"), a `⇧` hint (`kbd`) and a right-aligned "Clear selection" ghost link.
+4. **First-cycle banner** (only while `firstReportAcknowledged` is false and a report exists): see below.
+5. **Split bar** (`.gc-split`): a 32px bar of three segments — _cleaned automatically_ (corpses +
+   Docker housekeeping, Corpse triple), _needs you_ (Decide, hatch), _untouched_ (Alive). Widths
+   proportional to bytes, `gap: 2px`, segment radius `--radius-sm` (3px), 11px text, label left, size
+   right. A caption row above (eyebrow, 10.5px/500 uppercase `--text-4`) names the groups; the
+   last-cycle line (11px `--text-4`) sits under it.
+6. **Map** (or the List fallback), then the **Docker card**, then **Needs you**, then **Other leftovers**
+   and **Recent cleanups** (the existing tombstone footer).
+
+#### Treemap
+
+- **Data hierarchy:** repo → bucket group → worktree block; the third level (deps / owned volumes /
+  checkout) lives in the side panel as the composition bar. Area = bytes on disk.
+- **Layout:** squarified (Bruls et al.), computed in `lib/gc-treemap.ts` from byte sizes; ties break by
+  name so the order is stable between scans. Repos get a width floor (a small repo never collapses to a
+  sliver); byte totals are always printed on the region header. The canvas is **372px** tall in the
+  overview and **520px** once drilled into one repo (§4).
+- **Repo region** (`.tm-region`): `border-border`, radius 7 (`--radius`), `bg-surface`. Header 28px:
+  repo name 12.5px/600 `--text-2`, meta 11px `--text-4` (`61 worktrees · 27.8 GiB`), count badges
+  (Corpse / Decide / Alive) pushed right, then **Select all in repo** (11px link in `--text-2`;
+  icon-only 22px Ghost `list-checks` in the narrow side regions, which have no room for the label).
+  Clicking the repo name drills in (breadcrumb + bucket filter `All / Corpse / Decide / Alive`).
+- **Bucket group:** 22px header — bucket icon + eyebrow word in the bucket ink, count right in 11px
+  `--text-3`. Its area is itself a readable number.
+- **Block** (`.tm-block`): `position: absolute; inset: 2px` inside its cell (a 2px gutter between
+  blocks), radius 3, 1px border in the bucket line, `padding: 4px 6px`, 11px/14px text. Label ladder by
+  **container query** on the cell: full name → ticket id (`PROJ-0412`) → `#0412` → size only → icon only;
+  the title tooltip always carries full name, repo, size and reason. Blocks under 256 MiB in a drilled
+  repo (330 MiB in the overview) fold into one **"N smaller"** block per bucket; it is clickable and
+  opens that set as a list.
+- **States** (the block's whole state machine; the row in Needs you mirrors it):
+
+  | State        | Look                                                                                                                                              |
+  | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | rest         | bucket triple                                                                                                                                     |
+  | hover-linked | `box-shadow: 0 0 0 1px var(--color-text-2)` — the list row under the pointer outlines its block                                                   |
+  | selected     | single block whose panel is open: `border-color: --accent` + `box-shadow: 0 0 0 1px --accent`, **no badge**                                       |
+  | checked      | multi-select: the selected outline **plus** a 16px check badge (top-right, `--accent` fill, `--accent-ink` `check` glyph) — never colour alone    |
+  | planned      | dashed border (first cycle)                                                                                                                       |
+  | busy         | `--accent-soft` fill, `--accent-line` border, a 6px `--accent` dot with a 3px `--accent-soft` halo, and a 2px determinate sliver along the bottom |
+  | done         | `opacity: 0.45`, dashed border, word "freed" + `check`; after `--dur-slow` it is removed and the layout is recomputed                             |
+  | failed       | `--color-red-line` border + `triangle-alert` in `--red`; it is a Decide block again                                                               |
+
+  Only **Decide** blocks are checkable; corpses are cleaned by the hero, Alive blocks are never touched.
+
+- **Interaction:** click opens the panel; **Shift+click** toggles checked; **Esc** clears the selection
+  then closes the panel; arrow keys move to the nearest block in that direction, **↩** opens the panel,
+  `K` keep · `R` remove · `D` dehydrate · `A` ask (disabled). Blocks are real `<button>`s with
+  `aria-pressed` (checked) and an `aria-label` that states bucket, size and any busy/done/failed word.
+- **Layout stability:** a finished item fades (`--dur-slow`) and the layout is recomputed **once per
+  finished item**, never on pointer movement, so a block does not slide away from the cursor while it is
+  being aimed at. There is no freeze-on-hover.
+- **No bytes (Windows, `measureDiskBytes` null):** the map is unavailable; the List is the only view and
+  the toggle says why. Bucket counts still render.
+- **List fallback** (`.ls-*`): three bucket groups; rows `20px 260px 160px 1fr 70px` (icon / name + repo /
+  6px bar / reason or note / size), the bar filled in the bucket ink.
+
+#### Hero button and progress chip
+
+The **hero** is the screen's single **Primary** button (28px) right after the summary line, so "how
+much" and "do it" read as one sentence: `Clean 12 corpses · 6.0 GiB`. It acts on proven corpses only.
+
+- **Idle:** Primary, `Recycle` icon, label with count and bytes.
+- **Nothing to clean:** disabled (`opacity: 0.4`), label stays **"Nothing to clean"** — the state is
+  readable, not just dimmed.
+- **First-cycle state:** the hero is a **Soft** button, because "Enable autopilot" owns the one Primary.
+- **Running** (the hero stops being a button): a **progress chip** — Badge Accent triple at button height
+  (28px): static `--accent` dot (6px, 3px `--accent-soft` halo), `Cleaning 3/12 · 1.4 GiB freed`, a
+  **40 × 4px determinate bar** (`--accent` on `--border-2`, radius full) counting items, not bytes.
+  `aria-live="polite"`, announcing at most once per finished item. The chip has no control: the engine
+  has no cancel, so "Cancel after current" is **not drawn**.
+- **Re-attach:** closing and reopening the view, or reloading the renderer, rebuilds the chip from
+  `gc:jobs`. The view never awaits the `gc:clean` call.
+
+#### Side panel (320px)
+
+Dialog anatomy (`--surface`, `--border-2`, radius 10, 16px padding), docked right of the map;
+**below 1100px it overlays the map as a popover** instead of docking (the mockup's honest problem).
+Top to bottom: name (13px mono, `--text`) and repo (11px `--text-4`); size (20px/28px, 500); the
+**composition bar** (8px, `--green` deps · `--warning` owned volumes · `--border-2` checkout, with a
+legend of 11px rows and sizes) — volume bytes are not reported by the engine, so the volumes segment is
+drawn only when a size exists and otherwise the volumes are listed by name; **Why it is here** (13px
+`--text-2`, the engine's one-sentence reason, dirty-file count in `--warning`); **Takes with it** (the
+confirm dialog's preview: stack, owned volume, deps, checkout, branch); then the actions, stacked,
+`justify-content: flex-start`, shortcut `kbd` right: **Remove** (Danger), **Dehydrate** (Soft),
+**Keep** (Ghost), **Ask for an opinion** (Soft, disabled, "coming in S6"). A Corpse block's panel offers
+"Clean now" only. An orphan-volume block shows its project name and "no known worktree".
+A failed item's panel adds **what ran** — a step list (✓ done, ✗ failed in `--red`, dashed todo) for the
+engine's steps (stack stopped · containers removed · volumes · archive · deps · checkout · branch), and
+**Retry / Keep / Remove**. The raw error repeats the docker text truncated to 2 lines with a copy action.
+A pnpm hardlinked store can show deps that free nothing: the panel carries the engine's note.
+
+#### Needs you list
+
+A ranked list under the map, biggest first: grid `20px 220px 1fr 64px auto` (leading slot / name + repo /
+one-sentence reason / size / row actions), `padding: 12px 10px`, radius `--radius-sm`. The leading slot
+is the bucket icon, which becomes a hover-reveal checkbox (the Cleanup row pattern) and shows
+`square-check` in `--accent` when checked; a checked row is `--accent-soft` with `--accent-line`; a failed
+row is `--red-soft` with `--red-line` and `triangle-alert`. Header: eyebrow "Needs you" in `--warning`,
+the count, and two header buttons that act on the **whole list** — "Ask for an opinion on all {n}"
+(disabled, S6) and "Remove the {n} marked safe" (hidden until opinions exist). Hovering a row outlines
+its block. Footer: the keyboard hints (`kbd`).
+
+#### Bulk-clean and remove-selected dialog (`CleanupBulkConfirmDialog.vue`)
+
+Dialog anatomy (radius 10, `--border-2`, `--shadow-pop`) at `min(720px, 90vw)`, backdrop
+`rgba(0,0,0,0.55)`. Header: title, subtitle. Summary line (11px `--text-3`). A **bounded list** at
+`--fv-rail-list-max-h` (280px, `.scrollable`, focusable, arrow-key scroll) of rows `20px 1fr 64px`:
+bucket icon, `repo › worktree` + branch (11px mono `--text-4`), the **removal chips**, size right.
+
+- **Removal chip** (`.wchip`): Badge Default geometry at 10.5px/14px, radius 3, listing what the row takes
+  with it — stack · owned volume · deps · checkout · branch. The **volume chip uses the Warning triple**.
+- **Warning callout** (the SweepConfirmDialog callout): `--warning-soft` / `--warning-line`,
+  `triangle-alert`. Corpse variant: _volumes cannot be restored_; code, branch and dependencies can come
+  back (archive refs, OS trash, `setup`) — and how. Remove-selected variant: each row also carries its
+  one-sentence reason; a stronger line names how many picked worktrees hold work that no other branch has,
+  and says their code stays recoverable from archive refs and the OS trash.
+- **Footer:** total (12.5px/500) left; **Cancel** (Ghost) and the confirm. Confirm is **Success** for
+  proven corpses (positive bulk reclaim, like today's Sweep), **Danger** for remove-selected (it can include
+  code that exists nowhere else but an archive ref). Confirming calls `gc:clean(ids)` /
+  `gc:clean(ids, { confirmDecide: true })` and closes the dialog at once.
+- **Keyboard:** Esc or Cancel closes; **focus starts on Cancel, never the confirm button**; Tab cycles
+  inside (focus trap); ↩ activates only the focused control.
+
+#### Docker card
+
+Its own region under the map (`.dk`, `border-border`, radius 7, `bg-surface`): header `container` icon,
+title, "{n} stacks in use, never touched" note. Three blocks (Corpse triple, `min-width: 200px`): **build
+cache**, **dangling images**, **orphan volumes** — name, size right, a one-line sub, a toggle
+(`ToggleSwitch`) bound to `categories.dockerCache` / `categories.volumes`. The orphan-volumes block
+carries the Warning badge "can't be restored" and the project name of each volume. The engine reports the
+**last cycle's reclaimed** build-cache and image bytes but no pending size, so those two blocks show the
+reclaimed figure and read "size unavailable until the next cycle" for the pending part rather than
+inventing a number. Zero state: three muted zeros.
+
+#### First-cycle banner
+
+`.fc`: `--accent-soft` fill, `--accent-line` border, radius 7, `padding: 12px 16px`, `Recycle` icon in
+`--accent`. Text 13px/500: "Found {n} corpses, {size} — enable autopilot?", 11px sub-line "The first cycle only
+reports; nothing is deleted until you turn it on." Buttons: **Enable autopilot** (the screen's one
+Primary) and **Not now** (Ghost). Enable calls `gc:ackFirstReport` **and** `gc:prefs:set({ autopilot: true })`.
+Corpse blocks are dashed ("planned, not done"); the summary reads "autopilot off".
+
+#### Empty state
+
+`.em`: a green `circle-check` icon, "All clean" (20px/28px, 500), "Nothing to reclaim. Autopilot checked
+{ago}." The map stays, showing only untouched blocks, so the screen still answers "where is my disk";
+the hero is disabled "Nothing to clean"; Docker shows zeros.
+
+#### Footer pill — one pill (supersedes "Cleanup footer pill" and "Containers footer pill")
+
+One `Recycle` pill (12px, stroke 1.6) in the footer's right cluster, before the fleet pill, 20px high,
+`padding: 0 8px`, `gap: 6px`, 11px, radius `--radius-sm`. It replaces both old pills. Click **toggles the
+Cleanup takeover** (`ui.toggleCleanup()`); while open it inks `--accent` and carries `aria-pressed`.
+
+| State     | Content                                                 | Ink                                         |
+| --------- | ------------------------------------------------------- | ------------------------------------------- |
+| idle      | `Recycle` icon + `17 GiB` (reclaimable total)           | `--text-2`, hover `--text` on `--surface-2` |
+| running   | `Recycle` icon + accent dot + `Cleaning 3/12`           | `--accent`                                  |
+| attention | `Recycle` icon + `1 needs you` (items that failed last) | `--warning`                                 |
+
+`aria-live="polite"`, one announcement per finished item. Hidden only when there is nothing to reclaim,
+nothing running and nothing needing attention. An optional hover popover (the footer popover anatomy,
+`--shadow-pop`, radius 7) previews the split.
+
+#### Toasts
+
+The documented Toast with an optional description and an action link — no new variant.
+
+| Outcome         | Kind      | Title                                | Action         |
+| --------------- | --------- | ------------------------------------ | -------------- |
+| all ok          | `success` | `Freed {size} · {n} corpses cleaned` | "View journal" |
+| partial failure | `warning` | `{n} cleaned · {m} needs you`        | "Review"       |
+
+A toast shows only while the window is focused; otherwise the native notification applies (see
+"Notifications"). Every run lands in the Activity bell and the journal.
+
+#### Motion
+
+Fade-out of a cleaned block uses `--dur-slow` / `--ease` (opacity to 0.45, then removal); no new
+keyframes and no new easing. The "busy" dot is static — a 6px `--accent` dot with a 3px `--accent-soft`
+halo — because `.anim-pulse-dot` carries a green ring today; an accent variant of that class is a
+follow-up, not part of this slice. `prefers-reduced-motion` already zeroes durations.
+
+#### Settings → Cleanup (supersedes the Cleanup and Containers panes' overlapping controls)
+
+One pane, the `CleanupSettingsPane.vue` anatomy (11px uppercase eyebrow, muted 11.5px intro, label-left /
+control-right rows with `SettingHint`). Groups, 16px apart, every control writing through `gc:prefs:set`
+(whole `GcPrefs`; main clamps and the pane re-syncs from the answer):
+
+- **Autopilot** — `autopilot` toggle; **Run every** (`SegmentedControl`: 30m / 1h / 6h / Daily, the
+  Reaper timer's interval); **Grace period** (days); **Per-cycle cap** (items).
+- **What it cleans** — three toggles: `categories.worktrees`, `categories.volumes`,
+  `categories.dockerCache`; **Remove volumes with a worktree** (`removeVolumes`) with the text
+  **"volumes cannot be restored"** in `--warning` right under its hint; **Build cache max age** (days).
+- **Never clean** — a list of absolute repo or worktree paths (`neverClean`), add/remove.
+- **Scan** (Reaper-only, kept): scan in the background, notify, never delete remote branches, protected
+  branches, minimum age. These are not GC prefs and are not duplicated anywhere.
+
+The Containers pane keeps only what the inspector needs (its own scan timer and the idle clock for stacks
+that belong to no worktree) and states that worktree-bound stacks are cleaned by Cleanup, with a link.
+
+#### Entity map
+
+`CleanupView.vue` (shell) · `CleanupTreemap.vue` · `CleanupBlockPanel.vue` · `CleanupHeroButton.vue` ·
+`CleanupSelectionBar.vue` · `CleanupDockerCard.vue` · `CleanupNeedsYouList.vue` ·
+`CleanupFirstCycleBanner.vue` · `CleanupBulkConfirmDialog.vue` · `CleanupOtherItems.vue` ·
+`stores/gc.ts` · `lib/gc-treemap.ts` · `lib/gc-model.ts` · `lib/gc-jobs.ts`.
 
 ### Containers takeover (ContainersView.vue)
 
@@ -8529,6 +8795,8 @@ rounded-sm`), and **Scan again**.
 
 ### Containers footer pill (StatusFooter.vue)
 
+> **Superseded by T443** — the Containers pill is gone; the single Cleanup pill (see "Workspace GC — unified Cleanup / Footer pill") carries the needs-you count. Containers is still reachable from the Topbar/FolderMenu entry points.
+
 Right cluster, next to the Cleanup pill, same anatomy: a Lucide `Container` icon (12px,
 stroke 1.6), `$t('containers.footerPill')`, and a count badge (`bg-green-soft text-green
 rounded-full`, 10.5px/700, tabular-nums) holding `totals.needsYou` — the zombie + orphan
@@ -8537,6 +8805,8 @@ stacks. Hidden at 0 and before the first scan. Click toggles the takeover
 `aria-pressed`.
 
 ### Containers settings pane (ContainersSettingsPane.vue)
+
+> **Narrowed by T443** — worktree-bound stacks are now judged and cleaned by Workspace GC (Settings → Cleanup). This pane keeps only the inspector's own scan timer and the idle clock for stacks that belong to no worktree, and links to Cleanup. See "Workspace GC — unified Cleanup / Settings → Cleanup".
 
 Settings → **Containers** (`SettingsTabId` `'containers'`, listed after Cleanup). It has no
 mockup of its own: its visual contract is `CleanupSettingsPane.vue`'s anatomy (PRD T320 §6)
