@@ -362,12 +362,13 @@ describe('the stager (real fs, temp dirs)', () => {
   it('garbage collection removes only old, unpinned, non-current stages', async () => {
     const s = stager()
     const current = (await s.ensureStaged())!
-    // an old sibling stage, backdated beyond 14 days
+    // an old sibling stage, backdated beyond 14 days from the stager's injected clock
+    // (the stager is built with a frozen `now`, so the real wall clock must not enter here)
     const oldKey = join(userData, 'companion', '0.0.9')
     await mkdir(join(oldKey, 'harnu-companion'), { recursive: true })
     const stamp = join(oldKey, 'harnu-companion', '.stamp')
     await writeFile(stamp, 'x\ny\n')
-    const old = new Date(Date.now() - 30 * 86_400_000)
+    const old = new Date(1_790_000_000_000 - 30 * 86_400_000)
     const { utimes } = await import('node:fs/promises')
     await utimes(stamp, old, old)
 
