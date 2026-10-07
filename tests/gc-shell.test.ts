@@ -31,6 +31,7 @@ const REPO = '/ws/org/proj/www'
 const WT = '/ws/org/proj/worktrees/PROJ-0000-slug'
 const WT_B = '/ws/org/proj/worktrees/PROJ-0000-slug-b'
 const ELSEWHERE = '/ws/org/other/api-gateway'
+const TIP = 'a'.repeat(40)
 
 function reapItem(over: Partial<ReapItem> = {}): ReapItem {
   return {
@@ -102,6 +103,7 @@ interface Harness {
   /** Replaces what the next listing returns, to model docker changing between calls. */
   setStacks(stacks: StackGroup[]): void
   presenceOf: ReturnType<typeof vi.fn>
+  headOf: ReturnType<typeof vi.fn>
   probeStatus: ReturnType<typeof vi.fn>
   git: ReturnType<typeof vi.fn>
   gitCalls: string[][]
@@ -115,6 +117,7 @@ function harness(
     stacks?: StackGroup[]
     presence?: SessionPresence
     trackedDirty?: boolean
+    head?: string | null
     executor?: Partial<ExecutorDeps>
     dehydrate?: Partial<DehydrateDeps>
   } = {}
@@ -125,6 +128,9 @@ function harness(
   let stacks = over.stacks ?? [stack('app', [container('c1', `${WT}/api`)])]
   const listStacks = vi.fn(async () => ({ stacks }))
   const presenceOf = vi.fn(async () => over.presence ?? ('none' as SessionPresence))
+  const headOf = vi.fn(async (): Promise<string | null> =>
+    over.head === undefined ? TIP : over.head
+  )
   const probeStatus = vi.fn(async () => ({
     trackedDirty: over.trackedDirty ?? false,
     untracked: []
@@ -164,7 +170,8 @@ function harness(
       dehydrate,
       docker: { stop, removeContainers, removeVolumes },
       listStacks,
-      presenceOf
+      presenceOf,
+      headOf
     },
     stop,
     removeContainers,
@@ -174,6 +181,7 @@ function harness(
       stacks = next
     },
     presenceOf,
+    headOf,
     probeStatus,
     git,
     gitCalls,
@@ -387,6 +395,43 @@ describe('reprobe (AC-5)', () => {
       ok: false,
       reason: 'changed-since-scan'
     })
+  })
+
+  it('accepts a local tip that has not moved since the scan', async () => {
+    const h = harness({ head: TIP })
+    expect(await createGcOps(h.deps).reprobe(bundle({ localTip: TIP }))).toEqual({ ok: true })
+    expect(h.headOf).toHaveBeenCalledWith(WT)
+  })
+
+  it('refuses when HEAD moved since the scan (new work on a merged branch)', async () => {
+    const h = harness({ head: 'c'.repeat(40) })
+    expect(await createGcOps(h.deps).reprobe(bundle({ localTip: TIP }))).toEqual({
+      ok: false,
+      reason: 'changed-since-scan'
+    })
+  })
+
+  it('refuses when HEAD can no longer be read', async () => {
+    const h = harness()
+    h.headOf.mockRejectedValueOnce(new Error('not a git repository'))
+    expect(await createGcOps(h.deps).reprobe(bundle({ localTip: TIP }))).toEqual({
+      ok: false,
+      reason: 'changed-since-scan'
+    })
+  })
+
+  it('refuses when HEAD now reads as nothing', async () => {
+    const h = harness({ head: null })
+    expect(await createGcOps(h.deps).reprobe(bundle({ localTip: TIP }))).toEqual({
+      ok: false,
+      reason: 'changed-since-scan'
+    })
+  })
+
+  it.each([null, undefined])('skips the tip check when the scanned tip is %s', async (tip) => {
+    const h = harness({ head: 'c'.repeat(40) })
+    expect(await createGcOps(h.deps).reprobe(bundle({ localTip: tip }))).toEqual({ ok: true })
+    expect(h.headOf).not.toHaveBeenCalled()
   })
 
   it('reports a throwing status probe as probe-failed', async () => {
