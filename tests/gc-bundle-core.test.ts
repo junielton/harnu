@@ -44,6 +44,9 @@ function mergedCheckpoint(at: string | null = OLD_MERGE): Checkpoint {
     : { id: 'pr-merged', state: 'green', detail: at }
 }
 
+/** What the Reaper records for a worktree whose tracked files were probed clean. */
+const LOCAL_CLEAN: Checkpoint = { id: 'local-clean', state: 'green' }
+
 function item(over: Partial<ReapItem> = {}): ReapItem {
   const path = over.path ?? WT_A
   return {
@@ -55,7 +58,7 @@ function item(over: Partial<ReapItem> = {}): ReapItem {
     hidden: false,
     ageDays: 12,
     diskBytes: 1_000_000,
-    checkpoints: [mergedCheckpoint()],
+    checkpoints: [mergedCheckpoint(), LOCAL_CLEAN],
     verdict: 'harvestable',
     blockers: [],
     needsRemoteDelete: false,
@@ -302,6 +305,61 @@ describe('bucketOf — rules 1 to 11', () => {
   it('10. with both blockers present, dirty is reported first', () => {
     const both = corpseFacts({ item: item({ blockers: ['unpushed', 'dirty'] }) })
     expect(bucketOf(both, NOW, GRACE_DAYS).reason?.code).toBe('dirty')
+  })
+})
+
+describe('bucketOf — fails closed on unknown inputs (delta 2, item 3)', () => {
+  it('(a) no local-clean checkpoint is decide dirty: the tree was never shown clean', () => {
+    const r = bucketOf(
+      corpseFacts({ item: item({ checkpoints: [mergedCheckpoint()] }) }),
+      NOW,
+      GRACE_DAYS
+    )
+    expect(r.bucket).toBe('decide')
+    expect(r.reason?.code).toBe('dirty')
+    expect(r.reason?.detail).toMatch(/could not be verified clean/)
+  })
+
+  it.each(['unknown', 'red', 'na'] as const)(
+    '(a) a local-clean checkpoint in state %s is decide dirty',
+    (state) => {
+      const unclean = item({ checkpoints: [mergedCheckpoint(), { id: 'local-clean', state }] })
+      const r = bucketOf(corpseFacts({ item: unclean }), NOW, GRACE_DAYS)
+      expect(r.bucket).toBe('decide')
+      expect(r.reason?.code).toBe('dirty')
+    }
+  )
+
+  it.each([undefined, 'hibernated'])(
+    '(b) a session that is not exactly none (%s) is never a corpse',
+    (session) => {
+      const r = bucketOf(
+        corpseFacts({ session: session as unknown as SessionPresence }),
+        NOW,
+        GRACE_DAYS
+      )
+      expect(r.bucket).toBe('decide')
+      expect(r.reason?.code).toBe('open-idle-session')
+      expect(r.reason?.detail).toMatch(/unknown/)
+    }
+  )
+
+  it.each([NaN, Infinity, -Infinity, -1])(
+    '(c) a lastSignOfLifeAt of %s is alive, never old enough',
+    (at) => {
+      expect(bucketOf(corpseFacts({ lastSignOfLifeAt: at }), NOW, GRACE_DAYS)).toEqual({
+        bucket: 'alive',
+        reason: null
+      })
+    }
+  )
+
+  it.each([NaN, Infinity, -1])('(c) a grace window of %s days is alive', (grace) => {
+    expect(bucketOf(corpseFacts(), NOW, grace)).toEqual({ bucket: 'alive', reason: null })
+  })
+
+  it('(c) a clock that is not a number is alive', () => {
+    expect(bucketOf(corpseFacts(), NaN, GRACE_DAYS)).toEqual({ bucket: 'alive', reason: null })
   })
 })
 

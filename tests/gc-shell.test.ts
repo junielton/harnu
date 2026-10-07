@@ -559,6 +559,21 @@ describe('reprobe (AC-5)', () => {
       })
     })
 
+    it.each<[string, Partial<WorktreeBundle>]>([
+      ['a NaN sign of life', { lastSignOfLifeAt: NaN }],
+      ['a negative sign of life', { lastSignOfLifeAt: -1 }],
+      ['a NaN grace', { graceDays: NaN }],
+      ['a negative grace', { graceDays: -1 }],
+      ['an infinite grace', { graceDays: Infinity }]
+    ])('refuses %s as grace-not-elapsed', async (_label, over) => {
+      const h = harness()
+      expect(await createGcOps(h.deps).reprobe(bundle(over))).toEqual({
+        ok: false,
+        reason: 'grace-not-elapsed'
+      })
+      expect(h.probeStatus).not.toHaveBeenCalled()
+    })
+
     it('refuses before any probe runs', async () => {
       const h = harness()
       await createGcOps(h.deps).reprobe(bundle({ lastSignOfLifeAt: null }))
@@ -693,7 +708,8 @@ function scanned(containers: InspectedContainer[]): WorktreeBundle {
         id: 'pr-merged',
         state: 'green',
         detail: new Date(EXEC_NOW - 10 * DAY).toISOString()
-      }
+      },
+      { id: 'local-clean', state: 'green' }
     ]
   })
   const out = buildBundles({

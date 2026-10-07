@@ -167,10 +167,13 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       if (typeof b.localTip !== 'string') return { ok: false, reason: 'tip-unknown' }
       // Re-check the grace against the clock now, not the one the bucket was decided on: a
       // bundle bucketed long ago, or built by hand, must not clean on a stale decision. No
-      // sign of life, or no recorded grace window, cannot show the window elapsed either.
+      // sign of life, or no recorded grace window, cannot show the window elapsed either,
+      // and neither can a NaN, infinite or negative one (each makes the comparison false).
+      const known = (n: number | null | undefined): n is number =>
+        Number.isFinite(n) && (n as number) >= 0
       if (
-        b.lastSignOfLifeAt === null ||
-        b.graceDays === undefined ||
+        !known(b.lastSignOfLifeAt) ||
+        !known(b.graceDays) ||
         deps.executor.now() - b.lastSignOfLifeAt < b.graceDays * 86_400_000
       ) {
         return { ok: false, reason: 'grace-not-elapsed' }
