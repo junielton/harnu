@@ -68,6 +68,7 @@ function fakeOps(over: Overrides = {}, bytes = 4096): Fake {
     removeContainers: rec('removeContainers', async () => undefined),
     removeVolumes: rec('removeVolumes', async () => undefined),
     dropDeps: rec('dropDeps', async () => bytes),
+    recheck: rec('recheck', async () => ({ ok: true })),
     cleanGit: rec('cleanGit', async () => undefined)
   }
   for (const key of Object.keys(over) as (keyof GcOps)[]) {
@@ -76,7 +77,15 @@ function fakeOps(over: Overrides = {}, bytes = 4096): Fake {
   return { ops, calls, args }
 }
 
-const FULL = ['reprobe', 'stopStacks', 'removeContainers', 'removeVolumes', 'dropDeps', 'cleanGit']
+const FULL = [
+  'reprobe',
+  'stopStacks',
+  'removeContainers',
+  'removeVolumes',
+  'dropDeps',
+  'recheck',
+  'cleanGit'
+]
 const OPTS = { removeVolumes: true }
 
 function boom(message = 'boom'): () => Promise<never> {
@@ -232,6 +241,38 @@ describe('runBundle — reprobe (Review Focus 4)', () => {
   })
 })
 
+describe('runBundle — recheck right before cleanGit (delta 2, item 4)', () => {
+  it('hands the bundle to recheck, after drop-deps and before cleanGit', async () => {
+    const f = fakeOps()
+    const b = bundle('a')
+    await runBundle(b, f.ops, OPTS)
+    expect(f.args.recheck).toBe(b)
+    expect(f.calls.indexOf('recheck')).toBe(f.calls.indexOf('dropDeps') + 1)
+    expect(f.calls.indexOf('cleanGit')).toBe(f.calls.indexOf('recheck') + 1)
+  })
+
+  it('a session that appeared after drop-deps halts at archive, and cleanGit never runs', async () => {
+    const f = fakeOps({ recheck: async () => ({ ok: false, reason: 'session-open' }) }, 8192)
+    const r = await runBundle(bundle('a'), f.ops, OPTS)
+    expect(r).toEqual({
+      id: bundle('a').item.id,
+      ok: false,
+      haltedAt: 'archive',
+      error: 'changed-mid-run',
+      freedBytes: 8192
+    })
+    expect(f.calls).not.toContain('cleanGit')
+  })
+
+  it('a throwing recheck halts the same way', async () => {
+    const f = fakeOps({ recheck: boom('presence unavailable') }, 8192)
+    const r = await runBundle(bundle('a'), f.ops, OPTS)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'changed-mid-run' })
+    expect(r.freedBytes).toBe(8192)
+    expect(f.calls).not.toContain('cleanGit')
+  })
+})
+
 describe('runBundle — only a proven corpse runs (delta 2, item 2)', () => {
   const refused = { ok: false, haltedAt: 'reprobe', error: 'not-a-corpse', freedBytes: 0 }
 
@@ -301,21 +342,35 @@ describe('runBundle — skipped steps', () => {
   it('removeVolumes:false skips the volume step and runs everything else', async () => {
     const f = fakeOps()
     const r = await runBundle(bundle('a'), f.ops, { removeVolumes: false })
-    expect(f.calls).toEqual(['reprobe', 'stopStacks', 'removeContainers', 'dropDeps', 'cleanGit'])
+    expect(f.calls).toEqual([
+      'reprobe',
+      'stopStacks',
+      'removeContainers',
+      'dropDeps',
+      'recheck',
+      'cleanGit'
+    ])
     expect(r.ok).toBe(true)
   })
 
   it('no owned volumes: the volume step is skipped', async () => {
     const f = fakeOps()
     const r = await runBundle(bundle('a', { ownedVolumes: [] }), f.ops, OPTS)
-    expect(f.calls).toEqual(['reprobe', 'stopStacks', 'removeContainers', 'dropDeps', 'cleanGit'])
+    expect(f.calls).toEqual([
+      'reprobe',
+      'stopStacks',
+      'removeContainers',
+      'dropDeps',
+      'recheck',
+      'cleanGit'
+    ])
     expect(r.ok).toBe(true)
   })
 
   it('no stacks: the docker steps are skipped, dropDeps and cleanGit still run', async () => {
     const f = fakeOps()
     const r = await runBundle(bundle('a', { stackIds: [], ownedVolumes: [] }), f.ops, OPTS)
-    expect(f.calls).toEqual(['reprobe', 'dropDeps', 'cleanGit'])
+    expect(f.calls).toEqual(['reprobe', 'dropDeps', 'recheck', 'cleanGit'])
     expect(r.ok).toBe(true)
     expect(r.haltedAt).toBeNull()
   })
@@ -350,6 +405,7 @@ describe('runBatch', () => {
       'removeContainers',
       'removeVolumes',
       'dropDeps',
+      'recheck',
       'cleanGit'
     ])
   })
@@ -378,6 +434,7 @@ describe('runBatch', () => {
       removeContainers: slow('rm', undefined),
       removeVolumes: slow('vol', undefined),
       dropDeps: slow('deps', 1),
+      recheck: slow('recheck', { ok: true as const }),
       cleanGit: slow('git', undefined)
     }
     const a = bundle('a', { stackIds: ['stackA'], ownedVolumes: ['volA'] })
@@ -427,7 +484,7 @@ describe('T321 definition of done', () => {
   it('(b) with no stack the docker steps are skipped', async () => {
     const f = fakeOps()
     await runBundle(bundle('a', { stackIds: [], ownedVolumes: [] }), f.ops, OPTS)
-    expect(f.calls).toEqual(['reprobe', 'dropDeps', 'cleanGit'])
+    expect(f.calls).toEqual(['reprobe', 'dropDeps', 'recheck', 'cleanGit'])
   })
 
   it('(c) a stop failure halts before the checkout is touched', async () => {

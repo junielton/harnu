@@ -265,6 +265,19 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       throw new Error(`drop deps: ${parts.join('; ') || 'failed'}`)
     },
 
+    async recheck(b) {
+      const path = b.item.path
+      if (!path) return { ok: false, reason: 'changed-mid-run' }
+      try {
+        // Fail closed: a probe that cannot answer is not a green light either.
+        if ((await deps.presenceOf(path)) !== 'none') return { ok: false, reason: 'session-open' }
+        if ((await deps.headOf(path)) !== b.localTip) return { ok: false, reason: 'head-moved' }
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, reason: `probe-failed: ${messageOf(err)}` }
+      }
+    },
+
     async cleanGit(b) {
       // Remote branch deletion never happens through the cleanup pipeline, so the flag is a
       // literal rather than anything read from settings or from the item.
