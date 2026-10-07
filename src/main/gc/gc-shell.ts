@@ -170,8 +170,12 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         if (status.trackedDirty !== item.blockers.includes('dirty')) {
           return { ok: false, reason: 'changed-since-scan' }
         }
-        if (sameState(await deps.presenceOf(path)) !== sameState(b.session)) {
-          return { ok: false, reason: 'changed-since-scan' }
+        // Any running session refuses, even one the scan already saw idle: dehydrateItem
+        // refuses a live worktree, which would halt the run after the docker steps.
+        const presence = await deps.presenceOf(path)
+        if (presence !== 'none') {
+          const changed = sameState(presence) !== sameState(b.session)
+          return { ok: false, reason: changed ? 'changed-since-scan' : 'session-open' }
         }
         // A strong merge proof covers the scanned tip only. New commits since then, or a
         // HEAD we cannot read, mean the proof no longer describes what we would archive.
