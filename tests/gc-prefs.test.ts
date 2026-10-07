@@ -1,0 +1,197 @@
+import { describe, it, expect } from 'vitest'
+import { defaultGcPrefs, normalizeGcPrefs } from '../src/main/gc/gc-prefs'
+
+const HOUR = 3_600_000
+
+describe('defaultGcPrefs', () => {
+  it('ships the operator-approved defaults', () => {
+    expect(defaultGcPrefs()).toEqual({
+      version: 1,
+      autopilot: false,
+      firstReportAcknowledged: false,
+      intervalMs: HOUR,
+      graceDays: 2,
+      maxItemsPerCycle: 20,
+      categories: { worktrees: true, volumes: true, dockerCache: true },
+      removeVolumes: true,
+      cacheMaxAgeDays: 7,
+      neverClean: [],
+      keep: {}
+    })
+  })
+
+  it('returns a fresh object each call', () => {
+    const a = defaultGcPrefs()
+    a.neverClean.push('/x')
+    a.categories.volumes = false
+    expect(defaultGcPrefs().neverClean).toEqual([])
+    expect(defaultGcPrefs().categories.volumes).toBe(true)
+  })
+})
+
+describe('normalizeGcPrefs: junk input', () => {
+  it.each([null, undefined, 42, 'prefs', true, [], [1, 2]])(
+    'falls back to defaults for %j',
+    (raw) => {
+      expect(normalizeGcPrefs(raw)).toEqual(defaultGcPrefs())
+    }
+  )
+
+  it('ignores wrong-typed fields one by one', () => {
+    const out = normalizeGcPrefs({
+      autopilot: 'yes',
+      firstReportAcknowledged: 1,
+      graceDays: '5',
+      maxItemsPerCycle: null,
+      categories: 'all',
+      removeVolumes: 'no',
+      cacheMaxAgeDays: {},
+      neverClean: 'nope',
+      keep: ['a']
+    })
+    expect(out).toEqual(defaultGcPrefs())
+  })
+
+  it('keeps valid fields next to broken ones', () => {
+    const out = normalizeGcPrefs({ autopilot: true, graceDays: 'x', removeVolumes: false })
+    expect(out.autopilot).toBe(true)
+    expect(out.removeVolumes).toBe(false)
+    expect(out.graceDays).toBe(2)
+  })
+
+  it('drops keys it does not know', () => {
+    const out = normalizeGcPrefs({ autopilot: true, surprise: 1 }) as unknown as Record<
+      string,
+      unknown
+    >
+    expect('surprise' in out).toBe(false)
+  })
+
+  it('reads categories field by field', () => {
+    const out = normalizeGcPrefs({ categories: { volumes: false, dockerCache: 'x' } })
+    expect(out.categories).toEqual({ worktrees: true, volumes: false, dockerCache: true })
+  })
+
+  it('keeps only non-empty string paths in neverClean, without duplicates', () => {
+    const out = normalizeGcPrefs({ neverClean: ['/a', '', 3, '/a', null, '/b', '  '] })
+    expect(out.neverClean).toEqual(['/a', '/b'])
+  })
+
+  it('keeps only string → string entries in keep', () => {
+    const out = normalizeGcPrefs({ keep: { 'repo::worktree::/a': 'merged', bad: 3, '': 'x' } })
+    expect(out.keep).toEqual({ 'repo::worktree::/a': 'merged' })
+  })
+})
+
+describe('normalizeGcPrefs: clamps', () => {
+  it.each([
+    [-3, 0],
+    [0, 0],
+    [4.6, 5],
+    [30, 30],
+    [31, 30],
+    [9999, 30]
+  ])('graceDays %j → %j', (given, want) => {
+    expect(normalizeGcPrefs({ graceDays: given }).graceDays).toBe(want)
+  })
+
+  it.each([
+    [0, 1],
+    [-5, 1],
+    [1, 1],
+    [20.4, 20],
+    [200, 200],
+    [201, 200],
+    [100000, 200]
+  ])('maxItemsPerCycle %j → %j', (given, want) => {
+    expect(normalizeGcPrefs({ maxItemsPerCycle: given }).maxItemsPerCycle).toBe(want)
+  })
+
+  it.each([
+    [0, 1],
+    [-5, 1],
+    [1, 1],
+    [7, 7],
+    [90, 90],
+    [365, 365],
+    [366, 365],
+    [9999, 365]
+  ])('cacheMaxAgeDays %j → %j', (given, want) => {
+    expect(normalizeGcPrefs({ cacheMaxAgeDays: given }).cacheMaxAgeDays).toBe(want)
+  })
+
+  it.each([NaN, Infinity, -Infinity])('non-finite numbers fall back (%j)', (bad) => {
+    const out = normalizeGcPrefs({
+      graceDays: bad,
+      maxItemsPerCycle: bad,
+      cacheMaxAgeDays: bad,
+      intervalMs: bad
+    })
+    expect(out).toEqual(defaultGcPrefs())
+  })
+
+  it.each([
+    [1000, 1_800_000],
+    [1_800_000, 1_800_000],
+    [2 * HOUR, 2 * HOUR],
+    [90_000_000, 86_400_000]
+  ])('intervalMs %j → %j', (given, want) => {
+    expect(normalizeGcPrefs({ intervalMs: given }).intervalMs).toBe(want)
+  })
+})
+
+describe('normalizeGcPrefs: migration from the Reaper and Containers prefs', () => {
+  it('takes intervalMs from the Reaper prefs when no stored value exists', () => {
+    const out = normalizeGcPrefs(null, { reaper: { intervalMs: 2 * HOUR } })
+    expect(out.intervalMs).toBe(2 * HOUR)
+  })
+
+  it('falls back to the Containers interval when the Reaper has none', () => {
+    const out = normalizeGcPrefs(null, { containers: { intervalMs: 4 * HOUR } })
+    expect(out.intervalMs).toBe(4 * HOUR)
+  })
+
+  it('prefers the Reaper interval over the Containers one', () => {
+    const out = normalizeGcPrefs(null, {
+      reaper: { intervalMs: 2 * HOUR },
+      containers: { intervalMs: 4 * HOUR }
+    })
+    expect(out.intervalMs).toBe(2 * HOUR)
+  })
+
+  it('carries the Containers idle threshold over as the grace window', () => {
+    const out = normalizeGcPrefs(null, { containers: { zombieAfterDays: 5 } })
+    expect(out.graceDays).toBe(5)
+  })
+
+  it('clamps migrated values like stored ones', () => {
+    const out = normalizeGcPrefs(null, {
+      reaper: { intervalMs: 5 },
+      containers: { zombieAfterDays: 400 }
+    })
+    expect(out.intervalMs).toBe(1_800_000)
+    expect(out.graceDays).toBe(30)
+  })
+
+  it('lets a stored value win over the legacy one, field by field', () => {
+    const out = normalizeGcPrefs(
+      { intervalMs: 3 * HOUR },
+      { reaper: { intervalMs: 2 * HOUR }, containers: { zombieAfterDays: 6 } }
+    )
+    expect(out.intervalMs).toBe(3 * HOUR)
+    expect(out.graceDays).toBe(6)
+  })
+
+  it('never turns the autopilot on by migration', () => {
+    const out = normalizeGcPrefs(null, {
+      reaper: { autoScan: true, intervalMs: HOUR },
+      containers: { autoScan: true, zombieAfterDays: 3 }
+    })
+    expect(out.autopilot).toBe(false)
+    expect(out.firstReportAcknowledged).toBe(false)
+  })
+
+  it('survives junk legacy input', () => {
+    expect(normalizeGcPrefs(null, { reaper: 'x', containers: [1] })).toEqual(defaultGcPrefs())
+  })
+})
