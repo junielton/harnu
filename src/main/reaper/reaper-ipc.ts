@@ -187,6 +187,12 @@ export interface ReaperControl {
   autoScan(): boolean
   /** The interval the timer runs at now. */
   intervalMs(): number
+  /**
+   * Runs destructive work on the Reaper's own op chain: after a running scan and every
+   * clean, sweep, dehydrate and rehydrate already queued, and before the next one. The
+   * workspace GC runs its jobs through this, so the two never touch a tree at once.
+   */
+  runExclusive<T>(fn: () => Promise<T>): Promise<T>
 }
 
 /** Register the Reaper IPC handlers. */
@@ -328,9 +334,12 @@ export function registerReaperHandlers(getWindow: () => BrowserWindow | null): R
       const item = findItem(itemId)
       if (!item) throw new Error(`unknown or stale reaper item id: ${itemId}; rescan and retry`)
       const effectiveDeleteRemote = currentPrefs.neverDeleteRemote ? false : deleteRemote
-      const result = await cleanItem(item, { deleteRemote: effectiveDeleteRemote }, deps)
-      await rescanAndPush([item.repoPath])
-      return result
+      // On the op chain: a clean never runs beside a workspace-GC job or a dehydrate.
+      return runOp(async () => {
+        const result = await cleanItem(item, { deleteRemote: effectiveDeleteRemote }, deps)
+        await rescanAndPush([item.repoPath])
+        return result
+      })
     }
   )
 
@@ -351,14 +360,16 @@ export function registerReaperHandlers(getWindow: () => BrowserWindow | null): R
         throw new Error(`no known reaper items among the given ids: ${missing.join(', ')}`)
       }
       const effectiveDeleteRemote = currentPrefs.neverDeleteRemote ? false : deleteRemote
-      const results = await sweep(
-        items,
-        { deleteRemote: effectiveDeleteRemote },
-        deps,
-        pushProgress
-      )
-      await rescanAndPush(items.map((i) => i.repoPath))
-      return results
+      return runOp(async () => {
+        const results = await sweep(
+          items,
+          { deleteRemote: effectiveDeleteRemote },
+          deps,
+          pushProgress
+        )
+        await rescanAndPush(items.map((i) => i.repoPath))
+        return results
+      })
     }
   )
 
@@ -430,6 +441,7 @@ export function registerReaperHandlers(getWindow: () => BrowserWindow | null): R
     },
     nextTickAt: () => nextAt,
     autoScan: () => currentPrefs.autoScan,
-    intervalMs: () => currentPrefs.intervalMs
+    intervalMs: () => currentPrefs.intervalMs,
+    runExclusive: (fn) => runOp(fn)
   }
 }

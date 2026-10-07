@@ -19,6 +19,9 @@ export interface CyclePlan {
   reportBytes: number
 }
 
+/** The item kinds the cleanup executor can actually remove; a detached worktree is not one. */
+export const CLEANABLE_KINDS: readonly string[] = ['worktree', 'hidden-folder']
+
 /** True when the bundle's worktree, or the repo it belongs to, is on the neverClean list. */
 export function isNeverClean(b: WorktreeBundle, prefs: GcPrefs): boolean {
   if (b.neverClean) return true
@@ -57,7 +60,14 @@ export function planCycle(bundles: readonly WorktreeBundle[], prefs: GcPrefs): C
     return { mode: 'off', toClean: [], deferred: 0, found: 0, reportBytes: 0 }
   }
   const eligible = bundles
-    .filter((b) => b.bucket === 'corpse' && !b.keep && !b.isMainCheckout && !isNeverClean(b, prefs))
+    .filter(
+      (b) =>
+        b.bucket === 'corpse' &&
+        CLEANABLE_KINDS.includes(b.item.kind) &&
+        !b.keep &&
+        !b.isMainCheckout &&
+        !isNeverClean(b, prefs)
+    )
     .sort(bySignOfLife)
   const reportBytes = eligible.reduce((sum, b) => sum + (b.item.diskBytes ?? 0), 0)
   if (!prefs.firstReportAcknowledged) {
@@ -140,7 +150,7 @@ export function refusalFor(
   if (b.keep) return 'kept'
   if (b.bucket === 'alive') return 'alive'
   // The cleanup executor skips the folder of a detached worktree, so "success" would be a lie.
-  if (b.item.kind !== 'worktree' && b.item.kind !== 'hidden-folder') return 'unsupported-kind'
+  if (!CLEANABLE_KINDS.includes(b.item.kind)) return 'unsupported-kind'
   if (b.bucket === 'decide' && !opts.confirmed) return 'needs-confirmation'
   return null
 }

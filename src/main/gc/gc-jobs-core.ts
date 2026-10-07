@@ -57,8 +57,13 @@ export interface JobQueueDeps {
   newId(): string
   emitProgress(p: GcJobProgress): void
   emitDone(d: GcJobDone): void
-  /** Awaited before each job starts, e.g. until a Reaper scan has finished. */
+  /** Awaited before each job starts, inside `around` when there is one. */
   beforeRun?(): Promise<void>
+  /**
+   * Wraps the whole of a job (`beforeRun` and the run). gc-ipc passes the Reaper's op chain,
+   * so a cleaning job and a Reaper sweep or dehydrate never run destructive work at once.
+   */
+  around?(work: () => Promise<void>): Promise<void>
 }
 
 export interface JobQueue {
@@ -126,9 +131,12 @@ export function createJobQueue(deps: JobQueueDeps): JobQueue {
         })
       }
     }
-    try {
+    const work = async (): Promise<void> => {
       await deps.beforeRun?.()
       await job.run(reporter)
+    }
+    try {
+      await (deps.around ? deps.around(work) : work())
     } catch (err) {
       job.error = messageOf(err)
     }
