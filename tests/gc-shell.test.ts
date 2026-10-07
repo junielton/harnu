@@ -959,6 +959,28 @@ describe('reprobe through the real builder', () => {
     expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: true })
   })
 
+  it('a stack run from elsewhere that bind-mounts the worktree is shared at the scan (delta 3, item 2)', () => {
+    const web = composeIn('web', 'other', ELSEWHERE, [
+      { type: 'bind', source: `${WT}/data`, name: null }
+    ])
+    const b = scanned([web])
+    expect(b.stackIds).toEqual([])
+    expect(b.sharedStackIds).toEqual(['other'])
+    expect(b.bucket).toBe('decide')
+  })
+
+  it('the same stack appearing after the scan refuses the clean (delta 3, item 2)', async () => {
+    const b = scanned([])
+    expect(b.bucket).toBe('corpse')
+    const web = composeIn('web', 'other', ELSEWHERE, [
+      { type: 'bind', source: `${WT}/data`, name: null }
+    ])
+    const h = harness({ stacks: groupStacks([web]) })
+    const r = await runBundle(b, createGcOps(h.deps), { removeVolumes: true })
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'changed-since-scan' })
+    expect(cleanItem).not.toHaveBeenCalled()
+  })
+
   it('I2: a labelless container bind-mounting the worktree after the scan refuses the clean', async () => {
     const b = scanned([])
     expect(b.stackIds).toEqual([])

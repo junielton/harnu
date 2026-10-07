@@ -225,15 +225,16 @@ function mergedAtOf(item: ReapItem): number | null {
 }
 
 /**
- * The folders one container runs from: its compose working dir when it has one, otherwise
- * the sources of its bind mounts. The builder and the execution-time reprobe both call this,
- * so a stack the scan attributed to a worktree is seen by the reprobe through the same rule.
- * Empty means nothing ties the container to a folder.
+ * Every folder one container touches: its compose working dir AND the source of each bind
+ * mount. A stack run from elsewhere that bind-mounts a worktree still uses it, so trashing
+ * the folder would pull files from under a running container. The builder and the
+ * execution-time reprobe both call this, so a stack the scan attributed to a worktree is
+ * seen by the reprobe through the same rule. Empty means nothing ties it to a folder.
  */
 export function containerFolders(c: InspectedContainer, platform: string): string[] {
-  const dir = c.labels[COMPOSE_WORKING_DIR_LABEL]
-  if (dir) return [normalizePath(dir, platform)]
   const out = new Set<string>()
+  const dir = c.labels[COMPOSE_WORKING_DIR_LABEL]
+  if (dir) out.add(normalizePath(dir, platform))
   for (const m of c.mounts) {
     if (m.type === 'bind' && m.source) out.add(normalizePath(m.source, platform))
   }

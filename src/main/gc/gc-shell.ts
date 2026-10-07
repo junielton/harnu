@@ -119,7 +119,10 @@ export function dockerIsUnavailable(err: unknown): boolean {
 const sameState = (p: SessionPresence): 'busy' | SessionPresence =>
   p === 'working' || p === 'needs-input' ? 'busy' : p
 
-/** True when every folder the container runs from lies inside `root`; false when it has none. */
+/**
+ * True when every folder the container touches (working dir and bind mount sources) lies
+ * inside `root`; false when it has none.
+ */
 function containedIn(c: InspectedContainer, root: string, platform: string): boolean {
   const dirs = containerFolders(c, platform)
   return dirs.length > 0 && dirs.every((d) => isInside(d, root))
