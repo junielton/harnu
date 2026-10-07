@@ -73,7 +73,7 @@ export function dockerIsUnavailable(err: unknown): boolean {
   return [e.stderr, e.message].some((t) => typeof t === 'string' && DAEMON_DOWN.test(t))
 }
 
-/** `working` and `needs-input` are one state to the fresh probe, so the scan's either matches. */
+/** `working` and `needs-input` are one state to the fresh probe, so neither is a change from the other. */
 const sameState = (p: SessionPresence): 'busy' | SessionPresence =>
   p === 'working' || p === 'needs-input' ? 'busy' : p
 
