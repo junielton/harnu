@@ -716,6 +716,20 @@ describe('buildBundles — flags', () => {
   })
 })
 
+describe('buildBundles — graceDays', () => {
+  it('stamps the grace window the bundle was bucketed with', () => {
+    expect(only(build()).graceDays).toBe(GRACE_DAYS)
+  })
+
+  it('stamps it on every bundle, whatever the bucket', () => {
+    const alive = only(
+      build({ sessions: new Map([[WT_A, { presence: 'working', lastActivityAt: null }]]) })
+    )
+    expect(alive.bucket).toBe('alive')
+    expect(alive.graceDays).toBe(GRACE_DAYS)
+  })
+})
+
 describe('buildBundles — lastSignOfLifeAt', () => {
   const merged = Date.parse('2026-09-20T00:00:00Z')
   const withMerge = (at: number | null = merged): ReapItem =>

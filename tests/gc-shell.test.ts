@@ -32,6 +32,10 @@ const WT = '/ws/org/proj/worktrees/PROJ-0000-slug'
 const WT_B = '/ws/org/proj/worktrees/PROJ-0000-slug-b'
 const ELSEWHERE = '/ws/org/other/api-gateway'
 const TIP = 'a'.repeat(40)
+const DAY = 86_400_000
+/** The executor clock at execution time; scan-time facts in the fixtures are set relative to it. */
+const EXEC_NOW = 1_700_000_000_000
+const GRACE_DAYS = 2
 
 function reapItem(over: Partial<ReapItem> = {}): ReapItem {
   return {
@@ -59,7 +63,9 @@ function bundle(over: Partial<WorktreeBundle> = {}): WorktreeBundle {
     item: reapItem(),
     fate: { fate: 'merged', signal: 'ancestor', strong: true },
     session: 'none',
-    lastSignOfLifeAt: 1,
+    lastSignOfLifeAt: EXEC_NOW - 10 * DAY,
+    graceDays: GRACE_DAYS,
+    localTip: TIP,
     stackIds: ['app'],
     sharedStackIds: [],
     ownedVolumes: ['pgdata'],
@@ -150,7 +156,7 @@ function harness(
     archiveWip: async (_repo, ref) => ref,
     detachSidebar: async () => undefined,
     appendTombstone: async () => undefined,
-    now: () => 1_700_000_000_000,
+    now: () => EXEC_NOW,
     ...over.executor
   }
   const dehydrate: DehydrateDeps = {
@@ -488,10 +494,70 @@ describe('reprobe (AC-5)', () => {
     })
   })
 
-  it.each([null, undefined])('skips the tip check when the scanned tip is %s', async (tip) => {
-    const h = harness({ head: 'c'.repeat(40) })
-    expect(await createGcOps(h.deps).reprobe(bundle({ localTip: tip }))).toEqual({ ok: true })
+  // A strong merge proof covers the scanned tip only; without one there is nothing to hold
+  // HEAD against, so the clean must not go ahead.
+  it.each([null, undefined])('refuses as tip-unknown when the scanned tip is %s', async (tip) => {
+    const h = harness()
+    expect(await createGcOps(h.deps).reprobe(bundle({ localTip: tip }))).toEqual({
+      ok: false,
+      reason: 'tip-unknown'
+    })
     expect(h.headOf).not.toHaveBeenCalled()
+    expect(h.probeStatus).not.toHaveBeenCalled()
+    expect(h.listStacks).not.toHaveBeenCalled()
+  })
+
+  describe('grace re-check', () => {
+    const graceMs = GRACE_DAYS * DAY
+
+    it('passes when the grace window elapsed exactly at the boundary', async () => {
+      const h = harness()
+      const b = bundle({ lastSignOfLifeAt: EXEC_NOW - graceMs })
+      expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: true })
+    })
+
+    it('refuses one millisecond short of the grace window', async () => {
+      const h = harness()
+      const b = bundle({ lastSignOfLifeAt: EXEC_NOW - graceMs + 1 })
+      expect(await createGcOps(h.deps).reprobe(b)).toEqual({
+        ok: false,
+        reason: 'grace-not-elapsed'
+      })
+    })
+
+    it('refuses when the clock at execution is still inside the grace window', async () => {
+      // Same bundle, but at execution only one day has passed since its last sign of life.
+      const h = harness({ executor: { now: () => EXEC_NOW - 9 * DAY } })
+      expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+        ok: false,
+        reason: 'grace-not-elapsed'
+      })
+    })
+
+    it('refuses when there is no sign of life to date the grace from', async () => {
+      const h = harness()
+      expect(await createGcOps(h.deps).reprobe(bundle({ lastSignOfLifeAt: null }))).toEqual({
+        ok: false,
+        reason: 'grace-not-elapsed'
+      })
+    })
+
+    it('refuses a bundle that does not carry the grace it was bucketed with', async () => {
+      const h = harness()
+      expect(await createGcOps(h.deps).reprobe(bundle({ graceDays: undefined }))).toEqual({
+        ok: false,
+        reason: 'grace-not-elapsed'
+      })
+    })
+
+    it('refuses before any probe runs', async () => {
+      const h = harness()
+      await createGcOps(h.deps).reprobe(bundle({ lastSignOfLifeAt: null }))
+      expect(h.probeStatus).not.toHaveBeenCalled()
+      expect(h.presenceOf).not.toHaveBeenCalled()
+      expect(h.headOf).not.toHaveBeenCalled()
+      expect(h.listStacks).not.toHaveBeenCalled()
+    })
   })
 
   it('reports a throwing status probe as probe-failed', async () => {
@@ -548,18 +614,27 @@ const MERGED_FACTS: BranchFacts = {
 
 /** The bundle the real builder makes for the worktree at WT from this container listing. */
 function scanned(containers: InspectedContainer[]): WorktreeBundle {
-  const item = reapItem()
+  // Merged ten days before the scan, so the grace window has long elapsed at execution time.
+  const item = reapItem({
+    checkpoints: [
+      {
+        id: 'pr-merged',
+        state: 'green',
+        detail: new Date(EXEC_NOW - 10 * DAY).toISOString()
+      }
+    ]
+  })
   const out = buildBundles({
     items: [item],
-    fateInputs: new Map([[item.id, { facts: MERGED_FACTS, localTip: null }]]),
+    fateInputs: new Map([[item.id, { facts: MERGED_FACTS, localTip: TIP }]]),
     stacks: groupStacks(containers),
     stackPaths: new Map(),
     containers,
     sessions: new Map(),
     keep: new Set(),
     neverClean: new Set(),
-    now: Date.parse('2026-10-07T12:00:00Z'),
-    graceDays: 2
+    now: EXEC_NOW,
+    graceDays: GRACE_DAYS
   })
   expect(out).toHaveLength(1)
   return out[0]!

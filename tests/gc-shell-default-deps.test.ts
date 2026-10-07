@@ -34,6 +34,7 @@ import type { ReapItem } from '../src/main/reaper/reaper-core'
 const REPO = '/ws/org/proj/www'
 const WT = '/ws/org/proj/worktrees/PROJ-0000-slug'
 const TIP = 'a'.repeat(40)
+const EXEC_NOW = 1_700_000_000_000
 
 function harvestable(): WorktreeBundle {
   const item: ReapItem = {
@@ -57,7 +58,8 @@ function harvestable(): WorktreeBundle {
     item,
     fate: { fate: 'merged', signal: 'ancestor', strong: true },
     session: 'none',
-    lastSignOfLifeAt: 1,
+    lastSignOfLifeAt: EXEC_NOW - 10 * 86_400_000,
+    graceDays: 2,
     stackIds: [],
     sharedStackIds: [],
     ownedVolumes: [],
@@ -86,7 +88,7 @@ beforeEach(() => {
   h.executor = {
     probeStatus: vi.fn(async () => ({ trackedDirty: false, untracked: [] })),
     git: vi.fn(async () => `${TIP}\n`),
-    now: () => 1_700_000_000_000 * 10
+    now: () => EXEC_NOW
   }
 })
 
