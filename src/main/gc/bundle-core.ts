@@ -6,6 +6,7 @@
 import { resolveDetachedFate, resolveFate, type FateResult } from './fate-core'
 import type { BranchFacts, ReapItem } from '../reaper/reaper-core'
 import {
+  COMPOSE_PROJECT_LABEL,
   COMPOSE_WORKING_DIR_LABEL,
   isInside,
   lastContainerEvent,
@@ -72,6 +73,20 @@ export interface WorktreeBundle extends BundleFacts {
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`
 
 /**
+ * The project name Compose gives a folder when none is set: its basename, lowercased, with
+ * every character outside [a-z0-9_-] dropped. The S4 housekeeping module has its own copy,
+ * which is not reachable from this branch, hence this duplicate.
+ */
+export function composeDefaultProject(path: string): string {
+  const base =
+    path
+      .replace(/[\\/]+$/, '')
+      .split(/[\\/]/)
+      .pop() ?? ''
+  return base.toLowerCase().replace(/[^a-z0-9_-]/g, '')
+}
+
+/**
  * Named volumes only the bundle's stacks use. A volume that a container outside the bundle
  * also mounts is never listed: removing it would pull data from under a stack we do not own.
  * Bind mounts have no volume name, so they never qualify.
@@ -80,30 +95,51 @@ const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n =
  * project label differs from the project of a bundle stack mounting it belongs to that other
  * project (declared `external` here), even while that project's containers are down. A
  * missing fact or an unlabelled volume is kept, as buildSnapshot keeps it.
+ *
+ * A volume's project (its own label, else the project of the bundle stack mounting it) must
+ * also be unique to the bundle. It is not when a container outside the bundle, running or
+ * stopped, carries that project, nor when the project is the Compose default name of one of
+ * `otherFolders`: a main checkout that shares the project and ran `compose down` has no
+ * container left, yet the volume is still its data.
  */
 export function ownedVolumes(
   bundleStacks: readonly StackGroup[],
   allContainers: readonly InspectedContainer[],
-  volumes?: ReadonlyMap<string, VolumeFact>
+  volumes?: ReadonlyMap<string, VolumeFact>,
+  otherFolders: readonly string[] = []
 ): string[] {
   const inBundle = new Set<string>()
-  const names = new Set<string>()
+  const projectsOf = new Map<string, Set<string>>()
   const otherProject = new Set<string>()
   for (const s of bundleStacks) {
     for (const c of s.containers) {
       inBundle.add(c.id)
       for (const m of c.mounts) {
         if (m.type !== 'volume' || !m.name) continue
-        names.add(m.name)
+        const projects = projectsOf.get(m.name) ?? new Set<string>()
+        projectsOf.set(m.name, projects)
         const project = volumes?.get(m.name)?.project
         if (project != null && project !== s.project) otherProject.add(m.name)
+        const own = project ?? s.project
+        if (own) projects.add(own)
       }
     }
   }
+  const names = new Set(projectsOf.keys())
   for (const name of otherProject) names.delete(name)
+  const foreignProjects = new Set<string>()
+  for (const folder of otherFolders) {
+    const project = composeDefaultProject(folder)
+    if (project) foreignProjects.add(project)
+  }
   for (const c of allContainers) {
     if (inBundle.has(c.id)) continue
     for (const m of c.mounts) if (m.name) names.delete(m.name)
+    const project = c.labels[COMPOSE_PROJECT_LABEL]
+    if (project) foreignProjects.add(project)
+  }
+  for (const name of [...names]) {
+    if ([...projectsOf.get(name)!].some((p) => foreignProjects.has(p))) names.delete(name)
   }
   return [...names].sort()
 }
@@ -214,6 +250,11 @@ export interface BuildBundlesInput {
   harnuStoppedAt?: ReadonlyMap<string, number>
   /** Volume facts from `docker system df -v`, for the cross-project rule in ownedVolumes. */
   volumes?: ReadonlyMap<string, VolumeFact>
+  /**
+   * Folders Harnu knows besides the items' own paths and repo paths (sidebar folders, say).
+   * A volume whose project is the Compose default name of any of them is never owned.
+   */
+  knownFolders?: string[]
 }
 
 /** Merge time from the `pr-merged` checkpoint detail; anything that is not a date is ignored. */
@@ -324,6 +365,15 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
 
   const neverClean = new Set([...input.neverClean].map((p) => normalizePath(p, platform)))
 
+  // Every folder that could share a compose project with a bundle: each item's checkout and
+  // its repo's main checkout, plus whatever else the caller knows about.
+  const knownFolders = new Set(
+    [
+      ...input.items.flatMap((i) => (i.path ? [i.path, i.repoPath] : [i.repoPath])),
+      ...(input.knownFolders ?? [])
+    ].map((p) => normalizePath(p, platform))
+  )
+
   return folders.map(({ item, path }) => {
     const fateInput = input.fateInputs.get(item.id)
     const fate: FateResult =
@@ -352,7 +402,12 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
       lastSignOfLifeAt: signs.length > 0 ? Math.max(...signs) : null,
       stackIds: stacks.map((s) => s.id),
       sharedStackIds: shared.get(item.id) ?? [],
-      ownedVolumes: ownedVolumes(stacks, input.containers, input.volumes),
+      ownedVolumes: ownedVolumes(
+        stacks,
+        input.containers,
+        input.volumes,
+        [...knownFolders].filter((f) => f !== path)
+      ),
       depsBytes: item.hydration?.reclaimableBytes ?? null,
       keep: input.keep.has(item.id),
       neverClean: neverClean.has(path) || neverClean.has(normalizePath(item.repoPath, platform)),
