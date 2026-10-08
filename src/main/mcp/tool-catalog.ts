@@ -155,6 +155,12 @@ export const MCP_OPS = [
   // verbs: it calls the same main-process service as the takeover and never
   // derives a verdict of its own.
   'list_containers',
+  // T445: the workspace-GC verbs. `list_cleanup` is the read half (buckets, reasons, sizes;
+  // paths redacted); `release_worktree` is the agent saying it is done with a merged
+  // worktree. Neither removes anything: release only lifts the grace window, and there is
+  // deliberately no clean verb (the Cleanup surface and the autopilot own removal).
+  'list_cleanup',
+  'release_worktree',
   // T329: the Containers actions. Each calls the SAME main-process action
   // function as the takeover (`getContainersService().act(raw, 'agent')`), so
   // the tiers are enforced once, in main. The gate follows reversibility:
@@ -1135,6 +1141,47 @@ export const MCP_TOOLS: McpToolDef[] = [
     mutates: false,
     op: 'list_containers',
     discloses: 'paths'
+  },
+  {
+    name: 'list_cleanup',
+    description:
+      "List the workspace-cleanup picture Harnu's Cleanup surface shows: every worktree bundle with its bucket — `ready` (Ready to clean: merged, clean, idle, past its grace window), `review` (Needs review: the operator decides) or `in-use` — each with a `reasonCode` and a fixed sentence `reason` when it needs review — plus the disk it occupies (`bytes`, `depsBytes`), orphan Docker volumes, `totals` (`ready`, `readyBytes`, `review`, `reviewBytes`, `inUse`, `orphanVolumes`, `orphanVolumeBytes`), the `autopilot` state (`enabled`, `reportOnly`, `graceDays`) and `nextCycleAt`. It reads the last scan Harnu made (the timer refreshes it); `scannedAt` says when, and the call never writes anything. Read the bucket; never re-derive it. No absolute path appears: `folderAlias` is a basename, `id` a readable label, a reason is a fixed sentence (never the raw git/fs error), and any other text has each path cut to its basename. A worktree in a folder the operator blocked still lists, with `agentControllable: false`. `released` is true for a bundle you already released. `folder` limits the listing (and its totals) to that repo and its worktrees — a worktree belongs to a repo by its own repo, wherever it sits — and leaves out the orphan volumes, which belong to no folder; a blocked `folder` is refused FOLDER_NOT_ALLOWED. Read-only: this verb removes nothing, and no verb cleans a worktree (the operator and the autopilot do; remove_containers removes Docker containers, but only after the operator confirms). `id` is the name release_worktree accepts back.",
+    inputSchema: z.object({
+      folder: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('Absolute path: limits the listing to that repo and its worktrees.')
+    }),
+    mutates: false,
+    op: 'list_cleanup',
+    discloses: 'paths'
+  },
+  {
+    name: 'release_worktree',
+    description:
+      "Tell Harnu you are done with a worktree whose pull request merged: its grace window no longer applies, so it becomes `ready` (Ready to clean) on the next scan IF every other rule still holds. Runs free and deletes nothing — the operator cleans it, or the autopilot when it is on and the operator acknowledged its first report. A release never overrides a safety rule: a worktree with dirty tracked files or unpushed commits, an open idle session, a stack shared with another worktree, another worktree nested inside it, a worktree git has locked, a Keep mark, a never-clean path or a path Harnu could not resolve stays out of `ready` (the ACK's `bucketAfter` and `reason` say where it landed). Refuses FATE_NOT_MERGED unless the branch is merged with a strong proof, FOLDER_NOT_ALLOWED in a folder the operator blocked, IS_MAIN_CHECKOUT for a repo's main checkout, NOT_A_WORKTREE for a folder Harnu's cleanup scan does not know. ACK: `{ ok, op, folderAlias, branch, released, alreadyReleased, bucketAfter, reason, reasonCode, deleted: false, message }`. A release is tied to the branch tip it was made at: new commits drop it. Idempotent. Name the worktree by `folder` (absolute path) or by the `id` list_cleanup lists — exactly one. See list_cleanup for the current buckets.",
+    inputSchema: z
+      .object({
+        folder: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('Absolute path of the worktree to release (not the main checkout).'),
+        id: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('The `id` of the worktree as list_cleanup lists it. Use instead of `folder`.')
+      })
+      .refine((v) => (v.folder === undefined) !== (v.id === undefined), {
+        message: 'pass exactly one of folder / id'
+      }),
+    mutates: true,
+    op: 'release_worktree',
+    silentAllowInAgentFolder: true
+    // Deliberately NOT grantable/alwaysAllowable: it deletes nothing, so the free-by-default
+    // posture already covers it, and no grant should ever be needed for it.
   },
   {
     name: 'stop_containers',

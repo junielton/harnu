@@ -26,6 +26,29 @@ export interface GcPrefs {
   neverClean: string[]
   /** Bundle id → the fate it had when the operator pressed Keep. */
   keep: Record<string, string>
+  /**
+   * Bundle id → when an agent released it (`release_worktree`). A released bundle skips the
+   * grace window and nothing else: `buildBundles` honors it only for a strongly merged fate,
+   * and every other rule (dirty, session, shared stack, keep, neverClean) still applies.
+   */
+  released: Record<string, number>
+  /**
+   * Where each released worktree was (repo and folder), so a later gather can tell it was
+   * cleaned: the repo scanned, the bundle gone, the folder gone. The bundle id alone does not
+   * carry the folder. A mark without an entry here is never dropped for being cleaned.
+   */
+  releasedFrom: Record<string, ReleasedFrom>
+}
+
+export interface ReleasedFrom {
+  repoPath: string
+  path: string
+  /**
+   * The branch tip the release was made at. A release applies only while the bundle's tip is
+   * still this one, so new commits followed by a fresh merge do not inherit it. A mark with no
+   * tip (legacy) never applies.
+   */
+  localTip?: string
 }
 
 export const PREFS_FILE = 'gc-prefs.json'
@@ -51,7 +74,9 @@ export function defaultGcPrefs(): GcPrefs {
     categories: { worktrees: true, dockerCache: true },
     cacheMaxAgeDays: 7,
     neverClean: [],
-    keep: {}
+    keep: {},
+    released: {},
+    releasedFrom: {}
   }
 }
 
@@ -108,6 +133,29 @@ export function normalizeGcPrefs(
     }
   }
 
+  const released: Record<string, number> = {}
+  if (isRecord(r.released)) {
+    for (const [id, at] of Object.entries(r.released)) {
+      const t = finite(at)
+      if (id && t !== null && t >= 0) released[id] = t
+    }
+  }
+
+  const releasedFrom: Record<string, ReleasedFrom> = {}
+  if (isRecord(r.releasedFrom)) {
+    for (const [id, from] of Object.entries(r.releasedFrom)) {
+      if (!id || !isRecord(from)) continue
+      const { repoPath, path: where, localTip } = from
+      if (typeof repoPath === 'string' && repoPath && typeof where === 'string' && where) {
+        releasedFrom[id] = {
+          repoPath,
+          path: where,
+          ...(typeof localTip === 'string' && localTip ? { localTip } : {})
+        }
+      }
+    }
+  }
+
   return {
     version: 1,
     autopilot: bool(r.autopilot) ?? d.autopilot,
@@ -128,7 +176,9 @@ export function normalizeGcPrefs(
     },
     cacheMaxAgeDays: clamped(r.cacheMaxAgeDays, 1, MAX_CACHE_AGE_DAYS) ?? d.cacheMaxAgeDays,
     neverClean,
-    keep
+    keep,
+    released,
+    releasedFrom
   }
 }
 
@@ -169,9 +219,9 @@ export async function writeGcPrefs(file: string, prefs: GcPrefs): Promise<void> 
 // ---- reducers behind the IPC channels ------------------------------------------------------
 
 /**
- * A write from the renderer, whole or partial: it changes only what it names. `keep` and the acknowledgement have their own
- * channels, so a stale settings form can neither wipe the operator's Keep marks nor
- * acknowledge a report it never showed.
+ * A write from the renderer, whole or partial: it changes only what it names. `keep`, `released`
+ * and the acknowledgement have their own channels, so a stale settings form can neither wipe the
+ * operator's Keep marks or an agent's releases nor acknowledge a report it never showed.
  */
 export function mergeIncomingPrefs(current: GcPrefs, raw: unknown): GcPrefs {
   const incoming =
@@ -189,7 +239,13 @@ export function mergeIncomingPrefs(current: GcPrefs, raw: unknown): GcPrefs {
     {},
     current
   )
-  return { ...next, keep: current.keep, firstReportAcknowledged: current.firstReportAcknowledged }
+  return {
+    ...next,
+    keep: current.keep,
+    released: current.released,
+    releasedFrom: current.releasedFrom,
+    firstReportAcknowledged: current.firstReportAcknowledged
+  }
 }
 
 export function withKeep(prefs: GcPrefs, id: string, fate: string): GcPrefs {
@@ -200,6 +256,24 @@ export function withoutKeep(prefs: GcPrefs, ids: readonly string[]): GcPrefs {
   const keep = { ...prefs.keep }
   for (const id of ids) delete keep[id]
   return { ...prefs, keep }
+}
+
+export function withReleased(prefs: GcPrefs, id: string, at: number, from?: ReleasedFrom): GcPrefs {
+  return {
+    ...prefs,
+    released: { ...prefs.released, [id]: at },
+    releasedFrom: from ? { ...prefs.releasedFrom, [id]: from } : prefs.releasedFrom
+  }
+}
+
+export function withoutReleased(prefs: GcPrefs, ids: readonly string[]): GcPrefs {
+  const released = { ...prefs.released }
+  const releasedFrom = { ...prefs.releasedFrom }
+  for (const id of ids) {
+    delete released[id]
+    delete releasedFrom[id]
+  }
+  return { ...prefs, released, releasedFrom }
 }
 
 export function withAcknowledged(prefs: GcPrefs): GcPrefs {

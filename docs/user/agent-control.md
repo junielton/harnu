@@ -126,6 +126,20 @@ A session can also act on those containers, through the same Stop, Start and Rem
 
 A container Harnu can't tie to one of your folders is never touched by any of the three, and neither is one in a folder you blocked for agents. Every stop, start or removal a session makes is recorded in the Containers view's history, marked as done by an agent, so you can always see what it did. Read-only Scheduler workers can watch containers but can't do any of this.
 
+## Watching workspace cleanup
+
+Harnu's Cleanup surface sorts every worktree into **Ready to clean** (its branch is proven merged, it's clean, nothing is running in it, and its grace period is over), **Needs review** (it needs you, with a one-line reason) or **In use**. A session can read the same list — each worktree's bucket, the reason, how much disk it holds, any orphan Docker volumes, the totals, whether the automatic cleanup is on, and when the next cycle runs. It reads the picture from Harnu's most recent scan, and the list says when that was; asking never starts a new scan or writes anything. It can ask for everything or just one repo and its worktrees. Reading the list never asks you, and no folder path ever appears in it: worktrees are shown by name, and a reason is a short fixed sentence, never a raw error message. Worktrees in a folder you blocked for agents still show up, marked as off-limits.
+
+A read-only (`observe`) [Scheduler worker](scheduler.md) can use it, so you can have a worker report how many worktrees are ready to clean and how much space they hold.
+
+### Telling Harnu a worktree is finished
+
+When a session's pull request has merged, it can **release** the worktree it worked in. That skips the grace period, so the worktree becomes ready to clean at the next scan instead of waiting a couple of days. It runs without asking, because it deletes nothing — you (or the automatic cleanup, if you turned it on and acknowledged its first report) still do the cleaning.
+
+A release is only a hint about timing, and it belongs to the commit the worktree was at when the session released it: if more commits land afterwards, the session has to release again after the next merge. It never overrides a safety rule. A worktree with uncommitted changes or unpushed commits, one with a session still open, one whose Docker stack another worktree also uses, one with another worktree sitting inside it, one git has locked, one you marked Keep or never-clean, and one whose folder Harnu couldn't resolve all stay out of Ready to clean, and the session is told which rule held it back. It's refused for a worktree whose branch isn't proven merged, for a repo's main checkout, for a folder Harnu doesn't know, and for a worktree in a folder (or a repo) you blocked for agents. A session can name the worktree by its folder or by the name the list gave it. Read-only Scheduler workers can't release anything.
+
+These two verbs never remove anything, and no session can clean a worktree. (A session can remove Docker containers, but only through a separate action that always asks you first — see "Stopping, starting and removing containers" above.)
+
 ## Tracking a mission's progress
 
 When a session owns work that spans several sessions or a long stretch of time — coordinating a multi-part delivery, say — it can keep a **Mission**: one structured record of where that work stands, instead of a loose notes file only the session itself understands. (Despite the name, this has nothing to do with the **mission grant** in "Batching approvals" below — a grant is a batch of pre-approved actions; a Mission is progress tracking. They just share a word.)
