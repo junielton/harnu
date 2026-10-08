@@ -434,7 +434,9 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
 
   // A stack is exclusive to a bundle only if EVERY folder it runs from is inside that
   // bundle. If a stack touches a bundle but also runs from outside it, or two bundles both
-  // claim it outright (nested paths), nobody may remove it: it is shared.
+  // claim it outright (nested paths), nobody may remove it: it is shared. A folder ABOVE the
+  // bundle touches it too: a dev container of the main checkout that mounts REPO sees a
+  // worktree nested at REPO/.claude/worktrees/wt1, so that stack shares the worktree.
   const exclusive = new Map<string, StackGroup[]>()
   const shared = new Map<string, string[]>()
   for (const stack of input.stacks) {
@@ -444,8 +446,9 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
     const partial: string[] = []
     for (const f of folders) {
       const inside = dirs.filter((d) => isInside(d, f.path)).length
+      const above = dirs.some((d) => isInside(f.path, d) && d !== f.path)
       if (inside === dirs.length) full.push(f.item.id)
-      else if (inside > 0) partial.push(f.item.id)
+      else if (inside > 0 || above) partial.push(f.item.id)
     }
     if (full.length === 1 && partial.length === 0) {
       exclusive.set(full[0]!, [...(exclusive.get(full[0]!) ?? []), stack])

@@ -1065,10 +1065,13 @@ const MERGED_FACTS: BranchFacts = {
 /** The bundle the real builder makes for the worktree at WT from this container listing. */
 function scanned(
   containers: InspectedContainer[],
-  links: CanonicalPath = (p) => ({ path: p, resolved: true })
+  links: CanonicalPath = (p) => ({ path: p, resolved: true }),
+  path: string = WT
 ): WorktreeBundle {
   // Merged ten days before the scan, so the grace window has long elapsed at execution time.
   const item = reapItem({
+    path,
+    id: `${REPO}::worktree::${path}`,
     checkpoints: [
       {
         id: 'pr-merged',
@@ -1713,5 +1716,42 @@ describe('reprobe and recheck on real paths (delta 4, item C)', () => {
       ok: false,
       reason: 'path-unresolved'
     })
+  })
+})
+
+// ---- a container that touches an ancestor of the worktree (delta 4, item E) -------------
+
+describe('P8: a dev container that bind-mounts an ancestor of the worktree (delta 4, item E)', () => {
+  const NESTED = `${REPO}/.claude/worktrees/wt1`
+  const dev = composeIn('dev', 'www', REPO, [{ type: 'bind', source: REPO, name: null }])
+  const nestedBundle = (): WorktreeBundle =>
+    bundle({ item: reapItem({ path: NESTED }), stackIds: [], ownedVolumes: [] })
+
+  it('the reprobe refuses when it appears after a scan that saw none', async () => {
+    const h = harness({ stacks: groupStacks([dev]) })
+    expect(await createGcOps(h.deps).reprobe(nestedBundle())).toEqual({
+      ok: false,
+      reason: 'changed-since-scan'
+    })
+  })
+
+  it('the recheck refuses it as stack-present', async () => {
+    const h = harness({ stacks: groupStacks([dev]) })
+    expect(await createGcOps(h.deps).recheck(nestedBundle())).toEqual({
+      ok: false,
+      reason: 'stack-present'
+    })
+  })
+
+  it('the builder and the reprobe agree: shared at the scan, and the run refuses it', async () => {
+    const b = scanned([dev], undefined, NESTED)
+    expect(b.sharedStackIds).toEqual(['www'])
+    expect(b.bucket).toBe('decide')
+    const h = harness({ stacks: groupStacks([dev]) })
+    expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: true })
+    const r = await runBundle(b, createGcOps(h.deps), { removeVolumes: false, confirmDecide: true })
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'shared-stack' })
+    expect(h.stop).not.toHaveBeenCalled()
+    expect(cleanItem).not.toHaveBeenCalled()
   })
 })
