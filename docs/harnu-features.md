@@ -1,4 +1,4 @@
-<!-- harnu-features v74 (2026-10-08) -->
+<!-- harnu-features v75 (2026-10-08) -->
 
 # You are running inside Harnu
 
@@ -534,12 +534,18 @@ operator's click or the autopilot's. (`remove_containers` does exist and removes
 containers, but only after the operator confirms.)
 
 - `list_cleanup({ folder? })` reads the picture. ACK
-  `{ ok, scannedAt, bundles: [{ id, folderAlias, branch, bucket, reason, bytes, depsBytes,
-released, agentControllable }], orphanVolumes, totals, autopilot: { enabled, reportOnly,
-graceDays }, nextCycleAt }`. Read `bucket` and `reason`; never re-derive them. Every call
-  runs a fresh gather. Paths are redacted like `list_containers`: `folderAlias` is a
-  basename and `id` a readable label (`<repo>::<kind>::<branch>::<hash>`, unique even for
-  two repos that share a name), never a path. A worktree in a folder the operator
+  `{ ok, scannedAt, bundles: [{ id, folderAlias, branch, bucket, reason, reasonCode, bytes,
+depsBytes, released, agentControllable }], orphanVolumes, totals: { ready, readyBytes,
+review, reviewBytes, inUse, orphanVolumes, orphanVolumeBytes }, autopilot: { enabled,
+reportOnly, graceDays }, nextCycleAt }`. Read `bucket`, `reasonCode` and `reason`; never
+  re-derive them. `totals` counts each bucket on its own — `ready` and `readyBytes`, `review`
+  and `reviewBytes`, `inUse` — plus `orphanVolumes` and `orphanVolumeBytes`. It reads the last scan Harnu made (the timer refreshes it), so look at
+  `scannedAt` to see how old the picture is; the call never writes anything. No absolute
+  path ever appears. `folderAlias` is a basename and `id` a readable label
+  (`<repo>::<kind>::<branch>::<hash>`, unique even for two repos that share a name). A review
+  `reason` is a fixed sentence per `reasonCode` (a halted cleanup reads "Cleanup stopped at
+  <step>."), never the raw git or file-system error, and any other text a field carries has
+  each path cut down to its basename. A worktree in a folder the operator
   blocked still lists with `agentControllable: false` — report it, leave it alone. `folder`
   narrows `bundles` and `totals` to that repo and its worktrees (and leaves out
   `orphanVolumes`, which belong to no folder). A worktree belongs to a repo by its own
@@ -552,13 +558,16 @@ graceDays }, nextCycleAt }`. Read `bucket` and `reason`; never re-derive them. E
   worktree's PR merged and I am done with it". Pass `folder` for the worktree you worked in,
   or the `id` from `list_cleanup` for any other (it needs no folder, so it also reaches a
   worktree Harnu's sidebar does not list). Its grace window stops applying, so the
-  worktree becomes `ready` on the next scan **if every other rule still holds**. It runs free and deletes nothing. Call it for the worktree you
-  worked in once its PR merged, not before. A release never overrides a safety rule: dirty
+  worktree becomes `ready` on the next scan **if every other rule still holds**. It runs
+  free and deletes nothing. Call it for the worktree you worked in once its PR merged, not
+  before. A release is tied to the branch tip it was made at: new commits move the tip and
+  the release no longer applies, so release again after the next merge. A release never overrides a safety rule: dirty
   tracked files or unpushed commits, an open idle session, a stack shared with another
   worktree, a Keep mark, a never-clean path or a path Harnu could not resolve keep the
   bundle out of `ready` — the ACK
-  `{ ok, op, folderAlias, branch, released, alreadyReleased, bucketAfter, reason, deleted:
-false, message }` says where it landed (`bucketAfter`) and why (`reason`), so tell the
+  `{ ok, op, folderAlias, branch, released, alreadyReleased, bucketAfter, reason, reasonCode,
+deleted: false, message }` says where it landed (`bucketAfter`) and why (`reason`; a worktree
+  whose last cleanup halted stays in `review` for about a day), so tell the
   operator instead of promising a cleanup. It is idempotent (`alreadyReleased`). Refusals:
   `FATE_NOT_MERGED` (the branch is not merged with a strong proof), `FOLDER_NOT_ALLOWED`
   (the worktree's folder or its repo is blocked), `IS_MAIN_CHECKOUT` (a repo's main checkout
