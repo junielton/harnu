@@ -76,6 +76,7 @@ function textOf(res: CallToolResult): string {
 }
 
 // A merged, strong, clean worktree still inside its grace window: "in-use" until released.
+const TIP = 'a'.repeat(40)
 const fresh = bundle(WT_READY, { bucket: 'in-use', lastSignOfLifeAt: NOW - 3_600_000 })
 
 beforeEach(() => {
@@ -103,7 +104,8 @@ describe('release_worktree handler (T445)', () => {
     expect(release).toHaveBeenCalledTimes(1)
     expect(release).toHaveBeenCalledWith(fresh.item.id, NOW, {
       repoPath: MAIN,
-      path: WT_READY
+      path: WT_READY,
+      localTip: TIP
     })
   })
 
@@ -268,7 +270,8 @@ describe('release_worktree handler (T445)', () => {
       expect(JSON.parse(textOf(res))).toMatchObject({ ok: true, bucketAfter: 'ready' })
       expect(release).toHaveBeenCalledWith(fresh.item.id, NOW, {
         repoPath: MAIN,
-        path: WT_READY
+        path: WT_READY,
+        localTip: TIP
       })
     })
 
@@ -307,6 +310,15 @@ describe('release_worktree handler (T445)', () => {
       expect(res.isError).toBe(true)
       expect(textOf(res)).toContain('BAD_ARGS')
     })
+  })
+
+  it('a bundle with no known tip cannot be released (a merge cannot be tied to it)', async () => {
+    const noTip = bundle(WT_READY, { bucket: 'in-use', localTip: null })
+    const { release } = serve(snapshot([noTip]))
+    const res = await handler({ folder: WT_READY }, ctx(WT_READY))
+    expect(res.isError).toBe(true)
+    expect(JSON.parse(textOf(res)).error).toBe('FATE_NOT_MERGED')
+    expect(release).not.toHaveBeenCalled()
   })
 
   describe('D2-3: bucketAfter respects the failure overlay (T445 delta 2)', () => {

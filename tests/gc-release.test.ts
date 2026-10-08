@@ -72,6 +72,10 @@ interface Over {
   keep?: boolean
   neverClean?: boolean
   released?: ReadonlyMap<string, number> | null
+  /** The tip each mark was made at; defaults to the bundle's own tip. null passes none. */
+  releasedTips?: ReadonlyMap<string, string> | null
+  /** The local tip the fate is judged on; defaults to TIP. */
+  localTip?: string
   mergedAgo?: number
 }
 
@@ -89,7 +93,7 @@ function build(over: Over = {}) {
     over.released === null ? undefined : (over.released ?? new Map([[it.id, NOW - 60_000]]))
   return buildBundles({
     items: [it],
-    fateInputs: new Map([[it.id, { facts: facts(over.facts), localTip: TIP }]]),
+    fateInputs: new Map([[it.id, { facts: facts(over.facts), localTip: over.localTip ?? TIP }]]),
     stacks: [],
     stackPaths: new Map(),
     containers: [],
@@ -104,7 +108,10 @@ function build(over: Over = {}) {
     knownFolders: [],
     protectedProjects: new Set<string>(),
     canonical: AS_GIVEN,
-    ...(released ? { released } : {})
+    ...(released ? { released } : {}),
+    ...(over.releasedTips === null
+      ? {}
+      : { releasedTips: over.releasedTips ?? new Map([[it.id, TIP]]) })
   })[0]!
 }
 
@@ -292,7 +299,7 @@ describe('staleReleases: when a release mark is dropped (T445 delta 1)', () => {
 describe('staleReleases: a cleaned worktree drops its mark (T445 delta 1 ruling)', () => {
   const id = reapItem(WT_READY).id
   const marks = { [id]: NOW - 1000 }
-  const from = { [id]: { repoPath: MAIN, path: WT_READY } }
+  const from = { [id]: { repoPath: MAIN, path: WT_READY, localTip: TIP } }
   const gone = (over: Partial<ReleaseGone> = {}): ReleaseGone => ({
     scannedRepos: new Set([MAIN]),
     from,
@@ -374,5 +381,98 @@ describe('releasedFrom prefs (T445 delta 1 ruling)', () => {
     const current = withReleased(defaultGcPrefs(), id, 7, { repoPath: MAIN, path: WT_READY })
     const next = mergeIncomingPrefs(current, { ...defaultGcPrefs(), releasedFrom: {} })
     expect(next.releasedFrom).toEqual(current.releasedFrom)
+  })
+})
+
+describe('a release is tied to the tip it was made at (T445 delta 2, 4)', () => {
+  const NEW_TIP = 'c'.repeat(40)
+  const id = reapItem(WT_READY).id
+
+  it('applies while the bundle’s tip is the tip of the release', () => {
+    const b = build()
+    expect(b.localTip).toBe(TIP)
+    expect(b.bucket).toBe('ready')
+    expect(b.graceDays).toBe(0)
+  })
+
+  it('does not apply once new commits moved the tip, even if the new tip is strongly merged', () => {
+    // Released at TIP; the branch then got new commits (NEW_TIP) and merged again.
+    const b = build({
+      localTip: NEW_TIP,
+      facts: { pr: pr({ headRefOid: NEW_TIP }), ancestorOfDefault: true }
+    })
+    expect(b.fate.strong).toBe(true)
+    expect(b.localTip).toBe(NEW_TIP)
+    expect(b.graceDays).toBe(GRACE)
+    expect(b.bucket).toBe('in-use')
+  })
+
+  it('does not apply to a mark that recorded no tip (a legacy mark cannot be shown to match)', () => {
+    const b = build({ releasedTips: null })
+    expect(b.graceDays).toBe(GRACE)
+    expect(b.bucket).toBe('in-use')
+  })
+
+  it('does not apply when the bundle has no tip to compare', () => {
+    const b = build({ item: { kind: 'worktree' }, localTip: undefined as never })
+    expect(b.bucket).not.toBe('ready')
+  })
+
+  describe('staleReleases drops a mark whose tip moved or was never recorded', () => {
+    const marks = { [id]: NOW - 1000 }
+    const gone = (tip?: string): ReleaseGone => ({
+      scannedRepos: new Set([MAIN]),
+      from: { [id]: { repoPath: MAIN, path: WT_READY, ...(tip ? { localTip: tip } : {}) } },
+      missingPaths: new Set()
+    })
+
+    it('keeps it at the same tip', () => {
+      expect(staleReleases([build()], marks, gone(TIP))).toEqual([])
+    })
+
+    it('drops it after new commits followed by a strong merge', () => {
+      const moved = build({
+        localTip: NEW_TIP,
+        facts: { pr: pr({ headRefOid: NEW_TIP }), ancestorOfDefault: true }
+      })
+      expect(moved.fate.strong).toBe(true)
+      expect(staleReleases([moved], marks, gone(TIP))).toEqual([id])
+    })
+
+    it('drops a legacy mark that recorded no tip', () => {
+      expect(staleReleases([build()], marks, gone())).toEqual([id])
+    })
+
+    it('without the context the rule stays fate-only', () => {
+      const moved = build({
+        localTip: NEW_TIP,
+        facts: { pr: pr({ headRefOid: NEW_TIP }), ancestorOfDefault: true }
+      })
+      expect(staleReleases([moved], marks)).toEqual([])
+    })
+  })
+
+  describe('prefs', () => {
+    it('keeps the tip in releasedFrom and ignores a non-string tip', () => {
+      const p = normalizeGcPrefs({
+        releasedFrom: {
+          a: { repoPath: MAIN, path: WT_READY, localTip: TIP },
+          b: { repoPath: MAIN, path: WT_READY, localTip: 5 },
+          c: { repoPath: MAIN, path: WT_READY }
+        }
+      })
+      expect(p.releasedFrom.a!.localTip).toBe(TIP)
+      expect(p.releasedFrom.b).toEqual({ repoPath: MAIN, path: WT_READY })
+      expect(p.releasedFrom.c).toEqual({ repoPath: MAIN, path: WT_READY })
+    })
+
+    it('withReleased records the tip', () => {
+      const p = withReleased(defaultGcPrefs(), id, 7, {
+        repoPath: MAIN,
+        path: WT_READY,
+        localTip: TIP
+      })
+      expect(p.releasedFrom[id]).toEqual({ repoPath: MAIN, path: WT_READY, localTip: TIP })
+    })
   })
 })
