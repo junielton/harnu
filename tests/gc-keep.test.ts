@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   judgeKeeps,
   keepFromFresh,
+  pressKeep,
+  type KeepPressDeps,
   protectedFromGather,
   withProvisionalKeep,
   withoutStaleKeeps
@@ -188,5 +190,99 @@ describe('the reprobe refuses an item whose Keep arrived after the gather (delta
     // The cycle's gather judged it ready; then the operator presses Keep.
     prefs = withProvisionalKeep(prefs, [b], b.item.id)
     expect(await ops.reprobe(b)).toEqual({ ok: false, reason: 'protected-now' })
+  })
+})
+
+describe('pressing Keep (delta 4 N1, delta 5 item 2)', () => {
+  const a = () => bundle('/ws/wt/a', 'ready')
+
+  /** In-memory stand-in for the service: prefs, a log of what was persisted, no electron. */
+  function rig(opts: {
+    prefs?: ReturnType<typeof defaultGcPrefs>
+    cached?: ReturnType<typeof a>[]
+    fresh: () => Promise<ReturnType<typeof a>[]>
+  }) {
+    let prefs = opts.prefs ?? defaultGcPrefs()
+    const log: string[] = []
+    const keepWrites = new Map<string, number>()
+    const provisionalKeeps = new Set<string>()
+    const deps: KeepPressDeps = {
+      prefs: () => prefs,
+      persist: async (next) => {
+        prefs = next
+        log.push(`persist ${JSON.stringify(next.keep)}`)
+        return prefs
+      },
+      cachedBundles: () => opts.cached ?? [],
+      gatherFresh: async () => {
+        log.push('gather')
+        return opts.fresh()
+      },
+      keepWrites,
+      provisionalKeeps,
+      now: () => 1000
+    }
+    return { deps, log, keepWrites, provisionalKeeps, prefs: () => prefs }
+  }
+
+  it('persists a provisional mark BEFORE it waits for the fresh gather', async () => {
+    const b = a()
+    const r = rig({ cached: [b], fresh: async () => [b] })
+    await pressKeep(b.item.id, r.deps)
+    expect(r.log[0]).toMatch(/^persist/)
+    expect(r.log.indexOf('gather')).toBeGreaterThan(0)
+    expect(r.prefs().keep).toEqual({ [b.item.id]: 'merged' })
+  })
+
+  it('marks the item provisional while the gather runs, and not afterwards', async () => {
+    const b = a()
+    let during: boolean | undefined
+    const r = rig({ fresh: async () => [b] })
+    const fresh = r.deps.gatherFresh
+    r.deps.gatherFresh = async () => {
+      during = r.provisionalKeeps.has(b.item.id)
+      return fresh()
+    }
+    await pressKeep(b.item.id, r.deps)
+    expect(during).toBe(true)
+    expect(r.provisionalKeeps.has(b.item.id)).toBe(false)
+  })
+
+  it('an unknown item takes back the mark THIS press created, and throws', async () => {
+    const r = rig({ fresh: async () => [] })
+    await expect(pressKeep('ghost', r.deps)).rejects.toThrow(/unknown cleanup item/)
+    expect(r.prefs().keep).toEqual({})
+    expect(r.keepWrites.has('ghost')).toBe(false)
+    expect(r.provisionalKeeps.has('ghost')).toBe(false)
+  })
+
+  it('a repeated Keep never drops the existing mark when the fresh gather omits the item', async () => {
+    const b = a()
+    const prefs = { ...defaultGcPrefs(), keep: { [b.item.id]: 'open' as const } }
+    const r = rig({ prefs, fresh: async () => [] })
+    const out = await pressKeep(b.item.id, r.deps)
+    expect(out.keep).toEqual({ [b.item.id]: 'open' })
+    expect(r.prefs().keep).toEqual({ [b.item.id]: 'open' })
+    expect(r.provisionalKeeps.has(b.item.id)).toBe(false)
+  })
+
+  it('a repeated Keep still refreshes the fate when the item is in the gather', async () => {
+    const b = a()
+    const prefs = { ...defaultGcPrefs(), keep: { [b.item.id]: 'open' as const } }
+    const r = rig({ prefs, fresh: async () => [b] })
+    expect((await pressKeep(b.item.id, r.deps)).keep).toEqual({ [b.item.id]: 'merged' })
+  })
+
+  it('a gather that fails leaves the mark in place: protecting is the safe side', async () => {
+    const b = a()
+    const r = rig({
+      cached: [b],
+      fresh: async () => {
+        throw new Error('docker is down')
+      }
+    })
+    await expect(pressKeep(b.item.id, r.deps)).rejects.toThrow(/docker is down/)
+    expect(r.prefs().keep[b.item.id]).toBeDefined()
+    expect(r.provisionalKeeps.has(b.item.id)).toBe(false)
   })
 })

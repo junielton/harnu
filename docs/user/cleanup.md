@@ -316,6 +316,10 @@ For each worktree, one at a time, stopping at the first problem for that worktre
 4. Remove installed dependencies.
 5. Archive the branch tip and the working state, then move the folder to the system trash, remove that worktree's own registration from git (never a repository-wide prune, which could also drop the entry of a worktree on an unmounted drive) and delete the local branch.
 
+A cleanup never deletes anything permanently: the folder goes to the system trash or stays where it is. If Harnu cannot find this worktree's own registration in git (for example because the registration is ambiguous or locked), the worktree is left untouched and shows up in Needs review with the reason, before anything was moved.
+
+If Harnu cannot read Claude's transcripts folder, or cannot tell which folder a transcript belongs to, it assumes the activity may be in your worktree: with the folder unreadable nothing is _Ready to clean_ until it can be read, and an unattributable transcript counts for every worktree whose path could have produced it.
+
 Remote branches are never deleted by the autopilot. If a step fails, the worktree appears in Needs review as _"Cleanup stopped at trash: …"_ and the autopilot leaves it alone for a day.
 
 ### Docker housekeeping

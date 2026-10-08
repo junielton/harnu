@@ -254,16 +254,16 @@ export async function cleanItem(
     }
   })
 
-  // When the worktree's own admin dir cannot be matched (a gitdir in a form we cannot read, an
-  // ambiguous match, a locked worktree), asking git to remove it is the only way to unregister
-  // it without a repo-wide prune, and it can only be done while the folder still exists. If git
-  // refuses too, the item halts here, before anything was trashed, with git's own reason.
-  let removedByGit = false
+  // A clean never deletes anything permanently: the folder goes to the OS trash or nowhere.
+  // When the worktree's own admin dir cannot be matched (an unreadable gitdir, an ambiguous
+  // match, a locked worktree) the item halts HERE, before anything was trashed, and stays as
+  // it was. Nothing is handed to git to remove: git would delete the folder for good,
+  // gitignored files included, which neither the archive nor the trash would hold.
   await run('trash-folder', hasFolder, async () => {
     if (!(await deps.canUnregister(item.repoPath, item.path!))) {
-      await deps.git(item.repoPath, ['worktree', 'remove', '--force', item.path!])
-      removedByGit = true
-      return
+      throw new Error(
+        'cannot-unregister: no matching, unlocked registration for this worktree in git; nothing was removed'
+      )
     }
     await deps.trash(item.path!)
   })
@@ -272,7 +272,6 @@ export async function cleanItem(
   // worktree now (see ExecutorDeps.removeWorktreeAdmin). Never a silent skip: a registration
   // that cannot be found after the trash is a failed step.
   await run('worktree-prune', hasFolder, async () => {
-    if (removedByGit) return
     if ((await deps.removeWorktreeAdmin(item.repoPath, item.path!)) === false) {
       throw new Error("could not find this worktree's registration in git to remove")
     }

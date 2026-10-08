@@ -10,6 +10,7 @@
 import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import type { WorktreeBundle } from './bundle-core'
 
 export interface TranscriptProbe {
   listProjectDirs(): Promise<string[]>
@@ -44,22 +45,65 @@ export function cwdFromTranscriptHead(head: string): string | null {
 
 const BATCH = 16
 
+export interface TranscriptScan {
+  /** Transcripts and index entries whose folder is known. */
+  folders: ActivityFolder[]
+  /**
+   * Transcripts whose folder could not be told (unreadable, no `cwd` in the head, the project
+   * folder could not be listed). Their only clue is the project slug; see {@link attributeBySlug}.
+   */
+  bySlug: Array<{ slug: string; mtimeMs: number }>
+  /** The projects root itself could not be read: nothing can be said about any folder. */
+  rootUnreadable: boolean
+}
+
+/** The folder name Claude gives a project directory: every non-alphanumeric becomes a dash. */
+export function slugOfPath(p: string): string {
+  return p.replace(/[\\/]+$/, '').replace(/[^A-Za-z0-9]/g, '-')
+}
+
 /**
- * One entry per folder, with the time of every transcript and index entry that names it. A
- * project folder that cannot be read contributes nothing; the rest still count.
+ * Activity for the folders in `paths` from transcripts known only by slug. Slug decoding is
+ * lossy, so this over-attributes on purpose (a sibling whose name starts the same counts): the
+ * safe direction for grace is "more in use". A path matches its own slug and any slug that
+ * continues it, which is how subfolders encode.
  */
-export async function transcriptFolders(probe: TranscriptProbe): Promise<ActivityFolder[]> {
+export function attributeBySlug(
+  bySlug: ReadonlyArray<{ slug: string; mtimeMs: number }>,
+  paths: readonly string[]
+): ActivityFolder[] {
+  const out: ActivityFolder[] = []
+  for (const path of new Set(paths)) {
+    const own = slugOfPath(path)
+    const sessions = bySlug
+      .filter((e) => e.slug === own || e.slug.startsWith(`${own}-`))
+      .map((e) => ({ fileMtime: e.mtimeMs }))
+    if (sessions.length > 0) out.push({ path, sessions })
+  }
+  return out
+}
+
+/**
+ * Every transcript on disk, one entry per folder, with the time of every transcript and index
+ * entry that names it. It fails closed: whatever cannot be attributed to a folder is returned
+ * by slug, and an unreadable root is reported, never read as "no activity".
+ */
+export async function scanTranscripts(
+  probe: TranscriptProbe,
+  now: number
+): Promise<TranscriptScan> {
   const byPath = new Map<string, Array<{ fileMtime?: number; modified?: string }>>()
+  const bySlug: TranscriptScan['bySlug'] = []
   const add = (path: string, s: { fileMtime?: number; modified?: string }): void => {
     const list = byPath.get(path) ?? []
     list.push(s)
     byPath.set(path, list)
   }
-  let slugs: string[] = []
+  let slugs: string[]
   try {
     slugs = await probe.listProjectDirs()
   } catch {
-    return []
+    return { folders: [], bySlug: [], rootUnreadable: true }
   }
   for (const slug of slugs) {
     try {
@@ -68,20 +112,58 @@ export async function transcriptFolders(probe: TranscriptProbe): Promise<Activit
           add(e.projectPath, { fileMtime: e.fileMtime, modified: e.modified })
         }
       }
-      const files = await probe.listJsonl(slug)
-      for (let i = 0; i < files.length; i += BATCH) {
-        await Promise.all(
-          files.slice(i, i + BATCH).map(async (f) => {
-            const cwd = await probe.cwdOf(slug, f.name, f.mtimeMs).catch(() => null)
-            if (cwd) add(cwd, { fileMtime: f.mtimeMs })
-          })
-        )
-      }
     } catch {
-      // This project folder cannot be read; its transcripts simply do not count.
+      // The index is an extra; the transcripts below are always read.
+    }
+    let files: Array<{ name: string; mtimeMs: number }>
+    try {
+      files = await probe.listJsonl(slug)
+    } catch {
+      // Cannot tell what ran here: treat the project as active right now.
+      bySlug.push({ slug, mtimeMs: now })
+      continue
+    }
+    for (let i = 0; i < files.length; i += BATCH) {
+      await Promise.all(
+        files.slice(i, i + BATCH).map(async (f) => {
+          const cwd = await probe.cwdOf(slug, f.name, f.mtimeMs).catch(() => null)
+          if (cwd) add(cwd, { fileMtime: f.mtimeMs })
+          else bySlug.push({ slug, mtimeMs: f.mtimeMs })
+        })
+      )
     }
   }
-  return [...byPath].map(([path, sessions]) => ({ path, sessions }))
+  return {
+    folders: [...byPath].map(([path, sessions]) => ({ path, sessions })),
+    bySlug,
+    rootUnreadable: false
+  }
+}
+
+/** The folders alone, for callers that do not need the fail-closed leftovers. */
+export async function transcriptFolders(probe: TranscriptProbe): Promise<ActivityFolder[]> {
+  return (await scanTranscripts(probe, Date.now())).folders
+}
+
+/**
+ * When the transcripts root could not be read nothing can be said about recent activity, so
+ * nothing is ready this gather. Uses the code that already means "the session state of this
+ * worktree is unknown".
+ */
+export function withGraceUnknown(bundles: readonly WorktreeBundle[]): WorktreeBundle[] {
+  return bundles.map((b) =>
+    b.bucket === 'ready'
+      ? {
+          ...b,
+          bucket: 'review' as const,
+          reason: {
+            code: 'open-idle-session' as const,
+            detail:
+              "Harnu could not read Claude's transcripts folder, so it cannot tell whether anything ran in this worktree recently."
+          }
+        }
+      : b
+  )
 }
 
 /** The fleet's folders and the transcript folders as one list, one entry per folder. */
@@ -104,10 +186,17 @@ const cwdCache = new Map<string, string>()
 
 export function fsTranscriptProbe(root = join(homedir(), '.claude', 'projects')): TranscriptProbe {
   return {
-    listProjectDirs: async () =>
-      (await fs.readdir(root, { withFileTypes: true }))
-        .filter((e) => e.isDirectory())
-        .map((e) => e.name),
+    listProjectDirs: async () => {
+      try {
+        return (await fs.readdir(root, { withFileTypes: true }))
+          .filter((e) => e.isDirectory())
+          .map((e) => e.name)
+      } catch (err) {
+        // No root at all means Claude never recorded anything; any other failure is unreadable.
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
+        throw err
+      }
+    },
     readIndex: async (slug) => {
       try {
         const idx = JSON.parse(
@@ -125,8 +214,9 @@ export function fsTranscriptProbe(root = join(homedir(), '.claude', 'projects'))
       const names = (await fs.readdir(dir)).filter((n) => n.endsWith('.jsonl'))
       const out: Array<{ name: string; mtimeMs: number }> = []
       for (const name of names) {
+        // A file that cannot be stat'ed may well be active: count it as modified right now.
         const st = await fs.stat(join(dir, name)).catch(() => null)
-        if (st) out.push({ name, mtimeMs: st.mtimeMs })
+        out.push({ name, mtimeMs: st ? st.mtimeMs : Date.now() })
       }
       return out
     },

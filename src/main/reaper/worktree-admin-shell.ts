@@ -28,6 +28,9 @@ export async function findAdminDir(
   } catch {
     return null // no worktree is registered at all
   }
+  // Compare real locations: the item can be spelled through a symlinked parent while git
+  // recorded the real path (or the other way round).
+  const target = await realOrGiven(worktreePath)
   const entries: Array<{ dir: string; gitdir: string }> = []
   for (const name of names) {
     const dir = path.join(base, name)
@@ -39,12 +42,30 @@ export async function findAdminDir(
     )
       continue
     try {
-      entries.push({ dir, gitdir: await fs.readFile(path.join(dir, 'gitdir'), 'utf8') })
+      const written = (await fs.readFile(path.join(dir, 'gitdir'), 'utf8')).trim()
+      const absolute = path.isAbsolute(written) ? written : path.resolve(dir, written)
+      // `<worktree>/.git`: resolve the worktree part, which is the one that can be a symlink.
+      entries.push({ dir, gitdir: `${await realOrGiven(path.dirname(absolute))}/.git` })
     } catch {
       // Not an admin dir we can read: it is not ours to remove.
     }
   }
-  return matchAdminDir(entries, worktreePath)
+  return matchAdminDir(entries, target)
+}
+
+/**
+ * The real path, even when the folder itself is gone (it is, once trashed): the nearest
+ * existing ancestor is resolved and the missing tail is appended, so a symlinked parent
+ * still compares equal to its real spelling.
+ */
+async function realOrGiven(p: string): Promise<string> {
+  try {
+    return await fs.realpath(p)
+  } catch {
+    const parent = path.dirname(p)
+    if (parent === p) return p
+    return path.join(await realOrGiven(parent), path.basename(p))
+  }
 }
 
 export async function canUnregister(
