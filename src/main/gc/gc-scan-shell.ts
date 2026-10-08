@@ -14,7 +14,8 @@ import {
   computeFolderSets,
   lastFateInputs,
   lastSnapshot,
-  listAllWorktreePaths
+  listAllWorktreePaths,
+  listLockedWorktreePaths
 } from '../reaper/scanner-shell'
 import { inspectAll, runDocker } from '../containers/containers-shell'
 import { journalFile, readJournal as readContainersJournal } from '../containers/containers-journal'
@@ -31,6 +32,7 @@ import {
 import { buildBundles, containerFolderPaths, type CanonicalPath } from './bundle-core'
 import { dockerIsUnavailable, findForeignCheckouts, resolveRealPaths } from './gc-shell'
 import { collectForeignCheckouts, explainFailedWalks } from './gc-foreign'
+import { lockedItemIds } from './gc-locked'
 import { sessionsFromFleet } from './gc-sessions'
 import {
   attributeBySlug,
@@ -172,13 +174,15 @@ export async function gatherGc(
   const repoPaths = snap?.repos.map((r) => r.repoPath) ?? []
   const itemPaths = items.flatMap((i) => (i.path ? [i.path] : []))
 
-  const [{ containers, df, available }, sets, fleet, known, journal] = await Promise.all([
-    dockerPicture(),
-    computeFolderSets(),
-    getFleetFolders(),
-    everyKnownFolder(repoPaths, itemPaths),
-    readContainersJournal(journalFile(app.getPath('userData')))
-  ])
+  const [{ containers, df, available }, sets, fleet, known, journal, lockedPaths] =
+    await Promise.all([
+      dockerPicture(),
+      computeFolderSets(),
+      getFleetFolders(),
+      everyKnownFolder(repoPaths, itemPaths),
+      readContainersJournal(journalFile(app.getPath('userData'))),
+      listLockedWorktreePaths(repoPaths)
+    ])
 
   // Sessions on real paths: the folders of every running session and every item are read
   // through their real locations, so a session reached through a symlink still counts.
@@ -252,7 +256,8 @@ export async function gatherGc(
       ...sessions.keys(),
       ...stackPaths.values(),
       ...prefs.neverClean,
-      ...guards.knownFolders
+      ...guards.knownFolders,
+      ...lockedPaths
     ],
     (p) => fs.realpath(p)
   )
@@ -281,7 +286,9 @@ export async function gatherGc(
     knownFolders: bundleFolders,
     protectedProjects: guards.protectedProjects,
     canonical,
-    foreignCheckouts: foreign.found
+    foreignCheckouts: foreign.found,
+    // Git's own lock: such a worktree cannot be unregistered, so it is review, not ready.
+    locked: lockedItemIds(items, lockedPaths, canonical, process.platform)
   }
   // A Keep mark holds only while the fate it was made under still holds: judge the fates
   // first, then rebuild with the marks that are still valid.
