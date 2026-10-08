@@ -352,6 +352,31 @@ describe('buildPrompt (AC-3)', () => {
       })
     })
 
+    describe('more encodings (delta 6)', () => {
+      it.each([
+        ['a double-encoded slash %252F', 'open %252Fhome%252Fleaky%252Fcode%252Fx.ts now'],
+        ['a triple-encoded slash', 'open %25252Fhome%25252Fleaky%25252Fx.ts now'],
+        ['a zero-padded decimal entity &#047;', 'open &#047;home&#047;leaky&#047;x.ts now'],
+        ['a longer zero-padded entity &#0047;', 'open &#0047;home&#0047;leaky&#0047;x.ts now'],
+        ['a zero-padded hex entity &#x02F;', 'open &#x02F;home&#x02F;leaky&#x02F;x.ts now'],
+        ['the named entity &sol;', 'open &sol;home&sol;leaky&sol;x.ts now'],
+        ['an encoded drive C%3A%5C', 'open C%3A%5CUsers%5Cleaky%5Cx.ts now'],
+        ['an encoded drive with slashes C%3A%2F', 'open C%3A%2FUsers%2Fleaky%2Fx.ts now'],
+        ['a lower-case encoded drive', 'open c%3a%5cusers%5cleaky%5cx.ts now'],
+        ['a double-encoded drive', 'open C%253A%255CUsers%255Cleaky%255Cx.ts now']
+      ])('removes %s', (_name, text) => {
+        const p = field(text)
+        expect(p).not.toMatch(/leaky/i)
+        expect(p).toContain('<path>')
+      })
+
+      it('leaves ordinary percent text alone', () => {
+        const p = field('coverage is 100% and the rate is 5%25 of 3%')
+        expect(p).not.toContain('<path>')
+        expect(p).toContain('coverage is 100%')
+      })
+    })
+
     describe('a path under the worktree that leaves it', () => {
       const own = '/home/someone/code/www/.claude/worktrees/feat-x'
       const scrubbed = (text: string): string =>
@@ -750,7 +775,14 @@ describe('scrubPaths is total and stable', () => {
     '..',
     '/home/',
     'x y',
-    '<this worktree>'
+    '<this worktree>',
+    '%25',
+    '%2F',
+    '%5C',
+    'C%3A',
+    '&#47;',
+    '&#047;',
+    '&sol;'
   ]
   function* strings(count: number): Generator<string> {
     let seed = 1234567
