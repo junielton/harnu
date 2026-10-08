@@ -1382,15 +1382,17 @@ describe('buildBundles — stack attribution', () => {
       expect(b.bucket).toBe('ready')
     })
 
-    // Flipped by delta 5: it was shared. The folder above is ignored, so exclusivity is
-    // decided by the remaining folders, which are all inside the worktree.
-    it('a stack whose other folders are all inside the worktree is exclusive', () => {
+    // A mixed stack: it reaches into the worktree and also runs from a folder above it. The
+    // ruling on delta 5 concern 1 keeps it shared, as it was before delta 5.
+    it('a stack whose other folders are inside the worktree but one is above it is shared', () => {
       const web = composeContainer('web', 'app', `${NESTED}/deploy`, {
         mounts: [bindMount(`${NESTED}/src`), bindMount(REPO)]
       })
       const b = only(build({ items: [nested()], stacks: [stack('app', [web])], containers: [web] }))
-      expect(b.stackIds).toEqual(['app'])
-      expect(b.sharedStackIds).toEqual([])
+      expect(b.stackIds).toEqual([])
+      expect(b.sharedStackIds).toEqual(['app'])
+      expect(b.bucket).toBe('review')
+      expect(b.reason?.code).toBe('shared-stack')
     })
 
     it('a stack with a folder inside, one above and one unrelated is still shared', () => {
@@ -1403,11 +1405,15 @@ describe('buildBundles — stack attribution', () => {
       expect(b.reason?.code).toBe('shared-stack')
     })
 
-    it('a stack run from above the worktree that bind-mounts a folder inside it is exclusive to it (the reprobe still refuses it)', () => {
+    // The main checkout's own stack reaching into a nested worktree: never this worktree's
+    // to stop, so the scan says review, as the run does.
+    it('a stack run from above the worktree that bind-mounts a folder inside it is shared', () => {
       const dev = composeContainer('dev', 'www', REPO, { mounts: [bindMount(`${NESTED}/storage`)] })
       const b = only(build({ items: [nested()], stacks: [stack('www', [dev])], containers: [dev] }))
-      expect(b.stackIds).toEqual(['www'])
-      expect(b.sharedStackIds).toEqual([])
+      expect(b.stackIds).toEqual([])
+      expect(b.sharedStackIds).toEqual(['www'])
+      expect(b.bucket).toBe('review')
+      expect(b.reason?.code).toBe('shared-stack')
     })
 
     // Flipped by delta 5: it was shared.

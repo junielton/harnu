@@ -50,14 +50,6 @@ const realKey = (p: string, platform: string, canonical: CanonicalPath): string 
 /** True when one path lies inside the other (either way). Empty keys relate to nothing. */
 export const relatesTo = (a: string, b: string): boolean =>
   a !== '' && b !== '' && (isInside(a, b) || isInside(b, a))
-
-/**
- * True when `folder` lies strictly above `root`. Stack attribution ignores such a folder
- * (delta 5): a container that can only see a worktree through it does not depend on it.
- */
-export const isAbove = (folder: string, root: string): boolean =>
-  folder !== '' && folder !== root && isInside(root, folder)
-
 export type SessionPresence = 'working' | 'needs-input' | 'open-idle' | 'none'
 export type Bucket = 'ready' | 'review' | 'in-use'
 export type ReviewCode =
@@ -445,14 +437,16 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
     .filter((p) => p && !canonical(p).resolved)
     .map((p) => canonicalPathKey(p, platform))
 
-  // A stack is exclusive to a bundle only if EVERY folder it runs from is inside that
-  // bundle. If a stack touches a bundle but also runs from outside it, or two bundles both
-  // claim it outright (nested paths), nobody may remove it: it is shared.
-  // A folder strictly ABOVE the bundle is ignored: it neither attributes the stack nor
-  // shares it (orchestrator ruling, delta 5, 2026-10-08). Sail and most dev stacks
-  // bind-mount REPO, so with worktrees nested at REPO/.claude/worktrees/* that rule made
-  // every one of them non-ready, and a container that can merely see a proven-ready nested
-  // worktree does not depend on it. Unresolved folders above it still block it below.
+  // A stack is attributed to a bundle only through a folder at or inside it. A stack whose
+  // folders are all above the bundle, or elsewhere, is not this bundle's at all
+  // (orchestrator ruling, delta 5, 2026-10-08): Sail and most dev stacks bind-mount REPO,
+  // so with worktrees nested at REPO/.claude/worktrees/* counting those made every one of
+  // them non-ready, and a container that can merely see a proven-ready nested worktree
+  // does not depend on it. Unresolved folders above it still block it below.
+  // Once attributed, a stack is exclusive only if EVERY folder it runs from is inside the
+  // bundle. One that also runs from above it or elsewhere (the main checkout's own stack
+  // bind-mounting a folder of a nested worktree), or that two bundles both claim outright
+  // (nested paths), is shared, and nobody may remove it (ruling on delta 5 concern 1).
   const exclusive = new Map<string, StackGroup[]>()
   const shared = new Map<string, string[]>()
   for (const stack of input.stacks) {
@@ -461,10 +455,9 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
     const full: string[] = []
     const partial: string[] = []
     for (const f of folders) {
-      const relevant = dirs.filter((d) => !isAbove(d, f.path))
-      const inside = relevant.filter((d) => isInside(d, f.path)).length
+      const inside = dirs.filter((d) => isInside(d, f.path)).length
       if (inside === 0) continue
-      if (inside === relevant.length) full.push(f.item.id)
+      if (inside === dirs.length) full.push(f.item.id)
       else partial.push(f.item.id)
     }
     if (full.length === 1 && partial.length === 0) {

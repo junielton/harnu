@@ -1802,19 +1802,25 @@ describe('P8: a dev container that bind-mounts an ancestor of the worktree (delt
     })
   })
 
-  // The builder calls such a stack exclusive (the folder above is ignored), but stopping it
-  // would tear down a stack the main checkout runs, so the reprobe's exclusivity check still
-  // wants every folder inside the worktree and refuses it: fail closed.
-  it('a stack run from above the worktree that the builder calls exclusive is refused by the reprobe', async () => {
+  // A mixed stack (the main checkout's own, reaching into the nested worktree) is shared at
+  // the scan, so the scan says review, the reprobe sees the same stack, and the run refuses
+  // it as shared: scan and run agree, and the main checkout's stack is never stopped.
+  it('the builder and the reprobe agree on a stack run from above that bind-mounts a folder inside', async () => {
     const mixed = composeIn('dev', 'www', REPO, [
       { type: 'bind', source: `${NESTED}/storage`, name: null }
     ])
     const b = scanned([mixed], undefined, NESTED)
-    expect(b.stackIds).toEqual(['www'])
+    expect(b.stackIds).toEqual([])
+    expect(b.sharedStackIds).toEqual(['www'])
+    expect(b.bucket).toBe('review')
+    expect(b.reason?.code).toBe('shared-stack')
     const h = harness({ stacks: groupStacks([mixed]) })
-    const r = await runBundle(b, createGcOps(h.deps), { removeVolumes: false })
-    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'changed-since-scan' })
+    expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: true })
+    const r = await runBundle(b, createGcOps(h.deps), { removeVolumes: false, confirmReview: true })
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'shared-stack' })
     expect(h.stop).not.toHaveBeenCalled()
+    expect(h.removeContainers).not.toHaveBeenCalled()
+    expect(cleanItem).not.toHaveBeenCalled()
   })
 })
 
