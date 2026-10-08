@@ -8503,6 +8503,18 @@ Needs review item, orphan volumes included) and the block panel's button (that o
   `NotebookEdit`, `WebFetch` and `WebSearch`, and no MCP server is configured. Everything git knows is in
   the dossier, which main computes. It has no tool that runs a command, writes a file or reaches the
   network; what it reads (the dossier and any file it opens) is sent to the model like any request.
+- **Reads only inside the folder it runs in.** There is no allow rule for Read, Grep or Glob: an allow rule
+  such as `--allowedTools Read,Grep,Glob` auto-approves reads anywhere the user can read, while with none
+  the CLI's own permission check refuses a file, a search or a listing outside the folder (a symlink out
+  of it included). Inside it any file can be opened, ignored ones such as `.env` included. The folder is
+  the repository; a run with no repository gets a fresh empty directory of its own, never the shared temp
+  dir.
+- **Git facts fail closed.** A dossier field that comes from git is either computed or marked
+  `COULD NOT BE COMPUTED (reason)`: a failed diff or status is unknown, not "no difference" or "none". An
+  item with a missing fact is answered `unsure` by Harnu without asking the model, has no cache key (so it
+  is never cached and never confirmed as safe), and the prompt tells the advisor never to answer safe for
+  such an item. The default branch is resolved from `origin/HEAD`, then `origin/main`, `origin/master`,
+  `main`, `master`; none existing is an error, not a silent fallback.
 - **Cost disclosure:** the button's tooltip says it uses the model on demand
   ("Asks a read-only model session. Uses tokens."). Docs say the same.
 
