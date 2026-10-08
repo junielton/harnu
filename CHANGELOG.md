@@ -33,8 +33,9 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   cleanup stopped partway shows as needing review, not as ready to clean, everywhere in Harnu.
 - **Automatic cleanup is stricter about what is still in use.** Time since the last activity
   now counts any terminal under the worktree, including `claude` runs started outside Harnu and
-  sessions parked a while ago, and sessions reached through a symlink. A worktree nested inside
-  another needs review. A Docker Compose project name written in a subfolder (`docker/compose.yml`,
+  sessions parked a while ago, and sessions reached through a symlink. A worktree, or a clone of another repository, inside
+  another worktree needs review, and so does one Harnu could not look inside (the reason names
+  the folder and the error). A Docker Compose project name written in a subfolder (`docker/compose.yml`,
   an `.env` there, `${VAR}` read from the `.env` beside it) keeps its volumes out of the orphan
   list, and a name that cannot be resolved keeps every volume out. Pressing Keep is remembered
   against the item's state at that moment, a partial settings write no longer resets other

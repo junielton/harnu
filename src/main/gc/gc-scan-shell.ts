@@ -29,7 +29,8 @@ import {
   type VolumeFact
 } from '../containers/containers-core'
 import { buildBundles, containerFolderPaths, type CanonicalPath } from './bundle-core'
-import { dockerIsUnavailable, resolveRealPaths } from './gc-shell'
+import { dockerIsUnavailable, findForeignCheckouts, resolveRealPaths } from './gc-shell'
+import { collectForeignCheckouts, explainFailedWalks } from './gc-foreign'
 import { sessionsFromFleet } from './gc-sessions'
 import {
   buildDirExists,
@@ -226,6 +227,11 @@ export async function gatherGc(
     (p) => fs.realpath(p)
   )
 
+  // Is another checkout (a worktree of another repo, a plain clone) hiding inside a worktree?
+  // One walk per worktree on its real path; a walk that fails leaves the worktree out of the
+  // answers, so it can never be ready, and its cause is named in the review reason.
+  const foreign = await collectForeignCheckouts(items, canonical, (p) => findForeignCheckouts(p))
+
   // Only folders that cannot pose as a worktree nested in a bundle (see foldersForBundles).
   const bundleFolders = foldersForBundles(guards.knownFolders, itemPaths, repoPaths)
 
@@ -244,13 +250,15 @@ export async function gatherGc(
     // A volume is owned only when no other folder may share its project (delta 1, item 1).
     knownFolders: bundleFolders,
     protectedProjects: guards.protectedProjects,
-    canonical
+    canonical,
+    foreignCheckouts: foreign.found
   }
   // A Keep mark holds only while the fate it was made under still holds: judge the fates
   // first, then rebuild with the marks that are still valid.
   let bundles = buildBundles({ ...input, keep: new Set() })
   const { keep, stale: staleKeeps } = judgeKeeps(bundles, prefs.keep)
   if (keep.size > 0) bundles = buildBundles({ ...input, keep })
+  bundles = explainFailedWalks(bundles, foreign.failed)
 
   const volumes = toHousekeepingVolumes(df)
   const housekeeping = {

@@ -92,7 +92,8 @@ describe('the scenario from the grade: a fate changed since the last gather', ()
         volumes: new Map(),
         knownFolders: [],
         protectedProjects: new Set(),
-        canonical: AS_GIVEN
+        canonical: AS_GIVEN,
+        foreignCheckouts: new Map(items.map((i) => [i.id, []]))
       })
     const fresh = build(new Set())
     expect(fresh[0]!.bucket).toBe('ready')

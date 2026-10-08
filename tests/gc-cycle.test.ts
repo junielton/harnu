@@ -568,7 +568,8 @@ describe('detached worktrees are never a ready item for the autopilot (delta 1, 
       volumes: new Map(),
       knownFolders: [],
       protectedProjects: new Set(),
-      canonical: AS_GIVEN
+      canonical: AS_GIVEN,
+      foreignCheckouts: new Map([[item.id, []]])
     })
     expect(b!.bucket).not.toBe('ready')
     expect(planCycle([b!], live()).toClean).toEqual([])
@@ -602,7 +603,8 @@ describe('S2 delta 4 contracts absorbed (delta 2, item 3)', () => {
       volumes: new Map(),
       knownFolders: [],
       protectedProjects: new Set(),
-      canonical: (p) => ({ path: p, resolved: p !== WT })
+      canonical: (p) => ({ path: p, resolved: p !== WT }),
+      foreignCheckouts: new Map(items.map((i) => [i.id, []]))
     })
     expect(b!.bucket).toBe('review')
     expect(b!.reason?.code).toBe('path-unresolved')
