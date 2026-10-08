@@ -764,3 +764,59 @@ describe('runBundle never rejects, whatever an op answers (delta 6, F3)', () => 
     expect(results[1]).toMatchObject({ ok: true, haltedAt: null })
   })
 })
+
+// ---- a nested worktree refuses even a confirmed review (delta 6, F1 concern 1) -----------
+
+describe('runBundle refuses a bundle with a nested worktree (delta 6, F1)', () => {
+  // The reprobe sees only this repo's `git worktree list`: a nested folder known only from
+  // knownFolders (a worktree of another repo) would pass it, so the bundle's own list
+  // refuses up front, whatever the operator confirmed.
+  const confirm = { removeVolumes: true, confirmReview: true }
+
+  it.each(['ready', 'review'] as const)(
+    'a %s bundle listing a nested worktree is refused with zero ops, even confirmed',
+    async (bucket) => {
+      const f = fakeOps()
+      const r = await runBundle(bundle('a', { bucket, nestedWorktrees: ['x'] }), f.ops, confirm)
+      expect(r).toMatchObject({
+        ok: false,
+        haltedAt: 'reprobe',
+        error: 'nested-worktree',
+        freedBytes: 0
+      })
+      expect(f.calls).toEqual([])
+    }
+  )
+
+  it.each<[string, unknown]>([
+    ['missing', undefined],
+    ['null', null],
+    ['not an array', 'x']
+  ])('a bundle whose list is %s is refused the same way', async (_label, value) => {
+    const f = fakeOps()
+    const b = bundle('a', { bucket: 'review' })
+    if (value === undefined) delete (b as Partial<WorktreeBundle>).nestedWorktrees
+    else (b as unknown as Record<string, unknown>).nestedWorktrees = value
+    const r = await runBundle(b, f.ops, confirm)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'nested-worktree' })
+    expect(f.calls).toEqual([])
+  })
+
+  it('an empty list still proceeds', async () => {
+    const f = fakeOps()
+    const r = await runBundle(bundle('a', { nestedWorktrees: [] }), f.ops, OPTS)
+    expect(r).toMatchObject({ ok: true, haltedAt: null })
+    expect(f.calls).toEqual(FULL)
+  })
+
+  it('runBatch continues past a refused bundle', async () => {
+    const f = fakeOps()
+    const results = await runBatch(
+      [bundle('a', { nestedWorktrees: ['x'] }), bundle('b')],
+      f.ops,
+      confirm
+    )
+    expect(results[0]).toMatchObject({ ok: false, error: 'nested-worktree' })
+    expect(results[1]).toMatchObject({ ok: true, haltedAt: null })
+  })
+})
