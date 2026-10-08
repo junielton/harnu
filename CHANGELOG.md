@@ -10,6 +10,21 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-08
+
+### Changed
+
+- **Cleanup now matches the approved mockup more closely.** Every map region shows its repo as a monospace `proj/www`-style label (the full path on hover), a legend row under the split bar names the three groups and says what a block's area means, Map / List and Scan now have icons, and the Docker card has a "runs each cycle" subtitle, a split bar of cache, images and orphan volumes, and draws orphan volumes in the amber review colour. The confirm dialog gained a close button, icons on the chips and the confirm button, monospace row titles, a one-line breakdown ("3 stacks stopped · 12 dependency folders removed · 12 worktrees trashed") and a "12 ready · 6.44 GB" footer.
+- **One unit everywhere in Cleanup.** Sizes use the app's decimal GB/MB on every surface; the docs examples follow.
+
+### Fixed
+
+- **Cleanup no longer invents a history of what ran.** After a failed clean the panel says what happened ("Nothing was changed", or "Stopped at <step>: <reason>") instead of ticking steps that never ran, and Docker volumes never show up as removed.
+- **Retry works for every failed item.** A failed ready item reopens the ready confirmation; a review item opens the review one.
+- **The confirmation can no longer drift under you.** If a scan or a running job changes what the dialog showed, it says "This changed since you opened it — review again" and Confirm stays off until you reopen it; what is sent is what you saw when it opened, including the worktree's folder.
+- **Every refusal has a plain sentence** in English and Portuguese (grace period not elapsed, protected now, another worktree inside it, and the rest), the needs-review counter ignores items you chose to keep, Keep skips orphan volumes, a failed Remove or Keep shows an error toast, and R / D / K / A work as the panel's shortcuts.
+- **Toast copy:** "1 cleaned · 1 needs review" / "… · 2 need review", and the success toast offers "View journal".
+
 ## 2026-10-07
 
 ### Added
