@@ -85,7 +85,7 @@ If the prompt names a skill that resolves to nothing on this machine — a typo,
 
 ## `observe` vs `act` — read this before you flip the switch
 
-**`observe`** is read-only, and the read-only-ness is enforced by an explicit allowlist, not by the prompt being polite. A worker in this mode can use `Read`, `Grep`, `Glob`, `WebFetch`, and a short list of read-only shell commands (`git log`, `git status`, `git diff`, `git show`, `gh pr list`, `gh pr view`, `gh run list`). `Edit`, `Write`, `NotebookEdit` and dispatching a subagent are explicitly denied. Only a handful of Harnu's own tools are reachable — reading memory, the fleet or a mission's progress, creating or updating a roadmap card, and sending a notification — every tool that would let it spawn a session, open a worktree, or dispatch a manifest is refused by name. An `observe` worker that decides something needs doing can raise a board card and notify you about it; it cannot act on that conclusion itself.
+**`observe`** is read-only, and the read-only-ness is enforced by an explicit allowlist, not by the prompt being polite. A worker in this mode can use `Read`, `Grep`, `Glob` and `WebFetch` — and **no shell at all**. `Bash` is explicitly denied, along with `Edit`, `Write`, `NotebookEdit` and dispatching a subagent. There used to be a short list of `git` and `gh` commands here; it was removed because a command that looks read-only can still write a file (`git log --output=<path>` overwrites whatever path you give it, and a planted `.git/config` can then run code on the next `git status`), and a rule cannot say "this command, but never with that flag". An `observe` worker gets its git and pull-request facts from Harnu's own read tools instead — the worktree listing, the fleet, and a mission's progress. Only a handful of Harnu's own tools are reachable — reading memory, the fleet or a mission's progress, creating or updating a roadmap card, and sending a notification — every tool that would let it spawn a session, open a worktree, or dispatch a manifest is refused by name. An `observe` worker that decides something needs doing can raise a board card and notify you about it; it cannot act on that conclusion itself.
 
 **`act` is full, unattended write access.** It runs with permissions bypassed and the entire Harnu toolset available — editing files, committing, pushing, dispatching sessions, anything a normal session with every permission pre-approved could do.
 
@@ -105,25 +105,15 @@ Every tick is a real model call, not a cheap poll. A worker set to run "every 5 
 
 Two related, gentler behaviors: a worker whose folder no longer exists at tick time disables itself and tells you why, rather than spawning into a directory that isn't there anymore; and a worker that fails three times in a row disables itself and notifies you, rather than quietly failing 288 times a day. Stopping a run by hand (the Stop button, next to a running worker) never counts toward that three-strikes count — the run is recorded as `stopped`, and the worker stays exactly as enabled as it was.
 
-## Extra read commands, and why yours might get rejected
+## Extra read commands are retired
 
-In `observe` mode, **Extra read commands** lets you add your own `Bash(...)` rules on top of the built-in read-only set — useful for a repo that uses `jj` instead of `git`. Harnu checks the **command** you typed, not just its shape: the verb has to be one it knows is read-only, and the rule is refused otherwise. `Bash(jj status:*)` and `Bash(git ls-files)` are accepted; `Bash(git push --force)`, `Bash(rm -rf /)` and `Bash(gh pr merge)` are not.
+Older versions of Harnu let an `observe` worker carry **Extra read commands** — your own `Bash(...)` rules added on top of the built-in set. Since `observe` has no shell any more, that field is gone from the worker's settings and grants nothing. A worker saved with some still has them on disk; every one is ignored when the worker runs, and it shows up in that worker's **Runs** tab next to the tick's permission denials as `rejected rule: Bash(…)`, so you can see it was refused rather than wondering why nothing changed.
 
-Four things get a rule rejected even when the verb itself looks harmless:
-
-- **Anything chained or substituted.** `Bash(git status && rm -rf /)`, `Bash(ls $(…))`, backticks, and pipes are refused outright — the verb at the front stops telling you what the command does.
-- **Anything that redirects.** A `>` or `>>` writes a file, whatever the verb was.
-- **A verb that runs another command.** `npm run <script>`, `node`, `xargs`, `env` and `sudo` all execute something chosen elsewhere, so none of them is on the list. If you were relying on `Bash(npm run lint:*)`, it no longer passes — that rule could run any script in your `package.json`.
-- **A writing flag on a reading verb**, however you write it — `-o file`, `-ofile` and `-lo` are all the same flag, and all three are caught.
-- **A `:*` wildcard on a verb an argument could make write.** `Bash(git status:*)` is fine; `Bash(git diff:*)` is not, because `git diff --output=FILE` writes a file and the wildcard would allow it. (`git log`, `git diff` and `git show` are already available to every `observe` worker without you adding them, so you lose nothing.)
-
-Some verbs are missing from the list for a reason that isn't obvious: `sort`, `uniq` and `tree` all write a file when you pass the right argument — `uniq IN OUT` overwrites `OUT` with no flag at all — so they are not read-only commands and Harnu does not accept them.
-
-A rejected rule is not silently dropped: it shows up in that worker's **Runs** tab next to the tick's permission denials, as `rejected rule: Bash(…)`, so you can see the field refused it rather than wondering why nothing changed. Harnu never narrows a rule into something weaker that it _would_ accept — it refuses it and tells you.
+If a worker genuinely needs a shell — to run `jj`, or a project script — it is no longer an `observe` job. Make it an `act` worker, and read the section above first: `act` has no allowlist and no safety net.
 
 ## Reading a worker's history
 
-The **Runs** tab shows the last result in full, a table of recent runs (time, status, turns, cost, duration), and — when a run got refused something — exactly what it tried and couldn't do (`Edit ×9`, `Bash(git commit) ×3`). A worker that keeps showing up there is telling you something: either its prompt is asking for more than `observe` allows, or it genuinely needs to be `act`. Harnu keeps the most recent 200 runs per worker; older ones roll off on their own.
+The **Runs** tab shows the last result in full, a table of recent runs (time, status, turns, cost, duration), and — when a run got refused something — exactly what it tried and couldn't do (`Edit ×9`, `Bash ×3`). A worker that keeps showing up there is telling you something: either its prompt is asking for more than `observe` allows, or it genuinely needs to be `act`. Harnu keeps the most recent 200 runs per worker; older ones roll off on their own.
 
 **Click any row in that table to read that run.** It expands in place, under the row, and shows what that particular run said, why it ended, and anything it was refused. All 200 stored runs have always carried that — until now only the newest one was readable, which made the table a scoreboard you could not ask a question of ("the 3am tick cost four times the others — what did it _do_?"). One row is open at a time; clicking it again closes it. A run that produced no text — one you stopped by hand, for instance — opens to a plain "This run produced no result", which is the honest answer rather than a blank panel.
 

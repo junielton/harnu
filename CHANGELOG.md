@@ -54,6 +54,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **The confirmation can no longer drift under you.** If a scan or a running job changes what the dialog showed, it says "This changed since you opened it — review again" and Confirm stays off until you reopen it; what is sent is what you saw when it opened, including the worktree's folder.
 - **Every refusal has a plain sentence** in English and Portuguese (grace period not elapsed, protected now, another worktree inside it, and the rest), the needs-review counter ignores items you chose to keep, Keep skips orphan volumes, a failed Remove or Keep shows an error toast, and R / D / K / A work as the panel's shortcuts.
 - **Toast copy:** "1 cleaned · 1 needs review" / "… · 2 need review", and the success toast offers "View journal".
+- Scheduler `observe` workers no longer have a shell. Their allowlist used to include `git log`, `git diff`, `git show`, `git status` and a few `gh` commands, and a "read-only" `git` command can still write a file: `git log --output=<path>` overwrites any path, so text from a commit message could land in `.git/config` and run as a command on the next `git status`. `Bash` is now denied outright in `observe` mode; the delivery watchdog reads worktrees and PRs through Harnu's own tools instead. The **Extra read commands** field is gone from worker settings, and any saved rules are ignored and listed as `rejected rule` in the Runs tab. `act` workers are unchanged.
 
 ## 2026-10-07
 

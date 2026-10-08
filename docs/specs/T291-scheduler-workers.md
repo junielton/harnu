@@ -312,6 +312,11 @@ filled in wrongly exactly once, on a Sunday, and then the label means nothing an
 warning on `act` is theater. The escape hatch already exists: a worker that needs
 `create_worktree` is an `act` worker.
 
+> **Superseded by BUG-164 (2026-10-08).** `observe` no longer has a shell: `Bash` is denied and
+> `extraReadCommands` grants nothing. A prefix rule like `Bash(git log:*)` cannot say "no
+> `--output` anywhere", and `--output=<path>` writes an arbitrary file (a path to code execution
+> through `.git/config`). The paragraph below and the BUG-108 verb validation are kept as history.
+
 What IS configurable is the dimension that genuinely varies per project:
 `extraReadCommands`, an **additive** field that accepts only read-only `Bash(...)` rules (a
 repo on `jj` adding `Bash(jj status:*)`). It can never add a Capy verb or a write tool. It
