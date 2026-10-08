@@ -76,3 +76,56 @@ describe('design.md names the real enforcement', () => {
     expect(t).toMatch(/right before (the|it opens the) (remove )?dialog/i)
   })
 })
+
+describe('the user doc is accurate about where each fact comes from (delta 4)', () => {
+  it('quotes the real refusal sentence, not a paraphrase', () => {
+    const t = userDoc()
+    expect(t).toContain('Changed since you confirmed — review it again.')
+    expect(t).not.toContain('Changed since you opened it')
+  })
+
+  it('says the diff, the uncommitted files and the head are read from git when you ask', () => {
+    const t = userDoc()
+    expect(t).toMatch(
+      /diff[^.]*uncommitted files[^.]*head[^.]*(read|taken) from git[^.]*(when|at the moment) you ask/i
+    )
+    expect(t).not.toMatch(
+      /summary of the branch, the changes and the pull request is taken by Harnu from the last scan/
+    )
+  })
+
+  it('says only the pull request state comes from the last scan', () => {
+    expect(userDoc()).toMatch(/pull request state[^.]*(from|as of) the last scan/i)
+  })
+
+  it('does not claim the re-check reads the pull request state "as it is now"', () => {
+    expect(userDoc()).not.toMatch(
+      /as it is now \(its head, its uncommitted files, its pull request state\)/
+    )
+    expect(userDoc()).toMatch(/pull request state as of the last scan/i)
+  })
+
+  it('says nested-worktree and locked items are never counted or pre-selected', () => {
+    const t = userDoc()
+    expect(t).toMatch(/nested/i)
+    expect(t).toMatch(/locked/i)
+    expect(t).toMatch(/never (counted|pre-selected)|left out of (it|the count)|excluded/i)
+  })
+})
+
+describe('every doc says exactly where the advisor can read', () => {
+  const where = (t: string): void => {
+    expect(t).toMatch(/inside the (repository|repo) folder|only inside the folder/i)
+    expect(t).toMatch(/\.env|ignored files/i)
+    expect(t).not.toMatch(/any file it opens in the worktree/i)
+  }
+  it('docs/user/cleanup.md', () => where(userDoc()))
+  it('CHANGELOG.md', () => where(changelog()))
+  it('design.md', () => where(designBlock()))
+
+  it('the user doc says an outside file cannot be opened, and a worktree outside the folder is not readable', () => {
+    const t = userDoc()
+    expect(t).toMatch(/(cannot|can't) open (a |any )?file outside/i)
+    expect(t).toMatch(/worktree[^.]*outside[^.]*(not readable|cannot read|works from the summary)/i)
+  })
+})
