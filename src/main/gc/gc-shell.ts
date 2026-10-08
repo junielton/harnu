@@ -193,7 +193,9 @@ const sameState = (p: SessionPresence): 'busy' | SessionPresence =>
 
 /**
  * True when every folder the container touches (working dir and bind mount sources) lies
- * inside `root`; false when it has none.
+ * inside `root`; false when it has none. Stricter than attribution on purpose: a folder
+ * above the worktree is NOT ignored here, because this vets containers about to be stopped
+ * and removed, and one run from the main checkout is not this worktree's to remove.
  */
 function containedIn(
   c: InspectedContainer,
@@ -206,9 +208,12 @@ function containedIn(
 }
 
 /**
- * Stacks with any container folder inside `root` or above it, as a sorted id list. Same
- * attribution as the builder (`containerFolders`, and a folder above the worktree shares
- * it), so a stack the scan saw is seen here by the same rule and the recheck agrees.
+ * Stacks with any container folder at `root` or inside it, as a sorted id list. Same
+ * attribution as the builder (`containerFolders`), so a stack the scan saw is seen here by
+ * the same rule and the recheck agrees. A folder strictly above the worktree is ignored, as
+ * the builder ignores it (orchestrator ruling, delta 5, 2026-10-08): Sail and most dev
+ * stacks bind-mount REPO, and a container that can merely see a proven-ready nested
+ * worktree does not depend on it. An unresolved one still refuses, in `unresolvedNear`.
  */
 function stackIdsInside(
   stacks: readonly StackGroup[],
@@ -219,7 +224,7 @@ function stackIdsInside(
   return stacks
     .filter((s) =>
       s.containers.some((c) =>
-        containerFolders(c, platform, canonical).some((d) => relatesTo(d, root))
+        containerFolders(c, platform, canonical).some((d) => d !== '' && isInside(d, root))
       )
     )
     .map((s) => s.id)
