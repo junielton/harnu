@@ -19,12 +19,7 @@ import { prefsPath as reaperPrefsPath } from '../reaper/prefs'
 import type { ReaperControl } from '../reaper/reaper-ipc'
 import { bucketFeed, setInheritedBuckets } from './gc-buckets'
 import { withActor } from './gc-actor'
-import {
-  keepFromFresh,
-  protectedFromGather,
-  withProvisionalKeep,
-  withoutStaleKeeps
-} from './gc-keep'
+import { pressKeep, protectedFromGather, withoutStaleKeeps } from './gc-keep'
 import {
   LEFTOVERS_FILE,
   pruneLeftovers,
@@ -256,27 +251,17 @@ export async function registerGcHandlers(
       ),
     keep: async (rawId) => {
       if (typeof rawId !== 'string') throw new Error('gc:keep expects a bundle id')
-      // 1. Protect NOW. The fresh gather below can take a minute, and a cycle that already
-      //    holds this item as ready would clean it meanwhile; any mark refuses it at the reprobe.
-      provisionalKeeps.add(rawId)
-      keepWrites.set(rawId, Date.now())
-      await persist(withProvisionalKeep(prefs, cache?.bundles ?? [], rawId))
-      try {
-        // 2. Record the real fate, from a gather made now: the cache may predate a scan, a
-        //    clean or a sweep, and a mark against an old fate is dropped by the next gather.
-        const next = keepFromFresh(prefs, (await gatherFresh()).bundles, rawId)
-        if (!next) {
-          await persist(withoutKeep(prefs, [rawId]))
-          keepWrites.delete(rawId)
-          throw new Error(`unknown cleanup item: ${rawId}; refresh and retry`)
-        }
-        keepWrites.set(rawId, Date.now())
-        await persist(next)
-        void gather().catch((err) => console.error('[gc] refresh after keep failed', err))
-        return next
-      } finally {
-        provisionalKeeps.delete(rawId)
-      }
+      const next = await pressKeep(rawId, {
+        prefs: () => prefs,
+        persist,
+        cachedBundles: () => cache?.bundles ?? [],
+        gatherFresh: async () => (await gatherFresh()).bundles,
+        keepWrites,
+        provisionalKeeps,
+        now: () => Date.now()
+      })
+      void gather().catch((err) => console.error('[gc] refresh after keep failed', err))
+      return next
     },
     unkeep: async (rawId) => {
       if (typeof rawId !== 'string') throw new Error('gc:unkeep expects a bundle id')
