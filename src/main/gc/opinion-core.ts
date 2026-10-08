@@ -209,8 +209,8 @@ function replaceOwn(text: string, own: string): string {
  * it is relative to that worktree and the one absolute path the prompt may carry.
  */
 export function scrubPaths(text: string, ownPath: string | null): string {
-  // `\/` is how JSON writes a slash: read it as the slash it stands for.
-  const unescaped = text.replace(/\\\//g, '/')
+  // A slash written as `\/` (JSON), `%2F` (URL) or `&#47;` / `&#x2F;` (HTML) is still a slash.
+  const unescaped = text.replace(/\\\/|%2[Ff]|&#47;|&#[xX]2[Ff];/g, '/')
   const input = ownPath ? replaceOwn(unescaped, ownPath) : unescaped
   let out = ''
   let i = 0
@@ -246,18 +246,22 @@ export function scrubPaths(text: string, ownPath: string | null): string {
         continue
       }
     } else if (c === '/') {
-      const next = input[i + 1] ?? ''
-      const rest = input.slice(i, i + 200)
+      // One or more slashes. A run of two or more (`//home/me/x`, `x//etc/passwd`) is a path that
+      // escaped its usual form; `scheme://file/…` (VS Code, Cursor, …) carries a filesystem path after it.
+      const slashes = /^\/+/.exec(input.slice(i, i + 16))?.[0].length ?? 1
+      const pathAt = i + slashes - 1
+      const first = input[i + slashes] ?? ''
+      const rest = input.slice(pathAt, pathAt + 200)
       const rootLooking = TWO_SEGMENTS.test(rest) || KNOWN_ROOTS.test(rest)
       const boundary = !/[A-Za-z~/\\]/.test(prev) && !GLUED_PREFIX.test(prev)
+      const schemeFile = /:\/\/file$/i.test(input.slice(Math.max(0, i - 8), i))
+      const opens = first !== '' && !isSpace(first) && !isNewline(first)
       const startsPath =
-        (boundary || (glue && rootLooking)) &&
-        next !== '' &&
-        next !== '/' &&
-        !isSpace(next) &&
-        !isNewline(next) &&
-        !(prev === ':' && next === '/')
-      if (startsPath) end = pathEnd(input, i, SLASH)
+        opens &&
+        (slashes === 1
+          ? (boundary || (glue && rootLooking) || schemeFile) && !(prev === ':' && first === '/')
+          : prev !== ':' && (boundary || glue || rootLooking))
+      if (startsPath) end = pathEnd(input, pathAt, SLASH)
     }
     if (end > i) {
       out += '<path>'
