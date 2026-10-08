@@ -72,6 +72,14 @@ describe('cleanup verbs: no false "nothing can be removed" claims (T445 delta 1)
     expect(featuresSection()).toContain('reasonCode')
   })
 
+  it('a git-locked worktree is named among the rules a release never overrides', () => {
+    expect(featuresSection()).toMatch(/locked/i)
+    expect(MCP_TOOLS.find((t) => t.name === 'release_worktree')!.description).toMatch(/locked/i)
+    const doc = read('docs/user/agent-control.md')
+    const start = doc.indexOf('### Telling Harnu a worktree is finished')
+    expect(doc.slice(start, doc.indexOf('## Tracking a mission', start))).toMatch(/locked/i)
+  })
+
   describe('T445 delta 2: the payload and its freshness are documented', () => {
     const TOTALS = ['ready', 'readyBytes', 'review', 'reviewBytes', 'inUse']
 

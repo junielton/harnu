@@ -444,6 +444,44 @@ describe('release_worktree handler (T445)', () => {
     })
   })
 
+  describe('locked: a release never lifts a worktree git has locked (T445)', () => {
+    // Merged, clean and idle by its facts, but the snapshot has it in review because git lists
+    // it as locked. The release lifts the grace window and nothing else.
+    const locked = bundle(WT_READY, {
+      bucket: 'review',
+      reason: { code: 'locked' as never, detail: 'This worktree is locked in git.' },
+      lastSignOfLifeAt: NOW - 3_600_000
+    })
+
+    it('stays review after a release, with the locked sentence', async () => {
+      const { release } = serve(snapshot([locked]))
+      const ack = JSON.parse(textOf(await handler({ folder: WT_READY }, ctx(WT_READY))))
+      expect(ack).toMatchObject({
+        ok: true,
+        bucketAfter: 'review',
+        reasonCode: 'locked',
+        reason: 'This worktree is locked in git; release it there first.',
+        deleted: false
+      })
+      expect(ack.message).not.toMatch(/is ready to clean from the next scan/)
+      expect(release).toHaveBeenCalledTimes(1)
+    })
+
+    it('any bundle the snapshot already holds in review stays there (a release lifts grace only)', async () => {
+      for (const code of ['nested-worktree', 'shared-stack', 'path-unresolved', 'dirty']) {
+        const b = bundle(WT_READY, {
+          bucket: 'review',
+          reason: { code: code as never, detail: 'x' },
+          lastSignOfLifeAt: NOW - 3_600_000
+        })
+        serve(snapshot([b]))
+        const ack = JSON.parse(textOf(await handler({ folder: WT_READY }, ctx(WT_READY))))
+        expect(ack.bucketAfter).toBe('review')
+        expect(ack.reasonCode).toBe(code)
+      }
+    })
+  })
+
   describe('D7: each guard is covered on its own (T445 delta 1)', () => {
     it('M8: a main checkout is recognised by a bundle’s repoPath alone', async () => {
       // No bundle at the main checkout, and no isMainWorktree flag on any folder.
