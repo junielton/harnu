@@ -303,11 +303,7 @@ export interface DialogRow {
  */
 const NOT_RISKY: ReadonlySet<string> = new Set(['open-idle-session', 'shared-stack'])
 
-export function dialogRows(
-  model: GcModel,
-  ids: readonly string[],
-  removeVolumes: boolean
-): DialogRow[] {
+export function dialogRows(model: GcModel, ids: readonly string[]): DialogRow[] {
   const rows: DialogRow[] = []
   for (const id of ids) {
     const b = model.byId.get(id)
@@ -317,7 +313,6 @@ export function dialogRows(
       chips.push('volume')
     } else {
       if (b.stackIds.length > 0) chips.push('stack')
-      if (removeVolumes && b.ownedVolumes.length > 0) chips.push('volume')
       if ((b.depsBytes ?? 0) > 0) chips.push('deps')
       chips.push('checkout')
       if (b.branch) chips.push('branch')

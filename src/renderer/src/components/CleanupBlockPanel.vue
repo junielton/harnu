@@ -40,7 +40,6 @@ const props = withDefaults(
     block: GcBlock
     state: BlockJobState | null
     failure: ItemFailure | null
-    removeVolumes: boolean
     /** `ReaperPrefs.dehydrateIdleDays`: an Alive worktree offers Dehydrate only once idle this long. */
     dehydrateIdleDays?: number
     /** A dehydrate/rehydrate in flight for this worktree; it disables those two buttons. */
@@ -108,17 +107,14 @@ const takes = computed<string[]>(() => {
   const out: string[] = []
   if (b.stackIds.length > 0)
     out.push(t('cleanup.gc.panel.takes.stack', { count: b.stackIds.length }, b.stackIds.length))
-  if (props.removeVolumes && b.ownedVolumes.length > 0) {
-    out.push(t('cleanup.gc.panel.takes.volume', { names: b.ownedVolumes.join(', ') }))
-  }
   if ((b.depsBytes ?? 0) > 0) out.push(t('cleanup.gc.panel.takes.deps'))
   out.push(t('cleanup.gc.panel.takes.checkout'))
   if (b.branch) out.push(t('cleanup.gc.panel.takes.branch', { branch: b.branch }))
   return out
 })
-const takesVolumes = computed(
-  () => isVolume.value || (props.removeVolumes && props.block.ownedVolumes.length > 0)
-)
+/** Only an orphan volume's own removal loses data; a worktree's volumes are kept, never removed with it. */
+const takesVolumes = computed(() => isVolume.value)
+const keptVolumes = computed(() => !isVolume.value && props.block.ownedVolumes.length > 0)
 
 // ---- legal actions ------------------------------------------------------------------------------
 
@@ -306,6 +302,13 @@ const showDetail = computed(() => !corpse.value && !!props.block.reasonDetail)
       >
         <TriangleAlert :size="12" :stroke-width="1.8" class="mt-px shrink-0" />
         {{ t('cleanup.gc.panel.volumesCannotRestore') }}
+      </p>
+      <p
+        v-if="keptVolumes"
+        class="text-[11px] leading-4 text-text-3"
+        data-testid="panel-volumes-kept"
+      >
+        {{ t('cleanup.gc.panel.volumesKept', { names: block.ownedVolumes.join(', ') }) }}
       </p>
     </section>
 

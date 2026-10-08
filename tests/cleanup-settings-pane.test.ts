@@ -9,6 +9,8 @@ import { i18n } from '@renderer/i18n'
 import { defaultGcPrefs, type GcPrefs } from '../src/main/gc/gc-prefs'
 import type { GcSnapshot } from '../src/main/gc/gc-wire'
 import { NOW } from './gc-fixtures'
+
+const t = (key: string): string => i18n.global.t(key) as string
 import { cloneGuardedApi } from './helpers/containers-api'
 
 /**
@@ -93,15 +95,18 @@ describe('CleanupSettingsPane — every GcPrefs field has a control', () => {
       'gc-grace',
       'gc-cap',
       'gc-cat-worktrees',
-      'gc-cat-volumes',
       'gc-cat-docker-cache',
-      'gc-remove-volumes',
       'gc-cache-age',
       'gc-never-input'
     ]) {
       expect(w.find(`[data-testid="${id}"]`).exists(), id).toBe(true)
     }
-    // The shape of the contract: GcPrefs minus version / keep / firstReportAcknowledged.
+    // D1: there is no volumes switch and no removeVolumes switch — volumes are always kept.
+    expect(w.find('[data-testid="gc-cat-volumes"]').exists()).toBe(false)
+    expect(w.find('[data-testid="gc-remove-volumes"]').exists()).toBe(false)
+    // The shape of the contract: GcPrefs minus version / keep / firstReportAcknowledged. `categories`
+    // and `removeVolumes` stay in the object S3 still sends back until its delta 2 drops them, but
+    // the pane exposes only what still means something.
     const editable = Object.keys(GC).filter(
       (k) => !['version', 'keep', 'firstReportAcknowledged'].includes(k)
     )
@@ -126,7 +131,6 @@ describe('CleanupSettingsPane — every GcPrefs field has a control', () => {
     expect((tid(w, 'gc-grace').element as HTMLInputElement).value).toBe('5')
     expect((tid(w, 'gc-cap').element as HTMLInputElement).value).toBe('30')
     expect((tid(w, 'gc-cache-age').element as HTMLInputElement).value).toBe('7')
-    expect(tid(w, 'gc-remove-volumes').attributes('aria-checked')).toBe('true')
     expect(radio(w, '1h').attributes('aria-checked')).toBe('true')
     w.unmount()
   })
@@ -159,28 +163,20 @@ describe('CleanupSettingsPane — writes the whole object', () => {
     w.unmount()
   })
 
-  it('each category toggle writes its own flag and keeps the other two', async () => {
+  it('each category toggle writes its own flag and keeps the others as they were', async () => {
     const w = await mountPane()
-    await tid(w, 'gc-cat-volumes').trigger('click')
+    await tid(w, 'gc-cat-worktrees').trigger('click')
     await flushPromises()
     expect(setGc).toHaveBeenLastCalledWith({
       ...GC,
-      categories: { worktrees: true, volumes: false, dockerCache: true }
+      categories: { worktrees: false, volumes: true, dockerCache: true }
     })
     await tid(w, 'gc-cat-docker-cache').trigger('click')
     await flushPromises()
     expect(setGc).toHaveBeenLastCalledWith({
       ...GC,
-      categories: { worktrees: true, volumes: false, dockerCache: false }
+      categories: { worktrees: false, volumes: true, dockerCache: false }
     })
-    w.unmount()
-  })
-
-  it('removeVolumes writes its flag', async () => {
-    const w = await mountPane()
-    await tid(w, 'gc-remove-volumes').trigger('click')
-    await flushPromises()
-    expect(setGc).toHaveBeenLastCalledWith({ ...GC, removeVolumes: false })
     w.unmount()
   })
 
@@ -241,22 +237,28 @@ describe('CleanupSettingsPane — writes the whole object', () => {
   })
 })
 
-describe('CleanupSettingsPane — volumes cannot be restored', () => {
-  it('the warning sits in the same row as the removeVolumes switch', async () => {
+describe('CleanupSettingsPane — volumes are always kept', () => {
+  it('states the rule and that a removed volume cannot be restored, as text, not as a switch', async () => {
     const w = await mountPane()
-    const warning = tid(w, 'gc-remove-volumes-warning')
-    const row = warning.element.closest('div.flex.items-start')!
-    expect(row.contains(tid(w, 'gc-remove-volumes').element)).toBe(true)
+    const rule = tid(w, 'gc-volumes-rule')
+    expect(rule.text()).toContain(t('cleanup.gc.settings.volumesRule.title'))
+    expect(rule.text()).toContain(t('cleanup.gc.settings.volumesRule.body'))
+    const warning = tid(w, 'gc-volumes-warning')
+    expect(rule.element.contains(warning.element)).toBe(true)
     expect(warning.classes()).toContain('text-warning')
+    expect(rule.find('input, [role="switch"]').exists()).toBe(false)
     w.unmount()
   })
 
   it('the copy says so, in both locales', () => {
     for (const locale of ['en', 'pt-BR']) {
       const msgs = JSON.parse(read(`src/renderer/src/i18n/${locale}.json`))
-      const text: string = msgs.cleanup?.gc?.settings?.removeVolumes?.warning ?? ''
-      expect(text, locale).not.toBe('')
-      if (locale === 'en') expect(text.toLowerCase()).toContain('cannot be restored')
+      const rule = msgs.cleanup?.gc?.settings?.volumesRule ?? {}
+      for (const k of ['title', 'body', 'warning']) expect(rule[k], `${locale}:${k}`).toBeTruthy()
+      if (locale === 'en') expect(rule.warning.toLowerCase()).toContain('cannot be restored')
+      // The removed switches leave no dead strings behind.
+      expect(msgs.cleanup.gc.settings.removeVolumes, locale).toBeUndefined()
+      expect(msgs.cleanup.gc.settings.categories.volumes, locale).toBeUndefined()
     }
   })
 })
@@ -379,13 +381,11 @@ describe('CleanupSettingsPane — copy', () => {
       'clean.intro',
       'categories.worktrees.label',
       'categories.worktrees.hint',
-      'categories.volumes.label',
-      'categories.volumes.hint',
       'categories.dockerCache.label',
       'categories.dockerCache.hint',
-      'removeVolumes.label',
-      'removeVolumes.hint',
-      'removeVolumes.warning',
+      'volumesRule.title',
+      'volumesRule.body',
+      'volumesRule.warning',
       'cacheMaxAge.label',
       'cacheMaxAge.hint',
       'never.eyebrow',

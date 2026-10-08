@@ -8401,11 +8401,11 @@ much" and "do it" read as one sentence: `Clean 12 corpses · 6.0 GiB`. It acts o
 Dialog anatomy (`--surface`, `--border-2`, radius 10, 16px padding), docked right of the map;
 **below 1100px it overlays the map as a popover** instead of docking (the mockup's honest problem).
 Top to bottom: name (13px mono, `--text`) and repo (11px `--text-4`); size (20px/28px, 500); the
-**composition bar** (8px, `--green` deps · `--warning` owned volumes · `--border-2` checkout, with a
-legend of 11px rows and sizes) — volume bytes are not reported by the engine, so the volumes segment is
-drawn only when a size exists and otherwise the volumes are listed by name; **Why it is here** (13px
+**composition bar** (8px, `--green` deps · `--border-2` checkout, with a legend of 11px rows and sizes)
+— volume bytes are not reported by the engine, so a worktree's volumes are listed by name, never drawn; **Why it is here** (13px
 `--text-2`, the engine's one-sentence reason, dirty-file count in `--warning`); **Takes with it** (the
-confirm dialog's preview: stack, owned volume, deps, checkout, branch); then the actions, stacked,
+confirm dialog's preview: stack containers, deps, checkout, branch; a worktree's volumes are kept and a
+note says so); then the actions, stacked,
 `justify-content: flex-start`, shortcut `kbd` right: **Remove** (Danger), **Dehydrate** (Soft),
 **Keep** (Ghost), **Ask for an opinion** (Soft, disabled, "coming in S6"). A Corpse block's panel offers
 "Clean now" only. An orphan-volume block shows its project name and "no known worktree".
@@ -8433,10 +8433,12 @@ Dialog anatomy (radius 10, `--border-2`, `--shadow-pop`) at `min(720px, 90vw)`, 
 bucket icon, `repo › worktree` + branch (11px mono `--text-4`), the **removal chips**, size right.
 
 - **Removal chip** (`.wchip`): Badge Default geometry at 10.5px/14px, radius 3, listing what the row takes
-  with it — stack · owned volume · deps · checkout · branch. The **volume chip uses the Warning triple**.
+  with it — stack · deps · checkout · branch for a worktree; **a worktree's volumes are never listed**
+  (they are kept). An orphan-volume row carries the one **volume chip, which uses the Warning triple**.
 - **Warning callout** (the SweepConfirmDialog callout): `--warning-soft` / `--warning-line`,
-  `triangle-alert`. Corpse variant: _volumes cannot be restored_; code, branch and dependencies can come
-  back (archive refs, OS trash, `setup`) — and how. Remove-selected variant: each row also carries its
+  `triangle-alert`. Corpse variant: _Volumes are kept. They show up in Needs review afterwards._; code,
+  branch and dependencies can come back (archive refs, OS trash, `setup`) — and how. A row that is an
+  orphan volume adds _Volumes cannot be restored_ in `--warning`. Remove-selected variant: each row also carries its
   one-sentence reason; a stronger line names how many picked worktrees hold work that no other branch has,
   and says their code stays recoverable from archive refs and the OS trash.
 - **Footer:** total (12.5px/500) left; **Cancel** (Ghost) and the confirm. Confirm is **Success** for
@@ -8452,8 +8454,10 @@ Its own region under the map (`.dk`, `border-border`, radius 7, `bg-surface`): h
 title, and an **Inspect stacks** text link (11px/500 `--text-2`, right-aligned) that opens the Containers
 inspector — the only in-app door to it now that the Containers footer pill is gone. (The mockup's "{n} stacks in use, never touched" note is omitted: the snapshot carries no such count.) Three blocks (Corpse triple, `min-width: 200px`): **build
 cache**, **dangling images**, **orphan volumes** — name, size right, a one-line sub, a toggle
-(`ToggleSwitch`) bound to `categories.dockerCache` / `categories.volumes`. The orphan-volumes block
-carries the Warning badge "can't be restored" and the project name of each volume. The engine reports the
+(`ToggleSwitch`) on the cache and image blocks, both bound to `categories.dockerCache`. The orphan-volumes
+block has **no switch** — a volume is never removed automatically — and carries the Warning badge "can't be
+restored", the project name of each volume and the line "Never removed automatically. Remove each one
+yourself in Needs review." The engine reports the
 **last cycle's reclaimed** build-cache and image bytes but no pending size, so those two blocks show the
 reclaimed figure and read "size unavailable until the next cycle" for the pending part rather than
 inventing a number. Zero state: three muted zeros.
@@ -8515,9 +8519,10 @@ control-right rows with `SettingHint`). Groups, 16px apart, every control writin
 
 - **Autopilot** — `autopilot` toggle; **Run every** (`SegmentedControl`: 30m / 1h / 6h / Daily, the
   Reaper timer's interval); **Grace period** (days); **Per-cycle cap** (items).
-- **What it cleans** — three toggles: `categories.worktrees`, `categories.volumes`,
-  `categories.dockerCache`; **Remove volumes with a worktree** (`removeVolumes`) with the text
-  **"volumes cannot be restored"** in `--warning` right under its hint; **Build cache max age** (days).
+- **What it cleans** — two toggles: `categories.worktrees`, `categories.dockerCache`; **Build cache max
+  age** (days); and, instead of a volumes switch, a `--warning-soft` note: **Docker volumes are always
+  kept** — cleaning a worktree never removes its volumes; they show up in Needs review as orphan volumes
+  and each one is removed by hand — with "a removed volume cannot be restored" in `--warning`.
 - **Never clean** — a list of absolute repo or worktree paths (`neverClean`), add/remove.
 - **Scan** (Reaper-only, kept): scan in the background, notify, never delete remote branches, protected
   branches, minimum age. These are not GC prefs and are not duplicated anywhere.

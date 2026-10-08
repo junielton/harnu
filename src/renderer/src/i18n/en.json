@@ -2385,7 +2385,8 @@
         "rehydrate": "Rehydrate",
         "keep": "Keep",
         "ask": "Ask for an opinion",
-        "askSoon": "coming in S6"
+        "askSoon": "coming in S6",
+        "volumesKept": "Its volumes ({names}) are kept. They show up in Needs review afterwards."
       },
       "needsYou": {
         "title": "Needs you",
@@ -2438,7 +2439,7 @@
         "riskMarker": "May hold work that no other branch has",
         "warnRisk": "{n} of these holds work that no other branch has. Its code stays recoverable from the archive refs and the OS trash. | {n} of these hold work that no other branch has. Their code stays recoverable from the archive refs and the OS trash.",
         "warnVolumesLost": "Volumes cannot be restored.",
-        "warnVolumesKept": "Docker volumes are kept.",
+        "warnVolumesKept": "Volumes are kept. They show up in Needs review afterwards.",
         "warnRecover": "Code and branch come back from the archive refs and the OS trash, and dependencies come back through the repo's setup.",
         "total": "Total {size}",
         "cancel": "Cancel",
@@ -2482,8 +2483,8 @@
         "more": "+{n} more",
         "toggleCache": "Clean build cache automatically",
         "toggleImages": "Clean dangling images automatically",
-        "toggleVolumes": "Include orphan volumes in cleaning",
-        "inspect": "Inspect stacks"
+        "inspect": "Inspect stacks",
+        "volumesNote": "Never removed automatically. Remove each one yourself in Needs review."
       },
       "split": {
         "label": "Disk split",
@@ -2571,19 +2572,10 @@
             "label": "Worktrees",
             "hint": "Merged, clean, idle worktrees, and the Docker stacks that run from them."
           },
-          "volumes": {
-            "label": "Volumes",
-            "hint": "Off: the autopilot leaves the volumes of a cleaned worktree."
-          },
           "dockerCache": {
             "label": "Docker build cache and dangling images",
             "hint": "Prunes build cache older than the age below and images no container uses. Never touches an image a stack uses."
           }
-        },
-        "removeVolumes": {
-          "label": "Remove volumes with a worktree",
-          "hint": "When a worktree is cleaned, also remove the named volumes only its stack used. Applies to cleaning by hand too.",
-          "warning": "Volumes cannot be restored: a removed volume and its data are gone."
         },
         "cacheMaxAge": {
           "label": "Build cache max age",
@@ -2604,6 +2596,11 @@
           "eyebrow": "Background scan and branches",
           "intro": "Cleanup scans every known repo on a timer and logs what becomes safe to clean. These settings also cover local and remote branches.",
           "autoScanHint": "Runs the scan on a timer without opening Cleanup. The autopilot rides this scan, so turning it off also stops the autopilot."
+        },
+        "volumesRule": {
+          "title": "Docker volumes are always kept",
+          "body": "Cleaning a worktree, by hand or automatically, never removes its volumes. Once the worktree is gone they show up in Needs review as orphan volumes, with their size and compose project, and you remove each one yourself.",
+          "warning": "A removed volume and its data cannot be restored."
         }
       },
       "refusal": {

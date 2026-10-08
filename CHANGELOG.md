@@ -93,8 +93,8 @@ mod: live`, `off`, or `legacy` with the reason), and the System Monitor shows th
   is visible but not available yet. See [Cleanup](docs/user/cleanup.md).
 - **Cleanup settings for everything automatic.** Settings -> Cleanup now holds every
   autopilot option: on/off, how often it runs, the grace period, the per-cycle cap, which
-  categories it cleans, whether volumes go with a worktree (they cannot be restored), the
-  build-cache age and a never-clean list.
+  categories it cleans, the build-cache age and a never-clean list, and it says plainly that
+  Docker volumes are always kept (a removed volume cannot be restored).
 
 ### Changed
 

@@ -70,13 +70,13 @@ The autopilot rides the background scan, so it needs **Automatic background scan
 
 **What it cleans** (these switches govern the autopilot; cleaning by hand always asks first)
 
-| Setting                                | Default | What it does                                                                                                                                                                                                                                 |
-| -------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Worktrees                              | on      | Off: the autopilot cleans no worktrees.                                                                                                                                                                                                      |
-| Volumes                                | on      | Off: the autopilot leaves the volumes of a worktree it cleans.                                                                                                                                                                               |
-| Docker build cache and dangling images | on      | Off: no build-cache or dangling-image pruning. It never removes an image a stack uses.                                                                                                                                                       |
-| Remove volumes with a worktree         | on      | When a worktree is cleaned, also remove the named volumes only its stack used. Applies to cleaning by hand as well. **Volumes cannot be restored**: this is the one step that cannot be undone, and the warning sits right under the switch. |
-| Build cache max age                    | 7 days  | Build cache older than this is pruned (1 - 365 days).                                                                                                                                                                                        |
+| Setting                                | Default | What it does                                                                           |
+| -------------------------------------- | ------- | -------------------------------------------------------------------------------------- |
+| Worktrees                              | on      | Off: the autopilot cleans no worktrees.                                                |
+| Docker build cache and dangling images | on      | Off: no build-cache or dangling-image pruning. It never removes an image a stack uses. |
+| Build cache max age                    | 7 days  | Build cache older than this is pruned (1 - 365 days).                                  |
+
+**Docker volumes are always kept.** There is no switch for this: cleaning a worktree, by hand or automatically, never removes its volumes. Once the worktree is gone they appear in Needs review as orphan volumes, with their size and compose project, and you remove each one yourself. A removed volume and its data cannot be restored.
 
 **Never clean**
 

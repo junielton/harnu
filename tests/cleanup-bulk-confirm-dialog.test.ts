@@ -15,7 +15,7 @@ function row(over: Partial<DialogRow> = {}): DialogRow {
     name: 'PROJ-41-feature',
     branch: 'feat/proj-41',
     bytes: 512 * MB,
-    chips: ['stack', 'volume', 'deps', 'checkout', 'branch'],
+    chips: ['stack', 'deps', 'checkout', 'branch'],
     reasonCode: null,
     reasonDetail: null,
     project: null,
@@ -40,11 +40,10 @@ let wrapper: VueWrapper | null = null
 
 async function open(
   rows: DialogRow[],
-  mode: 'corpses' | 'decide' = 'corpses',
-  removeVolumes = true
+  mode: 'corpses' | 'decide' = 'corpses'
 ): Promise<VueWrapper> {
   wrapper = mount(CleanupBulkConfirmDialog, {
-    props: { rows, mode, removeVolumes },
+    props: { rows, mode },
     global: { plugins: [i18n] },
     attachTo: document.body
   })
@@ -93,49 +92,62 @@ describe('CleanupBulkConfirmDialog — what it discloses', () => {
     expect(list.getAttribute('tabindex')).toBe('0')
   })
 
-  it('states what each removal takes, and the volume chip uses the warning triple', async () => {
+  it('states what each worktree removal takes: stack, deps, checkout, branch — never a volume', async () => {
     await open([row()])
     const chips = qa('[data-testid="bulk-row"] [data-chip]')
     expect(chips.map((c) => c.getAttribute('data-chip'))).toEqual([
       'stack',
-      'volume',
       'deps',
       'checkout',
       'branch'
     ])
-    const volume = chips.find((c) => c.getAttribute('data-chip') === 'volume')!
-    expect(volume.className).toContain('text-warning')
-    expect(volume.className).toContain('bg-warning-soft')
     expect(chips.find((c) => c.getAttribute('data-chip') === 'stack')!.className).not.toContain(
       'text-warning'
     )
   })
+
+  it('an orphan volume row carries the one chip that uses the warning triple', async () => {
+    await open(
+      [
+        row({
+          id: 'volume:pg',
+          kind: 'volume',
+          name: 'pg',
+          branch: null,
+          chips: ['volume'],
+          reasonCode: 'no-known-worktree',
+          project: 'old-app',
+          risk: false
+        })
+      ],
+      'decide'
+    )
+    const volume = qa('[data-testid="bulk-row"] [data-chip="volume"]')[0]!
+    expect(volume.className).toContain('text-warning')
+    expect(volume.className).toContain('bg-warning-soft')
+  })
 })
 
 describe('CleanupBulkConfirmDialog — copy by mode', () => {
-  it('corpses: Success confirm, volumes cannot be restored, and how the rest comes back', async () => {
+  it('corpses: Success confirm, volumes are kept, and how the rest comes back', async () => {
     await open([row()], 'corpses')
     const confirm = q('[data-testid="bulk-confirm"]')!
     expect(confirm.textContent?.trim()).toBe('Clean 1 corpse')
     expect(confirm.className).toContain('text-green')
     const warn = q('[data-testid="bulk-warning"]')!.textContent!
-    expect(warn).toContain('Volumes cannot be restored.')
+    expect(warn).toContain('Volumes are kept. They show up in Needs review afterwards.')
+    expect(warn).not.toContain('cannot be restored')
     expect(warn).toContain('archive refs')
     expect(warn).toContain('OS trash')
+    expect(q('[data-testid="bulk-volumes-kept"]')).not.toBeNull()
+    expect(q('[data-testid="bulk-volumes-lost"]')).toBeNull()
     expect(q('[data-testid="bulk-risk"]')).toBeNull()
     expect(q('[data-testid="bulk-reason"]')).toBeNull()
   })
 
-  it('corpses: says volumes are kept when removeVolumes is off', async () => {
-    await open([row({ chips: ['checkout', 'branch'] })], 'corpses', false)
-    const warn = q('[data-testid="bulk-warning"]')!.textContent!
-    expect(warn).toContain('Docker volumes are kept.')
-    expect(warn).not.toContain('cannot be restored')
-  })
-
-  it('corpses: says volumes are kept when no row owns one', async () => {
-    await open([row({ chips: ['checkout'] })], 'corpses', true)
-    expect(q('[data-testid="bulk-volumes-kept"]')).not.toBeNull()
+  it('corpses: never shows a volume chip for a worktree, whatever it owns', async () => {
+    await open([row({ chips: ['stack', 'deps', 'checkout', 'branch'] })], 'corpses')
+    expect(qa('[data-chip="volume"]')).toHaveLength(0)
   })
 
   it('decide: Danger confirm, a reason per row, and the stronger risk line with the count', async () => {
@@ -179,7 +191,7 @@ describe('CleanupBulkConfirmDialog — copy by mode', () => {
       reasonDetail: 'No known worktree.',
       risk: false
     })
-    await open([volume], 'decide', false)
+    await open([volume], 'decide')
     expect(q('[data-testid="bulk-confirm"]')!.textContent?.trim()).toBe('Remove 1 item')
     expect(q('[data-testid="bulk-row"]')!.textContent).toContain('Docker volume pg_data')
     expect(q('[data-testid="bulk-row"]')!.textContent).toContain('Project old-app')

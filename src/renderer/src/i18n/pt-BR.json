@@ -2385,7 +2385,8 @@
         "rehydrate": "Rehydrate",
         "keep": "Manter",
         "ask": "Pedir uma opinião",
-        "askSoon": "chega na S6"
+        "askSoon": "chega na S6",
+        "volumesKept": "Os volumes dele ({names}) são mantidos. Depois eles aparecem em Precisa de você."
       },
       "needsYou": {
         "title": "Precisa de você",
@@ -2438,7 +2439,7 @@
         "riskMarker": "Pode conter trabalho que nenhuma outra branch tem",
         "warnRisk": "{n} destes contém trabalho que nenhuma outra branch tem. O código continua recuperável pelas refs de arquivo e pela lixeira do sistema. | {n} destes contêm trabalho que nenhuma outra branch tem. O código continua recuperável pelas refs de arquivo e pela lixeira do sistema.",
         "warnVolumesLost": "Volumes não podem ser restaurados.",
-        "warnVolumesKept": "Os volumes do Docker são mantidos.",
+        "warnVolumesKept": "Os volumes são mantidos. Depois eles aparecem em Precisa de você.",
         "warnRecover": "O código e a branch voltam pelas refs de arquivo e pela lixeira do sistema, e as dependências voltam pelo setup do repositório.",
         "total": "Total {size}",
         "cancel": "Cancelar",
@@ -2482,8 +2483,8 @@
         "more": "+{n} outros",
         "toggleCache": "Limpar o build cache automaticamente",
         "toggleImages": "Limpar imagens dangling automaticamente",
-        "toggleVolumes": "Incluir volumes órfãos na limpeza",
-        "inspect": "Inspecionar stacks"
+        "inspect": "Inspecionar stacks",
+        "volumesNote": "Nunca são removidos automaticamente. Remova cada um você mesmo em Precisa de você."
       },
       "split": {
         "label": "Divisão do disco",
@@ -2571,19 +2572,10 @@
             "label": "Worktrees",
             "hint": "Worktrees mergeadas, limpas e ociosas, e os stacks do Docker que rodam a partir delas."
           },
-          "volumes": {
-            "label": "Volumes",
-            "hint": "Desligado: o autopilot deixa os volumes de uma worktree limpa."
-          },
           "dockerCache": {
             "label": "Cache de build do Docker e imagens órfãs",
             "hint": "Remove cache de build mais antigo que a idade abaixo e imagens que nenhum container usa. Nunca toca em uma imagem que um stack usa."
           }
-        },
-        "removeVolumes": {
-          "label": "Remover volumes junto com a worktree",
-          "hint": "Ao limpar uma worktree, remove também os volumes nomeados que só o stack dela usava. Vale para a limpeza manual também.",
-          "warning": "Volumes não podem ser restaurados: um volume removido e seus dados somem."
         },
         "cacheMaxAge": {
           "label": "Idade máxima do cache de build",
@@ -2604,6 +2596,11 @@
           "eyebrow": "Escaneamento em segundo plano e branches",
           "intro": "A Limpeza escaneia todo repo conhecido em um timer e registra o que fica seguro para limpar. Estas configurações também cobrem branches locais e remotas.",
           "autoScanHint": "Roda o escaneamento em um timer sem abrir a Limpeza. O autopilot pega carona nesse escaneamento, então desligá-lo também para o autopilot."
+        },
+        "volumesRule": {
+          "title": "Os volumes do Docker são sempre mantidos",
+          "body": "Limpar uma worktree, à mão ou automaticamente, nunca remove os volumes dela. Quando a worktree some, eles aparecem em Precisa de você como volumes órfãos, com tamanho e projeto do compose, e você remove cada um você mesmo.",
+          "warning": "Um volume removido e os dados dele não podem ser restaurados."
         }
       },
       "refusal": {

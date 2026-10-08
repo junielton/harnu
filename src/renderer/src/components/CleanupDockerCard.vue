@@ -20,7 +20,7 @@ const props = defineProps<{
   prefs: GcPrefs
 }>()
 const emit = defineEmits<{
-  toggle: [category: 'dockerCache' | 'volumes', value: boolean]
+  toggle: [category: 'dockerCache', value: boolean]
   inspect: []
 }>()
 const { t } = useI18n()
@@ -106,18 +106,11 @@ const blockClass = (on: boolean): string =>
         </div>
       </div>
 
-      <div :class="blockClass(prefs.categories.volumes)" data-testid="docker-volumes">
+      <div :class="blockClass(true)" data-testid="docker-volumes">
         <div class="flex items-center gap-2">
           <span class="text-[12.5px] font-medium text-text">{{
             t('cleanup.gc.docker.orphanVolumes')
           }}</span>
-          <ToggleSwitch
-            class="ml-auto"
-            :model-value="prefs.categories.volumes"
-            :aria-label="t('cleanup.gc.docker.toggleVolumes')"
-            data-testid="docker-toggle-volumes"
-            @update:model-value="emit('toggle', 'volumes', $event)"
-          />
         </div>
         <div
           class="text-[12.5px]"
@@ -141,6 +134,9 @@ const blockClass = (on: boolean): string =>
         >
           {{ t('cleanup.gc.docker.cantRestore') }}
         </span>
+        <div class="text-[11px] leading-4 text-text-3" data-testid="docker-volumes-note">
+          {{ t('cleanup.gc.docker.volumesNote') }}
+        </div>
       </div>
     </div>
   </section>

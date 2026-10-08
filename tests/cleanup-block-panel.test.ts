@@ -51,14 +51,13 @@ function blockWith(
 type Props = {
   state?: BlockJobState | null
   failure?: ItemFailure | null
-  removeVolumes?: boolean
   dehydrateIdleDays?: number
   hydrationBusy?: 'dehydrating' | 'rehydrating' | null
 }
 
 function mountPanel(block: GcBlock, props: Props = {}) {
   return mount(CleanupBlockPanel, {
-    props: { block, state: null, failure: null, removeVolumes: true, ...props },
+    props: { block, state: null, failure: null, ...props },
     global: { plugins: [i18n] }
   })
 }
@@ -132,14 +131,14 @@ describe('CleanupBlockPanel — actions by bucket and kind', () => {
     expect(w.emitted('close')).toHaveLength(1)
   })
 
-  it('shows what a removal takes with it, and the volume warning only when volumes go', () => {
+  it("shows what a removal takes with it — never the worktree's volumes, which are kept (D1)", () => {
     const w = mountPanel(blockWith('decide'))
     const lines = w.findAll('[data-testid="panel-takes"] li').map((l) => l.text())
-    expect(lines).toHaveLength(5) // stack, volume, deps, checkout, branch
-    expect(has(w, 'panel-volume-warning')).toBe(true)
-    const keepVolumes = mountPanel(blockWith('decide'), { removeVolumes: false })
-    expect(keepVolumes.findAll('[data-testid="panel-takes"] li')).toHaveLength(4)
-    expect(has(keepVolumes, 'panel-volume-warning')).toBe(false)
+    expect(lines).toHaveLength(4) // stack, deps, checkout, branch
+    expect(has(w, 'panel-volume-warning')).toBe(false)
+    expect(w.get('[data-testid="panel-volumes-kept"]').text()).toBe(
+      t('cleanup.gc.panel.volumesKept', { names: 'v1' })
+    )
   })
 
   it('draws the composition bar from deps and checkout, and lists volume names (no volume bytes exist)', () => {

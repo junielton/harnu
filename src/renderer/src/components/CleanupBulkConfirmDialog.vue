@@ -20,7 +20,6 @@ import type { DialogRow, RemovalChip } from '../lib/gc-model'
 const props = defineProps<{
   rows: DialogRow[]
   mode: 'corpses' | 'decide'
-  removeVolumes: boolean
 }>()
 const emit = defineEmits<{ confirm: []; cancel: [] }>()
 const { t, te } = useI18n()
@@ -29,12 +28,8 @@ const count = computed(() => props.rows.length)
 const totalBytes = computed(() => props.rows.reduce((a, r) => a + r.bytes, 0))
 const hasVolumeRow = computed(() => props.rows.some((r) => r.kind === 'volume'))
 const riskCount = computed(() => props.rows.filter((r) => r.risk).length)
-/** An orphan volume row is always removed; a worktree's owned volumes only with `removeVolumes`. */
-const volumesGoAway = computed(
-  () =>
-    hasVolumeRow.value ||
-    (props.removeVolumes && props.rows.some((r) => r.chips.includes('volume')))
-)
+/** A worktree's volumes are never removed with it (they become orphan volumes, reviewed one by one). */
+const hasWorktreeRow = computed(() => props.rows.some((r) => r.kind === 'worktree'))
 
 const title = computed(() => {
   if (props.mode === 'corpses') {
@@ -235,15 +230,15 @@ function onBackdropMousedown(e: MouseEvent): void {
             </p>
             <p class="m-0">
               <b
-                v-if="volumesGoAway"
+                v-if="hasVolumeRow"
                 class="font-semibold text-warning"
                 data-testid="bulk-volumes-lost"
                 >{{ t('cleanup.gc.confirm.warnVolumesLost') }}</b
               >
-              <span v-else data-testid="bulk-volumes-kept">{{
+              <span v-if="hasWorktreeRow" data-testid="bulk-volumes-kept">{{
                 t('cleanup.gc.confirm.warnVolumesKept')
               }}</span>
-              {{ t('cleanup.gc.confirm.warnRecover') }}
+              <template v-if="hasWorktreeRow">{{ t('cleanup.gc.confirm.warnRecover') }}</template>
             </p>
           </div>
         </div>

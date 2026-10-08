@@ -321,21 +321,6 @@ const EYEBROW_STYLE =
       <div class="flex items-start justify-between" style="gap: 12px; margin-top: 14px">
         <div style="flex: 1; min-width: 0">
           <div class="text-text-2" style="font-size: 12px">
-            {{ t('cleanup.gc.settings.categories.volumes.label') }}
-          </div>
-          <SettingHint>{{ t('cleanup.gc.settings.categories.volumes.hint') }}</SettingHint>
-        </div>
-        <ToggleSwitch
-          data-testid="gc-cat-volumes"
-          :model-value="prefs.categories.volumes"
-          :aria-label="t('cleanup.gc.settings.categories.volumes.label')"
-          @update:model-value="(v: boolean) => onCategory('volumes', v)"
-        />
-      </div>
-
-      <div class="flex items-start justify-between" style="gap: 12px; margin-top: 14px">
-        <div style="flex: 1; min-width: 0">
-          <div class="text-text-2" style="font-size: 12px">
             {{ t('cleanup.gc.settings.categories.dockerCache.label') }}
           </div>
           <SettingHint>{{ t('cleanup.gc.settings.categories.dockerCache.hint') }}</SettingHint>
@@ -348,27 +333,25 @@ const EYEBROW_STYLE =
         />
       </div>
 
-      <div class="flex items-start justify-between" style="gap: 12px; margin-top: 14px">
-        <div style="flex: 1; min-width: 0">
-          <div class="text-text-2" style="font-size: 12px">
-            {{ t('cleanup.gc.settings.removeVolumes.label') }}
-          </div>
-          <SettingHint>{{ t('cleanup.gc.settings.removeVolumes.hint') }}</SettingHint>
-          <!-- The one irreversible step, stated next to the switch that governs it. -->
-          <p
-            class="text-warning"
-            style="font-size: 11px; line-height: 1.4; margin-top: 4px"
-            data-testid="gc-remove-volumes-warning"
-          >
-            {{ t('cleanup.gc.settings.removeVolumes.warning') }}
-          </p>
+      <!-- The one rule about volumes, stated where the switches that look related used to be. -->
+      <div
+        style="margin-top: 14px; border-radius: 5px; padding: 8px 10px"
+        class="border border-warning-line bg-warning-soft"
+        data-testid="gc-volumes-rule"
+      >
+        <div class="text-text-2" style="font-size: 12px">
+          {{ t('cleanup.gc.settings.volumesRule.title') }}
         </div>
-        <ToggleSwitch
-          data-testid="gc-remove-volumes"
-          :model-value="prefs.removeVolumes"
-          :aria-label="t('cleanup.gc.settings.removeVolumes.label')"
-          @update:model-value="(v: boolean) => saveGc({ removeVolumes: v })"
-        />
+        <p class="text-text-3" style="font-size: 11.5px; line-height: 1.5; margin-top: 2px">
+          {{ t('cleanup.gc.settings.volumesRule.body') }}
+        </p>
+        <p
+          class="text-warning"
+          style="font-size: 11px; line-height: 1.4; margin-top: 4px"
+          data-testid="gc-volumes-warning"
+        >
+          {{ t('cleanup.gc.settings.volumesRule.warning') }}
+        </p>
       </div>
 
       <div class="flex items-start justify-between" style="gap: 12px; margin-top: 14px">

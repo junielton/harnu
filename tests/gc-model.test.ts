@@ -209,28 +209,29 @@ describe('dialogRows', () => {
       ownedVolumes: ['v1'],
       depsBytes: 200 * MIB
     })
-    const rows = dialogRows(buildGcModel(snap({ bundles: [b] })), [b.item.id], true)
+    const rows = dialogRows(buildGcModel(snap({ bundles: [b] })), [b.item.id])
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({
       repo: 'www',
       name: 'c1',
       branch: 'feat/c1',
       bytes: 512 * MIB,
-      chips: ['stack', 'volume', 'deps', 'checkout', 'branch']
+      chips: ['stack', 'deps', 'checkout', 'branch']
     })
   })
 
-  it('omits the volume chip when removeVolumes is off and the stack/deps chips when absent', () => {
+  it("never lists a worktree's volumes as removed (D1: they are kept), nor stack/deps chips that are absent", () => {
     const b = wt('c1', 'corpse', 1, { ownedVolumes: ['v1'] })
-    const rows = dialogRows(buildGcModel(snap({ bundles: [b] })), [b.item.id], false)
+    const rows = dialogRows(buildGcModel(snap({ bundles: [b] })), [b.item.id])
     expect(rows[0].chips).toEqual(['checkout', 'branch'])
+    expect(rows[0].chips).not.toContain('volume')
   })
 
   it('flags rows that hold work no other branch has', () => {
     const risky = wt('d1', 'decide', 1, { reason: reason('closed-unmerged') })
     const safe = wt('d2', 'decide', 1, { reason: reason('open-idle-session') })
     const m = buildGcModel(snap({ bundles: [risky, safe] }))
-    const rows = dialogRows(m, [risky.item.id, safe.item.id], true)
+    const rows = dialogRows(m, [risky.item.id, safe.item.id])
     expect(rows.find((r) => r.name === 'd1')!.risk).toBe(true)
     expect(rows.find((r) => r.name === 'd2')!.risk).toBe(false)
     expect(rows.find((r) => r.name === 'd1')!.reasonCode).toBe('closed-unmerged')
@@ -238,13 +239,13 @@ describe('dialogRows', () => {
 
   it('shows an orphan volume as a volume row with its project', () => {
     const m = buildGcModel(sample())
-    const rows = dialogRows(m, ['volume:pg_data'], true)
+    const rows = dialogRows(m, ['volume:pg_data'])
     expect(rows[0]).toMatchObject({ kind: 'volume', name: 'pg_data', project: 'old-app' })
     expect(rows[0].chips).toEqual(['volume'])
   })
 
   it('skips ids the model no longer has', () => {
-    expect(dialogRows(buildGcModel(snap()), ['ghost'], true)).toEqual([])
+    expect(dialogRows(buildGcModel(snap()), ['ghost'])).toEqual([])
   })
 })
 

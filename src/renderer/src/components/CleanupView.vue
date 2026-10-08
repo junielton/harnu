@@ -137,9 +137,7 @@ const dehydrateItems = ref<ReapItem[] | null>(null)
 const dialogOpen = computed(() => confirmDialog.value !== null || dehydrateItems.value !== null)
 
 const rows = computed(() =>
-  confirmDialog.value && model.value
-    ? dialogRows(model.value, confirmDialog.value.ids, prefs.value?.removeVolumes ?? true)
-    : []
+  confirmDialog.value && model.value ? dialogRows(model.value, confirmDialog.value.ids) : []
 )
 
 function openCorpses(ids?: string[]): void {
@@ -510,7 +508,6 @@ async function copyRestoreHint(hint: string): Promise<void> {
             :block="selectedBlock"
             :state="gc.blockState(selectedBlock.id)"
             :failure="gc.failureOf(selectedBlock.id)"
-            :remove-volumes="prefs.removeVolumes"
             :dehydrate-idle-days="reaper.dehydrateIdleDays"
             :hydration-busy="hydrationBusy(selectedBlock.id)"
             @close="selectedId = null"
@@ -570,7 +567,6 @@ async function copyRestoreHint(hint: string): Promise<void> {
     v-if="confirmDialog"
     :rows="rows"
     :mode="confirmDialog.mode"
-    :remove-volumes="prefs?.removeVolumes ?? true"
     @confirm="confirmClean()"
     @cancel="confirmDialog = null"
   />

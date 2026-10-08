@@ -93,24 +93,29 @@ describe('CleanupDockerCard', () => {
     expect(block.text()).toContain('+1 more')
   })
 
-  it('toggles emit their category and the new value', async () => {
+  it('the cache and image toggles emit the dockerCache category and the new value', async () => {
     const w = mountCard()
     await w.get('[data-testid="docker-toggle-cache"]').trigger('click')
-    await w.get('[data-testid="docker-toggle-volumes"]').trigger('click')
     await w.get('[data-testid="docker-toggle-images"]').trigger('click')
     expect(w.emitted('toggle')).toEqual([
       ['dockerCache', false],
-      ['volumes', false],
       ['dockerCache', false]
     ])
   })
 
-  it('toggles reflect the prefs', () => {
+  it('the toggles reflect the prefs', () => {
     const prefs = defaultGcPrefs()
-    prefs.categories.volumes = false
+    prefs.categories.dockerCache = false
     const w = mountCard({ prefs })
-    expect(w.get('[data-testid="docker-toggle-volumes"]').attributes('aria-checked')).toBe('false')
-    expect(w.get('[data-testid="docker-toggle-cache"]').attributes('aria-checked')).toBe('true')
+    expect(w.get('[data-testid="docker-toggle-cache"]').attributes('aria-checked')).toBe('false')
+  })
+
+  it('orphan volumes have no switch: they are never removed automatically (D1), only by hand', () => {
+    const w = mountCard({ orphanVolumes: { count: 2, bytes: 500_000_000 } })
+    expect(w.find('[data-testid="docker-toggle-volumes"]').exists()).toBe(false)
+    expect(w.get('[data-testid="docker-volumes-note"]').text()).toBe(
+      i18n.global.t('cleanup.gc.docker.volumesNote')
+    )
   })
 })
 
