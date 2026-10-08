@@ -189,8 +189,18 @@ const REVIEW_SENTENCES: Record<string, string> = {
   'shared-stack': 'A Docker stack also runs from outside this worktree.',
   'path-unresolved': 'A path of this worktree could not be resolved.',
   'nested-worktree':
-    'Another worktree lives inside this one, so removing it would take that one along.'
+    'Another worktree or checkout lives inside this one, so removing it would take that one along.'
 }
+
+/**
+ * `nested-worktree` is raised for two different facts: something WAS found inside, or Harnu
+ * could not look. S2 and S3 word the second as "could not be checked" / "could not look
+ * inside"; the code is the same, so the wording tells them apart. tests/cleanup-strip-paths
+ * builds both from the real rules, so a rewording there fails a test here.
+ */
+const COULD_NOT_CHECK = /could not (?:be checked|look inside)/i
+const COULD_NOT_CHECK_SENTENCE =
+  'Harnu could not check this worktree for other checkouts, so it cannot tell whether removing it would take one along.'
 
 const GENERIC_REVIEW_SENTENCE = 'This worktree needs your review.'
 
@@ -209,7 +219,9 @@ export function reviewReason(reason: { code: string; detail: string } | null): {
   const sentence =
     reason.code === 'cleanup-failed'
       ? cleanupFailedSentence(reason.detail)
-      : (REVIEW_SENTENCES[reason.code] ?? GENERIC_REVIEW_SENTENCE)
+      : reason.code === 'nested-worktree' && COULD_NOT_CHECK.test(reason.detail)
+        ? COULD_NOT_CHECK_SENTENCE
+        : (REVIEW_SENTENCES[reason.code] ?? GENERIC_REVIEW_SENTENCE)
   return { code: reason.code, sentence }
 }
 
