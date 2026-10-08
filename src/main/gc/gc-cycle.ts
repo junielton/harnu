@@ -39,6 +39,8 @@ export interface HousekeepingContext {
   protectedProjects: ReadonlySet<string>
   /** Compose project → folders a cleaned worktree ran from (see gc-leftovers.ts). */
   rememberedDirs?: ReadonlyMap<string, readonly string[]>
+  /** A compose name could not be resolved, so no volume is provably foreign. */
+  protectAllProjects?: boolean
 }
 
 export interface GcGather {
@@ -160,7 +162,8 @@ export async function runGcCycle(
             hk.dirExists,
             hk.knownFolders,
             hk.protectedProjects,
-            hk.rememberedDirs
+            hk.rememberedDirs,
+            hk.protectAllProjects
           )
           try {
             housekeeping = await deps.housekeeping(hkPlan)

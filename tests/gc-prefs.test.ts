@@ -279,3 +279,55 @@ describe('worktree cleanup never removes volumes: the old keys are gone (D1)', (
     expect(JSON.stringify(merged)).not.toMatch(/removeVolumes|"volumes"/)
   })
 })
+
+describe('a partial gc:prefs:set merges with the CURRENT prefs (delta 3, item 2)', () => {
+  const current = (): GcPrefs => ({
+    ...defaultGcPrefs(),
+    autopilot: true,
+    graceDays: 9,
+    maxItemsPerCycle: 50,
+    cacheMaxAgeDays: 30,
+    neverClean: ['/ws/keep-me'],
+    categories: { worktrees: false, dockerCache: true }
+  })
+
+  it('changes only the interval when only the interval is sent', () => {
+    const out = mergeIncomingPrefs(current(), { intervalMs: 2 * HOUR })
+    expect(out.intervalMs).toBe(2 * HOUR)
+    expect(out.neverClean).toEqual(['/ws/keep-me'])
+    expect(out.graceDays).toBe(9)
+    expect(out.maxItemsPerCycle).toBe(50)
+    expect(out.cacheMaxAgeDays).toBe(30)
+    expect(out.autopilot).toBe(true)
+    expect(out.categories).toEqual({ worktrees: false, dockerCache: true })
+  })
+
+  it('merges a partial categories object field by field', () => {
+    const out = mergeIncomingPrefs(current(), { categories: { dockerCache: false } })
+    expect(out.categories).toEqual({ worktrees: false, dockerCache: false })
+  })
+
+  it('still replaces a field that is sent, including the neverClean list', () => {
+    const out = mergeIncomingPrefs(current(), { neverClean: [], graceDays: 1 })
+    expect(out.neverClean).toEqual([])
+    expect(out.graceDays).toBe(1)
+  })
+
+  it('still clamps and ignores junk in what it merges', () => {
+    const out = mergeIncomingPrefs(current(), { graceDays: 999, maxItemsPerCycle: 'x' })
+    expect(out.graceDays).toBe(30)
+    expect(out.maxItemsPerCycle).toBe(50)
+  })
+
+  it('treats a non-object write as no change', () => {
+    expect(mergeIncomingPrefs(current(), null)).toEqual(current())
+    expect(mergeIncomingPrefs(current(), 'x')).toEqual(current())
+  })
+
+  it('keeps keep and the acknowledgement out of reach', () => {
+    const prefs = { ...current(), firstReportAcknowledged: true, keep: { a: 'merged' } }
+    const out = mergeIncomingPrefs(prefs, { keep: {}, firstReportAcknowledged: false })
+    expect(out.keep).toEqual({ a: 'merged' })
+    expect(out.firstReportAcknowledged).toBe(true)
+  })
+})

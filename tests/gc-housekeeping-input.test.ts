@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   explicitProjectNames,
+  foldersForBundles,
   makeDirExists,
   orphanVolumeItems,
   protectedProjects,
@@ -290,5 +291,40 @@ describe('volumeGuards: what keeps a bundle from owning a volume (delta 1, item 
     const exists = makeDirExists(new Set(['/ws/a']), new Set())
     const g = volumeGuards([{ path: '/ws/a' }, { path: '/ws/unchecked' }], exists)
     expect(g.knownFolders).toEqual(['/ws/unchecked'])
+  })
+})
+
+describe('foldersForBundles: what the bundle builder may treat as a nested worktree (S2 delta 6)', () => {
+  const WT_A = '/ws/org/proj/worktrees/a'
+  const WT_B = `${WT_A}/.claude/worktrees/b`
+  const REPO_ROOT = '/ws/org/proj/www'
+
+  it('keeps worktree roots and repo roots, even a worktree nested in another', () => {
+    const out = foldersForBundles([], [WT_A, WT_B], [REPO_ROOT])
+    expect(out.sort()).toEqual([REPO_ROOT, WT_A, WT_B].sort())
+  })
+
+  it('drops a pinned or fleet subfolder inside a worktree', () => {
+    const out = foldersForBundles([`${WT_A}/api`, `${WT_A}/docker/x`], [WT_A], [REPO_ROOT])
+    expect(out).not.toContain(`${WT_A}/api`)
+    expect(out).not.toContain(`${WT_A}/docker/x`)
+  })
+
+  it('keeps a known folder that lies outside every worktree', () => {
+    const out = foldersForBundles(
+      ['/ws/org/other/api-gateway', '/home/me/notes'],
+      [WT_A],
+      [REPO_ROOT]
+    )
+    expect(out).toEqual(expect.arrayContaining(['/ws/org/other/api-gateway', '/home/me/notes']))
+  })
+
+  it('keeps a sibling whose name only starts like the worktree', () => {
+    expect(foldersForBundles([`${WT_A}-other`], [WT_A], [REPO_ROOT])).toContain(`${WT_A}-other`)
+  })
+
+  it('does not repeat a path', () => {
+    const out = foldersForBundles([WT_A, REPO_ROOT], [WT_A], [REPO_ROOT])
+    expect(out.filter((p) => p === WT_A)).toHaveLength(1)
   })
 })

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { buildSnapshot } from '../src/main/containers/containers-core'
 import {
   bucketFeed,
+  bucketLookup,
   clearInheritedBuckets,
   inheritedBucketFor,
   setInheritedBuckets
@@ -149,5 +150,39 @@ describe('a stack run from a subfolder of the worktree inherits the worktree buc
       })
     )
     expect(snap.stacks[0]!.verdict).toBe('zombie')
+  })
+})
+
+describe('the feed is keyed on real paths (delta 3b, item 12)', () => {
+  const canonical = (p: string) => ({
+    path: p.startsWith('/link/') ? `/real/${p.slice('/link/'.length)}` : p,
+    resolved: true
+  })
+  const entry = (path: string, bucket: 'ready' | 'review' | 'in-use') =>
+    ({ item: { path }, bucket }) as never
+
+  it('records a worktree under its real location when a resolver is given', () => {
+    const feed = bucketFeed([entry('/link/wt', 'ready')], canonical)
+    expect([...feed]).toEqual([['/real/wt', 'ready']])
+  })
+
+  it('finds the stack of a worktree spelled through the symlink', () => {
+    setInheritedBuckets(bucketFeed([entry('/link/wt', 'ready')], canonical))
+    expect(inheritedBucketFor('/real/wt/api')).toBe('ready')
+  })
+
+  it('looks a stack up by the real path of its attributed folder', () => {
+    setInheritedBuckets(bucketFeed([entry('/real/wt', 'ready')], canonical))
+    const realOf = new Map([['/link/wt/api', '/real/wt/api']])
+    expect(bucketLookup(realOf)('/link/wt/api')).toBe('ready')
+  })
+
+  it('falls back to the spelling when the real path is unknown', () => {
+    setInheritedBuckets(new Map([['/ws/wt', 'in-use']]))
+    expect(bucketLookup(new Map())('/ws/wt/api')).toBe('in-use')
+  })
+
+  it('without a resolver the keys are the spellings, as before', () => {
+    expect([...bucketFeed([entry('/ws/a', 'ready')])]).toEqual([['/ws/a', 'ready']])
   })
 })

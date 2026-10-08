@@ -242,6 +242,91 @@ describe('job queue: exclusive wrapper (delta 1, item 4)', () => {
   })
 })
 
+describe('job queue: it always settles (delta 3, item 5)', () => {
+  it('frees the queue and settles the job when emitDone throws', async () => {
+    const ran: string[] = []
+    let n = 0
+    const queue = createJobQueue({
+      newId: () => `j${++n}`,
+      emitProgress: () => undefined,
+      emitDone: (d) => {
+        if (d.jobId === 'j1') throw new Error('renderer is gone')
+      }
+    })
+    const first = queue.submit('manual', ['a'], async () => {
+      ran.push('a')
+      return []
+    })
+    const second = queue.submit('manual', ['b'], async () => {
+      ran.push('b')
+      return []
+    })
+    const timeout = new Promise<string>((res) => setTimeout(() => res('hung'), 500))
+    expect(await Promise.race([first.finished.then(() => 'settled'), timeout])).toBe('settled')
+    expect(await Promise.race([second.finished.then(() => 'settled'), timeout])).toBe('settled')
+    await queue.idle()
+    expect(ran).toEqual(['a', 'b'])
+    expect(queue.busy()).toBe(false)
+  })
+
+  it('does not leave an unhandled rejection behind', async () => {
+    const seen: unknown[] = []
+    const onRejection = (e: unknown): void => void seen.push(e)
+    process.on('unhandledRejection', onRejection)
+    try {
+      const queue = createJobQueue({
+        newId: () => 'j',
+        emitProgress: () => undefined,
+        emitDone: () => {
+          throw new Error('boom')
+        }
+      })
+      queue.submit('manual', [], async () => [])
+      await queue.idle()
+      await new Promise((r) => setTimeout(r, 20))
+      expect(seen).toEqual([])
+    } finally {
+      process.off('unhandledRejection', onRejection)
+    }
+  })
+
+  it('a progress event that throws does not fail the job or skip its other items', async () => {
+    const results: string[] = []
+    const queue = createJobQueue({
+      newId: () => 'j',
+      emitProgress: () => {
+        throw new Error('window closed')
+      },
+      emitDone: (d) => results.push(...d.results.map((r) => r.id))
+    })
+    const { finished } = queue.submit('manual', ['a', 'b'], async (r) => {
+      r.onItem(ok('a'))
+      r.onItem(ok('b'))
+      return [ok('a'), ok('b')]
+    })
+    const done = await finished
+    expect(done.error).toBeNull()
+    expect(results).toEqual(['a', 'b'])
+  })
+
+  it('the cycle that awaits a job whose emitDone threw still returns', async () => {
+    let n = 0
+    const queue = createJobQueue({
+      newId: () => `j${++n}`,
+      emitProgress: () => undefined,
+      emitDone: () => {
+        throw new Error('boom')
+      }
+    })
+    const { finished } = queue.submit('autopilot', ['a'], async (r) => {
+      const res = ok('a')
+      r.onItem(res)
+      return [res]
+    })
+    expect((await finished).results.map((r) => r.id)).toEqual(['a'])
+  })
+})
+
 describe('job queue: failure and bookkeeping', () => {
   it('still ends with a done event when the run throws, keeping the results so far', async () => {
     const { queue, done } = harness()

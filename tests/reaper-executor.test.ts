@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   cleanItem,
+  matchAdminDir,
   sweep,
   type ExecutorDeps,
   type CleanResult
@@ -54,6 +55,7 @@ function fakeDeps(overrides: Partial<ExecutorDeps> = {}): {
       return 'wipsha1'
     }),
     detachSidebar: vi.fn(async () => undefined),
+    removeWorktreeAdmin: vi.fn(async () => undefined),
     appendTombstone: vi.fn(async (t: Tombstone) => {
       journal.push(t)
     }),
@@ -645,5 +647,80 @@ describe('overridesAncestryCheck', () => {
     expect(overridesAncestryCheck('remote-gone-after-close')).toBe(true)
     // git's own answer: a `-d` refusal here means the facts and git disagree.
     expect(overridesAncestryCheck('ancestor')).toBe(false)
+  })
+})
+
+describe('cleanItem unregisters only its own worktree (delta 3b, item 11)', () => {
+  it('never runs a repo-wide git worktree prune', async () => {
+    const { deps } = fakeDeps()
+    const result = await cleanItem(harvestableItem(), { deleteRemote: false }, deps)
+    expect(result.ok).toBe(true)
+    const gitCalls = vi.mocked(deps.git).mock.calls.map(([, args]) => args.join(' '))
+    expect(gitCalls.some((c) => c.startsWith('worktree'))).toBe(false)
+  })
+
+  it('removes the registration of the worktree it trashed, after the trash', async () => {
+    const order: string[] = []
+    const { deps } = fakeDeps({
+      trash: vi.fn(async () => void order.push('trash')),
+      removeWorktreeAdmin: vi.fn(async (repo: string, path: string) => {
+        order.push(`admin ${repo} ${path}`)
+      })
+    })
+    await cleanItem(harvestableItem(), { deleteRemote: false }, deps)
+    expect(order).toEqual(['trash', 'admin /repo /repo/wt-x'])
+  })
+
+  it('keeps the step list and the journal the same as before', async () => {
+    const { deps, journal } = fakeDeps()
+    const result = await cleanItem(harvestableItem(), { deleteRemote: false }, deps)
+    expect(result.steps.map((s) => s.id)).toContain('worktree-prune')
+    expect(journal[0]!.deleted).toContain('worktree-prune')
+  })
+
+  it('halts at that step when the registration cannot be removed, before the branch is touched', async () => {
+    const { deps } = fakeDeps({
+      removeWorktreeAdmin: vi.fn(async () => {
+        throw new Error('EACCES')
+      })
+    })
+    const result = await cleanItem(harvestableItem(), { deleteRemote: false }, deps)
+    expect(result.ok).toBe(false)
+    expect(result.steps.find((s) => s.id === 'worktree-prune')).toMatchObject({
+      ok: false,
+      error: 'EACCES'
+    })
+    expect(result.steps.some((s) => s.id === 'branch-delete')).toBe(false)
+  })
+})
+
+describe('matchAdminDir: which admin dir belongs to a worktree (delta 3b, item 11)', () => {
+  const entries = [
+    { dir: '/repo/.git/worktrees/a', gitdir: '/repo/wt-a/.git' },
+    { dir: '/repo/.git/worktrees/b', gitdir: '/mnt/usb/wt-b/.git' },
+    { dir: '/repo/.git/worktrees/c', gitdir: '/repo/wt-c/.git' }
+  ]
+
+  it('picks the entry whose gitdir points into that worktree', () => {
+    expect(matchAdminDir(entries, '/repo/wt-c')).toBe('/repo/.git/worktrees/c')
+  })
+
+  it('does not pick another worktree, whose folder may simply be unmounted', () => {
+    expect(matchAdminDir(entries, '/repo/wt-c')).not.toBe('/repo/.git/worktrees/b')
+  })
+
+  it('tolerates trailing slashes and backslashes', () => {
+    expect(matchAdminDir(entries, '/repo/wt-a/')).toBe('/repo/.git/worktrees/a')
+    expect(matchAdminDir([{ dir: 'D', gitdir: 'C:\\ws\\wt\\.git' }], 'C:/ws/wt')).toBe('D')
+  })
+
+  it('is null for a worktree that is not registered, or whose name is only a prefix', () => {
+    expect(matchAdminDir(entries, '/repo/wt-z')).toBeNull()
+    expect(matchAdminDir(entries, '/repo/wt')).toBeNull()
+  })
+
+  it('is null when two entries claim the same folder: ambiguous means untouched', () => {
+    const twice = [...entries, { dir: '/repo/.git/worktrees/c2', gitdir: '/repo/wt-c/.git' }]
+    expect(matchAdminDir(twice, '/repo/wt-c')).toBeNull()
   })
 })

@@ -34,7 +34,7 @@ import {
   type InspectedContainer,
   type KnownFolder
 } from './containers-core'
-import { inheritedBucketFor } from '../gc/gc-buckets'
+import { bucketLookup } from '../gc/gc-buckets'
 import type { DockerBatchResult } from './containers-actions'
 import type { ContainersSnapshot, Tombstone } from './containers-wire'
 
@@ -261,8 +261,21 @@ export async function scanContainers(req: ScanRequest): Promise<ContainersSnapsh
     ...containers.flatMap((c) => c.labels[COMPOSE_WORKING_DIR_LABEL] ?? [])
   ]
   const existing = await existingPaths(candidates)
-  const checkouts = await gitCheckouts(
-    attributedPaths(containers, folders, process.platform).filter((p) => existing.has(p))
+  const attributed = attributedPaths(containers, folders, process.platform).filter((p) =>
+    existing.has(p)
+  )
+  const checkouts = await gitCheckouts(attributed)
+  // Real locations of the folders stacks are attributed to, for the GC bucket feed, which is
+  // keyed on real paths. A folder that does not resolve is looked up as written.
+  const realOf = new Map<string, string>()
+  await Promise.all(
+    attributed.map(async (p) => {
+      try {
+        realOf.set(p, await fs.realpath(p))
+      } catch {
+        // looked up by its spelling
+      }
+    })
   )
 
   return buildSnapshot({
@@ -278,7 +291,7 @@ export async function scanContainers(req: ScanRequest): Promise<ContainersSnapsh
     recent,
     platform: process.platform,
     // The last GC snapshot's bucket: a worktree stack reads zombie as soon as its branch is dead.
-    inheritedBucketOf: inheritedBucketFor
+    inheritedBucketOf: bucketLookup(realOf)
   })
 }
 

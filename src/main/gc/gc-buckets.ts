@@ -5,7 +5,7 @@
 // gather, and `containers-shell` reads it per stack.
 
 import { normalizePath } from '../containers/containers-core'
-import type { Bucket } from './bundle-core'
+import type { Bucket, CanonicalPath } from './bundle-core'
 
 let buckets: ReadonlyMap<string, Bucket> = new Map()
 
@@ -37,9 +37,24 @@ export function inheritedBucketFor(path: string): Bucket | undefined {
 
 /** The feed for one gather: each bundle's bucket by worktree path. */
 export function bucketFeed(
-  bundles: ReadonlyArray<{ item: { path?: string }; bucket: Bucket }>
+  bundles: ReadonlyArray<{ item: { path?: string }; bucket: Bucket }>,
+  canonical?: CanonicalPath
 ): Map<string, Bucket> {
   const out = new Map<string, Bucket>()
-  for (const b of bundles) if (b.item.path) out.set(b.item.path, b.bucket)
+  // Keyed on the real location when a resolver is given, so a stack whose folder is spelled
+  // through a symlink still finds its worktree.
+  for (const b of bundles) {
+    if (b.item.path) out.set(canonical ? canonical(b.item.path).path : b.item.path, b.bucket)
+  }
   return out
+}
+
+/**
+ * The lookup the Containers scan uses: `realOf` maps the folder a stack is attributed to onto
+ * its real path (read when the scan stats it); a folder not in the map is looked up as written.
+ */
+export function bucketLookup(
+  realOf: ReadonlyMap<string, string>
+): (path: string) => Bucket | undefined {
+  return (path) => inheritedBucketFor(realOf.get(path) ?? path)
 }
