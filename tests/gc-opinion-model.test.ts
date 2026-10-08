@@ -258,3 +258,46 @@ describe('an opinion belongs to the item as it was when asked', () => {
     expect(dropUnconfirmed(map, [ids.a], new Set([ids.a]))).toBe(map)
   })
 })
+
+describe('the fingerprint covers what the snapshot exposes of the item', () => {
+  const withBundle = (over: (b: ReturnType<typeof bundle>) => void): GcModel => {
+    const a = wt('a', 'review', 900 * MIB)
+    over(a)
+    return buildGcModel(snap([a, wt('r', 'ready', 100 * MIB)]))
+  }
+  const fp = (m: GcModel): string => fingerprintOf(m.review[0])
+
+  it('changes with the untracked files, the fate and the merge signal, not with the disk size', () => {
+    const base = fp(withBundle(() => {}))
+    expect(fp(withBundle((b) => (b.item.untracked = ['scratch.log'])))).not.toBe(base)
+    expect(
+      fp(withBundle((b) => (b.fate = { fate: 'open', signal: null, strong: false })))
+    ).not.toBe(base)
+    expect(
+      fp(withBundle((b) => (b.fate = { fate: 'merged', signal: 'gh-merged', strong: true })))
+    ).not.toBe(base)
+    expect(fp(withBundle((b) => (b.item.diskBytes = 5 * MIB)))).toBe(base)
+  })
+
+  it('does not depend on the order of the untracked files', () => {
+    const one = fp(withBundle((b) => (b.item.untracked = ['a.log', 'b.log'])))
+    const two = fp(withBundle((b) => (b.item.untracked = ['b.log', 'a.log'])))
+    expect(one).toBe(two)
+  })
+
+  it('drops a chip once an untracked file appears', () => {
+    const { m, ids } = model()
+    const map = recordOpinion(new Map(), op(ids.a, 'safe'), m)
+    const a = wt('a', 'review', 900 * MIB)
+    a.item.untracked = ['appeared.txt']
+    const next = buildGcModel(
+      snap([
+        a,
+        wt('b', 'review', 500 * MIB),
+        wt('c', 'review', 300 * MIB),
+        wt('r', 'ready', 100 * MIB)
+      ])
+    )
+    expect(pruneOpinions(map, next).has(ids.a)).toBe(false)
+  })
+})

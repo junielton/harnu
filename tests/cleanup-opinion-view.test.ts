@@ -382,3 +382,71 @@ describe('a chip never outlives the item it was about', () => {
     expect(q('[data-testid="review-remove-safe"]')).toBeNull()
   })
 })
+
+describe('Remove the ones marked safe re-checks main at the moment of removal', () => {
+  async function marked(rig: Rig): Promise<void> {
+    await click(q('[data-testid="review-ask-all"]'))
+    await rig.result(safe(D1))
+    await rig.result(safe(D3))
+    await rig.result({ id: D2, verdict: 'keep', reason: 'r', evidence: 'e' })
+    await rig.done({ answered: 3 })
+  }
+
+  it('does not pre-select an item whose dirty set changed after its chip was shown, and says so', async () => {
+    const rig = install(snap())
+    await mountView()
+    await marked(rig)
+    expect(text(q('[data-testid="review-remove-safe"]'))).toBe('Remove the 2 marked safe')
+    // Main's key for D1 moved (a file changed), so its cache no longer holds the opinion.
+    rig.gcOpinionCached.mockResolvedValue({ [D3]: { id: D3, ...safe(D3) } })
+    await click(q('[data-testid="review-remove-safe"]'))
+    expect(qa('[data-testid="bulk-row"]')).toHaveLength(1)
+    expect(text(q('[data-testid="bulk-dialog"]'))).toContain('d3')
+    expect(
+      qa('[data-testid="review-check"]').filter((c) => (c as HTMLInputElement).checked)
+    ).toHaveLength(1)
+    expect(chipOf(D1)).toBeNull()
+    const note = useUiStore().toasts.find((x) => x.title.includes('left out'))
+    expect(note).toBeTruthy()
+    expect(rig.gcClean).not.toHaveBeenCalled()
+  })
+
+  it('opens no dialog when main confirms none of them', async () => {
+    const rig = install(snap())
+    await mountView()
+    await marked(rig)
+    rig.gcOpinionCached.mockResolvedValue({})
+    await click(q('[data-testid="review-remove-safe"]'))
+    expect(q('[data-testid="bulk-dialog"]')).toBeNull()
+    expect(rig.gcClean).not.toHaveBeenCalled()
+    expect(useUiStore().toasts.some((x) => x.title.includes('left out'))).toBe(true)
+    expect(q('[data-testid="review-remove-safe"]')).toBeNull()
+  })
+
+  it('opens no dialog when main cannot be asked, and says so', async () => {
+    const rig = install(snap())
+    await mountView()
+    await marked(rig)
+    rig.gcOpinionCached.mockRejectedValue(new Error('boom'))
+    await click(q('[data-testid="review-remove-safe"]'))
+    expect(q('[data-testid="bulk-dialog"]')).toBeNull()
+    expect(
+      useUiStore().toasts.some(
+        (x) => x.title === 'Couldn’t re-check the opinions. Nothing was selected.'
+      )
+    ).toBe(true)
+  })
+
+  it('selects both when main still confirms both', async () => {
+    const rig = install(snap())
+    await mountView()
+    await marked(rig)
+    rig.gcOpinionCached.mockResolvedValue({
+      [D1]: { id: D1, ...safe(D1) },
+      [D3]: { id: D3, ...safe(D3) }
+    })
+    await click(q('[data-testid="review-remove-safe"]'))
+    expect(qa('[data-testid="bulk-row"]')).toHaveLength(2)
+    expect(useUiStore().toasts.some((x) => x.title.includes('left out'))).toBe(false)
+  })
+})

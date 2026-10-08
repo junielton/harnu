@@ -894,3 +894,78 @@ describe('gc store — asking about more than 100 items is one logical ask', () 
     expect((api.gcOpinion.mock.calls[0][0] as string[]).length).toBe(100)
   })
 })
+
+describe('gc store — confirming the safe ones right before removal', () => {
+  const safeOf = (id: string): GcOpinion => ({ id, verdict: 'safe', reason: 'r', evidence: 'e' })
+
+  async function ready(): Promise<{
+    api: Api
+    gc: ReturnType<typeof useGcStore>
+    ids: string[]
+  }> {
+    const api = installApi(
+      (() => {
+        const base = snap()
+        const more = [wt('d2', 'review', 300 * MIB), wt('d3', 'review', 200 * MIB)]
+        return { ...base, bundles: [...base.bundles, ...more] }
+      })()
+    )
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    const ids = gc.model!.review.map((b) => b.id)
+    await gc.askOpinion(ids)
+    for (const id of ids) api.push.opinion({ jobId: 'o1', id, ...safeOf(id), durable: true })
+    return { api, gc, ids }
+  }
+
+  it('asks main about exactly the marked ids and keeps the ones it still confirms as safe', async () => {
+    const { api, gc, ids } = await ready()
+    expect(gc.safeOpinionIds).toEqual(ids)
+    api.gcOpinionCached.mockClear()
+    api.gcOpinionCached.mockResolvedValue({ [ids[0]]: safeOf(ids[0]), [ids[2]]: safeOf(ids[2]) })
+    const r = await gc.confirmSafe()
+    expect(api.gcOpinionCached).toHaveBeenCalledTimes(1)
+    expect([...(api.gcOpinionCached.mock.calls[0][0] as string[])].sort()).toEqual([...ids].sort())
+    expect(r.kept).toEqual([ids[0], ids[2]])
+    expect(r.dropped).toEqual([ids[1]])
+  })
+
+  it('drops a chip main no longer holds (the dirty set changed after the chip was shown)', async () => {
+    const { api, gc, ids } = await ready()
+    api.gcOpinionCached.mockResolvedValue({ [ids[0]]: safeOf(ids[0]) })
+    await gc.confirmSafe()
+    expect(gc.opinionFor(ids[1])).toBeNull()
+    expect(gc.opinionFor(ids[0])?.verdict).toBe('safe')
+    expect(gc.safeOpinionIds).toEqual([ids[0]])
+  })
+
+  it('does not keep an item whose cached verdict is no longer safe', async () => {
+    const { api, gc, ids } = await ready()
+    api.gcOpinionCached.mockResolvedValue({
+      [ids[0]]: { ...safeOf(ids[0]), verdict: 'keep' },
+      [ids[1]]: safeOf(ids[1])
+    })
+    const r = await gc.confirmSafe()
+    expect(r.kept).toEqual([ids[1]])
+  })
+
+  it('fails closed: if main cannot be asked nothing is kept', async () => {
+    const { api, gc, ids } = await ready()
+    api.gcOpinionCached.mockRejectedValue(new Error('boom'))
+    const r = await gc.confirmSafe()
+    expect(r.kept).toEqual([])
+    expect(r.failed).toBe(true)
+    expect(r.dropped.sort()).toEqual([...ids].sort())
+  })
+
+  it('has nothing to ask when nothing is marked safe', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    api.gcOpinionCached.mockClear()
+    expect(await gc.confirmSafe()).toEqual({ kept: [], dropped: [], failed: false })
+    expect(api.gcOpinionCached).not.toHaveBeenCalled()
+  })
+})
