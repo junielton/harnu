@@ -136,9 +136,9 @@ A read-only (`observe`) [Scheduler worker](scheduler.md) can use it, so you can 
 
 When a session's pull request has merged, it can **release** the worktree it worked in. That skips the grace period, so the worktree becomes a corpse at the next scan instead of waiting a couple of days. It runs without asking, because it deletes nothing — you (or the automatic cleanup, if you turned it on and acknowledged its first report) still do the cleaning.
 
-A release is only a hint about timing; it never overrides a safety rule. A worktree with uncommitted changes or unpushed commits, one with a session still open, one whose Docker stack another worktree also uses, and one you marked Keep or never-clean all stay out of the corpse list, and the session is told which rule held it back. It's refused for a worktree whose branch isn't proven merged, for a repo's main checkout, for a folder Harnu doesn't know, and for a folder you blocked for agents. Read-only Scheduler workers can't release anything.
+A release is only a hint about timing; it never overrides a safety rule. A worktree with uncommitted changes or unpushed commits, one with a session still open, one whose Docker stack another worktree also uses, and one you marked Keep or never-clean all stay out of the corpse list, and the session is told which rule held it back. It's refused for a worktree whose branch isn't proven merged, for a repo's main checkout, for a folder Harnu doesn't know, and for a worktree in a folder (or a repo) you blocked for agents. A session can name the worktree by its folder or by the name the list gave it. Read-only Scheduler workers can't release anything.
 
-There is no way for a session to remove a worktree, a container volume or a branch through any of this.
+These two verbs never remove anything, and no session can clean a worktree. (A session can remove Docker containers, but only through a separate action that always asks you first — see "Stopping, starting and removing containers" above.)
 
 ## Tracking a mission's progress
 

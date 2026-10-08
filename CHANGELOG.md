@@ -21,8 +21,9 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   worker can report corpses piling up. `release_worktree` lets a session say its merged
   worktree is done, which skips the grace period so it becomes a corpse at the next scan.
   A release never overrides a safety rule (uncommitted work, an open session, a shared
-  Docker stack, Keep, never-clean all still hold it back) and it deletes nothing: there is
-  still no way for an agent to remove anything. See [Agent control](docs/user/agent-control.md).
+  Docker stack, Keep, never-clean all still hold it back) and it deletes nothing: neither
+  verb removes anything, and no agent can clean a worktree. A session can name the worktree
+  by its folder or by the name the list gave it. See [Agent control](docs/user/agent-control.md).
 
 - **Automatic cleanup of merged worktrees and their Docker stacks.** Harnu can now clear
   worktrees whose branch is proven merged, together with the Docker stack running from

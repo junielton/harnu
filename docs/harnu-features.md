@@ -1,4 +1,4 @@
-<!-- harnu-features v72 (2026-10-07) -->
+<!-- harnu-features v73 (2026-10-08) -->
 
 # You are running inside Harnu
 
@@ -529,22 +529,29 @@ you see in `list_containers.recent`. None of the three is open to a Scheduler
 judges every worktree into one bucket: `corpse` (branch strongly merged, clean, no
 running session, past its grace window — cleanable), `decide` (needs the operator, with a
 one-sentence reason) or `alive`. You can read that picture and tell Harnu you are done
-with a worktree. **You cannot remove anything**: removal is the operator's click or the
-autopilot's, and no verb reaches it.
+with a worktree. Neither verb removes anything, and no verb cleans a worktree: that is the
+operator's click or the autopilot's. (`remove_containers` does exist and removes Docker
+containers, but only after the operator confirms.)
 
 - `list_cleanup({ folder? })` reads the picture. ACK
   `{ ok, scannedAt, bundles: [{ id, folderAlias, branch, bucket, reason, bytes, depsBytes,
 released, agentControllable }], orphanVolumes, totals, autopilot: { enabled, reportOnly,
 graceDays }, nextCycleAt }`. Read `bucket` and `reason`; never re-derive them. Every call
   runs a fresh gather. Paths are redacted like `list_containers`: `folderAlias` is a
-  basename and `id` a readable label, never a path. A worktree in a folder the operator
+  basename and `id` a readable label (`<repo>::<kind>::<branch>::<hash>`, unique even for
+  two repos that share a name), never a path. A worktree in a folder the operator
   blocked still lists with `agentControllable: false` — report it, leave it alone. `folder`
   narrows `bundles` and `totals` to that repo and its worktrees (and leaves out
-  `orphanVolumes`, which belong to no folder); a blocked `folder` is refused
+  `orphanVolumes`, which belong to no folder). A worktree belongs to a repo by its own
+  repo, not by where it sits, so a worktree outside the repo's tree is included. A blocked
+  `folder` is refused
   `FOLDER_NOT_ALLOWED`. `autopilot.reportOnly` is true until the operator acknowledges the
   first report. `GC_NOT_READY` right after Harnu starts means retry in a moment. It is on
   the Scheduler `observe` allowlist, so a read-only worker can report accumulated corpses.
-- `release_worktree({ folder })` says "this worktree's PR merged and I am done with it":
+- `release_worktree({ folder })` or `release_worktree({ id })` — exactly one — says "this
+  worktree's PR merged and I am done with it". Pass `folder` for the worktree you worked in,
+  or the `id` from `list_cleanup` for any other (it needs no folder, so it also reaches a
+  worktree Harnu's sidebar does not list):
   its grace window stops applying, so it becomes a `corpse` on the next scan **if every
   other rule still holds**. It runs free and deletes nothing. Call it for the worktree you
   worked in once its PR merged, not before. A release never overrides a safety rule: dirty
@@ -554,9 +561,9 @@ graceDays }, nextCycleAt }`. Read `bucket` and `reason`; never re-derive them. E
 false, message }` says where it landed (`bucketAfter`) and why (`reason`), so tell the
   operator instead of promising a cleanup. It is idempotent (`alreadyReleased`). Refusals:
   `FATE_NOT_MERGED` (the branch is not merged with a strong proof), `FOLDER_NOT_ALLOWED`
-  (blocked folder), `IS_MAIN_CHECKOUT` (a repo's main checkout is never cleaned) and
-  `NOT_A_WORKTREE` (the cleanup scan does not know that folder — call `list_cleanup` for
-  the exact path). Not open to a Scheduler `observe` worker.
+  (the worktree's folder or its repo is blocked), `IS_MAIN_CHECKOUT` (a repo's main checkout
+  is never cleaned) and `NOT_A_WORKTREE` (the cleanup scan does not know it — call
+  `list_cleanup` and pass the `id` it lists). Not open to a Scheduler `observe` worker.
 
 **Worktrees.** You can create and list git worktrees (`create_worktree` /
 `list_worktrees`). Harnu reads a repo's `WORKTREE.md` manifest so fresh worktrees are
