@@ -301,3 +301,22 @@ describe('foreign checkouts are walked in the gather (S2 delta 7)', () => {
     expect(scan).toMatch(/explainFailedWalks\(/)
   })
 })
+
+describe('Keep protects at once (delta 4, N1)', () => {
+  it('gc:keep persists a provisional mark before it waits for any gather', () => {
+    const keep = between(ipc, '    keep: async', '    unkeep: async')
+    expect(keep.indexOf('withProvisionalKeep(')).toBeGreaterThanOrEqual(0)
+    expect(keep.indexOf('withProvisionalKeep(')).toBeLessThan(keep.indexOf('gatherFresh()'))
+    expect(keep.indexOf('await persist(')).toBeLessThan(keep.indexOf('gatherFresh()'))
+  })
+
+  it('a gather protects provisional marks and marks written after it started', () => {
+    expect(between(ipc, 'const gather = ', 'const gatherFresh')).toMatch(
+      /withoutStaleKeeps\(prefs, g\.staleKeeps, protectedFromGather\(/
+    )
+  })
+
+  it('a refused unknown id takes its provisional mark back', () => {
+    expect(between(ipc, '    keep: async', '    unkeep: async')).toMatch(/withoutKeep\(/)
+  })
+})
