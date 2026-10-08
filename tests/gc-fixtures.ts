@@ -1,7 +1,7 @@
 // Shared fixtures for the Workspace GC slice 3 tests. A hand-built bundle carries the three
 // fields the S2 reprobe refuses without: `localTip`, `graceDays` and `lastSignOfLifeAt`.
 
-import type { BundleFacts, Bucket, DecideReason, WorktreeBundle } from '../src/main/gc/bundle-core'
+import type { BundleFacts, Bucket, ReviewReason, WorktreeBundle } from '../src/main/gc/bundle-core'
 import type { ReapItem } from '../src/main/reaper/reaper-core'
 
 export const DAY = 86_400_000
@@ -32,7 +32,7 @@ export function reapItem(path: string, over: Partial<ReapItem> = {}): ReapItem {
 export function bundle(
   path: string,
   bucket: Bucket,
-  over: Partial<BundleFacts> & { reason?: DecideReason | null } = {}
+  over: Partial<BundleFacts> & { reason?: ReviewReason | null } = {}
 ): WorktreeBundle {
   const { reason, ...facts } = over
   return {
@@ -51,6 +51,6 @@ export function bundle(
     graceDays: 2,
     ...facts,
     bucket,
-    reason: reason ?? (bucket === 'decide' ? { code: 'dirty', detail: 'x' } : null)
+    reason: reason ?? (bucket === 'review' ? { code: 'dirty', detail: 'x' } : null)
   }
 }

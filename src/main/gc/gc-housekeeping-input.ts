@@ -1,6 +1,6 @@
-// Pure helpers that prepare what the Docker housekeeping planner needs and what the Decide
+// Pure helpers that prepare what the Docker housekeeping planner needs and what the Needs review
 // bucket shows for orphan volumes (design: workspace-gc §5, operator decision: the autopilot
-// never removes a volume outside a corpse bundle). No I/O: the shell reads the files and
+// never removes a volume outside a ready bundle). No I/O: the shell reads the files and
 // stats the paths, these functions interpret the results.
 
 import { statProvesGone, type VolumeFact } from '../containers/containers-core'
@@ -109,7 +109,7 @@ export function toHousekeepingVolumes(df: ReadonlyMap<string, VolumeFact>): Hous
   return [...df].map(([name, fact]) => ({ name, ...fact }))
 }
 
-/** A volume offered in Decide: removed only by an explicit, confirmed operator action. */
+/** A volume offered in Needs review: removed only by an explicit, confirmed operator action. */
 export interface OrphanVolumeItem {
   id: string
   name: string
@@ -120,7 +120,7 @@ export interface OrphanVolumeItem {
 
 export const volumeItemId = (name: string): string => `volume:${name}`
 
-/** Decide entries for the planner's orphan names, biggest first. Volumes are not restorable. */
+/** Review entries for the planner's orphan names, biggest first. Volumes are not restorable. */
 export function orphanVolumeItems(
   names: readonly string[],
   df: ReadonlyMap<string, VolumeFact>

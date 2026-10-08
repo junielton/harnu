@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { parseOptions } from '../src/main/gc/gc-options'
 
 const good = {
-  bucket: 'decide',
+  bucket: 'review',
   reasonCode: 'dirty',
   headSha: 'a'.repeat(40),
   stackIds: ['s1'],
@@ -46,7 +46,7 @@ describe('parseOptions: the gc:clean payload is untrusted', () => {
     ['a numeric headSha', { ...good, headSha: 5 }],
     ['a string for bytes', { ...good, bytes: '12' }],
     ['a numeric project', { ...good, project: 4 }],
-    ['not an object', 'decide']
+    ['not an object', 'review']
   ])('drops an expected entry with %s, so that id is refused', (_name, entry) => {
     expect(parseOptions({ expected: { a: entry, b: good } }).expected).toEqual({ b: good })
   })

@@ -14,9 +14,9 @@ function parseExpected(raw: unknown): GcExpected | null {
   const stackIds = strings(e.stackIds)
   const ownedVolumes = strings(e.ownedVolumes)
   if (
-    (bucket !== 'corpse' &&
-      bucket !== 'decide' &&
-      bucket !== 'alive' &&
+    (bucket !== 'ready' &&
+      bucket !== 'review' &&
+      bucket !== 'in-use' &&
       bucket !== 'orphan-volume') ||
     !stackIds ||
     !ownedVolumes ||

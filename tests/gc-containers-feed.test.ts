@@ -25,17 +25,17 @@ describe('gc-buckets: the last GC snapshot, keyed by worktree path', () => {
   })
 
   it('answers for a recorded path, ignoring a trailing slash', () => {
-    setInheritedBuckets(new Map([[WT, 'corpse']]))
-    expect(inheritedBucketFor(WT)).toBe('corpse')
-    expect(inheritedBucketFor(`${WT}/`)).toBe('corpse')
+    setInheritedBuckets(new Map([[WT, 'ready']]))
+    expect(inheritedBucketFor(WT)).toBe('ready')
+    expect(inheritedBucketFor(`${WT}/`)).toBe('ready')
     expect(inheritedBucketFor(WT2)).toBeUndefined()
   })
 
   it('replaces the previous snapshot instead of merging', () => {
-    setInheritedBuckets(new Map([[WT, 'corpse']]))
-    setInheritedBuckets(new Map([[WT2, 'alive']]))
+    setInheritedBuckets(new Map([[WT, 'ready']]))
+    setInheritedBuckets(new Map([[WT2, 'in-use']]))
     expect(inheritedBucketFor(WT)).toBeUndefined()
-    expect(inheritedBucketFor(WT2)).toBe('alive')
+    expect(inheritedBucketFor(WT2)).toBe('in-use')
   })
 })
 
@@ -44,11 +44,11 @@ describe('Containers snapshot inherits the worktree bucket (AC-9)', () => {
   const recent = composeContainer('proj-231', WT, { startedAt: NOW - 12 * 3_600_000 })
   const folders = [knownFolder(MAIN), knownFolder(WT, { lastActivityAt: NOW - 12 * 3_600_000 })]
 
-  it('reads zombie immediately for a stack in a corpse worktree', () => {
+  it('reads zombie immediately for a stack in a ready item worktree', () => {
     const snap = buildSnapshot(
       scanInput({ containers: [recent], folders, inheritedBucketOf: inheritedBucketFor })
     )
-    setInheritedBuckets(new Map([[WT, 'corpse']]))
+    setInheritedBuckets(new Map([[WT, 'ready']]))
     const withFeed = buildSnapshot(
       scanInput({ containers: [recent], folders, inheritedBucketOf: inheritedBucketFor })
     )
@@ -56,10 +56,10 @@ describe('Containers snapshot inherits the worktree bucket (AC-9)', () => {
     expect(withFeed.stacks[0]!.verdict).toBe('zombie')
   })
 
-  it('reads active for an alive worktree and pending for a decide one', () => {
+  it('reads active for an in-use worktree and pending for a review one', () => {
     for (const [bucket, verdict] of [
-      ['alive', 'active'],
-      ['decide', 'pending']
+      ['in-use', 'active'],
+      ['review', 'pending']
     ] as const) {
       setInheritedBuckets(new Map([[WT, bucket]]))
       const snap = buildSnapshot(
@@ -86,7 +86,7 @@ describe('Containers snapshot inherits the worktree bucket (AC-9)', () => {
   })
 
   it('ignores the bucket for a stack in the main checkout', () => {
-    setInheritedBuckets(new Map([[MAIN, 'corpse']]))
+    setInheritedBuckets(new Map([[MAIN, 'ready']]))
     const snap = buildSnapshot(
       scanInput({
         containers: [composeContainer('proj', MAIN, { startedAt: NOW - 10 * DAY })],
@@ -106,40 +106,40 @@ describe('Containers snapshot inherits the worktree bucket (AC-9)', () => {
 describe('bucketFeed: the path → bucket map built from a gather', () => {
   it('maps each bundle with a path to its bucket', () => {
     const feed = bucketFeed([
-      { item: { path: '/ws/a' }, bucket: 'corpse' },
-      { item: { path: '/ws/b' }, bucket: 'alive' },
-      { item: {}, bucket: 'decide' }
+      { item: { path: '/ws/a' }, bucket: 'ready' },
+      { item: { path: '/ws/b' }, bucket: 'in-use' },
+      { item: {}, bucket: 'review' }
     ] as never)
     expect([...feed]).toEqual([
-      ['/ws/a', 'corpse'],
-      ['/ws/b', 'alive']
+      ['/ws/a', 'ready'],
+      ['/ws/b', 'in-use']
     ])
   })
 })
 
 describe('a stack run from a subfolder of the worktree inherits the worktree bucket', () => {
   it('walks up to the deepest recorded ancestor', () => {
-    setInheritedBuckets(new Map([[WT, 'corpse']]))
-    expect(inheritedBucketFor(`${WT}/api/docker`)).toBe('corpse')
+    setInheritedBuckets(new Map([[WT, 'ready']]))
+    expect(inheritedBucketFor(`${WT}/api/docker`)).toBe('ready')
   })
 
   it('does not match a sibling that merely shares a name prefix', () => {
-    setInheritedBuckets(new Map([[WT, 'corpse']]))
+    setInheritedBuckets(new Map([[WT, 'ready']]))
     expect(inheritedBucketFor(`${WT}-2/api`)).toBeUndefined()
   })
 
   it('prefers the deepest recorded folder', () => {
     setInheritedBuckets(
       new Map([
-        [WT, 'corpse'],
-        [`${WT}/nested`, 'alive']
+        [WT, 'ready'],
+        [`${WT}/nested`, 'in-use']
       ])
     )
-    expect(inheritedBucketFor(`${WT}/nested/x`)).toBe('alive')
+    expect(inheritedBucketFor(`${WT}/nested/x`)).toBe('in-use')
   })
 
   it('makes the stack a zombie when only a subfolder is attributed', () => {
-    setInheritedBuckets(new Map([[WT, 'corpse']]))
+    setInheritedBuckets(new Map([[WT, 'ready']]))
     const sub = composeContainer('proj-231', `${WT}/api`, { startedAt: NOW - 12 * 3_600_000 })
     const snap = buildSnapshot(
       scanInput({

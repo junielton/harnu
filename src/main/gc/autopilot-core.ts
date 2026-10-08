@@ -10,13 +10,13 @@ export type CycleMode = 'off' | 'report' | 'clean'
 
 export interface CyclePlan {
   mode: CycleMode
-  /** Corpses to clean now, oldest sign of life first, capped. Always empty unless `clean`. */
+  /** Ready items to clean now, oldest sign of life first, capped. Always empty unless `clean`. */
   toClean: WorktreeBundle[]
-  /** Eligible corpses left for a later cycle by the per-cycle cap. */
+  /** Eligible ready items left for a later cycle by the per-cycle cap. */
   deferred: number
-  /** Eligible corpses: past `neverClean`, `keep` and main-checkout exclusions. */
+  /** Eligible ready items: past `neverClean`, `keep` and main-checkout exclusions. */
   found: number
-  /** Disk the eligible corpses occupy, for the report-only notice. */
+  /** Disk the eligible ready items occupy, for the report-only notice. */
   reportBytes: number
 }
 
@@ -60,7 +60,7 @@ const bySignOfLife = (a: WorktreeBundle, b: WorktreeBundle): number => {
 /**
  * `off` when the autopilot or the worktrees category is off. `report` until the operator has
  * acknowledged the first report: it finds and counts, and returns nothing to clean. `clean`
- * otherwise: corpses only, minus neverClean, oldest first, capped at `maxItemsPerCycle`.
+ * otherwise: ready items only, minus neverClean, oldest first, capped at `maxItemsPerCycle`.
  */
 export function planCycle(bundles: readonly WorktreeBundle[], prefs: GcPrefs): CyclePlan {
   if (!prefs.autopilot || !prefs.categories.worktrees) {
@@ -69,7 +69,7 @@ export function planCycle(bundles: readonly WorktreeBundle[], prefs: GcPrefs): C
   const eligible = bundles
     .filter(
       (b) =>
-        b.bucket === 'corpse' &&
+        b.bucket === 'ready' &&
         CLEANABLE_KINDS.includes(b.item.kind) &&
         !b.keep &&
         !b.isMainCheckout &&
@@ -90,7 +90,7 @@ export function planCycle(bundles: readonly WorktreeBundle[], prefs: GcPrefs): C
   }
 }
 
-// ---- failures: a corpse that keeps failing is a decision, not a retry loop -----------------
+// ---- failures: a ready item that keeps failing is a decision, not a retry loop -----------------
 
 /** A halted cleanup, remembered in memory until it succeeds, the worktree is gone, or a day passes. */
 export interface CycleFailure {
@@ -115,7 +115,7 @@ export function pruneFailures(
 }
 
 /**
- * Spec §4: a halted item reappears in Decide with the step and the error. Only a corpse is
+ * Spec §4: a halted item reappears in Needs review with the step and the error. Only a ready item is
  * rewritten; anything else is already a decision or off limits.
  */
 export function applyFailures(
@@ -123,11 +123,11 @@ export function applyFailures(
   failures: ReadonlyMap<string, CycleFailure>
 ): WorktreeBundle[] {
   return bundles.map((b) => {
-    const f = b.bucket === 'corpse' ? failures.get(b.item.id) : undefined
+    const f = b.bucket === 'ready' ? failures.get(b.item.id) : undefined
     if (!f) return b
     return {
       ...b,
-      bucket: 'decide' as const,
+      bucket: 'review' as const,
       reason: {
         code: 'cleanup-failed' as const,
         detail: `Cleanup stopped at ${f.step}: ${f.error}`
@@ -139,12 +139,12 @@ export function applyFailures(
 // ---- manual cleaning: what the operator's click may take -----------------------------------
 
 export type RefusalCode =
-  'main-checkout' | 'never-clean' | 'alive' | 'kept' | 'needs-confirmation' | 'unsupported-kind'
+  'main-checkout' | 'never-clean' | 'in-use' | 'kept' | 'needs-confirmation' | 'unsupported-kind'
 
 /**
  * Why a manual `gc:clean` must not touch this bundle, or null when it may proceed. Judged
  * against the CURRENT prefs, because `neverClean` can change after the snapshot the operator
- * is looking at. A confirmed Decide item passes; Alive, a main checkout, a neverClean path and
+ * is looking at. A confirmed review item passes; an in-use item, a main checkout, a neverClean path and
  * a kept bundle never do. The live-session and changed-stack refusals are the reprobe's.
  */
 export function refusalFor(
@@ -155,9 +155,9 @@ export function refusalFor(
   if (b.isMainCheckout || isMainCheckoutByPath(b)) return 'main-checkout'
   if (isNeverClean(b, prefs)) return 'never-clean'
   if (b.keep) return 'kept'
-  if (b.bucket === 'alive') return 'alive'
+  if (b.bucket === 'in-use') return 'in-use'
   // The cleanup executor skips the folder of a detached worktree, so "success" would be a lie.
   if (!CLEANABLE_KINDS.includes(b.item.kind)) return 'unsupported-kind'
-  if (b.bucket === 'decide' && !opts.confirmed) return 'needs-confirmation'
+  if (b.bucket === 'review' && !opts.confirmed) return 'needs-confirmation'
   return null
 }

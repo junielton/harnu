@@ -99,7 +99,7 @@ describe('the feeds are wired (M12, M13, M14, M17)', () => {
   })
 })
 
-describe('every consumer sees a halted item as Decide (delta 1, item 4)', () => {
+describe('every consumer sees a halted item as Needs review (delta 1, item 4)', () => {
   it('gather() applies the failures before it caches and feeds anything', () => {
     const gather = between(ipc, 'const gather = ', 'const queue = createJobQueue')
     const applied = gather.indexOf('withFailures(')

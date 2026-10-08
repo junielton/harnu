@@ -574,7 +574,7 @@ export interface ScanInput {
    * that path. Only a stack attributed to a linked worktree reads it; absent, every stack
    * keeps the idle clock.
    */
-  inheritedBucketOf?: (path: string) => 'corpse' | 'decide' | 'alive' | undefined
+  inheritedBucketOf?: (path: string) => 'ready' | 'review' | 'in-use' | undefined
 }
 
 function memFor(id: string, memById: ReadonlyMap<string, number>): number | null {

@@ -1,8 +1,8 @@
-// The operator's explicit force path for Decide worktrees (design: workspace-gc §3.3, Decide →
+// The operator's explicit force path for review worktrees (design: workspace-gc §3.3, Needs review →
 // Remove). Only `gc-manual.ts` builds these ops, and only for a bundle the operator confirmed;
 // the autopilot has no import path to this file.
 //
-// A Decide bundle is one the cleanup executor would refuse: it is dirty, unpushed or not
+// A review bundle is one the cleanup executor would refuse: it is dirty, unpushed or not
 // proven merged. Forcing it is safe only because everything it could lose is written to git
 // first, so the order here is the whole contract:
 //
@@ -12,7 +12,7 @@
 //   3. only then does the normal pipeline run, with the executor's own dirty/unpushed/merged
 //      guards waived, because step 2 is what makes waiving them recoverable.
 //
-// What stays refused: a main checkout, a neverClean path, an Alive bundle and a detached
+// What stays refused: a main checkout, a neverClean path, an in-use bundle and a detached
 // worktree are turned away before these ops are even built (autopilot-core `refusalFor`).
 
 import type { WorktreeBundle } from './bundle-core'
@@ -25,7 +25,7 @@ const messageOf = (err: unknown): string => (err instanceof Error ? err.message 
 /**
  * The bundle as the executor should see it: harvestable, with the blockers the operator
  * confirmed removed. Only a copy used inside these ops; the bundle the queue holds, and the
- * one reported back, still says Decide.
+ * one reported back, still says Needs review.
  */
 export function asExecutable(b: WorktreeBundle): WorktreeBundle {
   return {
