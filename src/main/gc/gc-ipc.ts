@@ -131,7 +131,7 @@ export async function registerGcHandlers(
           }
         }
         cache = g
-        setInheritedBuckets(bucketFeed(g.bundles))
+        setInheritedBuckets(bucketFeed(g.bundles, g.canonical))
         // Only the marks this gather judged, and only while they are still the same: a Keep
         // pressed meanwhile must survive this verdict on an older one.
         if (g.staleKeeps.length > 0) await persist(withoutStaleKeeps(prefs, g.staleKeeps))

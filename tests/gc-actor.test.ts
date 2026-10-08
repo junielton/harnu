@@ -27,7 +27,8 @@ function base() {
         written.push(t)
       }
     },
-    isProtectedNow: () => false
+    isProtectedNow: () => false,
+    realpath: async (p: string) => p
   } as unknown as GcShellDeps
   return { deps, written }
 }

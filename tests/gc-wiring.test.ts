@@ -72,7 +72,9 @@ describe('one timer', () => {
 
 describe('the feeds are wired (M12, M13, M14, M17)', () => {
   it('M12: the Containers scan passes the inherited bucket feed', () => {
-    expect(containersShell).toMatch(/inheritedBucketOf: inheritedBucketFor/)
+    expect(containersShell).toMatch(/inheritedBucketOf: bucketLookup\(realOf\)/)
+    // ...keyed on real paths: the feed is built with the gather's resolver.
+    expect(ipc).toMatch(/bucketFeed\(g\.bundles, g\.canonical\)/)
   })
 
   it('M13: the gather passes the volume facts to the bundle builder', () => {

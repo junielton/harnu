@@ -28,7 +28,7 @@ import {
   type KnownFolder,
   type VolumeFact
 } from '../containers/containers-core'
-import { buildBundles, containerFolderPaths } from './bundle-core'
+import { buildBundles, containerFolderPaths, type CanonicalPath } from './bundle-core'
 import { dockerIsUnavailable, resolveRealPaths } from './gc-shell'
 import { sessionsFromFleet } from './gc-sessions'
 import {
@@ -50,6 +50,8 @@ import type { GcPrefs } from './gc-prefs'
 /** A gather plus what only the snapshot needs. */
 export interface GcGathered extends GcGather {
   scannedAt: number
+  /** Real paths of everything the bundles were built from; the Containers feed is keyed on them. */
+  canonical: CanonicalPath
   df: Map<string, VolumeFact>
   /** False when docker was absent or down, so `df` and the container list say nothing. */
   dockerAvailable: boolean
@@ -275,6 +277,7 @@ export async function gatherGc(
     bundles,
     housekeeping,
     scannedAt: now,
+    canonical,
     df,
     dockerAvailable: available,
     docker,
