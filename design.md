@@ -8482,7 +8482,8 @@ Needs review item, orphan volumes included) and the block panel's button (that o
   still current. **Right before the dialog opens** it asks main's cache (`gc:opinion:cached`) about the
   marked ids again, under each item's current key, and pre-selects only those main still confirms as
   `safe`; the rest lose their chip and a one-line toast says how many were left out. If main cannot be
-  asked, nothing is selected. It **pre-selects those items and opens the existing remove dialog**; it never removes by
+  asked, nothing is selected. An item main always refuses to remove (a worktree that holds another one,
+  or one git has locked) keeps its chip but is never counted or pre-selected. It **pre-selects those items and opens the existing remove dialog**; it never removes by
   itself. The binding is the `expected` the dialog captures **when it opens**, exactly as for Remove
   selected: the dialog sends `gc:clean(ids, { confirmed, expected })` and main refuses any item whose
   facts differ from that `expected` (`changed-since-confirm`). The opinion is advice shown before the
