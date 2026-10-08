@@ -2260,11 +2260,11 @@
       "bucket": {
         "header": {
           "ready": "Pronto para limpar",
-          "review": "Precisa de você",
+          "review": "Precisa de revisão",
           "in-use": "Em uso"
         },
         "ready": "Pronto para limpar",
-        "review": "Precisa de você",
+        "review": "Precisa de revisão",
         "in-use": "Em uso"
       },
       "map": {
@@ -2303,7 +2303,8 @@
         "noKnownWorktree": "Nenhum worktree conhecido usa este volume.",
         "ready": "Mesclado, limpo e parado além do período de carência.",
         "pathUnresolved": "A worktree tem um caminho que o Harnu não conseguiu resolver para o local real, então não sabe o que o usa.",
-        "nestedWorktree": "Há outro worktree dentro deste, e remover este também o jogaria no lixo."
+        "nestedWorktree": "Há outro worktree dentro deste, e remover este também o jogaria no lixo.",
+        "locked": "Este worktree está bloqueado no git"
       },
       "step": {
         "stopStack": "Parar a stack",
@@ -2313,7 +2314,10 @@
         "trash": "Enviar o checkout à lixeira",
         "prune": "Podar o worktree",
         "branchDelete": "Apagar a branch",
-        "unknown": "uma etapa desconhecida"
+        "unknown": "uma etapa desconhecida",
+        "reprobe": "Verificar de novo",
+        "rmVolumes": "Remover volumes",
+        "detach": "Desanexar o worktree"
       },
       "panel": {
         "close": "Fechar painel",
@@ -2344,12 +2348,15 @@
         "keep": "Manter",
         "ask": "Pedir uma opinião",
         "opinionTitle": "Opinião",
-        "volumesKept": "Os volumes dele ({names}) são mantidos. Depois eles aparecem em Precisa de você.",
+        "volumesKept": "Os volumes dele ({names}) são mantidos. Depois eles aparecem em Precisa de revisão.",
         "readyNote": "Limpo no próximo ciclo, ou agora com Limpar agora.",
         "inUseNote": "Deixado como está enquanto uma sessão trabalha aqui ou o pull request está aberto.",
         "happenedTitle": "O que aconteceu",
         "stoppedAt": "Parou em “{step}”",
-        "nothingChanged": "Nada foi alterado."
+        "nothingChanged": "Nada foi alterado.",
+        "genericStop": "O Harnu parou este item por uma verificação de segurança.",
+        "removeBlocked": "Remover não está disponível: esta pasta contém outro worktree. Remova ou mova esse primeiro.",
+        "removeLocked": "Remover não está disponível: o git tem este worktree bloqueado. Desbloqueie primeiro."
       },
       "list": {
         "label": "Worktrees por grupo",
@@ -2381,7 +2388,7 @@
         "riskMarker": "Pode conter trabalho que nenhuma outra branch tem",
         "warnRisk": "{n} destes contém trabalho que nenhuma outra branch tem. O código continua recuperável pelas refs de arquivo e pela lixeira do sistema. | {n} destes contêm trabalho que nenhuma outra branch tem. O código continua recuperável pelas refs de arquivo e pela lixeira do sistema.",
         "warnVolumesLost": "Volumes não podem ser restaurados.",
-        "warnVolumesKept": "Os volumes são mantidos. Depois eles aparecem em Precisa de você.",
+        "warnVolumesKept": "Os volumes são mantidos. Depois eles aparecem em Precisa de revisão.",
         "warnRecover": "O código e a branch voltam pelas refs de arquivo e pela lixeira do sistema, e as dependências voltam pelo setup do repositório.",
         "cancel": "Cancelar",
         "confirmWorktrees": "Remover {n} worktree | Remover {n} worktrees",
@@ -2439,7 +2446,7 @@
         "toggleCache": "Limpar o build cache automaticamente",
         "toggleImages": "Limpar imagens dangling automaticamente",
         "inspect": "Inspecionar stacks",
-        "volumesNote": "Nunca são removidos automaticamente. Remova cada um você mesmo em Precisa de você.",
+        "volumesNote": "Nunca são removidos automaticamente. Remova cada um você mesmo em Precisa de revisão.",
         "reclaimable": "{size} recuperáveis",
         "imagesCount": "{n} imagem · {size} | {n} imagens · {size}",
         "sub": {
@@ -2447,7 +2454,12 @@
           "plain": "roda a cada ciclo",
           "off": "A limpeza do Docker está desligada"
         },
-        "splitLabel": "Números do Docker por tamanho: build cache, imagens dangling, volumes órfãos"
+        "splitLabel": "Números do Docker por tamanho: build cache, imagens dangling, volumes órfãos",
+        "hidden": {
+          "size": "ocultos",
+          "unresolvedCompose": "Os volumes órfãos estão ocultos porque o nome de um projeto compose não pôde ser resolvido em: {folders}",
+          "scanLimit": "Os volumes órfãos estão ocultos porque a busca por arquivos compose atingiu o limite em: {folders}"
+        }
       },
       "split": {
         "label": "Divisão do disco",
@@ -2456,7 +2468,11 @@
         "count": "{n} item | {n} itens",
         "lastCycle": "Último ciclo {ago}: {n} limpos, {size} liberados",
         "lastCycleReport": "Último ciclo {ago}: {n} item pronto encontrado, {size} (só relatório) | Último ciclo {ago}: {n} itens prontos encontrados, {size} (só relatório)",
-        "review": "Precisa de você"
+        "review": "Precisa de revisão",
+        "running": "Limpando agora · faltam {n}",
+        "runningNow": "Limpando agora",
+        "cache": "Docker (limpo a cada ciclo)",
+        "cacheShort": "Docker"
       },
       "status": {
         "reclaimable": "{size} recuperáveis",
@@ -2495,15 +2511,15 @@
       },
       "toast": {
         "success": "{size} liberados · {count} item pronto limpo | {size} liberados · {count} itens prontos limpos",
-        "partial": "{cleaned} limpos · {failed} precisa de você | {cleaned} limpos · {failed} precisam de você",
+        "partial": "{cleaned} limpos · {failed} precisa de revisão | {cleaned} limpos · {failed} precisam de revisão",
         "review": "Revisar",
         "viewJournal": "Ver diário"
       },
       "footer": {
         "running": "Limpando {done}/{total}",
-        "attention": "{n} precisa de você | {n} precisam de você",
+        "attention": "{n} precisa de revisão | {n} precisam de revisão",
         "a11yRunning": "Limpando: {done} de {total} concluídos. Abrir Limpeza",
-        "a11yAttention": "{n} item precisa de você. Abrir Limpeza | {n} itens precisam de você. Abrir Limpeza",
+        "a11yAttention": "{n} item precisa de revisão. Abrir Limpeza | {n} itens precisam de revisão. Abrir Limpeza",
         "a11yIdle": "Abrir Limpeza — {size} recuperáveis"
       },
       "settings": {
@@ -2563,7 +2579,7 @@
         },
         "volumesRule": {
           "title": "Os volumes do Docker são sempre mantidos",
-          "body": "Limpar uma worktree, à mão ou automaticamente, nunca remove os volumes dela. Quando a worktree some, eles aparecem em Precisa de você como volumes órfãos, com tamanho e projeto do compose, e você remove cada um você mesmo.",
+          "body": "Limpar uma worktree, à mão ou automaticamente, nunca remove os volumes dela. Quando a worktree some, eles aparecem em Precisa de revisão como volumes órfãos, com tamanho e projeto do compose, e você remove cada um você mesmo.",
           "warning": "Um volume removido e os dados dele não podem ser restaurados."
         }
       },
@@ -2595,7 +2611,10 @@
         "sessionOpen": "Há uma sessão aberta nesta worktree, então ela foi deixada como está.",
         "unpushed": "Ela tem commits que nunca foram enviados, então foi deixada como está.",
         "volumeInUse": "Um volume ainda está em uso por um container, então foi deixado como está.",
-        "changedMidRun": "Ela mudou durante a limpeza, então o Harnu parou."
+        "changedMidRun": "Ela mudou durante a limpeza, então o Harnu parou.",
+        "dirty": "Agora há alterações não commitadas, então foi deixado como está.",
+        "foreignCheckout": "Há outro repositório com checkout dentro desta pasta, então foi deixado como está.",
+        "cannotUnregister": "O Harnu não conseguiu associar este worktree a um único registro do git, então nada foi tocado."
       },
       "opinion": {
         "safe": "Seguro",
@@ -2610,10 +2629,10 @@
         "evidence": "Evidência"
       },
       "review": {
-        "title": "Precisa de você",
+        "title": "Precisa de revisão",
         "askAll": "Pedir uma opinião sobre todos os {count}",
         "removeSafe": "Remover o {count} marcado como seguro | Remover os {count} marcados como seguros",
-        "empty": "Nada precisa de você.",
+        "empty": "Nada precisa de revisão.",
         "showAll": "Mostrar todos os {count}",
         "rowAria": "{name}, {size}",
         "selectRow": "Selecionar {name}",
@@ -2631,7 +2650,7 @@
       },
       "legend": {
         "ready": "Pronto para limpar · limpo com um clique ou pelo autopilot",
-        "review": "Precisa de você · sua decisão",
+        "review": "Precisa de revisão · sua decisão",
         "inUse": "Em uso · nunca tocado",
         "area": "Área do bloco = tamanho em disco · clique num bloco para agir",
         "label": "Legenda"

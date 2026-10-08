@@ -45,6 +45,58 @@ describe('CleanupSplitBar', () => {
     expect(w.get('[data-testid="split-review"]').text()).toContain('49 items')
   })
 
+  it('keeps Docker bytes out of the Ready segment and draws them as their own "Docker" segment', () => {
+    const t = totals()
+    t.docker = { count: 14, bytes: 5_000_000_000 }
+    const w = mountBar({ totals: t })
+    expect(w.get('[data-testid="split-auto"]').attributes('style')).toContain(
+      'flex: 6000000000 1 0px'
+    )
+    const docker = w.get('[data-testid="split-cache"]')
+    expect(docker.attributes('style')).toContain('flex: 5000000000 1 0px')
+    expect(docker.text()).toContain('Docker (cleaned each cycle)')
+    expect(docker.text()).toContain('5.00 GB')
+    // The bar itself says just "Docker" so it does not truncate; the caption above carries the full name.
+    expect(docker.get('[data-testid="split-cache-word"]').text()).toBe('Docker')
+    expect(docker.find('svg').exists()).toBe(true)
+  })
+
+  it('with zero ready worktrees and some Docker bytes, the Ready segment is gone and Docker stays', () => {
+    const t = totals()
+    t.ready = { count: 0, bytes: 0 }
+    t.docker = { count: 14, bytes: 5_000_000_000 }
+    const w = mountBar({ totals: t })
+    expect(w.find('[data-testid="split-auto"]').exists()).toBe(false)
+    expect(w.get('[data-testid="split-cache"]').exists()).toBe(true)
+  })
+
+  it('while a job runs the line under the bar reads "Cleaning now · N left", not the last cycle', () => {
+    const cycle = {
+      at: Date.now() - 4 * 60_000,
+      trigger: 'timer',
+      mode: 'clean',
+      found: 2,
+      foundBytes: 1,
+      cleaned: [{ id: 'a', ok: true, haltedAt: null, freedBytes: 1 }],
+      freedBytes: 1,
+      deferred: 0,
+      housekeeping: { buildCacheBytes: 0, imageBytes: 0, volumeBytes: 0, errors: [] },
+      notified: false,
+      jobId: null
+    } as CycleRecord
+    const w = mountBar({ lastCycle: cycle, running: { left: 9 } })
+    expect(w.get('[data-testid="split-running"]').text()).toBe('Cleaning now · 9 left')
+    expect(w.find('[data-testid="split-last-cycle"]').exists()).toBe(false)
+    const idle = mountBar({ lastCycle: cycle, running: null })
+    expect(idle.find('[data-testid="split-running"]').exists()).toBe(false)
+    expect(idle.find('[data-testid="split-last-cycle"]').exists()).toBe(true)
+  })
+
+  it('says "Cleaning now" alone when nothing is left to count', () => {
+    const w = mountBar({ running: { left: 0 } })
+    expect(w.get('[data-testid="split-running"]').text()).toBe('Cleaning now')
+  })
+
   it('leaves out a bucket with nothing in it', () => {
     const t = totals()
     t.ready = { count: 0, bytes: 0 }

@@ -2303,7 +2303,8 @@
         "noKnownWorktree": "No known worktree uses this volume.",
         "ready": "Merged, clean and idle past the grace period.",
         "pathUnresolved": "The worktree has a path Harnu could not resolve to its real location, so it cannot tell what uses it.",
-        "nestedWorktree": "Another worktree lives inside this one, and removing this one would trash it too."
+        "nestedWorktree": "Another worktree lives inside this one, and removing this one would trash it too.",
+        "locked": "This worktree is locked in git"
       },
       "step": {
         "stopStack": "Stop the stack",
@@ -2313,7 +2314,10 @@
         "trash": "Trash the checkout",
         "prune": "Prune the worktree",
         "branchDelete": "Delete the branch",
-        "unknown": "an unknown step"
+        "unknown": "an unknown step",
+        "reprobe": "Check it again",
+        "rmVolumes": "Remove volumes",
+        "detach": "Detach the worktree"
       },
       "panel": {
         "close": "Close panel",
@@ -2349,7 +2353,10 @@
         "inUseNote": "Left alone while a session works here or its pull request is open.",
         "happenedTitle": "What happened",
         "stoppedAt": "Stopped at “{step}”",
-        "nothingChanged": "Nothing was changed."
+        "nothingChanged": "Nothing was changed.",
+        "genericStop": "Harnu stopped this item for a safety check.",
+        "removeBlocked": "Remove is unavailable: this folder holds another worktree. Remove or move that one first.",
+        "removeLocked": "Remove is unavailable: git has this worktree locked. Unlock it first."
       },
       "list": {
         "label": "Worktrees by bucket",
@@ -2447,7 +2454,12 @@
           "plain": "runs each cycle",
           "off": "Docker cleaning is off"
         },
-        "splitLabel": "Docker figures by size: build cache, dangling images, orphan volumes"
+        "splitLabel": "Docker figures by size: build cache, dangling images, orphan volumes",
+        "hidden": {
+          "size": "hidden",
+          "unresolvedCompose": "Orphan volumes are hidden because a compose project name couldn't be resolved in: {folders}",
+          "scanLimit": "Orphan volumes are hidden because the compose scan hit its limit in: {folders}"
+        }
       },
       "split": {
         "label": "Disk split",
@@ -2456,7 +2468,11 @@
         "count": "{n} item | {n} items",
         "lastCycle": "Last cycle {ago}: cleaned {n}, freed {size}",
         "lastCycleReport": "Last cycle {ago}: found {n} ready item, {size} (report only) | Last cycle {ago}: found {n} ready items, {size} (report only)",
-        "review": "Needs review"
+        "review": "Needs review",
+        "running": "Cleaning now · {n} left",
+        "runningNow": "Cleaning now",
+        "cache": "Docker (cleaned each cycle)",
+        "cacheShort": "Docker"
       },
       "status": {
         "reclaimable": "{size} reclaimable",
@@ -2595,7 +2611,10 @@
         "sessionOpen": "A session is open in this worktree, so it was left alone.",
         "unpushed": "It has commits that were never pushed, so it was left alone.",
         "volumeInUse": "A volume is still in use by a container, so it was left alone.",
-        "changedMidRun": "It changed while the clean was running, so Harnu stopped."
+        "changedMidRun": "It changed while the clean was running, so Harnu stopped.",
+        "dirty": "It has uncommitted changes now, so it was left alone.",
+        "foreignCheckout": "Another repository is checked out inside this folder, so it was left alone.",
+        "cannotUnregister": "Harnu couldn't match this worktree to a single git registration, so nothing was touched."
       },
       "opinion": {
         "safe": "Safe",

@@ -8,7 +8,10 @@ import type { RefusalCode } from '../lib/gc-jobs'
  * headline the operator reads is translated here by `code`, and the detail stays a secondary line.
  */
 
-const REASON_SUFFIX: Record<ReasonCode, string> = {
+// Keyed by string, not `ReasonCode`: a code S3 adds (here `locked`) renders by label before this branch has
+// merged the main-side type that names it.
+const REASON_SUFFIX: Record<string, string> = {
+  locked: 'locked',
   dirty: 'dirty',
   unpushed: 'unpushed',
   'open-idle-session': 'openIdleSession',
@@ -27,12 +30,15 @@ const REASON_SUFFIX: Record<ReasonCode, string> = {
 /** `cleanup.gc.reason.*` key for a bucket + reason code; a ready item has no reason code. */
 export function reasonKey(code: ReasonCode | null, ready = false): string {
   if (ready || code === null) return 'cleanup.gc.reason.ready'
-  return `cleanup.gc.reason.${REASON_SUFFIX[code] ?? 'unknownFate'}`
+  return `cleanup.gc.reason.${REASON_SUFFIX[code as string] ?? 'unknownFate'}`
 }
 
 const STEP_SUFFIX: Partial<Record<GcStep, string>> = {
+  reprobe: 'reprobe',
   'stop-stack': 'stopStack',
   'rm-containers': 'rmContainers',
+  'rm-volumes': 'rmVolumes',
+  detach: 'detach',
   archive: 'archive',
   'drop-deps': 'dropDeps',
   trash: 'trash',

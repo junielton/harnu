@@ -3,7 +3,7 @@
 // cache, and a gather clearing a mark the operator set after that gather began.
 
 import type { WorktreeBundle } from './bundle-core'
-import type { GcPrefs } from './gc-prefs'
+import { withoutKeep, type GcPrefs } from './gc-prefs'
 
 /** A mark whose branch fate is no longer the one it was made under. */
 export interface StaleKeep {
@@ -36,10 +36,47 @@ export function judgeKeeps(
  * takes time: if the operator pressed Keep again meanwhile, that newer mark carries the
  * current fate and must survive this gather's verdict on the old one.
  */
-export function withoutStaleKeeps(prefs: GcPrefs, stale: readonly StaleKeep[]): GcPrefs {
+export function withoutStaleKeeps(
+  prefs: GcPrefs,
+  stale: readonly StaleKeep[],
+  /** Ids this verdict must not touch: see {@link protectedFromGather}. */
+  protect: ReadonlySet<string> = new Set()
+): GcPrefs {
   const keep = { ...prefs.keep }
-  for (const { id, marked } of stale) if (keep[id] === marked) delete keep[id]
+  for (const { id, marked } of stale) if (keep[id] === marked && !protect.has(id)) delete keep[id]
   return { ...prefs, keep }
+}
+
+/**
+ * The marks a gather's verdict must leave alone. It judged the prefs as they were when it
+ * started, so a mark written at or after that moment is newer than the verdict, and a
+ * provisional mark (written at once on a click, its fate still to be confirmed by a fresh
+ * gather) is not yet a mark that could be stale.
+ */
+export function protectedFromGather(
+  writtenAt: ReadonlyMap<string, number>,
+  provisional: ReadonlySet<string>,
+  startedAt: number
+): Set<string> {
+  const out = new Set(provisional)
+  for (const [id, at] of writtenAt) if (at >= startedAt) out.add(id)
+  return out
+}
+
+/**
+ * The prefs with a Keep written NOW, before any gather has finished: the cached fate when the
+ * item is known, a placeholder when it is not. Any mark protects through `isProtectedNow`, so
+ * a cycle that already holds this item as ready is refused at its reprobe; the fate is
+ * rewritten once a fresh gather has confirmed it.
+ */
+export function withProvisionalKeep(
+  prefs: GcPrefs,
+  cached: readonly WorktreeBundle[],
+  id: string
+): GcPrefs {
+  if (prefs.keep[id] !== undefined) return prefs
+  const fate = cached.find((b) => b.item.id === id)?.fate.fate ?? 'pending'
+  return { ...prefs, keep: { ...prefs.keep, [id]: fate } }
 }
 
 /**
@@ -54,4 +91,46 @@ export function keepFromFresh(
 ): GcPrefs | null {
   const bundle = fresh.find((b) => b.item.id === id)
   return bundle ? { ...prefs, keep: { ...prefs.keep, [id]: bundle.fate.fate } } : null
+}
+
+export interface KeepPressDeps {
+  /** The live prefs, read again after every await. */
+  prefs(): GcPrefs
+  persist(next: GcPrefs): Promise<GcPrefs>
+  cachedBundles(): readonly WorktreeBundle[]
+  gatherFresh(): Promise<readonly WorktreeBundle[]>
+  /** When each Keep was last written, and which are still waiting for a fresh gather. */
+  keepWrites: Map<string, number>
+  provisionalKeeps: Set<string>
+  now(): number
+}
+
+/**
+ * The Keep button. A provisional mark is persisted FIRST, so the item is protected while the
+ * fresh gather runs (any mark refuses it at the reprobe); the real fate is written once that
+ * gather is in. An item the gather does not know takes back the mark THIS press created and
+ * is refused; a mark that already existed is never touched by a press, so pressing Keep
+ * twice, or on an item a gather happens to omit, can never lose it.
+ */
+export async function pressKeep(id: string, d: KeepPressDeps): Promise<GcPrefs> {
+  const existed = d.prefs().keep[id] !== undefined
+  d.provisionalKeeps.add(id)
+  d.keepWrites.set(id, d.now())
+  await d.persist(withProvisionalKeep(d.prefs(), d.cachedBundles(), id))
+  try {
+    // The cache may predate a scan, a clean or a sweep, and a mark against an old fate is
+    // dropped by the next gather: record the fate from a gather made now.
+    const next = keepFromFresh(d.prefs(), await d.gatherFresh(), id)
+    if (!next) {
+      // Not in the gather is not a change of fate: it never removes a mark that was there.
+      if (existed) return d.prefs()
+      await d.persist(withoutKeep(d.prefs(), [id]))
+      d.keepWrites.delete(id)
+      throw new Error(`unknown cleanup item: ${id}; refresh and retry`)
+    }
+    d.keepWrites.set(id, d.now())
+    return await d.persist(next)
+  } finally {
+    d.provisionalKeeps.delete(id)
+  }
 }

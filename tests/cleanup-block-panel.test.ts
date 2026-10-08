@@ -8,6 +8,7 @@ import type { ReapItem, HydrationInfo } from '../src/preload'
 import type { GcOpinion } from '../src/main/gc/gc-wire'
 import type { GcBlock } from '../src/renderer/src/lib/gc-model'
 import type { BlockJobState, ItemFailure } from '../src/renderer/src/lib/gc-jobs'
+import { stepKey } from '../src/renderer/src/components/cleanup-gc-copy'
 import { CHANGED_SINCE_CONFIRM, REFUSAL_CODES } from '../src/renderer/src/lib/gc-jobs'
 import { MIB, blockOf, reviewReason, modelOf, volume, wt } from './helpers/cleanup-gc-fixtures'
 
@@ -67,6 +68,52 @@ function mountPanel(block: GcBlock, props: Props = {}) {
 
 const has = (w: ReturnType<typeof mountPanel>, id: string): boolean =>
   w.find(`[data-testid="${id}"]`).exists()
+
+describe('CleanupBlockPanel — a nested-worktree item can never be removed from here', () => {
+  const nested = () =>
+    blockWith(
+      'review',
+      {},
+      reviewReason(
+        'nested-worktree',
+        '1 other worktree lives inside this one: .claude/worktrees/spike.'
+      )
+    )
+
+  it('hides Remove and does not act on R, and says why', async () => {
+    const w = mountPanel(nested(), { attachTo: document.body } as never)
+    expect(has(w, 'panel-remove')).toBe(false)
+    expect(w.get('[data-testid="panel-remove-blocked"]').text()).toBe(
+      'Remove is unavailable: this folder holds another worktree. Remove or move that one first.'
+    )
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r' }))
+    expect(w.emitted('remove')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('a locked worktree (git refuses to remove it) gets the same treatment', () => {
+    const locked = blockWith(
+      'review',
+      {},
+      reviewReason('locked' as never, 'This worktree is locked in git.')
+    )
+    const w = mountPanel(locked)
+    expect(has(w, 'panel-remove')).toBe(false)
+    expect(w.get('[data-testid="panel-remove-blocked"]').text()).toBe(
+      'Remove is unavailable: git has this worktree locked. Unlock it first.'
+    )
+  })
+
+  it('keeps Keep and the other actions that do not delete the folder', () => {
+    const w = mountPanel(nested())
+    expect(has(w, 'panel-keep')).toBe(true)
+  })
+
+  it('every other review reason still offers Remove', () => {
+    expect(has(mountPanel(blockWith('review')), 'panel-remove')).toBe(true)
+    expect(has(mountPanel(blockWith('review')), 'panel-remove-blocked')).toBe(false)
+  })
+})
 
 describe('CleanupBlockPanel — actions by bucket and kind', () => {
   it('a ready item offers Clean now and nothing destructive besides', async () => {
@@ -187,7 +234,8 @@ describe('CleanupBlockPanel — a failed item', () => {
       failure: failure({ step: 'drop-deps', error: 'EBUSY: node_modules is in use' })
     })
     expect(w.get('[data-testid="panel-halt"]').text()).toContain(t('cleanup.gc.step.dropDeps'))
-    expect(w.get('[data-testid="panel-error"]').text()).toBe('EBUSY: node_modules is in use')
+    expect(has(w, 'panel-error')).toBe(false)
+    expect(w.text()).not.toContain('EBUSY')
     // No per-step history: "archive" is not claimed done, and no volume step appears at all.
     expect(has(w, 'panel-steps')).toBe(false)
     const text = w.text()
@@ -207,12 +255,14 @@ describe('CleanupBlockPanel — a failed item', () => {
     expect(has(w, 'panel-halt')).toBe(false)
   })
 
-  it('a pre-flight halt with free text still says nothing was changed, and shows the text', () => {
+  it('a pre-flight halt with an unknown reason still says nothing was changed, in a generic sentence', () => {
     const w = mountPanel(failedBlock(), {
       failure: failure({ step: 'reprobe', error: 'git exploded', refusal: null })
     })
     expect(has(w, 'panel-nothing-changed')).toBe(true)
-    expect(w.get('[data-testid="panel-error"]').text()).toBe('git exploded')
+    expect(w.get('[data-testid="panel-generic"]').text()).toBe(
+      'Harnu stopped this item for a safety check.'
+    )
   })
 
   it('a mid-run reason is NOT "nothing was changed": earlier steps may have run', () => {
@@ -235,15 +285,44 @@ describe('CleanupBlockPanel — a failed item', () => {
     expect(w.emitted('retry')).toHaveLength(1)
   })
 
-  it('shows the raw error clamped to two lines, with the full text in the tooltip, and copies it', async () => {
+  it('never shows a raw error as text: a generic sentence is visible and the raw text only travels with Copy error', async () => {
     const writeText = vi.fn(async () => {})
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     const w = mountPanel(failedBlock(), { failure: failure() })
-    const err = w.get('[data-testid="panel-error"]')
-    expect(err.classes()).toContain('line-clamp-2')
-    expect(err.attributes('title')).toBe('volume pg-1 is in use by container pg-1')
+    expect(has(w, 'panel-error')).toBe(false)
+    expect(w.text()).not.toContain('volume pg-1 is in use by container pg-1')
+    expect(w.html()).not.toContain('volume pg-1 is in use by container pg-1')
+    expect(w.get('[data-testid="panel-generic"]').text()).toBe(
+      'Harnu stopped this item for a safety check.'
+    )
     await w.get('[data-testid="panel-copy-error"]').trigger('click')
     expect(writeText).toHaveBeenCalledWith('volume pg-1 is in use by container pg-1')
+  })
+
+  it('a known refusal gets its sentence and no generic one', () => {
+    const w = mountPanel(failedBlock(), {
+      failure: failure({ step: 'reprobe', error: 'dirty', refusal: 'dirty' })
+    })
+    expect(has(w, 'panel-generic')).toBe(false)
+    expect(w.get('[data-testid="panel-refusal"]').text()).not.toBe('dirty')
+  })
+
+  it('every pipeline step has its own label, so no known step reads as "an unknown step"', () => {
+    for (const step of [
+      'reprobe',
+      'stop-stack',
+      'rm-containers',
+      'rm-volumes',
+      'archive',
+      'drop-deps',
+      'trash',
+      'prune',
+      'branch-delete',
+      'detach'
+    ] as const) {
+      expect(stepKey(step), step).not.toBe('cleanup.gc.step.unknown')
+      expect(t(stepKey(step)), step).not.toBe('an unknown step')
+    }
   })
 
   it('a changed-since-confirm refusal is stated plainly instead of dumping the error', () => {

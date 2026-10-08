@@ -22,6 +22,7 @@ const CODES = [
   'cleanup-failed',
   'path-unresolved',
   'nested-worktree',
+  'locked',
   'no-known-worktree'
 ] as const
 

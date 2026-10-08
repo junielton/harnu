@@ -84,6 +84,7 @@ function bundle(over: Partial<WorktreeBundle> = {}): WorktreeBundle {
     isMainCheckout: false,
     pathsResolved: true,
     nestedWorktrees: [],
+    foreignCheckouts: [],
     bucket: 'ready',
     reason: null,
     ...over
@@ -126,6 +127,9 @@ interface Harness {
   listWorktrees: ReturnType<typeof vi.fn>
   /** Replaces what the next `git worktree list` returns, to model a worktree appearing. */
   setWorktrees(paths: string[]): void
+  findForeignCheckouts: ReturnType<typeof vi.fn>
+  /** Replaces what the next foreign-checkout walk finds, to model a clone appearing. */
+  setForeign(paths: string[]): void
   probeStatus: ReturnType<typeof vi.fn>
   git: ReturnType<typeof vi.fn>
   gitCalls: string[][]
@@ -151,6 +155,8 @@ function harness(
     unresolvedExactly?: string[]
     /** What `git worktree list` reports; the main checkout and the worktree itself by default. */
     worktrees?: string[]
+    /** What the foreign-checkout walk finds; nothing by default. */
+    foreign?: string[]
   } = {}
 ): Harness {
   let stacks = over.stacks ?? [stack('app', [container('c1', `${WT}/api`)])]
@@ -181,6 +187,8 @@ function harness(
   })
   let worktrees = over.worktrees ?? [REPO, WT]
   const listWorktrees = vi.fn(async (_repo: string) => worktrees)
+  let foreign = over.foreign ?? []
+  const findForeignCheckouts = vi.fn(async (_path: string) => foreign)
   const probeStatus = vi.fn(async () => ({
     // WorktreeStatus types this as a boolean; null models a probe that gave no real answer,
     // which the reprobe must refuse rather than read as clean.
@@ -201,7 +209,8 @@ function harness(
     archiveTip: async (_repo, ref) => ref,
     archiveWip: async (_repo, ref) => ref,
     detachSidebar: async () => undefined,
-    removeWorktreeAdmin: async () => undefined,
+    canUnregister: async () => true,
+    removeWorktreeAdmin: async () => true,
     appendTombstone: async () => undefined,
     now: () => EXEC_NOW,
     ...over.executor
@@ -227,7 +236,8 @@ function harness(
       headOf,
       isProtectedNow,
       realpath,
-      listWorktrees
+      listWorktrees,
+      findForeignCheckouts
     },
     stop,
     removeContainers,
@@ -243,6 +253,10 @@ function harness(
     listWorktrees,
     setWorktrees: (next) => {
       worktrees = next
+    },
+    findForeignCheckouts,
+    setForeign: (next) => {
+      foreign = next
     },
     probeStatus,
     git,
@@ -1143,7 +1157,8 @@ function scanned(
     volumes: new Map([['deploy_pg', { sizeBytes: 1, project: 'deploy' }]]),
     knownFolders: [],
     protectedProjects: new Set(),
-    canonical: links
+    canonical: links,
+    foreignCheckouts: new Map([[item.id, []]])
   })
   expect(out).toHaveLength(1)
   return out[0]!
@@ -2031,6 +2046,100 @@ describe('a worktree nested inside the bundle (delta 6, F1)', () => {
       const r = await runBundle(bundle(), createGcOps(h.deps), opts)
       expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'changed-mid-run' })
       expect(r.freedBytes).toBe(4096)
+      expect(cleanItem).not.toHaveBeenCalled()
+    })
+  })
+})
+
+// ---- a foreign checkout nested inside the bundle (delta 7) -------------------------------
+
+describe('a foreign checkout nested inside the bundle (delta 7)', () => {
+  // A worktree of another repo, or a plain clone, inside WT is not in WT's repo's
+  // `git worktree list`; only its `.git` on disk shows it.
+  const FOREIGN = `${WT}/libs/api-gateway/.git`
+  const opts = { removeVolumes: true }
+
+  describe('the reprobe', () => {
+    it('refuses as foreign-checkout, walking the real path of the worktree, before any docker call', async () => {
+      const h = harness({ foreign: [FOREIGN], links: { '/link/wt': WT } })
+      const b = bundle({ item: reapItem({ path: '/link/wt' }) })
+      expect(await createGcOps(h.deps).reprobe(b)).toEqual({
+        ok: false,
+        reason: 'foreign-checkout'
+      })
+      expect(h.findForeignCheckouts).toHaveBeenCalledWith(WT)
+      expect(h.listStacks).not.toHaveBeenCalled()
+    })
+
+    it('passes when the walk finds nothing', async () => {
+      const h = harness()
+      expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({ ok: true })
+      expect(h.findForeignCheckouts).toHaveBeenCalledWith(WT)
+    })
+
+    it('refuses as probe-failed when the walk throws', async () => {
+      const h = harness()
+      h.findForeignCheckouts.mockRejectedValueOnce(new Error('EACCES: permission denied'))
+      expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+        ok: false,
+        reason: 'probe-failed: EACCES: permission denied'
+      })
+      expect(h.listStacks).not.toHaveBeenCalled()
+    })
+
+    it('refuses as probe-failed when the walk answers something that is not a list', async () => {
+      const h = harness()
+      h.findForeignCheckouts.mockResolvedValueOnce(undefined)
+      const r = await createGcOps(h.deps).reprobe(bundle())
+      expect(r.ok === false && r.reason).toMatch(/^probe-failed/)
+    })
+  })
+
+  describe('the recheck', () => {
+    it('refuses as foreign-checkout', async () => {
+      const h = harness({ stacks: [], foreign: [FOREIGN] })
+      expect(await createGcOps(h.deps).recheck(bundle())).toEqual({
+        ok: false,
+        reason: 'foreign-checkout'
+      })
+    })
+
+    it('refuses as probe-failed when the walk throws or answers no list', async () => {
+      const h = harness({ stacks: [] })
+      h.findForeignCheckouts.mockRejectedValueOnce(new Error('walk failed'))
+      expect(await createGcOps(h.deps).recheck(bundle())).toEqual({
+        ok: false,
+        reason: 'probe-failed: walk failed'
+      })
+      h.findForeignCheckouts.mockResolvedValueOnce('x')
+      const r = await createGcOps(h.deps).recheck(bundle())
+      expect(r.ok === false && r.reason).toMatch(/^probe-failed/)
+    })
+
+    it('one cloned during the docker steps halts at drop-deps, before the deps go', async () => {
+      const removeDir = vi.fn(async () => undefined)
+      const h = harness({ dehydrate: { removeDir } })
+      h.stop.mockImplementationOnce(async (ids: string[]) => {
+        h.setForeign([FOREIGN])
+        return ok(ids)
+      })
+      const r = await runBundle(bundle(), createGcOps(h.deps), opts)
+      expect(r).toMatchObject({ ok: false, haltedAt: 'drop-deps', error: 'changed-mid-run' })
+      expect(removeDir).not.toHaveBeenCalled()
+      expect(cleanItem).not.toHaveBeenCalled()
+    })
+
+    it('one cloned during drop-deps halts at archive, before cleanGit', async () => {
+      let h: Harness | null = null
+      h = harness({
+        dehydrate: {
+          removeDir: async () => {
+            h!.setForeign([FOREIGN])
+          }
+        }
+      })
+      const r = await runBundle(bundle(), createGcOps(h.deps), opts)
+      expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'changed-mid-run' })
       expect(cleanItem).not.toHaveBeenCalled()
     })
   })

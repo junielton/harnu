@@ -314,10 +314,22 @@ describe('every code the engine can refuse with is known', () => {
     'not-harvestable',
     'session-open',
     'unpushed',
-    'volume-in-use'
+    'volume-in-use',
+    'dirty',
+    'foreign-checkout',
+    'cannot-unregister'
   ])('%s', (code) => {
     expect(REFUSAL_CODES).toContain(code)
     expect(refusalOf({ ok: false, error: code })).toBe(code)
+  })
+
+  it('a refusal code followed by engine text (cannot-unregister: …) is still that refusal', () => {
+    expect(
+      refusalOf({
+        ok: false,
+        error: 'cannot-unregister: no matching, unlocked registration for this worktree'
+      })
+    ).toBe('cannot-unregister')
   })
 
   it('a probe-failed reason carries the engine text after the code and is still the probe-failed refusal', () => {

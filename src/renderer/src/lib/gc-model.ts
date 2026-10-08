@@ -116,7 +116,7 @@ function worktreeBlock(b: WorktreeBundle): GcBlock {
     kind: 'worktree',
     bucket: b.bucket,
     repoPath: item.repoPath,
-    repoLabel: basename(item.repoPath),
+    repoLabel: repoDisplayLabel(item.repoPath),
     name: item.path ? basename(item.path) : (item.branch ?? item.id),
     branch: item.branch ?? null,
     bytes: bytes ?? 0,
@@ -198,7 +198,8 @@ export function buildGcModel(snapshot: GcSnapshot): GcModel {
   }
   const docker: GcDockerCard = snapshot.docker ?? {
     buildCacheReclaimableBytes: null,
-    danglingImages: null
+    danglingImages: null,
+    orphanVolumesHidden: null
   }
   if (snapshot.prefs.categories.dockerCache) {
     totals.docker.count = docker.danglingImages?.count ?? 0

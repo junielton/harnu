@@ -32,11 +32,15 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
+- **Cleanup polish.** Docker bytes now get their own "Docker (cleaned each cycle)" segment in the split bar, so "Ready to clean" agrees with the big button. While a clean runs, the line under the bar reads "Cleaning now · N left". The selection bar's Remove, Dehydrate and Keep have icons. The dialog and the side panel use the same `proj/www` repo label as the map, so two repos called `www` stay apart. Portuguese now calls the review group "Precisa de revisão" everywhere in Cleanup.
 - **Cleanup now matches the approved mockup more closely.** Every map region shows its repo as a monospace `proj/www`-style label (the full path on hover), a legend row under the split bar names the three groups and says what a block's area means, Map / List and Scan now have icons, and the Docker card has a "runs each cycle" subtitle, a split bar of cache, images and orphan volumes, and draws orphan volumes in the amber review colour. The confirm dialog gained a close button, icons on the chips and the confirm button, monospace row titles, a one-line breakdown ("3 stacks stopped · 12 dependency folders removed · 12 worktrees trashed") and a "12 ready · 6.44 GB" footer.
 - **One unit everywhere in Cleanup.** Sizes use the app's decimal GB/MB on every surface; the docs examples follow.
 
 ### Fixed
 
+- **No raw codes in Cleanup.** Items stopped because they became dirty, hold another repository's checkout, or could not be unregistered from git now say so in a sentence; any other reason reads "Harnu stopped this item for a safety check", with the raw text only behind Copy error. Every pipeline step has a label.
+- **No Remove on an item that holds another worktree or that git has locked.** It could never succeed, so the button and its R shortcut are gone, with a line saying why.
+- **The Docker card says when orphan volumes are hidden.** If a compose project name could not be resolved (or the compose scan hit its limit), the volumes block now reads "hidden" with a note naming the folders, instead of a misleading "0 volumes".
 - **Cleanup no longer invents a history of what ran.** After a failed clean the panel says what happened ("Nothing was changed", or "Stopped at <step>: <reason>") instead of ticking steps that never ran, and Docker volumes never show up as removed.
 - **Retry works for every failed item.** A failed ready item reopens the ready confirmation; a review item opens the review one.
 - **The confirmation can no longer drift under you.** If a scan or a running job changes what the dialog showed, it says "This changed since you opened it — review again" and Confirm stays off until you reopen it; what is sent is what you saw when it opened, including the worktree's folder.
@@ -53,7 +57,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   prove are finished: merged for real (the pull request's last commit is the worktree's
   commit, or git itself shows the work is in main), clean, past a grace period, and with no
   Harnu session running in them. It is off by default, and the first run only reports what
-  it found ("Found N ready to clean, X GiB - enable automatic cleanup?") and deletes nothing. A
+  it found ("Found N ready to clean, X GB - enable automatic cleanup?") and deletes nothing. A
   stack's containers, the code (kept as `refs/archive/…` refs), the dependencies, the folder
   and the local branch go in a fixed order, one worktree at a time, and a failure stops that
   worktree only. **Docker volumes are never removed with a worktree**, by the automatic cleanup
@@ -66,13 +70,27 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   cleanup stopped partway shows as needing review, not as ready to clean, everywhere in Harnu.
 - **Automatic cleanup is stricter about what is still in use.** Time since the last activity
   now counts any terminal under the worktree, including `claude` runs started outside Harnu and
-  sessions parked a while ago, and sessions reached through a symlink. A worktree nested inside
-  another needs review. A Docker Compose project name written in a subfolder (`docker/compose.yml`,
+  sessions parked a while ago, and sessions reached through a symlink. A worktree, or a clone of another repository, inside
+  another worktree needs review, and so does one Harnu could not look inside (the reason names
+  the folder and the error). A Docker Compose project name written in a subfolder (`docker/compose.yml`,
   an `.env` there, `${VAR}` read from the `.env` beside it) keeps its volumes out of the orphan
   list, and a name that cannot be resolved keeps every volume out. Pressing Keep is remembered
   against the item's state at that moment, a partial settings write no longer resets other
   settings, and cleaning a worktree now unregisters only that worktree from git instead of
   pruning every stale entry in the repository.
+- **Automatic cleanup counts every kind of session, and a Keep protects at once.** Headless
+  runs (`claude -p`, including Harnu's own scheduled workers) and a stale legacy session index
+  now count as activity for the grace period. Pressing **Keep** protects the worktree
+  immediately instead of after Harnu has re-checked it, even while a cleaning cycle is already
+  running. If Harnu cannot read every compose file it needs to (a scan limit, or a project name
+  it cannot resolve), it lists no orphan volumes and says why. Cleanup notifications use the
+  same decimal units (`GB`) as the screens.
+- **A clean never deletes anything permanently.** If Harnu cannot match a worktree to its own
+  registration in git (even through a symlinked path), it leaves the worktree untouched and
+  reports why, instead of asking git to remove it for good. Pressing **Keep** again on an item
+  that is already kept never drops its mark. If Harnu cannot read Claude's transcripts folder,
+  or cannot tell which folder a transcript belongs to, it counts the activity as possibly
+  belonging to the worktree and keeps it out of the ready list.
 - **Docker housekeeping in the same cycle.** When automatic cleanup is on, each cycle also
   clears Docker build cache older than a week and dangling images, and reports how much it
   freed. It never touches images a stack uses and never removes a volume: volumes nobody uses

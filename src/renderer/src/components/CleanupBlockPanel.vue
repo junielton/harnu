@@ -129,7 +129,19 @@ const ready = computed(() => props.block.bucket === 'ready')
 const inUse = computed(() => props.block.bucket === 'in-use')
 const hasFailure = computed(() => props.failure !== null)
 
-const showRemove = computed(() => review.value)
+/**
+ * Main always refuses a worktree that holds another one (removing it would trash the inner one too) and one
+ * git has locked. `locked` is compared by string: its main-side type has not reached this branch yet.
+ */
+const REMOVE_REFUSED: Readonly<Record<string, string>> = {
+  'nested-worktree': 'cleanup.gc.panel.removeBlocked',
+  locked: 'cleanup.gc.panel.removeLocked'
+}
+const removeBlockedKey = computed(() =>
+  review.value ? (REMOVE_REFUSED[props.block.reasonCode ?? ''] ?? null) : null
+)
+const removeBlocked = computed(() => removeBlockedKey.value !== null)
+const showRemove = computed(() => review.value && !removeBlocked.value)
 const showKeep = computed(() => review.value && !isVolume.value)
 const showAsk = computed(() => review.value)
 const showOpinion = computed(() => review.value && (props.asking || props.opinion !== null))
@@ -396,13 +408,11 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
       <p v-if="nothingChanged" class="text-caption text-text-3" data-testid="panel-nothing-changed">
         {{ t('cleanup.gc.panel.nothingChanged') }}
       </p>
+      <!-- An error that is not a known refusal never shows as text: a plain sentence says what happened, and
+           the raw text travels only with "Copy error". -->
       <div v-if="failure.error && !failure.refusal" class="flex items-start gap-2">
-        <p
-          class="line-clamp-2 min-w-0 flex-1 break-words font-mono text-caption text-text-3"
-          :title="failure.error"
-          data-testid="panel-error"
-        >
-          {{ failure.error }}
+        <p class="min-w-0 flex-1 text-ui text-text-2" data-testid="panel-generic">
+          {{ t('cleanup.gc.panel.genericStop') }}
         </p>
         <button
           type="button"
@@ -443,6 +453,10 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
       >
         <RotateCcw :size="13" :stroke-width="1.7" />{{ t('cleanup.gc.panel.retry') }}
       </Button>
+
+      <p v-if="removeBlocked" class="text-caption text-text-3" data-testid="panel-remove-blocked">
+        {{ removeBlockedKey ? t(removeBlockedKey) : '' }}
+      </p>
 
       <Button
         v-if="showRemove"

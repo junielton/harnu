@@ -51,6 +51,7 @@ export function bundle(
     graceDays: 2,
     pathsResolved: true,
     nestedWorktrees: [],
+    foreignCheckouts: [],
     ...facts,
     bucket,
     reason: reason ?? (bucket === 'review' ? { code: 'dirty', detail: 'x' } : null)

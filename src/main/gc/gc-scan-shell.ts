@@ -29,8 +29,16 @@ import {
   type VolumeFact
 } from '../containers/containers-core'
 import { buildBundles, containerFolderPaths, type CanonicalPath } from './bundle-core'
-import { dockerIsUnavailable, resolveRealPaths } from './gc-shell'
+import { dockerIsUnavailable, findForeignCheckouts, resolveRealPaths } from './gc-shell'
+import { collectForeignCheckouts, explainFailedWalks } from './gc-foreign'
 import { sessionsFromFleet } from './gc-sessions'
+import {
+  attributeBySlug,
+  fsTranscriptProbe,
+  mergeActivityFolders,
+  scanTranscripts,
+  withGraceUnknown
+} from './gc-transcripts'
 import {
   buildDirExists,
   foldersForBundles,
@@ -41,8 +49,13 @@ import {
   type OrphanVolumeItem
 } from './gc-housekeeping-input'
 import { planHousekeeping } from './housekeeping-core'
-import { collectProjectFiles, type FsProbe } from './gc-project-files'
-import { NO_DOCKER_CARD, dockerCardFacts, type GcDockerCard } from './gc-docker-card'
+import { scanProjectFiles, type FsProbe, type ProjectFile } from './gc-project-files'
+import {
+  NO_DOCKER_CARD,
+  dockerCardFacts,
+  withOrphanVolumesHidden,
+  type GcDockerCard
+} from './gc-docker-card'
 import type { GcGather } from './gc-cycle'
 import { judgeKeeps, type StaleKeep } from './gc-keep'
 import type { GcPrefs } from './gc-prefs'
@@ -85,6 +98,12 @@ const fsProbe: FsProbe = {
       isDir: e.isDirectory()
     })),
   readFile: readSmall
+}
+
+/** Files and whether a cap cut the scan short: `truncated` fails closed downstream. */
+async function scanFolder(p: string): Promise<{ files: ProjectFile[]; truncated: boolean }> {
+  const scanned = await scanProjectFiles(p, fsProbe)
+  return { files: scanned.files, truncated: scanned.truncated }
 }
 
 async function readComposeFile(dir: string): Promise<string | undefined> {
@@ -163,13 +182,25 @@ export async function gatherGc(
 
   // Sessions on real paths: the folders of every running session and every item are read
   // through their real locations, so a session reached through a symlink still counts.
+  // Every folder of the transcript index, whoever wrote it (a headless `claude -p` run, a
+  // Scheduler worker, a legacy index gone stale), so grace counts any terminal under the
+  // worktree, outside Harnu included, and a session parked a while ago.
+  const transcripts = await scanTranscripts(fsTranscriptProbe(), Date.now())
+  // A transcript whose folder cannot be told still tells something: its project slug. It counts
+  // for every worktree that slug could belong to, as either spelling of the path.
+  const slugCandidates =
+    transcripts.bySlug.length === 0
+      ? []
+      : [...itemPaths, ...(await Promise.all(itemPaths.map((p) => fs.realpath(p).catch(() => p))))]
+  const activity = mergeActivityFolders(
+    mergeActivityFolders(fleet, transcripts.folders),
+    attributeBySlug(transcripts.bySlug, slugCandidates)
+  )
   const sessionCanonical = await resolveRealPaths(
-    [...itemPaths, ...fleet.map((f) => f.path), ...sets.live, ...sets.inUse],
+    [...itemPaths, ...activity.map((f) => f.path), ...sets.live, ...sets.inUse],
     (p) => fs.realpath(p)
   )
-  // Every folder of the transcript index, so grace counts any terminal under the worktree,
-  // outside Harnu included, and a session parked a while ago.
-  const sessions = sessionsFromFleet(fleet, sets, sessionCanonical)
+  const sessions = sessionsFromFleet(activity, sets, sessionCanonical)
 
   // Read-only listings for the Docker card; skipped, not guessed, when docker is absent.
   const docker = available
@@ -193,7 +224,7 @@ export async function gatherGc(
         env: await readSmall(path.join(p, '.env')),
         compose: await readComposeFile(p),
         // Subfolders too: docker/compose.yml pins a project just as the root one does.
-        files: await collectProjectFiles(p, fsProbe)
+        ...(await scanFolder(p))
       }))
   )
   const guards = volumeGuards(sources, dirExists)
@@ -226,6 +257,11 @@ export async function gatherGc(
     (p) => fs.realpath(p)
   )
 
+  // Is another checkout (a worktree of another repo, a plain clone) hiding inside a worktree?
+  // One walk per worktree on its real path; a walk that fails leaves the worktree out of the
+  // answers, so it can never be ready, and its cause is named in the review reason.
+  const foreign = await collectForeignCheckouts(items, canonical, (p) => findForeignCheckouts(p))
+
   // Only folders that cannot pose as a worktree nested in a bundle (see foldersForBundles).
   const bundleFolders = foldersForBundles(guards.knownFolders, itemPaths, repoPaths)
 
@@ -244,13 +280,17 @@ export async function gatherGc(
     // A volume is owned only when no other folder may share its project (delta 1, item 1).
     knownFolders: bundleFolders,
     protectedProjects: guards.protectedProjects,
-    canonical
+    canonical,
+    foreignCheckouts: foreign.found
   }
   // A Keep mark holds only while the fate it was made under still holds: judge the fates
   // first, then rebuild with the marks that are still valid.
   let bundles = buildBundles({ ...input, keep: new Set() })
   const { keep, stale: staleKeeps } = judgeKeeps(bundles, prefs.keep)
   if (keep.size > 0) bundles = buildBundles({ ...input, keep })
+  bundles = explainFailedWalks(bundles, foreign.failed)
+  // An unreadable transcripts root says nothing about recent activity: nothing is ready.
+  if (transcripts.rootUnreadable) bundles = withGraceUnknown(bundles)
 
   const volumes = toHousekeepingVolumes(df)
   const housekeeping = {
@@ -280,7 +320,8 @@ export async function gatherGc(
     canonical,
     df,
     dockerAvailable: available,
-    docker,
+    // With docker absent there are no volumes to hide, so the card carries no explanation.
+    docker: available ? withOrphanVolumesHidden(docker, guards.hidden) : docker,
     orphanVolumes: orphanVolumeItems(orphanNames, df),
     staleKeeps
   }

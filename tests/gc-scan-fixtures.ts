@@ -75,7 +75,8 @@ export function bundlesOf(input: RepoScanInput) {
     volumes: new Map(),
     knownFolders: [],
     protectedProjects: new Set(),
-    canonical: AS_GIVEN
+    canonical: AS_GIVEN,
+    foreignCheckouts: new Map(items.map((i) => [i.id, []]))
   }
   return buildBundles(args)
 }

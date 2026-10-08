@@ -172,7 +172,7 @@ describe('gc store', () => {
     await gc.init()
     const ids = gc.model!.ready.map((b) => b.id)
     const captured = captureConfirm(gc.model!, ids, 'ready')!
-    // The world changes after the dialog opened: the first corpse is now a Needs review item.
+    // The world changes after the dialog opened: the first ready item is now a Needs review item.
     const moved = snap({
       bundles: [
         wt('c1', 'review', 500 * MIB, { code: 'dirty', detail: 'x' }),

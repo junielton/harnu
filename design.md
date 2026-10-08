@@ -8328,15 +8328,19 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
    - Autopilot badge: Badge Success "Autopilot on · every {interval}" or Default "Autopilot off".
 3. **Selection bar** (only with ≥1 checked block) — the takeover's existing selection band
    (`border-b border-border bg-surface-2`, `padding: 8px 22px`): `square-check` icon (`--accent`), the
-   count `N selected · X GB` (13px; numbers 600-weight `--text`), then **Remove selected** (Danger),
-   **Dehydrate** (Soft), **Keep** (Ghost), **Ask for an opinion** (Soft, `sparkles`; enabled whenever the selection holds Needs review
-   items — see "Opinion chip"), a `⇧` hint (`kbd`) and a right-aligned "Clear selection" ghost link.
+   count `N selected · X GB` (13px; numbers 600-weight `--text`), then **Remove selected** (Danger,
+   `trash-2`), **Dehydrate** (Soft, `package-minus`), **Keep** (Ghost, `bookmark`) — the same icons as the side
+   panel's actions — **Ask for an opinion** (Soft, `sparkles`; enabled whenever the selection
+   holds Needs review items — see "Opinion chip"), a `⇧` hint (`kbd`) and a right-aligned "Clear selection" ghost link.
 4. **First-cycle banner** (only while `firstReportAcknowledged` is false and a report exists): see below.
-5. **Split bar** (`.gc-split`): a 32px bar of three segments — _Ready to clean_ (ready items +
-   Docker housekeeping, Ready triple), _Needs review_ (hatch), _In use_. Widths
+5. **Split bar** (`.gc-split`): a 32px bar of up to four segments — _Ready to clean_ (ready worktrees only, Ready triple, so
+   it agrees with the hero's count), _Docker (cleaned each cycle)_ (build cache + dangling images, Ready triple,
+   `Container` icon, left out when there is nothing to take), _Needs review_ (hatch), _In use_. Widths
    proportional to bytes, `gap: 2px`, segment radius `--radius-sm` (3px), 11px text, label left, size
    right. A caption row above (eyebrow, 10.5px/500 uppercase `--text-4`) names the groups; the
-   last-cycle line (11px `--text-4`) sits under it.
+   last-cycle line (11px `--text-4`) sits under it — **while a job runs it is replaced by "Cleaning now · N left"**
+   (11px `--accent`; "Cleaning now" when nothing is left to count). There is no "Cancel after current": the
+   engine has no verb to stop a running job, so it is not drawn.
    **Legend row** (`.lg`, 11px/16px, `gap: 16px`) directly under the split bar: three items — bucket icon +
    word in the bucket ink + a short gloss ("Ready to clean · cleaned by one click or the autopilot",
    "Needs review · your call", "In use · never touched") — then, pushed right in `--text-3`,
@@ -8429,9 +8433,13 @@ note says so); then the actions, stacked,
 actions (see "Opinion chip"). A Ready to clean block's panel offers
 "Clean now" only. An orphan-volume block shows its project name and "no known worktree".
 A failed or refused item's panel adds **what happened** — never a reconstructed history. The engine reports
-only the step an item halted at and why, so the panel says **"Stopped at {step}: {reason}"** (the engine's
-own text clamped to 2 lines, with a copy action), or, for a refusal made before anything ran (the
-pre-flight re-probe), **"Nothing was changed: {sentence}"**. It never draws ✓ for a step it was not told
+only the step an item halted at and why, so the panel says **"Stopped at {step}"** plus a human sentence
+for the reason, or, for a refusal made before anything ran (the pre-flight re-probe), **"Nothing was
+changed"** plus the sentence. **A raw engine error is never visible text**: a code the catalog knows gets
+its own sentence, anything else reads "Harnu stopped this item for a safety check." and the raw text travels
+only with the **Copy error** action. A review item whose reason is `nested-worktree` or `locked` has **no Remove (and no
+R)** — main always refuses it (removing the folder would trash the inner worktree too; git has the worktree
+locked) — and an 11px `--text-3` line says which. It never draws ✓ for a step it was not told
 ran, and it never shows volumes as removed — a worktree clean never removes one. Actions: **Retry**,
 **Keep**, **Remove**. **Retry follows the item's _current_ bucket**: a ready item re-opens the ready
 (bulk-style) confirm for that one id, a review item the review confirm — never a dialog that would send
@@ -8546,7 +8554,12 @@ cache**, **dangling images**, **orphan volumes** — name, size right, a one-lin
 block has **no switch** — a volume is never removed automatically — and is drawn in the **review (warning) colours** because it is the item the operator must act on, not one the
 autopilot takes; it carries the Warning badge "can't be
 restored", the project name of each volume and the line "Never removed automatically. Remove each one
-yourself in Needs review." The snapshot's `docker` figures feed the two blocks:
+yourself in Needs review." When the snapshot says the orphan list is empty **by construction**
+(`docker.orphanVolumesHidden`: an unresolved compose project name, or the compose scan hit its limit), the
+block's size line reads "hidden" in `--warning` instead of a confident "0 volumes", and a one-line `note` in
+`--warning` with an `EyeOff` icon explains why — "Orphan volumes are hidden because a compose project name
+couldn't be resolved in: {folders}" (or "…because the compose scan hit its limit in: {folders}") — listing the
+folder **basenames**, each with its full path as a tooltip. It disappears once the name resolves. The snapshot's `docker` figures feed the two blocks:
 `buildCacheReclaimableBytes` ("{size} reclaimable") and `danglingImages` ("{n} images · {size}"); a `null`
 figure reads **"Size unavailable — Docker did not answer"** in `--text-3`, never a confident zero. Once a
 cycle has run, a second 11px `--text-3` line adds "Last cycle reclaimed {size}". Both figures count in the
@@ -8604,8 +8617,8 @@ Every Cleanup surface — summary line, hero, chip, split bar, legend, map, pane
 footer pill and Settings — formats bytes with the app's `formatBytes`, which is **decimal** (`6.44 GB`,
 `715 MB`). The mockup and the spec write GiB; that is its sample data's unit, not the screen's. One system on
 every surface, so two numbers on the same screen can be compared by eye. A native notification or
-Activity line built in the main process is the one place a different unit could slip in; it must use the
-same decimal system (tracked as a follow-up for the engine, `gc-cycle.ts` still prints binary units).
+Activity line built in the main process is the one place a different unit could slip in; it uses the same
+decimal system.
 
 #### Type and spacing in the Cleanup files
 

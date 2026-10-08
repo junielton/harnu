@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { SquareCheck, Sparkles } from 'lucide-vue-next'
+import { Bookmark, PackageMinus, SquareCheck, Sparkles, Trash2 } from 'lucide-vue-next'
 import Button from './ui/Button.vue'
 import { formatBytes } from './system-monitor-format'
 
@@ -37,12 +37,15 @@ const { t } = useI18n()
       </i18n-t>
     </span>
     <Button variant="danger" data-testid="sel-remove" @click="emit('remove')">
+      <Trash2 :size="13" :stroke-width="1.6" class="shrink-0" />
       {{ t('cleanup.gc.selection.remove') }}
     </Button>
     <Button variant="soft" data-testid="sel-dehydrate" @click="emit('dehydrate')">
+      <PackageMinus :size="13" :stroke-width="1.6" class="shrink-0" />
       {{ t('cleanup.gc.selection.dehydrate') }}
     </Button>
     <Button v-if="canKeep" variant="ghost" data-testid="sel-keep" @click="emit('keep')">
+      <Bookmark :size="13" :stroke-width="1.6" class="shrink-0" />
       {{ t('cleanup.gc.selection.keep') }}
     </Button>
     <!-- A disabled button swallows hover, so the tooltip rides on a wrapper. -->
