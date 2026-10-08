@@ -229,8 +229,7 @@ describe('Keep survives a stale cache (delta 3, item 1)', () => {
 
 describe('an orphan volume is re-planned right before removal (delta 3, item 4)', () => {
   it('the service gives the manual job a gather that starts after the call', () => {
-    expect(between(ipc, 'submitManualClean(', 'parseIds(rawIds)')).toMatch(
-      /freshOrphans: async \(\) => \(await gatherFresh\(\)\)\.orphanVolumes/
-    )
+    expect(ipc).toMatch(/const freshOrphans = async[\s\S]*\(await gatherFresh\(\)\)\.orphanVolumes/)
+    expect(between(ipc, 'submitManualClean(', 'parseIds(rawIds)')).toMatch(/\bfreshOrphans,/)
   })
 })

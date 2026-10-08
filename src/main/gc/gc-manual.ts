@@ -33,6 +33,13 @@ export interface ManualCleanDeps {
   }>
   /** `forced` ops archive before anything destructive and waive the review-only guards. */
   opsFor(actor: 'operator', forced: boolean): GcOps
+  /**
+   * The orphan volumes according to a gather that STARTS now. The job's own gather may predate
+   * the click (a gather in flight is shared), so the check right before `docker volume rm`
+   * uses this one: a project folder that reappeared, or a container that took the volume,
+   * since then keeps it.
+   */
+  freshOrphans(): Promise<OrphanVolumeItem[]>
   /** `docker volume rm` for exactly these names. */
   removeOrphanVolumes(names: string[]): Promise<HousekeepingResult>
   /** What a cleaned worktree leaves in Docker, so its volumes can be offered for review. */
@@ -106,6 +113,16 @@ export function submitManualClean(
       // the click is no longer an orphan, and is left alone.
       if (!item) return refused(id, 'no-longer-orphan')
       if (volumeChangedSince(item, seen)) return refused(id, 'changed-since-confirm')
+      // Right before the removal, look again: with a fresh existence check of the project
+      // folder and the containers that reference the volume. Failing to look is a refusal.
+      let fresh: OrphanVolumeItem | undefined
+      try {
+        fresh = (await deps.freshOrphans()).find((o) => o.id === id)
+      } catch (err) {
+        return refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+      if (!fresh) return refused(id, 'no-longer-orphan')
+      if (volumeChangedSince(fresh, seen)) return refused(id, 'changed-since-confirm')
       const r = await deps.removeOrphanVolumes([item.name])
       if (r.errors.length > 0) {
         return {

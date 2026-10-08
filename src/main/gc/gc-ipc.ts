@@ -49,7 +49,7 @@ import {
   type GcPrefs
 } from './gc-prefs'
 import { parseOptions } from './gc-options'
-import type { GcCleanAck, GcSnapshot } from './gc-wire'
+import type { GcCleanAck, GcSnapshot, OrphanVolumeItem } from './gc-wire'
 import { createGcOps, defaultGcShellDeps, type GcShellDeps } from './gc-shell'
 import { createForcedGcOps } from './gc-forced-ops'
 import { runHousekeeping } from './housekeeping-shell'
@@ -149,6 +149,9 @@ export async function registerGcHandlers(
     return gather()
   }
 
+  /** Orphan volumes per a gather that starts now (see ManualCleanDeps.freshOrphans). */
+  const freshOrphans = async (): Promise<OrphanVolumeItem[]> => (await gatherFresh()).orphanVolumes
+
   const queue = createJobQueue({
     newId: () => randomUUID(),
     // On the Reaper's op chain: after a running scan and any queued sweep or dehydrate,
@@ -224,6 +227,7 @@ export async function registerGcHandlers(
           opsFor: (_actor, forced) =>
             forced ? createForcedGcOps(withRun('operator')) : createGcOps(withRun('operator')),
           // S4's runner builds the argv itself (`docker volume rm <name>`, name-checked).
+          freshOrphans,
           removeOrphanVolumes: (names) =>
             runHousekeeping({
               builderPruneUntilHours: null,
