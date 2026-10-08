@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { MCP_TOOLS } from '../src/main/mcp/tool-catalog'
+import { MCP_SERVER_NAMES, mcpToolName } from '../src/main/mcp/config-file'
 import {
   tickArgv,
   partitionExtraReadCommands,
@@ -259,5 +261,63 @@ describe('BUG-164 — nothing observe-reachable tells a tick to run git or gh', 
 
   it('points the watchdog at the MCP reads it already has', () => {
     for (const verb of ['mission_get', 'list_worktrees']) expect(watchdog).toContain(verb)
+  })
+})
+
+// BUG-166 delta 1: the deny list is DERIVED, never hand-curated. A hand list silently misses every
+// verb added after it (update_worker, delete_worker, plan_mission, get_approval, open_file, speak
+// and archive_card all showed up in an observe roster), so a new verb must default to denied.
+describe('BUG-164/166 — the observe MCP deny list is the catalog minus the allowed verbs', () => {
+  const catalog = MCP_TOOLS.map((t) => t.name)
+  const allowedBare = (verbs: readonly string[]): string[] =>
+    MCP_SERVER_NAMES.flatMap((server) => verbs.map((v) => mcpToolName(v, server)))
+
+  it('every allowed verb exists in the catalog (a typo would silently allow nothing)', () => {
+    const allowedNames = new Set(OBSERVE_MCP_ALLOW)
+    for (const server of MCP_SERVER_NAMES) {
+      const bare = [...allowedNames]
+        .filter((n) => n.startsWith(`mcp__${server}__`))
+        .map((n) => n.slice(`mcp__${server}__`.length))
+      for (const verb of bare) expect(catalog, verb).toContain(verb)
+    }
+  })
+
+  it('the deny list equals catalog minus allow, under every server name', () => {
+    const allowedVerbs = new Set(
+      OBSERVE_MCP_ALLOW.filter((n) => n.startsWith(`mcp__${MCP_SERVER_NAMES[0]}__`)).map((n) =>
+        n.slice(`mcp__${MCP_SERVER_NAMES[0]}__`.length)
+      )
+    )
+    const expected = allowedBare(catalog.filter((v) => !allowedVerbs.has(v)))
+    expect([...OBSERVE_MCP_DENY].sort()).toEqual([...expected].sort())
+  })
+
+  it('allow and deny never overlap', () => {
+    const deny = new Set(OBSERVE_MCP_DENY)
+    for (const a of OBSERVE_MCP_ALLOW) expect(deny.has(a)).toBe(false)
+  })
+
+  it.each([
+    'update_worker',
+    'delete_worker',
+    'plan_mission',
+    'get_approval',
+    'open_file',
+    'speak',
+    'archive_card'
+  ])('%s is denied in an observe tick', (verb) => {
+    const argv = tickArgv(worker(), { mcpConfigPath: '/tmp/harnu.json' })
+    expect(rulesOf(valueOf(argv, '--disallowedTools'))).toContain(`mcp__harnu__${verb}`)
+    expect(rulesOf(valueOf(argv, '--allowedTools'))).not.toContain(`mcp__harnu__${verb}`)
+  })
+
+  it('a verb added to the catalog tomorrow is denied without anyone touching the scheduler', () => {
+    const argv = tickArgv(worker(), { mcpConfigPath: '/tmp/harnu.json' })
+    const denied = new Set(rulesOf(valueOf(argv, '--disallowedTools')))
+    const allowed = new Set(rulesOf(valueOf(argv, '--allowedTools')))
+    for (const verb of catalog) {
+      const name = `mcp__harnu__${verb}`
+      expect(allowed.has(name) || denied.has(name), name).toBe(true)
+    }
   })
 })

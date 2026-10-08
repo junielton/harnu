@@ -49,23 +49,41 @@ const base = {
 
 let stop: (() => void) | null = null
 
-async function boot(): Promise<{
-  dispatched: Array<{ cmd: string; args: Record<string, unknown> }>
-}> {
+type Dispatched = Array<{ cmd: string; args: Record<string, unknown> }>
+
+/**
+ * Boot the shell against a fake bridge. `refuse` simulates the real command bridge before the
+ * renderer has announced itself: dispatch REJECTS until it returns false. `delivered` records only
+ * the dispatches that succeeded.
+ */
+async function boot(
+  refuse: () => boolean = () => false
+): Promise<{ dispatched: Dispatched; attempts: () => number }> {
   vi.resetModules()
   h.ipc.clear()
   const shell = await import('../src/main/scheduler-shell')
-  const dispatched: Array<{ cmd: string; args: Record<string, unknown> }> = []
+  shell.setNetworkNoticeRetryMs(10)
+  const dispatched: Dispatched = []
+  let attempts = 0
   shell.registerScheduler(() => null, {
     dispatch: async (cmd: string, args: Record<string, unknown>) => {
+      attempts++
+      if (refuse()) throw new Error('NO_WINDOW')
       dispatched.push({ cmd, args })
       return {}
     }
   } as unknown as Parameters<typeof shell.registerScheduler>[1])
   stop = shell.stopSchedulerTicker
   await h.ipc.get('scheduler:list')!({} as never)
-  return { dispatched }
+  return { dispatched, attempts: () => attempts }
 }
+
+const notices = (d: Dispatched): Dispatched => d.filter((x) => x.cmd === 'notify.push')
+const settleMs = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+const readFile = async (): Promise<{
+  workers: Array<{ allowNetwork: boolean }>
+  pendingNetworkNotice?: Array<{ id: string }>
+}> => JSON.parse(await fs.readFile(path.join(h.userDataDir, 'schedulers.json'), 'utf8'))
 
 describe('BUG-166 — boot migration to allowNetwork: false', () => {
   beforeEach(async () => {
@@ -160,5 +178,87 @@ describe('BUG-166 — boot migration to allowNetwork: false', () => {
     const { dispatched } = await boot()
     expect(dispatched).toEqual([])
     await expect(fs.access(path.join(h.userDataDir, 'schedulers.json'))).rejects.toThrow()
+  })
+})
+
+describe('BUG-166 delta 1 — the notice survives a bridge that is not ready yet', () => {
+  beforeEach(async () => {
+    h.userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-net-mig-'))
+    await fs.writeFile(
+      path.join(h.userDataDir, 'schedulers.json'),
+      JSON.stringify({
+        version: 1,
+        workers: [
+          {
+            ...base,
+            id: 'a',
+            name: 'Status page',
+            mode: 'observe',
+            prompt: 'read https://status.example.com'
+          }
+        ]
+      })
+    )
+  })
+
+  afterEach(() => {
+    stop?.()
+    stop = null
+  })
+
+  it('persists the pending notice in the same write that heals the file', async () => {
+    // Never ready within this test: the notice cannot be delivered, but it must not be lost.
+    await boot(() => true)
+    const file = await readFile()
+    expect(file.workers[0].allowNetwork).toBe(false)
+    expect(file.pendingNetworkNotice?.map((w) => w.id)).toEqual(['a'])
+  })
+
+  it('retries until the bridge is ready, then delivers exactly one notice and clears the record', async () => {
+    let ready = false
+    const { dispatched, attempts } = await boot(() => !ready)
+    await settleMs(60)
+    expect(notices(dispatched)).toEqual([])
+    expect(attempts()).toBeGreaterThan(1)
+
+    ready = true
+    await vi.waitFor(() => {
+      if (notices(dispatched).length === 0) throw new Error('not delivered yet')
+    })
+    await settleMs(60)
+    expect(notices(dispatched)).toHaveLength(1)
+    expect(String(notices(dispatched)[0].args.description)).toContain('Status page')
+    await vi.waitFor(async () => {
+      if ((await readFile()).pendingNetworkNotice !== undefined) throw new Error('not cleared yet')
+    })
+  })
+
+  it('a boot that never got a ready bridge hands the notice to the next boot, once', async () => {
+    await boot(() => true)
+    stop?.()
+
+    const second = await boot()
+    await vi.waitFor(() => {
+      if (notices(second.dispatched).length === 0) throw new Error('not delivered yet')
+    })
+    expect(notices(second.dispatched)).toHaveLength(1)
+    expect(String(notices(second.dispatched)[0].args.description)).toContain('Status page')
+    await vi.waitFor(async () => {
+      if ((await readFile()).pendingNetworkNotice !== undefined) throw new Error('not cleared yet')
+    })
+    stop?.()
+
+    const third = await boot()
+    await settleMs(60)
+    expect(notices(third.dispatched)).toEqual([])
+  })
+
+  it('the notice quotes the real switch label', async () => {
+    const { dispatched } = await boot()
+    await vi.waitFor(() => {
+      if (notices(dispatched).length === 0) throw new Error('not delivered yet')
+    })
+    expect(String(notices(dispatched)[0].args.description)).toContain('"Network access"')
+    expect(String(notices(dispatched)[0].args.description)).not.toContain('Allow network access')
   })
 })
