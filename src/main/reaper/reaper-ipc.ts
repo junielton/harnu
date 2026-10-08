@@ -83,7 +83,7 @@ function findItem(itemId: string): ReapItem | undefined {
  * throws) if the directory somehow still exists — this step only ever runs
  * after a successful `trash-folder`, so that should never happen in practice.
  */
-function buildDeps(getWindow: () => BrowserWindow | null): ExecutorDeps {
+export function buildDeps(getWindow: () => BrowserWindow | null): ExecutorDeps {
   return {
     // BUG-75: the executor re-probes TRACKED dirtiness only. `isWorktreeDirty`
     // stays wired to `worktree:remove`, whose stricter gate this must not touch.
@@ -114,7 +114,7 @@ function buildDeps(getWindow: () => BrowserWindow | null): ExecutorDeps {
  * Deps for dehydrate / rehydrate (T250). Guard 4 is `isFolderInUse` — probed
  * fresh inside `dehydrateItem` / `rehydrateItem`, never read off the snapshot.
  */
-function buildHydrationDeps(): { dehydrate: DehydrateDeps; rehydrate: RehydrateDeps } {
+export function buildHydrationDeps(): { dehydrate: DehydrateDeps; rehydrate: RehydrateDeps } {
   const fingerprint = (wt: string): ReturnType<typeof trackedFingerprint> =>
     trackedFingerprint(reaperExec, wt)
   return {
