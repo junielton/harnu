@@ -116,6 +116,16 @@ export function createContainersService(deps: ContainersServiceDeps): Containers
   const journalPath = journalFile(deps.userDataDir)
   const prefsPath = prefsFile(deps.userDataDir)
   let prefs: ContainersPrefs = normalizePrefs(null)
+  // Bumped by every save. A read that began before a save must not replace what the save stored.
+  let prefsSaves = 0
+  /** Reads the file; the result becomes the service's prefs only when no save happened meanwhile. */
+  const loadPrefs = async (): Promise<ContainersPrefs> => {
+    const savesBefore = prefsSaves
+    const read = await readPrefs(prefsPath)
+    if (savesBefore !== prefsSaves) return prefs
+    prefs = read
+    return prefs
+  }
   let last: ContainersSnapshot | null = null
   let inflight: Promise<ContainersSnapshot> | null = null
   let actChain: Promise<unknown> = Promise.resolve()
@@ -224,22 +234,21 @@ export function createContainersService(deps: ContainersServiceDeps): Containers
       return run
     },
     journal: (limit = JOURNAL_LIMIT) => readJournal(journalPath, limit),
-    prefs: async () => {
-      prefs = await readPrefs(prefsPath)
-      return prefs
-    },
+    prefs: loadPrefs,
     setPrefs: async (raw) => {
       const next = normalizePrefs(raw)
       const thresholdChanged = next.zombieAfterDays !== prefs.zombieAfterDays
+      prefsSaves++
       prefs = next
-      await writePrefs(prefsPath, prefs)
+      await writePrefs(prefsPath, next)
       schedule()
       // The verdicts depend on the threshold: recompute them now, not at the next tick.
       if (thresholdChanged && last) void scanAndPush().catch(() => undefined)
-      return prefs
+      // What this save stored, whatever another read or save did to `prefs` while the file was written.
+      return next
     },
     start: async () => {
-      prefs = await readPrefs(prefsPath)
+      await loadPrefs()
       schedule()
     },
     stop: clearSchedule

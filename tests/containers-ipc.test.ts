@@ -236,6 +236,37 @@ describe('the service', () => {
     return { svc, pushes }
   }
 
+  it('a slow start() read never overwrites a newer setPrefs', async () => {
+    // start()'s prefs read is held open. It resolves with the pre-save defaults while setPrefs is
+    // still writing the file, i.e. after the new value is in memory and before setPrefs returns.
+    // The save must stand, in the value it returns and in what the service holds afterwards.
+    const realRead = fs.readFile.bind(fs) as (...a: unknown[]) => Promise<unknown>
+    const realMkdir = fs.mkdir.bind(fs) as (...a: unknown[]) => Promise<unknown>
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    vi.spyOn(fs, 'readFile').mockImplementationOnce((async (...a: unknown[]) => {
+      await gate
+      return realRead(...a)
+    }) as unknown as typeof fs.readFile)
+    const { svc } = service()
+    const started = svc.start()
+    vi.spyOn(fs, 'mkdir').mockImplementationOnce((async (...a: unknown[]) => {
+      release()
+      await started
+      return realMkdir(...a)
+    }) as unknown as typeof fs.mkdir)
+    const saved = await svc.setPrefs({
+      ...defaultPrefs(),
+      intervalMs: 7_200_000,
+      zombieAfterDays: 5
+    })
+    expect(saved).toMatchObject({ intervalMs: 7_200_000, zombieAfterDays: 5 })
+    expect(await svc.prefs()).toMatchObject({ intervalMs: 7_200_000, zombieAfterDays: 5 })
+    // A second save is judged against the saved value, not the stale default the read produced.
+    const again = await svc.setPrefs({ ...saved, zombieAfterDays: 6 })
+    expect(again.zombieAfterDays).toBe(6)
+  })
+
   describe('background scan (PRD §6)', () => {
     beforeEach(() => {
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
