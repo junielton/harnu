@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { tickArgv, OBSERVE_TOOLS, type Worker } from '../../src/main/scheduler-core'
+import { resolve } from 'node:path'
 import { WITH_CLI } from './support/run-claude'
 
 // BUG-164 delta 1: the real `claude`, started with the exact argv an `observe` tick gets,
@@ -103,6 +104,39 @@ describe.skipIf(!WITH_CLI)('an observe tick against a real claude (BUG-164 delta
       expect([...init.tools].sort()).toEqual([...OBSERVE_TOOLS].sort())
       // And nothing was written by merely starting.
       await expect(access(join(cwd, 'PWNED'))).rejects.toThrow()
+    } finally {
+      await rm(work, { recursive: true, force: true })
+    }
+  }, 40_000)
+
+  it('the roster is the observe built-ins plus the allowed Harnu verbs, nothing else', async () => {
+    const work = await mkdtemp(join(tmpdir(), 'harnu-observe-roster-'))
+    const cwd = join(work, 'cwd')
+    const home = join(work, 'home')
+    await mkdir(cwd, { recursive: true })
+    await mkdir(home, { recursive: true })
+    const mcpConfig = join(work, 'harnu.mcp.json')
+    await writeFile(
+      mcpConfig,
+      JSON.stringify({
+        mcpServers: {
+          harnu: {
+            command: 'node',
+            args: [resolve(import.meta.dirname, 'fixtures', 'stub-harnu-mcp.mjs')]
+          }
+        }
+      })
+    )
+    try {
+      const init = await initOf(tickArgv(OBSERVE_WORKER, { mcpConfigPath: mcpConfig }), cwd, home)
+      expect([...init.tools].sort()).toEqual(
+        [
+          ...OBSERVE_TOOLS,
+          'mcp__harnu__get_fleet',
+          'mcp__harnu__mission_get',
+          'mcp__harnu__notify'
+        ].sort()
+      )
     } finally {
       await rm(work, { recursive: true, force: true })
     }

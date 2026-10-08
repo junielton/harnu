@@ -508,7 +508,12 @@ export function tickArgv(worker: Worker, ctx: TickContext): string[] {
     argv.push('--tools', OBSERVE_TOOLS.join(','))
     if (ctx.mcpConfigPath) allow.push(...OBSERVE_MCP_ALLOW)
     argv.push('--allowedTools', allow.join(','))
-    argv.push('--disallowedTools', OBSERVE_TOOLS_DENY.join(','))
+    // Denying the non-allowed Harnu verbs by name, not just leaving them unallowed, drops them
+    // from the roster the CLI shows the model: an unallowed verb is otherwise still listed and
+    // only refused when called.
+    const deny = [...OBSERVE_TOOLS_DENY]
+    if (ctx.mcpConfigPath) deny.push(...OBSERVE_MCP_DENY)
+    argv.push('--disallowedTools', deny.join(','))
   }
 
   if (worker.systemPrompt)
