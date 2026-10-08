@@ -520,12 +520,13 @@ export function safeEffort(effort: string): Effort {
  * anywhere the user can read (the real CLI read a file outside the folder and listed ~/.ssh). With no
  * allow rule the CLI's own permission check keeps Read, Grep and Glob inside the folder the process runs
  * in, symlinks out of it included, because it cannot ask in `-p` mode (tests/cli/opinion-confine.cli.test.ts).
- * That check does not cover everything, so two more things are closed explicitly: Claude's own data
- * folder, which the CLI would otherwise let a session read as the project folder of its repository, is
- * explicitly denied by name ({@link dataDirRules}), and auto memory is switched off ({@link advisorEnv}),
- * because it would inject that folder's MEMORY.md into the context
- * (tests/cli/opinion-claude-dir.cli.test.ts). Not covered: a hard link inside the folder to a file
- * elsewhere reads as a file inside it.
+ * That check is not a guarantee: the CLI may still allow a few of its own working folders, and two have
+ * been found. So Harnu explicitly blocks Claude's own data folder, which the CLI would otherwise let a
+ * session read as the project folder of its repository, and Claude's temp folder, where other sessions'
+ * task outputs live (both explicitly denied by name, {@link dataDirRules} and {@link claudeFolders}), and
+ * switches auto memory off ({@link advisorEnv}), because it would inject that folder's MEMORY.md into the
+ * context (tests/cli/opinion-claude-dir.cli.test.ts). Other folders the CLI allows itself may exist. Not
+ * covered either: a hard link inside the folder to a file elsewhere reads as a file inside it.
  */
 export const OPINION_BUILTIN_TOOLS: readonly string[] = ['Read', 'Grep', 'Glob']
 
@@ -618,7 +619,9 @@ const normalPath = (p: string): string => {
  * HOME, an ancestor of HOME, or a filesystem root. The comparison is on real paths (`realpath`), so
  * `/home/u/.`, `/home//u`, `/home/u/../u` and a symlink to HOME are all HOME; a path that cannot be
  * resolved, or is not absolute, is not trusted. The real path is what is returned, so the process starts
- * in the folder that was checked and not in a symlink that may be repointed.
+ * in the folder that was checked and not in a symlink that may be repointed. This keeps the advisor out
+ * of the most sensitive folders; it is a safeguard, not a guarantee, since the CLI may still allow a few
+ * of its own working folders.
  */
 export function confineCwd(
   cwd: string | null,

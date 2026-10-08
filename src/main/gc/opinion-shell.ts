@@ -166,10 +166,11 @@ function volumeDossier(v: OrphanVolumeItem): { dossier: OpinionDossier; group: s
 }
 
 /**
- * Resolves `claude` and runs it with the advisor's argv; the prompt goes in on stdin. The folder it
- * runs in is its whole readable world, so it is never HOME, an ancestor of HOME or a root (then the
- * runner makes an empty directory of its own), and auto memory is switched off so a repository's
- * MEMORY.md is not injected into the context.
+ * Resolves `claude` and runs it with the advisor's argv; the prompt goes in on stdin. It runs in the
+ * repository folder, chosen on real paths: HOME, an ancestor of HOME or a root is replaced by an empty
+ * directory of the runner's own. The CLI's own check keeps it to that folder, but the CLI may still allow
+ * a few of its own working folders, so the argv explicitly blocks Claude's data folder and temp folder,
+ * and auto memory is switched off so a repository's MEMORY.md is not injected into the context.
  */
 async function runClaude(a: {
   cwd: string | null

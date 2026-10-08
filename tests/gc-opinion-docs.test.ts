@@ -147,7 +147,7 @@ describe('the docs state exactly what confines the advisor (delta 5, item 2)', (
       expect(t).toMatch(/repository folder/i)
       expect(t).toMatch(/~\/\.claude|Claude['’]s own data folder|Claude data folder/i)
       expect(t).toMatch(
-        /(explicitly|specifically) (blocked|denied)|blocked explicitly|denied by name/i
+        /(explicitly|specifically) (blocks?|blocked|denied|denies)|blocked explicitly|denied by name/i
       )
     })
 
@@ -240,7 +240,9 @@ describe('no doc or comment claims absolute confinement (delta 6, item 3)', () =
   })
 
   describe('the code comments', () => {
-    const src = (rel: string): string => flat(readFileSync(join(ROOT, rel), 'utf8'))
+    // Comment text only needs its words: drop the ` * ` and `//` decoration so a phrase can wrap lines.
+    const src = (rel: string): string =>
+      flat(readFileSync(join(ROOT, rel), 'utf8').replace(/\n\s*(\*|\/\/)\s?/g, ' '))
     const core = (): string => src('src/main/gc/opinion-core.ts')
 
     it.each([

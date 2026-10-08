@@ -8481,7 +8481,7 @@ Needs review item, orphan volumes included) and the block panel's button (that o
 - **"Remove the {n} marked safe"**: counts only items that are still Needs review and whose opinion is
   still current. **Right before the dialog opens** it asks main's cache (`gc:opinion:cached`) about the
   marked ids again, under each item's current key, and pre-selects only those main still confirms as
-  `safe`; the rest lose their chip and a one-line toast says how many were left out. If main cannot be
+  `safe`; the rest lose their chip and a one-line toast says how many were left out. If main could not be
   asked, nothing is selected. An item main always refuses to remove (a worktree that holds another one,
   or one git has locked) keeps its chip but is never counted or pre-selected. It **pre-selects those items and opens the existing remove dialog**; it never removes by
   itself. The binding is the `expected` the dialog captures **when it opens**, exactly as for Remove
@@ -8495,26 +8495,29 @@ Needs review item, orphan volumes included) and the block panel's button (that o
   list renders, the store asks main's cache (`gc:opinion:cached`, a read that never asks the model) for
   every item without a chip. Only an answer that still fits the item is returned (same head, dirty
   files, fate and reason); an item that changed shows no chip and costs a new ask.
-- **Reads files, runs nothing:** the session is started with `--tools Read,Grep,Glob`, which is what
-  restricts its roster (`--allowedTools` and `--disallowedTools` are only permission rules and leave the
-  built-ins offered; the real CLI then still offers CronCreate, EnterWorktree, RemoteTrigger and more).
-  The permission rules stay as defence in depth: `Bash` is denied entirely (even a git rule can write
-  files through `--output=<path>`, which prefix rules cannot forbid), as are `Edit`, `Write`,
-  `NotebookEdit`, `WebFetch` and `WebSearch`, and no MCP server is configured. Everything git knows is in
-  the dossier, which main computes. It has no tool that runs a command, writes a file or reaches the
-  network; what it reads (the dossier and any file it opens) is sent to the model like any request.
-- **Reads only inside the repository folder.** The folder the process runs in is its whole readable
-  world, and Harnu never runs it in HOME, an ancestor of HOME or a filesystem root (it then gets a fresh
-  empty directory of its own, never the shared temp dir). There is no allow rule for Read, Grep or Glob:
-  an allow rule such as `--allowedTools Read,Grep,Glob` auto-approves reads anywhere the user can read,
-  while with none the CLI's own permission check keeps a file, a search and a listing inside that folder
-  (a symlink out of it included). Two things the CLI would still allow are closed explicitly: Claude's
-  own data folder is denied by name (`Read`, `Grep` and `Glob` of `~/.claude/**`, and of
-  `CLAUDE_CONFIG_DIR` when it is set), because the project folder of the repository sits there next to
-  the transcripts; and auto memory is switched off (`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`), because the
-  CLI would otherwise inject that project's `MEMORY.md` into the model's context. Inside the folder any
-  file can be opened, ignored ones such as `.env` included, and a hard link there to a file elsewhere
-  reads as a file inside it. A worktree outside the repository folder is not readable.
+- **What the session is given.** It reads files and runs nothing: it runs in the repository folder with
+  `Read`, `Grep` and `Glob` only, started with `--tools Read,Grep,Glob`, which is what restricts its roster (`--allowedTools` and
+  `--disallowedTools` are only permission rules and leave the built-ins offered; the real CLI then
+  still offers CronCreate, EnterWorktree, RemoteTrigger and more). It has no shell, no tool that writes
+  a file, no web tool and none of Harnu's own tools; `Bash` is denied entirely (even a git rule can write
+  files through `--output=<path>`, which a prefix rule has no way to forbid), as are `Edit`, `Write`,
+  `NotebookEdit`, `WebFetch` and `WebSearch`, and no MCP server, skill or plugin is configured.
+  Everything git knows is in the dossier, which main computes. What it opens, the dossier and any file,
+  is sent to the model like any request.
+- **Where it reads.** There is no allow rule for Read, Grep or Glob: an allow rule such as
+  `--allowedTools Read,Grep,Glob` auto-approves reads anywhere the user can read, while with none the
+  Claude CLI's own permission check keeps a file, a search and a listing inside the folder it runs in (a
+  symlink out of it included). That check is not a guarantee: the CLI may still allow a few of its own
+  working folders, and two have been found. So Harnu explicitly blocks Claude's own data folder
+  (`Read`, `Grep` and `Glob` of `~/.claude/**` and of `CLAUDE_CONFIG_DIR` when set; the project folder of
+  the repository sits there next to the transcripts) and Claude's temp folder (`claude-<uid>` under the OS
+  temp dir, `/tmp` and `CLAUDE_CODE_TMPDIR`, where other sessions' task outputs and scratchpads live),
+  and auto memory is switched off (`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, because the CLI would otherwise
+  inject that project's `MEMORY.md` into the model's context). The folder it runs in is chosen on real
+  paths: HOME, an ancestor of HOME or a filesystem root is replaced by a fresh empty directory of its
+  own, never the shared temp dir. Inside the repository folder any file can be opened, ignored ones such
+  as `.env` included, and a hard link there to a file elsewhere reads as a file inside it. A worktree
+  outside the repository folder is not readable.
 - **Git facts fail closed.** A dossier field that comes from git is either computed or marked
   `COULD NOT BE COMPUTED (reason)`: a failed diff or status is unknown, not "no difference" or "none". An
   item with a missing fact is answered `unsure` by Harnu without asking the model, has no cache key (so it

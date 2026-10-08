@@ -13,11 +13,11 @@ const DEFAULT_STDOUT_MAX = 4 << 20
 
 export interface RunSupervisedOptions {
   /**
-   * The folder to run in. It is the whole readable world of the advisor: the CLI's own permission check
-   * keeps Read, Grep and Glob inside it (a hard link inside it to a file elsewhere reads as a file
-   * inside; Claude's own data folder is closed separately, by name, in the argv). When null, a fresh
-   * empty directory of its own is made and removed afterwards, never the shared temp dir, which holds
-   * other programs' files.
+   * The folder to run in. The Claude CLI's own permission check keeps Read, Grep and Glob to it, but
+   * the CLI may still allow a few of its own working folders (Claude's data folder and temp folder are
+   * blocked separately, by name, in the argv), and a hard link inside it to a file elsewhere reads as a
+   * file inside. When null, a fresh empty directory of its own is made and removed afterwards, never the
+   * shared temp dir, which holds other programs' files.
    */
   cwd: string | null
   env: Record<string, string>
