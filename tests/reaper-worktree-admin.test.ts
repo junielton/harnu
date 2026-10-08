@@ -1,6 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { execFile } from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readdirSync } from 'node:fs'
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  symlinkSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -187,17 +196,56 @@ describe('real git: no silent skip, no half-cleaned worktree (delta 4, N4)', () 
     expect((await git(repo, ['branch', '--list', 'feat/mine'])).trim()).not.toBe('')
   })
 
-  it('falls back to git worktree remove --force while the folder exists, and finishes the clean', async () => {
+  it('an admin dir that cannot be matched halts BEFORE the trash: folder, registration and branch untouched', async () => {
     const mine = join(root, 'wt-mine')
     await git(repo, ['worktree', 'add', '-q', '-b', 'feat/mine', mine])
+    writeFileSync(join(repo, '.git', 'worktrees', 'wt-mine', 'gitdir'), '/somewhere/else/.git\n')
+    const result = await cleanItem(item(mine, 'feat/mine'), { deleteRemote: false }, execDeps())
+    expect(result.ok).toBe(false)
+    const failed = result.steps.find((s) => !s.ok)!
+    expect(failed.id).toBe('trash-folder')
+    expect(failed.error).toContain('cannot-unregister')
+    expect(existsSync(mine)).toBe(true)
+    expect(adminNames()).toEqual(['wt-mine'])
+    expect((await git(repo, ['branch', '--list', 'feat/mine'])).trim()).not.toBe('')
+  })
+
+  it('a symlinked spelling of the path matches, and the folder goes to the trash with its .env', async () => {
+    const real = join(root, 'real')
+    mkdirSync(real)
+    const mine = join(real, 'wt-mine')
+    await git(repo, ['worktree', 'add', '-q', '-b', 'feat/mine', mine])
+    writeFileSync(join(mine, '.env'), 'SECRET=1')
+    const via = join(root, 'via')
+    symlinkSync(real, via)
+    const spelled = join(via, 'wt-mine')
+
+    expect(await canUnregister(repo, spelled, git)).toBe(true)
+
+    const trashDir = join(root, 'trash')
+    mkdirSync(trashDir)
     const result = await cleanItem(
-      item(mine, 'feat/mine'),
+      item(spelled, 'feat/mine'),
       { deleteRemote: false },
-      execDeps({ canUnregister: async () => false })
+      execDeps({ trash: async (p) => fsp.rename(p, join(trashDir, 'wt-mine')) })
     )
     expect(result.ok, JSON.stringify(result.steps)).toBe(true)
     expect(existsSync(mine)).toBe(false)
+    expect(readFileSync(join(trashDir, 'wt-mine', '.env'), 'utf8')).toBe('SECRET=1')
     expect(adminNames()).toEqual([])
-    expect((await git(repo, ['branch', '--list', 'feat/mine'])).trim()).toBe('')
+  })
+})
+
+describe('a clean never deletes anything permanently (delta 5, item 1)', () => {
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]
+    )
+  it('no source under reaper/ or gc/ ever asks git to remove a worktree', () => {
+    const base = join(__dirname, '..', 'src', 'main')
+    const offenders = [...walk(join(base, 'reaper')), ...walk(join(base, 'gc'))].filter((f) =>
+      /worktree\W{1,6}remove/.test(readFileSync(f, 'utf8'))
+    )
+    expect(offenders).toEqual([])
   })
 })
