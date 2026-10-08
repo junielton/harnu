@@ -13,6 +13,7 @@
  *  - decides a release request: the refusals, in a fixed order, and what the bucket becomes.
  */
 
+import { createHash } from 'node:crypto'
 import * as path from 'node:path'
 import { bucketOf, type Bucket, type WorktreeBundle } from '../gc/bundle-core'
 import type { OrphanVolumeItem } from '../gc/gc-housekeeping-input'
@@ -80,16 +81,28 @@ export interface CleanupListingOptions {
   /** The live policy's blocked folders (`Policy.denyFolders`). */
   denyFolders: readonly string[]
   home: string
-  /** From `containersScopeRoots`; null or absent lists every bundle. */
+  /**
+   * The folder the caller scoped to; absent lists every bundle. A bundle is in scope when its
+   * own repo (`item.repoPath`) is the scoped folder's repo, so a worktree outside the repo
+   * tree and unknown to Harnu's folder list is still found.
+   */
+  scope?: string | null
+  /** From `containersScopeRoots`: also keeps whatever lies under the scope or its sibling folders. */
   scopeRoots?: readonly string[] | null
 }
 
 const alias = (p: string): string => path.basename(p) || p
 
-/** The raw item id embeds the repo path, so the label is rebuilt from basenames. */
-function listedId(b: WorktreeBundle): string {
+/**
+ * The raw item id embeds the repo path, so the label is rebuilt from basenames plus a short
+ * hash of the raw id. Two repos that share a basename and a branch still get different ids,
+ * and the label leaks no path. `release_worktree` accepts it back as `{ id }`.
+ */
+export function listedId(b: Pick<WorktreeBundle, 'item'>): string {
   const { item } = b
-  return `${alias(item.repoPath)}::${item.kind}::${item.branch ?? (item.path ? alias(item.path) : '')}`
+  const tail = item.branch ?? (item.path ? alias(item.path) : '')
+  const hash = createHash('sha256').update(item.id).digest('hex').slice(0, 8)
+  return `${alias(item.repoPath)}::${item.kind}::${tail}::${hash}`
 }
 
 function redact(text: string, home: string): string {
@@ -105,9 +118,27 @@ function isControllable(b: WorktreeBundle, denyFolders: readonly string[], home:
   return !anchorsOf(b).some((p) => isFolderDenied(p, denyFolders, home))
 }
 
-function inScope(b: WorktreeBundle, roots: readonly string[], home: string): boolean {
-  const target = b.item.path ? normalizePath(b.item.path, home) : null
-  return target !== null && roots.some((root) => isWithinRoot(target, root))
+/** The repos a scoped folder belongs to: the scope is a repo's checkout, or one of its worktrees. */
+function scopedRepos(bundles: readonly WorktreeBundle[], scope: string, home: string): Set<string> {
+  const target = normalizePath(scope, home)
+  const repos = new Set<string>()
+  for (const b of bundles) {
+    const repo = normalizePath(b.item.repoPath, home)
+    const own = b.item.path ? normalizePath(b.item.path, home) : null
+    if (isWithinRoot(target, repo) || (own !== null && isWithinRoot(target, own))) repos.add(repo)
+  }
+  return repos
+}
+
+function inScope(
+  b: WorktreeBundle,
+  repos: ReadonlySet<string>,
+  roots: readonly string[],
+  home: string
+): boolean {
+  if (repos.has(normalizePath(b.item.repoPath, home))) return true
+  const own = b.item.path ? normalizePath(b.item.path, home) : null
+  return own !== null && roots.some((root) => isWithinRoot(own, root))
 }
 
 function listBundle(
@@ -161,11 +192,13 @@ function totalsOf(
  * volumes out: they belong to no folder, so no repo scope can claim them.
  */
 export function cleanupListing(snap: GcSnapshot, opts: CleanupListingOptions): CleanupListing {
-  const roots = opts.scopeRoots?.map((r) => normalizePath(r, opts.home)) ?? null
+  const scoped = !!opts.scope || !!opts.scopeRoots
+  const roots = opts.scopeRoots?.map((r) => normalizePath(r, opts.home)) ?? []
+  const repos = opts.scope ? scopedRepos(snap.bundles, opts.scope, opts.home) : new Set<string>()
   const bundles = snap.bundles
-    .filter((b) => (roots ? inScope(b, roots, opts.home) : true))
+    .filter((b) => (scoped ? inScope(b, repos, roots, opts.home) : true))
     .map((b) => listBundle(b, snap, opts))
-  const orphanVolumes = roots ? [] : snap.orphanVolumes.map((v) => listVolume(v, opts.home))
+  const orphanVolumes = scoped ? [] : snap.orphanVolumes.map((v) => listVolume(v, opts.home))
   return {
     scannedAt: snap.scannedAt,
     bundles,

@@ -2413,6 +2413,7 @@ const listCleanupHandler: Handler = async (args, ctx) => {
   const listing = cleanupListing(snap, {
     denyFolders: ctx.denyFolders,
     home,
+    scope: scope ?? null,
     scopeRoots: scope ? containersScopeRoots(scope, ctx.folders, home) : null
   })
   return textResult({ ok: true, ...listing })
