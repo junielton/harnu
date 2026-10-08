@@ -210,6 +210,31 @@ describe('list_cleanup handler (T445)', () => {
     })
   })
 
+  it('M11: the totals count each bucket on its own (in-use never counts review)', async () => {
+    const inUse2 = bundle(`${MAIN}/.claude/worktrees/PROJ-8-b`, {
+      bucket: 'in-use',
+      item: { diskBytes: 3 }
+    })
+    const inUse3 = bundle(`${MAIN}/.claude/worktrees/PROJ-9-c`, {
+      bucket: 'in-use',
+      item: { diskBytes: 4 }
+    })
+    const review2 = bundle(`${MAIN}/.claude/worktrees/PROJ-10-d`, {
+      bucket: 'review',
+      reason: { code: 'unpushed', detail: 'x' },
+      item: { diskBytes: 20 }
+    })
+    serve(snapshot([ready, dirty, open, inUse2, inUse3, review2]))
+    const t = JSON.parse(textOf(await handler({}, ctx()))).totals
+    expect(t).toMatchObject({
+      ready: 1,
+      readyBytes: 5_000,
+      review: 2,
+      reviewBytes: 720,
+      inUse: 3
+    })
+  })
+
   it('AC-1: reports the autopilot state and the next cycle', async () => {
     serve(
       snapshot([ready], {
