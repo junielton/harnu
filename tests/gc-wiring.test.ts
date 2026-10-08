@@ -335,3 +335,10 @@ describe('a scan cut short hides orphan volumes (delta 4, N5)', () => {
     expect(scan).toMatch(/truncated: scanned\.truncated/)
   })
 })
+
+describe('the Docker card says why orphan volumes are hidden (delta 4, item 6)', () => {
+  it('the gather adds the compose scan result to the docker facts', () => {
+    expect(scan).toMatch(/withOrphanVolumesHidden\(/)
+    expect(scan).toMatch(/guards\.hidden/)
+  })
+})

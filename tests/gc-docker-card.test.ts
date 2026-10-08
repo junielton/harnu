@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
+  NO_DOCKER_CARD,
   dockerCardFacts,
   parseBuildCacheReclaimable,
-  parseDanglingImages
+  parseDanglingImages,
+  withOrphanVolumesHidden
 } from '../src/main/gc/gc-docker-card'
 
 const DF = [
@@ -89,14 +91,19 @@ describe('dockerCardFacts: with injected deps', () => {
     )
     expect(out).toEqual({
       buildCacheReclaimableBytes: 4_600_000_000,
-      danglingImages: { count: 1, bytes: 10_000_000 }
+      danglingImages: { count: 1, bytes: 10_000_000 },
+      orphanVolumesHidden: null
     })
   })
 
   it('is null on both when docker is unavailable', async () => {
     const down = new Error('Cannot connect to the Docker daemon')
     const out = await dockerCardFacts(run({ [DF_ARGV]: down, [IMAGES_ARGV]: down }))
-    expect(out).toEqual({ buildCacheReclaimableBytes: null, danglingImages: null })
+    expect(out).toEqual({
+      buildCacheReclaimableBytes: null,
+      danglingImages: null,
+      orphanVolumesHidden: null
+    })
   })
 
   it('nulls only the figure whose command failed', async () => {
@@ -105,7 +112,8 @@ describe('dockerCardFacts: with injected deps', () => {
     )
     expect(out).toEqual({
       buildCacheReclaimableBytes: null,
-      danglingImages: { count: 1, bytes: 1_000_000 }
+      danglingImages: { count: 1, bytes: 1_000_000 },
+      orphanVolumesHidden: null
     })
   })
 
@@ -123,5 +131,37 @@ describe('dockerCardFacts: with injected deps', () => {
     const out = await dockerCardFacts(run({ [DF_ARGV]: '', [IMAGES_ARGV]: '' }))
     expect(out.buildCacheReclaimableBytes).toBeNull()
     expect(out.danglingImages).toEqual({ count: 0, bytes: 0 })
+  })
+})
+
+describe('orphanVolumesHidden explains an empty orphan list (delta 4, item 6)', () => {
+  it('is null from docker alone: the gather fills it from the compose scan', async () => {
+    const out = await dockerCardFacts(async () => ({ stdout: '' }))
+    expect(out.orphanVolumesHidden).toBeNull()
+    expect(NO_DOCKER_CARD.orphanVolumesHidden).toBeNull()
+  })
+
+  it('carries the reason and the folders when something hides the volumes', () => {
+    const hidden = { reason: 'scan-limit' as const, folders: ['/ws/org/proj/www'] }
+    expect(withOrphanVolumesHidden(NO_DOCKER_CARD, hidden)).toEqual({
+      buildCacheReclaimableBytes: null,
+      danglingImages: null,
+      orphanVolumesHidden: hidden
+    })
+  })
+
+  it('does not change the other figures, and returns a new card', () => {
+    const card = {
+      buildCacheReclaimableBytes: 5,
+      danglingImages: { count: 1, bytes: 2 },
+      orphanVolumesHidden: null
+    }
+    const out = withOrphanVolumesHidden(card, {
+      reason: 'unresolved-compose-name',
+      folders: ['/a']
+    })
+    expect(out.buildCacheReclaimableBytes).toBe(5)
+    expect(out.danglingImages).toEqual({ count: 1, bytes: 2 })
+    expect(card.orphanVolumesHidden).toBeNull()
   })
 })
