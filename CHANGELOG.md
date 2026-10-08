@@ -24,8 +24,11 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   opens the usual remove dialog, where you still confirm each one. The opinion is advice
   only: it never removes anything, never runs by itself, and its session only reads files
   (`Read`, `Grep` and `Glob`; it cannot run any command, write a file or use a web tool), and only inside
-  the repository folder it runs in: the Claude CLI refuses anything outside it, but inside it any file can
-  be opened, ignored files such as `.env` included. What it reads is sent to the model like any Claude
+  the repository folder it runs in (never your home folder or the filesystem root): the Claude CLI's own
+  check keeps it from reading outside that folder, Claude's own data folder (`~/.claude` and
+  `CLAUDE_CONFIG_DIR`) is explicitly blocked and auto memory is switched off, and inside the folder any
+  file can be opened, ignored files such as `.env` included (a hard link there to a file elsewhere reads
+  as a file inside it). What it reads is sent to the model like any Claude
   request. If git cannot produce a fact for an item, Harnu says so and answers unsure itself. Right before the dialog opens, Harnu re-checks the marked
   items and leaves out any it can no longer confirm as safe. Each question uses model tokens (it runs as the cheap "scout" tier of the folder's model routing table, Haiku at low effort by default). Answers are kept
   until the item changes (a new commit, different uncommitted files, a different pull request

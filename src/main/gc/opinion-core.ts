@@ -516,11 +516,16 @@ export function safeEffort(effort: string): Effort {
  * (`--output=.git/config` plants a `core.fsmonitor` that the next `git status` runs), and a prefix rule
  * cannot say "no --output". Everything git knows is already in the dossier, which main computes.
  *
- * There is deliberately NO allow rule for these tools. `--allowedTools Read,Grep,Glob` auto-approves
- * reads anywhere the user can read (the real CLI read a file outside the folder and listed ~/.ssh);
- * with no allow rule the CLI's own permission check confines Read, Grep and Glob to the folder the
- * process runs in, symlinks out of it included, and refuses the rest because it cannot ask in `-p`
- * mode (tests/cli/opinion-confine.cli.test.ts).
+ * There is deliberately NO allow rule for these tools. `--allowedTools Read,Grep,Glob` auto-approves reads
+ * anywhere the user can read (the real CLI read a file outside the folder and listed ~/.ssh). With no
+ * allow rule the CLI's own permission check keeps Read, Grep and Glob inside the folder the process runs
+ * in, symlinks out of it included, because it cannot ask in `-p` mode (tests/cli/opinion-confine.cli.test.ts).
+ * That check does not cover everything, so two more things are closed explicitly: Claude's own data
+ * folder, which the CLI would otherwise let a session read as the project folder of its repository, is
+ * explicitly denied by name ({@link dataDirRules}), and auto memory is switched off ({@link advisorEnv}),
+ * because it would inject that folder's MEMORY.md into the context
+ * (tests/cli/opinion-claude-dir.cli.test.ts). Not covered: a hard link inside the folder to a file
+ * elsewhere reads as a file inside it.
  */
 export const OPINION_BUILTIN_TOOLS: readonly string[] = ['Read', 'Grep', 'Glob']
 

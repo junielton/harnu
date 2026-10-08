@@ -8503,12 +8503,18 @@ Needs review item, orphan volumes included) and the block panel's button (that o
   `NotebookEdit`, `WebFetch` and `WebSearch`, and no MCP server is configured. Everything git knows is in
   the dossier, which main computes. It has no tool that runs a command, writes a file or reaches the
   network; what it reads (the dossier and any file it opens) is sent to the model like any request.
-- **Reads only inside the folder it runs in.** There is no allow rule for Read, Grep or Glob: an allow rule
-  such as `--allowedTools Read,Grep,Glob` auto-approves reads anywhere the user can read, while with none
-  the CLI's own permission check refuses a file, a search or a listing outside the folder (a symlink out
-  of it included). Inside it any file can be opened, ignored ones such as `.env` included. The folder is
-  the repository; a run with no repository gets a fresh empty directory of its own, never the shared temp
-  dir.
+- **Reads only inside the repository folder.** The folder the process runs in is its whole readable
+  world, and Harnu never runs it in HOME, an ancestor of HOME or a filesystem root (it then gets a fresh
+  empty directory of its own, never the shared temp dir). There is no allow rule for Read, Grep or Glob:
+  an allow rule such as `--allowedTools Read,Grep,Glob` auto-approves reads anywhere the user can read,
+  while with none the CLI's own permission check keeps a file, a search and a listing inside that folder
+  (a symlink out of it included). Two things the CLI would still allow are closed explicitly: Claude's
+  own data folder is denied by name (`Read`, `Grep` and `Glob` of `~/.claude/**`, and of
+  `CLAUDE_CONFIG_DIR` when it is set), because the project folder of the repository sits there next to
+  the transcripts; and auto memory is switched off (`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`), because the
+  CLI would otherwise inject that project's `MEMORY.md` into the model's context. Inside the folder any
+  file can be opened, ignored ones such as `.env` included, and a hard link there to a file elsewhere
+  reads as a file inside it. A worktree outside the repository folder is not readable.
 - **Git facts fail closed.** A dossier field that comes from git is either computed or marked
   `COULD NOT BE COMPUTED (reason)`: a failed diff or status is unknown, not "no difference" or "none". An
   item with a missing fact is answered `unsure` by Harnu without asking the model, has no cache key (so it
