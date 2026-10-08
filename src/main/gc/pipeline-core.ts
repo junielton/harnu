@@ -29,9 +29,10 @@ export interface GcOps {
   /** Resolves to the bytes freed. */
   dropDeps(b: WorktreeBundle): Promise<number>
   /**
-   * Re-reads presence, HEAD and the stacks touching the worktree right before `cleanGit`: the
-   * docker steps and drop-deps take time, and a session opened, a commit made or a stack
-   * started meanwhile must stop the archive and trash. Any stack still touching the worktree
+   * Re-reads presence, HEAD and the stacks touching the worktree, right before drop-deps and
+   * again right before `cleanGit`: the docker steps and drop-deps take time, and a session
+   * opened (in any subfolder), a commit made or a stack started meanwhile must stop the
+   * removal of the deps, the archive and the trash. Any stack still touching the worktree
    * refuses, a scanned one included: by then the run removed every stack it may remove.
    */
   recheck(b: WorktreeBundle): Promise<{ ok: true } | { ok: false; reason: string }>
@@ -107,7 +108,7 @@ function refusalOf(b: WorktreeBundle, opts: GcRunOptions): string | null {
 
 /**
  * Clean one bundle in a fixed order: reprobe, stop stacks, remove containers, remove
- * volumes, drop deps, recheck, then the git side. The order is what makes it safe: nothing
+ * volumes, recheck, drop deps, recheck, then the git side. The order is what makes it safe: nothing
  * under the checkout is touched until the stack running from it is gone, and nothing is
  * removed at all unless the reprobe still agrees with the scan.
  *
@@ -168,6 +169,17 @@ export async function runBundle(
       if (halted) return halted
     }
   }
+
+  // The docker steps take time: a session that opened meanwhile, in the worktree or any
+  // folder under it, must keep its deps. dehydrateItem's own live check matches the exact
+  // folder only, so the full recheck runs first.
+  let before: Awaited<ReturnType<GcOps['recheck']>> | null = null
+  try {
+    before = await ops.recheck(b)
+  } catch {
+    // A recheck that cannot answer is not a green light.
+  }
+  if (!before?.ok) return fail('drop-deps', 'changed-mid-run')
 
   // Accepted spec §4 deviation: cleanItem is one call, and its archive skips the ignored dirs.
   halted = await step('drop-deps', async () => {

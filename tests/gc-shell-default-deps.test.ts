@@ -217,3 +217,29 @@ describe('real paths over the default deps (delta 4, item C)', () => {
     expect(await deps.presenceOf(LINK)).toBe('open-idle')
   })
 })
+
+describe('the dehydrate live check over the default deps (delta 4, item D)', () => {
+  it('refuses while a session runs in a subfolder of the worktree', async () => {
+    h.computeFolderSets.mockResolvedValue({
+      live: new Set([`${WT}/api`]),
+      inUse: new Set([`${WT}/api`])
+    })
+    const deps = await defaultGcShellDeps(() => null)
+    expect(await deps.dehydrate.isSessionLive(WT)).toBe(true)
+  })
+
+  it('refuses for an idle PTY in a subfolder too', async () => {
+    h.computeFolderSets.mockResolvedValue({ live: new Set(), inUse: new Set([`${WT}/web`]) })
+    const deps = await defaultGcShellDeps(() => null)
+    expect(await deps.dehydrate.isSessionLive(WT)).toBe(true)
+  })
+
+  it('lets a worktree with no session anywhere under it through', async () => {
+    h.computeFolderSets.mockResolvedValue({
+      live: new Set([`${WT}-other/api`]),
+      inUse: new Set(['/ws/org/proj'])
+    })
+    const deps = await defaultGcShellDeps(() => null)
+    expect(await deps.dehydrate.isSessionLive(WT)).toBe(false)
+  })
+})

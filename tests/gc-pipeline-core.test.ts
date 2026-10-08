@@ -78,11 +78,13 @@ function fakeOps(over: Overrides = {}, bytes = 4096): Fake {
   return { ops, calls, args }
 }
 
+// Delta 4, item D: the recheck runs twice, right before drop-deps and right before cleanGit.
 const FULL = [
   'reprobe',
   'stopStacks',
   'removeContainers',
   'removeVolumes',
+  'recheck',
   'dropDeps',
   'recheck',
   'cleanGit'
@@ -242,18 +244,27 @@ describe('runBundle — reprobe (Review Focus 4)', () => {
   })
 })
 
+/** A recheck that passes its first call (before drop-deps) and answers `later` after. */
+function passesOnce(later: GcOps['recheck']): GcOps['recheck'] {
+  let calls = 0
+  return async (b) => (calls++ === 0 ? { ok: true } : later(b))
+}
+
 describe('runBundle — recheck right before cleanGit (delta 2, item 4)', () => {
   it('hands the bundle to recheck, after drop-deps and before cleanGit', async () => {
     const f = fakeOps()
     const b = bundle('a')
     await runBundle(b, f.ops, OPTS)
     expect(f.args.recheck).toBe(b)
-    expect(f.calls.indexOf('recheck')).toBe(f.calls.indexOf('dropDeps') + 1)
-    expect(f.calls.indexOf('cleanGit')).toBe(f.calls.indexOf('recheck') + 1)
+    expect(f.calls.lastIndexOf('recheck')).toBe(f.calls.indexOf('dropDeps') + 1)
+    expect(f.calls.indexOf('cleanGit')).toBe(f.calls.lastIndexOf('recheck') + 1)
   })
 
   it('a session that appeared after drop-deps halts at archive, and cleanGit never runs', async () => {
-    const f = fakeOps({ recheck: async () => ({ ok: false, reason: 'session-open' }) }, 8192)
+    const f = fakeOps(
+      { recheck: passesOnce(async () => ({ ok: false, reason: 'session-open' })) },
+      8192
+    )
     const r = await runBundle(bundle('a'), f.ops, OPTS)
     expect(r).toEqual({
       id: bundle('a').item.id,
@@ -266,11 +277,54 @@ describe('runBundle — recheck right before cleanGit (delta 2, item 4)', () => 
   })
 
   it('a throwing recheck halts the same way', async () => {
-    const f = fakeOps({ recheck: boom('presence unavailable') }, 8192)
+    const f = fakeOps({ recheck: passesOnce(boom('presence unavailable')) }, 8192)
     const r = await runBundle(bundle('a'), f.ops, OPTS)
     expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'changed-mid-run' })
     expect(r.freedBytes).toBe(8192)
     expect(f.calls).not.toContain('cleanGit')
+  })
+})
+
+describe('runBundle — recheck right before drop-deps (delta 4, item D)', () => {
+  it('runs after the docker steps and right before dropDeps', async () => {
+    const f = fakeOps()
+    await runBundle(bundle('a'), f.ops, OPTS)
+    expect(f.calls.indexOf('recheck')).toBe(f.calls.indexOf('removeVolumes') + 1)
+    expect(f.calls.indexOf('dropDeps')).toBe(f.calls.indexOf('recheck') + 1)
+  })
+
+  it('P2: a session that appeared during the docker steps halts at drop-deps, before dropDeps', async () => {
+    const f = fakeOps({ recheck: async () => ({ ok: false, reason: 'session-open' }) })
+    const r = await runBundle(bundle('a'), f.ops, OPTS)
+    expect(r).toEqual({
+      id: bundle('a').item.id,
+      ok: false,
+      haltedAt: 'drop-deps',
+      error: 'changed-mid-run',
+      freedBytes: 0
+    })
+    expect(f.calls).toEqual([
+      'reprobe',
+      'stopStacks',
+      'removeContainers',
+      'removeVolumes',
+      'recheck'
+    ])
+  })
+
+  it('a throwing recheck before drop-deps halts the same way', async () => {
+    const f = fakeOps({ recheck: boom('presence unavailable') })
+    const r = await runBundle(bundle('a'), f.ops, OPTS)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'drop-deps', error: 'changed-mid-run' })
+    expect(f.calls).not.toContain('dropDeps')
+    expect(f.calls).not.toContain('cleanGit')
+  })
+
+  it('runs with no stack too, right after the reprobe', async () => {
+    const f = fakeOps({ recheck: async () => ({ ok: false, reason: 'head-moved' }) })
+    const r = await runBundle(bundle('a', { stackIds: [], ownedVolumes: [] }), f.ops, OPTS)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'drop-deps', freedBytes: 0 })
+    expect(f.calls).toEqual(['reprobe', 'recheck'])
   })
 })
 
@@ -434,6 +488,7 @@ describe('runBundle — skipped steps', () => {
       'reprobe',
       'stopStacks',
       'removeContainers',
+      'recheck',
       'dropDeps',
       'recheck',
       'cleanGit'
@@ -448,6 +503,7 @@ describe('runBundle — skipped steps', () => {
       'reprobe',
       'stopStacks',
       'removeContainers',
+      'recheck',
       'dropDeps',
       'recheck',
       'cleanGit'
@@ -458,7 +514,7 @@ describe('runBundle — skipped steps', () => {
   it('no stacks: the docker steps are skipped, dropDeps and cleanGit still run', async () => {
     const f = fakeOps()
     const r = await runBundle(bundle('a', { stackIds: [], ownedVolumes: [] }), f.ops, OPTS)
-    expect(f.calls).toEqual(['reprobe', 'dropDeps', 'recheck', 'cleanGit'])
+    expect(f.calls).toEqual(['reprobe', 'recheck', 'dropDeps', 'recheck', 'cleanGit'])
     expect(r.ok).toBe(true)
     expect(r.haltedAt).toBeNull()
   })
@@ -492,6 +548,7 @@ describe('runBatch', () => {
       'stopStacks',
       'removeContainers',
       'removeVolumes',
+      'recheck',
       'dropDeps',
       'recheck',
       'cleanGit'
@@ -572,7 +629,7 @@ describe('T321 definition of done', () => {
   it('(b) with no stack the docker steps are skipped', async () => {
     const f = fakeOps()
     await runBundle(bundle('a', { stackIds: [], ownedVolumes: [] }), f.ops, OPTS)
-    expect(f.calls).toEqual(['reprobe', 'dropDeps', 'recheck', 'cleanGit'])
+    expect(f.calls).toEqual(['reprobe', 'recheck', 'dropDeps', 'recheck', 'cleanGit'])
   })
 
   it('(c) a stop failure halts before the checkout is touched', async () => {
