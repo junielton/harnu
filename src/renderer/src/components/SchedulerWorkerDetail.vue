@@ -106,6 +106,11 @@ const carryLastResultField = field('carryLastResult')
 const modelField = field('model')
 const effortField = field('effort')
 const modeField = field('mode')
+// BUG-166: only the literal `true` is on; a worker saved before the field existed reads as off.
+const allowNetworkField = computed<boolean>({
+  get: () => props.worker.allowNetwork === true,
+  set: (v) => scheduler.save(props.worker.id, { allowNetwork: v })
+})
 /**
  * T304. Written as a plain `field`, not an `allowDefault` tri-state: `silent`
  * IS the default, so it is one of the three real options rather than a fourth
@@ -832,6 +837,32 @@ const NOTIFY_OPTIONS = computed<{ value: NotifyOn; label: string }[]>(() => [
                     t('scheduler.settings.modeActWarningLead', { n: worker.everyMinutes })
                   }}</b>
                   {{ t('scheduler.settings.modeActWarningRest') }}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div v-if="worker.mode === 'observe'" class="flex items-start gap-3">
+            <div class="w-[132px] flex-none pt-2 text-[12px] text-text-2">
+              {{ t('scheduler.settings.allowNetwork') }}
+              <SettingHint>{{ t('scheduler.settings.allowNetworkHint') }}</SettingHint>
+            </div>
+            <div class="flex min-w-0 flex-1 flex-col gap-2">
+              <div class="flex items-center pt-1">
+                <ToggleSwitch
+                  v-model="allowNetworkField"
+                  :aria-label="t('scheduler.settings.allowNetwork')"
+                />
+              </div>
+              <div
+                v-if="worker.allowNetwork === true"
+                class="flex gap-2 rounded-sm border border-red-line bg-red-soft px-2.5 py-2.5 text-[11.5px] leading-[1.5] text-text-2"
+              >
+                <TriangleAlert :size="13" :stroke-width="1.7" class="mt-[1px] shrink-0 text-red" />
+                <span>
+                  <b class="font-semibold text-red">{{
+                    t('scheduler.settings.allowNetworkWarningLead')
+                  }}</b>
+                  {{ t('scheduler.settings.allowNetworkWarningRest') }}
                 </span>
               </div>
             </div>

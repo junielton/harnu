@@ -28,11 +28,40 @@ export const RUN_RETENTION = 200
 interface WorkersFile {
   version: 1
   workers: Worker[]
+  /**
+   * BUG-166: the migration notice that has not been delivered yet. Written in the SAME file write
+   * that heals the workers, so the heal can never happen without the notice being owed, and cleared
+   * only after a dispatch succeeded. Absent when nothing is owed.
+   */
+  pendingNetworkNotice?: NetworkLossNotice[]
 }
 
-export function serializeWorkers(workers: readonly Worker[]): string {
-  const doc: WorkersFile = { version: 1, workers: [...workers] }
+export function serializeWorkers(
+  workers: readonly Worker[],
+  pendingNetworkNotice: readonly NetworkLossNotice[] = []
+): string {
+  const doc: WorkersFile = {
+    version: 1,
+    workers: [...workers],
+    ...(pendingNetworkNotice.length > 0 ? { pendingNetworkNotice: [...pendingNetworkNotice] } : {})
+  }
   return JSON.stringify(doc, null, 2)
+}
+
+/** The undelivered notice recorded in a save file, validated field by field. */
+export function pendingNoticeOf(text: string): NetworkLossNotice[] {
+  try {
+    const doc = JSON.parse(text) as { pendingNetworkNotice?: unknown }
+    if (!Array.isArray(doc.pendingNetworkNotice)) return []
+    return doc.pendingNetworkNotice.flatMap((n): NetworkLossNotice[] => {
+      const w = n as Partial<NetworkLossNotice> | null
+      return w && typeof w.id === 'string' && typeof w.folder === 'string' && w.folder.length > 0
+        ? [{ id: w.id, name: typeof w.name === 'string' ? w.name : '', folder: w.folder }]
+        : []
+    })
+  } catch {
+    return []
+  }
 }
 
 /**
@@ -70,9 +99,51 @@ function normalizeWorker(w: Worker): Worker {
     timeoutSeconds: typeof w.timeoutSeconds === 'number' ? w.timeoutSeconds : 300,
     carryLastResult: w.carryLastResult === true,
     notifyOn: resolveNotifyOn(w),
+    // BUG-166: only the literal `true` is an opt-in; a worker saved before the field existed,
+    // or a hand-edited non-boolean, resolves to off and heals on the next write.
+    allowNetwork: w.allowNetwork === true,
     ...(Array.isArray(w.extraReadCommands) ? { extraReadCommands: w.extraReadCommands } : {}),
     ...(typeof w.systemPrompt === 'string' ? { systemPrompt: w.systemPrompt } : {}),
     failureStreak: typeof w.failureStreak === 'number' ? w.failureStreak : 0
+  }
+}
+
+/** One worker the BUG-166 migration just took the network away from. */
+export interface NetworkLossNotice {
+  id: string
+  name: string
+  folder: string
+}
+
+/** A prompt that names a URL or the tool itself: the signs a worker was using the network. */
+const NETWORK_HINT = /https?:\/\/|webfetch/i
+
+/**
+ * BUG-166: the observe workers a save file written BEFORE `allowNetwork` existed will silently lose
+ * `WebFetch` for: observe mode, no `allowNetwork` key yet, and a prompt or system prompt that names
+ * a URL or `WebFetch`. Read off the RAW file, since {@link parseWorkers} resolves the missing key
+ * to `false` and so cannot tell "never set" from "turned off". One-time by construction: the boot
+ * migration writes the key back, so the next load finds it and lists nothing.
+ */
+export function workersLosingNetwork(text: string): NetworkLossNotice[] {
+  try {
+    const doc = JSON.parse(text) as { workers?: unknown }
+    if (!Array.isArray(doc.workers)) return []
+    return doc.workers
+      .filter(
+        (w): w is Worker =>
+          !!w &&
+          typeof w === 'object' &&
+          typeof (w as Worker).id === 'string' &&
+          typeof (w as Worker).folder === 'string' &&
+          (w as Worker).folder.length > 0 &&
+          (w as Worker).mode !== 'act' &&
+          !('allowNetwork' in (w as object))
+      )
+      .filter((w) => NETWORK_HINT.test(w.prompt ?? '') || NETWORK_HINT.test(w.systemPrompt ?? ''))
+      .map((w) => ({ id: w.id, name: typeof w.name === 'string' ? w.name : '', folder: w.folder }))
+  } catch {
+    return []
   }
 }
 
@@ -128,16 +199,45 @@ function runsPath(workerId: string): string {
 }
 
 export async function loadWorkers(): Promise<Worker[]> {
+  return (await loadWorkersForBoot()).workers
+}
+
+/**
+ * Boot-time load (BUG-166): the workers, plus whether the file predates `allowNetwork` and which
+ * observe workers that cost `WebFetch`. `needsHeal` is true when any worker lacks the key, so the
+ * caller writes the migrated file back and the notice fires exactly once.
+ */
+export async function loadWorkersForBoot(): Promise<{
+  workers: Worker[]
+  lostNetwork: NetworkLossNotice[]
+  /** A notice an earlier boot recorded but never delivered. */
+  pendingNotice: NetworkLossNotice[]
+  needsHeal: boolean
+}> {
   try {
-    return parseWorkers(await fs.readFile(workersPath(), 'utf8'))
+    const text = await fs.readFile(workersPath(), 'utf8')
+    const workers = parseWorkers(text)
+    const doc = JSON.parse(text) as { workers?: unknown[] }
+    const needsHeal = (doc.workers ?? []).some(
+      (w) => !!w && typeof w === 'object' && !('allowNetwork' in (w as object))
+    )
+    return {
+      workers,
+      lostNetwork: workersLosingNetwork(text),
+      pendingNotice: pendingNoticeOf(text),
+      needsHeal
+    }
   } catch {
-    return []
+    return { workers: [], lostNetwork: [], pendingNotice: [], needsHeal: false }
   }
 }
 
-export async function saveWorkers(workers: readonly Worker[]): Promise<void> {
+export async function saveWorkers(
+  workers: readonly Worker[],
+  pendingNetworkNotice: readonly NetworkLossNotice[] = []
+): Promise<void> {
   await fs.mkdir(app.getPath('userData'), { recursive: true })
-  await atomicWriteFile(workersPath(), serializeWorkers(workers), 0o600)
+  await atomicWriteFile(workersPath(), serializeWorkers(workers, pendingNetworkNotice), 0o600)
 }
 
 export async function loadRuns(workerId: string): Promise<Run[]> {

@@ -3,7 +3,14 @@ import { mkdir, mkdtemp, rm, writeFile, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { tickArgv, OBSERVE_TOOLS, type Worker } from '../../src/main/scheduler-core'
+import { MCP_TOOLS } from '../../src/main/mcp/tool-catalog'
+import {
+  tickArgv,
+  OBSERVE_TOOLS,
+  OBSERVE_NETWORK_TOOLS,
+  OBSERVE_MCP_ALLOW,
+  type Worker
+} from '../../src/main/scheduler-core'
 import { resolve } from 'node:path'
 import { WITH_CLI } from './support/run-claude'
 
@@ -102,6 +109,8 @@ describe.skipIf(!WITH_CLI)('an observe tick against a real claude (BUG-164 delta
       const init = await initOf(tickArgv(OBSERVE_WORKER, {}), cwd, home)
       for (const tool of MUST_BE_ABSENT) expect(init.tools).not.toContain(tool)
       expect([...init.tools].sort()).toEqual([...OBSERVE_TOOLS].sort())
+      // BUG-166: without the opt-in there is no network tool at all.
+      expect(init.tools).not.toContain('WebFetch')
       // And nothing was written by merely starting.
       await expect(access(join(cwd, 'PWNED'))).rejects.toThrow()
     } finally {
@@ -109,7 +118,24 @@ describe.skipIf(!WITH_CLI)('an observe tick against a real claude (BUG-164 delta
     }
   }, 40_000)
 
-  it('the roster is the observe built-ins plus the allowed Harnu verbs, nothing else', async () => {
+  it('BUG-166: an opted-in worker (allowNetwork) is the only one that loads WebFetch', async () => {
+    const work = await mkdtemp(join(tmpdir(), 'harnu-observe-net-'))
+    const cwd = join(work, 'cwd')
+    const home = join(work, 'home')
+    await mkdir(cwd, { recursive: true })
+    await mkdir(home, { recursive: true })
+    try {
+      const off = await initOf(tickArgv(OBSERVE_WORKER, {}), cwd, home)
+      const on = await initOf(tickArgv({ ...OBSERVE_WORKER, allowNetwork: true }, {}), cwd, home)
+      expect(off.tools).not.toContain('WebFetch')
+      expect(on.tools).toContain('WebFetch')
+      expect([...on.tools].sort()).toEqual([...OBSERVE_TOOLS, ...OBSERVE_NETWORK_TOOLS].sort())
+    } finally {
+      await rm(work, { recursive: true, force: true })
+    }
+  }, 40_000)
+
+  it('the roster is the observe built-ins plus exactly the allowed Harnu verbs, from the full catalog', async () => {
     const work = await mkdtemp(join(tmpdir(), 'harnu-observe-roster-'))
     const cwd = join(work, 'cwd')
     const home = join(work, 'home')
@@ -122,7 +148,12 @@ describe.skipIf(!WITH_CLI)('an observe tick against a real claude (BUG-164 delta
         mcpServers: {
           harnu: {
             command: 'node',
-            args: [resolve(import.meta.dirname, 'fixtures', 'stub-harnu-mcp.mjs')]
+            // The stub exposes EVERY verb in the real catalog, so a verb that is merely not allowed
+            // (update_worker, delete_worker, plan_mission, ...) has to be kept out by the argv.
+            args: [
+              resolve(import.meta.dirname, 'fixtures', 'stub-harnu-mcp.mjs'),
+              JSON.stringify(MCP_TOOLS.map((t) => t.name))
+            ]
           }
         }
       })
@@ -130,12 +161,7 @@ describe.skipIf(!WITH_CLI)('an observe tick against a real claude (BUG-164 delta
     try {
       const init = await initOf(tickArgv(OBSERVE_WORKER, { mcpConfigPath: mcpConfig }), cwd, home)
       expect([...init.tools].sort()).toEqual(
-        [
-          ...OBSERVE_TOOLS,
-          'mcp__harnu__get_fleet',
-          'mcp__harnu__mission_get',
-          'mcp__harnu__notify'
-        ].sort()
+        [...OBSERVE_TOOLS, ...OBSERVE_MCP_ALLOW.filter((n) => n.startsWith('mcp__harnu__'))].sort()
       )
     } finally {
       await rm(work, { recursive: true, force: true })

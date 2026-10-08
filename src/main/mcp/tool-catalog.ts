@@ -1072,7 +1072,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'create_worker',
     description:
-      "Create a Scheduler worker — the only heartbeat that outlives this session, firing on its own cadence until disabled. `mode: 'observe'` (the default) is read-only by an explicit allowlist and is created DIRECTLY, no confirm, same class as create_session. `mode: 'act'` runs with permissions bypassed and the full toolset, and does NOT stop at the Approval Inbox — minting one unattended would be granting yourself a permanent, unsupervised second body, so it ALWAYS faces the operator as a confirm naming the folder, cadence and prompt, the same class as plan_mission/delete_card. Born ENABLED: unlike the Scheduler UI's blank form, every field arrives in one call, so it fires from the next tick rather than waiting for a second arm step. If the prompt names a skill mention that resolves to nothing on this machine — a typo, an unknown name, a plugin skill a tick can't load — the ACK carries a `warning`; the worker is still created, but that mention will never stage. A bundled skill that's merely switched off for this folder is not this case: naming it is an explicit request, so it stages anyway and draws no warning.",
+      "Create a Scheduler worker — the only heartbeat that outlives this session, firing on its own cadence until disabled. `mode: 'observe'` (the default) is read-only by an explicit allowlist (no shell, and no network tool unless you pass `allowNetwork: true`) and is created DIRECTLY, no confirm, same class as create_session. `allowNetwork: true` gives the tick WebFetch, which with Read lets it send data from files it reads to the internet, so it ALWAYS confirms, observe or not. `mode: 'act'` runs with permissions bypassed and the full toolset, and does NOT stop at the Approval Inbox — minting one unattended would be granting yourself a permanent, unsupervised second body, so it ALWAYS faces the operator as a confirm naming the folder, cadence and prompt, the same class as plan_mission/delete_card. Born ENABLED: unlike the Scheduler UI's blank form, every field arrives in one call, so it fires from the next tick rather than waiting for a second arm step. If the prompt names a skill mention that resolves to nothing on this machine — a typo, an unknown name, a plugin skill a tick can't load — the ACK carries a `warning`; the worker is still created, but that mention will never stage. A bundled skill that's merely switched off for this folder is not this case: naming it is an explicit request, so it stages anyway and draws no warning.",
     inputSchema: z.object({
       folder: z
         .string()
@@ -1110,12 +1110,18 @@ export const MCP_TOOLS: McpToolDef[] = [
         .optional()
         .describe(
           'Seconds before a tick is killed. Defaults to 300 (5 min) — raise this for a tick whose own command chain (e.g. create_worktree → npm ci → create_session) needs longer than that.'
+        ),
+      allowNetwork: z
+        .boolean()
+        .optional()
+        .describe(
+          'observe only. Default false: the tick has no WebFetch. true lets it send data from files it reads to the internet, so it ALWAYS confirms with the operator.'
         )
     }),
     mutates: true,
     op: 'create_worker',
     silentAllowInAgentFolder: true,
-    forceConfirmFor: (input) => input.mode === 'act'
+    forceConfirmFor: (input) => input.mode === 'act' || input.allowNetwork === true
   },
   {
     name: 'list_workers',
@@ -1244,7 +1250,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'update_worker',
     description:
-      "Edit an EXISTING Scheduler worker — the fix half of create_worker. Takes the worker's `id` (from create_worker or list_workers) plus `set`, any subset of its editable fields (name/prompt/everyMinutes/mode/model/effort/timeoutSeconds/enabled/runOnBoot/carryLastResult/notifyOn/extraReadCommands/systemPrompt). Merges through the SAME in-memory store every other write path in the Scheduler already shares — never a direct file write a UI save would clobber. Runs DIRECTLY, no confirm, UNLESS the edit itself raises the risk: setting `mode: 'act'`, or touching `prompt` or `systemPrompt` at all — either one rewrites the body a tick runs unattended, and can mint a new one under an old approval; this verb cannot see the worker's CURRENT mode to tell a safe edit from a risky one, so ANY prompt edit confirms, the same class as create_worker's `mode: 'act'`. `update_worker({ id, set: { enabled: false } })` is the reversible way to pause a worker instead of deleting it. An edit never reaches a tick already running — it takes effect from the next one; the ACK's `tickInFlight` says whether one was live when you called this. Refuses with WORKER_NOT_FOUND if `id` names no worker.",
+      "Edit an EXISTING Scheduler worker — the fix half of create_worker. Takes the worker's `id` (from create_worker or list_workers) plus `set`, any subset of its editable fields (name/prompt/everyMinutes/mode/model/effort/timeoutSeconds/enabled/runOnBoot/carryLastResult/notifyOn/extraReadCommands/systemPrompt/allowNetwork). Merges through the SAME in-memory store every other write path in the Scheduler already shares — never a direct file write a UI save would clobber. Runs DIRECTLY, no confirm, UNLESS the edit itself raises the risk: setting `mode: 'act'`, or touching `prompt` or `systemPrompt` at all — either one rewrites the body a tick runs unattended, and can mint a new one under an old approval; this verb cannot see the worker's CURRENT mode to tell a safe edit from a risky one, so ANY prompt edit confirms, the same class as create_worker's `mode: 'act'`. Setting `allowNetwork: true` also confirms (it gives an observe tick WebFetch, which with Read can send local files out); `allowNetwork: false` is the safe direction and stays free. `update_worker({ id, set: { enabled: false } })` is the reversible way to pause a worker instead of deleting it. An edit never reaches a tick already running — it takes effect from the next one; the ACK's `tickInFlight` says whether one was live when you called this. Refuses with WORKER_NOT_FOUND if `id` names no worker.",
     inputSchema: z.object({
       id: z.string().min(1).describe("The worker's id, from create_worker or list_workers."),
       set: z
@@ -1261,7 +1267,8 @@ export const MCP_TOOLS: McpToolDef[] = [
           carryLastResult: z.boolean().optional(),
           notifyOn: z.enum(['silent', 'failure', 'every']).optional(),
           extraReadCommands: z.array(z.string()).optional(),
-          systemPrompt: z.string().optional()
+          systemPrompt: z.string().optional(),
+          allowNetwork: z.boolean().optional()
         })
         .refine((v) => Object.keys(v).length > 0, {
           message: 'set must include at least one field'
@@ -1276,7 +1283,15 @@ export const MCP_TOOLS: McpToolDef[] = [
       // `systemPrompt` rides the same rule as `prompt`: `tickArgv` pushes it as
       // `--system-prompt`, so it is an unattended instruction body too, and this
       // verb is equally blind to the worker's CURRENT mode.
-      return set.mode === 'act' || set.prompt !== undefined || set.systemPrompt !== undefined
+      // BUG-166: `allowNetwork: true` hands an unattended tick WebFetch, which with an
+      // unrestricted Read is a way to send local files out. Turning it OFF is the safe direction
+      // and stays free.
+      return (
+        set.mode === 'act' ||
+        set.prompt !== undefined ||
+        set.systemPrompt !== undefined ||
+        set.allowNetwork === true
+      )
     }
   },
   {

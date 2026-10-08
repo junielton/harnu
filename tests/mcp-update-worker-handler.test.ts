@@ -128,6 +128,45 @@ describe('update_worker / delete_worker handlers (T316)', () => {
     expect(found?.everyMinutes).toBe(30)
   })
 
+  // BUG-166 — the handler writes `allowNetwork` through the same store, and the ACK reports the
+  // resulting value so the agent reads what actually took effect.
+  it('BUG-166: create_worker and update_worker carry allowNetwork, default it to false, and report it', async () => {
+    const { WIRED_TOOLS } = await loadHandlers()
+    const createWorker = WIRED_TOOLS.find((t) => t.op === 'create_worker')!.handler!
+    const updateWorker = WIRED_TOOLS.find((t) => t.op === 'update_worker')!.handler!
+
+    const plain = payloadOf(
+      await createWorker(
+        { folder, name: 'w', prompt: 'p', everyMinutes: 20 },
+        { ...baseCtx, folder }
+      )
+    )
+    expect(plain.allowNetwork).toBe(false)
+
+    const online = payloadOf(
+      await createWorker(
+        { folder, name: 'w2', prompt: 'p', everyMinutes: 20, allowNetwork: true },
+        { ...baseCtx, folder }
+      )
+    )
+    expect(online.allowNetwork).toBe(true)
+
+    const on = payloadOf(
+      await updateWorker({ id: plain.id, set: { allowNetwork: true } }, { ...baseCtx, folder })
+    )
+    expect(on.allowNetwork).toBe(true)
+    const off = payloadOf(
+      await updateWorker({ id: plain.id, set: { allowNetwork: false } }, { ...baseCtx, folder })
+    )
+    expect(off.allowNetwork).toBe(false)
+
+    const stored = JSON.parse(
+      await fs.readFile(path.join(h.userDataDir, 'schedulers.json'), 'utf8')
+    ) as { workers: Array<{ id: string; allowNetwork: boolean }> }
+    expect(stored.workers.find((w) => w.id === plain.id)?.allowNetwork).toBe(false)
+    expect(stored.workers.find((w) => w.id === online.id)?.allowNetwork).toBe(true)
+  })
+
   it('merges a subset of fields, leaving everything else exactly as it was', async () => {
     const { WIRED_TOOLS } = await loadHandlers()
     const createWorker = WIRED_TOOLS.find((t) => t.op === 'create_worker')!.handler!

@@ -2031,6 +2031,9 @@ const createWorkerHandler: Handler = async (args, ctx) => {
   // workers with just this one. Surface that refusal as an ordinary tool error
   // so the caller sees WHY nothing was created, instead of the throw escaping
   // the handler.
+  // BUG-166: opt-in to WebFetch. Only the literal `true` counts; anything else is off.
+  const allowNetwork = args.allowNetwork === true
+
   let created: Awaited<ReturnType<typeof createWorkerForAgent>>
   try {
     created = await createWorkerForAgent({
@@ -2041,7 +2044,8 @@ const createWorkerHandler: Handler = async (args, ctx) => {
       mode,
       ...(model ? { model } : {}),
       ...(effort ? { effort } : {}),
-      ...(timeoutSeconds ? { timeoutSeconds } : {})
+      ...(timeoutSeconds ? { timeoutSeconds } : {}),
+      allowNetwork
     })
   } catch (err) {
     // Matched on the error's `code`, not `instanceof`: a duplicated module
@@ -2065,6 +2069,8 @@ const createWorkerHandler: Handler = async (args, ctx) => {
     mode: worker.mode,
     everyMinutes: worker.everyMinutes,
     enabled: worker.enabled,
+    // BUG-166: what actually took effect, so the agent reads it instead of assuming.
+    allowNetwork: worker.allowNetwork === true,
     // AC-6: reported, never silently dropped — the worker IS created either way.
     ...(missingSkills.length > 0
       ? {
@@ -2139,6 +2145,7 @@ function patchFromSetArg(setRaw: Record<string, unknown>): UpdateWorkerPatch | '
   }
   const systemPrompt = strField(setRaw, 'systemPrompt')
   if (systemPrompt !== undefined) patch.systemPrompt = systemPrompt
+  if (typeof setRaw.allowNetwork === 'boolean') patch.allowNetwork = setRaw.allowNetwork
   return patch
 }
 
@@ -2174,6 +2181,7 @@ const updateWorkerHandler: Handler = async (args) => {
     mode: worker.mode,
     everyMinutes: worker.everyMinutes,
     enabled: worker.enabled,
+    allowNetwork: worker.allowNetwork === true,
     // T316 decision 4: whether a tick was already running with the PRE-edit
     // worker at the moment this call landed — the edit itself never touches it.
     tickInFlight,
