@@ -9,8 +9,8 @@ import type { DialogRow, RemovalChip } from '../lib/gc-model'
 
 /**
  * The one confirm of the Cleanup screen (design.md "Workspace GC — unified Cleanup / Bulk-clean and
- * remove-selected dialog"). `corpses` is the hero's bulk clean over proven corpses; `decide` is
- * Remove selected over Decide items, which can include code that exists nowhere else but an archive
+ * remove-selected dialog"). `ready` is the hero's bulk clean over proven ready; `review` is
+ * Remove selected over Needs review items, which can include code that exists nowhere else but an archive
  * ref — so its confirm is Danger and its warning is stronger.
  *
  * It lists what the operator is about to remove and nothing else: the parent builds `rows` once,
@@ -19,7 +19,7 @@ import type { DialogRow, RemovalChip } from '../lib/gc-model'
  */
 const props = defineProps<{
   rows: DialogRow[]
-  mode: 'corpses' | 'decide'
+  mode: 'ready' | 'review'
 }>()
 const emit = defineEmits<{ confirm: []; cancel: [] }>()
 const { t, te } = useI18n()
@@ -32,15 +32,15 @@ const riskCount = computed(() => props.rows.filter((r) => r.risk).length)
 const hasWorktreeRow = computed(() => props.rows.some((r) => r.kind === 'worktree'))
 
 const title = computed(() => {
-  if (props.mode === 'corpses') {
-    return t('cleanup.gc.confirm.titleCorpses', count.value, { named: { n: count.value } })
+  if (props.mode === 'ready') {
+    return t('cleanup.gc.confirm.titleReady', count.value, { named: { n: count.value } })
   }
   const key = hasVolumeRow.value ? 'titleItems' : 'titleWorktrees'
   return t(`cleanup.gc.confirm.${key}`, count.value, { named: { n: count.value } })
 })
 const confirmLabel = computed(() => {
-  if (props.mode === 'corpses') {
-    return t('cleanup.gc.confirm.confirmCorpses', count.value, { named: { n: count.value } })
+  if (props.mode === 'ready') {
+    return t('cleanup.gc.confirm.confirmReady', count.value, { named: { n: count.value } })
   }
   const key = hasVolumeRow.value ? 'confirmItems' : 'confirmWorktrees'
   return t(`cleanup.gc.confirm.${key}`, count.value, { named: { n: count.value } })
@@ -128,9 +128,9 @@ function onBackdropMousedown(e: MouseEvent): void {
           </div>
           <p class="m-0 mt-0.5 text-[12.5px] leading-[18px] text-text-2">
             {{
-              mode === 'corpses'
-                ? t('cleanup.gc.confirm.subtitleCorpses')
-                : t('cleanup.gc.confirm.subtitleDecide')
+              mode === 'ready'
+                ? t('cleanup.gc.confirm.subtitleReady')
+                : t('cleanup.gc.confirm.subtitleReview')
             }}
           </p>
         </div>
@@ -160,7 +160,7 @@ function onBackdropMousedown(e: MouseEvent): void {
           >
             <span
               class="mt-px inline-flex"
-              :class="row.risk || mode === 'decide' ? 'text-warning' : 'text-green'"
+              :class="row.risk || mode === 'review' ? 'text-warning' : 'text-green'"
             >
               <TriangleAlert
                 v-if="row.risk"
@@ -170,7 +170,7 @@ function onBackdropMousedown(e: MouseEvent): void {
                 role="img"
               />
               <CircleHelp
-                v-else-if="mode === 'decide'"
+                v-else-if="mode === 'review'"
                 :size="14"
                 :stroke-width="1.6"
                 aria-hidden="true"
@@ -184,7 +184,7 @@ function onBackdropMousedown(e: MouseEvent): void {
                 class="truncate font-mono text-[11px] leading-4 text-text-4"
                 >{{ rowSub(row) }}</span
               >
-              <template v-if="mode === 'decide' && row.reasonCode">
+              <template v-if="mode === 'review' && row.reasonCode">
                 <span class="text-[11px] leading-4 text-text-3" data-testid="bulk-reason">{{
                   reasonText(row)
                 }}</span>
@@ -223,7 +223,7 @@ function onBackdropMousedown(e: MouseEvent): void {
             aria-hidden="true"
           />
           <div class="min-w-0 text-[12px] leading-[18px] text-text-2">
-            <p v-if="mode === 'decide' && riskCount > 0" class="m-0 mb-1" data-testid="bulk-risk">
+            <p v-if="mode === 'review' && riskCount > 0" class="m-0 mb-1" data-testid="bulk-risk">
               <b class="font-semibold text-warning">{{
                 t('cleanup.gc.confirm.warnRisk', riskCount, { named: { n: riskCount } })
               }}</b>
@@ -257,7 +257,7 @@ function onBackdropMousedown(e: MouseEvent): void {
             {{ t('cleanup.gc.confirm.cancel') }}
           </Button>
           <Button
-            :variant="mode === 'corpses' ? 'success' : 'danger'"
+            :variant="mode === 'ready' ? 'success' : 'danger'"
             data-testid="bulk-confirm"
             @click="emit('confirm')"
           >

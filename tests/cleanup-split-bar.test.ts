@@ -7,9 +7,9 @@ import type { GcModel } from '../src/renderer/src/lib/gc-model'
 import type { CycleRecord } from '../src/main/gc/gc-wire'
 
 const totals = (): GcModel['totals'] => ({
-  corpse: { count: 12, bytes: 6_000_000_000 },
-  decide: { count: 46, bytes: 20_000_000_000 },
-  alive: { count: 19, bytes: 7_000_000_000 },
+  ready: { count: 12, bytes: 6_000_000_000 },
+  review: { count: 46, bytes: 20_000_000_000 },
+  'in-use': { count: 19, bytes: 7_000_000_000 },
   orphanVolumes: { count: 3, bytes: 900_000_000 },
   docker: { count: 0, bytes: 0 }
 })
@@ -32,7 +32,7 @@ describe('CleanupSplitBar', () => {
     expect(w.get('[data-testid="split-untouched"]').text()).toContain('In use')
   })
 
-  it('needs-you counts Decide plus orphan volumes and is hatched', () => {
+  it('needs-you counts Needs review plus orphan volumes and is hatched', () => {
     const needs = mountBar().get('[data-testid="split-needsYou"]')
     expect(needs.text()).toContain('20.90 GB')
     expect(needs.html()).toContain('repeating-linear-gradient')
@@ -47,7 +47,7 @@ describe('CleanupSplitBar', () => {
 
   it('leaves out a bucket with nothing in it', () => {
     const t = totals()
-    t.corpse = { count: 0, bytes: 0 }
+    t.ready = { count: 0, bytes: 0 }
     expect(mountBar({ totals: t }).find('[data-testid="split-auto"]').exists()).toBe(false)
   })
 

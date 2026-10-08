@@ -6,7 +6,7 @@ import { formatBytes } from './system-monitor-format'
 
 /**
  * Multi-select band of the Cleanup takeover (design.md "Workspace GC — unified Cleanup / Page
- * anatomy" #3). Shown only while at least one Decide block is checked. "Ask for an opinion" is
+ * anatomy" #3). Shown only while at least one Needs review block is checked. "Ask for an opinion" is
  * drawn but disabled until the opinion helper (S6) exists.
  */
 defineProps<{ count: number; bytes: number }>()

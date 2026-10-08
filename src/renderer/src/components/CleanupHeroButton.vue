@@ -8,7 +8,7 @@ import type { HeroState } from '../lib/gc-model'
 
 /**
  * The hero of the Cleanup screen (design.md "Workspace GC — unified Cleanup / Hero button and
- * progress chip"): the screen's single Primary button, `Clean N corpses · X`, that turns into a
+ * progress chip"): the screen's single Primary button, `Clean N ready · X`, that turns into a
  * progress chip while a clean runs. It never awaits anything — the chip is fed by `gc:progress`
  * through the store, and there is no cancel because the engine has none.
  */

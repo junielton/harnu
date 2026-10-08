@@ -2258,14 +2258,14 @@
     },
     "gc": {
       "bucket": {
-        "corpse": "Pronto para limpar",
-        "decide": "Precisa de você",
-        "alive": "Em uso",
         "header": {
-          "corpse": "Pronto para limpar",
-          "decide": "Precisa de você",
-          "alive": "Em uso"
-        }
+          "ready": "Pronto para limpar",
+          "review": "Precisa de você",
+          "in-use": "Em uso"
+        },
+        "ready": "Pronto para limpar",
+        "review": "Precisa de você",
+        "in-use": "Em uso"
       },
       "map": {
         "canvasLabel": "Mapa de uso de disco",
@@ -2290,7 +2290,6 @@
         "empty": "Nenhum worktree para mostrar."
       },
       "reason": {
-        "corpse": "Mesclado, limpo e parado além do período de carência.",
         "dirty": "Mesclado, mas tem alterações não commitadas em arquivos rastreados.",
         "unpushed": "Mesclado, mas tem commits que nunca foram enviados.",
         "openIdleSession": "Uma sessão ainda está aberta aqui, embora parada.",
@@ -2301,7 +2300,9 @@
         "weakMergeSignal": "Parece mesclado, mas a ponta local difere da mesclada.",
         "sharedStack": "Outra stack Docker também roda a partir deste worktree.",
         "cleanupFailed": "A última limpeza parou antes de terminar.",
-        "noKnownWorktree": "Nenhum worktree conhecido usa este volume."
+        "noKnownWorktree": "Nenhum worktree conhecido usa este volume.",
+        "ready": "Mesclado, limpo e parado além do período de carência.",
+        "pathUnresolved": "A worktree tem um caminho que o Harnu não conseguiu resolver para o local real, então não sabe o que o usa."
       },
       "step": {
         "stopStack": "Parar a stack",
@@ -2322,8 +2323,6 @@
         "checkout": "Checkout",
         "volumesNoSize": "Volumes (tamanho não informado): {names}",
         "whyTitle": "Por que está aqui",
-        "corpseNote": "Limpo no próximo ciclo, ou agora com Limpar agora.",
-        "aliveNote": "Deixado como está enquanto uma sessão trabalha aqui ou o pull request está aberto.",
         "takesTitle": "Leva junto",
         "takes": {
           "stack": "Sua stack Docker | {count} stacks Docker",
@@ -2351,7 +2350,9 @@
         "keep": "Manter",
         "ask": "Pedir uma opinião",
         "askSoon": "chega na S6",
-        "volumesKept": "Os volumes dele ({names}) são mantidos. Depois eles aparecem em Precisa de você."
+        "volumesKept": "Os volumes dele ({names}) são mantidos. Depois eles aparecem em Precisa de você.",
+        "readyNote": "Limpo no próximo ciclo, ou agora com Limpar agora.",
+        "inUseNote": "Deixado como está enquanto uma sessão trabalha aqui ou o pull request está aberto."
       },
       "needsYou": {
         "title": "Precisa de você",
@@ -2390,11 +2391,8 @@
         "clear": "Limpar seleção"
       },
       "confirm": {
-        "titleCorpses": "Limpar {n} item pronto? | Limpar {n} itens prontos?",
         "titleWorktrees": "Remover {n} worktree? | Remover {n} worktrees?",
         "titleItems": "Remover {n} item? | Remover {n} itens?",
-        "subtitleCorpses": "Cada um está merged, limpo e ocioso além do período de carência. Tudo o que está listado abaixo será removido.",
-        "subtitleDecide": "Você escolheu estes itens, então o Harnu não pôde provar que são seguros. Tudo o que está listado abaixo será removido.",
         "summary": "{n} item · {size} | {n} itens · {size}",
         "listLabel": "Itens a remover",
         "worktreeRow": "{repo} › {name}",
@@ -2408,9 +2406,12 @@
         "warnRecover": "O código e a branch voltam pelas refs de arquivo e pela lixeira do sistema, e as dependências voltam pelo setup do repositório.",
         "total": "Total {size}",
         "cancel": "Cancelar",
-        "confirmCorpses": "Limpar {n} pronto | Limpar {n} prontos",
         "confirmWorktrees": "Remover {n} worktree | Remover {n} worktrees",
-        "confirmItems": "Remover {n} item | Remover {n} itens"
+        "confirmItems": "Remover {n} item | Remover {n} itens",
+        "titleReady": "Limpar {n} item pronto? | Limpar {n} itens prontos?",
+        "subtitleReady": "Cada um está merged, limpo e ocioso além do período de carência. Tudo o que está listado abaixo será removido.",
+        "confirmReady": "Limpar {n} pronto | Limpar {n} prontos",
+        "subtitleReview": "Você escolheu estes itens, então o Harnu não pôde provar que são seguros. Tudo o que está listado abaixo será removido."
       },
       "chip": {
         "stack": "stack",
@@ -2578,10 +2579,10 @@
         "kept": "Você marcou como Manter, então foi deixado como está.",
         "neverClean": "Está na sua lista de nunca limpar, então foi deixado como está.",
         "mainCheckout": "Este é um checkout principal, que nunca é limpo.",
-        "alive": "Está em uso, então foi deixado como está.",
         "unsupportedKind": "O Harnu ainda não consegue limpar este tipo de pasta.",
         "unknownItem": "A limpeza não conhece mais este item. Atualize e tente de novo.",
-        "several": "{n} itens foram deixados como estão por motivos diferentes. Abra cada um para ver o motivo."
+        "several": "{n} itens foram deixados como estão por motivos diferentes. Abra cada um para ver o motivo.",
+        "inUse": "Está em uso, então foi deixado como está."
       }
     }
   },

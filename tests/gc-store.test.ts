@@ -9,7 +9,7 @@ import type {
   GcJobProgress,
   GcSnapshot
 } from '../src/main/gc/gc-wire'
-import type { Bucket, DecideReason } from '../src/main/gc/bundle-core'
+import type { Bucket, ReviewReason } from '../src/main/gc/bundle-core'
 import { useGcStore } from '../src/renderer/src/stores/gc'
 import { useUiStore } from '../src/renderer/src/stores/ui'
 import { CHANGED_SINCE_CONFIRM } from '../src/renderer/src/lib/gc-jobs'
@@ -20,7 +20,7 @@ const t = (key: string, named?: Record<string, unknown>): string =>
 
 const MIB = 1024 ** 2
 
-function wt(name: string, bucket: Bucket, bytes: number, reason?: DecideReason) {
+function wt(name: string, bucket: Bucket, bytes: number, reason?: ReviewReason) {
   const b = bundle(`/ws/${name}`, bucket, { reason })
   b.item = reapItem(`/ws/${name}`, { diskBytes: bytes })
   return b
@@ -30,9 +30,9 @@ function snap(over: Partial<GcSnapshot> = {}): GcSnapshot {
   return {
     scannedAt: NOW,
     bundles: [
-      wt('c1', 'corpse', 500 * MIB),
-      wt('c2', 'corpse', 400 * MIB),
-      wt('d1', 'decide', 900 * MIB)
+      wt('c1', 'ready', 500 * MIB),
+      wt('c2', 'ready', 400 * MIB),
+      wt('d1', 'review', 900 * MIB)
     ],
     orphanVolumes: [],
     docker: { buildCacheReclaimableBytes: null, danglingImages: null },
@@ -117,18 +117,18 @@ describe('gc store', () => {
     installApi()
     const gc = useGcStore()
     await gc.init()
-    expect(gc.model?.totals.corpse.count).toBe(2)
+    expect(gc.model?.totals.ready.count).toBe(2)
     expect(gc.hero).toMatchObject({ kind: 'clean', count: 2, bytes: 900 * MIB })
-    expect(gc.pill).toEqual({ kind: 'idle' }) // 'needs you' is for failures, not for the whole Decide list
+    expect(gc.pill).toEqual({ kind: 'idle' }) // 'needs you' is for failures, not for the whole Needs review list
     expect(gc.reclaimableBytes).toBe(1800 * MIB)
   })
 
-  it('cleaning the corpses sends ids + expected facts and no confirmed list', async () => {
+  it('cleaning the ready items send ids + expected facts and no confirmed list', async () => {
     const api = installApi()
     const gc = useGcStore()
     await gc.init()
-    const ids = gc.model!.corpses.map((b) => b.id)
-    const ack = await gc.cleanCorpses()
+    const ids = gc.model!.ready.map((b) => b.id)
+    const ack = await gc.cleanReady()
     expect(ack?.jobId).toBe('j1')
     const [sentIds, opts] = api.gcClean.mock.calls[0]
     expect(sentIds).toEqual(ids)
@@ -137,7 +137,7 @@ describe('gc store', () => {
     expect('confirmDecide' in opts).toBe(false)
   })
 
-  it('removing Decide items confirms each id explicitly', async () => {
+  it('removing Needs review items confirms each id explicitly', async () => {
     const api = installApi()
     const gc = useGcStore()
     await gc.init()
@@ -182,11 +182,11 @@ describe('gc store', () => {
     const api = installApi()
     const gc = useGcStore()
     await gc.init()
-    const c1 = gc.model!.corpses[0].id
+    const c1 = gc.model!.ready[0].id
     api.push.progress(
       progress({
         done: 1,
-        current: gc.model!.corpses[1].id,
+        current: gc.model!.ready[1].id,
         results: [{ id: c1, ok: true, haltedAt: null, freedBytes: 500 * MIB }]
       })
     )
@@ -194,7 +194,7 @@ describe('gc store', () => {
     expect(gc.model!.byId.has(c1)).toBe(true) // still drawn, faded
     vi.advanceTimersByTime(300)
     expect(gc.model!.byId.has(c1)).toBe(false) // gone, layout recomputed
-    expect(gc.model!.totals.corpse.count).toBe(1)
+    expect(gc.model!.totals.ready.count).toBe(1)
   })
 
   it('done refreshes the snapshot, toasts success, and clears the transient state', async () => {
@@ -203,7 +203,7 @@ describe('gc store', () => {
     const ui = useUiStore()
     const toast = vi.spyOn(ui, 'pushToast')
     await gc.init()
-    const after = snap({ bundles: [wt('d1', 'decide', 900 * MIB)] })
+    const after = snap({ bundles: [wt('d1', 'review', 900 * MIB)] })
     api.gcSnapshot.mockResolvedValueOnce(after)
     api.push.done(
       done({
@@ -220,21 +220,21 @@ describe('gc store', () => {
     expect(gc.pill).toEqual({ kind: 'idle' })
   })
 
-  it('a partial failure toasts a warning and the failed item is back in Decide with what ran', async () => {
+  it('a partial failure toasts a warning and the failed item is back in Needs review with what ran', async () => {
     const api = installApi()
     const gc = useGcStore()
     const ui = useUiStore()
     const toast = vi.spyOn(ui, 'pushToast')
     await gc.init()
-    const failed = gc.model!.corpses[0].id
-    const reason: DecideReason = {
+    const failed = gc.model!.ready[0].id
+    const reason: ReviewReason = {
       code: 'cleanup-failed',
       detail: 'Cleanup stopped at step rm-volumes.'
     }
-    const failedBundle = wt('c1', 'decide', 500 * MIB, reason)
+    const failedBundle = wt('c1', 'review', 500 * MIB, reason)
     failedBundle.item.id = failed
     api.gcSnapshot.mockResolvedValueOnce(
-      snap({ bundles: [failedBundle, wt('d1', 'decide', 900 * MIB)] })
+      snap({ bundles: [failedBundle, wt('d1', 'review', 900 * MIB)] })
     )
     api.push.done(
       done({
@@ -305,7 +305,7 @@ describe('gc store', () => {
         total: 2,
         results: [
           { id: 'a', ok: false, haltedAt: 'reprobe', error: 'kept', freedBytes: 0 },
-          { id: 'b', ok: false, haltedAt: 'reprobe', error: 'alive', freedBytes: 0 }
+          { id: 'b', ok: false, haltedAt: 'reprobe', error: 'in-use', freedBytes: 0 }
         ]
       })
     )
@@ -335,7 +335,7 @@ describe('gc store', () => {
     )
     await vi.runAllTimersAsync()
     expect(gc.failureOf('x')).not.toBeNull()
-    await gc.cleanCorpses()
+    await gc.cleanReady()
     expect(gc.failureOf('x')).toBeNull()
   })
 

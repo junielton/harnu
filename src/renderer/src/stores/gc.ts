@@ -46,7 +46,7 @@ import { useUiStore } from './ui'
 /** `--dur-slow`: how long a cleaned block stays on the map, faded, before the layout re-flows. */
 export const FADE_MS = 220
 
-/** The one place the clean payload crosses to the preload: ids, `expected` per id, `confirmed` for Decide items. */
+/** The one place the clean payload crosses to the preload: ids, `expected` per id, `confirmed` for Needs review items. */
 function sendClean(req: CleanRequest): Promise<GcCleanAck> {
   return window.api.gcClean(req.ids, req.options)
 }
@@ -229,7 +229,7 @@ export const useGcStore = defineStore('gc', () => {
 
   function startClean(
     ids: readonly string[],
-    mode: 'corpses' | 'decide'
+    mode: 'ready' | 'review'
   ): Promise<GcCleanAck | null> {
     const m = model.value
     if (!m) return Promise.resolve(null)
@@ -239,13 +239,13 @@ export const useGcStore = defineStore('gc', () => {
     return sendClean(req)
   }
 
-  /** The hero: every proven corpse, behind the one confirm dialog. */
-  const cleanCorpses = (ids?: readonly string[]): Promise<GcCleanAck | null> =>
-    startClean(ids ?? model.value?.corpses.map((b) => b.id) ?? [], 'corpses')
+  /** The hero: every proven-ready item, behind the one confirm dialog. */
+  const cleanReady = (ids?: readonly string[]): Promise<GcCleanAck | null> =>
+    startClean(ids ?? model.value?.ready.map((b) => b.id) ?? [], 'ready')
 
-  /** Remove selected: the operator confirmed each of these Decide items. */
+  /** Remove selected: the operator confirmed each of these Needs review items. */
   const cleanSelected = (ids: readonly string[]): Promise<GcCleanAck | null> =>
-    startClean(ids, 'decide')
+    startClean(ids, 'review')
 
   async function keep(id: string): Promise<void> {
     await window.api.gcKeep(id)
@@ -285,7 +285,7 @@ export const useGcStore = defineStore('gc', () => {
     return saved
   }
 
-  /** Selection that survives a refresh only for the items that are still Decide. */
+  /** Selection that survives a refresh only for the items that are still Needs review. */
   function pruneSelection(selection: ReadonlySet<string>): Set<string> {
     return model.value ? prunedSelection(model.value, selection) : new Set()
   }
@@ -308,7 +308,7 @@ export const useGcStore = defineStore('gc', () => {
     init,
     dispose,
     refresh,
-    cleanCorpses,
+    cleanReady,
     cleanSelected,
     keep,
     keepMany,

@@ -40,7 +40,7 @@ const props = withDefaults(
     block: GcBlock
     state: BlockJobState | null
     failure: ItemFailure | null
-    /** `ReaperPrefs.dehydrateIdleDays`: an Alive worktree offers Dehydrate only once idle this long. */
+    /** `ReaperPrefs.dehydrateIdleDays`: an In use worktree offers Dehydrate only once idle this long. */
     dehydrateIdleDays?: number
     /** A dehydrate/rehydrate in flight for this worktree; it disables those two buttons. */
     hydrationBusy?: HydrationOp | null
@@ -118,20 +118,20 @@ const keptVolumes = computed(() => !isVolume.value && props.block.ownedVolumes.l
 
 // ---- legal actions ------------------------------------------------------------------------------
 
-const decide = computed(() => props.block.bucket === 'decide')
-const corpse = computed(() => props.block.bucket === 'corpse')
-const alive = computed(() => props.block.bucket === 'alive')
+const review = computed(() => props.block.bucket === 'review')
+const ready = computed(() => props.block.bucket === 'ready')
+const inUse = computed(() => props.block.bucket === 'in-use')
 const hasFailure = computed(() => props.failure !== null)
 
-const showRemove = computed(() => decide.value)
-const showKeep = computed(() => decide.value && !isVolume.value)
-const showAsk = computed(() => decide.value && !isVolume.value)
-const showCleanNow = computed(() => corpse.value && !hasFailure.value)
+const showRemove = computed(() => review.value)
+const showKeep = computed(() => review.value && !isVolume.value)
+const showAsk = computed(() => review.value && !isVolume.value)
+const showCleanNow = computed(() => ready.value && !hasFailure.value)
 const showRetry = computed(() => hasFailure.value && !isVolume.value)
 const showDehydrate = computed(() => {
   const it = item.value
-  if (!it || isVolume.value || corpse.value) return false
-  if (alive.value) return isIdleDehydratable(it, props.dehydrateIdleDays)
+  if (!it || isVolume.value || ready.value) return false
+  if (inUse.value) return isIdleDehydratable(it, props.dehydrateIdleDays)
   return canDehydrate(it)
 })
 const showRehydrate = computed(() => {
@@ -180,8 +180,8 @@ onBeforeUnmount(() => {
   if (copiedTimer) clearTimeout(copiedTimer)
 })
 
-const reasonText = computed(() => t(reasonKey(props.block.reasonCode, corpse.value)))
-const showDetail = computed(() => !corpse.value && !!props.block.reasonDetail)
+const reasonText = computed(() => t(reasonKey(props.block.reasonCode, ready.value)))
+const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
 </script>
 
 <template>
@@ -277,15 +277,15 @@ const showDetail = computed(() => !corpse.value && !!props.block.reasonDetail)
       >
         {{ block.reasonDetail }}
       </p>
-      <p v-if="alive" class="text-[11px] leading-4 text-text-3" data-testid="panel-alive-note">
-        {{ t('cleanup.gc.panel.aliveNote') }}
+      <p v-if="inUse" class="text-[11px] leading-4 text-text-3" data-testid="panel-in-use-note">
+        {{ t('cleanup.gc.panel.inUseNote') }}
       </p>
-      <p v-if="corpse" class="text-[11px] leading-4 text-text-3" data-testid="panel-corpse-note">
-        {{ t('cleanup.gc.panel.corpseNote') }}
+      <p v-if="ready" class="text-[11px] leading-4 text-text-3" data-testid="panel-ready-note">
+        {{ t('cleanup.gc.panel.readyNote') }}
       </p>
     </section>
 
-    <section v-if="!alive" class="flex flex-col gap-1 border-t border-border pt-3">
+    <section v-if="!inUse" class="flex flex-col gap-1 border-t border-border pt-3">
       <div class="text-[10.5px] font-medium uppercase tracking-[0.07em] text-text-4">
         {{ t('cleanup.gc.panel.takesTitle') }}
       </div>

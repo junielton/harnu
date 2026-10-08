@@ -24,7 +24,7 @@ function row(over: Partial<DialogRow> = {}): DialogRow {
   }
 }
 
-const decideRow = (over: Partial<DialogRow> = {}): DialogRow =>
+const reviewRow = (over: Partial<DialogRow> = {}): DialogRow =>
   row({
     id: 'd1',
     name: 'PROJ-7-spike',
@@ -38,10 +38,7 @@ const decideRow = (over: Partial<DialogRow> = {}): DialogRow =>
 
 let wrapper: VueWrapper | null = null
 
-async function open(
-  rows: DialogRow[],
-  mode: 'corpses' | 'decide' = 'corpses'
-): Promise<VueWrapper> {
+async function open(rows: DialogRow[], mode: 'ready' | 'review' = 'ready'): Promise<VueWrapper> {
   wrapper = mount(CleanupBulkConfirmDialog, {
     props: { rows, mode },
     global: { plugins: [i18n] },
@@ -120,7 +117,7 @@ describe('CleanupBulkConfirmDialog — what it discloses', () => {
           risk: false
         })
       ],
-      'decide'
+      'review'
     )
     const volume = qa('[data-testid="bulk-row"] [data-chip="volume"]')[0]!
     expect(volume.className).toContain('text-warning')
@@ -129,8 +126,8 @@ describe('CleanupBulkConfirmDialog — what it discloses', () => {
 })
 
 describe('CleanupBulkConfirmDialog — copy by mode', () => {
-  it('corpses: Success confirm, volumes are kept, and how the rest comes back', async () => {
-    await open([row()], 'corpses')
+  it('ready items: Success confirm, volumes are kept, and how the rest comes back', async () => {
+    await open([row()], 'ready')
     const confirm = q('[data-testid="bulk-confirm"]')!
     expect(confirm.textContent?.trim()).toBe('Clean 1 ready')
     expect(confirm.className).toContain('text-green')
@@ -145,19 +142,19 @@ describe('CleanupBulkConfirmDialog — copy by mode', () => {
     expect(q('[data-testid="bulk-reason"]')).toBeNull()
   })
 
-  it('corpses: never shows a volume chip for a worktree, whatever it owns', async () => {
-    await open([row({ chips: ['stack', 'deps', 'checkout', 'branch'] })], 'corpses')
+  it('ready items: never shows a volume chip for a worktree, whatever it owns', async () => {
+    await open([row({ chips: ['stack', 'deps', 'checkout', 'branch'] })], 'ready')
     expect(qa('[data-chip="volume"]')).toHaveLength(0)
   })
 
-  it('decide: Danger confirm, a reason per row, and the stronger risk line with the count', async () => {
+  it('review: Danger confirm, a reason per row, and the stronger risk line with the count', async () => {
     await open(
       [
-        decideRow(),
-        decideRow({ id: 'd2', name: 'PROJ-8', reasonCode: 'remote-gone' }),
-        decideRow({ id: 'd3', name: 'idle', risk: false, reasonCode: 'open-idle-session' })
+        reviewRow(),
+        reviewRow({ id: 'd2', name: 'PROJ-8', reasonCode: 'remote-gone' }),
+        reviewRow({ id: 'd3', name: 'idle', risk: false, reasonCode: 'open-idle-session' })
       ],
-      'decide'
+      'review'
     )
     const confirm = q('[data-testid="bulk-confirm"]')!
     expect(confirm.textContent?.trim()).toBe('Remove 3 worktrees')
@@ -171,14 +168,14 @@ describe('CleanupBulkConfirmDialog — copy by mode', () => {
     expect(risky).toHaveLength(2)
   })
 
-  it('decide: one risky row reads in the singular', async () => {
-    await open([decideRow()], 'decide')
+  it('review: one risky row reads in the singular', async () => {
+    await open([reviewRow()], 'review')
     expect(q('[data-testid="bulk-risk"]')!.textContent).toContain(
       '1 of these holds work that no other branch has'
     )
   })
 
-  it('decide: an orphan volume uses item wording and always warns that volumes are lost', async () => {
+  it('review: an orphan volume uses item wording and always warns that volumes are lost', async () => {
     const volume = row({
       id: 'volume:pg_data',
       kind: 'volume',
@@ -191,7 +188,7 @@ describe('CleanupBulkConfirmDialog — copy by mode', () => {
       reasonDetail: 'No known worktree.',
       risk: false
     })
-    await open([volume], 'decide')
+    await open([volume], 'review')
     expect(q('[data-testid="bulk-confirm"]')!.textContent?.trim()).toBe('Remove 1 item')
     expect(q('[data-testid="bulk-row"]')!.textContent).toContain('Docker volume pg_data')
     expect(q('[data-testid="bulk-row"]')!.textContent).toContain('Project old-app')

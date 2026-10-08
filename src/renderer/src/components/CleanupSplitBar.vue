@@ -9,9 +9,9 @@ import type { CycleRecord } from '../../../main/gc/gc-wire'
 
 /**
  * The split bar of the Cleanup screen (design.md "Workspace GC — unified Cleanup / Page anatomy" #5):
- * one 32px bar, three segments sized by bytes — cleaned automatically (corpses), needs you (Decide
- * plus orphan volumes, hatched), untouched (alive). A bucket is never colour alone: every segment
- * carries an icon and a word, and Decide adds the hatch. Without byte sizes (Windows) the segments
+ * one 32px bar, three segments sized by bytes — ready to clean (ready items), needs review
+ * (plus orphan volumes, hatched), in use. A bucket is never colour alone: every segment
+ * carries an icon and a word, and Needs review adds the hatch. Without byte sizes (Windows) the segments
  * show counts and share the width equally.
  */
 const props = defineProps<{
@@ -23,7 +23,7 @@ const { t } = useI18n()
 
 interface Segment {
   key: 'auto' | 'needsYou' | 'untouched'
-  bucket: 'corpse' | 'decide' | 'alive'
+  bucket: 'ready' | 'review' | 'in-use'
   icon: Component
   count: number
   bytes: number
@@ -33,24 +33,24 @@ const segments = computed<Segment[]>(() => {
   const all: Segment[] = [
     {
       key: 'auto',
-      bucket: 'corpse',
+      bucket: 'ready',
       icon: CircleCheck,
-      count: props.totals.corpse.count,
-      bytes: props.totals.corpse.bytes + props.totals.docker.bytes
+      count: props.totals.ready.count,
+      bytes: props.totals.ready.bytes + props.totals.docker.bytes
     },
     {
       key: 'needsYou',
-      bucket: 'decide',
+      bucket: 'review',
       icon: CircleHelp,
-      count: props.totals.decide.count + props.totals.orphanVolumes.count,
-      bytes: props.totals.decide.bytes + props.totals.orphanVolumes.bytes
+      count: props.totals.review.count + props.totals.orphanVolumes.count,
+      bytes: props.totals.review.bytes + props.totals.orphanVolumes.bytes
     },
     {
       key: 'untouched',
-      bucket: 'alive',
+      bucket: 'in-use',
       icon: Lock,
-      count: props.totals.alive.count,
-      bytes: props.totals.alive.bytes
+      count: props.totals['in-use'].count,
+      bytes: props.totals['in-use'].bytes
     }
   ]
   return all.filter((s) => s.count > 0 || s.bytes > 0)
@@ -62,11 +62,11 @@ function grow(s: Segment): number {
 }
 
 const SEGMENT_CLASS: Record<Segment['bucket'], string> = {
-  corpse: 'border-green-line bg-green-soft text-green',
-  decide: 'border-warning-line bg-warning-soft text-warning',
-  alive: 'border-border bg-surface-2 text-text-3'
+  ready: 'border-green-line bg-green-soft text-green',
+  review: 'border-warning-line bg-warning-soft text-warning',
+  'in-use': 'border-border bg-surface-2 text-text-3'
 }
-/** The Decide hatch: diagonal 4px stripes over the soft fill (design.md "Buckets"). */
+/** The Needs review hatch: diagonal 4px stripes over the soft fill (design.md "Buckets"). */
 const HATCH =
   'repeating-linear-gradient(135deg, transparent 0 4px, var(--color-warning-soft) 4px 8px)'
 
@@ -107,7 +107,7 @@ const lastLine = computed(() => {
         <span
           class="flex h-8 min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-[3px] border px-2.5 text-[11px]"
           :class="SEGMENT_CLASS[s.bucket]"
-          :style="s.bucket === 'decide' ? { backgroundImage: HATCH } : undefined"
+          :style="s.bucket === 'review' ? { backgroundImage: HATCH } : undefined"
         >
           <component :is="s.icon" :size="12" :stroke-width="1.6" class="shrink-0" />
           <span class="truncate">{{ t(`cleanup.gc.split.${s.key}`) }}</span>

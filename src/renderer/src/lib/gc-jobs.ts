@@ -21,7 +21,7 @@ export const REFUSAL_CODES = [
   'kept',
   'never-clean',
   'main-checkout',
-  'alive',
+  'in-use',
   'unsupported-kind',
   'unknown-item'
 ] as const

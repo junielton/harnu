@@ -19,12 +19,13 @@ const REASON_SUFFIX: Record<ReasonCode, string> = {
   'weak-merge-signal': 'weakMergeSignal',
   'shared-stack': 'sharedStack',
   'cleanup-failed': 'cleanupFailed',
+  'path-unresolved': 'pathUnresolved',
   'no-known-worktree': 'noKnownWorktree'
 }
 
-/** `cleanup.gc.reason.*` key for a bucket + reason code; a corpse has no reason code. */
-export function reasonKey(code: ReasonCode | null, corpse = false): string {
-  if (corpse || code === null) return 'cleanup.gc.reason.corpse'
+/** `cleanup.gc.reason.*` key for a bucket + reason code; a ready item has no reason code. */
+export function reasonKey(code: ReasonCode | null, ready = false): string {
+  if (ready || code === null) return 'cleanup.gc.reason.ready'
   return `cleanup.gc.reason.${REASON_SUFFIX[code] ?? 'unknownFate'}`
 }
 

@@ -17,7 +17,7 @@ import {
 import type { GcSnapshot } from '../src/main/gc/gc-wire'
 import { defaultGcPrefs } from '../src/main/gc/gc-prefs'
 import { expectedOf, orphanExpectedOf } from '../src/main/gc/gc-confirm'
-import type { Bucket, DecideReason } from '../src/main/gc/bundle-core'
+import type { Bucket, ReviewReason } from '../src/main/gc/bundle-core'
 
 const GIB = 1024 ** 3
 const MIB = 1024 ** 2
@@ -48,17 +48,17 @@ function snap(over: Partial<GcSnapshot> = {}): GcSnapshot {
   }
 }
 
-const reason = (code: DecideReason['code'], detail = 'x'): DecideReason => ({ code, detail })
+const reason = (code: ReviewReason['code'], detail = 'x'): ReviewReason => ({ code, detail })
 
 function sample(): GcSnapshot {
   return snap({
     bundles: [
-      wt('c1', 'corpse', 512 * MIB),
-      wt('c2', 'corpse', 488 * MIB),
-      wt('d1', 'decide', 2 * GIB, { reason: reason('dirty') }),
-      wt('d2', 'decide', 600 * MIB, { reason: reason('closed-unmerged') }),
-      wt('d3', 'decide', 300 * MIB, { reason: reason('remote-gone'), repo: '/ws/org/portal' }),
-      wt('a1', 'alive', 1 * GIB)
+      wt('c1', 'ready', 512 * MIB),
+      wt('c2', 'ready', 488 * MIB),
+      wt('d1', 'review', 2 * GIB, { reason: reason('dirty') }),
+      wt('d2', 'review', 600 * MIB, { reason: reason('closed-unmerged') }),
+      wt('d3', 'review', 300 * MIB, { reason: reason('remote-gone'), repo: '/ws/org/portal' }),
+      wt('a1', 'in-use', 1 * GIB)
     ],
     orphanVolumes: [
       {
@@ -77,28 +77,28 @@ describe('buildGcModel', () => {
     const m = buildGcModel(sample())
     expect(m.regions.map((r) => r.label).sort()).toEqual(['portal', 'www'])
     const www = m.regions.find((r) => r.label === 'www')!
-    expect(www.counts).toEqual({ corpse: 2, decide: 2, alive: 1 })
+    expect(www.counts).toEqual({ ready: 2, review: 2, 'in-use': 1 })
     expect(www.bytes).toBe(512 * MIB + 488 * MIB + 2 * GIB + 600 * MIB + 1 * GIB)
-    expect(www.groups.map((g) => g.bucket)).toEqual(['corpse', 'decide', 'alive'])
+    expect(www.groups.map((g) => g.bucket)).toEqual(['ready', 'review', 'in-use'])
   })
 
   it('sorts regions and blocks biggest first', () => {
     const m = buildGcModel(sample())
     expect(m.regions[0].label).toBe('www')
-    const decide = m.regions[0].groups.find((g) => g.bucket === 'decide')!
-    expect(decide.blocks.map((b) => b.bytes)).toEqual([2 * GIB, 600 * MIB])
+    const review = m.regions[0].groups.find((g) => g.bucket === 'review')!
+    expect(review.blocks.map((b) => b.bytes)).toEqual([2 * GIB, 600 * MIB])
   })
 
-  it('totals each bucket and counts reclaimable as everything not alive plus orphan volumes', () => {
+  it('totals each bucket and counts reclaimable as everything not in use plus orphan volumes', () => {
     const m = buildGcModel(sample())
-    expect(m.totals.corpse).toEqual({ count: 2, bytes: 1000 * MIB })
-    expect(m.totals.decide).toEqual({ count: 3, bytes: 2 * GIB + 600 * MIB + 300 * MIB })
-    expect(m.totals.alive).toEqual({ count: 1, bytes: 1 * GIB })
+    expect(m.totals.ready).toEqual({ count: 2, bytes: 1000 * MIB })
+    expect(m.totals.review).toEqual({ count: 3, bytes: 2 * GIB + 600 * MIB + 300 * MIB })
+    expect(m.totals['in-use']).toEqual({ count: 1, bytes: 1 * GIB })
     expect(m.totals.orphanVolumes).toEqual({ count: 1, bytes: 900 * MIB })
     expect(m.reclaimableBytes).toBe(1000 * MIB + (2 * GIB + 900 * MIB) + 900 * MIB)
   })
 
-  it('lists the Decide items ("Needs you") biggest first, orphan volumes included', () => {
+  it('lists the Needs review items ("Needs you") biggest first, orphan volumes included', () => {
     const m = buildGcModel(sample())
     expect(m.needsYou.map((b) => b.name)).toEqual(['d1', 'pg_data', 'd2', 'd3'])
     const vol = m.needsYou.find((b) => b.kind === 'volume')!
@@ -117,10 +117,10 @@ describe('buildGcModel', () => {
   })
 
   it('reports hasBytes false when no worktree has a size (Windows) and keeps counts', () => {
-    const m = buildGcModel(snap({ bundles: [wt('c1', 'corpse', null), wt('d1', 'decide', null)] }))
+    const m = buildGcModel(snap({ bundles: [wt('c1', 'ready', null), wt('d1', 'review', null)] }))
     expect(m.hasBytes).toBe(false)
-    expect(m.totals.corpse.count).toBe(1)
-    expect(m.totals.corpse.bytes).toBe(0)
+    expect(m.totals.ready.count).toBe(1)
+    expect(m.totals.ready.bytes).toBe(0)
   })
 
   it('is empty-safe', () => {
@@ -135,25 +135,25 @@ describe('selection rules', () => {
   let m: GcModel
   const fresh = (): GcModel => (m = buildGcModel(sample()))
 
-  it('only Decide items are checkable — corpses and alive never are', () => {
+  it('only Needs review items are checkable — ready and in-use items never are', () => {
     fresh()
-    for (const b of m.blocks) expect(isCheckable(b)).toBe(b.bucket === 'decide')
+    for (const b of m.blocks) expect(isCheckable(b)).toBe(b.bucket === 'review')
     expect(isCheckable(m.needsYou.find((b) => b.kind === 'volume')!)).toBe(true)
   })
 
-  it('toggleChecked adds, removes and refuses a non-Decide id', () => {
+  it('toggleChecked adds, removes and refuses a non-Needs review id', () => {
     fresh()
     const d1 = m.needsYou[0].id
     let sel = toggleChecked(m, new Set(), d1)
     expect([...sel]).toEqual([d1])
     sel = toggleChecked(m, sel, d1)
     expect(sel.size).toBe(0)
-    const corpse = m.blocks.find((b) => b.bucket === 'corpse')!.id
-    expect(toggleChecked(m, new Set(), corpse).size).toBe(0)
+    const ready = m.blocks.find((b) => b.bucket === 'ready')!.id
+    expect(toggleChecked(m, new Set(), ready).size).toBe(0)
     expect(toggleChecked(m, new Set(), 'nope').size).toBe(0)
   })
 
-  it("selectAllInRepo selects that repo's Decide worktrees only", () => {
+  it("selectAllInRepo selects that repo's Needs review worktrees only", () => {
     fresh()
     const ids = selectAllInRepo(m, '/ws/org/proj/www')
     expect(ids.map((i) => m.byId.get(i)!.name).sort()).toEqual(['d1', 'd2'])
@@ -167,24 +167,24 @@ describe('selection rules', () => {
     expect(selectionStats(m, new Set(ids))).toEqual({ count: 2, bytes: 2 * GIB + 600 * MIB })
   })
 
-  it('prunedSelection drops ids that stopped being Decide (cleaned, kept, re-bucketed)', () => {
+  it('prunedSelection drops ids that stopped being Needs review (cleaned, kept, re-bucketed)', () => {
     fresh()
     const d1 = m.needsYou[0].id
     const sel = new Set([d1, 'gone'])
     expect([...prunedSelection(m, sel)]).toEqual([d1])
-    const next = buildGcModel(snap({ bundles: [wt('d1', 'corpse', 2 * GIB)] }))
+    const next = buildGcModel(snap({ bundles: [wt('d1', 'ready', 2 * GIB)] }))
     expect(prunedSelection(next, new Set([d1])).size).toBe(0)
   })
 })
 
 describe('heroState', () => {
-  it('offers to clean every corpse with count and bytes', () => {
+  it('offers to clean every ready item with count and bytes', () => {
     const h = heroState(buildGcModel(sample()), null, true)
     expect(h).toEqual({ kind: 'clean', count: 2, bytes: 1000 * MIB, soft: false })
   })
 
-  it('is disabled "nothing to clean" without corpses', () => {
-    const h = heroState(buildGcModel(snap({ bundles: [wt('d1', 'decide', 1)] })), null, true)
+  it('is disabled "nothing to clean" without ready items', () => {
+    const h = heroState(buildGcModel(snap({ bundles: [wt('d1', 'review', 1)] })), null, true)
     expect(h.kind).toBe('empty')
   })
 
@@ -205,7 +205,7 @@ describe('heroState', () => {
 
 describe('dialogRows', () => {
   it('lists repo, worktree, branch, bytes and what each removal takes with it', () => {
-    const b = wt('c1', 'corpse', 512 * MIB, {
+    const b = wt('c1', 'ready', 512 * MIB, {
       stackIds: ['stack-a'],
       ownedVolumes: ['v1'],
       depsBytes: 200 * MIB
@@ -222,15 +222,15 @@ describe('dialogRows', () => {
   })
 
   it("never lists a worktree's volumes as removed (D1: they are kept), nor stack/deps chips that are absent", () => {
-    const b = wt('c1', 'corpse', 1, { ownedVolumes: ['v1'] })
+    const b = wt('c1', 'ready', 1, { ownedVolumes: ['v1'] })
     const rows = dialogRows(buildGcModel(snap({ bundles: [b] })), [b.item.id])
     expect(rows[0].chips).toEqual(['checkout', 'branch'])
     expect(rows[0].chips).not.toContain('volume')
   })
 
   it('flags rows that hold work no other branch has', () => {
-    const risky = wt('d1', 'decide', 1, { reason: reason('closed-unmerged') })
-    const safe = wt('d2', 'decide', 1, { reason: reason('open-idle-session') })
+    const risky = wt('d1', 'review', 1, { reason: reason('closed-unmerged') })
+    const safe = wt('d2', 'review', 1, { reason: reason('open-idle-session') })
     const m = buildGcModel(snap({ bundles: [risky, safe] }))
     const rows = dialogRows(m, [risky.item.id, safe.item.id])
     expect(rows.find((r) => r.name === 'd1')!.risk).toBe(true)
@@ -251,18 +251,18 @@ describe('dialogRows', () => {
 })
 
 describe('cleanRequestFor — the one place that builds the gc:clean payload', () => {
-  it('bulk corpses: ids + expected for every id, no confirmed', () => {
-    const c = wt('c1', 'corpse', 512 * MIB, {
+  it('bulk ready: ids + expected for every id, no confirmed', () => {
+    const c = wt('c1', 'ready', 512 * MIB, {
       stackIds: ['s1'],
       ownedVolumes: ['v1'],
       localTip: 'b'.repeat(40)
     })
     const m = buildGcModel(snap({ bundles: [c] }))
-    const req = cleanRequestFor(m, [c.item.id], 'corpses')
+    const req = cleanRequestFor(m, [c.item.id], 'ready')
     expect(req.ids).toEqual([c.item.id])
     expect(req.options.confirmed).toBeUndefined()
     expect(req.options.expected[c.item.id]).toEqual({
-      bucket: 'corpse',
+      bucket: 'ready',
       reasonCode: null,
       headSha: 'b'.repeat(40),
       stackIds: ['s1'],
@@ -274,7 +274,7 @@ describe('cleanRequestFor — the one place that builds the gc:clean payload', (
   it('remove selected: every id is confirmed and has an expected entry, volumes included', () => {
     const m = buildGcModel(sample())
     const d1 = m.needsYou.find((b) => b.name === 'd1')!.id
-    const req = cleanRequestFor(m, [d1, 'volume:pg_data'], 'decide')
+    const req = cleanRequestFor(m, [d1, 'volume:pg_data'], 'review')
     expect(req.options.confirmed).toEqual([d1, 'volume:pg_data'])
     expect(req.options.expected[d1].reasonCode).toBe('dirty')
     expect(req.options.expected['volume:pg_data']).toMatchObject({
@@ -289,19 +289,19 @@ describe('cleanRequestFor — the one place that builds the gc:clean payload', (
 
   it('never sends the retired confirmDecide boolean', () => {
     const m = buildGcModel(sample())
-    const req = cleanRequestFor(m, [m.needsYou[0].id], 'decide')
+    const req = cleanRequestFor(m, [m.needsYou[0].id], 'review')
     expect('confirmDecide' in req.options).toBe(false)
   })
 
   it('is plain data that survives structured clone (IPC)', () => {
     const m = buildGcModel(sample())
-    const req = cleanRequestFor(m, [m.needsYou[0].id], 'decide')
+    const req = cleanRequestFor(m, [m.needsYou[0].id], 'review')
     expect(structuredClone(req)).toEqual(req)
   })
 
   it('drops ids the model no longer knows rather than sending a blind id', () => {
     const m = buildGcModel(sample())
-    expect(cleanRequestFor(m, ['ghost'], 'corpses').ids).toEqual([])
+    expect(cleanRequestFor(m, ['ghost'], 'ready').ids).toEqual([])
   })
 })
 
@@ -313,7 +313,7 @@ describe('volumeBlockId', () => {
 
 describe("expectedFor mirrors main's expectedOf / orphanExpectedOf", () => {
   it('sends exactly what main compares for a worktree (sorted stacks and volumes, localTip)', () => {
-    const b = wt('c1', 'corpse', 512 * MIB, {
+    const b = wt('c1', 'ready', 512 * MIB, {
       stackIds: ['b-stack', 'a-stack'],
       ownedVolumes: ['v2', 'v1'],
       localTip: 'c'.repeat(40)
@@ -323,7 +323,7 @@ describe("expectedFor mirrors main's expectedOf / orphanExpectedOf", () => {
   })
 
   it('a worktree with no known size sends null bytes, like main', () => {
-    const b = wt('c1', 'corpse', null)
+    const b = wt('c1', 'ready', null)
     const m = buildGcModel(snap({ bundles: [b] }))
     expect(expectedFor(m.byId.get(b.item.id)!)).toEqual(expectedOf(b))
   })
@@ -352,7 +352,7 @@ describe("expectedFor mirrors main's expectedOf / orphanExpectedOf", () => {
   })
 
   it('does not fall back to the checked-out commit of a detached worktree: main compares localTip only', () => {
-    const b = wt('c1', 'corpse', 1, { localTip: null })
+    const b = wt('c1', 'ready', 1, { localTip: null })
     b.item.headSha = 'd'.repeat(40)
     const m = buildGcModel(snap({ bundles: [b] }))
     expect(expectedFor(m.byId.get(b.item.id)!).headSha).toBeNull()
@@ -362,7 +362,7 @@ describe("expectedFor mirrors main's expectedOf / orphanExpectedOf", () => {
 
 describe('Docker figures in the model', () => {
   const withDocker = (docker: GcSnapshot['docker'], cache = true): GcSnapshot => ({
-    ...snap({ bundles: [wt('c1', 'corpse', 100 * MIB)] }),
+    ...snap({ bundles: [wt('c1', 'ready', 100 * MIB)] }),
     docker,
     prefs: { ...defaultGcPrefs(), categories: { worktrees: true, dockerCache: cache } }
   })

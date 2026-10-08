@@ -2258,14 +2258,14 @@
     },
     "gc": {
       "bucket": {
-        "corpse": "Ready to clean",
-        "decide": "Needs review",
-        "alive": "In use",
         "header": {
-          "corpse": "Ready to clean",
-          "decide": "Needs review",
-          "alive": "In use"
-        }
+          "ready": "Ready to clean",
+          "review": "Needs review",
+          "in-use": "In use"
+        },
+        "ready": "Ready to clean",
+        "review": "Needs review",
+        "in-use": "In use"
       },
       "map": {
         "canvasLabel": "Disk usage map",
@@ -2290,7 +2290,6 @@
         "empty": "No worktrees to show."
       },
       "reason": {
-        "corpse": "Merged, clean and idle past the grace period.",
         "dirty": "Merged, but it has uncommitted changes to tracked files.",
         "unpushed": "Merged, but it has commits that were never pushed.",
         "openIdleSession": "A session is still open here, though idle.",
@@ -2301,7 +2300,9 @@
         "weakMergeSignal": "Looks merged, but the local tip differs from the merged one.",
         "sharedStack": "Another Docker stack also runs from this worktree.",
         "cleanupFailed": "The last cleanup stopped before it finished.",
-        "noKnownWorktree": "No known worktree uses this volume."
+        "noKnownWorktree": "No known worktree uses this volume.",
+        "ready": "Merged, clean and idle past the grace period.",
+        "pathUnresolved": "The worktree has a path Harnu could not resolve to its real location, so it cannot tell what uses it."
       },
       "step": {
         "stopStack": "Stop the stack",
@@ -2322,8 +2323,6 @@
         "checkout": "Checkout",
         "volumesNoSize": "Volumes (size not reported): {names}",
         "whyTitle": "Why it is here",
-        "corpseNote": "Cleaned on the next cycle, or now with Clean now.",
-        "aliveNote": "Left alone while a session works here or its pull request is open.",
         "takesTitle": "Takes with it",
         "takes": {
           "stack": "Its Docker stack | {count} Docker stacks",
@@ -2351,7 +2350,9 @@
         "keep": "Keep",
         "ask": "Ask for an opinion",
         "askSoon": "coming in S6",
-        "volumesKept": "Its volumes ({names}) are kept. They show up in Needs review afterwards."
+        "volumesKept": "Its volumes ({names}) are kept. They show up in Needs review afterwards.",
+        "readyNote": "Cleaned on the next cycle, or now with Clean now.",
+        "inUseNote": "Left alone while a session works here or its pull request is open."
       },
       "needsYou": {
         "title": "Needs review",
@@ -2390,11 +2391,8 @@
         "clear": "Clear selection"
       },
       "confirm": {
-        "titleCorpses": "Clean {n} ready item? | Clean {n} ready items?",
         "titleWorktrees": "Remove {n} worktree? | Remove {n} worktrees?",
         "titleItems": "Remove {n} item? | Remove {n} items?",
-        "subtitleCorpses": "Each one is merged, clean and idle past its grace period. Everything listed below is removed.",
-        "subtitleDecide": "You picked these yourself, so Harnu could not prove they are safe. Everything listed below is removed.",
         "summary": "{n} item · {size} | {n} items · {size}",
         "listLabel": "Items to remove",
         "worktreeRow": "{repo} › {name}",
@@ -2408,9 +2406,12 @@
         "warnRecover": "Code and branch come back from the archive refs and the OS trash, and dependencies come back through the repo's setup.",
         "total": "Total {size}",
         "cancel": "Cancel",
-        "confirmCorpses": "Clean {n} ready | Clean {n} ready",
         "confirmWorktrees": "Remove {n} worktree | Remove {n} worktrees",
-        "confirmItems": "Remove {n} item | Remove {n} items"
+        "confirmItems": "Remove {n} item | Remove {n} items",
+        "titleReady": "Clean {n} ready item? | Clean {n} ready items?",
+        "subtitleReady": "Each one is merged, clean and idle past its grace period. Everything listed below is removed.",
+        "confirmReady": "Clean {n} ready | Clean {n} ready",
+        "subtitleReview": "You picked these yourself, so Harnu could not prove they are safe. Everything listed below is removed."
       },
       "chip": {
         "stack": "stack",
@@ -2578,10 +2579,10 @@
         "kept": "You marked it Keep, so it was left alone.",
         "neverClean": "It is on your never-clean list, so it was left alone.",
         "mainCheckout": "This is a main checkout, which is never cleaned.",
-        "alive": "It is in use, so it was left alone.",
         "unsupportedKind": "Harnu cannot clean this kind of folder yet.",
         "unknownItem": "Cleanup no longer knows this item. Refresh and try again.",
-        "several": "{n} items were left alone for different reasons. Open each one to see why."
+        "several": "{n} items were left alone for different reasons. Open each one to see why.",
+        "inUse": "It is in use, so it was left alone."
       }
     }
   },

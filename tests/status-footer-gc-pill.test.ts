@@ -30,7 +30,7 @@ function wt(name: string, bucket: Bucket, bytes: number) {
   return b
 }
 
-function snap(bundles = [wt('c1', 'corpse', 500 * MIB)]): GcSnapshot {
+function snap(bundles = [wt('c1', 'ready', 500 * MIB)]): GcSnapshot {
   return {
     scannedAt: NOW,
     bundles,
@@ -123,7 +123,7 @@ describe('the single Cleanup footer pill', () => {
   })
 
   it('is hidden when there is nothing to reclaim, nothing running and nothing failed', async () => {
-    const { wrapper } = await mountFooter(snap([wt('a1', 'alive', 900 * MIB)]))
+    const { wrapper } = await mountFooter(snap([wt('a1', 'in-use', 900 * MIB)]))
     expect(pill(wrapper).exists()).toBe(false)
     wrapper.unmount()
   })
@@ -152,7 +152,7 @@ describe('the single Cleanup footer pill', () => {
   it('turns warning when a clean left items that need the operator', async () => {
     const { wrapper, push } = await mountFooter()
     const gc = useGcStore()
-    const id = gc.model!.corpses[0].id
+    const id = gc.model!.ready[0].id
     push.done({
       jobId: 'j1',
       kind: 'manual',

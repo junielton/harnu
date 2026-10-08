@@ -72,7 +72,7 @@ interface LiveTerminal {
    * (BUG-24/zombie-synthetic). The map entry otherwise stays keyed by
    * `sessionId` forever — nothing else deletes it on a natural exit — so every
    * consumer that only checked "is this id present" (the `activate()` reuse
-   * branch, `drainBgBoot`'s skip guard) silently reattached/skipped a corpse
+   * branch, `drainBgBoot`'s skip guard) silently reattached/skipped a dead entry
    * instead of spawning a fresh PTY. `dead` lets those call sites tell "was
    * live" apart from "is live" without changing the detach-not-dispose
    * contract for terminals nobody has asked to reuse yet.
@@ -723,7 +723,7 @@ function wireLiveTerminal(
       }
       // Flag the cache entry dead (zombie-synthetic fix) so a later respawn
       // attempt — `activate()`'s reuse branch, or `drainBgBoot`'s Retry-boot
-      // skip guard — disposes this corpse instead of reattaching/ignoring it.
+      // skip guard — disposes this dead entry instead of reattaching/ignoring it.
       // The entry itself stays in `liveTerminals` (scrollback + the frozen
       // "[session ended]" text stay viewable on plain reselect, unchanged for
       // real sessions); only an actual respawn attempt disposes it.
@@ -1480,7 +1480,7 @@ async function activate(id: string): Promise<void> {
   }
 
   let live = liveTerminals.get(id)
-  // Zombie-synthetic fix: a dead entry for a synthetic session is a corpse, not
+  // Zombie-synthetic fix: a dead entry for a synthetic session is a dead entry, not
   // something worth reattaching to — the synthetic never got a JSONL twin, so
   // there's nothing to resume and no reason to keep staring at a frozen
   // "[session ended]" pane. Dispose it and fall into the create path below so
@@ -1573,7 +1573,7 @@ async function drainBgBoot(): Promise<void> {
         // Zombie fix: a dead entry here means a prior PTY for this id already
         // exited — a Retry-boot after the user dismissed a Ctrl+C'd synthetic,
         // or (T215) a REAL session whose process Harnu killed to park it.
-        // Dispose the corpse instead of skipping, so the boot actually spawns a
+        // Dispose the dead entry instead of skipping, so the boot actually spawns a
         // fresh PTY instead of silently dropping the id off the queue.
         if (stale.dead) {
           disposeLiveTerminal(stale)

@@ -23,16 +23,16 @@ const emit = defineEmits<{ select: [id: string] }>()
 
 const { t } = useI18n()
 
-const ICON = { corpse: CircleCheck, decide: CircleHelp, alive: Lock } as const
+const ICON = { ready: CircleCheck, review: CircleHelp, 'in-use': Lock } as const
 const INK: Record<Bucket, string> = {
-  corpse: 'text-green',
-  decide: 'text-warning',
-  alive: 'text-text-3'
+  ready: 'text-green',
+  review: 'text-warning',
+  'in-use': 'text-text-3'
 }
 const FILL: Record<Bucket, string> = {
-  corpse: 'bg-green',
-  decide: 'bg-warning',
-  alive: 'bg-text-4'
+  ready: 'bg-green',
+  review: 'bg-warning',
+  'in-use': 'bg-text-4'
 }
 
 const bigFirst = (a: GcBlock, b: GcBlock): number => b.bytes - a.bytes
@@ -40,10 +40,10 @@ const bigFirst = (a: GcBlock, b: GcBlock): number => b.bytes - a.bytes
 const groups = computed(() => {
   const m = props.model
   const buckets: Array<{ bucket: Bucket; blocks: GcBlock[] }> = [
-    { bucket: 'corpse', blocks: m.corpses },
-    // Decide includes the orphan volumes, as "Needs you" does.
-    { bucket: 'decide', blocks: m.needsYou },
-    { bucket: 'alive', blocks: m.blocks.filter((b) => b.bucket === 'alive').sort(bigFirst) }
+    { bucket: 'ready', blocks: m.ready },
+    // Needs review includes the orphan volumes, as the "Needs review" list does.
+    { bucket: 'review', blocks: m.needsYou },
+    { bucket: 'in-use', blocks: m.blocks.filter((b) => b.bucket === 'in-use').sort(bigFirst) }
   ]
   return buckets
     .filter((g) => g.blocks.length > 0)
@@ -56,7 +56,7 @@ const groups = computed(() => {
 const sizeOf = (b: GcBlock): string => (b.hasBytes ? formatBytes(b.bytes) : '—')
 
 function note(b: GcBlock): string {
-  if (b.bucket === 'decide') return t(reasonKey(b.reasonCode))
+  if (b.bucket === 'review') return t(reasonKey(b.reasonCode))
   return t(`cleanup.gc.bucket.header.${b.bucket}`)
 }
 

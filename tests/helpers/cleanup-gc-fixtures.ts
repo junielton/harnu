@@ -3,7 +3,7 @@
 
 import { bundle, NOW, reapItem } from '../gc-fixtures'
 import { defaultGcPrefs } from '../../src/main/gc/gc-prefs'
-import type { Bucket, BundleFacts, DecideReason } from '../../src/main/gc/bundle-core'
+import type { Bucket, BundleFacts, ReviewReason } from '../../src/main/gc/bundle-core'
 import type { GcSnapshot, OrphanVolumeItem } from '../../src/main/gc/gc-wire'
 import type { ReapItem } from '../../src/main/reaper/reaper-core'
 import { buildGcModel, type GcBlock, type GcModel } from '../../src/renderer/src/lib/gc-model'
@@ -11,7 +11,7 @@ import { buildGcModel, type GcBlock, type GcModel } from '../../src/renderer/src
 export const MIB = 1024 ** 2
 export const GIB = 1024 ** 3
 
-type Opts = Partial<BundleFacts> & { reason?: DecideReason | null }
+type Opts = Partial<BundleFacts> & { reason?: ReviewReason | null }
 
 /** One worktree bundle. `item` overrides land on the `ReapItem` (repo, hydration, age…). */
 export function wt(
@@ -69,7 +69,7 @@ export function blockOf(b: ReturnType<typeof bundle>): GcBlock {
   return modelOf([b]).blocks[0]
 }
 
-export const decideReason = (code: DecideReason['code'], detail = 'detail'): DecideReason => ({
+export const reviewReason = (code: ReviewReason['code'], detail = 'detail'): ReviewReason => ({
   code,
   detail
 })

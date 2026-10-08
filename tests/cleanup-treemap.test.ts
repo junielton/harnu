@@ -4,7 +4,7 @@ import { mount } from '@vue/test-utils'
 import CleanupTreemap from '../src/renderer/src/components/CleanupTreemap.vue'
 import { i18n } from '@renderer/i18n'
 import type { BlockJobState } from '../src/renderer/src/lib/gc-jobs'
-import { GIB, MIB, decideReason, modelOf, wt } from './helpers/cleanup-gc-fixtures'
+import { GIB, MIB, reviewReason, modelOf, wt } from './helpers/cleanup-gc-fixtures'
 
 const t = (key: string, named?: Record<string, unknown>): string =>
   (named ? i18n.global.t(key, named) : i18n.global.t(key)) as string
@@ -36,10 +36,10 @@ function mountMap(model: ReturnType<typeof modelOf>, props: Props = {}, attach =
 
 const sample = () =>
   modelOf([
-    wt('PROJ-0412-login', 'corpse', 3 * GIB),
-    wt('d1', 'decide', 2 * GIB, {}, { reason: decideReason('dirty') }),
-    wt('d2', 'decide', 1 * GIB, {}, { reason: decideReason('closed-unmerged') }),
-    wt('a1', 'alive', 1 * GIB)
+    wt('PROJ-0412-login', 'ready', 3 * GIB),
+    wt('d1', 'review', 2 * GIB, {}, { reason: reviewReason('dirty') }),
+    wt('d2', 'review', 1 * GIB, {}, { reason: reviewReason('closed-unmerged') }),
+    wt('a1', 'in-use', 1 * GIB)
   ])
 
 const blocks = (w: ReturnType<typeof mountMap>) => w.findAll('[data-testid="treemap-block"]')
@@ -52,12 +52,12 @@ describe('CleanupTreemap — blocks', () => {
     expect(blocks(w)).toHaveLength(4)
     const d1 = byName(w, 'd1')
     expect(d1.element.tagName).toBe('BUTTON')
-    expect(d1.attributes('data-bucket')).toBe('decide')
+    expect(d1.attributes('data-bucket')).toBe('review')
     // Expected text comes from the same catalog, so this holds whatever the locale wording is.
     expect(d1.attributes('aria-label')).toBe(
       t('cleanup.gc.map.blockLabel', {
         name: 'd1',
-        bucket: t('cleanup.gc.bucket.decide'),
+        bucket: t('cleanup.gc.bucket.review'),
         size: '2.15 GB'
       })
     )
@@ -67,10 +67,10 @@ describe('CleanupTreemap — blocks', () => {
   it('groups blocks under repo and bucket headers', () => {
     const w = mountMap(sample())
     expect(w.findAll('[data-testid="treemap-region"]')).toHaveLength(1)
-    for (const b of ['corpse', 'decide', 'alive']) {
+    for (const b of ['ready', 'review', 'in-use']) {
       expect(w.find(`[data-testid="treemap-group-${b}"]`).exists()).toBe(true)
     }
-    expect(w.text()).toContain(t('cleanup.gc.bucket.header.decide'))
+    expect(w.text()).toContain(t('cleanup.gc.bucket.header.review'))
   })
 
   it('carries the label ladder: full name, ticket id and #id in the DOM, CSS picks one', () => {
@@ -126,7 +126,7 @@ describe('CleanupTreemap — states', () => {
     expect(b.attributes('aria-label')).toBe(
       t('cleanup.gc.map.blockLabelState', {
         name: 'PROJ-0412-login',
-        bucket: t('cleanup.gc.bucket.corpse'),
+        bucket: t('cleanup.gc.bucket.ready'),
         size: '3.22 GB',
         state: t('cleanup.gc.map.state.done')
       })
@@ -142,14 +142,14 @@ describe('CleanupTreemap — states', () => {
     expect(b.find('.lucide-triangle-alert').exists()).toBe(true)
   })
 
-  it('first cycle: corpse blocks are dashed ("planned"), Decide and Alive are not', () => {
+  it('first cycle: ready blocks are dashed ("planned"), Needs review and In use are not', () => {
     const w = mountMap(sample(), { planned: true })
     expect(blocks(w).filter((b) => b.classes().includes('is-planned'))).toHaveLength(1)
     expect(byName(w, 'PROJ-0412-login').classes()).toContain('border-dashed')
     expect(byName(w, 'd1').classes()).not.toContain('border-dashed')
   })
 
-  it('Decide blocks carry the hatch class; the others do not', () => {
+  it('Needs review blocks carry the hatch class; the others do not', () => {
     const w = mountMap(sample())
     expect(byName(w, 'd1').classes()).toContain('tm-hatch')
     expect(byName(w, 'a1').classes()).not.toContain('tm-hatch')
@@ -165,14 +165,14 @@ describe('CleanupTreemap — interaction', () => {
     expect(w.emitted('toggle')).toBeUndefined()
   })
 
-  it('Shift+click toggles a Decide block', async () => {
+  it('Shift+click toggles a Needs review block', async () => {
     const w = mountMap(sample())
     await byName(w, 'd1').trigger('click', { shiftKey: true })
     expect(w.emitted('toggle')).toHaveLength(1)
     expect(w.emitted('select')).toBeUndefined()
   })
 
-  it('Shift+click on a corpse or an alive block does nothing — only Decide is selectable', async () => {
+  it('Shift+click on a ready or an in-use block does nothing — only Needs review is selectable', async () => {
     const w = mountMap(sample())
     await byName(w, 'PROJ-0412-login').trigger('click', { shiftKey: true })
     await byName(w, 'a1').trigger('click', { shiftKey: true })
@@ -180,7 +180,7 @@ describe('CleanupTreemap — interaction', () => {
     expect(w.emitted('select')).toBeUndefined()
   })
 
-  it('Space toggles a Decide block and opens a corpse', async () => {
+  it('Space toggles a Needs review block and opens a ready block', async () => {
     const w = mountMap(sample())
     await byName(w, 'd2').trigger('keydown', { key: ' ' })
     expect(w.emitted('toggle')).toHaveLength(1)
@@ -221,10 +221,10 @@ describe('CleanupTreemap — interaction', () => {
 describe('CleanupTreemap — aggregates, regions and drill-down', () => {
   const crowded = () =>
     modelOf([
-      wt('big', 'decide', 4 * GIB, {}, { reason: decideReason('dirty') }),
-      wt('s1', 'decide', 10 * MIB, {}, { reason: decideReason('dirty') }),
-      wt('s2', 'decide', 20 * MIB, {}, { reason: decideReason('dirty') }),
-      wt('s3', 'decide', 30 * MIB, {}, { reason: decideReason('dirty') })
+      wt('big', 'review', 4 * GIB, {}, { reason: reviewReason('dirty') }),
+      wt('s1', 'review', 10 * MIB, {}, { reason: reviewReason('dirty') }),
+      wt('s2', 'review', 20 * MIB, {}, { reason: reviewReason('dirty') }),
+      wt('s3', 'review', 30 * MIB, {}, { reason: reviewReason('dirty') })
     ])
 
   it('folds the long tail into one "N smaller" block that opens the folded set', async () => {
@@ -234,7 +234,7 @@ describe('CleanupTreemap — aggregates, regions and drill-down', () => {
     const agg = w.get('[data-testid="treemap-aggregate"]')
     await agg.trigger('click')
     const [ids, bucket] = w.emitted('openAggregate')![0] as [string[], string]
-    expect(bucket).toBe('decide')
+    expect(bucket).toBe('review')
     expect(ids.sort()).toEqual(
       m.blocks
         .filter((b) => b.name.startsWith('s'))
@@ -243,26 +243,26 @@ describe('CleanupTreemap — aggregates, regions and drill-down', () => {
     )
   })
 
-  it('lets the repo header select all its Decide blocks, and only when there are some', async () => {
+  it('lets the repo header select all its Needs review blocks, and only when there are some', async () => {
     const w = mountMap(sample())
     await w.get('[data-testid="treemap-select-all"]').trigger('click')
     await w.get('[data-testid="treemap-select-all-icon"]').trigger('click')
     expect(w.emitted('selectAllInRepo')).toEqual([['/w/repo'], ['/w/repo']])
 
-    const none = mountMap(modelOf([wt('c', 'corpse', GIB)]))
+    const none = mountMap(modelOf([wt('c', 'ready', GIB)]))
     expect(none.find('[data-testid="treemap-select-all"]').exists()).toBe(false)
   })
 
   it('shows bucket counts on the repo header', () => {
     const w = mountMap(sample())
-    expect(w.get('[data-testid="treemap-count-decide"]').text()).toBe('2')
-    expect(w.get('[data-testid="treemap-count-corpse"]').text()).toBe('1')
+    expect(w.get('[data-testid="treemap-count-review"]').text()).toBe('2')
+    expect(w.get('[data-testid="treemap-count-ready"]').text()).toBe('1')
   })
 
   it('clicking a repo drills in; the drilled view has a way back and only that repo', async () => {
     const m = modelOf([
-      wt('a', 'corpse', 2 * GIB),
-      wt('b', 'corpse', 2 * GIB, { repoPath: '/w/other', id: '/w/other::worktree::b' })
+      wt('a', 'ready', 2 * GIB),
+      wt('b', 'ready', 2 * GIB, { repoPath: '/w/other', id: '/w/other::worktree::b' })
     ])
     const w = mountMap(m)
     expect(w.findAll('[data-testid="treemap-region"]')).toHaveLength(2)
@@ -278,7 +278,7 @@ describe('CleanupTreemap — aggregates, regions and drill-down', () => {
   })
 
   it('without disk sizes there is no map — a notice sends the operator to the list', () => {
-    const w = mountMap(modelOf([wt('c', 'corpse', null), wt('d', 'decide', null)]))
+    const w = mountMap(modelOf([wt('c', 'ready', null), wt('d', 'review', null)]))
     expect(w.find('[data-testid="treemap-no-bytes"]').exists()).toBe(true)
     expect(w.find('[data-testid="treemap-canvas"]').exists()).toBe(false)
   })

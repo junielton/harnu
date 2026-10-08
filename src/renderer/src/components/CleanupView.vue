@@ -44,7 +44,7 @@ import type { ReapItem, Tombstone } from '../../../preload'
 /**
  * Cleanup takeover — the single home of cleaning (design.md "Workspace GC — unified Cleanup").
  * A disk-first treemap of every worktree (repo → bucket → block), one hero button for the proven
- * corpses, a selection bar for the Decide items, a Docker card and the "Needs you" list. Cleaning
+ * ready items, a selection bar for the Needs review items, a Docker card and the "Needs review" list. Cleaning
  * runs as a background job: the hero turns into a progress chip, cleaned blocks fade out and the map
  * re-flows, and the view stays usable throughout — it never awaits `gc:clean`.
  *
@@ -123,7 +123,7 @@ function onSelectAllInRepo(repoPath: string): void {
   const m = model.value
   if (!m) return
   const next = new Set(checked.value)
-  for (const b of m.blocks) if (b.repoPath === repoPath && b.bucket === 'decide') next.add(b.id)
+  for (const b of m.blocks) if (b.repoPath === repoPath && b.bucket === 'review') next.add(b.id)
   checked.value = next
 }
 function clearSelection(): void {
@@ -132,7 +132,7 @@ function clearSelection(): void {
 
 // ---- dialogs ------------------------------------------------------------------------------------
 
-const confirmDialog = ref<{ mode: 'corpses' | 'decide'; ids: string[] } | null>(null)
+const confirmDialog = ref<{ mode: 'ready' | 'review'; ids: string[] } | null>(null)
 const dehydrateItems = ref<ReapItem[] | null>(null)
 const dialogOpen = computed(() => confirmDialog.value !== null || dehydrateItems.value !== null)
 
@@ -140,21 +140,21 @@ const rows = computed(() =>
   confirmDialog.value && model.value ? dialogRows(model.value, confirmDialog.value.ids) : []
 )
 
-function openCorpses(ids?: string[]): void {
+function openReady(ids?: string[]): void {
   if (dialogOpen.value || !model.value) return
-  const list = ids ?? model.value.corpses.map((b) => b.id)
-  if (list.length > 0) confirmDialog.value = { mode: 'corpses', ids: list }
+  const list = ids ?? model.value.ready.map((b) => b.id)
+  if (list.length > 0) confirmDialog.value = { mode: 'ready', ids: list }
 }
 function openRemove(ids: string[]): void {
   if (dialogOpen.value || ids.length === 0) return
-  confirmDialog.value = { mode: 'decide', ids }
+  confirmDialog.value = { mode: 'review', ids }
 }
 async function confirmClean(): Promise<void> {
   const d = confirmDialog.value
   confirmDialog.value = null
   if (!d) return
   // Close first, then start: the clean is a background job, the view is never blocked on it.
-  if (d.mode === 'corpses') await gc.cleanCorpses(d.ids)
+  if (d.mode === 'ready') await gc.cleanReady(d.ids)
   else await gc.cleanSelected(d.ids)
   const next = new Set(checked.value)
   for (const id of d.ids) next.delete(id)
@@ -252,11 +252,11 @@ const nextText = computed(() => {
 
 const showFirstCycle = computed(
   () =>
-    !!prefs.value && !prefs.value.firstReportAcknowledged && (model.value?.corpses.length ?? 0) > 0
+    !!prefs.value && !prefs.value.firstReportAcknowledged && (model.value?.ready.length ?? 0) > 0
 )
 const allClean = computed(() => {
   const tt = model.value?.totals
-  return !!tt && tt.corpse.count + tt.decide.count + tt.orphanVolumes.count === 0
+  return !!tt && tt.ready.count + tt.review.count + tt.orphanVolumes.count === 0
 })
 const lastChecked = computed(() => {
   const at = gc.snapshot?.lastCycle?.at
@@ -335,7 +335,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
       </template>
     </span>
 
-    <CleanupHeroButton :hero="gc.hero" @click="openCorpses()" />
+    <CleanupHeroButton :hero="gc.hero" @click="openReady()" />
 
     <span
       class="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] leading-4"
@@ -414,8 +414,8 @@ async function copyRestoreHint(hint: string): Promise<void> {
       <div class="px-[22px] pt-3">
         <CleanupFirstCycleBanner
           v-if="showFirstCycle"
-          :count="model.corpses.length"
-          :bytes="model.totals.corpse.bytes"
+          :count="model.ready.length"
+          :bytes="model.totals.ready.bytes"
           @enable="gc.enableAutopilot()"
           @dismiss="gc.dismissFirstReport()"
         />
@@ -514,7 +514,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             @close="selectedId = null"
             @remove="openRemove([$event])"
             @retry="openRemove([$event])"
-            @clean-now="openCorpses([$event])"
+            @clean-now="openReady([$event])"
             @dehydrate="openDehydrate([$event])"
             @rehydrate="rehydrate($event)"
             @keep="gc.keep($event)"

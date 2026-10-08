@@ -18,8 +18,8 @@ import { reasonKey, refusalKey } from './cleanup-gc-copy'
 import Button from './ui/Button.vue'
 
 /**
- * "Needs you": the ranked list of Decide items under the map (design.md "Workspace GC — unified
- * Cleanup / Needs you list"). Biggest first; most decisions are taken here, the map is the overview.
+ * "Needs review": the ranked list of Needs review items under the map (design.md "Workspace GC — unified
+ * Cleanup / Needs review list"). Biggest first; most decisions are taken here, the map is the overview.
  * Hovering a row outlines its block (the `hover` emit), a checkbox in the leading slot multi-selects.
  */
 

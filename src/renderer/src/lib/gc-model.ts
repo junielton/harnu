@@ -2,7 +2,7 @@
 // `gc:snapshot` payload into regions, buckets, blocks, totals and the selection rules, and builds
 // the `gc:clean` payload. No DOM, no Vue, no i18n — unit-tested in tests/gc-model.test.ts.
 
-import type { Bucket, DecideCode, WorktreeBundle } from '../../../main/gc/bundle-core'
+import type { Bucket, ReviewCode, WorktreeBundle } from '../../../main/gc/bundle-core'
 import type {
   GcCleanOptions,
   GcDockerCard,
@@ -12,7 +12,7 @@ import type {
 } from '../../../main/gc/gc-wire'
 
 export type BlockKind = 'worktree' | 'volume'
-export type ReasonCode = DecideCode | 'no-known-worktree'
+export type ReasonCode = ReviewCode | 'no-known-worktree'
 
 export interface GcBlock {
   id: string
@@ -62,26 +62,26 @@ export interface GcModel {
   blocks: GcBlock[]
   /** Every block by id, orphan volumes included. */
   byId: Map<string, GcBlock>
-  /** Decide items, biggest first — the "Needs you" list. Orphan volumes included. */
+  /** Needs review items, biggest first — the "Needs review" list. Orphan volumes included. */
   needsYou: GcBlock[]
-  corpses: GcBlock[]
+  ready: GcBlock[]
   totals: {
-    corpse: BucketTotal
-    decide: BucketTotal
-    alive: BucketTotal
+    ready: BucketTotal
+    review: BucketTotal
+    'in-use': BucketTotal
     orphanVolumes: BucketTotal
     /** What the autopilot's next Docker housekeeping would reclaim (cache + dangling images), when it is on. */
     docker: BucketTotal
   }
   /** The snapshot's Docker figures, null per figure when Docker did not answer for it. */
   docker: GcDockerCard
-  /** Corpse + Decide + orphan volumes + Docker cache/images: everything that is not untouched. */
+  /** Ready + Needs review + orphan volumes + Docker cache/images: everything that is not untouched. */
   reclaimableBytes: number
   /** False when no worktree reports a size (Windows): the map has nothing to draw. */
   hasBytes: boolean
 }
 
-const BUCKET_ORDER: Bucket[] = ['corpse', 'decide', 'alive']
+const BUCKET_ORDER: Bucket[] = ['ready', 'review', 'in-use']
 
 export const volumeBlockId = (name: string): string => `volume:${name}`
 
@@ -122,7 +122,7 @@ function volumeBlock(v: OrphanVolumeItem): GcBlock {
   return {
     id: v.id,
     kind: 'volume',
-    bucket: 'decide',
+    bucket: 'review',
     repoPath: null,
     repoLabel: null,
     name: v.name,
@@ -154,7 +154,7 @@ export function buildGcModel(snapshot: GcSnapshot): GcModel {
   }
 
   const regions: RepoRegion[] = [...byRepo.entries()].map(([repoPath, blocks]) => {
-    const counts: Record<Bucket, number> = { corpse: 0, decide: 0, alive: 0 }
+    const counts: Record<Bucket, number> = { ready: 0, review: 0, 'in-use': 0 }
     const groups: BucketGroup[] = []
     for (const bucket of BUCKET_ORDER) {
       const inBucket = blocks.filter((b) => b.bucket === bucket).sort(bigFirst)
@@ -175,9 +175,9 @@ export function buildGcModel(snapshot: GcSnapshot): GcModel {
   regions.sort((a, b) => b.bytes - a.bytes || (a.label < b.label ? -1 : 1))
 
   const totals = {
-    corpse: emptyTotal(),
-    decide: emptyTotal(),
-    alive: emptyTotal(),
+    ready: emptyTotal(),
+    review: emptyTotal(),
+    'in-use': emptyTotal(),
     orphanVolumes: emptyTotal(),
     docker: emptyTotal()
   }
@@ -206,20 +206,20 @@ export function buildGcModel(snapshot: GcSnapshot): GcModel {
     regions,
     blocks: worktrees,
     byId,
-    needsYou: [...worktrees.filter((b) => b.bucket === 'decide'), ...volumes].sort(bigFirst),
-    corpses: worktrees.filter((b) => b.bucket === 'corpse').sort(bigFirst),
+    needsYou: [...worktrees.filter((b) => b.bucket === 'review'), ...volumes].sort(bigFirst),
+    ready: worktrees.filter((b) => b.bucket === 'ready').sort(bigFirst),
     totals,
     docker,
     reclaimableBytes:
-      totals.corpse.bytes + totals.decide.bytes + totals.orphanVolumes.bytes + totals.docker.bytes,
+      totals.ready.bytes + totals.review.bytes + totals.orphanVolumes.bytes + totals.docker.bytes,
     hasBytes: worktrees.length === 0 || worktrees.some((b) => b.hasBytes)
   }
 }
 
 // ---- selection ------------------------------------------------------------------------------
 
-/** Only Decide items are selectable: corpses are cleaned by the hero, alive items are never touched. */
-export const isCheckable = (b: GcBlock): boolean => b.bucket === 'decide'
+/** Only Needs review items are selectable: ready items are cleaned by the hero, in-use items are never touched. */
+export const isCheckable = (b: GcBlock): boolean => b.bucket === 'review'
 
 export function toggleChecked(
   model: GcModel,
@@ -236,7 +236,7 @@ export function toggleChecked(
   return next
 }
 
-/** "Select all in repo": that repo's Decide worktrees. Orphan volumes belong to no repo. */
+/** "Select all in repo": that repo's Needs review worktrees. Orphan volumes belong to no repo. */
 export function selectAllInRepo(model: GcModel, repoPath: string): string[] {
   return model.blocks.filter((b) => b.repoPath === repoPath && isCheckable(b)).map((b) => b.id)
 }
@@ -286,11 +286,11 @@ export function heroState(
       freedBytes: running.freedBytes
     }
   }
-  if (model.corpses.length === 0) return { kind: 'empty' }
+  if (model.ready.length === 0) return { kind: 'empty' }
   return {
     kind: 'clean',
-    count: model.corpses.length,
-    bytes: model.totals.corpse.bytes,
+    count: model.ready.length,
+    bytes: model.totals.ready.bytes,
     soft: !firstReportAcknowledged
   }
 }
@@ -315,7 +315,7 @@ export interface DialogRow {
 }
 
 /**
- * Decide reasons under which the removed code is NOT unique to this worktree. Everything else —
+ * Needs review reasons under which the removed code is NOT unique to this worktree. Everything else —
  * including an unknown or failed state — is treated as a risk and gets the stronger warning.
  */
 const NOT_RISKY: ReadonlySet<string> = new Set(['open-idle-session', 'shared-stack'])
@@ -345,7 +345,7 @@ export function dialogRows(model: GcModel, ids: readonly string[]): DialogRow[] 
       reasonCode: b.reasonCode,
       reasonDetail: b.reasonDetail,
       project: b.project,
-      risk: b.kind === 'worktree' && b.bucket === 'decide' && !NOT_RISKY.has(b.reasonCode ?? '')
+      risk: b.kind === 'worktree' && b.bucket === 'review' && !NOT_RISKY.has(b.reasonCode ?? '')
     })
   }
   return rows
@@ -390,15 +390,15 @@ export function expectedFor(b: GcBlock): GcExpected {
 
 /**
  * The single place that builds the `gc:clean` payload, so a change of the wire contract is one edit.
- * `corpses` is the hero's bulk clean (expected facts, nothing confirmed); `decide` is Remove selected
+ * `ready` is the hero's bulk clean (expected facts, nothing confirmed); `review` is Remove selected
  * (every id confirmed, expected for each). Ids the model no longer knows are dropped, never sent blind.
  */
 export function cleanRequestFor(
   model: GcModel,
   ids: readonly string[],
-  mode: 'corpses' | 'decide'
+  mode: 'ready' | 'review'
 ): CleanRequest {
-  const want: Bucket = mode === 'corpses' ? 'corpse' : 'decide'
+  const want: Bucket = mode === 'ready' ? 'ready' : 'review'
   const kept: string[] = []
   const expected: Record<string, GcExpected> = {}
   for (const id of ids) {
@@ -408,6 +408,6 @@ export function cleanRequestFor(
     expected[id] = expectedFor(b)
   }
   const options: CleanRequest['options'] = { expected }
-  if (mode === 'decide') options.confirmed = [...kept]
+  if (mode === 'review') options.confirmed = [...kept]
   return { ids: kept, options }
 }

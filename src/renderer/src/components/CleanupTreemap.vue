@@ -41,7 +41,7 @@ const props = defineProps<{
   checked: ReadonlySet<string>
   selectedId: string | null
   linkedId: string | null
-  /** First-cycle report-only: corpse blocks are "planned, not done" and take a dashed border. */
+  /** First-cycle report-only: ready blocks are "planned, not done" and take a dashed border. */
   planned: boolean
   drillRepo: string | null
 }>()
@@ -180,22 +180,22 @@ const navCells = computed(() => layout.value.flatMap((r) => r.groups.flatMap((g)
 
 // ---- presentation helpers ----------------------------------------------------------------------
 
-const BUCKET_ICON = { corpse: CircleCheck, decide: CircleHelp, alive: Lock } as const
+const BUCKET_ICON = { ready: CircleCheck, review: CircleHelp, 'in-use': Lock } as const
 
 const BORDER_CLASS: Record<Bucket, string> = {
-  corpse: 'border-green-line',
-  decide: 'border-warning-line',
-  alive: 'border-border-2'
+  ready: 'border-green-line',
+  review: 'border-warning-line',
+  'in-use': 'border-border-2'
 }
 const FILL_CLASS: Record<Bucket, string> = {
-  corpse: 'bg-green-soft',
-  decide: 'bg-warning-soft tm-hatch',
-  alive: 'bg-surface-2'
+  ready: 'bg-green-soft',
+  review: 'bg-warning-soft tm-hatch',
+  'in-use': 'bg-surface-2'
 }
 const INK_CLASS: Record<Bucket, string> = {
-  corpse: 'text-green',
-  decide: 'text-warning',
-  alive: 'text-text-3'
+  ready: 'text-green',
+  review: 'text-warning',
+  'in-use': 'text-text-3'
 }
 
 const bucketWord = (b: Bucket): string => t(`cleanup.gc.bucket.${b}`)
@@ -216,14 +216,14 @@ function blockClasses(b: GcBlock): string[] {
           ? 'border-accent-line'
           : BORDER_CLASS[b.bucket]
   const fill = st === 'busy' ? 'bg-accent-soft' : FILL_CLASS[b.bucket]
-  cls.push(border, fill, b.bucket === 'alive' ? 'text-text-3' : 'text-text-2')
+  cls.push(border, fill, b.bucket === 'in-use' ? 'text-text-3' : 'text-text-2')
   if (st === 'done') cls.push('is-done', 'opacity-45', 'border-dashed')
   if (st === 'busy') cls.push('is-busy')
   if (st === 'failed') cls.push('is-failed')
   if (checked) cls.push('is-checked')
   if (selected) cls.push('is-selected')
   if (linked && !checked && !selected) cls.push('is-linked', 'ring-1', 'ring-text-2')
-  if (props.planned && b.bucket === 'corpse') cls.push('is-planned', 'border-dashed')
+  if (props.planned && b.bucket === 'ready') cls.push('is-planned', 'border-dashed')
   return cls
 }
 
@@ -249,7 +249,7 @@ function blockTitle(b: GcBlock): string {
     b.name,
     b.repoLabel ?? '',
     sizeOf(b.bytes, b.hasBytes),
-    t(reasonKey(b.reasonCode, b.bucket === 'corpse'))
+    t(reasonKey(b.reasonCode, b.bucket === 'ready'))
   ]
     .filter(Boolean)
     .join('\n')
@@ -305,7 +305,7 @@ function onBlockClick(e: MouseEvent, b: GcBlock): void {
 
 function onKey(e: KeyboardEvent, key: string, b: GcBlock | null): void {
   if (e.key === ' ' && b) {
-    // Space toggles a Decide block (the keyboard twin of Shift+click) and opens any other.
+    // Space toggles a Needs review block (the keyboard twin of Shift+click) and opens any other.
     e.preventDefault()
     if (isCheckable(b)) emit('toggle', b.id)
     else emit('select', b.id)
@@ -320,15 +320,15 @@ function onKey(e: KeyboardEvent, key: string, b: GcBlock | null): void {
 
 const filterOptions = computed(() => [
   { value: 'all', label: t('cleanup.gc.map.filterAll') },
-  { value: 'corpse', label: bucketWord('corpse') },
-  { value: 'decide', label: bucketWord('decide') },
-  { value: 'alive', label: bucketWord('alive') }
+  { value: 'ready', label: bucketWord('ready') },
+  { value: 'review', label: bucketWord('review') },
+  { value: 'in-use', label: bucketWord('in-use') }
 ])
 
 const drilledRegion = computed(() =>
   props.drillRepo ? props.model.regions.find((r) => r.repoPath === props.drillRepo) : null
 )
-const BUCKETS: Bucket[] = ['corpse', 'decide', 'alive']
+const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
 </script>
 
 <template>
@@ -408,9 +408,9 @@ const BUCKETS: Bucket[] = ['corpse', 'decide', 'alive']
                   v-if="r.region.counts[b] > 0"
                   class="tm-badge inline-flex items-center gap-1 rounded-full border px-2 text-[11px] leading-4"
                   :class="{
-                    'border-green-line bg-green-soft text-green': b === 'corpse',
-                    'border-warning-line bg-warning-soft text-warning': b === 'decide',
-                    'border-border bg-surface text-text-3': b === 'alive'
+                    'border-green-line bg-green-soft text-green': b === 'ready',
+                    'border-warning-line bg-warning-soft text-warning': b === 'review',
+                    'border-border bg-surface text-text-3': b === 'in-use'
                   }"
                   :title="`${bucketWord(b)}: ${r.region.counts[b]}`"
                   :data-testid="`treemap-count-${b}`"
@@ -419,7 +419,7 @@ const BUCKETS: Bucket[] = ['corpse', 'decide', 'alive']
                   {{ r.region.counts[b] }}
                 </span>
               </template>
-              <template v-if="r.region.counts.decide > 0">
+              <template v-if="r.region.counts.review > 0">
                 <button
                   type="button"
                   class="tm-sel-label ml-1 text-[11px] text-text-2 transition hover:text-text"

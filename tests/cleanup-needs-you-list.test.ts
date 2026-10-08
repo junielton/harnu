@@ -6,7 +6,7 @@ import CleanupListView from '../src/renderer/src/components/CleanupListView.vue'
 import { i18n } from '@renderer/i18n'
 import type { BlockJobState, ItemFailure } from '../src/renderer/src/lib/gc-jobs'
 import type { GcBlock } from '../src/renderer/src/lib/gc-model'
-import { GIB, MIB, decideReason, modelOf, volume, wt } from './helpers/cleanup-gc-fixtures'
+import { GIB, MIB, reviewReason, modelOf, volume, wt } from './helpers/cleanup-gc-fixtures'
 
 const t = (key: string, named?: Record<string, unknown>): string =>
   (named ? i18n.global.t(key, named) : i18n.global.t(key)) as string
@@ -31,11 +31,11 @@ function mountList(blocks: GcBlock[], o: Opts = {}) {
   })
 }
 
-const decideModel = () =>
+const reviewModel = () =>
   modelOf(
     [
-      wt('d1', 'decide', 2 * GIB, {}, { reason: decideReason('dirty') }),
-      wt('d2', 'decide', 600 * MIB, {}, { reason: decideReason('closed-unmerged') })
+      wt('d1', 'review', 2 * GIB, {}, { reason: reviewReason('dirty') }),
+      wt('d2', 'review', 600 * MIB, {}, { reason: reviewReason('closed-unmerged') })
     ],
     [volume('pg_data', 'old-app', 900 * MIB)]
   )
@@ -43,8 +43,8 @@ const decideModel = () =>
 const rows = (w: ReturnType<typeof mountList>) => w.findAll('[data-testid="needs-you-row"]')
 
 describe('CleanupNeedsYouList', () => {
-  it('lists Decide items biggest first with their translated reason and size', () => {
-    const m = decideModel()
+  it('lists Needs review items biggest first with their translated reason and size', () => {
+    const m = reviewModel()
     const w = mountList(m.needsYou)
     expect(rows(w)).toHaveLength(3)
     expect(rows(w).map((r) => r.attributes('data-id'))).toEqual(m.needsYou.map((b) => b.id))
@@ -56,7 +56,7 @@ describe('CleanupNeedsYouList', () => {
   })
 
   it('an orphan volume row shows its project and "no known worktree", without Keep', () => {
-    const w = mountList(decideModel().needsYou)
+    const w = mountList(reviewModel().needsYou)
     const vol = rows(w).find((r) => r.attributes('data-id') === 'volume:pg_data')!
     expect(vol.get('[data-testid="needs-you-sub"]').text()).toBe(
       t('cleanup.gc.needsYou.volumeProject', { project: 'old-app' })
@@ -69,7 +69,7 @@ describe('CleanupNeedsYouList', () => {
   })
 
   it('the hover-reveal checkbox toggles; a plain row click opens the block', async () => {
-    const m = decideModel()
+    const m = reviewModel()
     const w = mountList(m.needsYou)
     await rows(w)[0].get('[data-testid="needs-you-check"]').setValue(true)
     expect(w.emitted('toggle')).toEqual([[m.needsYou[0].id]])
@@ -79,7 +79,7 @@ describe('CleanupNeedsYouList', () => {
   })
 
   it('a checked row shows the checked treatment and a ticked box', () => {
-    const m = decideModel()
+    const m = reviewModel()
     const w = mountList(m.needsYou, { checked: [m.needsYou[0].id] })
     expect(rows(w)[0].classes()).toContain('bg-accent-soft')
     expect(
@@ -89,7 +89,7 @@ describe('CleanupNeedsYouList', () => {
   })
 
   it('hovering a row tells the screen which block to outline', async () => {
-    const m = decideModel()
+    const m = reviewModel()
     const w = mountList(m.needsYou)
     await rows(w)[1].trigger('mouseenter')
     await rows(w)[1].trigger('mouseleave')
@@ -100,7 +100,7 @@ describe('CleanupNeedsYouList', () => {
     const m = modelOf([
       wt(
         'd1',
-        'decide',
+        'review',
         GIB,
         {
           hydration: {
@@ -112,7 +112,7 @@ describe('CleanupNeedsYouList', () => {
             rehydrateChanged: []
           }
         },
-        { reason: decideReason('dirty') }
+        { reason: reviewReason('dirty') }
       )
     ])
     const w = mountList(m.needsYou)
@@ -127,7 +127,7 @@ describe('CleanupNeedsYouList', () => {
   })
 
   it('"Ask for an opinion on all N" is visible, disabled, and says it is coming', () => {
-    const w = mountList(decideModel().needsYou)
+    const w = mountList(reviewModel().needsYou)
     const ask = w.get('[data-testid="needs-you-ask-all"]')
     expect(ask.attributes('disabled')).toBeDefined()
     expect(ask.attributes('title')).toBe(t('cleanup.gc.needsYou.askSoon'))
@@ -135,7 +135,7 @@ describe('CleanupNeedsYouList', () => {
   })
 
   it('a failed row is flagged, and a changed-since-confirm refusal says to review again', () => {
-    const m = decideModel()
+    const m = reviewModel()
     const id = m.needsYou[1].id
     const w = mountList(m.needsYou, {
       blockState: (x) => (x === id ? 'failed' : null),
@@ -157,10 +157,10 @@ describe('CleanupNeedsYouList', () => {
       Array.from({ length: 64 }, (_, i) =>
         wt(
           `w${String(i).padStart(2, '0')}`,
-          'decide',
+          'review',
           (100 + i) * MIB,
           {},
-          { reason: decideReason('dirty') }
+          { reason: reviewReason('dirty') }
         )
       )
     )
@@ -175,7 +175,7 @@ describe('CleanupNeedsYouList', () => {
   })
 
   it('has no cap button at 50 or fewer', () => {
-    const w = mountList(decideModel().needsYou)
+    const w = mountList(reviewModel().needsYou)
     expect(w.find('[data-testid="needs-you-show-all"]').exists()).toBe(false)
   })
 
@@ -190,22 +190,22 @@ describe('CleanupListView (the List fallback)', () => {
   const model = () =>
     modelOf(
       [
-        wt('c1', 'corpse', 2 * GIB),
-        wt('d1', 'decide', 1 * GIB, {}, { reason: decideReason('dirty') }),
-        wt('a1', 'alive', 500 * MIB)
+        wt('c1', 'ready', 2 * GIB),
+        wt('d1', 'review', 1 * GIB, {}, { reason: reviewReason('dirty') }),
+        wt('a1', 'in-use', 500 * MIB)
       ],
       [volume('pg_data', 'old-app', 300 * MIB)]
     )
 
-  it('groups by bucket, the Decide group including orphan volumes', () => {
+  it('groups by bucket, the Needs review group including orphan volumes', () => {
     const w = mount(CleanupListView, {
       props: { model: model(), blockState: () => null },
       global: { plugins: [i18n] }
     })
-    for (const b of ['corpse', 'decide', 'alive']) {
+    for (const b of ['ready', 'review', 'in-use']) {
       expect(w.find(`[data-testid="list-group-${b}"]`).exists()).toBe(true)
     }
-    expect(w.findAll('[data-testid="list-group-decide"] [data-testid="list-row"]')).toHaveLength(2)
+    expect(w.findAll('[data-testid="list-group-review"] [data-testid="list-row"]')).toHaveLength(2)
   })
 
   it('draws each bar relative to the biggest in its group', () => {
@@ -213,13 +213,13 @@ describe('CleanupListView (the List fallback)', () => {
       props: { model: model(), blockState: () => null },
       global: { plugins: [i18n] }
     })
-    const bars = w.findAll('[data-testid="list-group-decide"] [data-testid="list-bar"]')
+    const bars = w.findAll('[data-testid="list-group-review"] [data-testid="list-bar"]')
     expect(bars[0].attributes('style')).toContain('100%')
     expect(bars[1].attributes('style')).toContain('29.29')
   })
 
   it('opens a row, shows "—" for an unmeasured size, and disables a freed row', async () => {
-    const m = modelOf([wt('c1', 'corpse', null), wt('c2', 'corpse', GIB)])
+    const m = modelOf([wt('c1', 'ready', null), wt('c2', 'ready', GIB)])
     const done = m.blocks.find((b) => b.name === 'c2')!.id
     const w = mount(CleanupListView, {
       props: { model: m, blockState: (id: string) => (id === done ? 'done' : null) },
