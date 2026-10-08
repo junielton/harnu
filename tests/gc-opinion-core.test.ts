@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   OPINION_BATCH_SIZE,
+  OPINION_BUILTIN_TOOLS,
   OPINION_FALLBACK,
   OPINION_TOOLS,
   buildPrompt,
@@ -48,6 +49,44 @@ describe('opinionArgv: the read-only session (AC-2)', () => {
   it('allows exactly Read, Grep and Glob', () => {
     expect(allowed()).toEqual(['Read', 'Grep', 'Glob'])
     expect([...OPINION_TOOLS]).toEqual(['Read', 'Grep', 'Glob'])
+  })
+
+  // `--allowedTools` and `--disallowedTools` are permission rules: they do not remove tools from the
+  // session. With them alone the real CLI still offered CronCreate, EnterWorktree, RemoteTrigger,
+  // SendMessage, ScheduleWakeup, ToolSearch→Monitor and more. `--tools` is what restricts the roster.
+  it('restricts the built-in toolset itself with --tools Read,Grep,Glob', () => {
+    expect(argv.filter((a) => a === '--tools')).toHaveLength(1)
+    expect(after('--tools')).toBe('Read,Grep,Glob')
+    expect(OPINION_BUILTIN_TOOLS).toEqual(['Read', 'Grep', 'Glob'])
+  })
+
+  it('names no other built-in tool in --tools, and never the default or empty set', () => {
+    const tools = (after('--tools') ?? '').split(',')
+    expect(tools).toHaveLength(3)
+    for (const forbidden of [
+      'default',
+      '',
+      'Bash',
+      'Monitor',
+      'ToolSearch',
+      'Skill',
+      'Workflow',
+      'EnterWorktree',
+      'RemoteTrigger',
+      'CronCreate',
+      'ScheduleWakeup',
+      'SendMessage',
+      'ListAgents',
+      'PushNotification',
+      'DesignSync'
+    ]) {
+      expect(tools).not.toContain(forbidden)
+    }
+  })
+
+  it('keeps the permission rules as defence in depth next to --tools', () => {
+    expect(after('--allowedTools')).toBe('Read,Grep,Glob')
+    expect(after('--disallowedTools')).toContain('Bash')
   })
 
   it('never allows more than the Scheduler observe list does', () => {
