@@ -510,6 +510,16 @@ export async function defaultGcShellDeps(
     import('node:fs/promises')
   ])
   const executor = buildDeps(getWindow)
+  // Every set member and the queried path on their real paths, so a session reached
+  // through a symlink still counts for the worktree it runs in.
+  const presenceOf = async (path: string): Promise<SessionPresence> => {
+    const sets = await computeFolderSets()
+    const canonical = await resolveRealPaths([path, ...sets.live, ...sets.inUse], (p) =>
+      fs.realpath(p)
+    )
+    return presenceFromSets(path, sets, canonical)
+  }
+  const dehydrate = buildHydrationDeps().dehydrate
   const realpath = async (p: string): Promise<string | null> => {
     try {
       return await fs.realpath(p)
@@ -519,7 +529,12 @@ export async function defaultGcShellDeps(
   }
   return {
     executor,
-    dehydrate: buildHydrationDeps().dehydrate,
+    // dehydrateItem's own live check (isFolderInUse) matches the exact folder only; a
+    // session in WT/api must keep WT's deps too, so it asks the segment-containing presence.
+    dehydrate: {
+      ...dehydrate,
+      isSessionLive: async (path) => (await presenceOf(path)) !== 'none'
+    },
     docker: shell.dockerActions,
     listStacks: async () => {
       try {
@@ -534,15 +549,7 @@ export async function defaultGcShellDeps(
         throw err
       }
     },
-    // Every set member and the queried path on their real paths, so a session reached
-    // through a symlink still counts for the worktree it runs in.
-    presenceOf: async (path) => {
-      const sets = await computeFolderSets()
-      const canonical = await resolveRealPaths([path, ...sets.live, ...sets.inUse], (p) =>
-        fs.realpath(p)
-      )
-      return presenceFromSets(path, sets, canonical)
-    },
+    presenceOf,
     headOf: async (path) => (await executor.git(path, ['rev-parse', 'HEAD'])).trim() || null,
     // The scan-time flags for now; S3 replaces this with a live read of the prefs.
     isProtectedNow: (b) => b.keep || b.neverClean || b.isMainCheckout || isMainCheckoutByPath(b),

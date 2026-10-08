@@ -830,8 +830,12 @@ describe('recheck before cleanGit (delta 2, item 4)', () => {
 
   it('a session that appears after drop-deps halts at archive before cleanGit', async () => {
     const h = harness()
-    // The reprobe still sees nobody; the session opens while the deps are being dropped.
-    h.presenceOf.mockResolvedValueOnce('none').mockResolvedValue('working')
+    // The reprobe and the recheck before drop-deps still see nobody; the session opens while
+    // the deps are being dropped.
+    h.presenceOf
+      .mockResolvedValueOnce('none')
+      .mockResolvedValueOnce('none')
+      .mockResolvedValue('working')
     const r = await runBundle(bundle(), createGcOps(h.deps), opts)
     expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'changed-mid-run' })
     expect(r.freedBytes).toBe(4096)
@@ -841,7 +845,8 @@ describe('recheck before cleanGit (delta 2, item 4)', () => {
 
   it('HEAD moving after drop-deps halts at archive before cleanGit', async () => {
     const h = harness()
-    h.headOf.mockResolvedValueOnce(TIP).mockResolvedValue('c'.repeat(40))
+    // The reprobe and the recheck before drop-deps read the scanned tip; then it moves.
+    h.headOf.mockResolvedValueOnce(TIP).mockResolvedValueOnce(TIP).mockResolvedValue('c'.repeat(40))
     const r = await runBundle(bundle(), createGcOps(h.deps), opts)
     expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'changed-mid-run' })
     expect(cleanItem).not.toHaveBeenCalled()
@@ -944,6 +949,31 @@ describe('recheck before cleanGit (delta 2, item 4)', () => {
     expect((await createGcOps(h.deps).recheck(bundle())).ok).toBe(false)
     h.headOf.mockRejectedValueOnce(new Error('not a git repository'))
     expect((await createGcOps(h.deps).recheck(bundle())).ok).toBe(false)
+  })
+})
+
+describe('recheck before drop-deps (delta 4, item D)', () => {
+  it('P2: a session that opens in WT/api during docker stop keeps node_modules in place', async () => {
+    const sets = { live: new Set<string>(), inUse: new Set<string>() }
+    const removeDir = vi.fn(async () => undefined)
+    const h = harness({ dehydrate: { removeDir } })
+    h.presenceOf.mockImplementation(async (path: string) => presenceFromSets(path, sets))
+    h.stop.mockImplementation(async (ids: string[]) => {
+      // Someone opens a session in a subfolder of the worktree while its stack stops.
+      sets.live.add(`${WT}/api`)
+      sets.inUse.add(`${WT}/api`)
+      return ok(ids)
+    })
+    const r = await runBundle(bundle(), createGcOps(h.deps), { removeVolumes: false })
+    expect(h.stop).toHaveBeenCalled()
+    expect(r).toMatchObject({
+      ok: false,
+      haltedAt: 'drop-deps',
+      error: 'changed-mid-run',
+      freedBytes: 0
+    })
+    expect(removeDir).not.toHaveBeenCalled()
+    expect(cleanItem).not.toHaveBeenCalled()
   })
 })
 
