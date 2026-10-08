@@ -198,7 +198,8 @@ export function buildGcModel(snapshot: GcSnapshot): GcModel {
   }
   const docker: GcDockerCard = snapshot.docker ?? {
     buildCacheReclaimableBytes: null,
-    danglingImages: null
+    danglingImages: null,
+    orphanVolumesHidden: null
   }
   if (snapshot.prefs.categories.dockerCache) {
     totals.docker.count = docker.danglingImages?.count ?? 0

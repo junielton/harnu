@@ -8497,7 +8497,12 @@ cache**, **dangling images**, **orphan volumes** — name, size right, a one-lin
 block has **no switch** — a volume is never removed automatically — and is drawn in the **review (warning) colours** because it is the item the operator must act on, not one the
 autopilot takes; it carries the Warning badge "can't be
 restored", the project name of each volume and the line "Never removed automatically. Remove each one
-yourself in Needs review." The snapshot's `docker` figures feed the two blocks:
+yourself in Needs review." When the snapshot says the orphan list is empty **by construction**
+(`docker.orphanVolumesHidden`: an unresolved compose project name, or the compose scan hit its limit), the
+block's size line reads "hidden" in `--warning` instead of a confident "0 volumes", and a one-line `note` in
+`--warning` with an `EyeOff` icon explains why — "Orphan volumes are hidden because a compose project name
+couldn't be resolved in: {folders}" (or "…because the compose scan hit its limit in: {folders}") — listing the
+folder **basenames**, each with its full path as a tooltip. It disappears once the name resolves. The snapshot's `docker` figures feed the two blocks:
 `buildCacheReclaimableBytes` ("{size} reclaimable") and `danglingImages` ("{n} images · {size}"); a `null`
 figure reads **"Size unavailable — Docker did not answer"** in `--text-3`, never a confident zero. Once a
 cycle has run, a second 11px `--text-3` line adds "Last cycle reclaimed {size}". Both figures count in the
@@ -8555,8 +8560,8 @@ Every Cleanup surface — summary line, hero, chip, split bar, legend, map, pane
 footer pill and Settings — formats bytes with the app's `formatBytes`, which is **decimal** (`6.44 GB`,
 `715 MB`). The mockup and the spec write GiB; that is its sample data's unit, not the screen's. One system on
 every surface, so two numbers on the same screen can be compared by eye. A native notification or
-Activity line built in the main process is the one place a different unit could slip in; it must use the
-same decimal system (tracked as a follow-up for the engine, `gc-cycle.ts` still prints binary units).
+Activity line built in the main process is the one place a different unit could slip in; it uses the same
+decimal system.
 
 #### Type and spacing in the Cleanup files
 

@@ -2448,7 +2448,12 @@
           "plain": "roda a cada ciclo",
           "off": "A limpeza do Docker está desligada"
         },
-        "splitLabel": "Números do Docker por tamanho: build cache, imagens dangling, volumes órfãos"
+        "splitLabel": "Números do Docker por tamanho: build cache, imagens dangling, volumes órfãos",
+        "hidden": {
+          "size": "ocultos",
+          "unresolvedCompose": "Os volumes órfãos estão ocultos porque o nome de um projeto compose não pôde ser resolvido em: {folders}",
+          "scanLimit": "Os volumes órfãos estão ocultos porque a busca por arquivos compose atingiu o limite em: {folders}"
+        }
       },
       "split": {
         "label": "Divisão do disco",

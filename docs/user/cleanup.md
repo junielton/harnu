@@ -111,7 +111,7 @@ A strip under the map covers what is not a worktree:
 
 - **Build cache**, **Dangling images** and **Orphan volumes**. Build cache and dangling images share one automatic-cleaning switch (the same one as in Settings → Cleanup). Orphan volumes have no switch: they are never removed automatically.
 - The build-cache block shows how much Docker could **reclaim right now** and the dangling-image block shows how many images there are and how big. Once an automatic cycle has run, each block also says what the **last cycle reclaimed**. If Docker does not answer for a figure, that block says "Size unavailable — Docker did not answer" rather than show a zero. Both figures count in the reclaimable total at the top while the Docker switch is on.
-- **Orphan volumes** show a count and a size, the compose projects they belonged to, and a "Can't be restored" badge. They are never cleaned automatically; they appear in Needs review and are removed only when you select them and confirm each one.
+- **Orphan volumes** show a count and a size, the compose projects they belonged to, and a "Can't be restored" badge. They are never cleaned automatically; they appear in Needs review and are removed only when you select them and confirm each one. When Harnu cannot tell which volumes are orphans — a compose project name in one of your folders could not be resolved, or the scan of compose files hit its limit — the block reads **hidden** instead of "0 volumes", with a one-line note naming the folders (hover a folder for its full path). It goes away once the name resolves.
 - **Inspect stacks** in the card header opens the [Containers](containers.md) view, where you can look at each stack and start or stop it.
 
 ### All clean

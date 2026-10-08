@@ -19,6 +19,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- **The Docker card says when orphan volumes are hidden.** If a compose project name could not be resolved (or the compose scan hit its limit), the volumes block now reads "hidden" with a note naming the folders, instead of a misleading "0 volumes".
 - **Cleanup no longer invents a history of what ran.** After a failed clean the panel says what happened ("Nothing was changed", or "Stopped at <step>: <reason>") instead of ticking steps that never ran, and Docker volumes never show up as removed.
 - **Retry works for every failed item.** A failed ready item reopens the ready confirmation; a review item opens the review one.
 - **The confirmation can no longer drift under you.** If a scan or a running job changes what the dialog showed, it says "This changed since you opened it — review again" and Confirm stays off until you reopen it; what is sent is what you saw when it opened, including the worktree's folder.

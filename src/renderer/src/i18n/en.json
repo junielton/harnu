@@ -2448,7 +2448,12 @@
           "plain": "runs each cycle",
           "off": "Docker cleaning is off"
         },
-        "splitLabel": "Docker figures by size: build cache, dangling images, orphan volumes"
+        "splitLabel": "Docker figures by size: build cache, dangling images, orphan volumes",
+        "hidden": {
+          "size": "hidden",
+          "unresolvedCompose": "Orphan volumes are hidden because a compose project name couldn't be resolved in: {folders}",
+          "scanLimit": "Orphan volumes are hidden because the compose scan hit its limit in: {folders}"
+        }
       },
       "split": {
         "label": "Disk split",

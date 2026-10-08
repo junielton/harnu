@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import CleanupDockerCard from '../src/renderer/src/components/CleanupDockerCard.vue'
 import { i18n } from '@renderer/i18n'
 import { defaultGcPrefs } from '../src/main/gc/gc-prefs'
@@ -195,5 +197,59 @@ describe('CleanupDockerCard — parity with the approved mockup', () => {
     expect(w.get('[data-testid="docker-volumes-size"]').classes()).toContain('text-warning')
     // …while the cache and image blocks keep the ready green.
     expect(w.get('[data-testid="docker-cache"]').classes()).toContain('bg-green-soft')
+  })
+})
+
+describe('CleanupDockerCard — hidden orphan volumes (S3 delta 4)', () => {
+  const hidden = (reason: string, folders: string[]) => ({
+    buildCacheReclaimableBytes: null,
+    danglingImages: null,
+    orphanVolumesHidden: { reason, folders }
+  })
+
+  it('shows no hint when nothing is hidden (null or absent)', () => {
+    expect(mountCard().find('[data-testid="docker-hidden"]').exists()).toBe(false)
+    const w = mountCard({
+      docker: { buildCacheReclaimableBytes: null, danglingImages: null, orphanVolumesHidden: null }
+    })
+    expect(w.find('[data-testid="docker-hidden"]').exists()).toBe(false)
+  })
+
+  it('explains an unresolved compose name, with folder basenames and the full path in a tooltip', () => {
+    const w = mountCard({
+      docker: hidden('unresolved-compose-name', ['/ws/org/proj/www', '/ws/org/portal'])
+    })
+    const hint = w.get('[data-testid="docker-hidden"]')
+    expect(hint.attributes('role')).toBe('note')
+    expect(hint.text()).toBe(
+      "Orphan volumes are hidden because a compose project name couldn't be resolved in: www, portal"
+    )
+    const folders = hint.findAll('[data-testid="docker-hidden-folder"]')
+    expect(folders.map((f) => f.text())).toEqual(['www', 'portal'])
+    expect(folders.map((f) => f.attributes('title'))).toEqual([
+      '/ws/org/proj/www',
+      '/ws/org/portal'
+    ])
+  })
+
+  it('explains a scan limit with its own sentence', () => {
+    const w = mountCard({ docker: hidden('scan-limit', ['/ws/org/proj/www']) })
+    expect(w.get('[data-testid="docker-hidden"]').text()).toBe(
+      'Orphan volumes are hidden because the compose scan hit its limit in: www'
+    )
+  })
+
+  it('says 0 volumes is not the full story: the volumes block explains instead of a bare zero', () => {
+    const w = mountCard({ docker: hidden('unresolved-compose-name', ['/ws/a']) })
+    expect(w.get('[data-testid="docker-volumes-size"]').text()).toBe('hidden')
+  })
+
+  it('has a Portuguese sentence for both reasons', () => {
+    for (const k of ['unresolvedCompose', 'scanLimit']) {
+      const pt = JSON.parse(
+        readFileSync(join(process.cwd(), 'src/renderer/src/i18n/pt-BR.json'), 'utf8')
+      )
+      expect(pt.cleanup.gc.docker.hidden[k]).toContain('{folders}')
+    }
   })
 })

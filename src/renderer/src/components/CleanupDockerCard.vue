@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { Container } from 'lucide-vue-next'
+import { I18nT, useI18n } from 'vue-i18n'
+import { Container, EyeOff } from 'lucide-vue-next'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import { formatBytes } from './system-monitor-format'
 import type { GcPrefs } from '../../../main/gc/gc-prefs'
@@ -50,6 +50,26 @@ const imagesNow = computed(() => {
     : t('cleanup.gc.docker.imagesCount', d.count, {
         named: { n: d.count, size: formatBytes(d.bytes) }
       })
+})
+
+/**
+ * Why the orphan list is empty when it is empty by construction (an unresolved compose project name, or a
+ * compose scan cut short); null when nothing is hidden. The folders are shown as basenames.
+ */
+const hidden = computed(() => {
+  const h = props.docker.orphanVolumesHidden
+  if (!h) return null
+  return {
+    key: h.reason === 'scan-limit' ? 'scanLimit' : 'unresolvedCompose',
+    folders: h.folders.map((path) => ({
+      path,
+      name:
+        path
+          .replace(/[\\/]+$/, '')
+          .split(/[\\/]/)
+          .pop() || path
+    }))
+  }
 })
 
 const MAX_PROJECTS = 3
@@ -195,14 +215,34 @@ const splitSegments = computed(() =>
         </div>
         <div
           class="text-ui"
-          :class="orphanVolumes.count === 0 ? 'text-text-3' : 'text-warning'"
+          :class="hidden || orphanVolumes.count > 0 ? 'text-warning' : 'text-text-3'"
           data-testid="docker-volumes-size"
         >
           {{
-            t('cleanup.gc.docker.volumesCount', orphanVolumes.count, {
-              named: { n: orphanVolumes.count, size: formatBytes(orphanVolumes.bytes) }
-            })
+            hidden
+              ? t('cleanup.gc.docker.hidden.size')
+              : t('cleanup.gc.docker.volumesCount', orphanVolumes.count, {
+                  named: { n: orphanVolumes.count, size: formatBytes(orphanVolumes.bytes) }
+                })
           }}
+        </div>
+        <div
+          v-if="hidden"
+          class="flex items-start gap-1.5 text-caption text-warning"
+          role="note"
+          data-testid="docker-hidden"
+        >
+          <EyeOff :size="12" :stroke-width="1.7" class="mt-0.5 shrink-0" aria-hidden="true" />
+          <I18nT :keypath="`cleanup.gc.docker.hidden.${hidden.key}`" tag="span" scope="global">
+            <template #folders>
+              <span v-for="(f, i) in hidden.folders" :key="f.path">
+                <span :title="f.path" class="font-mono" data-testid="docker-hidden-folder">{{
+                  f.name
+                }}</span
+                ><template v-if="i < hidden.folders.length - 1">, </template>
+              </span>
+            </template>
+          </I18nT>
         </div>
         <div v-if="projects.length > 0" class="truncate text-caption text-text-3">
           {{ t('cleanup.gc.docker.projects', { names: shownProjects }) }}
