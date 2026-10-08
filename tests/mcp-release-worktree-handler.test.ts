@@ -309,6 +309,47 @@ describe('release_worktree handler (T445)', () => {
     })
   })
 
+  describe('D2-3: bucketAfter respects the failure overlay (T445 delta 2)', () => {
+    // A merged, clean, idle worktree whose last cleanup halted: the snapshot already shows it
+    // in review for the failure window, whatever bucketOf says about its facts.
+    const halted = bundle(WT_READY, {
+      bucket: 'review',
+      reason: {
+        code: 'cleanup-failed',
+        detail: `Cleanup stopped at stack: fatal: '${WT_READY}' contains modified files`
+      },
+      lastSignOfLifeAt: NOW - 3_600_000
+    })
+
+    it('a halted bundle stays review after a release, with the failure as its reason', async () => {
+      const { release } = serve(snapshot([halted]))
+      const res = await handler({ folder: WT_READY }, ctx(WT_READY))
+      const ack = JSON.parse(textOf(res))
+      expect(ack).toMatchObject({
+        ok: true,
+        bucketAfter: 'review',
+        reasonCode: 'cleanup-failed',
+        reason: 'Cleanup stopped at stack.'
+      })
+      expect(release).toHaveBeenCalledTimes(1)
+    })
+
+    it('the message does not promise a cleanup, and carries no path', async () => {
+      serve(snapshot([halted]))
+      const text = textOf(await handler({ folder: WT_READY }, ctx(WT_READY)))
+      const ack = JSON.parse(text)
+      expect(ack.message).not.toMatch(/is ready to clean from the next scan/)
+      expect(ack.message).toMatch(/failed|stopped/i)
+      expect(absolutePathsIn(text)).toEqual([])
+    })
+
+    it('without a failure the same facts are still ready', async () => {
+      serve(snapshot([fresh]))
+      const ack = JSON.parse(textOf(await handler({ folder: WT_READY }, ctx(WT_READY))))
+      expect(ack.bucketAfter).toBe('ready')
+    })
+  })
+
   describe('D7: each guard is covered on its own (T445 delta 1)', () => {
     it('M8: a main checkout is recognised by a bundle’s repoPath alone', async () => {
       // No bundle at the main checkout, and no isMainWorktree flag on any folder.
