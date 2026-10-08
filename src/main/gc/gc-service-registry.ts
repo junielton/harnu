@@ -8,8 +8,11 @@ import type { GcSnapshot } from './gc-wire'
 export interface GcAgentService {
   /** The last gather, or a fresh one with `refresh`. */
   snapshot(opts?: { refresh?: boolean }): Promise<GcSnapshot>
-  /** Records that an agent is done with the bundle. Deletes nothing. */
-  release(bundleId: string, atMs: number): Promise<void>
+  /**
+   * Records that an agent is done with the bundle, and where the worktree is so a later gather
+   * can tell it was cleaned. Deletes nothing.
+   */
+  release(bundleId: string, atMs: number, from: { repoPath: string; path: string }): Promise<void>
 }
 
 let service: GcAgentService | null = null

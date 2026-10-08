@@ -23,6 +23,7 @@ import {
   attributionRung,
   groupStacks,
   harnuStopTimes,
+  normalizePath,
   parseDfVolumes,
   type InspectedContainer,
   type KnownFolder,
@@ -127,6 +128,22 @@ async function everyKnownFolder(repoPaths: string[], itemPaths: string[]): Promi
   ]
 }
 
+/** The folders among `paths` that are gone. An unreadable one is not gone: it stays. */
+async function missingFolders(paths: readonly string[]): Promise<Set<string>> {
+  const gone = new Set<string>()
+  await Promise.all(
+    [...new Set(paths)].map(async (p) => {
+      try {
+        await fs.stat(p)
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code
+        if (code === 'ENOENT' || code === 'ENOTDIR') gone.add(p)
+      }
+    })
+  )
+  return gone
+}
+
 export async function gatherGc(prefs: GcPrefs, now: number): Promise<GcGathered> {
   const snap = lastSnapshot()
   const items = snap?.repos.flatMap((r) => r.items) ?? []
@@ -219,7 +236,22 @@ export async function gatherGc(prefs: GcPrefs, now: number): Promise<GcGathered>
   // A release is dropped only when its bundle is in this gather and no longer strongly merged,
   // so a branch that reopens does not come back pre-released. A gather that cannot see the
   // bundle (app start, before the first scan) leaves the mark alone.
-  const staleReleaseIds = staleReleases(bundles, prefs.released)
+  // The cleaned case also needs the disk: only the folders of marks whose bundle is absent
+  // from a repo that WAS scanned are looked at, and only "not found" counts as gone.
+  const scannedRepos = new Set(repoPaths.map((p) => normalizePath(p, process.platform)))
+  const inGather = new Set(bundles.map((b) => b.item.id))
+  const missingPaths = await missingFolders(
+    Object.keys(prefs.released).flatMap((id) => {
+      const from = prefs.releasedFrom[id]
+      const scanned = from && scannedRepos.has(normalizePath(from.repoPath, process.platform))
+      return from && scanned && !inGather.has(id) ? [from.path] : []
+    })
+  )
+  const staleReleaseIds = staleReleases(bundles, prefs.released, {
+    scannedRepos,
+    from: prefs.releasedFrom,
+    missingPaths
+  })
   const volumes = toHousekeepingVolumes(df)
   const housekeeping = {
     volumes,

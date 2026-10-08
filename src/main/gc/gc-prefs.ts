@@ -28,6 +28,17 @@ export interface GcPrefs {
    * and every other rule (dirty, session, shared stack, keep, neverClean) still applies.
    */
   released: Record<string, number>
+  /**
+   * Where each released worktree was (repo and folder), so a later gather can tell it was
+   * cleaned: the repo scanned, the bundle gone, the folder gone. The bundle id alone does not
+   * carry the folder. A mark without an entry here is never dropped for being cleaned.
+   */
+  releasedFrom: Record<string, ReleasedFrom>
+}
+
+export interface ReleasedFrom {
+  repoPath: string
+  path: string
 }
 
 export const PREFS_FILE = 'gc-prefs.json'
@@ -55,7 +66,8 @@ export function defaultGcPrefs(): GcPrefs {
     cacheMaxAgeDays: 7,
     neverClean: [],
     keep: {},
-    released: {}
+    released: {},
+    releasedFrom: {}
   }
 }
 
@@ -115,6 +127,17 @@ export function normalizeGcPrefs(raw: unknown, legacy: LegacyPrefs = {}): GcPref
     }
   }
 
+  const releasedFrom: Record<string, ReleasedFrom> = {}
+  if (isRecord(r.releasedFrom)) {
+    for (const [id, from] of Object.entries(r.releasedFrom)) {
+      if (!id || !isRecord(from)) continue
+      const { repoPath, path: where } = from
+      if (typeof repoPath === 'string' && repoPath && typeof where === 'string' && where) {
+        releasedFrom[id] = { repoPath, path: where }
+      }
+    }
+  }
+
   return {
     version: 1,
     autopilot: bool(r.autopilot) ?? d.autopilot,
@@ -138,7 +161,8 @@ export function normalizeGcPrefs(raw: unknown, legacy: LegacyPrefs = {}): GcPref
     cacheMaxAgeDays: clamped(r.cacheMaxAgeDays, 1, MAX_CACHE_AGE_DAYS) ?? d.cacheMaxAgeDays,
     neverClean,
     keep,
-    released
+    released,
+    releasedFrom
   }
 }
 
@@ -189,6 +213,7 @@ export function mergeIncomingPrefs(current: GcPrefs, raw: unknown): GcPrefs {
     ...next,
     keep: current.keep,
     released: current.released,
+    releasedFrom: current.releasedFrom,
     firstReportAcknowledged: current.firstReportAcknowledged
   }
 }
@@ -203,14 +228,22 @@ export function withoutKeep(prefs: GcPrefs, ids: readonly string[]): GcPrefs {
   return { ...prefs, keep }
 }
 
-export function withReleased(prefs: GcPrefs, id: string, at: number): GcPrefs {
-  return { ...prefs, released: { ...prefs.released, [id]: at } }
+export function withReleased(prefs: GcPrefs, id: string, at: number, from?: ReleasedFrom): GcPrefs {
+  return {
+    ...prefs,
+    released: { ...prefs.released, [id]: at },
+    releasedFrom: from ? { ...prefs.releasedFrom, [id]: from } : prefs.releasedFrom
+  }
 }
 
 export function withoutReleased(prefs: GcPrefs, ids: readonly string[]): GcPrefs {
   const released = { ...prefs.released }
-  for (const id of ids) delete released[id]
-  return { ...prefs, released }
+  const releasedFrom = { ...prefs.releasedFrom }
+  for (const id of ids) {
+    delete released[id]
+    delete releasedFrom[id]
+  }
+  return { ...prefs, released, releasedFrom }
 }
 
 export function withAcknowledged(prefs: GcPrefs): GcPrefs {

@@ -2454,7 +2454,7 @@ const releaseWorktreeHandler: Handler = async (args, ctx) => {
   }
   // The single commit point: past the 120s deadline the caller already got TOOL_TIMEOUT.
   if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
-  if (!plan.ack.alreadyReleased) await svc.release(plan.bundleId, now)
+  if (!plan.ack.alreadyReleased) await svc.release(plan.bundleId, now, plan.from)
   return textResult(plan.ack)
 }
 

@@ -260,7 +260,7 @@ export type ReleasePlan =
   /** A folder the operator blocked covers the worktree or its repo (the handler refuses it). */
   | { ok: false; blocked: true }
   | { ok: false; blocked?: false; refusal: ReleaseRefusal }
-  | { ok: true; bundleId: string; ack: ReleaseAck }
+  | { ok: true; bundleId: string; from: { repoPath: string; path: string }; ack: ReleaseAck }
 
 const refuse = (
   error: ReleaseRefusalCode,
@@ -345,6 +345,7 @@ export function planRelease(
   return {
     ok: true,
     bundleId: bundle.item.id,
+    from: { repoPath: bundle.item.repoPath, path: bundle.item.path ?? '' },
     ack: {
       ok: true,
       op: 'release_worktree',

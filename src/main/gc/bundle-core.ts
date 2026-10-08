@@ -440,18 +440,42 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
 }
 
 /**
- * Release marks to drop after a gather. A mark goes only when its bundle IS in this gather and
- * its fate is no longer merged and strong. A bundle that is absent proves nothing: the gather
- * at app start runs before the Reaper's first scan and builds no bundles, and a repo that
- * dropped out of a scan builds none of its own, so absence must never read as "stale".
+ * What a gather learned about worktrees that may have been cleaned. Built by the shell, which
+ * owns the Reaper snapshot and the disk; this module only decides.
+ */
+export interface ReleaseGone {
+  /** Repos the Reaper snapshot covered. Empty when there was no snapshot. */
+  scannedRepos: ReadonlySet<string>
+  /** Where each released worktree was, as recorded when it was released. */
+  from: Readonly<Record<string, { repoPath: string; path: string }>>
+  /** Recorded folders confirmed absent from disk (a missing file, not an unreadable one). */
+  missingPaths: ReadonlySet<string>
+}
+
+/**
+ * Release marks to drop after a gather. A mark goes in two cases only:
+ *  1. its bundle IS in this gather and its fate is no longer merged and strong (a reopened
+ *     branch must not come back pre-released);
+ *  2. its bundle is absent, its repo WAS scanned, and the folder it recorded is gone from disk
+ *     (it was cleaned).
+ * Absence alone proves nothing: the gather at app start runs before the Reaper's first scan and
+ * builds no bundles, and a repo that dropped out of a scan builds none of its own. A mark that
+ * recorded no folder can never be shown cleaned, so it stays.
  */
 export function staleReleases(
   bundles: ReadonlyArray<Pick<WorktreeBundle, 'item' | 'fate'>>,
-  released: Readonly<Record<string, number>>
+  released: Readonly<Record<string, number>>,
+  gone?: ReleaseGone
 ): string[] {
   const present = new Map(bundles.map((b) => [b.item.id, b.fate]))
+  const platform = process.platform
+  const norm = (p: string): string => normalizePath(p, platform)
+  const scanned = new Set([...(gone?.scannedRepos ?? [])].map(norm))
+  const missing = new Set([...(gone?.missingPaths ?? [])].map(norm))
   return Object.keys(released).filter((id) => {
     const fate = present.get(id)
-    return fate !== undefined && !(fate.fate === 'merged' && fate.strong)
+    if (fate !== undefined) return !(fate.fate === 'merged' && fate.strong)
+    const from = gone?.from[id]
+    return from !== undefined && scanned.has(norm(from.repoPath)) && missing.has(norm(from.path))
   })
 }

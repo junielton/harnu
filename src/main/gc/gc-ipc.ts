@@ -231,8 +231,8 @@ export async function registerGcHandlers(
   // The agent-facing seam (T445). Deliberately narrow: no clean, keep or prefs method.
   setGcService({
     snapshot: (opts) => service.snapshot(opts),
-    release: async (bundleId, atMs) => {
-      await persist(withReleased(prefs, bundleId, atMs))
+    release: async (bundleId, atMs, from) => {
+      await persist(withReleased(prefs, bundleId, atMs, from))
       // The release changes the bucket, so refresh what the Cleanup surface reads.
       void gather().catch((err) => console.error('[gc] refresh after release failed', err))
     }
