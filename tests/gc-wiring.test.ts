@@ -281,3 +281,10 @@ describe('compose names are read from subfolders (delta 3b, item 10)', () => {
     expect(scan).toMatch(/guards\.unresolved/)
   })
 })
+
+describe('the bundle builder gets only the folders that cannot fake a nested worktree (S2 delta 6)', () => {
+  it('the gather filters the known folders before they reach buildBundles', () => {
+    expect(scan).toMatch(/const bundleFolders = foldersForBundles\(/)
+    expect(between(scan, 'const input = {', 'let bundles')).toMatch(/knownFolders: bundleFolders/)
+  })
+})

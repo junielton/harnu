@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { sessionsFromFleet, sessionsFromFolders } from '../src/main/gc/gc-sessions'
+import { foldersForBundles } from '../src/main/gc/gc-housekeeping-input'
 import { buildBundles, canonicalPathKey, type CanonicalPath } from '../src/main/gc/bundle-core'
 import { NOW, REPO, WT, collect, scanInput } from './gc-scan-fixtures'
 
@@ -193,5 +194,47 @@ describe('grace counts every terminal under the worktree, outside Harnu too (del
       canonical
     )
     expect(bundlesFor(sessions, canonical, { worktree: '/link/wt' })[0]!.session).toBe('working')
+  })
+})
+
+describe('a pinned subfolder inside a ready worktree does not make it nested (S2 delta 6)', () => {
+  const build = (knownFolders: string[]) => {
+    const { items, fateInputs } = collect(scanInput())
+    return buildBundles({
+      items,
+      fateInputs,
+      stacks: [],
+      stackPaths: new Map(),
+      containers: [],
+      sessions: new Map(),
+      keep: new Set(),
+      neverClean: new Set(),
+      now: NOW,
+      graceDays: 2,
+      volumes: new Map(),
+      knownFolders,
+      protectedProjects: new Set(),
+      canonical: (p) => ({ path: p, resolved: true })
+    })[0]!
+  }
+
+  it('is ready when the gather filters the known folders', () => {
+    const known = foldersForBundles([`${WT}/api`], [WT], [REPO])
+    const b = build(known)
+    expect(b.nestedWorktrees).toEqual([])
+    expect(b.bucket).toBe('ready')
+  })
+
+  it('shows what would happen unfiltered: the subfolder reads as a nested worktree', () => {
+    const b = build([`${WT}/api`])
+    expect(b.nestedWorktrees).toEqual([`${WT}/api`])
+    expect(b.reason?.code).toBe('nested-worktree')
+  })
+
+  it('a real nested worktree is still found', () => {
+    const nested = `${WT}/.claude/worktrees/b`
+    const b = build(foldersForBundles([`${WT}/api`], [WT, nested], [REPO]))
+    expect(b.nestedWorktrees).toEqual([nested])
+    expect(b.reason?.code).toBe('nested-worktree')
   })
 })
