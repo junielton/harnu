@@ -31,9 +31,9 @@ import {
 import { buildBundles, containerFolderPaths, type SessionPresence } from './bundle-core'
 import { presenceFromSets, dockerIsUnavailable, resolveRealPaths } from './gc-shell'
 import {
-  makeDirExists,
+  buildDirExists,
+  existenceCandidates,
   orphanVolumeItems,
-  statExistence,
   toHousekeepingVolumes,
   volumeGuards,
   type OrphanVolumeItem
@@ -178,11 +178,13 @@ export async function gatherGc(
   // Housekeeping facts first: the bundle builder needs them too. Existence fails closed and
   // explicit project names come from the files, exactly as for the orphan planner.
   const workingDirs = containers.flatMap((c) => c.labels[COMPOSE_WORKING_DIR_LABEL] ?? [])
-  const { checked, existing } = await statExistence([...known, ...workingDirs], (p) => fs.stat(p))
-  const dirExists = makeDirExists(checked, existing)
+  const dirExists = await buildDirExists(
+    existenceCandidates({ known, workingDirs, remembered: rememberedDirs }),
+    (p) => fs.stat(p)
+  )
   const sources = await Promise.all(
     known
-      .filter((p) => existing.has(p))
+      .filter((p) => dirExists(p))
       .map(async (p) => ({
         path: p,
         env: await readSmall(path.join(p, '.env')),

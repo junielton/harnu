@@ -175,3 +175,32 @@ export function volumeGuards(
   }
   return { knownFolders: existing.map((f) => f.path), protectedProjects: names }
 }
+
+/**
+ * Every path whose existence the gather must really check: the folders Harnu knows, the
+ * compose working dirs of the containers, and the folders cleaned worktrees ran from
+ * (`gc-left-volumes.json`). One left out reads as "exists" through {@link makeDirExists}, so
+ * a leftover volume would surface for review only by luck.
+ */
+export function existenceCandidates(sources: {
+  known: readonly string[]
+  workingDirs: readonly string[]
+  remembered: ReadonlyMap<string, readonly string[]>
+}): string[] {
+  return [
+    ...new Set([
+      ...sources.known,
+      ...sources.workingDirs,
+      ...[...sources.remembered.values()].flat()
+    ])
+  ]
+}
+
+/** The existence predicate over those paths: missing is gone, any other stat outcome exists. */
+export async function buildDirExists(
+  paths: Iterable<string>,
+  stat: (path: string) => Promise<unknown>
+): Promise<(path: string) => boolean> {
+  const { checked, existing } = await statExistence(paths, stat)
+  return makeDirExists(checked, existing)
+}
