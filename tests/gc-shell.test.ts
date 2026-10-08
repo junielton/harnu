@@ -1697,19 +1697,16 @@ describe('reprobe and recheck on real paths (delta 4, item C)', () => {
     expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: false, reason: 'protected-now' })
   })
 
-  it.each<[string, string, StackGroup[]]>([
-    ['the worktree path', WT, []],
-    ['the repo path', REPO, []],
-    ['a container folder inside the worktree', `${WT}/api`, []],
-    // A container that only bind-mounts a folder above the worktree, which cannot be read.
-    [
-      'a container folder above the worktree',
-      '/ws/org/proj',
-      [stack('up', [runWithBind('c5', '/ws/org/proj')])]
-    ]
-  ])('refuses as path-unresolved when %s cannot be resolved', async (_label, gone, extra) => {
+  // A container folder above the worktree is covered by 'a container folder above the
+  // worktree that cannot be resolved (delta 5, item 1)' below: here an unresolved ancestor
+  // would take the worktree path down with it and prove nothing.
+  it.each<[string, string]>([
+    ['the worktree path', WT],
+    ['the repo path', REPO],
+    ['a container folder inside the worktree', `${WT}/api`]
+  ])('refuses as path-unresolved when %s cannot be resolved', async (_label, gone) => {
     const h = harness({
-      stacks: [stack('app', [container('c1', `${WT}/api`)]), ...extra],
+      stacks: [stack('app', [container('c1', `${WT}/api`)])],
       unresolved: [gone]
     })
     expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
