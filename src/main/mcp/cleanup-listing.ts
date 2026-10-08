@@ -5,8 +5,9 @@
  * Pure + deterministic. It never decides a bucket and never removes anything: every bucket,
  * reason and size comes from the GC bundle core, and the only write an agent can cause is
  * the release mark the handler hands to the GC service. This module only
- *  - redacts absolute paths to basename aliases, the `list_containers` convention
- *    (`folderAlias`, a rebuilt `id`, redacted reasons);
+ *  - keeps every absolute path out of the payload: aliases are basenames, a review reason is a
+ *    fixed sentence per code (never the raw git/fs error the code was raised with), and any
+ *    other free text a field carries has each path token cut down to its basename;
  *  - marks a bundle a blocked folder covers with `agentControllable: false`, and still lists it;
  *  - narrows the listing to one repo and its worktrees when the caller scopes it, with the
  *    totals recomputed over what is left;
@@ -31,8 +32,10 @@ export interface ListedBundle {
   /** Null for a detached worktree. */
   branch: string | null
   bucket: Bucket
-  /** The one-sentence reason for a bundle that needs review; null for ready and in-use. */
+  /** A fixed, path-free sentence for a bundle that needs review; null for ready and in-use. */
   reason: string | null
+  /** The review code behind `reason` (`dirty`, `cleanup-failed`, ...); null when there is none. */
+  reasonCode: string | null
   /** Disk the checkout occupies (dependency directories included), when it was measured. */
   bytes: number | null
   /** The part of `bytes` that dehydrating would free, when known. */
@@ -100,13 +103,67 @@ const alias = (p: string): string => path.basename(p) || p
  */
 export function listedId(b: Pick<WorktreeBundle, 'item'>): string {
   const { item } = b
-  const tail = item.branch ?? (item.path ? alias(item.path) : '')
+  const tail = item.branch ? stripPaths(item.branch) : item.path ? alias(item.path) : ''
   const hash = createHash('sha256').update(item.id).digest('hex').slice(0, 8)
   return `${alias(item.repoPath)}::${item.kind}::${tail}::${hash}`
 }
 
-function redact(text: string, home: string): string {
-  return redactTranscript(text, { home }).text
+/**
+ * Every absolute path in `text` cut down to its basename: POSIX (`/a/b`, `~/a`), Windows
+ * (`C:\a\b`, `C:/a`) and UNC (`\\host\share\a`) alike. A URL is left alone. Applied before
+ * the `$HOME` rewrite, so a path inside the home directory loses its prefix as well.
+ */
+const PATH_TOKEN =
+  /([A-Za-z][\w+.-]*:\/\/\S*)|((?<![\w])(?:[A-Za-z]:[\\/]|\\\\[^\\/\s]+[\\/])[^\s"'`<>|]*)|((?<![\w.~/-])~?\/[^\s"'`<>|,;)]*)/g
+
+export function stripPaths(text: string): string {
+  return text.replace(PATH_TOKEN, (match, url?: string) => {
+    if (url) return match
+    const trail = /[.:]+$/.exec(match)?.[0] ?? ''
+    const body = trail ? match.slice(0, -trail.length) : match
+    const segments = body.split(/[\\/]/).filter((s) => s && s !== '~')
+    return (segments[segments.length - 1] ?? '') + trail
+  })
+}
+
+/** Free text for the payload: paths cut to basenames, then the usual home/secret redaction. */
+function safe(text: string, home: string): string {
+  return redactTranscript(stripPaths(text), { home }).text
+}
+
+/** The fixed, path-free sentence for each review code. The raw detail is never passed on. */
+const REVIEW_SENTENCES: Record<string, string> = {
+  dirty: 'The working tree has uncommitted changes, or could not be verified clean.',
+  unpushed: 'The branch has commits that are not pushed.',
+  'open-idle-session': 'A session is still open in this worktree, though idle.',
+  'closed-unmerged': 'The pull request was closed without being merged.',
+  'remote-gone': 'The remote branch is gone and no pull request records a merge.',
+  detached: 'This worktree has a detached HEAD, so there is no branch to judge.',
+  'unknown-fate': 'The state of the branch could not be determined.',
+  'weak-merge-signal': 'The merge is only weakly proven.',
+  'shared-stack': 'A Docker stack also runs from outside this worktree.',
+  'path-unresolved': 'A path of this worktree could not be resolved.'
+}
+
+const GENERIC_REVIEW_SENTENCE = 'This worktree needs your review.'
+
+/** `Cleanup stopped at <step>.` — the step is a short lowercase word, never free text. */
+function cleanupFailedSentence(detail: string): string {
+  const step = /^Cleanup stopped at ([a-z][a-z-]*)\b/.exec(detail)?.[1]
+  return `Cleanup stopped at ${step ?? 'an earlier step'}.`
+}
+
+/** A review reason as the agent sees it: its code and a fixed sentence. Both are path-free. */
+export function reviewReason(reason: { code: string; detail: string } | null): {
+  code: string
+  sentence: string
+} | null {
+  if (!reason) return null
+  const sentence =
+    reason.code === 'cleanup-failed'
+      ? cleanupFailedSentence(reason.detail)
+      : (REVIEW_SENTENCES[reason.code] ?? GENERIC_REVIEW_SENTENCE)
+  return { code: reason.code, sentence }
 }
 
 /** The bundle's anchors: the worktree itself and the repo it belongs to. */
@@ -146,12 +203,14 @@ function listBundle(
   snap: GcSnapshot,
   opts: CleanupListingOptions
 ): ListedBundle {
+  const reason = reviewReason(b.reason)
   return {
-    id: listedId(b),
-    folderAlias: b.item.path ? alias(b.item.path) : alias(b.item.repoPath),
-    branch: b.item.branch ?? null,
+    id: safe(listedId(b), opts.home),
+    folderAlias: safe(b.item.path ? alias(b.item.path) : alias(b.item.repoPath), opts.home),
+    branch: b.item.branch ? safe(b.item.branch, opts.home) : null,
     bucket: b.bucket,
-    reason: b.reason ? redact(b.reason.detail, opts.home) : null,
+    reason: reason?.sentence ?? null,
+    reasonCode: reason?.code ?? null,
     bytes: b.item.diskBytes,
     depsBytes: b.depsBytes,
     released: snap.prefs.released[b.item.id] !== undefined,
@@ -161,11 +220,11 @@ function listBundle(
 
 function listVolume(v: OrphanVolumeItem, home: string): ListedOrphanVolume {
   return {
-    id: v.id,
-    name: v.name,
+    id: safe(v.id, home),
+    name: safe(v.name, home),
     sizeBytes: v.sizeBytes,
-    project: v.project,
-    reason: redact(v.reason.detail, home)
+    project: v.project === null ? null : safe(v.project, home),
+    reason: safe(v.reason.detail, home)
   }
 }
 
@@ -234,8 +293,10 @@ export interface ReleaseAck {
   alreadyReleased: boolean
   /** The bucket the bundle takes once the grace no longer applies. */
   bucketAfter: Bucket
-  /** Why it is not ready to clean, when it is not. */
+  /** Why it is not ready to clean, when it is not: a fixed, path-free sentence. */
   reason: string | null
+  /** The review code behind `reason`; null when there is none. */
+  reasonCode: string | null
   /** Always false: release marks a bundle, it never removes one. */
   deleted: false
   message: string
@@ -337,7 +398,7 @@ export function planRelease(
     opts.now,
     0
   )
-  const reason = after.reason ? redact(after.reason.detail, opts.home) : null
+  const reason = reviewReason(after.reason)
   const message =
     after.bucket === 'ready'
       ? 'Released. The grace window no longer applies, so this worktree is ready to clean from the next scan. Nothing was deleted: the operator cleans it, or the autopilot does when it is on and acknowledged.'
@@ -349,12 +410,13 @@ export function planRelease(
     ack: {
       ok: true,
       op: 'release_worktree',
-      folderAlias: alias(bundle.item.path ?? bundle.item.repoPath),
-      branch: bundle.item.branch ?? null,
+      folderAlias: safe(alias(bundle.item.path ?? bundle.item.repoPath), opts.home),
+      branch: bundle.item.branch ? safe(bundle.item.branch, opts.home) : null,
       released: true,
       alreadyReleased: releasedAlready,
       bucketAfter: after.bucket,
-      reason,
+      reason: reason?.sentence ?? null,
+      reasonCode: reason?.code ?? null,
       deleted: false,
       message
     }
