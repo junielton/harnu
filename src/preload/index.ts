@@ -145,6 +145,7 @@ import type {
   GcJobDone,
   GcJobInfo,
   GcJobProgress,
+  GcOpinion,
   GcOpinionAck,
   GcOpinionDone,
   GcOpinionResult,
@@ -2571,6 +2572,12 @@ const api = {
    * `gc:opinion:done`. Advisory and read-only: it can never remove anything.
    */
   gcOpinion: (ids: string[]): Promise<GcOpinionAck> => ipcRenderer.invoke('gc:opinion', ids),
+  /**
+   * The peek: opinions main already holds for items that are still as they were when asked, by
+   * id. Never asks the model; a reloaded renderer uses it to restore its chips for free.
+   */
+  gcOpinionCached: (ids: string[]): Promise<Record<string, GcOpinion>> =>
+    ipcRenderer.invoke('gc:opinion:cached', ids),
   onGcOpinionResult: (cb: (r: GcOpinionResult) => void): (() => void) =>
     subscribe('gc:opinion:result', cb),
   onGcOpinionDone: (cb: (d: GcOpinionDone) => void): (() => void) =>

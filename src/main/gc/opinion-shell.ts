@@ -19,6 +19,7 @@ import type { OrphanVolumeItem } from './gc-housekeeping-input'
 import {
   OPINION_ROUTING_KIND,
   type OpinionDossier,
+  type OpinionKeyFacts,
   type OpinionLookup,
   type OpinionServiceDeps
 } from './opinion-core'
@@ -40,7 +41,7 @@ export interface OpinionShellOptions {
   git(path: string, args: string[]): Promise<string>
 }
 
-type ShellDeps = Pick<OpinionServiceDeps, 'classify' | 'dossier' | 'route' | 'run'>
+type ShellDeps = Pick<OpinionServiceDeps, 'classify' | 'dossier' | 'keyFacts' | 'route' | 'run'>
 
 async function attempt(work: () => Promise<string>): Promise<string> {
   try {
@@ -71,29 +72,52 @@ async function lastSummaryIn(path: string): Promise<string | null> {
   }
 }
 
+/**
+ * What the cache key reads, and nothing heavier: the fate and pull request from the last scan, the
+ * live head and the live dirty set (two cheap git calls). The ask and the peek both go through it,
+ * so the same item always has the same key.
+ */
+async function worktreeKeyFacts(
+  opts: OpinionShellOptions,
+  b: WorktreeBundle
+): Promise<OpinionKeyFacts> {
+  const { item } = b
+  const path = item.path ?? null
+  const facts = lastFateInputs().get(item.id)?.facts
+  let head: string | null = b.localTip ?? null
+  let dirtyFiles: string[] = []
+  if (path) {
+    const [status, tip] = await Promise.all([
+      attempt(() => opts.git(path, ['status', '--porcelain'])),
+      attempt(() => opts.git(path, ['rev-parse', 'HEAD']))
+    ])
+    dirtyFiles = status.split('\n').filter((l) => l.trim().length > 0)
+    head = tip.trim() || head
+  }
+  return {
+    reasonCode: b.reason?.code ?? 'unknown-fate',
+    fate: b.fate.fate,
+    prState: facts?.pr?.state ?? null,
+    head,
+    dirtyFiles
+  }
+}
+
 async function worktreeDossier(
   opts: OpinionShellOptions,
   b: WorktreeBundle
 ): Promise<{ dossier: OpinionDossier; group: string }> {
   const { item } = b
   const path = item.path ?? null
-  const facts = lastFateInputs().get(item.id)?.facts
+  const key = await worktreeKeyFacts(opts, b)
   let diffStat = ''
-  let dirtyFiles: string[] = []
-  let head: string | null = b.localTip ?? null
   let lastSessionSummary: string | null = null
   if (path) {
     const base = await defaultRef(opts, item.repoPath)
-    const [stat, status, tip, summary] = await Promise.all([
+    ;[diffStat, lastSessionSummary] = await Promise.all([
       attempt(() => opts.git(path, ['diff', '--stat', '--stat-width=120', `${base}...HEAD`])),
-      attempt(() => opts.git(path, ['status', '--porcelain'])),
-      attempt(() => opts.git(path, ['rev-parse', 'HEAD'])),
       lastSummaryIn(path)
     ])
-    diffStat = stat
-    dirtyFiles = status.split('\n').filter((l) => l.trim().length > 0)
-    head = tip.trim() || head
-    lastSessionSummary = summary
   }
   return {
     group: item.repoPath,
@@ -101,13 +125,13 @@ async function worktreeDossier(
       id: item.id,
       path,
       branch: item.branch ?? null,
-      reasonCode: b.reason?.code ?? 'unknown-fate',
+      reasonCode: key.reasonCode,
       reasonDetail: b.reason?.detail ?? '',
-      fate: b.fate.fate,
-      prState: facts?.pr?.state ?? null,
-      head,
+      fate: key.fate,
+      prState: key.prState,
+      head: key.head,
       diffStat,
-      dirtyFiles,
+      dirtyFiles: key.dirtyFiles,
       lastSessionSummary
     }
   }
@@ -178,6 +202,13 @@ export function createOpinionShell(opts: OpinionShellOptions): ShellDeps {
       if (bundle) return worktreeDossier(opts, bundle)
       const volume = g.orphanVolumes.find((v) => v.id === id)
       return volume ? volumeDossier(volume) : null
+    },
+    keyFacts: async (id) => {
+      const g = await opts.current()
+      const bundle = g.bundles.find((b) => b.item.id === id)
+      if (bundle) return worktreeKeyFacts(opts, bundle)
+      const volume = g.orphanVolumes.find((v) => v.id === id)
+      return volume ? volumeDossier(volume).dossier : null
     },
     // The operator's routing table, per repo (design.md: "Model follows the operator's routing
     // table"), as kind `scout`. The table is read, never written.

@@ -348,15 +348,15 @@ export type OpinionLookup = 'review' | 'orphan-volume' | 'other'
 export type OpinionRefusal = 'unknown' | 'not-review'
 
 export const OPINION_MAX_IDS = 100
+/** The peek only reads the cache, so it may be asked about a whole list at once. */
+export const OPINION_PEEK_MAX_IDS = 500
 
 /** Ids from an untrusted payload: a non-empty array of non-empty strings, bounded. */
-export function parseOpinionIds(raw: unknown): string[] {
+export function parseOpinionIds(raw: unknown, max: number = OPINION_MAX_IDS): string[] {
   if (!Array.isArray(raw) || raw.length === 0) throw new Error('gc:opinion expects an array of ids')
   const ids = raw.filter((x): x is string => typeof x === 'string' && x.length > 0)
   if (ids.length !== raw.length) throw new Error('gc:opinion ids must be non-empty strings')
-  if (ids.length > OPINION_MAX_IDS) {
-    throw new Error(`gc:opinion takes at most ${OPINION_MAX_IDS} ids`)
-  }
+  if (ids.length > max) throw new Error(`gc:opinion takes at most ${max} ids`)
   return ids
 }
 
@@ -377,11 +377,17 @@ export function classifyOpinionIds(
 
 // ---- cache ------------------------------------------------------------------------------------
 
+/** The part of a dossier an opinion's cache key reads: cheap to gather, no diff and no chat. */
+export type OpinionKeyFacts = Pick<
+  OpinionDossier,
+  'reasonCode' | 'fate' | 'prState' | 'head' | 'dirtyFiles' | 'volume'
+>
+
 /**
  * What an opinion was about. Two dossiers with the same key would get the same answer, so an
  * answer is reused until the fate, the pull request, the head or the set of dirty files changes.
  */
-export function opinionKey(d: OpinionDossier): string {
+export function opinionKey(d: OpinionKeyFacts): string {
   return JSON.stringify([
     d.reasonCode,
     d.fate,
@@ -446,6 +452,11 @@ export interface OpinionServiceDeps {
   classify(): Promise<(id: string) => OpinionLookup | undefined>
   /** The facts about one item right now, or null when it is gone. */
   dossier(id: string): Promise<OpinionSubject | null>
+  /**
+   * Only what the cache key reads, for the peek. Optional: without it the peek falls back to the
+   * whole dossier, which is correct but slower (the shell gathers a diff and a chat summary too).
+   */
+  keyFacts?(id: string): Promise<OpinionKeyFacts | null>
   /** The operator's routing table for this group. */
   route(group: string): Promise<{ model: string; effort: string }>
   /** Runs the headless session and resolves with its stdout, or null when it failed. */
@@ -458,6 +469,12 @@ export interface OpinionServiceDeps {
 export interface OpinionService {
   /** Validates, then acknowledges at once; the job runs after the ones already queued. */
   start(rawIds: unknown): GcOpinionAck
+  /**
+   * `gc:opinion:cached`: the opinions main already holds for items that are still as they were
+   * when asked. It never asks the model, starts no job and emits nothing, so a reloaded renderer
+   * can restore its chips for free. The same cache rules apply as for an ask.
+   */
+  cached(rawIds: unknown): Promise<Record<string, Opinion>>
   /** Resolves when every started job has finished. */
   idle(): Promise<void>
 }
@@ -550,7 +567,31 @@ export function createOpinionService(deps: OpinionServiceDeps): OpinionService {
     deps.emitDone(done)
   }
 
+  async function cached(rawIds: unknown): Promise<Record<string, Opinion>> {
+    const ids = parseOpinionIds(rawIds, OPINION_PEEK_MAX_IDS)
+    const { accepted } = classifyOpinionIds(ids, await deps.classify())
+    const facts = deps.keyFacts ?? (async (id: string) => (await deps.dossier(id))?.dossier ?? null)
+    const out: Record<string, Opinion> = {}
+    // A few at a time: each look is a couple of git calls.
+    for (const batch of chunk(accepted, 8)) {
+      await Promise.all(
+        batch.map(async (id) => {
+          let key: OpinionKeyFacts | null = null
+          try {
+            key = await facts(id)
+          } catch {
+            key = null
+          }
+          const hit = key ? deps.cache.get(id, opinionKey(key)) : undefined
+          if (hit) out[id] = hit
+        })
+      )
+    }
+    return out
+  }
+
   return {
+    cached,
     start(rawIds) {
       const ids = parseOpinionIds(rawIds)
       const jobId = deps.newId()
