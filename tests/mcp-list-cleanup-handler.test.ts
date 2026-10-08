@@ -45,6 +45,7 @@ import {
   WT_CORPSE,
   WT_DIRTY,
   WT_OPEN,
+  absolutePathsIn,
   bundle,
   snapshot
 } from './gc-snapshot-fixtures'
@@ -150,7 +151,8 @@ describe('list_cleanup handler (T445)', () => {
     serve(withVolume)
     const text = textOf(await handler({}, ctx()))
     expect(text).not.toContain(MAIN)
-    expect(text).not.toContain('/home/dev')
+    expect(absolutePathsIn(text)).toEqual([])
+    expect(text).not.toContain('/srv/ws')
     expect(text).not.toMatch(/\/\.claude\/worktrees\//)
   })
 
@@ -160,7 +162,8 @@ describe('list_cleanup handler (T445)', () => {
     })
     serve(snapshot([detached]))
     const text = textOf(await handler({}, ctx()))
-    expect(text).not.toContain('/home/dev')
+    expect(absolutePathsIn(text)).toEqual([])
+    expect(text).not.toContain('/srv/ws')
     const row = JSON.parse(text).bundles[0] as Listed
     expect(row.branch).toBeNull()
     expect(row.folderAlias).toBe('PROJ-9-detached')

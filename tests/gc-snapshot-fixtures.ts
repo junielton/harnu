@@ -11,13 +11,23 @@ import type { ReapItem } from '../src/main/reaper/reaper-core'
 export const DAY = 86_400_000
 export const NOW = Date.parse('2026-10-07T12:00:00Z')
 
-export const MAIN = '/home/dev/org/proj/www'
+export const MAIN = '/srv/ws/org/proj/www'
 export const WT_CORPSE = `${MAIN}/.claude/worktrees/PROJ-231-wave-1`
 export const WT_DIRTY = `${MAIN}/.claude/worktrees/PROJ-231-wave-2`
 export const WT_OPEN = `${MAIN}/.claude/worktrees/PROJ-347-wave-3`
 export const WT_WEAK = `${MAIN}/.claude/worktrees/PROJ-347-wave-4`
-export const OTHER_MAIN = '/home/dev/org/api-gateway'
+export const OTHER_MAIN = '/srv/ws/org/api-gateway'
 export const OTHER_WT = `${OTHER_MAIN}/.claude/worktrees/PROJ-500-hotfix`
+
+/**
+ * Every absolute path (two or more segments) in a payload. The fixtures sit under `/srv/ws`,
+ * outside any home directory, so the home-prefix redaction cannot hide a leak: a path that
+ * reaches the output is a real leak. A branch like `feat/x` is not matched (its slash follows
+ * a word character).
+ */
+export function absolutePathsIn(text: string): string[] {
+  return text.match(/(?<![\w.~-])\/(?:[\w.-]+\/)+[\w.-]+/g) ?? []
+}
 
 export function reapItem(path: string, over: Partial<ReapItem> = {}): ReapItem {
   const repoPath = over.repoPath ?? MAIN

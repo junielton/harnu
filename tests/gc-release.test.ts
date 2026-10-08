@@ -224,7 +224,7 @@ describe('buildBundles honors a release (T445)', () => {
         ports: [],
         mounts: []
       })
-      const containers = [ctr('db', WT_CORPSE), ctr('web', '/home/dev/org/elsewhere')]
+      const containers = [ctr('db', WT_CORPSE), ctr('web', '/srv/ws/org/elsewhere')]
       const b = buildBundles({
         items: [it],
         fateInputs: new Map([[it.id, { facts: facts(), localTip: TIP }]]),

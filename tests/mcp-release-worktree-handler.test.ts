@@ -40,6 +40,7 @@ import {
   WT_DIRTY,
   WT_OPEN,
   WT_WEAK,
+  absolutePathsIn,
   bundle,
   snapshot
 } from './gc-snapshot-fixtures'
@@ -104,7 +105,8 @@ describe('release_worktree handler (T445)', () => {
   it('AC-3: the ACK carries no absolute path', async () => {
     serve(snapshot([fresh]))
     const text = textOf(await handler({ folder: WT_CORPSE }, ctx(WT_CORPSE)))
-    expect(text).not.toContain('/home/dev')
+    expect(absolutePathsIn(text)).toEqual([])
+    expect(text).not.toContain('/srv/ws')
   })
 
   it('AC-3: releasing twice is idempotent and says so', async () => {
@@ -171,7 +173,7 @@ describe('release_worktree handler (T445)', () => {
 
   it('AC-3: NOT_A_WORKTREE for a folder the scan does not know', async () => {
     const { release } = serve(snapshot([fresh]))
-    const res = await handler({ folder: '/home/dev/org/elsewhere' }, ctx('/home/dev/org/elsewhere'))
+    const res = await handler({ folder: '/srv/ws/org/elsewhere' }, ctx('/srv/ws/org/elsewhere'))
     expect(JSON.parse(textOf(res))).toMatchObject({ ok: false, error: 'NOT_A_WORKTREE' })
     expect(release).not.toHaveBeenCalled()
   })
@@ -179,7 +181,7 @@ describe('release_worktree handler (T445)', () => {
   it('AC-3: every refusal carries a message and a next action', async () => {
     serve(snapshot([fresh]))
     const refusal = JSON.parse(
-      textOf(await handler({ folder: '/home/dev/org/elsewhere' }, ctx('/home/dev/org/elsewhere')))
+      textOf(await handler({ folder: '/srv/ws/org/elsewhere' }, ctx('/srv/ws/org/elsewhere')))
     )
     expect(refusal.message).toEqual(expect.any(String))
     expect(refusal.nextActions.length).toBeGreaterThan(0)
