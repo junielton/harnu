@@ -139,25 +139,68 @@ function hasHooksKey(value: unknown): boolean {
  * might skip.
  */
 export function skillDeclaresHooks(raw: string): boolean {
-  const open = /^(?:\uFEFF|\s)*---[ \t]*\r?\n/.exec(raw)
-  if (!open) return false
-  const afterOpen = raw.slice(open[0].length)
-  const close = /\r?\n---[ \t]*(?:\r?\n|$)/.exec(afterOpen)
-  if (!close) return true
-  const inner = afterOpen.slice(0, close.index)
+  return skillFrontmatterVerdict(raw) !== 'ok'
+}
 
-  if (/hooks/i.test(inner) || inner.includes('\\')) return true
-  if (FRONTMATTER_HIDING_FORMS.some((re) => re.test(inner))) return true
+/** What an `observe` tick makes of a SKILL.md header. */
+export type FrontmatterVerdict = 'ok' | 'hooks' | 'unsafe-frontmatter'
+
+/** Whitespace and invisible characters a lenient reader might skip before an opening fence. */
+const INVISIBLE_LEAD = /^[\s᠎​-‏⁠﻿]*/
+
+/**
+ * The verdict behind {@link skillDeclaresHooks}: `ok`, `hooks` (the header may declare hooks, by
+ * rules 1-5 above) or `unsafe-frontmatter` (the FENCE cannot be read unambiguously, rule 6 and the
+ * two below).
+ *
+ * The CLI opens frontmatter with `^---\s*\n` after stripping one BOM, and its `\s` covers `\r`,
+ * `\f`, `\v`, U+00A0, U+2028 and U+FEFF, so `--- \n` or `---\r\r\n` is a fence to it. A fence regex
+ * written to the letter of YAML, as this one first was, calls those "no frontmatter" and lets the
+ * hooks through (confirmed against claude 2.1.294). So nothing here is left to interpretation:
+ *
+ * - after at most ONE BOM, a file that starts with `---` must have a first line of exactly `---\n`
+ *   or `---\r\n`; `--- \n`, `----`, `--- yaml` and every other near-fence is refused;
+ * - a file that starts with whitespace or invisible characters and THEN `---` is refused (it is
+ *   not valid frontmatter, but a reader that skips the lead-in would parse it);
+ * - the header closes at the first line that starts with `---`, and that line must be exactly
+ *   `---` (a trailing `\r` allowed); a line that starts with `---` and is anything else is
+ *   ambiguous about where the header ends, so it is refused too. A header that never closes is
+ *   refused.
+ *
+ * A file whose first characters are anything else has no frontmatter to the CLI and is `ok`.
+ */
+export function skillFrontmatterVerdict(raw: string): FrontmatterVerdict {
+  const text = raw.startsWith('﻿') ? raw.slice(1) : raw
+  if (!text.startsWith('---')) {
+    const lead = INVISIBLE_LEAD.exec(text)?.[0] ?? ''
+    return lead.length > 0 && text.startsWith('---', lead.length) ? 'unsafe-frontmatter' : 'ok'
+  }
+  const open = /^---\r?\n/.exec(text)
+  if (!open) return 'unsafe-frontmatter'
+
+  const lines = text.slice(open[0].length).split('\n')
+  let closeAt = -1
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].startsWith('---')) continue
+    if (lines[i] !== '---' && lines[i] !== '---\r') return 'unsafe-frontmatter'
+    closeAt = i
+    break
+  }
+  if (closeAt < 0) return 'unsafe-frontmatter'
+  const inner = lines.slice(0, closeAt).join('\n')
+
+  if (/hooks/i.test(inner) || inner.includes('\\')) return 'hooks'
+  if (FRONTMATTER_HIDING_FORMS.some((re) => re.test(inner))) return 'hooks'
 
   let doc: unknown
   try {
     doc = yaml.load(inner, { schema: yaml.CORE_SCHEMA })
   } catch {
-    return true
+    return 'hooks'
   }
-  if (doc === undefined || doc === null) return false
-  if (typeof doc !== 'object' || Array.isArray(doc)) return true
-  return hasHooksKey(doc)
+  if (doc === undefined || doc === null) return 'ok'
+  if (typeof doc !== 'object' || Array.isArray(doc)) return 'hooks'
+  return hasHooksKey(doc) ? 'hooks' : 'ok'
 }
 
 export function parseSkillFrontmatter(raw: string, dirName?: string): BundledSkill | null {

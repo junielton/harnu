@@ -550,8 +550,17 @@ async function startTick(worker: Worker): Promise<void> {
 }
 
 /** BUG-169: how a refused mention reads in the Runs tab. */
-function skillRejectionText(r: { mention: string; reason: 'hooks' | 'unsafe-layout' }): string {
-  return `rejected skill: /${r.mention} (${r.reason === 'hooks' ? 'declares hooks' : 'unsafe files'})`
+function skillRejectionText(r: {
+  mention: string
+  reason: 'hooks' | 'unsafe-layout' | 'unsafe-frontmatter'
+}): string {
+  const why =
+    r.reason === 'hooks'
+      ? 'declares hooks'
+      : r.reason === 'unsafe-frontmatter'
+        ? 'unsafe frontmatter'
+        : 'unsafe files'
+  return `rejected skill: /${r.mention} (${why})`
 }
 
 /** One 30s beat: start every worker `dueWorkers` says is ready. */

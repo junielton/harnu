@@ -434,7 +434,10 @@ honors any mention. In an `observe` worker two rules narrow that: a bare
 `/name` that the bundled catalog owns always resolves to the BUNDLED skill, in
 any letter case (a repo's own `.claude/skills/<name>` cannot shadow it), and a
 personal or project skill is staged only if it can be read as a plain header and
-a plain directory: its frontmatter must not mention `hooks` anywhere, use YAML
+a plain directory: its frontmatter fence must be exactly `---` on its own line
+(after at most one BOM; `--- `, `---\r\r`, a form feed or no-break space after the
+dashes, or anything before the fence is refused, because the CLI reads those as a
+fence), it must close on a line that is exactly `---`, it must not mention `hooks` anywhere, use YAML
 that can hide a key (`?` keys, tags, anchors, aliases, merge keys, backslash
 escapes), or fail a strict parse, and the directory must hold no symlink, no
 `hooks` directory or `hooks.json`, no non-regular file and not too much data
@@ -446,7 +449,7 @@ resolves to nothing on this machine at all (a typo, an unknown name, a plugin
 skill a tick can't load), and separately when an observe worker names a skill
 that declares hooks: either way that mention will never stage, though the worker
 is still created. A refused mention also shows on the run as
-`rejected skill: /name (declares hooks)` or `rejected skill: /name (unsafe files)`.
+`rejected skill: /name (declares hooks)`, `(unsafe frontmatter)` or `(unsafe files)`.
 
 **List Scheduler workers — `list_workers`.** Call `list_workers({ folder? })`
 to see what's ticking: id, name, a redacted `folderAlias` (never the raw path,

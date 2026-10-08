@@ -53,7 +53,7 @@ import {
   folderStageKey,
   parseBundledSkillsVersion,
   parseSkillFrontmatter,
-  skillDeclaresHooks,
+  skillFrontmatterVerdict,
   stageStamp,
   type BundledSkill,
   type BundledSkillsPrefs,
@@ -368,7 +368,7 @@ const SKILL_MAX_TOTAL_BYTES = 8 * 1024 * 1024
 
 /** A skill read into memory, ready to be written out byte for byte. */
 type ObserveSkill =
-  { ok: true; files: Map<string, Buffer> } | { ok: false; reason: 'hooks' | 'unsafe-layout' }
+  { ok: true; files: Map<string, Buffer> } | { ok: false; reason: SkillRejection['reason'] }
 
 const UNSAFE: ObserveSkill = { ok: false, reason: 'unsafe-layout' }
 
@@ -379,7 +379,11 @@ const UNSAFE: ObserveSkill = { ok: false, reason: 'unsafe-layout' }
  * rather than followed.
  */
 async function readRegularFile(file: string, budget: { left: number }): Promise<Buffer | null> {
-  const fh = await fs.open(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW).catch(() => null)
+  // O_NONBLOCK: a FIFO swapped in after the scan would otherwise make this open wait for a
+  // writer forever. It changes nothing for a regular file, and the handle is checked below.
+  const fh = await fs
+    .open(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK)
+    .catch(() => null)
   if (!fh) return null
   try {
     const st = await fh.stat()
@@ -414,7 +418,8 @@ async function readSkillForObserve(dir: string): Promise<ObserveSkill> {
   if (!manifest || !manifest.isFile()) return UNSAFE
   const skillMd = await readRegularFile(path.join(dir, 'SKILL.md'), budget)
   if (!skillMd) return UNSAFE
-  if (skillDeclaresHooks(skillMd.toString('utf8'))) return { ok: false, reason: 'hooks' }
+  const verdict = skillFrontmatterVerdict(skillMd.toString('utf8'))
+  if (verdict !== 'ok') return { ok: false, reason: verdict }
 
   const files = new Map<string, Buffer>([['SKILL.md', skillMd]])
   const walk = async (rel: string): Promise<boolean> => {
@@ -538,8 +543,9 @@ export interface SkillRejection {
    * `hooks`: the frontmatter declares (or may declare) hooks, which run shell commands outside the
    * tool allowlist. `unsafe-layout`: the skill directory holds something an observe tick will not
    * copy (a symlink, a hooks directory, a non-regular file, or too much data).
+   * `unsafe-frontmatter`: the header's fence cannot be read unambiguously.
    */
-  reason: 'hooks' | 'unsafe-layout'
+  reason: 'hooks' | 'unsafe-layout' | 'unsafe-frontmatter'
 }
 
 /** Which kind of tick is staging: `observe` is the restricted one (BUG-169). */
