@@ -170,7 +170,7 @@ describe('buildPrompt (AC-3)', () => {
       ['a Windows path with backslashes', 'file C:\\Users\\leaky\\proj\\x.ts changed'],
       ['a Windows path with spaces', 'file C:\\Users\\leaky\\My Documents\\x.ts changed'],
       ['a lower-case drive', 'file d:\\work\\leaky\\x.ts changed'],
-      ['a UNC path', 'share \\\\leakyserver\\share\\x.ts mounted']
+      ['a UNC path', 'mounted \\\\leakyserver\\share\\x.ts mounted']
     ])('removes %s', (_name, text) => {
       const p = field(text)
       expect(p).not.toMatch(/leaky/i)

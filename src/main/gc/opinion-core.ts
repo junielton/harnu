@@ -63,17 +63,98 @@ export const refOf = (index: number): string => `item-${index + 1}`
 
 // ---- prompt -----------------------------------------------------------------------------------
 
-const POSIX_ABSOLUTE = /(?<![\w.\-:/~>])(?:\/[\w.@+=~-]+)+\/?/g
-const WINDOWS_ABSOLUTE = /(?<![\w])[A-Za-z]:\\[^\s"'<>|]*/g
+const OWN_WORKTREE = '<this worktree>'
+
+/** Characters that end a path: a quote, an angle bracket, a pipe, or the end of a clause. */
+const PATH_END = new Set(['"', "'", '`', '<', '>', '|', ')', ']', '}', ',', ';'])
+const isSpace = (c: string): boolean => c === ' ' || c === '\t'
+const isNewline = (c: string): boolean => c === '\n' || c === '\r'
+/** What a word inside a spaced folder name may be made of. */
+const SPACED_WORD = /[\w .@+=~()-]/
 
 /**
- * Removes every absolute path from free text. The dossier's own worktree folder becomes a
- * placeholder first, so a path built on it does not survive as a second, longer path.
+ * Where the path that starts at `from` ends. Segments run to the next separator, a space, or a
+ * character that ends a clause. A space continues the path only when a separator follows within the
+ * same short run of words (`/My Projects/app`), so "/code is dirty, see src/a.ts" stops after
+ * `/code`. Over-scrubbing a rare run of prose is the safe error.
+ */
+function pathEnd(text: string, from: number, seps: ReadonlySet<string>): number {
+  let j = from
+  for (;;) {
+    // at a separator
+    j++
+    const segmentStart = j
+    while (
+      j < text.length &&
+      !seps.has(text[j]) &&
+      !isSpace(text[j]) &&
+      !isNewline(text[j]) &&
+      !PATH_END.has(text[j])
+    ) {
+      j++
+    }
+    if (j < text.length && seps.has(text[j])) continue
+    if (j < text.length && isSpace(text[j]) && j > segmentStart) {
+      let k = j
+      while (k < text.length && k - j < 80 && SPACED_WORD.test(text[k])) k++
+      if (k < text.length && seps.has(text[k])) {
+        j = k
+        continue
+      }
+    }
+    return j
+  }
+}
+
+const SLASH: ReadonlySet<string> = new Set(['/'])
+const WIN_SEPS: ReadonlySet<string> = new Set(['/', '\\'])
+const PATHISH = /[A-Za-z0-9_.\-~/\\]/
+
+/**
+ * Removes every absolute path from free text: POSIX, `~/` and `~user/`, `file://` URLs, Windows
+ * `C:\` and `C:/`, UNC shares, and paths with spaces or glued after `=`, `:`, `>`, a quote or a
+ * bracket. Relative paths, web URLs and ordinary prose stay. The dossier's own worktree folder
+ * becomes a placeholder first, and a path built on it (`<this worktree>/src/a.ts`) is left alone:
+ * it is relative to that worktree and the one absolute path the prompt may carry.
  */
 export function scrubPaths(text: string, ownPath: string | null): string {
-  let out = text
-  if (ownPath) out = out.split(ownPath).join('<this worktree>')
-  return out.replace(WINDOWS_ABSOLUTE, '<path>').replace(POSIX_ABSOLUTE, '<path>')
+  const input = ownPath ? text.split(ownPath).join(OWN_WORKTREE) : text
+  let out = ''
+  let i = 0
+  while (i < input.length) {
+    const c = input[i]
+    const prev = i > 0 ? input[i - 1] : ''
+    let end = -1
+    if (input.startsWith('file:', i) && !/[A-Za-z0-9]/.test(prev)) {
+      end = i + 5
+      while (end < input.length && !/[\s"'<>)\]}]/.test(input[end])) end++
+    } else if (/[A-Za-z]/.test(c) && input[i + 1] === ':' && /[\\/]/.test(input[i + 2] ?? '')) {
+      if (!/[A-Za-z0-9]/.test(prev)) end = pathEnd(input, i + 2, WIN_SEPS)
+    } else if (c === '\\' && input[i + 1] === '\\' && /\S/.test(input[i + 2] ?? '')) {
+      if (prev !== '\\') end = pathEnd(input, i + 1, WIN_SEPS)
+    } else if (c === '~' && !/\w/.test(prev) && /^~[\w.-]*\//.test(input.slice(i, i + 80))) {
+      end = pathEnd(input, i + input.slice(i).indexOf('/'), SLASH)
+    } else if (c === '/') {
+      const next = input[i + 1] ?? ''
+      const startsPath =
+        !PATHISH.test(prev) &&
+        next !== '' &&
+        next !== '/' &&
+        !isSpace(next) &&
+        !isNewline(next) &&
+        !(prev === ':' && next === '/') &&
+        !input.slice(0, i).endsWith(OWN_WORKTREE)
+      if (startsPath) end = pathEnd(input, i, SLASH)
+    }
+    if (end > i) {
+      out += '<path>'
+      i = end
+    } else {
+      out += c
+      i++
+    }
+  }
+  return out
 }
 
 function cap(text: string, max: number): string {
