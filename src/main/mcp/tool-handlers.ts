@@ -2434,14 +2434,16 @@ const releaseWorktreeHandler: Handler = async (args, ctx) => {
 
   const snap = await svc.snapshot()
   const now = Date.now()
-  const plan = planRelease(snap, folder, { home, now, folders: ctx.folders })
+  const plan = planRelease(snap, folder, {
+    denyFolders: ctx.denyFolders,
+    home,
+    now,
+    folders: ctx.folders
+  })
   if (!plan.ok) {
+    // A repo the operator blocked is as closed as the worktree folder itself.
+    if (plan.blocked) return steerError('FOLDER_NOT_ALLOWED', folder)
     return { content: [{ type: 'text', text: JSON.stringify(plan.refusal) }], isError: true }
-  }
-  // A repo the operator blocked is as closed as the worktree folder itself.
-  const bundle = snap.bundles.find((b) => b.item.id === plan.bundleId)
-  if (bundle && isFolderDenied(bundle.item.repoPath, ctx.denyFolders, home)) {
-    return steerError('FOLDER_NOT_ALLOWED', folder)
   }
   // The single commit point: past the 120s deadline the caller already got TOOL_TIMEOUT.
   if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')

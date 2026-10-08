@@ -242,6 +242,8 @@ export interface ReleaseAck {
 }
 
 export interface ReleaseOptions {
+  /** The live policy's blocked folders; a blocked worktree OR repo is refused first. */
+  denyFolders: readonly string[]
   home: string
   now: number
   /** Harnu's folder list, for a main checkout that is not a bundle. */
@@ -249,7 +251,10 @@ export interface ReleaseOptions {
 }
 
 export type ReleasePlan =
-  { ok: false; refusal: ReleaseRefusal } | { ok: true; bundleId: string; ack: ReleaseAck }
+  /** A folder the operator blocked covers the worktree or its repo (the handler refuses it). */
+  | { ok: false; blocked: true }
+  | { ok: false; blocked?: false; refusal: ReleaseRefusal }
+  | { ok: true; bundleId: string; ack: ReleaseAck }
 
 const refuse = (
   error: ReleaseRefusalCode,
@@ -261,8 +266,9 @@ const refuse = (
 })
 
 /**
- * Decides one release. Order of refusals: main checkout, unknown folder, fate not strongly
- * merged. (A blocked folder is refused by the handler before it reaches here.) A release
+ * Decides one release. Order of refusals: a blocked worktree or repo (before anything else, so
+ * an out-of-tree worktree of a blocked repo is always FOLDER_NOT_ALLOWED), main checkout,
+ * unknown folder, fate not strongly merged. A release
  * that passes is accepted even when another rule keeps the bundle out of `corpse`: the ACK
  * then names the bucket it will be in and why, instead of pretending it will be cleaned.
  */
@@ -270,6 +276,10 @@ export function planRelease(snap: GcSnapshot, folder: string, opts: ReleaseOptio
   const target = normalizePath(folder, opts.home)
   const same = (p: string): boolean => normalizePath(p, opts.home) === target
   const bundle = snap.bundles.find((b) => b.item.path && same(b.item.path))
+
+  if (bundle && anchorsOf(bundle).some((p) => isFolderDenied(p, opts.denyFolders, opts.home))) {
+    return { ok: false, blocked: true }
+  }
 
   const isMain =
     bundle?.isMainCheckout === true ||
