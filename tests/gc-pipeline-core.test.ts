@@ -38,6 +38,7 @@ function bundle(name: string, over: Partial<WorktreeBundle> = {}): WorktreeBundl
     isMainCheckout: false,
     pathsResolved: true,
     nestedWorktrees: [],
+    foreignCheckouts: [],
     bucket: 'ready',
     reason: null,
     ...over
@@ -818,5 +819,48 @@ describe('runBundle refuses a bundle with a nested worktree (delta 6, F1)', () =
     )
     expect(results[0]).toMatchObject({ ok: false, error: 'nested-worktree' })
     expect(results[1]).toMatchObject({ ok: true, haltedAt: null })
+  })
+})
+
+// ---- a foreign checkout refuses even a confirmed review (delta 7) -------------------------
+
+describe('runBundle refuses a bundle with a foreign checkout (delta 7)', () => {
+  const confirm = { removeVolumes: true, confirmReview: true }
+
+  it.each(['ready', 'review'] as const)(
+    'a %s bundle listing one is refused with zero ops, even confirmed',
+    async (bucket) => {
+      const f = fakeOps()
+      const b = bundle('a', { bucket, foreignCheckouts: ['/x/.git'] })
+      const r = await runBundle(b, f.ops, confirm)
+      expect(r).toMatchObject({
+        ok: false,
+        haltedAt: 'reprobe',
+        error: 'nested-worktree',
+        freedBytes: 0
+      })
+      expect(f.calls).toEqual([])
+    }
+  )
+
+  it.each<[string, unknown]>([
+    ['missing', undefined],
+    ['null', null],
+    ['not an array', 'x']
+  ])('a bundle whose list is %s is refused the same way', async (_label, value) => {
+    const f = fakeOps()
+    const b = bundle('a', { bucket: 'review' })
+    if (value === undefined) delete (b as Partial<WorktreeBundle>).foreignCheckouts
+    else (b as unknown as Record<string, unknown>).foreignCheckouts = value
+    const r = await runBundle(b, f.ops, confirm)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'nested-worktree' })
+    expect(f.calls).toEqual([])
+  })
+
+  it('an empty list still proceeds', async () => {
+    const f = fakeOps()
+    const r = await runBundle(bundle('a', { foreignCheckouts: [] }), f.ops, OPTS)
+    expect(r).toMatchObject({ ok: true, haltedAt: null })
+    expect(f.calls).toEqual(FULL)
   })
 })

@@ -84,6 +84,7 @@ function bundle(over: Partial<WorktreeBundle> = {}): WorktreeBundle {
     isMainCheckout: false,
     pathsResolved: true,
     nestedWorktrees: [],
+    foreignCheckouts: [],
     bucket: 'ready',
     reason: null,
     ...over
@@ -1154,7 +1155,8 @@ function scanned(
     volumes: new Map([['deploy_pg', { sizeBytes: 1, project: 'deploy' }]]),
     knownFolders: [],
     protectedProjects: new Set(),
-    canonical: links
+    canonical: links,
+    foreignCheckouts: new Map([[item.id, []]])
   })
   expect(out).toHaveLength(1)
   return out[0]!

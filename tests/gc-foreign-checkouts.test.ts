@@ -24,7 +24,7 @@ import {
   type GcShellDeps
 } from '../src/main/gc/gc-shell'
 import { runBundle } from '../src/main/gc/pipeline-core'
-import type { WorktreeBundle } from '../src/main/gc/bundle-core'
+import { buildBundles, type WorktreeBundle } from '../src/main/gc/bundle-core'
 
 let tmp = ''
 
@@ -203,6 +203,7 @@ function bundleOf(www: string, a: string): WorktreeBundle {
     isMainCheckout: false,
     pathsResolved: true,
     nestedWorktrees: [],
+    foreignCheckouts: [],
     bucket: 'ready',
     reason: null
   }
@@ -343,4 +344,46 @@ describe('the reprobe and the recheck over real git (delta 7)', () => {
       }
     }
   )
+})
+
+describe('the builder over a real clone (delta 7)', () => {
+  it('(b) a plain clone inside the worktree at scan time is review nested-worktree', async () => {
+    const { www, a } = worktreeA()
+    git(a, 'clone', '-q', repo(join(tmp, 'org/other/api-gateway')), join(a, 'libs/api-gateway'))
+    const { item } = bundleOf(www, a)
+    const [b] = buildBundles({
+      items: [
+        {
+          ...item,
+          checkpoints: [
+            // Merged long ago, so only the clone can keep it from ready.
+            {
+              id: 'pr-merged',
+              state: 'green',
+              detail: new Date(EXEC_NOW - 10 * 86_400_000).toISOString()
+            },
+            { id: 'local-clean', state: 'green' }
+          ]
+        }
+      ],
+      fateInputs: new Map(),
+      stacks: [],
+      stackPaths: new Map(),
+      containers: [],
+      sessions: new Map(),
+      keep: new Set(),
+      neverClean: new Set(),
+      now: EXEC_NOW,
+      graceDays: 2,
+      volumes: new Map(),
+      knownFolders: [],
+      protectedProjects: new Set(),
+      canonical: (p) => ({ path: p, resolved: true }),
+      // What the shell scan fills in, per worktree, from the same walk the reprobe runs.
+      foreignCheckouts: new Map([[item.id, await findForeignCheckouts(a)]])
+    })
+    expect(b!.foreignCheckouts).toEqual([join(a, 'libs/api-gateway/.git')])
+    expect(b!.bucket).toBe('review')
+    expect(b!.reason?.code).toBe('nested-worktree')
+  })
 })

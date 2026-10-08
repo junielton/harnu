@@ -88,6 +88,7 @@ function harvestable(): WorktreeBundle {
     isMainCheckout: false,
     pathsResolved: true,
     nestedWorktrees: [],
+    foreignCheckouts: [],
     localTip: TIP,
     bucket: 'ready',
     reason: null
