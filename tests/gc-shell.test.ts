@@ -193,6 +193,7 @@ function harness(
     archiveTip: async (_repo, ref) => ref,
     archiveWip: async (_repo, ref) => ref,
     detachSidebar: async () => undefined,
+    removeWorktreeAdmin: async () => undefined,
     appendTombstone: async () => undefined,
     now: () => EXEC_NOW,
     ...over.executor

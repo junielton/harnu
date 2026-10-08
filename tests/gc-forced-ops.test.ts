@@ -108,6 +108,7 @@ function rig(
       return ref
     },
     detachSidebar: async () => undefined,
+    removeWorktreeAdmin: async () => undefined,
     appendTombstone: async (t) => {
       tombstones.push(t)
     },
@@ -250,7 +251,8 @@ describe('the executor guards are waived only inside the forced ops (AC-8)', () 
   it('does not rewrite any other git command', async () => {
     const r = rig()
     await run(reviewBundle(), r)
-    expect(r.git).toContainEqual(['worktree', 'prune'])
+    // The registration goes through the executor's own dep now, never a repo-wide prune.
+    expect(r.git).not.toContainEqual(['worktree', 'prune'])
   })
 
   it('leaves the ordinary ops strict: they refuse the same bundle', async () => {
