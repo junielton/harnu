@@ -2260,11 +2260,11 @@
       "bucket": {
         "header": {
           "ready": "Pronto para limpar",
-          "review": "Precisa de você",
+          "review": "Precisa de revisão",
           "in-use": "Em uso"
         },
         "ready": "Pronto para limpar",
-        "review": "Precisa de você",
+        "review": "Precisa de revisão",
         "in-use": "Em uso"
       },
       "map": {
@@ -2347,7 +2347,7 @@
         "keep": "Manter",
         "ask": "Pedir uma opinião",
         "askSoon": "chega na S6",
-        "volumesKept": "Os volumes dele ({names}) são mantidos. Depois eles aparecem em Precisa de você.",
+        "volumesKept": "Os volumes dele ({names}) são mantidos. Depois eles aparecem em Precisa de revisão.",
         "readyNote": "Limpo no próximo ciclo, ou agora com Limpar agora.",
         "inUseNote": "Deixado como está enquanto uma sessão trabalha aqui ou o pull request está aberto.",
         "happenedTitle": "O que aconteceu",
@@ -2386,7 +2386,7 @@
         "riskMarker": "Pode conter trabalho que nenhuma outra branch tem",
         "warnRisk": "{n} destes contém trabalho que nenhuma outra branch tem. O código continua recuperável pelas refs de arquivo e pela lixeira do sistema. | {n} destes contêm trabalho que nenhuma outra branch tem. O código continua recuperável pelas refs de arquivo e pela lixeira do sistema.",
         "warnVolumesLost": "Volumes não podem ser restaurados.",
-        "warnVolumesKept": "Os volumes são mantidos. Depois eles aparecem em Precisa de você.",
+        "warnVolumesKept": "Os volumes são mantidos. Depois eles aparecem em Precisa de revisão.",
         "warnRecover": "O código e a branch voltam pelas refs de arquivo e pela lixeira do sistema, e as dependências voltam pelo setup do repositório.",
         "cancel": "Cancelar",
         "confirmWorktrees": "Remover {n} worktree | Remover {n} worktrees",
@@ -2444,7 +2444,7 @@
         "toggleCache": "Limpar o build cache automaticamente",
         "toggleImages": "Limpar imagens dangling automaticamente",
         "inspect": "Inspecionar stacks",
-        "volumesNote": "Nunca são removidos automaticamente. Remova cada um você mesmo em Precisa de você.",
+        "volumesNote": "Nunca são removidos automaticamente. Remova cada um você mesmo em Precisa de revisão.",
         "reclaimable": "{size} recuperáveis",
         "imagesCount": "{n} imagem · {size} | {n} imagens · {size}",
         "sub": {
@@ -2466,7 +2466,7 @@
         "count": "{n} item | {n} itens",
         "lastCycle": "Último ciclo {ago}: {n} limpos, {size} liberados",
         "lastCycleReport": "Último ciclo {ago}: {n} item pronto encontrado, {size} (só relatório) | Último ciclo {ago}: {n} itens prontos encontrados, {size} (só relatório)",
-        "review": "Precisa de você"
+        "review": "Precisa de revisão"
       },
       "status": {
         "reclaimable": "{size} recuperáveis",
@@ -2505,15 +2505,15 @@
       },
       "toast": {
         "success": "{size} liberados · {count} item pronto limpo | {size} liberados · {count} itens prontos limpos",
-        "partial": "{cleaned} limpos · {failed} precisa de você | {cleaned} limpos · {failed} precisam de você",
+        "partial": "{cleaned} limpos · {failed} precisa de revisão | {cleaned} limpos · {failed} precisam de revisão",
         "review": "Revisar",
         "viewJournal": "Ver diário"
       },
       "footer": {
         "running": "Limpando {done}/{total}",
-        "attention": "{n} precisa de você | {n} precisam de você",
+        "attention": "{n} precisa de revisão | {n} precisam de revisão",
         "a11yRunning": "Limpando: {done} de {total} concluídos. Abrir Limpeza",
-        "a11yAttention": "{n} item precisa de você. Abrir Limpeza | {n} itens precisam de você. Abrir Limpeza",
+        "a11yAttention": "{n} item precisa de revisão. Abrir Limpeza | {n} itens precisam de revisão. Abrir Limpeza",
         "a11yIdle": "Abrir Limpeza — {size} recuperáveis"
       },
       "settings": {
@@ -2573,7 +2573,7 @@
         },
         "volumesRule": {
           "title": "Os volumes do Docker são sempre mantidos",
-          "body": "Limpar uma worktree, à mão ou automaticamente, nunca remove os volumes dela. Quando a worktree some, eles aparecem em Precisa de você como volumes órfãos, com tamanho e projeto do compose, e você remove cada um você mesmo.",
+          "body": "Limpar uma worktree, à mão ou automaticamente, nunca remove os volumes dela. Quando a worktree some, eles aparecem em Precisa de revisão como volumes órfãos, com tamanho e projeto do compose, e você remove cada um você mesmo.",
           "warning": "Um volume removido e os dados dele não podem ser restaurados."
         }
       },
@@ -2611,10 +2611,10 @@
         "cannotUnregister": "O git não tem registro destravado para este worktree, então nada foi removido."
       },
       "review": {
-        "title": "Precisa de você",
+        "title": "Precisa de revisão",
         "askAll": "Pedir uma opinião sobre todos os {count}",
         "askSoon": "chega na S6",
-        "empty": "Nada precisa de você.",
+        "empty": "Nada precisa de revisão.",
         "showAll": "Mostrar todos os {count}",
         "rowAria": "{name}, {size}",
         "selectRow": "Selecionar {name}",
@@ -2632,7 +2632,7 @@
       },
       "legend": {
         "ready": "Pronto para limpar · limpo com um clique ou pelo autopilot",
-        "review": "Precisa de você · sua decisão",
+        "review": "Precisa de revisão · sua decisão",
         "inUse": "Em uso · nunca tocado",
         "area": "Área do bloco = tamanho em disco · clique num bloco para agir",
         "label": "Legenda"
