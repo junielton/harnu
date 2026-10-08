@@ -54,6 +54,9 @@ import { gatherGc } from '../src/main/gc/gc-scan-shell'
 import { defaultGcPrefs, type GcPrefs } from '../src/main/gc/gc-prefs'
 import type { BranchFacts, ReapItem } from '../src/main/reaper/reaper-core'
 
+// Each test runs real gathers (fs stats, realpaths); coverage instrumentation can slow them.
+vi.setConfig({ testTimeout: 30_000 })
+
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 const TIP = 'a'.repeat(40)
 
