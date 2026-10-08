@@ -495,6 +495,18 @@ describe('composeDefaultProject', () => {
   it('reads a Windows path by its last segment', () => {
     expect(composeDefaultProject('C:\\Work\\Api-Gateway')).toBe('api-gateway')
   })
+
+  // Delta 4, item G: Compose trims leading underscores and dashes from the normalized name.
+  it.each(['/ws/org/_www', '/ws/org/-www', '/ws/org/_-www', '/ws/org/.www', '/ws/org/ _www/'])(
+    'trims the leading separators Compose trims (%s is www)',
+    (path) => {
+      expect(composeDefaultProject(path)).toBe('www')
+    }
+  )
+
+  it('keeps a separator that is not leading', () => {
+    expect(composeDefaultProject('/ws/org/my_app-')).toBe('my_app-')
+  })
 })
 
 // ---- ownedVolumes -----------------------------------------------------------------
@@ -624,6 +636,16 @@ describe('ownedVolumes', () => {
         ownedVolumes([stack('app', [db])], [db, stopped], facts([['app_pg', 'app']]), [REPO])
       ).toEqual([])
     })
+
+    it.each(['/ws/org/other/_www', '/ws/org/other/-www'])(
+      'drops a volume of project www when %s is another known folder (delta 4, item G)',
+      (folder) => {
+        const db = composeContainer('db', 'www', WT_A, { mounts: [volumeMount('www_pg')] })
+        expect(
+          ownedVolumes([stack('www', [db])], [db], facts([['www_pg', 'www']]), [folder])
+        ).toEqual([])
+      }
+    )
 
     it('keeps a volume whose project is unique to the bundle stacks', () => {
       const db = composeContainer('db', 'app', WT_A, { mounts: [volumeMount('app_pg')] })
@@ -1363,6 +1385,22 @@ describe('buildBundles — stack attribution', () => {
           knownFolders: [ELSEWHERE]
         })
       )
+      expect(b.ownedVolumes).toEqual([])
+    })
+
+    it('a known folder whose name starts with an underscore protects the trimmed project (delta 4, item G)', () => {
+      const db = composeContainer('db', 'api-gateway', WT_A, {
+        mounts: [volumeMount('api-gateway_pg')]
+      })
+      const b = only(
+        build({
+          stacks: [stack('api-gateway', [db])],
+          containers: [db],
+          volumes: labelled('api-gateway', 'api-gateway_pg'),
+          knownFolders: ['/ws/org/other/_api-gateway']
+        })
+      )
+      expect(b.stackIds).toEqual(['api-gateway'])
       expect(b.ownedVolumes).toEqual([])
     })
 
