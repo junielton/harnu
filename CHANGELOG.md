@@ -25,7 +25,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   only: it never removes anything, has no network access (no web tools, no `gh`), never runs by itself, and uses model tokens each time you
   ask (it runs as the cheap "scout" tier of the folder's model routing table, Haiku at low effort by default). Answers are kept
   until the item changes (a new commit, different uncommitted files, a different pull request
-  state), so asking again costs nothing.
+  state), so asking again costs nothing, and the chips come back by themselves after you reload
+  the window.
 
 ### Changed
 

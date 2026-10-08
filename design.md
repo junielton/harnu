@@ -8472,6 +8472,12 @@ Needs review item, orphan volumes included) and the block panel's button (that o
 - **Failure and doubt are the same chip**: an advisor that could not run, answered badly, or marked
   something safe without evidence reads **unsure**; the reason says why. A failed answer is not
   remembered, so asking again asks again.
+- **After a reload the chips come back by themselves.** Main keeps the opinions; when the Needs review
+  list renders, the store asks main's cache (`gc:opinion:cached`, a read that never asks the model) for
+  every item without a chip. Only an answer that still fits the item is returned (same head, dirty
+  files, fate and reason); an item that changed shows no chip and costs a new ask.
+- **No network, local reads only:** the advisor session may read files and run `git log`, `git diff`,
+  `git show` and `git status`; it has no web tool and no `gh`, so nothing leaves the machine.
 - **Cost disclosure:** the button's tooltip says it uses the model on demand
   ("Asks a read-only model session. Uses tokens."). Docs say the same.
 

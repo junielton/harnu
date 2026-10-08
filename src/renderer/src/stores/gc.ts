@@ -40,6 +40,7 @@ import {
 } from '../lib/gc-jobs'
 import {
   clearPending,
+  fingerprintOf,
   markPending,
   opinionOf,
   pruneOpinions,
@@ -107,8 +108,46 @@ export const useGcStore = defineStore('gc', () => {
   // An opinion is about one state of one item: it goes when the snapshot shows a different head,
   // reason or bucket. The chip then disappears and asking again is a fresh question.
   watch(model, (m) => {
-    if (m) opinions.value = pruneOpinions(opinions.value, m)
+    if (!m) return
+    opinions.value = pruneOpinions(opinions.value, m)
+    void peekOpinions()
   })
+
+  /**
+   * Restores the chips after a reload: main keeps the opinions it already got, so for every Needs
+   * review item that has no chip yet the store asks main's cache (never the model). An item is
+   * peeked once per state: a later snapshot shows the same item the same way and skips it, and a
+   * changed head or reason makes it a new question. Best effort: a failed peek just shows no chip.
+   */
+  const peeked = new Map<string, string>()
+  async function peekOpinions(): Promise<void> {
+    const m = model.value
+    if (!m) return
+    const ids: string[] = []
+    for (const b of m.review) {
+      const fp = fingerprintOf(b)
+      if (opinions.value.has(b.id) || pendingOpinions.value.has(b.id) || peeked.get(b.id) === fp) {
+        continue
+      }
+      peeked.set(b.id, fp)
+      ids.push(b.id)
+    }
+    for (let i = 0; i < ids.length; i += 500) {
+      try {
+        const found = await window.api.gcOpinionCached(ids.slice(i, i + 500))
+        for (const opinion of Object.values(found)) {
+          const now = model.value
+          // A fresher answer, or a request still in flight, beats what the cache held.
+          if (!now || opinions.value.has(opinion.id) || pendingOpinions.value.has(opinion.id)) {
+            continue
+          }
+          opinions.value = recordOpinion(opinions.value, opinion, now)
+        }
+      } catch {
+        // Best effort: the chips simply stay off until the operator asks.
+      }
+    }
+  }
 
   const prefs = computed<GcPrefs | null>(() => snapshot.value?.prefs ?? null)
   const running = computed(() => runningJob(jobs.value))
