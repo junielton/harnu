@@ -297,3 +297,228 @@ export function opinionArgv(a: { model: string; effort: string; prompt: string }
 
 /** The tools the advisor may use; exported so the tests and the docs name the same list. */
 export const OPINION_TOOLS: readonly string[] = OBSERVE_TOOLS
+
+// ---- which items may be asked about -----------------------------------------------------------
+
+/** What the last gather says an id is. `other` is a ready or in-use worktree. */
+export type OpinionLookup = 'review' | 'orphan-volume' | 'other'
+export type OpinionRefusal = 'unknown' | 'not-review'
+
+export const OPINION_MAX_IDS = 100
+
+/** Ids from an untrusted payload: a non-empty array of non-empty strings, bounded. */
+export function parseOpinionIds(raw: unknown): string[] {
+  if (!Array.isArray(raw) || raw.length === 0) throw new Error('gc:opinion expects an array of ids')
+  const ids = raw.filter((x): x is string => typeof x === 'string' && x.length > 0)
+  if (ids.length !== raw.length) throw new Error('gc:opinion ids must be non-empty strings')
+  if (ids.length > OPINION_MAX_IDS) {
+    throw new Error(`gc:opinion takes at most ${OPINION_MAX_IDS} ids`)
+  }
+  return ids
+}
+
+/** Only Needs review worktrees and orphan volumes are accepted; everything else is refused per id. */
+export function classifyOpinionIds(
+  ids: readonly string[],
+  lookup: (id: string) => OpinionLookup | undefined
+): { accepted: string[]; refused: { id: string; code: OpinionRefusal }[] } {
+  const accepted: string[] = []
+  const refused: { id: string; code: OpinionRefusal }[] = []
+  for (const id of new Set(ids)) {
+    const kind = lookup(id)
+    if (kind === 'review' || kind === 'orphan-volume') accepted.push(id)
+    else refused.push({ id, code: kind === undefined ? 'unknown' : 'not-review' })
+  }
+  return { accepted, refused }
+}
+
+// ---- cache ------------------------------------------------------------------------------------
+
+/**
+ * What an opinion was about. Two dossiers with the same key would get the same answer, so an
+ * answer is reused until the fate, the pull request, the head or the set of dirty files changes.
+ */
+export function opinionKey(d: OpinionDossier): string {
+  return JSON.stringify([
+    d.reasonCode,
+    d.fate,
+    d.prState,
+    d.head,
+    [...d.dirtyFiles].sort(),
+    d.volume ? [d.volume.name, d.volume.project, d.volume.sizeBytes] : null
+  ])
+}
+
+export interface OpinionCache {
+  get(id: string, key: string): Opinion | undefined
+  set(id: string, key: string, opinion: Opinion): void
+  size(): number
+}
+
+/** Held in the main process, so a renderer reload does not lose it. */
+export function createOpinionCache(): OpinionCache {
+  const entries = new Map<string, { key: string; opinion: Opinion }>()
+  return {
+    get: (id, key) => {
+      const hit = entries.get(id)
+      return hit && hit.key === key ? hit.opinion : undefined
+    },
+    set: (id, key, opinion) => void entries.set(id, { key, opinion }),
+    size: () => entries.size
+  }
+}
+
+// ---- the service ------------------------------------------------------------------------------
+
+/** One streamed result on `gc:opinion:result`: a verdict, or the reason the id was not accepted. */
+export type GcOpinionResult =
+  ({ jobId: string } & Opinion) | { jobId: string; id: string; refused: OpinionRefusal }
+
+/** The terminal `gc:opinion:done` of a job. */
+export interface GcOpinionDone {
+  jobId: string
+  /** Items the model answered this time. */
+  answered: number
+  /** Items served from the cache without asking. */
+  cached: number
+  refused: number
+  /** Items whose process failed or timed out. They read `unsure` and are not cached. */
+  failed: number
+}
+
+/** `gc:opinion` acknowledges at once; the work streams on `gc:opinion:result` and ends on `gc:opinion:done`. */
+export interface GcOpinionAck {
+  jobId: string
+}
+
+export interface OpinionSubject {
+  dossier: OpinionDossier
+  /** The repo the item belongs to; '' for an orphan volume. One process per group. */
+  group: string
+}
+
+export interface OpinionServiceDeps {
+  cache: OpinionCache
+  /** The lookup over the freshest gather. */
+  classify(): Promise<(id: string) => OpinionLookup | undefined>
+  /** The facts about one item right now, or null when it is gone. */
+  dossier(id: string): Promise<OpinionSubject | null>
+  /** The operator's routing table for this group. */
+  route(group: string): Promise<{ model: string; effort: string }>
+  /** Runs the headless session and resolves with its stdout, or null when it failed. */
+  run(a: { cwd: string | null; argv: string[] }): Promise<string | null>
+  emitResult(r: GcOpinionResult): void
+  emitDone(d: GcOpinionDone): void
+  newId(): string
+}
+
+export interface OpinionService {
+  /** Validates, then acknowledges at once; the job runs after the ones already queued. */
+  start(rawIds: unknown): GcOpinionAck
+  /** Resolves when every started job has finished. */
+  idle(): Promise<void>
+}
+
+const UNREACHABLE = 'The advisor could not be reached.'
+
+function chunk<T>(xs: readonly T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < xs.length; i += size) out.push(xs.slice(i, i + size))
+  return out
+}
+
+/**
+ * Orchestrates one opinion request. It is the only caller of the model: on demand, one process
+ * at a time, one batch per repo and at most {@link OPINION_BATCH_SIZE} items per process. It
+ * never retries, never runs by itself, and has no way to remove anything.
+ */
+export function createOpinionService(deps: OpinionServiceDeps): OpinionService {
+  let tail: Promise<void> = Promise.resolve()
+
+  async function runJob(jobId: string, rawIds: string[]): Promise<void> {
+    const done: GcOpinionDone = { jobId, answered: 0, cached: 0, refused: 0, failed: 0 }
+    const refuse = (id: string, code: OpinionRefusal): void => {
+      done.refused++
+      deps.emitResult({ jobId, id, refused: code })
+    }
+
+    const { accepted, refused } = classifyOpinionIds(rawIds, await deps.classify())
+    for (const r of refused) refuse(r.id, r.code)
+
+    // Facts as of now, then whatever the cache already knows about exactly these facts.
+    const pending = new Map<string, { subject: OpinionSubject; key: string }[]>()
+    for (const id of accepted) {
+      const subject = await deps.dossier(id)
+      if (!subject) {
+        refuse(id, 'unknown')
+        continue
+      }
+      const key = opinionKey(subject.dossier)
+      const hit = deps.cache.get(id, key)
+      if (hit) {
+        done.cached++
+        deps.emitResult({ jobId, ...hit })
+        continue
+      }
+      const list = pending.get(subject.group) ?? []
+      list.push({ subject, key })
+      pending.set(subject.group, list)
+    }
+
+    for (const [group, items] of pending) {
+      const { model, effort } = await deps.route(group)
+      for (const batch of chunk(items, OPINION_BATCH_SIZE)) {
+        const batchIds = batch.map((b) => b.subject.dossier.id)
+        const argv = opinionArgv({
+          model,
+          effort,
+          prompt: buildPrompt(batch.map((b) => b.subject.dossier))
+        })
+        let stdout: string | null = null
+        try {
+          stdout = await deps.run({ cwd: group || null, argv })
+        } catch {
+          stdout = null
+        }
+        if (stdout === null) {
+          done.failed += batch.length
+          for (const id of batchIds) {
+            deps.emitResult({
+              jobId,
+              id,
+              verdict: 'unsure',
+              reason: UNREACHABLE,
+              evidence: UNREACHABLE
+            })
+          }
+          continue
+        }
+        const { opinions, answered } = parseOpinionsDetailed(stdout, batchIds)
+        batch.forEach((b, i) => {
+          const opinion = opinions[i]
+          if (answered.has(opinion.id)) {
+            done.answered++
+            deps.cache.set(opinion.id, b.key, opinion)
+          }
+          deps.emitResult({ jobId, ...opinion })
+        })
+      }
+    }
+    deps.emitDone(done)
+  }
+
+  return {
+    start(rawIds) {
+      const ids = parseOpinionIds(rawIds)
+      const jobId = deps.newId()
+      tail = tail
+        .then(() => runJob(jobId, ids))
+        .catch((err: unknown) => {
+          console.error('[gc] opinion job failed', err instanceof Error ? err.message : err)
+          deps.emitDone({ jobId, answered: 0, cached: 0, refused: 0, failed: ids.length })
+        })
+      return { jobId }
+    },
+    idle: () => tail
+  }
+}
