@@ -10,6 +10,25 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-08
+
+### Changed
+
+- **Cleanup polish.** Docker bytes now get their own "Docker (cleaned each cycle)" segment in the split bar, so "Ready to clean" agrees with the big button. While a clean runs, the line under the bar reads "Cleaning now · N left". The selection bar's Remove, Dehydrate and Keep have icons. The dialog and the side panel use the same `proj/www` repo label as the map, so two repos called `www` stay apart. Portuguese now calls the review group "Precisa de revisão" everywhere in Cleanup.
+- **Cleanup now matches the approved mockup more closely.** Every map region shows its repo as a monospace `proj/www`-style label (the full path on hover), a legend row under the split bar names the three groups and says what a block's area means, Map / List and Scan now have icons, and the Docker card has a "runs each cycle" subtitle, a split bar of cache, images and orphan volumes, and draws orphan volumes in the amber review colour. The confirm dialog gained a close button, icons on the chips and the confirm button, monospace row titles, a one-line breakdown ("3 stacks stopped · 12 dependency folders removed · 12 worktrees trashed") and a "12 ready · 6.44 GB" footer.
+- **One unit everywhere in Cleanup.** Sizes use the app's decimal GB/MB on every surface; the docs examples follow.
+
+### Fixed
+
+- **No raw codes in Cleanup.** Items stopped because they became dirty, hold another repository's checkout, or could not be unregistered from git now say so in a sentence; any other reason reads "Harnu stopped this item for a safety check", with the raw text only behind Copy error. Every pipeline step has a label.
+- **No Remove on an item that holds another worktree or that git has locked.** It could never succeed, so the button and its R shortcut are gone, with a line saying why.
+- **The Docker card says when orphan volumes are hidden.** If a compose project name could not be resolved (or the compose scan hit its limit), the volumes block now reads "hidden" with a note naming the folders, instead of a misleading "0 volumes".
+- **Cleanup no longer invents a history of what ran.** After a failed clean the panel says what happened ("Nothing was changed", or "Stopped at <step>: <reason>") instead of ticking steps that never ran, and Docker volumes never show up as removed.
+- **Retry works for every failed item.** A failed ready item reopens the ready confirmation; a review item opens the review one.
+- **The confirmation can no longer drift under you.** If a scan or a running job changes what the dialog showed, it says "This changed since you opened it — review again" and Confirm stays off until you reopen it; what is sent is what you saw when it opened, including the worktree's folder.
+- **Every refusal has a plain sentence** in English and Portuguese (grace period not elapsed, protected now, another worktree inside it, and the rest), the needs-review counter ignores items you chose to keep, Keep skips orphan volumes, a failed Remove or Keep shows an error toast, and R / D / K / A work as the panel's shortcuts.
+- **Toast copy:** "1 cleaned · 1 needs review" / "… · 2 need review", and the success toast offers "View journal".
+
 ## 2026-10-07
 
 ### Added
@@ -117,6 +136,38 @@ mod: live`, `off`, or `legacy` with the reason), and the System Monitor shows th
   a short `Harnu mod channel check` line in its own terminal. Nothing else in the session
   changes, and Harnu has no abort or compact button: the channel behind this one only
   carries the check for now.
+
+- **One Cleanup screen for worktrees, Docker stacks and Docker housekeeping.** Cleanup is
+  now a disk-first map: every worktree is a block sized by what it takes on disk, grouped by
+  repository and colored by what Harnu thinks of it - ready to clean (proven merged),
+  needs review, or in use. A summary line shows what could be reclaimed, whether autopilot is
+  on and when the next cycle runs. **Clean N ready** cleans every proven-ready item behind one
+  confirmation that lists each one and says plainly that Docker volumes are kept. Click a
+  block for its reason, size and what removing it takes with it, then Remove, Dehydrate or
+  Keep; Shift+click, or **Select all in repo**, picks several at once. Cleaning runs in the
+  background: the button turns into a progress chip, cleaned blocks fade out and the map
+  re-flows, you can keep working (or close and reopen the screen), and a toast reports how
+  much was freed - or which items still need review. A Docker card and a ranked "Needs review" list
+  sit under the map (showing how much build cache and how many dangling images Docker could
+  reclaim right now), and the first autopilot run offers to turn it on. "Ask for an opinion"
+  is visible but not available yet. See [Cleanup](docs/user/cleanup.md).
+- **Cleanup settings for everything automatic.** Settings -> Cleanup now holds every
+  autopilot option: on/off, how often it runs, the grace period, the per-cycle cap, which
+  categories it cleans, the build-cache age and a never-clean list, and it says plainly that
+  Docker volumes are always kept (a removed volume cannot be restored).
+
+### Changed
+
+- **One footer pill instead of two.** The separate Cleanup and Containers pills in the footer
+  are now one recycle pill showing how much can be reclaimed; it reads "Cleaning 3/12" while a
+  clean runs and "1 needs review" when an item could not be cleaned. Click it to open Cleanup.
+- **The Containers view sends cleaning to Cleanup.** Containers stays the place to inspect and
+  start or stop stacks; its clean-up button now opens Cleanup, so there is one place to clean.
+  Its settings keep only the stack scan options and the idle clock for stacks that belong to no
+  worktree. Containers now opens from the **Inspect stacks** link in the Cleanup screen's Docker
+  card.
+- **Branches and folders that are not worktrees** (local and remote branches, hidden folders)
+  now appear under "Other leftovers" on the Cleanup screen instead of in the old row list.
 
 ### Fixed
 

@@ -2114,18 +2114,8 @@
   "cleanup": {
     "title": "Limpeza",
     "close": "Fechar Limpeza",
-    "kpis": "{items} itens · {harvestable} aproveitáveis · {size} recuperável",
-    "groupSummary": "{worktrees} worktrees · {branches} branches · {folders} pastas",
     "scanNow": "Escanear agora",
-    "scannedAgo": "escaneado {ago}",
     "sweep": "Limpar {count} verdes · {size}",
-    "sweepGroup": "Limpar {count}",
-    "selectRow": "Selecionar {what}",
-    "selection": {
-      "count": "{count} selecionado(s)",
-      "sweep": "Limpar {count} selecionado(s)",
-      "clear": "Limpar seleção"
-    },
     "kind": {
       "worktree": "worktree",
       "localBranch": "branch local",
@@ -2148,8 +2138,7 @@
       "harvestable": "aproveitável",
       "harvestableRemote": "aproveitável · remoto",
       "blocked": "bloqueado",
-      "unknown": "sinal insuficiente",
-      "active": "sessão ativa"
+      "unknown": "sinal insuficiente"
     },
     "blocker": {
       "dirty": "mudanças não commitadas",
@@ -2161,18 +2150,6 @@
       "detachedHead": "HEAD detached — sem branch"
     },
     "trashTitle": "Limpar: {what}",
-    "filterBar": {
-      "searchPlaceholder": "Buscar branch ou pasta…",
-      "searchLabel": "Buscar itens de limpeza",
-      "verdictLabel": "Filtrar por veredito",
-      "verdict": {
-        "all": "Todos",
-        "harvestable": "Aproveitáveis",
-        "blocked": "Bloqueados",
-        "unknown": "Desconhecidos"
-      }
-    },
-    "filterEmptyState": "Nenhum item corresponde aos filtros.",
     "sweepConfirm": {
       "title": "Limpar {count} itens verdes?",
       "subtitle": "Pastas vão para a lixeira do sistema. Branches locais continuam recuperáveis via reflog por ~30 dias. Toda ação é registrada no journal de limpeza.",
@@ -2196,21 +2173,11 @@
     "recent": "Limpezas recentes",
     "sweptAgo": "limpo {ago}",
     "was": "era {sha}",
-    "emptyState": "Nada para limpar — toda branch e worktree está ativa ou já está em ordem.",
-    "footerPill": "Limpeza",
-    "a11yFooterPill": "Abrir Limpeza — {count} itens aproveitáveis",
     "notifyTitle": "{count} itens fecharam o ciclo",
     "notifyBody": "{size} recuperável — abra a Limpeza para limpar",
     "settings": {
-      "eyebrow": "Escaneamento em segundo plano",
-      "intro": "O Reaper escaneia as branches e worktrees deste repo em um timer e registra silenciosamente o que fica seguro para limpar — sem toast, sem som, só uma entrada na central de notificações.",
       "autoScan": {
-        "label": "Escaneamento automático em segundo plano",
-        "hint": "Roda o mesmo classificador do Escanear agora, em um timer, sem abrir a view de Limpeza."
-      },
-      "interval": {
-        "label": "Intervalo de escaneamento",
-        "hint": "Com que frequência o escaneamento em segundo plano roda enquanto o auto-scan está ligado."
+        "label": "Escaneamento automático em segundo plano"
       },
       "interval30m": "30m",
       "interval1h": "1h",
@@ -2253,10 +2220,8 @@
       "dehydrate": "Desidratar {what}",
       "dehydrateSize": "Desidratar {what} — libera {size}",
       "dehydrateNoSetup": "Desidratar {what} — o Harnu não consegue reidratá-la",
-      "rehydrate": "Reidratar {what}",
-      "dehydrateGroup": "Desidratar {count} worktrees ociosas em {repo}"
+      "rehydrate": "Reidratar {what}"
     },
-    "dehydrateGroup": "Desidratar {count} ociosas",
     "toast": {
       "rehydrated": "{what} reidratada",
       "rehydrateChanged": "O setup modificou arquivos rastreados: {files}",
@@ -2290,6 +2255,395 @@
       "totalsUnknown": "{worktrees} worktrees · {size} de volta · {unknown} sem medição",
       "failed": "{path}: {error}",
       "trackedChanged": "Arquivos rastreados mudaram durante a remoção — nada rastreado deveria ser tocado: {files}"
+    },
+    "gc": {
+      "bucket": {
+        "header": {
+          "ready": "Pronto para limpar",
+          "review": "Precisa de revisão",
+          "in-use": "Em uso"
+        },
+        "ready": "Pronto para limpar",
+        "review": "Precisa de revisão",
+        "in-use": "Em uso"
+      },
+      "map": {
+        "canvasLabel": "Mapa de uso de disco",
+        "blockLabel": "{name}, {bucket}, {size}",
+        "blockLabelState": "{name}, {bucket}, {size}, {state}",
+        "state": {
+          "busy": "limpando",
+          "done": "liberado",
+          "failed": "falhou"
+        },
+        "freed": "liberado",
+        "aggregate": "{count} menores",
+        "aggregateLabel": "{count} worktrees menores, {bucket}, {size}",
+        "selectAll": "Selecionar tudo no repo",
+        "selectAllAria": "Selecionar todos os worktrees a decidir em {repo}",
+        "repoMeta": "{count} worktree · {size} | {count} worktrees · {size}",
+        "drillRepo": "Abrir {repo} sozinho",
+        "drillBack": "Todos os repos",
+        "filterLabel": "Mostrar grupo",
+        "filterAll": "Todos",
+        "noBytes": "Este sistema não mede o tamanho em disco, então não há o que desenhar. Use a visão em lista.",
+        "empty": "Nenhum worktree para mostrar."
+      },
+      "reason": {
+        "dirty": "Mesclado, mas tem alterações não commitadas em arquivos rastreados.",
+        "unpushed": "Mesclado, mas tem commits que nunca foram enviados.",
+        "openIdleSession": "Uma sessão ainda está aberta aqui, embora parada.",
+        "closedUnmerged": "O pull request foi fechado sem ser mesclado.",
+        "remoteGone": "A branch remota sumiu e nenhum pull request registra um merge.",
+        "detached": "HEAD solto, então não há branch para avaliar.",
+        "unknownFate": "O Harnu não conseguiu saber o que aconteceu com esta branch.",
+        "weakMergeSignal": "Parece mesclado, mas a ponta local difere da mesclada.",
+        "sharedStack": "Outra stack Docker também roda a partir deste worktree.",
+        "cleanupFailed": "A última limpeza parou antes de terminar.",
+        "noKnownWorktree": "Nenhum worktree conhecido usa este volume.",
+        "ready": "Mesclado, limpo e parado além do período de carência.",
+        "pathUnresolved": "A worktree tem um caminho que o Harnu não conseguiu resolver para o local real, então não sabe o que o usa.",
+        "nestedWorktree": "Há outro worktree dentro deste, e remover este também o jogaria no lixo.",
+        "locked": "Este worktree está bloqueado no git"
+      },
+      "step": {
+        "stopStack": "Parar a stack",
+        "rmContainers": "Remover containers",
+        "archive": "Arquivar o código",
+        "dropDeps": "Remover dependências",
+        "trash": "Enviar o checkout à lixeira",
+        "prune": "Podar o worktree",
+        "branchDelete": "Apagar a branch",
+        "unknown": "uma etapa desconhecida",
+        "reprobe": "Verificar de novo",
+        "rmVolumes": "Remover volumes",
+        "detach": "Desanexar o worktree"
+      },
+      "panel": {
+        "close": "Fechar painel",
+        "project": "Projeto compose {project}",
+        "projectUnknown": "Projeto desconhecido",
+        "compositionLabel": "Composição do tamanho",
+        "deps": "Dependências",
+        "checkout": "Checkout",
+        "volumesNoSize": "Volumes (tamanho não informado): {names}",
+        "whyTitle": "Por que está aqui",
+        "takesTitle": "Leva junto",
+        "takes": {
+          "stack": "Sua stack Docker | {count} stacks Docker",
+          "volume": "Volumes: {names}",
+          "deps": "Suas pastas de dependências",
+          "checkout": "O checkout",
+          "branch": "A branch local {branch}"
+        },
+        "volumesCannotRestore": "Volumes não podem ser restaurados.",
+        "copyError": "Copiar erro",
+        "copied": "Copiado",
+        "cleaning": "Limpando…",
+        "cleanNow": "Limpar agora",
+        "retry": "Tentar de novo",
+        "remove": "Remover",
+        "dehydrate": "Dehydrate",
+        "rehydrate": "Rehydrate",
+        "keep": "Manter",
+        "ask": "Pedir uma opinião",
+        "askSoon": "chega na S6",
+        "volumesKept": "Os volumes dele ({names}) são mantidos. Depois eles aparecem em Precisa de revisão.",
+        "readyNote": "Limpo no próximo ciclo, ou agora com Limpar agora.",
+        "inUseNote": "Deixado como está enquanto uma sessão trabalha aqui ou o pull request está aberto.",
+        "happenedTitle": "O que aconteceu",
+        "stoppedAt": "Parou em “{step}”",
+        "nothingChanged": "Nada foi alterado.",
+        "genericStop": "O Harnu parou este item por uma verificação de segurança.",
+        "removeBlocked": "Remover não está disponível: esta pasta contém outro worktree. Remova ou mova esse primeiro.",
+        "removeLocked": "Remover não está disponível: o git tem este worktree bloqueado. Desbloqueie primeiro."
+      },
+      "list": {
+        "label": "Worktrees por grupo",
+        "empty": "Nenhum worktree para mostrar."
+      },
+      "hero": {
+        "clean": "Limpar {n} pronto · {size} | Limpar {n} prontos · {size}",
+        "empty": "Nada para limpar",
+        "chip": "Limpando {done}/{total} · {size} liberados"
+      },
+      "selection": {
+        "label": "Seleção",
+        "count": "{count} selecionados · {size}",
+        "remove": "Remover selecionados",
+        "dehydrate": "Dehydrate",
+        "keep": "Manter",
+        "ask": "Pedir uma opinião",
+        "askSoon": "chega no S6",
+        "shiftHint": "clique para adicionar mais",
+        "clear": "Limpar seleção"
+      },
+      "confirm": {
+        "titleWorktrees": "Remover {n} worktree? | Remover {n} worktrees?",
+        "titleItems": "Remover {n} item? | Remover {n} itens?",
+        "listLabel": "Itens a remover",
+        "worktreeRow": "{repo} › {name}",
+        "volumeRow": "Volume Docker {name}",
+        "volumeProject": "Projeto {project}",
+        "noWorktree": "Nenhum worktree conhecido",
+        "riskMarker": "Pode conter trabalho que nenhuma outra branch tem",
+        "warnRisk": "{n} destes contém trabalho que nenhuma outra branch tem. O código continua recuperável pelas refs de arquivo e pela lixeira do sistema. | {n} destes contêm trabalho que nenhuma outra branch tem. O código continua recuperável pelas refs de arquivo e pela lixeira do sistema.",
+        "warnVolumesLost": "Volumes não podem ser restaurados.",
+        "warnVolumesKept": "Os volumes são mantidos. Depois eles aparecem em Precisa de revisão.",
+        "warnRecover": "O código e a branch voltam pelas refs de arquivo e pela lixeira do sistema, e as dependências voltam pelo setup do repositório.",
+        "cancel": "Cancelar",
+        "confirmWorktrees": "Remover {n} worktree | Remover {n} worktrees",
+        "confirmItems": "Remover {n} item | Remover {n} itens",
+        "titleReady": "Limpar {n} item pronto? | Limpar {n} itens prontos?",
+        "subtitleReady": "Cada um está merged, limpo e ocioso além do período de carência. Tudo o que está listado abaixo será removido.",
+        "confirmReady": "Limpar {n} pronto | Limpar {n} prontos",
+        "subtitleReview": "Você escolheu estes itens, então o Harnu não pôde provar que são seguros. Tudo o que está listado abaixo será removido.",
+        "changed": "Isto mudou desde que você abriu — revise de novo.",
+        "breakdown": {
+          "stacks": "{n} stack parada | {n} stacks paradas",
+          "deps": "{n} pasta de dependências removida | {n} pastas de dependências removidas",
+          "worktrees": "{n} worktree para a lixeira | {n} worktrees para a lixeira",
+          "volumes": "{n} volume apagado | {n} volumes apagados"
+        },
+        "totalReady": "{n} prontos · {size}",
+        "totalSelected": "{n} selecionados · {size}",
+        "close": "Fechar",
+        "branchSub": "branch {branch}"
+      },
+      "chip": {
+        "stack": "stack",
+        "volume": "volume",
+        "deps": "deps",
+        "checkout": "checkout",
+        "branch": "branch",
+        "title": {
+          "stack": "A stack do Docker é parada e seus containers são removidos",
+          "volume": "Um volume órfão, sem worktree: só é removido depois que você confirma, e não pode ser restaurado",
+          "deps": "As pastas de dependências são apagadas; o setup do repositório as traz de volta",
+          "checkout": "O checkout vai para a lixeira do sistema",
+          "branch": "A branch local é apagada depois de arquivada"
+        }
+      },
+      "firstCycle": {
+        "label": "Primeiro relatório de limpeza",
+        "title": "Encontrei {n} item pronto, {size} — ativar o autopilot? | Encontrei {n} itens prontos, {size} — ativar o autopilot?",
+        "sub": "O primeiro ciclo só reporta; nada é apagado até você ativar.",
+        "enable": "Ativar autopilot",
+        "dismiss": "Agora não"
+      },
+      "docker": {
+        "title": "Docker",
+        "buildCache": "Build cache",
+        "danglingImages": "Imagens dangling",
+        "orphanVolumes": "Volumes órfãos",
+        "reclaimed": "Último ciclo recuperou {size}",
+        "unavailable": "Tamanho indisponível — o Docker não respondeu",
+        "olderThan": "Mais antigo que {n} dia | Mais antigo que {n} dias",
+        "danglingSub": "Imagens sem tag que nenhum container usa",
+        "volumesCount": "{n} volume · {size} | {n} volumes · {size}",
+        "cantRestore": "Não pode ser restaurado",
+        "projects": "Projetos: {names}",
+        "more": "+{n} outros",
+        "toggleCache": "Limpar o build cache automaticamente",
+        "toggleImages": "Limpar imagens dangling automaticamente",
+        "inspect": "Inspecionar stacks",
+        "volumesNote": "Nunca são removidos automaticamente. Remova cada um você mesmo em Precisa de revisão.",
+        "reclaimable": "{size} recuperáveis",
+        "imagesCount": "{n} imagem · {size} | {n} imagens · {size}",
+        "sub": {
+          "size": "roda a cada ciclo · {size}",
+          "plain": "roda a cada ciclo",
+          "off": "A limpeza do Docker está desligada"
+        },
+        "splitLabel": "Números do Docker por tamanho: build cache, imagens dangling, volumes órfãos",
+        "hidden": {
+          "size": "ocultos",
+          "unresolvedCompose": "Os volumes órfãos estão ocultos porque o nome de um projeto compose não pôde ser resolvido em: {folders}",
+          "scanLimit": "Os volumes órfãos estão ocultos porque a busca por arquivos compose atingiu o limite em: {folders}"
+        }
+      },
+      "split": {
+        "label": "Divisão do disco",
+        "auto": "Pronto para limpar",
+        "untouched": "Em uso",
+        "count": "{n} item | {n} itens",
+        "lastCycle": "Último ciclo {ago}: {n} limpos, {size} liberados",
+        "lastCycleReport": "Último ciclo {ago}: {n} item pronto encontrado, {size} (só relatório) | Último ciclo {ago}: {n} itens prontos encontrados, {size} (só relatório)",
+        "review": "Precisa de revisão",
+        "running": "Limpando agora · faltam {n}",
+        "runningNow": "Limpando agora",
+        "cache": "Docker (limpo a cada ciclo)",
+        "cacheShort": "Docker"
+      },
+      "status": {
+        "reclaimable": "{size} recuperáveis",
+        "autopilotOn": "autopilot ligado",
+        "autopilotOff": "autopilot desligado",
+        "next": {
+          "minute": "próximo ciclo em {n} min",
+          "hour": "próximo ciclo em {n} h",
+          "day": "próximo ciclo em {n} d"
+        },
+        "badgeOn": "Autopilot ligado · a cada {every}",
+        "badgeOff": "Autopilot desligado",
+        "everyMinutes": "{n} min",
+        "everyHours": "{n} h",
+        "everyDay": "dia"
+      },
+      "view": {
+        "map": "Mapa",
+        "list": "Lista",
+        "label": "Visão da limpeza",
+        "noBytes": "Os tamanhos em disco não estão disponíveis neste sistema, então só a lista pode ser mostrada."
+      },
+      "toolbar": {
+        "autopilotSettings": "Configurações do autopilot"
+      },
+      "empty": {
+        "title": "Tudo limpo",
+        "subtitle": "Nada para recuperar.",
+        "subtitleAgo": "Nada para recuperar. O autopilot verificou {ago}."
+      },
+      "loading": "Analisando seus worktrees e o Docker…",
+      "loadError": "Não foi possível carregar o relatório de limpeza: {error}",
+      "other": {
+        "title": "Outros resíduos",
+        "intro": "Branches e pastas que não são worktrees."
+      },
+      "toast": {
+        "success": "{size} liberados · {count} item pronto limpo | {size} liberados · {count} itens prontos limpos",
+        "partial": "{cleaned} limpos · {failed} precisa de revisão | {cleaned} limpos · {failed} precisam de revisão",
+        "review": "Revisar",
+        "viewJournal": "Ver diário"
+      },
+      "footer": {
+        "running": "Limpando {done}/{total}",
+        "attention": "{n} precisa de revisão | {n} precisam de revisão",
+        "a11yRunning": "Limpando: {done} de {total} concluídos. Abrir Limpeza",
+        "a11yAttention": "{n} item precisa de revisão. Abrir Limpeza | {n} itens precisam de revisão. Abrir Limpeza",
+        "a11yIdle": "Abrir Limpeza — {size} recuperáveis"
+      },
+      "settings": {
+        "autopilot": {
+          "eyebrow": "Autopilot",
+          "intro": "Limpa worktrees prontas comprovadas (worktrees mergeadas, limpas e ociosas) no timer em segundo plano. O primeiro ciclo depois de ligar só reporta o que encontrou; a limpeza automática começa quando você confirma esse relatório na Limpeza.",
+          "label": "Limpar worktrees prontas automaticamente",
+          "hint": "Precisa do escaneamento em segundo plano abaixo ligado: a limpeza roda no mesmo timer."
+        },
+        "interval": {
+          "label": "Rodar a cada",
+          "hint": "Um único timer comanda o escaneamento e a limpeza."
+        },
+        "grace": {
+          "label": "Período de carência",
+          "hint": "Uma worktree precisa ficar quieta por esse tempo, sem atividade de sessão e sem start ou stop de container, antes de contar como pronta para limpar."
+        },
+        "cap": {
+          "label": "Limite por ciclo",
+          "hint": "O máximo de worktrees que um ciclo automático limpa. O resto espera o próximo ciclo.",
+          "suffix": "worktrees"
+        },
+        "daysSuffix": "dias",
+        "clean": {
+          "eyebrow": "O que ela limpa",
+          "intro": "Estes botões governam o autopilot. Limpar à mão na tela de Limpeza sempre pergunta antes."
+        },
+        "categories": {
+          "worktrees": {
+            "label": "Worktrees",
+            "hint": "Worktrees mergeadas, limpas e ociosas, e os stacks do Docker que rodam a partir delas."
+          },
+          "dockerCache": {
+            "label": "Cache de build do Docker e imagens órfãs",
+            "hint": "Remove cache de build mais antigo que a idade abaixo e imagens que nenhum container usa. Nunca toca em uma imagem que um stack usa."
+          }
+        },
+        "cacheMaxAge": {
+          "label": "Idade máxima do cache de build",
+          "hint": "Cache de build mais antigo que isso é removido."
+        },
+        "never": {
+          "eyebrow": "Nunca limpar",
+          "intro": "Repos ou worktrees listados aqui nunca são limpos, nem automaticamente nem à mão. Use caminhos absolutos.",
+          "label": "Adicionar um caminho para nunca limpar",
+          "empty": "Nada está protegido ainda.",
+          "placeholder": "/caminho/do/repo",
+          "add": "Adicionar",
+          "removeLabel": "Remover",
+          "remove": "Remover {path} da lista de nunca limpar",
+          "invalid": "Digite um caminho absoluto, como /work/meu-repo."
+        },
+        "scan": {
+          "eyebrow": "Escaneamento em segundo plano e branches",
+          "intro": "A Limpeza escaneia todo repo conhecido em um timer e registra o que fica seguro para limpar. Estas configurações também cobrem branches locais e remotas.",
+          "autoScanHint": "Roda o escaneamento em um timer sem abrir a Limpeza. O autopilot pega carona nesse escaneamento, então desligá-lo também para o autopilot."
+        },
+        "volumesRule": {
+          "title": "Os volumes do Docker são sempre mantidos",
+          "body": "Limpar uma worktree, à mão ou automaticamente, nunca remove os volumes dela. Quando a worktree some, eles aparecem em Precisa de revisão como volumes órfãos, com tamanho e projeto do compose, e você remove cada um você mesmo.",
+          "warning": "Um volume removido e os dados dele não podem ser restaurados."
+        }
+      },
+      "refusal": {
+        "changedSinceConfirm": "Mudou desde que você confirmou — revise de novo.",
+        "needsConfirmation": "Precisa da sua confirmação antes. Selecione e escolha Remover.",
+        "missingExpected": "A limpeza não conseguiu comparar com o que você viu. Revise e tente de novo.",
+        "noLongerOrphan": "Este volume voltou a ser usado, então foi deixado como está.",
+        "kept": "Você marcou como Manter, então foi deixado como está.",
+        "neverClean": "Está na sua lista de nunca limpar, então foi deixado como está.",
+        "mainCheckout": "Este é um checkout principal, que nunca é limpo.",
+        "unsupportedKind": "O Harnu ainda não consegue limpar este tipo de pasta.",
+        "unknownItem": "A limpeza não conhece mais este item. Atualize e tente de novo.",
+        "several": "{n} itens foram deixados como estão por motivos diferentes. Abra cada um para ver o motivo.",
+        "inUse": "Está em uso, então foi deixado como está.",
+        "tipUnknown": "O Harnu não conseguiu saber em qual commit esta worktree está, então a deixou como está.",
+        "protectedNow": "Ela está protegida agora (checkout principal, caminho de nunca limpar ou marca Manter), então foi deixada como está.",
+        "changedSinceScan": "Ela mudou desde a última varredura, então foi deixada como está. Varra de novo e revise.",
+        "graceNotElapsed": "Ela ainda não ficou quieta por tempo suficiente, então foi deixada como está.",
+        "notReady": "Ela não está mais pronta para limpar, então foi deixada como está.",
+        "pathUnresolved": "Um caminho ligado a esta worktree não pôde ser resolvido, então o Harnu não sabe o que a usa e a deixou como está.",
+        "stackPresent": "Uma stack do Docker está rodando a partir desta worktree, então ela foi deixada como está.",
+        "dockerUnavailable": "O Docker não respondeu, então o Harnu não pôde checar esta worktree com segurança e a deixou como está.",
+        "probeFailed": "A checagem desta worktree falhou, então ela foi deixada como está.",
+        "nestedWorktree": "Outra worktree vive dentro desta, então ela foi deixada como está.",
+        "sharedStack": "Outra stack também roda a partir desta worktree, então ela foi deixada como está.",
+        "headMoved": "Um commit novo chegou nesta worktree, então ela foi deixada como está.",
+        "notHarvestable": "A limpeza não a considera mais concluída, então foi deixada como está.",
+        "sessionOpen": "Há uma sessão aberta nesta worktree, então ela foi deixada como está.",
+        "unpushed": "Ela tem commits que nunca foram enviados, então foi deixada como está.",
+        "volumeInUse": "Um volume ainda está em uso por um container, então foi deixado como está.",
+        "changedMidRun": "Ela mudou durante a limpeza, então o Harnu parou.",
+        "dirty": "Agora há alterações não commitadas, então foi deixado como está.",
+        "foreignCheckout": "Há outro repositório com checkout dentro desta pasta, então foi deixado como está.",
+        "cannotUnregister": "O Harnu não conseguiu associar este worktree a um único registro do git, então nada foi tocado."
+      },
+      "review": {
+        "title": "Precisa de revisão",
+        "askAll": "Pedir uma opinião sobre todos os {count}",
+        "askSoon": "chega na S6",
+        "empty": "Nada precisa de revisão.",
+        "showAll": "Mostrar todos os {count}",
+        "rowAria": "{name}, {size}",
+        "selectRow": "Selecionar {name}",
+        "removeAria": "Remover {name}",
+        "dehydrateAria": "Dehydrate {name}",
+        "keepAria": "Manter {name}",
+        "volumeProject": "Volume Docker · {project}",
+        "volumeUnknown": "Volume Docker · projeto desconhecido",
+        "hintShift": "clique seleciona vários",
+        "hintOpen": "abre o painel"
+      },
+      "error": {
+        "clean": "Não foi possível iniciar a limpeza",
+        "keep": "Não foi possível manter isso"
+      },
+      "legend": {
+        "ready": "Pronto para limpar · limpo com um clique ou pelo autopilot",
+        "review": "Precisa de revisão · sua decisão",
+        "inUse": "Em uso · nunca tocado",
+        "area": "Área do bloco = tamanho em disco · clique num bloco para agir",
+        "label": "Legenda"
+      }
     }
   },
   "containers": {
@@ -2297,7 +2651,6 @@
     "close": "Fechar Containers",
     "settings": {
       "eyebrow": "Escaneamento em segundo plano",
-      "intro": "O Harnu escaneia o docker em um timer, para que a pílula do rodapé continue atualizada com a view de Containers fechada.",
       "autoScan": {
         "label": "Escanear em segundo plano",
         "hint": "Roda o mesmo escaneamento do Verificar agora, em um timer, sem abrir Containers."
@@ -2312,12 +2665,17 @@
       "intervalDaily": "Diário",
       "zombieAfter": {
         "label": "Zumbi após",
-        "hint": "Um stack de worktree que ninguém usa há esse número de dias é um zumbi. As linhas se reorganizam assim que você muda o valor.",
         "daysSuffix": "dias"
       },
       "notify": {
         "label": "Me avisar sobre novos zumbis",
         "hint": "Na primeira vez que um stack vira zumbi, adiciona uma entrada na central de notificações — sem toast, sem som."
+      },
+      "gcNote": {
+        "intro": "Estas configurações comandam o inspetor de Containers: o escaneamento próprio e o relógio de inatividade dele.",
+        "text": "Um stack que roda a partir de uma worktree recebe o veredito da Limpeza, então os controles desses ficam lá.",
+        "link": "Abrir configurações de Limpeza",
+        "zombieHint": "Um stack que a Limpeza não julgou e que ninguém usa há esse número de dias é um zumbi. Stacks que rodam a partir de uma worktree seguem o estado da worktree na Limpeza. As linhas se reorganizam assim que você muda o valor."
       }
     },
     "newZombies": {
@@ -2325,8 +2683,6 @@
       "body": "{names} — abra Containers para revisar",
       "more": "+{n} a mais"
     },
-    "footerPill": "Containers",
-    "a11yFooterPill": "Containers: {n} stack precisa de você | Containers: {n} stacks precisam de você",
     "scannedAgo": "verificado {ago}",
     "readingDocker": "lendo o docker…",
     "scanNow": "Verificar agora",
@@ -2334,8 +2690,6 @@
     "scanAgain": "Verificar de novo",
     "stopRunning": "Parar {n} rodando",
     "stoppingRunning": "Parando…",
-    "sweep": "Limpar {n} stack | Limpar {n} stacks",
-    "sweeping": "Limpando… {done} de {total}",
     "hero": {
       "ramFreed": "RAM liberada ao parar as stacks zumbis",
       "portsReleased": "portas do host liberadas",
@@ -2372,11 +2726,6 @@
     "quickStop": {
       "stack": "Parar stack",
       "container": "Parar container"
-    },
-    "select": {
-      "stack": "Incluir {name} na limpeza",
-      "all": "Selecionar todos os stacks",
-      "none": "Limpar a seleção"
     },
     "ago": {
       "justNow": "agora mesmo",
@@ -2559,16 +2908,8 @@
       "confirm": "Remover {n} container | Remover {n} containers",
       "removing": "Removendo…"
     },
-    "sweepDialog": {
-      "title": "Limpar {n} stack? | Limpar {n} stacks?",
-      "body": "{n} container será removido. | {n} containers serão removidos.",
-      "stackContainers": "{n} container | {n} containers",
-      "volumes": "Também remover {n} volume · {size} | Também remover {n} volumes · {size}",
-      "partial": "Limpou {done} de {total} stack. Esta não: | Limpou {done} de {total} stacks. Estas não:",
-      "failedStack": "{name} — {reason}",
-      "changed": "A lista mudou enquanto este diálogo estava aberto, então nada foi apagado. Confira o que a limpeza levaria agora e confirme de novo.",
-      "moved": "A lista mudou enquanto este diálogo estava aberto, então ela foi atualizada e nada foi removido. Confira o que a limpeza levaria agora e confirme de novo."
-    }
+    "openCleanup": "Abrir Limpeza · {n} stack | Abrir Limpeza · {n} stacks",
+    "openCleanupTitle": "Limpar stacks agora acontece na Limpeza"
   },
   "prStack": {
     "title": "PR Stack",

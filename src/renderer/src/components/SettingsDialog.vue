@@ -307,7 +307,16 @@ const tabs: Array<{ id: SettingsTabId; labelKey: string; keywords: string[] }> =
       'scan',
       'escaneamento',
       'protected branches',
-      'branches protegidas'
+      'branches protegidas',
+      // Workspace GC prefs (T443): the autopilot, what it cleans, and the never-clean list.
+      'autopilot',
+      'ready',
+      'grace',
+      'volumes',
+      'docker cache',
+      'build cache',
+      'never clean',
+      'nunca limpar'
     ]
   },
   {
@@ -1059,7 +1068,7 @@ onBeforeUnmount(() => {
             <MemoryLocationPane v-else-if="activeTab === 'memory'" />
             <HibernationPolicyPane v-else-if="activeTab === 'hibernationPolicy'" />
             <CleanupSettingsPane v-else-if="activeTab === 'cleanup'" />
-            <ContainersSettingsPane v-else-if="activeTab === 'containers'" />
+            <ContainersSettingsPane v-else-if="activeTab === 'containers'" @navigate="goToTab" />
             <PrStackSettingsPane v-else-if="activeTab === 'prStack'" />
             <template v-else-if="activeTab === 'appearance'">
               <!-- Appearance — theme picker (design §9, themes.css) -->

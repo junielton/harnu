@@ -652,7 +652,7 @@ describe('useSessionsStore reload coalescing + in-place reconcile (sidebar-freez
     expect(dead.taskState).toBe('completed')
 
     // "+ New session" again must mint a genuinely NEW synthetic, not dedupe onto
-    // the corpse — otherwise the user can never open a working session again.
+    // the dead entry — otherwise the user can never open a working session again.
     const secondId = store.createNewSession('/repos/alpha')!
     expect(secondId).not.toBe(firstId)
     expect(store.selectedId).toBe(secondId)

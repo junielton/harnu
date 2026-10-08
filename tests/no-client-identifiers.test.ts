@@ -91,6 +91,12 @@ const ALLOWED_UPPER_PREFIXES = [
 const ALLOWED_LOWER_PREFIXES = [
   'abc',
   'acme',
+  // `at` / `rv`: element ids of the promoted Workspace GC mockup (`treemap-at-64`, `rv-18`) — layout
+  // names, not tracker keys.
+  'at',
+  'rv',
+  // `pt`: a Tailwind padding utility (`pt-18`), not a tracker key.
+  'pt',
   'agent',
   'agents',
   'argv',

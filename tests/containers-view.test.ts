@@ -15,8 +15,7 @@ import {
   REMOVE_TOMB,
   STOP_TOMB,
   snapshotOf,
-  specStacks,
-  stack
+  specStacks
 } from './helpers/containers-fixtures'
 import { cloneGuardedApi } from './helpers/containers-api'
 import type { ContainersActResult, ContainersSnapshot, ContainersTombstone } from '../src/preload'
@@ -498,10 +497,13 @@ describe('AC-1: registration', () => {
       'containers: ContainersView'
     )
     expect(read('src/renderer/src/App.vue')).toMatch(/showContainers\.value \|\|/)
+    // T443: the Containers footer pill is gone; the single Cleanup pill replaced it (and the old
+    // Cleanup pill), and the inspector stays reachable from the entry points that open it.
     const footer = read('src/renderer/src/components/StatusFooter.vue')
-    expect(footer).toContain('v-if="containersCount > 0"')
-    expect(footer).toContain("ui.containersOpen ? 'text-accent'")
-    expect(footer).toContain('ui.toggleContainers()')
+    expect(footer).not.toContain('containersCount')
+    expect(footer).not.toContain('ui.toggleContainers()')
+    expect(footer).toContain('ui.toggleCleanup()')
+    expect(footer.match(/data-dsqa="cleanup-footer-pill"/g)).toHaveLength(1)
   })
 })
 
@@ -520,43 +522,24 @@ describe('AC-10: copy', () => {
     expect(en.verdict.zombie).toBe('zombie')
   })
 
-  it('T341 AC-7: every sweep key exists in both locales', () => {
+  it('T443: the sweep dialog is gone with its keys; the refusal wording the store still reports stays', () => {
     const locales = ['src/renderer/src/i18n/en.json', 'src/renderer/src/i18n/pt-BR.json'].map(
       (f) => JSON.parse(read(f)).containers
     )
     for (const c of locales) {
-      expect(Object.keys(c.sweepDialog).sort()).toEqual([
-        'body',
-        // BUG-137: the mismatch line, at parity like every other sweep key.
-        'changed',
-        'failedStack',
-        // BUG-139: the in-dialog twin of `changed`, when the set moved before
-        // main was ever asked.
-        'moved',
-        'partial',
-        'stackContainers',
-        'title',
-        'volumes'
-      ])
+      expect(c.sweepDialog).toBeUndefined()
+      expect(c.sweeping).toBeUndefined()
+      expect(c.select).toBeUndefined()
       expect(typeof c.refusal.SWEEP_SET_CHANGED).toBe('string')
-      expect(typeof c.sweep).toBe('string')
-      expect(typeof c.sweeping).toBe('string')
       expect(typeof c.failed.refused.sweep).toBe('string')
+      expect(typeof c.openCleanup).toBe('string')
     }
-    // The label the operator picked (provisional, T341), in the source of truth.
     const en = locales[0]
-    expect(en.sweep).toBe('Clean up {n} stack | Clean up {n} stacks')
-    expect(en.sweepDialog.title).toBe('Clean up {n} stack? | Clean up {n} stacks?')
     expect(en.dialog.confirm).toBe('Remove {n} container | Remove {n} containers')
   })
 
   it('the Containers components hold no hardcoded English in their templates', () => {
-    for (const f of [
-      'ContainersView.vue',
-      'ContainersDetail.vue',
-      'ContainersRemoveDialog.vue',
-      'ContainersSweepDialog.vue'
-    ]) {
+    for (const f of ['ContainersView.vue', 'ContainersDetail.vue', 'ContainersRemoveDialog.vue']) {
       const src = read(`src/renderer/src/components/${f}`)
       const template = src.slice(src.indexOf('<template>'))
       // Visible text lives in $t: a bare word between tags is a leaked literal.
@@ -565,16 +548,19 @@ describe('AC-10: copy', () => {
   })
 })
 
-describe('T341 AC-1/AC-4/AC-5: the mass clean', () => {
-  it('shows "Clean up N stacks" beside the unchanged bulk stop', async () => {
+describe('T443: the mass clean now lives in Cleanup', () => {
+  it('shows one button beside the unchanged bulk stop, counting every zombie and orphan', async () => {
     const wrapper = await mountView(snapshotOf(specStacks()))
-    // proj-82 + proj-11 (zombie) + proj-27 (orphan); nothing else is sweep-eligible.
-    expect(wrapper.get('[data-testid="containers-sweep"]').text()).toBe('Clean up 3 stacks')
+    // proj-82 + proj-11 (zombie) + proj-27 (orphan); nothing else is eligible.
+    expect(wrapper.find('[data-testid="containers-sweep"]').exists()).toBe(true)
+    // The count is the pluralized message's argument, not a tick-list: no checkbox is drawn.
+    expect(wrapper.find('[data-testid="containers-select-stack"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="containers-select-all"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="containers-stop-running"]').text()).toBe('Stop 1 running')
     wrapper.unmount()
   })
 
-  it('is absent during the first scan and absent when nothing is sweep-eligible', async () => {
+  it('is absent during the first scan and absent when nothing is eligible', async () => {
     stubApi(null)
     ;(window as unknown as { api: { containersScan: unknown } }).api.containersScan = vi.fn(
       () => new Promise(() => {})
@@ -592,97 +578,26 @@ describe('T341 AC-1/AC-4/AC-5: the mass clean', () => {
     clean.unmount()
   })
 
-  it('hands the dialog the whole snapshot, so it names a volume a survivor still mounts', async () => {
-    const shared = { name: 'shared_mid', sizeBytes: 80_000_000, shared: true }
-    const own = { name: 'z1_data', sizeBytes: 20_000_000, shared: false }
-    const wrapper = await mountView(
-      snapshotOf([
-        stack({ id: 'z-1', verdict: 'zombie', volumes: [shared, own] }),
-        stack({ id: 'z-2', verdict: 'zombie', volumes: [shared] }),
-        stack({ id: 'a-1', verdict: 'active', volumes: [shared] })
-      ])
-    )
-    await wrapper.get('[data-testid="containers-sweep"]').trigger('click')
-    await settle()
-    const text = body().get('[data-dsqa="containers-sweep-dialog"]').text()
-    // The survivor keeps `shared_mid`: only `z1_data` is offered, and it alone is totalled.
-    expect(text).toContain('Also remove 1 volume')
-    expect(text).not.toContain('Also remove 2 volumes')
-    expect(text).toContain('shared_mid is shared with another stack, so it is kept.')
-    wrapper.unmount()
-  })
-
-  it('BUG-137: the disclosure it sends leaves out the volume the survivor keeps', async () => {
-    // The sibling of the guard above, on the wire rather than the screen. If the
-    // view ever hands the dialog a pre-filtered set again, `sweepPlan` stops
-    // seeing the survivor and asserts a volume main would never take — and every
-    // sweep is refused SWEEP_SET_CHANGED forever, with nothing on screen to say why.
-    const shared = { name: 'shared_mid', sizeBytes: 80_000_000, shared: true }
-    const own = { name: 'z1_data', sizeBytes: 20_000_000, shared: false }
-    const wrapper = await mountView(
-      snapshotOf([
-        stack({ id: 'z-1', verdict: 'zombie', volumes: [shared, own] }),
-        stack({ id: 'z-2', verdict: 'zombie', volumes: [shared] }),
-        stack({ id: 'a-1', verdict: 'active', volumes: [shared] })
-      ])
-    )
-    await wrapper.get('[data-testid="containers-sweep"]').trigger('click')
-    await settle()
-    await body().get('[data-testid="containers-sweep-confirm"]').trigger('click')
-    await settle()
-    expect(containersAct.mock.calls).toEqual([
-      [
-        {
-          verb: 'sweep',
-          removeVolumes: false,
-          disclosed: { stacks: ['z-1', 'z-2'], volumes: ['z1_data'] }
-        }
-      ]
-    ])
-    wrapper.unmount()
-  })
-
-  it('opens ONE dialog, and confirming sends exactly one sweep', async () => {
+  it('routes to Cleanup instead of opening a dialog or sending a sweep', async () => {
     const wrapper = await mountView(snapshotOf(specStacks()))
+    const ui = useUiStore()
+    expect(ui.cleanupOpen).toBe(false)
     await wrapper.get('[data-testid="containers-sweep"]').trigger('click')
     await settle()
-    expect(body().findAll('[data-dsqa="containers-sweep-dialog"]')).toHaveLength(1)
-
-    await body().get('[data-testid="containers-sweep-confirm"]').trigger('click')
-    await settle()
-    // The confirm carries the set the dialog disclosed (BUG-137).
-    expect(containersAct.mock.calls).toEqual([
-      [
-        {
-          verb: 'sweep',
-          removeVolumes: false,
-          disclosed: {
-            stacks: ['proj-82', 'proj-11', 'proj-27'],
-            volumes: ['proj-82_mysql', 'proj-11_mysql', 'proj-27_mysql']
-          }
-        }
-      ]
-    ])
+    // One cleanup door: Cleanup opens, the Containers takeover gives way to it, and the view
+    // itself neither opens a confirm nor asks main to clean anything.
+    expect(ui.cleanupOpen).toBe(true)
+    expect(ui.containersOpen).toBe(false)
     expect(body().find('[data-dsqa="containers-sweep-dialog"]').exists()).toBe(false)
+    expect(containersAct).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
-  it('disables the button and counts progress while the sweep runs', async () => {
-    const wrapper = await mountView(snapshotOf(specStacks()))
-    containersAct.mockImplementation(() => new Promise(() => {}))
-    await wrapper.get('[data-testid="containers-sweep"]').trigger('click')
-    await settle()
-    await body().get('[data-testid="containers-sweep-confirm"]').trigger('click')
-    await settle()
-
-    const btn = wrapper.get('[data-testid="containers-sweep"]')
-    expect((btn.element as HTMLButtonElement).disabled).toBe(true)
-    expect(btn.text()).toBe('Cleaning… 0 of 3')
-    // The bulk stop is unchanged but shares the one-action-at-a-time rule.
-    const stop = wrapper.get('[data-testid="containers-stop-running"]')
-    expect(stop.text()).toBe('Stop 1 running')
-    expect((stop.element as HTMLButtonElement).disabled).toBe(true)
-    wrapper.unmount()
+  it('the view no longer carries the sweep dialog or its tick-list', () => {
+    const view = read('src/renderer/src/components/ContainersView.vue')
+    expect(view).not.toContain('ContainersSweepDialog')
+    expect(view).not.toContain('tickedStacks')
+    expect(view).toContain('ui.openCleanup()')
   })
 })
 

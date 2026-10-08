@@ -103,10 +103,24 @@ describe('ContainersSettingsPane', () => {
     expect((zombieInput(w).element as HTMLInputElement).value).toBe('1')
   })
 
+  it('says worktree stacks are cleaned by Cleanup and links to its settings', async () => {
+    const w = await mountPane()
+    expect(w.find('[data-testid="containers-gc-note"]').exists()).toBe(true)
+    await w.get('[data-testid="containers-open-cleanup-settings"]').trigger('click')
+    // The Settings dialog owns the tab switch; the pane only asks for it.
+    expect(w.emitted('navigate')).toEqual([['cleanup']])
+    // The note replaced the old "so the footer pill stays current" intro: that pill is gone.
+    expect(read('src/renderer/src/components/ContainersSettingsPane.vue')).not.toContain(
+      "'containers.settings.intro'"
+    )
+  })
+
   it('is a Settings tab of its own, labelled in both locales', () => {
     const dialog = read('src/renderer/src/components/SettingsDialog.vue')
     expect(dialog).toContain("id: 'containers'")
-    expect(dialog).toContain(`<ContainersSettingsPane v-else-if="activeTab === 'containers'" />`)
+    expect(dialog).toMatch(
+      /<ContainersSettingsPane\s+v-else-if="activeTab === 'containers'"\s+@navigate="goToTab"\s*\/>/
+    )
     expect(read('src/renderer/src/stores/ui.ts')).toMatch(/\| 'containers'\n {2}\| 'prStack'/)
     for (const locale of ['en', 'pt-BR']) {
       const msgs = JSON.parse(read(`src/renderer/src/i18n/${locale}.json`))

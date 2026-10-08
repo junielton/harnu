@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import SettingHint from './ui/SettingHint.vue'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
+import type { SettingsTabId } from '../stores/ui'
 import type { ContainersPrefs } from '../../../preload'
 
 /**
@@ -16,8 +17,14 @@ import type { ContainersPrefs } from '../../../preload'
  * Main clamps every write (`normalizePrefs`), and the pane re-syncs from its
  * answer, so a field always shows what was persisted. A new "Zombie after"
  * re-sorts the stacks right away: main rescans when the threshold changes.
+ *
+ * T443: these are the INSPECTOR's settings, not cleanup settings. A stack that runs from a worktree
+ * takes its verdict from Workspace GC (Settings → Cleanup), so what is left here is the inspector's
+ * own scan timer and the idle clock for stacks GC has not judged (no worktree). The note at the top
+ * says so and links to the Cleanup tab through `navigate`, which the Settings dialog handles.
  */
 
+const emit = defineEmits<{ navigate: [tab: SettingsTabId] }>()
 const { t } = useI18n()
 
 const loading = ref(true)
@@ -97,8 +104,24 @@ onBeforeUnmount(() => {
       >
         {{ t('containers.settings.eyebrow') }}
       </div>
-      <p class="text-text-3" style="font-size: 11.5px; line-height: 1.5; margin-bottom: 14px">
-        {{ t('containers.settings.intro') }}
+      <p class="text-text-3" style="font-size: 11.5px; line-height: 1.5; margin-bottom: 8px">
+        {{ t('containers.settings.gcNote.intro') }}
+      </p>
+      <!-- Worktree stacks are judged and cleaned by Workspace GC: say where those controls live. -->
+      <p
+        class="text-text-3"
+        style="font-size: 11.5px; line-height: 1.5; margin-bottom: 14px"
+        data-testid="containers-gc-note"
+      >
+        {{ t('containers.settings.gcNote.text') }}
+        <button
+          type="button"
+          class="text-accent hover:underline"
+          data-testid="containers-open-cleanup-settings"
+          @click="emit('navigate', 'cleanup')"
+        >
+          {{ t('containers.settings.gcNote.link') }}
+        </button>
       </p>
 
       <div class="flex items-start justify-between" style="gap: 12px">
@@ -139,7 +162,7 @@ onBeforeUnmount(() => {
           <div class="text-text-2" style="font-size: 12px">
             {{ t('containers.settings.zombieAfter.label') }}
           </div>
-          <SettingHint>{{ t('containers.settings.zombieAfter.hint') }}</SettingHint>
+          <SettingHint>{{ t('containers.settings.gcNote.zombieHint') }}</SettingHint>
         </div>
         <div class="flex items-center" style="gap: 6px">
           <input

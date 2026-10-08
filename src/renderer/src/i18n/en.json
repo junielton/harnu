@@ -2114,18 +2114,8 @@
   "cleanup": {
     "title": "Cleanup",
     "close": "Close Cleanup",
-    "kpis": "{items} items · {harvestable} harvestable · {size} reclaimable",
-    "groupSummary": "{worktrees} worktrees · {branches} branches · {folders} folders",
     "scanNow": "Scan now",
-    "scannedAgo": "scanned {ago}",
     "sweep": "Sweep {count} green · {size}",
-    "sweepGroup": "Sweep {count}",
-    "selectRow": "Select {what}",
-    "selection": {
-      "count": "{count} selected",
-      "sweep": "Sweep {count} selected",
-      "clear": "Clear selection"
-    },
     "kind": {
       "worktree": "worktree",
       "localBranch": "local branch",
@@ -2148,8 +2138,7 @@
       "harvestable": "harvestable",
       "harvestableRemote": "harvestable · remote",
       "blocked": "blocked",
-      "unknown": "insufficient signal",
-      "active": "session live"
+      "unknown": "insufficient signal"
     },
     "blocker": {
       "dirty": "uncommitted changes",
@@ -2161,18 +2150,6 @@
       "detachedHead": "detached HEAD — no branch"
     },
     "trashTitle": "Clean up: {what}",
-    "filterBar": {
-      "searchPlaceholder": "Search branch or folder…",
-      "searchLabel": "Search cleanup items",
-      "verdictLabel": "Filter by verdict",
-      "verdict": {
-        "all": "All",
-        "harvestable": "Harvestable",
-        "blocked": "Blocked",
-        "unknown": "Unknown"
-      }
-    },
-    "filterEmptyState": "No items match your filters.",
     "sweepConfirm": {
       "title": "Sweep {count} green items?",
       "subtitle": "Folders go to the system trash. Local branches stay recoverable via reflog for ~30 days. Every action is logged to the cleanup journal.",
@@ -2196,21 +2173,11 @@
     "recent": "Recent cleanups",
     "sweptAgo": "swept {ago}",
     "was": "was {sha}",
-    "emptyState": "Nothing to clean — every branch and worktree is either active or already tidy.",
-    "footerPill": "Cleanup",
-    "a11yFooterPill": "Open Cleanup — {count} harvestable items",
     "notifyTitle": "{count} items closed the cycle",
     "notifyBody": "{size} reclaimable — open Cleanup to sweep",
     "settings": {
-      "eyebrow": "Background scan",
-      "intro": "Reaper scans this repo's branches and worktrees on a timer and quietly logs anything that becomes safe to clean — no toast, no sound, just a notification-center entry.",
       "autoScan": {
-        "label": "Automatic background scan",
-        "hint": "Runs the same classifier as Scan now, on a timer, without opening the Cleanup view."
-      },
-      "interval": {
-        "label": "Scan interval",
-        "hint": "How often the background scan runs while auto-scan is on."
+        "label": "Automatic background scan"
       },
       "interval30m": "30m",
       "interval1h": "1h",
@@ -2253,10 +2220,8 @@
       "dehydrate": "Dehydrate {what}",
       "dehydrateSize": "Dehydrate {what} — frees {size}",
       "dehydrateNoSetup": "Dehydrate {what} — Harnu cannot rehydrate it",
-      "rehydrate": "Rehydrate {what}",
-      "dehydrateGroup": "Dehydrate {count} idle worktrees in {repo}"
+      "rehydrate": "Rehydrate {what}"
     },
-    "dehydrateGroup": "Dehydrate {count} idle",
     "toast": {
       "rehydrated": "Rehydrated {what}",
       "rehydrateChanged": "Setup modified tracked files: {files}",
@@ -2290,6 +2255,395 @@
       "totalsUnknown": "{worktrees} worktrees · {size} back · {unknown} not measured",
       "failed": "{path}: {error}",
       "trackedChanged": "Tracked files changed during removal — nothing tracked should ever be touched: {files}"
+    },
+    "gc": {
+      "bucket": {
+        "header": {
+          "ready": "Ready to clean",
+          "review": "Needs review",
+          "in-use": "In use"
+        },
+        "ready": "Ready to clean",
+        "review": "Needs review",
+        "in-use": "In use"
+      },
+      "map": {
+        "canvasLabel": "Disk usage map",
+        "blockLabel": "{name}, {bucket}, {size}",
+        "blockLabelState": "{name}, {bucket}, {size}, {state}",
+        "state": {
+          "busy": "cleaning",
+          "done": "freed",
+          "failed": "failed"
+        },
+        "freed": "freed",
+        "aggregate": "{count} smaller",
+        "aggregateLabel": "{count} smaller worktrees, {bucket}, {size}",
+        "selectAll": "Select all in repo",
+        "selectAllAria": "Select all Needs review worktrees in {repo}",
+        "repoMeta": "{count} worktree · {size} | {count} worktrees · {size}",
+        "drillRepo": "Open {repo} on its own",
+        "drillBack": "All repos",
+        "filterLabel": "Show bucket",
+        "filterAll": "All",
+        "noBytes": "This system cannot measure disk sizes, so there is nothing to draw. Use the list view.",
+        "empty": "No worktrees to show."
+      },
+      "reason": {
+        "dirty": "Merged, but it has uncommitted changes to tracked files.",
+        "unpushed": "Merged, but it has commits that were never pushed.",
+        "openIdleSession": "A session is still open here, though idle.",
+        "closedUnmerged": "The pull request was closed without being merged.",
+        "remoteGone": "The remote branch is gone and no pull request records a merge.",
+        "detached": "Detached HEAD, so there is no branch to judge.",
+        "unknownFate": "Harnu could not tell what became of this branch.",
+        "weakMergeSignal": "Looks merged, but the local tip differs from the merged one.",
+        "sharedStack": "Another Docker stack also runs from this worktree.",
+        "cleanupFailed": "The last cleanup stopped before it finished.",
+        "noKnownWorktree": "No known worktree uses this volume.",
+        "ready": "Merged, clean and idle past the grace period.",
+        "pathUnresolved": "The worktree has a path Harnu could not resolve to its real location, so it cannot tell what uses it.",
+        "nestedWorktree": "Another worktree lives inside this one, and removing this one would trash it too.",
+        "locked": "This worktree is locked in git"
+      },
+      "step": {
+        "stopStack": "Stop the stack",
+        "rmContainers": "Remove containers",
+        "archive": "Archive the code",
+        "dropDeps": "Remove dependencies",
+        "trash": "Trash the checkout",
+        "prune": "Prune the worktree",
+        "branchDelete": "Delete the branch",
+        "unknown": "an unknown step",
+        "reprobe": "Check it again",
+        "rmVolumes": "Remove volumes",
+        "detach": "Detach the worktree"
+      },
+      "panel": {
+        "close": "Close panel",
+        "project": "Compose project {project}",
+        "projectUnknown": "Unknown project",
+        "compositionLabel": "Size composition",
+        "deps": "Dependencies",
+        "checkout": "Checkout",
+        "volumesNoSize": "Volumes (size not reported): {names}",
+        "whyTitle": "Why it is here",
+        "takesTitle": "Takes with it",
+        "takes": {
+          "stack": "Its Docker stack | {count} Docker stacks",
+          "volume": "Volumes: {names}",
+          "deps": "Its dependency folders",
+          "checkout": "The checkout",
+          "branch": "The local branch {branch}"
+        },
+        "volumesCannotRestore": "Volumes cannot be restored.",
+        "copyError": "Copy error",
+        "copied": "Copied",
+        "cleaning": "Cleaning…",
+        "cleanNow": "Clean now",
+        "retry": "Retry",
+        "remove": "Remove",
+        "dehydrate": "Dehydrate",
+        "rehydrate": "Rehydrate",
+        "keep": "Keep",
+        "ask": "Ask for an opinion",
+        "askSoon": "coming in S6",
+        "volumesKept": "Its volumes ({names}) are kept. They show up in Needs review afterwards.",
+        "readyNote": "Cleaned on the next cycle, or now with Clean now.",
+        "inUseNote": "Left alone while a session works here or its pull request is open.",
+        "happenedTitle": "What happened",
+        "stoppedAt": "Stopped at “{step}”",
+        "nothingChanged": "Nothing was changed.",
+        "genericStop": "Harnu stopped this item for a safety check.",
+        "removeBlocked": "Remove is unavailable: this folder holds another worktree. Remove or move that one first.",
+        "removeLocked": "Remove is unavailable: git has this worktree locked. Unlock it first."
+      },
+      "list": {
+        "label": "Worktrees by bucket",
+        "empty": "No worktrees to show."
+      },
+      "hero": {
+        "clean": "Clean {n} ready · {size} | Clean {n} ready · {size}",
+        "empty": "Nothing to clean",
+        "chip": "Cleaning {done}/{total} · {size} freed"
+      },
+      "selection": {
+        "label": "Selection",
+        "count": "{count} selected · {size}",
+        "remove": "Remove selected",
+        "dehydrate": "Dehydrate",
+        "keep": "Keep",
+        "ask": "Ask for an opinion",
+        "askSoon": "coming in S6",
+        "shiftHint": "click to add more",
+        "clear": "Clear selection"
+      },
+      "confirm": {
+        "titleWorktrees": "Remove {n} worktree? | Remove {n} worktrees?",
+        "titleItems": "Remove {n} item? | Remove {n} items?",
+        "listLabel": "Items to remove",
+        "worktreeRow": "{repo} › {name}",
+        "volumeRow": "Docker volume {name}",
+        "volumeProject": "Project {project}",
+        "noWorktree": "No known worktree",
+        "riskMarker": "May hold work that no other branch has",
+        "warnRisk": "{n} of these holds work that no other branch has. Its code stays recoverable from the archive refs and the OS trash. | {n} of these hold work that no other branch has. Their code stays recoverable from the archive refs and the OS trash.",
+        "warnVolumesLost": "Volumes cannot be restored.",
+        "warnVolumesKept": "Volumes are kept. They show up in Needs review afterwards.",
+        "warnRecover": "Code and branch come back from the archive refs and the OS trash, and dependencies come back through the repo's setup.",
+        "cancel": "Cancel",
+        "confirmWorktrees": "Remove {n} worktree | Remove {n} worktrees",
+        "confirmItems": "Remove {n} item | Remove {n} items",
+        "titleReady": "Clean {n} ready item? | Clean {n} ready items?",
+        "subtitleReady": "Each one is merged, clean and idle past its grace period. Everything listed below is removed.",
+        "confirmReady": "Clean {n} ready | Clean {n} ready",
+        "subtitleReview": "You picked these yourself, so Harnu could not prove they are safe. Everything listed below is removed.",
+        "changed": "This changed since you opened it — review again.",
+        "breakdown": {
+          "stacks": "{n} stack stopped | {n} stacks stopped",
+          "deps": "{n} dependency folder removed | {n} dependency folders removed",
+          "worktrees": "{n} worktree trashed | {n} worktrees trashed",
+          "volumes": "{n} volume deleted | {n} volumes deleted"
+        },
+        "totalReady": "{n} ready · {size}",
+        "totalSelected": "{n} selected · {size}",
+        "close": "Close",
+        "branchSub": "branch {branch}"
+      },
+      "chip": {
+        "stack": "stack",
+        "volume": "volume",
+        "deps": "deps",
+        "checkout": "checkout",
+        "branch": "branch",
+        "title": {
+          "stack": "The Docker stack is stopped and its containers removed",
+          "volume": "An orphan volume, with no worktree: removed only after you confirm it, and it cannot be restored",
+          "deps": "Dependency folders are deleted; the repo's setup brings them back",
+          "checkout": "The checkout goes to the OS trash",
+          "branch": "The local branch is deleted after it is archived"
+        }
+      },
+      "firstCycle": {
+        "label": "First cleanup report",
+        "title": "Found {n} ready item, {size} — enable autopilot? | Found {n} ready items, {size} — enable autopilot?",
+        "sub": "The first cycle only reports; nothing is deleted until you turn it on.",
+        "enable": "Enable autopilot",
+        "dismiss": "Not now"
+      },
+      "docker": {
+        "title": "Docker",
+        "buildCache": "Build cache",
+        "danglingImages": "Dangling images",
+        "orphanVolumes": "Orphan volumes",
+        "reclaimed": "Last cycle reclaimed {size}",
+        "unavailable": "Size unavailable — Docker did not answer",
+        "olderThan": "Older than {n} day | Older than {n} days",
+        "danglingSub": "Untagged images that no container uses",
+        "volumesCount": "{n} volume · {size} | {n} volumes · {size}",
+        "cantRestore": "Can't be restored",
+        "projects": "Projects: {names}",
+        "more": "+{n} more",
+        "toggleCache": "Clean build cache automatically",
+        "toggleImages": "Clean dangling images automatically",
+        "inspect": "Inspect stacks",
+        "volumesNote": "Never removed automatically. Remove each one yourself in Needs review.",
+        "reclaimable": "{size} reclaimable",
+        "imagesCount": "{n} image · {size} | {n} images · {size}",
+        "sub": {
+          "size": "runs each cycle · {size}",
+          "plain": "runs each cycle",
+          "off": "Docker cleaning is off"
+        },
+        "splitLabel": "Docker figures by size: build cache, dangling images, orphan volumes",
+        "hidden": {
+          "size": "hidden",
+          "unresolvedCompose": "Orphan volumes are hidden because a compose project name couldn't be resolved in: {folders}",
+          "scanLimit": "Orphan volumes are hidden because the compose scan hit its limit in: {folders}"
+        }
+      },
+      "split": {
+        "label": "Disk split",
+        "auto": "Ready to clean",
+        "untouched": "In use",
+        "count": "{n} item | {n} items",
+        "lastCycle": "Last cycle {ago}: cleaned {n}, freed {size}",
+        "lastCycleReport": "Last cycle {ago}: found {n} ready item, {size} (report only) | Last cycle {ago}: found {n} ready items, {size} (report only)",
+        "review": "Needs review",
+        "running": "Cleaning now · {n} left",
+        "runningNow": "Cleaning now",
+        "cache": "Docker (cleaned each cycle)",
+        "cacheShort": "Docker"
+      },
+      "status": {
+        "reclaimable": "{size} reclaimable",
+        "autopilotOn": "autopilot on",
+        "autopilotOff": "autopilot off",
+        "next": {
+          "minute": "next cycle in {n} min",
+          "hour": "next cycle in {n} h",
+          "day": "next cycle in {n} d"
+        },
+        "badgeOn": "Autopilot on · every {every}",
+        "badgeOff": "Autopilot off",
+        "everyMinutes": "{n} min",
+        "everyHours": "{n} h",
+        "everyDay": "day"
+      },
+      "view": {
+        "map": "Map",
+        "list": "List",
+        "label": "Cleanup view",
+        "noBytes": "Disk sizes are not available on this system, so only the list can be shown."
+      },
+      "toolbar": {
+        "autopilotSettings": "Autopilot settings"
+      },
+      "empty": {
+        "title": "All clean",
+        "subtitle": "Nothing to reclaim.",
+        "subtitleAgo": "Nothing to reclaim. Autopilot checked {ago}."
+      },
+      "loading": "Looking at your worktrees and Docker…",
+      "loadError": "Could not load the cleanup report: {error}",
+      "other": {
+        "title": "Other leftovers",
+        "intro": "Branches and folders that are not worktrees."
+      },
+      "toast": {
+        "success": "Freed {size} · {count} ready item cleaned | Freed {size} · {count} ready items cleaned",
+        "partial": "{cleaned} cleaned · {failed} needs review | {cleaned} cleaned · {failed} need review",
+        "review": "Review",
+        "viewJournal": "View journal"
+      },
+      "footer": {
+        "running": "Cleaning {done}/{total}",
+        "attention": "{n} needs review | {n} need review",
+        "a11yRunning": "Cleaning: {done} of {total} done. Open Cleanup",
+        "a11yAttention": "{n} item needs review. Open Cleanup | {n} items need review. Open Cleanup",
+        "a11yIdle": "Open Cleanup — {size} reclaimable"
+      },
+      "settings": {
+        "autopilot": {
+          "eyebrow": "Autopilot",
+          "intro": "Cleans proven ready worktrees (merged, clean, idle worktrees) on the background timer. The first cycle after you turn it on only reports what it found; automatic cleaning starts once you acknowledge that report in Cleanup.",
+          "label": "Clean ready worktrees automatically",
+          "hint": "Needs the background scan below to stay on: the cleanup runs on the same timer."
+        },
+        "interval": {
+          "label": "Run every",
+          "hint": "One timer drives both the scan and the cleanup."
+        },
+        "grace": {
+          "label": "Grace period",
+          "hint": "A worktree must be quiet this long, with no session activity and no container start or stop, before it counts as ready to clean."
+        },
+        "cap": {
+          "label": "Per-cycle cap",
+          "hint": "The most worktrees one automatic cycle cleans. The rest wait for the next cycle.",
+          "suffix": "worktrees"
+        },
+        "daysSuffix": "days",
+        "clean": {
+          "eyebrow": "What it cleans",
+          "intro": "These switches govern the autopilot. Cleaning by hand from the Cleanup screen always asks you first."
+        },
+        "categories": {
+          "worktrees": {
+            "label": "Worktrees",
+            "hint": "Merged, clean, idle worktrees, and the Docker stacks that run from them."
+          },
+          "dockerCache": {
+            "label": "Docker build cache and dangling images",
+            "hint": "Prunes build cache older than the age below and images no container uses. Never touches an image a stack uses."
+          }
+        },
+        "cacheMaxAge": {
+          "label": "Build cache max age",
+          "hint": "Build cache older than this is pruned."
+        },
+        "never": {
+          "eyebrow": "Never clean",
+          "intro": "Repos or worktrees listed here are never cleaned, automatically or by hand. Use absolute paths.",
+          "label": "Add a path to never clean",
+          "empty": "Nothing is protected yet.",
+          "placeholder": "/path/to/repo",
+          "add": "Add",
+          "removeLabel": "Remove",
+          "remove": "Remove {path} from the never-clean list",
+          "invalid": "Enter an absolute path, such as /work/my-repo."
+        },
+        "scan": {
+          "eyebrow": "Background scan and branches",
+          "intro": "Cleanup scans every known repo on a timer and logs what becomes safe to clean. These settings also cover local and remote branches.",
+          "autoScanHint": "Runs the scan on a timer without opening Cleanup. The autopilot rides this scan, so turning it off also stops the autopilot."
+        },
+        "volumesRule": {
+          "title": "Docker volumes are always kept",
+          "body": "Cleaning a worktree, by hand or automatically, never removes its volumes. Once the worktree is gone they show up in Needs review as orphan volumes, with their size and compose project, and you remove each one yourself.",
+          "warning": "A removed volume and its data cannot be restored."
+        }
+      },
+      "refusal": {
+        "changedSinceConfirm": "Changed since you confirmed — review it again.",
+        "needsConfirmation": "Needs your confirmation first. Select it and choose Remove.",
+        "missingExpected": "Cleanup could not check it against what you were shown. Review it and try again.",
+        "noLongerOrphan": "This volume is in use again, so it was left alone.",
+        "kept": "You marked it Keep, so it was left alone.",
+        "neverClean": "It is on your never-clean list, so it was left alone.",
+        "mainCheckout": "This is a main checkout, which is never cleaned.",
+        "unsupportedKind": "Harnu cannot clean this kind of folder yet.",
+        "unknownItem": "Cleanup no longer knows this item. Refresh and try again.",
+        "several": "{n} items were left alone for different reasons. Open each one to see why.",
+        "inUse": "It is in use, so it was left alone.",
+        "tipUnknown": "Harnu could not tell which commit this worktree is on, so it left it alone.",
+        "protectedNow": "It is protected now (a main checkout, a never-clean path or a Keep mark), so it was left alone.",
+        "changedSinceScan": "It changed since the last scan, so it was left alone. Scan again and review it.",
+        "graceNotElapsed": "It has not been quiet long enough yet, so it was left alone.",
+        "notReady": "It is no longer ready to clean, so it was left alone.",
+        "pathUnresolved": "A path tied to this worktree could not be resolved, so Harnu cannot tell what uses it and left it alone.",
+        "stackPresent": "A Docker stack is running from this worktree, so it was left alone.",
+        "dockerUnavailable": "Docker did not answer, so Harnu could not check this worktree safely and left it alone.",
+        "probeFailed": "Checking this worktree failed, so it was left alone.",
+        "nestedWorktree": "Another worktree lives inside this one, so it was left alone.",
+        "sharedStack": "Another stack also runs from this worktree, so it was left alone.",
+        "headMoved": "A new commit landed on this worktree, so it was left alone.",
+        "notHarvestable": "Cleanup no longer considers it finished, so it was left alone.",
+        "sessionOpen": "A session is open in this worktree, so it was left alone.",
+        "unpushed": "It has commits that were never pushed, so it was left alone.",
+        "volumeInUse": "A volume is still in use by a container, so it was left alone.",
+        "changedMidRun": "It changed while the clean was running, so Harnu stopped.",
+        "dirty": "It has uncommitted changes now, so it was left alone.",
+        "foreignCheckout": "Another repository is checked out inside this folder, so it was left alone.",
+        "cannotUnregister": "Harnu couldn't match this worktree to a single git registration, so nothing was touched."
+      },
+      "review": {
+        "title": "Needs review",
+        "askAll": "Ask for an opinion on all {count}",
+        "askSoon": "coming in S6",
+        "empty": "Nothing needs review.",
+        "showAll": "Show all {count}",
+        "rowAria": "{name}, {size}",
+        "selectRow": "Select {name}",
+        "removeAria": "Remove {name}",
+        "dehydrateAria": "Dehydrate {name}",
+        "keepAria": "Keep {name}",
+        "volumeProject": "Docker volume · {project}",
+        "volumeUnknown": "Docker volume · unknown project",
+        "hintShift": "click selects several",
+        "hintOpen": "opens the panel"
+      },
+      "error": {
+        "clean": "Could not start the clean",
+        "keep": "Could not keep that"
+      },
+      "legend": {
+        "ready": "Ready to clean · cleaned by one click or the autopilot",
+        "review": "Needs review · your call",
+        "inUse": "In use · never touched",
+        "area": "Block area = size on disk · click a block to act",
+        "label": "Legend"
+      }
     }
   },
   "containers": {
@@ -2297,7 +2651,6 @@
     "close": "Close Containers",
     "settings": {
       "eyebrow": "Background scan",
-      "intro": "Harnu scans docker on a timer, so the footer pill stays current while the Containers view is closed.",
       "autoScan": {
         "label": "Scan in the background",
         "hint": "Runs the same scan as Scan now, on a timer, without opening Containers."
@@ -2312,12 +2665,17 @@
       "intervalDaily": "Daily",
       "zombieAfter": {
         "label": "Zombie after",
-        "hint": "A worktree's stack that nobody has used for this many days is a zombie. The rows re-sort as soon as you change it.",
         "daysSuffix": "days"
       },
       "notify": {
         "label": "Notify me about new zombies",
         "hint": "The first time a stack becomes a zombie, adds one entry to the notification center — no toast, no sound."
+      },
+      "gcNote": {
+        "intro": "These settings drive the Containers inspector: its own scan, and how long a stack waits before it counts as a zombie.",
+        "text": "A stack that runs from a worktree takes its verdict from Cleanup, so the controls for those live there.",
+        "link": "Open Cleanup settings",
+        "zombieHint": "A stack that Cleanup has not judged and that nobody has used for this many days is a zombie. Stacks that run from a worktree follow that worktree's state in Cleanup instead. The rows re-sort as soon as you change it."
       }
     },
     "newZombies": {
@@ -2325,8 +2683,6 @@
       "body": "{names} — open Containers to review",
       "more": "+{n} more"
     },
-    "footerPill": "Containers",
-    "a11yFooterPill": "Containers: {n} stack needs you | Containers: {n} stacks need you",
     "scannedAgo": "scanned {ago}",
     "readingDocker": "reading docker…",
     "scanNow": "Scan now",
@@ -2334,8 +2690,6 @@
     "scanAgain": "Scan again",
     "stopRunning": "Stop {n} running",
     "stoppingRunning": "Stopping…",
-    "sweep": "Clean up {n} stack | Clean up {n} stacks",
-    "sweeping": "Cleaning… {done} of {total}",
     "hero": {
       "ramFreed": "RAM freed by stopping zombie stacks",
       "portsReleased": "host ports released",
@@ -2372,11 +2726,6 @@
     "quickStop": {
       "stack": "Stop stack",
       "container": "Stop container"
-    },
-    "select": {
-      "stack": "Include {name} in the clean-up",
-      "all": "Select every stack",
-      "none": "Clear the selection"
     },
     "ago": {
       "justNow": "just now",
@@ -2559,16 +2908,8 @@
       "confirm": "Remove {n} container | Remove {n} containers",
       "removing": "Removing…"
     },
-    "sweepDialog": {
-      "title": "Clean up {n} stack? | Clean up {n} stacks?",
-      "body": "{n} container will be removed. | {n} containers will be removed.",
-      "stackContainers": "{n} container | {n} containers",
-      "volumes": "Also remove {n} volume · {size} | Also remove {n} volumes · {size}",
-      "partial": "Cleaned {done} of {total} stack. This one was not: | Cleaned {done} of {total} stacks. These were not:",
-      "failedStack": "{name} — {reason}",
-      "changed": "The list changed while this dialog was open, so nothing was deleted. Check what the clean-up would take now and confirm again.",
-      "moved": "The list changed while this dialog was open, so it was refreshed and nothing was removed. Check what the clean-up would take now and confirm again."
-    }
+    "openCleanup": "Open Cleanup · {n} stack | Open Cleanup · {n} stacks",
+    "openCleanupTitle": "Cleaning up stacks now happens in Cleanup"
   },
   "prStack": {
     "title": "PR Stack",

@@ -26,6 +26,8 @@ export const ALLOWED_PATHS = [
   /^src\/renderer\/src\/components\/SettingsDialog\.vue$/,
   // Fixtures that exercise locale, unicode or non-English input handling.
   /^tests\/push-relay\.test\.ts$/,
+  // Asserts the pt-BR name of the review bucket (D2): a locale fixture.
+  /^tests\/cleanup-gc-i18n\.test\.ts$/,
   /^tests\/branch-slug\.test\.ts$/,
   /^tests\/claude-watcher\.test\.ts$/,
   /^tests\/pr-stack-format\.test\.ts$/,
