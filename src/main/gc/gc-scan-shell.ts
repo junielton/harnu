@@ -14,7 +14,8 @@ import {
   computeFolderSets,
   lastFateInputs,
   lastSnapshot,
-  listAllWorktreePaths
+  listAllWorktreePaths,
+  listLockedWorktreePaths
 } from '../reaper/scanner-shell'
 import { inspectAll, runDocker } from '../containers/containers-shell'
 import { journalFile, readJournal as readContainersJournal } from '../containers/containers-journal'
@@ -23,14 +24,21 @@ import {
   attributionRung,
   groupStacks,
   harnuStopTimes,
+  normalizePath,
   parseDfVolumes,
   type InspectedContainer,
   type KnownFolder,
   type VolumeFact
 } from '../containers/containers-core'
-import { buildBundles, containerFolderPaths, type CanonicalPath } from './bundle-core'
+import {
+  buildBundles,
+  containerFolderPaths,
+  staleReleases,
+  type CanonicalPath
+} from './bundle-core'
 import { dockerIsUnavailable, findForeignCheckouts, resolveRealPaths } from './gc-shell'
 import { collectForeignCheckouts, explainFailedWalks } from './gc-foreign'
+import { lockedItemIds } from './gc-locked'
 import { sessionsFromFleet } from './gc-sessions'
 import {
   attributeBySlug,
@@ -73,6 +81,8 @@ export interface GcGathered extends GcGather {
   orphanVolumes: OrphanVolumeItem[]
   /** Keep marks whose branch fate has changed since; the caller clears them from the prefs. */
   staleKeeps: StaleKeep[]
+  /** Releases whose bundle is gone or no longer strongly merged; the caller clears them. */
+  staleReleases: string[]
 }
 
 const COMPOSE_FILES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml']
@@ -161,6 +171,31 @@ async function everyKnownFolder(repoPaths: string[], itemPaths: string[]): Promi
   ]
 }
 
+/** The tip each release was made at; a mark that recorded none is left out and never applies. */
+function releasedTipsOf(prefs: GcPrefs): Map<string, string> {
+  const tips = new Map<string, string>()
+  for (const [id, from] of Object.entries(prefs.releasedFrom)) {
+    if (from.localTip) tips.set(id, from.localTip)
+  }
+  return tips
+}
+
+/** The folders among `paths` that are gone. An unreadable one is not gone: it stays. */
+async function missingFolders(paths: readonly string[]): Promise<Set<string>> {
+  const gone = new Set<string>()
+  await Promise.all(
+    [...new Set(paths)].map(async (p) => {
+      try {
+        await fs.stat(p)
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code
+        if (code === 'ENOENT' || code === 'ENOTDIR') gone.add(p)
+      }
+    })
+  )
+  return gone
+}
+
 export async function gatherGc(
   prefs: GcPrefs,
   now: number,
@@ -172,13 +207,15 @@ export async function gatherGc(
   const repoPaths = snap?.repos.map((r) => r.repoPath) ?? []
   const itemPaths = items.flatMap((i) => (i.path ? [i.path] : []))
 
-  const [{ containers, df, available }, sets, fleet, known, journal] = await Promise.all([
-    dockerPicture(),
-    computeFolderSets(),
-    getFleetFolders(),
-    everyKnownFolder(repoPaths, itemPaths),
-    readContainersJournal(journalFile(app.getPath('userData')))
-  ])
+  const [{ containers, df, available }, sets, fleet, known, journal, lockedPaths] =
+    await Promise.all([
+      dockerPicture(),
+      computeFolderSets(),
+      getFleetFolders(),
+      everyKnownFolder(repoPaths, itemPaths),
+      readContainersJournal(journalFile(app.getPath('userData'))),
+      listLockedWorktreePaths(repoPaths)
+    ])
 
   // Sessions on real paths: the folders of every running session and every item are read
   // through their real locations, so a session reached through a symlink still counts.
@@ -252,7 +289,8 @@ export async function gatherGc(
       ...sessions.keys(),
       ...stackPaths.values(),
       ...prefs.neverClean,
-      ...guards.knownFolders
+      ...guards.knownFolders,
+      ...lockedPaths
     ],
     (p) => fs.realpath(p)
   )
@@ -281,7 +319,11 @@ export async function gatherGc(
     knownFolders: bundleFolders,
     protectedProjects: guards.protectedProjects,
     canonical,
-    foreignCheckouts: foreign.found
+    foreignCheckouts: foreign.found,
+    released: new Map(Object.entries(prefs.released)),
+    releasedTips: releasedTipsOf(prefs),
+    // Git's own lock: such a worktree cannot be unregistered, so it is review, not ready.
+    locked: lockedItemIds(items, lockedPaths, canonical, process.platform)
   }
   // A Keep mark holds only while the fate it was made under still holds: judge the fates
   // first, then rebuild with the marks that are still valid.
@@ -292,6 +334,25 @@ export async function gatherGc(
   // An unreadable transcripts root says nothing about recent activity: nothing is ready.
   if (transcripts.rootUnreadable) bundles = withGraceUnknown(bundles)
 
+  // A release is dropped only when its bundle is in this gather and no longer strongly merged,
+  // so a branch that reopens does not come back pre-released. A gather that cannot see the
+  // bundle (app start, before the first scan) leaves the mark alone.
+  // The cleaned case also needs the disk: only the folders of marks whose bundle is absent
+  // from a repo that WAS scanned are looked at, and only "not found" counts as gone.
+  const scannedRepos = new Set(repoPaths.map((p) => normalizePath(p, process.platform)))
+  const inGather = new Set(bundles.map((b) => b.item.id))
+  const missingPaths = await missingFolders(
+    Object.keys(prefs.released).flatMap((id) => {
+      const from = prefs.releasedFrom[id]
+      const scanned = from && scannedRepos.has(normalizePath(from.repoPath, process.platform))
+      return from && scanned && !inGather.has(id) ? [from.path] : []
+    })
+  )
+  const staleReleaseIds = staleReleases(bundles, prefs.released, {
+    scannedRepos,
+    from: prefs.releasedFrom,
+    missingPaths
+  })
   const volumes = toHousekeepingVolumes(df)
   const housekeeping = {
     volumes,
@@ -323,6 +384,7 @@ export async function gatherGc(
     // With docker absent there are no volumes to hide, so the card carries no explanation.
     docker: available ? withOrphanVolumesHidden(docker, guards.hidden) : docker,
     orphanVolumes: orphanVolumeItems(orphanNames, df),
-    staleKeeps
+    staleKeeps,
+    staleReleases: staleReleaseIds
   }
 }

@@ -306,6 +306,15 @@ const translateListWorkers: Translator = (_args, gateFolder) => {
   return input
 }
 
+// T445: a worktree is named by its folder (the gate anchor) or by the id list_cleanup listed;
+// an id carries no folder, and the handler refuses a blocked repo itself.
+const translateReleaseWorktree: Translator = (args, gateFolder) => {
+  const input: Record<string, unknown> = {}
+  if (gateFolder) input.folder = gateFolder
+  if (args.id !== undefined) input.id = args.id
+  return input
+}
+
 // T329: the Containers actions address stacks by id, never a folder, so there
 // is no gate folder to carry; a blocked folder's stack is refused per stack by
 // the handler. Fields pass through untouched so the validator does the
@@ -407,6 +416,9 @@ const TRANSLATORS: { [K in McpOp]: Translator } = {
   list_workers: translateListWorkers,
   // T328: the same optional `{ folder }` shape as list_workers.
   list_containers: translateListWorkers,
+  // T445: both gate on the `folder` arg, like list_containers / adopt_folder.
+  list_cleanup: translateListWorkers,
+  release_worktree: translateReleaseWorktree,
   stop_containers: translateStopContainers,
   start_containers: translateStartContainers,
   remove_containers: translateRemoveContainers,

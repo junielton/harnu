@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest'
 const read = (p: string): string => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8')
 const ipc = read('src/main/gc/gc-ipc.ts')
 const scan = read('src/main/gc/gc-scan-shell.ts')
+const gatherSrc = read('src/main/gc/gc-gatherer.ts')
 const reaper = read('src/main/reaper/reaper-ipc.ts')
 const containersShell = read('src/main/containers/containers-shell.ts')
 
@@ -102,12 +103,14 @@ describe('the feeds are wired (M12, M13, M14, M17)', () => {
 })
 
 describe('every consumer sees a halted item as Needs review (delta 1, item 4)', () => {
-  it('gather() applies the failures before it caches and feeds anything', () => {
-    const gather = between(ipc, 'const gather = ', 'const queue = createJobQueue')
-    const applied = gather.indexOf('withFailures(')
-    expect(applied).toBeGreaterThanOrEqual(0)
-    expect(applied).toBeLessThan(gather.indexOf('cache = g'))
-    expect(applied).toBeLessThan(gather.indexOf('setInheritedBuckets('))
+  // The ordering itself (failures applied before anything is cached or fed) is pinned by
+  // behavior in tests/gc-gatherer.test.ts; here only the wiring into the shared state is read.
+  it('the gather runs on the one shared cycle state and feeds the Containers view', () => {
+    const gatherer = between(ipc, 'const gatherer = createGatherer(', 'const gather = ')
+    expect(gatherer).toMatch(/\bstate,/)
+    expect(gatherer).toMatch(
+      /feed: \(g\) => setInheritedBuckets\(bucketFeed\(g\.bundles, g\.canonical\)\)/
+    )
   })
 
   it('the cycle shares the same failure memory as the manual jobs', () => {
@@ -216,16 +219,23 @@ describe('Keep survives a stale cache (delta 3, item 1)', () => {
     expect(read('src/main/gc/gc-keep.ts')).toMatch(/keepFromFresh\(/)
   })
 
+  // The gather's persistence moved into gc-gatherer; its behavior is pinned in
+  // tests/gc-gatherer.test.ts. What is read here is only that the code still goes through it.
   it('a gather clears only the marks it judged, and only if they are still the same', () => {
-    expect(between(ipc, 'const gather = ', 'const queue = createJobQueue')).toMatch(
-      /withoutStaleKeeps\(prefs, g\.staleKeeps, protect\)/
+    expect(gatherSrc).toMatch(
+      /withoutStaleKeeps\(deps\.prefs\(\), g\.staleKeeps, deps\.protectedKeeps\?\.\(startedAt\)\)/
+    )
+    // ...and the protection (a Keep written since the gather began, or still provisional) is S3's.
+    expect(between(ipc, 'const gatherer = createGatherer(', 'const gather = ')).toMatch(
+      /protectedFromGather\(keepWrites, provisionalKeeps, startedAt\)/
     )
     expect(scan).toMatch(/judgeKeeps\(/)
   })
 
   it('a fresh gather waits for the one in flight and then starts its own', () => {
+    expect(gatherSrc).toMatch(/fresh: async[\s\S]*await gathering[\s\S]*return self\.gather\(\)/)
     expect(between(ipc, 'const gatherFresh', 'const queue = createJobQueue')).toMatch(
-      /await gathering[\s\S]*return gather\(\)/
+      /gatherer\.fresh\(\)/
     )
   })
 })
@@ -311,8 +321,13 @@ describe('Keep protects at once (delta 4, N1)', () => {
   })
 
   it('a gather protects provisional marks and marks written after it started', () => {
-    expect(between(ipc, 'const gather = ', 'const gatherFresh')).toMatch(
-      /protectedFromGather\(keepWrites, provisionalKeeps, startedAt\)[\s\S]*withoutStaleKeeps\(prefs, g\.staleKeeps, protect\)/
+    // The gather lives in gc-gatherer (behavior pinned in tests/gc-gatherer.test.ts); here only
+    // the S3 protection set is read to be wired into it.
+    expect(between(ipc, 'const gatherer = createGatherer(', 'const gather = ')).toMatch(
+      /protectedKeeps: \(startedAt\) =>\s*protectedFromGather\(keepWrites, provisionalKeeps, startedAt\)/
+    )
+    expect(gatherSrc).toMatch(
+      /withoutStaleKeeps\(deps\.prefs\(\), g\.staleKeeps, deps\.protectedKeeps\?\.\(startedAt\)\)/
     )
   })
 
@@ -349,5 +364,13 @@ describe('transcript activity fails closed (delta 5, item 3)', () => {
     expect(scan).toMatch(/attributeBySlug\(/)
     expect(scan).toMatch(/rootUnreadable/)
     expect(scan).toMatch(/withGraceUnknown\(/)
+  })
+})
+
+describe('a locked worktree is review at scan time (delta 6, item 2)', () => {
+  it('the gather lists git-locked worktrees and hands them to the bundle builder', () => {
+    expect(scan).toMatch(/listLockedWorktreePaths\(/)
+    expect(scan).toMatch(/lockedItemIds\(/)
+    expect(scan).toMatch(/locked: /)
   })
 })

@@ -301,10 +301,17 @@ describe('transcript activity fails closed (delta 5, item 3)', () => {
     }
     afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })))
 
-    it('a missing root is an empty root, not a failure: nothing was ever recorded', async () => {
-      const scan = await scanTranscripts(fsTranscriptProbe(join(tmp(), 'nope')), NOW)
+    it('a missing root while ~/.claude does not exist is an empty root: Claude was never used', async () => {
+      const scan = await scanTranscripts(fsTranscriptProbe(join(tmp(), '.claude', 'projects')), NOW)
       expect(scan.rootUnreadable).toBe(false)
       expect(scan.folders).toEqual([])
+    })
+
+    it('a missing root while ~/.claude exists is unreadable: transcripts may have moved or vanished', async () => {
+      const home = tmp()
+      mkdirSync(join(home, '.claude'))
+      const scan = await scanTranscripts(fsTranscriptProbe(join(home, '.claude', 'projects')), NOW)
+      expect(scan.rootUnreadable).toBe(true)
     })
 
     it('a root that is not a folder cannot be read: nothing may be ready', async () => {

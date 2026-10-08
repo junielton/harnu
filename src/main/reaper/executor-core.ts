@@ -78,7 +78,7 @@ const slashes = (p: string): string =>
  * when none does, or when more than one does: an ambiguous match is left alone.
  */
 export function matchAdminDir(
-  entries: ReadonlyArray<{ dir: string; gitdir: string }>,
+  entries: ReadonlyArray<{ dir: string; gitdir: string; locked?: boolean }>,
   worktreePath: string
 ): string | null {
   const target = `${slashes(worktreePath)}/.git`
@@ -88,7 +88,9 @@ export function matchAdminDir(
     return isAbsolute(g) || /^[A-Za-z]:[\\/]/.test(g) ? g : resolve(e.dir, g)
   }
   const hits = entries.filter((e) => slashes(absolute(e)) === target)
-  return hits.length === 1 ? hits[0]!.dir : null
+  // A lock counts toward ambiguity: a locked entry and a stale duplicate for the same folder
+  // are two matches, and a lone locked one is the user's "keep this registered".
+  return hits.length === 1 && hits[0]!.locked !== true ? hits[0]!.dir : null
 }
 
 function errorMessage(err: unknown): string {

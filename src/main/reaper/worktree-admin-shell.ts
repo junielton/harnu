@@ -11,7 +11,8 @@ import { matchAdminDir } from './executor-core'
 /**
  * The admin directory of the worktree at `worktreePath`, or null: nothing is registered for it,
  * the match is ambiguous, or the worktree is locked (a lock is the user's way of saying "keep
- * this registered", as with `git worktree prune`).
+ * this registered", as with `git worktree prune`). Locked entries count toward ambiguity, so a
+ * stale unlocked duplicate of a locked worktree can never become the unique match.
  */
 export async function findAdminDir(
   repoPath: string,
@@ -31,21 +32,18 @@ export async function findAdminDir(
   // Compare real locations: the item can be spelled through a symlinked parent while git
   // recorded the real path (or the other way round).
   const target = await realOrGiven(worktreePath)
-  const entries: Array<{ dir: string; gitdir: string }> = []
+  const entries: Array<{ dir: string; gitdir: string; locked: boolean }> = []
   for (const name of names) {
     const dir = path.join(base, name)
-    if (
-      await fs.stat(path.join(dir, 'locked')).then(
-        () => true,
-        () => false
-      )
+    const locked = await fs.stat(path.join(dir, 'locked')).then(
+      () => true,
+      () => false
     )
-      continue
     try {
       const written = (await fs.readFile(path.join(dir, 'gitdir'), 'utf8')).trim()
       const absolute = path.isAbsolute(written) ? written : path.resolve(dir, written)
       // `<worktree>/.git`: resolve the worktree part, which is the one that can be a symlink.
-      entries.push({ dir, gitdir: `${await realOrGiven(path.dirname(absolute))}/.git` })
+      entries.push({ dir, gitdir: `${await realOrGiven(path.dirname(absolute))}/.git`, locked })
     } catch {
       // Not an admin dir we can read: it is not ours to remove.
     }

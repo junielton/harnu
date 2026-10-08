@@ -226,6 +226,9 @@ import {
   containersScopeRoots,
   dockerUnavailableRefusal
 } from './containers-listing'
+import { getGcService } from '../gc/gc-service-registry'
+import { cleanupListing, planRelease } from './cleanup-listing'
+import { realPathLookup } from './real-paths'
 
 /** Everything a handler may need beyond its own validated `input`. */
 export interface ToolHandlerCtx {
@@ -2386,6 +2389,88 @@ const removeContainersHandler: Handler = (args, ctx) => {
   return actOnContainers('remove', raw, [stack], ctx)
 }
 
+// ---- T445 `list_cleanup` / `release_worktree` --------------------------------
+
+const GC_NOT_READY =
+  'GC_NOT_READY: the workspace cleanup service has not started yet. Retry in a moment.'
+
+/**
+ * The workspace GC's facts for an agent (T445). Reads through the SAME service the Cleanup
+ * surface uses and never decides a bucket; `cleanup-listing.ts` only redacts paths and applies
+ * the scope. The service handle the agent gets can read a snapshot and mark a release, so
+ * this verb cannot remove anything.
+ */
+const listCleanupHandler: Handler = async (args, ctx) => {
+  const svc = getGcService()
+  if (!svc) return errorResult(GC_NOT_READY)
+  const home = os.homedir()
+  const scope = strField(args, 'folder')
+  if (scope && isFolderDenied(scope, ctx.denyFolders, home)) {
+    return steerError('FOLDER_NOT_ALLOWED', scope)
+  }
+  // The current snapshot, never a forced gather: an observe read must not write (a gather
+  // clears marks and prunes files), so the timer and the operator keep that to themselves.
+  // `scannedAt` tells the caller how old the picture is.
+  const snap = await svc.snapshot()
+  const listing = cleanupListing(snap, {
+    denyFolders: ctx.denyFolders,
+    home,
+    scope: scope ?? null,
+    scopeRoots: scope ? containersScopeRoots(scope, ctx.folders, home) : null
+  })
+  return textResult({ ok: true, ...listing })
+}
+
+/**
+ * The agent says it is done with a merged worktree (T445). Marks the bundle released and
+ * deletes nothing: the bucket rules still decide whether it ever becomes ready to clean, and only
+ * the operator (or the autopilot, once acknowledged) cleans one.
+ */
+const releaseWorktreeHandler: Handler = async (args, ctx) => {
+  const svc = getGcService()
+  if (!svc) return errorResult(GC_NOT_READY)
+  const home = os.homedir()
+  const folder = strField(args, 'folder') || ctx.folder || undefined
+  const id = strField(args, 'id') || undefined
+  if (!folder && !id) return errorResult('BAD_ARGS: pass a folder or an id from list_cleanup')
+  if (folder && isFolderDenied(folder, ctx.denyFolders, home)) {
+    return steerError('FOLDER_NOT_ALLOWED', folder)
+  }
+
+  const snap = await svc.snapshot()
+  const now = Date.now()
+  // A symlinked spelling is the same folder: compare real paths, not spellings.
+  const real = await realPathLookup(
+    [
+      folder,
+      ...snap.bundles.flatMap((b) => [b.item.path, b.item.repoPath]),
+      ...ctx.folders.map((f) => f.path)
+    ],
+    home
+  )
+  const plan = planRelease(
+    snap,
+    { ...(folder ? { folder } : {}), ...(id ? { id } : {}) },
+    {
+      denyFolders: ctx.denyFolders,
+      home,
+      now,
+      folders: ctx.folders,
+      real
+    }
+  )
+  if (!plan.ok) {
+    // A repo the operator blocked is as closed as the worktree folder itself. An id names no
+    // folder, so none is echoed.
+    if (plan.blocked) return steerError('FOLDER_NOT_ALLOWED', folder)
+    return { content: [{ type: 'text', text: JSON.stringify(plan.refusal) }], isError: true }
+  }
+  // The single commit point: past the 120s deadline the caller already got TOOL_TIMEOUT.
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  if (!plan.ack.alreadyReleased) await svc.release(plan.bundleId, now, plan.from)
+  return textResult(plan.ack)
+}
+
 // ---- mission_* verbs (T358 S3 — design.md §4) -------------------------------
 //
 // Missions are repo-scoped and shared by every worktree (design §9, decision 17):
@@ -4493,6 +4578,8 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   create_worker: createWorkerHandler,
   list_workers: listWorkersHandler,
   list_containers: listContainersHandler,
+  list_cleanup: listCleanupHandler,
+  release_worktree: releaseWorktreeHandler,
   stop_containers: stopContainersHandler,
   start_containers: startContainersHandler,
   remove_containers: removeContainersHandler,

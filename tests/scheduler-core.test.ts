@@ -49,6 +49,7 @@ const ALLOWED_VERBS = [
   'get_session',
   'list_worktrees',
   'list_containers',
+  'list_cleanup',
   'mission_get',
   'mission_list',
   'create_card',
@@ -75,6 +76,7 @@ const DENIED_VERBS = [
   'stop_containers',
   'start_containers',
   'remove_containers',
+  'release_worktree',
   'mission_create',
   'mission_add_step',
   'mission_update_step',
@@ -94,6 +96,16 @@ describe('observe-mode MCP allowlist', () => {
     expect(OBSERVE_MCP_ALLOW).toContain(`${prefix}list_containers`)
     expect(OBSERVE_MCP_DENY).not.toContain(`${prefix}list_containers`)
   })
+
+  it.each(PREFIXES)(
+    'lets an observe tick read the cleanup list but not release (T445) — %s',
+    (prefix) => {
+      expect(OBSERVE_MCP_ALLOW).toContain(`${prefix}list_cleanup`)
+      expect(OBSERVE_MCP_DENY).not.toContain(`${prefix}list_cleanup`)
+      expect(OBSERVE_MCP_DENY).toContain(`${prefix}release_worktree`)
+      expect(OBSERVE_MCP_ALLOW).not.toContain(`${prefix}release_worktree`)
+    }
+  )
 
   it.each(PREFIXES)('denies every Containers action to an observe tick (T329) — %s', (prefix) => {
     for (const op of ['stop_containers', 'start_containers', 'remove_containers']) {
