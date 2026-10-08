@@ -116,7 +116,7 @@ const folderPathsOf = (stacks: readonly StackGroup[]): string[] =>
 /**
  * The Reaper's two folder sets decide presence: `live` is a working or waiting session with
  * a running PTY, `inUse` is any running PTY. `live` cannot tell `working` from `needs-input`,
- * and the bucket treats both as alive, so one answer covers both. History-only and
+ * and the bucket treats both as in use, so one answer covers both. History-only and
  * hibernated sessions have no PTY, so they read `none`.
  *
  * A session in a folder under `path` counts as one in `path` itself: the worktree is live
