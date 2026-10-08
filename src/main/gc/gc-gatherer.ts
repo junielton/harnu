@@ -68,6 +68,9 @@ export function createGatherer(deps: GathererDeps): Gatherer {
     gather: () => {
       gathering ??= (async () => {
         try {
+          // Which release marks this gather judged: a release made while it ran is a newer
+          // mark, and must survive the verdict on the one it replaced (as a Keep does).
+          const judgedReleases = { ...deps.prefs().released }
           const g = await read(true)
           // A project with no volume left in Docker has nothing to review. Only judged when
           // docker answered: an outage says nothing about what exists.
@@ -82,8 +85,11 @@ export function createGatherer(deps: GathererDeps): Gatherer {
           deps.feed(g)
           if (g.staleKeeps.length > 0)
             await deps.persistPrefs(withoutStaleKeeps(deps.prefs(), g.staleKeeps))
-          if (g.staleReleases.length > 0) {
-            await deps.persistPrefs(withoutReleased(deps.prefs(), g.staleReleases))
+          const staleReleases = g.staleReleases.filter(
+            (id) => deps.prefs().released[id] === judgedReleases[id]
+          )
+          if (staleReleases.length > 0) {
+            await deps.persistPrefs(withoutReleased(deps.prefs(), staleReleases))
           }
           return g
         } finally {

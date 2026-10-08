@@ -142,7 +142,9 @@ const REVIEW_SENTENCES: Record<string, string> = {
   'unknown-fate': 'The state of the branch could not be determined.',
   'weak-merge-signal': 'The merge is only weakly proven.',
   'shared-stack': 'A Docker stack also runs from outside this worktree.',
-  'path-unresolved': 'A path of this worktree could not be resolved.'
+  'path-unresolved': 'A path of this worktree could not be resolved.',
+  'nested-worktree':
+    'Another worktree lives inside this one, so removing it would take that one along.'
 }
 
 const GENERIC_REVIEW_SENTENCE = 'This worktree needs your review.'
