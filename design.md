@@ -8562,13 +8562,28 @@ same decimal system (tracked as a follow-up for the engine, `gc-cycle.ts` still 
 
 The Cleanup surfaces use the §3 scale through Tailwind `text-*` tokens declared in `main.css`
 (`text-eyebrow` 10.5/14 + the `.eyebrow` class, `text-caption` 11/16, `text-ui` 12.5/18, `text-body` 13/20,
-`text-subtitle` 15/22, `text-title` 20/28) and spacing on the 4px grid (`h-5.5` = 22px). Sizes with no
-scale entry are **documented exceptions**, listed once here: the Settings-pane rows keep the shared pane
-anatomy of 12px labels and 11.5px hints/intros (every Settings tab uses it); the repo-label and block text are
-Code-sm (11/14 mono); the side panel (320px), the treemap canvas (372/520px) and the list dialog
-(`min(720px, 90vw)`) are the layout dimensions of §4, exposed as `--gc-panel-w`, `--gc-canvas-h`,
-`--gc-canvas-h-drilled` and `--gc-dialog-w` in `themes.css`. The dialog backdrop `rgba(0, 0, 0, 0.55)` is the
-documented one every dialog uses.
+`text-subtitle` 15/22, `text-title` 20/28 with `tracking-title`), spacing on the 4px grid with the 2px half
+step Tailwind v4 allows (`h-5.5` = 22px, `py-0.75` = 3px), and the 3px radius as `rounded-xs`. Text that was
+set at 10, 11.5 or 12px snaps to the nearest scale step (`caption`, `ui`). The layout dimensions of §4 are
+`--gc-panel-w` (side panel 320px), `--gc-canvas-h` / `--gc-canvas-h-drilled` (treemap canvas 372 / 520px) and
+`--gc-dialog-w` (`min(720px, 90vw)`) in `themes.css`, used as `w-(--gc-panel-w)`. The dialog backdrop
+`rgba(0, 0, 0, 0.55)` is the documented one every dialog uses.
+
+**Documented exceptions** (every raw size left in the files S5 created, listed once):
+
+- **List-row column templates** — `grid-cols-[20px_1fr_64px]` (bulk dialog rows) and the three review/list
+  row grids (`20px` icon · fixed name/branch column · flexible reason · size). They are per-list layouts, not
+  reusable steps; a column that is a token elsewhere stays a token.
+- **Treemap geometry** — `REGION_HEAD` (28px) and `GROUP_HEAD` (22px) header heights and the canvas heights
+  (372 / 520px, mirroring `--gc-canvas-h*`) are layout constants of the squarified canvas, applied as inline
+  `height`/`inset` because block rectangles are computed from data. The canvas heights are asserted against the
+  tokens in `tests/cleanup-treemap.test.ts`.
+- **The busy dot halo** — `shadow-[0_0_0_3px_var(--color-accent-soft)]` is the 3px `--accent-soft` halo of the
+  6px static accent dot (see Motion below).
+- **`max-w-[55%]`** on the repo label is a proportion, not a size.
+- **Settings → Cleanup rows** (`CleanupSettingsPane.vue`) keep the shared Settings-pane anatomy — inline 12px
+  labels, 11.5px hints, 12/16px gaps — that every Settings tab uses (`SettingsDialog.vue`). Migrating the
+  Settings family to tokens is one change for all panes, not a Cleanup-only one.
 
 #### Motion
 

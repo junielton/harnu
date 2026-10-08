@@ -91,7 +91,7 @@ describe('CleanupBulkConfirmDialog — what it discloses', () => {
   it('bounds the list at the existing 280px cap and makes it focusable and scrollable', async () => {
     await open([row()])
     const list = q('[data-testid="bulk-list"]')!
-    expect(list.className).toContain('max-h-[var(--fv-rail-list-max-h)]')
+    expect(list.className).toContain('max-h-(--fv-rail-list-max-h)')
     expect(list.className).toContain('overflow-y-auto')
     expect(list.getAttribute('tabindex')).toBe('0')
   })

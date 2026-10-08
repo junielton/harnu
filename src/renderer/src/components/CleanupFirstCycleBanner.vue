@@ -23,12 +23,12 @@ const { t } = useI18n()
   >
     <Recycle :size="16" :stroke-width="1.6" class="shrink-0 text-accent" aria-hidden="true" />
     <div class="min-w-0 flex-1">
-      <div class="text-[13px] font-medium leading-5 text-text">
+      <div class="text-body font-medium leading-5 text-text">
         {{
           t('cleanup.gc.firstCycle.title', count, { named: { n: count, size: formatBytes(bytes) } })
         }}
       </div>
-      <div class="text-[11px] leading-4 text-text-3">{{ t('cleanup.gc.firstCycle.sub') }}</div>
+      <div class="text-caption leading-4 text-text-3">{{ t('cleanup.gc.firstCycle.sub') }}</div>
     </div>
     <Button variant="primary" data-testid="first-enable" @click="emit('enable')">
       {{ t('cleanup.gc.firstCycle.enable') }}

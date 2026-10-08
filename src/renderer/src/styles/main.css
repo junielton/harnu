@@ -23,6 +23,7 @@
   --text-caption--line-height: 16px;
   --text-eyebrow: 10.5px;
   --text-eyebrow--line-height: 14px;
+  --tracking-title: -0.015em;
 }
 
 html,

@@ -63,7 +63,7 @@ const pct = computed(() => {
     role="status"
     aria-live="polite"
     data-testid="hero-chip"
-    class="inline-flex h-7 shrink-0 items-center gap-2 whitespace-nowrap rounded-sm border border-accent-line bg-accent-soft px-3 text-[12.5px] font-medium text-accent"
+    class="inline-flex h-7 shrink-0 items-center gap-2 whitespace-nowrap rounded-sm border border-accent-line bg-accent-soft px-3 text-ui font-medium text-accent"
   >
     <span
       class="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_0_3px_var(--color-accent-soft)]"

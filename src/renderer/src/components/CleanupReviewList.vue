@@ -82,10 +82,10 @@ function onRowKey(e: KeyboardEvent, id: string): void {
 <template>
   <section class="rounded border border-border bg-surface" data-testid="review-list">
     <header class="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2.5">
-      <span class="text-[10.5px] font-medium uppercase tracking-[0.07em] text-warning">
+      <span class="eyebrow text-warning">
         {{ t('cleanup.gc.review.title') }}
       </span>
-      <span class="text-[11px] text-text-3" data-testid="review-count">{{ blocks.length }}</span>
+      <span class="text-caption text-text-3" data-testid="review-count">{{ blocks.length }}</span>
       <span class="ml-auto" :title="t('cleanup.gc.review.askSoon')">
         <Button
           variant="soft"
@@ -99,7 +99,7 @@ function onRowKey(e: KeyboardEvent, id: string): void {
       </span>
     </header>
 
-    <p v-if="blocks.length === 0" class="px-3 py-6 text-center text-[12px] text-text-3">
+    <p v-if="blocks.length === 0" class="px-3 py-6 text-center text-ui text-text-3">
       {{ t('cleanup.gc.review.empty') }}
     </p>
 
@@ -127,7 +127,7 @@ function onRowKey(e: KeyboardEvent, id: string): void {
         @focusout="emit('hover', null)"
       >
         <!-- leading slot: the bucket icon, swapped for a checkbox on hover or when checked -->
-        <span class="relative flex h-[16px] w-[16px] items-center justify-center">
+        <span class="relative flex h-4 w-4 items-center justify-center">
           <TriangleAlert
             v-if="failed(b)"
             :size="14"
@@ -150,7 +150,7 @@ function onRowKey(e: KeyboardEvent, id: string): void {
           />
           <input
             type="checkbox"
-            class="absolute inset-0 h-[16px] w-[16px] cursor-pointer transition-opacity"
+            class="absolute inset-0 h-4 w-4 cursor-pointer transition-opacity"
             :class="checked.has(b.id) ? 'opacity-0' : 'opacity-0 group-hover/row:opacity-100'"
             :checked="checked.has(b.id)"
             :aria-label="t('cleanup.gc.review.selectRow', { name: b.name })"
@@ -161,23 +161,23 @@ function onRowKey(e: KeyboardEvent, id: string): void {
         </span>
 
         <span class="flex min-w-0 flex-col">
-          <span class="truncate text-[12.5px] text-text" :title="b.name">{{ b.name }}</span>
-          <span class="truncate text-[11px] text-text-4" data-testid="review-sub">{{
+          <span class="truncate text-ui text-text" :title="b.name">{{ b.name }}</span>
+          <span class="truncate text-caption text-text-4" data-testid="review-sub">{{
             sub(b)
           }}</span>
         </span>
 
-        <span class="min-w-0 text-[12.5px] text-text-2" data-testid="review-reason">
+        <span class="min-w-0 text-ui text-text-2" data-testid="review-reason">
           {{ reasonOf(b) }}
         </span>
 
-        <span class="text-right text-[12.5px] tabular-nums text-text">{{ sizeOf(b) }}</span>
+        <span class="text-right text-ui tabular-nums text-text">{{ sizeOf(b) }}</span>
 
         <span class="flex items-center justify-end gap-1" @click.stop>
           <button
             v-if="canDehydrateBlock(b)"
             type="button"
-            class="flex h-[26px] w-[26px] items-center justify-center rounded-sm border border-border-2 text-text-3 transition hover:bg-surface-2 hover:text-text"
+            class="flex h-6.5 w-6.5 items-center justify-center rounded-sm border border-border-2 text-text-3 transition hover:bg-surface-2 hover:text-text"
             :aria-label="t('cleanup.gc.review.dehydrateAria', { name: b.name })"
             :title="t('cleanup.gc.review.dehydrateAria', { name: b.name })"
             data-testid="review-dehydrate"
@@ -188,7 +188,7 @@ function onRowKey(e: KeyboardEvent, id: string): void {
           <button
             v-if="b.kind === 'worktree'"
             type="button"
-            class="flex h-[26px] w-[26px] items-center justify-center rounded-sm border border-border-2 text-text-3 transition hover:bg-surface-2 hover:text-text"
+            class="flex h-6.5 w-6.5 items-center justify-center rounded-sm border border-border-2 text-text-3 transition hover:bg-surface-2 hover:text-text"
             :aria-label="t('cleanup.gc.review.keepAria', { name: b.name })"
             :title="t('cleanup.gc.review.keepAria', { name: b.name })"
             data-testid="review-keep"
@@ -198,7 +198,7 @@ function onRowKey(e: KeyboardEvent, id: string): void {
           </button>
           <button
             type="button"
-            class="flex h-[26px] w-[26px] items-center justify-center rounded-sm border border-border-2 text-text-3 transition hover:border-red hover:bg-red-soft hover:text-red"
+            class="flex h-6.5 w-6.5 items-center justify-center rounded-sm border border-border-2 text-text-3 transition hover:border-red hover:bg-red-soft hover:text-red"
             :aria-label="t('cleanup.gc.review.removeAria', { name: b.name })"
             :title="t('cleanup.gc.review.removeAria', { name: b.name })"
             data-testid="review-remove"
@@ -217,16 +217,16 @@ function onRowKey(e: KeyboardEvent, id: string): void {
     </div>
 
     <footer
-      class="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border px-3 py-2.5 text-[11px] text-text-3"
+      class="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border px-3 py-2.5 text-caption text-text-3"
     >
       <span class="inline-flex items-center gap-1">
-        <kbd class="rounded-[3px] border border-border bg-surface-2 px-1.5 font-mono text-[10.5px]"
+        <kbd class="rounded-xs border border-border bg-surface-2 px-1.5 font-mono text-eyebrow"
           >⇧</kbd
         >
         {{ t('cleanup.gc.review.hintShift') }}
       </span>
       <span class="inline-flex items-center gap-1">
-        <kbd class="rounded-[3px] border border-border bg-surface-2 px-1.5 font-mono text-[10.5px]"
+        <kbd class="rounded-xs border border-border bg-surface-2 px-1.5 font-mono text-eyebrow"
           >↩</kbd
         >
         {{ t('cleanup.gc.review.hintOpen') }}

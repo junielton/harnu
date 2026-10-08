@@ -152,14 +152,14 @@ function onBackdropMousedown(e: MouseEvent): void {
 <template>
   <Teleport to="body">
     <div
-      class="anim-overlay-fade fixed inset-0 flex items-start justify-center overflow-y-auto pt-[72px]"
+      class="anim-overlay-fade fixed inset-0 flex items-start justify-center overflow-y-auto pt-18"
       style="background: rgba(0, 0, 0, 0.55); z-index: 60"
       role="presentation"
       @mousedown="onBackdropMousedown"
     >
       <div
         ref="dialogRef"
-        class="anim-fade-in-scale mb-6 flex w-[min(720px,90vw)] flex-col rounded-lg border border-border-2 bg-surface text-text shadow-pop"
+        class="anim-fade-in-scale mb-6 flex w-(--gc-dialog-w) flex-col rounded-lg border border-border-2 bg-surface text-text shadow-pop"
         role="dialog"
         aria-modal="true"
         aria-labelledby="cleanup-bulk-dialog-title"
@@ -196,7 +196,7 @@ function onBackdropMousedown(e: MouseEvent): void {
         </div>
 
         <div
-          class="scrollable mx-5 flex max-h-[var(--fv-rail-list-max-h)] flex-col gap-1.5 overflow-y-auto pr-1"
+          class="scrollable mx-5 flex max-h-(--fv-rail-list-max-h) flex-col gap-1.5 overflow-y-auto pr-1"
           tabindex="0"
           role="list"
           :aria-label="t('cleanup.gc.confirm.listLabel')"
@@ -241,12 +241,12 @@ function onBackdropMousedown(e: MouseEvent): void {
                 >{{ rowSub(row) }}</span
               >
               <template v-if="mode === 'review' && row.reasonCode">
-                <span class="text-[11px] leading-4 text-text-3" data-testid="bulk-reason">{{
+                <span class="text-caption leading-4 text-text-3" data-testid="bulk-reason">{{
                   reasonText(row)
                 }}</span>
                 <span
                   v-if="row.reasonDetail && row.reasonDetail !== reasonText(row)"
-                  class="truncate font-mono text-[11px] leading-4 text-text-4"
+                  class="truncate font-mono text-caption text-text-4"
                   >{{ row.reasonDetail }}</span
                 >
               </template>
@@ -254,7 +254,7 @@ function onBackdropMousedown(e: MouseEvent): void {
                 <span
                   v-for="chip in row.chips"
                   :key="chip"
-                  class="inline-flex items-center gap-[3px] rounded-[3px] border px-1.5 py-px text-[10.5px] leading-[14px]"
+                  class="inline-flex items-center gap-0.75 rounded-xs border px-1.5 py-px text-eyebrow"
                   :class="CHIP_CLASS[chip]"
                   :data-chip="chip"
                   :title="t(`cleanup.gc.chip.title.${chip}`)"
@@ -267,7 +267,7 @@ function onBackdropMousedown(e: MouseEvent): void {
                 >
               </span>
             </span>
-            <span class="text-right text-[12.5px] leading-4 tabular-nums text-text">{{
+            <span class="text-right text-ui leading-4 tabular-nums text-text">{{
               formatBytes(row.bytes)
             }}</span>
           </div>
@@ -283,7 +283,7 @@ function onBackdropMousedown(e: MouseEvent): void {
             class="mt-0.5 shrink-0 text-warning"
             aria-hidden="true"
           />
-          <div class="min-w-0 text-[12px] leading-[18px] text-text-2">
+          <div class="min-w-0 text-ui text-text-2">
             <p v-if="mode === 'review' && riskCount > 0" class="m-0 mb-1" data-testid="bulk-risk">
               <b class="font-semibold text-warning">{{
                 t('cleanup.gc.confirm.warnRisk', riskCount, { named: { n: riskCount } })

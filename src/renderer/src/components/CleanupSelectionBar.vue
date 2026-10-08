@@ -19,11 +19,11 @@ const { t } = useI18n()
     v-if="count > 0"
     role="region"
     :aria-label="t('cleanup.gc.selection.label')"
-    class="flex flex-wrap items-center gap-2 border-b border-border bg-surface-2 px-[22px] py-2"
+    class="flex flex-wrap items-center gap-2 border-b border-border bg-surface-2 px-5.5 py-2"
     data-testid="selection-bar"
   >
     <SquareCheck :size="14" :stroke-width="1.6" class="shrink-0 text-accent" aria-hidden="true" />
-    <span class="mr-2 text-[13px] text-text-2" data-testid="sel-count">
+    <span class="mr-2 text-body text-text-2" data-testid="sel-count">
       <i18n-t keypath="cleanup.gc.selection.count" scope="global">
         <template #count>
           <b class="font-semibold text-text">{{ count }}</b>
@@ -49,16 +49,16 @@ const { t } = useI18n()
         {{ t('cleanup.gc.selection.ask') }}
       </Button>
     </span>
-    <span class="inline-flex items-center gap-1.5 text-[11px] text-text-3">
+    <span class="inline-flex items-center gap-1.5 text-caption text-text-3">
       <kbd
-        class="rounded-[3px] border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10.5px] leading-[14px] text-text-3"
+        class="rounded-xs border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-eyebrow text-text-3"
         >⇧</kbd
       >
       {{ t('cleanup.gc.selection.shiftHint') }}
     </span>
     <button
       type="button"
-      class="ml-auto text-[11.5px] text-text-3 transition hover:text-text"
+      class="ml-auto text-caption text-text-3 transition hover:text-text"
       data-testid="sel-clear"
       @click="emit('clear')"
     >

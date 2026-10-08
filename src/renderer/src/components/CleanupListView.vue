@@ -77,7 +77,7 @@ function stateWord(id: string): string | null {
     :aria-label="t('cleanup.gc.list.label')"
     data-testid="list-view"
   >
-    <p v-if="groups.length === 0" class="py-8 text-center text-[12px] text-text-3">
+    <p v-if="groups.length === 0" class="py-8 text-center text-ui text-text-3">
       {{ t('cleanup.gc.list.empty') }}
     </p>
 
@@ -92,10 +92,10 @@ function stateWord(id: string): string | null {
         :class="INK[g.bucket]"
       >
         <component :is="ICON[g.bucket]" :size="14" :stroke-width="1.7" />
-        <span class="text-[10.5px] font-medium uppercase tracking-[0.07em]">
+        <span class="eyebrow">
           {{ t(`cleanup.gc.bucket.header.${g.bucket}`) }}
         </span>
-        <span class="ml-auto text-[11px] text-text-3">
+        <span class="ml-auto text-caption text-text-3">
           {{ g.blocks.length }} ·
           {{ g.blocks.some((b) => b.hasBytes) ? formatBytes(g.bytes) : '—' }}
         </span>
@@ -114,8 +114,8 @@ function stateWord(id: string): string | null {
       >
         <component :is="ICON[g.bucket]" :size="14" :stroke-width="1.7" :class="INK[g.bucket]" />
         <span class="flex min-w-0 flex-col">
-          <span class="truncate text-[12.5px] text-text">{{ b.name }}</span>
-          <span class="truncate text-[11px] text-text-4">{{ sub(b) }}</span>
+          <span class="truncate text-ui text-text">{{ b.name }}</span>
+          <span class="truncate text-caption text-text-4">{{ sub(b) }}</span>
         </span>
         <span class="h-1.5 overflow-hidden rounded-full bg-surface-2" aria-hidden="true">
           <span
@@ -125,13 +125,13 @@ function stateWord(id: string): string | null {
             data-testid="list-bar"
           />
         </span>
-        <span class="truncate text-[12px] text-text-2">
+        <span class="truncate text-ui text-text-2">
           {{ note(b) }}
           <span v-if="stateWord(b.id)" class="text-text-3" data-testid="list-state">
             · {{ stateWord(b.id) }}
           </span>
         </span>
-        <span class="text-right text-[12.5px] tabular-nums text-text">{{ sizeOf(b) }}</span>
+        <span class="text-right text-ui tabular-nums text-text">{{ sizeOf(b) }}</span>
       </button>
     </section>
   </div>

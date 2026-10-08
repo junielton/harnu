@@ -354,13 +354,10 @@ async function copyRestoreHint(hint: string): Promise<void> {
 
 <template>
   <div
-    class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-[22px] py-3"
+    class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-5.5 py-3"
     data-testid="cleanup-toolbar"
   >
-    <span
-      class="flex items-center gap-2 text-[13px] leading-5 text-text-2"
-      data-testid="cleanup-summary"
-    >
+    <span class="flex items-center gap-2 text-body text-text-2" data-testid="cleanup-summary">
       <Recycle :size="14" :stroke-width="1.6" class="shrink-0 text-green" />
       <i18n-t keypath="cleanup.gc.status.reclaimable" scope="global">
         <template #size>
@@ -380,7 +377,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
     <CleanupHeroButton :hero="gc.hero" @click="openReady()" />
 
     <span
-      class="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] leading-4"
+      class="inline-flex items-center rounded-full border px-2 py-0.5 text-caption"
       :class="
         prefs?.autopilot
           ? 'border-green-line bg-green-soft text-green'
@@ -443,20 +440,16 @@ async function copyRestoreHint(hint: string): Promise<void> {
   />
 
   <div ref="body" class="scrollable min-h-0 flex-1 overflow-y-auto" data-testid="cleanup-body">
-    <div
-      v-if="loading"
-      class="py-16 text-center text-[12px] text-text-3"
-      data-testid="cleanup-loading"
-    >
+    <div v-if="loading" class="py-16 text-center text-ui text-text-3" data-testid="cleanup-loading">
       <Loader2 :size="16" :stroke-width="1.6" class="mx-auto mb-2 animate-spin text-text-4" />
       {{ t('cleanup.gc.loading') }}
     </div>
-    <div v-else-if="gc.loadError" class="px-[22px] py-8 text-[12px] text-red">
+    <div v-else-if="gc.loadError" class="px-5.5 py-8 text-ui text-red">
       {{ t('cleanup.gc.loadError', { error: gc.loadError }) }}
     </div>
 
     <div v-else-if="model && prefs" class="relative">
-      <div class="px-[22px] pt-3">
+      <div class="px-5.5 pt-3">
         <CleanupFirstCycleBanner
           v-if="showFirstCycle"
           :count="model.ready.length"
@@ -467,7 +460,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
       </div>
 
       <div
-        class="gap-4 px-[22px] pb-4 pt-3"
+        class="gap-4 px-5.5 pb-4 pt-3"
         :class="
           selectedBlock && panelDocked ? 'grid grid-cols-[minmax(0,1fr)_320px]' : 'flex flex-col'
         "
@@ -486,10 +479,10 @@ async function copyRestoreHint(hint: string): Promise<void> {
             data-testid="cleanup-all-clean"
           >
             <CircleCheck :size="28" :stroke-width="1.5" class="mb-2 text-green" />
-            <div class="text-[20px] font-medium leading-7 tracking-[-0.015em] text-text">
+            <div class="text-title font-medium leading-7 tracking-title text-text">
               {{ t('cleanup.gc.empty.title') }}
             </div>
-            <div class="text-[13px] leading-5 text-text-2">
+            <div class="text-body leading-5 text-text-2">
               {{
                 lastChecked
                   ? t('cleanup.gc.empty.subtitleAgo', { ago: lastChecked })
@@ -547,7 +540,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
         <aside
           v-if="selectedBlock"
           :class="
-            panelDocked ? 'sticky top-3 self-start' : 'absolute right-[22px] top-3 z-10 shadow-pop'
+            panelDocked ? 'sticky top-3 self-start' : 'absolute right-5.5 top-3 z-10 shadow-pop'
           "
           data-testid="cleanup-panel"
         >
@@ -572,16 +565,16 @@ async function copyRestoreHint(hint: string): Promise<void> {
 
       <template v-if="reaper.journal.length > 0">
         <div
-          class="flex items-center gap-2 px-[22px] pb-2.5 pt-[22px] text-[11px] font-semibold uppercase tracking-wide text-text-4"
+          class="flex items-center gap-2 px-5.5 pb-2.5 pt-5.5 text-caption font-semibold uppercase tracking-wide text-text-4"
         >
           <History :size="12" :stroke-width="1.7" />
           {{ t('cleanup.recent') }}
         </div>
-        <div class="flex flex-col gap-1.5 px-[22px] pb-[22px]">
+        <div class="flex flex-col gap-1.5 px-5.5 pb-5.5">
           <div
             v-for="(tomb, index) in reaper.journal"
             :key="tombKey(tomb, index)"
-            class="flex items-center gap-3 rounded-sm border border-border bg-surface px-3 py-[9px] text-[11.5px] text-text-3"
+            class="flex items-center gap-3 rounded-sm border border-border bg-surface px-3 py-2.25 text-caption text-text-3"
           >
             <component
               :is="tombIcon(tomb.kind)"
@@ -589,7 +582,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
               :stroke-width="1.6"
               class="text-text-4"
             />
-            <span class="font-mono text-[11px] text-text-2">{{
+            <span class="font-mono text-caption text-text-2">{{
               tomb.branch ?? tomb.repoPath
             }}</span>
             <span class="truncate">
@@ -598,7 +591,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             </span>
             <button
               v-if="tomb.restoreHint"
-              class="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-border bg-bg px-2 py-[3px] font-mono text-[10px] text-text-4 transition hover:border-border-2 hover:text-text-2"
+              class="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-border bg-bg px-2 py-0.75 font-mono text-eyebrow text-text-4 transition hover:border-border-2 hover:text-text-2"
               @click="copyRestoreHint(tomb.restoreHint)"
             >
               <Copy :size="10" :stroke-width="1.7" />

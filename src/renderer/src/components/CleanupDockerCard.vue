@@ -97,7 +97,7 @@ const splitSegments = computed(() =>
       <!-- The Containers takeover stays the inspector (per-stack start/stop); this is its door. -->
       <button
         type="button"
-        class="ml-auto text-[11px] font-medium text-text-2 transition hover:text-text"
+        class="ml-auto text-caption font-medium text-text-2 transition hover:text-text"
         data-testid="docker-inspect"
         @click="emit('inspect')"
       >
@@ -123,9 +123,7 @@ const splitSegments = computed(() =>
     <div class="flex flex-wrap gap-2 px-3 pb-3">
       <div :class="blockClass(prefs.categories.dockerCache)" data-testid="docker-cache">
         <div class="flex items-center gap-2">
-          <span class="text-[12.5px] font-medium text-text">{{
-            t('cleanup.gc.docker.buildCache')
-          }}</span>
+          <span class="text-ui font-medium text-text">{{ t('cleanup.gc.docker.buildCache') }}</span>
           <ToggleSwitch
             class="ml-auto"
             :model-value="prefs.categories.dockerCache"
@@ -135,7 +133,7 @@ const splitSegments = computed(() =>
           />
         </div>
         <div
-          class="text-[12.5px]"
+          class="text-ui"
           :class="docker.buildCacheReclaimableBytes === null ? 'text-text-3' : 'text-green'"
           data-testid="docker-cache-size"
         >
@@ -143,12 +141,12 @@ const splitSegments = computed(() =>
         </div>
         <div
           v-if="housekeeping"
-          class="text-[11px] leading-4 text-text-3"
+          class="text-caption leading-4 text-text-3"
           data-testid="docker-cache-last"
         >
           {{ reclaimed(housekeeping.buildCacheBytes) }}
         </div>
-        <div class="text-[11px] leading-4 text-text-3">
+        <div class="text-caption leading-4 text-text-3">
           {{
             t('cleanup.gc.docker.olderThan', prefs.cacheMaxAgeDays, {
               named: { n: prefs.cacheMaxAgeDays }
@@ -159,7 +157,7 @@ const splitSegments = computed(() =>
 
       <div :class="blockClass(prefs.categories.dockerCache)" data-testid="docker-images">
         <div class="flex items-center gap-2">
-          <span class="text-[12.5px] font-medium text-text">{{
+          <span class="text-ui font-medium text-text">{{
             t('cleanup.gc.docker.danglingImages')
           }}</span>
           <ToggleSwitch
@@ -171,7 +169,7 @@ const splitSegments = computed(() =>
           />
         </div>
         <div
-          class="text-[12.5px]"
+          class="text-ui"
           :class="docker.danglingImages === null ? 'text-text-3' : 'text-green'"
           data-testid="docker-images-size"
         >
@@ -179,19 +177,19 @@ const splitSegments = computed(() =>
         </div>
         <div
           v-if="housekeeping"
-          class="text-[11px] leading-4 text-text-3"
+          class="text-caption leading-4 text-text-3"
           data-testid="docker-images-last"
         >
           {{ reclaimed(housekeeping.imageBytes) }}
         </div>
-        <div class="text-[11px] leading-4 text-text-3">
+        <div class="text-caption leading-4 text-text-3">
           {{ t('cleanup.gc.docker.danglingSub') }}
         </div>
       </div>
 
       <div :class="blockClass(true, 'review')" data-testid="docker-volumes">
         <div class="flex items-center gap-2">
-          <span class="text-[12.5px] font-medium text-text">{{
+          <span class="text-ui font-medium text-text">{{
             t('cleanup.gc.docker.orphanVolumes')
           }}</span>
         </div>
@@ -206,18 +204,18 @@ const splitSegments = computed(() =>
             })
           }}
         </div>
-        <div v-if="projects.length > 0" class="truncate text-[11px] leading-4 text-text-3">
+        <div v-if="projects.length > 0" class="truncate text-caption text-text-3">
           {{ t('cleanup.gc.docker.projects', { names: shownProjects }) }}
           <template v-if="moreProjects > 0">
             {{ t('cleanup.gc.docker.more', { n: moreProjects }) }}
           </template>
         </div>
         <span
-          class="mt-1 inline-flex w-fit items-center rounded-full border border-warning-line bg-warning-soft px-2 py-0.5 text-[11px] leading-4 text-warning"
+          class="mt-1 inline-flex w-fit items-center rounded-full border border-warning-line bg-warning-soft px-2 py-0.5 text-caption text-warning"
         >
           {{ t('cleanup.gc.docker.cantRestore') }}
         </span>
-        <div class="text-[11px] leading-4 text-text-3" data-testid="docker-volumes-note">
+        <div class="text-caption leading-4 text-text-3" data-testid="docker-volumes-note">
           {{ t('cleanup.gc.docker.volumesNote') }}
         </div>
       </div>

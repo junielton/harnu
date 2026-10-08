@@ -95,17 +95,15 @@ const lastLine = computed(() => {
       <div
         v-for="s in segments"
         :key="s.key"
-        class="flex min-w-[112px] flex-col gap-1"
+        class="flex min-w-28 flex-col gap-1"
         :style="{ flexGrow: grow(s), flexShrink: 1, flexBasis: '0px' }"
         :data-testid="`split-${s.key}`"
       >
-        <span
-          class="truncate text-[10.5px] font-medium uppercase leading-[14px] tracking-[0.07em] text-text-4"
-        >
+        <span class="truncate eyebrow text-text-4">
           {{ t(`cleanup.gc.split.${s.key}`) }}
         </span>
         <span
-          class="flex h-8 min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-[3px] border px-2.5 text-[11px]"
+          class="flex h-8 min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-xs border px-2.5 text-caption"
           :class="SEGMENT_CLASS[s.bucket]"
           :style="s.bucket === 'review' ? { backgroundImage: HATCH } : undefined"
         >
@@ -121,7 +119,7 @@ const lastLine = computed(() => {
         </span>
       </div>
     </div>
-    <div v-if="lastLine" class="text-[11px] leading-4 text-text-4" data-testid="split-last-cycle">
+    <div v-if="lastLine" class="text-caption leading-4 text-text-4" data-testid="split-last-cycle">
       {{ lastLine }}
     </div>
   </div>
