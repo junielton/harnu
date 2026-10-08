@@ -64,11 +64,11 @@ The autopilot behind [Cleanup](cleanup.md#automatic-cleanup-the-autopilot) has n
 | `graceDays`               | 2       | 0 - 30                | How long a worktree must be quiet (no session activity, no container start or stop that Harnu did not cause) before it can be a corpse. |
 | `maxItemsPerCycle`        | 20      | 1 - 200               | The most worktrees one cycle cleans.                                                                                                    |
 | `categories.worktrees`    | on      | on / off              | Off: the autopilot cleans no worktrees.                                                                                                 |
-| `categories.volumes`      | on      | on / off              | Off: the autopilot leaves the volumes of a cleaned worktree.                                                                            |
 | `categories.dockerCache`  | on      | on / off              | Off: no build-cache or dangling-image pruning.                                                                                          |
-| `removeVolumes`           | on      | on / off              | Remove the named volumes only a cleaned worktree's stack used. **A removed volume cannot be restored.**                                 |
 | `cacheMaxAgeDays`         | 7       | 1 - 365               | Build cache older than this is pruned.                                                                                                  |
 | `neverClean`              | none    | list of paths         | Repos or worktrees that are never cleaned, automatically or by hand.                                                                    |
+
+There is no switch for removing volumes: worktree cleanup never removes a Docker volume. Volumes left behind are offered for review in Cleanup, one by one, after their own confirmation. An older `gc-prefs.json` that still has `removeVolumes` or `categories.volumes` is read without them.
 
 The autopilot rides the Cleanup background scan, so it needs **Automatic background scan** (Settings → Cleanup) to stay on. The first time Harnu reads `gc-prefs.json` without one, it starts from your existing Cleanup interval and from the Containers zombie threshold (which becomes the grace period).
 

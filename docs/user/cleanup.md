@@ -209,7 +209,7 @@ For each worktree, one at a time, stopping at the first problem for that worktre
 
 1. Check again that nothing changed since the scan (a session started, the branch got a new commit, a container came up, the grace period no longer holds). If it did, the worktree is skipped and shows up again on the next scan.
 2. Stop and remove the Docker containers that run only from this worktree. A stack that also runs from somewhere else is never touched, and the worktree moves to Decide.
-3. Remove the named volumes only those containers used (the **Remove volumes** setting; on by default). A volume stays if Harnu cannot prove it is the worktree's alone: it carries no Compose project label, another container mounts it, or another folder Harnu knows has the same Compose project name (the same folder name, or the same `COMPOSE_PROJECT_NAME` or `name:`). A sibling worktree or the main checkout that shares the project therefore keeps its data even when it has no containers running. A worktree that pins its own project name leaves that volume behind too; it then shows up under orphan volumes for you to decide.
+3. Keep the volumes. Worktree cleanup never removes a Docker volume, whether the autopilot or your own click does it, because Harnu cannot prove a volume belongs to one worktree alone (a compose file in a subfolder, a `name:` in it, or a project name shared with another checkout all hide that). Once the worktree is gone, its volumes show up under orphan volumes (below), with their size and compose project, for you to review.
 4. Remove installed dependencies.
 5. Archive the branch tip and the working state, then move the folder to the system trash, prune the worktree entry and delete the local branch.
 
@@ -219,7 +219,7 @@ Remote branches are never deleted by the autopilot. If a step fails, the worktre
 
 In the same cycle, when the Docker cache setting is on, Harnu runs `docker builder prune` for build cache older than 7 days and `docker image prune` for dangling images, and adds the bytes they report to the cycle's total. It never runs `-a` variants, so an image a stack uses is never removed.
 
-**Orphan volumes are not cleaned automatically.** A volume that no container uses and whose compose project's folder no longer exists is listed in Decide with its size, its compose project and the reason "no known worktree". It is removed only when you ask for it and confirm. Harnu keeps a volume when it cannot tell whether it is orphaned: a folder that still exists pins the compose project name (by its folder name, by `COMPOSE_PROJECT_NAME` in its `.env`, or by a `name:` in its compose file), a folder it cannot read counts as existing, and a project whose folder it cannot learn is left alone.
+**Orphan volumes are not cleaned automatically.** A volume that no container uses and whose compose project's folder no longer exists is listed in Decide with its size, its compose project and the reason "no known worktree". That includes the volumes a worktree cleanup left behind: Harnu remembers which folder each cleaned worktree's project ran from, so they are recognized even though the containers are gone. It is removed only when you ask for it and confirm. Harnu keeps a volume when it cannot tell whether it is orphaned: a folder that still exists pins the compose project name (by its folder name, by `COMPOSE_PROJECT_NAME` in its `.env`, or by a `name:` in its compose file), a folder it cannot read counts as existing, and a project whose folder it cannot learn is left alone.
 
 ### Removing a Decide item on purpose
 
@@ -227,12 +227,12 @@ Decide items are removed only after you confirm, and the confirmation is for wha
 
 ### What you can get back
 
-| What                                        | Restorable? | How                                                                                                                                                                                                                            |
-| ------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Code, uncommitted work and the local branch | Yes         | The `refs/archive/…` refs and the system trash. The cleanup journal line carries the command.                                                                                                                                  |
-| Containers                                  | Yes         | `docker compose -p <project> --project-directory <folder> up -d`, while the folder exists.                                                                                                                                     |
-| Dependencies                                | Yes         | Rehydrate, which re-runs the repo's `setup`.                                                                                                                                                                                   |
-| **Volumes**                                 | **No**      | A removed volume and its data are gone. This is the only step that cannot be undone, and it is the reason the autopilot only removes volumes that belong to a worktree it is cleaning, and only when **Remove volumes** is on. |
+| What                                        | Restorable? | How                                                                                                                                                                                                                           |
+| ------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Code, uncommitted work and the local branch | Yes         | The `refs/archive/…` refs and the system trash. The cleanup journal line carries the command.                                                                                                                                 |
+| Containers                                  | Yes         | `docker compose -p <project> --project-directory <folder> up -d`, while the folder exists.                                                                                                                                    |
+| Dependencies                                | Yes         | Rehydrate, which re-runs the repo's `setup`.                                                                                                                                                                                  |
+| **Volumes**                                 | **No**      | A removed volume and its data are gone. This is the only step that cannot be undone, so no cleanup ever does it: a volume is removed only when you confirm that one volume, and Harnu checks it is still what you were shown. |
 
 On Windows, sizes are not measured, so the report shows counts without a byte total. pnpm's hard-linked store means removing `node_modules` frees less than the figure shown until the store is pruned.
 
