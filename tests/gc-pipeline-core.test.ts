@@ -36,7 +36,8 @@ function bundle(name: string, over: Partial<WorktreeBundle> = {}): WorktreeBundl
     keep: false,
     neverClean: false,
     isMainCheckout: false,
-    bucket: 'corpse',
+    pathsResolved: true,
+    bucket: 'ready',
     reason: null,
     ...over
   }
@@ -77,11 +78,13 @@ function fakeOps(over: Overrides = {}, bytes = 4096): Fake {
   return { ops, calls, args }
 }
 
+// Delta 4, item D: the recheck runs twice, right before drop-deps and right before cleanGit.
 const FULL = [
   'reprobe',
   'stopStacks',
   'removeContainers',
   'removeVolumes',
+  'recheck',
   'dropDeps',
   'recheck',
   'cleanGit'
@@ -241,18 +244,27 @@ describe('runBundle — reprobe (Review Focus 4)', () => {
   })
 })
 
+/** A recheck that passes its first call (before drop-deps) and answers `later` after. */
+function passesOnce(later: GcOps['recheck']): GcOps['recheck'] {
+  let calls = 0
+  return async (b) => (calls++ === 0 ? { ok: true } : later(b))
+}
+
 describe('runBundle — recheck right before cleanGit (delta 2, item 4)', () => {
   it('hands the bundle to recheck, after drop-deps and before cleanGit', async () => {
     const f = fakeOps()
     const b = bundle('a')
     await runBundle(b, f.ops, OPTS)
     expect(f.args.recheck).toBe(b)
-    expect(f.calls.indexOf('recheck')).toBe(f.calls.indexOf('dropDeps') + 1)
-    expect(f.calls.indexOf('cleanGit')).toBe(f.calls.indexOf('recheck') + 1)
+    expect(f.calls.lastIndexOf('recheck')).toBe(f.calls.indexOf('dropDeps') + 1)
+    expect(f.calls.indexOf('cleanGit')).toBe(f.calls.lastIndexOf('recheck') + 1)
   })
 
   it('a session that appeared after drop-deps halts at archive, and cleanGit never runs', async () => {
-    const f = fakeOps({ recheck: async () => ({ ok: false, reason: 'session-open' }) }, 8192)
+    const f = fakeOps(
+      { recheck: passesOnce(async () => ({ ok: false, reason: 'session-open' })) },
+      8192
+    )
     const r = await runBundle(bundle('a'), f.ops, OPTS)
     expect(r).toEqual({
       id: bundle('a').item.id,
@@ -265,7 +277,7 @@ describe('runBundle — recheck right before cleanGit (delta 2, item 4)', () => 
   })
 
   it('a throwing recheck halts the same way', async () => {
-    const f = fakeOps({ recheck: boom('presence unavailable') }, 8192)
+    const f = fakeOps({ recheck: passesOnce(boom('presence unavailable')) }, 8192)
     const r = await runBundle(bundle('a'), f.ops, OPTS)
     expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'changed-mid-run' })
     expect(r.freedBytes).toBe(8192)
@@ -273,31 +285,81 @@ describe('runBundle — recheck right before cleanGit (delta 2, item 4)', () => 
   })
 })
 
-describe('runBundle — only a proven corpse runs (delta 2, item 2)', () => {
-  const refused = { ok: false, haltedAt: 'reprobe', error: 'not-a-corpse', freedBytes: 0 }
+describe('runBundle — recheck right before drop-deps (delta 4, item D)', () => {
+  it('runs after the docker steps and right before dropDeps', async () => {
+    const f = fakeOps()
+    await runBundle(bundle('a'), f.ops, OPTS)
+    expect(f.calls.indexOf('recheck')).toBe(f.calls.indexOf('removeVolumes') + 1)
+    expect(f.calls.indexOf('dropDeps')).toBe(f.calls.indexOf('recheck') + 1)
+  })
+
+  it('P2: a session that appeared during the docker steps halts at drop-deps, before dropDeps', async () => {
+    const f = fakeOps({ recheck: async () => ({ ok: false, reason: 'session-open' }) })
+    const r = await runBundle(bundle('a'), f.ops, OPTS)
+    expect(r).toEqual({
+      id: bundle('a').item.id,
+      ok: false,
+      haltedAt: 'drop-deps',
+      error: 'changed-mid-run',
+      freedBytes: 0
+    })
+    expect(f.calls).toEqual([
+      'reprobe',
+      'stopStacks',
+      'removeContainers',
+      'removeVolumes',
+      'recheck'
+    ])
+  })
+
+  it('a throwing recheck before drop-deps halts the same way', async () => {
+    const f = fakeOps({ recheck: boom('presence unavailable') })
+    const r = await runBundle(bundle('a'), f.ops, OPTS)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'drop-deps', error: 'changed-mid-run' })
+    expect(f.calls).not.toContain('dropDeps')
+    expect(f.calls).not.toContain('cleanGit')
+  })
+
+  it('runs with no stack too, right after the reprobe', async () => {
+    const f = fakeOps({ recheck: async () => ({ ok: false, reason: 'head-moved' }) })
+    const r = await runBundle(bundle('a', { stackIds: [], ownedVolumes: [] }), f.ops, OPTS)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'drop-deps', freedBytes: 0 })
+    expect(f.calls).toEqual(['reprobe', 'recheck'])
+  })
+})
+
+describe('runBundle — only a proven ready bundle runs (delta 2, item 2)', () => {
+  const refused = { ok: false, haltedAt: 'reprobe', error: 'not-ready', freedBytes: 0 }
 
   it.each<[string, Partial<WorktreeBundle>]>([
-    ['alive', { bucket: 'alive' }],
+    ['in-use', { bucket: 'in-use' }],
     ['keep', { keep: true }],
     ['neverClean', { neverClean: true }],
     ['a main checkout', { isMainCheckout: true }],
-    ['decide without confirmDecide', { bucket: 'decide' }]
+    ['review without confirmReview', { bucket: 'review' }]
   ])('refuses %s with zero ops called', async (_label, over) => {
-    // A corpse base, so keep / neverClean / main checkout are refused for the flag itself:
-    // a hand-built or stale bundle can carry a corpse bucket next to a protection flag.
+    // A ready base, so keep / neverClean / main checkout are refused for the flag itself:
+    // a hand-built or stale bundle can carry a ready bucket next to a protection flag.
     const b = bundle('a', over)
     const f = fakeOps()
     expect(await runBundle(b, f.ops, OPTS)).toEqual({ id: b.item.id, ...refused })
     expect(f.calls).toEqual([])
   })
 
-  it.each([REPO, `${REPO}/`, '/ws/org/proj//www'])(
+  it.each([
+    REPO,
+    `${REPO}/`,
+    '/ws/org/proj//www',
+    // Delta 4, item F: . and .. segments resolve before the comparison.
+    `${REPO}/.`,
+    '/ws/org/proj/worktrees/../www'
+  ])(
     'refuses a main checkout told by its path (%s), whatever its flag says (delta 3, item 6)',
     async (path) => {
       const base = bundle('a')
       const b = bundle('a', { item: { ...base.item, path }, isMainCheckout: false })
       const f = fakeOps()
-      expect(await runBundle(b, f.ops, { ...OPTS, confirmDecide: true })).toEqual({
+      expect(await runBundle(b, f.ops, { ...OPTS, confirmReview: true })).toEqual({
         id: b.item.id,
         ...refused
       })
@@ -305,21 +367,32 @@ describe('runBundle — only a proven corpse runs (delta 2, item 2)', () => {
     }
   )
 
-  it('refuses a decide bundle when confirmDecide is false', async () => {
+  it('refuses the main checkout when its repo path is the one spelled with .. (delta 4, item F)', async () => {
+    const base = bundle('a')
+    const b = bundle('a', {
+      item: { ...base.item, path: REPO, repoPath: '/ws/org/proj/worktrees/../www' },
+      isMainCheckout: false
+    })
     const f = fakeOps()
-    const r = await runBundle(bundle('a', { bucket: 'decide' }), f.ops, {
+    expect(await runBundle(b, f.ops, OPTS)).toEqual({ id: b.item.id, ...refused })
+    expect(f.calls).toEqual([])
+  })
+
+  it('refuses a review bundle when confirmReview is false', async () => {
+    const f = fakeOps()
+    const r = await runBundle(bundle('a', { bucket: 'review' }), f.ops, {
       ...OPTS,
-      confirmDecide: false
+      confirmReview: false
     })
     expect(r).toMatchObject(refused)
     expect(f.calls).toEqual([])
   })
 
-  it('runs a decide bundle when the operator confirmed it', async () => {
+  it('runs a review bundle when the operator confirmed it', async () => {
     const f = fakeOps()
-    const r = await runBundle(bundle('a', { bucket: 'decide' }), f.ops, {
+    const r = await runBundle(bundle('a', { bucket: 'review' }), f.ops, {
       ...OPTS,
-      confirmDecide: true
+      confirmReview: true
     })
     expect(r.ok).toBe(true)
     expect(f.calls[0]).toBe('reprobe')
@@ -327,39 +400,39 @@ describe('runBundle — only a proven corpse runs (delta 2, item 2)', () => {
   })
 
   it.each<[string, Partial<WorktreeBundle>]>([
-    ['alive', { bucket: 'alive' }],
+    ['in-use', { bucket: 'in-use' }],
     ['keep', { keep: true }],
     ['neverClean', { neverClean: true }],
     ['a main checkout', { isMainCheckout: true }]
-  ])('confirmDecide still refuses %s', async (_label, over) => {
+  ])('confirmReview still refuses %s', async (_label, over) => {
     const f = fakeOps()
-    const r = await runBundle(bundle('a', { bucket: 'decide', ...over }), f.ops, {
+    const r = await runBundle(bundle('a', { bucket: 'review', ...over }), f.ops, {
       ...OPTS,
-      confirmDecide: true
+      confirmReview: true
     })
     expect(r).toMatchObject(refused)
     expect(f.calls).toEqual([])
   })
 
-  describe('confirmDecide never overrides a shared stack (delta 3, item 4)', () => {
+  describe('confirmReview never overrides a shared stack (delta 3, item 4)', () => {
     const shared = { ok: false, haltedAt: 'reprobe', error: 'shared-stack', freedBytes: 0 }
 
-    it('refuses a decide shared-stack bundle the operator confirmed, with zero ops called', async () => {
+    it('refuses a review shared-stack bundle the operator confirmed, with zero ops called', async () => {
       const b = bundle('a', {
-        bucket: 'decide',
+        bucket: 'review',
         reason: { code: 'shared-stack', detail: '1 other stack also uses this worktree: app.' },
         stackIds: [],
         sharedStackIds: ['app']
       })
       const f = fakeOps()
-      expect(await runBundle(b, f.ops, { ...OPTS, confirmDecide: true })).toEqual({
+      expect(await runBundle(b, f.ops, { ...OPTS, confirmReview: true })).toEqual({
         id: b.item.id,
         ...shared
       })
       expect(f.calls).toEqual([])
     })
 
-    it('refuses a hand-built corpse that still lists a shared stack', async () => {
+    it('refuses a hand-built ready bundle that still lists a shared stack', async () => {
       const f = fakeOps()
       const r = await runBundle(bundle('a', { sharedStackIds: ['cache'] }), f.ops, OPTS)
       expect(r).toMatchObject(shared)
@@ -367,13 +440,13 @@ describe('runBundle — only a proven corpse runs (delta 2, item 2)', () => {
     })
   })
 
-  it('runBatch passes confirmDecide through to every bundle', async () => {
+  it('runBatch passes confirmReview through to every bundle', async () => {
     const f = fakeOps()
-    const bs = [bundle('a', { bucket: 'decide' }), bundle('b', { bucket: 'decide' })]
+    const bs = [bundle('a', { bucket: 'review' }), bundle('b', { bucket: 'review' })]
     const refusedAll = await runBatch(bs, f.ops, OPTS)
-    expect(refusedAll.every((r) => r.error === 'not-a-corpse')).toBe(true)
+    expect(refusedAll.every((r) => r.error === 'not-ready')).toBe(true)
     expect(f.calls).toEqual([])
-    const ran = await runBatch(bs, f.ops, { ...OPTS, confirmDecide: true })
+    const ran = await runBatch(bs, f.ops, { ...OPTS, confirmReview: true })
     expect(ran.every((r) => r.ok)).toBe(true)
   })
 })
@@ -415,6 +488,7 @@ describe('runBundle — skipped steps', () => {
       'reprobe',
       'stopStacks',
       'removeContainers',
+      'recheck',
       'dropDeps',
       'recheck',
       'cleanGit'
@@ -429,6 +503,7 @@ describe('runBundle — skipped steps', () => {
       'reprobe',
       'stopStacks',
       'removeContainers',
+      'recheck',
       'dropDeps',
       'recheck',
       'cleanGit'
@@ -439,7 +514,7 @@ describe('runBundle — skipped steps', () => {
   it('no stacks: the docker steps are skipped, dropDeps and cleanGit still run', async () => {
     const f = fakeOps()
     const r = await runBundle(bundle('a', { stackIds: [], ownedVolumes: [] }), f.ops, OPTS)
-    expect(f.calls).toEqual(['reprobe', 'dropDeps', 'recheck', 'cleanGit'])
+    expect(f.calls).toEqual(['reprobe', 'recheck', 'dropDeps', 'recheck', 'cleanGit'])
     expect(r.ok).toBe(true)
     expect(r.haltedAt).toBeNull()
   })
@@ -473,6 +548,7 @@ describe('runBatch', () => {
       'stopStacks',
       'removeContainers',
       'removeVolumes',
+      'recheck',
       'dropDeps',
       'recheck',
       'cleanGit'
@@ -553,7 +629,7 @@ describe('T321 definition of done', () => {
   it('(b) with no stack the docker steps are skipped', async () => {
     const f = fakeOps()
     await runBundle(bundle('a', { stackIds: [], ownedVolumes: [] }), f.ops, OPTS)
-    expect(f.calls).toEqual(['reprobe', 'dropDeps', 'recheck', 'cleanGit'])
+    expect(f.calls).toEqual(['reprobe', 'recheck', 'dropDeps', 'recheck', 'cleanGit'])
   })
 
   it('(c) a stop failure halts before the checkout is touched', async () => {

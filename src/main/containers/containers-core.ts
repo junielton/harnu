@@ -483,7 +483,7 @@ export interface VerdictFacts {
    * The attributed worktree's workspace-GC bucket. Applies to `worktree` folders
    * only: it replaces the idle clock, which stays in charge of every other stack.
    */
-  inheritedBucket?: 'corpse' | 'decide' | 'alive'
+  inheritedBucket?: 'ready' | 'review' | 'in-use'
 }
 
 /**
@@ -499,8 +499,8 @@ export function classifyStack(f: VerdictFacts): Verdict {
   if (f.liveSession) return 'active'
   if (kind === 'main-checkout' || kind === 'plain') return 'protected'
   if (kind === 'worktree' && f.inheritedBucket !== undefined) {
-    if (f.inheritedBucket === 'alive') return 'active'
-    return f.inheritedBucket === 'corpse' ? 'zombie' : 'pending'
+    if (f.inheritedBucket === 'in-use') return 'active'
+    return f.inheritedBucket === 'ready' ? 'zombie' : 'pending'
   }
   if (f.unusedForMs === null || f.unusedForMs < f.zombieAfterDays * DAY_MS) return 'pending'
   return 'zombie'
