@@ -40,6 +40,7 @@ import {
   type OrphanVolumeItem
 } from './gc-housekeeping-input'
 import { planHousekeeping } from './housekeeping-core'
+import { collectProjectFiles, type FsProbe } from './gc-project-files'
 import { NO_DOCKER_CARD, dockerCardFacts, type GcDockerCard } from './gc-docker-card'
 import type { GcGather } from './gc-cycle'
 import { judgeKeeps, type StaleKeep } from './gc-keep'
@@ -73,6 +74,16 @@ async function readSmall(file: string): Promise<string | undefined> {
 }
 
 /** The compose file a folder would use, read cheaply; the first one that exists wins. */
+/** The filesystem as the project-file walk sees it: names, kinds, and small text files only. */
+const fsProbe: FsProbe = {
+  readdir: async (dir) =>
+    (await fs.readdir(dir, { withFileTypes: true })).map((e) => ({
+      name: e.name,
+      isDir: e.isDirectory()
+    })),
+  readFile: readSmall
+}
+
 async function readComposeFile(dir: string): Promise<string | undefined> {
   for (const name of COMPOSE_FILES) {
     const text = await readSmall(path.join(dir, name))
@@ -177,7 +188,9 @@ export async function gatherGc(
       .map(async (p) => ({
         path: p,
         env: await readSmall(path.join(p, '.env')),
-        compose: await readComposeFile(p)
+        compose: await readComposeFile(p),
+        // Subfolders too: docker/compose.yml pins a project just as the root one does.
+        files: await collectProjectFiles(p, fsProbe)
       }))
   )
   const guards = volumeGuards(sources, dirExists)
@@ -240,7 +253,8 @@ export async function gatherGc(
     dirExists,
     knownFolders: known,
     protectedProjects: guards.protectedProjects,
-    rememberedDirs
+    rememberedDirs,
+    protectAllProjects: guards.unresolved
   }
   const orphanNames = planHousekeeping(
     { cacheMaxAgeDays: 0, danglingImages: false, orphanVolumes: true },
@@ -249,7 +263,8 @@ export async function gatherGc(
     dirExists,
     known,
     guards.protectedProjects,
-    rememberedDirs
+    rememberedDirs,
+    guards.unresolved
   ).orphanVolumes
 
   return {
