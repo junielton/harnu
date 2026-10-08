@@ -23,7 +23,13 @@ import { relativeTime } from '../composables/useRelativeTime'
 import { formatBytes } from './system-monitor-format'
 import { canDehydrate, canRehydrate } from './cleanup-row'
 import { identText } from './cleanup-ident'
-import { dialogRows, selectionStats, toggleChecked } from '../lib/gc-model'
+import {
+  captureConfirm,
+  confirmChanged,
+  selectionStats,
+  toggleChecked,
+  type CapturedConfirm
+} from '../lib/gc-model'
 import { nextCycleIn } from '../lib/gc-format'
 import CleanupTreemap from './CleanupTreemap.vue'
 import CleanupListView from './CleanupListView.vue'
@@ -132,34 +138,67 @@ function clearSelection(): void {
 
 // ---- dialogs ------------------------------------------------------------------------------------
 
-const confirmDialog = ref<{ mode: 'ready' | 'review'; ids: string[] } | null>(null)
+/** What the open dialog showed — rows AND the exact request — frozen at the moment it opened. */
+const confirmDialog = ref<CapturedConfirm | null>(null)
 const dehydrateItems = ref<ReapItem[] | null>(null)
 const dialogOpen = computed(() => confirmDialog.value !== null || dehydrateItems.value !== null)
 
-const rows = computed(() =>
-  confirmDialog.value && model.value ? dialogRows(model.value, confirmDialog.value.ids) : []
+/** The data behind the open dialog moved (a cycle or a job refreshed it): block the confirm. */
+const confirmStale = computed(
+  () => !!confirmDialog.value && !!model.value && confirmChanged(model.value, confirmDialog.value)
 )
 
 function openReady(ids?: string[]): void {
   if (dialogOpen.value || !model.value) return
-  const list = ids ?? model.value.ready.map((b) => b.id)
-  if (list.length > 0) confirmDialog.value = { mode: 'ready', ids: list }
+  const c = captureConfirm(model.value, ids ?? model.value.ready.map((b) => b.id), 'ready')
+  if (c) confirmDialog.value = c
 }
 function openRemove(ids: string[]): void {
-  if (dialogOpen.value || ids.length === 0) return
-  confirmDialog.value = { mode: 'review', ids }
+  if (dialogOpen.value || !model.value) return
+  const c = captureConfirm(model.value, ids, 'review')
+  if (c) confirmDialog.value = c
+}
+/** Retry re-opens the confirm for the item's CURRENT bucket — never a dialog that would send nothing. */
+function retry(id: string): void {
+  const bucket = model.value?.byId.get(id)?.bucket
+  if (bucket === 'ready') openReady([id])
+  else if (bucket === 'review') openRemove([id])
+}
+function errorToast(title: string, e: unknown): void {
+  ui.pushToast({
+    kind: 'danger',
+    title,
+    description: e instanceof Error ? e.message : String(e),
+    timeoutMs: 8000
+  })
 }
 async function confirmClean(): Promise<void> {
   const d = confirmDialog.value
-  confirmDialog.value = null
-  if (!d) return
+  if (!d || confirmStale.value) return
   // Close first, then start: the clean is a background job, the view is never blocked on it.
-  if (d.mode === 'ready') await gc.cleanReady(d.ids)
-  else await gc.cleanSelected(d.ids)
+  confirmDialog.value = null
+  try {
+    await gc.submit(d.request)
+  } catch (e) {
+    errorToast(t('cleanup.gc.error.clean'), e)
+    return
+  }
   const next = new Set(checked.value)
   for (const id of d.ids) next.delete(id)
   checked.value = next
 }
+
+/** Keep applies to worktrees; a rejected keep is reported and the screen refreshed, never swallowed. */
+async function keepIds(ids: readonly string[]): Promise<void> {
+  try {
+    await gc.keepMany(ids)
+  } catch (e) {
+    errorToast(t('cleanup.gc.error.keep'), e)
+  }
+}
+const canKeepSelection = computed(() =>
+  [...checked.value].some((id) => model.value?.byId.get(id)?.kind === 'worktree')
+)
 
 function dehydratable(ids: readonly string[]): ReapItem[] {
   const m = model.value
@@ -391,9 +430,10 @@ async function copyRestoreHint(hint: string): Promise<void> {
   <CleanupSelectionBar
     :count="stats.count"
     :bytes="stats.bytes"
+    :can-keep="canKeepSelection"
     @remove="openRemove([...checked])"
     @dehydrate="openDehydrate([...checked])"
-    @keep="gc.keepMany([...checked])"
+    @keep="keepIds([...checked])"
     @clear="clearSelection()"
   />
 
@@ -494,7 +534,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             @hover="linkedId = $event"
             @remove="openRemove([$event])"
             @dehydrate="openDehydrate([$event])"
-            @keep="gc.keep($event)"
+            @keep="keepIds([$event])"
           />
         </div>
 
@@ -513,11 +553,11 @@ async function copyRestoreHint(hint: string): Promise<void> {
             :hydration-busy="hydrationBusy(selectedBlock.id)"
             @close="selectedId = null"
             @remove="openRemove([$event])"
-            @retry="openRemove([$event])"
+            @retry="retry($event)"
             @clean-now="openReady([$event])"
             @dehydrate="openDehydrate([$event])"
             @rehydrate="rehydrate($event)"
-            @keep="gc.keep($event)"
+            @keep="keepIds([$event])"
           />
         </aside>
       </div>
@@ -566,8 +606,9 @@ async function copyRestoreHint(hint: string): Promise<void> {
 
   <CleanupBulkConfirmDialog
     v-if="confirmDialog"
-    :rows="rows"
+    :rows="confirmDialog.rows"
     :mode="confirmDialog.mode"
+    :stale="confirmStale"
     @confirm="confirmClean()"
     @cancel="confirmDialog = null"
   />

@@ -2391,7 +2391,8 @@
         "titleReady": "Clean {n} ready item? | Clean {n} ready items?",
         "subtitleReady": "Each one is merged, clean and idle past its grace period. Everything listed below is removed.",
         "confirmReady": "Clean {n} ready | Clean {n} ready",
-        "subtitleReview": "You picked these yourself, so Harnu could not prove they are safe. Everything listed below is removed."
+        "subtitleReview": "You picked these yourself, so Harnu could not prove they are safe. Everything listed below is removed.",
+        "changed": "This changed since you opened it — review again."
       },
       "chip": {
         "stack": "stack",
@@ -2596,6 +2597,10 @@
         "volumeUnknown": "Docker volume · unknown project",
         "hintShift": "click selects several",
         "hintOpen": "opens the panel"
+      },
+      "error": {
+        "clean": "Could not start the clean",
+        "keep": "Could not keep that"
       }
     }
   },

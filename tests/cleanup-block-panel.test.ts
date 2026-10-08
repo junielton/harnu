@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import CleanupBlockPanel from '../src/renderer/src/components/CleanupBlockPanel.vue'
 import { i18n } from '@renderer/i18n'
@@ -356,5 +356,110 @@ describe('CleanupBlockPanel — hydration legality', () => {
       { hydrationBusy: 'rehydrating' }
     )
     expect(re.get('[data-testid="panel-rehydrate"]').attributes('disabled')).toBeDefined()
+  })
+})
+
+describe('CleanupBlockPanel — Retry follows the bucket', () => {
+  const failure = (): ItemFailure => ({ step: 'trash', error: 'EBUSY', refusal: null })
+
+  it('is offered for a failed ready item and for a failed review item', () => {
+    expect(has(mountPanel(blockWith('ready'), { failure: failure() }), 'panel-retry')).toBe(true)
+    expect(has(mountPanel(blockWith('review'), { failure: failure() }), 'panel-retry')).toBe(true)
+  })
+
+  it('is offered for a failed orphan volume (it is a review item)', () => {
+    const vol = modelOf([], [volume('pg', 'old-app', 1 * MIB)]).byId.get('volume:pg')!
+    expect(has(mountPanel(vol, { failure: failure() }), 'panel-retry')).toBe(true)
+  })
+
+  it('is never offered for an in-use item: there is nothing a retry could send', () => {
+    expect(has(mountPanel(blockWith('in-use'), { failure: failure() }), 'panel-retry')).toBe(false)
+  })
+})
+
+describe('CleanupBlockPanel — R / D / K / A on the open panel', () => {
+  const press = (key: string, init: KeyboardEventInit = {}, target: EventTarget = window): void => {
+    target.dispatchEvent(
+      new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })
+    )
+  }
+  const mounted = (block: GcBlock, props: Props = {}) => {
+    const w = mount(CleanupBlockPanel, {
+      props: { block, state: null, failure: null, ...props },
+      global: { plugins: [i18n] },
+      attachTo: document.body
+    })
+    return w
+  }
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('R removes, K keeps and D dehydrates a review item — the buttons that are shown and enabled', () => {
+    const w = mounted(blockWith('review'))
+    press('r')
+    press('k')
+    press('d')
+    expect(w.emitted('remove')).toHaveLength(1)
+    expect(w.emitted('keep')).toHaveLength(1)
+    expect(w.emitted('dehydrate')).toHaveLength(1)
+    w.unmount()
+  })
+
+  it('upper case works too (caps lock)', () => {
+    const w = mounted(blockWith('review'))
+    press('R')
+    expect(w.emitted('remove')).toHaveLength(1)
+    w.unmount()
+  })
+
+  it('A does nothing: Ask for an opinion is disabled until a later release', () => {
+    const w = mounted(blockWith('review'))
+    press('a')
+    expect(w.emitted()).not.toHaveProperty('ask')
+    expect(
+      Object.keys(w.emitted()).filter((k) => ['remove', 'keep', 'dehydrate'].includes(k))
+    ).toEqual([])
+    w.unmount()
+  })
+
+  it('a letter whose button is not shown does nothing (a ready item has no Remove or Keep)', () => {
+    const w = mounted(blockWith('ready', { verdict: 'harvestable', blockers: [] }))
+    press('r')
+    press('k')
+    expect(w.emitted('remove')).toBeUndefined()
+    expect(w.emitted('keep')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('a letter whose button is disabled does nothing (the item is being cleaned)', () => {
+    const w = mounted(blockWith('review'), { state: 'busy' })
+    press('r')
+    expect(w.emitted('remove')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('ignores modifier chords, typing in a field, and an open dialog', () => {
+    const w = mounted(blockWith('review'))
+    press('r', { ctrlKey: true })
+    press('r', { metaKey: true })
+    press('r', { altKey: true })
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    press('r', {}, input)
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    dialog.setAttribute('aria-modal', 'true')
+    document.body.appendChild(dialog)
+    press('r')
+    expect(w.emitted('remove')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('stops listening when the panel closes', () => {
+    const w = mounted(blockWith('review'))
+    w.unmount()
+    press('r')
+    expect(w.emitted('remove')).toBeUndefined()
   })
 })

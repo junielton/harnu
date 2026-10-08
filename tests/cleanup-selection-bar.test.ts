@@ -4,8 +4,8 @@ import { mount } from '@vue/test-utils'
 import CleanupSelectionBar from '../src/renderer/src/components/CleanupSelectionBar.vue'
 import { i18n } from '@renderer/i18n'
 
-const mountBar = (count: number, bytes = 3_466_000_000) =>
-  mount(CleanupSelectionBar, { props: { count, bytes }, global: { plugins: [i18n] } })
+const mountBar = (count: number, bytes = 3_466_000_000, canKeep = true) =>
+  mount(CleanupSelectionBar, { props: { count, bytes, canKeep }, global: { plugins: [i18n] } })
 
 describe('CleanupSelectionBar', () => {
   it('renders nothing with an empty selection', () => {
@@ -47,5 +47,16 @@ describe('CleanupSelectionBar', () => {
 
   it('hints at Shift+click for adding more', () => {
     expect(mountBar(1).get('kbd').text()).toBe('⇧')
+  })
+})
+
+describe('CleanupSelectionBar — Keep only when something can be kept', () => {
+  it('hides Keep when the selection holds no worktree (orphan volumes have no Keep)', () => {
+    const w = mountBar(2, 3_000_000, false)
+    expect(w.find('[data-testid="sel-keep"]').exists()).toBe(false)
+    expect(w.find('[data-testid="sel-remove"]').exists()).toBe(true)
+  })
+  it('shows Keep by default', () => {
+    expect(mountBar(1).find('[data-testid="sel-keep"]').exists()).toBe(true)
   })
 })

@@ -4,6 +4,8 @@ import {
   buildGcModel,
   cleanRequestFor,
   dialogRows,
+  captureConfirm,
+  confirmChanged,
   expectedFor,
   heroState,
   isCheckable,
@@ -398,5 +400,81 @@ describe('Docker figures in the model', () => {
     expect(m.reclaimableBytes).toBe(100 * MIB)
     // The figure itself is still there for the card to show.
     expect(m.docker.buildCacheReclaimableBytes).toBe(3 * GIB)
+  })
+})
+
+describe('captureConfirm / confirmChanged — the dialog binds to what it showed', () => {
+  it('captures the rows and the request when the dialog opens', () => {
+    const m = buildGcModel(sample())
+    const ids = m.ready.map((b) => b.id)
+    const c = captureConfirm(m, ids, 'ready')!
+    expect(c.mode).toBe('ready')
+    expect(c.ids).toEqual(ids)
+    expect(c.rows.map((r) => r.id)).toEqual(ids)
+    expect(c.request).toEqual(cleanRequestFor(m, ids, 'ready'))
+  })
+
+  it('nothing valid to capture means no dialog', () => {
+    const m = buildGcModel(sample())
+    expect(captureConfirm(m, ['ghost'], 'ready')).toBeNull()
+    expect(
+      captureConfirm(
+        m,
+        m.ready.map((b) => b.id),
+        'review'
+      )
+    ).toBeNull()
+  })
+
+  it('a fresh model with the same facts is not a change', () => {
+    const c = captureConfirm(
+      buildGcModel(sample()),
+      buildGcModel(sample()).ready.map((b) => b.id),
+      'ready'
+    )!
+    expect(confirmChanged(buildGcModel(sample()), c)).toBe(false)
+  })
+
+  it('a worktree that moved bucket under the dialog is a change', () => {
+    const before = buildGcModel(sample())
+    const id = before.ready[0].id
+    const c = captureConfirm(before, [id], 'ready')!
+    const s = sample()
+    const b = s.bundles.find((x) => x.item.id === id)!
+    b.bucket = 'review'
+    b.reason = reason('dirty')
+    expect(confirmChanged(buildGcModel(s), c)).toBe(true)
+  })
+
+  it('a new stack, a new head or a gone item is a change', () => {
+    const before = buildGcModel(sample())
+    const id = before.ready[0].id
+    const c = captureConfirm(before, [id], 'ready')!
+    const withStack = sample()
+    withStack.bundles.find((x) => x.item.id === id)!.stackIds = ['new-stack']
+    expect(confirmChanged(buildGcModel(withStack), c)).toBe(true)
+    const moved = sample()
+    moved.bundles.find((x) => x.item.id === id)!.localTip = 'f'.repeat(40)
+    expect(confirmChanged(buildGcModel(moved), c)).toBe(true)
+    const gone = sample()
+    gone.bundles = gone.bundles.filter((x) => x.item.id !== id)
+    expect(confirmChanged(buildGcModel(gone), c)).toBe(true)
+  })
+
+  it('disk-use drift of a worktree alone is not a change (main does not compare it either)', () => {
+    const before = buildGcModel(sample())
+    const id = before.ready[0].id
+    const c = captureConfirm(before, [id], 'ready')!
+    const s = sample()
+    s.bundles.find((x) => x.item.id === id)!.item.diskBytes = 1
+    expect(confirmChanged(buildGcModel(s), c)).toBe(false)
+  })
+
+  it('an orphan volume that grew is a change', () => {
+    const before = buildGcModel(sample())
+    const c = captureConfirm(before, ['volume:pg_data'], 'review')!
+    const s = sample()
+    s.orphanVolumes[0].sizeBytes = 1
+    expect(confirmChanged(buildGcModel(s), c)).toBe(true)
   })
 })

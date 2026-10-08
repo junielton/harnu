@@ -411,3 +411,54 @@ export function cleanRequestFor(
   if (mode === 'review') options.confirmed = [...kept]
   return { ids: kept, options }
 }
+
+// ---- the dialog binds to what it showed -------------------------------------------------------
+
+/** What a confirm dialog showed when it opened: its rows and the exact request it will send. */
+export interface CapturedConfirm {
+  mode: 'ready' | 'review'
+  /** The ids that survived capture (unknown or wrong-bucket ids are dropped, never sent blind). */
+  ids: string[]
+  rows: DialogRow[]
+  request: CleanRequest
+}
+
+/** Freeze the dialog's rows and `expected` facts at the moment it opens; null when nothing is valid. */
+export function captureConfirm(
+  model: GcModel,
+  ids: readonly string[],
+  mode: 'ready' | 'review'
+): CapturedConfirm | null {
+  const request = cleanRequestFor(model, ids, mode)
+  if (request.ids.length === 0) return null
+  return { mode, ids: request.ids, rows: dialogRows(model, request.ids), request }
+}
+
+const sameList = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((x, i) => x === b[i])
+
+/**
+ * Same comparison main makes (`bundleChangedSince` / `volumeChangedSince`): bucket, reason, head, stacks and
+ * volumes — and, for an orphan volume only, its size and project. A worktree's disk use drifts without
+ * anything having changed, so its bytes are not compared.
+ */
+function sameFacts(a: GcExpected, b: GcExpected): boolean {
+  if (a.bucket !== b.bucket || a.reasonCode !== b.reasonCode || a.headSha !== b.headSha)
+    return false
+  if (!sameList(a.stackIds, b.stackIds) || !sameList(a.ownedVolumes, b.ownedVolumes)) return false
+  if (a.bucket === 'orphan-volume')
+    return a.bytes === b.bytes && (a.project ?? null) === (b.project ?? null)
+  return true
+}
+
+/**
+ * Whether what the open dialog showed is no longer what the model says (a cycle or a job refreshed the
+ * snapshot underneath it). The dialog then blocks its confirm until it is reopened.
+ */
+export function confirmChanged(model: GcModel, captured: CapturedConfirm): boolean {
+  const fresh = cleanRequestFor(model, captured.ids, captured.mode)
+  if (!sameList(fresh.ids, captured.ids)) return true
+  return captured.ids.some(
+    (id) => !sameFacts(fresh.options.expected[id], captured.request.options.expected[id])
+  )
+}

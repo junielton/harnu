@@ -38,9 +38,13 @@ const reviewRow = (over: Partial<DialogRow> = {}): DialogRow =>
 
 let wrapper: VueWrapper | null = null
 
-async function open(rows: DialogRow[], mode: 'ready' | 'review' = 'ready'): Promise<VueWrapper> {
+async function open(
+  rows: DialogRow[],
+  mode: 'ready' | 'review' = 'ready',
+  stale = false
+): Promise<VueWrapper> {
   wrapper = mount(CleanupBulkConfirmDialog, {
-    props: { rows, mode },
+    props: { rows, mode, stale },
     global: { plugins: [i18n] },
     attachTo: document.body
   })
@@ -133,6 +137,8 @@ describe('CleanupBulkConfirmDialog — copy by mode', () => {
     expect(confirm.className).toContain('text-green')
     const warn = q('[data-testid="bulk-warning"]')!.textContent!
     expect(warn).toContain('Volumes are kept. They show up in Needs review afterwards.')
+    // A space between the two sentences (they come from two catalog keys).
+    expect(warn).toContain('afterwards. Code')
     expect(warn).not.toContain('cannot be restored')
     expect(warn).toContain('archive refs')
     expect(warn).toContain('OS trash')
@@ -258,5 +264,32 @@ describe('CleanupBulkConfirmDialog — behaviour', () => {
     })
     window.dispatchEvent(back)
     expect(document.activeElement).toBe(confirm)
+  })
+})
+
+describe('CleanupBulkConfirmDialog — when what it showed has changed', () => {
+  it('says so, in the warning ink, and disables the confirm', async () => {
+    await open([row()], 'ready', true)
+    expect(q('[data-testid="bulk-stale"]')!.textContent).toContain(
+      i18n.global.t('cleanup.gc.confirm.changed')
+    )
+    expect((q('[data-testid="bulk-confirm"]') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('does not confirm on click or Enter while changed, but Cancel still closes it', async () => {
+    const w = await open([row()], 'ready', true)
+    ;(q('[data-testid="bulk-confirm"]') as HTMLButtonElement).click()
+    q('[data-testid="bulk-confirm"]')!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    )
+    expect(w.emitted('confirm')).toBeUndefined()
+    ;(q('[data-testid="bulk-cancel"]') as HTMLButtonElement).click()
+    expect(w.emitted('cancel')).toHaveLength(1)
+  })
+
+  it('shows nothing of the kind while the facts are what was shown', async () => {
+    await open([row()], 'ready', false)
+    expect(q('[data-testid="bulk-stale"]')).toBeNull()
+    expect((q('[data-testid="bulk-confirm"]') as HTMLButtonElement).disabled).toBe(false)
   })
 })

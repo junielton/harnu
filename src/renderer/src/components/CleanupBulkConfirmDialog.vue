@@ -17,10 +17,15 @@ import type { DialogRow, RemovalChip } from '../lib/gc-model'
  * at open, from the same model it later builds the `gc:clean` payload from, so what is read is what
  * is sent. Focus starts on Cancel — never on the confirm — and Enter only activates what has focus.
  */
-const props = defineProps<{
-  rows: DialogRow[]
-  mode: 'ready' | 'review'
-}>()
+const props = withDefaults(
+  defineProps<{
+    rows: DialogRow[]
+    mode: 'ready' | 'review'
+    /** The facts behind the open dialog moved since it opened: confirm stays disabled until it is reopened. */
+    stale?: boolean
+  }>(),
+  { stale: false }
+)
 const emit = defineEmits<{ confirm: []; cancel: [] }>()
 const { t, te } = useI18n()
 
@@ -235,13 +240,31 @@ function onBackdropMousedown(e: MouseEvent): void {
                 data-testid="bulk-volumes-lost"
                 >{{ t('cleanup.gc.confirm.warnVolumesLost') }}</b
               >
+              <template v-if="hasVolumeRow">{{ ' ' }}</template>
               <span v-if="hasWorktreeRow" data-testid="bulk-volumes-kept">{{
                 t('cleanup.gc.confirm.warnVolumesKept')
               }}</span>
-              <template v-if="hasWorktreeRow">{{ t('cleanup.gc.confirm.warnRecover') }}</template>
+              <template v-if="hasWorktreeRow"
+                >{{ ' ' }}{{ t('cleanup.gc.confirm.warnRecover') }}</template
+              >
             </p>
           </div>
         </div>
+
+        <p
+          v-if="stale"
+          class="mx-5 mt-3 flex items-start gap-2 text-ui text-warning"
+          role="alert"
+          data-testid="bulk-stale"
+        >
+          <TriangleAlert
+            :size="14"
+            :stroke-width="1.6"
+            class="mt-0.5 shrink-0"
+            aria-hidden="true"
+          />
+          {{ t('cleanup.gc.confirm.changed') }}
+        </p>
 
         <div class="mt-3 flex items-center gap-2 border-t border-border px-5 py-3">
           <span v-if="totalBytes > 0" class="mr-auto text-[12.5px] font-medium text-text">{{
@@ -258,8 +281,9 @@ function onBackdropMousedown(e: MouseEvent): void {
           </Button>
           <Button
             :variant="mode === 'ready' ? 'success' : 'danger'"
+            :disabled="stale"
             data-testid="bulk-confirm"
-            @click="emit('confirm')"
+            @click="!stale && emit('confirm')"
           >
             {{ confirmLabel }}
           </Button>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   Bookmark,
@@ -126,7 +126,8 @@ const showRemove = computed(() => review.value)
 const showKeep = computed(() => review.value && !isVolume.value)
 const showAsk = computed(() => review.value && !isVolume.value)
 const showCleanNow = computed(() => ready.value && !hasFailure.value)
-const showRetry = computed(() => hasFailure.value && !isVolume.value)
+/** Retry re-opens the confirm for the item's CURRENT bucket, so an in-use item has nothing to retry. */
+const showRetry = computed(() => hasFailure.value && !inUse.value)
 const showDehydrate = computed(() => {
   const it = item.value
   if (!it || isVolume.value || ready.value) return false
@@ -138,6 +139,35 @@ const showRehydrate = computed(() => {
   return !!it && !isVolume.value && canRehydrate(it)
 })
 const hydrationDisabled = computed(() => locked.value || props.hydrationBusy !== null)
+
+// ---- shortcuts: R remove · D dehydrate · K keep · A ask ---------------------------------------------
+
+/** Typing in a field, a held modifier or an open dialog owns the keyboard, not the panel. */
+function shortcutsBlocked(e: KeyboardEvent): boolean {
+  if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return true
+  const el = e.target as HTMLElement | null
+  if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) return true
+  return !!document.querySelector('[role="dialog"][aria-modal="true"]')
+}
+
+/** Each letter acts only when its button is shown AND enabled; "A" has no action (Ask is disabled). */
+function onShortcut(e: KeyboardEvent): void {
+  if (shortcutsBlocked(e)) return
+  const id = props.block.id
+  switch (e.key.toLowerCase()) {
+    case 'r':
+      if (showRemove.value && !locked.value) emit('remove', id)
+      break
+    case 'k':
+      if (showKeep.value && !locked.value) emit('keep', id)
+      break
+    case 'd':
+      if (showDehydrate.value && !hydrationDisabled.value) emit('dehydrate', id)
+      break
+  }
+}
+onMounted(() => window.addEventListener('keydown', onShortcut))
+onBeforeUnmount(() => window.removeEventListener('keydown', onShortcut))
 
 const dehydrateLabel = computed(() => {
   const it = item.value

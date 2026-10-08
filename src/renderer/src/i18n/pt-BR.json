@@ -2391,7 +2391,8 @@
         "titleReady": "Limpar {n} item pronto? | Limpar {n} itens prontos?",
         "subtitleReady": "Cada um está merged, limpo e ocioso além do período de carência. Tudo o que está listado abaixo será removido.",
         "confirmReady": "Limpar {n} pronto | Limpar {n} prontos",
-        "subtitleReview": "Você escolheu estes itens, então o Harnu não pôde provar que são seguros. Tudo o que está listado abaixo será removido."
+        "subtitleReview": "Você escolheu estes itens, então o Harnu não pôde provar que são seguros. Tudo o que está listado abaixo será removido.",
+        "changed": "Isto mudou desde que você abriu — revise de novo."
       },
       "chip": {
         "stack": "stack",
@@ -2596,6 +2597,10 @@
         "volumeUnknown": "Volume Docker · projeto desconhecido",
         "hintShift": "clique seleciona vários",
         "hintOpen": "abre o painel"
+      },
+      "error": {
+        "clean": "Não foi possível iniciar a limpeza",
+        "keep": "Não foi possível manter isso"
       }
     }
   },

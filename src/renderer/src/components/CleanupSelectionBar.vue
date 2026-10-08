@@ -9,7 +9,7 @@ import { formatBytes } from './system-monitor-format'
  * anatomy" #3). Shown only while at least one Needs review block is checked. "Ask for an opinion" is
  * drawn but disabled until the opinion helper (S6) exists.
  */
-defineProps<{ count: number; bytes: number }>()
+withDefaults(defineProps<{ count: number; bytes: number; canKeep?: boolean }>(), { canKeep: true })
 const emit = defineEmits<{ remove: []; dehydrate: []; keep: []; clear: [] }>()
 const { t } = useI18n()
 </script>
@@ -39,7 +39,7 @@ const { t } = useI18n()
     <Button variant="soft" data-testid="sel-dehydrate" @click="emit('dehydrate')">
       {{ t('cleanup.gc.selection.dehydrate') }}
     </Button>
-    <Button variant="ghost" data-testid="sel-keep" @click="emit('keep')">
+    <Button v-if="canKeep" variant="ghost" data-testid="sel-keep" @click="emit('keep')">
       {{ t('cleanup.gc.selection.keep') }}
     </Button>
     <!-- A disabled button swallows hover, so the tooltip rides on a wrapper. -->

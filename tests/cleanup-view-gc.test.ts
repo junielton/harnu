@@ -42,10 +42,19 @@ interface Api {
   gcJobs: ReturnType<typeof vi.fn>
   gcAckFirstReport: ReturnType<typeof vi.fn>
   gcSetPrefs: ReturnType<typeof vi.fn>
+  push: Record<string, (p: unknown) => void>
 }
 
 function install(first: GcSnapshot, jobs: GcJobInfo[] = []): Api {
+  const push: Api['push'] = {}
+  const sub =
+    (name: string) =>
+    (cb: (p: unknown) => void): (() => void) => {
+      push[name] = cb
+      return () => delete push[name]
+    }
   const api: Api = {
+    push,
     gcSnapshot: vi.fn(async () => first),
     gcClean: vi.fn(async () => ({ jobId: 'j1', queued: false })),
     gcKeep: vi.fn(async () => defaultGcPrefs()),
@@ -56,6 +65,9 @@ function install(first: GcSnapshot, jobs: GcJobInfo[] = []): Api {
   const full = {
     ...api,
     gcPrefs: vi.fn(async () => first.prefs),
+    onGcProgress: sub('progress'),
+    onGcDone: sub('done'),
+    onGcCycle: sub('cycle'),
     reaperSnapshot: vi.fn(async () => ({ scannedAt: Date.now(), repos: [] })),
     reaperScan: vi.fn(async () => ({ scannedAt: Date.now(), repos: [] })),
     reaperJournal: vi.fn(async () => []),
@@ -337,5 +349,175 @@ describe('Cleanup screen — one door', () => {
     await mountView()
     await dom('[data-testid="docker-inspect"]').trigger('click')
     expect(useUiStore().activeView?.id).toBe('containers')
+  })
+})
+
+describe('Cleanup screen — Retry follows the bucket', () => {
+  async function failed(api: Api, id: string): Promise<void> {
+    api.push.done({
+      jobId: 'j1',
+      kind: 'manual',
+      done: 0,
+      total: 1,
+      freedBytes: 0,
+      results: [{ id, ok: false, haltedAt: 'trash', error: 'EBUSY', freedBytes: 0 }],
+      error: null
+    })
+    await flushPromises()
+  }
+  const blockId = (bucket: string, n = 0): string =>
+    document.body
+      .querySelectorAll(`[data-testid="treemap-block"][data-bucket="${bucket}"]`)
+      [n].getAttribute('data-block-id')!
+
+  it('a failed ready item opens the ready confirm for that one id — and confirming sends it', async () => {
+    const api = install(snap())
+    await mountView()
+    const id = blockId('ready')
+    await failed(api, id)
+    await dom(`[data-block-id="${id}"]`).trigger('click')
+    await dom('[data-testid="panel-retry"]').trigger('click')
+    expect(body('bulk-dialog')).not.toBeNull()
+    expect(document.body.querySelectorAll('[data-testid="bulk-row"]')).toHaveLength(1)
+    ;(body('bulk-confirm') as HTMLButtonElement).click()
+    await flushPromises()
+    const [ids, opts] = api.gcClean.mock.calls[0]
+    expect(ids).toEqual([id])
+    expect(opts.confirmed).toBeUndefined() // a ready item needs no confirmation of its own
+    expect(opts.expected[id].bucket).toBe('ready')
+  })
+
+  it('a failed review item opens the review confirm — Danger, and confirmed', async () => {
+    const api = install(snap())
+    await mountView()
+    const id = blockId('review')
+    await failed(api, id)
+    await dom(`[data-block-id="${id}"]`).trigger('click')
+    await dom('[data-testid="panel-retry"]').trigger('click')
+    expect(body('bulk-confirm')!.className).toContain('text-red')
+    ;(body('bulk-confirm') as HTMLButtonElement).click()
+    await flushPromises()
+    const [ids, opts] = api.gcClean.mock.calls[0]
+    expect(ids).toEqual([id])
+    expect(opts.confirmed).toEqual([id])
+  })
+
+  it('never opens a dialog that would send nothing', async () => {
+    const api = install(snap())
+    await mountView()
+    const id = blockId('in-use')
+    await failed(api, id)
+    await dom(`[data-block-id="${id}"]`).trigger('click')
+    expect(dom('[data-testid="panel-retry"]').exists()).toBe(false)
+    expect(api.gcClean).not.toHaveBeenCalled()
+  })
+})
+
+describe('Cleanup screen — the dialog binds to what it showed', () => {
+  async function openHero(): Promise<void> {
+    await dom('[data-testid="hero-clean"]').trigger('click')
+    await flushPromises()
+  }
+  const moved = (): GcSnapshot => {
+    const s = snap()
+    // the first ready item turned into a review item while the dialog was open
+    const b = s.bundles.find((x) => x.bucket === 'ready')!
+    b.bucket = 'review'
+    b.reason = reviewReason('dirty')
+    return s
+  }
+
+  it('a refresh that changes an item blocks the confirm until the dialog is reopened', async () => {
+    const api = install(snap())
+    await mountView()
+    await openHero()
+    expect(body('bulk-stale')).toBeNull()
+    api.gcSnapshot.mockResolvedValue(moved())
+    api.push.cycle({})
+    await flushPromises()
+    expect(body('bulk-stale')).not.toBeNull()
+    expect((body('bulk-confirm') as HTMLButtonElement).disabled).toBe(true)
+    ;(body('bulk-confirm') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(api.gcClean).not.toHaveBeenCalled()
+  })
+
+  it('a refresh that changes nothing the dialog showed leaves it confirmable, with the facts it opened with', async () => {
+    const api = install(snap())
+    await mountView()
+    await openHero()
+    api.gcSnapshot.mockResolvedValue(snap()) // fresh objects, same facts
+    api.push.cycle({})
+    await flushPromises()
+    expect(body('bulk-stale')).toBeNull()
+    ;(body('bulk-confirm') as HTMLButtonElement).click()
+    await flushPromises()
+    const [ids, opts] = api.gcClean.mock.calls[0]
+    expect(ids).toHaveLength(2)
+    expect(Object.keys(opts.expected)).toEqual(ids)
+  })
+
+  it('reopening after the change shows the new facts and the confirm works again', async () => {
+    const api = install(snap())
+    await mountView()
+    await openHero()
+    api.gcSnapshot.mockResolvedValue(moved())
+    api.push.cycle({})
+    await flushPromises()
+    ;(body('bulk-cancel') as HTMLButtonElement).click()
+    await flushPromises()
+    await openHero()
+    expect(body('bulk-stale')).toBeNull()
+    expect(document.body.querySelectorAll('[data-testid="bulk-row"]')).toHaveLength(1)
+  })
+
+  it('a rejected clean shows an error toast instead of failing silently', async () => {
+    const api = install(snap())
+    await mountView()
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    api.gcClean.mockRejectedValueOnce(new Error('ipc exploded'))
+    await openHero()
+    ;(body('bulk-confirm') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(toast).toHaveBeenCalledTimes(1)
+    expect(toast.mock.calls[0][0]).toMatchObject({ kind: 'danger' })
+    expect(toast.mock.calls[0][0].description).toContain('ipc exploded')
+  })
+})
+
+describe('Cleanup screen — Keep on a selection', () => {
+  const pick = async (names: string[]): Promise<void> => {
+    for (const n of names) {
+      const row = domAll('[data-testid="review-row"]').find((r) => r.text().includes(n))!
+      await new Q(row.el!.querySelector('[data-testid="review-check"]')).setValue(true)
+    }
+  }
+
+  it('skips orphan volumes: only worktree ids reach gc:keep', async () => {
+    const api = install(snap())
+    await mountView()
+    await pick(['pg_old', 'd1'])
+    await dom('[data-testid="sel-keep"]').trigger('click')
+    expect(api.gcKeep).toHaveBeenCalledTimes(1)
+    expect(String(api.gcKeep.mock.calls[0][0])).toContain('d1')
+  })
+
+  it('hides Keep when only orphan volumes are selected', async () => {
+    install(snap())
+    await mountView()
+    await pick(['pg_old'])
+    expect(dom('[data-testid="sel-keep"]').exists()).toBe(false)
+  })
+
+  it('a rejected keep shows a toast and refreshes the screen', async () => {
+    const api = install(snap())
+    await mountView()
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    api.gcKeep.mockRejectedValueOnce(new Error('unknown cleanup item'))
+    await pick(['d1'])
+    const before = api.gcSnapshot.mock.calls.length
+    await dom('[data-testid="sel-keep"]').trigger('click')
+    expect(toast.mock.calls[0][0]).toMatchObject({ kind: 'danger' })
+    expect(api.gcSnapshot.mock.calls.length).toBeGreaterThan(before)
   })
 })
