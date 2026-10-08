@@ -100,12 +100,12 @@ describe('the feeds are wired (M12, M13, M14, M17)', () => {
 })
 
 describe('every consumer sees a halted item as Needs review (delta 1, item 4)', () => {
-  it('gather() applies the failures before it caches and feeds anything', () => {
-    const gather = between(ipc, 'const gather = ', 'const queue = createJobQueue')
-    const applied = gather.indexOf('withFailures(')
-    expect(applied).toBeGreaterThanOrEqual(0)
-    expect(applied).toBeLessThan(gather.indexOf('cache = g'))
-    expect(applied).toBeLessThan(gather.indexOf('setInheritedBuckets('))
+  // The ordering itself (failures applied before anything is cached or fed) is pinned by
+  // behavior in tests/gc-gatherer.test.ts; here only the wiring into the shared state is read.
+  it('the gather runs on the one shared cycle state and feeds the Containers view', () => {
+    const gatherer = between(ipc, 'const gatherer = createGatherer(', 'const gather = ')
+    expect(gatherer).toMatch(/\bstate,/)
+    expect(gatherer).toMatch(/feed: \(g\) => setInheritedBuckets\(bucketFeed\(g\.bundles\)\)/)
   })
 
   it('the cycle shares the same failure memory as the manual jobs', () => {

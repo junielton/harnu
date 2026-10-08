@@ -98,6 +98,24 @@ describe('createGatherer: a persisting gather (T445 delta 2)', () => {
     expect(b.spies.setLeftovers).not.toHaveBeenCalled()
   })
 
+  it('applies the failures before it caches and feeds anything (delta 1, item 4)', async () => {
+    const b = bundle(WT_READY)
+    const { spies, gatherer } = setup(gathered({ bundles: [b] }))
+    spies.state.failures.set(b.item.id, { step: 'stack', error: 'boom', at: NOW })
+    await gatherer.gather()
+    const fed = spies.feed.mock.calls[0]![0] as GcGathered
+    expect(fed.bundles[0]!.bucket).toBe('review')
+    expect(gatherer.cached()!.bundles[0]!.bucket).toBe('review')
+    expect(gatherer.cached()!.bundles[0]!.reason?.code).toBe('cleanup-failed')
+  })
+
+  it('drops the failure note of a bundle it cannot see (a persisting gather prunes)', async () => {
+    const { spies, gatherer } = setup(gathered())
+    spies.state.failures.set('vanished', { step: 'deps', error: 'x', at: NOW })
+    await gatherer.gather()
+    expect(spies.state.failures.has('vanished')).toBe(false)
+  })
+
   it('feeds the Containers view and caches the result', async () => {
     const g = gathered()
     const { spies, gatherer } = setup(g)
