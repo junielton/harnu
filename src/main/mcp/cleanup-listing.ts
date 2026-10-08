@@ -189,7 +189,8 @@ const REVIEW_SENTENCES: Record<string, string> = {
   'shared-stack': 'A Docker stack also runs from outside this worktree.',
   'path-unresolved': 'A path of this worktree could not be resolved.',
   'nested-worktree':
-    'Another worktree or checkout lives inside this one, so removing it would take that one along.'
+    'Another worktree or checkout lives inside this one, so removing it would take that one along.',
+  locked: 'This worktree is locked in git; release it there first.'
 }
 
 /**
@@ -495,13 +496,20 @@ export function planRelease(
   // "Needs review" for the failure window whatever its facts say, so a release cannot promise
   // it is about to be cleaned.
   const halted = bundle.reason?.code === 'cleanup-failed'
-  const after = halted ? { bucket: 'review' as const, reason: bundle.reason } : judged
+  // A bundle the snapshot already holds in review is past its grace window, so a release (which
+  // lifts the grace and nothing else) cannot move it out, whatever rule put it there — a git
+  // lock, a nested worktree, a shared stack. Reading the snapshot rather than re-deriving keeps
+  // that true for a rule `bucketOf` does not know yet.
+  const held = bundle.bucket === 'review'
+  const after = halted || held ? { bucket: 'review' as const, reason: bundle.reason } : judged
   const reason = reviewReason(after.reason)
   const message = halted
     ? 'Released, but the last cleanup of this worktree stopped, so it stays in review until that failure note expires (about a day) or the operator retries. Nothing was deleted.'
-    : after.bucket === 'ready'
-      ? 'Released. The grace window no longer applies, so this worktree is ready to clean from the next scan. Nothing was deleted: the operator cleans it, or the autopilot does when it is on and acknowledged.'
-      : `Released, but this worktree is not ready to clean (it is ${after.bucket}): a release lifts the grace window and nothing else. Nothing was deleted.`
+    : held
+      ? 'Released, but this worktree stays in review: a release lifts the grace window and nothing else. Nothing was deleted.'
+      : after.bucket === 'ready'
+        ? 'Released. The grace window no longer applies, so this worktree is ready to clean from the next scan. Nothing was deleted: the operator cleans it, or the autopilot does when it is on and acknowledged.'
+        : `Released, but this worktree is not ready to clean (it is ${after.bucket}): a release lifts the grace window and nothing else. Nothing was deleted.`
   return {
     ok: true,
     bundleId: bundle.item.id,

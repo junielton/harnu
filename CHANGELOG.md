@@ -21,7 +21,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   worker can report how many worktrees are ready to clean. `release_worktree` lets a session say its merged
   worktree is done, which skips the grace period so it becomes ready to clean at the next scan.
   A release never overrides a safety rule (uncommitted work, an open session, a shared
-  Docker stack, a worktree nested inside it, Keep, never-clean, an unresolved path all still hold it back) and it deletes nothing: neither
+  Docker stack, a worktree nested inside it, a worktree git has locked, Keep, never-clean, an unresolved path all still hold it back) and it deletes nothing: neither
   verb removes anything, and no agent can clean a worktree. A release belongs to the commit it was made at, and a
   session can name the worktree by its folder or by the name the list gave it. See [Agent control](docs/user/agent-control.md).
 
