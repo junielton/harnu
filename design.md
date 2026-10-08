@@ -8320,8 +8320,8 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
 3. **Selection bar** (only with ≥1 checked block) — the takeover's existing selection band
    (`border-b border-border bg-surface-2`, `padding: 8px 22px`): `square-check` icon (`--accent`), the
    count `N selected · X GiB` (13px; numbers 600-weight `--text`), then **Remove selected** (Danger),
-   **Dehydrate** (Soft), **Keep** (Ghost), **Ask for an opinion** (Soft, `sparkles`, disabled, tooltip
-   "coming in S6"), a `⇧` hint (`kbd`) and a right-aligned "Clear selection" ghost link.
+   **Dehydrate** (Soft), **Keep** (Ghost), **Ask for an opinion** (Soft, `sparkles`; enabled
+   whenever the selection holds Needs review items — see "Opinion chip"), a `⇧` hint (`kbd`) and a right-aligned "Clear selection" ghost link.
 4. **First-cycle banner** (only while `firstReportAcknowledged` is false and a report exists): see below.
 5. **Split bar** (`.gc-split`): a 32px bar of three segments — _Ready to clean_ (ready items +
    Docker housekeeping, Ready triple), _Needs review_ (hatch), _In use_. Widths
@@ -8407,7 +8407,8 @@ Top to bottom: name (13px mono, `--text`) and repo (11px `--text-4`); size (20px
 confirm dialog's preview: stack containers, deps, checkout, branch; a worktree's volumes are kept and a
 note says so); then the actions, stacked,
 `justify-content: flex-start`, shortcut `kbd` right: **Remove** (Danger), **Dehydrate** (Soft),
-**Keep** (Ghost), **Ask for an opinion** (Soft, disabled, "coming in S6"). A Ready to clean block's panel offers
+**Keep** (Ghost), **Ask for an opinion** (Soft, `sparkles`) — and, once the block has an opinion, an **Opinion** section above the
+actions (see "Opinion chip"). A Ready to clean block's panel offers
 "Clean now" only. An orphan-volume block shows its project name and "no known worktree".
 A failed item's panel adds **what ran** — a step list (✓ done, ✗ failed in `--red`, dashed todo) for the
 engine's steps (stack stopped · containers removed · volumes · archive · deps · checkout · branch), and
@@ -8422,8 +8423,34 @@ is the bucket icon, which becomes a hover-reveal checkbox (the Cleanup row patte
 `square-check` in `--accent` when checked; a checked row is `--accent-soft` with `--accent-line`; a failed
 row is `--red-soft` with `--red-line` and `triangle-alert`. Header: eyebrow "Needs review" in `--warning`,
 the count, and two header buttons that act on the **whole list** — "Ask for an opinion on all {n}"
-(disabled, S6) and "Remove the {n} marked safe" (hidden until opinions exist). Hovering a row outlines
-its block. Footer: the keyboard hints (`kbd`).
+(Soft, `sparkles`) and "Remove the {n} marked safe" (Success, hidden until at least one safe opinion
+is current). Each row carries its **opinion chip** under the reason (see "Opinion chip"). Hovering a row
+outlines its block. Footer: the keyboard hints (`kbd`).
+
+#### Opinion chip ("Ask for an opinion", T444)
+
+An **advisory, on-demand** verdict on a Needs review item, produced by a read-only headless session.
+It never removes anything and never runs by itself: the timer and the autopilot do not ask. The three
+entry points are the selection bar's button (the checked items), the list header's "on all {n}" (every
+Needs review item, orphan volumes included) and the block panel's button (that one item).
+
+- **Chip** (`CleanupOpinionChip.vue`): the Badges geometry (`2px 8px`, pill, 11px). Verdicts use the
+  existing variants, label always in words (never colour alone): **safe** → Success, **keep** → Accent,
+  **unsure** → Default. The chip's `title` is the reason, then the evidence on a second line.
+- **Pending** (a request in flight for that item): a Default chip with a 6px `--accent` dot using the
+  existing `.anim-shimmer-dot` helper and the word "Asking…". No chip is drawn for an item nobody asked about.
+- **Panel section "Opinion"** (above the actions, only when there is an opinion): the chip, the reason in
+  13px `--text-2`, and the evidence as an 11.5px `--text-3` line prefixed "Evidence". Nothing else.
+- **"Remove the {n} marked safe"**: counts only items that are still Needs review and whose opinion still
+  matches (head and reason unchanged). It **pre-selects those items and opens the existing remove dialog**;
+  it never removes by itself. The dialog sends `gc:clean(ids, { confirmed, expected })` exactly like
+  Remove selected (every id confirmed, each with its `expected`), so a change between the opinion and the
+  click is refused as `changed-since-confirm`.
+- **Failure and doubt are the same chip**: an advisor that could not run, answered badly, or marked
+  something safe without evidence reads **unsure**; the reason says why. A failed answer is not
+  remembered, so asking again asks again.
+- **Cost disclosure:** the button's tooltip says it uses the model on demand
+  ("Asks a read-only model session. Uses tokens."). Docs say the same.
 
 #### Bulk-clean and remove-selected dialog (`CleanupBulkConfirmDialog.vue`)
 
@@ -8439,12 +8466,13 @@ bucket icon, `repo › worktree` + branch (11px mono `--text-4`), the **removal 
   `triangle-alert`. Ready variant: _Volumes are kept. They show up in Needs review afterwards._; code,
   branch and dependencies can come back (archive refs, OS trash, `setup`) — and how. A row that is an
   orphan volume adds _Volumes cannot be restored_ in `--warning`. Remove-selected variant: each row also carries its
-  one-sentence reason; a stronger line names how many picked worktrees hold work that no other branch has,
+  one-sentence reason and, when it has one, its **opinion chip** with the evidence line under it; a stronger line names how many picked worktrees hold work that no other branch has,
   and says their code stays recoverable from archive refs and the OS trash.
 - **Footer:** total (12.5px/500) left; **Cancel** (Ghost) and the confirm. Confirm is **Success** for
   proven-ready items (positive bulk reclaim, like today's Sweep), **Danger** for remove-selected (it can include
-  code that exists nowhere else but an archive ref). Confirming calls `gc:clean(ids)` /
-  `gc:clean(ids, { confirmDecide: true })` and closes the dialog at once.
+  code that exists nowhere else but an archive ref). Confirming calls `gc:clean(ids, { expected })` for
+  proven-ready items and `gc:clean(ids, { confirmed, expected })` for remove-selected (each id confirmed
+  on its own, each with the facts the row showed) and closes the dialog at once.
 - **Keyboard:** Esc or Cancel closes; **focus starts on Cancel, never the confirm button**; Tab cycles
   inside (focus trap); ↩ activates only the focused control.
 
@@ -8537,7 +8565,8 @@ that belong to no worktree) and states that worktree-bound stacks are cleaned by
 `CleanupView.vue` (shell) · `CleanupTreemap.vue` · `CleanupBlockPanel.vue` · `CleanupHeroButton.vue` ·
 `CleanupSelectionBar.vue` · `CleanupDockerCard.vue` · `CleanupReviewList.vue` ·
 `CleanupFirstCycleBanner.vue` · `CleanupBulkConfirmDialog.vue` · `CleanupOtherItems.vue` ·
-`stores/gc.ts` · `lib/gc-treemap.ts` · `lib/gc-model.ts` · `lib/gc-jobs.ts`.
+`CleanupOpinionChip.vue` · `stores/gc.ts` · `lib/gc-treemap.ts` · `lib/gc-model.ts` · `lib/gc-jobs.ts` ·
+`lib/gc-opinion.ts`.
 
 ### Containers takeover (ContainersView.vue)
 
