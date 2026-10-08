@@ -48,8 +48,35 @@ export interface ExecutorDeps {
   /** Captures a worktree's tracked + untracked working state and points `ref` at it. */
   archiveWip(repoPath: string, ref: string, worktreePath: string): Promise<string>
   detachSidebar(path: string): Promise<void>
+  /**
+   * Unregisters exactly this worktree from git: removes its own admin directory, found by the
+   * `gitdir` file that points at `worktreePath`. Never a repo-wide `git worktree prune`, which
+   * also drops the registration of every unlocked worktree whose folder is merely missing, an
+   * unmounted drive for instance, and so can lose a live worktree's metadata unattended.
+   */
+  removeWorktreeAdmin(repoPath: string, worktreePath: string): Promise<void>
   appendTombstone(t: Tombstone): Promise<void>
   now(): number
+}
+
+const slashes = (p: string): string =>
+  p
+    .replace(/\\/g, '/')
+    .replace(/\/{2,}/g, '/')
+    .replace(/\/+$/, '')
+
+/**
+ * The admin directory of the worktree at `worktreePath`, from the entries of
+ * `<common>/worktrees/*`: the one whose `gitdir` file points at `<worktreePath>/.git`. Null
+ * when none does, or when more than one does: an ambiguous match is left alone.
+ */
+export function matchAdminDir(
+  entries: ReadonlyArray<{ dir: string; gitdir: string }>,
+  worktreePath: string
+): string | null {
+  const target = `${slashes(worktreePath)}/.git`
+  const hits = entries.filter((e) => slashes(e.gitdir.trim()) === target)
+  return hits.length === 1 ? hits[0]!.dir : null
 }
 
 function errorMessage(err: unknown): string {
@@ -219,8 +246,10 @@ export async function cleanItem(
     await deps.trash(item.path!)
   })
 
+  // The step keeps its id for the journal and the pipeline, but it only unregisters THIS
+  // worktree now (see ExecutorDeps.removeWorktreeAdmin).
   await run('worktree-prune', hasFolder, async () => {
-    await deps.git(item.repoPath, ['worktree', 'prune'])
+    await deps.removeWorktreeAdmin(item.repoPath, item.path!)
   })
 
   await run('branch-delete', hasLocalBranch, async () => {

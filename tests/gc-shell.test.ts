@@ -1507,9 +1507,8 @@ describe('cleanGit', () => {
     [
       'worktree-prune',
       {
-        git: async (_repo, args) => {
-          if (args[0] === 'worktree') throw new Error('prune failed')
-          return ''
+        removeWorktreeAdmin: async () => {
+          throw new Error('prune failed')
         }
       },
       'prune'
