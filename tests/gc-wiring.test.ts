@@ -218,7 +218,7 @@ describe('Keep survives a stale cache (delta 3, item 1)', () => {
 
   it('a gather clears only the marks it judged, and only if they are still the same', () => {
     expect(between(ipc, 'const gather = ', 'const queue = createJobQueue')).toMatch(
-      /withoutStaleKeeps\(prefs, g\.staleKeeps\)/
+      /withoutStaleKeeps\(prefs, g\.staleKeeps, protect\)/
     )
     expect(scan).toMatch(/judgeKeeps\(/)
   })
@@ -312,7 +312,7 @@ describe('Keep protects at once (delta 4, N1)', () => {
 
   it('a gather protects provisional marks and marks written after it started', () => {
     expect(between(ipc, 'const gather = ', 'const gatherFresh')).toMatch(
-      /withoutStaleKeeps\(prefs, g\.staleKeeps, protectedFromGather\(/
+      /protectedFromGather\(keepWrites, provisionalKeeps, startedAt\)[\s\S]*withoutStaleKeeps\(prefs, g\.staleKeeps, protect\)/
     )
   })
 
