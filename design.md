@@ -8471,7 +8471,10 @@ Needs review item, orphan volumes included) and the block panel's button (that o
   main cached is checked against main's cache again after every snapshot (`gc:opinion:cached`), so a
   change the snapshot does not carry (the dirty files, the pull request state) clears it too.
 - **"Remove the {n} marked safe"**: counts only items that are still Needs review and whose opinion is
-  still current. It **pre-selects those items and opens the existing remove dialog**; it never removes by
+  still current. **Right before the dialog opens** it asks main's cache (`gc:opinion:cached`) about the
+  marked ids again, under each item's current key, and pre-selects only those main still confirms as
+  `safe`; the rest lose their chip and a one-line toast says how many were left out. If main cannot be
+  asked, nothing is selected. It **pre-selects those items and opens the existing remove dialog**; it never removes by
   itself. The binding is the `expected` the dialog captures **when it opens**, exactly as for Remove
   selected: the dialog sends `gc:clean(ids, { confirmed, expected })` and main refuses any item whose
   facts differ from that `expected` (`changed-since-confirm`). The opinion is advice shown before the
@@ -8483,10 +8486,14 @@ Needs review item, orphan volumes included) and the block panel's button (that o
   list renders, the store asks main's cache (`gc:opinion:cached`, a read that never asks the model) for
   every item without a chip. Only an answer that still fits the item is returned (same head, dirty
   files, fate and reason); an item that changed shows no chip and costs a new ask.
-- **Reads files, runs nothing, no network:** the advisor session has exactly `Read`, `Grep` and `Glob`.
-  `Bash` is denied entirely (even a git rule can write files through `--output=<path>`, which prefix rules
-  cannot forbid), as are `Edit`, `Write`, `NotebookEdit`, `WebFetch` and `WebSearch`; no MCP server is
-  configured. Everything git knows is in the dossier, which main computes.
+- **Reads files, runs nothing:** the session is started with `--tools Read,Grep,Glob`, which is what
+  restricts its roster (`--allowedTools` and `--disallowedTools` are only permission rules and leave the
+  built-ins offered; the real CLI then still offers CronCreate, EnterWorktree, RemoteTrigger and more).
+  The permission rules stay as defence in depth: `Bash` is denied entirely (even a git rule can write
+  files through `--output=<path>`, which prefix rules cannot forbid), as are `Edit`, `Write`,
+  `NotebookEdit`, `WebFetch` and `WebSearch`, and no MCP server is configured. Everything git knows is in
+  the dossier, which main computes. It has no tool that runs a command, writes a file or reaches the
+  network; what it reads (the dossier and any file it opens) is sent to the model like any request.
 - **Cost disclosure:** the button's tooltip says it uses the model on demand
   ("Asks a read-only model session. Uses tokens."). Docs say the same.
 
