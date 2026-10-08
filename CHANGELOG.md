@@ -21,7 +21,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ### Fixed
 
 - **No raw codes in Cleanup.** Items stopped because they became dirty, hold another repository's checkout, or could not be unregistered from git now say so in a sentence; any other reason reads "Harnu stopped this item for a safety check", with the raw text only behind Copy error. Every pipeline step has a label.
-- **No Remove on an item that holds another worktree.** It could never succeed, so the button and its R shortcut are gone, with a line saying why.
+- **No Remove on an item that holds another worktree or that git has locked.** It could never succeed, so the button and its R shortcut are gone, with a line saying why.
 - **The Docker card says when orphan volumes are hidden.** If a compose project name could not be resolved (or the compose scan hit its limit), the volumes block now reads "hidden" with a note naming the folders, instead of a misleading "0 volumes".
 - **Cleanup no longer invents a history of what ran.** After a failed clean the panel says what happened ("Nothing was changed", or "Stopped at <step>: <reason>") instead of ticking steps that never ran, and Docker volumes never show up as removed.
 - **Retry works for every failed item.** A failed ready item reopens the ready confirmation; a review item opens the review one.

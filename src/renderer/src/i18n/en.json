@@ -2303,7 +2303,8 @@
         "noKnownWorktree": "No known worktree uses this volume.",
         "ready": "Merged, clean and idle past the grace period.",
         "pathUnresolved": "The worktree has a path Harnu could not resolve to its real location, so it cannot tell what uses it.",
-        "nestedWorktree": "Another worktree lives inside this one, and removing this one would trash it too."
+        "nestedWorktree": "Another worktree lives inside this one, and removing this one would trash it too.",
+        "locked": "This worktree is locked in git"
       },
       "step": {
         "stopStack": "Stop the stack",
@@ -2354,7 +2355,8 @@
         "stoppedAt": "Stopped at “{step}”",
         "nothingChanged": "Nothing was changed.",
         "genericStop": "Harnu stopped this item for a safety check.",
-        "removeBlocked": "Remove is unavailable: this folder holds another worktree. Remove or move that one first."
+        "removeBlocked": "Remove is unavailable: this folder holds another worktree. Remove or move that one first.",
+        "removeLocked": "Remove is unavailable: git has this worktree locked. Unlock it first."
       },
       "list": {
         "label": "Worktrees by bucket",
@@ -2613,7 +2615,7 @@
         "changedMidRun": "It changed while the clean was running, so Harnu stopped.",
         "dirty": "It has uncommitted changes now, so it was left alone.",
         "foreignCheckout": "Another repository is checked out inside this folder, so it was left alone.",
-        "cannotUnregister": "Git has no unlocked registration for this worktree, so nothing was removed."
+        "cannotUnregister": "Harnu couldn't match this worktree to a single git registration, so nothing was touched."
       },
       "review": {
         "title": "Needs review",

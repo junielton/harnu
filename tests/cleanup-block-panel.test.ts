@@ -88,6 +88,19 @@ describe('CleanupBlockPanel — a nested-worktree item can never be removed from
     w.unmount()
   })
 
+  it('a locked worktree (git refuses to remove it) gets the same treatment', () => {
+    const locked = blockWith(
+      'review',
+      {},
+      reviewReason('locked' as never, 'This worktree is locked in git.')
+    )
+    const w = mountPanel(locked)
+    expect(has(w, 'panel-remove')).toBe(false)
+    expect(w.get('[data-testid="panel-remove-blocked"]').text()).toBe(
+      'Remove is unavailable: git has this worktree locked. Unlock it first.'
+    )
+  })
+
   it('keeps Keep and the other actions that do not delete the folder', () => {
     const w = mountPanel(nested())
     expect(has(w, 'panel-keep')).toBe(true)

@@ -122,8 +122,18 @@ const ready = computed(() => props.block.bucket === 'ready')
 const inUse = computed(() => props.block.bucket === 'in-use')
 const hasFailure = computed(() => props.failure !== null)
 
-/** Main always refuses a worktree that holds another one (removing it would trash the inner one too). */
-const removeBlocked = computed(() => review.value && props.block.reasonCode === 'nested-worktree')
+/**
+ * Main always refuses a worktree that holds another one (removing it would trash the inner one too) and one
+ * git has locked. `locked` is compared by string: its main-side type has not reached this branch yet.
+ */
+const REMOVE_REFUSED: Readonly<Record<string, string>> = {
+  'nested-worktree': 'cleanup.gc.panel.removeBlocked',
+  locked: 'cleanup.gc.panel.removeLocked'
+}
+const removeBlockedKey = computed(() =>
+  review.value ? (REMOVE_REFUSED[props.block.reasonCode ?? ''] ?? null) : null
+)
+const removeBlocked = computed(() => removeBlockedKey.value !== null)
 const showRemove = computed(() => review.value && !removeBlocked.value)
 const showKeep = computed(() => review.value && !isVolume.value)
 const showAsk = computed(() => review.value && !isVolume.value)
@@ -415,7 +425,7 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
       </Button>
 
       <p v-if="removeBlocked" class="text-caption text-text-3" data-testid="panel-remove-blocked">
-        {{ t('cleanup.gc.panel.removeBlocked') }}
+        {{ removeBlockedKey ? t(removeBlockedKey) : '' }}
       </p>
 
       <Button
