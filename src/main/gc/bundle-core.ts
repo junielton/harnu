@@ -66,6 +66,7 @@ export type ReviewCode =
   | 'cleanup-failed'
   | 'path-unresolved'
   | 'nested-worktree'
+  | 'locked'
 
 /** `detail` is one English sentence with the concrete fact; the renderer translates by `code`. */
 export interface ReviewReason {
@@ -117,6 +118,11 @@ export interface BundleFacts {
    * list that is absent (the scan did not walk it), is never ready.
    */
   foreignCheckouts: string[]
+  /**
+   * Git lists this worktree as locked (delta 6): it cannot be unregistered, so it is never
+   * ready. Optional, and absent means unlocked: the reprobe asks git again before any step.
+   */
+  locked?: boolean
 }
 
 export interface WorktreeBundle extends BundleFacts {
@@ -293,6 +299,8 @@ export function bucketOf(
     )
   }
 
+  if (f.locked === true) return review('locked', 'This worktree is locked in git.')
+
   if (f.pathsResolved !== true)
     return review(
       'path-unresolved',
@@ -378,6 +386,8 @@ export interface BuildBundlesInput {
    * id (delta 7). Required: a worktree with no entry was not walked, so it is never ready.
    */
   foreignCheckouts: ReadonlyMap<string, string[]>
+  /** Ids of the items git lists as locked (delta 6); absent means none. See {@link lockedItemIds}. */
+  locked?: ReadonlySet<string>
 }
 
 /** Merge time from the `pr-merged` checkpoint detail; anything that is not a date is ignored. */
@@ -627,7 +637,8 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
       nestedWorktrees,
       // Passed through as given: a missing or malformed entry stays so, and bucketOf and
       // refusalOf both fail closed on it.
-      foreignCheckouts: input.foreignCheckouts.get(item.id) as string[]
+      foreignCheckouts: input.foreignCheckouts.get(item.id) as string[],
+      ...(input.locked?.has(item.id) ? { locked: true } : {})
     }
     return { ...facts, ...bucketOf(facts, input.now, graceDays) }
   })

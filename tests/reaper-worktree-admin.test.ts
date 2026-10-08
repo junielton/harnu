@@ -8,7 +8,8 @@ import {
   existsSync,
   readdirSync,
   readFileSync,
-  symlinkSync
+  symlinkSync,
+  cpSync
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -45,6 +46,40 @@ const adminNames = (): string[] => {
     return [] // git removes the folder with the last registration
   }
 }
+
+const item = (mine: string, branch: string): ReapItem =>
+  ({
+    id: 'i',
+    repoPath: repo,
+    kind: 'worktree',
+    branch,
+    path: mine,
+    hidden: false,
+    ageDays: 1,
+    diskBytes: 0,
+    checkpoints: [],
+    verdict: 'harvestable',
+    blockers: [],
+    needsRemoteDelete: false,
+    untracked: [],
+    justifiedBy: 'ancestor',
+    hydration: null
+  }) as ReapItem
+const execDeps = (over: Partial<ExecutorDeps> = {}): ExecutorDeps => ({
+  probeStatus: async () => ({ trackedDirty: false, untracked: [] }),
+  hasUnpushed: async () => false,
+  trash: async (p) => fsp.rm(p, { recursive: true, force: true }),
+  git: (r, args) => git(r, args),
+  resolveSha: async (r, rev) => (await git(r, ['rev-parse', '--verify', `${rev}^{commit}`])).trim(),
+  archiveTip: async (_r, ref) => ref,
+  archiveWip: async (_r, ref) => ref,
+  detachSidebar: async () => undefined,
+  canUnregister: (r, p) => canUnregister(r, p, git),
+  removeWorktreeAdmin: (r, p) => removeWorktreeAdmin(r, p, git),
+  appendTombstone: async () => undefined,
+  now: () => 1,
+  ...over
+})
 
 describe('a GC clean leaves unrelated worktree registrations alone (delta 3b, item 11)', () => {
   it('keeps the registration of an unrelated worktree whose folder is missing', async () => {
@@ -124,41 +159,6 @@ describe('a GC clean leaves unrelated worktree registrations alone (delta 3b, it
 })
 
 describe('real git: no silent skip, no half-cleaned worktree (delta 4, N4)', () => {
-  const item = (mine: string, branch: string): ReapItem =>
-    ({
-      id: 'i',
-      repoPath: repo,
-      kind: 'worktree',
-      branch,
-      path: mine,
-      hidden: false,
-      ageDays: 1,
-      diskBytes: 0,
-      checkpoints: [],
-      verdict: 'harvestable',
-      blockers: [],
-      needsRemoteDelete: false,
-      untracked: [],
-      justifiedBy: 'ancestor',
-      hydration: null
-    }) as ReapItem
-  const execDeps = (over: Partial<ExecutorDeps> = {}): ExecutorDeps => ({
-    probeStatus: async () => ({ trackedDirty: false, untracked: [] }),
-    hasUnpushed: async () => false,
-    trash: async (p) => fsp.rm(p, { recursive: true, force: true }),
-    git: (r, args) => git(r, args),
-    resolveSha: async (r, rev) =>
-      (await git(r, ['rev-parse', '--verify', `${rev}^{commit}`])).trim(),
-    archiveTip: async (_r, ref) => ref,
-    archiveWip: async (_r, ref) => ref,
-    detachSidebar: async () => undefined,
-    canUnregister: (r, p) => canUnregister(r, p, git),
-    removeWorktreeAdmin: (r, p) => removeWorktreeAdmin(r, p, git),
-    appendTombstone: async () => undefined,
-    now: () => 1,
-    ...over
-  })
-
   it('finds an admin dir whose gitdir is written relative, as git 2.48+ does with useRelativePaths', async () => {
     const mine = join(root, 'wt-mine')
     await git(repo, ['worktree', 'add', '-q', '-b', 'feat/mine', mine])
@@ -233,6 +233,46 @@ describe('real git: no silent skip, no half-cleaned worktree (delta 4, N4)', () 
     expect(existsSync(mine)).toBe(false)
     expect(readFileSync(join(trashDir, 'wt-mine', '.env'), 'utf8')).toBe('SECRET=1')
     expect(adminNames()).toEqual([])
+  })
+})
+
+describe('a lock counts toward ambiguity (delta 6, item 1)', () => {
+  const lockedWithStaleTwin = async (): Promise<string> => {
+    const mine = join(root, 'wt-mine')
+    await git(repo, ['worktree', 'add', '-q', '-b', 'feat/mine', mine])
+    await git(repo, ['worktree', 'lock', mine])
+    // A stale duplicate registration pointing at the same folder, as a crash can leave behind.
+    cpSync(
+      join(repo, '.git', 'worktrees', 'wt-mine'),
+      join(repo, '.git', 'worktrees', 'wt-mine1'),
+      {
+        recursive: true
+      }
+    )
+    rmSync(join(repo, '.git', 'worktrees', 'wt-mine1', 'locked'))
+    return mine
+  }
+
+  it('a locked admin dir plus an unlocked duplicate is not a unique match', async () => {
+    const mine = await lockedWithStaleTwin()
+    expect(await canUnregister(repo, mine, git)).toBe(false)
+    expect(await removeWorktreeAdmin(repo, mine, git)).toBe(false)
+  })
+
+  it('halts the item before the trash: folder and both registrations untouched', async () => {
+    const mine = await lockedWithStaleTwin()
+    const result = await cleanItem(item(mine, 'feat/mine'), { deleteRemote: false }, execDeps())
+    expect(result.ok).toBe(false)
+    expect(result.steps.find((s) => !s.ok)!.id).toBe('trash-folder')
+    expect(existsSync(mine)).toBe(true)
+    expect(adminNames()).toEqual(['wt-mine', 'wt-mine1'])
+  })
+
+  it('a lone locked admin dir is still not unregisterable', async () => {
+    const mine = join(root, 'wt-mine')
+    await git(repo, ['worktree', 'add', '-q', '-b', 'feat/mine', mine])
+    await git(repo, ['worktree', 'lock', mine])
+    expect(await canUnregister(repo, mine, git)).toBe(false)
   })
 })
 

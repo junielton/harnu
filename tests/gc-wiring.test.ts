@@ -366,3 +366,11 @@ describe('transcript activity fails closed (delta 5, item 3)', () => {
     expect(scan).toMatch(/withGraceUnknown\(/)
   })
 })
+
+describe('a locked worktree is review at scan time (delta 6, item 2)', () => {
+  it('the gather lists git-locked worktrees and hands them to the bundle builder', () => {
+    expect(scan).toMatch(/listLockedWorktreePaths\(/)
+    expect(scan).toMatch(/lockedItemIds\(/)
+    expect(scan).toMatch(/locked: /)
+  })
+})

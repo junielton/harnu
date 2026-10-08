@@ -65,6 +65,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   that is already kept never drops its mark. If Harnu cannot read Claude's transcripts folder,
   or cannot tell which folder a transcript belongs to, it counts the activity as possibly
   belonging to the worktree and keeps it out of the ready list.
+- **Locked worktrees are left alone, and Harnu says so up front.** A worktree you locked in git
+  (`git worktree lock`) now shows in Needs review with "This worktree is locked in git", and
+  Harnu checks again before it stops any container: if git cannot unregister a worktree, nothing
+  is stopped or removed. A lock also counts when a stale duplicate registration points at the
+  same folder. If Claude's folder exists but its transcripts folder is missing, Harnu treats
+  recent activity as unknown and cleans nothing automatically.
 - **Docker housekeeping in the same cycle.** When automatic cleanup is on, each cycle also
   clears Docker build cache older than a week and dangling images, and reports how much it
   freed. It never touches images a stack uses and never removes a volume: volumes nobody uses

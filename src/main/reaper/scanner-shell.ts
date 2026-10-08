@@ -887,6 +887,15 @@ export function lastFateInputs(): Map<string, FateInput> {
 }
 
 /** Every worktree path of the given repos (main checkout and linked, bare excluded). */
+/** Paths of the worktrees git lists as locked, across the repos. */
+export async function listLockedWorktreePaths(repoPaths: readonly string[]): Promise<string[]> {
+  const out = new Set<string>()
+  for (const repoPath of repoPaths) {
+    for (const w of await listWorktreesRaw(repoPath)) if (!w.bare && w.locked) out.add(w.path)
+  }
+  return [...out]
+}
+
 export async function listAllWorktreePaths(repoPaths: readonly string[]): Promise<string[]> {
   const out = new Set<string>()
   for (const repoPath of repoPaths) {
