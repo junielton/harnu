@@ -119,9 +119,35 @@ describe('release_worktree handler (T445)', () => {
   it('AC-3: releasing twice is idempotent and says so', async () => {
     const snap = snapshot([fresh])
     snap.prefs.released = { [fresh.item.id]: NOW - 5_000 }
-    serve(snap)
+    snap.prefs.releasedFrom = {
+      [fresh.item.id]: { repoPath: MAIN, path: WT_READY, localTip: TIP }
+    }
+    const { release } = serve(snap)
     const ack = JSON.parse(textOf(await handler({ folder: WT_READY }, ctx(WT_READY))))
     expect(ack).toMatchObject({ ok: true, alreadyReleased: true, released: true })
+    // H4: nothing is recorded again, so repeated calls never rewrite the prefs.
+    expect(release).not.toHaveBeenCalled()
+  })
+
+  it('H4: a mark made at an older tip does not count as "already released"', async () => {
+    const snap = snapshot([fresh])
+    snap.prefs.released = { [fresh.item.id]: NOW - 5_000 }
+    snap.prefs.releasedFrom = {
+      [fresh.item.id]: { repoPath: MAIN, path: WT_READY, localTip: 'b'.repeat(40) }
+    }
+    const { release } = serve(snap)
+    const ack = JSON.parse(textOf(await handler({ folder: WT_READY }, ctx(WT_READY))))
+    expect(ack.alreadyReleased).toBe(false)
+    expect(release).toHaveBeenCalledTimes(1)
+  })
+
+  it('H4: a legacy mark with no recorded tip does not count either', async () => {
+    const snap = snapshot([fresh])
+    snap.prefs.released = { [fresh.item.id]: NOW - 5_000 }
+    const { release } = serve(snap)
+    const ack = JSON.parse(textOf(await handler({ folder: WT_READY }, ctx(WT_READY))))
+    expect(ack.alreadyReleased).toBe(false)
+    expect(release).toHaveBeenCalledTimes(1)
   })
 
   it('AC-3: a trailing slash on the folder still finds the bundle', async () => {

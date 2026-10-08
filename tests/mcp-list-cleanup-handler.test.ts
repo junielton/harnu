@@ -353,15 +353,37 @@ describe('list_cleanup handler (T445)', () => {
   it('marks a bundle the agent already released', async () => {
     const snap = snapshot([ready])
     snap.prefs.released = { [ready.item.id]: NOW - 1000 }
+    snap.prefs.releasedFrom = {
+      [ready.item.id]: { repoPath: MAIN, path: WT_READY, localTip: 'a'.repeat(40) }
+    }
     serve(snap)
     const rows = JSON.parse(textOf(await handler({}, ctx()))).bundles as Listed[]
     expect(rows[0]!.released).toBe(true)
   })
 
-  it('AC-2: reads a fresh snapshot and never calls release', async () => {
+  it('a mark made at another tip, or with no tip, does not read as released', async () => {
+    const old = snapshot([ready])
+    old.prefs.released = { [ready.item.id]: NOW - 1000 }
+    old.prefs.releasedFrom = {
+      [ready.item.id]: { repoPath: MAIN, path: WT_READY, localTip: 'b'.repeat(40) }
+    }
+    serve(old)
+    expect((JSON.parse(textOf(await handler({}, ctx()))).bundles as Listed[])[0]!.released).toBe(
+      false
+    )
+    const legacy = snapshot([ready])
+    legacy.prefs.released = { [ready.item.id]: NOW - 1000 }
+    serve(legacy)
+    expect((JSON.parse(textOf(await handler({}, ctx()))).bundles as Listed[])[0]!.released).toBe(
+      false
+    )
+  })
+
+  it('AC-2: reads the current snapshot, asks for no refresh, and never calls release', async () => {
     const { release } = serve(snapshot([ready]))
     await handler({}, ctx())
-    expect(h.snapshotCalls).toEqual([{ refresh: true }])
+    expect(h.snapshotCalls).toHaveLength(1)
+    expect(h.snapshotCalls[0]?.refresh).toBeFalsy()
     expect(release).not.toHaveBeenCalled()
   })
 
