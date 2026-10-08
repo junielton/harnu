@@ -28,7 +28,7 @@ import {
   type KnownFolder,
   type VolumeFact
 } from '../containers/containers-core'
-import { buildBundles, type SessionPresence } from './bundle-core'
+import { buildBundles, staleReleases, type SessionPresence } from './bundle-core'
 import { presenceFromSets, dockerIsUnavailable } from './gc-shell'
 import {
   makeDirExists,
@@ -216,12 +216,10 @@ export async function gatherGc(prefs: GcPrefs, now: number): Promise<GcGathered>
   }
   if (keep.size > 0) bundles = buildBundles({ ...input, keep })
 
-  // A release holds while the bundle is there and its merge proof stays strong; otherwise
-  // the mark is dropped, so a branch that later reopens does not come back pre-released.
-  const stillReleased = new Set(
-    bundles.filter((b) => b.fate.fate === 'merged' && b.fate.strong).map((b) => b.item.id)
-  )
-  const staleReleases = Object.keys(prefs.released).filter((id) => !stillReleased.has(id))
+  // A release is dropped only when its bundle is in this gather and no longer strongly merged,
+  // so a branch that reopens does not come back pre-released. A gather that cannot see the
+  // bundle (app start, before the first scan) leaves the mark alone.
+  const staleReleaseIds = staleReleases(bundles, prefs.released)
   const volumes = toHousekeepingVolumes(df)
   const housekeeping = {
     volumes,
@@ -246,6 +244,6 @@ export async function gatherGc(prefs: GcPrefs, now: number): Promise<GcGathered>
     df,
     orphanVolumes: orphanVolumeItems(orphanNames, df),
     staleKeeps,
-    staleReleases
+    staleReleases: staleReleaseIds
   }
 }

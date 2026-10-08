@@ -438,3 +438,20 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
     return { ...facts, ...bucketOf(facts, input.now, graceDays) }
   })
 }
+
+/**
+ * Release marks to drop after a gather. A mark goes only when its bundle IS in this gather and
+ * its fate is no longer merged and strong. A bundle that is absent proves nothing: the gather
+ * at app start runs before the Reaper's first scan and builds no bundles, and a repo that
+ * dropped out of a scan builds none of its own, so absence must never read as "stale".
+ */
+export function staleReleases(
+  bundles: ReadonlyArray<Pick<WorktreeBundle, 'item' | 'fate'>>,
+  released: Readonly<Record<string, number>>
+): string[] {
+  const present = new Map(bundles.map((b) => [b.item.id, b.fate]))
+  return Object.keys(released).filter((id) => {
+    const fate = present.get(id)
+    return fate !== undefined && !(fate.fate === 'merged' && fate.strong)
+  })
+}
