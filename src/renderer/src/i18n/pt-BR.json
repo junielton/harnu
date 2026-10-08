@@ -2307,12 +2307,12 @@
       "step": {
         "stopStack": "Parar a stack",
         "rmContainers": "Remover containers",
-        "rmVolumes": "Remover volumes",
         "archive": "Arquivar o código",
         "dropDeps": "Remover dependências",
         "trash": "Enviar o checkout à lixeira",
         "prune": "Podar o worktree",
-        "branchDelete": "Apagar a branch"
+        "branchDelete": "Apagar a branch",
+        "unknown": "uma etapa desconhecida"
       },
       "panel": {
         "close": "Fechar painel",
@@ -2332,13 +2332,6 @@
           "branch": "A branch local {branch}"
         },
         "volumesCannotRestore": "Volumes não podem ser restaurados.",
-        "ranTitle": "O que rodou",
-        "stepState": {
-          "ok": "feito",
-          "failed": "falhou",
-          "todo": "não rodou"
-        },
-        "nothingRan": "Nada destrutivo rodou.",
         "copyError": "Copiar erro",
         "copied": "Copiado",
         "cleaning": "Limpando…",
@@ -2352,7 +2345,10 @@
         "askSoon": "chega na S6",
         "volumesKept": "Os volumes dele ({names}) são mantidos. Depois eles aparecem em Precisa de você.",
         "readyNote": "Limpo no próximo ciclo, ou agora com Limpar agora.",
-        "inUseNote": "Deixado como está enquanto uma sessão trabalha aqui ou o pull request está aberto."
+        "inUseNote": "Deixado como está enquanto uma sessão trabalha aqui ou o pull request está aberto.",
+        "happenedTitle": "O que aconteceu",
+        "stoppedAt": "Parou em “{step}”",
+        "nothingChanged": "Nada foi alterado."
       },
       "list": {
         "label": "Worktrees por grupo",
@@ -2566,7 +2562,24 @@
         "unsupportedKind": "O Harnu ainda não consegue limpar este tipo de pasta.",
         "unknownItem": "A limpeza não conhece mais este item. Atualize e tente de novo.",
         "several": "{n} itens foram deixados como estão por motivos diferentes. Abra cada um para ver o motivo.",
-        "inUse": "Está em uso, então foi deixado como está."
+        "inUse": "Está em uso, então foi deixado como está.",
+        "tipUnknown": "O Harnu não conseguiu saber em qual commit esta worktree está, então a deixou como está.",
+        "protectedNow": "Ela está protegida agora (checkout principal, caminho de nunca limpar ou marca Manter), então foi deixada como está.",
+        "changedSinceScan": "Ela mudou desde a última varredura, então foi deixada como está. Varra de novo e revise.",
+        "graceNotElapsed": "Ela ainda não ficou quieta por tempo suficiente, então foi deixada como está.",
+        "notReady": "Ela não está mais pronta para limpar, então foi deixada como está.",
+        "pathUnresolved": "Um caminho ligado a esta worktree não pôde ser resolvido, então o Harnu não sabe o que a usa e a deixou como está.",
+        "stackPresent": "Uma stack do Docker está rodando a partir desta worktree, então ela foi deixada como está.",
+        "dockerUnavailable": "O Docker não respondeu, então o Harnu não pôde checar esta worktree com segurança e a deixou como está.",
+        "probeFailed": "A checagem desta worktree falhou, então ela foi deixada como está.",
+        "nestedWorktree": "Outra worktree vive dentro desta, então ela foi deixada como está.",
+        "sharedStack": "Outra stack também roda a partir desta worktree, então ela foi deixada como está.",
+        "headMoved": "Um commit novo chegou nesta worktree, então ela foi deixada como está.",
+        "notHarvestable": "A limpeza não a considera mais concluída, então foi deixada como está.",
+        "sessionOpen": "Há uma sessão aberta nesta worktree, então ela foi deixada como está.",
+        "unpushed": "Ela tem commits que nunca foram enviados, então foi deixada como está.",
+        "volumeInUse": "Um volume ainda está em uso por um container, então foi deixado como está.",
+        "changedMidRun": "Ela mudou durante a limpeza, então o Harnu parou."
       },
       "review": {
         "title": "Precisa de você",

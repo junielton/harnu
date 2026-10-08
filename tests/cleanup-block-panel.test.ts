@@ -176,17 +176,48 @@ describe('CleanupBlockPanel — a failed item', () => {
   const failedBlock = () =>
     blockWith('review', {}, reviewReason('cleanup-failed', 'Cleanup stopped at step rm-volumes.'))
 
-  it('lists what ran, what failed and what never started', () => {
-    const w = mountPanel(failedBlock(), { failure: failure(), state: 'failed' })
-    const states = Object.fromEntries(
-      w
-        .findAll('[data-testid="panel-steps"] li')
-        .map((li) => [li.attributes('data-step'), li.attributes('data-state')])
+  it("says where it stopped, in the engine's own words — and invents no other step", () => {
+    const w = mountPanel(failedBlock(), {
+      failure: failure({ step: 'drop-deps', error: 'EBUSY: node_modules is in use' })
+    })
+    expect(w.get('[data-testid="panel-halt"]').text()).toContain(t('cleanup.gc.step.dropDeps'))
+    expect(w.get('[data-testid="panel-error"]').text()).toBe('EBUSY: node_modules is in use')
+    // No per-step history: "archive" is not claimed done, and no volume step appears at all.
+    expect(has(w, 'panel-steps')).toBe(false)
+    const text = w.text()
+    expect(text).not.toContain(t('cleanup.gc.step.archive'))
+    expect(text).not.toContain(t('cleanup.gc.step.stopStack'))
+    expect(text).not.toMatch(/Remove volumes/i)
+  })
+
+  it('a pre-flight refusal says nothing was changed, in a human sentence', () => {
+    const w = mountPanel(failedBlock(), {
+      failure: failure({ step: 'reprobe', error: 'tip-unknown', refusal: 'tip-unknown' })
+    })
+    expect(w.get('[data-testid="panel-nothing-changed"]').text()).toBe(
+      t('cleanup.gc.panel.nothingChanged')
     )
-    expect(states['stop-stack']).toBe('ok')
-    expect(states['rm-containers']).toBe('ok')
-    expect(states['rm-volumes']).toBe('failed')
-    expect(states['trash']).toBe('todo')
+    expect(w.get('[data-testid="panel-refusal"]').text()).toBe(t('cleanup.gc.refusal.tipUnknown'))
+    expect(has(w, 'panel-halt')).toBe(false)
+  })
+
+  it('a pre-flight halt with free text still says nothing was changed, and shows the text', () => {
+    const w = mountPanel(failedBlock(), {
+      failure: failure({ step: 'reprobe', error: 'git exploded', refusal: null })
+    })
+    expect(has(w, 'panel-nothing-changed')).toBe(true)
+    expect(w.get('[data-testid="panel-error"]').text()).toBe('git exploded')
+  })
+
+  it('a mid-run reason is NOT "nothing was changed": earlier steps may have run', () => {
+    const w = mountPanel(failedBlock(), {
+      failure: failure({ step: 'drop-deps', error: 'changed-mid-run', refusal: 'changed-mid-run' })
+    })
+    expect(has(w, 'panel-nothing-changed')).toBe(false)
+    expect(w.get('[data-testid="panel-halt"]').text()).toContain(t('cleanup.gc.step.dropDeps'))
+    expect(w.get('[data-testid="panel-refusal"]').text()).toBe(
+      t('cleanup.gc.refusal.changedMidRun')
+    )
   })
 
   it('offers Retry, Keep and Remove', async () => {
@@ -207,13 +238,6 @@ describe('CleanupBlockPanel — a failed item', () => {
     expect(err.attributes('title')).toBe('volume pg-1 is in use by container pg-1')
     await w.get('[data-testid="panel-copy-error"]').trigger('click')
     expect(writeText).toHaveBeenCalledWith('volume pg-1 is in use by container pg-1')
-  })
-
-  it('says nothing destructive ran when the pre-flight reprobe refused it', () => {
-    const w = mountPanel(failedBlock(), {
-      failure: failure({ step: 'reprobe', error: 'refused' })
-    })
-    expect(has(w, 'panel-nothing-ran')).toBe(true)
   })
 
   it('a changed-since-confirm refusal is stated plainly instead of dumping the error', () => {

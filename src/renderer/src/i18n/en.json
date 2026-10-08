@@ -2307,12 +2307,12 @@
       "step": {
         "stopStack": "Stop the stack",
         "rmContainers": "Remove containers",
-        "rmVolumes": "Remove volumes",
         "archive": "Archive the code",
         "dropDeps": "Remove dependencies",
         "trash": "Trash the checkout",
         "prune": "Prune the worktree",
-        "branchDelete": "Delete the branch"
+        "branchDelete": "Delete the branch",
+        "unknown": "an unknown step"
       },
       "panel": {
         "close": "Close panel",
@@ -2332,13 +2332,6 @@
           "branch": "The local branch {branch}"
         },
         "volumesCannotRestore": "Volumes cannot be restored.",
-        "ranTitle": "What ran",
-        "stepState": {
-          "ok": "done",
-          "failed": "failed",
-          "todo": "did not run"
-        },
-        "nothingRan": "Nothing destructive ran.",
         "copyError": "Copy error",
         "copied": "Copied",
         "cleaning": "Cleaning…",
@@ -2352,7 +2345,10 @@
         "askSoon": "coming in S6",
         "volumesKept": "Its volumes ({names}) are kept. They show up in Needs review afterwards.",
         "readyNote": "Cleaned on the next cycle, or now with Clean now.",
-        "inUseNote": "Left alone while a session works here or its pull request is open."
+        "inUseNote": "Left alone while a session works here or its pull request is open.",
+        "happenedTitle": "What happened",
+        "stoppedAt": "Stopped at “{step}”",
+        "nothingChanged": "Nothing was changed."
       },
       "list": {
         "label": "Worktrees by bucket",
@@ -2566,7 +2562,24 @@
         "unsupportedKind": "Harnu cannot clean this kind of folder yet.",
         "unknownItem": "Cleanup no longer knows this item. Refresh and try again.",
         "several": "{n} items were left alone for different reasons. Open each one to see why.",
-        "inUse": "It is in use, so it was left alone."
+        "inUse": "It is in use, so it was left alone.",
+        "tipUnknown": "Harnu could not tell which commit this worktree is on, so it left it alone.",
+        "protectedNow": "It is protected now (a main checkout, a never-clean path or a Keep mark), so it was left alone.",
+        "changedSinceScan": "It changed since the last scan, so it was left alone. Scan again and review it.",
+        "graceNotElapsed": "It has not been quiet long enough yet, so it was left alone.",
+        "notReady": "It is no longer ready to clean, so it was left alone.",
+        "pathUnresolved": "A path tied to this worktree could not be resolved, so Harnu cannot tell what uses it and left it alone.",
+        "stackPresent": "A Docker stack is running from this worktree, so it was left alone.",
+        "dockerUnavailable": "Docker did not answer, so Harnu could not check this worktree safely and left it alone.",
+        "probeFailed": "Checking this worktree failed, so it was left alone.",
+        "nestedWorktree": "Another worktree lives inside this one, so it was left alone.",
+        "sharedStack": "Another stack also runs from this worktree, so it was left alone.",
+        "headMoved": "A new commit landed on this worktree, so it was left alone.",
+        "notHarvestable": "Cleanup no longer considers it finished, so it was left alone.",
+        "sessionOpen": "A session is open in this worktree, so it was left alone.",
+        "unpushed": "It has commits that were never pushed, so it was left alone.",
+        "volumeInUse": "A volume is still in use by a container, so it was left alone.",
+        "changedMidRun": "It changed while the clean was running, so Harnu stopped."
       },
       "review": {
         "title": "Needs review",

@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   Bookmark,
-  Check,
   Copy,
   PackageMinus,
   PackagePlus,
@@ -14,7 +13,7 @@ import {
   X
 } from 'lucide-vue-next'
 import type { GcBlock } from '../lib/gc-model'
-import { stepProgress, type BlockJobState, type ItemFailure } from '../lib/gc-jobs'
+import { haltOf, type BlockJobState, type ItemFailure } from '../lib/gc-jobs'
 import { formatBytes } from './system-monitor-format'
 import { identText } from './cleanup-ident'
 import {
@@ -156,11 +155,12 @@ const rehydrateLabel = computed(() =>
   item.value ? t('cleanup.a11y.rehydrate', { what: identText(item.value) }) : ''
 )
 
-// ---- failure: what ran, the raw error ------------------------------------------------------------
+// ---- failure: what happened, the raw error ------------------------------------------------------------
 
-const steps = computed(() => (props.failure ? stepProgress(props.failure.step) : []))
-const nothingRan = computed(
-  () => steps.value.length > 0 && steps.value.every((s) => s.state === 'todo')
+/** Where it stopped, from what the engine reported — never a reconstructed step history. */
+const halt = computed(() => (props.failure ? haltOf(props.failure) : null))
+const nothingChanged = computed(
+  () => halt.value?.kind === 'refused' || halt.value?.kind === 'unchanged'
 )
 
 const copied = ref(false)
@@ -312,7 +312,7 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
       </p>
     </section>
 
-    <!-- failure: what ran, the raw error, the refusal note -->
+    <!-- failure: what happened — the step it stopped at and why; never a reconstructed history -->
     <section
       v-if="failure"
       class="flex flex-col gap-2 border-t border-red-line pt-3"
@@ -327,47 +327,18 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
         <TriangleAlert :size="13" :stroke-width="1.8" class="mt-0.5 shrink-0" />
         {{ t(refusalKey(failure.refusal)) }}
       </p>
-      <template v-if="steps.length > 0">
-        <div class="text-[10.5px] font-medium uppercase tracking-[0.07em] text-text-4">
-          {{ t('cleanup.gc.panel.ranTitle') }}
-        </div>
-        <ul class="m-0 flex list-none flex-col gap-1.5 p-0" data-testid="panel-steps">
-          <li
-            v-for="s in steps"
-            :key="s.step"
-            class="flex items-center gap-2 text-[12px] leading-[18px]"
-            :class="{
-              'text-text-2': s.state === 'ok',
-              'text-red': s.state === 'failed',
-              'text-text-3': s.state === 'todo'
-            }"
-            :data-step="s.step"
-            :data-state="s.state"
-          >
-            <span
-              class="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border-[1.5px]"
-              :class="{
-                'border-green bg-green text-bg': s.state === 'ok',
-                'border-red bg-red text-bg': s.state === 'failed',
-                'border-dashed border-border-2': s.state === 'todo'
-              }"
-              aria-hidden="true"
-            >
-              <Check v-if="s.state === 'ok'" :size="9" :stroke-width="3" />
-              <X v-else-if="s.state === 'failed'" :size="9" :stroke-width="3" />
-            </span>
-            {{ t(stepKey(s.step)) }}
-            <span class="sr-only">— {{ t(`cleanup.gc.panel.stepState.${s.state}`) }}</span>
-          </li>
-        </ul>
-        <p
-          v-if="nothingRan"
-          class="text-[11px] leading-4 text-text-3"
-          data-testid="panel-nothing-ran"
-        >
-          {{ t('cleanup.gc.panel.nothingRan') }}
-        </p>
-      </template>
+      <div class="eyebrow text-text-4">{{ t('cleanup.gc.panel.happenedTitle') }}</div>
+      <p
+        v-if="halt?.kind === 'stopped'"
+        class="text-body text-text-2"
+        data-testid="panel-halt"
+        :data-step="halt.step"
+      >
+        {{ t('cleanup.gc.panel.stoppedAt', { step: t(stepKey(halt.step)) }) }}
+      </p>
+      <p v-if="nothingChanged" class="text-caption text-text-3" data-testid="panel-nothing-changed">
+        {{ t('cleanup.gc.panel.nothingChanged') }}
+      </p>
       <div v-if="failure.error && !failure.refusal" class="flex items-start gap-2">
         <p
           class="line-clamp-2 min-w-0 flex-1 break-words font-mono text-[11px] leading-4 text-text-3"
