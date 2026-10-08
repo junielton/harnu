@@ -263,6 +263,23 @@ describe('presenceFromSets', () => {
       expect(presenceFromSets(WT, parent)).toBe('none')
     })
   })
+
+  describe('. and .. segments (delta 4, item F)', () => {
+    it('a session folder that resolves into the worktree counts', () => {
+      const sets = { live: new Set([`${WT}/api/../web`]), inUse: new Set<string>() }
+      expect(presenceFromSets(WT, sets)).toBe('working')
+    })
+
+    it('a session folder that leaves the worktree through .. does not count', () => {
+      const sets = { live: new Set([`${WT}/../PROJ-0000-slug-b`]), inUse: new Set<string>() }
+      expect(presenceFromSets(WT, sets)).toBe('none')
+    })
+
+    it('the queried path is resolved too', () => {
+      const sets = { live: new Set([`${WT}/api`]), inUse: new Set<string>() }
+      expect(presenceFromSets(`${WT_B}/../PROJ-0000-slug/.`, sets)).toBe('working')
+    })
+  })
 })
 
 describe('dockerIsUnavailable', () => {
@@ -540,6 +557,16 @@ describe('reprobe (AC-5)', () => {
   it('refuses when a container of an exclusive stack now runs from outside the worktree', async () => {
     const h = harness({
       stacks: [stack('app', [container('c1', `${WT}/api`), container('c2', WT_B)])]
+    })
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+      ok: false,
+      reason: 'changed-since-scan'
+    })
+  })
+
+  it('refuses when a container of an exclusive stack leaves the worktree through .. (delta 4, item F)', async () => {
+    const h = harness({
+      stacks: [stack('app', [container('c1', `${WT}/api`), container('c2', `${WT}/../www`)])]
     })
     expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
       ok: false,
@@ -859,6 +886,16 @@ describe('recheck before cleanGit (delta 2, item 4)', () => {
       expect(cleanItem).not.toHaveBeenCalled()
     })
 
+    it('a stack whose working dir reaches the worktree through .. refuses (delta 4, item F)', async () => {
+      const h = harness({
+        stacks: [stack('fresh', [container('c7', '/ws/org/proj/worktrees/x/../PROJ-0000-slug')])]
+      })
+      expect(await createGcOps(h.deps).recheck(bundle())).toEqual({
+        ok: false,
+        reason: 'stack-present'
+      })
+    })
+
     it('a scanned stack that already vanished is fine', async () => {
       const h = harness({ stacks: [] })
       expect(await createGcOps(h.deps).recheck(bundle())).toEqual({ ok: true })
@@ -948,7 +985,7 @@ describe('reprobe re-reads protection at execution time (delta 2, item 8)', () =
         keep: false
       })
 
-    it.each([REPO, `${REPO}/`])(
+    it.each([REPO, `${REPO}/`, `${REPO}/.`, '/ws/org/proj/worktrees/../www'])(
       'the reprobe refuses %s as protected-now before any probe',
       async (path) => {
         const h = harness({ protectedNow: false })

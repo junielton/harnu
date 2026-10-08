@@ -3,6 +3,7 @@
 // session that works in it, then puts it in exactly one bucket. No I/O — every decision is
 // unit-tested in tests/gc-bundle-core.test.ts.
 
+import { posix, win32 } from 'node:path'
 import { resolveDetachedFate, resolveFate, type FateResult } from './fate-core'
 import type { BranchFacts, ReapItem } from '../reaper/reaper-core'
 import {
@@ -10,13 +11,27 @@ import {
   COMPOSE_WORKING_DIR_LABEL,
   isInside,
   lastContainerEvent,
-  normalizePath,
   type InspectedContainer,
   type StackGroup,
   type VolumeFact
 } from '../containers/containers-core'
 
 const DAY_MS = 86_400_000
+
+/**
+ * The one form every GC path comparison uses: lexically resolved, so `REPO/.` and
+ * `…/worktrees/../www` are `REPO` itself; forward slashes; no trailing slash; case-folded on
+ * darwin and win32, whose default filesystems ignore case. Pure: it never touches the disk,
+ * so a symlink is resolved by the caller first. An empty path stays empty instead of
+ * resolving to the working directory.
+ */
+export function canonicalPathKey(p: string, platform: string): string {
+  if (!p) return ''
+  const win = platform === 'win32'
+  let out = win ? win32.resolve(p).replace(/\\/g, '/') : posix.resolve(p)
+  if (out.length > 1 && out.endsWith('/') && !/^[a-z]:\/$/i.test(out)) out = out.slice(0, -1)
+  return win || platform === 'darwin' ? out.toLowerCase() : out
+}
 
 export type SessionPresence = 'working' | 'needs-input' | 'open-idle' | 'none'
 export type Bucket = 'corpse' | 'decide' | 'alive'
@@ -284,9 +299,9 @@ function mergedAtOf(item: ReapItem): number | null {
 export function containerFolders(c: InspectedContainer, platform: string): string[] {
   const out = new Set<string>()
   const dir = c.labels[COMPOSE_WORKING_DIR_LABEL]
-  if (dir) out.add(normalizePath(dir, platform))
+  if (dir) out.add(canonicalPathKey(dir, platform))
   for (const m of c.mounts) {
-    if (m.type === 'bind' && m.source) out.add(normalizePath(m.source, platform))
+    if (m.type === 'bind' && m.source) out.add(canonicalPathKey(m.source, platform))
   }
   return [...out]
 }
@@ -304,7 +319,7 @@ function stackFolders(
   const out = new Set<string>()
   for (const c of stack.containers) for (const d of containerFolders(c, platform)) out.add(d)
   const attributed = stackPaths.get(stack.id)
-  if (attributed) out.add(normalizePath(attributed, platform))
+  if (attributed) out.add(canonicalPathKey(attributed, platform))
   return [...out]
 }
 
@@ -329,7 +344,7 @@ function sessionOf(
 ): SessionEntry | undefined {
   let out: SessionEntry | undefined
   for (const [folder, s] of sessions) {
-    if (!isInside(normalizePath(folder, platform), path)) continue
+    if (!isInside(canonicalPathKey(folder, platform), path)) continue
     const activity = [out?.lastActivityAt ?? null, s.lastActivityAt].filter(
       (t): t is number => t !== null
     )
@@ -348,7 +363,7 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
 
   const folders = input.items
     .filter((i) => (i.kind === 'worktree' || i.kind === 'detached-worktree') && i.path)
-    .map((item) => ({ item, path: normalizePath(item.path as string, platform) }))
+    .map((item) => ({ item, path: canonicalPathKey(item.path as string, platform) }))
 
   // A stack is exclusive to a bundle only if EVERY folder it runs from is inside that
   // bundle. If a stack touches a bundle but also runs from outside it, or two bundles both
@@ -372,7 +387,7 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
     }
   }
 
-  const neverClean = new Set([...input.neverClean].map((p) => normalizePath(p, platform)))
+  const neverClean = new Set([...input.neverClean].map((p) => canonicalPathKey(p, platform)))
 
   // Every folder that could share a compose project with a bundle: each item's checkout and
   // its repo's main checkout, plus whatever else the caller knows about.
@@ -380,7 +395,7 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
     [
       ...input.items.flatMap((i) => (i.path ? [i.path, i.repoPath] : [i.repoPath])),
       ...input.knownFolders
-    ].map((p) => normalizePath(p, platform))
+    ].map((p) => canonicalPathKey(p, platform))
   )
 
   return folders.map(({ item, path }) => {
@@ -393,7 +408,7 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
           : { fate: 'unknown', signal: null, strong: false }
 
     const stacks = exclusive.get(item.id) ?? []
-    // Normalized, so a trailing slash must not hide a session, and a session in a subfolder
+    // Canonical, so a trailing slash or a `..` must not hide a session, and a session in a subfolder
     // counts too.
     const session = sessionOf(input.sessions, path, platform)
     const events = lastContainerEvent(
@@ -420,8 +435,8 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
       ),
       depsBytes: item.hydration?.reclaimableBytes ?? null,
       keep: input.keep.has(item.id),
-      neverClean: neverClean.has(path) || neverClean.has(normalizePath(item.repoPath, platform)),
-      isMainCheckout: path === normalizePath(item.repoPath, platform),
+      neverClean: neverClean.has(path) || neverClean.has(canonicalPathKey(item.repoPath, platform)),
+      isMainCheckout: path === canonicalPathKey(item.repoPath, platform),
       localTip:
         item.kind === 'detached-worktree' ? (item.headSha ?? null) : (fateInput?.localTip ?? null),
       graceDays: input.graceDays
