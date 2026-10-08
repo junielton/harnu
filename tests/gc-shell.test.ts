@@ -143,6 +143,8 @@ function harness(
     links?: Record<string, string>
     /** Paths whose realpath fails (a broken link, an unreadable folder). */
     unresolved?: string[]
+    /** Paths whose realpath fails, without taking the paths under them down too. */
+    unresolvedExactly?: string[]
   } = {}
 ): Harness {
   let stacks = over.stacks ?? [stack('app', [container('c1', `${WT}/api`)])]
@@ -165,6 +167,7 @@ function harness(
   const under = (p: string, root: string): boolean => p === root || p.startsWith(`${root}/`)
   const realpath = vi.fn(async (p: string): Promise<string | null> => {
     if ((over.unresolved ?? []).some((u) => under(p, u))) return null
+    if ((over.unresolvedExactly ?? []).includes(p)) return null
     for (const [link, target] of Object.entries(over.links ?? {})) {
       if (under(p, link)) return target + p.slice(link.length)
     }
@@ -1096,7 +1099,8 @@ const MERGED_FACTS: BranchFacts = {
 function scanned(
   containers: InspectedContainer[],
   links: CanonicalPath = (p) => ({ path: p, resolved: true }),
-  path: string = WT
+  path: string = WT,
+  sessions: Map<string, { presence: SessionPresence; lastActivityAt: number | null }> = new Map()
 ): WorktreeBundle {
   // Merged ten days before the scan, so the grace window has long elapsed at execution time.
   const item = reapItem({
@@ -1117,7 +1121,7 @@ function scanned(
     stacks: groupStacks(containers),
     stackPaths: new Map(),
     containers,
-    sessions: new Map(),
+    sessions,
     keep: new Set(),
     neverClean: new Set(),
     now: EXEC_NOW,
@@ -1693,19 +1697,16 @@ describe('reprobe and recheck on real paths (delta 4, item C)', () => {
     expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: false, reason: 'protected-now' })
   })
 
-  it.each<[string, string, StackGroup[]]>([
-    ['the worktree path', WT, []],
-    ['the repo path', REPO, []],
-    ['a container folder inside the worktree', `${WT}/api`, []],
-    // A container that only bind-mounts a folder above the worktree, which cannot be read.
-    [
-      'a container folder above the worktree',
-      '/ws/org/proj',
-      [stack('up', [runWithBind('c5', '/ws/org/proj')])]
-    ]
-  ])('refuses as path-unresolved when %s cannot be resolved', async (_label, gone, extra) => {
+  // A container folder above the worktree is covered by 'a container folder above the
+  // worktree that cannot be resolved (delta 5, item 1)' below: here an unresolved ancestor
+  // would take the worktree path down with it and prove nothing.
+  it.each<[string, string]>([
+    ['the worktree path', WT],
+    ['the repo path', REPO],
+    ['a container folder inside the worktree', `${WT}/api`]
+  ])('refuses as path-unresolved when %s cannot be resolved', async (_label, gone) => {
     const h = harness({
-      stacks: [stack('app', [container('c1', `${WT}/api`)]), ...extra],
+      stacks: [stack('app', [container('c1', `${WT}/api`)])],
       unresolved: [gone]
     })
     expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
@@ -1749,39 +1750,140 @@ describe('reprobe and recheck on real paths (delta 4, item C)', () => {
   })
 })
 
-// ---- a container that touches an ancestor of the worktree (delta 4, item E) -------------
+// ---- a container that touches an ancestor of the worktree (delta 5, item 1) -------------
 
-describe('P8: a dev container that bind-mounts an ancestor of the worktree (delta 4, item E)', () => {
+// Delta 4, item E refused these; delta 5, item 1 (the orchestrator ruling of 2026-10-08)
+// relaxed it: a folder above the worktree is ignored for attribution. The three P8 tests
+// below flipped from a refusal to a pass.
+describe('P8: a dev container that bind-mounts an ancestor of the worktree (delta 5, item 1)', () => {
   const NESTED = `${REPO}/.claude/worktrees/wt1`
   const dev = composeIn('dev', 'www', REPO, [{ type: 'bind', source: REPO, name: null }])
   const nestedBundle = (): WorktreeBundle =>
     bundle({ item: reapItem({ path: NESTED }), stackIds: [], ownedVolumes: [] })
 
-  it('the reprobe refuses when it appears after a scan that saw none', async () => {
+  it('the reprobe passes when it appears after a scan that saw none', async () => {
     const h = harness({ stacks: groupStacks([dev]) })
+    expect(await createGcOps(h.deps).reprobe(nestedBundle())).toEqual({ ok: true })
+  })
+
+  it('the recheck does not count it as stack-present', async () => {
+    const h = harness({ stacks: groupStacks([dev]) })
+    expect(await createGcOps(h.deps).recheck(nestedBundle())).toEqual({ ok: true })
+  })
+
+  it('the builder and the reprobe agree: ready at the scan, and the run cleans without touching it', async () => {
+    const b = scanned([dev], undefined, NESTED)
+    expect(b.stackIds).toEqual([])
+    expect(b.sharedStackIds).toEqual([])
+    expect(b.bucket).toBe('ready')
+    const h = harness({ stacks: groupStacks([dev]) })
+    const r = await runBundle(b, createGcOps(h.deps), { removeVolumes: false })
+    expect(r).toMatchObject({ ok: true, haltedAt: null })
+    expect(h.stop).not.toHaveBeenCalled()
+    expect(h.removeContainers).not.toHaveBeenCalled()
+    expect(cleanItem).toHaveBeenCalled()
+  })
+
+  it('a stack that bind-mounts a folder inside the worktree from above it still refuses', async () => {
+    const after = composeIn('dev', 'www', REPO, [
+      { type: 'bind', source: `${NESTED}/storage`, name: null }
+    ])
+    const h = harness({ stacks: groupStacks([after]) })
     expect(await createGcOps(h.deps).reprobe(nestedBundle())).toEqual({
       ok: false,
       reason: 'changed-since-scan'
     })
-  })
-
-  it('the recheck refuses it as stack-present', async () => {
-    const h = harness({ stacks: groupStacks([dev]) })
     expect(await createGcOps(h.deps).recheck(nestedBundle())).toEqual({
       ok: false,
       reason: 'stack-present'
     })
   })
 
-  it('the builder and the reprobe agree: shared at the scan, and the run refuses it', async () => {
-    const b = scanned([dev], undefined, NESTED)
+  // A mixed stack (the main checkout's own, reaching into the nested worktree) is shared at
+  // the scan, so the scan says review, the reprobe sees the same stack, and the run refuses
+  // it as shared: scan and run agree, and the main checkout's stack is never stopped.
+  it('the builder and the reprobe agree on a stack run from above that bind-mounts a folder inside', async () => {
+    const mixed = composeIn('dev', 'www', REPO, [
+      { type: 'bind', source: `${NESTED}/storage`, name: null }
+    ])
+    const b = scanned([mixed], undefined, NESTED)
+    expect(b.stackIds).toEqual([])
     expect(b.sharedStackIds).toEqual(['www'])
     expect(b.bucket).toBe('review')
-    const h = harness({ stacks: groupStacks([dev]) })
+    expect(b.reason?.code).toBe('shared-stack')
+    const h = harness({ stacks: groupStacks([mixed]) })
     expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: true })
     const r = await runBundle(b, createGcOps(h.deps), { removeVolumes: false, confirmReview: true })
     expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'shared-stack' })
     expect(h.stop).not.toHaveBeenCalled()
+    expect(h.removeContainers).not.toHaveBeenCalled()
     expect(cleanItem).not.toHaveBeenCalled()
+  })
+})
+
+// ---- a history-only session never forces path-unresolved (delta 5, item 2) -------------
+
+describe('a history-only session in a deleted subfolder (delta 5, item 2)', () => {
+  const GONE = `${WT}/api`
+  const historyOnly = new Map([
+    [GONE, { presence: 'none' as SessionPresence, lastActivityAt: null }]
+  ])
+  const goneOnDisk: CanonicalPath = (p) =>
+    p === GONE ? { path: p, resolved: false } : { path: p, resolved: true }
+
+  it('is ready at the scan and the run cleans it', async () => {
+    const b = scanned([], goneOnDisk, WT, historyOnly)
+    expect(b.pathsResolved).toBe(true)
+    expect(b.bucket).toBe('ready')
+    const h = harness({ stacks: [], unresolved: [GONE] })
+    expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: true })
+    const r = await runBundle(b, createGcOps(h.deps), { removeVolumes: false })
+    expect(r).toMatchObject({ ok: true, haltedAt: null })
+  })
+
+  it('a live session in an unreadable subfolder still counts for the worktree', async () => {
+    const sets = { live: new Set([GONE]), inUse: new Set([GONE]) }
+    const canonical = await resolveRealPaths([WT, GONE], async (p) => {
+      if (p === GONE) throw new Error('ENOENT')
+      return p
+    })
+    expect(canonical(GONE).resolved).toBe(false)
+    expect(presenceFromSets(WT, sets, canonical)).toBe('working')
+  })
+})
+
+// ---- an unresolved folder above the worktree still refuses (delta 5, item 1) ------------
+
+describe('a container folder above the worktree that cannot be resolved (delta 5, item 1)', () => {
+  // Only the ancestor fails to resolve; the worktree and its repo path still resolve, so a
+  // refusal here comes from the container folder and nothing else.
+  const ABOVE = '/ws/org/proj'
+  const stacks = (): StackGroup[] => [
+    stack('app', [container('c1', `${WT}/api`)]),
+    stack('up', [runWithBind('c5', ABOVE)])
+  ]
+
+  it('the reprobe passes when it resolves: a folder above is ignored', async () => {
+    const h = harness({ stacks: stacks() })
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({ ok: true })
+  })
+
+  it('the reprobe refuses as path-unresolved when it does not', async () => {
+    const h = harness({ stacks: stacks(), unresolvedExactly: [ABOVE] })
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+      ok: false,
+      reason: 'path-unresolved'
+    })
+  })
+
+  it('the recheck refuses as path-unresolved too', async () => {
+    const h = harness({
+      stacks: [stack('up', [runWithBind('c5', ABOVE)])],
+      unresolvedExactly: [ABOVE]
+    })
+    expect(await createGcOps(h.deps).recheck(bundle())).toEqual({
+      ok: false,
+      reason: 'path-unresolved'
+    })
   })
 })

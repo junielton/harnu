@@ -74,7 +74,7 @@ export function mergedSignal(f: BranchFacts): MergeSignal | null {
  *  4. no PR and remote branch gone → `remote-gone`
  *  5. anything else                → `unknown` (gh/ls-remote failed is never "gone")
  *
- * `strong` is the corpse gate: a branch reused after its merge carries a
+ * `strong` is the ready gate: a branch reused after its merge carries a
  * `gh-merged` signal for a tip that is no longer the PR head, so it is merged but
  * not strongly. A null on either side never counts as a match.
  */
