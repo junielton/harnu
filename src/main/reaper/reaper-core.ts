@@ -1,5 +1,7 @@
 // Pure classifier for the Reaper cleanup engine (design: docs/specs/2026-07-15-reaper-cleanup-design.md).
-// No imports, no I/O — every decision here is unit-tested in tests/reaper-classifier.test.ts.
+// Only the pure fate-core import, no I/O — every decision here is unit-tested in tests/reaper-classifier.test.ts.
+
+import { mergedSignal, prMayJustify } from '../gc/fate-core'
 
 export type ReapItemKind =
   'worktree' | 'local-branch' | 'hidden-folder' | 'remote-branch' | 'detached-worktree'
@@ -244,58 +246,6 @@ const DAY_MS = 86_400_000
 
 export function itemId(facts: Pick<BranchFacts, 'repoPath' | 'kind' | 'branch' | 'path'>): string {
   return `${facts.repoPath}::${facts.kind}::${facts.branch ?? facts.path ?? ''}`
-}
-
-/**
- * Whether {@link BranchFacts.pr} may justify a merge signal for *this* branch.
- *
- * A PR found by the branch's own name always may. One found through a shared
- * upstream may only when the local tip is independently corroborated — either it
- * *is* the PR's head, or patch-id proves containment. Without that guard the
- * sibling of a merged branch inherits `gh-merged` and becomes sweepable while
- * carrying commits the default branch has never seen (BUG-93).
- */
-function prMayJustify(f: BranchFacts): boolean {
-  return f.prProvenance !== 'upstream-unverified' || f.patchIdContained === true
-}
-
-/**
- * Signal hierarchy for "merged into the default branch".
- *
- * Order, and why:
- *  1. `gh-merged` — an external verdict, true across a squash, and free (already fetched).
- *  2. `ancestor` — git's own containment answer; the cheap local check comes before the probe.
- *  3. `squash-equivalent` — patch-id containment. Deliberately *above* the CLOSED
- *     clause below, which is guarded by `ancestorOfDefault !== false`: a
- *     squash-merged branch legitimately has `ancestorOfDefault === false`, so
- *     bolting the squash case onto that clause would be refused by the very
- *     guard that exists to read a `false` as "closed unmerged". Proven
- *     containment must override that pessimism rather than be blocked by it.
- *  4. `remote-gone-after-close` — the weakest, and the only inferential one.
- */
-function mergedSignal(f: BranchFacts): MergeSignal | null {
-  if (f.pr?.state === 'MERGED' && prMayJustify(f)) return 'gh-merged'
-  if (f.ancestorOfDefault === true) return 'ancestor'
-  if (f.patchIdContained === true) return 'squash-equivalent'
-  // Only when the ancestor check is inconclusive (null) — an explicit `false`
-  // is positive evidence the branch was closed unmerged, not cleaned up post-merge.
-  //
-  // `prMayJustify` guards this arm too, and must: the whole inference is "the
-  // remote branch was DELETED after the PR closed, so someone cleaned up". For a
-  // sibling resolved through a shared upstream that reading is simply wrong —
-  // `remoteExists` is false because the branch was never pushed at all. Left
-  // unguarded this is a strictly worse leak than the MERGED arm: the signal it
-  // mints also neutralizes the `unpushed` gate below AND overrides the ancestry
-  // check in the sweep, so the sibling is force-deleted with `git branch -D`
-  // while carrying commits the default branch has never seen.
-  if (
-    f.pr?.state === 'CLOSED' &&
-    prMayJustify(f) &&
-    f.remoteExists === false &&
-    f.ancestorOfDefault !== false
-  )
-    return 'remote-gone-after-close'
-  return null
 }
 
 /**
