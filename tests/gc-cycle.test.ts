@@ -165,10 +165,7 @@ describe('runGcCycle: only corpses reach the pipeline (AC-3)', () => {
   })
 
   it('cleans nothing while the worktrees category is off', async () => {
-    const r = rig(
-      [corpse('a')],
-      live({ categories: { worktrees: false, volumes: true, dockerCache: false } })
-    )
+    const r = rig([corpse('a')], live({ categories: { worktrees: false, dockerCache: false } }))
     await runGcCycle(r.deps, 'timer')
     expect(cleanedPaths(r)).toEqual([])
   })
@@ -186,27 +183,37 @@ describe('runGcCycle: only corpses reach the pipeline (AC-3)', () => {
     expect(cleanedPaths(r)).toEqual(['/ws/wt/b'])
   })
 
-  it('does not drop volumes of a bundle when the volumes category is off', async () => {
+  it('never removes a volume, whatever the prefs say (D1)', async () => {
     const withVolume = corpse('a', 5, { stackIds: ['s1'], ownedVolumes: ['v1'] })
-    const on = rig([withVolume], live())
-    await runGcCycle(on.deps, 'timer')
-    expect(on.log).toContain('removeVolumes v1')
-
-    const off = rig(
-      [withVolume],
-      live({ categories: { worktrees: true, volumes: false, dockerCache: true } })
-    )
-    await runGcCycle(off.deps, 'timer')
-    expect(off.log.some((l) => l.startsWith('removeVolumes'))).toBe(false)
+    const r = rig([withVolume], live())
+    await runGcCycle(r.deps, 'timer')
+    expect(cleanedPaths(r)).toEqual(['/ws/wt/a'])
+    expect(r.log.some((l) => l.startsWith('removeVolumes'))).toBe(false)
+    // Even a stale prefs file that still carries the retired switches turns nothing on.
+    const stale = {
+      ...live(),
+      removeVolumes: true,
+      categories: { worktrees: true, volumes: true, dockerCache: true }
+    }
+    const r2 = rig([withVolume], stale as GcPrefs)
+    await runGcCycle(r2.deps, 'timer')
+    expect(r2.log.some((l) => l.startsWith('removeVolumes'))).toBe(false)
   })
 
-  it('does not drop volumes when removeVolumes is off', async () => {
-    const r = rig(
-      [corpse('a', 5, { stackIds: ['s1'], ownedVolumes: ['v1'] })],
-      live({ removeVolumes: false })
-    )
+  it('hands runBatch removeVolumes:false', async () => {
+    const seen: unknown[] = []
+    const withVolume = corpse('a', 5, { stackIds: ['s1'], ownedVolumes: ['v1'] })
+    const r = rig([withVolume], live(), {
+      ops: {
+        reprobe: async (b) => {
+          seen.push(b.ownedVolumes)
+          return { ok: true }
+        }
+      }
+    })
     await runGcCycle(r.deps, 'timer')
-    expect(r.log.some((l) => l.startsWith('removeVolumes'))).toBe(false)
+    expect(seen).toEqual([['v1']])
+    expect(r.log).not.toContain('removeVolumes v1')
   })
 })
 
@@ -290,10 +297,7 @@ describe('runGcCycle: one notification at most (AC-3)', () => {
 
 describe('runGcCycle: Docker housekeeping (AC-6)', () => {
   it('is never planned or run when the dockerCache category is off', async () => {
-    const r = rig(
-      [corpse('a')],
-      live({ categories: { worktrees: true, volumes: true, dockerCache: false } })
-    )
+    const r = rig([corpse('a')], live({ categories: { worktrees: true, dockerCache: false } }))
     await runGcCycle(r.deps, 'timer')
     expect(r.hk).toEqual([])
     expect(r.log).not.toContain('housekeeping')
@@ -346,10 +350,7 @@ describe('runGcCycle: Docker housekeeping (AC-6)', () => {
   })
 
   it('still runs when only the worktrees category is off', async () => {
-    const r = rig(
-      [corpse('a')],
-      live({ categories: { worktrees: false, volumes: true, dockerCache: true } })
-    )
+    const r = rig([corpse('a')], live({ categories: { worktrees: false, dockerCache: true } }))
     await runGcCycle(r.deps, 'timer')
     expect(cleanedPaths(r)).toEqual([])
     expect(r.hk).toHaveLength(1)

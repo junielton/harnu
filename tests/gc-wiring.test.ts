@@ -150,3 +150,32 @@ describe('a bundle never owns a volume another folder may share (delta 1, item 1
     expect(scan).toMatch(/planHousekeeping\([\s\S]*guards\.protectedProjects/)
   })
 })
+
+describe('worktree cleanup never removes volumes (D1)', () => {
+  it('every runBatch call passes removeVolumes:false, and no pref feeds it', () => {
+    for (const file of ['gc-cycle.ts', 'gc-manual.ts']) {
+      const src = read(`src/main/gc/${file}`)
+      expect(src, file).toMatch(/removeVolumes: false/)
+      expect(src, file).not.toMatch(/removeVolumes:\s*prefs/)
+    }
+  })
+
+  it('the prefs no longer carry the retired switches', () => {
+    const code = read('src/main/gc/gc-prefs.ts')
+      .split('\n')
+      .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+      .join('\n')
+    expect(code).not.toMatch(/removeVolumes|volumes: boolean|categories\.volumes/)
+  })
+})
+
+describe('the Docker card reaches the snapshot (delta 2, item 2)', () => {
+  it('the gather asks docker for the card facts and the snapshot carries them', () => {
+    expect(scan).toMatch(/dockerCardFacts\(/)
+    expect(between(ipc, 'const buildSnapshot', 'const service')).toMatch(/docker: g\.docker/)
+  })
+
+  it('is not asked when docker is known to be absent', () => {
+    expect(scan).toMatch(/available\s*\?[\s\S]*dockerCardFacts|!available[\s\S]*null/)
+  })
+})

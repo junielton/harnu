@@ -39,6 +39,7 @@ import {
   type OrphanVolumeItem
 } from './gc-housekeeping-input'
 import { planHousekeeping } from './housekeeping-core'
+import { NO_DOCKER_CARD, dockerCardFacts, type GcDockerCard } from './gc-docker-card'
 import type { GcGather } from './gc-cycle'
 import type { GcPrefs } from './gc-prefs'
 
@@ -46,6 +47,10 @@ import type { GcPrefs } from './gc-prefs'
 export interface GcGathered extends GcGather {
   scannedAt: number
   df: Map<string, VolumeFact>
+  /** False when docker was absent or down, so `df` and the container list say nothing. */
+  dockerAvailable: boolean
+  /** The Docker card's figures; null inside when docker could not answer. */
+  docker: GcDockerCard
   orphanVolumes: OrphanVolumeItem[]
   /** Keep marks whose branch fate has changed since; the caller clears them from the prefs. */
   staleKeeps: string[]
@@ -96,12 +101,13 @@ async function strictVolumeFacts(): Promise<Map<string, VolumeFact>> {
 async function dockerPicture(): Promise<{
   containers: InspectedContainer[]
   df: Map<string, VolumeFact>
+  available: boolean
 }> {
   try {
     const containers = await inspectAll({ strict: true })
-    return { containers, df: await strictVolumeFacts() }
+    return { containers, df: await strictVolumeFacts(), available: true }
   } catch (err) {
-    if (dockerIsUnavailable(err)) return { containers: [], df: new Map() }
+    if (dockerIsUnavailable(err)) return { containers: [], df: new Map(), available: false }
     throw err
   }
 }
@@ -125,13 +131,18 @@ async function everyKnownFolder(repoPaths: string[], itemPaths: string[]): Promi
   ]
 }
 
-export async function gatherGc(prefs: GcPrefs, now: number): Promise<GcGathered> {
+export async function gatherGc(
+  prefs: GcPrefs,
+  now: number,
+  /** Compose project → folders a cleaned worktree ran from (gc-leftovers.ts). */
+  rememberedDirs: ReadonlyMap<string, readonly string[]> = new Map()
+): Promise<GcGathered> {
   const snap = lastSnapshot()
   const items = snap?.repos.flatMap((r) => r.items) ?? []
   const repoPaths = snap?.repos.map((r) => r.repoPath) ?? []
   const itemPaths = items.flatMap((i) => (i.path ? [i.path] : []))
 
-  const [{ containers, df }, sets, fleet, known, journal] = await Promise.all([
+  const [{ containers, df, available }, sets, fleet, known, journal] = await Promise.all([
     dockerPicture(),
     computeFolderSets(),
     getFleetFolders(),
@@ -155,6 +166,13 @@ export async function gatherGc(prefs: GcPrefs, now: number): Promise<GcGathered>
       lastActivityAt: activityByPath.get(p) ?? null
     })
   }
+
+  // Read-only listings for the Docker card; skipped, not guessed, when docker is absent.
+  const docker = available
+    ? await dockerCardFacts((argv) =>
+        runDocker(argv, { windowsHide: true, timeout: 60_000, maxBuffer: 8 << 20 })
+      )
+    : NO_DOCKER_CARD
 
   // Housekeeping facts first: the bundle builder needs them too. Existence fails closed and
   // explicit project names come from the files, exactly as for the orphan planner.
@@ -219,7 +237,8 @@ export async function gatherGc(prefs: GcPrefs, now: number): Promise<GcGathered>
     containers,
     dirExists,
     knownFolders: known,
-    protectedProjects: guards.protectedProjects
+    protectedProjects: guards.protectedProjects,
+    rememberedDirs
   }
   const orphanNames = planHousekeeping(
     { cacheMaxAgeDays: 0, danglingImages: false, orphanVolumes: true },
@@ -227,7 +246,8 @@ export async function gatherGc(prefs: GcPrefs, now: number): Promise<GcGathered>
     containers,
     dirExists,
     known,
-    guards.protectedProjects
+    guards.protectedProjects,
+    rememberedDirs
   ).orphanVolumes
 
   return {
@@ -235,6 +255,8 @@ export async function gatherGc(prefs: GcPrefs, now: number): Promise<GcGathered>
     housekeeping,
     scannedAt: now,
     df,
+    dockerAvailable: available,
+    docker,
     orphanVolumes: orphanVolumeItems(orphanNames, df),
     staleKeeps
   }

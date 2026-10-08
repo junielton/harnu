@@ -34,7 +34,7 @@ describe('planCycle: mode', () => {
   it('is off when the worktrees category is off, even with the autopilot on', () => {
     const plan = planCycle(
       [corpse('a', 5)],
-      prefs({ categories: { worktrees: false, volumes: true, dockerCache: true } })
+      prefs({ categories: { worktrees: false, dockerCache: true } })
     )
     expect(plan.mode).toBe('off')
     expect(plan.toClean).toEqual([])

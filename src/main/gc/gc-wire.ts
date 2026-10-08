@@ -9,8 +9,17 @@ import type { GcItemResult } from './pipeline-core'
 import type { HousekeepingResult } from './housekeeping-core'
 import type { OrphanVolumeItem } from './gc-housekeeping-input'
 import type { GcJobDone, GcJobInfo, GcJobProgress } from './gc-jobs-core'
+import type { GcDockerCard } from './gc-docker-card'
 
-export type { CycleMode, GcJobDone, GcJobInfo, GcJobProgress, OrphanVolumeItem, GcItemResult }
+export type {
+  GcDockerCard,
+  CycleMode,
+  GcJobDone,
+  GcJobInfo,
+  GcJobProgress,
+  OrphanVolumeItem,
+  GcItemResult
+}
 
 /** What one pass of the autopilot did. Pushed on `gc:cycle` and kept as `lastCycle`. */
 export interface CycleRecord {
@@ -39,6 +48,11 @@ export interface GcSnapshot {
   bundles: WorktreeBundle[]
   /** Orphan volumes offered in Decide. Removed only by an explicit, confirmed action. */
   orphanVolumes: OrphanVolumeItem[]
+  /**
+   * The Docker card: `buildCacheReclaimableBytes` and `danglingImages { count, bytes }`.
+   * Each is null when docker was absent or did not answer for it.
+   */
+  docker: GcDockerCard
   prefs: GcPrefs
   lastCycle: CycleRecord | null
   /** When the next timer tick fires, or null when the Reaper background scan is off. */

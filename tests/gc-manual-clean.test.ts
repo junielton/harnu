@@ -354,17 +354,14 @@ describe('the explicit force path for Decide worktrees (AC-8)', () => {
     })
   })
 
-  it('honors the removeVolumes pref for owned volumes', async () => {
-    const b = bundle('/ws/wt/a', 'corpse', { stackIds: ['s'], ownedVolumes: ['v1'] })
-    const on = rig([b])
-    submitManualClean(on.deps, [b.item.id], shown([b]))
-    await settle(on)
-    expect(on.normal).toContain('removeVolumes v1')
-
-    const off = rig([b], { prefs: prefs({ removeVolumes: false }) })
-    submitManualClean(off.deps, [b.item.id], shown([b]))
-    await settle(off)
-    expect(off.normal.some((l) => l.startsWith('removeVolumes'))).toBe(false)
+  it("never removes a worktree bundle's volumes, ready or reviewed (D1)", async () => {
+    const ready = bundle('/ws/wt/a', 'corpse', { stackIds: ['s'], ownedVolumes: ['v1'] })
+    const review = bundle('/ws/wt/d', 'decide', { stackIds: ['t'], ownedVolumes: ['v2'] })
+    const r = rig([ready, review])
+    submitManualClean(r.deps, [ready.item.id, review.item.id], shown([ready, review]))
+    await settle(r)
+    expect(r.done[0]!.results.map((x) => x.ok)).toEqual([true, true])
+    expect([...r.normal, ...r.forced].some((l) => l.startsWith('removeVolumes'))).toBe(false)
   })
 })
 

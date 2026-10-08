@@ -20,8 +20,7 @@ describe('defaultGcPrefs', () => {
       intervalMs: HOUR,
       graceDays: 2,
       maxItemsPerCycle: 20,
-      categories: { worktrees: true, volumes: true, dockerCache: true },
-      removeVolumes: true,
+      categories: { worktrees: true, dockerCache: true },
       cacheMaxAgeDays: 7,
       neverClean: [],
       keep: {}
@@ -31,9 +30,9 @@ describe('defaultGcPrefs', () => {
   it('returns a fresh object each call', () => {
     const a = defaultGcPrefs()
     a.neverClean.push('/x')
-    a.categories.volumes = false
+    a.categories.dockerCache = false
     expect(defaultGcPrefs().neverClean).toEqual([])
-    expect(defaultGcPrefs().categories.volumes).toBe(true)
+    expect(defaultGcPrefs().categories.dockerCache).toBe(true)
   })
 })
 
@@ -52,7 +51,6 @@ describe('normalizeGcPrefs: junk input', () => {
       graceDays: '5',
       maxItemsPerCycle: null,
       categories: 'all',
-      removeVolumes: 'no',
       cacheMaxAgeDays: {},
       neverClean: 'nope',
       keep: ['a']
@@ -61,9 +59,9 @@ describe('normalizeGcPrefs: junk input', () => {
   })
 
   it('keeps valid fields next to broken ones', () => {
-    const out = normalizeGcPrefs({ autopilot: true, graceDays: 'x', removeVolumes: false })
+    const out = normalizeGcPrefs({ autopilot: true, graceDays: 'x', cacheMaxAgeDays: 3 })
     expect(out.autopilot).toBe(true)
-    expect(out.removeVolumes).toBe(false)
+    expect(out.cacheMaxAgeDays).toBe(3)
     expect(out.graceDays).toBe(2)
   })
 
@@ -76,8 +74,8 @@ describe('normalizeGcPrefs: junk input', () => {
   })
 
   it('reads categories field by field', () => {
-    const out = normalizeGcPrefs({ categories: { volumes: false, dockerCache: 'x' } })
-    expect(out.categories).toEqual({ worktrees: true, volumes: false, dockerCache: true })
+    const out = normalizeGcPrefs({ categories: { worktrees: false, dockerCache: 'x' } })
+    expect(out.categories).toEqual({ worktrees: false, dockerCache: true })
   })
 
   it('keeps only non-empty string paths in neverClean, without duplicates', () => {
@@ -251,5 +249,33 @@ describe('prefs reducers behind the IPC channels', () => {
     const out = withAcknowledged({ ...defaultGcPrefs(), autopilot: true })
     expect(out.firstReportAcknowledged).toBe(true)
     expect(out.autopilot).toBe(true)
+  })
+})
+
+describe('worktree cleanup never removes volumes: the old keys are gone (D1)', () => {
+  it('has neither removeVolumes nor categories.volumes', () => {
+    const out = normalizeGcPrefs(null) as unknown as Record<string, unknown>
+    expect('removeVolumes' in out).toBe(false)
+    expect('volumes' in (out.categories as object)).toBe(false)
+  })
+
+  it('drops both old keys from a stored file, whatever their values', () => {
+    const stored = {
+      autopilot: true,
+      removeVolumes: true,
+      categories: { worktrees: true, volumes: true, dockerCache: false }
+    }
+    const out = normalizeGcPrefs(stored) as unknown as Record<string, unknown>
+    expect(out.autopilot).toBe(true)
+    expect('removeVolumes' in out).toBe(false)
+    expect(out.categories).toEqual({ worktrees: true, dockerCache: false })
+  })
+
+  it('does not write them back', () => {
+    const merged = mergeIncomingPrefs(defaultGcPrefs(), {
+      removeVolumes: true,
+      categories: { volumes: true }
+    })
+    expect(JSON.stringify(merged)).not.toMatch(/removeVolumes|"volumes"/)
   })
 })

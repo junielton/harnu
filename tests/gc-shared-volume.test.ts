@@ -106,13 +106,14 @@ function cycleOver(bundles: ReturnType<typeof bundlesWith>) {
 }
 
 describe('the autopilot never removes a volume a live sibling shares (delta 1, item 1)', () => {
-  it('baseline: with no sibling, the corpse owns the volume and the cycle removes it', async () => {
+  it('baseline: with no sibling the corpse owns the volume, and the cycle still removes nothing (D1)', async () => {
     const bundles = bundlesWith([])
     expect(bundles[0]!.bucket).toBe('corpse')
     expect(bundles[0]!.ownedVolumes).toEqual([VOLUME])
     const { deps, removed } = cycleOver(bundles)
     await runGcCycle(deps, 'timer')
-    expect(removed).toEqual([[VOLUME]])
+    // D1: worktree cleanup never removes a volume. It is offered for review afterwards.
+    expect(removed).toEqual([])
   })
 
   it('a sibling folder with the same basename (the same default project) keeps the volume', async () => {
