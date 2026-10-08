@@ -8476,8 +8476,10 @@ Needs review item, orphan volumes included) and the block panel's button (that o
   list renders, the store asks main's cache (`gc:opinion:cached`, a read that never asks the model) for
   every item without a chip. Only an answer that still fits the item is returned (same head, dirty
   files, fate and reason); an item that changed shows no chip and costs a new ask.
-- **No network, local reads only:** the advisor session may read files and run `git log`, `git diff`,
-  `git show` and `git status`; it has no web tool and no `gh`, so nothing leaves the machine.
+- **Reads files, runs nothing, no network:** the advisor session has exactly `Read`, `Grep` and `Glob`.
+  `Bash` is denied entirely (even a git rule can write files through `--output=<path>`, which prefix rules
+  cannot forbid), as are `Edit`, `Write`, `NotebookEdit`, `WebFetch` and `WebSearch`; no MCP server is
+  configured. Everything git knows is in the dossier, which main computes.
 - **Cost disclosure:** the button's tooltip says it uses the model on demand
   ("Asks a read-only model session. Uses tokens."). Docs say the same.
 

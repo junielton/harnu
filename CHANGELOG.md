@@ -22,7 +22,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   evidence behind it. The answer shows as a chip on the row, with the reason and evidence on
   hover and in the panel. **Remove the N marked safe** then selects exactly those items and
   opens the usual remove dialog, where you still confirm each one. The opinion is advice
-  only: it never removes anything, has no network access (no web tools, no `gh`), never runs by itself, and uses model tokens each time you
+  only: it never removes anything, reads files only (it cannot run any command) and has no network access, never runs by itself, and uses model tokens each time you
   ask (it runs as the cheap "scout" tier of the folder's model routing table, Haiku at low effort by default). Answers are kept
   until the item changes (a new commit, different uncommitted files, a different pull request
   state), so asking again costs nothing, and the chips come back by themselves after you reload
