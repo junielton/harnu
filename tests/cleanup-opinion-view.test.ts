@@ -310,6 +310,8 @@ describe('"Remove the ones marked safe"', () => {
     await askedAll(rig)
     expect(q('[data-testid="review-remove-safe"]')).not.toBeNull()
     // The next snapshot shows d1 on a different commit.
+    // Main's cache still holds the opinion of the item that did not change, and only that one.
+    rig.gcOpinionCached.mockResolvedValue({ [D3]: { id: D3, ...safe(D3) } })
     rig.gcSnapshot.mockResolvedValue(snap('b'.repeat(40)))
     await click(q('[data-testid="cleanup-rescan"]'))
     await flushPromises()
@@ -373,6 +375,7 @@ describe('a chip never outlives the item it was about', () => {
     expect(chipOf(D1)?.getAttribute('data-state')).toBe('safe')
     expect(q('[data-testid="review-remove-safe"]')).not.toBeNull()
     rig.gcOpinionCached.mockResolvedValue({}) // main's key moved (the PR state), so it holds no opinion
+    rig.gcSnapshot.mockResolvedValue(snap()) // a new snapshot object, as every IPC answer is
     await click(q('[data-testid="cleanup-rescan"]'))
     await flushPromises()
     expect(chipOf(D1)).toBeNull()

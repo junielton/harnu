@@ -11,8 +11,13 @@ import type { GcBlock, GcModel } from './gc-model'
 
 export interface StoredOpinion {
   opinion: GcOpinion
-  /** What the block looked like when the opinion arrived. */
+  /** What the block looked like when the opinion was ASKED for. */
   fingerprint: string
+  /**
+   * Main cached this answer, so a later peek can confirm it. An advisor that could not answer reads
+   * `unsure` and is not durable: there is nothing in main to confirm it against.
+   */
+  durable: boolean
 }
 
 export type OpinionMap = ReadonlyMap<string, StoredOpinion>
@@ -25,13 +30,50 @@ export function fingerprintOf(b: GcBlock): string {
 
 const isAskable = (b: GcBlock | undefined): b is GcBlock => !!b && b.bucket === 'review'
 
-/** Stores an opinion for a Needs review block of the model; an unknown or non-review id is ignored. */
-export function recordOpinion(map: OpinionMap, opinion: GcOpinion, model: GcModel): OpinionMap {
+/**
+ * Stores an opinion for a Needs review block of the model; an unknown or non-review id is ignored.
+ * `askedFingerprint` is the block's fingerprint when the question was asked: a result for an item
+ * that has since changed is about a state that no longer exists and is dropped, not shown. Without
+ * it (a peek, which main already checked) the current fingerprint is used.
+ */
+export function recordOpinion(
+  map: OpinionMap,
+  opinion: GcOpinion,
+  model: GcModel,
+  opts: { askedFingerprint?: string; durable?: boolean } = {}
+): OpinionMap {
   const block = model.byId.get(opinion.id)
   if (!isAskable(block)) return map
+  const current = fingerprintOf(block)
+  if (opts.askedFingerprint !== undefined && opts.askedFingerprint !== current) return map
   const next = new Map(map)
-  next.set(opinion.id, { opinion, fingerprint: fingerprintOf(block) })
+  next.set(opinion.id, {
+    opinion,
+    fingerprint: opts.askedFingerprint ?? current,
+    durable: opts.durable ?? true
+  })
   return next
+}
+
+/**
+ * After main was asked to confirm `requested` ids: the durable opinions among them that main did not
+ * return are no longer about the item (its pull request state, dirty files or head moved), so they
+ * go. Opinions outside `requested`, and ones main never cached, are left alone. The same map when
+ * nothing dropped.
+ */
+export function dropUnconfirmed(
+  map: OpinionMap,
+  requested: readonly string[],
+  confirmed: ReadonlySet<string>
+): OpinionMap {
+  const asked = new Set(requested)
+  let dropped = false
+  const next = new Map<string, StoredOpinion>()
+  for (const [id, stored] of map) {
+    if (stored.durable && asked.has(id) && !confirmed.has(id)) dropped = true
+    else next.set(id, stored)
+  }
+  return dropped ? next : map
 }
 
 /** Keeps the opinions whose item is still Needs review and unchanged; the same map when none dropped. */

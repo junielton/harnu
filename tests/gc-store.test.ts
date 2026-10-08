@@ -785,6 +785,7 @@ describe('gc store — an opinion belongs to the item as it was when asked', () 
     expect(gc.opinionFor(review)).not.toBeNull()
     // The pull request state moved: main's key differs, so its cache no longer returns the opinion.
     api.gcOpinionCached.mockResolvedValue({})
+    api.gcSnapshot.mockResolvedValue(snap()) // a new snapshot object, as every IPC answer is
     await gc.refresh()
     await vi.advanceTimersByTimeAsync(0)
     expect(gc.opinionFor(review)).toBeNull()
@@ -806,6 +807,7 @@ describe('gc store — an opinion belongs to the item as it was when asked', () 
           .map((i) => [i, { id: i, verdict: 'safe', reason: 'r', evidence: 'e' }])
       )
     )
+    api.gcSnapshot.mockResolvedValue(snap()) // a new snapshot object, as every IPC answer is
     await gc.refresh()
     await vi.advanceTimersByTimeAsync(0)
     expect(gc.opinionFor(review)?.verdict).toBe('safe')
@@ -822,6 +824,7 @@ describe('gc store — an opinion belongs to the item as it was when asked', () 
       verdict(review, { verdict: 'unsure', durable: false } as Partial<GcOpinionResult>)
     )
     api.gcOpinionCached.mockResolvedValue({})
+    api.gcSnapshot.mockResolvedValue(snap()) // a new snapshot object, as every IPC answer is
     await gc.refresh()
     await vi.advanceTimersByTimeAsync(0)
     expect(gc.opinionFor(review)?.verdict).toBe('unsure')

@@ -8464,11 +8464,18 @@ Needs review item, orphan volumes included) and the block panel's button (that o
   existing `.anim-shimmer-dot` helper and the word "Asking…". No chip is drawn for an item nobody asked about.
 - **Panel section "Opinion"** (above the actions, only when there is an opinion): the chip, the reason in
   13px `--text-2`, and the evidence as an 11.5px `--text-3` line prefixed "Evidence". Nothing else.
-- **"Remove the {n} marked safe"**: counts only items that are still Needs review and whose opinion still
-  matches (head and reason unchanged). It **pre-selects those items and opens the existing remove dialog**;
-  it never removes by itself. The dialog sends `gc:clean(ids, { confirmed, expected })` exactly like
-  Remove selected (every id confirmed, each with its `expected`), so a change between the opinion and the
-  click is refused as `changed-since-confirm`.
+- **An opinion is about the item as it was when asked.** Main binds each answer to its cache key
+  (reason, fate, pull request state, head, the sorted dirty files, the volume) taken when the question
+  went out. If the item moves while the model thinks, the answer arrives marked `stale` and is dropped;
+  the renderer also drops a result whose asked-for fingerprint no longer matches the item. A chip that
+  main cached is checked against main's cache again after every snapshot (`gc:opinion:cached`), so a
+  change the snapshot does not carry (the dirty files, the pull request state) clears it too.
+- **"Remove the {n} marked safe"**: counts only items that are still Needs review and whose opinion is
+  still current. It **pre-selects those items and opens the existing remove dialog**; it never removes by
+  itself. The binding is the `expected` the dialog captures **when it opens**, exactly as for Remove
+  selected: the dialog sends `gc:clean(ids, { confirmed, expected })` and main refuses any item whose
+  facts differ from that `expected` (`changed-since-confirm`). The opinion is advice shown before the
+  dialog; it is not what `gc:clean` checks.
 - **Failure and doubt are the same chip**: an advisor that could not run, answered badly, or marked
   something safe without evidence reads **unsure**; the reason says why. A failed answer is not
   remembered, so asking again asks again.
