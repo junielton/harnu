@@ -272,7 +272,7 @@ describe('session presence on real paths (delta 3b, item 8)', () => {
 describe('grace activity comes from the whole transcript index (delta 3b, item 9)', () => {
   it('the gather feeds every fleet folder, not only the item paths', () => {
     expect(between(scan, '// Sessions on real paths', 'const stacks = groupStacks')).toMatch(
-      /sessionsFromFleet\(fleet,/
+      /sessionsFromFleet\(activity,/
     )
   })
 })

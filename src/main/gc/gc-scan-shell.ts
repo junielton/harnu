@@ -32,6 +32,7 @@ import { buildBundles, containerFolderPaths, type CanonicalPath } from './bundle
 import { dockerIsUnavailable, findForeignCheckouts, resolveRealPaths } from './gc-shell'
 import { collectForeignCheckouts, explainFailedWalks } from './gc-foreign'
 import { sessionsFromFleet } from './gc-sessions'
+import { fsTranscriptProbe, mergeActivityFolders, transcriptFolders } from './gc-transcripts'
 import {
   buildDirExists,
   foldersForBundles,
@@ -164,13 +165,15 @@ export async function gatherGc(
 
   // Sessions on real paths: the folders of every running session and every item are read
   // through their real locations, so a session reached through a symlink still counts.
+  // Every folder of the transcript index, whoever wrote it (a headless `claude -p` run, a
+  // Scheduler worker, a legacy index gone stale), so grace counts any terminal under the
+  // worktree, outside Harnu included, and a session parked a while ago.
+  const activity = mergeActivityFolders(fleet, await transcriptFolders(fsTranscriptProbe()))
   const sessionCanonical = await resolveRealPaths(
-    [...itemPaths, ...fleet.map((f) => f.path), ...sets.live, ...sets.inUse],
+    [...itemPaths, ...activity.map((f) => f.path), ...sets.live, ...sets.inUse],
     (p) => fs.realpath(p)
   )
-  // Every folder of the transcript index, so grace counts any terminal under the worktree,
-  // outside Harnu included, and a session parked a while ago.
-  const sessions = sessionsFromFleet(fleet, sets, sessionCanonical)
+  const sessions = sessionsFromFleet(activity, sets, sessionCanonical)
 
   // Read-only listings for the Docker card; skipped, not guessed, when docker is absent.
   const docker = available
