@@ -77,6 +77,7 @@ export function bundle(path: string, over: BundleOver = {}): WorktreeBundle {
     isMainCheckout: false,
     pathsResolved: true,
     nestedWorktrees: [],
+    foreignCheckouts: [],
     localTip: 'a'.repeat(40),
     graceDays: 2,
     bucket: 'ready',

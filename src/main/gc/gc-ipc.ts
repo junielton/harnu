@@ -19,7 +19,7 @@ import { prefsPath as reaperPrefsPath } from '../reaper/prefs'
 import type { ReaperControl } from '../reaper/reaper-ipc'
 import { bucketFeed, setInheritedBuckets } from './gc-buckets'
 import { withActor } from './gc-actor'
-import { keepFromFresh } from './gc-keep'
+import { keepFromFresh, protectedFromGather, withProvisionalKeep } from './gc-keep'
 import {
   LEFTOVERS_FILE,
   readLeftovers,
@@ -83,6 +83,9 @@ export async function registerGcHandlers(
     containers: containersPrefsFile(userData)
   })
   const state = createCycleState()
+  /** When each Keep was last written, and which are still waiting for a fresh gather. */
+  const keepWrites = new Map<string, number>()
+  const provisionalKeeps = new Set<string>()
   // What cleaned worktrees left in Docker, so their volumes can be offered for review (D1).
   const leftoversFile = path.join(userData, LEFTOVERS_FILE)
   let leftovers = readLeftovers(leftoversFile)
@@ -121,6 +124,8 @@ export async function registerGcHandlers(
       }
     },
     feed: (g) => setInheritedBuckets(bucketFeed(g.bundles, g.canonical)),
+    // A Keep pressed meanwhile (or still provisional) must survive a verdict on older prefs.
+    protectedKeeps: (startedAt) => protectedFromGather(keepWrites, provisionalKeeps, startedAt),
     now: () => Date.now()
   })
   const gather = (): Promise<GcGathered> => gatherer.gather()
@@ -224,13 +229,27 @@ export async function registerGcHandlers(
       ),
     keep: async (rawId) => {
       if (typeof rawId !== 'string') throw new Error('gc:keep expects a bundle id')
-      // The fate is recorded from a gather made now: the cache may predate a scan, a clean
-      // or a sweep, and a mark recorded against an old fate is dropped by the next gather.
-      const next = keepFromFresh(prefs, (await gatherFresh()).bundles, rawId)
-      if (!next) throw new Error(`unknown cleanup item: ${rawId}; refresh and retry`)
-      await persist(next)
-      void gather().catch((err) => console.error('[gc] refresh after keep failed', err))
-      return next
+      // 1. Protect NOW. The fresh gather below can take a minute, and a cycle that already
+      //    holds this item as ready would clean it meanwhile; any mark refuses it at the reprobe.
+      provisionalKeeps.add(rawId)
+      keepWrites.set(rawId, Date.now())
+      await persist(withProvisionalKeep(prefs, gatherer.cached()?.bundles ?? [], rawId))
+      try {
+        // 2. Record the real fate, from a gather made now: the cache may predate a scan, a
+        //    clean or a sweep, and a mark against an old fate is dropped by the next gather.
+        const next = keepFromFresh(prefs, (await gatherFresh()).bundles, rawId)
+        if (!next) {
+          await persist(withoutKeep(prefs, [rawId]))
+          keepWrites.delete(rawId)
+          throw new Error(`unknown cleanup item: ${rawId}; refresh and retry`)
+        }
+        keepWrites.set(rawId, Date.now())
+        await persist(next)
+        void gather().catch((err) => console.error('[gc] refresh after keep failed', err))
+        return next
+      } finally {
+        provisionalKeeps.delete(rawId)
+      }
     },
     unkeep: async (rawId) => {
       if (typeof rawId !== 'string') throw new Error('gc:unkeep expects a bundle id')

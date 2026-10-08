@@ -99,6 +99,31 @@ describe('createGatherer: a persisting gather (T445 delta 2)', () => {
     expect(spies.prefs.keep).toEqual({ a: 'open' })
   })
 
+  it('S3 delta 4: a provisional Keep is protected from the gather’s verdict', async () => {
+    const prefs = { ...defaultGcPrefs(), keep: { a: 'merged', b: 'merged' } }
+    const spies = setup(
+      gathered({
+        staleKeeps: [
+          { id: 'a', marked: 'merged' },
+          { id: 'b', marked: 'merged' }
+        ]
+      }),
+      prefs
+    )
+    const gatherer = createGatherer({
+      prefs: () => spies.spies.prefs,
+      persistPrefs: spies.spies.persistPrefs,
+      gatherGc: spies.spies.gatherGc,
+      state: spies.spies.state,
+      leftovers: { get: () => spies.spies.leftovers, set: spies.spies.setLeftovers },
+      feed: spies.spies.feed,
+      protectedKeeps: () => new Set(['a']),
+      now: () => NOW
+    })
+    await gatherer.gather()
+    expect(spies.spies.prefs.keep).toEqual({ a: 'merged' })
+  })
+
   it('a release made while the gather ran survives that gather’s verdict on the old one', async () => {
     const prefs = {
       ...defaultGcPrefs(),

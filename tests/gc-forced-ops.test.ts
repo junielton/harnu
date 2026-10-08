@@ -108,7 +108,8 @@ function rig(
       return ref
     },
     detachSidebar: async () => undefined,
-    removeWorktreeAdmin: async () => undefined,
+    canUnregister: async () => true,
+    removeWorktreeAdmin: async () => true,
     appendTombstone: async (t) => {
       tombstones.push(t)
     },
@@ -154,7 +155,8 @@ function rig(
       headOf: async () => (over.head === undefined ? TIP : over.head),
       isProtectedNow: () => false,
       realpath: async (p: string) => p,
-      listWorktrees: async () => ['/ws/org/proj/www', WT]
+      listWorktrees: async () => ['/ws/org/proj/www', WT],
+      findForeignCheckouts: async () => []
     },
     order,
     git,

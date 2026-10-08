@@ -31,6 +31,11 @@ export interface GathererDeps {
   ) => Promise<GcGathered>
   state: CycleState
   leftovers: { get: () => LeftoverFile; set: (next: LeftoverFile) => void }
+  /**
+   * Ids a gather that began at `startedAt` must not clear a Keep for: marks written since it
+   * began, and marks still provisional. Absent protects none.
+   */
+  protectedKeeps?: (startedAt: number) => ReadonlySet<string>
   /** Hands the bundles' buckets to the Containers view. */
   feed: (g: GcGathered) => void
   now: () => number
@@ -70,6 +75,7 @@ export function createGatherer(deps: GathererDeps): Gatherer {
         try {
           // Which release marks this gather judged: a release made while it ran is a newer
           // mark, and must survive the verdict on the one it replaced (as a Keep does).
+          const startedAt = deps.now()
           const judgedReleases = { ...deps.prefs().released }
           const g = await read(true)
           // A project with no volume left in Docker has nothing to review. Only judged when
@@ -84,7 +90,9 @@ export function createGatherer(deps: GathererDeps): Gatherer {
           cache = g
           deps.feed(g)
           if (g.staleKeeps.length > 0)
-            await deps.persistPrefs(withoutStaleKeeps(deps.prefs(), g.staleKeeps))
+            await deps.persistPrefs(
+              withoutStaleKeeps(deps.prefs(), g.staleKeeps, deps.protectedKeeps?.(startedAt))
+            )
           const staleReleases = g.staleReleases.filter(
             (id) => deps.prefs().released[id] === judgedReleases[id]
           )

@@ -3,6 +3,7 @@ import {
   collectProjectFiles,
   isComposeFile,
   isEnvFile,
+  scanProjectFiles,
   projectNamesFromFiles,
   type FsProbe
 } from '../src/main/gc/gc-project-files'
@@ -287,5 +288,106 @@ describe('a name pinned in a subfolder protects its volume (delta 3b, item 10)',
     )
     expect(g.unresolved).toBe(false)
     expect(g.protectedProjects.size).toBe(0)
+  })
+})
+
+describe('scanProjectFiles reports when a cap cut the scan short (delta 4, N5)', () => {
+  const many = (n: number): Record<string, string> => {
+    const t: Record<string, string> = {}
+    for (let i = 0; i < n; i++) t[`/ws/b/d${i}/compose.yml`] = `name: n${i}`
+    return t
+  }
+
+  it('is not truncated on an ordinary folder', async () => {
+    const out = await scanProjectFiles(
+      '/ws/a',
+      fake({ '/ws/a/compose.yml': 'name: a', '/ws/a/x/.env': 'A=1' })
+    )
+    expect(out.truncated).toBe(false)
+    expect(out.files).toHaveLength(2)
+  })
+
+  it('is truncated when more matching files exist than the file cap lets through', async () => {
+    const out = await scanProjectFiles('/ws/b', fake(many(200)))
+    expect(out.files.length).toBeLessThanOrEqual(100)
+    expect(out.truncated).toBe(true)
+  })
+
+  it('is not truncated when the files fit exactly in the cap', async () => {
+    const out = await scanProjectFiles('/ws/b', fake(many(100)))
+    expect(out.files).toHaveLength(100)
+    expect(out.truncated).toBe(false)
+  })
+
+  it('is truncated when a folder has more entries than the entry cap', async () => {
+    const probe: FsProbe = {
+      readdir: async () => Array.from({ length: 600 }, (_, i) => ({ name: `f${i}`, isDir: false })),
+      readFile: async () => undefined
+    }
+    expect((await scanProjectFiles('/ws/c', probe)).truncated).toBe(true)
+  })
+
+  it('is truncated when a matching file cannot be read: too large, or gone', async () => {
+    const probe: FsProbe = {
+      readdir: async () => [{ name: 'compose.yml', isDir: false }],
+      readFile: async () => undefined
+    }
+    const out = await scanProjectFiles('/ws/d', probe)
+    expect(out.files).toEqual([])
+    expect(out.truncated).toBe(true)
+  })
+
+  it('ignores a file that is not a project file, however large', async () => {
+    const probe: FsProbe = {
+      readdir: async () => [{ name: 'big.log', isDir: false }],
+      readFile: async () => undefined
+    }
+    expect((await scanProjectFiles('/ws/e', probe)).truncated).toBe(false)
+  })
+
+  it('collectProjectFiles still returns just the files', async () => {
+    expect(await collectProjectFiles('/ws/b', fake(many(3)))).toHaveLength(3)
+  })
+})
+
+describe('a truncated scan hides orphan volumes (delta 4, N5)', () => {
+  const gone = (p: string): boolean => !p.startsWith('/ws/old')
+  it('marks the folder unresolved, keeping the names it did read', () => {
+    const g = volumeGuards(
+      [
+        {
+          path: '/ws/live',
+          truncated: true,
+          files: [{ path: '/ws/live/c.yml', dir: '/ws/live', kind: 'compose', text: 'name: shop' }]
+        }
+      ],
+      gone
+    )
+    expect(g.unresolved).toBe(true)
+    expect(g.protectedProjects.has('shop')).toBe(true)
+  })
+
+  it('names the folder and the reason', () => {
+    const g = volumeGuards([{ path: '/ws/live', truncated: true }, { path: '/ws/ok' }], gone)
+    expect(g.hidden).toEqual({ reason: 'scan-limit', folders: ['/ws/live'] })
+  })
+
+  it('an unresolved name is reported before a scan limit', () => {
+    const g = volumeGuards(
+      [
+        { path: '/ws/a', truncated: true },
+        {
+          path: '/ws/b',
+          files: [{ path: '/ws/b/c.yml', dir: '/ws/b', kind: 'compose', text: 'name: ${WHO}' }]
+        }
+      ],
+      gone
+    )
+    expect(g.hidden).toEqual({ reason: 'unresolved-compose-name', folders: ['/ws/b'] })
+  })
+
+  it('is null when nothing is hidden, and a folder that is gone hides nothing', () => {
+    expect(volumeGuards([{ path: '/ws/ok' }], gone).hidden).toBeNull()
+    expect(volumeGuards([{ path: '/ws/old/x', truncated: true }], gone).hidden).toBeNull()
   })
 })

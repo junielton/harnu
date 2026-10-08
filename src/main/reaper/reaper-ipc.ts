@@ -31,7 +31,7 @@ import { newlyHarvestable, type ReaperSnapshot } from './scan-core'
 import type { ReapItem } from './reaper-core'
 import { cleanItem, sweep, type CleanResult, type ExecutorDeps } from './executor-core'
 import { appendTombstone, readJournal, type Tombstone } from './journal'
-import { removeWorktreeAdmin } from './worktree-admin-shell'
+import { canUnregister, removeWorktreeAdmin } from './worktree-admin-shell'
 import { archiveTip, archiveWip } from './archive-shell'
 import { defaultPrefs, normalizePrefs, readPrefs, writePrefs, type ReaperPrefs } from './prefs'
 import {
@@ -105,6 +105,7 @@ export function buildDeps(getWindow: () => BrowserWindow | null): ExecutorDeps {
     },
     archiveTip,
     archiveWip,
+    canUnregister: (repo, wt) => canUnregister(repo, wt, git),
     removeWorktreeAdmin: (repo, wt) => removeWorktreeAdmin(repo, wt, git),
     detachSidebar: async (p) => {
       await removeGhostFolder(getWindow, p)

@@ -113,6 +113,7 @@ function build(over: Over = {}) {
     knownFolders: [],
     protectedProjects: new Set<string>(),
     canonical: AS_GIVEN,
+    foreignCheckouts: new Map([[it.id, []]]),
     ...(released ? { released } : {}),
     ...(over.releasedTips === null
       ? {}
@@ -256,6 +257,8 @@ describe('buildBundles honors a release (T445)', () => {
         knownFolders: [],
         protectedProjects: new Set<string>(),
         canonical: AS_GIVEN,
+        foreignCheckouts: new Map([[it.id, []]]),
+        foreignCheckouts: new Map([[it.id, []]]),
         released: new Map([[it.id, NOW - 60_000]])
       })[0]!
       expect(b.sharedStackIds).toEqual(['app'])

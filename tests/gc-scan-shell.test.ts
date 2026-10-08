@@ -45,6 +45,7 @@ vi.mock('../src/main/gc/gc-shell', async () => {
   return {
     presenceFromSets: () => 'none',
     dockerIsUnavailable: () => true,
+    findForeignCheckouts: async () => [],
     resolveRealPaths: async () => AS_GIVEN
   }
 })

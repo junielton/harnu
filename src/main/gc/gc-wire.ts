@@ -9,10 +9,11 @@ import type { GcItemResult } from './pipeline-core'
 import type { HousekeepingResult } from './housekeeping-core'
 import type { OrphanVolumeItem } from './gc-housekeeping-input'
 import type { GcJobDone, GcJobInfo, GcJobProgress } from './gc-jobs-core'
-import type { GcDockerCard } from './gc-docker-card'
+import type { GcDockerCard, OrphanVolumesHidden } from './gc-docker-card'
 
 export type {
   GcDockerCard,
+  OrphanVolumesHidden,
   CycleMode,
   GcJobDone,
   GcJobInfo,
@@ -49,8 +50,10 @@ export interface GcSnapshot {
   /** Orphan volumes offered in Needs review. Removed only by an explicit, confirmed action. */
   orphanVolumes: OrphanVolumeItem[]
   /**
-   * The Docker card: `buildCacheReclaimableBytes` and `danglingImages { count, bytes }`.
-   * Each is null when docker was absent or did not answer for it.
+   * The Docker card: `buildCacheReclaimableBytes`, `danglingImages { count, bytes }` and
+   * `orphanVolumesHidden { reason, folders } | null`. The first two are null when docker was
+   * absent or did not answer for them; the last says why the orphan list is empty when an
+   * unresolved compose name or a scan limit hides it (null when nothing is hidden).
    */
   docker: GcDockerCard
   prefs: GcPrefs

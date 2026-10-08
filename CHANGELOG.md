@@ -31,7 +31,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   prove are finished: merged for real (the pull request's last commit is the worktree's
   commit, or git itself shows the work is in main), clean, past a grace period, and with no
   Harnu session running in them. It is off by default, and the first run only reports what
-  it found ("Found N ready to clean, X GiB - enable automatic cleanup?") and deletes nothing. A
+  it found ("Found N ready to clean, X GB - enable automatic cleanup?") and deletes nothing. A
   stack's containers, the code (kept as `refs/archive/…` refs), the dependencies, the folder
   and the local branch go in a fixed order, one worktree at a time, and a failure stops that
   worktree only. **Docker volumes are never removed with a worktree**, by the automatic cleanup
@@ -44,13 +44,21 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   cleanup stopped partway shows as needing review, not as ready to clean, everywhere in Harnu.
 - **Automatic cleanup is stricter about what is still in use.** Time since the last activity
   now counts any terminal under the worktree, including `claude` runs started outside Harnu and
-  sessions parked a while ago, and sessions reached through a symlink. A worktree nested inside
-  another needs review. A Docker Compose project name written in a subfolder (`docker/compose.yml`,
+  sessions parked a while ago, and sessions reached through a symlink. A worktree, or a clone of another repository, inside
+  another worktree needs review, and so does one Harnu could not look inside (the reason names
+  the folder and the error). A Docker Compose project name written in a subfolder (`docker/compose.yml`,
   an `.env` there, `${VAR}` read from the `.env` beside it) keeps its volumes out of the orphan
   list, and a name that cannot be resolved keeps every volume out. Pressing Keep is remembered
   against the item's state at that moment, a partial settings write no longer resets other
   settings, and cleaning a worktree now unregisters only that worktree from git instead of
   pruning every stale entry in the repository.
+- **Automatic cleanup counts every kind of session, and a Keep protects at once.** Headless
+  runs (`claude -p`, including Harnu's own scheduled workers) and a stale legacy session index
+  now count as activity for the grace period. Pressing **Keep** protects the worktree
+  immediately instead of after Harnu has re-checked it, even while a cleaning cycle is already
+  running. If Harnu cannot read every compose file it needs to (a scan limit, or a project name
+  it cannot resolve), it lists no orphan volumes and says why. Cleanup notifications use the
+  same decimal units (`GB`) as the screens.
 - **Docker housekeeping in the same cycle.** When automatic cleanup is on, each cycle also
   clears Docker build cache older than a week and dangling images, and reports how much it
   freed. It never touches images a stack uses and never removes a volume: volumes nobody uses

@@ -41,7 +41,8 @@ const bundlesFor = (
     volumes: new Map(),
     knownFolders: [],
     protectedProjects: new Set(),
-    canonical
+    canonical,
+    foreignCheckouts: new Map(items.map((i) => [i.id, []]))
   })
 }
 
@@ -214,7 +215,8 @@ describe('a pinned subfolder inside a ready worktree does not make it nested (S2
       volumes: new Map(),
       knownFolders,
       protectedProjects: new Set(),
-      canonical: (p) => ({ path: p, resolved: true })
+      canonical: (p) => ({ path: p, resolved: true }),
+      foreignCheckouts: new Map(items.map((i) => [i.id, []]))
     })[0]!
   }
 
