@@ -32,7 +32,8 @@ export interface GcOps {
   /**
    * Re-reads presence, HEAD and the stacks touching the worktree right before `cleanGit`: the
    * docker steps and drop-deps take time, and a session opened, a commit made or a stack
-   * started meanwhile must stop the archive and trash.
+   * started meanwhile must stop the archive and trash. Any stack still touching the worktree
+   * refuses, a scanned one included: by then the run removed every stack it may remove.
    */
   recheck(b: WorktreeBundle): Promise<{ ok: true } | { ok: false; reason: string }>
   /** archive → trash → prune → branch-delete → detach, remote branch deletion forced off. */
