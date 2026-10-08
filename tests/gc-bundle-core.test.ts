@@ -1894,7 +1894,8 @@ describe('buildBundles — real paths (delta 4, item C)', () => {
         build({
           stacks: [stack('web', [web])],
           containers: [web],
-          canonical: aliases({}, ['/ws/org/proj'])
+          // Only the ancestor fails: under `aliases` the worktree path would fail with it.
+          canonical: unresolvedExactly(['/ws/org/proj'])
         })
       )
       // Never ready. Since delta 5 item 1 a folder above the worktree no longer shares it,
