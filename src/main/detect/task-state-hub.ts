@@ -22,6 +22,8 @@ export interface BridgeEvent {
   failureReason?: FailureReason
   /** Only on StopFailure: the rate-limit reset, normalized to epoch-ms. */
   resetsAt?: number
+  /** Claude Code's `agent_id`: set only for a hook fired by a subagent's own tool call. */
+  agentId?: string
   /** Which writer produced the event. */
   source: 'hook' | 'companion'
 }
@@ -202,7 +204,8 @@ export function ingest(ev: BridgeEvent, getWindow: () => BrowserWindow | null): 
   const next = registry.fold(ev.sessionId, {
     hookEventName: ev.event,
     matcher: ev.matcher,
-    sessionId: ev.sessionId
+    sessionId: ev.sessionId,
+    ...(ev.agentId !== undefined ? { agentId: ev.agentId } : {})
   })
   // T79 S2: forward the folded edge to in-main observers (the auto-digest
   // engine) BEFORE the renderer send. An observer throw never breaks the fold.

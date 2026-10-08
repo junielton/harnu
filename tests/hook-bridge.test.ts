@@ -75,6 +75,18 @@ describe('hook bridge server', () => {
     })
   })
 
+  it('carries the subagent id from the body (a subagent event is not a main-thread one)', async () => {
+    const events: BridgeEvent[] = []
+    const started = await startHookServer((e) => events.push(e), 'tok')
+    close = started.close
+    await post(started.port, '/hook/tok/PostToolUse/_', { session_id: 'S5', agent_id: 'agent-9' })
+    await post(started.port, '/hook/tok/PostToolUse/_', { session_id: 'S5' })
+    await post(started.port, '/hook/tok/PostToolUse/_', { session_id: 'S5', agent_id: '' })
+    expect(events[0].agentId).toBe('agent-9')
+    expect(events[1].agentId).toBeUndefined()
+    expect(events[2].agentId).toBeUndefined()
+  })
+
   it('rejects a wrong token with 403 and emits nothing', async () => {
     const events: BridgeEvent[] = []
     const started = await startHookServer((e) => events.push(e), 'tok')

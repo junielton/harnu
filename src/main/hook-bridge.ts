@@ -156,8 +156,19 @@ export function startHookServer(
             if (Number.isFinite(t)) resetsAt = t
           }
         }
+        // `agent_id` marks a subagent's own tool call; the main thread never sends one.
+        const agentId =
+          typeof body.agent_id === 'string' && body.agent_id !== '' ? body.agent_id : undefined
         if (sessionId && event)
-          onEvent({ sessionId, event, matcher, ts: Date.now(), failureReason, resetsAt })
+          onEvent({
+            sessionId,
+            event,
+            matcher,
+            ts: Date.now(),
+            failureReason,
+            resetsAt,
+            ...(agentId !== undefined ? { agentId } : {})
+          })
 
         // ---- Dispatch branch (responder spec §4.3) — fail-open in EVERYTHING ----
         // The observation above is byte-for-byte unchanged; this only runs for a

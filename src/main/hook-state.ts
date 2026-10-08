@@ -23,6 +23,18 @@ export interface HookEvent {
    */
   matcher?: string
   sessionId: string
+  /**
+   * Claude Code's `agent_id`: set when the event came from a SUBAGENT's own tool call, absent for
+   * the main thread. A background agent keeps firing `PreToolUse`/`PostToolUse` while the main
+   * thread sits on an open dialog, so those events cannot be read as "the dialog was answered".
+   */
+  agentId?: string
+  /**
+   * The registry's memory of who raised the current `needs-input`: true when a subagent did (its
+   * own `PermissionRequest`), so only a subagent's progress may clear it. Meaningless unless the
+   * current state is `needs-input`.
+   */
+  blockRaisedByAgent?: boolean
 }
 
 /**
@@ -35,8 +47,16 @@ export interface HookEvent {
 export function reduceTaskState(current: TaskState, ev: HookEvent): TaskState {
   switch (ev.hookEventName) {
     case 'UserPromptSubmit':
+      return 'working'
     case 'PreToolUse':
     case 'PostToolUse':
+      // An open question or approval outranks "a background agent is still running": a
+      // subagent's tool call proves the AGENT is alive, not that the main thread's dialog was
+      // answered. Only the main thread's own tool events (or a block the subagent raised itself)
+      // leave `needs-input`.
+      if (current === 'needs-input' && ev.agentId !== undefined && !ev.blockRaisedByAgent) {
+        return current
+      }
       return 'working'
     case 'PermissionRequest':
       return 'needs-input'
