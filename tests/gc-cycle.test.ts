@@ -8,7 +8,7 @@ import {
   type GcGather
 } from '../src/main/gc/gc-cycle'
 import { bucketFeed } from '../src/main/gc/gc-buckets'
-import { buildBundles } from '../src/main/gc/bundle-core'
+import { AS_GIVEN, buildBundles } from '../src/main/gc/bundle-core'
 import { planCycle } from '../src/main/gc/autopilot-core'
 import { createJobQueue } from '../src/main/gc/gc-jobs-core'
 import { defaultGcPrefs, type GcPrefs } from '../src/main/gc/gc-prefs'
@@ -21,7 +21,7 @@ import {
 import type { CycleRecord } from '../src/main/gc/gc-wire'
 import type { WorktreeBundle } from '../src/main/gc/bundle-core'
 import { bundle, DAY, NOW, reapItem } from './gc-fixtures'
-import { bundlesOf, pr, scanInput, OTHER } from './gc-scan-fixtures'
+import { bundlesOf, collect, pr, scanInput, OTHER, WT } from './gc-scan-fixtures'
 
 const GIB = 1024 ** 3
 
@@ -567,7 +567,8 @@ describe('detached worktrees are never a ready item for the autopilot (delta 1, 
       graceDays: 2,
       volumes: new Map(),
       knownFolders: [],
-      protectedProjects: new Set()
+      protectedProjects: new Set(),
+      canonical: AS_GIVEN
     })
     expect(b!.bucket).not.toBe('ready')
     expect(planCycle([b!], live()).toClean).toEqual([])
@@ -581,5 +582,60 @@ describe('detached worktrees are never a ready item for the autopilot (delta 1, 
     const r = rig([det], live())
     await runGcCycle(r.deps, 'timer')
     expect(cleanedPaths(r)).toEqual([])
+  })
+})
+
+describe('S2 delta 4 contracts absorbed (delta 2, item 3)', () => {
+  it('a path that does not resolve keeps the worktree in Needs review as path-unresolved, and uncleaned', async () => {
+    const { items, fateInputs } = collect(scanInput())
+    const [b] = buildBundles({
+      items,
+      fateInputs,
+      stacks: [],
+      stackPaths: new Map(),
+      containers: [],
+      sessions: new Map(),
+      keep: new Set(),
+      neverClean: new Set(),
+      now: NOW,
+      graceDays: 2,
+      volumes: new Map(),
+      knownFolders: [],
+      protectedProjects: new Set(),
+      canonical: (p) => ({ path: p, resolved: p !== WT })
+    })
+    expect(b!.bucket).toBe('review')
+    expect(b!.reason?.code).toBe('path-unresolved')
+    const r = rig([b!], live())
+    await runGcCycle(r.deps, 'timer')
+    expect(cleanedPaths(r)).toEqual([])
+  })
+
+  it('a first recheck that fails halts at drop-deps and makes the item a review item', async () => {
+    const state = createCycleState()
+    let calls = 0
+    const first = rig([ready('a')], live(), {
+      state,
+      ops: {
+        recheck: async () => (++calls === 1 ? { ok: false, reason: 'head-moved' } : { ok: true })
+      }
+    })
+    const record = await runGcCycle(first.deps, 'timer')
+    expect(record.cleaned[0]).toMatchObject({ ok: false, haltedAt: 'drop-deps' })
+    expect(first.cleanGit).not.toHaveBeenCalled()
+
+    let seen: WorktreeBundle[] = []
+    const second = rig([ready('a')], live(), { state })
+    second.deps.onGathered = (g) => (seen = g.bundles)
+    await runGcCycle(second.deps, 'timer')
+    expect(seen[0]).toMatchObject({ bucket: 'review', reason: { code: 'cleanup-failed' } })
+  })
+
+  it('the autopilot never carries the review gate', async () => {
+    const reviewItem = bundle('/ws/wt/d', 'review')
+    const r = rig([reviewItem], live())
+    const record = await runGcCycle(r.deps, 'timer')
+    expect(record.cleaned).toEqual([])
+    expect(r.log.filter((l) => l !== 'housekeeping')).toEqual([])
   })
 })

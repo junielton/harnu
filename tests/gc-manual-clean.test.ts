@@ -310,9 +310,13 @@ describe('the confirmation binds to what the operator saw (AC-8, delta 1)', () =
     expect(r.done[0]!.results[0]).toMatchObject({ ok: true })
   })
 
-  it('has no blanket flag: confirmDecide is ignored', async () => {
+  it('has no blanket flag: a stray confirmDecide or confirmReview is ignored', async () => {
     const d = bundle('/ws/wt/d', 'review')
-    const opts = { ...shown([d], [], []), confirmDecide: true } as GcCleanOptions
+    const opts = {
+      ...shown([d], [], []),
+      confirmDecide: true,
+      confirmReview: true
+    } as GcCleanOptions
     const r = await run([d], opts, [d.item.id])
     expect(r.forced).toEqual([])
     expect(r.done[0]!.results[0]!.error).toBe('needs-confirmation')

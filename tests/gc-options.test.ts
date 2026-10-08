@@ -23,8 +23,8 @@ describe('parseOptions: the gc:clean payload is untrusted', () => {
     expect(parseOptions({ expected: { 'volume:x': volume } }).expected!['volume:x']).toEqual(volume)
   })
 
-  it('ignores a blanket confirmDecide: it confirms nothing', () => {
-    const out = parseOptions({ confirmDecide: true })
+  it('ignores a blanket confirmDecide or confirmReview: it confirms nothing', () => {
+    const out = parseOptions({ confirmDecide: true, confirmReview: true })
     expect(out).toEqual({ confirmed: [], expected: {} })
   })
 

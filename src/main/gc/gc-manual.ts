@@ -82,11 +82,13 @@ export function submitManualClean(
       // the forced ops.
       const forced = b.bucket !== 'ready'
       if (forced && !confirmed.has(id)) return refused(id, 'needs-confirmation')
-      const batchOpts: { removeVolumes: boolean; confirmDecide?: boolean } = {
+      const batchOpts: { removeVolumes: boolean; confirmReview?: boolean } = {
         // D1: worktree cleanup never removes a volume, ready or reviewed, bulk or single. What
         // it leaves behind comes back as an orphan-volume review item.
         removeVolumes: false,
-        confirmDecide: forced
+        // S2's own gate: set ONLY for an item the operator confirmed by id (checked above),
+        // never by the autopilot.
+        confirmReview: forced
       }
       const [result] = await runBatch([b], deps.opsFor('operator', forced), batchOpts)
       if (result!.ok) {

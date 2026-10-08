@@ -41,7 +41,7 @@ function parseExpected(raw: unknown): GcExpected | null {
 
 /**
  * `confirmed` and `expected` from an untrusted payload. There is deliberately no blanket
- * "confirm everything" flag: a stray `confirmDecide` is ignored, so it confirms nothing.
+ * "confirm everything" flag: a stray `confirmDecide` or `confirmReview` is ignored, so it confirms nothing.
  */
 export function parseOptions(raw: unknown): GcCleanOptions {
   const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}

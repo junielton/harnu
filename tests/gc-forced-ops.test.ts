@@ -137,6 +137,10 @@ function rig(
         }),
         removeContainers: vi.fn(async (ids: string[]) => {
           order.push('docker rm')
+          // As docker does: a removed container is gone from every later listing.
+          stacks = stacks
+            .map((st) => ({ ...st, containers: st.containers.filter((c) => !ids.includes(c.id)) }))
+            .filter((st) => st.containers.length > 0)
           return ok(ids)
         }),
         removeVolumes: vi.fn(async (names: string[]) => {
@@ -147,7 +151,8 @@ function rig(
       listStacks: async () => ({ stacks }),
       presenceOf: async () => over.presence ?? 'none',
       headOf: async () => (over.head === undefined ? TIP : over.head),
-      isProtectedNow: () => false
+      isProtectedNow: () => false,
+      realpath: async (p: string) => p
     },
     order,
     git,
@@ -159,7 +164,7 @@ function rig(
   }
 }
 
-const FORCE = { removeVolumes: true, confirmDecide: true }
+const FORCE = { removeVolumes: false, confirmReview: true }
 const run = (b: WorktreeBundle, r: Rig) => runBundle(b, createForcedGcOps(r.deps), FORCE)
 
 describe('asExecutable', () => {
@@ -189,15 +194,11 @@ describe('the forced path archives before anything destructive (AC-8)', () => {
     const at = (what: string): number => r.order.indexOf(what)
     expect(at('archiveTip')).toBeGreaterThanOrEqual(0)
     expect(at('archiveWip')).toBeGreaterThan(at('archiveTip'))
-    for (const destructive of [
-      'docker stop',
-      'docker rm',
-      'docker volume rm',
-      'removeDir',
-      'trash'
-    ]) {
+    for (const destructive of ['docker stop', 'docker rm', 'removeDir', 'trash']) {
       expect(at(destructive), destructive).toBeGreaterThan(at('archiveWip'))
     }
+    // D1: even a confirmed review item never loses a volume.
+    expect(r.order).not.toContain('docker volume rm')
   })
 
   it('writes the same archive refs the cleanup writes later, not a second set', async () => {

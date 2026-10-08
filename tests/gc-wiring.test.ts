@@ -179,3 +179,28 @@ describe('the Docker card reaches the snapshot (delta 2, item 2)', () => {
     expect(scan).toMatch(/available\s*\?[\s\S]*dockerCardFacts|!available[\s\S]*null/)
   })
 })
+
+describe('S2 delta 4 contracts (delta 2, item 3)', () => {
+  it('the gather builds canonical from real paths of everything the builder compares', () => {
+    const block = between(scan, 'const canonical = await resolveRealPaths(', 'const input = {')
+    for (const source of [
+      'itemPaths',
+      'repoPaths',
+      'containerFolderPaths',
+      'sessions.keys()',
+      'stackPaths.values()',
+      'prefs.neverClean',
+      'guards.knownFolders'
+    ]) {
+      expect(block, source).toContain(source)
+    }
+    expect(between(scan, 'const input = {', 'let bundles')).toMatch(/canonical/)
+  })
+
+  it('only the operator path sets the review gate, and only for a non-ready bundle', () => {
+    expect(read('src/main/gc/gc-cycle.ts')).not.toMatch(/confirmReview|confirmDecide/)
+    const manual = read('src/main/gc/gc-manual.ts')
+    expect(manual).toMatch(/confirmReview: forced/)
+    expect(manual).not.toMatch(/confirmReview: true/)
+  })
+})

@@ -2545,8 +2545,9 @@ const api = {
     ipcRenderer.invoke('gc:snapshot', opts),
   /**
    * Clean bundles or orphan volumes (`volume:<name>` ids) as a background job. Returns at
-   * once; progress streams on `gc:progress` and the job ends with `gc:done`. A Decide item or
-   * an orphan volume needs `confirmDecide: true`.
+   * once; progress streams on `gc:progress` and the job ends with `gc:done`. A Needs review
+   * item or an orphan volume needs its own id in `confirmed`, and every id needs its facts in
+   * `expected`; see `GcCleanOptions`.
    */
   gcClean: (ids: string[], opts?: GcCleanOptions): Promise<GcCleanAck> =>
     ipcRenderer.invoke('gc:clean', ids, opts),

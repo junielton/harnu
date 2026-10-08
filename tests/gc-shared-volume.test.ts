@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { buildBundles } from '../src/main/gc/bundle-core'
+import { AS_GIVEN, buildBundles } from '../src/main/gc/bundle-core'
 import { createCycleState, runGcCycle, type GcCycleDeps } from '../src/main/gc/gc-cycle'
 import { createJobQueue } from '../src/main/gc/gc-jobs-core'
 import { defaultGcPrefs } from '../src/main/gc/gc-prefs'
@@ -55,7 +55,8 @@ function bundlesWith(siblings: Sibling[]) {
     graceDays: 2,
     volumes: df,
     knownFolders: guards.knownFolders,
-    protectedProjects: guards.protectedProjects
+    protectedProjects: guards.protectedProjects,
+    canonical: AS_GIVEN
   })
 }
 
@@ -161,7 +162,8 @@ describe('the autopilot never removes a volume a live sibling shares (delta 1, i
       graceDays: 2,
       volumes: df,
       knownFolders: guards.knownFolders,
-      protectedProjects: guards.protectedProjects
+      protectedProjects: guards.protectedProjects,
+      canonical: AS_GIVEN
     })
     expect(b!.ownedVolumes).toEqual([VOLUME])
   })

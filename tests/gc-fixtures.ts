@@ -49,6 +49,7 @@ export function bundle(
     isMainCheckout: false,
     localTip: 'a'.repeat(40),
     graceDays: 2,
+    pathsResolved: true,
     ...facts,
     bucket,
     reason: reason ?? (bucket === 'review' ? { code: 'dirty', detail: 'x' } : null)
