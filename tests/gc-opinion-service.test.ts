@@ -692,3 +692,32 @@ describe('an item whose git facts could not be computed is never sent, never cac
     expect(reason).toMatch(/head/)
   })
 })
+
+describe('the service closes the Claude data folders in the argv it hands the run', () => {
+  it('adds the data folders it was given to the deny rules', async () => {
+    const r = rig(['a'])
+    const svc = createOpinionService({
+      cache: createOpinionCache(),
+      classify: async () => () => 'review',
+      dossier: async (id) => ({ dossier: dossier(id), group: '/repo' }),
+      route: async () => ({ model: 'haiku', effort: 'low' }),
+      dataDirs: ['/srv/cfg/claude'],
+      run: async (a) => {
+        r.runs.push(a)
+        return allSafe(a.stdin)
+      },
+      emitResult: () => {},
+      emitDone: () => {},
+      newId: () => 'j'
+    })
+    svc.start(['a'])
+    await svc.idle()
+    const argv = r.runs[0].argv
+    const denied = argv[argv.indexOf('--disallowedTools') + 1].split(',')
+    expect(denied).toContain('Read(~/.claude/**)')
+    expect(denied).toContain('Grep(//srv/cfg/claude/**)')
+    expect(argv).toEqual(
+      opinionArgv({ model: 'haiku', effort: 'low', dataDirs: ['/srv/cfg/claude'] })
+    )
+  })
+})

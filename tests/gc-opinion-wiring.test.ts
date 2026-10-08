@@ -131,6 +131,15 @@ describe('the advisor can only read (AC-2)', () => {
     expect(run).toMatch(/child\.stdin\??\.end\(/)
   })
 
+  it('runs the advisor without auto memory, in a confined folder, with the Claude data folders closed', () => {
+    const shell = code('src/main/gc/opinion-shell.ts')
+    expect(shell).toContain('advisorEnv(')
+    expect(shell).toContain('confineCwd(')
+    expect(shell).toContain('homedir()')
+    expect(shell).toMatch(/CLAUDE_CONFIG_DIR/)
+    expect(shell).toContain('dataDirs')
+  })
+
   it('stages no skill or plugin and builds argv from an empty tick context', () => {
     const core = read('src/main/gc/opinion-core.ts')
     // The Scheduler stages bundled skills with `--plugin-dir`; a skill's `hooks:` would run commands.

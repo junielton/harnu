@@ -3,6 +3,8 @@ import {
   OPINION_BATCH_SIZE,
   OPINION_BUILTIN_TOOLS,
   OPINION_FALLBACK,
+  advisorEnv,
+  confineCwd,
   scrubPaths,
   cacheKeyOf,
   buildPrompt,
@@ -735,5 +737,97 @@ describe('scrubPaths is total and stable', () => {
     for (const t of strings(2000)) {
       expect(scrubPaths(t, null).length).toBeLessThanOrEqual(t.length * 3 + 6)
     }
+  })
+})
+
+describe("Claude's own data folder is closed to the advisor (delta 5, item 1)", () => {
+  const denyOf = (argv: string[]): string[] =>
+    (argv[argv.indexOf('--disallowedTools') + 1] ?? '').split(',')
+
+  it('denies Read, Grep and Glob of ~/.claude/** by default', () => {
+    const denied = denyOf(opinionArgv({ model: 'haiku', effort: 'low' }))
+    for (const tool of ['Read', 'Grep', 'Glob']) expect(denied).toContain(`${tool}(~/.claude/**)`)
+  })
+
+  it('also denies every extra data folder, such as CLAUDE_CONFIG_DIR, in the absolute // form', () => {
+    const denied = denyOf(
+      opinionArgv({ model: 'haiku', effort: 'low', dataDirs: ['/srv/cfg/claude'] })
+    )
+    for (const tool of ['Read', 'Grep', 'Glob']) {
+      expect(denied).toContain(`${tool}(~/.claude/**)`)
+      expect(denied).toContain(`${tool}(//srv/cfg/claude/**)`)
+    }
+  })
+
+  it('normalises a trailing slash, a Windows drive, and ignores blanks and relative paths', () => {
+    const denied = denyOf(
+      opinionArgv({
+        model: 'haiku',
+        effort: 'low',
+        dataDirs: ['/a/b/', 'C:\\Users\\me\\cfg', '', '   ', 'relative/dir']
+      })
+    )
+    expect(denied).toContain('Read(//a/b/**)')
+    expect(denied).toContain('Read(//c/Users/me/cfg/**)')
+    expect(denied.some((d) => d.includes('relative'))).toBe(false)
+    expect(denied.filter((d) => d.startsWith('Read(')).length).toBe(3) // ~/.claude, /a/b, c/Users/me/cfg
+  })
+
+  it('keeps the earlier denies and still has no allow rule', () => {
+    const argv = opinionArgv({ model: 'haiku', effort: 'low' })
+    const denied = denyOf(argv)
+    for (const tool of ['Bash', 'Edit', 'Write', 'NotebookEdit', 'WebFetch', 'WebSearch']) {
+      expect(denied).toContain(tool)
+    }
+    expect(argv).not.toContain('--allowedTools')
+  })
+})
+
+describe('the advisor runs without auto memory', () => {
+  it('sets CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 and keeps the rest of the environment', () => {
+    const env = advisorEnv({ PATH: '/bin', HOME: '/home/x' })
+    expect(env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe('1')
+    expect(env.PATH).toBe('/bin')
+    expect(env.HOME).toBe('/home/x')
+  })
+
+  it('overrides a value that would switch it back on, and does not mutate its input', () => {
+    const base = { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0', CLAUDE_CODE_ENABLE_AUTO_MEMORY: '1' }
+    const env = advisorEnv(base)
+    expect(env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe('1')
+    expect(env.CLAUDE_CODE_ENABLE_AUTO_MEMORY).toBeUndefined()
+    expect(base.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe('0')
+  })
+})
+
+describe('confineCwd: the folder it runs in is never HOME, an ancestor of HOME, or the root', () => {
+  const HOME = '/home/someone'
+  it.each([
+    ['the filesystem root', '/'],
+    ['HOME itself', '/home/someone'],
+    ['HOME with a trailing slash', '/home/someone/'],
+    ['the parent of HOME', '/home'],
+    ['a Windows drive root', 'C:\\'],
+    ['an empty path', ''],
+    ['a relative path', 'repo']
+  ])('uses the private scratch dir (null) for %s', (_name, cwd) => {
+    expect(confineCwd(cwd, HOME)).toBeNull()
+  })
+
+  it('keeps a repository folder inside HOME, and one outside it', () => {
+    expect(confineCwd('/home/someone/code/www', HOME)).toBe('/home/someone/code/www')
+    expect(confineCwd('/srv/repos/www', HOME)).toBe('/srv/repos/www')
+  })
+
+  it('treats a Windows HOME the same way, case-insensitively', () => {
+    expect(confineCwd('C:\\Users\\Me', 'c:\\users\\me')).toBeNull()
+    expect(confineCwd('C:\\Users', 'C:\\Users\\Me')).toBeNull()
+    expect(confineCwd('C:\\Users\\Me\\code\\www', 'C:\\Users\\Me')).toBe('C:\\Users\\Me\\code\\www')
+  })
+
+  it('passes null through, and falls back to scratch when HOME is unknown and the path is a root', () => {
+    expect(confineCwd(null, HOME)).toBeNull()
+    expect(confineCwd('/', '')).toBeNull()
+    expect(confineCwd('/srv/repos/www', '')).toBe('/srv/repos/www')
   })
 })
