@@ -72,6 +72,52 @@ export class GcStepError extends Error {
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
+/** The error of a probe that threw or answered in a shape no op is allowed to (delta 6, F3). */
+const PROBE_FAILED = 'probe-failed'
+
+/** A reprobe or recheck answer: `ok` must be a real boolean, never just truthy. */
+const isProbeAnswer = (r: unknown): r is { ok: boolean; reason?: unknown } =>
+  typeof r === 'object' && r !== null && typeof (r as { ok?: unknown }).ok === 'boolean'
+
+const isStringList = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((s) => typeof s === 'string')
+
+/**
+ * The fields runBundle reads before and between the ops. A stale, hand-built or corrupt
+ * bundle missing one is refused up front instead of throwing halfway through a run.
+ */
+function wellFormed(b: unknown): b is WorktreeBundle {
+  if (typeof b !== 'object' || b === null) return false
+  const x = b as Partial<WorktreeBundle>
+  return (
+    typeof x.item === 'object' &&
+    x.item !== null &&
+    typeof x.item.id === 'string' &&
+    isStringList(x.stackIds) &&
+    isStringList(x.sharedStackIds) &&
+    isStringList(x.ownedVolumes)
+  )
+}
+
+/** removeVolumes answers nothing, or the volumes it skipped; anything else is unexpected. */
+function skippedOf(r: unknown): SkippedVolume[] {
+  if (r === undefined || r === null) return []
+  const list = typeof r === 'object' ? (r as { skipped?: unknown }).skipped : undefined
+  if (
+    Array.isArray(list) &&
+    list.every(
+      (v) =>
+        typeof v === 'object' &&
+        v !== null &&
+        typeof (v as SkippedVolume).name === 'string' &&
+        (v as SkippedVolume).reason === 'volume-in-use'
+    )
+  ) {
+    return list as SkippedVolume[]
+  }
+  throw new Error('removeVolumes answered an unexpected result')
+}
+
 export interface GcRunOptions {
   removeVolumes: boolean
   /** The operator explicitly chose to clean `review` bundles too. Never set by default. */
@@ -114,13 +160,40 @@ function refusalOf(b: WorktreeBundle, opts: GcRunOptions): string | null {
  *
  * Anything but a proven ready bundle (or a confirmed `review`), and anything with a shared stack,
  * is refused before any op runs.
- * The first failing step halts this bundle; later steps never run. Never rejects.
+ * The first failing step halts this bundle; later steps never run. Never rejects: a throw or
+ * an unexpected answer from any op, or a malformed bundle, halts this item and nothing else
+ * (delta 6, F3), so `runBatch` always reaches the items after it.
  */
 export async function runBundle(
   b: WorktreeBundle,
   ops: GcOps,
   opts: GcRunOptions
 ): Promise<GcItemResult> {
+  // Where the run is, so a throw nobody expected still reports the step it happened in and
+  // the bytes already freed, never "nothing was touched" after the docker steps ran.
+  const progress: { step: GcStep; freedBytes: number } = { step: 'reprobe', freedBytes: 0 }
+  try {
+    return await runChecked(b, ops, opts, progress)
+  } catch {
+    const id = (b as Partial<WorktreeBundle> | null | undefined)?.item?.id
+    return {
+      id: typeof id === 'string' ? id : 'unknown',
+      ok: false,
+      haltedAt: progress.step,
+      error: PROBE_FAILED,
+      freedBytes: progress.freedBytes
+    }
+  }
+}
+
+async function runChecked(
+  b: WorktreeBundle,
+  ops: GcOps,
+  opts: GcRunOptions,
+  progress: { step: GcStep; freedBytes: number }
+): Promise<GcItemResult> {
+  // Throws on a malformed bundle, which runBundle reports as probe-failed at the reprobe.
+  if (!wellFormed(b)) throw new TypeError('malformed bundle')
   const refused = refusalOf(b, opts)
   if (refused) {
     return { id: b.item.id, ok: false, haltedAt: 'reprobe', error: refused, freedBytes: 0 }
@@ -139,6 +212,7 @@ export async function runBundle(
   })
   /** Runs one step; returns the failure when it throws, null otherwise. */
   const step = async (name: GcStep, fn: () => Promise<void>): Promise<GcItemResult | null> => {
+    progress.step = name
     try {
       await fn()
       return null
@@ -147,13 +221,17 @@ export async function runBundle(
     }
   }
 
-  let probe: Awaited<ReturnType<GcOps['reprobe']>>
+  let probe: unknown
   try {
     probe = await ops.reprobe(b)
   } catch (err) {
     return fail('reprobe', messageOf(err))
   }
-  if (!probe.ok) return fail('reprobe', probe.reason)
+  // Only a real `ok: true` is a green light; any other shape is a probe that did not answer.
+  if (!isProbeAnswer(probe)) return fail('reprobe', PROBE_FAILED)
+  if (probe.ok !== true) {
+    return fail('reprobe', typeof probe.reason === 'string' ? probe.reason : PROBE_FAILED)
+  }
 
   let halted: GcItemResult | null
   if (b.stackIds.length > 0) {
@@ -163,8 +241,7 @@ export async function runBundle(
     if (halted) return halted
     if (opts.removeVolumes && b.ownedVolumes.length > 0) {
       halted = await step('rm-volumes', async () => {
-        const r = await ops.removeVolumes(b.ownedVolumes)
-        if (r) skippedVolumes = r.skipped
+        skippedVolumes = skippedOf(await ops.removeVolumes(b.ownedVolumes))
       })
       if (halted) return halted
     }
@@ -173,28 +250,23 @@ export async function runBundle(
   // The docker steps take time: a session that opened meanwhile, in the worktree or any
   // folder under it, must keep its deps. dehydrateItem's own live check matches the exact
   // folder only, so the full recheck runs first.
-  let before: Awaited<ReturnType<GcOps['recheck']>> | null = null
-  try {
-    before = await ops.recheck(b)
-  } catch {
-    // A recheck that cannot answer is not a green light.
-  }
-  if (!before?.ok) return fail('drop-deps', 'changed-mid-run')
+  progress.step = 'drop-deps'
+  if (!(await rechecked(ops, b))) return fail('drop-deps', 'changed-mid-run')
 
   // Accepted spec §4 deviation: cleanItem is one call, and its archive skips the ignored dirs.
   halted = await step('drop-deps', async () => {
-    freedBytes = await ops.dropDeps(b)
+    const bytes: unknown = await ops.dropDeps(b)
+    if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) {
+      throw new Error('dropDeps answered an unexpected result')
+    }
+    freedBytes = bytes
+    progress.freedBytes = bytes
   })
   if (halted) return halted
 
   // The deps are already gone, so their bytes stay counted whatever the recheck says.
-  let still: Awaited<ReturnType<GcOps['recheck']>> | null = null
-  try {
-    still = await ops.recheck(b)
-  } catch {
-    // A recheck that cannot answer is not a green light.
-  }
-  if (!still?.ok) return fail('archive', 'changed-mid-run')
+  progress.step = 'archive'
+  if (!(await rechecked(ops, b))) return fail('archive', 'changed-mid-run')
 
   try {
     await ops.cleanGit(b)
@@ -205,6 +277,19 @@ export async function runBundle(
   return { id: b.item.id, ok: true, haltedAt: null, freedBytes, ...skipped() }
 }
 
+/**
+ * True only for a recheck that answered a real `ok: true`. One that throws, or answers in
+ * any other shape, cannot show nothing changed, so it is not a green light.
+ */
+async function rechecked(ops: GcOps, b: WorktreeBundle): Promise<boolean> {
+  try {
+    const r: unknown = await ops.recheck(b)
+    return isProbeAnswer(r) && r.ok === true
+  } catch {
+    return false
+  }
+}
+
 /** Sequential on purpose: docker and git are shared resources, and one failure never stops the rest. */
 export async function runBatch(
   bs: WorktreeBundle[],
@@ -212,6 +297,20 @@ export async function runBatch(
   opts: GcRunOptions
 ): Promise<GcItemResult[]> {
   const results: GcItemResult[] = []
-  for (const b of bs) results.push(await runBundle(b, ops, opts))
+  for (const b of bs) {
+    // runBundle never rejects; this guard keeps one bad item from aborting the rest even so.
+    try {
+      results.push(await runBundle(b, ops, opts))
+    } catch {
+      const id = (b as Partial<WorktreeBundle> | null | undefined)?.item?.id
+      results.push({
+        id: typeof id === 'string' ? id : 'unknown',
+        ok: false,
+        haltedAt: 'reprobe',
+        error: PROBE_FAILED,
+        freedBytes: 0
+      })
+    }
+  }
   return results
 }
