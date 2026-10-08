@@ -906,6 +906,28 @@ export function parseListCleanup(input: unknown): ParseResult<ListCleanupArgs> {
   return parseListWorkers(input)
 }
 
+/** Validated args for the `release_worktree` mutation tool (T445): a folder or a listed id. */
+export interface ReleaseWorktreeArgs {
+  folder?: string
+  id?: string
+}
+
+const ReleaseWorktreeSchema = z
+  .object({ folder: absolutePathSchema.optional(), id: z.string().min(1).optional() })
+  .refine((v) => (v.folder === undefined) !== (v.id === undefined), {
+    message: 'pass exactly one of folder / id'
+  })
+
+/** Validate `release_worktree` args (T445). */
+export function parseReleaseWorktree(input: unknown): ParseResult<ReleaseWorktreeArgs> {
+  const parsed = ReleaseWorktreeSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const value: ReleaseWorktreeArgs = {}
+  if (parsed.data.folder !== undefined) value.folder = parsed.data.folder
+  if (parsed.data.id !== undefined) value.id = parsed.data.id
+  return { ok: true, value }
+}
+
 /** Stack ids from `list_containers`: a non-empty list of non-empty strings. */
 const StackIdsSchema = z.array(z.string().min(1)).min(1)
 
@@ -1155,7 +1177,7 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   list_containers: parseListContainers,
   // T445: list_cleanup takes the optional folder; release_worktree requires it.
   list_cleanup: parseListCleanup,
-  release_worktree: parseAdoptFolder,
+  release_worktree: parseReleaseWorktree,
   stop_containers: parseStopContainers,
   start_containers: parseStartContainers,
   remove_containers: parseRemoveContainers,

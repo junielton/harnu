@@ -241,6 +241,12 @@ export interface ReleaseAck {
   message: string
 }
 
+/** What the agent named: the worktree's folder, or the `id` `list_cleanup` listed. */
+export interface ReleaseRequest {
+  folder?: string
+  id?: string
+}
+
 export interface ReleaseOptions {
   /** The live policy's blocked folders; a blocked worktree OR repo is refused first. */
   denyFolders: readonly string[]
@@ -272,10 +278,17 @@ const refuse = (
  * that passes is accepted even when another rule keeps the bundle out of `corpse`: the ACK
  * then names the bucket it will be in and why, instead of pretending it will be cleaned.
  */
-export function planRelease(snap: GcSnapshot, folder: string, opts: ReleaseOptions): ReleasePlan {
-  const target = normalizePath(folder, opts.home)
-  const same = (p: string): boolean => normalizePath(p, opts.home) === target
-  const bundle = snap.bundles.find((b) => b.item.path && same(b.item.path))
+export function planRelease(
+  snap: GcSnapshot,
+  request: ReleaseRequest,
+  opts: ReleaseOptions
+): ReleasePlan {
+  const folder = request.folder
+  const target = folder ? normalizePath(folder, opts.home) : null
+  const same = (p: string): boolean => target !== null && normalizePath(p, opts.home) === target
+  const bundle = request.id
+    ? snap.bundles.find((b) => listedId(b) === request.id)
+    : snap.bundles.find((b) => b.item.path && same(b.item.path))
 
   if (bundle && anchorsOf(bundle).some((p) => isFolderDenied(p, opts.denyFolders, opts.home))) {
     return { ok: false, blocked: true }
@@ -296,8 +309,8 @@ export function planRelease(snap: GcSnapshot, folder: string, opts: ReleaseOptio
     )
   }
   if (!bundle) {
-    return refuse('NOT_A_WORKTREE', "Harnu's last cleanup scan has no worktree at this folder.", {
-      do: 'Call list_cleanup to see the worktrees Harnu tracks, and pass the exact folder of one of them. A worktree created moments ago shows up after the next scan.',
+    return refuse('NOT_A_WORKTREE', "Harnu's last cleanup scan has no worktree there.", {
+      do: 'Call list_cleanup and pass the `id` of the worktree from its listing, or the exact folder of the worktree you worked in. A worktree created moments ago shows up after the next scan.',
       why: 'release_worktree only marks a worktree the cleanup scan already judged.'
     })
   }
@@ -335,7 +348,7 @@ export function planRelease(snap: GcSnapshot, folder: string, opts: ReleaseOptio
     ack: {
       ok: true,
       op: 'release_worktree',
-      folderAlias: alias(bundle.item.path ?? folder),
+      folderAlias: alias(bundle.item.path ?? bundle.item.repoPath),
       branch: bundle.item.branch ?? null,
       released: true,
       alreadyReleased: releasedAlready,

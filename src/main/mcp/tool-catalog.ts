@@ -1160,13 +1160,23 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'release_worktree',
     description:
-      "Tell Harnu you are done with a worktree whose pull request merged: its grace window no longer applies, so it becomes a `corpse` on the next scan IF every other rule still holds. Runs free and deletes nothing — the operator cleans it, or the autopilot when it is on and the operator acknowledged its first report. A release never overrides a safety rule: a worktree with dirty tracked files or unpushed commits, an open idle session, a stack shared with another worktree, a Keep mark or a never-clean path stays out of `corpse` (the ACK's `bucketAfter` and `reason` say where it landed). Refuses FATE_NOT_MERGED unless the branch is merged with a strong proof, FOLDER_NOT_ALLOWED in a folder the operator blocked, IS_MAIN_CHECKOUT for a repo's main checkout, NOT_A_WORKTREE for a folder Harnu's cleanup scan does not know. ACK: `{ ok, op, folderAlias, branch, released, alreadyReleased, bucketAfter, reason, deleted: false, message }`. Idempotent. See list_cleanup for the current buckets.",
-    inputSchema: z.object({
-      folder: z
-        .string()
-        .min(1)
-        .describe('Absolute path of the worktree to release (not the main checkout).')
-    }),
+      "Tell Harnu you are done with a worktree whose pull request merged: its grace window no longer applies, so it becomes a `corpse` on the next scan IF every other rule still holds. Runs free and deletes nothing — the operator cleans it, or the autopilot when it is on and the operator acknowledged its first report. A release never overrides a safety rule: a worktree with dirty tracked files or unpushed commits, an open idle session, a stack shared with another worktree, a Keep mark or a never-clean path stays out of `corpse` (the ACK's `bucketAfter` and `reason` say where it landed). Refuses FATE_NOT_MERGED unless the branch is merged with a strong proof, FOLDER_NOT_ALLOWED in a folder the operator blocked, IS_MAIN_CHECKOUT for a repo's main checkout, NOT_A_WORKTREE for a folder Harnu's cleanup scan does not know. ACK: `{ ok, op, folderAlias, branch, released, alreadyReleased, bucketAfter, reason, deleted: false, message }`. Idempotent. Name the worktree by `folder` (absolute path) or by the `id` list_cleanup lists — exactly one. See list_cleanup for the current buckets.",
+    inputSchema: z
+      .object({
+        folder: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('Absolute path of the worktree to release (not the main checkout).'),
+        id: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('The `id` of the worktree as list_cleanup lists it. Use instead of `folder`.')
+      })
+      .refine((v) => (v.folder === undefined) !== (v.id === undefined), {
+        message: 'pass exactly one of folder / id'
+      }),
     mutates: true,
     op: 'release_worktree',
     silentAllowInAgentFolder: true

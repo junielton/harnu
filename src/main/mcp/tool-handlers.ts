@@ -2428,18 +2428,25 @@ const releaseWorktreeHandler: Handler = async (args, ctx) => {
   const svc = getGcService()
   if (!svc) return errorResult(GC_NOT_READY)
   const home = os.homedir()
-  const folder = strField(args, 'folder') ?? ctx.folder
-  if (!folder) return errorResult('BAD_ARGS: folder is required')
-  if (isFolderDenied(folder, ctx.denyFolders, home)) return steerError('FOLDER_NOT_ALLOWED', folder)
+  const folder = strField(args, 'folder') || ctx.folder || undefined
+  const id = strField(args, 'id') || undefined
+  if (!folder && !id) return errorResult('BAD_ARGS: pass a folder or an id from list_cleanup')
+  if (folder && isFolderDenied(folder, ctx.denyFolders, home)) {
+    return steerError('FOLDER_NOT_ALLOWED', folder)
+  }
 
   const snap = await svc.snapshot()
   const now = Date.now()
-  const plan = planRelease(snap, folder, {
-    denyFolders: ctx.denyFolders,
-    home,
-    now,
-    folders: ctx.folders
-  })
+  const plan = planRelease(
+    snap,
+    { ...(folder ? { folder } : {}), ...(id ? { id } : {}) },
+    {
+      denyFolders: ctx.denyFolders,
+      home,
+      now,
+      folders: ctx.folders
+    }
+  )
   if (!plan.ok) {
     // A repo the operator blocked is as closed as the worktree folder itself.
     if (plan.blocked) return steerError('FOLDER_NOT_ALLOWED', folder)
