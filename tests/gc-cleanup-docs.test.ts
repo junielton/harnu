@@ -66,6 +66,12 @@ describe('cleanup verbs: no false "nothing can be removed" claims (T445 delta 1)
     expect(doc.slice(start, doc.indexOf('## Tracking a mission', start))).toMatch(/inside/i)
   })
 
+  it('the release_worktree description lists reasonCode in its ACK, like harnu-features', () => {
+    const d = MCP_TOOLS.find((t) => t.name === 'release_worktree')!.description
+    expect(d).toContain('reasonCode')
+    expect(featuresSection()).toContain('reasonCode')
+  })
+
   describe('T445 delta 2: the payload and its freshness are documented', () => {
     const TOTALS = ['ready', 'readyBytes', 'review', 'reviewBytes', 'inUse']
 

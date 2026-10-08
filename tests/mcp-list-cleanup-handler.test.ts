@@ -570,6 +570,30 @@ describe('list_cleanup handler (T445)', () => {
       expect(v.project).toBe('proj')
     })
 
+    it('M10b: file:// URLs, rooted windows paths and paths with spaces in free text are scrubbed', async () => {
+      serve(
+        snapshot([ready], {
+          orphanVolumes: [
+            {
+              id: 'volume:v',
+              name: 'v',
+              sizeBytes: 1,
+              project: 'proj',
+              reason: {
+                code: 'no-known-worktree',
+                detail:
+                  'seen at file:///srv/ws/leak/vol, \\srv\\ws\\leak\\vol, rc=1/srv/ws/leak/vol and /srv/ws/my leak/vol dir'
+              }
+            }
+          ]
+        })
+      )
+      const text = textOf(await handler({}, ctx()))
+      expect(leaksIn(text)).toEqual([])
+      expect(text).not.toContain('leak/')
+      expect(text).not.toContain('my leak')
+    })
+
     it('the id and folderAlias of a bundle never carry a path', async () => {
       serve(snapshot([outside, inside]))
       const text = textOf(await handler({}, ctx()))
