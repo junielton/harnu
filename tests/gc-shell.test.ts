@@ -143,6 +143,8 @@ function harness(
     links?: Record<string, string>
     /** Paths whose realpath fails (a broken link, an unreadable folder). */
     unresolved?: string[]
+    /** Paths whose realpath fails, without taking the paths under them down too. */
+    unresolvedExactly?: string[]
   } = {}
 ): Harness {
   let stacks = over.stacks ?? [stack('app', [container('c1', `${WT}/api`)])]
@@ -165,6 +167,7 @@ function harness(
   const under = (p: string, root: string): boolean => p === root || p.startsWith(`${root}/`)
   const realpath = vi.fn(async (p: string): Promise<string | null> => {
     if ((over.unresolved ?? []).some((u) => under(p, u))) return null
+    if ((over.unresolvedExactly ?? []).includes(p)) return null
     for (const [link, target] of Object.entries(over.links ?? {})) {
       if (under(p, link)) return target + p.slice(link.length)
     }
@@ -1843,5 +1846,41 @@ describe('a history-only session in a deleted subfolder (delta 5, item 2)', () =
     })
     expect(canonical(GONE).resolved).toBe(false)
     expect(presenceFromSets(WT, sets, canonical)).toBe('working')
+  })
+})
+
+// ---- an unresolved folder above the worktree still refuses (delta 5, item 1) ------------
+
+describe('a container folder above the worktree that cannot be resolved (delta 5, item 1)', () => {
+  // Only the ancestor fails to resolve; the worktree and its repo path still resolve, so a
+  // refusal here comes from the container folder and nothing else.
+  const ABOVE = '/ws/org/proj'
+  const stacks = (): StackGroup[] => [
+    stack('app', [container('c1', `${WT}/api`)]),
+    stack('up', [runWithBind('c5', ABOVE)])
+  ]
+
+  it('the reprobe passes when it resolves: a folder above is ignored', async () => {
+    const h = harness({ stacks: stacks() })
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({ ok: true })
+  })
+
+  it('the reprobe refuses as path-unresolved when it does not', async () => {
+    const h = harness({ stacks: stacks(), unresolvedExactly: [ABOVE] })
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+      ok: false,
+      reason: 'path-unresolved'
+    })
+  })
+
+  it('the recheck refuses as path-unresolved too', async () => {
+    const h = harness({
+      stacks: [stack('up', [runWithBind('c5', ABOVE)])],
+      unresolvedExactly: [ABOVE]
+    })
+    expect(await createGcOps(h.deps).recheck(bundle())).toEqual({
+      ok: false,
+      reason: 'path-unresolved'
+    })
   })
 })
