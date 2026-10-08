@@ -934,6 +934,11 @@ describe('parseToolInput routes the cleanup verbs (T445)', () => {
       ok: true,
       value: { folder: '/abs/wt' }
     })
+    expect(parseToolInput('release_worktree', { id: 'www::worktree::feat::abc12345' })).toEqual({
+      ok: true,
+      value: { id: 'www::worktree::feat::abc12345' }
+    })
+    expect(parseToolInput('release_worktree', { folder: '/abs/wt', id: 'x' }).ok).toBe(false)
     expect(parseToolInput('release_worktree', {}).ok).toBe(false)
     expect(parseToolInput('release_worktree', { folder: 'relative/dir' }).ok).toBe(false)
   })

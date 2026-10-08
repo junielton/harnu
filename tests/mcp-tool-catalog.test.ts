@@ -577,10 +577,13 @@ describe('list_cleanup / release_worktree (T445)', () => {
     expect((SAFE_GRANT_VERBS as readonly string[]).includes('release_worktree')).toBe(false)
   })
 
-  it('release_worktree requires a folder', () => {
+  it('release_worktree takes a folder or an id from list_cleanup, exactly one', () => {
     const schema = toolByName('release_worktree')!.inputSchema
     expect(schema.safeParse({}).success).toBe(false)
     expect(schema.safeParse({ folder: '/abs' }).success).toBe(true)
+    expect(schema.safeParse({ id: 'www::worktree::feat::abc12345' }).success).toBe(true)
+    expect(schema.safeParse({ folder: '/abs', id: 'x' }).success).toBe(false)
+    expect(schema.safeParse({ id: '' }).success).toBe(false)
   })
 
   it('the descriptions name the refusal codes and say nothing is deleted', () => {

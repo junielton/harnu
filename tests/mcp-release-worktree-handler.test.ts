@@ -31,6 +31,7 @@ vi.mock('../src/main/gc/gc-service-registry', () => ({
 }))
 
 import { WIRED_TOOLS } from '../src/main/mcp/tool-handlers'
+import { listedId } from '../src/main/mcp/cleanup-listing'
 import type { FolderEntry } from '../src/main/folder-model'
 import type { GcSnapshot } from '../src/main/gc/gc-wire'
 import {
@@ -39,6 +40,7 @@ import {
   WT_CORPSE,
   WT_DIRTY,
   WT_OPEN,
+  WT_OUT_OF_TREE,
   WT_WEAK,
   absolutePathsIn,
   bundle,
@@ -212,6 +214,117 @@ describe('release_worktree handler (T445)', () => {
       expect(ack.bucketAfter).not.toBe('corpse')
       expect(ack.deleted).toBe(false)
     }
+  })
+
+  describe('D3: the repo block is checked before anything else (T445 delta 1)', () => {
+    const outOfTree = bundle(WT_OUT_OF_TREE, { bucket: 'alive', lastSignOfLifeAt: NOW - 1000 })
+
+    it('an out-of-tree worktree of a blocked repo is refused FOLDER_NOT_ALLOWED', async () => {
+      const { release } = serve(snapshot([outOfTree]))
+      const res = await handler({ folder: WT_OUT_OF_TREE }, ctx(WT_OUT_OF_TREE, [MAIN]))
+      expect(res.isError).toBe(true)
+      expect(textOf(res)).toContain('FOLDER_NOT_ALLOWED')
+      expect(release).not.toHaveBeenCalled()
+    })
+
+    it('the block wins over every other refusal, whatever the fate', async () => {
+      const open = bundle(WT_OUT_OF_TREE, {
+        bucket: 'alive',
+        fate: { fate: 'open', signal: null, strong: false }
+      })
+      serve(snapshot([open]))
+      const res = await handler({ folder: WT_OUT_OF_TREE }, ctx(WT_OUT_OF_TREE, [MAIN]))
+      expect(textOf(res)).toContain('FOLDER_NOT_ALLOWED')
+      expect(textOf(res)).not.toContain('FATE_NOT_MERGED')
+    })
+
+    it('a block on the worktree folder alone is refused too (its repo is not blocked)', async () => {
+      const { release } = serve(snapshot([outOfTree]))
+      const res = await handler({ folder: WT_OUT_OF_TREE }, ctx(WT_OUT_OF_TREE, [WT_OUT_OF_TREE]))
+      expect(textOf(res)).toContain('FOLDER_NOT_ALLOWED')
+      expect(release).not.toHaveBeenCalled()
+    })
+
+    it('an out-of-tree worktree of an allowed repo can be released', async () => {
+      const { release } = serve(snapshot([outOfTree]))
+      const res = await handler(
+        { folder: WT_OUT_OF_TREE },
+        ctx(WT_OUT_OF_TREE, ['/srv/ws/elsewhere'])
+      )
+      expect(res.isError).toBeFalsy()
+      expect(release).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('D4: release by the listed id (T445 delta 1)', () => {
+    it('accepts { id } from list_cleanup and records the raw bundle id', async () => {
+      const { release } = serve(snapshot([fresh]))
+      const res = await handler({ id: listedId(fresh) }, ctx(''))
+      expect(res.isError).toBeFalsy()
+      expect(JSON.parse(textOf(res))).toMatchObject({ ok: true, bucketAfter: 'corpse' })
+      expect(release).toHaveBeenCalledWith(fresh.item.id, NOW)
+    })
+
+    it('an unknown id is NOT_A_WORKTREE, and the advice names the id from list_cleanup', async () => {
+      const { release } = serve(snapshot([fresh]))
+      const res = await handler({ id: 'www::worktree::nope::deadbeef' }, ctx(''))
+      const refusal = JSON.parse(textOf(res))
+      expect(refusal.error).toBe('NOT_A_WORKTREE')
+      expect(JSON.stringify(refusal.nextActions)).toMatch(/\bid\b/)
+      expect(release).not.toHaveBeenCalled()
+    })
+
+    it('the NOT_A_WORKTREE advice for a folder also points at the id', async () => {
+      serve(snapshot([fresh]))
+      const res = await handler({ folder: '/srv/ws/org/elsewhere' }, ctx('/srv/ws/org/elsewhere'))
+      expect(JSON.stringify(JSON.parse(textOf(res)).nextActions)).toMatch(/\bid\b/)
+    })
+
+    it('an id of a bundle in a blocked repo is refused FOLDER_NOT_ALLOWED', async () => {
+      const { release } = serve(snapshot([fresh]))
+      const res = await handler({ id: listedId(fresh) }, ctx('', [MAIN]))
+      expect(textOf(res)).toContain('FOLDER_NOT_ALLOWED')
+      expect(release).not.toHaveBeenCalled()
+    })
+
+    it('an id of a main checkout is IS_MAIN_CHECKOUT', async () => {
+      const main = bundle(MAIN, { isMainCheckout: true, bucket: 'alive' })
+      serve(snapshot([main]))
+      const res = await handler({ id: listedId(main) }, ctx(''))
+      expect(JSON.parse(textOf(res)).error).toBe('IS_MAIN_CHECKOUT')
+    })
+
+    it('with neither folder nor id it is BAD_ARGS', async () => {
+      serve(snapshot([fresh]))
+      const res = await handler({}, ctx(''))
+      expect(res.isError).toBe(true)
+      expect(textOf(res)).toContain('BAD_ARGS')
+    })
+  })
+
+  describe('D7: each guard is covered on its own (T445 delta 1)', () => {
+    it('M8: a main checkout is recognised by a bundle’s repoPath alone', async () => {
+      // No bundle at the main checkout, and no isMainWorktree flag on any folder.
+      const { release } = serve(snapshot([fresh]))
+      const res = await handler({ folder: MAIN }, ctx(MAIN, [], []))
+      expect(JSON.parse(textOf(res)).error).toBe('IS_MAIN_CHECKOUT')
+      expect(release).not.toHaveBeenCalled()
+    })
+
+    it('M5: a blocked worktree folder is refused when its repo is not blocked', async () => {
+      const { release } = serve(snapshot([fresh]))
+      const res = await handler({ folder: WT_CORPSE }, ctx(WT_CORPSE, [WT_CORPSE]))
+      expect(textOf(res)).toContain('FOLDER_NOT_ALLOWED')
+      expect(release).not.toHaveBeenCalled()
+    })
+
+    it('M10: a blocked repo is refused when the worktree folder itself is not blocked', async () => {
+      const outOfTree = bundle(WT_OUT_OF_TREE, { bucket: 'alive' })
+      const { release } = serve(snapshot([outOfTree]))
+      const res = await handler({ folder: WT_OUT_OF_TREE }, ctx(WT_OUT_OF_TREE, [MAIN]))
+      expect(textOf(res)).toContain('FOLDER_NOT_ALLOWED')
+      expect(release).not.toHaveBeenCalled()
+    })
   })
 
   it('AC-5: the service the handler reaches has no way to clean', async () => {
