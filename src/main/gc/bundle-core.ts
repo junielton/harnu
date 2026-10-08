@@ -33,6 +33,24 @@ export function canonicalPathKey(p: string, platform: string): string {
   return win || platform === 'darwin' ? out.toLowerCase() : out
 }
 
+/**
+ * A path's real location, as the shell read it from disk (symlinks resolved). `resolved` is
+ * false when it could not be read; `path` is then the spelling as given, which may be an
+ * alias of anything, so whatever it touches can never be proven ready.
+ */
+export type CanonicalPath = (p: string) => { path: string; resolved: boolean }
+
+/** No resolver: every path is taken as its own real path. Only for pure callers and tests. */
+export const AS_GIVEN: CanonicalPath = (p) => ({ path: p, resolved: true })
+
+/** The comparison key of a path's real location. */
+const realKey = (p: string, platform: string, canonical: CanonicalPath): string =>
+  canonicalPathKey(canonical(p).path, platform)
+
+/** True when one path lies inside the other (either way). Empty keys relate to nothing. */
+export const relatesTo = (a: string, b: string): boolean =>
+  a !== '' && b !== '' && (isInside(a, b) || isInside(b, a))
+
 export type SessionPresence = 'working' | 'needs-input' | 'open-idle' | 'none'
 export type Bucket = 'corpse' | 'decide' | 'alive'
 export type DecideCode =
@@ -46,6 +64,7 @@ export type DecideCode =
   | 'weak-merge-signal'
   | 'shared-stack'
   | 'cleanup-failed'
+  | 'path-unresolved'
 
 /** `detail` is one English sentence with the concrete fact; the renderer translates by `code`. */
 export interface DecideReason {
@@ -78,6 +97,12 @@ export interface BundleFacts {
    * execution time, so a bundle without it is never cleaned.
    */
   graceDays?: number
+  /**
+   * Every path the bundle was judged on resolved to its real location: its own path, its
+   * repo path, and every container and session folder inside it or above it. An unresolved
+   * one may be an alias of anything, so false, or absent, is never ready.
+   */
+  pathsResolved: boolean
 }
 
 export interface WorktreeBundle extends BundleFacts {
@@ -222,6 +247,12 @@ export function bucketOf(
     )
   }
 
+  if (f.pathsResolved !== true)
+    return decide(
+      'path-unresolved',
+      'A path tied to this worktree could not be resolved to its real location, so what uses it is unknown.'
+    )
+
   if (f.fate.fate !== 'merged') {
     const d = FATE_DECISIONS[f.fate.fate]
     return decide(d.code, d.detail)
@@ -279,6 +310,13 @@ export interface BuildBundlesInput {
    * `name:` values, and the default name of every other existing known folder.
    */
   protectedProjects: Set<string>
+  /**
+   * Each path's real location, read by the caller (the shell realpaths them; this module
+   * never touches the disk). Every path below is compared through it: item and repo paths,
+   * container working dirs and bind sources, session folders, stackPaths, neverClean and
+   * known folders. Required, so no caller can skip it and compare aliases by spelling.
+   */
+  canonical: CanonicalPath
 }
 
 /** Merge time from the `pr-merged` checkpoint detail; anything that is not a date is ignored. */
@@ -289,21 +327,29 @@ function mergedAtOf(item: ReapItem): number | null {
   return Number.isFinite(t) ? t : null
 }
 
+/** The folders one container touches, as docker spells them (see {@link containerFolders}). */
+export function containerFolderPaths(c: InspectedContainer): string[] {
+  const out: string[] = []
+  const dir = c.labels[COMPOSE_WORKING_DIR_LABEL]
+  if (dir) out.push(dir)
+  for (const m of c.mounts) if (m.type === 'bind' && m.source) out.push(m.source)
+  return out
+}
+
 /**
  * Every folder one container touches: its compose working dir AND the source of each bind
  * mount. A stack run from elsewhere that bind-mounts a worktree still uses it, so trashing
  * the folder would pull files from under a running container. The builder and the
  * execution-time reprobe both call this, so a stack the scan attributed to a worktree is
  * seen by the reprobe through the same rule. Empty means nothing ties it to a folder.
+ * Each folder is keyed on its real path, so a symlinked working dir counts where it lands.
  */
-export function containerFolders(c: InspectedContainer, platform: string): string[] {
-  const out = new Set<string>()
-  const dir = c.labels[COMPOSE_WORKING_DIR_LABEL]
-  if (dir) out.add(canonicalPathKey(dir, platform))
-  for (const m of c.mounts) {
-    if (m.type === 'bind' && m.source) out.add(canonicalPathKey(m.source, platform))
-  }
-  return [...out]
+export function containerFolders(
+  c: InspectedContainer,
+  platform: string,
+  canonical: CanonicalPath = AS_GIVEN
+): string[] {
+  return [...new Set(containerFolderPaths(c).map((p) => realKey(p, platform, canonical)))]
 }
 
 /**
@@ -314,12 +360,15 @@ export function containerFolders(c: InspectedContainer, platform: string): strin
 function stackFolders(
   stack: StackGroup,
   stackPaths: Map<string, string>,
-  platform: string
+  platform: string,
+  canonical: CanonicalPath
 ): string[] {
   const out = new Set<string>()
-  for (const c of stack.containers) for (const d of containerFolders(c, platform)) out.add(d)
+  for (const c of stack.containers) {
+    for (const d of containerFolders(c, platform, canonical)) out.add(d)
+  }
   const attributed = stackPaths.get(stack.id)
-  if (attributed) out.add(canonicalPathKey(attributed, platform))
+  if (attributed) out.add(realKey(attributed, platform, canonical))
   return [...out]
 }
 
@@ -340,11 +389,12 @@ type SessionEntry = BuildBundlesInput['sessions'] extends Map<string, infer V> ?
 function sessionOf(
   sessions: BuildBundlesInput['sessions'],
   path: string,
-  platform: string
+  platform: string,
+  canonical: CanonicalPath
 ): SessionEntry | undefined {
   let out: SessionEntry | undefined
   for (const [folder, s] of sessions) {
-    if (!isInside(canonicalPathKey(folder, platform), path)) continue
+    if (!folder || !isInside(realKey(folder, platform, canonical), path)) continue
     const activity = [out?.lastActivityAt ?? null, s.lastActivityAt].filter(
       (t): t is number => t !== null
     )
@@ -359,11 +409,28 @@ function sessionOf(
 
 export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
   const platform = process.platform
+  const canonical = input.canonical
+  const real = (p: string): string => realKey(p, platform, canonical)
   const stoppedByHarnu = input.harnuStoppedAt ?? new Map<string, number>()
 
   const folders = input.items
     .filter((i) => (i.kind === 'worktree' || i.kind === 'detached-worktree') && i.path)
-    .map((item) => ({ item, path: canonicalPathKey(item.path as string, platform) }))
+    .map((item) => ({ item, path: real(item.path as string) }))
+
+  // Every container and session folder that did not resolve, keyed on its spelling. Such a
+  // folder may be an alias of any worktree, so one inside a bundle or above it (where it may
+  // see the bundle) keeps that bundle from being proven ready.
+  const unresolved = [
+    ...new Set([
+      ...[...input.containers, ...input.stacks.flatMap((s) => s.containers)].flatMap(
+        containerFolderPaths
+      ),
+      ...input.sessions.keys(),
+      ...input.stackPaths.values()
+    ])
+  ]
+    .filter((p) => p && !canonical(p).resolved)
+    .map((p) => canonicalPathKey(p, platform))
 
   // A stack is exclusive to a bundle only if EVERY folder it runs from is inside that
   // bundle. If a stack touches a bundle but also runs from outside it, or two bundles both
@@ -371,7 +438,7 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
   const exclusive = new Map<string, StackGroup[]>()
   const shared = new Map<string, string[]>()
   for (const stack of input.stacks) {
-    const dirs = stackFolders(stack, input.stackPaths, platform)
+    const dirs = stackFolders(stack, input.stackPaths, platform, canonical)
     if (dirs.length === 0) continue
     const full: string[] = []
     const partial: string[] = []
@@ -387,7 +454,7 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
     }
   }
 
-  const neverClean = new Set([...input.neverClean].map((p) => canonicalPathKey(p, platform)))
+  const neverClean = new Set([...input.neverClean].map(real))
 
   // Every folder that could share a compose project with a bundle: each item's checkout and
   // its repo's main checkout, plus whatever else the caller knows about.
@@ -395,7 +462,7 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
     [
       ...input.items.flatMap((i) => (i.path ? [i.path, i.repoPath] : [i.repoPath])),
       ...input.knownFolders
-    ].map((p) => canonicalPathKey(p, platform))
+    ].map(real)
   )
 
   return folders.map(({ item, path }) => {
@@ -408,9 +475,9 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
           : { fate: 'unknown', signal: null, strong: false }
 
     const stacks = exclusive.get(item.id) ?? []
-    // Canonical, so a trailing slash or a `..` must not hide a session, and a session in a subfolder
-    // counts too.
-    const session = sessionOf(input.sessions, path, platform)
+    // On real paths, so a trailing slash, a `..` or a symlink must not hide a session, and a
+    // session in a subfolder counts too.
+    const session = sessionOf(input.sessions, path, platform, canonical)
     const events = lastContainerEvent(
       stacks.flatMap((s) => s.containers),
       stoppedByHarnu
@@ -435,11 +502,17 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
       ),
       depsBytes: item.hydration?.reclaimableBytes ?? null,
       keep: input.keep.has(item.id),
-      neverClean: neverClean.has(path) || neverClean.has(canonicalPathKey(item.repoPath, platform)),
-      isMainCheckout: path === canonicalPathKey(item.repoPath, platform),
+      neverClean: neverClean.has(path) || neverClean.has(real(item.repoPath)),
+      isMainCheckout: path === real(item.repoPath),
       localTip:
         item.kind === 'detached-worktree' ? (item.headSha ?? null) : (fateInput?.localTip ?? null),
-      graceDays: input.graceDays
+      graceDays: input.graceDays,
+      pathsResolved:
+        canonical(item.path as string).resolved &&
+        canonical(item.repoPath).resolved &&
+        !unresolved.some(
+          (u) => relatesTo(u, path) || relatesTo(u, canonicalPathKey(item.path as string, platform))
+        )
     }
     return { ...facts, ...bucketOf(facts, input.now, input.graceDays) }
   })
