@@ -28,7 +28,8 @@ vi.mock('../src/main/reaper/scanner-shell', () => ({
   computeFolderSets: async () => ({ live: new Set(), inUse: new Set() }),
   lastFateInputs: () => h.fateInputs,
   lastSnapshot: () => h.snapshot,
-  listAllWorktreePaths: async () => []
+  listAllWorktreePaths: async () => [],
+  listLockedWorktreePaths: async () => []
 }))
 vi.mock('../src/main/containers/containers-shell', () => ({
   inspectAll: async () => {
