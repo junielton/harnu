@@ -59,15 +59,41 @@ const projects = computed(() => [
 const shownProjects = computed(() => projects.value.slice(0, MAX_PROJECTS).join(', '))
 const moreProjects = computed(() => Math.max(0, projects.value.length - MAX_PROJECTS))
 
-const blockClass = (on: boolean): string =>
-  `flex min-w-[200px] flex-1 flex-col gap-1 rounded-[3px] border border-green-line bg-green-soft px-3 py-2 ${on ? '' : 'opacity-60'}`
+/** Ready green for what the autopilot takes (cache, images); the review (warning) triple for orphan volumes. */
+const TONE: Record<'ready' | 'review', string> = {
+  ready: 'border-green-line bg-green-soft',
+  review: 'border-warning-line bg-warning-soft'
+}
+const blockClass = (on: boolean, tone: 'ready' | 'review' = 'ready'): string =>
+  `flex min-w-50 flex-1 flex-col gap-1 rounded-xs border px-3 py-2 ${TONE[tone]} ${on ? '' : 'opacity-60'}`
+
+/** What the next cycle could reclaim from Docker (cache + dangling images), when the autopilot cleans it. */
+const nextCycleBytes = computed(
+  () => (props.docker.buildCacheReclaimableBytes ?? 0) + (props.docker.danglingImages?.bytes ?? 0)
+)
+const subtitle = computed(() => {
+  if (!props.prefs.categories.dockerCache) return t('cleanup.gc.docker.sub.off')
+  return nextCycleBytes.value > 0
+    ? t('cleanup.gc.docker.sub.size', { size: formatBytes(nextCycleBytes.value) })
+    : t('cleanup.gc.docker.sub.plain')
+})
+
+/** The three Docker figures by bytes: cache and images are what a cycle takes, volumes what you review. */
+const splitSegments = computed(() =>
+  [
+    { key: 'cache', bytes: props.docker.buildCacheReclaimableBytes ?? 0, tone: 'bg-green' },
+    { key: 'images', bytes: props.docker.danglingImages?.bytes ?? 0, tone: 'bg-green' },
+    { key: 'volumes', bytes: props.orphanVolumes.bytes, tone: 'bg-warning' }
+  ].filter((x) => x.bytes > 0)
+)
 </script>
 
 <template>
   <section class="rounded border border-border bg-surface" data-testid="docker-card">
     <header class="flex items-center gap-2 px-3 py-2 text-text-2">
       <Container :size="14" :stroke-width="1.6" class="shrink-0" aria-hidden="true" />
-      <span class="text-[12.5px] font-medium text-text">{{ t('cleanup.gc.docker.title') }}</span>
+      <span class="text-ui font-medium text-text">{{ t('cleanup.gc.docker.title') }}</span>
+      <span class="text-caption text-text-4" data-testid="docker-sub">{{ subtitle }}</span>
       <!-- The Containers takeover stays the inspector (per-stack start/stop); this is its door. -->
       <button
         type="button"
@@ -78,6 +104,22 @@ const blockClass = (on: boolean): string =>
         {{ t('cleanup.gc.docker.inspect') }}
       </button>
     </header>
+    <div
+      v-if="splitSegments.length > 0"
+      class="mx-3 mb-2 flex h-1 gap-0.5"
+      role="img"
+      :aria-label="t('cleanup.gc.docker.splitLabel')"
+      data-testid="docker-split"
+    >
+      <span
+        v-for="seg in splitSegments"
+        :key="seg.key"
+        class="rounded-full"
+        :class="seg.tone"
+        :style="{ flex: String(seg.bytes) }"
+        :data-seg="seg.key"
+      />
+    </div>
     <div class="flex flex-wrap gap-2 px-3 pb-3">
       <div :class="blockClass(prefs.categories.dockerCache)" data-testid="docker-cache">
         <div class="flex items-center gap-2">
@@ -147,15 +189,15 @@ const blockClass = (on: boolean): string =>
         </div>
       </div>
 
-      <div :class="blockClass(true)" data-testid="docker-volumes">
+      <div :class="blockClass(true, 'review')" data-testid="docker-volumes">
         <div class="flex items-center gap-2">
           <span class="text-[12.5px] font-medium text-text">{{
             t('cleanup.gc.docker.orphanVolumes')
           }}</span>
         </div>
         <div
-          class="text-[12.5px]"
-          :class="orphanVolumes.count === 0 ? 'text-text-3' : 'text-green'"
+          class="text-ui"
+          :class="orphanVolumes.count === 0 ? 'text-text-3' : 'text-warning'"
           data-testid="docker-volumes-size"
         >
           {{

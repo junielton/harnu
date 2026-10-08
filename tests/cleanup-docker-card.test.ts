@@ -141,3 +141,59 @@ describe('CleanupDockerCard — inspector door', () => {
     expect(w.emitted('inspect')).toHaveLength(1)
   })
 })
+
+describe('CleanupDockerCard — parity with the approved mockup', () => {
+  const figures = {
+    buildCacheReclaimableBytes: 3_800_000_000,
+    danglingImages: { count: 14, bytes: 1_100_000_000 }
+  }
+
+  it('has a subtitle saying it runs each cycle, with what the next cycle could reclaim', () => {
+    const w = mountCard({ docker: figures })
+    expect(w.get('[data-testid="docker-sub"]').text()).toBe('runs each cycle · 4.90 GB')
+  })
+
+  it('the subtitle is just "runs each cycle" when Docker gave no figure', () => {
+    const w = mountCard()
+    expect(w.get('[data-testid="docker-sub"]').text()).toBe('runs each cycle')
+  })
+
+  it('the subtitle says the autopilot leaves Docker alone when that switch is off', () => {
+    const prefs = defaultGcPrefs()
+    prefs.categories.dockerCache = false
+    const w = mountCard({ docker: figures, prefs })
+    expect(w.get('[data-testid="docker-sub"]').text()).toBe('Docker cleaning is off')
+  })
+
+  it('draws a split bar of cache, images and orphan volumes by bytes', () => {
+    const w = mountCard({
+      docker: figures,
+      orphanVolumes: { count: 3, bytes: 900_000_000 },
+      volumes: [vol('a', 'alpha')]
+    })
+    const bar = w.get('[data-testid="docker-split"]')
+    const segs = bar.findAll('[data-seg]')
+    expect(segs.map((s) => s.attributes('data-seg'))).toEqual(['cache', 'images', 'volumes'])
+    expect(segs[0].attributes('style')).toContain('flex: 3800000000')
+    expect(segs[2].classes()).toContain('bg-warning')
+    expect(segs[0].classes()).toContain('bg-green')
+  })
+
+  it('draws no bar when every figure is zero or unavailable', () => {
+    expect(mountCard().find('[data-testid="docker-split"]').exists()).toBe(false)
+  })
+
+  it('draws the orphan-volume block in the review (warning) colours, not the ready green', () => {
+    const w = mountCard({
+      orphanVolumes: { count: 2, bytes: 5_000_000 },
+      volumes: [vol('a', 'alpha')]
+    })
+    const block = w.get('[data-testid="docker-volumes"]')
+    expect(block.classes()).toContain('border-warning-line')
+    expect(block.classes()).toContain('bg-warning-soft')
+    expect(block.classes()).not.toContain('bg-green-soft')
+    expect(w.get('[data-testid="docker-volumes-size"]').classes()).toContain('text-warning')
+    // …while the cache and image blocks keep the ready green.
+    expect(w.get('[data-testid="docker-cache"]').classes()).toContain('bg-green-soft')
+  })
+})

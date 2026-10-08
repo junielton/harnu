@@ -1,11 +1,24 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, type ComponentPublicInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { CircleCheck, CircleHelp, TriangleAlert } from 'lucide-vue-next'
+import {
+  CircleCheck,
+  CircleHelp,
+  Container,
+  Database,
+  Folder,
+  GitBranch,
+  PackageMinus,
+  Recycle,
+  Trash2,
+  TriangleAlert,
+  X,
+  type LucideIcon
+} from 'lucide-vue-next'
 import Button from './ui/Button.vue'
 import { formatBytes } from './system-monitor-format'
 import { useFocusTrap } from '../composables/useFocusTrap'
-import type { DialogRow, RemovalChip } from '../lib/gc-model'
+import { dialogBreakdown, type DialogRow, type RemovalChip } from '../lib/gc-model'
 
 /**
  * The one confirm of the Cleanup screen (design.md "Workspace GC — unified Cleanup / Bulk-clean and
@@ -32,6 +45,28 @@ const { t, te } = useI18n()
 const count = computed(() => props.rows.length)
 const totalBytes = computed(() => props.rows.reduce((a, r) => a + r.bytes, 0))
 const hasVolumeRow = computed(() => props.rows.some((r) => r.kind === 'volume'))
+/** One line saying what the whole clean does; a part that is zero is left out (volumes only for orphan rows). */
+const breakdown = computed(() => {
+  const b = dialogBreakdown(props.rows)
+  const parts: string[] = []
+  if (b.stacks > 0)
+    parts.push(t('cleanup.gc.confirm.breakdown.stacks', b.stacks, { named: { n: b.stacks } }))
+  if (b.deps > 0)
+    parts.push(t('cleanup.gc.confirm.breakdown.deps', b.deps, { named: { n: b.deps } }))
+  if (b.worktrees > 0)
+    parts.push(
+      t('cleanup.gc.confirm.breakdown.worktrees', b.worktrees, { named: { n: b.worktrees } })
+    )
+  if (b.volumes > 0)
+    parts.push(t('cleanup.gc.confirm.breakdown.volumes', b.volumes, { named: { n: b.volumes } }))
+  return parts.join(' · ')
+})
+const totalText = computed(() =>
+  t(props.mode === 'ready' ? 'cleanup.gc.confirm.totalReady' : 'cleanup.gc.confirm.totalSelected', {
+    n: count.value,
+    size: formatBytes(totalBytes.value)
+  })
+)
 const riskCount = computed(() => props.rows.filter((r) => r.risk).length)
 /** A worktree's volumes are never removed with it (they become orphan volumes, reviewed one by one). */
 const hasWorktreeRow = computed(() => props.rows.some((r) => r.kind === 'worktree'))
@@ -72,7 +107,15 @@ function rowSub(row: DialogRow): string {
       ? t('cleanup.gc.confirm.volumeProject', { project: row.project })
       : t('cleanup.gc.confirm.noWorktree')
   }
-  return row.branch ?? ''
+  return row.branch ? t('cleanup.gc.confirm.branchSub', { branch: row.branch }) : ''
+}
+
+const CHIP_ICON: Record<RemovalChip, LucideIcon> = {
+  stack: Container,
+  volume: Database,
+  deps: PackageMinus,
+  checkout: Folder,
+  branch: GitBranch
 }
 
 const CHIP_CLASS: Record<RemovalChip, string> = {
@@ -124,27 +167,32 @@ function onBackdropMousedown(e: MouseEvent): void {
         :data-mode="mode"
         @mousedown.stop
       >
-        <div class="px-5 pb-2 pt-4">
-          <div
-            id="cleanup-bulk-dialog-title"
-            class="text-[15px] font-medium leading-[22px] text-text"
-          >
-            {{ title }}
+        <div class="flex items-start gap-3 px-5 pb-2 pt-4">
+          <div class="min-w-0 flex-1">
+            <div id="cleanup-bulk-dialog-title" class="text-subtitle font-medium text-text">
+              {{ title }}
+            </div>
+            <p class="m-0 mt-0.5 text-ui text-text-2">
+              {{
+                mode === 'ready'
+                  ? t('cleanup.gc.confirm.subtitleReady')
+                  : t('cleanup.gc.confirm.subtitleReview')
+              }}
+            </p>
           </div>
-          <p class="m-0 mt-0.5 text-[12.5px] leading-[18px] text-text-2">
-            {{
-              mode === 'ready'
-                ? t('cleanup.gc.confirm.subtitleReady')
-                : t('cleanup.gc.confirm.subtitleReview')
-            }}
-          </p>
+          <Button
+            variant="ghost"
+            size="icon"
+            :aria-label="t('cleanup.gc.confirm.close')"
+            :title="t('cleanup.gc.confirm.close')"
+            data-testid="bulk-close"
+            @click="emit('cancel')"
+          >
+            <X :size="14" :stroke-width="1.7" />
+          </Button>
         </div>
-        <div class="px-5 pb-3 text-[11px] leading-4 text-text-3" data-testid="bulk-summary">
-          {{
-            t('cleanup.gc.confirm.summary', count, {
-              named: { n: count, size: formatBytes(totalBytes) }
-            })
-          }}
+        <div class="px-5 pb-3 text-caption tabular-nums text-text-3" data-testid="bulk-breakdown">
+          {{ breakdown }}
         </div>
 
         <div
@@ -183,10 +231,13 @@ function onBackdropMousedown(e: MouseEvent): void {
               <CircleCheck v-else :size="14" :stroke-width="1.6" aria-hidden="true" />
             </span>
             <span class="flex min-w-0 flex-col gap-0.5">
-              <span class="truncate text-[12.5px] leading-4 text-text">{{ rowTitle(row) }}</span>
+              <span class="truncate font-mono text-ui text-text" data-testid="bulk-row-title">{{
+                rowTitle(row)
+              }}</span>
               <span
                 v-if="rowSub(row)"
-                class="truncate font-mono text-[11px] leading-4 text-text-4"
+                class="truncate font-mono text-caption text-text-4"
+                data-testid="bulk-row-sub"
                 >{{ rowSub(row) }}</span
               >
               <template v-if="mode === 'review' && row.reasonCode">
@@ -207,7 +258,12 @@ function onBackdropMousedown(e: MouseEvent): void {
                   :class="CHIP_CLASS[chip]"
                   :data-chip="chip"
                   :title="t(`cleanup.gc.chip.title.${chip}`)"
-                  >{{ t(`cleanup.gc.chip.${chip}`) }}</span
+                  ><component
+                    :is="CHIP_ICON[chip]"
+                    :size="10"
+                    :stroke-width="1.8"
+                    aria-hidden="true"
+                  />{{ t(`cleanup.gc.chip.${chip}`) }}</span
                 >
               </span>
             </span>
@@ -267,10 +323,11 @@ function onBackdropMousedown(e: MouseEvent): void {
         </p>
 
         <div class="mt-3 flex items-center gap-2 border-t border-border px-5 py-3">
-          <span v-if="totalBytes > 0" class="mr-auto text-[12.5px] font-medium text-text">{{
-            t('cleanup.gc.confirm.total', { size: formatBytes(totalBytes) })
-          }}</span>
-          <span v-else class="mr-auto" />
+          <span
+            class="mr-auto text-ui font-medium tabular-nums text-text"
+            data-testid="bulk-total"
+            >{{ totalText }}</span
+          >
           <Button
             :ref="setCancel"
             variant="ghost"
@@ -285,6 +342,8 @@ function onBackdropMousedown(e: MouseEvent): void {
             data-testid="bulk-confirm"
             @click="!stale && emit('confirm')"
           >
+            <Recycle v-if="mode === 'ready'" :size="14" :stroke-width="1.6" class="shrink-0" />
+            <Trash2 v-else :size="14" :stroke-width="1.6" class="shrink-0" />
             {{ confirmLabel }}
           </Button>
         </div>

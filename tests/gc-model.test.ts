@@ -5,6 +5,7 @@ import {
   cleanRequestFor,
   dialogRows,
   captureConfirm,
+  dialogBreakdown,
   repoDisplayLabel,
   confirmChanged,
   expectedFor,
@@ -495,5 +496,32 @@ describe('repoDisplayLabel — org/proj style labels for the map regions', () =>
     const www = m.regions.find((r) => r.label === 'www')!
     expect(www.displayLabel).toBe('proj/www')
     expect(www.repoPath).toBe('/ws/org/proj/www')
+  })
+})
+
+describe('dialogBreakdown — what the whole clean does, in numbers', () => {
+  it('counts stacks stopped, dependency folders removed and worktrees trashed', () => {
+    const a = wt('c1', 'ready', 1, { stackIds: ['s1', 's2'], depsBytes: 5 })
+    const b = wt('c2', 'ready', 1, { stackIds: ['s3'], depsBytes: null })
+    const c = wt('c3', 'ready', 1, { depsBytes: 9 })
+    const m = buildGcModel(snap({ bundles: [a, b, c] }))
+    const rows = dialogRows(
+      m,
+      m.ready.map((x) => x.id)
+    )
+    expect(dialogBreakdown(rows)).toEqual({ stacks: 3, deps: 2, worktrees: 3, volumes: 0 })
+  })
+
+  it("counts a volume only when an orphan volume row is in the list — a worktree's volumes are kept", () => {
+    const a = wt('c1', 'ready', 1, { ownedVolumes: ['v1', 'v2'] })
+    const m = buildGcModel(snap({ bundles: [a], orphanVolumes: sample().orphanVolumes }))
+    expect(dialogBreakdown(dialogRows(m, [a.item.id])).volumes).toBe(0)
+    expect(dialogBreakdown(dialogRows(m, [a.item.id, 'volume:pg_data'])).volumes).toBe(1)
+  })
+
+  it('rows carry the stack count the breakdown sums', () => {
+    const a = wt('c1', 'ready', 1, { stackIds: ['s1', 's2'] })
+    const m = buildGcModel(snap({ bundles: [a] }))
+    expect(dialogRows(m, [a.item.id])[0].stackCount).toBe(2)
   })
 })

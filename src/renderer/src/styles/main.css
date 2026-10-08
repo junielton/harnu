@@ -7,6 +7,9 @@
   --font-mono:
     'JetBrainsMono Nerd Font Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
+  /* design.md §4 "Radii": the 3px step (badges, kbd, blocks) as `rounded-xs`. */
+  --radius-xs: 3px;
+
   /* design.md §3 "Scale" as utilities: size and line height travel together (`text-ui` = 12.5/18). */
   --text-title: 20px;
   --text-title--line-height: 28px;

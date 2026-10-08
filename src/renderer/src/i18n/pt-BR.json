@@ -2373,7 +2373,6 @@
       "confirm": {
         "titleWorktrees": "Remover {n} worktree? | Remover {n} worktrees?",
         "titleItems": "Remover {n} item? | Remover {n} itens?",
-        "summary": "{n} item · {size} | {n} itens · {size}",
         "listLabel": "Itens a remover",
         "worktreeRow": "{repo} › {name}",
         "volumeRow": "Volume Docker {name}",
@@ -2384,7 +2383,6 @@
         "warnVolumesLost": "Volumes não podem ser restaurados.",
         "warnVolumesKept": "Os volumes são mantidos. Depois eles aparecem em Precisa de você.",
         "warnRecover": "O código e a branch voltam pelas refs de arquivo e pela lixeira do sistema, e as dependências voltam pelo setup do repositório.",
-        "total": "Total {size}",
         "cancel": "Cancelar",
         "confirmWorktrees": "Remover {n} worktree | Remover {n} worktrees",
         "confirmItems": "Remover {n} item | Remover {n} itens",
@@ -2392,7 +2390,17 @@
         "subtitleReady": "Cada um está merged, limpo e ocioso além do período de carência. Tudo o que está listado abaixo será removido.",
         "confirmReady": "Limpar {n} pronto | Limpar {n} prontos",
         "subtitleReview": "Você escolheu estes itens, então o Harnu não pôde provar que são seguros. Tudo o que está listado abaixo será removido.",
-        "changed": "Isto mudou desde que você abriu — revise de novo."
+        "changed": "Isto mudou desde que você abriu — revise de novo.",
+        "breakdown": {
+          "stacks": "{n} stack parada | {n} stacks paradas",
+          "deps": "{n} pasta de dependências removida | {n} pastas de dependências removidas",
+          "worktrees": "{n} worktree para a lixeira | {n} worktrees para a lixeira",
+          "volumes": "{n} volume apagado | {n} volumes apagados"
+        },
+        "totalReady": "{n} prontos · {size}",
+        "totalSelected": "{n} selecionados · {size}",
+        "close": "Fechar",
+        "branchSub": "branch {branch}"
       },
       "chip": {
         "stack": "stack",
@@ -2433,7 +2441,13 @@
         "inspect": "Inspecionar stacks",
         "volumesNote": "Nunca são removidos automaticamente. Remova cada um você mesmo em Precisa de você.",
         "reclaimable": "{size} recuperáveis",
-        "imagesCount": "{n} imagem · {size} | {n} imagens · {size}"
+        "imagesCount": "{n} imagem · {size} | {n} imagens · {size}",
+        "sub": {
+          "size": "roda a cada ciclo · {size}",
+          "plain": "roda a cada ciclo",
+          "off": "A limpeza do Docker está desligada"
+        },
+        "splitLabel": "Números do Docker por tamanho: build cache, imagens dangling, volumes órfãos"
       },
       "split": {
         "label": "Divisão do disco",

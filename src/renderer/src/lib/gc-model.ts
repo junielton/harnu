@@ -322,6 +322,8 @@ export interface DialogRow {
   branch: string | null
   bytes: number
   chips: RemovalChip[]
+  /** Stacks this removal stops (the breakdown line sums them). */
+  stackCount: number
   reasonCode: ReasonCode | null
   reasonDetail: string | null
   project: string | null
@@ -357,6 +359,7 @@ export function dialogRows(model: GcModel, ids: readonly string[]): DialogRow[] 
       branch: b.branch,
       bytes: b.bytes,
       chips,
+      stackCount: b.kind === 'volume' ? 0 : b.stackIds.length,
       reasonCode: b.reasonCode,
       reasonDetail: b.reasonDetail,
       project: b.project,
@@ -364,6 +367,23 @@ export function dialogRows(model: GcModel, ids: readonly string[]): DialogRow[] 
     })
   }
   return rows
+}
+
+/** The numbers behind the dialog's breakdown line. A worktree's volumes are kept, so only volume ROWS count. */
+export interface DialogBreakdown {
+  stacks: number
+  deps: number
+  worktrees: number
+  volumes: number
+}
+
+export function dialogBreakdown(rows: readonly DialogRow[]): DialogBreakdown {
+  return {
+    stacks: rows.reduce((a, r) => a + r.stackCount, 0),
+    deps: rows.filter((r) => r.chips.includes('deps')).length,
+    worktrees: rows.filter((r) => r.kind === 'worktree').length,
+    volumes: rows.filter((r) => r.kind === 'volume').length
+  }
 }
 
 // ---- gc:clean payload -----------------------------------------------------------------------

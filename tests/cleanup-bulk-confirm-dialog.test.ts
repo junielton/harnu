@@ -18,6 +18,7 @@ function row(over: Partial<DialogRow> = {}): DialogRow {
     branch: 'feat/proj-41',
     bytes: 512 * MB,
     chips: ['stack', 'deps', 'checkout', 'branch'],
+    stackCount: 1,
     reasonCode: null,
     reasonDetail: null,
     project: null,
@@ -75,7 +76,7 @@ describe('CleanupBulkConfirmDialog — what it discloses', () => {
     expect(dlg.getAttribute('aria-modal')).toBe('true')
     const title = q(`#${dlg.getAttribute('aria-labelledby')}`)!
     expect(title.textContent?.trim()).toBe('Clean 2 ready items?')
-    expect(q('[data-testid="bulk-summary"]')!.textContent?.trim()).toBe('2 items · 1.00 GB')
+    expect(q('[data-testid="bulk-total"]')!.textContent?.trim()).toBe('2 ready · 1.00 GB')
   })
 
   it('lists every row as repo › worktree with its branch and size', async () => {
@@ -250,13 +251,14 @@ describe('CleanupBulkConfirmDialog — behaviour', () => {
       {} as DOMRect
     ] as unknown as DOMRectList)
     await open([row()])
-    const list = q('[data-testid="bulk-list"]')!
+    // The × is now the first control of the dialog, so that is where Tab wraps to.
+    const first = q('[data-testid="bulk-close"]')!
     const confirm = q('[data-testid="bulk-confirm"]')!
     confirm.focus()
     const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
     window.dispatchEvent(tab)
     expect(tab.defaultPrevented).toBe(true)
-    expect(document.activeElement).toBe(list)
+    expect(document.activeElement).toBe(first)
 
     const back = new KeyboardEvent('keydown', {
       key: 'Tab',
@@ -306,5 +308,81 @@ describe('CleanupBulkConfirmDialog — chip titles', () => {
       expect(title, locale).not.toMatch(/owned by this worktree|deste worktree/i)
       if (locale === 'en') expect(title).toMatch(/no worktree/i)
     }
+  })
+})
+
+describe('CleanupBulkConfirmDialog — parity with the approved mockup', () => {
+  it('has a × close button that cancels, next to the title', async () => {
+    const w = await open([row()])
+    const x = q('[data-testid="bulk-close"]') as HTMLButtonElement
+    expect(x.getAttribute('aria-label')).toBe('Close')
+    expect(x.querySelector('svg')).not.toBeNull()
+    x.click()
+    expect(w.emitted('cancel')).toHaveLength(1)
+  })
+
+  it('gives every removal chip an icon', async () => {
+    await open([row()])
+    const chips = qa('[data-testid="bulk-row"] [data-chip]')
+    expect(chips.length).toBeGreaterThan(0)
+    for (const c of chips) expect(c.querySelector('svg'), c.dataset.chip).not.toBeNull()
+  })
+
+  it('sets the row title in mono, with the branch as a mono sub-line', async () => {
+    await open([row()])
+    const r = q('[data-testid="bulk-row"]')!
+    expect(r.querySelector('[data-testid="bulk-row-title"]')!.className).toContain('font-mono')
+    expect(r.querySelector('[data-testid="bulk-row-sub"]')!.className).toContain('font-mono')
+  })
+
+  it('states the whole clean in one breakdown line, without volumes', async () => {
+    await open([
+      row({ stackCount: 2 }),
+      row({ id: 'r2', stackCount: 1, chips: ['deps', 'checkout'] })
+    ])
+    expect(q('[data-testid="bulk-breakdown"]')!.textContent!.trim()).toBe(
+      '3 stacks stopped · 2 dependency folders removed · 2 worktrees trashed'
+    )
+  })
+
+  it('leaves out a part that is zero, and uses the singular for one', async () => {
+    await open([row({ stackCount: 0, chips: ['checkout', 'branch'] })])
+    expect(q('[data-testid="bulk-breakdown"]')!.textContent!.trim()).toBe('1 worktree trashed')
+  })
+
+  it('adds the volumes only for an orphan volume row', async () => {
+    await open(
+      [
+        {
+          ...row(),
+          id: 'volume:pg',
+          kind: 'volume',
+          name: 'pg',
+          branch: null,
+          chips: ['volume'],
+          stackCount: 0,
+          reasonCode: 'no-known-worktree',
+          project: 'old-app'
+        }
+      ],
+      'review'
+    )
+    expect(q('[data-testid="bulk-breakdown"]')!.textContent!.trim()).toBe('1 volume deleted')
+  })
+
+  it('the footer reads "N ready · size" for the ready dialog and "N selected · size" for remove-selected', async () => {
+    await open([row(), row({ id: 'r2' })], 'ready')
+    expect(q('[data-testid="bulk-total"]')!.textContent!.trim()).toBe('2 ready · 1.02 GB')
+    wrapper?.unmount()
+    await open([reviewRow(), reviewRow({ id: 'd2' })], 'review')
+    expect(q('[data-testid="bulk-total"]')!.textContent!.trim()).toBe('2 selected · 1.02 GB')
+  })
+
+  it('puts an icon on the confirm button: Recycle on Success, Trash on Danger', async () => {
+    await open([row()], 'ready')
+    expect(q('[data-testid="bulk-confirm"] svg')!.getAttribute('class')).toContain('recycle')
+    wrapper?.unmount()
+    await open([reviewRow()], 'review')
+    expect(q('[data-testid="bulk-confirm"] svg')!.getAttribute('class')).toContain('trash')
   })
 })

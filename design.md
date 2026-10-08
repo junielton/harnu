@@ -272,14 +272,14 @@ documented exception in the component's own §6 section.
 
 ### Radii
 
-| Value   | Use                                    |
-| ------- | -------------------------------------- |
-| `0`     | Reset / full-bleed containers          |
-| `3px`   | Badges, kbd, separator pills           |
-| `5px`   | Buttons, inputs, chips                 |
-| `7px`   | Cards, dropdown menus, message bubbles |
-| `10px`  | Dialogs, large panels                  |
-| `999px` | Status pills, accent indicators        |
+| Value   | Use                                                                                |
+| ------- | ---------------------------------------------------------------------------------- |
+| `0`     | Reset / full-bleed containers                                                      |
+| `3px`   | Badges, kbd, separator pills, treemap blocks and Docker-card blocks (`rounded-xs`) |
+| `5px`   | Buttons, inputs, chips                                                             |
+| `7px`   | Cards, dropdown menus, message bubbles                                             |
+| `10px`  | Dialogs, large panels                                                              |
+| `999px` | Status pills, accent indicators                                                    |
 
 ### Row density
 

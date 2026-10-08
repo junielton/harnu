@@ -2373,7 +2373,6 @@
       "confirm": {
         "titleWorktrees": "Remove {n} worktree? | Remove {n} worktrees?",
         "titleItems": "Remove {n} item? | Remove {n} items?",
-        "summary": "{n} item · {size} | {n} items · {size}",
         "listLabel": "Items to remove",
         "worktreeRow": "{repo} › {name}",
         "volumeRow": "Docker volume {name}",
@@ -2384,7 +2383,6 @@
         "warnVolumesLost": "Volumes cannot be restored.",
         "warnVolumesKept": "Volumes are kept. They show up in Needs review afterwards.",
         "warnRecover": "Code and branch come back from the archive refs and the OS trash, and dependencies come back through the repo's setup.",
-        "total": "Total {size}",
         "cancel": "Cancel",
         "confirmWorktrees": "Remove {n} worktree | Remove {n} worktrees",
         "confirmItems": "Remove {n} item | Remove {n} items",
@@ -2392,7 +2390,17 @@
         "subtitleReady": "Each one is merged, clean and idle past its grace period. Everything listed below is removed.",
         "confirmReady": "Clean {n} ready | Clean {n} ready",
         "subtitleReview": "You picked these yourself, so Harnu could not prove they are safe. Everything listed below is removed.",
-        "changed": "This changed since you opened it — review again."
+        "changed": "This changed since you opened it — review again.",
+        "breakdown": {
+          "stacks": "{n} stack stopped | {n} stacks stopped",
+          "deps": "{n} dependency folder removed | {n} dependency folders removed",
+          "worktrees": "{n} worktree trashed | {n} worktrees trashed",
+          "volumes": "{n} volume deleted | {n} volumes deleted"
+        },
+        "totalReady": "{n} ready · {size}",
+        "totalSelected": "{n} selected · {size}",
+        "close": "Close",
+        "branchSub": "branch {branch}"
       },
       "chip": {
         "stack": "stack",
@@ -2433,7 +2441,13 @@
         "inspect": "Inspect stacks",
         "volumesNote": "Never removed automatically. Remove each one yourself in Needs review.",
         "reclaimable": "{size} reclaimable",
-        "imagesCount": "{n} image · {size} | {n} images · {size}"
+        "imagesCount": "{n} image · {size} | {n} images · {size}",
+        "sub": {
+          "size": "runs each cycle · {size}",
+          "plain": "runs each cycle",
+          "off": "Docker cleaning is off"
+        },
+        "splitLabel": "Docker figures by size: build cache, dangling images, orphan volumes"
       },
       "split": {
         "label": "Disk split",
