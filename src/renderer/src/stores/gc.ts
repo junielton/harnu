@@ -15,7 +15,6 @@ import { formatBytes } from '../components/system-monitor-format'
 import { refusalKey } from '../components/cleanup-gc-copy'
 import {
   buildGcModel,
-  cleanRequestFor,
   heroState,
   prunedSelection,
   type CleanRequest,
@@ -30,6 +29,7 @@ import {
   dropFinished,
   emptyJobs,
   failureFor,
+  needsAction,
   pillState,
   runningJob,
   type BlockJobState,
@@ -124,7 +124,8 @@ export const useGcStore = defineStore('gc', () => {
     const m = model.value
     if (!m) return 0
     let n = 0
-    for (const id of failures.value.keys()) if (m.byId.has(id)) n++
+    // Only what needs the operator: their own Keep / never-clean refusals are settings, not problems.
+    for (const [id, f] of failures.value) if (m.byId.has(id) && needsAction(f.refusal)) n++
     return n
   })
   const pill = computed(() => pillState(jobs.value, attentionCount.value))
@@ -177,12 +178,16 @@ export const useGcStore = defineStore('gc', () => {
     const entry = {
       kind: warning ? ('warning' as const) : ('success' as const),
       title: warning
-        ? t('cleanup.gc.toast.partial', { cleaned: s.cleaned, failed: s.failed })
+        ? t('cleanup.gc.toast.partial', { cleaned: s.cleaned, failed: s.failed }, s.failed)
         : t('cleanup.gc.toast.success', { size: formatBytes(s.freedBytes), count: s.cleaned }),
       description: refusalDescription(s) ?? d.error ?? undefined,
       timeoutMs: warning ? 8000 : 6000,
       target: { view: 'cleanup' as const },
-      action: { label: t('cleanup.gc.toast.review'), handler: () => ui.openCleanup() }
+      // Both open Cleanup, where the journal ("Recent cleanups") sits under the map.
+      action: {
+        label: warning ? t('cleanup.gc.toast.review') : t('cleanup.gc.toast.viewJournal'),
+        handler: () => ui.openCleanup()
+      }
     }
     // A toast shows only while the window is focused; otherwise the Activity entry stands in
     // (main raises the native notification).
@@ -273,25 +278,16 @@ export const useGcStore = defineStore('gc', () => {
 
   // ---- actions ---------------------------------------------------------------------------------
 
-  function startClean(
-    ids: readonly string[],
-    mode: 'ready' | 'review'
-  ): Promise<GcCleanAck | null> {
-    const m = model.value
-    if (!m) return Promise.resolve(null)
-    const req = cleanRequestFor(m, ids, mode)
+  /**
+   * Send a clean request that was captured when its confirm dialog opened. The store never rebuilds the
+   * facts from the current model: what the operator confirmed is what main compares (a request whose
+   * facts have since moved is refused by the view before it gets here, and by main if it slips through).
+   */
+  function submit(req: CleanRequest): Promise<GcCleanAck | null> {
     if (req.ids.length === 0) return Promise.resolve(null)
     failures.value = new Map() // a new run replaces what the last one left behind
     return sendClean(req)
   }
-
-  /** The hero: every proven-ready item, behind the one confirm dialog. */
-  const cleanReady = (ids?: readonly string[]): Promise<GcCleanAck | null> =>
-    startClean(ids ?? model.value?.ready.map((b) => b.id) ?? [], 'ready')
-
-  /** Remove selected: the operator confirmed each of these Needs review items. */
-  const cleanSelected = (ids: readonly string[]): Promise<GcCleanAck | null> =>
-    startClean(ids, 'review')
 
   /**
    * "Ask for an opinion" on Needs review items (orphan volumes included). Advisory and read-only:
@@ -330,10 +326,19 @@ export const useGcStore = defineStore('gc', () => {
     await refresh()
   }
 
-  /** Keep several at once (the selection bar): one refresh at the end, not one per id. */
+  /**
+   * Keep several at once (the selection bar): one refresh at the end, not one per id. Orphan volumes are
+   * skipped (Keep applies to worktrees; the engine would reject a volume id), and the refresh runs even when
+   * a keep is rejected so the screen never stays on a stale snapshot — the rejection is then passed on.
+   */
   async function keepMany(ids: readonly string[]): Promise<void> {
-    for (const id of ids) await window.api.gcKeep(id)
-    await refresh()
+    try {
+      for (const id of ids) {
+        if (!id.startsWith('volume:')) await window.api.gcKeep(id)
+      }
+    } finally {
+      await refresh()
+    }
   }
 
   async function unkeep(id: string): Promise<void> {
@@ -386,8 +391,7 @@ export const useGcStore = defineStore('gc', () => {
     init,
     dispose,
     refresh,
-    cleanReady,
-    cleanSelected,
+    submit,
     keep,
     keepMany,
     unkeep,

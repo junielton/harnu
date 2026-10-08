@@ -9,11 +9,14 @@ import type { GcStep } from '../../../main/gc/pipeline-core'
 export const CHANGED_SINCE_CONFIRM = 'changed-since-confirm'
 
 /**
- * Every reason `gc:clean` refuses an item before it touches anything (`gc-manual.ts`, `refusalFor`).
- * Main reports the code as the result's `error`, halted at the pre-flight `reprobe` step; nothing
- * destructive ran. `unknown-item` is a refresh away: the id is not in the fresh gather.
+ * Every reason the engine gives for not cleaning an item, as the result's `error`: the up-front refusals of
+ * `gc:clean` (`gc-manual.ts`, `refusalFor`), the pre-flight re-probe's reasons (`gc-shell.ts`
+ * `reprobe`, halted at `reprobe`, nothing changed) and the one the pipeline reports mid-run
+ * (`changed-mid-run`, where earlier steps may already have run). Each has a human sentence in the
+ * catalog, so a raw code is never shown. `unknown-item` is a refresh away: the id is not in the gather.
  */
 export const REFUSAL_CODES = [
+  // up front, from gc:clean
   'changed-since-confirm',
   'needs-confirmation',
   'missing-expected',
@@ -23,14 +26,44 @@ export const REFUSAL_CODES = [
   'main-checkout',
   'in-use',
   'unsupported-kind',
-  'unknown-item'
+  'unknown-item',
+  // the pre-flight re-probe
+  'tip-unknown',
+  'protected-now',
+  'changed-since-scan',
+  'grace-not-elapsed',
+  'not-ready',
+  'path-unresolved',
+  'stack-present',
+  'docker-unavailable',
+  'probe-failed',
+  'nested-worktree',
+  'shared-stack',
+  'head-moved',
+  'not-harvestable',
+  'session-open',
+  'unpushed',
+  'volume-in-use',
+  // mid-run
+  'changed-mid-run'
 ] as const
 export type RefusalCode = (typeof REFUSAL_CODES)[number]
 
 /** The refusal code of a failed result, or null when it failed for another reason (a step error). */
 export function refusalOf(r: Pick<GcItemResult, 'ok' | 'error'>): RefusalCode | null {
   if (r.ok) return null
-  return REFUSAL_CODES.find((c) => c === (r.error ?? '').trim()) ?? null
+  const error = (r.error ?? '').trim()
+  // `probe-failed: <message>` carries the thrown message after the code; the code is what is known.
+  if (error.startsWith('probe-failed:')) return 'probe-failed'
+  return REFUSAL_CODES.find((c) => c === error) ?? null
+}
+
+/** Refusals that are the operator's own settings: they are not something that needs the operator. */
+const OWN_CHOICE: ReadonlySet<RefusalCode> = new Set(['kept', 'never-clean'])
+
+/** Whether a failed item still needs the operator: everything except their own `kept` / `never-clean`. */
+export function needsAction(refusal: RefusalCode | null): boolean {
+  return refusal === null || !OWN_CHOICE.has(refusal)
 }
 
 export interface JobView {
@@ -173,32 +206,30 @@ export function failureFor(s: JobsState, id: string): ItemFailure | null {
   return null
 }
 
-/** The pipeline order (design: workspace-gc §4), without the pre-flight and the bookkeeping steps. */
-export const PIPELINE_STEPS: readonly GcStep[] = [
-  'stop-stack',
-  'rm-containers',
-  'rm-volumes',
-  'archive',
-  'drop-deps',
-  'trash',
-  'prune',
-  'branch-delete'
-]
+/**
+ * Where an item stopped, from what the engine reported and nothing else. The engine tells us ONE step and
+ * why — not which steps before it ran — so this never reconstructs a history: no "✓ archive", and no volume
+ * step at all (a worktree clean never removes a volume).
+ *
+ * - `refused`: halted at the pre-flight re-probe with a code the catalog knows. Nothing was changed.
+ * - `stopped`: halted at a pipeline step (`refusal` set when the reason is a known code, e.g.
+ *   `changed-mid-run`; earlier steps may have run, so this is never "nothing was changed").
+ * - `unknown`: no step reported.
+ */
+export type Halt =
+  | { kind: 'refused'; refusal: RefusalCode }
+  | { kind: 'unchanged'; reason: string }
+  | { kind: 'stopped'; step: GcStep; error: string; refusal: RefusalCode | null }
+  | { kind: 'unknown'; error: string }
 
-export interface StepRow {
-  step: GcStep
-  state: 'ok' | 'failed' | 'todo'
-}
-
-/** What ran before the halt, what failed, and what never started. Empty when the step is unknown. */
-export function stepProgress(haltedAt: GcStep | null): StepRow[] {
-  if (!haltedAt) return []
-  const at = PIPELINE_STEPS.indexOf(haltedAt)
-  // A halt in the pre-flight reprobe means nothing destructive ran.
-  return PIPELINE_STEPS.map((step, i) => ({
-    step,
-    state: at === -1 ? 'todo' : i < at ? 'ok' : i === at ? 'failed' : 'todo'
-  }))
+export function haltOf(f: ItemFailure): Halt {
+  if (f.step === 'reprobe') {
+    return f.refusal
+      ? { kind: 'refused', refusal: f.refusal }
+      : { kind: 'unchanged', reason: f.error }
+  }
+  if (f.step) return { kind: 'stopped', step: f.step, error: f.error, refusal: f.refusal }
+  return { kind: 'unknown', error: f.error }
 }
 
 export type PillState =

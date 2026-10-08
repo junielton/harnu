@@ -8,7 +8,7 @@ import { defaultGcPrefs, type GcPrefs } from '../src/main/gc/gc-prefs'
 import { GcStepError, type GcOps } from '../src/main/gc/pipeline-core'
 import type { WorktreeBundle } from '../src/main/gc/bundle-core'
 import type { OrphanVolumeItem } from '../src/main/gc/gc-housekeeping-input'
-import { bundle, NOW } from './gc-fixtures'
+import { bundle, NOW, reapItem } from './gc-fixtures'
 
 const prefs = (over: Partial<GcPrefs> = {}): GcPrefs => ({ ...defaultGcPrefs(), ...over })
 
@@ -62,6 +62,8 @@ function rig(
     forcedOps?: Partial<GcOps>
     gatherGate?: Promise<void>
     volumeError?: string
+    /** What a gather started right before the removal sees; defaults to the job's own orphans. */
+    freshOrphans?: () => Promise<OrphanVolumeItem[]>
   } = {}
 ): Rig {
   const normal: string[] = []
@@ -79,6 +81,7 @@ function rig(
     gather,
     opsFor: (_actor, isForced) =>
       isForced ? fakeOps(forced, opts.forcedOps) : fakeOps(normal, opts.normalOps),
+    freshOrphans: async () => (opts.freshOrphans ? opts.freshOrphans() : (opts.orphans ?? [])),
     removeOrphanVolumes: async (names) => {
       removedVolumes.push(names)
       return {
@@ -310,6 +313,14 @@ describe('the confirmation binds to what the operator saw (AC-8, delta 1)', () =
     expect(r.done[0]!.results[0]).toMatchObject({ ok: true })
   })
 
+  it('a confirmation for one folder cannot clean another folder with the same id', async () => {
+    const shownA = bundle('/ws/wt/A', 'ready')
+    const nowB = bundle('/ws/wt/B', 'ready', { item: reapItem('/ws/wt/B', { id: shownA.item.id }) })
+    const r = await run([nowB], shown([shownA]), [shownA.item.id])
+    expect(r.normal).toEqual([])
+    expect(r.done[0]!.results[0]).toMatchObject({ ok: false, error: 'changed-since-confirm' })
+  })
+
   it('has no blanket flag: a stray confirmDecide or confirmReview is ignored', async () => {
     const d = bundle('/ws/wt/d', 'review')
     const opts = {
@@ -414,6 +425,58 @@ describe('orphan volumes are removed only by a confirmed manual action (AC-7)', 
     await settle(r)
     expect(r.removedVolumes).toEqual([])
     expect(r.done[0]!.results[0]!.error).toBe('changed-since-confirm')
+  })
+
+  it('re-plans the volume right before removing it: a folder that reappeared keeps it', async () => {
+    const o = orphan('lost_data')
+    // The job's gather (possibly older than the click) still calls it an orphan; a gather
+    // started now sees the project folder back on disk.
+    const r = rig([], { orphans: [o], freshOrphans: async () => [] })
+    submitManualClean(r.deps, [o.id], shown([], [o]))
+    await settle(r)
+    expect(r.removedVolumes).toEqual([])
+    expect(r.done[0]!.results[0]).toMatchObject({ ok: false, error: 'no-longer-orphan' })
+  })
+
+  it('refuses a volume whose size changed between the gather and the removal', async () => {
+    const o = orphan('lost_data', 9_000)
+    const r = rig([], { orphans: [o], freshOrphans: async () => [orphan('lost_data', 20_000)] })
+    submitManualClean(r.deps, [o.id], shown([], [o]))
+    await settle(r)
+    expect(r.removedVolumes).toEqual([])
+    expect(r.done[0]!.results[0]!.error).toBe('changed-since-confirm')
+  })
+
+  it('removes nothing when the fresh look cannot be taken', async () => {
+    const o = orphan('lost_data')
+    const r = rig([], {
+      orphans: [o],
+      freshOrphans: async () => {
+        throw new Error('docker did not answer')
+      }
+    })
+    submitManualClean(r.deps, [o.id], shown([], [o]))
+    await settle(r)
+    expect(r.removedVolumes).toEqual([])
+    expect(r.done[0]!.results[0]).toMatchObject({ ok: false })
+    expect(r.done[0]!.results[0]!.error).toContain('probe-failed')
+  })
+
+  it('looks once per volume that is about to go, and not for one it already refused', async () => {
+    const a = orphan('a_data')
+    const b = orphan('b_data')
+    let looks = 0
+    const r = rig([], {
+      orphans: [a, b],
+      freshOrphans: async () => {
+        looks++
+        return [a, b]
+      }
+    })
+    submitManualClean(r.deps, [a.id, b.id], shown([], [a, b], [a.id]))
+    await settle(r)
+    expect(looks).toBe(1)
+    expect(r.removedVolumes).toEqual([['a_data']])
   })
 
   it('refuses a volume that is no longer an orphan at execution time', async () => {

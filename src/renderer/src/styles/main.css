@@ -6,6 +6,24 @@
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-mono:
     'JetBrainsMono Nerd Font Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* design.md §4 "Radii": the 3px step (badges, kbd, blocks) as `rounded-xs`. */
+  --radius-xs: 3px;
+
+  /* design.md §3 "Scale" as utilities: size and line height travel together (`text-ui` = 12.5/18). */
+  --text-title: 20px;
+  --text-title--line-height: 28px;
+  --text-subtitle: 15px;
+  --text-subtitle--line-height: 22px;
+  --text-body: 13px;
+  --text-body--line-height: 20px;
+  --text-ui: 12.5px;
+  --text-ui--line-height: 18px;
+  --text-caption: 11px;
+  --text-caption--line-height: 16px;
+  --text-eyebrow: 10.5px;
+  --text-eyebrow--line-height: 14px;
+  --tracking-title: -0.015em;
 }
 
 html,

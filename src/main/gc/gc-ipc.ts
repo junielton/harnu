@@ -20,6 +20,7 @@ import { prefsPath as reaperPrefsPath } from '../reaper/prefs'
 import type { ReaperControl } from '../reaper/reaper-ipc'
 import { bucketFeed, setInheritedBuckets } from './gc-buckets'
 import { withActor } from './gc-actor'
+import { keepFromFresh, withoutStaleKeeps } from './gc-keep'
 import {
   LEFTOVERS_FILE,
   pruneLeftovers,
@@ -44,13 +45,12 @@ import {
   prefsFile,
   readGcPrefs,
   withAcknowledged,
-  withKeep,
   withoutKeep,
   writeGcPrefs,
   type GcPrefs
 } from './gc-prefs'
 import { parseOptions } from './gc-options'
-import type { GcCleanAck, GcSnapshot } from './gc-wire'
+import type { GcCleanAck, GcSnapshot, OrphanVolumeItem } from './gc-wire'
 import { createGcOps, defaultGcShellDeps, type GcShellDeps } from './gc-shell'
 import { createForcedGcOps } from './gc-forced-ops'
 import { runHousekeeping } from './housekeeping-shell'
@@ -136,8 +136,10 @@ export async function registerGcHandlers(
           }
         }
         cache = g
-        setInheritedBuckets(bucketFeed(g.bundles))
-        if (g.staleKeeps.length > 0) await persist(withoutKeep(prefs, g.staleKeeps))
+        setInheritedBuckets(bucketFeed(g.bundles, g.canonical))
+        // Only the marks this gather judged, and only while they are still the same: a Keep
+        // pressed meanwhile must survive this verdict on an older one.
+        if (g.staleKeeps.length > 0) await persist(withoutStaleKeeps(prefs, g.staleKeeps))
         return g
       } finally {
         gathering = null
@@ -145,6 +147,15 @@ export async function registerGcHandlers(
     })()
     return gathering
   }
+
+  /** A gather that STARTS after this call: waits for the one in flight, which may predate it. */
+  const gatherFresh = async (): Promise<GcGathered> => {
+    if (gathering) await gathering.catch(() => undefined)
+    return gather()
+  }
+
+  /** Orphan volumes per a gather that starts now (see ManualCleanDeps.freshOrphans). */
+  const freshOrphans = async (): Promise<OrphanVolumeItem[]> => (await gatherFresh()).orphanVolumes
 
   const queue = createJobQueue({
     newId: () => randomUUID(),
@@ -234,6 +245,7 @@ export async function registerGcHandlers(
           opsFor: (_actor, forced) =>
             forced ? createForcedGcOps(withRun('operator')) : createGcOps(withRun('operator')),
           // S4's runner builds the argv itself (`docker volume rm <name>`, name-checked).
+          freshOrphans,
           removeOrphanVolumes: (names) =>
             runHousekeeping({
               builderPruneUntilHours: null,
@@ -250,9 +262,11 @@ export async function registerGcHandlers(
       ),
     keep: async (rawId) => {
       if (typeof rawId !== 'string') throw new Error('gc:keep expects a bundle id')
-      const bundle = (cache ?? (await gather())).bundles.find((b) => b.item.id === rawId)
-      if (!bundle) throw new Error(`unknown cleanup item: ${rawId}; refresh and retry`)
-      const next = await persist(withKeep(prefs, rawId, bundle.fate.fate))
+      // The fate is recorded from a gather made now: the cache may predate a scan, a clean
+      // or a sweep, and a mark recorded against an old fate is dropped by the next gather.
+      const next = keepFromFresh(prefs, (await gatherFresh()).bundles, rawId)
+      if (!next) throw new Error(`unknown cleanup item: ${rawId}; refresh and retry`)
+      await persist(next)
       void gather().catch((err) => console.error('[gc] refresh after keep failed', err))
       return next
     },

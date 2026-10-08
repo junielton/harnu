@@ -45,6 +45,8 @@ export interface BucketGroup {
 export interface RepoRegion {
   repoPath: string
   label: string
+  /** `proj/www`-style label for the region header (the full path is its tooltip). */
+  displayLabel: string
   bytes: number
   worktrees: number
   counts: Record<Bucket, number>
@@ -90,6 +92,18 @@ const basename = (p: string): string =>
     .replace(/[\\/]+$/, '')
     .split(/[\\/]/)
     .pop() || p
+
+/**
+ * The label a map region wears: the last two path segments (`proj/www`, `org/portal`), so a repo with
+ * an org parent reads like the mockup's `org/proj/www` and two repos called `www` stay apart.
+ */
+export function repoDisplayLabel(repoPath: string): string {
+  const parts = repoPath
+    .replace(/[\\/]+$/, '')
+    .split(/[\\/]/)
+    .filter(Boolean)
+  return parts.slice(-2).join('/') || repoPath
+}
 
 const bigFirst = (a: GcBlock, b: GcBlock): number =>
   b.bytes - a.bytes || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
@@ -166,6 +180,7 @@ export function buildGcModel(snapshot: GcSnapshot): GcModel {
     return {
       repoPath,
       label: basename(repoPath),
+      displayLabel: repoDisplayLabel(repoPath),
       bytes: blocks.reduce((a, b) => a + b.bytes, 0),
       worktrees: blocks.length,
       counts,
@@ -307,6 +322,8 @@ export interface DialogRow {
   branch: string | null
   bytes: number
   chips: RemovalChip[]
+  /** Stacks this removal stops (the breakdown line sums them). */
+  stackCount: number
   reasonCode: ReasonCode | null
   reasonDetail: string | null
   project: string | null
@@ -342,6 +359,7 @@ export function dialogRows(model: GcModel, ids: readonly string[]): DialogRow[] 
       branch: b.branch,
       bytes: b.bytes,
       chips,
+      stackCount: b.kind === 'volume' ? 0 : b.stackIds.length,
       reasonCode: b.reasonCode,
       reasonDetail: b.reasonDetail,
       project: b.project,
@@ -349,6 +367,23 @@ export function dialogRows(model: GcModel, ids: readonly string[]): DialogRow[] 
     })
   }
   return rows
+}
+
+/** The numbers behind the dialog's breakdown line. A worktree's volumes are kept, so only volume ROWS count. */
+export interface DialogBreakdown {
+  stacks: number
+  deps: number
+  worktrees: number
+  volumes: number
+}
+
+export function dialogBreakdown(rows: readonly DialogRow[]): DialogBreakdown {
+  return {
+    stacks: rows.reduce((a, r) => a + r.stackCount, 0),
+    deps: rows.filter((r) => r.chips.includes('deps')).length,
+    worktrees: rows.filter((r) => r.kind === 'worktree').length,
+    volumes: rows.filter((r) => r.kind === 'volume').length
+  }
 }
 
 // ---- gc:clean payload -----------------------------------------------------------------------
@@ -364,7 +399,8 @@ const sorted = (xs: readonly string[]): string[] => [...xs].sort()
  * The facts a row showed for one item, in the shape `gc:clean` compares them with a fresh gather.
  * Mirrors `expectedOf` / `orphanExpectedOf` in `src/main/gc/gc-confirm.ts` (same semantics; the
  * renderer never imports main code). A worktree's `bytes` is sent but not compared; a volume's size
- * and project are, and a missing project counts as a change.
+ * and project are, and a missing project counts as a change. `path` is the worktree folder as the row
+ * showed it (null for a volume): a worktree moved with `git worktree move` keeps its id, head and reason.
  */
 export function expectedFor(b: GcBlock): GcExpected {
   if (b.kind === 'volume') {
@@ -375,6 +411,7 @@ export function expectedFor(b: GcBlock): GcExpected {
       stackIds: [],
       ownedVolumes: [b.name],
       bytes: b.hasBytes ? b.bytes : null,
+      path: null,
       project: b.project
     }
   }
@@ -384,7 +421,8 @@ export function expectedFor(b: GcBlock): GcExpected {
     headSha: b.bundle?.localTip ?? null,
     stackIds: sorted(b.stackIds),
     ownedVolumes: sorted(b.ownedVolumes),
-    bytes: b.hasBytes ? b.bytes : null
+    bytes: b.hasBytes ? b.bytes : null,
+    path: b.bundle?.item.path ?? null
   }
 }
 
@@ -410,4 +448,68 @@ export function cleanRequestFor(
   const options: CleanRequest['options'] = { expected }
   if (mode === 'review') options.confirmed = [...kept]
   return { ids: kept, options }
+}
+
+// ---- the dialog binds to what it showed -------------------------------------------------------
+
+/** What a confirm dialog showed when it opened: its rows and the exact request it will send. */
+export interface CapturedConfirm {
+  mode: 'ready' | 'review'
+  /** The ids that survived capture (unknown or wrong-bucket ids are dropped, never sent blind). */
+  ids: string[]
+  rows: DialogRow[]
+  request: CleanRequest
+}
+
+/** Freeze the dialog's rows and `expected` facts at the moment it opens; null when nothing is valid. */
+export function captureConfirm(
+  model: GcModel,
+  ids: readonly string[],
+  mode: 'ready' | 'review'
+): CapturedConfirm | null {
+  const request = cleanRequestFor(model, ids, mode)
+  if (request.ids.length === 0) return null
+  return { mode, ids: request.ids, rows: dialogRows(model, request.ids), request }
+}
+
+const sameList = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((x, i) => x === b[i])
+
+/**
+ * Same comparison main makes (`bundleChangedSince` / `volumeChangedSince`): bucket, reason, head, stacks and
+ * volumes — and, for an orphan volume only, its size and project. A worktree's disk use drifts without
+ * anything having changed, so its bytes are not compared.
+ */
+/** Slashes and `.` / `..` segments normalized, so a spelling difference of the same folder is not a change. */
+function pathKey(p: string | null | undefined): string | null {
+  if (!p) return null
+  const abs = /^[\\/]/.test(p)
+  const out: string[] = []
+  for (const seg of p.split(/[\\/]+/)) {
+    if (!seg || seg === '.') continue
+    if (seg === '..' && out.length > 0 && out[out.length - 1] !== '..') out.pop()
+    else out.push(seg)
+  }
+  return (abs ? '/' : '') + out.join('/')
+}
+
+function sameFacts(a: GcExpected, b: GcExpected): boolean {
+  if (a.bucket !== b.bucket || a.reasonCode !== b.reasonCode || a.headSha !== b.headSha)
+    return false
+  if (!sameList(a.stackIds, b.stackIds) || !sameList(a.ownedVolumes, b.ownedVolumes)) return false
+  if (a.bucket === 'orphan-volume')
+    return a.bytes === b.bytes && (a.project ?? null) === (b.project ?? null)
+  return pathKey(a.path) === pathKey(b.path)
+}
+
+/**
+ * Whether what the open dialog showed is no longer what the model says (a cycle or a job refreshed the
+ * snapshot underneath it). The dialog then blocks its confirm until it is reopened.
+ */
+export function confirmChanged(model: GcModel, captured: CapturedConfirm): boolean {
+  const fresh = cleanRequestFor(model, captured.ids, captured.mode)
+  if (!sameList(fresh.ids, captured.ids)) return true
+  return captured.ids.some(
+    (id) => !sameFacts(fresh.options.expected[id], captured.request.options.expected[id])
+  )
 }

@@ -1480,7 +1480,7 @@ async function activate(id: string): Promise<void> {
   }
 
   let live = liveTerminals.get(id)
-  // Zombie-synthetic fix: a dead entry for a synthetic session is a dead entry, not
+  // Zombie-synthetic fix: a dead entry for a synthetic session is not
   // something worth reattaching to — the synthetic never got a JSONL twin, so
   // there's nothing to resume and no reason to keep staring at a frozen
   // "[session ended]" pane. Dispose it and fall into the create path below so

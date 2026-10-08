@@ -63,12 +63,12 @@ function repoLabel(item: ReapItem): string {
 </script>
 
 <template>
-  <section v-if="rows.length > 0" class="px-[22px] pb-2 pt-4" data-testid="cleanup-other">
+  <section v-if="rows.length > 0" class="px-5.5 pb-2 pt-4" data-testid="cleanup-other">
     <div class="flex items-center gap-3 pb-2">
-      <span class="text-[10.5px] font-medium uppercase tracking-[0.07em] text-text-4">
+      <span class="eyebrow text-text-4">
         {{ t('cleanup.gc.other.title') }}
       </span>
-      <span class="text-[11px] text-text-4">{{ t('cleanup.gc.other.intro') }}</span>
+      <span class="text-caption text-text-4">{{ t('cleanup.gc.other.intro') }}</span>
       <Button
         v-if="harvestable.length > 0"
         class="ml-auto"
@@ -84,7 +84,7 @@ function repoLabel(item: ReapItem): string {
     <div
       v-for="item in rows"
       :key="item.id"
-      class="grid min-h-[48px] grid-cols-[20px_240px_1fr_150px_40px] items-center gap-3.5 rounded border border-transparent p-2 hover:border-border hover:bg-surface"
+      class="grid min-h-12 grid-cols-[20px_240px_1fr_150px_40px] items-center gap-3.5 rounded border border-transparent p-2 hover:border-border hover:bg-surface"
       data-testid="cleanup-other-row"
     >
       <component
@@ -94,9 +94,9 @@ function repoLabel(item: ReapItem): string {
         class="text-text-4"
         :title="t(`cleanup.kind.${KIND_LABEL[item.kind]}`)"
       />
-      <span class="flex min-w-0 flex-col gap-[3px]" :title="identTitle(item)">
-        <span class="truncate font-mono text-[12px] text-text">{{ identText(item) }}</span>
-        <span class="block truncate text-[10.5px] text-text-4">
+      <span class="flex min-w-0 flex-col gap-0.75" :title="identTitle(item)">
+        <span class="truncate font-mono text-ui text-text">{{ identText(item) }}</span>
+        <span class="block truncate text-eyebrow text-text-4">
           {{ repoLabel(item) }} · {{ t(`cleanup.kind.${KIND_LABEL[item.kind]}`)
           }}<template v-if="item.diskBytes !== null"> · {{ formatBytes(item.diskBytes) }}</template>
         </span>
@@ -105,7 +105,7 @@ function repoLabel(item: ReapItem): string {
       <span class="flex min-w-0 flex-col items-end gap-1" :title="reasonLine(item, t)?.title">
         <span
           v-if="item.verdict === 'harvestable'"
-          class="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-green-soft px-2.5 py-[3px] text-[10.5px] font-semibold text-green"
+          class="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-green-soft px-2.5 py-0.75 text-eyebrow font-semibold text-green"
         >
           {{
             item.needsRemoteDelete
@@ -121,26 +121,26 @@ function repoLabel(item: ReapItem): string {
         </span>
         <span
           v-else-if="item.verdict === 'blocked'"
-          class="whitespace-nowrap rounded-full bg-red-soft px-2.5 py-[3px] text-[10.5px] font-semibold text-red"
+          class="whitespace-nowrap rounded-full bg-red-soft px-2.5 py-0.75 text-eyebrow font-semibold text-red"
         >
           {{ t('cleanup.verdict.blocked') }}
         </span>
         <span
           v-else
-          class="whitespace-nowrap rounded-full bg-surface-2 px-2.5 py-[3px] text-[10.5px] font-semibold text-text-3"
+          class="whitespace-nowrap rounded-full bg-surface-2 px-2.5 py-0.75 text-eyebrow font-semibold text-text-3"
         >
           {{ t('cleanup.verdict.unknown') }}
         </span>
         <span
           v-if="reasonLine(item, t)"
-          class="block max-w-full truncate text-right text-[10px] text-text-4"
+          class="block max-w-full truncate text-right text-eyebrow text-text-4"
           >{{ reasonLine(item, t)!.text }}</span
         >
       </span>
       <span class="flex justify-end">
         <button
           v-if="item.verdict === 'harvestable'"
-          class="flex h-[26px] w-[26px] items-center justify-center rounded-sm border border-border-2 text-text-3 transition hover:border-red hover:bg-red-soft hover:text-red disabled:cursor-not-allowed disabled:opacity-40"
+          class="flex h-6.5 w-6.5 items-center justify-center rounded-sm border border-border-2 text-text-3 transition hover:border-red hover:bg-red-soft hover:text-red disabled:cursor-not-allowed disabled:opacity-40"
           :aria-label="t('cleanup.trashTitle', { what: identText(item) })"
           :title="t('cleanup.trashTitle', { what: identText(item) })"
           :disabled="sweepItems !== null"

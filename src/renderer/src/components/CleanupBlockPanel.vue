@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   Bookmark,
-  Check,
   Copy,
   PackageMinus,
   PackagePlus,
@@ -15,7 +14,7 @@ import {
 } from 'lucide-vue-next'
 import type { GcOpinion } from '../../../main/gc/gc-wire'
 import type { GcBlock } from '../lib/gc-model'
-import { stepProgress, type BlockJobState, type ItemFailure } from '../lib/gc-jobs'
+import { haltOf, type BlockJobState, type ItemFailure } from '../lib/gc-jobs'
 import { formatBytes } from './system-monitor-format'
 import { identText } from './cleanup-ident'
 import {
@@ -135,7 +134,8 @@ const showKeep = computed(() => review.value && !isVolume.value)
 const showAsk = computed(() => review.value)
 const showOpinion = computed(() => review.value && (props.asking || props.opinion !== null))
 const showCleanNow = computed(() => ready.value && !hasFailure.value)
-const showRetry = computed(() => hasFailure.value && !isVolume.value)
+/** Retry re-opens the confirm for the item's CURRENT bucket, so an in-use item has nothing to retry. */
+const showRetry = computed(() => hasFailure.value && !inUse.value)
 const showDehydrate = computed(() => {
   const it = item.value
   if (!it || isVolume.value || ready.value) return false
@@ -147,6 +147,35 @@ const showRehydrate = computed(() => {
   return !!it && !isVolume.value && canRehydrate(it)
 })
 const hydrationDisabled = computed(() => locked.value || props.hydrationBusy !== null)
+
+// ---- shortcuts: R remove · D dehydrate · K keep · A ask ---------------------------------------------
+
+/** Typing in a field, a held modifier or an open dialog owns the keyboard, not the panel. */
+function shortcutsBlocked(e: KeyboardEvent): boolean {
+  if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return true
+  const el = e.target as HTMLElement | null
+  if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) return true
+  return !!document.querySelector('[role="dialog"][aria-modal="true"]')
+}
+
+/** Each letter acts only when its button is shown AND enabled; "A" has no action (Ask is disabled). */
+function onShortcut(e: KeyboardEvent): void {
+  if (shortcutsBlocked(e)) return
+  const id = props.block.id
+  switch (e.key.toLowerCase()) {
+    case 'r':
+      if (showRemove.value && !locked.value) emit('remove', id)
+      break
+    case 'k':
+      if (showKeep.value && !locked.value) emit('keep', id)
+      break
+    case 'd':
+      if (showDehydrate.value && !hydrationDisabled.value) emit('dehydrate', id)
+      break
+  }
+}
+onMounted(() => window.addEventListener('keydown', onShortcut))
+onBeforeUnmount(() => window.removeEventListener('keydown', onShortcut))
 
 const dehydrateLabel = computed(() => {
   const it = item.value
@@ -164,11 +193,12 @@ const rehydrateLabel = computed(() =>
   item.value ? t('cleanup.a11y.rehydrate', { what: identText(item.value) }) : ''
 )
 
-// ---- failure: what ran, the raw error ------------------------------------------------------------
+// ---- failure: what happened, the raw error ------------------------------------------------------------
 
-const steps = computed(() => (props.failure ? stepProgress(props.failure.step) : []))
-const nothingRan = computed(
-  () => steps.value.length > 0 && steps.value.every((s) => s.state === 'todo')
+/** Where it stopped, from what the engine reported — never a reconstructed step history. */
+const halt = computed(() => (props.failure ? haltOf(props.failure) : null))
+const nothingChanged = computed(
+  () => halt.value?.kind === 'refused' || halt.value?.kind === 'unchanged'
 )
 
 const copied = ref(false)
@@ -194,16 +224,16 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
 
 <template>
   <aside
-    class="flex w-[320px] max-w-full flex-col gap-3 rounded-lg border border-border-2 bg-surface p-4"
+    class="flex w-(--gc-panel-w) max-w-full flex-col gap-3 rounded-lg border border-border-2 bg-surface p-4"
     :aria-label="block.name"
     data-testid="block-panel"
   >
     <div class="flex items-start gap-2">
       <div class="min-w-0 flex-1">
-        <div class="break-all font-mono text-[13px] leading-5 text-text" data-testid="panel-name">
+        <div class="break-all font-mono text-body text-text" data-testid="panel-name">
           {{ block.name }}
         </div>
-        <div class="text-[11px] text-text-4" data-testid="panel-repo">
+        <div class="text-caption text-text-4" data-testid="panel-repo">
           <template v-if="isVolume">{{
             block.project
               ? t('cleanup.gc.panel.project', { project: block.project })
@@ -214,7 +244,7 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
       </div>
       <button
         type="button"
-        class="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
+        class="flex h-5.5 w-5.5 shrink-0 items-center justify-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
         :aria-label="t('cleanup.gc.panel.close')"
         :title="t('cleanup.gc.panel.close')"
         data-testid="panel-close"
@@ -224,13 +254,13 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
       </button>
     </div>
 
-    <div class="text-[20px] font-medium leading-7 tracking-[-0.015em]" data-testid="panel-size">
+    <div class="text-title font-medium leading-7 tracking-title" data-testid="panel-size">
       {{ sizeText }}
     </div>
 
     <p
       v-if="marker"
-      class="-mt-1 text-[11px]"
+      class="-mt-1 text-caption"
       :class="marker.tone === 'warning' ? 'text-warning' : 'text-text-4'"
       :title="metaTitle || undefined"
       data-testid="panel-hydration"
@@ -251,7 +281,7 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
         />
         <span class="rounded-sm bg-border-2" :style="{ flex: 100 - composition.depsPct }" />
       </div>
-      <ul class="mt-2 flex flex-col gap-1 text-[11px] leading-4 text-text-3">
+      <ul class="mt-2 flex flex-col gap-1 text-caption text-text-3">
         <li v-if="composition.deps > 0" class="flex items-center gap-2">
           <span class="h-2 w-2 rounded-sm bg-green" />{{ t('cleanup.gc.panel.deps')
           }}<b class="ml-auto font-medium text-text-2">{{ formatBytes(composition.deps) }}</b>
@@ -274,21 +304,21 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
     </div>
 
     <section class="flex flex-col gap-1 border-t border-border pt-3">
-      <div class="text-[10.5px] font-medium uppercase tracking-[0.07em] text-text-4">
+      <div class="eyebrow text-text-4">
         {{ t('cleanup.gc.panel.whyTitle') }}
       </div>
-      <p class="text-[13px] leading-5 text-text-2" data-testid="panel-reason">{{ reasonText }}</p>
+      <p class="text-body leading-5 text-text-2" data-testid="panel-reason">{{ reasonText }}</p>
       <p
         v-if="showDetail"
-        class="break-words font-mono text-[11px] leading-4 text-text-4"
+        class="break-words font-mono text-caption text-text-4"
         data-testid="panel-reason-detail"
       >
         {{ block.reasonDetail }}
       </p>
-      <p v-if="inUse" class="text-[11px] leading-4 text-text-3" data-testid="panel-in-use-note">
+      <p v-if="inUse" class="text-caption leading-4 text-text-3" data-testid="panel-in-use-note">
         {{ t('cleanup.gc.panel.inUseNote') }}
       </p>
-      <p v-if="ready" class="text-[11px] leading-4 text-text-3" data-testid="panel-ready-note">
+      <p v-if="ready" class="text-caption leading-4 text-text-3" data-testid="panel-ready-note">
         {{ t('cleanup.gc.panel.readyNote') }}
       </p>
     </section>
@@ -298,33 +328,30 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
       class="flex flex-col gap-1.5 border-t border-border pt-3"
       data-testid="panel-opinion"
     >
-      <div class="text-[10.5px] font-medium uppercase tracking-[0.07em] text-text-4">
+      <div class="eyebrow text-text-4">
         {{ t('cleanup.gc.panel.opinionTitle') }}
       </div>
       <CleanupOpinionChip :opinion="opinion" :pending="asking" />
       <template v-if="opinion && !asking">
-        <p class="text-[13px] leading-5 text-text-2" data-testid="panel-opinion-reason">
+        <p class="text-body text-text-2" data-testid="panel-opinion-reason">
           {{ opinion.reason }}
         </p>
-        <p class="text-[11.5px] leading-4 text-text-3" data-testid="panel-opinion-evidence">
+        <p class="text-caption text-text-3" data-testid="panel-opinion-evidence">
           {{ t('cleanup.gc.opinion.evidence') }}: {{ opinion.evidence }}
         </p>
       </template>
     </section>
 
     <section v-if="!inUse" class="flex flex-col gap-1 border-t border-border pt-3">
-      <div class="text-[10.5px] font-medium uppercase tracking-[0.07em] text-text-4">
+      <div class="eyebrow text-text-4">
         {{ t('cleanup.gc.panel.takesTitle') }}
       </div>
-      <ul
-        class="flex flex-col gap-0.5 text-[12px] leading-[18px] text-text-2"
-        data-testid="panel-takes"
-      >
+      <ul class="flex flex-col gap-0.5 text-ui text-text-2" data-testid="panel-takes">
         <li v-for="line in takes" :key="line">{{ line }}</li>
       </ul>
       <p
         v-if="takesVolumes"
-        class="flex items-start gap-1.5 text-[11px] leading-4 text-warning"
+        class="flex items-start gap-1.5 text-caption text-warning"
         data-testid="panel-volume-warning"
       >
         <TriangleAlert :size="12" :stroke-width="1.8" class="mt-px shrink-0" />
@@ -332,14 +359,14 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
       </p>
       <p
         v-if="keptVolumes"
-        class="text-[11px] leading-4 text-text-3"
+        class="text-caption leading-4 text-text-3"
         data-testid="panel-volumes-kept"
       >
         {{ t('cleanup.gc.panel.volumesKept', { names: block.ownedVolumes.join(', ') }) }}
       </p>
     </section>
 
-    <!-- failure: what ran, the raw error, the refusal note -->
+    <!-- failure: what happened — the step it stopped at and why; never a reconstructed history -->
     <section
       v-if="failure"
       class="flex flex-col gap-2 border-t border-red-line pt-3"
@@ -347,57 +374,28 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
     >
       <p
         v-if="failure.refusal"
-        class="flex items-start gap-1.5 text-[12px] leading-[18px] text-warning"
+        class="flex items-start gap-1.5 text-ui text-warning"
         data-testid="panel-refusal"
         :data-refusal="failure.refusal"
       >
         <TriangleAlert :size="13" :stroke-width="1.8" class="mt-0.5 shrink-0" />
         {{ t(refusalKey(failure.refusal)) }}
       </p>
-      <template v-if="steps.length > 0">
-        <div class="text-[10.5px] font-medium uppercase tracking-[0.07em] text-text-4">
-          {{ t('cleanup.gc.panel.ranTitle') }}
-        </div>
-        <ul class="m-0 flex list-none flex-col gap-1.5 p-0" data-testid="panel-steps">
-          <li
-            v-for="s in steps"
-            :key="s.step"
-            class="flex items-center gap-2 text-[12px] leading-[18px]"
-            :class="{
-              'text-text-2': s.state === 'ok',
-              'text-red': s.state === 'failed',
-              'text-text-3': s.state === 'todo'
-            }"
-            :data-step="s.step"
-            :data-state="s.state"
-          >
-            <span
-              class="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border-[1.5px]"
-              :class="{
-                'border-green bg-green text-bg': s.state === 'ok',
-                'border-red bg-red text-bg': s.state === 'failed',
-                'border-dashed border-border-2': s.state === 'todo'
-              }"
-              aria-hidden="true"
-            >
-              <Check v-if="s.state === 'ok'" :size="9" :stroke-width="3" />
-              <X v-else-if="s.state === 'failed'" :size="9" :stroke-width="3" />
-            </span>
-            {{ t(stepKey(s.step)) }}
-            <span class="sr-only">— {{ t(`cleanup.gc.panel.stepState.${s.state}`) }}</span>
-          </li>
-        </ul>
-        <p
-          v-if="nothingRan"
-          class="text-[11px] leading-4 text-text-3"
-          data-testid="panel-nothing-ran"
-        >
-          {{ t('cleanup.gc.panel.nothingRan') }}
-        </p>
-      </template>
+      <div class="eyebrow text-text-4">{{ t('cleanup.gc.panel.happenedTitle') }}</div>
+      <p
+        v-if="halt?.kind === 'stopped'"
+        class="text-body text-text-2"
+        data-testid="panel-halt"
+        :data-step="halt.step"
+      >
+        {{ t('cleanup.gc.panel.stoppedAt', { step: t(stepKey(halt.step)) }) }}
+      </p>
+      <p v-if="nothingChanged" class="text-caption text-text-3" data-testid="panel-nothing-changed">
+        {{ t('cleanup.gc.panel.nothingChanged') }}
+      </p>
       <div v-if="failure.error && !failure.refusal" class="flex items-start gap-2">
         <p
-          class="line-clamp-2 min-w-0 flex-1 break-words font-mono text-[11px] leading-4 text-text-3"
+          class="line-clamp-2 min-w-0 flex-1 break-words font-mono text-caption text-text-3"
           :title="failure.error"
           data-testid="panel-error"
         >
@@ -405,7 +403,7 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
         </p>
         <button
           type="button"
-          class="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border bg-bg px-2 py-[3px] text-[10.5px] text-text-3 transition hover:border-border-2 hover:text-text-2"
+          class="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border bg-bg px-2 py-0.75 text-eyebrow text-text-3 transition hover:border-border-2 hover:text-text-2"
           :aria-label="t('cleanup.gc.panel.copyError')"
           data-testid="panel-copy-error"
           @click="copyError"
@@ -416,7 +414,7 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
       </div>
     </section>
 
-    <p v-if="busy" class="text-[12px] text-accent" data-testid="panel-busy">
+    <p v-if="busy" class="text-ui text-accent" data-testid="panel-busy">
       {{ t('cleanup.gc.panel.cleaning') }}
     </p>
 
@@ -452,7 +450,7 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
         @click="emit('remove', block.id)"
       >
         <Trash2 :size="13" :stroke-width="1.7" />{{ t('cleanup.gc.panel.remove') }}
-        <kbd class="ml-auto font-mono text-[10.5px] text-text-3">R</kbd>
+        <kbd class="ml-auto font-mono text-eyebrow text-text-3">R</kbd>
       </Button>
 
       <Button
@@ -466,7 +464,7 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
         @click="emit('dehydrate', block.id)"
       >
         <PackageMinus :size="13" :stroke-width="1.7" />{{ t('cleanup.gc.panel.dehydrate') }}
-        <kbd class="ml-auto font-mono text-[10.5px] text-text-3">D</kbd>
+        <kbd class="ml-auto font-mono text-eyebrow text-text-3">D</kbd>
       </Button>
 
       <Button
@@ -491,7 +489,7 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
         @click="emit('keep', block.id)"
       >
         <Bookmark :size="13" :stroke-width="1.7" />{{ t('cleanup.gc.panel.keep') }}
-        <kbd class="ml-auto font-mono text-[10.5px] text-text-3">K</kbd>
+        <kbd class="ml-auto font-mono text-eyebrow text-text-3">K</kbd>
       </Button>
 
       <Button
@@ -504,7 +502,7 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
         @click="emit('ask', block.id)"
       >
         <Sparkles :size="13" :stroke-width="1.7" />{{ t('cleanup.gc.panel.ask') }}
-        <kbd class="ml-auto font-mono text-[10.5px] text-text-3">A</kbd>
+        <kbd class="ml-auto font-mono text-eyebrow text-text-3">A</kbd>
       </Button>
     </div>
   </aside>

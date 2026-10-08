@@ -232,6 +232,14 @@ Two families, no exceptions.
 | Code     | 13 / 20     | 400    | 0                 | JetBrains Mono — paths, commands, values |
 | Code-sm  | 11 / 14     | 400    | 0                 | JetBrains Mono — kbd, badges, timestamps |
 
+### Tailwind type tokens
+
+The Scale rows are available as Tailwind utilities declared in `main.css` `@theme` (size **and** line
+height travel together): `text-title` (20/28), `text-subtitle` (15/22), `text-body` (13/20), `text-ui`
+(12.5/18), `text-caption` (11/16), `text-eyebrow` (10.5/14; pair with `.eyebrow` for the weight, case and
+tracking). New surfaces use these instead of an arbitrary `text-[Npx]`; a size that is not on the scale is a
+documented exception in the component's own §6 section.
+
 ### Rules
 
 - **Minimum size:** 10.5px (only for uppercase eyebrows with letter-spacing)
@@ -264,14 +272,14 @@ Two families, no exceptions.
 
 ### Radii
 
-| Value   | Use                                    |
-| ------- | -------------------------------------- |
-| `0`     | Reset / full-bleed containers          |
-| `3px`   | Badges, kbd, separator pills           |
-| `5px`   | Buttons, inputs, chips                 |
-| `7px`   | Cards, dropdown menus, message bubbles |
-| `10px`  | Dialogs, large panels                  |
-| `999px` | Status pills, accent indicators        |
+| Value   | Use                                                                                |
+| ------- | ---------------------------------------------------------------------------------- |
+| `0`     | Reset / full-bleed containers                                                      |
+| `3px`   | Badges, kbd, separator pills, treemap blocks and Docker-card blocks (`rounded-xs`) |
+| `5px`   | Buttons, inputs, chips                                                             |
+| `7px`   | Cards, dropdown menus, message bubbles                                             |
+| `10px`  | Dialogs, large panels                                                              |
+| `999px` | Status pills, accent indicators                                                    |
 
 ### Row density
 
@@ -8310,24 +8318,29 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
 1. **TakeoverShell header** — `Trash2` icon, title, close (unchanged, see "TakeoverShell").
 2. **Toolbar row** (`padding: 12px 22px`, `border-b border-border`, wraps): the **summary line**, the
    **hero button / progress chip**, the autopilot badge, the "Autopilot settings" Ghost button (opens
-   Settings → Cleanup), the Map/List `SegmentedControl` (`layout-grid` / `list`, `size="sm"`) and a
-   rescan icon button.
+   Settings → Cleanup), the Map/List `SegmentedControl` (`size="sm"`; each option carries its icon,
+   `layout-grid` / `list`, 12px) and a **rescan icon button** (Ghost, icon-only, `RefreshCw` — it spins while
+   a scan runs; `aria-label` "Scan now").
    - Summary line: `Recycle` icon (`--green`), 13px/20px `--text-2`, then
-     `{n} GiB reclaimable · autopilot on|off · next cycle in {t}`; the size is 600-weight `--text`.
+     `{n} GB reclaimable · autopilot on|off · next cycle in {t}`; the size is 600-weight `--text`.
      "Reclaimable" is everything not In use plus orphan volumes (ready + needs review + orphan volumes);
      Docker build cache is added only when the engine reports it (see "Docker card").
    - Autopilot badge: Badge Success "Autopilot on · every {interval}" or Default "Autopilot off".
 3. **Selection bar** (only with ≥1 checked block) — the takeover's existing selection band
    (`border-b border-border bg-surface-2`, `padding: 8px 22px`): `square-check` icon (`--accent`), the
-   count `N selected · X GiB` (13px; numbers 600-weight `--text`), then **Remove selected** (Danger),
-   **Dehydrate** (Soft), **Keep** (Ghost), **Ask for an opinion** (Soft, `sparkles`; enabled
-   whenever the selection holds Needs review items — see "Opinion chip"), a `⇧` hint (`kbd`) and a right-aligned "Clear selection" ghost link.
+   count `N selected · X GB` (13px; numbers 600-weight `--text`), then **Remove selected** (Danger),
+   **Dehydrate** (Soft), **Keep** (Ghost), **Ask for an opinion** (Soft, `sparkles`; enabled whenever the selection holds Needs review
+   items — see "Opinion chip"), a `⇧` hint (`kbd`) and a right-aligned "Clear selection" ghost link.
 4. **First-cycle banner** (only while `firstReportAcknowledged` is false and a report exists): see below.
 5. **Split bar** (`.gc-split`): a 32px bar of three segments — _Ready to clean_ (ready items +
    Docker housekeeping, Ready triple), _Needs review_ (hatch), _In use_. Widths
    proportional to bytes, `gap: 2px`, segment radius `--radius-sm` (3px), 11px text, label left, size
    right. A caption row above (eyebrow, 10.5px/500 uppercase `--text-4`) names the groups; the
    last-cycle line (11px `--text-4`) sits under it.
+   **Legend row** (`.lg`, 11px/16px, `gap: 16px`) directly under the split bar: three items — bucket icon +
+   word in the bucket ink + a short gloss ("Ready to clean · cleaned by one click or the autopilot",
+   "Needs review · your call", "In use · never touched") — then, pushed right in `--text-3`,
+   **"Block area = size on disk · click a block to act"**. Without byte sizes the area note is dropped.
 6. **Map** (or the List fallback), then the **Docker card**, then **Needs review**, then **Other leftovers**
    and **Recent cleanups** (the existing tombstone footer).
 
@@ -8340,7 +8353,10 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
   sliver); byte totals are always printed on the region header. The canvas is **372px** tall in the
   overview and **520px** once drilled into one repo (§4).
 - **Repo region** (`.tm-region`): `border-border`, radius 7 (`--radius`), `bg-surface`. Header 28px:
-  repo name 12.5px/600 `--text-2`, meta 11px `--text-4` (`61 worktrees · 27.8 GiB`), count badges
+  **repo label** (mono 12.5px/600 `--text-2`) — the last two path segments, `proj/www` or `org/portal`, so a
+  repo with an org parent reads like the mockup's `org/proj/www`; it is **always visible, even in the
+  narrow side regions** (it truncates with an ellipsis, the full path is its `title`, and the meta and badges
+  yield first) — meta 11px `--text-4` (`61 worktrees · 27.8 GB`), count badges
   (Ready to clean / Needs review / In use) pushed right, then **Select all in repo** (11px link in `--text-2`;
   icon-only 22px Ghost `list-checks` in the narrow side regions, which have no room for the label).
   Clicking the repo name drills in (breadcrumb + bucket filter `All / Ready to clean / Needs review / In use`).
@@ -8369,7 +8385,9 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
 
 - **Interaction:** click opens the panel; **Shift+click** toggles checked; **Esc** clears the selection
   then closes the panel; arrow keys move to the nearest block in that direction, **↩** opens the panel,
-  `K` keep · `R` remove · `D` dehydrate · `A` ask (disabled). Blocks are real `<button>`s with
+  `K` keep · `R` remove · `D` dehydrate · `A` ask (disabled: it does nothing). **The four letters are wired**
+  on the open panel and on a focused block: each acts only when the matching button is shown and enabled,
+  never while a dialog is open, a field is being typed in, or a modifier key is held. Blocks are real `<button>`s with
   `aria-pressed` (checked) and an `aria-label` that states bucket, size and any busy/done/failed word.
 - **Layout stability:** a finished item fades (`--dur-slow`) and the layout is recomputed **once per
   finished item**, never on pointer movement, so a block does not slide away from the cursor while it is
@@ -8382,14 +8400,14 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
 #### Hero button and progress chip
 
 The **hero** is the screen's single **Primary** button (28px) right after the summary line, so "how
-much" and "do it" read as one sentence: `Clean 12 ready · 6.0 GiB`. It acts on proven-ready items only.
+much" and "do it" read as one sentence: `Clean 12 ready · 6.0 GB`. It acts on proven-ready items only.
 
 - **Idle:** Primary, `Recycle` icon, label with count and bytes.
 - **Nothing to clean:** disabled (`opacity: 0.4`), label stays **"Nothing to clean"** — the state is
   readable, not just dimmed.
 - **First-cycle state:** the hero is a **Soft** button, because "Enable autopilot" owns the one Primary.
 - **Running** (the hero stops being a button): a **progress chip** — Badge Accent triple at button height
-  (28px): static `--accent` dot (6px, 3px `--accent-soft` halo), `Cleaning 3/12 · 1.4 GiB freed`, a
+  (28px): static `--accent` dot (6px, 3px `--accent-soft` halo), `Cleaning 3/12 · 1.4 GB freed`, a
   **40 × 4px determinate bar** (`--accent` on `--border-2`, radius full) counting items, not bytes.
   `aria-live="polite"`, announcing at most once per finished item. The chip has no control: the engine
   has no cancel, so "Cancel after current" is **not drawn**.
@@ -8410,9 +8428,14 @@ note says so); then the actions, stacked,
 **Keep** (Ghost), **Ask for an opinion** (Soft, `sparkles`) — and, once the block has an opinion, an **Opinion** section above the
 actions (see "Opinion chip"). A Ready to clean block's panel offers
 "Clean now" only. An orphan-volume block shows its project name and "no known worktree".
-A failed item's panel adds **what ran** — a step list (✓ done, ✗ failed in `--red`, dashed todo) for the
-engine's steps (stack stopped · containers removed · volumes · archive · deps · checkout · branch), and
-**Retry / Keep / Remove**. The raw error repeats the docker text truncated to 2 lines with a copy action.
+A failed or refused item's panel adds **what happened** — never a reconstructed history. The engine reports
+only the step an item halted at and why, so the panel says **"Stopped at {step}: {reason}"** (the engine's
+own text clamped to 2 lines, with a copy action), or, for a refusal made before anything ran (the
+pre-flight re-probe), **"Nothing was changed: {sentence}"**. It never draws ✓ for a step it was not told
+ran, and it never shows volumes as removed — a worktree clean never removes one. Actions: **Retry**,
+**Keep**, **Remove**. **Retry follows the item's _current_ bucket**: a ready item re-opens the ready
+(bulk-style) confirm for that one id, a review item the review confirm — never a dialog that would send
+nothing.
 A pnpm hardlinked store can show deps that free nothing: the panel carries the engine's note.
 
 #### Needs review list
@@ -8455,9 +8478,14 @@ Needs review item, orphan volumes included) and the block panel's button (that o
 #### Bulk-clean and remove-selected dialog (`CleanupBulkConfirmDialog.vue`)
 
 Dialog anatomy (radius 10, `--border-2`, `--shadow-pop`) at `min(720px, 90vw)`, backdrop
-`rgba(0,0,0,0.55)`. Header: title, subtitle. Summary line (11px `--text-3`). A **bounded list** at
-`--fv-rail-list-max-h` (280px, `.scrollable`, focusable, arrow-key scroll) of rows `20px 1fr 64px`:
-bucket icon, `repo › worktree` + branch (11px mono `--text-4`), the **removal chips**, size right.
+`rgba(0,0,0,0.55)`. Header: title, subtitle and a **`×` close button** (Ghost icon-only, `aria-label` "Close", same as Cancel).
+Under it the **breakdown line** (11px/16px `--text-3`): "{n} stacks stopped · {m} dependency folders removed ·
+{k} worktrees trashed" (and "· {v} volumes deleted" only when orphan-volume rows are in the list — a
+worktree's volumes are never counted). A **bounded list** at `--fv-rail-list-max-h` (280px, `.scrollable`,
+focusable, arrow-key scroll) of rows `20px 1fr 64px`: bucket icon, **mono row title** `repo › worktree`
+(12.5px mono `--text`), a mono sub-line `branch {branch}` (11px `--text-4`), the **removal chips** (each with
+a 10px icon: `container` stack, `package-minus` deps, `folder` checkout, `git-branch` branch, `database`
+volume), size right.
 
 - **Removal chip** (`.wchip`): Badge Default geometry at 10.5px/14px, radius 3, listing what the row takes
   with it — stack · deps · checkout · branch for a worktree; **a worktree's volumes are never listed**
@@ -8468,22 +8496,33 @@ bucket icon, `repo › worktree` + branch (11px mono `--text-4`), the **removal 
   orphan volume adds _Volumes cannot be restored_ in `--warning`. Remove-selected variant: each row also carries its
   one-sentence reason and, when it has one, its **opinion chip** with the evidence line under it; a stronger line names how many picked worktrees hold work that no other branch has,
   and says their code stays recoverable from archive refs and the OS trash.
-- **Footer:** total (12.5px/500) left; **Cancel** (Ghost) and the confirm. Confirm is **Success** for
-  proven-ready items (positive bulk reclaim, like today's Sweep), **Danger** for remove-selected (it can include
-  code that exists nowhere else but an archive ref). Confirming calls `gc:clean(ids, { expected })` for
-  proven-ready items and `gc:clean(ids, { confirmed, expected })` for remove-selected (each id confirmed
-  on its own, each with the facts the row showed) and closes the dialog at once.
+- **Footer:** total (12.5px/500) left, reading **"{n} ready · {size}"** for the ready dialog and
+  **"{n} selected · {size}"** for remove-selected; **Cancel** (Ghost) and the confirm, which carries a leading
+  icon (`Recycle` on Success, `Trash2` on Danger). Confirm is **Success** for proven-ready items (positive
+  bulk reclaim, like today's Sweep), **Danger** for remove-selected (it can include code that exists nowhere
+  else but an archive ref). Confirming calls `gc:clean(ids, { expected })` for ready items and
+  `gc:clean(ids, { confirmed, expected })` for review items, then closes the dialog at once.
+- **`expected` is captured when the dialog opens**, not when it is confirmed. If the data behind an open
+  dialog changes (an autopilot cycle or a job refresh), the dialog shows "This changed since you opened it —
+  review again" in `--warning` and **disables the confirm until it is reopened**; the confirm never sends facts
+  newer than the ones the operator was shown. A rejected `gc:clean` call shows an error toast.
 - **Keyboard:** Esc or Cancel closes; **focus starts on Cancel, never the confirm button**; Tab cycles
   inside (focus trap); ↩ activates only the focused control.
 
 #### Docker card
 
 Its own region under the map (`.dk`, `border-border`, radius 7, `bg-surface`): header `container` icon,
-title, and an **Inspect stacks** text link (11px/500 `--text-2`, right-aligned) that opens the Containers
-inspector — the only in-app door to it now that the Containers footer pill is gone. (The mockup's "{n} stacks in use, never touched" note is omitted: the snapshot carries no such count.) Three blocks (Ready triple, `min-width: 200px`): **build
+title, a **subtitle** (11px `--text-4`: "runs each cycle · {size}", what the next cycle could reclaim from
+Docker) and an **Inspect stacks** text link (11px/500 `--text-2`, right-aligned) that opens the Containers
+inspector — the only in-app door to it now that the Containers footer pill is gone. (The mockup's "{n} stacks in use, never touched" note is omitted: the snapshot carries no such count.) Under the header, a 4px **split bar** (radius full, gap 2px) divides that reclaimable total by kind —
+build cache, dangling images (Ready green) and orphan volumes (Needs review warning); it is omitted when
+every figure is zero or unavailable. (The mockup's per-block "older than N days vs kept" bar needs the cache's
+total size, which the snapshot does not carry.) Three blocks (Ready triple for cache and images, **Needs
+review triple for orphan volumes**, `min-width: 200px`): **build
 cache**, **dangling images**, **orphan volumes** — name, size right, a one-line sub, a toggle
 (`ToggleSwitch`) on the cache and image blocks, both bound to `categories.dockerCache`. The orphan-volumes
-block has **no switch** — a volume is never removed automatically — and carries the Warning badge "can't be
+block has **no switch** — a volume is never removed automatically — and is drawn in the **review (warning) colours** because it is the item the operator must act on, not one the
+autopilot takes; it carries the Warning badge "can't be
 restored", the project name of each volume and the line "Never removed automatically. Remove each one
 yourself in Needs review." The snapshot's `docker` figures feed the two blocks:
 `buildCacheReclaimableBytes` ("{size} reclaimable") and `danglingImages` ("{n} images · {size}"); a `null`
@@ -8512,11 +8551,11 @@ One `Recycle` pill (12px, stroke 1.6) in the footer's right cluster, before the 
 `padding: 0 8px`, `gap: 6px`, 11px, radius `--radius-sm`. It replaces both old pills. Click **toggles the
 Cleanup takeover** (`ui.toggleCleanup()`); while open it inks `--accent` and carries `aria-pressed`.
 
-| State     | Content                                                    | Ink                                         |
-| --------- | ---------------------------------------------------------- | ------------------------------------------- |
-| idle      | `Recycle` icon + `17 GiB` (reclaimable total)              | `--text-2`, hover `--text` on `--surface-2` |
-| running   | `Recycle` icon + accent dot + `Cleaning 3/12`              | `--accent`                                  |
-| attention | `Recycle` icon + `1 needs review` (items that failed last) | `--warning`                                 |
+| State     | Content                                                          | Ink                                         |
+| --------- | ---------------------------------------------------------------- | ------------------------------------------- |
+| idle      | `Recycle` icon + `17 GB` (reclaimable total)                     | `--text-2`, hover `--text` on `--surface-2` |
+| running   | `Recycle` icon + accent dot + `Cleaning 3/12`                    | `--accent`                                  |
+| attention | `Recycle` icon + `1 needs review` (items that need the operator) | `--warning`                                 |
 
 `aria-live="polite"`, one announcement per finished item. Hidden only when there is nothing to reclaim,
 nothing running and nothing needing attention. An optional hover popover (the footer popover anatomy,
@@ -8531,8 +8570,47 @@ The documented Toast with an optional description and an action link — no new 
 | all ok          | `success` | `Freed {size} · {n} ready items cleaned` | "View journal" |
 | partial failure | `warning` | `{n} cleaned · {m} needs review`         | "Review"       |
 
+The count behind **attention** is the items that need operator action: a failed item, or a refusal the
+operator did not choose. A refusal that is the operator's own setting (`kept`, `never-clean`) is not counted.
+
 A toast shows only while the window is focused; otherwise the native notification applies (see
 "Notifications"). Every run lands in the Activity bell and the journal.
+
+#### Units
+
+Every Cleanup surface — summary line, hero, chip, split bar, legend, map, panel, dialog, Docker card, toasts,
+footer pill and Settings — formats bytes with the app's `formatBytes`, which is **decimal** (`6.44 GB`,
+`715 MB`). The mockup and the spec write GiB; that is its sample data's unit, not the screen's. One system on
+every surface, so two numbers on the same screen can be compared by eye. A native notification or
+Activity line built in the main process is the one place a different unit could slip in; it must use the
+same decimal system (tracked as a follow-up for the engine, `gc-cycle.ts` still prints binary units).
+
+#### Type and spacing in the Cleanup files
+
+The Cleanup surfaces use the §3 scale through Tailwind `text-*` tokens declared in `main.css`
+(`text-eyebrow` 10.5/14 + the `.eyebrow` class, `text-caption` 11/16, `text-ui` 12.5/18, `text-body` 13/20,
+`text-subtitle` 15/22, `text-title` 20/28 with `tracking-title`), spacing on the 4px grid with the 2px half
+step Tailwind v4 allows (`h-5.5` = 22px, `py-0.75` = 3px), and the 3px radius as `rounded-xs`. Text that was
+set at 10, 11.5 or 12px snaps to the nearest scale step (`caption`, `ui`). The layout dimensions of §4 are
+`--gc-panel-w` (side panel 320px), `--gc-canvas-h` / `--gc-canvas-h-drilled` (treemap canvas 372 / 520px) and
+`--gc-dialog-w` (`min(720px, 90vw)`) in `themes.css`, used as `w-(--gc-panel-w)`. The dialog backdrop
+`rgba(0, 0, 0, 0.55)` is the documented one every dialog uses.
+
+**Documented exceptions** (every raw size left in the files S5 created, listed once):
+
+- **List-row column templates** — `grid-cols-[20px_1fr_64px]` (bulk dialog rows) and the three review/list
+  row grids (`20px` icon · fixed name/branch column · flexible reason · size). They are per-list layouts, not
+  reusable steps; a column that is a token elsewhere stays a token.
+- **Treemap geometry** — `REGION_HEAD` (28px) and `GROUP_HEAD` (22px) header heights and the canvas heights
+  (372 / 520px, mirroring `--gc-canvas-h*`) are layout constants of the squarified canvas, applied as inline
+  `height`/`inset` because block rectangles are computed from data. The canvas heights are asserted against the
+  tokens in `tests/cleanup-treemap.test.ts`.
+- **The busy dot halo** — `shadow-[0_0_0_3px_var(--color-accent-soft)]` is the 3px `--accent-soft` halo of the
+  6px static accent dot (see Motion below).
+- **`max-w-[55%]`** on the repo label is a proportion, not a size.
+- **Settings → Cleanup rows** (`CleanupSettingsPane.vue`) keep the shared Settings-pane anatomy — inline 12px
+  labels, 11.5px hints, 12/16px gaps — that every Settings tab uses (`SettingsDialog.vue`). Migrating the
+  Settings family to tokens is one change for all panes, not a Cleanup-only one.
 
 #### Motion
 
@@ -8563,10 +8641,9 @@ that belong to no worktree) and states that worktree-bound stacks are cleaned by
 #### Entity map
 
 `CleanupView.vue` (shell) · `CleanupTreemap.vue` · `CleanupBlockPanel.vue` · `CleanupHeroButton.vue` ·
-`CleanupSelectionBar.vue` · `CleanupDockerCard.vue` · `CleanupReviewList.vue` ·
-`CleanupFirstCycleBanner.vue` · `CleanupBulkConfirmDialog.vue` · `CleanupOtherItems.vue` ·
-`CleanupOpinionChip.vue` · `stores/gc.ts` · `lib/gc-treemap.ts` · `lib/gc-model.ts` · `lib/gc-jobs.ts` ·
-`lib/gc-opinion.ts`.
+`CleanupSelectionBar.vue` · `CleanupDockerCard.vue` · `CleanupReviewList.vue` · `CleanupListView.vue` ·
+`CleanupSplitBar.vue` · `CleanupLegend.vue` · `CleanupFirstCycleBanner.vue` · `CleanupBulkConfirmDialog.vue` · `CleanupOtherItems.vue` ·
+`CleanupOpinionChip.vue` · `lib/gc-opinion.ts` · `stores/gc.ts` · `lib/gc-treemap.ts` · `lib/gc-model.ts` · `lib/gc-jobs.ts`.
 
 ### Containers takeover (ContainersView.vue)
 
@@ -8816,7 +8893,7 @@ rounded-sm`), and **Scan again**.
 
 ### Containers footer pill (StatusFooter.vue)
 
-> **Superseded by T443** — the Containers pill is gone; the single Cleanup pill (see "Workspace GC — unified Cleanup / Footer pill") carries the needs-you count. Containers is still reachable from the Topbar/FolderMenu entry points.
+> **Superseded by T443** — the Containers pill is gone; the single Cleanup pill (see "Workspace GC — unified Cleanup / Footer pill") carries the review count. Containers has exactly two entry points now: **Cleanup → Docker card → Inspect stacks**, and the new-zombie notification.
 
 Right cluster, next to the Cleanup pill, same anatomy: a Lucide `Container` icon (12px,
 stroke 1.6), `$t('containers.footerPill')`, and a count badge (`bg-green-soft text-green
@@ -11131,6 +11208,12 @@ codebase is a bug to fix.
   /* Folder View scroll caps (§6 "Folder View → Height caps") */
   --fv-fanout-max-h: 380px;
   --fv-rail-list-max-h: 280px;
+
+  /* Cleanup layout dimensions (§4, §6 "Workspace GC — unified Cleanup") */
+  --gc-panel-w: 320px;
+  --gc-canvas-h: 372px;
+  --gc-canvas-h-drilled: 520px;
+  --gc-dialog-w: min(720px, 90vw);
 
   /* motion */
   --ease: cubic-bezier(0.16, 1, 0.3, 1);

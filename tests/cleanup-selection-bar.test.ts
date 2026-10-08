@@ -4,8 +4,11 @@ import { mount } from '@vue/test-utils'
 import CleanupSelectionBar from '../src/renderer/src/components/CleanupSelectionBar.vue'
 import { i18n } from '@renderer/i18n'
 
-const mountBar = (count: number, bytes = 3_466_000_000, asking = false) =>
-  mount(CleanupSelectionBar, { props: { count, bytes, asking }, global: { plugins: [i18n] } })
+const mountBar = (count: number, bytes = 3_466_000_000, canKeep = true, asking = false) =>
+  mount(CleanupSelectionBar, {
+    props: { count, bytes, canKeep, asking },
+    global: { plugins: [i18n] }
+  })
 
 describe('CleanupSelectionBar', () => {
   it('renders nothing with an empty selection', () => {
@@ -49,7 +52,7 @@ describe('CleanupSelectionBar', () => {
   })
 
   it('Ask for an opinion is disabled while the whole selection is already being asked about', async () => {
-    const w = mountBar(2, 1, true)
+    const w = mountBar(2, 1, true, true)
     const ask = w.get('[data-testid="sel-ask"]')
     expect((ask.element as HTMLButtonElement).disabled).toBe(true)
     await ask.trigger('click')
@@ -58,5 +61,16 @@ describe('CleanupSelectionBar', () => {
 
   it('hints at Shift+click for adding more', () => {
     expect(mountBar(1).get('kbd').text()).toBe('⇧')
+  })
+})
+
+describe('CleanupSelectionBar — Keep only when something can be kept', () => {
+  it('hides Keep when the selection holds no worktree (orphan volumes have no Keep)', () => {
+    const w = mountBar(2, 3_000_000, false)
+    expect(w.find('[data-testid="sel-keep"]').exists()).toBe(false)
+    expect(w.find('[data-testid="sel-remove"]').exists()).toBe(true)
+  })
+  it('shows Keep by default', () => {
+    expect(mountBar(1).find('[data-testid="sel-keep"]').exists()).toBe(true)
   })
 })

@@ -31,6 +31,7 @@ import { newlyHarvestable, type ReaperSnapshot } from './scan-core'
 import type { ReapItem } from './reaper-core'
 import { cleanItem, sweep, type CleanResult, type ExecutorDeps } from './executor-core'
 import { appendTombstone, readJournal, type Tombstone } from './journal'
+import { removeWorktreeAdmin } from './worktree-admin-shell'
 import { archiveTip, archiveWip } from './archive-shell'
 import { defaultPrefs, normalizePrefs, readPrefs, writePrefs, type ReaperPrefs } from './prefs'
 import {
@@ -84,13 +85,15 @@ function findItem(itemId: string): ReapItem | undefined {
  * after a successful `trash-folder`, so that should never happen in practice.
  */
 export function buildDeps(getWindow: () => BrowserWindow | null): ExecutorDeps {
+  const git = async (repo: string, args: string[]): Promise<string> =>
+    (await runFile('git', ['-C', repo, ...args], GIT_OPTS)).stdout
   return {
     // BUG-75: the executor re-probes TRACKED dirtiness only. `isWorktreeDirty`
     // stays wired to `worktree:remove`, whose stricter gate this must not touch.
     probeStatus: probeWorktreeStatus,
     hasUnpushed: hasUnpushedCommits,
     trash: (p) => shell.trashItem(p),
-    git: async (repo, args) => (await runFile('git', ['-C', repo, ...args], GIT_OPTS)).stdout,
+    git,
     resolveSha: async (repo, rev) => {
       try {
         return (
@@ -102,6 +105,7 @@ export function buildDeps(getWindow: () => BrowserWindow | null): ExecutorDeps {
     },
     archiveTip,
     archiveWip,
+    removeWorktreeAdmin: (repo, wt) => removeWorktreeAdmin(repo, wt, git),
     detachSidebar: async (p) => {
       await removeGhostFolder(getWindow, p)
     },

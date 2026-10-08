@@ -37,6 +37,7 @@ function bundle(name: string, over: Partial<WorktreeBundle> = {}): WorktreeBundl
     neverClean: false,
     isMainCheckout: false,
     pathsResolved: true,
+    nestedWorktrees: [],
     bucket: 'ready',
     reason: null,
     ...over
@@ -646,5 +647,176 @@ describe('T321 definition of done', () => {
     expect(f.calls).not.toContain('removeVolumes')
     expect(f.calls).toContain('removeContainers')
     expect(f.calls).toContain('cleanGit')
+  })
+})
+
+// ---- runBundle never rejects (delta 6, F3) ---------------------------------------------
+
+describe('runBundle never rejects, whatever an op answers (delta 6, F3)', () => {
+  const garbage = <T>(value: unknown): T => value as T
+
+  it.each([undefined, null, 'yes', 1, {}, { ok: 'true' }, { ok: 1 }])(
+    'a reprobe answering %j halts that item at reprobe as probe-failed',
+    async (answer) => {
+      const f = fakeOps({ reprobe: async () => garbage(answer) })
+      const r = await runBundle(bundle('a'), f.ops, OPTS)
+      expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'probe-failed' })
+      expect(r.freedBytes).toBe(0)
+      expect(f.calls).toEqual(['reprobe'])
+    }
+  )
+
+  it('a refusing reprobe with no reason still names an error', async () => {
+    const f = fakeOps({ reprobe: async () => garbage({ ok: false }) })
+    const r = await runBundle(bundle('a'), f.ops, OPTS)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'probe-failed' })
+  })
+
+  it('runBatch: a reprobe answering undefined halts item 1, and item 2 still runs and succeeds', async () => {
+    const f = fakeOps({
+      reprobe: async (b) => (b.item.id.endsWith('-a') ? garbage(undefined) : { ok: true })
+    })
+    const results = await runBatch([bundle('a'), bundle('b')], f.ops, OPTS)
+    expect(results[0]).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'probe-failed' })
+    expect(results[1]).toMatchObject({ ok: true, haltedAt: null })
+    expect(f.calls.filter((c) => c === 'cleanGit')).toHaveLength(1)
+  })
+
+  it.each([undefined, null, 'yes', { ok: 'true' }, { ok: 1 }])(
+    'a recheck answering %j before cleanGit halts at archive, and cleanGit never runs',
+    async (answer) => {
+      const f = fakeOps({ recheck: passesOnce(async () => garbage(answer)) })
+      const r = await runBundle(bundle('a'), f.ops, OPTS)
+      expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'changed-mid-run' })
+      expect(f.calls).not.toContain('cleanGit')
+    }
+  )
+
+  it.each([undefined, { ok: 'true' }])(
+    'a recheck answering %j before drop-deps halts there, and dropDeps never runs',
+    async (answer) => {
+      const f = fakeOps({ recheck: async () => garbage(answer) })
+      const r = await runBundle(bundle('a'), f.ops, OPTS)
+      expect(r).toMatchObject({ ok: false, haltedAt: 'drop-deps', error: 'changed-mid-run' })
+      expect(f.calls).not.toContain('dropDeps')
+      expect(f.calls).not.toContain('cleanGit')
+    }
+  )
+
+  it.each([5, 'x', { skipped: 'x' }, { skipped: [null] }, { skipped: [{ name: 1 }] }])(
+    'a removeVolumes answering %j halts at rm-volumes instead of throwing',
+    async (answer) => {
+      const f = fakeOps({ removeVolumes: async () => garbage(answer) })
+      const r = await runBundle(bundle('a'), f.ops, OPTS)
+      expect(r).toMatchObject({ ok: false, haltedAt: 'rm-volumes' })
+      expect(typeof r.error).toBe('string')
+      expect(f.calls).not.toContain('dropDeps')
+      expect(f.calls).not.toContain('cleanGit')
+    }
+  )
+
+  it.each([undefined, 'many', NaN, -1, Infinity])(
+    'a dropDeps answering %s halts at drop-deps, and cleanGit never runs',
+    async (answer) => {
+      const f = fakeOps({ dropDeps: async () => garbage(answer) })
+      const r = await runBundle(bundle('a'), f.ops, OPTS)
+      expect(r).toMatchObject({ ok: false, haltedAt: 'drop-deps', freedBytes: 0 })
+      expect(f.calls).not.toContain('cleanGit')
+    }
+  )
+
+  it('an op that is not a function halts that item', async () => {
+    const f = fakeOps()
+    const ops = { ...f.ops, stopStacks: garbage<GcOps['stopStacks']>(undefined) }
+    const r = await runBundle(bundle('a'), ops, OPTS)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'stop-stack' })
+    expect(f.calls).not.toContain('cleanGit')
+  })
+
+  it.each<[string, unknown]>([
+    [
+      'a bundle with no item',
+      (() => {
+        const { item: _omit, ...rest } = bundle('a')
+        return rest
+      })()
+    ],
+    ['a bundle that is undefined', undefined],
+    ['a bundle that is null', null],
+    ['a bundle whose stack list is missing', { ...bundle('a'), sharedStackIds: undefined }]
+  ])('%s returns a halted result instead of rejecting', async (_label, b) => {
+    const f = fakeOps()
+    const r = await runBundle(garbage<WorktreeBundle>(b), f.ops, OPTS)
+    expect(r).toMatchObject({
+      ok: false,
+      haltedAt: 'reprobe',
+      error: 'probe-failed',
+      freedBytes: 0
+    })
+    expect(r.id).toBe((b as WorktreeBundle | null)?.item?.id ?? 'unknown')
+    expect(f.calls).toEqual([])
+  })
+
+  it('runBatch: a malformed bundle never stops the ones after it', async () => {
+    const f = fakeOps()
+    const results = await runBatch([garbage<WorktreeBundle>(undefined), bundle('b')], f.ops, OPTS)
+    expect(results[0]).toMatchObject({ id: 'unknown', ok: false, error: 'probe-failed' })
+    expect(results[1]).toMatchObject({ ok: true, haltedAt: null })
+  })
+})
+
+// ---- a nested worktree refuses even a confirmed review (delta 6, F1 concern 1) -----------
+
+describe('runBundle refuses a bundle with a nested worktree (delta 6, F1)', () => {
+  // The reprobe sees only this repo's `git worktree list`: a nested folder known only from
+  // knownFolders (a worktree of another repo) would pass it, so the bundle's own list
+  // refuses up front, whatever the operator confirmed.
+  const confirm = { removeVolumes: true, confirmReview: true }
+
+  it.each(['ready', 'review'] as const)(
+    'a %s bundle listing a nested worktree is refused with zero ops, even confirmed',
+    async (bucket) => {
+      const f = fakeOps()
+      const r = await runBundle(bundle('a', { bucket, nestedWorktrees: ['x'] }), f.ops, confirm)
+      expect(r).toMatchObject({
+        ok: false,
+        haltedAt: 'reprobe',
+        error: 'nested-worktree',
+        freedBytes: 0
+      })
+      expect(f.calls).toEqual([])
+    }
+  )
+
+  it.each<[string, unknown]>([
+    ['missing', undefined],
+    ['null', null],
+    ['not an array', 'x']
+  ])('a bundle whose list is %s is refused the same way', async (_label, value) => {
+    const f = fakeOps()
+    const b = bundle('a', { bucket: 'review' })
+    if (value === undefined) delete (b as Partial<WorktreeBundle>).nestedWorktrees
+    else (b as unknown as Record<string, unknown>).nestedWorktrees = value
+    const r = await runBundle(b, f.ops, confirm)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'nested-worktree' })
+    expect(f.calls).toEqual([])
+  })
+
+  it('an empty list still proceeds', async () => {
+    const f = fakeOps()
+    const r = await runBundle(bundle('a', { nestedWorktrees: [] }), f.ops, OPTS)
+    expect(r).toMatchObject({ ok: true, haltedAt: null })
+    expect(f.calls).toEqual(FULL)
+  })
+
+  it('runBatch continues past a refused bundle', async () => {
+    const f = fakeOps()
+    const results = await runBatch(
+      [bundle('a', { nestedWorktrees: ['x'] }), bundle('b')],
+      f.ops,
+      confirm
+    )
+    expect(results[0]).toMatchObject({ ok: false, error: 'nested-worktree' })
+    expect(results[1]).toMatchObject({ ok: true, haltedAt: null })
   })
 })

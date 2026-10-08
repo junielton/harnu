@@ -335,7 +335,7 @@ const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
   <div data-testid="treemap" :aria-label="t('cleanup.gc.map.canvasLabel')" role="group">
     <p
       v-if="!model.hasBytes"
-      class="rounded border border-border bg-surface px-4 py-6 text-center text-[12px] text-text-3"
+      class="rounded border border-border bg-surface px-4 py-6 text-center text-ui text-text-3"
       data-testid="treemap-no-bytes"
     >
       {{ t('cleanup.gc.map.noBytes') }}
@@ -346,14 +346,14 @@ const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
       <div v-if="drillRepo" class="mb-2 flex items-center gap-3" data-testid="treemap-crumb">
         <button
           type="button"
-          class="inline-flex items-center gap-1 rounded-sm border border-border bg-transparent px-2.5 py-1 text-[12px] font-medium text-text-2 transition hover:bg-surface-2"
+          class="inline-flex items-center gap-1 rounded-sm border border-border bg-transparent px-2.5 py-1 text-ui font-medium text-text-2 transition hover:bg-surface-2"
           data-testid="treemap-back"
           @click="emit('drill', null)"
         >
           <ChevronLeft :size="13" :stroke-width="1.8" />
           {{ t('cleanup.gc.map.drillBack') }}
         </button>
-        <span class="text-[12.5px] font-semibold text-text-2">{{ drilledRegion?.label }}</span>
+        <span class="text-ui font-semibold text-text-2">{{ drilledRegion?.label }}</span>
         <SegmentedControl
           v-model="bucketFilter"
           class="ml-auto"
@@ -363,7 +363,7 @@ const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
         />
       </div>
 
-      <p v-if="layout.length === 0" class="py-8 text-center text-[12px] text-text-3">
+      <p v-if="layout.length === 0" class="py-8 text-center text-ui text-text-3">
         {{ t('cleanup.gc.map.empty') }}
       </p>
 
@@ -386,14 +386,15 @@ const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
           >
             <button
               type="button"
-              class="min-w-0 truncate text-[12.5px] font-semibold text-text-2 transition hover:text-text"
+              class="max-w-[55%] shrink-0 truncate font-mono text-ui font-semibold text-text-2 transition hover:text-text"
               :aria-label="t('cleanup.gc.map.drillRepo', { repo: r.region.label })"
+              :title="r.region.repoPath"
               data-testid="treemap-repo"
               @click="emit('drill', r.region.repoPath)"
             >
-              {{ r.region.label }}
+              {{ r.region.displayLabel }}
             </button>
-            <span class="tm-rmeta shrink-0 text-[11px] text-text-4">
+            <span class="tm-rmeta min-w-0 truncate text-caption text-text-4">
               {{
                 t(
                   'cleanup.gc.map.repoMeta',
@@ -406,7 +407,7 @@ const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
               <template v-for="b in BUCKETS" :key="b">
                 <span
                   v-if="r.region.counts[b] > 0"
-                  class="tm-badge inline-flex items-center gap-1 rounded-full border px-2 text-[11px] leading-4"
+                  class="tm-badge inline-flex items-center gap-1 rounded-full border px-2 text-caption"
                   :class="{
                     'border-green-line bg-green-soft text-green': b === 'ready',
                     'border-warning-line bg-warning-soft text-warning': b === 'review',
@@ -422,7 +423,7 @@ const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
               <template v-if="r.region.counts.review > 0">
                 <button
                   type="button"
-                  class="tm-sel-label ml-1 text-[11px] text-text-2 transition hover:text-text"
+                  class="tm-sel-label ml-1 text-caption text-text-2 transition hover:text-text"
                   :aria-label="t('cleanup.gc.map.selectAllAria', { repo: r.region.label })"
                   data-testid="treemap-select-all"
                   @click="emit('selectAllInRepo', r.region.repoPath)"
@@ -431,7 +432,7 @@ const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
                 </button>
                 <button
                   type="button"
-                  class="tm-sel-icon h-[22px] w-[22px] items-center justify-center rounded-sm text-text-2 transition hover:bg-surface-2"
+                  class="tm-sel-icon h-5.5 w-5.5 items-center justify-center rounded-sm text-text-2 transition hover:bg-surface-2"
                   :aria-label="t('cleanup.gc.map.selectAllAria', { repo: r.region.label })"
                   :title="t('cleanup.gc.map.selectAll')"
                   data-testid="treemap-select-all-icon"
@@ -458,10 +459,10 @@ const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
                   :style="{ height: GROUP_HEAD + 'px' }"
                 >
                   <component :is="BUCKET_ICON[g.bucket]" :size="12" :stroke-width="1.7" />
-                  <span class="text-[10.5px] font-medium uppercase tracking-[0.07em]">
+                  <span class="eyebrow">
                     {{ t(`cleanup.gc.bucket.header.${g.bucket}`) }}
                   </span>
-                  <span class="ml-auto text-[11px] text-text-3">{{ g.count }}</span>
+                  <span class="ml-auto text-caption text-text-3">{{ g.count }}</span>
                 </div>
                 <div class="relative flex-1">
                   <div v-for="c in g.cells" :key="c.key" class="tm-cell absolute" :style="c.style">
@@ -549,7 +550,7 @@ const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
                       </span>
                       <span
                         v-if="blockState(c.block.id) === 'done'"
-                        class="tm-b-freed inline-flex items-center gap-[3px] text-[11px] text-text-3"
+                        class="tm-b-freed inline-flex items-center gap-0.75 text-caption text-text-3"
                         data-testid="treemap-freed"
                       >
                         <Check :size="10" :stroke-width="2" />{{ t('cleanup.gc.map.freed') }}

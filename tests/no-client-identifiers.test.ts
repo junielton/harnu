@@ -95,6 +95,8 @@ const ALLOWED_LOWER_PREFIXES = [
   // names, not tracker keys.
   'at',
   'rv',
+  // `pt`: a Tailwind padding utility (`pt-18`), not a tracker key.
+  'pt',
   'agent',
   'agents',
   'argv',

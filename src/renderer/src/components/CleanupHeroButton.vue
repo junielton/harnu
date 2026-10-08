@@ -34,7 +34,7 @@ const chipLabel = computed(() =>
     : ''
 )
 
-/** The bar counts items, not bytes: `3/12` can be 1.4 GiB or 4 GiB. */
+/** The bar counts items, not bytes: `3/12` can be 1.4 GB or 4 GB. */
 const pct = computed(() => {
   if (props.hero.kind !== 'running' || props.hero.total <= 0) return 0
   return Math.min(100, Math.round((props.hero.done / props.hero.total) * 100))
@@ -63,7 +63,7 @@ const pct = computed(() => {
     role="status"
     aria-live="polite"
     data-testid="hero-chip"
-    class="inline-flex h-7 shrink-0 items-center gap-2 whitespace-nowrap rounded-sm border border-accent-line bg-accent-soft px-3 text-[12.5px] font-medium text-accent"
+    class="inline-flex h-7 shrink-0 items-center gap-2 whitespace-nowrap rounded-sm border border-accent-line bg-accent-soft px-3 text-ui font-medium text-accent"
   >
     <span
       class="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_0_3px_var(--color-accent-soft)]"

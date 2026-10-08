@@ -10,7 +10,8 @@ import {
   failureFor,
   pillState,
   runningJob,
-  stepProgress,
+  haltOf,
+  needsAction,
   CHANGED_SINCE_CONFIRM,
   REFUSAL_CODES,
   refusalOf
@@ -187,7 +188,7 @@ describe('doneSummary', () => {
   })
 })
 
-describe('failureFor and stepProgress', () => {
+describe('failureFor and haltOf', () => {
   it('finds the failure of an item with the step it halted at', () => {
     const s = applyDone(emptyJobs(), done({ results: [bad('b', 'rm-volumes', 'volume in use')] }))
     expect(failureFor(s, 'b')).toEqual({
@@ -226,18 +227,113 @@ describe('failureFor and stepProgress', () => {
     expect(refusalOf({ ok: true, error: 'kept' })).toBeNull()
   })
 
-  it('lists which steps ran, which failed and which never started', () => {
-    const steps = stepProgress('rm-volumes')
-    const by = Object.fromEntries(steps.map((x) => [x.step, x.state]))
-    expect(by['stop-stack']).toBe('ok')
-    expect(by['rm-containers']).toBe('ok')
-    expect(by['rm-volumes']).toBe('failed')
-    expect(by['archive']).toBe('todo')
-    expect(by['trash']).toBe('todo')
+  it('reports only the step the engine halted at — never a reconstructed history', () => {
+    const f = failureFor(
+      applyDone(emptyJobs(), done({ results: [bad('b', 'drop-deps', 'EBUSY: node_modules')] })),
+      'b'
+    )!
+    // Exactly the facts the engine gave: one step and its reason. No done-steps list, so "archive"
+    // can never read as done and no volume step exists to be shown.
+    expect(haltOf(f)).toEqual({
+      kind: 'stopped',
+      step: 'drop-deps',
+      error: 'EBUSY: node_modules',
+      refusal: null
+    })
   })
 
-  it('has nothing to say when the halt step is unknown', () => {
-    expect(stepProgress(null)).toEqual([])
+  it('a pre-flight halt with a code the engine documents is a refusal: nothing was changed', () => {
+    const f = failureFor(
+      applyDone(emptyJobs(), done({ results: [bad('b', 'reprobe', 'tip-unknown')] })),
+      'b'
+    )!
+    expect(haltOf(f)).toEqual({ kind: 'refused', refusal: 'tip-unknown' })
+  })
+
+  it('a pre-flight halt with free text (a thrown probe) still says nothing was changed', () => {
+    const f = failureFor(
+      applyDone(
+        emptyJobs(),
+        done({ results: [bad('b', 'reprobe', 'probe-failed: git exploded')] })
+      ),
+      'b'
+    )!
+    expect(haltOf(f)).toEqual({ kind: 'refused', refusal: 'probe-failed' })
+  })
+
+  it('a reason the engine reports mid-run is NOT "nothing was changed": earlier steps may have run', () => {
+    const f = failureFor(
+      applyDone(emptyJobs(), done({ results: [bad('b', 'drop-deps', 'changed-mid-run')] })),
+      'b'
+    )!
+    expect(haltOf(f)).toEqual({
+      kind: 'stopped',
+      step: 'drop-deps',
+      error: 'changed-mid-run',
+      refusal: 'changed-mid-run'
+    })
+  })
+
+  it('a refusal is reported as a refusal, not as a halted step', () => {
+    const f = failureFor(
+      applyDone(emptyJobs(), done({ results: [bad('b', 'reprobe', 'kept')] })),
+      'b'
+    )!
+    expect(haltOf(f)).toEqual({ kind: 'refused', refusal: 'kept' })
+  })
+
+  it('with no step at all there is nothing to say about where it stopped', () => {
+    expect(haltOf({ step: null, error: 'boom', refusal: null })).toEqual({
+      kind: 'unknown',
+      error: 'boom'
+    })
+  })
+
+  it('no longer exposes a per-step history (the engine does not report one)', async () => {
+    const mod = (await import('../src/renderer/src/lib/gc-jobs')) as Record<string, unknown>
+    expect('stepProgress' in mod).toBe(false)
+    expect('PIPELINE_STEPS' in mod).toBe(false)
+  })
+})
+
+describe('every code the engine can refuse with is known', () => {
+  it.each([
+    'tip-unknown',
+    'protected-now',
+    'changed-since-scan',
+    'grace-not-elapsed',
+    'not-ready',
+    'path-unresolved',
+    'stack-present',
+    'changed-mid-run',
+    'docker-unavailable',
+    'probe-failed',
+    'nested-worktree',
+    'shared-stack',
+    'head-moved',
+    'not-harvestable',
+    'session-open',
+    'unpushed',
+    'volume-in-use'
+  ])('%s', (code) => {
+    expect(REFUSAL_CODES).toContain(code)
+    expect(refusalOf({ ok: false, error: code })).toBe(code)
+  })
+
+  it('a probe-failed reason carries the engine text after the code and is still the probe-failed refusal', () => {
+    expect(refusalOf({ ok: false, error: 'probe-failed: ENOENT git' })).toBe('probe-failed')
+  })
+})
+
+describe('needsAction — what the attention pill counts', () => {
+  it("skips refusals that are the operator's own settings", () => {
+    expect(needsAction('kept')).toBe(false)
+    expect(needsAction('never-clean')).toBe(false)
+  })
+  it('counts every other refusal and every step failure', () => {
+    expect(needsAction('changed-since-confirm')).toBe(true)
+    expect(needsAction('docker-unavailable')).toBe(true)
+    expect(needsAction(null)).toBe(true)
   })
 })
 

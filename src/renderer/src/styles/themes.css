@@ -55,6 +55,12 @@
   --fv-fanout-max-h: 380px;
   --fv-rail-list-max-h: 280px;
 
+  /* Cleanup layout dimensions (design.md §4, "Workspace GC — unified Cleanup"). Theme-invariant. */
+  --gc-panel-w: 320px;
+  --gc-canvas-h: 372px;
+  --gc-canvas-h-drilled: 520px;
+  --gc-dialog-w: min(720px, 90vw);
+
   /* motion */
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
   --dur-fast: 100ms;

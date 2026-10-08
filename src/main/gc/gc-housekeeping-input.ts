@@ -3,33 +3,19 @@
 // never removes a volume outside a ready bundle). No I/O: the shell reads the files and
 // stats the paths, these functions interpret the results.
 
-import { statProvesGone, type VolumeFact } from '../containers/containers-core'
+import {
+  isInside,
+  normalizePath,
+  statProvesGone,
+  type VolumeFact
+} from '../containers/containers-core'
 import { normalizeComposeProjectName, type HousekeepingVolume } from './housekeeping-core'
+import { projectNamesFromFiles, readValue, type ProjectFile } from './gc-project-files'
 
 // ---- explicit compose project names -------------------------------------------------
 
 const ENV_LINE = /^\s*(?:export\s+)?COMPOSE_PROJECT_NAME\s*=\s*(.*)$/
 const NAME_LINE = /^name:\s*(.*)$/
-const INTERPOLATED_DEFAULT = /^\$\{[A-Za-z_][A-Za-z0-9_]*:?-([^}]*)\}$/
-
-/** Strips a trailing comment and surrounding quotes; null when the value cannot be resolved. */
-function readValue(raw: string): string | null {
-  let v = raw.trim()
-  const quote = v[0] === '"' || v[0] === "'" ? v[0] : null
-  if (quote) {
-    const end = v.indexOf(quote, 1)
-    v = end > 0 ? v.slice(1, end) : v.slice(1)
-  } else {
-    const hash = v.search(/\s#/)
-    if (hash >= 0) v = v.slice(0, hash)
-    v = v.trim()
-  }
-  if (v.includes('$')) {
-    const fallback = INTERPOLATED_DEFAULT.exec(v)?.[1]
-    return fallback ? fallback.trim() : null
-  }
-  return v
-}
 
 /**
  * The project names a folder pins itself: `COMPOSE_PROJECT_NAME` in its `.env` and the
@@ -51,18 +37,38 @@ export function explicitProjectNames(sources: { env?: string; compose?: string }
   return [...out]
 }
 
+/** What is read from one known folder to learn the project names it pins. */
+export interface ProjectSource {
+  path: string
+  /** The root `.env` and compose file, as one text each. */
+  env?: string
+  compose?: string
+  /** Every `.env` and compose file down to depth 3, from {@link collectProjectFiles}. */
+  files?: ProjectFile[]
+}
+
+/** The names a source pins, and whether one of them could not be resolved. */
+export function sourceProjectNames(source: ProjectSource): {
+  names: string[]
+  unresolved: boolean
+} {
+  const fromFiles = projectNamesFromFiles(source.files ?? [])
+  const names = new Set([...explicitProjectNames(source), ...fromFiles.names])
+  return { names: [...names], unresolved: fromFiles.unresolved }
+}
+
 /**
  * Explicit project names of every folder that still exists. A folder that is gone protects
  * nothing: its own volumes are exactly what an operator-confirmed run may remove.
  */
 export function protectedProjects(
-  folders: ReadonlyArray<{ path: string; env?: string; compose?: string }>,
+  folders: ReadonlyArray<ProjectSource>,
   dirExists: (path: string) => boolean
 ): Set<string> {
   const out = new Set<string>()
   for (const f of folders) {
     if (!dirExists(f.path)) continue
-    for (const name of explicitProjectNames(f)) out.add(name)
+    for (const name of sourceProjectNames(f).names) out.add(name)
   }
   return out
 }
@@ -157,9 +163,9 @@ export function orphanVolumeItems(
  * volume behind, where it shows up as an orphan for the operator to decide on.
  */
 export function volumeGuards(
-  folders: ReadonlyArray<{ path: string; env?: string; compose?: string }>,
+  folders: ReadonlyArray<ProjectSource>,
   dirExists: (path: string) => boolean
-): { knownFolders: string[]; protectedProjects: Set<string> } {
+): { knownFolders: string[]; protectedProjects: Set<string>; unresolved: boolean } {
   const existing = folders.filter((f) => dirExists(f.path))
   const names = protectedProjects(folders, dirExists)
   for (const f of existing) {
@@ -173,5 +179,57 @@ export function volumeGuards(
       if (trimmed) names.add(trimmed)
     }
   }
-  return { knownFolders: existing.map((f) => f.path), protectedProjects: names }
+  // A name some folder writes but we cannot resolve could be any project's: nothing is then
+  // provably foreign, and the orphan planner lists no volume at all until it is resolved.
+  const unresolved = existing.some((f) => sourceProjectNames(f).unresolved)
+  return { knownFolders: existing.map((f) => f.path), protectedProjects: names, unresolved }
+}
+
+/**
+ * Every path whose existence the gather must really check: the folders Harnu knows, the
+ * compose working dirs of the containers, and the folders cleaned worktrees ran from
+ * (`gc-left-volumes.json`). One left out reads as "exists" through {@link makeDirExists}, so
+ * a leftover volume would surface for review only by luck.
+ */
+export function existenceCandidates(sources: {
+  known: readonly string[]
+  workingDirs: readonly string[]
+  remembered: ReadonlyMap<string, readonly string[]>
+}): string[] {
+  return [
+    ...new Set([
+      ...sources.known,
+      ...sources.workingDirs,
+      ...[...sources.remembered.values()].flat()
+    ])
+  ]
+}
+
+/** The existence predicate over those paths: missing is gone, any other stat outcome exists. */
+export async function buildDirExists(
+  paths: Iterable<string>,
+  stat: (path: string) => Promise<unknown>
+): Promise<(path: string) => boolean> {
+  const { checked, existing } = await statExistence(paths, stat)
+  return makeDirExists(checked, existing)
+}
+
+/**
+ * The known folders the bundle builder may see. It treats every known folder strictly inside
+ * a bundle's path as a worktree nested in it (S2 delta 6), so a pinned or fleet subfolder such
+ * as `WT/api` would push its own worktree into review. Worktree roots and repo roots always
+ * go in (a worktree really nested in another is what the rule exists to find); any other
+ * folder goes in only when it lies outside every worktree. Compose project protection for the
+ * dropped subfolders already comes from `protectedProjects`, so nothing is lost.
+ */
+export function foldersForBundles(
+  known: readonly string[],
+  worktreePaths: readonly string[],
+  repoPaths: readonly string[]
+): string[] {
+  const platform = process.platform
+  const key = (p: string): string => normalizePath(p, platform)
+  const roots = worktreePaths.map(key)
+  const outside = known.filter((p) => !roots.some((r) => isInside(key(p), r)))
+  return [...new Set([...worktreePaths, ...repoPaths, ...outside])]
 }

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import CleanupBlockPanel from '../src/renderer/src/components/CleanupBlockPanel.vue'
 import { i18n } from '@renderer/i18n'
@@ -182,17 +182,48 @@ describe('CleanupBlockPanel — a failed item', () => {
   const failedBlock = () =>
     blockWith('review', {}, reviewReason('cleanup-failed', 'Cleanup stopped at step rm-volumes.'))
 
-  it('lists what ran, what failed and what never started', () => {
-    const w = mountPanel(failedBlock(), { failure: failure(), state: 'failed' })
-    const states = Object.fromEntries(
-      w
-        .findAll('[data-testid="panel-steps"] li')
-        .map((li) => [li.attributes('data-step'), li.attributes('data-state')])
+  it("says where it stopped, in the engine's own words — and invents no other step", () => {
+    const w = mountPanel(failedBlock(), {
+      failure: failure({ step: 'drop-deps', error: 'EBUSY: node_modules is in use' })
+    })
+    expect(w.get('[data-testid="panel-halt"]').text()).toContain(t('cleanup.gc.step.dropDeps'))
+    expect(w.get('[data-testid="panel-error"]').text()).toBe('EBUSY: node_modules is in use')
+    // No per-step history: "archive" is not claimed done, and no volume step appears at all.
+    expect(has(w, 'panel-steps')).toBe(false)
+    const text = w.text()
+    expect(text).not.toContain(t('cleanup.gc.step.archive'))
+    expect(text).not.toContain(t('cleanup.gc.step.stopStack'))
+    expect(text).not.toMatch(/Remove volumes/i)
+  })
+
+  it('a pre-flight refusal says nothing was changed, in a human sentence', () => {
+    const w = mountPanel(failedBlock(), {
+      failure: failure({ step: 'reprobe', error: 'tip-unknown', refusal: 'tip-unknown' })
+    })
+    expect(w.get('[data-testid="panel-nothing-changed"]').text()).toBe(
+      t('cleanup.gc.panel.nothingChanged')
     )
-    expect(states['stop-stack']).toBe('ok')
-    expect(states['rm-containers']).toBe('ok')
-    expect(states['rm-volumes']).toBe('failed')
-    expect(states['trash']).toBe('todo')
+    expect(w.get('[data-testid="panel-refusal"]').text()).toBe(t('cleanup.gc.refusal.tipUnknown'))
+    expect(has(w, 'panel-halt')).toBe(false)
+  })
+
+  it('a pre-flight halt with free text still says nothing was changed, and shows the text', () => {
+    const w = mountPanel(failedBlock(), {
+      failure: failure({ step: 'reprobe', error: 'git exploded', refusal: null })
+    })
+    expect(has(w, 'panel-nothing-changed')).toBe(true)
+    expect(w.get('[data-testid="panel-error"]').text()).toBe('git exploded')
+  })
+
+  it('a mid-run reason is NOT "nothing was changed": earlier steps may have run', () => {
+    const w = mountPanel(failedBlock(), {
+      failure: failure({ step: 'drop-deps', error: 'changed-mid-run', refusal: 'changed-mid-run' })
+    })
+    expect(has(w, 'panel-nothing-changed')).toBe(false)
+    expect(w.get('[data-testid="panel-halt"]').text()).toContain(t('cleanup.gc.step.dropDeps'))
+    expect(w.get('[data-testid="panel-refusal"]').text()).toBe(
+      t('cleanup.gc.refusal.changedMidRun')
+    )
   })
 
   it('offers Retry, Keep and Remove', async () => {
@@ -213,13 +244,6 @@ describe('CleanupBlockPanel — a failed item', () => {
     expect(err.attributes('title')).toBe('volume pg-1 is in use by container pg-1')
     await w.get('[data-testid="panel-copy-error"]').trigger('click')
     expect(writeText).toHaveBeenCalledWith('volume pg-1 is in use by container pg-1')
-  })
-
-  it('says nothing destructive ran when the pre-flight reprobe refused it', () => {
-    const w = mountPanel(failedBlock(), {
-      failure: failure({ step: 'reprobe', error: 'refused' })
-    })
-    expect(has(w, 'panel-nothing-ran')).toBe(true)
   })
 
   it('a changed-since-confirm refusal is stated plainly instead of dumping the error', () => {
@@ -379,5 +403,110 @@ describe('CleanupBlockPanel — the opinion section', () => {
       opinion: opinion()
     })
     expect(has(w, 'panel-opinion')).toBe(false)
+  })
+})
+
+describe('CleanupBlockPanel — Retry follows the bucket', () => {
+  const failure = (): ItemFailure => ({ step: 'trash', error: 'EBUSY', refusal: null })
+
+  it('is offered for a failed ready item and for a failed review item', () => {
+    expect(has(mountPanel(blockWith('ready'), { failure: failure() }), 'panel-retry')).toBe(true)
+    expect(has(mountPanel(blockWith('review'), { failure: failure() }), 'panel-retry')).toBe(true)
+  })
+
+  it('is offered for a failed orphan volume (it is a review item)', () => {
+    const vol = modelOf([], [volume('pg', 'old-app', 1 * MIB)]).byId.get('volume:pg')!
+    expect(has(mountPanel(vol, { failure: failure() }), 'panel-retry')).toBe(true)
+  })
+
+  it('is never offered for an in-use item: there is nothing a retry could send', () => {
+    expect(has(mountPanel(blockWith('in-use'), { failure: failure() }), 'panel-retry')).toBe(false)
+  })
+})
+
+describe('CleanupBlockPanel — R / D / K / A on the open panel', () => {
+  const press = (key: string, init: KeyboardEventInit = {}, target: EventTarget = window): void => {
+    target.dispatchEvent(
+      new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })
+    )
+  }
+  const mounted = (block: GcBlock, props: Props = {}) => {
+    const w = mount(CleanupBlockPanel, {
+      props: { block, state: null, failure: null, ...props },
+      global: { plugins: [i18n] },
+      attachTo: document.body
+    })
+    return w
+  }
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('R removes, K keeps and D dehydrates a review item — the buttons that are shown and enabled', () => {
+    const w = mounted(blockWith('review'))
+    press('r')
+    press('k')
+    press('d')
+    expect(w.emitted('remove')).toHaveLength(1)
+    expect(w.emitted('keep')).toHaveLength(1)
+    expect(w.emitted('dehydrate')).toHaveLength(1)
+    w.unmount()
+  })
+
+  it('upper case works too (caps lock)', () => {
+    const w = mounted(blockWith('review'))
+    press('R')
+    expect(w.emitted('remove')).toHaveLength(1)
+    w.unmount()
+  })
+
+  it('A does nothing: Ask for an opinion is disabled until a later release', () => {
+    const w = mounted(blockWith('review'))
+    press('a')
+    expect(w.emitted()).not.toHaveProperty('ask')
+    expect(
+      Object.keys(w.emitted()).filter((k) => ['remove', 'keep', 'dehydrate'].includes(k))
+    ).toEqual([])
+    w.unmount()
+  })
+
+  it('a letter whose button is not shown does nothing (a ready item has no Remove or Keep)', () => {
+    const w = mounted(blockWith('ready', { verdict: 'harvestable', blockers: [] }))
+    press('r')
+    press('k')
+    expect(w.emitted('remove')).toBeUndefined()
+    expect(w.emitted('keep')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('a letter whose button is disabled does nothing (the item is being cleaned)', () => {
+    const w = mounted(blockWith('review'), { state: 'busy' })
+    press('r')
+    expect(w.emitted('remove')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('ignores modifier chords, typing in a field, and an open dialog', () => {
+    const w = mounted(blockWith('review'))
+    press('r', { ctrlKey: true })
+    press('r', { metaKey: true })
+    press('r', { altKey: true })
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    press('r', {}, input)
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    dialog.setAttribute('aria-modal', 'true')
+    document.body.appendChild(dialog)
+    press('r')
+    expect(w.emitted('remove')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('stops listening when the panel closes', () => {
+    const w = mounted(blockWith('review'))
+    w.unmount()
+    press('r')
+    expect(w.emitted('remove')).toBeUndefined()
   })
 })

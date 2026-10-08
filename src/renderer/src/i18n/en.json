@@ -2302,17 +2302,18 @@
         "cleanupFailed": "The last cleanup stopped before it finished.",
         "noKnownWorktree": "No known worktree uses this volume.",
         "ready": "Merged, clean and idle past the grace period.",
-        "pathUnresolved": "The worktree has a path Harnu could not resolve to its real location, so it cannot tell what uses it."
+        "pathUnresolved": "The worktree has a path Harnu could not resolve to its real location, so it cannot tell what uses it.",
+        "nestedWorktree": "Another worktree lives inside this one, and removing this one would trash it too."
       },
       "step": {
         "stopStack": "Stop the stack",
         "rmContainers": "Remove containers",
-        "rmVolumes": "Remove volumes",
         "archive": "Archive the code",
         "dropDeps": "Remove dependencies",
         "trash": "Trash the checkout",
         "prune": "Prune the worktree",
-        "branchDelete": "Delete the branch"
+        "branchDelete": "Delete the branch",
+        "unknown": "an unknown step"
       },
       "panel": {
         "close": "Close panel",
@@ -2332,13 +2333,6 @@
           "branch": "The local branch {branch}"
         },
         "volumesCannotRestore": "Volumes cannot be restored.",
-        "ranTitle": "What ran",
-        "stepState": {
-          "ok": "done",
-          "failed": "failed",
-          "todo": "did not run"
-        },
-        "nothingRan": "Nothing destructive ran.",
         "copyError": "Copy error",
         "copied": "Copied",
         "cleaning": "Cleaning…",
@@ -2352,7 +2346,10 @@
         "opinionTitle": "Opinion",
         "volumesKept": "Its volumes ({names}) are kept. They show up in Needs review afterwards.",
         "readyNote": "Cleaned on the next cycle, or now with Clean now.",
-        "inUseNote": "Left alone while a session works here or its pull request is open."
+        "inUseNote": "Left alone while a session works here or its pull request is open.",
+        "happenedTitle": "What happened",
+        "stoppedAt": "Stopped at “{step}”",
+        "nothingChanged": "Nothing was changed."
       },
       "list": {
         "label": "Worktrees by bucket",
@@ -2376,7 +2373,6 @@
       "confirm": {
         "titleWorktrees": "Remove {n} worktree? | Remove {n} worktrees?",
         "titleItems": "Remove {n} item? | Remove {n} items?",
-        "summary": "{n} item · {size} | {n} items · {size}",
         "listLabel": "Items to remove",
         "worktreeRow": "{repo} › {name}",
         "volumeRow": "Docker volume {name}",
@@ -2387,14 +2383,24 @@
         "warnVolumesLost": "Volumes cannot be restored.",
         "warnVolumesKept": "Volumes are kept. They show up in Needs review afterwards.",
         "warnRecover": "Code and branch come back from the archive refs and the OS trash, and dependencies come back through the repo's setup.",
-        "total": "Total {size}",
         "cancel": "Cancel",
         "confirmWorktrees": "Remove {n} worktree | Remove {n} worktrees",
         "confirmItems": "Remove {n} item | Remove {n} items",
         "titleReady": "Clean {n} ready item? | Clean {n} ready items?",
         "subtitleReady": "Each one is merged, clean and idle past its grace period. Everything listed below is removed.",
         "confirmReady": "Clean {n} ready | Clean {n} ready",
-        "subtitleReview": "You picked these yourself, so Harnu could not prove they are safe. Everything listed below is removed."
+        "subtitleReview": "You picked these yourself, so Harnu could not prove they are safe. Everything listed below is removed.",
+        "changed": "This changed since you opened it — review again.",
+        "breakdown": {
+          "stacks": "{n} stack stopped | {n} stacks stopped",
+          "deps": "{n} dependency folder removed | {n} dependency folders removed",
+          "worktrees": "{n} worktree trashed | {n} worktrees trashed",
+          "volumes": "{n} volume deleted | {n} volumes deleted"
+        },
+        "totalReady": "{n} ready · {size}",
+        "totalSelected": "{n} selected · {size}",
+        "close": "Close",
+        "branchSub": "branch {branch}"
       },
       "chip": {
         "stack": "stack",
@@ -2404,7 +2410,7 @@
         "branch": "branch",
         "title": {
           "stack": "The Docker stack is stopped and its containers removed",
-          "volume": "Docker volumes owned by this worktree are removed and cannot be restored",
+          "volume": "An orphan volume, with no worktree: removed only after you confirm it, and it cannot be restored",
           "deps": "Dependency folders are deleted; the repo's setup brings them back",
           "checkout": "The checkout goes to the OS trash",
           "branch": "The local branch is deleted after it is archived"
@@ -2435,7 +2441,13 @@
         "inspect": "Inspect stacks",
         "volumesNote": "Never removed automatically. Remove each one yourself in Needs review.",
         "reclaimable": "{size} reclaimable",
-        "imagesCount": "{n} image · {size} | {n} images · {size}"
+        "imagesCount": "{n} image · {size} | {n} images · {size}",
+        "sub": {
+          "size": "runs each cycle · {size}",
+          "plain": "runs each cycle",
+          "off": "Docker cleaning is off"
+        },
+        "splitLabel": "Docker figures by size: build cache, dangling images, orphan volumes"
       },
       "split": {
         "label": "Disk split",
@@ -2483,8 +2495,9 @@
       },
       "toast": {
         "success": "Freed {size} · {count} ready item cleaned | Freed {size} · {count} ready items cleaned",
-        "partial": "{cleaned} cleaned · {failed} needs review",
-        "review": "Review"
+        "partial": "{cleaned} cleaned · {failed} needs review | {cleaned} cleaned · {failed} need review",
+        "review": "Review",
+        "viewJournal": "View journal"
       },
       "footer": {
         "running": "Cleaning {done}/{total}",
@@ -2565,7 +2578,24 @@
         "unsupportedKind": "Harnu cannot clean this kind of folder yet.",
         "unknownItem": "Cleanup no longer knows this item. Refresh and try again.",
         "several": "{n} items were left alone for different reasons. Open each one to see why.",
-        "inUse": "It is in use, so it was left alone."
+        "inUse": "It is in use, so it was left alone.",
+        "tipUnknown": "Harnu could not tell which commit this worktree is on, so it left it alone.",
+        "protectedNow": "It is protected now (a main checkout, a never-clean path or a Keep mark), so it was left alone.",
+        "changedSinceScan": "It changed since the last scan, so it was left alone. Scan again and review it.",
+        "graceNotElapsed": "It has not been quiet long enough yet, so it was left alone.",
+        "notReady": "It is no longer ready to clean, so it was left alone.",
+        "pathUnresolved": "A path tied to this worktree could not be resolved, so Harnu cannot tell what uses it and left it alone.",
+        "stackPresent": "A Docker stack is running from this worktree, so it was left alone.",
+        "dockerUnavailable": "Docker did not answer, so Harnu could not check this worktree safely and left it alone.",
+        "probeFailed": "Checking this worktree failed, so it was left alone.",
+        "nestedWorktree": "Another worktree lives inside this one, so it was left alone.",
+        "sharedStack": "Another stack also runs from this worktree, so it was left alone.",
+        "headMoved": "A new commit landed on this worktree, so it was left alone.",
+        "notHarvestable": "Cleanup no longer considers it finished, so it was left alone.",
+        "sessionOpen": "A session is open in this worktree, so it was left alone.",
+        "unpushed": "It has commits that were never pushed, so it was left alone.",
+        "volumeInUse": "A volume is still in use by a container, so it was left alone.",
+        "changedMidRun": "It changed while the clean was running, so Harnu stopped."
       },
       "opinion": {
         "safe": "Safe",
@@ -2592,6 +2622,17 @@
         "volumeUnknown": "Docker volume · unknown project",
         "hintShift": "click selects several",
         "hintOpen": "opens the panel"
+      },
+      "error": {
+        "clean": "Could not start the clean",
+        "keep": "Could not keep that"
+      },
+      "legend": {
+        "ready": "Ready to clean · cleaned by one click or the autopilot",
+        "review": "Needs review · your call",
+        "inUse": "In use · never touched",
+        "area": "Block area = size on disk · click a block to act",
+        "label": "Legend"
       }
     }
   },

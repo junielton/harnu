@@ -8,6 +8,8 @@ import {
   RefreshCw,
   Loader2,
   Settings,
+  LayoutGrid,
+  List,
   CircleCheck,
   History,
   Copy,
@@ -23,7 +25,13 @@ import { relativeTime } from '../composables/useRelativeTime'
 import { formatBytes } from './system-monitor-format'
 import { canDehydrate, canRehydrate } from './cleanup-row'
 import { identText } from './cleanup-ident'
-import { dialogRows, selectionStats, toggleChecked } from '../lib/gc-model'
+import {
+  captureConfirm,
+  confirmChanged,
+  selectionStats,
+  toggleChecked,
+  type CapturedConfirm
+} from '../lib/gc-model'
 import { nextCycleIn } from '../lib/gc-format'
 import CleanupTreemap from './CleanupTreemap.vue'
 import CleanupListView from './CleanupListView.vue'
@@ -34,6 +42,7 @@ import CleanupSelectionBar from './CleanupSelectionBar.vue'
 import CleanupFirstCycleBanner from './CleanupFirstCycleBanner.vue'
 import CleanupDockerCard from './CleanupDockerCard.vue'
 import CleanupSplitBar from './CleanupSplitBar.vue'
+import CleanupLegend from './CleanupLegend.vue'
 import CleanupBulkConfirmDialog from './CleanupBulkConfirmDialog.vue'
 import CleanupOtherItems from './CleanupOtherItems.vue'
 import DehydrateConfirmDialog from './DehydrateConfirmDialog.vue'
@@ -154,34 +163,67 @@ function removeMarkedSafe(): void {
 
 // ---- dialogs ------------------------------------------------------------------------------------
 
-const confirmDialog = ref<{ mode: 'ready' | 'review'; ids: string[] } | null>(null)
+/** What the open dialog showed — rows AND the exact request — frozen at the moment it opened. */
+const confirmDialog = ref<CapturedConfirm | null>(null)
 const dehydrateItems = ref<ReapItem[] | null>(null)
 const dialogOpen = computed(() => confirmDialog.value !== null || dehydrateItems.value !== null)
 
-const rows = computed(() =>
-  confirmDialog.value && model.value ? dialogRows(model.value, confirmDialog.value.ids) : []
+/** The data behind the open dialog moved (a cycle or a job refreshed it): block the confirm. */
+const confirmStale = computed(
+  () => !!confirmDialog.value && !!model.value && confirmChanged(model.value, confirmDialog.value)
 )
 
 function openReady(ids?: string[]): void {
   if (dialogOpen.value || !model.value) return
-  const list = ids ?? model.value.ready.map((b) => b.id)
-  if (list.length > 0) confirmDialog.value = { mode: 'ready', ids: list }
+  const c = captureConfirm(model.value, ids ?? model.value.ready.map((b) => b.id), 'ready')
+  if (c) confirmDialog.value = c
 }
 function openRemove(ids: string[]): void {
-  if (dialogOpen.value || ids.length === 0) return
-  confirmDialog.value = { mode: 'review', ids }
+  if (dialogOpen.value || !model.value) return
+  const c = captureConfirm(model.value, ids, 'review')
+  if (c) confirmDialog.value = c
+}
+/** Retry re-opens the confirm for the item's CURRENT bucket — never a dialog that would send nothing. */
+function retry(id: string): void {
+  const bucket = model.value?.byId.get(id)?.bucket
+  if (bucket === 'ready') openReady([id])
+  else if (bucket === 'review') openRemove([id])
+}
+function errorToast(title: string, e: unknown): void {
+  ui.pushToast({
+    kind: 'danger',
+    title,
+    description: e instanceof Error ? e.message : String(e),
+    timeoutMs: 8000
+  })
 }
 async function confirmClean(): Promise<void> {
   const d = confirmDialog.value
-  confirmDialog.value = null
-  if (!d) return
+  if (!d || confirmStale.value) return
   // Close first, then start: the clean is a background job, the view is never blocked on it.
-  if (d.mode === 'ready') await gc.cleanReady(d.ids)
-  else await gc.cleanSelected(d.ids)
+  confirmDialog.value = null
+  try {
+    await gc.submit(d.request)
+  } catch (e) {
+    errorToast(t('cleanup.gc.error.clean'), e)
+    return
+  }
   const next = new Set(checked.value)
   for (const id of d.ids) next.delete(id)
   checked.value = next
 }
+
+/** Keep applies to worktrees; a rejected keep is reported and the screen refreshed, never swallowed. */
+async function keepIds(ids: readonly string[]): Promise<void> {
+  try {
+    await gc.keepMany(ids)
+  } catch (e) {
+    errorToast(t('cleanup.gc.error.keep'), e)
+  }
+}
+const canKeepSelection = computed(() =>
+  [...checked.value].some((id) => model.value?.byId.get(id)?.kind === 'worktree')
+)
 
 function dehydratable(ids: readonly string[]): ReapItem[] {
   const m = model.value
@@ -287,8 +329,8 @@ const lastChecked = computed(() => {
 })
 
 const modeOptions = computed(() => [
-  { value: 'map', label: t('cleanup.gc.view.map') },
-  { value: 'list', label: t('cleanup.gc.view.list') }
+  { value: 'map', label: t('cleanup.gc.view.map'), icon: LayoutGrid },
+  { value: 'list', label: t('cleanup.gc.view.list'), icon: List }
 ])
 
 function openAutopilotSettings(): void {
@@ -334,13 +376,10 @@ async function copyRestoreHint(hint: string): Promise<void> {
 
 <template>
   <div
-    class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-[22px] py-3"
+    class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-5.5 py-3"
     data-testid="cleanup-toolbar"
   >
-    <span
-      class="flex items-center gap-2 text-[13px] leading-5 text-text-2"
-      data-testid="cleanup-summary"
-    >
+    <span class="flex items-center gap-2 text-body text-text-2" data-testid="cleanup-summary">
       <Recycle :size="14" :stroke-width="1.6" class="shrink-0 text-green" />
       <i18n-t keypath="cleanup.gc.status.reclaimable" scope="global">
         <template #size>
@@ -360,7 +399,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
     <CleanupHeroButton :hero="gc.hero" @click="openReady()" />
 
     <span
-      class="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] leading-4"
+      class="inline-flex items-center rounded-full border px-2 py-0.5 text-caption"
       :class="
         prefs?.autopilot
           ? 'border-green-line bg-green-soft text-green'
@@ -393,19 +432,21 @@ async function copyRestoreHint(hint: string): Promise<void> {
         :aria-label="t('cleanup.gc.view.label')"
       />
       <Button
-        variant="soft"
+        variant="ghost"
+        size="icon"
         :disabled="reaper.scanning"
+        :aria-label="t('cleanup.scanNow')"
+        :title="t('cleanup.scanNow')"
         data-testid="cleanup-rescan"
         @click="rescan()"
       >
         <Loader2
           v-if="reaper.scanning"
-          :size="13"
+          :size="14"
           :stroke-width="1.7"
           class="shrink-0 animate-spin"
         />
-        <RefreshCw v-else :size="13" :stroke-width="1.7" />
-        {{ t('cleanup.scanNow') }}
+        <RefreshCw v-else :size="14" :stroke-width="1.7" />
       </Button>
     </div>
   </div>
@@ -413,29 +454,26 @@ async function copyRestoreHint(hint: string): Promise<void> {
   <CleanupSelectionBar
     :count="stats.count"
     :bytes="stats.bytes"
+    :can-keep="canKeepSelection"
     :asking="askingSelection"
     @remove="openRemove([...checked])"
     @dehydrate="openDehydrate([...checked])"
-    @keep="gc.keepMany([...checked])"
+    @keep="keepIds([...checked])"
     @ask="askOpinion([...checked])"
     @clear="clearSelection()"
   />
 
   <div ref="body" class="scrollable min-h-0 flex-1 overflow-y-auto" data-testid="cleanup-body">
-    <div
-      v-if="loading"
-      class="py-16 text-center text-[12px] text-text-3"
-      data-testid="cleanup-loading"
-    >
+    <div v-if="loading" class="py-16 text-center text-ui text-text-3" data-testid="cleanup-loading">
       <Loader2 :size="16" :stroke-width="1.6" class="mx-auto mb-2 animate-spin text-text-4" />
       {{ t('cleanup.gc.loading') }}
     </div>
-    <div v-else-if="gc.loadError" class="px-[22px] py-8 text-[12px] text-red">
+    <div v-else-if="gc.loadError" class="px-5.5 py-8 text-ui text-red">
       {{ t('cleanup.gc.loadError', { error: gc.loadError }) }}
     </div>
 
     <div v-else-if="model && prefs" class="relative">
-      <div class="px-[22px] pt-3">
+      <div class="px-5.5 pt-3">
         <CleanupFirstCycleBanner
           v-if="showFirstCycle"
           :count="model.ready.length"
@@ -446,7 +484,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
       </div>
 
       <div
-        class="gap-4 px-[22px] pb-4 pt-3"
+        class="gap-4 px-5.5 pb-4 pt-3"
         :class="
           selectedBlock && panelDocked ? 'grid grid-cols-[minmax(0,1fr)_320px]' : 'flex flex-col'
         "
@@ -457,6 +495,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             :has-bytes="model.hasBytes"
             :last-cycle="gc.snapshot?.lastCycle ?? null"
           />
+          <CleanupLegend :has-bytes="model.hasBytes" />
 
           <div
             v-if="allClean"
@@ -464,10 +503,10 @@ async function copyRestoreHint(hint: string): Promise<void> {
             data-testid="cleanup-all-clean"
           >
             <CircleCheck :size="28" :stroke-width="1.5" class="mb-2 text-green" />
-            <div class="text-[20px] font-medium leading-7 tracking-[-0.015em] text-text">
+            <div class="text-title font-medium leading-7 tracking-title text-text">
               {{ t('cleanup.gc.empty.title') }}
             </div>
-            <div class="text-[13px] leading-5 text-text-2">
+            <div class="text-body leading-5 text-text-2">
               {{
                 lastChecked
                   ? t('cleanup.gc.empty.subtitleAgo', { ago: lastChecked })
@@ -521,7 +560,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             @hover="linkedId = $event"
             @remove="openRemove([$event])"
             @dehydrate="openDehydrate([$event])"
-            @keep="gc.keep($event)"
+            @keep="keepIds([$event])"
             @ask-all="askAllOpinions()"
             @remove-safe="removeMarkedSafe()"
           />
@@ -530,7 +569,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
         <aside
           v-if="selectedBlock"
           :class="
-            panelDocked ? 'sticky top-3 self-start' : 'absolute right-[22px] top-3 z-10 shadow-pop'
+            panelDocked ? 'sticky top-3 self-start' : 'absolute right-5.5 top-3 z-10 shadow-pop'
           "
           data-testid="cleanup-panel"
         >
@@ -544,11 +583,11 @@ async function copyRestoreHint(hint: string): Promise<void> {
             :asking="gc.isAsking(selectedBlock.id)"
             @close="selectedId = null"
             @remove="openRemove([$event])"
-            @retry="openRemove([$event])"
+            @retry="retry($event)"
             @clean-now="openReady([$event])"
             @dehydrate="openDehydrate([$event])"
             @rehydrate="rehydrate($event)"
-            @keep="gc.keep($event)"
+            @keep="keepIds([$event])"
             @ask="askOpinion([$event])"
           />
         </aside>
@@ -558,16 +597,16 @@ async function copyRestoreHint(hint: string): Promise<void> {
 
       <template v-if="reaper.journal.length > 0">
         <div
-          class="flex items-center gap-2 px-[22px] pb-2.5 pt-[22px] text-[11px] font-semibold uppercase tracking-wide text-text-4"
+          class="flex items-center gap-2 px-5.5 pb-2.5 pt-5.5 text-caption font-semibold uppercase tracking-wide text-text-4"
         >
           <History :size="12" :stroke-width="1.7" />
           {{ t('cleanup.recent') }}
         </div>
-        <div class="flex flex-col gap-1.5 px-[22px] pb-[22px]">
+        <div class="flex flex-col gap-1.5 px-5.5 pb-5.5">
           <div
             v-for="(tomb, index) in reaper.journal"
             :key="tombKey(tomb, index)"
-            class="flex items-center gap-3 rounded-sm border border-border bg-surface px-3 py-[9px] text-[11.5px] text-text-3"
+            class="flex items-center gap-3 rounded-sm border border-border bg-surface px-3 py-2.25 text-caption text-text-3"
           >
             <component
               :is="tombIcon(tomb.kind)"
@@ -575,7 +614,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
               :stroke-width="1.6"
               class="text-text-4"
             />
-            <span class="font-mono text-[11px] text-text-2">{{
+            <span class="font-mono text-caption text-text-2">{{
               tomb.branch ?? tomb.repoPath
             }}</span>
             <span class="truncate">
@@ -584,7 +623,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             </span>
             <button
               v-if="tomb.restoreHint"
-              class="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-border bg-bg px-2 py-[3px] font-mono text-[10px] text-text-4 transition hover:border-border-2 hover:text-text-2"
+              class="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-border bg-bg px-2 py-0.75 font-mono text-eyebrow text-text-4 transition hover:border-border-2 hover:text-text-2"
               @click="copyRestoreHint(tomb.restoreHint)"
             >
               <Copy :size="10" :stroke-width="1.7" />
@@ -598,8 +637,9 @@ async function copyRestoreHint(hint: string): Promise<void> {
 
   <CleanupBulkConfirmDialog
     v-if="confirmDialog"
-    :rows="rows"
+    :rows="confirmDialog.rows"
     :mode="confirmDialog.mode"
+    :stale="confirmStale"
     :opinion-of="gc.opinionFor"
     @confirm="confirmClean()"
     @cancel="confirmDialog = null"

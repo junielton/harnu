@@ -13,6 +13,7 @@ import type {
 import type { Bucket, ReviewReason } from '../src/main/gc/bundle-core'
 import { useGcStore } from '../src/renderer/src/stores/gc'
 import { useUiStore } from '../src/renderer/src/stores/ui'
+import { captureConfirm } from '../src/renderer/src/lib/gc-model'
 import { CHANGED_SINCE_CONFIRM } from '../src/renderer/src/lib/gc-jobs'
 import { i18n } from '../src/renderer/src/i18n'
 
@@ -133,7 +134,7 @@ describe('gc store', () => {
     const gc = useGcStore()
     await gc.init()
     const ids = gc.model!.ready.map((b) => b.id)
-    const ack = await gc.cleanReady()
+    const ack = await gc.submit(captureConfirm(gc.model!, ids, 'ready')!.request)
     expect(ack?.jobId).toBe('j1')
     const [sentIds, opts] = api.gcClean.mock.calls[0]
     expect(sentIds).toEqual(ids)
@@ -147,7 +148,7 @@ describe('gc store', () => {
     const gc = useGcStore()
     await gc.init()
     const d1 = gc.model!.review[0].id
-    await gc.cleanSelected([d1])
+    await gc.submit(captureConfirm(gc.model!, [d1], 'review')!.request)
     const [sentIds, opts] = api.gcClean.mock.calls[0]
     expect(sentIds).toEqual([d1])
     expect(opts.confirmed).toEqual([d1])
@@ -158,8 +159,30 @@ describe('gc store', () => {
     const api = installApi()
     const gc = useGcStore()
     await gc.init()
-    expect(await gc.cleanSelected(['ghost'])).toBeNull()
+    expect(await gc.submit({ ids: [], options: { expected: {} } })).toBeNull()
     expect(api.gcClean).not.toHaveBeenCalled()
+  })
+
+  it('sends exactly the request it was given, not facts rebuilt from a model that has since moved', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    const ids = gc.model!.ready.map((b) => b.id)
+    const captured = captureConfirm(gc.model!, ids, 'ready')!
+    // The world changes after the dialog opened: the first corpse is now a Needs review item.
+    const moved = snap({
+      bundles: [
+        wt('c1', 'review', 500 * MIB, { code: 'dirty', detail: 'x' }),
+        wt('c2', 'ready', 400 * MIB)
+      ]
+    })
+    api.gcSnapshot.mockResolvedValueOnce(moved)
+    await gc.refresh()
+    await gc.submit(captured.request)
+    const [sentIds, opts] = api.gcClean.mock.calls[0]
+    expect(sentIds).toEqual(captured.request.ids)
+    expect(opts).toEqual(captured.request.options)
+    expect(opts.expected[ids[0]].bucket).toBe('ready')
   })
 
   it('the chip follows gc:progress and re-attaches from gc:jobs', async () => {
@@ -318,6 +341,52 @@ describe('gc store', () => {
     expect(toast.mock.calls[0][0].description).toBe(t('cleanup.gc.refusal.several', { n: 2 }))
   })
 
+  it('the success toast offers "View journal"; the partial one offers "Review"', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.push.done(done({ results: [{ id: 'a', ok: true, haltedAt: null, freedBytes: 1 }] }))
+    await vi.runAllTimersAsync()
+    expect(toast.mock.calls[0][0].action?.label).toBe('View journal')
+    api.push.done(
+      done({
+        jobId: 'j2',
+        results: [{ id: 'a', ok: false, haltedAt: 'trash', error: 'EBUSY', freedBytes: 0 }]
+      })
+    )
+    await vi.runAllTimersAsync()
+    expect(toast.mock.calls[1][0].action?.label).toBe('Review')
+  })
+
+  it('the partial-failure title agrees with the count: "needs review" for one, "need review" for several', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    const fail = (id: string) => ({
+      id,
+      ok: false,
+      haltedAt: 'trash' as const,
+      error: 'EBUSY',
+      freedBytes: 0
+    })
+    api.push.done(
+      done({
+        jobId: 'j1',
+        done: 1,
+        results: [{ id: 'a', ok: true, haltedAt: null, freedBytes: 1 }, fail('b')]
+      })
+    )
+    await vi.runAllTimersAsync()
+    expect(toast.mock.calls[0][0].title).toBe('1 cleaned · 1 needs review')
+    api.push.done(done({ jobId: 'j2', done: 0, results: [fail('b'), fail('c')] }))
+    await vi.runAllTimersAsync()
+    expect(toast.mock.calls[1][0].title).toBe('0 cleaned · 2 need review')
+  })
+
   it('an autopilot job drives the chip but raises no renderer toast (main notifies)', async () => {
     const api = installApi()
     const gc = useGcStore()
@@ -340,7 +409,13 @@ describe('gc store', () => {
     )
     await vi.runAllTimersAsync()
     expect(gc.failureOf('x')).not.toBeNull()
-    await gc.cleanReady()
+    await gc.submit(
+      captureConfirm(
+        gc.model!,
+        gc.model!.ready.map((b) => b.id),
+        'ready'
+      )!.request
+    )
     expect(gc.failureOf('x')).toBeNull()
   })
 
@@ -375,6 +450,46 @@ describe('gc store', () => {
     await gc.keepMany(['a', 'b', 'c'])
     expect(api.gcKeep.mock.calls.map((c) => c[0])).toEqual(['a', 'b', 'c'])
     expect(api.gcSnapshot.mock.calls.length).toBe(before + 1)
+  })
+
+  it('keepMany skips orphan volumes: Keep is for worktrees only', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    await gc.keepMany(['a', 'volume:pg_data', 'b'])
+    expect(api.gcKeep.mock.calls.map((c) => c[0])).toEqual(['a', 'b'])
+  })
+
+  it('keepMany refreshes even when a keep is rejected, then passes the rejection on', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    const before = api.gcSnapshot.mock.calls.length
+    api.gcKeep.mockRejectedValueOnce(new Error('unknown cleanup item'))
+    await expect(gc.keepMany(['a', 'b'])).rejects.toThrow('unknown cleanup item')
+    expect(api.gcSnapshot.mock.calls.length).toBe(before + 1)
+  })
+
+  it('the attention pill counts only what needs the operator — not their own Keep or never-clean', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    const ids = gc.model!.byId.keys()
+    const [a, b, c] = [...ids]
+    api.push.done(
+      done({
+        done: 0,
+        total: 3,
+        results: [
+          { id: a, ok: false, haltedAt: 'reprobe', error: 'kept', freedBytes: 0 },
+          { id: b, ok: false, haltedAt: 'reprobe', error: 'never-clean', freedBytes: 0 },
+          { id: c, ok: false, haltedAt: 'trash', error: 'EBUSY', freedBytes: 0 }
+        ]
+      })
+    )
+    await vi.runAllTimersAsync()
+    expect(gc.attentionCount).toBe(1)
+    expect(gc.pill).toEqual({ kind: 'attention', count: 1 })
   })
 
   it('init is idempotent: one set of subscriptions', async () => {

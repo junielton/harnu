@@ -35,7 +35,8 @@ describe('expectedOf: the facts the operator was shown', () => {
       headSha: 'c'.repeat(40),
       stackIds: ['s1', 's2'],
       ownedVolumes: ['v'],
-      bytes: 77
+      bytes: 77,
+      path: '/ws/wt/d'
     })
   })
 
@@ -117,5 +118,36 @@ describe('volumeChangedSince', () => {
 
   it('refuses an expectation that is not for an orphan volume', () => {
     expect(volumeChangedSince(orphan(), expectedOf(bundle('/ws/wt/a', 'ready')))).toBe('bucket')
+  })
+})
+
+describe('the confirmation is bound to the folder (delta 3, item 3)', () => {
+  const at = (path: string) => bundle(path, 'ready')
+
+  it('records the worktree path, and none for an orphan volume', () => {
+    expect(expectedOf(at('/ws/wt/a')).path).toBe('/ws/wt/a')
+    expect(orphanExpectedOf(orphan()).path).toBeNull()
+  })
+
+  it('refuses the same id at a different folder (git worktree move)', () => {
+    const seen = expectedOf(at('/ws/wt/A'))
+    expect(bundleChangedSince(at('/ws/wt/B'), seen)).toBe('path')
+  })
+
+  it('accepts the same folder spelled differently: slashes and dot segments', () => {
+    const seen = expectedOf(at('/ws/wt/A'))
+    expect(bundleChangedSince(at('/ws/wt/A/'), seen)).toBeNull()
+    expect(bundleChangedSince(at('/ws/wt/x/../A'), seen)).toBeNull()
+  })
+
+  it('refuses when the expectation carries no path but the bundle has one', () => {
+    const seen = { ...expectedOf(at('/ws/wt/A')), path: null }
+    expect(bundleChangedSince(at('/ws/wt/A'), seen)).toBe('path')
+  })
+
+  it('checks the path before the rest, so a moved worktree is named as moved', () => {
+    const seen = expectedOf(at('/ws/wt/A'))
+    const moved = bundle('/ws/wt/B', 'review')
+    expect(bundleChangedSince(moved, seen)).toBe('path')
   })
 })

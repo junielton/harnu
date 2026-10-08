@@ -83,7 +83,7 @@ export interface GcSnapshot {
  * `volume:<name>`): `bucket: 'orphan-volume'`, `reasonCode` the item's reason code, `bytes`
  * its `sizeBytes`, `project` its compose project, `ownedVolumes: [name]`.
  *
- * "Different" means a different bucket, reason or head, any stack or volume that was not
+ * "Different" means a different folder, bucket, reason or head, any stack or volume that was not
  * listed, or (for a volume) a different size or project. `bytes` of a worktree is not
  * compared: disk use drifts without anything having changed.
  */
@@ -94,6 +94,13 @@ export interface GcExpected {
   stackIds: string[]
   ownedVolumes: string[]
   bytes: number | null
+  /**
+   * The folder of the worktree the operator was looking at (`bundle.item.path`; null for an
+   * orphan volume). A worktree moved with `git worktree move` keeps its id, its head and its
+   * reason, so only the path tells the confirmation no longer describes it. Compared after
+   * normalization (slashes, `.` and `..`), so a spelling difference is not a change.
+   */
+  path: string | null
   /** Orphan volumes only: the compose project shown with the volume. */
   project?: string | null
 }

@@ -7,7 +7,8 @@ const good = {
   headSha: 'a'.repeat(40),
   stackIds: ['s1'],
   ownedVolumes: ['v1'],
-  bytes: 12
+  bytes: 12,
+  path: '/ws/wt/a'
 }
 
 describe('parseOptions: the gc:clean payload is untrusted', () => {
@@ -54,5 +55,14 @@ describe('parseOptions: the gc:clean payload is untrusted', () => {
   it('ignores an expected that is not a record', () => {
     expect(parseOptions({ expected: [good] }).expected).toEqual({})
     expect(parseOptions({ expected: 'x' }).expected).toEqual({})
+  })
+
+  it('drops an entry with no path field, or a non-string path: that id is refused', () => {
+    const { path: _drop, ...noPath } = good
+    expect(parseOptions({ expected: { a: noPath } }).expected).toEqual({})
+    expect(parseOptions({ expected: { a: { ...good, path: 7 } } }).expected).toEqual({})
+    expect(parseOptions({ expected: { a: { ...good, path: null } } }).expected).toEqual({
+      a: { ...good, path: null }
+    })
   })
 })

@@ -4,6 +4,10 @@ import {
   buildGcModel,
   cleanRequestFor,
   dialogRows,
+  captureConfirm,
+  dialogBreakdown,
+  repoDisplayLabel,
+  confirmChanged,
   expectedFor,
   heroState,
   isCheckable,
@@ -267,7 +271,8 @@ describe('cleanRequestFor — the one place that builds the gc:clean payload', (
       headSha: 'b'.repeat(40),
       stackIds: ['s1'],
       ownedVolumes: ['v1'],
-      bytes: 512 * MIB
+      bytes: 512 * MIB,
+      path: c.item.path
     })
   })
 
@@ -398,5 +403,155 @@ describe('Docker figures in the model', () => {
     expect(m.reclaimableBytes).toBe(100 * MIB)
     // The figure itself is still there for the card to show.
     expect(m.docker.buildCacheReclaimableBytes).toBe(3 * GIB)
+  })
+})
+
+describe('captureConfirm / confirmChanged — the dialog binds to what it showed', () => {
+  it('captures the rows and the request when the dialog opens', () => {
+    const m = buildGcModel(sample())
+    const ids = m.ready.map((b) => b.id)
+    const c = captureConfirm(m, ids, 'ready')!
+    expect(c.mode).toBe('ready')
+    expect(c.ids).toEqual(ids)
+    expect(c.rows.map((r) => r.id)).toEqual(ids)
+    expect(c.request).toEqual(cleanRequestFor(m, ids, 'ready'))
+  })
+
+  it('nothing valid to capture means no dialog', () => {
+    const m = buildGcModel(sample())
+    expect(captureConfirm(m, ['ghost'], 'ready')).toBeNull()
+    expect(
+      captureConfirm(
+        m,
+        m.ready.map((b) => b.id),
+        'review'
+      )
+    ).toBeNull()
+  })
+
+  it('a fresh model with the same facts is not a change', () => {
+    const c = captureConfirm(
+      buildGcModel(sample()),
+      buildGcModel(sample()).ready.map((b) => b.id),
+      'ready'
+    )!
+    expect(confirmChanged(buildGcModel(sample()), c)).toBe(false)
+  })
+
+  it('a worktree that moved bucket under the dialog is a change', () => {
+    const before = buildGcModel(sample())
+    const id = before.ready[0].id
+    const c = captureConfirm(before, [id], 'ready')!
+    const s = sample()
+    const b = s.bundles.find((x) => x.item.id === id)!
+    b.bucket = 'review'
+    b.reason = reason('dirty')
+    expect(confirmChanged(buildGcModel(s), c)).toBe(true)
+  })
+
+  it('a new stack, a new head or a gone item is a change', () => {
+    const before = buildGcModel(sample())
+    const id = before.ready[0].id
+    const c = captureConfirm(before, [id], 'ready')!
+    const withStack = sample()
+    withStack.bundles.find((x) => x.item.id === id)!.stackIds = ['new-stack']
+    expect(confirmChanged(buildGcModel(withStack), c)).toBe(true)
+    const moved = sample()
+    moved.bundles.find((x) => x.item.id === id)!.localTip = 'f'.repeat(40)
+    expect(confirmChanged(buildGcModel(moved), c)).toBe(true)
+    const gone = sample()
+    gone.bundles = gone.bundles.filter((x) => x.item.id !== id)
+    expect(confirmChanged(buildGcModel(gone), c)).toBe(true)
+  })
+
+  it('disk-use drift of a worktree alone is not a change (main does not compare it either)', () => {
+    const before = buildGcModel(sample())
+    const id = before.ready[0].id
+    const c = captureConfirm(before, [id], 'ready')!
+    const s = sample()
+    s.bundles.find((x) => x.item.id === id)!.item.diskBytes = 1
+    expect(confirmChanged(buildGcModel(s), c)).toBe(false)
+  })
+
+  it('an orphan volume that grew is a change', () => {
+    const before = buildGcModel(sample())
+    const c = captureConfirm(before, ['volume:pg_data'], 'review')!
+    const s = sample()
+    s.orphanVolumes[0].sizeBytes = 1
+    expect(confirmChanged(buildGcModel(s), c)).toBe(true)
+  })
+})
+
+describe('repoDisplayLabel — org/proj style labels for the map regions', () => {
+  it('keeps the last two path segments so a repo with a parent reads like the mockup', () => {
+    expect(repoDisplayLabel('/ws/org/proj/www')).toBe('proj/www')
+    expect(repoDisplayLabel('/ws/org/portal')).toBe('org/portal')
+    expect(repoDisplayLabel('/home/dev/Workspace/org/api-gateway/')).toBe('org/api-gateway')
+  })
+  it('a repo directly under the root is just its name; Windows separators work', () => {
+    expect(repoDisplayLabel('/www')).toBe('www')
+    expect(repoDisplayLabel('C:\\Work\\org\\proj')).toBe('org/proj')
+  })
+  it('regions carry both the short name (for aria and drill) and the display label', () => {
+    const m = buildGcModel(sample())
+    const www = m.regions.find((r) => r.label === 'www')!
+    expect(www.displayLabel).toBe('proj/www')
+    expect(www.repoPath).toBe('/ws/org/proj/www')
+  })
+})
+
+describe('dialogBreakdown — what the whole clean does, in numbers', () => {
+  it('counts stacks stopped, dependency folders removed and worktrees trashed', () => {
+    const a = wt('c1', 'ready', 1, { stackIds: ['s1', 's2'], depsBytes: 5 })
+    const b = wt('c2', 'ready', 1, { stackIds: ['s3'], depsBytes: null })
+    const c = wt('c3', 'ready', 1, { depsBytes: 9 })
+    const m = buildGcModel(snap({ bundles: [a, b, c] }))
+    const rows = dialogRows(
+      m,
+      m.ready.map((x) => x.id)
+    )
+    expect(dialogBreakdown(rows)).toEqual({ stacks: 3, deps: 2, worktrees: 3, volumes: 0 })
+  })
+
+  it("counts a volume only when an orphan volume row is in the list — a worktree's volumes are kept", () => {
+    const a = wt('c1', 'ready', 1, { ownedVolumes: ['v1', 'v2'] })
+    const m = buildGcModel(snap({ bundles: [a], orphanVolumes: sample().orphanVolumes }))
+    expect(dialogBreakdown(dialogRows(m, [a.item.id])).volumes).toBe(0)
+    expect(dialogBreakdown(dialogRows(m, [a.item.id, 'volume:pg_data'])).volumes).toBe(1)
+  })
+
+  it('rows carry the stack count the breakdown sums', () => {
+    const a = wt('c1', 'ready', 1, { stackIds: ['s1', 's2'] })
+    const m = buildGcModel(snap({ bundles: [a] }))
+    expect(dialogRows(m, [a.item.id])[0].stackCount).toBe(2)
+  })
+})
+
+describe('expectedFor — the worktree path (S3 delta 3: GcExpected.path)', () => {
+  it('sends bundle.item.path as-is for a worktree and null for an orphan volume', () => {
+    const s = sample()
+    const m = buildGcModel(s)
+    const b = s.bundles[0]
+    expect(expectedFor(m.byId.get(b.item.id)!).path).toBe(b.item.path)
+    expect(expectedFor(m.byId.get(s.orphanVolumes[0].id)!).path).toBeNull()
+  })
+
+  it('a worktree moved on disk (same id, head and reason) counts as changed since the dialog opened', () => {
+    const b = wt('c1', 'ready', 1)
+    const first = buildGcModel(snap({ bundles: [b] }))
+    const captured = captureConfirm(first, [b.item.id], 'ready')
+    const moved = { ...b, item: { ...b.item, path: '/ws/org/proj/www-moved' } }
+    expect(confirmChanged(buildGcModel(snap({ bundles: [moved] })), captured)).toBe(true)
+  })
+
+  it('a spelling difference of the same folder (slashes, dot segments) is not a change', () => {
+    const b = wt('c1', 'ready', 1)
+    const first = buildGcModel(snap({ bundles: [b] }))
+    const captured = captureConfirm(first, [b.item.id], 'ready')
+    const same = {
+      ...b,
+      item: { ...b.item, path: b.item.path.replace(/\/([^/]+)$/, '/./x/../$1') }
+    }
+    expect(confirmChanged(buildGcModel(snap({ bundles: [same] })), captured)).toBe(false)
   })
 })

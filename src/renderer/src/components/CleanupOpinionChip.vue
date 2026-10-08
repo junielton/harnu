@@ -37,17 +37,17 @@ const tooltip = computed(() =>
 <template>
   <span
     v-if="pending"
-    class="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2 text-[11px] leading-4 text-text-3"
+    class="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2 text-caption text-text-3"
     role="status"
     data-testid="opinion-chip"
     data-state="pending"
   >
-    <span class="anim-shimmer-dot h-[6px] w-[6px] rounded-full bg-accent" aria-hidden="true" />
+    <span class="anim-shimmer-dot size-1.5 rounded-full bg-accent" aria-hidden="true" />
     {{ t('cleanup.gc.opinion.pending') }}
   </span>
   <span v-else-if="opinion" class="inline-flex min-w-0 flex-col items-start gap-0.5">
     <span
-      class="inline-flex items-center rounded-full border px-2 text-[11px] leading-4"
+      class="inline-flex items-center rounded-full border px-2 text-caption"
       :class="VARIANT[opinion.verdict]"
       :title="tooltip"
       :aria-label="t('cleanup.gc.opinion.aria', { verdict: verdictWord, reason: opinion.reason })"
@@ -58,7 +58,7 @@ const tooltip = computed(() =>
     </span>
     <span
       v-if="showEvidence"
-      class="max-w-full truncate text-[11px] text-text-4"
+      class="max-w-full truncate text-caption text-text-4"
       :title="opinion.evidence"
       data-testid="opinion-evidence"
     >

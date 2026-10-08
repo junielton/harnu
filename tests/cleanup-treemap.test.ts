@@ -283,3 +283,38 @@ describe('CleanupTreemap — aggregates, regions and drill-down', () => {
     expect(w.find('[data-testid="treemap-canvas"]').exists()).toBe(false)
   })
 })
+
+describe('CleanupTreemap — the repo label', () => {
+  it('wears a mono org/proj-style label in EVERY region, with the full path as its tooltip', () => {
+    const model = modelOf([
+      wt('a', 'ready', 5 * GIB, {
+        repoPath: '/ws/org/proj/www',
+        id: '/ws/org/proj/www::worktree::a'
+      }),
+      wt('b', 'review', 1 * GIB, { repoPath: '/ws/org/portal', id: '/ws/org/portal::worktree::b' }),
+      wt('c', 'review', 1 * GIB, {
+        repoPath: '/ws/org/api-gateway',
+        id: '/ws/org/api-gateway::worktree::c'
+      })
+    ])
+    const w = mountMap(model)
+    const labels = w.findAll('[data-testid="treemap-repo"]')
+    expect(labels.map((l) => l.text()).sort()).toEqual([
+      'org/api-gateway',
+      'org/portal',
+      'proj/www'
+    ])
+    for (const l of labels) {
+      expect(l.classes()).toContain('font-mono')
+      expect(l.classes()).toContain('truncate')
+      expect(l.attributes('title')).toMatch(/^\/ws\//)
+    }
+  })
+
+  it('keeps the label out of the squeeze: the meta and badges yield first', () => {
+    const w = mountMap(sample())
+    const label = w.get('[data-testid="treemap-repo"]')
+    expect(label.classes().join(' ')).toMatch(/shrink-0|max-w/)
+    expect(w.get('.tm-rmeta').classes()).toContain('truncate')
+  })
+})

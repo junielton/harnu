@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import CleanupBulkConfirmDialog from '../src/renderer/src/components/CleanupBulkConfirmDialog.vue'
 import { i18n } from '@renderer/i18n'
 import type { DialogRow } from '../src/renderer/src/lib/gc-model'
@@ -16,6 +18,7 @@ function row(over: Partial<DialogRow> = {}): DialogRow {
     branch: 'feat/proj-41',
     bytes: 512 * MB,
     chips: ['stack', 'deps', 'checkout', 'branch'],
+    stackCount: 1,
     reasonCode: null,
     reasonDetail: null,
     project: null,
@@ -38,9 +41,13 @@ const reviewRow = (over: Partial<DialogRow> = {}): DialogRow =>
 
 let wrapper: VueWrapper | null = null
 
-async function open(rows: DialogRow[], mode: 'ready' | 'review' = 'ready'): Promise<VueWrapper> {
+async function open(
+  rows: DialogRow[],
+  mode: 'ready' | 'review' = 'ready',
+  stale = false
+): Promise<VueWrapper> {
   wrapper = mount(CleanupBulkConfirmDialog, {
-    props: { rows, mode },
+    props: { rows, mode, stale },
     global: { plugins: [i18n] },
     attachTo: document.body
   })
@@ -69,7 +76,7 @@ describe('CleanupBulkConfirmDialog — what it discloses', () => {
     expect(dlg.getAttribute('aria-modal')).toBe('true')
     const title = q(`#${dlg.getAttribute('aria-labelledby')}`)!
     expect(title.textContent?.trim()).toBe('Clean 2 ready items?')
-    expect(q('[data-testid="bulk-summary"]')!.textContent?.trim()).toBe('2 items · 1.00 GB')
+    expect(q('[data-testid="bulk-total"]')!.textContent?.trim()).toBe('2 ready · 1.00 GB')
   })
 
   it('lists every row as repo › worktree with its branch and size', async () => {
@@ -84,7 +91,7 @@ describe('CleanupBulkConfirmDialog — what it discloses', () => {
   it('bounds the list at the existing 280px cap and makes it focusable and scrollable', async () => {
     await open([row()])
     const list = q('[data-testid="bulk-list"]')!
-    expect(list.className).toContain('max-h-[var(--fv-rail-list-max-h)]')
+    expect(list.className).toContain('max-h-(--fv-rail-list-max-h)')
     expect(list.className).toContain('overflow-y-auto')
     expect(list.getAttribute('tabindex')).toBe('0')
   })
@@ -133,6 +140,8 @@ describe('CleanupBulkConfirmDialog — copy by mode', () => {
     expect(confirm.className).toContain('text-green')
     const warn = q('[data-testid="bulk-warning"]')!.textContent!
     expect(warn).toContain('Volumes are kept. They show up in Needs review afterwards.')
+    // A space between the two sentences (they come from two catalog keys).
+    expect(warn).toContain('afterwards. Code')
     expect(warn).not.toContain('cannot be restored')
     expect(warn).toContain('archive refs')
     expect(warn).toContain('OS trash')
@@ -242,13 +251,14 @@ describe('CleanupBulkConfirmDialog — behaviour', () => {
       {} as DOMRect
     ] as unknown as DOMRectList)
     await open([row()])
-    const list = q('[data-testid="bulk-list"]')!
+    // The × is now the first control of the dialog, so that is where Tab wraps to.
+    const first = q('[data-testid="bulk-close"]')!
     const confirm = q('[data-testid="bulk-confirm"]')!
     confirm.focus()
     const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
     window.dispatchEvent(tab)
     expect(tab.defaultPrevented).toBe(true)
-    expect(document.activeElement).toBe(list)
+    expect(document.activeElement).toBe(first)
 
     const back = new KeyboardEvent('keydown', {
       key: 'Tab',
@@ -258,5 +268,121 @@ describe('CleanupBulkConfirmDialog — behaviour', () => {
     })
     window.dispatchEvent(back)
     expect(document.activeElement).toBe(confirm)
+  })
+})
+
+describe('CleanupBulkConfirmDialog — when what it showed has changed', () => {
+  it('says so, in the warning ink, and disables the confirm', async () => {
+    await open([row()], 'ready', true)
+    expect(q('[data-testid="bulk-stale"]')!.textContent).toContain(
+      i18n.global.t('cleanup.gc.confirm.changed')
+    )
+    expect((q('[data-testid="bulk-confirm"]') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('does not confirm on click or Enter while changed, but Cancel still closes it', async () => {
+    const w = await open([row()], 'ready', true)
+    ;(q('[data-testid="bulk-confirm"]') as HTMLButtonElement).click()
+    q('[data-testid="bulk-confirm"]')!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    )
+    expect(w.emitted('confirm')).toBeUndefined()
+    ;(q('[data-testid="bulk-cancel"]') as HTMLButtonElement).click()
+    expect(w.emitted('cancel')).toHaveLength(1)
+  })
+
+  it('shows nothing of the kind while the facts are what was shown', async () => {
+    await open([row()], 'ready', false)
+    expect(q('[data-testid="bulk-stale"]')).toBeNull()
+    expect((q('[data-testid="bulk-confirm"]') as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
+describe('CleanupBulkConfirmDialog — chip titles', () => {
+  it("the volume chip describes an orphan volume with no worktree, not a worktree's volume", () => {
+    for (const locale of ['en', 'pt-BR']) {
+      const msgs = JSON.parse(
+        readFileSync(join(process.cwd(), `src/renderer/src/i18n/${locale}.json`), 'utf8')
+      )
+      const title: string = msgs.cleanup.gc.chip.title.volume
+      expect(title, locale).not.toMatch(/owned by this worktree|deste worktree/i)
+      if (locale === 'en') expect(title).toMatch(/no worktree/i)
+    }
+  })
+})
+
+describe('CleanupBulkConfirmDialog — parity with the approved mockup', () => {
+  it('has a × close button that cancels, next to the title', async () => {
+    const w = await open([row()])
+    const x = q('[data-testid="bulk-close"]') as HTMLButtonElement
+    expect(x.getAttribute('aria-label')).toBe('Close')
+    expect(x.querySelector('svg')).not.toBeNull()
+    x.click()
+    expect(w.emitted('cancel')).toHaveLength(1)
+  })
+
+  it('gives every removal chip an icon', async () => {
+    await open([row()])
+    const chips = qa('[data-testid="bulk-row"] [data-chip]')
+    expect(chips.length).toBeGreaterThan(0)
+    for (const c of chips) expect(c.querySelector('svg'), c.dataset.chip).not.toBeNull()
+  })
+
+  it('sets the row title in mono, with the branch as a mono sub-line', async () => {
+    await open([row()])
+    const r = q('[data-testid="bulk-row"]')!
+    expect(r.querySelector('[data-testid="bulk-row-title"]')!.className).toContain('font-mono')
+    expect(r.querySelector('[data-testid="bulk-row-sub"]')!.className).toContain('font-mono')
+  })
+
+  it('states the whole clean in one breakdown line, without volumes', async () => {
+    await open([
+      row({ stackCount: 2 }),
+      row({ id: 'r2', stackCount: 1, chips: ['deps', 'checkout'] })
+    ])
+    expect(q('[data-testid="bulk-breakdown"]')!.textContent!.trim()).toBe(
+      '3 stacks stopped · 2 dependency folders removed · 2 worktrees trashed'
+    )
+  })
+
+  it('leaves out a part that is zero, and uses the singular for one', async () => {
+    await open([row({ stackCount: 0, chips: ['checkout', 'branch'] })])
+    expect(q('[data-testid="bulk-breakdown"]')!.textContent!.trim()).toBe('1 worktree trashed')
+  })
+
+  it('adds the volumes only for an orphan volume row', async () => {
+    await open(
+      [
+        {
+          ...row(),
+          id: 'volume:pg',
+          kind: 'volume',
+          name: 'pg',
+          branch: null,
+          chips: ['volume'],
+          stackCount: 0,
+          reasonCode: 'no-known-worktree',
+          project: 'old-app'
+        }
+      ],
+      'review'
+    )
+    expect(q('[data-testid="bulk-breakdown"]')!.textContent!.trim()).toBe('1 volume deleted')
+  })
+
+  it('the footer reads "N ready · size" for the ready dialog and "N selected · size" for remove-selected', async () => {
+    await open([row(), row({ id: 'r2' })], 'ready')
+    expect(q('[data-testid="bulk-total"]')!.textContent!.trim()).toBe('2 ready · 1.02 GB')
+    wrapper?.unmount()
+    await open([reviewRow(), reviewRow({ id: 'd2' })], 'review')
+    expect(q('[data-testid="bulk-total"]')!.textContent!.trim()).toBe('2 selected · 1.02 GB')
+  })
+
+  it('puts an icon on the confirm button: Recycle on Success, Trash on Danger', async () => {
+    await open([row()], 'ready')
+    expect(q('[data-testid="bulk-confirm"] svg')!.getAttribute('class')).toContain('recycle')
+    wrapper?.unmount()
+    await open([reviewRow()], 'review')
+    expect(q('[data-testid="bulk-confirm"] svg')!.getAttribute('class')).toContain('trash')
   })
 })

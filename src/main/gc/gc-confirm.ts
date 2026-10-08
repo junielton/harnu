@@ -6,7 +6,7 @@
 //
 // Pure: no I/O, so every comparison is unit-tested in tests/gc-confirm.test.ts.
 
-import type { WorktreeBundle } from './bundle-core'
+import { canonicalPathKey, type WorktreeBundle } from './bundle-core'
 import type { OrphanVolumeItem } from './gc-housekeeping-input'
 import type { GcExpected } from './gc-wire'
 
@@ -20,7 +20,8 @@ export function expectedOf(b: WorktreeBundle): GcExpected {
     headSha: b.localTip ?? null,
     stackIds: sorted(b.stackIds),
     ownedVolumes: sorted(b.ownedVolumes),
-    bytes: b.item.diskBytes ?? null
+    bytes: b.item.diskBytes ?? null,
+    path: b.item.path ?? null
   }
 }
 
@@ -33,11 +34,13 @@ export function orphanExpectedOf(v: OrphanVolumeItem): GcExpected {
     stackIds: [],
     ownedVolumes: [v.name],
     bytes: v.sizeBytes,
+    path: null,
     project: v.project
   }
 }
 
-export type ChangeKind = 'bucket' | 'reason' | 'head' | 'stack' | 'volume' | 'size' | 'project'
+export type ChangeKind =
+  'path' | 'bucket' | 'reason' | 'head' | 'stack' | 'volume' | 'size' | 'project'
 
 const addedTo = (fresh: readonly string[], seen: readonly string[]): boolean => {
   const known = new Set(seen)
@@ -50,6 +53,10 @@ const addedTo = (fresh: readonly string[], seen: readonly string[]): boolean => 
  * deliberately not compared: a checkout's disk use drifts without anything having changed.
  */
 export function bundleChangedSince(b: WorktreeBundle, seen: GcExpected): ChangeKind | null {
+  // The folder first: a worktree moved elsewhere is a different thing under the same id.
+  const here = b.item.path ? canonicalPathKey(b.item.path, process.platform) : null
+  const there = seen.path ? canonicalPathKey(seen.path, process.platform) : null
+  if (here !== there) return 'path'
   if (b.bucket !== seen.bucket) return 'bucket'
   if ((b.reason?.code ?? null) !== seen.reasonCode) return 'reason'
   if ((b.localTip ?? null) !== seen.headSha) return 'head'
