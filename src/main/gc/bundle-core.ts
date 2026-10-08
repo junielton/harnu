@@ -64,6 +64,7 @@ export type ReviewCode =
   | 'shared-stack'
   | 'cleanup-failed'
   | 'path-unresolved'
+  | 'nested-worktree'
 
 /** `detail` is one English sentence with the concrete fact; the renderer translates by `code`. */
 export interface ReviewReason {
@@ -103,6 +104,12 @@ export interface BundleFacts {
    * ready.
    */
   pathsResolved: boolean
+  /**
+   * Real paths of the other known worktrees (other bundles and `knownFolders`) that lie
+   * strictly inside this one. Trashing this folder would take theirs with it, uncommitted
+   * work included, so any entry, or a list that is absent, is never ready (delta 6, F1).
+   */
+  nestedWorktrees: string[]
 }
 
 export interface WorktreeBundle extends BundleFacts {
@@ -244,6 +251,23 @@ export function bucketOf(
     return review(
       'shared-stack',
       `${plural(n, 'other stack')} also ${n === 1 ? 'uses' : 'use'} this worktree: ${f.sharedStackIds.join(', ')}.`
+    )
+  }
+
+  // A worktree nested inside this one (Claude Code's worktree command run from inside a
+  // linked worktree puts it at `.claude/worktrees/*`) would be trashed with it, and its git
+  // status shows only `?? .claude/`, so the parent reads clean (delta 6, F1). A list that
+  // is missing or not a list cannot show there is none.
+  if (!Array.isArray(f.nestedWorktrees))
+    return review(
+      'nested-worktree',
+      'Whether another worktree lives inside this one could not be checked.'
+    )
+  if (f.nestedWorktrees.length > 0) {
+    const n = f.nestedWorktrees.length
+    return review(
+      'nested-worktree',
+      `${plural(n, 'other worktree')} ${n === 1 ? 'lives' : 'live'} inside this one: ${f.nestedWorktrees.join(', ')}.`
     )
   }
 
@@ -469,6 +493,17 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
 
   const neverClean = new Set([...input.neverClean].map(real))
 
+  // Every known worktree path a bundle could contain: each bundle's own path and every known
+  // folder, on real paths (delta 6, F1). One that did not resolve is left to the
+  // path-unresolved rule instead, since its spelling says nothing about where it lives.
+  const knownWorktrees = [
+    ...new Set(
+      [...folders.map((f) => f.item.path as string), ...input.knownFolders]
+        .filter((p) => p && canonical(p).resolved)
+        .map(real)
+    )
+  ]
+
   // Every folder that could share a compose project with a bundle: each item's checkout and
   // its repo's main checkout, plus whatever else the caller knows about.
   const knownFolders = new Set(
@@ -488,6 +523,11 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
           : { fate: 'unknown', signal: null, strong: false }
 
     const stacks = exclusive.get(item.id) ?? []
+    // Segment containment, so a sibling `WT-other` is not nested, and strictly inside, so
+    // the bundle's own path (however it was spelled) is not either.
+    const nestedWorktrees = knownWorktrees
+      .filter((k) => k !== '' && k !== path && isInside(k, path))
+      .sort()
     // On real paths, so a trailing slash, a `..` or a symlink must not hide a session, and a
     // session in a subfolder counts too.
     const session = sessionOf(input.sessions, path, platform, canonical)
@@ -525,7 +565,8 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
         canonical(item.repoPath).resolved &&
         !unresolved.some(
           (u) => relatesTo(u, path) || relatesTo(u, canonicalPathKey(item.path as string, platform))
-        )
+        ),
+      nestedWorktrees
     }
     return { ...facts, ...bucketOf(facts, input.now, input.graceDays) }
   })

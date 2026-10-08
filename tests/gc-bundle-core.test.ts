@@ -124,6 +124,7 @@ function readyFacts(over: Partial<BundleFacts> = {}): BundleFacts {
     neverClean: false,
     isMainCheckout: false,
     pathsResolved: true,
+    nestedWorktrees: [],
     ...over
   }
 }
@@ -2028,5 +2029,121 @@ describe('containerFolders through a resolver (delta 4, item C)', () => {
     const c = composeContainer('web', 'app', '/link/wt')
     const real = containerFolders(c, 'darwin', aliases({ '/link/wt': '/Users/Me/Proj/WT' }))
     expect(real).toEqual([canonicalPathKey('/users/me/proj/wt', 'darwin')])
+  })
+})
+
+// ---- nested linked worktrees (delta 6, F1) --------------------------------------------
+
+describe('bucketOf — a worktree nested inside this one (delta 6, F1)', () => {
+  const NESTED = `${WT_A}/.claude/worktrees/b`
+
+  it('a ready bundle with a nested worktree is review nested-worktree, naming the path', () => {
+    const r = bucketOf(readyFacts({ nestedWorktrees: [NESTED] }), NOW, GRACE_DAYS)
+    expect(r.bucket).toBe('review')
+    expect(r.reason?.code).toBe('nested-worktree')
+    expect(r.reason?.detail).toContain(NESTED)
+  })
+
+  it.each([undefined, null, 'x'])('fails closed when the list is %s', (bad) => {
+    const r = bucketOf(readyFacts({ nestedWorktrees: bad as unknown as string[] }), NOW, GRACE_DAYS)
+    expect(r.bucket).toBe('review')
+    expect(r.reason?.code).toBe('nested-worktree')
+  })
+
+  it('fails closed when the field is absent', () => {
+    const { nestedWorktrees: _omit, ...rest } = readyFacts()
+    const r = bucketOf(rest as BundleFacts, NOW, GRACE_DAYS)
+    expect(r.bucket).toBe('review')
+    expect(r.reason?.code).toBe('nested-worktree')
+  })
+
+  it('the in-use rules still win', () => {
+    const r = bucketOf(
+      readyFacts({ nestedWorktrees: [NESTED], session: 'working' }),
+      NOW,
+      GRACE_DAYS
+    )
+    expect(r).toEqual({ bucket: 'in-use', reason: null })
+  })
+
+  it('open-idle-session and shared-stack come first', () => {
+    const idle = readyFacts({ nestedWorktrees: [NESTED], session: 'open-idle' })
+    expect(bucketOf(idle, NOW, GRACE_DAYS).reason?.code).toBe('open-idle-session')
+    const shared = readyFacts({ nestedWorktrees: [NESTED], sharedStackIds: ['app'] })
+    expect(bucketOf(shared, NOW, GRACE_DAYS).reason?.code).toBe('shared-stack')
+  })
+
+  it('comes before path-unresolved and the fate rules', () => {
+    const unresolved = readyFacts({ nestedWorktrees: [NESTED], pathsResolved: false })
+    expect(bucketOf(unresolved, NOW, GRACE_DAYS).reason?.code).toBe('nested-worktree')
+    const closed: FateResult = { fate: 'closed-unmerged', signal: null, strong: false }
+    const notMerged = readyFacts({ nestedWorktrees: [NESTED], fate: closed })
+    expect(bucketOf(notMerged, NOW, GRACE_DAYS).reason?.code).toBe('nested-worktree')
+  })
+})
+
+describe('buildBundles — a worktree nested inside another (delta 6, F1)', () => {
+  // Claude Code's worktree command run inside linked worktree A creates B under A. A reads
+  // clean (its status shows only `?? .claude/`), so without this A is ready and its trash
+  // takes B's uncommitted work with it.
+  const NESTED = `${WT_A}/.claude/worktrees/b`
+  const nested = (path = NESTED): ReapItem =>
+    item({ path, id: `${REPO}::worktree::${path}`, branch: 'feat/b' })
+  const parentOf = (
+    out: ReturnType<typeof buildBundles>
+  ): ReturnType<typeof buildBundles>[number] => out.find((b) => b.item.path === WT_A)!
+
+  it('a clean ready parent with a nested worktree is review nested-worktree', () => {
+    const out = build({ items: [item(), nested()] })
+    const parent = parentOf(out)
+    expect(parent.nestedWorktrees).toEqual([NESTED])
+    expect(parent.bucket).toBe('review')
+    expect(parent.reason?.code).toBe('nested-worktree')
+    expect(parent.reason?.detail).toContain(NESTED)
+  })
+
+  it('a dirty parent with a nested worktree is review nested-worktree too', () => {
+    const dirty = item({ blockers: ['dirty'] })
+    const parent = parentOf(build({ items: [dirty, nested()] }))
+    expect(parent.bucket).toBe('review')
+    expect(parent.reason?.code).toBe('nested-worktree')
+  })
+
+  it('the nested worktree itself contains nothing and is judged on its own', () => {
+    const child = build({ items: [item(), nested()] }).find((b) => b.item.path === NESTED)!
+    expect(child.nestedWorktrees).toEqual([])
+    expect(child.bucket).toBe('ready')
+  })
+
+  it('a nested path known only from knownFolders counts too', () => {
+    const b = only(build({ knownFolders: [NESTED] }))
+    expect(b.nestedWorktrees).toEqual([NESTED])
+    expect(b.bucket).toBe('review')
+    expect(b.reason?.code).toBe('nested-worktree')
+  })
+
+  it('a nested path reached through a symlink counts where it really lives', () => {
+    const b = only(build({ knownFolders: ['/link/b'], canonical: aliases({ '/link/b': NESTED }) }))
+    expect(b.nestedWorktrees).toEqual([NESTED])
+    expect(b.reason?.code).toBe('nested-worktree')
+  })
+
+  it('a sibling that only shares a name prefix does not count', () => {
+    const out = build({ items: [item(), nested(`${WT_A}-other`)], knownFolders: [`${WT_A}-b`] })
+    const parent = parentOf(out)
+    expect(parent.nestedWorktrees).toEqual([])
+    expect(parent.bucket).toBe('ready')
+  })
+
+  it('the bundle itself, however it is spelled, does not count', () => {
+    const b = only(build({ knownFolders: [WT_A, `${WT_A}/`, `${WT_A}/.`] }))
+    expect(b.nestedWorktrees).toEqual([])
+    expect(b.bucket).toBe('ready')
+  })
+
+  it('a folder above the bundle does not count', () => {
+    const b = only(build({ knownFolders: ['/ws/org/proj'] }))
+    expect(b.nestedWorktrees).toEqual([])
+    expect(b.bucket).toBe('ready')
   })
 })

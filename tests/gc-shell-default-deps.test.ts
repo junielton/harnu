@@ -75,6 +75,7 @@ function harvestable(): WorktreeBundle {
     neverClean: false,
     isMainCheckout: false,
     pathsResolved: true,
+    nestedWorktrees: [],
     localTip: TIP,
     bucket: 'ready',
     reason: null
