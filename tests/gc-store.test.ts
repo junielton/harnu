@@ -830,3 +830,67 @@ describe('gc store — an opinion belongs to the item as it was when asked', () 
     expect(gc.opinionFor(review)?.verdict).toBe('unsure')
   })
 })
+
+describe('gc store — asking about more than 100 items is one logical ask', () => {
+  function manyReview(n: number): GcSnapshot {
+    const base = snap()
+    const extra = Array.from({ length: n }, (_, i) => wt(`m${i}`, 'review', (i + 1) * MIB))
+    return { ...base, bundles: [...base.bundles.filter((b) => b.bucket !== 'review'), ...extra] }
+  }
+
+  it('splits 250 ids into batches of at most 100 and sends every one of them, once', async () => {
+    const api = installApi(manyReview(250))
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    const all = gc.model!.review.map((b) => b.id)
+    expect(all).toHaveLength(250)
+    await gc.askOpinion(all)
+    const batches = api.gcOpinion.mock.calls.map((c) => c[0] as string[])
+    expect(batches.map((b) => b.length)).toEqual([100, 100, 50])
+    expect(batches.flat().sort()).toEqual([...all].sort())
+    expect(new Set(batches.flat()).size).toBe(250)
+  })
+
+  it('shows every item as asking at once, and clears each as its result arrives', async () => {
+    const api = installApi(manyReview(150))
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    const all = gc.model!.review.map((b) => b.id)
+    await gc.askOpinion(all)
+    expect(all.every((id) => gc.isAsking(id))).toBe(true)
+    api.push.opinion({ jobId: 'o1', id: all[120], verdict: 'keep', reason: 'r', evidence: 'e' })
+    expect(gc.isAsking(all[120])).toBe(false)
+    expect(gc.isAsking(all[0])).toBe(true)
+  })
+
+  it('a rejected batch clears only its own ids, and says so once', async () => {
+    const api = installApi(manyReview(250))
+    api.gcOpinion
+      .mockResolvedValueOnce({ jobId: 'o1' })
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce({ jobId: 'o3' })
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    const all = gc.model!.review.map((b) => b.id)
+    await gc.askOpinion(all)
+    const batches = api.gcOpinion.mock.calls.map((c) => c[0] as string[])
+    expect(batches[1].every((id) => !gc.isAsking(id))).toBe(true)
+    expect(batches[0].every((id) => gc.isAsking(id))).toBe(true)
+    expect(batches[2].every((id) => gc.isAsking(id))).toBe(true)
+    const toasts = useUiStore().toasts.filter((x) => x.title === t('cleanup.gc.opinion.failed'))
+    expect(toasts).toHaveLength(1)
+  })
+
+  it('does not split a request of 100 or fewer', async () => {
+    const api = installApi(manyReview(100))
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    await gc.askOpinion(gc.model!.review.map((b) => b.id))
+    expect(api.gcOpinion).toHaveBeenCalledTimes(1)
+    expect((api.gcOpinion.mock.calls[0][0] as string[]).length).toBe(100)
+  })
+})
