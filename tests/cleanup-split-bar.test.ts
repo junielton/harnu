@@ -52,10 +52,12 @@ describe('CleanupSplitBar', () => {
     expect(w.get('[data-testid="split-auto"]').attributes('style')).toContain(
       'flex: 6000000000 1 0px'
     )
-    const docker = w.get('[data-testid="split-docker"]')
+    const docker = w.get('[data-testid="split-cache"]')
     expect(docker.attributes('style')).toContain('flex: 5000000000 1 0px')
     expect(docker.text()).toContain('Docker (cleaned each cycle)')
     expect(docker.text()).toContain('5.00 GB')
+    // The bar itself says just "Docker" so it does not truncate; the caption above carries the full name.
+    expect(docker.get('[data-testid="split-cache-word"]').text()).toBe('Docker')
     expect(docker.find('svg').exists()).toBe(true)
   })
 
@@ -65,7 +67,7 @@ describe('CleanupSplitBar', () => {
     t.docker = { count: 14, bytes: 5_000_000_000 }
     const w = mountBar({ totals: t })
     expect(w.find('[data-testid="split-auto"]').exists()).toBe(false)
-    expect(w.get('[data-testid="split-docker"]').exists()).toBe(true)
+    expect(w.get('[data-testid="split-cache"]').exists()).toBe(true)
   })
 
   it('while a job runs the line under the bar reads "Cleaning now · N left", not the last cycle', () => {

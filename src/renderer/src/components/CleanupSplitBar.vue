@@ -24,7 +24,7 @@ const props = defineProps<{
 const { t } = useI18n()
 
 interface Segment {
-  key: 'auto' | 'docker' | 'review' | 'untouched'
+  key: 'auto' | 'cache' | 'review' | 'untouched'
   bucket: 'ready' | 'review' | 'in-use'
   icon: Component
   count: number
@@ -43,7 +43,7 @@ const segments = computed<Segment[]>(() => {
     {
       // Docker housekeeping is taken every cycle too, but it is not a worktree: the hero counts worktrees, so
       // the bar keeps the two apart and they agree after a clean.
-      key: 'docker',
+      key: 'cache',
       bucket: 'ready',
       icon: Container,
       count: props.totals.docker.count,
@@ -119,7 +119,9 @@ const lastLine = computed(() => {
           :style="s.bucket === 'review' ? { backgroundImage: HATCH } : undefined"
         >
           <component :is="s.icon" :size="12" :stroke-width="1.6" class="shrink-0" />
-          <span class="truncate">{{ t(`cleanup.gc.split.${s.key}`) }}</span>
+          <span class="truncate" :data-testid="`split-${s.key}-word`">{{
+            t(s.key === 'cache' ? 'cleanup.gc.split.cacheShort' : `cleanup.gc.split.${s.key}`)
+          }}</span>
           <span class="ml-auto tabular-nums">
             {{
               hasBytes
