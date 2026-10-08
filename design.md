@@ -8517,7 +8517,11 @@ Needs review item, orphan volumes included) and the block panel's button (that o
   paths: HOME, an ancestor of HOME or a filesystem root is replaced by a fresh empty directory of its
   own, never the shared temp dir. Inside the repository folder any file can be opened, ignored ones such
   as `.env` included, and a hard link there to a file elsewhere reads as a file inside it. A worktree
-  outside the repository folder is not readable.
+  outside the repository folder is not readable. On Windows, where there is no per-user temp folder name
+  to block, only `~/.claude` (and `CLAUDE_CONFIG_DIR`) are explicitly blocked. A blocked folder whose path
+  holds a comma, a parenthesis or a control character has no safe form in a deny rule (a comma
+  separates rules, parentheses end one): then the advisor is not run, every item is answered `unsure`
+  ("Harnu could not express a safety rule for <folder name>"), and nothing is cached.
 - **Git facts fail closed.** A dossier field that comes from git is either computed or marked
   `COULD NOT BE COMPUTED (reason)`: a failed diff or status is unknown, not "no difference" or "none". An
   item with a missing fact is answered `unsure` by Harnu without asking the model, has no cache key (so it

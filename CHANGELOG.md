@@ -27,7 +27,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   and none of Harnu's own tools. The Claude CLI's own check keeps it to that folder, but the CLI
   may still allow a few of its own working folders, so Harnu explicitly blocks Claude's data
   folder (`~/.claude` and `CLAUDE_CONFIG_DIR`) and Claude's temp folder, and switches auto memory
-  off, so a repository's `MEMORY.md` is not added to what it sees (auto memory is off). Inside the
+  off, so a repository's `MEMORY.md` is not added to what it sees (auto memory is off). On Windows, where there is no per-user temp folder name to block, only `~/.claude` (and `CLAUDE_CONFIG_DIR`) are explicitly blocked. If a blocked folder's path could not be written into a rule, Harnu does not run the advisor and answers unsure. Inside the
   repository folder any file can be opened, ignored files such as `.env` included (a hard link
   there to a file elsewhere reads as a file inside it). What it opens is sent to the model like
   any Claude request. If git fails to produce a fact for an item, Harnu says so and answers unsure
