@@ -1096,7 +1096,8 @@ const MERGED_FACTS: BranchFacts = {
 function scanned(
   containers: InspectedContainer[],
   links: CanonicalPath = (p) => ({ path: p, resolved: true }),
-  path: string = WT
+  path: string = WT,
+  sessions: Map<string, { presence: SessionPresence; lastActivityAt: number | null }> = new Map()
 ): WorktreeBundle {
   // Merged ten days before the scan, so the grace window has long elapsed at execution time.
   const item = reapItem({
@@ -1117,7 +1118,7 @@ function scanned(
     stacks: groupStacks(containers),
     stackPaths: new Map(),
     containers,
-    sessions: new Map(),
+    sessions,
     keep: new Set(),
     neverClean: new Set(),
     now: EXEC_NOW,
@@ -1811,5 +1812,36 @@ describe('P8: a dev container that bind-mounts an ancestor of the worktree (delt
     const r = await runBundle(b, createGcOps(h.deps), { removeVolumes: false })
     expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'changed-since-scan' })
     expect(h.stop).not.toHaveBeenCalled()
+  })
+})
+
+// ---- a history-only session never forces path-unresolved (delta 5, item 2) -------------
+
+describe('a history-only session in a deleted subfolder (delta 5, item 2)', () => {
+  const GONE = `${WT}/api`
+  const historyOnly = new Map([
+    [GONE, { presence: 'none' as SessionPresence, lastActivityAt: null }]
+  ])
+  const goneOnDisk: CanonicalPath = (p) =>
+    p === GONE ? { path: p, resolved: false } : { path: p, resolved: true }
+
+  it('is ready at the scan and the run cleans it', async () => {
+    const b = scanned([], goneOnDisk, WT, historyOnly)
+    expect(b.pathsResolved).toBe(true)
+    expect(b.bucket).toBe('ready')
+    const h = harness({ stacks: [], unresolved: [GONE] })
+    expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: true })
+    const r = await runBundle(b, createGcOps(h.deps), { removeVolumes: false })
+    expect(r).toMatchObject({ ok: true, haltedAt: null })
+  })
+
+  it('a live session in an unreadable subfolder still counts for the worktree', async () => {
+    const sets = { live: new Set([GONE]), inUse: new Set([GONE]) }
+    const canonical = await resolveRealPaths([WT, GONE], async (p) => {
+      if (p === GONE) throw new Error('ENOENT')
+      return p
+    })
+    expect(canonical(GONE).resolved).toBe(false)
+    expect(presenceFromSets(WT, sets, canonical)).toBe('working')
   })
 })

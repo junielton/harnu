@@ -203,6 +203,14 @@ function aliases(links: Record<string, string>, unresolved: string[] = []): Cano
   }
 }
 
+/**
+ * A fake realpath where only the listed paths themselves fail. `aliases` fails every path
+ * under an entry too, so an unresolved ancestor would take the worktree path down with it.
+ */
+function unresolvedExactly(paths: string[]): CanonicalPath {
+  return (p) => ({ path: p, resolved: !paths.includes(p) })
+}
+
 /** Inputs for a single worktree at WT_A whose branch is merged by ancestry. */
 function build(over: BuildOver = {}): ReturnType<typeof buildBundles> {
   const items = over.items ?? [item()]
@@ -1894,26 +1902,45 @@ describe('buildBundles — real paths (delta 4, item C)', () => {
       expectUnresolved(b)
     })
 
-    it('a session folder that is an ancestor of the worktree', () => {
+    // Both were `none` before delta 5, item 2 exempted history-only sessions; the rule
+    // they pinned now holds for an open one. Only the ancestor itself fails to resolve
+    // here: under `aliases` the worktree path would fail with it and prove nothing.
+    it('an open session folder that is an ancestor of the worktree', () => {
       expectUnresolved(
         only(
           build({
-            sessions: new Map([['/ws/org/proj', { presence: 'none', lastActivityAt: null }]]),
-            canonical: aliases({}, ['/ws/org/proj'])
+            sessions: new Map([
+              [WT_A, { presence: 'none', lastActivityAt: null }],
+              ['/ws/org/proj', { presence: 'open-idle', lastActivityAt: null }]
+            ]),
+            canonical: unresolvedExactly(['/ws/org/proj'])
           })
         )
       )
     })
 
-    it('a session folder inside the worktree', () => {
-      expectUnresolved(
-        only(
-          build({
-            sessions: new Map([[`${WT_A}/api`, { presence: 'none', lastActivityAt: null }]]),
-            canonical: aliases({}, [`${WT_A}/api`])
-          })
-        )
+    it('an open session folder inside the worktree', () => {
+      const b = only(
+        build({
+          sessions: new Map([[`${WT_A}/api`, { presence: 'open-idle', lastActivityAt: null }]]),
+          canonical: aliases({}, [`${WT_A}/api`])
+        })
       )
+      // Never ready; the open session is the rule that comes first.
+      expect(b.pathsResolved).toBe(false)
+      expect(b.bucket).toBe('review')
+      expect(b.reason?.code).toBe('open-idle-session')
+    })
+
+    it('a live session folder inside the worktree', () => {
+      const b = only(
+        build({
+          sessions: new Map([[`${WT_A}/api`, { presence: 'working', lastActivityAt: null }]]),
+          canonical: aliases({}, [`${WT_A}/api`])
+        })
+      )
+      expect(b.pathsResolved).toBe(false)
+      expect(b.bucket).toBe('in-use')
     })
 
     it('an unresolved folder unrelated to the worktree changes nothing', () => {
@@ -1922,12 +1949,61 @@ describe('buildBundles — real paths (delta 4, item C)', () => {
         build({
           stacks: [stack('other', [web])],
           containers: [web],
-          sessions: new Map([[`${WT_A}-other`, { presence: 'none', lastActivityAt: null }]]),
+          // Open, so the delta 5 exemption for history-only sessions plays no part.
+          sessions: new Map([[`${WT_A}-other`, { presence: 'open-idle', lastActivityAt: null }]]),
           canonical: aliases({}, [ELSEWHERE, `${WT_A}-other`])
         })
       )
       expect(b.pathsResolved).toBe(true)
       expect(b.bucket).toBe('ready')
+    })
+  })
+
+  describe('a history-only session never forces path-unresolved (delta 5, item 2)', () => {
+    const historyOnly = { presence: 'none' as const, lastActivityAt: null }
+
+    // Flipped by delta 5: it was path-unresolved.
+    it('a history-only session in a deleted subfolder leaves the bundle ready', () => {
+      const b = only(
+        build({
+          sessions: new Map([
+            [WT_A, historyOnly],
+            [`${WT_A}/api`, historyOnly]
+          ]),
+          canonical: aliases({}, [`${WT_A}/api`])
+        })
+      )
+      expect(b.pathsResolved).toBe(true)
+      expect(b.bucket).toBe('ready')
+    })
+
+    // Flipped by delta 5: it was path-unresolved.
+    it('a history-only session in an unresolvable folder above the worktree leaves it ready', () => {
+      const b = only(
+        build({
+          sessions: new Map([
+            [WT_A, historyOnly],
+            ['/ws/org/proj', historyOnly]
+          ]),
+          canonical: unresolvedExactly(['/ws/org/proj'])
+        })
+      )
+      expect(b.pathsResolved).toBe(true)
+      expect(b.bucket).toBe('ready')
+    })
+
+    it('an unresolved container folder in the same subfolder still blocks it', () => {
+      const db = composeContainer('db', 'app', `${WT_A}/api`)
+      const b = only(
+        build({
+          stacks: [stack('app', [db])],
+          containers: [db],
+          sessions: new Map([[`${WT_A}/api`, historyOnly]]),
+          canonical: aliases({}, [`${WT_A}/api`])
+        })
+      )
+      expect(b.pathsResolved).toBe(false)
+      expect(b.reason?.code).toBe('path-unresolved')
     })
   })
 })
