@@ -31,7 +31,12 @@ interface Seen {
   answer: string
 }
 
-async function run(cwd: string, prompt: string, protectedRun: boolean): Promise<Seen> {
+async function run(
+  cwd: string,
+  prompt: string,
+  protectedRun: boolean,
+  memoryOff: boolean = protectedRun
+): Promise<Seen> {
   // The same folders the shell closes: ~/.claude always, plus CLAUDE_CONFIG_DIR and the CLI's temp folder.
   const dataDirs = claudeFolders({
     configDir: process.env.CLAUDE_CONFIG_DIR,
@@ -54,7 +59,7 @@ async function run(cwd: string, prompt: string, protectedRun: boolean): Promise<
   const base = { ...process.env } as Record<string, string>
   delete base.HARNU_SPAWN_TOKEN
   delete base.CLAUDE_CODE_DISABLE_AUTO_MEMORY
-  const env = protectedRun ? advisorEnv(base) : base
+  const env = memoryOff ? advisorEnv(base) : base
   const out = await new Promise<string>((resolve) => {
     const child = spawn('claude', flags, {
       cwd,
@@ -189,10 +194,18 @@ describe.skipIf(!LIVE)("the advisor cannot reach the CLI's temp folder (real CLI
       for (const r of seen.results) expect(r.text).not.toContain('PROBE-TMP-MARKER-3')
       expect(seen.answer).not.toContain('PROBE-TMP-MARKER-3')
       // The control: without the denies the same session reads it (why the denies exist).
-      const open = await run(cwd, prompt, false)
+      const open = await run(cwd, prompt, false, true) // denies off, auto memory still off
       expect(open.results.some((r) => !r.error && r.text.includes('PROBE-TMP-MARKER-3'))).toBe(true)
     } finally {
       if (existsSync(marker)) unlinkSync(marker)
+      const project = join(homedir(), '.claude', 'projects', slug)
+      for (const d of [join(project, 'memory'), project]) {
+        try {
+          rmdirSync(d) // only an empty folder the CLI may have made for this throwaway cwd
+        } catch {
+          // not there, or not empty: left alone
+        }
+      }
       for (const d of made.reverse()) {
         try {
           rmdirSync(d)
