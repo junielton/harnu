@@ -393,14 +393,20 @@ export function planRelease(
   const releasedAlready = snap.prefs.released[bundle.item.id] !== undefined
   // What the next gather will conclude: no grace, and the release time stands in for a
   // missing sign of life. Every other rule is judged exactly as it is.
-  const after = bucketOf(
+  const judged = bucketOf(
     { ...bundle, graceDays: 0, lastSignOfLifeAt: bundle.lastSignOfLifeAt ?? opts.now },
     opts.now,
     0
   )
+  // The snapshot's own failure overlay wins: a bundle whose last cleanup halted reads
+  // "Needs review" for the failure window whatever its facts say, so a release cannot promise
+  // it is about to be cleaned.
+  const halted = bundle.reason?.code === 'cleanup-failed'
+  const after = halted ? { bucket: 'review' as const, reason: bundle.reason } : judged
   const reason = reviewReason(after.reason)
-  const message =
-    after.bucket === 'ready'
+  const message = halted
+    ? 'Released, but the last cleanup of this worktree stopped, so it stays in review until that failure note expires (about a day) or the operator retries. Nothing was deleted.'
+    : after.bucket === 'ready'
       ? 'Released. The grace window no longer applies, so this worktree is ready to clean from the next scan. Nothing was deleted: the operator cleans it, or the autopilot does when it is on and acknowledged.'
       : `Released, but this worktree is not ready to clean (it is ${after.bucket}): a release lifts the grace window and nothing else. Nothing was deleted.`
   return {
