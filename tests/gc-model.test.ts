@@ -5,6 +5,7 @@ import {
   cleanRequestFor,
   dialogRows,
   captureConfirm,
+  repoDisplayLabel,
   confirmChanged,
   expectedFor,
   heroState,
@@ -476,5 +477,23 @@ describe('captureConfirm / confirmChanged — the dialog binds to what it showed
     const s = sample()
     s.orphanVolumes[0].sizeBytes = 1
     expect(confirmChanged(buildGcModel(s), c)).toBe(true)
+  })
+})
+
+describe('repoDisplayLabel — org/proj style labels for the map regions', () => {
+  it('keeps the last two path segments so a repo with a parent reads like the mockup', () => {
+    expect(repoDisplayLabel('/ws/org/proj/www')).toBe('proj/www')
+    expect(repoDisplayLabel('/ws/org/portal')).toBe('org/portal')
+    expect(repoDisplayLabel('/home/dev/Workspace/org/api-gateway/')).toBe('org/api-gateway')
+  })
+  it('a repo directly under the root is just its name; Windows separators work', () => {
+    expect(repoDisplayLabel('/www')).toBe('www')
+    expect(repoDisplayLabel('C:\\Work\\org\\proj')).toBe('org/proj')
+  })
+  it('regions carry both the short name (for aria and drill) and the display label', () => {
+    const m = buildGcModel(sample())
+    const www = m.regions.find((r) => r.label === 'www')!
+    expect(www.displayLabel).toBe('proj/www')
+    expect(www.repoPath).toBe('/ws/org/proj/www')
   })
 })

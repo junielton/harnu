@@ -8,6 +8,8 @@ import {
   RefreshCw,
   Loader2,
   Settings,
+  LayoutGrid,
+  List,
   CircleCheck,
   History,
   Copy,
@@ -40,6 +42,7 @@ import CleanupSelectionBar from './CleanupSelectionBar.vue'
 import CleanupFirstCycleBanner from './CleanupFirstCycleBanner.vue'
 import CleanupDockerCard from './CleanupDockerCard.vue'
 import CleanupSplitBar from './CleanupSplitBar.vue'
+import CleanupLegend from './CleanupLegend.vue'
 import CleanupBulkConfirmDialog from './CleanupBulkConfirmDialog.vue'
 import CleanupOtherItems from './CleanupOtherItems.vue'
 import DehydrateConfirmDialog from './DehydrateConfirmDialog.vue'
@@ -304,8 +307,8 @@ const lastChecked = computed(() => {
 })
 
 const modeOptions = computed(() => [
-  { value: 'map', label: t('cleanup.gc.view.map') },
-  { value: 'list', label: t('cleanup.gc.view.list') }
+  { value: 'map', label: t('cleanup.gc.view.map'), icon: LayoutGrid },
+  { value: 'list', label: t('cleanup.gc.view.list'), icon: List }
 ])
 
 function openAutopilotSettings(): void {
@@ -410,19 +413,21 @@ async function copyRestoreHint(hint: string): Promise<void> {
         :aria-label="t('cleanup.gc.view.label')"
       />
       <Button
-        variant="soft"
+        variant="ghost"
+        size="icon"
         :disabled="reaper.scanning"
+        :aria-label="t('cleanup.scanNow')"
+        :title="t('cleanup.scanNow')"
         data-testid="cleanup-rescan"
         @click="rescan()"
       >
         <Loader2
           v-if="reaper.scanning"
-          :size="13"
+          :size="14"
           :stroke-width="1.7"
           class="shrink-0 animate-spin"
         />
-        <RefreshCw v-else :size="13" :stroke-width="1.7" />
-        {{ t('cleanup.scanNow') }}
+        <RefreshCw v-else :size="14" :stroke-width="1.7" />
       </Button>
     </div>
   </div>
@@ -473,6 +478,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             :has-bytes="model.hasBytes"
             :last-cycle="gc.snapshot?.lastCycle ?? null"
           />
+          <CleanupLegend :has-bytes="model.hasBytes" />
 
           <div
             v-if="allClean"

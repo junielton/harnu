@@ -521,3 +521,34 @@ describe('Cleanup screen — Keep on a selection', () => {
     expect(api.gcSnapshot.mock.calls.length).toBeGreaterThan(before)
   })
 })
+
+describe('Cleanup screen — toolbar and legend parity with the mockup', () => {
+  it('the Map / List toggle carries its icons', async () => {
+    install(snap())
+    await mountView()
+    const group = document.body.querySelector('[aria-label="Cleanup view"]')!
+    const buttons = [...group.querySelectorAll('button')]
+    expect(buttons.map((b) => b.textContent!.trim())).toEqual(['Map', 'List'])
+    for (const b of buttons) expect(b.querySelector('svg')).not.toBeNull()
+  })
+
+  it('rescan is an icon-only button that still has a name and a tooltip', async () => {
+    install(snap())
+    await mountView()
+    const btn = dom('[data-testid="cleanup-rescan"]')
+    expect(btn.text()).toBe('')
+    expect(btn.attributes('aria-label')).toBe('Scan now')
+    expect(btn.attributes('title')).toBe('Scan now')
+    expect(btn.el!.querySelector('svg')).not.toBeNull()
+  })
+
+  it('shows the legend row under the split bar, with the area note', async () => {
+    install(snap())
+    await mountView()
+    expect(dom('[data-testid="legend"]').exists()).toBe(true)
+    expect(dom('[data-testid="legend-area"]').text()).toContain('Block area = size on disk')
+    const bar = document.body.querySelector('[data-testid="split-bar"]')!
+    const legend = document.body.querySelector('[data-testid="legend"]')!
+    expect(bar.compareDocumentPosition(legend) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})

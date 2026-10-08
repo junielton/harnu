@@ -2602,6 +2602,13 @@
       "error": {
         "clean": "Não foi possível iniciar a limpeza",
         "keep": "Não foi possível manter isso"
+      },
+      "legend": {
+        "ready": "Pronto para limpar · limpo com um clique ou pelo autopilot",
+        "review": "Precisa de você · sua decisão",
+        "inUse": "Em uso · nunca tocado",
+        "area": "Área do bloco = tamanho em disco · clique num bloco para agir",
+        "label": "Legenda"
       }
     }
   },

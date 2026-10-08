@@ -45,6 +45,8 @@ export interface BucketGroup {
 export interface RepoRegion {
   repoPath: string
   label: string
+  /** `proj/www`-style label for the region header (the full path is its tooltip). */
+  displayLabel: string
   bytes: number
   worktrees: number
   counts: Record<Bucket, number>
@@ -90,6 +92,18 @@ const basename = (p: string): string =>
     .replace(/[\\/]+$/, '')
     .split(/[\\/]/)
     .pop() || p
+
+/**
+ * The label a map region wears: the last two path segments (`proj/www`, `org/portal`), so a repo with
+ * an org parent reads like the mockup's `org/proj/www` and two repos called `www` stay apart.
+ */
+export function repoDisplayLabel(repoPath: string): string {
+  const parts = repoPath
+    .replace(/[\\/]+$/, '')
+    .split(/[\\/]/)
+    .filter(Boolean)
+  return parts.slice(-2).join('/') || repoPath
+}
 
 const bigFirst = (a: GcBlock, b: GcBlock): number =>
   b.bytes - a.bytes || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
@@ -166,6 +180,7 @@ export function buildGcModel(snapshot: GcSnapshot): GcModel {
     return {
       repoPath,
       label: basename(repoPath),
+      displayLabel: repoDisplayLabel(repoPath),
       bytes: blocks.reduce((a, b) => a + b.bytes, 0),
       worktrees: blocks.length,
       counts,

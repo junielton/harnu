@@ -2602,6 +2602,13 @@
       "error": {
         "clean": "Could not start the clean",
         "keep": "Could not keep that"
+      },
+      "legend": {
+        "ready": "Ready to clean · cleaned by one click or the autopilot",
+        "review": "Needs review · your call",
+        "inUse": "In use · never touched",
+        "area": "Block area = size on disk · click a block to act",
+        "label": "Legend"
       }
     }
   },

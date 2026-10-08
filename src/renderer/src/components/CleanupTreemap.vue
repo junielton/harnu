@@ -386,14 +386,15 @@ const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
           >
             <button
               type="button"
-              class="min-w-0 truncate text-[12.5px] font-semibold text-text-2 transition hover:text-text"
+              class="max-w-[55%] shrink-0 truncate font-mono text-ui font-semibold text-text-2 transition hover:text-text"
               :aria-label="t('cleanup.gc.map.drillRepo', { repo: r.region.label })"
+              :title="r.region.repoPath"
               data-testid="treemap-repo"
               @click="emit('drill', r.region.repoPath)"
             >
-              {{ r.region.label }}
+              {{ r.region.displayLabel }}
             </button>
-            <span class="tm-rmeta shrink-0 text-[11px] text-text-4">
+            <span class="tm-rmeta min-w-0 truncate text-[11px] text-text-4">
               {{
                 t(
                   'cleanup.gc.map.repoMeta',

@@ -8339,7 +8339,7 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
    last-cycle line (11px `--text-4`) sits under it.
    **Legend row** (`.lg`, 11px/16px, `gap: 16px`) directly under the split bar: three items — bucket icon +
    word in the bucket ink + a short gloss ("Ready to clean · cleaned by one click or the autopilot",
-   "Needs review · you decide", "In use · never touched") — then, pushed right in `--text-3`,
+   "Needs review · your call", "In use · never touched") — then, pushed right in `--text-3`,
    **"Block area = size on disk · click a block to act"**. Without byte sizes the area note is dropped.
 6. **Map** (or the List fallback), then the **Docker card**, then **Needs review**, then **Other leftovers**
    and **Recent cleanups** (the existing tombstone footer).
@@ -8598,7 +8598,7 @@ that belong to no worktree) and states that worktree-bound stacks are cleaned by
 
 `CleanupView.vue` (shell) · `CleanupTreemap.vue` · `CleanupBlockPanel.vue` · `CleanupHeroButton.vue` ·
 `CleanupSelectionBar.vue` · `CleanupDockerCard.vue` · `CleanupReviewList.vue` · `CleanupListView.vue` ·
-`CleanupSplitBar.vue` · `CleanupFirstCycleBanner.vue` · `CleanupBulkConfirmDialog.vue` · `CleanupOtherItems.vue` ·
+`CleanupSplitBar.vue` · `CleanupLegend.vue` · `CleanupFirstCycleBanner.vue` · `CleanupBulkConfirmDialog.vue` · `CleanupOtherItems.vue` ·
 `stores/gc.ts` · `lib/gc-treemap.ts` · `lib/gc-model.ts` · `lib/gc-jobs.ts`.
 
 ### Containers takeover (ContainersView.vue)
