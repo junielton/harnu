@@ -150,12 +150,16 @@ export const useGcStore = defineStore('gc', () => {
     const entry = {
       kind: warning ? ('warning' as const) : ('success' as const),
       title: warning
-        ? t('cleanup.gc.toast.partial', { cleaned: s.cleaned, failed: s.failed })
+        ? t('cleanup.gc.toast.partial', { cleaned: s.cleaned, failed: s.failed }, s.failed)
         : t('cleanup.gc.toast.success', { size: formatBytes(s.freedBytes), count: s.cleaned }),
       description: refusalDescription(s) ?? d.error ?? undefined,
       timeoutMs: warning ? 8000 : 6000,
       target: { view: 'cleanup' as const },
-      action: { label: t('cleanup.gc.toast.review'), handler: () => ui.openCleanup() }
+      // Both open Cleanup, where the journal ("Recent cleanups") sits under the map.
+      action: {
+        label: warning ? t('cleanup.gc.toast.review') : t('cleanup.gc.toast.viewJournal'),
+        handler: () => ui.openCleanup()
+      }
     }
     // A toast shows only while the window is focused; otherwise the Activity entry stands in
     // (main raises the native notification).

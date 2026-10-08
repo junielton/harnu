@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import CleanupBulkConfirmDialog from '../src/renderer/src/components/CleanupBulkConfirmDialog.vue'
 import { i18n } from '@renderer/i18n'
 import type { DialogRow } from '../src/renderer/src/lib/gc-model'
@@ -291,5 +293,18 @@ describe('CleanupBulkConfirmDialog — when what it showed has changed', () => {
     await open([row()], 'ready', false)
     expect(q('[data-testid="bulk-stale"]')).toBeNull()
     expect((q('[data-testid="bulk-confirm"]') as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
+describe('CleanupBulkConfirmDialog — chip titles', () => {
+  it("the volume chip describes an orphan volume with no worktree, not a worktree's volume", () => {
+    for (const locale of ['en', 'pt-BR']) {
+      const msgs = JSON.parse(
+        readFileSync(join(process.cwd(), `src/renderer/src/i18n/${locale}.json`), 'utf8')
+      )
+      const title: string = msgs.cleanup.gc.chip.title.volume
+      expect(title, locale).not.toMatch(/owned by this worktree|deste worktree/i)
+      if (locale === 'en') expect(title).toMatch(/no worktree/i)
+    }
   })
 })

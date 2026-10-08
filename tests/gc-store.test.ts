@@ -336,6 +336,52 @@ describe('gc store', () => {
     expect(toast.mock.calls[0][0].description).toBe(t('cleanup.gc.refusal.several', { n: 2 }))
   })
 
+  it('the success toast offers "View journal"; the partial one offers "Review"', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.push.done(done({ results: [{ id: 'a', ok: true, haltedAt: null, freedBytes: 1 }] }))
+    await vi.runAllTimersAsync()
+    expect(toast.mock.calls[0][0].action?.label).toBe('View journal')
+    api.push.done(
+      done({
+        jobId: 'j2',
+        results: [{ id: 'a', ok: false, haltedAt: 'trash', error: 'EBUSY', freedBytes: 0 }]
+      })
+    )
+    await vi.runAllTimersAsync()
+    expect(toast.mock.calls[1][0].action?.label).toBe('Review')
+  })
+
+  it('the partial-failure title agrees with the count: "needs review" for one, "need review" for several', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    const fail = (id: string) => ({
+      id,
+      ok: false,
+      haltedAt: 'trash' as const,
+      error: 'EBUSY',
+      freedBytes: 0
+    })
+    api.push.done(
+      done({
+        jobId: 'j1',
+        done: 1,
+        results: [{ id: 'a', ok: true, haltedAt: null, freedBytes: 1 }, fail('b')]
+      })
+    )
+    await vi.runAllTimersAsync()
+    expect(toast.mock.calls[0][0].title).toBe('1 cleaned · 1 needs review')
+    api.push.done(done({ jobId: 'j2', done: 0, results: [fail('b'), fail('c')] }))
+    await vi.runAllTimersAsync()
+    expect(toast.mock.calls[1][0].title).toBe('0 cleaned · 2 need review')
+  })
+
   it('an autopilot job drives the chip but raises no renderer toast (main notifies)', async () => {
     const api = installApi()
     const gc = useGcStore()

@@ -2402,7 +2402,7 @@
         "branch": "branch",
         "title": {
           "stack": "A stack do Docker é parada e seus containers são removidos",
-          "volume": "Os volumes do Docker deste worktree são removidos e não podem ser restaurados",
+          "volume": "Um volume órfão, sem worktree: só é removido depois que você confirma, e não pode ser restaurado",
           "deps": "As pastas de dependências são apagadas; o setup do repositório as traz de volta",
           "checkout": "O checkout vai para a lixeira do sistema",
           "branch": "A branch local é apagada depois de arquivada"
@@ -2481,8 +2481,9 @@
       },
       "toast": {
         "success": "{size} liberados · {count} item pronto limpo | {size} liberados · {count} itens prontos limpos",
-        "partial": "{cleaned} limpos · {failed} precisa de você",
-        "review": "Revisar"
+        "partial": "{cleaned} limpos · {failed} precisa de você | {cleaned} limpos · {failed} precisam de você",
+        "review": "Revisar",
+        "viewJournal": "Ver diário"
       },
       "footer": {
         "running": "Limpando {done}/{total}",

@@ -2402,7 +2402,7 @@
         "branch": "branch",
         "title": {
           "stack": "The Docker stack is stopped and its containers removed",
-          "volume": "Docker volumes owned by this worktree are removed and cannot be restored",
+          "volume": "An orphan volume, with no worktree: removed only after you confirm it, and it cannot be restored",
           "deps": "Dependency folders are deleted; the repo's setup brings them back",
           "checkout": "The checkout goes to the OS trash",
           "branch": "The local branch is deleted after it is archived"
@@ -2481,8 +2481,9 @@
       },
       "toast": {
         "success": "Freed {size} · {count} ready item cleaned | Freed {size} · {count} ready items cleaned",
-        "partial": "{cleaned} cleaned · {failed} needs review",
-        "review": "Review"
+        "partial": "{cleaned} cleaned · {failed} needs review | {cleaned} cleaned · {failed} need review",
+        "review": "Review",
+        "viewJournal": "View journal"
       },
       "footer": {
         "running": "Cleaning {done}/{total}",
