@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   OPINION_BATCH_SIZE,
+  OPINION_TOOLS,
   buildPrompt,
   opinionArgv,
   parseOpinions,
@@ -37,12 +38,46 @@ describe('opinionArgv: the read-only session (AC-2)', () => {
   const argv = opinionArgv({ model: 'opus', effort: 'high', prompt: 'the prompt' })
   const after = (flag: string): string | undefined => argv[argv.indexOf(flag) + 1]
 
-  it('allows exactly the Scheduler observe tools and nothing else', () => {
-    expect(after('--allowedTools')).toBe(OBSERVE_TOOLS.join(','))
+  // A diff or a file must never leave the machine through the advisor: the Scheduler's observe
+  // allowlist minus every tool that can reach the network. The subtracted list is pinned here.
+  const NETWORK_RULES_REMOVED = [
+    'WebFetch',
+    'Bash(gh pr list:*)',
+    'Bash(gh pr view:*)',
+    'Bash(gh run list:*)'
+  ]
+
+  it('allows the Scheduler observe tools minus exactly the network rules', () => {
+    expect(after('--allowedTools')).toBe(
+      OBSERVE_TOOLS.filter((t) => !NETWORK_RULES_REMOVED.includes(t)).join(',')
+    )
+    expect(OPINION_TOOLS).toEqual(OBSERVE_TOOLS.filter((t) => !NETWORK_RULES_REMOVED.includes(t)))
   })
 
-  it('denies the observe deny list', () => {
-    expect(after('--disallowedTools')).toBe(OBSERVE_TOOLS_DENY.join(','))
+  it('keeps only local reads: Read, Grep, Glob and git log/status/diff/show', () => {
+    expect((after('--allowedTools') ?? '').split(',')).toEqual([
+      'Read',
+      'Grep',
+      'Glob',
+      'Bash(git log:*)',
+      'Bash(git status:*)',
+      'Bash(git diff:*)',
+      'Bash(git show:*)'
+    ])
+  })
+
+  it('has no web or network tool anywhere in the allowlist', () => {
+    const allowed = (after('--allowedTools') ?? '').split(',')
+    for (const rule of allowed) {
+      expect(rule).not.toMatch(/^Web/i)
+      expect(rule).not.toMatch(/\b(gh|curl|wget|ssh|scp|nc|git (push|fetch|pull|clone|remote))\b/)
+    }
+    for (const tool of ['WebFetch', 'WebSearch']) expect(allowed).not.toContain(tool)
+  })
+
+  it('denies the observe deny list and, explicitly, every web tool and gh', () => {
+    const denied = (after('--disallowedTools') ?? '').split(',')
+    expect(denied).toEqual([...OBSERVE_TOOLS_DENY, 'WebFetch', 'WebSearch', 'Bash(gh:*)'])
   })
 
   it('has no write tool in the allowlist', () => {
@@ -50,9 +85,7 @@ describe('opinionArgv: the read-only session (AC-2)', () => {
     for (const tool of ['Edit', 'Write', 'NotebookEdit', 'Task'])
       expect(allowed).not.toContain(tool)
     for (const rule of allowed.filter((r) => r.startsWith('Bash('))) {
-      expect(rule).toMatch(
-        /^Bash\(git (log|status|diff|show):\*\)$|^Bash\(gh (pr|run) (list|view):\*\)$/
-      )
+      expect(rule).toMatch(/^Bash\(git (log|status|diff|show):\*\)$/)
     }
   })
 
@@ -163,6 +196,12 @@ describe('buildPrompt (AC-3)', () => {
     expect(p).toMatch(/untrusted/i)
     expect(p).toMatch(/read-only/i)
     expect(p).toMatch(/never (delete|remove)|do not (delete|remove)/i)
+  })
+
+  it('tells the advisor about local git only, never about the network or gh', () => {
+    const p = buildPrompt([dossier()])
+    expect(p).toMatch(/git (log|diff|show|status)/)
+    expect(p).not.toMatch(/\bgh\b|WebFetch|WebSearch|fetch (a|the) url|network/i)
   })
 
   it('asks for JSON with the closed verdict set', () => {
