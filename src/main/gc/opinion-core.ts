@@ -143,16 +143,38 @@ function capitalisedTail(text: string, spaceAt: number): number {
 
 const SLASH: ReadonlySet<string> = new Set(['/'])
 const WIN_SEPS: ReadonlySet<string> = new Set(['/', '\\'])
-/** After these a `/` continues a relative path or a word (`src/a`, `1/2`, `./x`). */
-const PATHISH = /[A-Za-z~/\\]/
 /**
- * After a digit, `_`, `-` or `.` a `/` may still start an absolute path glued to its prefix
- * (`-o/home/me/x`, `42/home/me/x`, `done./home/me/x`), but `2026/10/08` and `./build.sh` must not
- * be touched. So there it needs a first segment that is a well-known filesystem root.
+ * After a digit, `_`, `-` or `.`, or right after a one-letter flag (`-o`), an absolute path can be glued
+ * to what precedes it (`-o/work/repo/a`, `v2/data/project/foo`, `a_/builds/x/y`, `foo./app/src/x`). A
+ * root-looking path there (two or more segments, or a well-known filesystem root) is treated as
+ * absolute. That can also take a relative-looking `v2/data/x`, which only costs readability: scrubbing
+ * a harmless string is the safe error. A `.` or `..` that is a whole segment (`./x`, `../x`) is
+ * relative and is left alone.
  */
 const GLUED_PREFIX = /[0-9_.-]/
 const KNOWN_ROOTS =
   /^\/(?:home|Users|root|tmp|var|etc|opt|usr|mnt|srv|private|Volumes|run|media|snap|nix|proc|sys)(?:\/|\b)/
+const TWO_SEGMENTS = /^\/[^/\s]+\/[^/\s]/
+const SEGMENT_BOUNDARY = /[\s/\\"'(=:]/
+
+/** True when the text before `i` ends in a whole `.` or `..` segment (`./`, `../`). */
+function dotSegmentBefore(text: string, i: number): boolean {
+  if (text[i - 1] !== '.') return false
+  const k = text[i - 2] === '.' ? i - 3 : i - 2
+  return k < 0 || SEGMENT_BOUNDARY.test(text[k])
+}
+
+/** True when a relative path climbs above where it started (`../x`, `a/../../x`). */
+function leavesRoot(rel: string): boolean {
+  let depth = 0
+  for (const seg of rel.split(/[\\/]/)) {
+    if (seg === '' || seg === '.') continue
+    if (seg === '..') {
+      if (--depth < 0) return true
+    } else depth++
+  }
+  return false
+}
 
 /** Replaces the dossier's own folder, but only where it is the whole path, not a longer sibling's. */
 function replaceOwn(text: string, own: string): string {
@@ -187,30 +209,46 @@ export function scrubPaths(text: string, ownPath: string | null): string {
   while (i < input.length) {
     const c = input[i]
     const prev = i > 0 ? input[i - 1] : ''
+    // A one-letter flag with its value glued on (`-o/x`, `-o~/x`, `-oC:\x`, `-ofile:///x`), or a prefix
+    // that is not a letter: an absolute path may start here although the previous character is not a
+    // plain boundary.
+    const flagGlued = /(?:^|\s)-[A-Za-z]$/.test(input.slice(Math.max(0, i - 3), i))
+    const glue = flagGlued || (GLUED_PREFIX.test(prev) && !dotSegmentBefore(input, i))
     let end = -1
-    if (input.slice(i, i + 5).toLowerCase() === 'file:' && !/[A-Za-z0-9]/.test(prev)) {
+    if (input.slice(i, i + 5).toLowerCase() === 'file:' && (!/[A-Za-z0-9]/.test(prev) || glue)) {
       end = i + 5
       while (end < input.length && !/[\s"'<>)\]}]/.test(input[end])) end++
     } else if (/[A-Za-z]/.test(c) && input[i + 1] === ':' && /[\\/]/.test(input[i + 2] ?? '')) {
-      if (!/[A-Za-z0-9]/.test(prev)) end = pathEnd(input, i + 2, WIN_SEPS)
+      if (!/[A-Za-z0-9]/.test(prev) || glue) end = pathEnd(input, i + 2, WIN_SEPS)
     } else if (c === '\\' && input[i + 1] === '\\' && /\S/.test(input[i + 2] ?? '')) {
       if (prev !== '\\') end = pathEnd(input, i + 1, WIN_SEPS)
-    } else if (c === '~' && !/\w/.test(prev) && /^~[\w.-]*\//.test(input.slice(i, i + 80))) {
+    } else if (
+      c === '~' &&
+      (!/\w/.test(prev) || glue) &&
+      /^~[\w.-]*\//.test(input.slice(i, i + 80))
+    ) {
       end = pathEnd(input, i + input.slice(i).indexOf('/'), SLASH)
+    } else if ((c === '/' || c === '\\') && input.slice(0, i).endsWith(OWN_WORKTREE)) {
+      // A path under the worktree is relative to it and stays readable, unless it climbs out of it
+      // (`<this worktree>/../secret`), which names something that is not the worktree.
+      const e = pathEnd(input, i, WIN_SEPS)
+      if (e > i + 1 && leavesRoot(input.slice(i, e))) {
+        out = out.slice(0, out.length - OWN_WORKTREE.length) + '<path>'
+        i = e
+        continue
+      }
     } else if (c === '/') {
       const next = input[i + 1] ?? ''
-      const knownRoot = KNOWN_ROOTS.test(input.slice(i, i + 40))
-      // `-o/home/me/x`: a one-letter flag with its value glued on.
-      const flagGlued = knownRoot && /(?:^|\s)-[A-Za-z]$/.test(input.slice(Math.max(0, i - 4), i))
-      const glued = (GLUED_PREFIX.test(prev) && knownRoot) || flagGlued
+      const rest = input.slice(i, i + 200)
+      const rootLooking = TWO_SEGMENTS.test(rest) || KNOWN_ROOTS.test(rest)
+      const boundary = !/[A-Za-z~/\\]/.test(prev) && !GLUED_PREFIX.test(prev)
       const startsPath =
-        ((!PATHISH.test(prev) && !GLUED_PREFIX.test(prev)) || glued) &&
+        (boundary || (glue && rootLooking)) &&
         next !== '' &&
         next !== '/' &&
         !isSpace(next) &&
         !isNewline(next) &&
-        !(prev === ':' && next === '/') &&
-        !input.slice(0, i).endsWith(OWN_WORKTREE)
+        !(prev === ':' && next === '/')
       if (startsPath) end = pathEnd(input, i, SLASH)
     }
     if (end > i) {

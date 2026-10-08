@@ -3,6 +3,7 @@ import {
   OPINION_BATCH_SIZE,
   OPINION_BUILTIN_TOOLS,
   OPINION_FALLBACK,
+  scrubPaths,
   cacheKeyOf,
   buildPrompt,
   opinionArgv,
@@ -668,5 +669,71 @@ describe('a git fact that could not be computed is stated, never rendered as emp
     expect(cacheKeyOf(broken())).toBeNull()
     expect(cacheKeyOf(dossier({ unavailable: { head: 'x' } }))).toBeNull()
     expect(cacheKeyOf(dossier({ unavailable: {} }))).toEqual(expect.any(String))
+  })
+})
+
+describe('scrubPaths is total and stable', () => {
+  // A small deterministic generator (no dependency, no flake): mixes every character the scanner looks at.
+  const ALPHABET = [
+    '/',
+    '\\',
+    '~',
+    ':',
+    '.',
+    '-',
+    '_',
+    '=',
+    '>',
+    '<',
+    '"',
+    "'",
+    ' ',
+    '\n',
+    '(',
+    ')',
+    ',',
+    'a',
+    'b',
+    'C',
+    '2',
+    'o',
+    'file:',
+    '..',
+    '/home/',
+    'x y',
+    '<this worktree>'
+  ]
+  function* strings(count: number): Generator<string> {
+    let seed = 1234567
+    const next = (): number => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff
+      return seed
+    }
+    for (let n = 0; n < count; n++) {
+      let t = ''
+      const len = 1 + (next() % 40)
+      for (let k = 0; k < len; k++) t += ALPHABET[next() % ALPHABET.length]
+      yield t
+    }
+  }
+
+  it('never throws and always terminates, with or without an own path', () => {
+    for (const t of strings(4000)) {
+      expect(() => scrubPaths(t, null)).not.toThrow()
+      expect(() => scrubPaths(t, '/home/someone/wt')).not.toThrow()
+    }
+  })
+
+  it('is idempotent: scrubbing twice changes nothing more', () => {
+    for (const t of strings(2000)) {
+      const once = scrubPaths(t, null)
+      expect(scrubPaths(once, null), t).toBe(once)
+    }
+  })
+
+  it('never makes the text longer than three times its size (no runaway replacement)', () => {
+    for (const t of strings(2000)) {
+      expect(scrubPaths(t, null).length).toBeLessThanOrEqual(t.length * 3 + 6)
+    }
   })
 })
