@@ -209,3 +209,88 @@ describe('describeGitError', () => {
     expect(describeGitError(new Error('y'.repeat(500))).length).toBeLessThanOrEqual(160)
   })
 })
+
+describe("the item's own branch is never the default ref it is compared with (delta 5, item 4)", () => {
+  /** A repo whose default branch is `trunk`, plus a worktree on `main` with one unpushed commit. */
+  async function trunkRepoWithMainWorktree(): Promise<{ dir: string; wt: string }> {
+    const dir = await repo('trunk')
+    const wt = join(dir, '..', 'wt-main')
+    await sh(dir, 'worktree', 'add', '-q', '-b', 'main', wt)
+    writeFileSync(join(wt, 'unpushed.txt'), 'only here\n')
+    await sh(wt, 'add', '.')
+    await sh(wt, 'commit', '-qm', 'unpushed')
+    return { dir, wt }
+  }
+
+  it('an item on `main` is not compared with `main`: with a trunk default and no origin that is an error', async () => {
+    const { dir, wt } = await trunkRepoWithMainWorktree()
+    const d = await gatherDiff(git, dir, wt, 'main')
+    expect(d.ok).toBe(false) // never an empty diff that reads as "(no difference)"
+    if (!d.ok) expect(d.reason).toMatch(/no default branch/i)
+  })
+
+  it('without the exclusion the same item would compare with itself and read as no difference', async () => {
+    const { dir, wt } = await trunkRepoWithMainWorktree()
+    const d = await gatherDiff(git, dir, wt, null)
+    expect(d).toMatchObject({ ok: true, value: '', ref: 'main' }) // the flaw the exclusion closes
+  })
+
+  it('shows the real diff when origin/HEAD names the true default (trunk)', async () => {
+    const { dir, wt } = await trunkRepoWithMainWorktree()
+    const bare = join(dir, '..', 'bare.git')
+    await run('git', ['clone', '-q', '--bare', dir, bare])
+    await sh(dir, 'remote', 'add', 'origin', bare)
+    await sh(dir, 'fetch', '-q', 'origin')
+    await sh(dir, 'remote', 'set-head', 'origin', 'trunk')
+    const d = await gatherDiff(git, dir, wt, 'main')
+    expect(d.ok).toBe(true)
+    if (d.ok) {
+      expect(d.ref).toBe('origin/trunk')
+      expect(d.value).toContain('unpushed.txt')
+    }
+  })
+
+  it('also skips the remote counterpart of its own branch (origin/main for an item on main)', async () => {
+    const dir = await repo('main')
+    const bare = join(dir, '..', 'bare.git')
+    await run('git', ['clone', '-q', '--bare', dir, bare])
+    await sh(dir, 'remote', 'add', 'origin', bare)
+    await sh(dir, 'fetch', '-q', 'origin')
+    const r = await resolveDefaultRef(git, dir, 'main')
+    expect(r.ok).toBe(false)
+  })
+
+  it('still picks a different default for an item on a feature branch, and reports which ref it used', async () => {
+    const dir = await repo('master')
+    const wt = await withFeature(dir)
+    const d = await gatherDiff(git, dir, wt, 'feature')
+    expect(d).toMatchObject({ ok: true, ref: 'master' })
+  })
+
+  it('a detached worktree (no branch) excludes nothing', async () => {
+    const dir = await repo('main')
+    expect(await resolveDefaultRef(git, dir, null)).toEqual({ ok: true, value: 'main' })
+  })
+})
+
+describe('untracked files cannot be hidden by git config (delta 5, item 5)', () => {
+  it('reads untracked files even when status.showUntrackedFiles is no', async () => {
+    const dir = await repo('main')
+    await sh(dir, 'config', 'status.showUntrackedFiles', 'no')
+    writeFileSync(join(dir, 'scratch.log'), 'x')
+    const k = await gatherKeyGit(git, dir)
+    expect(k.dirty).toEqual({ ok: true, value: ['?? scratch.log'] })
+  })
+
+  it('asks git for `status --porcelain -unormal`', async () => {
+    const seen: string[][] = []
+    const spy: GitRunner = async (cwd, args) => {
+      seen.push(args)
+      return git(cwd, args)
+    }
+    const dir = await repo('main')
+    await gatherKeyGit(spy, dir)
+    const status = seen.find((a) => a[0] === 'status')
+    expect(status).toEqual(['status', '--porcelain', '-unormal'])
+  })
+})

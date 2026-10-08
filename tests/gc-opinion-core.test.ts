@@ -906,3 +906,26 @@ describe('an unknown pull request state is UNKNOWN, never "none" (delta 5, item 
     )
   })
 })
+
+describe('the prompt prints the ref the diff was taken against (delta 5, item 4)', () => {
+  it('says "Diff against <ref>"', () => {
+    const p = buildPrompt([dossier({ diffRef: 'origin/trunk' })])
+    expect(p).toMatch(/Diff against origin\/trunk:/)
+  })
+
+  it('falls back to a generic label only when no ref is known', () => {
+    const p = buildPrompt([dossier()])
+    expect(p.slice(p.indexOf('<dossier id='))).toMatch(/Diff against the default branch:/)
+  })
+
+  it('still says COULD NOT BE COMPUTED, with no ref, when the diff failed', () => {
+    const p = buildPrompt([
+      dossier({ diffRef: 'origin/trunk', unavailable: { diff: 'git timed out' } })
+    ])
+    const block = p.slice(p.indexOf('<dossier id='))
+    expect(block).toMatch(
+      /Diff against the default branch: COULD NOT BE COMPUTED \(git timed out\)/
+    )
+    expect(block).not.toMatch(/Diff against origin\/trunk/)
+  })
+})
