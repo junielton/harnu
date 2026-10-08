@@ -25,7 +25,8 @@ describe('defaultGcPrefs', () => {
       cacheMaxAgeDays: 7,
       neverClean: [],
       keep: {},
-      released: {}
+      released: {},
+      releasedFrom: {}
     })
   })
 

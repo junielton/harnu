@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { buildBundles, staleReleases, type SessionPresence } from '../src/main/gc/bundle-core'
+import {
+  buildBundles,
+  staleReleases,
+  type ReleaseGone,
+  type SessionPresence
+} from '../src/main/gc/bundle-core'
 import {
   defaultGcPrefs,
   mergeIncomingPrefs,
@@ -281,5 +286,93 @@ describe('staleReleases: when a release mark is dropped (T445 delta 1)', () => {
       facts: { ancestorOfDefault: null, pr: pr({ headRefOid: 'b'.repeat(40) }) }
     })
     expect(staleReleases([weak], marks)).toEqual([reapItem(WT_CORPSE).id])
+  })
+})
+
+describe('staleReleases: a cleaned worktree drops its mark (T445 delta 1 ruling)', () => {
+  const id = reapItem(WT_CORPSE).id
+  const marks = { [id]: NOW - 1000 }
+  const from = { [id]: { repoPath: MAIN, path: WT_CORPSE } }
+  const gone = (over: Partial<ReleaseGone> = {}): ReleaseGone => ({
+    scannedRepos: new Set([MAIN]),
+    from,
+    missingPaths: new Set([WT_CORPSE]),
+    ...over
+  })
+
+  it('drops a mark when the repo was scanned, the bundle is absent and the path is gone', () => {
+    expect(staleReleases([], marks, gone())).toEqual([id])
+  })
+
+  it('keeps it when there was no Reaper snapshot (no repo was scanned)', () => {
+    expect(staleReleases([], marks, gone({ scannedRepos: new Set() }))).toEqual([])
+  })
+
+  it('keeps it when the repo was not part of the scan', () => {
+    expect(staleReleases([], marks, gone({ scannedRepos: new Set(['/srv/ws/other']) }))).toEqual([])
+  })
+
+  it('keeps it when the path still exists', () => {
+    expect(staleReleases([], marks, gone({ missingPaths: new Set() }))).toEqual([])
+  })
+
+  it('keeps a mark that recorded no path (it cannot be shown cleaned)', () => {
+    expect(staleReleases([], marks, gone({ from: {} }))).toEqual([])
+  })
+
+  it('compares paths after normalizing them (trailing slash)', () => {
+    expect(staleReleases([], marks, gone({ scannedRepos: new Set([`${MAIN}/`]) }))).toEqual([id])
+    expect(staleReleases([], marks, gone({ missingPaths: new Set([`${WT_CORPSE}/`]) }))).toEqual([
+      id
+    ])
+  })
+
+  it('keeps a mark whose bundle is present and strongly merged, even if the path set says missing', () => {
+    expect(staleReleases([build()], marks, gone())).toEqual([])
+  })
+
+  it('without the extra input the rule is unchanged (an absent bundle is never stale)', () => {
+    expect(staleReleases([], marks)).toEqual([])
+  })
+})
+
+describe('releasedFrom prefs (T445 delta 1 ruling)', () => {
+  const id = 'www::worktree::feat::abc'
+
+  it('defaults to nothing recorded', () => {
+    expect(defaultGcPrefs().releasedFrom).toEqual({})
+  })
+
+  it('withReleased records where the worktree was, withoutReleased forgets it', () => {
+    const p = withReleased(defaultGcPrefs(), id, 7, { repoPath: MAIN, path: WT_CORPSE })
+    expect(p.released).toEqual({ [id]: 7 })
+    expect(p.releasedFrom).toEqual({ [id]: { repoPath: MAIN, path: WT_CORPSE } })
+    const q = withoutReleased(p, [id])
+    expect(q.released).toEqual({})
+    expect(q.releasedFrom).toEqual({})
+  })
+
+  it('withReleased without a location records none', () => {
+    expect(withReleased(defaultGcPrefs(), id, 7).releasedFrom).toEqual({})
+  })
+
+  it('normalizes junk: only entries with two non-empty strings survive', () => {
+    const p = normalizeGcPrefs({
+      releasedFrom: {
+        ok: { repoPath: MAIN, path: WT_CORPSE },
+        a: { repoPath: '', path: 'x' },
+        b: { repoPath: 'x' },
+        c: 'nope',
+        '': { repoPath: 'x', path: 'y' }
+      }
+    })
+    expect(p.releasedFrom).toEqual({ ok: { repoPath: MAIN, path: WT_CORPSE } })
+    expect(normalizeGcPrefs({ releasedFrom: [1] }).releasedFrom).toEqual({})
+  })
+
+  it('a whole-object write from the renderer cannot wipe them', () => {
+    const current = withReleased(defaultGcPrefs(), id, 7, { repoPath: MAIN, path: WT_CORPSE })
+    const next = mergeIncomingPrefs(current, { ...defaultGcPrefs(), releasedFrom: {} })
+    expect(next.releasedFrom).toEqual(current.releasedFrom)
   })
 })

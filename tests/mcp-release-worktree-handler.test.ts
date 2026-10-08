@@ -101,7 +101,10 @@ describe('release_worktree handler (T445)', () => {
       deleted: false
     })
     expect(release).toHaveBeenCalledTimes(1)
-    expect(release).toHaveBeenCalledWith(fresh.item.id, NOW)
+    expect(release).toHaveBeenCalledWith(fresh.item.id, NOW, {
+      repoPath: MAIN,
+      path: WT_CORPSE
+    })
   })
 
   it('AC-3: the ACK carries no absolute path', async () => {
@@ -262,7 +265,10 @@ describe('release_worktree handler (T445)', () => {
       const res = await handler({ id: listedId(fresh) }, ctx(''))
       expect(res.isError).toBeFalsy()
       expect(JSON.parse(textOf(res))).toMatchObject({ ok: true, bucketAfter: 'corpse' })
-      expect(release).toHaveBeenCalledWith(fresh.item.id, NOW)
+      expect(release).toHaveBeenCalledWith(fresh.item.id, NOW, {
+        repoPath: MAIN,
+        path: WT_CORPSE
+      })
     })
 
     it('an unknown id is NOT_A_WORKTREE, and the advice names the id from list_cleanup', async () => {
