@@ -38,55 +38,42 @@ describe('opinionArgv: the read-only session (AC-2)', () => {
   const argv = opinionArgv({ model: 'opus', effort: 'high', prompt: 'the prompt' })
   const after = (flag: string): string | undefined => argv[argv.indexOf(flag) + 1]
 
-  // A diff or a file must never leave the machine through the advisor: the Scheduler's observe
-  // allowlist minus every tool that can reach the network. The subtracted list is pinned here.
-  const NETWORK_RULES_REMOVED = [
-    'WebFetch',
-    'Bash(gh pr list:*)',
-    'Bash(gh pr view:*)',
-    'Bash(gh run list:*)'
-  ]
+  // The advisor reads files and nothing else. No Bash at all: a git rule such as `git diff` can still
+  // write any file through `--output=<path>`, and a prefix rule cannot say "no --output". Everything
+  // git knows is already in the dossier, which main computes.
+  const allowed = (): string[] => (after('--allowedTools') ?? '').split(',')
+  const denied = (): string[] => (after('--disallowedTools') ?? '').split(',')
 
-  it('allows the Scheduler observe tools minus exactly the network rules', () => {
-    expect(after('--allowedTools')).toBe(
-      OBSERVE_TOOLS.filter((t) => !NETWORK_RULES_REMOVED.includes(t)).join(',')
-    )
-    expect(OPINION_TOOLS).toEqual(OBSERVE_TOOLS.filter((t) => !NETWORK_RULES_REMOVED.includes(t)))
+  it('allows exactly Read, Grep and Glob', () => {
+    expect(allowed()).toEqual(['Read', 'Grep', 'Glob'])
+    expect([...OPINION_TOOLS]).toEqual(['Read', 'Grep', 'Glob'])
   })
 
-  it('keeps only local reads: Read, Grep, Glob and git log/status/diff/show', () => {
-    expect((after('--allowedTools') ?? '').split(',')).toEqual([
-      'Read',
-      'Grep',
-      'Glob',
-      'Bash(git log:*)',
-      'Bash(git status:*)',
-      'Bash(git diff:*)',
-      'Bash(git show:*)'
-    ])
+  it('never allows more than the Scheduler observe list does', () => {
+    for (const tool of OPINION_TOOLS) expect(OBSERVE_TOOLS).toContain(tool)
   })
 
-  it('has no web or network tool anywhere in the allowlist', () => {
-    const allowed = (after('--allowedTools') ?? '').split(',')
-    for (const rule of allowed) {
-      expect(rule).not.toMatch(/^Web/i)
-      expect(rule).not.toMatch(/\b(gh|curl|wget|ssh|scp|nc|git (push|fetch|pull|clone|remote))\b/)
+  it('has no Bash rule anywhere in the allow argv, not even a git one', () => {
+    expect(argv.join(' ')).not.toMatch(/--allowedTools[^-]*Bash/)
+    for (const rule of allowed()) expect(rule).not.toMatch(/^Bash/)
+    expect(allowed().join(',')).not.toContain('Bash(')
+    expect(allowed().join(',')).not.toMatch(/git/i)
+  })
+
+  it('denies Bash entirely, and every write and web tool by name', () => {
+    for (const tool of ['Bash', 'Edit', 'Write', 'NotebookEdit', 'WebFetch', 'WebSearch']) {
+      expect(denied()).toContain(tool)
     }
-    for (const tool of ['WebFetch', 'WebSearch']) expect(allowed).not.toContain(tool)
+    expect(denied()).toEqual(expect.arrayContaining([...OBSERVE_TOOLS_DENY]))
+    // The bare name, not a prefix rule: a prefix rule would only deny that prefix.
+    expect(denied()).not.toContain('Bash(gh:*)')
   })
 
-  it('denies the observe deny list and, explicitly, every web tool and gh', () => {
-    const denied = (after('--disallowedTools') ?? '').split(',')
-    expect(denied).toEqual([...OBSERVE_TOOLS_DENY, 'WebFetch', 'WebSearch', 'Bash(gh:*)'])
-  })
-
-  it('has no write tool in the allowlist', () => {
-    const allowed = (after('--allowedTools') ?? '').split(',')
-    for (const tool of ['Edit', 'Write', 'NotebookEdit', 'Task'])
-      expect(allowed).not.toContain(tool)
-    for (const rule of allowed.filter((r) => r.startsWith('Bash('))) {
-      expect(rule).toMatch(/^Bash\(git (log|status|diff|show):\*\)$/)
+  it('has no write, shell or network tool in the allowlist', () => {
+    for (const tool of ['Edit', 'Write', 'NotebookEdit', 'Task', 'Bash', 'WebFetch', 'WebSearch']) {
+      expect(allowed()).not.toContain(tool)
     }
+    for (const rule of allowed()) expect(rule).not.toMatch(/^Web|\b(gh|curl|wget|ssh|scp|nc)\b/i)
   })
 
   it('reaches no MCP server at all, so no Harnu verb and no gc:clean', () => {
@@ -198,10 +185,11 @@ describe('buildPrompt (AC-3)', () => {
     expect(p).toMatch(/never (delete|remove)|do not (delete|remove)/i)
   })
 
-  it('tells the advisor about local git only, never about the network or gh', () => {
+  it('tells the advisor it can read files and run nothing, and never offers a command or the network', () => {
     const p = buildPrompt([dossier()])
-    expect(p).toMatch(/git (log|diff|show|status)/)
-    expect(p).not.toMatch(/\bgh\b|WebFetch|WebSearch|fetch (a|the) url|network/i)
+    expect(p).toMatch(/read files|Read, Grep and Glob/i)
+    expect(p).toMatch(/cannot run (any )?commands|run no commands/i)
+    expect(p).not.toMatch(/\bgh\b|WebFetch|WebSearch|git (log|diff|show|status)|network/i)
   })
 
   it('asks for JSON with the closed verdict set', () => {
