@@ -4,7 +4,9 @@
 // real modules, and it loads them lazily so importing this file never pulls in electron.
 
 import type { BrowserWindow } from 'electron'
-import { resolve as resolveLexically } from 'node:path'
+import type { Dirent } from 'node:fs'
+import { readdir } from 'node:fs/promises'
+import { join, resolve as resolveLexically } from 'node:path'
 import { GcStepError, isMainCheckoutByPath, type GcOps, type GcStep } from './pipeline-core'
 import {
   AS_GIVEN,
@@ -62,6 +64,67 @@ export interface GcShellDeps {
    * "no worktrees". The reprobe and the recheck refuse a bundle with one nested inside it.
    */
   listWorktrees(repoPath: string): Promise<string[]>
+  /**
+   * Every `.git` entry under a worktree but its own root one ({@link findForeignCheckouts}):
+   * a worktree of another repo or a plain clone inside it, which `listWorktrees` cannot see.
+   * Rejects when the walk cannot read a folder. The reprobe and the recheck refuse on any.
+   */
+  findForeignCheckouts(path: string): Promise<string[]>
+}
+
+/**
+ * Folders the foreign-checkout walk never enters: the manifest `ephemeral:` defaults, which
+ * dehydrate drops anyway. Git dependencies (composer `source` installs, npm git deps) carry
+ * a `.git` there that is nobody's work.
+ */
+export const FOREIGN_WALK_SKIP: readonly string[] = ['node_modules', 'vendor', '.venv', 'venv']
+
+/** How deep the foreign-checkout walk looks by default; the root is depth 0. */
+export const FOREIGN_WALK_DEPTH = 6
+
+const errCode = (err: unknown): unknown =>
+  typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined
+
+/**
+ * Every `.git` entry (file or directory) under `root`, its own top-level `.git` aside, as
+ * sorted absolute paths (delta 7). A worktree of another repo or a plain clone created
+ * inside a worktree carries one, and `git worktree list` of the worktree's repo never shows
+ * it, so trashing the worktree would take that checkout's uncommitted work with it.
+ *
+ * A `.git` at depth `maxDepth` (root = 0, so `root/a/b/c/d/e/.git` is depth 6) is the
+ * deepest seen. Symlinks are neither followed nor recorded, a recorded `.git` directory is
+ * never entered, and {@link FOREIGN_WALK_SKIP} folders are skipped. A folder that cannot be
+ * read rejects, the root included; only a child that vanished mid-walk (ENOENT) is ignored.
+ */
+export async function findForeignCheckouts(
+  root: string,
+  opts: { maxDepth?: number } = {}
+): Promise<string[]> {
+  const maxDepth = opts.maxDepth ?? FOREIGN_WALK_DEPTH
+  const found: string[] = []
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    let entries: Dirent[]
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch (err) {
+      if (depth > 0 && errCode(err) === 'ENOENT') return
+      throw err
+    }
+    const below: Promise<void>[] = []
+    for (const e of entries) {
+      if (e.isSymbolicLink()) continue
+      const p = join(dir, e.name)
+      if (e.name === '.git') {
+        if (depth > 0) found.push(p)
+        continue
+      }
+      if (!e.isDirectory() || FOREIGN_WALK_SKIP.includes(e.name)) continue
+      if (depth + 1 < maxDepth) below.push(walk(p, depth + 1))
+    }
+    await Promise.all(below)
+  }
+  await walk(root, 0)
+  return found.sort()
 }
 
 /** The paths of the `worktree <path>` lines of `git worktree list --porcelain`. */
@@ -326,6 +389,23 @@ export function createGcOps(deps: GcShellDeps): GcOps {
   }
 
   /**
+   * The foreign-checkout probe (delta 7): a worktree of another repo or a plain clone inside
+   * the worktree, which the nested-worktree probe cannot see in this repo's listing, would
+   * be trashed with it. Walks the real path. Returns the refusal, or null; a walk that
+   * throws or answers something other than a list is probe-failed. No side effects.
+   */
+  const foreignRefusal = async (realRoot: string): Promise<string | null> => {
+    let found: unknown
+    try {
+      found = await deps.findForeignCheckouts(realRoot)
+    } catch (err) {
+      return `probe-failed: ${messageOf(err)}`
+    }
+    if (!Array.isArray(found)) return 'probe-failed: the foreign-checkout walk is not a list'
+    return found.length > 0 ? 'foreign-checkout' : null
+  }
+
+  /**
    * Container ids of the named stacks, from a listing taken now rather than at scan time.
    * Throws before any docker call unless each stack passed a reprobe and still has exactly
    * the containers that reprobe saw, all inside its worktree: a container that started in
@@ -429,6 +509,9 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         // A worktree nested inside this one, created after the scan, before any docker call.
         const nested = await nestedRefusal(item.repoPath, root, roots)
         if (nested) return { ok: false, reason: nested }
+        // A worktree of another repo or a clone inside it, which that listing cannot see.
+        const foreign = await foreignRefusal(own(path).path)
+        if (foreign) return { ok: false, reason: foreign }
         const { stacks } = await deps.listStacks()
         // Every container folder on its real path. One that cannot be read and lies inside
         // the worktree or above it may run from it under another name.
@@ -536,6 +619,9 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         // A worktree nested inside this one may be created mid-run too (delta 6, F1).
         const nested = await nestedRefusal(b.item.repoPath, root, roots)
         if (nested) return { ok: false, reason: nested }
+        // And a worktree of another repo or a clone made inside it mid-run (delta 7).
+        const foreign = await foreignRefusal(canonical(path).path)
+        if (foreign) return { ok: false, reason: foreign }
         return { ok: true }
       } catch (err) {
         return { ok: false, reason: `probe-failed: ${messageOf(err)}` }
@@ -617,6 +703,7 @@ export async function defaultGcShellDeps(
     realpath,
     // A git failure rejects, so the reprobe and the recheck refuse as probe-failed.
     listWorktrees: async (repoPath) =>
-      parseWorktreeList(await executor.git(repoPath, ['worktree', 'list', '--porcelain']))
+      parseWorktreeList(await executor.git(repoPath, ['worktree', 'list', '--porcelain'])),
+    findForeignCheckouts
   }
 }

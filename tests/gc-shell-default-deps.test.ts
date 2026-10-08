@@ -10,12 +10,19 @@ const h = vi.hoisted(() => ({
   computeFolderSets: vi.fn(),
   executor: {} as Record<string, unknown>,
   /** The fake disk's realpath; by default every path is real and exists. */
-  realpath: vi.fn(async (p: string): Promise<string> => p)
+  realpath: vi.fn(async (p: string): Promise<string> => p),
+  /** The fake disk's readdir: every folder is empty, so no foreign checkout is ever found. */
+  readdir: vi.fn(async (): Promise<unknown[]> => [])
 }))
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:fs/promises')>()
-  return { ...real, default: { ...real, realpath: h.realpath }, realpath: h.realpath }
+  return {
+    ...real,
+    default: { ...real, realpath: h.realpath, readdir: h.readdir },
+    realpath: h.realpath,
+    readdir: h.readdir
+  }
 })
 
 vi.mock('../src/main/containers/containers-shell', () => ({
@@ -34,7 +41,12 @@ vi.mock('../src/main/reaper/reaper-ipc', () => ({
   buildHydrationDeps: () => ({ dehydrate: {} })
 }))
 
-import { createGcOps, defaultGcShellDeps, DockerUnavailableError } from '../src/main/gc/gc-shell'
+import {
+  createGcOps,
+  defaultGcShellDeps,
+  DockerUnavailableError,
+  findForeignCheckouts
+} from '../src/main/gc/gc-shell'
 import type { WorktreeBundle } from '../src/main/gc/bundle-core'
 import type { ReapItem } from '../src/main/reaper/reaper-core'
 
@@ -76,6 +88,7 @@ function harvestable(): WorktreeBundle {
     isMainCheckout: false,
     pathsResolved: true,
     nestedWorktrees: [],
+    foreignCheckouts: [],
     localTip: TIP,
     bucket: 'ready',
     reason: null
@@ -99,6 +112,8 @@ const timeoutError = (): Error =>
   })
 
 beforeEach(() => {
+  h.readdir.mockReset()
+  h.readdir.mockImplementation(async () => [])
   h.realpath.mockReset()
   h.realpath.mockImplementation(async (p: string) => p)
   h.inspectAll.mockReset()
@@ -295,5 +310,26 @@ describe('defaultGcShellDeps.listWorktrees (delta 6, F1)', () => {
     )
     const ops = createGcOps(await defaultGcShellDeps(() => null))
     expect(await ops.reprobe(harvestable())).toEqual({ ok: false, reason: 'nested-worktree' })
+  })
+})
+
+describe('defaultGcShellDeps.findForeignCheckouts (delta 7)', () => {
+  it('is the on-disk walk', async () => {
+    const deps = await defaultGcShellDeps(() => null)
+    expect(deps.findForeignCheckouts).toBe(findForeignCheckouts)
+  })
+
+  it('the reprobe over the default deps refuses a foreign checkout the walk finds', async () => {
+    h.inspectAll.mockResolvedValue([])
+    const dir = (name: string): unknown => ({
+      name,
+      isSymbolicLink: () => false,
+      isDirectory: () => true
+    })
+    h.readdir.mockImplementation(async (p: unknown) =>
+      p === WT ? [dir('libs')] : p === `${WT}/libs` ? [dir('.git')] : []
+    )
+    const ops = createGcOps(await defaultGcShellDeps(() => null))
+    expect(await ops.reprobe(harvestable())).toEqual({ ok: false, reason: 'foreign-checkout' })
   })
 })
