@@ -66,15 +66,14 @@ describe('the advisor is reachable only on demand (AC-5)', () => {
     )
   })
 
-  it('never retries: the core runs the model once per batch and the shell has no timer loop', () => {
+  it('never retries: the core runs the model once per batch and the shell owns no timer', () => {
     const core = read('src/main/gc/opinion-core.ts')
     const shell = read('src/main/gc/opinion-shell.ts')
     expect(core.match(/deps\.run\(/g)).toHaveLength(1)
     expect(core).not.toMatch(/setInterval|setTimeout|retry|attempts/i)
-    expect(shell).not.toMatch(/setInterval|retry|attempts/i)
-    // The one timer is the kill switch of a hung process.
-    expect(shell.match(/setTimeout\(/g)).toHaveLength(1)
-    expect(shell).toMatch(/child\.kill\('SIGTERM'\)/)
+    expect(shell).not.toMatch(/setInterval|setTimeout|retry|attempts/i)
+    // A hung process is ended by spawn's own timeout, not by a timer this module owns.
+    expect(shell).toMatch(/timeout: RUN_TIMEOUT_MS/)
   })
 })
 

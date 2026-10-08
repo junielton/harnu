@@ -137,20 +137,18 @@ async function runClaude(a: { cwd: string | null; argv: string[] }): Promise<str
     const finish = (value: string | null): void => {
       if (settled) return
       settled = true
-      clearTimeout(timer)
       resolve(value)
     }
-    // stdin is ignored: `claude -p` otherwise waits for it before it starts.
+    // stdin is ignored: `claude -p` otherwise waits for it before it starts. The timeout is
+    // spawn's own, so a hung process is killed without this module owning a timer.
     const child = spawn(bin, a.argv, {
       cwd: a.cwd ?? tmpdir(),
       env: sanitizeSpawnEnv(process.env, { execPath: process.execPath }),
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: RUN_TIMEOUT_MS,
+      killSignal: 'SIGTERM'
     })
     let stdout = ''
-    const timer = setTimeout(() => {
-      child.kill('SIGTERM')
-      finish(null)
-    }, RUN_TIMEOUT_MS)
     child.stdout?.on('data', (d: Buffer) => {
       if (stdout.length < STDOUT_MAX) stdout += d.toString()
     })
