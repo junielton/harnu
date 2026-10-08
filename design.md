@@ -8736,26 +8736,10 @@ is always unchecked when the dialog opens.** Shared volumes are never offered. F
 control disables; a failure shows an `error` note in the dialog and keeps it open. Esc and a
 backdrop click cancel.
 
-**Clean-up dialog** (`ContainersSweepDialog.vue`, §6 Dialog anatomy; T341): the same card
-as the Remove dialog one size up — 520px, `bg-surface border-border-2 rounded-lg shadow-pop`,
-`padding: 22px 24px 18px`, `gap: 14px` — and the ONE door to a sweep. Title 15px/22px 500
-("Clean up **N** stacks?"), then a 13px/20px `--text-2` sentence giving the total ("47
-containers will be removed."). Under it the stack list (mono 11px `--text-3` on `bg-bg`,
-`border-border rounded`, `padding: 8px 12px`, `max-height: 168px`, `overflow-y-auto`): one
-row per swept stack, name left and "N containers" right — every zombie and orphan, and
-nothing else, so `active`, `protected`, `pending` and `unknown` are never listed. **A stack
-the operator unticked is not listed either**: the dialog lists exactly what it is
-about to take, so its title count, its container total, its volume line and its confirm
-button all describe the ticked set alone. A volume an unticked stack still mounts is a
-volume that SURVIVES the clean-up, so it is kept and named under the opt-in like any other
-survivor's — unticking a stack protects its data as well as its containers. Then the
-same volume opt-in as the Remove dialog (`bg-warning-soft border-warning-line rounded`,
-`padding: 10px 12px`, 14px checkbox, 11px/16px `--warning` warning), aggregated across the
-whole sweep: "Also remove **N** volumes · size", one total. **The checkbox is always
-unchecked when the dialog opens.** Shared volumes the sweep leaves behind are named under
-it, 11px `--text-3`, one line each. Footer: ghost **Cancel** and danger **Remove N
-containers**; while the sweep runs the confirm spins, reads "Cleaning… N of M" (the hero's own count, which the dialog covers) and every control disables. Esc and a
-backdrop click cancel.
+**Clean-up dialog — removed (T443).** The sweep button is now **"Open Cleanup · N stacks"** and routes
+to the Cleanup takeover; the per-stack tick-list, the sweep dialog and its select-all header are gone. The
+confirm for cleaning is the Cleanup bulk dialog (see "Workspace GC — unified Cleanup"). The text below that
+describes the tick-list or the sweep dialog is history.
 
 A sweep that did not fully succeed keeps the dialog open and shows an `error` note
 (`bg-red-soft border-red-line`, `TriangleAlert` 14px) that says how many stacks were

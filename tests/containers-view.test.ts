@@ -522,43 +522,24 @@ describe('AC-10: copy', () => {
     expect(en.verdict.zombie).toBe('zombie')
   })
 
-  it('T341 AC-7: every sweep key exists in both locales', () => {
+  it('T443: the sweep dialog is gone with its keys; the refusal wording the store still reports stays', () => {
     const locales = ['src/renderer/src/i18n/en.json', 'src/renderer/src/i18n/pt-BR.json'].map(
       (f) => JSON.parse(read(f)).containers
     )
     for (const c of locales) {
-      expect(Object.keys(c.sweepDialog).sort()).toEqual([
-        'body',
-        // BUG-137: the mismatch line, at parity like every other sweep key.
-        'changed',
-        'failedStack',
-        // BUG-139: the in-dialog twin of `changed`, when the set moved before
-        // main was ever asked.
-        'moved',
-        'partial',
-        'stackContainers',
-        'title',
-        'volumes'
-      ])
+      expect(c.sweepDialog).toBeUndefined()
+      expect(c.sweeping).toBeUndefined()
+      expect(c.select).toBeUndefined()
       expect(typeof c.refusal.SWEEP_SET_CHANGED).toBe('string')
-      expect(typeof c.sweep).toBe('string')
-      expect(typeof c.sweeping).toBe('string')
       expect(typeof c.failed.refused.sweep).toBe('string')
+      expect(typeof c.openCleanup).toBe('string')
     }
-    // The label the operator picked (provisional, T341), in the source of truth.
     const en = locales[0]
-    expect(en.sweep).toBe('Clean up {n} stack | Clean up {n} stacks')
-    expect(en.sweepDialog.title).toBe('Clean up {n} stack? | Clean up {n} stacks?')
     expect(en.dialog.confirm).toBe('Remove {n} container | Remove {n} containers')
   })
 
   it('the Containers components hold no hardcoded English in their templates', () => {
-    for (const f of [
-      'ContainersView.vue',
-      'ContainersDetail.vue',
-      'ContainersRemoveDialog.vue',
-      'ContainersSweepDialog.vue'
-    ]) {
+    for (const f of ['ContainersView.vue', 'ContainersDetail.vue', 'ContainersRemoveDialog.vue']) {
       const src = read(`src/renderer/src/components/${f}`)
       const template = src.slice(src.indexOf('<template>'))
       // Visible text lives in $t: a bare word between tags is a leaked literal.

@@ -559,7 +559,7 @@ const BTN_VARIANT: Record<BtnVariant, string> = {
  *
  * T345 migrated `ContainersView.vue`'s own toolbar buttons to `ui/Button.vue`
  * (design.md §6 "Buttons"), but this helper stays: `ContainersDetail.vue`,
- * `ContainersSweepDialog.vue` and `ContainersRemoveDialog.vue` still call it, and
+ * `ContainersRemoveDialog.vue` still calls it, and
  * those detail/dialog surfaces were out of T345's scope (header/toolbar buttons
  * only). Its `sm` size and `ghost` treatment also have no equivalent on
  * `ui/Button.vue` yet — migrating the remaining call sites is a follow-up, not a

@@ -2114,18 +2114,8 @@
   "cleanup": {
     "title": "Limpeza",
     "close": "Fechar Limpeza",
-    "kpis": "{items} itens · {harvestable} aproveitáveis · {size} recuperável",
-    "groupSummary": "{worktrees} worktrees · {branches} branches · {folders} pastas",
     "scanNow": "Escanear agora",
-    "scannedAgo": "escaneado {ago}",
     "sweep": "Limpar {count} verdes · {size}",
-    "sweepGroup": "Limpar {count}",
-    "selectRow": "Selecionar {what}",
-    "selection": {
-      "count": "{count} selecionado(s)",
-      "sweep": "Limpar {count} selecionado(s)",
-      "clear": "Limpar seleção"
-    },
     "kind": {
       "worktree": "worktree",
       "localBranch": "branch local",
@@ -2148,8 +2138,7 @@
       "harvestable": "aproveitável",
       "harvestableRemote": "aproveitável · remoto",
       "blocked": "bloqueado",
-      "unknown": "sinal insuficiente",
-      "active": "sessão ativa"
+      "unknown": "sinal insuficiente"
     },
     "blocker": {
       "dirty": "mudanças não commitadas",
@@ -2161,18 +2150,6 @@
       "detachedHead": "HEAD detached — sem branch"
     },
     "trashTitle": "Limpar: {what}",
-    "filterBar": {
-      "searchPlaceholder": "Buscar branch ou pasta…",
-      "searchLabel": "Buscar itens de limpeza",
-      "verdictLabel": "Filtrar por veredito",
-      "verdict": {
-        "all": "Todos",
-        "harvestable": "Aproveitáveis",
-        "blocked": "Bloqueados",
-        "unknown": "Desconhecidos"
-      }
-    },
-    "filterEmptyState": "Nenhum item corresponde aos filtros.",
     "sweepConfirm": {
       "title": "Limpar {count} itens verdes?",
       "subtitle": "Pastas vão para a lixeira do sistema. Branches locais continuam recuperáveis via reflog por ~30 dias. Toda ação é registrada no journal de limpeza.",
@@ -2196,21 +2173,11 @@
     "recent": "Limpezas recentes",
     "sweptAgo": "limpo {ago}",
     "was": "era {sha}",
-    "emptyState": "Nada para limpar — toda branch e worktree está ativa ou já está em ordem.",
-    "footerPill": "Limpeza",
-    "a11yFooterPill": "Abrir Limpeza — {count} itens aproveitáveis",
     "notifyTitle": "{count} itens fecharam o ciclo",
     "notifyBody": "{size} recuperável — abra a Limpeza para limpar",
     "settings": {
-      "eyebrow": "Escaneamento em segundo plano",
-      "intro": "O Reaper escaneia as branches e worktrees deste repo em um timer e registra silenciosamente o que fica seguro para limpar — sem toast, sem som, só uma entrada na central de notificações.",
       "autoScan": {
-        "label": "Escaneamento automático em segundo plano",
-        "hint": "Roda o mesmo classificador do Escanear agora, em um timer, sem abrir a view de Limpeza."
-      },
-      "interval": {
-        "label": "Intervalo de escaneamento",
-        "hint": "Com que frequência o escaneamento em segundo plano roda enquanto o auto-scan está ligado."
+        "label": "Escaneamento automático em segundo plano"
       },
       "interval30m": "30m",
       "interval1h": "1h",
@@ -2253,10 +2220,8 @@
       "dehydrate": "Desidratar {what}",
       "dehydrateSize": "Desidratar {what} — libera {size}",
       "dehydrateNoSetup": "Desidratar {what} — o Harnu não consegue reidratá-la",
-      "rehydrate": "Reidratar {what}",
-      "dehydrateGroup": "Desidratar {count} worktrees ociosas em {repo}"
+      "rehydrate": "Reidratar {what}"
     },
-    "dehydrateGroup": "Desidratar {count} ociosas",
     "toast": {
       "rehydrated": "{what} reidratada",
       "rehydrateChanged": "O setup modificou arquivos rastreados: {files}",
@@ -2625,7 +2590,6 @@
     "close": "Fechar Containers",
     "settings": {
       "eyebrow": "Escaneamento em segundo plano",
-      "intro": "O Harnu escaneia o docker em um timer, para que a pílula do rodapé continue atualizada com a view de Containers fechada.",
       "autoScan": {
         "label": "Escanear em segundo plano",
         "hint": "Roda o mesmo escaneamento do Verificar agora, em um timer, sem abrir Containers."
@@ -2640,7 +2604,6 @@
       "intervalDaily": "Diário",
       "zombieAfter": {
         "label": "Zumbi após",
-        "hint": "Um stack de worktree que ninguém usa há esse número de dias é um zumbi. As linhas se reorganizam assim que você muda o valor.",
         "daysSuffix": "dias"
       },
       "notify": {
@@ -2659,8 +2622,6 @@
       "body": "{names} — abra Containers para revisar",
       "more": "+{n} a mais"
     },
-    "footerPill": "Containers",
-    "a11yFooterPill": "Containers: {n} stack precisa de você | Containers: {n} stacks precisam de você",
     "scannedAgo": "verificado {ago}",
     "readingDocker": "lendo o docker…",
     "scanNow": "Verificar agora",
@@ -2668,8 +2629,6 @@
     "scanAgain": "Verificar de novo",
     "stopRunning": "Parar {n} rodando",
     "stoppingRunning": "Parando…",
-    "sweep": "Limpar {n} stack | Limpar {n} stacks",
-    "sweeping": "Limpando… {done} de {total}",
     "hero": {
       "ramFreed": "RAM liberada ao parar as stacks zumbis",
       "portsReleased": "portas do host liberadas",
@@ -2706,11 +2665,6 @@
     "quickStop": {
       "stack": "Parar stack",
       "container": "Parar container"
-    },
-    "select": {
-      "stack": "Incluir {name} na limpeza",
-      "all": "Selecionar todos os stacks",
-      "none": "Limpar a seleção"
     },
     "ago": {
       "justNow": "agora mesmo",
@@ -2892,16 +2846,6 @@
       "cancel": "Cancelar",
       "confirm": "Remover {n} container | Remover {n} containers",
       "removing": "Removendo…"
-    },
-    "sweepDialog": {
-      "title": "Limpar {n} stack? | Limpar {n} stacks?",
-      "body": "{n} container será removido. | {n} containers serão removidos.",
-      "stackContainers": "{n} container | {n} containers",
-      "volumes": "Também remover {n} volume · {size} | Também remover {n} volumes · {size}",
-      "partial": "Limpou {done} de {total} stack. Esta não: | Limpou {done} de {total} stacks. Estas não:",
-      "failedStack": "{name} — {reason}",
-      "changed": "A lista mudou enquanto este diálogo estava aberto, então nada foi apagado. Confira o que a limpeza levaria agora e confirme de novo.",
-      "moved": "A lista mudou enquanto este diálogo estava aberto, então ela foi atualizada e nada foi removido. Confira o que a limpeza levaria agora e confirme de novo."
     },
     "openCleanup": "Abrir Limpeza · {n} stack | Abrir Limpeza · {n} stacks",
     "openCleanupTitle": "Limpar stacks agora acontece na Limpeza"

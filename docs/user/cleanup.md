@@ -95,7 +95,7 @@ Nothing blocks. After you confirm, the hero button turns into a **progress chip*
 - a finished block fades ("freed"), disappears and the map re-flows;
 - the footer pill mirrors the chip ("Cleaning 3/12") on every screen.
 
-If you close Cleanup, or reload the window, and come back, the chip is back where it was. There is no Cancel for a clean that is running: it works through the list. An automatic cycle that runs while the screen is open looks exactly the same.
+If you close Cleanup, or reload the window, and come back, the chip is back where it was. There is no Cancel for a clean that is running, because the engine has no way to stop a job once it started: it works through the list (a "Cancel after current" option may come later). An automatic cycle that runs while the screen is open looks exactly the same.
 
 When it ends, a toast says **Freed 6.0 GiB · 12 ready items cleaned**. If something could not be cleaned, it says **11 cleaned · 1 needs review** instead, in amber. The failed item reappears as a Needs review block with its reason ("Cleanup stopped at …"), and the footer pill reads **1 needs review** until you deal with it. Every run also lands in the Activity bell and in the journal at the bottom of the screen. If the window is not focused, you get a normal desktop notification instead of a toast.
 

@@ -337,7 +337,6 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Dehydrate confirm dialog (T250)                    | `src/renderer/src/components/DehydrateConfirmDialog.vue` + `cleanup-row.ts`      |
 | Cleanup settings pane (Settings tab, Reaper)       | `src/renderer/src/components/CleanupSettingsPane.vue`                            |
 | Containers settings pane (Settings tab, T332)      | `src/renderer/src/components/ContainersSettingsPane.vue`                         |
-| Containers clean-up dialog (T341)                  | `src/renderer/src/components/ContainersSweepDialog.vue`                          |
 | PR Stack Canvas (takeover, T198)                   | `src/renderer/src/components/PrStackCanvas.vue`                                  |
 | PR card (canvas node)                              | `src/renderer/src/components/PrStackCard.vue` + `pr-stack-format.ts`             |
 | PR Stack edge layer                                | `src/renderer/src/components/PrStackEdges.vue`                                   |

@@ -2114,18 +2114,8 @@
   "cleanup": {
     "title": "Cleanup",
     "close": "Close Cleanup",
-    "kpis": "{items} items · {harvestable} harvestable · {size} reclaimable",
-    "groupSummary": "{worktrees} worktrees · {branches} branches · {folders} folders",
     "scanNow": "Scan now",
-    "scannedAgo": "scanned {ago}",
     "sweep": "Sweep {count} green · {size}",
-    "sweepGroup": "Sweep {count}",
-    "selectRow": "Select {what}",
-    "selection": {
-      "count": "{count} selected",
-      "sweep": "Sweep {count} selected",
-      "clear": "Clear selection"
-    },
     "kind": {
       "worktree": "worktree",
       "localBranch": "local branch",
@@ -2148,8 +2138,7 @@
       "harvestable": "harvestable",
       "harvestableRemote": "harvestable · remote",
       "blocked": "blocked",
-      "unknown": "insufficient signal",
-      "active": "session live"
+      "unknown": "insufficient signal"
     },
     "blocker": {
       "dirty": "uncommitted changes",
@@ -2161,18 +2150,6 @@
       "detachedHead": "detached HEAD — no branch"
     },
     "trashTitle": "Clean up: {what}",
-    "filterBar": {
-      "searchPlaceholder": "Search branch or folder…",
-      "searchLabel": "Search cleanup items",
-      "verdictLabel": "Filter by verdict",
-      "verdict": {
-        "all": "All",
-        "harvestable": "Harvestable",
-        "blocked": "Blocked",
-        "unknown": "Unknown"
-      }
-    },
-    "filterEmptyState": "No items match your filters.",
     "sweepConfirm": {
       "title": "Sweep {count} green items?",
       "subtitle": "Folders go to the system trash. Local branches stay recoverable via reflog for ~30 days. Every action is logged to the cleanup journal.",
@@ -2196,21 +2173,11 @@
     "recent": "Recent cleanups",
     "sweptAgo": "swept {ago}",
     "was": "was {sha}",
-    "emptyState": "Nothing to clean — every branch and worktree is either active or already tidy.",
-    "footerPill": "Cleanup",
-    "a11yFooterPill": "Open Cleanup — {count} harvestable items",
     "notifyTitle": "{count} items closed the cycle",
     "notifyBody": "{size} reclaimable — open Cleanup to sweep",
     "settings": {
-      "eyebrow": "Background scan",
-      "intro": "Reaper scans this repo's branches and worktrees on a timer and quietly logs anything that becomes safe to clean — no toast, no sound, just a notification-center entry.",
       "autoScan": {
-        "label": "Automatic background scan",
-        "hint": "Runs the same classifier as Scan now, on a timer, without opening the Cleanup view."
-      },
-      "interval": {
-        "label": "Scan interval",
-        "hint": "How often the background scan runs while auto-scan is on."
+        "label": "Automatic background scan"
       },
       "interval30m": "30m",
       "interval1h": "1h",
@@ -2253,10 +2220,8 @@
       "dehydrate": "Dehydrate {what}",
       "dehydrateSize": "Dehydrate {what} — frees {size}",
       "dehydrateNoSetup": "Dehydrate {what} — Harnu cannot rehydrate it",
-      "rehydrate": "Rehydrate {what}",
-      "dehydrateGroup": "Dehydrate {count} idle worktrees in {repo}"
+      "rehydrate": "Rehydrate {what}"
     },
-    "dehydrateGroup": "Dehydrate {count} idle",
     "toast": {
       "rehydrated": "Rehydrated {what}",
       "rehydrateChanged": "Setup modified tracked files: {files}",
@@ -2625,7 +2590,6 @@
     "close": "Close Containers",
     "settings": {
       "eyebrow": "Background scan",
-      "intro": "Harnu scans docker on a timer, so the footer pill stays current while the Containers view is closed.",
       "autoScan": {
         "label": "Scan in the background",
         "hint": "Runs the same scan as Scan now, on a timer, without opening Containers."
@@ -2640,7 +2604,6 @@
       "intervalDaily": "Daily",
       "zombieAfter": {
         "label": "Zombie after",
-        "hint": "A worktree's stack that nobody has used for this many days is a zombie. The rows re-sort as soon as you change it.",
         "daysSuffix": "days"
       },
       "notify": {
@@ -2659,8 +2622,6 @@
       "body": "{names} — open Containers to review",
       "more": "+{n} more"
     },
-    "footerPill": "Containers",
-    "a11yFooterPill": "Containers: {n} stack needs you | Containers: {n} stacks need you",
     "scannedAgo": "scanned {ago}",
     "readingDocker": "reading docker…",
     "scanNow": "Scan now",
@@ -2668,8 +2629,6 @@
     "scanAgain": "Scan again",
     "stopRunning": "Stop {n} running",
     "stoppingRunning": "Stopping…",
-    "sweep": "Clean up {n} stack | Clean up {n} stacks",
-    "sweeping": "Cleaning… {done} of {total}",
     "hero": {
       "ramFreed": "RAM freed by stopping zombie stacks",
       "portsReleased": "host ports released",
@@ -2706,11 +2665,6 @@
     "quickStop": {
       "stack": "Stop stack",
       "container": "Stop container"
-    },
-    "select": {
-      "stack": "Include {name} in the clean-up",
-      "all": "Select every stack",
-      "none": "Clear the selection"
     },
     "ago": {
       "justNow": "just now",
@@ -2892,16 +2846,6 @@
       "cancel": "Cancel",
       "confirm": "Remove {n} container | Remove {n} containers",
       "removing": "Removing…"
-    },
-    "sweepDialog": {
-      "title": "Clean up {n} stack? | Clean up {n} stacks?",
-      "body": "{n} container will be removed. | {n} containers will be removed.",
-      "stackContainers": "{n} container | {n} containers",
-      "volumes": "Also remove {n} volume · {size} | Also remove {n} volumes · {size}",
-      "partial": "Cleaned {done} of {total} stack. This one was not: | Cleaned {done} of {total} stacks. These were not:",
-      "failedStack": "{name} — {reason}",
-      "changed": "The list changed while this dialog was open, so nothing was deleted. Check what the clean-up would take now and confirm again.",
-      "moved": "The list changed while this dialog was open, so it was refreshed and nothing was removed. Check what the clean-up would take now and confirm again."
     },
     "openCleanup": "Open Cleanup · {n} stack | Open Cleanup · {n} stacks",
     "openCleanupTitle": "Cleaning up stacks now happens in Cleanup"
