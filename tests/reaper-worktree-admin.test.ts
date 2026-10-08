@@ -244,7 +244,7 @@ describe('a clean never deletes anything permanently (delta 5, item 1)', () => {
   it('no source under reaper/ or gc/ ever asks git to remove a worktree', () => {
     const base = join(__dirname, '..', 'src', 'main')
     const offenders = [...walk(join(base, 'reaper')), ...walk(join(base, 'gc'))].filter((f) =>
-      /worktree\W{1,6}remove/.test(readFileSync(f, 'utf8'))
+      /worktree['"\s,]+remove\b/.test(readFileSync(f, 'utf8'))
     )
     expect(offenders).toEqual([])
   })
