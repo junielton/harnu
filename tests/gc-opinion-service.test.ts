@@ -34,7 +34,7 @@ interface Rig {
   service: ReturnType<typeof createOpinionService>
   results: GcOpinionResult[]
   done: GcOpinionDone[]
-  runs: { cwd: string | null; argv: string[] }[]
+  runs: { cwd: string | null; argv: string[]; stdin: string }[]
   state: {
     lookup: Record<string, OpinionLookup>
     dossiers: Record<string, OpinionDossier>
@@ -72,7 +72,7 @@ function rig(ids: string[], cache = createOpinionCache()): Rig {
     route: async (group) => ({ model: group === '/other' ? 'sonnet' : 'opus', effort: 'high' }),
     run: async (a) => {
       runs.push(a)
-      const prompt = a.argv[a.argv.length - 1]
+      const prompt = a.stdin
       return state.answer(prompt)
     },
     emitResult: (r) => results.push(r),
@@ -172,7 +172,7 @@ describe('the service: ask (AC-1)', () => {
     expect(Object.keys(verdicts(r)).sort()).toEqual(['a', 'volume:v'])
     expect(r.done[0]).toMatchObject({ answered: 2, refused: 2 })
     for (const run of r.runs) {
-      expect(run.argv[run.argv.length - 1]).not.toContain('ready1')
+      expect(run.stdin).not.toContain('ready1')
     }
   })
 
@@ -195,7 +195,7 @@ describe('the service: ask (AC-1)', () => {
     r.state.dossiers['/repo::worktree::feat'] = dossier('feat', { path: '/repo/wt' })
     r.service.start(['/repo::worktree::feat'])
     await r.service.idle()
-    expect(r.runs[0].argv.join('\n')).not.toContain('::')
+    expect([...r.runs[0].argv, r.runs[0].stdin].join('\n')).not.toContain('::')
   })
 })
 
@@ -205,10 +205,10 @@ describe('the service: the read-only session (AC-2)', () => {
     r.service.start(['a'])
     await r.service.idle()
     expect(r.runs).toHaveLength(1)
-    const { cwd, argv } = r.runs[0]
+    const { cwd, argv, stdin } = r.runs[0]
     expect(cwd).toBe('/repo')
-    const prompt = argv[argv.length - 1]
-    expect(argv).toEqual(opinionArgv({ model: 'opus', effort: 'high', prompt }))
+    expect(stdin).toContain('<dossier id="item-1">')
+    expect(argv).toEqual(opinionArgv({ model: 'opus', effort: 'high' }))
     expect(argv.join(' ')).not.toContain('mcp__')
   })
 
@@ -241,7 +241,7 @@ describe('the service: the read-only session (AC-2)', () => {
     await r.service.idle()
     expect(r.runs).toHaveLength(3)
     for (const run of r.runs) {
-      const refs = run.argv[run.argv.length - 1].match(/<dossier id=/g) ?? []
+      const refs = run.stdin.match(/<dossier id=/g) ?? []
       expect(refs.length).toBeLessThanOrEqual(OPINION_BATCH_SIZE)
     }
     expect(Object.keys(verdicts(r))).toHaveLength(many.length)
@@ -260,7 +260,7 @@ describe('the service: the read-only session (AC-2)', () => {
         peak = Math.max(peak, live)
         await new Promise((res) => setTimeout(res, 5))
         live--
-        return allSafe(a.argv[a.argv.length - 1])
+        return allSafe(a.stdin)
       },
       emitResult: () => {},
       emitDone: () => {},
@@ -313,7 +313,7 @@ describe('the service: caching (AC-4)', () => {
     r.service.start(['a', 'b'])
     await r.service.idle()
     expect(r.runs).toHaveLength(2)
-    const prompt = r.runs[1].argv[r.runs[1].argv.length - 1]
+    const prompt = r.runs[1].stdin
     expect(prompt.match(/<dossier id=/g)).toHaveLength(1)
     expect(prompt).toContain('Branch: b')
   })
@@ -356,7 +356,7 @@ describe('the service: caching (AC-4)', () => {
     r.service.start(['a', 'b'])
     await r.service.idle()
     expect(r.runs).toHaveLength(2) // b was asked again, a came from the cache
-    expect(r.runs[1].argv[r.runs[1].argv.length - 1].match(/<dossier id=/g)).toHaveLength(1)
+    expect(r.runs[1].stdin.match(/<dossier id=/g)).toHaveLength(1)
   })
 
   it('treats a run that throws like a failed run', async () => {
@@ -577,5 +577,47 @@ describe('a result is bound to the item as it was when asked (stale chips)', () 
     r.service.start(['a'])
     await r.service.idle()
     expect(resultOf(r, 'a')).toMatchObject({ verdict: 'unsure', durable: false })
+  })
+})
+
+describe('the prompt goes over stdin, never in argv (E2BIG)', () => {
+  const MAX_ARG = 64 * 1024
+  const worst = (i: number): OpinionDossier =>
+    dossier(`w${i}`, {
+      path: `/repo/.claude/worktrees/${'long-name-'.repeat(8)}${i}`,
+      reasonDetail: 'r'.repeat(900),
+      branch: 'b'.repeat(900),
+      diffStat: ' file.ts | 9 +++++++++\n'.repeat(900),
+      dirtyFiles: Array.from({ length: 400 }, (_, k) => ` M ${'dir/'.repeat(120)}file${k}.ts`),
+      lastSessionSummary: 's'.repeat(5000)
+    })
+
+  it('hands the prompt to the run as stdin and keeps every argv element small', async () => {
+    const r = rig(['a'])
+    r.service.start(['a'])
+    await r.service.idle()
+    const { argv, stdin } = r.runs[0]
+    expect(stdin).toContain('Branch: a')
+    expect(stdin).toContain('<dossier id="item-1">')
+    for (const el of argv) expect(el.length).toBeLessThan(1024)
+    expect(argv.join('\n')).not.toContain('<dossier')
+    expect(argv).not.toContain('--') // no positional prompt follows
+  })
+
+  it('a worst-case 8-item batch: argv stays tiny and the whole prompt arrives intact on stdin', async () => {
+    const ids = Array.from({ length: OPINION_BATCH_SIZE }, (_, i) => `w${i}`)
+    const r = rig([])
+    r.state.lookup = Object.fromEntries(ids.map((id) => [id, 'review' as const]))
+    r.state.dossiers = Object.fromEntries(ids.map((id, i) => [id, { ...worst(i), id }]))
+    r.service.start(ids)
+    await r.service.idle()
+    expect(r.runs).toHaveLength(1)
+    const { argv, stdin } = r.runs[0]
+    for (const el of argv) expect(Buffer.byteLength(el)).toBeLessThan(MAX_ARG)
+    expect(Buffer.byteLength(argv.join(' '))).toBeLessThan(MAX_ARG)
+    expect(stdin).toContain(`item-${OPINION_BATCH_SIZE}`)
+    expect(stdin.match(/<dossier id=/g)).toHaveLength(OPINION_BATCH_SIZE)
+    // Bounded all the same: the per-field caps keep a worst case far below a context window.
+    expect(Buffer.byteLength(stdin)).toBeLessThan(250_000)
   })
 })

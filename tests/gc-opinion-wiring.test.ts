@@ -101,6 +101,13 @@ describe('the advisor can only read (AC-2)', () => {
     expect(shell).not.toMatch(/--dangerously|bypassPermissions|--allowedTools|--mcp-config/)
   })
 
+  it('feeds the prompt on stdin and never as an argv element', () => {
+    const shell = read('src/main/gc/opinion-shell.ts')
+    expect(shell).toContain("stdio: ['pipe', 'pipe', 'pipe']")
+    expect(shell).toMatch(/child\.stdin\??\.end\(a\.stdin\)/)
+    expect(shell).toContain('spawn(bin, a.argv,')
+  })
+
   it('takes the argv from opinionArgv, which is built on the Scheduler tickArgv', () => {
     const core = read('src/main/gc/opinion-core.ts')
     expect(core).toContain("from '../scheduler-core'")

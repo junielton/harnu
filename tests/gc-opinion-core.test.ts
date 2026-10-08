@@ -35,7 +35,7 @@ const ids = (n: number): string[] => Array.from({ length: n }, (_, i) => `id-${i
 const answer = (...rows: unknown[]): string => JSON.stringify({ opinions: rows })
 
 describe('opinionArgv: the read-only session (AC-2)', () => {
-  const argv = opinionArgv({ model: 'opus', effort: 'high', prompt: 'the prompt' })
+  const argv = opinionArgv({ model: 'opus', effort: 'high' })
   const after = (flag: string): string | undefined => argv[argv.indexOf(flag) + 1]
 
   // The advisor reads files and nothing else. No Bash at all: a git rule such as `git diff` can still
@@ -88,10 +88,11 @@ describe('opinionArgv: the read-only session (AC-2)', () => {
     expect(argv).not.toContain('--dangerously-skip-permissions')
   })
 
-  it('carries the routed model and effort, and the prompt after the end-of-options marker', () => {
+  it('carries the routed model and effort and no prompt: the prompt travels over stdin', () => {
     expect(after('--model')).toBe('opus')
     expect(after('--effort')).toBe('high')
-    expect(argv.slice(-2)).toEqual(['--', 'the prompt'])
+    expect(argv).not.toContain('--')
+    expect(argv.every((el) => el.length < 1024)).toBe(true)
   })
 
   it('is headless and leaves no session behind', () => {
