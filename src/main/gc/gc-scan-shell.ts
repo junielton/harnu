@@ -43,7 +43,7 @@ import {
   type OrphanVolumeItem
 } from './gc-housekeeping-input'
 import { planHousekeeping } from './housekeeping-core'
-import { collectProjectFiles, type FsProbe } from './gc-project-files'
+import { scanProjectFiles, type FsProbe, type ProjectFile } from './gc-project-files'
 import { NO_DOCKER_CARD, dockerCardFacts, type GcDockerCard } from './gc-docker-card'
 import type { GcGather } from './gc-cycle'
 import { judgeKeeps, type StaleKeep } from './gc-keep'
@@ -87,6 +87,12 @@ const fsProbe: FsProbe = {
       isDir: e.isDirectory()
     })),
   readFile: readSmall
+}
+
+/** Files and whether a cap cut the scan short: `truncated` fails closed downstream. */
+async function scanFolder(p: string): Promise<{ files: ProjectFile[]; truncated: boolean }> {
+  const scanned = await scanProjectFiles(p, fsProbe)
+  return { files: scanned.files, truncated: scanned.truncated }
 }
 
 async function readComposeFile(dir: string): Promise<string | undefined> {
@@ -197,7 +203,7 @@ export async function gatherGc(
         env: await readSmall(path.join(p, '.env')),
         compose: await readComposeFile(p),
         // Subfolders too: docker/compose.yml pins a project just as the root one does.
-        files: await collectProjectFiles(p, fsProbe)
+        ...(await scanFolder(p))
       }))
   )
   const guards = volumeGuards(sources, dirExists)

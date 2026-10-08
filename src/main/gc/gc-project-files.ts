@@ -30,26 +30,42 @@ export const isEnvFile = (name: string): boolean => name === '.env'
 export const isComposeFile = (name: string): boolean =>
   /^(docker-)?compose(\..+)?\.ya?ml$/.test(name)
 
+export interface ProjectScan {
+  files: ProjectFile[]
+  /**
+   * A cap cut the scan short: a folder with more entries than {@link MAX_ENTRIES_PER_DIR}, more
+   * matching files than {@link MAX_FILES}, or a matching file that could not be read (too large,
+   * or gone). What was not read may name a project, so the caller must not treat the files
+   * found as the whole answer.
+   */
+  truncated: boolean
+}
+
 /**
  * Every `.env` and compose file under `root`, breadth first, to {@link MAX_DEPTH} levels, with
- * the skipped folders never entered. A folder or file that cannot be read is skipped: the
- * unreadable part simply contributes nothing, as it did before.
+ * the skipped folders never entered. A folder that cannot be listed contributes nothing, as it
+ * did before; a cap that cuts the scan short is reported in `truncated`, never swallowed.
  */
-export async function collectProjectFiles(
+export async function scanProjectFiles(
   root: string,
   probe: FsProbe,
   maxDepth = MAX_DEPTH
-): Promise<ProjectFile[]> {
+): Promise<ProjectScan> {
   const out: ProjectFile[] = []
+  let truncated = false
   let level: string[] = [root]
   for (let depth = 0; depth <= maxDepth && level.length > 0; depth++) {
     const next: string[] = []
     for (const dir of level) {
       let entries: Array<{ name: string; isDir: boolean }>
       try {
-        entries = (await probe.readdir(dir)).slice(0, MAX_ENTRIES_PER_DIR)
+        entries = await probe.readdir(dir)
       } catch {
         continue
+      }
+      if (entries.length > MAX_ENTRIES_PER_DIR) {
+        truncated = true
+        entries = entries.slice(0, MAX_ENTRIES_PER_DIR)
       }
       for (const e of entries) {
         const path = `${dir}/${e.name}`
@@ -58,14 +74,28 @@ export async function collectProjectFiles(
           continue
         }
         const kind = isEnvFile(e.name) ? 'env' : isComposeFile(e.name) ? 'compose' : null
-        if (!kind || out.length >= MAX_FILES) continue
+        if (!kind) continue
+        if (out.length >= MAX_FILES) {
+          truncated = true
+          continue
+        }
         const text = await probe.readFile(path)
-        if (text !== undefined) out.push({ path, dir, kind, text })
+        if (text === undefined) truncated = true
+        else out.push({ path, dir, kind, text })
       }
     }
     level = next
   }
-  return out
+  return { files: out, truncated }
+}
+
+/** The files alone, for callers that do not care whether a cap cut the scan short. */
+export async function collectProjectFiles(
+  root: string,
+  probe: FsProbe,
+  maxDepth = MAX_DEPTH
+): Promise<ProjectFile[]> {
+  return (await scanProjectFiles(root, probe, maxDepth)).files
 }
 
 // ---- values ------------------------------------------------------------------------------
