@@ -99,6 +99,27 @@ describe('createGatherer: a persisting gather (T445 delta 2)', () => {
     expect(spies.prefs.keep).toEqual({ a: 'open' })
   })
 
+  it('a release made while the gather ran survives that gather’s verdict on the old one', async () => {
+    const prefs = {
+      ...defaultGcPrefs(),
+      released: { r1: 1 },
+      releasedFrom: { r1: { repoPath: '/x', path: '/y', localTip: 'old' } }
+    }
+    const { spies, gatherer } = setup(gathered({ staleReleases: ['r1'] }), prefs)
+    // The agent releases the worktree again, at its new tip, while the gather is running.
+    spies.gatherGc.mockImplementation(async () => {
+      spies.prefs = {
+        ...spies.prefs,
+        released: { r1: 2 },
+        releasedFrom: { r1: { repoPath: '/x', path: '/y', localTip: 'new' } }
+      }
+      return gathered({ staleReleases: ['r1'] })
+    })
+    await gatherer.gather()
+    expect(spies.prefs.released).toEqual({ r1: 2 })
+    expect(spies.prefs.releasedFrom.r1!.localTip).toBe('new')
+  })
+
   it('S3: fresh() waits for the gather in flight and then starts its own', async () => {
     const { spies, gatherer } = setup(gathered())
     let release!: () => void

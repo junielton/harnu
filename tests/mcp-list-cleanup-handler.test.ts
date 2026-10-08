@@ -487,7 +487,8 @@ describe('list_cleanup handler (T445)', () => {
         'unknown-fate',
         'weak-merge-signal',
         'shared-stack',
-        'path-unresolved'
+        'path-unresolved',
+        'nested-worktree'
       ] as const
       const bundles = codes.map((code, i) =>
         bundle(`${MAIN}/.claude/worktrees/PROJ-${i}-c`, {
@@ -505,6 +506,23 @@ describe('list_cleanup handler (T445)', () => {
         expect(r.reason).not.toContain('raw detail')
       }
       expect(new Set(rows.map((r) => r.reason)).size).toBe(codes.length)
+    })
+
+    it('nested-worktree has its own sentence, not the generic one, and names no path', async () => {
+      const nested = bundle(WT_READY, {
+        bucket: 'review',
+        reason: {
+          code: 'nested-worktree',
+          detail: `1 other worktree lives inside this one: ${MAIN}/.claude/worktrees/inner.`
+        }
+      })
+      serve(snapshot([nested]))
+      const text = textOf(await handler({}, ctx()))
+      expect(leaksIn(text)).toEqual([])
+      const row = (JSON.parse(text).bundles as Listed[])[0]!
+      expect(row.reasonCode).toBe('nested-worktree')
+      expect(row.reason).toMatch(/worktree/i)
+      expect(row.reason).not.toBe('This worktree needs your review.')
     })
 
     it('an unknown review code still gets a generic, path-free sentence', async () => {
