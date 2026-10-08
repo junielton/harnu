@@ -26,14 +26,14 @@ export interface CycleRecord {
   at: number
   trigger: 'timer' | 'manual'
   mode: CycleMode
-  /** Eligible corpses seen this cycle. */
+  /** Eligible ready items seen this cycle. */
   found: number
-  /** Disk those corpses occupy. */
+  /** Disk those ready items occupy. */
   foundBytes: number
   cleaned: GcItemResult[]
   /** Bytes the worktree cleanups freed plus what Docker housekeeping reclaimed. */
   freedBytes: number
-  /** Eligible corpses the per-cycle cap left for a later cycle. */
+  /** Eligible ready items the per-cycle cap left for a later cycle. */
   deferred: number
   housekeeping: HousekeepingResult | null
   /** Whether this cycle raised its one notification. */
@@ -46,7 +46,7 @@ export interface CycleRecord {
 export interface GcSnapshot {
   scannedAt: number
   bundles: WorktreeBundle[]
-  /** Orphan volumes offered in Decide. Removed only by an explicit, confirmed action. */
+  /** Orphan volumes offered in Needs review. Removed only by an explicit, confirmed action. */
   orphanVolumes: OrphanVolumeItem[]
   /**
    * The Docker card: `buildCacheReclaimableBytes` and `danglingImages { count, bytes }`.
@@ -64,7 +64,7 @@ export interface GcSnapshot {
  * fresh gather when the job runs and refuses an item that differs (`changed-since-confirm`).
  *
  * For a worktree bundle they are read straight off the `WorktreeBundle` in the snapshot:
- * `bucket`, `reason?.code` (`reasonCode`, null for a corpse), `localTip` (`headSha`),
+ * `bucket`, `reason?.code` (`reasonCode`, null for a ready item), `localTip` (`headSha`),
  * `stackIds`, `ownedVolumes`, `item.diskBytes` (`bytes`). For an orphan volume (id
  * `volume:<name>`): `bucket: 'orphan-volume'`, `reasonCode` the item's reason code, `bytes`
  * its `sizeBytes`, `project` its compose project, `ownedVolumes: [name]`.
@@ -74,7 +74,7 @@ export interface GcSnapshot {
  * compared: disk use drifts without anything having changed.
  */
 export interface GcExpected {
-  bucket: 'corpse' | 'decide' | 'alive' | 'orphan-volume'
+  bucket: 'ready' | 'review' | 'in-use' | 'orphan-volume'
   reasonCode: string | null
   headSha: string | null
   stackIds: string[]
@@ -87,13 +87,13 @@ export interface GcExpected {
 /**
  * The `gc:clean(ids, opts)` contract.
  *
- * - `expected` is REQUIRED for every id, corpses included. An id without an entry is refused
+ * - `expected` is REQUIRED for every id, ready items included. An id without an entry is refused
  *   `missing-expected`; an item whose fresh facts differ is refused `changed-since-confirm`.
- * - `confirmed` lists the ids the operator explicitly confirmed. A Decide worktree and an
+ * - `confirmed` lists the ids the operator explicitly confirmed. A review worktree and an
  *   orphan volume (`volume:<name>`) need their OWN entry: confirming one id confirms no
- *   other, and without it the item is refused `needs-confirmation`. A corpse needs none.
+ *   other, and without it the item is refused `needs-confirmation`. A ready item needs none.
  * - The autopilot never passes `confirmed`; there is no boolean "confirm everything".
- * - Alive items, main checkouts, `neverClean` paths and Keep marks are refused whatever is
+ * - in-use items, main checkouts, `neverClean` paths and Keep marks are refused whatever is
  *   confirmed.
  */
 export interface GcCleanOptions {

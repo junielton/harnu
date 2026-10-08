@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest'
 import {
   buildBundles,
   bucketOf,
+  canonicalPathKey,
   composeDefaultProject,
   containerFolders,
   ownedVolumes,
   type BundleFacts,
+  type CanonicalPath,
   type SessionPresence
 } from '../src/main/gc/bundle-core'
 import type { FateResult } from '../src/main/gc/fate-core'
@@ -107,8 +109,8 @@ function facts(over: Partial<BranchFacts> = {}): BranchFacts {
 
 const MERGED_STRONG: FateResult = { fate: 'merged', signal: 'ancestor', strong: true }
 
-/** A BundleFacts that is a corpse. Each bucketOf test mutates exactly one respect. */
-function corpseFacts(over: Partial<BundleFacts> = {}): BundleFacts {
+/** A BundleFacts that is ready to clean. Each bucketOf test mutates exactly one respect. */
+function readyFacts(over: Partial<BundleFacts> = {}): BundleFacts {
   return {
     item: item(),
     fate: MERGED_STRONG,
@@ -121,6 +123,7 @@ function corpseFacts(over: Partial<BundleFacts> = {}): BundleFacts {
     keep: false,
     neverClean: false,
     isMainCheckout: false,
+    pathsResolved: true,
     ...over
   }
 }
@@ -179,6 +182,25 @@ interface BuildOver {
   volumes?: ReadonlyMap<string, VolumeFact>
   knownFolders?: string[]
   protectedProjects?: Set<string>
+  canonical?: CanonicalPath
+}
+
+/** Every path is its own real path: no symlink anywhere, everything resolves. */
+const LEXICAL: CanonicalPath = (p) => ({ path: p, resolved: true })
+
+/**
+ * A fake realpath over a symlink table: a path under an alias resolves to the target, a
+ * path under an `unresolved` entry cannot be resolved, anything else is real already.
+ */
+function aliases(links: Record<string, string>, unresolved: string[] = []): CanonicalPath {
+  const under = (p: string, root: string): boolean => p === root || p.startsWith(`${root}/`)
+  return (p) => {
+    if (unresolved.some((u) => under(p, u))) return { path: p, resolved: false }
+    for (const [link, target] of Object.entries(links)) {
+      if (under(p, link)) return { path: target + p.slice(link.length), resolved: true }
+    }
+    return { path: p, resolved: true }
+  }
 }
 
 /** Inputs for a single worktree at WT_A whose branch is merged by ancestry. */
@@ -206,7 +228,8 @@ function build(over: BuildOver = {}): ReturnType<typeof buildBundles> {
     ...(over.harnuStoppedAt ? { harnuStoppedAt: over.harnuStoppedAt } : {}),
     volumes: over.volumes ?? new Map(),
     knownFolders: over.knownFolders ?? [],
-    protectedProjects: over.protectedProjects ?? new Set()
+    protectedProjects: over.protectedProjects ?? new Set(),
+    canonical: over.canonical ?? LEXICAL
   })
 }
 
@@ -218,65 +241,65 @@ function only(bundles: ReturnType<typeof buildBundles>): ReturnType<typeof build
 // ---- bucketOf -------------------------------------------------------------------
 
 describe('bucketOf — rules 1 to 11', () => {
-  it('11. an untouched corpse fixture is a corpse with no reason', () => {
-    expect(bucketOf(corpseFacts(), NOW, GRACE_DAYS)).toEqual({ bucket: 'corpse', reason: null })
+  it('11. an untouched ready fixture is ready with no reason', () => {
+    expect(bucketOf(readyFacts(), NOW, GRACE_DAYS)).toEqual({ bucket: 'ready', reason: null })
   })
 
-  it('1. a main checkout is alive', () => {
-    expect(bucketOf(corpseFacts({ isMainCheckout: true }), NOW, GRACE_DAYS)).toEqual({
-      bucket: 'alive',
+  it('1. a main checkout is in use', () => {
+    expect(bucketOf(readyFacts({ isMainCheckout: true }), NOW, GRACE_DAYS)).toEqual({
+      bucket: 'in-use',
       reason: null
     })
   })
 
-  it('1. a neverClean path is alive', () => {
-    expect(bucketOf(corpseFacts({ neverClean: true }), NOW, GRACE_DAYS)).toEqual({
-      bucket: 'alive',
+  it('1. a neverClean path is in use', () => {
+    expect(bucketOf(readyFacts({ neverClean: true }), NOW, GRACE_DAYS)).toEqual({
+      bucket: 'in-use',
       reason: null
     })
   })
 
-  it('2. a working session is alive', () => {
-    expect(bucketOf(corpseFacts({ session: 'working' }), NOW, GRACE_DAYS).bucket).toBe('alive')
+  it('2. a working session is in use', () => {
+    expect(bucketOf(readyFacts({ session: 'working' }), NOW, GRACE_DAYS).bucket).toBe('in-use')
   })
 
-  it('2. a needs-input session is alive', () => {
-    expect(bucketOf(corpseFacts({ session: 'needs-input' }), NOW, GRACE_DAYS).bucket).toBe('alive')
+  it('2. a needs-input session is in use', () => {
+    expect(bucketOf(readyFacts({ session: 'needs-input' }), NOW, GRACE_DAYS).bucket).toBe('in-use')
   })
 
-  it('3. an open branch is alive', () => {
+  it('3. an open branch is in use', () => {
     const open: FateResult = { fate: 'open', signal: null, strong: false }
-    expect(bucketOf(corpseFacts({ fate: open }), NOW, GRACE_DAYS).bucket).toBe('alive')
+    expect(bucketOf(readyFacts({ fate: open }), NOW, GRACE_DAYS).bucket).toBe('in-use')
   })
 
-  it('4. no sign of life at all is alive (never a corpse)', () => {
-    expect(bucketOf(corpseFacts({ lastSignOfLifeAt: null }), NOW, GRACE_DAYS).bucket).toBe('alive')
+  it('4. no sign of life at all is in use (never ready)', () => {
+    expect(bucketOf(readyFacts({ lastSignOfLifeAt: null }), NOW, GRACE_DAYS).bucket).toBe('in-use')
   })
 
-  it('4. a sign of life within the grace window is alive', () => {
-    const recent = corpseFacts({ lastSignOfLifeAt: NOW - GRACE_DAYS * DAY + HOUR })
-    expect(bucketOf(recent, NOW, GRACE_DAYS).bucket).toBe('alive')
+  it('4. a sign of life within the grace window is in use', () => {
+    const recent = readyFacts({ lastSignOfLifeAt: NOW - GRACE_DAYS * DAY + HOUR })
+    expect(bucketOf(recent, NOW, GRACE_DAYS).bucket).toBe('in-use')
   })
 
-  it('4. a sign of life exactly at the grace boundary is no longer alive', () => {
-    const boundary = corpseFacts({ lastSignOfLifeAt: NOW - GRACE_DAYS * DAY })
-    expect(bucketOf(boundary, NOW, GRACE_DAYS)).toEqual({ bucket: 'corpse', reason: null })
+  it('4. a sign of life exactly at the grace boundary is no longer in use', () => {
+    const boundary = readyFacts({ lastSignOfLifeAt: NOW - GRACE_DAYS * DAY })
+    expect(bucketOf(boundary, NOW, GRACE_DAYS)).toEqual({ bucket: 'ready', reason: null })
   })
 
-  it('5. a keep flag is alive', () => {
-    expect(bucketOf(corpseFacts({ keep: true }), NOW, GRACE_DAYS).bucket).toBe('alive')
+  it('5. a keep flag is in use', () => {
+    expect(bucketOf(readyFacts({ keep: true }), NOW, GRACE_DAYS).bucket).toBe('in-use')
   })
 
-  it('6. an open-idle session sends the bundle to decide', () => {
-    const r = bucketOf(corpseFacts({ session: 'open-idle' }), NOW, GRACE_DAYS)
-    expect(r.bucket).toBe('decide')
+  it('6. an open-idle session sends the bundle to review', () => {
+    const r = bucketOf(readyFacts({ session: 'open-idle' }), NOW, GRACE_DAYS)
+    expect(r.bucket).toBe('review')
     expect(r.reason?.code).toBe('open-idle-session')
     expect(r.reason?.detail.length).toBeGreaterThan(0)
   })
 
-  it('7. a stack shared with another bundle sends the bundle to decide, naming the stack', () => {
-    const r = bucketOf(corpseFacts({ sharedStackIds: ['app'] }), NOW, GRACE_DAYS)
-    expect(r.bucket).toBe('decide')
+  it('7. a stack shared with another bundle sends the bundle to review, naming the stack', () => {
+    const r = bucketOf(readyFacts({ sharedStackIds: ['app'] }), NOW, GRACE_DAYS)
+    expect(r.bucket).toBe('review')
     expect(r.reason?.code).toBe('shared-stack')
     expect(r.reason?.detail).toContain('app')
   })
@@ -286,118 +309,114 @@ describe('bucketOf — rules 1 to 11', () => {
     ['remote-gone', 'remote-gone'],
     ['detached', 'detached'],
     ['unknown', 'unknown-fate']
-  ] as const)('8. fate %s is decide with code %s', (fate, code) => {
+  ] as const)('8. fate %s is review with code %s', (fate, code) => {
     const f: FateResult = { fate, signal: null, strong: false }
-    const r = bucketOf(corpseFacts({ fate: f }), NOW, GRACE_DAYS)
-    expect(r.bucket).toBe('decide')
+    const r = bucketOf(readyFacts({ fate: f }), NOW, GRACE_DAYS)
+    expect(r.bucket).toBe('review')
     expect(r.reason?.code).toBe(code)
   })
 
-  it('9. a merged but weak signal is decide weak-merge-signal', () => {
+  it('9. a merged but weak signal is review weak-merge-signal', () => {
     const weak: FateResult = { fate: 'merged', signal: 'gh-merged', strong: false }
-    const r = bucketOf(corpseFacts({ fate: weak }), NOW, GRACE_DAYS)
-    expect(r.bucket).toBe('decide')
+    const r = bucketOf(readyFacts({ fate: weak }), NOW, GRACE_DAYS)
+    expect(r.bucket).toBe('review')
     expect(r.reason?.code).toBe('weak-merge-signal')
   })
 
-  it('10. a dirty blocker is decide dirty', () => {
-    const r = bucketOf(corpseFacts({ item: item({ blockers: ['dirty'] }) }), NOW, GRACE_DAYS)
-    expect(r.bucket).toBe('decide')
+  it('10. a dirty blocker is review dirty', () => {
+    const r = bucketOf(readyFacts({ item: item({ blockers: ['dirty'] }) }), NOW, GRACE_DAYS)
+    expect(r.bucket).toBe('review')
     expect(r.reason?.code).toBe('dirty')
   })
 
-  it('10. an unpushed blocker is decide unpushed', () => {
-    const r = bucketOf(corpseFacts({ item: item({ blockers: ['unpushed'] }) }), NOW, GRACE_DAYS)
-    expect(r.bucket).toBe('decide')
+  it('10. an unpushed blocker is review unpushed', () => {
+    const r = bucketOf(readyFacts({ item: item({ blockers: ['unpushed'] }) }), NOW, GRACE_DAYS)
+    expect(r.bucket).toBe('review')
     expect(r.reason?.code).toBe('unpushed')
   })
 
   it('10. with both blockers present, dirty is reported first', () => {
-    const both = corpseFacts({ item: item({ blockers: ['unpushed', 'dirty'] }) })
+    const both = readyFacts({ item: item({ blockers: ['unpushed', 'dirty'] }) })
     expect(bucketOf(both, NOW, GRACE_DAYS).reason?.code).toBe('dirty')
   })
 })
 
 describe('bucketOf — fails closed on unknown inputs (delta 2, item 3)', () => {
-  it('(a) no local-clean checkpoint is decide dirty: the tree was never shown clean', () => {
+  it('(a) no local-clean checkpoint is review dirty: the tree was never shown clean', () => {
     const r = bucketOf(
-      corpseFacts({ item: item({ checkpoints: [mergedCheckpoint()] }) }),
+      readyFacts({ item: item({ checkpoints: [mergedCheckpoint()] }) }),
       NOW,
       GRACE_DAYS
     )
-    expect(r.bucket).toBe('decide')
+    expect(r.bucket).toBe('review')
     expect(r.reason?.code).toBe('dirty')
     expect(r.reason?.detail).toMatch(/could not be verified clean/)
   })
 
   it.each(['unknown', 'red', 'na'] as const)(
-    '(a) a local-clean checkpoint in state %s is decide dirty',
+    '(a) a local-clean checkpoint in state %s is review dirty',
     (state) => {
       const unclean = item({ checkpoints: [mergedCheckpoint(), { id: 'local-clean', state }] })
-      const r = bucketOf(corpseFacts({ item: unclean }), NOW, GRACE_DAYS)
-      expect(r.bucket).toBe('decide')
+      const r = bucketOf(readyFacts({ item: unclean }), NOW, GRACE_DAYS)
+      expect(r.bucket).toBe('review')
       expect(r.reason?.code).toBe('dirty')
     }
   )
 
   it.each([undefined, 'hibernated'])(
-    '(b) a session that is not exactly none (%s) is never a corpse',
+    '(b) a session that is not exactly none (%s) is never ready',
     (session) => {
       const r = bucketOf(
-        corpseFacts({ session: session as unknown as SessionPresence }),
+        readyFacts({ session: session as unknown as SessionPresence }),
         NOW,
         GRACE_DAYS
       )
-      expect(r.bucket).toBe('decide')
+      expect(r.bucket).toBe('review')
       expect(r.reason?.code).toBe('open-idle-session')
       expect(r.reason?.detail).toMatch(/unknown/)
     }
   )
 
   it.each([NaN, Infinity, -Infinity, -1])(
-    '(c) a lastSignOfLifeAt of %s is alive, never old enough',
+    '(c) a lastSignOfLifeAt of %s is in use, never old enough',
     (at) => {
-      expect(bucketOf(corpseFacts({ lastSignOfLifeAt: at }), NOW, GRACE_DAYS)).toEqual({
-        bucket: 'alive',
+      expect(bucketOf(readyFacts({ lastSignOfLifeAt: at }), NOW, GRACE_DAYS)).toEqual({
+        bucket: 'in-use',
         reason: null
       })
     }
   )
 
-  it.each([NaN, Infinity, -1])('(c) a grace window of %s days is alive', (grace) => {
-    expect(bucketOf(corpseFacts(), NOW, grace)).toEqual({ bucket: 'alive', reason: null })
+  it.each([NaN, Infinity, -1])('(c) a grace window of %s days is in use', (grace) => {
+    expect(bucketOf(readyFacts(), NOW, grace)).toEqual({ bucket: 'in-use', reason: null })
   })
 
-  it('(c) a clock that is not a number is alive', () => {
-    expect(bucketOf(corpseFacts(), NaN, GRACE_DAYS)).toEqual({ bucket: 'alive', reason: null })
+  it('(c) a clock that is not a number is in use', () => {
+    expect(bucketOf(readyFacts(), NaN, GRACE_DAYS)).toEqual({ bucket: 'in-use', reason: null })
   })
 })
 
 describe('bucketOf — rule precedence', () => {
-  it('alive beats shared-stack', () => {
-    const r = bucketOf(
-      corpseFacts({ session: 'working', sharedStackIds: ['app'] }),
-      NOW,
-      GRACE_DAYS
-    )
-    expect(r).toEqual({ bucket: 'alive', reason: null })
+  it('in use beats shared-stack', () => {
+    const r = bucketOf(readyFacts({ session: 'working', sharedStackIds: ['app'] }), NOW, GRACE_DAYS)
+    expect(r).toEqual({ bucket: 'in-use', reason: null })
   })
 
-  it('alive (grace) beats a non-merged fate', () => {
+  it('in use (grace) beats a non-merged fate', () => {
     const closed: FateResult = { fate: 'closed-unmerged', signal: null, strong: false }
-    const r = bucketOf(corpseFacts({ fate: closed, lastSignOfLifeAt: NOW - HOUR }), NOW, GRACE_DAYS)
-    expect(r.bucket).toBe('alive')
+    const r = bucketOf(readyFacts({ fate: closed, lastSignOfLifeAt: NOW - HOUR }), NOW, GRACE_DAYS)
+    expect(r.bucket).toBe('in-use')
   })
 
-  it('an open branch with an open-idle session is alive: rule 3 comes before rule 6', () => {
+  it('an open branch with an open-idle session is in use: rule 3 comes before rule 6', () => {
     const open: FateResult = { fate: 'open', signal: null, strong: false }
-    const r = bucketOf(corpseFacts({ fate: open, session: 'open-idle' }), NOW, GRACE_DAYS)
-    expect(r).toEqual({ bucket: 'alive', reason: null })
+    const r = bucketOf(readyFacts({ fate: open, session: 'open-idle' }), NOW, GRACE_DAYS)
+    expect(r).toEqual({ bucket: 'in-use', reason: null })
   })
 
   it('open-idle-session beats shared-stack', () => {
     const r = bucketOf(
-      corpseFacts({ session: 'open-idle', sharedStackIds: ['app'] }),
+      readyFacts({ session: 'open-idle', sharedStackIds: ['app'] }),
       NOW,
       GRACE_DAYS
     )
@@ -406,20 +425,20 @@ describe('bucketOf — rule precedence', () => {
 
   it('shared-stack beats the weak-signal rule', () => {
     const weak: FateResult = { fate: 'merged', signal: 'gh-merged', strong: false }
-    const r = bucketOf(corpseFacts({ fate: weak, sharedStackIds: ['app'] }), NOW, GRACE_DAYS)
+    const r = bucketOf(readyFacts({ fate: weak, sharedStackIds: ['app'] }), NOW, GRACE_DAYS)
     expect(r.reason?.code).toBe('shared-stack')
   })
 
   it('shared-stack beats a non-merged fate', () => {
     const closed: FateResult = { fate: 'closed-unmerged', signal: null, strong: false }
-    const r = bucketOf(corpseFacts({ fate: closed, sharedStackIds: ['app'] }), NOW, GRACE_DAYS)
+    const r = bucketOf(readyFacts({ fate: closed, sharedStackIds: ['app'] }), NOW, GRACE_DAYS)
     expect(r.reason?.code).toBe('shared-stack')
   })
 
   it('the weak-signal rule beats the blockers', () => {
     const weak: FateResult = { fate: 'merged', signal: 'gh-merged', strong: false }
     const r = bucketOf(
-      corpseFacts({ fate: weak, item: item({ blockers: ['dirty'] }) }),
+      readyFacts({ fate: weak, item: item({ blockers: ['dirty'] }) }),
       NOW,
       GRACE_DAYS
     )
@@ -475,6 +494,46 @@ describe('containerFolders', () => {
     const c = container('web', { mounts: [bindMount('C:\\Work\\Proj\\')] })
     expect(containerFolders(c, 'win32')).toEqual(['c:/work/proj'])
   })
+
+  it('resolves . and .. segments and folds case on darwin (delta 4, item F)', () => {
+    const c = composeContainer('web', 'app', '/Ws/Org/Proj/worktrees/../WWW/.', {
+      mounts: [bindMount('/Ws/Org/Proj/WWW/api/..')]
+    })
+    expect(containerFolders(c, 'darwin')).toEqual(['/ws/org/proj/www'])
+    expect(containerFolders(c, 'linux')).toEqual(['/Ws/Org/Proj/WWW'])
+  })
+})
+
+// ---- canonicalPathKey ---------------------------------------------------------------
+
+describe('canonicalPathKey (delta 4, item F)', () => {
+  it.each([
+    [`${REPO}/.`, REPO],
+    [`${REPO}/./`, REPO],
+    ['/ws/org/proj/worktrees/../www', REPO],
+    ['/ws/org/proj/www/api/../../www', REPO],
+    ['/ws/org//proj/www/', REPO],
+    [`${WT_A}/..`, '/ws/org/proj/worktrees']
+  ])('resolves %s lexically to %s', (input, expected) => {
+    expect(canonicalPathKey(input, 'linux')).toBe(expected)
+  })
+
+  it('keeps the root as it is', () => {
+    expect(canonicalPathKey('/', 'linux')).toBe('/')
+    expect(canonicalPathKey('/..', 'linux')).toBe('/')
+  })
+
+  it('folds case on darwin and win32, never on linux', () => {
+    expect(canonicalPathKey('/Users/Me/WWW/', 'darwin')).toBe('/users/me/www')
+    expect(canonicalPathKey('/Users/Me/WWW/', 'linux')).toBe('/Users/Me/WWW')
+    expect(canonicalPathKey('C:\\Work\\Proj\\..\\Api-Gateway\\', 'win32')).toBe(
+      'c:/work/api-gateway'
+    )
+  })
+
+  it('maps an empty path to an empty key, never to the working directory', () => {
+    expect(canonicalPathKey('', 'linux')).toBe('')
+  })
 })
 
 // ---- composeDefaultProject --------------------------------------------------------
@@ -494,6 +553,18 @@ describe('composeDefaultProject', () => {
 
   it('reads a Windows path by its last segment', () => {
     expect(composeDefaultProject('C:\\Work\\Api-Gateway')).toBe('api-gateway')
+  })
+
+  // Delta 4, item G: Compose trims leading underscores and dashes from the normalized name.
+  it.each(['/ws/org/_www', '/ws/org/-www', '/ws/org/_-www', '/ws/org/.www', '/ws/org/ _www/'])(
+    'trims the leading separators Compose trims (%s is www)',
+    (path) => {
+      expect(composeDefaultProject(path)).toBe('www')
+    }
+  )
+
+  it('keeps a separator that is not leading', () => {
+    expect(composeDefaultProject('/ws/org/my_app-')).toBe('my_app-')
   })
 })
 
@@ -625,6 +696,16 @@ describe('ownedVolumes', () => {
       ).toEqual([])
     })
 
+    it.each(['/ws/org/other/_www', '/ws/org/other/-www'])(
+      'drops a volume of project www when %s is another known folder (delta 4, item G)',
+      (folder) => {
+        const db = composeContainer('db', 'www', WT_A, { mounts: [volumeMount('www_pg')] })
+        expect(
+          ownedVolumes([stack('www', [db])], [db], facts([['www_pg', 'www']]), [folder])
+        ).toEqual([])
+      }
+    )
+
     it('keeps a volume whose project is unique to the bundle stacks', () => {
       const db = composeContainer('db', 'app', WT_A, { mounts: [volumeMount('app_pg')] })
       const other = composeContainer('other-web', 'other', ELSEWHERE, { state: 'exited' })
@@ -681,7 +762,7 @@ describe('ownedVolumes', () => {
 // ---- buildBundles -----------------------------------------------------------------
 
 describe('buildBundles — fate, including AC-6', () => {
-  it('AC-6: a branch reused after its merge (PR head differs from the local tip) is weak, never a corpse', () => {
+  it('AC-6: a branch reused after its merge (PR head differs from the local tip) is weak, never ready', () => {
     const b = only(
       build({
         fateInputs: new Map([
@@ -692,12 +773,12 @@ describe('buildBundles — fate, including AC-6', () => {
     expect(b.fate.fate).toBe('merged')
     expect(b.fate.signal).toBe('gh-merged')
     expect(b.fate.strong).toBe(false)
-    expect(b.bucket).toBe('decide')
+    expect(b.bucket).toBe('review')
     expect(b.reason?.code).toBe('weak-merge-signal')
-    expect(b.bucket).not.toBe('corpse')
+    expect(b.bucket).not.toBe('ready')
   })
 
-  it('AC-6: the same fixture with the local tip on the PR head is strong and a corpse', () => {
+  it('AC-6: the same fixture with the local tip on the PR head is strong and ready', () => {
     const b = only(
       build({
         fateInputs: new Map([
@@ -706,7 +787,7 @@ describe('buildBundles — fate, including AC-6', () => {
       })
     )
     expect(b.fate.strong).toBe(true)
-    expect(b.bucket).toBe('corpse')
+    expect(b.bucket).toBe('ready')
     expect(b.reason).toBeNull()
   })
 
@@ -714,7 +795,7 @@ describe('buildBundles — fate, including AC-6', () => {
     const b = only(build({ fateInputs: new Map() }))
     expect(b.fate.fate).toBe('unknown')
     expect(b.fate.strong).toBe(false)
-    expect(b.bucket).toBe('decide')
+    expect(b.bucket).toBe('review')
     expect(b.reason?.code).toBe('unknown-fate')
   })
 
@@ -726,7 +807,7 @@ describe('buildBundles — fate, including AC-6', () => {
     })
     const b = only(build({ items: [detached], fateInputs: new Map() }))
     expect(b.fate).toEqual({ fate: 'detached', signal: null, strong: false })
-    expect(b.bucket).toBe('decide')
+    expect(b.bucket).toBe('review')
     expect(b.reason?.code).toBe('detached')
   })
 
@@ -746,7 +827,7 @@ describe('buildBundles — fate, including AC-6', () => {
       })
     )
     expect(b.fate).toEqual({ fate: 'detached', signal: null, strong: false })
-    expect(b.bucket).toBe('decide')
+    expect(b.bucket).toBe('review')
     expect(b.reason?.code).toBe('detached')
     // The checked-out commit, not the facts' tip, is what the reprobe re-checks.
     expect(b.localTip).toBe(TIP_B)
@@ -769,10 +850,10 @@ describe('buildBundles — fate, including AC-6', () => {
     expect(only(build({ items: [detached], fateInputs: new Map() })).localTip).toBeNull()
   })
 
-  it('a plain merged-by-ancestry worktree past grace is a corpse', () => {
+  it('a plain merged-by-ancestry worktree past grace is ready', () => {
     const b = only(build())
     expect(b.fate).toEqual({ fate: 'merged', signal: 'ancestor', strong: true })
-    expect(b.bucket).toBe('corpse')
+    expect(b.bucket).toBe('ready')
     expect(b.item.id).toBe(item().id)
   })
 })
@@ -801,27 +882,121 @@ describe('buildBundles — which items become bundles', () => {
 })
 
 describe('buildBundles — flags', () => {
-  it('isMainCheckout when the item path is the repo path, and it is alive', () => {
+  it('isMainCheckout when the item path is the repo path, and it is in use', () => {
     const main = item({ path: REPO, id: `${REPO}::worktree::${REPO}` })
     const b = only(build({ items: [main] }))
     expect(b.isMainCheckout).toBe(true)
-    expect(b.bucket).toBe('alive')
+    expect(b.bucket).toBe('in-use')
   })
 
   it('a linked worktree is not a main checkout', () => {
     expect(only(build()).isMainCheckout).toBe(false)
   })
 
+  describe('. and .. segments (delta 4, item F)', () => {
+    it.each([`${REPO}/.`, '/ws/org/proj/worktrees/../www'])(
+      'the main checkout spelled %s is still the main checkout, and in use',
+      (path) => {
+        const b = only(build({ items: [item({ path, id: `${REPO}::worktree::${path}` })] }))
+        expect(b.isMainCheckout).toBe(true)
+        expect(b.bucket).toBe('in-use')
+      }
+    )
+
+    it('a repo path spelled with .. still matches the main checkout', () => {
+      const main = item({
+        path: REPO,
+        id: `${REPO}::worktree::${REPO}`,
+        repoPath: '/ws/org/proj/worktrees/../www'
+      })
+      expect(only(build({ items: [main] })).isMainCheckout).toBe(true)
+    })
+
+    it('neverClean spelled with .. matches the worktree', () => {
+      const b = only(build({ neverClean: new Set([`${WT_A}/api/..`]) }))
+      expect(b.neverClean).toBe(true)
+      expect(b.bucket).toBe('in-use')
+    })
+
+    it('a session folder spelled with .. counts when it resolves into the worktree', () => {
+      const b = only(
+        build({
+          sessions: new Map([[`${WT_A}/api/../web`, { presence: 'working', lastActivityAt: NOW }]])
+        })
+      )
+      expect(b.session).toBe('working')
+      expect(b.bucket).toBe('in-use')
+    })
+
+    it('a session folder that leaves the worktree through .. does not count', () => {
+      const b = only(
+        build({
+          sessions: new Map([
+            [`${WT_A}/../PROJ-0000-slug-b`, { presence: 'working', lastActivityAt: NOW }]
+          ])
+        })
+      )
+      expect(b.session).toBe('none')
+      expect(b.bucket).toBe('ready')
+    })
+
+    it('a working dir that leaves the worktree through .. is attributed where it resolves', () => {
+      const wtA = item()
+      const wtB = item({ path: WT_B, id: `${REPO}::worktree::${WT_B}`, branch: 'feat/slug-b' })
+      const db = composeContainer('db', 'projb', `${WT_A}/../PROJ-0000-slug-b/deploy`)
+      const out = build({
+        items: [wtA, wtB],
+        fateInputs: new Map([
+          [wtA.id, { facts: facts({ ancestorOfDefault: true }), localTip: TIP_A }],
+          [
+            wtB.id,
+            {
+              facts: facts({ path: WT_B, branch: 'feat/slug-b', ancestorOfDefault: true }),
+              localTip: TIP_B
+            }
+          ]
+        ]),
+        stacks: [stack('projb', [db])],
+        containers: [db]
+      })
+      const a = out.find((b) => b.item.path === WT_A)!
+      const b = out.find((x) => x.item.path === WT_B)!
+      expect([...a.stackIds, ...a.sharedStackIds]).toEqual([])
+      expect(b.stackIds).toEqual(['projb'])
+    })
+
+    it('a working dir spelled with . inside the worktree is exclusive to it', () => {
+      const db = composeContainer('db', 'app', `${WT_A}/./deploy/../deploy`)
+      const b = only(build({ stacks: [stack('app', [db])], containers: [db] }))
+      expect(b.stackIds).toEqual(['app'])
+    })
+
+    it('a known folder spelled with .. protects its compose project', () => {
+      const db = composeContainer('db', 'api-gateway', WT_A, {
+        mounts: [volumeMount('api-gateway_pg')]
+      })
+      const b = only(
+        build({
+          stacks: [stack('api-gateway', [db])],
+          containers: [db],
+          volumes: labelled('api-gateway', 'api-gateway_pg'),
+          knownFolders: ['/ws/org/other/api-gateway/.']
+        })
+      )
+      expect(b.ownedVolumes).toEqual([])
+    })
+  })
+
   it('neverClean matches the worktree path', () => {
     const b = only(build({ neverClean: new Set([WT_A]) }))
     expect(b.neverClean).toBe(true)
-    expect(b.bucket).toBe('alive')
+    expect(b.bucket).toBe('in-use')
   })
 
   it('neverClean matches the repo path', () => {
     const b = only(build({ neverClean: new Set([REPO]) }))
     expect(b.neverClean).toBe(true)
-    expect(b.bucket).toBe('alive')
+    expect(b.bucket).toBe('in-use')
   })
 
   it('neverClean does not match an unrelated path', () => {
@@ -831,7 +1006,7 @@ describe('buildBundles — flags', () => {
   it('keep matches the item id', () => {
     const b = only(build({ keep: new Set([item().id]) }))
     expect(b.keep).toBe(true)
-    expect(b.bucket).toBe('alive')
+    expect(b.bucket).toBe('in-use')
   })
 
   it('keep does not match a different id', () => {
@@ -843,7 +1018,7 @@ describe('buildBundles — flags', () => {
       build({ sessions: new Map([[WT_A, { presence: 'open-idle', lastActivityAt: null }]]) })
     )
     expect(b.session).toBe('open-idle')
-    expect(b.bucket).toBe('decide')
+    expect(b.bucket).toBe('review')
     expect(b.reason?.code).toBe('open-idle-session')
   })
 
@@ -871,7 +1046,7 @@ describe('buildBundles — flags', () => {
   })
 
   describe('sessions in a subfolder count (delta 3, item 1)', () => {
-    it('a working session in a subfolder keeps the bundle alive and dates its sign of life', () => {
+    it('a working session in a subfolder keeps the bundle in use and dates its sign of life', () => {
       const activity = NOW - HOUR
       const b = only(
         build({
@@ -883,17 +1058,17 @@ describe('buildBundles — flags', () => {
       )
       expect(b.session).toBe('working')
       expect(b.lastSignOfLifeAt).toBe(activity)
-      expect(b.bucket).toBe('alive')
+      expect(b.bucket).toBe('in-use')
     })
 
-    it('an idle session in a subfolder sends the bundle to decide, with no exact-path entry', () => {
+    it('an idle session in a subfolder sends the bundle to review, with no exact-path entry', () => {
       const b = only(
         build({
           sessions: new Map([[`${WT_A}/web/`, { presence: 'open-idle', lastActivityAt: null }]])
         })
       )
       expect(b.session).toBe('open-idle')
-      expect(b.bucket).toBe('decide')
+      expect(b.bucket).toBe('review')
       expect(b.reason?.code).toBe('open-idle-session')
     })
 
@@ -924,7 +1099,7 @@ describe('buildBundles — flags', () => {
       )
       expect(b.session).toBe('none')
       expect(b.lastSignOfLifeAt).toBe(Date.parse(OLD_MERGE))
-      expect(b.bucket).toBe('corpse')
+      expect(b.bucket).toBe('ready')
     })
 
     it('a session in a parent folder of the worktree does not count', () => {
@@ -934,7 +1109,7 @@ describe('buildBundles — flags', () => {
         })
       )
       expect(b.session).toBe('none')
-      expect(b.bucket).toBe('corpse')
+      expect(b.bucket).toBe('ready')
     })
   })
 
@@ -974,11 +1149,11 @@ describe('buildBundles — graceDays', () => {
   })
 
   it('stamps it on every bundle, whatever the bucket', () => {
-    const alive = only(
+    const inUse = only(
       build({ sessions: new Map([[WT_A, { presence: 'working', lastActivityAt: null }]]) })
     )
-    expect(alive.bucket).toBe('alive')
-    expect(alive.graceDays).toBe(GRACE_DAYS)
+    expect(inUse.bucket).toBe('in-use')
+    expect(inUse.graceDays).toBe(GRACE_DAYS)
   })
 })
 
@@ -994,7 +1169,7 @@ describe('buildBundles — lastSignOfLifeAt', () => {
   it('is null when every source is absent', () => {
     const b = only(build({ items: [withMerge(null)] }))
     expect(b.lastSignOfLifeAt).toBeNull()
-    expect(b.bucket).toBe('alive')
+    expect(b.bucket).toBe('in-use')
   })
 
   it('ignores a pr-merged checkpoint whose detail is not a date', () => {
@@ -1085,7 +1260,7 @@ describe('buildBundles — stack attribution', () => {
     expect(b.stackIds).toEqual(['app'])
     expect(b.sharedStackIds).toEqual([])
     expect(b.ownedVolumes).toEqual(['pgdata'])
-    expect(b.bucket).toBe('corpse')
+    expect(b.bucket).toBe('ready')
   })
 
   it('a stack attributed only through stackPaths is exclusive when that path is inside the bundle', () => {
@@ -1121,14 +1296,14 @@ describe('buildBundles — stack attribution', () => {
   })
 
   describe('bind-mounted stacks count (delta 3, item 2)', () => {
-    it('a stack run from elsewhere that bind-mounts a folder in the worktree is shared, never a corpse', () => {
+    it('a stack run from elsewhere that bind-mounts a folder in the worktree is shared, never ready', () => {
       const web = composeContainer('web', 'other', ELSEWHERE, {
         mounts: [bindMount(`${WT_A}/data`)]
       })
       const b = only(build({ stacks: [stack('other', [web])], containers: [web] }))
       expect(b.stackIds).toEqual([])
       expect(b.sharedStackIds).toEqual(['other'])
-      expect(b.bucket).toBe('decide')
+      expect(b.bucket).toBe('review')
       expect(b.reason?.code).toBe('shared-stack')
     })
 
@@ -1139,7 +1314,7 @@ describe('buildBundles — stack attribution', () => {
       const b = only(build({ stacks: [stack('app', [web])], containers: [web] }))
       expect(b.stackIds).toEqual([])
       expect(b.sharedStackIds).toEqual(['app'])
-      expect(b.bucket).toBe('decide')
+      expect(b.bucket).toBe('review')
     })
 
     it('a stack run from the worktree whose bind mounts all stay inside it is exclusive', () => {
@@ -1151,14 +1326,69 @@ describe('buildBundles — stack attribution', () => {
       expect(b.sharedStackIds).toEqual([])
     })
 
-    it('a bind mount of a parent folder of the worktree does not tie the stack to it', () => {
+    // Delta 4, item E inverted this: the container sees every folder under the one it
+    // mounts, the worktree included, so it shares the worktree.
+    it('a bind mount of a parent folder of the worktree shares the worktree', () => {
       const web = composeContainer('web', 'other', ELSEWHERE, {
         mounts: [bindMount('/ws/org/proj')]
       })
       const b = only(build({ stacks: [stack('other', [web])], containers: [web] }))
       expect(b.stackIds).toEqual([])
+      expect(b.sharedStackIds).toEqual(['other'])
+      expect(b.bucket).toBe('review')
+      expect(b.reason?.code).toBe('shared-stack')
+    })
+  })
+
+  describe('a container that touches an ancestor of the worktree (delta 4, item E)', () => {
+    const NESTED = `${REPO}/.claude/worktrees/wt1`
+    const nested = (): ReapItem =>
+      item({ path: NESTED, id: `${REPO}::worktree::${NESTED}`, branch: 'feat/wt1' })
+
+    it('P8: a dev container of the main checkout that bind-mounts REPO shares a nested worktree', () => {
+      const dev = composeContainer('dev', 'www', REPO, { mounts: [bindMount(REPO)] })
+      const b = only(build({ items: [nested()], stacks: [stack('www', [dev])], containers: [dev] }))
+      expect(b.stackIds).toEqual([])
+      expect(b.sharedStackIds).toEqual(['www'])
+      expect(b.bucket).toBe('review')
+      expect(b.reason?.code).toBe('shared-stack')
+    })
+
+    it('a compose working dir above the worktree shares it, with no bind mount at all', () => {
+      const dev = composeContainer('dev', 'www', REPO)
+      const b = only(build({ items: [nested()], stacks: [stack('www', [dev])], containers: [dev] }))
+      expect(b.sharedStackIds).toEqual(['www'])
+    })
+
+    it('a stack whose other folders are inside the worktree is still shared, never exclusive', () => {
+      const web = composeContainer('web', 'app', `${NESTED}/deploy`, {
+        mounts: [bindMount(`${NESTED}/src`), bindMount(REPO)]
+      })
+      const b = only(build({ items: [nested()], stacks: [stack('app', [web])], containers: [web] }))
+      expect(b.stackIds).toEqual([])
+      expect(b.sharedStackIds).toEqual(['app'])
+    })
+
+    it('a stack attributed through stackPaths to an ancestor shares the worktree', () => {
+      const api = composeContainer('api', 'svc', null)
+      const b = only(
+        build({
+          items: [nested()],
+          stacks: [stack('svc', [api])],
+          stackPaths: new Map([['svc', REPO]]),
+          containers: [api]
+        })
+      )
+      expect(b.sharedStackIds).toEqual(['svc'])
+    })
+
+    it('a sibling of an ancestor does not count', () => {
+      const dev = composeContainer('dev', 'www', `${REPO}-old`, {
+        mounts: [bindMount(`${REPO}-old`)]
+      })
+      const b = only(build({ items: [nested()], stacks: [stack('www', [dev])], containers: [dev] }))
       expect(b.sharedStackIds).toEqual([])
-      expect(b.bucket).toBe('corpse')
+      expect(b.bucket).toBe('ready')
     })
   })
 
@@ -1167,7 +1397,7 @@ describe('buildBundles — stack attribution', () => {
     const b = only(build({ stacks: [stack('other', [web])], containers: [web] }))
     expect(b.stackIds).toEqual([])
     expect(b.sharedStackIds).toEqual([])
-    expect(b.bucket).toBe('corpse')
+    expect(b.bucket).toBe('ready')
   })
 
   it('does not match a sibling directory that merely shares a name prefix', () => {
@@ -1203,7 +1433,7 @@ describe('buildBundles — stack attribution', () => {
       expect(b.stackIds).toEqual([])
       expect(b.sharedStackIds).toEqual(['app'])
       expect(b.ownedVolumes).toEqual([])
-      expect(b.bucket).toBe('decide')
+      expect(b.bucket).toBe('review')
       expect(b.reason?.code).toBe('shared-stack')
     }
   })
@@ -1237,7 +1467,7 @@ describe('buildBundles — stack attribution', () => {
     for (const b of out) {
       expect(b.stackIds).toEqual([])
       expect(b.sharedStackIds).toContain('app')
-      expect(b.bucket).toBe('decide')
+      expect(b.bucket).toBe('review')
       expect(b.reason?.code).toBe('shared-stack')
     }
   })
@@ -1248,7 +1478,7 @@ describe('buildBundles — stack attribution', () => {
     const b = only(build({ stacks: [stack('app', [inWt, inMain])], containers: [inWt, inMain] }))
     expect(b.stackIds).toEqual([])
     expect(b.sharedStackIds).toEqual(['app'])
-    expect(b.bucket).toBe('decide')
+    expect(b.bucket).toBe('review')
     expect(b.reason?.code).toBe('shared-stack')
   })
 
@@ -1366,6 +1596,22 @@ describe('buildBundles — stack attribution', () => {
       expect(b.ownedVolumes).toEqual([])
     })
 
+    it('a known folder whose name starts with an underscore protects the trimmed project (delta 4, item G)', () => {
+      const db = composeContainer('db', 'api-gateway', WT_A, {
+        mounts: [volumeMount('api-gateway_pg')]
+      })
+      const b = only(
+        build({
+          stacks: [stack('api-gateway', [db])],
+          containers: [db],
+          volumes: labelled('api-gateway', 'api-gateway_pg'),
+          knownFolders: ['/ws/org/other/_api-gateway']
+        })
+      )
+      expect(b.stackIds).toEqual(['api-gateway'])
+      expect(b.ownedVolumes).toEqual([])
+    })
+
     it('another worktree item counts as a known folder', () => {
       const wtB = item({ path: WT_B, id: `${REPO}::worktree::${WT_B}`, branch: 'feat/slug-b' })
       const db = composeContainer('db', 'proj-0000-slug-b', WT_A, {
@@ -1411,5 +1657,231 @@ describe('buildBundles — stack attribution', () => {
     )
     expect(b.stackIds).toEqual(['app'])
     expect(b.ownedVolumes).toEqual(['pgdata'])
+  })
+})
+
+// ---- path aliasing (delta 4, item C) ------------------------------------------------
+
+describe('bucketOf — unresolved paths (delta 4, item C)', () => {
+  it('a bundle whose paths did not all resolve is review path-unresolved, never ready', () => {
+    const r = bucketOf(readyFacts({ pathsResolved: false }), NOW, GRACE_DAYS)
+    expect(r.bucket).toBe('review')
+    expect(r.reason?.code).toBe('path-unresolved')
+    expect(r.reason?.detail.length).toBeGreaterThan(0)
+  })
+
+  it('fails closed when the flag is absent', () => {
+    const { pathsResolved: _omit, ...rest } = readyFacts()
+    const r = bucketOf(rest as BundleFacts, NOW, GRACE_DAYS)
+    expect(r.bucket).toBe('review')
+    expect(r.reason?.code).toBe('path-unresolved')
+  })
+
+  it('the in-use rules still win: a working session stays in use', () => {
+    const r = bucketOf(readyFacts({ pathsResolved: false, session: 'working' }), NOW, GRACE_DAYS)
+    expect(r).toEqual({ bucket: 'in-use', reason: null })
+  })
+
+  it('comes before the fate rules', () => {
+    const closed: FateResult = { fate: 'closed-unmerged', signal: null, strong: false }
+    const r = bucketOf(readyFacts({ pathsResolved: false, fate: closed }), NOW, GRACE_DAYS)
+    expect(r.reason?.code).toBe('path-unresolved')
+  })
+})
+
+describe('buildBundles — real paths (delta 4, item C)', () => {
+  const LINK = '/link/wt'
+
+  it('marks a bundle whose every path resolved', () => {
+    expect(only(build()).pathsResolved).toBe(true)
+  })
+
+  it('P3: a stack whose working dir is a symlink to the worktree is attributed to it', () => {
+    const db = composeContainer('db', 'app', `${LINK}/deploy`)
+    const b = only(
+      build({
+        stacks: [stack('app', [db])],
+        containers: [db],
+        canonical: aliases({ [LINK]: WT_A })
+      })
+    )
+    expect(b.stackIds).toEqual(['app'])
+    expect(b.sharedStackIds).toEqual([])
+    expect(b.pathsResolved).toBe(true)
+  })
+
+  it('P3b: a stack that bind-mounts the worktree through a symlink shares it', () => {
+    const web = composeContainer('web', 'other', ELSEWHERE, { mounts: [bindMount(`${LINK}/data`)] })
+    const b = only(
+      build({
+        stacks: [stack('other', [web])],
+        containers: [web],
+        canonical: aliases({ [LINK]: WT_A })
+      })
+    )
+    expect(b.sharedStackIds).toEqual(['other'])
+    expect(b.bucket).toBe('review')
+    expect(b.reason?.code).toBe('shared-stack')
+  })
+
+  it('P9: a session working in the worktree through a symlink keeps it in use', () => {
+    const b = only(
+      build({
+        sessions: new Map([[`${LINK}/api`, { presence: 'working', lastActivityAt: NOW }]]),
+        canonical: aliases({ [LINK]: WT_A })
+      })
+    )
+    expect(b.session).toBe('working')
+    expect(b.bucket).toBe('in-use')
+  })
+
+  it('a worktree item reached through a symlink is matched on its real path', () => {
+    const db = composeContainer('db', 'app', `${WT_A}/deploy`)
+    const linked = item({ path: LINK, id: `${REPO}::worktree::${LINK}` })
+    const b = only(
+      build({
+        items: [linked],
+        stacks: [stack('app', [db])],
+        containers: [db],
+        canonical: aliases({ [LINK]: WT_A })
+      })
+    )
+    expect(b.stackIds).toEqual(['app'])
+  })
+
+  it('a worktree path that is a symlink to its repo path is the main checkout', () => {
+    const linked = item({ path: LINK, id: `${REPO}::worktree::${LINK}` })
+    const b = only(build({ items: [linked], canonical: aliases({ [LINK]: REPO }) }))
+    expect(b.isMainCheckout).toBe(true)
+    expect(b.bucket).toBe('in-use')
+  })
+
+  it('neverClean and known folders are compared on their real paths', () => {
+    const b = only(build({ neverClean: new Set([LINK]), canonical: aliases({ [LINK]: WT_A }) }))
+    expect(b.neverClean).toBe(true)
+
+    const db = composeContainer('db', 'api-gateway', WT_A, {
+      mounts: [volumeMount('api-gateway_pg')]
+    })
+    const viaLink = only(
+      build({
+        stacks: [stack('api-gateway', [db])],
+        containers: [db],
+        volumes: labelled('api-gateway', 'api-gateway_pg'),
+        knownFolders: ['/link/gw'],
+        canonical: aliases({ '/link/gw': ELSEWHERE })
+      })
+    )
+    expect(viaLink.ownedVolumes).toEqual([])
+  })
+
+  it('a stack attributed through stackPaths is compared on the real path', () => {
+    const api = composeContainer('api', 'svc', null)
+    const b = only(
+      build({
+        stacks: [stack('svc', [api])],
+        stackPaths: new Map([['svc', `${LINK}/services`]]),
+        containers: [api],
+        canonical: aliases({ [LINK]: WT_A })
+      })
+    )
+    expect(b.stackIds).toEqual(['svc'])
+  })
+
+  describe('an unresolved path can never be ready', () => {
+    const expectUnresolved = (b: ReturnType<typeof only>): void => {
+      expect(b.pathsResolved).toBe(false)
+      expect(b.bucket).toBe('review')
+      expect(b.reason?.code).toBe('path-unresolved')
+    }
+
+    it('the worktree path itself', () => {
+      expectUnresolved(only(build({ canonical: aliases({}, [WT_A]) })))
+    })
+
+    it('the repo path', () => {
+      expectUnresolved(only(build({ canonical: aliases({}, [REPO]) })))
+    })
+
+    it('a container working dir inside the worktree', () => {
+      const db = composeContainer('db', 'app', `${WT_A}/deploy`)
+      expectUnresolved(
+        only(
+          build({
+            stacks: [stack('app', [db])],
+            containers: [db],
+            canonical: aliases({}, [`${WT_A}/deploy`])
+          })
+        )
+      )
+    })
+
+    it('a bind source that is an ancestor of the worktree', () => {
+      const web = container('web', { mounts: [bindMount('/ws/org/proj')] })
+      const b = only(
+        build({
+          stacks: [stack('web', [web])],
+          containers: [web],
+          canonical: aliases({}, ['/ws/org/proj'])
+        })
+      )
+      // Never ready. Since delta 4 item E a container above the worktree also shares it,
+      // and shared-stack is the rule that comes first.
+      expect(b.pathsResolved).toBe(false)
+      expect(b.bucket).toBe('review')
+      expect(b.reason?.code).toBe('shared-stack')
+    })
+
+    it('a session folder that is an ancestor of the worktree', () => {
+      expectUnresolved(
+        only(
+          build({
+            sessions: new Map([['/ws/org/proj', { presence: 'none', lastActivityAt: null }]]),
+            canonical: aliases({}, ['/ws/org/proj'])
+          })
+        )
+      )
+    })
+
+    it('a session folder inside the worktree', () => {
+      expectUnresolved(
+        only(
+          build({
+            sessions: new Map([[`${WT_A}/api`, { presence: 'none', lastActivityAt: null }]]),
+            canonical: aliases({}, [`${WT_A}/api`])
+          })
+        )
+      )
+    })
+
+    it('an unresolved folder unrelated to the worktree changes nothing', () => {
+      const web = composeContainer('web', 'other', ELSEWHERE)
+      const b = only(
+        build({
+          stacks: [stack('other', [web])],
+          containers: [web],
+          sessions: new Map([[`${WT_A}-other`, { presence: 'none', lastActivityAt: null }]]),
+          canonical: aliases({}, [ELSEWHERE, `${WT_A}-other`])
+        })
+      )
+      expect(b.pathsResolved).toBe(true)
+      expect(b.bucket).toBe('ready')
+    })
+  })
+})
+
+describe('containerFolders through a resolver (delta 4, item C)', () => {
+  it('maps every folder through the real path, then the canonical key', () => {
+    const c = composeContainer('web', 'app', '/link/wt', { mounts: [bindMount('/link/wt/data')] })
+    expect(containerFolders(c, 'linux', aliases({ '/link/wt': WT_A }))).toEqual([
+      WT_A,
+      `${WT_A}/data`
+    ])
+  })
+
+  it('folds a darwin case difference between the link target and the worktree', () => {
+    const c = composeContainer('web', 'app', '/link/wt')
+    const real = containerFolders(c, 'darwin', aliases({ '/link/wt': '/Users/Me/Proj/WT' }))
+    expect(real).toEqual([canonicalPathKey('/users/me/proj/wt', 'darwin')])
   })
 })

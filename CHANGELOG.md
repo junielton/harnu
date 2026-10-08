@@ -20,7 +20,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   prove are finished: merged for real (the pull request's last commit is the worktree's
   commit, or git itself shows the work is in main), clean, past a grace period, and with no
   Harnu session running in them. It is off by default, and the first run only reports what
-  it found ("Found N corpses, X GiB - enable automatic cleanup?") and deletes nothing. A
+  it found ("Found N ready to clean, X GiB - enable automatic cleanup?") and deletes nothing. A
   stack's containers, the code (kept as `refs/archive/…` refs), the dependencies, the folder
   and the local branch go in a fixed order, one worktree at a time, and a failure stops that
   worktree only. **Docker volumes are never removed with a worktree**, by the automatic cleanup
@@ -30,7 +30,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   settings screen for it: the options live in `gc-prefs.json` in Harnu's settings folder and
   the screen arrives with the next Cleanup update (see [Cleanup](docs/user/cleanup.md)).
   A worktree whose
-  cleanup stopped partway shows as a decision, not as ready to clean, everywhere in Harnu.
+  cleanup stopped partway shows as needing review, not as ready to clean, everywhere in Harnu.
 - **Docker housekeeping in the same cycle.** When automatic cleanup is on, each cycle also
   clears Docker build cache older than a week and dangling images, and reports how much it
   freed. It never touches images a stack uses and never removes a volume: volumes nobody uses

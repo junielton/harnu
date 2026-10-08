@@ -1,10 +1,10 @@
 // The autopilot cycle (design: workspace-gc §6). `runGcCycle` runs right after the Reaper
-// scan in the same tick: gather the bundles, plan, clean the corpses through the shared job
+// scan in the same tick: gather the bundles, plan, clean the ready items through the shared job
 // queue, run Docker housekeeping, and raise at most one notification. Every effect is an
 // injected dep, so the whole cycle is unit-tested with fakes in tests/gc-cycle.test.ts.
 //
 // The autopilot is the one caller that must never force: it only ever hands `runBatch`
-// bundles the planner called corpses, through ops built for the `autopilot` actor.
+// bundles the planner called ready items, through ops built for the `autopilot` actor.
 
 import type { InspectedContainer } from '../containers/containers-core'
 import type { WorktreeBundle } from './bundle-core'
@@ -77,7 +77,7 @@ export interface GcCycleDeps {
 
 /**
  * The gather as every consumer must see it: a worktree whose last cleanup halted reads as a
- * Decide item (`cleanup-failed`), not as the corpse it still is on paper. gc-ipc applies this
+ * review item (`cleanup-failed`), not as the ready item it still is on paper. gc-ipc applies this
  * once, inside its single gather, so the snapshot, the Containers feed, the manual job and
  * the cycle agree; applying it again is a no-op.
  */
@@ -121,8 +121,8 @@ export async function runGcCycle(
   deps.onGathered?.(gathered)
 
   const plan: CyclePlan = planCycle(bundles, prefs)
-  // Defense in depth: whatever the planner returned, only a corpse is ever handed on.
-  const toClean = plan.toClean.filter((b) => b.bucket === 'corpse')
+  // Defense in depth: whatever the planner returned, only a ready item is ever handed on.
+  const toClean = plan.toClean.filter((b) => b.bucket === 'ready')
   // Housekeeping deletes things, so it waits for the same acknowledgement the cleaning does.
   const housekeepingOn =
     prefs.autopilot && prefs.firstReportAcknowledged && prefs.categories.dockerCache
@@ -152,8 +152,8 @@ export async function runGcCycle(
         if (housekeepingOn) {
           const hk = gathered.housekeeping
           const hkPlan = planHousekeeping(
-            // The autopilot never removes a volume outside a corpse bundle: orphan volumes
-            // are Decide items that only an explicit operator action can clear.
+            // The autopilot never removes a volume outside a ready bundle: orphan volumes
+            // are review items that only an explicit operator action can clear.
             { cacheMaxAgeDays: prefs.cacheMaxAgeDays, danglingImages: true, orphanVolumes: false },
             hk.volumes,
             hk.containers,
@@ -194,7 +194,7 @@ export async function runGcCycle(
   if (plan.mode === 'report') {
     const key = String(plan.found)
     if (plan.found > 0 && key !== deps.state.lastReportKey) {
-      notice = `Found ${plan.found} ${plural(plan.found, 'corpse')}, ${formatBytes(plan.reportBytes)} — enable automatic cleanup?`
+      notice = `Found ${plan.found} ready to clean, ${formatBytes(plan.reportBytes)} — enable automatic cleanup?`
     }
     deps.state.lastReportKey = key
   } else {

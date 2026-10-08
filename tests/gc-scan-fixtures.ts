@@ -2,7 +2,7 @@
 // worktree, built through the real buildRepoItems + buildBundles so the fate inputs are real.
 
 import { buildRepoItems, type RepoScanInput } from '../src/main/reaper/scan-core'
-import { buildBundles, type BuildBundlesInput } from '../src/main/gc/bundle-core'
+import { AS_GIVEN, buildBundles, type BuildBundlesInput } from '../src/main/gc/bundle-core'
 import type { BranchFacts, PrFacts } from '../src/main/reaper/reaper-core'
 
 export const DAY = 86_400_000
@@ -74,7 +74,8 @@ export function bundlesOf(input: RepoScanInput) {
     graceDays: 2,
     volumes: new Map(),
     knownFolders: [],
-    protectedProjects: new Set()
+    protectedProjects: new Set(),
+    canonical: AS_GIVEN
   }
   return buildBundles(args)
 }

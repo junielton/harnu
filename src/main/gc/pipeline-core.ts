@@ -2,8 +2,7 @@
 // Every side effect is an injected op, so the ordering and halt-on-failure rules are
 // unit-tested in tests/gc-pipeline-core.test.ts without touching docker, git or disk.
 
-import type { WorktreeBundle } from './bundle-core'
-import { normalizePath } from '../containers/containers-core'
+import { canonicalPathKey, type WorktreeBundle } from './bundle-core'
 
 export type GcStep =
   | 'reprobe'
@@ -30,9 +29,11 @@ export interface GcOps {
   /** Resolves to the bytes freed. */
   dropDeps(b: WorktreeBundle): Promise<number>
   /**
-   * Re-reads presence, HEAD and the stacks touching the worktree right before `cleanGit`: the
-   * docker steps and drop-deps take time, and a session opened, a commit made or a stack
-   * started meanwhile must stop the archive and trash.
+   * Re-reads presence, HEAD and the stacks touching the worktree, right before drop-deps and
+   * again right before `cleanGit`: the docker steps and drop-deps take time, and a session
+   * opened (in any subfolder), a commit made or a stack started meanwhile must stop the
+   * removal of the deps, the archive and the trash. Any stack still touching the worktree
+   * refuses, a scanned one included: by then the run removed every stack it may remove.
    */
   recheck(b: WorktreeBundle): Promise<{ ok: true } | { ok: false; reason: string }>
   /** archive → trash → prune → branch-delete → detach, remote branch deletion forced off. */
@@ -73,8 +74,8 @@ const messageOf = (err: unknown): string => (err instanceof Error ? err.message 
 
 export interface GcRunOptions {
   removeVolumes: boolean
-  /** The operator explicitly chose to clean `decide` bundles too. Never set by default. */
-  confirmDecide?: boolean
+  /** The operator explicitly chose to clean `review` bundles too. Never set by default. */
+  confirmReview?: boolean
 }
 
 /**
@@ -84,32 +85,34 @@ export interface GcRunOptions {
 export function isMainCheckoutByPath(b: WorktreeBundle): boolean {
   const path = b.item.path
   if (!path) return false
-  return normalizePath(path, process.platform) === normalizePath(b.item.repoPath, process.platform)
+  return (
+    canonicalPathKey(path, process.platform) === canonicalPathKey(b.item.repoPath, process.platform)
+  )
 }
 
 /**
- * Only a proven corpse runs, or a `decide` bundle the operator explicitly confirmed. A
+ * Only a proven ready bundle runs, or a `review` bundle the operator explicitly confirmed. A
  * protection flag refuses whatever the bucket says, since a stale or hand-built bundle can
- * carry a corpse bucket next to a flag set after the scan.
+ * carry a ready bucket next to a flag set after the scan.
  *
- * A shared stack refuses even a confirmed `decide`: the pipeline stops only the exclusive
+ * A shared stack refuses even a confirmed `review`: the pipeline stops only the exclusive
  * stacks, so the folder would be trashed under a foreign stack that still runs from it.
  * Returns the refusal, or null when the bundle may run.
  */
 function refusalOf(b: WorktreeBundle, opts: GcRunOptions): string | null {
-  if (b.isMainCheckout || b.neverClean || b.keep || isMainCheckoutByPath(b)) return 'not-a-corpse'
+  if (b.isMainCheckout || b.neverClean || b.keep || isMainCheckoutByPath(b)) return 'not-ready'
   if (b.sharedStackIds.length > 0) return 'shared-stack'
-  const runs = b.bucket === 'corpse' || (opts.confirmDecide === true && b.bucket === 'decide')
-  return runs ? null : 'not-a-corpse'
+  const runs = b.bucket === 'ready' || (opts.confirmReview === true && b.bucket === 'review')
+  return runs ? null : 'not-ready'
 }
 
 /**
  * Clean one bundle in a fixed order: reprobe, stop stacks, remove containers, remove
- * volumes, drop deps, recheck, then the git side. The order is what makes it safe: nothing
+ * volumes, recheck, drop deps, recheck, then the git side. The order is what makes it safe: nothing
  * under the checkout is touched until the stack running from it is gone, and nothing is
  * removed at all unless the reprobe still agrees with the scan.
  *
- * Anything but a proven corpse (or a confirmed `decide`), and anything with a shared stack,
+ * Anything but a proven ready bundle (or a confirmed `review`), and anything with a shared stack,
  * is refused before any op runs.
  * The first failing step halts this bundle; later steps never run. Never rejects.
  */
@@ -166,6 +169,17 @@ export async function runBundle(
       if (halted) return halted
     }
   }
+
+  // The docker steps take time: a session that opened meanwhile, in the worktree or any
+  // folder under it, must keep its deps. dehydrateItem's own live check matches the exact
+  // folder only, so the full recheck runs first.
+  let before: Awaited<ReturnType<GcOps['recheck']>> | null = null
+  try {
+    before = await ops.recheck(b)
+  } catch {
+    // A recheck that cannot answer is not a green light.
+  }
+  if (!before?.ok) return fail('drop-deps', 'changed-mid-run')
 
   // Accepted spec §4 deviation: cleanItem is one call, and its archive skips the ignored dirs.
   halted = await step('drop-deps', async () => {

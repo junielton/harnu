@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { buildBundles } from '../src/main/gc/bundle-core'
+import { AS_GIVEN, buildBundles } from '../src/main/gc/bundle-core'
 import { createCycleState, runGcCycle, type GcCycleDeps } from '../src/main/gc/gc-cycle'
 import { createJobQueue } from '../src/main/gc/gc-jobs-core'
 import { defaultGcPrefs } from '../src/main/gc/gc-prefs'
@@ -14,8 +14,8 @@ import {
 } from '../src/main/containers/containers-core'
 import { NOW, WT, collect, scanInput } from './gc-scan-fixtures'
 
-// The graders' scenario (T441 delta 1, item 1): a corpse worktree and a live sibling share a
-// compose project, the corpse owns the only containers, and the project's volume holds the
+// The graders' scenario (T441 delta 1, item 1): a ready item worktree and a live sibling share a
+// compose project, the ready item owns the only containers, and the project's volume holds the
 // sibling's data. With the default prefs the autopilot must NOT remove that volume.
 
 const PROJECT = 'proj-0000-slug'
@@ -38,7 +38,7 @@ const df = new Map<string, VolumeFact>([[VOLUME, { sizeBytes: 5_000, project: PR
 
 type Sibling = { path: string; env?: string; compose?: string }
 
-/** Bundles for the corpse worktree, built the way the gather builds them. */
+/** Bundles for the ready item worktree, built the way the gather builds them. */
 function bundlesWith(siblings: Sibling[]) {
   const { items, fateInputs } = collect(scanInput())
   const guards = volumeGuards([{ path: WT }, ...siblings], () => true)
@@ -55,7 +55,8 @@ function bundlesWith(siblings: Sibling[]) {
     graceDays: 2,
     volumes: df,
     knownFolders: guards.knownFolders,
-    protectedProjects: guards.protectedProjects
+    protectedProjects: guards.protectedProjects,
+    canonical: AS_GIVEN
   })
 }
 
@@ -106,9 +107,9 @@ function cycleOver(bundles: ReturnType<typeof bundlesWith>) {
 }
 
 describe('the autopilot never removes a volume a live sibling shares (delta 1, item 1)', () => {
-  it('baseline: with no sibling the corpse owns the volume, and the cycle still removes nothing (D1)', async () => {
+  it('baseline: with no sibling the ready item owns the volume, and the cycle still removes nothing (D1)', async () => {
     const bundles = bundlesWith([])
-    expect(bundles[0]!.bucket).toBe('corpse')
+    expect(bundles[0]!.bucket).toBe('ready')
     expect(bundles[0]!.ownedVolumes).toEqual([VOLUME])
     const { deps, removed } = cycleOver(bundles)
     await runGcCycle(deps, 'timer')
@@ -161,7 +162,8 @@ describe('the autopilot never removes a volume a live sibling shares (delta 1, i
       graceDays: 2,
       volumes: df,
       knownFolders: guards.knownFolders,
-      protectedProjects: guards.protectedProjects
+      protectedProjects: guards.protectedProjects,
+      canonical: AS_GIVEN
     })
     expect(b!.ownedVolumes).toEqual([VOLUME])
   })

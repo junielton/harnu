@@ -1,7 +1,7 @@
 // Binding an operator's confirmation to what they were shown (design: workspace-gc §3.3,
-// Decide → Remove; T441 delta 1). A blanket "yes, remove it" is not a confirmation of what is
-// there when the job finally runs: a stack that started after the click, or a corpse that
-// turned into a Decide item, was never looked at. The renderer sends the facts it displayed
+// Needs review → Remove; T441 delta 1). A blanket "yes, remove it" is not a confirmation of what is
+// there when the job finally runs: a stack that started after the click, or a ready item that
+// turned into a review item, was never looked at. The renderer sends the facts it displayed
 // (`expected`); the job compares them with a fresh gather and refuses what differs.
 //
 // Pure: no I/O, so every comparison is unit-tested in tests/gc-confirm.test.ts.

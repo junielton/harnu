@@ -38,18 +38,18 @@ const volume = (name: string, project: string | null = PROJECT): HousekeepingVol
 
 describe('leftBehind: what a cleaned worktree leaves in Docker', () => {
   it('lists one entry per project, with the worktree folder it ran from', () => {
-    const b = bundle(WT, 'corpse', { stackIds: [PROJECT], ownedVolumes: ['a_data', 'b_data'] })
+    const b = bundle(WT, 'ready', { stackIds: [PROJECT], ownedVolumes: ['a_data', 'b_data'] })
     const out = leftBehind(b, [volume('a_data'), volume('b_data'), volume('c_data', 'other')])
     expect(out).toEqual([{ project: PROJECT, dir: WT }])
   })
 
   it('skips a volume without a project label: nothing could tie it to the folder', () => {
-    const b = bundle(WT, 'corpse', { ownedVolumes: ['a_data'] })
+    const b = bundle(WT, 'ready', { ownedVolumes: ['a_data'] })
     expect(leftBehind(b, [volume('a_data', null)])).toEqual([])
   })
 
   it('skips a volume it has no fact for, and a bundle without a path', () => {
-    expect(leftBehind(bundle(WT, 'corpse', { ownedVolumes: ['ghost'] }), [])).toEqual([])
+    expect(leftBehind(bundle(WT, 'ready', { ownedVolumes: ['ghost'] }), [])).toEqual([])
   })
 })
 
@@ -205,7 +205,7 @@ describe('the cycle remembers what it leaves behind (D1)', () => {
       ...over
     }
     let n = 0
-    const b = bundle(WT, 'corpse', { stackIds: [PROJECT], ownedVolumes: ['proj_data'] })
+    const b = bundle(WT, 'ready', { stackIds: [PROJECT], ownedVolumes: ['proj_data'] })
     const deps: GcCycleDeps = {
       prefs: () => ({ ...defaultGcPrefs(), autopilot: true, firstReportAcknowledged: true }),
       gather: async () => ({

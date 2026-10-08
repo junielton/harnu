@@ -28,8 +28,8 @@ import {
   type KnownFolder,
   type VolumeFact
 } from '../containers/containers-core'
-import { buildBundles, type SessionPresence } from './bundle-core'
-import { presenceFromSets, dockerIsUnavailable } from './gc-shell'
+import { buildBundles, containerFolderPaths, type SessionPresence } from './bundle-core'
+import { presenceFromSets, dockerIsUnavailable, resolveRealPaths } from './gc-shell'
 import {
   makeDirExists,
   orphanVolumeItems,
@@ -202,6 +202,22 @@ export async function gatherGc(
     if (attributed) stackPaths.set(s.id, attributed)
   }
 
+  // Real paths of everything the bundle builder compares, read once: a symlink or a `..`
+  // would otherwise hide that two spellings are the same folder. A path that does not
+  // resolve keeps its bundle out of the ready bucket (path-unresolved).
+  const canonical = await resolveRealPaths(
+    [
+      ...itemPaths,
+      ...repoPaths,
+      ...[...containers, ...stacks.flatMap((s) => s.containers)].flatMap(containerFolderPaths),
+      ...sessions.keys(),
+      ...stackPaths.values(),
+      ...prefs.neverClean,
+      ...guards.knownFolders
+    ],
+    (p) => fs.realpath(p)
+  )
+
   const input = {
     items,
     fateInputs: lastFateInputs(),
@@ -216,7 +232,8 @@ export async function gatherGc(
     volumes: df,
     // A volume is owned only when no other folder may share its project (delta 1, item 1).
     knownFolders: guards.knownFolders,
-    protectedProjects: guards.protectedProjects
+    protectedProjects: guards.protectedProjects,
+    canonical
   }
   // A Keep mark holds only while the fate it was made under still holds: judge the fates
   // first, then rebuild with the marks that are still valid.

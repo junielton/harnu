@@ -299,7 +299,7 @@ describe('runBatch hooks: the per-item progress source', () => {
 
   it('reports each bundle before it runs and its result after, in order', async () => {
     const log: string[] = []
-    const bs = [bundle('/ws/wt/a', 'corpse'), bundle('/ws/wt/b', 'corpse')]
+    const bs = [bundle('/ws/wt/a', 'ready'), bundle('/ws/wt/b', 'ready')]
     const results = await runBatch(
       bs,
       ops,
@@ -319,7 +319,7 @@ describe('runBatch hooks: the per-item progress source', () => {
   })
 
   it('behaves as before without hooks', async () => {
-    const results = await runBatch([bundle('/ws/wt/a', 'corpse')], ops, { removeVolumes: true })
+    const results = await runBatch([bundle('/ws/wt/a', 'ready')], ops, { removeVolumes: true })
     expect(results.map((r) => r.ok)).toEqual([true])
   })
 })

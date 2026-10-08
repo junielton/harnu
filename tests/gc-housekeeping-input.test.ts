@@ -231,7 +231,7 @@ describe('toHousekeepingVolumes', () => {
   })
 })
 
-describe('orphanVolumeItems: the Decide entries for orphan volumes (AC-7)', () => {
+describe('orphanVolumeItems: the review entries for orphan volumes (AC-7)', () => {
   const df = new Map<string, VolumeFact>([
     ['shop_pgdata', { sizeBytes: 5_000, project: 'shop' }],
     ['other', { sizeBytes: 1, project: 'other' }]

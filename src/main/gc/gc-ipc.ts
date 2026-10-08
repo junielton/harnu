@@ -115,7 +115,7 @@ export async function registerGcHandlers(
   const gather = (): Promise<GcGathered> => {
     gathering ??= (async () => {
       try {
-        // A halted item reads Decide here, once, for the snapshot, the feed, the jobs and the cycle.
+        // A halted item reads Needs review here, once, for the snapshot, the feed, the jobs and the cycle.
         const g = withFailures(
           await gatherGc(prefs, Date.now(), toDirMap(leftovers)),
           state,

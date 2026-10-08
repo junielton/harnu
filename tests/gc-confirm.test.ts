@@ -9,7 +9,7 @@ import type { OrphanVolumeItem } from '../src/main/gc/gc-housekeeping-input'
 import { bundle, reapItem } from './gc-fixtures'
 
 const withStacks = (stackIds: string[], ownedVolumes: string[] = []) =>
-  bundle('/ws/wt/a', 'corpse', { stackIds, ownedVolumes })
+  bundle('/ws/wt/a', 'ready', { stackIds, ownedVolumes })
 
 const orphan = (over: Partial<OrphanVolumeItem> = {}): OrphanVolumeItem => ({
   id: 'volume:lost',
@@ -22,7 +22,7 @@ const orphan = (over: Partial<OrphanVolumeItem> = {}): OrphanVolumeItem => ({
 
 describe('expectedOf: the facts the operator was shown', () => {
   it('reads bucket, reason, head, stacks, volumes and size off the bundle', () => {
-    const b = bundle('/ws/wt/d', 'decide', {
+    const b = bundle('/ws/wt/d', 'review', {
       stackIds: ['s2', 's1'],
       ownedVolumes: ['v'],
       localTip: 'c'.repeat(40),
@@ -30,7 +30,7 @@ describe('expectedOf: the facts the operator was shown', () => {
       item: reapItem('/ws/wt/d', { diskBytes: 77 })
     })
     expect(expectedOf(b)).toEqual({
-      bucket: 'decide',
+      bucket: 'review',
       reasonCode: 'dirty',
       headSha: 'c'.repeat(40),
       stackIds: ['s1', 's2'],
@@ -39,8 +39,8 @@ describe('expectedOf: the facts the operator was shown', () => {
     })
   })
 
-  it('has no reason for a corpse and no head when the tip is unknown', () => {
-    const b = bundle('/ws/wt/a', 'corpse', { localTip: null })
+  it('has no reason for a ready item and no head when the tip is unknown', () => {
+    const b = bundle('/ws/wt/a', 'ready', { localTip: null })
     expect(expectedOf(b)).toMatchObject({ reasonCode: null, headSha: null })
   })
 })
@@ -72,29 +72,29 @@ describe('bundleChangedSince: what makes a confirmation stale (AC-8)', () => {
     expect(bundleChangedSince(withStacks(['s1'], ['v1']), seen)).toBeNull()
   })
 
-  it('refuses a different bucket, even for a corpse that turned Decide', () => {
-    const seen = expectedOf(bundle('/ws/wt/a', 'corpse'))
-    expect(bundleChangedSince(bundle('/ws/wt/a', 'decide'), seen)).toBe('bucket')
+  it('refuses a different bucket, even for a ready item that turned Needs review', () => {
+    const seen = expectedOf(bundle('/ws/wt/a', 'ready'))
+    expect(bundleChangedSince(bundle('/ws/wt/a', 'review'), seen)).toBe('bucket')
   })
 
   it('refuses a different reason inside the same bucket', () => {
     const seen = expectedOf(
-      bundle('/ws/wt/a', 'decide', { reason: { code: 'dirty', detail: 'x' } })
+      bundle('/ws/wt/a', 'review', { reason: { code: 'dirty', detail: 'x' } })
     )
-    const now = bundle('/ws/wt/a', 'decide', { reason: { code: 'unpushed', detail: 'x' } })
+    const now = bundle('/ws/wt/a', 'review', { reason: { code: 'unpushed', detail: 'x' } })
     expect(bundleChangedSince(now, seen)).toBe('reason')
   })
 
   it('refuses a head that moved', () => {
-    const seen = expectedOf(bundle('/ws/wt/a', 'corpse', { localTip: 'a'.repeat(40) }))
+    const seen = expectedOf(bundle('/ws/wt/a', 'ready', { localTip: 'a'.repeat(40) }))
     expect(
-      bundleChangedSince(bundle('/ws/wt/a', 'corpse', { localTip: 'b'.repeat(40) }), seen)
+      bundleChangedSince(bundle('/ws/wt/a', 'ready', { localTip: 'b'.repeat(40) }), seen)
     ).toBe('head')
   })
 
   it('refuses when the head was unknown then and is known now, or the reverse', () => {
-    const none = expectedOf(bundle('/ws/wt/a', 'corpse', { localTip: null }))
-    expect(bundleChangedSince(bundle('/ws/wt/a', 'corpse'), none)).toBe('head')
+    const none = expectedOf(bundle('/ws/wt/a', 'ready', { localTip: null }))
+    expect(bundleChangedSince(bundle('/ws/wt/a', 'ready'), none)).toBe('head')
   })
 })
 
@@ -116,6 +116,6 @@ describe('volumeChangedSince', () => {
   })
 
   it('refuses an expectation that is not for an orphan volume', () => {
-    expect(volumeChangedSince(orphan(), expectedOf(bundle('/ws/wt/a', 'corpse')))).toBe('bucket')
+    expect(volumeChangedSince(orphan(), expectedOf(bundle('/ws/wt/a', 'ready')))).toBe('bucket')
   })
 })
