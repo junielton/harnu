@@ -20,6 +20,7 @@
  */
 
 import { createHash } from 'node:crypto'
+import yaml from 'js-yaml'
 
 import { insertOptionArgs, splitOptionArgs } from './claude-args'
 
@@ -91,6 +92,117 @@ function unquote(v: string): string {
  * its directory, so a mismatch would make the panel promise a name the session
  * never sees. Such an entry is dropped rather than silently renamed.
  */
+/**
+ * Frontmatter YAML constructs that can name a key without writing it, or hide one from a text scan:
+ * an explicit `? key`, a tag (`!x`), an anchor (`&x`), an alias (`*x`) and a merge key (`<<:`).
+ */
+const FRONTMATTER_HIDING_FORMS: readonly RegExp[] = [
+  /^[ \t]*\?(?:[ \t]|$)/m,
+  /(?:^|[\s:\-[{,])[!&*]\S/m,
+  /(?:^|[\s,{])<<[ \t]*:/m
+]
+
+/** True when `value` is, or contains at any depth, an object key spelled `hooks` in any casing. */
+function hasHooksKey(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(hasHooksKey)
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>).some(
+      ([k, v]) => /hooks/i.test(k) || hasHooksKey(v)
+    )
+  }
+  return false
+}
+
+/**
+ * BUG-169: must an `observe` tick refuse this SKILL.md because its frontmatter may declare `hooks:`?
+ * Such a skill runs the shell commands it names (PreToolUse / PostToolUse / Stop) whenever it is
+ * loaded, with no shell TOOL involved, so `--tools` and `--disallowedTools` do not touch it.
+ *
+ * The CLI's YAML reader decides what a hook is, and a text scan for one spelling of the key is
+ * easy to walk around (`? [hooks]`, a tag, an anchor, an escape). So this does not try to prove a
+ * skill is clean; it refuses anything it cannot positively read as a plain header. A frontmatter is
+ * refused when ANY of these holds:
+ *
+ * 1. the token `hooks` appears anywhere in it, in any casing, in prose or in a key;
+ * 2. it contains a backslash, so no escaped spelling of a key survives to be missed;
+ * 3. it uses a YAML construct that can hide a key: `? ` explicit keys, tags, anchors, aliases,
+ *    merge keys;
+ * 4. it does not load cleanly under js-yaml's CORE_SCHEMA (the library the repo already uses):
+ *    syntax errors, duplicate keys, several documents, a non-mapping root;
+ * 5. after loading, a key spelled `hooks` exists at any depth;
+ * 6. the fence opens and never closes.
+ *
+ * False positives are accepted by design: the skill is simply refused in observe, still works in an
+ * act worker, and the cost is a re-word. The cost of a false negative is a command running in a
+ * tick that promised to be read-only. A file with no frontmatter fence is not read for hooks by the
+ * CLI, so it is not refused; the fence may follow a BOM or blank lines, which a lenient reader
+ * might skip.
+ */
+export function skillDeclaresHooks(raw: string): boolean {
+  return skillFrontmatterVerdict(raw) !== 'ok'
+}
+
+/** What an `observe` tick makes of a SKILL.md header. */
+export type FrontmatterVerdict = 'ok' | 'hooks' | 'unsafe-frontmatter'
+
+/** Whitespace and invisible characters a lenient reader might skip before an opening fence. */
+const INVISIBLE_LEAD = /^[\s\u180E\u200B-\u200F\u2060\uFEFF]*/
+
+/**
+ * The verdict behind {@link skillDeclaresHooks}: `ok`, `hooks` (the header may declare hooks, by
+ * rules 1-5 above) or `unsafe-frontmatter` (the FENCE cannot be read unambiguously, rule 6 and the
+ * two below).
+ *
+ * The CLI opens frontmatter with `^---\s*\n` after stripping one BOM, and its `\s` covers `\r`,
+ * `\f`, `\v`, U+00A0, U+2028 and U+FEFF, so `--- \n` or `---\r\r\n` is a fence to it. A fence regex
+ * written to the letter of YAML, as this one first was, calls those "no frontmatter" and lets the
+ * hooks through (confirmed against claude 2.1.294). So nothing here is left to interpretation:
+ *
+ * - after at most ONE BOM, a file that starts with `---` must have a first line of exactly `---\n`
+ *   or `---\r\n`; `--- \n`, `----`, `--- yaml` and every other near-fence is refused;
+ * - a file that starts with whitespace or invisible characters and THEN `---` is refused (it is
+ *   not valid frontmatter, but a reader that skips the lead-in would parse it);
+ * - the header closes at the first line that starts with `---`, and that line must be exactly
+ *   `---` (a trailing `\r` allowed); a line that starts with `---` and is anything else is
+ *   ambiguous about where the header ends, so it is refused too. A header that never closes is
+ *   refused.
+ *
+ * A file whose first characters are anything else has no frontmatter to the CLI and is `ok`.
+ */
+export function skillFrontmatterVerdict(raw: string): FrontmatterVerdict {
+  const text = raw.startsWith('\uFEFF') ? raw.slice(1) : raw
+  if (!text.startsWith('---')) {
+    const lead = INVISIBLE_LEAD.exec(text)?.[0] ?? ''
+    return lead.length > 0 && text.startsWith('---', lead.length) ? 'unsafe-frontmatter' : 'ok'
+  }
+  const open = /^---\r?\n/.exec(text)
+  if (!open) return 'unsafe-frontmatter'
+
+  const lines = text.slice(open[0].length).split('\n')
+  let closeAt = -1
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].startsWith('---')) continue
+    if (lines[i] !== '---' && lines[i] !== '---\r') return 'unsafe-frontmatter'
+    closeAt = i
+    break
+  }
+  if (closeAt < 0) return 'unsafe-frontmatter'
+  const inner = lines.slice(0, closeAt).join('\n')
+
+  if (/hooks/i.test(inner) || inner.includes('\\')) return 'hooks'
+  if (FRONTMATTER_HIDING_FORMS.some((re) => re.test(inner))) return 'hooks'
+
+  let doc: unknown
+  try {
+    doc = yaml.load(inner, { schema: yaml.CORE_SCHEMA })
+  } catch {
+    return 'hooks'
+  }
+  if (doc === undefined || doc === null) return 'ok'
+  if (typeof doc !== 'object' || Array.isArray(doc)) return 'hooks'
+  return hasHooksKey(doc) ? 'hooks' : 'ok'
+}
+
 export function parseSkillFrontmatter(raw: string, dirName?: string): BundledSkill | null {
   const open = /^---\r?\n/.exec(raw)
   if (!open) return null

@@ -2000,6 +2000,29 @@ function positiveIntField(args: Record<string, unknown>, key: string): number | 
   return Number.isInteger(v) && (v as number) > 0 ? (v as number) : null
 }
 
+/**
+ * The ACK `warning` for a worker prompt's skill mentions: ones nothing answers to (T305 AC-6) and,
+ * for an observe worker, ones refused because the skill declares frontmatter hooks (BUG-169). The
+ * worker is created or edited either way; this only says which mentions will never stage.
+ */
+function skillWarning(
+  missingSkills: readonly string[],
+  rejectedSkills: readonly string[]
+): { warning: string } | Record<string, never> {
+  const parts: string[] = []
+  if (missingSkills.length > 0) {
+    parts.push(
+      `Prompt names skill(s) nothing on this machine answers to, so they will never stage: ${missingSkills.join(', ')}`
+    )
+  }
+  if (rejectedSkills.length > 0) {
+    parts.push(
+      `Prompt names skill(s) an observe worker never stages (they declare hooks or contain files it will not copy): ${rejectedSkills.join(', ')}`
+    )
+  }
+  return parts.length > 0 ? { warning: parts.join('. ') } : {}
+}
+
 const createWorkerHandler: Handler = async (args, ctx) => {
   // T10 already structurally validated this call (parseCreateWorker) before the
   // gate ever dispatched it — this handler still re-derives its own fields from
@@ -2058,7 +2081,7 @@ const createWorkerHandler: Handler = async (args, ctx) => {
     if (isSchedulerNotReady(err)) return errorResult((err as Error).message)
     throw err
   }
-  const { worker, missingSkills } = created
+  const { worker, missingSkills, rejectedSkills } = created
 
   return textResult({
     ok: true,
@@ -2072,11 +2095,7 @@ const createWorkerHandler: Handler = async (args, ctx) => {
     // BUG-166: what actually took effect, so the agent reads it instead of assuming.
     allowNetwork: worker.allowNetwork === true,
     // AC-6: reported, never silently dropped — the worker IS created either way.
-    ...(missingSkills.length > 0
-      ? {
-          warning: `Prompt names skill(s) nothing on this machine answers to, so they will never stage: ${missingSkills.join(', ')}`
-        }
-      : {})
+    ...skillWarning(missingSkills, rejectedSkills)
   })
 }
 
@@ -2171,7 +2190,7 @@ const updateWorkerHandler: Handler = async (args) => {
     if (isWorkerNotFound(err)) return errorResult((err as Error).message)
     throw err
   }
-  const { worker, missingSkills, tickInFlight } = result
+  const { worker, missingSkills, rejectedSkills, tickInFlight } = result
 
   return textResult({
     ok: true,
@@ -2185,11 +2204,7 @@ const updateWorkerHandler: Handler = async (args) => {
     // T316 decision 4: whether a tick was already running with the PRE-edit
     // worker at the moment this call landed — the edit itself never touches it.
     tickInFlight,
-    ...(missingSkills.length > 0
-      ? {
-          warning: `Prompt names skill(s) nothing on this machine answers to, so they will never stage: ${missingSkills.join(', ')}`
-        }
-      : {})
+    ...skillWarning(missingSkills, rejectedSkills)
   })
 }
 

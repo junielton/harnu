@@ -98,7 +98,10 @@ describe('registerScheduler — the runner (mocked spawn)', () => {
     spawn: vi.fn(),
     ipcHandlers: new Map<string, (e: unknown, ...args: never[]) => Promise<unknown>>(),
     userDataDir: '',
-    hookBlob: null as string | null
+    hookBlob: null as string | null,
+    // BUG-169: what the (mocked) skill stager reports for the tick being run.
+    stageRejected: [] as Array<{ mention: string; reason: 'hooks' }>,
+    stageModes: [] as string[]
   }))
 
   vi.mock('node:child_process', () => ({ spawn: h.spawn }))
@@ -122,7 +125,11 @@ describe('registerScheduler — the runner (mocked spawn)', () => {
     resolveClaudePath: vi.fn(async () => '/usr/bin/claude')
   }))
   vi.mock('../src/main/bundled-skills', () => ({
-    stageSkillsForFolder: vi.fn(async () => null)
+    stageSkillsForFolder: vi.fn(async () => null),
+    stageSkillsForTick: vi.fn(async (_folder: string, _mentions: string[], mode: string) => {
+      h.stageModes.push(mode)
+      return { staged: null, rejected: h.stageRejected }
+    })
   }))
 
   const bridge = { dispatch: vi.fn(async () => undefined) }
@@ -150,6 +157,8 @@ describe('registerScheduler — the runner (mocked spawn)', () => {
     h.ipcHandlers.clear()
     h.spawn.mockReset()
     h.hookBlob = null
+    h.stageRejected = []
+    h.stageModes = []
     bridge.dispatch.mockClear()
     h.userDataDir = mkdtempSync(join(tmpdir(), 'harnu-scheduler-test-'))
     const mod = await import('../src/main/scheduler-shell')
@@ -268,6 +277,46 @@ describe('registerScheduler — the runner (mocked spawn)', () => {
       if (h.spawn.mock.calls.length === 0) throw new Error('not spawned yet')
     })
     expect(h.spawn.mock.calls[0][1] as string[]).not.toContain('--settings')
+  })
+
+  // BUG-169 — a mention the stager refused (the skill declares hooks) is recorded where the operator
+  // already looks for what a tick could not do, and the tick still runs.
+  it('records a rejected skill mention in the run denials, observe mode only', async () => {
+    h.stageRejected = [{ mention: 'hooky', reason: 'hooks' }]
+    const child = new FakeChild()
+    h.spawn.mockReturnValue(child)
+    const [worker] = await save(baseDraft(h.userDataDir, { mode: 'observe', prompt: 'run /hooky' }))
+    await runNow(worker.id)
+    await vi.waitFor(() => {
+      if (h.spawn.mock.calls.length === 0) throw new Error('not spawned yet')
+    })
+    child.stdout.emit('data', JSON.stringify({ type: 'result', result: 'ok' }))
+    child.emit('exit', 0)
+    await vi.waitFor(async () => {
+      if ((await runsFor(worker.id)).length === 0) throw new Error('run not recorded yet')
+    })
+    const runs = (await runsFor(worker.id)) as Array<{ status: string; denials: string[] }>
+    expect(runs[0].status).toBe('ok')
+    expect(runs[0].denials).toContain('rejected skill: /hooky (declares hooks)')
+    expect(h.stageModes).toEqual(['observe'])
+  })
+
+  it('stages an act worker in act mode and records no rejection', async () => {
+    const child = new FakeChild()
+    h.spawn.mockReturnValue(child)
+    const [worker] = await save(baseDraft(h.userDataDir, { mode: 'act' }))
+    await runNow(worker.id)
+    await vi.waitFor(() => {
+      if (h.spawn.mock.calls.length === 0) throw new Error('not spawned yet')
+    })
+    child.stdout.emit('data', JSON.stringify({ type: 'result', result: 'ok' }))
+    child.emit('exit', 0)
+    await vi.waitFor(async () => {
+      if ((await runsFor(worker.id)).length === 0) throw new Error('run not recorded yet')
+    })
+    const runs = (await runsFor(worker.id)) as Array<{ denials: string[] }>
+    expect(h.stageModes).toEqual(['act'])
+    expect(runs[0].denials.join(' ')).not.toContain('rejected skill')
   })
 
   // BUG-108 / BUG-164 — an extra read command is never honored (observe has no
