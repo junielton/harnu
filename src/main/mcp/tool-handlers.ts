@@ -2017,7 +2017,7 @@ function skillWarning(
   }
   if (rejectedSkills.length > 0) {
     parts.push(
-      `Prompt names skill(s) that declare hooks, which an observe worker never stages: ${rejectedSkills.join(', ')}`
+      `Prompt names skill(s) an observe worker never stages (they declare hooks or contain files it will not copy): ${rejectedSkills.join(', ')}`
     )
   }
   return parts.length > 0 ? { warning: parts.join('. ') } : {}

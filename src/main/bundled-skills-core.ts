@@ -20,6 +20,7 @@
  */
 
 import { createHash } from 'node:crypto'
+import yaml from 'js-yaml'
 
 import { insertOptionArgs, splitOptionArgs } from './claude-args'
 
@@ -92,22 +93,50 @@ function unquote(v: string): string {
  * never sees. Such an entry is dropped rather than silently renamed.
  */
 /**
- * BUG-169: does this SKILL.md declare frontmatter `hooks:`? Such a skill runs the shell commands it
- * names (PreToolUse / PostToolUse / Stop) whenever it is loaded, with no shell TOOL involved, so
- * `--tools` and `--disallowedTools` do not touch it. An `observe` tick refuses to stage one.
+ * Frontmatter YAML constructs that can name a key without writing it, or hide one from a text scan:
+ * an explicit `? key`, a tag (`!x`), an anchor (`&x`), an alias (`*x`) and a merge key (`<<:`).
+ */
+const FRONTMATTER_HIDING_FORMS: readonly RegExp[] = [
+  /^[ \t]*\?(?:[ \t]|$)/m,
+  /(?:^|[\s:\-[{,])[!&*]\S/m,
+  /(?:^|[\s,{])<<[ \t]*:/m
+]
+
+/** True when `value` is, or contains at any depth, an object key spelled `hooks` in any casing. */
+function hasHooksKey(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(hasHooksKey)
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>).some(
+      ([k, v]) => /hooks/i.test(k) || hasHooksKey(v)
+    )
+  }
+  return false
+}
+
+/**
+ * BUG-169: must an `observe` tick refuse this SKILL.md because its frontmatter may declare `hooks:`?
+ * Such a skill runs the shell commands it names (PreToolUse / PostToolUse / Stop) whenever it is
+ * loaded, with no shell TOOL involved, so `--tools` and `--disallowedTools` do not touch it.
  *
- * Deliberately a text check, and deliberately generous. The CLI's YAML parser is the one that
- * decides what a hook is, and this must never be narrower than it:
+ * The CLI's YAML reader decides what a hook is, and a text scan for one spelling of the key is
+ * easy to walk around (`? [hooks]`, a tag, an anchor, an escape). So this does not try to prove a
+ * skill is clean; it refuses anything it cannot positively read as a plain header. A frontmatter is
+ * refused when ANY of these holds:
  *
- * - the key is matched case-insensitively, quoted or bare, at the start of any line (so a nested
- *   `  hooks:` counts) or after `{` / `,` (flow style);
- * - the fence may follow a BOM or blank lines, which a lenient reader might skip;
- * - a frontmatter that opens and never closes is AMBIGUOUS, and ambiguity is a refusal.
+ * 1. the token `hooks` appears anywhere in it, in any casing, in prose or in a key;
+ * 2. it contains a backslash, so no escaped spelling of a key survives to be missed;
+ * 3. it uses a YAML construct that can hide a key: `? ` explicit keys, tags, anchors, aliases,
+ *    merge keys;
+ * 4. it does not load cleanly under js-yaml's CORE_SCHEMA (the library the repo already uses):
+ *    syntax errors, duplicate keys, several documents, a non-mapping root;
+ * 5. after loading, a key spelled `hooks` exists at any depth;
+ * 6. the fence opens and never closes.
  *
- * The cost of being generous is a false positive on a skill that uses the word `hooks:` at the start
- * of a frontmatter line for something else; the cost of being narrow is a command running in a
+ * False positives are accepted by design: the skill is simply refused in observe, still works in an
+ * act worker, and the cost is a re-word. The cost of a false negative is a command running in a
  * tick that promised to be read-only. A file with no frontmatter fence is not read for hooks by the
- * CLI, so it is not refused.
+ * CLI, so it is not refused; the fence may follow a BOM or blank lines, which a lenient reader
+ * might skip.
  */
 export function skillDeclaresHooks(raw: string): boolean {
   const open = /^(?:\uFEFF|\s)*---[ \t]*\r?\n/.exec(raw)
@@ -115,7 +144,20 @@ export function skillDeclaresHooks(raw: string): boolean {
   const afterOpen = raw.slice(open[0].length)
   const close = /\r?\n---[ \t]*(?:\r?\n|$)/.exec(afterOpen)
   if (!close) return true
-  return /(?:^|[{,])\s*["']?hooks["']?\s*:/im.test(afterOpen.slice(0, close.index))
+  const inner = afterOpen.slice(0, close.index)
+
+  if (/hooks/i.test(inner) || inner.includes('\\')) return true
+  if (FRONTMATTER_HIDING_FORMS.some((re) => re.test(inner))) return true
+
+  let doc: unknown
+  try {
+    doc = yaml.load(inner, { schema: yaml.CORE_SCHEMA })
+  } catch {
+    return true
+  }
+  if (doc === undefined || doc === null) return false
+  if (typeof doc !== 'object' || Array.isArray(doc)) return true
+  return hasHooksKey(doc)
 }
 
 export function parseSkillFrontmatter(raw: string, dirName?: string): BundledSkill | null {

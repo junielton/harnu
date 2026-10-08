@@ -431,16 +431,22 @@ so it fires from the very next tick rather than waiting on a second arm step.
 Name a bundled skill inline in the prompt with `/skill-name` — naming it stages
 it even if it's switched off for that folder, the same as a Scheduler tick
 honors any mention. In an `observe` worker two rules narrow that: a bare
-`/name` that the bundled catalog owns always resolves to the BUNDLED skill (a
-repo's own `.claude/skills/<name>` cannot shadow it), and a skill whose
-SKILL.md frontmatter declares `hooks:` is never staged at all, because hooks run
-shell commands whatever the tool allowlist says. Act workers keep the old
+`/name` that the bundled catalog owns always resolves to the BUNDLED skill, in
+any letter case (a repo's own `.claude/skills/<name>` cannot shadow it), and a
+personal or project skill is staged only if it can be read as a plain header and
+a plain directory: its frontmatter must not mention `hooks` anywhere, use YAML
+that can hide a key (`?` keys, tags, anchors, aliases, merge keys, backslash
+escapes), or fail a strict parse, and the directory must hold no symlink, no
+`hooks` directory or `hooks.json`, no non-regular file and not too much data
+(dot-files and dot-directories are skipped, not copied). Hooks run shell
+commands whatever the tool allowlist says. The skill is read once and the very
+bytes that were checked are the bytes staged. Act workers keep the old
 most-specific-first resolution. The `warning` on the ACK fires when a mention
 resolves to nothing on this machine at all (a typo, an unknown name, a plugin
 skill a tick can't load), and separately when an observe worker names a skill
 that declares hooks: either way that mention will never stage, though the worker
 is still created. A refused mention also shows on the run as
-`rejected skill: /name (declares hooks)`.
+`rejected skill: /name (declares hooks)` or `rejected skill: /name (unsafe files)`.
 
 **List Scheduler workers — `list_workers`.** Call `list_workers({ folder? })`
 to see what's ticking: id, name, a redacted `folderAlias` (never the raw path,

@@ -520,7 +520,7 @@ async function startTick(worker: Worker): Promise<void> {
     outcome: null,
     settled: false,
     timeoutHandle,
-    skillRejections: skillRejected.map((r) => skillRejectionText(r.mention)),
+    skillRejections: skillRejected.map(skillRejectionText),
     ...(companionOwner ? { companionOwner } : {})
   }
   liveTicks.set(worker.id, live)
@@ -550,8 +550,8 @@ async function startTick(worker: Worker): Promise<void> {
 }
 
 /** BUG-169: how a refused mention reads in the Runs tab. */
-function skillRejectionText(mention: string): string {
-  return `rejected skill: /${mention} (declares hooks)`
+function skillRejectionText(r: { mention: string; reason: 'hooks' | 'unsafe-layout' }): string {
+  return `rejected skill: /${r.mention} (${r.reason === 'hooks' ? 'declares hooks' : 'unsafe files'})`
 }
 
 /** One 30s beat: start every worker `dueWorkers` says is ready. */
