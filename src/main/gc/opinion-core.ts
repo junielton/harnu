@@ -354,13 +354,20 @@ export function parseOpinions(stdout: string, ids: readonly string[]): Opinion[]
 
 const EFFORTS: ReadonlySet<string> = new Set(['low', 'medium', 'high', 'xhigh', 'max'])
 
+/**
+ * What the advisor runs as when the routing table hands back something unusable: the scout tier's
+ * own default. It is the cheap tier on purpose; a malformed value must never turn into the most
+ * expensive model.
+ */
+export const OPINION_FALLBACK: { model: string; effort: Effort } = { model: 'haiku', effort: 'low' }
+
 /** A model name from the operator's routing table, kept out of the option position. */
 export function safeModel(model: string): string {
-  return /^[A-Za-z0-9][\w.:[\]-]*$/.test(model) ? model : 'opus'
+  return /^[A-Za-z0-9][\w.:[\]-]*$/.test(model) ? model : OPINION_FALLBACK.model
 }
 
 export function safeEffort(effort: string): Effort {
-  return (EFFORTS.has(effort) ? effort : 'high') as Effort
+  return EFFORTS.has(effort) ? (effort as Effort) : OPINION_FALLBACK.effort
 }
 
 /**
