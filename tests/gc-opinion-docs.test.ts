@@ -123,10 +123,8 @@ describe('every doc says exactly where the advisor can read', () => {
   it('CHANGELOG.md', () => where(changelog()))
   it('design.md', () => where(designBlock()))
 
-  it('the user doc says an outside file cannot be opened, and a worktree outside the folder is not readable', () => {
-    const t = userDoc()
-    expect(t).toMatch(/(cannot|can't) open (a |any )?file outside/i)
-    expect(t).toMatch(/worktree[^.]*outside[^.]*(not readable|cannot read|works from the summary)/i)
+  it('the user doc says a worktree outside the repository folder is not readable', () => {
+    expect(userDoc()).toMatch(/worktree[^.]*outside[^.]*(not readable|works from the summary)/i)
   })
 })
 
@@ -164,8 +162,10 @@ describe('the docs state exactly what confines the advisor (delta 5, item 2)', (
     }
   })
 
-  it('the user doc says the advisor never runs in your home folder or the filesystem root', () => {
-    expect(userDoc()).toMatch(/home folder or the filesystem root|never your home folder/i)
+  it('the user doc says Harnu falls back to an empty folder rather than your home folder or the filesystem root', () => {
+    expect(userDoc()).toMatch(
+      /rather than (running it in )?your home folder or the filesystem root/i
+    )
   })
 
   it('the user doc says an unknown pull request state is shown as unknown, not as none', () => {
@@ -195,6 +195,92 @@ describe('the docs state exactly what confines the advisor (delta 5, item 2)', (
       const t = flat(read2('src/main/gc/opinion-run.ts'))
       expect(t).not.toMatch(/the CLI confines its reads to it/)
       expect(t).toMatch(/hard link/i)
+    })
+  })
+})
+
+describe('no doc or comment claims absolute confinement (delta 6, item 3)', () => {
+  const docs: [string, () => string][] = [
+    ['docs/user/cleanup.md', userDoc],
+    ['CHANGELOG.md', changelog],
+    ['design.md', designBlock]
+  ]
+
+  describe.each(docs)('%s', (_name, get) => {
+    it('drops the words that over-claim', () => {
+      const t = get()
+      expect(t).not.toMatch(/\bcannot\b/i)
+      expect(t).not.toMatch(/never your home folder/i)
+      expect(t).not.toMatch(/whole readable world/i)
+    })
+
+    it('says it runs in the repository folder with Read, Grep and Glob only, and no shell, write, web or Harnu tools', () => {
+      const t = get()
+      expect(t).toMatch(/repository folder/i)
+      expect(t).toMatch(/Read[`,]* (and |, )?`?Grep`?,? and `?Glob/)
+      expect(t).toMatch(/no shell/i)
+      expect(t).toMatch(/(no|nor) (tool that )?writes?|write a file|no write/i)
+      expect(t).toMatch(/web/i)
+    })
+
+    it("says the CLI's own check keeps it to that folder but may still allow a few of its own working folders", () => {
+      expect(get()).toMatch(/may still allow a few of its own working folders/i)
+    })
+
+    it("says Harnu explicitly blocks Claude's data folder and its temp folder", () => {
+      const t = get()
+      expect(t).toMatch(/explicitly blocks?/i)
+      expect(t).toMatch(/~\/\.claude/)
+      expect(t).toMatch(/temp folder/i)
+    })
+
+    it('says what it opens is sent to the model', () => {
+      expect(get()).toMatch(/sent to the model/i)
+    })
+  })
+
+  describe('the code comments', () => {
+    const src = (rel: string): string => flat(readFileSync(join(ROOT, rel), 'utf8'))
+    const core = (): string => src('src/main/gc/opinion-core.ts')
+
+    it.each([
+      ['opinion-core.ts', 'src/main/gc/opinion-core.ts'],
+      ['opinion-run.ts', 'src/main/gc/opinion-run.ts'],
+      ['opinion-shell.ts', 'src/main/gc/opinion-shell.ts']
+    ])('%s never says whole readable world', (_n, rel) => {
+      expect(src(rel)).not.toMatch(/whole readable world/i)
+    })
+
+    it('OPINION_BUILTIN_TOOLS says the CLI may still allow a few of its own folders', () => {
+      const t = core()
+      const i = t.indexOf('export const OPINION_BUILTIN_TOOLS')
+      expect(t.slice(Math.max(0, i - 2600), i)).toMatch(
+        /may still allow a few of its own working folders/i
+      )
+    })
+
+    it('confineCwd says the check is on real paths and that it is a safeguard, not a guarantee', () => {
+      const t = core()
+      const i = t.indexOf('export function confineCwd')
+      const block = t.slice(Math.max(0, i - 1100), i)
+      expect(block).toMatch(/real paths/i)
+      expect(block).toMatch(/may still allow a few of its own working folders/i)
+    })
+
+    it('RunSupervisedOptions.cwd says the CLI may still allow a few of its own folders', () => {
+      const t = src('src/main/gc/opinion-run.ts')
+      const i = t.indexOf('cwd: string | null')
+      expect(t.slice(Math.max(0, i - 900), i)).toMatch(
+        /may still allow a few of its own working folders/i
+      )
+    })
+
+    it('runClaude says the same and names the folders Harnu blocks itself', () => {
+      const t = src('src/main/gc/opinion-shell.ts')
+      const i = t.indexOf('async function runClaude')
+      const block = t.slice(Math.max(0, i - 1100), i)
+      expect(block).toMatch(/may still allow a few of its own working folders/i)
+      expect(block).toMatch(/data folder|temp folder/i)
     })
   })
 })
