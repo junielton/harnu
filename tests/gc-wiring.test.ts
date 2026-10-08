@@ -342,3 +342,12 @@ describe('the Docker card says why orphan volumes are hidden (delta 4, item 6)',
     expect(scan).toMatch(/guards\.hidden/)
   })
 })
+
+describe('transcript activity fails closed (delta 5, item 3)', () => {
+  it('the gather attributes unreadable transcripts by slug and refuses ready when the root is unreadable', () => {
+    expect(scan).toMatch(/scanTranscripts\(fsTranscriptProbe\(\)/)
+    expect(scan).toMatch(/attributeBySlug\(/)
+    expect(scan).toMatch(/rootUnreadable/)
+    expect(scan).toMatch(/withGraceUnknown\(/)
+  })
+})
