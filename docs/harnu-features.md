@@ -1,4 +1,4 @@
-<!-- harnu-features v75 (2026-10-08) -->
+<!-- harnu-features v76 (2026-10-08) -->
 
 # You are running inside Harnu
 
@@ -563,7 +563,8 @@ reportOnly, graceDays }, nextCycleAt }`. Read `bucket`, `reasonCode` and `reason
   before. A release is tied to the branch tip it was made at: new commits move the tip and
   the release no longer applies, so release again after the next merge. A release never overrides a safety rule: dirty
   tracked files or unpushed commits, an open idle session, a stack shared with another
-  worktree, a Keep mark, a never-clean path or a path Harnu could not resolve keep the
+  worktree, another worktree nested inside it, a Keep mark, a never-clean path or a path Harnu
+  could not resolve keep the
   bundle out of `ready` — the ACK
   `{ ok, op, folderAlias, branch, released, alreadyReleased, bucketAfter, reason, reasonCode,
 deleted: false, message }` says where it landed (`bucketAfter`) and why (`reason`; a worktree
