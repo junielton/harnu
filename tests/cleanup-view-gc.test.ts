@@ -183,7 +183,7 @@ describe('Cleanup screen — multi-select on Needs review', () => {
     const api = install(snap())
     await mountView()
     expect(dom('[data-testid="sel-remove"]').exists()).toBe(false)
-    const checks = domAll('[data-testid="needs-you-check"]')
+    const checks = domAll('[data-testid="review-check"]')
     expect(checks.length).toBeGreaterThanOrEqual(2)
     await checks[0].setValue(true)
     await checks[1].setValue(true)
@@ -203,7 +203,7 @@ describe('Cleanup screen — multi-select on Needs review', () => {
   it('"Ask for an opinion" is visible but disabled', async () => {
     install(snap())
     await mountView()
-    await domAll('[data-testid="needs-you-check"]')[0].setValue(true)
+    await domAll('[data-testid="review-check"]')[0].setValue(true)
     await flushPromises()
     expect(domGet('[data-testid="sel-ask"]').attributes('disabled')).toBeDefined()
   })
@@ -255,7 +255,7 @@ describe('Cleanup screen — panel', () => {
   it('an orphan volume shows its project and "no known worktree"', async () => {
     install(snap())
     await mountView()
-    const rows = domAll('[data-testid="needs-you-row"]')
+    const rows = domAll('[data-testid="review-row"]')
     const volumeRow = rows.find((r) => r.text().includes('pg_old'))!
     expect(volumeRow.text()).toContain('old-app')
     await volumeRow.trigger('click')

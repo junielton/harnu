@@ -22,7 +22,7 @@ const props = defineProps<{
 const { t } = useI18n()
 
 interface Segment {
-  key: 'auto' | 'needsYou' | 'untouched'
+  key: 'auto' | 'review' | 'untouched'
   bucket: 'ready' | 'review' | 'in-use'
   icon: Component
   count: number
@@ -39,7 +39,7 @@ const segments = computed<Segment[]>(() => {
       bytes: props.totals.ready.bytes + props.totals.docker.bytes
     },
     {
-      key: 'needsYou',
+      key: 'review',
       bucket: 'review',
       icon: CircleHelp,
       count: props.totals.review.count + props.totals.orphanVolumes.count,

@@ -65,8 +65,8 @@ function canDehydrateBlock(b: GcBlock): boolean {
 function sub(b: GcBlock): string {
   if (b.kind === 'volume') {
     return b.project
-      ? t('cleanup.gc.needsYou.volumeProject', { project: b.project })
-      : t('cleanup.gc.needsYou.volumeUnknown')
+      ? t('cleanup.gc.review.volumeProject', { project: b.project })
+      : t('cleanup.gc.review.volumeUnknown')
   }
   return b.repoLabel ?? ''
 }
@@ -80,27 +80,27 @@ function onRowKey(e: KeyboardEvent, id: string): void {
 </script>
 
 <template>
-  <section class="rounded border border-border bg-surface" data-testid="needs-you">
+  <section class="rounded border border-border bg-surface" data-testid="review-list">
     <header class="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2.5">
       <span class="text-[10.5px] font-medium uppercase tracking-[0.07em] text-warning">
-        {{ t('cleanup.gc.needsYou.title') }}
+        {{ t('cleanup.gc.review.title') }}
       </span>
-      <span class="text-[11px] text-text-3" data-testid="needs-you-count">{{ blocks.length }}</span>
-      <span class="ml-auto" :title="t('cleanup.gc.needsYou.askSoon')">
+      <span class="text-[11px] text-text-3" data-testid="review-count">{{ blocks.length }}</span>
+      <span class="ml-auto" :title="t('cleanup.gc.review.askSoon')">
         <Button
           variant="soft"
           :disabled="true"
-          :title="t('cleanup.gc.needsYou.askSoon')"
-          data-testid="needs-you-ask-all"
+          :title="t('cleanup.gc.review.askSoon')"
+          data-testid="review-ask-all"
         >
           <Sparkles :size="13" :stroke-width="1.7" />
-          {{ t('cleanup.gc.needsYou.askAll', { count: blocks.length }) }}
+          {{ t('cleanup.gc.review.askAll', { count: blocks.length }) }}
         </Button>
       </span>
     </header>
 
     <p v-if="blocks.length === 0" class="px-3 py-6 text-center text-[12px] text-text-3">
-      {{ t('cleanup.gc.needsYou.empty') }}
+      {{ t('cleanup.gc.review.empty') }}
     </p>
 
     <div v-else class="px-3 py-1.5">
@@ -116,9 +116,9 @@ function onRowKey(e: KeyboardEvent, id: string): void {
         }"
         tabindex="0"
         role="button"
-        :aria-label="t('cleanup.gc.needsYou.rowAria', { name: b.name, size: sizeOf(b) })"
+        :aria-label="t('cleanup.gc.review.rowAria', { name: b.name, size: sizeOf(b) })"
         :data-id="b.id"
-        data-testid="needs-you-row"
+        data-testid="review-row"
         @click="emit('select', b.id)"
         @keydown="onRowKey($event, b.id)"
         @mouseenter="emit('hover', b.id)"
@@ -153,8 +153,8 @@ function onRowKey(e: KeyboardEvent, id: string): void {
             class="absolute inset-0 h-[16px] w-[16px] cursor-pointer transition-opacity"
             :class="checked.has(b.id) ? 'opacity-0' : 'opacity-0 group-hover/row:opacity-100'"
             :checked="checked.has(b.id)"
-            :aria-label="t('cleanup.gc.needsYou.selectRow', { name: b.name })"
-            data-testid="needs-you-check"
+            :aria-label="t('cleanup.gc.review.selectRow', { name: b.name })"
+            data-testid="review-check"
             @click.stop
             @change="emit('toggle', b.id)"
           />
@@ -162,12 +162,12 @@ function onRowKey(e: KeyboardEvent, id: string): void {
 
         <span class="flex min-w-0 flex-col">
           <span class="truncate text-[12.5px] text-text" :title="b.name">{{ b.name }}</span>
-          <span class="truncate text-[11px] text-text-4" data-testid="needs-you-sub">{{
+          <span class="truncate text-[11px] text-text-4" data-testid="review-sub">{{
             sub(b)
           }}</span>
         </span>
 
-        <span class="min-w-0 text-[12.5px] text-text-2" data-testid="needs-you-reason">
+        <span class="min-w-0 text-[12.5px] text-text-2" data-testid="review-reason">
           {{ reasonOf(b) }}
         </span>
 
@@ -178,9 +178,9 @@ function onRowKey(e: KeyboardEvent, id: string): void {
             v-if="canDehydrateBlock(b)"
             type="button"
             class="flex h-[26px] w-[26px] items-center justify-center rounded-sm border border-border-2 text-text-3 transition hover:bg-surface-2 hover:text-text"
-            :aria-label="t('cleanup.gc.needsYou.dehydrateAria', { name: b.name })"
-            :title="t('cleanup.gc.needsYou.dehydrateAria', { name: b.name })"
-            data-testid="needs-you-dehydrate"
+            :aria-label="t('cleanup.gc.review.dehydrateAria', { name: b.name })"
+            :title="t('cleanup.gc.review.dehydrateAria', { name: b.name })"
+            data-testid="review-dehydrate"
             @click="emit('dehydrate', b.id)"
           >
             <PackageMinus :size="13" :stroke-width="1.7" />
@@ -189,9 +189,9 @@ function onRowKey(e: KeyboardEvent, id: string): void {
             v-if="b.kind === 'worktree'"
             type="button"
             class="flex h-[26px] w-[26px] items-center justify-center rounded-sm border border-border-2 text-text-3 transition hover:bg-surface-2 hover:text-text"
-            :aria-label="t('cleanup.gc.needsYou.keepAria', { name: b.name })"
-            :title="t('cleanup.gc.needsYou.keepAria', { name: b.name })"
-            data-testid="needs-you-keep"
+            :aria-label="t('cleanup.gc.review.keepAria', { name: b.name })"
+            :title="t('cleanup.gc.review.keepAria', { name: b.name })"
+            data-testid="review-keep"
             @click="emit('keep', b.id)"
           >
             <Bookmark :size="13" :stroke-width="1.7" />
@@ -199,9 +199,9 @@ function onRowKey(e: KeyboardEvent, id: string): void {
           <button
             type="button"
             class="flex h-[26px] w-[26px] items-center justify-center rounded-sm border border-border-2 text-text-3 transition hover:border-red hover:bg-red-soft hover:text-red"
-            :aria-label="t('cleanup.gc.needsYou.removeAria', { name: b.name })"
-            :title="t('cleanup.gc.needsYou.removeAria', { name: b.name })"
-            data-testid="needs-you-remove"
+            :aria-label="t('cleanup.gc.review.removeAria', { name: b.name })"
+            :title="t('cleanup.gc.review.removeAria', { name: b.name })"
+            data-testid="review-remove"
             @click="emit('remove', b.id)"
           >
             <Trash2 :size="13" :stroke-width="1.7" />
@@ -210,8 +210,8 @@ function onRowKey(e: KeyboardEvent, id: string): void {
       </div>
 
       <div v-if="!showAll && hiddenCount > 0" class="flex justify-center py-2">
-        <Button variant="ghost" data-testid="needs-you-show-all" @click="showAll = true">
-          {{ t('cleanup.gc.needsYou.showAll', { count: blocks.length }) }}
+        <Button variant="ghost" data-testid="review-show-all" @click="showAll = true">
+          {{ t('cleanup.gc.review.showAll', { count: blocks.length }) }}
         </Button>
       </div>
     </div>
@@ -223,13 +223,13 @@ function onRowKey(e: KeyboardEvent, id: string): void {
         <kbd class="rounded-[3px] border border-border bg-surface-2 px-1.5 font-mono text-[10.5px]"
           >⇧</kbd
         >
-        {{ t('cleanup.gc.needsYou.hintShift') }}
+        {{ t('cleanup.gc.review.hintShift') }}
       </span>
       <span class="inline-flex items-center gap-1">
         <kbd class="rounded-[3px] border border-border bg-surface-2 px-1.5 font-mono text-[10.5px]"
           >↩</kbd
         >
-        {{ t('cleanup.gc.needsYou.hintOpen') }}
+        {{ t('cleanup.gc.review.hintOpen') }}
       </span>
     </footer>
   </section>

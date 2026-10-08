@@ -2354,22 +2354,6 @@
         "readyNote": "Limpo no próximo ciclo, ou agora com Limpar agora.",
         "inUseNote": "Deixado como está enquanto uma sessão trabalha aqui ou o pull request está aberto."
       },
-      "needsYou": {
-        "title": "Precisa de você",
-        "askAll": "Pedir uma opinião sobre todos os {count}",
-        "askSoon": "chega na S6",
-        "empty": "Nada precisa de você.",
-        "showAll": "Mostrar todos os {count}",
-        "rowAria": "{name}, {size}",
-        "selectRow": "Selecionar {name}",
-        "removeAria": "Remover {name}",
-        "dehydrateAria": "Dehydrate {name}",
-        "keepAria": "Manter {name}",
-        "volumeProject": "Volume Docker · {project}",
-        "volumeUnknown": "Volume Docker · projeto desconhecido",
-        "hintShift": "clique seleciona vários",
-        "hintOpen": "abre o painel"
-      },
       "list": {
         "label": "Worktrees por grupo",
         "empty": "Nenhum worktree para mostrar."
@@ -2457,11 +2441,11 @@
       "split": {
         "label": "Divisão do disco",
         "auto": "Pronto para limpar",
-        "needsYou": "Precisa de você",
         "untouched": "Em uso",
         "count": "{n} item | {n} itens",
         "lastCycle": "Último ciclo {ago}: {n} limpos, {size} liberados",
-        "lastCycleReport": "Último ciclo {ago}: {n} item pronto encontrado, {size} (só relatório) | Último ciclo {ago}: {n} itens prontos encontrados, {size} (só relatório)"
+        "lastCycleReport": "Último ciclo {ago}: {n} item pronto encontrado, {size} (só relatório) | Último ciclo {ago}: {n} itens prontos encontrados, {size} (só relatório)",
+        "review": "Precisa de você"
       },
       "status": {
         "reclaimable": "{size} recuperáveis",
@@ -2583,6 +2567,22 @@
         "unknownItem": "A limpeza não conhece mais este item. Atualize e tente de novo.",
         "several": "{n} itens foram deixados como estão por motivos diferentes. Abra cada um para ver o motivo.",
         "inUse": "Está em uso, então foi deixado como está."
+      },
+      "review": {
+        "title": "Precisa de você",
+        "askAll": "Pedir uma opinião sobre todos os {count}",
+        "askSoon": "chega na S6",
+        "empty": "Nada precisa de você.",
+        "showAll": "Mostrar todos os {count}",
+        "rowAria": "{name}, {size}",
+        "selectRow": "Selecionar {name}",
+        "removeAria": "Remover {name}",
+        "dehydrateAria": "Dehydrate {name}",
+        "keepAria": "Manter {name}",
+        "volumeProject": "Volume Docker · {project}",
+        "volumeUnknown": "Volume Docker · projeto desconhecido",
+        "hintShift": "clique seleciona vários",
+        "hintOpen": "abre o painel"
       }
     }
   },

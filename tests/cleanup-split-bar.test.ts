@@ -24,7 +24,7 @@ describe('CleanupSplitBar', () => {
   it('draws three segments sized by bytes, each with a word', () => {
     const w = mountBar()
     const auto = w.get('[data-testid="split-auto"]')
-    const needs = w.get('[data-testid="split-needsYou"]')
+    const needs = w.get('[data-testid="split-review"]')
     expect(auto.attributes('style')).toContain('flex: 6000000000 1 0px')
     expect(needs.attributes('style')).toContain('flex: 20900000000 1 0px')
     expect(auto.text()).toContain('Ready to clean')
@@ -32,8 +32,8 @@ describe('CleanupSplitBar', () => {
     expect(w.get('[data-testid="split-untouched"]').text()).toContain('In use')
   })
 
-  it('needs-you counts Needs review plus orphan volumes and is hatched', () => {
-    const needs = mountBar().get('[data-testid="split-needsYou"]')
+  it('review counts Needs review plus orphan volumes and is hatched', () => {
+    const needs = mountBar().get('[data-testid="split-review"]')
     expect(needs.text()).toContain('20.90 GB')
     expect(needs.html()).toContain('repeating-linear-gradient')
   })
@@ -42,7 +42,7 @@ describe('CleanupSplitBar', () => {
     const w = mountBar({ hasBytes: false })
     expect(w.get('[data-testid="split-auto"]').attributes('style')).toContain('flex: 1 1 0px')
     expect(w.get('[data-testid="split-auto"]').text()).toContain('12 items')
-    expect(w.get('[data-testid="split-needsYou"]').text()).toContain('49 items')
+    expect(w.get('[data-testid="split-review"]').text()).toContain('49 items')
   })
 
   it('leaves out a bucket with nothing in it', () => {

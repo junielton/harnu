@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
-import CleanupNeedsYouList from '../src/renderer/src/components/CleanupNeedsYouList.vue'
+import CleanupReviewList from '../src/renderer/src/components/CleanupReviewList.vue'
 import CleanupListView from '../src/renderer/src/components/CleanupListView.vue'
 import { i18n } from '@renderer/i18n'
 import type { BlockJobState, ItemFailure } from '../src/renderer/src/lib/gc-jobs'
@@ -19,7 +19,7 @@ interface Opts {
 }
 
 function mountList(blocks: GcBlock[], o: Opts = {}) {
-  return mount(CleanupNeedsYouList, {
+  return mount(CleanupReviewList, {
     props: {
       blocks,
       checked: new Set(o.checked ?? []),
@@ -40,60 +40,60 @@ const reviewModel = () =>
     [volume('pg_data', 'old-app', 900 * MIB)]
   )
 
-const rows = (w: ReturnType<typeof mountList>) => w.findAll('[data-testid="needs-you-row"]')
+const rows = (w: ReturnType<typeof mountList>) => w.findAll('[data-testid="review-row"]')
 
-describe('CleanupNeedsYouList', () => {
+describe('CleanupReviewList', () => {
   it('lists Needs review items biggest first with their translated reason and size', () => {
     const m = reviewModel()
-    const w = mountList(m.needsYou)
+    const w = mountList(m.review)
     expect(rows(w)).toHaveLength(3)
-    expect(rows(w).map((r) => r.attributes('data-id'))).toEqual(m.needsYou.map((b) => b.id))
-    expect(w.get('[data-testid="needs-you-count"]').text()).toBe('3')
-    expect(rows(w)[0].get('[data-testid="needs-you-reason"]').text()).toBe(
+    expect(rows(w).map((r) => r.attributes('data-id'))).toEqual(m.review.map((b) => b.id))
+    expect(w.get('[data-testid="review-count"]').text()).toBe('3')
+    expect(rows(w)[0].get('[data-testid="review-reason"]').text()).toBe(
       t('cleanup.gc.reason.dirty')
     )
     expect(rows(w)[0].text()).toContain('2.15 GB')
   })
 
   it('an orphan volume row shows its project and "no known worktree", without Keep', () => {
-    const w = mountList(reviewModel().needsYou)
+    const w = mountList(reviewModel().review)
     const vol = rows(w).find((r) => r.attributes('data-id') === 'volume:pg_data')!
-    expect(vol.get('[data-testid="needs-you-sub"]').text()).toBe(
-      t('cleanup.gc.needsYou.volumeProject', { project: 'old-app' })
+    expect(vol.get('[data-testid="review-sub"]').text()).toBe(
+      t('cleanup.gc.review.volumeProject', { project: 'old-app' })
     )
-    expect(vol.get('[data-testid="needs-you-reason"]').text()).toBe(
+    expect(vol.get('[data-testid="review-reason"]').text()).toBe(
       t('cleanup.gc.reason.noKnownWorktree')
     )
-    expect(vol.find('[data-testid="needs-you-keep"]').exists()).toBe(false)
-    expect(vol.find('[data-testid="needs-you-remove"]').exists()).toBe(true)
+    expect(vol.find('[data-testid="review-keep"]').exists()).toBe(false)
+    expect(vol.find('[data-testid="review-remove"]').exists()).toBe(true)
   })
 
   it('the hover-reveal checkbox toggles; a plain row click opens the block', async () => {
     const m = reviewModel()
-    const w = mountList(m.needsYou)
-    await rows(w)[0].get('[data-testid="needs-you-check"]').setValue(true)
-    expect(w.emitted('toggle')).toEqual([[m.needsYou[0].id]])
+    const w = mountList(m.review)
+    await rows(w)[0].get('[data-testid="review-check"]').setValue(true)
+    expect(w.emitted('toggle')).toEqual([[m.review[0].id]])
     expect(w.emitted('select')).toBeUndefined() // the checkbox click does not also open the row
     await rows(w)[1].trigger('click')
-    expect(w.emitted('select')).toEqual([[m.needsYou[1].id]])
+    expect(w.emitted('select')).toEqual([[m.review[1].id]])
   })
 
   it('a checked row shows the checked treatment and a ticked box', () => {
     const m = reviewModel()
-    const w = mountList(m.needsYou, { checked: [m.needsYou[0].id] })
+    const w = mountList(m.review, { checked: [m.review[0].id] })
     expect(rows(w)[0].classes()).toContain('bg-accent-soft')
     expect(
-      (rows(w)[0].get('[data-testid="needs-you-check"]').element as HTMLInputElement).checked
+      (rows(w)[0].get('[data-testid="review-check"]').element as HTMLInputElement).checked
     ).toBe(true)
     expect(rows(w)[1].classes()).not.toContain('bg-accent-soft')
   })
 
   it('hovering a row tells the screen which block to outline', async () => {
     const m = reviewModel()
-    const w = mountList(m.needsYou)
+    const w = mountList(m.review)
     await rows(w)[1].trigger('mouseenter')
     await rows(w)[1].trigger('mouseleave')
-    expect(w.emitted('hover')).toEqual([[m.needsYou[1].id], [null]])
+    expect(w.emitted('hover')).toEqual([[m.review[1].id], [null]])
   })
 
   it('row actions emit their id', async () => {
@@ -115,11 +115,11 @@ describe('CleanupNeedsYouList', () => {
         { reason: reviewReason('dirty') }
       )
     ])
-    const w = mountList(m.needsYou)
-    await w.get('[data-testid="needs-you-remove"]').trigger('click')
-    await w.get('[data-testid="needs-you-keep"]').trigger('click')
-    await w.get('[data-testid="needs-you-dehydrate"]').trigger('click')
-    const id = m.needsYou[0].id
+    const w = mountList(m.review)
+    await w.get('[data-testid="review-remove"]').trigger('click')
+    await w.get('[data-testid="review-keep"]').trigger('click')
+    await w.get('[data-testid="review-dehydrate"]').trigger('click')
+    const id = m.review[0].id
     expect(w.emitted('remove')).toEqual([[id]])
     expect(w.emitted('keep')).toEqual([[id]])
     expect(w.emitted('dehydrate')).toEqual([[id]])
@@ -127,17 +127,17 @@ describe('CleanupNeedsYouList', () => {
   })
 
   it('"Ask for an opinion on all N" is visible, disabled, and says it is coming', () => {
-    const w = mountList(reviewModel().needsYou)
-    const ask = w.get('[data-testid="needs-you-ask-all"]')
+    const w = mountList(reviewModel().review)
+    const ask = w.get('[data-testid="review-ask-all"]')
     expect(ask.attributes('disabled')).toBeDefined()
-    expect(ask.attributes('title')).toBe(t('cleanup.gc.needsYou.askSoon'))
-    expect(ask.text()).toBe(t('cleanup.gc.needsYou.askAll', { count: 3 }))
+    expect(ask.attributes('title')).toBe(t('cleanup.gc.review.askSoon'))
+    expect(ask.text()).toBe(t('cleanup.gc.review.askAll', { count: 3 }))
   })
 
   it('a failed row is flagged, and a changed-since-confirm refusal says to review again', () => {
     const m = reviewModel()
-    const id = m.needsYou[1].id
-    const w = mountList(m.needsYou, {
+    const id = m.review[1].id
+    const w = mountList(m.review, {
       blockState: (x) => (x === id ? 'failed' : null),
       failureOf: (x) =>
         x === id
@@ -147,7 +147,7 @@ describe('CleanupNeedsYouList', () => {
     const row = rows(w)[1]
     expect(row.classes()).toContain('bg-red-soft')
     expect(row.find('.lucide-triangle-alert').exists()).toBe(true)
-    expect(row.get('[data-testid="needs-you-reason"]').text()).toBe(
+    expect(row.get('[data-testid="review-reason"]').text()).toBe(
       t('cleanup.gc.refusal.changedSinceConfirm')
     )
   })
@@ -164,25 +164,25 @@ describe('CleanupNeedsYouList', () => {
         )
       )
     )
-    const w = mountList(many.needsYou)
+    const w = mountList(many.review)
     expect(rows(w)).toHaveLength(50)
-    expect(w.get('[data-testid="needs-you-show-all"]').text()).toBe(
-      t('cleanup.gc.needsYou.showAll', { count: 64 })
+    expect(w.get('[data-testid="review-show-all"]').text()).toBe(
+      t('cleanup.gc.review.showAll', { count: 64 })
     )
-    await w.get('[data-testid="needs-you-show-all"]').trigger('click')
+    await w.get('[data-testid="review-show-all"]').trigger('click')
     expect(rows(w)).toHaveLength(64)
-    expect(w.find('[data-testid="needs-you-show-all"]').exists()).toBe(false)
+    expect(w.find('[data-testid="review-show-all"]').exists()).toBe(false)
   })
 
   it('has no cap button at 50 or fewer', () => {
-    const w = mountList(reviewModel().needsYou)
-    expect(w.find('[data-testid="needs-you-show-all"]').exists()).toBe(false)
+    const w = mountList(reviewModel().review)
+    expect(w.find('[data-testid="review-show-all"]').exists()).toBe(false)
   })
 
   it('an empty list says nothing needs the operator', () => {
     const w = mountList([])
     expect(rows(w)).toHaveLength(0)
-    expect(w.text()).toContain(t('cleanup.gc.needsYou.empty'))
+    expect(w.text()).toContain(t('cleanup.gc.review.empty'))
   })
 })
 

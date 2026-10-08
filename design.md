@@ -8535,7 +8535,7 @@ that belong to no worktree) and states that worktree-bound stacks are cleaned by
 #### Entity map
 
 `CleanupView.vue` (shell) · `CleanupTreemap.vue` · `CleanupBlockPanel.vue` · `CleanupHeroButton.vue` ·
-`CleanupSelectionBar.vue` · `CleanupDockerCard.vue` · `CleanupNeedsYouList.vue` ·
+`CleanupSelectionBar.vue` · `CleanupDockerCard.vue` · `CleanupReviewList.vue` ·
 `CleanupFirstCycleBanner.vue` · `CleanupBulkConfirmDialog.vue` · `CleanupOtherItems.vue` ·
 `stores/gc.ts` · `lib/gc-treemap.ts` · `lib/gc-model.ts` · `lib/gc-jobs.ts`.
 

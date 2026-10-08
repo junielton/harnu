@@ -100,8 +100,8 @@ describe('buildGcModel', () => {
 
   it('lists the Needs review items ("Needs you") biggest first, orphan volumes included', () => {
     const m = buildGcModel(sample())
-    expect(m.needsYou.map((b) => b.name)).toEqual(['d1', 'pg_data', 'd2', 'd3'])
-    const vol = m.needsYou.find((b) => b.kind === 'volume')!
+    expect(m.review.map((b) => b.name)).toEqual(['d1', 'pg_data', 'd2', 'd3'])
+    const vol = m.review.find((b) => b.kind === 'volume')!
     expect(vol.id).toBe('volume:pg_data')
     expect(vol.project).toBe('old-app')
     expect(vol.reasonCode).toBe('no-known-worktree')
@@ -126,7 +126,7 @@ describe('buildGcModel', () => {
   it('is empty-safe', () => {
     const m = buildGcModel(snap())
     expect(m.regions).toEqual([])
-    expect(m.needsYou).toEqual([])
+    expect(m.review).toEqual([])
     expect(m.reclaimableBytes).toBe(0)
   })
 })
@@ -138,12 +138,12 @@ describe('selection rules', () => {
   it('only Needs review items are checkable — ready and in-use items never are', () => {
     fresh()
     for (const b of m.blocks) expect(isCheckable(b)).toBe(b.bucket === 'review')
-    expect(isCheckable(m.needsYou.find((b) => b.kind === 'volume')!)).toBe(true)
+    expect(isCheckable(m.review.find((b) => b.kind === 'volume')!)).toBe(true)
   })
 
   it('toggleChecked adds, removes and refuses a non-Needs review id', () => {
     fresh()
-    const d1 = m.needsYou[0].id
+    const d1 = m.review[0].id
     let sel = toggleChecked(m, new Set(), d1)
     expect([...sel]).toEqual([d1])
     sel = toggleChecked(m, sel, d1)
@@ -169,7 +169,7 @@ describe('selection rules', () => {
 
   it('prunedSelection drops ids that stopped being Needs review (cleaned, kept, re-bucketed)', () => {
     fresh()
-    const d1 = m.needsYou[0].id
+    const d1 = m.review[0].id
     const sel = new Set([d1, 'gone'])
     expect([...prunedSelection(m, sel)]).toEqual([d1])
     const next = buildGcModel(snap({ bundles: [wt('d1', 'ready', 2 * GIB)] }))
@@ -273,7 +273,7 @@ describe('cleanRequestFor — the one place that builds the gc:clean payload', (
 
   it('remove selected: every id is confirmed and has an expected entry, volumes included', () => {
     const m = buildGcModel(sample())
-    const d1 = m.needsYou.find((b) => b.name === 'd1')!.id
+    const d1 = m.review.find((b) => b.name === 'd1')!.id
     const req = cleanRequestFor(m, [d1, 'volume:pg_data'], 'review')
     expect(req.options.confirmed).toEqual([d1, 'volume:pg_data'])
     expect(req.options.expected[d1].reasonCode).toBe('dirty')
@@ -289,13 +289,13 @@ describe('cleanRequestFor — the one place that builds the gc:clean payload', (
 
   it('never sends the retired confirmDecide boolean', () => {
     const m = buildGcModel(sample())
-    const req = cleanRequestFor(m, [m.needsYou[0].id], 'review')
+    const req = cleanRequestFor(m, [m.review[0].id], 'review')
     expect('confirmDecide' in req.options).toBe(false)
   })
 
   it('is plain data that survives structured clone (IPC)', () => {
     const m = buildGcModel(sample())
-    const req = cleanRequestFor(m, [m.needsYou[0].id], 'review')
+    const req = cleanRequestFor(m, [m.review[0].id], 'review')
     expect(structuredClone(req)).toEqual(req)
   })
 

@@ -63,7 +63,7 @@ export interface GcModel {
   /** Every block by id, orphan volumes included. */
   byId: Map<string, GcBlock>
   /** Needs review items, biggest first — the "Needs review" list. Orphan volumes included. */
-  needsYou: GcBlock[]
+  review: GcBlock[]
   ready: GcBlock[]
   totals: {
     ready: BucketTotal
@@ -206,7 +206,7 @@ export function buildGcModel(snapshot: GcSnapshot): GcModel {
     regions,
     blocks: worktrees,
     byId,
-    needsYou: [...worktrees.filter((b) => b.bucket === 'review'), ...volumes].sort(bigFirst),
+    review: [...worktrees.filter((b) => b.bucket === 'review'), ...volumes].sort(bigFirst),
     ready: worktrees.filter((b) => b.bucket === 'ready').sort(bigFirst),
     totals,
     docker,

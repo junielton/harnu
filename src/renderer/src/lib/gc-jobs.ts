@@ -206,9 +206,9 @@ export type PillState =
   | { kind: 'attention'; count: number }
   | { kind: 'idle' }
 
-export function pillState(s: JobsState, needsYou: number): PillState {
+export function pillState(s: JobsState, needsReview: number): PillState {
   const r = runningJob(s)
   if (r) return { kind: 'running', done: r.done, total: r.total }
-  if (needsYou > 0) return { kind: 'attention', count: needsYou }
+  if (needsReview > 0) return { kind: 'attention', count: needsReview }
   return { kind: 'idle' }
 }

@@ -2354,22 +2354,6 @@
         "readyNote": "Cleaned on the next cycle, or now with Clean now.",
         "inUseNote": "Left alone while a session works here or its pull request is open."
       },
-      "needsYou": {
-        "title": "Needs review",
-        "askAll": "Ask for an opinion on all {count}",
-        "askSoon": "coming in S6",
-        "empty": "Nothing needs review.",
-        "showAll": "Show all {count}",
-        "rowAria": "{name}, {size}",
-        "selectRow": "Select {name}",
-        "removeAria": "Remove {name}",
-        "dehydrateAria": "Dehydrate {name}",
-        "keepAria": "Keep {name}",
-        "volumeProject": "Docker volume · {project}",
-        "volumeUnknown": "Docker volume · unknown project",
-        "hintShift": "click selects several",
-        "hintOpen": "opens the panel"
-      },
       "list": {
         "label": "Worktrees by bucket",
         "empty": "No worktrees to show."
@@ -2457,11 +2441,11 @@
       "split": {
         "label": "Disk split",
         "auto": "Ready to clean",
-        "needsYou": "Needs review",
         "untouched": "In use",
         "count": "{n} item | {n} items",
         "lastCycle": "Last cycle {ago}: cleaned {n}, freed {size}",
-        "lastCycleReport": "Last cycle {ago}: found {n} ready item, {size} (report only) | Last cycle {ago}: found {n} ready items, {size} (report only)"
+        "lastCycleReport": "Last cycle {ago}: found {n} ready item, {size} (report only) | Last cycle {ago}: found {n} ready items, {size} (report only)",
+        "review": "Needs review"
       },
       "status": {
         "reclaimable": "{size} reclaimable",
@@ -2583,6 +2567,22 @@
         "unknownItem": "Cleanup no longer knows this item. Refresh and try again.",
         "several": "{n} items were left alone for different reasons. Open each one to see why.",
         "inUse": "It is in use, so it was left alone."
+      },
+      "review": {
+        "title": "Needs review",
+        "askAll": "Ask for an opinion on all {count}",
+        "askSoon": "coming in S6",
+        "empty": "Nothing needs review.",
+        "showAll": "Show all {count}",
+        "rowAria": "{name}, {size}",
+        "selectRow": "Select {name}",
+        "removeAria": "Remove {name}",
+        "dehydrateAria": "Dehydrate {name}",
+        "keepAria": "Keep {name}",
+        "volumeProject": "Docker volume · {project}",
+        "volumeUnknown": "Docker volume · unknown project",
+        "hintShift": "click selects several",
+        "hintOpen": "opens the panel"
       }
     }
   },

@@ -28,7 +28,7 @@ import { nextCycleIn } from '../lib/gc-format'
 import CleanupTreemap from './CleanupTreemap.vue'
 import CleanupListView from './CleanupListView.vue'
 import CleanupBlockPanel from './CleanupBlockPanel.vue'
-import CleanupNeedsYouList from './CleanupNeedsYouList.vue'
+import CleanupReviewList from './CleanupReviewList.vue'
 import CleanupHeroButton from './CleanupHeroButton.vue'
 import CleanupSelectionBar from './CleanupSelectionBar.vue'
 import CleanupFirstCycleBanner from './CleanupFirstCycleBanner.vue'
@@ -482,9 +482,9 @@ async function copyRestoreHint(hint: string): Promise<void> {
             "
           />
 
-          <CleanupNeedsYouList
-            v-if="model.needsYou.length > 0"
-            :blocks="model.needsYou"
+          <CleanupReviewList
+            v-if="model.review.length > 0"
+            :blocks="model.review"
             :checked="checked"
             :linked-id="linkedId"
             :block-state="gc.blockState"

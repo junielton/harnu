@@ -141,7 +141,7 @@ describe('gc store', () => {
     const api = installApi()
     const gc = useGcStore()
     await gc.init()
-    const d1 = gc.model!.needsYou[0].id
+    const d1 = gc.model!.review[0].id
     await gc.cleanSelected([d1])
     const [sentIds, opts] = api.gcClean.mock.calls[0]
     expect(sentIds).toEqual([d1])

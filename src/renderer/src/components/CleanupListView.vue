@@ -42,7 +42,7 @@ const groups = computed(() => {
   const buckets: Array<{ bucket: Bucket; blocks: GcBlock[] }> = [
     { bucket: 'ready', blocks: m.ready },
     // Needs review includes the orphan volumes, as the "Needs review" list does.
-    { bucket: 'review', blocks: m.needsYou },
+    { bucket: 'review', blocks: m.review },
     { bucket: 'in-use', blocks: m.blocks.filter((b) => b.bucket === 'in-use').sort(bigFirst) }
   ]
   return buckets
