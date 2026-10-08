@@ -3,7 +3,7 @@
  * another repo, or a plain clone, created inside a worktree carries its own `.git`, which
  * `git worktree list` of the worktree's repo never shows.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import {
   chmodSync,
@@ -15,16 +15,25 @@ import {
   writeFileSync
 } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { realpath } from 'node:fs/promises'
 import { join } from 'node:path'
-import { findForeignCheckouts } from '../src/main/gc/gc-shell'
+import {
+  createGcOps,
+  findForeignCheckouts,
+  parseWorktreeList,
+  type GcShellDeps
+} from '../src/main/gc/gc-shell'
+import { runBundle } from '../src/main/gc/pipeline-core'
+import type { WorktreeBundle } from '../src/main/gc/bundle-core'
 
 let tmp = ''
 
 /** Real git, isolated from the machine's config: no global/system config, no hooks. */
-function git(cwd: string, ...args: string[]): void {
-  execFileSync('git', args, {
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync('git', args, {
     cwd,
-    stdio: 'ignore',
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
     env: {
       PATH: process.env.PATH ?? '/usr/bin:/bin',
       HOME: tmp,
@@ -153,4 +162,185 @@ describe('findForeignCheckouts (delta 7)', () => {
       chmodSync(locked, 0o755)
     }
   })
+})
+
+// ---- the reprobe and the recheck over real git (delta 7) --------------------------------
+
+const TIP = 'a'.repeat(40)
+const EXEC_NOW = 1_700_000_000_000
+
+/** A ready bundle for worktree A, with no stack: only the git and folder checks decide. */
+function bundleOf(www: string, a: string): WorktreeBundle {
+  return {
+    item: {
+      id: `${www}::worktree::${a}`,
+      repoPath: www,
+      kind: 'worktree',
+      branch: 'feat/PROJ-0000-slug',
+      path: a,
+      hidden: false,
+      ageDays: 12,
+      diskBytes: 1_000_000,
+      checkpoints: [],
+      verdict: 'harvestable',
+      blockers: [],
+      needsRemoteDelete: false,
+      untracked: [],
+      justifiedBy: 'ancestor',
+      hydration: null
+    },
+    fate: { fate: 'merged', signal: 'ancestor', strong: true },
+    session: 'none',
+    lastSignOfLifeAt: EXEC_NOW - 10 * 86_400_000,
+    graceDays: 2,
+    localTip: TIP,
+    stackIds: [],
+    sharedStackIds: [],
+    ownedVolumes: [],
+    depsBytes: 0,
+    keep: false,
+    neverClean: false,
+    isMainCheckout: false,
+    pathsResolved: true,
+    nestedWorktrees: [],
+    bucket: 'ready',
+    reason: null
+  }
+}
+
+/**
+ * Real paths, the real `git worktree list` and the real walk; everything that would change
+ * the disk (trash, archive, deps) is a recording fake, so a refusal is visible as a trash
+ * that never happened. `onRemoveDir` runs while the deps are being dropped.
+ */
+function realDeps(onRemoveDir?: () => void): {
+  deps: GcShellDeps
+  trash: ReturnType<typeof vi.fn>
+} {
+  const trash = vi.fn(async () => undefined)
+  const deps: GcShellDeps = {
+    executor: {
+      probeStatus: async () => ({ trackedDirty: false, untracked: [] }),
+      hasUnpushed: async () => false,
+      trash,
+      git: async () => '',
+      resolveSha: async () => TIP,
+      archiveTip: async (_repo, ref) => ref,
+      archiveWip: async (_repo, ref) => ref,
+      detachSidebar: async () => undefined,
+      appendTombstone: async () => undefined,
+      now: () => EXEC_NOW
+    },
+    dehydrate: {
+      isSessionLive: async () => false,
+      readManifest: async () => ({ ephemeral: ['node_modules'], setup: [] }),
+      probeEntries: async () => [
+        { path: 'node_modules', presence: 'dir', contained: true, ignored: true, tracked: false }
+      ],
+      trackedFingerprint: async () => new Map(),
+      removeDir: async () => onRemoveDir?.(),
+      recordDehydrated: async () => undefined
+    },
+    docker: {
+      stop: async (ids) => ({ done: ids, error: null }),
+      removeContainers: async (ids) => ({ done: ids, error: null }),
+      removeVolumes: async (names) => ({ done: names, error: null })
+    },
+    listStacks: async () => ({ stacks: [] }),
+    presenceOf: async () => 'none',
+    headOf: async () => TIP,
+    isProtectedNow: () => false,
+    realpath: async (p) => realpath(p).catch(() => null),
+    listWorktrees: async (repoPath) =>
+      parseWorktreeList(git(repoPath, 'worktree', 'list', '--porcelain')),
+    findForeignCheckouts
+  }
+  return { deps, trash }
+}
+
+describe('the reprobe and the recheck over real git (delta 7)', () => {
+  const OPTS = { removeVolumes: true }
+
+  it('the clean baseline: an untouched worktree passes and is trashed', async () => {
+    const { www, a } = worktreeA()
+    const { deps, trash } = realDeps()
+    const r = await runBundle(bundleOf(www, a), createGcOps(deps), OPTS)
+    expect(r).toMatchObject({ ok: true, haltedAt: null })
+    expect(trash).toHaveBeenCalledWith(a)
+  })
+
+  it('(a) a worktree of another repo added inside it after the scan is never trashed', async () => {
+    const { www, a } = worktreeA()
+    const repo2 = repo(join(tmp, 'org/other/api-gateway'))
+    git(repo2, 'worktree', 'add', '-q', '-b', 'feat/b', join(a, '.claude/worktrees/b'))
+    const { deps, trash } = realDeps()
+    const ops = createGcOps(deps)
+    expect(await ops.reprobe(bundleOf(www, a))).toEqual({ ok: false, reason: 'foreign-checkout' })
+    expect(await ops.recheck(bundleOf(www, a))).toEqual({ ok: false, reason: 'foreign-checkout' })
+    const r = await runBundle(bundleOf(www, a), ops, OPTS)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'foreign-checkout' })
+    expect(trash).not.toHaveBeenCalled()
+  })
+
+  it('(a) one added while the deps are dropped halts before cleanGit, and nothing is trashed', async () => {
+    const { www, a } = worktreeA()
+    const repo2 = repo(join(tmp, 'org/other/api-gateway'))
+    const { deps, trash } = realDeps(() => {
+      git(repo2, 'worktree', 'add', '-q', '-b', 'feat/b', join(a, '.claude/worktrees/b'))
+    })
+    const r = await runBundle(bundleOf(www, a), createGcOps(deps), OPTS)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'changed-mid-run' })
+    expect(trash).not.toHaveBeenCalled()
+  })
+
+  it('(b) a plain clone inside it refuses the reprobe', async () => {
+    const { www, a } = worktreeA()
+    git(a, 'clone', '-q', repo(join(tmp, 'org/other/api-gateway')), join(a, 'libs/api-gateway'))
+    const { deps, trash } = realDeps()
+    const r = await runBundle(bundleOf(www, a), createGcOps(deps), OPTS)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'foreign-checkout' })
+    expect(trash).not.toHaveBeenCalled()
+  })
+
+  it.each(['node_modules', 'vendor', '.venv'])(
+    '(c) a `.git` inside %s/somepkg does not block it',
+    async (dir) => {
+      const { www, a } = worktreeA()
+      dotGitFile(join(a, dir, 'somepkg'))
+      const { deps, trash } = realDeps()
+      const r = await runBundle(bundleOf(www, a), createGcOps(deps), OPTS)
+      expect(r).toMatchObject({ ok: true, haltedAt: null })
+      expect(trash).toHaveBeenCalledWith(a)
+    }
+  )
+
+  it('(d) a symlink to a repo elsewhere is not followed and does not block it', async () => {
+    const { www, a } = worktreeA()
+    symlinkSync(repo(join(tmp, 'org/other/api-gateway')), join(a, 'linked'))
+    const { deps, trash } = realDeps()
+    const r = await runBundle(bundleOf(www, a), createGcOps(deps), OPTS)
+    expect(r).toMatchObject({ ok: true, haltedAt: null })
+    expect(trash).toHaveBeenCalledWith(a)
+  })
+
+  // Root ignores permissions, so the unreadable folder is readable there; the injected
+  // failure in tests/gc-shell.test.ts covers that case everywhere.
+  it.skipIf(process.getuid?.() === 0)(
+    '(e) a folder the walk cannot read refuses as probe-failed',
+    async () => {
+      const { www, a } = worktreeA()
+      const locked = join(a, 'locked')
+      mkdirSync(locked)
+      chmodSync(locked, 0o000)
+      try {
+        const { deps, trash } = realDeps()
+        const r = await runBundle(bundleOf(www, a), createGcOps(deps), OPTS)
+        expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe' })
+        expect(r.error).toMatch(/^probe-failed: .*EACCES/)
+        expect(trash).not.toHaveBeenCalled()
+      } finally {
+        chmodSync(locked, 0o755)
+      }
+    }
+  )
 })

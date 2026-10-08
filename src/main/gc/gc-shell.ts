@@ -64,6 +64,12 @@ export interface GcShellDeps {
    * "no worktrees". The reprobe and the recheck refuse a bundle with one nested inside it.
    */
   listWorktrees(repoPath: string): Promise<string[]>
+  /**
+   * Every `.git` entry under a worktree but its own root one ({@link findForeignCheckouts}):
+   * a worktree of another repo or a plain clone inside it, which `listWorktrees` cannot see.
+   * Rejects when the walk cannot read a folder. The reprobe and the recheck refuse on any.
+   */
+  findForeignCheckouts(path: string): Promise<string[]>
 }
 
 /**
@@ -383,6 +389,23 @@ export function createGcOps(deps: GcShellDeps): GcOps {
   }
 
   /**
+   * The foreign-checkout probe (delta 7): a worktree of another repo or a plain clone inside
+   * the worktree, which the nested-worktree probe cannot see in this repo's listing, would
+   * be trashed with it. Walks the real path. Returns the refusal, or null; a walk that
+   * throws or answers something other than a list is probe-failed. No side effects.
+   */
+  const foreignRefusal = async (realRoot: string): Promise<string | null> => {
+    let found: unknown
+    try {
+      found = await deps.findForeignCheckouts(realRoot)
+    } catch (err) {
+      return `probe-failed: ${messageOf(err)}`
+    }
+    if (!Array.isArray(found)) return 'probe-failed: the foreign-checkout walk is not a list'
+    return found.length > 0 ? 'foreign-checkout' : null
+  }
+
+  /**
    * Container ids of the named stacks, from a listing taken now rather than at scan time.
    * Throws before any docker call unless each stack passed a reprobe and still has exactly
    * the containers that reprobe saw, all inside its worktree: a container that started in
@@ -486,6 +509,9 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         // A worktree nested inside this one, created after the scan, before any docker call.
         const nested = await nestedRefusal(item.repoPath, root, roots)
         if (nested) return { ok: false, reason: nested }
+        // A worktree of another repo or a clone inside it, which that listing cannot see.
+        const foreign = await foreignRefusal(own(path).path)
+        if (foreign) return { ok: false, reason: foreign }
         const { stacks } = await deps.listStacks()
         // Every container folder on its real path. One that cannot be read and lies inside
         // the worktree or above it may run from it under another name.
@@ -593,6 +619,9 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         // A worktree nested inside this one may be created mid-run too (delta 6, F1).
         const nested = await nestedRefusal(b.item.repoPath, root, roots)
         if (nested) return { ok: false, reason: nested }
+        // And a worktree of another repo or a clone made inside it mid-run (delta 7).
+        const foreign = await foreignRefusal(canonical(path).path)
+        if (foreign) return { ok: false, reason: foreign }
         return { ok: true }
       } catch (err) {
         return { ok: false, reason: `probe-failed: ${messageOf(err)}` }
@@ -674,6 +703,7 @@ export async function defaultGcShellDeps(
     realpath,
     // A git failure rejects, so the reprobe and the recheck refuse as probe-failed.
     listWorktrees: async (repoPath) =>
-      parseWorktreeList(await executor.git(repoPath, ['worktree', 'list', '--porcelain']))
+      parseWorktreeList(await executor.git(repoPath, ['worktree', 'list', '--porcelain'])),
+    findForeignCheckouts
   }
 }
