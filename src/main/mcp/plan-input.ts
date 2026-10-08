@@ -295,6 +295,9 @@ const translateCreateWorker: Translator = (args, gateFolder) => {
   const effort = strField(args, 'effort')
   if (effort !== undefined) input.effort = effort
   if (typeof args.timeoutSeconds === 'number') input.timeoutSeconds = args.timeoutSeconds
+  // BUG-166: carried through as given (even a non-boolean), so the validator refuses it instead of
+  // the translator quietly dropping a value that would otherwise have been checked.
+  if (args.allowNetwork !== undefined) input.allowNetwork = args.allowNetwork
   return input
 }
 

@@ -68,6 +68,14 @@ export interface Worker {
   notifyOn?: NotifyOn
   /** Retired (BUG-164): kept so saved workers load; `observe` has no shell, so it grants nothing. */
   extraReadCommands?: string[]
+  /**
+   * BUG-166: `observe` only. Opt-in to `WebFetch`. Off unless this is the literal `true`: a tick that
+   * can `Read` any file the operator can read and also reach the internet can send what it read
+   * anywhere (a URL query is enough), and a prompt injection in anything it reads is enough to
+   * make it try. Optional so a worker persisted before the field existed type-checks; the store
+   * resolves it to `false` on load.
+   */
+  allowNetwork?: boolean
   /** Advanced: replaces the default system prompt. */
   systemPrompt?: string
   /** Consecutive failures. Three disables the worker. */
@@ -111,6 +119,7 @@ export function newWorker(id: string): Worker {
     timeoutSeconds: 300,
     carryLastResult: false,
     notifyOn: 'silent',
+    allowNetwork: false,
     failureStreak: 0
   }
 }
@@ -287,9 +296,17 @@ function capNotification(text: string): string {
  * `/skill` slash form works without it. A skill is text, not a capability, and whatever
  * it asks for still has to pass the list above.
  *
- * `WebFetch` is still here pending BUG-166, which makes network access opt-in.
+ * `WebFetch` is NOT here: it is opt-in per worker, see {@link OBSERVE_NETWORK_TOOLS}.
  */
-export const OBSERVE_TOOLS: readonly string[] = ['Read', 'Grep', 'Glob', 'WebFetch', 'Skill']
+export const OBSERVE_TOOLS: readonly string[] = ['Read', 'Grep', 'Glob', 'Skill']
+
+/**
+ * The one network tool, added to an `observe` tick only when the worker has `allowNetwork: true`
+ * (BUG-166). `Read` is unrestricted, so a tick that can also `WebFetch` can exfiltrate any file the
+ * operator can read: a URL query carries it. Opt-in, per worker, with a warning in the UI and a
+ * confirm on the agent verbs.
+ */
+export const OBSERVE_NETWORK_TOOLS: readonly string[] = ['WebFetch']
 
 /**
  * Native tools an `observe` tick is explicitly denied. Redundant with `--tools` on purpose:
@@ -503,15 +520,21 @@ export function tickArgv(worker: Worker, ctx: TickContext): string[] {
     if (ctx.mcpConfigPath) argv.push('--allowedTools', ALLOWED_TOOLS_RULES.join(','))
   } else {
     // `extraReadCommands` is deliberately not consulted: observe has no shell (BUG-164).
-    const allow = [...OBSERVE_TOOLS]
+    // Only the literal `true` opts in to the network (BUG-166).
+    const builtIns = [
+      ...OBSERVE_TOOLS,
+      ...(worker.allowNetwork === true ? OBSERVE_NETWORK_TOOLS : [])
+    ]
+    const allow = [...builtIns]
     // The built-in tool set is an allowlist, not "everything minus a deny list".
-    argv.push('--tools', OBSERVE_TOOLS.join(','))
+    argv.push('--tools', builtIns.join(','))
     if (ctx.mcpConfigPath) allow.push(...OBSERVE_MCP_ALLOW)
     argv.push('--allowedTools', allow.join(','))
     // Denying the non-allowed Harnu verbs by name, not just leaving them unallowed, drops them
     // from the roster the CLI shows the model: an unallowed verb is otherwise still listed and
     // only refused when called.
     const deny = [...OBSERVE_TOOLS_DENY]
+    if (worker.allowNetwork !== true) deny.push(...OBSERVE_NETWORK_TOOLS)
     if (ctx.mcpConfigPath) deny.push(...OBSERVE_MCP_DENY)
     argv.push('--disallowedTools', deny.join(','))
   }

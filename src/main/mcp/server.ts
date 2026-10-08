@@ -640,8 +640,14 @@ async function buildConfirmDisclosure(
         mode === 'act'
           ? `Create an ACT Scheduler worker "${name}" in:\n  ${folder}\n\nThis worker runs with PERMISSIONS BYPASSED and the full toolset, and does NOT stop at the Approval Inbox — it is a second, unsupervised body that acts on cadence (${cadence}) until you disable it.`
           : `Create an observe Scheduler worker "${name}" in:\n  ${folder}\n\nCadence: ${cadence}. Read-only by allowlist.`
+      // BUG-166: the other input that forces this confirm. Named in plain words, because the
+      // operator is the only thing between a successful prompt injection and their local files.
+      const networkNote =
+        args.allowNetwork === true
+          ? `\n\nNETWORK ACCESS ON: this worker gets WebFetch. Combined with reading any file you can read, it can send data from those files to the internet, and a prompt injection in anything it reads is enough to try.`
+          : ''
       return {
-        prompt: `${lead}\n\nPrompt:\n\n${prompt}`,
+        prompt: `${lead}${networkNote}\n\nPrompt:\n\n${prompt}`,
         permissionMode: 'default',
         nonDefaultFlags: [],
         commands: []
@@ -668,8 +674,12 @@ async function buildConfirmDisclosure(
       // gets the same verbatim disclosure the prompt does.
       const systemPromptNote =
         systemPrompt !== undefined ? `\n\nNew system prompt:\n\n${systemPrompt}` : ''
+      const networkNote =
+        set.allowNetwork === true
+          ? `\n\nNETWORK ACCESS ON: from its next tick on, this worker gets WebFetch. Combined with reading any file you can read, it can send data from those files to the internet, and a prompt injection in anything it reads is enough to try.`
+          : ''
       return {
-        prompt: `${lead}${promptNote}${systemPromptNote}`,
+        prompt: `${lead}${networkNote}${promptNote}${systemPromptNote}`,
         permissionMode: 'default',
         nonDefaultFlags: [],
         commands: []

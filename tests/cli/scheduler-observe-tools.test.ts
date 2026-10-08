@@ -3,7 +3,12 @@ import { mkdir, mkdtemp, rm, writeFile, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { tickArgv, OBSERVE_TOOLS, type Worker } from '../../src/main/scheduler-core'
+import {
+  tickArgv,
+  OBSERVE_TOOLS,
+  OBSERVE_NETWORK_TOOLS,
+  type Worker
+} from '../../src/main/scheduler-core'
 import { resolve } from 'node:path'
 import { WITH_CLI } from './support/run-claude'
 
@@ -102,8 +107,27 @@ describe.skipIf(!WITH_CLI)('an observe tick against a real claude (BUG-164 delta
       const init = await initOf(tickArgv(OBSERVE_WORKER, {}), cwd, home)
       for (const tool of MUST_BE_ABSENT) expect(init.tools).not.toContain(tool)
       expect([...init.tools].sort()).toEqual([...OBSERVE_TOOLS].sort())
+      // BUG-166: without the opt-in there is no network tool at all.
+      expect(init.tools).not.toContain('WebFetch')
       // And nothing was written by merely starting.
       await expect(access(join(cwd, 'PWNED'))).rejects.toThrow()
+    } finally {
+      await rm(work, { recursive: true, force: true })
+    }
+  }, 40_000)
+
+  it('BUG-166: an opted-in worker (allowNetwork) is the only one that loads WebFetch', async () => {
+    const work = await mkdtemp(join(tmpdir(), 'harnu-observe-net-'))
+    const cwd = join(work, 'cwd')
+    const home = join(work, 'home')
+    await mkdir(cwd, { recursive: true })
+    await mkdir(home, { recursive: true })
+    try {
+      const off = await initOf(tickArgv(OBSERVE_WORKER, {}), cwd, home)
+      const on = await initOf(tickArgv({ ...OBSERVE_WORKER, allowNetwork: true }, {}), cwd, home)
+      expect(off.tools).not.toContain('WebFetch')
+      expect(on.tools).toContain('WebFetch')
+      expect([...on.tools].sort()).toEqual([...OBSERVE_TOOLS, ...OBSERVE_NETWORK_TOOLS].sort())
     } finally {
       await rm(work, { recursive: true, force: true })
     }

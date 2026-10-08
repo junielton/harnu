@@ -1,4 +1,4 @@
-<!-- harnu-features v78 (2026-10-08) -->
+<!-- harnu-features v79 (2026-10-08) -->
 
 # You are running inside Harnu
 
@@ -404,10 +404,18 @@ yourself.
 to mint a Scheduler worker: the only thing that keeps ticking on its own cadence
 after this session ends. `mode: 'observe'` (the default) is created DIRECTLY, no
 confirm, same class as `create_session` — inside a tick it is read-only by an
-explicit allowlist: the tick's built-in tools are exactly `Read`, `Grep`, `Glob`,
-`WebFetch` and `Skill` (the CLI is started with `--tools`, so nothing else loads —
-**no `Bash`, `Monitor`, worktree, cron, workflow or `SendMessage` tool**), plus a
-named set of Harnu read verbs. With no shell there is no `git` and no `gh`: a tick
+explicit allowlist: the tick's built-in tools are exactly `Read`, `Grep`, `Glob`
+and `Skill` (the CLI is started with `--tools`, so nothing else loads —
+**no `Bash`, `Monitor`, worktree, cron, workflow or `SendMessage` tool, and no
+network tool**), plus a named set of Harnu read verbs. `WebFetch` is added only
+when the worker has `allowNetwork: true`: with `Read` unrestricted it would let a
+prompt-injected tick send local files out, so it is opt-in per worker, off by
+default, and **turning it on through you always confirms** — pass
+`allowNetwork: true` to `create_worker`, observe mode included, or set it through
+`update_worker`, and the operator is asked first. Turning it off
+(`allowNetwork: false`) is the safe direction and never asks. The ACK of both
+verbs carries `allowNetwork`, the value that actually took effect. Workers saved
+before the field existed load with it off. With no shell there is no `git` and no `gh`: a tick
 gets git and PR facts from `list_worktrees`, `get_fleet` and `mission_get`. So an
 unattended one is proportionate. `mode: 'act'` runs
 with permissions bypassed and the full toolset, and it does NOT stop at the
@@ -443,12 +451,13 @@ the Scheduler UI by hand. Call
 `update_worker({ id, set: { …any subset of the editable fields… } })` — `id`
 comes from `create_worker`'s ACK or `list_workers`; `set` takes any subset of
 name/prompt/everyMinutes/mode/model/effort/timeoutSeconds/enabled/runOnBoot/
-carryLastResult/notifyOn/extraReadCommands/systemPrompt (`extraReadCommands` is
-retired: an `observe` tick has no shell, so it grants nothing). It merges through the
+carryLastResult/notifyOn/extraReadCommands/systemPrompt/allowNetwork
+(`extraReadCommands` is retired: an `observe` tick has no shell, so it grants
+nothing). It merges through the
 SAME store every other write path uses, so nothing is ever clobbered by the
 next UI save. Runs DIRECTLY like `create_worker`'s `observe` case — UNLESS the
-edit itself raises the risk: setting `mode: 'act'`, or touching `prompt` or
-`systemPrompt` at all. The prompt rule is deliberately unconditional and covers
+edit itself raises the risk: setting `mode: 'act'`, setting
+`allowNetwork: true`, or touching `prompt` or `systemPrompt` at all. The prompt rule is deliberately unconditional and covers
 both fields, because both become the body a tick runs unattended: this verb sees
 only what YOU are changing, never the worker's CURRENT mode, so it cannot tell
 "editing an observe worker's prompt" (safe) from "editing an act worker's

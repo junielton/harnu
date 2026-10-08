@@ -25,6 +25,7 @@ const W: Worker = {
   timeoutSeconds: 300,
   carryLastResult: false,
   notifyOn: 'silent',
+  allowNetwork: false,
   failureStreak: 0
 }
 
@@ -176,7 +177,7 @@ describe('normalizeWorker enumerates every optional field on Worker', () => {
     // A guard whose parser silently matched nothing would pass forever.
     expect(optionalWorkerKeys(CORE).length).toBeGreaterThan(0)
     expect(optionalWorkerKeys(CORE)).toEqual(
-      expect.arrayContaining(['notifyOn', 'extraReadCommands', 'systemPrompt'])
+      expect.arrayContaining(['notifyOn', 'extraReadCommands', 'systemPrompt', 'allowNetwork'])
     )
   })
 
@@ -192,7 +193,8 @@ describe('normalizeWorker enumerates every optional field on Worker', () => {
       ...W,
       extraReadCommands: ['Bash(jj log:*)'],
       systemPrompt: 'be terse',
-      notifyOn: 'every'
+      notifyOn: 'every',
+      allowNetwork: true
     }
     const loaded = parseWorkers(JSON.stringify({ version: 1, workers: [stored] }))[0] as Record<
       string,

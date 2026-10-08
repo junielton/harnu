@@ -74,7 +74,7 @@ const ATTACKS = [
 
 describe('BUG-164 — an observe tick has no shell', () => {
   it('pins the exact native allowlist', () => {
-    expect(OBSERVE_TOOLS).toEqual(['Read', 'Grep', 'Glob', 'WebFetch', 'Skill'])
+    expect(OBSERVE_TOOLS).toEqual(['Read', 'Grep', 'Glob', 'Skill'])
   })
 
   it('pins the exact native deny list, with Bash on it', () => {

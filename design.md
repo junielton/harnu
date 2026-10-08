@@ -10265,9 +10265,27 @@ chrome — the same "plain stack, no card" rule the Hibernation policy pane
 - **Permission** — Mode (`SegmentedControl`, `observe` / `act` — see the
   callout immediately below) with a one-line dynamic hint under it that
   changes with the selection (`observe`: _"Reads the repo, never writes to
-  it. Can raise a card and notify you"_); Extra read commands (a `.tagfield` of
-  removable mono chips + an inline add input, hint _"Additive. Read-only
-  shapes only"_).
+  it. Can raise a card and notify you"_); then, **only while `observe` is
+  selected**, a **Network access** row (BUG-166): a `ToggleSwitch` (off by
+  default) under the 132px label _"Network access"_ with a `SettingHint`
+  (_"Off by default. Without it this worker cannot reach the internet."_). While
+  the switch is off the row carries nothing else. While it is on, the same
+  danger callout the `act` mode uses sits under the switch (`TriangleAlert`
+  13px `--red`, `border-red-line bg-red-soft`, 11.5px/1.5), bold lead in
+  `--red` _"Lets this worker send data from files it reads to the internet."_ and
+  the rest in `--text-2`: _"A prompt injection in anything it reads — a README, a
+  commit, a PR body — is enough to try."_ The switch is the opt-in to
+  `WebFetch`: it is the one place the operator turns the network on, and it has
+  no confirm of its own (the operator is the author). An agent turning it on
+  through `create_worker` / `update_worker` is confirmed in the Approval Inbox
+  instead, in the same words. Nothing else in the Permission group changed:
+  the **Extra read commands** tag field is gone (BUG-164), since `observe`
+  runs with no shell for a rule to widen.
+  **Migration notice:** a worker saved before this switch existed loads with
+  it off. There is no banner and no dialog: one Activity entry, _"Scheduler:
+  network access is now opt-in"_, lists the observe workers whose prompt names
+  a URL or WebFetch and tells the operator where to turn it back on. It fires
+  once, because the boot migration writes the field back.
 - **Delete worker** — a lone `btn-danger btn-sm` at the foot of the tab, no
   divider beyond the group's own.
 

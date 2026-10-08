@@ -55,7 +55,14 @@ import {
   type Worker,
   type WorkerMode
 } from './scheduler-core'
-import { appendRun, deleteWorkerRuns, loadRuns, loadWorkers, saveWorkers } from './scheduler-store'
+import {
+  appendRun,
+  deleteWorkerRuns,
+  loadRuns,
+  loadWorkersForBoot,
+  saveWorkers,
+  type NetworkLossNotice
+} from './scheduler-store'
 
 /** State pushed to the renderer on every change (`scheduler:changed`). */
 export interface SchedulerState {
@@ -533,12 +540,41 @@ async function tick(): Promise<void> {
   }
 }
 
+/**
+ * BUG-166: one notice, listing the observe workers that just lost `WebFetch` because their saved
+ * definition predates the opt-in and their prompt names a URL or the tool. Posted into the
+ * operator's Activity history under the first affected worker's folder; the migration write that
+ * follows is what makes it one-time.
+ */
+async function noticeNetworkLoss(lost: readonly NetworkLossNotice[]): Promise<void> {
+  if (lost.length === 0 || !bridgeRef) return
+  const names = lost.map((w) => w.name || w.id).join(', ')
+  try {
+    await bridgeRef.dispatch('notify.push', {
+      folderPath: lost[0].folder,
+      title: 'Scheduler: network access is now opt-in',
+      description: `Observe workers no longer get WebFetch by default. These mention a URL or WebFetch and now run without it: ${names}. Turn on "Allow network access" in a worker's settings if it needs it.`,
+      kind: 'warning'
+    })
+  } catch {
+    // Best-effort — never let a notice failure break boot.
+  }
+}
+
 async function initScheduler(): Promise<void> {
-  workersCache = await loadWorkers()
+  const boot = await loadWorkersForBoot()
+  workersCache = boot.workers
   // BUG-121: set at exactly the instant the cache reflects disk — after the
   // read, before anything that could await and let a write interleave. From
   // here on an empty `workersCache` means the operator owns zero workers.
   storeLoaded = true
+  // BUG-166: write the migrated file back (every worker now carries an explicit
+  // `allowNetwork`), then say once which workers lost the network. Heal first, so a crash between
+  // the two can only drop the notice, never repeat it.
+  if (boot.needsHeal) {
+    await persistWorkers()
+    await noticeNetworkLoss(boot.lostNetwork)
+  }
   for (const w of workersCache) {
     const runs = await loadRuns(w.id)
     if (runs.length > 0) lastRunAt[w.id] = runs[runs.length - 1].startedAt
@@ -579,6 +615,8 @@ export interface CreateWorkerAgentInput {
   effort?: Effort
   /** T316 AC-5: defaults to {@link newWorker}'s 300s when omitted. */
   timeoutSeconds?: number
+  /** BUG-166: opt in to WebFetch. Defaults to off. */
+  allowNetwork?: boolean
 }
 
 /** Result of {@link createWorkerForAgent}. */
@@ -622,6 +660,7 @@ export async function createWorkerForAgent(
     model: input.model ?? base.model,
     effort: input.effort ?? base.effort,
     timeoutSeconds: input.timeoutSeconds ?? base.timeoutSeconds,
+    allowNetwork: input.allowNetwork === true,
     enabled: true
   }
   workersCache = [...workersCache, worker]
@@ -732,6 +771,7 @@ export type UpdateWorkerPatch = Partial<
     | 'notifyOn'
     | 'extraReadCommands'
     | 'systemPrompt'
+    | 'allowNetwork'
   >
 >
 

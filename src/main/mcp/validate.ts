@@ -843,6 +843,8 @@ export interface CreateWorkerArgs {
   effort?: WorkerEffortArg
   /** T316 AC-5: seconds before a tick is killed. Left undefined ⇒ the shell's 300s default. */
   timeoutSeconds?: number
+  /** BUG-166: opt an `observe` worker in to WebFetch. Kept when given so `forceConfirmFor` reads it. */
+  allowNetwork?: boolean
 }
 
 const CreateWorkerSchema = z.object({
@@ -853,7 +855,8 @@ const CreateWorkerSchema = z.object({
   mode: z.enum(['observe', 'act']).optional(),
   model: z.string().min(1).max(64).optional(),
   effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
-  timeoutSeconds: z.number().int().positive().optional()
+  timeoutSeconds: z.number().int().positive().optional(),
+  allowNetwork: z.boolean().optional()
 })
 
 /**
@@ -866,11 +869,13 @@ const CreateWorkerSchema = z.object({
 export function parseCreateWorker(input: unknown): ParseResult<CreateWorkerArgs> {
   const parsed = CreateWorkerSchema.safeParse(input)
   if (!parsed.success) return fromZod(parsed.error)
-  const { folder, name, prompt, everyMinutes, mode, model, effort, timeoutSeconds } = parsed.data
+  const { folder, name, prompt, everyMinutes, mode, model, effort, timeoutSeconds, allowNetwork } =
+    parsed.data
   const value: CreateWorkerArgs = { folder, name, prompt, everyMinutes, mode: mode ?? 'observe' }
   if (model !== undefined) value.model = model
   if (effort !== undefined) value.effort = effort
   if (timeoutSeconds !== undefined) value.timeoutSeconds = timeoutSeconds
+  if (allowNetwork !== undefined) value.allowNetwork = allowNetwork
   return { ok: true, value }
 }
 
@@ -1003,6 +1008,8 @@ export interface UpdateWorkerSet {
   notifyOn?: 'silent' | 'failure' | 'every'
   extraReadCommands?: string[]
   systemPrompt?: string
+  /** BUG-166 */
+  allowNetwork?: boolean
 }
 
 /** Validated args for the `update_worker` mutation tool (T316). */
@@ -1032,7 +1039,8 @@ const UpdateWorkerSetSchema = z
     carryLastResult: z.boolean().optional(),
     notifyOn: z.enum(['silent', 'failure', 'every']).optional(),
     extraReadCommands: z.array(z.string()).optional(),
-    systemPrompt: z.string().optional()
+    systemPrompt: z.string().optional(),
+    allowNetwork: z.boolean().optional()
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'set must include at least one field' })
 
