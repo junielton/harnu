@@ -18,6 +18,8 @@ const props = defineProps<{
   totals: GcModel['totals']
   hasBytes: boolean
   lastCycle: CycleRecord | null
+  /** A job is running: the line under the bar counts what is left instead of naming the last cycle. */
+  running?: { left: number } | null
 }>()
 const { t } = useI18n()
 
@@ -128,7 +130,14 @@ const lastLine = computed(() => {
         </span>
       </div>
     </div>
-    <div v-if="lastLine" class="text-caption leading-4 text-text-4" data-testid="split-last-cycle">
+    <div v-if="running" class="text-caption text-accent" data-testid="split-running">
+      {{
+        running.left > 0
+          ? t('cleanup.gc.split.running', { n: running.left })
+          : t('cleanup.gc.split.runningNow')
+      }}
+    </div>
+    <div v-else-if="lastLine" class="text-caption text-text-4" data-testid="split-last-cycle">
       {{ lastLine }}
     </div>
   </div>

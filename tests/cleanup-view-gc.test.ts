@@ -522,6 +522,23 @@ describe('Cleanup screen — Keep on a selection', () => {
   })
 })
 
+describe('Cleanup screen — the running line', () => {
+  it('under the split bar the running job reads "Cleaning now · N left"', async () => {
+    const api = install(snap())
+    await mountView()
+    api.push.progress({
+      jobId: 'j1',
+      done: 3,
+      total: 12,
+      freedBytes: 1,
+      current: null,
+      results: []
+    })
+    await flushPromises()
+    expect(dom('[data-testid="split-running"]').text()).toBe('Cleaning now · 9 left')
+  })
+})
+
 describe('Cleanup screen — toolbar and legend parity with the mockup', () => {
   it('the Map / List toggle carries its icons', async () => {
     install(snap())

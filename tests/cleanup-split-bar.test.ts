@@ -68,6 +68,33 @@ describe('CleanupSplitBar', () => {
     expect(w.get('[data-testid="split-docker"]').exists()).toBe(true)
   })
 
+  it('while a job runs the line under the bar reads "Cleaning now · N left", not the last cycle', () => {
+    const cycle = {
+      at: Date.now() - 4 * 60_000,
+      trigger: 'timer',
+      mode: 'clean',
+      found: 2,
+      foundBytes: 1,
+      cleaned: [{ id: 'a', ok: true, haltedAt: null, freedBytes: 1 }],
+      freedBytes: 1,
+      deferred: 0,
+      housekeeping: { buildCacheBytes: 0, imageBytes: 0, volumeBytes: 0, errors: [] },
+      notified: false,
+      jobId: null
+    } as CycleRecord
+    const w = mountBar({ lastCycle: cycle, running: { left: 9 } })
+    expect(w.get('[data-testid="split-running"]').text()).toBe('Cleaning now · 9 left')
+    expect(w.find('[data-testid="split-last-cycle"]').exists()).toBe(false)
+    const idle = mountBar({ lastCycle: cycle, running: null })
+    expect(idle.find('[data-testid="split-running"]').exists()).toBe(false)
+    expect(idle.find('[data-testid="split-last-cycle"]').exists()).toBe(true)
+  })
+
+  it('says "Cleaning now" alone when nothing is left to count', () => {
+    const w = mountBar({ running: { left: 0 } })
+    expect(w.get('[data-testid="split-running"]').text()).toBe('Cleaning now')
+  })
+
   it('leaves out a bucket with nothing in it', () => {
     const t = totals()
     t.ready = { count: 0, bytes: 0 }

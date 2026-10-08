@@ -470,6 +470,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             :totals="model.totals"
             :has-bytes="model.hasBytes"
             :last-cycle="gc.snapshot?.lastCycle ?? null"
+            :running="gc.hero.kind === 'running' ? { left: gc.hero.total - gc.hero.done } : null"
           />
           <CleanupLegend :has-bytes="model.hasBytes" />
 

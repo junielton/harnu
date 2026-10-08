@@ -2467,7 +2467,9 @@
         "lastCycle": "Last cycle {ago}: cleaned {n}, freed {size}",
         "lastCycleReport": "Last cycle {ago}: found {n} ready item, {size} (report only) | Last cycle {ago}: found {n} ready items, {size} (report only)",
         "review": "Needs review",
-        "docker": "Docker (cleaned each cycle)"
+        "docker": "Docker (cleaned each cycle)",
+        "running": "Cleaning now · {n} left",
+        "runningNow": "Cleaning now"
       },
       "status": {
         "reclaimable": "{size} reclaimable",

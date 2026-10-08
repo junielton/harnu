@@ -2467,7 +2467,9 @@
         "lastCycle": "Último ciclo {ago}: {n} limpos, {size} liberados",
         "lastCycleReport": "Último ciclo {ago}: {n} item pronto encontrado, {size} (só relatório) | Último ciclo {ago}: {n} itens prontos encontrados, {size} (só relatório)",
         "review": "Precisa de revisão",
-        "docker": "Docker (limpo a cada ciclo)"
+        "docker": "Docker (limpo a cada ciclo)",
+        "running": "Limpando agora · faltam {n}",
+        "runningNow": "Limpando agora"
       },
       "status": {
         "reclaimable": "{size} recuperáveis",

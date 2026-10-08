@@ -8338,7 +8338,9 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
    `Container` icon, left out when there is nothing to take), _Needs review_ (hatch), _In use_. Widths
    proportional to bytes, `gap: 2px`, segment radius `--radius-sm` (3px), 11px text, label left, size
    right. A caption row above (eyebrow, 10.5px/500 uppercase `--text-4`) names the groups; the
-   last-cycle line (11px `--text-4`) sits under it.
+   last-cycle line (11px `--text-4`) sits under it — **while a job runs it is replaced by "Cleaning now · N left"**
+   (11px `--accent`; "Cleaning now" when nothing is left to count). There is no "Cancel after current": the
+   engine has no verb to stop a running job, so it is not drawn.
    **Legend row** (`.lg`, 11px/16px, `gap: 16px`) directly under the split bar: three items — bucket icon +
    word in the bucket ink + a short gloss ("Ready to clean · cleaned by one click or the autopilot",
    "Needs review · your call", "In use · never touched") — then, pushed right in `--text-3`,
