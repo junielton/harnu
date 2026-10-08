@@ -69,7 +69,7 @@ Click a block to open its panel on the right (on a narrow window it opens over t
 - the worktree's name and repo, and its size, split into dependencies and the rest of the checkout (Harnu does not report how big a worktree's volumes are, so volumes are listed by name, with a note that they are kept);
 - **Why it is here**: the one-sentence reason (for example "The pull request was closed without being merged.");
 - **Takes with it**: exactly what removing it would delete (its Docker stack's containers, dependencies, the checkout, the local branch; its volumes are kept);
-- the actions: **Remove**, **Dehydrate** (or **Rehydrate** for one already dehydrated), **Keep**, and **Ask for an opinion**. **Ask for an opinion** is visible but disabled for now (it says "coming in S6"). A ready item's panel offers **Clean now** instead.
+- the actions: **Remove**, **Dehydrate** (or **Rehydrate** for one already dehydrated), **Keep**, and **Ask for an opinion**. **Ask for an opinion** asks a read-only advisor about this one item (see "Ask for an opinion" below), and once it has answered, an **Opinion** section appears above the actions with its reason and evidence. A ready item's panel offers **Clean now** instead.
 
 An orphan Docker volume shows its compose project and "No known worktree uses this volume".
 
@@ -79,13 +79,32 @@ If a clean failed on an item, the panel also shows **What ran**: which steps fin
 
 ### Needs review
 
-A ranked list under the map, biggest first: every Needs review item with its one-sentence reason, size and quick actions (Keep, Dehydrate, Remove). Hovering a row outlines its block on the map. Orphan Docker volumes are listed here too. "Ask for an opinion on all" is visible and disabled for now.
+A ranked list under the map, biggest first: every Needs review item with its one-sentence reason, size and quick actions (Keep, Dehydrate, Remove). Hovering a row outlines its block on the map. Orphan Docker volumes are listed here too. Each row shows an opinion chip once you have asked for one. The header has **Ask for an opinion on all N**, and, once at least one item is marked safe, **Remove the N marked safe**.
 
 ### Selecting several at once
 
 **Shift+click** a Needs review block (or tick a row in Needs review) to select it, and again to deselect. **Select all in repo** selects every Needs review block in that repo. Only Needs review blocks can be selected: ready items are cleaned by the hero button, and In use blocks are never touched. **Esc** clears the selection.
 
-A selection bar appears under the toolbar: `4 selected · 3.4 GiB`, with **Remove selected**, **Dehydrate**, **Keep** and **Ask for an opinion** (disabled for now). **Remove selected** opens the same kind of dialog as the hero button, with differences that matter: each row carries its reason, and a stronger warning says how many of the worktrees you picked hold work that no other branch has. Their code stays recoverable from the archive refs and the system trash. Those items were not proven safe, so the confirm button is red rather than green. Harnu checks every item again at the moment you confirm; one that changed in the meantime is skipped and shown as "Changed since you confirmed — review again."
+A selection bar appears under the toolbar: `4 selected · 3.4 GiB`, with **Remove selected**, **Dehydrate**, **Keep** and **Ask for an opinion**. **Remove selected** opens the same kind of dialog as the hero button, with differences that matter: each row carries its reason, and a stronger warning says how many of the worktrees you picked hold work that no other branch has. Their code stays recoverable from the archive refs and the system trash. Those items were not proven safe, so the confirm button is red rather than green. Harnu checks every item again at the moment you confirm; one that changed in the meantime is skipped and shown as "Changed since you confirmed — review again."
+
+### Ask for an opinion
+
+When a Needs review item is a judgement call, you can ask a second pair of eyes. **Ask for an opinion** is in the selection bar (it asks about the items you ticked), in the panel (that one item) and above the Needs review list ("on all N"). Harnu starts a headless Claude session, hands it a short file on each item — the diff against the default branch, the uncommitted files, the pull request, the reason it needs review and the last chat held in that folder — and shows what comes back as a chip on the row:
+
+- **safe**: the advisor found nothing that would be lost, and names the evidence (for example "the 3 changed files are on main at abc123");
+- **keep**: it found work that exists nowhere else;
+- **unsure**: it could not tell, did not answer, or called something safe without naming evidence. Doubt always lands here.
+
+Hover the chip, or open the panel, to read the reason and the evidence. While it is thinking the chip says **Asking…**.
+
+**Remove the N marked safe** appears above the list once at least one item is marked safe. It only **selects those items and opens the same remove dialog** as Remove selected, where each row shows its chip and evidence and you confirm as usual. Nothing is removed until you confirm there, and Harnu still re-checks every item at that moment: one that changed since the opinion is skipped.
+
+What it is, and what it is not:
+
+- **Advice only.** The advisor cannot remove, edit or run anything. Its session is read-only (it may only read the repository with `git log`, `git diff`, `git show`, `git status` and `gh pr view`/`list`) and it has no access to Harnu's own tools. Treat a **safe** as a reason to look closer, not as proof: the advisor can be wrong, and a worktree's contents are untrusted text to it.
+- **Only when you ask.** The timer and the autopilot never ask for opinions, and a failed request is not retried on its own. If it could not run, the items read **unsure** and you can ask again.
+- **It costs model tokens.** Each question runs a model session. It uses the model of the folder's routing table for review tasks (Opus at high effort unless you changed it in the folder's settings), one session per repo and at most eight items at a time.
+- **Remembered while nothing changes.** An answer is kept until the item changes (a new commit, different uncommitted files, a different pull request state), also if you reload the window. Asking again about an unchanged item costs nothing and shows the same answer. The chips themselves come back only when you ask again.
 
 ### Cleaning runs in the background
 

@@ -10,6 +10,23 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-08
+
+### Added
+
+- **Ask for an opinion on Needs review items.** In Cleanup, **Ask for an opinion** (in the
+  selection bar, the panel, or "on all" above the Needs review list) now works. It starts a
+  read-only model session that looks at each item you picked (the diff against the default
+  branch, the uncommitted files, the pull request, the reason it needs review and the last
+  chat in that folder) and answers **safe**, **keep** or **unsure**, with a reason and the
+  evidence behind it. The answer shows as a chip on the row, with the reason and evidence on
+  hover and in the panel. **Remove the N marked safe** then selects exactly those items and
+  opens the usual remove dialog, where you still confirm each one. The opinion is advice
+  only: it never removes anything, never runs by itself, and uses model tokens each time you
+  ask (the model comes from the folder's routing table for review tasks). Answers are kept
+  until the item changes (a new commit, different uncommitted files, a different pull request
+  state), so asking again costs nothing.
+
 ## 2026-10-07
 
 ### Added
