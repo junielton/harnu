@@ -50,7 +50,6 @@ const realKey = (p: string, platform: string, canonical: CanonicalPath): string 
 /** True when one path lies inside the other (either way). Empty keys relate to nothing. */
 export const relatesTo = (a: string, b: string): boolean =>
   a !== '' && b !== '' && (isInside(a, b) || isInside(b, a))
-
 export type SessionPresence = 'working' | 'needs-input' | 'open-idle' | 'none'
 export type Bucket = 'ready' | 'review' | 'in-use'
 export type ReviewCode =
@@ -99,8 +98,9 @@ export interface BundleFacts {
   graceDays?: number
   /**
    * Every path the bundle was judged on resolved to its real location: its own path, its
-   * repo path, and every container and session folder inside it or above it. An unresolved
-   * one may be an alias of anything, so false, or absent, is never ready.
+   * repo path, and every container and open (not history-only) session folder inside it or
+   * above it. An unresolved one may be an alias of anything, so false, or absent, is never
+   * ready.
    */
   pathsResolved: boolean
 }
@@ -419,24 +419,34 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
 
   // Every container and session folder that did not resolve, keyed on its spelling. Such a
   // folder may be an alias of any worktree, so one inside a bundle or above it (where it may
-  // see the bundle) keeps that bundle from being proven ready.
+  // see the bundle) keeps that bundle from being proven ready. A history-only session
+  // (`none`) is exempt (delta 5, 2026-10-08): nothing runs there, so its folder, often a
+  // deleted subfolder, cannot hide anything that uses the worktree.
+  const openSessionFolders = [...input.sessions]
+    .filter(([, s]) => s.presence !== 'none')
+    .map(([folder]) => folder)
   const unresolved = [
     ...new Set([
       ...[...input.containers, ...input.stacks.flatMap((s) => s.containers)].flatMap(
         containerFolderPaths
       ),
-      ...input.sessions.keys(),
+      ...openSessionFolders,
       ...input.stackPaths.values()
     ])
   ]
     .filter((p) => p && !canonical(p).resolved)
     .map((p) => canonicalPathKey(p, platform))
 
-  // A stack is exclusive to a bundle only if EVERY folder it runs from is inside that
-  // bundle. If a stack touches a bundle but also runs from outside it, or two bundles both
-  // claim it outright (nested paths), nobody may remove it: it is shared. A folder ABOVE the
-  // bundle touches it too: a dev container of the main checkout that mounts REPO sees a
-  // worktree nested at REPO/.claude/worktrees/wt1, so that stack shares the worktree.
+  // A stack is attributed to a bundle only through a folder at or inside it. A stack whose
+  // folders are all above the bundle, or elsewhere, is not this bundle's at all
+  // (orchestrator ruling, delta 5, 2026-10-08): Sail and most dev stacks bind-mount REPO,
+  // so with worktrees nested at REPO/.claude/worktrees/* counting those made every one of
+  // them non-ready, and a container that can merely see a proven-ready nested worktree
+  // does not depend on it. Unresolved folders above it still block it below.
+  // Once attributed, a stack is exclusive only if EVERY folder it runs from is inside the
+  // bundle. One that also runs from above it or elsewhere (the main checkout's own stack
+  // bind-mounting a folder of a nested worktree), or that two bundles both claim outright
+  // (nested paths), is shared, and nobody may remove it (ruling on delta 5 concern 1).
   const exclusive = new Map<string, StackGroup[]>()
   const shared = new Map<string, string[]>()
   for (const stack of input.stacks) {
@@ -446,9 +456,9 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
     const partial: string[] = []
     for (const f of folders) {
       const inside = dirs.filter((d) => isInside(d, f.path)).length
-      const above = dirs.some((d) => isInside(f.path, d) && d !== f.path)
+      if (inside === 0) continue
       if (inside === dirs.length) full.push(f.item.id)
-      else if (inside > 0 || above) partial.push(f.item.id)
+      else partial.push(f.item.id)
     }
     if (full.length === 1 && partial.length === 0) {
       exclusive.set(full[0]!, [...(exclusive.get(full[0]!) ?? []), stack])
