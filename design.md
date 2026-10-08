@@ -8322,13 +8322,13 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
    `layout-grid` / `list`, 12px) and a **rescan icon button** (Ghost, icon-only, `RefreshCw` — it spins while
    a scan runs; `aria-label` "Scan now").
    - Summary line: `Recycle` icon (`--green`), 13px/20px `--text-2`, then
-     `{n} GiB reclaimable · autopilot on|off · next cycle in {t}`; the size is 600-weight `--text`.
+     `{n} GB reclaimable · autopilot on|off · next cycle in {t}`; the size is 600-weight `--text`.
      "Reclaimable" is everything not In use plus orphan volumes (ready + needs review + orphan volumes);
      Docker build cache is added only when the engine reports it (see "Docker card").
    - Autopilot badge: Badge Success "Autopilot on · every {interval}" or Default "Autopilot off".
 3. **Selection bar** (only with ≥1 checked block) — the takeover's existing selection band
    (`border-b border-border bg-surface-2`, `padding: 8px 22px`): `square-check` icon (`--accent`), the
-   count `N selected · X GiB` (13px; numbers 600-weight `--text`), then **Remove selected** (Danger),
+   count `N selected · X GB` (13px; numbers 600-weight `--text`), then **Remove selected** (Danger),
    **Dehydrate** (Soft), **Keep** (Ghost), **Ask for an opinion** (Soft, `sparkles`, disabled, tooltip
    "coming in S6"), a `⇧` hint (`kbd`) and a right-aligned "Clear selection" ghost link.
 4. **First-cycle banner** (only while `firstReportAcknowledged` is false and a report exists): see below.
@@ -8356,7 +8356,7 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
   **repo label** (mono 12.5px/600 `--text-2`) — the last two path segments, `proj/www` or `org/portal`, so a
   repo with an org parent reads like the mockup's `org/proj/www`; it is **always visible, even in the
   narrow side regions** (it truncates with an ellipsis, the full path is its `title`, and the meta and badges
-  yield first) — meta 11px `--text-4` (`61 worktrees · 27.8 GiB`), count badges
+  yield first) — meta 11px `--text-4` (`61 worktrees · 27.8 GB`), count badges
   (Ready to clean / Needs review / In use) pushed right, then **Select all in repo** (11px link in `--text-2`;
   icon-only 22px Ghost `list-checks` in the narrow side regions, which have no room for the label).
   Clicking the repo name drills in (breadcrumb + bucket filter `All / Ready to clean / Needs review / In use`).
@@ -8400,14 +8400,14 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
 #### Hero button and progress chip
 
 The **hero** is the screen's single **Primary** button (28px) right after the summary line, so "how
-much" and "do it" read as one sentence: `Clean 12 ready · 6.0 GiB`. It acts on proven-ready items only.
+much" and "do it" read as one sentence: `Clean 12 ready · 6.0 GB`. It acts on proven-ready items only.
 
 - **Idle:** Primary, `Recycle` icon, label with count and bytes.
 - **Nothing to clean:** disabled (`opacity: 0.4`), label stays **"Nothing to clean"** — the state is
   readable, not just dimmed.
 - **First-cycle state:** the hero is a **Soft** button, because "Enable autopilot" owns the one Primary.
 - **Running** (the hero stops being a button): a **progress chip** — Badge Accent triple at button height
-  (28px): static `--accent` dot (6px, 3px `--accent-soft` halo), `Cleaning 3/12 · 1.4 GiB freed`, a
+  (28px): static `--accent` dot (6px, 3px `--accent-soft` halo), `Cleaning 3/12 · 1.4 GB freed`, a
   **40 × 4px determinate bar** (`--accent` on `--border-2`, radius full) counting items, not bytes.
   `aria-live="polite"`, announcing at most once per finished item. The chip has no control: the engine
   has no cancel, so "Cancel after current" is **not drawn**.
@@ -8526,7 +8526,7 @@ Cleanup takeover** (`ui.toggleCleanup()`); while open it inks `--accent` and car
 
 | State     | Content                                                          | Ink                                         |
 | --------- | ---------------------------------------------------------------- | ------------------------------------------- |
-| idle      | `Recycle` icon + `17 GiB` (reclaimable total)                    | `--text-2`, hover `--text` on `--surface-2` |
+| idle      | `Recycle` icon + `17 GB` (reclaimable total)                     | `--text-2`, hover `--text` on `--surface-2` |
 | running   | `Recycle` icon + accent dot + `Cleaning 3/12`                    | `--accent`                                  |
 | attention | `Recycle` icon + `1 needs review` (items that need the operator) | `--warning`                                 |
 
@@ -8554,7 +8554,9 @@ A toast shows only while the window is focused; otherwise the native notificatio
 Every Cleanup surface — summary line, hero, chip, split bar, legend, map, panel, dialog, Docker card, toasts,
 footer pill and Settings — formats bytes with the app's `formatBytes`, which is **decimal** (`6.44 GB`,
 `715 MB`). The mockup and the spec write GiB; that is its sample data's unit, not the screen's. One system on
-every surface, so two numbers on the same screen can be compared by eye.
+every surface, so two numbers on the same screen can be compared by eye. A native notification or
+Activity line built in the main process is the one place a different unit could slip in; it must use the
+same decimal system (tracked as a follow-up for the engine, `gc-cycle.ts` still prints binary units).
 
 #### Type and spacing in the Cleanup files
 
