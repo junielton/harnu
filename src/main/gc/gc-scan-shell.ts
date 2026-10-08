@@ -30,7 +30,7 @@ import {
 } from '../containers/containers-core'
 import { buildBundles, containerFolderPaths } from './bundle-core'
 import { dockerIsUnavailable, resolveRealPaths } from './gc-shell'
-import { sessionsFromFolders } from './gc-sessions'
+import { sessionsFromFleet } from './gc-sessions'
 import {
   buildDirExists,
   existenceCandidates,
@@ -79,11 +79,6 @@ async function readComposeFile(dir: string): Promise<string | undefined> {
     if (text !== undefined) return text
   }
   return undefined
-}
-
-function sessionActivityAt(s: { fileMtime?: number; modified?: string }): number | null {
-  const times = [s.fileMtime ?? 0, Date.parse(s.modified ?? '') || 0].filter((t) => t > 0)
-  return times.length > 0 ? Math.max(...times) : null
 }
 
 /**
@@ -155,23 +150,12 @@ export async function gatherGc(
   // Sessions on real paths: the folders of every running session and every item are read
   // through their real locations, so a session reached through a symlink still counts.
   const sessionCanonical = await resolveRealPaths(
-    [...itemPaths, ...sets.live, ...sets.inUse],
+    [...itemPaths, ...fleet.map((f) => f.path), ...sets.live, ...sets.inUse],
     (p) => fs.realpath(p)
   )
-  const activityByPath = new Map<string, number | null>()
-  for (const f of fleet) {
-    let latest: number | null = null
-    for (const s of f.sessions) {
-      const at = sessionActivityAt(s)
-      if (at !== null && (latest === null || at > latest)) latest = at
-    }
-    activityByPath.set(f.path, latest)
-  }
-  const sessions = sessionsFromFolders(itemPaths, sets, sessionCanonical)
-  for (const p of itemPaths) {
-    const entry = sessions.get(p)
-    if (entry) entry.lastActivityAt = activityByPath.get(p) ?? null
-  }
+  // Every folder of the transcript index, so grace counts any terminal under the worktree,
+  // outside Harnu included, and a session parked a while ago.
+  const sessions = sessionsFromFleet(fleet, sets, sessionCanonical)
 
   // Read-only listings for the Docker card; skipped, not guessed, when docker is absent.
   const docker = available
