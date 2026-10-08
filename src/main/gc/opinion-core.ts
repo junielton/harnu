@@ -412,9 +412,16 @@ export function createOpinionCache(): OpinionCache {
 
 // ---- the service ------------------------------------------------------------------------------
 
-/** One streamed result on `gc:opinion:result`: a verdict, or the reason the id was not accepted. */
+/**
+ * One streamed result on `gc:opinion:result`: a verdict, the reason the id was not accepted, or a
+ * `stale` marker when the item changed while the model was thinking, so its answer is about a state
+ * that no longer exists and is dropped. `durable` says main cached the answer, which is what lets a
+ * later peek confirm it; an advisor that could not answer reads `unsure` and is not durable.
+ */
 export type GcOpinionResult =
-  ({ jobId: string } & Opinion) | { jobId: string; id: string; refused: OpinionRefusal }
+  | ({ jobId: string; durable?: boolean } & Opinion)
+  | { jobId: string; id: string; refused: OpinionRefusal }
+  | { jobId: string; id: string; stale: true }
 
 /** The terminal `gc:opinion:done` of a job. */
 export interface GcOpinionDone {
@@ -426,6 +433,8 @@ export interface GcOpinionDone {
   refused: number
   /** Items whose process failed or timed out. They read `unsure` and are not cached. */
   failed: number
+  /** Answers dropped because the item changed while the model ran. Not cached. */
+  stale: number
 }
 
 /** `gc:opinion` acknowledges at once; the work streams on `gc:opinion:result` and ends on `gc:opinion:done`. */
@@ -488,8 +497,21 @@ function chunk<T>(xs: readonly T[], size: number): T[][] {
 export function createOpinionService(deps: OpinionServiceDeps): OpinionService {
   let tail: Promise<void> = Promise.resolve()
 
+  const keyFactsOf =
+    deps.keyFacts ?? (async (id: string) => (await deps.dossier(id))?.dossier ?? null)
+
+  /** The cache key of an item right now, or null when it is gone or cannot be read. */
+  async function currentKey(id: string): Promise<string | null> {
+    try {
+      const facts = await keyFactsOf(id)
+      return facts ? opinionKey(facts) : null
+    } catch {
+      return null
+    }
+  }
+
   async function runJob(jobId: string, rawIds: string[]): Promise<void> {
-    const done: GcOpinionDone = { jobId, answered: 0, cached: 0, refused: 0, failed: 0 }
+    const done: GcOpinionDone = { jobId, answered: 0, cached: 0, refused: 0, failed: 0, stale: 0 }
     const refuse = (id: string, code: OpinionRefusal): void => {
       done.refused++
       deps.emitResult({ jobId, id, refused: code })
@@ -510,7 +532,7 @@ export function createOpinionService(deps: OpinionServiceDeps): OpinionService {
       const hit = deps.cache.get(id, key)
       if (hit) {
         done.cached++
-        deps.emitResult({ jobId, ...hit })
+        deps.emitResult({ jobId, ...hit, durable: true })
         continue
       }
       const list = pending.get(subject.group) ?? []
@@ -541,20 +563,30 @@ export function createOpinionService(deps: OpinionServiceDeps): OpinionService {
               id,
               verdict: 'unsure',
               reason: UNREACHABLE,
-              evidence: UNREACHABLE
+              evidence: UNREACHABLE,
+              durable: false
             })
           }
           continue
         }
         const { opinions, answered } = parseOpinionsDetailed(stdout, batchIds)
-        batch.forEach((b, i) => {
+        for (const [i, b] of batch.entries()) {
           const opinion = opinions[i]
-          if (answered.has(opinion.id)) {
+          // The answer is about the item as it was when asked. If it moved while the model ran
+          // (a new commit, a changed file, a pull request that merged), the answer describes a
+          // state that no longer exists: say so, cache nothing, and let the renderer drop it.
+          if ((await currentKey(opinion.id)) !== b.key) {
+            done.stale++
+            deps.emitResult({ jobId, id: opinion.id, stale: true })
+            continue
+          }
+          const durable = answered.has(opinion.id)
+          if (durable) {
             done.answered++
             deps.cache.set(opinion.id, b.key, opinion)
           }
-          deps.emitResult({ jobId, ...opinion })
-        })
+          deps.emitResult({ jobId, ...opinion, durable })
+        }
       }
     }
     deps.emitDone(done)
@@ -563,19 +595,13 @@ export function createOpinionService(deps: OpinionServiceDeps): OpinionService {
   async function cached(rawIds: unknown): Promise<Record<string, Opinion>> {
     const ids = parseOpinionIds(rawIds, OPINION_PEEK_MAX_IDS)
     const { accepted } = classifyOpinionIds(ids, await deps.classify())
-    const facts = deps.keyFacts ?? (async (id: string) => (await deps.dossier(id))?.dossier ?? null)
     const out: Record<string, Opinion> = {}
     // A few at a time: each look is a couple of git calls.
     for (const batch of chunk(accepted, 8)) {
       await Promise.all(
         batch.map(async (id) => {
-          let key: OpinionKeyFacts | null = null
-          try {
-            key = await facts(id)
-          } catch {
-            key = null
-          }
-          const hit = key ? deps.cache.get(id, opinionKey(key)) : undefined
+          const key = await currentKey(id)
+          const hit = key === null ? undefined : deps.cache.get(id, key)
           if (hit) out[id] = hit
         })
       )
@@ -592,7 +618,7 @@ export function createOpinionService(deps: OpinionServiceDeps): OpinionService {
         .then(() => runJob(jobId, ids))
         .catch((err: unknown) => {
           console.error('[gc] opinion job failed', err instanceof Error ? err.message : err)
-          deps.emitDone({ jobId, answered: 0, cached: 0, refused: 0, failed: ids.length })
+          deps.emitDone({ jobId, answered: 0, cached: 0, refused: 0, failed: ids.length, stale: 0 })
         })
       return { jobId }
     },
