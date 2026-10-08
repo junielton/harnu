@@ -12,7 +12,7 @@ export interface HousekeepingParams {
   /**
    * Plan orphan-volume removal. Volumes cannot be restored, so this means "this
    * is a manual, operator-confirmed run": the autopilot never sets it, and
-   * orphan volumes reach the Decide bucket for a human click instead.
+   * orphan volumes reach the Needs review bucket for a human click instead.
    */
   orphanVolumes: boolean
 }
