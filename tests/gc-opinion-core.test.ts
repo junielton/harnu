@@ -89,6 +89,32 @@ describe('opinionArgv: the read-only session (AC-2)', () => {
     expect(after('--disallowedTools')).toContain('Bash')
   })
 
+  // A skill's frontmatter `hooks:` run shell commands whenever the skill is staged through
+  // `--plugin-dir`, and `--tools` does not stop them. So the advisor stages nothing at all.
+  it('stages no plugin, skill, extra directory or MCP config', () => {
+    for (const flag of [
+      '--plugin-dir',
+      '--add-dir',
+      '--mcp-config',
+      '--settings',
+      '--agents',
+      '--append-system-prompt',
+      '--system-prompt'
+    ]) {
+      expect(argv, flag).not.toContain(flag)
+    }
+    // `--strict-mcp-config` with no `--mcp-config` means no MCP server at all; settings are not read.
+    expect(argv).toContain('--strict-mcp-config')
+    expect(after('--setting-sources')).toBe('')
+  })
+
+  it('does not offer the Skill tool, in --tools or in the permission rules', () => {
+    expect(after('--tools')?.split(',')).not.toContain('Skill')
+    expect(allowed()).not.toContain('Skill')
+    expect(OPINION_TOOLS).not.toContain('Skill')
+    expect(OPINION_BUILTIN_TOOLS).not.toContain('Skill')
+  })
+
   it('never allows more than the Scheduler observe list does', () => {
     for (const tool of OPINION_TOOLS) expect(OBSERVE_TOOLS).toContain(tool)
   })

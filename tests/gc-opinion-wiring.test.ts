@@ -124,6 +124,19 @@ describe('the advisor can only read (AC-2)', () => {
     expect(run).toMatch(/child\.stdin\??\.end\(/)
   })
 
+  it('stages no skill or plugin and builds argv from an empty tick context', () => {
+    const core = read('src/main/gc/opinion-core.ts')
+    // The Scheduler stages bundled skills with `--plugin-dir`; a skill's `hooks:` would run commands.
+    for (const rel of [...OPINION_FILES]) {
+      expect(code(rel), rel).not.toMatch(
+        /stageSkillsForFolder|bundled-skills|pluginDir|companionPluginDir|hookSettingsJson|hook-bridge|--plugin-dir|--add-dir|--mcp-config/
+      )
+    }
+    // `tickArgv(worker, {})`: the context carries no plugin dir, MCP config or hook blob.
+    expect(code('src/main/gc/opinion-core.ts')).toMatch(/\},\s*\{\}\s*\)/)
+    expect(core).toContain("mode: 'observe'")
+  })
+
   it('takes the argv from opinionArgv, which is built on the Scheduler tickArgv', () => {
     const core = read('src/main/gc/opinion-core.ts')
     expect(core).toContain("from '../scheduler-core'")
