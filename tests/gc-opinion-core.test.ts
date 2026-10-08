@@ -231,6 +231,49 @@ describe('buildPrompt (AC-3)', () => {
       expect(p).not.toContain('<path>')
     })
 
+    describe('residuals', () => {
+      it.each([
+        ['an upper-case FILE: scheme', 'open FILE:///home/leaky/code/x.ts now'],
+        ['a mixed-case File: scheme', 'open File://localhost/home/leaky/code/x.ts now'],
+        ['a JSON-escaped path', 'path "\\/home\\/leaky\\/code\\/x.ts" saved'],
+        ['a JSON-escaped path with a Windows drive', 'path "C:\\\\Users\\\\leaky\\\\x.ts" saved'],
+        ['a path glued after a full stop', 'done./home/leaky/code/x.ts'],
+        ['a path glued after -o', 'ran tool -o/home/leaky/code/x.ts'],
+        ['a path glued after a digit', 'wrote 42/home/leaky/code/x.ts'],
+        ['a path glued after an underscore', 'file_/home/leaky/code/x.ts'],
+        ['a path glued after a hyphen', 'build-/home/leaky/code/x.ts']
+      ])('removes %s', (_name, text) => {
+        const p = field(text)
+        expect(p).not.toMatch(/leaky/i)
+        expect(p).toContain('<path>')
+      })
+
+      it('removes the whole spaced path, never leaving its tail behind', () => {
+        const p = field('see /home/leaky/My Projects/app now')
+        expect(p).not.toMatch(/Projects|leaky/)
+        expect(p).not.toMatch(/<path>\s+Projects/)
+        const q = field('open /home/leaky/My Projects')
+        expect(q).not.toMatch(/Projects|leaky/)
+      })
+
+      it('replaces the dossier’s own path only at a boundary', () => {
+        const own = '/home/someone/code/www/.claude/worktrees/feat-x'
+        const d = dossier({
+          path: own,
+          diffStat: `${own}-other/src/a.ts changed\n${own}2/src/b.ts changed\nin ${own}/src/c.ts`,
+          reasonDetail: `see ${own}.`
+        })
+        const p = buildPrompt([d])
+        // A longer sibling path is somebody else's: it is scrubbed, not half-replaced.
+        expect(p).not.toContain('-other')
+        expect(p).not.toContain(`${own}2`)
+        expect(p).not.toMatch(/<this worktree>-other|<this worktree>2/)
+        // The worktree's own file keeps its relative form.
+        expect(p).toContain('<this worktree>/src/c.ts')
+        expect(p).toContain(`Worktree: ${own}`)
+      })
+    })
+
     it('stops at the end of the path: the prose after it survives', () => {
       const p = field('/home/leaky/code is dirty, see src/a.ts')
       expect(p).toContain('is dirty, see src/a.ts')
