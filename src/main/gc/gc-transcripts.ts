@@ -9,7 +9,7 @@
 
 import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { WorktreeBundle } from './bundle-core'
 
 export interface TranscriptProbe {
@@ -192,8 +192,16 @@ export function fsTranscriptProbe(root = join(homedir(), '.claude', 'projects'))
           .filter((e) => e.isDirectory())
           .map((e) => e.name)
       } catch (err) {
-        // No root at all means Claude never recorded anything; any other failure is unreadable.
-        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
+        // No root at all means Claude never recorded anything, but only when ~/.claude is not
+        // there either: a Claude folder without its projects folder means the transcripts
+        // were moved or removed, and what ran here is unknown. Any other failure is unreadable.
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          const claudeDirExists = await fs.stat(dirname(root)).then(
+            () => true,
+            () => false
+          )
+          if (!claudeDirExists) return []
+        }
         throw err
       }
     },

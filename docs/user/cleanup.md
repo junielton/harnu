@@ -215,7 +215,9 @@ For each worktree, one at a time, stopping at the first problem for that worktre
 
 A cleanup never deletes anything permanently: the folder goes to the system trash or stays where it is. If Harnu cannot find this worktree's own registration in git (for example because the registration is ambiguous or locked), the worktree is left untouched and shows up in Needs review with the reason, before anything was moved.
 
-If Harnu cannot read Claude's transcripts folder, or cannot tell which folder a transcript belongs to, it assumes the activity may be in your worktree: with the folder unreadable nothing is _Ready to clean_ until it can be read, and an unattributable transcript counts for every worktree whose path could have produced it.
+A worktree you locked in git (`git worktree lock`) is listed in Needs review as _"This worktree is locked in git"_ and is never cleaned. Before a cleanup starts, Harnu also checks that git can unregister the worktree; if it cannot, the worktree is refused before any container is stopped or any dependency removed.
+
+If Harnu cannot read Claude's transcripts folder, or cannot tell which folder a transcript belongs to (including a `~/.claude` folder whose `projects` folder is missing), it assumes the activity may be in your worktree: with the folder unreadable nothing is _Ready to clean_ until it can be read, and an unattributable transcript counts for every worktree whose path could have produced it.
 
 Remote branches are never deleted by the autopilot. If a step fails, the worktree appears in Needs review as _"Cleanup stopped at trash: …"_ and the autopilot leaves it alone for a day.
 
