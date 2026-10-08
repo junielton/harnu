@@ -7,6 +7,7 @@ import type {
   GcJobDone,
   GcJobInfo,
   GcJobProgress,
+  GcOpinionResult,
   GcSnapshot
 } from '../src/main/gc/gc-wire'
 import type { Bucket, ReviewReason } from '../src/main/gc/bundle-core'
@@ -52,6 +53,7 @@ interface Api {
   gcJobs: ReturnType<typeof vi.fn>
   gcAckFirstReport: ReturnType<typeof vi.fn>
   gcSetPrefs: ReturnType<typeof vi.fn>
+  gcOpinion: ReturnType<typeof vi.fn>
 }
 
 function installApi(first: GcSnapshot = snap(), jobs: GcJobInfo[] = []): Api {
@@ -70,14 +72,17 @@ function installApi(first: GcSnapshot = snap(), jobs: GcJobInfo[] = []): Api {
     gcUnkeep: vi.fn(async () => defaultGcPrefs()),
     gcJobs: vi.fn(async () => jobs),
     gcAckFirstReport: vi.fn(async () => ({ ...defaultGcPrefs(), firstReportAcknowledged: true })),
-    gcSetPrefs: vi.fn(async (p: unknown) => p)
+    gcSetPrefs: vi.fn(async (p: unknown) => p),
+    gcOpinion: vi.fn(async () => ({ jobId: 'o1' }))
   }
   ;(globalThis as unknown as { window: unknown }).window = {
     api: {
       ...api,
       onGcProgress: sub('progress'),
       onGcDone: sub('done'),
-      onGcCycle: sub('cycle')
+      onGcCycle: sub('cycle'),
+      onGcOpinionResult: sub('opinion'),
+      onGcOpinionDone: sub('opinionDone')
     }
   }
   ;(globalThis as unknown as { document: unknown }).document = { hasFocus: () => true }
@@ -377,6 +382,113 @@ describe('gc store', () => {
     const gc = useGcStore()
     await gc.init()
     await gc.init()
-    expect(Object.keys(api.push).sort()).toEqual(['cycle', 'done', 'progress'])
+    expect(Object.keys(api.push).sort()).toEqual([
+      'cycle',
+      'done',
+      'opinion',
+      'opinionDone',
+      'progress'
+    ])
+  })
+})
+
+describe('gc store — ask for an opinion', () => {
+  const result = (id: string, verdict: 'safe' | 'keep' | 'unsure'): GcOpinionResult => ({
+    jobId: 'o1',
+    id,
+    verdict,
+    reason: 'r',
+    evidence: 'e'
+  })
+
+  function ids(gc: ReturnType<typeof useGcStore>): { ready: string; review: string } {
+    const m = gc.model!
+    return { ready: m.ready[0].id, review: m.review[0].id }
+  }
+
+  it('asks only about Needs review items and marks them pending until their result arrives', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    const { ready, review } = ids(gc)
+    await gc.askOpinion([ready, review, 'ghost'])
+    expect(api.gcOpinion).toHaveBeenCalledWith([review])
+    expect(gc.isAsking(review)).toBe(true)
+    expect(gc.isAsking(ready)).toBe(false)
+    api.push.opinion(result(review, 'safe'))
+    expect(gc.isAsking(review)).toBe(false)
+    expect(gc.opinionFor(review)?.verdict).toBe('safe')
+    expect(gc.safeOpinionIds).toEqual([review])
+  })
+
+  it('does not send an item that is already being asked about', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    const { review } = ids(gc)
+    await gc.askOpinion([review])
+    await gc.askOpinion([review])
+    expect(api.gcOpinion).toHaveBeenCalledTimes(1)
+  })
+
+  it('never reaches gc:clean: asking and reading opinions only fills the chips', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    const { review } = ids(gc)
+    await gc.askOpinion([review])
+    api.push.opinion(result(review, 'safe'))
+    api.push.opinionDone({ jobId: 'o1', answered: 1, cached: 0, refused: 0, failed: 0 })
+    expect(api.gcClean).not.toHaveBeenCalled()
+  })
+
+  it('clears pending when the job ends without a result for an id', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    const { review } = ids(gc)
+    await gc.askOpinion([review])
+    api.push.opinionDone({ jobId: 'o1', answered: 0, cached: 0, refused: 0, failed: 1 })
+    expect(gc.isAsking(review)).toBe(false)
+    expect(gc.opinionFor(review)).toBeNull()
+  })
+
+  it('a refused id ends pending without recording an opinion', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    const { review } = ids(gc)
+    await gc.askOpinion([review])
+    api.push.opinion({ jobId: 'o1', id: review, refused: 'not-review' })
+    expect(gc.isAsking(review)).toBe(false)
+    expect(gc.opinionFor(review)).toBeNull()
+  })
+
+  it('a failed request clears pending and toasts', async () => {
+    const api = installApi()
+    api.gcOpinion.mockRejectedValueOnce(new Error('nope'))
+    const gc = useGcStore()
+    await gc.init()
+    const { review } = ids(gc)
+    await gc.askOpinion([review])
+    expect(gc.isAsking(review)).toBe(false)
+    expect(useUiStore().toasts.some((x) => x.title === t('cleanup.gc.opinion.failed'))).toBe(true)
+  })
+
+  it('forgets an opinion when the next snapshot shows the item on another commit', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    const { review } = ids(gc)
+    await gc.askOpinion([review])
+    api.push.opinion(result(review, 'safe'))
+    const moved = snap()
+    moved.bundles = moved.bundles.map((b) =>
+      b.bucket === 'review' ? { ...b, localTip: 'f'.repeat(40) } : b
+    )
+    api.gcSnapshot.mockResolvedValue(moved)
+    await gc.refresh()
+    expect(gc.opinionFor(review)).toBeNull()
+    expect(gc.safeOpinionIds).toEqual([])
   })
 })
