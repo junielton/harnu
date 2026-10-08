@@ -202,6 +202,26 @@ function replaceOwn(text: string, own: string): string {
   }
 }
 /**
+ * Reads the ways a path separator is hidden as the character it stands for, until nothing changes (so
+ * `%252F` is read as `%2F` and then as `/`): `\/` (JSON), `%2F` and `%5C` (URL), `&#47;`, `&#047;`,
+ * `&#x2F;` and `&sol;` (HTML, zero-padded or not), and a drive letter's `%3A`. Ordinary text is left as it
+ * is, including a lone `%`. Bounded, so it always ends.
+ */
+function decodeSeparators(text: string): string {
+  let cur = text
+  for (let n = 0; n < 4; n++) {
+    const next = cur
+      .replace(/%25(?=[0-9A-Fa-f]{2})/g, '%')
+      .replace(/\\\/|%2[Ff]|&#0*47;|&#[xX]0*2[Ff];|&sol;/g, '/')
+      .replace(/%5[Cc]/g, '\\')
+      .replace(/([A-Za-z])%3[Aa]/g, '$1:')
+    if (next === cur) break
+    cur = next
+  }
+  return cur
+}
+
+/**
  * Removes every absolute path from free text: POSIX, `~/` and `~user/`, `file://` URLs, Windows
  * `C:\` and `C:/`, UNC shares, and paths with spaces or glued after `=`, `:`, `>`, a quote or a
  * bracket. Relative paths, web URLs and ordinary prose stay. The dossier's own worktree folder
@@ -209,8 +229,7 @@ function replaceOwn(text: string, own: string): string {
  * it is relative to that worktree and the one absolute path the prompt may carry.
  */
 export function scrubPaths(text: string, ownPath: string | null): string {
-  // A slash written as `\/` (JSON), `%2F` (URL) or `&#47;` / `&#x2F;` (HTML) is still a slash.
-  const unescaped = text.replace(/\\\/|%2[Ff]|&#47;|&#[xX]2[Ff];/g, '/')
+  const unescaped = decodeSeparators(text)
   const input = ownPath ? replaceOwn(unescaped, ownPath) : unescaped
   let out = ''
   let i = 0
