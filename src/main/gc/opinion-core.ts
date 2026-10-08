@@ -30,7 +30,13 @@ export interface OpinionDossier {
   reasonCode: string
   reasonDetail: string
   fate: string | null
+  /** `OPEN`, `MERGED` or `CLOSED`; null means there is no pull request (see `prUnknown`). */
   prState: string | null
+  /**
+   * Set when the pull request state is not known (never scanned, `gh` unavailable at the scan, or the
+   * list capped): then `prState` is not "none". The reason is for people and not part of the cache key.
+   */
+  prUnknown?: string
   /** The commit checked out in the worktree. */
   head: string | null
   /** `git diff --stat` against the default branch, as git printed it. */
@@ -292,7 +298,11 @@ function renderDossier(d: OpinionDossier, index: number): string {
   }
   lines.push(`Why it needs review: ${d.reasonCode} — ${field(d.reasonDetail, own, FIELD_MAX)}`)
   if (!d.volume) {
-    lines.push(`Branch fate: ${d.fate ?? 'unknown'} · Pull request: ${d.prState ?? 'none'}`)
+    const pull =
+      d.prUnknown !== undefined
+        ? `UNKNOWN (${field(d.prUnknown, own, FIELD_MAX)})`
+        : (d.prState ?? 'none')
+    lines.push(`Branch fate: ${d.fate ?? 'unknown'} · Pull request: ${pull}`)
     const missing = (k: UnavailableFact): string =>
       `COULD NOT BE COMPUTED (${field(d.unavailable?.[k] ?? 'unknown reason', own, FIELD_MAX)})`
     if (d.unavailable?.head !== undefined) lines.push(`HEAD: ${missing('head')}`)
@@ -333,6 +343,7 @@ const INSTRUCTIONS = [
   '- "keep": it holds work that exists nowhere else (unpushed commits, uncommitted changes that matter, an open pull request).',
   '- "unsure": you cannot tell. When in doubt, answer "unsure". Answer "safe" only when you can name the evidence.',
   '- A line that says COULD NOT BE COMPUTED means that fact is unknown, not empty. Never answer "safe" for an item that has one.',
+  '- "Pull request: UNKNOWN" means nobody checked, not that there is none: do not read it as "none".',
   '- "reason" is one sentence. "evidence" is the concrete fact it rests on, for example "the 3 changed files are on main at abc123".',
   '',
   'Answer with JSON only, no other text, for every item, using its id exactly:',
@@ -571,6 +582,33 @@ export function confineCwd(cwd: string | null, home: string): string | null {
   return cwd
 }
 
+/** What the last scan recorded about an item's pull request (`BranchFacts`, the parts read here). */
+export interface ScannedPullRequest {
+  pr: { state: string } | null
+  ghAvailable: boolean
+  prSetComplete: boolean
+}
+
+/**
+ * The pull request state, with "unknown" kept apart from "none". `none` is only the case where `gh`
+ * answered completely and found no pull request; an item with no scan entry, a scan where `gh` was not
+ * available, or one whose pull request list was capped (so absence proves nothing) is unknown.
+ */
+export function pullRequestFacts(facts: ScannedPullRequest | undefined): {
+  prState: string | null
+  prUnknown?: string
+} {
+  if (!facts) return { prState: null, prUnknown: 'this item has not been scanned yet' }
+  if (facts.pr) return { prState: facts.pr.state }
+  if (!facts.ghAvailable) {
+    return { prState: null, prUnknown: 'the GitHub CLI was not available at the last scan' }
+  }
+  if (!facts.prSetComplete) {
+    return { prState: null, prUnknown: 'the pull request list was capped at the last scan' }
+  }
+  return { prState: null }
+}
+
 /** Removes a flag and its value from an argv. */
 function withoutFlag(argv: string[], flag: string): string[] {
   const i = argv.indexOf(flag)
@@ -664,7 +702,7 @@ export function classifyOpinionIds(
 /** The part of a dossier an opinion's cache key reads: cheap to gather, no diff and no chat. */
 export type OpinionKeyFacts = Pick<
   OpinionDossier,
-  'reasonCode' | 'fate' | 'prState' | 'head' | 'dirtyFiles' | 'volume' | 'unavailable'
+  'reasonCode' | 'fate' | 'prState' | 'prUnknown' | 'head' | 'dirtyFiles' | 'volume' | 'unavailable'
 >
 
 /**
@@ -676,7 +714,7 @@ export function opinionKey(d: OpinionKeyFacts): string {
   return JSON.stringify([
     d.reasonCode,
     d.fate,
-    d.prState,
+    d.prUnknown !== undefined ? { unknown: 'pr' } : d.prState,
     d.head,
     [...d.dirtyFiles].sort(),
     d.volume ? [d.volume.name, d.volume.project, d.volume.sizeBytes] : null

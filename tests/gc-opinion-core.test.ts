@@ -883,7 +883,7 @@ describe('an unknown pull request state is UNKNOWN, never "none" (delta 5, item 
     expect(block).not.toMatch(/Pull request: none/)
     const none = buildPrompt([dossier({ prState: null })])
     expect(none.slice(none.indexOf('<dossier id='))).toMatch(/Pull request: none/)
-    expect(none).not.toMatch(/Pull request: UNKNOWN/)
+    expect(none.slice(none.indexOf('<dossier id='))).not.toMatch(/Pull request: UNKNOWN/)
   })
 
   it('tells the advisor UNKNOWN is not "none"', () => {

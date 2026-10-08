@@ -21,6 +21,7 @@ import {
   OPINION_ROUTING_KIND,
   advisorEnv,
   confineCwd,
+  pullRequestFacts,
   type OpinionDossier,
   type OpinionKeyFacts,
   type OpinionLookup,
@@ -90,7 +91,7 @@ async function worktreeKeyFacts(
   return {
     reasonCode: b.reason?.code ?? 'unknown-fate',
     fate: b.fate.fate,
-    prState: facts?.pr?.state ?? null,
+    ...pullRequestFacts(facts),
     head,
     dirtyFiles,
     ...(Object.keys(unavailable).length > 0 ? { unavailable } : {})
@@ -128,6 +129,7 @@ async function worktreeDossier(
       reasonDetail: b.reason?.detail ?? '',
       fate: key.fate,
       prState: key.prState,
+      ...(key.prUnknown !== undefined ? { prUnknown: key.prUnknown } : {}),
       head: key.head,
       diffStat,
       dirtyFiles: key.dirtyFiles,
