@@ -51,6 +51,13 @@ const SUMMARY_MAX = 600
 const FIELD_MAX = 400
 const VERDICTS: ReadonlySet<string> = new Set(['safe', 'keep', 'unsure'])
 
+/**
+ * The routing-table kind the advisor runs as: the cheap triage tier (Haiku at low effort unless the
+ * folder's table says otherwise). The operator's call, 2026-10-08; a dossier is small and the
+ * verdict set is closed, so the answer is cheap and the cost note in the docs says so.
+ */
+export const OPINION_ROUTING_KIND = 'scout'
+
 /** The name the model answers to. Real ids embed the absolute repo path, so they never leave main. */
 export const refOf = (index: number): string => `item-${index + 1}`
 

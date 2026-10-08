@@ -16,7 +16,12 @@ import { lastFateInputs } from '../reaper/scanner-shell'
 import { resolveFolderRouting } from '../routing-policy'
 import type { WorktreeBundle } from './bundle-core'
 import type { OrphanVolumeItem } from './gc-housekeeping-input'
-import type { OpinionDossier, OpinionLookup, OpinionServiceDeps } from './opinion-core'
+import {
+  OPINION_ROUTING_KIND,
+  type OpinionDossier,
+  type OpinionLookup,
+  type OpinionServiceDeps
+} from './opinion-core'
 
 /** One headless process may think for a while, but never indefinitely. */
 const RUN_TIMEOUT_MS = 180_000
@@ -174,9 +179,9 @@ export function createOpinionShell(opts: OpinionShellOptions): ShellDeps {
       const volume = g.orphanVolumes.find((v) => v.id === id)
       return volume ? volumeDossier(volume) : null
     },
-    // The operator's routing table for a review job, per repo (design.md: "Model follows the
-    // operator's routing table"). The table is read, never written.
-    route: (group) => resolveFolderRouting(group, 'review'),
+    // The operator's routing table, per repo (design.md: "Model follows the operator's routing
+    // table"), as kind `scout`. The table is read, never written.
+    route: (group) => resolveFolderRouting(group, OPINION_ROUTING_KIND),
     run: runClaude
   }
 }
