@@ -5,13 +5,17 @@
 
 import type { BrowserWindow } from 'electron'
 import { GcStepError, isMainCheckoutByPath, type GcOps, type GcStep } from './pipeline-core'
-import { containerFolders, type SessionPresence, type WorktreeBundle } from './bundle-core'
+import {
+  canonicalPathKey,
+  containerFolders,
+  type SessionPresence,
+  type WorktreeBundle
+} from './bundle-core'
 import { cleanItem, type CleanStepId, type ExecutorDeps } from '../reaper/executor-core'
 import { dehydrateItem, type DehydrateDeps } from '../reaper/dehydrate-core'
 import {
   groupStacks,
   isInside,
-  normalizePath,
   type InspectedContainer,
   type StackGroup
 } from '../containers/containers-core'
@@ -58,9 +62,9 @@ export function presenceFromSets(
   sets: { live: Set<string>; inUse: Set<string> }
 ): SessionPresence {
   const platform = process.platform
-  const root = normalizePath(path, platform)
+  const root = canonicalPathKey(path, platform)
   const touches = (folders: Set<string>): boolean =>
-    [...folders].some((f) => isInside(normalizePath(f, platform), root))
+    [...folders].some((f) => isInside(canonicalPathKey(f, platform), root))
   if (touches(sets.live)) return 'working'
   if (touches(sets.inUse)) return 'open-idle'
   return 'none'
@@ -238,7 +242,7 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       }
       const path = item.path
       if (!path) return { ok: false, reason: 'changed-since-scan' }
-      const root = normalizePath(path, platform)
+      const root = canonicalPathKey(path, platform)
       try {
         // Pre-flight everything cleanItem's guard would refuse: that guard runs only after
         // the docker steps and drop-deps, so refusing there is too late. Dirty or unknown
@@ -352,7 +356,7 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         // be trashed, whatever its id: a `compose up` during drop-deps brings the same project
         // id back. Same attribution as the scan and the reprobe.
         const { stacks } = await deps.listStacks()
-        const root = normalizePath(path, platform)
+        const root = canonicalPathKey(path, platform)
         if (stackIdsInside(stacks, root, platform).length > 0) {
           return { ok: false, reason: 'stack-present' }
         }

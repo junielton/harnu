@@ -2,8 +2,7 @@
 // Every side effect is an injected op, so the ordering and halt-on-failure rules are
 // unit-tested in tests/gc-pipeline-core.test.ts without touching docker, git or disk.
 
-import type { WorktreeBundle } from './bundle-core'
-import { normalizePath } from '../containers/containers-core'
+import { canonicalPathKey, type WorktreeBundle } from './bundle-core'
 
 export type GcStep =
   | 'reprobe'
@@ -85,7 +84,9 @@ export interface GcRunOptions {
 export function isMainCheckoutByPath(b: WorktreeBundle): boolean {
   const path = b.item.path
   if (!path) return false
-  return normalizePath(path, process.platform) === normalizePath(b.item.repoPath, process.platform)
+  return (
+    canonicalPathKey(path, process.platform) === canonicalPathKey(b.item.repoPath, process.platform)
+  )
 }
 
 /**

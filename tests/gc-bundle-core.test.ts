@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildBundles,
   bucketOf,
+  canonicalPathKey,
   composeDefaultProject,
   containerFolders,
   ownedVolumes,
@@ -475,6 +476,46 @@ describe('containerFolders', () => {
     const c = container('web', { mounts: [bindMount('C:\\Work\\Proj\\')] })
     expect(containerFolders(c, 'win32')).toEqual(['c:/work/proj'])
   })
+
+  it('resolves . and .. segments and folds case on darwin (delta 4, item F)', () => {
+    const c = composeContainer('web', 'app', '/Ws/Org/Proj/worktrees/../WWW/.', {
+      mounts: [bindMount('/Ws/Org/Proj/WWW/api/..')]
+    })
+    expect(containerFolders(c, 'darwin')).toEqual(['/ws/org/proj/www'])
+    expect(containerFolders(c, 'linux')).toEqual(['/Ws/Org/Proj/WWW'])
+  })
+})
+
+// ---- canonicalPathKey ---------------------------------------------------------------
+
+describe('canonicalPathKey (delta 4, item F)', () => {
+  it.each([
+    [`${REPO}/.`, REPO],
+    [`${REPO}/./`, REPO],
+    ['/ws/org/proj/worktrees/../www', REPO],
+    ['/ws/org/proj/www/api/../../www', REPO],
+    ['/ws/org//proj/www/', REPO],
+    [`${WT_A}/..`, '/ws/org/proj/worktrees']
+  ])('resolves %s lexically to %s', (input, expected) => {
+    expect(canonicalPathKey(input, 'linux')).toBe(expected)
+  })
+
+  it('keeps the root as it is', () => {
+    expect(canonicalPathKey('/', 'linux')).toBe('/')
+    expect(canonicalPathKey('/..', 'linux')).toBe('/')
+  })
+
+  it('folds case on darwin and win32, never on linux', () => {
+    expect(canonicalPathKey('/Users/Me/WWW/', 'darwin')).toBe('/users/me/www')
+    expect(canonicalPathKey('/Users/Me/WWW/', 'linux')).toBe('/Users/Me/WWW')
+    expect(canonicalPathKey('C:\\Work\\Proj\\..\\Api-Gateway\\', 'win32')).toBe(
+      'c:/work/api-gateway'
+    )
+  })
+
+  it('maps an empty path to an empty key, never to the working directory', () => {
+    expect(canonicalPathKey('', 'linux')).toBe('')
+  })
 })
 
 // ---- composeDefaultProject --------------------------------------------------------
@@ -832,6 +873,100 @@ describe('buildBundles — flags', () => {
 
   it('a linked worktree is not a main checkout', () => {
     expect(only(build()).isMainCheckout).toBe(false)
+  })
+
+  describe('. and .. segments (delta 4, item F)', () => {
+    it.each([`${REPO}/.`, '/ws/org/proj/worktrees/../www'])(
+      'the main checkout spelled %s is still the main checkout, and in use',
+      (path) => {
+        const b = only(build({ items: [item({ path, id: `${REPO}::worktree::${path}` })] }))
+        expect(b.isMainCheckout).toBe(true)
+        expect(b.bucket).toBe('alive')
+      }
+    )
+
+    it('a repo path spelled with .. still matches the main checkout', () => {
+      const main = item({
+        path: REPO,
+        id: `${REPO}::worktree::${REPO}`,
+        repoPath: '/ws/org/proj/worktrees/../www'
+      })
+      expect(only(build({ items: [main] })).isMainCheckout).toBe(true)
+    })
+
+    it('neverClean spelled with .. matches the worktree', () => {
+      const b = only(build({ neverClean: new Set([`${WT_A}/api/..`]) }))
+      expect(b.neverClean).toBe(true)
+      expect(b.bucket).toBe('alive')
+    })
+
+    it('a session folder spelled with .. counts when it resolves into the worktree', () => {
+      const b = only(
+        build({
+          sessions: new Map([[`${WT_A}/api/../web`, { presence: 'working', lastActivityAt: NOW }]])
+        })
+      )
+      expect(b.session).toBe('working')
+      expect(b.bucket).toBe('alive')
+    })
+
+    it('a session folder that leaves the worktree through .. does not count', () => {
+      const b = only(
+        build({
+          sessions: new Map([
+            [`${WT_A}/../PROJ-0000-slug-b`, { presence: 'working', lastActivityAt: NOW }]
+          ])
+        })
+      )
+      expect(b.session).toBe('none')
+      expect(b.bucket).toBe('corpse')
+    })
+
+    it('a working dir that leaves the worktree through .. is attributed where it resolves', () => {
+      const wtA = item()
+      const wtB = item({ path: WT_B, id: `${REPO}::worktree::${WT_B}`, branch: 'feat/slug-b' })
+      const db = composeContainer('db', 'projb', `${WT_A}/../PROJ-0000-slug-b/deploy`)
+      const out = build({
+        items: [wtA, wtB],
+        fateInputs: new Map([
+          [wtA.id, { facts: facts({ ancestorOfDefault: true }), localTip: TIP_A }],
+          [
+            wtB.id,
+            {
+              facts: facts({ path: WT_B, branch: 'feat/slug-b', ancestorOfDefault: true }),
+              localTip: TIP_B
+            }
+          ]
+        ]),
+        stacks: [stack('projb', [db])],
+        containers: [db]
+      })
+      const a = out.find((b) => b.item.path === WT_A)!
+      const b = out.find((x) => x.item.path === WT_B)!
+      expect([...a.stackIds, ...a.sharedStackIds]).toEqual([])
+      expect(b.stackIds).toEqual(['projb'])
+    })
+
+    it('a working dir spelled with . inside the worktree is exclusive to it', () => {
+      const db = composeContainer('db', 'app', `${WT_A}/./deploy/../deploy`)
+      const b = only(build({ stacks: [stack('app', [db])], containers: [db] }))
+      expect(b.stackIds).toEqual(['app'])
+    })
+
+    it('a known folder spelled with .. protects its compose project', () => {
+      const db = composeContainer('db', 'api-gateway', WT_A, {
+        mounts: [volumeMount('api-gateway_pg')]
+      })
+      const b = only(
+        build({
+          stacks: [stack('api-gateway', [db])],
+          containers: [db],
+          volumes: labelled('api-gateway', 'api-gateway_pg'),
+          knownFolders: ['/ws/org/other/api-gateway/.']
+        })
+      )
+      expect(b.ownedVolumes).toEqual([])
+    })
   })
 
   it('neverClean matches the worktree path', () => {
