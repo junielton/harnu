@@ -2466,7 +2466,8 @@
         "count": "{n} item | {n} itens",
         "lastCycle": "Último ciclo {ago}: {n} limpos, {size} liberados",
         "lastCycleReport": "Último ciclo {ago}: {n} item pronto encontrado, {size} (só relatório) | Último ciclo {ago}: {n} itens prontos encontrados, {size} (só relatório)",
-        "review": "Precisa de revisão"
+        "review": "Precisa de revisão",
+        "docker": "Docker (limpo a cada ciclo)"
       },
       "status": {
         "reclaimable": "{size} recuperáveis",

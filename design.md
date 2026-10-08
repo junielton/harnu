@@ -8332,8 +8332,9 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
    **Dehydrate** (Soft), **Keep** (Ghost), **Ask for an opinion** (Soft, `sparkles`, disabled, tooltip
    "coming in S6"), a `⇧` hint (`kbd`) and a right-aligned "Clear selection" ghost link.
 4. **First-cycle banner** (only while `firstReportAcknowledged` is false and a report exists): see below.
-5. **Split bar** (`.gc-split`): a 32px bar of three segments — _Ready to clean_ (ready items +
-   Docker housekeeping, Ready triple), _Needs review_ (hatch), _In use_. Widths
+5. **Split bar** (`.gc-split`): a 32px bar of up to four segments — _Ready to clean_ (ready worktrees only, Ready triple, so
+   it agrees with the hero's count), _Docker (cleaned each cycle)_ (build cache + dangling images, Ready triple,
+   `Container` icon, left out when there is nothing to take), _Needs review_ (hatch), _In use_. Widths
    proportional to bytes, `gap: 2px`, segment radius `--radius-sm` (3px), 11px text, label left, size
    right. A caption row above (eyebrow, 10.5px/500 uppercase `--text-4`) names the groups; the
    last-cycle line (11px `--text-4`) sits under it.

@@ -45,6 +45,29 @@ describe('CleanupSplitBar', () => {
     expect(w.get('[data-testid="split-review"]').text()).toContain('49 items')
   })
 
+  it('keeps Docker bytes out of the Ready segment and draws them as their own "Docker" segment', () => {
+    const t = totals()
+    t.docker = { count: 14, bytes: 5_000_000_000 }
+    const w = mountBar({ totals: t })
+    expect(w.get('[data-testid="split-auto"]').attributes('style')).toContain(
+      'flex: 6000000000 1 0px'
+    )
+    const docker = w.get('[data-testid="split-docker"]')
+    expect(docker.attributes('style')).toContain('flex: 5000000000 1 0px')
+    expect(docker.text()).toContain('Docker (cleaned each cycle)')
+    expect(docker.text()).toContain('5.00 GB')
+    expect(docker.find('svg').exists()).toBe(true)
+  })
+
+  it('with zero ready worktrees and some Docker bytes, the Ready segment is gone and Docker stays', () => {
+    const t = totals()
+    t.ready = { count: 0, bytes: 0 }
+    t.docker = { count: 14, bytes: 5_000_000_000 }
+    const w = mountBar({ totals: t })
+    expect(w.find('[data-testid="split-auto"]').exists()).toBe(false)
+    expect(w.get('[data-testid="split-docker"]').exists()).toBe(true)
+  })
+
   it('leaves out a bucket with nothing in it', () => {
     const t = totals()
     t.ready = { count: 0, bytes: 0 }

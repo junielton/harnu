@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { CircleCheck, CircleHelp, Lock } from 'lucide-vue-next'
+import { CircleCheck, CircleHelp, Container, Lock } from 'lucide-vue-next'
 import { formatBytes } from './system-monitor-format'
 import { relativeTime } from '../composables/useRelativeTime'
 import type { GcModel } from '../lib/gc-model'
@@ -9,7 +9,7 @@ import type { CycleRecord } from '../../../main/gc/gc-wire'
 
 /**
  * The split bar of the Cleanup screen (design.md "Workspace GC — unified Cleanup / Page anatomy" #5):
- * one 32px bar, three segments sized by bytes — ready to clean (ready items), needs review
+ * one 32px bar of segments sized by bytes — ready to clean (ready worktrees only), Docker (cleaned each cycle), needs review
  * (plus orphan volumes, hatched), in use. A bucket is never colour alone: every segment
  * carries an icon and a word, and Needs review adds the hatch. Without byte sizes (Windows) the segments
  * show counts and share the width equally.
@@ -22,7 +22,7 @@ const props = defineProps<{
 const { t } = useI18n()
 
 interface Segment {
-  key: 'auto' | 'review' | 'untouched'
+  key: 'auto' | 'docker' | 'review' | 'untouched'
   bucket: 'ready' | 'review' | 'in-use'
   icon: Component
   count: number
@@ -36,7 +36,16 @@ const segments = computed<Segment[]>(() => {
       bucket: 'ready',
       icon: CircleCheck,
       count: props.totals.ready.count,
-      bytes: props.totals.ready.bytes + props.totals.docker.bytes
+      bytes: props.totals.ready.bytes
+    },
+    {
+      // Docker housekeeping is taken every cycle too, but it is not a worktree: the hero counts worktrees, so
+      // the bar keeps the two apart and they agree after a clean.
+      key: 'docker',
+      bucket: 'ready',
+      icon: Container,
+      count: props.totals.docker.count,
+      bytes: props.totals.docker.bytes
     },
     {
       key: 'review',
