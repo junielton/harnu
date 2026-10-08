@@ -57,4 +57,55 @@ describe('cleanup verbs: no false "nothing can be removed" claims (T445 delta 1)
     expect(section).not.toMatch(/no way for a session to remove/i)
     expect(section).toMatch(/Stopping, starting and removing containers/)
   })
+
+  describe('T445 delta 2: the payload and its freshness are documented', () => {
+    const TOTALS = ['ready', 'readyBytes', 'review', 'reviewBytes', 'inUse']
+
+    it('harnu-features names every totals key, and reasonCode', () => {
+      const s = featuresSection()
+      for (const key of TOTALS) expect(s).toContain(`\`${key}\``)
+      expect(s).toContain('reasonCode')
+      expect(s).toContain('orphanVolumes')
+    })
+
+    it('the list_cleanup description names the totals keys and reasonCode', () => {
+      const d = MCP_TOOLS.find((t) => t.name === 'list_cleanup')!.description
+      for (const key of TOTALS) expect(d).toContain(key)
+      expect(d).toContain('reasonCode')
+    })
+
+    it('says the paths are cut to basenames and a reason is a fixed sentence, not "never a path"', () => {
+      const s = featuresSection()
+      expect(s).not.toMatch(/never a path/i)
+      expect(s).toMatch(/basename/)
+      expect(s).toMatch(/fixed sentence/i)
+      const d = MCP_TOOLS.find((t) => t.name === 'list_cleanup')!.description
+      expect(d).toMatch(/basename/)
+      expect(d).toMatch(/fixed sentence/i)
+    })
+
+    it('does not claim a fresh gather: list_cleanup reads the last one and says how old it is', () => {
+      const s = featuresSection()
+      expect(s).not.toMatch(/runs a fresh gather/i)
+      expect(s).toMatch(/scannedAt/)
+      const d = MCP_TOOLS.find((t) => t.name === 'list_cleanup')!.description
+      expect(d).not.toMatch(/runs a fresh gather/i)
+      expect(d).toContain('scannedAt')
+    })
+
+    it('documents that a release is tied to the branch tip', () => {
+      const s = featuresSection()
+      expect(s).toMatch(/tip/)
+      const d = MCP_TOOLS.find((t) => t.name === 'release_worktree')!.description
+      expect(d).toMatch(/tip/)
+    })
+
+    it('the user doc says the same: last scan, names not paths, release tied to the commit', () => {
+      const doc = read('docs/user/agent-control.md')
+      const start = doc.indexOf('## Watching workspace cleanup')
+      const section = doc.slice(start, doc.indexOf('## Tracking a mission', start))
+      expect(section).toMatch(/last scan|most recent scan|last cleanup scan/i)
+      expect(section).toMatch(/commit/i)
+    })
+  })
 })
