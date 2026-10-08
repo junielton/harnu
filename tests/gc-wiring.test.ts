@@ -255,3 +255,13 @@ describe('a scheduled Reaper tick yields to a running GC job (delta 3, item 7: M
     expect(ipc).toMatch(/reaper\.setBusy\(\(\) => queue\.busy\(\)\)/)
   })
 })
+
+describe('session presence on real paths (delta 3b, item 8)', () => {
+  it('the gather resolves every session-set folder and passes canonical to the presence read', () => {
+    const block = between(scan, '// Sessions on real paths', 'const stacks = groupStacks')
+    expect(block).toMatch(/resolveRealPaths\(/)
+    expect(block).toMatch(/sessionsFromFolders\(/)
+    expect(block).toMatch(/sets\.live/)
+    expect(block).toMatch(/sets\.inUse/)
+  })
+})
