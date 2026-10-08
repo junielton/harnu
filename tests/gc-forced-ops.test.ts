@@ -4,6 +4,9 @@ import { createGcOps, type GcShellDeps } from '../src/main/gc/gc-shell'
 import { runBundle } from '../src/main/gc/pipeline-core'
 import type { SessionPresence, WorktreeBundle } from '../src/main/gc/bundle-core'
 import type { ExecutorDeps } from '../src/main/reaper/executor-core'
+import type { Tombstone } from '../src/main/reaper/journal'
+import { withActor } from '../src/main/gc/gc-actor'
+import { defaultGcPrefs, type GcPrefs } from '../src/main/gc/gc-prefs'
 import type { DehydrateDeps } from '../src/main/reaper/dehydrate-core'
 import {
   COMPOSE_WORKING_DIR_LABEL,
@@ -64,6 +67,7 @@ interface Rig {
   order: string[]
   git: string[][]
   archived: string[]
+  tombstones: Tombstone[]
   setStacks(s: StackGroup[]): void
 }
 
@@ -78,6 +82,7 @@ function rig(
   const order: string[] = []
   const git: string[][] = []
   const archived: string[] = []
+  const tombstones: Tombstone[] = []
   let stacks = [stack('app', [container('c1', `${WT}/api`)])]
   const executor: ExecutorDeps = {
     probeStatus: async () => ({ trackedDirty: over.trackedDirty ?? true, untracked: ['notes.md'] }),
@@ -103,7 +108,9 @@ function rig(
       return ref
     },
     detachSidebar: async () => undefined,
-    appendTombstone: async () => undefined,
+    appendTombstone: async (t) => {
+      tombstones.push(t)
+    },
     now: () => NOW
   }
   const dehydrate: DehydrateDeps = {
@@ -145,6 +152,7 @@ function rig(
     order,
     git,
     archived,
+    tombstones,
     setStacks: (s) => {
       stacks = s
     }
@@ -284,5 +292,56 @@ describe('what the force path still refuses (AC-8)', () => {
     const result = await run(decideBundle(), r)
     expect(result.ok).toBe(false)
     expect(r.order).toEqual([])
+  })
+})
+
+describe('the forced ops keep the live protection and the actor (delta 1, item 3: M15, M18)', () => {
+  const operatorOps = (r: Rig, prefs: () => GcPrefs) =>
+    createForcedGcOps(withActor(r.deps, 'operator', prefs))
+
+  it('refuses a Keep pressed after the scan, before anything is archived or stopped', async () => {
+    const r = rig()
+    const b = decideBundle()
+    const prefs = { ...defaultGcPrefs(), keep: { [b.item.id]: 'closed-unmerged' } }
+    const result = await runBundle(
+      b,
+      operatorOps(r, () => prefs),
+      FORCE
+    )
+    expect(result).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'protected-now' })
+    expect(r.order).toEqual([])
+  })
+
+  it('refuses a path put on neverClean after the scan', async () => {
+    const r = rig()
+    const prefs = { ...defaultGcPrefs(), neverClean: [WT] }
+    const result = await runBundle(
+      decideBundle(),
+      operatorOps(r, () => prefs),
+      FORCE
+    )
+    expect(result).toMatchObject({ ok: false, error: 'protected-now' })
+    expect(r.order).toEqual([])
+  })
+
+  it('reads the prefs at the moment of the clean, not when the ops were built', async () => {
+    const r = rig()
+    let prefs = defaultGcPrefs()
+    const ops = operatorOps(r, () => prefs)
+    prefs = { ...prefs, neverClean: [WT] }
+    const result = await runBundle(decideBundle(), ops, FORCE)
+    expect(result.ok).toBe(false)
+  })
+
+  it('stamps the operator on the journal line of a forced clean', async () => {
+    const r = rig()
+    const result = await runBundle(
+      decideBundle(),
+      operatorOps(r, () => defaultGcPrefs()),
+      FORCE
+    )
+    expect(result.ok).toBe(true)
+    expect(r.tombstones).toHaveLength(1)
+    expect(r.tombstones[0]).toMatchObject({ actor: 'operator' })
   })
 })

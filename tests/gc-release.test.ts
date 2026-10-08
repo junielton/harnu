@@ -97,6 +97,9 @@ function build(over: Over = {}) {
     neverClean: new Set(over.neverClean ? [WT_CORPSE] : []),
     now: NOW,
     graceDays: GRACE,
+    volumes: new Map(),
+    knownFolders: [],
+    protectedProjects: new Set<string>(),
     ...(released ? { released } : {})
   })[0]!
 }
@@ -233,6 +236,9 @@ describe('buildBundles honors a release (T445)', () => {
         neverClean: new Set(),
         now: NOW,
         graceDays: GRACE,
+        volumes: new Map(),
+        knownFolders: [],
+        protectedProjects: new Set<string>(),
         released: new Map([[it.id, NOW - 60_000]])
       })[0]!
       expect(b.sharedStackIds).toEqual(['app'])

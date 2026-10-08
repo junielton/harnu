@@ -70,6 +70,17 @@ export interface GcCycleDeps {
   now(): number
 }
 
+/**
+ * The gather as every consumer must see it: a worktree whose last cleanup halted reads as a
+ * Decide item (`cleanup-failed`), not as the corpse it still is on paper. gc-ipc applies this
+ * once, inside its single gather, so the snapshot, the Containers feed, the manual job and
+ * the cycle agree; applying it again is a no-op.
+ */
+export function withFailures<G extends GcGather>(g: G, state: CycleState, now: number): G {
+  pruneFailures(state.failures, g.bundles, now)
+  return { ...g, bundles: applyFailures(g.bundles, state.failures) }
+}
+
 const UNITS = ['B', 'KiB', 'MiB', 'GiB', 'TiB'] as const
 
 /** `1.5 GiB`; bytes print whole, everything else with one decimal. */
@@ -99,11 +110,10 @@ export async function runGcCycle(
   trigger: 'timer' | 'manual'
 ): Promise<CycleRecord> {
   const prefs = deps.prefs()
-  const gathered = await deps.gather()
   const now = deps.now()
-  pruneFailures(deps.state.failures, gathered.bundles, now)
-  const bundles = applyFailures(gathered.bundles, deps.state.failures)
-  deps.onGathered?.({ ...gathered, bundles })
+  const gathered = withFailures(await deps.gather(), deps.state, now)
+  const { bundles } = gathered
+  deps.onGathered?.(gathered)
 
   const plan: CyclePlan = planCycle(bundles, prefs)
   // Defense in depth: whatever the planner returned, only a corpse is ever handed on.
