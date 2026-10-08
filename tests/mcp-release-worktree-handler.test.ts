@@ -201,7 +201,8 @@ describe('release_worktree handler (T445)', () => {
     serve(snapshot([dirty]))
     const ack = JSON.parse(textOf(await handler({ folder: WT_DIRTY }, ctx(WT_DIRTY))))
     expect(ack).toMatchObject({ ok: true, bucketAfter: 'review', deleted: false })
-    expect(ack.reason).toContain('dirty')
+    expect(ack.reasonCode).toBe('dirty')
+    expect(ack.reason).toMatch(/uncommitted/)
   })
 
   it('AC-4: a live session, a shared stack, keep and neverClean all keep it out of ready', async () => {

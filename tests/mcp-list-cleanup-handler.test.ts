@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 
@@ -80,12 +81,16 @@ function textOf(res: CallToolResult): string {
   return first.text
 }
 
+/** The fixed, path-free sentence list_cleanup gives a `dirty` review reason. */
+const DIRTY_SENTENCE = 'The working tree has uncommitted changes, or could not be verified clean.'
+
 type Listed = {
   id: string
   folderAlias: string
   branch: string | null
   bucket: string
   reason: string | null
+  reasonCode: string | null
   bytes: number | null
   released: boolean
   agentControllable: boolean
@@ -128,7 +133,7 @@ describe('list_cleanup handler (T445)', () => {
     const rows = payload.bundles as Listed[]
     expect(rows.map((r) => [r.folderAlias, r.bucket, r.reason, r.bytes])).toEqual([
       ['PROJ-231-wave-1', 'ready', null, 5_000],
-      ['PROJ-231-wave-2', 'review', '1 blocker: dirty.', 700],
+      ['PROJ-231-wave-2', 'review', DIRTY_SENTENCE, 700],
       ['PROJ-347-wave-3', 'in-use', null, 40]
     ])
     expect(rows[0]).toMatchObject({ branch: 'feat/PROJ-231-wave-1', released: false })
@@ -364,5 +369,146 @@ describe('list_cleanup handler (T445)', () => {
     const res = await handler({}, ctx())
     expect(res.isError).toBe(true)
     expect(textOf(res)).toMatch(/^GC_NOT_READY/)
+  })
+
+  describe('D2-1: no absolute path ever reaches the payload (T445 delta 2)', () => {
+    const HOME_REPO = path.join(os.homedir(), 'work', 'org', 'proj', 'www')
+    const HOME_WT = `${HOME_REPO}/.claude/worktrees/PROJ-9-home`
+    const GIT_ERROR = (p: string): string =>
+      `Cleanup stopped at stack: fatal: '${p}' contains modified or untracked files, use --force to delete it`
+
+    function halted(wt: string, repo: string, detail: string) {
+      return bundle(wt, {
+        bucket: 'review',
+        reason: { code: 'cleanup-failed', detail },
+        item: { repoPath: repo }
+      })
+    }
+
+    const outside = halted(WT_READY, MAIN, GIT_ERROR(WT_READY))
+    const inside = halted(HOME_WT, HOME_REPO, GIT_ERROR(HOME_WT))
+    const windows = halted(
+      '/srv/ws/win/PROJ-7-win',
+      '/srv/ws/win',
+      "Cleanup stopped at deps: error: unable to unlink 'C:\\Users\\dev\\proj\\node_modules\\x' and \\\\fileserver\\share\\proj\\y"
+    )
+
+    function leaksIn(text: string): string[] {
+      return [
+        ...absolutePathsIn(text),
+        ...(text.match(/[A-Za-z]:\\\\/g) ?? []),
+        ...(text.match(/\\\\\\\\[\w.-]+\\\\/g) ?? []),
+        ...(text.includes('/srv/ws') ? ['/srv/ws'] : []),
+        ...(text.includes(os.homedir()) ? [os.homedir()] : [])
+      ]
+    }
+
+    it('a halted bundle’s raw git error is replaced by "Cleanup stopped at <step>", with the code', async () => {
+      serve(snapshot([outside]))
+      const text = textOf(await handler({}, ctx()))
+      const row = JSON.parse(text).bundles[0] as Listed
+      expect(row.reasonCode).toBe('cleanup-failed')
+      expect(row.reason).toBe('Cleanup stopped at stack.')
+      expect(leaksIn(text)).toEqual([])
+    })
+
+    it('fixtures outside and inside $HOME, posix and windows, all come out path-free', async () => {
+      serve(snapshot([outside, inside, windows]))
+      const text = textOf(await handler({}, ctx()))
+      expect(leaksIn(text)).toEqual([])
+      const rows = JSON.parse(text).bundles as Listed[]
+      expect(rows.map((r) => r.reasonCode)).toEqual([
+        'cleanup-failed',
+        'cleanup-failed',
+        'cleanup-failed'
+      ])
+      expect(rows.map((r) => r.reason)).toEqual([
+        'Cleanup stopped at stack.',
+        'Cleanup stopped at stack.',
+        'Cleanup stopped at deps.'
+      ])
+    })
+
+    it('every review code reads as its own fixed sentence, never the raw detail', async () => {
+      const codes = [
+        'dirty',
+        'unpushed',
+        'open-idle-session',
+        'closed-unmerged',
+        'remote-gone',
+        'detached',
+        'unknown-fate',
+        'weak-merge-signal',
+        'shared-stack',
+        'path-unresolved'
+      ] as const
+      const bundles = codes.map((code, i) =>
+        bundle(`${MAIN}/.claude/worktrees/PROJ-${i}-c`, {
+          bucket: 'review',
+          reason: { code, detail: `raw detail naming ${MAIN}/secret/${code}` }
+        })
+      )
+      serve(snapshot(bundles))
+      const text = textOf(await handler({}, ctx()))
+      expect(leaksIn(text)).toEqual([])
+      const rows = JSON.parse(text).bundles as Listed[]
+      expect(rows.map((r) => r.reasonCode)).toEqual([...codes])
+      for (const r of rows) {
+        expect(r.reason).toEqual(expect.any(String))
+        expect(r.reason).not.toContain('raw detail')
+      }
+      expect(new Set(rows.map((r) => r.reason)).size).toBe(codes.length)
+    })
+
+    it('an unknown review code still gets a generic, path-free sentence', async () => {
+      const odd = bundle(WT_READY, {
+        bucket: 'review',
+        reason: { code: 'brand-new-code' as never, detail: `see ${MAIN}/x` }
+      })
+      serve(snapshot([odd]))
+      const text = textOf(await handler({}, ctx()))
+      expect(leaksIn(text)).toEqual([])
+      expect((JSON.parse(text).bundles as Listed[])[0]!.reason).toEqual(expect.any(String))
+    })
+
+    it('M9: a path in a bundle’s branch or alias is stripped to its basename', async () => {
+      const odd = bundle(`${MAIN}/.claude/worktrees/PROJ-1-b`, {
+        item: { branch: '/srv/ws/leak/branch-name' }
+      })
+      serve(snapshot([odd]))
+      const text = textOf(await handler({}, ctx()))
+      expect(leaksIn(text)).toEqual([])
+      expect((JSON.parse(text).bundles as Listed[])[0]!.branch).toBe('branch-name')
+    })
+
+    it('M10: orphan volume name, project, id and reason are scrubbed too', async () => {
+      serve(
+        snapshot([ready], {
+          orphanVolumes: [
+            {
+              id: 'volume:/srv/ws/leak/vol',
+              name: '/srv/ws/leak/vol',
+              sizeBytes: 5,
+              project: `${os.homedir()}/work/proj`,
+              reason: {
+                code: 'no-known-worktree',
+                detail: `No known worktree uses "/srv/ws/leak/proj" nor C:\\Users\\dev\\proj.`
+              }
+            }
+          ]
+        })
+      )
+      const text = textOf(await handler({}, ctx()))
+      expect(leaksIn(text)).toEqual([])
+      const v = JSON.parse(text).orphanVolumes[0]
+      expect(v.name).toBe('vol')
+      expect(v.project).toBe('proj')
+    })
+
+    it('the id and folderAlias of a bundle never carry a path', async () => {
+      serve(snapshot([outside, inside]))
+      const text = textOf(await handler({}, ctx()))
+      expect(leaksIn(text)).toEqual([])
+    })
   })
 })
