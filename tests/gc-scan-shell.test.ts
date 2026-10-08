@@ -31,6 +31,17 @@ vi.mock('../src/main/reaper/scanner-shell', () => ({
   listAllWorktreePaths: async () => [],
   listLockedWorktreePaths: async () => []
 }))
+// Hermetic: the real probe reads ~/.claude/projects, and a runner with ~/.claude but no
+// projects folder makes the transcript root unreadable, which (correctly) blocks every ready.
+vi.mock('../src/main/gc/gc-transcripts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/gc/gc-transcripts')>()),
+  fsTranscriptProbe: () => ({
+    listProjectDirs: async () => [],
+    readIndex: async () => null,
+    listJsonl: async () => [],
+    cwdOf: async () => null
+  })
+}))
 vi.mock('../src/main/containers/containers-shell', () => ({
   inspectAll: async () => {
     throw Object.assign(new Error('docker: command not found'), { code: 'ENOENT' })
