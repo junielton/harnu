@@ -4,7 +4,9 @@
 // real modules, and it loads them lazily so importing this file never pulls in electron.
 
 import type { BrowserWindow } from 'electron'
-import { resolve as resolveLexically } from 'node:path'
+import type { Dirent } from 'node:fs'
+import { readdir } from 'node:fs/promises'
+import { join, resolve as resolveLexically } from 'node:path'
 import { GcStepError, isMainCheckoutByPath, type GcOps, type GcStep } from './pipeline-core'
 import {
   AS_GIVEN,
@@ -62,6 +64,61 @@ export interface GcShellDeps {
    * "no worktrees". The reprobe and the recheck refuse a bundle with one nested inside it.
    */
   listWorktrees(repoPath: string): Promise<string[]>
+}
+
+/**
+ * Folders the foreign-checkout walk never enters: the manifest `ephemeral:` defaults, which
+ * dehydrate drops anyway. Git dependencies (composer `source` installs, npm git deps) carry
+ * a `.git` there that is nobody's work.
+ */
+export const FOREIGN_WALK_SKIP: readonly string[] = ['node_modules', 'vendor', '.venv', 'venv']
+
+/** How deep the foreign-checkout walk looks by default; the root is depth 0. */
+export const FOREIGN_WALK_DEPTH = 6
+
+const errCode = (err: unknown): unknown =>
+  typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined
+
+/**
+ * Every `.git` entry (file or directory) under `root`, its own top-level `.git` aside, as
+ * sorted absolute paths (delta 7). A worktree of another repo or a plain clone created
+ * inside a worktree carries one, and `git worktree list` of the worktree's repo never shows
+ * it, so trashing the worktree would take that checkout's uncommitted work with it.
+ *
+ * A `.git` at depth `maxDepth` (root = 0, so `root/a/b/c/d/e/.git` is depth 6) is the
+ * deepest seen. Symlinks are neither followed nor recorded, a recorded `.git` directory is
+ * never entered, and {@link FOREIGN_WALK_SKIP} folders are skipped. A folder that cannot be
+ * read rejects, the root included; only a child that vanished mid-walk (ENOENT) is ignored.
+ */
+export async function findForeignCheckouts(
+  root: string,
+  opts: { maxDepth?: number } = {}
+): Promise<string[]> {
+  const maxDepth = opts.maxDepth ?? FOREIGN_WALK_DEPTH
+  const found: string[] = []
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    let entries: Dirent[]
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch (err) {
+      if (depth > 0 && errCode(err) === 'ENOENT') return
+      throw err
+    }
+    const below: Promise<void>[] = []
+    for (const e of entries) {
+      if (e.isSymbolicLink()) continue
+      const p = join(dir, e.name)
+      if (e.name === '.git') {
+        if (depth > 0) found.push(p)
+        continue
+      }
+      if (!e.isDirectory() || FOREIGN_WALK_SKIP.includes(e.name)) continue
+      if (depth + 1 < maxDepth) below.push(walk(p, depth + 1))
+    }
+    await Promise.all(below)
+  }
+  await walk(root, 0)
+  return found.sort()
 }
 
 /** The paths of the `worktree <path>` lines of `git worktree list --porcelain`. */
