@@ -441,11 +441,11 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
     .filter((i) => (i.kind === 'worktree' || i.kind === 'detached-worktree') && i.path)
     .map((item) => ({ item, path: real(item.path as string) }))
 
-  // Every container and session folder that did not resolve, keyed on its spelling. Such a
-  // folder may be an alias of any worktree, so one inside a bundle or above it (where it may
-  // see the bundle) keeps that bundle from being proven ready. A history-only session
-  // (`none`) is exempt (delta 5, 2026-10-08): nothing runs there, so its folder, often a
-  // deleted subfolder, cannot hide anything that uses the worktree.
+  // Every container, session and known worktree folder that did not resolve, keyed on its
+  // spelling. Such a folder may be an alias of any worktree, so one inside a bundle or above
+  // it (where it may see the bundle) keeps that bundle from being proven ready. A
+  // history-only session (`none`) is exempt (delta 5, 2026-10-08): nothing runs there, so
+  // its folder, often a deleted subfolder, cannot hide anything that uses the worktree.
   const openSessionFolders = [...input.sessions]
     .filter(([, s]) => s.presence !== 'none')
     .map(([folder]) => folder)
@@ -455,7 +455,11 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
         containerFolderPaths
       ),
       ...openSessionFolders,
-      ...input.stackPaths.values()
+      ...input.stackPaths.values(),
+      // Every known worktree path too (delta 6, F1): one that cannot be resolved may be an
+      // alias of a worktree nested inside this one, which the nested rule then cannot see.
+      ...folders.map((f) => f.item.path as string),
+      ...input.knownFolders
     ])
   ]
     .filter((p) => p && !canonical(p).resolved)
