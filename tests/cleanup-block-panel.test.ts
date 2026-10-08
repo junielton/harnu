@@ -66,6 +66,39 @@ function mountPanel(block: GcBlock, props: Props = {}) {
 const has = (w: ReturnType<typeof mountPanel>, id: string): boolean =>
   w.find(`[data-testid="${id}"]`).exists()
 
+describe('CleanupBlockPanel — a nested-worktree item can never be removed from here', () => {
+  const nested = () =>
+    blockWith(
+      'review',
+      {},
+      reviewReason(
+        'nested-worktree',
+        '1 other worktree lives inside this one: .claude/worktrees/spike.'
+      )
+    )
+
+  it('hides Remove and does not act on R, and says why', async () => {
+    const w = mountPanel(nested(), { attachTo: document.body } as never)
+    expect(has(w, 'panel-remove')).toBe(false)
+    expect(w.get('[data-testid="panel-remove-blocked"]').text()).toBe(
+      'Remove is unavailable: this folder holds another worktree. Remove or move that one first.'
+    )
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r' }))
+    expect(w.emitted('remove')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('keeps Keep and the other actions that do not delete the folder', () => {
+    const w = mountPanel(nested())
+    expect(has(w, 'panel-keep')).toBe(true)
+  })
+
+  it('every other review reason still offers Remove', () => {
+    expect(has(mountPanel(blockWith('review')), 'panel-remove')).toBe(true)
+    expect(has(mountPanel(blockWith('review')), 'panel-remove-blocked')).toBe(false)
+  })
+})
+
 describe('CleanupBlockPanel — actions by bucket and kind', () => {
   it('a ready item offers Clean now and nothing destructive besides', async () => {
     const w = mountPanel(blockWith('ready', { verdict: 'harvestable', blockers: [] }))

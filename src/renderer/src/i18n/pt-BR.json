@@ -2353,7 +2353,8 @@
         "happenedTitle": "O que aconteceu",
         "stoppedAt": "Parou em “{step}”",
         "nothingChanged": "Nada foi alterado.",
-        "genericStop": "O Harnu parou este item por uma verificação de segurança."
+        "genericStop": "O Harnu parou este item por uma verificação de segurança.",
+        "removeBlocked": "Remover não está disponível: esta pasta contém outro worktree. Remova ou mova esse primeiro."
       },
       "list": {
         "label": "Worktrees por grupo",

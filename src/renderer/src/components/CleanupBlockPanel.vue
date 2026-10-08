@@ -122,7 +122,9 @@ const ready = computed(() => props.block.bucket === 'ready')
 const inUse = computed(() => props.block.bucket === 'in-use')
 const hasFailure = computed(() => props.failure !== null)
 
-const showRemove = computed(() => review.value)
+/** Main always refuses a worktree that holds another one (removing it would trash the inner one too). */
+const removeBlocked = computed(() => review.value && props.block.reasonCode === 'nested-worktree')
+const showRemove = computed(() => review.value && !removeBlocked.value)
 const showKeep = computed(() => review.value && !isVolume.value)
 const showAsk = computed(() => review.value && !isVolume.value)
 const showCleanNow = computed(() => ready.value && !hasFailure.value)
@@ -411,6 +413,10 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
       >
         <RotateCcw :size="13" :stroke-width="1.7" />{{ t('cleanup.gc.panel.retry') }}
       </Button>
+
+      <p v-if="removeBlocked" class="text-caption text-text-3" data-testid="panel-remove-blocked">
+        {{ t('cleanup.gc.panel.removeBlocked') }}
+      </p>
 
       <Button
         v-if="showRemove"
