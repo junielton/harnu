@@ -111,9 +111,9 @@ An `observe` worker can read any file you can read. If it could also reach the i
 
 To allow it, open the worker's **Settings** tab, and under **Permission** switch on **Network access**. Harnu shows a red notice while it is on: _"Lets this worker send data from files it reads to the internet."_ Only turn it on for a worker whose job really needs the web, and consider keeping its folder free of secrets. Network access is not offered for an `act` worker, which has no allowlist to begin with.
 
-If an agent (a Claude session using Harnu's tools) tries to switch it on for a worker, in `create_worker` or `update_worker`, Harnu stops and asks you first, in the Approval Inbox. Switching it **off** never asks.
+If an agent (a Claude session using Harnu's tools) tries to switch it on for a worker, in `create_worker` or `update_worker`, Harnu stops and asks you first: a confirmation window appears in front of Harnu, naming the worker and spelling out the network risk. If Harnu is not the window you are looking at, the request waits in the Approval Inbox instead, and comes back as the window the next time you return. Switching it **off** never asks.
 
-**Workers you already had.** Every worker saved before this change starts with Network access off. Harnu posts one entry in your Activity bell, _"Scheduler: network access is now opt-in"_, listing the `observe` workers whose prompt mentions a URL or `WebFetch` — those are the ones that may have been using it. Switch it back on for any that should. The entry appears once; it will not repeat on the next launch.
+**Workers you already had.** Every worker saved before this change starts with Network access off. Harnu posts one entry in your Activity bell, _"Scheduler: network access is now opt-in"_, listing the `observe` workers whose prompt mentions a URL or `WebFetch` — those are the ones that may have been using it. Switch it back on for any that should. The entry names the **Network access** switch as the place to turn it back on. It is delivered once: if Harnu cannot show it right away (it is still starting), it is kept and delivered as soon as it can be, even on the next launch, and then never again.
 
 ## Extra read commands are retired
 

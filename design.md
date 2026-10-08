@@ -10277,15 +10277,22 @@ chrome — the same "plain stack, no card" rule the Hibernation policy pane
   commit, a PR body — is enough to try."_ The switch is the opt-in to
   `WebFetch`: it is the one place the operator turns the network on, and it has
   no confirm of its own (the operator is the author). An agent turning it on
-  through `create_worker` / `update_worker` is confirmed in the Approval Inbox
-  instead, in the same words. Nothing else in the Permission group changed:
+  through `create_worker` / `update_worker` is confirmed instead by the
+  agent-action confirm (§6 → Agent-action confirm: the fail-closed
+  `McpConfirmOverlay` modal when Harnu's window is focused, parked in the
+  Approval Inbox when it is not, and back in the modal on focus), whose
+  disclosure carries a **NETWORK ACCESS ON** paragraph in the same words. Nothing else in the Permission group changed:
   the **Extra read commands** tag field is gone (BUG-164), since `observe`
   runs with no shell for a rule to widen.
   **Migration notice:** a worker saved before this switch existed loads with
   it off. There is no banner and no dialog: one Activity entry, _"Scheduler:
   network access is now opt-in"_, lists the observe workers whose prompt names
-  a URL or WebFetch and tells the operator where to turn it back on. It fires
-  once, because the boot migration writes the field back.
+  a URL or WebFetch and names the **Network access** switch (the exact label)
+  as the place to turn it back on. The command bridge refuses until the
+  renderer is ready, so the notice is owed, not fired: it is written to
+  `schedulers.json` in the same write that heals the workers, retried until a
+  dispatch succeeds, and cleared only then (a boot that never gets a ready
+  bridge leaves it for the next one). It is delivered once.
 - **Delete worker** — a lone `btn-danger btn-sm` at the foot of the tab, no
   divider beyond the group's own.
 

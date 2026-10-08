@@ -17,6 +17,7 @@
  */
 
 import { injectHookSettings } from './hook-settings-blob'
+import { MCP_TOOLS } from './mcp/tool-catalog'
 import { ALLOWED_TOOLS_RULES, MCP_SERVER_NAMES, mcpToolName } from './mcp/config-file'
 
 /** How much a tick is allowed to do. See the spec §4.4/§4.5. */
@@ -365,57 +366,10 @@ const OBSERVE_ALLOW_VERBS: readonly string[] = [
 ]
 
 /**
- * Verb names (no prefix) an `observe` tick must never reach. Kept as an explicit
- * list so the test can assert each one by name — a silent omission from the allow
- * list would otherwise look identical to a deliberate denial.
+ * Every verb the Harnu control server exposes, by name: the tool catalog, which is also what the
+ * server registers. The deny list below is derived from it so it cannot fall behind.
  */
-const OBSERVE_DENY_VERBS: readonly string[] = [
-  'create_session',
-  'create_worktree',
-  'spawn_terminal',
-  'submit_manifest',
-  'adopt_folder',
-  'remove_folder',
-  'move_card',
-  'delete_card',
-  'message_session',
-  'memory_append',
-  'draw_canvas',
-  // T308: an observe tick that can mint or enumerate Scheduler workers is an
-  // observe tick that can escape its own allowlist — `create_worker` could mint
-  // an unattended `act` worker (a second, unsupervised body) and `list_workers`
-  // would hand a "read-only" tick a map of every heartbeat running unattended.
-  'create_worker',
-  'list_workers',
-  // T309: an observe tick has no business changing ANOTHER session's tool
-  // permissions — the same reasoning Unit 1's create_worker/list_workers denial
-  // is built on, applied to the orchestrator guard instead of worker creation.
-  'orchestrator_arm',
-  'orchestrator_disarm',
-  // T329: an observe worker may watch containers (list_containers above) but
-  // never act on them — stopping, starting or removing one is a mutation.
-  'stop_containers',
-  'start_containers',
-  'remove_containers',
-  // T445: an observe worker may read the cleanup list (list_cleanup above) but never
-  // release a worktree — that is a write, and it changes what the autopilot may clean.
-  'release_worktree',
-  // T369: an observe worker may read missions (mission_get/mission_list above)
-  // but never write one — a watchdog that could log, verify, block or close a
-  // mission would be acting on the delivery it exists only to watch.
-  'mission_create',
-  'mission_add_step',
-  'mission_update_step',
-  'mission_link_child',
-  'mission_log',
-  'mission_set_blocker',
-  'mission_clear_blocker',
-  'mission_set_end',
-  'mission_verify_step',
-  'mission_request_close',
-  'mission_import_legacy',
-  'mission_add_check'
-]
+const CATALOG_VERBS: readonly string[] = MCP_TOOLS.map((t) => t.name)
 
 /** `mcp__<server>__<verb>` for every verb under EVERY server name (current, then legacy). */
 function underAllServerNames(verbs: readonly string[]): readonly string[] {
@@ -431,10 +385,16 @@ function underAllServerNames(verbs: readonly string[]): readonly string[] {
 export const OBSERVE_MCP_ALLOW: readonly string[] = underAllServerNames(OBSERVE_ALLOW_VERBS)
 
 /**
- * Verbs an `observe` tick must never reach, under BOTH prefixes. A security
- * boundary: a verb missing under either prefix would be a leak.
+ * Verbs an `observe` tick must never reach, under BOTH prefixes: every verb in the tool catalog
+ * that is not in {@link OBSERVE_ALLOW_VERBS}. Derived, never hand-curated (BUG-166 delta 1): a
+ * hand list missed `update_worker`, `delete_worker`, `plan_mission`, `get_approval`, `open_file`,
+ * `speak` and `archive_card`, and a verb added tomorrow would have been missed too. A new verb is
+ * denied in observe until someone allows it by name. A security boundary: a verb missing under
+ * either prefix would be a leak.
  */
-export const OBSERVE_MCP_DENY: readonly string[] = underAllServerNames(OBSERVE_DENY_VERBS)
+export const OBSERVE_MCP_DENY: readonly string[] = underAllServerNames(
+  CATALOG_VERBS.filter((verb) => !OBSERVE_ALLOW_VERBS.includes(verb))
+)
 
 export interface TickContext {
   /**

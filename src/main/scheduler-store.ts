@@ -28,11 +28,40 @@ export const RUN_RETENTION = 200
 interface WorkersFile {
   version: 1
   workers: Worker[]
+  /**
+   * BUG-166: the migration notice that has not been delivered yet. Written in the SAME file write
+   * that heals the workers, so the heal can never happen without the notice being owed, and cleared
+   * only after a dispatch succeeded. Absent when nothing is owed.
+   */
+  pendingNetworkNotice?: NetworkLossNotice[]
 }
 
-export function serializeWorkers(workers: readonly Worker[]): string {
-  const doc: WorkersFile = { version: 1, workers: [...workers] }
+export function serializeWorkers(
+  workers: readonly Worker[],
+  pendingNetworkNotice: readonly NetworkLossNotice[] = []
+): string {
+  const doc: WorkersFile = {
+    version: 1,
+    workers: [...workers],
+    ...(pendingNetworkNotice.length > 0 ? { pendingNetworkNotice: [...pendingNetworkNotice] } : {})
+  }
   return JSON.stringify(doc, null, 2)
+}
+
+/** The undelivered notice recorded in a save file, validated field by field. */
+export function pendingNoticeOf(text: string): NetworkLossNotice[] {
+  try {
+    const doc = JSON.parse(text) as { pendingNetworkNotice?: unknown }
+    if (!Array.isArray(doc.pendingNetworkNotice)) return []
+    return doc.pendingNetworkNotice.flatMap((n): NetworkLossNotice[] => {
+      const w = n as Partial<NetworkLossNotice> | null
+      return w && typeof w.id === 'string' && typeof w.folder === 'string' && w.folder.length > 0
+        ? [{ id: w.id, name: typeof w.name === 'string' ? w.name : '', folder: w.folder }]
+        : []
+    })
+  } catch {
+    return []
+  }
 }
 
 /**
@@ -181,6 +210,8 @@ export async function loadWorkers(): Promise<Worker[]> {
 export async function loadWorkersForBoot(): Promise<{
   workers: Worker[]
   lostNetwork: NetworkLossNotice[]
+  /** A notice an earlier boot recorded but never delivered. */
+  pendingNotice: NetworkLossNotice[]
   needsHeal: boolean
 }> {
   try {
@@ -190,15 +221,23 @@ export async function loadWorkersForBoot(): Promise<{
     const needsHeal = (doc.workers ?? []).some(
       (w) => !!w && typeof w === 'object' && !('allowNetwork' in (w as object))
     )
-    return { workers, lostNetwork: workersLosingNetwork(text), needsHeal }
+    return {
+      workers,
+      lostNetwork: workersLosingNetwork(text),
+      pendingNotice: pendingNoticeOf(text),
+      needsHeal
+    }
   } catch {
-    return { workers: [], lostNetwork: [], needsHeal: false }
+    return { workers: [], lostNetwork: [], pendingNotice: [], needsHeal: false }
   }
 }
 
-export async function saveWorkers(workers: readonly Worker[]): Promise<void> {
+export async function saveWorkers(
+  workers: readonly Worker[],
+  pendingNetworkNotice: readonly NetworkLossNotice[] = []
+): Promise<void> {
   await fs.mkdir(app.getPath('userData'), { recursive: true })
-  await atomicWriteFile(workersPath(), serializeWorkers(workers), 0o600)
+  await atomicWriteFile(workersPath(), serializeWorkers(workers, pendingNetworkNotice), 0o600)
 }
 
 export async function loadRuns(workerId: string): Promise<Run[]> {

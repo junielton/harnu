@@ -407,7 +407,10 @@ confirm, same class as `create_session` — inside a tick it is read-only by an
 explicit allowlist: the tick's built-in tools are exactly `Read`, `Grep`, `Glob`
 and `Skill` (the CLI is started with `--tools`, so nothing else loads —
 **no `Bash`, `Monitor`, worktree, cron, workflow or `SendMessage` tool, and no
-network tool**), plus a named set of Harnu read verbs. `WebFetch` is added only
+network tool**), plus a named set of Harnu read verbs. That set is the whole
+Harnu surface a tick sees: every other verb in the tool catalog is denied by
+name (the deny list is derived, so a verb added later is denied until it is
+allowed on purpose), which also keeps it out of the tick's tool list. `WebFetch` is added only
 when the worker has `allowNetwork: true`: with `Read` unrestricted it would let a
 prompt-injected tick send local files out, so it is opt-in per worker, off by
 default, and **turning it on through you always confirms** — pass

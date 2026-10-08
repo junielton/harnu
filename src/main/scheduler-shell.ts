@@ -337,7 +337,7 @@ function updateWorker(id: string, patch: Partial<Worker>): Worker | undefined {
  */
 async function persistWorkers(): Promise<void> {
   assertStoreLoaded()
-  await saveWorkers(workersCache)
+  await saveWorkers(workersCache, pendingNetworkNotice)
 }
 
 /** The worker's most recent recorded result, for `carryLastResult`. */
@@ -541,23 +541,56 @@ async function tick(): Promise<void> {
 }
 
 /**
+ * BUG-166: the migration notice that is owed but not yet delivered. Persisted with every workers
+ * write (see {@link persistWorkers}), so it survives a restart until a dispatch succeeds.
+ */
+let pendingNetworkNotice: NetworkLossNotice[] = []
+
+let networkNoticeRetryMs = 2_000
+const NETWORK_NOTICE_MAX_TRIES = 90
+
+/** Bumped on every scheduler start and stop, so a stale delivery loop ends instead of lingering. */
+let noticeEpoch = 0
+
+/** Test seam: the wait between delivery attempts. */
+export function setNetworkNoticeRetryMs(ms: number): void {
+  networkNoticeRetryMs = ms
+}
+
+/**
  * BUG-166: one notice, listing the observe workers that just lost `WebFetch` because their saved
  * definition predates the opt-in and their prompt names a URL or the tool. Posted into the
- * operator's Activity history under the first affected worker's folder; the migration write that
- * follows is what makes it one-time.
+ * operator's Activity history under the first affected worker's folder.
+ *
+ * The command bridge REFUSES to dispatch until the renderer has announced itself, and this runs
+ * from `initScheduler`, before the window exists. A single fire-and-forget dispatch (the first
+ * version) was therefore lost every time, and since the file had already been healed it could never
+ * be sent again. So the notice is retried like `data-dir-boot`'s, and the record is cleared only
+ * after a dispatch SUCCEEDED. If this boot never gets a ready bridge, the record stays on disk and
+ * the next boot delivers it.
  */
-async function noticeNetworkLoss(lost: readonly NetworkLossNotice[]): Promise<void> {
-  if (lost.length === 0 || !bridgeRef) return
-  const names = lost.map((w) => w.name || w.id).join(', ')
-  try {
-    await bridgeRef.dispatch('notify.push', {
-      folderPath: lost[0].folder,
-      title: 'Scheduler: network access is now opt-in',
-      description: `Observe workers no longer get WebFetch by default. These mention a URL or WebFetch and now run without it: ${names}. Turn on "Allow network access" in a worker's settings if it needs it.`,
-      kind: 'warning'
-    })
-  } catch {
-    // Best-effort — never let a notice failure break boot.
+async function deliverNetworkNotice(epoch: number): Promise<void> {
+  for (let attempt = 0; attempt < NETWORK_NOTICE_MAX_TRIES; attempt++) {
+    if (epoch !== noticeEpoch) return
+    const lost = pendingNetworkNotice
+    if (lost.length === 0) return
+    const names = lost.map((w) => w.name || w.id).join(', ')
+    try {
+      if (!bridgeRef) throw new Error('no bridge')
+      await bridgeRef.dispatch('notify.push', {
+        folderPath: lost[0].folder,
+        title: 'Scheduler: network access is now opt-in',
+        description: `Observe workers no longer get WebFetch by default. These mention a URL or WebFetch and now run without it: ${names}. Turn on "Network access" in a worker's Settings if it needs it.`,
+        kind: 'warning'
+      })
+    } catch {
+      await new Promise((r) => setTimeout(r, networkNoticeRetryMs))
+      continue
+    }
+    if (epoch !== noticeEpoch) return
+    pendingNetworkNotice = []
+    await persistWorkers().catch(() => {})
+    return
   }
 }
 
@@ -568,13 +601,16 @@ async function initScheduler(): Promise<void> {
   // read, before anything that could await and let a write interleave. From
   // here on an empty `workersCache` means the operator owns zero workers.
   storeLoaded = true
-  // BUG-166: write the migrated file back (every worker now carries an explicit
-  // `allowNetwork`), then say once which workers lost the network. Heal first, so a crash between
-  // the two can only drop the notice, never repeat it.
-  if (boot.needsHeal) {
-    await persistWorkers()
-    await noticeNetworkLoss(boot.lostNetwork)
-  }
+  // BUG-166: every worker now carries an explicit `allowNetwork`, written back in the same write
+  // that records the notice that is owed for it, so the two can never be split by a crash. The
+  // notice is then delivered in the background, with retry (see deliverNetworkNotice).
+  const owed = [...boot.pendingNotice, ...boot.lostNetwork].filter(
+    (w, i, all) => all.findIndex((x) => x.id === w.id) === i
+  )
+  pendingNetworkNotice = owed
+  const epoch = ++noticeEpoch
+  if (boot.needsHeal || owed.length > 0) await persistWorkers()
+  if (owed.length > 0) void deliverNetworkNotice(epoch)
   for (const w of workersCache) {
     const runs = await loadRuns(w.id)
     if (runs.length > 0) lastRunAt[w.id] = runs[runs.length - 1].startedAt
@@ -936,6 +972,7 @@ export function registerScheduler(
 
 /** Test/quit hook — never called by production code paths otherwise. */
 export function stopSchedulerTicker(): void {
+  noticeEpoch++
   if (tickerHandle) clearInterval(tickerHandle)
   tickerHandle = null
 }
