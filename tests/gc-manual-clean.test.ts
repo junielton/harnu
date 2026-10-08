@@ -8,7 +8,7 @@ import { defaultGcPrefs, type GcPrefs } from '../src/main/gc/gc-prefs'
 import { GcStepError, type GcOps } from '../src/main/gc/pipeline-core'
 import type { WorktreeBundle } from '../src/main/gc/bundle-core'
 import type { OrphanVolumeItem } from '../src/main/gc/gc-housekeeping-input'
-import { bundle, NOW } from './gc-fixtures'
+import { bundle, NOW, reapItem } from './gc-fixtures'
 
 const prefs = (over: Partial<GcPrefs> = {}): GcPrefs => ({ ...defaultGcPrefs(), ...over })
 
@@ -308,6 +308,14 @@ describe('the confirmation binds to what the operator saw (AC-8, delta 1)', () =
     opts.expected![a.item.id]!.bytes = 1
     const r = await run([a], opts, [a.item.id])
     expect(r.done[0]!.results[0]).toMatchObject({ ok: true })
+  })
+
+  it('a confirmation for one folder cannot clean another folder with the same id', async () => {
+    const shownA = bundle('/ws/wt/A', 'ready')
+    const nowB = bundle('/ws/wt/B', 'ready', { item: reapItem('/ws/wt/B', { id: shownA.item.id }) })
+    const r = await run([nowB], shown([shownA]), [shownA.item.id])
+    expect(r.normal).toEqual([])
+    expect(r.done[0]!.results[0]).toMatchObject({ ok: false, error: 'changed-since-confirm' })
   })
 
   it('has no blanket flag: a stray confirmDecide or confirmReview is ignored', async () => {
