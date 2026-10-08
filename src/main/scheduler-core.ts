@@ -274,20 +274,46 @@ function capNotification(text: string): string {
  * `git status` runs it. Flag-by-flag filtering is a losing game, so an observe tick
  * gets no shell and reads git/PR facts through Harnu's read verbs instead
  * (`list_worktrees`, `mission_get`, `get_fleet`). Never re-add `Bash` here.
+ *
+ * This list is passed twice, and the two flags do different jobs. `--tools` decides which
+ * built-in tools the CLI LOADS at all; `--allowedTools` only auto-approves a call to one
+ * that is loaded. Without `--tools` the CLI also loads `Monitor` (a shell by another name),
+ * `EnterWorktree` (runs `git worktree add`, which fires `post-checkout` hooks), the
+ * Cron tools, Workflow, RemoteTrigger, `SendMessage` and `ToolSearch`, none of which a
+ * `Bash` deny touches (verified against claude 2.1.294). MCP verbs are not built-ins:
+ * `--tools` leaves them alone and they stay gated by the allow list below.
+ *
+ * `Skill` is here because a worker prompt may say "use the X skill" in prose; the
+ * `/skill` slash form works without it. A skill is text, not a capability, and whatever
+ * it asks for still has to pass the list above.
+ *
+ * `WebFetch` is still here pending BUG-166, which makes network access opt-in.
  */
-export const OBSERVE_TOOLS: readonly string[] = ['Read', 'Grep', 'Glob', 'WebFetch']
+export const OBSERVE_TOOLS: readonly string[] = ['Read', 'Grep', 'Glob', 'WebFetch', 'Skill']
 
 /**
- * Native tools an `observe` tick is explicitly denied. A deny rule beats any allow
- * rule, so bare `Bash` here keeps the shell out even if a `Bash(...)` rule ever
- * reaches the allowlist by another route.
+ * Native tools an `observe` tick is explicitly denied. Redundant with `--tools` on purpose:
+ * a deny rule beats any allow rule, so if the CLI ever loads one of these anyway, or a rule
+ * reaches the allowlist by another route, the call is still refused. Bare `Bash` matters
+ * most; `Monitor` and `EnterWorktree` are the two that were found loaded and callable.
  */
 export const OBSERVE_TOOLS_DENY: readonly string[] = [
   'Edit',
   'Write',
   'NotebookEdit',
   'Task',
-  'Bash'
+  'Agent',
+  'Bash',
+  'Monitor',
+  'EnterWorktree',
+  'ExitWorktree',
+  'CronCreate',
+  'CronDelete',
+  'Workflow',
+  'RemoteTrigger',
+  'PushNotification',
+  'SendMessage',
+  'ToolSearch'
 ]
 
 /**
@@ -478,6 +504,8 @@ export function tickArgv(worker: Worker, ctx: TickContext): string[] {
   } else {
     // `extraReadCommands` is deliberately not consulted: observe has no shell (BUG-164).
     const allow = [...OBSERVE_TOOLS]
+    // The built-in tool set is an allowlist, not "everything minus a deny list".
+    argv.push('--tools', OBSERVE_TOOLS.join(','))
     if (ctx.mcpConfigPath) allow.push(...OBSERVE_MCP_ALLOW)
     argv.push('--allowedTools', allow.join(','))
     argv.push('--disallowedTools', OBSERVE_TOOLS_DENY.join(','))

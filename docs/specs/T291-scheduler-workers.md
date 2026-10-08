@@ -315,7 +315,8 @@ warning on `act` is theater. The escape hatch already exists: a worker that need
 > **Superseded by BUG-164 (2026-10-08).** `observe` no longer has a shell: `Bash` is denied and
 > `extraReadCommands` grants nothing. A prefix rule like `Bash(git log:*)` cannot say "no
 > `--output` anywhere", and `--output=<path>` writes an arbitrary file (a path to code execution
-> through `.git/config`). The paragraph below and the BUG-108 verb validation are kept as history.
+> through `.git/config`). Delta 1: the built-in tool set is also an allowlist (`--tools`), because a
+> `Bash` deny does not cover `Monitor`, `EnterWorktree` and others the CLI loads by default. The paragraph below and the BUG-108 verb validation are kept as history.
 
 What IS configurable is the dimension that genuinely varies per project:
 `extraReadCommands`, an **additive** field that accepts only read-only `Bash(...)` rules (a

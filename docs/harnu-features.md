@@ -404,10 +404,12 @@ yourself.
 to mint a Scheduler worker: the only thing that keeps ticking on its own cadence
 after this session ends. `mode: 'observe'` (the default) is created DIRECTLY, no
 confirm, same class as `create_session` — inside a tick it is read-only by an
-explicit allowlist (`Read`, `Grep`, `Glob`, `WebFetch` and a named set of Harnu
-read verbs; **no `Bash`, so no `git` and no `gh`** — a tick gets git and PR facts
-from `list_worktrees`, `get_fleet` and `mission_get`), so an unattended one is
-proportionate. `mode: 'act'` runs
+explicit allowlist: the tick's built-in tools are exactly `Read`, `Grep`, `Glob`,
+`WebFetch` and `Skill` (the CLI is started with `--tools`, so nothing else loads —
+**no `Bash`, `Monitor`, worktree, cron, workflow or `SendMessage` tool**), plus a
+named set of Harnu read verbs. With no shell there is no `git` and no `gh`: a tick
+gets git and PR facts from `list_worktrees`, `get_fleet` and `mission_get`. So an
+unattended one is proportionate. `mode: 'act'` runs
 with permissions bypassed and the full toolset, and it does NOT stop at the
 Approval Inbox — minting one unattended would be granting yourself a permanent,
 unsupervised second body, so it ALWAYS faces the operator as a confirm naming
