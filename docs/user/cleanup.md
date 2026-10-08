@@ -73,6 +73,8 @@ Click a block to open its panel on the right (on a narrow window it opens over t
 - **Takes with it**: exactly what removing it would delete (its Docker stack's containers, dependencies, the checkout, the local branch; its volumes are kept);
 - the actions: **Remove**, **Dehydrate** (or **Rehydrate** for one already dehydrated), **Keep**, and **Ask for an opinion**. **Ask for an opinion** asks a read-only advisor about this one item (see "Ask for an opinion" below), and once it has answered, an **Opinion** section appears above the actions with its reason and evidence. A ready item's panel offers **Clean now** instead.
 
+With the panel open, the letters on its buttons work too: **R** Remove, **D** Dehydrate, **K** Keep and **A** Ask for an opinion (each only while its button is shown and enabled).
+
 An orphan Docker volume shows its compose project and "No known worktree uses this volume".
 
 If a clean failed on an item, the panel also shows **What ran**: which steps finished, which one failed, and which never started ("Nothing destructive ran" when it stopped before touching anything), with Docker's own error text and a **Copy error** button. The item comes back as a Needs review block with its own reason.

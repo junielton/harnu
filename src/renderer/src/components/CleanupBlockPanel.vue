@@ -158,7 +158,7 @@ function shortcutsBlocked(e: KeyboardEvent): boolean {
   return !!document.querySelector('[role="dialog"][aria-modal="true"]')
 }
 
-/** Each letter acts only when its button is shown AND enabled; "A" has no action (Ask is disabled). */
+/** Each letter acts only when its button is shown AND enabled. */
 function onShortcut(e: KeyboardEvent): void {
   if (shortcutsBlocked(e)) return
   const id = props.block.id
@@ -171,6 +171,9 @@ function onShortcut(e: KeyboardEvent): void {
       break
     case 'd':
       if (showDehydrate.value && !hydrationDisabled.value) emit('dehydrate', id)
+      break
+    case 'a':
+      if (showAsk.value && !locked.value && !props.asking) emit('ask', id)
       break
   }
 }
