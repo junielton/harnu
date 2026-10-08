@@ -52,8 +52,8 @@ export const relatesTo = (a: string, b: string): boolean =>
   a !== '' && b !== '' && (isInside(a, b) || isInside(b, a))
 
 export type SessionPresence = 'working' | 'needs-input' | 'open-idle' | 'none'
-export type Bucket = 'corpse' | 'decide' | 'alive'
-export type DecideCode =
+export type Bucket = 'ready' | 'review' | 'in-use'
+export type ReviewCode =
   | 'dirty'
   | 'unpushed'
   | 'open-idle-session'
@@ -67,8 +67,8 @@ export type DecideCode =
   | 'path-unresolved'
 
 /** `detail` is one English sentence with the concrete fact; the renderer translates by `code`. */
-export interface DecideReason {
-  code: DecideCode
+export interface ReviewReason {
+  code: ReviewCode
   detail: string
 }
 
@@ -107,7 +107,7 @@ export interface BundleFacts {
 
 export interface WorktreeBundle extends BundleFacts {
   bucket: Bucket
-  reason: DecideReason | null
+  reason: ReviewReason | null
 }
 
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`
@@ -185,9 +185,9 @@ export function ownedVolumes(
     .sort()
 }
 
-const FATE_DECISIONS: Record<
+const FATE_REVIEWS: Record<
   Exclude<FateResult['fate'], 'merged' | 'open'>,
-  { code: DecideCode; detail: string }
+  { code: ReviewCode; detail: string }
 > = {
   'closed-unmerged': {
     code: 'closed-unmerged',
@@ -209,57 +209,57 @@ const FATE_DECISIONS: Record<
 
 /**
  * First matching rule wins (master plan rules 1–11). Anything that could be someone's live
- * work is `alive`; anything uncertain is `decide`; only a strongly merged, clean, idle
- * worktree past its grace window is a `corpse`.
+ * work is `in-use`; anything uncertain is `review`; only a strongly merged, clean, idle
+ * worktree past its grace window is `ready`.
  */
 export function bucketOf(
   f: BundleFacts,
   now: number,
   graceDays: number
-): { bucket: Bucket; reason: DecideReason | null } {
-  const alive = { bucket: 'alive' as const, reason: null }
-  const decide = (code: DecideCode, detail: string): { bucket: Bucket; reason: DecideReason } => ({
-    bucket: 'decide',
+): { bucket: Bucket; reason: ReviewReason | null } {
+  const inUse = { bucket: 'in-use' as const, reason: null }
+  const review = (code: ReviewCode, detail: string): { bucket: Bucket; reason: ReviewReason } => ({
+    bucket: 'review',
     reason: { code, detail }
   })
 
-  if (f.isMainCheckout || f.neverClean) return alive
-  if (f.session === 'working' || f.session === 'needs-input') return alive
-  if (f.fate.fate === 'open') return alive
+  if (f.isMainCheckout || f.neverClean) return inUse
+  if (f.session === 'working' || f.session === 'needs-input') return inUse
+  if (f.fate.fate === 'open') return inUse
   // No sign of life at all is "unknown age", which must not read as "old enough". Neither
   // is a NaN, infinite or negative input: each would make the comparison below false.
   const known = (n: number | null): n is number => Number.isFinite(n) && (n as number) >= 0
-  if (!known(f.lastSignOfLifeAt) || !known(graceDays) || !known(now)) return alive
-  if (now - f.lastSignOfLifeAt < graceDays * DAY_MS) return alive
-  if (f.keep) return alive
+  if (!known(f.lastSignOfLifeAt) || !known(graceDays) || !known(now)) return inUse
+  if (now - f.lastSignOfLifeAt < graceDays * DAY_MS) return inUse
+  if (f.keep) return inUse
 
   if (f.session === 'open-idle')
-    return decide('open-idle-session', 'A session is still open in this worktree, though idle.')
-  // Only a session read as exactly `none` can be a corpse; anything else is not proven idle.
+    return review('open-idle-session', 'A session is still open in this worktree, though idle.')
+  // Only a session read as exactly `none` can be ready; anything else is not proven idle.
   if (f.session !== 'none')
-    return decide('open-idle-session', 'The session state of this worktree is unknown.')
+    return review('open-idle-session', 'The session state of this worktree is unknown.')
 
   if (f.sharedStackIds.length > 0) {
     const n = f.sharedStackIds.length
-    return decide(
+    return review(
       'shared-stack',
       `${plural(n, 'other stack')} also ${n === 1 ? 'uses' : 'use'} this worktree: ${f.sharedStackIds.join(', ')}.`
     )
   }
 
   if (f.pathsResolved !== true)
-    return decide(
+    return review(
       'path-unresolved',
       'A path tied to this worktree could not be resolved to its real location, so what uses it is unknown.'
     )
 
   if (f.fate.fate !== 'merged') {
-    const d = FATE_DECISIONS[f.fate.fate]
-    return decide(d.code, d.detail)
+    const d = FATE_REVIEWS[f.fate.fate]
+    return review(d.code, d.detail)
   }
 
   if (!f.fate.strong)
-    return decide(
+    return review(
       'weak-merge-signal',
       f.fate.signal === 'gh-merged'
         ? 'Merged by gh-merged, but the local tip differs from the PR head.'
@@ -270,14 +270,14 @@ export function bucketOf(
   if (blockers.includes('dirty') || blockers.includes('unpushed')) {
     const hit = ['dirty', 'unpushed'].filter((b) => blockers.includes(b))
     const detail = `${plural(hit.length, 'blocker')}: ${hit.join(', ')}.`
-    return decide(hit[0] === 'dirty' ? 'dirty' : 'unpushed', detail)
+    return review(hit[0] === 'dirty' ? 'dirty' : 'unpushed', detail)
   }
   // No blocker is not proof of clean: a status probe that failed leaves no blocker either.
   // Only a green local-clean checkpoint shows the tracked files were read and clean.
   if (f.item.checkpoints.find((c) => c.id === 'local-clean')?.state !== 'green')
-    return decide('dirty', 'The working tree could not be verified clean.')
+    return review('dirty', 'The working tree could not be verified clean.')
 
-  return { bucket: 'corpse', reason: null }
+  return { bucket: 'ready', reason: null }
 }
 
 export interface BuildBundlesInput {

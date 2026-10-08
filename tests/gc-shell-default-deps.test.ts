@@ -76,7 +76,7 @@ function harvestable(): WorktreeBundle {
     isMainCheckout: false,
     pathsResolved: true,
     localTip: TIP,
-    bucket: 'corpse',
+    bucket: 'ready',
     reason: null
   }
 }

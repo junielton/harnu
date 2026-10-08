@@ -83,7 +83,7 @@ function bundle(over: Partial<WorktreeBundle> = {}): WorktreeBundle {
     neverClean: false,
     isMainCheckout: false,
     pathsResolved: true,
-    bucket: 'corpse',
+    bucket: 'ready',
     reason: null,
     ...over
   }
@@ -1189,12 +1189,12 @@ describe('reprobe through the real builder', () => {
     const b = scanned([web])
     expect(b.stackIds).toEqual([])
     expect(b.sharedStackIds).toEqual(['other'])
-    expect(b.bucket).toBe('decide')
+    expect(b.bucket).toBe('review')
   })
 
   it('the same stack appearing after the scan refuses the clean (delta 3, item 2)', async () => {
     const b = scanned([])
-    expect(b.bucket).toBe('corpse')
+    expect(b.bucket).toBe('ready')
     const web = composeIn('web', 'other', ELSEWHERE, [
       { type: 'bind', source: `${WT}/data`, name: null }
     ])
@@ -1776,10 +1776,10 @@ describe('P8: a dev container that bind-mounts an ancestor of the worktree (delt
   it('the builder and the reprobe agree: shared at the scan, and the run refuses it', async () => {
     const b = scanned([dev], undefined, NESTED)
     expect(b.sharedStackIds).toEqual(['www'])
-    expect(b.bucket).toBe('decide')
+    expect(b.bucket).toBe('review')
     const h = harness({ stacks: groupStacks([dev]) })
     expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: true })
-    const r = await runBundle(b, createGcOps(h.deps), { removeVolumes: false, confirmDecide: true })
+    const r = await runBundle(b, createGcOps(h.deps), { removeVolumes: false, confirmReview: true })
     expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'shared-stack' })
     expect(h.stop).not.toHaveBeenCalled()
     expect(cleanItem).not.toHaveBeenCalled()

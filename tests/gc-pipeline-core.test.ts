@@ -37,7 +37,7 @@ function bundle(name: string, over: Partial<WorktreeBundle> = {}): WorktreeBundl
     neverClean: false,
     isMainCheckout: false,
     pathsResolved: true,
-    bucket: 'corpse',
+    bucket: 'ready',
     reason: null,
     ...over
   }
@@ -328,18 +328,18 @@ describe('runBundle — recheck right before drop-deps (delta 4, item D)', () =>
   })
 })
 
-describe('runBundle — only a proven corpse runs (delta 2, item 2)', () => {
-  const refused = { ok: false, haltedAt: 'reprobe', error: 'not-a-corpse', freedBytes: 0 }
+describe('runBundle — only a proven ready bundle runs (delta 2, item 2)', () => {
+  const refused = { ok: false, haltedAt: 'reprobe', error: 'not-ready', freedBytes: 0 }
 
   it.each<[string, Partial<WorktreeBundle>]>([
-    ['alive', { bucket: 'alive' }],
+    ['in-use', { bucket: 'in-use' }],
     ['keep', { keep: true }],
     ['neverClean', { neverClean: true }],
     ['a main checkout', { isMainCheckout: true }],
-    ['decide without confirmDecide', { bucket: 'decide' }]
+    ['review without confirmReview', { bucket: 'review' }]
   ])('refuses %s with zero ops called', async (_label, over) => {
-    // A corpse base, so keep / neverClean / main checkout are refused for the flag itself:
-    // a hand-built or stale bundle can carry a corpse bucket next to a protection flag.
+    // A ready base, so keep / neverClean / main checkout are refused for the flag itself:
+    // a hand-built or stale bundle can carry a ready bucket next to a protection flag.
     const b = bundle('a', over)
     const f = fakeOps()
     expect(await runBundle(b, f.ops, OPTS)).toEqual({ id: b.item.id, ...refused })
@@ -359,7 +359,7 @@ describe('runBundle — only a proven corpse runs (delta 2, item 2)', () => {
       const base = bundle('a')
       const b = bundle('a', { item: { ...base.item, path }, isMainCheckout: false })
       const f = fakeOps()
-      expect(await runBundle(b, f.ops, { ...OPTS, confirmDecide: true })).toEqual({
+      expect(await runBundle(b, f.ops, { ...OPTS, confirmReview: true })).toEqual({
         id: b.item.id,
         ...refused
       })
@@ -378,21 +378,21 @@ describe('runBundle — only a proven corpse runs (delta 2, item 2)', () => {
     expect(f.calls).toEqual([])
   })
 
-  it('refuses a decide bundle when confirmDecide is false', async () => {
+  it('refuses a review bundle when confirmReview is false', async () => {
     const f = fakeOps()
-    const r = await runBundle(bundle('a', { bucket: 'decide' }), f.ops, {
+    const r = await runBundle(bundle('a', { bucket: 'review' }), f.ops, {
       ...OPTS,
-      confirmDecide: false
+      confirmReview: false
     })
     expect(r).toMatchObject(refused)
     expect(f.calls).toEqual([])
   })
 
-  it('runs a decide bundle when the operator confirmed it', async () => {
+  it('runs a review bundle when the operator confirmed it', async () => {
     const f = fakeOps()
-    const r = await runBundle(bundle('a', { bucket: 'decide' }), f.ops, {
+    const r = await runBundle(bundle('a', { bucket: 'review' }), f.ops, {
       ...OPTS,
-      confirmDecide: true
+      confirmReview: true
     })
     expect(r.ok).toBe(true)
     expect(f.calls[0]).toBe('reprobe')
@@ -400,39 +400,39 @@ describe('runBundle — only a proven corpse runs (delta 2, item 2)', () => {
   })
 
   it.each<[string, Partial<WorktreeBundle>]>([
-    ['alive', { bucket: 'alive' }],
+    ['in-use', { bucket: 'in-use' }],
     ['keep', { keep: true }],
     ['neverClean', { neverClean: true }],
     ['a main checkout', { isMainCheckout: true }]
-  ])('confirmDecide still refuses %s', async (_label, over) => {
+  ])('confirmReview still refuses %s', async (_label, over) => {
     const f = fakeOps()
-    const r = await runBundle(bundle('a', { bucket: 'decide', ...over }), f.ops, {
+    const r = await runBundle(bundle('a', { bucket: 'review', ...over }), f.ops, {
       ...OPTS,
-      confirmDecide: true
+      confirmReview: true
     })
     expect(r).toMatchObject(refused)
     expect(f.calls).toEqual([])
   })
 
-  describe('confirmDecide never overrides a shared stack (delta 3, item 4)', () => {
+  describe('confirmReview never overrides a shared stack (delta 3, item 4)', () => {
     const shared = { ok: false, haltedAt: 'reprobe', error: 'shared-stack', freedBytes: 0 }
 
-    it('refuses a decide shared-stack bundle the operator confirmed, with zero ops called', async () => {
+    it('refuses a review shared-stack bundle the operator confirmed, with zero ops called', async () => {
       const b = bundle('a', {
-        bucket: 'decide',
+        bucket: 'review',
         reason: { code: 'shared-stack', detail: '1 other stack also uses this worktree: app.' },
         stackIds: [],
         sharedStackIds: ['app']
       })
       const f = fakeOps()
-      expect(await runBundle(b, f.ops, { ...OPTS, confirmDecide: true })).toEqual({
+      expect(await runBundle(b, f.ops, { ...OPTS, confirmReview: true })).toEqual({
         id: b.item.id,
         ...shared
       })
       expect(f.calls).toEqual([])
     })
 
-    it('refuses a hand-built corpse that still lists a shared stack', async () => {
+    it('refuses a hand-built ready bundle that still lists a shared stack', async () => {
       const f = fakeOps()
       const r = await runBundle(bundle('a', { sharedStackIds: ['cache'] }), f.ops, OPTS)
       expect(r).toMatchObject(shared)
@@ -440,13 +440,13 @@ describe('runBundle — only a proven corpse runs (delta 2, item 2)', () => {
     })
   })
 
-  it('runBatch passes confirmDecide through to every bundle', async () => {
+  it('runBatch passes confirmReview through to every bundle', async () => {
     const f = fakeOps()
-    const bs = [bundle('a', { bucket: 'decide' }), bundle('b', { bucket: 'decide' })]
+    const bs = [bundle('a', { bucket: 'review' }), bundle('b', { bucket: 'review' })]
     const refusedAll = await runBatch(bs, f.ops, OPTS)
-    expect(refusedAll.every((r) => r.error === 'not-a-corpse')).toBe(true)
+    expect(refusedAll.every((r) => r.error === 'not-ready')).toBe(true)
     expect(f.calls).toEqual([])
-    const ran = await runBatch(bs, f.ops, { ...OPTS, confirmDecide: true })
+    const ran = await runBatch(bs, f.ops, { ...OPTS, confirmReview: true })
     expect(ran.every((r) => r.ok)).toBe(true)
   })
 })

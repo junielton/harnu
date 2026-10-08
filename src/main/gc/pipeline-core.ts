@@ -74,8 +74,8 @@ const messageOf = (err: unknown): string => (err instanceof Error ? err.message 
 
 export interface GcRunOptions {
   removeVolumes: boolean
-  /** The operator explicitly chose to clean `decide` bundles too. Never set by default. */
-  confirmDecide?: boolean
+  /** The operator explicitly chose to clean `review` bundles too. Never set by default. */
+  confirmReview?: boolean
 }
 
 /**
@@ -91,19 +91,19 @@ export function isMainCheckoutByPath(b: WorktreeBundle): boolean {
 }
 
 /**
- * Only a proven corpse runs, or a `decide` bundle the operator explicitly confirmed. A
+ * Only a proven ready bundle runs, or a `review` bundle the operator explicitly confirmed. A
  * protection flag refuses whatever the bucket says, since a stale or hand-built bundle can
- * carry a corpse bucket next to a flag set after the scan.
+ * carry a ready bucket next to a flag set after the scan.
  *
- * A shared stack refuses even a confirmed `decide`: the pipeline stops only the exclusive
+ * A shared stack refuses even a confirmed `review`: the pipeline stops only the exclusive
  * stacks, so the folder would be trashed under a foreign stack that still runs from it.
  * Returns the refusal, or null when the bundle may run.
  */
 function refusalOf(b: WorktreeBundle, opts: GcRunOptions): string | null {
-  if (b.isMainCheckout || b.neverClean || b.keep || isMainCheckoutByPath(b)) return 'not-a-corpse'
+  if (b.isMainCheckout || b.neverClean || b.keep || isMainCheckoutByPath(b)) return 'not-ready'
   if (b.sharedStackIds.length > 0) return 'shared-stack'
-  const runs = b.bucket === 'corpse' || (opts.confirmDecide === true && b.bucket === 'decide')
-  return runs ? null : 'not-a-corpse'
+  const runs = b.bucket === 'ready' || (opts.confirmReview === true && b.bucket === 'review')
+  return runs ? null : 'not-ready'
 }
 
 /**
@@ -112,7 +112,7 @@ function refusalOf(b: WorktreeBundle, opts: GcRunOptions): string | null {
  * under the checkout is touched until the stack running from it is gone, and nothing is
  * removed at all unless the reprobe still agrees with the scan.
  *
- * Anything but a proven corpse (or a confirmed `decide`), and anything with a shared stack,
+ * Anything but a proven ready bundle (or a confirmed `review`), and anything with a shared stack,
  * is refused before any op runs.
  * The first failing step halts this bundle; later steps never run. Never rejects.
  */
