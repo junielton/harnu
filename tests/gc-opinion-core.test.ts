@@ -5,6 +5,8 @@ import {
   opinionArgv,
   parseOpinions,
   parseOpinionsDetailed,
+  safeEffort,
+  safeModel,
   type OpinionDossier
 } from '../src/main/gc/opinion-core'
 import { OBSERVE_TOOLS, OBSERVE_TOOLS_DENY } from '../src/main/scheduler-core'
@@ -302,5 +304,44 @@ describe('parseOpinions (AC-3)', () => {
 
   it('returns nothing for no ids', () => {
     expect(parseOpinions(answer(), [])).toEqual([])
+  })
+})
+
+describe('a verdict has to earn its name', () => {
+  it('a safe verdict without evidence reads unsure', () => {
+    const out = parseOpinions(answer({ id: 'item-1', verdict: 'safe', reason: 'Looks fine.' }), [
+      'id-1'
+    ])
+    expect(out[0].verdict).toBe('unsure')
+  })
+
+  it('a keep verdict without evidence is still a keep', () => {
+    const out = parseOpinions(answer({ id: 'item-1', verdict: 'keep', reason: 'Has commits.' }), [
+      'id-1'
+    ])
+    expect(out[0].verdict).toBe('keep')
+  })
+
+  it('an unknown verdict is not counted as answered', () => {
+    const r = parseOpinionsDetailed(
+      answer({ id: 'item-1', verdict: 'maybe', reason: 'r', evidence: 'e' }),
+      ['id-1']
+    )
+    expect(r.answered.size).toBe(0)
+  })
+})
+
+describe('the routed model and effort stay data', () => {
+  it('keeps a plausible model name and replaces one that could be read as a flag', () => {
+    expect(safeModel('opus')).toBe('opus')
+    expect(safeModel('claude-opus-5-5')).toBe('claude-opus-5-5')
+    expect(safeModel('opus[1m]')).toBe('opus[1m]')
+    expect(safeModel('--dangerously-skip-permissions')).toBe('opus')
+    expect(safeModel('')).toBe('opus')
+  })
+
+  it('falls back to high for an effort it does not know', () => {
+    expect(safeEffort('low')).toBe('low')
+    expect(safeEffort('turbo')).toBe('high')
   })
 })
