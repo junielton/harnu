@@ -7,11 +7,10 @@
 // Read-only on every side: the git calls are `status`, `diff --stat` and `rev-parse`, and the
 // session it spawns is the Scheduler's `observe` argv with no MCP server (see `opinionArgv`).
 
-import { spawn } from 'node:child_process'
-import { tmpdir } from 'node:os'
 import { getFleetFolders } from '../fleet-model'
 import { resolveClaudePath } from '../claude-cli'
 import { sanitizeSpawnEnv } from '../appimage-env'
+import { runSupervised } from './opinion-run'
 import { lastFateInputs } from '../reaper/scanner-shell'
 import { resolveFolderRouting } from '../routing-policy'
 import type { WorktreeBundle } from './bundle-core'
@@ -26,7 +25,6 @@ import {
 
 /** One headless process may think for a while, but never indefinitely. */
 const RUN_TIMEOUT_MS = 180_000
-const STDOUT_MAX = 4 << 20
 
 /** The part of a gather the advisor reads. */
 export interface OpinionSource {
@@ -157,7 +155,7 @@ function volumeDossier(v: OrphanVolumeItem): { dossier: OpinionDossier; group: s
   }
 }
 
-/** Spawns `claude` with the given argv and resolves with its stdout; null on any failure. */
+/** Resolves `claude` and runs it with the advisor's argv; the prompt goes in on stdin. */
 async function runClaude(a: {
   cwd: string | null
   argv: string[]
@@ -165,30 +163,11 @@ async function runClaude(a: {
 }): Promise<string | null> {
   const bin = await resolveClaudePath()
   if (!bin) return null
-  return new Promise<string | null>((resolve) => {
-    let settled = false
-    const finish = (value: string | null): void => {
-      if (settled) return
-      settled = true
-      resolve(value)
-    }
-    // The prompt goes in on stdin, never as an argument (one argv string over 128 KB is E2BIG). The
-    // timeout is spawn's own, so a hung process is killed without this module owning a timer.
-    const child = spawn(bin, a.argv, {
-      cwd: a.cwd ?? tmpdir(),
-      env: sanitizeSpawnEnv(process.env, { execPath: process.execPath }),
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: RUN_TIMEOUT_MS,
-      killSignal: 'SIGTERM'
-    })
-    let stdout = ''
-    child.stdout?.on('data', (d: Buffer) => {
-      if (stdout.length < STDOUT_MAX) stdout += d.toString()
-    })
-    child.stdin?.on('error', () => {}) // the process may exit before it reads everything
-    child.stdin?.end(a.stdin)
-    child.on('error', () => finish(null))
-    child.on('exit', (code) => finish(code === 0 && stdout.trim() ? stdout : null))
+  return runSupervised(bin, a.argv, {
+    cwd: a.cwd,
+    env: sanitizeSpawnEnv(process.env, { execPath: process.execPath }),
+    stdin: a.stdin,
+    timeoutMs: RUN_TIMEOUT_MS
   })
 }
 
