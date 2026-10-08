@@ -75,7 +75,7 @@ interface Over {
   /** The tip each mark was made at; defaults to the bundle's own tip. null passes none. */
   releasedTips?: ReadonlyMap<string, string> | null
   /** The local tip the fate is judged on; defaults to TIP. */
-  localTip?: string
+  localTip?: string | null
   mergedAgo?: number
 }
 
@@ -93,7 +93,12 @@ function build(over: Over = {}) {
     over.released === null ? undefined : (over.released ?? new Map([[it.id, NOW - 60_000]]))
   return buildBundles({
     items: [it],
-    fateInputs: new Map([[it.id, { facts: facts(over.facts), localTip: over.localTip ?? TIP }]]),
+    fateInputs: new Map([
+      [
+        it.id,
+        { facts: facts(over.facts), localTip: 'localTip' in over ? (over.localTip ?? null) : TIP }
+      ]
+    ]),
     stacks: [],
     stackPaths: new Map(),
     containers: [],
@@ -414,7 +419,7 @@ describe('a release is tied to the tip it was made at (T445 delta 2, 4)', () => 
   })
 
   it('does not apply when the bundle has no tip to compare', () => {
-    const b = build({ item: { kind: 'worktree' }, localTip: undefined as never })
+    const b = build({ localTip: null })
     expect(b.bucket).not.toBe('ready')
   })
 

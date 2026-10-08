@@ -317,6 +317,11 @@ export interface BuildBundlesInput {
    */
   released?: ReadonlyMap<string, number>
   /**
+   * The tip each release was made at. A release applies only when this matches the bundle's
+   * current tip; a mark with no entry here (a legacy one) never applies.
+   */
+  releasedTips?: ReadonlyMap<string, string>
+  /**
    * Each path's real location, read by the caller (the shell realpaths them; this module
    * never touches the disk). Every path below is compared through it: item and repo paths,
    * container working dirs and bind sources, session folders, stackPaths, neverClean and
@@ -509,8 +514,17 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
     // grace actually used, so the execution-time reprobe agrees with the bucket.
     // It applies only to a strongly merged fate: any weaker proof keeps the normal window.
     const mark = input.released?.get(item.id)
+    const markTip = input.releasedTips?.get(item.id)
+    const tip =
+      item.kind === 'detached-worktree' ? (item.headSha ?? null) : (fateInput?.localTip ?? null)
     const releasedAt =
-      mark !== undefined && fate.fate === 'merged' && fate.strong ? mark : undefined
+      mark !== undefined &&
+      fate.fate === 'merged' &&
+      fate.strong &&
+      typeof markTip === 'string' &&
+      tip === markTip
+        ? mark
+        : undefined
     const graceDays = releasedAt !== undefined ? 0 : input.graceDays
 
     const facts: BundleFacts = {
@@ -553,15 +567,16 @@ export interface ReleaseGone {
   /** Repos the Reaper snapshot covered. Empty when there was no snapshot. */
   scannedRepos: ReadonlySet<string>
   /** Where each released worktree was, as recorded when it was released. */
-  from: Readonly<Record<string, { repoPath: string; path: string }>>
+  from: Readonly<Record<string, { repoPath: string; path: string; localTip?: string }>>
   /** Recorded folders confirmed absent from disk (a missing file, not an unreadable one). */
   missingPaths: ReadonlySet<string>
 }
 
 /**
  * Release marks to drop after a gather. A mark goes in two cases only:
- *  1. its bundle IS in this gather and its fate is no longer merged and strong (a reopened
- *     branch must not come back pre-released);
+ *  1. its bundle IS in this gather and its fate is no longer merged and strong, or (given the
+ *     gather's context) its tip is no longer the tip it was released at (a reopened or
+ *     extended branch must not come back pre-released);
  *  2. its bundle is absent, its repo WAS scanned, and the folder it recorded is gone from disk
  *     (it was cleaned).
  * Absence alone proves nothing: the gather at app start runs before the Reaper's first scan and
@@ -569,18 +584,23 @@ export interface ReleaseGone {
  * recorded no folder can never be shown cleaned, so it stays.
  */
 export function staleReleases(
-  bundles: ReadonlyArray<Pick<WorktreeBundle, 'item' | 'fate'>>,
+  bundles: ReadonlyArray<Pick<WorktreeBundle, 'item' | 'fate' | 'localTip'>>,
   released: Readonly<Record<string, number>>,
   gone?: ReleaseGone
 ): string[] {
-  const present = new Map(bundles.map((b) => [b.item.id, b.fate]))
+  const present = new Map(bundles.map((b) => [b.item.id, b]))
   const platform = process.platform
   const norm = (p: string): string => normalizePath(p, platform)
   const scanned = new Set([...(gone?.scannedRepos ?? [])].map(norm))
   const missing = new Set([...(gone?.missingPaths ?? [])].map(norm))
   return Object.keys(released).filter((id) => {
-    const fate = present.get(id)
-    if (fate !== undefined) return !(fate.fate === 'merged' && fate.strong)
+    const b = present.get(id)
+    if (b !== undefined) {
+      if (!(b.fate.fate === 'merged' && b.fate.strong)) return true
+      // With the gather's context a mark must still match the tip it was made at. A mark that
+      // recorded none is dropped too: it would never apply, so it is only clutter.
+      return gone !== undefined && gone.from[id]?.localTip !== (b.localTip ?? undefined)
+    }
     const from = gone?.from[id]
     return from !== undefined && scanned.has(norm(from.repoPath)) && missing.has(norm(from.path))
   })

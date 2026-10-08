@@ -43,6 +43,12 @@ export interface GcPrefs {
 export interface ReleasedFrom {
   repoPath: string
   path: string
+  /**
+   * The branch tip the release was made at. A release applies only while the bundle's tip is
+   * still this one, so new commits followed by a fresh merge do not inherit it. A mark with no
+   * tip (legacy) never applies.
+   */
+  localTip?: string
 }
 
 export const PREFS_FILE = 'gc-prefs.json'
@@ -134,9 +140,13 @@ export function normalizeGcPrefs(raw: unknown, legacy: LegacyPrefs = {}): GcPref
   if (isRecord(r.releasedFrom)) {
     for (const [id, from] of Object.entries(r.releasedFrom)) {
       if (!id || !isRecord(from)) continue
-      const { repoPath, path: where } = from
+      const { repoPath, path: where, localTip } = from
       if (typeof repoPath === 'string' && repoPath && typeof where === 'string' && where) {
-        releasedFrom[id] = { repoPath, path: where }
+        releasedFrom[id] = {
+          repoPath,
+          path: where,
+          ...(typeof localTip === 'string' && localTip ? { localTip } : {})
+        }
       }
     }
   }

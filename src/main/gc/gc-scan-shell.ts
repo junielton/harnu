@@ -139,6 +139,15 @@ async function everyKnownFolder(repoPaths: string[], itemPaths: string[]): Promi
   ]
 }
 
+/** The tip each release was made at; a mark that recorded none is left out and never applies. */
+function releasedTipsOf(prefs: GcPrefs): Map<string, string> {
+  const tips = new Map<string, string>()
+  for (const [id, from] of Object.entries(prefs.releasedFrom)) {
+    if (from.localTip) tips.set(id, from.localTip)
+  }
+  return tips
+}
+
 /** The folders among `paths` that are gone. An unreadable one is not gone: it stays. */
 async function missingFolders(paths: readonly string[]): Promise<Set<string>> {
   const gone = new Set<string>()
@@ -258,7 +267,8 @@ export async function gatherGc(
     knownFolders: guards.knownFolders,
     protectedProjects: guards.protectedProjects,
     canonical,
-    released: new Map(Object.entries(prefs.released))
+    released: new Map(Object.entries(prefs.released)),
+    releasedTips: releasedTipsOf(prefs)
   }
   // A Keep mark holds only while the fate it was made under still holds: judge the fates
   // first, then rebuild with the marks that are still valid.

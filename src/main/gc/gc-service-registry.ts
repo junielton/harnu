@@ -12,7 +12,11 @@ export interface GcAgentService {
    * Records that an agent is done with the bundle, and where the worktree is so a later gather
    * can tell it was cleaned. Deletes nothing.
    */
-  release(bundleId: string, atMs: number, from: { repoPath: string; path: string }): Promise<void>
+  release(
+    bundleId: string,
+    atMs: number,
+    from: { repoPath: string; path: string; localTip: string }
+  ): Promise<void>
 }
 
 let service: GcAgentService | null = null

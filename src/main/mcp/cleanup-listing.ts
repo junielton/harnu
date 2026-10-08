@@ -321,7 +321,12 @@ export type ReleasePlan =
   /** A folder the operator blocked covers the worktree or its repo (the handler refuses it). */
   | { ok: false; blocked: true }
   | { ok: false; blocked?: false; refusal: ReleaseRefusal }
-  | { ok: true; bundleId: string; from: { repoPath: string; path: string }; ack: ReleaseAck }
+  | {
+      ok: true
+      bundleId: string
+      from: { repoPath: string; path: string; localTip: string }
+      ack: ReleaseAck
+    }
 
 const refuse = (
   error: ReleaseRefusalCode,
@@ -390,6 +395,20 @@ export function planRelease(
     )
   }
 
+  // A merge proof is about one tip. With no tip on record the release could not be tied to
+  // anything, so it would never apply: say so instead of recording a dead mark.
+  const localTip = bundle.localTip
+  if (typeof localTip !== 'string' || !localTip) {
+    return refuse(
+      'FATE_NOT_MERGED',
+      "This worktree's branch tip could not be read, so a merge cannot be tied to it.",
+      {
+        do: 'Retry after the next cleanup scan; call list_cleanup to see whether the worktree is judged.',
+        why: 'A release applies to the exact tip it was made at.'
+      }
+    )
+  }
+
   const releasedAlready = snap.prefs.released[bundle.item.id] !== undefined
   // What the next gather will conclude: no grace, and the release time stands in for a
   // missing sign of life. Every other rule is judged exactly as it is.
@@ -412,7 +431,7 @@ export function planRelease(
   return {
     ok: true,
     bundleId: bundle.item.id,
-    from: { repoPath: bundle.item.repoPath, path: bundle.item.path ?? '' },
+    from: { repoPath: bundle.item.repoPath, path: bundle.item.path ?? '', localTip },
     ack: {
       ok: true,
       op: 'release_worktree',
