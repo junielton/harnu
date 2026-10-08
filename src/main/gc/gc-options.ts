@@ -22,7 +22,8 @@ function parseExpected(raw: unknown): GcExpected | null {
     !ownedVolumes ||
     !(e.reasonCode === null || typeof e.reasonCode === 'string') ||
     !(e.headSha === null || typeof e.headSha === 'string') ||
-    !(e.bytes === null || typeof e.bytes === 'number')
+    !(e.bytes === null || typeof e.bytes === 'number') ||
+    !(e.path === null || typeof e.path === 'string')
   ) {
     return null
   }
@@ -35,6 +36,7 @@ function parseExpected(raw: unknown): GcExpected | null {
     stackIds,
     ownedVolumes,
     bytes: e.bytes,
+    path: e.path,
     ...(e.project !== undefined ? { project: e.project as string | null } : {})
   }
 }
