@@ -62,6 +62,9 @@ import { useUiStore } from './ui'
  * and ends on `gc:done`.
  */
 
+/** `gc:opinion` takes at most this many ids per request (`OPINION_MAX_IDS` in main). */
+const OPINION_BATCH = 100
+
 /** `--dur-slow`: how long a cleaned block stays on the map, faded, before the layout re-flows. */
 export const FADE_MS = 220
 
@@ -360,16 +363,26 @@ export const useGcStore = defineStore('gc', () => {
     if (wanted.length === 0) return
     pendingOpinions.value = markPending(pendingOpinions.value, wanted)
     for (const id of wanted) askedFingerprints.set(id, fingerprintOf(m.byId.get(id)!))
-    try {
-      const ack = await window.api.gcOpinion(wanted)
-      opinionJobs.set(ack.jobId, wanted)
-    } catch (e) {
-      pendingOpinions.value = clearPending(pendingOpinions.value, wanted)
-      for (const id of wanted) askedFingerprints.delete(id)
+    // Main takes at most 100 ids per request, so a longer list goes out in batches. They are one
+    // logical ask: every item shows "Asking…" at once, each result clears its own item, and a
+    // rejected batch gives up only its own ids and is reported once.
+    let failure: unknown = null
+    for (let i = 0; i < wanted.length; i += OPINION_BATCH) {
+      const batch = wanted.slice(i, i + OPINION_BATCH)
+      try {
+        const ack = await window.api.gcOpinion(batch)
+        opinionJobs.set(ack.jobId, batch)
+      } catch (e) {
+        failure ??= e
+        pendingOpinions.value = clearPending(pendingOpinions.value, batch)
+        for (const id of batch) askedFingerprints.delete(id)
+      }
+    }
+    if (failure !== null) {
       useUiStore().pushToast({
         kind: 'danger',
         title: i18n.global.t('cleanup.gc.opinion.failed'),
-        description: e instanceof Error ? e.message : String(e),
+        description: failure instanceof Error ? failure.message : String(failure),
         timeoutMs: 8000
       })
     }
