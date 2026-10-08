@@ -9,7 +9,7 @@ import { formatBytes } from './system-monitor-format'
  * Holds the screen's one Primary button, so the hero turns Soft while this is up. Enabling calls
  * `gc:ackFirstReport` and `gc:prefs:set({ autopilot: true })` — the store does both.
  */
-defineProps<{ count: number; bytes: number }>()
+defineProps<{ count: number; bytes: number; pending?: boolean }>()
 const emit = defineEmits<{ enable: []; dismiss: [] }>()
 const { t } = useI18n()
 </script>
@@ -30,10 +30,20 @@ const { t } = useI18n()
       </div>
       <div class="text-caption leading-4 text-text-3">{{ t('cleanup.gc.firstCycle.sub') }}</div>
     </div>
-    <Button variant="primary" data-testid="first-enable" @click="emit('enable')">
+    <Button
+      variant="primary"
+      :disabled="pending"
+      data-testid="first-enable"
+      @click="emit('enable')"
+    >
       {{ t('cleanup.gc.firstCycle.enable') }}
     </Button>
-    <Button variant="ghost" data-testid="first-dismiss" @click="emit('dismiss')">
+    <Button
+      variant="ghost"
+      :disabled="pending"
+      data-testid="first-dismiss"
+      @click="emit('dismiss')"
+    >
       {{ t('cleanup.gc.firstCycle.dismiss') }}
     </Button>
   </div>

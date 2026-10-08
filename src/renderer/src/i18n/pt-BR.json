@@ -2646,7 +2646,9 @@
       },
       "error": {
         "clean": "Não foi possível iniciar a limpeza",
-        "keep": "Não foi possível manter isso"
+        "keep": "Não foi possível manter isso",
+        "autopilot": "Não foi possível ativar o autopilot",
+        "dismiss": "Não foi possível salvar isso"
       },
       "legend": {
         "ready": "Pronto para limpar · limpo com um clique ou pelo autopilot",

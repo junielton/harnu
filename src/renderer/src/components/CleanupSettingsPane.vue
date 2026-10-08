@@ -5,6 +5,7 @@ import SettingHint from './ui/SettingHint.vue'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
 import { useGcStore } from '../stores/gc'
+import { toIpc } from '../lib/to-ipc'
 import type { GcPrefs } from '../../../main/gc/gc-prefs'
 import type { ReaperPrefs } from '../../../preload'
 
@@ -112,7 +113,7 @@ function saveReaper(patch: Partial<ReaperPrefs>): Promise<void> {
   }
   reaper.value = next // optimistic
   const run = chain.then(async () => {
-    applyReaper(await window.api.reaperSetPrefs(next))
+    applyReaper(await window.api.reaperSetPrefs(toIpc(next)))
   })
   chain = run.catch(() => undefined)
   return run

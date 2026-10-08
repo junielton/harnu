@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { ipcFn } from './helpers/ipc-clone'
 import { setActivePinia, createPinia } from 'pinia'
 import { useReaperStore } from '../src/renderer/src/stores/reaper'
 import type { ReaperSnapshot, ReapItem, ReapVerdict, CleanResult, Tombstone } from '../src/preload'
@@ -50,12 +51,12 @@ function installApi(): {
     }
 
   const reaperScan = vi.fn(async () => snapshotOf([]))
-  const reaperClean = vi.fn(async (): Promise<CleanResult> => ({
+  const reaperClean = ipcFn(async (): Promise<CleanResult> => ({
     itemId: 'x',
     ok: true,
     steps: []
   }))
-  const reaperSweep = vi.fn(async (): Promise<CleanResult[]> => [])
+  const reaperSweep = ipcFn(async (): Promise<CleanResult[]> => [])
   const reaperJournal = vi.fn(async (): Promise<Tombstone[]> => [])
 
   ;(globalThis as unknown as { window: unknown }).window = {

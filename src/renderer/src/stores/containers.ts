@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, ref, toRaw } from 'vue'
+import { computed, ref } from 'vue'
 import type {
   ContainersActErrorCode,
   ContainersActRequest,
@@ -10,6 +10,7 @@ import type {
   StackRow
 } from '../../../preload'
 import { i18n } from '../i18n'
+import { toIpc } from '../lib/to-ipc'
 import { useNotificationsStore } from './notifications'
 import { isNeedsYou, sweepTargets } from '../components/containers-format'
 
@@ -88,30 +89,6 @@ function stateKey(stack: StackRow | null): string {
     .map((c) => `${c.id}:${c.running ? 1 : 0}`)
     .sort()
     .join('|')
-}
-
-/**
- * The request as plain data (BUG-141).
- *
- * Every caller builds its payload out of store state, and Vue hands out deep
- * reactive Proxies for anything a `ref` holds — `plan.value.volumes` in the
- * clean-up dialog is one. Electron's IPC structured-clones an invoke's
- * arguments, and a Proxy is not cloneable: the request dies in the renderer
- * with "An object could not be cloned" and never reaches main. That is how the
- * first real sweep failed, on code every test called fine.
- *
- * `act` is the renderer's only door to `containersAct`, so the unwrapping
- * belongs here rather than in each call site's spread — one place to be right,
- * and a new verb cannot forget it. Requests are plain JSON-ish data by
- * construction (ids, flags, name lists), so rebuilding them is lossless.
- */
-function plainRequest<T>(value: T): T {
-  const raw = toRaw(value)
-  if (Array.isArray(raw)) return raw.map(plainRequest) as T
-  if (raw === null || typeof raw !== 'object') return raw
-  const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) out[k] = plainRequest(v)
-  return out as T
 }
 
 function targetsOf(req: ContainersActRequest, snap: ContainersSnapshot | null): string[] {
@@ -294,7 +271,7 @@ export const useContainersStore = defineStore('containers', () => {
     void pollProgress()
     try {
       // Plain data only past this line: the IPC clones it (BUG-141).
-      const result = await window.api.containersAct(plainRequest(req))
+      const result = await window.api.containersAct(toIpc(req))
       recordFailures(req, targets, result, baseline)
       return result
     } catch (err) {

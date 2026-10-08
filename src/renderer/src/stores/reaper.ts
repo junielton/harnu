@@ -9,6 +9,7 @@ import type {
   RehydrateResult
 } from '../../../preload'
 import { i18n } from '../i18n'
+import { toIpc } from '../lib/to-ipc'
 import { useNotificationsStore } from './notifications'
 import { formatBytes } from '../components/system-monitor-format'
 import { isIdleDehydratable, type HydrationOp } from '../components/cleanup-row'
@@ -174,7 +175,7 @@ export const useReaperStore = defineStore('reaper', () => {
   }
 
   async function cleanItem(itemId: string, deleteRemote: boolean): Promise<CleanResult> {
-    const result = await window.api.reaperClean({ itemId, deleteRemote })
+    const result = await window.api.reaperClean(toIpc({ itemId, deleteRemote }))
     journal.value = await window.api.reaperJournal()
     return result
   }
@@ -186,7 +187,7 @@ export const useReaperStore = defineStore('reaper', () => {
     sweeping.value = true
     progress.value = []
     try {
-      const results = await window.api.reaperSweep({ itemIds, deleteRemote })
+      const results = await window.api.reaperSweep(toIpc({ itemIds, deleteRemote }))
       journal.value = await window.api.reaperJournal()
       return results
     } finally {
@@ -212,7 +213,7 @@ export const useReaperStore = defineStore('reaper', () => {
     dehydrateProgress.value = []
     setOps(itemIds, 'dehydrating')
     try {
-      return await window.api.reaperDehydrate({ itemIds })
+      return await window.api.reaperDehydrate(toIpc({ itemIds }))
     } finally {
       setOps(itemIds, null)
     }
@@ -221,7 +222,7 @@ export const useReaperStore = defineStore('reaper', () => {
   async function rehydrate(itemId: string): Promise<RehydrateResult> {
     setOps([itemId], 'rehydrating')
     try {
-      return await window.api.reaperRehydrate({ itemId })
+      return await window.api.reaperRehydrate(toIpc({ itemId }))
     } finally {
       setOps([itemId], null)
     }

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import SettingHint from './ui/SettingHint.vue'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
+import { toIpc } from '../lib/to-ipc'
 import type { SettingsTabId } from '../stores/ui'
 import type { ContainersPrefs } from '../../../preload'
 
@@ -58,7 +59,7 @@ async function save(patch: Partial<ContainersPrefs>): Promise<void> {
   if (!prefs.value) return
   const next = { ...prefs.value, ...patch }
   prefs.value = next // optimistic
-  applyPrefs(await window.api.containersSetPrefs(next))
+  applyPrefs(await window.api.containersSetPrefs(toIpc(next)))
 }
 
 function onAutoScanChange(v: boolean): void {

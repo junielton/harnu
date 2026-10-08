@@ -11,6 +11,7 @@ import type {
   GcSnapshot
 } from '../../../main/gc/gc-wire'
 import { i18n } from '../i18n'
+import { toIpc } from '../lib/to-ipc'
 import { formatBytes } from '../components/system-monitor-format'
 import { refusalKey } from '../components/cleanup-gc-copy'
 import {
@@ -70,7 +71,7 @@ export const FADE_MS = 220
 
 /** The one place the clean payload crosses to the preload: ids, `expected` per id, `confirmed` for Needs review items. */
 function sendClean(req: CleanRequest): Promise<GcCleanAck> {
-  return window.api.gcClean(req.ids, req.options)
+  return window.api.gcClean(toIpc(req.ids), toIpc(req.options))
 }
 
 /** One sentence for the toast when items were refused up front: the code's own, or a count of several kinds. */
@@ -148,7 +149,7 @@ export const useGcStore = defineStore('gc', () => {
     for (let i = 0; i < ids.length; i += 500) {
       const slice = ids.slice(i, i + 500)
       try {
-        const found = await window.api.gcOpinionCached(slice)
+        const found = await window.api.gcOpinionCached(toIpc(slice))
         const now = model.value
         if (!now) continue
         for (const opinion of Object.values(found)) {
@@ -370,7 +371,7 @@ export const useGcStore = defineStore('gc', () => {
     for (let i = 0; i < wanted.length; i += OPINION_BATCH) {
       const batch = wanted.slice(i, i + OPINION_BATCH)
       try {
-        const ack = await window.api.gcOpinion(batch)
+        const ack = await window.api.gcOpinion(toIpc(batch))
         opinionJobs.set(ack.jobId, batch)
       } catch (e) {
         failure ??= e
@@ -401,7 +402,7 @@ export const useGcStore = defineStore('gc', () => {
     const found: Record<string, GcOpinion> = {}
     try {
       for (let i = 0; i < marked.length; i += 500) {
-        Object.assign(found, await window.api.gcOpinionCached(marked.slice(i, i + 500)))
+        Object.assign(found, await window.api.gcOpinionCached(toIpc(marked.slice(i, i + 500))))
       }
     } catch {
       return { kept: [], dropped: marked, failed: true }
@@ -452,8 +453,9 @@ export const useGcStore = defineStore('gc', () => {
   /** "Enable autopilot" on the first-cycle banner: acknowledge the report AND turn the pref on. */
   async function enableAutopilot(): Promise<void> {
     const current = prefs.value ?? (await window.api.gcPrefs())
+    // Prefs first: if turning it on fails, the report stays unacknowledged and the banner stays up to retry.
+    await window.api.gcSetPrefs(toIpc({ ...current, autopilot: true }))
     await window.api.gcAckFirstReport()
-    await window.api.gcSetPrefs({ ...current, autopilot: true })
     await refresh()
   }
 
@@ -466,7 +468,7 @@ export const useGcStore = defineStore('gc', () => {
   /** Settings: always the whole object — main fills a missing field with its default. */
   async function savePrefs(patch: Partial<GcPrefs>): Promise<GcPrefs> {
     const base = prefs.value ?? (await window.api.gcPrefs())
-    const saved = await window.api.gcSetPrefs({ ...base, ...patch })
+    const saved = await window.api.gcSetPrefs(toIpc({ ...base, ...patch }))
     if (snapshot.value) snapshot.value = { ...snapshot.value, prefs: saved }
     return saved
   }
