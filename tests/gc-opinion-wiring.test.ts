@@ -16,7 +16,11 @@ function walk(dir: string): string[] {
 }
 
 const MAIN = walk(join(ROOT, 'src/main')).map((f) => relative(ROOT, f))
-const OPINION_FILES = ['src/main/gc/opinion-core.ts', 'src/main/gc/opinion-shell.ts']
+const OPINION_FILES = [
+  'src/main/gc/opinion-core.ts',
+  'src/main/gc/opinion-shell.ts',
+  'src/main/gc/opinion-run.ts'
+]
 
 /** Code without comments, so a comment that names what the file must not do is not a hit. */
 const code = (rel: string): string =>
@@ -66,14 +70,20 @@ describe('the advisor is reachable only on demand (AC-5)', () => {
     )
   })
 
-  it('never retries: the core runs the model once per batch and the shell owns no timer', () => {
+  it('never retries: the core runs the model once per batch, only the runner owns timers', () => {
     const core = read('src/main/gc/opinion-core.ts')
     const shell = read('src/main/gc/opinion-shell.ts')
+    const run = read('src/main/gc/opinion-run.ts')
     expect(core.match(/deps\.run\(/g)).toHaveLength(1)
     expect(core).not.toMatch(/setInterval|setTimeout|retry|attempts/i)
     expect(shell).not.toMatch(/setInterval|setTimeout|retry|attempts/i)
-    // A hung process is ended by spawn's own timeout, not by a timer this module owns.
-    expect(shell).toMatch(/timeout: RUN_TIMEOUT_MS/)
+    expect(run).not.toMatch(/setInterval|retry|attempts/i)
+    // The runner's two timers are the bounded kill switch of one process: SIGTERM at the timeout,
+    // SIGKILL after the grace. Neither starts a new run.
+    expect(run.match(/setTimeout\(/g)).toHaveLength(2)
+    expect(run).toContain("'SIGTERM'")
+    expect(run).toContain("'SIGKILL'")
+    expect(shell).toContain('runSupervised(')
   })
 })
 
@@ -96,16 +106,22 @@ describe('the advisor can only read (AC-2)', () => {
 
   it('spawns claude with the argv it was given and nothing it added', () => {
     const shell = read('src/main/gc/opinion-shell.ts')
-    expect(shell.match(/spawn\(/g)).toHaveLength(1)
-    expect(shell).toContain('spawn(bin, a.argv,')
-    expect(shell).not.toMatch(/--dangerously|bypassPermissions|--allowedTools|--mcp-config/)
+    const run = read('src/main/gc/opinion-run.ts')
+    expect(shell).not.toMatch(/spawn\(/)
+    expect(shell).toContain('runSupervised(bin, a.argv,')
+    expect(run.match(/spawn\(/g)).toHaveLength(1)
+    expect(run).toContain('spawn(cmd, args,')
+    for (const file of [shell, run]) {
+      expect(file).not.toMatch(/--dangerously|bypassPermissions|--allowedTools|--mcp-config/)
+    }
   })
 
   it('feeds the prompt on stdin and never as an argv element', () => {
     const shell = read('src/main/gc/opinion-shell.ts')
-    expect(shell).toContain("stdio: ['pipe', 'pipe', 'pipe']")
-    expect(shell).toMatch(/child\.stdin\??\.end\(a\.stdin\)/)
-    expect(shell).toContain('spawn(bin, a.argv,')
+    const run = read('src/main/gc/opinion-run.ts')
+    expect(shell).toContain('stdin: a.stdin')
+    expect(run).toContain("stdio: ['pipe', 'pipe', 'pipe']")
+    expect(run).toMatch(/child\.stdin\??\.end\(/)
   })
 
   it('takes the argv from opinionArgv, which is built on the Scheduler tickArgv', () => {
