@@ -12,7 +12,7 @@ export const DAY = 86_400_000
 export const NOW = Date.parse('2026-10-07T12:00:00Z')
 
 export const MAIN = '/srv/ws/org/proj/www'
-export const WT_CORPSE = `${MAIN}/.claude/worktrees/PROJ-231-wave-1`
+export const WT_READY = `${MAIN}/.claude/worktrees/PROJ-231-wave-1`
 export const WT_DIRTY = `${MAIN}/.claude/worktrees/PROJ-231-wave-2`
 export const WT_OPEN = `${MAIN}/.claude/worktrees/PROJ-347-wave-3`
 export const WT_WEAK = `${MAIN}/.claude/worktrees/PROJ-347-wave-4`
@@ -60,7 +60,7 @@ export interface BundleOver extends Partial<Omit<WorktreeBundle, 'item'>> {
   item?: Partial<ReapItem>
 }
 
-/** A bundle that is a corpse; each test changes the respect it is about. */
+/** A bundle that is ready to clean; each test changes the respect it is about. */
 export function bundle(path: string, over: BundleOver = {}): WorktreeBundle {
   const { item: itemOver, ...rest } = over
   return {
@@ -78,7 +78,7 @@ export function bundle(path: string, over: BundleOver = {}): WorktreeBundle {
     pathsResolved: true,
     localTip: 'a'.repeat(40),
     graceDays: 2,
-    bucket: 'corpse',
+    bucket: 'ready',
     reason: null,
     ...rest
   }

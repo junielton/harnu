@@ -19,7 +19,7 @@ import {
   type InspectedContainer
 } from '../src/main/containers/containers-core'
 import type { BranchFacts, PrFacts, ReapItem } from '../src/main/reaper/reaper-core'
-import { DAY, NOW, MAIN, WT_CORPSE, reapItem } from './gc-snapshot-fixtures'
+import { DAY, NOW, MAIN, WT_READY, reapItem } from './gc-snapshot-fixtures'
 
 /**
  * T445 — the release mark. `released` lives in the GC prefs and is honored where the
@@ -34,7 +34,7 @@ function facts(over: Partial<BranchFacts> = {}): BranchFacts {
     kind: 'worktree',
     repoPath: MAIN,
     branch: 'feat/slug',
-    path: WT_CORPSE,
+    path: WT_READY,
     hidden: false,
     sessionLive: false,
     trackedDirty: false,
@@ -78,7 +78,7 @@ interface Over {
 /** A merged worktree whose merge landed `mergedAgo` ago (default: an hour, inside grace). */
 function build(over: Over = {}) {
   const mergedAt = new Date(NOW - (over.mergedAgo ?? 3_600_000)).toISOString()
-  const it = reapItem(WT_CORPSE, {
+  const it = reapItem(WT_READY, {
     checkpoints: [
       { id: 'pr-merged', state: 'green', detail: mergedAt },
       { id: 'local-clean', state: 'green' }
@@ -94,13 +94,10 @@ function build(over: Over = {}) {
     stackPaths: new Map(),
     containers: [],
     sessions: new Map([
-      [
-        WT_CORPSE,
-        { presence: over.presence ?? 'none', lastActivityAt: over.lastActivityAt ?? null }
-      ]
+      [WT_READY, { presence: over.presence ?? 'none', lastActivityAt: over.lastActivityAt ?? null }]
     ]),
     keep: new Set(over.keep ? [it.id] : []),
-    neverClean: new Set(over.neverClean ? [WT_CORPSE] : []),
+    neverClean: new Set(over.neverClean ? [WT_READY] : []),
     now: NOW,
     graceDays: GRACE,
     volumes: new Map(),
@@ -140,28 +137,28 @@ describe('released prefs (T445)', () => {
 })
 
 describe('buildBundles honors a release (T445)', () => {
-  it('AC-3: without a release, a merged bundle inside its grace is alive', () => {
-    expect(build({ released: null }).bucket).toBe('alive')
+  it('AC-3: without a release, a merged bundle inside its grace is in-use', () => {
+    expect(build({ released: null }).bucket).toBe('in-use')
   })
 
-  it('AC-3: a release skips the grace, so the same bundle is a corpse', () => {
+  it('AC-3: a release skips the grace, so the same bundle is ready', () => {
     const b = build()
-    expect(b.bucket).toBe('corpse')
+    expect(b.bucket).toBe('ready')
     expect(b.graceDays).toBe(0)
   })
 
   it('AC-3: with no sign of life at all, the release time stands in for one', () => {
     const b = build({ item: { checkpoints: [{ id: 'local-clean', state: 'green' }] } })
     expect(b.lastSignOfLifeAt).toBe(NOW - 60_000)
-    expect(b.bucket).toBe('corpse')
+    expect(b.bucket).toBe('ready')
   })
 
   it('AC-3: a release never makes a bundle that was already past grace worse off', () => {
-    expect(build({ mergedAgo: 10 * DAY }).bucket).toBe('corpse')
+    expect(build({ mergedAgo: 10 * DAY }).bucket).toBe('ready')
   })
 
   it('AC-3: a mark for another bundle changes nothing', () => {
-    expect(build({ released: new Map([['some-other-id', NOW - 1]]) }).bucket).toBe('alive')
+    expect(build({ released: new Map([['some-other-id', NOW - 1]]) }).bucket).toBe('in-use')
   })
 
   it('AC-3: a release has no effect unless the fate is merged and strong', () => {
@@ -169,56 +166,56 @@ describe('buildBundles honors a release (T445)', () => {
       facts: { ancestorOfDefault: false, pr: pr({ state: 'OPEN', mergedAt: null }) }
     })
     expect(open.fate.fate).toBe('open')
-    expect(open.bucket).toBe('alive')
+    expect(open.bucket).toBe('in-use')
     expect(open.graceDays).toBe(GRACE)
 
     const closed = build({
       facts: { ancestorOfDefault: false, pr: pr({ state: 'CLOSED', mergedAt: null }) }
     })
     expect(closed.fate.fate).toBe('closed-unmerged')
-    expect(closed.bucket).toBe('alive')
+    expect(closed.bucket).toBe('in-use')
 
     const weak = build({
       facts: { ancestorOfDefault: null, pr: pr({ headRefOid: 'b'.repeat(40) }) }
     })
     expect(weak.fate.strong).toBe(false)
-    expect(weak.bucket).not.toBe('corpse')
+    expect(weak.bucket).not.toBe('ready')
   })
 
   describe('AC-4: a release never bypasses a safety rule', () => {
     it('dirty tracked files', () => {
       const b = build({ item: { blockers: ['dirty'] } })
-      expect(b.bucket).toBe('decide')
+      expect(b.bucket).toBe('review')
       expect(b.reason?.code).toBe('dirty')
     })
 
     it('unpushed commits', () => {
       const b = build({ item: { blockers: ['unpushed'] } })
-      expect(b.bucket).toBe('decide')
+      expect(b.bucket).toBe('review')
       expect(b.reason?.code).toBe('unpushed')
     })
 
     it('a working or needs-input session', () => {
-      expect(build({ presence: 'working' }).bucket).toBe('alive')
-      expect(build({ presence: 'needs-input' }).bucket).toBe('alive')
+      expect(build({ presence: 'working' }).bucket).toBe('in-use')
+      expect(build({ presence: 'needs-input' }).bucket).toBe('in-use')
     })
 
     it('an open but idle session', () => {
       const b = build({ presence: 'open-idle' })
-      expect(b.bucket).toBe('decide')
+      expect(b.bucket).toBe('review')
       expect(b.reason?.code).toBe('open-idle-session')
     })
 
     it('keep', () => {
-      expect(build({ keep: true }).bucket).toBe('alive')
+      expect(build({ keep: true }).bucket).toBe('in-use')
     })
 
     it('neverClean', () => {
-      expect(build({ neverClean: true }).bucket).toBe('alive')
+      expect(build({ neverClean: true }).bucket).toBe('in-use')
     })
 
     it('a stack shared with another worktree', () => {
-      const it = reapItem(WT_CORPSE)
+      const it = reapItem(WT_READY)
       const ctr = (id: string, dir: string): InspectedContainer => ({
         id,
         name: id,
@@ -231,14 +228,14 @@ describe('buildBundles honors a release (T445)', () => {
         ports: [],
         mounts: []
       })
-      const containers = [ctr('db', WT_CORPSE), ctr('web', '/srv/ws/org/elsewhere')]
+      const containers = [ctr('db', WT_READY), ctr('web', '/srv/ws/org/elsewhere')]
       const b = buildBundles({
         items: [it],
         fateInputs: new Map([[it.id, { facts: facts(), localTip: TIP }]]),
         stacks: [{ id: 'app', name: 'app', kind: 'compose', project: 'app', containers }],
         stackPaths: new Map(),
         containers,
-        sessions: new Map([[WT_CORPSE, { presence: 'none' as const, lastActivityAt: null }]]),
+        sessions: new Map([[WT_READY, { presence: 'none' as const, lastActivityAt: null }]]),
         keep: new Set(),
         neverClean: new Set(),
         now: NOW,
@@ -250,11 +247,11 @@ describe('buildBundles honors a release (T445)', () => {
         released: new Map([[it.id, NOW - 60_000]])
       })[0]!
       expect(b.sharedStackIds).toEqual(['app'])
-      expect(b.bucket).toBe('decide')
+      expect(b.bucket).toBe('review')
       expect(b.reason?.code).toBe('shared-stack')
     })
 
-    it('a released bundle that is not a corpse is never planned for cleaning', () => {
+    it('a released bundle that is not ready is never planned for cleaning', () => {
       const prefs = { ...defaultGcPrefs(), autopilot: true, firstReportAcknowledged: true }
       const dirty = build({ item: { blockers: ['dirty'] } })
       expect(planCycle([dirty], prefs).toClean).toEqual([])
@@ -264,7 +261,7 @@ describe('buildBundles honors a release (T445)', () => {
 })
 
 describe('staleReleases: when a release mark is dropped (T445 delta 1)', () => {
-  const marks = { [reapItem(WT_CORPSE).id]: NOW - 1000 }
+  const marks = { [reapItem(WT_READY).id]: NOW - 1000 }
 
   it('keeps every mark on a startup gather that has no Reaper snapshot (zero bundles)', () => {
     expect(staleReleases([], marks)).toEqual([])
@@ -284,22 +281,22 @@ describe('staleReleases: when a release mark is dropped (T445 delta 1)', () => {
     const reopened = build({
       facts: { ancestorOfDefault: false, pr: pr({ state: 'OPEN', mergedAt: null }) }
     })
-    expect(staleReleases([reopened], marks)).toEqual([reapItem(WT_CORPSE).id])
+    expect(staleReleases([reopened], marks)).toEqual([reapItem(WT_READY).id])
     const weak = build({
       facts: { ancestorOfDefault: null, pr: pr({ headRefOid: 'b'.repeat(40) }) }
     })
-    expect(staleReleases([weak], marks)).toEqual([reapItem(WT_CORPSE).id])
+    expect(staleReleases([weak], marks)).toEqual([reapItem(WT_READY).id])
   })
 })
 
 describe('staleReleases: a cleaned worktree drops its mark (T445 delta 1 ruling)', () => {
-  const id = reapItem(WT_CORPSE).id
+  const id = reapItem(WT_READY).id
   const marks = { [id]: NOW - 1000 }
-  const from = { [id]: { repoPath: MAIN, path: WT_CORPSE } }
+  const from = { [id]: { repoPath: MAIN, path: WT_READY } }
   const gone = (over: Partial<ReleaseGone> = {}): ReleaseGone => ({
     scannedRepos: new Set([MAIN]),
     from,
-    missingPaths: new Set([WT_CORPSE]),
+    missingPaths: new Set([WT_READY]),
     ...over
   })
 
@@ -325,7 +322,7 @@ describe('staleReleases: a cleaned worktree drops its mark (T445 delta 1 ruling)
 
   it('compares paths after normalizing them (trailing slash)', () => {
     expect(staleReleases([], marks, gone({ scannedRepos: new Set([`${MAIN}/`]) }))).toEqual([id])
-    expect(staleReleases([], marks, gone({ missingPaths: new Set([`${WT_CORPSE}/`]) }))).toEqual([
+    expect(staleReleases([], marks, gone({ missingPaths: new Set([`${WT_READY}/`]) }))).toEqual([
       id
     ])
   })
@@ -347,9 +344,9 @@ describe('releasedFrom prefs (T445 delta 1 ruling)', () => {
   })
 
   it('withReleased records where the worktree was, withoutReleased forgets it', () => {
-    const p = withReleased(defaultGcPrefs(), id, 7, { repoPath: MAIN, path: WT_CORPSE })
+    const p = withReleased(defaultGcPrefs(), id, 7, { repoPath: MAIN, path: WT_READY })
     expect(p.released).toEqual({ [id]: 7 })
-    expect(p.releasedFrom).toEqual({ [id]: { repoPath: MAIN, path: WT_CORPSE } })
+    expect(p.releasedFrom).toEqual({ [id]: { repoPath: MAIN, path: WT_READY } })
     const q = withoutReleased(p, [id])
     expect(q.released).toEqual({})
     expect(q.releasedFrom).toEqual({})
@@ -362,19 +359,19 @@ describe('releasedFrom prefs (T445 delta 1 ruling)', () => {
   it('normalizes junk: only entries with two non-empty strings survive', () => {
     const p = normalizeGcPrefs({
       releasedFrom: {
-        ok: { repoPath: MAIN, path: WT_CORPSE },
+        ok: { repoPath: MAIN, path: WT_READY },
         a: { repoPath: '', path: 'x' },
         b: { repoPath: 'x' },
         c: 'nope',
         '': { repoPath: 'x', path: 'y' }
       }
     })
-    expect(p.releasedFrom).toEqual({ ok: { repoPath: MAIN, path: WT_CORPSE } })
+    expect(p.releasedFrom).toEqual({ ok: { repoPath: MAIN, path: WT_READY } })
     expect(normalizeGcPrefs({ releasedFrom: [1] }).releasedFrom).toEqual({})
   })
 
   it('a whole-object write from the renderer cannot wipe them', () => {
-    const current = withReleased(defaultGcPrefs(), id, 7, { repoPath: MAIN, path: WT_CORPSE })
+    const current = withReleased(defaultGcPrefs(), id, 7, { repoPath: MAIN, path: WT_READY })
     const next = mergeIncomingPrefs(current, { ...defaultGcPrefs(), releasedFrom: {} })
     expect(next.releasedFrom).toEqual(current.releasedFrom)
   })

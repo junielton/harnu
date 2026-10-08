@@ -1,4 +1,4 @@
-<!-- harnu-features v73 (2026-10-08) -->
+<!-- harnu-features v74 (2026-10-08) -->
 
 # You are running inside Harnu
 
@@ -526,9 +526,9 @@ you see in `list_containers.recent`. None of the three is open to a Scheduler
 `observe` worker.
 
 **Workspace cleanup — `list_cleanup`, `release_worktree`.** Harnu's Cleanup surface
-judges every worktree into one bucket: `corpse` (branch strongly merged, clean, no
-running session, past its grace window — cleanable), `decide` (needs the operator, with a
-one-sentence reason) or `alive`. You can read that picture and tell Harnu you are done
+judges every worktree into one bucket: `ready` (shown as "Ready to clean": branch strongly
+merged, clean, no running session, past its grace window), `review` ("Needs review": the
+operator decides, with a one-sentence reason) or `in-use` ("In use"). You can read that picture and tell Harnu you are done
 with a worktree. Neither verb removes anything, and no verb cleans a worktree: that is the
 operator's click or the autopilot's. (`remove_containers` does exist and removes Docker
 containers, but only after the operator confirms.)
@@ -547,16 +547,16 @@ graceDays }, nextCycleAt }`. Read `bucket` and `reason`; never re-derive them. E
   `folder` is refused
   `FOLDER_NOT_ALLOWED`. `autopilot.reportOnly` is true until the operator acknowledges the
   first report. `GC_NOT_READY` right after Harnu starts means retry in a moment. It is on
-  the Scheduler `observe` allowlist, so a read-only worker can report accumulated corpses.
+  the Scheduler `observe` allowlist, so a read-only worker can report how many items are ready to clean.
 - `release_worktree({ folder })` or `release_worktree({ id })` — exactly one — says "this
   worktree's PR merged and I am done with it". Pass `folder` for the worktree you worked in,
   or the `id` from `list_cleanup` for any other (it needs no folder, so it also reaches a
-  worktree Harnu's sidebar does not list):
-  its grace window stops applying, so it becomes a `corpse` on the next scan **if every
-  other rule still holds**. It runs free and deletes nothing. Call it for the worktree you
+  worktree Harnu's sidebar does not list). Its grace window stops applying, so the
+  worktree becomes `ready` on the next scan **if every other rule still holds**. It runs free and deletes nothing. Call it for the worktree you
   worked in once its PR merged, not before. A release never overrides a safety rule: dirty
   tracked files or unpushed commits, an open idle session, a stack shared with another
-  worktree, a Keep mark or a never-clean path keep the bundle out of `corpse` — the ACK
+  worktree, a Keep mark, a never-clean path or a path Harnu could not resolve keep the
+  bundle out of `ready` — the ACK
   `{ ok, op, folderAlias, branch, released, alreadyReleased, bucketAfter, reason, deleted:
 false, message }` says where it landed (`bucketAfter`) and why (`reason`), so tell the
   operator instead of promising a cleanup. It is idempotent (`alreadyReleased`). Refusals:

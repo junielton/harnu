@@ -2407,7 +2407,7 @@ const listCleanupHandler: Handler = async (args, ctx) => {
   if (scope && isFolderDenied(scope, ctx.denyFolders, home)) {
     return steerError('FOLDER_NOT_ALLOWED', scope)
   }
-  // A fresh gather, not the cached snapshot: a watchdog counting corpses must never read
+  // A fresh gather, not the cached snapshot: a watchdog counting ready items must never read
   // buckets from before its own call. The service single-flights it.
   const snap = await svc.snapshot({ refresh: true })
   const listing = cleanupListing(snap, {
@@ -2421,7 +2421,7 @@ const listCleanupHandler: Handler = async (args, ctx) => {
 
 /**
  * The agent says it is done with a merged worktree (T445). Marks the bundle released and
- * deletes nothing: the bucket rules still decide whether it ever becomes a corpse, and only
+ * deletes nothing: the bucket rules still decide whether it ever becomes ready to clean, and only
  * the operator (or the autopilot, once acknowledged) cleans one.
  */
 const releaseWorktreeHandler: Handler = async (args, ctx) => {

@@ -37,7 +37,7 @@ import type { GcSnapshot } from '../src/main/gc/gc-wire'
 import {
   MAIN,
   NOW,
-  WT_CORPSE,
+  WT_READY,
   WT_DIRTY,
   WT_OPEN,
   WT_OUT_OF_TREE,
@@ -75,8 +75,8 @@ function textOf(res: CallToolResult): string {
   return first.text
 }
 
-// A merged, strong, clean worktree still inside its grace window: "alive" until released.
-const fresh = bundle(WT_CORPSE, { bucket: 'alive', lastSignOfLifeAt: NOW - 3_600_000 })
+// A merged, strong, clean worktree still inside its grace window: "in-use" until released.
+const fresh = bundle(WT_READY, { bucket: 'in-use', lastSignOfLifeAt: NOW - 3_600_000 })
 
 beforeEach(() => {
   h.service = null
@@ -85,9 +85,9 @@ beforeEach(() => {
 })
 
 describe('release_worktree handler (T445)', () => {
-  it('AC-3: records the release and says the bundle is a corpse from the next cycle', async () => {
+  it('AC-3: records the release and says the bundle is ready to clean from the next cycle', async () => {
     const { release } = serve(snapshot([fresh]))
-    const res = await handler({ folder: WT_CORPSE }, ctx(WT_CORPSE))
+    const res = await handler({ folder: WT_READY }, ctx(WT_READY))
     expect(res.isError).toBeFalsy()
     const ack = JSON.parse(textOf(res))
     expect(ack).toMatchObject({
@@ -96,20 +96,20 @@ describe('release_worktree handler (T445)', () => {
       folderAlias: 'PROJ-231-wave-1',
       released: true,
       alreadyReleased: false,
-      bucketAfter: 'corpse',
+      bucketAfter: 'ready',
       reason: null,
       deleted: false
     })
     expect(release).toHaveBeenCalledTimes(1)
     expect(release).toHaveBeenCalledWith(fresh.item.id, NOW, {
       repoPath: MAIN,
-      path: WT_CORPSE
+      path: WT_READY
     })
   })
 
   it('AC-3: the ACK carries no absolute path', async () => {
     serve(snapshot([fresh]))
-    const text = textOf(await handler({ folder: WT_CORPSE }, ctx(WT_CORPSE)))
+    const text = textOf(await handler({ folder: WT_READY }, ctx(WT_READY)))
     expect(absolutePathsIn(text)).toEqual([])
     expect(text).not.toContain('/srv/ws')
   })
@@ -118,20 +118,20 @@ describe('release_worktree handler (T445)', () => {
     const snap = snapshot([fresh])
     snap.prefs.released = { [fresh.item.id]: NOW - 5_000 }
     serve(snap)
-    const ack = JSON.parse(textOf(await handler({ folder: WT_CORPSE }, ctx(WT_CORPSE))))
+    const ack = JSON.parse(textOf(await handler({ folder: WT_READY }, ctx(WT_READY))))
     expect(ack).toMatchObject({ ok: true, alreadyReleased: true, released: true })
   })
 
   it('AC-3: a trailing slash on the folder still finds the bundle', async () => {
     const { release } = serve(snapshot([fresh]))
-    const res = await handler({ folder: `${WT_CORPSE}/` }, ctx(`${WT_CORPSE}/`))
+    const res = await handler({ folder: `${WT_READY}/` }, ctx(`${WT_READY}/`))
     expect(res.isError).toBeFalsy()
     expect(release).toHaveBeenCalledTimes(1)
   })
 
   it('AC-3: FATE_NOT_MERGED when the fate is not merged', async () => {
     const open = bundle(WT_OPEN, {
-      bucket: 'alive',
+      bucket: 'in-use',
       fate: { fate: 'open', signal: null, strong: false }
     })
     const { release } = serve(snapshot([open]))
@@ -143,7 +143,7 @@ describe('release_worktree handler (T445)', () => {
 
   it('AC-3: FATE_NOT_MERGED when the merge signal is weak', async () => {
     const weak = bundle(WT_WEAK, {
-      bucket: 'decide',
+      bucket: 'review',
       fate: { fate: 'merged', signal: 'remote-gone-after-close', strong: false }
     })
     const { release } = serve(snapshot([weak]))
@@ -154,14 +154,14 @@ describe('release_worktree handler (T445)', () => {
 
   it('AC-3: FOLDER_NOT_ALLOWED for a blocked folder, and nothing is recorded', async () => {
     const { release } = serve(snapshot([fresh]))
-    const res = await handler({ folder: WT_CORPSE }, ctx(WT_CORPSE, [MAIN]))
+    const res = await handler({ folder: WT_READY }, ctx(WT_READY, [MAIN]))
     expect(res.isError).toBe(true)
     expect(textOf(res)).toContain('FOLDER_NOT_ALLOWED')
     expect(release).not.toHaveBeenCalled()
   })
 
   it('AC-3: IS_MAIN_CHECKOUT when the bundle is the main checkout', async () => {
-    const main = bundle(MAIN, { isMainCheckout: true, bucket: 'alive' })
+    const main = bundle(MAIN, { isMainCheckout: true, bucket: 'in-use' })
     const { release } = serve(snapshot([main]))
     const res = await handler({ folder: MAIN }, ctx(MAIN))
     expect(JSON.parse(textOf(res))).toMatchObject({ ok: false, error: 'IS_MAIN_CHECKOUT' })
@@ -192,35 +192,35 @@ describe('release_worktree handler (T445)', () => {
     expect(refusal.nextActions.length).toBeGreaterThan(0)
   })
 
-  it('AC-4: a released bundle with dirty files is accepted but reported as decide, not corpse', async () => {
+  it('AC-4: a released bundle with dirty files is accepted but reported as review, not ready', async () => {
     const dirty = bundle(WT_DIRTY, {
-      bucket: 'decide',
+      bucket: 'review',
       reason: { code: 'dirty', detail: '1 blocker: dirty.' },
       item: { blockers: ['dirty'] }
     })
     serve(snapshot([dirty]))
     const ack = JSON.parse(textOf(await handler({ folder: WT_DIRTY }, ctx(WT_DIRTY))))
-    expect(ack).toMatchObject({ ok: true, bucketAfter: 'decide', deleted: false })
+    expect(ack).toMatchObject({ ok: true, bucketAfter: 'review', deleted: false })
     expect(ack.reason).toContain('dirty')
   })
 
-  it('AC-4: a live session, a shared stack, keep and neverClean all keep it out of corpse', async () => {
+  it('AC-4: a live session, a shared stack, keep and neverClean all keep it out of ready', async () => {
     const cases = [
-      bundle(WT_CORPSE, { session: 'open-idle' }),
-      bundle(WT_CORPSE, { sharedStackIds: ['api'] }),
-      bundle(WT_CORPSE, { keep: true }),
-      bundle(WT_CORPSE, { neverClean: true })
+      bundle(WT_READY, { session: 'open-idle' }),
+      bundle(WT_READY, { sharedStackIds: ['api'] }),
+      bundle(WT_READY, { keep: true }),
+      bundle(WT_READY, { neverClean: true })
     ]
     for (const b of cases) {
       serve(snapshot([b]))
-      const ack = JSON.parse(textOf(await handler({ folder: WT_CORPSE }, ctx(WT_CORPSE))))
-      expect(ack.bucketAfter).not.toBe('corpse')
+      const ack = JSON.parse(textOf(await handler({ folder: WT_READY }, ctx(WT_READY))))
+      expect(ack.bucketAfter).not.toBe('ready')
       expect(ack.deleted).toBe(false)
     }
   })
 
   describe('D3: the repo block is checked before anything else (T445 delta 1)', () => {
-    const outOfTree = bundle(WT_OUT_OF_TREE, { bucket: 'alive', lastSignOfLifeAt: NOW - 1000 })
+    const outOfTree = bundle(WT_OUT_OF_TREE, { bucket: 'in-use', lastSignOfLifeAt: NOW - 1000 })
 
     it('an out-of-tree worktree of a blocked repo is refused FOLDER_NOT_ALLOWED', async () => {
       const { release } = serve(snapshot([outOfTree]))
@@ -232,7 +232,7 @@ describe('release_worktree handler (T445)', () => {
 
     it('the block wins over every other refusal, whatever the fate', async () => {
       const open = bundle(WT_OUT_OF_TREE, {
-        bucket: 'alive',
+        bucket: 'in-use',
         fate: { fate: 'open', signal: null, strong: false }
       })
       serve(snapshot([open]))
@@ -264,10 +264,10 @@ describe('release_worktree handler (T445)', () => {
       const { release } = serve(snapshot([fresh]))
       const res = await handler({ id: listedId(fresh) }, ctx(''))
       expect(res.isError).toBeFalsy()
-      expect(JSON.parse(textOf(res))).toMatchObject({ ok: true, bucketAfter: 'corpse' })
+      expect(JSON.parse(textOf(res))).toMatchObject({ ok: true, bucketAfter: 'ready' })
       expect(release).toHaveBeenCalledWith(fresh.item.id, NOW, {
         repoPath: MAIN,
-        path: WT_CORPSE
+        path: WT_READY
       })
     })
 
@@ -294,7 +294,7 @@ describe('release_worktree handler (T445)', () => {
     })
 
     it('an id of a main checkout is IS_MAIN_CHECKOUT', async () => {
-      const main = bundle(MAIN, { isMainCheckout: true, bucket: 'alive' })
+      const main = bundle(MAIN, { isMainCheckout: true, bucket: 'in-use' })
       serve(snapshot([main]))
       const res = await handler({ id: listedId(main) }, ctx(''))
       expect(JSON.parse(textOf(res)).error).toBe('IS_MAIN_CHECKOUT')
@@ -319,7 +319,7 @@ describe('release_worktree handler (T445)', () => {
 
     it('M5: a blocked worktree folder is refused when its repo is not blocked', async () => {
       const { release } = serve(snapshot([fresh]))
-      const res = await handler({ folder: WT_CORPSE }, ctx(WT_CORPSE, [WT_CORPSE]))
+      const res = await handler({ folder: WT_READY }, ctx(WT_READY, [WT_READY]))
       expect(textOf(res)).toContain('FOLDER_NOT_ALLOWED')
       expect(release).not.toHaveBeenCalled()
     })
@@ -336,7 +336,7 @@ describe('release_worktree handler (T445)', () => {
     })
 
     it('M10: a blocked repo is refused when the worktree folder itself is not blocked', async () => {
-      const outOfTree = bundle(WT_OUT_OF_TREE, { bucket: 'alive' })
+      const outOfTree = bundle(WT_OUT_OF_TREE, { bucket: 'in-use' })
       const { release } = serve(snapshot([outOfTree]))
       const res = await handler({ folder: WT_OUT_OF_TREE }, ctx(WT_OUT_OF_TREE, [MAIN]))
       expect(textOf(res)).toContain('FOLDER_NOT_ALLOWED')
@@ -346,12 +346,12 @@ describe('release_worktree handler (T445)', () => {
 
   it('AC-5: the service the handler reaches has no way to clean', async () => {
     serve(snapshot([fresh]))
-    await handler({ folder: WT_CORPSE }, ctx(WT_CORPSE))
+    await handler({ folder: WT_READY }, ctx(WT_READY))
     expect(Object.keys(h.service!).sort()).toEqual(['release', 'snapshot'])
   })
 
   it('refuses GC_NOT_READY before the service is registered', async () => {
-    const res = await handler({ folder: WT_CORPSE }, ctx(WT_CORPSE))
+    const res = await handler({ folder: WT_READY }, ctx(WT_READY))
     expect(res.isError).toBe(true)
     expect(textOf(res)).toMatch(/^GC_NOT_READY/)
   })

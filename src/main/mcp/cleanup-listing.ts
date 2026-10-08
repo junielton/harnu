@@ -31,7 +31,7 @@ export interface ListedBundle {
   /** Null for a detached worktree. */
   branch: string | null
   bucket: Bucket
-  /** The one-sentence reason for a Decide bundle; null for corpse and alive. */
+  /** The one-sentence reason for a bundle that needs review; null for ready and in-use. */
   reason: string | null
   /** Disk the checkout occupies (dependency directories included), when it was measured. */
   bytes: number | null
@@ -52,11 +52,11 @@ export interface ListedOrphanVolume {
 }
 
 export interface CleanupTotals {
-  corpse: number
-  corpseBytes: number
-  decide: number
-  decideBytes: number
-  alive: number
+  ready: number
+  readyBytes: number
+  review: number
+  reviewBytes: number
+  inUse: number
   orphanVolumes: number
   orphanVolumeBytes: number
 }
@@ -177,11 +177,11 @@ function totalsOf(
     bundles.filter((b) => b.bucket === bucket).reduce((n, b) => n + (b.bytes ?? 0), 0)
   const count = (bucket: Bucket): number => bundles.filter((b) => b.bucket === bucket).length
   return {
-    corpse: count('corpse'),
-    corpseBytes: sum('corpse'),
-    decide: count('decide'),
-    decideBytes: sum('decide'),
-    alive: count('alive'),
+    ready: count('ready'),
+    readyBytes: sum('ready'),
+    review: count('review'),
+    reviewBytes: sum('review'),
+    inUse: count('in-use'),
     orphanVolumes: volumes.length,
     orphanVolumeBytes: volumes.reduce((n, v) => n + (v.sizeBytes ?? 0), 0)
   }
@@ -234,7 +234,7 @@ export interface ReleaseAck {
   alreadyReleased: boolean
   /** The bucket the bundle takes once the grace no longer applies. */
   bucketAfter: Bucket
-  /** Why it is not a corpse, when it is not. */
+  /** Why it is not ready to clean, when it is not. */
   reason: string | null
   /** Always false: release marks a bundle, it never removes one. */
   deleted: false
@@ -275,7 +275,7 @@ const refuse = (
  * Decides one release. Order of refusals: a blocked worktree or repo (before anything else, so
  * an out-of-tree worktree of a blocked repo is always FOLDER_NOT_ALLOWED), main checkout,
  * unknown folder, fate not strongly merged. A release
- * that passes is accepted even when another rule keeps the bundle out of `corpse`: the ACK
+ * that passes is accepted even when another rule keeps the bundle out of `ready`: the ACK
  * then names the bucket it will be in and why, instead of pretending it will be cleaned.
  */
 export function planRelease(
@@ -304,7 +304,7 @@ export function planRelease(
       "This is a repo's main checkout, which is never cleaned, so there is nothing to release.",
       {
         do: 'Release the feature worktree whose PR merged, not the main checkout.',
-        why: 'Only a linked worktree can be a corpse.'
+        why: 'Only a linked worktree can be ready to clean.'
       }
     )
   }
@@ -339,9 +339,9 @@ export function planRelease(
   )
   const reason = after.reason ? redact(after.reason.detail, opts.home) : null
   const message =
-    after.bucket === 'corpse'
-      ? 'Released. The grace window no longer applies, so this worktree is a corpse from the next scan. Nothing was deleted: the operator cleans it, or the autopilot does when it is on and acknowledged.'
-      : `Released, but this worktree stays ${after.bucket}: a release lifts the grace window and nothing else. Nothing was deleted.`
+    after.bucket === 'ready'
+      ? 'Released. The grace window no longer applies, so this worktree is ready to clean from the next scan. Nothing was deleted: the operator cleans it, or the autopilot does when it is on and acknowledged.'
+      : `Released, but this worktree is not ready to clean (it is ${after.bucket}): a release lifts the grace window and nothing else. Nothing was deleted.`
   return {
     ok: true,
     bundleId: bundle.item.id,

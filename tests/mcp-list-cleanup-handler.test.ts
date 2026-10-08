@@ -42,7 +42,7 @@ import {
   NOW,
   OTHER_MAIN,
   OTHER_WT,
-  WT_CORPSE,
+  WT_READY,
   WT_DIRTY,
   WT_OPEN,
   WT_OUT_OF_TREE,
@@ -91,14 +91,14 @@ type Listed = {
   agentControllable: boolean
 }
 
-const corpse = bundle(WT_CORPSE, { item: { diskBytes: 5_000 } })
+const ready = bundle(WT_READY, { item: { diskBytes: 5_000 } })
 const dirty = bundle(WT_DIRTY, {
-  bucket: 'decide',
+  bucket: 'review',
   reason: { code: 'dirty', detail: '1 blocker: dirty.' },
   item: { diskBytes: 700, blockers: ['dirty'] }
 })
 const open = bundle(WT_OPEN, {
-  bucket: 'alive',
+  bucket: 'in-use',
   fate: { fate: 'open', signal: null, strong: false },
   item: { diskBytes: 40 }
 })
@@ -106,7 +106,7 @@ const other = bundle(OTHER_WT, { item: { repoPath: OTHER_MAIN, diskBytes: 9_000 
 
 const FOLDERS = [
   folderEntry(MAIN, 'www'),
-  folderEntry(WT_CORPSE, 'www'),
+  folderEntry(WT_READY, 'www'),
   folderEntry(WT_DIRTY, 'www'),
   folderEntry(WT_OPEN, 'www'),
   folderEntry(OTHER_MAIN, 'gw'),
@@ -120,23 +120,23 @@ beforeEach(() => {
 
 describe('list_cleanup handler (T445)', () => {
   it('AC-1: lists every bundle with id, alias, branch, bucket, reason and bytes', async () => {
-    serve(snapshot([corpse, dirty, open]))
+    serve(snapshot([ready, dirty, open]))
     const res = await handler({}, ctx())
     expect(res.isError).toBeFalsy()
     const payload = JSON.parse(textOf(res))
     expect(payload).toMatchObject({ ok: true, scannedAt: NOW })
     const rows = payload.bundles as Listed[]
     expect(rows.map((r) => [r.folderAlias, r.bucket, r.reason, r.bytes])).toEqual([
-      ['PROJ-231-wave-1', 'corpse', null, 5_000],
-      ['PROJ-231-wave-2', 'decide', '1 blocker: dirty.', 700],
-      ['PROJ-347-wave-3', 'alive', null, 40]
+      ['PROJ-231-wave-1', 'ready', null, 5_000],
+      ['PROJ-231-wave-2', 'review', '1 blocker: dirty.', 700],
+      ['PROJ-347-wave-3', 'in-use', null, 40]
     ])
     expect(rows[0]).toMatchObject({ branch: 'feat/PROJ-231-wave-1', released: false })
     expect(typeof rows[0]!.id).toBe('string')
   })
 
   it('AC-1: redaction — no absolute path appears anywhere in the payload', async () => {
-    const withVolume = snapshot([corpse, dirty, open], {
+    const withVolume = snapshot([ready, dirty, open], {
       orphanVolumes: [
         {
           id: 'volume:pgdata',
@@ -173,7 +173,7 @@ describe('list_cleanup handler (T445)', () => {
 
   it('AC-1: lists orphan volumes and totals', async () => {
     serve(
-      snapshot([corpse, dirty, open], {
+      snapshot([ready, dirty, open], {
         orphanVolumes: [
           {
             id: 'volume:pgdata',
@@ -195,11 +195,11 @@ describe('list_cleanup handler (T445)', () => {
     const payload = JSON.parse(textOf(await handler({}, ctx())))
     expect(payload.orphanVolumes.map((v: { name: string }) => v.name)).toEqual(['pgdata', 'redis'])
     expect(payload.totals).toEqual({
-      corpse: 1,
-      corpseBytes: 5_000,
-      decide: 1,
-      decideBytes: 700,
-      alive: 1,
+      ready: 1,
+      readyBytes: 5_000,
+      review: 1,
+      reviewBytes: 700,
+      inUse: 1,
       orphanVolumes: 2,
       orphanVolumeBytes: 123
     })
@@ -207,7 +207,7 @@ describe('list_cleanup handler (T445)', () => {
 
   it('AC-1: reports the autopilot state and the next cycle', async () => {
     serve(
-      snapshot([corpse], {
+      snapshot([ready], {
         prefs: { autopilot: true, firstReportAcknowledged: false, graceDays: 3 },
         nextCycleAt: NOW + 5_000
       })
@@ -218,12 +218,12 @@ describe('list_cleanup handler (T445)', () => {
   })
 
   it('AC-1: nextCycleAt is null when the background scan is off', async () => {
-    serve(snapshot([corpse], { nextCycleAt: null }))
+    serve(snapshot([ready], { nextCycleAt: null }))
     expect(JSON.parse(textOf(await handler({}, ctx()))).nextCycleAt).toBeNull()
   })
 
   it('AC-1: folder scopes the listing, and the totals, to one repo and its worktrees', async () => {
-    serve(snapshot([corpse, dirty, open, other]))
+    serve(snapshot([ready, dirty, open, other]))
     const res = await handler({ folder: WT_DIRTY }, ctx([], FOLDERS, WT_DIRTY))
     const payload = JSON.parse(textOf(res))
     expect(payload.bundles.map((b: Listed) => b.folderAlias)).toEqual([
@@ -231,24 +231,24 @@ describe('list_cleanup handler (T445)', () => {
       'PROJ-231-wave-2',
       'PROJ-347-wave-3'
     ])
-    expect(payload.totals).toMatchObject({ corpse: 1, decide: 1, alive: 1, corpseBytes: 5_000 })
+    expect(payload.totals).toMatchObject({ ready: 1, review: 1, inUse: 1, readyBytes: 5_000 })
   })
 
   it('AC-1: scope follows the bundle’s repo, so an out-of-tree worktree absent from the folder list is included', async () => {
     const outOfTree = bundle(WT_OUT_OF_TREE, { item: { diskBytes: 11 } })
-    serve(snapshot([corpse, outOfTree, other]))
-    for (const scope of [MAIN, WT_CORPSE]) {
+    serve(snapshot([ready, outOfTree, other]))
+    for (const scope of [MAIN, WT_READY]) {
       const payload = JSON.parse(textOf(await handler({ folder: scope }, ctx([], FOLDERS, scope))))
       expect(payload.bundles.map((b: Listed) => b.folderAlias)).toEqual([
         'PROJ-231-wave-1',
         'PROJ-231-oot'
       ])
-      expect(payload.totals).toMatchObject({ corpse: 2, corpseBytes: 5_011 })
+      expect(payload.totals).toMatchObject({ ready: 2, readyBytes: 5_011 })
     }
   })
 
   it('AC-1: scoping to an out-of-tree worktree finds its repo too', async () => {
-    serve(snapshot([corpse, bundle(WT_OUT_OF_TREE), other]))
+    serve(snapshot([ready, bundle(WT_OUT_OF_TREE), other]))
     const payload = JSON.parse(
       textOf(await handler({ folder: WT_OUT_OF_TREE }, ctx([], FOLDERS, WT_OUT_OF_TREE)))
     )
@@ -259,7 +259,7 @@ describe('list_cleanup handler (T445)', () => {
   })
 
   it('AC-1: a scope that matches no repo lists nothing', async () => {
-    serve(snapshot([corpse, other]))
+    serve(snapshot([ready, other]))
     const payload = JSON.parse(
       textOf(await handler({ folder: '/srv/ws/nowhere' }, ctx([], FOLDERS, '/srv/ws/nowhere')))
     )
@@ -281,7 +281,7 @@ describe('list_cleanup handler (T445)', () => {
   })
 
   it('D6: the id of a bundle is stable between calls', async () => {
-    serve(snapshot([corpse]))
+    serve(snapshot([ready]))
     const first = (JSON.parse(textOf(await handler({}, ctx()))).bundles as Listed[])[0]!.id
     const second = (JSON.parse(textOf(await handler({}, ctx()))).bundles as Listed[])[0]!.id
     expect(second).toBe(first)
@@ -289,7 +289,7 @@ describe('list_cleanup handler (T445)', () => {
 
   it('AC-1: a scoped listing leaves out the orphan volumes (they belong to no folder)', async () => {
     serve(
-      snapshot([corpse], {
+      snapshot([ready], {
         orphanVolumes: [
           {
             id: 'volume:pgdata',
@@ -302,22 +302,22 @@ describe('list_cleanup handler (T445)', () => {
       })
     )
     const payload = JSON.parse(
-      textOf(await handler({ folder: WT_CORPSE }, ctx([], FOLDERS, WT_CORPSE)))
+      textOf(await handler({ folder: WT_READY }, ctx([], FOLDERS, WT_READY)))
     )
     expect(payload.orphanVolumes).toEqual([])
     expect(payload.totals.orphanVolumes).toBe(0)
   })
 
   it('AC-1: a blocked folder as the scope is refused FOLDER_NOT_ALLOWED', async () => {
-    serve(snapshot([corpse]))
-    const res = await handler({ folder: WT_CORPSE }, ctx([MAIN], FOLDERS, WT_CORPSE))
+    serve(snapshot([ready]))
+    const res = await handler({ folder: WT_READY }, ctx([MAIN], FOLDERS, WT_READY))
     expect(res.isError).toBe(true)
     expect(textOf(res)).toContain('FOLDER_NOT_ALLOWED')
     expect(h.snapshotCalls).toHaveLength(0)
   })
 
   it('AC-1: unscoped, a blocked folder’s bundle still lists, marked agentControllable:false', async () => {
-    serve(snapshot([corpse, other]))
+    serve(snapshot([ready, other]))
     const rows = JSON.parse(textOf(await handler({}, ctx([MAIN])))).bundles as Listed[]
     expect(rows.map((r) => [r.folderAlias, r.agentControllable])).toEqual([
       ['PROJ-231-wave-1', false],
@@ -340,21 +340,21 @@ describe('list_cleanup handler (T445)', () => {
   })
 
   it('M5: a blocked scope is refused even when no bundle sits under it', async () => {
-    serve(snapshot([corpse]))
+    serve(snapshot([ready]))
     const res = await handler({ folder: '/srv/ws/blocked' }, ctx(['/srv/ws/blocked'], FOLDERS))
     expect(textOf(res)).toContain('FOLDER_NOT_ALLOWED')
   })
 
   it('marks a bundle the agent already released', async () => {
-    const snap = snapshot([corpse])
-    snap.prefs.released = { [corpse.item.id]: NOW - 1000 }
+    const snap = snapshot([ready])
+    snap.prefs.released = { [ready.item.id]: NOW - 1000 }
     serve(snap)
     const rows = JSON.parse(textOf(await handler({}, ctx()))).bundles as Listed[]
     expect(rows[0]!.released).toBe(true)
   })
 
   it('AC-2: reads a fresh snapshot and never calls release', async () => {
-    const { release } = serve(snapshot([corpse]))
+    const { release } = serve(snapshot([ready]))
     await handler({}, ctx())
     expect(h.snapshotCalls).toEqual([{ refresh: true }])
     expect(release).not.toHaveBeenCalled()

@@ -15,13 +15,13 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ### Added
 
 - **Sessions can read the cleanup list and release a finished worktree.** Two new agent
-  verbs: `list_cleanup` shows the same corpse / decide / alive picture the Cleanup surface
-  uses (reasons, sizes, orphan volumes, whether the automatic cleanup is on, when the next
+  verbs: `list_cleanup` shows the same Ready to clean / Needs review / In use picture the Cleanup
+  surface uses (reasons, sizes, orphan volumes, whether the automatic cleanup is on, when the next
   cycle runs; paths shortened to names) and is open to read-only Scheduler workers, so a
-  worker can report corpses piling up. `release_worktree` lets a session say its merged
-  worktree is done, which skips the grace period so it becomes a corpse at the next scan.
+  worker can report how many worktrees are ready to clean. `release_worktree` lets a session say its merged
+  worktree is done, which skips the grace period so it becomes ready to clean at the next scan.
   A release never overrides a safety rule (uncommitted work, an open session, a shared
-  Docker stack, Keep, never-clean all still hold it back) and it deletes nothing: neither
+  Docker stack, Keep, never-clean, an unresolved path all still hold it back) and it deletes nothing: neither
   verb removes anything, and no agent can clean a worktree. A session can name the worktree
   by its folder or by the name the list gave it. See [Agent control](docs/user/agent-control.md).
 

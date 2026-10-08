@@ -300,7 +300,7 @@ const OBSERVE_ALLOW_VERBS: readonly string[] = [
   // T328: read-only, so an observe worker can watch for zombie containers.
   // Its stop/start/remove siblings (T329) belong on the deny list below.
   'list_containers',
-  // T445: read-only, so a delivery-watchdog can report accumulated corpses. Its sibling
+  // T445: read-only, so a delivery-watchdog can report how many items are ready to clean. Its sibling
   // `release_worktree` writes a mark and belongs on the deny list below.
   'list_cleanup',
   // T369 (Mission progress S8): the two Mission READ verbs, so an observe-mode
