@@ -228,6 +228,7 @@ import {
 } from './containers-listing'
 import { getGcService } from '../gc/gc-service-registry'
 import { cleanupListing, planRelease } from './cleanup-listing'
+import { realPathLookup } from './real-paths'
 
 /** Everything a handler may need beyond its own validated `input`. */
 export interface ToolHandlerCtx {
@@ -2438,6 +2439,15 @@ const releaseWorktreeHandler: Handler = async (args, ctx) => {
 
   const snap = await svc.snapshot()
   const now = Date.now()
+  // A symlinked spelling is the same folder: compare real paths, not spellings.
+  const real = await realPathLookup(
+    [
+      folder,
+      ...snap.bundles.flatMap((b) => [b.item.path, b.item.repoPath]),
+      ...ctx.folders.map((f) => f.path)
+    ],
+    home
+  )
   const plan = planRelease(
     snap,
     { ...(folder ? { folder } : {}), ...(id ? { id } : {}) },
@@ -2445,11 +2455,13 @@ const releaseWorktreeHandler: Handler = async (args, ctx) => {
       denyFolders: ctx.denyFolders,
       home,
       now,
-      folders: ctx.folders
+      folders: ctx.folders,
+      real
     }
   )
   if (!plan.ok) {
-    // A repo the operator blocked is as closed as the worktree folder itself.
+    // A repo the operator blocked is as closed as the worktree folder itself. An id names no
+    // folder, so none is echoed.
     if (plan.blocked) return steerError('FOLDER_NOT_ALLOWED', folder)
     return { content: [{ type: 'text', text: JSON.stringify(plan.refusal) }], isError: true }
   }

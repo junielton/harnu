@@ -318,6 +318,11 @@ export interface ReleaseRequest {
 }
 
 export interface ReleaseOptions {
+  /**
+   * Real path of any folder the request touches (symlinks followed), from `realPathLookup`.
+   * Absent compares by normalized spelling only.
+   */
+  real?: (p: string) => string
   /** The live policy's blocked folders; a blocked worktree OR repo is refused first. */
   denyFolders: readonly string[]
   home: string
@@ -359,8 +364,9 @@ export function planRelease(
   opts: ReleaseOptions
 ): ReleasePlan {
   const folder = request.folder
-  const target = folder ? normalizePath(folder, opts.home) : null
-  const same = (p: string): boolean => target !== null && normalizePath(p, opts.home) === target
+  const real = (p: string): string => opts.real?.(p) ?? normalizePath(p, opts.home)
+  const target = folder ? real(folder) : null
+  const same = (p: string): boolean => target !== null && real(p) === target
   const bundle = request.id
     ? snap.bundles.find((b) => listedId(b) === request.id)
     : snap.bundles.find((b) => b.item.path && same(b.item.path))

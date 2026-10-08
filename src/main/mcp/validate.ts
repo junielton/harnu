@@ -1175,7 +1175,7 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   create_worker: parseCreateWorker,
   list_workers: parseListWorkers,
   list_containers: parseListContainers,
-  // T445: list_cleanup takes the optional folder; release_worktree requires it.
+  // T445: list_cleanup takes the optional folder; release_worktree takes a folder or an id.
   list_cleanup: parseListCleanup,
   release_worktree: parseReleaseWorktree,
   stop_containers: parseStopContainers,
