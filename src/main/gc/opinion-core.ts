@@ -379,6 +379,16 @@ export function safeEffort(effort: string): Effort {
  */
 export const OPINION_TOOLS: readonly string[] = ['Read', 'Grep', 'Glob']
 
+/**
+ * The built-in roster, passed as `--tools`. This, not the permission rules, is what restricts the
+ * session: `--allowedTools` and `--disallowedTools` only decide what may run without asking, and with
+ * them alone the real CLI still offered CronCreate, EnterWorktree (it wrote a worktree),
+ * RemoteTrigger (authenticated cloud calls), SendMessage, ScheduleWakeup and a ToolSearch that
+ * loads Monitor (it ran `cat` and `git status`). With `--tools` the CLI's init roster is exactly
+ * Glob, Grep and Read (tests/cli/opinion-tools.cli.test.ts).
+ */
+export const OPINION_BUILTIN_TOOLS: readonly string[] = OPINION_TOOLS
+
 /** What it is denied by name: the observe deny list, all of Bash, and the web tools. */
 export const OPINION_TOOLS_DENY: readonly string[] = [
   ...OBSERVE_TOOLS_DENY,
@@ -398,8 +408,8 @@ function withFlagValue(argv: string[], flag: string, value: string): string[] {
 
 /**
  * The argv of the headless session (without the binary). It is the Scheduler's `observe` argv with
- * no MCP config and no hook blob, narrowed to {@link OPINION_TOOLS} and denying
- * {@link OPINION_TOOLS_DENY}: file reads only, no command, `--strict-mcp-config` with nothing configured (so no
+ * no MCP config and no hook blob, narrowed to {@link OPINION_BUILTIN_TOOLS} (`--tools`, the roster) and
+ * {@link OPINION_TOOLS} / {@link OPINION_TOOLS_DENY} (the permission rules, as defence in depth): file reads only, no command, `--strict-mcp-config` with nothing configured (so no
  * Harnu verb and no `gc:clean` is reachable), no shell, no network tool, and no permission bypass.
  * A Scheduler tick additionally allows git/gh commands, a few board verbs and web tools; the
  * advisor deliberately does not.
@@ -419,11 +429,15 @@ export function opinionArgv(a: { model: string; effort: string }): string[] {
   // fails with E2BIG on Linux, and a batch can be larger. It is written to the process's stdin,
   // which `claude -p` reads with these flags (checked against the real CLI with a 195 KB prompt).
   const flags = base.slice(0, base.lastIndexOf('--'))
-  return withFlagValue(
-    withFlagValue(flags, '--allowedTools', OPINION_TOOLS.join(',')),
-    '--disallowedTools',
-    OPINION_TOOLS_DENY.join(',')
-  )
+  return [
+    ...withFlagValue(
+      withFlagValue(flags, '--allowedTools', OPINION_TOOLS.join(',')),
+      '--disallowedTools',
+      OPINION_TOOLS_DENY.join(',')
+    ),
+    '--tools',
+    OPINION_BUILTIN_TOOLS.join(',')
+  ]
 }
 
 // ---- which items may be asked about -----------------------------------------------------------
