@@ -4,6 +4,7 @@ import {
   OPINION_BUILTIN_TOOLS,
   OPINION_FALLBACK,
   advisorEnv,
+  claudeFolders,
   opinionKey,
   pullRequestFacts,
   confineCwd,
@@ -966,5 +967,57 @@ describe('the prompt prints the ref the diff was taken against (delta 5, item 4)
       /Diff against the default branch: COULD NOT BE COMPUTED \(git timed out\)/
     )
     expect(block).not.toMatch(/Diff against origin\/trunk/)
+  })
+})
+
+describe("Claude's own folders: the data folder and the temp folder (delta 6, item 1)", () => {
+  it('names the config dir and the per-user temp folder under every temp base', () => {
+    const dirs = claudeFolders({
+      configDir: '/srv/cfg',
+      tmpDirs: ['/var/tmp/x', '/tmp'],
+      uid: 1000
+    })
+    expect(dirs).toEqual(
+      expect.arrayContaining(['/srv/cfg', '/var/tmp/x/claude-1000', '/tmp/claude-1000'])
+    )
+  })
+
+  it('covers the CLI temp override (CLAUDE_CODE_TMPDIR) and its sandbox fallback', () => {
+    const dirs = claudeFolders({ tmpDirs: ['/over/ride', '/tmp'], uid: 501 })
+    expect(dirs).toContain('/over/ride/claude-501')
+    expect(dirs).toContain('/tmp/claude-501')
+    expect(dirs).toContain('/tmp/claude') // the folder the CLI's sandbox uses when no temp dir is set
+  })
+
+  it('adds the real path when it differs (a symlinked temp dir, macOS /var → /private/var)', () => {
+    const dirs = claudeFolders({
+      tmpDirs: ['/var/folders/ab/T'],
+      uid: 501,
+      realpath: (p) => (p === '/var/folders/ab/T' ? '/private/var/folders/ab/T' : p)
+    })
+    expect(dirs).toContain('/var/folders/ab/T/claude-501')
+    expect(dirs).toContain('/private/var/folders/ab/T/claude-501')
+  })
+
+  it('drops duplicates, blanks and relative bases, and has no temp folder without a uid', () => {
+    const dirs = claudeFolders({ tmpDirs: ['/tmp', '/tmp/', '', undefined, 'relative'], uid: 7 })
+    expect(dirs.filter((d) => d === '/tmp/claude-7')).toHaveLength(1)
+    expect(dirs.some((d) => d.includes('relative'))).toBe(false)
+    const noUid = claudeFolders({ configDir: '/c', tmpDirs: ['/tmp'], uid: null })
+    expect(noUid).toContain('/c')
+    expect(noUid.some((d) => d.includes('claude-'))).toBe(false)
+  })
+
+  it('turns into deny rules for Read, Grep and Glob in the argv', () => {
+    const argv = opinionArgv({
+      model: 'haiku',
+      effort: 'low',
+      dataDirs: claudeFolders({ tmpDirs: ['/tmp'], uid: 1000 })
+    })
+    const denied = argv[argv.indexOf('--disallowedTools') + 1].split(',')
+    for (const tool of ['Read', 'Grep', 'Glob']) {
+      expect(denied).toContain(`${tool}(//tmp/claude-1000/**)`)
+      expect(denied).toContain(`${tool}(~/.claude/**)`)
+    }
   })
 })

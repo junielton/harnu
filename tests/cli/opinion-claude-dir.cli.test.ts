@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { advisorEnv, opinionArgv } from '../../src/main/gc/opinion-core'
+import { advisorEnv, claudeFolders, opinionArgv } from '../../src/main/gc/opinion-core'
 
 // Claude's own data folder against the real CLI (T444 delta 5, item 1). From a repository folder the CLI
 // lets a session read `~/.claude/projects/<slug>/` (transcripts, tool results, memory) and, with auto
@@ -32,7 +32,13 @@ interface Seen {
 }
 
 async function run(cwd: string, prompt: string, protectedRun: boolean): Promise<Seen> {
-  let flags = opinionArgv({ model: 'haiku', effort: 'low' }).map((a) =>
+  // The same folders the shell closes: ~/.claude always, plus CLAUDE_CONFIG_DIR and the CLI's temp folder.
+  const dataDirs = claudeFolders({
+    configDir: process.env.CLAUDE_CONFIG_DIR,
+    tmpDirs: [process.env.CLAUDE_CODE_TMPDIR, process.env.CLAUDE_TMPDIR, tmpdir(), '/tmp'],
+    uid: process.getuid?.() ?? null
+  })
+  let flags = opinionArgv({ model: 'haiku', effort: 'low', dataDirs }).map((a) =>
     a === 'json' ? 'stream-json' : a
   )
   if (!protectedRun) {
@@ -155,4 +161,46 @@ describe.skipIf(!LIVE)("the advisor cannot reach Claude's own data folder (real 
       )
     })
   }, 150_000)
+})
+
+describe.skipIf(!LIVE)("the advisor cannot reach the CLI's temp folder (real CLI)", () => {
+  it('refuses a Read, Grep and Glob of another session’s folder under /tmp/claude-<uid>/<slug>/', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'harnu-advisor-tmpdir-'))
+    const cwd = join(root, 'repo')
+    mkdirSync(cwd)
+    const slug = cwd.replace(/[^A-Za-z0-9]/g, '-')
+    const base = join('/tmp', `claude-${process.getuid?.() ?? 0}`)
+    const folder = join(base, slug, 'other-session', 'scratchpad')
+    const marker = join(folder, 'note.txt')
+    const made: string[] = []
+    try {
+      if (existsSync(join(base, slug)))
+        throw new Error(`refusing to touch an existing folder: ${join(base, slug)}`)
+      for (const d of [join(base, slug), join(base, slug, 'other-session'), folder]) {
+        mkdirSync(d, { recursive: true })
+        made.push(d)
+      }
+      writeFileSync(marker, 'PROBE-TMP-MARKER-3\n')
+      const prompt = `Read ${marker}, Grep for PROBE in directory ${folder}, Glob '*' in path ${folder}, and report each result.`
+      const seen = await run(cwd, prompt, true)
+      const reads = seen.results.filter((r) => ['Read', 'Grep', 'Glob'].includes(r.name))
+      expect(reads.length).toBeGreaterThan(0)
+      expect(reads.every((r) => r.error)).toBe(true)
+      for (const r of seen.results) expect(r.text).not.toContain('PROBE-TMP-MARKER-3')
+      expect(seen.answer).not.toContain('PROBE-TMP-MARKER-3')
+      // The control: without the denies the same session reads it (why the denies exist).
+      const open = await run(cwd, prompt, false)
+      expect(open.results.some((r) => !r.error && r.text.includes('PROBE-TMP-MARKER-3'))).toBe(true)
+    } finally {
+      if (existsSync(marker)) unlinkSync(marker)
+      for (const d of made.reverse()) {
+        try {
+          rmdirSync(d)
+        } catch {
+          // already gone
+        }
+      }
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 180_000)
 })

@@ -138,6 +138,11 @@ describe('the advisor can only read (AC-2)', () => {
     expect(shell).toContain('homedir()')
     expect(shell).toMatch(/CLAUDE_CONFIG_DIR/)
     expect(shell).toContain('dataDirs')
+    // Claude's temp folder too: the CLI lets a session read it from the repository folder.
+    expect(shell).toContain('claudeFolders(')
+    expect(shell).toContain('CLAUDE_CODE_TMPDIR')
+    expect(shell).toContain('tmpdir()')
+    expect(shell).toContain('getuid')
   })
 
   it('stages no skill or plugin and builds argv from an empty tick context', () => {
