@@ -137,6 +137,16 @@ import type {
 import type { Tombstone } from '../main/reaper/journal'
 import type { ReaperPrefs } from '../main/reaper/prefs'
 import type { HarvestableAlert } from '../main/reaper/reaper-ipc'
+import type { GcPrefs } from '../main/gc/gc-prefs'
+import type {
+  CycleRecord as GcCycleRecord,
+  GcCleanAck,
+  GcCleanOptions,
+  GcJobDone,
+  GcJobInfo,
+  GcJobProgress,
+  GcSnapshot
+} from '../main/gc/gc-wire'
 // Containers wire types (T320, ADR-0014 §1): the ONLY containers module the
 // preload and the renderer may import — plain JSON-safe types, no main internals.
 import type {
@@ -2528,6 +2538,32 @@ const api = {
   /** Fires after a background tick finds items that just became harvestable. */
   onReaperHarvestable: (cb: (alert: HarvestableAlert) => void): (() => void) =>
     subscribe('reaper:harvestable', cb),
+
+  // ---- Workspace GC (UI-only; never exposed to an agent) --------------------
+  /** The last gather: buckets, orphan volumes, prefs, last cycle. `refresh` regathers first. */
+  gcSnapshot: (opts?: { refresh?: boolean }): Promise<GcSnapshot> =>
+    ipcRenderer.invoke('gc:snapshot', opts),
+  /**
+   * Clean bundles or orphan volumes (`volume:<name>` ids) as a background job. Returns at
+   * once; progress streams on `gc:progress` and the job ends with `gc:done`. A Needs review
+   * item or an orphan volume needs its own id in `confirmed`, and every id needs its facts in
+   * `expected`; see `GcCleanOptions`.
+   */
+  gcClean: (ids: string[], opts?: GcCleanOptions): Promise<GcCleanAck> =>
+    ipcRenderer.invoke('gc:clean', ids, opts),
+  gcKeep: (id: string): Promise<GcPrefs> => ipcRenderer.invoke('gc:keep', id),
+  gcUnkeep: (id: string): Promise<GcPrefs> => ipcRenderer.invoke('gc:unkeep', id),
+  gcPrefs: (): Promise<GcPrefs> => ipcRenderer.invoke('gc:prefs:get'),
+  /** Whole-object write, clamped in main. `keep` and the acknowledgement are not writable here. */
+  gcSetPrefs: (prefs: GcPrefs): Promise<GcPrefs> => ipcRenderer.invoke('gc:prefs:set', prefs),
+  /** Turns the first, report-only autopilot cycle into real cleaning from the next tick on. */
+  gcAckFirstReport: (): Promise<GcPrefs> => ipcRenderer.invoke('gc:ackFirstReport'),
+  /** Running, queued and recent jobs, so a reloaded renderer can re-attach. */
+  gcJobs: (): Promise<GcJobInfo[]> => ipcRenderer.invoke('gc:jobs'),
+  onGcProgress: (cb: (p: GcJobProgress) => void): (() => void) => subscribe('gc:progress', cb),
+  onGcDone: (cb: (d: GcJobDone) => void): (() => void) => subscribe('gc:done', cb),
+  /** Fires after every autopilot cycle, whatever it did. */
+  onGcCycle: (cb: (r: GcCycleRecord) => void): (() => void) => subscribe('gc:cycle', cb),
 
   // ---- Containers (T320) ------------------------------------------------------
   /** The last snapshot, or `null` before the first scan this session. */

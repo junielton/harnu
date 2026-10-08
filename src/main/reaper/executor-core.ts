@@ -3,6 +3,7 @@
 
 import { overridesAncestryCheck, type ReapItem } from './reaper-core'
 import type { WorktreeStatus } from '../worktree-core'
+import { isAbsolute, resolve } from 'node:path'
 import { planArchive } from './archive-core'
 import { restoreHintFor, type Tombstone } from './journal'
 
@@ -48,8 +49,48 @@ export interface ExecutorDeps {
   /** Captures a worktree's tracked + untracked working state and points `ref` at it. */
   archiveWip(repoPath: string, ref: string, worktreePath: string): Promise<string>
   detachSidebar(path: string): Promise<void>
+  /**
+   * Unregisters exactly this worktree from git: removes its own admin directory, found by the
+   * `gitdir` file that points at `worktreePath`. Never a repo-wide `git worktree prune`, which
+   * also drops the registration of every unlocked worktree whose folder is merely missing, an
+   * unmounted drive for instance, and so can lose a live worktree's metadata unattended.
+   */
+  removeWorktreeAdmin(repoPath: string, worktreePath: string): Promise<boolean>
+  /**
+   * Whether {@link removeWorktreeAdmin} can find this worktree's own admin directory: exactly
+   * one unlocked match. Asked BEFORE the folder is trashed, while git can still be asked to do
+   * it instead; false means the unregistration would otherwise be skipped.
+   */
+  canUnregister(repoPath: string, worktreePath: string): Promise<boolean>
   appendTombstone(t: Tombstone): Promise<void>
   now(): number
+}
+
+const slashes = (p: string): string =>
+  p
+    .replace(/\\/g, '/')
+    .replace(/\/{2,}/g, '/')
+    .replace(/\/+$/, '')
+
+/**
+ * The admin directory of the worktree at `worktreePath`, from the entries of
+ * `<common>/worktrees/*`: the one whose `gitdir` file points at `<worktreePath>/.git`. Null
+ * when none does, or when more than one does: an ambiguous match is left alone.
+ */
+export function matchAdminDir(
+  entries: ReadonlyArray<{ dir: string; gitdir: string; locked?: boolean }>,
+  worktreePath: string
+): string | null {
+  const target = `${slashes(worktreePath)}/.git`
+  // A gitdir can be written relative to its admin dir (git 2.48 `worktree.useRelativePaths`).
+  const absolute = (e: { dir: string; gitdir: string }): string => {
+    const g = e.gitdir.trim()
+    return isAbsolute(g) || /^[A-Za-z]:[\\/]/.test(g) ? g : resolve(e.dir, g)
+  }
+  const hits = entries.filter((e) => slashes(absolute(e)) === target)
+  // A lock counts toward ambiguity: a locked entry and a stale duplicate for the same folder
+  // are two matches, and a lone locked one is the user's "keep this registered".
+  return hits.length === 1 && hits[0]!.locked !== true ? hits[0]!.dir : null
 }
 
 function errorMessage(err: unknown): string {
@@ -215,12 +256,27 @@ export async function cleanItem(
     }
   })
 
+  // A clean never deletes anything permanently: the folder goes to the OS trash or nowhere.
+  // When the worktree's own admin dir cannot be matched (an unreadable gitdir, an ambiguous
+  // match, a locked worktree) the item halts HERE, before anything was trashed, and stays as
+  // it was. Nothing is handed to git to remove: git would delete the folder for good,
+  // gitignored files included, which neither the archive nor the trash would hold.
   await run('trash-folder', hasFolder, async () => {
+    if (!(await deps.canUnregister(item.repoPath, item.path!))) {
+      throw new Error(
+        'cannot-unregister: no matching, unlocked registration for this worktree in git; nothing was removed'
+      )
+    }
     await deps.trash(item.path!)
   })
 
+  // The step keeps its id for the journal and the pipeline, but it only unregisters THIS
+  // worktree now (see ExecutorDeps.removeWorktreeAdmin). Never a silent skip: a registration
+  // that cannot be found after the trash is a failed step.
   await run('worktree-prune', hasFolder, async () => {
-    await deps.git(item.repoPath, ['worktree', 'prune'])
+    if ((await deps.removeWorktreeAdmin(item.repoPath, item.path!)) === false) {
+      throw new Error("could not find this worktree's registration in git to remove")
+    }
   })
 
   await run('branch-delete', hasLocalBranch, async () => {

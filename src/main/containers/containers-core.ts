@@ -569,6 +569,12 @@ export interface ScanInput {
   zombieAfterDays: number
   recent: Tombstone[]
   platform: string
+  /**
+   * The workspace-GC bucket of a worktree path (the last GC snapshot), when it has judged
+   * that path. Only a stack attributed to a linked worktree reads it; absent, every stack
+   * keeps the idle clock.
+   */
+  inheritedBucketOf?: (path: string) => 'ready' | 'review' | 'in-use' | undefined
 }
 
 function memFor(id: string, memById: ReadonlyMap<string, number>): number | null {
@@ -682,7 +688,8 @@ export function buildSnapshot(input: ScanInput): ContainersSnapshotAvailable {
       attribution,
       liveSession: liveSessionId !== null,
       unusedForMs: clock,
-      zombieAfterDays: input.zombieAfterDays
+      zombieAfterDays: input.zombieAfterDays,
+      inheritedBucket: attribution.path ? input.inheritedBucketOf?.(attribution.path) : undefined
     })
     const usesClock = verdict === 'pending' || verdict === 'zombie'
     const zombieInMs =

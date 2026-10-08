@@ -180,6 +180,7 @@ import { registerMcpConfirm, closeMcpConfirm } from './mcp/confirm-resolver'
 import { registerWorktreeHandlers, adoptExistingFolder } from './worktree-ipc'
 import { registerReaperHandlers } from './reaper/reaper-ipc'
 import { registerContainersHandlers } from './containers/containers-ipc'
+import { registerGcHandlers } from './gc/gc-ipc'
 import { registerScheduler, setSchedulerCompanionProvider } from './scheduler-shell'
 import { companionSpawnProvider } from './companion/spawn-inject'
 import { gcStagedDirs } from './companion/staging'
@@ -688,8 +689,13 @@ app.whenReady().then(async () => {
   })
   const mcpConfirm = registerMcpConfirm(() => mainWindow)
   registerWorktreeHandlers(() => mainWindow)
-  registerReaperHandlers(() => mainWindow)
+  const reaperControl = registerReaperHandlers(() => mainWindow)
   registerContainersHandlers(() => mainWindow)
+  // Workspace GC: the autopilot cycle rides the Reaper tick above (one timer), and its
+  // notifications reuse the app icon like every other main-process notice.
+  void registerGcHandlers(() => mainWindow, reaperControl, icon).catch((err) =>
+    console.error('[gc] register failed', err)
+  )
   // T113: the background manifest drain — stamped Ready cards dispatch without
   // the Roadmap board open. Shares the SAME CommandBridge (spawns are
   // renderer-owned); pokes arrive from the card write paths in roadmap-ipc.

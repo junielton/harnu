@@ -31,6 +31,7 @@ import { newlyHarvestable, type ReaperSnapshot } from './scan-core'
 import type { ReapItem } from './reaper-core'
 import { cleanItem, sweep, type CleanResult, type ExecutorDeps } from './executor-core'
 import { appendTombstone, readJournal, type Tombstone } from './journal'
+import { canUnregister, removeWorktreeAdmin } from './worktree-admin-shell'
 import { archiveTip, archiveWip } from './archive-shell'
 import { defaultPrefs, normalizePrefs, readPrefs, writePrefs, type ReaperPrefs } from './prefs'
 import {
@@ -84,13 +85,15 @@ function findItem(itemId: string): ReapItem | undefined {
  * after a successful `trash-folder`, so that should never happen in practice.
  */
 export function buildDeps(getWindow: () => BrowserWindow | null): ExecutorDeps {
+  const git = async (repo: string, args: string[]): Promise<string> =>
+    (await runFile('git', ['-C', repo, ...args], GIT_OPTS)).stdout
   return {
     // BUG-75: the executor re-probes TRACKED dirtiness only. `isWorktreeDirty`
     // stays wired to `worktree:remove`, whose stricter gate this must not touch.
     probeStatus: probeWorktreeStatus,
     hasUnpushed: hasUnpushedCommits,
     trash: (p) => shell.trashItem(p),
-    git: async (repo, args) => (await runFile('git', ['-C', repo, ...args], GIT_OPTS)).stdout,
+    git,
     resolveSha: async (repo, rev) => {
       try {
         return (
@@ -102,6 +105,8 @@ export function buildDeps(getWindow: () => BrowserWindow | null): ExecutorDeps {
     },
     archiveTip,
     archiveWip,
+    canUnregister: (repo, wt) => canUnregister(repo, wt, git),
+    removeWorktreeAdmin: (repo, wt) => removeWorktreeAdmin(repo, wt, git),
     detachSidebar: async (p) => {
       await removeGhostFolder(getWindow, p)
     },
@@ -170,8 +175,33 @@ export interface HarvestableAlert {
   reclaimableBytes: number
 }
 
+/**
+ * The handle the workspace GC uses to ride the Reaper timer instead of owning a second one:
+ * one clock, one scan, then the cycle in the same tick.
+ */
+export interface ReaperControl {
+  /** Runs after every scheduled scan, inside the same tick (single-flighted with it). */
+  setAfterScan(hook: (() => Promise<void>) | null): void
+  /** While this answers true, a scheduled tick is skipped (a cleaning job is running). */
+  setBusy(check: (() => boolean) | null): void
+  /** Clamped and persisted like any Reaper pref; reschedules the timer. */
+  setIntervalMs(intervalMs: number): Promise<void>
+  /** Epoch ms of the next scheduled tick, or null while the background scan is off. */
+  nextTickAt(): number | null
+  /** Whether the background scan (and with it the autopilot) is switched on. */
+  autoScan(): boolean
+  /** The interval the timer runs at now. */
+  intervalMs(): number
+  /**
+   * Runs destructive work on the Reaper's own op chain: after a running scan and every
+   * clean, sweep, dehydrate and rehydrate already queued, and before the next one. The
+   * workspace GC runs its jobs through this, so the two never touch a tree at once.
+   */
+  runExclusive<T>(fn: () => Promise<T>): Promise<T>
+}
+
 /** Register the Reaper IPC handlers. */
-export function registerReaperHandlers(getWindow: () => BrowserWindow | null): void {
+export function registerReaperHandlers(getWindow: () => BrowserWindow | null): ReaperControl {
   const deps = buildDeps(getWindow)
   const hydrationDeps = buildHydrationDeps()
   // Dehydrate/rehydrate run one at a time, and never while a scan walks the same
@@ -199,6 +229,9 @@ export function registerReaperHandlers(getWindow: () => BrowserWindow | null): v
   let initialTimer: ReturnType<typeof setTimeout> | null = null
   let intervalTimer: ReturnType<typeof setInterval> | null = null
   let tickRunning = false
+  let afterScan: (() => Promise<void>) | null = null
+  let gcBusy: (() => boolean) | null = null
+  let nextAt: number | null = null
 
   const pushUpdate = (snap: ReaperSnapshot): void => {
     const win = getWindow()
@@ -240,6 +273,7 @@ export function registerReaperHandlers(getWindow: () => BrowserWindow | null): v
   const runScheduledTick = async (): Promise<void> => {
     if (tickRunning) return // single-flight: never stack a tick on a slow scan
     if (opsPending > 0) return // a dehydrate/rehydrate is walking these trees; next tick
+    if (gcBusy?.()) return // a cleaning job is removing worktrees; scan after it
     tickRunning = true
     try {
       const prev = lastSnapshot()
@@ -252,6 +286,15 @@ export function registerReaperHandlers(getWindow: () => BrowserWindow | null): v
         const reclaimableBytes = grown.reduce((sum, item) => sum + (item.diskBytes ?? 0), 0)
         pushHarvestable({ count: grown.length, reclaimableBytes })
       }
+      // Workspace GC: the cycle rides this tick, so there is still exactly one timer. A
+      // failing cycle must never take the scan schedule down with it.
+      if (afterScan) {
+        try {
+          await afterScan()
+        } catch (err) {
+          console.error('[reaper] post-scan hook failed', err)
+        }
+      }
     } finally {
       tickRunning = false
     }
@@ -260,11 +303,17 @@ export function registerReaperHandlers(getWindow: () => BrowserWindow | null): v
   /** (Re)arms the timer pair from `currentPrefs`. A no-op scan schedule when `autoScan` is off. */
   const scheduleTicks = (): void => {
     clearSchedule()
+    nextAt = null
     if (!currentPrefs.autoScan) return
+    nextAt = Date.now() + INITIAL_DELAY_MS
     initialTimer = setTimeout(() => {
       initialTimer = null
       void runScheduledTick()
-      intervalTimer = setInterval(() => void runScheduledTick(), currentPrefs.intervalMs)
+      nextAt = Date.now() + currentPrefs.intervalMs
+      intervalTimer = setInterval(() => {
+        nextAt = Date.now() + currentPrefs.intervalMs
+        void runScheduledTick()
+      }, currentPrefs.intervalMs)
     }, INITIAL_DELAY_MS)
   }
 
@@ -290,9 +339,12 @@ export function registerReaperHandlers(getWindow: () => BrowserWindow | null): v
       const item = findItem(itemId)
       if (!item) throw new Error(`unknown or stale reaper item id: ${itemId}; rescan and retry`)
       const effectiveDeleteRemote = currentPrefs.neverDeleteRemote ? false : deleteRemote
-      const result = await cleanItem(item, { deleteRemote: effectiveDeleteRemote }, deps)
-      await rescanAndPush([item.repoPath])
-      return result
+      // On the op chain: a clean never runs beside a workspace-GC job or a dehydrate.
+      return runOp(async () => {
+        const result = await cleanItem(item, { deleteRemote: effectiveDeleteRemote }, deps)
+        await rescanAndPush([item.repoPath])
+        return result
+      })
     }
   )
 
@@ -313,14 +365,16 @@ export function registerReaperHandlers(getWindow: () => BrowserWindow | null): v
         throw new Error(`no known reaper items among the given ids: ${missing.join(', ')}`)
       }
       const effectiveDeleteRemote = currentPrefs.neverDeleteRemote ? false : deleteRemote
-      const results = await sweep(
-        items,
-        { deleteRemote: effectiveDeleteRemote },
-        deps,
-        pushProgress
-      )
-      await rescanAndPush(items.map((i) => i.repoPath))
-      return results
+      return runOp(async () => {
+        const results = await sweep(
+          items,
+          { deleteRemote: effectiveDeleteRemote },
+          deps,
+          pushProgress
+        )
+        await rescanAndPush(items.map((i) => i.repoPath))
+        return results
+      })
     }
   )
 
@@ -377,4 +431,22 @@ export function registerReaperHandlers(getWindow: () => BrowserWindow | null): v
     currentPrefs = await readPrefs()
     scheduleTicks()
   })()
+
+  return {
+    setAfterScan: (hook) => {
+      afterScan = hook
+    },
+    setBusy: (check) => {
+      gcBusy = check
+    },
+    setIntervalMs: async (intervalMs) => {
+      currentPrefs = normalizePrefs({ ...currentPrefs, intervalMs })
+      await writePrefs(currentPrefs)
+      scheduleTicks()
+    },
+    nextTickAt: () => nextAt,
+    autoScan: () => currentPrefs.autoScan,
+    intervalMs: () => currentPrefs.intervalMs,
+    runExclusive: (fn) => runOp(fn)
+  }
 }

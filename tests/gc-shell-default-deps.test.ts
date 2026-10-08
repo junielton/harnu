@@ -122,6 +122,7 @@ beforeEach(() => {
   h.executor = {
     probeStatus: vi.fn(async () => ({ trackedDirty: false, untracked: [] })),
     git: vi.fn(async () => `${TIP}\n`),
+    canUnregister: vi.fn(async () => true),
     now: () => EXEC_NOW
   }
 })

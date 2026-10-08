@@ -568,6 +568,16 @@ export interface RepoScanInput {
    * means "not measured" and the item reports a null disk figure.
    */
   diskBytesByPath?: Map<string, number | null>
+  /**
+   * Receives the facts each branch worktree item was judged on, with the commit its worktree
+   * has checked out. The workspace GC re-resolves branch fate from these, so its strong-merge
+   * proof is checked against the real local tip rather than whatever the classifier saw.
+   * Called once per worktree or hidden-folder item; never for detached worktrees (no branch).
+   */
+  collectFateInput?: (
+    itemId: string,
+    input: { facts: BranchFacts; localTip: string | null }
+  ) => void
   now: number
 }
 
@@ -616,6 +626,7 @@ export function buildRepoItems(input: RepoScanInput): ReapItem[] {
     patchIdContainedByBranch,
     commitDateBySha,
     diskBytesByPath,
+    collectFateInput,
     now
   } = input
 
@@ -691,7 +702,9 @@ export function buildRepoItems(input: RepoScanInput): ReapItem[] {
       prSetComplete: prSetCompleteFor(prSetComplete, prProbedBranches, branch),
       prProvenance: resolved.provenance
     }
-    items.push(classify(facts, now))
+    const classified = classify(facts, now)
+    items.push(classified)
+    collectFateInput?.(classified.id, { facts, localTip: w.head || null })
   }
 
   for (const ref of localBranches) {

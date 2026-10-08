@@ -512,6 +512,11 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         // A worktree of another repo or a clone inside it, which that listing cannot see.
         const foreign = await foreignRefusal(own(path).path)
         if (foreign) return { ok: false, reason: foreign }
+        // A worktree git cannot unregister (locked, no unique registration) would halt at the
+        // trash, after the stack was stopped and the deps dropped: refuse before any of that.
+        if (!(await deps.executor.canUnregister(item.repoPath, path))) {
+          return { ok: false, reason: 'cannot-unregister' }
+        }
         const { stacks } = await deps.listStacks()
         // Every container folder on its real path. One that cannot be read and lies inside
         // the worktree or above it may run from it under another name.

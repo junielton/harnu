@@ -297,27 +297,38 @@ async function rechecked(ops: GcOps, b: WorktreeBundle): Promise<boolean> {
   }
 }
 
+/** Observers for a batch in flight: progress streams from these, the batch itself is unchanged. */
+export interface BatchHooks {
+  onStart?(b: WorktreeBundle): void
+  onItem?(result: GcItemResult, b: WorktreeBundle): void
+}
+
 /** Sequential on purpose: docker and git are shared resources, and one failure never stops the rest. */
 export async function runBatch(
   bs: WorktreeBundle[],
   ops: GcOps,
-  opts: GcRunOptions
+  opts: GcRunOptions,
+  hooks: BatchHooks = {}
 ): Promise<GcItemResult[]> {
   const results: GcItemResult[] = []
   for (const b of bs) {
+    hooks.onStart?.(b)
     // runBundle never rejects; this guard keeps one bad item from aborting the rest even so.
+    let result: GcItemResult
     try {
-      results.push(await runBundle(b, ops, opts))
+      result = await runBundle(b, ops, opts)
     } catch {
       const id = (b as Partial<WorktreeBundle> | null | undefined)?.item?.id
-      results.push({
+      result = {
         id: typeof id === 'string' ? id : 'unknown',
         ok: false,
         haltedAt: 'reprobe',
         error: PROBE_FAILED,
         freedBytes: 0
-      })
+      }
     }
+    results.push(result)
+    hooks.onItem?.(result, b)
   }
   return results
 }

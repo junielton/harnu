@@ -25,6 +25,11 @@ export interface Tombstone {
    */
   archiveTipRef: string | null
   archiveWipRef: string | null
+  /**
+   * Who ran the cleanup. Absent on every line written before the workspace GC, and then it
+   * was an operator click; `autopilot` marks an unattended cycle on the Reaper timer.
+   */
+  actor?: 'operator' | 'autopilot'
 }
 
 /** Serializes a tombstone to a single JSON line (with trailing newline). */
@@ -45,7 +50,8 @@ function isTombstone(v: unknown): v is Tombstone {
     (typeof t.justifiedBy === 'string' || t.justifiedBy === null) &&
     (typeof t.restoreHint === 'string' || t.restoreHint === null) &&
     isOptionalRef(t.archiveTipRef) &&
-    isOptionalRef(t.archiveWipRef)
+    isOptionalRef(t.archiveWipRef) &&
+    (t.actor === undefined || t.actor === 'operator' || t.actor === 'autopilot')
   )
 }
 

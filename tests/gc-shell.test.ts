@@ -209,6 +209,8 @@ function harness(
     archiveTip: async (_repo, ref) => ref,
     archiveWip: async (_repo, ref) => ref,
     detachSidebar: async () => undefined,
+    canUnregister: async () => true,
+    removeWorktreeAdmin: async () => true,
     appendTombstone: async () => undefined,
     now: () => EXEC_NOW,
     ...over.executor
@@ -1533,9 +1535,8 @@ describe('cleanGit', () => {
     [
       'worktree-prune',
       {
-        git: async (_repo, args) => {
-          if (args[0] === 'worktree') throw new Error('prune failed')
-          return ''
+        removeWorktreeAdmin: async () => {
+          throw new Error('prune failed')
         }
       },
       'prune'
@@ -2141,5 +2142,50 @@ describe('a foreign checkout nested inside the bundle (delta 7)', () => {
       expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'changed-mid-run' })
       expect(cleanItem).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe('a worktree git cannot unregister (delta 6, item 2)', () => {
+  const opts = { removeVolumes: false }
+  it('the reprobe refuses as cannot-unregister before any docker call', async () => {
+    const h = harness({ executor: { canUnregister: async () => false } })
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+      ok: false,
+      reason: 'cannot-unregister'
+    })
+    expect(h.listStacks).not.toHaveBeenCalled()
+    expect(h.stop).not.toHaveBeenCalled()
+  })
+
+  it('asks about this repo and this worktree', async () => {
+    const canUnregister = vi.fn(async () => true)
+    const h = harness({ executor: { canUnregister } })
+    const b = bundle()
+    expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: true })
+    expect(canUnregister).toHaveBeenCalledWith(b.item.repoPath, b.item.path)
+  })
+
+  it('refuses as probe-failed when asking throws', async () => {
+    const h = harness({
+      executor: {
+        canUnregister: async () => {
+          throw new Error('git is gone')
+        }
+      }
+    })
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+      ok: false,
+      reason: 'probe-failed: git is gone'
+    })
+    expect(h.listStacks).not.toHaveBeenCalled()
+  })
+
+  it('runBundle stops nothing and drops no deps for a locked, otherwise ready worktree', async () => {
+    const h = harness({ executor: { canUnregister: async () => false } })
+    const r = await runBundle(bundle(), createGcOps(h.deps), opts)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'cannot-unregister' })
+    expect(h.stop).not.toHaveBeenCalled()
+    expect(h.removeContainers).not.toHaveBeenCalled()
+    expect(cleanItem).not.toHaveBeenCalled()
   })
 })

@@ -14,6 +14,66 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Added
 
+- **Automatic cleanup of merged worktrees and their Docker stacks.** Harnu can now clear
+  worktrees whose branch is proven merged, together with the Docker stack running from
+  each one, on the same hourly timer as the Cleanup scan. It cleans only worktrees it can
+  prove are finished: merged for real (the pull request's last commit is the worktree's
+  commit, or git itself shows the work is in main), clean, past a grace period, and with no
+  Harnu session running in them. It is off by default, and the first run only reports what
+  it found ("Found N ready to clean, X GB - enable automatic cleanup?") and deletes nothing. A
+  stack's containers, the code (kept as `refs/archive/…` refs), the dependencies, the folder
+  and the local branch go in a fixed order, one worktree at a time, and a failure stops that
+  worktree only. **Docker volumes are never removed with a worktree**, by the automatic cleanup
+  or by hand: they stay, and show up afterwards as orphan volumes for you to review. A cycle that cleaned something posts one
+  notification. The Containers view now marks a stack from a merged worktree as a zombie as
+  soon as the branch is merged instead of waiting for the idle clock. For now there is no
+  settings screen for it: the options live in `gc-prefs.json` in Harnu's settings folder and
+  the screen arrives with the next Cleanup update (see [Cleanup](docs/user/cleanup.md)).
+  A worktree whose
+  cleanup stopped partway shows as needing review, not as ready to clean, everywhere in Harnu.
+- **Automatic cleanup is stricter about what is still in use.** Time since the last activity
+  now counts any terminal under the worktree, including `claude` runs started outside Harnu and
+  sessions parked a while ago, and sessions reached through a symlink. A worktree, or a clone of another repository, inside
+  another worktree needs review, and so does one Harnu could not look inside (the reason names
+  the folder and the error). A Docker Compose project name written in a subfolder (`docker/compose.yml`,
+  an `.env` there, `${VAR}` read from the `.env` beside it) keeps its volumes out of the orphan
+  list, and a name that cannot be resolved keeps every volume out. Pressing Keep is remembered
+  against the item's state at that moment, a partial settings write no longer resets other
+  settings, and cleaning a worktree now unregisters only that worktree from git instead of
+  pruning every stale entry in the repository.
+- **Automatic cleanup counts every kind of session, and a Keep protects at once.** Headless
+  runs (`claude -p`, including Harnu's own scheduled workers) and a stale legacy session index
+  now count as activity for the grace period. Pressing **Keep** protects the worktree
+  immediately instead of after Harnu has re-checked it, even while a cleaning cycle is already
+  running. If Harnu cannot read every compose file it needs to (a scan limit, or a project name
+  it cannot resolve), it lists no orphan volumes and says why. Cleanup notifications use the
+  same decimal units (`GB`) as the screens.
+- **A clean never deletes anything permanently.** If Harnu cannot match a worktree to its own
+  registration in git (even through a symlinked path), it leaves the worktree untouched and
+  reports why, instead of asking git to remove it for good. Pressing **Keep** again on an item
+  that is already kept never drops its mark. If Harnu cannot read Claude's transcripts folder,
+  or cannot tell which folder a transcript belongs to, it counts the activity as possibly
+  belonging to the worktree and keeps it out of the ready list.
+- **Locked worktrees are left alone, and Harnu says so up front.** A worktree you locked in git
+  (`git worktree lock`) now shows in Needs review with "This worktree is locked in git", and
+  Harnu checks again before it stops any container: if git cannot unregister a worktree, nothing
+  is stopped or removed. A lock also counts when a stale duplicate registration points at the
+  same folder. If Claude's folder exists but its transcripts folder is missing, Harnu treats
+  recent activity as unknown and cleans nothing automatically.
+- **Docker housekeeping in the same cycle.** When automatic cleanup is on, each cycle also
+  clears Docker build cache older than a week and dangling images, and reports how much it
+  freed. It never touches images a stack uses and never removes a volume: volumes nobody uses
+  any more, including the ones a cleaned worktree left behind, are listed with their size for
+  you to remove one by one, each after its own confirmation, and **a removed volume cannot be
+  restored**.
+- **Cleaning in the background.** Removing worktrees by hand no longer holds the window: it
+  starts a job, reports progress item by item, survives a reload of the window, and a second
+  request waits for the first instead of running beside it. Worktrees that Cleanup is not
+  sure about (an unmerged or dirty branch, say) can be removed on purpose after an explicit
+  confirmation; their code and uncommitted work are archived to `refs/archive/…` first. The confirmation is for what you were
+  looking at: if the worktree changed after you clicked (a new commit, a Docker stack that
+  started), Harnu refuses it and you look again.
+
 - **The Harnu mod.** Harnu now loads a small mod into the `claude` sessions it starts, so
   it can read what a session is doing from the inside instead of guessing from hooks and
   files. For now it only watches: your sessions behave exactly as before, and every fact

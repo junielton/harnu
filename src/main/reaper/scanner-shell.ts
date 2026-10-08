@@ -34,7 +34,7 @@ import {
   type LocalBranchRef,
   type ReaperSnapshot
 } from './scan-core'
-import type { PrFacts, ReapItem } from './reaper-core'
+import type { BranchFacts, PrFacts, ReapItem } from './reaper-core'
 import { parseWorktreeList, type WorktreeListEntry, type WorktreeStatus } from '../worktree-core'
 import { readUserProjects } from '../user-projects'
 import { getFleetFolders } from '../fleet-model'
@@ -111,6 +111,12 @@ const MEASURE_CONCURRENCY = 3
 // 1 MiB buffer of {@link GH_OPTS} would survive.
 
 const DEFAULT_PROTECTED_BRANCHES = ['main', 'master', 'develop']
+
+/** The inputs branch-fate resolution needs for one worktree item. */
+export interface FateInput {
+  facts: BranchFacts
+  localTip: string | null
+}
 
 export interface ScanOptions {
   /** Rescan only these (already-discovered) repo paths; merges into the last full snapshot. */
@@ -694,6 +700,8 @@ async function scanOneRepo(
     inUseFolders: Set<string>
     hydrationFile: HydrationRecordFile
     protectedBranches: string[]
+    /** Receives the facts and local tip each worktree item was judged on (workspace GC). */
+    fateSink: Map<string, FateInput>
   },
   ghCache: GhCacheFile,
   now: number
@@ -767,6 +775,7 @@ async function scanOneRepo(
     ancestorByBranch,
     patchIdContainedByBranch,
     commitDateBySha,
+    collectFateInput: (id, input) => opts.fateSink.set(id, input),
     now
   })
 
@@ -857,11 +866,42 @@ function deriveInto(
 // ---- snapshot memoization + single-flight ------------------------------------
 
 let cachedSnapshot: ReaperSnapshot | null = null
+/** What each worktree item was judged on, per repo, kept in step with `cachedSnapshot`. */
+let cachedFate = new Map<string, Map<string, FateInput>>()
 let inflight: Promise<ReaperSnapshot> | null = null
 
 /** The last computed snapshot, or `null` before the first scan. */
 export function lastSnapshot(): ReaperSnapshot | null {
   return cachedSnapshot
+}
+
+/**
+ * The facts and the real checked-out commit behind every worktree item of the last scan, by
+ * item id. The workspace GC resolves branch fate from these, so a strong-merge proof is
+ * checked against the commit the worktree really has.
+ */
+export function lastFateInputs(): Map<string, FateInput> {
+  const out = new Map<string, FateInput>()
+  for (const repo of cachedFate.values()) for (const [id, input] of repo) out.set(id, input)
+  return out
+}
+
+/** Every worktree path of the given repos (main checkout and linked, bare excluded). */
+/** Paths of the worktrees git lists as locked, across the repos. */
+export async function listLockedWorktreePaths(repoPaths: readonly string[]): Promise<string[]> {
+  const out = new Set<string>()
+  for (const repoPath of repoPaths) {
+    for (const w of await listWorktreesRaw(repoPath)) if (!w.bare && w.locked) out.add(w.path)
+  }
+  return [...out]
+}
+
+export async function listAllWorktreePaths(repoPaths: readonly string[]): Promise<string[]> {
+  const out = new Set<string>()
+  for (const repoPath of repoPaths) {
+    for (const w of await listWorktreesRaw(repoPath)) if (!w.bare) out.add(w.path)
+  }
+  return [...out]
 }
 
 async function runScan(opts: ScanOptions): Promise<ReaperSnapshot> {
@@ -882,9 +922,12 @@ async function runScan(opts: ScanOptions): Promise<ReaperSnapshot> {
   const ghCache = await readGhCache()
   let cacheDirty = false
   const freshRepos: ReaperSnapshot['repos'] = []
+  const freshFate = new Map<string, Map<string, FateInput>>()
   // Serialized: one repo at a time, git commands within a repo sequential.
   for (const target of targets) {
     const before = ghCache[target.repoPath]
+    const fateSink = new Map<string, FateInput>()
+    freshFate.set(target.repoPath, fateSink)
     const result = await scanOneRepo(
       target.repoPath,
       {
@@ -893,7 +936,8 @@ async function runScan(opts: ScanOptions): Promise<ReaperSnapshot> {
         liveFolders,
         inUseFolders: folderSets.inUse,
         hydrationFile,
-        protectedBranches: opts.protectedBranches ?? DEFAULT_PROTECTED_BRANCHES
+        protectedBranches: opts.protectedBranches ?? DEFAULT_PROTECTED_BRANCHES,
+        fateSink
       },
       ghCache,
       now
@@ -909,8 +953,10 @@ async function runScan(opts: ScanOptions): Promise<ReaperSnapshot> {
     const byRepo = new Map(cachedSnapshot.repos.map((r) => [r.repoPath, r]))
     for (const r of freshRepos) byRepo.set(r.repoPath, r)
     cachedSnapshot = { scannedAt: now, repos: [...byRepo.values()] }
+    for (const [repo, sink] of freshFate) cachedFate.set(repo, sink)
   } else {
     cachedSnapshot = { scannedAt: now, repos: freshRepos }
+    cachedFate = freshFate
   }
   return cachedSnapshot
 }
