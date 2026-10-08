@@ -70,7 +70,8 @@ Typing `/` only opens the list at the start of a word. A slash inside a path —
 
 A few details worth knowing:
 
-- If you have a personal skill with the same name as one of Harnu's, the personal one wins. Write `/harnu:mission` to insist on the bundled one. A saved prompt that still says `/capy:mission` keeps working.
+- If you have a personal skill with the same name as one of Harnu's, the personal one wins in an `act` worker. Write `/harnu:mission` to insist on the bundled one. A saved prompt that still says `/capy:mission` keeps working. **An `observe` worker always gets Harnu's own skill** for a name Harnu ships (such as `/delivery-watchdog`), whatever a repo or your personal folder has under that name: a repo you clone can carry a skill with that name, and an `observe` worker is promised to be read-only.
+- **An `observe` worker never runs a skill that declares hooks.** A skill can carry `hooks:` in the header of its `SKILL.md`; those are shell commands the skill runs on its own, outside everything the worker is allowed to do, so Harnu refuses to load such a skill into an `observe` worker. The worker still runs without it, and the refusal shows in that worker's **Runs** tab as `rejected skill: /name (declares hooks)`. Make the worker `act` if you really want that skill.
 - A skill that belongs to an installed **plugin** (`/dtk:review`) can't be staged — plugins come from the settings a tick deliberately doesn't load — so it shows as **not found**.
 - Naming a bundled skill stages it even if it's switched off for this folder in Settings → Skills. Naming it in a prompt is an explicit request, so it's honoured.
 - Skills reach the tick namespaced, the same way they do in a session started by Harnu: `/land-prs` arrives as `harnu:land-prs`. The model resolves it either way — you write the plain name.

@@ -1,4 +1,4 @@
-<!-- harnu-features v79 (2026-10-08) -->
+<!-- harnu-features v80 (2026-10-08) -->
 
 # You are running inside Harnu
 
@@ -430,10 +430,17 @@ ENABLED — unlike the blank Scheduler UI form, every field arrives in one call,
 so it fires from the very next tick rather than waiting on a second arm step.
 Name a bundled skill inline in the prompt with `/skill-name` — naming it stages
 it even if it's switched off for that folder, the same as a Scheduler tick
-honors any mention. The `warning` on the ACK fires only when a mention
+honors any mention. In an `observe` worker two rules narrow that: a bare
+`/name` that the bundled catalog owns always resolves to the BUNDLED skill (a
+repo's own `.claude/skills/<name>` cannot shadow it), and a skill whose
+SKILL.md frontmatter declares `hooks:` is never staged at all, because hooks run
+shell commands whatever the tool allowlist says. Act workers keep the old
+most-specific-first resolution. The `warning` on the ACK fires when a mention
 resolves to nothing on this machine at all (a typo, an unknown name, a plugin
-skill a tick can't load): that mention will never stage, though the worker is
-still created either way.
+skill a tick can't load), and separately when an observe worker names a skill
+that declares hooks: either way that mention will never stage, though the worker
+is still created. A refused mention also shows on the run as
+`rejected skill: /name (declares hooks)`.
 
 **List Scheduler workers — `list_workers`.** Call `list_workers({ folder? })`
 to see what's ticking: id, name, a redacted `folderAlias` (never the raw path,

@@ -52,6 +52,7 @@ import {
   folderStageKey,
   parseBundledSkillsVersion,
   parseSkillFrontmatter,
+  skillDeclaresHooks,
   stageStamp,
   type BundledSkill,
   type BundledSkillsPrefs,
@@ -109,13 +110,23 @@ function stagingRoot(): string {
  * Keyed per folder because the enabled set is per folder: one shared directory
  * cannot express two folders with different sets while both have live sessions.
  */
-export function stagedPluginDir(folder: string, mentions: readonly string[] = []): string {
+export function stagedPluginDir(
+  folder: string,
+  mentions: readonly string[] = [],
+  observe = false
+): string {
   // A worker's mentioned skills are keyed INTO the directory, not merged into the
   // folder's shared one (T305). Interactive sessions in the same folder stage the
   // enabled-bundled set and nothing else; if a worker's mentions landed in that
   // same directory the two would fight over the `.stamp` and re-copy the tree on
   // every spawn — and a session would silently inherit a worker's skills.
-  const key = mentions.length === 0 ? folder : `${folder}\u0000${[...mentions].sort().join(',')}`
+  // BUG-169: an observe tick resolves and filters the same mentions differently from an act one
+  // (bundled first, hooks refused), so the two must not share a directory either: they would
+  // re-stage over each other on every tick of two workers in one folder.
+  const key =
+    mentions.length === 0
+      ? folder
+      : `${folder}\u0000${[...mentions].sort().join(',')}${observe ? '\u0000observe' : ''}`
   return path.join(stagingRoot(), folderStageKey(key), PLUGIN_NAME)
 }
 
@@ -298,7 +309,8 @@ export async function listAvailableSkills(folder: string): Promise<AvailableSkil
 async function resolveMention(
   mention: string,
   folder: string,
-  catalogNames: ReadonlySet<string>
+  catalogNames: ReadonlySet<string>,
+  bundledFirst = false
 ): Promise<{ name: string; src: string; origin: SkillOrigin } | null> {
   const colon = mention.indexOf(':')
   if (colon !== -1) {
@@ -306,6 +318,16 @@ async function resolveMention(
     const bare = mention.slice(colon + 1)
     if (![PLUGIN_NAME, ...LEGACY_PLUGIN_NAMES].includes(ns) || !catalogNames.has(bare)) return null
     return { name: bare, src: path.join(skillsResourceDir(), 'skills', bare), origin: 'bundled' }
+  }
+  // BUG-169: an `observe` tick resolves a bare name that the bundled catalog owns to the bundled
+  // skill, so a repo cannot shadow `/delivery-watchdog` with its own copy. Act mode and the picker
+  // keep the most-specific-first order.
+  if (bundledFirst && catalogNames.has(mention)) {
+    return {
+      name: mention,
+      src: path.join(skillsResourceDir(), 'skills', mention),
+      origin: 'bundled'
+    }
   }
   for (const [root, origin] of [
     [folder ? projectSkillsRoot(folder) : '', 'project'],
@@ -327,6 +349,15 @@ async function resolveMention(
     }
   }
   return null
+}
+
+/**
+ * BUG-169: does the skill at `dir` declare hooks? A `SKILL.md` that cannot be read counts as
+ * declaring them — fail closed, since an unreadable file cannot be shown to be safe.
+ */
+async function skillFileDeclaresHooks(dir: string): Promise<boolean> {
+  const raw = await fs.readFile(path.join(dir, 'SKILL.md'), 'utf8').catch(() => null)
+  return raw === null ? true : skillDeclaresHooks(raw)
 }
 
 /** A mention's contribution to the stage stamp: identity AND freshness. */
@@ -399,6 +430,33 @@ export interface StagedSkills {
   enabled: string[]
   /** Of `mentions`, the ones that resolved to something on disk (T305). */
   mentioned: string[]
+  /** BUG-169: mentions an `observe` tick refused to stage. Always `[]` outside observe mode. */
+  rejected: SkillRejection[]
+}
+
+/** BUG-169: a `/mention` an `observe` tick refused to stage, and why. */
+export interface SkillRejection {
+  mention: string
+  /** The skill declares frontmatter `hooks:`, which run shell commands outside the tool allowlist. */
+  reason: 'hooks'
+}
+
+/** Which kind of tick is staging: `observe` is the restricted one (BUG-169). */
+export type StageMode = 'observe' | 'act'
+
+/**
+ * Stage for a Scheduler tick and report what was refused. Unlike {@link stageSkillsForFolder} this
+ * keeps the rejections when nothing ends up staged (every mention refused and no bundled skill
+ * enabled returns `staged: null`), which is exactly the case where the operator most needs to know.
+ */
+export async function stageSkillsForTick(
+  folder: string,
+  mentions: readonly string[],
+  mode: StageMode
+): Promise<{ staged: StagedSkills | null; rejected: SkillRejection[] }> {
+  const rejected: SkillRejection[] = []
+  const staged = await stageInternal(folder, mentions, mode === 'observe', rejected)
+  return { staged, rejected }
 }
 
 /**
@@ -413,7 +471,17 @@ export interface StagedSkills {
  */
 export async function stageSkillsForFolder(
   folder: string,
-  mentions: readonly string[] = []
+  mentions: readonly string[] = [],
+  opts: { observe?: boolean } = {}
+): Promise<StagedSkills | null> {
+  return stageInternal(folder, mentions, opts.observe === true, [])
+}
+
+async function stageInternal(
+  folder: string,
+  mentions: readonly string[],
+  observe: boolean,
+  rejected: SkillRejection[]
 ): Promise<StagedSkills | null> {
   try {
     const catalog = await readBundledCatalog()
@@ -421,7 +489,7 @@ export async function stageSkillsForFolder(
     const folderFlags = folder ? await getUserProjectSkills(folder) : {}
     const bundledEnabled = enabledSkillNames(catalog, prefs.enabled, folderFlags)
     const catalogNames = new Set(catalog.map((c) => c.name))
-    const dir = stagedPluginDir(folder, mentions)
+    const dir = stagedPluginDir(folder, mentions, observe)
 
     // src by staged directory name. Bundled first so a mention that resolves to a
     // personal or project skill of the same name REPLACES it — one directory name
@@ -434,8 +502,15 @@ export async function stageSkillsForFolder(
     const mentioned: string[] = []
     const mentionStamps: string[] = []
     for (const mention of mentions) {
-      const hit = await resolveMention(mention, folder, catalogNames)
+      const hit = await resolveMention(mention, folder, catalogNames, observe)
       if (!hit) continue
+      // BUG-169: an observe tick never stages a skill whose frontmatter declares hooks — they run
+      // shell commands whatever the tool allowlist says. Refused, not stripped: an edited copy
+      // would be a skill the operator did not write.
+      if (observe && (await skillFileDeclaresHooks(hit.src))) {
+        rejected.push({ mention, reason: 'hooks' })
+        continue
+      }
       sources.set(hit.name, { src: hit.src, origin: hit.origin })
       mentioned.push(mention)
       mentionStamps.push(await mentionStamp(hit.name, hit.src, hit.origin))
@@ -452,7 +527,7 @@ export async function stageSkillsForFolder(
     const wanted = stageStamp(BUNDLED_SKILLS_VERSION, [...enabled, ...mentionStamps])
     const stampFile = path.join(dir, '.stamp')
     const current = await fs.readFile(stampFile, 'utf8').catch(() => null)
-    if (current?.trim() === wanted) return { dir, enabled, mentioned }
+    if (current?.trim() === wanted) return { dir, enabled, mentioned, rejected }
 
     // Build in a SIBLING temp dir and swap it in, rather than wiping `dir` and
     // copying into it: two sessions can start in the same folder at once, and a
@@ -478,7 +553,7 @@ export async function stageSkillsForFolder(
     } finally {
       await fs.rm(tmp, { recursive: true, force: true }).catch(() => {})
     }
-    return { dir, enabled, mentioned }
+    return { dir, enabled, mentioned, rejected }
   } catch (err) {
     console.error('[bundled-skills] staging failed', err)
     return null

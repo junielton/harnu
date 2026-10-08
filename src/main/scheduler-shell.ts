@@ -30,7 +30,7 @@ import { app } from 'electron'
 import { randomUUID } from 'node:crypto'
 import type { CommandBridge } from './command-bridge'
 import { resolveClaudePath } from './claude-cli'
-import { stageSkillsForFolder } from './bundled-skills'
+import { stageSkillsForTick } from './bundled-skills'
 import { hookSettingsBlobJson } from './hook-bridge'
 import {
   releaseCompanionSpawn,
@@ -179,6 +179,8 @@ interface LiveTick {
   settled: boolean
   /** T389: the spawn-ledger owner of this tick's token; released when the child closes. */
   companionOwner?: SpawnOwner
+  /** BUG-169: mentions the stager refused for this tick, shown in the run's denials. */
+  skillRejections: string[]
 }
 
 /**
@@ -358,7 +360,11 @@ async function lastResultFor(workerId: string): Promise<string | undefined> {
  * decision itself is `shouldNotifyRun` in the pure core, and this function only
  * carries it out.
  */
-async function completeTick(worker: Worker, run: Run): Promise<void> {
+async function completeTick(
+  worker: Worker,
+  run: Run,
+  skillRejections: readonly string[] = []
+): Promise<void> {
   liveTicks.delete(worker.id)
   // BUG-108 / BUG-164: `observe` has no shell, so an extra read command never reaches
   // the allowlist. Record it alongside the tick's own permission denials so the
@@ -369,6 +375,10 @@ async function completeTick(worker: Worker, run: Run): Promise<void> {
     if (rejected.length > 0) {
       run = { ...run, denials: [...rejected.map((r) => `rejected rule: ${r}`), ...run.denials] }
     }
+  }
+  // BUG-169: a refused skill mention, next to the tick's own permission denials.
+  if (skillRejections.length > 0) {
+    run = { ...run, denials: [...skillRejections, ...run.denials] }
   }
   await appendRun(run)
 
@@ -408,7 +418,7 @@ function finishLiveTick(id: string, exitCode: number | null): void {
   } else {
     run = runFromResult(id, live.startedAt, endedAt, live.stdout, exitCode ?? 1)
   }
-  void completeTick(live.worker, run)
+  void completeTick(live.worker, run, live.skillRejections)
 }
 
 /**
@@ -453,9 +463,13 @@ async function startTick(worker: Worker): Promise<void> {
   // enabled bundled skills. Derived from `worker.prompt` HERE, at spawn time —
   // never read off a stored field, which is what keeps the staged set and the
   // text the model reads from ever disagreeing.
-  const staged = await stageSkillsForFolder(worker.folder, parseSkillMentions(worker.prompt)).catch(
-    () => null
-  )
+  // BUG-169: an observe tick is staged in observe mode — bundled names resolve to the bundled
+  // skill, and a skill that declares hooks is refused and reported on the run.
+  const { staged, rejected: skillRejected } = await stageSkillsForTick(
+    worker.folder,
+    parseSkillMentions(worker.prompt),
+    worker.mode
+  ).catch(() => ({ staged: null, rejected: [] }))
   const lastResult = worker.carryLastResult ? await lastResultFor(worker.id) : undefined
   const mcpConfigPath = mcpConfigPathIfPresent()
 
@@ -506,6 +520,7 @@ async function startTick(worker: Worker): Promise<void> {
     outcome: null,
     settled: false,
     timeoutHandle,
+    skillRejections: skillRejected.map((r) => skillRejectionText(r.mention)),
     ...(companionOwner ? { companionOwner } : {})
   }
   liveTicks.set(worker.id, live)
@@ -523,11 +538,20 @@ async function startTick(worker: Worker): Promise<void> {
     l.settled = true
     clearTimeout(l.timeoutHandle)
     releaseTickSpawn(l)
-    void completeTick(worker, runForOutcome(worker.id, startedAt, Date.now(), 'error', String(err)))
+    void completeTick(
+      worker,
+      runForOutcome(worker.id, startedAt, Date.now(), 'error', String(err)),
+      l.skillRejections
+    )
   })
   child.on('exit', (code) => {
     finishLiveTick(worker.id, code)
   })
+}
+
+/** BUG-169: how a refused mention reads in the Runs tab. */
+function skillRejectionText(mention: string): string {
+  return `rejected skill: /${mention} (declares hooks)`
 }
 
 /** One 30s beat: start every worker `dueWorkers` says is ready. */
@@ -664,6 +688,8 @@ export interface CreateWorkerAgentResult {
    * of silently accepting a mention that will never stage (AC-6).
    */
   missingSkills: string[]
+  /** BUG-169: mentions an `observe` tick will refuse to stage because the skill declares hooks. */
+  rejectedSkills: string[]
 }
 
 /**
@@ -705,12 +731,14 @@ export async function createWorkerForAgent(
 
   const mentions = parseSkillMentions(worker.prompt)
   let missingSkills: string[] = []
+  let rejectedSkills: string[] = []
   if (mentions.length > 0) {
-    const staged = await stageSkillsForFolder(worker.folder, mentions).catch(() => null)
-    const resolved = new Set(staged?.mentioned ?? [])
-    missingSkills = mentions.filter((m) => !resolved.has(m))
+    const out = await stageSkillsForTick(worker.folder, mentions, worker.mode).catch(() => null)
+    const resolved = new Set(out?.staged?.mentioned ?? [])
+    rejectedSkills = (out?.rejected ?? []).map((r) => r.mention)
+    missingSkills = mentions.filter((m) => !resolved.has(m) && !rejectedSkills.includes(m))
   }
-  return { worker, missingSkills }
+  return { worker, missingSkills, rejectedSkills }
 }
 
 /** One redacted-at-the-source row {@link listWorkersForAgent} returns. Folder redaction is the MCP handler's job (fleet-read parity), not this shell's. */
@@ -822,6 +850,8 @@ export interface UpdateWorkerAgentResult {
   worker: Worker
   /** T305/AC-6 parity with create_worker — only recomputed when `set.prompt` changed. */
   missingSkills: string[]
+  /** BUG-169: see {@link CreateWorkerAgentResult.rejectedSkills}. */
+  rejectedSkills: string[]
   /**
    * T316 decision 4: an edit never reaches a tick already running — it takes
    * effect starting the NEXT tick. `true` means a tick was live (with the
@@ -854,15 +884,17 @@ export async function updateWorkerForAgent(
   emitChanged()
 
   let missingSkills: string[] = []
+  let rejectedSkills: string[] = []
   if (input.set.prompt !== undefined) {
     const mentions = parseSkillMentions(updated.prompt)
     if (mentions.length > 0) {
-      const staged = await stageSkillsForFolder(updated.folder, mentions).catch(() => null)
-      const resolved = new Set(staged?.mentioned ?? [])
-      missingSkills = mentions.filter((m) => !resolved.has(m))
+      const out = await stageSkillsForTick(updated.folder, mentions, updated.mode).catch(() => null)
+      const resolved = new Set(out?.staged?.mentioned ?? [])
+      rejectedSkills = (out?.rejected ?? []).map((r) => r.mention)
+      missingSkills = mentions.filter((m) => !resolved.has(m) && !rejectedSkills.includes(m))
     }
   }
-  return { worker: updated, missingSkills, tickInFlight }
+  return { worker: updated, missingSkills, rejectedSkills, tickInFlight }
 }
 
 /**

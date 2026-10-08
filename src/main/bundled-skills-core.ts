@@ -91,6 +91,33 @@ function unquote(v: string): string {
  * its directory, so a mismatch would make the panel promise a name the session
  * never sees. Such an entry is dropped rather than silently renamed.
  */
+/**
+ * BUG-169: does this SKILL.md declare frontmatter `hooks:`? Such a skill runs the shell commands it
+ * names (PreToolUse / PostToolUse / Stop) whenever it is loaded, with no shell TOOL involved, so
+ * `--tools` and `--disallowedTools` do not touch it. An `observe` tick refuses to stage one.
+ *
+ * Deliberately a text check, and deliberately generous. The CLI's YAML parser is the one that
+ * decides what a hook is, and this must never be narrower than it:
+ *
+ * - the key is matched case-insensitively, quoted or bare, at the start of any line (so a nested
+ *   `  hooks:` counts) or after `{` / `,` (flow style);
+ * - the fence may follow a BOM or blank lines, which a lenient reader might skip;
+ * - a frontmatter that opens and never closes is AMBIGUOUS, and ambiguity is a refusal.
+ *
+ * The cost of being generous is a false positive on a skill that uses the word `hooks:` at the start
+ * of a frontmatter line for something else; the cost of being narrow is a command running in a
+ * tick that promised to be read-only. A file with no frontmatter fence is not read for hooks by the
+ * CLI, so it is not refused.
+ */
+export function skillDeclaresHooks(raw: string): boolean {
+  const open = /^(?:\uFEFF|\s)*---[ \t]*\r?\n/.exec(raw)
+  if (!open) return false
+  const afterOpen = raw.slice(open[0].length)
+  const close = /\r?\n---[ \t]*(?:\r?\n|$)/.exec(afterOpen)
+  if (!close) return true
+  return /(?:^|[{,])\s*["']?hooks["']?\s*:/im.test(afterOpen.slice(0, close.index))
+}
+
 export function parseSkillFrontmatter(raw: string, dirName?: string): BundledSkill | null {
   const open = /^---\r?\n/.exec(raw)
   if (!open) return null
