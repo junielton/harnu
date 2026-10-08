@@ -309,6 +309,45 @@ describe('buildPrompt (AC-3)', () => {
       })
     })
 
+    describe('leftovers: doubled slashes, encoded slashes and scheme://file (delta 5)', () => {
+      it.each([
+        ['a leading //', '//home/leaky/code/x.ts changed'],
+        ['a leading ///', '///home/leaky/code/x.ts changed'],
+        ['// after a space', 'see //home/leaky/code/x.ts now'],
+        ['//  glued after a letter with a root-looking path', 'saw x//etc/leaky/conf now'],
+        ['// glued after a letter with two segments', 'saw x//work/leaky/conf now'],
+        ['a %2F-encoded path', 'open %2Fhome%2Fleaky%2Fcode%2Fx.ts now'],
+        ['a lower-case %2f-encoded path', 'open %2fhome%2fleaky%2fcode%2fx.ts now'],
+        ['an &#47;-encoded path', 'open &#47;home&#47;leaky&#47;code&#47;x.ts now'],
+        ['an &#x2F;-encoded path', 'open &#x2F;home&#x2F;leaky&#x2F;x.ts now'],
+        ['vscode://file/', 'open vscode://file/home/leaky/code/x.ts:12:3 now'],
+        ['vscode-insiders://file/', 'open vscode-insiders://file/home/leaky/x.ts now'],
+        ['cursor://file/ with a Windows drive', 'open cursor://file/C:/Users/leaky/x.ts now'],
+        ['any scheme://file/', 'open myeditor://file/tmp/leaky/x.ts now']
+      ])('removes %s', (_name, text) => {
+        const p = field(text)
+        expect(p).not.toMatch(/leaky/i)
+        expect(p).toContain('<path>')
+      })
+
+      it('still keeps web URLs, a doubled slash in prose, and a comment marker', () => {
+        for (const text of [
+          'see https://github.com/org/repo/pull/1 and http://localhost:3000/api',
+          '// this is a comment about x',
+          'a//b and c//d'
+        ]) {
+          const p = field(text)
+          expect(p, text).toContain(text)
+          expect(p, text).not.toContain('<path>')
+        }
+      })
+
+      it('only the file scheme host is special: another host keeps its path', () => {
+        const p = field('open https://example.com/file/home/bob')
+        expect(p).toContain('https://example.com/file/home/bob')
+      })
+    })
+
     describe('a path under the worktree that leaves it', () => {
       const own = '/home/someone/code/www/.claude/worktrees/feat-x'
       const scrubbed = (text: string): string =>
