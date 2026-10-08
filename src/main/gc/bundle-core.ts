@@ -110,6 +110,12 @@ export interface BundleFacts {
    * work included, so any entry, or a list that is absent, is never ready (delta 6, F1).
    */
   nestedWorktrees: string[]
+  /**
+   * Every `.git` entry the shell's walk found inside this worktree besides its own (delta 7):
+   * a worktree of another repo or a plain clone, which no known path shows. Any entry, or a
+   * list that is absent (the scan did not walk it), is never ready.
+   */
+  foreignCheckouts: string[]
 }
 
 export interface WorktreeBundle extends BundleFacts {
@@ -271,6 +277,21 @@ export function bucketOf(
     )
   }
 
+  // A worktree of another repo or a plain clone inside this one (delta 7) goes with it too.
+  // Same code as above, so the UI needs no new label.
+  if (!Array.isArray(f.foreignCheckouts))
+    return review(
+      'nested-worktree',
+      'Whether a checkout of another repo lives inside this worktree could not be checked.'
+    )
+  if (f.foreignCheckouts.length > 0) {
+    const n = f.foreignCheckouts.length
+    return review(
+      'nested-worktree',
+      `${plural(n, 'other checkout')} ${n === 1 ? 'lives' : 'live'} inside this one: ${f.foreignCheckouts.join(', ')}.`
+    )
+  }
+
   if (f.pathsResolved !== true)
     return review(
       'path-unresolved',
@@ -341,6 +362,11 @@ export interface BuildBundlesInput {
    * known folders. Required, so no caller can skip it and compare aliases by spelling.
    */
   canonical: CanonicalPath
+  /**
+   * The `.git` entries the shell's foreign-checkout walk found inside each worktree, by item
+   * id (delta 7). Required: a worktree with no entry was not walked, so it is never ready.
+   */
+  foreignCheckouts: ReadonlyMap<string, string[]>
 }
 
 /** Merge time from the `pr-merged` checkpoint detail; anything that is not a date is ignored. */
@@ -570,7 +596,10 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
         !unresolved.some(
           (u) => relatesTo(u, path) || relatesTo(u, canonicalPathKey(item.path as string, platform))
         ),
-      nestedWorktrees
+      nestedWorktrees,
+      // Passed through as given: a missing or malformed entry stays so, and bucketOf and
+      // refusalOf both fail closed on it.
+      foreignCheckouts: input.foreignCheckouts.get(item.id) as string[]
     }
     return { ...facts, ...bucketOf(facts, input.now, input.graceDays) }
   })
