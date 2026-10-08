@@ -149,6 +149,59 @@ describe('buildPrompt (AC-3)', () => {
     expect(homePaths(p, [a.path!, b.path!])).toEqual([])
   })
 
+  describe('path scrub gaps', () => {
+    // Every private path below carries the word LEAKY; none of it may reach the prompt.
+    const field = (text: string): string =>
+      buildPrompt([dossier({ lastSessionSummary: text, diffStat: text, reasonDetail: text })])
+    it.each([
+      ['a home-relative path', 'edited ~/leaky/code/x.ts today'],
+      ['a ~user path', 'see ~leaky/code/x.ts'],
+      ['a file:/// URL', 'open file:///home/leaky/code/x.ts now'],
+      ['a file:// URL with a host', 'open file://localhost/home/leaky/code/x.ts'],
+      ['a path glued after =', 'cwd=/home/leaky/code'],
+      ['a path glued after :', 'cwd:/home/leaky/code'],
+      ['a path glued after >', '<b>/home/leaky/code</b>'],
+      ['a path in parentheses', 'saved (/home/leaky/code/x.ts)'],
+      ['a path in brackets and quotes', '["/home/leaky/code/x.ts"]'],
+      ['a path with a line and column', 'at /home/leaky/code/x.ts:12:5'],
+      ['a path that contains spaces', 'in /home/leaky/My Projects/app/src/a.ts it broke'],
+      ['a quoted path that contains spaces', 'opened "/home/leaky/My Projects/app/a.ts" last'],
+      ['a Windows path with forward slashes', 'file C:/Users/leaky/proj/x.ts changed'],
+      ['a Windows path with backslashes', 'file C:\\Users\\leaky\\proj\\x.ts changed'],
+      ['a Windows path with spaces', 'file C:\\Users\\leaky\\My Documents\\x.ts changed'],
+      ['a lower-case drive', 'file d:\\work\\leaky\\x.ts changed'],
+      ['a UNC path', 'share \\\\leakyserver\\share\\x.ts mounted']
+    ])('removes %s', (_name, text) => {
+      const p = field(text)
+      expect(p).not.toMatch(/leaky/i)
+      // A space inside a folder name must not leave the rest of the path behind.
+      expect(p).not.toMatch(/Projects|Documents|share/)
+      expect(p).toContain('<path>')
+    })
+
+    it.each([
+      ['a web URL', 'see https://github.com/org/repo/pull/1 for context'],
+      ['a relative path', 'changed src/main/gc/x.ts and ../docs/y.md'],
+      ['a slash in prose', 'and/or 1/2 and a/b'],
+      ['a dot-relative path', 'ran ./scripts/build.sh']
+    ])('keeps %s', (_name, text) => {
+      const p = field(text)
+      expect(p).toContain(text)
+      expect(p).not.toContain('<path>')
+    })
+
+    it('stops at the end of the path: the prose after it survives', () => {
+      const p = field('/home/leaky/code is dirty, see src/a.ts')
+      expect(p).toContain('is dirty, see src/a.ts')
+      expect(p).not.toMatch(/leaky/)
+    })
+
+    it('does not scrub the dossier’s own worktree line', () => {
+      const d = dossier()
+      expect(buildPrompt([d])).toContain(`Worktree: ${d.path}`)
+    })
+  })
+
   it('keeps relative paths in the diff stat and dirty files', () => {
     const p = buildPrompt([dossier({ diffStat: ' src/main/gc/x.ts | 2 +-' })])
     expect(p).toContain('src/main/gc/x.ts')
