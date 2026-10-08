@@ -4,13 +4,19 @@
 // hang the advisor's queue. It starts one process, never retries, and imports nothing from electron.
 
 import { spawn } from 'node:child_process'
+import { mkdtempSync, rmdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const DEFAULT_GRACE_MS = 5000
 const DEFAULT_STDOUT_MAX = 4 << 20
 
 export interface RunSupervisedOptions {
-  /** The folder to run in; the OS temp dir when null. */
+  /**
+   * The folder to run in. It is also the whole readable world of the advisor (the CLI confines its
+   * reads to it). When null, a fresh empty directory of its own is made and removed afterwards, never
+   * the shared temp dir, which holds other programs' files.
+   */
   cwd: string | null
   env: Record<string, string>
   /** The prompt. Written to the child's stdin, never passed as an argument. */
@@ -39,16 +45,24 @@ export function runSupervised(
     let timedOut = false
     let stdout = ''
     let killTimer: ReturnType<typeof setTimeout> | undefined
+    const scratch = o.cwd === null ? mkdtempSync(join(tmpdir(), 'harnu-advisor-')) : null
     const finish = (value: string | null): void => {
       if (settled) return
       settled = true
+      if (scratch) {
+        try {
+          rmdirSync(scratch) // only ever removes an empty directory: it is ours and holds nothing
+        } catch {
+          // left in the OS temp dir if something wrote into it; nothing sensitive lives there
+        }
+      }
       clearTimeout(termTimer)
       clearTimeout(killTimer)
       resolve(value)
     }
 
     const child = spawn(cmd, args, {
-      cwd: o.cwd ?? tmpdir(),
+      cwd: o.cwd ?? scratch ?? undefined,
       env: o.env,
       stdio: ['pipe', 'pipe', 'pipe']
     })

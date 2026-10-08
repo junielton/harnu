@@ -450,23 +450,24 @@ export function safeEffort(effort: string): Effort {
 }
 
 /**
- * The tools the advisor may use: Read, Grep and Glob, and nothing else. No Bash, not even a git rule:
- * `git diff|log|show --output=<path>` writes any file (`--output=.git/config` plants a
- * `core.fsmonitor` that the next `git status` runs), and a prefix rule cannot say "no --output".
- * Everything git knows is already in the dossier, which main computes; if the advisor needs more,
- * the dossier grows, never the tool list. Read-only by construction: no write, no shell, no network.
+ * The built-in roster, passed as `--tools`: Read, Grep and Glob, and nothing else. This, not a
+ * permission rule, is what restricts the session: `--allowedTools` and `--disallowedTools` only decide
+ * what may run without asking, and with them alone the real CLI still offered CronCreate, EnterWorktree
+ * (it wrote a worktree), RemoteTrigger (authenticated cloud calls), SendMessage, ScheduleWakeup and a
+ * ToolSearch that loads Monitor (it ran `cat` and `git status`). With `--tools` the CLI's init roster is
+ * exactly Glob, Grep and Read (tests/cli/opinion-tools.cli.test.ts).
+ *
+ * No Bash, not even a git rule: `git diff|log|show --output=<path>` writes any file
+ * (`--output=.git/config` plants a `core.fsmonitor` that the next `git status` runs), and a prefix rule
+ * cannot say "no --output". Everything git knows is already in the dossier, which main computes.
+ *
+ * There is deliberately NO allow rule for these tools. `--allowedTools Read,Grep,Glob` auto-approves
+ * reads anywhere the user can read (the real CLI read a file outside the folder and listed ~/.ssh);
+ * with no allow rule the CLI's own permission check confines Read, Grep and Glob to the folder the
+ * process runs in, symlinks out of it included, and refuses the rest because it cannot ask in `-p`
+ * mode (tests/cli/opinion-confine.cli.test.ts).
  */
-export const OPINION_TOOLS: readonly string[] = ['Read', 'Grep', 'Glob']
-
-/**
- * The built-in roster, passed as `--tools`. This, not the permission rules, is what restricts the
- * session: `--allowedTools` and `--disallowedTools` only decide what may run without asking, and with
- * them alone the real CLI still offered CronCreate, EnterWorktree (it wrote a worktree),
- * RemoteTrigger (authenticated cloud calls), SendMessage, ScheduleWakeup and a ToolSearch that
- * loads Monitor (it ran `cat` and `git status`). With `--tools` the CLI's init roster is exactly
- * Glob, Grep and Read (tests/cli/opinion-tools.cli.test.ts).
- */
-export const OPINION_BUILTIN_TOOLS: readonly string[] = OPINION_TOOLS
+export const OPINION_BUILTIN_TOOLS: readonly string[] = ['Read', 'Grep', 'Glob']
 
 /** What it is denied by name: the observe deny list, all of Bash, and the web tools. */
 export const OPINION_TOOLS_DENY: readonly string[] = [
@@ -475,6 +476,12 @@ export const OPINION_TOOLS_DENY: readonly string[] = [
   'WebFetch',
   'WebSearch'
 ]
+
+/** Removes a flag and its value from an argv. */
+function withoutFlag(argv: string[], flag: string): string[] {
+  const i = argv.indexOf(flag)
+  return i === -1 ? argv : [...argv.slice(0, i), ...argv.slice(i + 2)]
+}
 
 /** Sets the value of a flag that `tickArgv` already emitted. */
 function withFlagValue(argv: string[], flag: string, value: string): string[] {
@@ -487,8 +494,8 @@ function withFlagValue(argv: string[], flag: string, value: string): string[] {
 
 /**
  * The argv of the headless session (without the binary). It is the Scheduler's `observe` argv with
- * no MCP config and no hook blob, narrowed to {@link OPINION_BUILTIN_TOOLS} (`--tools`, the roster) and
- * {@link OPINION_TOOLS} / {@link OPINION_TOOLS_DENY} (the permission rules, as defence in depth): file reads only, no command, `--strict-mcp-config` with nothing configured (so no
+ * no MCP config and no hook blob, narrowed to {@link OPINION_BUILTIN_TOOLS} (`--tools`, the roster) and denying
+ * {@link OPINION_TOOLS_DENY} by name (defence in depth), with no allow rule: file reads only, no command, `--strict-mcp-config` with nothing configured (so no
  * Harnu verb and no `gc:clean` is reachable), no shell, no network tool, and no permission bypass.
  * A Scheduler tick additionally allows git/gh commands, a few board verbs and web tools; the
  * advisor deliberately does not.
@@ -510,7 +517,7 @@ export function opinionArgv(a: { model: string; effort: string }): string[] {
   const flags = base.slice(0, base.lastIndexOf('--'))
   return [
     ...withFlagValue(
-      withFlagValue(flags, '--allowedTools', OPINION_TOOLS.join(',')),
+      withoutFlag(flags, '--allowedTools'),
       '--disallowedTools',
       OPINION_TOOLS_DENY.join(',')
     ),

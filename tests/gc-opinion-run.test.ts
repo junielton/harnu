@@ -121,7 +121,8 @@ describe('runSupervised: the folder it runs in is the whole readable world of th
       timeoutMs: 5000
     })
     const [cwd, listing] = (out ?? '').trim().split('\n')
-    expect(realpathSync(cwd)).not.toBe(realpathSync(tmpdir()))
+    expect([tmpdir(), realpathSync(tmpdir())]).not.toContain(cwd)
+    expect(cwd.startsWith(realpathSync(tmpdir()))).toBe(true) // a child of it, not it
     expect(JSON.parse(listing)).toEqual([])
   })
 
