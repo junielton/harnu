@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  AS_GIVEN,
   buildBundles,
   staleReleases,
   type ReleaseGone,
@@ -105,6 +106,7 @@ function build(over: Over = {}) {
     volumes: new Map(),
     knownFolders: [],
     protectedProjects: new Set<string>(),
+    canonical: AS_GIVEN,
     ...(released ? { released } : {})
   })[0]!
 }
@@ -244,6 +246,7 @@ describe('buildBundles honors a release (T445)', () => {
         volumes: new Map(),
         knownFolders: [],
         protectedProjects: new Set<string>(),
+        canonical: AS_GIVEN,
         released: new Map([[it.id, NOW - 60_000]])
       })[0]!
       expect(b.sharedStackIds).toEqual(['app'])

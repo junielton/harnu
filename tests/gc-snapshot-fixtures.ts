@@ -75,6 +75,7 @@ export function bundle(path: string, over: BundleOver = {}): WorktreeBundle {
     keep: false,
     neverClean: false,
     isMainCheckout: false,
+    pathsResolved: true,
     localTip: 'a'.repeat(40),
     graceDays: 2,
     bucket: 'corpse',
