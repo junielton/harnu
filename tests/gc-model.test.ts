@@ -271,7 +271,8 @@ describe('cleanRequestFor — the one place that builds the gc:clean payload', (
       headSha: 'b'.repeat(40),
       stackIds: ['s1'],
       ownedVolumes: ['v1'],
-      bytes: 512 * MIB
+      bytes: 512 * MIB,
+      path: c.item.path
     })
   })
 
@@ -523,5 +524,34 @@ describe('dialogBreakdown — what the whole clean does, in numbers', () => {
     const a = wt('c1', 'ready', 1, { stackIds: ['s1', 's2'] })
     const m = buildGcModel(snap({ bundles: [a] }))
     expect(dialogRows(m, [a.item.id])[0].stackCount).toBe(2)
+  })
+})
+
+describe('expectedFor — the worktree path (S3 delta 3: GcExpected.path)', () => {
+  it('sends bundle.item.path as-is for a worktree and null for an orphan volume', () => {
+    const s = sample()
+    const m = buildGcModel(s)
+    const b = s.bundles[0]
+    expect(expectedFor(m.byId.get(b.item.id)!).path).toBe(b.item.path)
+    expect(expectedFor(m.byId.get(s.orphanVolumes[0].id)!).path).toBeNull()
+  })
+
+  it('a worktree moved on disk (same id, head and reason) counts as changed since the dialog opened', () => {
+    const b = wt('c1', 'ready', 1)
+    const first = buildGcModel(snap({ bundles: [b] }))
+    const captured = captureConfirm(first, [b.item.id], 'ready')
+    const moved = { ...b, item: { ...b.item, path: '/ws/org/proj/www-moved' } }
+    expect(confirmChanged(buildGcModel(snap({ bundles: [moved] })), captured)).toBe(true)
+  })
+
+  it('a spelling difference of the same folder (slashes, dot segments) is not a change', () => {
+    const b = wt('c1', 'ready', 1)
+    const first = buildGcModel(snap({ bundles: [b] }))
+    const captured = captureConfirm(first, [b.item.id], 'ready')
+    const same = {
+      ...b,
+      item: { ...b.item, path: b.item.path.replace(/\/([^/]+)$/, '/./x/../$1') }
+    }
+    expect(confirmChanged(buildGcModel(snap({ bundles: [same] })), captured)).toBe(false)
   })
 })

@@ -2302,7 +2302,8 @@
         "cleanupFailed": "The last cleanup stopped before it finished.",
         "noKnownWorktree": "No known worktree uses this volume.",
         "ready": "Merged, clean and idle past the grace period.",
-        "pathUnresolved": "The worktree has a path Harnu could not resolve to its real location, so it cannot tell what uses it."
+        "pathUnresolved": "The worktree has a path Harnu could not resolve to its real location, so it cannot tell what uses it.",
+        "nestedWorktree": "Another worktree lives inside this one, and removing this one would trash it too."
       },
       "step": {
         "stopStack": "Stop the stack",

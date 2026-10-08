@@ -399,7 +399,8 @@ const sorted = (xs: readonly string[]): string[] => [...xs].sort()
  * The facts a row showed for one item, in the shape `gc:clean` compares them with a fresh gather.
  * Mirrors `expectedOf` / `orphanExpectedOf` in `src/main/gc/gc-confirm.ts` (same semantics; the
  * renderer never imports main code). A worktree's `bytes` is sent but not compared; a volume's size
- * and project are, and a missing project counts as a change.
+ * and project are, and a missing project counts as a change. `path` is the worktree folder as the row
+ * showed it (null for a volume): a worktree moved with `git worktree move` keeps its id, head and reason.
  */
 export function expectedFor(b: GcBlock): GcExpected {
   if (b.kind === 'volume') {
@@ -410,6 +411,7 @@ export function expectedFor(b: GcBlock): GcExpected {
       stackIds: [],
       ownedVolumes: [b.name],
       bytes: b.hasBytes ? b.bytes : null,
+      path: null,
       project: b.project
     }
   }
@@ -419,7 +421,8 @@ export function expectedFor(b: GcBlock): GcExpected {
     headSha: b.bundle?.localTip ?? null,
     stackIds: sorted(b.stackIds),
     ownedVolumes: sorted(b.ownedVolumes),
-    bytes: b.hasBytes ? b.bytes : null
+    bytes: b.hasBytes ? b.bytes : null,
+    path: b.bundle?.item.path ?? null
   }
 }
 
@@ -477,13 +480,26 @@ const sameList = (a: readonly string[], b: readonly string[]): boolean =>
  * volumes — and, for an orphan volume only, its size and project. A worktree's disk use drifts without
  * anything having changed, so its bytes are not compared.
  */
+/** Slashes and `.` / `..` segments normalized, so a spelling difference of the same folder is not a change. */
+function pathKey(p: string | null | undefined): string | null {
+  if (!p) return null
+  const abs = /^[\\/]/.test(p)
+  const out: string[] = []
+  for (const seg of p.split(/[\\/]+/)) {
+    if (!seg || seg === '.') continue
+    if (seg === '..' && out.length > 0 && out[out.length - 1] !== '..') out.pop()
+    else out.push(seg)
+  }
+  return (abs ? '/' : '') + out.join('/')
+}
+
 function sameFacts(a: GcExpected, b: GcExpected): boolean {
   if (a.bucket !== b.bucket || a.reasonCode !== b.reasonCode || a.headSha !== b.headSha)
     return false
   if (!sameList(a.stackIds, b.stackIds) || !sameList(a.ownedVolumes, b.ownedVolumes)) return false
   if (a.bucket === 'orphan-volume')
     return a.bytes === b.bytes && (a.project ?? null) === (b.project ?? null)
-  return true
+  return pathKey(a.path) === pathKey(b.path)
 }
 
 /**

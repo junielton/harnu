@@ -2302,7 +2302,8 @@
         "cleanupFailed": "A última limpeza parou antes de terminar.",
         "noKnownWorktree": "Nenhum worktree conhecido usa este volume.",
         "ready": "Mesclado, limpo e parado além do período de carência.",
-        "pathUnresolved": "A worktree tem um caminho que o Harnu não conseguiu resolver para o local real, então não sabe o que o usa."
+        "pathUnresolved": "A worktree tem um caminho que o Harnu não conseguiu resolver para o local real, então não sabe o que o usa.",
+        "nestedWorktree": "Há outro worktree dentro deste, e remover este também o jogaria no lixo."
       },
       "step": {
         "stopStack": "Parar a stack",

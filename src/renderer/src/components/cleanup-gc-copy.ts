@@ -20,6 +20,7 @@ const REASON_SUFFIX: Record<ReasonCode, string> = {
   'shared-stack': 'sharedStack',
   'cleanup-failed': 'cleanupFailed',
   'path-unresolved': 'pathUnresolved',
+  'nested-worktree': 'nestedWorktree',
   'no-known-worktree': 'noKnownWorktree'
 }
 
