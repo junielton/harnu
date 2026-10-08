@@ -41,6 +41,7 @@ import {
 import { planHousekeeping } from './housekeeping-core'
 import { NO_DOCKER_CARD, dockerCardFacts, type GcDockerCard } from './gc-docker-card'
 import type { GcGather } from './gc-cycle'
+import { judgeKeeps, type StaleKeep } from './gc-keep'
 import type { GcPrefs } from './gc-prefs'
 
 /** A gather plus what only the snapshot needs. */
@@ -53,7 +54,7 @@ export interface GcGathered extends GcGather {
   docker: GcDockerCard
   orphanVolumes: OrphanVolumeItem[]
   /** Keep marks whose branch fate has changed since; the caller clears them from the prefs. */
-  staleKeeps: string[]
+  staleKeeps: StaleKeep[]
 }
 
 const COMPOSE_FILES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml']
@@ -238,14 +239,7 @@ export async function gatherGc(
   // A Keep mark holds only while the fate it was made under still holds: judge the fates
   // first, then rebuild with the marks that are still valid.
   let bundles = buildBundles({ ...input, keep: new Set() })
-  const staleKeeps: string[] = []
-  const keep = new Set<string>()
-  for (const b of bundles) {
-    const marked = prefs.keep[b.item.id]
-    if (marked === undefined) continue
-    if (marked === b.fate.fate) keep.add(b.item.id)
-    else staleKeeps.push(b.item.id)
-  }
+  const { keep, stale: staleKeeps } = judgeKeeps(bundles, prefs.keep)
   if (keep.size > 0) bundles = buildBundles({ ...input, keep })
 
   const volumes = toHousekeepingVolumes(df)

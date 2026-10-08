@@ -19,6 +19,7 @@ import { prefsPath as reaperPrefsPath } from '../reaper/prefs'
 import type { ReaperControl } from '../reaper/reaper-ipc'
 import { bucketFeed, setInheritedBuckets } from './gc-buckets'
 import { withActor } from './gc-actor'
+import { keepFromFresh, withoutStaleKeeps } from './gc-keep'
 import {
   LEFTOVERS_FILE,
   pruneLeftovers,
@@ -43,7 +44,6 @@ import {
   prefsFile,
   readGcPrefs,
   withAcknowledged,
-  withKeep,
   withoutKeep,
   writeGcPrefs,
   type GcPrefs
@@ -132,13 +132,21 @@ export async function registerGcHandlers(
         }
         cache = g
         setInheritedBuckets(bucketFeed(g.bundles))
-        if (g.staleKeeps.length > 0) await persist(withoutKeep(prefs, g.staleKeeps))
+        // Only the marks this gather judged, and only while they are still the same: a Keep
+        // pressed meanwhile must survive this verdict on an older one.
+        if (g.staleKeeps.length > 0) await persist(withoutStaleKeeps(prefs, g.staleKeeps))
         return g
       } finally {
         gathering = null
       }
     })()
     return gathering
+  }
+
+  /** A gather that STARTS after this call: waits for the one in flight, which may predate it. */
+  const gatherFresh = async (): Promise<GcGathered> => {
+    if (gathering) await gathering.catch(() => undefined)
+    return gather()
   }
 
   const queue = createJobQueue({
@@ -232,9 +240,11 @@ export async function registerGcHandlers(
       ),
     keep: async (rawId) => {
       if (typeof rawId !== 'string') throw new Error('gc:keep expects a bundle id')
-      const bundle = (cache ?? (await gather())).bundles.find((b) => b.item.id === rawId)
-      if (!bundle) throw new Error(`unknown cleanup item: ${rawId}; refresh and retry`)
-      const next = await persist(withKeep(prefs, rawId, bundle.fate.fate))
+      // The fate is recorded from a gather made now: the cache may predate a scan, a clean
+      // or a sweep, and a mark recorded against an old fate is dropped by the next gather.
+      const next = keepFromFresh(prefs, (await gatherFresh()).bundles, rawId)
+      if (!next) throw new Error(`unknown cleanup item: ${rawId}; refresh and retry`)
+      await persist(next)
       void gather().catch((err) => console.error('[gc] refresh after keep failed', err))
       return next
     },
