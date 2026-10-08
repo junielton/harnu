@@ -58,6 +58,14 @@ describe('cleanup verbs: no false "nothing can be removed" claims (T445 delta 1)
     expect(section).toMatch(/Stopping, starting and removing containers/)
   })
 
+  it('the safety rules a release never overrides include a worktree nested inside another', () => {
+    expect(featuresSection()).toMatch(/nested/i)
+    expect(MCP_TOOLS.find((t) => t.name === 'release_worktree')!.description).toMatch(/nested/i)
+    const doc = read('docs/user/agent-control.md')
+    const start = doc.indexOf('### Telling Harnu a worktree is finished')
+    expect(doc.slice(start, doc.indexOf('## Tracking a mission', start))).toMatch(/inside/i)
+  })
+
   describe('T445 delta 2: the payload and its freshness are documented', () => {
     const TOTALS = ['ready', 'readyBytes', 'review', 'reviewBytes', 'inUse']
 
