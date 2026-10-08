@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { ipcFn } from './helpers/ipc-clone'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -49,13 +50,13 @@ function stubApi(initial: GcPrefs): void {
     nextCycleAt: null
   }
   // Main clamps like `normalizeGcPrefs`; echo the object back the way it answers.
-  setGc = vi.fn(async (p: GcPrefs) => ({
+  setGc = ipcFn(async (p: GcPrefs) => ({
     ...p,
     graceDays: Math.min(30, Math.max(0, p.graceDays)),
     maxItemsPerCycle: Math.min(200, Math.max(1, p.maxItemsPerCycle)),
     cacheMaxAgeDays: Math.min(365, Math.max(1, p.cacheMaxAgeDays))
   }))
-  setReaper = vi.fn(async (p: unknown) => p)
+  setReaper = ipcFn(async (p: unknown) => p)
   ;(window as unknown as { api: unknown }).api = cloneGuardedApi({
     gcPrefs: vi.fn(async () => initial),
     gcSetPrefs: setGc,

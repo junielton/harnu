@@ -47,6 +47,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- **Cleanup can start a clean and enable the autopilot again.** "Clean N ready" failed at once with "An object could not be cloned", and "Enable autopilot" acknowledged the report but never turned the autopilot on. Both sent live view state across to the main process in a form it rejects; Cleanup, the Reaper and the Settings panes now send plain copies. The first-cycle banner also disables its buttons while it works and shows an error toast, instead of staying silent, when a click fails.
 - **No raw codes in Cleanup.** Items stopped because they became dirty, hold another repository's checkout, or could not be unregistered from git now say so in a sentence; any other reason reads "Harnu stopped this item for a safety check", with the raw text only behind Copy error. Every pipeline step has a label.
 - **No Remove on an item that holds another worktree or that git has locked.** It could never succeed, so the button and its R shortcut are gone, with a line saying why.
 - **The Docker card says when orphan volumes are hidden.** If a compose project name could not be resolved (or the compose scan hit its limit), the volumes block now reads "hidden" with a note naming the folders, instead of a misleading "0 volumes".

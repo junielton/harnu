@@ -2646,7 +2646,9 @@
       },
       "error": {
         "clean": "Could not start the clean",
-        "keep": "Could not keep that"
+        "keep": "Could not keep that",
+        "autopilot": "Could not enable the autopilot",
+        "dismiss": "Could not save that"
       },
       "legend": {
         "ready": "Ready to clean · cleaned by one click or the autopilot",

@@ -211,6 +211,22 @@ function errorToast(title: string, e: unknown): void {
     timeoutMs: 8000
   })
 }
+
+/** True while a banner action is in flight: the buttons disable so a click always shows something. */
+const firstCyclePending = ref(false)
+/** Runs one first-cycle banner action; a failure is reported and the banner stays up to retry. */
+async function runFirstCycle(action: () => Promise<void>, failureTitle: string): Promise<void> {
+  if (firstCyclePending.value) return
+  firstCyclePending.value = true
+  try {
+    await action()
+  } catch (e) {
+    errorToast(failureTitle, e)
+  } finally {
+    firstCyclePending.value = false
+  }
+}
+
 async function confirmClean(): Promise<void> {
   const d = confirmDialog.value
   if (!d || confirmStale.value) return
@@ -492,8 +508,9 @@ async function copyRestoreHint(hint: string): Promise<void> {
           v-if="showFirstCycle"
           :count="model.ready.length"
           :bytes="model.totals.ready.bytes"
-          @enable="gc.enableAutopilot()"
-          @dismiss="gc.dismissFirstReport()"
+          :pending="firstCyclePending"
+          @enable="runFirstCycle(() => gc.enableAutopilot(), t('cleanup.gc.error.autopilot'))"
+          @dismiss="runFirstCycle(() => gc.dismissFirstReport(), t('cleanup.gc.error.dismiss'))"
         />
       </div>
 

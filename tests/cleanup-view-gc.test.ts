@@ -7,6 +7,7 @@ import { i18n } from '@renderer/i18n'
 import { useUiStore } from '../src/renderer/src/stores/ui'
 import { defaultGcPrefs, type GcPrefs } from '../src/main/gc/gc-prefs'
 import type { GcJobInfo, GcSnapshot } from '../src/main/gc/gc-wire'
+import { ipcFn } from './helpers/ipc-clone'
 import { GIB, MIB, reviewReason, snapshotOf, volume, wt } from './helpers/cleanup-gc-fixtures'
 
 /**
@@ -55,23 +56,23 @@ function install(first: GcSnapshot, jobs: GcJobInfo[] = []): Api {
     }
   const api: Api = {
     push,
-    gcSnapshot: vi.fn(async () => first),
-    gcClean: vi.fn(async () => ({ jobId: 'j1', queued: false })),
-    gcKeep: vi.fn(async () => defaultGcPrefs()),
-    gcJobs: vi.fn(async () => jobs),
-    gcAckFirstReport: vi.fn(async () => defaultGcPrefs()),
-    gcSetPrefs: vi.fn(async (p: unknown) => p)
+    gcSnapshot: ipcFn(async () => first),
+    gcClean: ipcFn(async () => ({ jobId: 'j1', queued: false })),
+    gcKeep: ipcFn(async () => defaultGcPrefs()),
+    gcJobs: ipcFn(async () => jobs),
+    gcAckFirstReport: ipcFn(async () => defaultGcPrefs()),
+    gcSetPrefs: ipcFn(async (p: unknown) => p)
   }
   const full = {
     ...api,
-    gcPrefs: vi.fn(async () => first.prefs),
+    gcPrefs: ipcFn(async () => first.prefs),
     onGcProgress: sub('progress'),
     onGcDone: sub('done'),
     onGcCycle: sub('cycle'),
-    reaperSnapshot: vi.fn(async () => ({ scannedAt: Date.now(), repos: [] })),
-    reaperScan: vi.fn(async () => ({ scannedAt: Date.now(), repos: [] })),
-    reaperJournal: vi.fn(async () => []),
-    reaperPrefs: vi.fn(async () => ({ dehydrateIdleDays: 7 }))
+    reaperSnapshot: ipcFn(async () => ({ scannedAt: Date.now(), repos: [] })),
+    reaperScan: ipcFn(async () => ({ scannedAt: Date.now(), repos: [] })),
+    reaperJournal: ipcFn(async () => []),
+    reaperPrefs: ipcFn(async () => ({ dehydrateIdleDays: 7 }))
   }
   ;(window as unknown as { api: unknown }).api = new Proxy(full, {
     get: (t2: Record<string, unknown>, k: string) => (k in t2 ? t2[k] : () => () => {})
@@ -291,6 +292,67 @@ describe('Cleanup screen — first cycle and background run', () => {
     await flushPromises()
     expect(api.gcAckFirstReport).toHaveBeenCalledTimes(1)
     expect(api.gcSetPrefs.mock.calls[0][0].autopilot).toBe(true)
+  })
+
+  it('Enable autopilot leaves the prefs with autopilot AND the report acknowledged — through a real clone', async () => {
+    // A stateful stand-in for main: it keeps what it was sent, as the real prefs store does.
+    const first = snap({}, { autopilot: false, firstReportAcknowledged: false })
+    let stored: GcPrefs = first.prefs
+    const api = install(first)
+    api.gcSetPrefs.mockImplementation(async (p: unknown) => {
+      stored = { ...(p as GcPrefs), firstReportAcknowledged: stored.firstReportAcknowledged }
+      return stored
+    })
+    api.gcAckFirstReport.mockImplementation(async () => {
+      stored = { ...stored, firstReportAcknowledged: true }
+      return stored
+    })
+    await mountView()
+    await domGet('[data-testid="first-enable"]').trigger('click')
+    await flushPromises()
+    expect(stored.autopilot).toBe(true)
+    expect(stored.firstReportAcknowledged).toBe(true)
+  })
+
+  it('a failed Enable autopilot reports it, keeps the banner and lets the operator retry', async () => {
+    const api = install(snap({}, { autopilot: false, firstReportAcknowledged: false }))
+    await mountView()
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    api.gcSetPrefs.mockRejectedValueOnce(new Error('ipc exploded'))
+    await domGet('[data-testid="first-enable"]').trigger('click')
+    await flushPromises()
+    expect(toast).toHaveBeenCalledTimes(1)
+    expect(toast.mock.calls[0][0]).toMatchObject({
+      kind: 'danger',
+      title: t('cleanup.gc.error.autopilot')
+    })
+    expect(toast.mock.calls[0][0].description).toContain('ipc exploded')
+    expect(api.gcAckFirstReport).not.toHaveBeenCalled() // nothing was acknowledged behind the failure
+    expect(dom('[data-testid="first-enable"]').exists()).toBe(true)
+    expect(domGet('[data-testid="first-enable"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('the banner buttons are disabled while an action is in flight', async () => {
+    const api = install(snap({}, { autopilot: false, firstReportAcknowledged: false }))
+    let release: (v: GcPrefs) => void = () => {}
+    api.gcSetPrefs.mockImplementationOnce(() => new Promise<GcPrefs>((r) => (release = r)))
+    await mountView()
+    await domGet('[data-testid="first-enable"]').trigger('click')
+    await flushPromises()
+    expect(domGet('[data-testid="first-enable"]').attributes('disabled')).toBeDefined()
+    expect(domGet('[data-testid="first-dismiss"]').attributes('disabled')).toBeDefined()
+    release(defaultGcPrefs())
+    await flushPromises()
+  })
+
+  it('"Not now" acknowledges through a real clone and reports a failure', async () => {
+    const api = install(snap({}, { autopilot: false, firstReportAcknowledged: false }))
+    await mountView()
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    api.gcAckFirstReport.mockRejectedValueOnce(new Error('nope'))
+    await domGet('[data-testid="first-dismiss"]').trigger('click')
+    await flushPromises()
+    expect(toast.mock.calls[0][0]).toMatchObject({ title: t('cleanup.gc.error.dismiss') })
   })
 
   it('no banner once the first report is acknowledged', async () => {
