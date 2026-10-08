@@ -38,6 +38,59 @@ const HOOKS_FRONTMATTER = `hooks:
         - type: command
           command: "touch /tmp/x"`
 
+describe('skillDeclaresHooks — forms that hide the key (BUG-169 delta 1)', () => {
+  const doc = (front: string): string => `---\nname: s\ndescription: d\n${front}\n---\n\nbody\n`
+
+  // (a) the token, in any spelling the lexer could still read as the key
+  it.each([
+    ['upper case', 'HOOKS: {}'],
+    ['single quoted', "'hooks': {}"],
+    ['double quoted', '"hooks": {}'],
+    ['nested', 'meta:\n  hooks:\n    Stop: []'],
+    ['flow nested', 'meta: {x: [{hooks: {}}]}'],
+    ['escaped letter', '"h\\x6fooks": {}'],
+    ['unicode escape', '"\\u0068ooks": {}'],
+    ['line-folded key', '"ho\\\nooks": {}']
+  ])('(a) refuses %s', (_name, front) => {
+    expect(skillDeclaresHooks(doc(front))).toBe(true)
+  })
+
+  // (b) YAML features that can name a key without writing it. None of these spells the token, so
+  // they are refused by the structural rule, not by (a).
+  it.each([
+    ['an explicit ? key', '? [a, b]\n: v'],
+    ['an explicit ? key, scalar', '? plain\n: v'],
+    ['a tag', 'x: !!str y'],
+    ['a custom tag', 'x: !thing y'],
+    ['an anchor', 'a: &anc {k: v}'],
+    ['an alias', 'a: &anc v\nb: *anc'],
+    ['a merge key', 'base: &b {k: v}\n<<: *b'],
+    ['a backslash escape in a flow mapping', '{"a\\tb": 1}'],
+    ['a double-quoted escape', 'x: "a\\tb"']
+  ])('(b) refuses %s', (_name, front) => {
+    expect(skillDeclaresHooks(doc(front))).toBe(true)
+  })
+
+  // (c) not a clean strict parse with the YAML library the repo already uses
+  it.each([
+    ['an unclosed flow sequence', 'x: [a, b'],
+    ['a duplicate key', 'name: other'],
+    ['a tab for indentation', 'x:\n\ty: 1'],
+    ['a second document (after a document-end marker)', 'x: 1\n...\ny: 2'],
+    ['a bare scalar instead of a mapping', 'just a string']
+  ])('(c) refuses %s', (_name, front) => {
+    expect(skillDeclaresHooks(doc(front))).toBe(true)
+  })
+
+  it('still accepts an ordinary skill header', () => {
+    expect(
+      skillDeclaresHooks(
+        doc('allowed-tools: Read, Grep\nmodel: haiku\ntags:\n  - delivery\n  - status')
+      )
+    ).toBe(false)
+  })
+})
+
 describe('skillDeclaresHooks', () => {
   const doc = (front: string): string => `---\nname: s\ndescription: d\n${front}\n---\n\nbody\n`
 
@@ -65,12 +118,19 @@ describe('skillDeclaresHooks', () => {
     )
   })
 
-  it('is false for an ordinary skill, and for the word "hooks" in prose', () => {
+  it('is false for an ordinary skill, and for hooks in the BODY (the CLI reads only the frontmatter)', () => {
     expect(skillDeclaresHooks(doc('allowed-tools: Read'))).toBe(false)
+    expect(skillDeclaresHooks('---\nname: s\ndescription: d\n---\n\nhooks:\n  x: 1\n')).toBe(false)
+  })
+
+  // BUG-169 delta 1: conservative on purpose. A skill that mentions the word in its description is
+  // refused too; it still works in an act worker, and a false positive costs a re-word, a false
+  // negative costs a command running in a read-only tick.
+  it('refuses the word hooks anywhere in the frontmatter, prose included', () => {
     expect(
       skillDeclaresHooks(doc('description: Install git hooks: pre-commit and pre-push.'))
-    ).toBe(false)
-    expect(skillDeclaresHooks('---\nname: s\ndescription: d\n---\n\nhooks:\n  x: 1\n')).toBe(false)
+    ).toBe(true)
+    expect(skillDeclaresHooks(doc('tags: [git, HOOKS]'))).toBe(true)
   })
 
   it('is false for a file with no frontmatter at all (the CLI reads none)', () => {
@@ -215,11 +275,166 @@ describe('stageSkillsForFolder — observe mode resolves a bundled name to the b
     expect(m.stagedPluginDir(project)).toBe(m.stagedPluginDir(project, [], true))
   })
 
-  it('the bundled skills Harnu ships declare no hooks', async () => {
+  // Bundled skills are Harnu's own and are not run through the observe check. This pins the
+  // premise that makes that safe: none of them mentions hooks in its header. (Several fail js-yaml's
+  // strict parse, e.g. an unquoted description containing ": ", which the CLI reads leniently, so the
+  // strict rule is deliberately not applied to them.)
+  it('the bundled skills Harnu ships never mention hooks in their frontmatter', async () => {
     const real = path.resolve(__dirname, '..', 'resources', 'skills', 'skills')
     for (const name of await fs.readdir(real)) {
       const raw = await fs.readFile(path.join(real, name, 'SKILL.md'), 'utf8')
-      expect({ name, hooks: skillDeclaresHooks(raw) }).toEqual({ name, hooks: false })
+      const header = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw)?.[1] ?? ''
+      expect({ name, mentionsHooks: /hooks/i.test(header) }).toEqual({ name, mentionsHooks: false })
     }
+  })
+})
+
+// ── BUG-169 delta 1: what an observe tick copies, and how ────────────────────
+
+describe('observe staging — file layout and the check/copy gap (BUG-169 delta 1)', () => {
+  const skillsRoot = (): string => path.join(project, '.claude', 'skills')
+  const stagedSkill = (dir: string, name: string): string => path.join(dir, 'skills', name)
+
+  async function plain(name: string, extra?: (dir: string) => Promise<void>): Promise<void> {
+    const dir = path.join(skillsRoot(), name)
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, 'SKILL.md'),
+      `---\nname: ${name}\ndescription: plain ${name}\n---\n\nbody ${name}\n`
+    )
+    await extra?.(dir)
+  }
+
+  it('refuses a skill whose SKILL.md is a symlink', async () => {
+    await plain('linked')
+    const real = path.join(h.userDataDir, 'elsewhere.md')
+    await fs.writeFile(real, '---\nname: linked\ndescription: x\n---\nbody\n')
+    await fs.rm(path.join(skillsRoot(), 'linked', 'SKILL.md'))
+    await fs.symlink(real, path.join(skillsRoot(), 'linked', 'SKILL.md'))
+    const m = await load()
+    const out = await m.stageSkillsForTick(project, ['linked'], 'observe')
+    expect(out.rejected).toEqual([{ mention: 'linked', reason: 'unsafe-layout' }])
+    expect(out.staged).toBeNull()
+  })
+
+  it('refuses a skill with a symlink anywhere inside it', async () => {
+    await plain('nested-link', async (dir) => {
+      await fs.mkdir(path.join(dir, 'refs'))
+      await fs.symlink('/etc/hosts', path.join(dir, 'refs', 'hosts'))
+    })
+    const m = await load()
+    const out = await m.stageSkillsForTick(project, ['nested-link'], 'observe')
+    expect(out.rejected).toEqual([{ mention: 'nested-link', reason: 'unsafe-layout' }])
+  })
+
+  it('refuses a skill that contains a hooks directory or a hooks.json, at any depth', async () => {
+    await plain('layout-a', async (dir) => {
+      await fs.mkdir(path.join(dir, 'hooks'))
+      await fs.writeFile(path.join(dir, 'hooks', 'hooks.json'), '{}')
+    })
+    await plain('layout-b', async (dir) => {
+      await fs.mkdir(path.join(dir, 'a', 'b'), { recursive: true })
+      await fs.writeFile(path.join(dir, 'a', 'b', 'Hooks.JSON'), '{}')
+    })
+    const m = await load()
+    const out = await m.stageSkillsForTick(project, ['layout-a', 'layout-b'], 'observe')
+    expect(out.rejected.map((r) => [r.mention, r.reason])).toEqual([
+      ['layout-a', 'unsafe-layout'],
+      ['layout-b', 'unsafe-layout']
+    ])
+  })
+
+  it('skips dot-files and dot-directories (.claude-plugin/, .mcp.json, .claude/) instead of copying them', async () => {
+    await plain('dotty', async (dir) => {
+      await fs.mkdir(path.join(dir, '.claude-plugin'))
+      await fs.writeFile(path.join(dir, '.claude-plugin', 'plugin.json'), '{"hooks":{}}')
+      await fs.writeFile(path.join(dir, '.mcp.json'), '{"mcpServers":{}}')
+      await fs.mkdir(path.join(dir, '.claude'))
+      await fs.writeFile(path.join(dir, '.claude', 'settings.json'), '{"hooks":{}}')
+      await fs.mkdir(path.join(dir, 'refs'))
+      await fs.writeFile(path.join(dir, 'refs', 'notes.md'), 'kept')
+    })
+    const m = await load()
+    const out = await m.stageSkillsForTick(project, ['dotty'], 'observe')
+    expect(out.rejected).toEqual([])
+    const copied = stagedSkill(out.staged!.dir, 'dotty')
+    expect((await fs.readdir(copied)).sort()).toEqual(['SKILL.md', 'refs'])
+    expect(await read(copied, 'refs', 'notes.md')).toBe('kept')
+  })
+
+  it('refuses a skill with a non-regular file (a FIFO would hang a copy)', async () => {
+    await plain('fifo', async (dir) => {
+      const { execFileSync } = await import('node:child_process')
+      execFileSync('mkfifo', [path.join(dir, 'pipe')])
+    })
+    const m = await load()
+    const out = await m.stageSkillsForTick(project, ['fifo'], 'observe')
+    expect(out.rejected).toEqual([{ mention: 'fifo', reason: 'unsafe-layout' }])
+  })
+
+  it('refuses an oversized skill rather than copying it', async () => {
+    await plain('huge', async (dir) => {
+      await fs.writeFile(path.join(dir, 'blob.bin'), Buffer.alloc(3 * 1024 * 1024))
+    })
+    const m = await load()
+    const out = await m.stageSkillsForTick(project, ['huge'], 'observe')
+    expect(out.rejected).toEqual([{ mention: 'huge', reason: 'unsafe-layout' }])
+  })
+
+  // The check and the copy used to be two separate reads of the same file. The bytes that were
+  // checked must be the bytes that are staged, whatever happens to the file in between.
+  it('stages exactly the bytes it checked, even if SKILL.md is swapped right after the check', async () => {
+    await plain('swapme')
+    const file = path.join(skillsRoot(), 'swapme', 'SKILL.md')
+    const checked = await fs.readFile(file, 'utf8')
+    const evil = `---\nname: swapme\ndescription: evil\n${HOOKS_FRONTMATTER}\n---\n\nevil\n`
+    const m = await load()
+    // The first thing the builder does after resolving and checking is create the temp tree.
+    const real = fs.mkdir.bind(fs)
+    const spy = vi
+      .spyOn(fs, 'mkdir')
+      .mockImplementation(async (...a: Parameters<typeof fs.mkdir>) => {
+        await fs.writeFile(file, evil)
+        return real(...a)
+      })
+    try {
+      const out = await m.stageSkillsForTick(project, ['swapme'], 'observe')
+      expect(out.rejected).toEqual([])
+      expect(await read(stagedSkill(out.staged!.dir, 'swapme'), 'SKILL.md')).toBe(checked)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+})
+
+describe('observe resolution — case variants of a bundled name (BUG-169 delta 1)', () => {
+  it.each(['Status', 'STATUS', 'sTaTuS'])(
+    '/%s resolves to the bundled skill, not a project one',
+    async (mention) => {
+      // A project skill that differs from the bundled name only by case.
+      await writeSkill(path.join(project, '.claude', 'skills'), 'Status', 'project Status')
+      const m = await load()
+      const out = await m.stageSkillsForTick(project, [mention], 'observe')
+      expect(out.rejected).toEqual([])
+      expect(await read(out.staged!.dir, 'skills', 'status', 'SKILL.md')).toContain(
+        'bundled status'
+      )
+      expect(await exists(path.join(out.staged!.dir, 'skills', 'Status'))).toBe(false)
+    }
+  )
+
+  it('the harnu: prefix is case-insensitive in observe too', async () => {
+    const m = await load()
+    const out = await m.stageSkillsForTick(project, ['Harnu:Delivery-Watchdog'], 'observe')
+    expect(await read(out.staged!.dir, 'skills', 'delivery-watchdog', 'SKILL.md')).toContain(
+      'bundled delivery-watchdog'
+    )
+  })
+
+  it('act mode keeps its exact-case behaviour', async () => {
+    await writeSkill(path.join(project, '.claude', 'skills'), 'Status', 'project Status')
+    const m = await load()
+    const out = await m.stageSkillsForTick(project, ['Status'], 'act')
+    expect(await read(out.staged!.dir, 'skills', 'Status', 'SKILL.md')).toContain('project Status')
   })
 })
