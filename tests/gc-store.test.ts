@@ -7,6 +7,7 @@ import type {
   GcJobDone,
   GcJobInfo,
   GcJobProgress,
+  GcOpinion,
   GcOpinionResult,
   GcSnapshot
 } from '../src/main/gc/gc-wire'
@@ -55,6 +56,7 @@ interface Api {
   gcAckFirstReport: ReturnType<typeof vi.fn>
   gcSetPrefs: ReturnType<typeof vi.fn>
   gcOpinion: ReturnType<typeof vi.fn>
+  gcOpinionCached: ReturnType<typeof vi.fn>
 }
 
 function installApi(first: GcSnapshot = snap(), jobs: GcJobInfo[] = []): Api {
@@ -74,7 +76,8 @@ function installApi(first: GcSnapshot = snap(), jobs: GcJobInfo[] = []): Api {
     gcJobs: vi.fn(async () => jobs),
     gcAckFirstReport: vi.fn(async () => ({ ...defaultGcPrefs(), firstReportAcknowledged: true })),
     gcSetPrefs: vi.fn(async (p: unknown) => p),
-    gcOpinion: vi.fn(async () => ({ jobId: 'o1' }))
+    gcOpinion: vi.fn(async () => ({ jobId: 'o1' })),
+    gcOpinionCached: vi.fn(async () => ({}))
   }
   ;(globalThis as unknown as { window: unknown }).window = {
     api: {
@@ -605,5 +608,111 @@ describe('gc store — ask for an opinion', () => {
     await gc.refresh()
     expect(gc.opinionFor(review)).toBeNull()
     expect(gc.safeOpinionIds).toEqual([])
+  })
+})
+
+describe('gc store — chips survive a reload (the peek)', () => {
+  const cachedOpinion = (id: string): GcOpinion => ({
+    id,
+    verdict: 'safe',
+    reason: 'Everything it changed is on main.',
+    evidence: 'on main at abc123'
+  })
+
+  it('restores the opinions main has cached when the store starts, without asking', async () => {
+    const api = installApi()
+    const probe = useGcStore()
+    await probe.init()
+    const review = probe.model!.review[0].id
+    probe.dispose()
+    setActivePinia(createPinia()) // a reload: a fresh renderer, main untouched
+    api.gcOpinionCached.mockResolvedValue({ [review]: cachedOpinion(review) })
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gc.opinionFor(review)).toMatchObject({ verdict: 'safe' })
+    expect(gc.safeOpinionIds).toEqual([review])
+    expect(api.gcOpinion).not.toHaveBeenCalled()
+    expect(api.gcClean).not.toHaveBeenCalled()
+  })
+
+  it('peeks with the Needs review ids only, never a ready one', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(api.gcOpinionCached).toHaveBeenCalledTimes(1)
+    const ids = api.gcOpinionCached.mock.calls[0][0] as string[]
+    expect(ids).toEqual(gc.model!.review.map((b) => b.id))
+    for (const b of gc.model!.ready) expect(ids).not.toContain(b.id)
+  })
+
+  it('does not peek again for an item it already peeked in the same state', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    await gc.refresh()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(api.gcOpinionCached).toHaveBeenCalledTimes(1)
+  })
+
+  it('peeks again when the item changed, and drops what no longer fits', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    const review = gc.model!.review[0].id
+    const moved = snap()
+    moved.bundles = moved.bundles.map((b) =>
+      b.bucket === 'review' ? { ...b, localTip: 'e'.repeat(40) } : b
+    )
+    api.gcSnapshot.mockResolvedValue(moved)
+    await gc.refresh()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(api.gcOpinionCached).toHaveBeenCalledTimes(2)
+    expect((api.gcOpinionCached.mock.calls[1][0] as string[]).includes(review)).toBe(true)
+  })
+
+  it('does not overwrite a newer answer with an older cached one', async () => {
+    const api = installApi()
+    let release!: (v: Record<string, GcOpinion>) => void
+    api.gcOpinionCached.mockImplementationOnce(
+      () => new Promise<Record<string, GcOpinion>>((res) => (release = res))
+    )
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    const review = gc.model!.review[0].id
+    api.push.opinion({
+      jobId: 'o1',
+      id: review,
+      verdict: 'keep',
+      reason: 'fresh',
+      evidence: 'fresh'
+    })
+    release({ [review]: cachedOpinion(review) })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gc.opinionFor(review)?.verdict).toBe('keep')
+  })
+
+  it('a failing peek is harmless: no chip, no toast, no ask', async () => {
+    const api = installApi()
+    api.gcOpinionCached.mockRejectedValue(new Error('boom'))
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gc.opinionFor(gc.model!.review[0].id)).toBeNull()
+    expect(useUiStore().toasts).toHaveLength(0)
+    expect(api.gcOpinion).not.toHaveBeenCalled()
+  })
+
+  it('ignores a cached opinion for an id the model does not hold', async () => {
+    const api = installApi()
+    api.gcOpinionCached.mockResolvedValue({ ghost: cachedOpinion('ghost') })
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gc.opinions.size).toBe(0)
   })
 })

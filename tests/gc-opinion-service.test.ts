@@ -376,3 +376,121 @@ describe('the service: caching (AC-4)', () => {
     expect(results[0]).toMatchObject({ id: 'a', verdict: 'unsure' })
   })
 })
+
+describe('the peek: gc:opinion:cached serves main’s cache and never asks', () => {
+  async function asked(ids: string[]): Promise<Rig> {
+    const r = rig(ids)
+    r.service.start(ids)
+    await r.service.idle()
+    return r
+  }
+
+  it('returns the cached opinion of every item that is still as it was', async () => {
+    const r = await asked(['a', 'b'])
+    const hits = await r.service.cached(['a', 'b'])
+    expect(Object.keys(hits).sort()).toEqual(['a', 'b'])
+    expect(hits.a).toMatchObject({ id: 'a', verdict: 'safe', evidence: 'on main' })
+  })
+
+  it('never runs the model, emits nothing and starts no job', async () => {
+    const r = await asked(['a'])
+    const runs = r.runs.length
+    const results = r.results.length
+    const done = r.done.length
+    await r.service.cached(['a', 'nope'])
+    expect(r.runs).toHaveLength(runs)
+    expect(r.results).toHaveLength(results)
+    expect(r.done).toHaveLength(done)
+  })
+
+  it('returns nothing for an item nobody asked about', async () => {
+    const r = rig(['a'])
+    expect(await r.service.cached(['a'])).toEqual({})
+  })
+
+  it('applies the cache rules: a changed head, dirty set, fate or PR state drops the opinion', async () => {
+    const r = await asked(['a'])
+    const base = r.state.dossiers.a
+    for (const change of [
+      { head: 'bbb222' },
+      { dirtyFiles: [' M a.ts', '?? new.ts'] },
+      { fate: 'open' },
+      { prState: 'OPEN' },
+      { reasonCode: 'unpushed' }
+    ]) {
+      r.state.dossiers.a = { ...base, ...change }
+      expect(await r.service.cached(['a'])).toEqual({})
+    }
+    r.state.dossiers.a = base
+    expect(Object.keys(await r.service.cached(['a']))).toEqual(['a'])
+  })
+
+  it('answers only for Needs review items and orphan volumes, and skips the rest quietly', async () => {
+    const r = await asked(['a'])
+    r.state.lookup.a = 'other'
+    expect(await r.service.cached(['a', 'ghost'])).toEqual({})
+  })
+
+  it('skips an item that vanished', async () => {
+    const r = await asked(['a'])
+    delete r.state.dossiers.a
+    expect(await r.service.cached(['a'])).toEqual({})
+  })
+
+  it('does not return a failed or fallback answer, because none was cached', async () => {
+    const r = rig(['a'])
+    r.state.answer = () => null
+    r.service.start(['a'])
+    await r.service.idle()
+    expect(await r.service.cached(['a'])).toEqual({})
+  })
+
+  it('survives a rebuilt service over the same cache: a reload gets its chips back without a new ask', async () => {
+    const cache = createOpinionCache()
+    const first = rig(['a'], cache)
+    first.service.start(['a'])
+    await first.service.idle()
+    const second = rig(['a'], cache)
+    expect(Object.keys(await second.service.cached(['a']))).toEqual(['a'])
+    expect(second.runs).toHaveLength(0)
+  })
+
+  it('uses the cheap key facts, not the full dossier, so a long list stays quick', async () => {
+    const cache = createOpinionCache()
+    const first = rig(['a'], cache)
+    first.service.start(['a'])
+    await first.service.idle()
+    let keyCalls = 0
+    let dossierCalls = 0
+    const peek = createOpinionService({
+      cache,
+      classify: async () => () => 'review',
+      keyFacts: async () => {
+        keyCalls++
+        return first.state.dossiers.a
+      },
+      dossier: async () => {
+        dossierCalls++
+        return null
+      },
+      route: async () => ({ model: 'opus', effort: 'high' }),
+      run: async () => null,
+      emitResult: () => {},
+      emitDone: () => {},
+      newId: () => 'j'
+    })
+    expect(Object.keys(await peek.cached(['a']))).toEqual(['a'])
+    expect(keyCalls).toBe(1)
+    expect(dossierCalls).toBe(0)
+  })
+
+  it('rejects a malformed request and takes up to 500 ids', async () => {
+    const r = rig(['a'])
+    await expect(r.service.cached('a')).rejects.toThrow()
+    await expect(r.service.cached([])).rejects.toThrow()
+    await expect(r.service.cached(Array.from({ length: 501 }, (_, i) => `i${i}`))).rejects.toThrow()
+    await expect(r.service.cached(Array.from({ length: 500 }, (_, i) => `i${i}`))).resolves.toEqual(
+      {}
+    )
+  })
+})

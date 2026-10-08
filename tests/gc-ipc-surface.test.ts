@@ -17,6 +17,7 @@ const REQUESTS = [
   'gc:jobs',
   'gc:keep',
   'gc:opinion',
+  'gc:opinion:cached',
   'gc:prefs:get',
   'gc:prefs:set',
   'gc:snapshot',

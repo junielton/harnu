@@ -43,6 +43,7 @@ interface Rig {
   gcOpinion: ReturnType<typeof vi.fn>
   gcClean: ReturnType<typeof vi.fn>
   gcSnapshot: ReturnType<typeof vi.fn>
+  gcOpinionCached: ReturnType<typeof vi.fn>
   result(r: Omit<GcOpinionResult, 'jobId'> & { jobId?: string }): Promise<void>
   done(d: Partial<GcOpinionDone>): Promise<void>
 }
@@ -55,7 +56,8 @@ function install(first: GcSnapshot): Rig {
   const rig = {
     gcOpinion: vi.fn(async () => ({ jobId: 'job-1' })),
     gcClean: vi.fn(async () => ({ jobId: 'j1', queued: false })),
-    gcSnapshot: vi.fn(async () => first)
+    gcSnapshot: vi.fn(async () => first),
+    gcOpinionCached: vi.fn(async () => ({}))
   }
   const full = {
     ...rig,
@@ -314,5 +316,24 @@ describe('"Remove the ones marked safe"', () => {
     expect(chipOf(D1)).toBeNull()
     expect(chipOf(D3)?.getAttribute('data-state')).toBe('safe')
     expect(text(q('[data-testid="review-remove-safe"]'))).toBe('Remove the 1 marked safe')
+  })
+})
+
+describe('after a reload the chips come back without a new ask', () => {
+  it('draws the cached verdicts on mount and offers Remove the ones marked safe, without asking', async () => {
+    const rig = install(snap())
+    rig.gcOpinionCached.mockResolvedValue({
+      [D1]: { id: D1, ...safe(D1) },
+      [D2]: { id: D2, verdict: 'keep', reason: 'Two commits.', evidence: '2 unpushed' }
+    })
+    await mountView()
+    await flushPromises()
+    expect(rig.gcOpinionCached).toHaveBeenCalledTimes(1)
+    expect(chipOf(D1)?.getAttribute('data-state')).toBe('safe')
+    expect(chipOf(D2)?.getAttribute('data-state')).toBe('keep')
+    expect(chipOf(D3)).toBeNull()
+    expect(text(q('[data-testid="review-remove-safe"]'))).toBe('Remove the 1 marked safe')
+    expect(rig.gcOpinion).not.toHaveBeenCalled()
+    expect(rig.gcClean).not.toHaveBeenCalled()
   })
 })

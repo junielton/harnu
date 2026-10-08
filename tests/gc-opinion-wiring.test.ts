@@ -117,6 +117,16 @@ describe('the channels (AC-1)', () => {
     expect(ipc).toContain("'gc:opinion:done'")
   })
 
+  it('registers the read-only peek, which only reads main’s cache', () => {
+    const ipc = read('src/main/gc/gc-ipc.ts')
+    expect(ipc).toContain(
+      "ipcMain.handle('gc:opinion:cached', (_e, ids: unknown) => service.opinionCached(ids))"
+    )
+    expect(ipc.match(/opinions\.cached\(/g)).toHaveLength(1)
+    const preload = read('src/preload/index.ts')
+    expect(preload).toContain("ipcRenderer.invoke('gc:opinion:cached', ids)")
+  })
+
   it('exposes the same three channels through the preload', () => {
     const preload = read('src/preload/index.ts')
     expect(preload).toContain("ipcRenderer.invoke('gc:opinion', ids)")
