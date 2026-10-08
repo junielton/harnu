@@ -488,7 +488,8 @@ describe('list_cleanup handler (T445)', () => {
         'weak-merge-signal',
         'shared-stack',
         'path-unresolved',
-        'nested-worktree'
+        'nested-worktree',
+        'locked'
       ] as const
       const bundles = codes.map((code, i) =>
         bundle(`${MAIN}/.claude/worktrees/PROJ-${i}-c`, {
@@ -523,6 +524,19 @@ describe('list_cleanup handler (T445)', () => {
       expect(row.reasonCode).toBe('nested-worktree')
       expect(row.reason).toMatch(/worktree/i)
       expect(row.reason).not.toBe('This worktree needs your review.')
+    })
+
+    it('locked reads as its own fixed sentence', async () => {
+      const locked = bundle(WT_READY, {
+        bucket: 'review',
+        reason: { code: 'locked' as never, detail: `locked: ${MAIN}/.git/worktrees/x/locked` }
+      })
+      serve(snapshot([locked]))
+      const text = textOf(await handler({}, ctx()))
+      expect(leaksIn(text)).toEqual([])
+      const row = (JSON.parse(text).bundles as Listed[])[0]!
+      expect(row.reasonCode).toBe('locked')
+      expect(row.reason).toBe('This worktree is locked in git; release it there first.')
     })
 
     it('an unknown review code still gets a generic, path-free sentence', async () => {
