@@ -2375,7 +2375,6 @@
           "todo": "não rodou"
         },
         "nothingRan": "Nada destrutivo rodou.",
-        "changedSinceConfirm": "Mudou desde que você confirmou — revise de novo.",
         "copyError": "Copiar erro",
         "copied": "Copiado",
         "cleaning": "Limpando…",
@@ -2401,7 +2400,6 @@
         "keepAria": "Manter {name}",
         "volumeProject": "Volume Docker · {project}",
         "volumeUnknown": "Volume Docker · projeto desconhecido",
-        "changedSinceConfirm": "Mudou desde que você confirmou — revise de novo.",
         "hintShift": "clique seleciona vários",
         "hintOpen": "abre o painel"
       },
@@ -2536,7 +2534,6 @@
         "partial": "{cleaned} limpos · {failed} precisa de você",
         "review": "Revisar"
       },
-      "changedSinceConfirm": "Mudou desde que você confirmou — revise de novo.",
       "footer": {
         "running": "Limpando {done}/{total}",
         "attention": "{n} precisa de você | {n} precisam de você",
@@ -2608,6 +2605,19 @@
           "intro": "A Limpeza escaneia todo repo conhecido em um timer e registra o que fica seguro para limpar. Estas configurações também cobrem branches locais e remotas.",
           "autoScanHint": "Roda o escaneamento em um timer sem abrir a Limpeza. O autopilot pega carona nesse escaneamento, então desligá-lo também para o autopilot."
         }
+      },
+      "refusal": {
+        "changedSinceConfirm": "Mudou desde que você confirmou — revise de novo.",
+        "needsConfirmation": "Precisa da sua confirmação antes. Selecione e escolha Remover.",
+        "missingExpected": "A limpeza não conseguiu comparar com o que você viu. Revise e tente de novo.",
+        "noLongerOrphan": "Este volume voltou a ser usado, então foi deixado como está.",
+        "kept": "Você marcou como Manter, então foi deixado como está.",
+        "neverClean": "Está na sua lista de nunca limpar, então foi deixado como está.",
+        "mainCheckout": "Este é um checkout principal, que nunca é limpo.",
+        "alive": "Está em uso, então foi deixado como está.",
+        "unsupportedKind": "O Harnu ainda não consegue limpar este tipo de pasta.",
+        "unknownItem": "A limpeza não conhece mais este item. Atualize e tente de novo.",
+        "several": "{n} itens foram deixados como estão por motivos diferentes. Abra cada um para ver o motivo."
       }
     }
   },

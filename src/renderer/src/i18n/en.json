@@ -2375,7 +2375,6 @@
           "todo": "did not run"
         },
         "nothingRan": "Nothing destructive ran.",
-        "changedSinceConfirm": "Changed since you confirmed — review again.",
         "copyError": "Copy error",
         "copied": "Copied",
         "cleaning": "Cleaning…",
@@ -2401,7 +2400,6 @@
         "keepAria": "Keep {name}",
         "volumeProject": "Docker volume · {project}",
         "volumeUnknown": "Docker volume · unknown project",
-        "changedSinceConfirm": "Changed since you confirmed — review again.",
         "hintShift": "click selects several",
         "hintOpen": "opens the panel"
       },
@@ -2536,7 +2534,6 @@
         "partial": "{cleaned} cleaned · {failed} needs you",
         "review": "Review"
       },
-      "changedSinceConfirm": "Changed since you confirmed — review again.",
       "footer": {
         "running": "Cleaning {done}/{total}",
         "attention": "{n} needs you | {n} need you",
@@ -2608,6 +2605,19 @@
           "intro": "Cleanup scans every known repo on a timer and logs what becomes safe to clean. These settings also cover local and remote branches.",
           "autoScanHint": "Runs the scan on a timer without opening Cleanup. The autopilot rides this scan, so turning it off also stops the autopilot."
         }
+      },
+      "refusal": {
+        "changedSinceConfirm": "Changed since you confirmed — review it again.",
+        "needsConfirmation": "Needs your confirmation first. Select it and choose Remove.",
+        "missingExpected": "Cleanup could not check it against what you were shown. Review it and try again.",
+        "noLongerOrphan": "This volume is in use again, so it was left alone.",
+        "kept": "You marked it Keep, so it was left alone.",
+        "neverClean": "It is on your never-clean list, so it was left alone.",
+        "mainCheckout": "This is a main checkout, which is never cleaned.",
+        "alive": "It is in use, so it was left alone.",
+        "unsupportedKind": "Harnu cannot clean this kind of folder yet.",
+        "unknownItem": "Cleanup no longer knows this item. Refresh and try again.",
+        "several": "{n} items were left alone for different reasons. Open each one to see why."
       }
     }
   },

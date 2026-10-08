@@ -11,7 +11,9 @@ import {
   pillState,
   runningJob,
   stepProgress,
-  CHANGED_SINCE_CONFIRM
+  CHANGED_SINCE_CONFIRM,
+  REFUSAL_CODES,
+  refusalOf
 } from '../src/renderer/src/lib/gc-jobs'
 import type { GcJobDone, GcJobInfo, GcJobProgress, GcItemResult } from '../src/main/gc/gc-wire'
 
@@ -142,7 +144,8 @@ describe('doneSummary', () => {
       cleaned: 3,
       failed: 0,
       freedBytes: 300,
-      changedSinceConfirm: 0
+      refusals: {},
+      refused: 0
     })
   })
 
@@ -166,7 +169,11 @@ describe('doneSummary', () => {
       done: 1,
       total: 2
     })
-    expect(doneSummary(d)).toMatchObject({ failed: 1, changedSinceConfirm: 1 })
+    expect(doneSummary(d)).toMatchObject({
+      failed: 1,
+      refused: 1,
+      refusals: { 'changed-since-confirm': 1 }
+    })
   })
 
   it('a thrown run is a warning even with no per-item failure', () => {
@@ -186,7 +193,7 @@ describe('failureFor and stepProgress', () => {
     expect(failureFor(s, 'b')).toEqual({
       step: 'rm-volumes',
       error: 'volume in use',
-      changedSinceConfirm: false
+      refusal: null
     })
     expect(failureFor(s, 'zzz')).toBeNull()
   })
@@ -196,7 +203,27 @@ describe('failureFor and stepProgress', () => {
       emptyJobs(),
       done({ results: [bad('b', 'reprobe', CHANGED_SINCE_CONFIRM)] })
     )
-    expect(failureFor(s, 'b')?.changedSinceConfirm).toBe(true)
+    expect(failureFor(s, 'b')?.refusal).toBe('changed-since-confirm')
+  })
+
+  it.each(REFUSAL_CODES)(
+    'recognizes the %s refusal and counts it separately from a step failure',
+    (code) => {
+      const d = done({
+        results: [bad('a', 'reprobe', code), bad('b', 'rm-volumes', 'volume in use')],
+        done: 0,
+        total: 2
+      })
+      const s = applyDone(emptyJobs(), d)
+      expect(failureFor(s, 'a')?.refusal).toBe(code)
+      expect(failureFor(s, 'b')?.refusal).toBeNull()
+      expect(doneSummary(d)).toMatchObject({ failed: 2, refused: 1, refusals: { [code]: 1 } })
+    }
+  )
+
+  it('an error that merely contains a code is not a refusal', () => {
+    expect(refusalOf({ ok: false, error: 'docker said: kept alive' })).toBeNull()
+    expect(refusalOf({ ok: true, error: 'kept' })).toBeNull()
   })
 
   it('lists which steps ran, which failed and which never started', () => {

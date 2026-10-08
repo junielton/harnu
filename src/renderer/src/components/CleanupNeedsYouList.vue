@@ -14,7 +14,7 @@ import type { GcBlock } from '../lib/gc-model'
 import type { BlockJobState, ItemFailure } from '../lib/gc-jobs'
 import { formatBytes } from './system-monitor-format'
 import { canDehydrate } from './cleanup-row'
-import { reasonKey } from './cleanup-gc-copy'
+import { reasonKey, refusalKey } from './cleanup-gc-copy'
 import Button from './ui/Button.vue'
 
 /**
@@ -53,8 +53,8 @@ function failed(b: GcBlock): boolean {
 }
 
 function reasonOf(b: GcBlock): string {
-  if (props.failureOf(b.id)?.changedSinceConfirm)
-    return t('cleanup.gc.needsYou.changedSinceConfirm')
+  const refusal = props.failureOf(b.id)?.refusal
+  if (refusal) return t(refusalKey(refusal))
   return t(reasonKey(b.reasonCode))
 }
 

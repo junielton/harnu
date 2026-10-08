@@ -13,6 +13,10 @@ import type { Bucket, DecideReason } from '../src/main/gc/bundle-core'
 import { useGcStore } from '../src/renderer/src/stores/gc'
 import { useUiStore } from '../src/renderer/src/stores/ui'
 import { CHANGED_SINCE_CONFIRM } from '../src/renderer/src/lib/gc-jobs'
+import { i18n } from '../src/renderer/src/i18n'
+
+const t = (key: string, named?: Record<string, unknown>): string =>
+  (named ? i18n.global.t(key, named) : i18n.global.t(key)) as string
 
 const MIB = 1024 ** 2
 
@@ -264,7 +268,48 @@ describe('gc store', () => {
     )
     await vi.runAllTimersAsync()
     expect(toast.mock.calls[0][0].description).toBeTruthy()
-    expect(gc.failureOf('x')?.changedSinceConfirm).toBe(true)
+    expect(gc.failureOf('x')?.refusal).toBe('changed-since-confirm')
+    expect(toast.mock.calls[0][0].description).toBe(t('cleanup.gc.refusal.changedSinceConfirm'))
+  })
+
+  it('names the refusal in the toast when every refused item has the same reason', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.push.done(
+      done({
+        done: 0,
+        total: 2,
+        results: [
+          { id: 'a', ok: false, haltedAt: 'reprobe', error: 'kept', freedBytes: 0 },
+          { id: 'b', ok: false, haltedAt: 'reprobe', error: 'kept', freedBytes: 0 }
+        ]
+      })
+    )
+    await vi.runAllTimersAsync()
+    expect(toast.mock.calls[0][0].description).toBe(t('cleanup.gc.refusal.kept'))
+  })
+
+  it('says how many were refused when the reasons differ', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.push.done(
+      done({
+        done: 0,
+        total: 2,
+        results: [
+          { id: 'a', ok: false, haltedAt: 'reprobe', error: 'kept', freedBytes: 0 },
+          { id: 'b', ok: false, haltedAt: 'reprobe', error: 'alive', freedBytes: 0 }
+        ]
+      })
+    )
+    await vi.runAllTimersAsync()
+    expect(toast.mock.calls[0][0].description).toBe(t('cleanup.gc.refusal.several', { n: 2 }))
   })
 
   it('an autopilot job drives the chip but raises no renderer toast (main notifies)', async () => {

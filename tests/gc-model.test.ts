@@ -4,6 +4,7 @@ import {
   buildGcModel,
   cleanRequestFor,
   dialogRows,
+  expectedFor,
   heroState,
   isCheckable,
   prunedSelection,
@@ -15,6 +16,7 @@ import {
 } from '../src/renderer/src/lib/gc-model'
 import type { GcSnapshot } from '../src/main/gc/gc-wire'
 import { defaultGcPrefs } from '../src/main/gc/gc-prefs'
+import { expectedOf, orphanExpectedOf } from '../src/main/gc/gc-confirm'
 import type { Bucket, DecideReason } from '../src/main/gc/bundle-core'
 
 const GIB = 1024 ** 3
@@ -274,7 +276,8 @@ describe('cleanRequestFor — the one place that builds the gc:clean payload', (
     expect(req.options.confirmed).toEqual([d1, 'volume:pg_data'])
     expect(req.options.expected[d1].reasonCode).toBe('dirty')
     expect(req.options.expected['volume:pg_data']).toMatchObject({
-      bucket: 'decide',
+      bucket: 'orphan-volume',
+      project: 'old-app',
       reasonCode: 'no-known-worktree',
       headSha: null,
       ownedVolumes: ['pg_data'],
@@ -303,5 +306,54 @@ describe('cleanRequestFor — the one place that builds the gc:clean payload', (
 describe('volumeBlockId', () => {
   it('matches the engine id', () => {
     expect(volumeBlockId('pg_data')).toBe('volume:pg_data')
+  })
+})
+
+describe("expectedFor mirrors main's expectedOf / orphanExpectedOf", () => {
+  it('sends exactly what main compares for a worktree (sorted stacks and volumes, localTip)', () => {
+    const b = wt('c1', 'corpse', 512 * MIB, {
+      stackIds: ['b-stack', 'a-stack'],
+      ownedVolumes: ['v2', 'v1'],
+      localTip: 'c'.repeat(40)
+    })
+    const m = buildGcModel(snap({ bundles: [b] }))
+    expect(expectedFor(m.byId.get(b.item.id)!)).toEqual(expectedOf(b))
+  })
+
+  it('a worktree with no known size sends null bytes, like main', () => {
+    const b = wt('c1', 'corpse', null)
+    const m = buildGcModel(snap({ bundles: [b] }))
+    expect(expectedFor(m.byId.get(b.item.id)!)).toEqual(expectedOf(b))
+  })
+
+  it('sends exactly what main compares for an orphan volume, project included', () => {
+    const s = sample()
+    const m = buildGcModel(s)
+    const v = s.orphanVolumes[0]
+    expect(expectedFor(m.byId.get(v.id)!)).toEqual(orphanExpectedOf(v))
+  })
+
+  it('a volume with no project and no size sends nulls, so main sees what the operator saw', () => {
+    const s = snap({
+      orphanVolumes: [
+        {
+          id: 'volume:x',
+          name: 'x',
+          sizeBytes: null,
+          project: null,
+          reason: { code: 'no-known-worktree', detail: 'd' }
+        }
+      ]
+    })
+    const m = buildGcModel(s)
+    expect(expectedFor(m.byId.get('volume:x')!)).toEqual(orphanExpectedOf(s.orphanVolumes[0]))
+  })
+
+  it('does not fall back to the checked-out commit of a detached worktree: main compares localTip only', () => {
+    const b = wt('c1', 'corpse', 1, { localTip: null })
+    b.item.headSha = 'd'.repeat(40)
+    const m = buildGcModel(snap({ bundles: [b] }))
+    expect(expectedFor(m.byId.get(b.item.id)!).headSha).toBeNull()
+    expect(expectedFor(m.byId.get(b.item.id)!)).toEqual(expectedOf(b))
   })
 })

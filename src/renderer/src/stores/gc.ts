@@ -1,15 +1,10 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { GcPrefs } from '../../../main/gc/gc-prefs'
-import type {
-  GcCleanAck,
-  GcCleanOptions,
-  GcJobDone,
-  GcJobProgress,
-  GcSnapshot
-} from '../../../main/gc/gc-wire'
+import type { GcCleanAck, GcJobDone, GcJobProgress, GcSnapshot } from '../../../main/gc/gc-wire'
 import { i18n } from '../i18n'
 import { formatBytes } from '../components/system-monitor-format'
+import { refusalKey } from '../components/cleanup-gc-copy'
 import {
   buildGcModel,
   cleanRequestFor,
@@ -30,6 +25,8 @@ import {
   pillState,
   runningJob,
   type BlockJobState,
+  type DoneSummary,
+  type RefusalCode,
   type ItemFailure,
   type JobsState
 } from '../lib/gc-jobs'
@@ -49,13 +46,18 @@ import { useUiStore } from './ui'
 /** `--dur-slow`: how long a cleaned block stays on the map, faded, before the layout re-flows. */
 export const FADE_MS = 220
 
-/**
- * The one place the clean payload crosses to the preload. The wire type still names the retired
- * `confirmDecide` boolean until S3's contract change is merged; the payload is already the new shape
- * (`confirmed` + `expected`), so the switch is dropping this cast, not editing a caller.
- */
+/** The one place the clean payload crosses to the preload: ids, `expected` per id, `confirmed` for Decide items. */
 function sendClean(req: CleanRequest): Promise<GcCleanAck> {
-  return window.api.gcClean(req.ids, req.options as unknown as GcCleanOptions)
+  return window.api.gcClean(req.ids, req.options)
+}
+
+/** One sentence for the toast when items were refused up front: the code's own, or a count of several kinds. */
+function refusalDescription(s: DoneSummary): string | undefined {
+  const codes = Object.keys(s.refusals) as RefusalCode[]
+  const { t } = i18n.global
+  if (codes.length === 1) return t(refusalKey(codes[0]))
+  if (codes.length > 1) return t('cleanup.gc.refusal.several', { n: s.refused })
+  return undefined
 }
 
 export const useGcStore = defineStore('gc', () => {
@@ -149,8 +151,7 @@ export const useGcStore = defineStore('gc', () => {
       title: warning
         ? t('cleanup.gc.toast.partial', { cleaned: s.cleaned, failed: s.failed })
         : t('cleanup.gc.toast.success', { size: formatBytes(s.freedBytes), count: s.cleaned }),
-      description:
-        s.changedSinceConfirm > 0 ? t('cleanup.gc.changedSinceConfirm') : (d.error ?? undefined),
+      description: refusalDescription(s) ?? d.error ?? undefined,
       timeoutMs: warning ? 8000 : 6000,
       target: { view: 'cleanup' as const },
       action: { label: t('cleanup.gc.toast.review'), handler: () => ui.openCleanup() }

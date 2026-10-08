@@ -1,5 +1,6 @@
 import type { GcStep } from '../../../main/gc/pipeline-core'
 import type { ReasonCode } from '../lib/gc-model'
+import type { RefusalCode } from '../lib/gc-jobs'
 
 /**
  * Copy keys shared by the Cleanup map, panel, list and Needs-you list (design.md "Workspace GC —
@@ -55,4 +56,9 @@ export function ticketParts(
     if (m) return { short: `${m[1].toUpperCase()}-${m[2]}`, tiny: `#${m[2]}` }
   }
   return null
+}
+
+/** `cleanup.gc.refusal.*` key: one human sentence per refusal code. */
+export function refusalKey(code: RefusalCode): string {
+  return `cleanup.gc.refusal.${code.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())}`
 }

@@ -7,7 +7,7 @@ import type { Bucket } from '../src/main/gc/bundle-core'
 import type { ReapItem, HydrationInfo } from '../src/preload'
 import type { GcBlock } from '../src/renderer/src/lib/gc-model'
 import type { BlockJobState, ItemFailure } from '../src/renderer/src/lib/gc-jobs'
-import { CHANGED_SINCE_CONFIRM } from '../src/renderer/src/lib/gc-jobs'
+import { CHANGED_SINCE_CONFIRM, REFUSAL_CODES } from '../src/renderer/src/lib/gc-jobs'
 import { MIB, blockOf, decideReason, modelOf, volume, wt } from './helpers/cleanup-gc-fixtures'
 
 const t = (key: string, named?: Record<string, unknown>): string =>
@@ -171,7 +171,7 @@ describe('CleanupBlockPanel — a failed item', () => {
   const failure = (over: Partial<ItemFailure> = {}): ItemFailure => ({
     step: 'rm-volumes',
     error: 'volume pg-1 is in use by container pg-1',
-    changedSinceConfirm: false,
+    refusal: null,
     ...over
   })
   const failedBlock = () =>
@@ -219,11 +219,25 @@ describe('CleanupBlockPanel — a failed item', () => {
 
   it('a changed-since-confirm refusal is stated plainly instead of dumping the error', () => {
     const w = mountPanel(failedBlock(), {
-      failure: failure({ step: 'reprobe', error: CHANGED_SINCE_CONFIRM, changedSinceConfirm: true })
+      failure: failure({
+        step: 'reprobe',
+        error: CHANGED_SINCE_CONFIRM,
+        refusal: 'changed-since-confirm'
+      })
     })
-    expect(w.get('[data-testid="panel-changed-note"]').text()).toBe(
-      t('cleanup.gc.panel.changedSinceConfirm')
+    expect(w.get('[data-testid="panel-refusal"]').text()).toBe(
+      t('cleanup.gc.refusal.changedSinceConfirm')
     )
+    expect(has(w, 'panel-error')).toBe(false)
+  })
+
+  it.each(REFUSAL_CODES)('the %s refusal gets its own human sentence', (code) => {
+    const w = mountPanel(failedBlock(), {
+      failure: failure({ step: 'reprobe', error: code, refusal: code })
+    })
+    const sentence = w.get('[data-testid="panel-refusal"]').text()
+    expect(sentence).not.toBe(code)
+    expect(sentence).not.toContain('cleanup.gc.refusal')
     expect(has(w, 'panel-error')).toBe(false)
   })
 })

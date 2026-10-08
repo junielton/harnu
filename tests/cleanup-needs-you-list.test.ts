@@ -141,14 +141,14 @@ describe('CleanupNeedsYouList', () => {
       blockState: (x) => (x === id ? 'failed' : null),
       failureOf: (x) =>
         x === id
-          ? { step: 'reprobe', error: 'changed-since-confirm', changedSinceConfirm: true }
+          ? { step: 'reprobe', error: 'changed-since-confirm', refusal: 'changed-since-confirm' }
           : null
     })
     const row = rows(w)[1]
     expect(row.classes()).toContain('bg-red-soft')
     expect(row.find('.lucide-triangle-alert').exists()).toBe(true)
     expect(row.get('[data-testid="needs-you-reason"]').text()).toBe(
-      t('cleanup.gc.needsYou.changedSinceConfirm')
+      t('cleanup.gc.refusal.changedSinceConfirm')
     )
   })
 

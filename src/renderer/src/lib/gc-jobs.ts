@@ -8,6 +8,31 @@ import type { GcStep } from '../../../main/gc/pipeline-core'
 /** The engine's reason for refusing an item whose facts moved after the operator confirmed. */
 export const CHANGED_SINCE_CONFIRM = 'changed-since-confirm'
 
+/**
+ * Every reason `gc:clean` refuses an item before it touches anything (`gc-manual.ts`, `refusalFor`).
+ * Main reports the code as the result's `error`, halted at the pre-flight `reprobe` step; nothing
+ * destructive ran. `unknown-item` is a refresh away: the id is not in the fresh gather.
+ */
+export const REFUSAL_CODES = [
+  'changed-since-confirm',
+  'needs-confirmation',
+  'missing-expected',
+  'no-longer-orphan',
+  'kept',
+  'never-clean',
+  'main-checkout',
+  'alive',
+  'unsupported-kind',
+  'unknown-item'
+] as const
+export type RefusalCode = (typeof REFUSAL_CODES)[number]
+
+/** The refusal code of a failed result, or null when it failed for another reason (a step error). */
+export function refusalOf(r: Pick<GcItemResult, 'ok' | 'error'>): RefusalCode | null {
+  if (r.ok) return null
+  return REFUSAL_CODES.find((c) => c === (r.error ?? '').trim()) ?? null
+}
+
 export interface JobView {
   jobId: string
   kind: 'manual' | 'autopilot'
@@ -106,26 +131,32 @@ export interface DoneSummary {
   cleaned: number
   failed: number
   freedBytes: number
-  changedSinceConfirm: number
+  /** Failed items that were refused up front, by code. */
+  refusals: Partial<Record<RefusalCode, number>>
+  /** How many items were refused (any code). */
+  refused: number
 }
-
-const isChangedSinceConfirm = (r: GcItemResult): boolean =>
-  !r.ok && (r.error ?? '').includes(CHANGED_SINCE_CONFIRM)
 
 export function doneSummary(d: GcJobDone): DoneSummary {
   const cleaned = d.results.filter((r) => r.ok).length
   const failed = d.results.length - cleaned
-  const changedSinceConfirm = d.results.filter(isChangedSinceConfirm).length
+  const refusals: DoneSummary['refusals'] = {}
+  for (const r of d.results) {
+    const code = refusalOf(r)
+    if (code) refusals[code] = (refusals[code] ?? 0) + 1
+  }
+  const refused = Object.values(refusals).reduce((a, n) => a + (n ?? 0), 0)
   let tone: DoneSummary['tone'] = 'success'
   if (failed > 0 || d.error) tone = 'warning'
   else if (d.results.length === 0 && d.freedBytes === 0) tone = 'none'
-  return { tone, cleaned, failed, freedBytes: d.freedBytes, changedSinceConfirm }
+  return { tone, cleaned, failed, freedBytes: d.freedBytes, refusals, refused }
 }
 
 export interface ItemFailure {
   step: GcStep | null
   error: string
-  changedSinceConfirm: boolean
+  /** Set when the item was refused before anything ran. */
+  refusal: RefusalCode | null
 }
 
 export function failureFor(s: JobsState, id: string): ItemFailure | null {
@@ -135,7 +166,7 @@ export function failureFor(s: JobsState, id: string): ItemFailure | null {
       return {
         step: r.haltedAt,
         error: r.error ?? '',
-        changedSinceConfirm: isChangedSinceConfirm(r)
+        refusal: refusalOf(r)
       }
     }
   }

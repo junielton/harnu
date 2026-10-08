@@ -25,7 +25,7 @@ import {
   SKIP_REASON_KEYS,
   type HydrationOp
 } from './cleanup-row'
-import { reasonKey, stepKey } from './cleanup-gc-copy'
+import { reasonKey, refusalKey, stepKey } from './cleanup-gc-copy'
 import Button from './ui/Button.vue'
 
 /**
@@ -316,12 +316,13 @@ const showDetail = computed(() => !corpse.value && !!props.block.reasonDetail)
       data-testid="panel-failure"
     >
       <p
-        v-if="failure.changedSinceConfirm"
+        v-if="failure.refusal"
         class="flex items-start gap-1.5 text-[12px] leading-[18px] text-warning"
-        data-testid="panel-changed-note"
+        data-testid="panel-refusal"
+        :data-refusal="failure.refusal"
       >
         <TriangleAlert :size="13" :stroke-width="1.8" class="mt-0.5 shrink-0" />
-        {{ t('cleanup.gc.panel.changedSinceConfirm') }}
+        {{ t(refusalKey(failure.refusal)) }}
       </p>
       <template v-if="steps.length > 0">
         <div class="text-[10.5px] font-medium uppercase tracking-[0.07em] text-text-4">
@@ -364,7 +365,7 @@ const showDetail = computed(() => !corpse.value && !!props.block.reasonDetail)
           {{ t('cleanup.gc.panel.nothingRan') }}
         </p>
       </template>
-      <div v-if="failure.error && !failure.changedSinceConfirm" class="flex items-start gap-2">
+      <div v-if="failure.error && !failure.refusal" class="flex items-start gap-2">
         <p
           class="line-clamp-2 min-w-0 flex-1 break-words font-mono text-[11px] leading-4 text-text-3"
           :title="failure.error"

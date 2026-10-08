@@ -3,7 +3,12 @@
 // the `gc:clean` payload. No DOM, no Vue, no i18n — unit-tested in tests/gc-model.test.ts.
 
 import type { Bucket, DecideCode, WorktreeBundle } from '../../../main/gc/bundle-core'
-import type { GcSnapshot, OrphanVolumeItem } from '../../../main/gc/gc-wire'
+import type {
+  GcCleanOptions,
+  GcExpected,
+  GcSnapshot,
+  OrphanVolumeItem
+} from '../../../main/gc/gc-wire'
 
 export type BlockKind = 'worktree' | 'volume'
 export type ReasonCode = DecideCode | 'no-known-worktree'
@@ -336,25 +341,39 @@ export function dialogRows(
 
 // ---- gc:clean payload -----------------------------------------------------------------------
 
-/** What the dialog showed for one item; main refuses the item if its facts changed since. */
-export interface ExpectedFacts {
-  bucket: Bucket
-  reasonCode: string | null
-  headSha: string | null
-  stackIds: string[]
-  ownedVolumes: string[]
-  bytes: number | null
-}
-
-export interface CleanRequestOptions {
-  /** Ids the operator explicitly confirmed — Decide items and orphan volumes. Absent for bulk corpses. */
-  confirmed?: string[]
-  expected: Record<string, ExpectedFacts>
-}
-
 export interface CleanRequest {
   ids: string[]
-  options: CleanRequestOptions
+  options: Required<Pick<GcCleanOptions, 'expected'>> & Pick<GcCleanOptions, 'confirmed'>
+}
+
+const sorted = (xs: readonly string[]): string[] => [...xs].sort()
+
+/**
+ * The facts a row showed for one item, in the shape `gc:clean` compares them with a fresh gather.
+ * Mirrors `expectedOf` / `orphanExpectedOf` in `src/main/gc/gc-confirm.ts` (same semantics; the
+ * renderer never imports main code). A worktree's `bytes` is sent but not compared; a volume's size
+ * and project are, and a missing project counts as a change.
+ */
+export function expectedFor(b: GcBlock): GcExpected {
+  if (b.kind === 'volume') {
+    return {
+      bucket: 'orphan-volume',
+      reasonCode: b.reasonCode,
+      headSha: null,
+      stackIds: [],
+      ownedVolumes: [b.name],
+      bytes: b.hasBytes ? b.bytes : null,
+      project: b.project
+    }
+  }
+  return {
+    bucket: b.bucket,
+    reasonCode: b.reasonCode,
+    headSha: b.bundle?.localTip ?? null,
+    stackIds: sorted(b.stackIds),
+    ownedVolumes: sorted(b.ownedVolumes),
+    bytes: b.hasBytes ? b.bytes : null
+  }
 }
 
 /**
@@ -369,21 +388,14 @@ export function cleanRequestFor(
 ): CleanRequest {
   const want: Bucket = mode === 'corpses' ? 'corpse' : 'decide'
   const kept: string[] = []
-  const expected: Record<string, ExpectedFacts> = {}
+  const expected: Record<string, GcExpected> = {}
   for (const id of ids) {
     const b = model.byId.get(id)
     if (!b || b.bucket !== want) continue
     kept.push(id)
-    expected[id] = {
-      bucket: b.bucket,
-      reasonCode: b.reasonCode,
-      headSha: b.bundle?.localTip ?? b.bundle?.item.headSha ?? null,
-      stackIds: [...b.stackIds],
-      ownedVolumes: [...b.ownedVolumes],
-      bytes: b.hasBytes ? b.bytes : null
-    }
+    expected[id] = expectedFor(b)
   }
-  const options: CleanRequestOptions = { expected }
+  const options: CleanRequest['options'] = { expected }
   if (mode === 'decide') options.confirmed = [...kept]
   return { ids: kept, options }
 }
