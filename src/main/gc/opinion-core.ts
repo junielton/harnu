@@ -560,6 +560,7 @@ export const OPINION_TOOLS_DENY: readonly string[] = [
 const READ_TOOLS = ['Read', 'Grep', 'Glob'] as const
 
 /** Characters that cannot be written into a deny rule: the rule separator, its parentheses, control characters. */
+// eslint-disable-next-line no-control-regex -- control characters are the point
 const UNSAFE_RULE_CHARS = /[,()\u0000-\u001f]/
 
 /**
