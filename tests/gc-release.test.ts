@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildBundles, type SessionPresence } from '../src/main/gc/bundle-core'
+import { buildBundles, staleReleases, type SessionPresence } from '../src/main/gc/bundle-core'
 import {
   defaultGcPrefs,
   mergeIncomingPrefs,
@@ -252,5 +252,34 @@ describe('buildBundles honors a release (T445)', () => {
       expect(planCycle([dirty], prefs).toClean).toEqual([])
       expect(planCycle([build()], prefs).toClean).toHaveLength(1)
     })
+  })
+})
+
+describe('staleReleases: when a release mark is dropped (T445 delta 1)', () => {
+  const marks = { [reapItem(WT_CORPSE).id]: NOW - 1000 }
+
+  it('keeps every mark on a startup gather that has no Reaper snapshot (zero bundles)', () => {
+    expect(staleReleases([], marks)).toEqual([])
+  })
+
+  it('keeps the marks of a repo that dropped out of the scan', () => {
+    const otherRepo = build({ released: null }) // a bundle, but not the marked one
+    const other = { ...otherRepo, item: { ...otherRepo.item, id: 'other-repo::worktree::/x' } }
+    expect(staleReleases([other], marks)).toEqual([])
+  })
+
+  it('keeps a mark whose bundle is still strongly merged', () => {
+    expect(staleReleases([build()], marks)).toEqual([])
+  })
+
+  it('drops a mark whose bundle is present and no longer strongly merged', () => {
+    const reopened = build({
+      facts: { ancestorOfDefault: false, pr: pr({ state: 'OPEN', mergedAt: null }) }
+    })
+    expect(staleReleases([reopened], marks)).toEqual([reapItem(WT_CORPSE).id])
+    const weak = build({
+      facts: { ancestorOfDefault: null, pr: pr({ headRefOid: 'b'.repeat(40) }) }
+    })
+    expect(staleReleases([weak], marks)).toEqual([reapItem(WT_CORPSE).id])
   })
 })
