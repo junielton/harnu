@@ -2147,3 +2147,45 @@ describe('buildBundles — a worktree nested inside another (delta 6, F1)', () =
     expect(b.bucket).toBe('ready')
   })
 })
+
+describe('buildBundles — an unresolved known worktree path (delta 6, F1)', () => {
+  // A known worktree path that cannot be resolved may be an alias of a folder inside this
+  // one, so where it lies cannot be shown and the bundle is never proven ready.
+  const NESTED = `${WT_A}/.claude/worktrees/b`
+  const expectUnresolved = (b: ReturnType<typeof only>): void => {
+    expect(b.pathsResolved).toBe(false)
+    expect(b.bucket).toBe('review')
+    expect(b.reason?.code).toBe('path-unresolved')
+  }
+
+  it('a known folder inside the bundle that cannot be resolved is path-unresolved', () => {
+    expectUnresolved(
+      only(build({ knownFolders: [NESTED], canonical: unresolvedExactly([NESTED]) }))
+    )
+  })
+
+  it('a known folder above the bundle that cannot be resolved is path-unresolved', () => {
+    expectUnresolved(
+      only(
+        build({ knownFolders: ['/ws/org/proj'], canonical: unresolvedExactly(['/ws/org/proj']) })
+      )
+    )
+  })
+
+  it('another bundle nested inside it that cannot be resolved is path-unresolved', () => {
+    const nested = item({ path: NESTED, id: `${REPO}::worktree::${NESTED}`, branch: 'feat/b' })
+    const out = build({ items: [item(), nested], canonical: unresolvedExactly([NESTED]) })
+    expectUnresolved(out.find((b) => b.item.path === WT_A)!)
+  })
+
+  it('an unresolved known folder that does not relate to the bundle changes nothing', () => {
+    const b = only(
+      build({
+        knownFolders: [ELSEWHERE, `${WT_A}-other`],
+        canonical: unresolvedExactly([ELSEWHERE, `${WT_A}-other`])
+      })
+    )
+    expect(b.pathsResolved).toBe(true)
+    expect(b.bucket).toBe('ready')
+  })
+})
