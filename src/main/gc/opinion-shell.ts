@@ -158,7 +158,11 @@ function volumeDossier(v: OrphanVolumeItem): { dossier: OpinionDossier; group: s
 }
 
 /** Spawns `claude` with the given argv and resolves with its stdout; null on any failure. */
-async function runClaude(a: { cwd: string | null; argv: string[] }): Promise<string | null> {
+async function runClaude(a: {
+  cwd: string | null
+  argv: string[]
+  stdin: string
+}): Promise<string | null> {
   const bin = await resolveClaudePath()
   if (!bin) return null
   return new Promise<string | null>((resolve) => {
@@ -168,12 +172,12 @@ async function runClaude(a: { cwd: string | null; argv: string[] }): Promise<str
       settled = true
       resolve(value)
     }
-    // stdin is ignored: `claude -p` otherwise waits for it before it starts. The timeout is
-    // spawn's own, so a hung process is killed without this module owning a timer.
+    // The prompt goes in on stdin, never as an argument (one argv string over 128 KB is E2BIG). The
+    // timeout is spawn's own, so a hung process is killed without this module owning a timer.
     const child = spawn(bin, a.argv, {
       cwd: a.cwd ?? tmpdir(),
       env: sanitizeSpawnEnv(process.env, { execPath: process.execPath }),
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
       timeout: RUN_TIMEOUT_MS,
       killSignal: 'SIGTERM'
     })
@@ -181,6 +185,8 @@ async function runClaude(a: { cwd: string | null; argv: string[] }): Promise<str
     child.stdout?.on('data', (d: Buffer) => {
       if (stdout.length < STDOUT_MAX) stdout += d.toString()
     })
+    child.stdin?.on('error', () => {}) // the process may exit before it reads everything
+    child.stdin?.end(a.stdin)
     child.on('error', () => finish(null))
     child.on('exit', (code) => finish(code === 0 && stdout.trim() ? stdout : null))
   })

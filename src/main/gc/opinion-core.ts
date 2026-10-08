@@ -397,19 +397,23 @@ function withFlagValue(argv: string[], flag: string, value: string): string[] {
  * A Scheduler tick additionally allows git/gh commands, a few board verbs and web tools; the
  * advisor deliberately does not.
  */
-export function opinionArgv(a: { model: string; effort: string; prompt: string }): string[] {
+export function opinionArgv(a: { model: string; effort: string }): string[] {
   const base = tickArgv(
     {
       ...newWorker('gc-opinion'),
       mode: 'observe',
-      prompt: a.prompt,
+      prompt: 'stdin',
       model: safeModel(a.model),
       effort: safeEffort(a.effort)
     },
     {}
   )
+  // `tickArgv` ends with `-- <prompt>`. The prompt does not go in argv: one argv string over 128 KB
+  // fails with E2BIG on Linux, and a batch can be larger. It is written to the process's stdin,
+  // which `claude -p` reads with these flags (checked against the real CLI with a 195 KB prompt).
+  const flags = base.slice(0, base.lastIndexOf('--'))
   return withFlagValue(
-    withFlagValue(base, '--allowedTools', OPINION_TOOLS.join(',')),
+    withFlagValue(flags, '--allowedTools', OPINION_TOOLS.join(',')),
     '--disallowedTools',
     OPINION_TOOLS_DENY.join(',')
   )
@@ -542,8 +546,11 @@ export interface OpinionServiceDeps {
   keyFacts?(id: string): Promise<OpinionKeyFacts | null>
   /** The operator's routing table for this group. */
   route(group: string): Promise<{ model: string; effort: string }>
-  /** Runs the headless session and resolves with its stdout, or null when it failed. */
-  run(a: { cwd: string | null; argv: string[] }): Promise<string | null>
+  /**
+   * Runs the headless session and resolves with its stdout, or null when it failed. `stdin` is the
+   * prompt: it is written to the process, never passed as an argument.
+   */
+  run(a: { cwd: string | null; argv: string[]; stdin: string }): Promise<string | null>
   emitResult(r: GcOpinionResult): void
   emitDone(d: GcOpinionDone): void
   newId(): string
@@ -625,14 +632,11 @@ export function createOpinionService(deps: OpinionServiceDeps): OpinionService {
       const { model, effort } = await deps.route(group)
       for (const batch of chunk(items, OPINION_BATCH_SIZE)) {
         const batchIds = batch.map((b) => b.subject.dossier.id)
-        const argv = opinionArgv({
-          model,
-          effort,
-          prompt: buildPrompt(batch.map((b) => b.subject.dossier))
-        })
+        const argv = opinionArgv({ model, effort })
+        const stdin = buildPrompt(batch.map((b) => b.subject.dossier))
         let stdout: string | null = null
         try {
-          stdout = await deps.run({ cwd: group || null, argv })
+          stdout = await deps.run({ cwd: group || null, argv, stdin })
         } catch {
           stdout = null
         }
