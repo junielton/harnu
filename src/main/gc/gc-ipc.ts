@@ -218,7 +218,7 @@ export async function registerGcHandlers(
   const opinions = createOpinionService({
     cache: createOpinionCache(),
     ...createOpinionShell({
-      current: async () => cache ?? (await gather()),
+      current: async () => gatherer.cached() ?? (await gather()),
       git: shellDeps.executor.git
     }),
     emitResult: (r) => send('gc:opinion:result', r),
