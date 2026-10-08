@@ -1,4 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, realpathSync } from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 
@@ -385,6 +387,60 @@ describe('release_worktree handler (T445)', () => {
       serve(snapshot([fresh]))
       const ack = JSON.parse(textOf(await handler({ folder: WT_READY }, ctx(WT_READY))))
       expect(ack.bucketAfter).toBe('ready')
+    })
+  })
+
+  describe('D2-7: nits (T445 delta 2)', () => {
+    it('FOLDER_NOT_ALLOWED via { id } does not echo a folder: no "undefined", no path', async () => {
+      const { release } = serve(snapshot([fresh]))
+      const res = await handler({ id: listedId(fresh) }, ctx('', [MAIN]))
+      const text = textOf(res)
+      expect(text).toContain('FOLDER_NOT_ALLOWED')
+      expect(text).not.toContain('undefined')
+      expect(absolutePathsIn(text)).toEqual([])
+      expect(release).not.toHaveBeenCalled()
+    })
+
+    describe('a symlinked spelling is the same folder', () => {
+      let dir: string
+      let repoReal: string
+      let wtReal: string
+      beforeEach(() => {
+        dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'harnu-release-')))
+        repoReal = path.join(dir, 'real', 'www')
+        wtReal = path.join(dir, 'real', 'trees', 'PROJ-1-x')
+        mkdirSync(repoReal, { recursive: true })
+        mkdirSync(wtReal, { recursive: true })
+        symlinkSync(path.join(dir, 'real'), path.join(dir, 'alias'))
+      })
+      afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+      it('a symlinked spelling of the main checkout is IS_MAIN_CHECKOUT', async () => {
+        const b = bundle(wtReal, { item: { repoPath: repoReal }, bucket: 'in-use' })
+        const { release } = serve(snapshot([b]))
+        const spelled = path.join(dir, 'alias', 'www')
+        const res = await handler({ folder: spelled }, ctx(spelled))
+        expect(JSON.parse(textOf(res)).error).toBe('IS_MAIN_CHECKOUT')
+        expect(release).not.toHaveBeenCalled()
+      })
+
+      it('a symlinked spelling of a worktree finds its bundle', async () => {
+        const b = bundle(wtReal, { item: { repoPath: repoReal }, bucket: 'in-use' })
+        const { release } = serve(snapshot([b]))
+        const spelled = path.join(dir, 'alias', 'trees', 'PROJ-1-x')
+        const res = await handler({ folder: spelled }, ctx(spelled))
+        expect(res.isError).toBeFalsy()
+        expect(release).toHaveBeenCalledTimes(1)
+      })
+
+      it('a main checkout flagged by Harnu is recognised through a symlink too', async () => {
+        const b = bundle(wtReal, { item: { repoPath: repoReal }, bucket: 'in-use' })
+        serve(snapshot([b]))
+        const folders = [folderEntry(repoReal, { isMainWorktree: true })]
+        const spelled = path.join(dir, 'alias', 'www')
+        const res = await handler({ folder: spelled }, ctx(spelled, [], folders))
+        expect(JSON.parse(textOf(res)).error).toBe('IS_MAIN_CHECKOUT')
+      })
     })
   })
 
