@@ -240,3 +240,18 @@ describe('leftover folders are stat-ed (delta 3, item 6)', () => {
     expect(scan).toMatch(/await buildDirExists\(/)
   })
 })
+
+describe('a scheduled Reaper tick yields to a running GC job (delta 3, item 7: M20)', () => {
+  it('skips the whole tick, before it claims the slot or scans, while the GC is busy', () => {
+    const tick = between(reaper, 'const runScheduledTick', 'const scheduleTicks')
+    expect(tick).toMatch(/if \(gcBusy\?\.\(\)\) return/)
+    expect(tick.indexOf('gcBusy')).toBeLessThan(tick.indexOf('tickRunning = true'))
+    expect(tick.indexOf('gcBusy')).toBeLessThan(tick.indexOf('await scanAll('))
+  })
+
+  it('the busy check is the GC queue, registered once on the Reaper control', () => {
+    expect(reaper).toMatch(/setBusy: \(check\) => \{\s*gcBusy = check\s*\}/)
+    expect(ipc.match(/reaper\.setBusy\(/g)).toHaveLength(1)
+    expect(ipc).toMatch(/reaper\.setBusy\(\(\) => queue\.busy\(\)\)/)
+  })
+})
