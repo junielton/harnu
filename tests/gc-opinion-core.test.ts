@@ -4,7 +4,6 @@ import {
   OPINION_BUILTIN_TOOLS,
   OPINION_FALLBACK,
   cacheKeyOf,
-  OPINION_TOOLS,
   buildPrompt,
   opinionArgv,
   parseOpinions,
@@ -44,12 +43,24 @@ describe('opinionArgv: the read-only session (AC-2)', () => {
   // The advisor reads files and nothing else. No Bash at all: a git rule such as `git diff` can still
   // write any file through `--output=<path>`, and a prefix rule cannot say "no --output". Everything
   // git knows is already in the dossier, which main computes.
-  const allowed = (): string[] => (after('--allowedTools') ?? '').split(',')
+  const allowed = (): string[] => (after('--allowedTools') ?? '').split(',').filter(Boolean)
   const denied = (): string[] => (after('--disallowedTools') ?? '').split(',')
 
-  it('allows exactly Read, Grep and Glob', () => {
-    expect(allowed()).toEqual(['Read', 'Grep', 'Glob'])
-    expect([...OPINION_TOOLS]).toEqual(['Read', 'Grep', 'Glob'])
+  it('offers exactly Read, Grep and Glob, through --tools', () => {
+    expect(after('--tools')).toBe('Read,Grep,Glob')
+    expect([...OPINION_BUILTIN_TOOLS]).toEqual(['Read', 'Grep', 'Glob'])
+  })
+
+  // `--allowedTools Read,Grep,Glob` would auto-approve reads ANYWHERE the user can read (real CLI: a file
+  // outside the folder and a listing of ~/.ssh both succeeded). With no allow rule at all, the CLI's own
+  // permission check confines Read, Grep and Glob to the folder the process runs in, symlinks
+  // included, and refuses the rest (it cannot ask in `-p` mode).
+  it('has no blanket allow rule, so reads stay confined to the folder it runs in', () => {
+    expect(argv).not.toContain('--allowedTools')
+    expect(argv).not.toContain('--allowed-tools')
+    expect(argv).not.toContain('--add-dir')
+    expect(argv).not.toContain('--permission-mode')
+    expect(argv.join(' ')).not.toMatch(/Read\(/)
   })
 
   // `--allowedTools` and `--disallowedTools` are permission rules: they do not remove tools from the
@@ -86,7 +97,6 @@ describe('opinionArgv: the read-only session (AC-2)', () => {
   })
 
   it('keeps the permission rules as defence in depth next to --tools', () => {
-    expect(after('--allowedTools')).toBe('Read,Grep,Glob')
     expect(after('--disallowedTools')).toContain('Bash')
   })
 
@@ -112,12 +122,11 @@ describe('opinionArgv: the read-only session (AC-2)', () => {
   it('does not offer the Skill tool, in --tools or in the permission rules', () => {
     expect(after('--tools')?.split(',')).not.toContain('Skill')
     expect(allowed()).not.toContain('Skill')
-    expect(OPINION_TOOLS).not.toContain('Skill')
     expect(OPINION_BUILTIN_TOOLS).not.toContain('Skill')
   })
 
   it('never allows more than the Scheduler observe list does', () => {
-    for (const tool of OPINION_TOOLS) expect(OBSERVE_TOOLS).toContain(tool)
+    for (const tool of OPINION_BUILTIN_TOOLS) expect(OBSERVE_TOOLS).toContain(tool)
   })
 
   it('has no Bash rule anywhere in the allow argv, not even a git one', () => {

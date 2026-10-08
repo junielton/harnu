@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { existsSync, readdirSync, realpathSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { runSupervised } from '../src/main/gc/opinion-run'
 
 // The advisor's process supervision (T444 delta 3, item 5): a timeout sends SIGTERM and, if the child
@@ -102,5 +104,60 @@ describe('runSupervised', () => {
     )
     expect(out).not.toBeNull()
     expect((out ?? '').length).toBeLessThan(5 * 1024 * 1024)
+  })
+})
+
+describe('runSupervised: the folder it runs in is the whole readable world of the advisor', () => {
+  const printCwd = [
+    '-e',
+    'console.log(process.cwd()); console.log(JSON.stringify(require("fs").readdirSync(".")))'
+  ]
+
+  it('with no folder it runs in a fresh, empty, private directory, never the shared temp dir', async () => {
+    const out = await runSupervised(NODE, printCwd, {
+      ...BASE,
+      cwd: null,
+      stdin: '',
+      timeoutMs: 5000
+    })
+    const [cwd, listing] = (out ?? '').trim().split('\n')
+    expect(realpathSync(cwd)).not.toBe(realpathSync(tmpdir()))
+    expect(JSON.parse(listing)).toEqual([])
+  })
+
+  it('removes that directory when the process is done', async () => {
+    let seen = ''
+    const out = await runSupervised(NODE, printCwd, {
+      ...BASE,
+      cwd: null,
+      stdin: '',
+      timeoutMs: 5000,
+      onSpawn: () => {}
+    })
+    seen = (out ?? '').trim().split('\n')[0]
+    expect(seen).not.toBe('')
+    expect(existsSync(seen)).toBe(false)
+  })
+
+  it('uses two different directories for two runs', async () => {
+    const a = (
+      await runSupervised(NODE, printCwd, { ...BASE, cwd: null, stdin: '', timeoutMs: 5000 })
+    )?.split('\n')[0]
+    const b = (
+      await runSupervised(NODE, printCwd, { ...BASE, cwd: null, stdin: '', timeoutMs: 5000 })
+    )?.split('\n')[0]
+    expect(a).not.toBe(b)
+  })
+
+  it('runs in the given folder when there is one', async () => {
+    const dir = tmpdir()
+    const out = await runSupervised(NODE, printCwd, {
+      ...BASE,
+      cwd: dir,
+      stdin: '',
+      timeoutMs: 5000
+    })
+    expect(realpathSync((out ?? '').split('\n')[0])).toBe(realpathSync(dir))
+    expect(readdirSync(dir)).toBeDefined()
   })
 })
