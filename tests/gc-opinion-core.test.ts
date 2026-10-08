@@ -63,7 +63,9 @@ describe('opinionArgv: the read-only session (AC-2)', () => {
     expect(argv).not.toContain('--allowed-tools')
     expect(argv).not.toContain('--add-dir')
     expect(argv).not.toContain('--permission-mode')
-    expect(argv.join(' ')).not.toMatch(/Read\(/)
+    // A `Read(` rule may only be a deny rule (Claude's data folder), never an allow rule.
+    const withoutDeny = argv.filter((_, i) => argv[i - 1] !== '--disallowedTools')
+    expect(withoutDeny.join(' ')).not.toMatch(/Read\(/)
   })
 
   // `--allowedTools` and `--disallowedTools` are permission rules: they do not remove tools from the

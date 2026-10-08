@@ -10,6 +10,7 @@
 import { getFleetFolders } from '../fleet-model'
 import { resolveClaudePath } from '../claude-cli'
 import { sanitizeSpawnEnv } from '../appimage-env'
+import { homedir } from 'node:os'
 import { gatherDiff, gatherKeyGit } from './opinion-git'
 import { runSupervised } from './opinion-run'
 import { lastFateInputs } from '../reaper/scanner-shell'
@@ -18,6 +19,8 @@ import type { WorktreeBundle } from './bundle-core'
 import type { OrphanVolumeItem } from './gc-housekeeping-input'
 import {
   OPINION_ROUTING_KIND,
+  advisorEnv,
+  confineCwd,
   type OpinionDossier,
   type OpinionKeyFacts,
   type OpinionLookup,
@@ -40,7 +43,10 @@ export interface OpinionShellOptions {
   git(path: string, args: string[]): Promise<string>
 }
 
-type ShellDeps = Pick<OpinionServiceDeps, 'classify' | 'dossier' | 'keyFacts' | 'route' | 'run'>
+type ShellDeps = Pick<
+  OpinionServiceDeps,
+  'classify' | 'dossier' | 'keyFacts' | 'route' | 'run' | 'dataDirs'
+>
 
 /** The most recent chat held in exactly this folder: its summary, else its first prompt. */
 async function lastSummaryIn(path: string): Promise<string | null> {
@@ -151,7 +157,12 @@ function volumeDossier(v: OrphanVolumeItem): { dossier: OpinionDossier; group: s
   }
 }
 
-/** Resolves `claude` and runs it with the advisor's argv; the prompt goes in on stdin. */
+/**
+ * Resolves `claude` and runs it with the advisor's argv; the prompt goes in on stdin. The folder it
+ * runs in is its whole readable world, so it is never HOME, an ancestor of HOME or a root (then the
+ * runner makes an empty directory of its own), and auto memory is switched off so a repository's
+ * MEMORY.md is not injected into the context.
+ */
 async function runClaude(a: {
   cwd: string | null
   argv: string[]
@@ -160,11 +171,17 @@ async function runClaude(a: {
   const bin = await resolveClaudePath()
   if (!bin) return null
   return runSupervised(bin, a.argv, {
-    cwd: a.cwd,
-    env: sanitizeSpawnEnv(process.env, { execPath: process.execPath }),
+    cwd: confineCwd(a.cwd, homedir()),
+    env: advisorEnv(sanitizeSpawnEnv(process.env, { execPath: process.execPath })),
     stdin: a.stdin,
     timeoutMs: RUN_TIMEOUT_MS
   })
+}
+
+/** Claude data folders to close besides `~/.claude`: where `CLAUDE_CONFIG_DIR` points, when it is set. */
+function claudeDataDirs(): string[] {
+  const dir = process.env.CLAUDE_CONFIG_DIR
+  return dir && dir.trim() ? [dir] : []
 }
 
 /** The shell half of {@link OpinionServiceDeps}: which ids exist, their facts, their model, the spawn. */
@@ -194,6 +211,7 @@ export function createOpinionShell(opts: OpinionShellOptions): ShellDeps {
     // The operator's routing table, per repo (design.md: "Model follows the operator's routing
     // table"), as kind `scout`. The table is read, never written.
     route: (group) => resolveFolderRouting(group, OPINION_ROUTING_KIND),
-    run: runClaude
+    run: runClaude,
+    dataDirs: claudeDataDirs()
   }
 }

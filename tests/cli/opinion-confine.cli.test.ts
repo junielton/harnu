@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { opinionArgv } from '../../src/main/gc/opinion-core'
+import { advisorEnv, opinionArgv } from '../../src/main/gc/opinion-core'
 
 // What the advisor can READ against the real CLI (T444 delta 4, item 2). With no blanket allow rule the
 // CLI confines Read, Grep and Glob to the folder it runs in and refuses everything else, symlinks out
@@ -26,8 +26,9 @@ async function tryReads(prompt: string, cwd: string): Promise<Call[]> {
     a === 'json' ? 'stream-json' : a
   )
   flags.push('--verbose')
-  const env = { ...process.env } as Record<string, string>
-  delete env.HARNU_SPAWN_TOKEN
+  const base = { ...process.env } as Record<string, string>
+  delete base.HARNU_SPAWN_TOKEN
+  const env = advisorEnv(base) // as the advisor runs: no auto memory, so no folder is created under ~/.claude
   const out = await new Promise<string>((resolve) => {
     const child = spawn('claude', flags, {
       cwd,

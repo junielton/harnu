@@ -515,6 +515,62 @@ export const OPINION_TOOLS_DENY: readonly string[] = [
   'WebSearch'
 ]
 
+const READ_TOOLS = ['Read', 'Grep', 'Glob'] as const
+
+/**
+ * Deny rules that close Claude's own data folder: `~/.claude` always, plus each given folder (for
+ * `CLAUDE_CONFIG_DIR`) in the CLI's absolute `//path` form, for Read, Grep and Glob. That folder holds
+ * session transcripts, tool results and memory, and the CLI otherwise lets a session read the project
+ * folder of the repository it runs in. Verified on the real CLI for all three tools in both forms.
+ */
+export function dataDirRules(dirs: readonly string[]): string[] {
+  const roots = ['~/.claude']
+  for (const raw of dirs) {
+    const d = raw.trim().replace(/\\/g, '/').replace(/\/+$/, '')
+    const drive = /^([A-Za-z]):(\/.*)?$/.exec(d)
+    const abs = drive
+      ? `//${drive[1].toLowerCase()}${drive[2] ?? ''}`
+      : d.startsWith('/')
+        ? `/${d}`
+        : ''
+    if (abs && abs !== '//' && !roots.includes(abs)) roots.push(abs)
+  }
+  return roots.flatMap((r) => READ_TOOLS.map((t) => `${t}(${r}/**)`))
+}
+
+/**
+ * The child's environment: the given one with auto memory switched off. With it on, the CLI injects
+ * the MEMORY.md of the repository's project folder into the model's context, which would send notes
+ * the operator never meant to share. Does not mutate its input.
+ */
+export function advisorEnv(base: Record<string, string>): Record<string, string> {
+  const env = { ...base }
+  delete env.CLAUDE_CODE_ENABLE_AUTO_MEMORY
+  env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1'
+  return env
+}
+
+const normalPath = (p: string): string => {
+  const t = p.trim().replace(/\\/g, '/').replace(/\/+$/, '')
+  return /^[A-Za-z]:/.test(t) ? t.toLowerCase() : t
+}
+
+/**
+ * The folder the advisor runs in is its whole readable world, so it must never be HOME, an ancestor
+ * of HOME, or a filesystem root. Those, and anything that is not an absolute path, become null: the
+ * runner then uses a fresh empty directory of its own.
+ */
+export function confineCwd(cwd: string | null, home: string): string | null {
+  if (cwd === null) return null
+  const c = normalPath(cwd)
+  const isAbsolute = c.startsWith('/') || /^[a-z]:\//.test(c)
+  if (!isAbsolute) return null
+  if (c === '' || /^[a-z]:$/.test(c)) return null // a root: `/` or a drive
+  const h = normalPath(home)
+  if (h !== '' && (c === h || h.startsWith(`${c}/`))) return null
+  return cwd
+}
+
 /** Removes a flag and its value from an argv. */
 function withoutFlag(argv: string[], flag: string): string[] {
   const i = argv.indexOf(flag)
@@ -538,7 +594,12 @@ function withFlagValue(argv: string[], flag: string, value: string): string[] {
  * A Scheduler tick additionally allows git/gh commands, a few board verbs and web tools; the
  * advisor deliberately does not.
  */
-export function opinionArgv(a: { model: string; effort: string }): string[] {
+export function opinionArgv(a: {
+  model: string
+  effort: string
+  /** Extra Claude data folders to close, such as `CLAUDE_CONFIG_DIR`; `~/.claude` is always closed. */
+  dataDirs?: readonly string[]
+}): string[] {
   const base = tickArgv(
     {
       ...newWorker('gc-opinion'),
@@ -557,7 +618,7 @@ export function opinionArgv(a: { model: string; effort: string }): string[] {
     ...withFlagValue(
       withoutFlag(flags, '--allowedTools'),
       '--disallowedTools',
-      OPINION_TOOLS_DENY.join(',')
+      [...OPINION_TOOLS_DENY, ...dataDirRules(a.dataDirs ?? [])].join(',')
     ),
     '--tools',
     OPINION_BUILTIN_TOOLS.join(',')
@@ -709,6 +770,8 @@ export interface OpinionServiceDeps {
   emitResult(r: GcOpinionResult): void
   emitDone(d: GcOpinionDone): void
   newId(): string
+  /** Claude data folders to close besides `~/.claude` (CLAUDE_CONFIG_DIR). */
+  dataDirs?: readonly string[]
 }
 
 export interface OpinionService {
@@ -807,7 +870,7 @@ export function createOpinionService(deps: OpinionServiceDeps): OpinionService {
       const { model, effort } = await deps.route(group)
       for (const batch of chunk(items, OPINION_BATCH_SIZE)) {
         const batchIds = batch.map((b) => b.subject.dossier.id)
-        const argv = opinionArgv({ model, effort })
+        const argv = opinionArgv({ model, effort, dataDirs: deps.dataDirs })
         const stdin = buildPrompt(batch.map((b) => b.subject.dossier))
         let stdout: string | null = null
         try {
