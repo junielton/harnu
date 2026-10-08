@@ -460,13 +460,48 @@ describe('CleanupBlockPanel — R / D / K / A on the open panel', () => {
     w.unmount()
   })
 
-  it('A does nothing: Ask for an opinion is disabled until a later release', () => {
-    const w = mounted(blockWith('review'))
+  it('A asks for an opinion — the button that is shown and enabled — and removes nothing', () => {
+    const block = blockWith('review')
+    const w = mounted(block)
     press('a')
-    expect(w.emitted()).not.toHaveProperty('ask')
+    press('A')
+    expect(w.emitted('ask')).toEqual([[block.id], [block.id]])
     expect(
       Object.keys(w.emitted()).filter((k) => ['remove', 'keep', 'dehydrate'].includes(k))
     ).toEqual([])
+    w.unmount()
+  })
+
+  it('A does nothing while the opinion is already being asked, or the item is being cleaned', () => {
+    const asking = mounted(blockWith('review'), { asking: true })
+    press('a')
+    expect(asking.emitted('ask')).toBeUndefined()
+    asking.unmount()
+    const busy = mounted(blockWith('review'), { state: 'busy' })
+    press('a')
+    expect(busy.emitted('ask')).toBeUndefined()
+    busy.unmount()
+  })
+
+  it('A does nothing on a ready item, which has no Ask button', () => {
+    const w = mounted(blockWith('ready', { verdict: 'harvestable', blockers: [] }))
+    press('a')
+    expect(w.emitted('ask')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('A is ignored with a modifier, in a field and under an open dialog, like the other letters', () => {
+    const w = mounted(blockWith('review'))
+    press('a', { ctrlKey: true })
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    press('a', {}, input)
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    dialog.setAttribute('aria-modal', 'true')
+    document.body.appendChild(dialog)
+    press('a')
+    expect(w.emitted('ask')).toBeUndefined()
     w.unmount()
   })
 

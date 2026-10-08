@@ -337,3 +337,19 @@ describe('after a reload the chips come back without a new ask', () => {
     expect(rig.gcClean).not.toHaveBeenCalled()
   })
 })
+
+describe('the A shortcut on the open panel runs the same ask', () => {
+  it('asks about the open item and fills the chip, without touching gc:clean', async () => {
+    const rig = install(snap())
+    await mountView()
+    await click(rowOf(D1))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }))
+    await flushPromises()
+    expect(rig.gcOpinion).toHaveBeenCalledTimes(1)
+    expect(rig.gcOpinion.mock.calls[0][0]).toEqual([D1])
+    expect(chipOf(D1)?.getAttribute('data-state')).toBe('pending')
+    await rig.result(safe(D1))
+    expect(chipOf(D1)?.getAttribute('data-state')).toBe('safe')
+    expect(rig.gcClean).not.toHaveBeenCalled()
+  })
+})
