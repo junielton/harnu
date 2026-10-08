@@ -3,6 +3,7 @@ import { bundle, NOW, reapItem } from './gc-fixtures'
 import { buildGcModel, type GcModel } from '../src/renderer/src/lib/gc-model'
 import {
   clearPending,
+  dropUnconfirmed,
   fingerprintOf,
   markPending,
   opinionOf,
@@ -204,5 +205,56 @@ describe('pending bookkeeping', () => {
   it('returns the same set when there is nothing to clear', () => {
     const s: ReadonlySet<string> = new Set(['a'])
     expect(clearPending(s, ['zzz'])).toBe(s)
+  })
+})
+
+describe('an opinion belongs to the item as it was when asked', () => {
+  it('stamps the fingerprint taken at ask time, not the one at arrival', () => {
+    const { m, ids } = model()
+    const asked = fingerprintOf(m.byId.get(ids.a)!)
+    const map = recordOpinion(new Map(), op(ids.a, 'safe'), m, { askedFingerprint: asked })
+    expect(map.get(ids.a)?.fingerprint).toBe(asked)
+  })
+
+  it('drops a result whose asked-for fingerprint no longer matches the current item', () => {
+    const { m, ids } = model()
+    const asked = fingerprintOf(m.byId.get(ids.a)!)
+    const moved = buildGcModel(
+      snap([
+        wt('a', 'review', 900 * MIB, { tip: 'd'.repeat(40) }),
+        wt('b', 'review', 500 * MIB),
+        wt('c', 'review', 300 * MIB),
+        wt('r', 'ready', 100 * MIB)
+      ])
+    )
+    const before: OpinionMap = new Map()
+    const after = recordOpinion(before, op(ids.a, 'safe'), moved, { askedFingerprint: asked })
+    expect(after).toBe(before)
+    expect(after.size).toBe(0)
+  })
+
+  it('records whether main cached the answer (durable) and defaults to durable', () => {
+    const { m, ids } = model()
+    expect(recordOpinion(new Map(), op(ids.a, 'safe'), m).get(ids.a)?.durable).toBe(true)
+    expect(
+      recordOpinion(new Map(), op(ids.a, 'unsure'), m, { durable: false }).get(ids.a)?.durable
+    ).toBe(false)
+  })
+
+  it('dropUnconfirmed removes the durable opinions main no longer confirms, and only those asked about', () => {
+    const { m, ids } = model()
+    let map: OpinionMap = recordOpinion(new Map(), op(ids.a, 'safe'), m)
+    map = recordOpinion(map, op(ids.b, 'keep'), m)
+    map = recordOpinion(map, op(ids.c, 'unsure'), m, { durable: false })
+    const next = dropUnconfirmed(map, [ids.a, ids.b, ids.c], new Set([ids.b]))
+    expect([...next.keys()].sort()).toEqual([ids.b, ids.c].sort()) // a dropped; c is not durable
+    // An id that was not part of the check is left alone.
+    expect(dropUnconfirmed(map, [ids.b], new Set()).has(ids.a)).toBe(true)
+  })
+
+  it('dropUnconfirmed returns the same map when nothing dropped', () => {
+    const { m, ids } = model()
+    const map = recordOpinion(new Map(), op(ids.a, 'safe'), m)
+    expect(dropUnconfirmed(map, [ids.a], new Set([ids.a]))).toBe(map)
   })
 })

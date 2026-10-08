@@ -150,7 +150,9 @@ describe('the service: ask (AC-1)', () => {
     await r.service.idle()
     expect(verdicts(r)).toEqual({ a: 'safe', b: 'safe' })
     expect(r.results.every((x) => x.jobId === 'job-1')).toBe(true)
-    expect(r.done).toEqual([{ jobId: 'job-1', answered: 2, cached: 0, refused: 0, failed: 0 }])
+    expect(r.done).toEqual([
+      { jobId: 'job-1', answered: 2, cached: 0, refused: 0, failed: 0, stale: 0 }
+    ])
   })
 
   it('refuses ready, in-use and unknown ids per id and never runs the model for them', async () => {
@@ -492,5 +494,88 @@ describe('the peek: gc:opinion:cached serves main’s cache and never asks', () 
     await expect(r.service.cached(Array.from({ length: 500 }, (_, i) => `i${i}`))).resolves.toEqual(
       {}
     )
+  })
+})
+
+describe('a result is bound to the item as it was when asked (stale chips)', () => {
+  const resultOf = (r: Rig, id: string): GcOpinionResult | undefined =>
+    r.results.filter((x) => x.id === id).pop()
+
+  it('flags a result stale and caches nothing when the dirty set changed while the model ran', async () => {
+    const r = rig(['a'])
+    r.state.answer = (prompt) => {
+      r.state.dossiers.a = dossier('a', { dirtyFiles: [' M a.ts', '?? appeared-meanwhile.ts'] })
+      return allSafe(prompt)
+    }
+    r.service.start(['a'])
+    await r.service.idle()
+    expect(resultOf(r, 'a')).toEqual({ jobId: 'job-1', id: 'a', stale: true })
+    expect(r.done[0]).toMatchObject({ answered: 0, stale: 1 })
+    expect(await r.service.cached(['a'])).toEqual({})
+    // Neither state has an opinion: the next ask asks again.
+    r.state.answer = allSafe
+    r.service.start(['a'])
+    await r.service.idle()
+    expect(r.runs).toHaveLength(2)
+  })
+
+  it.each([
+    ['head', { head: 'bbb222' }],
+    ['fate', { fate: 'open' }],
+    ['pull request state', { prState: 'OPEN' }],
+    ['reason', { reasonCode: 'unpushed' }]
+  ])('also when the %s changed while the model ran', async (_name, change) => {
+    const r = rig(['a'])
+    r.state.answer = (prompt) => {
+      r.state.dossiers.a = { ...r.state.dossiers.a, ...change }
+      return allSafe(prompt)
+    }
+    r.service.start(['a'])
+    await r.service.idle()
+    expect(resultOf(r, 'a')).toMatchObject({ stale: true })
+  })
+
+  it('flags only the item that changed, not its neighbours in the batch', async () => {
+    const r = rig(['a', 'b'])
+    r.state.answer = (prompt) => {
+      r.state.dossiers.b = dossier('b', { head: 'moved' })
+      return allSafe(prompt)
+    }
+    r.service.start(['a', 'b'])
+    await r.service.idle()
+    expect(resultOf(r, 'a')).toMatchObject({ verdict: 'safe', durable: true })
+    expect(resultOf(r, 'b')).toMatchObject({ stale: true })
+  })
+
+  it('an item that vanished while the model ran is stale too', async () => {
+    const r = rig(['a'])
+    r.state.answer = (prompt) => {
+      delete r.state.dossiers.a
+      return allSafe(prompt)
+    }
+    r.service.start(['a'])
+    await r.service.idle()
+    expect(resultOf(r, 'a')).toMatchObject({ stale: true })
+  })
+
+  it('marks an answer durable when it is cached, and a fallback unsure not', async () => {
+    const r = rig(['a', 'b'])
+    r.state.answer = () =>
+      JSON.stringify({ opinions: [{ id: 'item-1', verdict: 'safe', reason: 'r', evidence: 'e' }] })
+    r.service.start(['a', 'b'])
+    await r.service.idle()
+    expect(resultOf(r, 'a')).toMatchObject({ verdict: 'safe', durable: true })
+    expect(resultOf(r, 'b')).toMatchObject({ verdict: 'unsure', durable: false })
+    r.service.start(['a'])
+    await r.service.idle()
+    expect(resultOf(r, 'a')).toMatchObject({ verdict: 'safe', durable: true }) // from the cache
+  })
+
+  it('a failed run reads unsure and not durable', async () => {
+    const r = rig(['a'])
+    r.state.answer = () => null
+    r.service.start(['a'])
+    await r.service.idle()
+    expect(resultOf(r, 'a')).toMatchObject({ verdict: 'unsure', durable: false })
   })
 })

@@ -716,3 +716,114 @@ describe('gc store — chips survive a reload (the peek)', () => {
     expect(gc.opinions.size).toBe(0)
   })
 })
+
+describe('gc store — an opinion belongs to the item as it was when asked', () => {
+  const movedSnap = (): GcSnapshot => {
+    const moved = snap()
+    moved.bundles = moved.bundles.map((b) =>
+      b.bucket === 'review' ? { ...b, localTip: '9'.repeat(40) } : b
+    )
+    return moved
+  }
+  const verdict = (id: string, over: Partial<GcOpinionResult> = {}): GcOpinionResult =>
+    ({
+      jobId: 'o1',
+      id,
+      verdict: 'safe',
+      reason: 'r',
+      evidence: 'e',
+      durable: true,
+      ...over
+    }) as GcOpinionResult
+
+  it('drops a result when the item moved between the ask and the arrival', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    const review = gc.model!.review[0].id
+    await gc.askOpinion([review])
+    api.gcSnapshot.mockResolvedValue(movedSnap())
+    await gc.refresh()
+    await vi.advanceTimersByTimeAsync(0)
+    api.push.opinion(verdict(review))
+    expect(gc.opinionFor(review)).toBeNull()
+    expect(gc.isAsking(review)).toBe(false)
+  })
+
+  it('drops a result main flagged stale and clears its pending state', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    const review = gc.model!.review[0].id
+    await gc.askOpinion([review])
+    api.push.opinion({ jobId: 'o1', id: review, stale: true })
+    expect(gc.opinionFor(review)).toBeNull()
+    expect(gc.isAsking(review)).toBe(false)
+  })
+
+  it('keeps a result whose item did not move, stamped with the fingerprint from the ask', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    const review = gc.model!.review[0].id
+    await gc.askOpinion([review])
+    api.push.opinion(verdict(review))
+    expect(gc.opinionFor(review)?.verdict).toBe('safe')
+  })
+
+  it('clears a chip once main no longer confirms it, after the next snapshot (the PR state changed)', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    const review = gc.model!.review[0].id
+    await gc.askOpinion([review])
+    api.push.opinion(verdict(review))
+    expect(gc.opinionFor(review)).not.toBeNull()
+    // The pull request state moved: main's key differs, so its cache no longer returns the opinion.
+    api.gcOpinionCached.mockResolvedValue({})
+    await gc.refresh()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gc.opinionFor(review)).toBeNull()
+    expect(gc.safeOpinionIds).toEqual([])
+  })
+
+  it('keeps a chip main still confirms across a snapshot', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    const review = gc.model!.review[0].id
+    await gc.askOpinion([review])
+    api.push.opinion(verdict(review))
+    api.gcOpinionCached.mockImplementation(async (ids: string[]) =>
+      Object.fromEntries(
+        ids
+          .filter((i) => i === review)
+          .map((i) => [i, { id: i, verdict: 'safe', reason: 'r', evidence: 'e' }])
+      )
+    )
+    await gc.refresh()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gc.opinionFor(review)?.verdict).toBe('safe')
+  })
+
+  it('does not re-validate a chip main never cached (an advisor that could not answer)', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    await gc.init()
+    await vi.advanceTimersByTimeAsync(0)
+    const review = gc.model!.review[0].id
+    await gc.askOpinion([review])
+    api.push.opinion(
+      verdict(review, { verdict: 'unsure', durable: false } as Partial<GcOpinionResult>)
+    )
+    api.gcOpinionCached.mockResolvedValue({})
+    await gc.refresh()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(gc.opinionFor(review)?.verdict).toBe('unsure')
+  })
+})

@@ -353,3 +353,29 @@ describe('the A shortcut on the open panel runs the same ask', () => {
     expect(rig.gcClean).not.toHaveBeenCalled()
   })
 })
+
+describe('a chip never outlives the item it was about', () => {
+  it('drops a result the advisor flagged stale: the dirty set changed between the ask and the arrival', async () => {
+    const rig = install(snap())
+    await mountView()
+    await click(rowOf(D1))
+    await click(q('[data-testid="panel-ask"]'))
+    await rig.result({ id: D1, stale: true } as Omit<GcOpinionResult, 'jobId'>)
+    expect(chipOf(D1)).toBeNull()
+    expect(q('[data-testid="review-remove-safe"]')).toBeNull()
+  })
+
+  it('clears a shown chip, and the Remove-the-safe button, when the pull request state changes', async () => {
+    const rig = install(snap())
+    rig.gcOpinionCached.mockResolvedValue({ [D1]: { id: D1, ...safe(D1) } })
+    await mountView()
+    await flushPromises()
+    expect(chipOf(D1)?.getAttribute('data-state')).toBe('safe')
+    expect(q('[data-testid="review-remove-safe"]')).not.toBeNull()
+    rig.gcOpinionCached.mockResolvedValue({}) // main's key moved (the PR state), so it holds no opinion
+    await click(q('[data-testid="cleanup-rescan"]'))
+    await flushPromises()
+    expect(chipOf(D1)).toBeNull()
+    expect(q('[data-testid="review-remove-safe"]')).toBeNull()
+  })
+})
