@@ -621,3 +621,74 @@ describe('the prompt goes over stdin, never in argv (E2BIG)', () => {
     expect(Buffer.byteLength(stdin)).toBeLessThan(250_000)
   })
 })
+
+describe('an item whose git facts could not be computed is never sent, never cached, never confirmed', () => {
+  const broken = (id: string): OpinionDossier =>
+    dossier(id, { diffStat: '', unavailable: { diff: 'no default branch found' } })
+
+  it('is answered unsure by Harnu itself and the model is not run for it', async () => {
+    const r = rig(['a'])
+    r.state.dossiers.a = broken('a')
+    r.service.start(['a'])
+    await r.service.idle()
+    expect(r.runs).toHaveLength(0)
+    const res = r.results.find((x) => x.id === 'a')
+    expect(res).toMatchObject({ verdict: 'unsure', durable: false })
+    expect((res as { reason: string }).reason).toMatch(
+      /Harnu could not compute the diff against the default branch/
+    )
+    expect(r.done[0]).toMatchObject({ answered: 0, failed: 1 })
+  })
+
+  it('is not cached, so the peek and the safe re-check never return it', async () => {
+    const r = rig(['a'])
+    r.state.dossiers.a = broken('a')
+    r.service.start(['a'])
+    await r.service.idle()
+    expect(await r.service.cached(['a'])).toEqual({})
+  })
+
+  it('does not hide a healthy neighbour: only the healthy item reaches the model', async () => {
+    const r = rig(['a', 'b'])
+    r.state.dossiers.a = broken('a')
+    r.service.start(['a', 'b'])
+    await r.service.idle()
+    expect(r.runs).toHaveLength(1)
+    expect(r.runs[0].stdin).toContain('Branch: b')
+    expect(r.runs[0].stdin).not.toContain('Branch: a')
+    expect(verdicts(r)).toEqual({ a: 'unsure', b: 'safe' })
+  })
+
+  it('an opinion cached while healthy is no longer served once a fact cannot be computed', async () => {
+    const r = rig(['a'])
+    r.service.start(['a'])
+    await r.service.idle()
+    expect(Object.keys(await r.service.cached(['a']))).toEqual(['a'])
+    r.state.dossiers.a = broken('a')
+    expect(await r.service.cached(['a'])).toEqual({})
+  })
+
+  it('an answer for an item that became uncomputable while the model ran is stale', async () => {
+    const r = rig(['a'])
+    r.state.answer = (prompt) => {
+      r.state.dossiers.a = broken('a')
+      return allSafe(prompt)
+    }
+    r.service.start(['a'])
+    await r.service.idle()
+    expect(r.results.find((x) => x.id === 'a')).toMatchObject({ stale: true })
+  })
+
+  it('names every missing fact in the answer', async () => {
+    const r = rig(['a'])
+    r.state.dossiers.a = dossier('a', {
+      unavailable: { diff: 'd', uncommitted: 'u', head: 'h' }
+    })
+    r.service.start(['a'])
+    await r.service.idle()
+    const reason = (r.results.find((x) => x.id === 'a') as { reason: string }).reason
+    expect(reason).toMatch(/diff/)
+    expect(reason).toMatch(/uncommitted files/)
+    expect(reason).toMatch(/head/)
+  })
+})

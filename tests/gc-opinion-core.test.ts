@@ -3,6 +3,7 @@ import {
   OPINION_BATCH_SIZE,
   OPINION_BUILTIN_TOOLS,
   OPINION_FALLBACK,
+  cacheKeyOf,
   OPINION_TOOLS,
   buildPrompt,
   opinionArgv,
@@ -546,5 +547,56 @@ describe('the routed model and effort stay data', () => {
 
   it('names the fallback once, as scout’s own default', () => {
     expect(OPINION_FALLBACK).toEqual({ model: 'haiku', effort: 'low' })
+  })
+})
+
+describe('a git fact that could not be computed is stated, never rendered as empty (fail closed)', () => {
+  const broken = (over: Partial<OpinionDossier> = {}): OpinionDossier =>
+    dossier({
+      diffStat: '',
+      dirtyFiles: [],
+      head: null,
+      unavailable: {
+        diff: 'no default branch found (tried origin/HEAD, main, master)',
+        uncommitted: 'git output too large',
+        head: 'fatal: not a git repository'
+      },
+      ...over
+    })
+
+  it('renders each missing fact as COULD NOT BE COMPUTED with its reason', () => {
+    const p = buildPrompt([broken()])
+    expect(p).toMatch(
+      /Diff against the default branch: COULD NOT BE COMPUTED \(no default branch found/
+    )
+    expect(p).toMatch(/Uncommitted files: COULD NOT BE COMPUTED \(git output too large\)/)
+    expect(p).toMatch(/HEAD: COULD NOT BE COMPUTED \(fatal: not a git repository\)/)
+  })
+
+  it('never says "(no difference)" or "(none)" for a fact it could not compute', () => {
+    const p = buildPrompt([broken()])
+    expect(p).not.toContain('(no difference)')
+    expect(p).not.toContain('(none)')
+  })
+
+  it('still says "(no difference)" and "(none)" for a fact it did compute and found empty', () => {
+    const p = buildPrompt([dossier({ diffStat: '', dirtyFiles: [] })])
+    expect(p).toContain('(no difference)')
+    expect(p).toContain('(none)')
+    expect(p).not.toContain('COULD NOT BE COMPUTED')
+  })
+
+  it('tells the advisor that such a line is unknown, not empty, and never to answer safe for it', () => {
+    const p = buildPrompt([dossier()])
+    expect(p).toMatch(/COULD NOT BE COMPUTED/)
+    expect(p).toMatch(/unknown, not empty/i)
+    expect(p).toMatch(/never answer "safe"/i)
+  })
+
+  it('is uncacheable: no cache key exists for a dossier with a missing fact', () => {
+    expect(cacheKeyOf(dossier())).toEqual(expect.any(String))
+    expect(cacheKeyOf(broken())).toBeNull()
+    expect(cacheKeyOf(dossier({ unavailable: { head: 'x' } }))).toBeNull()
+    expect(cacheKeyOf(dossier({ unavailable: {} }))).toEqual(expect.any(String))
   })
 })
