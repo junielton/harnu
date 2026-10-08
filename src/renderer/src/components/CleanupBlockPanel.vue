@@ -366,13 +366,11 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
       <p v-if="nothingChanged" class="text-caption text-text-3" data-testid="panel-nothing-changed">
         {{ t('cleanup.gc.panel.nothingChanged') }}
       </p>
+      <!-- An error that is not a known refusal never shows as text: a plain sentence says what happened, and
+           the raw text travels only with "Copy error". -->
       <div v-if="failure.error && !failure.refusal" class="flex items-start gap-2">
-        <p
-          class="line-clamp-2 min-w-0 flex-1 break-words font-mono text-caption text-text-3"
-          :title="failure.error"
-          data-testid="panel-error"
-        >
-          {{ failure.error }}
+        <p class="min-w-0 flex-1 text-ui text-text-2" data-testid="panel-generic">
+          {{ t('cleanup.gc.panel.genericStop') }}
         </p>
         <button
           type="button"

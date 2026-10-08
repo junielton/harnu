@@ -2313,7 +2313,10 @@
         "trash": "Enviar o checkout à lixeira",
         "prune": "Podar o worktree",
         "branchDelete": "Apagar a branch",
-        "unknown": "uma etapa desconhecida"
+        "unknown": "uma etapa desconhecida",
+        "reprobe": "Verificar de novo",
+        "rmVolumes": "Remover volumes",
+        "detach": "Desanexar o worktree"
       },
       "panel": {
         "close": "Fechar painel",
@@ -2349,7 +2352,8 @@
         "inUseNote": "Deixado como está enquanto uma sessão trabalha aqui ou o pull request está aberto.",
         "happenedTitle": "O que aconteceu",
         "stoppedAt": "Parou em “{step}”",
-        "nothingChanged": "Nada foi alterado."
+        "nothingChanged": "Nada foi alterado.",
+        "genericStop": "O Harnu parou este item por uma verificação de segurança."
       },
       "list": {
         "label": "Worktrees por grupo",
@@ -2601,7 +2605,10 @@
         "sessionOpen": "Há uma sessão aberta nesta worktree, então ela foi deixada como está.",
         "unpushed": "Ela tem commits que nunca foram enviados, então foi deixada como está.",
         "volumeInUse": "Um volume ainda está em uso por um container, então foi deixado como está.",
-        "changedMidRun": "Ela mudou durante a limpeza, então o Harnu parou."
+        "changedMidRun": "Ela mudou durante a limpeza, então o Harnu parou.",
+        "dirty": "Agora há alterações não commitadas, então foi deixado como está.",
+        "foreignCheckout": "Há outro repositório com checkout dentro desta pasta, então foi deixado como está.",
+        "cannotUnregister": "O git não tem registro destravado para este worktree, então nada foi removido."
       },
       "review": {
         "title": "Precisa de você",

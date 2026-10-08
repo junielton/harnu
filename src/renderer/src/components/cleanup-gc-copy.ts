@@ -31,8 +31,11 @@ export function reasonKey(code: ReasonCode | null, ready = false): string {
 }
 
 const STEP_SUFFIX: Partial<Record<GcStep, string>> = {
+  reprobe: 'reprobe',
   'stop-stack': 'stopStack',
   'rm-containers': 'rmContainers',
+  'rm-volumes': 'rmVolumes',
+  detach: 'detach',
   archive: 'archive',
   'drop-deps': 'dropDeps',
   trash: 'trash',

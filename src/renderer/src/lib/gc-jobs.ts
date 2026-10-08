@@ -44,6 +44,9 @@ export const REFUSAL_CODES = [
   'session-open',
   'unpushed',
   'volume-in-use',
+  'dirty',
+  'foreign-checkout',
+  'cannot-unregister',
   // mid-run
   'changed-mid-run'
 ] as const
@@ -53,9 +56,10 @@ export type RefusalCode = (typeof REFUSAL_CODES)[number]
 export function refusalOf(r: Pick<GcItemResult, 'ok' | 'error'>): RefusalCode | null {
   if (r.ok) return null
   const error = (r.error ?? '').trim()
-  // `probe-failed: <message>` carries the thrown message after the code; the code is what is known.
-  if (error.startsWith('probe-failed:')) return 'probe-failed'
-  return REFUSAL_CODES.find((c) => c === error) ?? null
+  // `probe-failed: <message>` and `cannot-unregister: <message>` carry the engine's text after the code;
+  // the code is what is known.
+  const code = error.split(':')[0].trim()
+  return REFUSAL_CODES.find((c) => c === code) ?? null
 }
 
 /** Refusals that are the operator's own settings: they are not something that needs the operator. */

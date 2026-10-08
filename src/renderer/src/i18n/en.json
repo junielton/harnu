@@ -2313,7 +2313,10 @@
         "trash": "Trash the checkout",
         "prune": "Prune the worktree",
         "branchDelete": "Delete the branch",
-        "unknown": "an unknown step"
+        "unknown": "an unknown step",
+        "reprobe": "Check it again",
+        "rmVolumes": "Remove volumes",
+        "detach": "Detach the worktree"
       },
       "panel": {
         "close": "Close panel",
@@ -2349,7 +2352,8 @@
         "inUseNote": "Left alone while a session works here or its pull request is open.",
         "happenedTitle": "What happened",
         "stoppedAt": "Stopped at “{step}”",
-        "nothingChanged": "Nothing was changed."
+        "nothingChanged": "Nothing was changed.",
+        "genericStop": "Harnu stopped this item for a safety check."
       },
       "list": {
         "label": "Worktrees by bucket",
@@ -2601,7 +2605,10 @@
         "sessionOpen": "A session is open in this worktree, so it was left alone.",
         "unpushed": "It has commits that were never pushed, so it was left alone.",
         "volumeInUse": "A volume is still in use by a container, so it was left alone.",
-        "changedMidRun": "It changed while the clean was running, so Harnu stopped."
+        "changedMidRun": "It changed while the clean was running, so Harnu stopped.",
+        "dirty": "It has uncommitted changes now, so it was left alone.",
+        "foreignCheckout": "Another repository is checked out inside this folder, so it was left alone.",
+        "cannotUnregister": "Git has no unlocked registration for this worktree, so nothing was removed."
       },
       "review": {
         "title": "Needs review",
