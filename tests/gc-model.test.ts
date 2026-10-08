@@ -217,7 +217,7 @@ describe('dialogRows', () => {
     const rows = dialogRows(buildGcModel(snap({ bundles: [b] })), [b.item.id])
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({
-      repo: 'www',
+      repo: 'proj/www',
       name: 'c1',
       branch: 'feat/c1',
       bytes: 512 * MIB,
@@ -492,6 +492,16 @@ describe('repoDisplayLabel — org/proj style labels for the map regions', () =>
     expect(repoDisplayLabel('/www')).toBe('www')
     expect(repoDisplayLabel('C:\\Work\\org\\proj')).toBe('org/proj')
   })
+  it('worktree blocks use the same label, so two repos both named www stay distinct in the dialog and the panel', () => {
+    const a = wt('c1', 'ready', 1, { repo: '/ws/org-a/www' })
+    const b = wt('c2', 'ready', 1, { repo: '/ws/org-b/www' })
+    const m = buildGcModel(snap({ bundles: [a, b] }))
+    expect(m.byId.get(a.item.id)!.repoLabel).toBe('org-a/www')
+    expect(m.byId.get(b.item.id)!.repoLabel).toBe('org-b/www')
+    const rows = dialogRows(m, [a.item.id, b.item.id])
+    expect(rows.map((r) => r.repo)).toEqual(['org-a/www', 'org-b/www'])
+  })
+
   it('regions carry both the short name (for aria and drill) and the display label', () => {
     const m = buildGcModel(sample())
     const www = m.regions.find((r) => r.label === 'www')!

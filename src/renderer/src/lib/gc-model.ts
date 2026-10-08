@@ -116,7 +116,7 @@ function worktreeBlock(b: WorktreeBundle): GcBlock {
     kind: 'worktree',
     bucket: b.bucket,
     repoPath: item.repoPath,
-    repoLabel: basename(item.repoPath),
+    repoLabel: repoDisplayLabel(item.repoPath),
     name: item.path ? basename(item.path) : (item.branch ?? item.id),
     branch: item.branch ?? null,
     bytes: bytes ?? 0,
