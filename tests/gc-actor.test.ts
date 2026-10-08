@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { withActor } from '../src/main/gc/gc-actor'
+import { createGcOps } from '../src/main/gc/gc-shell'
 import { defaultGcPrefs } from '../src/main/gc/gc-prefs'
 import type { GcShellDeps } from '../src/main/gc/gc-shell'
 import type { Tombstone } from '../src/main/reaper/journal'
@@ -55,5 +56,53 @@ describe('withActor marks the journal lines of a run (AC-3)', () => {
     expect(await wrapped.isProtectedNow(b)).toBe(true)
     prefs = { ...defaultGcPrefs(), keep: { [b.item.id]: 'merged' } }
     expect(await wrapped.isProtectedNow(b)).toBe(true)
+  })
+})
+
+describe('the live protection check resolves real paths (delta 3b, item 12)', () => {
+  const link = async (p: string): Promise<string | null> =>
+    p.startsWith('/link/') ? `/real/${p.slice('/link/'.length)}` : p
+
+  it('a never-clean entry added under a symlinked spelling is honored', async () => {
+    const { deps } = base()
+    const wrapped = withActor({ ...deps, realpath: link }, 'autopilot', () => ({
+      ...defaultGcPrefs(),
+      neverClean: ['/link/wt']
+    }))
+    expect(await wrapped.isProtectedNow(bundle('/real/wt', 'ready'))).toBe(true)
+    expect(await wrapped.isProtectedNow(bundle('/real/other', 'ready'))).toBe(false)
+  })
+
+  it('refuses the reprobe on it, before anything is probed', async () => {
+    const { deps } = base()
+    const ops = createGcOps(
+      withActor({ ...deps, realpath: link } as GcShellDeps, 'autopilot', () => ({
+        ...defaultGcPrefs(),
+        neverClean: ['/link/wt']
+      }))
+    )
+    expect(await ops.reprobe(bundle('/real/wt', 'ready'))).toEqual({
+      ok: false,
+      reason: 'protected-now'
+    })
+  })
+
+  it('a stale never-clean entry that no longer resolves matches by spelling only, not everything', async () => {
+    const { deps } = base()
+    const gone = async (p: string): Promise<string | null> => (p === '/old/folder' ? null : p)
+    const wrapped = withActor({ ...deps, realpath: gone }, 'autopilot', () => ({
+      ...defaultGcPrefs(),
+      neverClean: ['/old/folder']
+    }))
+    expect(await wrapped.isProtectedNow(bundle('/real/wt', 'ready'))).toBe(false)
+    expect(await wrapped.isProtectedNow(bundle('/old/folder', 'ready'))).toBe(true)
+  })
+
+  it("a bundle path that cannot be resolved is protected: it may be anyone's", async () => {
+    const { deps } = base()
+    const wrapped = withActor({ ...deps, realpath: async () => null }, 'autopilot', () =>
+      defaultGcPrefs()
+    )
+    expect(await wrapped.isProtectedNow(bundle('/real/wt', 'ready'))).toBe(true)
   })
 })
