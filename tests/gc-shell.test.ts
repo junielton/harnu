@@ -133,10 +133,17 @@ function harness(
     dehydrate?: Partial<DehydrateDeps>
   } = {}
 ): Harness {
-  const stop = vi.fn(async (ids: string[]) => ok(ids))
-  const removeContainers = vi.fn(async (ids: string[]) => ok(ids))
-  const removeVolumes = vi.fn(async (names: string[]) => ok(names))
   let stacks = over.stacks ?? [stack('app', [container('c1', `${WT}/api`)])]
+  const stop = vi.fn(async (ids: string[]) => ok(ids))
+  // Like docker, a removed container is gone from every later listing, so the recheck after
+  // the docker steps no longer sees the stack the run just removed.
+  const removeContainers = vi.fn(async (ids: string[]) => {
+    stacks = stacks
+      .map((s) => ({ ...s, containers: s.containers.filter((c) => !ids.includes(c.id)) }))
+      .filter((s) => s.containers.length > 0)
+    return ok(ids)
+  })
+  const removeVolumes = vi.fn(async (names: string[]) => ok(names))
   const listStacks = vi.fn(async () => ({ stacks }))
   const presenceOf = vi.fn(async () => over.presence ?? ('none' as SessionPresence))
   const headOf = vi.fn(async (): Promise<string | null> =>
@@ -767,7 +774,8 @@ describe('recheck before cleanGit (delta 2, item 4)', () => {
   const opts = { removeVolumes: true }
 
   it('passes while the worktree is still idle on the scanned tip', async () => {
-    const h = harness()
+    // By the recheck the exclusive stack was removed, so the listing no longer has it.
+    const h = harness({ stacks: [] })
     expect(await createGcOps(h.deps).recheck(bundle())).toEqual({ ok: true })
   })
 
@@ -810,29 +818,45 @@ describe('recheck before cleanGit (delta 2, item 4)', () => {
       expect(cleanItem).not.toHaveBeenCalled()
     })
 
-    it('names the new stack as the reason', async () => {
-      const h = harness({
-        stacks: [
-          stack('app', [container('c1', `${WT}/api`)]),
-          stack('fresh', [runWithBind('c7', `${WT}/data`)])
-        ]
-      })
+    it('a new stack touching the worktree refuses as stack-present', async () => {
+      const h = harness({ stacks: [stack('fresh', [runWithBind('c7', `${WT}/data`)])] })
       expect(await createGcOps(h.deps).recheck(bundle())).toEqual({
         ok: false,
-        reason: 'new-stack'
+        reason: 'stack-present'
       })
     })
 
-    it('a scanned stack still present is fine, exclusive or shared', async () => {
-      const h = harness({
-        stacks: [
-          stack('app', [container('c1', `${WT}/api`)]),
-          stack('shared', [container('c3', WT), container('c4', REPO)])
-        ]
+    // Delta 4, item B: by the recheck the exclusive stacks were removed and a shared one was
+    // refused at the reprobe, so any stack still touching the worktree is new, whatever its id.
+    it.each<[string, StackGroup[], Partial<WorktreeBundle>]>([
+      ['an exclusive stack the scan saw', [stack('app', [container('c1', `${WT}/api`)])], {}],
+      [
+        'a shared stack the scan saw',
+        [stack('shared', [container('c3', WT), container('c4', REPO)])],
+        { stackIds: [], sharedStackIds: ['shared'] }
+      ]
+    ])('%s still touching the worktree refuses as stack-present', async (_label, stacks, over) => {
+      const h = harness({ stacks })
+      expect(await createGcOps(h.deps).recheck(bundle(over))).toEqual({
+        ok: false,
+        reason: 'stack-present'
       })
-      expect(await createGcOps(h.deps).recheck(bundle({ sharedStackIds: ['shared'] }))).toEqual({
-        ok: true
+    })
+
+    it('P1: compose up brings the scanned project back during drop-deps, so the run halts before cleanGit', async () => {
+      let h: Harness | null = null
+      h = harness({
+        dehydrate: {
+          // The same project id the run just removed comes back from the worktree.
+          removeDir: async () => {
+            h!.setStacks([stack('app', [container('c8', `${WT}/api`)])])
+          }
+        }
       })
+      const r = await runBundle(bundle(), createGcOps(h.deps), opts)
+      expect(h.removeContainers).toHaveBeenCalledWith(['c1'])
+      expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'changed-mid-run' })
+      expect(cleanItem).not.toHaveBeenCalled()
     })
 
     it('a scanned stack that already vanished is fine', async () => {
@@ -841,12 +865,7 @@ describe('recheck before cleanGit (delta 2, item 4)', () => {
     })
 
     it('a new stack that runs from somewhere else is fine', async () => {
-      const h = harness({
-        stacks: [
-          stack('app', [container('c1', `${WT}/api`)]),
-          stack('other', [container('c9', `${WT}-other`)])
-        ]
-      })
+      const h = harness({ stacks: [stack('other', [container('c9', `${WT}-other`)])] })
       expect(await createGcOps(h.deps).recheck(bundle())).toEqual({ ok: true })
     })
 
