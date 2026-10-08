@@ -30,6 +30,16 @@ describe('CleanupSelectionBar', () => {
     expect(w.emitted('clear')).toHaveLength(1)
   })
 
+  it('gives Remove selected, Dehydrate and Keep an icon each — the same icons the side panel uses', () => {
+    const w = mountBar(2)
+    for (const id of ['sel-remove', 'sel-dehydrate', 'sel-keep', 'sel-ask'])
+      expect(w.get(`[data-testid="${id}"] svg`).exists(), id).toBe(true)
+    const icon = (id: string) => w.get(`[data-testid="${id}"] svg`).attributes('class')
+    expect(icon('sel-remove')).toContain('trash')
+    expect(icon('sel-dehydrate')).toContain('package-minus')
+    expect(icon('sel-keep')).toContain('bookmark')
+  })
+
   it('Remove selected is the Danger button', () => {
     const w = mountBar(2)
     expect(w.get('[data-testid="sel-remove"]').classes()).toContain('text-red')

@@ -8328,8 +8328,9 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
    - Autopilot badge: Badge Success "Autopilot on · every {interval}" or Default "Autopilot off".
 3. **Selection bar** (only with ≥1 checked block) — the takeover's existing selection band
    (`border-b border-border bg-surface-2`, `padding: 8px 22px`): `square-check` icon (`--accent`), the
-   count `N selected · X GB` (13px; numbers 600-weight `--text`), then **Remove selected** (Danger),
-   **Dehydrate** (Soft), **Keep** (Ghost), **Ask for an opinion** (Soft, `sparkles`, disabled, tooltip
+   count `N selected · X GB` (13px; numbers 600-weight `--text`), then **Remove selected** (Danger,
+   `trash-2`), **Dehydrate** (Soft, `package-minus`), **Keep** (Ghost, `bookmark`) — the same icons as the side
+   panel's actions — **Ask for an opinion** (Soft, `sparkles`, disabled, tooltip
    "coming in S6"), a `⇧` hint (`kbd`) and a right-aligned "Clear selection" ghost link.
 4. **First-cycle banner** (only while `firstReportAcknowledged` is false and a report exists): see below.
 5. **Split bar** (`.gc-split`): a 32px bar of up to four segments — _Ready to clean_ (ready worktrees only, Ready triple, so
