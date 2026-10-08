@@ -6,6 +6,8 @@ import {
   partitionExtraReadCommands,
   OBSERVE_TOOLS,
   OBSERVE_TOOLS_DENY,
+  OBSERVE_MCP_ALLOW,
+  OBSERVE_MCP_DENY,
   type Worker
 } from '../src/main/scheduler-core'
 
@@ -220,6 +222,20 @@ describe('BUG-164 delta 1 — the built-in tool set is an allowlist (--tools)', 
     const argv = tickArgv(worker(), { mcpConfigPath: '/tmp/harnu.json' })
     const native = rulesOf(valueOf(argv, '--allowedTools')).filter((r) => !r.startsWith('mcp__'))
     expect(native.sort()).toEqual(rulesOf(valueOf(argv, '--tools')).sort())
+  })
+
+  // The CLI lists every verb of the connected server in its roster, allowed or not; a verb that
+  // is merely not allowed is refused only when called. Denying them by name takes them out of
+  // the roster, so the roster an observe tick sees is the allowed verbs and nothing else.
+  it('denies every non-allowed Harnu verb by name when the control server is up', () => {
+    const argv = tickArgv(worker(), { mcpConfigPath: '/tmp/harnu.json' })
+    const denied = rulesOf(valueOf(argv, '--disallowedTools'))
+    for (const verb of OBSERVE_MCP_DENY) expect(denied).toContain(verb)
+    for (const verb of OBSERVE_MCP_ALLOW) expect(denied).not.toContain(verb)
+  })
+
+  it('adds no MCP deny rule when the control server is down', () => {
+    expect(valueOf(tickArgv(worker(), {}), '--disallowedTools')).not.toContain('mcp__')
   })
 
   it('leaves act mode alone: no --tools restriction', () => {
