@@ -21,9 +21,10 @@ import {
 import type { CycleRecord } from '../src/main/gc/gc-wire'
 import type { WorktreeBundle } from '../src/main/gc/bundle-core'
 import { bundle, DAY, NOW, reapItem } from './gc-fixtures'
+import { formatBytes as rendererFormatBytes } from '../src/renderer/src/components/system-monitor-format'
 import { bundlesOf, collect, pr, scanInput, OTHER, WT } from './gc-scan-fixtures'
 
-const GIB = 1024 ** 3
+const GB = 1e9
 
 const live = (over: Partial<GcPrefs> = {}): GcPrefs => ({
   ...defaultGcPrefs(),
@@ -35,7 +36,7 @@ const live = (over: Partial<GcPrefs> = {}): GcPrefs => ({
 const ready = (name: string, daysAgo = 5, over: Parameters<typeof bundle>[2] = {}) =>
   bundle(`/ws/wt/${name}`, 'ready', {
     lastSignOfLifeAt: NOW - daysAgo * DAY,
-    item: reapItem(`/ws/wt/${name}`, { diskBytes: GIB }),
+    item: reapItem(`/ws/wt/${name}`, { diskBytes: GB }),
     ...over
   })
 
@@ -229,7 +230,7 @@ describe('runGcCycle: the first cycle only reports (AC-3)', () => {
     expect(r.notices).toEqual([
       {
         title: 'Workspace cleanup',
-        body: 'Found 2 ready to clean, 2.0 GiB — enable automatic cleanup?'
+        body: 'Found 2 ready to clean, 2.00 GB — enable automatic cleanup?'
       }
     ])
     expect(record.notified).toBe(true)
@@ -238,7 +239,7 @@ describe('runGcCycle: the first cycle only reports (AC-3)', () => {
   it('words the notice the same for one item', async () => {
     const r = rig([ready('a')], unacknowledged)
     await runGcCycle(r.deps, 'timer')
-    expect(r.notices[0]!.body).toBe('Found 1 ready to clean, 1.0 GiB — enable automatic cleanup?')
+    expect(r.notices[0]!.body).toBe('Found 1 ready to clean, 1.00 GB — enable automatic cleanup?')
   })
 
   it('does not repeat the report notice until the count changes', async () => {
@@ -367,22 +368,22 @@ describe('runGcCycle: Docker housekeeping (AC-6)', () => {
 
   it('adds the reclaimed bytes to the cycle record and the notice', async () => {
     const r = rig([ready('a')], live(), {
-      hkResult: { buildCacheBytes: 2 * GIB, imageBytes: GIB, volumeBytes: 0, errors: [] }
+      hkResult: { buildCacheBytes: 2 * GB, imageBytes: GB, volumeBytes: 0, errors: [] }
     })
     const record = await runGcCycle(r.deps, 'timer')
-    expect(record.freedBytes).toBe(100 + 3 * GIB)
-    expect(record.housekeeping).toMatchObject({ buildCacheBytes: 2 * GIB, imageBytes: GIB })
+    expect(record.freedBytes).toBe(100 + 3 * GB)
+    expect(record.housekeeping).toMatchObject({ buildCacheBytes: 2 * GB, imageBytes: GB })
     expect(r.notices).toHaveLength(1)
-    expect(r.notices[0]!.body).toBe('Cleaned 1 worktree, freed 3.0 GiB')
+    expect(r.notices[0]!.body).toBe('Cleaned 1 worktree, freed 3.00 GB')
   })
 
   it('notifies once when only the Docker cache was reclaimed', async () => {
     const r = rig([], live(), {
-      hkResult: { buildCacheBytes: GIB, imageBytes: 0, volumeBytes: 0, errors: [] }
+      hkResult: { buildCacheBytes: GB, imageBytes: 0, volumeBytes: 0, errors: [] }
     })
     await runGcCycle(r.deps, 'timer')
     expect(r.notices).toEqual([
-      { title: 'Workspace cleanup', body: 'Freed 1.0 GiB of Docker cache' }
+      { title: 'Workspace cleanup', body: 'Freed 1.00 GB of Docker cache' }
     ])
   })
 
@@ -491,14 +492,27 @@ describe('end to end from the scanner fixtures (AC-5)', () => {
   })
 })
 
+describe('formatBytes matches the units every renderer surface prints (delta 4, item 7)', () => {
+  it.each([
+    0, 1, 999, 1_000, 1_499, 1_500, 999_499, 1_000_000, 1_234_567, 999_999_999, 1e9, 1.2e9, 4.6e9,
+    3e12
+  ])('prints %j exactly as the System Monitor and Cleanup do', (n) => {
+    expect(formatBytes(n)).toBe(rendererFormatBytes(n))
+  })
+
+  it('never prints a binary unit', () => {
+    for (const n of [1, 1e3, 1e6, 1e9, 1e12]) expect(formatBytes(n)).not.toMatch(/iB/)
+  })
+})
+
 describe('formatBytes', () => {
   it.each([
     [0, '0 B'],
     [512, '512 B'],
-    [2048, '2.0 KiB'],
-    [5 * 1024 ** 2, '5.0 MiB'],
-    [1.5 * GIB, '1.5 GiB'],
-    [3 * 1024 ** 4, '3.0 TiB']
+    [2048, '2 KB'],
+    [5_000_000, '5 MB'],
+    [1.5 * GB, '1.50 GB'],
+    [3e12, '3000.00 GB']
   ])('%j → %j', (n, want) => {
     expect(formatBytes(n)).toBe(want)
   })
@@ -568,7 +582,8 @@ describe('detached worktrees are never a ready item for the autopilot (delta 1, 
       volumes: new Map(),
       knownFolders: [],
       protectedProjects: new Set(),
-      canonical: AS_GIVEN
+      canonical: AS_GIVEN,
+      foreignCheckouts: new Map([[item.id, []]])
     })
     expect(b!.bucket).not.toBe('ready')
     expect(planCycle([b!], live()).toClean).toEqual([])
@@ -602,7 +617,8 @@ describe('S2 delta 4 contracts absorbed (delta 2, item 3)', () => {
       volumes: new Map(),
       knownFolders: [],
       protectedProjects: new Set(),
-      canonical: (p) => ({ path: p, resolved: p !== WT })
+      canonical: (p) => ({ path: p, resolved: p !== WT }),
+      foreignCheckouts: new Map(items.map((i) => [i.id, []]))
     })
     expect(b!.bucket).toBe('review')
     expect(b!.reason?.code).toBe('path-unresolved')

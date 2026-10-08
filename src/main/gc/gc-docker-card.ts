@@ -11,11 +11,32 @@ export interface GcDockerCard {
   buildCacheReclaimableBytes: number | null
   /** Images with no tag and no container; null when docker did not say. */
   danglingImages: { count: number; bytes: number } | null
+  /**
+   * Why the orphan-volume list is empty when volumes may well exist: a compose project name
+   * somewhere could not be resolved, or the scan for names hit a cap. Null when nothing is
+   * hidden (and when docker is absent). `folders` are the folders that cause it; paths are
+   * fine here, this goes to the renderer only.
+   */
+  orphanVolumesHidden: OrphanVolumesHidden | null
+}
+
+export interface OrphanVolumesHidden {
+  reason: 'unresolved-compose-name' | 'scan-limit'
+  folders: string[]
+}
+
+/** The card with the compose scan's verdict attached (the gather knows it, docker does not). */
+export function withOrphanVolumesHidden(
+  card: GcDockerCard,
+  hidden: OrphanVolumesHidden | null
+): GcDockerCard {
+  return { ...card, orphanVolumesHidden: hidden }
 }
 
 export const NO_DOCKER_CARD: GcDockerCard = {
   buildCacheReclaimableBytes: null,
-  danglingImages: null
+  danglingImages: null,
+  orphanVolumesHidden: null
 }
 
 function rows(stdout: string): Array<Record<string, unknown>> {
@@ -64,5 +85,5 @@ export async function dockerCardFacts(run: DockerRun): Promise<GcDockerCard> {
       () => null
     )
   ])
-  return { buildCacheReclaimableBytes: df, danglingImages: images }
+  return { buildCacheReclaimableBytes: df, danglingImages: images, orphanVolumesHidden: null }
 }

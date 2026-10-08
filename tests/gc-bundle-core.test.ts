@@ -125,6 +125,7 @@ function readyFacts(over: Partial<BundleFacts> = {}): BundleFacts {
     isMainCheckout: false,
     pathsResolved: true,
     nestedWorktrees: [],
+    foreignCheckouts: [],
     ...over
   }
 }
@@ -184,6 +185,7 @@ interface BuildOver {
   knownFolders?: string[]
   protectedProjects?: Set<string>
   canonical?: CanonicalPath
+  foreignCheckouts?: ReadonlyMap<string, string[]>
 }
 
 /** Every path is its own real path: no symlink anywhere, everything resolves. */
@@ -238,7 +240,8 @@ function build(over: BuildOver = {}): ReturnType<typeof buildBundles> {
     volumes: over.volumes ?? new Map(),
     knownFolders: over.knownFolders ?? [],
     protectedProjects: over.protectedProjects ?? new Set(),
-    canonical: over.canonical ?? LEXICAL
+    canonical: over.canonical ?? LEXICAL,
+    foreignCheckouts: over.foreignCheckouts ?? new Map(items.map((i) => [i.id, []]))
   })
 }
 
@@ -2187,5 +2190,64 @@ describe('buildBundles — an unresolved known worktree path (delta 6, F1)', () 
     )
     expect(b.pathsResolved).toBe(true)
     expect(b.bucket).toBe('ready')
+  })
+})
+
+// ---- a foreign checkout nested inside the worktree (delta 7) ------------------------------
+
+describe('bucketOf — a foreign checkout inside the worktree (delta 7)', () => {
+  const FOREIGN = `${WT_A}/libs/api-gateway/.git`
+
+  it('a ready bundle with one is review nested-worktree, naming the `.git` path', () => {
+    const r = bucketOf(readyFacts({ foreignCheckouts: [FOREIGN] }), NOW, GRACE_DAYS)
+    expect(r.bucket).toBe('review')
+    expect(r.reason?.code).toBe('nested-worktree')
+    expect(r.reason?.detail).toContain(FOREIGN)
+  })
+
+  it.each([undefined, null, 'x'])('fails closed when the list is %s', (bad) => {
+    const r = bucketOf(
+      readyFacts({ foreignCheckouts: bad as unknown as string[] }),
+      NOW,
+      GRACE_DAYS
+    )
+    expect(r.bucket).toBe('review')
+    expect(r.reason?.code).toBe('nested-worktree')
+    expect(r.reason?.detail).toMatch(/could not be checked/)
+  })
+
+  it('sits with the nested-worktree rule: after shared-stack, before path-unresolved', () => {
+    const shared = readyFacts({ foreignCheckouts: [FOREIGN], sharedStackIds: ['app'] })
+    expect(bucketOf(shared, NOW, GRACE_DAYS).reason?.code).toBe('shared-stack')
+    const unresolved = readyFacts({ foreignCheckouts: [FOREIGN], pathsResolved: false })
+    expect(bucketOf(unresolved, NOW, GRACE_DAYS).reason?.code).toBe('nested-worktree')
+    const working = readyFacts({ foreignCheckouts: [FOREIGN], session: 'working' })
+    expect(bucketOf(working, NOW, GRACE_DAYS)).toEqual({ bucket: 'in-use', reason: null })
+  })
+})
+
+describe('buildBundles — foreign checkouts from the shell scan (delta 7)', () => {
+  const FOREIGN = `${WT_A}/libs/api-gateway/.git`
+
+  it('carries the entry for the item into the fact, and a non-empty one is review', () => {
+    const b = only(build({ foreignCheckouts: new Map([[item().id, [FOREIGN]]]) }))
+    expect(b.foreignCheckouts).toEqual([FOREIGN])
+    expect(b.bucket).toBe('review')
+    expect(b.reason?.code).toBe('nested-worktree')
+  })
+
+  it('an empty entry leaves the bundle ready', () => {
+    const b = only(build({ foreignCheckouts: new Map([[item().id, []]]) }))
+    expect(b.foreignCheckouts).toEqual([])
+    expect(b.bucket).toBe('ready')
+  })
+
+  it.each<[string, ReadonlyMap<string, string[]>]>([
+    ['missing', new Map()],
+    ['not a list', new Map([[item().id, 'x' as unknown as string[]]])]
+  ])('an entry that is %s fails closed as review nested-worktree', (_label, map) => {
+    const b = only(build({ foreignCheckouts: map }))
+    expect(b.bucket).toBe('review')
+    expect(b.reason?.code).toBe('nested-worktree')
   })
 })

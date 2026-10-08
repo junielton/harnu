@@ -36,10 +36,47 @@ export function judgeKeeps(
  * takes time: if the operator pressed Keep again meanwhile, that newer mark carries the
  * current fate and must survive this gather's verdict on the old one.
  */
-export function withoutStaleKeeps(prefs: GcPrefs, stale: readonly StaleKeep[]): GcPrefs {
+export function withoutStaleKeeps(
+  prefs: GcPrefs,
+  stale: readonly StaleKeep[],
+  /** Ids this verdict must not touch: see {@link protectedFromGather}. */
+  protect: ReadonlySet<string> = new Set()
+): GcPrefs {
   const keep = { ...prefs.keep }
-  for (const { id, marked } of stale) if (keep[id] === marked) delete keep[id]
+  for (const { id, marked } of stale) if (keep[id] === marked && !protect.has(id)) delete keep[id]
   return { ...prefs, keep }
+}
+
+/**
+ * The marks a gather's verdict must leave alone. It judged the prefs as they were when it
+ * started, so a mark written at or after that moment is newer than the verdict, and a
+ * provisional mark (written at once on a click, its fate still to be confirmed by a fresh
+ * gather) is not yet a mark that could be stale.
+ */
+export function protectedFromGather(
+  writtenAt: ReadonlyMap<string, number>,
+  provisional: ReadonlySet<string>,
+  startedAt: number
+): Set<string> {
+  const out = new Set(provisional)
+  for (const [id, at] of writtenAt) if (at >= startedAt) out.add(id)
+  return out
+}
+
+/**
+ * The prefs with a Keep written NOW, before any gather has finished: the cached fate when the
+ * item is known, a placeholder when it is not. Any mark protects through `isProtectedNow`, so
+ * a cycle that already holds this item as ready is refused at its reprobe; the fate is
+ * rewritten once a fresh gather has confirmed it.
+ */
+export function withProvisionalKeep(
+  prefs: GcPrefs,
+  cached: readonly WorktreeBundle[],
+  id: string
+): GcPrefs {
+  if (prefs.keep[id] !== undefined) return prefs
+  const fate = cached.find((b) => b.item.id === id)?.fate.fate ?? 'pending'
+  return { ...prefs, keep: { ...prefs.keep, [id]: fate } }
 }
 
 /**

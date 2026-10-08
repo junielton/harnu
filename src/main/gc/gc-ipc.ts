@@ -19,7 +19,12 @@ import { prefsPath as reaperPrefsPath } from '../reaper/prefs'
 import type { ReaperControl } from '../reaper/reaper-ipc'
 import { bucketFeed, setInheritedBuckets } from './gc-buckets'
 import { withActor } from './gc-actor'
-import { keepFromFresh, withoutStaleKeeps } from './gc-keep'
+import {
+  keepFromFresh,
+  protectedFromGather,
+  withProvisionalKeep,
+  withoutStaleKeeps
+} from './gc-keep'
 import {
   LEFTOVERS_FILE,
   pruneLeftovers,
@@ -89,6 +94,9 @@ export async function registerGcHandlers(
     containers: containersPrefsFile(userData)
   })
   const state = createCycleState()
+  /** When each Keep was last written, and which are still waiting for a fresh gather. */
+  const keepWrites = new Map<string, number>()
+  const provisionalKeeps = new Set<string>()
   // What cleaned worktrees left in Docker, so their volumes can be offered for review (D1).
   const leftoversFile = path.join(userData, LEFTOVERS_FILE)
   let leftovers = readLeftovers(leftoversFile)
@@ -114,6 +122,7 @@ export async function registerGcHandlers(
   /** One gather at a time; it also feeds the Containers view and clears outdated Keep marks. */
   const gather = (): Promise<GcGathered> => {
     gathering ??= (async () => {
+      const startedAt = Date.now()
       try {
         // A halted item reads Needs review here, once, for the snapshot, the feed, the jobs and the cycle.
         const g = withFailures(
@@ -133,8 +142,11 @@ export async function registerGcHandlers(
         cache = g
         setInheritedBuckets(bucketFeed(g.bundles, g.canonical))
         // Only the marks this gather judged, and only while they are still the same: a Keep
-        // pressed meanwhile must survive this verdict on an older one.
-        if (g.staleKeeps.length > 0) await persist(withoutStaleKeeps(prefs, g.staleKeeps))
+        // pressed meanwhile (or still provisional) must survive this verdict on older prefs.
+        if (g.staleKeeps.length > 0) {
+          const protect = protectedFromGather(keepWrites, provisionalKeeps, startedAt)
+          await persist(withoutStaleKeeps(prefs, g.staleKeeps, protect))
+        }
         return g
       } finally {
         gathering = null
@@ -244,13 +256,27 @@ export async function registerGcHandlers(
       ),
     keep: async (rawId) => {
       if (typeof rawId !== 'string') throw new Error('gc:keep expects a bundle id')
-      // The fate is recorded from a gather made now: the cache may predate a scan, a clean
-      // or a sweep, and a mark recorded against an old fate is dropped by the next gather.
-      const next = keepFromFresh(prefs, (await gatherFresh()).bundles, rawId)
-      if (!next) throw new Error(`unknown cleanup item: ${rawId}; refresh and retry`)
-      await persist(next)
-      void gather().catch((err) => console.error('[gc] refresh after keep failed', err))
-      return next
+      // 1. Protect NOW. The fresh gather below can take a minute, and a cycle that already
+      //    holds this item as ready would clean it meanwhile; any mark refuses it at the reprobe.
+      provisionalKeeps.add(rawId)
+      keepWrites.set(rawId, Date.now())
+      await persist(withProvisionalKeep(prefs, cache?.bundles ?? [], rawId))
+      try {
+        // 2. Record the real fate, from a gather made now: the cache may predate a scan, a
+        //    clean or a sweep, and a mark against an old fate is dropped by the next gather.
+        const next = keepFromFresh(prefs, (await gatherFresh()).bundles, rawId)
+        if (!next) {
+          await persist(withoutKeep(prefs, [rawId]))
+          keepWrites.delete(rawId)
+          throw new Error(`unknown cleanup item: ${rawId}; refresh and retry`)
+        }
+        keepWrites.set(rawId, Date.now())
+        await persist(next)
+        void gather().catch((err) => console.error('[gc] refresh after keep failed', err))
+        return next
+      } finally {
+        provisionalKeeps.delete(rawId)
+      }
     },
     unkeep: async (rawId) => {
       if (typeof rawId !== 'string') throw new Error('gc:unkeep expects a bundle id')

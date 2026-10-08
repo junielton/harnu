@@ -56,7 +56,8 @@ function bundlesWith(siblings: Sibling[]) {
     volumes: df,
     knownFolders: guards.knownFolders,
     protectedProjects: guards.protectedProjects,
-    canonical: AS_GIVEN
+    canonical: AS_GIVEN,
+    foreignCheckouts: new Map(items.map((i) => [i.id, []]))
   })
 }
 
@@ -163,7 +164,8 @@ describe('the autopilot never removes a volume a live sibling shares (delta 1, i
       volumes: df,
       knownFolders: guards.knownFolders,
       protectedProjects: guards.protectedProjects,
-      canonical: AS_GIVEN
+      canonical: AS_GIVEN,
+      foreignCheckouts: new Map(items.map((i) => [i.id, []]))
     })
     expect(b!.ownedVolumes).toEqual([VOLUME])
   })

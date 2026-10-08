@@ -45,16 +45,25 @@ export interface ProjectSource {
   compose?: string
   /** Every `.env` and compose file down to depth 3, from {@link collectProjectFiles}. */
   files?: ProjectFile[]
+  /** A scan cap cut the walk short (see ProjectScan): a name may be missing altogether. */
+  truncated?: boolean
 }
 
 /** The names a source pins, and whether one of them could not be resolved. */
 export function sourceProjectNames(source: ProjectSource): {
   names: string[]
+  /** A name was written that could not be resolved. */
   unresolved: boolean
+  /** The scan was cut short, so a name may be missing altogether. */
+  limited: boolean
 } {
   const fromFiles = projectNamesFromFiles(source.files ?? [])
   const names = new Set([...explicitProjectNames(source), ...fromFiles.names])
-  return { names: [...names], unresolved: fromFiles.unresolved }
+  return {
+    names: [...names],
+    unresolved: fromFiles.unresolved,
+    limited: source.truncated === true
+  }
 }
 
 /**
@@ -165,7 +174,13 @@ export function orphanVolumeItems(
 export function volumeGuards(
   folders: ReadonlyArray<ProjectSource>,
   dirExists: (path: string) => boolean
-): { knownFolders: string[]; protectedProjects: Set<string>; unresolved: boolean } {
+): {
+  knownFolders: string[]
+  protectedProjects: Set<string>
+  unresolved: boolean
+  /** Why no orphan volume is listed, and which folders cause it; null when nothing is hidden. */
+  hidden: { reason: 'unresolved-compose-name' | 'scan-limit'; folders: string[] } | null
+} {
   const existing = folders.filter((f) => dirExists(f.path))
   const names = protectedProjects(folders, dirExists)
   for (const f of existing) {
@@ -181,8 +196,18 @@ export function volumeGuards(
   }
   // A name some folder writes but we cannot resolve could be any project's: nothing is then
   // provably foreign, and the orphan planner lists no volume at all until it is resolved.
-  const unresolved = existing.some((f) => sourceProjectNames(f).unresolved)
-  return { knownFolders: existing.map((f) => f.path), protectedProjects: names, unresolved }
+  const reads = existing.map((f) => ({ path: f.path, ...sourceProjectNames(f) }))
+  const unresolvedFolders = reads.filter((r) => r.unresolved).map((r) => r.path)
+  const limitedFolders = reads.filter((r) => r.limited).map((r) => r.path)
+  // A scan cut short may have missed a name just as surely as an unresolved one hides it.
+  const unresolved = unresolvedFolders.length > 0 || limitedFolders.length > 0
+  const hidden =
+    unresolvedFolders.length > 0
+      ? { reason: 'unresolved-compose-name' as const, folders: unresolvedFolders }
+      : limitedFolders.length > 0
+        ? { reason: 'scan-limit' as const, folders: limitedFolders }
+        : null
+  return { knownFolders: existing.map((f) => f.path), protectedProjects: names, unresolved, hidden }
 }
 
 /**

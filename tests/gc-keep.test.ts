@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { judgeKeeps, keepFromFresh, withoutStaleKeeps } from '../src/main/gc/gc-keep'
+import {
+  judgeKeeps,
+  keepFromFresh,
+  protectedFromGather,
+  withProvisionalKeep,
+  withoutStaleKeeps
+} from '../src/main/gc/gc-keep'
+import { withActor } from '../src/main/gc/gc-actor'
+import { createGcOps } from '../src/main/gc/gc-shell'
 import { defaultGcPrefs } from '../src/main/gc/gc-prefs'
 import { planCycle } from '../src/main/gc/autopilot-core'
 import { buildBundles } from '../src/main/gc/bundle-core'
@@ -92,7 +100,8 @@ describe('the scenario from the grade: a fate changed since the last gather', ()
         volumes: new Map(),
         knownFolders: [],
         protectedProjects: new Set(),
-        canonical: AS_GIVEN
+        canonical: AS_GIVEN,
+        foreignCheckouts: new Map(items.map((i) => [i.id, []]))
       })
     const fresh = build(new Set())
     expect(fresh[0]!.bucket).toBe('ready')
@@ -105,5 +114,79 @@ describe('the scenario from the grade: a fate changed since the last gather', ()
     expect(
       planCycle(afterGather, { ...prefs, autopilot: true, firstReportAcknowledged: true }).toClean
     ).toEqual([])
+  })
+})
+
+describe('a Keep pressed during an in-flight gather protects at once (delta 4, N1)', () => {
+  const ready = () => bundle('/ws/wt/a', 'ready')
+
+  it('writes a provisional mark immediately, from the cached fate', () => {
+    const cached = bundle('/ws/wt/a', 'ready', {
+      fate: { fate: 'open', signal: null, strong: false }
+    })
+    const next = withProvisionalKeep(defaultGcPrefs(), [cached], cached.item.id)
+    expect(next.keep).toEqual({ [cached.item.id]: 'open' })
+  })
+
+  it('writes one even when nothing is cached: any mark protects', () => {
+    const next = withProvisionalKeep(defaultGcPrefs(), [], 'unseen-id')
+    expect(next.keep['unseen-id']).toBeDefined()
+  })
+
+  it('keeps an existing mark for the item untouched while it waits for the fresh gather', () => {
+    const b = ready()
+    const prefs = { ...defaultGcPrefs(), keep: { [b.item.id]: 'closed-unmerged' } }
+    expect(withProvisionalKeep(prefs, [b], b.item.id).keep[b.item.id]).toBe('closed-unmerged')
+  })
+
+  it('a gather never drops a mark that is provisional', () => {
+    const b = ready()
+    const prefs = { ...defaultGcPrefs(), keep: { [b.item.id]: 'open' } }
+    const out = withoutStaleKeeps(prefs, [{ id: b.item.id, marked: 'open' }], new Set([b.item.id]))
+    expect(out.keep).toEqual({ [b.item.id]: 'open' })
+  })
+
+  it('a gather never drops a mark written after it started', () => {
+    const protect = protectedFromGather(new Map([['a', 1_000]]), new Set(), 900)
+    expect([...protect]).toEqual(['a'])
+    const old = protectedFromGather(new Map([['a', 800]]), new Set(), 900)
+    expect(old.size).toBe(0)
+  })
+
+  it('protects a mark written at the very instant the gather started', () => {
+    expect(protectedFromGather(new Map([['a', 900]]), new Set(), 900).has('a')).toBe(true)
+  })
+
+  it('combines both ways to be protected', () => {
+    const protect = protectedFromGather(new Map([['a', 1_000]]), new Set(['b']), 900)
+    expect([...protect].sort()).toEqual(['a', 'b'])
+  })
+
+  it('the timeline: Keep during the gather, the gather returns a verdict, the mark survives', () => {
+    const b = ready()
+    // t=0 gather starts with the old prefs. t=1 the operator presses Keep (provisional).
+    let prefs = withProvisionalKeep(defaultGcPrefs(), [b], b.item.id)
+    // t=2 the gather finishes and judged an older mark of the same id stale.
+    const stale = [{ id: b.item.id, marked: b.fate.fate }]
+    const protect = protectedFromGather(new Map([[b.item.id, 1]]), new Set([b.item.id]), 0)
+    prefs = withoutStaleKeeps(prefs, stale, protect)
+    expect(prefs.keep[b.item.id]).toBeDefined()
+  })
+})
+
+describe('the reprobe refuses an item whose Keep arrived after the gather (delta 4, N1)', () => {
+  it('protected-now, read from the live prefs when the job reaches the item', async () => {
+    const b = bundle('/ws/wt/a', 'ready')
+    let prefs = defaultGcPrefs()
+    const ops = createGcOps(
+      withActor(
+        { executor: {}, isProtectedNow: () => false, realpath: async (p: string) => p } as never,
+        'autopilot',
+        () => prefs
+      )
+    )
+    // The cycle's gather judged it ready; then the operator presses Keep.
+    prefs = withProvisionalKeep(prefs, [b], b.item.id)
+    expect(await ops.reprobe(b)).toEqual({ ok: false, reason: 'protected-now' })
   })
 })

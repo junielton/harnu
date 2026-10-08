@@ -3,6 +3,7 @@
 
 import { overridesAncestryCheck, type ReapItem } from './reaper-core'
 import type { WorktreeStatus } from '../worktree-core'
+import { isAbsolute, resolve } from 'node:path'
 import { planArchive } from './archive-core'
 import { restoreHintFor, type Tombstone } from './journal'
 
@@ -54,7 +55,13 @@ export interface ExecutorDeps {
    * also drops the registration of every unlocked worktree whose folder is merely missing, an
    * unmounted drive for instance, and so can lose a live worktree's metadata unattended.
    */
-  removeWorktreeAdmin(repoPath: string, worktreePath: string): Promise<void>
+  removeWorktreeAdmin(repoPath: string, worktreePath: string): Promise<boolean>
+  /**
+   * Whether {@link removeWorktreeAdmin} can find this worktree's own admin directory: exactly
+   * one unlocked match. Asked BEFORE the folder is trashed, while git can still be asked to do
+   * it instead; false means the unregistration would otherwise be skipped.
+   */
+  canUnregister(repoPath: string, worktreePath: string): Promise<boolean>
   appendTombstone(t: Tombstone): Promise<void>
   now(): number
 }
@@ -75,7 +82,12 @@ export function matchAdminDir(
   worktreePath: string
 ): string | null {
   const target = `${slashes(worktreePath)}/.git`
-  const hits = entries.filter((e) => slashes(e.gitdir.trim()) === target)
+  // A gitdir can be written relative to its admin dir (git 2.48 `worktree.useRelativePaths`).
+  const absolute = (e: { dir: string; gitdir: string }): string => {
+    const g = e.gitdir.trim()
+    return isAbsolute(g) || /^[A-Za-z]:[\\/]/.test(g) ? g : resolve(e.dir, g)
+  }
+  const hits = entries.filter((e) => slashes(absolute(e)) === target)
   return hits.length === 1 ? hits[0]!.dir : null
 }
 
@@ -242,14 +254,28 @@ export async function cleanItem(
     }
   })
 
+  // When the worktree's own admin dir cannot be matched (a gitdir in a form we cannot read, an
+  // ambiguous match, a locked worktree), asking git to remove it is the only way to unregister
+  // it without a repo-wide prune, and it can only be done while the folder still exists. If git
+  // refuses too, the item halts here, before anything was trashed, with git's own reason.
+  let removedByGit = false
   await run('trash-folder', hasFolder, async () => {
+    if (!(await deps.canUnregister(item.repoPath, item.path!))) {
+      await deps.git(item.repoPath, ['worktree', 'remove', '--force', item.path!])
+      removedByGit = true
+      return
+    }
     await deps.trash(item.path!)
   })
 
   // The step keeps its id for the journal and the pipeline, but it only unregisters THIS
-  // worktree now (see ExecutorDeps.removeWorktreeAdmin).
+  // worktree now (see ExecutorDeps.removeWorktreeAdmin). Never a silent skip: a registration
+  // that cannot be found after the trash is a failed step.
   await run('worktree-prune', hasFolder, async () => {
-    await deps.removeWorktreeAdmin(item.repoPath, item.path!)
+    if (removedByGit) return
+    if ((await deps.removeWorktreeAdmin(item.repoPath, item.path!)) === false) {
+      throw new Error("could not find this worktree's registration in git to remove")
+    }
   })
 
   await run('branch-delete', hasLocalBranch, async () => {

@@ -88,17 +88,19 @@ export function withFailures<G extends GcGather>(g: G, state: CycleState, now: n
   return { ...g, bundles: applyFailures(g.bundles, state.failures) }
 }
 
-const UNITS = ['B', 'KiB', 'MiB', 'GiB', 'TiB'] as const
-
-/** `1.5 GiB`; bytes print whole, everything else with one decimal. */
+/**
+ * Decimal units, exactly as every renderer surface prints them (`formatBytes` in
+ * system-monitor-format.ts, which Cleanup uses): `1.20 GB`, `410 MB`, `40 KB`, `12 B`. The
+ * renderer file is not part of the main process project, so this is the same rule written
+ * here, and tests/gc-cycle.test.ts pins the two to the same output. A notification that said
+ * GiB next to a screen that says GB would show two numbers for one amount.
+ */
 export function formatBytes(bytes: number): string {
-  let value = Math.max(0, bytes)
-  let unit = 0
-  while (value >= 1024 && unit < UNITS.length - 1) {
-    value /= 1024
-    unit++
-  }
-  return unit === 0 ? `${Math.round(value)} B` : `${value.toFixed(1)} ${UNITS[unit]}`
+  const n = Math.max(0, bytes)
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + ' GB'
+  if (n >= 1e6) return Math.round(n / 1e6) + ' MB'
+  if (n >= 1e3) return Math.round(n / 1e3) + ' KB'
+  return Math.round(n) + ' B'
 }
 
 const NOTICE_TITLE = 'Workspace cleanup'
