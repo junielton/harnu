@@ -66,7 +66,7 @@ export interface Worker {
    * persisted before T304 resolves to `silent` — see `resolveNotifyOn`.
    */
   notifyOn?: NotifyOn
-  /** Additive read-only `Bash(...)` rules, `observe` only. */
+  /** Retired (BUG-164): kept so saved workers load; `observe` has no shell, so it grants nothing. */
   extraReadCommands?: string[]
   /** Advanced: replaces the default system prompt. */
   systemPrompt?: string
@@ -264,23 +264,57 @@ function capNotification(text: string): string {
 
 // ── tickArgv — the permission contract as argv ──────────────────────────────
 
-/** Native tools an `observe` tick may use. Read-only by construction. */
-export const OBSERVE_TOOLS: readonly string[] = [
-  'Read',
-  'Grep',
-  'Glob',
-  'WebFetch',
-  'Bash(git log:*)',
-  'Bash(git status:*)',
-  'Bash(git diff:*)',
-  'Bash(git show:*)',
-  'Bash(gh pr list:*)',
-  'Bash(gh pr view:*)',
-  'Bash(gh run list:*)'
-]
+/**
+ * Native tools an `observe` tick may use. Read-only by construction.
+ *
+ * There is NO `Bash(...)` rule here, deliberately (BUG-164). A prefix rule such as
+ * `Bash(git log:*)` authorizes the command followed by ANY arguments, and cannot
+ * express "no `--output` anywhere": git's `--output=<path>` writes an arbitrary file,
+ * so a commit message written over `.git/config` sets `core.fsmonitor` and the next
+ * `git status` runs it. Flag-by-flag filtering is a losing game, so an observe tick
+ * gets no shell and reads git/PR facts through Harnu's read verbs instead
+ * (`list_worktrees`, `mission_get`, `get_fleet`). Never re-add `Bash` here.
+ *
+ * This list is passed twice, and the two flags do different jobs. `--tools` decides which
+ * built-in tools the CLI LOADS at all; `--allowedTools` only auto-approves a call to one
+ * that is loaded. Without `--tools` the CLI also loads `Monitor` (a shell by another name),
+ * `EnterWorktree` (runs `git worktree add`, which fires `post-checkout` hooks), the
+ * Cron tools, Workflow, RemoteTrigger, `SendMessage` and `ToolSearch`, none of which a
+ * `Bash` deny touches (verified against claude 2.1.294). MCP verbs are not built-ins:
+ * `--tools` leaves them alone and they stay gated by the allow list below.
+ *
+ * `Skill` is here because a worker prompt may say "use the X skill" in prose; the
+ * `/skill` slash form works without it. A skill is text, not a capability, and whatever
+ * it asks for still has to pass the list above.
+ *
+ * `WebFetch` is still here pending BUG-166, which makes network access opt-in.
+ */
+export const OBSERVE_TOOLS: readonly string[] = ['Read', 'Grep', 'Glob', 'WebFetch', 'Skill']
 
-/** Native tools an `observe` tick is explicitly denied. */
-export const OBSERVE_TOOLS_DENY: readonly string[] = ['Edit', 'Write', 'NotebookEdit', 'Task']
+/**
+ * Native tools an `observe` tick is explicitly denied. Redundant with `--tools` on purpose:
+ * a deny rule beats any allow rule, so if the CLI ever loads one of these anyway, or a rule
+ * reaches the allowlist by another route, the call is still refused. Bare `Bash` matters
+ * most; `Monitor` and `EnterWorktree` are the two that were found loaded and callable.
+ */
+export const OBSERVE_TOOLS_DENY: readonly string[] = [
+  'Edit',
+  'Write',
+  'NotebookEdit',
+  'Task',
+  'Agent',
+  'Bash',
+  'Monitor',
+  'EnterWorktree',
+  'ExitWorktree',
+  'CronCreate',
+  'CronDelete',
+  'Workflow',
+  'RemoteTrigger',
+  'PushNotification',
+  'SendMessage',
+  'ToolSearch'
+]
 
 /**
  * Verb names (no prefix) an `observe` tick may call.
@@ -411,226 +445,18 @@ export interface TickContext {
   hookSettingsJson?: string
 }
 
-// ── extraReadCommands — verb validation, not shape validation ───────────────
+// ── extraReadCommands — retired (BUG-164) ───────────────────────────────────
 //
-// BUG-108: the previous check accepted any rule whose SHAPE was `Bash(...)`,
-// so `Bash(rm -rf /)` widened an `observe` worker's allowlist. The field is
-// documented as one that "can never add a write tool" and "widens what a
-// worker can see, never what it can do", so what has to be validated is the
-// VERB being invoked, not the punctuation around it.
-//
-// The lists below are deliberately SHORT. A rejected rule costs the operator a
-// re-type; an accepted writing rule costs them the repo — so anything whose
-// read-only-ness depends on which flags follow it is left off.
-//
-// Three things have to agree for a rule to pass, and each closes a way the
-// other two can be walked around: the VERB must be allowlisted, the FLAGS must
-// not include a writing one in any of the forms a shell accepts them in, and a
-// `:*` wildcard must not be pointed at a verb whose arguments could write.
-
-/**
- * The invocations an extra read command may use, as `verb` or `verb
- * subcommand`, matched against the command's leading tokens.
- *
- * Multi-word entries are the whole point: `git` is read-only for `status` and
- * catastrophic for `push --force`, so a bare `git` here would reintroduce the
- * bug in a narrower disguise. Every entry is asserted by name in
- * `tests/scheduler-argv.test.ts`, following the precedent of `OBSERVE_TOOLS` /
- * `OBSERVE_MCP_ALLOW` / `OBSERVE_MCP_DENY` above — a silent edit to this list
- * is a change to the security contract and must read like one in the diff.
- *
- * Notable absences, each for a reason: `find` (`-delete`, `-exec`), `sed`
- * (`-i`), `awk` (`print >`), `xargs` and `npm run` (they execute an arbitrary
- * command chosen elsewhere), `git branch` / `git tag` / `git remote` (each has
- * a deleting form), `gh api` (`-X POST` writes), `env` and `sudo` (they are
- * prefixes to another verb, not verbs). `sort` (`-o FILE`), `uniq`
- * (`uniq IN OUT` writes its second positional) and `tree` (`-o FILE`) were on
- * this list and were REMOVED: each writes with an ordinary argument, so no
- * amount of flag checking makes them read-only verbs.
- *
- * Every absence above is load-bearing, not incidental. `find` in particular is
- * refused only because it is not on this list — {@link WRITING_FLAGS} would
- * catch `-delete` and `-exec`, but nothing catches `-fprintf`, so adding
- * `find` here would open a hole this module cannot close. Treat an addition to
- * this list as a security change and ask what the verb does with its most
- * hostile argument, not its typical one.
- */
-export const READ_COMMANDS: readonly string[] = [
-  'basename',
-  'cat',
-  'column',
-  'cut',
-  'date',
-  'df',
-  'diff',
-  'dirname',
-  'du',
-  'echo',
-  'file',
-  'gh issue list',
-  'gh issue view',
-  'gh pr checks',
-  'gh pr diff',
-  'gh pr list',
-  'gh pr view',
-  'gh run list',
-  'gh run view',
-  'git blame',
-  'git describe',
-  'git diff',
-  'git log',
-  'git ls-files',
-  'git rev-list',
-  'git rev-parse',
-  'git shortlog',
-  'git show',
-  'git status',
-  'grep',
-  'head',
-  'jj diff',
-  'jj log',
-  'jj show',
-  'jj status',
-  'jq',
-  'ls',
-  'nl',
-  'pwd',
-  'realpath',
-  'rg',
-  'stat',
-  'tail',
-  'tr',
-  'wc',
-  'which'
-]
-
-/**
- * Flags that turn one of the verbs above into a writing command. `ls -o` and
- * `grep -i` collide here; a legitimate one being rejected is the intended
- * trade, because a rejected rule is REJECTED (the operator sees it and
- * rewrites it) rather than silently narrowed into something that looks like it
- * was accepted.
- *
- * Matched against the token as written, against a `--long=value` prefix, AND
- * against each letter of a single-dash cluster — `-ofile.txt` and `-lo` both
- * carry `-o`, and checking only whole tokens let both through.
- */
-export const WRITING_FLAGS: readonly string[] = [
-  '-o',
-  '-i',
-  '--in-place',
-  '--output',
-  '--output-file',
-  '--exec',
-  '--delete',
-  '-delete',
-  '-exec',
-  '-X',
-  '--method'
-]
-
-/**
- * Entries from {@link READ_COMMANDS} whose `:*` form must be refused.
- *
- * `:*` is Claude Code's prefix match: it authorizes the named command followed
- * by ANY arguments. So for a verb that accepts a writing flag, the wildcard
- * form grants precisely what the explicit form is refused for —
- * `Bash(git diff --output=F)` is rejected while `Bash(git diff:*)` would allow
- * the very same call at runtime. git's diff machinery (`log`, `diff`, `show`)
- * all take `--output=<file>`, so their wildcard forms are refused here.
- *
- * Their explicit forms are still accepted, and nothing an `observe` worker
- * needs is lost: `Bash(git log:*)`, `Bash(git diff:*)` and `Bash(git show:*)`
- * are already granted unconditionally by {@link OBSERVE_TOOLS}. This list only
- * governs what an operator may ADD.
- */
-export const PREFIX_UNSAFE_COMMANDS: readonly string[] = ['git diff', 'git log', 'git show']
-
-/**
- * Shell punctuation that makes a command something other than the single
- * invocation it appears to be: chaining (`;` `&` `|`), redirection (`<` `>`),
- * substitution (`$` backtick), grouping and escaping. Any of these and the
- * leading-token check below is answering a question about the wrong command.
- */
-const SHELL_METACHARACTERS = /[;&|<>$`()\\{}\n\r]/
-
-/** The `Bash(<command>)` wrapper, with no `)` inside — a subshell cannot hide here. */
-const BASH_RULE = /^Bash\(([^)]+)\)$/
-
-/**
- * The command inside a `Bash(...)` rule, plus whether it carried Claude Code's
- * `:*` prefix-match suffix. `null` when the rule is not a `Bash(...)` rule at
- * all. The suffix is reported rather than silently dropped: stripping it before
- * the checks below is what made the wildcard form more permissive than the
- * explicit one.
- */
-function commandOfRule(rule: string): { command: string; prefixMatch: boolean } | null {
-  const m = BASH_RULE.exec(rule.trim())
-  if (!m) return null
-  const inner = m[1].trim()
-  const prefixMatch = inner.endsWith(':*')
-  const command = prefixMatch ? inner.slice(0, -2).trim() : inner
-  return command.length > 0 ? { command, prefixMatch } : null
-}
-
-/** The `READ_COMMANDS` entry the leading tokens match exactly, or `null`. */
-function matchedReadCommand(tokens: readonly string[]): string | null {
-  return (
-    READ_COMMANDS.find((entry) => {
-      const want = entry.split(' ')
-      if (tokens.length < want.length) return false
-      return want.every((w, i) => tokens[i] === w)
-    }) ?? null
-  )
-}
-
-/**
- * Every form one token can carry a writing flag in: the token itself
- * (`-o`, `-delete`), a `--long=value` pair, and — for a single-dash token —
- * each of its letters, which covers both the bundled (`-lo`) and the attached
- * (`-ofile.txt`) short-flag forms.
- */
-function flagFormsOf(token: string): string[] {
-  const forms = [token]
-  if (/^-[^-]/.test(token)) {
-    for (const ch of token.slice(1)) forms.push(`-${ch}`)
-  }
-  return forms
-}
-
-/** True when any token is a flag that would let the invocation write. */
-function hasWritingFlag(tokens: readonly string[]): boolean {
-  return tokens.some((t) => {
-    if (WRITING_FLAGS.some((f) => f.startsWith('--') && t.startsWith(`${f}=`))) return true
-    return flagFormsOf(t).some((form) => WRITING_FLAGS.includes(form))
-  })
-}
-
-/**
- * Whether one `extraReadCommands` entry may widen an `observe` allowlist: it
- * must be a `Bash(...)` rule, carry no shell metacharacter, invoke a
- * `READ_COMMANDS` verb, and pass no `WRITING_FLAGS`. Deny is the default —
- * anything unrecognized is rejected.
- */
-export function isReadCommandRule(rule: string): boolean {
-  const parsed = commandOfRule(rule)
-  if (parsed === null) return false
-  if (SHELL_METACHARACTERS.test(parsed.command)) return false
-  const tokens = parsed.command.split(/\s+/).filter((t) => t.length > 0)
-  if (tokens.length === 0) return false
-  if (hasWritingFlag(tokens)) return false
-  const entry = matchedReadCommand(tokens)
-  if (entry === null) return false
-  // A `:*` rule authorizes arguments this function never sees, so the flag
-  // check above proves nothing about it. Refuse the wildcard where an argument
-  // could write.
-  if (parsed.prefixMatch && PREFIX_UNSAFE_COMMANDS.includes(entry)) return false
-  return true
-}
+// `extraReadCommands` used to let an operator add `Bash(...)` rules to an `observe`
+// allowlist, guarded by a verb allowlist and a writing-flag filter (BUG-108). That
+// guard was the wrong shape of defense: `observe` now has no shell at all (see
+// {@link OBSERVE_TOOLS}), so no rule can widen it. The field stays on the `Worker`
+// record so a saved worker still loads and the MCP/UI surfaces keep their types, but
+// it grants nothing, and every entry is reported as refused.
 
 /**
  * Split configured extra read commands into the ones that widen the allowlist
- * and the ones that were refused. `tickArgv` only needs `accepted`; `rejected`
+ * (always none: `observe` has no shell) and the ones that were refused. `rejected`
  * exists so the shell can put the refusal in front of the operator instead of
  * dropping it in silence (see `scheduler-shell.ts#completeTick`).
  */
@@ -638,13 +464,7 @@ export function partitionExtraReadCommands(rules: readonly string[] | undefined)
   accepted: string[]
   rejected: string[]
 } {
-  const accepted: string[] = []
-  const rejected: string[] = []
-  for (const rule of rules ?? []) {
-    if (isReadCommandRule(rule)) accepted.push(rule)
-    else rejected.push(rule)
-  }
-  return { accepted, rejected }
+  return { accepted: [], rejected: [...(rules ?? [])] }
 }
 
 /**
@@ -682,11 +502,18 @@ export function tickArgv(worker: Worker, ctx: TickContext): string[] {
     argv.push('--permission-mode', 'bypassPermissions')
     if (ctx.mcpConfigPath) argv.push('--allowedTools', ALLOWED_TOOLS_RULES.join(','))
   } else {
-    const { accepted } = partitionExtraReadCommands(worker.extraReadCommands)
-    const allow = [...OBSERVE_TOOLS, ...accepted]
+    // `extraReadCommands` is deliberately not consulted: observe has no shell (BUG-164).
+    const allow = [...OBSERVE_TOOLS]
+    // The built-in tool set is an allowlist, not "everything minus a deny list".
+    argv.push('--tools', OBSERVE_TOOLS.join(','))
     if (ctx.mcpConfigPath) allow.push(...OBSERVE_MCP_ALLOW)
     argv.push('--allowedTools', allow.join(','))
-    argv.push('--disallowedTools', OBSERVE_TOOLS_DENY.join(','))
+    // Denying the non-allowed Harnu verbs by name, not just leaving them unallowed, drops them
+    // from the roster the CLI shows the model: an unallowed verb is otherwise still listed and
+    // only refused when called.
+    const deny = [...OBSERVE_TOOLS_DENY]
+    if (ctx.mcpConfigPath) deny.push(...OBSERVE_MCP_DENY)
+    argv.push('--disallowedTools', deny.join(','))
   }
 
   if (worker.systemPrompt)

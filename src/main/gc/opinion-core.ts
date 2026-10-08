@@ -779,7 +779,9 @@ export function opinionArgv(a: {
   const flags = base.slice(0, base.lastIndexOf('--'))
   return [
     ...withFlagValue(
-      withoutFlag(flags, '--allowedTools'),
+      // `tickArgv` already offers the observe roster through `--tools`; the advisor's narrower roster
+      // below must be the only one, or the CLI would see two `--tools` flags.
+      withoutFlag(withoutFlag(flags, '--allowedTools'), '--tools'),
       '--disallowedTools',
       [...OPINION_TOOLS_DENY, ...dataDirRules(a.dataDirs ?? [])].join(',')
     ),

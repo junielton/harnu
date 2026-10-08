@@ -270,9 +270,10 @@ describe('registerScheduler — the runner (mocked spawn)', () => {
     expect(h.spawn.mock.calls[0][1] as string[]).not.toContain('--settings')
   })
 
-  // BUG-108 — a refused extra read command is recorded where the operator
-  // already looks for what a tick could not do, instead of vanishing.
-  it('records a rejected extra read command in the run denials', async () => {
+  // BUG-108 / BUG-164 — an extra read command is never honored (observe has no
+  // shell), and the refusal is recorded where the operator already looks for what a
+  // tick could not do, instead of vanishing.
+  it('records every extra read command as rejected in the run denials', async () => {
     const child = new FakeChild()
     h.spawn.mockReturnValue(child)
     const [worker] = await save(
@@ -294,7 +295,7 @@ describe('registerScheduler — the runner (mocked spawn)', () => {
     })
     const runs = await runsFor(worker.id)
     expect(runs[0].denials).toContain('rejected rule: Bash(rm -rf /)')
-    expect(runs[0].denials.join(' ')).not.toContain('Bash(git status)')
+    expect(runs[0].denials).toContain('rejected rule: Bash(git status)')
   })
 
   /**

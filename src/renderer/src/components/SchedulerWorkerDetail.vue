@@ -22,8 +22,7 @@ import {
   Clock,
   ListChecks,
   TriangleAlert,
-  ChevronRight,
-  X as XIcon
+  ChevronRight
 } from 'lucide-vue-next'
 import { useSchedulerStore } from '../stores/scheduler'
 import { useSessionsStore } from '../stores/sessions'
@@ -227,25 +226,6 @@ const folderHasNoSkillEnabled = computed(() => {
     (name) => folderSkillFlags.value[name] ?? globalSkillFlags.value[name] === true
   )
 })
-
-// ── extra read commands (observe-only tag field) ────────────────────────────
-// Mirrors `isReadCommandRule` in src/main/scheduler-core.ts (a Bash(...) rule
-// and nothing else) — duplicated here because that module is main-only per
-// the process-boundary rule; the renderer never imports across it.
-const READ_COMMAND_RULE = /^Bash\([^)]+\)$/
-const newCommandDraft = ref('')
-
-function addExtraReadCommand(): void {
-  const value = newCommandDraft.value.trim()
-  if (!READ_COMMAND_RULE.test(value)) return
-  const next = [...(props.worker.extraReadCommands ?? []), value]
-  scheduler.save(props.worker.id, { extraReadCommands: next })
-  newCommandDraft.value = ''
-}
-function removeExtraReadCommand(index: number): void {
-  const next = (props.worker.extraReadCommands ?? []).filter((_, i) => i !== index)
-  scheduler.save(props.worker.id, { extraReadCommands: next })
-}
 
 // ── header badges ────────────────────────────────────────────────────────
 const modeBadgeClass = computed(() =>
@@ -853,40 +833,6 @@ const NOTIFY_OPTIONS = computed<{ value: NotifyOn; label: string }[]>(() => [
                   }}</b>
                   {{ t('scheduler.settings.modeActWarningRest') }}
                 </span>
-              </div>
-            </div>
-          </div>
-          <div v-if="worker.mode === 'observe'" class="flex items-start gap-3">
-            <div class="w-[132px] flex-none pt-2 text-[12px] text-text-2">
-              {{ t('scheduler.settings.extraReadCommands') }}
-              <SettingHint>{{ t('scheduler.settings.extraReadCommandsHint') }}</SettingHint>
-            </div>
-            <div class="flex min-w-0 flex-1 flex-col gap-1">
-              <div
-                class="flex min-h-8 flex-wrap items-center gap-1.5 rounded-sm border border-border-2 bg-surface px-2 py-1.5"
-              >
-                <span
-                  v-for="(cmd, i) in worker.extraReadCommands ?? []"
-                  :key="cmd"
-                  class="inline-flex items-center gap-1 rounded-full border border-border-2 bg-surface-2 py-0.5 pl-2 pr-1 font-mono text-[11px] text-text-2"
-                >
-                  {{ cmd }}
-                  <button
-                    type="button"
-                    class="flex items-center text-text-4 transition hover:text-text"
-                    :aria-label="t('scheduler.row.delete')"
-                    @click="removeExtraReadCommand(i)"
-                  >
-                    <XIcon :size="11" :stroke-width="1.8" />
-                  </button>
-                </span>
-                <input
-                  v-model="newCommandDraft"
-                  type="text"
-                  class="h-5 min-w-[110px] flex-1 border-0 bg-transparent text-[12px] text-text outline-none"
-                  :placeholder="t('scheduler.settings.extraReadCommandsPlaceholder')"
-                  @keydown.enter.prevent="addExtraReadCommand"
-                />
               </div>
             </div>
           </div>

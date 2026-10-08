@@ -353,7 +353,7 @@ async function lastResultFor(workerId: string): Promise<string | undefined> {
  */
 async function completeTick(worker: Worker, run: Run): Promise<void> {
   liveTicks.delete(worker.id)
-  // BUG-108: an extra read command that failed verb validation never reached
+  // BUG-108 / BUG-164: `observe` has no shell, so an extra read command never reaches
   // the allowlist. Record it alongside the tick's own permission denials so the
   // Runs tab shows the refusal instead of the operator wondering why their rule
   // did nothing. `act` has no allowlist to widen, so the field is inert there.
