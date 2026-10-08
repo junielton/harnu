@@ -106,8 +106,9 @@ export interface BundleFacts {
   graceDays?: number
   /**
    * Every path the bundle was judged on resolved to its real location: its own path, its
-   * repo path, and every container and session folder inside it or above it. An unresolved
-   * one may be an alias of anything, so false, or absent, is never ready.
+   * repo path, and every container and open (not history-only) session folder inside it or
+   * above it. An unresolved one may be an alias of anything, so false, or absent, is never
+   * ready.
    */
   pathsResolved: boolean
 }
@@ -426,13 +427,18 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
 
   // Every container and session folder that did not resolve, keyed on its spelling. Such a
   // folder may be an alias of any worktree, so one inside a bundle or above it (where it may
-  // see the bundle) keeps that bundle from being proven ready.
+  // see the bundle) keeps that bundle from being proven ready. A history-only session
+  // (`none`) is exempt (delta 5, 2026-10-08): nothing runs there, so its folder, often a
+  // deleted subfolder, cannot hide anything that uses the worktree.
+  const openSessionFolders = [...input.sessions]
+    .filter(([, s]) => s.presence !== 'none')
+    .map(([folder]) => folder)
   const unresolved = [
     ...new Set([
       ...[...input.containers, ...input.stacks.flatMap((s) => s.containers)].flatMap(
         containerFolderPaths
       ),
-      ...input.sessions.keys(),
+      ...openSessionFolders,
       ...input.stackPaths.values()
     ])
   ]
