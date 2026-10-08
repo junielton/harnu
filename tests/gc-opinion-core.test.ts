@@ -7,6 +7,8 @@ import {
   OPINION_BUILTIN_TOOLS,
   OPINION_FALLBACK,
   advisorEnv,
+  unsafeRulePaths,
+  dataDirRules,
   claudeFolders,
   opinionKey,
   pullRequestFacts,
@@ -1134,5 +1136,49 @@ describe('confineCwd compares real paths, not spellings (delta 6, item 2)', () =
   it('still treats an unknown HOME as nothing to compare with, but never accepts a root', () => {
     expect(confineCwd(other, '', real)).toBe(other)
     expect(confineCwd('/', '', real)).toBeNull()
+  })
+})
+
+describe('a blocked folder that cannot be written into a deny rule fails closed (delta 6 nits, item 2)', () => {
+  it.each([
+    ['a comma', '/srv/my,cfg'],
+    ['an opening parenthesis', '/srv/cfg(1'],
+    ['a closing parenthesis', '/srv/cfg)1'],
+    ['a newline', '/srv/cfg\nextra'],
+    ['a carriage return', '/srv/cfg\rextra'],
+    ['a tab', '/srv/cfg\textra'],
+    ['a comma in a Windows path', 'C:\\Users\\me\\my,cfg']
+  ])('reports a folder with %s as unsafe', (_name, dir) => {
+    expect(unsafeRulePaths([dir])).toEqual([dir])
+  })
+
+  it('accepts ordinary paths, spaces, dots, dashes and non-ASCII letters', () => {
+    expect(
+      unsafeRulePaths([
+        '/srv/cfg',
+        '/home/me/My Projects/x',
+        '/tmp/claude-1000',
+        'C:\\Users\\me',
+        '/srv/café-é.d'
+      ])
+    ).toEqual([])
+  })
+
+  it('ignores blanks and relative paths, which never become a rule', () => {
+    expect(unsafeRulePaths(['', '   ', 'relative,dir'])).toEqual([])
+  })
+
+  it('lists every offender, in order', () => {
+    expect(unsafeRulePaths(['/ok', '/a,b', '/also/ok', '/c(d'])).toEqual(['/a,b', '/c(d'])
+  })
+
+  it('dataDirRules and opinionArgv refuse to splice an unsafe path, instead of writing a broken rule', () => {
+    expect(() => dataDirRules(['/srv/my,cfg'])).toThrow(/safety rule/i)
+    expect(() => opinionArgv({ model: 'haiku', effort: 'low', dataDirs: ['/srv/cfg)x'] })).toThrow(
+      /safety rule/i
+    )
+    expect(() =>
+      opinionArgv({ model: 'haiku', effort: 'low', dataDirs: ['/srv/fine'] })
+    ).not.toThrow()
   })
 })

@@ -721,3 +721,73 @@ describe('the service closes the Claude data folders in the argv it hands the ru
     )
   })
 })
+
+describe('an unsafe blocked-folder path: Harnu does not run the advisor (delta 6 nits, item 2)', () => {
+  function rigWith(dataDirs: string[], ids: string[]): Rig {
+    const r = rig([])
+    r.state.lookup = Object.fromEntries(ids.map((id) => [id, 'review' as const]))
+    r.state.dossiers = Object.fromEntries(ids.map((id) => [id, dossier(id)]))
+    r.service = createOpinionService({
+      cache: createOpinionCache(),
+      classify: async () => (id) => r.state.lookup[id],
+      dossier: async (id) => ({ dossier: r.state.dossiers[id], group: '/repo' }),
+      route: async () => ({ model: 'haiku', effort: 'low' }),
+      dataDirs,
+      run: async (a) => {
+        r.runs.push(a)
+        return allSafe(a.stdin)
+      },
+      emitResult: (x) => r.results.push(x),
+      emitDone: (d) => r.done.push(d),
+      newId: () => 'j'
+    })
+    return r
+  }
+
+  it('answers every item unsure, names the folder by its basename, and never runs the model', async () => {
+    const r = rigWith(['/srv/cfg/my,claude'], ['a', 'b'])
+    r.service.start(['a', 'b'])
+    await r.service.idle()
+    expect(r.runs).toHaveLength(0)
+    for (const id of ['a', 'b']) {
+      const res = r.results.find((x) => x.id === id) as {
+        verdict: string
+        reason: string
+        durable: boolean
+      }
+      expect(res.verdict).toBe('unsure')
+      expect(res.durable).toBe(false)
+      expect(res.reason).toBe('Harnu could not express a safety rule for my,claude')
+    }
+    expect(r.done[0]).toMatchObject({ answered: 0, failed: 2 })
+  })
+
+  it('shows a readable basename for a path with a newline', async () => {
+    const r = rigWith(['/srv/cfg/odd\nname'], ['a'])
+    r.service.start(['a'])
+    await r.service.idle()
+    const res = r.results.find((x) => x.id === 'a') as { reason: string }
+    expect(res.reason).toMatch(/^Harnu could not express a safety rule for odd.name$/)
+    expect(res.reason).not.toContain('\n')
+  })
+
+  it('caches nothing and the peek returns nothing for it', async () => {
+    const r = rigWith(['/srv/x(y'], ['a'])
+    r.service.start(['a'])
+    await r.service.idle()
+    expect(await r.service.cached(['a'])).toEqual({})
+  })
+
+  it('still refuses ids that are not Needs review, and runs normally with safe paths', async () => {
+    const bad = rigWith(['/srv/x,y'], ['a'])
+    bad.state.lookup.ready1 = 'other'
+    bad.service.start(['a', 'ready1'])
+    await bad.service.idle()
+    expect(bad.results.find((x) => x.id === 'ready1')).toMatchObject({ refused: 'not-review' })
+    const good = rigWith(['/srv/fine/claude'], ['a'])
+    good.service.start(['a'])
+    await good.service.idle()
+    expect(good.runs).toHaveLength(1)
+    expect(good.results.find((x) => x.id === 'a')).toMatchObject({ verdict: 'safe' })
+  })
+})

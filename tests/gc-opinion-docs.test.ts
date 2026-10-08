@@ -286,3 +286,15 @@ describe('no doc or comment claims absolute confinement (delta 6, item 3)', () =
     })
   })
 })
+
+describe('the Windows caveat is stated precisely (delta 6 nits, item 1)', () => {
+  const windows =
+    /On Windows[\s\S]{0,160}?only `?~\/\.claude`? \(and `?CLAUDE_CONFIG_DIR`?\)[\s\S]{0,40}?explicitly blocked/i
+  it('docs/user/cleanup.md', () => expect(userDoc()).toMatch(windows))
+  it('CHANGELOG.md', () => expect(changelog()).toMatch(windows))
+  it('design.md', () => expect(designBlock()).toMatch(windows))
+
+  it('says why: there is no per-user temp folder name to block there', () => {
+    expect(userDoc()).toMatch(/On Windows[\s\S]{0,120}?no per-user temp folder/i)
+  })
+})
