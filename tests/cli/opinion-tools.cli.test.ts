@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { opinionArgv } from '../../src/main/gc/opinion-core'
+import { OPINION_BUILTIN_TOOLS, opinionArgv } from '../../src/main/gc/opinion-core'
 import { WITH_CLI } from './support/run-claude'
 
 // The advisor's session against the real CLI (T444 delta 3): the tool roster the model is offered is
@@ -57,7 +57,10 @@ describe.skipIf(!WITH_CLI)('the advisor session against the real CLI', () => {
     const i = argv.indexOf('--tools')
     const without = [...argv.slice(0, i), ...argv.slice(i + 2)]
     const tools = await initTools(without)
-    expect(tools).toContain('EnterWorktree')
+    // The deny list names what the observe tier denies (EnterWorktree among them since BUG-164), and
+    // the CLI drops a tool denied by name from the roster. The point stands for every other built-in.
+    const beyond = tools.filter((t) => !OPINION_BUILTIN_TOOLS.includes(t))
+    expect(beyond.length).toBeGreaterThan(0)
     expect(tools.length).toBeGreaterThan(3)
   }, 40_000)
 })
