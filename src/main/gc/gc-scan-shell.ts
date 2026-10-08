@@ -44,7 +44,12 @@ import {
 } from './gc-housekeeping-input'
 import { planHousekeeping } from './housekeeping-core'
 import { scanProjectFiles, type FsProbe, type ProjectFile } from './gc-project-files'
-import { NO_DOCKER_CARD, dockerCardFacts, type GcDockerCard } from './gc-docker-card'
+import {
+  NO_DOCKER_CARD,
+  dockerCardFacts,
+  withOrphanVolumesHidden,
+  type GcDockerCard
+} from './gc-docker-card'
 import type { GcGather } from './gc-cycle'
 import { judgeKeeps, type StaleKeep } from './gc-keep'
 import type { GcPrefs } from './gc-prefs'
@@ -297,7 +302,8 @@ export async function gatherGc(
     canonical,
     df,
     dockerAvailable: available,
-    docker,
+    // With docker absent there are no volumes to hide, so the card carries no explanation.
+    docker: available ? withOrphanVolumesHidden(docker, guards.hidden) : docker,
     orphanVolumes: orphanVolumeItems(orphanNames, df),
     staleKeeps
   }
