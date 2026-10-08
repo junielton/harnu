@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sessionsFromFolders } from '../src/main/gc/gc-sessions'
+import { sessionsFromFleet, sessionsFromFolders } from '../src/main/gc/gc-sessions'
 import { buildBundles, canonicalPathKey, type CanonicalPath } from '../src/main/gc/bundle-core'
 import { NOW, REPO, WT, collect, scanInput } from './gc-scan-fixtures'
 
@@ -109,5 +109,89 @@ describe('session presence is judged on real paths (delta 3b, item 8)', () => {
     expect(sessions.has('/link/wt')).toBe(true)
     expect(canonicalPathKey('/link/wt', 'linux')).toBe('/link/wt')
     expect(REPO).toBeTruthy()
+  })
+})
+
+describe('grace counts every terminal under the worktree, outside Harnu too (delta 3b, item 9)', () => {
+  const HOUR = 3_600_000
+  const idle = { live: new Set<string>(), inUse: new Set<string>() }
+  const folder = (path: string, atMs: number | null) => ({
+    path,
+    sessions: atMs === null ? [] : [{ fileMtime: atMs }]
+  })
+
+  it('takes the latest activity of a folder from its transcripts', () => {
+    const out = sessionsFromFleet(
+      [
+        {
+          path: '/ws/wt',
+          sessions: [{ fileMtime: 100 }, { modified: new Date(900).toISOString() }, {}]
+        }
+      ],
+      idle,
+      aliasing({})
+    )
+    expect(out.get('/ws/wt')!.lastActivityAt).toBe(900)
+  })
+
+  it('gives a folder with no transcript no activity', () => {
+    const out = sessionsFromFleet([folder('/ws/wt', null)], idle, aliasing({}))
+    expect(out.get('/ws/wt')!.lastActivityAt).toBeNull()
+  })
+
+  it('a recent transcript in WT/api, from a claude run outside Harnu, keeps the worktree in use', () => {
+    const canonical = aliasing({})
+    const sessions = sessionsFromFleet([folder(`${WT}/api`, NOW - HOUR)], idle, canonical)
+    const [b] = bundlesFor(sessions, canonical)
+    expect(b!.session).toBe('none')
+    expect(b!.lastSignOfLifeAt).toBe(NOW - HOUR)
+    expect(b!.bucket).toBe('in-use')
+  })
+
+  it('a session parked an hour ago counts toward grace', () => {
+    const canonical = aliasing({})
+    const sessions = sessionsFromFleet([folder(WT, NOW - HOUR)], idle, canonical)
+    expect(bundlesFor(sessions, canonical)[0]!.bucket).toBe('in-use')
+  })
+
+  it('a transcript under an alias of the worktree counts', () => {
+    const canonical = aliasing({ '/link': '/real' })
+    const sessions = sessionsFromFleet([folder('/link/wt/api', NOW - HOUR)], idle, canonical)
+    const [b] = bundlesFor(sessions, canonical, { worktree: '/real/wt' })
+    expect(b!.bucket).toBe('in-use')
+  })
+
+  it('old activity under the worktree does not keep it, and a sibling name prefix never counts', () => {
+    const canonical = aliasing({})
+    const old = sessionsFromFleet(
+      [folder(`${WT}/api`, NOW - 30 * 86_400_000), folder(`${WT}-other`, NOW - HOUR)],
+      idle,
+      canonical
+    )
+    expect(bundlesFor(old, canonical)[0]!.bucket).toBe('ready')
+  })
+
+  it('takes the newest of several folders under the worktree', () => {
+    const canonical = aliasing({})
+    const sessions = sessionsFromFleet(
+      [
+        folder(`${WT}/a`, NOW - 5 * HOUR),
+        folder(`${WT}/b`, NOW - HOUR),
+        folder(WT, NOW - 9 * HOUR)
+      ],
+      idle,
+      canonical
+    )
+    expect(bundlesFor(sessions, canonical)[0]!.lastSignOfLifeAt).toBe(NOW - HOUR)
+  })
+
+  it('still reads presence for those folders on real paths', () => {
+    const canonical = aliasing({ '/link': '/real' })
+    const sessions = sessionsFromFleet(
+      [folder('/real/wt/api', NOW - HOUR)],
+      { live: new Set(['/real/wt/api']), inUse: new Set(['/real/wt/api']) },
+      canonical
+    )
+    expect(bundlesFor(sessions, canonical, { worktree: '/link/wt' })[0]!.session).toBe('working')
   })
 })
