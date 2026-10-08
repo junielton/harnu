@@ -320,3 +320,11 @@ describe('Keep protects at once (delta 4, N1)', () => {
     expect(between(ipc, '    keep: async', '    unkeep: async')).toMatch(/withoutKeep\(/)
   })
 })
+
+describe('headless sessions and a stale index count toward grace (delta 4, N2, N3)', () => {
+  it('the gather merges the transcript index into the fleet before reading activity', () => {
+    const block = between(scan, '// Sessions on real paths', 'const stacks = groupStacks')
+    expect(block).toMatch(/mergeActivityFolders\(fleet, await transcriptFolders\(/)
+    expect(block).toMatch(/sessionsFromFleet\(activity,/)
+  })
+})
