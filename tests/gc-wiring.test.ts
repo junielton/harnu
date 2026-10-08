@@ -138,7 +138,8 @@ describe('GC jobs and the Reaper never run destructive work at once (delta 1, it
 describe('a bundle never owns a volume another folder may share (delta 1, item 1)', () => {
   it('the gather feeds the bundle builder the folders and the pinned project names', () => {
     const input = between(scan, 'const input = {', 'let bundles')
-    expect(input).toMatch(/knownFolders: guards\.knownFolders/)
+    expect(input).toMatch(/knownFolders: bundleFolders/)
+    expect(scan).toMatch(/foldersForBundles\(guards\.knownFolders,/)
     expect(input).toMatch(/protectedProjects: guards\.protectedProjects/)
     expect(scan).toMatch(/const guards = volumeGuards\(sources, dirExists\)/)
   })

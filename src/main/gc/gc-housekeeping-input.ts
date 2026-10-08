@@ -3,7 +3,12 @@
 // never removes a volume outside a ready bundle). No I/O: the shell reads the files and
 // stats the paths, these functions interpret the results.
 
-import { statProvesGone, type VolumeFact } from '../containers/containers-core'
+import {
+  isInside,
+  normalizePath,
+  statProvesGone,
+  type VolumeFact
+} from '../containers/containers-core'
 import { normalizeComposeProjectName, type HousekeepingVolume } from './housekeeping-core'
 import { projectNamesFromFiles, readValue, type ProjectFile } from './gc-project-files'
 
@@ -207,4 +212,24 @@ export async function buildDirExists(
 ): Promise<(path: string) => boolean> {
   const { checked, existing } = await statExistence(paths, stat)
   return makeDirExists(checked, existing)
+}
+
+/**
+ * The known folders the bundle builder may see. It treats every known folder strictly inside
+ * a bundle's path as a worktree nested in it (S2 delta 6), so a pinned or fleet subfolder such
+ * as `WT/api` would push its own worktree into review. Worktree roots and repo roots always
+ * go in (a worktree really nested in another is what the rule exists to find); any other
+ * folder goes in only when it lies outside every worktree. Compose project protection for the
+ * dropped subfolders already comes from `protectedProjects`, so nothing is lost.
+ */
+export function foldersForBundles(
+  known: readonly string[],
+  worktreePaths: readonly string[],
+  repoPaths: readonly string[]
+): string[] {
+  const platform = process.platform
+  const key = (p: string): string => normalizePath(p, platform)
+  const roots = worktreePaths.map(key)
+  const outside = known.filter((p) => !roots.some((r) => isInside(key(p), r)))
+  return [...new Set([...worktreePaths, ...repoPaths, ...outside])]
 }

@@ -33,6 +33,7 @@ import { dockerIsUnavailable, resolveRealPaths } from './gc-shell'
 import { sessionsFromFleet } from './gc-sessions'
 import {
   buildDirExists,
+  foldersForBundles,
   existenceCandidates,
   orphanVolumeItems,
   toHousekeepingVolumes,
@@ -223,6 +224,9 @@ export async function gatherGc(
     (p) => fs.realpath(p)
   )
 
+  // Only folders that cannot pose as a worktree nested in a bundle (see foldersForBundles).
+  const bundleFolders = foldersForBundles(guards.knownFolders, itemPaths, repoPaths)
+
   const input = {
     items,
     fateInputs: lastFateInputs(),
@@ -236,7 +240,7 @@ export async function gatherGc(
     graceDays: prefs.graceDays,
     volumes: df,
     // A volume is owned only when no other folder may share its project (delta 1, item 1).
-    knownFolders: guards.knownFolders,
+    knownFolders: bundleFolders,
     protectedProjects: guards.protectedProjects,
     canonical
   }
