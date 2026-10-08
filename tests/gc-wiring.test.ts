@@ -204,3 +204,25 @@ describe('S2 delta 4 contracts (delta 2, item 3)', () => {
     expect(manual).not.toMatch(/confirmReview: true/)
   })
 })
+
+describe('Keep survives a stale cache (delta 3, item 1)', () => {
+  it('gc:keep records the fate from a fresh gather, not from the cache', () => {
+    const keep = between(ipc, '    keep: async', '    unkeep: async')
+    expect(keep).toMatch(/gatherFresh\(\)/)
+    expect(keep).not.toMatch(/cache \?\?|cache\.bundles/)
+    expect(keep).toMatch(/keepFromFresh\(/)
+  })
+
+  it('a gather clears only the marks it judged, and only if they are still the same', () => {
+    expect(between(ipc, 'const gather = ', 'const queue = createJobQueue')).toMatch(
+      /withoutStaleKeeps\(prefs, g\.staleKeeps\)/
+    )
+    expect(scan).toMatch(/judgeKeeps\(/)
+  })
+
+  it('a fresh gather waits for the one in flight and then starts its own', () => {
+    expect(between(ipc, 'const gatherFresh', 'const queue = createJobQueue')).toMatch(
+      /await gathering[\s\S]*return gather\(\)/
+    )
+  })
+})
