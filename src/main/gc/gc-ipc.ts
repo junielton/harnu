@@ -22,21 +22,14 @@ import { bucketFeed, setInheritedBuckets } from './gc-buckets'
 import { withActor } from './gc-actor'
 import {
   LEFTOVERS_FILE,
-  pruneLeftovers,
   readLeftovers,
-  toDirMap,
   withLeftovers,
   writeLeftovers,
   type Leftover
 } from './gc-leftovers'
-import {
-  createCycleState,
-  runGcCycle,
-  withFailures,
-  type GcCycleDeps,
-  type GcGather
-} from './gc-cycle'
+import { createCycleState, runGcCycle, type GcCycleDeps, type GcGather } from './gc-cycle'
 import { gatherGc, type GcGathered } from './gc-scan-shell'
+import { createAgentService, createGatherer } from './gc-gatherer'
 import { createJobQueue, type GcJobInfo } from './gc-jobs-core'
 import { submitManualClean } from './gc-manual'
 import {
@@ -45,9 +38,7 @@ import {
   readGcPrefs,
   withAcknowledged,
   withKeep,
-  withReleased,
   withoutKeep,
-  withoutReleased,
   writeGcPrefs,
   type GcPrefs
 } from './gc-prefs'
@@ -101,9 +92,6 @@ export async function registerGcHandlers(
     leftovers = withLeftovers(leftovers, entries)
     writeLeftovers(leftoversFile, leftovers)
   }
-  let cache: GcGathered | null = null
-  let gathering: Promise<GcGathered> | null = null
-
   const send = (channel: string, payload: unknown): void => {
     const win = getWindow()
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
@@ -115,36 +103,27 @@ export async function registerGcHandlers(
     return prefs
   }
 
-  /** One gather at a time; it also feeds the Containers view and clears outdated Keep marks. */
-  const gather = (): Promise<GcGathered> => {
-    gathering ??= (async () => {
-      try {
-        // A halted item reads Needs review here, once, for the snapshot, the feed, the jobs and the cycle.
-        const g = withFailures(
-          await gatherGc(prefs, Date.now(), toDirMap(leftovers)),
-          state,
-          Date.now()
-        )
-        // A project with no volume left in Docker has nothing to review. Only judged when
-        // docker answered: an outage says nothing about what exists.
-        if (g.dockerAvailable) {
-          const pruned = pruneLeftovers(leftovers, g.housekeeping.volumes)
-          if (Object.keys(pruned.projects).length !== Object.keys(leftovers.projects).length) {
-            leftovers = pruned
-            writeLeftovers(leftoversFile, leftovers)
-          }
-        }
-        cache = g
-        setInheritedBuckets(bucketFeed(g.bundles))
-        if (g.staleKeeps.length > 0) await persist(withoutKeep(prefs, g.staleKeeps))
-        if (g.staleReleases.length > 0) await persist(withoutReleased(prefs, g.staleReleases))
-        return g
-      } finally {
-        gathering = null
+  /**
+   * One gather at a time; it also feeds the Containers view and clears outdated marks. A
+   * halted item reads Needs review here, once, for the snapshot, the feed, the jobs and the
+   * cycle. The persistence rules live in `gc-gatherer`, where they are tested.
+   */
+  const gatherer = createGatherer({
+    prefs: () => prefs,
+    persistPrefs: persist,
+    gatherGc,
+    state,
+    leftovers: {
+      get: () => leftovers,
+      set: (next) => {
+        leftovers = next
+        writeLeftovers(leftoversFile, leftovers)
       }
-    })()
-    return gathering
-  }
+    },
+    feed: (g) => setInheritedBuckets(bucketFeed(g.bundles)),
+    now: () => Date.now()
+  })
+  const gather = (): Promise<GcGathered> => gatherer.gather()
 
   const queue = createJobQueue({
     newId: () => randomUUID(),
@@ -212,7 +191,8 @@ export async function registerGcHandlers(
   })
 
   const service: GcService = {
-    snapshot: async (opts) => buildSnapshot(opts?.refresh || !cache ? await gather() : cache),
+    snapshot: async (opts) =>
+      buildSnapshot(opts?.refresh || !gatherer.cached() ? await gather() : gatherer.cached()!),
     clean: (rawIds, rawOpts) =>
       submitManualClean(
         {
@@ -237,7 +217,9 @@ export async function registerGcHandlers(
       ),
     keep: async (rawId) => {
       if (typeof rawId !== 'string') throw new Error('gc:keep expects a bundle id')
-      const bundle = (cache ?? (await gather())).bundles.find((b) => b.item.id === rawId)
+      const bundle = (gatherer.cached() ?? (await gather())).bundles.find(
+        (b) => b.item.id === rawId
+      )
       if (!bundle) throw new Error(`unknown cleanup item: ${rawId}; refresh and retry`)
       const next = await persist(withKeep(prefs, rawId, bundle.fate.fate))
       void gather().catch((err) => console.error('[gc] refresh after keep failed', err))
@@ -262,15 +244,16 @@ export async function registerGcHandlers(
     jobs: () => queue.jobs()
   }
 
-  // The agent-facing seam (T445). Deliberately narrow: no clean, keep or prefs method.
-  setGcService({
-    snapshot: (opts) => service.snapshot(opts),
-    release: async (bundleId, atMs, from) => {
-      await persist(withReleased(prefs, bundleId, atMs, from))
-      // The release changes the bucket, so refresh what the Cleanup surface reads.
-      void gather().catch((err) => console.error('[gc] refresh after release failed', err))
-    }
-  })
+  // The agent-facing seam (T445). Deliberately narrow: no clean, keep or prefs method, and its
+  // snapshot never triggers a write (a persisting gather belongs to the timer and the operator).
+  setGcService(
+    createAgentService({
+      gatherer,
+      snapshotOf: buildSnapshot,
+      prefs: () => prefs,
+      persistPrefs: persist
+    })
+  )
 
   ipcMain.handle('gc:snapshot', (_e, opts?: { refresh?: boolean }) =>
     service.snapshot({ refresh: opts?.refresh === true })

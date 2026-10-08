@@ -166,6 +166,15 @@ export function reviewReason(reason: { code: string; detail: string } | null): {
   return { code: reason.code, sentence }
 }
 
+/**
+ * Whether the bundle carries a release that still applies: a mark made at the bundle's current
+ * tip. A mark from an older tip, or a legacy one with no tip, does not count.
+ */
+function releaseApplies(snap: GcSnapshot, b: WorktreeBundle): boolean {
+  const tip = snap.prefs.releasedFrom[b.item.id]?.localTip
+  return snap.prefs.released[b.item.id] !== undefined && !!tip && tip === b.localTip
+}
+
 /** The bundle's anchors: the worktree itself and the repo it belongs to. */
 function anchorsOf(b: WorktreeBundle): string[] {
   return [b.item.path, b.item.repoPath].filter((p): p is string => typeof p === 'string' && !!p)
@@ -213,7 +222,7 @@ function listBundle(
     reasonCode: reason?.code ?? null,
     bytes: b.item.diskBytes,
     depsBytes: b.depsBytes,
-    released: snap.prefs.released[b.item.id] !== undefined,
+    released: releaseApplies(snap, b),
     agentControllable: isControllable(b, opts.denyFolders, opts.home)
   }
 }
@@ -409,7 +418,7 @@ export function planRelease(
     )
   }
 
-  const releasedAlready = snap.prefs.released[bundle.item.id] !== undefined
+  const releasedAlready = releaseApplies(snap, bundle)
   // What the next gather will conclude: no grace, and the release time stands in for a
   // missing sign of life. Every other rule is judged exactly as it is.
   const judged = bucketOf(

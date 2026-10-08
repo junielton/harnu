@@ -6,8 +6,8 @@
 import type { GcSnapshot } from './gc-wire'
 
 export interface GcAgentService {
-  /** The last gather, or a fresh one with `refresh`. */
-  snapshot(opts?: { refresh?: boolean }): Promise<GcSnapshot>
+  /** The last gather; with none yet, one read-only gather. It never writes anything. */
+  snapshot(): Promise<GcSnapshot>
   /**
    * Records that an agent is done with the bundle, and where the worktree is so a later gather
    * can tell it was cleaned. Deletes nothing.

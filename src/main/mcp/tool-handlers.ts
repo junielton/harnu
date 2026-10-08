@@ -2407,9 +2407,10 @@ const listCleanupHandler: Handler = async (args, ctx) => {
   if (scope && isFolderDenied(scope, ctx.denyFolders, home)) {
     return steerError('FOLDER_NOT_ALLOWED', scope)
   }
-  // A fresh gather, not the cached snapshot: a watchdog counting ready items must never read
-  // buckets from before its own call. The service single-flights it.
-  const snap = await svc.snapshot({ refresh: true })
+  // The current snapshot, never a forced gather: an observe read must not write (a gather
+  // clears marks and prunes files), so the timer and the operator keep that to themselves.
+  // `scannedAt` tells the caller how old the picture is.
+  const snap = await svc.snapshot()
   const listing = cleanupListing(snap, {
     denyFolders: ctx.denyFolders,
     home,
