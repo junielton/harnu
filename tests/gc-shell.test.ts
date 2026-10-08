@@ -1749,39 +1749,67 @@ describe('reprobe and recheck on real paths (delta 4, item C)', () => {
   })
 })
 
-// ---- a container that touches an ancestor of the worktree (delta 4, item E) -------------
+// ---- a container that touches an ancestor of the worktree (delta 5, item 1) -------------
 
-describe('P8: a dev container that bind-mounts an ancestor of the worktree (delta 4, item E)', () => {
+// Delta 4, item E refused these; delta 5, item 1 (the orchestrator ruling of 2026-10-08)
+// relaxed it: a folder above the worktree is ignored for attribution. The three P8 tests
+// below flipped from a refusal to a pass.
+describe('P8: a dev container that bind-mounts an ancestor of the worktree (delta 5, item 1)', () => {
   const NESTED = `${REPO}/.claude/worktrees/wt1`
   const dev = composeIn('dev', 'www', REPO, [{ type: 'bind', source: REPO, name: null }])
   const nestedBundle = (): WorktreeBundle =>
     bundle({ item: reapItem({ path: NESTED }), stackIds: [], ownedVolumes: [] })
 
-  it('the reprobe refuses when it appears after a scan that saw none', async () => {
+  it('the reprobe passes when it appears after a scan that saw none', async () => {
     const h = harness({ stacks: groupStacks([dev]) })
+    expect(await createGcOps(h.deps).reprobe(nestedBundle())).toEqual({ ok: true })
+  })
+
+  it('the recheck does not count it as stack-present', async () => {
+    const h = harness({ stacks: groupStacks([dev]) })
+    expect(await createGcOps(h.deps).recheck(nestedBundle())).toEqual({ ok: true })
+  })
+
+  it('the builder and the reprobe agree: ready at the scan, and the run cleans without touching it', async () => {
+    const b = scanned([dev], undefined, NESTED)
+    expect(b.stackIds).toEqual([])
+    expect(b.sharedStackIds).toEqual([])
+    expect(b.bucket).toBe('ready')
+    const h = harness({ stacks: groupStacks([dev]) })
+    const r = await runBundle(b, createGcOps(h.deps), { removeVolumes: false })
+    expect(r).toMatchObject({ ok: true, haltedAt: null })
+    expect(h.stop).not.toHaveBeenCalled()
+    expect(h.removeContainers).not.toHaveBeenCalled()
+    expect(cleanItem).toHaveBeenCalled()
+  })
+
+  it('a stack that bind-mounts a folder inside the worktree from above it still refuses', async () => {
+    const after = composeIn('dev', 'www', REPO, [
+      { type: 'bind', source: `${NESTED}/storage`, name: null }
+    ])
+    const h = harness({ stacks: groupStacks([after]) })
     expect(await createGcOps(h.deps).reprobe(nestedBundle())).toEqual({
       ok: false,
       reason: 'changed-since-scan'
     })
-  })
-
-  it('the recheck refuses it as stack-present', async () => {
-    const h = harness({ stacks: groupStacks([dev]) })
     expect(await createGcOps(h.deps).recheck(nestedBundle())).toEqual({
       ok: false,
       reason: 'stack-present'
     })
   })
 
-  it('the builder and the reprobe agree: shared at the scan, and the run refuses it', async () => {
-    const b = scanned([dev], undefined, NESTED)
-    expect(b.sharedStackIds).toEqual(['www'])
-    expect(b.bucket).toBe('review')
-    const h = harness({ stacks: groupStacks([dev]) })
-    expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: true })
-    const r = await runBundle(b, createGcOps(h.deps), { removeVolumes: false, confirmReview: true })
-    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'shared-stack' })
+  // The builder calls such a stack exclusive (the folder above is ignored), but stopping it
+  // would tear down a stack the main checkout runs, so the reprobe's exclusivity check still
+  // wants every folder inside the worktree and refuses it: fail closed.
+  it('a stack run from above the worktree that the builder calls exclusive is refused by the reprobe', async () => {
+    const mixed = composeIn('dev', 'www', REPO, [
+      { type: 'bind', source: `${NESTED}/storage`, name: null }
+    ])
+    const b = scanned([mixed], undefined, NESTED)
+    expect(b.stackIds).toEqual(['www'])
+    const h = harness({ stacks: groupStacks([mixed]) })
+    const r = await runBundle(b, createGcOps(h.deps), { removeVolumes: false })
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'changed-since-scan' })
     expect(h.stop).not.toHaveBeenCalled()
-    expect(cleanItem).not.toHaveBeenCalled()
   })
 })

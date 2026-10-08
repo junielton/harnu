@@ -1326,50 +1326,84 @@ describe('buildBundles — stack attribution', () => {
       expect(b.sharedStackIds).toEqual([])
     })
 
-    // Delta 4, item E inverted this: the container sees every folder under the one it
-    // mounts, the worktree included, so it shares the worktree.
-    it('a bind mount of a parent folder of the worktree shares the worktree', () => {
+    // Delta 4, item E inverted this and delta 5, item 1 restored it: a container that only
+    // sees the worktree through a folder above it does not depend on it.
+    it('a bind mount of a parent folder of the worktree does not attribute the stack to it', () => {
       const web = composeContainer('web', 'other', ELSEWHERE, {
         mounts: [bindMount('/ws/org/proj')]
       })
       const b = only(build({ stacks: [stack('other', [web])], containers: [web] }))
       expect(b.stackIds).toEqual([])
+      expect(b.sharedStackIds).toEqual([])
+      expect(b.bucket).toBe('ready')
+    })
+
+    it('a stack run from elsewhere that bind-mounts the worktree folder itself is shared', () => {
+      const web = composeContainer('web', 'other', ELSEWHERE, { mounts: [bindMount(WT_A)] })
+      const b = only(build({ stacks: [stack('other', [web])], containers: [web] }))
+      expect(b.stackIds).toEqual([])
       expect(b.sharedStackIds).toEqual(['other'])
-      expect(b.bucket).toBe('review')
       expect(b.reason?.code).toBe('shared-stack')
     })
   })
 
-  describe('a container that touches an ancestor of the worktree (delta 4, item E)', () => {
+  // Delta 4, item E made every folder above a worktree share it; delta 5, item 1 (the
+  // orchestrator ruling of 2026-10-08) relaxed that, so a folder above the worktree is
+  // ignored for attribution. Each test below that flipped says so.
+  describe('a container that touches an ancestor of the worktree (delta 5, item 1)', () => {
     const NESTED = `${REPO}/.claude/worktrees/wt1`
     const nested = (): ReapItem =>
       item({ path: NESTED, id: `${REPO}::worktree::${NESTED}`, branch: 'feat/wt1' })
 
-    it('P8: a dev container of the main checkout that bind-mounts REPO shares a nested worktree', () => {
+    // Flipped by delta 5: it was shared-stack.
+    it('P8: a dev container of the main checkout that bind-mounts REPO leaves a nested worktree ready', () => {
       const dev = composeContainer('dev', 'www', REPO, { mounts: [bindMount(REPO)] })
       const b = only(build({ items: [nested()], stacks: [stack('www', [dev])], containers: [dev] }))
       expect(b.stackIds).toEqual([])
-      expect(b.sharedStackIds).toEqual(['www'])
-      expect(b.bucket).toBe('review')
-      expect(b.reason?.code).toBe('shared-stack')
+      expect(b.sharedStackIds).toEqual([])
+      expect(b.bucket).toBe('ready')
+      expect(b.reason).toBeNull()
     })
 
-    it('a compose working dir above the worktree shares it, with no bind mount at all', () => {
+    // Flipped by delta 5: it was shared.
+    it('a compose working dir above the worktree does not attribute the stack, with no bind mount at all', () => {
       const dev = composeContainer('dev', 'www', REPO)
       const b = only(build({ items: [nested()], stacks: [stack('www', [dev])], containers: [dev] }))
-      expect(b.sharedStackIds).toEqual(['www'])
+      expect(b.stackIds).toEqual([])
+      expect(b.sharedStackIds).toEqual([])
+      expect(b.bucket).toBe('ready')
     })
 
-    it('a stack whose other folders are inside the worktree is still shared, never exclusive', () => {
+    // Flipped by delta 5: it was shared. The folder above is ignored, so exclusivity is
+    // decided by the remaining folders, which are all inside the worktree.
+    it('a stack whose other folders are all inside the worktree is exclusive', () => {
       const web = composeContainer('web', 'app', `${NESTED}/deploy`, {
         mounts: [bindMount(`${NESTED}/src`), bindMount(REPO)]
       })
       const b = only(build({ items: [nested()], stacks: [stack('app', [web])], containers: [web] }))
-      expect(b.stackIds).toEqual([])
-      expect(b.sharedStackIds).toEqual(['app'])
+      expect(b.stackIds).toEqual(['app'])
+      expect(b.sharedStackIds).toEqual([])
     })
 
-    it('a stack attributed through stackPaths to an ancestor shares the worktree', () => {
+    it('a stack with a folder inside, one above and one unrelated is still shared', () => {
+      const web = composeContainer('web', 'app', `${NESTED}/deploy`, {
+        mounts: [bindMount(REPO), bindMount(ELSEWHERE)]
+      })
+      const b = only(build({ items: [nested()], stacks: [stack('app', [web])], containers: [web] }))
+      expect(b.stackIds).toEqual([])
+      expect(b.sharedStackIds).toEqual(['app'])
+      expect(b.reason?.code).toBe('shared-stack')
+    })
+
+    it('a stack run from above the worktree that bind-mounts a folder inside it is exclusive to it (the reprobe still refuses it)', () => {
+      const dev = composeContainer('dev', 'www', REPO, { mounts: [bindMount(`${NESTED}/storage`)] })
+      const b = only(build({ items: [nested()], stacks: [stack('www', [dev])], containers: [dev] }))
+      expect(b.stackIds).toEqual(['www'])
+      expect(b.sharedStackIds).toEqual([])
+    })
+
+    // Flipped by delta 5: it was shared.
+    it('a stack attributed through stackPaths to an ancestor is not attributed to the worktree', () => {
       const api = composeContainer('api', 'svc', null)
       const b = only(
         build({
@@ -1379,7 +1413,37 @@ describe('buildBundles — stack attribution', () => {
           containers: [api]
         })
       )
-      expect(b.sharedStackIds).toEqual(['svc'])
+      expect(b.stackIds).toEqual([])
+      expect(b.sharedStackIds).toEqual([])
+      expect(b.bucket).toBe('ready')
+    })
+
+    it('an outer worktree owns a stack that runs from it, a worktree nested in it does not share it', () => {
+      const outer = item()
+      const inner = `${WT_A}/nested`
+      const innerItem = item({ path: inner, id: `${REPO}::worktree::${inner}`, branch: 'feat/in' })
+      const db = composeContainer('db', 'app', WT_A)
+      const out = build({
+        items: [outer, innerItem],
+        fateInputs: new Map([
+          [outer.id, { facts: facts({ ancestorOfDefault: true }), localTip: TIP_A }],
+          [
+            innerItem.id,
+            {
+              facts: facts({ path: inner, branch: 'feat/in', ancestorOfDefault: true }),
+              localTip: TIP_B
+            }
+          ]
+        ]),
+        stacks: [stack('app', [db])],
+        containers: [db]
+      })
+      const o = out.find((b) => b.item.path === WT_A)!
+      const n = out.find((b) => b.item.path === inner)!
+      expect(o.stackIds).toEqual(['app'])
+      expect(o.sharedStackIds).toEqual([])
+      expect(n.stackIds).toEqual([])
+      expect(n.sharedStackIds).toEqual([])
     })
 
     it('a sibling of an ancestor does not count', () => {
@@ -1825,11 +1889,9 @@ describe('buildBundles — real paths (delta 4, item C)', () => {
           canonical: aliases({}, ['/ws/org/proj'])
         })
       )
-      // Never ready. Since delta 4 item E a container above the worktree also shares it,
-      // and shared-stack is the rule that comes first.
-      expect(b.pathsResolved).toBe(false)
-      expect(b.bucket).toBe('review')
-      expect(b.reason?.code).toBe('shared-stack')
+      // Never ready. Since delta 5 item 1 a folder above the worktree no longer shares it,
+      // but one that cannot be resolved still blocks it as before.
+      expectUnresolved(b)
     })
 
     it('a session folder that is an ancestor of the worktree', () => {
