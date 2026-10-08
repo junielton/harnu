@@ -29,7 +29,13 @@ beforeEach(async () => {
 
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
-const adminNames = (): string[] => readdirSync(join(repo, '.git', 'worktrees')).sort()
+const adminNames = (): string[] => {
+  try {
+    return readdirSync(join(repo, '.git', 'worktrees')).sort()
+  } catch {
+    return [] // git removes the folder with the last registration
+  }
+}
 
 describe('a GC clean leaves unrelated worktree registrations alone (delta 3b, item 11)', () => {
   it('keeps the registration of an unrelated worktree whose folder is missing', async () => {
