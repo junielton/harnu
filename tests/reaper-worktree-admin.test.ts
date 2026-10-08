@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readdirSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { removeWorktreeAdmin } from '../src/main/reaper/worktree-admin-shell'
+import { canUnregister, removeWorktreeAdmin } from '../src/main/reaper/worktree-admin-shell'
 import { cleanItem, type ExecutorDeps } from '../src/main/reaper/executor-core'
 import type { ReapItem } from '../src/main/reaper/reaper-core'
 import { promises as fsp } from 'node:fs'
@@ -68,6 +68,7 @@ describe('a GC clean leaves unrelated worktree registrations alone (delta 3b, it
       archiveTip: async (_r, ref) => ref,
       archiveWip: async (_r, ref) => ref,
       detachSidebar: async () => undefined,
+      canUnregister: (r, p) => canUnregister(r, p, git),
       removeWorktreeAdmin: (r, p) => removeWorktreeAdmin(r, p, git),
       appendTombstone: async () => undefined,
       now: () => 1
@@ -104,5 +105,93 @@ describe('a GC clean leaves unrelated worktree registrations alone (delta 3b, it
     rmSync(mine, { recursive: true, force: true })
     await removeWorktreeAdmin(repo, mine, git)
     expect(adminNames()).toEqual([])
+  })
+})
+
+describe('real git: no silent skip, no half-cleaned worktree (delta 4, N4)', () => {
+  const item = (mine: string, branch: string): ReapItem =>
+    ({
+      id: 'i',
+      repoPath: repo,
+      kind: 'worktree',
+      branch,
+      path: mine,
+      hidden: false,
+      ageDays: 1,
+      diskBytes: 0,
+      checkpoints: [],
+      verdict: 'harvestable',
+      blockers: [],
+      needsRemoteDelete: false,
+      untracked: [],
+      justifiedBy: 'ancestor',
+      hydration: null
+    }) as ReapItem
+  const execDeps = (over: Partial<ExecutorDeps> = {}): ExecutorDeps => ({
+    probeStatus: async () => ({ trackedDirty: false, untracked: [] }),
+    hasUnpushed: async () => false,
+    trash: async (p) => fsp.rm(p, { recursive: true, force: true }),
+    git: (r, args) => git(r, args),
+    resolveSha: async (r, rev) =>
+      (await git(r, ['rev-parse', '--verify', `${rev}^{commit}`])).trim(),
+    archiveTip: async (_r, ref) => ref,
+    archiveWip: async (_r, ref) => ref,
+    detachSidebar: async () => undefined,
+    canUnregister: (r, p) => canUnregister(r, p, git),
+    removeWorktreeAdmin: (r, p) => removeWorktreeAdmin(r, p, git),
+    appendTombstone: async () => undefined,
+    now: () => 1,
+    ...over
+  })
+
+  it('finds an admin dir whose gitdir is written relative, as git 2.48+ does with useRelativePaths', async () => {
+    const mine = join(root, 'wt-mine')
+    await git(repo, ['worktree', 'add', '-q', '-b', 'feat/mine', mine])
+    // What `worktree.useRelativePaths=true` writes: the path relative to the admin dir.
+    writeFileSync(
+      join(repo, '.git', 'worktrees', 'wt-mine', 'gitdir'),
+      '../../../../wt-mine/.git\n'
+    )
+    expect(await canUnregister(repo, mine, git)).toBe(true)
+    expect(await removeWorktreeAdmin(repo, mine, git)).toBe(true)
+    expect(adminNames()).toEqual([])
+  })
+
+  it('says so when there is nothing to unregister, instead of returning as if it had', async () => {
+    expect(await canUnregister(repo, join(root, 'never-was'), git)).toBe(false)
+    expect(await removeWorktreeAdmin(repo, join(root, 'never-was'), git)).toBe(false)
+  })
+
+  it('a locked worktree cannot be unregistered by the admin dir', async () => {
+    const mine = join(root, 'wt-mine')
+    await git(repo, ['worktree', 'add', '-q', '-b', 'feat/mine', mine])
+    await git(repo, ['worktree', 'lock', mine])
+    expect(await canUnregister(repo, mine, git)).toBe(false)
+  })
+
+  it('a locked worktree halts the item BEFORE the trash: folder, branch and registration intact', async () => {
+    const mine = join(root, 'wt-mine')
+    await git(repo, ['worktree', 'add', '-q', '-b', 'feat/mine', mine])
+    await git(repo, ['worktree', 'lock', mine])
+    const result = await cleanItem(item(mine, 'feat/mine'), { deleteRemote: false }, execDeps())
+    expect(result.ok).toBe(false)
+    expect(result.steps.find((s) => !s.ok)!.id).toBe('trash-folder')
+    expect(existsSync(mine)).toBe(true)
+    expect(adminNames()).toEqual(['wt-mine'])
+    expect((await git(repo, ['branch', '--list', 'feat/mine'])).trim()).not.toBe('')
+  })
+
+  it('falls back to git worktree remove --force while the folder exists, and finishes the clean', async () => {
+    const mine = join(root, 'wt-mine')
+    await git(repo, ['worktree', 'add', '-q', '-b', 'feat/mine', mine])
+    const result = await cleanItem(
+      item(mine, 'feat/mine'),
+      { deleteRemote: false },
+      execDeps({ canUnregister: async () => false })
+    )
+    expect(result.ok, JSON.stringify(result.steps)).toBe(true)
+    expect(existsSync(mine)).toBe(false)
+    expect(adminNames()).toEqual([])
+    expect((await git(repo, ['branch', '--list', 'feat/mine'])).trim()).toBe('')
   })
 })

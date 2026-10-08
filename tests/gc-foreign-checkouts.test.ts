@@ -230,7 +230,8 @@ function realDeps(onRemoveDir?: () => void): {
       archiveWip: async (_repo, ref) => ref,
       detachSidebar: async () => undefined,
       // Fake registration removal, like the other disk-changing ops here (T441 delta 3b).
-      removeWorktreeAdmin: async () => undefined,
+      canUnregister: async () => true,
+      removeWorktreeAdmin: async () => true,
       appendTombstone: async () => undefined,
       now: () => EXEC_NOW
     },

@@ -108,7 +108,8 @@ function rig(
       return ref
     },
     detachSidebar: async () => undefined,
-    removeWorktreeAdmin: async () => undefined,
+    canUnregister: async () => true,
+    removeWorktreeAdmin: async () => true,
     appendTombstone: async (t) => {
       tombstones.push(t)
     },
