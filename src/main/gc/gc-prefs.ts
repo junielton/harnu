@@ -5,6 +5,11 @@
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 
+/**
+ * There is no switch for removing volumes (D1, 2026-10-08): worktree cleanup never removes
+ * one. What a cleaned worktree leaves behind is offered for review, one confirmation per
+ * volume. The retired `removeVolumes` and `categories.volumes` keys are ignored on read.
+ */
 export interface GcPrefs {
   version: 1
   /** Off until the operator turns it on; even then the first cycle only reports. */
@@ -15,8 +20,7 @@ export interface GcPrefs {
   intervalMs: number
   graceDays: number
   maxItemsPerCycle: number
-  categories: { worktrees: boolean; volumes: boolean; dockerCache: boolean }
-  removeVolumes: boolean
+  categories: { worktrees: boolean; dockerCache: boolean }
   cacheMaxAgeDays: number
   /** Absolute repo or worktree paths the autopilot and manual cleaning never touch. */
   neverClean: string[]
@@ -44,8 +48,7 @@ export function defaultGcPrefs(): GcPrefs {
     intervalMs: 3_600_000,
     graceDays: 2,
     maxItemsPerCycle: 20,
-    categories: { worktrees: true, volumes: true, dockerCache: true },
-    removeVolumes: true,
+    categories: { worktrees: true, dockerCache: true },
     cacheMaxAgeDays: 7,
     neverClean: [],
     keep: {}
@@ -116,10 +119,8 @@ export function normalizeGcPrefs(raw: unknown, legacy: LegacyPrefs = {}): GcPref
     maxItemsPerCycle: clamped(r.maxItemsPerCycle, 1, MAX_ITEMS_PER_CYCLE) ?? d.maxItemsPerCycle,
     categories: {
       worktrees: bool(categories.worktrees) ?? d.categories.worktrees,
-      volumes: bool(categories.volumes) ?? d.categories.volumes,
       dockerCache: bool(categories.dockerCache) ?? d.categories.dockerCache
     },
-    removeVolumes: bool(r.removeVolumes) ?? d.removeVolumes,
     cacheMaxAgeDays: clamped(r.cacheMaxAgeDays, 1, MAX_CACHE_AGE_DAYS) ?? d.cacheMaxAgeDays,
     neverClean,
     keep

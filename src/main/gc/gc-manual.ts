@@ -15,7 +15,8 @@ import type { CycleState } from './gc-cycle'
 import type { JobQueue } from './gc-jobs-core'
 import type { GcPrefs } from './gc-prefs'
 import { volumeItemId, type OrphanVolumeItem } from './gc-housekeeping-input'
-import type { HousekeepingResult } from './housekeeping-core'
+import type { HousekeepingResult, HousekeepingVolume } from './housekeeping-core'
+import { leftBehind, type Leftover } from './gc-leftovers'
 import { runBatch, type GcItemResult, type GcOps } from './pipeline-core'
 import type { GcCleanAck, GcCleanOptions } from './gc-wire'
 
@@ -25,11 +26,17 @@ export interface ManualCleanDeps {
   /** Read fresh: `neverClean` may have changed since the snapshot the operator clicked on. */
   prefs(): GcPrefs
   /** A fresh gather: refusals and the orphan-volume plan are judged on this, not on the click's snapshot. */
-  gather(): Promise<{ bundles: WorktreeBundle[]; orphanVolumes: OrphanVolumeItem[] }>
+  gather(): Promise<{
+    bundles: WorktreeBundle[]
+    orphanVolumes: OrphanVolumeItem[]
+    housekeeping?: { volumes: HousekeepingVolume[] }
+  }>
   /** `forced` ops archive before anything destructive and waive the Decide-only guards. */
   opsFor(actor: 'operator', forced: boolean): GcOps
   /** `docker volume rm` for exactly these names. */
   removeOrphanVolumes(names: string[]): Promise<HousekeepingResult>
+  /** What a cleaned worktree leaves in Docker, so its volumes can be offered for review. */
+  rememberLeftovers?(entries: Leftover[]): void
   queue: JobQueue
   state: CycleState
   now(): number
@@ -76,10 +83,15 @@ export function submitManualClean(
       const forced = b.bucket !== 'corpse'
       if (forced && !confirmed.has(id)) return refused(id, 'needs-confirmation')
       const batchOpts: { removeVolumes: boolean; confirmDecide?: boolean } = {
-        removeVolumes: prefs.removeVolumes,
+        // D1: worktree cleanup never removes a volume, ready or reviewed, bulk or single. What
+        // it leaves behind comes back as an orphan-volume review item.
+        removeVolumes: false,
         confirmDecide: forced
       }
       const [result] = await runBatch([b], deps.opsFor('operator', forced), batchOpts)
+      if (result!.ok) {
+        deps.rememberLeftovers?.(leftBehind(b, gathered.housekeeping?.volumes ?? []))
+      }
       return result!
     }
 

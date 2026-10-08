@@ -161,6 +161,10 @@ describe('worktree cleanup never removes volumes (D1)', () => {
   })
 
   it('the prefs no longer carry the retired switches', () => {
-    expect(read('src/main/gc/gc-prefs.ts')).not.toMatch(/removeVolumes|volumes: boolean/)
+    const code = read('src/main/gc/gc-prefs.ts')
+      .split('\n')
+      .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+      .join('\n')
+    expect(code).not.toMatch(/removeVolumes|volumes: boolean|categories\.volumes/)
   })
 })

@@ -57,13 +57,21 @@ export function planHousekeeping(
   containers: readonly InspectedContainer[],
   dirExists: (path: string) => boolean,
   knownFolders: readonly string[],
-  protectedProjects: ReadonlySet<string> = new Set()
+  protectedProjects: ReadonlySet<string> = new Set(),
+  rememberedDirs: ReadonlyMap<string, readonly string[]> = new Map()
 ): HousekeepingPlan {
   return {
     builderPruneUntilHours: untilHours(p.cacheMaxAgeDays),
     danglingImages: p.danglingImages,
     orphanVolumes: p.orphanVolumes
-      ? orphanVolumeNames(volumes, containers, dirExists, knownFolders, protectedProjects)
+      ? orphanVolumeNames(
+          volumes,
+          containers,
+          dirExists,
+          knownFolders,
+          protectedProjects,
+          rememberedDirs
+        )
       : []
   }
 }
@@ -109,7 +117,8 @@ function orphanVolumeNames(
   containers: readonly InspectedContainer[],
   dirExists: (path: string) => boolean,
   knownFolders: readonly string[],
-  protectedProjects: ReadonlySet<string>
+  protectedProjects: ReadonlySet<string>,
+  rememberedDirs: ReadonlyMap<string, readonly string[]>
 ): string[] {
   const referenced = new Set<string>()
   const dirsByProject = new Map<string, Set<string>>()
@@ -126,6 +135,13 @@ function orphanVolumeNames(
     const dirs = dirsByProject.get(project) ?? new Set<string>()
     dirs.add(dir)
     dirsByProject.set(project, dirs)
+  }
+  // Folders a cleaned worktree ran from. Once its containers are gone, nothing else says where
+  // the project lived; every remembered folder must be gone too, like every labelled one.
+  for (const [project, dirs] of rememberedDirs) {
+    const known = dirsByProject.get(project) ?? new Set<string>()
+    for (const d of dirs) known.add(d)
+    if (known.size > 0) dirsByProject.set(project, known)
   }
   const liveProjects = new Set(knownFolders.filter(dirExists).map(composeProjectName))
   return volumes

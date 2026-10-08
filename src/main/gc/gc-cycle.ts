@@ -24,6 +24,7 @@ import {
   type HousekeepingResult,
   type HousekeepingVolume
 } from './housekeeping-core'
+import { leftBehind, type Leftover } from './gc-leftovers'
 import { runBatch, type GcItemResult, type GcOps } from './pipeline-core'
 
 /** What the planner needs to know about Docker and the folders Harnu knows. */
@@ -36,6 +37,8 @@ export interface HousekeepingContext {
   knownFolders: string[]
   /** Compose project names pinned explicitly by a folder that still exists. */
   protectedProjects: ReadonlySet<string>
+  /** Compose project → folders a cleaned worktree ran from (see gc-leftovers.ts). */
+  rememberedDirs?: ReadonlyMap<string, readonly string[]>
 }
 
 export interface GcGather {
@@ -64,6 +67,8 @@ export interface GcCycleDeps {
   housekeeping(plan: HousekeepingPlan): Promise<HousekeepingResult>
   notify(n: { title: string; body: string }): void
   emitCycle(r: CycleRecord): void
+  /** What a cleaned worktree leaves in Docker, so its volumes can be offered for review. */
+  rememberLeftovers?(entries: Leftover[]): void
   /** Called with every gather, whether or not the cycle cleans: the Containers feed reads it. */
   onGathered?(g: GcGather): void
   state: CycleState
@@ -136,7 +141,8 @@ export async function runGcCycle(
           ? await runBatch(
               toClean,
               ops,
-              { removeVolumes: prefs.removeVolumes && prefs.categories.volumes },
+              // D1: worktree cleanup never removes a volume; they come back as review items.
+              { removeVolumes: false },
               {
                 onStart: (b) => reporter.onStart(b.item.id),
                 onItem: (r) => reporter.onItem(r)
@@ -153,7 +159,8 @@ export async function runGcCycle(
             hk.containers,
             hk.dirExists,
             hk.knownFolders,
-            hk.protectedProjects
+            hk.protectedProjects,
+            hk.rememberedDirs
           )
           try {
             housekeeping = await deps.housekeeping(hkPlan)
@@ -169,9 +176,13 @@ export async function runGcCycle(
   }
 
   for (const r of cleaned) {
-    if (r.ok) deps.state.failures.delete(r.id)
+    if (r.ok) {
+      deps.state.failures.delete(r.id)
+      const done = toClean.find((b) => b.item.id === r.id)
+      if (done) deps.rememberLeftovers?.(leftBehind(done, gathered.housekeeping.volumes))
+    }
     // A refusal at the reprobe changed nothing: that item just re-buckets on the next scan.
-    else if (r.haltedAt !== 'reprobe' && r.haltedAt !== null) {
+    if (!r.ok && r.haltedAt !== 'reprobe' && r.haltedAt !== null) {
       deps.state.failures.set(r.id, { step: r.haltedAt, error: r.error ?? 'failed', at: now })
     }
   }

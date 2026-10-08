@@ -30,9 +30,9 @@ describe('defaultGcPrefs', () => {
   it('returns a fresh object each call', () => {
     const a = defaultGcPrefs()
     a.neverClean.push('/x')
-    a.categories.volumes = false
+    a.categories.dockerCache = false
     expect(defaultGcPrefs().neverClean).toEqual([])
-    expect(defaultGcPrefs().categories.volumes).toBe(true)
+    expect(defaultGcPrefs().categories.dockerCache).toBe(true)
   })
 })
 
