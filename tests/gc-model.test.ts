@@ -40,6 +40,7 @@ function snap(over: Partial<GcSnapshot> = {}): GcSnapshot {
     scannedAt: NOW,
     bundles: [],
     orphanVolumes: [],
+    docker: { buildCacheReclaimableBytes: null, danglingImages: null },
     prefs: defaultGcPrefs(),
     lastCycle: null,
     nextCycleAt: null,
@@ -356,5 +357,46 @@ describe("expectedFor mirrors main's expectedOf / orphanExpectedOf", () => {
     const m = buildGcModel(snap({ bundles: [b] }))
     expect(expectedFor(m.byId.get(b.item.id)!).headSha).toBeNull()
     expect(expectedFor(m.byId.get(b.item.id)!)).toEqual(expectedOf(b))
+  })
+})
+
+describe('Docker figures in the model', () => {
+  const withDocker = (docker: GcSnapshot['docker'], cache = true): GcSnapshot => ({
+    ...snap({ bundles: [wt('c1', 'corpse', 100 * MIB)] }),
+    docker,
+    prefs: { ...defaultGcPrefs(), categories: { worktrees: true, dockerCache: cache } }
+  })
+
+  it('adds the reclaimable build cache and dangling images to what can be reclaimed', () => {
+    const m = buildGcModel(
+      withDocker({
+        buildCacheReclaimableBytes: 3 * GIB,
+        danglingImages: { count: 4, bytes: 1 * GIB }
+      })
+    )
+    expect(m.totals.docker).toEqual({ count: 4, bytes: 4 * GIB })
+    expect(m.reclaimableBytes).toBe(100 * MIB + 4 * GIB)
+    expect(m.docker.buildCacheReclaimableBytes).toBe(3 * GIB)
+  })
+
+  it('counts a null figure as nothing, not as an error', () => {
+    const m = buildGcModel(
+      withDocker({ buildCacheReclaimableBytes: null, danglingImages: { count: 1, bytes: MIB } })
+    )
+    expect(m.totals.docker.bytes).toBe(MIB)
+    const none = buildGcModel(
+      withDocker({ buildCacheReclaimableBytes: null, danglingImages: null })
+    )
+    expect(none.totals.docker).toEqual({ count: 0, bytes: 0 })
+  })
+
+  it('leaves Docker out of the total when the autopilot does not clean it', () => {
+    const m = buildGcModel(
+      withDocker({ buildCacheReclaimableBytes: 3 * GIB, danglingImages: null }, false)
+    )
+    expect(m.totals.docker.bytes).toBe(0)
+    expect(m.reclaimableBytes).toBe(100 * MIB)
+    // The figure itself is still there for the card to show.
+    expect(m.docker.buildCacheReclaimableBytes).toBe(3 * GIB)
   })
 })

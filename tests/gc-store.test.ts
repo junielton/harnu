@@ -35,6 +35,7 @@ function snap(over: Partial<GcSnapshot> = {}): GcSnapshot {
       wt('d1', 'decide', 900 * MIB)
     ],
     orphanVolumes: [],
+    docker: { buildCacheReclaimableBytes: null, danglingImages: null },
     prefs: defaultGcPrefs(),
     lastCycle: null,
     nextCycleAt: null,

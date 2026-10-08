@@ -8457,10 +8457,12 @@ cache**, **dangling images**, **orphan volumes** — name, size right, a one-lin
 (`ToggleSwitch`) on the cache and image blocks, both bound to `categories.dockerCache`. The orphan-volumes
 block has **no switch** — a volume is never removed automatically — and carries the Warning badge "can't be
 restored", the project name of each volume and the line "Never removed automatically. Remove each one
-yourself in Needs review." The engine reports the
-**last cycle's reclaimed** build-cache and image bytes but no pending size, so those two blocks show the
-reclaimed figure and read "size unavailable until the next cycle" for the pending part rather than
-inventing a number. Zero state: three muted zeros.
+yourself in Needs review." The snapshot's `docker` figures feed the two blocks:
+`buildCacheReclaimableBytes` ("{size} reclaimable") and `danglingImages` ("{n} images · {size}"); a `null`
+figure reads **"Size unavailable — Docker did not answer"** in `--text-3`, never a confident zero. Once a
+cycle has run, a second 11px `--text-3` line adds "Last cycle reclaimed {size}". Both figures count in the
+summary line and in the split bar's Ready segment while `categories.dockerCache` is on. Zero state: real
+zeros when Docker says so.
 
 #### First-cycle banner
 

@@ -5,6 +5,7 @@
 import type { Bucket, DecideCode, WorktreeBundle } from '../../../main/gc/bundle-core'
 import type {
   GcCleanOptions,
+  GcDockerCard,
   GcExpected,
   GcSnapshot,
   OrphanVolumeItem
@@ -69,8 +70,12 @@ export interface GcModel {
     decide: BucketTotal
     alive: BucketTotal
     orphanVolumes: BucketTotal
+    /** What the autopilot's next Docker housekeeping would reclaim (cache + dangling images), when it is on. */
+    docker: BucketTotal
   }
-  /** Corpse + Decide + orphan volumes: everything that is not untouched. */
+  /** The snapshot's Docker figures, null per figure when Docker did not answer for it. */
+  docker: GcDockerCard
+  /** Corpse + Decide + orphan volumes + Docker cache/images: everything that is not untouched. */
   reclaimableBytes: number
   /** False when no worktree reports a size (Windows): the map has nothing to draw. */
   hasBytes: boolean
@@ -173,7 +178,17 @@ export function buildGcModel(snapshot: GcSnapshot): GcModel {
     corpse: emptyTotal(),
     decide: emptyTotal(),
     alive: emptyTotal(),
-    orphanVolumes: emptyTotal()
+    orphanVolumes: emptyTotal(),
+    docker: emptyTotal()
+  }
+  const docker: GcDockerCard = snapshot.docker ?? {
+    buildCacheReclaimableBytes: null,
+    danglingImages: null
+  }
+  if (snapshot.prefs.categories.dockerCache) {
+    totals.docker.count = docker.danglingImages?.count ?? 0
+    totals.docker.bytes =
+      (docker.buildCacheReclaimableBytes ?? 0) + (docker.danglingImages?.bytes ?? 0)
   }
   for (const b of worktrees) {
     totals[b.bucket].count++
@@ -194,7 +209,9 @@ export function buildGcModel(snapshot: GcSnapshot): GcModel {
     needsYou: [...worktrees.filter((b) => b.bucket === 'decide'), ...volumes].sort(bigFirst),
     corpses: worktrees.filter((b) => b.bucket === 'corpse').sort(bigFirst),
     totals,
-    reclaimableBytes: totals.corpse.bytes + totals.decide.bytes + totals.orphanVolumes.bytes,
+    docker,
+    reclaimableBytes:
+      totals.corpse.bytes + totals.decide.bytes + totals.orphanVolumes.bytes + totals.docker.bytes,
     hasBytes: worktrees.length === 0 || worktrees.some((b) => b.hasBytes)
   }
 }

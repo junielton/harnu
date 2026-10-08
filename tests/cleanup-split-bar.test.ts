@@ -10,7 +10,8 @@ const totals = (): GcModel['totals'] => ({
   corpse: { count: 12, bytes: 6_000_000_000 },
   decide: { count: 46, bytes: 20_000_000_000 },
   alive: { count: 19, bytes: 7_000_000_000 },
-  orphanVolumes: { count: 3, bytes: 900_000_000 }
+  orphanVolumes: { count: 3, bytes: 900_000_000 },
+  docker: { count: 0, bytes: 0 }
 })
 
 const mountBar = (over: Record<string, unknown> = {}) =>

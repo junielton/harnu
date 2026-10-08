@@ -21,7 +21,7 @@ Cleanup takes over the main pane, the same way the Roadmap board, Usage Dashboar
 
 Along the top: `17.2 GiB reclaimable · autopilot on · next cycle in 42 min`.
 
-- **Reclaimable** is everything that is not untouched: proven corpses, items waiting for your decision, and orphan volumes. It is the most you could get back, not what the next automatic cycle will take. Docker's build cache is not in the figure, because Harnu only learns how much cache a cycle freed after the cycle ran.
+- **Reclaimable** is everything that is not untouched: proven corpses, items waiting for your decision, orphan volumes, and the build cache and dangling images Docker could reclaim. It is the most you could get back, not what the next automatic cycle will take. Docker's build cache is not in the figure, because Harnu only learns how much cache a cycle freed after the cycle ran.
 - **Autopilot on / off** is the switch in [Settings → Cleanup](settings.md#cleanup). When the Reaper's background scan is off there is no timer, so "next cycle" is left out.
 - Next to it, a badge repeats the state ("Autopilot on · every 1 h") and an **Autopilot settings** button opens Settings → Cleanup.
 
@@ -108,7 +108,7 @@ Until you acknowledge the first report, the screen shows a banner: **"Found 12 c
 A strip under the map covers what is not a worktree:
 
 - **Build cache**, **Dangling images** and **Orphan volumes**. Build cache and dangling images share one automatic-cleaning switch (the same one as in Settings → Cleanup). Orphan volumes have no switch: they are never removed automatically.
-- The build-cache and dangling-image blocks show what the **last cycle reclaimed**. Harnu does not measure how much cache is waiting to be pruned until a cycle runs, so before the first cycle they say "Size unavailable until the next cycle" rather than invent a number.
+- The build-cache block shows how much Docker could **reclaim right now** and the dangling-image block shows how many images there are and how big. Once an automatic cycle has run, each block also says what the **last cycle reclaimed**. If Docker does not answer for a figure, that block says "Size unavailable — Docker did not answer" rather than show a zero. Both figures count in the reclaimable total at the top while the Docker switch is on.
 - **Orphan volumes** show a count and a size, the compose projects they belonged to, and a "Can't be restored" badge. They are never cleaned automatically; they appear in Needs review and are removed only when you select them and confirm each one.
 - **Inspect stacks** in the card header opens the [Containers](containers.md) view, where you can look at each stack and start or stop it.
 

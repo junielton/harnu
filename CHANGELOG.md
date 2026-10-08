@@ -89,7 +89,8 @@ mod: live`, `off`, or `legacy` with the reason), and the System Monitor shows th
   background: the button turns into a progress chip, cleaned blocks fade out and the map
   re-flows, you can keep working (or close and reopen the screen), and a toast reports how
   much was freed - or which items still need you. A Docker card and a ranked "Needs you" list
-  sit under the map, and the first autopilot run offers to turn it on. "Ask for an opinion"
+  sit under the map (showing how much build cache and how many dangling images Docker could
+  reclaim right now), and the first autopilot run offers to turn it on. "Ask for an opinion"
   is visible but not available yet. See [Cleanup](docs/user/cleanup.md).
 - **Cleanup settings for everything automatic.** Settings -> Cleanup now holds every
   autopilot option: on/off, how often it runs, the grace period, the per-cycle cap, which

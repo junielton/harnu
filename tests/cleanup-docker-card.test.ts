@@ -39,6 +39,7 @@ function mountCard(over: Record<string, unknown> = {}) {
     props: {
       orphanVolumes: { count: 0, bytes: 0 },
       volumes: [],
+      docker: { buildCacheReclaimableBytes: null, danglingImages: null },
       lastCycle: null,
       prefs: defaultGcPrefs(),
       ...over
@@ -48,33 +49,47 @@ function mountCard(over: Record<string, unknown> = {}) {
 }
 
 describe('CleanupDockerCard', () => {
-  it('zero state: muted zeros for volumes and no invented cache figures', () => {
+  it('zero state: muted zeros for volumes, and real zeros when Docker says nothing is reclaimable', () => {
     const w = mountCard({
-      lastCycle: cycle({
-        housekeeping: { buildCacheBytes: 0, imageBytes: 0, volumeBytes: 0, errors: [] }
-      })
+      docker: { buildCacheReclaimableBytes: 0, danglingImages: { count: 0, bytes: 0 } }
     })
     const volumes = w.get('[data-testid="docker-volumes-size"]')
     expect(volumes.text()).toBe('0 volumes · 0 B')
     expect(volumes.classes()).toContain('text-text-3')
-    expect(w.get('[data-testid="docker-cache-size"]').text()).toBe('Last cycle reclaimed 0 B')
+    expect(w.get('[data-testid="docker-cache-size"]').text()).toBe('0 B reclaimable')
+    expect(w.get('[data-testid="docker-images-size"]').text()).toBe('0 images · 0 B')
   })
 
-  it('before any cycle the engine has no cache figure: it says so instead of guessing', () => {
-    const w = mountCard()
-    expect(w.get('[data-testid="docker-cache-size"]').text()).toBe(
-      'Size unavailable until the next cycle'
-    )
-    expect(w.get('[data-testid="docker-images-size"]').text()).toBe(
-      'Size unavailable until the next cycle'
-    )
-  })
-
-  it('shows what the last cycle reclaimed and the cache age cutoff', () => {
-    const w = mountCard({ lastCycle: cycle() })
-    expect(w.get('[data-testid="docker-cache-size"]').text()).toBe('Last cycle reclaimed 3.80 GB')
-    expect(w.get('[data-testid="docker-images-size"]').text()).toBe('Last cycle reclaimed 1.10 GB')
+  it('shows what Docker could reclaim right now: the build cache and the dangling images', () => {
+    const w = mountCard({
+      docker: {
+        buildCacheReclaimableBytes: 3_800_000_000,
+        danglingImages: { count: 14, bytes: 1_100_000_000 }
+      }
+    })
+    expect(w.get('[data-testid="docker-cache-size"]').text()).toBe('3.80 GB reclaimable')
+    expect(w.get('[data-testid="docker-images-size"]').text()).toBe('14 images · 1.10 GB')
     expect(w.get('[data-testid="docker-cache"]').text()).toContain('Older than 7 days')
+    expect(w.get('[data-testid="docker-cache-size"]').classes()).toContain('text-green')
+  })
+
+  it('says "size unavailable" only for a figure Docker did not give — never a confident zero', () => {
+    const w = mountCard({
+      docker: { buildCacheReclaimableBytes: null, danglingImages: { count: 2, bytes: 5_000_000 } }
+    })
+    expect(w.get('[data-testid="docker-cache-size"]').text()).toBe(
+      i18n.global.t('cleanup.gc.docker.unavailable')
+    )
+    expect(w.get('[data-testid="docker-cache-size"]').classes()).toContain('text-text-3')
+    expect(w.get('[data-testid="docker-images-size"]').text()).toBe('2 images · 5 MB')
+  })
+
+  it('also shows what the last automatic cycle reclaimed, once one has run', () => {
+    const none = mountCard()
+    expect(none.find('[data-testid="docker-cache-last"]').exists()).toBe(false)
+    const w = mountCard({ lastCycle: cycle() })
+    expect(w.get('[data-testid="docker-cache-last"]').text()).toBe('Last cycle reclaimed 3.80 GB')
+    expect(w.get('[data-testid="docker-images-last"]').text()).toBe('Last cycle reclaimed 1.10 GB')
   })
 
   it("orphan volumes: count, bytes, the can't-be-restored warning and the first projects", () => {

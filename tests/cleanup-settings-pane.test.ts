@@ -43,6 +43,7 @@ function stubApi(initial: GcPrefs): void {
     scannedAt: NOW,
     bundles: [],
     orphanVolumes: [],
+    docker: { buildCacheReclaimableBytes: null, danglingImages: null },
     prefs: initial,
     lastCycle: null,
     nextCycleAt: null
@@ -104,9 +105,8 @@ describe('CleanupSettingsPane — every GcPrefs field has a control', () => {
     // D1: there is no volumes switch and no removeVolumes switch — volumes are always kept.
     expect(w.find('[data-testid="gc-cat-volumes"]').exists()).toBe(false)
     expect(w.find('[data-testid="gc-remove-volumes"]').exists()).toBe(false)
-    // The shape of the contract: GcPrefs minus version / keep / firstReportAcknowledged. `categories`
-    // and `removeVolumes` stay in the object S3 still sends back until its delta 2 drops them, but
-    // the pane exposes only what still means something.
+    // The shape of the contract (S3 delta 2): GcPrefs minus version / keep / firstReportAcknowledged.
+    // `removeVolumes` and `categories.volumes` are gone from the engine as well as from the pane.
     const editable = Object.keys(GC).filter(
       (k) => !['version', 'keep', 'firstReportAcknowledged'].includes(k)
     )
@@ -117,7 +117,6 @@ describe('CleanupSettingsPane — every GcPrefs field has a control', () => {
         'graceDays',
         'maxItemsPerCycle',
         'categories',
-        'removeVolumes',
         'cacheMaxAgeDays',
         'neverClean'
       ].sort()
@@ -169,13 +168,13 @@ describe('CleanupSettingsPane — writes the whole object', () => {
     await flushPromises()
     expect(setGc).toHaveBeenLastCalledWith({
       ...GC,
-      categories: { worktrees: false, volumes: true, dockerCache: true }
+      categories: { worktrees: false, dockerCache: true }
     })
     await tid(w, 'gc-cat-docker-cache').trigger('click')
     await flushPromises()
     expect(setGc).toHaveBeenLastCalledWith({
       ...GC,
-      categories: { worktrees: false, volumes: true, dockerCache: false }
+      categories: { worktrees: false, dockerCache: false }
     })
     w.unmount()
   })

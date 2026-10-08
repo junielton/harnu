@@ -2474,7 +2474,7 @@
         "danglingImages": "Dangling images",
         "orphanVolumes": "Orphan volumes",
         "reclaimed": "Last cycle reclaimed {size}",
-        "unavailable": "Size unavailable until the next cycle",
+        "unavailable": "Size unavailable — Docker did not answer",
         "olderThan": "Older than {n} day | Older than {n} days",
         "danglingSub": "Untagged images that no container uses",
         "volumesCount": "{n} volume · {size} | {n} volumes · {size}",
@@ -2484,7 +2484,9 @@
         "toggleCache": "Clean build cache automatically",
         "toggleImages": "Clean dangling images automatically",
         "inspect": "Inspect stacks",
-        "volumesNote": "Never removed automatically. Remove each one yourself in Needs review."
+        "volumesNote": "Never removed automatically. Remove each one yourself in Needs review.",
+        "reclaimable": "{size} reclaimable",
+        "imagesCount": "{n} image · {size} | {n} images · {size}"
       },
       "split": {
         "label": "Disk split",

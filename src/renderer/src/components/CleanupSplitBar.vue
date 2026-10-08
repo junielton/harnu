@@ -36,7 +36,7 @@ const segments = computed<Segment[]>(() => {
       bucket: 'corpse',
       icon: CircleCheck,
       count: props.totals.corpse.count,
-      bytes: props.totals.corpse.bytes
+      bytes: props.totals.corpse.bytes + props.totals.docker.bytes
     },
     {
       key: 'needsYou',

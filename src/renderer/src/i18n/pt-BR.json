@@ -2474,7 +2474,7 @@
         "danglingImages": "Imagens dangling",
         "orphanVolumes": "Volumes órfãos",
         "reclaimed": "Último ciclo recuperou {size}",
-        "unavailable": "Tamanho indisponível até o próximo ciclo",
+        "unavailable": "Tamanho indisponível — o Docker não respondeu",
         "olderThan": "Mais antigo que {n} dia | Mais antigo que {n} dias",
         "danglingSub": "Imagens sem tag que nenhum container usa",
         "volumesCount": "{n} volume · {size} | {n} volumes · {size}",
@@ -2484,7 +2484,9 @@
         "toggleCache": "Limpar o build cache automaticamente",
         "toggleImages": "Limpar imagens dangling automaticamente",
         "inspect": "Inspecionar stacks",
-        "volumesNote": "Nunca são removidos automaticamente. Remova cada um você mesmo em Precisa de você."
+        "volumesNote": "Nunca são removidos automaticamente. Remova cada um você mesmo em Precisa de você.",
+        "reclaimable": "{size} recuperáveis",
+        "imagesCount": "{n} imagem · {size} | {n} imagens · {size}"
       },
       "split": {
         "label": "Divisão do disco",

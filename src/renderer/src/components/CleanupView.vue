@@ -472,6 +472,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
           <CleanupDockerCard
             :orphan-volumes="model.totals.orphanVolumes"
             :volumes="gc.snapshot?.orphanVolumes ?? []"
+            :docker="model.docker"
             :last-cycle="gc.snapshot?.lastCycle ?? null"
             :prefs="prefs"
             @inspect="ui.openContainers()"

@@ -5,7 +5,7 @@ import { Container } from 'lucide-vue-next'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import { formatBytes } from './system-monitor-format'
 import type { GcPrefs } from '../../../main/gc/gc-prefs'
-import type { CycleRecord, OrphanVolumeItem } from '../../../main/gc/gc-wire'
+import type { CycleRecord, GcDockerCard, OrphanVolumeItem } from '../../../main/gc/gc-wire'
 
 /**
  * Docker region of the Cleanup screen (design.md "Workspace GC — unified Cleanup / Docker card").
@@ -15,6 +15,8 @@ import type { CycleRecord, OrphanVolumeItem } from '../../../main/gc/gc-wire'
  */
 const props = defineProps<{
   orphanVolumes: { count: number; bytes: number }
+  /** What Docker could reclaim now; each figure is null when Docker did not answer for it. */
+  docker: GcDockerCard
   volumes: OrphanVolumeItem[]
   lastCycle: CycleRecord | null
   prefs: GcPrefs
@@ -27,11 +29,28 @@ const { t } = useI18n()
 
 const housekeeping = computed(() => props.lastCycle?.housekeeping ?? null)
 
+/** What the last automatic cycle reclaimed; empty before the first cycle has run. */
 function reclaimed(bytes: number | undefined): string {
-  return bytes === undefined
-    ? t('cleanup.gc.docker.unavailable')
-    : t('cleanup.gc.docker.reclaimed', { size: formatBytes(bytes) })
+  return bytes === undefined ? '' : t('cleanup.gc.docker.reclaimed', { size: formatBytes(bytes) })
 }
+
+/** Build cache a prune could reclaim now; null means Docker did not answer, never a confident zero. */
+const cacheNow = computed(() =>
+  props.docker.buildCacheReclaimableBytes === null
+    ? t('cleanup.gc.docker.unavailable')
+    : t('cleanup.gc.docker.reclaimable', {
+        size: formatBytes(props.docker.buildCacheReclaimableBytes)
+      })
+)
+
+const imagesNow = computed(() => {
+  const d = props.docker.danglingImages
+  return d === null
+    ? t('cleanup.gc.docker.unavailable')
+    : t('cleanup.gc.docker.imagesCount', d.count, {
+        named: { n: d.count, size: formatBytes(d.bytes) }
+      })
+})
 
 const MAX_PROJECTS = 3
 const projects = computed(() => [
@@ -73,8 +92,19 @@ const blockClass = (on: boolean): string =>
             @update:model-value="emit('toggle', 'dockerCache', $event)"
           />
         </div>
-        <div class="text-[12.5px] text-green" data-testid="docker-cache-size">
-          {{ reclaimed(housekeeping?.buildCacheBytes) }}
+        <div
+          class="text-[12.5px]"
+          :class="docker.buildCacheReclaimableBytes === null ? 'text-text-3' : 'text-green'"
+          data-testid="docker-cache-size"
+        >
+          {{ cacheNow }}
+        </div>
+        <div
+          v-if="housekeeping"
+          class="text-[11px] leading-4 text-text-3"
+          data-testid="docker-cache-last"
+        >
+          {{ reclaimed(housekeeping.buildCacheBytes) }}
         </div>
         <div class="text-[11px] leading-4 text-text-3">
           {{
@@ -98,8 +128,19 @@ const blockClass = (on: boolean): string =>
             @update:model-value="emit('toggle', 'dockerCache', $event)"
           />
         </div>
-        <div class="text-[12.5px] text-green" data-testid="docker-images-size">
-          {{ reclaimed(housekeeping?.imageBytes) }}
+        <div
+          class="text-[12.5px]"
+          :class="docker.danglingImages === null ? 'text-text-3' : 'text-green'"
+          data-testid="docker-images-size"
+        >
+          {{ imagesNow }}
+        </div>
+        <div
+          v-if="housekeeping"
+          class="text-[11px] leading-4 text-text-3"
+          data-testid="docker-images-last"
+        >
+          {{ reclaimed(housekeeping.imageBytes) }}
         </div>
         <div class="text-[11px] leading-4 text-text-3">
           {{ t('cleanup.gc.docker.danglingSub') }}

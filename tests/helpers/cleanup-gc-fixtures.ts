@@ -50,6 +50,7 @@ export function snapshotOf(
     scannedAt: NOW,
     bundles,
     orphanVolumes,
+    docker: { buildCacheReclaimableBytes: null, danglingImages: null },
     prefs: defaultGcPrefs(),
     lastCycle: null,
     nextCycleAt: null
