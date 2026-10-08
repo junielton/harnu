@@ -301,3 +301,28 @@ describe('the fingerprint covers what the snapshot exposes of the item', () => {
     expect(pruneOpinions(map, next).has(ids.a)).toBe(false)
   })
 })
+
+describe('an item main always refuses to remove is never marked-safe material', () => {
+  const refused = (name: string, code: string): ReturnType<typeof bundle> =>
+    wt(name, 'review', 400 * MIB, { reason: { code: code as never, detail: 'x' } })
+
+  function mixed(): { m: GcModel; ok: string; nested: string; locked: string } {
+    const ok = wt('ok', 'review', 900 * MIB)
+    const nested = refused('nested', 'nested-worktree')
+    const locked = refused('locked', 'locked')
+    const m = buildGcModel(snap([ok, nested, locked, wt('r', 'ready', 1 * MIB)]))
+    return { m, ok: ok.item.id, nested: nested.item.id, locked: locked.item.id }
+  }
+
+  it('safeIds leaves out a nested-worktree and a locked item even when their chip says safe', () => {
+    const { m, ok, nested, locked } = mixed()
+    let map: OpinionMap = new Map()
+    for (const id of [ok, nested, locked]) map = recordOpinion(map, op(id, 'safe'), m)
+    expect(safeIds(map, m)).toEqual([ok])
+  })
+
+  it('still records and shows their opinion: it is advice, only the removal shortcut skips them', () => {
+    const { m, nested } = mixed()
+    expect(opinionOf(recordOpinion(new Map(), op(nested, 'safe'), m), nested)?.verdict).toBe('safe')
+  })
+})

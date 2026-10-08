@@ -460,3 +460,25 @@ describe('Remove the ones marked safe re-checks main at the moment of removal', 
     expect(useUiStore().toasts.some((x) => x.title.includes('left out'))).toBe(false)
   })
 })
+
+describe('Remove the ones marked safe skips what main always refuses', () => {
+  it('does not count or pre-select a nested-worktree item the advisor called safe', async () => {
+    const base = snap()
+    const nested = wt('nest', 'review', 800 * MIB, {}, { reason: reviewReason('nested-worktree') })
+    const rig = install({ ...base, bundles: [...base.bundles, nested] })
+    const NEST = nested.item.id
+    await mountView()
+    await click(q('[data-testid="review-ask-all"]'))
+    await rig.result(safe(D1))
+    await rig.result(safe(NEST))
+    await rig.done({ answered: 2 })
+    rig.gcOpinionCached.mockImplementation(async (ids: string[]) =>
+      Object.fromEntries(ids.map((i) => [i, { id: i, ...safe(i) }]))
+    )
+    expect(chipOf(NEST)?.getAttribute('data-state')).toBe('safe') // the advice is still shown
+    expect(text(q('[data-testid="review-remove-safe"]'))).toBe('Remove the 1 marked safe')
+    await click(q('[data-testid="review-remove-safe"]'))
+    expect(qa('[data-testid="bulk-row"]')).toHaveLength(1)
+    expect(text(q('[data-testid="bulk-dialog"]'))).not.toContain('nest')
+  })
+})
