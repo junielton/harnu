@@ -28,8 +28,9 @@ import {
   type KnownFolder,
   type VolumeFact
 } from '../containers/containers-core'
-import { buildBundles, containerFolderPaths, type SessionPresence } from './bundle-core'
-import { presenceFromSets, dockerIsUnavailable, resolveRealPaths } from './gc-shell'
+import { buildBundles, containerFolderPaths } from './bundle-core'
+import { dockerIsUnavailable, resolveRealPaths } from './gc-shell'
+import { sessionsFromFolders } from './gc-sessions'
 import {
   buildDirExists,
   existenceCandidates,
@@ -151,7 +152,12 @@ export async function gatherGc(
     readContainersJournal(journalFile(app.getPath('userData')))
   ])
 
-  const sessions = new Map<string, { presence: SessionPresence; lastActivityAt: number | null }>()
+  // Sessions on real paths: the folders of every running session and every item are read
+  // through their real locations, so a session reached through a symlink still counts.
+  const sessionCanonical = await resolveRealPaths(
+    [...itemPaths, ...sets.live, ...sets.inUse],
+    (p) => fs.realpath(p)
+  )
   const activityByPath = new Map<string, number | null>()
   for (const f of fleet) {
     let latest: number | null = null
@@ -161,11 +167,10 @@ export async function gatherGc(
     }
     activityByPath.set(f.path, latest)
   }
+  const sessions = sessionsFromFolders(itemPaths, sets, sessionCanonical)
   for (const p of itemPaths) {
-    sessions.set(p, {
-      presence: presenceFromSets(p, sets),
-      lastActivityAt: activityByPath.get(p) ?? null
-    })
+    const entry = sessions.get(p)
+    if (entry) entry.lastActivityAt = activityByPath.get(p) ?? null
   }
 
   // Read-only listings for the Docker card; skipped, not guessed, when docker is absent.
