@@ -129,3 +129,72 @@ describe('every doc says exactly where the advisor can read', () => {
     expect(t).toMatch(/worktree[^.]*outside[^.]*(not readable|cannot read|works from the summary)/i)
   })
 })
+
+describe('the docs state exactly what confines the advisor (delta 5, item 2)', () => {
+  const docs: [string, () => string][] = [
+    ['docs/user/cleanup.md', userDoc],
+    ['CHANGELOG.md', changelog],
+    ['design.md', designBlock]
+  ]
+
+  describe.each(docs)('%s', (_name, get) => {
+    it('does not claim the CLI refuses anything outside the folder', () => {
+      const t = get()
+      expect(t).not.toMatch(/refuses anything outside/i)
+      expect(t).not.toMatch(/Claude CLI refuses a file outside/i)
+    })
+
+    it('says the repository folder only, with Claude’s own data folder explicitly blocked', () => {
+      const t = get()
+      expect(t).toMatch(/repository folder/i)
+      expect(t).toMatch(/~\/\.claude|Claude['’]s own data folder|Claude data folder/i)
+      expect(t).toMatch(
+        /(explicitly|specifically) (blocked|denied)|blocked explicitly|denied by name/i
+      )
+    })
+
+    it('says auto memory is off', () => {
+      expect(get()).toMatch(/no auto memory|auto memory is (switched )?off|without auto memory/i)
+    })
+  })
+
+  it('the user doc and design.md mention the hard link limitation, in a clause', () => {
+    for (const t of [userDoc(), designBlock()]) {
+      expect(t).toMatch(/hard link/i)
+    }
+  })
+
+  it('the user doc says the advisor never runs in your home folder or the filesystem root', () => {
+    expect(userDoc()).toMatch(/home folder or the filesystem root|never your home folder/i)
+  })
+
+  it('the user doc says an unknown pull request state is shown as unknown, not as none', () => {
+    expect(userDoc()).toMatch(
+      /pull request[^.]*unknown[^.]*not[^.]*none|unknown[^.]*never[^.]*none/i
+    )
+  })
+
+  it('the user doc says the diff names the branch it was taken against and never the item’s own', () => {
+    expect(userDoc()).toMatch(
+      /names the (branch|ref)[^.]*(against|compared)|never (compared|compares)[^.]*own branch/i
+    )
+  })
+
+  describe('the code comments make no claim the CLI does not keep', () => {
+    const read2 = (rel: string): string => readFileSync(join(ROOT, rel), 'utf8')
+    it('opinion-core.ts', () => {
+      const t = flat(read2('src/main/gc/opinion-core.ts'))
+      expect(t).not.toMatch(
+        /confines Read, Grep and Glob to the folder the process runs in, symlinks out of it included, and refuses the rest/
+      )
+      expect(t).toMatch(/explicitly denied|explicitly blocked/i)
+      expect(t).toMatch(/auto memory/i)
+      expect(t).toMatch(/hard link/i)
+    })
+    it('opinion-run.ts', () => {
+      const t = flat(read2('src/main/gc/opinion-run.ts'))
+      expect(t).not.toMatch(/the CLI confines its reads to it/)
+      expect(t).toMatch(/hard link/i)
+    })
+  })
+})
