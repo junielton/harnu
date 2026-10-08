@@ -233,3 +233,10 @@ describe('an orphan volume is re-planned right before removal (delta 3, item 4)'
     expect(between(ipc, 'submitManualClean(', 'parseIds(rawIds)')).toMatch(/\bfreshOrphans,/)
   })
 })
+
+describe('leftover folders are stat-ed (delta 3, item 6)', () => {
+  it('the gather builds its existence check over the leftover folders too', () => {
+    expect(scan).toMatch(/existenceCandidates\(\{[\s\S]*remembered: rememberedDirs/)
+    expect(scan).toMatch(/await buildDirExists\(/)
+  })
+})
