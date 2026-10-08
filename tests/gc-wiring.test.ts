@@ -328,3 +328,10 @@ describe('headless sessions and a stale index count toward grace (delta 4, N2, N
     expect(block).toMatch(/sessionsFromFleet\(activity,/)
   })
 })
+
+describe('a scan cut short hides orphan volumes (delta 4, N5)', () => {
+  it('the gather passes the truncation of each folder to the guards', () => {
+    expect(scan).toMatch(/await scanProjectFiles\(p, fsProbe\)/)
+    expect(scan).toMatch(/truncated: scanned\.truncated/)
+  })
+})
