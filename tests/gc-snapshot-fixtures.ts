@@ -16,6 +16,8 @@ export const WT_CORPSE = `${MAIN}/.claude/worktrees/PROJ-231-wave-1`
 export const WT_DIRTY = `${MAIN}/.claude/worktrees/PROJ-231-wave-2`
 export const WT_OPEN = `${MAIN}/.claude/worktrees/PROJ-347-wave-3`
 export const WT_WEAK = `${MAIN}/.claude/worktrees/PROJ-347-wave-4`
+/** A worktree of MAIN that lives outside the repo tree and is not in Harnu's folder list. */
+export const WT_OUT_OF_TREE = '/srv/ws/trees/PROJ-231-oot'
 export const OTHER_MAIN = '/srv/ws/org/api-gateway'
 export const OTHER_WT = `${OTHER_MAIN}/.claude/worktrees/PROJ-500-hotfix`
 

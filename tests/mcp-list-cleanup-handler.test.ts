@@ -45,6 +45,8 @@ import {
   WT_CORPSE,
   WT_DIRTY,
   WT_OPEN,
+  WT_OUT_OF_TREE,
+  WT_OUT_OF_TREE,
   absolutePathsIn,
   bundle,
   snapshot
@@ -230,6 +232,59 @@ describe('list_cleanup handler (T445)', () => {
       'PROJ-347-wave-3'
     ])
     expect(payload.totals).toMatchObject({ corpse: 1, decide: 1, alive: 1, corpseBytes: 5_000 })
+  })
+
+  it('AC-1: scope follows the bundle’s repo, so an out-of-tree worktree absent from the folder list is included', async () => {
+    const outOfTree = bundle(WT_OUT_OF_TREE, { item: { diskBytes: 11 } })
+    serve(snapshot([corpse, outOfTree, other]))
+    for (const scope of [MAIN, WT_CORPSE]) {
+      const payload = JSON.parse(textOf(await handler({ folder: scope }, ctx([], FOLDERS, scope))))
+      expect(payload.bundles.map((b: Listed) => b.folderAlias)).toEqual([
+        'PROJ-231-wave-1',
+        'PROJ-231-oot'
+      ])
+      expect(payload.totals).toMatchObject({ corpse: 2, corpseBytes: 5_011 })
+    }
+  })
+
+  it('AC-1: scoping to an out-of-tree worktree finds its repo too', async () => {
+    serve(snapshot([corpse, bundle(WT_OUT_OF_TREE), other]))
+    const payload = JSON.parse(
+      textOf(await handler({ folder: WT_OUT_OF_TREE }, ctx([], FOLDERS, WT_OUT_OF_TREE)))
+    )
+    expect(payload.bundles.map((b: Listed) => b.folderAlias)).toEqual([
+      'PROJ-231-wave-1',
+      'PROJ-231-oot'
+    ])
+  })
+
+  it('AC-1: a scope that matches no repo lists nothing', async () => {
+    serve(snapshot([corpse, other]))
+    const payload = JSON.parse(
+      textOf(await handler({ folder: '/srv/ws/nowhere' }, ctx([], FOLDERS, '/srv/ws/nowhere')))
+    )
+    expect(payload.bundles).toEqual([])
+  })
+
+  it('D6: two repos sharing a basename and a branch get different ids, with no path in them', async () => {
+    const a = bundle('/srv/ws/a/www/.claude/worktrees/PROJ-1-x', {
+      item: { repoPath: '/srv/ws/a/www', branch: 'feat/x' }
+    })
+    const b = bundle('/srv/ws/b/www/.claude/worktrees/PROJ-1-x', {
+      item: { repoPath: '/srv/ws/b/www', branch: 'feat/x' }
+    })
+    serve(snapshot([a, b]))
+    const text = textOf(await handler({}, ctx()))
+    const ids = (JSON.parse(text).bundles as Listed[]).map((r) => r.id)
+    expect(new Set(ids).size).toBe(2)
+    expect(absolutePathsIn(text)).toEqual([])
+  })
+
+  it('D6: the id of a bundle is stable between calls', async () => {
+    serve(snapshot([corpse]))
+    const first = (JSON.parse(textOf(await handler({}, ctx()))).bundles as Listed[])[0]!.id
+    const second = (JSON.parse(textOf(await handler({}, ctx()))).bundles as Listed[])[0]!.id
+    expect(second).toBe(first)
   })
 
   it('AC-1: a scoped listing leaves out the orphan volumes (they belong to no folder)', async () => {
