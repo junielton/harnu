@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   OPINION_BATCH_SIZE,
   OPINION_BUILTIN_TOOLS,
@@ -844,6 +847,8 @@ describe('the advisor runs without auto memory', () => {
   })
 })
 
+const ID = (p: string): string | null => p
+
 describe('confineCwd: the folder it runs in is never HOME, an ancestor of HOME, or the root', () => {
   const HOME = '/home/someone'
   it.each([
@@ -855,24 +860,26 @@ describe('confineCwd: the folder it runs in is never HOME, an ancestor of HOME, 
     ['an empty path', ''],
     ['a relative path', 'repo']
   ])('uses the private scratch dir (null) for %s', (_name, cwd) => {
-    expect(confineCwd(cwd, HOME)).toBeNull()
+    expect(confineCwd(cwd, HOME, ID)).toBeNull()
   })
 
   it('keeps a repository folder inside HOME, and one outside it', () => {
-    expect(confineCwd('/home/someone/code/www', HOME)).toBe('/home/someone/code/www')
-    expect(confineCwd('/srv/repos/www', HOME)).toBe('/srv/repos/www')
+    expect(confineCwd('/home/someone/code/www', HOME, ID)).toBe('/home/someone/code/www')
+    expect(confineCwd('/srv/repos/www', HOME, ID)).toBe('/srv/repos/www')
   })
 
   it('treats a Windows HOME the same way, case-insensitively', () => {
-    expect(confineCwd('C:\\Users\\Me', 'c:\\users\\me')).toBeNull()
-    expect(confineCwd('C:\\Users', 'C:\\Users\\Me')).toBeNull()
-    expect(confineCwd('C:\\Users\\Me\\code\\www', 'C:\\Users\\Me')).toBe('C:\\Users\\Me\\code\\www')
+    expect(confineCwd('C:\\Users\\Me', 'c:\\users\\me', ID)).toBeNull()
+    expect(confineCwd('C:\\Users', 'C:\\Users\\Me', ID)).toBeNull()
+    expect(confineCwd('C:\\Users\\Me\\code\\www', 'C:\\Users\\Me', ID)).toBe(
+      'C:\\Users\\Me\\code\\www'
+    )
   })
 
   it('passes null through, and falls back to scratch when HOME is unknown and the path is a root', () => {
-    expect(confineCwd(null, HOME)).toBeNull()
-    expect(confineCwd('/', '')).toBeNull()
-    expect(confineCwd('/srv/repos/www', '')).toBe('/srv/repos/www')
+    expect(confineCwd(null, HOME, ID)).toBeNull()
+    expect(confineCwd('/', '', ID)).toBeNull()
+    expect(confineCwd('/srv/repos/www', '', ID)).toBe('/srv/repos/www')
   })
 })
 
@@ -1019,5 +1026,81 @@ describe("Claude's own folders: the data folder and the temp folder (delta 6, it
       expect(denied).toContain(`${tool}(//tmp/claude-1000/**)`)
       expect(denied).toContain(`${tool}(~/.claude/**)`)
     }
+  })
+})
+
+describe('confineCwd compares real paths, not spellings (delta 6, item 2)', () => {
+  let root = ''
+  let home = ''
+  let repo = ''
+  let link = ''
+  let other = ''
+  const real = (p: string): string | null => {
+    try {
+      return realpathSync(p)
+    } catch {
+      return null
+    }
+  }
+
+  beforeAll(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), 'harnu-confine-')))
+    home = join(root, 'home')
+    repo = join(home, 'repo')
+    other = join(root, 'other', 'repo')
+    link = join(root, 'link-to-home')
+    mkdirSync(repo, { recursive: true })
+    mkdirSync(other, { recursive: true })
+    symlinkSync(home, link)
+  })
+  afterAll(() => rmSync(root, { recursive: true, force: true }))
+
+  it.each([
+    ['a trailing dot', (): string => `${home}/.`],
+    ['a doubled slash', (): string => `${root}//home`],
+    ['an extra ..', (): string => `${home}/../home`],
+    ['a trailing slash run', (): string => `${home}///`],
+    ['..out of a child', (): string => `${repo}/..`],
+    ['a symlink to HOME', (): string => link],
+    ['a symlink to HOME with a dot', (): string => `${link}/.`],
+    ['an ancestor of HOME', (): string => root],
+    ['an ancestor spelled with ..', (): string => `${home}/..`],
+    ['the filesystem root', (): string => '/'],
+    ['the filesystem root spelled /.', (): string => '/.']
+  ])('uses the scratch dir for %s', (_name, spelling) => {
+    expect(confineCwd(spelling(), home, real)).toBeNull()
+  })
+
+  it('also when HOME itself is given as a symlink', () => {
+    expect(confineCwd(home, link, real)).toBeNull()
+    expect(confineCwd(`${home}/.`, `${link}/`, real)).toBeNull()
+  })
+
+  it('uses the scratch dir when the path does not exist or cannot be resolved', () => {
+    expect(confineCwd(join(home, 'nope'), home, real)).toBeNull()
+    expect(confineCwd(repo, home, () => null)).toBeNull()
+    expect(
+      confineCwd(repo, home, (p) => {
+        if (p === repo) throw new Error('EACCES')
+        return p
+      })
+    ).toBeNull()
+  })
+
+  it('keeps a repository inside HOME, and returns its real path', () => {
+    expect(confineCwd(repo, home, real)).toBe(repo)
+    expect(confineCwd(`${repo}/../repo`, home, real)).toBe(repo)
+    expect(confineCwd(other, home, real)).toBe(other)
+  })
+
+  it('returns the real path of a symlink to a repository, not the symlink', () => {
+    const alias = join(root, 'alias-to-other')
+    symlinkSync(other, alias)
+    expect(confineCwd(alias, home, real)).toBe(other)
+  })
+
+  it('still treats an unknown HOME as nothing to compare with, but never accepts a root', () => {
+    expect(confineCwd(other, '', real)).toBe(other)
+    expect(confineCwd('/', '', real)).toBeNull()
   })
 })

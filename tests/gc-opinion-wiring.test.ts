@@ -134,7 +134,7 @@ describe('the advisor can only read (AC-2)', () => {
   it('runs the advisor without auto memory, in a confined folder, with the Claude data folders closed', () => {
     const shell = code('src/main/gc/opinion-shell.ts')
     expect(shell).toContain('advisorEnv(')
-    expect(shell).toContain('confineCwd(')
+    expect(shell).toMatch(/confineCwd\(a\.cwd, homedir\(\), realPath\)/)
     expect(shell).toContain('homedir()')
     expect(shell).toMatch(/CLAUDE_CONFIG_DIR/)
     expect(shell).toContain('dataDirs')
