@@ -105,7 +105,7 @@ function onRowKey(e: KeyboardEvent, id: string): void {
           @click="emit('removeSafe')"
         >
           <Trash2 :size="13" :stroke-width="1.7" />
-          {{ t('cleanup.gc.review.removeSafe', { count: safeCount }) }}
+          {{ t('cleanup.gc.review.removeSafe', { count: safeCount }, safeCount) }}
         </Button>
         <span :title="t('cleanup.gc.opinion.hint')" class="inline-flex">
           <Button

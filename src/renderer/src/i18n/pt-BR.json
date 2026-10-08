@@ -2580,7 +2580,7 @@
       "review": {
         "title": "Precisa de você",
         "askAll": "Pedir uma opinião sobre todos os {count}",
-        "removeSafe": "Remover os {count} marcados como seguros",
+        "removeSafe": "Remover o {count} marcado como seguro | Remover os {count} marcados como seguros",
         "empty": "Nada precisa de você.",
         "showAll": "Mostrar todos os {count}",
         "rowAria": "{name}, {size}",

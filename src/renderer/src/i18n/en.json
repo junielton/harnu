@@ -2580,7 +2580,7 @@
       "review": {
         "title": "Needs review",
         "askAll": "Ask for an opinion on all {count}",
-        "removeSafe": "Remove the {count} marked safe",
+        "removeSafe": "Remove the {count} marked safe | Remove the {count} marked safe",
         "empty": "Nothing needs review.",
         "showAll": "Show all {count}",
         "rowAria": "{name}, {size}",

@@ -251,9 +251,7 @@ describe('"Remove the ones marked safe"', () => {
     await rig.result({ id: D1, verdict: 'keep', reason: 'r', evidence: 'e' })
     expect(q('[data-testid="review-remove-safe"]')).toBeNull()
     await rig.result(safe(D3))
-    expect(text(q('[data-testid="review-remove-safe"]'))).toBe(
-      t('cleanup.gc.review.removeSafe', { count: 1 })
-    )
+    expect(text(q('[data-testid="review-remove-safe"]'))).toBe('Remove the 1 marked safe')
   })
 
   it('pre-selects exactly the safe items and opens the remove dialog; it removes nothing by itself', async () => {
@@ -315,8 +313,6 @@ describe('"Remove the ones marked safe"', () => {
     await flushPromises()
     expect(chipOf(D1)).toBeNull()
     expect(chipOf(D3)?.getAttribute('data-state')).toBe('safe')
-    expect(text(q('[data-testid="review-remove-safe"]'))).toBe(
-      t('cleanup.gc.review.removeSafe', { count: 1 })
-    )
+    expect(text(q('[data-testid="review-remove-safe"]'))).toBe('Remove the 1 marked safe')
   })
 })

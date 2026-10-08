@@ -156,7 +156,7 @@ describe('CleanupReviewList', () => {
     expect(mountList(m.review).find('[data-testid="review-remove-safe"]').exists()).toBe(false)
     const w = mountList(m.review, { safeCount: 2 })
     const btn = w.get('[data-testid="review-remove-safe"]')
-    expect(btn.text()).toBe(t('cleanup.gc.review.removeSafe', { count: 2 }))
+    expect(btn.text()).toBe('Remove the 2 marked safe')
     await btn.trigger('click')
     expect(w.emitted('removeSafe')).toHaveLength(1)
     // It only asks the screen to pre-select: the list itself never emits a removal for it.
