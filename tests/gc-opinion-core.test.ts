@@ -267,6 +267,66 @@ describe('buildPrompt (AC-3)', () => {
       expect(p).not.toContain('<path>')
     })
 
+    describe('residuals after any boundary (delta 4)', () => {
+      it.each([
+        ['-o/workspace/repo/a', 'wrote -o/workspace/leaky/a now'],
+        ['a path glued after a digit', 'saved v2/data/leaky/foo today'],
+        ['a path glued after an underscore', 'built a_/builds/leaky/y ok'],
+        ['a path glued after a dot', 'ran foo./app/leaky/x ok'],
+        ['a path glued after a hyphen', 'out build-/srv/leaky/x ok'],
+        ['-o~/secret/a', 'wrote -o~/leaky/a now'],
+        ['-o~user/secret/a', 'wrote -o~leaky/a/b now'],
+        ['-oC:\\Users\\jo\\x', 'wrote -oC:\\Users\\leaky\\x now'],
+        ['-ofile:///home/me/x', 'wrote -ofile:///home/leaky/x now'],
+        ['a drive glued after a digit', 'saved 42C:\\Users\\leaky\\x now'],
+        ['file: glued after an underscore', 'saved x_file:///home/leaky/x now'],
+        ['~ glued after a hyphen', 'saved out-~/leaky/x now'],
+        ['a path at the very start of the text', '/data/leaky/x is dirty']
+      ])('removes %s', (_name, text) => {
+        const p = field(text)
+        expect(p).not.toMatch(/leaky|secret/i)
+        expect(p).toContain('<path>')
+      })
+
+      it('still keeps relative paths, dot-segments, web URLs and one-segment slashes', () => {
+        for (const text of [
+          'changed src/main/gc/x.ts and app/Models/User.php',
+          'see ../docs/y.md and ./scripts/build.sh and ../../a/b/c.md',
+          'see https://github.com/org/repo/pull/1',
+          'and/or 1/2 a/b'
+        ]) {
+          const p = field(text)
+          expect(p, text).toContain(text)
+          expect(p, text).not.toContain('<path>')
+        }
+      })
+    })
+
+    describe('a path under the worktree that leaves it', () => {
+      const own = '/home/someone/code/www/.claude/worktrees/feat-x'
+      const scrubbed = (text: string): string =>
+        buildPrompt([dossier({ path: own, diffStat: text, lastSessionSummary: null })])
+
+      it.each([
+        ['one level up', `${own}/../secret.txt`],
+        ['up from a subfolder', `${own}/src/../../secret.txt`],
+        ['just the parent', `see ${own}/.. done`],
+        ['a sibling worktree', `${own}/../feat-y/secret.txt`],
+        ['a Windows-style climb', `${own}/..\\..\\secret.txt`]
+      ])('removes %s, placeholder included', (_name, text) => {
+        const p = scrubbed(text)
+        expect(p.slice(p.indexOf('Diff against'))).not.toMatch(
+          /secret|feat-y|<this worktree>\/\.\./
+        )
+      })
+
+      it('keeps a path that wanders but stays inside the worktree', () => {
+        const p = scrubbed(`${own}/src/../README.md and ${own}/a/./b.ts`)
+        expect(p).toContain('<this worktree>/src/../README.md')
+        expect(p).toContain('<this worktree>/a/./b.ts')
+      })
+    })
+
     describe('residuals', () => {
       it.each([
         ['an upper-case FILE: scheme', 'open FILE:///home/leaky/code/x.ts now'],
