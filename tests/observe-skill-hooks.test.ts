@@ -108,7 +108,7 @@ describe('skillDeclaresHooks', () => {
   })
 
   it('tolerates a BOM and leading blank lines before the opening fence', () => {
-    expect(skillDeclaresHooks('﻿' + doc(HOOKS_FRONTMATTER))).toBe(true)
+    expect(skillDeclaresHooks('\uFEFF' + doc(HOOKS_FRONTMATTER))).toBe(true)
     expect(skillDeclaresHooks('\n\n' + doc(HOOKS_FRONTMATTER))).toBe(true)
   })
 
@@ -457,9 +457,9 @@ describe('skillFrontmatterVerdict — the fence (BUG-169 delta 2)', () => {
     ['a carriage-return pair', '---\r\r\n'],
     ['a form feed', '---\f\n'],
     ['a vertical tab', '---\v\n'],
-    ['a no-break space', '--- \n'],
-    ['a line separator', '--- \n'],
-    ['a BOM after the fence', '---﻿\n'],
+    ['a no-break space', '---\u00A0\n'],
+    ['a line separator', '---\u2028\n'],
+    ['a BOM after the fence', '---\uFEFF\n'],
     ['trailing text', '--- yaml\n'],
     ['a fourth dash', '----\n']
   ])('refuses an opening fence with %s', (_name, fence) => {
@@ -468,13 +468,13 @@ describe('skillFrontmatterVerdict — the fence (BUG-169 delta 2)', () => {
   })
 
   it.each([
-    ['a double BOM', '﻿﻿---\n'],
+    ['a double BOM', '\uFEFF\uFEFF---\n'],
     ['one blank line', '\n---\n'],
     ['leading spaces', '  ---\n'],
-    ['a leading no-break space', ' ---\n'],
-    ['a leading line separator', ' ---\n'],
-    ['a BOM then whitespace', '﻿\n---\n'],
-    ['a zero-width space', '​---\n']
+    ['a leading no-break space', '\u00A0---\n'],
+    ['a leading line separator', '\u2028---\n'],
+    ['a BOM then whitespace', '\uFEFF\n---\n'],
+    ['a zero-width space', '\u200B---\n']
   ])('refuses anything before the fence: %s', (_name, lead) => {
     expect(skillFrontmatterVerdict(`${lead}${HOOKED}---\n\nbody\n`)).toBe('unsafe-frontmatter')
     expect(skillDeclaresHooks(`${lead}${HOOKED}---\n\nbody\n`)).toBe(true)
@@ -483,7 +483,7 @@ describe('skillFrontmatterVerdict — the fence (BUG-169 delta 2)', () => {
   it('accepts exactly one BOM, then a plain LF or CRLF fence, for a clean header', () => {
     const clean = 'name: s\ndescription: d\nallowed-tools: Read\n'
     expect(skillFrontmatterVerdict(`---\n${clean}---\n\nbody\n`)).toBe('ok')
-    expect(skillFrontmatterVerdict(`﻿---\n${clean}---\n\nbody\n`)).toBe('ok')
+    expect(skillFrontmatterVerdict(`\uFEFF---\n${clean}---\n\nbody\n`)).toBe('ok')
     expect(
       skillFrontmatterVerdict(`---\r\n${clean.replace(/\n/g, '\r\n')}---\r\n\r\nbody\r\n`)
     ).toBe('ok')
@@ -494,7 +494,7 @@ describe('skillFrontmatterVerdict — the fence (BUG-169 delta 2)', () => {
   it.each([
     ['a trailing space', '--- \n'],
     ['a form feed', '---\f\n'],
-    ['a no-break space', '--- \n'],
+    ['a no-break space', '---\u00A0\n'],
     ['trailing text', '--- end\n'],
     ['a fourth dash', '----\n']
   ])('refuses a closing line that is not exactly ---: %s', (_name, close) => {
@@ -521,8 +521,8 @@ describe('observe staging — a fence variant is refused as unsafe-frontmatter (
     ['--- \n', 'sp'],
     ['---\r\r\n', 'crcr'],
     ['---\f\n', 'ff'],
-    ['--- \n', 'nbsp'],
-    ['﻿﻿---\n', 'bom2'],
+    ['---\u00A0\n', 'nbsp'],
+    ['\uFEFF\uFEFF---\n', 'bom2'],
     ['\n\n  ---\n', 'lead']
   ])('%j is not staged', async (fence, id) => {
     const dir = path.join(project, '.claude', 'skills', `fence-${id}`)

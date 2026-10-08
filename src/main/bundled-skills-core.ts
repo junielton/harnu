@@ -146,7 +146,7 @@ export function skillDeclaresHooks(raw: string): boolean {
 export type FrontmatterVerdict = 'ok' | 'hooks' | 'unsafe-frontmatter'
 
 /** Whitespace and invisible characters a lenient reader might skip before an opening fence. */
-const INVISIBLE_LEAD = /^[\s᠎​-‏⁠﻿]*/
+const INVISIBLE_LEAD = /^[\s\u180E\u200B-\u200F\u2060\uFEFF]*/
 
 /**
  * The verdict behind {@link skillDeclaresHooks}: `ok`, `hooks` (the header may declare hooks, by
@@ -170,7 +170,7 @@ const INVISIBLE_LEAD = /^[\s᠎​-‏⁠﻿]*/
  * A file whose first characters are anything else has no frontmatter to the CLI and is `ok`.
  */
 export function skillFrontmatterVerdict(raw: string): FrontmatterVerdict {
-  const text = raw.startsWith('﻿') ? raw.slice(1) : raw
+  const text = raw.startsWith('\uFEFF') ? raw.slice(1) : raw
   if (!text.startsWith('---')) {
     const lead = INVISIBLE_LEAD.exec(text)?.[0] ?? ''
     return lead.length > 0 && text.startsWith('---', lead.length) ? 'unsafe-frontmatter' : 'ok'
