@@ -179,7 +179,7 @@ async function runClaude(a: {
   const bin = await resolveClaudePath()
   if (!bin) return null
   return runSupervised(bin, a.argv, {
-    cwd: confineCwd(a.cwd, homedir()),
+    cwd: confineCwd(a.cwd, homedir(), realPath),
     env: advisorEnv(sanitizeSpawnEnv(process.env, { execPath: process.execPath })),
     stdin: a.stdin,
     timeoutMs: RUN_TIMEOUT_MS

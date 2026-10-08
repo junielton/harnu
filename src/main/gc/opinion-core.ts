@@ -613,19 +613,43 @@ const normalPath = (p: string): string => {
 }
 
 /**
- * The folder the advisor runs in is its whole readable world, so it must never be HOME, an ancestor
- * of HOME, or a filesystem root. Those, and anything that is not an absolute path, become null: the
- * runner then uses a fresh empty directory of its own.
+ * The folder the advisor runs in, or null for "use an empty private directory instead". The folder is
+ * where the CLI's own check keeps the advisor's reads, so it must be a real repository folder: never
+ * HOME, an ancestor of HOME, or a filesystem root. The comparison is on real paths (`realpath`), so
+ * `/home/u/.`, `/home//u`, `/home/u/../u` and a symlink to HOME are all HOME; a path that cannot be
+ * resolved, or is not absolute, is not trusted. The real path is what is returned, so the process starts
+ * in the folder that was checked and not in a symlink that may be repointed.
  */
-export function confineCwd(cwd: string | null, home: string): string | null {
+export function confineCwd(
+  cwd: string | null,
+  home: string,
+  realpath: (p: string) => string | null
+): string | null {
   if (cwd === null) return null
-  const c = normalPath(cwd)
-  const isAbsolute = c.startsWith('/') || /^[a-z]:\//.test(c)
-  if (!isAbsolute) return null
+  const isAbsolute = (p: string): boolean => p.startsWith('/') || /^[a-z]:\//.test(p)
+  if (!isAbsolute(normalPath(cwd))) return null
+  let real: string | null
+  try {
+    real = realpath(cwd)
+  } catch {
+    real = null
+  }
+  if (real === null) return null
+  const c = normalPath(real)
   if (c === '' || /^[a-z]:$/.test(c)) return null // a root: `/` or a drive
-  const h = normalPath(home)
-  if (h !== '' && (c === h || h.startsWith(`${c}/`))) return null
-  return cwd
+  const homes = new Set<string>()
+  const rawHome = home.trim()
+  if (rawHome) {
+    homes.add(normalPath(rawHome))
+    try {
+      const realHome = realpath(rawHome)
+      if (realHome) homes.add(normalPath(realHome))
+    } catch {
+      // the raw spelling is still compared
+    }
+  }
+  for (const h of homes) if (h !== '' && (c === h || h.startsWith(`${c}/`))) return null
+  return real
 }
 
 /** What the last scan recorded about an item's pull request (`BranchFacts`, the parts read here). */
