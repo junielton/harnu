@@ -59,6 +59,17 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Added
 
+- **Sessions can read the cleanup list and release a finished worktree.** Two new agent
+  verbs: `list_cleanup` shows the same Ready to clean / Needs review / In use picture the Cleanup
+  surface uses (reasons, sizes, orphan volumes, whether the automatic cleanup is on, when the next
+  cycle runs; worktrees shown by name, never by path) and is open to read-only Scheduler workers, so a
+  worker can report how many worktrees are ready to clean. `release_worktree` lets a session say its merged
+  worktree is done, which skips the grace period so it becomes ready to clean at the next scan.
+  A release never overrides a safety rule (uncommitted work, an open session, a shared
+  Docker stack, a worktree nested inside it, a worktree git has locked, Keep, never-clean, an unresolved path all still hold it back) and it deletes nothing: neither
+  verb removes anything, and no agent can clean a worktree. A release belongs to the commit it was made at, and a
+  session can name the worktree by its folder or by the name the list gave it. See [Agent control](docs/user/agent-control.md).
+
 - **Automatic cleanup of merged worktrees and their Docker stacks.** Harnu can now clear
   worktrees whose branch is proven merged, together with the Docker stack running from
   each one, on the same hourly timer as the Cleanup scan. It cleans only worktrees it can
@@ -99,6 +110,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   that is already kept never drops its mark. If Harnu cannot read Claude's transcripts folder,
   or cannot tell which folder a transcript belongs to, it counts the activity as possibly
   belonging to the worktree and keeps it out of the ready list.
+- **Locked worktrees are left alone, and Harnu says so up front.** A worktree you locked in git
+  (`git worktree lock`) now shows in Needs review with "This worktree is locked in git", and
+  Harnu checks again before it stops any container: if git cannot unregister a worktree, nothing
+  is stopped or removed. A lock also counts when a stale duplicate registration points at the
+  same folder. If Claude's folder exists but its transcripts folder is missing, Harnu treats
+  recent activity as unknown and cleans nothing automatically.
 - **Docker housekeeping in the same cycle.** When automatic cleanup is on, each cycle also
   clears Docker build cache older than a week and dangling images, and reports how much it
   freed. It never touches images a stack uses and never removes a volume: volumes nobody uses

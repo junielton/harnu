@@ -11,6 +11,7 @@ import {
   COMPOSE_WORKING_DIR_LABEL,
   isInside,
   lastContainerEvent,
+  normalizePath,
   type InspectedContainer,
   type StackGroup,
   type VolumeFact
@@ -65,6 +66,7 @@ export type ReviewCode =
   | 'cleanup-failed'
   | 'path-unresolved'
   | 'nested-worktree'
+  | 'locked'
 
 /** `detail` is one English sentence with the concrete fact; the renderer translates by `code`. */
 export interface ReviewReason {
@@ -116,6 +118,11 @@ export interface BundleFacts {
    * list that is absent (the scan did not walk it), is never ready.
    */
   foreignCheckouts: string[]
+  /**
+   * Git lists this worktree as locked (delta 6): it cannot be unregistered, so it is never
+   * ready. Optional, and absent means unlocked: the reprobe asks git again before any step.
+   */
+  locked?: boolean
 }
 
 export interface WorktreeBundle extends BundleFacts {
@@ -292,6 +299,8 @@ export function bucketOf(
     )
   }
 
+  if (f.locked === true) return review('locked', 'This worktree is locked in git.')
+
   if (f.pathsResolved !== true)
     return review(
       'path-unresolved',
@@ -356,6 +365,16 @@ export interface BuildBundlesInput {
    */
   protectedProjects: Set<string>
   /**
+   * Bundle id → when an agent released it. A release lifts the grace window and nothing else,
+   * and only for a strongly merged fate; every other bucket rule still decides.
+   */
+  released?: ReadonlyMap<string, number>
+  /**
+   * The tip each release was made at. A release applies only when this matches the bundle's
+   * current tip; a mark with no entry here (a legacy one) never applies.
+   */
+  releasedTips?: ReadonlyMap<string, string>
+  /**
    * Each path's real location, read by the caller (the shell realpaths them; this module
    * never touches the disk). Every path below is compared through it: item and repo paths,
    * container working dirs and bind sources, session folders, stackPaths, neverClean and
@@ -367,6 +386,8 @@ export interface BuildBundlesInput {
    * id (delta 7). Required: a worktree with no entry was not walked, so it is never ready.
    */
   foreignCheckouts: ReadonlyMap<string, string[]>
+  /** Ids of the items git lists as locked (delta 6); absent means none. See {@link lockedItemIds}. */
+  locked?: ReadonlySet<string>
 }
 
 /** Merge time from the `pr-merged` checkpoint detail; anything that is not a date is ignored. */
@@ -568,12 +589,29 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
     const signs = [mergedAtOf(item), session?.lastActivityAt ?? null, events].filter(
       (t): t is number => t !== null
     )
+    // A release is an agent saying it is done with the worktree: the grace no longer applies,
+    // and with no other sign of life the release time stands in for one. The facts record the
+    // grace actually used, so the execution-time reprobe agrees with the bucket.
+    // It applies only to a strongly merged fate: any weaker proof keeps the normal window.
+    const mark = input.released?.get(item.id)
+    const markTip = input.releasedTips?.get(item.id)
+    const tip =
+      item.kind === 'detached-worktree' ? (item.headSha ?? null) : (fateInput?.localTip ?? null)
+    const releasedAt =
+      mark !== undefined &&
+      fate.fate === 'merged' &&
+      fate.strong &&
+      typeof markTip === 'string' &&
+      tip === markTip
+        ? mark
+        : undefined
+    const graceDays = releasedAt !== undefined ? 0 : input.graceDays
 
     const facts: BundleFacts = {
       item,
       fate,
       session: session?.presence ?? 'none',
-      lastSignOfLifeAt: signs.length > 0 ? Math.max(...signs) : null,
+      lastSignOfLifeAt: signs.length > 0 ? Math.max(...signs) : (releasedAt ?? null),
       stackIds: stacks.map((s) => s.id),
       sharedStackIds: shared.get(item.id) ?? [],
       ownedVolumes: ownedVolumes(
@@ -589,7 +627,7 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
       isMainCheckout: path === real(item.repoPath),
       localTip:
         item.kind === 'detached-worktree' ? (item.headSha ?? null) : (fateInput?.localTip ?? null),
-      graceDays: input.graceDays,
+      graceDays,
       pathsResolved:
         canonical(item.path as string).resolved &&
         canonical(item.repoPath).resolved &&
@@ -599,8 +637,56 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
       nestedWorktrees,
       // Passed through as given: a missing or malformed entry stays so, and bucketOf and
       // refusalOf both fail closed on it.
-      foreignCheckouts: input.foreignCheckouts.get(item.id) as string[]
+      foreignCheckouts: input.foreignCheckouts.get(item.id) as string[],
+      ...(input.locked?.has(item.id) ? { locked: true } : {})
     }
-    return { ...facts, ...bucketOf(facts, input.now, input.graceDays) }
+    return { ...facts, ...bucketOf(facts, input.now, graceDays) }
+  })
+}
+
+/**
+ * What a gather learned about worktrees that may have been cleaned. Built by the shell, which
+ * owns the Reaper snapshot and the disk; this module only decides.
+ */
+export interface ReleaseGone {
+  /** Repos the Reaper snapshot covered. Empty when there was no snapshot. */
+  scannedRepos: ReadonlySet<string>
+  /** Where each released worktree was, as recorded when it was released. */
+  from: Readonly<Record<string, { repoPath: string; path: string; localTip?: string }>>
+  /** Recorded folders confirmed absent from disk (a missing file, not an unreadable one). */
+  missingPaths: ReadonlySet<string>
+}
+
+/**
+ * Release marks to drop after a gather. A mark goes in two cases only:
+ *  1. its bundle IS in this gather and its fate is no longer merged and strong, or (given the
+ *     gather's context) its tip is no longer the tip it was released at (a reopened or
+ *     extended branch must not come back pre-released);
+ *  2. its bundle is absent, its repo WAS scanned, and the folder it recorded is gone from disk
+ *     (it was cleaned).
+ * Absence alone proves nothing: the gather at app start runs before the Reaper's first scan and
+ * builds no bundles, and a repo that dropped out of a scan builds none of its own. A mark that
+ * recorded no folder can never be shown cleaned, so it stays.
+ */
+export function staleReleases(
+  bundles: ReadonlyArray<Pick<WorktreeBundle, 'item' | 'fate' | 'localTip'>>,
+  released: Readonly<Record<string, number>>,
+  gone?: ReleaseGone
+): string[] {
+  const present = new Map(bundles.map((b) => [b.item.id, b]))
+  const platform = process.platform
+  const norm = (p: string): string => normalizePath(p, platform)
+  const scanned = new Set([...(gone?.scannedRepos ?? [])].map(norm))
+  const missing = new Set([...(gone?.missingPaths ?? [])].map(norm))
+  return Object.keys(released).filter((id) => {
+    const b = present.get(id)
+    if (b !== undefined) {
+      if (!(b.fate.fate === 'merged' && b.fate.strong)) return true
+      // With the gather's context a mark must still match the tip it was made at. A mark that
+      // recorded none is dropped too: it would never apply, so it is only clutter.
+      return gone !== undefined && gone.from[id]?.localTip !== (b.localTip ?? undefined)
+    }
+    const from = gone?.from[id]
+    return from !== undefined && scanned.has(norm(from.repoPath)) && missing.has(norm(from.path))
   })
 }

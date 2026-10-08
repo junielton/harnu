@@ -23,7 +23,9 @@ describe('defaultGcPrefs', () => {
       categories: { worktrees: true, dockerCache: true },
       cacheMaxAgeDays: 7,
       neverClean: [],
-      keep: {}
+      keep: {},
+      released: {},
+      releasedFrom: {}
     })
   })
 

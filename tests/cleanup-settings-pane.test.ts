@@ -88,7 +88,7 @@ afterEach(() => {
 })
 
 describe('CleanupSettingsPane — every GcPrefs field has a control', () => {
-  it('renders a control for each editable field, and none for the internal three', async () => {
+  it('renders a control for each editable field, and none for the internal five', async () => {
     const w = await mountPane()
     for (const id of [
       'gc-autopilot',
@@ -105,10 +105,11 @@ describe('CleanupSettingsPane — every GcPrefs field has a control', () => {
     // D1: there is no volumes switch and no removeVolumes switch — volumes are always kept.
     expect(w.find('[data-testid="gc-cat-volumes"]').exists()).toBe(false)
     expect(w.find('[data-testid="gc-remove-volumes"]').exists()).toBe(false)
-    // The shape of the contract (S3 delta 2): GcPrefs minus version / keep / firstReportAcknowledged.
+    // The shape of the contract (S3 delta 2): GcPrefs minus version / keep / firstReportAcknowledged
+    // and the release marks (released / releasedFrom, written by release_worktree, never edited here).
     // `removeVolumes` and `categories.volumes` are gone from the engine as well as from the pane.
     const editable = Object.keys(GC).filter(
-      (k) => !['version', 'keep', 'firstReportAcknowledged'].includes(k)
+      (k) => !['version', 'keep', 'firstReportAcknowledged', 'released', 'releasedFrom'].includes(k)
     )
     expect(editable.sort()).toEqual(
       [
