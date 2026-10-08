@@ -200,6 +200,7 @@ export async function registerGcHandlers(
     scannedAt: g.scannedAt,
     bundles: g.bundles,
     orphanVolumes: g.orphanVolumes,
+    docker: g.docker,
     prefs: livePrefs(),
     lastCycle: state.last,
     nextCycleAt: reaper.autoScan() ? reaper.nextTickAt() : null

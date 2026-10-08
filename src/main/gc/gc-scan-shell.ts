@@ -39,6 +39,7 @@ import {
   type OrphanVolumeItem
 } from './gc-housekeeping-input'
 import { planHousekeeping } from './housekeeping-core'
+import { NO_DOCKER_CARD, dockerCardFacts, type GcDockerCard } from './gc-docker-card'
 import type { GcGather } from './gc-cycle'
 import type { GcPrefs } from './gc-prefs'
 
@@ -48,6 +49,8 @@ export interface GcGathered extends GcGather {
   df: Map<string, VolumeFact>
   /** False when docker was absent or down, so `df` and the container list say nothing. */
   dockerAvailable: boolean
+  /** The Docker card's figures; null inside when docker could not answer. */
+  docker: GcDockerCard
   orphanVolumes: OrphanVolumeItem[]
   /** Keep marks whose branch fate has changed since; the caller clears them from the prefs. */
   staleKeeps: string[]
@@ -164,6 +167,13 @@ export async function gatherGc(
     })
   }
 
+  // Read-only listings for the Docker card; skipped, not guessed, when docker is absent.
+  const docker = available
+    ? await dockerCardFacts((argv) =>
+        runDocker(argv, { windowsHide: true, timeout: 60_000, maxBuffer: 8 << 20 })
+      )
+    : NO_DOCKER_CARD
+
   // Housekeeping facts first: the bundle builder needs them too. Existence fails closed and
   // explicit project names come from the files, exactly as for the orphan planner.
   const workingDirs = containers.flatMap((c) => c.labels[COMPOSE_WORKING_DIR_LABEL] ?? [])
@@ -246,6 +256,7 @@ export async function gatherGc(
     scannedAt: now,
     df,
     dockerAvailable: available,
+    docker,
     orphanVolumes: orphanVolumeItems(orphanNames, df),
     staleKeeps
   }
