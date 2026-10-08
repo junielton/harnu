@@ -29,7 +29,8 @@ describe('reasonKey — every review code has a sentence in both locales', () =>
   for (const code of CODES) {
     it(code, () => {
       const key = reasonKey(code)
-      expect(key).not.toBe('cleanup.gc.reason.unknownFate')
+      // A code must have its own key, not fall through to the unknown-fate fallback.
+      if (code !== 'unknown-fate') expect(key).not.toBe('cleanup.gc.reason.unknownFate')
       for (const locale of ['en', 'pt-BR']) {
         expect(typeof at(load(locale), key), `${locale} ${key}`).toBe('string')
       }
