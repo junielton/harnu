@@ -8330,8 +8330,8 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
    (`border-b border-border bg-surface-2`, `padding: 8px 22px`): `square-check` icon (`--accent`), the
    count `N selected · X GB` (13px; numbers 600-weight `--text`), then **Remove selected** (Danger,
    `trash-2`), **Dehydrate** (Soft, `package-minus`), **Keep** (Ghost, `bookmark`) — the same icons as the side
-   panel's actions — **Ask for an opinion** (Soft, `sparkles`, disabled, tooltip
-   "coming in S6"), a `⇧` hint (`kbd`) and a right-aligned "Clear selection" ghost link.
+   panel's actions — **Ask for an opinion** (Soft, `sparkles`; enabled whenever the selection
+   holds Needs review items — see "Opinion chip"), a `⇧` hint (`kbd`) and a right-aligned "Clear selection" ghost link.
 4. **First-cycle banner** (only while `firstReportAcknowledged` is false and a report exists): see below.
 5. **Split bar** (`.gc-split`): a 32px bar of up to four segments — _Ready to clean_ (ready worktrees only, Ready triple, so
    it agrees with the hero's count), _Docker (cleaned each cycle)_ (build cache + dangling images, Ready triple,
@@ -8429,7 +8429,8 @@ Top to bottom: name (13px mono, `--text`) and repo (11px `--text-4`); size (20px
 confirm dialog's preview: stack containers, deps, checkout, branch; a worktree's volumes are kept and a
 note says so); then the actions, stacked,
 `justify-content: flex-start`, shortcut `kbd` right: **Remove** (Danger), **Dehydrate** (Soft),
-**Keep** (Ghost), **Ask for an opinion** (Soft, disabled, "coming in S6"). A Ready to clean block's panel offers
+**Keep** (Ghost), **Ask for an opinion** (Soft, `sparkles`) — and, once the block has an opinion, an **Opinion** section above the
+actions (see "Opinion chip"). A Ready to clean block's panel offers
 "Clean now" only. An orphan-volume block shows its project name and "no known worktree".
 A failed or refused item's panel adds **what happened** — never a reconstructed history. The engine reports
 only the step an item halted at and why, so the panel says **"Stopped at {step}"** plus a human sentence
@@ -8453,8 +8454,82 @@ is the bucket icon, which becomes a hover-reveal checkbox (the Cleanup row patte
 `square-check` in `--accent` when checked; a checked row is `--accent-soft` with `--accent-line`; a failed
 row is `--red-soft` with `--red-line` and `triangle-alert`. Header: eyebrow "Needs review" in `--warning`,
 the count, and two header buttons that act on the **whole list** — "Ask for an opinion on all {n}"
-(disabled, S6) and "Remove the {n} marked safe" (hidden until opinions exist). Hovering a row outlines
-its block. Footer: the keyboard hints (`kbd`).
+(Soft, `sparkles`) and "Remove the {n} marked safe" (Success, hidden until at least one safe opinion
+is current). Each row carries its **opinion chip** under the reason (see "Opinion chip"). Hovering a row
+outlines its block. Footer: the keyboard hints (`kbd`).
+
+#### Opinion chip ("Ask for an opinion", T444)
+
+An **advisory, on-demand** verdict on a Needs review item, produced by a read-only headless session.
+It never removes anything and never runs by itself: the timer and the autopilot do not ask. The three
+entry points are the selection bar's button (the checked items), the list header's "on all {n}" (every
+Needs review item, orphan volumes included) and the block panel's button (that one item).
+
+- **Chip** (`CleanupOpinionChip.vue`): the Badges geometry (`2px 8px`, pill, 11px). Verdicts use the
+  existing variants, label always in words (never colour alone): **safe** → Success, **keep** → Accent,
+  **unsure** → Default. The chip's `title` is the reason, then the evidence on a second line.
+- **Pending** (a request in flight for that item): a Default chip with a 6px `--accent` dot using the
+  existing `.anim-shimmer-dot` helper and the word "Asking…". No chip is drawn for an item nobody asked about.
+- **Panel section "Opinion"** (above the actions, only when there is an opinion): the chip, the reason in
+  13px `--text-2`, and the evidence as an 11.5px `--text-3` line prefixed "Evidence". Nothing else.
+- **An opinion is about the item as it was when asked.** Main binds each answer to its cache key
+  (reason, fate, pull request state, head, the sorted dirty files, the volume) taken when the question
+  went out. If the item moves while the model thinks, the answer arrives marked `stale` and is dropped;
+  the renderer also drops a result whose asked-for fingerprint no longer matches the item. A chip that
+  main cached is checked against main's cache again after every snapshot (`gc:opinion:cached`), so a
+  change the snapshot does not carry (the dirty files, the pull request state) clears it too.
+- **"Remove the {n} marked safe"**: counts only items that are still Needs review and whose opinion is
+  still current. **Right before the dialog opens** it asks main's cache (`gc:opinion:cached`) about the
+  marked ids again, under each item's current key, and pre-selects only those main still confirms as
+  `safe`; the rest lose their chip and a one-line toast says how many were left out. If main could not be
+  asked, nothing is selected. An item main always refuses to remove (a worktree that holds another one,
+  or one git has locked) keeps its chip but is never counted or pre-selected. It **pre-selects those items and opens the existing remove dialog**; it never removes by
+  itself. The binding is the `expected` the dialog captures **when it opens**, exactly as for Remove
+  selected: the dialog sends `gc:clean(ids, { confirmed, expected })` and main refuses any item whose
+  facts differ from that `expected` (`changed-since-confirm`). The opinion is advice shown before the
+  dialog; it is not what `gc:clean` checks.
+- **Failure and doubt are the same chip**: an advisor that could not run, answered badly, or marked
+  something safe without evidence reads **unsure**; the reason says why. A failed answer is not
+  remembered, so asking again asks again.
+- **After a reload the chips come back by themselves.** Main keeps the opinions; when the Needs review
+  list renders, the store asks main's cache (`gc:opinion:cached`, a read that never asks the model) for
+  every item without a chip. Only an answer that still fits the item is returned (same head, dirty
+  files, fate and reason); an item that changed shows no chip and costs a new ask.
+- **What the session is given.** It reads files and runs nothing: it runs in the repository folder with
+  `Read`, `Grep` and `Glob` only, started with `--tools Read,Grep,Glob`, which is what restricts its roster (`--allowedTools` and
+  `--disallowedTools` are only permission rules and leave the built-ins offered; the real CLI then
+  still offers CronCreate, EnterWorktree, RemoteTrigger and more). It has no shell, no tool that writes
+  a file, no web tool and none of Harnu's own tools; `Bash` is denied entirely (even a git rule can write
+  files through `--output=<path>`, which a prefix rule has no way to forbid), as are `Edit`, `Write`,
+  `NotebookEdit`, `WebFetch` and `WebSearch`, and no MCP server, skill or plugin is configured.
+  Everything git knows is in the dossier, which main computes. What it opens, the dossier and any file,
+  is sent to the model like any request.
+- **Where it reads.** There is no allow rule for Read, Grep or Glob: an allow rule such as
+  `--allowedTools Read,Grep,Glob` auto-approves reads anywhere the user can read, while with none the
+  Claude CLI's own permission check keeps a file, a search and a listing inside the folder it runs in (a
+  symlink out of it included). That check is not a guarantee: the CLI may still allow a few of its own
+  working folders, and two have been found. So Harnu explicitly blocks Claude's own data folder
+  (`Read`, `Grep` and `Glob` of `~/.claude/**` and of `CLAUDE_CONFIG_DIR` when set; the project folder of
+  the repository sits there next to the transcripts) and Claude's temp folder (`claude-<uid>` under the OS
+  temp dir, `/tmp` and `CLAUDE_CODE_TMPDIR`, where other sessions' task outputs and scratchpads live),
+  and auto memory is switched off (`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, because the CLI would otherwise
+  inject that project's `MEMORY.md` into the model's context). The folder it runs in is chosen on real
+  paths: HOME, an ancestor of HOME or a filesystem root is replaced by a fresh empty directory of its
+  own, never the shared temp dir. Inside the repository folder any file can be opened, ignored ones such
+  as `.env` included, and a hard link there to a file elsewhere reads as a file inside it. A worktree
+  outside the repository folder is not readable. On Windows, where there is no per-user temp folder name
+  to block, only `~/.claude` (and `CLAUDE_CONFIG_DIR`) are explicitly blocked. A blocked folder whose path
+  holds a comma, a parenthesis or a control character has no safe form in a deny rule (a comma
+  separates rules, parentheses end one): then the advisor is not run, every item is answered `unsure`
+  ("Harnu could not express a safety rule for <folder name>"), and nothing is cached.
+- **Git facts fail closed.** A dossier field that comes from git is either computed or marked
+  `COULD NOT BE COMPUTED (reason)`: a failed diff or status is unknown, not "no difference" or "none". An
+  item with a missing fact is answered `unsure` by Harnu without asking the model, has no cache key (so it
+  is never cached and never confirmed as safe), and the prompt tells the advisor never to answer safe for
+  such an item. The default branch is resolved from `origin/HEAD`, then `origin/main`, `origin/master`,
+  `main`, `master`; none existing is an error, not a silent fallback.
+- **Cost disclosure:** the button's tooltip says it uses the model on demand
+  ("Asks a read-only model session. Uses tokens."). Docs say the same.
 
 #### Bulk-clean and remove-selected dialog (`CleanupBulkConfirmDialog.vue`)
 
@@ -8475,7 +8550,7 @@ volume), size right.
   `triangle-alert`. Ready variant: _Volumes are kept. They show up in Needs review afterwards._; code,
   branch and dependencies can come back (archive refs, OS trash, `setup`) — and how. A row that is an
   orphan volume adds _Volumes cannot be restored_ in `--warning`. Remove-selected variant: each row also carries its
-  one-sentence reason; a stronger line names how many picked worktrees hold work that no other branch has,
+  one-sentence reason and, when it has one, its **opinion chip** with the evidence line under it; a stronger line names how many picked worktrees hold work that no other branch has,
   and says their code stays recoverable from archive refs and the OS trash.
 - **Footer:** total (12.5px/500) left, reading **"{n} ready · {size}"** for the ready dialog and
   **"{n} selected · {size}"** for remove-selected; **Cancel** (Ghost) and the confirm, which carries a leading
@@ -8629,7 +8704,7 @@ that belong to no worktree) and states that worktree-bound stacks are cleaned by
 `CleanupView.vue` (shell) · `CleanupTreemap.vue` · `CleanupBlockPanel.vue` · `CleanupHeroButton.vue` ·
 `CleanupSelectionBar.vue` · `CleanupDockerCard.vue` · `CleanupReviewList.vue` · `CleanupListView.vue` ·
 `CleanupSplitBar.vue` · `CleanupLegend.vue` · `CleanupFirstCycleBanner.vue` · `CleanupBulkConfirmDialog.vue` · `CleanupOtherItems.vue` ·
-`stores/gc.ts` · `lib/gc-treemap.ts` · `lib/gc-model.ts` · `lib/gc-jobs.ts`.
+`CleanupOpinionChip.vue` · `lib/gc-opinion.ts` · `stores/gc.ts` · `lib/gc-treemap.ts` · `lib/gc-model.ts` · `lib/gc-jobs.ts`.
 
 ### Containers takeover (ContainersView.vue)
 

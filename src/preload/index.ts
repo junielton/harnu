@@ -145,6 +145,10 @@ import type {
   GcJobDone,
   GcJobInfo,
   GcJobProgress,
+  GcOpinion,
+  GcOpinionAck,
+  GcOpinionDone,
+  GcOpinionResult,
   GcSnapshot
 } from '../main/gc/gc-wire'
 // Containers wire types (T320, ADR-0014 §1): the ONLY containers module the
@@ -2562,6 +2566,22 @@ const api = {
   gcJobs: (): Promise<GcJobInfo[]> => ipcRenderer.invoke('gc:jobs'),
   onGcProgress: (cb: (p: GcJobProgress) => void): (() => void) => subscribe('gc:progress', cb),
   onGcDone: (cb: (d: GcJobDone) => void): (() => void) => subscribe('gc:done', cb),
+  /**
+   * "Ask for an opinion" on Needs review items and orphan volumes. Returns at once; one
+   * `gc:opinion:result` per id streams in (a verdict, or `refused`) and the job ends with
+   * `gc:opinion:done`. Advisory and read-only: it can never remove anything.
+   */
+  gcOpinion: (ids: string[]): Promise<GcOpinionAck> => ipcRenderer.invoke('gc:opinion', ids),
+  /**
+   * The peek: opinions main already holds for items that are still as they were when asked, by
+   * id. Never asks the model; a reloaded renderer uses it to restore its chips for free.
+   */
+  gcOpinionCached: (ids: string[]): Promise<Record<string, GcOpinion>> =>
+    ipcRenderer.invoke('gc:opinion:cached', ids),
+  onGcOpinionResult: (cb: (r: GcOpinionResult) => void): (() => void) =>
+    subscribe('gc:opinion:result', cb),
+  onGcOpinionDone: (cb: (d: GcOpinionDone) => void): (() => void) =>
+    subscribe('gc:opinion:done', cb),
   /** Fires after every autopilot cycle, whatever it did. */
   onGcCycle: (cb: (r: GcCycleRecord) => void): (() => void) => subscribe('gc:cycle', cb),
 

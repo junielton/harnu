@@ -5,6 +5,7 @@ import CleanupReviewList from '../src/renderer/src/components/CleanupReviewList.
 import CleanupListView from '../src/renderer/src/components/CleanupListView.vue'
 import { i18n } from '@renderer/i18n'
 import type { BlockJobState, ItemFailure } from '../src/renderer/src/lib/gc-jobs'
+import type { GcOpinion } from '../src/main/gc/gc-wire'
 import type { GcBlock } from '../src/renderer/src/lib/gc-model'
 import { GIB, MIB, reviewReason, modelOf, volume, wt } from './helpers/cleanup-gc-fixtures'
 
@@ -16,6 +17,9 @@ interface Opts {
   linkedId?: string | null
   blockState?: (id: string) => BlockJobState | null
   failureOf?: (id: string) => ItemFailure | null
+  opinions?: Record<string, GcOpinion>
+  asking?: string[]
+  safeCount?: number
 }
 
 function mountList(blocks: GcBlock[], o: Opts = {}) {
@@ -25,7 +29,10 @@ function mountList(blocks: GcBlock[], o: Opts = {}) {
       checked: new Set(o.checked ?? []),
       linkedId: o.linkedId ?? null,
       blockState: o.blockState ?? (() => null),
-      failureOf: o.failureOf ?? (() => null)
+      failureOf: o.failureOf ?? (() => null),
+      opinionOf: (id: string) => o.opinions?.[id] ?? null,
+      isAsking: (id: string) => (o.asking ?? []).includes(id),
+      safeCount: o.safeCount ?? 0
     },
     global: { plugins: [i18n] }
   })
@@ -126,12 +133,55 @@ describe('CleanupReviewList', () => {
     expect(w.emitted('select')).toBeUndefined() // action buttons do not open the row
   })
 
-  it('"Ask for an opinion on all N" is visible, disabled, and says it is coming', () => {
+  it('"Ask for an opinion on all N" is enabled and emits askAll', async () => {
     const w = mountList(reviewModel().review)
     const ask = w.get('[data-testid="review-ask-all"]')
-    expect(ask.attributes('disabled')).toBeDefined()
-    expect(ask.attributes('title')).toBe(t('cleanup.gc.review.askSoon'))
+    expect(ask.attributes('disabled')).toBeUndefined()
+    expect(ask.element.parentElement?.getAttribute('title')).toBe(t('cleanup.gc.opinion.hint'))
     expect(ask.text()).toBe(t('cleanup.gc.review.askAll', { count: 3 }))
+    await ask.trigger('click')
+    expect(w.emitted('askAll')).toHaveLength(1)
+  })
+
+  it('disables "Ask on all" only while every item is already being asked about', () => {
+    const m = reviewModel()
+    const some = mountList(m.review, { asking: [m.review[0].id] })
+    expect(some.get('[data-testid="review-ask-all"]').attributes('disabled')).toBeUndefined()
+    const all = mountList(m.review, { asking: m.review.map((b) => b.id) })
+    expect(all.get('[data-testid="review-ask-all"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('"Remove the N marked safe" is hidden without safe opinions and emits removeSafe otherwise', async () => {
+    const m = reviewModel()
+    expect(mountList(m.review).find('[data-testid="review-remove-safe"]').exists()).toBe(false)
+    const w = mountList(m.review, { safeCount: 2 })
+    const btn = w.get('[data-testid="review-remove-safe"]')
+    expect(btn.text()).toBe('Remove the 2 marked safe')
+    await btn.trigger('click')
+    expect(w.emitted('removeSafe')).toHaveLength(1)
+    // It only asks the screen to pre-select: the list itself never emits a removal for it.
+    expect(w.emitted('remove')).toBeUndefined()
+  })
+
+  it('draws a chip per verdict under the reason, a pending chip while asking, and none otherwise', () => {
+    const m = reviewModel()
+    const [a, b, c] = m.review
+    const w = mountList(m.review, {
+      opinions: {
+        [a.id]: { id: a.id, verdict: 'safe', reason: 'r', evidence: 'e' },
+        [b.id]: { id: b.id, verdict: 'keep', reason: 'r', evidence: 'e' }
+      },
+      asking: [c.id]
+    })
+    const chip = (id: string) =>
+      rows(w)
+        .find((r) => r.attributes('data-id') === id)!
+        .find('[data-testid="opinion-chip"]')
+    expect(chip(a.id).attributes('data-state')).toBe('safe')
+    expect(chip(b.id).attributes('data-state')).toBe('keep')
+    expect(chip(c.id).attributes('data-state')).toBe('pending')
+    const bare = mountList(m.review)
+    expect(bare.find('[data-testid="opinion-chip"]').exists()).toBe(false)
   })
 
   it('a failed row is flagged, and a changed-since-confirm refusal says to review again', () => {

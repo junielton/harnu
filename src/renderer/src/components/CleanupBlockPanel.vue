@@ -12,6 +12,7 @@ import {
   TriangleAlert,
   X
 } from 'lucide-vue-next'
+import type { GcOpinion } from '../../../main/gc/gc-wire'
 import type { GcBlock } from '../lib/gc-model'
 import { haltOf, type BlockJobState, type ItemFailure } from '../lib/gc-jobs'
 import { formatBytes } from './system-monitor-format'
@@ -26,6 +27,7 @@ import {
 } from './cleanup-row'
 import { reasonKey, refusalKey, stepKey } from './cleanup-gc-copy'
 import Button from './ui/Button.vue'
+import CleanupOpinionChip from './CleanupOpinionChip.vue'
 
 /**
  * Docked detail panel of the Cleanup map (design.md "Workspace GC — unified Cleanup / Side panel").
@@ -43,8 +45,12 @@ const props = withDefaults(
     dehydrateIdleDays?: number
     /** A dehydrate/rehydrate in flight for this worktree; it disables those two buttons. */
     hydrationBusy?: HydrationOp | null
+    /** The advisor's verdict on this item, when it was asked. */
+    opinion?: GcOpinion | null
+    /** A request for this item's opinion is in flight. */
+    asking?: boolean
   }>(),
-  { dehydrateIdleDays: 7, hydrationBusy: null }
+  { dehydrateIdleDays: 7, hydrationBusy: null, opinion: null, asking: false }
 )
 
 const emit = defineEmits<{
@@ -53,6 +59,7 @@ const emit = defineEmits<{
   dehydrate: [id: string]
   rehydrate: [id: string]
   keep: [id: string]
+  ask: [id: string]
   cleanNow: [id: string]
   retry: [id: string]
 }>()
@@ -136,7 +143,8 @@ const removeBlockedKey = computed(() =>
 const removeBlocked = computed(() => removeBlockedKey.value !== null)
 const showRemove = computed(() => review.value && !removeBlocked.value)
 const showKeep = computed(() => review.value && !isVolume.value)
-const showAsk = computed(() => review.value && !isVolume.value)
+const showAsk = computed(() => review.value)
+const showOpinion = computed(() => review.value && (props.asking || props.opinion !== null))
 const showCleanNow = computed(() => ready.value && !hasFailure.value)
 /** Retry re-opens the confirm for the item's CURRENT bucket, so an in-use item has nothing to retry. */
 const showRetry = computed(() => hasFailure.value && !inUse.value)
@@ -162,7 +170,7 @@ function shortcutsBlocked(e: KeyboardEvent): boolean {
   return !!document.querySelector('[role="dialog"][aria-modal="true"]')
 }
 
-/** Each letter acts only when its button is shown AND enabled; "A" has no action (Ask is disabled). */
+/** Each letter acts only when its button is shown AND enabled. */
 function onShortcut(e: KeyboardEvent): void {
   if (shortcutsBlocked(e)) return
   const id = props.block.id
@@ -175,6 +183,9 @@ function onShortcut(e: KeyboardEvent): void {
       break
     case 'd':
       if (showDehydrate.value && !hydrationDisabled.value) emit('dehydrate', id)
+      break
+    case 'a':
+      if (showAsk.value && !locked.value && !props.asking) emit('ask', id)
       break
   }
 }
@@ -325,6 +336,25 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
       <p v-if="ready" class="text-caption leading-4 text-text-3" data-testid="panel-ready-note">
         {{ t('cleanup.gc.panel.readyNote') }}
       </p>
+    </section>
+
+    <section
+      v-if="showOpinion"
+      class="flex flex-col gap-1.5 border-t border-border pt-3"
+      data-testid="panel-opinion"
+    >
+      <div class="eyebrow text-text-4">
+        {{ t('cleanup.gc.panel.opinionTitle') }}
+      </div>
+      <CleanupOpinionChip :opinion="opinion" :pending="asking" />
+      <template v-if="opinion && !asking">
+        <p class="text-body text-text-2" data-testid="panel-opinion-reason">
+          {{ opinion.reason }}
+        </p>
+        <p class="text-caption text-text-3" data-testid="panel-opinion-evidence">
+          {{ t('cleanup.gc.opinion.evidence') }}: {{ opinion.evidence }}
+        </p>
+      </template>
     </section>
 
     <section v-if="!inUse" class="flex flex-col gap-1 border-t border-border pt-3">
@@ -479,18 +509,18 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
         <kbd class="ml-auto font-mono text-eyebrow text-text-3">K</kbd>
       </Button>
 
-      <span v-if="showAsk" :title="t('cleanup.gc.panel.askSoon')" class="block">
-        <Button
-          variant="soft"
-          class="w-full !justify-start"
-          :disabled="true"
-          :title="t('cleanup.gc.panel.askSoon')"
-          data-testid="panel-ask"
-        >
-          <Sparkles :size="13" :stroke-width="1.7" />{{ t('cleanup.gc.panel.ask') }}
-          <kbd class="ml-auto font-mono text-eyebrow text-text-3">A</kbd>
-        </Button>
-      </span>
+      <Button
+        v-if="showAsk"
+        variant="soft"
+        class="!justify-start"
+        :disabled="locked || asking"
+        :title="t('cleanup.gc.opinion.hint')"
+        data-testid="panel-ask"
+        @click="emit('ask', block.id)"
+      >
+        <Sparkles :size="13" :stroke-width="1.7" />{{ t('cleanup.gc.panel.ask') }}
+        <kbd class="ml-auto font-mono text-eyebrow text-text-3">A</kbd>
+      </Button>
     </div>
   </aside>
 </template>

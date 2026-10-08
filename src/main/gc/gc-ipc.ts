@@ -2,7 +2,8 @@
  * The workspace-GC service and its IPC surface (design: workspace-gc §6, slice 3).
  *
  * Request/response channels `gc:snapshot/clean/keep/unkeep/prefs:get/prefs:set/
- * ackFirstReport/jobs`, plus the `gc:progress`, `gc:done` and `gc:cycle` pushes. There is no
+ * ackFirstReport/jobs/opinion`, plus the `gc:progress`, `gc:done`, `gc:cycle`,
+ * `gc:opinion:result` and `gc:opinion:done` pushes. There is no
  * timer here: the cycle rides the Reaper tick through `ReaperControl.setAfterScan`, so the
  * scan and the clean share one clock. Cleaning is UI-only on purpose: no MCP verb reaches it.
  *
@@ -47,6 +48,13 @@ import type { GcCleanAck, GcSnapshot, OrphanVolumeItem } from './gc-wire'
 import { createGcOps, defaultGcShellDeps, type GcShellDeps } from './gc-shell'
 import { createForcedGcOps } from './gc-forced-ops'
 import { runHousekeeping } from './housekeeping-shell'
+import {
+  createOpinionCache,
+  createOpinionService,
+  type GcOpinionAck,
+  type Opinion as GcOpinion
+} from './opinion-core'
+import { createOpinionShell } from './opinion-shell'
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
@@ -59,6 +67,10 @@ export interface GcService {
   setPrefs(raw: unknown): Promise<GcPrefs>
   ackFirstReport(): Promise<GcPrefs>
   jobs(): GcJobInfo[]
+  /** "Ask for an opinion": on demand only, read-only, advisory. Never removes anything. */
+  opinion(ids: unknown): GcOpinionAck
+  /** The peek: cached opinions that still match their item. Never asks the model. */
+  opinionCached(ids: unknown): Promise<Record<string, GcOpinion>>
 }
 
 /** Ids from an untrusted payload: strings only, bounded. */
@@ -201,6 +213,19 @@ export async function registerGcHandlers(
     nextCycleAt: reaper.autoScan() ? reaper.nextTickAt() : null
   })
 
+  // The advisor is reachable from the `gc:opinion` handler below and from nowhere else: the
+  // cycle, the timer and the autopilot never touch it (tests/gc-opinion-wiring.test.ts).
+  const opinions = createOpinionService({
+    cache: createOpinionCache(),
+    ...createOpinionShell({
+      current: async () => gatherer.cached() ?? (await gather()),
+      git: shellDeps.executor.git
+    }),
+    emitResult: (r) => send('gc:opinion:result', r),
+    emitDone: (d) => send('gc:opinion:done', d),
+    newId: () => randomUUID()
+  })
+
   const service: GcService = {
     snapshot: async (opts) =>
       buildSnapshot(opts?.refresh || !gatherer.cached() ? await gather() : gatherer.cached()!),
@@ -257,7 +282,9 @@ export async function registerGcHandlers(
       return next
     },
     ackFirstReport: () => persist(withAcknowledged(prefs)),
-    jobs: () => queue.jobs()
+    jobs: () => queue.jobs(),
+    opinion: (ids) => opinions.start(ids),
+    opinionCached: (ids) => opinions.cached(ids)
   }
 
   // The agent-facing seam (T445). Deliberately narrow: no clean, keep or prefs method, and its
@@ -281,6 +308,8 @@ export async function registerGcHandlers(
   ipcMain.handle('gc:prefs:set', (_e, raw: unknown) => service.setPrefs(raw))
   ipcMain.handle('gc:ackFirstReport', () => service.ackFirstReport())
   ipcMain.handle('gc:jobs', () => service.jobs())
+  ipcMain.handle('gc:opinion', (_e, ids: unknown) => service.opinion(ids))
+  ipcMain.handle('gc:opinion:cached', (_e, ids: unknown) => service.opinionCached(ids))
 
   // Seed the Containers feed once at start-up so the view is right before the first tick.
   void gather().catch((err) => console.error('[gc] first gather failed:', messageOf(err)))

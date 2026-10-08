@@ -10,10 +10,24 @@ import type { HousekeepingResult } from './housekeeping-core'
 import type { OrphanVolumeItem } from './gc-housekeeping-input'
 import type { GcJobDone, GcJobInfo, GcJobProgress } from './gc-jobs-core'
 import type { GcDockerCard, OrphanVolumesHidden } from './gc-docker-card'
+import type {
+  GcOpinionAck,
+  GcOpinionDone,
+  GcOpinionResult,
+  Opinion,
+  OpinionRefusal,
+  OpinionVerdict
+} from './opinion-core'
 
 export type {
   GcDockerCard,
   OrphanVolumesHidden,
+  GcOpinionAck,
+  GcOpinionDone,
+  GcOpinionResult,
+  Opinion as GcOpinion,
+  OpinionRefusal as GcOpinionRefusal,
+  OpinionVerdict as GcOpinionVerdict,
   CycleMode,
   GcJobDone,
   GcJobInfo,

@@ -10,12 +10,14 @@ import {
   Trash2,
   TriangleAlert
 } from 'lucide-vue-next'
+import type { GcOpinion } from '../../../main/gc/gc-wire'
 import type { GcBlock } from '../lib/gc-model'
 import type { BlockJobState, ItemFailure } from '../lib/gc-jobs'
 import { formatBytes } from './system-monitor-format'
 import { canDehydrate } from './cleanup-row'
 import { reasonKey, refusalKey } from './cleanup-gc-copy'
 import Button from './ui/Button.vue'
+import CleanupOpinionChip from './CleanupOpinionChip.vue'
 
 /**
  * "Needs review": the ranked list of Needs review items under the map (design.md "Workspace GC — unified
@@ -31,6 +33,10 @@ const props = defineProps<{
   linkedId: string | null
   blockState: (id: string) => BlockJobState | null
   failureOf: (id: string) => ItemFailure | null
+  opinionOf: (id: string) => GcOpinion | null
+  isAsking: (id: string) => boolean
+  /** How many current opinions say safe: "Remove the {n} marked safe" shows only above zero. */
+  safeCount: number
 }>()
 
 const emit = defineEmits<{
@@ -40,11 +46,16 @@ const emit = defineEmits<{
   remove: [id: string]
   dehydrate: [id: string]
   keep: [id: string]
+  askAll: []
+  removeSafe: []
 }>()
 
 const { t } = useI18n()
 
 const showAll = ref(false)
+const allAsking = computed(
+  () => props.blocks.length > 0 && props.blocks.every((b) => props.isAsking(b.id))
+)
 const visible = computed(() => (showAll.value ? props.blocks : props.blocks.slice(0, ROW_CAP)))
 const hiddenCount = computed(() => Math.max(props.blocks.length - ROW_CAP, 0))
 
@@ -86,16 +97,27 @@ function onRowKey(e: KeyboardEvent, id: string): void {
         {{ t('cleanup.gc.review.title') }}
       </span>
       <span class="text-caption text-text-3" data-testid="review-count">{{ blocks.length }}</span>
-      <span class="ml-auto" :title="t('cleanup.gc.review.askSoon')">
+      <span class="ml-auto flex flex-wrap items-center gap-2">
         <Button
-          variant="soft"
-          :disabled="true"
-          :title="t('cleanup.gc.review.askSoon')"
-          data-testid="review-ask-all"
+          v-if="safeCount > 0"
+          variant="success"
+          data-testid="review-remove-safe"
+          @click="emit('removeSafe')"
         >
-          <Sparkles :size="13" :stroke-width="1.7" />
-          {{ t('cleanup.gc.review.askAll', { count: blocks.length }) }}
+          <Trash2 :size="13" :stroke-width="1.7" />
+          {{ t('cleanup.gc.review.removeSafe', { count: safeCount }, safeCount) }}
         </Button>
+        <span :title="t('cleanup.gc.opinion.hint')" class="inline-flex">
+          <Button
+            variant="soft"
+            :disabled="blocks.length === 0 || allAsking"
+            data-testid="review-ask-all"
+            @click="emit('askAll')"
+          >
+            <Sparkles :size="13" :stroke-width="1.7" />
+            {{ t('cleanup.gc.review.askAll', { count: blocks.length }) }}
+          </Button>
+        </span>
       </span>
     </header>
 
@@ -167,8 +189,11 @@ function onRowKey(e: KeyboardEvent, id: string): void {
           }}</span>
         </span>
 
-        <span class="min-w-0 text-ui text-text-2" data-testid="review-reason">
-          {{ reasonOf(b) }}
+        <span class="flex min-w-0 flex-col items-start gap-1">
+          <span class="min-w-0 text-ui text-text-2" data-testid="review-reason">
+            {{ reasonOf(b) }}
+          </span>
+          <CleanupOpinionChip :opinion="opinionOf(b.id)" :pending="isAsking(b.id)" />
         </span>
 
         <span class="text-right text-ui tabular-nums text-text">{{ sizeOf(b) }}</span>

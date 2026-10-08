@@ -212,14 +212,6 @@ describe('Cleanup screen — multi-select on Needs review', () => {
     expect('confirmDecide' in opts).toBe(false)
   })
 
-  it('"Ask for an opinion" is visible but disabled', async () => {
-    install(snap())
-    await mountView()
-    await domAll('[data-testid="review-check"]')[0].setValue(true)
-    await flushPromises()
-    expect(domGet('[data-testid="sel-ask"]').attributes('disabled')).toBeDefined()
-  })
-
   it('Shift+click on a Needs review block checks it; a plain click opens its panel instead', async () => {
     install(snap())
     await mountView()
@@ -258,7 +250,7 @@ describe('Cleanup screen — panel', () => {
     await domAll('[data-testid="treemap-block"][data-bucket="review"]')[0].trigger('click')
     await flushPromises()
     expect(dom('[data-testid="panel-reason"]').exists()).toBe(true)
-    expect(domGet('[data-testid="panel-ask"]').attributes('disabled')).toBeDefined()
+    expect(domGet('[data-testid="panel-ask"]').attributes('disabled')).toBeUndefined()
     await domGet('[data-testid="panel-keep"]').trigger('click')
     await flushPromises()
     expect(api.gcKeep).toHaveBeenCalledTimes(1)

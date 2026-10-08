@@ -324,6 +324,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Cleanup list fallback (T443)                       | `src/renderer/src/components/CleanupListView.vue`                                |
 | Cleanup block side panel (T443)                    | `src/renderer/src/components/CleanupBlockPanel.vue`                              |
 | Cleanup "Needs review" list (T443)                 | `src/renderer/src/components/CleanupReviewList.vue`                              |
+| Cleanup opinion chip (T444)                        | `src/renderer/src/components/CleanupOpinionChip.vue` + `lib/gc-opinion.ts`       |
 | Cleanup hero button / progress chip (T443)         | `src/renderer/src/components/CleanupHeroButton.vue`                              |
 | Cleanup selection bar (T443)                       | `src/renderer/src/components/CleanupSelectionBar.vue`                            |
 | Cleanup bulk-clean confirm dialog (T443)           | `src/renderer/src/components/CleanupBulkConfirmDialog.vue`                       |

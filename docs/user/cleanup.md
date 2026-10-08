@@ -71,7 +71,9 @@ Click a block to open its panel on the right (on a narrow window it opens over t
 - the worktree's name and repo, and its size, split into dependencies and the rest of the checkout (Harnu does not report how big a worktree's volumes are, so volumes are listed by name, with a note that they are kept);
 - **Why it is here**: the one-sentence reason (for example "The pull request was closed without being merged.");
 - **Takes with it**: exactly what removing it would delete (its Docker stack's containers, dependencies, the checkout, the local branch; its volumes are kept);
-- the actions: **Remove**, **Dehydrate** (or **Rehydrate** for one already dehydrated), **Keep**, and **Ask for an opinion**. **Ask for an opinion** is visible but disabled for now (it says "coming in S6"). A ready item's panel offers **Clean now** instead.
+- the actions: **Remove**, **Dehydrate** (or **Rehydrate** for one already dehydrated), **Keep**, and **Ask for an opinion**. **Ask for an opinion** asks a read-only advisor about this one item (see "Ask for an opinion" below), and once it has answered, an **Opinion** section appears above the actions with its reason and evidence. A ready item's panel offers **Clean now** instead.
+
+With the panel open, the letters on its buttons work too: **R** Remove, **D** Dehydrate, **K** Keep and **A** Ask for an opinion (each only while its button is shown and enabled).
 
 An orphan Docker volume shows its compose project and "No known worktree uses this volume".
 
@@ -81,13 +83,42 @@ If a clean failed on an item, the panel also shows **What ran**: which steps fin
 
 ### Needs review
 
-A ranked list under the map, biggest first: every Needs review item with its one-sentence reason, size and quick actions (Keep, Dehydrate, Remove). Hovering a row outlines its block on the map. Orphan Docker volumes are listed here too. "Ask for an opinion on all" is visible and disabled for now.
+A ranked list under the map, biggest first: every Needs review item with its one-sentence reason, size and quick actions (Keep, Dehydrate, Remove). Hovering a row outlines its block on the map. Orphan Docker volumes are listed here too. Each row shows an opinion chip once you have asked for one. The header has **Ask for an opinion on all N**, and, once at least one item is marked safe, **Remove the N marked safe**.
 
 ### Selecting several at once
 
 **Shift+click** a Needs review block (or tick a row in Needs review) to select it, and again to deselect. **Select all in repo** selects every Needs review block in that repo. Only Needs review blocks can be selected: ready items are cleaned by the hero button, and In use blocks are never touched. **Esc** clears the selection.
 
-A selection bar appears under the toolbar: `4 selected · 3.4 GB`, with **Remove selected**, **Dehydrate**, **Keep** and **Ask for an opinion** (disabled for now). **Remove selected** opens the same kind of dialog as the hero button, with differences that matter: each row carries its reason, and a stronger warning says how many of the worktrees you picked hold work that no other branch has. Their code stays recoverable from the archive refs and the system trash. Those items were not proven safe, so the confirm button is red rather than green. Harnu checks every item again at the moment you confirm; one that changed in the meantime is skipped and shown as "Changed since you confirmed — review again."
+A selection bar appears under the toolbar: `4 selected · 3.4 GB`, with **Remove selected**, **Dehydrate**, **Keep** and **Ask for an opinion**. **Remove selected** opens the same kind of dialog as the hero button, with differences that matter: each row carries its reason, and a stronger warning says how many of the worktrees you picked hold work that no other branch has. Their code stays recoverable from the archive refs and the system trash. Those items were not proven safe, so the confirm button is red rather than green. Harnu checks every item again at the moment you confirm; one that changed in the meantime is skipped and shown as "Changed since you confirmed — review again."
+
+### Ask for an opinion
+
+When a Needs review item is a judgement call, you can ask a second pair of eyes. **Ask for an opinion** is in the selection bar (it asks about the items you ticked), in the panel (that one item) and above the Needs review list ("on all N"). Harnu starts a headless Claude session, hands it a short file on each item — the diff against the default branch, the uncommitted files, the pull request, the reason it needs review and the last chat held in that folder — and shows what comes back as a chip on the row:
+
+- **safe**: the advisor found nothing that would be lost, and names the evidence (for example "the 3 changed files are on main at abc123");
+- **keep**: it found work that exists nowhere else;
+- **unsure**: it could not tell, did not answer, or called something safe without naming evidence. Doubt always lands here.
+
+Hover the chip, or open the panel, to read the reason and the evidence. While it is thinking the chip says **Asking…**.
+
+**Remove the N marked safe** appears above the list once at least one item is marked safe. It only **selects those items and opens the same remove dialog** as Remove selected, where each row shows its chip and evidence and you confirm as usual. Nothing is removed until you confirm there. Two checks stand between a chip and a removal:
+
+- Right before the dialog opens, Harnu asks its own memory of the opinions again for each marked item, with the item as it is: its head and uncommitted files as they are now, its pull request state as of the last scan. Any item it can no longer confirm as safe is left out, with a one-line note, and its chip goes. If it could not ask, nothing is selected. An item Harnu would refuse to remove anyway (a nested worktree, one that holds another worktree, or a locked one that git will not release) keeps its chip but is never counted or pre-selected.
+- When the dialog opens, Harnu captures what it shows. When you confirm, it skips any item that differs from what the dialog showed when it opened ("Changed since you confirmed — review it again."). That check is the usual one for every removal; it does not look at the opinion, which is advice shown before the dialog.
+
+What it is, and what it is not:
+
+- **Advice only.** The advisor has no way to remove, edit or run anything. Its session is started with a fixed set of three tools, `Read`, `Grep` and `Glob`: it reads files and nothing else. It has no shell (no command, not even `git`), no tool that writes a file, no web tool and none of Harnu's own tools.
+
+  **Where it reads.** It runs in the repository folder: the main checkout and the worktrees under it. The Claude CLI's own check keeps it to that folder (a file, a search or a listing outside it, and a symlink that leads outside, are refused; checked against the real CLI), but the CLI may still allow a few of its own working folders, and two of those have been found so far. Harnu explicitly blocks Claude's own data folder (`~/.claude`, and wherever `CLAUDE_CONFIG_DIR` points: session transcripts, tool results and memory) and Claude's temp folder (`claude-<uid>` under the temp directory or `CLAUDE_CODE_TMPDIR`, where other sessions' task outputs live), and auto memory is switched off, so a repository's `MEMORY.md` is not added to what it sees. On Windows, where there is no per-user temp folder name to block, only `~/.claude` (and `CLAUDE_CONFIG_DIR`) are explicitly blocked. If the path of a folder Harnu must block holds a comma, a parenthesis or a control character that a rule has no way to express, Harnu does not run the advisor at all and answers every item **unsure** ("Harnu could not express a safety rule for <folder name>"). If the repository folder is your home folder, one of its parents or the filesystem root, Harnu falls back to an empty folder of its own rather than your home folder or the filesystem root. Inside the repository folder it can open any file, ignored files such as `.env` included (a hard link there to a file elsewhere reads as a file inside it). A worktree that lives outside the repository folder is not readable by it; for that one it works from the summary alone. It is started without any setting, skill, plugin or MCP server of yours.
+
+  **Where its summary comes from.** The diff against the default branch, the uncommitted files and the head are read from git at the moment you ask; if git fails or overflows, the summary says "COULD NOT BE COMPUTED", Harnu answers **unsure** itself without asking the model, and nothing is remembered for that item. The diff names the branch it was taken against (`origin/main`, `master`, …) and is never taken against the item's own branch. The pull request state is the one from the last scan, and so is the reason it needs review; if that scan could not tell (the GitHub CLI was missing, the list was capped, or the item was never scanned) the advisor is told it is unknown, never "none".
+
+  **What leaves your machine.** The summary and every file the advisor opens are **sent to the model** like any Claude request, so do not ask about a repository whose files you would not send to Claude. Treat a **safe** as a reason to look closer, not as proof: the advisor can be wrong, and a worktree's contents are untrusted text to it.
+
+- **Only when you ask.** The timer and the autopilot never ask for opinions, and a failed request is not retried on its own. If it could not run, the items read **unsure** and you can ask again.
+- **It costs model tokens.** Each question runs a model session. It runs as the cheap "scout" tier of the folder's model routing table (Haiku at low effort unless you changed it in the folder's settings), so a question costs little, but it is not free: one session per repo and at most eight items at a time.
+- **Remembered while nothing changes.** An answer is kept until the item changes (a new commit, different uncommitted files, a different pull request state), also if you reload the window. Asking again about an unchanged item costs nothing and shows the same answer.
 
 ### Cleaning runs in the background
 

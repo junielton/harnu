@@ -54,6 +54,9 @@ describe('one timer', () => {
   it('no GC module owns a timer', () => {
     for (const file of readdirSync(new URL('../src/main/gc', import.meta.url))) {
       if (!file.endsWith('.ts')) continue
+      // The advisor's runner owns the two bounded timers that end one hung process (SIGTERM, then
+      // SIGKILL); it is not a cycle timer and starts nothing (tests/gc-opinion-wiring.test.ts).
+      if (file === 'opinion-run.ts') continue
       expect(read(`src/main/gc/${file}`), file).not.toMatch(/\bsetInterval\s*\(|\bsetTimeout\s*\(/)
     }
   })

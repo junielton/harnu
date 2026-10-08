@@ -1,7 +1,15 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { GcPrefs } from '../../../main/gc/gc-prefs'
-import type { GcCleanAck, GcJobDone, GcJobProgress, GcSnapshot } from '../../../main/gc/gc-wire'
+import type {
+  GcCleanAck,
+  GcJobDone,
+  GcJobProgress,
+  GcOpinion,
+  GcOpinionDone,
+  GcOpinionResult,
+  GcSnapshot
+} from '../../../main/gc/gc-wire'
 import { i18n } from '../i18n'
 import { formatBytes } from '../components/system-monitor-format'
 import { refusalKey } from '../components/cleanup-gc-copy'
@@ -30,6 +38,17 @@ import {
   type ItemFailure,
   type JobsState
 } from '../lib/gc-jobs'
+import {
+  clearPending,
+  dropUnconfirmed,
+  fingerprintOf,
+  markPending,
+  opinionOf,
+  pruneOpinions,
+  recordOpinion,
+  safeIds,
+  type OpinionMap
+} from '../lib/gc-opinion'
 import { useNotificationsStore } from './notifications'
 import { useUiStore } from './ui'
 
@@ -42,6 +61,9 @@ import { useUiStore } from './ui'
  * The view never awaits `gc:clean`: it returns an ack at once and the work streams on `gc:progress`
  * and ends on `gc:done`.
  */
+
+/** `gc:opinion` takes at most this many ids per request (`OPINION_MAX_IDS` in main). */
+const OPINION_BATCH = 100
 
 /** `--dur-slow`: how long a cleaned block stays on the map, faded, before the layout re-flows. */
 export const FADE_MS = 220
@@ -69,11 +91,18 @@ export const useGcStore = defineStore('gc', () => {
   const gone = ref<Set<string>>(new Set())
   /** Items the last run could not clean (or refused), kept for the panel's "what ran" and the pill. */
   const failures = ref<Map<string, ItemFailure>>(new Map())
+  /** "Ask for an opinion": the verdicts received, and the ids whose answer is still on its way. */
+  const opinions = ref<OpinionMap>(new Map())
+  const pendingOpinions = ref<ReadonlySet<string>>(new Set())
 
   let unsubs: Array<() => void> = []
   let initialised = false
   const fadeTimers = new Set<ReturnType<typeof setTimeout>>()
   const scheduled = new Set<string>()
+  /** What each asked item looked like when the question went out; an answer is bound to it. */
+  const askedFingerprints = new Map<string, string>()
+  /** Ids each opinion request named, to end their pending state if a result is lost. */
+  const opinionJobs = new Map<string, string[]>()
 
   const model = computed<GcModel | null>(() => {
     const s = snapshot.value
@@ -81,6 +110,59 @@ export const useGcStore = defineStore('gc', () => {
     if (gone.value.size === 0) return buildGcModel(s)
     return buildGcModel({ ...s, bundles: s.bundles.filter((b) => !gone.value.has(b.item.id)) })
   })
+
+  // An opinion is about one state of one item: it goes when the snapshot shows a different head,
+  // reason or bucket. The chip then disappears and asking again is a fresh question.
+  watch(model, (m) => {
+    if (!m) return
+    opinions.value = pruneOpinions(opinions.value, m)
+    void peekOpinions()
+  })
+
+  /**
+   * Restores the chips after a reload: main keeps the opinions it already got, so for every Needs
+   * review item that has no chip yet the store asks main's cache (never the model). An item is
+   * peeked once per state: a later snapshot shows the same item the same way and skips it, and a
+   * changed head or reason makes it a new question. Best effort: a failed peek just shows no chip.
+   */
+  const peeked = new Map<string, string>()
+  async function peekOpinions(): Promise<void> {
+    const m = model.value
+    if (!m) return
+    const fresh: string[] = []
+    for (const b of m.review) {
+      const fp = fingerprintOf(b)
+      if (opinions.value.has(b.id) || pendingOpinions.value.has(b.id) || peeked.get(b.id) === fp) {
+        continue
+      }
+      peeked.set(b.id, fp)
+      fresh.push(b.id)
+    }
+    // A chip that main cached is checked again on every snapshot: main's key also covers what the
+    // snapshot does not carry (the dirty files, the pull request state), so it alone can say the
+    // answer still describes the item.
+    const recheck = [...opinions.value]
+      .filter(([id, o]) => o.durable && !pendingOpinions.value.has(id))
+      .map(([id]) => id)
+    const ids = [...fresh, ...recheck]
+    for (let i = 0; i < ids.length; i += 500) {
+      const slice = ids.slice(i, i + 500)
+      try {
+        const found = await window.api.gcOpinionCached(slice)
+        const now = model.value
+        if (!now) continue
+        for (const opinion of Object.values(found)) {
+          // A fresher answer, or a request still in flight, beats what the cache held.
+          if (opinions.value.has(opinion.id) || pendingOpinions.value.has(opinion.id)) continue
+          opinions.value = recordOpinion(opinions.value, opinion, now)
+        }
+        const checked = recheck.filter((id) => slice.includes(id))
+        opinions.value = dropUnconfirmed(opinions.value, checked, new Set(Object.keys(found)))
+      } catch {
+        // Best effort: a chip stays as it is, and a missing one stays off until the operator asks.
+      }
+    }
+  }
 
   const prefs = computed<GcPrefs | null>(() => snapshot.value?.prefs ?? null)
   const running = computed(() => runningJob(jobs.value))
@@ -177,6 +259,28 @@ export const useGcStore = defineStore('gc', () => {
     }
   }
 
+  function onOpinionResult(r: GcOpinionResult): void {
+    // Every id the request named gets exactly one result (a verdict, a refusal, or a stale
+    // marker), so this is also what ends its pending state.
+    pendingOpinions.value = clearPending(pendingOpinions.value, [r.id])
+    const askedFingerprint = askedFingerprints.get(r.id)
+    askedFingerprints.delete(r.id)
+    if ('refused' in r || 'stale' in r || !model.value) return
+    const { jobId: _jobId, durable, ...opinion } = r
+    // Bound to the item as it was when asked: if it moved since, the answer is dropped.
+    opinions.value = recordOpinion(opinions.value, opinion, model.value, {
+      askedFingerprint,
+      durable: durable !== false
+    })
+  }
+
+  /** The job is over: anything still marked pending for it was lost, so stop showing "Asking…". */
+  function onOpinionDone(d: GcOpinionDone): void {
+    const ids = opinionJobs.get(d.jobId)
+    opinionJobs.delete(d.jobId)
+    if (ids) pendingOpinions.value = clearPending(pendingOpinions.value, ids)
+  }
+
   async function onDone(d: GcJobDone): Promise<void> {
     jobs.value = applyDone(jobs.value, d)
     const next = new Map(failures.value)
@@ -208,7 +312,9 @@ export const useGcStore = defineStore('gc', () => {
         window.api.onGcProgress(onProgress),
         window.api.onGcDone((d) => void onDone(d)),
         // A cycle finished (autopilot tick or manual): the world changed.
-        window.api.onGcCycle(() => void refresh())
+        window.api.onGcCycle(() => void refresh()),
+        window.api.onGcOpinionResult(onOpinionResult),
+        window.api.onGcOpinionDone(onOpinionDone)
       ]
       const [snap, live] = await Promise.all([
         window.api.gcSnapshot(),
@@ -242,6 +348,81 @@ export const useGcStore = defineStore('gc', () => {
     failures.value = new Map() // a new run replaces what the last one left behind
     return sendClean(req)
   }
+
+  /**
+   * "Ask for an opinion" on Needs review items (orphan volumes included). Advisory and read-only:
+   * it only fills `opinions`. Items already being asked about are not asked twice, and an item that
+   * is not Needs review is not sent at all.
+   */
+  async function askOpinion(ids: readonly string[]): Promise<void> {
+    const m = model.value
+    if (!m) return
+    const wanted = [...new Set(ids)].filter(
+      (id) => m.byId.get(id)?.bucket === 'review' && !pendingOpinions.value.has(id)
+    )
+    if (wanted.length === 0) return
+    pendingOpinions.value = markPending(pendingOpinions.value, wanted)
+    for (const id of wanted) askedFingerprints.set(id, fingerprintOf(m.byId.get(id)!))
+    // Main takes at most 100 ids per request, so a longer list goes out in batches. They are one
+    // logical ask: every item shows "Asking…" at once, each result clears its own item, and a
+    // rejected batch gives up only its own ids and is reported once.
+    let failure: unknown = null
+    for (let i = 0; i < wanted.length; i += OPINION_BATCH) {
+      const batch = wanted.slice(i, i + OPINION_BATCH)
+      try {
+        const ack = await window.api.gcOpinion(batch)
+        opinionJobs.set(ack.jobId, batch)
+      } catch (e) {
+        failure ??= e
+        pendingOpinions.value = clearPending(pendingOpinions.value, batch)
+        for (const id of batch) askedFingerprints.delete(id)
+      }
+    }
+    if (failure !== null) {
+      useUiStore().pushToast({
+        kind: 'danger',
+        title: i18n.global.t('cleanup.gc.opinion.failed'),
+        description: failure instanceof Error ? failure.message : String(failure),
+        timeoutMs: 8000
+      })
+    }
+  }
+
+  /**
+   * Right before "Remove the ones marked safe" opens its dialog: asks main's cache again about the
+   * marked ids and keeps only those it still holds as `safe` under the item's CURRENT key (the dirty
+   * files and the pull request state included, which the snapshot does not carry). The rest lose
+   * their chip. If main cannot be asked nothing is kept: an opinion that cannot be confirmed is not
+   * a reason to pre-select a removal.
+   */
+  async function confirmSafe(): Promise<{ kept: string[]; dropped: string[]; failed: boolean }> {
+    const marked = [...safeOpinionIds.value]
+    if (marked.length === 0) return { kept: [], dropped: [], failed: false }
+    const found: Record<string, GcOpinion> = {}
+    try {
+      for (let i = 0; i < marked.length; i += 500) {
+        Object.assign(found, await window.api.gcOpinionCached(marked.slice(i, i + 500)))
+      }
+    } catch {
+      return { kept: [], dropped: marked, failed: true }
+    }
+    const now = model.value
+    const kept = marked.filter((id) => found[id]?.verdict === 'safe')
+    if (now) {
+      let next = dropUnconfirmed(opinions.value, marked, new Set(Object.keys(found)))
+      // What main holds now replaces what the chip said (a safe that turned into a keep, say).
+      for (const id of Object.keys(found)) {
+        if (marked.includes(id)) next = recordOpinion(next, found[id], now)
+      }
+      opinions.value = next
+    }
+    return { kept, dropped: marked.filter((id) => !kept.includes(id)), failed: false }
+  }
+
+  const opinionFor = (id: string): GcOpinion | null => opinionOf(opinions.value, id)
+  const isAsking = (id: string): boolean => pendingOpinions.value.has(id)
+  /** What "Remove the ones marked safe" pre-selects. */
+  const safeOpinionIds = computed(() => (model.value ? safeIds(opinions.value, model.value) : []))
 
   async function keep(id: string): Promise<void> {
     await window.api.gcKeep(id)
@@ -320,6 +501,13 @@ export const useGcStore = defineStore('gc', () => {
     enableAutopilot,
     dismissFirstReport,
     savePrefs,
-    pruneSelection
+    pruneSelection,
+    opinions,
+    pendingOpinions,
+    safeOpinionIds,
+    confirmSafe,
+    askOpinion,
+    opinionFor,
+    isAsking
   }
 })

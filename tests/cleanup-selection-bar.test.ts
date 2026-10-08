@@ -4,8 +4,11 @@ import { mount } from '@vue/test-utils'
 import CleanupSelectionBar from '../src/renderer/src/components/CleanupSelectionBar.vue'
 import { i18n } from '@renderer/i18n'
 
-const mountBar = (count: number, bytes = 3_466_000_000, canKeep = true) =>
-  mount(CleanupSelectionBar, { props: { count, bytes, canKeep }, global: { plugins: [i18n] } })
+const mountBar = (count: number, bytes = 3_466_000_000, canKeep = true, asking = false) =>
+  mount(CleanupSelectionBar, {
+    props: { count, bytes, canKeep, asking },
+    global: { plugins: [i18n] }
+  })
 
 describe('CleanupSelectionBar', () => {
   it('renders nothing with an empty selection', () => {
@@ -45,14 +48,25 @@ describe('CleanupSelectionBar', () => {
     expect(w.get('[data-testid="sel-remove"]').classes()).toContain('text-red')
   })
 
-  it('Ask for an opinion is visible but disabled, with the S6 tooltip', async () => {
+  it('Ask for an opinion is enabled, says it uses tokens, and emits ask', async () => {
     const w = mountBar(2)
     const ask = w.get('[data-testid="sel-ask"]')
     expect(ask.text()).toBe('Ask for an opinion')
-    expect((ask.element as HTMLButtonElement).disabled).toBe(true)
-    expect(ask.element.parentElement?.getAttribute('title')).toBe('coming in S6')
+    expect((ask.element as HTMLButtonElement).disabled).toBe(false)
+    expect(ask.element.parentElement?.getAttribute('title')).toBe(
+      'Asks a read-only model session. Uses tokens.'
+    )
     await ask.trigger('click')
-    expect(w.emitted()).not.toHaveProperty('ask')
+    expect(w.emitted('ask')).toHaveLength(1)
+    expect(w.emitted('remove')).toBeUndefined()
+  })
+
+  it('Ask for an opinion is disabled while the whole selection is already being asked about', async () => {
+    const w = mountBar(2, 1, true, true)
+    const ask = w.get('[data-testid="sel-ask"]')
+    expect((ask.element as HTMLButtonElement).disabled).toBe(true)
+    await ask.trigger('click')
+    expect(w.emitted('ask')).toBeUndefined()
   })
 
   it('hints at Shift+click for adding more', () => {

@@ -2347,7 +2347,7 @@
         "rehydrate": "Rehydrate",
         "keep": "Keep",
         "ask": "Ask for an opinion",
-        "askSoon": "coming in S6",
+        "opinionTitle": "Opinion",
         "volumesKept": "Its volumes ({names}) are kept. They show up in Needs review afterwards.",
         "readyNote": "Cleaned on the next cycle, or now with Clean now.",
         "inUseNote": "Left alone while a session works here or its pull request is open.",
@@ -2374,7 +2374,6 @@
         "dehydrate": "Dehydrate",
         "keep": "Keep",
         "ask": "Ask for an opinion",
-        "askSoon": "coming in S6",
         "shiftHint": "click to add more",
         "clear": "Clear selection"
       },
@@ -2617,10 +2616,22 @@
         "foreignCheckout": "Another repository is checked out inside this folder, so it was left alone.",
         "cannotUnregister": "Harnu couldn't match this worktree to a single git registration, so nothing was touched."
       },
+      "opinion": {
+        "safe": "Safe",
+        "keep": "Keep",
+        "unsure": "Unsure",
+        "pending": "Asking…",
+        "aria": "Opinion: {verdict}. {reason}",
+        "hint": "Asks a read-only model session. Uses tokens.",
+        "failed": "Couldn't ask for an opinion",
+        "staleSafe": "{count} marked safe changed since and was left out | {count} marked safe changed since and were left out",
+        "recheckFailed": "Couldn’t re-check the opinions. Nothing was selected.",
+        "evidence": "Evidence"
+      },
       "review": {
         "title": "Needs review",
         "askAll": "Ask for an opinion on all {count}",
-        "askSoon": "coming in S6",
+        "removeSafe": "Remove the {count} marked safe | Remove the {count} marked safe",
         "empty": "Nothing needs review.",
         "showAll": "Show all {count}",
         "rowAria": "{name}, {size}",
