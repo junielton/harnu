@@ -291,3 +291,13 @@ describe('the bundle builder gets only the folders that cannot fake a nested wor
     expect(between(scan, 'const input = {', 'let bundles')).toMatch(/knownFolders: bundleFolders/)
   })
 })
+
+describe('foreign checkouts are walked in the gather (S2 delta 7)', () => {
+  it('feeds the bundle builder the walk results and explains a failed walk', () => {
+    expect(scan).toMatch(/await collectForeignCheckouts\(/)
+    expect(between(scan, 'const input = {', 'let bundles')).toMatch(
+      /foreignCheckouts: foreign\.found/
+    )
+    expect(scan).toMatch(/explainFailedWalks\(/)
+  })
+})
