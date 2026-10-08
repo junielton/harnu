@@ -72,11 +72,28 @@ const ATTACKS = [
 
 describe('BUG-164 — an observe tick has no shell', () => {
   it('pins the exact native allowlist', () => {
-    expect(OBSERVE_TOOLS).toEqual(['Read', 'Grep', 'Glob', 'WebFetch'])
+    expect(OBSERVE_TOOLS).toEqual(['Read', 'Grep', 'Glob', 'WebFetch', 'Skill'])
   })
 
   it('pins the exact native deny list, with Bash on it', () => {
-    expect(OBSERVE_TOOLS_DENY).toEqual(['Edit', 'Write', 'NotebookEdit', 'Task', 'Bash'])
+    expect(OBSERVE_TOOLS_DENY).toEqual([
+      'Edit',
+      'Write',
+      'NotebookEdit',
+      'Task',
+      'Agent',
+      'Bash',
+      'Monitor',
+      'EnterWorktree',
+      'ExitWorktree',
+      'CronCreate',
+      'CronDelete',
+      'Workflow',
+      'RemoteTrigger',
+      'PushNotification',
+      'SendMessage',
+      'ToolSearch'
+    ])
   })
 
   it('emits no Bash( rule anywhere in the observe argv', () => {
@@ -123,6 +140,92 @@ describe('BUG-164 — an observe tick has no shell', () => {
   it('keeps the file readers observe still needs', () => {
     const allowed = rulesOf(valueOf(tickArgv(worker(), {}), '--allowedTools'))
     for (const tool of ['Read', 'Grep', 'Glob']) expect(allowed).toContain(tool)
+  })
+})
+
+// Delta 1: a deny/allow list only gates tools the CLI has loaded. Without `--tools` the CLI
+// still loaded Monitor (a shell by another name), EnterWorktree (`git worktree add`, which
+// fires post-checkout hooks), the Cron*/Workflow/RemoteTrigger family, SendMessage and
+// ToolSearch, all outside the `Bash` deny. `--tools` makes the built-in set an allowlist.
+describe('BUG-164 delta 1 — the built-in tool set is an allowlist (--tools)', () => {
+  const BUILTINS_WE_REFUSE = [
+    'Bash',
+    'Monitor',
+    'EnterWorktree',
+    'ExitWorktree',
+    'CronCreate',
+    'CronDelete',
+    'CronList',
+    'ScheduleWakeup',
+    'Workflow',
+    'RemoteTrigger',
+    'PushNotification',
+    'SendMessage',
+    'ListAgents',
+    'DesignSync',
+    'TaskStop',
+    'ToolSearch',
+    'Edit',
+    'Write',
+    'NotebookEdit',
+    'Task',
+    'Agent',
+    'WebSearch'
+  ]
+
+  it('passes --tools with exactly the observe built-ins', () => {
+    const argv = tickArgv(worker(), { mcpConfigPath: '/tmp/harnu.json' })
+    expect(valueOf(argv, '--tools')).toBe(OBSERVE_TOOLS.join(','))
+  })
+
+  it('--tools is set whether or not the control server is up, and before the -- separator', () => {
+    const argv = tickArgv(worker(), {})
+    expect(argv).toContain('--tools')
+    expect(argv.indexOf('--tools')).toBeLessThan(argv.indexOf('--'))
+  })
+
+  it.each(BUILTINS_WE_REFUSE)('does not make %s available', (tool) => {
+    const argv = tickArgv(worker(), { mcpConfigPath: '/tmp/harnu.json' })
+    expect(rulesOf(valueOf(argv, '--tools'))).not.toContain(tool)
+    expect(rulesOf(valueOf(argv, '--allowedTools'))).not.toContain(tool)
+  })
+
+  // `--tools` is the control; the deny list is the second net. It names the tools found loaded
+  // and callable in a tick (Monitor, EnterWorktree) and the families around them, not every
+  // built-in: the rest are absent because `--tools` never loads them.
+  it('also denies the dangerous ones by name (defence in depth)', () => {
+    const denied = rulesOf(valueOf(tickArgv(worker(), {}), '--disallowedTools'))
+    for (const tool of [
+      'Bash',
+      'Monitor',
+      'EnterWorktree',
+      'ExitWorktree',
+      'CronCreate',
+      'CronDelete',
+      'Workflow',
+      'RemoteTrigger',
+      'PushNotification',
+      'SendMessage',
+      'ToolSearch',
+      'Task',
+      'Agent',
+      'NotebookEdit',
+      'Edit',
+      'Write'
+    ])
+      expect(denied).toContain(tool)
+  })
+
+  it('every native allow rule is also in --tools, so an allow rule never names an absent tool', () => {
+    const argv = tickArgv(worker(), { mcpConfigPath: '/tmp/harnu.json' })
+    const native = rulesOf(valueOf(argv, '--allowedTools')).filter((r) => !r.startsWith('mcp__'))
+    expect(native.sort()).toEqual(rulesOf(valueOf(argv, '--tools')).sort())
+  })
+
+  it('leaves act mode alone: no --tools restriction', () => {
+    expect(tickArgv(worker({ mode: 'act' }), { mcpConfigPath: '/tmp/harnu.json' })).not.toContain(
+      '--tools'
+    )
   })
 })
 
