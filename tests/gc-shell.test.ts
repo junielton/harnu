@@ -123,6 +123,9 @@ interface Harness {
   headOf: ReturnType<typeof vi.fn>
   isProtectedNow: ReturnType<typeof vi.fn>
   realpath: ReturnType<typeof vi.fn>
+  listWorktrees: ReturnType<typeof vi.fn>
+  /** Replaces what the next `git worktree list` returns, to model a worktree appearing. */
+  setWorktrees(paths: string[]): void
   probeStatus: ReturnType<typeof vi.fn>
   git: ReturnType<typeof vi.fn>
   gitCalls: string[][]
@@ -146,6 +149,8 @@ function harness(
     unresolved?: string[]
     /** Paths whose realpath fails, without taking the paths under them down too. */
     unresolvedExactly?: string[]
+    /** What `git worktree list` reports; the main checkout and the worktree itself by default. */
+    worktrees?: string[]
   } = {}
 ): Harness {
   let stacks = over.stacks ?? [stack('app', [container('c1', `${WT}/api`)])]
@@ -174,6 +179,8 @@ function harness(
     }
     return p
   })
+  let worktrees = over.worktrees ?? [REPO, WT]
+  const listWorktrees = vi.fn(async (_repo: string) => worktrees)
   const probeStatus = vi.fn(async () => ({
     // WorktreeStatus types this as a boolean; null models a probe that gave no real answer,
     // which the reprobe must refuse rather than read as clean.
@@ -218,7 +225,8 @@ function harness(
       presenceOf,
       headOf,
       isProtectedNow,
-      realpath
+      realpath,
+      listWorktrees
     },
     stop,
     removeContainers,
@@ -231,6 +239,10 @@ function harness(
     headOf,
     isProtectedNow,
     realpath,
+    listWorktrees,
+    setWorktrees: (next) => {
+      worktrees = next
+    },
     probeStatus,
     git,
     gitCalls,
@@ -1885,6 +1897,141 @@ describe('a container folder above the worktree that cannot be resolved (delta 5
     expect(await createGcOps(h.deps).recheck(bundle())).toEqual({
       ok: false,
       reason: 'path-unresolved'
+    })
+  })
+})
+
+// ---- a worktree nested inside the bundle (delta 6, F1) ---------------------------------
+
+describe('a worktree nested inside the bundle (delta 6, F1)', () => {
+  // Claude Code's worktree command run inside WT creates a linked worktree under it. Trashing
+  // WT would take that worktree's uncommitted work with it, so the run refuses whenever git
+  // lists one inside WT, however late it appeared.
+  const NESTED = `${WT}/.claude/worktrees/b`
+  const opts = { removeVolumes: true }
+
+  describe('the reprobe', () => {
+    it('refuses as nested-worktree when one appeared after the scan, before any docker call', async () => {
+      const h = harness({ worktrees: [REPO, WT, NESTED] })
+      expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+        ok: false,
+        reason: 'nested-worktree'
+      })
+      expect(h.listWorktrees).toHaveBeenCalledWith(REPO)
+      expect(h.listStacks).not.toHaveBeenCalled()
+    })
+
+    it('through runBundle, it halts at the reprobe and nothing is touched', async () => {
+      const h = harness({ worktrees: [REPO, WT, NESTED] })
+      const r = await runBundle(bundle(), createGcOps(h.deps), opts)
+      expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'nested-worktree' })
+      expect(h.stop).not.toHaveBeenCalled()
+      expect(cleanItem).not.toHaveBeenCalled()
+    })
+
+    it('a nested worktree listed through a symlink counts where it really lives', async () => {
+      const h = harness({ worktrees: [REPO, WT, '/link/b'], links: { '/link/b': NESTED } })
+      expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+        ok: false,
+        reason: 'nested-worktree'
+      })
+    })
+
+    it('a sibling that only shares a name prefix does not count', async () => {
+      const h = harness({ worktrees: [REPO, WT, `${WT}-other`, WT_B] })
+      expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({ ok: true })
+    })
+
+    it('the worktree itself, however git spells it, does not count', async () => {
+      const h = harness({ worktrees: [REPO, `${WT}/`, '/link/wt'], links: { '/link/wt': WT } })
+      expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({ ok: true })
+    })
+
+    it('refuses as path-unresolved when a listed worktree inside it cannot be resolved', async () => {
+      const h = harness({ worktrees: [REPO, WT, NESTED], unresolvedExactly: [NESTED] })
+      expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+        ok: false,
+        reason: 'path-unresolved'
+      })
+    })
+
+    it('an unresolvable listed worktree unrelated to it changes nothing', async () => {
+      const h = harness({ worktrees: [REPO, WT, WT_B], unresolvedExactly: [WT_B] })
+      expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({ ok: true })
+    })
+
+    it('refuses as probe-failed when the listing fails, before any docker call', async () => {
+      const h = harness()
+      h.listWorktrees.mockRejectedValueOnce(new Error('not a git repository'))
+      expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+        ok: false,
+        reason: 'probe-failed: not a git repository'
+      })
+      expect(h.listStacks).not.toHaveBeenCalled()
+    })
+  })
+
+  it('a listing that is not a list refuses as probe-failed; a blank entry is skipped', async () => {
+    const h = harness()
+    h.listWorktrees.mockResolvedValueOnce(undefined)
+    const r = await createGcOps(h.deps).reprobe(bundle())
+    expect(r.ok === false && r.reason).toMatch(/^probe-failed/)
+    h.listWorktrees.mockResolvedValueOnce([REPO, '', WT])
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({ ok: true })
+  })
+
+  describe('the recheck', () => {
+    it('refuses as nested-worktree', async () => {
+      const h = harness({ stacks: [], worktrees: [REPO, WT, NESTED] })
+      expect(await createGcOps(h.deps).recheck(bundle())).toEqual({
+        ok: false,
+        reason: 'nested-worktree'
+      })
+    })
+
+    it('refuses as path-unresolved when a listed worktree inside it cannot be resolved', async () => {
+      const h = harness({ stacks: [], worktrees: [REPO, WT, NESTED], unresolvedExactly: [NESTED] })
+      expect(await createGcOps(h.deps).recheck(bundle())).toEqual({
+        ok: false,
+        reason: 'path-unresolved'
+      })
+    })
+
+    it('refuses as probe-failed when the listing fails', async () => {
+      const h = harness({ stacks: [] })
+      h.listWorktrees.mockRejectedValueOnce(new Error('git gone'))
+      expect(await createGcOps(h.deps).recheck(bundle())).toEqual({
+        ok: false,
+        reason: 'probe-failed: git gone'
+      })
+    })
+
+    it('one created during the docker steps halts at drop-deps, before the deps go', async () => {
+      const removeDir = vi.fn(async () => undefined)
+      const h = harness({ dehydrate: { removeDir } })
+      h.stop.mockImplementationOnce(async (ids: string[]) => {
+        h.setWorktrees([REPO, WT, NESTED])
+        return ok(ids)
+      })
+      const r = await runBundle(bundle(), createGcOps(h.deps), opts)
+      expect(r).toMatchObject({ ok: false, haltedAt: 'drop-deps', error: 'changed-mid-run' })
+      expect(removeDir).not.toHaveBeenCalled()
+      expect(cleanItem).not.toHaveBeenCalled()
+    })
+
+    it('one created during drop-deps halts at archive, before cleanGit', async () => {
+      let h: Harness | null = null
+      h = harness({
+        dehydrate: {
+          removeDir: async () => {
+            h!.setWorktrees([REPO, WT, NESTED])
+          }
+        }
+      })
+      const r = await runBundle(bundle(), createGcOps(h.deps), opts)
+      expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'changed-mid-run' })
+      expect(r.freedBytes).toBe(4096)
+      expect(cleanItem).not.toHaveBeenCalled()
     })
   })
 })
