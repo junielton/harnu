@@ -4,6 +4,8 @@ import {
   OPINION_BUILTIN_TOOLS,
   OPINION_FALLBACK,
   advisorEnv,
+  opinionKey,
+  pullRequestFacts,
   confineCwd,
   scrubPaths,
   cacheKeyOf,
@@ -831,5 +833,76 @@ describe('confineCwd: the folder it runs in is never HOME, an ancestor of HOME, 
     expect(confineCwd(null, HOME)).toBeNull()
     expect(confineCwd('/', '')).toBeNull()
     expect(confineCwd('/srv/repos/www', '')).toBe('/srv/repos/www')
+  })
+})
+
+describe('an unknown pull request state is UNKNOWN, never "none" (delta 5, item 3)', () => {
+  const pr = (state: string) => ({ state })
+
+  it('is unknown when the item has no scan entry', () => {
+    expect(pullRequestFacts(undefined)).toEqual({
+      prState: null,
+      prUnknown: expect.stringMatching(/not been scanned|no scan/i)
+    })
+  })
+
+  it('is unknown when the GitHub CLI was not available at the last scan', () => {
+    const r = pullRequestFacts({ pr: null, ghAvailable: false, prSetComplete: true })
+    expect(r.prState).toBeNull()
+    expect(r.prUnknown).toMatch(/GitHub CLI/i)
+  })
+
+  it('is unknown when the pull request list was capped and no pull request was found', () => {
+    const r = pullRequestFacts({ pr: null, ghAvailable: true, prSetComplete: false })
+    expect(r.prUnknown).toMatch(/capped|incomplete/i)
+  })
+
+  it('is "none" only when gh answered completely and found no pull request', () => {
+    expect(pullRequestFacts({ pr: null, ghAvailable: true, prSetComplete: true })).toEqual({
+      prState: null
+    })
+  })
+
+  it('is the pull request state when there is one, even if the list was capped', () => {
+    expect(pullRequestFacts({ pr: pr('OPEN'), ghAvailable: true, prSetComplete: false })).toEqual({
+      prState: 'OPEN'
+    })
+    expect(pullRequestFacts({ pr: pr('MERGED'), ghAvailable: true, prSetComplete: true })).toEqual({
+      prState: 'MERGED'
+    })
+  })
+
+  it('renders UNKNOWN with the reason, and "none" only for a known absence', () => {
+    const unknown = buildPrompt([
+      dossier({ prState: null, prUnknown: 'the GitHub CLI was not available at the last scan' })
+    ])
+    expect(unknown).toMatch(
+      /Pull request: UNKNOWN \(the GitHub CLI was not available at the last scan\)/
+    )
+    const block = unknown.slice(unknown.indexOf('<dossier id='))
+    expect(block).not.toMatch(/Pull request: none/)
+    const none = buildPrompt([dossier({ prState: null })])
+    expect(none.slice(none.indexOf('<dossier id='))).toMatch(/Pull request: none/)
+    expect(none).not.toMatch(/Pull request: UNKNOWN/)
+  })
+
+  it('tells the advisor UNKNOWN is not "none"', () => {
+    expect(buildPrompt([dossier()])).toMatch(/UNKNOWN[^.]*(not|never)[^.]*none/i)
+  })
+
+  it('stores unknown in the key, distinct from none and from every real state', () => {
+    const none = opinionKey(dossier({ prState: null }))
+    const unknown = opinionKey(dossier({ prState: null, prUnknown: 'x' }))
+    const unknownOther = opinionKey(dossier({ prState: null, prUnknown: 'a different reason' }))
+    expect(unknown).not.toBe(none)
+    expect(unknown).not.toBe(opinionKey(dossier({ prState: 'OPEN' })))
+    expect(unknown).not.toBe(opinionKey(dossier({ prState: 'MERGED' })))
+    expect(unknownOther).toBe(unknown) // the reason is for people, not part of the key
+  })
+
+  it('a cached answer given while the state was unknown is not served once it is known', () => {
+    expect(opinionKey(dossier({ prState: null, prUnknown: 'x' }))).not.toBe(
+      opinionKey(dossier({ prState: null }))
+    )
   })
 })
