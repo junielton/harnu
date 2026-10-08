@@ -10,7 +10,8 @@
 import { getFleetFolders } from '../fleet-model'
 import { resolveClaudePath } from '../claude-cli'
 import { sanitizeSpawnEnv } from '../appimage-env'
-import { homedir } from 'node:os'
+import { realpathSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { gatherDiff, gatherKeyGit } from './opinion-git'
 import { runSupervised } from './opinion-run'
 import { lastFateInputs } from '../reaper/scanner-shell'
@@ -20,6 +21,7 @@ import type { OrphanVolumeItem } from './gc-housekeeping-input'
 import {
   OPINION_ROUTING_KIND,
   advisorEnv,
+  claudeFolders,
   confineCwd,
   pullRequestFacts,
   type OpinionDossier,
@@ -184,10 +186,27 @@ async function runClaude(a: {
   })
 }
 
-/** Claude data folders to close besides `~/.claude`: where `CLAUDE_CONFIG_DIR` points, when it is set. */
+/** A real path, or null when it cannot be resolved. */
+function realPath(p: string): string | null {
+  try {
+    return realpathSync(p)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Claude's own folders to close besides `~/.claude`: where `CLAUDE_CONFIG_DIR` points, and the CLI's
+ * per-user temp folder `claude-<uid>` under `CLAUDE_CODE_TMPDIR` (the CLI's override), the OS temp dir and
+ * `/tmp`. The CLI lets a session read these from a repository folder.
+ */
 function claudeDataDirs(): string[] {
-  const dir = process.env.CLAUDE_CONFIG_DIR
-  return dir && dir.trim() ? [dir] : []
+  return claudeFolders({
+    configDir: process.env.CLAUDE_CONFIG_DIR,
+    tmpDirs: [process.env.CLAUDE_CODE_TMPDIR, process.env.CLAUDE_TMPDIR, tmpdir(), '/tmp'],
+    uid: process.getuid?.() ?? null,
+    realpath: realPath
+  })
 }
 
 /** The shell half of {@link OpinionServiceDeps}: which ids exist, their facts, their model, the spawn. */

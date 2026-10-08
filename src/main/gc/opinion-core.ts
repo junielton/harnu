@@ -561,6 +561,41 @@ export function dataDirRules(dirs: readonly string[]): string[] {
 }
 
 /**
+ * Claude's own folders that the CLI lets a session read from a repository folder, as absolute paths to
+ * deny: the config dir (`CLAUDE_CONFIG_DIR`) and the per-user temp folder `<temp>/claude-<uid>`, where
+ * other sessions' task outputs and scratchpads live. The CLI's temp base is `CLAUDE_CODE_TMPDIR` when
+ * set, else the OS temp dir (its sandbox falls back to `/tmp/claude`), so every base the caller knows is
+ * covered, in its real-path form too (a symlinked temp dir, macOS `/var` → `/private/var`). Without a
+ * uid (Windows) there is no per-user temp folder to name.
+ */
+export function claudeFolders(o: {
+  configDir?: string
+  tmpDirs: readonly (string | undefined)[]
+  uid: number | string | null
+  realpath?: (p: string) => string | null
+}): string[] {
+  const out = new Set<string>()
+  const add = (p: string | undefined | null): void => {
+    const t = (p ?? '').trim().replace(/\/+$/, '')
+    if (t.startsWith('/') && t !== '') out.add(t)
+  }
+  const both = (p: string): string[] => {
+    const real = o.realpath?.(p) ?? null
+    return real && real !== p ? [p, real] : [p]
+  }
+  if (o.configDir?.trim()) for (const p of both(o.configDir.trim().replace(/\/+$/, ''))) add(p)
+  if (o.uid !== null) {
+    for (const raw of o.tmpDirs) {
+      const base = (raw ?? '').trim().replace(/\/+$/, '')
+      if (!base.startsWith('/')) continue
+      for (const b of both(base)) add(`${b}/claude-${o.uid}`)
+    }
+    add('/tmp/claude')
+  }
+  return [...out]
+}
+
+/**
  * The child's environment: the given one with auto memory switched off. With it on, the CLI injects
  * the MEMORY.md of the repository's project folder into the model's context, which would send notes
  * the operator never meant to share. Does not mutate its input.
