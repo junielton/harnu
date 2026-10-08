@@ -101,15 +101,57 @@ function pathEnd(text: string, from: number, seps: ReadonlySet<string>): number 
         j = k
         continue
       }
+      // No separator follows, but folder names with spaces are usually Capitalised words
+      // ("My Projects", "Application Support"): keep them, so the tail is not left behind.
+      return capitalisedTail(text, j)
     }
     return j
   }
 }
 
+/** The end of a run of Capitalised or numeric words that continues a spaced folder name. */
+function capitalisedTail(text: string, spaceAt: number): number {
+  let end = spaceAt
+  let k = spaceAt
+  while (k < text.length && isSpace(text[k])) {
+    const m = /^[A-Z0-9][\w.@+()&-]*/.exec(text.slice(k + 1))
+    if (!m) break
+    end = k + 1 + m[0].length
+    k = end
+  }
+  return end
+}
+
 const SLASH: ReadonlySet<string> = new Set(['/'])
 const WIN_SEPS: ReadonlySet<string> = new Set(['/', '\\'])
-const PATHISH = /[A-Za-z0-9_.\-~/\\]/
+/** After these a `/` continues a relative path or a word (`src/a`, `1/2`, `./x`). */
+const PATHISH = /[A-Za-z~/\\]/
+/**
+ * After a digit, `_`, `-` or `.` a `/` may still start an absolute path glued to its prefix
+ * (`-o/home/me/x`, `42/home/me/x`, `done./home/me/x`), but `2026/10/08` and `./build.sh` must not
+ * be touched. So there it needs a first segment that is a well-known filesystem root.
+ */
+const GLUED_PREFIX = /[0-9_.-]/
+const KNOWN_ROOTS =
+  /^\/(?:home|Users|root|tmp|var|etc|opt|usr|mnt|srv|private|Volumes|run|media|snap|nix|proc|sys)(?:\/|\b)/
 
+/** Replaces the dossier's own folder, but only where it is the whole path, not a longer sibling's. */
+function replaceOwn(text: string, own: string): string {
+  let out = ''
+  let from = 0
+  for (;;) {
+    const at = text.indexOf(own, from)
+    if (at === -1) return out + text.slice(from)
+    const after = text[at + own.length]
+    const boundary =
+      after === undefined ||
+      /[\s/\\"'`)\]}>,;:|<]/.test(after) ||
+      (after === '.' &&
+        (text[at + own.length + 1] === undefined || /\s/.test(text[at + own.length + 1])))
+    out += text.slice(from, at) + (boundary ? OWN_WORKTREE : own)
+    from = at + own.length
+  }
+}
 /**
  * Removes every absolute path from free text: POSIX, `~/` and `~user/`, `file://` URLs, Windows
  * `C:\` and `C:/`, UNC shares, and paths with spaces or glued after `=`, `:`, `>`, a quote or a
@@ -118,14 +160,16 @@ const PATHISH = /[A-Za-z0-9_.\-~/\\]/
  * it is relative to that worktree and the one absolute path the prompt may carry.
  */
 export function scrubPaths(text: string, ownPath: string | null): string {
-  const input = ownPath ? text.split(ownPath).join(OWN_WORKTREE) : text
+  // `\/` is how JSON writes a slash: read it as the slash it stands for.
+  const unescaped = text.replace(/\\\//g, '/')
+  const input = ownPath ? replaceOwn(unescaped, ownPath) : unescaped
   let out = ''
   let i = 0
   while (i < input.length) {
     const c = input[i]
     const prev = i > 0 ? input[i - 1] : ''
     let end = -1
-    if (input.startsWith('file:', i) && !/[A-Za-z0-9]/.test(prev)) {
+    if (input.slice(i, i + 5).toLowerCase() === 'file:' && !/[A-Za-z0-9]/.test(prev)) {
       end = i + 5
       while (end < input.length && !/[\s"'<>)\]}]/.test(input[end])) end++
     } else if (/[A-Za-z]/.test(c) && input[i + 1] === ':' && /[\\/]/.test(input[i + 2] ?? '')) {
@@ -136,8 +180,12 @@ export function scrubPaths(text: string, ownPath: string | null): string {
       end = pathEnd(input, i + input.slice(i).indexOf('/'), SLASH)
     } else if (c === '/') {
       const next = input[i + 1] ?? ''
+      const knownRoot = KNOWN_ROOTS.test(input.slice(i, i + 40))
+      // `-o/home/me/x`: a one-letter flag with its value glued on.
+      const flagGlued = knownRoot && /(?:^|\s)-[A-Za-z]$/.test(input.slice(Math.max(0, i - 4), i))
+      const glued = (GLUED_PREFIX.test(prev) && knownRoot) || flagGlued
       const startsPath =
-        !PATHISH.test(prev) &&
+        ((!PATHISH.test(prev) && !GLUED_PREFIX.test(prev)) || glued) &&
         next !== '' &&
         next !== '/' &&
         !isSpace(next) &&
