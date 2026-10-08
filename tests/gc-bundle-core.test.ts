@@ -1330,12 +1330,67 @@ describe('buildBundles — stack attribution', () => {
       expect(b.sharedStackIds).toEqual([])
     })
 
-    it('a bind mount of a parent folder of the worktree does not tie the stack to it', () => {
+    // Delta 4, item E inverted this: the container sees every folder under the one it
+    // mounts, the worktree included, so it shares the worktree.
+    it('a bind mount of a parent folder of the worktree shares the worktree', () => {
       const web = composeContainer('web', 'other', ELSEWHERE, {
         mounts: [bindMount('/ws/org/proj')]
       })
       const b = only(build({ stacks: [stack('other', [web])], containers: [web] }))
       expect(b.stackIds).toEqual([])
+      expect(b.sharedStackIds).toEqual(['other'])
+      expect(b.bucket).toBe('decide')
+      expect(b.reason?.code).toBe('shared-stack')
+    })
+  })
+
+  describe('a container that touches an ancestor of the worktree (delta 4, item E)', () => {
+    const NESTED = `${REPO}/.claude/worktrees/wt1`
+    const nested = (): ReapItem =>
+      item({ path: NESTED, id: `${REPO}::worktree::${NESTED}`, branch: 'feat/wt1' })
+
+    it('P8: a dev container of the main checkout that bind-mounts REPO shares a nested worktree', () => {
+      const dev = composeContainer('dev', 'www', REPO, { mounts: [bindMount(REPO)] })
+      const b = only(build({ items: [nested()], stacks: [stack('www', [dev])], containers: [dev] }))
+      expect(b.stackIds).toEqual([])
+      expect(b.sharedStackIds).toEqual(['www'])
+      expect(b.bucket).toBe('decide')
+      expect(b.reason?.code).toBe('shared-stack')
+    })
+
+    it('a compose working dir above the worktree shares it, with no bind mount at all', () => {
+      const dev = composeContainer('dev', 'www', REPO)
+      const b = only(build({ items: [nested()], stacks: [stack('www', [dev])], containers: [dev] }))
+      expect(b.sharedStackIds).toEqual(['www'])
+    })
+
+    it('a stack whose other folders are inside the worktree is still shared, never exclusive', () => {
+      const web = composeContainer('web', 'app', `${NESTED}/deploy`, {
+        mounts: [bindMount(`${NESTED}/src`), bindMount(REPO)]
+      })
+      const b = only(build({ items: [nested()], stacks: [stack('app', [web])], containers: [web] }))
+      expect(b.stackIds).toEqual([])
+      expect(b.sharedStackIds).toEqual(['app'])
+    })
+
+    it('a stack attributed through stackPaths to an ancestor shares the worktree', () => {
+      const api = composeContainer('api', 'svc', null)
+      const b = only(
+        build({
+          items: [nested()],
+          stacks: [stack('svc', [api])],
+          stackPaths: new Map([['svc', REPO]]),
+          containers: [api]
+        })
+      )
+      expect(b.sharedStackIds).toEqual(['svc'])
+    })
+
+    it('a sibling of an ancestor does not count', () => {
+      const dev = composeContainer('dev', 'www', `${REPO}-old`, {
+        mounts: [bindMount(`${REPO}-old`)]
+      })
+      const b = only(build({ items: [nested()], stacks: [stack('www', [dev])], containers: [dev] }))
       expect(b.sharedStackIds).toEqual([])
       expect(b.bucket).toBe('corpse')
     })
@@ -1767,11 +1822,25 @@ describe('buildBundles — real paths (delta 4, item C)', () => {
 
     it('a bind source that is an ancestor of the worktree', () => {
       const web = container('web', { mounts: [bindMount('/ws/org/proj')] })
+      const b = only(
+        build({
+          stacks: [stack('web', [web])],
+          containers: [web],
+          canonical: aliases({}, ['/ws/org/proj'])
+        })
+      )
+      // Never ready. Since delta 4 item E a container above the worktree also shares it,
+      // and shared-stack is the rule that comes first.
+      expect(b.pathsResolved).toBe(false)
+      expect(b.bucket).toBe('decide')
+      expect(b.reason?.code).toBe('shared-stack')
+    })
+
+    it('a session folder that is an ancestor of the worktree', () => {
       expectUnresolved(
         only(
           build({
-            stacks: [stack('web', [web])],
-            containers: [web],
+            sessions: new Map([['/ws/org/proj', { presence: 'none', lastActivityAt: null }]]),
             canonical: aliases({}, ['/ws/org/proj'])
           })
         )

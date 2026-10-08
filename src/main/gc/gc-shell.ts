@@ -206,8 +206,9 @@ function containedIn(
 }
 
 /**
- * Stacks with any container folder inside `root`, as a sorted id list. Same attribution as
- * the builder (`containerFolders`), so a stack the scan saw is seen here by the same rule.
+ * Stacks with any container folder inside `root` or above it, as a sorted id list. Same
+ * attribution as the builder (`containerFolders`, and a folder above the worktree shares
+ * it), so a stack the scan saw is seen here by the same rule and the recheck agrees.
  */
 function stackIdsInside(
   stacks: readonly StackGroup[],
@@ -218,7 +219,7 @@ function stackIdsInside(
   return stacks
     .filter((s) =>
       s.containers.some((c) =>
-        containerFolders(c, platform, canonical).some((d) => isInside(d, root))
+        containerFolders(c, platform, canonical).some((d) => relatesTo(d, root))
       )
     )
     .map((s) => s.id)
