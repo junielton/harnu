@@ -22,16 +22,16 @@ Every stack — one docker compose project, or one container that belongs to no 
 
 It then gets one **verdict**, shown as a chip on its row:
 
-| Verdict          | What it means                                                                                                               | Where it's listed |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| **zombie**       | It runs from a worktree Cleanup calls a corpse, or no Harnu session is using it and it has been unused for at least 2 days. | Needs you         |
-| **orphan**       | The directory it ran from was inside one of your Harnu folders, and no longer exists.                                       | Needs you         |
-| **active**       | A Harnu session is working in its worktree right now.                                                                       | Leave alone       |
-| **protected**    | It runs from a repo's main checkout (or from a folder git can't vouch for). It is never counted as a zombie.                | Leave alone       |
-| **zombie in Nd** | It runs from a worktree and is unused, but not for 2 days yet.                                                              | Leave alone       |
-| **unknown**      | Harnu can't tell which worktree it belongs to — including a directory outside every Harnu folder, gone or not.              | Leave alone       |
+| Verdict          | What it means                                                                                                                     | Where it's listed |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| **zombie**       | It runs from a worktree Cleanup calls ready to clean, or no Harnu session is using it and it has been unused for at least 2 days. | Needs you         |
+| **orphan**       | The directory it ran from was inside one of your Harnu folders, and no longer exists.                                             | Needs you         |
+| **active**       | A Harnu session is working in its worktree right now.                                                                             | Leave alone       |
+| **protected**    | It runs from a repo's main checkout (or from a folder git can't vouch for). It is never counted as a zombie.                      | Leave alone       |
+| **zombie in Nd** | It runs from a worktree and is unused, but not for 2 days yet.                                                                    | Leave alone       |
+| **unknown**      | Harnu can't tell which worktree it belongs to — including a directory outside every Harnu folder, gone or not.                    | Leave alone       |
 
-**A stack that runs from a worktree takes its verdict from Cleanup.** When Cleanup has judged the worktree, its group decides: a **Corpse** worktree's stack is a **zombie** at once (no waiting for the clock), a **Decide** worktree's stack stays out of "Needs you" until you decide about the worktree, and an **Alive** worktree's stack is **active**. The idle clock below only applies to stacks Cleanup has not judged.
+**A stack that runs from a worktree takes its verdict from Cleanup.** When Cleanup has judged the worktree, its group decides: a **Ready to clean** worktree's stack is a **zombie** at once (no waiting for the clock), a **Needs review** worktree's stack stays out of "Needs you" until you review the worktree, and an **In use** worktree's stack is **active**. The idle clock below only applies to stacks Cleanup has not judged.
 
 "Unused for" counts from the later of two moments: the last activity of any Harnu session in that folder, and the last time any of the stack's containers started or stopped. Stopping a stack from Harnu does not reset it — a stopped zombie stays a zombie until you remove it. The 2-day threshold is the default; change it under [Settings → Containers](#settings).
 
@@ -84,7 +84,7 @@ Each stack is announced **once**. It is not announced again on later scans, afte
 - Harnu never stops or removes anything in this view on its own; every action is a click.
 - Nothing is removed while it is running, and `--force` is never used.
 - A volume is removed only when you tick it, and the box is always unticked when the **Remove…** dialog opens. That dialog takes one stack and never removes a volume docker reports as shared with another stack.
-- Cleaning many stacks at once is [Cleanup](cleanup.md#the-hero-button-clean-every-corpse-in-one-click)'s job, and it is as strict: one confirm dialog that lists everything it will take, a re-check of the machine at the moment you confirm (anything that changed is skipped and shown again), and a plain warning that volumes cannot be restored.
+- Cleaning many stacks at once is [Cleanup](cleanup.md#the-hero-button-clean-everything-that-is-ready)'s job, and it is as strict: one confirm dialog that lists everything it will take, a re-check of the machine at the moment you confirm (anything that changed is skipped and shown again), and a plain warning that volumes cannot be restored.
 - The same rules are enforced in Harnu's main process, so nothing — not the view, not an agent — can get around them.
 
 **Mass cleaning is yours alone.** An agent can stop and remove stacks one at a time through Harnu's agent verbs, with the same rules; there is no agent verb that cleans in bulk.

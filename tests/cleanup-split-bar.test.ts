@@ -27,9 +27,9 @@ describe('CleanupSplitBar', () => {
     const needs = w.get('[data-testid="split-needsYou"]')
     expect(auto.attributes('style')).toContain('flex: 6000000000 1 0px')
     expect(needs.attributes('style')).toContain('flex: 20900000000 1 0px')
-    expect(auto.text()).toContain('Cleaned automatically')
-    expect(needs.text()).toContain('Needs you')
-    expect(w.get('[data-testid="split-untouched"]').text()).toContain('Untouched')
+    expect(auto.text()).toContain('Ready to clean')
+    expect(needs.text()).toContain('Needs review')
+    expect(w.get('[data-testid="split-untouched"]').text()).toContain('In use')
   })
 
   it('needs-you counts Decide plus orphan volumes and is hatched', () => {
@@ -73,7 +73,7 @@ describe('CleanupSplitBar', () => {
     )
     const report = { ...base, mode: 'report' } as CycleRecord
     expect(mountBar({ lastCycle: report }).get('[data-testid="split-last-cycle"]').text()).toBe(
-      'Last cycle 4m ago: found 2 corpses, 900 MB (report only)'
+      'Last cycle 4m ago: found 2 ready items, 900 MB (report only)'
     )
   })
 })

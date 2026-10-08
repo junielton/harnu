@@ -1,6 +1,6 @@
 # Cleanup
 
-One screen for everything Harnu can reclaim: worktrees that are finished, the Docker stacks that hang off them, orphan Docker volumes, Docker's build cache, and the leftover branches and folders around them. Disk space is the first thing you see (a map where every worktree's area is its size on disk), one button cleans everything Harnu has proven is dead, and everything it is unsure about is listed with a one-sentence reason and left for you to decide.
+One screen for everything Harnu can reclaim: worktrees that are finished, the Docker stacks that hang off them, orphan Docker volumes, Docker's build cache, and the leftover branches and folders around them. Disk space is the first thing you see (a map where every worktree's area is its size on disk), one button cleans everything Harnu has proven is ready to clean, and everything it is unsure about is listed with a one-sentence reason under Needs review.
 
 ## Why it exists
 
@@ -10,7 +10,7 @@ Working across many worktrees leaves a trail: merged worktrees nobody removed, t
 
 Cleanup takes over the main pane, the same way the Roadmap board, Usage Dashboard, and System Monitor do. The sidebar and topbar stay put.
 
-- Click the **recycle pill** in the footer (bottom-right, next to the fleet summary). It is the only Cleanup pill there is: it replaces the old Cleanup and Containers pills. At rest it shows how much disk Cleanup could reclaim, for example `17 GiB`. While a clean is running it reads **Cleaning 3/12** in the accent color, with a small dot. If a clean left something that needs you, it turns amber and reads **1 needs you**, so you can see it from any screen. It is hidden only when there is nothing to reclaim, nothing running and nothing failed. The pill is a toggle: it turns accent-colored while Cleanup is open, and clicking it again puts you back in your session (Esc and clicking any session do the same).
+- Click the **recycle pill** in the footer (bottom-right, next to the fleet summary). It is the only Cleanup pill there is: it replaces the old Cleanup and Containers pills. At rest it shows how much disk Cleanup could reclaim, for example `17 GiB`. While a clean is running it reads **Cleaning 3/12** in the accent color, with a small dot. If a clean left something that needs review, it turns amber and reads **1 needs review**, so you can see it from any screen. It is hidden only when there is nothing to reclaim, nothing running and nothing failed. The pill is a toggle: it turns accent-colored while Cleanup is open, and clicking it again puts you back in your session (Esc and clicking any session do the same).
 - Right-click a repo-group header in the sidebar and choose **Cleanup…**. This opens the same view and scrolls to that repo's section.
 - In [Containers](containers.md), click **Open Cleanup · N stacks**. Cleanup is the one place stacks are cleaned.
 - Click **Review** on a cleanup toast, or open the matching entry in the Activity bell.
@@ -21,43 +21,43 @@ Cleanup takes over the main pane, the same way the Roadmap board, Usage Dashboar
 
 Along the top: `17.2 GiB reclaimable · autopilot on · next cycle in 42 min`.
 
-- **Reclaimable** is everything that is not untouched: proven corpses, items waiting for your decision, orphan volumes, and the build cache and dangling images Docker could reclaim. It is the most you could get back, not what the next automatic cycle will take. Docker's build cache is not in the figure, because Harnu only learns how much cache a cycle freed after the cycle ran.
+- **Reclaimable** is everything that is not in use: items that are ready to clean, items that need review, orphan volumes, and the build cache and dangling images Docker could reclaim. It is the most you could get back, not what the next automatic cycle will take.
 - **Autopilot on / off** is the switch in [Settings → Cleanup](settings.md#cleanup). When the Reaper's background scan is off there is no timer, so "next cycle" is left out.
 - Next to it, a badge repeats the state ("Autopilot on · every 1 h") and an **Autopilot settings** button opens Settings → Cleanup.
 
-Under the toolbar, one **split bar** divides everything Cleanup tracks into three parts, in proportion to their size: **Cleaned automatically** (corpses), **Needs you** (decisions) and **Untouched**. A line below it says what the last cycle did ("Last cycle 12 min ago: cleaned 6, freed 3.1 GiB", or "found 12 corpses, 6.0 GiB (report only)").
+Under the toolbar, one **split bar** divides everything Cleanup tracks into three parts, in proportion to their size: **Ready to clean**, **Needs review** and **In use**. A line below it says what the last cycle did ("Last cycle 12 min ago: cleaned 6, freed 3.1 GiB", or "found 12 ready items, 6.0 GiB (report only)").
 
 ### The three groups
 
 Every worktree is in exactly one group, and the screen shows each group three ways, so it never relies on color alone: a fill pattern, an icon and a word.
 
-| Group      | Look                          | What it means                                                                                                                                                                                                                                                                                                               | What happens                                                                                   |
-| ---------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| **Corpse** | Solid green, a check circle   | The branch is merged for real, nothing in the folder is uncommitted or unpushed, no Harnu session is running in it, and it has been quiet for the grace period (2 days by default).                                                                                                                                         | The autopilot removes it with the Docker stack running from it. You can also clean it by hand. |
-| **Decide** | Amber hatching, a help circle | Something is unclear: the branch was closed without merging, the remote branch is gone, the worktree has a detached HEAD, GitHub could not be reached, it has uncommitted or unpushed work, the merge is only inferred, a session is open but idle, another stack shares the folder, or an earlier cleanup stopped partway. | Nothing is touched. The reason is one sentence. You decide: Remove, Dehydrate or Keep.         |
-| **Alive**  | Plain grey, a padlock         | The pull request is still open, a session is working or waiting for you, or the worktree is within its grace period. Also: a main checkout, anything on your never-clean list, anything you marked Keep.                                                                                                                    | Never touched. (Dehydrate is offered once a worktree has been idle for a week.)                |
+| Group              | Look                          | What it means                                                                                                                                                                                                                                                                                                               | What happens                                                                                   |
+| ------------------ | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **Ready to clean** | Solid green, a check circle   | The branch is merged for real, nothing in the folder is uncommitted or unpushed, no Harnu session is running in it, and it has been quiet for the grace period (2 days by default).                                                                                                                                         | The autopilot removes it with the Docker stack running from it. You can also clean it by hand. |
+| **Needs review**   | Amber hatching, a help circle | Something is unclear: the branch was closed without merging, the remote branch is gone, the worktree has a detached HEAD, GitHub could not be reached, it has uncommitted or unpushed work, the merge is only inferred, a session is open but idle, another stack shares the folder, or an earlier cleanup stopped partway. | Nothing is touched. The reason is one sentence. You decide: Remove, Dehydrate or Keep.         |
+| **In use**         | Plain grey, a padlock         | The pull request is still open, a session is working or waiting for you, or the worktree is within its grace period. Also: a main checkout, anything on your never-clean list, anything you marked Keep.                                                                                                                    | Never touched. (Dehydrate is offered once a worktree has been idle for a week.)                |
 
 "Merged for real", "no session" and the grace period are explained under [Automatic cleanup](#automatic-cleanup-the-autopilot) below.
 
-### The hero button: clean every corpse in one click
+### The hero button: clean everything that is ready
 
-Right after the summary line sits the screen's one big button: **Clean 12 corpses · 6.0 GiB**. It cleans proven corpses only. The count and the size are in the label, so the click is never blind.
+Right after the summary line sits the screen's one big button: **Clean 12 ready · 6.0 GiB**. It cleans proven-ready items only. The count and the size are in the label, so the click is never blind.
 
-Clicking it opens **one** confirm dialog. It lists every corpse: `repo › worktree`, the branch, its size, and small chips for what goes with it (the Docker stack's containers, dependencies, the checkout, the branch). A warning says plainly that **volumes are kept** (they show up in Needs review afterwards) and what can come back and how (see [What you can get back](#what-you-can-get-back)). Esc or **Cancel** closes it; the focus starts on Cancel, never on the confirm button. Confirming closes the dialog at once and the cleaning runs in the background.
+Clicking it opens **one** confirm dialog. It lists every ready item: `repo › worktree`, the branch, its size, and small chips for what goes with it (the Docker stack's containers, dependencies, the checkout, the branch). A warning says plainly that **volumes are kept** (they show up in Needs review afterwards) and what can come back and how (see [What you can get back](#what-you-can-get-back)). Esc or **Cancel** closes it; the focus starts on Cancel, never on the confirm button. Confirming closes the dialog at once and the cleaning runs in the background.
 
 With nothing to clean, the button is disabled and reads **Nothing to clean**. Before you have acknowledged the first report (see below), it is a quieter button, because **Enable autopilot** is the one big button on that screen. Cleaning by hand still works then.
 
-A manual clean is not limited by the autopilot's per-cycle cap: with 24 corpses, the button says 24.
+A manual clean is not limited by the autopilot's per-cycle cap: with 24 ready items, the button says 24.
 
 ### The map
 
-Below the split bar, each repo is a region sized by its disk use, and inside it each worktree is a block whose **area is its size on disk**. Blocks are grouped by bucket (Cleaned automatically, Needs you, Untouched), so the area of each group is itself a number you can read. The biggest blocks are the biggest wins.
+Below the split bar, each repo is a region sized by its disk use, and inside it each worktree is a block whose **area is its size on disk**. Blocks are grouped by bucket (Ready to clean, Needs review, In use), so the area of each group is itself a number you can read. The biggest blocks are the biggest wins.
 
-- A region header shows the repo name, its worktree count and size, how many are Corpse, Decide and Alive, and **Select all in repo**.
+- A region header shows the repo name, its worktree count and size, how many are Ready to clean, Needs review and In use, and **Select all in repo**.
 - Each block shows the longest label that fits: the full name, then a ticket id such as `PROJ-0412`, then a number, then only its size. Hover for the full name, repo, size and reason.
 - Worktrees too small to read collapse into one **N smaller** block per group (dotted border); click it to see them as a list.
-- Click a repo's name to open it on its own, with a breadcrumb back to **All repos** and a filter (All / Corpse / Decide / Alive). Use the filter to look only at the 42 items that need you.
-- Arrow keys move between blocks; **Enter** opens the panel for the focused block; **Space** selects a Decide block or opens any other.
+- Click a repo's name to open it on its own, with a breadcrumb back to **All repos** and a filter (All / Ready to clean / Needs review / In use). Use the filter to look only at the 42 items that need review.
+- Arrow keys move between blocks; **Enter** opens the panel for the focused block; **Space** selects a Needs review block or opens any other.
 - A block that is cleaned fades ("freed") and then the map re-draws without it. The map never re-draws under your pointer while you are aiming at a block.
 
 **Scan now** in the toolbar re-reads every repo and Docker straight away instead of waiting for the next scan. The **Map / List** switch changes how the same data is drawn. The list is grouped by bucket and shows each item as a row with a bar. On a system that cannot measure disk sizes (Windows), there is nothing to draw, so the list is the only view and the screen says so.
@@ -69,21 +69,21 @@ Click a block to open its panel on the right (on a narrow window it opens over t
 - the worktree's name and repo, and its size, split into dependencies and the rest of the checkout (Harnu does not report how big a worktree's volumes are, so volumes are listed by name, with a note that they are kept);
 - **Why it is here**: the one-sentence reason (for example "The pull request was closed without being merged.");
 - **Takes with it**: exactly what removing it would delete (its Docker stack's containers, dependencies, the checkout, the local branch; its volumes are kept);
-- the actions: **Remove**, **Dehydrate** (or **Rehydrate** for one already dehydrated), **Keep**, and **Ask for an opinion**. **Ask for an opinion** is visible but disabled for now (it says "coming in S6"). A corpse's panel offers **Clean now** instead.
+- the actions: **Remove**, **Dehydrate** (or **Rehydrate** for one already dehydrated), **Keep**, and **Ask for an opinion**. **Ask for an opinion** is visible but disabled for now (it says "coming in S6"). A ready item's panel offers **Clean now** instead.
 
 An orphan Docker volume shows its compose project and "No known worktree uses this volume".
 
-If a clean failed on an item, the panel also shows **What ran**: which steps finished, which one failed, and which never started ("Nothing destructive ran" when it stopped before touching anything), with Docker's own error text and a **Copy error** button. The item comes back as a Decide block with its own reason.
+If a clean failed on an item, the panel also shows **What ran**: which steps finished, which one failed, and which never started ("Nothing destructive ran" when it stopped before touching anything), with Docker's own error text and a **Copy error** button. The item comes back as a Needs review block with its own reason.
 
 **Keep** marks an item so Cleanup stops offering it and the autopilot never cleans it, until its situation changes (the branch merges, or goes away).
 
-### Needs you
+### Needs review
 
-A ranked list under the map, biggest first: every Decide item with its one-sentence reason, size and quick actions (Keep, Dehydrate, Remove). Hovering a row outlines its block on the map. Orphan Docker volumes are listed here too. "Ask for an opinion on all" is visible and disabled for now.
+A ranked list under the map, biggest first: every Needs review item with its one-sentence reason, size and quick actions (Keep, Dehydrate, Remove). Hovering a row outlines its block on the map. Orphan Docker volumes are listed here too. "Ask for an opinion on all" is visible and disabled for now.
 
 ### Selecting several at once
 
-**Shift+click** a Decide block (or tick a row in Needs you) to select it, and again to deselect. **Select all in repo** selects every Decide block in that repo. Only Decide blocks can be selected: corpses are cleaned by the hero button, and Alive blocks are never touched. **Esc** clears the selection.
+**Shift+click** a Needs review block (or tick a row in Needs review) to select it, and again to deselect. **Select all in repo** selects every Needs review block in that repo. Only Needs review blocks can be selected: ready items are cleaned by the hero button, and In use blocks are never touched. **Esc** clears the selection.
 
 A selection bar appears under the toolbar: `4 selected · 3.4 GiB`, with **Remove selected**, **Dehydrate**, **Keep** and **Ask for an opinion** (disabled for now). **Remove selected** opens the same kind of dialog as the hero button, with differences that matter: each row carries its reason, and a stronger warning says how many of the worktrees you picked hold work that no other branch has. Their code stays recoverable from the archive refs and the system trash. Those items were not proven safe, so the confirm button is red rather than green. Harnu checks every item again at the moment you confirm; one that changed in the meantime is skipped and shown as "Changed since you confirmed — review again."
 
@@ -97,11 +97,11 @@ Nothing blocks. After you confirm, the hero button turns into a **progress chip*
 
 If you close Cleanup, or reload the window, and come back, the chip is back where it was. There is no Cancel for a clean that is running: it works through the list. An automatic cycle that runs while the screen is open looks exactly the same.
 
-When it ends, a toast says **Freed 6.0 GiB · 12 corpses cleaned**. If something could not be cleaned, it says **11 cleaned · 1 needs you** instead, in amber. The failed item reappears as a Decide block with its reason ("Cleanup stopped at …"), and the footer pill reads **1 needs you** until you deal with it. Every run also lands in the Activity bell and in the journal at the bottom of the screen. If the window is not focused, you get a normal desktop notification instead of a toast.
+When it ends, a toast says **Freed 6.0 GiB · 12 ready items cleaned**. If something could not be cleaned, it says **11 cleaned · 1 needs review** instead, in amber. The failed item reappears as a Needs review block with its reason ("Cleanup stopped at …"), and the footer pill reads **1 needs review** until you deal with it. Every run also lands in the Activity bell and in the journal at the bottom of the screen. If the window is not focused, you get a normal desktop notification instead of a toast.
 
 ### The first run only reports (the banner)
 
-Until you acknowledge the first report, the screen shows a banner: **"Found 12 corpses, 6.0 GiB — enable autopilot?"** with **Enable autopilot** and **Not now**. The corpse blocks are drawn with a dashed border: planned, not done. **Enable autopilot** acknowledges the report and turns the autopilot on in one step. **Not now** acknowledges the report and leaves the autopilot off. Either way nothing is deleted by the banner itself.
+Until you acknowledge the first report, the screen shows a banner: **"Found 12 ready items, 6.0 GiB — enable autopilot?"** with **Enable autopilot** and **Not now**. The ready blocks are drawn with a dashed border: planned, not done. **Enable autopilot** acknowledges the report and turns the autopilot on in one step. **Not now** acknowledges the report and leaves the autopilot off. Either way nothing is deleted by the banner itself.
 
 ### Docker
 
@@ -114,7 +114,7 @@ A strip under the map covers what is not a worktree:
 
 ### All clean
 
-When there is nothing to reclaim, the screen says **All clean** ("Nothing to reclaim. Autopilot checked 4 min ago."). The map is still there, showing only untouched worktrees, so it still answers "where did my disk go?".
+When there is nothing to reclaim, the screen says **All clean** ("Nothing to reclaim. Autopilot checked 4 min ago."). The map is still there, showing only worktrees that are in use, so it still answers "where did my disk go?".
 
 ### Other leftovers
 
@@ -153,9 +153,9 @@ A worktree can be checked out at a bare commit rather than a branch — a **deta
 
 Cleanup used to leave these out of the list entirely. On one real repo that was 15 of 48 worktrees holding 7 GiB — a third of the checkout disk, invisible. Silence read as "nothing there", which was the opposite of the truth.
 
-They now get a block on the map of their own, in **Decide**, showing the folder and how much disk it takes, and a panel that says how old the commit it sits on is. (The commit sha itself is recorded but not yet on the row — it needs a slot on the meta line that doesn't exist yet.) Because there is no branch, there is no PR, no ancestry and no remote to check — so every branch checkpoint reads as "not applicable" rather than borrowing an answer from a branch that happens to point at the same commit.
+They now get a block on the map of their own, in **Needs review**, showing the folder and how much disk it takes, and a panel that says how old the commit it sits on is. (The commit sha itself is recorded but not yet on the row — it needs a slot on the meta line that doesn't exist yet.) Because there is no branch, there is no PR, no ancestry and no remote to check — so every branch checkpoint reads as "not applicable" rather than borrowing an answer from a branch that happens to point at the same commit.
 
-**A detached worktree is never a corpse and can never be removed**, on its own or inside a selection. It is listed in **Decide**, with "Detached HEAD, so there is no branch to judge." as the reason — unless a Harnu session is running in that folder, in which case Cleanup hides it while the session is live, exactly as it does for every other folder in use. Cleanup is telling you the folder is there and costing you disk, not that it is safe to delete. Most of that disk is usually installed dependencies, and **Dehydrate** reaches detached worktrees like any other (see below) — it needs no branch. To reclaim the checkout itself, attach it to a branch (`git switch -c <name>`) so the normal checkpoints apply, or remove it yourself with `git worktree remove`.
+**A detached worktree is never ready to clean and can never be removed**, on its own or inside a selection. It is listed in **Needs review**, with "Detached HEAD, so there is no branch to judge." as the reason — unless a Harnu session is running in that folder, in which case Cleanup hides it while the session is live, exactly as it does for every other folder in use. Cleanup is telling you the folder is there and costing you disk, not that it is safe to delete. Most of that disk is usually installed dependencies, and **Dehydrate** reaches detached worktrees like any other (see below) — it needs no branch. To reclaim the checkout itself, attach it to a branch (`git switch -c <name>`) so the normal checkpoints apply, or remove it yourself with `git worktree remove`.
 
 ## Dehydrate: reclaim dependency space without deleting work
 
@@ -190,7 +190,7 @@ A dehydrated worktree reads **dehydrated** in its panel and offers **Rehydrate**
 
 ### Dehydrating many at once
 
-Select several Decide blocks and click **Dehydrate** in the selection bar: it opens one confirm dialog listing every worktree, what will be removed from each, and the total. A single worktree is **Dehydrate** in its side panel or in its Needs you row. A worktree that is Alive is offered Dehydrate once its last commit is at least a week old. That one-week threshold is the `dehydrateIdleDays` setting in `reaper-prefs.json` in Harnu's settings folder; there's no control for it in **Settings → Cleanup** yet. Dehydration is always something you click; Cleanup never dehydrates on its own.
+Select several Needs review blocks and click **Dehydrate** in the selection bar: it opens one confirm dialog listing every worktree, what will be removed from each, and the total. A single worktree is **Dehydrate** in its side panel or in its Needs review row. A worktree that is In use is offered Dehydrate once its last commit is at least a week old. That one-week threshold is the `dehydrateIdleDays` setting in `reaper-prefs.json` in Harnu's settings folder; there's no control for it in **Settings → Cleanup** yet. Dehydration is always something you click; Cleanup never dehydrates on its own.
 
 ### How big, and how honest the number is
 
@@ -292,15 +292,15 @@ A branch stuck at "PR list was capped" resolves itself on a later scan, or immed
 
 ## Automatic cleanup (the autopilot)
 
-The autopilot cleans **Corpse** worktrees on a timer, with no click. It is **off** until you turn it on (the **Enable autopilot** banner, or Settings → Cleanup), and it only ever acts on the first group in the table above.
+The autopilot cleans **Ready to clean** worktrees on a timer, with no click. It is **off** until you turn it on (the **Enable autopilot** banner, or Settings → Cleanup), and it only ever acts on the first group in the table above.
 
-**"Merged for real"** is stricter than a green merged checkpoint. It means git itself shows the branch's work is in the default branch (as an ancestor, or as the same change squashed), or GitHub says the pull request merged **and** that pull request's last commit is the commit the worktree has checked out. A branch that kept getting commits after its pull request merged therefore lands in Decide, not Corpse. A branch whose remote was deleted after a closed pull request is also Decide, never Corpse.
+**"Merged for real"** is stricter than a green merged checkpoint. It means git itself shows the branch's work is in the default branch (as an ancestor, or as the same change squashed), or GitHub says the pull request merged **and** that pull request's last commit is the commit the worktree has checked out. A branch that kept getting commits after its pull request merged therefore lands in Needs review, not Ready to clean. A branch whose remote was deleted after a closed pull request is also Needs review, never Ready to clean.
 
-**"No session"** means no running process. A past conversation in that folder, or a parked session, does not block cleaning. A session that is open but idle moves the worktree to Decide, because Harnu never ends a process on its own.
+**"No session"** means no running process. A past conversation in that folder, or a parked session, does not block cleaning. A session that is open but idle moves the worktree to Needs review, because Harnu never ends a process on its own.
 
 ### The first run only reports
 
-Turning the autopilot on does not clean anything. The first cycle runs the same checks and stops at the count: _"Found 12 corpses, 6.0 GiB — enable autopilot?"_ This is the banner described above. Nothing is deleted until you acknowledge that report, and acknowledging is a separate step from turning the autopilot on (the banner's **Enable autopilot** does both at once). From the next cycle on, it cleans, at most **20 worktrees per cycle** by default (the oldest first; the rest wait for the next cycle). A cycle that cleaned something posts one notification with how much it freed.
+Turning the autopilot on does not clean anything. The first cycle runs the same checks and stops at the count: _"Found 12 ready items, 6.0 GiB — enable autopilot?"_ This is the banner described above. Nothing is deleted until you acknowledge that report, and acknowledging is a separate step from turning the autopilot on (the banner's **Enable autopilot** does both at once). From the next cycle on, it cleans, at most **20 worktrees per cycle** by default (the oldest first; the rest wait for the next cycle). A cycle that cleaned something posts one notification with how much it freed.
 
 The cycle runs on the same timer as the background scan, right after it, so switching the background scan off also stops the autopilot. A cleaning job you started by hand takes priority: a cycle that comes due waits for it, and a manual request made during a cycle waits for the cycle.
 
@@ -309,12 +309,12 @@ The cycle runs on the same timer as the background scan, right after it, so swit
 For each worktree, one at a time, stopping at the first problem for that worktree only:
 
 1. Check again that nothing changed since the scan (a session started, the branch got a new commit, a container came up, the grace period no longer holds). If it did, the worktree is skipped and shows up again on the next scan.
-2. Stop and remove the Docker containers that run only from this worktree. A stack that also runs from somewhere else is never touched, and the worktree moves to Decide.
+2. Stop and remove the Docker containers that run only from this worktree. A stack that also runs from somewhere else is never touched, and the worktree moves to Needs review.
 3. **Keep the volumes.** Cleaning a worktree, by hand or automatically, never removes a Docker volume: Harnu could not reliably prove that a volume belongs to only one worktree (a compose file in a subfolder, a `name:` in the compose file or a project name shared with the main checkout all fooled the check). Once the worktree is gone its volumes show up under orphan volumes in Needs review, with their size and compose project, for you to remove one by one.
 4. Remove installed dependencies.
 5. Archive the branch tip and the working state, then move the folder to the system trash, prune the worktree entry and delete the local branch.
 
-Remote branches are never deleted by the autopilot. If a step fails, the worktree appears in Decide as _"Cleanup stopped at trash: …"_ and the autopilot leaves it alone for a day.
+Remote branches are never deleted by the autopilot. If a step fails, the worktree appears in Needs review as _"Cleanup stopped at trash: …"_ and the autopilot leaves it alone for a day.
 
 ### Docker housekeeping
 
@@ -322,9 +322,9 @@ In the same cycle, when the Docker cache setting is on, Harnu runs `docker build
 
 **Orphan volumes are not cleaned automatically.** A volume that no container uses and whose compose project's folder no longer exists is listed in Needs review with its size, its compose project and the reason "no known worktree". That includes the volumes a worktree cleanup left behind: Harnu remembers which folder each cleaned worktree's project ran from, so they are recognized even though the containers are gone. It is removed only when you ask for it and confirm. Harnu keeps a volume when it cannot tell whether it is orphaned: a folder that still exists pins the compose project name (by its folder name, by `COMPOSE_PROJECT_NAME` in its `.env`, or by a `name:` in its compose file), a folder it cannot read counts as existing, and a project whose folder it cannot learn is left alone.
 
-### Removing a Decide item on purpose
+### Removing a Needs review item on purpose
 
-Decide items are removed only after you confirm, and the confirmation is for what you were looking at: if the worktree changed between your click and the job (a new commit, a Docker stack that started, a different reason it is listed), Harnu refuses it with _changed since you confirmed_ and you look again. Confirming one item never confirms another, and an orphan volume needs its own confirmation. The same check applies to a worktree you remove by hand that Harnu already considers finished. Before anything is stopped or deleted, Harnu writes the branch tip and the working state (tracked and untracked files) to `refs/archive/…`; if that fails, nothing is touched. It still refuses a worktree with a running session, a folder whose Docker stacks changed since the scan, a main checkout, a path on your never-clean list and a worktree with a detached HEAD (there is no branch to preserve or delete). The branch is then deleted even though git does not consider it merged, because its tip is archived.
+Needs review items are removed only after you confirm, and the confirmation is for what you were looking at: if the worktree changed between your click and the job (a new commit, a Docker stack that started, a different reason it is listed), Harnu refuses it with _changed since you confirmed_ and you look again. Confirming one item never confirms another, and an orphan volume needs its own confirmation. The same check applies to a worktree you remove by hand that Harnu already considers finished. Before anything is stopped or deleted, Harnu writes the branch tip and the working state (tracked and untracked files) to `refs/archive/…`; if that fails, nothing is touched. It still refuses a worktree with a running session, a folder whose Docker stacks changed since the scan, a main checkout, a path on your never-clean list and a worktree with a detached HEAD (there is no branch to preserve or delete). The branch is then deleted even though git does not consider it merged, because its tip is archived.
 
 ### What you can get back
 

@@ -9,8 +9,8 @@ const mountBanner = (count = 12, bytes = 6_000_000_000) =>
 
 describe('CleanupFirstCycleBanner', () => {
   it('asks to enable autopilot with the count and the bytes it found', () => {
-    expect(mountBanner().text()).toContain('Found 12 corpses, 6.00 GB — enable autopilot?')
-    expect(mountBanner(1, 5_000_000).text()).toContain('Found 1 corpse, 5 MB')
+    expect(mountBanner().text()).toContain('Found 12 ready items, 6.00 GB — enable autopilot?')
+    expect(mountBanner(1, 5_000_000).text()).toContain('Found 1 ready item, 5 MB')
   })
 
   it('says the first cycle deletes nothing', () => {

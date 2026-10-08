@@ -80,15 +80,15 @@ mod: live`, `off`, or `legacy` with the reason), and the System Monitor shows th
 
 - **One Cleanup screen for worktrees, Docker stacks and Docker housekeeping.** Cleanup is
   now a disk-first map: every worktree is a block sized by what it takes on disk, grouped by
-  repository and colored by what Harnu thinks of it - cleaned automatically (proven merged),
-  needs you, or untouched. A summary line shows what could be reclaimed, whether autopilot is
-  on and when the next cycle runs. **Clean N corpses** cleans every proven corpse behind one
-  confirmation that lists each one and says plainly that volumes cannot be restored. Click a
+  repository and colored by what Harnu thinks of it - ready to clean (proven merged),
+  needs review, or in use. A summary line shows what could be reclaimed, whether autopilot is
+  on and when the next cycle runs. **Clean N ready** cleans every proven-ready item behind one
+  confirmation that lists each one and says plainly that Docker volumes are kept. Click a
   block for its reason, size and what removing it takes with it, then Remove, Dehydrate or
   Keep; Shift+click, or **Select all in repo**, picks several at once. Cleaning runs in the
   background: the button turns into a progress chip, cleaned blocks fade out and the map
   re-flows, you can keep working (or close and reopen the screen), and a toast reports how
-  much was freed - or which items still need you. A Docker card and a ranked "Needs you" list
+  much was freed - or which items still need review. A Docker card and a ranked "Needs review" list
   sit under the map (showing how much build cache and how many dangling images Docker could
   reclaim right now), and the first autopilot run offers to turn it on. "Ask for an opinion"
   is visible but not available yet. See [Cleanup](docs/user/cleanup.md).
@@ -101,7 +101,7 @@ mod: live`, `off`, or `legacy` with the reason), and the System Monitor shows th
 
 - **One footer pill instead of two.** The separate Cleanup and Containers pills in the footer
   are now one recycle pill showing how much can be reclaimed; it reads "Cleaning 3/12" while a
-  clean runs and "1 needs you" when an item could not be cleaned. Click it to open Cleanup.
+  clean runs and "1 needs review" when an item could not be cleaned. Click it to open Cleanup.
 - **The Containers view sends cleaning to Cleanup.** Containers stays the place to inspect and
   start or stop stacks; its clean-up button now opens Cleanup, so there is one place to clean.
   Its settings keep only the stack scan options and the idle clock for stacks that belong to no

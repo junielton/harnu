@@ -15,14 +15,14 @@ describe('CleanupHeroButton', () => {
   it('clean: a Primary button with the count and the bytes in its label', () => {
     const w = mountHero({ kind: 'clean', count: 12, bytes: 600 * MB, soft: false })
     const btn = w.get('[data-testid="hero-clean"]')
-    expect(btn.text()).toBe('Clean 12 corpses · 600 MB')
+    expect(btn.text()).toBe('Clean 12 ready · 600 MB')
     expect(btn.classes()).toContain('bg-accent')
     expect((btn.element as HTMLButtonElement).disabled).toBe(false)
   })
 
-  it('clean: singular for one corpse', () => {
+  it('clean: same wording for one ready item', () => {
     const w = mountHero({ kind: 'clean', count: 1, bytes: 5 * MB, soft: false })
-    expect(w.get('[data-testid="hero-clean"]').text()).toBe('Clean 1 corpse · 5 MB')
+    expect(w.get('[data-testid="hero-clean"]').text()).toBe('Clean 1 ready · 5 MB')
   })
 
   it('clean: the first-cycle state is Soft, because Enable autopilot owns the Primary', () => {

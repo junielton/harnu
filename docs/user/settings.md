@@ -59,12 +59,12 @@ The alert lives in the other tab: **Settings → General**, in the **OS notifica
 
 **Autopilot**
 
-| Setting                     | Default | Range                      | What it does                                                                                                                                                     |
-| --------------------------- | ------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Clean corpses automatically | off     | on / off                   | Turns automatic cleaning on. The first cycle after turning it on only reports; automatic cleaning starts once you acknowledge that report on the Cleanup screen. |
-| Run every                   | 1 hour  | 30 min / 1 h / 6 h / daily | How often the cycle runs. It is the same timer as the background scan, so this is the one interval setting for both.                                             |
-| Grace period                | 2 days  | 0 - 30 days                | How long a worktree must be quiet (no session activity, no container start or stop that Harnu did not cause) before it can count as a corpse.                    |
-| Per-cycle cap               | 20      | 1 - 200 worktrees          | The most worktrees one automatic cycle cleans. The rest wait for the next cycle. Cleaning by hand is not limited by it.                                          |
+| Setting                             | Default | Range                      | What it does                                                                                                                                                     |
+| ----------------------------------- | ------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Clean ready worktrees automatically | off     | on / off                   | Turns automatic cleaning on. The first cycle after turning it on only reports; automatic cleaning starts once you acknowledge that report on the Cleanup screen. |
+| Run every                           | 1 hour  | 30 min / 1 h / 6 h / daily | How often the cycle runs. It is the same timer as the background scan, so this is the one interval setting for both.                                             |
+| Grace period                        | 2 days  | 0 - 30 days                | How long a worktree must be quiet (no session activity, no container start or stop that Harnu did not cause) before it can count as ready to clean.              |
+| Per-cycle cap                       | 20      | 1 - 200 worktrees          | The most worktrees one automatic cycle cleans. The rest wait for the next cycle. Cleaning by hand is not limited by it.                                          |
 
 The autopilot rides the background scan, so it needs **Automatic background scan** (in the Scan group below) to stay on.
 

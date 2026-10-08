@@ -2293,13 +2293,13 @@
     },
     "gc": {
       "bucket": {
-        "corpse": "Corpse",
-        "decide": "Decide",
-        "alive": "Alive",
+        "corpse": "Ready to clean",
+        "decide": "Needs review",
+        "alive": "In use",
         "header": {
-          "corpse": "Cleaned automatically",
-          "decide": "Needs you",
-          "alive": "Untouched"
+          "corpse": "Ready to clean",
+          "decide": "Needs review",
+          "alive": "In use"
         }
       },
       "map": {
@@ -2315,7 +2315,7 @@
         "aggregate": "{count} smaller",
         "aggregateLabel": "{count} smaller worktrees, {bucket}, {size}",
         "selectAll": "Select all in repo",
-        "selectAllAria": "Select all Decide worktrees in {repo}",
+        "selectAllAria": "Select all Needs review worktrees in {repo}",
         "repoMeta": "{count} worktree · {size} | {count} worktrees · {size}",
         "drillRepo": "Open {repo} on its own",
         "drillBack": "All repos",
@@ -2358,7 +2358,7 @@
         "volumesNoSize": "Volumes (size not reported): {names}",
         "whyTitle": "Why it is here",
         "corpseNote": "Cleaned on the next cycle, or now with Clean now.",
-        "aliveNote": "Untouched while a session works here or its pull request is open.",
+        "aliveNote": "Left alone while a session works here or its pull request is open.",
         "takesTitle": "Takes with it",
         "takes": {
           "stack": "Its Docker stack | {count} Docker stacks",
@@ -2389,10 +2389,10 @@
         "volumesKept": "Its volumes ({names}) are kept. They show up in Needs review afterwards."
       },
       "needsYou": {
-        "title": "Needs you",
+        "title": "Needs review",
         "askAll": "Ask for an opinion on all {count}",
         "askSoon": "coming in S6",
-        "empty": "Nothing needs you.",
+        "empty": "Nothing needs review.",
         "showAll": "Show all {count}",
         "rowAria": "{name}, {size}",
         "selectRow": "Select {name}",
@@ -2409,7 +2409,7 @@
         "empty": "No worktrees to show."
       },
       "hero": {
-        "clean": "Clean {n} corpse · {size} | Clean {n} corpses · {size}",
+        "clean": "Clean {n} ready · {size} | Clean {n} ready · {size}",
         "empty": "Nothing to clean",
         "chip": "Cleaning {done}/{total} · {size} freed"
       },
@@ -2425,7 +2425,7 @@
         "clear": "Clear selection"
       },
       "confirm": {
-        "titleCorpses": "Clean {n} corpse? | Clean {n} corpses?",
+        "titleCorpses": "Clean {n} ready item? | Clean {n} ready items?",
         "titleWorktrees": "Remove {n} worktree? | Remove {n} worktrees?",
         "titleItems": "Remove {n} item? | Remove {n} items?",
         "subtitleCorpses": "Each one is merged, clean and idle past its grace period. Everything listed below is removed.",
@@ -2443,7 +2443,7 @@
         "warnRecover": "Code and branch come back from the archive refs and the OS trash, and dependencies come back through the repo's setup.",
         "total": "Total {size}",
         "cancel": "Cancel",
-        "confirmCorpses": "Clean {n} corpse | Clean {n} corpses",
+        "confirmCorpses": "Clean {n} ready | Clean {n} ready",
         "confirmWorktrees": "Remove {n} worktree | Remove {n} worktrees",
         "confirmItems": "Remove {n} item | Remove {n} items"
       },
@@ -2463,7 +2463,7 @@
       },
       "firstCycle": {
         "label": "First cleanup report",
-        "title": "Found {n} corpse, {size} — enable autopilot? | Found {n} corpses, {size} — enable autopilot?",
+        "title": "Found {n} ready item, {size} — enable autopilot? | Found {n} ready items, {size} — enable autopilot?",
         "sub": "The first cycle only reports; nothing is deleted until you turn it on.",
         "enable": "Enable autopilot",
         "dismiss": "Not now"
@@ -2490,12 +2490,12 @@
       },
       "split": {
         "label": "Disk split",
-        "auto": "Cleaned automatically",
-        "needsYou": "Needs you",
-        "untouched": "Untouched",
+        "auto": "Ready to clean",
+        "needsYou": "Needs review",
+        "untouched": "In use",
         "count": "{n} item | {n} items",
         "lastCycle": "Last cycle {ago}: cleaned {n}, freed {size}",
-        "lastCycleReport": "Last cycle {ago}: found {n} corpse, {size} (report only) | Last cycle {ago}: found {n} corpses, {size} (report only)"
+        "lastCycleReport": "Last cycle {ago}: found {n} ready item, {size} (report only) | Last cycle {ago}: found {n} ready items, {size} (report only)"
       },
       "status": {
         "reclaimable": "{size} reclaimable",
@@ -2533,22 +2533,22 @@
         "intro": "Branches and folders that are not worktrees."
       },
       "toast": {
-        "success": "Freed {size} · {count} corpse cleaned | Freed {size} · {count} corpses cleaned",
-        "partial": "{cleaned} cleaned · {failed} needs you",
+        "success": "Freed {size} · {count} ready item cleaned | Freed {size} · {count} ready items cleaned",
+        "partial": "{cleaned} cleaned · {failed} needs review",
         "review": "Review"
       },
       "footer": {
         "running": "Cleaning {done}/{total}",
-        "attention": "{n} needs you | {n} need you",
+        "attention": "{n} needs review | {n} need review",
         "a11yRunning": "Cleaning: {done} of {total} done. Open Cleanup",
-        "a11yAttention": "{n} item needs you. Open Cleanup | {n} items need you. Open Cleanup",
+        "a11yAttention": "{n} item needs review. Open Cleanup | {n} items need review. Open Cleanup",
         "a11yIdle": "Open Cleanup — {size} reclaimable"
       },
       "settings": {
         "autopilot": {
           "eyebrow": "Autopilot",
-          "intro": "Cleans proven corpses (merged, clean, idle worktrees) on the background timer. The first cycle after you turn it on only reports what it found; automatic cleaning starts once you acknowledge that report in Cleanup.",
-          "label": "Clean corpses automatically",
+          "intro": "Cleans proven ready worktrees (merged, clean, idle worktrees) on the background timer. The first cycle after you turn it on only reports what it found; automatic cleaning starts once you acknowledge that report in Cleanup.",
+          "label": "Clean ready worktrees automatically",
           "hint": "Needs the background scan below to stay on: the cleanup runs on the same timer."
         },
         "interval": {
@@ -2557,7 +2557,7 @@
         },
         "grace": {
           "label": "Grace period",
-          "hint": "A worktree must be quiet this long, with no session activity and no container start or stop, before it counts as a corpse."
+          "hint": "A worktree must be quiet this long, with no session activity and no container start or stop, before it counts as ready to clean."
         },
         "cap": {
           "label": "Per-cycle cap",

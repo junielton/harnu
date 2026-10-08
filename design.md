@@ -362,7 +362,7 @@ _another_ folder.
 | `git-branch`                             | Branch badge (git folder) / repo-group header                                                                                                                                                                                          |
 | `chevron-right`                          | Collapse folder / repo-group (rotates 90° when open)                                                                                                                                                                                   |
 | `recycle`                                | Workspace GC: the Cleanup summary line, the single footer pill (replaces `trash-2` + `container` there) and the first-cycle banner. The spec's ♻ glyph, as a Lucide icon (§5 forbids text glyphs); the takeover header keeps `trash-2` |
-| `circle-check` / `circle-help` / `lock`  | Cleanup bucket icons: Corpse / Decide / Alive — repeated in the legend, group headers, badges and list rows so a bucket never relies on colour alone                                                                                   |
+| `circle-check` / `circle-help` / `lock`  | Cleanup bucket icons: Ready to clean / Needs review / In use — repeated in the legend, group headers, badges and list rows so a bucket never relies on colour alone                                                                    |
 | `check` · `square-check` · `list-checks` | Checked-block badge (`check`, 16px badge) · checked list row (`square-check`) · "Select all in repo" on narrow regions (`list-checks`, icon-only 22px Ghost)                                                                           |
 | `triangle-alert` · `rotate-ccw`          | Failed block / partial-failure pill / warning callouts (`triangle-alert`) · Retry a failed item (`rotate-ccw`)                                                                                                                         |
 | `bookmark` · `sparkles`                  | Keep (`bookmark`) and Ask for an opinion (`sparkles`) on the Cleanup surface — new there; `package-minus` stays Dehydrate and `trash-2` stays Remove                                                                                   |
@@ -8295,11 +8295,11 @@ and zombie controls of "Containers settings pane" that the GC prefs now cover. `
 
 #### Buckets — three encodings, never colour alone
 
-| Bucket | Colour triple (fill / line / ink)                                   | Pattern                                                                                                                                            | Icon           | Word                    |
-| ------ | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ----------------------- |
-| Corpse | `--color-green-soft` / `--color-green-line` / `--color-green`       | solid fill                                                                                                                                         | `circle-check` | "Cleaned automatically" |
-| Decide | `--color-warning-soft` / `--color-warning-line` / `--color-warning` | **hatch**: `repeating-linear-gradient(135deg, transparent 0 4px, var(--color-warning-soft) 4px 8px)` over the soft fill (4px = spacing step `s-1`) | `circle-help`  | "Needs you"             |
-| Alive  | `--color-surface-2` / `--color-border-2` / `--color-text-3`         | plain neutral fill                                                                                                                                 | `lock`         | "Untouched"             |
+| Bucket         | Colour triple (fill / line / ink)                                   | Pattern                                                                                                                                            | Icon           | Word             |
+| -------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ---------------- |
+| Ready to clean | `--color-green-soft` / `--color-green-line` / `--color-green`       | solid fill                                                                                                                                         | `circle-check` | "Ready to clean" |
+| Needs review   | `--color-warning-soft` / `--color-warning-line` / `--color-warning` | **hatch**: `repeating-linear-gradient(135deg, transparent 0 4px, var(--color-warning-soft) 4px 8px)` over the soft fill (4px = spacing step `s-1`) | `circle-help`  | "Needs review"   |
+| In use         | `--color-surface-2` / `--color-border-2` / `--color-text-3`         | plain neutral fill                                                                                                                                 | `lock`         | "In use"         |
 
 A block that is **planned, not done** (first-cycle report-only) takes a dashed border. An aggregate
 ("N smaller") takes a dotted border and an italic label. The hatch may also be reused by the existing
@@ -8314,7 +8314,7 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
    rescan icon button.
    - Summary line: `Recycle` icon (`--green`), 13px/20px `--text-2`, then
      `{n} GiB reclaimable · autopilot on|off · next cycle in {t}`; the size is 600-weight `--text`.
-     "Reclaimable" is everything not Alive plus orphan volumes (corpse + decide + orphan volumes);
+     "Reclaimable" is everything not In use plus orphan volumes (ready + needs review + orphan volumes);
      Docker build cache is added only when the engine reports it (see "Docker card").
    - Autopilot badge: Badge Success "Autopilot on · every {interval}" or Default "Autopilot off".
 3. **Selection bar** (only with ≥1 checked block) — the takeover's existing selection band
@@ -8323,12 +8323,12 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
    **Dehydrate** (Soft), **Keep** (Ghost), **Ask for an opinion** (Soft, `sparkles`, disabled, tooltip
    "coming in S6"), a `⇧` hint (`kbd`) and a right-aligned "Clear selection" ghost link.
 4. **First-cycle banner** (only while `firstReportAcknowledged` is false and a report exists): see below.
-5. **Split bar** (`.gc-split`): a 32px bar of three segments — _cleaned automatically_ (corpses +
-   Docker housekeeping, Corpse triple), _needs you_ (Decide, hatch), _untouched_ (Alive). Widths
+5. **Split bar** (`.gc-split`): a 32px bar of three segments — _Ready to clean_ (ready items +
+   Docker housekeeping, Ready triple), _Needs review_ (hatch), _In use_. Widths
    proportional to bytes, `gap: 2px`, segment radius `--radius-sm` (3px), 11px text, label left, size
    right. A caption row above (eyebrow, 10.5px/500 uppercase `--text-4`) names the groups; the
    last-cycle line (11px `--text-4`) sits under it.
-6. **Map** (or the List fallback), then the **Docker card**, then **Needs you**, then **Other leftovers**
+6. **Map** (or the List fallback), then the **Docker card**, then **Needs review**, then **Other leftovers**
    and **Recent cleanups** (the existing tombstone footer).
 
 #### Treemap
@@ -8341,9 +8341,9 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
   overview and **520px** once drilled into one repo (§4).
 - **Repo region** (`.tm-region`): `border-border`, radius 7 (`--radius`), `bg-surface`. Header 28px:
   repo name 12.5px/600 `--text-2`, meta 11px `--text-4` (`61 worktrees · 27.8 GiB`), count badges
-  (Corpse / Decide / Alive) pushed right, then **Select all in repo** (11px link in `--text-2`;
+  (Ready to clean / Needs review / In use) pushed right, then **Select all in repo** (11px link in `--text-2`;
   icon-only 22px Ghost `list-checks` in the narrow side regions, which have no room for the label).
-  Clicking the repo name drills in (breadcrumb + bucket filter `All / Corpse / Decide / Alive`).
+  Clicking the repo name drills in (breadcrumb + bucket filter `All / Ready to clean / Needs review / In use`).
 - **Bucket group:** 22px header — bucket icon + eyebrow word in the bucket ink, count right in 11px
   `--text-3`. Its area is itself a readable number.
 - **Block** (`.tm-block`): `position: absolute; inset: 2px` inside its cell (a 2px gutter between
@@ -8352,7 +8352,7 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
   the title tooltip always carries full name, repo, size and reason. Blocks under 256 MiB in a drilled
   repo (330 MiB in the overview) fold into one **"N smaller"** block per bucket; it is clickable and
   opens that set as a list.
-- **States** (the block's whole state machine; the row in Needs you mirrors it):
+- **States** (the block's whole state machine; the row in Needs review mirrors it):
 
   | State        | Look                                                                                                                                              |
   | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -8363,9 +8363,9 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
   | planned      | dashed border (first cycle)                                                                                                                       |
   | busy         | `--accent-soft` fill, `--accent-line` border, a 6px `--accent` dot with a 3px `--accent-soft` halo, and a 2px determinate sliver along the bottom |
   | done         | `opacity: 0.45`, dashed border, word "freed" + `check`; after `--dur-slow` it is removed and the layout is recomputed                             |
-  | failed       | `--color-red-line` border + `triangle-alert` in `--red`; it is a Decide block again                                                               |
+  | failed       | `--color-red-line` border + `triangle-alert` in `--red`; it is a Needs review block again                                                         |
 
-  Only **Decide** blocks are checkable; corpses are cleaned by the hero, Alive blocks are never touched.
+  Only **Needs review** blocks are checkable; ready items are cleaned by the hero, In use blocks are never touched.
 
 - **Interaction:** click opens the panel; **Shift+click** toggles checked; **Esc** clears the selection
   then closes the panel; arrow keys move to the nearest block in that direction, **↩** opens the panel,
@@ -8382,7 +8382,7 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
 #### Hero button and progress chip
 
 The **hero** is the screen's single **Primary** button (28px) right after the summary line, so "how
-much" and "do it" read as one sentence: `Clean 12 corpses · 6.0 GiB`. It acts on proven corpses only.
+much" and "do it" read as one sentence: `Clean 12 ready · 6.0 GiB`. It acts on proven-ready items only.
 
 - **Idle:** Primary, `Recycle` icon, label with count and bytes.
 - **Nothing to clean:** disabled (`opacity: 0.4`), label stays **"Nothing to clean"** — the state is
@@ -8407,20 +8407,20 @@ Top to bottom: name (13px mono, `--text`) and repo (11px `--text-4`); size (20px
 confirm dialog's preview: stack containers, deps, checkout, branch; a worktree's volumes are kept and a
 note says so); then the actions, stacked,
 `justify-content: flex-start`, shortcut `kbd` right: **Remove** (Danger), **Dehydrate** (Soft),
-**Keep** (Ghost), **Ask for an opinion** (Soft, disabled, "coming in S6"). A Corpse block's panel offers
+**Keep** (Ghost), **Ask for an opinion** (Soft, disabled, "coming in S6"). A Ready to clean block's panel offers
 "Clean now" only. An orphan-volume block shows its project name and "no known worktree".
 A failed item's panel adds **what ran** — a step list (✓ done, ✗ failed in `--red`, dashed todo) for the
 engine's steps (stack stopped · containers removed · volumes · archive · deps · checkout · branch), and
 **Retry / Keep / Remove**. The raw error repeats the docker text truncated to 2 lines with a copy action.
 A pnpm hardlinked store can show deps that free nothing: the panel carries the engine's note.
 
-#### Needs you list
+#### Needs review list
 
 A ranked list under the map, biggest first: grid `20px 220px 1fr 64px auto` (leading slot / name + repo /
 one-sentence reason / size / row actions), `padding: 12px 10px`, radius `--radius-sm`. The leading slot
 is the bucket icon, which becomes a hover-reveal checkbox (the Cleanup row pattern) and shows
 `square-check` in `--accent` when checked; a checked row is `--accent-soft` with `--accent-line`; a failed
-row is `--red-soft` with `--red-line` and `triangle-alert`. Header: eyebrow "Needs you" in `--warning`,
+row is `--red-soft` with `--red-line` and `triangle-alert`. Header: eyebrow "Needs review" in `--warning`,
 the count, and two header buttons that act on the **whole list** — "Ask for an opinion on all {n}"
 (disabled, S6) and "Remove the {n} marked safe" (hidden until opinions exist). Hovering a row outlines
 its block. Footer: the keyboard hints (`kbd`).
@@ -8436,13 +8436,13 @@ bucket icon, `repo › worktree` + branch (11px mono `--text-4`), the **removal 
   with it — stack · deps · checkout · branch for a worktree; **a worktree's volumes are never listed**
   (they are kept). An orphan-volume row carries the one **volume chip, which uses the Warning triple**.
 - **Warning callout** (the SweepConfirmDialog callout): `--warning-soft` / `--warning-line`,
-  `triangle-alert`. Corpse variant: _Volumes are kept. They show up in Needs review afterwards._; code,
+  `triangle-alert`. Ready variant: _Volumes are kept. They show up in Needs review afterwards._; code,
   branch and dependencies can come back (archive refs, OS trash, `setup`) — and how. A row that is an
   orphan volume adds _Volumes cannot be restored_ in `--warning`. Remove-selected variant: each row also carries its
   one-sentence reason; a stronger line names how many picked worktrees hold work that no other branch has,
   and says their code stays recoverable from archive refs and the OS trash.
 - **Footer:** total (12.5px/500) left; **Cancel** (Ghost) and the confirm. Confirm is **Success** for
-  proven corpses (positive bulk reclaim, like today's Sweep), **Danger** for remove-selected (it can include
+  proven-ready items (positive bulk reclaim, like today's Sweep), **Danger** for remove-selected (it can include
   code that exists nowhere else but an archive ref). Confirming calls `gc:clean(ids)` /
   `gc:clean(ids, { confirmDecide: true })` and closes the dialog at once.
 - **Keyboard:** Esc or Cancel closes; **focus starts on Cancel, never the confirm button**; Tab cycles
@@ -8452,7 +8452,7 @@ bucket icon, `repo › worktree` + branch (11px mono `--text-4`), the **removal 
 
 Its own region under the map (`.dk`, `border-border`, radius 7, `bg-surface`): header `container` icon,
 title, and an **Inspect stacks** text link (11px/500 `--text-2`, right-aligned) that opens the Containers
-inspector — the only in-app door to it now that the Containers footer pill is gone. (The mockup's "{n} stacks in use, never touched" note is omitted: the snapshot carries no such count.) Three blocks (Corpse triple, `min-width: 200px`): **build
+inspector — the only in-app door to it now that the Containers footer pill is gone. (The mockup's "{n} stacks in use, never touched" note is omitted: the snapshot carries no such count.) Three blocks (Ready triple, `min-width: 200px`): **build
 cache**, **dangling images**, **orphan volumes** — name, size right, a one-line sub, a toggle
 (`ToggleSwitch`) on the cache and image blocks, both bound to `categories.dockerCache`. The orphan-volumes
 block has **no switch** — a volume is never removed automatically — and carries the Warning badge "can't be
@@ -8467,15 +8467,15 @@ zeros when Docker says so.
 #### First-cycle banner
 
 `.fc`: `--accent-soft` fill, `--accent-line` border, radius 7, `padding: 12px 16px`, `Recycle` icon in
-`--accent`. Text 13px/500: "Found {n} corpses, {size} — enable autopilot?", 11px sub-line "The first cycle only
+`--accent`. Text 13px/500: "Found {n} ready items, {size} — enable autopilot?", 11px sub-line "The first cycle only
 reports; nothing is deleted until you turn it on." Buttons: **Enable autopilot** (the screen's one
 Primary) and **Not now** (Ghost). Enable calls `gc:ackFirstReport` **and** `gc:prefs:set({ autopilot: true })`.
-Corpse blocks are dashed ("planned, not done"); the summary reads "autopilot off".
+Ready blocks are dashed ("planned, not done"); the summary reads "autopilot off".
 
 #### Empty state
 
 `.em`: a green `circle-check` icon, "All clean" (20px/28px, 500), "Nothing to reclaim. Autopilot checked
-{ago}." The map stays, showing only untouched blocks, so the screen still answers "where is my disk";
+{ago}." The map stays, showing only In use blocks, so the screen still answers "where is my disk";
 the hero is disabled "Nothing to clean"; Docker shows zeros.
 
 #### Footer pill — one pill (supersedes "Cleanup footer pill" and "Containers footer pill")
@@ -8484,11 +8484,11 @@ One `Recycle` pill (12px, stroke 1.6) in the footer's right cluster, before the 
 `padding: 0 8px`, `gap: 6px`, 11px, radius `--radius-sm`. It replaces both old pills. Click **toggles the
 Cleanup takeover** (`ui.toggleCleanup()`); while open it inks `--accent` and carries `aria-pressed`.
 
-| State     | Content                                                 | Ink                                         |
-| --------- | ------------------------------------------------------- | ------------------------------------------- |
-| idle      | `Recycle` icon + `17 GiB` (reclaimable total)           | `--text-2`, hover `--text` on `--surface-2` |
-| running   | `Recycle` icon + accent dot + `Cleaning 3/12`           | `--accent`                                  |
-| attention | `Recycle` icon + `1 needs you` (items that failed last) | `--warning`                                 |
+| State     | Content                                                    | Ink                                         |
+| --------- | ---------------------------------------------------------- | ------------------------------------------- |
+| idle      | `Recycle` icon + `17 GiB` (reclaimable total)              | `--text-2`, hover `--text` on `--surface-2` |
+| running   | `Recycle` icon + accent dot + `Cleaning 3/12`              | `--accent`                                  |
+| attention | `Recycle` icon + `1 needs review` (items that failed last) | `--warning`                                 |
 
 `aria-live="polite"`, one announcement per finished item. Hidden only when there is nothing to reclaim,
 nothing running and nothing needing attention. An optional hover popover (the footer popover anatomy,
@@ -8498,10 +8498,10 @@ nothing running and nothing needing attention. An optional hover popover (the fo
 
 The documented Toast with an optional description and an action link — no new variant.
 
-| Outcome         | Kind      | Title                                | Action         |
-| --------------- | --------- | ------------------------------------ | -------------- |
-| all ok          | `success` | `Freed {size} · {n} corpses cleaned` | "View journal" |
-| partial failure | `warning` | `{n} cleaned · {m} needs you`        | "Review"       |
+| Outcome         | Kind      | Title                                    | Action         |
+| --------------- | --------- | ---------------------------------------- | -------------- |
+| all ok          | `success` | `Freed {size} · {n} ready items cleaned` | "View journal" |
+| partial failure | `warning` | `{n} cleaned · {m} needs review`         | "Review"       |
 
 A toast shows only while the window is focused; otherwise the native notification applies (see
 "Notifications"). Every run lands in the Activity bell and the journal.

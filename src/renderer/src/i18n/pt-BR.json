@@ -2293,13 +2293,13 @@
     },
     "gc": {
       "bucket": {
-        "corpse": "Cadáver",
-        "decide": "Decidir",
-        "alive": "Ativo",
+        "corpse": "Pronto para limpar",
+        "decide": "Precisa de você",
+        "alive": "Em uso",
         "header": {
-          "corpse": "Limpo automaticamente",
+          "corpse": "Pronto para limpar",
           "decide": "Precisa de você",
-          "alive": "Intocado"
+          "alive": "Em uso"
         }
       },
       "map": {
@@ -2358,7 +2358,7 @@
         "volumesNoSize": "Volumes (tamanho não informado): {names}",
         "whyTitle": "Por que está aqui",
         "corpseNote": "Limpo no próximo ciclo, ou agora com Limpar agora.",
-        "aliveNote": "Intocado enquanto uma sessão trabalha aqui ou o pull request está aberto.",
+        "aliveNote": "Deixado como está enquanto uma sessão trabalha aqui ou o pull request está aberto.",
         "takesTitle": "Leva junto",
         "takes": {
           "stack": "Sua stack Docker | {count} stacks Docker",
@@ -2409,7 +2409,7 @@
         "empty": "Nenhum worktree para mostrar."
       },
       "hero": {
-        "clean": "Limpar {n} cadáver · {size} | Limpar {n} cadáveres · {size}",
+        "clean": "Limpar {n} pronto · {size} | Limpar {n} prontos · {size}",
         "empty": "Nada para limpar",
         "chip": "Limpando {done}/{total} · {size} liberados"
       },
@@ -2425,7 +2425,7 @@
         "clear": "Limpar seleção"
       },
       "confirm": {
-        "titleCorpses": "Limpar {n} cadáver? | Limpar {n} cadáveres?",
+        "titleCorpses": "Limpar {n} item pronto? | Limpar {n} itens prontos?",
         "titleWorktrees": "Remover {n} worktree? | Remover {n} worktrees?",
         "titleItems": "Remover {n} item? | Remover {n} itens?",
         "subtitleCorpses": "Cada um está merged, limpo e ocioso além do período de carência. Tudo o que está listado abaixo será removido.",
@@ -2443,7 +2443,7 @@
         "warnRecover": "O código e a branch voltam pelas refs de arquivo e pela lixeira do sistema, e as dependências voltam pelo setup do repositório.",
         "total": "Total {size}",
         "cancel": "Cancelar",
-        "confirmCorpses": "Limpar {n} cadáver | Limpar {n} cadáveres",
+        "confirmCorpses": "Limpar {n} pronto | Limpar {n} prontos",
         "confirmWorktrees": "Remover {n} worktree | Remover {n} worktrees",
         "confirmItems": "Remover {n} item | Remover {n} itens"
       },
@@ -2463,7 +2463,7 @@
       },
       "firstCycle": {
         "label": "Primeiro relatório de limpeza",
-        "title": "Encontrei {n} cadáver, {size} — ativar o autopilot? | Encontrei {n} cadáveres, {size} — ativar o autopilot?",
+        "title": "Encontrei {n} item pronto, {size} — ativar o autopilot? | Encontrei {n} itens prontos, {size} — ativar o autopilot?",
         "sub": "O primeiro ciclo só reporta; nada é apagado até você ativar.",
         "enable": "Ativar autopilot",
         "dismiss": "Agora não"
@@ -2490,12 +2490,12 @@
       },
       "split": {
         "label": "Divisão do disco",
-        "auto": "Limpo automaticamente",
+        "auto": "Pronto para limpar",
         "needsYou": "Precisa de você",
-        "untouched": "Intocado",
+        "untouched": "Em uso",
         "count": "{n} item | {n} itens",
         "lastCycle": "Último ciclo {ago}: {n} limpos, {size} liberados",
-        "lastCycleReport": "Último ciclo {ago}: {n} cadáver encontrado, {size} (só relatório) | Último ciclo {ago}: {n} cadáveres encontrados, {size} (só relatório)"
+        "lastCycleReport": "Último ciclo {ago}: {n} item pronto encontrado, {size} (só relatório) | Último ciclo {ago}: {n} itens prontos encontrados, {size} (só relatório)"
       },
       "status": {
         "reclaimable": "{size} recuperáveis",
@@ -2533,7 +2533,7 @@
         "intro": "Branches e pastas que não são worktrees."
       },
       "toast": {
-        "success": "{size} liberados · {count} cadáver limpo | {size} liberados · {count} cadáveres limpos",
+        "success": "{size} liberados · {count} item pronto limpo | {size} liberados · {count} itens prontos limpos",
         "partial": "{cleaned} limpos · {failed} precisa de você",
         "review": "Revisar"
       },
@@ -2547,8 +2547,8 @@
       "settings": {
         "autopilot": {
           "eyebrow": "Autopilot",
-          "intro": "Limpa cadáveres comprovados (worktrees mergeadas, limpas e ociosas) no timer em segundo plano. O primeiro ciclo depois de ligar só reporta o que encontrou; a limpeza automática começa quando você confirma esse relatório na Limpeza.",
-          "label": "Limpar cadáveres automaticamente",
+          "intro": "Limpa worktrees prontas comprovadas (worktrees mergeadas, limpas e ociosas) no timer em segundo plano. O primeiro ciclo depois de ligar só reporta o que encontrou; a limpeza automática começa quando você confirma esse relatório na Limpeza.",
+          "label": "Limpar worktrees prontas automaticamente",
           "hint": "Precisa do escaneamento em segundo plano abaixo ligado: a limpeza roda no mesmo timer."
         },
         "interval": {
@@ -2557,7 +2557,7 @@
         },
         "grace": {
           "label": "Período de carência",
-          "hint": "Uma worktree precisa ficar quieta por esse tempo, sem atividade de sessão e sem start ou stop de container, antes de contar como cadáver."
+          "hint": "Uma worktree precisa ficar quieta por esse tempo, sem atividade de sessão e sem start ou stop de container, antes de contar como pronta para limpar."
         },
         "cap": {
           "label": "Limite por ciclo",

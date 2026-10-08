@@ -310,7 +310,7 @@ const tabs: Array<{ id: SettingsTabId; labelKey: string; keywords: string[] }> =
       'branches protegidas',
       // Workspace GC prefs (T443): the autopilot, what it cleans, and the never-clean list.
       'autopilot',
-      'corpse',
+      'ready',
       'grace',
       'volumes',
       'docker cache',

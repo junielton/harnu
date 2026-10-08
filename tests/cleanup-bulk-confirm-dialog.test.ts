@@ -71,7 +71,7 @@ describe('CleanupBulkConfirmDialog — what it discloses', () => {
     expect(dlg.getAttribute('role')).toBe('dialog')
     expect(dlg.getAttribute('aria-modal')).toBe('true')
     const title = q(`#${dlg.getAttribute('aria-labelledby')}`)!
-    expect(title.textContent?.trim()).toBe('Clean 2 corpses?')
+    expect(title.textContent?.trim()).toBe('Clean 2 ready items?')
     expect(q('[data-testid="bulk-summary"]')!.textContent?.trim()).toBe('2 items · 1.00 GB')
   })
 
@@ -132,7 +132,7 @@ describe('CleanupBulkConfirmDialog — copy by mode', () => {
   it('corpses: Success confirm, volumes are kept, and how the rest comes back', async () => {
     await open([row()], 'corpses')
     const confirm = q('[data-testid="bulk-confirm"]')!
-    expect(confirm.textContent?.trim()).toBe('Clean 1 corpse')
+    expect(confirm.textContent?.trim()).toBe('Clean 1 ready')
     expect(confirm.className).toContain('text-green')
     const warn = q('[data-testid="bulk-warning"]')!.textContent!
     expect(warn).toContain('Volumes are kept. They show up in Needs review afterwards.')
