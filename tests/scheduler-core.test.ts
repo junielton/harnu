@@ -155,9 +155,13 @@ describe('observe-mode MCP allowlist', () => {
     expect([...OBSERVE_MCP_ALLOW].sort()).toEqual([...expected].sort())
   })
 
-  it('denies exactly the denied verbs, under both prefixes and nothing else', () => {
-    const expected = PREFIXES.flatMap((p) => DENIED_VERBS.map((v) => `${p}${v}`))
-    expect([...OBSERVE_MCP_DENY].sort()).toEqual([...expected].sort())
+  // BUG-166 delta 1: the deny list is DERIVED (catalog minus allowed), so it is no longer pinned
+  // to this hand-written list. These are the verbs a reviewer named on purpose; they must stay
+  // denied, and tests/scheduler-observe-no-shell.test.ts pins the derivation itself.
+  it('denies every verb it names on purpose, under both prefixes', () => {
+    for (const p of PREFIXES) {
+      for (const v of DENIED_VERBS) expect(OBSERVE_MCP_DENY).toContain(`${p}${v}`)
+    }
   })
 
   it('lists every verb under both prefixes symmetrically (no one-sided entry)', () => {
