@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   OPINION_BATCH_SIZE,
+  OPINION_FALLBACK,
   OPINION_TOOLS,
   buildPrompt,
   opinionArgv,
@@ -413,16 +414,29 @@ describe('a verdict has to earn its name', () => {
 })
 
 describe('the routed model and effort stay data', () => {
-  it('keeps a plausible model name and replaces one that could be read as a flag', () => {
+  it('keeps a plausible model name and falls back to Haiku for one that could be read as a flag', () => {
     expect(safeModel('opus')).toBe('opus')
     expect(safeModel('claude-opus-5-5')).toBe('claude-opus-5-5')
     expect(safeModel('opus[1m]')).toBe('opus[1m]')
-    expect(safeModel('--dangerously-skip-permissions')).toBe('opus')
-    expect(safeModel('')).toBe('opus')
+    for (const bad of ['--dangerously-skip-permissions', '', ' ', '-x', 'a b', 'opus;rm', '$(x)']) {
+      expect(safeModel(bad)).toBe('haiku')
+    }
   })
 
-  it('falls back to high for an effort it does not know', () => {
+  it('falls back to low for an effort it does not know', () => {
+    expect(safeEffort('high')).toBe('high')
     expect(safeEffort('low')).toBe('low')
-    expect(safeEffort('turbo')).toBe('high')
+    for (const bad of ['turbo', '', 'HIGH ', '--x']) expect(safeEffort(bad)).toBe('low')
+  })
+
+  it('a malformed routing value yields Haiku at low effort in the argv, never Opus', () => {
+    const argv = opinionArgv({ model: '--oops', effort: 'turbo' })
+    expect(argv[argv.indexOf('--model') + 1]).toBe('haiku')
+    expect(argv[argv.indexOf('--effort') + 1]).toBe('low')
+    expect(argv.join(' ')).not.toMatch(/opus/)
+  })
+
+  it('names the fallback once, as scout’s own default', () => {
+    expect(OPINION_FALLBACK).toEqual({ model: 'haiku', effort: 'low' })
   })
 })
