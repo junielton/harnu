@@ -38,7 +38,13 @@ import {
 import { dockerIsUnavailable, findForeignCheckouts, resolveRealPaths } from './gc-shell'
 import { collectForeignCheckouts, explainFailedWalks } from './gc-foreign'
 import { sessionsFromFleet } from './gc-sessions'
-import { fsTranscriptProbe, mergeActivityFolders, transcriptFolders } from './gc-transcripts'
+import {
+  attributeBySlug,
+  fsTranscriptProbe,
+  mergeActivityFolders,
+  scanTranscripts,
+  withGraceUnknown
+} from './gc-transcripts'
 import {
   buildDirExists,
   foldersForBundles,
@@ -212,7 +218,17 @@ export async function gatherGc(
   // Every folder of the transcript index, whoever wrote it (a headless `claude -p` run, a
   // Scheduler worker, a legacy index gone stale), so grace counts any terminal under the
   // worktree, outside Harnu included, and a session parked a while ago.
-  const activity = mergeActivityFolders(fleet, await transcriptFolders(fsTranscriptProbe()))
+  const transcripts = await scanTranscripts(fsTranscriptProbe(), Date.now())
+  // A transcript whose folder cannot be told still tells something: its project slug. It counts
+  // for every worktree that slug could belong to, as either spelling of the path.
+  const slugCandidates =
+    transcripts.bySlug.length === 0
+      ? []
+      : [...itemPaths, ...(await Promise.all(itemPaths.map((p) => fs.realpath(p).catch(() => p))))]
+  const activity = mergeActivityFolders(
+    mergeActivityFolders(fleet, transcripts.folders),
+    attributeBySlug(transcripts.bySlug, slugCandidates)
+  )
   const sessionCanonical = await resolveRealPaths(
     [...itemPaths, ...activity.map((f) => f.path), ...sets.live, ...sets.inUse],
     (p) => fs.realpath(p)
@@ -308,6 +324,8 @@ export async function gatherGc(
   const { keep, stale: staleKeeps } = judgeKeeps(bundles, prefs.keep)
   if (keep.size > 0) bundles = buildBundles({ ...input, keep })
   bundles = explainFailedWalks(bundles, foreign.failed)
+  // An unreadable transcripts root says nothing about recent activity: nothing is ready.
+  if (transcripts.rootUnreadable) bundles = withGraceUnknown(bundles)
 
   // A release is dropped only when its bundle is in this gather and no longer strongly merged,
   // so a branch that reopens does not come back pre-released. A gather that cannot see the

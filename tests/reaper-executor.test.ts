@@ -742,43 +742,22 @@ describe('cleanItem never leaves a worktree half-cleaned (delta 4, N4)', () => {
     expect(order).toEqual(['trash', 'admin'])
   })
 
-  it('asks git to remove the worktree BEFORE the trash when no admin dir can be matched', async () => {
-    const order: string[] = []
+  it('halts BEFORE the trash when no admin dir can be matched, and never asks git to remove', async () => {
     const { deps } = fakeDeps({
       canUnregister: vi.fn(async () => false),
-      git: vi.fn(async (_repo: string, args: string[]) => {
-        order.push(`git ${args.join(' ')}`)
-        return ''
-      }),
-      trash: vi.fn(async () => void order.push('trash')),
-      removeWorktreeAdmin: vi.fn(async () => {
-        order.push('admin')
-        return true
-      })
-    })
-    const result = await cleanItem(harvestableItem(), { deleteRemote: false }, deps)
-    expect(result.ok).toBe(true)
-    expect(order.slice(0, 1)).toEqual(['git worktree remove --force /repo/wt-x'])
-    expect(order).not.toContain('trash')
-    expect(order).not.toContain('admin')
-    expect(result.steps.map((s) => s.id)).toContain('worktree-prune')
-  })
-
-  it("halts BEFORE the trash, with git's reason, when that fails too", async () => {
-    const { deps } = fakeDeps({
-      canUnregister: vi.fn(async () => false),
-      git: vi.fn(async (_repo: string, args: string[]) => {
-        if (args[0] === 'worktree') throw new Error('fatal: cannot remove a locked working tree')
-        return ''
-      })
+      git: vi.fn(async () => '')
     })
     const result = await cleanItem(harvestableItem(), { deleteRemote: false }, deps)
     expect(result.ok).toBe(false)
     const failed = result.steps.find((s) => !s.ok)!
     expect(failed.id).toBe('trash-folder')
-    expect(failed.error).toContain('locked')
+    expect(failed.error).toContain('cannot-unregister')
     expect(deps.trash).not.toHaveBeenCalled()
     expect(deps.removeWorktreeAdmin).not.toHaveBeenCalled()
+    expect(deps.git).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.arrayContaining(['worktree'])
+    )
     expect(result.steps.some((s) => s.id === 'branch-delete')).toBe(false)
   })
 

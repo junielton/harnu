@@ -216,7 +216,7 @@ describe('Keep survives a stale cache (delta 3, item 1)', () => {
     const keep = between(ipc, '    keep: async', '    unkeep: async')
     expect(keep).toMatch(/gatherFresh\(\)/)
     expect(keep).not.toMatch(/cache \?\?|cache\.bundles/)
-    expect(keep).toMatch(/keepFromFresh\(/)
+    expect(read('src/main/gc/gc-keep.ts')).toMatch(/keepFromFresh\(/)
   })
 
   // The gather's persistence moved into gc-gatherer; its behavior is pinned in
@@ -313,11 +313,11 @@ describe('foreign checkouts are walked in the gather (S2 delta 7)', () => {
 })
 
 describe('Keep protects at once (delta 4, N1)', () => {
-  it('gc:keep persists a provisional mark before it waits for any gather', () => {
+  it('gc:keep goes through pressKeep, which persists a provisional mark before any gather', () => {
     const keep = between(ipc, '    keep: async', '    unkeep: async')
-    expect(keep.indexOf('withProvisionalKeep(')).toBeGreaterThanOrEqual(0)
-    expect(keep.indexOf('withProvisionalKeep(')).toBeLessThan(keep.indexOf('gatherFresh()'))
-    expect(keep.indexOf('await persist(')).toBeLessThan(keep.indexOf('gatherFresh()'))
+    expect(keep).toMatch(/pressKeep\(rawId, \{/)
+    expect(keep).toMatch(/gatherFresh/)
+    expect(keep).not.toMatch(/withoutKeep\(/)
   })
 
   it('a gather protects provisional marks and marks written after it started', () => {
@@ -331,15 +331,15 @@ describe('Keep protects at once (delta 4, N1)', () => {
     )
   })
 
-  it('a refused unknown id takes its provisional mark back', () => {
-    expect(between(ipc, '    keep: async', '    unkeep: async')).toMatch(/withoutKeep\(/)
+  it("rolling a press back is pressKeep's job, and it only undoes a mark it created", () => {
+    expect(read('src/main/gc/gc-keep.ts')).toMatch(/const existed = /)
   })
 })
 
 describe('headless sessions and a stale index count toward grace (delta 4, N2, N3)', () => {
   it('the gather merges the transcript index into the fleet before reading activity', () => {
     const block = between(scan, '// Sessions on real paths', 'const stacks = groupStacks')
-    expect(block).toMatch(/mergeActivityFolders\(fleet, await transcriptFolders\(/)
+    expect(block).toMatch(/mergeActivityFolders\(fleet, transcripts\.folders\)/)
     expect(block).toMatch(/sessionsFromFleet\(activity,/)
   })
 })
@@ -355,5 +355,14 @@ describe('the Docker card says why orphan volumes are hidden (delta 4, item 6)',
   it('the gather adds the compose scan result to the docker facts', () => {
     expect(scan).toMatch(/withOrphanVolumesHidden\(/)
     expect(scan).toMatch(/guards\.hidden/)
+  })
+})
+
+describe('transcript activity fails closed (delta 5, item 3)', () => {
+  it('the gather attributes unreadable transcripts by slug and refuses ready when the root is unreadable', () => {
+    expect(scan).toMatch(/scanTranscripts\(fsTranscriptProbe\(\)/)
+    expect(scan).toMatch(/attributeBySlug\(/)
+    expect(scan).toMatch(/rootUnreadable/)
+    expect(scan).toMatch(/withGraceUnknown\(/)
   })
 })

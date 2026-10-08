@@ -59,6 +59,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   running. If Harnu cannot read every compose file it needs to (a scan limit, or a project name
   it cannot resolve), it lists no orphan volumes and says why. Cleanup notifications use the
   same decimal units (`GB`) as the screens.
+- **A clean never deletes anything permanently.** If Harnu cannot match a worktree to its own
+  registration in git (even through a symlinked path), it leaves the worktree untouched and
+  reports why, instead of asking git to remove it for good. Pressing **Keep** again on an item
+  that is already kept never drops its mark. If Harnu cannot read Claude's transcripts folder,
+  or cannot tell which folder a transcript belongs to, it counts the activity as possibly
+  belonging to the worktree and keeps it out of the ready list.
 - **Docker housekeeping in the same cycle.** When automatic cleanup is on, each cycle also
   clears Docker build cache older than a week and dangling images, and reports how much it
   freed. It never touches images a stack uses and never removes a volume: volumes nobody uses
