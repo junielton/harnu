@@ -388,6 +388,37 @@ export const useGcStore = defineStore('gc', () => {
     }
   }
 
+  /**
+   * Right before "Remove the ones marked safe" opens its dialog: asks main's cache again about the
+   * marked ids and keeps only those it still holds as `safe` under the item's CURRENT key (the dirty
+   * files and the pull request state included, which the snapshot does not carry). The rest lose
+   * their chip. If main cannot be asked nothing is kept: an opinion that cannot be confirmed is not
+   * a reason to pre-select a removal.
+   */
+  async function confirmSafe(): Promise<{ kept: string[]; dropped: string[]; failed: boolean }> {
+    const marked = [...safeOpinionIds.value]
+    if (marked.length === 0) return { kept: [], dropped: [], failed: false }
+    const found: Record<string, GcOpinion> = {}
+    try {
+      for (let i = 0; i < marked.length; i += 500) {
+        Object.assign(found, await window.api.gcOpinionCached(marked.slice(i, i + 500)))
+      }
+    } catch {
+      return { kept: [], dropped: marked, failed: true }
+    }
+    const now = model.value
+    const kept = marked.filter((id) => found[id]?.verdict === 'safe')
+    if (now) {
+      let next = dropUnconfirmed(opinions.value, marked, new Set(Object.keys(found)))
+      // What main holds now replaces what the chip said (a safe that turned into a keep, say).
+      for (const id of Object.keys(found)) {
+        if (marked.includes(id)) next = recordOpinion(next, found[id], now)
+      }
+      opinions.value = next
+    }
+    return { kept, dropped: marked.filter((id) => !kept.includes(id)), failed: false }
+  }
+
   const opinionFor = (id: string): GcOpinion | null => opinionOf(opinions.value, id)
   const isAsking = (id: string): boolean => pendingOpinions.value.has(id)
   /** What "Remove the ones marked safe" pre-selects. */
@@ -474,6 +505,7 @@ export const useGcStore = defineStore('gc', () => {
     opinions,
     pendingOpinions,
     safeOpinionIds,
+    confirmSafe,
     askOpinion,
     opinionFor,
     isAsking

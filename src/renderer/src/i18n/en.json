@@ -2605,6 +2605,8 @@
         "aria": "Opinion: {verdict}. {reason}",
         "hint": "Asks a read-only model session. Uses tokens.",
         "failed": "Couldn't ask for an opinion",
+        "staleSafe": "{count} marked safe changed since and was left out | {count} marked safe changed since and were left out",
+        "recheckFailed": "Couldn’t re-check the opinions. Nothing was selected.",
         "evidence": "Evidence"
       },
       "review": {

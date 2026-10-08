@@ -2605,6 +2605,8 @@
         "aria": "Opinião: {verdict}. {reason}",
         "hint": "Pergunta a uma sessão de modelo somente leitura. Gasta tokens.",
         "failed": "Não foi possível pedir uma opinião",
+        "staleSafe": "{count} item marcado como seguro mudou e ficou de fora | {count} itens marcados como seguros mudaram e ficaram de fora",
+        "recheckFailed": "Não foi possível conferir as opiniões. Nada foi selecionado.",
         "evidence": "Evidência"
       },
       "review": {

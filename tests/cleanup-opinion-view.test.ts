@@ -6,7 +6,7 @@ import CleanupView from '../src/renderer/src/components/CleanupView.vue'
 import { i18n } from '@renderer/i18n'
 import { useUiStore } from '../src/renderer/src/stores/ui'
 import { defaultGcPrefs } from '../src/main/gc/gc-prefs'
-import type { GcOpinionDone, GcOpinionResult, GcSnapshot } from '../src/main/gc/gc-wire'
+import type { GcOpinion, GcOpinionDone, GcOpinionResult, GcSnapshot } from '../src/main/gc/gc-wire'
 import { GIB, MIB, reviewReason, snapshotOf, volume, wt } from './helpers/cleanup-gc-fixtures'
 
 /**
@@ -243,6 +243,16 @@ describe('"Remove the ones marked safe"', () => {
     await rig.result(safe(D3))
     await rig.result({ id: VOL, verdict: 'unsure', reason: 'No idea.', evidence: 'none' })
     await rig.done({ answered: 4 })
+    // Main's cache holds these four answers, as it does after a real ask.
+    const held: Record<string, GcOpinion> = {
+      [D1]: { id: D1, ...safe(D1) },
+      [D2]: { id: D2, verdict: 'keep', reason: 'Two commits.', evidence: '2 unpushed' },
+      [D3]: { id: D3, ...safe(D3) },
+      [VOL]: { id: VOL, verdict: 'unsure', reason: 'No idea.', evidence: 'none' }
+    }
+    rig.gcOpinionCached.mockImplementation(async (ids: string[]) =>
+      Object.fromEntries(ids.filter((i) => held[i]).map((i) => [i, held[i]]))
+    )
   }
 
   it('is hidden until something is marked safe, then counts the safe ones', async () => {

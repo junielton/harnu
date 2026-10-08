@@ -154,11 +154,25 @@ function askOpinion(ids: readonly string[]): void {
 function askAllOpinions(): void {
   askOpinion(model.value?.review.map((b) => b.id) ?? [])
 }
-function removeMarkedSafe(): void {
-  const ids = gc.safeOpinionIds
-  if (dialogOpen.value || ids.length === 0) return
-  checked.value = new Set(ids)
-  openRemove(ids)
+async function removeMarkedSafe(): Promise<void> {
+  if (dialogOpen.value || gc.safeOpinionIds.length === 0) return
+  // The chips were true when they were drawn. Main is asked again right now, under each item's
+  // current key, and only the ones it still confirms as safe are pre-selected.
+  const r = await gc.confirmSafe()
+  if (r.failed) {
+    ui.pushToast({ kind: 'warning', title: t('cleanup.gc.opinion.recheckFailed'), timeoutMs: 8000 })
+    return
+  }
+  if (r.dropped.length > 0) {
+    ui.pushToast({
+      kind: 'warning',
+      title: t('cleanup.gc.opinion.staleSafe', { count: r.dropped.length }, r.dropped.length),
+      timeoutMs: 8000
+    })
+  }
+  if (r.kept.length === 0 || dialogOpen.value) return
+  checked.value = new Set(r.kept)
+  openRemove(r.kept)
 }
 
 // ---- dialogs ------------------------------------------------------------------------------------

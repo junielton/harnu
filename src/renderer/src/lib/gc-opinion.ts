@@ -22,10 +22,17 @@ export interface StoredOpinion {
 
 export type OpinionMap = ReadonlyMap<string, StoredOpinion>
 
-/** The facts an opinion depends on that the snapshot carries. Disk use is left out: it only drifts. */
+/**
+ * The facts an opinion depends on that the snapshot carries: the head, the reason, the bucket, the
+ * branch fate and merge signal, and the untracked files. Disk use is left out: it only drifts. The
+ * snapshot does not carry the tracked dirty files or the pull request state, so main's own key
+ * (checked through `gc:opinion:cached`) is what covers those.
+ */
 export function fingerprintOf(b: GcBlock): string {
   if (b.kind === 'volume') return `volume|${b.project ?? ''}|${b.volume?.sizeBytes ?? ''}`
-  return `${b.bundle?.localTip ?? ''}|${b.reasonCode ?? ''}|${b.bucket}`
+  const fate = b.bundle ? `${b.bundle.fate.fate}/${b.bundle.fate.signal ?? ''}` : ''
+  const untracked = [...(b.bundle?.item.untracked ?? [])].sort().join('\n')
+  return `${b.bundle?.localTip ?? ''}|${b.reasonCode ?? ''}|${b.bucket}|${fate}|${untracked}`
 }
 
 const isAskable = (b: GcBlock | undefined): b is GcBlock => !!b && b.bucket === 'review'
