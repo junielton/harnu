@@ -41,6 +41,8 @@ export interface OpinionDossier {
   head: string | null
   /** `git diff --stat` against the default branch, as git printed it. */
   diffStat: string
+  /** The ref that diff was taken against (`origin/trunk`, `master`…); printed in the prompt. */
+  diffRef?: string
   /** `git status --porcelain` lines: tracked changes and untracked paths. */
   dirtyFiles: string[]
   lastSessionSummary: string | null
@@ -310,7 +312,7 @@ function renderDossier(d: OpinionDossier, index: number): string {
     if (d.unavailable?.diff !== undefined) {
       lines.push(`Diff against the default branch: ${missing('diff')}`)
     } else {
-      lines.push('Diff against the default branch:')
+      lines.push(`Diff against ${d.diffRef ? field(d.diffRef, own, 80) : 'the default branch'}:`)
       lines.push(d.diffStat.trim() ? field(d.diffStat, own, DIFF_STAT_MAX) : '(no difference)')
     }
     if (d.unavailable?.uncommitted !== undefined) {

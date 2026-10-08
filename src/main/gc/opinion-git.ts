@@ -45,25 +45,29 @@ const fail = (err: unknown): { ok: false; reason: string } => ({
 /**
  * The branch a worktree is compared with, as a ref that exists: what `origin/HEAD` points at, else
  * `origin/main`, `origin/master`, `main`, `master`, the first of them that resolves to a commit. No
- * network (`ls-remote` is out), and no silent fallback: if none exists that is an error, so a repo
+ * network (`ls-remote` is out). The item's own branch (and its `origin/` counterpart) is never a candidate:
+ * an item on `main` compared with `main` would read as "no difference", the exact answer that means safe.
+ * And no silent fallback: if none exists that is an error, so a repo
  * with a `master` default, a `remote add` without `set-head`, or no remote at all is handled, and a
  * repo with none of these is reported instead of being compared with a ref that is not there.
  */
 export async function resolveDefaultRef(
   git: GitRunner,
-  repoPath: string
+  repoPath: string,
+  ownBranch: string | null = null
 ): Promise<Gathered<string>> {
+  const own = ownBranch ? new Set([ownBranch, `origin/${ownBranch}`]) : new Set<string>()
   const candidates: string[] = []
   try {
     const head = (
       await git(repoPath, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])
     ).trim()
-    if (head) candidates.push(head)
+    if (head && !own.has(head)) candidates.push(head)
   } catch {
     // origin/HEAD is simply not set: the other candidates cover it.
   }
   for (const ref of ['origin/main', 'origin/master', 'main', 'master']) {
-    if (!candidates.includes(ref)) candidates.push(ref)
+    if (!candidates.includes(ref) && !own.has(ref)) candidates.push(ref)
   }
   for (const ref of candidates) {
     try {
@@ -83,14 +87,16 @@ export async function resolveDefaultRef(
 export async function gatherDiff(
   git: GitRunner,
   repoPath: string,
-  path: string
-): Promise<Gathered<string>> {
-  const ref = await resolveDefaultRef(git, repoPath)
+  path: string,
+  ownBranch: string | null = null
+): Promise<Gathered<string> & { ref?: string }> {
+  const ref = await resolveDefaultRef(git, repoPath, ownBranch)
   if (!ref.ok) return ref
   try {
     return {
       ok: true,
-      value: await git(path, ['diff', '--stat', '--stat-width=120', `${ref.value}...HEAD`])
+      value: await git(path, ['diff', '--stat', '--stat-width=120', `${ref.value}...HEAD`]),
+      ref: ref.value
     }
   } catch (err) {
     return fail(err)
@@ -108,7 +114,8 @@ export async function gatherKeyGit(
         out.trim() ? { ok: true, value: out.trim() } : { ok: false, reason: 'no HEAD commit' },
       fail
     ),
-    git(path, ['status', '--porcelain']).then(
+    // `-unormal`: a repo's `status.showUntrackedFiles=no` must not hide untracked files from the advisor.
+    git(path, ['status', '--porcelain', '-unormal']).then(
       (out): Gathered<string[]> => ({
         ok: true,
         value: out.split('\n').filter((l) => l.trim().length > 0)

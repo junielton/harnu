@@ -114,7 +114,7 @@ describe('gatherDiff', () => {
     const dir = await repo('main')
     const wt = join(dir, '..', 'wt')
     await sh(dir, 'worktree', 'add', '-q', '-b', 'same', wt)
-    expect(await gatherDiff(git, dir, wt)).toEqual({ ok: true, value: '' })
+    expect(await gatherDiff(git, dir, wt, 'same')).toEqual({ ok: true, value: '', ref: 'main' })
   })
 
   it('fails closed when there is no default ref at all', async () => {

@@ -107,14 +107,17 @@ async function worktreeDossier(
   const key = await worktreeKeyFacts(opts, b)
   const unavailable: NonNullable<OpinionKeyFacts['unavailable']> = { ...key.unavailable }
   let diffStat = ''
+  let diffRef: string | undefined
   let lastSessionSummary: string | null = null
   if (path) {
     const [diff, summary] = await Promise.all([
-      gatherDiff(opts.git, item.repoPath, path),
+      gatherDiff(opts.git, item.repoPath, path, item.branch ?? null),
       lastSummaryIn(path)
     ])
-    if (diff.ok) diffStat = diff.value
-    else unavailable.diff = diff.reason
+    if (diff.ok) {
+      diffStat = diff.value
+      diffRef = diff.ref
+    } else unavailable.diff = diff.reason
     lastSessionSummary = summary
   } else {
     unavailable.diff = 'the worktree has no folder to inspect'
@@ -132,6 +135,7 @@ async function worktreeDossier(
       ...(key.prUnknown !== undefined ? { prUnknown: key.prUnknown } : {}),
       head: key.head,
       diffStat,
+      ...(diffRef ? { diffRef } : {}),
       dirtyFiles: key.dirtyFiles,
       lastSessionSummary,
       ...(Object.keys(unavailable).length > 0 ? { unavailable } : {})
