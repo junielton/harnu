@@ -49,7 +49,7 @@ describe('withActor marks the journal lines of a run (AC-3)', () => {
     const { deps } = base()
     let prefs = defaultGcPrefs()
     const wrapped = withActor(deps, 'autopilot', () => prefs)
-    const b = bundle('/ws/wt/a', 'corpse')
+    const b = bundle('/ws/wt/a', 'ready')
     expect(await wrapped.isProtectedNow(b)).toBe(false)
     prefs = { ...prefs, neverClean: ['/ws/wt/a'] }
     expect(await wrapped.isProtectedNow(b)).toBe(true)

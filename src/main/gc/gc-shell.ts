@@ -4,14 +4,23 @@
 // real modules, and it loads them lazily so importing this file never pulls in electron.
 
 import type { BrowserWindow } from 'electron'
+import { resolve as resolveLexically } from 'node:path'
 import { GcStepError, isMainCheckoutByPath, type GcOps, type GcStep } from './pipeline-core'
-import { containerFolders, type SessionPresence, type WorktreeBundle } from './bundle-core'
+import {
+  AS_GIVEN,
+  canonicalPathKey,
+  containerFolderPaths,
+  containerFolders,
+  relatesTo,
+  type CanonicalPath,
+  type SessionPresence,
+  type WorktreeBundle
+} from './bundle-core'
 import { cleanItem, type CleanStepId, type ExecutorDeps } from '../reaper/executor-core'
 import { dehydrateItem, type DehydrateDeps } from '../reaper/dehydrate-core'
 import {
   groupStacks,
   isInside,
-  normalizePath,
   type InspectedContainer,
   type StackGroup
 } from '../containers/containers-core'
@@ -41,12 +50,73 @@ export interface GcShellDeps {
    * worktree marked Keep after the scan must not be cleaned. The reprobe asks it first.
    */
   isProtectedNow(b: WorktreeBundle): boolean | Promise<boolean>
+  /**
+   * The real path of a folder (symlinks resolved), or null when it cannot be read. Every
+   * path the reprobe and the recheck compare goes through it first, so a stack or session
+   * reached through a symlink is attributed where it really runs.
+   */
+  realpath(p: string): Promise<string | null>
 }
+
+/**
+ * Reads the real path of each distinct path once (lexically resolved first, so `..` is
+ * taken as written, as Compose and the shell take it) and returns a synchronous lookup for
+ * the pure comparisons. A path whose realpath fails, or one that was never read, comes back
+ * unresolved with its lexical key: it may be an alias of anything, which the callers refuse.
+ */
+export async function resolveRealPaths(
+  paths: Iterable<string>,
+  realpath: (p: string) => Promise<string>
+): Promise<CanonicalPath> {
+  const platform = process.platform
+  const lexical = (p: string): { path: string; resolved: boolean } => ({
+    path: canonicalPathKey(p, platform),
+    resolved: false
+  })
+  const byLexical = new Map<string, Promise<{ path: string; resolved: boolean }>>()
+  const read = (p: string): Promise<{ path: string; resolved: boolean }> => {
+    const target = resolveLexically(p)
+    let pending = byLexical.get(target)
+    if (!pending) {
+      pending = realpath(target).then(
+        (real) => ({ path: canonicalPathKey(real, platform), resolved: true }),
+        () => lexical(p)
+      )
+      byLexical.set(target, pending)
+    }
+    return pending
+  }
+  const known = new Map<string, { path: string; resolved: boolean }>()
+  await Promise.all(
+    [...new Set(paths)].filter(Boolean).map(async (p) => known.set(p, await read(p)))
+  )
+  return (p) => known.get(p) ?? lexical(p)
+}
+
+/** True when a folder of any listed container did not resolve and lies inside or above a root. */
+function unresolvedNear(
+  stacks: readonly StackGroup[],
+  canonical: CanonicalPath,
+  roots: readonly string[],
+  platform: string
+): boolean {
+  return stacks.some((s) =>
+    s.containers.some((c) =>
+      containerFolderPaths(c).some(
+        (f) =>
+          !canonical(f).resolved && roots.some((r) => relatesTo(canonicalPathKey(f, platform), r))
+      )
+    )
+  )
+}
+
+const folderPathsOf = (stacks: readonly StackGroup[]): string[] =>
+  stacks.flatMap((s) => s.containers.flatMap(containerFolderPaths))
 
 /**
  * The Reaper's two folder sets decide presence: `live` is a working or waiting session with
  * a running PTY, `inUse` is any running PTY. `live` cannot tell `working` from `needs-input`,
- * and the bucket treats both as alive, so one answer covers both. History-only and
+ * and the bucket treats both as in use, so one answer covers both. History-only and
  * hibernated sessions have no PTY, so they read `none`.
  *
  * A session in a folder under `path` counts as one in `path` itself: the worktree is live
@@ -55,12 +125,14 @@ export interface GcShellDeps {
  */
 export function presenceFromSets(
   path: string,
-  sets: { live: Set<string>; inUse: Set<string> }
+  sets: { live: Set<string>; inUse: Set<string> },
+  canonical: CanonicalPath = AS_GIVEN
 ): SessionPresence {
   const platform = process.platform
-  const root = normalizePath(path, platform)
+  const key = (p: string): string => canonicalPathKey(canonical(p).path, platform)
+  const root = key(path)
   const touches = (folders: Set<string>): boolean =>
-    [...folders].some((f) => isInside(normalizePath(f, platform), root))
+    [...folders].some((f) => f !== '' && isInside(key(f), root))
   if (touches(sets.live)) return 'working'
   if (touches(sets.inUse)) return 'open-idle'
   return 'none'
@@ -123,19 +195,32 @@ const sameState = (p: SessionPresence): 'busy' | SessionPresence =>
  * True when every folder the container touches (working dir and bind mount sources) lies
  * inside `root`; false when it has none.
  */
-function containedIn(c: InspectedContainer, root: string, platform: string): boolean {
-  const dirs = containerFolders(c, platform)
+function containedIn(
+  c: InspectedContainer,
+  root: string,
+  platform: string,
+  canonical: CanonicalPath
+): boolean {
+  const dirs = containerFolders(c, platform, canonical)
   return dirs.length > 0 && dirs.every((d) => isInside(d, root))
 }
 
 /**
- * Stacks with any container folder inside `root`, as a sorted id list. Same attribution as
- * the builder (`containerFolders`), so a stack the scan saw is seen here by the same rule.
+ * Stacks with any container folder inside `root` or above it, as a sorted id list. Same
+ * attribution as the builder (`containerFolders`, and a folder above the worktree shares
+ * it), so a stack the scan saw is seen here by the same rule and the recheck agrees.
  */
-function stackIdsInside(stacks: readonly StackGroup[], root: string, platform: string): string[] {
+function stackIdsInside(
+  stacks: readonly StackGroup[],
+  root: string,
+  platform: string,
+  canonical: CanonicalPath
+): string[] {
   return stacks
     .filter((s) =>
-      s.containers.some((c) => containerFolders(c, platform).some((d) => isInside(d, root)))
+      s.containers.some((c) =>
+        containerFolders(c, platform, canonical).some((d) => relatesTo(d, root))
+      )
     )
     .map((s) => s.id)
     .sort()
@@ -177,6 +262,14 @@ export function createGcOps(deps: GcShellDeps): GcOps {
    */
   const vetted = new Map<string, { root: string; ids: Set<string> }>()
 
+  /** Real paths through the injected realpath; a null answer is a failed read. */
+  const realPaths = (paths: Iterable<string>): Promise<CanonicalPath> =>
+    resolveRealPaths(paths, async (p) => {
+      const real = await deps.realpath(p)
+      if (real === null) throw new Error(`cannot resolve ${p}`)
+      return real
+    })
+
   /**
    * Container ids of the named stacks, from a listing taken now rather than at scan time.
    * Throws before any docker call unless each stack passed a reprobe and still has exactly
@@ -186,6 +279,8 @@ export function createGcOps(deps: GcShellDeps): GcOps {
   const containersOf = async (stackIds: string[]): Promise<string[]> => {
     if (stackIds.length === 0) return []
     const { stacks } = await deps.listStacks()
+    const targets = stacks.filter((s) => stackIds.includes(s.id))
+    const canonical = await realPaths(folderPathsOf(targets))
     const out: string[] = []
     for (const id of stackIds) {
       const seen = vetted.get(id)
@@ -194,7 +289,9 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       const fresh = new Set(containers.map((c) => c.id))
       if (
         !sameSet(fresh, seen.ids) ||
-        !containers.every((c) => containedIn(c, seen.root, platform))
+        // A folder that no longer resolves may be an alias of anything: not the one vetted.
+        containers.some((c) => containerFolderPaths(c).some((f) => !canonical(f).resolved)) ||
+        !containers.every((c) => containedIn(c, seen.root, platform, canonical))
       ) {
         throw new Error(`stack ${id} changed since the reprobe`)
       }
@@ -238,8 +335,18 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       }
       const path = item.path
       if (!path) return { ok: false, reason: 'changed-since-scan' }
-      const root = normalizePath(path, platform)
       try {
+        // Real paths before any comparison: a symlinked worktree may be the main checkout,
+        // and one whose path cannot be read may be an alias of anything.
+        const own = await realPaths([path, item.repoPath])
+        if (!own(path).resolved || !own(item.repoPath).resolved) {
+          return { ok: false, reason: 'path-unresolved' }
+        }
+        const root = canonicalPathKey(own(path).path, platform)
+        if (root === canonicalPathKey(own(item.repoPath).path, platform)) {
+          return { ok: false, reason: 'protected-now' }
+        }
+        const roots = [root, canonicalPathKey(path, platform)]
         // Pre-flight everything cleanItem's guard would refuse: that guard runs only after
         // the docker steps and drop-deps, so refusing there is too late. Dirty or unknown
         // now refuses even when the scan already saw it dirty.
@@ -265,17 +372,23 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         const head = await deps.headOf(path).catch(() => null)
         if (head !== b.localTip) return { ok: false, reason: 'changed-since-scan' }
         const { stacks } = await deps.listStacks()
+        // Every container folder on its real path. One that cannot be read and lies inside
+        // the worktree or above it may run from it under another name.
+        const canonical = await realPaths(folderPathsOf(stacks))
+        if (unresolvedNear(stacks, canonical, roots, platform)) {
+          return { ok: false, reason: 'path-unresolved' }
+        }
         // Exclusivity is recomputed, not trusted: every container of every stack we are
         // about to remove must still run from inside this worktree and nowhere else.
         const pass = new Map<string, { root: string; ids: Set<string> }>()
         for (const id of b.stackIds) {
           const s = stacks.find((x) => x.id === id)
-          if (!s || !s.containers.every((c) => containedIn(c, root, platform))) {
+          if (!s || !s.containers.every((c) => containedIn(c, root, platform, canonical))) {
             return { ok: false, reason: 'changed-since-scan' }
           }
           pass.set(id, { root, ids: new Set(s.containers.map((c) => c.id)) })
         }
-        const fresh = stackIdsInside(stacks, root, platform)
+        const fresh = stackIdsInside(stacks, root, platform, canonical)
         const scanned = [...b.stackIds, ...b.sharedStackIds].sort()
         if (fresh.length !== scanned.length || fresh.some((id, i) => id !== scanned[i])) {
           return { ok: false, reason: 'changed-since-scan' }
@@ -347,14 +460,20 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         // Fail closed: a probe that cannot answer is not a green light either.
         if ((await deps.presenceOf(path)) !== 'none') return { ok: false, reason: 'session-open' }
         if ((await deps.headOf(path)) !== b.localTip) return { ok: false, reason: 'head-moved' }
-        // A stack started from the worktree during the docker steps or drop-deps would run
-        // from a folder about to be trashed. Same attribution as the scan and the reprobe; a
-        // scanned stack that is gone by now (we just removed it) is fine.
+        // By now the exclusive stacks were removed and a shared one was refused at the
+        // reprobe, so any stack still touching the worktree would run from a folder about to
+        // be trashed, whatever its id: a `compose up` during drop-deps brings the same project
+        // id back. Same attribution as the scan and the reprobe.
         const { stacks } = await deps.listStacks()
-        const scanned = new Set([...b.stackIds, ...b.sharedStackIds])
-        const root = normalizePath(path, platform)
-        if (stackIdsInside(stacks, root, platform).some((id) => !scanned.has(id))) {
-          return { ok: false, reason: 'new-stack' }
+        const canonical = await realPaths([path, ...folderPathsOf(stacks)])
+        if (!canonical(path).resolved) return { ok: false, reason: 'path-unresolved' }
+        const root = canonicalPathKey(canonical(path).path, platform)
+        const roots = [root, canonicalPathKey(path, platform)]
+        if (unresolvedNear(stacks, canonical, roots, platform)) {
+          return { ok: false, reason: 'path-unresolved' }
+        }
+        if (stackIdsInside(stacks, root, platform, canonical).length > 0) {
+          return { ok: false, reason: 'stack-present' }
         }
         return { ok: true }
       } catch (err) {
@@ -384,15 +503,38 @@ export function createGcOps(deps: GcShellDeps): GcOps {
 export async function defaultGcShellDeps(
   getWindow: () => BrowserWindow | null
 ): Promise<GcShellDeps> {
-  const [{ computeFolderSets }, { buildDeps, buildHydrationDeps }, shell] = await Promise.all([
+  const [{ computeFolderSets }, { buildDeps, buildHydrationDeps }, shell, fs] = await Promise.all([
     import('../reaper/scanner-shell'),
     import('../reaper/reaper-ipc'),
-    import('../containers/containers-shell')
+    import('../containers/containers-shell'),
+    import('node:fs/promises')
   ])
   const executor = buildDeps(getWindow)
+  // Every set member and the queried path on their real paths, so a session reached
+  // through a symlink still counts for the worktree it runs in.
+  const presenceOf = async (path: string): Promise<SessionPresence> => {
+    const sets = await computeFolderSets()
+    const canonical = await resolveRealPaths([path, ...sets.live, ...sets.inUse], (p) =>
+      fs.realpath(p)
+    )
+    return presenceFromSets(path, sets, canonical)
+  }
+  const dehydrate = buildHydrationDeps().dehydrate
+  const realpath = async (p: string): Promise<string | null> => {
+    try {
+      return await fs.realpath(p)
+    } catch {
+      return null
+    }
+  }
   return {
     executor,
-    dehydrate: buildHydrationDeps().dehydrate,
+    // dehydrateItem's own live check (isFolderInUse) matches the exact folder only; a
+    // session in WT/api must keep WT's deps too, so it asks the segment-containing presence.
+    dehydrate: {
+      ...dehydrate,
+      isSessionLive: async (path) => (await presenceOf(path)) !== 'none'
+    },
     docker: shell.dockerActions,
     listStacks: async () => {
       try {
@@ -407,9 +549,10 @@ export async function defaultGcShellDeps(
         throw err
       }
     },
-    presenceOf: async (path) => presenceFromSets(path, await computeFolderSets()),
+    presenceOf,
     headOf: async (path) => (await executor.git(path, ['rev-parse', 'HEAD'])).trim() || null,
     // The scan-time flags for now; S3 replaces this with a live read of the prefs.
-    isProtectedNow: (b) => b.keep || b.neverClean || b.isMainCheckout || isMainCheckoutByPath(b)
+    isProtectedNow: (b) => b.keep || b.neverClean || b.isMainCheckout || isMainCheckoutByPath(b),
+    realpath
   }
 }

@@ -103,7 +103,7 @@ const settle = (r: Rig): Promise<void> => r.deps.queue.idle()
 
 /**
  * What a Cleanup row would send back: the facts shown for every listed item, and the
- * confirmation of every Decide worktree and orphan volume among them (override with `confirm`).
+ * confirmation of every review worktree and orphan volume among them (override with `confirm`).
  */
 function shown(
   bundles: WorktreeBundle[],
@@ -116,21 +116,21 @@ function shown(
   return {
     expected,
     confirmed: confirm ?? [
-      ...bundles.filter((b) => b.bucket !== 'corpse').map((b) => b.item.id),
+      ...bundles.filter((b) => b.bucket !== 'ready').map((b) => b.item.id),
       ...orphans.map((o) => o.id)
     ]
   }
 }
 
-const corpseOpts = (...bs: WorktreeBundle[]): GcCleanOptions => shown(bs)
+const readyOpts = (...bs: WorktreeBundle[]): GcCleanOptions => shown(bs)
 
 describe('gc:clean is a background job (AC-4)', () => {
   it('acknowledges before the batch runs', async () => {
     let release!: () => void
     const gate = new Promise<void>((res) => (release = res))
-    const b = bundle('/ws/wt/a', 'corpse')
+    const b = bundle('/ws/wt/a', 'ready')
     const r = rig([b], { gatherGate: gate })
-    const ack = submitManualClean(r.deps, [b.item.id], corpseOpts(b))
+    const ack = submitManualClean(r.deps, [b.item.id], readyOpts(b))
     expect(ack).toEqual({ jobId: 'job-1', queued: false })
     expect(r.normal).toEqual([])
     release()
@@ -139,10 +139,10 @@ describe('gc:clean is a background job (AC-4)', () => {
   })
 
   it('streams one progress event per requested id, then one done', async () => {
-    const a = bundle('/ws/wt/a', 'corpse')
-    const b = bundle('/ws/wt/b', 'corpse')
+    const a = bundle('/ws/wt/a', 'ready')
+    const b = bundle('/ws/wt/b', 'ready')
     const r = rig([a, b])
-    submitManualClean(r.deps, [a.item.id, b.item.id], corpseOpts(a, b))
+    submitManualClean(r.deps, [a.item.id, b.item.id], readyOpts(a, b))
     await settle(r)
     expect(r.progress.map((p) => p.done)).toEqual([1, 2])
     expect(r.done).toHaveLength(1)
@@ -158,11 +158,11 @@ describe('gc:clean is a background job (AC-4)', () => {
   it('queues a second request behind a running one instead of running it in parallel', async () => {
     let release!: () => void
     const gate = new Promise<void>((res) => (release = res))
-    const a = bundle('/ws/wt/a', 'corpse')
-    const b = bundle('/ws/wt/b', 'corpse')
+    const a = bundle('/ws/wt/a', 'ready')
+    const b = bundle('/ws/wt/b', 'ready')
     const r = rig([a, b], { gatherGate: gate })
-    const first = submitManualClean(r.deps, [a.item.id], corpseOpts(a))
-    const second = submitManualClean(r.deps, [b.item.id], corpseOpts(b))
+    const first = submitManualClean(r.deps, [a.item.id], readyOpts(a))
+    const second = submitManualClean(r.deps, [b.item.id], readyOpts(b))
     expect(first.queued).toBe(false)
     expect(second.queued).toBe(true)
     await new Promise((res) => setTimeout(res, 5))
@@ -178,9 +178,9 @@ describe('gc:clean is a background job (AC-4)', () => {
   })
 
   it('ignores a repeated id', async () => {
-    const a = bundle('/ws/wt/a', 'corpse')
+    const a = bundle('/ws/wt/a', 'ready')
     const r = rig([a])
-    submitManualClean(r.deps, [a.item.id, a.item.id], corpseOpts(a))
+    submitManualClean(r.deps, [a.item.id, a.item.id], readyOpts(a))
     await settle(r)
     expect(r.normal.filter((l) => l.startsWith('cleanGit'))).toHaveLength(1)
   })
@@ -200,24 +200,24 @@ describe('refusals leave a result and call no op (AC-8)', () => {
     return r.done[0]!.results[0]!
   }
 
-  it('refuses a Decide worktree the operator did not confirm', async () => {
-    const d = bundle('/ws/wt/d', 'decide')
+  it('refuses a review worktree the operator did not confirm', async () => {
+    const d = bundle('/ws/wt/d', 'review')
     const res = await refused(d, {}, shown([d], [], []))
     expect(res).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'needs-confirmation' })
   })
 
-  it('refuses an Alive worktree even when confirmed', async () => {
-    const l = bundle('/ws/wt/l', 'alive')
-    expect((await refused(l, {}, shown([l], [], [l.item.id]))).error).toBe('alive')
+  it('refuses an in-use worktree even when confirmed', async () => {
+    const l = bundle('/ws/wt/l', 'in-use')
+    expect((await refused(l, {}, shown([l], [], [l.item.id]))).error).toBe('in-use')
   })
 
   it('refuses a main checkout even when confirmed', async () => {
-    const m = bundle('/ws/wt/m', 'decide', { isMainCheckout: true })
+    const m = bundle('/ws/wt/m', 'review', { isMainCheckout: true })
     expect((await refused(m)).error).toBe('main-checkout')
   })
 
   it('refuses a path added to neverClean after the snapshot was taken', async () => {
-    const a = bundle('/ws/wt/a', 'corpse')
+    const a = bundle('/ws/wt/a', 'ready')
     const res = await refused(a, { prefs: prefs({ neverClean: ['/ws/wt/a'] }) })
     expect(res.error).toBe('never-clean')
   })
@@ -230,7 +230,7 @@ describe('refusals leave a result and call no op (AC-8)', () => {
   })
 
   it('still emits progress for a refused item', async () => {
-    const d = bundle('/ws/wt/d', 'decide')
+    const d = bundle('/ws/wt/d', 'review')
     const r = rig([d])
     submitManualClean(r.deps, [d.item.id], shown([d], [], []))
     await settle(r)
@@ -247,38 +247,38 @@ describe('the confirmation binds to what the operator saw (AC-8, delta 1)', () =
   }
 
   it('refuses an item with no expected facts at all', async () => {
-    const a = bundle('/ws/wt/a', 'corpse')
+    const a = bundle('/ws/wt/a', 'ready')
     const r = await run([a], { confirmed: [] }, [a.item.id])
     expect(r.normal).toEqual([])
     expect(r.done[0]!.results[0]).toMatchObject({ ok: false, error: 'missing-expected' })
   })
 
-  it('refuses a stack that started after the click, for a confirmed Decide item', async () => {
-    const seen = bundle('/ws/wt/d', 'decide', { stackIds: ['s1'] })
-    const now = bundle('/ws/wt/d', 'decide', { stackIds: ['s1', 's2'] })
+  it('refuses a stack that started after the click, for a confirmed review item', async () => {
+    const seen = bundle('/ws/wt/d', 'review', { stackIds: ['s1'] })
+    const now = bundle('/ws/wt/d', 'review', { stackIds: ['s1', 's2'] })
     const r = await run([now], shown([seen]), [seen.item.id])
     expect(r.forced).toEqual([])
     expect(r.done[0]!.results[0]).toMatchObject({ ok: false, error: 'changed-since-confirm' })
   })
 
-  it('refuses a stack that started after the click, for a corpse too', async () => {
-    const seen = bundle('/ws/wt/a', 'corpse')
-    const now = bundle('/ws/wt/a', 'corpse', { stackIds: ['s9'] })
+  it('refuses a stack that started after the click, for a ready item too', async () => {
+    const seen = bundle('/ws/wt/a', 'ready')
+    const now = bundle('/ws/wt/a', 'ready', { stackIds: ['s9'] })
     const r = await run([now], shown([seen]), [seen.item.id])
     expect(r.normal).toEqual([])
     expect(r.done[0]!.results[0]!.error).toBe('changed-since-confirm')
   })
 
   it('refuses a volume that appeared after the click', async () => {
-    const seen = bundle('/ws/wt/a', 'corpse', { stackIds: ['s1'], ownedVolumes: ['v1'] })
-    const now = bundle('/ws/wt/a', 'corpse', { stackIds: ['s1'], ownedVolumes: ['v1', 'v2'] })
+    const seen = bundle('/ws/wt/a', 'ready', { stackIds: ['s1'], ownedVolumes: ['v1'] })
+    const now = bundle('/ws/wt/a', 'ready', { stackIds: ['s1'], ownedVolumes: ['v1', 'v2'] })
     const r = await run([now], shown([seen]), [seen.item.id])
     expect(r.done[0]!.results[0]!.error).toBe('changed-since-confirm')
   })
 
-  it('refuses a corpse that turned into a Decide item', async () => {
-    const seen = bundle('/ws/wt/a', 'corpse')
-    const now = bundle('/ws/wt/a', 'decide')
+  it('refuses a ready item that turned into a review item', async () => {
+    const seen = bundle('/ws/wt/a', 'ready')
+    const now = bundle('/ws/wt/a', 'review')
     const r = await run([now], shown([seen], [], [seen.item.id]), [seen.item.id])
     expect(r.normal).toEqual([])
     expect(r.forced).toEqual([])
@@ -286,15 +286,15 @@ describe('the confirmation binds to what the operator saw (AC-8, delta 1)', () =
   })
 
   it('refuses a head that moved since the click', async () => {
-    const seen = bundle('/ws/wt/a', 'corpse', { localTip: 'a'.repeat(40) })
-    const now = bundle('/ws/wt/a', 'corpse', { localTip: 'b'.repeat(40) })
+    const seen = bundle('/ws/wt/a', 'ready', { localTip: 'a'.repeat(40) })
+    const now = bundle('/ws/wt/a', 'ready', { localTip: 'b'.repeat(40) })
     const r = await run([now], shown([seen]), [seen.item.id])
     expect(r.done[0]!.results[0]!.error).toBe('changed-since-confirm')
   })
 
   it('does not let one confirmed id confirm another', async () => {
-    const d1 = bundle('/ws/wt/d1', 'decide')
-    const d2 = bundle('/ws/wt/d2', 'decide')
+    const d1 = bundle('/ws/wt/d1', 'review')
+    const d2 = bundle('/ws/wt/d2', 'review')
     const r = await run([d1, d2], shown([d1, d2], [], [d1.item.id]), [d1.item.id, d2.item.id])
     const [first, second] = r.done[0]!.results
     expect(first).toMatchObject({ ok: true })
@@ -303,25 +303,29 @@ describe('the confirmation binds to what the operator saw (AC-8, delta 1)', () =
   })
 
   it('cleans what matches what was shown, even when a size drifted', async () => {
-    const a = bundle('/ws/wt/a', 'corpse')
+    const a = bundle('/ws/wt/a', 'ready')
     const opts = shown([a])
     opts.expected![a.item.id]!.bytes = 1
     const r = await run([a], opts, [a.item.id])
     expect(r.done[0]!.results[0]).toMatchObject({ ok: true })
   })
 
-  it('has no blanket flag: confirmDecide is ignored', async () => {
-    const d = bundle('/ws/wt/d', 'decide')
-    const opts = { ...shown([d], [], []), confirmDecide: true } as GcCleanOptions
+  it('has no blanket flag: a stray confirmDecide or confirmReview is ignored', async () => {
+    const d = bundle('/ws/wt/d', 'review')
+    const opts = {
+      ...shown([d], [], []),
+      confirmDecide: true,
+      confirmReview: true
+    } as GcCleanOptions
     const r = await run([d], opts, [d.item.id])
     expect(r.forced).toEqual([])
     expect(r.done[0]!.results[0]!.error).toBe('needs-confirmation')
   })
 })
 
-describe('the explicit force path for Decide worktrees (AC-8)', () => {
-  it('runs a confirmed Decide worktree through the forced ops, never the normal ones', async () => {
-    const d = bundle('/ws/wt/d', 'decide')
+describe('the explicit force path for review worktrees (AC-8)', () => {
+  it('runs a confirmed review worktree through the forced ops, never the normal ones', async () => {
+    const d = bundle('/ws/wt/d', 'review')
     const r = rig([d])
     submitManualClean(r.deps, [d.item.id], shown([d]))
     await settle(r)
@@ -330,8 +334,8 @@ describe('the explicit force path for Decide worktrees (AC-8)', () => {
     expect(r.done[0]!.results[0]).toMatchObject({ ok: true })
   })
 
-  it('keeps a corpse on the normal ops even when its id is also confirmed', async () => {
-    const a = bundle('/ws/wt/a', 'corpse')
+  it('keeps a ready item on the normal ops even when its id is also confirmed', async () => {
+    const a = bundle('/ws/wt/a', 'ready')
     const r = rig([a])
     submitManualClean(r.deps, [a.item.id], shown([a], [], [a.item.id]))
     await settle(r)
@@ -340,7 +344,7 @@ describe('the explicit force path for Decide worktrees (AC-8)', () => {
   })
 
   it('still stops at the reprobe when a live session appeared', async () => {
-    const d = bundle('/ws/wt/d', 'decide')
+    const d = bundle('/ws/wt/d', 'review')
     const r = rig([d], {
       forcedOps: { reprobe: async () => ({ ok: false, reason: 'session-open' }) }
     })
@@ -354,17 +358,14 @@ describe('the explicit force path for Decide worktrees (AC-8)', () => {
     })
   })
 
-  it('honors the removeVolumes pref for owned volumes', async () => {
-    const b = bundle('/ws/wt/a', 'corpse', { stackIds: ['s'], ownedVolumes: ['v1'] })
-    const on = rig([b])
-    submitManualClean(on.deps, [b.item.id], shown([b]))
-    await settle(on)
-    expect(on.normal).toContain('removeVolumes v1')
-
-    const off = rig([b], { prefs: prefs({ removeVolumes: false }) })
-    submitManualClean(off.deps, [b.item.id], shown([b]))
-    await settle(off)
-    expect(off.normal.some((l) => l.startsWith('removeVolumes'))).toBe(false)
+  it("never removes a worktree bundle's volumes, ready or reviewed (D1)", async () => {
+    const ready = bundle('/ws/wt/a', 'ready', { stackIds: ['s'], ownedVolumes: ['v1'] })
+    const review = bundle('/ws/wt/d', 'review', { stackIds: ['t'], ownedVolumes: ['v2'] })
+    const r = rig([ready, review])
+    submitManualClean(r.deps, [ready.item.id, review.item.id], shown([ready, review]))
+    await settle(r)
+    expect(r.done[0]!.results.map((x) => x.ok)).toEqual([true, true])
+    expect([...r.normal, ...r.forced].some((l) => l.startsWith('removeVolumes'))).toBe(false)
   })
 })
 
@@ -380,7 +381,7 @@ describe('orphan volumes are removed only by a confirmed manual action (AC-7)', 
 
   it('refuses a volume confirmed by another id: it needs its own entry', async () => {
     const o = orphan('lost_data')
-    const d = bundle('/ws/wt/d', 'decide')
+    const d = bundle('/ws/wt/d', 'review')
     const r = rig([d], { orphans: [o] })
     submitManualClean(r.deps, [o.id], shown([d], [o], [d.item.id]))
     await settle(r)
@@ -437,7 +438,7 @@ describe('orphan volumes are removed only by a confirmed manual action (AC-7)', 
   })
 
   it('handles bundles and volumes in one request, in order', async () => {
-    const a = bundle('/ws/wt/a', 'corpse')
+    const a = bundle('/ws/wt/a', 'ready')
     const o = orphan('lost_data')
     const r = rig([a], { orphans: [o] })
     submitManualClean(r.deps, [a.item.id, o.id], shown([a], [o]))
@@ -448,7 +449,7 @@ describe('orphan volumes are removed only by a confirmed manual action (AC-7)', 
 
 describe('failure bookkeeping shared with the autopilot', () => {
   it('remembers a step that failed, so the autopilot does not retry it blindly', async () => {
-    const a = bundle('/ws/wt/a', 'corpse')
+    const a = bundle('/ws/wt/a', 'ready')
     const r = rig([a], {
       normalOps: {
         cleanGit: async () => {
@@ -462,7 +463,7 @@ describe('failure bookkeeping shared with the autopilot', () => {
   })
 
   it('forgets a failure once the same item is cleaned', async () => {
-    const a = bundle('/ws/wt/a', 'corpse')
+    const a = bundle('/ws/wt/a', 'ready')
     const r = rig([a])
     r.deps.state.failures.set(a.item.id, { step: 'trash', error: 'x', at: NOW })
     submitManualClean(r.deps, [a.item.id], shown([a]))

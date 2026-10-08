@@ -38,24 +38,24 @@ describe('the scanner hands the fate inputs to the bundle builder (AC-5)', () =>
   })
 })
 
-describe('a PR head that is not the worktree HEAD is not a corpse (AC-5, Review Focus 1)', () => {
-  it('is a corpse when the PR head equals the worktree HEAD', () => {
+describe('a PR head that is not the worktree HEAD is not a ready item (AC-5, Review Focus 1)', () => {
+  it('is a ready item when the PR head equals the worktree HEAD', () => {
     const [b] = bundlesOf(scanInput())
     expect(b!.fate).toMatchObject({ fate: 'merged', signal: 'gh-merged', strong: true })
-    expect(b!.bucket).toBe('corpse')
+    expect(b!.bucket).toBe('ready')
     expect(b!.localTip).toBe(HEAD)
   })
 
-  it('is weak, so Decide, when the branch moved on after the merge', () => {
+  it('is weak, so Needs review, when the branch moved on after the merge', () => {
     const [b] = bundlesOf(scanInput({ prByBranch: new Map([['feat/slug', pr(OTHER)]]) }))
     expect(b!.fate.strong).toBe(false)
-    expect(b!.bucket).toBe('decide')
+    expect(b!.bucket).toBe('review')
     expect(b!.reason?.code).toBe('weak-merge-signal')
   })
 
   it('is weak when gh reported no head OID at all', () => {
     const [b] = bundlesOf(scanInput({ prByBranch: new Map([['feat/slug', pr(null)]]) }))
     expect(b!.fate.strong).toBe(false)
-    expect(b!.bucket).toBe('decide')
+    expect(b!.bucket).toBe('review')
   })
 })

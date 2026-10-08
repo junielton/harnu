@@ -4,8 +4,8 @@
 // click, and it streams one progress event per requested id.
 //
 // This is the only caller of the forced ops. The operator's per-id `confirmed` entries, bound
-// to the facts they were shown (`expected`), are what let a Decide worktree or an orphan volume through; the autopilot (gc-cycle.ts) has no way to
-// reach either, and Alive items, main checkouts and neverClean paths are refused here
+// to the facts they were shown (`expected`), are what let a review worktree or an orphan volume through; the autopilot (gc-cycle.ts) has no way to
+// reach either, and in-use items, main checkouts and neverClean paths are refused here
 // against the current prefs before any op runs.
 
 import type { WorktreeBundle } from './bundle-core'
@@ -15,7 +15,8 @@ import type { CycleState } from './gc-cycle'
 import type { JobQueue } from './gc-jobs-core'
 import type { GcPrefs } from './gc-prefs'
 import { volumeItemId, type OrphanVolumeItem } from './gc-housekeeping-input'
-import type { HousekeepingResult } from './housekeeping-core'
+import type { HousekeepingResult, HousekeepingVolume } from './housekeeping-core'
+import { leftBehind, type Leftover } from './gc-leftovers'
 import { runBatch, type GcItemResult, type GcOps } from './pipeline-core'
 import type { GcCleanAck, GcCleanOptions } from './gc-wire'
 
@@ -25,11 +26,17 @@ export interface ManualCleanDeps {
   /** Read fresh: `neverClean` may have changed since the snapshot the operator clicked on. */
   prefs(): GcPrefs
   /** A fresh gather: refusals and the orphan-volume plan are judged on this, not on the click's snapshot. */
-  gather(): Promise<{ bundles: WorktreeBundle[]; orphanVolumes: OrphanVolumeItem[] }>
-  /** `forced` ops archive before anything destructive and waive the Decide-only guards. */
+  gather(): Promise<{
+    bundles: WorktreeBundle[]
+    orphanVolumes: OrphanVolumeItem[]
+    housekeeping?: { volumes: HousekeepingVolume[] }
+  }>
+  /** `forced` ops archive before anything destructive and waive the review-only guards. */
   opsFor(actor: 'operator', forced: boolean): GcOps
   /** `docker volume rm` for exactly these names. */
   removeOrphanVolumes(names: string[]): Promise<HousekeepingResult>
+  /** What a cleaned worktree leaves in Docker, so its volumes can be offered for review. */
+  rememberLeftovers?(entries: Leftover[]): void
   queue: JobQueue
   state: CycleState
   now(): number
@@ -71,15 +78,22 @@ export function submitManualClean(
       const seen = expected[id]
       if (!seen) return refused(id, 'missing-expected')
       if (bundleChangedSince(b, seen)) return refused(id, 'changed-since-confirm')
-      // Anything that is not a proven corpse needs its OWN confirmation, and then takes
+      // Anything that is not a proven ready item needs its OWN confirmation, and then takes
       // the forced ops.
-      const forced = b.bucket !== 'corpse'
+      const forced = b.bucket !== 'ready'
       if (forced && !confirmed.has(id)) return refused(id, 'needs-confirmation')
-      const batchOpts: { removeVolumes: boolean; confirmDecide?: boolean } = {
-        removeVolumes: prefs.removeVolumes,
-        confirmDecide: forced
+      const batchOpts: { removeVolumes: boolean; confirmReview?: boolean } = {
+        // D1: worktree cleanup never removes a volume, ready or reviewed, bulk or single. What
+        // it leaves behind comes back as an orphan-volume review item.
+        removeVolumes: false,
+        // S2's own gate: set ONLY for an item the operator confirmed by id (checked above),
+        // never by the autopilot.
+        confirmReview: forced
       }
       const [result] = await runBatch([b], deps.opsFor('operator', forced), batchOpts)
+      if (result!.ok) {
+        deps.rememberLeftovers?.(leftBehind(b, gathered.housekeeping?.volumes ?? []))
+      }
       return result!
     }
 

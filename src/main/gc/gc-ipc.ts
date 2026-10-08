@@ -12,6 +12,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import * as path from 'node:path'
 import { Notification, app, ipcMain, type BrowserWindow } from 'electron'
 import { buildNotificationOptions } from '../notifications'
 import { prefsFile as containersPrefsFile } from '../containers/containers-prefs'
@@ -19,6 +20,15 @@ import { prefsPath as reaperPrefsPath } from '../reaper/prefs'
 import type { ReaperControl } from '../reaper/reaper-ipc'
 import { bucketFeed, setInheritedBuckets } from './gc-buckets'
 import { withActor } from './gc-actor'
+import {
+  LEFTOVERS_FILE,
+  pruneLeftovers,
+  readLeftovers,
+  toDirMap,
+  withLeftovers,
+  writeLeftovers,
+  type Leftover
+} from './gc-leftovers'
 import {
   createCycleState,
   runGcCycle,
@@ -83,6 +93,14 @@ export async function registerGcHandlers(
     containers: containersPrefsFile(userData)
   })
   const state = createCycleState()
+  // What cleaned worktrees left in Docker, so their volumes can be offered for review (D1).
+  const leftoversFile = path.join(userData, LEFTOVERS_FILE)
+  let leftovers = readLeftovers(leftoversFile)
+  const remember = (entries: Leftover[]): void => {
+    if (entries.length === 0) return
+    leftovers = withLeftovers(leftovers, entries)
+    writeLeftovers(leftoversFile, leftovers)
+  }
   let cache: GcGathered | null = null
   let gathering: Promise<GcGathered> | null = null
 
@@ -101,8 +119,21 @@ export async function registerGcHandlers(
   const gather = (): Promise<GcGathered> => {
     gathering ??= (async () => {
       try {
-        // A halted item reads Decide here, once, for the snapshot, the feed, the jobs and the cycle.
-        const g = withFailures(await gatherGc(prefs, Date.now()), state, Date.now())
+        // A halted item reads Needs review here, once, for the snapshot, the feed, the jobs and the cycle.
+        const g = withFailures(
+          await gatherGc(prefs, Date.now(), toDirMap(leftovers)),
+          state,
+          Date.now()
+        )
+        // A project with no volume left in Docker has nothing to review. Only judged when
+        // docker answered: an outage says nothing about what exists.
+        if (g.dockerAvailable) {
+          const pruned = pruneLeftovers(leftovers, g.housekeeping.volumes)
+          if (Object.keys(pruned.projects).length !== Object.keys(leftovers.projects).length) {
+            leftovers = pruned
+            writeLeftovers(leftoversFile, leftovers)
+          }
+        }
         cache = g
         setInheritedBuckets(bucketFeed(g.bundles))
         if (g.staleKeeps.length > 0) await persist(withoutKeep(prefs, g.staleKeeps))
@@ -157,6 +188,7 @@ export async function registerGcHandlers(
     housekeeping: (plan) => runHousekeeping(plan),
     notify,
     emitCycle: (record) => send('gc:cycle', record),
+    rememberLeftovers: remember,
     state,
     now: () => Date.now()
   }
@@ -173,6 +205,7 @@ export async function registerGcHandlers(
     scannedAt: g.scannedAt,
     bundles: g.bundles,
     orphanVolumes: g.orphanVolumes,
+    docker: g.docker,
     prefs: livePrefs(),
     lastCycle: state.last,
     nextCycleAt: reaper.autoScan() ? reaper.nextTickAt() : null
@@ -194,6 +227,7 @@ export async function registerGcHandlers(
               danglingImages: false,
               orphanVolumes: names
             }),
+          rememberLeftovers: remember,
           queue,
           state,
           now: () => Date.now()

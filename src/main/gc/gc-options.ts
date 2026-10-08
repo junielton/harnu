@@ -14,9 +14,9 @@ function parseExpected(raw: unknown): GcExpected | null {
   const stackIds = strings(e.stackIds)
   const ownedVolumes = strings(e.ownedVolumes)
   if (
-    (bucket !== 'corpse' &&
-      bucket !== 'decide' &&
-      bucket !== 'alive' &&
+    (bucket !== 'ready' &&
+      bucket !== 'review' &&
+      bucket !== 'in-use' &&
       bucket !== 'orphan-volume') ||
     !stackIds ||
     !ownedVolumes ||
@@ -41,7 +41,7 @@ function parseExpected(raw: unknown): GcExpected | null {
 
 /**
  * `confirmed` and `expected` from an untrusted payload. There is deliberately no blanket
- * "confirm everything" flag: a stray `confirmDecide` is ignored, so it confirms nothing.
+ * "confirm everything" flag: a stray `confirmDecide` or `confirmReview` is ignored, so it confirms nothing.
  */
 export function parseOptions(raw: unknown): GcCleanOptions {
   const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}

@@ -3,6 +3,7 @@
 // session that works in it, then puts it in exactly one bucket. No I/O — every decision is
 // unit-tested in tests/gc-bundle-core.test.ts.
 
+import { posix, win32 } from 'node:path'
 import { resolveDetachedFate, resolveFate, type FateResult } from './fate-core'
 import type { BranchFacts, ReapItem } from '../reaper/reaper-core'
 import {
@@ -18,9 +19,42 @@ import {
 
 const DAY_MS = 86_400_000
 
+/**
+ * The one form every GC path comparison uses: lexically resolved, so `REPO/.` and
+ * `…/worktrees/../www` are `REPO` itself; forward slashes; no trailing slash; case-folded on
+ * darwin and win32, whose default filesystems ignore case. Pure: it never touches the disk,
+ * so a symlink is resolved by the caller first. An empty path stays empty instead of
+ * resolving to the working directory.
+ */
+export function canonicalPathKey(p: string, platform: string): string {
+  if (!p) return ''
+  const win = platform === 'win32'
+  let out = win ? win32.resolve(p).replace(/\\/g, '/') : posix.resolve(p)
+  if (out.length > 1 && out.endsWith('/') && !/^[a-z]:\/$/i.test(out)) out = out.slice(0, -1)
+  return win || platform === 'darwin' ? out.toLowerCase() : out
+}
+
+/**
+ * A path's real location, as the shell read it from disk (symlinks resolved). `resolved` is
+ * false when it could not be read; `path` is then the spelling as given, which may be an
+ * alias of anything, so whatever it touches can never be proven ready.
+ */
+export type CanonicalPath = (p: string) => { path: string; resolved: boolean }
+
+/** No resolver: every path is taken as its own real path. Only for pure callers and tests. */
+export const AS_GIVEN: CanonicalPath = (p) => ({ path: p, resolved: true })
+
+/** The comparison key of a path's real location. */
+const realKey = (p: string, platform: string, canonical: CanonicalPath): string =>
+  canonicalPathKey(canonical(p).path, platform)
+
+/** True when one path lies inside the other (either way). Empty keys relate to nothing. */
+export const relatesTo = (a: string, b: string): boolean =>
+  a !== '' && b !== '' && (isInside(a, b) || isInside(b, a))
+
 export type SessionPresence = 'working' | 'needs-input' | 'open-idle' | 'none'
-export type Bucket = 'corpse' | 'decide' | 'alive'
-export type DecideCode =
+export type Bucket = 'ready' | 'review' | 'in-use'
+export type ReviewCode =
   | 'dirty'
   | 'unpushed'
   | 'open-idle-session'
@@ -31,10 +65,11 @@ export type DecideCode =
   | 'weak-merge-signal'
   | 'shared-stack'
   | 'cleanup-failed'
+  | 'path-unresolved'
 
 /** `detail` is one English sentence with the concrete fact; the renderer translates by `code`. */
-export interface DecideReason {
-  code: DecideCode
+export interface ReviewReason {
+  code: ReviewCode
   detail: string
 }
 
@@ -63,19 +98,26 @@ export interface BundleFacts {
    * execution time, so a bundle without it is never cleaned.
    */
   graceDays?: number
+  /**
+   * Every path the bundle was judged on resolved to its real location: its own path, its
+   * repo path, and every container and session folder inside it or above it. An unresolved
+   * one may be an alias of anything, so false, or absent, is never ready.
+   */
+  pathsResolved: boolean
 }
 
 export interface WorktreeBundle extends BundleFacts {
   bucket: Bucket
-  reason: DecideReason | null
+  reason: ReviewReason | null
 }
 
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`
 
 /**
  * The project name Compose gives a folder when none is set: its basename, lowercased, with
- * every character outside [a-z0-9_-] dropped. The S4 housekeeping module has its own copy,
- * which is not reachable from this branch, hence this duplicate.
+ * every character outside [a-z0-9_-] dropped and the leading `_` and `-` trimmed, as
+ * compose-go's NormalizeProjectName does (so `_www` runs as `www`). The S4 housekeeping
+ * module has its own copy, which is not reachable from this branch, hence this duplicate.
  */
 export function composeDefaultProject(path: string): string {
   const base =
@@ -83,7 +125,10 @@ export function composeDefaultProject(path: string): string {
       .replace(/[\\/]+$/, '')
       .split(/[\\/]/)
       .pop() ?? ''
-  return base.toLowerCase().replace(/[^a-z0-9_-]/g, '')
+  return base
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '')
+    .replace(/^[_-]+/, '')
 }
 
 /**
@@ -141,9 +186,9 @@ export function ownedVolumes(
     .sort()
 }
 
-const FATE_DECISIONS: Record<
+const FATE_REVIEWS: Record<
   Exclude<FateResult['fate'], 'merged' | 'open'>,
-  { code: DecideCode; detail: string }
+  { code: ReviewCode; detail: string }
 > = {
   'closed-unmerged': {
     code: 'closed-unmerged',
@@ -165,51 +210,57 @@ const FATE_DECISIONS: Record<
 
 /**
  * First matching rule wins (master plan rules 1–11). Anything that could be someone's live
- * work is `alive`; anything uncertain is `decide`; only a strongly merged, clean, idle
- * worktree past its grace window is a `corpse`.
+ * work is `in-use`; anything uncertain is `review`; only a strongly merged, clean, idle
+ * worktree past its grace window is `ready`.
  */
 export function bucketOf(
   f: BundleFacts,
   now: number,
   graceDays: number
-): { bucket: Bucket; reason: DecideReason | null } {
-  const alive = { bucket: 'alive' as const, reason: null }
-  const decide = (code: DecideCode, detail: string): { bucket: Bucket; reason: DecideReason } => ({
-    bucket: 'decide',
+): { bucket: Bucket; reason: ReviewReason | null } {
+  const inUse = { bucket: 'in-use' as const, reason: null }
+  const review = (code: ReviewCode, detail: string): { bucket: Bucket; reason: ReviewReason } => ({
+    bucket: 'review',
     reason: { code, detail }
   })
 
-  if (f.isMainCheckout || f.neverClean) return alive
-  if (f.session === 'working' || f.session === 'needs-input') return alive
-  if (f.fate.fate === 'open') return alive
+  if (f.isMainCheckout || f.neverClean) return inUse
+  if (f.session === 'working' || f.session === 'needs-input') return inUse
+  if (f.fate.fate === 'open') return inUse
   // No sign of life at all is "unknown age", which must not read as "old enough". Neither
   // is a NaN, infinite or negative input: each would make the comparison below false.
   const known = (n: number | null): n is number => Number.isFinite(n) && (n as number) >= 0
-  if (!known(f.lastSignOfLifeAt) || !known(graceDays) || !known(now)) return alive
-  if (now - f.lastSignOfLifeAt < graceDays * DAY_MS) return alive
-  if (f.keep) return alive
+  if (!known(f.lastSignOfLifeAt) || !known(graceDays) || !known(now)) return inUse
+  if (now - f.lastSignOfLifeAt < graceDays * DAY_MS) return inUse
+  if (f.keep) return inUse
 
   if (f.session === 'open-idle')
-    return decide('open-idle-session', 'A session is still open in this worktree, though idle.')
-  // Only a session read as exactly `none` can be a corpse; anything else is not proven idle.
+    return review('open-idle-session', 'A session is still open in this worktree, though idle.')
+  // Only a session read as exactly `none` can be ready; anything else is not proven idle.
   if (f.session !== 'none')
-    return decide('open-idle-session', 'The session state of this worktree is unknown.')
+    return review('open-idle-session', 'The session state of this worktree is unknown.')
 
   if (f.sharedStackIds.length > 0) {
     const n = f.sharedStackIds.length
-    return decide(
+    return review(
       'shared-stack',
       `${plural(n, 'other stack')} also ${n === 1 ? 'uses' : 'use'} this worktree: ${f.sharedStackIds.join(', ')}.`
     )
   }
 
+  if (f.pathsResolved !== true)
+    return review(
+      'path-unresolved',
+      'A path tied to this worktree could not be resolved to its real location, so what uses it is unknown.'
+    )
+
   if (f.fate.fate !== 'merged') {
-    const d = FATE_DECISIONS[f.fate.fate]
-    return decide(d.code, d.detail)
+    const d = FATE_REVIEWS[f.fate.fate]
+    return review(d.code, d.detail)
   }
 
   if (!f.fate.strong)
-    return decide(
+    return review(
       'weak-merge-signal',
       f.fate.signal === 'gh-merged'
         ? 'Merged by gh-merged, but the local tip differs from the PR head.'
@@ -220,14 +271,14 @@ export function bucketOf(
   if (blockers.includes('dirty') || blockers.includes('unpushed')) {
     const hit = ['dirty', 'unpushed'].filter((b) => blockers.includes(b))
     const detail = `${plural(hit.length, 'blocker')}: ${hit.join(', ')}.`
-    return decide(hit[0] === 'dirty' ? 'dirty' : 'unpushed', detail)
+    return review(hit[0] === 'dirty' ? 'dirty' : 'unpushed', detail)
   }
   // No blocker is not proof of clean: a status probe that failed leaves no blocker either.
   // Only a green local-clean checkpoint shows the tracked files were read and clean.
   if (f.item.checkpoints.find((c) => c.id === 'local-clean')?.state !== 'green')
-    return decide('dirty', 'The working tree could not be verified clean.')
+    return review('dirty', 'The working tree could not be verified clean.')
 
-  return { bucket: 'corpse', reason: null }
+  return { bucket: 'ready', reason: null }
 }
 
 export interface BuildBundlesInput {
@@ -265,6 +316,13 @@ export interface BuildBundlesInput {
    * and only for a strongly merged fate; every other bucket rule still decides.
    */
   released?: ReadonlyMap<string, number>
+  /**
+   * Each path's real location, read by the caller (the shell realpaths them; this module
+   * never touches the disk). Every path below is compared through it: item and repo paths,
+   * container working dirs and bind sources, session folders, stackPaths, neverClean and
+   * known folders. Required, so no caller can skip it and compare aliases by spelling.
+   */
+  canonical: CanonicalPath
 }
 
 /** Merge time from the `pr-merged` checkpoint detail; anything that is not a date is ignored. */
@@ -275,21 +333,29 @@ function mergedAtOf(item: ReapItem): number | null {
   return Number.isFinite(t) ? t : null
 }
 
+/** The folders one container touches, as docker spells them (see {@link containerFolders}). */
+export function containerFolderPaths(c: InspectedContainer): string[] {
+  const out: string[] = []
+  const dir = c.labels[COMPOSE_WORKING_DIR_LABEL]
+  if (dir) out.push(dir)
+  for (const m of c.mounts) if (m.type === 'bind' && m.source) out.push(m.source)
+  return out
+}
+
 /**
  * Every folder one container touches: its compose working dir AND the source of each bind
  * mount. A stack run from elsewhere that bind-mounts a worktree still uses it, so trashing
  * the folder would pull files from under a running container. The builder and the
  * execution-time reprobe both call this, so a stack the scan attributed to a worktree is
  * seen by the reprobe through the same rule. Empty means nothing ties it to a folder.
+ * Each folder is keyed on its real path, so a symlinked working dir counts where it lands.
  */
-export function containerFolders(c: InspectedContainer, platform: string): string[] {
-  const out = new Set<string>()
-  const dir = c.labels[COMPOSE_WORKING_DIR_LABEL]
-  if (dir) out.add(normalizePath(dir, platform))
-  for (const m of c.mounts) {
-    if (m.type === 'bind' && m.source) out.add(normalizePath(m.source, platform))
-  }
-  return [...out]
+export function containerFolders(
+  c: InspectedContainer,
+  platform: string,
+  canonical: CanonicalPath = AS_GIVEN
+): string[] {
+  return [...new Set(containerFolderPaths(c).map((p) => realKey(p, platform, canonical)))]
 }
 
 /**
@@ -300,12 +366,15 @@ export function containerFolders(c: InspectedContainer, platform: string): strin
 function stackFolders(
   stack: StackGroup,
   stackPaths: Map<string, string>,
-  platform: string
+  platform: string,
+  canonical: CanonicalPath
 ): string[] {
   const out = new Set<string>()
-  for (const c of stack.containers) for (const d of containerFolders(c, platform)) out.add(d)
+  for (const c of stack.containers) {
+    for (const d of containerFolders(c, platform, canonical)) out.add(d)
+  }
   const attributed = stackPaths.get(stack.id)
-  if (attributed) out.add(normalizePath(attributed, platform))
+  if (attributed) out.add(realKey(attributed, platform, canonical))
   return [...out]
 }
 
@@ -326,11 +395,12 @@ type SessionEntry = BuildBundlesInput['sessions'] extends Map<string, infer V> ?
 function sessionOf(
   sessions: BuildBundlesInput['sessions'],
   path: string,
-  platform: string
+  platform: string,
+  canonical: CanonicalPath
 ): SessionEntry | undefined {
   let out: SessionEntry | undefined
   for (const [folder, s] of sessions) {
-    if (!isInside(normalizePath(folder, platform), path)) continue
+    if (!folder || !isInside(realKey(folder, platform, canonical), path)) continue
     const activity = [out?.lastActivityAt ?? null, s.lastActivityAt].filter(
       (t): t is number => t !== null
     )
@@ -345,26 +415,46 @@ function sessionOf(
 
 export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
   const platform = process.platform
+  const canonical = input.canonical
+  const real = (p: string): string => realKey(p, platform, canonical)
   const stoppedByHarnu = input.harnuStoppedAt ?? new Map<string, number>()
 
   const folders = input.items
     .filter((i) => (i.kind === 'worktree' || i.kind === 'detached-worktree') && i.path)
-    .map((item) => ({ item, path: normalizePath(item.path as string, platform) }))
+    .map((item) => ({ item, path: real(item.path as string) }))
+
+  // Every container and session folder that did not resolve, keyed on its spelling. Such a
+  // folder may be an alias of any worktree, so one inside a bundle or above it (where it may
+  // see the bundle) keeps that bundle from being proven ready.
+  const unresolved = [
+    ...new Set([
+      ...[...input.containers, ...input.stacks.flatMap((s) => s.containers)].flatMap(
+        containerFolderPaths
+      ),
+      ...input.sessions.keys(),
+      ...input.stackPaths.values()
+    ])
+  ]
+    .filter((p) => p && !canonical(p).resolved)
+    .map((p) => canonicalPathKey(p, platform))
 
   // A stack is exclusive to a bundle only if EVERY folder it runs from is inside that
   // bundle. If a stack touches a bundle but also runs from outside it, or two bundles both
-  // claim it outright (nested paths), nobody may remove it: it is shared.
+  // claim it outright (nested paths), nobody may remove it: it is shared. A folder ABOVE the
+  // bundle touches it too: a dev container of the main checkout that mounts REPO sees a
+  // worktree nested at REPO/.claude/worktrees/wt1, so that stack shares the worktree.
   const exclusive = new Map<string, StackGroup[]>()
   const shared = new Map<string, string[]>()
   for (const stack of input.stacks) {
-    const dirs = stackFolders(stack, input.stackPaths, platform)
+    const dirs = stackFolders(stack, input.stackPaths, platform, canonical)
     if (dirs.length === 0) continue
     const full: string[] = []
     const partial: string[] = []
     for (const f of folders) {
       const inside = dirs.filter((d) => isInside(d, f.path)).length
+      const above = dirs.some((d) => isInside(f.path, d) && d !== f.path)
       if (inside === dirs.length) full.push(f.item.id)
-      else if (inside > 0) partial.push(f.item.id)
+      else if (inside > 0 || above) partial.push(f.item.id)
     }
     if (full.length === 1 && partial.length === 0) {
       exclusive.set(full[0]!, [...(exclusive.get(full[0]!) ?? []), stack])
@@ -373,7 +463,7 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
     }
   }
 
-  const neverClean = new Set([...input.neverClean].map((p) => normalizePath(p, platform)))
+  const neverClean = new Set([...input.neverClean].map(real))
 
   // Every folder that could share a compose project with a bundle: each item's checkout and
   // its repo's main checkout, plus whatever else the caller knows about.
@@ -381,7 +471,7 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
     [
       ...input.items.flatMap((i) => (i.path ? [i.path, i.repoPath] : [i.repoPath])),
       ...input.knownFolders
-    ].map((p) => normalizePath(p, platform))
+    ].map(real)
   )
 
   return folders.map(({ item, path }) => {
@@ -394,9 +484,9 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
           : { fate: 'unknown', signal: null, strong: false }
 
     const stacks = exclusive.get(item.id) ?? []
-    // Normalized, so a trailing slash must not hide a session, and a session in a subfolder
-    // counts too.
-    const session = sessionOf(input.sessions, path, platform)
+    // On real paths, so a trailing slash, a `..` or a symlink must not hide a session, and a
+    // session in a subfolder counts too.
+    const session = sessionOf(input.sessions, path, platform, canonical)
     const events = lastContainerEvent(
       stacks.flatMap((s) => s.containers),
       stoppedByHarnu
@@ -429,11 +519,17 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
       ),
       depsBytes: item.hydration?.reclaimableBytes ?? null,
       keep: input.keep.has(item.id),
-      neverClean: neverClean.has(path) || neverClean.has(normalizePath(item.repoPath, platform)),
-      isMainCheckout: path === normalizePath(item.repoPath, platform),
+      neverClean: neverClean.has(path) || neverClean.has(real(item.repoPath)),
+      isMainCheckout: path === real(item.repoPath),
       localTip:
         item.kind === 'detached-worktree' ? (item.headSha ?? null) : (fateInput?.localTip ?? null),
-      graceDays
+      graceDays,
+      pathsResolved:
+        canonical(item.path as string).resolved &&
+        canonical(item.repoPath).resolved &&
+        !unresolved.some(
+          (u) => relatesTo(u, path) || relatesTo(u, canonicalPathKey(item.path as string, platform))
+        )
     }
     return { ...facts, ...bucketOf(facts, input.now, graceDays) }
   })

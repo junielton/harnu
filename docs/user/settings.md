@@ -56,19 +56,19 @@ The alert lives in the other tab: **Settings → General**, in the **OS notifica
 
 The autopilot behind [Cleanup](cleanup.md#automatic-cleanup-the-autopilot) has no settings screen yet; it will join the Cleanup tab in the next Cleanup update. Until then its options are in `gc-prefs.json` in Harnu's settings folder (next to `reaper-prefs.json`), read when Harnu starts and written by Harnu. Edit it with Harnu closed. Values outside a range are clamped; anything unreadable falls back to the default.
 
-| Option                    | Default | Range                 | What it does                                                                                                                            |
-| ------------------------- | ------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `autopilot`               | off     | on / off              | Turns automatic cleaning on. The first cycle after turning it on only reports.                                                          |
-| `firstReportAcknowledged` | no      | yes / no              | Set once you acknowledge the first report; automatic cleaning starts after that.                                                        |
-| `intervalMs`              | 1 hour  | 30 minutes - 24 hours | How often the cycle runs. It is the Cleanup background-scan interval; there is one timer.                                               |
-| `graceDays`               | 2       | 0 - 30                | How long a worktree must be quiet (no session activity, no container start or stop that Harnu did not cause) before it can be a corpse. |
-| `maxItemsPerCycle`        | 20      | 1 - 200               | The most worktrees one cycle cleans.                                                                                                    |
-| `categories.worktrees`    | on      | on / off              | Off: the autopilot cleans no worktrees.                                                                                                 |
-| `categories.volumes`      | on      | on / off              | Off: the autopilot leaves the volumes of a cleaned worktree.                                                                            |
-| `categories.dockerCache`  | on      | on / off              | Off: no build-cache or dangling-image pruning.                                                                                          |
-| `removeVolumes`           | on      | on / off              | Remove the named volumes only a cleaned worktree's stack used. **A removed volume cannot be restored.**                                 |
-| `cacheMaxAgeDays`         | 7       | 1 - 365               | Build cache older than this is pruned.                                                                                                  |
-| `neverClean`              | none    | list of paths         | Repos or worktrees that are never cleaned, automatically or by hand.                                                                    |
+| Option                    | Default | Range                 | What it does                                                                                                                                  |
+| ------------------------- | ------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `autopilot`               | off     | on / off              | Turns automatic cleaning on. The first cycle after turning it on only reports.                                                                |
+| `firstReportAcknowledged` | no      | yes / no              | Set once you acknowledge the first report; automatic cleaning starts after that.                                                              |
+| `intervalMs`              | 1 hour  | 30 minutes - 24 hours | How often the cycle runs. It is the Cleanup background-scan interval; there is one timer.                                                     |
+| `graceDays`               | 2       | 0 - 30                | How long a worktree must be quiet (no session activity, no container start or stop that Harnu did not cause) before it can be ready to clean. |
+| `maxItemsPerCycle`        | 20      | 1 - 200               | The most worktrees one cycle cleans.                                                                                                          |
+| `categories.worktrees`    | on      | on / off              | Off: the autopilot cleans no worktrees.                                                                                                       |
+| `categories.dockerCache`  | on      | on / off              | Off: no build-cache or dangling-image pruning.                                                                                                |
+| `cacheMaxAgeDays`         | 7       | 1 - 365               | Build cache older than this is pruned.                                                                                                        |
+| `neverClean`              | none    | list of paths         | Repos or worktrees that are never cleaned, automatically or by hand.                                                                          |
+
+There is no switch for removing volumes: worktree cleanup never removes a Docker volume. Volumes left behind are offered for review in Cleanup, one by one, after their own confirmation. An older `gc-prefs.json` that still has `removeVolumes` or `categories.volumes` is read without them.
 
 The autopilot rides the Cleanup background scan, so it needs **Automatic background scan** (Settings → Cleanup) to stay on. The first time Harnu reads `gc-prefs.json` without one, it starts from your existing Cleanup interval and from the Containers zombie threshold (which becomes the grace period).
 

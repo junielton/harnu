@@ -43,9 +43,9 @@ const stack = (id: string, containers: InspectedContainer[]): StackGroup => ({
 })
 
 /** A dirty, not-proven-merged worktree: exactly what the executor would refuse on its own. */
-function decideBundle(over: Partial<WorktreeBundle> = {}): WorktreeBundle {
+function reviewBundle(over: Partial<WorktreeBundle> = {}): WorktreeBundle {
   return {
-    ...bundle(WT, 'decide', { reason: { code: 'dirty', detail: '2 modified tracked files.' } }),
+    ...bundle(WT, 'review', { reason: { code: 'dirty', detail: '2 modified tracked files.' } }),
     item: reapItem(WT, {
       branch: BRANCH,
       verdict: 'blocked',
@@ -137,6 +137,10 @@ function rig(
         }),
         removeContainers: vi.fn(async (ids: string[]) => {
           order.push('docker rm')
+          // As docker does: a removed container is gone from every later listing.
+          stacks = stacks
+            .map((st) => ({ ...st, containers: st.containers.filter((c) => !ids.includes(c.id)) }))
+            .filter((st) => st.containers.length > 0)
           return ok(ids)
         }),
         removeVolumes: vi.fn(async (names: string[]) => {
@@ -147,7 +151,8 @@ function rig(
       listStacks: async () => ({ stacks }),
       presenceOf: async () => over.presence ?? 'none',
       headOf: async () => (over.head === undefined ? TIP : over.head),
-      isProtectedNow: () => false
+      isProtectedNow: () => false,
+      realpath: async (p: string) => p
     },
     order,
     git,
@@ -159,13 +164,13 @@ function rig(
   }
 }
 
-const FORCE = { removeVolumes: true, confirmDecide: true }
+const FORCE = { removeVolumes: false, confirmReview: true }
 const run = (b: WorktreeBundle, r: Rig) => runBundle(b, createForcedGcOps(r.deps), FORCE)
 
 describe('asExecutable', () => {
   it('shows the executor a harvestable bundle without the confirmed blockers', () => {
     const forced = asExecutable(
-      decideBundle({
+      reviewBundle({
         item: reapItem(WT, { verdict: 'blocked', blockers: ['dirty', 'unpushed', 'other'] })
       })
     )
@@ -174,35 +179,31 @@ describe('asExecutable', () => {
   })
 
   it('does not touch the original bundle', () => {
-    const original = decideBundle()
+    const original = reviewBundle()
     asExecutable(original)
     expect(original.item.verdict).toBe('blocked')
-    expect(original.bucket).toBe('decide')
+    expect(original.bucket).toBe('review')
   })
 })
 
 describe('the forced path archives before anything destructive (AC-8)', () => {
   it('writes the tip and the working state before it stops a container', async () => {
     const r = rig()
-    const result = await run(decideBundle(), r)
+    const result = await run(reviewBundle(), r)
     expect(result).toMatchObject({ ok: true, haltedAt: null })
     const at = (what: string): number => r.order.indexOf(what)
     expect(at('archiveTip')).toBeGreaterThanOrEqual(0)
     expect(at('archiveWip')).toBeGreaterThan(at('archiveTip'))
-    for (const destructive of [
-      'docker stop',
-      'docker rm',
-      'docker volume rm',
-      'removeDir',
-      'trash'
-    ]) {
+    for (const destructive of ['docker stop', 'docker rm', 'removeDir', 'trash']) {
       expect(at(destructive), destructive).toBeGreaterThan(at('archiveWip'))
     }
+    // D1: even a confirmed review item never loses a volume.
+    expect(r.order).not.toContain('docker volume rm')
   })
 
   it('writes the same archive refs the cleanup writes later, not a second set', async () => {
     const r = rig()
-    await run(decideBundle(), r)
+    await run(reviewBundle(), r)
     expect(r.archived).toHaveLength(4)
     expect(r.archived.slice(0, 2)).toEqual(r.archived.slice(2))
     expect(r.archived[0]).toMatch(/^refs\/archive\/feat\/PROJ-0000-slug\/.+\/tip$/)
@@ -210,7 +211,7 @@ describe('the forced path archives before anything destructive (AC-8)', () => {
 
   it('refuses without touching docker or the disk when the archive fails', async () => {
     const r = rig({ archiveWipThrows: true })
-    const result = await run(decideBundle(), r)
+    const result = await run(reviewBundle(), r)
     expect(result).toMatchObject({ ok: false, haltedAt: 'reprobe' })
     expect(result.error).toContain('archive-failed: disk full')
     expect(r.order).not.toContain('docker stop')
@@ -221,7 +222,7 @@ describe('the forced path archives before anything destructive (AC-8)', () => {
 
   it('refuses a worktree with nothing to preserve it', async () => {
     const r = rig()
-    const noBranch = decideBundle({
+    const noBranch = reviewBundle({
       item: reapItem(WT, { branch: undefined, verdict: 'blocked', blockers: ['dirty'] })
     })
     const result = await run(noBranch, r)
@@ -234,27 +235,27 @@ describe('the forced path archives before anything destructive (AC-8)', () => {
 describe('the executor guards are waived only inside the forced ops (AC-8)', () => {
   it('cleans a still-dirty, unpushed, unmerged worktree', async () => {
     const r = rig({ trackedDirty: true })
-    const result = await run(decideBundle(), r)
+    const result = await run(reviewBundle(), r)
     expect(result.ok).toBe(true)
     expect(r.order).toContain('trash')
   })
 
   it('deletes the unmerged local branch with -D, because its tip is archived', async () => {
     const r = rig()
-    await run(decideBundle(), r)
+    await run(reviewBundle(), r)
     expect(r.git).toContainEqual(['branch', '-D', BRANCH])
     expect(r.git).not.toContainEqual(['branch', '-d', BRANCH])
   })
 
   it('does not rewrite any other git command', async () => {
     const r = rig()
-    await run(decideBundle(), r)
+    await run(reviewBundle(), r)
     expect(r.git).toContainEqual(['worktree', 'prune'])
   })
 
   it('leaves the ordinary ops strict: they refuse the same bundle', async () => {
     const r = rig()
-    const result = await runBundle(decideBundle(), createGcOps(r.deps), { removeVolumes: true })
+    const result = await runBundle(reviewBundle(), createGcOps(r.deps), { removeVolumes: true })
     expect(result.ok).toBe(false)
     expect(r.order).toEqual([])
   })
@@ -263,14 +264,14 @@ describe('the executor guards are waived only inside the forced ops (AC-8)', () 
 describe('what the force path still refuses (AC-8)', () => {
   it('a running session, even an idle one', async () => {
     const r = rig({ presence: 'open-idle' })
-    const result = await run(decideBundle(), r)
+    const result = await run(reviewBundle(), r)
     expect(result).toMatchObject({ ok: false, haltedAt: 'reprobe' })
     expect(r.order).toEqual([])
   })
 
   it('a HEAD that moved since the scan', async () => {
     const r = rig({ head: 'b'.repeat(40) })
-    const result = await run(decideBundle(), r)
+    const result = await run(reviewBundle(), r)
     expect(result).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'changed-since-scan' })
     expect(r.order).toEqual([])
   })
@@ -281,7 +282,7 @@ describe('what the force path still refuses (AC-8)', () => {
       stack('app', [container('c1', `${WT}/api`)]),
       stack('extra', [container('c2', `${WT}/web`)])
     ])
-    const result = await run(decideBundle(), r)
+    const result = await run(reviewBundle(), r)
     expect(result).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'changed-since-scan' })
     expect(r.order).toEqual([])
   })
@@ -289,7 +290,7 @@ describe('what the force path still refuses (AC-8)', () => {
   it('a stack that now also runs from outside the worktree', async () => {
     const r = rig()
     r.setStacks([stack('app', [container('c1', `${WT}/api`), container('c3', '/ws/elsewhere')])])
-    const result = await run(decideBundle(), r)
+    const result = await run(reviewBundle(), r)
     expect(result.ok).toBe(false)
     expect(r.order).toEqual([])
   })
@@ -301,7 +302,7 @@ describe('the forced ops keep the live protection and the actor (delta 1, item 3
 
   it('refuses a Keep pressed after the scan, before anything is archived or stopped', async () => {
     const r = rig()
-    const b = decideBundle()
+    const b = reviewBundle()
     const prefs = { ...defaultGcPrefs(), keep: { [b.item.id]: 'closed-unmerged' } }
     const result = await runBundle(
       b,
@@ -316,7 +317,7 @@ describe('the forced ops keep the live protection and the actor (delta 1, item 3
     const r = rig()
     const prefs = { ...defaultGcPrefs(), neverClean: [WT] }
     const result = await runBundle(
-      decideBundle(),
+      reviewBundle(),
       operatorOps(r, () => prefs),
       FORCE
     )
@@ -329,14 +330,14 @@ describe('the forced ops keep the live protection and the actor (delta 1, item 3
     let prefs = defaultGcPrefs()
     const ops = operatorOps(r, () => prefs)
     prefs = { ...prefs, neverClean: [WT] }
-    const result = await runBundle(decideBundle(), ops, FORCE)
+    const result = await runBundle(reviewBundle(), ops, FORCE)
     expect(result.ok).toBe(false)
   })
 
   it('stamps the operator on the journal line of a forced clean', async () => {
     const r = rig()
     const result = await runBundle(
-      decideBundle(),
+      reviewBundle(),
       operatorOps(r, () => defaultGcPrefs()),
       FORCE
     )

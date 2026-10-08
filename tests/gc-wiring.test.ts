@@ -99,7 +99,7 @@ describe('the feeds are wired (M12, M13, M14, M17)', () => {
   })
 })
 
-describe('every consumer sees a halted item as Decide (delta 1, item 4)', () => {
+describe('every consumer sees a halted item as Needs review (delta 1, item 4)', () => {
   it('gather() applies the failures before it caches and feeds anything', () => {
     const gather = between(ipc, 'const gather = ', 'const queue = createJobQueue')
     const applied = gather.indexOf('withFailures(')
@@ -148,5 +148,59 @@ describe('a bundle never owns a volume another folder may share (delta 1, item 1
       scan.indexOf('let bundles = buildBundles(')
     )
     expect(scan).toMatch(/planHousekeeping\([\s\S]*guards\.protectedProjects/)
+  })
+})
+
+describe('worktree cleanup never removes volumes (D1)', () => {
+  it('every runBatch call passes removeVolumes:false, and no pref feeds it', () => {
+    for (const file of ['gc-cycle.ts', 'gc-manual.ts']) {
+      const src = read(`src/main/gc/${file}`)
+      expect(src, file).toMatch(/removeVolumes: false/)
+      expect(src, file).not.toMatch(/removeVolumes:\s*prefs/)
+    }
+  })
+
+  it('the prefs no longer carry the retired switches', () => {
+    const code = read('src/main/gc/gc-prefs.ts')
+      .split('\n')
+      .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+      .join('\n')
+    expect(code).not.toMatch(/removeVolumes|volumes: boolean|categories\.volumes/)
+  })
+})
+
+describe('the Docker card reaches the snapshot (delta 2, item 2)', () => {
+  it('the gather asks docker for the card facts and the snapshot carries them', () => {
+    expect(scan).toMatch(/dockerCardFacts\(/)
+    expect(between(ipc, 'const buildSnapshot', 'const service')).toMatch(/docker: g\.docker/)
+  })
+
+  it('is not asked when docker is known to be absent', () => {
+    expect(scan).toMatch(/available\s*\?[\s\S]*dockerCardFacts|!available[\s\S]*null/)
+  })
+})
+
+describe('S2 delta 4 contracts (delta 2, item 3)', () => {
+  it('the gather builds canonical from real paths of everything the builder compares', () => {
+    const block = between(scan, 'const canonical = await resolveRealPaths(', 'const input = {')
+    for (const source of [
+      'itemPaths',
+      'repoPaths',
+      'containerFolderPaths',
+      'sessions.keys()',
+      'stackPaths.values()',
+      'prefs.neverClean',
+      'guards.knownFolders'
+    ]) {
+      expect(block, source).toContain(source)
+    }
+    expect(between(scan, 'const input = {', 'let bundles')).toMatch(/canonical/)
+  })
+
+  it('only the operator path sets the review gate, and only for a non-ready bundle', () => {
+    expect(read('src/main/gc/gc-cycle.ts')).not.toMatch(/confirmReview|confirmDecide/)
+    const manual = read('src/main/gc/gc-manual.ts')
+    expect(manual).toMatch(/confirmReview: forced/)
+    expect(manual).not.toMatch(/confirmReview: true/)
   })
 })

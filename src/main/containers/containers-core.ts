@@ -483,7 +483,7 @@ export interface VerdictFacts {
    * The attributed worktree's workspace-GC bucket. Applies to `worktree` folders
    * only: it replaces the idle clock, which stays in charge of every other stack.
    */
-  inheritedBucket?: 'corpse' | 'decide' | 'alive'
+  inheritedBucket?: 'ready' | 'review' | 'in-use'
 }
 
 /**
@@ -499,8 +499,8 @@ export function classifyStack(f: VerdictFacts): Verdict {
   if (f.liveSession) return 'active'
   if (kind === 'main-checkout' || kind === 'plain') return 'protected'
   if (kind === 'worktree' && f.inheritedBucket !== undefined) {
-    if (f.inheritedBucket === 'alive') return 'active'
-    return f.inheritedBucket === 'corpse' ? 'zombie' : 'pending'
+    if (f.inheritedBucket === 'in-use') return 'active'
+    return f.inheritedBucket === 'ready' ? 'zombie' : 'pending'
   }
   if (f.unusedForMs === null || f.unusedForMs < f.zombieAfterDays * DAY_MS) return 'pending'
   return 'zombie'
@@ -574,7 +574,7 @@ export interface ScanInput {
    * that path. Only a stack attributed to a linked worktree reads it; absent, every stack
    * keeps the idle clock.
    */
-  inheritedBucketOf?: (path: string) => 'corpse' | 'decide' | 'alive' | undefined
+  inheritedBucketOf?: (path: string) => 'ready' | 'review' | 'in-use' | undefined
 }
 
 function memFor(id: string, memById: ReadonlyMap<string, number>): number | null {
