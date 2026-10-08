@@ -33,25 +33,31 @@ import {
   buildBundles,
   containerFolderPaths,
   staleReleases,
-  type SessionPresence
+  type CanonicalPath
 } from './bundle-core'
-import { presenceFromSets, dockerIsUnavailable, resolveRealPaths } from './gc-shell'
+import { dockerIsUnavailable, resolveRealPaths } from './gc-shell'
+import { sessionsFromFleet } from './gc-sessions'
 import {
-  makeDirExists,
+  buildDirExists,
+  foldersForBundles,
+  existenceCandidates,
   orphanVolumeItems,
-  statExistence,
   toHousekeepingVolumes,
   volumeGuards,
   type OrphanVolumeItem
 } from './gc-housekeeping-input'
 import { planHousekeeping } from './housekeeping-core'
+import { collectProjectFiles, type FsProbe } from './gc-project-files'
 import { NO_DOCKER_CARD, dockerCardFacts, type GcDockerCard } from './gc-docker-card'
 import type { GcGather } from './gc-cycle'
+import { judgeKeeps, type StaleKeep } from './gc-keep'
 import type { GcPrefs } from './gc-prefs'
 
 /** A gather plus what only the snapshot needs. */
 export interface GcGathered extends GcGather {
   scannedAt: number
+  /** Real paths of everything the bundles were built from; the Containers feed is keyed on them. */
+  canonical: CanonicalPath
   df: Map<string, VolumeFact>
   /** False when docker was absent or down, so `df` and the container list say nothing. */
   dockerAvailable: boolean
@@ -59,7 +65,7 @@ export interface GcGathered extends GcGather {
   docker: GcDockerCard
   orphanVolumes: OrphanVolumeItem[]
   /** Keep marks whose branch fate has changed since; the caller clears them from the prefs. */
-  staleKeeps: string[]
+  staleKeeps: StaleKeep[]
   /** Releases whose bundle is gone or no longer strongly merged; the caller clears them. */
   staleReleases: string[]
 }
@@ -79,17 +85,22 @@ async function readSmall(file: string): Promise<string | undefined> {
 }
 
 /** The compose file a folder would use, read cheaply; the first one that exists wins. */
+/** The filesystem as the project-file walk sees it: names, kinds, and small text files only. */
+const fsProbe: FsProbe = {
+  readdir: async (dir) =>
+    (await fs.readdir(dir, { withFileTypes: true })).map((e) => ({
+      name: e.name,
+      isDir: e.isDirectory()
+    })),
+  readFile: readSmall
+}
+
 async function readComposeFile(dir: string): Promise<string | undefined> {
   for (const name of COMPOSE_FILES) {
     const text = await readSmall(path.join(dir, name))
     if (text !== undefined) return text
   }
   return undefined
-}
-
-function sessionActivityAt(s: { fileMtime?: number; modified?: string }): number | null {
-  const times = [s.fileMtime ?? 0, Date.parse(s.modified ?? '') || 0].filter((t) => t > 0)
-  return times.length > 0 ? Math.max(...times) : null
 }
 
 /**
@@ -183,22 +194,15 @@ export async function gatherGc(
     readContainersJournal(journalFile(app.getPath('userData')))
   ])
 
-  const sessions = new Map<string, { presence: SessionPresence; lastActivityAt: number | null }>()
-  const activityByPath = new Map<string, number | null>()
-  for (const f of fleet) {
-    let latest: number | null = null
-    for (const s of f.sessions) {
-      const at = sessionActivityAt(s)
-      if (at !== null && (latest === null || at > latest)) latest = at
-    }
-    activityByPath.set(f.path, latest)
-  }
-  for (const p of itemPaths) {
-    sessions.set(p, {
-      presence: presenceFromSets(p, sets),
-      lastActivityAt: activityByPath.get(p) ?? null
-    })
-  }
+  // Sessions on real paths: the folders of every running session and every item are read
+  // through their real locations, so a session reached through a symlink still counts.
+  const sessionCanonical = await resolveRealPaths(
+    [...itemPaths, ...fleet.map((f) => f.path), ...sets.live, ...sets.inUse],
+    (p) => fs.realpath(p)
+  )
+  // Every folder of the transcript index, so grace counts any terminal under the worktree,
+  // outside Harnu included, and a session parked a while ago.
+  const sessions = sessionsFromFleet(fleet, sets, sessionCanonical)
 
   // Read-only listings for the Docker card; skipped, not guessed, when docker is absent.
   const docker = available
@@ -210,15 +214,19 @@ export async function gatherGc(
   // Housekeeping facts first: the bundle builder needs them too. Existence fails closed and
   // explicit project names come from the files, exactly as for the orphan planner.
   const workingDirs = containers.flatMap((c) => c.labels[COMPOSE_WORKING_DIR_LABEL] ?? [])
-  const { checked, existing } = await statExistence([...known, ...workingDirs], (p) => fs.stat(p))
-  const dirExists = makeDirExists(checked, existing)
+  const dirExists = await buildDirExists(
+    existenceCandidates({ known, workingDirs, remembered: rememberedDirs }),
+    (p) => fs.stat(p)
+  )
   const sources = await Promise.all(
     known
-      .filter((p) => existing.has(p))
+      .filter((p) => dirExists(p))
       .map(async (p) => ({
         path: p,
         env: await readSmall(path.join(p, '.env')),
-        compose: await readComposeFile(p)
+        compose: await readComposeFile(p),
+        // Subfolders too: docker/compose.yml pins a project just as the root one does.
+        files: await collectProjectFiles(p, fsProbe)
       }))
   )
   const guards = volumeGuards(sources, dirExists)
@@ -251,6 +259,9 @@ export async function gatherGc(
     (p) => fs.realpath(p)
   )
 
+  // Only folders that cannot pose as a worktree nested in a bundle (see foldersForBundles).
+  const bundleFolders = foldersForBundles(guards.knownFolders, itemPaths, repoPaths)
+
   const input = {
     items,
     fateInputs: lastFateInputs(),
@@ -264,7 +275,7 @@ export async function gatherGc(
     graceDays: prefs.graceDays,
     volumes: df,
     // A volume is owned only when no other folder may share its project (delta 1, item 1).
-    knownFolders: guards.knownFolders,
+    knownFolders: bundleFolders,
     protectedProjects: guards.protectedProjects,
     canonical,
     released: new Map(Object.entries(prefs.released)),
@@ -273,14 +284,7 @@ export async function gatherGc(
   // A Keep mark holds only while the fate it was made under still holds: judge the fates
   // first, then rebuild with the marks that are still valid.
   let bundles = buildBundles({ ...input, keep: new Set() })
-  const staleKeeps: string[] = []
-  const keep = new Set<string>()
-  for (const b of bundles) {
-    const marked = prefs.keep[b.item.id]
-    if (marked === undefined) continue
-    if (marked === b.fate.fate) keep.add(b.item.id)
-    else staleKeeps.push(b.item.id)
-  }
+  const { keep, stale: staleKeeps } = judgeKeeps(bundles, prefs.keep)
   if (keep.size > 0) bundles = buildBundles({ ...input, keep })
 
   // A release is dropped only when its bundle is in this gather and no longer strongly merged,
@@ -309,7 +313,8 @@ export async function gatherGc(
     dirExists,
     knownFolders: known,
     protectedProjects: guards.protectedProjects,
-    rememberedDirs
+    rememberedDirs,
+    protectAllProjects: guards.unresolved
   }
   const orphanNames = planHousekeeping(
     { cacheMaxAgeDays: 0, danglingImages: false, orphanVolumes: true },
@@ -318,13 +323,15 @@ export async function gatherGc(
     dirExists,
     known,
     guards.protectedProjects,
-    rememberedDirs
+    rememberedDirs,
+    guards.unresolved
   ).orphanVolumes
 
   return {
     bundles,
     housekeeping,
     scannedAt: now,
+    canonical,
     df,
     dockerAvailable: available,
     docker,

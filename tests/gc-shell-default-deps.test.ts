@@ -75,6 +75,7 @@ function harvestable(): WorktreeBundle {
     neverClean: false,
     isMainCheckout: false,
     pathsResolved: true,
+    nestedWorktrees: [],
     localTip: TIP,
     bucket: 'ready',
     reason: null
@@ -241,5 +242,58 @@ describe('the dehydrate live check over the default deps (delta 4, item D)', () 
     })
     const deps = await defaultGcShellDeps(() => null)
     expect(await deps.dehydrate.isSessionLive(WT)).toBe(false)
+  })
+})
+
+describe('defaultGcShellDeps.listWorktrees (delta 6, F1)', () => {
+  const NESTED = `${WT}/.claude/worktrees/b`
+  const PORCELAIN = [
+    `worktree ${REPO}`,
+    `HEAD ${TIP}`,
+    'branch refs/heads/main',
+    '',
+    `worktree ${WT}`,
+    `HEAD ${TIP}`,
+    'branch refs/heads/feat/PROJ-0000-slug',
+    '',
+    `worktree ${NESTED}`,
+    `HEAD ${TIP}`,
+    'detached',
+    'locked',
+    '',
+    '/ws/org/proj/bare-like-line-without-the-prefix',
+    'worktree /ws/org/proj/worktrees/with a space',
+    'prunable gitdir file points to non-existent location',
+    ''
+  ].join('\n')
+
+  it('lists every `worktree <path>` line of `git worktree list --porcelain`', async () => {
+    const git = vi.fn(async () => PORCELAIN)
+    h.executor.git = git
+    const deps = await defaultGcShellDeps(() => null)
+    expect(await deps.listWorktrees(REPO)).toEqual([
+      REPO,
+      WT,
+      NESTED,
+      '/ws/org/proj/worktrees/with a space'
+    ])
+    expect(git).toHaveBeenCalledWith(REPO, ['worktree', 'list', '--porcelain'])
+  })
+
+  it('rejects when git fails, so the listing never reads as "no worktrees"', async () => {
+    h.executor.git = vi.fn(async () => {
+      throw new Error('fatal: not a git repository')
+    })
+    const deps = await defaultGcShellDeps(() => null)
+    await expect(deps.listWorktrees(REPO)).rejects.toThrow(/not a git repository/)
+  })
+
+  it('the reprobe over the default deps refuses a nested worktree git lists', async () => {
+    h.inspectAll.mockResolvedValue([])
+    h.executor.git = vi.fn(async (_repo: string, args: string[]) =>
+      args[0] === 'worktree' ? PORCELAIN : `${TIP}\n`
+    )
+    const ops = createGcOps(await defaultGcShellDeps(() => null))
+    expect(await ops.reprobe(harvestable())).toEqual({ ok: false, reason: 'nested-worktree' })
   })
 })

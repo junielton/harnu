@@ -50,6 +50,7 @@ export function bundle(
     localTip: 'a'.repeat(40),
     graceDays: 2,
     pathsResolved: true,
+    nestedWorktrees: [],
     ...facts,
     bucket,
     reason: reason ?? (bucket === 'review' ? { code: 'dirty', detail: 'x' } : null)

@@ -121,14 +121,20 @@ export function createJobQueue(deps: JobQueueDeps): JobQueue {
         job.done = job.results.length
         job.freedBytes = sumFreed(job.results)
         job.current = job.ids[job.done] ?? null
-        deps.emitProgress({
-          jobId: job.jobId,
-          done: job.done,
-          total: job.total,
-          freedBytes: job.freedBytes,
-          current: job.current,
-          results: [...job.results]
-        })
+        // A listener that throws (a closed window, say) must not fail the job: the work is
+        // what matters, the event is a courtesy.
+        try {
+          deps.emitProgress({
+            jobId: job.jobId,
+            done: job.done,
+            total: job.total,
+            freedBytes: job.freedBytes,
+            current: job.current,
+            results: [...job.results]
+          })
+        } catch (err) {
+          console.error('[gc] progress event failed', err)
+        }
       }
     }
     const work = async (): Promise<void> => {
@@ -153,8 +159,15 @@ export function createJobQueue(deps: JobQueueDeps): JobQueue {
     }
     history.push(job)
     while (history.length > HISTORY) history.shift()
-    deps.emitDone(done)
-    job.settle(done)
+    // The job settles whatever the listener does: a cycle awaits `finished` inside the Reaper
+    // tick, and a rejection here would leave both hanging for good.
+    try {
+      deps.emitDone(done)
+    } catch (err) {
+      console.error('[gc] done event failed', err)
+    } finally {
+      job.settle(done)
+    }
   }
 
   const pump = (): void => {

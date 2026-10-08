@@ -73,12 +73,54 @@ describe('createGatherer: a persisting gather (T445 delta 2)', () => {
       released: { r1: 1, r2: 2 },
       releasedFrom: { r1: { repoPath: '/x', path: '/y', localTip: 't' } }
     }
-    const { spies, gatherer } = setup(gathered({ staleKeeps: ['a'], staleReleases: ['r1'] }), prefs)
+    const { spies, gatherer } = setup(
+      gathered({ staleKeeps: [{ id: 'a', marked: 'merged' }], staleReleases: ['r1'] }),
+      prefs
+    )
     await gatherer.gather()
     expect(spies.persistPrefs).toHaveBeenCalledTimes(2)
     expect(spies.prefs.keep).toEqual({ b: 'merged' })
     expect(spies.prefs.released).toEqual({ r2: 2 })
     expect(spies.prefs.releasedFrom).toEqual({})
+  })
+
+  it('S3: a Keep pressed while the gather ran survives that gather’s verdict on the old one', async () => {
+    const prefs = { ...defaultGcPrefs(), keep: { a: 'merged' } }
+    const { spies, gatherer } = setup(
+      gathered({ staleKeeps: [{ id: 'a', marked: 'merged' }] }),
+      prefs
+    )
+    // The operator presses Keep again, now against a newer fate, while the gather is running.
+    spies.gatherGc.mockImplementation(async () => {
+      spies.prefs = { ...spies.prefs, keep: { a: 'open' } }
+      return gathered({ staleKeeps: [{ id: 'a', marked: 'merged' }] })
+    })
+    await gatherer.gather()
+    expect(spies.prefs.keep).toEqual({ a: 'open' })
+  })
+
+  it('S3: fresh() waits for the gather in flight and then starts its own', async () => {
+    const { spies, gatherer } = setup(gathered())
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    spies.gatherGc.mockImplementationOnce(async () => {
+      await gate
+      return gathered()
+    })
+    const first = gatherer.gather()
+    const fresh = gatherer.fresh()
+    expect(spies.gatherGc).toHaveBeenCalledTimes(1)
+    release()
+    await Promise.all([first, fresh])
+    expect(spies.gatherGc).toHaveBeenCalledTimes(2)
+  })
+
+  it('S3: fresh() with nothing in flight just gathers', async () => {
+    const { spies, gatherer } = setup(gathered())
+    await gatherer.fresh()
+    expect(spies.gatherGc).toHaveBeenCalledTimes(1)
   })
 
   it('writes nothing when no mark is stale', async () => {
@@ -142,7 +184,10 @@ describe('createGatherer: a persisting gather (T445 delta 2)', () => {
 describe('createGatherer: a read-only gather writes nothing (T445 delta 2, 5)', () => {
   it('persists no prefs, writes no leftovers, feeds nothing, caches nothing', async () => {
     const prefs = { ...defaultGcPrefs(), keep: { a: 'merged' }, released: { r1: 1 } }
-    const { spies, gatherer } = setup(gathered({ staleKeeps: ['a'], staleReleases: ['r1'] }), prefs)
+    const { spies, gatherer } = setup(
+      gathered({ staleKeeps: [{ id: 'a', marked: 'merged' }], staleReleases: ['r1'] }),
+      prefs
+    )
     const g = await gatherer.peek()
     expect(g.bundles).toHaveLength(1)
     expect(spies.persistPrefs).not.toHaveBeenCalled()
@@ -195,7 +240,9 @@ describe('createAgentService (T445 delta 2)', () => {
   })
 
   it('with no cache yet it peeks: one gather, zero prefs and leftover writes', async () => {
-    const { spies, svc } = agent(gathered({ staleKeeps: ['a'], staleReleases: ['r1'] }))
+    const { spies, svc } = agent(
+      gathered({ staleKeeps: [{ id: 'a', marked: 'merged' }], staleReleases: ['r1'] })
+    )
     await svc.snapshot()
     expect(spies.gatherGc).toHaveBeenCalledTimes(1)
     expect(spies.persistPrefs).not.toHaveBeenCalled()

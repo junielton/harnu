@@ -107,8 +107,13 @@ export interface LegacyPrefs {
  * the old Reaper / Containers prefs so nothing the operator configured is lost. Migration
  * never turns the autopilot on.
  */
-export function normalizeGcPrefs(raw: unknown, legacy: LegacyPrefs = {}): GcPrefs {
-  const d = defaultGcPrefs()
+export function normalizeGcPrefs(
+  raw: unknown,
+  legacy: LegacyPrefs = {},
+  /** What a missing or invalid field falls back to; the defaults unless a merge passes the current prefs. */
+  base: GcPrefs = defaultGcPrefs()
+): GcPrefs {
+  const d = base
   const r = isRecord(raw) ? raw : {}
   const reaper = isRecord(legacy.reaper) ? legacy.reaper : {}
   const containers = isRecord(legacy.containers) ? legacy.containers : {}
@@ -214,12 +219,26 @@ export async function writeGcPrefs(file: string, prefs: GcPrefs): Promise<void> 
 // ---- reducers behind the IPC channels ------------------------------------------------------
 
 /**
- * A whole-object write from the renderer. `keep`, `released` and the acknowledgement have
- * their own channels, so a stale settings form can neither wipe the operator's Keep marks or
- * an agent's releases nor acknowledge a report it never showed.
+ * A write from the renderer, whole or partial: it changes only what it names. `keep`, `released`
+ * and the acknowledgement have their own channels, so a stale settings form can neither wipe the
+ * operator's Keep marks or an agent's releases nor acknowledge a report it never showed.
  */
 export function mergeIncomingPrefs(current: GcPrefs, raw: unknown): GcPrefs {
-  const next = normalizeGcPrefs(raw, { reaper: { intervalMs: current.intervalMs } })
+  const incoming =
+    raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
+  const categories =
+    incoming.categories &&
+    typeof incoming.categories === 'object' &&
+    !Array.isArray(incoming.categories)
+      ? (incoming.categories as Record<string, unknown>)
+      : {}
+  // A partial write changes only what it names: everything else, and every invalid value it
+  // brings, falls back to the CURRENT prefs rather than to the defaults.
+  const next = normalizeGcPrefs(
+    { ...current, ...incoming, categories: { ...current.categories, ...categories } },
+    {},
+    current
+  )
   return {
     ...next,
     keep: current.keep,

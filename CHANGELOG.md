@@ -42,6 +42,15 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   the screen arrives with the next Cleanup update (see [Cleanup](docs/user/cleanup.md)).
   A worktree whose
   cleanup stopped partway shows as needing review, not as ready to clean, everywhere in Harnu.
+- **Automatic cleanup is stricter about what is still in use.** Time since the last activity
+  now counts any terminal under the worktree, including `claude` runs started outside Harnu and
+  sessions parked a while ago, and sessions reached through a symlink. A worktree nested inside
+  another needs review. A Docker Compose project name written in a subfolder (`docker/compose.yml`,
+  an `.env` there, `${VAR}` read from the `.env` beside it) keeps its volumes out of the orphan
+  list, and a name that cannot be resolved keeps every volume out. Pressing Keep is remembered
+  against the item's state at that moment, a partial settings write no longer resets other
+  settings, and cleaning a worktree now unregisters only that worktree from git instead of
+  pruning every stale entry in the repository.
 - **Docker housekeeping in the same cycle.** When automatic cleanup is on, each cycle also
   clears Docker build cache older than a week and dangling images, and reports how much it
   freed. It never touches images a stack uses and never removes a volume: volumes nobody uses

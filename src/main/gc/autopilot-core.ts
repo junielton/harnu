@@ -3,7 +3,7 @@
 
 import type { WorktreeBundle } from './bundle-core'
 import type { GcPrefs } from './gc-prefs'
-import { normalizePath } from '../containers/containers-core'
+import { AS_GIVEN, canonicalPathKey, type CanonicalPath } from './bundle-core'
 import { isMainCheckoutByPath } from './pipeline-core'
 
 export type CycleMode = 'off' | 'report' | 'clean'
@@ -24,13 +24,20 @@ export interface CyclePlan {
 export const CLEANABLE_KINDS: readonly string[] = ['worktree', 'hidden-folder']
 
 /** True when the bundle's worktree, or the repo it belongs to, is on the neverClean list. */
-export function isNeverClean(b: WorktreeBundle, prefs: GcPrefs): boolean {
+export function isNeverClean(
+  b: WorktreeBundle,
+  prefs: GcPrefs,
+  canonical: CanonicalPath = AS_GIVEN
+): boolean {
   if (b.neverClean) return true
   if (prefs.neverClean.length === 0) return false
+  // On real paths: an entry spelled through a symlink is the same folder as the worktree
+  // reached by its real spelling. A path that does not resolve is compared as written.
   const platform = process.platform
-  const listed = new Set(prefs.neverClean.map((p) => normalizePath(p, platform)))
+  const key = (p: string): string => canonicalPathKey(canonical(p).path, platform)
+  const listed = new Set(prefs.neverClean.map(key))
   const candidates = [b.item.path, b.item.repoPath].filter((p): p is string => !!p)
-  return candidates.some((p) => listed.has(normalizePath(p, platform)))
+  return candidates.some((p) => listed.has(key(p)))
 }
 
 /**
@@ -39,13 +46,17 @@ export function isNeverClean(b: WorktreeBundle, prefs: GcPrefs): boolean {
  * bundle from any clean. Any Keep mark counts, whatever fate it was made under: a stale
  * mark is cleared by the next gather, and until then refusing is the safe side.
  */
-export function isProtectedNow(b: WorktreeBundle, prefs: GcPrefs): boolean {
+export function isProtectedNow(
+  b: WorktreeBundle,
+  prefs: GcPrefs,
+  canonical: CanonicalPath = AS_GIVEN
+): boolean {
   return (
     b.isMainCheckout ||
     isMainCheckoutByPath(b) ||
     b.keep ||
     prefs.keep[b.item.id] !== undefined ||
-    isNeverClean(b, prefs)
+    isNeverClean(b, prefs, canonical)
   )
 }
 

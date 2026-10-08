@@ -56,6 +56,21 @@ export interface GcShellDeps {
    * reached through a symlink is attributed where it really runs.
    */
   realpath(p: string): Promise<string | null>
+  /**
+   * Every worktree git has registered for a repo now (`git worktree list --porcelain`), the
+   * main checkout included. Rejects when git fails: a listing that cannot be read is never
+   * "no worktrees". The reprobe and the recheck refuse a bundle with one nested inside it.
+   */
+  listWorktrees(repoPath: string): Promise<string[]>
+}
+
+/** The paths of the `worktree <path>` lines of `git worktree list --porcelain`. */
+export function parseWorktreeList(porcelain: string): string[] {
+  return porcelain
+    .split('\n')
+    .filter((line) => line.startsWith('worktree '))
+    .map((line) => line.slice('worktree '.length).replace(/\r$/, ''))
+    .filter(Boolean)
 }
 
 /**
@@ -277,6 +292,40 @@ export function createGcOps(deps: GcShellDeps): GcOps {
     })
 
   /**
+   * The nested-worktree probe (delta 6, F1): a worktree git lists strictly inside the bundle
+   * would be trashed with it, uncommitted work included (Claude Code's worktree command run
+   * inside a linked worktree puts one at `.claude/worktrees/*`). One that cannot be resolved
+   * and lies inside or above the bundle may be such a worktree under another name. Returns
+   * the refusal, or null; a listing that fails is probe-failed. No side effects.
+   */
+  const nestedRefusal = async (
+    repoPath: string,
+    root: string,
+    roots: readonly string[]
+  ): Promise<string | null> => {
+    let listed: string[]
+    try {
+      listed = await deps.listWorktrees(repoPath)
+    } catch (err) {
+      return `probe-failed: ${messageOf(err)}`
+    }
+    if (!Array.isArray(listed)) return 'probe-failed: the worktree listing is not a list'
+    const canonical = await realPaths(listed)
+    for (const p of listed) {
+      if (typeof p !== 'string' || !p) continue
+      if (!canonical(p).resolved) {
+        if (roots.some((r) => relatesTo(canonicalPathKey(p, platform), r))) {
+          return 'path-unresolved'
+        }
+        continue
+      }
+      const k = canonicalPathKey(canonical(p).path, platform)
+      if (k !== root && isInside(k, root)) return 'nested-worktree'
+    }
+    return null
+  }
+
+  /**
    * Container ids of the named stacks, from a listing taken now rather than at scan time.
    * Throws before any docker call unless each stack passed a reprobe and still has exactly
    * the containers that reprobe saw, all inside its worktree: a container that started in
@@ -377,6 +426,9 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         // longer describes what we would archive.
         const head = await deps.headOf(path).catch(() => null)
         if (head !== b.localTip) return { ok: false, reason: 'changed-since-scan' }
+        // A worktree nested inside this one, created after the scan, before any docker call.
+        const nested = await nestedRefusal(item.repoPath, root, roots)
+        if (nested) return { ok: false, reason: nested }
         const { stacks } = await deps.listStacks()
         // Every container folder on its real path. One that cannot be read and lies inside
         // the worktree or above it may run from it under another name.
@@ -481,6 +533,9 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         if (stackIdsInside(stacks, root, platform, canonical).length > 0) {
           return { ok: false, reason: 'stack-present' }
         }
+        // A worktree nested inside this one may be created mid-run too (delta 6, F1).
+        const nested = await nestedRefusal(b.item.repoPath, root, roots)
+        if (nested) return { ok: false, reason: nested }
         return { ok: true }
       } catch (err) {
         return { ok: false, reason: `probe-failed: ${messageOf(err)}` }
@@ -559,6 +614,9 @@ export async function defaultGcShellDeps(
     headOf: async (path) => (await executor.git(path, ['rev-parse', 'HEAD'])).trim() || null,
     // The scan-time flags for now; S3 replaces this with a live read of the prefs.
     isProtectedNow: (b) => b.keep || b.neverClean || b.isMainCheckout || isMainCheckoutByPath(b),
-    realpath
+    realpath,
+    // A git failure rejects, so the reprobe and the recheck refuse as probe-failed.
+    listWorktrees: async (repoPath) =>
+      parseWorktreeList(await executor.git(repoPath, ['worktree', 'list', '--porcelain']))
   }
 }

@@ -11,7 +11,11 @@ import {
   writeLeftovers
 } from '../src/main/gc/gc-leftovers'
 import { planHousekeeping, type HousekeepingVolume } from '../src/main/gc/housekeeping-core'
-import { orphanVolumeItems } from '../src/main/gc/gc-housekeeping-input'
+import {
+  buildDirExists,
+  existenceCandidates,
+  orphanVolumeItems
+} from '../src/main/gc/gc-housekeeping-input'
 import { createCycleState, runGcCycle, type GcCycleDeps } from '../src/main/gc/gc-cycle'
 import { createJobQueue } from '../src/main/gc/gc-jobs-core'
 import { defaultGcPrefs } from '../src/main/gc/gc-prefs'
@@ -253,5 +257,61 @@ describe('the cycle remembers what it leaves behind (D1)', () => {
     })
     await runGcCycle(r.deps, 'timer')
     expect(r.remembered).toEqual([])
+  })
+})
+
+describe('leftover folders are checked on disk, with the real existence wiring (delta 3, item 6)', () => {
+  const remembered = new Map([[PROJECT, [WT]]])
+  const gone = async (): Promise<never> => {
+    throw Object.assign(new Error('missing'), { code: 'ENOENT' })
+  }
+  const denied = async (): Promise<never> => {
+    throw Object.assign(new Error('no access'), { code: 'EACCES' })
+  }
+
+  const plan = (dirExists: (p: string) => boolean) =>
+    planHousekeeping(ORPHANS_ON, [volume('proj_data')], [], dirExists, [], new Set(), remembered)
+
+  it('puts every remembered folder among the paths that get a stat', () => {
+    const paths = existenceCandidates({
+      known: ['/ws/a'],
+      workingDirs: ['/ws/b'],
+      remembered
+    })
+    expect(paths).toEqual(expect.arrayContaining(['/ws/a', '/ws/b', WT]))
+    expect(new Set(paths).size).toBe(paths.length)
+  })
+
+  it('a folder the stat proves missing lets the volume surface for review', async () => {
+    const exists = await buildDirExists(
+      existenceCandidates({ known: [], workingDirs: [], remembered }),
+      gone
+    )
+    expect(exists(WT)).toBe(false)
+    expect(plan(exists).orphanVolumes).toEqual(['proj_data'])
+  })
+
+  it('a folder whose stat fails for another reason counts as existing, so the volume stays out', async () => {
+    const exists = await buildDirExists(
+      existenceCandidates({ known: [], workingDirs: [], remembered }),
+      denied
+    )
+    expect(exists(WT)).toBe(true)
+    expect(plan(exists).orphanVolumes).toEqual([])
+  })
+
+  it('a folder that exists keeps the volume out', async () => {
+    const exists = await buildDirExists(
+      existenceCandidates({ known: [], workingDirs: [], remembered }),
+      async () => undefined
+    )
+    expect(plan(exists).orphanVolumes).toEqual([])
+  })
+
+  it('shows why: a folder that was never stat-ed reads as existing', async () => {
+    // The wiring before this fix: leftover folders left out of the candidates.
+    const exists = await buildDirExists(['/ws/other'], gone)
+    expect(exists(WT)).toBe(true)
+    expect(plan(exists).orphanVolumes).toEqual([])
   })
 })

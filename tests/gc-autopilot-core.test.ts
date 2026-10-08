@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  isNeverClean,
   FAILURE_TTL_MS,
   applyFailures,
   isProtectedNow,
@@ -250,5 +251,36 @@ describe('isProtectedNow: the live-prefs answer the reprobe asks (AC-8)', () => 
 
   it('protects nothing else', () => {
     expect(isProtectedNow(ready('a', 5), prefs())).toBe(false)
+  })
+})
+
+describe('never-clean is judged on real paths (delta 3b, item 12)', () => {
+  const canonical = (p: string) => ({
+    path: p.startsWith('/link/') ? `/real/${p.slice('/link/'.length)}` : p,
+    resolved: true
+  })
+
+  it('honors an entry spelled through a symlink', () => {
+    const b = ready('a', 5)
+    const here = bundle('/real/wt', 'ready')
+    expect(isNeverClean(here, prefs({ neverClean: ['/link/wt'] }), canonical)).toBe(true)
+    expect(isNeverClean(b, prefs({ neverClean: ['/link/wt'] }), canonical)).toBe(false)
+  })
+
+  it('honors an entry for the repo spelled through a symlink', () => {
+    const b = bundle('/real/repo/wt', 'ready', {
+      item: reapItem('/real/repo/wt', { repoPath: '/real/repo' })
+    })
+    expect(isNeverClean(b, prefs({ neverClean: ['/link/repo'] }), canonical)).toBe(true)
+  })
+
+  it('still matches plain spellings with no resolver', () => {
+    expect(isNeverClean(ready('a', 5), prefs({ neverClean: ['/ws/wt/a'] }))).toBe(true)
+  })
+
+  it('isProtectedNow passes the resolver on', () => {
+    const here = bundle('/real/wt', 'ready')
+    expect(isProtectedNow(here, prefs({ neverClean: ['/link/wt'] }), canonical)).toBe(true)
+    expect(isProtectedNow(here, prefs({ neverClean: ['/link/wt'] }))).toBe(false)
   })
 })

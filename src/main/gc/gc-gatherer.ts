@@ -14,13 +14,8 @@
 import { applyFailures, pruneFailures } from './autopilot-core'
 import type { CycleState } from './gc-cycle'
 import { pruneLeftovers, toDirMap, type LeftoverFile } from './gc-leftovers'
-import {
-  withReleased,
-  withoutKeep,
-  withoutReleased,
-  type GcPrefs,
-  type ReleasedFrom
-} from './gc-prefs'
+import { withReleased, withoutReleased, type GcPrefs, type ReleasedFrom } from './gc-prefs'
+import { withoutStaleKeeps } from './gc-keep'
 import type { GcAgentService } from './gc-service-registry'
 import type { GcGathered } from './gc-scan-shell'
 import type { GcSnapshot } from './gc-wire'
@@ -43,6 +38,8 @@ export interface GathererDeps {
 
 export interface Gatherer {
   gather(): Promise<GcGathered>
+  /** A gather that STARTS after this call: waits for the one in flight, which may predate it. */
+  fresh(): Promise<GcGathered>
   peek(): Promise<GcGathered>
   /** The last persisting gather, or null before the first one. */
   cached(): GcGathered | null
@@ -62,8 +59,12 @@ export function createGatherer(deps: GathererDeps): Gatherer {
     return { ...g, bundles: applyFailures(g.bundles, deps.state.failures) }
   }
 
-  return {
+  const self: Gatherer = {
     cached: () => cache,
+    fresh: async () => {
+      if (gathering) await gathering.catch(() => undefined)
+      return self.gather()
+    },
     gather: () => {
       gathering ??= (async () => {
         try {
@@ -80,7 +81,7 @@ export function createGatherer(deps: GathererDeps): Gatherer {
           cache = g
           deps.feed(g)
           if (g.staleKeeps.length > 0)
-            await deps.persistPrefs(withoutKeep(deps.prefs(), g.staleKeeps))
+            await deps.persistPrefs(withoutStaleKeeps(deps.prefs(), g.staleKeeps))
           if (g.staleReleases.length > 0) {
             await deps.persistPrefs(withoutReleased(deps.prefs(), g.staleReleases))
           }
@@ -98,6 +99,7 @@ export function createGatherer(deps: GathererDeps): Gatherer {
       return peeking
     }
   }
+  return self
 }
 
 export interface AgentServiceDeps {

@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest'
 const read = (p: string): string => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8')
 const ipc = read('src/main/gc/gc-ipc.ts')
 const scan = read('src/main/gc/gc-scan-shell.ts')
+const gatherSrc = read('src/main/gc/gc-gatherer.ts')
 const reaper = read('src/main/reaper/reaper-ipc.ts')
 const containersShell = read('src/main/containers/containers-shell.ts')
 
@@ -72,7 +73,9 @@ describe('one timer', () => {
 
 describe('the feeds are wired (M12, M13, M14, M17)', () => {
   it('M12: the Containers scan passes the inherited bucket feed', () => {
-    expect(containersShell).toMatch(/inheritedBucketOf: inheritedBucketFor/)
+    expect(containersShell).toMatch(/inheritedBucketOf: bucketLookup\(realOf\)/)
+    // ...keyed on real paths: the feed is built with the gather's resolver.
+    expect(ipc).toMatch(/bucketFeed\(g\.bundles, g\.canonical\)/)
   })
 
   it('M13: the gather passes the volume facts to the bundle builder', () => {
@@ -105,7 +108,9 @@ describe('every consumer sees a halted item as Needs review (delta 1, item 4)', 
   it('the gather runs on the one shared cycle state and feeds the Containers view', () => {
     const gatherer = between(ipc, 'const gatherer = createGatherer(', 'const gather = ')
     expect(gatherer).toMatch(/\bstate,/)
-    expect(gatherer).toMatch(/feed: \(g\) => setInheritedBuckets\(bucketFeed\(g\.bundles\)\)/)
+    expect(gatherer).toMatch(
+      /feed: \(g\) => setInheritedBuckets\(bucketFeed\(g\.bundles, g\.canonical\)\)/
+    )
   })
 
   it('the cycle shares the same failure memory as the manual jobs', () => {
@@ -138,7 +143,8 @@ describe('GC jobs and the Reaper never run destructive work at once (delta 1, it
 describe('a bundle never owns a volume another folder may share (delta 1, item 1)', () => {
   it('the gather feeds the bundle builder the folders and the pinned project names', () => {
     const input = between(scan, 'const input = {', 'let bundles')
-    expect(input).toMatch(/knownFolders: guards\.knownFolders/)
+    expect(input).toMatch(/knownFolders: bundleFolders/)
+    expect(scan).toMatch(/foldersForBundles\(guards\.knownFolders,/)
     expect(input).toMatch(/protectedProjects: guards\.protectedProjects/)
     expect(scan).toMatch(/const guards = volumeGuards\(sources, dirExists\)/)
   })
@@ -202,5 +208,90 @@ describe('S2 delta 4 contracts (delta 2, item 3)', () => {
     const manual = read('src/main/gc/gc-manual.ts')
     expect(manual).toMatch(/confirmReview: forced/)
     expect(manual).not.toMatch(/confirmReview: true/)
+  })
+})
+
+describe('Keep survives a stale cache (delta 3, item 1)', () => {
+  it('gc:keep records the fate from a fresh gather, not from the cache', () => {
+    const keep = between(ipc, '    keep: async', '    unkeep: async')
+    expect(keep).toMatch(/gatherFresh\(\)/)
+    expect(keep).not.toMatch(/cache \?\?|cache\.bundles/)
+    expect(keep).toMatch(/keepFromFresh\(/)
+  })
+
+  // The gather's persistence moved into gc-gatherer; its behavior is pinned in
+  // tests/gc-gatherer.test.ts. What is read here is only that the code still goes through it.
+  it('a gather clears only the marks it judged, and only if they are still the same', () => {
+    expect(gatherSrc).toMatch(/withoutStaleKeeps\(deps\.prefs\(\), g\.staleKeeps\)/)
+    expect(scan).toMatch(/judgeKeeps\(/)
+  })
+
+  it('a fresh gather waits for the one in flight and then starts its own', () => {
+    expect(gatherSrc).toMatch(/fresh: async[\s\S]*await gathering[\s\S]*return self\.gather\(\)/)
+    expect(between(ipc, 'const gatherFresh', 'const queue = createJobQueue')).toMatch(
+      /gatherer\.fresh\(\)/
+    )
+  })
+})
+
+describe('an orphan volume is re-planned right before removal (delta 3, item 4)', () => {
+  it('the service gives the manual job a gather that starts after the call', () => {
+    expect(ipc).toMatch(/const freshOrphans = async[\s\S]*\(await gatherFresh\(\)\)\.orphanVolumes/)
+    expect(between(ipc, 'submitManualClean(', 'parseIds(rawIds)')).toMatch(/\bfreshOrphans,/)
+  })
+})
+
+describe('leftover folders are stat-ed (delta 3, item 6)', () => {
+  it('the gather builds its existence check over the leftover folders too', () => {
+    expect(scan).toMatch(/existenceCandidates\(\{[\s\S]*remembered: rememberedDirs/)
+    expect(scan).toMatch(/await buildDirExists\(/)
+  })
+})
+
+describe('a scheduled Reaper tick yields to a running GC job (delta 3, item 7: M20)', () => {
+  it('skips the whole tick, before it claims the slot or scans, while the GC is busy', () => {
+    const tick = between(reaper, 'const runScheduledTick', 'const scheduleTicks')
+    expect(tick).toMatch(/if \(gcBusy\?\.\(\)\) return/)
+    expect(tick.indexOf('gcBusy')).toBeLessThan(tick.indexOf('tickRunning = true'))
+    expect(tick.indexOf('gcBusy')).toBeLessThan(tick.indexOf('await scanAll('))
+  })
+
+  it('the busy check is the GC queue, registered once on the Reaper control', () => {
+    expect(reaper).toMatch(/setBusy: \(check\) => \{\s*gcBusy = check\s*\}/)
+    expect(ipc.match(/reaper\.setBusy\(/g)).toHaveLength(1)
+    expect(ipc).toMatch(/reaper\.setBusy\(\(\) => queue\.busy\(\)\)/)
+  })
+})
+
+describe('session presence on real paths (delta 3b, item 8)', () => {
+  it('the gather resolves every session-set folder and passes canonical to the presence read', () => {
+    const block = between(scan, '// Sessions on real paths', 'const stacks = groupStacks')
+    expect(block).toMatch(/resolveRealPaths\(/)
+    expect(block).toMatch(/sessionsFrom(Folders|Fleet)\(/)
+    expect(block).toMatch(/sets\.live/)
+    expect(block).toMatch(/sets\.inUse/)
+  })
+})
+
+describe('grace activity comes from the whole transcript index (delta 3b, item 9)', () => {
+  it('the gather feeds every fleet folder, not only the item paths', () => {
+    expect(between(scan, '// Sessions on real paths', 'const stacks = groupStacks')).toMatch(
+      /sessionsFromFleet\(fleet,/
+    )
+  })
+})
+
+describe('compose names are read from subfolders (delta 3b, item 10)', () => {
+  it('the gather walks each known folder and feeds the files to the guards', () => {
+    expect(scan).toMatch(/collectProjectFiles\(p,/)
+    expect(scan).toMatch(/files: await collectProjectFiles/)
+    expect(scan).toMatch(/guards\.unresolved/)
+  })
+})
+
+describe('the bundle builder gets only the folders that cannot fake a nested worktree (S2 delta 6)', () => {
+  it('the gather filters the known folders before they reach buildBundles', () => {
+    expect(scan).toMatch(/const bundleFolders = foldersForBundles\(/)
+    expect(between(scan, 'const input = {', 'let bundles')).toMatch(/knownFolders: bundleFolders/)
   })
 })

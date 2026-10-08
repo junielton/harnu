@@ -12,7 +12,7 @@ export interface HousekeepingParams {
   /**
    * Plan orphan-volume removal. Volumes cannot be restored, so this means "this
    * is a manual, operator-confirmed run": the autopilot never sets it, and
-   * orphan volumes reach the Decide bucket for a human click instead.
+   * orphan volumes reach the Needs review bucket for a human click instead.
    */
   orphanVolumes: boolean
 }
@@ -58,21 +58,24 @@ export function planHousekeeping(
   dirExists: (path: string) => boolean,
   knownFolders: readonly string[],
   protectedProjects: ReadonlySet<string> = new Set(),
-  rememberedDirs: ReadonlyMap<string, readonly string[]> = new Map()
+  rememberedDirs: ReadonlyMap<string, readonly string[]> = new Map(),
+  /** A compose name somewhere could not be resolved: no volume is provably foreign, so none is planned. */
+  protectAllProjects = false
 ): HousekeepingPlan {
   return {
     builderPruneUntilHours: untilHours(p.cacheMaxAgeDays),
     danglingImages: p.danglingImages,
-    orphanVolumes: p.orphanVolumes
-      ? orphanVolumeNames(
-          volumes,
-          containers,
-          dirExists,
-          knownFolders,
-          protectedProjects,
-          rememberedDirs
-        )
-      : []
+    orphanVolumes:
+      p.orphanVolumes && !protectAllProjects
+        ? orphanVolumeNames(
+            volumes,
+            containers,
+            dirExists,
+            knownFolders,
+            protectedProjects,
+            rememberedDirs
+          )
+        : []
   }
 }
 
