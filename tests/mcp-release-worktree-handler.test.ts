@@ -318,6 +318,17 @@ describe('release_worktree handler (T445)', () => {
       expect(release).not.toHaveBeenCalled()
     })
 
+    it('M5: a blocked folder is FOLDER_NOT_ALLOWED even when it is no known worktree', async () => {
+      const { release } = serve(snapshot([fresh]))
+      const res = await handler(
+        { folder: '/srv/ws/blocked/x' },
+        ctx('/srv/ws/blocked/x', ['/srv/ws/blocked'])
+      )
+      expect(textOf(res)).toContain('FOLDER_NOT_ALLOWED')
+      expect(textOf(res)).not.toContain('NOT_A_WORKTREE')
+      expect(release).not.toHaveBeenCalled()
+    })
+
     it('M10: a blocked repo is refused when the worktree folder itself is not blocked', async () => {
       const outOfTree = bundle(WT_OUT_OF_TREE, { bucket: 'alive' })
       const { release } = serve(snapshot([outOfTree]))

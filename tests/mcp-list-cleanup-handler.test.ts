@@ -325,6 +325,26 @@ describe('list_cleanup handler (T445)', () => {
     ])
   })
 
+  it('M5/M10: agentControllable looks at the worktree folder and at its repo, each on its own', async () => {
+    const oot = bundle(WT_OUT_OF_TREE)
+    serve(snapshot([oot]))
+    const rows = async (deny: string[]): Promise<boolean[]> =>
+      (JSON.parse(textOf(await handler({}, ctx(deny)))).bundles as Listed[]).map(
+        (r) => r.agentControllable
+      )
+    expect(await rows([])).toEqual([true])
+    // Only the repo is blocked: the worktree sits outside its tree.
+    expect(await rows([MAIN])).toEqual([false])
+    // Only the worktree folder is blocked.
+    expect(await rows([WT_OUT_OF_TREE])).toEqual([false])
+  })
+
+  it('M5: a blocked scope is refused even when no bundle sits under it', async () => {
+    serve(snapshot([corpse]))
+    const res = await handler({ folder: '/srv/ws/blocked' }, ctx(['/srv/ws/blocked'], FOLDERS))
+    expect(textOf(res)).toContain('FOLDER_NOT_ALLOWED')
+  })
+
   it('marks a bundle the agent already released', async () => {
     const snap = snapshot([corpse])
     snap.prefs.released = { [corpse.item.id]: NOW - 1000 }
