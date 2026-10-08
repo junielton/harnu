@@ -298,3 +298,10 @@ describe('the Windows caveat is stated precisely (delta 6 nits, item 1)', () => 
     expect(userDoc()).toMatch(/On Windows[\s\S]{0,120}?no per-user temp folder/i)
   })
 })
+
+describe('the docs say what happens when a blocked folder cannot be written into a rule', () => {
+  const failClosed =
+    /(comma|parenthes)[\s\S]{0,160}?(does not run|will not run|is not run)[\s\S]{0,120}?unsure/i
+  it('docs/user/cleanup.md', () => expect(userDoc()).toMatch(failClosed))
+  it('design.md', () => expect(designBlock()).toMatch(failClosed))
+})
