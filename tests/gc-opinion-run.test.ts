@@ -107,7 +107,7 @@ describe('runSupervised', () => {
   })
 })
 
-describe('runSupervised: the folder it runs in is the whole readable world of the advisor', () => {
+describe('runSupervised: the folder it runs in (a private empty one when none is given)', () => {
   const printCwd = [
     '-e',
     'console.log(process.cwd()); console.log(JSON.stringify(require("fs").readdirSync(".")))'

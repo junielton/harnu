@@ -73,9 +73,9 @@ async function tryReads(prompt: string, cwd: string): Promise<Call[]> {
 }
 
 describe.skipIf(!LIVE)(
-  'the advisor session reads only inside the folder it runs in (real CLI)',
+  'the advisor session against the real CLI: reads outside its folder were refused in these cases',
   () => {
-    it('reads inside, and is refused outside, for Read, Grep, Glob and a symlink out', async () => {
+    it('reads inside, and was refused outside, in these five checks (Read, Grep, Glob and a symlink out)', async () => {
       const root = mkdtempSync(join(tmpdir(), 'harnu-advisor-confine-'))
       try {
         const inside = join(root, 'inside')
