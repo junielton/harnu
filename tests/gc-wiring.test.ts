@@ -168,3 +168,14 @@ describe('worktree cleanup never removes volumes (D1)', () => {
     expect(code).not.toMatch(/removeVolumes|volumes: boolean|categories\.volumes/)
   })
 })
+
+describe('the Docker card reaches the snapshot (delta 2, item 2)', () => {
+  it('the gather asks docker for the card facts and the snapshot carries them', () => {
+    expect(scan).toMatch(/dockerCardFacts\(/)
+    expect(between(ipc, 'const buildSnapshot', 'const service')).toMatch(/docker: g\.docker/)
+  })
+
+  it('is not asked when docker is known to be absent', () => {
+    expect(scan).toMatch(/available\s*\?[\s\S]*dockerCardFacts|!available[\s\S]*null/)
+  })
+})
