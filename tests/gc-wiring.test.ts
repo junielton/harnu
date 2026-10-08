@@ -273,3 +273,11 @@ describe('grace activity comes from the whole transcript index (delta 3b, item 9
     )
   })
 })
+
+describe('compose names are read from subfolders (delta 3b, item 10)', () => {
+  it('the gather walks each known folder and feeds the files to the guards', () => {
+    expect(scan).toMatch(/collectProjectFiles\(p,/)
+    expect(scan).toMatch(/files: await collectProjectFiles/)
+    expect(scan).toMatch(/guards\.unresolved/)
+  })
+})
