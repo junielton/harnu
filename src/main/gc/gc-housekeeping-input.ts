@@ -144,3 +144,34 @@ export function orphanVolumeItems(
     })
     .sort((a, b) => (b.sizeBytes ?? -1) - (a.sizeBytes ?? -1) || a.name.localeCompare(b.name))
 }
+
+// ---- what keeps a bundle from owning a volume ---------------------------------------------
+
+/**
+ * The two inputs `buildBundles` needs so that a worktree never owns a volume another folder
+ * may still use (T441 delta 1, item 1): the folders that exist, and the compose project names
+ * they pin. It is the orphan planner's own rule, read from the same files with the same
+ * fail-closed existence, plus the trimmed default name of a folder whose name starts with `_`
+ * or `-`, which the bundle builder's untrimmed default cannot see. Deliberately blunt: a name
+ * pinned by the bundle's own folder protects its volume too, so such a worktree leaves the
+ * volume behind, where it shows up as an orphan for the operator to decide on.
+ */
+export function volumeGuards(
+  folders: ReadonlyArray<{ path: string; env?: string; compose?: string }>,
+  dirExists: (path: string) => boolean
+): { knownFolders: string[]; protectedProjects: Set<string> } {
+  const existing = folders.filter((f) => dirExists(f.path))
+  const names = protectedProjects(folders, dirExists)
+  for (const f of existing) {
+    const base =
+      f.path
+        .split(/[\\/]+/)
+        .filter(Boolean)
+        .pop() ?? ''
+    if (/^[_-]/.test(base)) {
+      const trimmed = normalizeComposeProjectName(base)
+      if (trimmed) names.add(trimmed)
+    }
+  }
+  return { knownFolders: existing.map((f) => f.path), protectedProjects: names }
+}

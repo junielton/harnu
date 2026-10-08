@@ -3,13 +3,14 @@
 // work runs on the shared serial queue, so it never overlaps an autopilot cycle or another
 // click, and it streams one progress event per requested id.
 //
-// This is the only caller of the forced ops. The operator's `confirmDecide` is what lets a
-// Decide worktree or an orphan volume through; the autopilot (gc-cycle.ts) has no way to
+// This is the only caller of the forced ops. The operator's per-id `confirmed` entries, bound
+// to the facts they were shown (`expected`), are what let a Decide worktree or an orphan volume through; the autopilot (gc-cycle.ts) has no way to
 // reach either, and Alive items, main checkouts and neverClean paths are refused here
 // against the current prefs before any op runs.
 
 import type { WorktreeBundle } from './bundle-core'
 import { refusalFor } from './autopilot-core'
+import { bundleChangedSince, volumeChangedSince } from './gc-confirm'
 import type { CycleState } from './gc-cycle'
 import type { JobQueue } from './gc-jobs-core'
 import type { GcPrefs } from './gc-prefs'
@@ -48,7 +49,9 @@ export function submitManualClean(
   opts: GcCleanOptions
 ): GcCleanAck {
   const unique = [...new Set(ids)]
-  const confirmDecide = opts.confirmDecide === true
+  // Only an id the operator named confirms itself; there is no blanket flag.
+  const confirmed = new Set(opts.confirmed ?? [])
+  const expected = opts.expected ?? {}
   const queued = deps.queue.busy()
 
   const { jobId } = deps.queue.submit('manual', unique, async (reporter) => {
@@ -61,11 +64,17 @@ export function submitManualClean(
     const cleanBundle = async (id: string): Promise<GcItemResult> => {
       const b = bundles.get(id)
       if (!b) return refused(id, 'unknown-item')
-      const refusal = refusalFor(b, prefs, { confirmDecide })
-      if (refusal) return refused(id, refusal)
-      // Anything that is not a proven corpse got here only through the operator's
-      // confirmation, and takes the forced ops.
+      // The hard refusals come first and no confirmation lifts them.
+      const hard = refusalFor(b, prefs, { confirmed: true })
+      if (hard) return refused(id, hard)
+      // The operator confirmed what they were shown, not whatever is there now.
+      const seen = expected[id]
+      if (!seen) return refused(id, 'missing-expected')
+      if (bundleChangedSince(b, seen)) return refused(id, 'changed-since-confirm')
+      // Anything that is not a proven corpse needs its OWN confirmation, and then takes
+      // the forced ops.
       const forced = b.bucket !== 'corpse'
+      if (forced && !confirmed.has(id)) return refused(id, 'needs-confirmation')
       const batchOpts: { removeVolumes: boolean; confirmDecide?: boolean } = {
         removeVolumes: prefs.removeVolumes,
         confirmDecide: forced
@@ -75,11 +84,14 @@ export function submitManualClean(
     }
 
     const cleanVolume = async (id: string): Promise<GcItemResult> => {
-      if (!confirmDecide) return refused(id, 'needs-confirmation')
+      if (!confirmed.has(id)) return refused(id, 'needs-confirmation')
+      const seen = expected[id]
+      if (!seen) return refused(id, 'missing-expected')
       const item = orphans.get(id)
       // The plan was recomputed just now: a volume a container or a live folder claimed since
       // the click is no longer an orphan, and is left alone.
       if (!item) return refused(id, 'no-longer-orphan')
+      if (volumeChangedSince(item, seen)) return refused(id, 'changed-since-confirm')
       const r = await deps.removeOrphanVolumes([item.name])
       if (r.errors.length > 0) {
         return {

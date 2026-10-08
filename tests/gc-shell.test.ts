@@ -227,6 +227,35 @@ describe('presenceFromSets', () => {
   it('maps a folder with no PTY to none', () => {
     expect(presenceFromSets('/nobody', sets)).toBe('none')
   })
+
+  describe('sessions in a subfolder (delta 3, item 1)', () => {
+    const sub = {
+      live: new Set([`${WT}/api`]),
+      inUse: new Set([`${WT}/api`, `${WT_B}/web/`])
+    }
+
+    it('a working session in a subfolder of the worktree reads working', () => {
+      expect(presenceFromSets(WT, sub)).toBe('working')
+    })
+
+    it('an idle PTY in a subfolder of the worktree reads open-idle', () => {
+      expect(presenceFromSets(WT_B, sub)).toBe('open-idle')
+    })
+
+    it('a sibling folder that only shares a name prefix does not count', () => {
+      const sibling = { live: new Set([`${WT}-other`]), inUse: new Set([`${WT}-other/api`]) }
+      expect(presenceFromSets(WT, sibling)).toBe('none')
+    })
+
+    it('a session in the worktree itself still counts, trailing slashes aside', () => {
+      expect(presenceFromSets(`${WT}/`, { live: new Set([WT]), inUse: new Set() })).toBe('working')
+    })
+
+    it('a session in a parent folder of the worktree does not count', () => {
+      const parent = { live: new Set(['/ws/org/proj']), inUse: new Set(['/ws/org/proj']) }
+      expect(presenceFromSets(WT, parent)).toBe('none')
+    })
+  })
 })
 
 describe('dockerIsUnavailable', () => {
@@ -429,6 +458,16 @@ describe('reprobe (AC-5)', () => {
       ok: false,
       reason: 'changed-since-scan'
     })
+  })
+
+  it('refuses a working session in a subfolder, read through the real folder sets (delta 3, item 1)', async () => {
+    const h = harness()
+    const sets = { live: new Set([`${WT}/api`]), inUse: new Set([`${WT}/api`]) }
+    h.presenceOf.mockImplementation(async (path: string) => presenceFromSets(path, sets))
+    const r = await runBundle(bundle(), createGcOps(h.deps), { removeVolumes: true })
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'changed-since-scan' })
+    expect(h.stop).not.toHaveBeenCalled()
+    expect(cleanItem).not.toHaveBeenCalled()
   })
 
   it('accepts a session that was open-idle at the scan and has closed since', async () => {
@@ -751,6 +790,76 @@ describe('recheck before cleanGit (delta 2, item 4)', () => {
     expect(cleanItem).not.toHaveBeenCalled()
   })
 
+  describe('re-lists the stacks touching the worktree (delta 3, item 3)', () => {
+    it('a new stack started from the worktree during drop-deps halts at archive before cleanGit', async () => {
+      let h: Harness | null = null
+      h = harness({
+        dehydrate: {
+          // Someone runs `docker compose up` in the worktree while its deps are dropped.
+          removeDir: async () => {
+            h!.setStacks([
+              stack('app', [container('c1', `${WT}/api`)]),
+              stack('fresh', [container('c7', `${WT}/worker`)])
+            ])
+          }
+        }
+      })
+      const r = await runBundle(bundle(), createGcOps(h.deps), opts)
+      expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'changed-mid-run' })
+      expect(r.freedBytes).toBe(4096)
+      expect(cleanItem).not.toHaveBeenCalled()
+    })
+
+    it('names the new stack as the reason', async () => {
+      const h = harness({
+        stacks: [
+          stack('app', [container('c1', `${WT}/api`)]),
+          stack('fresh', [runWithBind('c7', `${WT}/data`)])
+        ]
+      })
+      expect(await createGcOps(h.deps).recheck(bundle())).toEqual({
+        ok: false,
+        reason: 'new-stack'
+      })
+    })
+
+    it('a scanned stack still present is fine, exclusive or shared', async () => {
+      const h = harness({
+        stacks: [
+          stack('app', [container('c1', `${WT}/api`)]),
+          stack('shared', [container('c3', WT), container('c4', REPO)])
+        ]
+      })
+      expect(await createGcOps(h.deps).recheck(bundle({ sharedStackIds: ['shared'] }))).toEqual({
+        ok: true
+      })
+    })
+
+    it('a scanned stack that already vanished is fine', async () => {
+      const h = harness({ stacks: [] })
+      expect(await createGcOps(h.deps).recheck(bundle())).toEqual({ ok: true })
+    })
+
+    it('a new stack that runs from somewhere else is fine', async () => {
+      const h = harness({
+        stacks: [
+          stack('app', [container('c1', `${WT}/api`)]),
+          stack('other', [container('c9', `${WT}-other`)])
+        ]
+      })
+      expect(await createGcOps(h.deps).recheck(bundle())).toEqual({ ok: true })
+    })
+
+    it.each([new Error('docker gone'), new DockerUnavailableError('daemon down')])(
+      'refuses when the stack listing fails (%s)',
+      async (err) => {
+        const h = harness()
+        h.listStacks.mockRejectedValueOnce(err)
+        expect((await createGcOps(h.deps).recheck(bundle())).ok).toBe(false)
+      }
+    )
+  })
+
   it('refuses when presence or HEAD cannot be read', async () => {
     const h = harness()
     h.presenceOf.mockRejectedValueOnce(new Error('fleet unavailable'))
@@ -810,6 +919,41 @@ describe('reprobe re-reads protection at execution time (delta 2, item 8)', () =
     expect(h.probeStatus).not.toHaveBeenCalled()
   })
 
+  describe('a main checkout told by its path (delta 3, item 6)', () => {
+    /** Hand-built: every flag says "clean me", only the path says it is the main checkout. */
+    const mainByPath = (path = REPO): WorktreeBundle =>
+      bundle({
+        item: reapItem({ path }),
+        isMainCheckout: false,
+        neverClean: false,
+        keep: false
+      })
+
+    it.each([REPO, `${REPO}/`])(
+      'the reprobe refuses %s as protected-now before any probe',
+      async (path) => {
+        const h = harness({ protectedNow: false })
+        expect(await createGcOps(h.deps).reprobe(mainByPath(path))).toEqual({
+          ok: false,
+          reason: 'protected-now'
+        })
+        for (const fn of [h.probeStatus, h.presenceOf, h.headOf, h.listStacks]) {
+          expect(fn).not.toHaveBeenCalled()
+        }
+      }
+    )
+
+    it('runBundle refuses it with zero ops', async () => {
+      const h = harness({ protectedNow: false })
+      const r = await runBundle(mainByPath(), createGcOps(h.deps), opts)
+      expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', freedBytes: 0 })
+      expect(h.isProtectedNow).not.toHaveBeenCalled()
+      expect(h.listStacks).not.toHaveBeenCalled()
+      expect(h.stop).not.toHaveBeenCalled()
+      expect(cleanItem).not.toHaveBeenCalled()
+    })
+  })
+
   it('lets an unprotected bundle proceed', async () => {
     const h = harness({ protectedNow: false })
     const r = await runBundle(bundle(), createGcOps(h.deps), opts)
@@ -863,7 +1007,10 @@ function scanned(containers: InspectedContainer[]): WorktreeBundle {
     keep: new Set(),
     neverClean: new Set(),
     now: EXEC_NOW,
-    graceDays: GRACE_DAYS
+    graceDays: GRACE_DAYS,
+    volumes: new Map([['deploy_pg', { sizeBytes: 1, project: 'deploy' }]]),
+    knownFolders: [],
+    protectedProjects: new Set()
   })
   expect(out).toHaveLength(1)
   return out[0]!
@@ -918,6 +1065,28 @@ describe('reprobe through the real builder', () => {
     expect(b.stackIds).toEqual(['web'])
     const h = harness({ stacks: groupStacks([web]) })
     expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: true })
+  })
+
+  it('a stack run from elsewhere that bind-mounts the worktree is shared at the scan (delta 3, item 2)', () => {
+    const web = composeIn('web', 'other', ELSEWHERE, [
+      { type: 'bind', source: `${WT}/data`, name: null }
+    ])
+    const b = scanned([web])
+    expect(b.stackIds).toEqual([])
+    expect(b.sharedStackIds).toEqual(['other'])
+    expect(b.bucket).toBe('decide')
+  })
+
+  it('the same stack appearing after the scan refuses the clean (delta 3, item 2)', async () => {
+    const b = scanned([])
+    expect(b.bucket).toBe('corpse')
+    const web = composeIn('web', 'other', ELSEWHERE, [
+      { type: 'bind', source: `${WT}/data`, name: null }
+    ])
+    const h = harness({ stacks: groupStacks([web]) })
+    const r = await runBundle(b, createGcOps(h.deps), { removeVolumes: true })
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'changed-since-scan' })
+    expect(cleanItem).not.toHaveBeenCalled()
   })
 
   it('I2: a labelless container bind-mounting the worktree after the scan refuses the clean', async () => {
@@ -1025,6 +1194,87 @@ describe('stopStacks / removeContainers', () => {
 })
 
 describe('removeVolumes', () => {
+  describe('re-lists who mounts each volume right before removing it (delta 3, item 5b)', () => {
+    const mount = (name: string): InspectedContainer['mounts'][number] => ({
+      type: 'volume',
+      source: `/var/lib/docker/volumes/${name}/_data`,
+      name
+    })
+    const foreign = (state: string): StackGroup =>
+      stack('other', [{ ...container('c9', ELSEWHERE), state, mounts: [mount('pgdata')] }])
+
+    it.each(['running', 'exited'])(
+      'skips a volume a %s container still mounts, and removes the rest',
+      async (state) => {
+        const h = harness({ stacks: [foreign(state)] })
+        expect(await createGcOps(h.deps).removeVolumes(['pgdata', 'cache'])).toEqual({
+          skipped: [{ name: 'pgdata', reason: 'volume-in-use' }]
+        })
+        expect(h.listStacks).toHaveBeenCalledTimes(1)
+        expect(h.removeVolumes).toHaveBeenCalledTimes(1)
+        expect(h.removeVolumes).toHaveBeenCalledWith(['cache'])
+      }
+    )
+
+    it('makes no docker call when every volume is still in use', async () => {
+      const h = harness({ stacks: [foreign('running')] })
+      expect(await createGcOps(h.deps).removeVolumes(['pgdata'])).toEqual({
+        skipped: [{ name: 'pgdata', reason: 'volume-in-use' }]
+      })
+      expect(h.removeVolumes).not.toHaveBeenCalled()
+    })
+
+    it.each([new Error('docker gone'), new DockerUnavailableError('daemon down')])(
+      'throws, with no docker call, when the listing fails (%s)',
+      async (err) => {
+        const h = harness()
+        h.listStacks.mockRejectedValueOnce(err)
+        await expect(createGcOps(h.deps).removeVolumes(['pgdata'])).rejects.toThrow()
+        expect(h.removeVolumes).not.toHaveBeenCalled()
+      }
+    )
+
+    it('through runBundle: a volume a foreign container took up is skipped and the item continues', async () => {
+      const h = harness({
+        stacks: [stack('app', [container('c1', `${WT}/api`)]), foreign('running')]
+      })
+      const r = await runBundle(
+        bundle({ ownedVolumes: ['cache', 'pgdata'] }),
+        createGcOps(h.deps),
+        { removeVolumes: true }
+      )
+      expect(r).toMatchObject({
+        ok: true,
+        haltedAt: null,
+        skippedVolumes: [{ name: 'pgdata', reason: 'volume-in-use' }]
+      })
+      expect(h.removeVolumes).toHaveBeenCalledWith(['cache'])
+      expect(h.removeVolumes.mock.calls.flat(2)).not.toContain('pgdata')
+      expect(cleanItem).toHaveBeenCalled()
+    })
+
+    it('through runBundle: a listing that fails halts at rm-volumes', async () => {
+      const h = harness()
+      const ops = createGcOps(h.deps)
+      // reprobe, stop and rm list fine; the volume step's own listing fails.
+      h.listStacks
+        .mockImplementationOnce(async () => ({
+          stacks: [stack('app', [container('c1', `${WT}/api`)])]
+        }))
+        .mockImplementationOnce(async () => ({
+          stacks: [stack('app', [container('c1', `${WT}/api`)])]
+        }))
+        .mockImplementationOnce(async () => ({
+          stacks: [stack('app', [container('c1', `${WT}/api`)])]
+        }))
+        .mockRejectedValueOnce(new Error('docker gone'))
+      const r = await runBundle(bundle(), ops, { removeVolumes: true })
+      expect(r).toMatchObject({ ok: false, haltedAt: 'rm-volumes' })
+      expect(h.removeVolumes).not.toHaveBeenCalled()
+      expect(cleanItem).not.toHaveBeenCalled()
+    })
+  })
+
   it('passes the volume names to docker', async () => {
     const h = harness()
     await createGcOps(h.deps).removeVolumes(['pgdata', 'cache'])

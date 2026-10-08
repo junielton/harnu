@@ -179,6 +179,69 @@ describe('job queue: one job at a time (AC-4)', () => {
   })
 })
 
+describe('job queue: exclusive wrapper (delta 1, item 4)', () => {
+  it('runs beforeRun and the job inside the wrapper, and leaves it afterwards', async () => {
+    const log: string[] = []
+    const queue = createJobQueue({
+      newId: () => 'j',
+      emitProgress: () => undefined,
+      emitDone: () => undefined,
+      around: async (work) => {
+        log.push('enter')
+        await work()
+        log.push('exit')
+      }
+    })
+    queue.submit('manual', ['a'], async () => {
+      log.push('run')
+      return [ok('a')]
+    })
+    await queue.idle()
+    expect(log).toEqual(['enter', 'run', 'exit'])
+  })
+
+  it('still ends the job when the wrapper itself fails', async () => {
+    const { done: _unused } = harness()
+    const finished: GcJobDone[] = []
+    const queue = createJobQueue({
+      newId: () => 'j',
+      emitProgress: () => undefined,
+      emitDone: (d) => finished.push(d),
+      around: async () => {
+        throw new Error('lock broke')
+      }
+    })
+    queue.submit('manual', ['a'], async () => [ok('a')])
+    await queue.idle()
+    expect(finished[0]).toMatchObject({ error: 'lock broke' })
+  })
+
+  it('holds the next job until the wrapper has released', async () => {
+    const log: string[] = []
+    let n = 0
+    const queue = createJobQueue({
+      newId: () => `j${++n}`,
+      emitProgress: () => undefined,
+      emitDone: () => undefined,
+      around: async (work) => {
+        log.push('enter')
+        await work()
+        log.push('exit')
+      }
+    })
+    queue.submit('manual', ['a'], async () => {
+      log.push('run a')
+      return []
+    })
+    queue.submit('manual', ['b'], async () => {
+      log.push('run b')
+      return []
+    })
+    await queue.idle()
+    expect(log).toEqual(['enter', 'run a', 'exit', 'enter', 'run b', 'exit'])
+  })
+})
+
 describe('job queue: failure and bookkeeping', () => {
   it('still ends with a done event when the run throws, keeping the results so far', async () => {
     const { queue, done } = harness()

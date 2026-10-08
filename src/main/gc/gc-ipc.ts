@@ -16,10 +16,15 @@ import { buildNotificationOptions } from '../notifications'
 import { prefsFile as containersPrefsFile } from '../containers/containers-prefs'
 import { prefsPath as reaperPrefsPath } from '../reaper/prefs'
 import type { ReaperControl } from '../reaper/reaper-ipc'
-import { scanIdle } from '../reaper/scanner-shell'
 import { bucketFeed, setInheritedBuckets } from './gc-buckets'
 import { withActor } from './gc-actor'
-import { createCycleState, runGcCycle, type GcCycleDeps, type GcGather } from './gc-cycle'
+import {
+  createCycleState,
+  runGcCycle,
+  withFailures,
+  type GcCycleDeps,
+  type GcGather
+} from './gc-cycle'
 import { gatherGc, type GcGathered } from './gc-scan-shell'
 import { createJobQueue, type GcJobInfo } from './gc-jobs-core'
 import { submitManualClean } from './gc-manual'
@@ -33,7 +38,8 @@ import {
   writeGcPrefs,
   type GcPrefs
 } from './gc-prefs'
-import type { GcCleanAck, GcCleanOptions, GcSnapshot } from './gc-wire'
+import { parseOptions } from './gc-options'
+import type { GcCleanAck, GcSnapshot } from './gc-wire'
 import { createGcOps, defaultGcShellDeps, type GcShellDeps } from './gc-shell'
 import { createForcedGcOps } from './gc-forced-ops'
 import { runHousekeeping } from './housekeeping-shell'
@@ -58,12 +64,6 @@ function parseIds(raw: unknown): string[] {
   if (ids.length !== raw.length) throw new Error('gc:clean ids must be non-empty strings')
   if (ids.length > 500) throw new Error('gc:clean takes at most 500 ids')
   return ids
-}
-
-function parseOptions(raw: unknown): GcCleanOptions {
-  const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
-  // Strictly `true`: a truthy string from a confused caller must not confirm a removal.
-  return { confirmDecide: r.confirmDecide === true }
 }
 
 /** Registers the handlers and arms the cycle on the Reaper tick. */
@@ -97,7 +97,8 @@ export async function registerGcHandlers(
   const gather = (): Promise<GcGathered> => {
     gathering ??= (async () => {
       try {
-        const g = await gatherGc(prefs, Date.now())
+        // A halted item reads Decide here, once, for the snapshot, the feed, the jobs and the cycle.
+        const g = withFailures(await gatherGc(prefs, Date.now()), state, Date.now())
         cache = g
         setInheritedBuckets(bucketFeed(g.bundles))
         if (g.staleKeeps.length > 0) await persist(withoutKeep(prefs, g.staleKeeps))
@@ -111,8 +112,9 @@ export async function registerGcHandlers(
 
   const queue = createJobQueue({
     newId: () => randomUUID(),
-    // A Reaper scan walks these trees; a removal must not start while one is still reading.
-    beforeRun: () => scanIdle(),
+    // On the Reaper's op chain: after a running scan and any queued sweep or dehydrate,
+    // and before the next one, so the two never remove things at the same time.
+    around: (work) => reaper.runExclusive(work),
     emitProgress: (p) => send('gc:progress', p),
     emitDone: (d) => {
       send('gc:done', d)

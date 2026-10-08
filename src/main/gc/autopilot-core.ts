@@ -4,6 +4,7 @@
 import type { WorktreeBundle } from './bundle-core'
 import type { GcPrefs } from './gc-prefs'
 import { normalizePath } from '../containers/containers-core'
+import { isMainCheckoutByPath } from './pipeline-core'
 
 export type CycleMode = 'off' | 'report' | 'clean'
 
@@ -18,6 +19,9 @@ export interface CyclePlan {
   /** Disk the eligible corpses occupy, for the report-only notice. */
   reportBytes: number
 }
+
+/** The item kinds the cleanup executor can actually remove; a detached worktree is not one. */
+export const CLEANABLE_KINDS: readonly string[] = ['worktree', 'hidden-folder']
 
 /** True when the bundle's worktree, or the repo it belongs to, is on the neverClean list. */
 export function isNeverClean(b: WorktreeBundle, prefs: GcPrefs): boolean {
@@ -36,7 +40,13 @@ export function isNeverClean(b: WorktreeBundle, prefs: GcPrefs): boolean {
  * mark is cleared by the next gather, and until then refusing is the safe side.
  */
 export function isProtectedNow(b: WorktreeBundle, prefs: GcPrefs): boolean {
-  return b.isMainCheckout || b.keep || prefs.keep[b.item.id] !== undefined || isNeverClean(b, prefs)
+  return (
+    b.isMainCheckout ||
+    isMainCheckoutByPath(b) ||
+    b.keep ||
+    prefs.keep[b.item.id] !== undefined ||
+    isNeverClean(b, prefs)
+  )
 }
 
 const bySignOfLife = (a: WorktreeBundle, b: WorktreeBundle): number => {
@@ -57,7 +67,14 @@ export function planCycle(bundles: readonly WorktreeBundle[], prefs: GcPrefs): C
     return { mode: 'off', toClean: [], deferred: 0, found: 0, reportBytes: 0 }
   }
   const eligible = bundles
-    .filter((b) => b.bucket === 'corpse' && !b.keep && !b.isMainCheckout && !isNeverClean(b, prefs))
+    .filter(
+      (b) =>
+        b.bucket === 'corpse' &&
+        CLEANABLE_KINDS.includes(b.item.kind) &&
+        !b.keep &&
+        !b.isMainCheckout &&
+        !isNeverClean(b, prefs)
+    )
     .sort(bySignOfLife)
   const reportBytes = eligible.reduce((sum, b) => sum + (b.item.diskBytes ?? 0), 0)
   if (!prefs.firstReportAcknowledged) {
@@ -133,14 +150,14 @@ export type RefusalCode =
 export function refusalFor(
   b: WorktreeBundle,
   prefs: GcPrefs,
-  opts: { confirmDecide: boolean }
+  opts: { confirmed: boolean }
 ): RefusalCode | null {
-  if (b.isMainCheckout) return 'main-checkout'
+  if (b.isMainCheckout || isMainCheckoutByPath(b)) return 'main-checkout'
   if (isNeverClean(b, prefs)) return 'never-clean'
   if (b.keep) return 'kept'
   if (b.bucket === 'alive') return 'alive'
   // The cleanup executor skips the folder of a detached worktree, so "success" would be a lie.
-  if (b.item.kind !== 'worktree' && b.item.kind !== 'hidden-folder') return 'unsupported-kind'
-  if (b.bucket === 'decide' && !opts.confirmDecide) return 'needs-confirmation'
+  if (!CLEANABLE_KINDS.includes(b.item.kind)) return 'unsupported-kind'
+  if (b.bucket === 'decide' && !opts.confirmed) return 'needs-confirmation'
   return null
 }

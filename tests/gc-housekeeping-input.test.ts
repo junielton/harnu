@@ -5,7 +5,8 @@ import {
   orphanVolumeItems,
   protectedProjects,
   statExistence,
-  toHousekeepingVolumes
+  toHousekeepingVolumes,
+  volumeGuards
 } from '../src/main/gc/gc-housekeeping-input'
 import {
   normalizeComposeProjectName,
@@ -260,5 +261,34 @@ describe('orphanVolumeItems: the Decide entries for orphan volumes (AC-7)', () =
   it('falls back to a null size and project for an unknown name', () => {
     const [item] = orphanVolumeItems(['mystery'], df)
     expect(item).toMatchObject({ sizeBytes: null, project: null })
+  })
+})
+
+describe('volumeGuards: what keeps a bundle from owning a volume (delta 1, item 1)', () => {
+  it('lists the existing folders and the explicit names they pin', () => {
+    const g = volumeGuards(
+      [
+        { path: '/ws/a', env: 'COMPOSE_PROJECT_NAME=shop' },
+        { path: '/ws/gone', env: 'COMPOSE_PROJECT_NAME=lost' },
+        { path: '/ws/b', compose: 'name: api' }
+      ],
+      (p) => p !== '/ws/gone'
+    )
+    expect(g.knownFolders).toEqual(['/ws/a', '/ws/b'])
+    expect([...g.protectedProjects].sort()).toEqual(['api', 'shop'])
+  })
+
+  it('adds the trimmed default name of a folder that starts with an underscore or dash', () => {
+    const g = volumeGuards(
+      [{ path: '/ws/_Shop' }, { path: '/ws/-api' }, { path: '/ws/plain' }],
+      () => true
+    )
+    expect([...g.protectedProjects].sort()).toEqual(['api', 'shop'])
+  })
+
+  it('treats a path it cannot prove gone as existing, through the predicate it is given', () => {
+    const exists = makeDirExists(new Set(['/ws/a']), new Set())
+    const g = volumeGuards([{ path: '/ws/a' }, { path: '/ws/unchecked' }], exists)
+    expect(g.knownFolders).toEqual(['/ws/unchecked'])
   })
 })

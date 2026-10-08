@@ -152,8 +152,8 @@ describe('planCycle: clean mode', () => {
 })
 
 describe('refusalFor: what a manual clean may take (AC-8)', () => {
-  const confirm = { confirmDecide: true }
-  const none = { confirmDecide: false }
+  const confirm = { confirmed: true }
+  const none = { confirmed: false }
 
   it('lets a corpse through without a confirmation', () => {
     expect(refusalFor(corpse('a', 5), prefs(), none)).toBeNull()

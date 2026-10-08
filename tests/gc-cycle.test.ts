@@ -3,9 +3,13 @@ import {
   createCycleState,
   formatBytes,
   runGcCycle,
+  withFailures,
   type GcCycleDeps,
   type GcGather
 } from '../src/main/gc/gc-cycle'
+import { bucketFeed } from '../src/main/gc/gc-buckets'
+import { buildBundles } from '../src/main/gc/bundle-core'
+import { planCycle } from '../src/main/gc/autopilot-core'
 import { createJobQueue } from '../src/main/gc/gc-jobs-core'
 import { defaultGcPrefs, type GcPrefs } from '../src/main/gc/gc-prefs'
 import { GcStepError, type GcOps } from '../src/main/gc/pipeline-core'
@@ -493,5 +497,85 @@ describe('formatBytes', () => {
     [3 * 1024 ** 4, '3.0 TiB']
   ])('%j → %j', (n, want) => {
     expect(formatBytes(n)).toBe(want)
+  })
+})
+
+describe('withFailures: every consumer sees a halted item as Decide (delta 1, item 4)', () => {
+  const failure = { step: 'trash', error: 'EBUSY', at: NOW }
+
+  it('rewrites the gathered bundles and leaves the rest of the gather alone', () => {
+    const state = createCycleState()
+    const a = corpse('a')
+    state.failures.set(a.item.id, failure)
+    const gather: GcGather = { bundles: [a, corpse('b')], housekeeping: noHousekeeping }
+    const out = withFailures(gather, state, NOW)
+    expect(out.bundles[0]).toMatchObject({ bucket: 'decide', reason: { code: 'cleanup-failed' } })
+    expect(out.bundles[1]!.bucket).toBe('corpse')
+    expect(out.housekeeping).toBe(gather.housekeeping)
+  })
+
+  it('never feeds a cleanup-failed item to the Containers view as a corpse', () => {
+    const state = createCycleState()
+    const a = corpse('a')
+    state.failures.set(a.item.id, failure)
+    const feed = bucketFeed(
+      withFailures({ bundles: [a], housekeeping: noHousekeeping }, state, NOW).bundles
+    )
+    expect(feed.get('/ws/wt/a')).toBe('decide')
+  })
+
+  it('drops failures that expired or whose worktree is gone', () => {
+    const state = createCycleState()
+    state.failures.set('gone', failure)
+    const a = corpse('a')
+    state.failures.set(a.item.id, { ...failure, at: NOW - 25 * 3_600_000 })
+    const out = withFailures({ bundles: [a], housekeeping: noHousekeeping }, state, NOW)
+    expect(out.bundles[0]!.bucket).toBe('corpse')
+    expect(state.failures.size).toBe(0)
+  })
+
+  it('is idempotent, so the cycle can apply it again', () => {
+    const state = createCycleState()
+    const a = corpse('a')
+    state.failures.set(a.item.id, failure)
+    const once = withFailures({ bundles: [a], housekeeping: noHousekeeping }, state, NOW)
+    expect(withFailures(once, state, NOW).bundles).toEqual(once.bundles)
+  })
+})
+
+describe('detached worktrees are never a corpse for the autopilot (delta 1, item 3)', () => {
+  it('buildBundles never buckets a detached worktree as a corpse', () => {
+    const item = reapItem('/ws/wt/det', {
+      kind: 'detached-worktree',
+      branch: undefined,
+      headSha: 'a'.repeat(40)
+    })
+    const [b] = buildBundles({
+      items: [item],
+      fateInputs: new Map(),
+      stacks: [],
+      stackPaths: new Map(),
+      containers: [],
+      sessions: new Map(),
+      keep: new Set(),
+      neverClean: new Set(),
+      now: NOW,
+      graceDays: 2,
+      volumes: new Map(),
+      knownFolders: [],
+      protectedProjects: new Set()
+    })
+    expect(b!.bucket).not.toBe('corpse')
+    expect(planCycle([b!], live()).toClean).toEqual([])
+  })
+
+  it('does not plan or run a hand-built corpse of a detached kind', async () => {
+    const det = bundle('/ws/wt/det', 'corpse', {
+      item: reapItem('/ws/wt/det', { kind: 'detached-worktree' })
+    })
+    expect(planCycle([det], live()).toClean).toEqual([])
+    const r = rig([det], live())
+    await runGcCycle(r.deps, 'timer')
+    expect(cleanedPaths(r)).toEqual([])
   })
 })

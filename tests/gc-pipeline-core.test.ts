@@ -291,6 +291,20 @@ describe('runBundle — only a proven corpse runs (delta 2, item 2)', () => {
     expect(f.calls).toEqual([])
   })
 
+  it.each([REPO, `${REPO}/`, '/ws/org/proj//www'])(
+    'refuses a main checkout told by its path (%s), whatever its flag says (delta 3, item 6)',
+    async (path) => {
+      const base = bundle('a')
+      const b = bundle('a', { item: { ...base.item, path }, isMainCheckout: false })
+      const f = fakeOps()
+      expect(await runBundle(b, f.ops, { ...OPTS, confirmDecide: true })).toEqual({
+        id: b.item.id,
+        ...refused
+      })
+      expect(f.calls).toEqual([])
+    }
+  )
+
   it('refuses a decide bundle when confirmDecide is false', async () => {
     const f = fakeOps()
     const r = await runBundle(bundle('a', { bucket: 'decide' }), f.ops, {
@@ -327,6 +341,32 @@ describe('runBundle — only a proven corpse runs (delta 2, item 2)', () => {
     expect(f.calls).toEqual([])
   })
 
+  describe('confirmDecide never overrides a shared stack (delta 3, item 4)', () => {
+    const shared = { ok: false, haltedAt: 'reprobe', error: 'shared-stack', freedBytes: 0 }
+
+    it('refuses a decide shared-stack bundle the operator confirmed, with zero ops called', async () => {
+      const b = bundle('a', {
+        bucket: 'decide',
+        reason: { code: 'shared-stack', detail: '1 other stack also uses this worktree: app.' },
+        stackIds: [],
+        sharedStackIds: ['app']
+      })
+      const f = fakeOps()
+      expect(await runBundle(b, f.ops, { ...OPTS, confirmDecide: true })).toEqual({
+        id: b.item.id,
+        ...shared
+      })
+      expect(f.calls).toEqual([])
+    })
+
+    it('refuses a hand-built corpse that still lists a shared stack', async () => {
+      const f = fakeOps()
+      const r = await runBundle(bundle('a', { sharedStackIds: ['cache'] }), f.ops, OPTS)
+      expect(r).toMatchObject(shared)
+      expect(f.calls).toEqual([])
+    })
+  })
+
   it('runBatch passes confirmDecide through to every bundle', async () => {
     const f = fakeOps()
     const bs = [bundle('a', { bucket: 'decide' }), bundle('b', { bucket: 'decide' })]
@@ -335,6 +375,35 @@ describe('runBundle — only a proven corpse runs (delta 2, item 2)', () => {
     expect(f.calls).toEqual([])
     const ran = await runBatch(bs, f.ops, { ...OPTS, confirmDecide: true })
     expect(ran.every((r) => r.ok)).toBe(true)
+  })
+})
+
+describe('runBundle — volumes skipped at execution time (delta 3, item 5b)', () => {
+  const inUse = [{ name: 'pgdata', reason: 'volume-in-use' as const }]
+
+  it('reports the volumes removeVolumes skipped, and the item still cleans', async () => {
+    const f = fakeOps({ removeVolumes: async () => ({ skipped: inUse }) })
+    const r = await runBundle(bundle('a', { ownedVolumes: ['pgdata', 'redis'] }), f.ops, OPTS)
+    expect(r).toMatchObject({ ok: true, haltedAt: null, skippedVolumes: inUse })
+    expect(f.calls).toEqual(FULL)
+  })
+
+  it('keeps the skipped volumes on a later failure', async () => {
+    const f = fakeOps({
+      removeVolumes: async () => ({ skipped: inUse }),
+      cleanGit: boom('disk full')
+    })
+    const r = await runBundle(bundle('a'), f.ops, OPTS)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'archive', skippedVolumes: inUse })
+  })
+
+  it('leaves skippedVolumes out when nothing was skipped', async () => {
+    for (const result of [undefined, { skipped: [] }]) {
+      const f = fakeOps({ removeVolumes: async () => result })
+      const r = await runBundle(bundle('a'), f.ops, OPTS)
+      expect(r.ok).toBe(true)
+      expect('skippedVolumes' in r).toBe(false)
+    }
   })
 })
 

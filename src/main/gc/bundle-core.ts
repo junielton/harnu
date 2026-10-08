@@ -6,6 +6,7 @@
 import { resolveDetachedFate, resolveFate, type FateResult } from './fate-core'
 import type { BranchFacts, ReapItem } from '../reaper/reaper-core'
 import {
+  COMPOSE_PROJECT_LABEL,
   COMPOSE_WORKING_DIR_LABEL,
   isInside,
   lastContainerEvent,
@@ -72,40 +73,72 @@ export interface WorktreeBundle extends BundleFacts {
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`
 
 /**
+ * The project name Compose gives a folder when none is set: its basename, lowercased, with
+ * every character outside [a-z0-9_-] dropped. The S4 housekeeping module has its own copy,
+ * which is not reachable from this branch, hence this duplicate.
+ */
+export function composeDefaultProject(path: string): string {
+  const base =
+    path
+      .replace(/[\\/]+$/, '')
+      .split(/[\\/]/)
+      .pop() ?? ''
+  return base.toLowerCase().replace(/[^a-z0-9_-]/g, '')
+}
+
+/**
  * Named volumes only the bundle's stacks use. A volume that a container outside the bundle
  * also mounts is never listed: removing it would pull data from under a stack we do not own.
  * Bind mounts have no volume name, so they never qualify.
  *
- * With `volumes`, the rule buildSnapshot applies also holds: a volume whose own compose
- * project label differs from the project of a bundle stack mounting it belongs to that other
- * project (declared `external` here), even while that project's containers are down. A
- * missing fact or an unlabelled volume is kept, as buildSnapshot keeps it.
+ * Fail closed on the volume's own compose project label: it must be present and equal the
+ * project of every bundle stack mounting it. An unlabelled volume, or one with no fact at
+ * all, may be anyone's (an `external` volume, a `docker volume create`), so it is never
+ * owned; one labelled with another project belongs to that project, even while its
+ * containers are down.
+ *
+ * That project must also be unique to the bundle. It is not when it is in
+ * `protectedProjects`, when a container outside the bundle (running or stopped) carries it,
+ * or when it is the Compose default name of one of `otherFolders`: a main checkout that
+ * shares the project and ran `compose down` has no container left, yet the volume is still
+ * its data.
  */
 export function ownedVolumes(
   bundleStacks: readonly StackGroup[],
   allContainers: readonly InspectedContainer[],
-  volumes?: ReadonlyMap<string, VolumeFact>
+  volumes: ReadonlyMap<string, VolumeFact>,
+  otherFolders: readonly string[] = [],
+  protectedProjects: ReadonlySet<string> = new Set()
 ): string[] {
   const inBundle = new Set<string>()
-  const names = new Set<string>()
-  const otherProject = new Set<string>()
+  const projectOf = new Map<string, string>()
+  const rejected = new Set<string>()
   for (const s of bundleStacks) {
     for (const c of s.containers) {
       inBundle.add(c.id)
       for (const m of c.mounts) {
         if (m.type !== 'volume' || !m.name) continue
-        names.add(m.name)
-        const project = volumes?.get(m.name)?.project
-        if (project != null && project !== s.project) otherProject.add(m.name)
+        const project = volumes.get(m.name)?.project
+        if (project == null || project !== s.project) rejected.add(m.name)
+        else projectOf.set(m.name, project)
       }
     }
   }
-  for (const name of otherProject) names.delete(name)
+  const foreignProjects = new Set(protectedProjects)
+  for (const folder of otherFolders) {
+    const project = composeDefaultProject(folder)
+    if (project) foreignProjects.add(project)
+  }
   for (const c of allContainers) {
     if (inBundle.has(c.id)) continue
-    for (const m of c.mounts) if (m.name) names.delete(m.name)
+    for (const m of c.mounts) if (m.name) rejected.add(m.name)
+    const project = c.labels[COMPOSE_PROJECT_LABEL]
+    if (project) foreignProjects.add(project)
   }
-  return [...names].sort()
+  return [...projectOf]
+    .filter(([name, project]) => !rejected.has(name) && !foreignProjects.has(project))
+    .map(([name]) => name)
+    .sort()
 }
 
 const FATE_DECISIONS: Record<
@@ -212,8 +245,21 @@ export interface BuildBundlesInput {
   graceDays: number
   /** Containers Harnu itself stopped; their stop is not a sign of life. */
   harnuStoppedAt?: ReadonlyMap<string, number>
-  /** Volume facts from `docker system df -v`, for the cross-project rule in ownedVolumes. */
-  volumes?: ReadonlyMap<string, VolumeFact>
+  /**
+   * Volume facts from `docker system df -v`. Required: a volume is owned only when its fact
+   * carries the project label of the stack mounting it, so no map would mean none is owned.
+   */
+  volumes: ReadonlyMap<string, VolumeFact>
+  /**
+   * Folders Harnu knows besides the items' own paths and repo paths (sidebar folders, say).
+   * A volume whose project is the Compose default name of any of them is never owned.
+   */
+  knownFolders: string[]
+  /**
+   * Compose project names no bundle may own a volume of: explicit `COMPOSE_PROJECT_NAME` or
+   * `name:` values, and the default name of every other existing known folder.
+   */
+  protectedProjects: Set<string>
 }
 
 /** Merge time from the `pr-merged` checkpoint detail; anything that is not a date is ignored. */
@@ -225,15 +271,16 @@ function mergedAtOf(item: ReapItem): number | null {
 }
 
 /**
- * The folders one container runs from: its compose working dir when it has one, otherwise
- * the sources of its bind mounts. The builder and the execution-time reprobe both call this,
- * so a stack the scan attributed to a worktree is seen by the reprobe through the same rule.
- * Empty means nothing ties the container to a folder.
+ * Every folder one container touches: its compose working dir AND the source of each bind
+ * mount. A stack run from elsewhere that bind-mounts a worktree still uses it, so trashing
+ * the folder would pull files from under a running container. The builder and the
+ * execution-time reprobe both call this, so a stack the scan attributed to a worktree is
+ * seen by the reprobe through the same rule. Empty means nothing ties it to a folder.
  */
 export function containerFolders(c: InspectedContainer, platform: string): string[] {
-  const dir = c.labels[COMPOSE_WORKING_DIR_LABEL]
-  if (dir) return [normalizePath(dir, platform)]
   const out = new Set<string>()
+  const dir = c.labels[COMPOSE_WORKING_DIR_LABEL]
+  if (dir) out.add(normalizePath(dir, platform))
   for (const m of c.mounts) {
     if (m.type === 'bind' && m.source) out.add(normalizePath(m.source, platform))
   }
@@ -255,6 +302,40 @@ function stackFolders(
   const attributed = stackPaths.get(stack.id)
   if (attributed) out.add(normalizePath(attributed, platform))
   return [...out]
+}
+
+const PRESENCE_RANK: Record<SessionPresence, number> = {
+  none: 0,
+  'open-idle': 1,
+  'needs-input': 2,
+  working: 2
+}
+
+type SessionEntry = BuildBundlesInput['sessions'] extends Map<string, infer V> ? V : never
+
+/**
+ * Every session that works in the worktree or in any folder under it: a session started in
+ * `WT/api` is as alive as one in `WT`. The strongest presence wins and the latest activity
+ * is kept. Containment is by path segment, so a sibling `WT-other` never counts.
+ */
+function sessionOf(
+  sessions: BuildBundlesInput['sessions'],
+  path: string,
+  platform: string
+): SessionEntry | undefined {
+  let out: SessionEntry | undefined
+  for (const [folder, s] of sessions) {
+    if (!isInside(normalizePath(folder, platform), path)) continue
+    const activity = [out?.lastActivityAt ?? null, s.lastActivityAt].filter(
+      (t): t is number => t !== null
+    )
+    out = {
+      presence:
+        out && PRESENCE_RANK[out.presence] >= PRESENCE_RANK[s.presence] ? out.presence : s.presence,
+      lastActivityAt: activity.length > 0 ? Math.max(...activity) : null
+    }
+  }
+  return out
 }
 
 export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
@@ -289,6 +370,15 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
 
   const neverClean = new Set([...input.neverClean].map((p) => normalizePath(p, platform)))
 
+  // Every folder that could share a compose project with a bundle: each item's checkout and
+  // its repo's main checkout, plus whatever else the caller knows about.
+  const knownFolders = new Set(
+    [
+      ...input.items.flatMap((i) => (i.path ? [i.path, i.repoPath] : [i.repoPath])),
+      ...input.knownFolders
+    ].map((p) => normalizePath(p, platform))
+  )
+
   return folders.map(({ item, path }) => {
     const fateInput = input.fateInputs.get(item.id)
     const fate: FateResult =
@@ -299,8 +389,9 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
           : { fate: 'unknown', signal: null, strong: false }
 
     const stacks = exclusive.get(item.id) ?? []
-    // Every other comparison here is normalized; a trailing slash must not hide a session.
-    const session = input.sessions.get(item.path as string) ?? input.sessions.get(path)
+    // Normalized, so a trailing slash must not hide a session, and a session in a subfolder
+    // counts too.
+    const session = sessionOf(input.sessions, path, platform)
     const events = lastContainerEvent(
       stacks.flatMap((s) => s.containers),
       stoppedByHarnu
@@ -316,7 +407,13 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
       lastSignOfLifeAt: signs.length > 0 ? Math.max(...signs) : null,
       stackIds: stacks.map((s) => s.id),
       sharedStackIds: shared.get(item.id) ?? [],
-      ownedVolumes: ownedVolumes(stacks, input.containers, input.volumes),
+      ownedVolumes: ownedVolumes(
+        stacks,
+        input.containers,
+        input.volumes,
+        [...knownFolders].filter((f) => f !== path),
+        input.protectedProjects
+      ),
       depsBytes: item.hydration?.reclaimableBytes ?? null,
       keep: input.keep.has(item.id),
       neverClean: neverClean.has(path) || neverClean.has(normalizePath(item.repoPath, platform)),
