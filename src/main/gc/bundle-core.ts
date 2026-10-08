@@ -74,8 +74,9 @@ const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n =
 
 /**
  * The project name Compose gives a folder when none is set: its basename, lowercased, with
- * every character outside [a-z0-9_-] dropped. The S4 housekeeping module has its own copy,
- * which is not reachable from this branch, hence this duplicate.
+ * every character outside [a-z0-9_-] dropped and the leading `_` and `-` trimmed, as
+ * compose-go's NormalizeProjectName does (so `_www` runs as `www`). The S4 housekeeping
+ * module has its own copy, which is not reachable from this branch, hence this duplicate.
  */
 export function composeDefaultProject(path: string): string {
   const base =
@@ -83,7 +84,10 @@ export function composeDefaultProject(path: string): string {
       .replace(/[\\/]+$/, '')
       .split(/[\\/]/)
       .pop() ?? ''
-  return base.toLowerCase().replace(/[^a-z0-9_-]/g, '')
+  return base
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '')
+    .replace(/^[_-]+/, '')
 }
 
 /**
