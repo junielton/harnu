@@ -103,32 +103,77 @@ const alias = (p: string): string => path.basename(p) || p
  */
 export function listedId(b: Pick<WorktreeBundle, 'item'>): string {
   const { item } = b
-  const tail = item.branch ? stripPaths(item.branch) : item.path ? alias(item.path) : ''
+  const tail = item.branch
+    ? stripPaths(item.branch, { glued: false })
+    : item.path
+      ? alias(item.path)
+      : ''
   const hash = createHash('sha256').update(item.id).digest('hex').slice(0, 8)
   return `${alias(item.repoPath)}::${item.kind}::${tail}::${hash}`
 }
 
 /**
  * Every absolute path in `text` cut down to its basename: POSIX (`/a/b`, `~/a`), Windows
- * (`C:\a\b`, `C:/a`) and UNC (`\\host\share\a`) alike. A URL is left alone. Applied before
- * the `$HOME` rewrite, so a path inside the home directory loses its prefix as well.
+ * (`C:\a\b`, `C:/a`, rooted `\a\b`), UNC (`\\host\share\a`) and `file://` URLs alike, also
+ * when a folder name holds spaces. Any other URL is left alone. Applied before the `$HOME`
+ * rewrite, so a path inside the home directory loses its prefix as well.
+ *
+ * A path glued straight after a word character or a dot (`rc=1/srv/...`) is cut when it starts
+ * at a well-known root (`/srv`, `/home`, ...): the root list keeps `feat/home/page`-style text
+ * from being mistaken for one. Callers holding a git ref pass `{ glued: false }`.
  */
-const PATH_TOKEN =
-  /([A-Za-z][\w+.-]*:\/\/\S*)|((?<![\w])(?:[A-Za-z]:[\\/]|\\\\[^\\/\s]+[\\/])[^\s"'`<>|]*)|((?<![\w.~/-])~?\/[^\s"'`<>|,;)]*)/g
+const STOP = '\\s"\'`<>|,;)'
+/** One path segment, optionally with single spaces when the path clearly goes on after them. */
+const segment = (sep: string): string => {
+  const ch = `[^${STOP}${sep}]`
+  return `(?:${ch}| (?=(?:${ch}+ )*${ch}+[${sep}]))`
+}
+const POSIX_SEG = segment('\\/')
+const WIN_SEG = segment('\\\\/')
+const GLUE_ROOTS =
+  'home|Users|srv|tmp|var|opt|mnt|root|usr|etc|private|Volumes|workspace|media|data'
 
-export function stripPaths(text: string): string {
-  return text.replace(PATH_TOKEN, (match, url?: string) => {
+const PATH_TOKEN = new RegExp(
+  [
+    // 1: file:// URL, 2: any other URL (kept)
+    '(file:\\/\\/[^\\s"\'`<>|]*)',
+    '([A-Za-z][\\w+.-]*:\\/\\/\\S*)',
+    // 3: a rooted POSIX path glued after a word character or a dot
+    `(?<=[\\w.])(\\/(?:${GLUE_ROOTS})(?:\\/${POSIX_SEG}*)+)`,
+    // 4: drive, UNC, rooted Windows, POSIX and ~ paths
+    `((?<![\\w])[A-Za-z]:[\\\\/]${WIN_SEG}*(?:[\\\\/]${WIN_SEG}*)*` +
+      `|(?<![\\w])\\\\\\\\[^\\\\/\\s]+[\\\\/]${WIN_SEG}*(?:[\\\\/]${WIN_SEG}*)*` +
+      `|(?<![\\w.\\\\])\\\\${WIN_SEG}+(?:\\\\${WIN_SEG}*)+` +
+      `|(?<![\\w.~/-])~?(?:\\/${POSIX_SEG}*)+)`
+  ].join('|'),
+  'g'
+)
+
+const baseOf = (token: string): { name: string; trail: string } => {
+  const trail = /[.:]+$/.exec(token)?.[0] ?? ''
+  const body = trail ? token.slice(0, -trail.length) : token
+  const segments = body.split(/[\\/]/).filter((s) => s && s !== '~')
+  return { name: segments[segments.length - 1] ?? '', trail }
+}
+
+export function stripPaths(text: string, opts: { glued?: boolean } = {}): string {
+  const glued = opts.glued ?? true
+  return text.replace(PATH_TOKEN, (match, file?: string, url?: string, glue?: string) => {
     if (url) return match
-    const trail = /[.:]+$/.exec(match)?.[0] ?? ''
-    const body = trail ? match.slice(0, -trail.length) : match
-    const segments = body.split(/[\\/]/).filter((s) => s && s !== '~')
-    return (segments[segments.length - 1] ?? '') + trail
+    if (glue !== undefined) {
+      // Not a glue we trust (a git ref, say): leave the text alone.
+      if (!glued) return match
+      const { name, trail } = baseOf(glue)
+      return ` ${name}${trail}`
+    }
+    const { name, trail } = baseOf(file ? file.slice('file://'.length) : match)
+    return name + trail
   })
 }
 
 /** Free text for the payload: paths cut to basenames, then the usual home/secret redaction. */
-function safe(text: string, home: string): string {
-  return redactTranscript(stripPaths(text), { home }).text
+function safe(text: string, home: string, opts: { glued?: boolean } = {}): string {
+  return redactTranscript(stripPaths(text, opts), { home }).text
 }
 
 /** The fixed, path-free sentence for each review code. The raw detail is never passed on. */
@@ -218,7 +263,7 @@ function listBundle(
   return {
     id: safe(listedId(b), opts.home),
     folderAlias: safe(b.item.path ? alias(b.item.path) : alias(b.item.repoPath), opts.home),
-    branch: b.item.branch ? safe(b.item.branch, opts.home) : null,
+    branch: b.item.branch ? safe(b.item.branch, opts.home, { glued: false }) : null,
     bucket: b.bucket,
     reason: reason?.sentence ?? null,
     reasonCode: reason?.code ?? null,
@@ -453,7 +498,7 @@ export function planRelease(
       ok: true,
       op: 'release_worktree',
       folderAlias: safe(alias(bundle.item.path ?? bundle.item.repoPath), opts.home),
-      branch: bundle.item.branch ? safe(bundle.item.branch, opts.home) : null,
+      branch: bundle.item.branch ? safe(bundle.item.branch, opts.home, { glued: false }) : null,
       released: true,
       alreadyReleased: releasedAlready,
       bucketAfter: after.bucket,

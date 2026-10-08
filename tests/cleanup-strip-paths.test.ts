@@ -55,10 +55,12 @@ describe('stripPaths: the shapes that must not leak', () => {
 
   it('what is not an absolute path is left alone', () => {
     expect(stripPaths('and/or a/b/c')).toBe('and/or a/b/c')
-    expect(stripPaths('branch feat/home/page')).toBe('branch feat/home/page')
+    expect(stripPaths('see lib/utils/helpers and src/main')).toBe(
+      'see lib/utils/helpers and src/main'
+    )
   })
 
-  it('a branch name is never mangled when glue-scrubbing is off', () => {
+  it('a branch name is never mangled when glue-scrubbing is off (free text may lose a ref like feat/home/x)', () => {
     expect(stripPaths('feat/home/refactor', { glued: false })).toBe('feat/home/refactor')
     expect(stripPaths('v2/srv/thing', { glued: false })).toBe('v2/srv/thing')
   })
