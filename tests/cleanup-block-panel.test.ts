@@ -5,6 +5,7 @@ import CleanupBlockPanel from '../src/renderer/src/components/CleanupBlockPanel.
 import { i18n } from '@renderer/i18n'
 import type { Bucket } from '../src/main/gc/bundle-core'
 import type { ReapItem, HydrationInfo } from '../src/preload'
+import type { GcOpinion } from '../src/main/gc/gc-wire'
 import type { GcBlock } from '../src/renderer/src/lib/gc-model'
 import type { BlockJobState, ItemFailure } from '../src/renderer/src/lib/gc-jobs'
 import { CHANGED_SINCE_CONFIRM, REFUSAL_CODES } from '../src/renderer/src/lib/gc-jobs'
@@ -53,6 +54,8 @@ type Props = {
   failure?: ItemFailure | null
   dehydrateIdleDays?: number
   hydrationBusy?: 'dehydrating' | 'rehydrating' | null
+  opinion?: GcOpinion | null
+  asking?: boolean
 }
 
 function mountPanel(block: GcBlock, props: Props = {}) {
@@ -82,14 +85,14 @@ describe('CleanupBlockPanel — actions by bucket and kind', () => {
     expect(w.emitted('cleanNow')).toHaveLength(1)
   })
 
-  it('a Needs review worktree offers Remove, Dehydrate, Keep and a disabled Ask with its tooltip', async () => {
+  it('a Needs review worktree offers Remove, Dehydrate, Keep and an enabled Ask with its cost tooltip', async () => {
     const w = mountPanel(blockWith('review'))
     for (const id of ['panel-remove', 'panel-dehydrate', 'panel-keep', 'panel-ask']) {
       expect(has(w, id)).toBe(true)
     }
     const ask = w.get('[data-testid="panel-ask"]')
-    expect(ask.attributes('disabled')).toBeDefined()
-    expect(ask.attributes('title')).toBe(t('cleanup.gc.panel.askSoon'))
+    expect(ask.attributes('disabled')).toBeUndefined()
+    expect(ask.attributes('title')).toBe(t('cleanup.gc.opinion.hint'))
     await w.get('[data-testid="panel-remove"]').trigger('click')
     await w.get('[data-testid="panel-keep"]').trigger('click')
     await w.get('[data-testid="panel-dehydrate"]').trigger('click')
@@ -97,6 +100,7 @@ describe('CleanupBlockPanel — actions by bucket and kind', () => {
     expect(w.emitted('remove')).toHaveLength(1)
     expect(w.emitted('keep')).toHaveLength(1)
     expect(w.emitted('dehydrate')).toHaveLength(1)
+    expect(w.emitted('ask')).toEqual([[w.props('block').id]])
     expect(w.emitted('close')).toBeUndefined()
   })
 
@@ -123,9 +127,11 @@ describe('CleanupBlockPanel — actions by bucket and kind', () => {
       t('cleanup.gc.reason.noKnownWorktree')
     )
     expect(has(w, 'panel-remove')).toBe(true)
-    for (const id of ['panel-keep', 'panel-ask', 'panel-dehydrate', 'panel-rehydrate']) {
+    for (const id of ['panel-keep', 'panel-dehydrate', 'panel-rehydrate']) {
       expect(has(w, id)).toBe(false)
     }
+    // An orphan volume can be asked about too: the advisor sees its project and size.
+    expect(has(w, 'panel-ask')).toBe(true)
     expect(has(w, 'panel-volume-warning')).toBe(true)
     await w.get('[data-testid="panel-close"]').trigger('click')
     expect(w.emitted('close')).toHaveLength(1)
@@ -332,5 +338,46 @@ describe('CleanupBlockPanel — hydration legality', () => {
       { hydrationBusy: 'rehydrating' }
     )
     expect(re.get('[data-testid="panel-rehydrate"]').attributes('disabled')).toBeDefined()
+  })
+})
+
+describe('CleanupBlockPanel — the opinion section', () => {
+  const opinion = (over: Partial<GcOpinion> = {}): GcOpinion => ({
+    id: 'x',
+    verdict: 'safe',
+    reason: 'Everything it changed is already on main.',
+    evidence: 'the 3 changed files are on main at abc123',
+    ...over
+  })
+
+  it('shows nothing until the item was asked about', () => {
+    expect(has(mountPanel(blockWith('review')), 'panel-opinion')).toBe(false)
+  })
+
+  it('shows the verdict, the reason and the evidence', () => {
+    const w = mountPanel(blockWith('review'), { opinion: opinion() })
+    expect(w.get('[data-testid="panel-opinion"] [data-testid="opinion-chip"]').text()).toBe(
+      t('cleanup.gc.opinion.safe')
+    )
+    expect(w.get('[data-testid="panel-opinion-reason"]').text()).toBe(
+      'Everything it changed is already on main.'
+    )
+    expect(w.get('[data-testid="panel-opinion-evidence"]').text()).toContain(
+      'the 3 changed files are on main at abc123'
+    )
+  })
+
+  it('shows the pending chip and disables Ask while the request is in flight', () => {
+    const w = mountPanel(blockWith('review'), { asking: true })
+    expect(w.get('[data-testid="opinion-chip"]').attributes('data-state')).toBe('pending')
+    expect(w.get('[data-testid="panel-ask"]').attributes('disabled')).toBeDefined()
+    expect(has(w, 'panel-opinion-reason')).toBe(false)
+  })
+
+  it('a ready item never shows an opinion section', () => {
+    const w = mountPanel(blockWith('ready', { verdict: 'harvestable', blockers: [] }), {
+      opinion: opinion()
+    })
+    expect(has(w, 'panel-opinion')).toBe(false)
   })
 })

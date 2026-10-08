@@ -5,7 +5,9 @@ import { CircleCheck, CircleHelp, TriangleAlert } from 'lucide-vue-next'
 import Button from './ui/Button.vue'
 import { formatBytes } from './system-monitor-format'
 import { useFocusTrap } from '../composables/useFocusTrap'
+import type { GcOpinion } from '../../../main/gc/gc-wire'
 import type { DialogRow, RemovalChip } from '../lib/gc-model'
+import CleanupOpinionChip from './CleanupOpinionChip.vue'
 
 /**
  * The one confirm of the Cleanup screen (design.md "Workspace GC — unified Cleanup / Bulk-clean and
@@ -20,6 +22,8 @@ import type { DialogRow, RemovalChip } from '../lib/gc-model'
 const props = defineProps<{
   rows: DialogRow[]
   mode: 'ready' | 'review'
+  /** The advisor's verdict on a row, when it was asked. Shown with its evidence; never decides. */
+  opinionOf?: (id: string) => GcOpinion | null
 }>()
 const emit = defineEmits<{ confirm: []; cancel: [] }>()
 const { t, te } = useI18n()
@@ -194,6 +198,12 @@ function onBackdropMousedown(e: MouseEvent): void {
                   >{{ row.reasonDetail }}</span
                 >
               </template>
+              <CleanupOpinionChip
+                v-if="mode === 'review' && opinionOf?.(row.id)"
+                :opinion="opinionOf(row.id)"
+                :pending="false"
+                show-evidence
+              />
               <span class="mt-1 flex flex-wrap gap-1">
                 <span
                   v-for="chip in row.chips"

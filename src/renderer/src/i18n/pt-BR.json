@@ -2349,7 +2349,7 @@
         "rehydrate": "Rehydrate",
         "keep": "Manter",
         "ask": "Pedir uma opinião",
-        "askSoon": "chega na S6",
+        "opinionTitle": "Opinião",
         "volumesKept": "Os volumes dele ({names}) são mantidos. Depois eles aparecem em Precisa de você.",
         "readyNote": "Limpo no próximo ciclo, ou agora com Limpar agora.",
         "inUseNote": "Deixado como está enquanto uma sessão trabalha aqui ou o pull request está aberto."
@@ -2370,7 +2370,6 @@
         "dehydrate": "Dehydrate",
         "keep": "Manter",
         "ask": "Pedir uma opinião",
-        "askSoon": "chega no S6",
         "shiftHint": "clique para adicionar mais",
         "clear": "Limpar seleção"
       },
@@ -2568,10 +2567,20 @@
         "several": "{n} itens foram deixados como estão por motivos diferentes. Abra cada um para ver o motivo.",
         "inUse": "Está em uso, então foi deixado como está."
       },
+      "opinion": {
+        "safe": "Seguro",
+        "keep": "Manter",
+        "unsure": "Incerto",
+        "pending": "Perguntando…",
+        "aria": "Opinião: {verdict}. {reason}",
+        "hint": "Pergunta a uma sessão de modelo somente leitura. Gasta tokens.",
+        "failed": "Não foi possível pedir uma opinião",
+        "evidence": "Evidência"
+      },
       "review": {
         "title": "Precisa de você",
         "askAll": "Pedir uma opinião sobre todos os {count}",
-        "askSoon": "chega na S6",
+        "removeSafe": "Remover os {count} marcados como seguros",
         "empty": "Nada precisa de você.",
         "showAll": "Mostrar todos os {count}",
         "rowAria": "{name}, {size}",

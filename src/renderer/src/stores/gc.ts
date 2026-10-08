@@ -1,7 +1,15 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { GcPrefs } from '../../../main/gc/gc-prefs'
-import type { GcCleanAck, GcJobDone, GcJobProgress, GcSnapshot } from '../../../main/gc/gc-wire'
+import type {
+  GcCleanAck,
+  GcJobDone,
+  GcJobProgress,
+  GcOpinion,
+  GcOpinionDone,
+  GcOpinionResult,
+  GcSnapshot
+} from '../../../main/gc/gc-wire'
 import { i18n } from '../i18n'
 import { formatBytes } from '../components/system-monitor-format'
 import { refusalKey } from '../components/cleanup-gc-copy'
@@ -30,6 +38,15 @@ import {
   type ItemFailure,
   type JobsState
 } from '../lib/gc-jobs'
+import {
+  clearPending,
+  markPending,
+  opinionOf,
+  pruneOpinions,
+  recordOpinion,
+  safeIds,
+  type OpinionMap
+} from '../lib/gc-opinion'
 import { useNotificationsStore } from './notifications'
 import { useUiStore } from './ui'
 
@@ -69,17 +86,28 @@ export const useGcStore = defineStore('gc', () => {
   const gone = ref<Set<string>>(new Set())
   /** Items the last run could not clean (or refused), kept for the panel's "what ran" and the pill. */
   const failures = ref<Map<string, ItemFailure>>(new Map())
+  /** "Ask for an opinion": the verdicts received, and the ids whose answer is still on its way. */
+  const opinions = ref<OpinionMap>(new Map())
+  const pendingOpinions = ref<ReadonlySet<string>>(new Set())
 
   let unsubs: Array<() => void> = []
   let initialised = false
   const fadeTimers = new Set<ReturnType<typeof setTimeout>>()
   const scheduled = new Set<string>()
+  /** Ids each opinion request named, to end their pending state if a result is lost. */
+  const opinionJobs = new Map<string, string[]>()
 
   const model = computed<GcModel | null>(() => {
     const s = snapshot.value
     if (!s) return null
     if (gone.value.size === 0) return buildGcModel(s)
     return buildGcModel({ ...s, bundles: s.bundles.filter((b) => !gone.value.has(b.item.id)) })
+  })
+
+  // An opinion is about one state of one item: it goes when the snapshot shows a different head,
+  // reason or bucket. The chip then disappears and asking again is a fresh question.
+  watch(model, (m) => {
+    if (m) opinions.value = pruneOpinions(opinions.value, m)
   })
 
   const prefs = computed<GcPrefs | null>(() => snapshot.value?.prefs ?? null)
@@ -172,6 +200,22 @@ export const useGcStore = defineStore('gc', () => {
     }
   }
 
+  function onOpinionResult(r: GcOpinionResult): void {
+    // Every id the request named gets exactly one result (a verdict, or a refusal), so this is
+    // also what ends its pending state.
+    pendingOpinions.value = clearPending(pendingOpinions.value, [r.id])
+    if ('refused' in r || !model.value) return
+    const { jobId: _jobId, ...opinion } = r
+    opinions.value = recordOpinion(opinions.value, opinion, model.value)
+  }
+
+  /** The job is over: anything still marked pending for it was lost, so stop showing "Asking…". */
+  function onOpinionDone(d: GcOpinionDone): void {
+    const ids = opinionJobs.get(d.jobId)
+    opinionJobs.delete(d.jobId)
+    if (ids) pendingOpinions.value = clearPending(pendingOpinions.value, ids)
+  }
+
   async function onDone(d: GcJobDone): Promise<void> {
     jobs.value = applyDone(jobs.value, d)
     const next = new Map(failures.value)
@@ -203,7 +247,9 @@ export const useGcStore = defineStore('gc', () => {
         window.api.onGcProgress(onProgress),
         window.api.onGcDone((d) => void onDone(d)),
         // A cycle finished (autopilot tick or manual): the world changed.
-        window.api.onGcCycle(() => void refresh())
+        window.api.onGcCycle(() => void refresh()),
+        window.api.onGcOpinionResult(onOpinionResult),
+        window.api.onGcOpinionDone(onOpinionDone)
       ]
       const [snap, live] = await Promise.all([
         window.api.gcSnapshot(),
@@ -246,6 +292,38 @@ export const useGcStore = defineStore('gc', () => {
   /** Remove selected: the operator confirmed each of these Needs review items. */
   const cleanSelected = (ids: readonly string[]): Promise<GcCleanAck | null> =>
     startClean(ids, 'review')
+
+  /**
+   * "Ask for an opinion" on Needs review items (orphan volumes included). Advisory and read-only:
+   * it only fills `opinions`. Items already being asked about are not asked twice, and an item that
+   * is not Needs review is not sent at all.
+   */
+  async function askOpinion(ids: readonly string[]): Promise<void> {
+    const m = model.value
+    if (!m) return
+    const wanted = [...new Set(ids)].filter(
+      (id) => m.byId.get(id)?.bucket === 'review' && !pendingOpinions.value.has(id)
+    )
+    if (wanted.length === 0) return
+    pendingOpinions.value = markPending(pendingOpinions.value, wanted)
+    try {
+      const ack = await window.api.gcOpinion(wanted)
+      opinionJobs.set(ack.jobId, wanted)
+    } catch (e) {
+      pendingOpinions.value = clearPending(pendingOpinions.value, wanted)
+      useUiStore().pushToast({
+        kind: 'danger',
+        title: i18n.global.t('cleanup.gc.opinion.failed'),
+        description: e instanceof Error ? e.message : String(e),
+        timeoutMs: 8000
+      })
+    }
+  }
+
+  const opinionFor = (id: string): GcOpinion | null => opinionOf(opinions.value, id)
+  const isAsking = (id: string): boolean => pendingOpinions.value.has(id)
+  /** What "Remove the ones marked safe" pre-selects. */
+  const safeOpinionIds = computed(() => (model.value ? safeIds(opinions.value, model.value) : []))
 
   async function keep(id: string): Promise<void> {
     await window.api.gcKeep(id)
@@ -316,6 +394,12 @@ export const useGcStore = defineStore('gc', () => {
     enableAutopilot,
     dismissFirstReport,
     savePrefs,
-    pruneSelection
+    pruneSelection,
+    opinions,
+    pendingOpinions,
+    safeOpinionIds,
+    askOpinion,
+    opinionFor,
+    isAsking
   }
 })

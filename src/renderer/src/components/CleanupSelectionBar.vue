@@ -6,11 +6,11 @@ import { formatBytes } from './system-monitor-format'
 
 /**
  * Multi-select band of the Cleanup takeover (design.md "Workspace GC — unified Cleanup / Page
- * anatomy" #3). Shown only while at least one Needs review block is checked. "Ask for an opinion" is
- * drawn but disabled until the opinion helper (S6) exists.
+ * anatomy" #3). Shown only while at least one Needs review block is checked. "Ask for an opinion"
+ * asks the read-only advisor about the checked items; it is advisory and never removes anything.
  */
-defineProps<{ count: number; bytes: number }>()
-const emit = defineEmits<{ remove: []; dehydrate: []; keep: []; clear: [] }>()
+defineProps<{ count: number; bytes: number; asking?: boolean }>()
+const emit = defineEmits<{ remove: []; dehydrate: []; keep: []; ask: []; clear: [] }>()
 const { t } = useI18n()
 </script>
 
@@ -43,8 +43,8 @@ const { t } = useI18n()
       {{ t('cleanup.gc.selection.keep') }}
     </Button>
     <!-- A disabled button swallows hover, so the tooltip rides on a wrapper. -->
-    <span :title="t('cleanup.gc.selection.askSoon')" class="inline-flex">
-      <Button variant="soft" disabled data-testid="sel-ask">
+    <span :title="t('cleanup.gc.opinion.hint')" class="inline-flex">
+      <Button variant="soft" :disabled="asking" data-testid="sel-ask" @click="emit('ask')">
         <Sparkles :size="13" :stroke-width="1.6" class="shrink-0" />
         {{ t('cleanup.gc.selection.ask') }}
       </Button>

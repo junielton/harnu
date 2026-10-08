@@ -2349,7 +2349,7 @@
         "rehydrate": "Rehydrate",
         "keep": "Keep",
         "ask": "Ask for an opinion",
-        "askSoon": "coming in S6",
+        "opinionTitle": "Opinion",
         "volumesKept": "Its volumes ({names}) are kept. They show up in Needs review afterwards.",
         "readyNote": "Cleaned on the next cycle, or now with Clean now.",
         "inUseNote": "Left alone while a session works here or its pull request is open."
@@ -2370,7 +2370,6 @@
         "dehydrate": "Dehydrate",
         "keep": "Keep",
         "ask": "Ask for an opinion",
-        "askSoon": "coming in S6",
         "shiftHint": "click to add more",
         "clear": "Clear selection"
       },
@@ -2568,10 +2567,20 @@
         "several": "{n} items were left alone for different reasons. Open each one to see why.",
         "inUse": "It is in use, so it was left alone."
       },
+      "opinion": {
+        "safe": "Safe",
+        "keep": "Keep",
+        "unsure": "Unsure",
+        "pending": "Asking…",
+        "aria": "Opinion: {verdict}. {reason}",
+        "hint": "Asks a read-only model session. Uses tokens.",
+        "failed": "Couldn't ask for an opinion",
+        "evidence": "Evidence"
+      },
       "review": {
         "title": "Needs review",
         "askAll": "Ask for an opinion on all {count}",
-        "askSoon": "coming in S6",
+        "removeSafe": "Remove the {count} marked safe",
         "empty": "Nothing needs review.",
         "showAll": "Show all {count}",
         "rowAria": "{name}, {size}",

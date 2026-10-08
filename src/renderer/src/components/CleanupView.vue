@@ -130,6 +130,28 @@ function clearSelection(): void {
   checked.value = new Set()
 }
 
+// ---- opinions -----------------------------------------------------------------------------------
+// "Ask for an opinion" is advisory: it fills chips and nothing else. "Remove the ones marked safe"
+// only pre-selects those items and opens the same remove dialog as Remove selected, so the confirm
+// still sends each id as `confirmed` with its `expected` facts. Nothing here calls `gc:clean`.
+
+const askingSelection = computed(
+  () => checked.value.size > 0 && [...checked.value].every((id) => gc.isAsking(id))
+)
+
+function askOpinion(ids: readonly string[]): void {
+  void gc.askOpinion(ids)
+}
+function askAllOpinions(): void {
+  askOpinion(model.value?.review.map((b) => b.id) ?? [])
+}
+function removeMarkedSafe(): void {
+  const ids = gc.safeOpinionIds
+  if (dialogOpen.value || ids.length === 0) return
+  checked.value = new Set(ids)
+  openRemove(ids)
+}
+
 // ---- dialogs ------------------------------------------------------------------------------------
 
 const confirmDialog = ref<{ mode: 'ready' | 'review'; ids: string[] } | null>(null)
@@ -391,9 +413,11 @@ async function copyRestoreHint(hint: string): Promise<void> {
   <CleanupSelectionBar
     :count="stats.count"
     :bytes="stats.bytes"
+    :asking="askingSelection"
     @remove="openRemove([...checked])"
     @dehydrate="openDehydrate([...checked])"
     @keep="gc.keepMany([...checked])"
+    @ask="askOpinion([...checked])"
     @clear="clearSelection()"
   />
 
@@ -489,12 +513,17 @@ async function copyRestoreHint(hint: string): Promise<void> {
             :linked-id="linkedId"
             :block-state="gc.blockState"
             :failure-of="gc.failureOf"
+            :opinion-of="gc.opinionFor"
+            :is-asking="gc.isAsking"
+            :safe-count="gc.safeOpinionIds.length"
             @toggle="onToggle"
             @select="onSelect"
             @hover="linkedId = $event"
             @remove="openRemove([$event])"
             @dehydrate="openDehydrate([$event])"
             @keep="gc.keep($event)"
+            @ask-all="askAllOpinions()"
+            @remove-safe="removeMarkedSafe()"
           />
         </div>
 
@@ -511,6 +540,8 @@ async function copyRestoreHint(hint: string): Promise<void> {
             :failure="gc.failureOf(selectedBlock.id)"
             :dehydrate-idle-days="reaper.dehydrateIdleDays"
             :hydration-busy="hydrationBusy(selectedBlock.id)"
+            :opinion="gc.opinionFor(selectedBlock.id)"
+            :asking="gc.isAsking(selectedBlock.id)"
             @close="selectedId = null"
             @remove="openRemove([$event])"
             @retry="openRemove([$event])"
@@ -518,6 +549,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             @dehydrate="openDehydrate([$event])"
             @rehydrate="rehydrate($event)"
             @keep="gc.keep($event)"
+            @ask="askOpinion([$event])"
           />
         </aside>
       </div>
@@ -568,6 +600,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
     v-if="confirmDialog"
     :rows="rows"
     :mode="confirmDialog.mode"
+    :opinion-of="gc.opinionFor"
     @confirm="confirmClean()"
     @cancel="confirmDialog = null"
   />
