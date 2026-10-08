@@ -10,6 +10,7 @@
 import { getFleetFolders } from '../fleet-model'
 import { resolveClaudePath } from '../claude-cli'
 import { sanitizeSpawnEnv } from '../appimage-env'
+import { gatherDiff, gatherKeyGit } from './opinion-git'
 import { runSupervised } from './opinion-run'
 import { lastFateInputs } from '../reaper/scanner-shell'
 import { resolveFolderRouting } from '../routing-policy'
@@ -41,22 +42,6 @@ export interface OpinionShellOptions {
 
 type ShellDeps = Pick<OpinionServiceDeps, 'classify' | 'dossier' | 'keyFacts' | 'route' | 'run'>
 
-async function attempt(work: () => Promise<string>): Promise<string> {
-  try {
-    return await work()
-  } catch {
-    return ''
-  }
-}
-
-/** `origin/<default>` as the remote reports it, or `origin/main` when it cannot be read. */
-async function defaultRef(opts: OpinionShellOptions, repoPath: string): Promise<string> {
-  const out = (
-    await attempt(() => opts.git(repoPath, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']))
-  ).trim()
-  return out || 'origin/main'
-}
-
 /** The most recent chat held in exactly this folder: its summary, else its first prompt. */
 async function lastSummaryIn(path: string): Promise<string | null> {
   try {
@@ -73,7 +58,8 @@ async function lastSummaryIn(path: string): Promise<string | null> {
 /**
  * What the cache key reads, and nothing heavier: the fate and pull request from the last scan, the
  * live head and the live dirty set (two cheap git calls). The ask and the peek both go through it,
- * so the same item always has the same key.
+ * so the same item always has the same key. A git call that fails is recorded as `unavailable`, never
+ * as an empty value: an unreadable status is not a clean worktree.
  */
 async function worktreeKeyFacts(
   opts: OpinionShellOptions,
@@ -82,22 +68,26 @@ async function worktreeKeyFacts(
   const { item } = b
   const path = item.path ?? null
   const facts = lastFateInputs().get(item.id)?.facts
-  let head: string | null = b.localTip ?? null
+  const unavailable: NonNullable<OpinionKeyFacts['unavailable']> = {}
+  let head: string | null = null
   let dirtyFiles: string[] = []
   if (path) {
-    const [status, tip] = await Promise.all([
-      attempt(() => opts.git(path, ['status', '--porcelain'])),
-      attempt(() => opts.git(path, ['rev-parse', 'HEAD']))
-    ])
-    dirtyFiles = status.split('\n').filter((l) => l.trim().length > 0)
-    head = tip.trim() || head
+    const live = await gatherKeyGit(opts.git, path)
+    if (live.head.ok) head = live.head.value
+    else unavailable.head = live.head.reason
+    if (live.dirty.ok) dirtyFiles = live.dirty.value
+    else unavailable.uncommitted = live.dirty.reason
+  } else {
+    head = b.localTip ?? null
+    unavailable.uncommitted = 'the worktree has no folder to inspect'
   }
   return {
     reasonCode: b.reason?.code ?? 'unknown-fate',
     fate: b.fate.fate,
     prState: facts?.pr?.state ?? null,
     head,
-    dirtyFiles
+    dirtyFiles,
+    ...(Object.keys(unavailable).length > 0 ? { unavailable } : {})
   }
 }
 
@@ -108,14 +98,19 @@ async function worktreeDossier(
   const { item } = b
   const path = item.path ?? null
   const key = await worktreeKeyFacts(opts, b)
+  const unavailable: NonNullable<OpinionKeyFacts['unavailable']> = { ...key.unavailable }
   let diffStat = ''
   let lastSessionSummary: string | null = null
   if (path) {
-    const base = await defaultRef(opts, item.repoPath)
-    ;[diffStat, lastSessionSummary] = await Promise.all([
-      attempt(() => opts.git(path, ['diff', '--stat', '--stat-width=120', `${base}...HEAD`])),
+    const [diff, summary] = await Promise.all([
+      gatherDiff(opts.git, item.repoPath, path),
       lastSummaryIn(path)
     ])
+    if (diff.ok) diffStat = diff.value
+    else unavailable.diff = diff.reason
+    lastSessionSummary = summary
+  } else {
+    unavailable.diff = 'the worktree has no folder to inspect'
   }
   return {
     group: item.repoPath,
@@ -130,7 +125,8 @@ async function worktreeDossier(
       head: key.head,
       diffStat,
       dirtyFiles: key.dirtyFiles,
-      lastSessionSummary
+      lastSessionSummary,
+      ...(Object.keys(unavailable).length > 0 ? { unavailable } : {})
     }
   }
 }

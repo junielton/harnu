@@ -40,6 +40,25 @@ export interface OpinionDossier {
   lastSessionSummary: string | null
   /** Set for an orphan volume, which has no worktree. */
   volume?: { name: string; project: string | null; sizeBytes: number | null }
+  /**
+   * Git facts that could not be computed, with a short reason. Such a fact is unknown, not empty:
+   * the prompt says so, the item is answered `unsure` without asking the model, and it has no
+   * cache key. The matching field above is left blank and must not be read.
+   */
+  unavailable?: Partial<Record<UnavailableFact, string>>
+}
+
+export type UnavailableFact = 'head' | 'uncommitted' | 'diff'
+
+const UNAVAILABLE_LABEL: Record<UnavailableFact, string> = {
+  head: 'head',
+  uncommitted: 'uncommitted files',
+  diff: 'the diff against the default branch'
+}
+
+/** The facts that are missing, in a stable order. */
+export function unavailableFacts(d: Pick<OpinionDossier, 'unavailable'>): UnavailableFact[] {
+  return (['head', 'uncommitted', 'diff'] as const).filter((k) => d.unavailable?.[k] !== undefined)
 }
 
 /** Items per headless process: enough to share one start-up, few enough to keep the answer focused. */
@@ -236,12 +255,23 @@ function renderDossier(d: OpinionDossier, index: number): string {
   lines.push(`Why it needs review: ${d.reasonCode} — ${field(d.reasonDetail, own, FIELD_MAX)}`)
   if (!d.volume) {
     lines.push(`Branch fate: ${d.fate ?? 'unknown'} · Pull request: ${d.prState ?? 'none'}`)
-    if (d.head) lines.push(`HEAD: ${field(d.head, own, 64)}`)
-    lines.push('Diff against the default branch:')
-    lines.push(d.diffStat.trim() ? field(d.diffStat, own, DIFF_STAT_MAX) : '(no difference)')
-    lines.push('Uncommitted files:')
-    if (d.dirtyFiles.length === 0) lines.push('(none)')
-    else {
+    const missing = (k: UnavailableFact): string =>
+      `COULD NOT BE COMPUTED (${field(d.unavailable?.[k] ?? 'unknown reason', own, FIELD_MAX)})`
+    if (d.unavailable?.head !== undefined) lines.push(`HEAD: ${missing('head')}`)
+    else if (d.head) lines.push(`HEAD: ${field(d.head, own, 64)}`)
+    if (d.unavailable?.diff !== undefined) {
+      lines.push(`Diff against the default branch: ${missing('diff')}`)
+    } else {
+      lines.push('Diff against the default branch:')
+      lines.push(d.diffStat.trim() ? field(d.diffStat, own, DIFF_STAT_MAX) : '(no difference)')
+    }
+    if (d.unavailable?.uncommitted !== undefined) {
+      lines.push(`Uncommitted files: ${missing('uncommitted')}`)
+    } else if (d.dirtyFiles.length === 0) {
+      lines.push('Uncommitted files:')
+      lines.push('(none)')
+    } else {
+      lines.push('Uncommitted files:')
       for (const f of d.dirtyFiles.slice(0, DIRTY_FILES_MAX)) lines.push(field(f, own, FIELD_MAX))
       if (d.dirtyFiles.length > DIRTY_FILES_MAX) {
         lines.push(`… and ${d.dirtyFiles.length - DIRTY_FILES_MAX} more`)
@@ -264,6 +294,7 @@ const INSTRUCTIONS = [
   '- "safe": nothing is lost by removing this item (its changes are already on the default branch, or there are none).',
   '- "keep": it holds work that exists nowhere else (unpushed commits, uncommitted changes that matter, an open pull request).',
   '- "unsure": you cannot tell. When in doubt, answer "unsure". Answer "safe" only when you can name the evidence.',
+  '- A line that says COULD NOT BE COMPUTED means that fact is unknown, not empty. Never answer "safe" for an item that has one.',
   '- "reason" is one sentence. "evidence" is the concrete fact it rests on, for example "the 3 changed files are on main at abc123".',
   '',
   'Answer with JSON only, no other text, for every item, using its id exactly:',
@@ -527,7 +558,7 @@ export function classifyOpinionIds(
 /** The part of a dossier an opinion's cache key reads: cheap to gather, no diff and no chat. */
 export type OpinionKeyFacts = Pick<
   OpinionDossier,
-  'reasonCode' | 'fate' | 'prState' | 'head' | 'dirtyFiles' | 'volume'
+  'reasonCode' | 'fate' | 'prState' | 'head' | 'dirtyFiles' | 'volume' | 'unavailable'
 >
 
 /**
@@ -535,6 +566,7 @@ export type OpinionKeyFacts = Pick<
  * answer is reused until the fate, the pull request, the head or the set of dirty files changes.
  */
 export function opinionKey(d: OpinionKeyFacts): string {
+  // Callers that cache go through `cacheKeyOf`, which has no key for an item with a missing fact.
   return JSON.stringify([
     d.reasonCode,
     d.fate,
@@ -543,6 +575,15 @@ export function opinionKey(d: OpinionKeyFacts): string {
     [...d.dirtyFiles].sort(),
     d.volume ? [d.volume.name, d.volume.project, d.volume.sizeBytes] : null
   ])
+}
+
+/**
+ * The key an answer is cached under, or null when a git fact could not be computed: such an item is
+ * uncacheable, so an answer given while it was unknown can never be served as if the item were
+ * checked, and nothing cached earlier is served while it is unknown.
+ */
+export function cacheKeyOf(d: OpinionKeyFacts): string | null {
+  return unavailableFacts(d).length > 0 ? null : opinionKey(d)
 }
 
 export interface OpinionCache {
@@ -661,7 +702,7 @@ export function createOpinionService(deps: OpinionServiceDeps): OpinionService {
   async function currentKey(id: string): Promise<string | null> {
     try {
       const facts = await keyFactsOf(id)
-      return facts ? opinionKey(facts) : null
+      return facts ? cacheKeyOf(facts) : null
     } catch {
       return null
     }
@@ -685,7 +726,27 @@ export function createOpinionService(deps: OpinionServiceDeps): OpinionService {
         refuse(id, 'unknown')
         continue
       }
-      const key = opinionKey(subject.dossier)
+      const key = cacheKeyOf(subject.dossier)
+      if (key === null) {
+        // A git fact could not be computed: unknown is not empty, so the model is not asked and
+        // nothing is cached. Harnu answers `unsure` itself and says which fact is missing.
+        const why = unavailableFacts(subject.dossier)
+          .map((k) => `${UNAVAILABLE_LABEL[k]} (${subject.dossier.unavailable?.[k]})`)
+          .join('; ')
+        const reason = `Harnu could not compute ${unavailableFacts(subject.dossier)
+          .map((k) => UNAVAILABLE_LABEL[k])
+          .join(', ')}, so it cannot judge this item.`
+        done.failed++
+        deps.emitResult({
+          jobId,
+          id,
+          verdict: 'unsure',
+          reason,
+          evidence: cap(why, FIELD_MAX),
+          durable: false
+        })
+        continue
+      }
       const hit = deps.cache.get(id, key)
       if (hit) {
         done.cached++

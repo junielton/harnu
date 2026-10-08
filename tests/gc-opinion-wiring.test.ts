@@ -19,7 +19,8 @@ const MAIN = walk(join(ROOT, 'src/main')).map((f) => relative(ROOT, f))
 const OPINION_FILES = [
   'src/main/gc/opinion-core.ts',
   'src/main/gc/opinion-shell.ts',
-  'src/main/gc/opinion-run.ts'
+  'src/main/gc/opinion-run.ts',
+  'src/main/gc/opinion-git.ts'
 ]
 
 /** Code without comments, so a comment that names what the file must not do is not a hit. */
@@ -96,12 +97,18 @@ describe('the advisor can only read (AC-2)', () => {
   })
 
   it('only runs read-only git subcommands', () => {
-    const shell = read('src/main/gc/opinion-shell.ts')
-    const subcommands = [...shell.matchAll(/opts\.git\([^[]*\[\s*'([a-z-]+)'/g)].map((m) => m[1])
+    const gitFile = code('src/main/gc/opinion-git.ts')
+    const subcommands = [...gitFile.matchAll(/\bgit\([^[]*\[\s*'([a-z-]+)'/g)].map((m) => m[1])
     expect(subcommands.length).toBeGreaterThan(0)
     for (const sub of subcommands) {
       expect(['symbolic-ref', 'diff', 'status', 'rev-parse']).toContain(sub)
     }
+    // The shell runs no git command of its own: every git fact comes through the fail-closed gatherer.
+    expect(code('src/main/gc/opinion-shell.ts')).not.toMatch(/opts\.git\(/)
+    // No catch-all that turns an error into an empty value.
+    expect(code('src/main/gc/opinion-shell.ts')).not.toMatch(
+      /async function attempt|catch\s*\{\s*return ''/
+    )
   })
 
   it('spawns claude with the argv it was given and nothing it added', () => {

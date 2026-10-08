@@ -581,9 +581,10 @@ describe('a git fact that could not be computed is stated, never rendered as emp
 
   it('still says "(no difference)" and "(none)" for a fact it did compute and found empty', () => {
     const p = buildPrompt([dossier({ diffStat: '', dirtyFiles: [] })])
-    expect(p).toContain('(no difference)')
-    expect(p).toContain('(none)')
-    expect(p).not.toContain('COULD NOT BE COMPUTED')
+    const block = p.slice(p.indexOf('<dossier id='))
+    expect(block).toContain('(no difference)')
+    expect(block).toContain('(none)')
+    expect(block).not.toContain('COULD NOT BE COMPUTED')
   })
 
   it('tells the advisor that such a line is unknown, not empty, and never to answer safe for it', () => {
