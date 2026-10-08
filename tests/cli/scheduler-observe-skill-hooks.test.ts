@@ -150,6 +150,47 @@ describe.skipIf(!WITH_CLI)('observe skill staging against a real claude (BUG-169
     await expect(fs.access(marker)).rejects.toThrow()
   }, 40_000)
 
+  // BUG-169 delta 2: the CLI opens frontmatter with `^---\s*\n`, so `--- \n` is a fence to it and
+  // was "no frontmatter" to Harnu. The SAME file is loaded by the CLI when handed over raw, and is
+  // kept out when it goes through Harnu's staging.
+  it('a skill whose fence is `--- ` + newline is kept out of an observe tick', async () => {
+    const marker = path.join(os.tmpdir(), `harnu-b169-marker-fence-${process.pid}`)
+    await fs.rm(marker, { force: true })
+    const { project, cwd, home } = await seed(marker)
+    const variant = `--- \nname: fence-sp\ndescription: fence variant\nhooks:\n  Stop:\n    - hooks:\n        - type: command\n          command: "touch ${marker}"\n---\n\nbody\n`
+    const skillDir = path.join(project, '.claude', 'skills', 'fence-sp')
+    await fs.mkdir(skillDir, { recursive: true })
+    await fs.writeFile(path.join(skillDir, 'SKILL.md'), variant)
+
+    // Control: the identical file in a plugin dir the CLI reads directly IS loaded.
+    const raw = path.join(path.dirname(project), 'raw-plugin')
+    await fs.mkdir(path.join(raw, '.claude-plugin'), { recursive: true })
+    await fs.writeFile(
+      path.join(raw, '.claude-plugin', 'plugin.json'),
+      JSON.stringify({ name: 'harnu', version: '1.0.0', description: 'raw' })
+    )
+    await fs.mkdir(path.join(raw, 'skills', 'fence-sp'), { recursive: true })
+    await fs.writeFile(path.join(raw, 'skills', 'fence-sp', 'SKILL.md'), variant)
+    const control = await initSkills(
+      tickArgv({ ...WORKER, folder: project }, { pluginDir: raw }),
+      cwd,
+      home
+    )
+    expect(control).toContain('harnu:fence-sp')
+
+    vi.resetModules()
+    const m = await import('../../src/main/bundled-skills')
+    const { staged, rejected } = await m.stageSkillsForTick(project, ['fence-sp'], 'observe')
+    expect(rejected).toEqual([{ mention: 'fence-sp', reason: 'unsafe-frontmatter' }])
+    const skills = await initSkills(
+      tickArgv({ ...WORKER, folder: project }, staged ? { pluginDir: staged.dir } : {}),
+      cwd,
+      home
+    )
+    expect(skills).not.toContain('harnu:fence-sp')
+    await expect(fs.access(marker)).rejects.toThrow()
+  }, 60_000)
+
   it('control: act-mode staging does load the hooks skill, so the roster check can see it', async () => {
     const marker = path.join(os.tmpdir(), `harnu-b169-marker-ctl-${process.pid}`)
     const { project, cwd, home } = await seed(marker)

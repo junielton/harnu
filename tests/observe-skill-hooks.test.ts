@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { skillDeclaresHooks } from '../src/main/bundled-skills-core'
+import { skillDeclaresHooks, skillFrontmatterVerdict } from '../src/main/bundled-skills-core'
 
 const h = vi.hoisted(() => ({ userDataDir: '', appPath: '', home: '' }))
 
@@ -437,4 +437,134 @@ describe('observe resolution — case variants of a bundled name (BUG-169 delta 
     const out = await m.stageSkillsForTick(project, ['Status'], 'act')
     expect(await read(out.staged!.dir, 'skills', 'Status', 'SKILL.md')).toContain('project Status')
   })
+})
+
+// ── BUG-169 delta 2: the fence itself ────────────────────────────────────────
+//
+// The CLI opens frontmatter with `^---\s*\n` after stripping one BOM, and its `\s` covers `\r`,
+// `\f`, `\v`, U+00A0, U+2028, U+FEFF. Harnu's fence regex was stricter, so `--- \n` or `---\r\r\n`
+// read as "no frontmatter" here while the CLI parsed the hooks (confirmed end to end against
+// claude 2.1.294). The rule is now: a fence is exactly `---\n` or `---\r\n`, and anything that
+// looks like an attempt at one is refused as unsafe-frontmatter rather than guessed at.
+
+describe('skillFrontmatterVerdict — the fence (BUG-169 delta 2)', () => {
+  const HOOKED = `name: s\ndescription: d\n${HOOKS_FRONTMATTER}\n`
+  const withFence = (fence: string, close = '---\n'): string => `${fence}${HOOKED}${close}\nbody\n`
+
+  it.each([
+    ['a trailing space', '--- \n'],
+    ['a trailing tab', '---\t\n'],
+    ['a carriage-return pair', '---\r\r\n'],
+    ['a form feed', '---\f\n'],
+    ['a vertical tab', '---\v\n'],
+    ['a no-break space', '--- \n'],
+    ['a line separator', '--- \n'],
+    ['a BOM after the fence', '---﻿\n'],
+    ['trailing text', '--- yaml\n'],
+    ['a fourth dash', '----\n']
+  ])('refuses an opening fence with %s', (_name, fence) => {
+    expect(skillFrontmatterVerdict(withFence(fence))).toBe('unsafe-frontmatter')
+    expect(skillDeclaresHooks(withFence(fence))).toBe(true)
+  })
+
+  it.each([
+    ['a double BOM', '﻿﻿---\n'],
+    ['one blank line', '\n---\n'],
+    ['leading spaces', '  ---\n'],
+    ['a leading no-break space', ' ---\n'],
+    ['a leading line separator', ' ---\n'],
+    ['a BOM then whitespace', '﻿\n---\n'],
+    ['a zero-width space', '​---\n']
+  ])('refuses anything before the fence: %s', (_name, lead) => {
+    expect(skillFrontmatterVerdict(`${lead}${HOOKED}---\n\nbody\n`)).toBe('unsafe-frontmatter')
+    expect(skillDeclaresHooks(`${lead}${HOOKED}---\n\nbody\n`)).toBe(true)
+  })
+
+  it('accepts exactly one BOM, then a plain LF or CRLF fence, for a clean header', () => {
+    const clean = 'name: s\ndescription: d\nallowed-tools: Read\n'
+    expect(skillFrontmatterVerdict(`---\n${clean}---\n\nbody\n`)).toBe('ok')
+    expect(skillFrontmatterVerdict(`﻿---\n${clean}---\n\nbody\n`)).toBe('ok')
+    expect(
+      skillFrontmatterVerdict(`---\r\n${clean.replace(/\n/g, '\r\n')}---\r\n\r\nbody\r\n`)
+    ).toBe('ok')
+  })
+
+  // The same gap in the other direction: the CLI may close the header at a line Harnu does not, so
+  // anything after a not-quite-closing line could be read by one and not the other.
+  it.each([
+    ['a trailing space', '--- \n'],
+    ['a form feed', '---\f\n'],
+    ['a no-break space', '--- \n'],
+    ['trailing text', '--- end\n'],
+    ['a fourth dash', '----\n']
+  ])('refuses a closing line that is not exactly ---: %s', (_name, close) => {
+    const doc = `---\nname: s\ndescription: d\n${close}${HOOKS_FRONTMATTER}\n---\n\nbody\n`
+    expect(skillFrontmatterVerdict(doc)).toBe('unsafe-frontmatter')
+    expect(skillDeclaresHooks(doc)).toBe(true)
+  })
+
+  it('still reports hooks in a well-formed header as hooks, and no frontmatter as ok', () => {
+    expect(skillFrontmatterVerdict(withFence('---\n'))).toBe('hooks')
+    expect(skillFrontmatterVerdict('# just a doc\n\nhooks:\n  Stop: []\n')).toBe('ok')
+    expect(skillFrontmatterVerdict('# a doc\n\n---\n\nrule above, not a fence\n')).toBe('ok')
+  })
+
+  it('an unclosed header is unsafe-frontmatter', () => {
+    expect(skillFrontmatterVerdict('---\nname: s\ndescription: d\n\nbody\n')).toBe(
+      'unsafe-frontmatter'
+    )
+  })
+})
+
+describe('observe staging — a fence variant is refused as unsafe-frontmatter (BUG-169 delta 2)', () => {
+  it.each([
+    ['--- \n', 'sp'],
+    ['---\r\r\n', 'crcr'],
+    ['---\f\n', 'ff'],
+    ['--- \n', 'nbsp'],
+    ['﻿﻿---\n', 'bom2'],
+    ['\n\n  ---\n', 'lead']
+  ])('%j is not staged', async (fence, id) => {
+    const dir = path.join(project, '.claude', 'skills', `fence-${id}`)
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, 'SKILL.md'),
+      `${fence}name: fence-${id}\ndescription: d\n${HOOKS_FRONTMATTER}\n---\n\nbody\n`,
+      'utf8'
+    )
+    const m = await load()
+    const out = await m.stageSkillsForTick(project, [`fence-${id}`], 'observe')
+    expect(out.rejected).toEqual([{ mention: `fence-${id}`, reason: 'unsafe-frontmatter' }])
+    expect(out.staged).toBeNull()
+  })
+})
+
+describe('readRegularFile — a FIFO swapped in mid-race cannot block (BUG-169 delta 2)', () => {
+  it('opens non-blocking, so a FIFO that appears after the scan is refused instead of waited on', async () => {
+    const dir = path.join(project, '.claude', 'skills', 'fifo-skill')
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, 'SKILL.md'),
+      '---\nname: fifo-skill\ndescription: d\n---\n\nb\n'
+    )
+    const fifo = path.join(dir, 'notes.md')
+    const { execFileSync } = await import('node:child_process')
+    execFileSync('mkfifo', [fifo])
+    const m = await load()
+    // The scan saw a regular file; by the time it is opened, a FIFO is there. (lstat is made to
+    // report the pre-swap state for that one path.)
+    const realLstat = fs.lstat.bind(fs)
+    const spy = vi
+      .spyOn(fs, 'lstat')
+      .mockImplementation(async (...a: Parameters<typeof fs.lstat>) =>
+        String(a[0]) === fifo ? realLstat(path.join(dir, 'SKILL.md')) : realLstat(...a)
+      )
+    try {
+      // A blocking open of a FIFO with no writer never returns; the test timeout is the failure.
+      const out = await m.stageSkillsForTick(project, ['fifo-skill'], 'observe')
+      expect(out.rejected).toEqual([{ mention: 'fifo-skill', reason: 'unsafe-layout' }])
+    } finally {
+      spy.mockRestore()
+    }
+  }, 5_000)
 })
