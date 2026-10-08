@@ -559,6 +559,32 @@ export const OPINION_TOOLS_DENY: readonly string[] = [
 
 const READ_TOOLS = ['Read', 'Grep', 'Glob'] as const
 
+/** Characters that cannot be written into a deny rule: the rule separator, its parentheses, control characters. */
+const UNSAFE_RULE_CHARS = /[,()\u0000-\u001f]/
+
+/**
+ * The folders (absolute ones; blanks and relative paths never become a rule) whose path contains a
+ * character that cannot be safely spliced into `--disallowedTools`. If there is one, the advisor must
+ * not run: a rule that is not the one intended may leave that folder readable.
+ */
+export function unsafeRulePaths(dirs: readonly string[]): string[] {
+  return dirs.filter((raw) => {
+    const t = raw.trim()
+    const absolute = t.startsWith('/') || /^[A-Za-z]:([\\/]|$)/.test(t)
+    return absolute && UNSAFE_RULE_CHARS.test(raw)
+  })
+}
+
+/** The last segment of a path, readable even when it holds control characters. */
+export function ruleBasename(path: string): string {
+  const parts = path
+    .trim()
+    .replace(/[\\/]+$/, '')
+    .split(/[\\/]/)
+  // eslint-disable-next-line no-control-regex
+  return (parts[parts.length - 1] || path).replace(/[\u0000-\u001f]/g, '?')
+}
+
 /**
  * Deny rules that close Claude's own data folder: `~/.claude` always, plus each given folder (for
  * `CLAUDE_CONFIG_DIR`) in the CLI's absolute `//path` form, for Read, Grep and Glob. That folder holds
@@ -566,6 +592,12 @@ const READ_TOOLS = ['Read', 'Grep', 'Glob'] as const
  * folder of the repository it runs in. Verified on the real CLI for all three tools in both forms.
  */
 export function dataDirRules(dirs: readonly string[]): string[] {
+  const unsafe = unsafeRulePaths(dirs)
+  if (unsafe.length > 0) {
+    // A `,` separates rules in `--disallowedTools`, parentheses end a rule, and a newline or other control
+    // character breaks the argument: splicing such a path in would write a different rule than intended.
+    throw new Error(`Harnu could not express a safety rule for ${ruleBasename(unsafe[0])}`)
+  }
   const roots = ['~/.claude']
   for (const raw of dirs) {
     const d = raw.trim().replace(/\\/g, '/').replace(/\/+$/, '')
@@ -955,6 +987,29 @@ export function createOpinionService(deps: OpinionServiceDeps): OpinionService {
 
     const { accepted, refused } = classifyOpinionIds(rawIds, await deps.classify())
     for (const r of refused) refuse(r.id, r.code)
+
+    // A blocked folder that cannot be written into a deny rule means the advisor's safety rules would not
+    // be the ones intended. Fail closed: do not run it, and answer every item unsure.
+    const unsafe = unsafeRulePaths(deps.dataDirs ?? [])
+    if (unsafe.length > 0) {
+      const names = unsafe.map(ruleBasename)
+      for (const id of accepted) {
+        done.failed++
+        deps.emitResult({
+          jobId,
+          id,
+          verdict: 'unsure',
+          reason: `Harnu could not express a safety rule for ${names[0]}`,
+          evidence: cap(
+            `A folder Harnu must block has a path with a character a deny rule cannot hold: ${names.join(', ')}.`,
+            FIELD_MAX
+          ),
+          durable: false
+        })
+      }
+      deps.emitDone(done)
+      return
+    }
 
     // Facts as of now, then whatever the cache already knows about exactly these facts.
     const pending = new Map<string, { subject: OpinionSubject; key: string }[]>()
