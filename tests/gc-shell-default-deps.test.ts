@@ -8,8 +8,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const h = vi.hoisted(() => ({
   inspectAll: vi.fn(),
   computeFolderSets: vi.fn(),
-  executor: {} as Record<string, unknown>
+  executor: {} as Record<string, unknown>,
+  /** The fake disk's realpath; by default every path is real and exists. */
+  realpath: vi.fn(async (p: string): Promise<string> => p)
 }))
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...real, default: { ...real, realpath: h.realpath }, realpath: h.realpath }
+})
 
 vi.mock('../src/main/containers/containers-shell', () => ({
   inspectAll: h.inspectAll,
@@ -67,6 +74,7 @@ function harvestable(): WorktreeBundle {
     keep: false,
     neverClean: false,
     isMainCheckout: false,
+    pathsResolved: true,
     localTip: TIP,
     bucket: 'corpse',
     reason: null
@@ -90,6 +98,8 @@ const timeoutError = (): Error =>
   })
 
 beforeEach(() => {
+  h.realpath.mockReset()
+  h.realpath.mockImplementation(async (p: string) => p)
   h.inspectAll.mockReset()
   h.computeFolderSets.mockReset()
   h.computeFolderSets.mockResolvedValue({ live: new Set(), inUse: new Set() })
@@ -175,5 +185,35 @@ describe('reprobe over the default deps', () => {
     )
     const ops = createGcOps(await defaultGcShellDeps(() => null))
     expect(await ops.reprobe(harvestable())).toEqual({ ok: true })
+  })
+})
+
+describe('real paths over the default deps (delta 4, item C)', () => {
+  const LINK = '/link/wt'
+
+  it('realpath answers the real path, and null when it cannot be read', async () => {
+    h.realpath.mockImplementation(async (p: string) => {
+      if (p === LINK) return WT
+      throw Object.assign(new Error(`ENOENT: ${p}`), { code: 'ENOENT' })
+    })
+    const deps = await defaultGcShellDeps(() => null)
+    expect(await deps.realpath(LINK)).toBe(WT)
+    expect(await deps.realpath('/gone')).toBeNull()
+  })
+
+  it('presenceOf counts a session reached through a symlink to the worktree', async () => {
+    h.realpath.mockImplementation(async (p: string) =>
+      p.startsWith(LINK) ? WT + p.slice(LINK.length) : p
+    )
+    h.computeFolderSets.mockResolvedValue({ live: new Set([`${LINK}/api`]), inUse: new Set() })
+    const deps = await defaultGcShellDeps(() => null)
+    expect(await deps.presenceOf(WT)).toBe('working')
+  })
+
+  it('presenceOf resolves the queried path too', async () => {
+    h.realpath.mockImplementation(async (p: string) => (p === LINK ? WT : p))
+    h.computeFolderSets.mockResolvedValue({ live: new Set(), inUse: new Set([`${WT}/web`]) })
+    const deps = await defaultGcShellDeps(() => null)
+    expect(await deps.presenceOf(LINK)).toBe('open-idle')
   })
 })

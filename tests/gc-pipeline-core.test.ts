@@ -36,6 +36,7 @@ function bundle(name: string, over: Partial<WorktreeBundle> = {}): WorktreeBundl
     keep: false,
     neverClean: false,
     isMainCheckout: false,
+    pathsResolved: true,
     bucket: 'corpse',
     reason: null,
     ...over

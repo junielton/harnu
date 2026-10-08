@@ -7,6 +7,7 @@ import {
   containerFolders,
   ownedVolumes,
   type BundleFacts,
+  type CanonicalPath,
   type SessionPresence
 } from '../src/main/gc/bundle-core'
 import type { FateResult } from '../src/main/gc/fate-core'
@@ -122,6 +123,7 @@ function corpseFacts(over: Partial<BundleFacts> = {}): BundleFacts {
     keep: false,
     neverClean: false,
     isMainCheckout: false,
+    pathsResolved: true,
     ...over
   }
 }
@@ -180,6 +182,25 @@ interface BuildOver {
   volumes?: ReadonlyMap<string, VolumeFact>
   knownFolders?: string[]
   protectedProjects?: Set<string>
+  canonical?: CanonicalPath
+}
+
+/** Every path is its own real path: no symlink anywhere, everything resolves. */
+const LEXICAL: CanonicalPath = (p) => ({ path: p, resolved: true })
+
+/**
+ * A fake realpath over a symlink table: a path under an alias resolves to the target, a
+ * path under an `unresolved` entry cannot be resolved, anything else is real already.
+ */
+function aliases(links: Record<string, string>, unresolved: string[] = []): CanonicalPath {
+  const under = (p: string, root: string): boolean => p === root || p.startsWith(`${root}/`)
+  return (p) => {
+    if (unresolved.some((u) => under(p, u))) return { path: p, resolved: false }
+    for (const [link, target] of Object.entries(links)) {
+      if (under(p, link)) return { path: target + p.slice(link.length), resolved: true }
+    }
+    return { path: p, resolved: true }
+  }
 }
 
 /** Inputs for a single worktree at WT_A whose branch is merged by ancestry. */
@@ -207,7 +228,8 @@ function build(over: BuildOver = {}): ReturnType<typeof buildBundles> {
     ...(over.harnuStoppedAt ? { harnuStoppedAt: over.harnuStoppedAt } : {}),
     volumes: over.volumes ?? new Map(),
     knownFolders: over.knownFolders ?? [],
-    protectedProjects: over.protectedProjects ?? new Set()
+    protectedProjects: over.protectedProjects ?? new Set(),
+    canonical: over.canonical ?? LEXICAL
   })
 }
 
@@ -1584,5 +1606,217 @@ describe('buildBundles — stack attribution', () => {
     )
     expect(b.stackIds).toEqual(['app'])
     expect(b.ownedVolumes).toEqual(['pgdata'])
+  })
+})
+
+// ---- path aliasing (delta 4, item C) ------------------------------------------------
+
+describe('bucketOf — unresolved paths (delta 4, item C)', () => {
+  it('a bundle whose paths did not all resolve is review path-unresolved, never ready', () => {
+    const r = bucketOf(corpseFacts({ pathsResolved: false }), NOW, GRACE_DAYS)
+    expect(r.bucket).toBe('decide')
+    expect(r.reason?.code).toBe('path-unresolved')
+    expect(r.reason?.detail.length).toBeGreaterThan(0)
+  })
+
+  it('fails closed when the flag is absent', () => {
+    const { pathsResolved: _omit, ...rest } = corpseFacts()
+    const r = bucketOf(rest as BundleFacts, NOW, GRACE_DAYS)
+    expect(r.bucket).toBe('decide')
+    expect(r.reason?.code).toBe('path-unresolved')
+  })
+
+  it('the in-use rules still win: a working session stays in use', () => {
+    const r = bucketOf(corpseFacts({ pathsResolved: false, session: 'working' }), NOW, GRACE_DAYS)
+    expect(r).toEqual({ bucket: 'alive', reason: null })
+  })
+
+  it('comes before the fate rules', () => {
+    const closed: FateResult = { fate: 'closed-unmerged', signal: null, strong: false }
+    const r = bucketOf(corpseFacts({ pathsResolved: false, fate: closed }), NOW, GRACE_DAYS)
+    expect(r.reason?.code).toBe('path-unresolved')
+  })
+})
+
+describe('buildBundles — real paths (delta 4, item C)', () => {
+  const LINK = '/link/wt'
+
+  it('marks a bundle whose every path resolved', () => {
+    expect(only(build()).pathsResolved).toBe(true)
+  })
+
+  it('P3: a stack whose working dir is a symlink to the worktree is attributed to it', () => {
+    const db = composeContainer('db', 'app', `${LINK}/deploy`)
+    const b = only(
+      build({
+        stacks: [stack('app', [db])],
+        containers: [db],
+        canonical: aliases({ [LINK]: WT_A })
+      })
+    )
+    expect(b.stackIds).toEqual(['app'])
+    expect(b.sharedStackIds).toEqual([])
+    expect(b.pathsResolved).toBe(true)
+  })
+
+  it('P3b: a stack that bind-mounts the worktree through a symlink shares it', () => {
+    const web = composeContainer('web', 'other', ELSEWHERE, { mounts: [bindMount(`${LINK}/data`)] })
+    const b = only(
+      build({
+        stacks: [stack('other', [web])],
+        containers: [web],
+        canonical: aliases({ [LINK]: WT_A })
+      })
+    )
+    expect(b.sharedStackIds).toEqual(['other'])
+    expect(b.bucket).toBe('decide')
+    expect(b.reason?.code).toBe('shared-stack')
+  })
+
+  it('P9: a session working in the worktree through a symlink keeps it in use', () => {
+    const b = only(
+      build({
+        sessions: new Map([[`${LINK}/api`, { presence: 'working', lastActivityAt: NOW }]]),
+        canonical: aliases({ [LINK]: WT_A })
+      })
+    )
+    expect(b.session).toBe('working')
+    expect(b.bucket).toBe('alive')
+  })
+
+  it('a worktree item reached through a symlink is matched on its real path', () => {
+    const db = composeContainer('db', 'app', `${WT_A}/deploy`)
+    const linked = item({ path: LINK, id: `${REPO}::worktree::${LINK}` })
+    const b = only(
+      build({
+        items: [linked],
+        stacks: [stack('app', [db])],
+        containers: [db],
+        canonical: aliases({ [LINK]: WT_A })
+      })
+    )
+    expect(b.stackIds).toEqual(['app'])
+  })
+
+  it('a worktree path that is a symlink to its repo path is the main checkout', () => {
+    const linked = item({ path: LINK, id: `${REPO}::worktree::${LINK}` })
+    const b = only(build({ items: [linked], canonical: aliases({ [LINK]: REPO }) }))
+    expect(b.isMainCheckout).toBe(true)
+    expect(b.bucket).toBe('alive')
+  })
+
+  it('neverClean and known folders are compared on their real paths', () => {
+    const b = only(build({ neverClean: new Set([LINK]), canonical: aliases({ [LINK]: WT_A }) }))
+    expect(b.neverClean).toBe(true)
+
+    const db = composeContainer('db', 'api-gateway', WT_A, {
+      mounts: [volumeMount('api-gateway_pg')]
+    })
+    const viaLink = only(
+      build({
+        stacks: [stack('api-gateway', [db])],
+        containers: [db],
+        volumes: labelled('api-gateway', 'api-gateway_pg'),
+        knownFolders: ['/link/gw'],
+        canonical: aliases({ '/link/gw': ELSEWHERE })
+      })
+    )
+    expect(viaLink.ownedVolumes).toEqual([])
+  })
+
+  it('a stack attributed through stackPaths is compared on the real path', () => {
+    const api = composeContainer('api', 'svc', null)
+    const b = only(
+      build({
+        stacks: [stack('svc', [api])],
+        stackPaths: new Map([['svc', `${LINK}/services`]]),
+        containers: [api],
+        canonical: aliases({ [LINK]: WT_A })
+      })
+    )
+    expect(b.stackIds).toEqual(['svc'])
+  })
+
+  describe('an unresolved path can never be ready', () => {
+    const expectUnresolved = (b: ReturnType<typeof only>): void => {
+      expect(b.pathsResolved).toBe(false)
+      expect(b.bucket).toBe('decide')
+      expect(b.reason?.code).toBe('path-unresolved')
+    }
+
+    it('the worktree path itself', () => {
+      expectUnresolved(only(build({ canonical: aliases({}, [WT_A]) })))
+    })
+
+    it('the repo path', () => {
+      expectUnresolved(only(build({ canonical: aliases({}, [REPO]) })))
+    })
+
+    it('a container working dir inside the worktree', () => {
+      const db = composeContainer('db', 'app', `${WT_A}/deploy`)
+      expectUnresolved(
+        only(
+          build({
+            stacks: [stack('app', [db])],
+            containers: [db],
+            canonical: aliases({}, [`${WT_A}/deploy`])
+          })
+        )
+      )
+    })
+
+    it('a bind source that is an ancestor of the worktree', () => {
+      const web = container('web', { mounts: [bindMount('/ws/org/proj')] })
+      expectUnresolved(
+        only(
+          build({
+            stacks: [stack('web', [web])],
+            containers: [web],
+            canonical: aliases({}, ['/ws/org/proj'])
+          })
+        )
+      )
+    })
+
+    it('a session folder inside the worktree', () => {
+      expectUnresolved(
+        only(
+          build({
+            sessions: new Map([[`${WT_A}/api`, { presence: 'none', lastActivityAt: null }]]),
+            canonical: aliases({}, [`${WT_A}/api`])
+          })
+        )
+      )
+    })
+
+    it('an unresolved folder unrelated to the worktree changes nothing', () => {
+      const web = composeContainer('web', 'other', ELSEWHERE)
+      const b = only(
+        build({
+          stacks: [stack('other', [web])],
+          containers: [web],
+          sessions: new Map([[`${WT_A}-other`, { presence: 'none', lastActivityAt: null }]]),
+          canonical: aliases({}, [ELSEWHERE, `${WT_A}-other`])
+        })
+      )
+      expect(b.pathsResolved).toBe(true)
+      expect(b.bucket).toBe('corpse')
+    })
+  })
+})
+
+describe('containerFolders through a resolver (delta 4, item C)', () => {
+  it('maps every folder through the real path, then the canonical key', () => {
+    const c = composeContainer('web', 'app', '/link/wt', { mounts: [bindMount('/link/wt/data')] })
+    expect(containerFolders(c, 'linux', aliases({ '/link/wt': WT_A }))).toEqual([
+      WT_A,
+      `${WT_A}/data`
+    ])
+  })
+
+  it('folds a darwin case difference between the link target and the worktree', () => {
+    const c = composeContainer('web', 'app', '/link/wt')
+    const real = containerFolders(c, 'darwin', aliases({ '/link/wt': '/Users/Me/Proj/WT' }))
+    expect(real).toEqual([canonicalPathKey('/users/me/proj/wt', 'darwin')])
   })
 })

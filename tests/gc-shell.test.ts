@@ -14,10 +14,16 @@ import {
   dockerIsUnavailable,
   DockerUnavailableError,
   presenceFromSets,
+  resolveRealPaths,
   type GcShellDeps
 } from '../src/main/gc/gc-shell'
 import { GcStepError, runBundle } from '../src/main/gc/pipeline-core'
-import { buildBundles, type SessionPresence, type WorktreeBundle } from '../src/main/gc/bundle-core'
+import {
+  buildBundles,
+  type CanonicalPath,
+  type SessionPresence,
+  type WorktreeBundle
+} from '../src/main/gc/bundle-core'
 import { cleanItem, type ExecutorDeps } from '../src/main/reaper/executor-core'
 import type { DehydrateDeps } from '../src/main/reaper/dehydrate-core'
 import type { BranchFacts, ReapItem } from '../src/main/reaper/reaper-core'
@@ -76,6 +82,7 @@ function bundle(over: Partial<WorktreeBundle> = {}): WorktreeBundle {
     keep: false,
     neverClean: false,
     isMainCheckout: false,
+    pathsResolved: true,
     bucket: 'corpse',
     reason: null,
     ...over
@@ -114,6 +121,7 @@ interface Harness {
   presenceOf: ReturnType<typeof vi.fn>
   headOf: ReturnType<typeof vi.fn>
   isProtectedNow: ReturnType<typeof vi.fn>
+  realpath: ReturnType<typeof vi.fn>
   probeStatus: ReturnType<typeof vi.fn>
   git: ReturnType<typeof vi.fn>
   gitCalls: string[][]
@@ -131,6 +139,10 @@ function harness(
     protectedNow?: boolean
     executor?: Partial<ExecutorDeps>
     dehydrate?: Partial<DehydrateDeps>
+    /** Symlinks on the fake disk: a path under a link resolves under its target. */
+    links?: Record<string, string>
+    /** Paths whose realpath fails (a broken link, an unreadable folder). */
+    unresolved?: string[]
   } = {}
 ): Harness {
   let stacks = over.stacks ?? [stack('app', [container('c1', `${WT}/api`)])]
@@ -150,6 +162,14 @@ function harness(
     over.head === undefined ? TIP : over.head
   )
   const isProtectedNow = vi.fn((): boolean | Promise<boolean> => over.protectedNow ?? false)
+  const under = (p: string, root: string): boolean => p === root || p.startsWith(`${root}/`)
+  const realpath = vi.fn(async (p: string): Promise<string | null> => {
+    if ((over.unresolved ?? []).some((u) => under(p, u))) return null
+    for (const [link, target] of Object.entries(over.links ?? {})) {
+      if (under(p, link)) return target + p.slice(link.length)
+    }
+    return p
+  })
   const probeStatus = vi.fn(async () => ({
     // WorktreeStatus types this as a boolean; null models a probe that gave no real answer,
     // which the reprobe must refuse rather than read as clean.
@@ -193,7 +213,8 @@ function harness(
       listStacks,
       presenceOf,
       headOf,
-      isProtectedNow
+      isProtectedNow,
+      realpath
     },
     stop,
     removeContainers,
@@ -205,6 +226,7 @@ function harness(
     presenceOf,
     headOf,
     isProtectedNow,
+    realpath,
     probeStatus,
     git,
     gitCalls,
@@ -1041,7 +1063,10 @@ const MERGED_FACTS: BranchFacts = {
 }
 
 /** The bundle the real builder makes for the worktree at WT from this container listing. */
-function scanned(containers: InspectedContainer[]): WorktreeBundle {
+function scanned(
+  containers: InspectedContainer[],
+  links: CanonicalPath = (p) => ({ path: p, resolved: true })
+): WorktreeBundle {
   // Merged ten days before the scan, so the grace window has long elapsed at execution time.
   const item = reapItem({
     checkpoints: [
@@ -1066,7 +1091,8 @@ function scanned(containers: InspectedContainer[]): WorktreeBundle {
     graceDays: GRACE_DAYS,
     volumes: new Map([['deploy_pg', { sizeBytes: 1, project: 'deploy' }]]),
     knownFolders: [],
-    protectedProjects: new Set()
+    protectedProjects: new Set(),
+    canonical: links
   })
   expect(out).toHaveLength(1)
   return out[0]!
@@ -1537,5 +1563,155 @@ describe('cleanGit', () => {
       }
     })
     await expect(createGcOps(h.deps).cleanGit(bundle())).rejects.toThrow(/trash failed/)
+  })
+})
+
+// ---- path aliasing (delta 4, item C) ------------------------------------------------
+
+const LINK = '/link/wt'
+
+describe('resolveRealPaths (delta 4, item C)', () => {
+  const disk: Record<string, string> = { [LINK]: WT, '/link/wt/api': `${WT}/api` }
+  const realpath = vi.fn(async (p: string): Promise<string> => {
+    const real = disk[p]
+    if (!real) throw Object.assign(new Error(`ENOENT: ${p}`), { code: 'ENOENT' })
+    return real
+  })
+  // A block body: a function returned from beforeEach would run as its teardown.
+  beforeEach(() => {
+    realpath.mockClear()
+  })
+
+  it('maps each path to its real path, resolved', async () => {
+    const canonical = await resolveRealPaths([LINK, '/link/wt/api'], realpath)
+    expect(canonical(LINK)).toEqual({ path: WT, resolved: true })
+    expect(canonical('/link/wt/api')).toEqual({ path: `${WT}/api`, resolved: true })
+  })
+
+  it('a path realpath cannot read is unresolved, with its lexical key', async () => {
+    const canonical = await resolveRealPaths(['/gone/wt/../x/'], realpath)
+    expect(canonical('/gone/wt/../x/')).toEqual({ path: '/gone/x', resolved: false })
+  })
+
+  it('a path it was never asked about is unresolved, with its lexical key', async () => {
+    const canonical = await resolveRealPaths([], realpath)
+    expect(canonical(`${LINK}/.`)).toEqual({ path: LINK, resolved: false })
+  })
+
+  it('reads each distinct path once, lexically resolved first', async () => {
+    await resolveRealPaths([LINK, LINK, '/link/wt/x/../api'], realpath)
+    expect(realpath.mock.calls.map((c) => c[0]).sort()).toEqual([LINK, '/link/wt/api'])
+  })
+})
+
+describe('presenceFromSets through real paths (delta 4, item C)', () => {
+  it('P9: a session working in the worktree through a symlink counts', async () => {
+    const sets = { live: new Set([`${LINK}/api`]), inUse: new Set<string>() }
+    const canonical = await resolveRealPaths([WT, `${LINK}/api`], async (p) =>
+      p.startsWith(LINK) ? WT + p.slice(LINK.length) : p
+    )
+    expect(presenceFromSets(WT, sets, canonical)).toBe('working')
+    expect(presenceFromSets(WT, sets)).toBe('none')
+  })
+
+  it('the queried path is compared on its real path too', async () => {
+    const sets = { live: new Set([`${WT}/api`]), inUse: new Set<string>() }
+    const canonical = await resolveRealPaths([LINK, `${WT}/api`], async (p) =>
+      p === LINK ? WT : p
+    )
+    expect(presenceFromSets(LINK, sets, canonical)).toBe('working')
+  })
+})
+
+describe('reprobe and recheck on real paths (delta 4, item C)', () => {
+  const opts = { removeVolumes: false }
+  const lexical: CanonicalPath = (p) => ({ path: p, resolved: true })
+  const viaLink: CanonicalPath = (p) =>
+    p === LINK || p.startsWith(`${LINK}/`)
+      ? { path: WT + p.slice(LINK.length), resolved: true }
+      : lexical(p)
+
+  it('P3: a stack run from a symlinked working dir is vetted, stopped and removed', async () => {
+    const web = composeIn('web', 'app', `${LINK}/api`)
+    const b = scanned([web], viaLink)
+    expect(b.stackIds).toEqual(['app'])
+    const h = harness({ stacks: groupStacks([web]), links: { [LINK]: WT } })
+    const r = await runBundle(b, createGcOps(h.deps), opts)
+    expect(r).toMatchObject({ ok: true, haltedAt: null })
+    expect(h.stop).toHaveBeenCalledWith(['web'])
+    expect(h.removeContainers).toHaveBeenCalledWith(['web'])
+  })
+
+  it('P3b: a stack that bind-mounts the worktree through a symlink after the scan refuses', async () => {
+    const b = scanned([])
+    const web = composeIn('web', 'other', ELSEWHERE, [
+      { type: 'bind', source: `${LINK}/data`, name: null }
+    ])
+    const h = harness({ stacks: groupStacks([web]), links: { [LINK]: WT } })
+    expect(await createGcOps(h.deps).reprobe(b)).toEqual({
+      ok: false,
+      reason: 'changed-since-scan'
+    })
+  })
+
+  it('a worktree whose real path is the repo path is refused as protected-now', async () => {
+    const h = harness({ stacks: [], links: { [LINK]: REPO } })
+    const b = bundle({ item: reapItem({ path: LINK }), stackIds: [], ownedVolumes: [] })
+    expect(await createGcOps(h.deps).reprobe(b)).toEqual({ ok: false, reason: 'protected-now' })
+  })
+
+  it.each<[string, string, StackGroup[]]>([
+    ['the worktree path', WT, []],
+    ['the repo path', REPO, []],
+    ['a container folder inside the worktree', `${WT}/api`, []],
+    // A container that only bind-mounts a folder above the worktree, which cannot be read.
+    [
+      'a container folder above the worktree',
+      '/ws/org/proj',
+      [stack('up', [runWithBind('c5', '/ws/org/proj')])]
+    ]
+  ])('refuses as path-unresolved when %s cannot be resolved', async (_label, gone, extra) => {
+    const h = harness({
+      stacks: [stack('app', [container('c1', `${WT}/api`)]), ...extra],
+      unresolved: [gone]
+    })
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+      ok: false,
+      reason: 'path-unresolved'
+    })
+    expect(h.stop).not.toHaveBeenCalled()
+  })
+
+  it('an unresolved folder that has nothing to do with the worktree changes nothing', async () => {
+    const h = harness({
+      stacks: [
+        stack('app', [container('c1', `${WT}/api`)]),
+        stack('x', [container('c9', ELSEWHERE)])
+      ],
+      unresolved: [ELSEWHERE]
+    })
+    expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({ ok: true })
+  })
+
+  it('recheck refuses a stack started through a symlink to the worktree', async () => {
+    const h = harness({
+      stacks: [stack('fresh', [container('c7', `${LINK}/worker`)])],
+      links: { [LINK]: WT }
+    })
+    expect(await createGcOps(h.deps).recheck(bundle())).toEqual({
+      ok: false,
+      reason: 'stack-present'
+    })
+  })
+
+  it('recheck refuses as path-unresolved when a folder inside the worktree cannot be resolved', async () => {
+    const h = harness({
+      stacks: [stack('fresh', [container('c7', `${WT}/worker`)])],
+      unresolved: [`${WT}/worker`]
+    })
+    expect(await createGcOps(h.deps).recheck(bundle())).toEqual({
+      ok: false,
+      reason: 'path-unresolved'
+    })
   })
 })
