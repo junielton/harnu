@@ -1,4 +1,5 @@
 import type { GcStep } from '../../../main/gc/pipeline-core'
+import type { WorktreeBundle } from '../../../main/gc/bundle-core'
 import type { ReasonCode } from '../lib/gc-model'
 import type { RefusalCode } from '../lib/gc-jobs'
 
@@ -31,6 +32,37 @@ const REASON_SUFFIX: Record<string, string> = {
 export function reasonKey(code: ReasonCode | null, ready = false): string {
   if (ready || code === null) return 'cleanup.gc.reason.ready'
   return `cleanup.gc.reason.${REASON_SUFFIX[code as string] ?? 'unknownFate'}`
+}
+
+/**
+ * Why an In use block is In use, read off the bundle's own facts in the order `bucketOf` applies them
+ * (main/gc/bundle-core.ts): first match wins. An In use bundle carries no reason code, so without this the
+ * tooltip fell back to the Ready sentence. `lastSignOfLifeAt` is set only for `withinGrace`.
+ */
+export function inUseReason(
+  b: Pick<
+    WorktreeBundle,
+    'isMainCheckout' | 'neverClean' | 'session' | 'fate' | 'lastSignOfLifeAt' | 'keep' | 'graceDays'
+  >,
+  now: number
+): { key: string; lastSignOfLifeAt: number | null } {
+  const key = (
+    suffix: string,
+    at: number | null = null
+  ): { key: string; lastSignOfLifeAt: number | null } => ({
+    key: `cleanup.gc.reason.inUse.${suffix}`,
+    lastSignOfLifeAt: at
+  })
+  if (b.isMainCheckout) return key('mainCheckout')
+  if (b.neverClean) return key('neverClean')
+  if (b.session === 'working' || b.session === 'needs-input') return key('sessionWorking')
+  if (b.fate.fate === 'open') return key('openPr')
+  const last = b.lastSignOfLifeAt
+  if (typeof last !== 'number' || !Number.isFinite(last) || last < 0) return key('unknownAge')
+  const grace = b.graceDays
+  const inGrace = typeof grace === 'number' ? now - last < grace * 86_400_000 : !b.keep
+  if (inGrace) return key('withinGrace', last)
+  return b.keep ? key('kept') : key('withinGrace', last)
 }
 
 const STEP_SUFFIX: Partial<Record<GcStep, string>> = {

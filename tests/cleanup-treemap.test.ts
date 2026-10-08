@@ -82,6 +82,36 @@ describe('CleanupTreemap — blocks', () => {
   })
 })
 
+describe('CleanupTreemap — the tooltip tells the truth about the block', () => {
+  const title = (w: ReturnType<typeof mountMap>, name: string): string =>
+    byName(w, name).attributes('title') ?? ''
+
+  it('an In use block says why it is In use, never the Ready sentence', () => {
+    const w = mountMap(
+      modelOf([
+        wt('live', 'in-use', 2 * GIB, {}, { session: 'working' }),
+        wt('pr', 'in-use', 2 * GIB, {}, { fate: { fate: 'open', signal: null, strong: false } }),
+        wt('ready1', 'ready', 2 * GIB)
+      ])
+    )
+    expect(title(w, 'live')).toContain(
+      `${t('cleanup.gc.bucket.in-use')} — ${t('cleanup.gc.reason.inUse.sessionWorking')}`
+    )
+    expect(title(w, 'pr')).toContain(t('cleanup.gc.reason.inUse.openPr'))
+    expect(title(w, 'live')).not.toContain(t('cleanup.gc.reason.ready'))
+    expect(title(w, 'ready1')).toContain(
+      `${t('cleanup.gc.bucket.ready')} — ${t('cleanup.gc.reason.ready')}`
+    )
+  })
+
+  it('a Needs review block keeps its own reason, with its bucket word', () => {
+    const w = mountMap(sample())
+    expect(title(w, 'd1')).toContain(
+      `${t('cleanup.gc.bucket.review')} — ${t('cleanup.gc.reason.dirty')}`
+    )
+  })
+})
+
 describe('CleanupTreemap — states', () => {
   it('a checked block gets the outline AND the check badge; a merely selected one gets no badge', () => {
     const m = sample()
@@ -271,10 +301,12 @@ describe('CleanupTreemap — aggregates, regions and drill-down', () => {
 
     const drilled = mountMap(m, { drillRepo: '/w/repo' })
     expect(drilled.findAll('[data-testid="treemap-region"]')).toHaveLength(1)
-    expect(drilled.get('[data-testid="treemap-canvas"]').attributes('style')).toContain('520px')
+    // No fixed height: the canvas is as tall as the layout needs (the map grows downward).
+    expect(drilled.get('[data-testid="treemap-canvas"]').attributes('style')).toMatch(
+      /height: [\d.]+px/
+    )
     await drilled.get('[data-testid="treemap-back"]').trigger('click')
     expect(drilled.emitted('drill')![0]).toEqual([null])
-    expect(w.get('[data-testid="treemap-canvas"]').attributes('style')).toContain('372px')
   })
 
   it('without disk sizes there is no map — a notice sends the operator to the list', () => {
@@ -314,7 +346,9 @@ describe('CleanupTreemap — the repo label', () => {
   it('keeps the label out of the squeeze: the meta and badges yield first', () => {
     const w = mountMap(sample())
     const label = w.get('[data-testid="treemap-repo"]')
-    expect(label.classes().join(' ')).toMatch(/shrink-0|max-w/)
+    // The name has its own line and takes all of it; the meta line yields (the worktree count first).
+    expect(label.classes()).toEqual(expect.arrayContaining(['min-w-0', 'flex-1', 'truncate']))
     expect(w.get('.tm-rmeta').classes()).toContain('truncate')
+    expect(w.get('.tm-rcount').exists()).toBe(true)
   })
 })

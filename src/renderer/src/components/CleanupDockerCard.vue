@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { I18nT, useI18n } from 'vue-i18n'
+import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Container, EyeOff } from 'lucide-vue-next'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import { formatBytes } from './system-monitor-format'
@@ -60,7 +60,11 @@ const hidden = computed(() => {
   const h = props.docker.orphanVolumesHidden
   if (!h) return null
   return {
-    key: h.reason === 'scan-limit' ? 'scanLimit' : 'unresolvedCompose',
+    text: t(
+      `cleanup.gc.docker.hidden.${h.reason === 'scan-limit' ? 'scanLimit' : 'unresolvedCompose'}`,
+      h.folders.length,
+      { named: { n: h.folders.length } }
+    ),
     folders: h.folders.map((path) => ({
       path,
       name:
@@ -71,6 +75,9 @@ const hidden = computed(() => {
     }))
   }
 })
+
+/** The folder names stay folded away until asked for, so the hint is two lines, not a wall of names. */
+const foldersOpen = ref(false)
 
 const MAX_PROJECTS = 3
 const projects = computed(() => [
@@ -85,7 +92,7 @@ const TONE: Record<'ready' | 'review', string> = {
   review: 'border-warning-line bg-warning-soft'
 }
 const blockClass = (on: boolean, tone: 'ready' | 'review' = 'ready'): string =>
-  `flex min-w-50 flex-1 flex-col gap-1 rounded-xs border px-3 py-2 ${TONE[tone]} ${on ? '' : 'opacity-60'}`
+  `flex flex-col gap-1 rounded-xs border px-3 py-2 ${TONE[tone]} ${on ? '' : 'opacity-60'}`
 
 /** What the next cycle could reclaim from Docker (cache + dangling images), when the autopilot cleans it. */
 const nextCycleBytes = computed(
@@ -140,7 +147,8 @@ const splitSegments = computed(() =>
         :data-seg="seg.key"
       />
     </div>
-    <div class="flex flex-wrap gap-2 px-3 pb-3">
+    <!-- Auto-fit columns, each block as tall as its own content: no stretching to the tallest sibling. -->
+    <div class="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] items-start gap-2 px-3 pb-3">
       <div :class="blockClass(prefs.categories.dockerCache)" data-testid="docker-cache">
         <div class="flex items-center gap-2">
           <span class="text-ui font-medium text-text">{{ t('cleanup.gc.docker.buildCache') }}</span>
@@ -226,23 +234,43 @@ const splitSegments = computed(() =>
                 })
           }}
         </div>
-        <div
-          v-if="hidden"
-          class="flex items-start gap-1.5 text-caption text-warning"
-          role="note"
-          data-testid="docker-hidden"
-        >
-          <EyeOff :size="12" :stroke-width="1.7" class="mt-0.5 shrink-0" aria-hidden="true" />
-          <I18nT :keypath="`cleanup.gc.docker.hidden.${hidden.key}`" tag="span" scope="global">
-            <template #folders>
-              <span v-for="(f, i) in hidden.folders" :key="f.path">
-                <span :title="f.path" class="font-mono" data-testid="docker-hidden-folder">{{
-                  f.name
-                }}</span
-                ><template v-if="i < hidden.folders.length - 1">, </template>
-              </span>
-            </template>
-          </I18nT>
+        <div v-if="hidden" class="flex flex-col gap-1" role="note" data-testid="docker-hidden">
+          <p class="flex items-start gap-1.5 text-caption text-warning">
+            <EyeOff :size="12" :stroke-width="1.7" class="mt-0.5 shrink-0" aria-hidden="true" />
+            <span>
+              <span data-testid="docker-hidden-text">{{ hidden.text }}</span>
+              {{ ' ' }}
+              <button
+                type="button"
+                class="font-medium underline underline-offset-2 transition hover:text-text"
+                :aria-expanded="foldersOpen"
+                data-testid="docker-hidden-toggle"
+                @click="foldersOpen = !foldersOpen"
+              >
+                {{
+                  foldersOpen
+                    ? t('cleanup.gc.docker.hidden.hide')
+                    : t('cleanup.gc.docker.hidden.show')
+                }}
+              </button>
+            </span>
+          </p>
+          <ul
+            v-if="foldersOpen"
+            class="scrollable max-h-32 overflow-y-auto pl-4.5 text-caption text-text-3"
+            :aria-label="t('cleanup.gc.docker.hidden.listLabel')"
+            data-testid="docker-hidden-list"
+          >
+            <li
+              v-for="f in hidden.folders"
+              :key="f.path"
+              :title="f.path"
+              class="truncate font-mono"
+              data-testid="docker-hidden-folder"
+            >
+              {{ f.name }}
+            </li>
+          </ul>
         </div>
         <div v-if="projects.length > 0" class="truncate text-caption text-text-3">
           {{ t('cleanup.gc.docker.projects', { names: shownProjects }) }}

@@ -46,7 +46,13 @@ interface Api {
   push: Record<string, (p: unknown) => void>
 }
 
-function install(first: GcSnapshot, jobs: GcJobInfo[] = []): Api {
+interface ReaperStubs {
+  /** What `reaper:snapshot` answers at mount; null = no scan has ever run. */
+  snapshot?: () => Promise<unknown>
+  scan?: () => Promise<unknown>
+}
+
+function install(first: GcSnapshot, jobs: GcJobInfo[] = [], reaper: ReaperStubs = {}): Api {
   const push: Api['push'] = {}
   const sub =
     (name: string) =>
@@ -69,8 +75,8 @@ function install(first: GcSnapshot, jobs: GcJobInfo[] = []): Api {
     onGcProgress: sub('progress'),
     onGcDone: sub('done'),
     onGcCycle: sub('cycle'),
-    reaperSnapshot: ipcFn(async () => ({ scannedAt: Date.now(), repos: [] })),
-    reaperScan: ipcFn(async () => ({ scannedAt: Date.now(), repos: [] })),
+    reaperSnapshot: ipcFn(reaper.snapshot ?? (async () => ({ scannedAt: Date.now(), repos: [] }))),
+    reaperScan: ipcFn(reaper.scan ?? (async () => ({ scannedAt: Date.now(), repos: [] }))),
     reaperJournal: ipcFn(async () => []),
     reaperPrefs: ipcFn(async () => ({ dehydrateIdleDays: 7 }))
   }
@@ -394,6 +400,75 @@ describe('Cleanup screen — all clean', () => {
     await mountView()
     expect(dom('[data-testid="cleanup-all-clean"]').exists()).toBe(true)
     expect(dom('[data-testid="hero-empty"]').exists()).toBe(true)
+  })
+})
+
+describe('Cleanup screen — before the first scan (BUG-171)', () => {
+  const empty = (): GcSnapshot => snap({ bundles: [], orphanVolumes: [] })
+
+  it('says it is scanning — never "All clean" — and disables the hero until the scan ends', async () => {
+    let finish!: (v: unknown) => void
+    const scan = new Promise((r) => (finish = r))
+    const api = install(empty(), [], { snapshot: async () => null, scan: () => scan })
+    await mountView()
+
+    expect(dom('[data-testid="cleanup-scanning"]').text()).toContain(
+      t('cleanup.gc.firstScan.title')
+    )
+    expect(dom('[data-testid="cleanup-all-clean"]').exists()).toBe(false)
+    expect(dom('[data-testid="treemap"]').exists()).toBe(false)
+    expect(dom('[data-testid="docker-card"]').exists()).toBe(false)
+    const hero = domGet('[data-testid="hero-scanning"]')
+    expect(hero.text()).toBe(t('cleanup.gc.firstScan.hero'))
+    expect((hero.el as HTMLButtonElement).disabled).toBe(true)
+    expect(dom('[data-testid="hero-empty"]').exists()).toBe(false)
+    // The summary does not claim "0 B reclaimable" either.
+    expect(domGet('[data-testid="cleanup-summary"]').text()).toBe(t('cleanup.gc.firstScan.title'))
+
+    const before = api.gcSnapshot.mock.calls.length
+    finish({ scannedAt: Date.now(), repos: [] })
+    await flushPromises()
+    // The gather is read again after the scan, and only then may the screen draw a result.
+    expect(api.gcSnapshot.mock.calls.length).toBeGreaterThan(before)
+    expect(dom('[data-testid="cleanup-scanning"]').exists()).toBe(false)
+    expect(dom('[data-testid="cleanup-all-clean"]').exists()).toBe(true)
+  })
+
+  it('draws the worktrees the scan found, not an empty first gather', async () => {
+    let scanned = false
+    const api = install(empty(), [], {
+      snapshot: async () => null,
+      scan: async () => {
+        scanned = true
+        return { scannedAt: Date.now(), repos: [] }
+      }
+    })
+    api.gcSnapshot.mockImplementation(async () => (scanned ? snap() : empty()))
+    await mountView()
+    expect(dom('[data-testid="cleanup-all-clean"]').exists()).toBe(false)
+    expect(dom('[data-testid="hero-clean"]').exists()).toBe(true)
+  })
+
+  it('reports a failed first scan instead of staying on "Scanning…" or claiming it is clean', async () => {
+    install(empty(), [], {
+      snapshot: async () => null,
+      scan: async () => {
+        throw new Error('git is not on the PATH')
+      }
+    })
+    await mountView()
+    expect(dom('[data-testid="cleanup-scanning"]').exists()).toBe(false)
+    expect(dom('[data-testid="cleanup-all-clean"]').exists()).toBe(false)
+    expect(domGet('[data-testid="cleanup-scan-failed"]').text()).toContain('git is not on the PATH')
+    // The rescan button is still there to try again.
+    expect((domGet('[data-testid="cleanup-rescan"]').el as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('an already scanned workspace shows no scanning state at all', async () => {
+    install(snap())
+    await mountView()
+    expect(dom('[data-testid="cleanup-scanning"]').exists()).toBe(false)
+    expect(dom('[data-testid="hero-scanning"]').exists()).toBe(false)
   })
 })
 

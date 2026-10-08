@@ -215,27 +215,43 @@ describe('CleanupDockerCard — hidden orphan volumes (S3 delta 4)', () => {
     expect(w.find('[data-testid="docker-hidden"]').exists()).toBe(false)
   })
 
-  it('explains an unresolved compose name, with folder basenames and the full path in a tooltip', () => {
+  it('explains an unresolved compose name in one short sentence, without naming the folders', () => {
     const w = mountCard({
       docker: hidden('unresolved-compose-name', ['/ws/org/proj/www', '/ws/org/portal'])
     })
     const hint = w.get('[data-testid="docker-hidden"]')
     expect(hint.attributes('role')).toBe('note')
-    expect(hint.text()).toBe(
-      "Orphan volumes are hidden because a compose project name couldn't be resolved in: www, portal"
+    expect(w.get('[data-testid="docker-hidden-text"]').text()).toBe(
+      "Orphan volumes hidden: a compose project name couldn't be resolved in 2 folders"
     )
-    const folders = hint.findAll('[data-testid="docker-hidden-folder"]')
+    // Folded away by default: no wall of folder names.
+    expect(hint.findAll('[data-testid="docker-hidden-folder"]')).toHaveLength(0)
+  })
+
+  it('"Show folders" opens the list: basenames, each with its full path as a tooltip', async () => {
+    const w = mountCard({
+      docker: hidden('unresolved-compose-name', ['/ws/org/proj/www', '/ws/org/portal'])
+    })
+    const toggle = w.get('[data-testid="docker-hidden-toggle"]')
+    expect(toggle.text()).toBe('Show folders')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(toggle.text()).toBe('Hide folders')
+    const folders = w.findAll('[data-testid="docker-hidden-folder"]')
     expect(folders.map((f) => f.text())).toEqual(['www', 'portal'])
     expect(folders.map((f) => f.attributes('title'))).toEqual([
       '/ws/org/proj/www',
       '/ws/org/portal'
     ])
+    await toggle.trigger('click')
+    expect(w.findAll('[data-testid="docker-hidden-folder"]')).toHaveLength(0)
   })
 
-  it('explains a scan limit with its own sentence', () => {
+  it('explains a scan limit with its own sentence, singular for one folder', () => {
     const w = mountCard({ docker: hidden('scan-limit', ['/ws/org/proj/www']) })
-    expect(w.get('[data-testid="docker-hidden"]').text()).toBe(
-      'Orphan volumes are hidden because the compose scan hit its limit in: www'
+    expect(w.get('[data-testid="docker-hidden-text"]').text()).toBe(
+      'Orphan volumes hidden: the compose scan hit its limit in 1 folder'
     )
   })
 
@@ -249,7 +265,7 @@ describe('CleanupDockerCard — hidden orphan volumes (S3 delta 4)', () => {
       const pt = JSON.parse(
         readFileSync(join(process.cwd(), 'src/renderer/src/i18n/pt-BR.json'), 'utf8')
       )
-      expect(pt.cleanup.gc.docker.hidden[k]).toContain('{folders}')
+      expect(pt.cleanup.gc.docker.hidden[k]).toContain('{n}')
     }
   })
 })

@@ -90,21 +90,6 @@ export function squarify(items: readonly TreemapItem[], box: Rect): Placed[] {
 }
 
 /**
- * Splits off the long tail: items under `threshold` that would be too small to read. A tail of one
- * stays in place — an "N smaller" block holding a single block is just a worse label.
- */
-export function foldSmall<T extends TreemapItem>(
-  items: readonly T[],
-  threshold: number,
-  minFold = 2
-): { kept: T[]; folded: T[] } {
-  const sorted = [...items].sort(byValueThenId)
-  const small = sorted.filter((i) => i.value < threshold)
-  if (small.length < minFold) return { kept: sorted, folded: [] }
-  return { kept: sorted.filter((i) => i.value >= threshold), folded: small }
-}
-
-/**
  * Region shares that sum to 1 but never fall under `minShare`, so a small repo next to a large one
  * does not shrink to a sliver (the overview's width floor). Byte totals stay on the header.
  */
@@ -126,4 +111,261 @@ export function floorShares(values: readonly number[], minShare: number): number
     shares = shares.map((s, k) => (pinned[k] ? floor : (s / freeSum) * (1 - pinnedTotal)))
   }
   return shares
+}
+
+// ---- the map: shelves of regions, stacked groups, readable blocks (BUG-171) ---------------------
+//
+// design.md "Workspace GC — unified Cleanup / Treemap". The map may grow downward: repo regions sit on
+// wrapping shelves (never squeezed under a minimum width), the bucket groups of a region stack at its full
+// width, and a block is drawn only when its cell can hold its label AND its whole size — anything smaller
+// folds into the group's "N smaller" block. Everything here is pure geometry; the Vue component only maps
+// ids back to the model.
+
+/** Layout constants, mirrored in design.md ("Treemap geometry") and asserted in the tests. */
+export const TM = {
+  /** Gutter between regions and between shelves (spacing token `s-2`). */
+  gap: 8,
+  regionMinW: 340,
+  /** Two-line region header: repo label, then meta and badges. */
+  regionHead: 50,
+  /** 1px border on each side of a region. */
+  regionBorder: 2,
+  groupHead: 22,
+  /** 2px inset on each side of a group. */
+  groupInset: 4,
+  /** A cell below this cannot hold the name line, the size line and the padding. */
+  cellMinW: 88,
+  cellMinH: 44,
+  /** Area density of the map: 24,000 px² per decimal GB, as `formatBytes` counts. */
+  areaPerByte: 24_000 / 1e9,
+  groupBodyMin: 48,
+  groupBodyMax: 560
+} as const
+
+export interface ShelfSlot {
+  id: string
+  /** Shelf index, 0 = top. */
+  row: number
+  x: number
+  w: number
+}
+
+/**
+ * Places regions on shelves. A shelf holds as many regions as fit at `minW`; the count is evened out
+ * (11 regions at 1298px → 3/3/3/2, not 3/3/3/1+…), biggest first. Widths inside a shelf follow bytes but
+ * never fall under `minW`, so a small repo is not a sliver.
+ */
+export function planShelves(
+  items: readonly TreemapItem[],
+  width: number,
+  minW: number = TM.regionMinW,
+  gap: number = TM.gap
+): ShelfSlot[] {
+  const sorted = [...items].sort(byValueThenId)
+  const n = sorted.length
+  if (n === 0 || !(width > 0)) return []
+  const perShelf = Math.max(1, Math.floor((width + gap) / (minW + gap)))
+  const shelves = Math.ceil(n / perShelf)
+  const per = Math.ceil(n / shelves)
+
+  const out: ShelfSlot[] = []
+  for (let row = 0; row * per < n; row++) {
+    const chunk = sorted.slice(row * per, row * per + per)
+    const usable = width - gap * (chunk.length - 1)
+    const shares = floorShares(
+      chunk.map((c) => c.value),
+      usable > 0 ? Math.min(1, minW / usable) : 0
+    )
+    let x = 0
+    chunk.forEach((c, k) => {
+      const w = shares[k] * usable
+      out.push({ id: c.id, row, x, w })
+      x += w + gap
+    })
+  }
+  return out
+}
+
+/** Body height of a bucket group: its bytes at the map's density, clamped so it is readable and bounded. */
+export function groupBodyHeight(bytes: number, bodyW: number): number {
+  if (!(bodyW > 0) || !usable(bytes)) return TM.groupBodyMin
+  const h = (bytes * TM.areaPerByte) / bodyW
+  return Math.min(TM.groupBodyMax, Math.max(TM.groupBodyMin, h))
+}
+
+export interface PackedCells {
+  placed: Placed[]
+  /** Items folded into the aggregate, biggest first. */
+  folded: TreemapItem[]
+}
+
+/**
+ * Squarifies `items` in `box` so that EVERY returned rectangle is at least `min.w × min.h`. What cannot be
+ * that big folds into one aggregate (id `aggId`, value = its members' sum), which has to meet the minimum
+ * too — when it does not, it takes in the next smallest block until it does. A zero-byte item counts as
+ * 1 byte so it folds instead of vanishing.
+ */
+export function packCells(
+  items: readonly TreemapItem[],
+  box: Rect,
+  min: { w: number; h: number },
+  aggId: string
+): PackedCells {
+  const all = items.map((i) => ({ id: i.id, value: usable(i.value) ? i.value : 1 }))
+  const kept = [...all].sort(byValueThenId)
+  const folded: TreemapItem[] = []
+  if (kept.length === 0 || !(box.w > 0) || !(box.h > 0)) return { placed: [], folded }
+
+  // First pass: whatever its byte share cannot give the minimum area is folded without a squarify each.
+  const total = kept.reduce((a, i) => a + i.value, 0)
+  const minValue = ((min.w * min.h) / (box.w * box.h)) * total
+  while (kept.length > 0 && kept[kept.length - 1].value < minValue) folded.push(kept.pop()!)
+
+  const eps = 1e-6
+  const tooSmall = (p: Placed): boolean => p.rect.w < min.w - eps || p.rect.h < min.h - eps
+  for (;;) {
+    let aggValue = sum(folded)
+    let placed = squarify(folded.length > 0 ? [...kept, { id: aggId, value: aggValue }] : kept, box)
+    // The tail is small by definition, so its byte share alone would draw it unreadably thin. The
+    // aggregate is given as much area as it needs (never more than the blocks it sits beside).
+    if (folded.length > 0 && kept.length > 0) {
+      const cap = sum(kept) * 3
+      for (let k = 0; k < 16 && aggValue < cap; k++) {
+        const agg = placed.find((p) => p.id === aggId)
+        if (agg && !tooSmall(agg)) break
+        aggValue *= 1.3
+        placed = squarify([...kept, { id: aggId, value: aggValue }], box)
+      }
+    }
+    const bad = placed.filter(tooSmall)
+    if (bad.length === 0 || kept.length === 0) return { placed, folded: sortBig(folded) }
+    // The smallest offending block folds; if only the aggregate is too small, the smallest kept one joins it.
+    const offenders = bad.filter((p) => p.id !== aggId).map((p) => p.id)
+    const victim =
+      kept
+        .filter((k) => offenders.includes(k.id))
+        .sort(byValueThenId)
+        .pop() ?? kept[kept.length - 1]
+    kept.splice(kept.indexOf(victim), 1)
+    folded.push(victim)
+  }
+}
+
+const sum = (xs: readonly TreemapItem[]): number => xs.reduce((a, i) => a + i.value, 0)
+const sortBig = (xs: TreemapItem[]): TreemapItem[] => [...xs].sort(byValueThenId)
+
+export interface MapGroupIn {
+  id: string
+  bytes: number
+  items: TreemapItem[]
+}
+export interface MapRegionIn {
+  id: string
+  bytes: number
+  groups: MapGroupIn[]
+}
+
+export interface MapGroup {
+  id: string
+  /** In the region body: x/y from its top-left, width = the body's. */
+  rect: Rect
+  /** The cells' drawing box inside the group (after its inset and header). */
+  box: Rect
+  /** Cell rectangles relative to `box`; the aggregate has id `agg:<regionId>:<groupId>`. */
+  cells: (Placed & { cx: number; cy: number })[]
+  folded: string[]
+  aggId: string
+}
+export interface MapRegion {
+  id: string
+  /** In canvas coordinates. */
+  rect: Rect
+  /** The region body below its header and inside its border. */
+  body: Rect
+  groups: MapGroup[]
+}
+export interface MapLayout {
+  width: number
+  height: number
+  shelves: number
+  regions: MapRegion[]
+}
+
+const aggIdOf = (region: string, group: string): string => `agg:${region}:${group}`
+
+/** Region height before any slack: header, borders and its stacked groups at their own heights. */
+function naturalHeight(r: MapRegionIn, bodyW: number): number {
+  const groups = r.groups.reduce(
+    (a, g) => a + TM.groupHead + TM.groupInset + groupBodyHeight(g.bytes, bodyW - TM.groupInset),
+    0
+  )
+  return TM.regionHead + TM.regionBorder + groups
+}
+
+export function layoutMap(regions: readonly MapRegionIn[], width: number): MapLayout {
+  const slots = planShelves(
+    regions.map((r) => ({ id: r.id, value: r.bytes })),
+    width
+  )
+  const byId = new Map(regions.map((r) => [r.id, r]))
+  const shelfCount = slots.reduce((m, s) => Math.max(m, s.row + 1), 0)
+
+  // Phase 1: a shelf is as tall as its tallest region.
+  const shelfH: number[] = Array.from({ length: shelfCount }, () => 0)
+  for (const s of slots) {
+    const r = byId.get(s.id)!
+    shelfH[s.row] = Math.max(shelfH[s.row], naturalHeight(r, s.w - TM.regionBorder))
+  }
+  const shelfY: number[] = []
+  let y = 0
+  shelfH.forEach((h, i) => {
+    shelfY[i] = y
+    y += h + TM.gap
+  })
+  const height = shelfCount > 0 ? y - TM.gap : 0
+
+  // Phase 2: stretch each region's groups over the slack, then pack the cells.
+  const out: MapRegion[] = slots.map((s) => {
+    const r = byId.get(s.id)!
+    const rect: Rect = { x: s.x, y: shelfY[s.row], w: s.w, h: shelfH[s.row] }
+    const bodyW = rect.w - TM.regionBorder
+    const body: Rect = {
+      x: 1,
+      y: TM.regionHead,
+      w: bodyW,
+      h: rect.h - TM.regionHead - TM.regionBorder
+    }
+    const bodies = r.groups.map((g) => groupBodyHeight(g.bytes, bodyW - TM.groupInset))
+    const natural = bodies.reduce((a, b) => a + b, 0)
+    const slack = body.h - r.groups.length * (TM.groupHead + TM.groupInset) - natural
+    let gy = 0
+    const groups = r.groups.map((g, k): MapGroup => {
+      const extra = natural > 0 ? (slack * bodies[k]) / natural : 0
+      const h = TM.groupHead + TM.groupInset + bodies[k] + extra
+      const G: Rect = { x: 0, y: gy, w: bodyW, h }
+      gy += h
+      const box: Rect = {
+        x: TM.groupInset / 2,
+        y: TM.groupInset / 2 + TM.groupHead,
+        w: bodyW - TM.groupInset,
+        h: h - TM.groupInset - TM.groupHead
+      }
+      const aggId = aggIdOf(r.id, g.id)
+      const packed = packCells(
+        g.items,
+        { x: 0, y: 0, w: box.w, h: box.h },
+        { w: TM.cellMinW, h: TM.cellMinH },
+        aggId
+      )
+      const cells = packed.placed.map((p) => ({
+        ...p,
+        cx: rect.x + body.x + G.x + box.x + p.rect.x + p.rect.w / 2,
+        cy: rect.y + body.y + G.y + box.y + p.rect.y + p.rect.h / 2
+      }))
+      return { id: g.id, rect: G, box, cells, folded: packed.folded.map((f) => f.id), aggId }
+    })
+    return { id: r.id, rect, body, groups }
+  })
+
+  return { width, height, shelves: shelfCount, regions: out }
 }

@@ -68,10 +68,33 @@ const now = useNow({ interval: 30_000 })
 
 const loading = computed(() => gc.loading || !gc.snapshot)
 
+/**
+ * The gather reads the Reaper's last scan, which does not exist before the first scan. Until it does the
+ * screen says it is scanning — an empty gather would otherwise read "All clean" (design.md "First scan").
+ * `settling` keeps that state through the gather that follows the scan, so a stale empty snapshot never
+ * paints in between.
+ */
+const scanError = ref<string | null>(null)
+const settling = ref(false)
+const awaitingScan = computed(() => (!reaper.snapshot && !scanError.value) || settling.value)
+
+async function scanFirst(): Promise<void> {
+  scanError.value = null
+  settling.value = true
+  try {
+    await reaper.scanNow()
+    await gc.refresh()
+  } catch (e) {
+    scanError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    settling.value = false
+  }
+}
+
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
   await Promise.all([gc.init(), reaper.init()])
-  if (!reaper.snapshot) await reaper.scanNow()
+  if (!reaper.snapshot) await scanFirst()
 })
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
@@ -320,6 +343,8 @@ function hydrationBusy(id: string): 'dehydrating' | 'rehydrating' | null {
 
 async function rescan(): Promise<void> {
   clearSelection()
+  // Before any scan has ever worked, a rescan is the first scan: it owns the "Scanning…" state.
+  if (!reaper.snapshot) return scanFirst()
   await reaper.scanNow()
   await gc.refresh()
 }
@@ -411,22 +436,29 @@ async function copyRestoreHint(hint: string): Promise<void> {
   >
     <span class="flex items-center gap-2 text-body text-text-2" data-testid="cleanup-summary">
       <Recycle :size="14" :stroke-width="1.6" class="shrink-0 text-green" />
-      <i18n-t keypath="cleanup.gc.status.reclaimable" scope="global">
-        <template #size>
-          <b class="font-semibold text-text">{{ formatBytes(gc.reclaimableBytes) }}</b>
-        </template>
-      </i18n-t>
-      <span class="text-text-4">·</span>
-      <span>{{
-        prefs?.autopilot ? t('cleanup.gc.status.autopilotOn') : t('cleanup.gc.status.autopilotOff')
+      <span v-if="awaitingScan" data-testid="cleanup-summary-scanning">{{
+        t('cleanup.gc.firstScan.title')
       }}</span>
-      <template v-if="nextText">
+      <template v-else>
+        <i18n-t keypath="cleanup.gc.status.reclaimable" scope="global">
+          <template #size>
+            <b class="font-semibold text-text">{{ formatBytes(gc.reclaimableBytes) }}</b>
+          </template>
+        </i18n-t>
         <span class="text-text-4">·</span>
-        <span>{{ nextText }}</span>
+        <span>{{
+          prefs?.autopilot
+            ? t('cleanup.gc.status.autopilotOn')
+            : t('cleanup.gc.status.autopilotOff')
+        }}</span>
+        <template v-if="nextText">
+          <span class="text-text-4">·</span>
+          <span>{{ nextText }}</span>
+        </template>
       </template>
     </span>
 
-    <CleanupHeroButton :hero="gc.hero" @click="openReady()" />
+    <CleanupHeroButton :hero="gc.hero" :scanning="awaitingScan" @click="openReady()" />
 
     <span
       class="inline-flex items-center rounded-full border px-2 py-0.5 text-caption"
@@ -500,6 +532,25 @@ async function copyRestoreHint(hint: string): Promise<void> {
     </div>
     <div v-else-if="gc.loadError" class="px-5.5 py-8 text-ui text-red">
       {{ t('cleanup.gc.loadError', { error: gc.loadError }) }}
+    </div>
+    <div
+      v-else-if="awaitingScan"
+      class="flex flex-col items-center gap-1 py-16 text-center"
+      role="status"
+      data-testid="cleanup-scanning"
+    >
+      <Loader2 :size="20" :stroke-width="1.6" class="mb-2 animate-spin text-text-4" />
+      <div class="text-body font-medium leading-5 text-text-2">
+        {{ t('cleanup.gc.firstScan.title') }}
+      </div>
+      <div class="text-caption text-text-3">{{ t('cleanup.gc.firstScan.sub') }}</div>
+    </div>
+    <div
+      v-else-if="scanError && !reaper.snapshot"
+      class="px-5.5 py-8 text-ui text-red"
+      data-testid="cleanup-scan-failed"
+    >
+      {{ t('cleanup.gc.firstScan.failed', { error: scanError }) }}
     </div>
 
     <div v-else-if="model && prefs" class="relative">
