@@ -199,7 +199,7 @@ Cleanup used to sort a worktree by one question, "is the branch merged?". The au
 
 ### The first run only reports
 
-Turning the autopilot on does not clean anything. The first cycle runs the same checks and stops at the count: _"Found 12 ready to clean, 6.0 GiB - enable automatic cleanup?"_ Nothing is deleted until you acknowledge that report, and acknowledging is a separate action from turning the autopilot on. From the next cycle on, it cleans, at most **20 worktrees per cycle** (the oldest first; the rest wait for the next cycle). A cycle that cleaned something posts one notification with how much it freed.
+Turning the autopilot on does not clean anything. The first cycle runs the same checks and stops at the count: _"Found 12 ready to clean, 6.00 GB - enable automatic cleanup?"_ Nothing is deleted until you acknowledge that report, and acknowledging is a separate action from turning the autopilot on. From the next cycle on, it cleans, at most **20 worktrees per cycle** (the oldest first; the rest wait for the next cycle). A cycle that cleaned something posts one notification with how much it freed.
 
 The cycle runs on the same timer as the background scan, right after it, so switching the background scan off also stops the autopilot. A cleaning job you started by hand takes priority: a cycle that comes due waits for it, and a manual request made during a cycle waits for the cycle.
 
