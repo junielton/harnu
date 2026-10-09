@@ -5601,7 +5601,7 @@ bg-accent-soft`): **Close as delivered** ("The work is done.") and
 #### Missions review dialog (`MissionsReviewDialog.vue`, BUG-173 S5, spec §3.5)
 
 "Missions that need you": the whole pile of missions that owe the operator
-something, in one place, and the only bulk action Harnu offers — **close
+something, plus every finished mission nobody asked to close, in one place, and the only bulk action Harnu offers — **close
 finished missions as delivered**. It is opened from the grouped Activity entry's
 **Review all {n}** button and from an orphan row (a mission whose owner session
 is not loaded), through `useMissionsStore().openReview(focusMissionId?)`. It is
@@ -5626,7 +5626,8 @@ border-border-2`, radius 9px, `--shadow-pop`, `.anim-fade-in-scale`, focus trap
   1. **Ready to close** — `status: 'delivered'` with `pendingClose`: the owner
      verified the end and asked. **Pre-selected.**
   2. **Finished, close never requested** — `status: 'active'` and
-     `progress.allDone`, nothing asked. Listed, **not** pre-selected, with a hint
+     `progress.allDone`, nothing asked — listed whether or not it owes anything else
+     (its row then reads its headline, "Step N of N ✓"). **Not** pre-selected, with a hint
      under the heading ("Nobody verified the end of these") and each row's
      `closeWarnings` inline (Warning callout look, below).
   3. **Waiting on you for something else** — every other owed mission. **No

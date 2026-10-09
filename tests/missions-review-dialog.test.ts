@@ -165,6 +165,7 @@ describe('MissionsReviewDialog — listing', () => {
       false
     )
     expect(q('[data-test="review-count"]')?.textContent).toContain('1 selected')
+    expect(q('[data-mission-id="q1"]')?.textContent).not.toContain('Needs you')
   })
 
   it('highlights and scrolls to the focused mission', async () => {

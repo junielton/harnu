@@ -356,9 +356,13 @@ export interface ReviewGroups {
 }
 
 /**
- * Split the missions that owe the operator something (the cue's owed set) into
- * the review's groups, keeping the input order. A repeated id keeps its first
- * view and a closed mission is never listed.
+ * Split the open missions into the review's groups, keeping the input order. The
+ * close groups come first and need no owed condition: a delivered mission whose
+ * close was requested is `ready`, and an active mission with every step done is
+ * `finished` whatever it owes (the finished-but-never-closed backlog is what the
+ * bulk close exists to clear). Every other mission is listed only if it owes the
+ * operator something (the cue's owed set). A repeated id keeps its first view
+ * and a closed mission is never listed.
  */
 export function groupReviewMissions(views: readonly MissionView[]): ReviewGroups {
   const out: ReviewGroups = { ready: [], finished: [], other: [] }
@@ -366,10 +370,11 @@ export function groupReviewMissions(views: readonly MissionView[]): ReviewGroups
   for (const v of views) {
     if (seen.has(v.mission.id)) continue
     seen.add(v.mission.id)
-    if (v.mission.status === 'closed' || owedKeys(v).size === 0) continue
-    if (v.mission.status === 'delivered' && v.mission.pendingClose) out.ready.push(v)
-    else if (v.mission.status === 'active' && v.progress.allDone) out.finished.push(v)
-    else out.other.push(v)
+    const { status } = v.mission
+    if (status === 'closed') continue
+    if (status === 'delivered' && v.mission.pendingClose) out.ready.push(v)
+    else if (status === 'active' && v.progress.allDone) out.finished.push(v)
+    else if (owedKeys(v).size > 0) out.other.push(v)
   }
   return out
 }

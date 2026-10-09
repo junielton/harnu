@@ -24,6 +24,7 @@ import {
   endWarningHeading,
   endWarnings,
   groupReviewMissions,
+  headlineText,
   isBulkCloseable,
   readyIds
 } from '../lib/mission-view'
@@ -32,6 +33,7 @@ import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
 import type { MissionDoor, MissionView } from '../../../main/mission-ipc'
+import { progressHeadline } from '../../../main/mission-progress'
 import Button from './ui/Button.vue'
 import MissionBulkCloseConfirmDialog, {
   type BulkCloseItem
@@ -99,7 +101,10 @@ function owed(v: MissionView): string {
     case 'review-import':
       return t('mission.you.reviewImport')
     default:
-      return t('mission.state.needsYou')
+      // Nothing owed (a finished mission nobody asked to close): say where it stands.
+      return item === null
+        ? headlineText(t, progressHeadline(v.progress))
+        : t('mission.state.needsYou')
   }
 }
 
