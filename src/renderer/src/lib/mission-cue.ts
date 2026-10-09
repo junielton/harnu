@@ -101,7 +101,11 @@ export function decideCue(
 ): CueDecision {
   const next: CueMemory['owed'] = new Map()
   const cueIds: string[] = []
+  const seen = new Set<string>()
   for (const v of views) {
+    // Defence in depth (BUG-173): main lists each mission once; a repeat never cues twice.
+    if (seen.has(v.mission.id)) continue
+    seen.add(v.mission.id)
     const keys = owedKeys(v)
     if (keys.size === 0) continue
     const prev = memory.owed.get(v.mission.id)

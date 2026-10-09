@@ -3906,6 +3906,91 @@ export async function readAllMissions(root: string): Promise<{
   return { missions, unreadable }
 }
 
+/** One readable mission copy with the repo root it was read from. */
+export interface RootedMission {
+  root: string
+  mission: Mission
+  log: string
+  file: string
+}
+
+/** `(id, root)` pairs already warned about, so a 20 s poll logs each shadowed copy once. */
+const warnedShadowed = new Set<string>()
+
+/**
+ * Every readable mission across `roots`, at most ONE per `mission.id` (BUG-173 S1).
+ * Two clones of one repo can hold the same mission files; both the renderer's
+ * `mission:list` and the agent's `mission_list` read through here so neither lists
+ * a mission twice.
+ *
+ * - Roots are canonicalised with `realpath` (the resolved string when that fails),
+ *   so one directory reached through two spellings is read once. The root reported
+ *   back is the first spelling given.
+ * - The winner of an id is the copy with the newest `updatedAt`; a tie goes to the
+ *   root that sorts first by path, so the answer never depends on poll order.
+ * - The status rule runs on the WINNER: with `includeClosed: false` a closed winner
+ *   drops the id even when an older twin elsewhere still says `active`.
+ * - Losing copies in another root come back as `shadowed` (one `console.warn` per
+ *   process per pair). Nothing is deleted or rewritten.
+ */
+export async function readMissionsDeduped(
+  roots: readonly string[],
+  { includeClosed }: { includeClosed: boolean }
+): Promise<{
+  missions: RootedMission[]
+  unreadable: Array<{ root: string; name: string }>
+  shadowed: Array<{ missionId: string; root: string }>
+}> {
+  const canonOf = new Map<string, string>() // canonical path → first spelling given
+  for (const root of roots) {
+    const canon = await fs.realpath(root).catch(() => path.resolve(root))
+    if (!canonOf.has(canon)) canonOf.set(canon, root)
+  }
+  const reads = await Promise.all(
+    [...canonOf].map(async ([canon, root]) => ({ canon, root, read: await readAllMissions(root) }))
+  )
+  const unreadable = reads.flatMap(({ root, read }) =>
+    read.unreadable.map((name) => ({ root, name }))
+  )
+
+  const all = reads.flatMap(({ canon, root, read }) =>
+    read.missions.map((m) => ({ canon, copy: { root, ...m } }))
+  )
+  const winners = new Map<string, (typeof all)[number]>()
+  for (const entry of all) {
+    const best = winners.get(entry.copy.mission.id)
+    if (!best) {
+      winners.set(entry.copy.mission.id, entry)
+      continue
+    }
+    const a = entry.copy.mission.updatedAt
+    const b = best.copy.mission.updatedAt
+    if (a > b || (a === b && entry.canon < best.canon)) winners.set(entry.copy.mission.id, entry)
+  }
+
+  const shadowed: Array<{ missionId: string; root: string }> = []
+  const missions: RootedMission[] = []
+  for (const entry of all) {
+    const winner = winners.get(entry.copy.mission.id)!
+    if (winner === entry) {
+      if (includeClosed || entry.copy.mission.status !== 'closed') missions.push(entry.copy)
+      continue
+    }
+    // A repeated id inside ONE root is the same mission twice, not a second clone.
+    if (winner.canon === entry.canon) continue
+    const { id } = entry.copy.mission
+    shadowed.push({ missionId: id, root: entry.copy.root })
+    const key = `${id}\u0000${entry.canon}`
+    if (!warnedShadowed.has(key)) {
+      warnedShadowed.add(key)
+      console.warn(
+        `[missions] ${id} in ${entry.copy.root} is shadowed by a newer copy in ${winner.copy.root}`
+      )
+    }
+  }
+  return { missions, unreadable, shadowed }
+}
+
 const missionGetHandler: Handler = async (args, ctx) => {
   const folder = ctx.folder
   if (!folder) return errorResult('BAD_ARGS: folder is required')
@@ -3974,34 +4059,28 @@ const missionListHandler: Handler = async (_args, ctx) => {
       (root) => !isFolderDenied(root, ctx.denyFolders)
     )
   }
-  const missions: Record<string, unknown>[] = []
-  const unreadable: string[] = []
-  for (const root of roots) {
-    const read = await readAllMissions(root)
-    unreadable.push(...read.unreadable.map((n) => path.join(missionsDir(root), n)))
-    for (const { mission: m, log } of read.missions) {
-      missions.push({
-        id: m.id,
-        slug: m.slug,
-        title: missionTitle(log, m.slug),
-        status: m.status,
-        folder: m.folder,
-        ownerSessionId: m.owner.sessionId,
-        ...(m.linkedCard ? { linkedCard: m.linkedCard } : {}),
-        // Mission v3 §3.10: the last derive's progress (null before any derive);
-        // read mission_get for exact numbers.
-        progress: lastProgress.get(m.id) ?? null,
-        // Deprecated (kept one release): proof counts, a legacy fixed start excluded.
-        steps: {
-          total: progressSteps(m).length,
-          verified: progressSteps(m).filter((s) => s.proof === 'verified').length,
-          claimed: progressSteps(m).filter((s) => s.proof === 'claimed').length
-        },
-        blocked: m.blockers.length > 0 || m.steps.some((s) => s.blockers.length > 0),
-        updatedAt: m.updatedAt
-      })
-    }
-  }
+  const read = await readMissionsDeduped(roots, { includeClosed: true })
+  const unreadable = read.unreadable.map((u) => path.join(missionsDir(u.root), u.name))
+  const missions: Record<string, unknown>[] = read.missions.map(({ mission: m, log }) => ({
+    id: m.id,
+    slug: m.slug,
+    title: missionTitle(log, m.slug),
+    status: m.status,
+    folder: m.folder,
+    ownerSessionId: m.owner.sessionId,
+    ...(m.linkedCard ? { linkedCard: m.linkedCard } : {}),
+    // Mission v3 §3.10: the last derive's progress (null before any derive);
+    // read mission_get for exact numbers.
+    progress: lastProgress.get(m.id) ?? null,
+    // Deprecated (kept one release): proof counts, a legacy fixed start excluded.
+    steps: {
+      total: progressSteps(m).length,
+      verified: progressSteps(m).filter((s) => s.proof === 'verified').length,
+      claimed: progressSteps(m).filter((s) => s.proof === 'claimed').length
+    },
+    blocked: m.blockers.length > 0 || m.steps.some((s) => s.blockers.length > 0),
+    updatedAt: m.updatedAt
+  }))
   return textResult({
     ok: true,
     op: 'mission_list',

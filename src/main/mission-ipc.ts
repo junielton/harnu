@@ -44,10 +44,11 @@ import {
   loadMission,
   missionRoot,
   missionTitle,
-  readAllMissions,
+  readMissionsDeduped,
   youItems,
   type MissionDerived,
   type MissionYouItem,
+  type RootedMission,
   type ToolHandlerCtx
 } from './mcp/tool-handlers'
 
@@ -71,6 +72,11 @@ export interface MissionListResult {
   views: MissionView[]
   /** Mission files that failed to parse — reported, never thrown. */
   unreadable: string[]
+  /**
+   * Copies of a mission id that lost to a newer copy in another clone (BUG-173).
+   * A diagnostic for "two clones carry the same missions"; nothing is deleted.
+   */
+  shadowed: Array<{ missionId: string; root: string }>
 }
 
 export type MissionDoor =
@@ -170,20 +176,19 @@ export async function listMissionViews(
   now = Date.now()
 ): Promise<MissionListResult> {
   const roots = [...new Set(folders.filter((f) => typeof f === 'string').map(missionRoot))]
-  if (roots.length === 0) return { views: [], unreadable: [] }
-  const [reads, folderRows] = await Promise.all([
-    Promise.all(roots.map((root) => readAllMissions(root))),
+  if (roots.length === 0) return { views: [], unreadable: [], shadowed: [] }
+  const [read, folderRows] = await Promise.all([
+    readMissionsDeduped(roots, { includeClosed: false }),
     scanFoldersMemo()
   ])
-  const unreadable = reads.flatMap((r) => r.unreadable)
-  const perRoot = reads.map((read, i) =>
-    read.missions
-      .filter(({ mission }) => mission.status !== 'closed')
-      .map(({ mission, log }) => ({ root: roots[i], mission, log }))
-  )
+  const unreadable = read.unreadable.map((u) => u.name)
+  // One list per repo root, so the jobs below can be taken round-robin across repos.
+  const perRoot = new Map<string, RootedMission[]>()
+  for (const m of read.missions) perRoot.set(m.root, [...(perRoot.get(m.root) ?? []), m])
+  const lists = [...perRoot.values()]
   const jobs: Array<{ root: string; mission: Mission; log: string }> = []
-  for (let k = 0; perRoot.some((list) => k < list.length); k++) {
-    for (const list of perRoot) if (k < list.length) jobs.push(list[k])
+  for (let k = 0; lists.some((list) => k < list.length); k++) {
+    for (const list of lists) if (k < list.length) jobs.push(list[k])
   }
   const views = await mapLimit(jobs, LIST_CONCURRENCY, ({ root, mission, log }) =>
     // The operator's own view: no folder is blocked from them (denyFolders is
@@ -197,7 +202,7 @@ export async function listMissionViews(
     )
   )
   views.sort((a, b) => b.mission.updatedAt.localeCompare(a.mission.updatedAt))
-  return { views, unreadable }
+  return { views, unreadable, shadowed: read.shadowed }
 }
 
 function applyDoor(door: MissionDoor, mission: Mission, at: string): Mission {
