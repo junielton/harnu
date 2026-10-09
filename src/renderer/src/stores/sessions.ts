@@ -2422,8 +2422,10 @@ export const useSessionsStore = defineStore('sessions', () => {
    * `collapseResolvedSynthetics`), the survivor's own `created` is the JSONL's
    * birthtime — seconds after the operator pressed "+ New session" — so keying
    * the sort on it would make the card jump past newer neighbours. The anchor
-   * is the creation moment as the operator experienced it. An in-place
-   * migration needs none: the same row object keeps its `created`.
+   * is the creation moment as the operator experienced it. The two IN-PLACE
+   * paths (`migrateSyntheticInPlace`, `collapseSyntheticInto`) need one too:
+   * they rename the same row object, but `reconcileSessions` overwrites its
+   * `created` with the disk row's on the next index update.
    * `Session.created` itself is never rewritten (twin matching reads it).
    */
   const creationAnchors = new Map<string, string>()
@@ -3330,6 +3332,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     report: boolean
   ): void {
     const oldId = synth.sessionId
+    anchorCreation(synth, realId) // the next reconcile overwrites `created` from disk
     synth.sessionId = realId
     synth.synthetic = false
     synth.forkSourceId = undefined
@@ -5047,6 +5050,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     const synthId = synth.sessionId
     const wasAgentControlled = synth.agentControlled === true
     agentCorrelationMeta.delete(synthId)
+    anchorCreation(synth, realId) // the next reconcile overwrites `created` from disk
     synth.sessionId = realId
     synth.synthetic = false
     synth.forkSourceId = undefined
