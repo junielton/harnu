@@ -1,14 +1,18 @@
 # T450 — Detection: rules, false positives, allowlist, measurements (U-1)
 
 Part of [`00-spec.md`](00-spec.md). The rule source is `hooks/detect.ts` in
-[`02-prototype.md`](02-prototype.md) §2. The test matrix and its real output are in
-[`02-prototype.md`](02-prototype.md) §3.
+[`02-prototype.md`](02-prototype.md) §2.3. The test matrix and its real output are in
+[`03-tests.md`](03-tests.md).
 
 ## 1. How a text is scanned
 
 `detect(text, options)` returns `{ start, end, rule }` spans. It is a pure function: no `$`, no
 engine, so the same file runs under `claude plugin test` and under Node for the measurements.
 
+0. **The vault's literals first** (in the hooks module, `scrubText`). Every value this session already
+   redacted is replaced by its placeholder wherever it appears again, before any rule runs. A
+   contextual rule only sees a value in its context (`postgres://app:<pw>@`). Echoed bare (`the
+password is <pw>`) it would pass; the literal match catches it.
 1. **Rules in order, most specific first.** Each rule is a global regex with match indices (the `d`
    flag). A span that overlaps one an earlier rule already took is skipped. So a GitHub token inside
    `GITHUB_TOKEN=…` is reported as `github-token`, not `secret-assignment`.
@@ -43,7 +47,7 @@ Formats are written broken up (`gh`·`p_`), never as a literal a scanner would f
 | `url-credentials`   | `scheme://user:PASSWORD@host`: the password only                                                                                                                                                                                                  | structural  |
 | `auth-header`       | `Authorization: Bearer\|Basic\|token <value>`: the value only                                                                                                                                                                                     | contextual  |
 | `secret-assignment` | `NAME=value`, `NAME: value`, `"name": "value"`, where NAME ends in SECRET, TOKEN, PASSWORD, PASSWD, PWD, API_KEY, ACCESS_KEY or PRIVATE_KEY (any case, `_` optional), and the value is a literal of 8 to 512 characters with a digit and a letter | contextual  |
-| `high-entropy`      | a 32 to 512 character run of `[A-Za-z0-9+/_=-]` that passes the shape filters (§3) and holds 4.0 bits of Shannon entropy per character or more                                                                                                    | statistical |
+| `high-entropy`      | a 32 to 512 character run of `[A-Za-z0-9+/_=-]` that passes the shape filters (§3) and holds 4.0 bits of Shannon entropy per character or more. **Off by default** until W0 measures it on real tool output (§5.3)                                | statistical |
 
 Choices the measurements drove (§5):
 
@@ -68,18 +72,55 @@ The high-entropy rule is the only one that guesses. A candidate is dropped, befo
 measured, when its shape says it is not a secret. Each filter below, and how many of this repo's 9,666
 candidates it dropped (§5):
 
-| Filter            | Drops                                                                                                                                                                         | Dropped |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `hex`             | all-hex runs: git SHAs, SHA1/256/512 digests, content hashes                                                                                                                  | 18      |
-| `uuid`            | the 8-4-4-4-12 UUID form (session ids, request ids)                                                                                                                           | 302     |
-| `integrity`       | `sha1-`/`sha256-`/`sha384-`/`sha512-` integrity values (`package-lock.json`, SRI attributes)                                                                                  | 941     |
-| `publishable-key` | `pk_live_`/`pk_test_` keys, which are public by design                                                                                                                        | (test)  |
-| `data-uri`        | the payload after `;base64,` (inline images and fonts)                                                                                                                        | (test)  |
-| `identifier`      | all-lowercase or all-uppercase runs with `_ . / -` and digits: file paths, constants, env names                                                                               | 7,060   |
-| `word`            | letters only (`ThisIsAVeryLongCamelCaseIdentifier`)                                                                                                                           | 70      |
-| `path`            | three or more `/`, or a longest `/`-separated part under 24 characters                                                                                                        | 1,089   |
-| `slug`            | three or more parts split on `- _ . /`, each a word, a capitalized word, a short upper-and-digits id (`T195`, `PROJ`) or digits with a suffix (`500s`): branch and card slugs | 126     |
-| `classes`         | fewer than three of lowercase, uppercase and digits in the longest `/`-separated part (ULIDs, Crockford ids)                                                                  | 50      |
+| Filter            | Drops                                                                                                                                                                                                                                                 | Dropped   |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `hex`             | all-hex runs: git SHAs, SHA1/256/512 digests, content hashes                                                                                                                                                                                          | 18        |
+| `uuid`            | the 8-4-4-4-12 UUID form (session ids, request ids)                                                                                                                                                                                                   | 302       |
+| `integrity`       | `sha1-`/`sha256-`/`sha384-`/`sha512-` integrity values (`package-lock.json`, SRI attributes)                                                                                                                                                          | 941       |
+| `publishable-key` | `pk_live_`/`pk_test_` keys, which are public by design                                                                                                                                                                                                | (test)    |
+| `data-uri`        | the payload after `;base64,` (inline images and fonts)                                                                                                                                                                                                | (test)    |
+| `identifier`      | all-lowercase or all-uppercase runs with `_ . / -` and digits: file paths, constants, env names                                                                                                                                                       | 7,060     |
+| `word`            | letters only (`ThisIsAVeryLongCamelCaseIdentifier`)                                                                                                                                                                                                   | 70        |
+| `path`            | three or more `/`, or a longest `/`-separated part under 24 characters                                                                                                                                                                                | 1,089     |
+| `slug`            | three or more parts split on `- _ . /`, each a word, a capitalized word, a short upper-and-digits id (`T195`, `PROJ`) or digits with a suffix (`500s`): branch and card slugs                                                                         | 126       |
+| `classes`         | fewer than three of lowercase, uppercase and digits in the longest `/`-separated part (ULIDs, Crockford ids)                                                                                                                                          | 50        |
+| `ssh-public-key`  | the key after `ssh-rsa`, `ssh-dss`, `ssh-ed25519`, `ecdsa-sha2-nistp…` or `sk-ssh-ed25519@openssh.com` (an `authorized_keys` line, `ssh-keygen -y` output)                                                                                            | (round 2) |
+| `go-sum`          | the hash after `h1:` (`go.sum`, `go mod download -json`)                                                                                                                                                                                              | (round 2) |
+| `nonce`           | a CSP `nonce-…` value                                                                                                                                                                                                                                 | (round 2) |
+| `public-pem`      | a line inside a `CERTIFICATE`, `TRUSTED CERTIFICATE`, `X509 CRL`, `CERTIFICATE REQUEST`, `PUBLIC KEY`, `RSA PUBLIC KEY`, `SSH2 PUBLIC KEY` or `PGP PUBLIC KEY BLOCK` PEM block, between its `BEGIN` and `END` lines (`cat cert.pem` keeps every line) | (round 2) |
+
+The four round-2 filters answer a verifier's probes of real tool-output shapes. The verifier's probe
+script (in the orchestrator's scratch, not in this repo) was run, unmodified, against the round-2
+`detect.ts`:
+
+```text
+-                      go.sum
+-                      yarn.lock integrity
+-                      docker digest
+-                      npm audit ref
+-                      git lfs oid
+-                      k8s pod name
+high-entropy           S3 presigned-ish X-Amz-Signature (hex)
+high-entropy           base64 cert body (public)
+-                      nonce in CSP
+-                      webpack chunk hash
+high-entropy           session id (claude)
+high-entropy           random 32 b62 token (should hit)
+-                      aws secret no label, b64 40
+-                      ssh pubkey
+```
+
+Three probe shapes still hit, and none is fixed here:
+
+- **An opaque `session_…` id.** It is indistinguishable from a token by shape.
+- **A certificate body line on its own,** without its `BEGIN` line around it. A private key's body
+  starts with the same `MII…` prefix, so the prefix cannot be the filter.
+- **An S3 `X-Amz-Signature` value.** That one is arguably a credential, being time-limited.
+
+The `random 32 b62 token` line is the positive control. The `aws secret no label` line is the known
+recall gap: standard base64 with `/` (§5.3).
+
+These are why the rule stays off by default (SCR-Q2).
 
 Media bytes are never text to scan. The prototype's `scrubDeep` skips any field named `base64` (a
 `Read` of an image or PDF, `d.ts:20963-21021`) and a Bash `stdout` whose result says `isImage`. Both
@@ -96,7 +137,8 @@ A repo commits `.claude/secret-scrubber.json`:
 ```json
 {
   "allow": ["sha256:<64 hex digits of the value>"],
-  "disable": ["high-entropy"]
+  "disable": ["jwt"],
+  "resolveInto": ["config/local.env"]
 }
 ```
 
@@ -106,6 +148,9 @@ A repo commits `.claude/secret-scrubber.json`:
   every machine. That is safe for this purpose: an allowlisted value is one the repo has already
   declared harmless.
 - **`disable`** takes rule ids from §2.
+- **`resolveInto`** takes repo-relative paths that a resolved placeholder may be written into without a
+  question, for a secrets file the repo does not gitignore (`00-spec.md` §6.2). Test `resolution > a
+path the repo lists under resolveInto resolves with no question`.
 - The mod reads the file at `session.start` from the session's `cwd` (`$.fs.read`, `d.ts:3223-3241`).
   No file means defaults. A file that is not JSON logs one line ("every rule stays on") and changes
   nothing. A broken allowlist never turns redaction off.
@@ -123,8 +168,9 @@ Harnu's per-folder off switch ([`00-spec.md`](00-spec.md) §9.1) and the `userCo
 
 ### 5.1 Method
 
-- **Negative corpus:** every text file `git ls-files` lists in this worktree at `cb7fb58`. That is
-  1,901 files and 26.4 MB, skipping files over 4 MiB and binaries. The tree holds no real secret, so
+- **Negative corpus:** every text file `git ls-files` lists in this worktree, except this spec's own
+  files, skipping files over 4 MiB and binaries. That is 1,901 files and 26.4 MB, the same set as at
+  `cb7fb58`. The tree holds no real secret, so
   every hit is a false positive or a deliberately secret-shaped test fixture.
 - **Positive corpus:** 10,000 random tokens per alphabet (base62, base64url, standard base64) and
   length (32, 40, 64), from `crypto.randomBytes`. Each is judged by the high-entropy rule alone (shape
@@ -143,6 +189,7 @@ const { detect, benign, shannon } = await import(detectPath)
 const files = execFileSync('git', ['-C', repo, 'ls-files'], { encoding: 'utf8' })
   .split('\n')
   .filter(Boolean)
+  .filter((f) => !f.startsWith('docs/specs/T450-secret-scrubber/'))
 const CAND = /[A-Za-z0-9+/_=-]{32,512}/g
 const thresholds = [3.5, 3.75, 4.0, 4.25, 4.5]
 let bytes = 0,
@@ -213,11 +260,11 @@ detect(big, { highEntropy: true, entropyThreshold: 4.0 })
 // prints the time
 ```
 
-### 5.2 Output (real, 2026-10-09)
+### 5.2 Output (real, 2026-10-09, round-2 `detect.ts`)
 
 ```text
 negative corpus: 1901 tracked text files, 26.4 MB
-structural rules over the corpus: {"secret-assignment":9,"url-credentials":3,"openai-key":1,"github-token":2,"private-key":3,"aws-access-key-id":4,"auth-header":2} in 411 ms
+structural rules over the corpus: {"secret-assignment":9,"url-credentials":3,"openai-key":1,"github-token":2,"private-key":3,"aws-access-key-id":4,"auth-header":2} in 414 ms
   secret-assignment: resources/companion/tests/fixtures/hello.ts, tests/cli/channel.cli.test.ts, tests/cli/handshake.cli.test.ts, tests/companion/audit-core.test.ts, tests/companion/parity-core.test.ts, tests/mcp-config-file.test.ts, tests/mcp-http-guard.test.ts, tests/mcp-transcript-redact.test.ts
   url-credentials: src/main/github-remote.ts, tests/github-remote.test.ts
   openai-key: tests/cli/fleet-state.cli.test.ts
@@ -231,16 +278,16 @@ high-entropy candidates (32+ chars): 9666; dropped by the shape filters: {"path"
   threshold 4: 4 high-entropy hits in 4 files: docs/specs/T205-claude-agents-json-fleet-reconciliation.md (1), tests/canvas-assets.test.ts (1), tests/canvas-origin-chain.test.ts (1), tests/voice-licence-gate.test.ts (1)
   threshold 4.25: 3 high-entropy hits in 3 files: docs/specs/T205-claude-agents-json-fleet-reconciliation.md (1), tests/canvas-assets.test.ts (1), tests/canvas-origin-chain.test.ts (1)
   threshold 4.5: 1 high-entropy hits in 1 files: docs/specs/T205-claude-agents-json-fleet-reconciliation.md (1)
-positives base62 len 32: 3.5→99.7%  3.75→99.7%  4→99.6%  4.25→97.8%  4.5→65.5%
-positives base62 len 40: 3.5→99.8%  3.75→99.8%  4→99.8%  4.25→99.8%  4.5→97.3%
+positives base62 len 32: 3.5→99.5%  3.75→99.5%  4→99.5%  4.25→97.4%  4.5→65.2%
+positives base62 len 40: 3.5→99.9%  3.75→99.9%  4→99.9%  4.25→99.8%  4.5→97.2%
 positives base62 len 64: 3.5→100.0%  3.75→100.0%  4→100.0%  4.25→100.0%  4.5→100.0%
-positives base64url len 32: 3.5→99.7%  3.75→99.7%  4→99.6%  4.25→98.0%  4.5→69.4%
-positives base64url len 40: 3.5→99.8%  3.75→99.8%  4→99.8%  4.25→99.8%  4.5→97.9%
+positives base64url len 32: 3.5→99.6%  3.75→99.6%  4→99.6%  4.25→97.9%  4.5→69.9%
+positives base64url len 40: 3.5→99.9%  3.75→99.9%  4→99.9%  4.25→99.9%  4.5→98.1%
 positives base64url len 64: 3.5→100.0%  3.75→100.0%  4→100.0%  4.25→100.0%  4.5→100.0%
-positives base64 len 32: 3.5→76.0%  3.75→76.0%  4→76.0%  4.25→74.8%  4.5→52.5%
-positives base64 len 40: 3.5→85.2%  3.75→85.2%  4→85.2%  4.25→85.2%  4.5→83.8%
-positives base64 len 64: 3.5→91.5%  3.75→91.5%  4→91.5%  4.25→91.5%  4.5→91.5%
-1 MB of package-lock.json, all rules: 9 ms
+positives base64 len 32: 3.5→76.4%  3.75→76.4%  4→76.3%  4.25→75.2%  4.5→53.5%
+positives base64 len 40: 3.5→85.5%  3.75→85.5%  4→85.5%  4.25→85.5%  4.5→84.0%
+positives base64 len 64: 3.5→92.0%  3.75→92.0%  4→92.0%  4.25→92.0%  4.5→92.0%
+1 MB of package-lock.json, all rules: 57 ms
 ```
 
 ### 5.3 What the numbers say
@@ -257,7 +304,11 @@ positives base64 len 64: 3.5→91.5%  3.75→91.5%  4→91.5%  4.25→91.5%  4.5
 
   That is one false positive per 6.6 MB of this repo's text. Lowering the threshold to 3.5 adds 2
   (in `folder-slug.test.ts`) and recalls almost nothing more. Raising it to 4.25 drops 1 hit but
-  loses about 2 points of recall on 32-character tokens. **Decision: 4.0.**
+  loses about 2 points of recall on 32-character tokens. **Decision: 4.0 when the rule is on, and
+  the rule is off by default.** One false positive per 6.6 MB of source code says little about a
+  transcript, which is mostly tool output: logs, `curl` responses, cloud CLI JSON full of opaque ids.
+  The round-1 probes (§3) found false positives there that this repo does not contain. W0 counts the
+  rule's hits on real transcripts (§5.4), and SCR-Q2 sets the bar for turning it on.
 
 - **Recall on base62 and base64url tokens of 32 characters or more: 99.6% or better** at 4.0. Those
   are most API keys and session tokens. The rest are random draws that happen to fail the
@@ -267,8 +318,11 @@ positives base64 len 64: 3.5→91.5%  3.75→91.5%  4→91.5%  4.25→91.5%  4.5
   This is a known trade: without that filter, file paths dominate the false positives (1,089
   candidates dropped by `path`). Base64 secrets with a known prefix (SendGrid, AWS secret keys in an
   assignment) are caught by their rules instead.
-- **Speed: 9 ms per MB**, against a 10 s hook budget (`d.ts:5109`). The whole 26.4 MB corpus took
-  411 ms for the rules. A large tool result never comes near the budget.
+- **Speed: 57 ms per MB** with every rule on, against a 10 s hook budget (`d.ts:5109`). Round 1
+  measured 9 ms. The round-2 `public-pem` filter searches back for a `BEGIN` line from every
+  candidate, and that search is the difference; W1 can index the `BEGIN`/`END` lines once per text.
+  The whole 26.4 MB corpus took 414 ms for the rules alone. A large tool result never comes near the
+  budget.
 
 ### 5.4 Not measured
 
@@ -276,6 +330,6 @@ positives base64 len 64: 3.5→91.5%  3.75→91.5%  4→91.5%  4.25→91.5%  4.5
   it for a count is safe (print counts only), but it was not done in this unit, because the brief
   forbids pasting anything from this machine that could be a credential. The W0 spike may run the
   same script over transcripts with output limited to counts per rule.
-- Non-English text, minified bundles and lockfiles of other ecosystems (`yarn.lock`, `Cargo.lock`,
-  `go.sum`). `go.sum`'s `h1:` hashes are base64 with `/`, so they would fall under the `path`/entropy
-  path. The spike adds a fixture for each.
+- Non-English text, minified bundles, and the lockfiles of other ecosystems (`yarn.lock`,
+  `Cargo.lock`). `go.sum` is covered by the `go-sum` filter and a test. The spike adds a fixture for
+  each.
