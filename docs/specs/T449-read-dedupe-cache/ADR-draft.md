@@ -7,7 +7,7 @@
 
 Idea 8 of the operator's ideation report proposes a mod that answers a re-`Read` of an unchanged
 file in-process, by returning a result from a `tool.call` hook without calling `next`. The spec
-shows the mechanism works on Claude Code 2.1.296 (a prototype and fifteen live runs), and that an
+shows the mechanism works on Claude Code 2.1.296 (a prototype and twenty-two live runs), and that an
 answer is safe only behind eight checks: the file's metadata, a hash of the same lines, the earlier
 result still present in the local message list, no idle gap that would let the engine clear tool
 results on the server, and a margin to the auto-compaction threshold, plus a repair note if a

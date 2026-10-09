@@ -116,6 +116,21 @@ the ~14.3 k tokens (the three it drops are the small ones). The auto-compaction 
 7 cannot be measured here: the transcript does not record the auto-compaction threshold that was in
 force.
 
+### 3.2 Re-scan for round 2 (2026-10-09, 17:50)
+
+Round 2 made the idle rule stricter: a compaction no longer resets it, and history the mod never
+stamped counts as idle when the session's first launch is more than 60 minutes before the first
+stamp (spec §5.1 check 6). The scanner's `quiet` cut follows the first change: it now runs from the
+loop's first row, across compactions. It cannot follow the second: a transcript does not say where
+the mod would have started stamping, so a resumed file is read as if every row had been stamped,
+which can only overcount.
+
+Run with `--exclude scratchpad-live` (46 live-run files left out): 12,144 transcript files (10,843
+main, 1,301 subagent), 4.06 GB, 10,337 Reads (7,062 main, 3,275 subagent). Unchanged text repeats,
+main loops: **9** (32,041 characters), the same nine; **quiet: 6** (29,058 characters, **~12.9 k
+tokens**), the same six as in round 1. Characters per token: median 2.251 (1.744–2.494, 912
+samples).
+
 ## 4. The scanner
 
 Run as `python3 -I scan.py [root] [--exclude SUBSTRING …]` (default `~/.claude/projects`); it prints
@@ -147,7 +162,8 @@ Definitions
   clears old tool results only after ~65 min idle, so gap <= 60 is the safe subset).
 - Bash repeat: identical command string, identical tool_result text, same window.
 - quiet: an unchanged repeat with no gap of more than 60 minutes between two consecutive rows
-  of its loop, from the window's start to the repeat (the spec's idle rule, check 6).
+  of its loop, from the loop's first row to the repeat; a compaction does not reset it (the
+  spec's idle rule, check 6, round 2).
 - --exclude: skip transcript files whose path contains the substring (for example the live
   runs of the prototype).
 - tokens: tool_result chars / CPT, CPT calibrated from usage deltas (see calib).
@@ -227,7 +243,7 @@ for f in files:
     S['loops_' + kind] += 1
     window = 0
     last_row_t = None
-    noisy = False        # a gap of more than 60 minutes between two rows in this window
+    noisy = False        # a gap of more than 60 minutes between two rows of this loop so far
     uses = {}            # tool_use_id -> (name, input, window, t)
     seen = {}            # key -> (texthash, chars, window, t_result)
     full = {}            # path -> (window, numbered dict)
@@ -255,7 +271,6 @@ for f in files:
             last_row_t = rt
         if t == 'system' and d.get('subtype') == 'compact_boundary':
             window += 1
-            noisy = False
             S['compact_boundaries'] += 1
             continue
         m = d.get('message') or {}

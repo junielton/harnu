@@ -83,7 +83,12 @@ export type ReadDedupeEntry = {
 
 export type ReadDedupeSaved = { tokens: number; reads: number }
 
-/** Per loop: when its conversation last gained a row, and whether a long gap ever came between two. */
+/**
+ * Per loop: when its conversation last gained a row, and whether it is idle for check 6: a gap of
+ * more than an hour between two rows, or a first stamp more than an hour after the session's first
+ * launch (history it never stamped, such as a resume, may hide one). Never reset
+ * by a compaction; cleared only with the session (`/clear`, a new session id).
+ */
 export type ReadDedupeRow = { at: number; idle: boolean }
 
 declare module 'claude-code' {
@@ -180,7 +185,7 @@ export const statusLine = (tokens: number, reads: number): string =>
 
 ```ts
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
 import type { ReadDedupeEntry, ReadDedupeRow, ReadDedupeSaved } from '../types'
 import {
@@ -215,8 +220,15 @@ const drop = (
   keep: (one: ReadDedupeEntry, key: string) => boolean
 ) => Object.fromEntries(Object.entries(all).filter(([key, one]) => keep(one, key)))
 
-const drop2 = <T>(all: Record<string, T>, key: string): Record<string, T> =>
-  Object.fromEntries(Object.entries(all).filter(([k]) => k !== key))
+/**
+ * Whether history this mod never stamped (a resume, or a mod enabled mid-session) may hold an idle
+ * gap: every such gap lies between the session's first launch (`startedAt`, kept across a resume)
+ * and now, so it is at most that span. Past an hour the mod cannot rule one out (check 6).
+ */
+async function mayHoldIdleGap($: EngineInterface, now: number) {
+  const { startedAt } = await $.session.usage()
+  return now - startedAt > IDLE_GUARD_MS
+}
 
 export const register: Register = (on, options) => {
   if (options['enabled'] === false) return
@@ -328,8 +340,9 @@ export const register: Register = (on, options) => {
       const owed = Object.values(await read($, entries)).filter(
         (one) => one.loop === loop && one.answeredTurn === turn
       )
+      // Entries go; the idle clock of check 6 runs on: a gap before the compaction may sit in the
+      // preserved tail, which the engine's clearing still measures.
       await update($, entries, (all) => drop(all, (one) => one.loop !== loop))
-      await update($, rows, (all) => drop2(all, loop))
       // The race: an answer of this turn may not have reached a model request before the compaction.
       if (owed.length > 0)
         await $.session.append({
@@ -344,12 +357,15 @@ export const register: Register = (on, options) => {
   }).catch(($, e, next) => next(e))
 
   // Every row a loop keeps: the time between two rows is the idle the engine's clearing keys on.
+  // The first row stamped in a loop starts it idle when the session's span could hide a gap.
   on('session.append', async ($, e, next) => {
     const now = await $.clock.now()
     const loop = e.agentId ?? 'main'
+    const isFirst = (await read($, rows))[loop] === undefined
+    const startsIdle = isFirst && (await mayHoldIdleGap($, now))
     await update($, rows, (all) => {
       const was = all[loop]
-      const idle = (was?.idle ?? false) || (was !== undefined && now - was.at > IDLE_GUARD_MS)
+      const idle = was === undefined ? startsIdle : was.idle || now - was.at > IDLE_GUARD_MS
       return { ...all, [loop]: { at: now, idle } }
     })
     return next(e)
@@ -380,7 +396,15 @@ function world(on: On) {
   const clock = mock.clock(on, { now: 1_000 })
   const session = mock.session(on)
   // The main window, as `$.session.usage({ breakdown: 'summary' })` reads it.
-  const fill = { isAutoCompactEnabled: true, autoCompactThreshold: 160_000, totalTokens: 20_000 }
+  const fill: {
+    isAutoCompactEnabled: boolean
+    autoCompactThreshold?: number
+    totalTokens: number
+  } = { isAutoCompactEnabled: true, autoCompactThreshold: 160_000, totalTokens: 20_000 }
+  // `breakdown`: the reading is there; `none`: no breakdown; `fails`: the call itself fails.
+  const usage = { mode: 'breakdown' as 'breakdown' | 'none' | 'fails' }
+  // A resumed session: its first launch, `startedAt`, two hours before the clock's now.
+  const history = { loaded: false }
   const disk: Disk = { text: TEXT, size: TEXT.length, mtimeMs: 500 }
   const shown = new Map<string, string>() // tool_use_id -> tool_result text in context
   const runs: string[] = []
@@ -395,14 +419,19 @@ function world(on: On) {
   on('fs.read', async () => ({ value: disk.text }))
   on('ui.status', async (_$, e) => (status.push(e.text), { value: undefined }))
   on('session.messages', async () => ({
-    value: [...shown].map(([id, text]) => ({
-      role: 'user' as const,
-      content: [{ type: 'tool_result', tool_use_id: id, content: text }]
-    }))
+    value: [
+      ...[...shown].map(([id, text]) => ({
+        role: 'user' as const,
+        content: [{ type: 'tool_result', tool_use_id: id, content: text }]
+      }))
+    ]
   }))
-  on('session.usage', async () => ({
-    value: { startedAt: 0, context: { window: 200_000, breakdown: fill as never }, rateLimits: [] }
-  }))
+  on('session.usage', async () => {
+    if (usage.mode === 'fails') throw new Error('usage unavailable')
+    const breakdown = usage.mode === 'breakdown' ? { breakdown: fill as never } : {}
+    const startedAt = history.loaded ? 1_000 - 2 * 60 * 60 * 1000 : 0
+    return { value: { startedAt, context: { window: 200_000, ...breakdown }, rateLimits: [] } }
+  })
   on('session.compact', async () => ({
     messages: [{ role: 'user' as const, text: 'summary', toolUses: [] }]
   }))
@@ -428,7 +457,7 @@ function world(on: On) {
     }
   })
   on('tool.call', { tool: 'Edit' }, async () => ({ result: { filePath: PATH } as never }))
-  return { disk, shown, runs, status, truncate, clock, session, fill }
+  return { disk, shown, runs, status, truncate, clock, session, fill, usage, history }
 }
 
 /** A prompt row of the main conversation, raised as a session raises one. */
@@ -566,7 +595,7 @@ test('near the auto-compaction threshold the Read runs (the race with a compacti
   expect(w.runs.length).toBe(2)
 })
 
-test('a gap of more than an hour between two rows stops answers until a compaction', async ($, on) => {
+test('a gap of more than an hour between two rows stops answers for the session', async ($, on) => {
   const w = world(on)
   await row($)
   await $.tool.call({ tool: 'Read', file_path: PATH })
@@ -595,6 +624,46 @@ test('a compaction in the turn of an answer appends a note naming the file', asy
   expect(w.runs.length).toBe(1)
   expect(notes.length).toBe(1)
   expect(notes[0]).toContain(`answered a Read of ${PATH} as unchanged`)
+})
+
+test('a resumed session, whose earlier gaps the mod never saw, gets no answer', async ($, on) => {
+  const w = world(on)
+  w.history.loaded = true
+  await row($)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+
+  expect(w.runs.length).toBe(2)
+})
+
+test('auto-compaction on with no threshold is an unknown reading: no answer', async ($, on) => {
+  const w = world(on)
+  await row($)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  delete w.fill.autoCompactThreshold
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+
+  expect(w.runs.length).toBe(2)
+})
+
+test('no breakdown in the usage reading: no answer', async ($, on) => {
+  const w = world(on)
+  await row($)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  w.usage.mode = 'none'
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+
+  expect(w.runs.length).toBe(2)
+})
+
+test('a failed usage call: no answer, the Read runs', async ($, on) => {
+  const w = world(on)
+  await row($)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  w.usage.mode = 'fails'
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+
+  expect(w.runs.length).toBe(2)
 })
 ```
 
@@ -631,24 +700,28 @@ Validating hooks: <scratchpad>/read-dedupe/hooks/hooks.json
 ```text
 
 tests/read-dedupe.test.ts:
-(pass) an unchanged re-Read still in context is answered without running Read [35.27ms]
-(pass) a changed file runs Read again [16.13ms]
-(pass) a same-size, same-mtime rewrite is caught by the content hash [15.57ms]
-(pass) an earlier result no longer in context is never short-circuited [15.88ms]
-(pass) an earlier result whose text the engine cut is never short-circuited [21.87ms]
-(pass) a Read cut to its token cap is not recorded [12.71ms]
-(pass) the next identical Read after an answer runs (the escape) [15.65ms]
-(pass) a different range is a different key [14.18ms]
-(pass) an Edit of the file evicts it [13.86ms]
-(pass) a compaction of the main loop evicts its entries [15.62ms]
-(pass) turned off, every Read runs [10.81ms]
-(pass) near the auto-compaction threshold the Read runs (the race with a compaction) [13.33ms]
-(pass) a gap of more than an hour between two rows stops answers until a compaction [14.75ms]
-(pass) a compaction in the turn of an answer appends a note naming the file [15.48ms]
+(pass) an unchanged re-Read still in context is answered without running Read [33.94ms]
+(pass) a changed file runs Read again [17.95ms]
+(pass) a same-size, same-mtime rewrite is caught by the content hash [16.75ms]
+(pass) an earlier result no longer in context is never short-circuited [16.68ms]
+(pass) an earlier result whose text the engine cut is never short-circuited [15.38ms]
+(pass) a Read cut to its token cap is not recorded [13.43ms]
+(pass) the next identical Read after an answer runs (the escape) [15.86ms]
+(pass) a different range is a different key [13.41ms]
+(pass) an Edit of the file evicts it [13.73ms]
+(pass) a compaction of the main loop evicts its entries [14.32ms]
+(pass) turned off, every Read runs [10.49ms]
+(pass) near the auto-compaction threshold the Read runs (the race with a compaction) [13.93ms]
+(pass) a gap of more than an hour between two rows stops answers for the session [15.65ms]
+(pass) a compaction in the turn of an answer appends a note naming the file [15.79ms]
+(pass) a resumed session, whose earlier gaps the mod never saw, gets no answer [13.17ms]
+(pass) auto-compaction on with no threshold is an unknown reading: no answer [20.68ms]
+(pass) no breakdown in the usage reading: no answer [14.92ms]
+(pass) a failed usage call: no answer, the Read runs [14.80ms]
 
- 14 pass
+ 18 pass
  0 fail
-Ran 14 tests across 1 file. [0.34s]
+Ran 18 tests across 1 file. [0.40s]
 ```
 
 ### 2.3 Type-check
@@ -689,34 +762,54 @@ header's `tsconfig.json` (types `claude-code.d.ts`:67-77), kept outside the mod 
 exit 0
 ```
 
+### 2.4 Mutation check
+
+Three guards were broken on purpose, each in a throwaway copy of the module, and the test suite run
+against it: treating a missing `autoCompactThreshold` as far from a compaction, answering when the
+usage call fails, and ignoring the `startedAt` bound on a loop's first stamp. Every mutant was
+killed (the tests named are the ones that failed):
+
+```text
+missing threshold treated as far: KILLED by ['auto-compaction on with no threshold is an unknown reading: no ']
+usage failure answers: KILLED by ['a changed file runs Read again [16.64ms]', 'a same-size, same-mtime rewrite is caught by the content hash [', 'no breakdown in the usage reading: no answer [15.93ms]', 'a failed usage call: no answer, the Read runs [14.88ms]']
+resume history ignored: KILLED by ['a resumed session, whose earlier gaps the mod never saw, gets n']
+```
+
 ## 3. Live runs: the mechanisms the design hinges on, run against a real engine
 
 The kit tests stand in for the engine: nothing sits beneath the plugin but the test's own hooks
 (reference.md:81). Four facts the design rests on can only come from a real session, so each was
 run with `claude -p --plugin-dir <scratchpad>/read-dedupe --model haiku --output-format
-stream-json --verbose --allowedTools=Read` (plus `Agent` for runs 10 and 13) on a three-line file
+stream-json --verbose --allowedTools=Read` (plus `Agent` for runs 10 and 13; `--resume <id>` for runs 17, 20, 21, 22) on a three-line file
 `notes.txt` (`alpha line one`, `beta line two`, `gamma line three`, trailing newline). Turn-by-turn
 runs (7, 8, 9) were driven with `--input-format stream-json`, one user message sent after each
-`result` line. Cost of all fifteen runs together: 0.12 USD (the sum of each run's reported `total_cost_usd`).
+`result` line. Cost of all twenty-two runs together: 0.17 USD (the sum of each run's reported `total_cost_usd`).
 
-| Run | Setup                                                                                           | What happened                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Proves                                                                                                           |
-| --- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| 1–2 | First version of the module: whole-text hash of the earlier result                              | The second Read ran for real. No hook error in the debug log.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | A silent miss: something did not match                                                                           |
-| 3   | Same, with a trace written through `$.fs.write`                                                 | Disk check passed (`isSame=true`). The earlier tool_result in `$.session.messages({ as: 'api' })` read `1\talpha line one\n…\n4\n\n<system-reminder>…`: the trailing tab of `text` (`…\n4\t`) cut, and a reminder appended **inside the same tool_result**                                                                                                                                                                                                                                                                          | The request holds the result normalised, so the check must compare a prefix (§5.3 of the spec)                   |
-| 4   | Fixed module (prefix hash), Read twice                                                          | Second Read answered: debug log `read-dedupe (user) answered tool.call without next() in 4.9ms; nothing beneath it ran for this dispatch` (the first Read's hook settled in 3,547.7 ms with `next()` included). The model read `Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.`, no `is_error`; the stored record is `{"type":"file_unchanged",…}`; the `context` note was stored as a `hook_additional_context` attachment. The model quoted all three lines from the first result. | The engine accepts a hook's `file_unchanged`, maps it with Read's own mapper, and carries `context` to the model |
-| 5   | Read three times                                                                                | Call 1 ran, call 2 answered, call 3 ran                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The escape (§7.4)                                                                                                |
-| 6   | Read, `/compact`, Read sent at once as stream-json input                                        | The engine folded the third message into the first turn and ran `/compact` last: the second Read was answered; the model quoted the three lines "from the first read"                                                                                                                                                                                                                                                                                                                                                               | A second instance of the answer leaving the content usable (not a compaction test; run 7 is)                     |
-| 7   | Read, `/compact`, Read (production module)                                                      | Both Reads ran                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Compaction ends the answer, with both layers on                                                                  |
-| 8   | Same, `session.compact` hook **removed**, trace on                                              | After `/compact` the API view held 5 messages and **no** tool_result for the first Read (`seen=undefined`), so the second Read ran                                                                                                                                                                                                                                                                                                                                                                                                  | The context check alone catches a compaction                                                                     |
-| 9   | Read, `/clear`, Read                                                                            | The session id changed (`c04f107f…` → `6c2eb543…`); no entry matched the new id; the Read ran                                                                                                                                                                                                                                                                                                                                                                                                                                       | `/clear` never reuses an entry                                                                                   |
-| 10  | Main Read, then a `general-purpose` subagent reads twice                                        | The main loop's entry did not answer the subagent's first Read; the subagent's second Read was answered from its own history                                                                                                                                                                                                                                                                                                                                                                                                        | Per-loop keys and `$.session.messages({ as: 'api', agentId })` work in a subagent                                |
-| 11  | The round 0 module after its last Prettier pass and the `SHA256` respelling, the run 4 scenario | Second Read answered in 3.8 ms, same mapped text                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Runs 4–10 used the round 0 module before that pass, which changed formatting and that one spelling only          |
-| 12  | Round 1 module (checks 0, 6, 7 of spec §5.1), two Reads                                         | Both ran: the model put both Reads in one response, so they ran in parallel and the second found no entry yet                                                                                                                                                                                                                                                                                                                                                                                                                       | Parallel identical Reads are never answered (a safe miss, spec §5.4)                                             |
-| 13  | Round 1 module, a main Read, then a subagent reading twice                                      | All three Reads ran                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | v1 answers in the main loop only (check 0)                                                                       |
-| 14  | Round 1 module with a trace written through `$.fs.write`                                        | Row present, not idle; `$.session.usage({ breakdown: 'summary' })` read `totalTokens` 41,385 against `autoCompactThreshold` 967,000 with auto-compaction on (`window` 1,000,000); the second Read was answered                                                                                                                                                                                                                                                                                                                      | The fill reading and the row guard work live                                                                     |
-| 15  | Final round 1 module, the two Reads in separate steps                                           | Answered in 26.4 ms (the usage read is the added cost)                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | The final module answers live                                                                                    |
+| Run | Setup                                                                                            | What happened                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Proves                                                                                                           |
+| --- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 1–2 | First version of the module: whole-text hash of the earlier result                               | The second Read ran for real. No hook error in the debug log.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | A silent miss: something did not match                                                                           |
+| 3   | Same, with a trace written through `$.fs.write`                                                  | Disk check passed (`isSame=true`). The earlier tool_result in `$.session.messages({ as: 'api' })` read `1\talpha line one\n…\n4\n\n<system-reminder>…`: the trailing tab of `text` (`…\n4\t`) cut, and a reminder appended **inside the same tool_result**                                                                                                                                                                                                                                                                          | The request holds the result normalised, so the check must compare a prefix (§5.3 of the spec)                   |
+| 4   | Fixed module (prefix hash), Read twice                                                           | Second Read answered: debug log `read-dedupe (user) answered tool.call without next() in 4.9ms; nothing beneath it ran for this dispatch` (the first Read's hook settled in 3,547.7 ms with `next()` included). The model read `Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.`, no `is_error`; the stored record is `{"type":"file_unchanged",…}`; the `context` note was stored as a `hook_additional_context` attachment. The model quoted all three lines from the first result. | The engine accepts a hook's `file_unchanged`, maps it with Read's own mapper, and carries `context` to the model |
+| 5   | Read three times                                                                                 | Call 1 ran, call 2 answered, call 3 ran                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The escape (§7.4)                                                                                                |
+| 6   | Read, `/compact`, Read sent at once as stream-json input                                         | The engine folded the third message into the first turn and ran `/compact` last: the second Read was answered; the model quoted the three lines "from the first read"                                                                                                                                                                                                                                                                                                                                                               | A second instance of the answer leaving the content usable (not a compaction test; run 7 is)                     |
+| 7   | Read, `/compact`, Read (production module)                                                       | Both Reads ran                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Compaction ends the answer, with both layers on                                                                  |
+| 8   | Same, `session.compact` hook **removed**, trace on                                               | After `/compact` the API view held 5 messages and **no** tool_result for the first Read (`seen=undefined`), so the second Read ran                                                                                                                                                                                                                                                                                                                                                                                                  | The context check alone catches a compaction                                                                     |
+| 9   | Read, `/clear`, Read                                                                             | The session id changed (`c04f107f…` → `6c2eb543…`); no entry matched the new id; the Read ran                                                                                                                                                                                                                                                                                                                                                                                                                                       | `/clear` never reuses an entry                                                                                   |
+| 10  | Main Read, then a `general-purpose` subagent reads twice                                         | The main loop's entry did not answer the subagent's first Read; the subagent's second Read was answered from its own history                                                                                                                                                                                                                                                                                                                                                                                                        | Per-loop keys and `$.session.messages({ as: 'api', agentId })` work in a subagent                                |
+| 11  | The round 0 module after its last Prettier pass and the `SHA256` respelling, the run 4 scenario  | Second Read answered in 3.8 ms, same mapped text                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Runs 4–10 used the round 0 module before that pass, which changed formatting and that one spelling only          |
+| 12  | Round 1 module (checks 0, 6, 7 of spec §5.1), two Reads                                          | Both ran: the model put both Reads in one response, so they ran in parallel and the second found no entry yet                                                                                                                                                                                                                                                                                                                                                                                                                       | Parallel identical Reads are never answered (a safe miss, spec §5.4)                                             |
+| 13  | Round 1 module, a main Read, then a subagent reading twice                                       | All three Reads ran                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | v1 answers in the main loop only (check 0)                                                                       |
+| 14  | Round 1 module with a trace written through `$.fs.write`                                         | Row present, not idle; `$.session.usage({ breakdown: 'summary' })` read `totalTokens` 41,385 against `autoCompactThreshold` 967,000 with auto-compaction on (`window` 1,000,000); the second Read was answered                                                                                                                                                                                                                                                                                                                      | The fill reading and the row guard work live                                                                     |
+| 15  | Final round 1 module, the two Reads in separate steps                                            | Answered in 26.4 ms (the usage read is the added cost)                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | The final module answers live                                                                                    |
+| 16  | Round 2 draft: the first stamp starts idle when `$.session.messages` is not empty, fresh session | No answer                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | The draft was too strict: see run 18                                                                             |
+| 17  | Same draft, a resumed session                                                                    | No answer (one Read only; not discriminating)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | —                                                                                                                |
+| 18  | Same draft with a trace                                                                          | The first row the mod stamped in a **fresh** `-p` session (`door: hook-context`, a `hook_success` attachment) already found one user message in the list                                                                                                                                                                                                                                                                                                                                                                            | A non-empty list does not mean a resume; the round 2 rule bounds unstamped history by `startedAt` instead        |
+| 19  | Final round 2 module, fresh session, Reads in separate steps                                     | Second Read answered                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | A fresh session still gets answers                                                                               |
+| 20  | Final round 2 module, `--resume` of run 1's session, 57 minutes after its first launch           | Second Read answered                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Within 60 minutes of the first launch no unstamped gap can exceed 60 minutes: answering is right                 |
+| 21  | `--resume` of the same session with a trace                                                      | The first stamp read `startedAt` = run 1's first launch (19:41:05 UTC), 57.3 minutes earlier; same session id                                                                                                                                                                                                                                                                                                                                                                                                                       | `startedAt` is the first launch across a resume (types:11704-11716)                                              |
+| 22  | Final round 2 module, the same resume at 60.2 minutes (20:41:19 UTC)                             | Both Reads ran, in separate responses; no answer in the debug log                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | The resumed-history gap is covered (check 6)                                                                     |
 
-Runs 1–11 used the round 0 module (no checks 0, 6 and 7); runs 12–15 the round 1 module pasted above.
+Runs 1–11 used the round 0 module (no checks 0, 6 and 7); runs 12–15 the round 1 module (check 6 reset by a compaction, no `startedAt` bound); runs 19–22 the round 2 module pasted above, run 22 after the last edit of its source (none since run 19).
 
 Runs 1 to 3 are the reason C-1 asks for runs: all eleven kit tests of the time passed against the first version,
 whose comparison could never match in a real session.
