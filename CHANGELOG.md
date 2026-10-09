@@ -281,7 +281,7 @@ mod: live`, `off`, or `legacy` with the reason), and the System Monitor shows th
 - A Scheduler worker's saved system prompt now gets the same `/capy:<skill>` → `/harnu:<skill>` rewrite its prompt already did, so an old worker keeps resolving its bundled skills.
 - The review pane's local PR refs are now `refs/harnu/pr/<n>` and the Reaper's archive commits start with `harnu-archive:`; nothing reads the old ones back, so leftovers are harmless.
 
-- **The visible name is now Harnu everywhere.** The window title, settings, dialogs, notifications, generated memory files, the README, the user guide and the design guide all say Harnu instead of Capy. The default theme is labelled "Harnu" (your saved theme choice is unaffected), and `harnu .` opens a folder from the terminal. The logo and mascot are unchanged for now.
+- **The visible name is now Harnu everywhere.** The window title, settings, dialogs, notifications, generated memory files, the README, the user guide and the design guide all say Harnu instead of Capy. The default theme is labelled "Harnu" (your saved theme choice is unaffected), and `harnu .` opens a folder from the terminal. The logo is unchanged for now.
 - **Each project's data folder moves from `.capy/` to `.harnu/`.** Memory, the roadmap board, missions and canvases now live in `.harnu/`. On first launch Harnu copies every known repo's `.capy/` into `.harnu/` automatically (a repo you add later, or one that only shows up under "Active elsewhere", is copied the first time Harnu opens it), and the old `.capy/` folder is kept until you delete it. New canvases are saved as `*.harnucanvas.json`; boards saved under the old name still open.
 - **The per-repo data folder is now kept out of git automatically.** The first time Capy writes memory, roadmap cards, missions or canvases in a repo, it adds the folder to that repo's `.git/info/exclude` (shared by every worktree), so it never shows up as untracked and your own `.gitignore` is never touched.
 - The in-app docs that tell a session about its environment are renamed to Harnu (`docs/harnu-features.md`, `harnu-orchestrator.md`, `harnu-teacher.md`), and lesson results now report to the session as `[harnu-lesson]` instead of `[capy-lesson]` (the teacher still grades old `[capy-lesson]` results). Your self-awareness on/off choice carries over from the old `capy-features.json` file.
@@ -3891,7 +3891,7 @@ status` against a path that no longer existed. It now detects the missing
 
 - **The default theme is now "Capy," built from the brand's own palette.** What
   was "Default Dark" (terracotta accent) is now Capy: a warm Ink-based
-  neutral scale with a Dusk-blue accent, matching the mascot's palette instead
+  neutral scale with a Dusk-blue accent, matching the brand palette instead
   of a generic dark theme. Existing users keep their setting automatically —
   only the display label changed, not the underlying theme id.
 
