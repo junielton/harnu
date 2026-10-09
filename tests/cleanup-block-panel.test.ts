@@ -228,6 +228,21 @@ describe('CleanupBlockPanel — a ready item main refused lately', () => {
     expect(has(w, 'panel-clean-now')).toBe(false)
   })
 
+  it('a demoted one offers neither Remove nor Retry, and names the real reason', () => {
+    const b = wt('x', 'review', 1200 * MIB, {}, { reason: reviewReason('cleanup-failed') })
+    b.reprobeRefusal = { code: 'cannot-unregister', count: 2 }
+    const w = mountPanel(blockOf(b))
+    expect(has(w, 'panel-remove')).toBe(false)
+    expect(has(w, 'panel-retry')).toBe(false)
+    expect(w.get('[data-testid="panel-remove-blocked"]').text()).toContain(
+      t('cleanup.gc.removal.reason.cannotUnregister')
+    )
+    expect(w.get('[data-testid="panel-remove-hint"]').text()).toContain('git worktree list')
+    expect(w.get('[data-testid="panel-reason"]').text()).toBe(
+      t('cleanup.gc.removal.reason.cannotUnregister')
+    )
+  })
+
   it('a demoted one says how many times, in Needs review', () => {
     const b = wt('x', 'review', 1200 * MIB, {}, { reason: reviewReason('cleanup-failed') })
     b.reprobeRefusal = { code: 'tip-unknown', count: 2 }

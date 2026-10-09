@@ -25,6 +25,9 @@ export type RemovalRefusal =
   | 'path-unresolved'
   | 'session-open'
   | 'locked'
+  | 'cannot-unregister'
+  | 'protected-now'
+  | 'stack-present'
 
 export type Removability =
   | { ok: true }
@@ -51,6 +54,22 @@ const looseKey = (p: string): string =>
 /** `p` as a single shell word: plain paths stay bare, anything else is single-quoted. */
 export function shellQuote(p: string): string {
   return /^[A-Za-z0-9_@%+=:,./-]+$/.test(p) ? p : `'${p.replace(/'/g, `'\\''`)}'`
+}
+
+/**
+ * What a remembered reprobe refusal means for Remove, for an item that was demoted to Needs review
+ * because main refused it again and again. The facts above catch most of them; these are the ones
+ * only main's own check could see (git has no single unlocked registration, a stack is running).
+ */
+const REMEMBERED: Readonly<Record<string, RemovalRefusal>> = {
+  'cannot-unregister': 'cannot-unregister',
+  'protected-now': 'protected-now',
+  'stack-present': 'stack-present',
+  'tip-unknown': 'tip-unknown',
+  'path-unresolved': 'path-unresolved',
+  'nested-worktree': 'nested-worktree',
+  'foreign-checkout': 'nested-worktree',
+  'shared-stack': 'shared-stack'
 }
 
 const refused = (reason: RemovalRefusal, hint?: string): Removability =>
@@ -103,6 +122,14 @@ export function bundleRemovability(b: WorktreeBundle, now: number = Date.now()):
   if (b.session !== 'none' || code === 'open-idle-session') return refused('session-open')
   if (b.locked === true || code === 'locked') {
     return refused('locked', `git worktree unlock ${shellQuote(path)}`)
+  }
+  // Demoted after repeated refusals: main said no again and again, and nothing here shows what changed.
+  const remembered = b.bucket === 'review' ? REMEMBERED[b.reprobeRefusal?.code ?? ''] : undefined
+  if (remembered) {
+    return refused(
+      remembered,
+      remembered === 'cannot-unregister' ? 'git worktree list --porcelain' : undefined
+    )
   }
   return { ok: true }
 }

@@ -245,7 +245,12 @@ onBeforeUnmount(() => {
   if (copiedTimer) clearTimeout(copiedTimer)
 })
 
-const reasonText = computed(() => t(reasonKey(props.block.reasonCode, ready.value)))
+const reasonText = computed(() => {
+  // A demoted item says what main kept refusing, not the generic "cleanup failed".
+  const v = verdict.value
+  if (review.value && refusalMark.value && !v.ok) return t(removalKey(v.reason))
+  return t(reasonKey(props.block.reasonCode, ready.value))
+})
 
 /**
  * The sentence for a refusal. A locked worktree is refused by main as `cannot-unregister`, whose catalog

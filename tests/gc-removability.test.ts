@@ -313,6 +313,36 @@ describe('removability of a block', () => {
     expect(v).toMatchObject({ ok: false, reason: 'nested-worktree' })
   })
 
+  it('does not offer Remove for a demoted item main keeps refusing, and says the real reason', () => {
+    const demoted = b('review', { reason: { code: 'cleanup-failed', detail: 'x' } })
+    demoted.reprobeRefusal = { code: 'cannot-unregister', count: 2 }
+    expect(bundleRemovability(demoted, NOW)).toEqual({
+      ok: false,
+      reason: 'cannot-unregister',
+      hint: 'git worktree list --porcelain'
+    })
+  })
+
+  it.each([
+    ['protected-now', 'protected-now'],
+    ['stack-present', 'stack-present'],
+    ['tip-unknown', 'tip-unknown'],
+    ['path-unresolved', 'path-unresolved'],
+    ['nested-worktree', 'nested-worktree'],
+    ['foreign-checkout', 'nested-worktree'],
+    ['shared-stack', 'shared-stack']
+  ])('a demoted %s refusal reads as %s', (code, reason) => {
+    const demoted = b('review', { reason: { code: 'cleanup-failed', detail: 'x' } })
+    demoted.reprobeRefusal = { code, count: 2 }
+    expect(bundleRemovability(demoted, NOW)).toMatchObject({ ok: false, reason })
+  })
+
+  it('a ready item marked after one refusal may still be retried on purpose', () => {
+    const marked = b('ready')
+    marked.reprobeRefusal = { code: 'cannot-unregister', count: 1 }
+    expect(bundleRemovability(marked, NOW)).toEqual({ ok: true })
+  })
+
   it('quotes a path with spaces so the command can be pasted', () => {
     expect(shellQuote('/ws/a b/c')).toBe("'/ws/a b/c'")
     expect(shellQuote("/ws/it's")).toBe("'/ws/it'\\''s'")

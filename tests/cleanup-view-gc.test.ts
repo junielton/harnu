@@ -869,6 +869,18 @@ describe('Cleanup screen — Remove is honest: what main refuses is never offere
     expect(domGet('[data-testid="sel-count"]').text()).toContain('1')
   })
 
+  it('a demoted item shows its real reason in the list and a blocked Remove', async () => {
+    const b = wt('x1', 'review', GIB, {}, { reason: reviewReason('cleanup-failed') })
+    b.reprobeRefusal = { code: 'cannot-unregister', count: 2 }
+    installJudged(snapshotOf([b]))
+    await mountView()
+    expect(domGet('[data-testid="review-reason"]').text()).toBe(
+      t('cleanup.gc.removal.reason.cannotUnregister')
+    )
+    expect(dom('[data-testid="review-remove"]').exists()).toBe(false)
+    expect(dom('[data-testid="review-remove-blocked"]').exists()).toBe(true)
+  })
+
   it('the panel of a locked item offers no Remove and names the command', async () => {
     installJudged(snapshotOf([locked('l1')]))
     await mountView()

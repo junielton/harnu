@@ -2623,7 +2623,10 @@
           "graceNotElapsed": "Ainda não ficou parado por tempo suficiente.",
           "pathUnresolved": "Não foi possível resolver um caminho ligado a este worktree, então o Harnu não sabe o que o usa.",
           "sessionOpen": "Ainda há uma sessão aberta neste worktree. Feche-a primeiro.",
-          "locked": "O git tem este worktree bloqueado. Desbloqueie primeiro."
+          "locked": "O git tem este worktree bloqueado. Desbloqueie primeiro.",
+          "cannotUnregister": "O git não tem um registro único e desbloqueado para este worktree, então o Harnu não consegue desregistrá-lo e o recusou mais de uma vez. Confira git worktree list.",
+          "protectedNow": "Ele está protegido agora (um checkout principal, um caminho de nunca limpar ou uma marca Manter), e o Harnu o recusou mais de uma vez.",
+          "stackPresent": "Uma stack do Docker está rodando a partir deste worktree, e o Harnu o recusou mais de uma vez. Pare a stack primeiro."
         }
       },
       "refusal": {

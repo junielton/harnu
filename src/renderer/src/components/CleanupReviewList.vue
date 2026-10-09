@@ -67,6 +67,9 @@ function failed(b: GcBlock): boolean {
 function reasonOf(b: GcBlock): string {
   const refusal = props.failureOf(b.id)?.refusal
   if (refusal) return t(refusalKey(refusal))
+  // Demoted after repeated refusals: say what main kept refusing.
+  const v = removability(b)
+  if (b.bundle?.reprobeRefusal && !v.ok) return t(removalKey(v.reason))
   return t(reasonKey(b.reasonCode))
 }
 
