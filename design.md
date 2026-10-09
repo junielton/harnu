@@ -8361,7 +8361,10 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
      `{n} GB reclaimable · autopilot on|off · next cycle in {t}`; the size is 600-weight `--text`.
      "Reclaimable" is everything not In use plus orphan volumes (ready + needs review + orphan volumes);
      Docker build cache is added only when the engine reports it (see "Docker card").
-   - Autopilot badge: Badge Success "Autopilot on · every {interval}" or Default "Autopilot off".
+   - Autopilot badge (says what the autopilot is really doing, F1 / TM-12), first match wins: Default
+     "Autopilot off"; **Warning-text** "Autopilot paused — background scan is off" (the Reaper's automatic scan
+     is off, so no cycle runs; `snapshot.backgroundScan`); **Accent-soft** "Autopilot on · report only" (the first
+     report is unacknowledged, so cycles only report); Success "Autopilot on · every {interval}".
 3. **Selection bar** (only with ≥1 checked block) — the takeover's existing selection band
    (`border-b border-border bg-surface-2`, `padding: 8px 22px`): `square-check` icon (`--accent`), the
    count `N selected · X GB` (13px; numbers 600-weight `--text`), then **Remove selected** (Danger,

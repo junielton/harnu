@@ -377,6 +377,37 @@ const firstCyclePlanned = computed(
     !!prefs.value && !prefs.value.firstReportAcknowledged && (model.value?.ready.length ?? 0) > 0
 )
 /** The banner itself; "Not now" hides it for the session without acknowledging anything. */
+/**
+ * What the autopilot is really doing, not just whether the pref is on (TM-12): paused when the
+ * background scan is off (no timer, so nothing runs), report only until the first report is
+ * acknowledged, otherwise on.
+ */
+const badge = computed(() => {
+  const p = prefs.value
+  if (!p?.autopilot) {
+    return {
+      text: t('cleanup.gc.status.badgeOff'),
+      classes: 'border-border bg-surface text-text-3'
+    }
+  }
+  if (gc.snapshot && !gc.snapshot.backgroundScan) {
+    return {
+      text: t('cleanup.gc.status.badgePaused'),
+      classes: 'border-border bg-surface text-warning'
+    }
+  }
+  if (!p.firstReportAcknowledged) {
+    return {
+      text: t('cleanup.gc.status.badgeReportOnly'),
+      classes: 'border-accent-line bg-accent-soft text-accent'
+    }
+  }
+  return {
+    text: t('cleanup.gc.status.badgeOn', { every: intervalText.value }),
+    classes: 'border-green-line bg-green-soft text-green'
+  }
+})
+
 const showFirstCycle = computed(() => firstCyclePlanned.value && !gc.firstReportSnoozed)
 /** "58 min" / "2 h" / "1 d" until the next timer tick, whatever the autopilot says; null when none is scheduled. */
 const firstCycleWhen = computed(() => {
@@ -472,18 +503,10 @@ async function copyRestoreHint(hint: string): Promise<void> {
 
     <span
       class="inline-flex items-center rounded-full border px-2 py-0.5 text-caption"
-      :class="
-        prefs?.autopilot
-          ? 'border-green-line bg-green-soft text-green'
-          : 'border-border bg-surface text-text-3'
-      "
+      :class="badge.classes"
       data-testid="cleanup-autopilot-badge"
     >
-      {{
-        prefs?.autopilot
-          ? t('cleanup.gc.status.badgeOn', { every: intervalText })
-          : t('cleanup.gc.status.badgeOff')
-      }}
+      {{ badge.text }}
     </span>
     <Button
       variant="ghost"

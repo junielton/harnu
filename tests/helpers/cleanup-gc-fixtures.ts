@@ -54,7 +54,8 @@ export function snapshotOf(
     prefs: defaultGcPrefs(),
     lastCycle: null,
     nextCycleAt: null,
-    nextClean: null
+    nextClean: null,
+    backgroundScan: true
   }
 }
 

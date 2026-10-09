@@ -2513,6 +2513,8 @@
         },
         "badgeOn": "Autopilot ligado · a cada {every}",
         "badgeOff": "Autopilot desligado",
+        "badgeReportOnly": "Autopilot ligado · só reporta",
+        "badgePaused": "Autopilot pausado — a varredura em segundo plano está desligada",
         "everyMinutes": "{n} min",
         "everyHours": "{n} h",
         "everyDay": "dia"

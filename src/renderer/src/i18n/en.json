@@ -2513,6 +2513,8 @@
         },
         "badgeOn": "Autopilot on · every {every}",
         "badgeOff": "Autopilot off",
+        "badgeReportOnly": "Autopilot on · report only",
+        "badgePaused": "Autopilot paused — background scan is off",
         "everyMinutes": "{n} min",
         "everyHours": "{n} h",
         "everyDay": "day"

@@ -289,6 +289,44 @@ describe('Cleanup screen — panel', () => {
   })
 })
 
+describe('Cleanup screen — the autopilot badge tells the truth (TM-12)', () => {
+  const badge = (): string => domGet('[data-testid="cleanup-autopilot-badge"]').text()
+
+  it('on and acknowledged: "Autopilot on · every 1 h"', async () => {
+    install(snap({}, { autopilot: true, firstReportAcknowledged: true }))
+    await mountView()
+    expect(badge()).toBe(
+      t('cleanup.gc.status.badgeOn', { every: t('cleanup.gc.status.everyHours', { n: 1 }) })
+    )
+  })
+
+  it('on but the first report is unacknowledged: it says report only, not "on"', async () => {
+    install(snap({}, { autopilot: true, firstReportAcknowledged: false }))
+    await mountView()
+    expect(badge()).toBe(t('cleanup.gc.status.badgeReportOnly'))
+    expect(badge()).toContain('report only')
+  })
+
+  it('on but the background scan is off: it says paused, because nothing will run', async () => {
+    install(snap({ backgroundScan: false }, { autopilot: true, firstReportAcknowledged: true }))
+    await mountView()
+    expect(badge()).toBe(t('cleanup.gc.status.badgePaused'))
+    expect(badge()).toContain('background scan is off')
+  })
+
+  it('paused wins over report only: with the scan off no report is produced either', async () => {
+    install(snap({ backgroundScan: false }, { autopilot: true, firstReportAcknowledged: false }))
+    await mountView()
+    expect(badge()).toBe(t('cleanup.gc.status.badgePaused'))
+  })
+
+  it('off stays "Autopilot off" whatever the scan does', async () => {
+    install(snap({ backgroundScan: false }, { autopilot: false }))
+    await mountView()
+    expect(badge()).toBe(t('cleanup.gc.status.badgeOff'))
+  })
+})
+
 describe('Cleanup screen — first cycle and background run', () => {
   it('the first-cycle banner enables autopilot: acknowledges AND sets the pref', async () => {
     const api = install(snap({}, { autopilot: false, firstReportAcknowledged: false }))

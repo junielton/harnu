@@ -214,7 +214,8 @@ export async function registerGcHandlers(
     prefs: livePrefs(),
     lastCycle: state.last,
     nextCycleAt: reaper.autoScan() ? reaper.nextTickAt() : null,
-    nextClean: planNextClean(g.bundles, livePrefs())
+    nextClean: planNextClean(g.bundles, livePrefs()),
+    backgroundScan: reaper.autoScan()
   })
 
   // The advisor is reachable from the `gc:opinion` handler below and from nowhere else: the

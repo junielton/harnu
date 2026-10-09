@@ -80,6 +80,8 @@ export interface GcSnapshot {
    * worktrees category is off.
    */
   nextClean: { count: number; bytes: number } | null
+  /** The Reaper's "Automatic background scan" toggle: with it off no cycle ever runs (TM-12). */
+  backgroundScan: boolean
 }
 
 /**

@@ -25,7 +25,7 @@ Every size in Cleanup — the summary line, the map, the panel, the dialogs, the
 
 - **Reclaimable** is everything that is not in use: items that are ready to clean, items that need review, orphan volumes, and the build cache and dangling images Docker could reclaim. It is the most you could get back, not what the next automatic cycle will take.
 - **Autopilot on / off** is the switch in [Settings → Cleanup](settings.md#cleanup). When the Reaper's background scan is off there is no timer, so "next cycle" is left out.
-- Next to it, a badge repeats the state ("Autopilot on · every 1 h") and an **Autopilot settings** button opens Settings → Cleanup.
+- Next to it, a badge repeats the state ("Autopilot on · every 1 h"). It tells the truth about what will happen: **"Autopilot on · report only"** until you allow cleaning (the first cycle only reports), and **"Autopilot paused — background scan is off"** when the automatic scan in Settings is off, because then no cycle runs at all. An **Autopilot settings** button next to it opens Settings → Cleanup.
 
 Under the toolbar, one **split bar** divides everything Cleanup tracks in proportion to its size: **Ready to clean** (worktrees only, so it matches the big button), **Docker (cleaned each cycle)** (build cache and dangling images, shown only when there is something to take), **Needs review** and **In use**. A line below it says what the last cycle did ("Last cycle 12 min ago: cleaned 6, freed 3.1 GB", or "found 12 ready items, 6.0 GB (report only)").
 

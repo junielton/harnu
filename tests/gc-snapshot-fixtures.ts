@@ -99,6 +99,7 @@ export function snapshot(
     lastCycle: null,
     nextCycleAt: NOW + 3_600_000,
     nextClean: null,
+    backgroundScan: true,
     ...rest
   }
 }
