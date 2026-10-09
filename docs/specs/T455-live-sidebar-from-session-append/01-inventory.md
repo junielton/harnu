@@ -31,8 +31,8 @@ passes (`src/main/fleet-model.ts`).
 | subagents                     | chevron and count (`SidebarFolder.vue:829-839`), preview                                                                      | `attachSubagents` (`claude-reader.ts:1424-1500`): 64 KB head, cached, running/done from a 15 s mtime window (`:45`, `:1477`)                                                                                                                                                      | Delta `claude:subagent:updated` (`stores/sessions.ts:4872-4916`); dropped while the parent row is still synthetic (`:4885-4886`). Out of T455's scope: T202 and P1W5's `subagent.*` events own it. |
 
 `get_fleet` returns per session only `sessionId`, `folderAlias`, `status`, `isSidechain`,
-`modified`, `taskState`, `failureReason`, `orchestrator`, `hibernated`, `peer` and `inflight`
-(`mcp/fleet-snapshot.ts:294-322`), although the comment at `fleet-model.ts:39-42` promises more
+`modified`, `agentControllable`, `inflight`, `taskState`, `failureReason`, `orchestrator`,
+`hibernated` and `peer` (`mcp/fleet-snapshot.ts:294-322`; `agentControllable` at `:301`), although the comment at `fleet-model.ts:39-42` promises more
 (F2). `get_session` adds `preview = firstPrompt + summary` (`mcp/tool-handlers.ts:568-570`).
 
 ## 3.2 Findings that shape the design
@@ -53,8 +53,12 @@ passes (`src/main/fleet-model.ts`).
 - **F6.** Push data that already reaches main is thrown away: the hook bridge forwards only
   `{sessionId, event, matcher, ts, failureReason, resetsAt, agentId}` (`hook-bridge.ts:162-171`),
   dropping `last_assistant_message` (Stop) and `session_title` (SessionStart, UserPromptSubmit).
-- **F7 (measured, 02-cost.md).** One append to a session in a large project directory makes Harnu
-  main open ~2,800 _other_ transcripts of that directory within the minute.
+- **F7 (measured, 02-cost.md §8.4).** A live transcript is reopened per append by two readers: the
+  watcher's tail within 2 ms (0.72–1.55 opens per append), and the slug pass and other
+  non-immediate readers on a ~2 s cadence (0.78–1.32 opens per append). Separately, Harnu main
+  sweeps whole project dirs, or the whole corpus, with no append in them; that sweep is a reader
+  bug of its own, not part of the live-session path. (Round 1 of this spec wrongly tied the sweeps
+  to appends.)
 - **F8 (measured, corpus of the 400 most recent transcripts on this machine, 2026-10-09).**
   `task-summary` appears in 0/400, `last-prompt` in 400/400, `ai-title` in 30/400, `custom-title`
   in 3/400, `away_summary` in 36/400. The `taskSummary` arm of "what's happening" is dead on this

@@ -2,20 +2,31 @@
 
 Two artefacts, both run from the session scratchpad (never staged into Harnu):
 
-- **`harnu-row-sensor`** — the core mechanism of the mod half, standalone: fold the rows
-  `session.append` keeps into the compact row, coalesce, push; identity at start; a seed for loads
-  (resume, fork); a fresh fold after `/clear`. In the real implementation the hooks become steps
-  inside the Harnu mod's existing registrations (contract §11.4, MOD-4) and `post()` becomes the
-  existing `emit()` (§5.3 of the spec). Here it POSTs to the URL in `HARNU_ROW_URL` so it runs alone.
-  The prototype carries the fold's prompt, assistant and tool-call rules, the 500 ms trailing
-  debounce, the turn-end flush, the seed and the `/clear` reset. W1 adds what the spec's wire shape
-  has beyond it (§5.3–§5.4 of the spec): `title`, `userRows`, `lastRowAt`, `awaySummary`, the 2 s
-  maximum wait, the re-send after hello and `resync`, and the hello fields.
+- **`harnu-row-sensor`** — the core mechanism of the mod half, standalone. It folds the rows
+  `session.append` keeps into the compact row, coalesces, and pushes. It sends identity and source
+  at start, starts empty on a resume or fork (the history is the host's baseline, §6.2 of the
+  spec), keeps no text in `$.state`, and starts a fresh fold after `/clear`.
+  - In the real implementation the hooks become steps inside the Harnu mod's existing
+    registrations (MOD-4), `post()` becomes the existing `emit()`, and the identity facts ride
+    `session.snapshot.start` (§5.3 of the spec). Here it POSTs to the URL in `HARNU_ROW_URL`, so it
+    runs alone.
+  - W1 adds what the spec's wire shape has beyond it: `title`, `userRows`, `lastRowAt`, the 2 s
+    maximum wait, the wire redaction (§5.5), and the re-send after a hello or `resync`.
 - **`t455-probe`** — a logger that records what the design hinges on, run in real `claude -p`
   sessions (§P.4).
 
 Engine: types written by Claude Code **2.1.295** (the `plugin-authoring` skill's
-`types/claude-code.d.ts`); every run below on the installed CLI, **2.1.296**.
+`types/claude-code.d.ts`); every run below used the installed CLI, **2.1.296**.
+
+**Revised after verification round 1.**
+
+- **The seed is gone.** It read `$.session.messages()`, whose rows carry no door or `isMeta`, and a
+  new session's list already holds a hook-context row (§P.4 run 1).
+- **No text in `$.state`.** Any co-loaded mod reads `$.state` (T447 §3.7).
+- **The tsconfig is portable.** It names a copy of the declarations, not the skill's temporary
+  folder.
+
+All outputs below are from this revision.
 
 ## P.1 `harnu-row-sensor`
 
@@ -45,17 +56,10 @@ Engine: types written by Claude Code **2.1.295** (the `plugin-authoring` skill's
 declare module 'claude-code' {
   interface PluginState {
     'harnu-row-sensor': {
-      /** The fold so far and the conversation it belongs to, read back after a reload. */
+      /** The fold's counts and the conversation they belong to, read back after a reload. No text. */
       row: {
         sid: string
-        row: {
-          firstPrompt: string | null
-          lastPrompt: string | null
-          lastAssistant: string | null
-          toolCalls: number
-          subagentToolCalls: number
-          lastUuid: string | null
-        }
+        counts: { toolCalls: number; subagentToolCalls: number; lastUuid: string | null }
       }
     }
   }
@@ -66,16 +70,21 @@ declare module 'claude-code' {
 
 ```ts
 // The compact row: what the sidebar and the session preview read for a live session, folded
-// from the rows the main conversation keeps. Pure: no `$`, so the host can run the same fold
-// over a cold JSONL for the parity gate.
+// from the rows the main conversation keeps in THIS process. Process-local on purpose: a resumed
+// or forked history is the host's cold baseline (its reader already folded it), so nothing here is
+// seeded. Pure: no `$`, so the host can run the same fold over a cold JSONL for the parity gate.
 
 export const TEXT_MAX = 240
 
+/**
+ * Text fields: `null` = none seen by this process; `undefined` = unknown (the module reloaded and
+ * texts are never persisted), sent as an absent field so the host keeps what it had.
+ */
 export interface Row {
-  /** The first typed prompt of the conversation: the title fallback. Never changes once set. */
-  firstPrompt: string | null
-  lastPrompt: string | null
-  lastAssistant: string | null
+  /** The first typed prompt this process saw. Never changes once set. */
+  firstPrompt?: string | null
+  lastPrompt?: string | null
+  lastAssistant?: string | null
   /** `tool_use` blocks in the main loop's responses. */
   toolCalls: number
   /** `tool_use` blocks in subagents' responses, kept apart. */
@@ -93,7 +102,7 @@ export const emptyRow = (): Row => ({
   lastUuid: null
 })
 
-/** The shape both `session.append`'s message and an `ApiMessage` share. */
+/** What the fold reads of a kept row (`session.append`'s stored message). */
 export interface Kept {
   role?: 'user' | 'assistant'
   isMeta?: true
@@ -123,11 +132,24 @@ function toolUses(m: Kept): number {
   return m.content.filter((b) => b.type === 'tool_use').length
 }
 
-/**
- * Folds one kept row in. `door` is `session.append`'s; a seed from `$.session.messages()`
- * passes `prompt` for a user row and `response` for an assistant row. Returns whether a field
- * the host shows changed.
- */
+/** The counts that survive a module reload in `$.state`: no text is ever persisted. */
+export type Counts = Pick<Row, 'toolCalls' | 'subagentToolCalls' | 'lastUuid'>
+
+export const countsOf = (r: Row): Counts => ({
+  toolCalls: r.toolCalls,
+  subagentToolCalls: r.subagentToolCalls,
+  lastUuid: r.lastUuid
+})
+
+/** After a reload: the counts come back, the texts are unknown. */
+export const restored = (c: Counts): Row => ({
+  firstPrompt: undefined,
+  lastPrompt: undefined,
+  lastAssistant: undefined,
+  ...c
+})
+
+/** Folds one kept row in. `door` is `session.append`'s. Returns whether a field changed. */
 export function fold(
   row: Row,
   door: string,
@@ -145,7 +167,7 @@ export function fold(
   if (door === 'prompt' && m.role === 'user' && m.isMeta !== true) {
     const t = clip(textOf(m))
     if (t === '') return false
-    if (row.firstPrompt === null) row.firstPrompt = t
+    if (row.firstPrompt === null) row.firstPrompt = t // `undefined` (reloaded): the host has it
     row.lastPrompt = t
     return true
   }
@@ -171,7 +193,7 @@ export function fold(
 
 ```ts
 import type { EngineInterface, Register, Timer } from 'claude-code'
-import { emptyRow, fold, type Row } from './row'
+import { countsOf, emptyRow, fold, restored, type Row } from './row'
 
 // T455 prototype: the `sense.row` family of the Harnu mod, standalone. In the companion the
 // `post` below is the existing `emit()` into the events ring (P1W3); here it is one POST to the
@@ -207,7 +229,7 @@ async function flush($: Dollar): Promise<void> {
   timer = null
   if (!dirty) return
   dirty = false
-  await $.state.set(ROW, { sid: sid ?? '', row }).catch(() => undefined)
+  await $.state.set(ROW, { sid: sid ?? '', counts: countsOf(row) }).catch(() => undefined)
   await post($, 'session.row', { ...row })
 }
 
@@ -218,15 +240,6 @@ function markDirty($: Dollar): void {
     timer = null
     void flush($).catch(() => undefined)
   })
-}
-
-/** Loads are not appends: a resumed conversation's rows are read once, here. */
-async function seed($: Dollar): Promise<void> {
-  const msgs = await $.session.messages({ as: 'api' })
-  for (const m of msgs) {
-    if (typeof m.content === 'string') continue // a string-content message has no blocks to fold
-    fold(row, m.role === 'user' ? 'prompt' : 'response', m, null, undefined)
-  }
 }
 
 export const register: Register = (on) => {
@@ -246,11 +259,10 @@ export const register: Register = (on) => {
     const r = await next(e)
     sid ??= await $.session.id()
     const saved = await $.state.get(ROW)
-    if (saved.value !== undefined && saved.value.sid === sid) {
-      row = saved.value.row // a reload: the fold so far survives in the host's state
-    } else if (source === 'resume' || source === 'fork') {
-      await seed($) // only a load has rows no append will raise; a new session's are hook context
-    }
+    // A reload: the counts survive in `$.state`; texts were never stored there (any co-loaded mod
+    // reads any `$.state` value), so they are unknown until the next row. A resume or a fork starts
+    // empty: its loaded history is the host's cold baseline, and loads raise no append.
+    if (saved.value !== undefined && saved.value.sid === sid) row = restored(saved.value.counts)
     await post($, 'session.identity', { sid, source, cwd: e.cwd })
     dirty = true
     await flush($)
@@ -336,6 +348,7 @@ function world(on: On, opts: { env?: boolean; history?: any[]; saved?: unknown }
     clock,
     wire,
     sid,
+    state,
     rows: () => wire.filter((w) => w.t === 'session.row'),
     reads: () => historyReads
   }
@@ -398,55 +411,45 @@ test('turn.complete flushes at once', async ($: any, on) => {
   expect(w.rows().at(-1)?.d.lastPrompt).toBe('hello')
 })
 
-test('a resume seeds the row from the loaded conversation', async ($: any, on) => {
+test("a resume starts empty: its history is the host's baseline, never re-read", async ($: any, on) => {
   const w = world(on, {
     history: [
-      { role: 'user', content: [{ type: 'text', text: 'first ask' }] },
-      { role: 'assistant', content: [{ type: 'text', text: 'done' }, toolUse('t1')] },
-      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] }
+      { role: 'user', content: [{ type: 'text', text: 'a hook context row, not a prompt' }] }
     ]
   })
   await $.classic.SessionStart({ source: 'resume', session_id: SID })
   await $.session.start(START)
   await w.clock.settle()
-  expect(w.reads()).toBe(1)
+  expect(w.reads()).toBe(0) // `$.session.messages()` is never called
   expect(w.wire[0]?.d).toMatchObject({ sid: SID, source: 'resume' })
-  expect(w.rows()[0]?.d).toMatchObject({
-    firstPrompt: 'first ask',
-    lastAssistant: 'done',
-    toolCalls: 1
-  })
+  expect(w.rows()[0]?.d).toMatchObject({ firstPrompt: null, lastPrompt: null, toolCalls: 0 })
+  await $.session.append(prompt('next ask', 'u5'))
+  await w.clock.advance(500)
+  expect(w.rows().at(-1)?.d).toMatchObject({ firstPrompt: 'next ask', lastPrompt: 'next ask' })
 })
 
 test('a fork reports its new id and source; lineage is the host spawn record', async ($: any, on) => {
-  const w = world(on, {
-    history: [{ role: 'user', content: [{ type: 'text', text: 'parent ask' }] }]
-  })
+  const w = world(on)
   w.sid.value = 'stale-id' // `$.session.id()` is not read when the payload named one
   await $.classic.SessionStart({ source: 'fork', session_id: SID_2 })
   await $.session.start(START)
   await w.clock.settle()
   expect(w.wire[0]).toMatchObject({ sid: SID_2, d: { sid: SID_2, source: 'fork' } })
-  expect(w.rows()[0]?.d.firstPrompt).toBe('parent ask')
+  expect(w.wire[0]?.d).not.toHaveProperty('forkedFrom')
 })
 
-test('a reload keeps the fold and does not read the history again', async ($: any, on) => {
-  const saved = {
-    sid: SID,
-    row: {
-      firstPrompt: 'a',
-      lastPrompt: 'b',
-      lastAssistant: 'c',
-      toolCalls: 7,
-      subagentToolCalls: 0,
-      lastUuid: 'u9'
-    }
-  }
+test('a reload keeps the counts, never stores text, and leaves texts unknown', async ($: any, on) => {
+  const saved = { sid: SID, counts: { toolCalls: 7, subagentToolCalls: 0, lastUuid: 'u9' } }
   const w = world(on, { saved })
   await $.session.start(START)
   await w.clock.settle()
-  expect(w.reads()).toBe(0)
-  expect(w.rows()[0]?.d.toolCalls).toBe(7)
+  const first = w.rows()[0]?.d
+  expect(first.toolCalls).toBe(7)
+  expect(first).not.toHaveProperty('lastPrompt') // absent: the host keeps what it had
+  await $.session.append(prompt('secret-looking prompt', 'u10'))
+  await w.clock.advance(500)
+  expect(w.rows().at(-1)?.d.lastPrompt).toBe('secret-looking prompt')
+  expect(JSON.stringify(w.state.get('row'))).not.toContain('secret-looking prompt')
 })
 
 test('outside Harnu nothing is sent', async ($: any, on) => {
@@ -472,7 +475,11 @@ test('a /clear starts a fresh fold under the new id', async ($: any, on) => {
 })
 ```
 
-### `tsconfig.json` (kept outside the mod folder, as the types file's header says)
+### `tsconfig.json`
+
+It is kept outside the mod folder, as the types file's header says. `engine/claude-code.d.ts` is a
+copy of the declarations the `plugin-authoring` skill writes (`types/claude-code.d.ts`, here from
+2.1.295). Copy it there before running `tsc`.
 
 ```json
 {
@@ -491,7 +498,7 @@ test('a /clear starts a fresh fold under the new id', async ($: any, on) => {
     "jsxFragmentFactory": "Fragment"
   },
   "include": [
-    "/tmp/claude-1000/bundled-skills/2.1.295/7677e87086511fae652e527dbd5b21fa/plugin-authoring/types/claude-code.d.ts",
+    "engine/claude-code.d.ts",
     "harnu-row-sensor/hooks",
     "harnu-row-sensor/tests",
     "harnu-row-sensor/types"
@@ -514,7 +521,7 @@ Validating hooks: <scratch>/proto/harnu-row-sensor/hooks/hooks.json
   ❯ ./register.ts hooks: classic.SessionStart, session.start, session.append, turn.complete, session.end
   ❯ ./register.ts gating hook with .catch: classic.SessionStart
   ❯ ./register.ts gating hook with .catch: session.append
-  ❯ ./register.ts calls: $.clock.after (via markDirty), $.clock.now (via post), $.env.get (via post), $.http.fetch (via post), $.session.id, $.session.messages (via seed), $.state.get, $.state.set (via flush)
+  ❯ ./register.ts calls: $.clock.after (via markDirty), $.clock.now (via post), $.env.get (via post), $.http.fetch (via post), $.session.id, $.state.get, $.state.set (via flush)
   ❯ ./register.ts env writes: nothing
   ❯ ./register.ts env reads: HARNU_ROW_URL
   ❯ ./register.ts state writes: harnu-row-sensor.row
@@ -526,70 +533,83 @@ Validating hooks: <scratch>/proto/harnu-row-sensor/hooks/hooks.json
 `claude plugin test harnu-row-sensor`:
 
 ```text
+
 tests/row.test.ts:
-(pass) a new session: identity, then one coalesced row per burst [31.53ms]
-(pass) turn.complete flushes at once [15.50ms]
-(pass) a resume seeds the row from the loaded conversation [12.86ms]
-(pass) a fork reports its new id and source; lineage is the host spawn record [12.17ms]
-(pass) a reload keeps the fold and does not read the history again [11.43ms]
-(pass) outside Harnu nothing is sent [12.13ms]
-(pass) a /clear starts a fresh fold under the new id [14.05ms]
+(pass) a new session: identity, then one coalesced row per burst [33.10ms]
+(pass) turn.complete flushes at once [16.00ms]
+(pass) a resume starts empty: its history is the host's baseline, never re-read [17.88ms]
+(pass) a fork reports its new id and source; lineage is the host spawn record [12.55ms]
+(pass) a reload keeps the counts, never stores text, and leaves texts unknown [13.11ms]
+(pass) outside Harnu nothing is sent [12.78ms]
+(pass) a /clear starts a fresh fold under the new id [14.39ms]
 
  7 pass
  0 fail
-Ran 7 tests across 1 file. [0.21s]
+Ran 7 tests across 1 file. [0.24s]
 ```
 
 `tsc -p tsconfig.json` (TypeScript 5.9.3, the repo's): **exit 0**, no output.
 
-**The tests catch regressions.** Two mutations, each run on a copy:
+**The tests catch regressions.** Three mutations, each run on a copy:
 
-| Mutation                                                     | Result                                                              |
-| ------------------------------------------------------------ | ------------------------------------------------------------------- |
-| `row.ts`: subagent rows folded as main rows (`if (false) {`) | 6 pass, 1 fail: "a new session: identity, then one coalesced row …" |
-| `register.ts`: seed on `resume` only, not on `fork`          | 6 pass, 1 fail: "a fork reports its new id and source; …"           |
+| Mutation                                                             | Result                                                                                   |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `row.ts`: subagent rows folded as main rows (`if (false) {`)         | 6 pass, 1 fail: "a new session: identity, then one coalesced row per burst"              |
+| `register.ts`: the whole row, texts included, persisted in `$.state` | 6 pass, 1 fail: "a reload keeps the counts, never stores text, and leaves texts unknown" |
+| `register.ts`: a reload ignores the saved counts                     | 6 pass, 1 fail: "a reload keeps the counts, never stores text, and leaves texts unknown" |
 
-The two gotchas the brief names were met on the way: `$.state` is reached through a const
-reference (`{ plugin, key } as const`) — `claude plugin validate` refused a bare string key
-("$.state.get takes a reference whose plugin and key are string literals") — and every `$` call a
-test reaches is stubbed (`mock.clock`, `mock.env`, `mock.session`, and hooks for `http.fetch`,
-`state.*`, `session.id`, `session.messages`), so no hook is skipped for a missing stub. No
-`'x' in $` anywhere.
+The two gotchas the brief names were met along the way:
+
+- `$.state` is reached through a const reference (`{ plugin, key } as const`):
+  `claude plugin validate` refused a bare string key ("$.state.get takes a reference whose
+  plugin and key are string literals").
+- Every `$` call a test reaches is stubbed (`mock.clock`, `mock.env`, `mock.session`, and
+  hooks for `http.fetch`, `state.*`, `session.id`, `session.messages`), so no hook is
+  skipped for a missing stub.
+
+No `'x' in $` anywhere.
 
 ## P.3 The prototype in a real session
 
-A local HTTP sink (`127.0.0.1:47455`, records every POST body) stood in for the host. The command:
+A local HTTP sink (`127.0.0.1:47455`, which records every POST body) stood in for the host:
 
 ```sh
 env -u HARNU_SPAWN_TOKEN -u CLAUDE_CODE_PLUGIN_DIRS HARNU_ROW_URL=http://127.0.0.1:47455/events \
   claude -p "Use the Bash tool to run: echo one; then run: echo two; then reply with one short sentence saying you are finished." \
-  --model haiku --allowedTools Bash --plugin-dir <scratch>/proto/harnu-row-sensor --debug-file <scratch>/proto-run.log
+  --model haiku --allowedTools Bash --plugin-dir <scratch>/proto/harnu-row-sensor --debug-file <scratch>/proto-run2.log
 ```
 
 What the sink received (receive time in ms, sid prefix, event, payload):
 
 ```text
-1791574766973 55e44e30 session.identity {"sid": "55e44e30-…", "source": "startup", "cwd": "<scratch>/work2"}
-1791574766978 55e44e30 session.row {"firstPrompt": null, "lastPrompt": null, "lastAssistant": null, "toolCalls": 0, "subagentToolCalls": 0, "lastUuid": "7bd7936d-…"}
-1791574769521 55e44e30 session.row {"firstPrompt": "Use the Bash tool to run: echo one; …", "lastPrompt": "Use the Bash tool to run: echo one; …", "lastAssistant": null, "toolCalls": 0, "subagentToolCalls": 0, "lastUuid": "904ef0d3-…"}
-1791574770541 55e44e30 session.row {"firstPrompt": "…", "lastPrompt": "…", "lastAssistant": null, "toolCalls": 1, "subagentToolCalls": 0, "lastUuid": "2e4b7900-…"}
-1791574775176 55e44e30 session.row {"firstPrompt": "…", "lastPrompt": "…", "lastAssistant": "Finished: both echo commands ran, printing \"one\" and \"two\".", "toolCalls": 1, "subagentToolCalls": 0, "lastUuid": "e1782097-…"}
+1791577630759 0af47979 session.identity {"sid": "0af47979-…", "source": "startup", "cwd": "<scratch>/work2"}
+1791577630764 0af47979 session.row {"firstPrompt": null, "lastPrompt": null, "lastAssistant": null, "toolCalls": 0, "subagentToolCalls": 0, "lastUuid": "8be3abac-…"}
+1791577633302 0af47979 session.row {"firstPrompt": "Use the Bash tool to run: echo one; …", "lastPrompt": "Use the Bash tool to run: echo one; …", "lastAssistant": null, "toolCalls": 0, "subagentToolCalls": 0, "lastUuid": "1840a9a1-…"}
+1791577634377 0af47979 session.row {"firstPrompt": "…", "lastPrompt": "…", "lastAssistant": null, "toolCalls": 2, "subagentToolCalls": 0, "lastUuid": "ed58f69a-…"}
+1791577639624 0af47979 session.row {"firstPrompt": "…", "lastPrompt": "…", "lastAssistant": "Finished.", "toolCalls": 2, "subagentToolCalls": 0, "lastUuid": "b0f52bec-…"}
 ```
 
-The model ran both commands in one Bash call (`echo one; echo two`). **Parity by hand** against the
-same session's JSONL: 1 `tool_use` block, the same last assistant text, and the CLI's own
-`last-prompt` line holding the same prompt. 26 rows were appended; 4 POSTs carried them.
+**Parity by hand** against the same session's JSONL:
+
+- 2 `tool_use` blocks;
+- the same last assistant text ("Finished.");
+- the CLI's own `last-prompt` line holds the same prompt.
+
+31 rows were appended, and 4 `session.row` POSTs carried them.
 
 Hook cost, from the engine's debug log (`hooks module harnu-row-sensor@inline <event> settled in
 <n>ms (worker hop, next() included)`):
 
-| Event                  | Settle times                                                                    |
-| ---------------------- | ------------------------------------------------------------------------------- |
-| `session.append` (26×) | 0.3, 0.4 ×7, 0.5 ×2, 0.6 ×4, 0.7 ×2, 0.8, 0.9 ×3, 1.0 ×2, 1.1, 1.7, 1.8, 9.5 ms |
-| `classic.SessionStart` | 58.9 ms                                                                         |
-| `session.start`        | 20.8 ms                                                                         |
-| `turn.complete`        | 3.8 ms                                                                          |
-| `session.end`          | 1.3 ms                                                                          |
+| Event                  | Settle times                                                                           |
+| ---------------------- | -------------------------------------------------------------------------------------- |
+| `session.append` (31×) | 0.2, 0.3 ×9, 0.4 ×5, 0.5 ×3, 0.6 ×3, 0.7, 0.8, 1.0, 1.3, 1.4, 2.8 ×2, 2.9, 4.5, 9.3 ms |
+| `classic.SessionStart` | 48.4 ms                                                                                |
+| `session.start`        | 22.2 ms                                                                                |
+| `turn.complete`        | 2.6 ms                                                                                 |
+| `session.end`          | 0.8 ms                                                                                 |
+
+The round-1 prototype ran the same prompt with the same result shape: 26 rows, 4 row POSTs, and
+0.3–1.8 ms per row with one 9.5 ms outlier.
 
 ## P.4 What the engine does — `t455-probe` runs
 
@@ -598,13 +618,13 @@ sessions in a scratch directory, with `HARNU_SPAWN_TOKEN` and `CLAUDE_CODE_PLUGI
 from the environment so the Harnu mod stayed out. Its source was formatted with the repo's
 prettier after the runs (whitespace only); `claude plugin validate` passes on it as pasted.
 
-| Run                                                                          | What it showed                                                                                                                                                                                                                                                                                                                                                                    |
-| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. new session, one Bash call                                                | `classic.SessionStart` (`source: "startup"`, `session_id`, exact `transcript_path`) fires **before** `session.start`; `$.session.id()` at `session.start` equals the transcript's file name. 26 `session.append` rows for one turn: 1 `prompt`, 3 `response` (one per block: `thinking`, `tool_use`, `text`), 1 `tool-result`, the rest `attachment` / `hook-context` / `notice`. |
-| 1 (cont.) — uuids against the JSONL                                          | 25 of 26 appended uuids are rows of the JSONL, **in the same order**; the 26th, a `hook_success` attachment appended before `session.start`, is not in the file. `last-prompt`, `cost-state`, `atis-latch` and `queue-operation` lines are in the file and were never appended (they are not conversation rows).                                                                  |
-| 2. `claude -p --resume <id>`                                                 | `source: "resume"`, **the same id**, appends go to the same file. `session.start` sees 4 loaded messages (`$.session.messages`), and **none of them is raised as `session.append`**: only the new prompt and response are.                                                                                                                                                        |
-| 3. `claude -p --resume <id> --fork-session`                                  | `source: "fork"`, **a new id**, its own `<newid>.jsonl` in the same project dir. The engine names no parent anywhere: not on any event, and the fork's JSONL restamps all 45 lines with the new `sessionId` (no `forkedFrom` / `parentSessionId` key exists in it).                                                                                                               |
-| 4. `claude -p --name "probe title alpha" --session-id <id>`, then `--resume` | `session_title: "probe title alpha"` on `classic.SessionStart` and on `classic.UserPromptSubmit`, in both runs; the JSONL holds the matching `custom-title` line. (`UserPromptSubmit.source` was absent under `-p`; the type says "may omit it while the field rolls out".)                                                                                                       |
+| Run                                                                          | What it showed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. new session, one Bash call                                                | `classic.SessionStart` (`source: "startup"`, `session_id`, exact `transcript_path`) fires **before** `session.start`; `session.start` already sees **1** loaded message through `$.session.messages`, the `hook_success` attachment appended before it, so a seed from that list would mistake hook context for a prompt; `$.session.id()` at `session.start` equals the transcript's file name. 26 `session.append` rows for one turn: 1 `prompt`, 3 `response` (one per block: `thinking`, `tool_use`, `text`), 1 `tool-result`, the rest `attachment` / `hook-context` / `notice`. |
+| 1 (cont.) — uuids against the JSONL                                          | 25 of 26 appended uuids are rows of the JSONL, **in the same order**; the 26th, a `hook_success` attachment appended before `session.start`, is not in the file. `last-prompt`, `cost-state`, `atis-latch` and `queue-operation` lines are in the file and were never appended (they are not conversation rows).                                                                                                                                                                                                                                                                      |
+| 2. `claude -p --resume <id>`                                                 | `source: "resume"`, **the same id**, appends go to the same file. `session.start` sees 4 loaded messages (`$.session.messages`), and **none of them is raised as `session.append`**: only the new prompt and response are.                                                                                                                                                                                                                                                                                                                                                            |
+| 3. `claude -p --resume <id> --fork-session`                                  | `source: "fork"`, **a new id**, its own `<newid>.jsonl` in the same project dir. The engine names no parent anywhere: not on any event, and the fork's JSONL restamps all 45 lines with the new `sessionId` (no `forkedFrom` / `parentSessionId` key exists in it).                                                                                                                                                                                                                                                                                                                   |
+| 4. `claude -p --name "probe title alpha" --session-id <id>`, then `--resume` | `session_title: "probe title alpha"` on `classic.SessionStart` and on `classic.UserPromptSubmit`, in both runs; the JSONL holds the matching `custom-title` line. (`UserPromptSubmit.source` was absent under `-p`; the type says "may omit it while the field rolls out".)                                                                                                                                                                                                                                                                                                           |
 
 Not run (assumptions the W0 spike checks, §11 of the spec): an interactive session; a mid-session
 `/rename`; an `ai-title` reaching `session_title`; `/clear` in a live session (only the kit test
