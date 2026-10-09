@@ -407,7 +407,9 @@ describe('Cleanup screen — first cycle and background run', () => {
     )
     await mountView()
     const text = domGet('[data-testid="first-cycle-banner"]').text()
-    expect(text).toMatch(/next cycle, in \d+ min, will clean 2 items, 944 MB/)
+    expect(text).toMatch(
+      /next cycle, in \d+ min, will clean the ready items it finds then, up to 20 per cycle\. Right now that is 2 items, 944 MB/
+    )
   })
 
   describe('the banner names the Docker prune only when the category is on and Docker answered', () => {

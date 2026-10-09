@@ -8675,8 +8675,9 @@ Primary) and **Not now** (Ghost). Enable calls `gc:prefs:set({ autopilot: true }
 Ready blocks are dashed ("planned, not done"); the summary reads "autopilot off".
 
 **The promise (decided 2026-10-09, F1): the banner discloses, and Not now only snoozes.** The 11px
-sub-line states exactly what the next cycle will clean — "Enable it and the next cycle, in 40 min, will clean
-2 items, 944 MB." (`snapshot.nextClean`, the same eligibility, order and cap as a clean cycle; with no timer
+sub-line states what the next cycle may clean (a cap, and today's count — a snapshot, not a promise) — "Enable it and the next cycle, in 40 min, will clean the
+ready items it finds then, up to 20 per cycle. Right now that is 2 items, 944 MB." (`snapshot.nextClean` is only
+today's count, the cap is the bound; same eligibility and order as a clean cycle, the with no timer
 scheduled: "…its first cycle will clean … The background scan is off, so none is scheduled."). Enable is the
 informed consent, so it acknowledges. The acknowledgement also turns on the Docker housekeeping, so when the
 Docker category is on and Docker answered for at least one figure, the sub-line adds "It will also prune Docker

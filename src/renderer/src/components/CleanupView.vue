@@ -606,6 +606,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
           :bytes="model.totals.ready.bytes"
           :clean-count="gc.snapshot?.nextClean?.count ?? 0"
           :clean-bytes="gc.snapshot?.nextClean?.bytes ?? 0"
+          :max-items="prefs.maxItemsPerCycle"
           :when="firstCycleWhen"
           :docker-days="firstCycleDockerDays"
           :autopilot-on="prefs.autopilot"

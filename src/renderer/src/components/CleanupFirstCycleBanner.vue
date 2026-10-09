@@ -16,6 +16,8 @@ defineProps<{
   bytes: number
   cleanCount: number
   cleanBytes: number
+  /** The per-cycle cap (`maxItemsPerCycle`): the count above is today's, the cap is the bound. */
+  maxItems: number
   /** Time until the next timer tick ("58 min"), or null when none is scheduled. */
   when: string | null
   autopilotOn?: boolean
@@ -53,7 +55,7 @@ const { t } = useI18n()
           t(
             `cleanup.gc.firstCycle.${autopilotOn ? 'allowWillClean' : 'willClean'}${when ? '' : 'Unscheduled'}`,
             cleanCount,
-            { named: { n: cleanCount, size: formatBytes(cleanBytes), when } }
+            { named: { n: cleanCount, size: formatBytes(cleanBytes), max: maxItems, when } }
           )
         }}
         <template v-if="dockerDays != null">
