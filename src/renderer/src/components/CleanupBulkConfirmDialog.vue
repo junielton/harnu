@@ -21,6 +21,7 @@ import { useFocusTrap } from '../composables/useFocusTrap'
 import type { GcOpinion } from '../../../main/gc/gc-wire'
 import { dialogBreakdown, type DialogRow, type RemovalChip } from '../lib/gc-model'
 import CleanupOpinionChip from './CleanupOpinionChip.vue'
+import { reasonKey } from './cleanup-gc-copy'
 
 /**
  * The one confirm of the Cleanup screen (design.md "Workspace GC — unified Cleanup / Bulk-clean and
@@ -93,7 +94,8 @@ const confirmLabel = computed(() => {
 /** The engine's reason code, translated; its English sentence is the fallback for a code we lack. */
 function reasonText(row: DialogRow): string {
   if (!row.reasonCode) return ''
-  const key = `cleanup.gc.reason.${row.reasonCode}`
+  // The same code → key map as the panel and the list (the codes are hyphenated, the keys are not).
+  const key = reasonKey(row.reasonCode)
   return te(key) ? t(key) : (row.reasonDetail ?? '')
 }
 
