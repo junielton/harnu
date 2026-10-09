@@ -4,17 +4,20 @@ Part of [`00-spec.md`](00-spec.md). This is the minimal hooks module for the cor
 spec chooses (§5): Harnu main builds the mission brief and delivers it; the mod keeps the latest
 one and hands it back after every compaction of the main conversation, through the
 `session.compact` result's `messages`. It was written and run from the session scratchpad
-(`<scratchpad>/proto/harnu-brief/`), never from this repository.
+(`<scratchpad>/proto/harnu-brief/`), never from this repository. Round 2 (after review) added the
+in-memory twin and the `$.state` read before `next(e)` (spec §6.5, §8.3).
 
 ## 1. What the prototype stands in for
 
-| Prototype                                             | Real design (00-spec.md)                                                                                                 |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| its own plugin, `harnu-brief`                         | a step inside the companion's one `session.compact` body (T389 contract §11.4), not a new mod (§9)                       |
-| the slash command `/harnu-brief-proto {"rev","text"}` | the host's `context.append { key: 'harnu.brief', durable: true, retainOnly: true }` over the command channel (§12)       |
-| the `brief` state key `{ rev, text }`                 | `durableRows.rows['harnu.brief']` (T389 contract §22); ordering comes from the channel, so the real key holds no `rev`   |
-| `rev` refusal, size cap, frame check in the mod       | the host enforces the budget (§8.1) and the frame (§7); the mod keeps only `CONTEXT_MAX_CHARS` as the wire cap           |
-| no `compact.started` emit (no host to answer it)      | §8.3: the body emits it, un-awaited, before `next(e)`; the last test shows a brief that lands during the summary is used |
+| Prototype                                             | Real design (00-spec.md)                                                                                                                 |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| its own plugin, `harnu-brief`                         | a step inside the companion's one `session.compact` body (T389 contract §11.4), not a new mod (§9)                                       |
+| the slash command `/harnu-brief-proto {"rev","text"}` | the host's `context.append { key: 'harnu.brief', durable: true, retainOnly: true }` over the command channel (§12)                       |
+| the `brief` state key `{ rev, text }`                 | `durableRows.rows['harnu.brief']` (T389 contract §22); ordering comes from the channel, so the real key holds no `rev` (§6.5)            |
+| the module variable `twin`                            | the in-memory twin of `durableRows` that the `context.append` handler writes beside `$.state` (§6.5, §12)                                |
+| `await $.state.get(BRIEF)` before `next(e)`           | P4W5's `ensureHello`, which reads `$.state` before `next(e)` (`register.ts:480-503`): the read that pins the dispatch's `$.state` moment |
+| `rev` refusal, size cap, frame check in the mod       | the host enforces the budget (§8.1) and the frame (§7); the mod keeps only `CONTEXT_MAX_CHARS` as the wire cap                           |
+| no `compact.started` emit (no host to answer it)      | §8.3: the body emits it, un-awaited, before `next(e)`; the last test shows a brief that lands during the summary is used                 |
 
 The command is a test and live-run convenience. A slash command must never be the delivery path:
 the person, and any plugin, could type one.
@@ -65,7 +68,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Brief } from '../types'
 
 // T451 prototype: the mod half of mission-aware compaction. Harnu main builds the brief and
-// delivers it; the mod keeps the latest revision in `$.state` and hands it back after every
+// delivers it; the mod keeps the latest revision (in `$.state`, and in a module twin) and hands it back after every
 // compaction of the main conversation, through the result's `messages` (the path P4W5 uses for
 // its durable rows). The command below stands in for the host's
 // `context.append { key: 'harnu.brief', durable: true, retainOnly: true }`.
@@ -74,9 +77,20 @@ const BRIEF = { plugin: 'harnu-brief', key: 'brief' } as const
 const BRIEF_MAX_CHARS = 6_000
 const BRIEF_MARK = '[Harnu mission brief'
 
+/**
+ * The in-memory twin of the stored brief. Every `$.state.get` of one dispatch reads one moment
+ * (TYPES:3389-3390), so a delivery that lands while a compaction runs is invisible to a read
+ * inside that compaction's dispatch once the dispatch has read `$.state` at all. The twin is
+ * written by the delivery and read after `next(e)`; `$.state` is only the copy a reload starts
+ * from (the companion keeps `channel` the same way, `register.ts:135`).
+ */
+let twin: Brief | null = null
+
 async function readBrief($: EngineInterface): Promise<Brief | null> {
+  if (twin !== null) return twin
   const saved = await $.state.get(BRIEF)
-  return saved.value ?? null
+  twin = saved.value ?? null
+  return twin
 }
 
 function parseDelivery(args: string): Brief | string {
@@ -101,6 +115,7 @@ async function ingest($: EngineInterface, args: string): Promise<string> {
   if (typeof next === 'string') return next
   const current = await readBrief($)
   if (current !== null && next.rev <= current.rev) return `ignored: rev ${next.rev} is stale`
+  twin = next
   await $.state.set(BRIEF, next)
   return next.text === null ? `dropped at rev ${next.rev}` : `stored rev ${next.rev}`
 }
@@ -121,6 +136,9 @@ export const register: Register = (on) => {
   on('session.compact', async ($, e, next) => {
     // A precompute installs nothing and a subagent's loop is not the dispatched session.
     if (e.trigger === 'precompute' || e.agentId !== undefined) return next(e)
+    // Stands for P4W5's `ensureHello`, which reads `$.state` before `next(e)` (register.ts:480-503):
+    // from here on this dispatch's `$.state` reads are pinned to this moment.
+    await $.state.get(BRIEF)
     const r = await next(e)
     if (r.skip !== undefined) return r
     const brief = await readBrief($)
@@ -247,25 +265,25 @@ test('no brief, no row: a session with no mission compacts as the engine does', 
   expect((await $.session.compact(COMPACT)).messages).toEqual([SUMMARY])
 })
 
-test('a failure after next fails open to the engine result', async ($, on) => {
+test('a failure in the hook fails open to the engine result', async ($, on) => {
   engine(on)
   let isStateDown = false
-  // Beneath the plugin's `$.state.get`: once the compaction ran, the read is refused, so the
-  // hook rejects after `next`; `.catch` replays what `next` settled to.
+  // Beneath the plugin's `$.state.get`: once the compaction starts, the read is refused, so the
+  // hook rejects before `next`; `.catch` runs `next(e)`, and the compaction stands as the engine
+  // made it, with no brief.
   on('state.get', async (_$, e, next) => (isStateDown ? { deny: 'state unavailable' } : next(e)))
-  on('session.compact', async () => {
-    isStateDown = true
-    return { messages: [SUMMARY] }
-  })
+  on('session.compact', async () => ({ messages: [SUMMARY] }))
   await $.session.start(START)
   await deliver($, { rev: 1, text: BRIEF_TEXT })
+  isStateDown = true
   expect((await $.session.compact(COMPACT)).messages).toEqual([SUMMARY])
 })
 
 test('a brief delivered while the summarizer runs is the one handed back', async ($, on) => {
   engine(on)
   const REFRESHED = '[Harnu mission brief rev 2] refreshed at compact.started'
-  // The host's refresh (spec §8.3) lands between `next(e)` starting and resolving.
+  // The host's refresh (spec §8.3) lands between `next(e)` starting and resolving, after the
+  // hook already read `$.state` (as P4W5's `ensureHello` does): only the module twin sees it.
   on('session.compact', async () => {
     await deliver($, { rev: 2, text: REFRESHED })
     return { messages: [SUMMARY] }
@@ -307,8 +325,8 @@ first `include` entry is the 2.1.295 declaration file the `plugin-authoring` ski
 
 ## 3. Real output
 
-Captured on 2026-10-09 with `claude --version` = `2.1.296 (Claude Code)` (the CLI updated itself from
-2.1.295 during this session; every live run in [`01-evidence.md`](01-evidence.md) also ran on
+Captured on 2026-10-09 (round 2) with `claude --version` = `2.1.296 (Claude Code)` (the CLI updated itself
+from 2.1.295 during this work; every live run in [`01-evidence.md`](01-evidence.md) also ran on
 2.1.296). `tsc` is the repository's TypeScript 5.9.3, checking against the 2.1.295 declarations.
 
 `claude plugin validate harnu-brief`
@@ -324,7 +342,7 @@ Validating hooks: <scratchpad>/proto/harnu-brief/hooks/hooks.json
   ❯ ./register.ts hooks: session.start, command.run{command=harnu-brief-proto}, session.compact
   ❯ ./register.ts answers its own command: command.run{command=harnu-brief-proto}
   ❯ ./register.ts gating hook with .catch: session.compact
-  ❯ ./register.ts calls: $.command.register, $.state.get (via readBrief), $.state.set (via ingest)
+  ❯ ./register.ts calls: $.command.register, $.state.get, $.state.set (via ingest)
   ❯ ./register.ts state writes: harnu-brief.brief
   ❯ ./register.ts state reads: harnu-brief.brief
 
@@ -337,18 +355,18 @@ validate exit 0
 ```text
 
 tests/brief.test.ts:
-(pass) the brief follows the summary after a manual compaction [24.50ms]
-(pass) the brief survives a second compaction, once [10.55ms]
-(pass) precompute and a subagent compaction pass through untouched [9.96ms]
-(pass) a veto passes through [9.25ms]
-(pass) stale, oversized, unframed and dropped deliveries [10.41ms]
-(pass) no brief, no row: a session with no mission compacts as the engine does [8.58ms]
-(pass) a failure after next fails open to the engine result [10.04ms]
-(pass) a brief delivered while the summarizer runs is the one handed back [9.12ms]
+(pass) the brief follows the summary after a manual compaction [22.16ms]
+(pass) the brief survives a second compaction, once [9.58ms]
+(pass) precompute and a subagent compaction pass through untouched [9.30ms]
+(pass) a veto passes through [9.43ms]
+(pass) stale, oversized, unframed and dropped deliveries [11.68ms]
+(pass) no brief, no row: a session with no mission compacts as the engine does [10.25ms]
+(pass) a failure in the hook fails open to the engine result [10.98ms]
+(pass) a brief delivered while the summarizer runs is the one handed back [9.64ms]
 
  8 pass
  0 fail
-Ran 8 tests across 1 file. [0.19s]
+Ran 8 tests across 1 file. [0.20s]
 test exit 0
 ```
 
@@ -358,22 +376,62 @@ test exit 0
 tsc exit 0
 ```
 
+The same suite on a copy with the twin removed (`readBrief` reads `$.state` every time; the
+`$.state` read before `next(e)` kept), which is the round-1 verifier's mutation:
+
+```text
+
+tests/brief.test.ts:
+(pass) the brief follows the summary after a manual compaction [22.43ms]
+(pass) the brief survives a second compaction, once [10.48ms]
+(pass) precompute and a subagent compaction pass through untouched [8.88ms]
+(pass) a veto passes through [8.76ms]
+(pass) stale, oversized, unframed and dropped deliveries [9.43ms]
+(pass) no brief, no row: a session with no mission compacts as the engine does [8.66ms]
+(pass) a failure in the hook fails open to the engine result [9.13ms]
+(fail) a brief delivered while the summarizer runs is the one handed back [9.33ms]
+  AssertionError: expect(received).toEqual()
+
+  Expected: [
+    "This session is being continued…",
+    "[Harnu mission brief rev 2] refreshed at compact.started"
+  ]
+  Received: [
+    "This session is being continued…",
+    "[Harnu mission brief rev 1] Mission mnt-0000aaaa · step stp-3 · AC U-1 …"
+  ]
+
+ 7 pass
+ 1 fail
+Ran 8 tests across 1 file. [0.20s]
+exit 1
+```
+
 ## 4. What the tests prove, and what they do not
 
 - **Proven in the kit:** the brief follows the summary (manual and auto triggers); a second
   compaction hands it back once, never twice; `precompute` and a subagent's compaction are
   untouched; a `{ skip }` veto passes through; stale, oversized, unframed and dropped deliveries
-  leave no row; with no brief the result is the engine's; a brief delivered while the summarizer
-  runs is the one handed back (the `$.state.get` after `next(e)` sees a write made during the
-  compaction, TYPES:3389-3390 "every `get` of one dispatch reads one moment").
-- **The engine already fails open.** A mutation run with the `.catch` removed still passes all
-  tests, and `validate` then reports `gating hook without .catch: session.compact`: a hook that
-  throws is skipped and the chain continues (REF:78-79). The `.catch` makes the fail-open choice
-  explicit and visible in `validate`; it is not what makes it safe. The companion's MOD-2 wrapper
+  leave no row; with no brief the result is the engine's; a failure in the hook leaves the
+  engine's compaction standing; and a brief delivered while the summarizer runs is the one handed
+  back, **even though the body read `$.state` before `next(e)`**.
+- **Why the twin is needed.** "Every `get` of one dispatch reads one moment, whatever is written
+  meanwhile" (TYPES:3389-3390): once the body has read `$.state`, a later `$.state` read in the
+  same dispatch returns that moment, not the newer delivery. The mutation above shows it: without
+  the twin the refresh test receives rev 1 (7 pass, 1 fail). Round 1 of this prototype read
+  `$.state` only after `next(e)`, so its first read happened after the delivery and the test
+  passed for the wrong reason; round 1 of this spec also misread TYPES:3389-3390 as support. The
+  twin makes the refresh independent of whatever the real body reads first.
+- **The engine already fails open.** With the `.catch` removed the suite still passes 8 / 0, and
+  `validate` then reports `gating hook without .catch: session.compact`: a hook that throws is
+  skipped and the chain continues (REF:78-79). The `.catch` makes the fail-open choice explicit and
+  visible in `validate`; it is not what makes it safe. The companion's MOD-2 wrapper
   (T389 `00-master.md:523`) does the same job there.
 - **Not proven here:** the live behaviour. That is [`01-evidence.md`](01-evidence.md) RUN-5 (manual,
-  twice) and RUN-6 (auto, twice), which load this same module with `--plugin-dir` and ask the
-  model for an acceptance criterion only the brief carries.
+  twice) and RUN-6 (auto, twice), which loaded round 1 of this module (no twin) with `--plugin-dir`
+  and asked the model for an acceptance criterion only the brief carries. The delivery there came
+  before any compaction, so the twin does not change those runs. A live delivery during a
+  compaction is spec §15 A1.
 - **Gotchas met while writing the tests** (for the implementer): every test needs bottom hooks for
   `session.start` and `command.register` (the engine reports "no implementation for
   command.register" otherwise), and `command.register`'s bottom answers `{ value: { command } }`;

@@ -3,7 +3,7 @@
 Part of [`00-spec.md`](00-spec.md). Every number the spec uses is measured here, with its method.
 All live runs used `claude -p --model haiku` on Claude Code **2.1.296** (the version every run's
 `system` event and transcript rows report; the CLI updated itself from 2.1.295 during the
-session), from a scratch working directory, with `--debug-file`. They cost USD 0.95 in total,
+session), from a scratch working directory, with `--debug-file`. They cost USD 0.97 in total,
 USD 0.80 of it the void RUN-0. Paths under the session scratchpad are written `<scratchpad>`.
 
 ## 1. Measurements on this machine
@@ -64,13 +64,25 @@ Method: the builder model in §4 of this file (the algorithm of 00-spec.md §7�
 on every custom step of the 17 missions in `.harnu/missions/` that carries a `session` or `card`
 link: 84 steps, 42 of them with a card holding acceptance criteria.
 
-| Brief                      | p50   | p90   | max    |
-| -------------------------- | ----- | ----- | ------ |
-| untrimmed (no budget)      | 1 829 | 4 626 | 19 062 |
-| at `BRIEF_MAX_CHARS` 6 000 | —     | —     | 5 920  |
+| Brief                      | p50   | p90 (round 1 / round 2) | max    |
+| -------------------------- | ----- | ----------------------- | ------ |
+| untrimmed (no budget)      | 1 829 | 4 626 / 5 448           | 19 062 |
+| at `BRIEF_MAX_CHARS` 6 000 | —     | —                       | 5 920  |
 
-5 of 84 briefs needed trimming; in all 5, shortening AC lines and dropping file names sufficed,
-and no AC line was dropped. T451's own brief is 3 581 characters (§3).
+The data is live: between the two runs of the model (round 1, then round 2 after review) the
+missions gained Log notes, which moved p90 from 4 626 to 5 448 characters. Both times 5 of 84
+briefs needed trimming; in all 5, shortening AC lines and dropping file names sufficed, and no AC
+line was dropped. T451's own brief was 3 581 characters when RUN-5 and RUN-6 injected it (§3); with
+the step's newer Log notes it would be 4 481. Round 2's model also adds the "(+k more blockers)"
+line of spec §7; no step here has more than 5 open blockers.
+
+### MEAS-7 — How cards and missions name their sessions
+
+Method: the frontmatter of every card under `.harnu/memory/roadmap/` and every mission under
+`.harnu/missions/`, round 2 (2026-10-09). 53 cards have a filled `session:` field: 44 hold
+`synthetic-<uuid>` (the id a board or manifest dispatch creates, never rewritten after the session
+materializes), 9 a real transcript uuid. 10 of the 17 missions carry `linkedCard`. The round-1
+verifier counted 52 bound cards, 44 synthetic; one more was dispatched since.
 
 ### MEAS-5 — How long a compaction takes
 
@@ -93,7 +105,10 @@ From the `usage` of each turn's `result` event (`cache_creation_input_tokens` = 
 The first request after any compaction rewrites everything past the shared system prompt (cr stays
 at the ~13.5 k shared prefix in both columns), so a brief costs its own size once, written into
 the cache with the rest (the differences, 1 650 and 2 337 tokens, also include the two runs'
-different summaries). In RUN-1 a mid-session `$.ui.invalidate("prompt.context")` changed nothing
+different summaries). These figures **exclude the compaction call itself**: the summarizer's own
+request reports no usage in the `/compact` turn's `result` (cw 0, cr 0 in every run), and T389
+smoke D7 found compaction spend in no `turn.complete` (`P4W5-compaction-digest.md:59`). The brief
+does not change that call, since it is added after it. In RUN-1 a mid-session `$.ui.invalidate("prompt.context")` changed nothing
 that was sent: that turn wrote 1 393 tokens and read 30 692.
 
 ## 2. The runs
@@ -220,7 +235,8 @@ ids, which the delivery's command record had shown the model before compaction 1
 quote after compaction 2 can only come from the re-injected row (stored twice, 3 581 characters,
 once after each boundary).
 
-RUN-5c, the control: the same prompts without the delivery.
+RUN-5c, a trivial control (it proves nothing: with no delivery there is nothing to remember): the
+same prompts without the delivery.
 
 ```text
 (1) UNKNOWN. No mission step or step id appears in my context.
@@ -229,6 +245,45 @@ RUN-5c, the control: the same prompts without the delivery.
 
 (3) UNKNOWN. I don't have a file path for a full card.
 ```
+
+RUN-5f, the fair control (round 2): no mod; the same brief pasted inline as the first user message
+("Here is your mission brief; keep it in mind for later questions. Reply with the single word OK."
+followed by the brief), then `OK`, `/compact`, `OK`, `/compact` and the same question. Neither
+summary held U-4's opening words; the second had shrunk to 1 062 characters. USD 0.02.
+
+```text
+(1) **UNKNOWN.** My context has no mission step id.
+
+(2) **UNKNOWN.** My context has no acceptance criterion U-4, so I can't quote it.
+
+(3) **UNKNOWN.** My context names no file holding a full card. The earlier transcript is at a path in the continuation note, but I haven't read it because you asked for no tool use.
+```
+
+The round-1 verifier ran the same shape (its run `vD`) and got the step id back plus a paraphrase:
+"First twelve words of U-4: UNKNOWN. I only have a paraphrase of U-4 from my summary, not the
+card's wording. The paraphrase begins: 'Size and staleness. Set a hard budget for the reinject…'".
+Two runs of one design, two outcomes: what a summary keeps varies. **The deciding evidence for
+RUN-5 and RUN-6 is the summary grep**: no summary held U-4's text, and the model quoted it word for
+word, so the words came from the re-injected row.
+
+**The `last-prompt` rows.** In RUN-5's transcript the engine wrote a `last-prompt` row after each
+compaction whose `lastPrompt` is the re-injected brief:
+
+```text
+last-prompt: 'Reply with the single word OK.'
+last-prompt: 'Reply with the single word OK.'
+last-prompt: 'Reply with the single word OK.'
+-- boundary
+last-prompt: '[Harnu mission brief rev 1 · 2026-10-09T20:00Z] Written by Harnu from '
+last-prompt: 'Reply with the single word OK.'
+last-prompt: 'Reply with the single word OK.'
+-- boundary
+last-prompt: '[Harnu mission brief rev 1 · 2026-10-09T20:00Z] Written by Harnu from '
+last-prompt: 'Without using any tool, answer three questions from what is in your co'
+```
+
+RUN-6 shows the same after each `auto` boundary. Harnu reads that row as the session's "what's
+happening now" (spec §8.5).
 
 ### RUN-6 — Two `auto` compactions
 
@@ -488,9 +543,12 @@ def build(m, entries, step, rev=1, now='2026-10-09T20:00Z'):
     ]
     if card_path:
         head.append(f'Card: {card_path} (re-read it with Read for the full text).')
-    blockers = [b for b in (m.get('blockers') or []) + (step.get('blockers') or [])][:BLOCKERS_MAX]
+    all_blockers = (m.get('blockers') or []) + (step.get('blockers') or [])
+    blockers = all_blockers[:BLOCKERS_MAX]
     tail = ['Open blockers: none' if not blockers else 'Open blockers:'] + [
         f"- ({b['owner']}) {clip(b['reason'], 200)} → clears when: {clip(b['unblocks'], 120)}" for b in blockers]
+    if len(all_blockers) > BLOCKERS_MAX:
+        tail.append(f'- (+{len(all_blockers) - BLOCKERS_MAX} more blockers: see the mission)')
     mine = [e for e in entries if re.match(r'\S+ · ' + re.escape(step['id']) + r'\b', e)]
     logs = [clip(e.split('\n', 1)[1].strip().split('\n\n')[0], LOG_LINE_MAX) for e in mine[-LOG_MAX:]][::-1]
     files = files_changed(wt)
