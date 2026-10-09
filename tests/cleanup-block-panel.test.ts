@@ -251,6 +251,31 @@ describe('CleanupBlockPanel — a ready item main refused lately', () => {
   })
 })
 
+describe('CleanupBlockPanel — Clean now follows the same predicate as Remove', () => {
+  const readyWith = (facts: Record<string, unknown>): GcBlock =>
+    blockOf(wt('x', 'ready', 1200 * MIB, { verdict: 'harvestable', blockers: [] }, facts))
+
+  it('offers Clean now for a ready item main takes', () => {
+    expect(has(mountPanel(readyWith({})), 'panel-clean-now')).toBe(true)
+  })
+
+  it.each([
+    [
+      'a scan that could not see Docker',
+      { dockerBlind: true },
+      'cleanup.gc.removal.reason.scanBlind'
+    ],
+    ['a locked worktree', { locked: true }, 'cleanup.gc.removal.reason.locked'],
+    ['a shared stack', { sharedStackIds: ['o'] }, 'cleanup.gc.removal.reason.sharedStack']
+  ])('hides Clean now for %s and says why', (_n, facts, key) => {
+    const w = mountPanel(readyWith(facts))
+    expect(has(w, 'panel-clean-now')).toBe(false)
+    expect(w.get('[data-testid="panel-remove-blocked"]').text()).toBe(
+      t('cleanup.gc.panel.cleanUnavailable', { reason: t(key) })
+    )
+  })
+})
+
 describe('CleanupBlockPanel — Docker down', () => {
   it('tells the operator to start Docker, then Retry, and offers Retry', () => {
     const w = mountPanel(blockWith('ready', { verdict: 'harvestable', blockers: [] }), {
