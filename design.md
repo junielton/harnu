@@ -8650,6 +8650,10 @@ volume), size right.
   last clean was refused. {reason}" — with **Retry** in place of **Clean now**. After two identical refusals it
   moves to Needs review with that reason ("Refused {n} times in a row…"); there the panel and the list row
   show the real cause, and neither Remove nor Retry is offered. The count outlives the pause.
+  A **Check again** soft button (`RotateCcw`, `data-testid="panel-recheck"`) sits among the panel actions for a
+  demoted item: it asks main (`gc:recheck`) to forget that item's remembered refusal and reprobe it once, then
+  a Success toast ("Checked again: nothing refuses it now"), or a Warning toast ("Still refused" + the
+  reason, or "Couldn't check it right now" when the check itself could not answer).
 - **Docker down.** A scan that ran with the daemon down marks every bundle `dockerBlind`: its empty stack
   list means "unseen", so main refuses it (`scan-blind`) in the autopilot and in a manual clean alike, with
   no override. The hero becomes a **disabled soft button** — "Start Docker to clean these", tooltip
