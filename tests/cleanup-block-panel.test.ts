@@ -323,7 +323,8 @@ describe('CleanupBlockPanel — a failed item', () => {
           .text()
         expect(hint).toContain('git -C /w/repo worktree prune')
         expect(hint).toContain('git -C /w/repo branch -D feat/x')
-        expect(hint).toMatch(/refs de arquivo/)
+        // The pt-BR sentence, read from the locale rather than spelled out here (English gate).
+        expect(hint).toContain(i18n.global.t('cleanup.gc.panel.resumeArchive'))
         expect(hint).not.toMatch(/archive refs/)
       } finally {
         locale.value = original
