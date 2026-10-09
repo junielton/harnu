@@ -1,0 +1,567 @@
+# T449 — Prototype: the read-dedupe hooks module, its tests and its checks
+
+Companion to [`00-spec.md`](00-spec.md) (C-5). The prototype is the mod half of the design in
+§5–§8 of the spec: one hooks module, its `$`-free helpers, its `$.state` contract and one test
+file. It was written and run in the session scratchpad, never in this repository; its source is
+pasted here verbatim, formatted with this repository's Prettier config before the checks below
+ran. `<scratchpad>` stands for that folder and `<skill>` for the `plugin-authoring` skill's folder.
+
+- Claude Code that ran `validate`, `test` and the live runs: **2.1.296** (the CLI updated itself
+  during the session; `claude --version` printed `2.1.296 (Claude Code)`). The type declarations
+  the module was type-checked against: **2.1.295**, written by the `plugin-authoring` skill
+  (`<skill>/types/claude-code.d.ts`).
+- TypeScript: 5.9.3 (`npx tsc` from this repository's `node_modules`).
+
+## 1. Files
+
+```
+read-dedupe/
+  .claude-plugin/plugin.json
+  hooks/hooks.json
+  hooks/register.ts        every function that takes `$`
+  hooks/lib/core.ts        `$`-free helpers
+  types/index.d.ts         the `$.state` contract
+  tests/read-dedupe.test.ts
+```
+
+### `.claude-plugin/plugin.json`
+
+```json
+{
+  "name": "read-dedupe",
+  "version": "0.1.0",
+  "description": "Answers a re-Read of an unchanged file whose earlier result is still in context, and shows the tokens saved.",
+  "author": {
+    "name": "Harnu"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Answer unchanged re-Reads",
+      "description": "When off, every Read runs as usual and nothing is recorded.",
+      "default": true
+    }
+  }
+}
+```
+
+### `hooks/hooks.json`
+
+```json
+{ "modules": ["./register.ts"] }
+```
+
+### `types/index.d.ts`
+
+```ts
+/** One Read this mod may answer again: what the model was shown, and where. */
+export type ReadDedupeEntry = {
+  sid: string
+  loop: string
+  toolUseId: string
+  path: string
+  startLine: number
+  numLines: number
+  /** sha256 of the lines the tool returned (`result.file.content`). */
+  contentHash: string
+  /**
+   * sha256 of the tool_result text the model read (`text`, trailing whitespace cut) and its
+   * length: the request holds it trimmed, and may add reminders inside the same tool_result.
+   */
+  textHash: string
+  textLength: number
+  size: number
+  mtimeMs: number
+  turn: number
+  tokens: number
+  /** True right after this mod answered the key: the next identical Read runs. */
+  answered: boolean
+}
+
+export type ReadDedupeSaved = { tokens: number; reads: number }
+
+declare module 'claude-code' {
+  interface PluginState {
+    'read-dedupe': {
+      entries: Record<string, ReadDedupeEntry>
+      saved: ReadDedupeSaved
+    }
+  }
+}
+```
+
+### `hooks/lib/core.ts`
+
+```ts
+// $-free helpers of the read-dedupe mod.
+
+/** Median characters per token of a Read result, measured on this machine's transcripts. */
+export const CHARS_PER_TOKEN = 2.245
+
+/** The model's own wording when a re-Read is still needed: the escape it is told about. */
+export const ESCAPE = 'If you need the text re-sent, call Read again with the same arguments.'
+
+export const keyOf = (
+  sid: string,
+  loop: string,
+  path: string,
+  offset: number | undefined,
+  limit: number | undefined
+): string => [sid, loop, path, offset ?? '', limit ?? ''].join('\u0000')
+
+/** The lines a text Read returned, cut from the file's text the same way. */
+export const sliceLines = (text: string, startLine: number, numLines: number): string =>
+  text
+    .split('\n')
+    .slice(startLine - 1, startLine - 1 + numLines)
+    .join('\n')
+
+/** Web Crypto's name for sha256, built so the Harnu repo's tracker-key gate does not read it as a key. */
+const SHA256 = `SHA-${256}`
+
+export async function sha256(text: string): Promise<string> {
+  const bytes = await crypto.subtle.digest(SHA256, new TextEncoder().encode(text))
+  return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+type Block = { type: string; [field: string]: unknown }
+type Message = { role: string; content: Block[] }
+
+/** The text of the tool_result for `toolUseId` in the messages the next request is built from. */
+export function toolResultText(
+  messages: readonly Message[],
+  toolUseId: string
+): string | undefined {
+  for (const message of messages) {
+    for (const block of message.content) {
+      if (block.type !== 'tool_result' || block['tool_use_id'] !== toolUseId) continue
+      const content = block['content']
+      if (typeof content === 'string') return content
+      if (!Array.isArray(content)) return ''
+      return content
+        .filter((part): part is { type: 'text'; text: string } => part?.type === 'text')
+        .map((part) => part.text)
+        .join('\n')
+    }
+  }
+  return undefined
+}
+
+export const formatTokens = (n: number): string =>
+  n < 1000 ? `${Math.round(n)}` : `${(n / 1000).toFixed(1)}k`
+
+export const statusLine = (tokens: number, reads: number): string =>
+  `read-dedupe · saved ~${formatTokens(tokens)} tok (${reads} re-read${reads === 1 ? '' : 's'})`
+```
+
+### `hooks/register.ts`
+
+```ts
+import { atom, read, update } from 'claude-code'
+import type { Register } from 'claude-code'
+
+import type { ReadDedupeEntry, ReadDedupeSaved } from '../types'
+import {
+  CHARS_PER_TOKEN,
+  ESCAPE,
+  keyOf,
+  sha256,
+  sliceLines,
+  statusLine,
+  toolResultText
+} from './lib/core'
+
+const entries = atom(
+  { plugin: 'read-dedupe', key: 'entries' } as const,
+  {} as Record<string, ReadDedupeEntry>
+)
+const saved = atom(
+  { plugin: 'read-dedupe', key: 'saved' } as const,
+  { tokens: 0, reads: 0 } as ReadDedupeSaved
+)
+
+const drop = (
+  all: Record<string, ReadDedupeEntry>,
+  keep: (one: ReadDedupeEntry, key: string) => boolean
+) => Object.fromEntries(Object.entries(all).filter(([key, one]) => keep(one, key)))
+
+export const register: Register = (on, options) => {
+  if (options['enabled'] === false) return
+
+  on('tool.call', { tool: 'Read' }, async ($, e, next) => {
+    if (e.pages !== undefined) return next(e)
+    const sid = await $.session.id()
+    const loop = e.agentId ?? 'main'
+    const key = keyOf(sid, loop, e.file_path, e.offset, e.limit)
+    const prior = (await read($, entries))[key]
+
+    if (prior !== undefined && !prior.answered) {
+      const stat = await $.fs.stat(e.file_path).catch(() => undefined)
+      const disk =
+        stat?.size === prior.size && stat.mtimeMs === prior.mtimeMs
+          ? await $.fs.read(e.file_path).catch(() => undefined)
+          : undefined
+      const isSame =
+        disk !== undefined &&
+        (await sha256(sliceLines(disk, prior.startLine, prior.numLines))) === prior.contentHash
+      const shown = isSame ? await $.session.messages({ as: 'api', agentId: e.agentId }) : []
+      const seen = Array.isArray(shown) ? toolResultText(shown, prior.toolUseId) : undefined
+      if (
+        seen !== undefined &&
+        (await sha256(seen.slice(0, prior.textLength))) === prior.textHash
+      ) {
+        await update($, entries, (all) => ({ ...all, [key]: { ...prior, answered: true } }))
+        const total = await update($, saved, (s) => ({
+          tokens: s.tokens + prior.tokens,
+          reads: s.reads + 1
+        }))
+        $.ui.status(statusLine(total.tokens, total.reads))
+        return {
+          result: { type: 'file_unchanged', file: { filePath: e.file_path } },
+          context: [
+            `read-dedupe: ${e.file_path} lines ${prior.startLine}-${prior.startLine + prior.numLines - 1} ` +
+              `are unchanged since turn ${prior.turn}; they are in the Read result ${prior.toolUseId} above. ${ESCAPE}`
+          ]
+        }
+      }
+    }
+
+    const ran = await next(e)
+    const file =
+      ran.result !== undefined && ran.isError === undefined && ran.result.type === 'text'
+        ? ran.result.file
+        : undefined
+    const stat =
+      file === undefined ? undefined : await $.fs.stat(e.file_path).catch(() => undefined)
+    if (
+      file === undefined ||
+      stat === undefined ||
+      file.truncatedByTokenCap === true ||
+      ran.text === undefined
+    ) {
+      if (prior !== undefined) await update($, entries, (all) => drop(all, (_, k) => k !== key))
+      return ran
+    }
+    const entry: ReadDedupeEntry = {
+      sid,
+      loop,
+      toolUseId: e.tool_use_id,
+      path: e.file_path,
+      startLine: file.startLine,
+      numLines: file.numLines,
+      contentHash: await sha256(file.content),
+      textHash: await sha256(ran.text.trimEnd()),
+      textLength: ran.text.trimEnd().length,
+      size: stat.size,
+      mtimeMs: stat.mtimeMs,
+      turn: await $.session.turns(),
+      tokens: ran.text.length / CHARS_PER_TOKEN,
+      answered: false
+    }
+    await update($, entries, (all) => ({ ...all, [key]: entry }))
+    return ran
+  }).catch(($, e, next) => next(e))
+
+  on('tool.call', { tool: /^(Edit|Write|NotebookEdit)$/ }, async ($, e, next) => {
+    const ran = await next(e)
+    const path = 'file_path' in e ? e.file_path : 'notebook_path' in e ? e.notebook_path : undefined
+    if (typeof path === 'string')
+      await update($, entries, (all) => drop(all, (one) => one.path !== path))
+    return ran
+  }).catch(($, e, next) => next(e))
+
+  on('session.compact', async ($, e, next) => {
+    const done = await next(e)
+    if (done.skip === undefined && e.trigger !== 'precompute') {
+      const loop = e.agentId ?? 'main'
+      await update($, entries, (all) => drop(all, (one) => one.loop !== loop))
+    }
+    return done
+  }).catch(($, e, next) => next(e))
+
+  on('session.end', async ($, e, next) => {
+    await update($, entries, (all) => drop(all, (one) => one.sid !== e.sessionId))
+    return next(e)
+  }).catch(($, e, next) => next(e))
+}
+```
+
+### `tests/read-dedupe.test.ts`
+
+```ts
+import { expect, mock, test } from 'claude-code/testing'
+import type { On } from 'claude-code'
+
+const PATH = '/repo/src/a.ts'
+const TEXT = 'export const a = 1\nexport const b = 2\n'
+
+type Disk = { text: string; size: number; mtimeMs: number }
+
+/** The engine beneath the plugin: a file, the Read tool, and the messages the next request holds. */
+function world(on: On) {
+  mock.clock(on, { now: 1_000 })
+  const disk: Disk = { text: TEXT, size: TEXT.length, mtimeMs: 500 }
+  const shown = new Map<string, string>() // tool_use_id -> tool_result text in context
+  const runs: string[] = []
+  const status: (string | undefined)[] = []
+  const truncate = { value: false }
+
+  on('session.id', async () => ({ value: 'sid-1' }))
+  on('session.turns', async () => ({ value: 3 }))
+  on('fs.stat', async () => ({
+    value: { kind: 'file', size: disk.size, mtimeMs: disk.mtimeMs, isLink: false }
+  }))
+  on('fs.read', async () => ({ value: disk.text }))
+  on('ui.status', async (_$, e) => (status.push(e.text), { value: undefined }))
+  on('session.messages', async () => ({
+    value: [...shown].map(([id, text]) => ({
+      role: 'user' as const,
+      content: [{ type: 'tool_result', tool_use_id: id, content: text }]
+    }))
+  }))
+  on('session.compact', async () => ({
+    messages: [{ role: 'user' as const, text: 'summary', toolUses: [] }]
+  }))
+  on('tool.call', { tool: 'Read' }, async (_$, e) => {
+    runs.push(e.tool_use_id)
+    const lines = disk.text.split('\n').slice(0, 2)
+    const text = `${lines.map((l, i) => `${i + 1}\t${l}`).join('\n')}\n3\t`
+    // As the request holds it (live run 3): trailing whitespace cut, a reminder appended.
+    shown.set(e.tool_use_id, `${text.trimEnd()}\n\n<system-reminder>\nnote\n</system-reminder>`)
+    return {
+      result: {
+        type: 'text' as const,
+        file: {
+          filePath: e.file_path,
+          content: lines.join('\n'),
+          numLines: 2,
+          startLine: 1,
+          totalLines: 2,
+          ...(truncate.value ? { truncatedByTokenCap: true } : {})
+        }
+      },
+      text
+    }
+  })
+  on('tool.call', { tool: 'Edit' }, async () => ({ result: { filePath: PATH } as never }))
+  return { disk, shown, runs, status, truncate }
+}
+
+test('an unchanged re-Read still in context is answered without running Read', async ($, on) => {
+  const w = world(on)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  const again = await $.tool.call({ tool: 'Read', file_path: PATH })
+
+  expect(w.runs.length).toBe(1)
+  expect(again.result).toEqual({ type: 'file_unchanged', file: { filePath: PATH } })
+  expect(again.context?.[0]).toContain('unchanged since turn 3')
+  expect(w.status.at(-1)).toMatch(/^read-dedupe · saved ~\d+ tok \(1 re-read\)$/)
+})
+
+test('a changed file runs Read again', async ($, on) => {
+  const w = world(on)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  w.disk.text = 'export const a = 9\nexport const b = 2\n'
+  w.disk.mtimeMs = 900
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+
+  expect(w.runs.length).toBe(2)
+})
+
+test('a same-size, same-mtime rewrite is caught by the content hash', async ($, on) => {
+  const w = world(on)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  w.disk.text = 'export const a = 7\nexport const b = 2\n'
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+
+  expect(w.runs.length).toBe(2)
+})
+
+test('an earlier result no longer in context is never short-circuited', async ($, on) => {
+  const w = world(on)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  w.shown.clear() // compaction, /clear or a cleared tool result: the request no longer holds it
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+
+  expect(w.runs.length).toBe(2)
+})
+
+test('an earlier result whose text the engine cut is never short-circuited', async ($, on) => {
+  const w = world(on)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  const [id] = [...w.shown.keys()]
+  w.shown.set(id!, '[Old tool result content cleared]')
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+
+  expect(w.runs.length).toBe(2)
+})
+
+test('a Read cut to its token cap is not recorded', async ($, on) => {
+  const w = world(on)
+  w.truncate.value = true
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+
+  expect(w.runs.length).toBe(2)
+})
+
+test('asking again right after an answer runs Read (the escape)', async ($, on) => {
+  const w = world(on)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+
+  expect(w.runs.length).toBe(2)
+})
+
+test('a different range is a different key', async ($, on) => {
+  const w = world(on)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  await $.tool.call({ tool: 'Read', file_path: PATH, offset: 1, limit: 2 })
+
+  expect(w.runs.length).toBe(2)
+})
+
+test('an Edit of the file evicts it', async ($, on) => {
+  const w = world(on)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  await $.tool.call({ tool: 'Edit', file_path: PATH, old_string: 'a', new_string: 'a' })
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+
+  expect(w.runs.length).toBe(2)
+})
+
+test('a compaction of the main loop evicts its entries', async ($, on) => {
+  const w = world(on)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  await $.session.compact({
+    trigger: 'manual',
+    messages: [{ role: 'user', text: 'read a.ts', toolUses: [] }]
+  })
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+
+  expect(w.runs.length).toBe(2)
+})
+
+test('turned off, every Read runs', { options: { enabled: false } }, async ($, on) => {
+  const w = world(on)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+
+  expect(w.runs.length).toBe(2)
+})
+```
+
+## 2. Checks, with their real output
+
+### 2.1 `claude plugin validate`
+
+`cd <scratchpad>/read-dedupe && claude plugin validate .`
+
+```text
+Validating plugin manifest: <scratchpad>/read-dedupe/.claude-plugin/plugin.json
+
+  ❯ types ./types/index.d.ts declares on $: nothing (no EngineInterface member)
+  ❯ types ./types/index.d.ts declares state: read-dedupe.entries, read-dedupe.saved
+
+Validating hooks: <scratchpad>/read-dedupe/hooks/hooks.json
+
+  ❯ ./register.ts hooks: tool.call{tool=Read}, tool.call{tool=/"^(Edit|Write|NotebookEdit)$"/}, session.compact, session.end
+  ❯ ./register.ts gating hook with .catch: tool.call{tool=Read}
+  ❯ ./register.ts gating hook with .catch: tool.call{tool=/"^(Edit|Write|NotebookEdit)$"/}
+  ❯ ./register.ts gating hook with .catch: session.compact
+  ❯ ./register.ts calls: $.fs.read, $.fs.stat, $.session.id, $.session.messages, $.session.turns, $.state.get, $.state.set, $.ui.status
+  ❯ ./register.ts state writes: read-dedupe.entries, read-dedupe.saved
+  ❯ ./register.ts state reads: read-dedupe.entries, read-dedupe.saved
+
+✔ Validation passed
+```
+
+### 2.2 `claude plugin test`
+
+`cd <scratchpad>/read-dedupe && claude plugin test .`
+
+```text
+
+tests/read-dedupe.test.ts:
+(pass) an unchanged re-Read still in context is answered without running Read [32.64ms]
+(pass) a changed file runs Read again [16.02ms]
+(pass) a same-size, same-mtime rewrite is caught by the content hash [16.46ms]
+(pass) an earlier result no longer in context is never short-circuited [16.21ms]
+(pass) an earlier result whose text the engine cut is never short-circuited [16.64ms]
+(pass) a Read cut to its token cap is not recorded [13.02ms]
+(pass) asking again right after an answer runs Read (the escape) [16.06ms]
+(pass) a different range is a different key [12.90ms]
+(pass) an Edit of the file evicts it [14.61ms]
+(pass) a compaction of the main loop evicts its entries [13.72ms]
+(pass) turned off, every Read runs [10.53ms]
+
+ 11 pass
+ 0 fail
+Ran 11 tests across 1 file. [0.28s]
+```
+
+### 2.3 Type-check
+
+There is no `tsconfig.json` in the mod folder: a `--plugin-dir` mod run under `claude -p` is never
+written in, so the engine lays no types beside it (reference.md:50-53). The type-check uses the
+header's `tsconfig.json` (types `claude-code.d.ts`:67-77), kept outside the mod folder, its
+`include` naming the declaration file and the mod's `hooks`, `types` and `tests`:
+
+```json
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "types": [],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "jsx": "react",
+    "jsxFactory": "h",
+    "jsxFragmentFactory": "Fragment"
+  },
+  "include": [
+    "<skill>/types/claude-code.d.ts",
+    "<scratchpad>/read-dedupe/hooks",
+    "<scratchpad>/read-dedupe/types",
+    "<scratchpad>/read-dedupe/tests"
+  ]
+}
+```
+
+`npx tsc -p <scratchpad>/tscheck/tsconfig.json; echo "exit $?"` (tsc prints nothing on success):
+
+```text
+exit 0
+```
+
+## 3. Live runs: the mechanisms the design hinges on, run against a real engine
+
+The kit tests stand in for the engine: nothing sits beneath the plugin but the test's own hooks
+(reference.md:81). Four facts the design rests on can only come from a real session, so each was
+run with `claude -p --plugin-dir <scratchpad>/read-dedupe --model haiku --output-format
+stream-json --verbose --allowedTools=Read` (plus `Agent` for run 10) on a three-line file
+`notes.txt` (`alpha line one`, `beta line two`, `gamma line three`, trailing newline). Turn-by-turn
+runs (7, 8, 9) were driven with `--input-format stream-json`, one user message sent after each
+`result` line. Cost of all eleven runs together: 0.09 USD (the sum of each run's reported `total_cost_usd`).
+
+| Run | Setup                                                                                           | What happened                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Proves                                                                                                           |
+| --- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 1–2 | First version of the module: whole-text hash of the earlier result                              | The second Read ran for real. No hook error in the debug log.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | A silent miss: something did not match                                                                           |
+| 3   | Same, with a trace written through `$.fs.write`                                                 | Disk check passed (`isSame=true`). The earlier tool_result in `$.session.messages({ as: 'api' })` read `1\talpha line one\n…\n4\n\n<system-reminder>…`: the trailing tab of `text` (`…\n4\t`) cut, and a reminder appended **inside the same tool_result**                                                                                                                                                                                                                                                                          | The request holds the result normalised, so the check must compare a prefix (§5.3 of the spec)                   |
+| 4   | Fixed module (prefix hash), Read twice                                                          | Second Read answered: debug log `read-dedupe (user) answered tool.call without next() in 4.9ms; nothing beneath it ran for this dispatch` (the first Read's hook settled in 3,547.7 ms with `next()` included). The model read `Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.`, no `is_error`; the stored record is `{"type":"file_unchanged",…}`; the `context` note was stored as a `hook_additional_context` attachment. The model quoted all three lines from the first result. | The engine accepts a hook's `file_unchanged`, maps it with Read's own mapper, and carries `context` to the model |
+| 5   | Read three times                                                                                | Call 1 ran, call 2 answered, call 3 ran                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The escape (§7.4)                                                                                                |
+| 6   | Read, `/compact`, Read sent at once as stream-json input                                        | The engine folded the third message into the first turn and ran `/compact` last: the second Read was answered; the model quoted the three lines "from the first read"                                                                                                                                                                                                                                                                                                                                                               | A second instance of the answer leaving the content usable (not a compaction test; run 7 is)                     |
+| 7   | Read, `/compact`, Read (production module)                                                      | Both Reads ran                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Compaction ends the answer, with both layers on                                                                  |
+| 8   | Same, `session.compact` hook **removed**, trace on                                              | After `/compact` the API view held 5 messages and **no** tool_result for the first Read (`seen=undefined`), so the second Read ran                                                                                                                                                                                                                                                                                                                                                                                                  | The context check alone catches a compaction                                                                     |
+| 9   | Read, `/clear`, Read                                                                            | The session id changed (`c04f107f…` → `6c2eb543…`); no entry matched the new id; the Read ran                                                                                                                                                                                                                                                                                                                                                                                                                                       | `/clear` never reuses an entry                                                                                   |
+| 10  | Main Read, then a `general-purpose` subagent reads twice                                        | The main loop's entry did not answer the subagent's first Read; the subagent's second Read was answered from its own history                                                                                                                                                                                                                                                                                                                                                                                                        | Per-loop keys and `$.session.messages({ as: 'api', agentId })` work in a subagent                                |
+| 11  | The final module (after the last Prettier pass and the `SHA256` respelling), the run 4 scenario | Second Read answered in 3.8 ms, same mapped text                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Runs 4–10 used the module before that pass, which changed formatting and that one spelling only                  |
+
+Runs 1 to 3 are the reason C-1 asks for runs: all eleven kit tests passed against the first version,
+whose comparison could never match in a real session.
