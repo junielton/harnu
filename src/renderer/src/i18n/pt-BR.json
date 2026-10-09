@@ -2370,6 +2370,7 @@
         "nothingChanged": "Nada foi alterado.",
         "genericStop": "O Harnu parou este item por uma verificação de segurança.",
         "removeUnavailable": "Remover não está disponível. {reason}",
+        "cleanUnavailable": "Limpar agora não está disponível. {reason}",
         "removeCommand": "Rode",
         "refusedNote": "A última limpeza foi recusada. {reason}",
         "refusedNoteHint": "Ele fica fora de “Limpar prontos” e o piloto automático o pula até a causa ser resolvida. Tentar de novo tenta mais uma vez.",

@@ -137,10 +137,15 @@ const hasFailure = computed(() => props.failure !== null)
  * ends in "0 cleaned".
  */
 const verdict = computed(() => removability(props.block))
-const removeBlocked = computed(() => review.value && !verdict.value.ok)
+// Both buttons that start a clean (Remove for review, Clean now for ready) wait on the same answer.
+const removeBlocked = computed(() => (review.value || ready.value) && !verdict.value.ok)
 const removeBlockedText = computed(() => {
   const v = verdict.value
-  return v.ok ? '' : t('cleanup.gc.panel.removeUnavailable', { reason: t(removalKey(v.reason)) })
+  if (v.ok) return ''
+  const key = review.value
+    ? 'cleanup.gc.panel.removeUnavailable'
+    : 'cleanup.gc.panel.cleanUnavailable'
+  return t(key, { reason: t(removalKey(v.reason)) })
 })
 const removeHint = computed(() => {
   const v = verdict.value
@@ -152,7 +157,9 @@ const showRemove = computed(() => review.value && verdict.value.ok)
 const showKeep = computed(() => review.value && !isVolume.value)
 const showAsk = computed(() => review.value)
 const showOpinion = computed(() => review.value && (props.asking || props.opinion !== null))
-const showCleanNow = computed(() => ready.value && !hasFailure.value && !refusalMark.value)
+const showCleanNow = computed(
+  () => ready.value && !hasFailure.value && !refusalMark.value && verdict.value.ok
+)
 /**
  * Retry re-opens the confirm for the item's CURRENT bucket, so an in-use item has nothing to retry,
  * and neither has one main refuses on its facts: that needs a fix first, not another click.

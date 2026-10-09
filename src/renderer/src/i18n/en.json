@@ -2370,6 +2370,7 @@
         "nothingChanged": "Nothing was changed.",
         "genericStop": "Harnu stopped this item for a safety check.",
         "removeUnavailable": "Remove is unavailable. {reason}",
+        "cleanUnavailable": "Clean now is unavailable. {reason}",
         "removeCommand": "Run",
         "refusedNote": "The last clean was refused. {reason}",
         "refusedNoteHint": "It stays out of “Clean ready” and the autopilot skips it until the cause is fixed. Retry tries once more.",
