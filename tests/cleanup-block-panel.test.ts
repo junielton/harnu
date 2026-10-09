@@ -117,6 +117,29 @@ describe('CleanupBlockPanel — a nested-worktree item can never be removed from
     expect(text).not.toMatch(/holds another worktree/)
   })
 
+  it.each(['en', 'pt-BR'])(
+    '%s: the could-not-look-inside sentence names the real Scan now button',
+    (lang) => {
+      const locale = i18n.global.locale as unknown as { value: string }
+      const original = locale.value
+      locale.value = lang
+      try {
+        const unchecked = blockWith(
+          'review',
+          {},
+          reviewReason('check-failed' as never, 'Harnu could not look inside /srv/ws/x.')
+        )
+        const text = mountPanel(unchecked).get('[data-testid="panel-remove-blocked"]').text()
+        // Whatever the button is called in this language is what the sentence must say.
+        expect(text).toContain(i18n.global.t('cleanup.scanNow'))
+        expect(text).not.toContain('{')
+        if (lang === 'pt-BR') expect(text).not.toContain('Scan now')
+      } finally {
+        locale.value = original
+      }
+    }
+  )
+
   it('keeps Keep and the other actions that do not delete the folder', () => {
     const w = mountPanel(nested())
     expect(has(w, 'panel-keep')).toBe(true)

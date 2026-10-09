@@ -456,7 +456,7 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
       </Button>
 
       <p v-if="removeBlocked" class="text-caption text-text-3" data-testid="panel-remove-blocked">
-        {{ removeBlockedKey ? t(removeBlockedKey) : '' }}
+        {{ removeBlockedKey ? t(removeBlockedKey, { scanNow: t('cleanup.scanNow') }) : '' }}
       </p>
 
       <Button
