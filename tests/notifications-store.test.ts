@@ -277,6 +277,99 @@ describe('notify() group upsert (BUG-173 S2, spec §3.3)', () => {
   })
 })
 
+describe('updateGroup() / removeGroup() — quiet sync helpers (BUG-173 S2 delta, spec §3.3)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('localStorage', makeLocalStorage())
+    setActivePinia(createPinia())
+  })
+
+  it('updateGroup rewrites the grouped record in place and keeps its id and ts', () => {
+    const s = useNotificationsStore()
+    const ts = Date.now() - 60_000
+    const rec = s.notify(
+      baseEntry({
+        ts,
+        kind: 'warning',
+        title: '3 missions need you',
+        group: 'mission-cue',
+        items: [
+          { id: 'm1', title: 'A' },
+          { id: 'm2', title: 'B' },
+          { id: 'm3', title: 'C' }
+        ]
+      })
+    )
+
+    const updated = s.updateGroup('mission-cue', {
+      title: '1 mission needs you',
+      items: [{ id: 'm1', title: 'A' }]
+    })
+
+    expect(updated).not.toBeNull()
+    expect(updated!.id).toBe(rec.id)
+    expect(updated!.ts).toBe(ts)
+    expect(s.list).toHaveLength(1)
+    expect(s.list[0]).toMatchObject({
+      id: rec.id,
+      ts,
+      title: '1 mission needs you',
+      kind: 'warning',
+      group: 'mission-cue'
+    })
+    expect(s.list[0].items).toEqual([{ id: 'm1', title: 'A' }])
+  })
+
+  it('updateGroup leaves fields the patch does not name untouched', () => {
+    const s = useNotificationsStore()
+    s.notify(baseEntry({ group: 'g', title: 't', description: 'd', sessionId: 'sess-1' }))
+
+    s.updateGroup('g', { title: 'new' })
+
+    expect(s.list[0]).toMatchObject({ title: 'new', description: 'd', sessionId: 'sess-1' })
+  })
+
+  it('updateGroup on an absent group returns null and leaves the list unchanged', () => {
+    const s = useNotificationsStore()
+    s.notify(baseEntry({ title: 'plain' }))
+    s.notify(baseEntry({ group: 'other', title: 'other' }))
+    const before = JSON.stringify(s.records)
+
+    expect(s.updateGroup('mission-cue', { title: 'x' })).toBeNull()
+
+    expect(JSON.stringify(s.records)).toBe(before)
+  })
+
+  it('updateGroup never resurrects a dismissed grouped entry', () => {
+    const s = useNotificationsStore()
+    const rec = s.notify(baseEntry({ group: 'mission-cue', title: 'a' }))
+    s.dismiss(rec.id)
+
+    expect(s.updateGroup('mission-cue', { title: 'b' })).toBeNull()
+
+    expect(s.list).toHaveLength(0)
+  })
+
+  it('removeGroup removes only the record holding that group and reports it', () => {
+    const s = useNotificationsStore()
+    s.notify(baseEntry({ title: 'plain' }))
+    s.notify(baseEntry({ group: 'other', title: 'other' }))
+    s.notify(baseEntry({ group: 'mission-cue', title: 'mc' }))
+
+    expect(s.removeGroup('mission-cue')).toBe(true)
+
+    expect(s.list.map((r) => r.title).sort()).toEqual(['other', 'plain'])
+  })
+
+  it('removeGroup on an absent group returns false and changes nothing', () => {
+    const s = useNotificationsStore()
+    s.notify(baseEntry({ title: 'plain' }))
+
+    expect(s.removeGroup('mission-cue')).toBe(false)
+
+    expect(s.list).toHaveLength(1)
+  })
+})
+
 describe('legacy persisted records (BUG-173 S2, spec §3.4 back-compat / I-7)', () => {
   beforeEach(() => {
     vi.stubGlobal('localStorage', makeLocalStorage())
