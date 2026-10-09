@@ -413,7 +413,9 @@ function world(on: On) {
   // A resumed session: its first launch, `startedAt`, two hours before the clock's now.
   // `turns`: a resumed history holding a model turn, with `startedAt` recent (no `cost-state` row).
   // `prompt`: a fresh session's opening row, a user text, already in the list (live run 18).
-  const history = { loaded: false, turns: false, prompt: false }
+  // `toolResult`: a history with a tool result and no model message; `denyOnce`: the next read of
+  // the conversation is refused (`{ deny }`), then it reads normally again.
+  const history = { loaded: false, turns: false, prompt: false, toolResult: false, denyOnce: false }
   const disk: Disk = { text: TEXT, size: TEXT.length, mtimeMs: 500 }
   const shown = new Map<string, string>() // tool_use_id -> tool_result text in context
   const runs: string[] = []
@@ -427,23 +429,39 @@ function world(on: On) {
   }))
   on('fs.read', async () => ({ value: disk.text }))
   on('ui.status', async (_$, e) => (status.push(e.text), { value: undefined }))
-  on('session.messages', async () => ({
-    value: [
-      ...(history.turns
-        ? [
-            { role: 'user' as const, content: [{ type: 'text', text: 'before the resume' }] },
-            { role: 'assistant' as const, content: [{ type: 'text', text: 'an answer' }] }
-          ]
-        : []),
-      ...(history.prompt
-        ? [{ role: 'user' as const, content: [{ type: 'text', text: 'the first prompt' }] }]
-        : []),
-      ...[...shown].map(([id, text]) => ({
-        role: 'user' as const,
-        content: [{ type: 'tool_result', tool_use_id: id, content: text }]
-      }))
-    ]
-  }))
+  on('session.messages', async () => {
+    if (history.denyOnce) {
+      history.denyOnce = false
+      return { value: { deny: 'not readable' } as never }
+    }
+    return {
+      value: [
+        ...(history.turns
+          ? [
+              { role: 'user' as const, content: [{ type: 'text', text: 'before the resume' }] },
+              { role: 'assistant' as const, content: [{ type: 'text', text: 'an answer' }] }
+            ]
+          : []),
+        ...(history.prompt
+          ? [{ role: 'user' as const, content: [{ type: 'text', text: 'the first prompt' }] }]
+          : []),
+        ...(history.toolResult
+          ? [
+              {
+                role: 'user' as const,
+                content: [
+                  { type: 'tool_result', tool_use_id: 'toolu_old', content: 'an old result' }
+                ]
+              }
+            ]
+          : []),
+        ...[...shown].map(([id, text]) => ({
+          role: 'user' as const,
+          content: [{ type: 'tool_result', tool_use_id: id, content: text }]
+        }))
+      ]
+    }
+  })
   on('session.usage', async () => {
     if (usage.mode === 'fails') throw new Error('usage unavailable')
     const breakdown = usage.mode === 'breakdown' ? { breakdown: fill as never } : {}
@@ -704,6 +722,26 @@ test('a fresh session whose opening user row came before the first stamp is answ
   expect(w.runs.length).toBe(1)
   expect(again.result).toEqual({ type: 'file_unchanged', file: { filePath: PATH } })
 })
+
+test('a history with a tool result and no model message still starts idle', async ($, on) => {
+  const w = world(on)
+  w.history.toolResult = true
+  await row($)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+
+  expect(w.runs.length).toBe(2)
+})
+
+test('a conversation the first stamp cannot read counts as history: no answer', async ($, on) => {
+  const w = world(on)
+  w.history.denyOnce = true
+  await row($)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+
+  expect(w.runs.length).toBe(2)
+})
 ```
 
 ## 2. Checks, with their real output
@@ -739,30 +777,32 @@ Validating hooks: <scratchpad>/read-dedupe/hooks/hooks.json
 ```text
 
 tests/read-dedupe.test.ts:
-(pass) an unchanged re-Read still in context is answered without running Read [36.18ms]
-(pass) a changed file runs Read again [24.16ms]
-(pass) a same-size, same-mtime rewrite is caught by the content hash [17.92ms]
-(pass) an earlier result no longer in context is never short-circuited [16.18ms]
-(pass) an earlier result whose text the engine cut is never short-circuited [16.20ms]
-(pass) a Read cut to its token cap is not recorded [13.91ms]
-(pass) the next identical Read after an answer runs (the escape) [16.72ms]
-(pass) a different range is a different key [14.03ms]
-(pass) an Edit of the file evicts it [16.70ms]
-(pass) a compaction of the main loop evicts its entries [15.26ms]
-(pass) turned off, every Read runs [11.07ms]
-(pass) near the auto-compaction threshold the Read runs (the race with a compaction) [15.18ms]
-(pass) a gap of more than an hour between two rows stops answers for the session [16.91ms]
-(pass) a compaction in the turn of an answer appends a note naming the file [16.42ms]
-(pass) a resumed session, whose earlier gaps the mod never saw, gets no answer [13.74ms]
-(pass) auto-compaction on with no threshold is an unknown reading: no answer [23.16ms]
-(pass) no breakdown in the usage reading: no answer [17.04ms]
-(pass) a failed usage call: no answer, the Read runs [14.19ms]
-(pass) a resumed session with no cost-state row (startedAt recent) still gets no answer [12.81ms]
-(pass) a fresh session whose opening user row came before the first stamp is answered [16.99ms]
+(pass) an unchanged re-Read still in context is answered without running Read [94.25ms]
+(pass) a changed file runs Read again [46.79ms]
+(pass) a same-size, same-mtime rewrite is caught by the content hash [36.82ms]
+(pass) an earlier result no longer in context is never short-circuited [41.98ms]
+(pass) an earlier result whose text the engine cut is never short-circuited [61.41ms]
+(pass) a Read cut to its token cap is not recorded [56.62ms]
+(pass) the next identical Read after an answer runs (the escape) [78.98ms]
+(pass) a different range is a different key [28.07ms]
+(pass) an Edit of the file evicts it [34.46ms]
+(pass) a compaction of the main loop evicts its entries [61.69ms]
+(pass) turned off, every Read runs [28.38ms]
+(pass) near the auto-compaction threshold the Read runs (the race with a compaction) [37.08ms]
+(pass) a gap of more than an hour between two rows stops answers for the session [46.54ms]
+(pass) a compaction in the turn of an answer appends a note naming the file [57.97ms]
+(pass) a resumed session, whose earlier gaps the mod never saw, gets no answer [31.05ms]
+(pass) auto-compaction on with no threshold is an unknown reading: no answer [61.18ms]
+(pass) no breakdown in the usage reading: no answer [38.62ms]
+(pass) a failed usage call: no answer, the Read runs [64.03ms]
+(pass) a resumed session with no cost-state row (startedAt recent) still gets no answer [36.14ms]
+(pass) a fresh session whose opening user row came before the first stamp is answered [71.82ms]
+(pass) a history with a tool result and no model message still starts idle [69.28ms]
+(pass) a conversation the first stamp cannot read counts as history: no answer [74.02ms]
 
- 20 pass
+ 22 pass
  0 fail
-Ran 20 tests across 1 file. [0.45s]
+Ran 22 tests across 1 file. [1.39s]
 ```
 
 ### 2.3 Type-check
@@ -805,18 +845,22 @@ exit 0
 
 ### 2.4 Mutation check
 
-Five guards were broken on purpose, each in a throwaway copy of the module, and the test suite run
+Seven guards were broken on purpose, each in a throwaway copy of the module, and the test suite run
 against it: treating a missing `autoCompactThreshold` as far from a compaction, answering when the
 usage call fails, ignoring the first-stamp rule altogether, ignoring the resumed history's model
-turns (leaving only the `startedAt` bound), and counting a user text as a model turn. Every mutant
-was killed (the tests named are the ones that failed):
+turns (leaving only the `startedAt` bound), counting a user text as a model turn, checking for an
+`assistant` message only (the `tool_result` clause dropped), and treating a refused read of the
+conversation as a fresh session. Every mutant was killed (the tests named are the ones that
+failed):
 
 ```text
 missing threshold treated as far: KILLED by ['auto-compaction on with no threshold is an unknown reading: no ']
-usage failure answers: KILLED by ['a changed file runs Read again [18.67ms]', 'a same-size, same-mtime rewrite is caught by the content hash [', 'no breakdown in the usage reading: no answer [15.69ms]', 'a failed usage call: no answer, the Read runs [16.59ms]']
-first-stamp bound ignored: KILLED by ['a resumed session, whose earlier gaps the mod never saw, gets n', 'a resumed session with no cost-state row (startedAt recent) sti']
-resumed turns not checked (startedAt only): KILLED by ['a resumed session with no cost-state row (startedAt recent) sti']
+usage failure answers: KILLED by ['a changed file runs Read again [20.40ms]', 'a same-size, same-mtime rewrite is caught by the content hash [', 'no breakdown in the usage reading: no answer [18.86ms]', 'a failed usage call: no answer, the Read runs [19.27ms]']
+first-stamp bound ignored: KILLED by ['a resumed session, whose earlier gaps the mod never saw, gets n', 'a resumed session with no cost-state row (startedAt recent) sti', 'a history with a tool result and no model message still starts ']
+resumed turns not checked (startedAt only): KILLED by ['a resumed session with no cost-state row (startedAt recent) sti', 'a history with a tool result and no model message still starts ', 'a conversation the first stamp cannot read counts as history: n']
 a user text counts as a turn: KILLED by ['a fresh session whose opening user row came before the first st']
+assistant-only check (tool_result clause dropped): KILLED by ['a history with a tool result and no model message still starts ']
+a refused conversation read counts as a fresh session: KILLED by ['a conversation the first stamp cannot read counts as history: n']
 ```
 
 ## 3. Live runs: the mechanisms the design hinges on, run against a real engine
