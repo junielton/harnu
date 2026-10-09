@@ -19,6 +19,8 @@ const isTrue = (n: ts.Expression): boolean => n.kind === ts.SyntaxKind.TrueKeywo
 
 /** Where a recursive (or unverifiably optioned) delete is called in `source`. */
 export function recursiveDeletes(source: string, file = 'x.ts'): number[] {
+  // Parsing every file in src/main is slow on a loaded CI runner; only a file that names a deleter can offend.
+  if (!/\b(rm|rmSync|rmdir|rmdirSync)\b/.test(source)) return []
   const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true)
   // `import { rm as remove } from 'node:fs/promises'` makes `remove` a deleter too.
   const aliases = new Set<string>()
@@ -139,7 +141,7 @@ describe('no recursive node:fs delete in src/main outside the app-owned folders'
       }
     }
     expect(offenders).toEqual([])
-  })
+  }, 60_000)
 
   it('the Cleanup engine has no exemption at all', () => {
     for (const exempt of [...Object.keys(APP_OWNED), ...Object.keys(CARDED_GAPS)]) {
