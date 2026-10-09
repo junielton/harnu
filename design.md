@@ -8648,10 +8648,18 @@ volume), size right.
 - **A ready item main refused lately** (`bundle.reprobeRefusal`, set by the gatherer) stays on the map but
   leaves the hero count, the hero's confirm and the autopilot. Its panel carries a Warning-toned note — "The
   last clean was refused. {reason}" — with **Retry** in place of **Clean now**. After two identical refusals it
-  moves to Needs review with that reason ("Refused {n} times in a row…").
-- **Docker down.** A refusal for `docker-unavailable` reads "Docker is not running … Start Docker, then
-  Retry." and offers Retry. Only a bundle that had Docker stacks at the scan is refused for it; the rest
-  clean as usual.
+  moves to Needs review with that reason ("Refused {n} times in a row…"); there the panel and the list row
+  show the real cause, and neither Remove nor Retry is offered. The count outlives the pause.
+- **Docker down.** A scan that ran with the daemon down marks every bundle `dockerBlind`: its empty stack
+  list means "unseen", so main refuses it (`scan-blind`) in the autopilot and in a manual clean alike, with
+  no override. The hero becomes a **disabled soft button** — "Start Docker to clean these", tooltip
+  "Docker wasn't running when Harnu scanned … Start Docker, then Scan now." (`data-testid="hero-blind"`) —
+  and a panel for a ready item swaps **Clean now** for the line "Clean now is unavailable. {reason}". No
+  Docker CLI at all is not blind. A refusal for `docker-unavailable` (the daemon stopped after a scan that
+  saw it, for a bundle that had stacks) reads "Docker is not running … Start Docker, then Retry." and offers
+  Retry.
+- **Marks are read from the current prefs.** Keep and never-clean come from the snapshot's prefs, not the
+  bundle's scan-time flags, so a mark added since the scan hides Remove (and the hero count) at once.
 - **Keyboard:** Esc or Cancel closes; **focus starts on Cancel, never the confirm button**; Tab cycles
   inside (focus trap); ↩ activates only the focused control.
 

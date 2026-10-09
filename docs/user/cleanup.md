@@ -47,9 +47,9 @@ Right after the summary line sits the screen's one big button: **Clean 12 ready 
 
 Clicking it opens **one** confirm dialog. It lists every ready item: `repo › worktree`, the branch, its size, and small chips for what goes with it (the Docker stack's containers, dependencies, the checkout, the branch). A warning says plainly that **volumes are kept** (they show up in Needs review afterwards) and what can come back and how (see [What you can get back](#what-you-can-get-back)). Esc or **Cancel** closes it; the focus starts on Cancel, never on the confirm button. Confirming closes the dialog at once and the cleaning runs in the background.
 
-An item that Harnu tried to clean and was refused at the last check (for example, git cannot unregister it) leaves the count: it stays on the map as ready, its panel says "The last clean was refused" and why, and the automatic cycle skips it, instead of failing the same way every hour. **Retry** in its panel tries once more. After two identical refusals in a row it moves to Needs review with that reason. A refusal is forgotten after a few hours, or as soon as the scan sees the item differently.
+An item that Harnu tried to clean and was refused at the last check (for example, git cannot unregister it) leaves the count: it stays on the map as ready, its panel says "The last clean was refused" and why, and the automatic cycle skips it, instead of failing the same way every hour. **Retry** in its panel tries once more. After two identical refusals in a row it moves to Needs review with that reason. The pause lasts a few hours; the count of refusals is remembered for a week, so a worktree that keeps being refused every few hours is demoted instead of being retried forever. It is forgotten as soon as the scan sees the item differently or its commit changes.
 
-If Docker is installed but not running, only the worktrees that had a Docker stack running from them are refused ("Docker is not running … Start Docker, then Retry"); the rest clean as usual.
+If Docker is installed but was not running when Harnu scanned, Harnu could not see which stacks run from your worktrees, so it does not guess: nothing from that scan is cleaned, by hand or by the automatic cycle. The big button reads **Start Docker to clean these** and is disabled; each worktree's panel says "Docker wasn't running when Harnu scanned. Start Docker, then Scan now." Start Docker and press **Scan now**. With no Docker installed at all there is nothing to stop, so worktrees clean as usual. If Docker stops between a scan that saw it and the clean, a worktree that had no stack still cleans; one that had a stack is refused with "Start Docker, then Retry".
 
 With nothing to clean, the button is disabled and reads **Nothing to clean**. Before you have acknowledged the first report (see below), it is a quieter button, because **Enable autopilot** is the one big button on that screen. Cleaning by hand still works then.
 
@@ -111,7 +111,7 @@ For these, the panel has no **Remove** button and no **R** shortcut and says why
 
 If you tick a mix, the dialog still opens once and lists what will be removed. A separate **Won't be removed (n)** section lists the rest, each with its reason and the command to fix it. That section is not in the count, the total or the request. If nothing you picked can be removed, no dialog opens and a toast tells you why.
 
-After a refusal, an item keeps its real reason: a locked worktree says it is locked, not "couldn't match a single git registration".
+After a refusal, an item keeps its real reason: a locked worktree says it is locked, not "couldn't match a single git registration". An item that Harnu refused twice at the last check is moved to Needs review with Remove and Retry hidden, and its panel names the real cause (for instance, git has no single unlocked registration for it: look at `git worktree list`). A Keep mark or a never-clean path you add takes effect at once, without a new scan, and **Clean now** on a ready item is hidden for the same reasons as **Remove**.
 
 ### Ask for an opinion
 
