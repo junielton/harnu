@@ -309,6 +309,22 @@ describe('CleanupBlockPanel — a failed item', () => {
       expect(hint).toMatch(/archive refs/)
     })
 
+    it('words it neutrally (the folder may have been deleted by hand) and claims the archive only when it ran', () => {
+      const early = goneBlock()
+      const b = early.bundle!
+      b.reason = { code: 'cleanup-failed', detail: 'Cleanup stopped at drop-deps in /w/repo/x.' }
+      const w = mountPanel(blockOf(b), { failure: failure({ step: 'drop-deps' }) })
+      const hint = w.get('[data-testid="panel-resume"]').text()
+      expect(hint).toMatch(/folder is gone/i)
+      expect(hint).not.toMatch(/trashed/i)
+      expect(hint).toContain('git -C /w/repo branch -D feat/x')
+      expect(hint).not.toMatch(/archive refs/)
+      // After the archive step the refs exist and the line is shown.
+      const late = mountPanel(goneBlock(), { failure: failure({ step: 'branch-delete' }) })
+      expect(late.get('[data-testid="panel-resume"]').text()).toMatch(/archive refs/)
+      expect(late.get('[data-testid="panel-resume"]').text()).not.toMatch(/trashed/i)
+    })
+
     it('still offers Keep', () => {
       expect(has(mountPanel(goneBlock(), { failure: failure() }), 'panel-keep')).toBe(true)
     })

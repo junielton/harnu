@@ -353,7 +353,9 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
           data-testid="panel-resume-command"
           >{{ cmd }}</code
         >
-        <p class="text-caption leading-4 text-text-3">{{ t('cleanup.gc.panel.resumeArchive') }}</p>
+        <p v-if="resume.archived" class="text-caption leading-4 text-text-3">
+          {{ t('cleanup.gc.panel.resumeArchive') }}
+        </p>
       </div>
       <p v-if="inUse" class="text-caption leading-4 text-text-3" data-testid="panel-in-use-note">
         {{ t('cleanup.gc.panel.inUseNote') }}

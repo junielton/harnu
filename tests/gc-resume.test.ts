@@ -43,6 +43,41 @@ describe('resumeHint', () => {
     expect(hint.commands).toEqual(['git -C /w/repo worktree prune'])
   })
 
+  it.each([
+    'reprobe',
+    'stop-stack',
+    'rm-containers',
+    'rm-volumes',
+    'drop-deps',
+    'archive',
+    'trash'
+  ])(
+    'a halt before the trash (%s) with the folder deleted by hand still gets the branch command',
+    (step) => {
+      // The folder is gone but the branch was never touched: it is still there.
+      expect(resumeHint(halted(`Cleanup stopped at ${step} in /w/x.`))!.commands).toEqual([
+        'git -C /w/repo worktree prune',
+        'git -C /w/repo branch -D feat/x'
+      ])
+    }
+  )
+
+  it('says the archive refs hold the commit only once the archive step had run', () => {
+    for (const step of ['trash', 'prune', 'branch-delete']) {
+      expect(resumeHint(halted(`Cleanup stopped at ${step} in /w/x.`))!.archived).toBe(true)
+    }
+    for (const step of [
+      'reprobe',
+      'stop-stack',
+      'rm-containers',
+      'rm-volumes',
+      'drop-deps',
+      'archive'
+    ]) {
+      expect(resumeHint(halted(`Cleanup stopped at ${step} in /w/x.`))!.archived).toBe(false)
+    }
+  })
+
   it('leaves the branch command out for a step after the branch is gone', () => {
     const hint = resumeHint(halted('Cleanup stopped at detach in /w/x.'))!
     expect(hint.commands).toEqual(['git -C /w/repo worktree prune'])

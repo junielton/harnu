@@ -10,10 +10,18 @@ export interface ResumeHint {
   step: string
   /** Shell commands to run, in order, each safe to copy as one line. */
   commands: string[]
+  /** True once the archive step had run, so the archive refs hold the commit. */
+  archived: boolean
 }
 
-/** The steps after which the local branch can still be there (prune and branch-delete). */
-const BRANCH_MAY_REMAIN = new Set(['prune', 'branch-delete'])
+/**
+ * The steps from which the archive refs exist: the archive runs before the trash. A halt at
+ * `archive` itself may have written none.
+ */
+const ARCHIVED = new Set(['trash', 'prune', 'branch-delete', 'detach'])
+
+/** The one step that runs after the branch is deleted; before it the branch is still there. */
+const BRANCH_GONE_AFTER = 'detach'
 
 /** Quotes a word for a POSIX shell only when it needs it, so the common case reads plainly. */
 function shq(word: string): string {
@@ -29,8 +37,9 @@ export function resumeHint(
   if (!step) return null
   const repo = shq(block.repoPath)
   const commands = [`git -C ${repo} worktree prune`]
-  if (block.branch && BRANCH_MAY_REMAIN.has(step)) {
+  // A halt before the trash with the folder deleted by hand leaves the branch alone, too.
+  if (block.branch && step !== BRANCH_GONE_AFTER) {
     commands.push(`git -C ${repo} branch -D ${shq(block.branch)}`)
   }
-  return { step, commands }
+  return { step, commands, archived: ARCHIVED.has(step) }
 }
