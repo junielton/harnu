@@ -117,10 +117,16 @@ Three probe shapes still hit, and none is fixed here:
   starts with the same `MII…` prefix, so the prefix cannot be the filter.
 - **An S3 `X-Amz-Signature` value.** That one is arguably a credential, being time-limited.
 
-The `random 32 b62 token` line is the positive control. The `aws secret no label` line is the known
-recall gap: standard base64 with `/` (§5.3).
+Two rows are **random draws**, regenerated on every run, so they can flip between runs:
 
-These are why the rule stays off by default (SCR-Q2).
+- **`random 32 b62 token (should hit)`** is the positive control. It hits about 99.5% of the time
+  (§5.2, base62 len 32).
+- **`aws secret no label, b64 40`** is the known recall gap: standard base64 with `/` (§5.3). It is
+  missed here, and caught about 85% of the time overall (§5.2, base64 len 40).
+
+These are why the rule stays off by default (SCR-Q2). A person who opts in is told so in the option's
+own description: "when on it also redacts opaque ids such as session\_… and a bare base64 certificate
+line" (`02-prototype.md` §2.1).
 
 Media bytes are never text to scan. The prototype's `scrubDeep` skips any field named `base64` (a
 `Read` of an image or PDF, `d.ts:20963-21021`) and a Bash `stdout` whose result says `isImage`. Both

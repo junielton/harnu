@@ -59,7 +59,7 @@ therefore uses the header `tsconfig.json` from `claude-code.d.ts`, kept outside 
     "highEntropy": {
       "type": "boolean",
       "title": "Redact high-entropy tokens",
-      "description": "Also redact unlabelled tokens that look random (off until measured on real tool output)",
+      "description": "Also redact unlabelled tokens that look random. Off until measured on real tool output; when on it also redacts opaque ids such as session_\u2026 and a bare base64 certificate line",
       "default": false
     },
     "entropyThreshold": {
@@ -255,9 +255,12 @@ let disabled = new Set<string>();
 let resolveInto = new Set<string>();
 let repoRoot = '';
 // Off for this session: `/scrub off`, or Harnu's flag file. Every hook then
-// passes rows through as they came.
+// passes rows through as they came, except that a placeholder is never
+// written into a file (§6.4's corruption).
 let off = false;
 let offBy = '';
+const BY_FLAG = 'Harnu Settings';
+const SWITCH = 'scrubber-off';
 // Circuit breaker: consecutive safety failures. At TRIP the person is told.
 let failures = 0;
 const TRIP = 3;
@@ -393,19 +396,53 @@ function resolveDeep(value: unknown): unknown {
 
 const WRITERS: ReadonlySet<string> = new Set(['Edit', 'Write', 'NotebookEdit']);
 
+// Where a path lands, every link followed: the file's real path, or the real
+// path of its nearest existing folder plus the rest. Undefined when it cannot
+// be placed (a dangling link, an empty or `..` name), and the call is refused.
+async function placed($: EngineInterface, path: string): Promise<string | undefined> {
+  const own = await $.fs.stat(path, { resolve: true }).catch(() => undefined);
+  if (own !== undefined) return own.realPath;
+  const parts = path.split('/');
+  const rest: string[] = [];
+  while (parts.length > 1) {
+    const name = parts.pop() ?? '';
+    if (name === '' || name === '.' || name === '..') return undefined;
+    rest.unshift(name);
+    const folder = parts.join('/') || '/';
+    const dir = await $.fs.stat(folder, { resolve: true }).catch(() => undefined);
+    if (dir !== undefined) return dir.realPath === undefined ? undefined : `${dir.realPath.replace(/\/$/, '')}/${rest.join('/')}`;
+  }
+  return undefined;
+}
+
 const UNKNOWN = (ps: readonly string[]) =>
   `secret-scrubber: the value behind ${ps.join(', ')} is not known in this session ` +
   '(it was resumed, parked by Harnu, or the scrubber reloaded). Nothing ran. ' +
   'Read the file or rerun the command that held it: the same placeholder comes back with its value.';
 
 // Where a resolved value would land: `tracked` (never), `ignored` or
-// `allowed` (silently), `other` (ask).
-async function landing($: EngineInterface, path: string): Promise<'tracked' | 'ignored' | 'allowed' | 'other'> {
-  if (repoRoot !== '' && path.startsWith(`${repoRoot}/`) && resolveInto.has(path.slice(repoRoot.length + 1))) return 'allowed';
-  const tracked = await $.process.run(['git', 'ls-files', '--error-unmatch', '--', path]);
+// `allowed` (silently), `other` (ask), `unplaceable` (refuse). Git is asked
+// about the real path, from the real path's own folder: a worktree nested in
+// an ignored dir of another repo, or a link out of an ignored dir, answers for
+// the repo that actually holds the file.
+type Landing = 'tracked' | 'ignored' | 'allowed' | 'other' | 'unplaceable';
+async function landing($: EngineInterface, path: string): Promise<Landing> {
+  const real = await placed($, path);
+  if (real === undefined) return 'unplaceable';
+  for (const entry of resolveInto) if ((await placed($, `${repoRoot}/${entry}`)) === real) return 'allowed';
+  let cwd = real.slice(0, real.lastIndexOf('/')) || '/';
+  // A file not there yet: run from its nearest existing folder.
+  while (cwd !== '/' && !(await $.fs.exists(cwd))) cwd = cwd.slice(0, cwd.lastIndexOf('/')) || '/';
+  const tracked = await $.process.run(['git', 'ls-files', '--error-unmatch', '--', real], { cwd });
   if (tracked.exitCode === 0) return 'tracked';
-  const ignored = await $.process.run(['git', 'check-ignore', '-q', '--', path]);
+  const ignored = await $.process.run(['git', 'check-ignore', '-q', '--', real], { cwd });
   return ignored.exitCode === 0 ? 'ignored' : 'other';
+}
+
+// A call that names the off switch's file. Not a boundary (§9.1): a command
+// can spell the name some other way. It stops the plain attempt.
+function namesSwitch(e: { tool: string }): boolean {
+  return JSON.stringify(e).includes(SWITCH);
 }
 
 // Counts are bookkeeping: a failure here never withholds a row (fail-open).
@@ -421,6 +458,21 @@ async function record($: EngineInterface, hits: readonly string[]): Promise<void
     $.ui.status(`${total} redacted`);
   } catch {
     // The row is already scrubbed; only the count is lost.
+  }
+}
+
+async function setOn($: EngineInterface, by: string): Promise<void> {
+  if (!off) return;
+  off = false;
+  offBy = '';
+  failures = 0;
+  $.ui.status(undefined);
+  try {
+    await $.session.append({ message: { type: 'system', content: [{ type: 'text', text: `Secret scrubbing is on again (${by}).` }] } });
+    const { value = NONE } = await $.state.get(counts);
+    await $.state.set(counts, { ...value, off: false });
+  } catch {
+    // Bookkeeping.
   }
 }
 
@@ -476,11 +528,15 @@ export const register: Register = (on, options) => {
     repoRoot = e.cwd;
     await loadRepoConfig($, e.cwd);
     await $.command.register({ name: 'scrub', description: 'Secret scrubber: status, keep-next, off or on' });
-    // Harnu's live off switch: a flag file beside the staged mod, checked every
-    // 5 s, so the operator's Settings toggle reaches running sessions too.
-    const flag = `${$.plugin.root}/../../scrubber-off`;
+    // Harnu's live switch: a flag file beside the staged mod, checked every 5 s
+    // both ways, so the operator's Settings toggle reaches running sessions.
+    // Present: off. Gone again: back on, unless the person turned it off.
+    const flag = `${$.plugin.root}/../../${SWITCH}`;
     $.clock.every(5000, () => {
-      void $.fs.exists(flag).then((isOff) => (isOff ? setOff($, 'Harnu Settings') : undefined)).catch(() => undefined);
+      void $.fs
+        .exists(flag)
+        .then((isOff) => (isOff ? setOff($, BY_FLAG) : offBy === BY_FLAG ? setOn($, BY_FLAG) : undefined))
+        .catch(() => undefined);
     });
     return next(e);
   });
@@ -496,9 +552,8 @@ export const register: Register = (on, options) => {
       return { text: 'Secret scrubbing is off for this session.' };
     }
     if (arg === 'on') {
-      off = false;
+      await setOn($, '/scrub on');
       failures = 0;
-      $.ui.status(undefined);
       return { text: 'Secret scrubbing is on again.' };
     }
     const { value = NONE } = await $.state.get(counts);
@@ -550,15 +605,27 @@ export const register: Register = (on, options) => {
   // Placeholders in a tool's input resolve only where the value cannot leave
   // unasked, and a placeholder this session cannot resolve stops the call.
   on('tool.call', async ($, e, next) => {
-    if (off) return next(e);
-    let call = e;
+    if ((WRITERS.has(e.tool) || e.tool === 'Bash') && namesSwitch(e)) {
+      return { deny: `secret-scrubber: this call names its off switch (${SWITCH}). Only Harnu's Settings or /scrub off turn it off.` };
+    }
     const used = [...placeholdersIn(e)];
+    if (off) {
+      // Off still never writes a placeholder's text into a file.
+      if (WRITERS.has(e.tool) && used.length > 0) {
+        return { deny: `secret-scrubber is off, so ${used.join(', ')} cannot be resolved, and its text is never written into a file. Nothing was written. Read the file again for its real value.` };
+      }
+      return next(e);
+    }
+    let call = e;
     if (used.length > 0 && (WRITERS.has(e.tool) || e.tool === 'Bash')) {
       const unknown = used.filter((p) => !vault.has(p));
       if (unknown.length > 0) return { deny: UNKNOWN(unknown) };
       if (WRITERS.has(e.tool)) {
         const target = String((e as { file_path?: unknown; notebook_path?: unknown }).file_path ?? (e as { notebook_path?: unknown }).notebook_path ?? '');
         const where = await landing($, target);
+        if (where === 'unplaceable') {
+          return { deny: `secret-scrubber: cannot tell where ${target} lands (a dangling link, or no such folder). Nothing was written.` };
+        }
         if (where === 'tracked') {
           return { deny: `secret-scrubber: ${target} is tracked by git, and a secret is never written into a tracked file. Use an ignored file (.env) and read it from there.` };
         }
@@ -626,7 +693,7 @@ Validating hooks: <scratchpad>/proto/secret-scrubber/hooks/hooks.json
   ❯ ./register.ts gating hook with .catch: prompt.submit
   ❯ ./register.ts gating hook with .catch: session.append
   ❯ ./register.ts gating hook with .catch: tool.call
-  ❯ ./register.ts calls: $.clock.every, $.command.register, $.fs.exists, $.fs.read (via loadRepoConfig), $.process.run (via landing), $.session.append (via setOff), $.state.get, $.state.set (via failed, record, setOff), $.store.get, $.store.set, $.ui.ask, $.ui.log (via loadRepoConfig), $.ui.status, $.ui.toast (via failed)
+  ❯ ./register.ts calls: $.clock.every, $.command.register, $.fs.exists, $.fs.read (via loadRepoConfig), $.fs.stat (via placed), $.process.run (via landing), $.session.append (via setOff, setOn), $.state.get, $.state.set (via failed, record, setOff, setOn), $.store.get, $.store.set, $.ui.ask, $.ui.log (via loadRepoConfig), $.ui.status (via failed, record, setOff, setOn), $.ui.toast (via failed)
   ❯ ./register.ts state writes: secret-scrubber.counts
   ❯ ./register.ts state reads: secret-scrubber.counts
 
@@ -634,8 +701,9 @@ Validating hooks: <scratchpad>/proto/secret-scrubber/hooks/hooks.json
 ```
 
 All three gating hooks carry a `.catch` (`00-spec.md` §9.2). The calls line is the mod's whole reach
-into the engine. It has no `$.http` and no `$.mcp`. `$.process.run` runs `git ls-files` and
-`git check-ignore` only, to decide where a resolved value may land (`00-spec.md` §6.2).
+into the engine. It has no `$.http` and no `$.mcp`. `$.fs.stat` resolves where a target lands, links
+followed. `$.process.run` runs only `git ls-files` and `git check-ignore` on that real path, from its
+own folder, to decide whether a resolved value may land there (`00-spec.md` §6.2).
 
 ## 3. Type check, audit chips, and Harnu's lint over placeholders
 

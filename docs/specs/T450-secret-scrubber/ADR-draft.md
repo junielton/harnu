@@ -55,10 +55,20 @@ safety path fails closed, its bookkeeping fails open, and two live off switches 
    - **The blast radius.** The mod is on by default, staged everywhere, and hooks every tool. So a
      scrub bug would stall every Harnu session. Three consecutive failures trip a breaker that tells
      the person how to turn it off. Two live off switches reach running sessions: `/scrub off`, and
-     Harnu's Settings toggle, which a running scrubber reads from a flag file every 5 s.
+     Harnu's Settings toggle, which a running scrubber reads from a flag file every 5 s, both ways.
+   - **The flag is not authenticated.** Any process running as the operator's user can create it, the
+     session's own Bash included. Nothing the mod can read is out of that Bash's reach, so no channel
+     can be made unforgeable against it. The design is tamper evidence and recovery:
+     - Harnu owns the flag's lifecycle and deletes a flag it did not write, with an operator notice.
+     - A call that names the flag plainly is refused.
+   - **Off never writes a placeholder's text into a file.** Writer calls that carry one are still
+     refused.
 4. **D4 — Placeholders resolve only where the person agreed.**
    - **Edit/Write/NotebookEdit:** never into a tracked file; silently into a gitignored file or a path
-     the repo lists; after a question for any other path.
+     the repo lists; after a question for any other path. The target is classified at its real path,
+     links followed, by `git` run from that path's own folder. Run from the session's folder, git
+     misreads a worktree nested in another repo's ignored dir, and an ignored link
+     ([`04-live-runs.md`](04-live-runs.md) §1.7).
    - **Bash:** after a question.
    - **Nobody to ask:** refused.
    - **Other tools:** never.

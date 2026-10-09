@@ -11,7 +11,10 @@ scanner would flag. `world()` is the engine beneath the plugin:
 - a store seeded with a fixed salt, so a test can compute the placeholder it expects;
 - the session recorder;
 - answers for `session.start`, `command.register`, `ui.status` and `ui.toast`;
-- a `git` stand-in that answers `ls-files` and `check-ignore` by path.
+- an `fs.stat` stand-in where every path is its own real path unless `links` maps it elsewhere;
+- an `fs.exists` stand-in with Harnu's off-switch flag;
+- a `git` stand-in that answers `ls-files` and `check-ignore` by real path, or by the folder it runs
+  in when a test needs that; it records each call's `cwd`.
 
 <!-- prettier-ignore -->
 ```ts
@@ -124,13 +127,20 @@ async function placeholderOf(rule: string, value: string): Promise<string> {
   return `[REDACTED:${rule}#${hex.slice(0, 8)}]`;
 }
 
-// The world beneath the plugin. `git` answers by the path it is asked about:
-// `tracked` paths are in the index, `ignored` ones are gitignored.
-function world(on: On, git: { tracked?: string[]; ignored?: string[] } = {}) {
+type Git = { tracked?: string[]; ignored?: string[]; links?: Record<string, string>; run?: (argv: readonly string[], cwd: string) => number };
+
+// The world beneath the plugin. Every path exists and is its own real path,
+// unless `links` maps it elsewhere. `git` answers by the real path it is asked
+// about (`tracked` in the index, `ignored` gitignored), or by `run` when a test
+// needs the answer to depend on the folder git runs in. `flag` is Harnu's
+// off-switch file.
+function world(on: On, git: Git = {}) {
   const clock = mock.clock(on);
   mock.store(on, { salt: SALT });
   const session = mock.session(on);
   const toasts: string[] = [];
+  const gitCalls: { argv: readonly string[]; cwd: string }[] = [];
+  const flag = { on: false };
   on('session.start', (_$, e) => ({ cwd: e.cwd }));
   on('command.register', (_$, e) => ({ value: { command: e.name } }));
   on('ui.status', () => ({ value: undefined }));
@@ -138,12 +148,18 @@ function world(on: On, git: { tracked?: string[]; ignored?: string[] } = {}) {
     toasts.push(e.text);
     return { value: undefined };
   });
+  on('fs.stat', (_$, e) => ({ value: { kind: 'file', size: 1, mtimeMs: 0, isLink: e.path in (git.links ?? {}), realPath: git.links?.[e.path] ?? e.path } }) as never);
+  on('fs.exists', (_$, e) => ({ value: e.path.endsWith('/scrubber-off') ? flag.on : true }) as never);
   on('process.run', (_$, e) => {
     const path = e.argv.at(-1) ?? '';
-    const yes = e.argv[1] === 'ls-files' ? (git.tracked ?? []).includes(path) : (git.ignored ?? []).includes(path);
-    return { value: { exitCode: yes ? 0 : 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } } as never;
+    const cwd = e.init?.cwd ?? '/repo';
+    gitCalls.push({ argv: e.argv, cwd });
+    const exit = git.run
+      ? git.run(e.argv, cwd)
+      : (e.argv[1] === 'ls-files' ? (git.tracked ?? []) : (git.ignored ?? [])).includes(path) ? 0 : 1;
+    return { value: { exitCode: exit, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } } as never;
   });
-  return { session, clock, toasts };
+  return { session, clock, toasts, gitCalls, flag };
 }
 
 describe('session.append', () => {
@@ -316,24 +332,50 @@ describe('failure', () => {
     expect(JSON.stringify(session.appended().at(-1)?.message)).toContain(S.github);
   });
 
-  test("Harnu's flag file turns a running session off within one 5 s check", async ($, on) => {
-    const { session, clock } = world(on);
-    let flagged = false;
-    const asked: string[] = [];
-    on('fs.exists', (_$, e) => {
-      asked.push(e.path);
-      return { value: flagged && e.path.endsWith('/scrubber-off') } as never;
-    });
+  test("Harnu's flag file turns a running session off within one 5 s check, and back on when it goes", async ($, on) => {
+    const { session, clock, flag } = world(on);
     await $.session.start(START);
     await $.session.append(toolResultRow(`GH=${S.github}`, 'before'));
     expect(JSON.stringify(session.appended().at(-1)?.message)).not.toContain(S.github);
-    flagged = true;
+    flag.on = true;
     await clock.advance(5000);
-    expect(asked.length).toBe(1);
-    expect(asked[0]).toMatch(/scrubber-off$/);
-    await $.session.append(toolResultRow(`GH=${S.github}`, 'after'));
+    await $.session.append(toolResultRow(`GH=${S.github}`, 'while-off'));
     expect(JSON.stringify(session.appended().at(-1)?.message)).toContain(S.github);
-    expect(JSON.stringify(session.appended())).toContain('(Harnu Settings)');
+    expect(JSON.stringify(session.appended())).toContain('off for this session (Harnu Settings)');
+    flag.on = false;
+    await clock.advance(5000);
+    await $.session.append(toolResultRow(`GH=${S.github}`, 'after'));
+    expect(JSON.stringify(session.appended().at(-1)?.message)).not.toContain(S.github);
+    expect(JSON.stringify(session.appended())).toContain('on again (Harnu Settings)');
+  });
+
+  test('a Bash command or a write that names the off switch is refused', async ($, on) => {
+    world(on);
+    let ran = false;
+    on('tool.call', { tool: 'Bash' }, () => {
+      ran = true;
+      return { result: { stdout: '', stderr: '', interrupted: false } } as never;
+    });
+    await $.session.start(START);
+    const out = (await $.tool.call({ tool: 'Bash', command: 'touch ~/.config/Harnu/scrubber/scrubber-off' } as never)) as { deny?: string };
+    expect(out.deny).toContain('names its off switch');
+    expect(ran).toBe(false);
+  });
+
+  test('while off, a placeholder is still never written into a file', async ($, on) => {
+    world(on, { ignored: ['/repo/.env'] });
+    let wrote = false;
+    on('tool.call', { tool: 'Write' }, () => {
+      wrote = true;
+      return { result: {} } as never;
+    });
+    await $.session.start(START);
+    await $.session.append(toolResultRow(`API_SECRET=${S.envValue}`));
+    await $.command.run({ command: 'scrub', args: 'off', ...PRESENT });
+    const p = await placeholderOf('secret-assignment', S.envValue);
+    const out = (await $.tool.call({ tool: 'Write', file_path: '/repo/.env', content: `API_SECRET=${p}\n` } as never)) as { deny?: string };
+    expect(out.deny).toContain('is off');
+    expect(wrote).toBe(false);
   });
 });
 
@@ -387,6 +429,45 @@ describe('resolution', () => {
     expect(out.context?.join(' ')).toContain('put the real value back');
     expect(edit.old_string).toBe(`API_SECRET=${S.envValue}`);
     expect(edit.new_string).toBe(`API_SECRET=${S.envValue}\nDEBUG=1`);
+  });
+
+  test('a tracked file in a worktree nested under an ignored dir is still tracked: git runs in its own folder', async ($, on) => {
+    // The main repo ignores `.claude/*`; the worktree under it tracks CLAUDE.md.
+    // Asked from the main checkout, git says "not tracked, ignored".
+    const target = '/repo/.claude/worktrees/wt/CLAUDE.md';
+    const { gitCalls } = world(on, {
+      run: (argv, cwd) => {
+        const inWorktree = cwd.startsWith('/repo/.claude/worktrees/wt');
+        if (argv[1] === 'ls-files') return inWorktree && argv.at(-1) === target ? 0 : 1;
+        return !inWorktree && (argv.at(-1) ?? '').startsWith('/repo/.claude/') ? 0 : 1;
+      },
+    });
+    let wrote = false;
+    on('tool.call', { tool: 'Write' }, () => {
+      wrote = true;
+      return { result: {} } as never;
+    });
+    await $.session.start(START);
+    await $.session.append(toolResultRow(`API_SECRET=${S.envValue}`));
+    const out = (await $.tool.call({ tool: 'Write', file_path: target, content: await placeholderOf('secret-assignment', S.envValue) } as never)) as { deny?: string };
+    expect(out.deny).toContain('tracked by git');
+    expect(wrote).toBe(false);
+    expect(gitCalls[0]?.cwd).toBe('/repo/.claude/worktrees/wt');
+  });
+
+  test('a gitignored link to a tracked file is classified by where it lands', async ($, on) => {
+    // build/ is ignored; build/link.ts -> ../config.ts, which is tracked.
+    world(on, { links: { '/repo/build/link.ts': '/repo/config.ts' }, tracked: ['/repo/config.ts'], ignored: ['/repo/build/link.ts'] });
+    let wrote = false;
+    on('tool.call', { tool: 'Write' }, () => {
+      wrote = true;
+      return { result: {} } as never;
+    });
+    await $.session.start(START);
+    await $.session.append(toolResultRow(`API_SECRET=${S.envValue}`));
+    const out = (await $.tool.call({ tool: 'Write', file_path: '/repo/build/link.ts', content: await placeholderOf('secret-assignment', S.envValue) } as never)) as { deny?: string };
+    expect(out.deny).toContain('tracked by git');
+    expect(wrote).toBe(false);
   });
 
   test('into a tracked file it is refused, and nothing is written', async ($, on) => {
@@ -510,76 +591,97 @@ describe('resolution', () => {
 ```text
 
 tests/scrubber.test.ts:
-(pass) detection: positives > aws-access-key-id: AWS access key id [1.65ms]
-(pass) detection: positives > github-token: GitHub token [0.32ms]
+(pass) detection: positives > aws-access-key-id: AWS access key id [1.71ms]
+(pass) detection: positives > github-token: GitHub token [0.30ms]
 (pass) detection: positives > github-pat: GitHub fine-grained PAT [0.16ms]
-(pass) detection: positives > gitlab-token: GitLab PAT [0.13ms]
-(pass) detection: positives > slack-token: Slack bot token [0.11ms]
-(pass) detection: positives > slack-webhook: Slack incoming webhook [0.12ms]
+(pass) detection: positives > gitlab-token: GitLab PAT [0.14ms]
+(pass) detection: positives > slack-token: Slack bot token [0.12ms]
+(pass) detection: positives > slack-webhook: Slack incoming webhook [0.11ms]
 (pass) detection: positives > sendgrid-key: SendGrid key [0.11ms]
-(pass) detection: positives > stripe-secret-key: Stripe live secret key [0.10ms]
+(pass) detection: positives > stripe-secret-key: Stripe live secret key [0.11ms]
 (pass) detection: positives > anthropic-key: Anthropic key [0.10ms]
 (pass) detection: positives > openai-key: OpenAI project key [0.09ms]
-(pass) detection: positives > google-api-key: Google API key [0.11ms]
+(pass) detection: positives > google-api-key: Google API key [0.09ms]
 (pass) detection: positives > npm-token: npm token [0.10ms]
-(pass) detection: positives > jwt: JWT [0.10ms]
+(pass) detection: positives > jwt: JWT [0.09ms]
 (pass) detection: positives > private-key: PEM private key block [0.09ms]
-(pass) detection: positives > url-credentials: postgres URL password [0.11ms]
+(pass) detection: positives > url-credentials: postgres URL password [0.12ms]
 (pass) detection: positives > auth-header: Authorization bearer header [0.11ms]
 (pass) detection: positives > secret-assignment: .env assignment [0.11ms]
-(pass) detection: positives > secret-assignment: JSON password field [0.11ms]
-(pass) detection: positives > high-entropy: unlabelled random token [0.33ms]
-(pass) detection: negatives > clean: git commit sha [0.38ms]
-(pass) detection: negatives > clean: sha256 hex digest [0.16ms]
-(pass) detection: negatives > clean: lockfile integrity [0.12ms]
-(pass) detection: negatives > clean: UUID [0.10ms]
-(pass) detection: negatives > clean: base64 image data URI [0.11ms]
+(pass) detection: positives > secret-assignment: JSON password field [0.10ms]
+(pass) detection: positives > high-entropy: unlabelled random token [0.34ms]
+(pass) detection: negatives > clean: git commit sha [0.39ms]
+(pass) detection: negatives > clean: sha256 hex digest [0.14ms]
+(pass) detection: negatives > clean: lockfile integrity [0.10ms]
+(pass) detection: negatives > clean: UUID [0.09ms]
+(pass) detection: negatives > clean: base64 image data URI [0.10ms]
 (pass) detection: negatives > clean: env var reference [0.10ms]
-(pass) detection: negatives > clean: placeholder password [0.10ms]
+(pass) detection: negatives > clean: placeholder password [0.12ms]
 (pass) detection: negatives > clean: angle-bracket placeholder [0.09ms]
-(pass) detection: negatives > clean: long identifier [0.09ms]
-(pass) detection: negatives > clean: CamelCase word run [0.10ms]
+(pass) detection: negatives > clean: long identifier [0.11ms]
+(pass) detection: negatives > clean: CamelCase word run [0.12ms]
 (pass) detection: negatives > clean: URL without credentials [0.10ms]
 (pass) detection: negatives > clean: already redacted [0.09ms]
 (pass) detection: negatives > clean: publishable stripe key [0.09ms]
 (pass) detection: negatives > clean: token from a function call [0.09ms]
-(pass) detection: negatives > clean: counter named tokens [0.12ms]
-(pass) detection: negatives > clean: card slug with a mixed-case id [0.14ms]
-(pass) detection: negatives > clean: branch slug with digits [0.11ms]
-(pass) detection: negatives > clean: ULID in a URL path [0.11ms]
-(pass) detection: negatives > clean: SSH public key [0.09ms]
-(pass) detection: negatives > clean: go.sum hash [0.09ms]
-(pass) detection: negatives > clean: CSP nonce [0.10ms]
-(pass) detection: negatives > clean: certificate body [0.11ms]
-(pass) session.append > a tool result is stored with placeholders, never the value [37.23ms]
-(pass) session.append > the same value gets the same placeholder in two rows [29.79ms]
-(pass) session.append > a value seen once is caught by its literal in a new context [17.52ms]
-(pass) session.append > a prompt row is scrubbed; thinking and tool_use are left alone [15.88ms]
-(pass) session.append > counts hold rule names and numbers only, and another plugin reads them [18.72ms]
-(pass) when the person means it > /scrub keep-next lets exactly one prompt reach the model as typed [16.89ms]
-(pass) repo config > a value the repo allowlists by digest, and a rule it turns off, pass through [15.07ms]
-(pass) failure > a row the scrubber cannot check is stored withheld, not raw (fail-closed) [13.70ms]
-(pass) failure > a failed count write never withholds a row (bookkeeping fails open) [14.54ms]
-(pass) failure > three failures in a row trip the breaker: the person is told how to turn it off [15.77ms]
-(pass) failure > /scrub off passes rows through and leaves a notice in the transcript [15.34ms]
-(pass) failure > Harnu's flag file turns a running session off within one 5 s check [15.73ms]
-(pass) tool.call > the tool's structured record is scrubbed before core stores it [25.08ms]
-(pass) tool.call > an errored result that holds a secret becomes a deny carrying the redacted text [13.75ms]
-(pass) tool.call > media bytes in a tool's record are left alone [14.52ms]
-(pass) resolution > into a gitignored file the real value goes back with no question [16.27ms]
-(pass) resolution > into a tracked file it is refused, and nothing is written [14.61ms]
-(pass) resolution > into any other path the person is asked; "Keep redacted" writes nothing [19.86ms]
-(pass) resolution > with nobody to answer the question (a -p run), nothing is written [18.86ms]
-(pass) resolution > a path the repo lists under resolveInto resolves with no question [15.16ms]
-(pass) resolution > a placeholder this session cannot resolve (resumed, parked, reloaded) stops the write; re-reading restores it [14.90ms]
-(pass) resolution > a placeholder resolves for Bash only after the person allows it [15.07ms]
+(pass) detection: negatives > clean: counter named tokens [0.09ms]
+(pass) detection: negatives > clean: card slug with a mixed-case id [0.15ms]
+(pass) detection: negatives > clean: branch slug with digits [0.18ms]
+(pass) detection: negatives > clean: ULID in a URL path [0.37ms]
+(pass) detection: negatives > clean: SSH public key [0.17ms]
+(pass) detection: negatives > clean: go.sum hash [0.13ms]
+(pass) detection: negatives > clean: CSP nonce [0.13ms]
+(pass) detection: negatives > clean: certificate body [0.14ms]
+(pass) session.append > a tool result is stored with placeholders, never the value [34.17ms]
+(pass) session.append > the same value gets the same placeholder in two rows [18.45ms]
+(pass) session.append > a value seen once is caught by its literal in a new context [17.75ms]
+(pass) session.append > a prompt row is scrubbed; thinking and tool_use are left alone [16.86ms]
+(pass) session.append > counts hold rule names and numbers only, and another plugin reads them [20.82ms]
+(pass) when the person means it > /scrub keep-next lets exactly one prompt reach the model as typed [20.83ms]
+(pass) repo config > a value the repo allowlists by digest, and a rule it turns off, pass through [18.43ms]
+(pass) failure > a row the scrubber cannot check is stored withheld, not raw (fail-closed) [15.52ms]
+(pass) failure > a failed count write never withholds a row (bookkeeping fails open) [15.03ms]
+(pass) failure > three failures in a row trip the breaker: the person is told how to turn it off [16.40ms]
+(pass) failure > /scrub off passes rows through and leaves a notice in the transcript [16.66ms]
+(pass) failure > Harnu's flag file turns a running session off within one 5 s check, and back on when it goes [29.48ms]
+(pass) failure > a Bash command or a write that names the off switch is refused [14.78ms]
+(pass) failure > while off, a placeholder is still never written into a file [16.06ms]
+(pass) tool.call > the tool's structured record is scrubbed before core stores it [15.50ms]
+(pass) tool.call > an errored result that holds a secret becomes a deny carrying the redacted text [15.30ms]
+(pass) tool.call > media bytes in a tool's record are left alone [13.82ms]
+(pass) resolution > into a gitignored file the real value goes back with no question [22.81ms]
+(pass) resolution > a tracked file in a worktree nested under an ignored dir is still tracked: git runs in its own folder [15.35ms]
+(pass) resolution > a gitignored link to a tracked file is classified by where it lands [15.48ms]
+(pass) resolution > into a tracked file it is refused, and nothing is written [15.30ms]
+(pass) resolution > into any other path the person is asked; "Keep redacted" writes nothing [17.31ms]
+(pass) resolution > with nobody to answer the question (a -p run), nothing is written [15.65ms]
+(pass) resolution > a path the repo lists under resolveInto resolves with no question [18.68ms]
+(pass) resolution > a placeholder this session cannot resolve (resumed, parked, reloaded) stops the write; re-reading restores it [25.15ms]
+(pass) resolution > a placeholder resolves for Bash only after the person allows it [25.05ms]
 
- 63 pass
+ 67 pass
  0 fail
-Ran 63 tests across 1 file. [0.52s]
+Ran 67 tests across 1 file. [0.63s]
 ```
 
-## 3. What the tests cover
+## 3. The new round-3 tests catch the round-3 bugs
+
+The same test file, run against the round-2 `register.ts` (the one pasted at commit `63c252a`):
+
+```text
+(fail) failure > Harnu's flag file turns a running session off within one 5 s check, and back on when it goes [28.73ms]
+(fail) failure > a Bash command or a write that names the off switch is refused [16.05ms]
+(fail) failure > while off, a placeholder is still never written into a file [16.12ms]
+(fail) resolution > a tracked file in a worktree nested under an ignored dir is still tracked: git runs in its own folder [17.25ms]
+(fail) resolution > a gitignored link to a tracked file is classified by where it lands [15.40ms]
+ 62 pass
+ 5 fail
+```
+
+The five that fail are exactly the round-3 tests: the nested worktree (N1), the link (N2), the flag
+both ways and the switch guard (N3), and the writer guard while off (N4).
+
+## 4. What the tests cover
 
 **Detection matrix (U-1).**
 
@@ -588,13 +690,13 @@ Ran 63 tests across 1 file. [0.52s]
   shapes a verifier probed in round 1 (an SSH public key, a `go.sum` hash, a CSP nonce, a certificate
   body and a ULID), plus the placeholder itself.
 
-**Behaviour tests (22).**
+**Behaviour tests (26).**
 
-| Group                    | What it proves                                                                                                                                                                                                                                                                      |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session.append`         | A row is stored with placeholders. A value keeps its placeholder across rows. A value seen once is caught by its literal in a context no rule matches. Pinned blocks are left alone. Counts hold no value or tag, and another plugin reads them.                                    |
-| when the person means it | `/scrub keep-next` lets exactly one prompt through.                                                                                                                                                                                                                                 |
-| repo config              | Digest allowlist and `disable` work.                                                                                                                                                                                                                                                |
-| failure                  | Fail-closed on a safety failure. Fail-open on a bookkeeping failure. The breaker trips at three with a toast naming `/scrub off`. `/scrub off` passes rows and leaves a notice. Harnu's flag file turns a running session off within one 5 s check.                                 |
-| `tool.call`              | The structured record is scrubbed. An errored result with a secret becomes a deny carrying the redacted text. Media bytes are skipped.                                                                                                                                              |
-| resolution               | Gitignored → silent, with a context note to the model. Tracked → refused. Other path → asked; "Keep redacted" writes nothing. Nobody to ask → refused. `resolveInto` → silent. Unknown placeholder (resumed, parked, reloaded) → refused, then restored by a re-read. Bash → asked. |
+| Group                    | What it proves                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session.append`         | A row is stored with placeholders. A value keeps its placeholder across rows. A value seen once is caught by its literal in a context no rule matches. Pinned blocks are left alone. Counts hold no value or tag, and another plugin reads them.                                                                                                                                                                                             |
+| when the person means it | `/scrub keep-next` lets exactly one prompt through.                                                                                                                                                                                                                                                                                                                                                                                          |
+| repo config              | Digest allowlist and `disable` work.                                                                                                                                                                                                                                                                                                                                                                                                         |
+| failure                  | Fail-closed on a safety failure. Fail-open on a bookkeeping failure. The breaker trips at three with a toast naming `/scrub off`. `/scrub off` passes rows and leaves a notice. Harnu's flag file turns a running session off within one 5 s check, and back on when it goes. A Bash call or a write naming the switch is refused. While off, a placeholder is still never written into a file.                                              |
+| `tool.call`              | The structured record is scrubbed. An errored result with a secret becomes a deny carrying the redacted text. Media bytes are skipped.                                                                                                                                                                                                                                                                                                       |
+| resolution               | Gitignored → silent, with a context note to the model. A tracked file in a worktree nested under an ignored dir → refused, git asked from the worktree's folder. A gitignored link to a tracked file → refused. Tracked → refused. Other path → asked; "Keep redacted" writes nothing. Nobody to ask → refused. `resolveInto` → silent. Unknown placeholder (resumed, parked, reloaded) → refused, then restored by a re-read. Bash → asked. |
