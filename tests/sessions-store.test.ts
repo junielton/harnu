@@ -669,6 +669,75 @@ describe('useSessionsStore reload coalescing + in-place reconcile (sidebar-freez
     expect(order).toEqual(['newer', 'real-twin'])
   })
 
+  it('T459 AC-7: an IN-PLACE synthetic→real migration keeps its Fleet-rail position across the next reload', async () => {
+    // Same shape as the twin-collapse test above, but the synthetic row is RENAMED
+    // in place (same object). The next `index:updated` reconcile then overwrites
+    // its `created` with the JSONL's later birthtime — the sort key must not move.
+    const t0 = Date.now()
+    const at = (offsetMs: number): string => new Date(t0 + offsetMs).toISOString()
+    disk = [
+      folder([session()]),
+      {
+        path: '/repos/beta',
+        alias: 'beta',
+        gitBranch: '',
+        sessions: [
+          session({
+            sessionId: 'newer',
+            fullPath: '/repos/beta/newer.jsonl',
+            projectPath: '/repos/beta',
+            created: at(1000),
+            modified: at(1000)
+          })
+        ]
+      }
+    ]
+    const store = useSessionsStore()
+    await store.init()
+
+    const synthId = store.createNewSession('/repos/alpha')!
+    const synth = store.folders
+      .find((f) => f.path === '/repos/alpha')!
+      .sessions.find((s) => s.sessionId === synthId)!
+    synth.created = at(0)
+
+    // The watcher reports the new transcript BEFORE any reload exists for it:
+    // `collapseSyntheticInto` renames the placeholder in place.
+    cb.onSessionAdded!({ slug: encodePathToSlug('/repos/alpha'), sessionId: 'real-inplace' })
+    const alpha = store.folders.find((f) => f.path === '/repos/alpha')!
+    expect(alpha.sessions.find((s) => s.sessionId === 'real-inplace')).toBe(synth)
+
+    // Next index update: the disk row carries the JSONL's later `created` (T0+2s,
+    // i.e. AFTER `newer`) and overwrites the renamed row's field.
+    disk = [
+      folder([
+        session(),
+        session({
+          sessionId: 'real-inplace',
+          summary: 'in place',
+          created: at(2000),
+          modified: at(2000)
+        })
+      ]),
+      disk[1]
+    ]
+    cb.onIndexUpdated!({ slug: 'x' })
+    await flushDebounce()
+
+    const row = alpha.sessions.find((s) => s.sessionId === 'real-inplace')!
+    expect(row.created).toBe(at(2000)) // proves the reconcile really rewrote `created`
+    row.taskState = 'completed'
+    store.folders
+      .find((f) => f.path === '/repos/beta')!
+      .sessions.find((s) => s.sessionId === 'newer')!.taskState = 'completed'
+
+    const order = store.boardBuckets
+      .find((b) => b.state === 'done')!
+      .sessions.map((s) => s.sessionId)
+    // Newest first: `newer` (T0+1s) stays above the migrated row (anchored at T0).
+    expect(order).toEqual(['newer', 'real-inplace'])
+  })
+
   it('keyboard arrow navigation reaches a folder terminal, and Enter selects it', async () => {
     const store = useSessionsStore()
     await store.init()
