@@ -34,9 +34,15 @@ import {
   buildBundles,
   containerFolderPaths,
   staleReleases,
+  withDockerBlind,
   type CanonicalPath
 } from './bundle-core'
-import { dockerIsUnavailable, findForeignCheckouts, resolveRealPaths } from './gc-shell'
+import {
+  dockerDaemonDown,
+  dockerIsUnavailable,
+  findForeignCheckouts,
+  resolveRealPaths
+} from './gc-shell'
 import { collectForeignCheckouts, explainFailedWalks } from './gc-foreign'
 import { lockedItemIds } from './gc-locked'
 import { sessionsFromFleet } from './gc-sessions'
@@ -143,12 +149,16 @@ async function dockerPicture(): Promise<{
   containers: InspectedContainer[]
   df: Map<string, VolumeFact>
   available: boolean
+  /** The CLI is there but the daemon did not answer: what is "none" here was really "unseen". */
+  blind: boolean
 }> {
   try {
     const containers = await inspectAll({ strict: true })
-    return { containers, df: await strictVolumeFacts(), available: true }
+    return { containers, df: await strictVolumeFacts(), available: true, blind: false }
   } catch (err) {
-    if (dockerIsUnavailable(err)) return { containers: [], df: new Map(), available: false }
+    if (dockerIsUnavailable(err)) {
+      return { containers: [], df: new Map(), available: false, blind: dockerDaemonDown(err) }
+    }
     throw err
   }
 }
@@ -208,7 +218,7 @@ export async function gatherGc(
   const repoPaths = snap?.repos.map((r) => r.repoPath) ?? []
   const itemPaths = items.flatMap((i) => (i.path ? [i.path] : []))
 
-  const [{ containers, df, available }, sets, fleet, known, journal, lockedPaths] =
+  const [{ containers, df, available, blind }, sets, fleet, known, journal, lockedPaths] =
     await Promise.all([
       dockerPicture(),
       computeFolderSets(),
@@ -334,6 +344,8 @@ export async function gatherGc(
   bundles = explainFailedWalks(bundles, foreign.failed)
   // An unreadable transcripts root says nothing about recent activity: nothing is ready.
   if (transcripts.rootUnreadable) bundles = withGraceUnknown(bundles)
+  // A daemon that was down at this scan says nothing about the stacks: no bundle was judged on them.
+  if (blind) bundles = withDockerBlind(bundles)
 
   // A release is dropped only when its bundle is in this gather and no longer strongly merged,
   // so a branch that reopens does not come back pre-released. A gather that cannot see the

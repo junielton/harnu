@@ -83,6 +83,8 @@ export function planCycle(bundles: readonly WorktreeBundle[], prefs: GcPrefs): C
         b.bucket === 'ready' &&
         // Refused at the reprobe lately: trying again every cycle only spends the cap on it.
         !b.reprobeRefusal &&
+        // Scanned while Docker was down: its stacks were never seen, so the reprobe would refuse it.
+        !b.dockerBlind &&
         CLEANABLE_KINDS.includes(b.item.kind) &&
         !b.keep &&
         !b.isMainCheckout &&

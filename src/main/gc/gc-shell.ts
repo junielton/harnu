@@ -464,6 +464,9 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       } catch (err) {
         return { ok: false, reason: `probe-failed: ${messageOf(err)}` }
       }
+      // The scan could not see Docker, so its "no stacks" proves nothing about this worktree: refuse
+      // before any probe, whatever Docker says now. A scan that saw Docker is what lifts it.
+      if (b.dockerBlind === true) return { ok: false, reason: 'scan-blind' }
       const item = b.item
       // cleanItem refuses a non-harvestable item at its first guard, after the docker steps
       // would already have run, so refuse here before anything destructive.

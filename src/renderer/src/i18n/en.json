@@ -2649,6 +2649,7 @@
         "pathUnresolved": "A path tied to this worktree could not be resolved, so Harnu cannot tell what uses it and left it alone.",
         "stackPresent": "A Docker stack is running from this worktree, so it was left alone.",
         "dockerUnavailable": "Docker is not running, so Harnu could not check this worktree safely and left it alone. Start Docker, then Retry.",
+        "scanBlind": "Docker wasn't running when Harnu scanned, so it could not see this worktree's stacks and left it alone. Start Docker, then Scan now.",
         "probeFailed": "Checking this worktree failed, so it was left alone.",
         "nestedWorktree": "Another worktree lives inside this one, so it was left alone.",
         "sharedStack": "Another stack also runs from this worktree, so it was left alone.",

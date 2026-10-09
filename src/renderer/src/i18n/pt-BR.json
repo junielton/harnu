@@ -2649,6 +2649,7 @@
         "pathUnresolved": "Um caminho ligado a esta worktree não pôde ser resolvido, então o Harnu não sabe o que a usa e a deixou como está.",
         "stackPresent": "Uma stack do Docker está rodando a partir desta worktree, então ela foi deixada como está.",
         "dockerUnavailable": "O Docker não está rodando, então o Harnu não pôde checar esta worktree com segurança e a deixou como está. Inicie o Docker e tente de novo.",
+        "scanBlind": "O Docker não estava rodando quando o Harnu varreu, então ele não pôde ver as stacks deste worktree e o deixou como está. Inicie o Docker e use Escanear agora.",
         "probeFailed": "A checagem desta worktree falhou, então ela foi deixada como está.",
         "nestedWorktree": "Outra worktree vive dentro desta, então ela foi deixada como está.",
         "sharedStack": "Outra stack também roda a partir desta worktree, então ela foi deixada como está.",
