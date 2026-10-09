@@ -5645,10 +5645,10 @@ border-border-2`, radius 9px, `--shadow-pop`, `.anim-fade-in-scale`, focus trap
   warning with the same copy as the End dialog (`mission.end.warnings.*`: step
   titles, never ids). They are information; they never disable a row.
 - **Footer** (`border-t border-border`, `padding: 12px 18px`, `gap: 8px`,
-  right-aligned): **Close** (Button `ghost`) + **Close {count} as delivered…**
+  right-aligned): **Cancel** (Button `ghost`) + **Close {count} as delivered…**
   (Button `success`, `check` 14px). The primary is **disabled at 0 selected**. It
   only **opens** the confirm; it never closes anything itself.
-- **Exits:** Close, `X`, `Esc` and a backdrop click dismiss it (not while a bulk
+- **Exits:** Cancel, `X`, `Esc` and a backdrop click dismiss it (not while a bulk
   close is running, and `Esc` goes to the confirm first when that is open). It also
   closes itself when the pile is empty after a successful close.
 - **Selection state:** local to the dialog. Group 1 starts selected, group 2
