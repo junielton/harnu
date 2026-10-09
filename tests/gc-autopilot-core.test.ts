@@ -209,6 +209,11 @@ describe('applyFailures / pruneFailures (spec §4)', () => {
     })
   })
 
+  it('remembers that the item was ready, so a retry can take the safe path (TM-05)', () => {
+    const [b] = applyFailures([ready('a', 5)], new Map([[ready('a', 5).item.id, failure]]))
+    expect(b!.retryAs).toBe('ready')
+  })
+
   it('leaves other bundles and items that are not ready alone', () => {
     const a = ready('a', 5)
     const d = bundle('/ws/wt/d', 'review')

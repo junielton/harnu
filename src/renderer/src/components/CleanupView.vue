@@ -28,6 +28,7 @@ import { identText } from './cleanup-ident'
 import {
   captureConfirm,
   confirmChanged,
+  isRetryAsReady,
   selectionStats,
   toggleChecked,
   type CapturedConfirm
@@ -222,9 +223,10 @@ function openRemove(ids: string[]): void {
 }
 /** Retry re-opens the confirm for the item's CURRENT bucket — never a dialog that would send nothing. */
 function retry(id: string): void {
-  const bucket = model.value?.byId.get(id)?.bucket
-  if (bucket === 'ready') openReady([id])
-  else if (bucket === 'review') openRemove([id])
+  const block = model.value?.byId.get(id)
+  // A ready item that halted mid-clean is listed under review, but its retry is the guarded ready path.
+  if (block?.bucket === 'ready' || (block && isRetryAsReady(block))) openReady([id])
+  else if (block?.bucket === 'review') openRemove([id])
 }
 function errorToast(title: string, e: unknown): void {
   ui.pushToast({

@@ -65,6 +65,7 @@ import {
   type ExecFn
 } from './dehydrate-shell'
 import { readHydrationFile, updateHydrationFile } from './hydration-store'
+import { workStampOf } from '../gc/gc-work-stamp'
 
 export { ghCacheFresh }
 
@@ -827,6 +828,17 @@ async function scanOneRepo(
     const hydration = pending.get(item.id)
     if (hydration && item.hydration === null) deriveInto(item, hydration, manifest, null)
   }
+
+  // TM-05: a fingerprint of the uncommitted work, for the force path to compare against. Only a
+  // worktree that has any is probed; a probe that fails leaves null, which the force path reads as
+  // "had no work" and so refuses if work shows up later.
+  await mapLimit(
+    items.filter((i) => i.path && (i.blockers.includes('dirty') || i.untracked.length > 0)),
+    MEASURE_CONCURRENCY,
+    async (item) => {
+      item.workStamp = await workStampOf(reaperExec, item.path!).catch(() => null)
+    }
+  )
 
   const reconcile = [...pending.entries()].flatMap(([id, h]) => {
     const item = items.find((i) => i.id === id)

@@ -536,6 +536,31 @@ describe('Cleanup screen — Retry follows the bucket', () => {
     expect(opts.expected[id].bucket).toBe('ready')
   })
 
+  it('a failed READY item (halted mid-clean) retries through the ready confirm, not the review one (TM-05)', async () => {
+    const f = wt(
+      'halted',
+      'review',
+      500 * MIB,
+      {},
+      {
+        reason: { code: 'cleanup-failed', detail: 'Cleanup stopped at drop-deps: ENOTEMPTY' },
+        retryAs: 'ready'
+      }
+    )
+    const api = install(snap({ bundles: [f] }))
+    await mountView()
+    const id = f.item.id
+    await failed(api, id)
+    await dom(`[data-block-id="${id}"]`).trigger('click')
+    await dom('[data-testid="panel-retry"]').trigger('click')
+    expect(body('bulk-confirm')!.className).not.toContain('text-red')
+    ;(body('bulk-confirm') as HTMLButtonElement).click()
+    await flushPromises()
+    const [ids, opts] = api.gcClean.mock.calls[0]
+    expect(ids).toEqual([id])
+    expect(opts.confirmed).toBeUndefined() // the guarded path needs no force confirmation
+  })
+
   it('a failed review item opens the review confirm — Danger, and confirmed', async () => {
     const api = install(snap())
     await mountView()

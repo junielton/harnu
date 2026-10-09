@@ -40,6 +40,11 @@ export interface ManualCleanDeps {
    * since then keeps it.
    */
   freshOrphans(): Promise<OrphanVolumeItem[]>
+  /**
+   * A fresh fingerprint of the uncommitted work in a worktree (null when none); throws when it
+   * cannot be read. The force path compares it with the one the dialog was built from.
+   */
+  workStampOf(path: string): Promise<string | null>
   /** `docker volume rm` for exactly these names. */
   removeOrphanVolumes(names: string[]): Promise<HousekeepingResult>
   /** What a cleaned worktree leaves in Docker, so its volumes can be offered for review. */
@@ -87,8 +92,24 @@ export function submitManualClean(
       if (bundleChangedSince(b, seen)) return refused(id, 'changed-since-confirm')
       // Anything that is not a proven ready item needs its OWN confirmation, and then takes
       // the forced ops.
-      const forced = b.bucket !== 'ready'
+      // A ready item whose cleanup halted is shown as `cleanup-failed` review (`retryAs`), but its
+      // facts still say ready: its Retry takes the same guarded path the autopilot did, with the
+      // dirty and unpushed guards and `branch -d`, not the operator's force path (TM-05).
+      const retryAsReady = b.bucket === 'review' && b.retryAs === 'ready'
+      const forced = b.bucket !== 'ready' && !retryAsReady
       if (forced && !confirmed.has(id)) return refused(id, 'needs-confirmation')
+      // The force path waives the dirty guard, so it re-reads the uncommitted work and halts when it
+      // is not what the dialog showed: a file edited since then would otherwise go to the trash
+      // unseen. The tip is already compared above and again by the reprobe.
+      if (forced && b.item.path) {
+        let live: string | null
+        try {
+          live = await deps.workStampOf(b.item.path)
+        } catch (err) {
+          return refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
+        }
+        if ((seen.workStamp ?? null) !== live) return refused(id, 'work-changed-since-confirm')
+      }
       const batchOpts: { removeVolumes: boolean; confirmReview?: boolean } = {
         // D1: worktree cleanup never removes a volume, ready or reviewed, bulk or single. What
         // it leaves behind comes back as an orphan-volume review item.
@@ -97,7 +118,10 @@ export function submitManualClean(
         // never by the autopilot.
         confirmReview: forced
       }
-      const [result] = await runBatch([b], deps.opsFor('operator', forced), batchOpts)
+      // The pipeline only runs ready bundles (or a confirmed review one): a retried item runs as
+      // the ready item it still is.
+      const runnable: WorktreeBundle = retryAsReady ? { ...b, bucket: 'ready', reason: null } : b
+      const [result] = await runBatch([runnable], deps.opsFor('operator', forced), batchOpts)
       if (result!.ok) {
         deps.rememberLeftovers?.(leftBehind(b, gathered.housekeeping?.volumes ?? []))
       }

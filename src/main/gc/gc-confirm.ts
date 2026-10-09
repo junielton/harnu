@@ -21,7 +21,8 @@ export function expectedOf(b: WorktreeBundle): GcExpected {
     stackIds: sorted(b.stackIds),
     ownedVolumes: sorted(b.ownedVolumes),
     bytes: b.item.diskBytes ?? null,
-    path: b.item.path ?? null
+    path: b.item.path ?? null,
+    workStamp: b.item.workStamp ?? null
   }
 }
 

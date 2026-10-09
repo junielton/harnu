@@ -156,6 +156,8 @@ export function applyFailures(
     return {
       ...b,
       bucket: 'review' as const,
+      // Only a ready item is rewritten, so this is always true: a retry is the guarded path.
+      retryAs: 'ready' as const,
       reason: {
         code: 'cleanup-failed' as const,
         detail: `Cleanup stopped at ${f.step}: ${f.error}`

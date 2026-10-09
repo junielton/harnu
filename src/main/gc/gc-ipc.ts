@@ -21,6 +21,8 @@ import type { ReaperControl } from '../reaper/reaper-ipc'
 import { bucketFeed, setInheritedBuckets } from './gc-buckets'
 import { withActor } from './gc-actor'
 import { planNextClean } from './autopilot-core'
+import { workStampOf } from './gc-work-stamp'
+import { reaperExec } from '../reaper/scanner-shell'
 import { pressKeep, protectedFromGather } from './gc-keep'
 import {
   LEFTOVERS_FILE,
@@ -240,6 +242,7 @@ export async function registerGcHandlers(
             forced ? createForcedGcOps(withRun('operator')) : createGcOps(withRun('operator')),
           // S4's runner builds the argv itself (`docker volume rm <name>`, name-checked).
           freshOrphans,
+          workStampOf: (p) => workStampOf(reaperExec, p),
           removeOrphanVolumes: (names) =>
             runHousekeeping({
               builderPruneUntilHours: null,

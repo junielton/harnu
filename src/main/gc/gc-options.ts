@@ -29,6 +29,9 @@ function parseExpected(raw: unknown): GcExpected | null {
   }
   const project = e.project === undefined || typeof e.project === 'string' || e.project === null
   if (!project) return null
+  if (!(e.workStamp === undefined || e.workStamp === null || typeof e.workStamp === 'string')) {
+    return null
+  }
   return {
     bucket,
     reasonCode: e.reasonCode,
@@ -37,6 +40,7 @@ function parseExpected(raw: unknown): GcExpected | null {
     ownedVolumes,
     bytes: e.bytes,
     path: e.path,
+    ...(e.workStamp !== undefined ? { workStamp: e.workStamp as string | null } : {}),
     ...(e.project !== undefined ? { project: e.project as string | null } : {})
   }
 }

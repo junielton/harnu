@@ -128,6 +128,12 @@ export interface BundleFacts {
 export interface WorktreeBundle extends BundleFacts {
   bucket: Bucket
   reason: ReviewReason | null
+  /**
+   * Set when a cleanup of a proven ready item halted and the item is shown as `cleanup-failed`
+   * review: the facts still say ready, so a Retry takes the SAME guarded path the autopilot
+   * uses, not the operator's force path (TM-05). Never set by the scan itself.
+   */
+  retryAs?: 'ready'
 }
 
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`

@@ -423,8 +423,14 @@ export function expectedFor(b: GcBlock): GcExpected {
     stackIds: sorted(b.stackIds),
     ownedVolumes: sorted(b.ownedVolumes),
     bytes: b.hasBytes ? b.bytes : null,
-    path: b.bundle?.item.path ?? null
+    path: b.bundle?.item.path ?? null,
+    workStamp: b.bundle?.item.workStamp ?? null
   }
+}
+
+/** A halted ready item: shown as review (`cleanup-failed`), retried as the ready item it still is. */
+export function isRetryAsReady(b: GcBlock): boolean {
+  return b.kind === 'worktree' && b.bucket === 'review' && b.bundle?.retryAs === 'ready'
 }
 
 /**
@@ -442,7 +448,9 @@ export function cleanRequestFor(
   const expected: Record<string, GcExpected> = {}
   for (const id of ids) {
     const b = model.byId.get(id)
-    if (!b || b.bucket !== want) continue
+    // A ready item whose cleanup halted is listed as review (`retryAs`), but its Retry is the
+    // ready path: guarded, and needing no confirmation of its own (TM-05).
+    if (!b || (b.bucket !== want && !(mode === 'ready' && isRetryAsReady(b)))) continue
     kept.push(id)
     expected[id] = expectedFor(b)
   }
