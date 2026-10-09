@@ -320,6 +320,40 @@ describe('Cleanup screen — the autopilot badge tells the truth', () => {
     expect(badge()).toBe(t('cleanup.gc.status.badgePaused'))
   })
 
+  describe('the summary line and the badge never disagree', () => {
+    const summary = (): string => domGet('[data-testid="cleanup-summary"]').text()
+
+    it('on and acknowledged: both say on', async () => {
+      install(snap({}, { autopilot: true, firstReportAcknowledged: true }))
+      await mountView()
+      expect(summary()).toContain('autopilot on')
+      expect(badge()).toContain('Autopilot on · every')
+    })
+
+    it('unacknowledged: the summary says report only, not on', async () => {
+      install(snap({}, { autopilot: true, firstReportAcknowledged: false }))
+      await mountView()
+      expect(summary()).toContain('autopilot report only')
+      expect(summary()).not.toContain('autopilot on')
+      expect(badge()).toContain('report only')
+    })
+
+    it('scan off: the summary says paused, not on', async () => {
+      install(snap({ backgroundScan: false }, { autopilot: true, firstReportAcknowledged: true }))
+      await mountView()
+      expect(summary()).toContain('autopilot paused')
+      expect(summary()).not.toContain('autopilot on')
+      expect(badge()).toContain('paused')
+    })
+
+    it('off: both say off', async () => {
+      install(snap({}, { autopilot: false }))
+      await mountView()
+      expect(summary()).toContain('autopilot off')
+      expect(badge()).toBe('Autopilot off')
+    })
+  })
+
   it('off stays "Autopilot off" whatever the scan does', async () => {
     install(snap({ backgroundScan: false }, { autopilot: false }))
     await mountView()

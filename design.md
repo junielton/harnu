@@ -8358,7 +8358,7 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
    `layout-grid` / `list`, 12px) and a **rescan icon button** (Ghost, icon-only, `RefreshCw` — it spins while
    a scan runs; `aria-label` "Scan now").
    - Summary line: `Recycle` icon (`--green`), 13px/20px `--text-2`, then
-     `{n} GB reclaimable · autopilot on|off · next cycle in {t}`; the size is 600-weight `--text`.
+     `{n} GB reclaimable · autopilot on|report only|paused|off · next cycle in {t}` (the same state as the badge below; one computed drives both); the size is 600-weight `--text`.
      "Reclaimable" is everything not In use plus orphan volumes (ready + needs review + orphan volumes);
      Docker build cache is added only when the engine reports it (see "Docker card").
    - Autopilot badge (says what the autopilot is really doing, F1), first match wins: Default

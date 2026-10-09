@@ -382,31 +382,49 @@ const firstCyclePlanned = computed(
  * background scan is off (no timer, so nothing runs), report only until the first report is
  * acknowledged, otherwise on.
  */
-const badge = computed(() => {
+const autopilotState = computed<'off' | 'paused' | 'report-only' | 'on'>(() => {
   const p = prefs.value
-  if (!p?.autopilot) {
-    return {
-      text: t('cleanup.gc.status.badgeOff'),
-      classes: 'border-border bg-surface text-text-3'
-    }
-  }
-  if (gc.snapshot && !gc.snapshot.backgroundScan) {
-    return {
-      text: t('cleanup.gc.status.badgePaused'),
-      classes: 'border-border bg-surface text-warning'
-    }
-  }
-  if (!p.firstReportAcknowledged) {
-    return {
-      text: t('cleanup.gc.status.badgeReportOnly'),
-      classes: 'border-accent-line bg-accent-soft text-accent'
-    }
-  }
-  return {
-    text: t('cleanup.gc.status.badgeOn', { every: intervalText.value }),
-    classes: 'border-green-line bg-green-soft text-green'
+  if (!p?.autopilot) return 'off'
+  if (gc.snapshot && !gc.snapshot.backgroundScan) return 'paused'
+  if (!p.firstReportAcknowledged) return 'report-only'
+  return 'on'
+})
+
+/** The badge and the summary line both read `autopilotState`, so they can never disagree. */
+const badge = computed(() => {
+  switch (autopilotState.value) {
+    case 'off':
+      return {
+        text: t('cleanup.gc.status.badgeOff'),
+        classes: 'border-border bg-surface text-text-3'
+      }
+    case 'paused':
+      return {
+        text: t('cleanup.gc.status.badgePaused'),
+        classes: 'border-border bg-surface text-warning'
+      }
+    case 'report-only':
+      return {
+        text: t('cleanup.gc.status.badgeReportOnly'),
+        classes: 'border-accent-line bg-accent-soft text-accent'
+      }
+    default:
+      return {
+        text: t('cleanup.gc.status.badgeOn', { every: intervalText.value }),
+        classes: 'border-green-line bg-green-soft text-green'
+      }
   }
 })
+const summaryAutopilot = computed(() =>
+  t(
+    {
+      off: 'cleanup.gc.status.autopilotOff',
+      paused: 'cleanup.gc.status.autopilotPaused',
+      'report-only': 'cleanup.gc.status.autopilotReportOnly',
+      on: 'cleanup.gc.status.autopilotOn'
+    }[autopilotState.value]
+  )
+)
 
 /**
  * The acknowledgement also turns on the Docker housekeeping (build cache past the age limit plus dangling
@@ -499,11 +517,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
           </template>
         </i18n-t>
         <span class="text-text-4">·</span>
-        <span>{{
-          prefs?.autopilot
-            ? t('cleanup.gc.status.autopilotOn')
-            : t('cleanup.gc.status.autopilotOff')
-        }}</span>
+        <span data-testid="cleanup-summary-autopilot">{{ summaryAutopilot }}</span>
         <template v-if="nextText">
           <span class="text-text-4">·</span>
           <span>{{ nextText }}</span>

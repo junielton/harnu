@@ -2509,6 +2509,8 @@
         "reclaimable": "{size} reclaimable",
         "autopilotOn": "autopilot on",
         "autopilotOff": "autopilot off",
+        "autopilotPaused": "autopilot paused",
+        "autopilotReportOnly": "autopilot report only",
         "next": {
           "minute": "next cycle in {n} min",
           "hour": "next cycle in {n} h",
