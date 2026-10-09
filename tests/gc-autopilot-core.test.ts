@@ -218,6 +218,25 @@ describe('applyFailures / pruneFailures (spec §4)', () => {
     expect(applyFailures([a, d], failures)).toEqual([a, d])
   })
 
+  it('a halted item whose folder is already gone reads cleanup-failed whatever its bucket', () => {
+    // The trash ran, then prune or branch-delete halted: the folder is gone, so the probes
+    // fail and the bundle is review (or anything), never ready. It must still say what stopped.
+    const d = bundle('/ws/wt/d', 'review')
+    const [out] = applyFailures(
+      [d],
+      new Map([[d.item.id, { step: 'prune', error: 'index.lock exists', at: NOW }]]),
+      new Set([d.item.id])
+    )
+    expect(out).toMatchObject({ bucket: 'review', reason: { code: 'cleanup-failed' } })
+  })
+
+  it('a gone-folder id with no failure note, or a failure on a live folder, is left alone', () => {
+    const d = bundle('/ws/wt/d', 'review')
+    const e = bundle('/ws/wt/e', 'review')
+    const notes = new Map([[e.item.id, failure]])
+    expect(applyFailures([d, e], notes, new Set([d.item.id]))).toEqual([d, e])
+  })
+
   it('prunes missing worktrees and failures older than a day', () => {
     const a = ready('a', 5)
     const b = ready('b', 5)

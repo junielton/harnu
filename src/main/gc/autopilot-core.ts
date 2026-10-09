@@ -131,10 +131,16 @@ export function pruneFailures(
  */
 export function applyFailures(
   bundles: readonly WorktreeBundle[],
-  failures: ReadonlyMap<string, CycleFailure>
+  failures: ReadonlyMap<string, CycleFailure>,
+  /**
+   * Items whose folder is already gone. A halt after the trash (prune, branch-delete) leaves
+   * the folder gone while git still holds a registration and a branch, so the probes fail and
+   * the bundle is anything but ready: it must still say what stopped.
+   */
+  goneIds: ReadonlySet<string> = new Set()
 ): WorktreeBundle[] {
   return bundles.map((b) => {
-    const f = b.bucket === 'ready' ? failures.get(b.item.id) : undefined
+    const f = b.bucket === 'ready' || goneIds.has(b.item.id) ? failures.get(b.item.id) : undefined
     if (!f) return b
     return {
       ...b,

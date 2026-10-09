@@ -84,6 +84,8 @@ export interface GcGathered extends GcGather {
   staleKeeps: StaleKeep[]
   /** Releases whose bundle is gone or no longer strongly merged; the caller clears them. */
   staleReleases: string[]
+  /** Items kept although their folder is gone, because a halted cleanup left a note on them. */
+  goneItemIds: string[]
 }
 
 const COMPOSE_FILES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml']
@@ -201,7 +203,13 @@ export async function gatherGc(
   prefs: GcPrefs,
   now: number,
   /** Compose project → folders a cleaned worktree ran from (gc-leftovers.ts). */
-  rememberedDirs: ReadonlyMap<string, readonly string[]> = new Map()
+  rememberedDirs: ReadonlyMap<string, readonly string[]> = new Map(),
+  /**
+   * Items with a pending failure note. A cleanup that halted after the trash (prune,
+   * branch-delete) leaves the folder gone but a git registration and a branch behind: such an
+   * item stays visible, so what is left is never silently dropped.
+   */
+  keepGone: ReadonlySet<string> = new Set()
 ): Promise<GcGathered> {
   const snap = lastSnapshot()
   const listed = snap?.repos.flatMap((r) => r.items) ?? []
@@ -209,7 +217,8 @@ export async function gatherGc(
   // someone deleted it by hand). A folder that is not there is not a bundle: left in, it only
   // fails every probe and reads as a "Needs review" ghost. An unreadable folder is not gone.
   const gone = await missingFolders(listed.flatMap((i) => (i.path ? [i.path] : [])))
-  const items = listed.filter((i) => !i.path || !gone.has(i.path))
+  const items = listed.filter((i) => !i.path || !gone.has(i.path) || keepGone.has(i.id))
+  const goneItemIds = items.filter((i) => i.path && gone.has(i.path)).map((i) => i.id)
   const repoPaths = snap?.repos.map((r) => r.repoPath) ?? []
   const itemPaths = items.flatMap((i) => (i.path ? [i.path] : []))
 
@@ -304,7 +313,12 @@ export async function gatherGc(
   // Is another checkout (a worktree of another repo, a plain clone) hiding inside a worktree?
   // One walk per worktree on its real path; a walk that fails leaves the worktree out of the
   // answers, so it can never be ready, and its cause is named in the review reason.
-  const foreign = await collectForeignCheckouts(items, canonical, (p) => findForeignCheckouts(p))
+  // A folder that is gone has nothing to walk.
+  const foreign = await collectForeignCheckouts(
+    items.filter((i) => !goneItemIds.includes(i.id)),
+    canonical,
+    (p) => findForeignCheckouts(p)
+  )
 
   // Only folders that cannot pose as a worktree nested in a bundle (see foldersForBundles).
   const bundleFolders = foldersForBundles(guards.knownFolders, itemPaths, repoPaths)
@@ -395,6 +409,7 @@ export async function gatherGc(
       : docker,
     orphanVolumes: orphanVolumeItems(orphanNames, df),
     staleKeeps,
-    staleReleases: staleReleaseIds
+    staleReleases: staleReleaseIds,
+    goneItemIds
   }
 }

@@ -255,6 +255,29 @@ describe('gatherGc: no ghost bundles for a folder that is gone (F0)', () => {
     expect(g.bundles).toEqual([])
   })
 
+  it('a halted item (it has a failure note) stays even though its folder is gone', async () => {
+    stale()
+    const g = await gatherGc({ ...released(), graceDays: 2 }, NOW, new Map(), new Set([item().id]))
+    expect(g.bundles.map((b) => b.item.id)).toEqual([item().id])
+    expect(g.goneItemIds).toEqual([item().id])
+  })
+
+  it('a kept gone item is not walked for foreign checkouts', async () => {
+    stale()
+    h.walkError = Object.assign(new Error('walked a folder that is gone'), { code: 'ENOENT' })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await gatherGc({ ...released(), graceDays: 2 }, NOW, new Map(), new Set([item().id]))
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('a failure note for another item keeps nothing else', async () => {
+    stale()
+    const g = await gatherGc({ ...released(), graceDays: 2 }, NOW, new Map(), new Set(['other']))
+    expect(g.bundles).toEqual([])
+    expect(g.goneItemIds).toEqual([])
+  })
+
   it('its release mark is still dropped, since the bundle is gone', async () => {
     stale()
     const g = await gatherGc({ ...released(), graceDays: 2 }, NOW)

@@ -27,7 +27,9 @@ export interface GathererDeps {
   gatherGc: (
     prefs: GcPrefs,
     now: number,
-    remembered: ReadonlyMap<string, readonly string[]>
+    remembered: ReadonlyMap<string, readonly string[]>,
+    /** Items with a pending failure note: kept in the gather even when their folder is gone. */
+    keepGone: ReadonlySet<string>
   ) => Promise<GcGathered>
   state: CycleState
   leftovers: { get: () => LeftoverFile; set: (next: LeftoverFile) => void }
@@ -58,10 +60,18 @@ export function createGatherer(deps: GathererDeps): Gatherer {
   /** The raw gather with the failure overlay on top: a halted item reads Needs review. */
   const read = async (persisting: boolean): Promise<GcGathered> => {
     const now = deps.now()
-    const g = await deps.gatherGc(deps.prefs(), now, toDirMap(deps.leftovers.get()))
+    const g = await deps.gatherGc(
+      deps.prefs(),
+      now,
+      toDirMap(deps.leftovers.get()),
+      new Set(deps.state.failures.keys())
+    )
     // Pruning forgets failure notes for bundles it cannot see, so only a persisting gather does.
     if (persisting) pruneFailures(deps.state.failures, g.bundles, now)
-    return { ...g, bundles: applyFailures(g.bundles, deps.state.failures) }
+    return {
+      ...g,
+      bundles: applyFailures(g.bundles, deps.state.failures, new Set(g.goneItemIds))
+    }
   }
 
   const self: Gatherer = {

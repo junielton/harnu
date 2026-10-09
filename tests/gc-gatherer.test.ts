@@ -317,3 +317,41 @@ describe('createAgentService (T445 delta 2)', () => {
     expect(Object.keys(svc).sort()).toEqual(['release', 'snapshot'])
   })
 })
+
+describe('createGatherer: a halted item whose folder is gone stays visible (F0 delta 1, item 1)', () => {
+  // `cleanItem` trashes the folder before prune and branch-delete. If it halts there the
+  // folder is gone but git still holds a registration and a branch: the item must keep its
+  // note and keep reading "Cleanup stopped at …", gather after gather.
+  const halted = (): GcGathered => {
+    const b = bundle(WT_READY, { bucket: 'review' })
+    return gathered({ bundles: [b], goneItemIds: [b.item.id] } as Partial<GcGathered>)
+  }
+
+  it('asks the gather to keep the ids that have a failure note', async () => {
+    const g = halted()
+    const { spies, gatherer } = setup(g)
+    spies.state.failures.set(g.bundles[0]!.item.id, { step: 'prune', error: 'locked', at: NOW })
+    await gatherer.gather()
+    const keep = spies.gatherGc.mock.calls[0]![3] as ReadonlySet<string>
+    expect([...keep]).toEqual([g.bundles[0]!.item.id])
+  })
+
+  it.each(['prune', 'branch-delete'])(
+    'a halt at %s reads cleanup-failed on every gather',
+    async (step) => {
+      const g = halted()
+      const id = g.bundles[0]!.item.id
+      const { spies, gatherer } = setup(g)
+      spies.state.failures.set(id, { step, error: 'fatal: Unable to create index.lock', at: NOW })
+      for (let i = 0; i < 3; i++) {
+        const out = await gatherer.gather()
+        expect(out.bundles).toHaveLength(1)
+        expect(out.bundles[0]).toMatchObject({
+          bucket: 'review',
+          reason: { code: 'cleanup-failed' }
+        })
+        expect(spies.state.failures.has(id)).toBe(true)
+      }
+    }
+  )
+})
