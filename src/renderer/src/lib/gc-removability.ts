@@ -80,14 +80,19 @@ const refused = (reason: RemovalRefusal, hint?: string): Removability =>
  * Whether `gc:clean` would take this worktree bundle, judged from its facts, in the order main
  * judges them. `now` is the clock the grace window is held against (main re-checks it at the click).
  */
-export function bundleRemovability(b: WorktreeBundle, now: number = Date.now()): Removability {
+export function bundleRemovability(
+  b: WorktreeBundle,
+  now: number = Date.now(),
+  /** What the CURRENT prefs say about this bundle; a mark made since the scan is not in its flags. */
+  protection: 'never-clean' | 'kept' | null = null
+): Removability {
   const path = b.item.path
   // refusalFor (autopilot-core)
   if (b.isMainCheckout || (!!path && looseKey(path) === looseKey(b.item.repoPath))) {
     return refused('main-checkout')
   }
-  if (b.neverClean) return refused('never-clean')
-  if (b.keep) return refused('kept')
+  if (b.neverClean || protection === 'never-clean') return refused('never-clean')
+  if (b.keep || protection === 'kept') return refused('kept')
   if (b.bucket === 'in-use') return refused('in-use')
   // Scanned while Docker was down: its stacks were never seen, and main refuses it until a scan does.
   if (b.dockerBlind === true) return refused('scan-blind')
@@ -143,5 +148,5 @@ export function bundleRemovability(b: WorktreeBundle, now: number = Date.now()):
  */
 export function removability(b: GcBlock, now: number = Date.now()): Removability {
   if (b.kind === 'volume' || !b.bundle) return { ok: true }
-  return bundleRemovability(b.bundle, now)
+  return bundleRemovability(b.bundle, now, b.protection)
 }

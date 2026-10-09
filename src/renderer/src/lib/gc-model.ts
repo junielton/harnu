@@ -33,6 +33,11 @@ export interface GcBlock {
   stackIds: string[]
   ownedVolumes: string[]
   depsBytes: number | null
+  /**
+   * What the CURRENT prefs say protects this worktree: a Keep mark or a never-clean path added since
+   * the scan is not in the bundle's flags, but Remove must stop being offered at once.
+   */
+  protection: 'never-clean' | 'kept' | null
   bundle: WorktreeBundle | null
   volume: OrphanVolumeItem | null
 }
@@ -115,7 +120,19 @@ export function repoDisplayLabel(repoPath: string): string {
 const bigFirst = (a: GcBlock, b: GcBlock): number =>
   b.bytes - a.bytes || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
 
-function worktreeBlock(b: WorktreeBundle): GcBlock {
+const looseKey = (p: string): string =>
+  p.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '')
+
+/** Keep and never-clean as the prefs say now. A never-clean repo covers every worktree of it. */
+function protectionOf(b: WorktreeBundle, prefs: GcSnapshot['prefs']): GcBlock['protection'] {
+  const listed = new Set((prefs.neverClean ?? []).map(looseKey))
+  const paths = [b.item.path, b.item.repoPath].filter((p): p is string => !!p)
+  if (paths.some((p) => listed.has(looseKey(p)))) return 'never-clean'
+  if (prefs.keep?.[b.item.id] !== undefined) return 'kept'
+  return null
+}
+
+function worktreeBlock(b: WorktreeBundle, prefs: GcSnapshot['prefs']): GcBlock {
   const { item } = b
   const bytes = item.diskBytes
   return {
@@ -134,6 +151,7 @@ function worktreeBlock(b: WorktreeBundle): GcBlock {
     stackIds: b.stackIds,
     ownedVolumes: b.ownedVolumes,
     depsBytes: b.depsBytes,
+    protection: protectionOf(b, prefs),
     bundle: b,
     volume: null
   }
@@ -156,6 +174,7 @@ function volumeBlock(v: OrphanVolumeItem): GcBlock {
     stackIds: [],
     ownedVolumes: [v.name],
     depsBytes: null,
+    protection: null,
     bundle: null,
     volume: v
   }
@@ -164,7 +183,7 @@ function volumeBlock(v: OrphanVolumeItem): GcBlock {
 const emptyTotal = (): BucketTotal => ({ count: 0, bytes: 0 })
 
 export function buildGcModel(snapshot: GcSnapshot): GcModel {
-  const worktrees = snapshot.bundles.map(worktreeBlock)
+  const worktrees = snapshot.bundles.map((b) => worktreeBlock(b, snapshot.prefs))
   const volumes = snapshot.orphanVolumes.map(volumeBlock)
 
   const byRepo = new Map<string, GcBlock[]>()

@@ -763,3 +763,43 @@ describe('a scan that could not see Docker: the hero says so instead of offering
     expect(heroState(buildGcModel(snap()), null, true)).toEqual({ kind: 'empty' })
   })
 })
+
+describe('Keep and never-clean are read from the current prefs, not the scan-time flags', () => {
+  const prefsWith = (over: Partial<ReturnType<typeof defaultGcPrefs>>): GcSnapshot['prefs'] => ({
+    ...defaultGcPrefs(),
+    ...over
+  })
+
+  it('a Keep mark added since the scan hides Remove at once', () => {
+    const d = wt('d1', 'review', GIB, { reason: reason('dirty') })
+    const m = buildGcModel(
+      snap({ bundles: [d], prefs: prefsWith({ keep: { [d.item.id]: 'merged' as never } }) })
+    )
+    expect(removability(m.byId.get(d.item.id)!)).toEqual({ ok: false, reason: 'kept' })
+    expect(cleanRequestFor(m, [d.item.id], 'review').ids).toEqual([])
+    expect(selectAllInRepo(m, d.item.repoPath)).toEqual([])
+  })
+
+  it('a worktree path added to neverClean since the scan hides Remove at once', () => {
+    const d = wt('d1', 'review', GIB, { reason: reason('dirty') })
+    const m = buildGcModel(snap({ bundles: [d], prefs: prefsWith({ neverClean: ['/ws/d1/'] }) }))
+    expect(removability(m.byId.get(d.item.id)!)).toEqual({ ok: false, reason: 'never-clean' })
+  })
+
+  it('so does the repo path, which covers every worktree of that repo', () => {
+    const a = wt('a', 'ready', GIB)
+    const m = buildGcModel(
+      snap({ bundles: [a], prefs: prefsWith({ neverClean: [a.item.repoPath] }) })
+    )
+    expect(removability(m.byId.get(a.item.id)!)).toEqual({ ok: false, reason: 'never-clean' })
+    expect(m.cleanable).toEqual([])
+  })
+
+  it('leaves everything else removable', () => {
+    const d = wt('d1', 'review', GIB, { reason: reason('dirty') })
+    const m = buildGcModel(
+      snap({ bundles: [d], prefs: prefsWith({ neverClean: ['/elsewhere'], keep: {} }) })
+    )
+    expect(removability(m.byId.get(d.item.id)!)).toEqual({ ok: true })
+  })
+})
