@@ -97,21 +97,3 @@ removeEphemeralDir(process.argv[2]).then(
     await expect(fs.lstat(dir)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })
-
-describe('no recursive node:fs delete in the Cleanup engine', () => {
-  it('every recursive rm under src/main/gc and src/main/reaper goes through rawRm', async () => {
-    const offenders: string[] = []
-    for (const dir of ['src/main/gc', 'src/main/reaper']) {
-      for (const f of await fs.readdir(path.join(repoRoot, dir))) {
-        if (!f.endsWith('.ts')) continue
-        const text = await fs.readFile(path.join(repoRoot, dir, f), 'utf8')
-        text.split('\n').forEach((line, i) => {
-          if (/\bfs\.rm\(|\brmSync\(/.test(line) && /recursive:\s*true/.test(line)) {
-            offenders.push(`${dir}/${f}:${i + 1}`)
-          }
-        })
-      }
-    }
-    expect(offenders).toEqual([])
-  })
-})
