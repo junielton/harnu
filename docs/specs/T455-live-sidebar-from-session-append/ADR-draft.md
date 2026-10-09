@@ -71,6 +71,10 @@ Three constraints bind the design:
      live row, so a skipped pass would otherwise roll the status dot, stuck verdict, `ctxPct` and
      `agents` back to stale values. Every reader of the model (spec §7.5, verified field by field)
      gets current values instead, with zero extra file reads.
+     Two guards keep the patch from being weaker than the pass it replaces. Main keeps a retained
+     window of the session's recent tool calls (≤ 256) so the patched `stagnation` is the 5-minute
+     window verdict, not the weaker one-delta verdict (spec §6.7). And one predicate,
+     `slugPassSkipped(sid) ⇔ patchApplied(sid)`, decides the skip, with a named test (spec §6.8).
 4. **A new fact family, `row`, conforming to ARB-2(c) and ARB-3 rather than amending them.**
    - Its fields are partitioned once, at design time, as `telemetry`'s are.
    - The companion owns `prompt`, `count`, `activity` and `assistant`.
