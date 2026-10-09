@@ -12,6 +12,8 @@ export interface ResumeHint {
   commands: string[]
   /** True once the archive step had run, so the archive refs hold the commit. */
   archived: boolean
+  /** True when no archive exists and the branch is still there: it may hold the only copy of commits. */
+  unarchivedWarning: boolean
 }
 
 /**
@@ -38,8 +40,12 @@ export function resumeHint(
   const repo = shq(block.repoPath)
   const commands = [`git -C ${repo} worktree prune`]
   // A halt before the trash with the folder deleted by hand leaves the branch alone, too.
-  if (block.branch && step !== BRANCH_GONE_AFTER) {
-    commands.push(`git -C ${repo} branch -D ${shq(block.branch)}`)
+  const archived = ARCHIVED.has(step)
+  const branchStays = !!block.branch && step !== BRANCH_GONE_AFTER
+  if (block.branch && branchStays) {
+    // `-D` only when the archive refs hold the commit. Without them the branch may carry the
+    // only copy of unmerged work: `-d` refuses that, and the screen says what a refusal means.
+    commands.push(`git -C ${repo} branch ${archived ? '-D' : '-d'} ${shq(block.branch)}`)
   }
-  return { step, commands, archived: ARCHIVED.has(step) }
+  return { step, commands, archived, unarchivedWarning: branchStays && !archived }
 }

@@ -317,11 +317,17 @@ describe('CleanupBlockPanel — a failed item', () => {
       const hint = w.get('[data-testid="panel-resume"]').text()
       expect(hint).toMatch(/folder is gone/i)
       expect(hint).not.toMatch(/trashed/i)
-      expect(hint).toContain('git -C /w/repo branch -D feat/x')
+      // Nothing was archived: the safe -d (it refuses unmerged commits), never -D, plus the warning.
+      expect(hint).toContain('git -C /w/repo branch -d feat/x')
+      expect(hint).not.toContain('branch -D')
+      expect(hint).toContain(i18n.global.t('cleanup.gc.panel.resumeUnarchived'))
+      expect(hint).toMatch(/If git refuses/)
       expect(hint).not.toMatch(/archive refs/)
       // After the archive step the refs exist and the line is shown.
       const late = mountPanel(goneBlock(), { failure: failure({ step: 'branch-delete' }) })
       expect(late.get('[data-testid="panel-resume"]').text()).toMatch(/archive refs/)
+      expect(late.get('[data-testid="panel-resume"]').text()).toContain('branch -D')
+      expect(late.get('[data-testid="panel-resume"]').text()).not.toMatch(/If git refuses/)
       expect(late.get('[data-testid="panel-resume"]').text()).not.toMatch(/trashed/i)
     })
 

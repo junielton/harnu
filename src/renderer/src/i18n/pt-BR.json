@@ -2373,6 +2373,7 @@
         "removeBlocked": "Remover não está disponível: esta pasta contém outro worktree. Remova ou mova esse primeiro.",
         "removeLocked": "Remover não está disponível: o git tem este worktree bloqueado. Desbloqueie primeiro.",
         "resumeBody": "A pasta não existe mais, e a limpeza parou em “{step}”, então Tentar de novo não consegue terminar. Rode isto num terminal para fazer o resto:",
+        "resumeUnarchived": "Se o git recusar, esta branch tem commits que não estão na sua branch padrão: mantenha-a ou arquive-a primeiro.",
         "resumeArchive": "As refs de arquivo mantêm o commit recuperável.",
         "removeUnchecked": "Remover não está disponível: o Harnu não conseguiu olhar dentro desta pasta. Confira se ela é legível e use {scanNow}."
       },

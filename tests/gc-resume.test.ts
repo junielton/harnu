@@ -43,22 +43,31 @@ describe('resumeHint', () => {
     expect(hint.commands).toEqual(['git -C /w/repo worktree prune'])
   })
 
-  it.each([
-    'reprobe',
-    'stop-stack',
-    'rm-containers',
-    'rm-volumes',
-    'drop-deps',
-    'archive',
-    'trash'
-  ])(
-    'a halt before the trash (%s) with the folder deleted by hand still gets the branch command',
+  it.each(['reprobe', 'stop-stack', 'rm-containers', 'rm-volumes', 'drop-deps', 'archive'])(
+    'a halt before the archive (%s) never suggests -D: the safe -d, and the warning',
     (step) => {
-      // The folder is gone but the branch was never touched: it is still there.
-      expect(resumeHint(halted(`Cleanup stopped at ${step} in /w/x.`))!.commands).toEqual([
+      // The folder is gone but the branch was never touched and nothing was archived: the
+      // branch may hold the only copy of unmerged commits. `-d` refuses those; `-D` would not.
+      const hint = resumeHint(halted(`Cleanup stopped at ${step} in /w/x.`))!
+      expect(hint.commands).toEqual([
+        'git -C /w/repo worktree prune',
+        'git -C /w/repo branch -d feat/x'
+      ])
+      expect(hint.commands.join('\n')).not.toMatch(/ -D /)
+      expect(hint.archived).toBe(false)
+      expect(hint.unarchivedWarning).toBe(true)
+    }
+  )
+
+  it.each(['trash', 'prune', 'branch-delete'])(
+    'a halt after the archive (%s) keeps -D, with no warning',
+    (step) => {
+      const hint = resumeHint(halted(`Cleanup stopped at ${step} in /w/x.`))!
+      expect(hint.commands).toEqual([
         'git -C /w/repo worktree prune',
         'git -C /w/repo branch -D feat/x'
       ])
+      expect(hint.unarchivedWarning).toBe(false)
     }
   )
 

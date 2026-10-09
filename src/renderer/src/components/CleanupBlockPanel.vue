@@ -354,6 +354,13 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
           data-testid="panel-resume-command"
           >{{ cmd }}</code
         >
+        <p
+          v-if="resume.unarchivedWarning"
+          class="text-caption leading-4 text-warning"
+          data-testid="panel-resume-warning"
+        >
+          {{ t('cleanup.gc.panel.resumeUnarchived') }}
+        </p>
         <p v-if="resume.archived" class="text-caption leading-4 text-text-3">
           {{ t('cleanup.gc.panel.resumeArchive') }}
         </p>

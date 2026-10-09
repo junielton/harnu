@@ -2373,6 +2373,7 @@
         "removeBlocked": "Remove is unavailable: this folder holds another worktree. Remove or move that one first.",
         "removeLocked": "Remove is unavailable: git has this worktree locked. Unlock it first.",
         "resumeBody": "The folder is gone, and the clean stopped at “{step}”, so Retry cannot finish it. Run these in a terminal to do the rest:",
+        "resumeUnarchived": "If git refuses, this branch has commits that aren't in your default branch: keep it, or archive it first.",
         "resumeArchive": "The archive refs keep the commit recoverable.",
         "removeUnchecked": "Remove is unavailable: Harnu could not look inside this folder. Make sure it is readable, then use {scanNow}."
       },
