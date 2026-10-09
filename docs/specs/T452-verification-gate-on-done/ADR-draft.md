@@ -1,6 +1,6 @@
 # ADR-draft — The verification gate is a separate bundled mod that runs only an operator-approved command
 
-**Status:** proposed (numbered at merge) · **Date:** 2026-10-09 (round 2) · **Card:** T452 ·
+**Status:** proposed (numbered at merge) · **Date:** 2026-10-09 (round 3) · **Card:** T452 ·
 **Spec:** [`00-spec.md`](00-spec.md)
 
 ## Context
@@ -46,9 +46,16 @@ Facts that constrain them (cited in full in the spec):
    found isolation intact (the T450 verifier). `tool.check` and classic hooks are safe either way.
 8. **T447 will guard Harnu's MCP server against direct mod calls**, and offers scoped Mission writes
    through its noun (T447 `03-security.md:23, :50-56`).
-9. **No command exists to run today.** A step carries a verification level (`src/main/mission-core.ts:76-95`).
-   A card AC carries a `verify:` kind by convention only. `WORKTREE.md` has no such key
-   (`worktree-manifest.ts:139-148`).
+9. **The approved text runs files the session can edit.** `npm run typecheck` executes the branch's
+   `package.json`, tests and configs. `forceDowngradePermission` maps `bypassPermissions` to
+   `manual` for MCP children (`src/main/mcp/agent-boot.ts:182-189`), so such a child in `manual` or
+   `acceptEdits` writes a script and then claims. A hash over the command text does not change.
+10. **The variables that carry the command have more than one source.** `$.env.get` reads the
+    process env (TYPES:3580-3598), which a settings file's `env` block feeds at the next spawn,
+    resume or park-wake, and which a Bash child and a nested `claude` inherit.
+11. **No command exists to run today.** A step carries a verification level (`src/main/mission-core.ts:76-95`).
+    A card AC carries a `verify:` kind by convention only. `WORKTREE.md` has no such key
+    (`worktree-manifest.ts:139-148`).
 
 ## Decision
 
@@ -68,16 +75,31 @@ Facts that constrain them (cited in full in the spec):
   - It passes them to the session at spawn (`HARNU_VERIFY_CMD`) **only when the operator has
     approved that exact hash** for the repo.
   - A changed command is a new hash, which nobody approved, so the gate runs nothing and asks again.
-  - The mod never reads the working tree.
+  - Harnu first **deletes any inherited `HARNU_VERIFY_*`** (as `applyCompanionEnv` does for
+    `HARNU_SPAWN_TOKEN`, `src/main/companion/spawn-inject.ts:131-141`) and passes the approved
+    parts together with `HARNU_VERIFY_ROOT`, the folder they were approved for.
+  - The mod never reads the working tree. It checks that the root equals `$.session.root()`, and
+    refuses any `HARNU_VERIFY_*` it finds in the `env` block of the `user`, `project` or `local`
+    settings.
 - **Outside Harnu:**
   - The default mode is **annotate**, which runs nothing.
   - `enforce` runs only the `check` option the person set in their own settings.
 
-**D3. The gate meets the intent of SEC-4 and SEC-9, not just their letter.**
+**D2b. The session's own permission mode decides each run.** Before every part the gate asks
+`$.tool.check({ tool: 'Bash', input: { command: part } })`, the same chain a real Bash call goes
+through, minus the run. It runs the part only on `allow`. On `ask` or `deny` it hands the run back
+("run it yourself"), and the session's own Bash call, governed by its own prompt or rule, becomes
+the receipt. So the gate never runs what the session could not.
 
-- **Project files and cwd: nothing read.** The only env read is two literal names Harnu sets at
-  spawn; the model cannot change the process env.
-- **Process runs** are limited to approved, disclosed text, never a generic runner.
+**D3. The gate meets the intent of SEC-4 and SEC-9, not just their letter, and says where it
+breaks the letter.**
+
+- **SEC-4's letter is broken knowingly:** the gate reads three literal env names and three
+  settings sources. Its answer to the intent is that **every read can only narrow**: a
+  `HARNU_VERIFY_*` key in a settings file or a root that is not the session's removes the parts,
+  and nothing in the working tree or cwd is read.
+- **Process runs** are limited to approved, disclosed text that the session's own permissions allow,
+  never a generic runner.
 - **No `$.mcp.call`:** W3's Mission writes go through T447's noun.
 - **No Bash `tool.call`.**
 - A static profile in `scripts/ci/api-surface-scan.mjs` enforces this, as it does for the
@@ -92,6 +114,12 @@ Facts that constrain them (cited in full in the spec):
 | `classic.SessionStart`                       | seeds the ledger on resume and clear                                                                                              |
 | `tool.call`                                  | gates the Harnu MCP claims (`mission_update_step` with `proof: 'claimed'`, `move_card` to `review`) and `message_session` reports |
 | `session.send`                               | appends a receipt line to outgoing reports                                                                                        |
+
+**D4b. A part counts as run only when its exit status is the call's.** A Bash call has one exit
+status, the last command's. A part counts when the call is parts and neutral segments joined by
+`&&`. After `;`, `|` or `||`, or after a directory change, the outcome is unknown and is no
+receipt. Any segment that may write is an edit. The round-2 grading showed live that matching the
+part anywhere records `sh check.sh 2>&1 | tail -5` (status `tail`'s) as green.
 
 **D5. The run is a `$.process.spawn` loop.**
 
@@ -112,18 +140,20 @@ never sets a proof label and never ticks a check.
 
 ## Alternatives considered
 
-| Alternative                                                            | Why not                                                                                                                                                                                                                                             |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Read `verify:` from the session's tree (round 1)                       | Fact 3: the model chooses what runs, outside its permissions. Withdrawn.                                                                                                                                                                            |
-| Read `verify:` from the committed `HEAD`, refuse when the tree differs | The session can commit, so `HEAD` is the session's too. `origin/<default>` helps only where the default branch is protected, which Harnu cannot know.                                                                                               |
-| Hash pin with no disclosure                                            | A pin nobody looked at protects nothing.                                                                                                                                                                                                            |
-| The gate inside `harnu-companion`                                      | Fact 5: it would reopen SEC-9 a/b/d for the one mod staged into every session.                                                                                                                                                                      |
-| The companion asks the host to run the check                           | Fact 6: no broker exists yet, tranches are shorter than the check, and headless sessions get no ask. It is the cleanest home for SEC-9's intent, and is revisited when P3W1's broker ships (spec Q12). The pin and disclosure carry over unchanged. |
-| Main process only                                                      | Fact 1: no outcomes and no caller identity.                                                                                                                                                                                                         |
-| Inside T447's `harnu` mod                                              | It is the noun and its guard; a process runner does not belong there.                                                                                                                                                                               |
-| `$.process.run` for the check                                          | No abort signal: an interrupted check ran on for up to 300 s, and its result could still be recorded.                                                                                                                                               |
-| A `tool.call` rewrite of SendMessage                                   | `session.send` is the event built for it, and covers `$.session.send` too.                                                                                                                                                                          |
-| A `tool.call` input rewrite of `message_session`                       | An MCP input rewrite is refused in `auto` mode (T389 P2W5). The gate asks for a re-send instead.                                                                                                                                                    |
+| Alternative                                                             | Why not                                                                                                                                                                                                                                             |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read `verify:` from the session's tree (round 1)                        | Fact 3: the model chooses what runs, outside its permissions. Withdrawn.                                                                                                                                                                            |
+| Read `verify:` from the committed `HEAD`, refuse when the tree differs  | The session can commit, so `HEAD` is the session's too. `origin/<default>` helps only where the default branch is protected, which Harnu cannot know.                                                                                               |
+| Run the approved text without asking the session's permissions          | Fact 9: the model edits a script, the gate runs it with no Bash prompt, and `forceDowngradePermission` is defeated for that run.                                                                                                                    |
+| Treat the env as trusted because "the model cannot set the process env" | Fact 10: a settings-file `env` block the model can write, and an inherited env, are two more sources.                                                                                                                                               |
+| Hash pin with no disclosure                                             | A pin nobody looked at protects nothing.                                                                                                                                                                                                            |
+| The gate inside `harnu-companion`                                       | Fact 5: it would reopen SEC-9 a/b/d for the one mod staged into every session.                                                                                                                                                                      |
+| The companion asks the host to run the check                            | Fact 6: no broker exists yet, tranches are shorter than the check, and headless sessions get no ask. It is the cleanest home for SEC-9's intent, and is revisited when P3W1's broker ships (spec Q12). The pin and disclosure carry over unchanged. |
+| Main process only                                                       | Fact 1: no outcomes and no caller identity.                                                                                                                                                                                                         |
+| Inside T447's `harnu` mod                                               | It is the noun and its guard; a process runner does not belong there.                                                                                                                                                                               |
+| `$.process.run` for the check                                           | No abort signal: an interrupted check ran on for up to 300 s, and its result could still be recorded.                                                                                                                                               |
+| A `tool.call` rewrite of SendMessage                                    | `session.send` is the event built for it, and covers `$.session.send` too.                                                                                                                                                                          |
+| A `tool.call` input rewrite of `message_session`                        | An MCP input rewrite is refused in `auto` mode (T389 P2W5). The gate asks for a re-send instead.                                                                                                                                                    |
 
 ## Consequences
 
@@ -140,7 +170,9 @@ never sets a proof label and never ticks a check.
 - `WORKTREE.md` gains a meaning beyond provisioning: what "green" is for the repo. The
   worktree-manifest skill and `docs/user/` must teach the key and what approving it means.
 - **Another mod could make the gate run a command of its choosing**, by forging the env or hooking
-  `env.get`. That mod can already run any process itself (ADR-0018 D3), so the gate adds nothing to
-  it. The Mods tab is the disclosure.
+  `env.get`. That mod can already run any process itself (ADR-0018 Decision 3, :43-45), so the gate
+  adds nothing to it. The Mods tab is the disclosure.
+- **A downgraded session that has no allow rule for the check gets a hand-back**, not a run. Its own
+  Bash call is the receipt. That costs one prompt in such a session, and it is the point.
 - The gate's value is bounded by its honesty model: it catches a stale "all tests pass", not a
   forged receipt. The verifier never counts the receipt as proof.

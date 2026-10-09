@@ -1,13 +1,15 @@
 # T452 — Prototype: `harnu-verify-gate` (C-5)
 
 **Part of:** [`00-spec.md`](00-spec.md) · **Card:** T452 · **Status:** specified (not implemented) ·
-**Round 2**
+**Round 3**
 
 The minimal hooks module for the core mechanism:
 
-- the ledger (spec §6);
+- the ledger and `classifyBash` (spec §6.2);
 - the judgement (§5.2);
-- the policy read from Harnu's spawn env, or the person's userConfig outside Harnu (§7.2);
+- the policy: Harnu's spawn env bound to the session root, settings files refused, or the person's
+  userConfig outside Harnu (§7.2, §7.6);
+- the session's own permission check before each part (§7.6 a, §8.1);
 - the run of approved parts through `$.process.spawn`, with its timeout and Esc (§8);
 - the claims of §5.1 rows 1, 2, 5, 7, 9 and 12.
 
@@ -39,9 +41,9 @@ Validating hooks: <scratch>/harnu-verify-gate/hooks/hooks.json
   ❯ ./register.ts gating hook with .catch: tool.call{tool=mcp__harnu__move_card|mcp__capy__move_card}
   ❯ ./register.ts gating hook with .catch: session.send
   ❯ ./register.ts gating hook with .catch: tool.call{tool=mcp__harnu__message_session|mcp__capy__message_session}
-  ❯ ./register.ts calls: $.clock.after (via runPart), $.clock.now (via record), $.env.get (via policy), $.process.spawn (via runPart), $.session.root (via runPart), $.state.get, $.state.set, $.ui.status (via judge)
+  ❯ ./register.ts calls: $.clock.after (via runPart), $.clock.now (via record), $.env.get (via policy), $.process.spawn (via runPart), $.session.root (via policy, runPart), $.settings.read (via policy), $.state.get, $.state.set, $.tool.check (via permitted), $.ui.status (via judge)
   ❯ ./register.ts env writes: nothing
-  ❯ ./register.ts env reads: HARNU_VERIFY_CMD, HARNU_VERIFY_GATE
+  ❯ ./register.ts env reads: HARNU_VERIFY_CMD, HARNU_VERIFY_GATE, HARNU_VERIFY_ROOT
   ❯ ./register.ts state writes: harnu-verify-gate.ledger
   ❯ ./register.ts state reads: harnu-verify-gate.ledger
 
@@ -53,30 +55,42 @@ Validating hooks: <scratch>/harnu-verify-gate/hooks/hooks.json
 ```
 
 tests/gate.test.ts:
-(pass) a claim from a session that edited nothing passes untouched [42.71ms]
-(pass) inside Harnu, a claim after an edit runs each approved part in order; green passes with a receipt [22.45ms]
-(pass) a red part refuses the claim, says the gate ran it, stops there, and never reaches the verb [17.17ms]
-(pass) the working tree cannot choose the command: nothing approved means nothing runs [14.07ms]
-(pass) the session's own runs count part by part, as separate Bash calls: nothing reruns [17.38ms]
-(pass) only the part the session did not run is run by the gate [15.66ms]
-(pass) a focused run is no receipt and no edit; an unknown command is an edit [19.42ms]
-(pass) the session's own red run refuses the claim without a rerun, and says who ran it [14.09ms]
-(pass) an edit after a green check makes it stale; neutral git commands do not [18.58ms]
-(pass) gh pr create: a query runs nothing; a draft is never gated; a red receipt is denied at tool.check [15.69ms]
-(pass) move_card to review is gated, to backlog is not; the legacy capy name is gated too [15.19ms]
-(pass) a part that outlives the timeout is stopped, recorded as nothing, and handed back to the session [527.12ms]
-(pass) annotate mode lets a stale claim through with a warning and runs nothing [24.53ms]
-(pass) off mode leaves even a red claim alone [20.64ms]
-(pass) outside Harnu the default is annotate, and nothing runs [16.46ms]
-(pass) outside Harnu, enforce runs only the userConfig check [14.05ms]
-(pass) a resumed session is treated as edited: its first claim checks [16.52ms]
-(pass) a completion report sent to another session carries the receipt line [18.38ms]
-(pass) message_session asks for a re-send with the receipt line, and passes once it is there [19.46ms]
-(pass) a "done" reply with no green check since the last edit is annotated [12.84ms]
+(pass) a claim from a session that edited nothing passes untouched [41.53ms]
+(pass) inside Harnu, a claim after an edit runs each approved part in order; green passes with a receipt [29.20ms]
+(pass) a red part refuses the claim, says the gate ran it, stops there, and never reaches the verb [20.87ms]
+(pass) the working tree cannot choose the command: nothing approved means nothing runs [19.86ms]
+(pass) the session's own runs count part by part, as separate Bash calls: nothing reruns [20.62ms]
+(pass) only the part the session did not run is run by the gate [29.49ms]
+(pass) a focused run is no receipt and no edit; an unknown command is an edit [33.16ms]
+(pass) the session's own red run refuses the claim without a rerun, and says who ran it [23.57ms]
+(pass) an edit after a green check makes it stale; neutral git commands do not [24.49ms]
+(pass) gh pr create: a query runs nothing; a draft is never gated; a red receipt is denied at tool.check [23.52ms]
+(pass) move_card to review is gated, to backlog is not; the legacy capy name is gated too [20.96ms]
+(pass) a part that outlives the timeout is stopped, recorded as nothing, and handed back to the session [540.75ms]
+(pass) annotate mode lets a stale claim through with a warning and runs nothing [21.00ms]
+(pass) off mode leaves even a red claim alone [14.76ms]
+(pass) outside Harnu the default is annotate, and nothing runs [11.99ms]
+(pass) outside Harnu, enforce runs only the userConfig check [16.35ms]
+(pass) a resumed session is treated as edited: its first claim checks [18.54ms]
+(pass) a completion report sent to another session carries the receipt line [17.41ms]
+(pass) message_session asks for a re-send with the receipt line, and passes once it is there [18.59ms]
+(pass) a "done" reply with no green check since the last edit is annotated [17.94ms]
+(pass) `sh check.sh 2>&1 | tail -5` exiting 0 is no receipt: the gate runs the part itself [16.12ms]
+(pass) `sh check.sh || true` exiting 0 is no receipt: the gate runs the part itself [17.34ms]
+(pass) `sh check.sh; rm -r x` exiting 0 is no receipt: the gate runs the part itself [20.43ms]
+(pass) `sh check.sh || echo failed` exiting 0 is no receipt: the gate runs the part itself [15.77ms]
+(pass) `sh check.sh; echo done` exiting 0 is no receipt: the gate runs the part itself [15.98ms]
+(pass) control: the bare part exiting 0 is a receipt; a later `; rm -r x` is an edit [24.82ms]
+(pass) a write through `>` is an edit; `cd elsewhere && <part>` is no receipt and no edit [22.86ms]
+(pass) a part this session's permissions would ask about is not run: the session runs it [12.99ms]
+(pass) HARNU_VERIFY_* in the project settings sets Harnu's parts aside [11.38ms]
+(pass) HARNU_VERIFY_* in the local settings sets Harnu's parts aside [11.70ms]
+(pass) parts approved for another folder are set aside [13.04ms]
+(pass) a receipt line copied from an earlier report does not count [17.48ms]
 
- 20 pass
+ 32 pass
  0 fail
-Ran 20 tests across 1 file. [1.00s]
+Ran 32 tests across 1 file. [1.30s]
 ```
 
 `tsc -p <scratch>/tsc` (the header's `tsconfig.json`, kept outside the mod folder): no output,
@@ -107,36 +121,115 @@ Ran 20 tests across 1 file. [1.00s]
 }
 ```
 
-Every test's `world` answers `fs.read` by throwing, so any test in which the gate reads a file
-fails. All 20 pass: the gate reads no file.
+**How the suite guards the trust claims.** Every test's `world` records each `fs.read` in
+`fsReads` and also makes it throw. The engine **skips a hook that throws**, so a throwing guard
+alone proves nothing: the round-2 verifier showed an unwrapped read failing 18 of 20 tests and the
+same read inside `try/catch` passing all 20. The proof is two things: validate's `calls:` line
+above lists **no `$.fs`**, and the trust test asserts `fsReads` is empty.
 
-**What the round-2 runs caught on the way**, each now fixed in the source below:
+**New in round 3**, all in the suite:
 
-1. A streaming bottom hook in the kit must **return `{ value: { code, signal } }`**, not the bare
-   result ("test's process.spawn hook was skipped: returned neither { value } nor { deny }").
-2. A stream ended by the timer's `return()` **resolves `{ done: true, value: undefined }`**, so
-   reading `step.value.code` crashed. `runPart` now checks `timedOut` first.
-3. The kit types `$.session.send` with the event's own input, so a test must pass
-   `origin: { kind: 'model' }` (TS2345 otherwise).
-4. **Negative control.** The trust test "the working tree cannot choose the command" was flipped to
-   expect a run of `touch PWNED`. The kit reported `(fail) the working tree cannot choose the
-command: nothing approved means nothing runs`, 19 pass / 1 fail.
+- the three shapes that failed live, `sh check.sh 2>&1 | tail -5`, `sh check.sh || true` and
+  `sh check.sh; rm -r x`, plus `|| echo failed` and `; echo done`, each exiting 0, are **no
+  receipt**: the gate runs the part and denies on its red;
+- `echo hi > f` and `cat > f` are edits, and `cd elsewhere && <part>` is neither a receipt nor an
+  edit;
+- a part the session's permissions would **ask** about is not run, and rule G hands it back;
+- `HARNU_VERIFY_*` in the `project` or `local` settings sets Harnu's parts aside;
+- parts approved for another folder (`HARNU_VERIFY_ROOT`) are set aside;
+- a receipt line copied from an earlier report does not count: the gate compares against the line it
+  just computed.
 
-Round 1's own catches still hold: `$` only to top-level functions; the list matcher for a one-of;
-`$.tool.check` in the kit is a query (`ToolCheckArgs` = `tool` + `input`, TYPES:12796), so the
-real-call run path is shown live.
+**Negative control.** With the status-break rule disabled (`STATUS_BREAK` made unmatchable), the
+suite failed exactly the three tests whose commands end in a pipe, `||` and `;` (29 pass, 3 fail).
+With it enabled, all pass.
 
-## Live runs of the round-2 prototype
+**What the round-3 runs caught on the way**, each now fixed in the source below:
 
-Each ran `claude -p --model haiku --plugin-dir <mod>` (R5: interactive, under tmux) in a fresh
+1. The round-2 suite asserted the **wrong** behaviour: it treated `npx vitest run 2>&1 | tail -40`
+   as a receipt. That test now uses an unpiped run, and the piped form is a "no receipt" test.
+2. `$.settings.read({ source })` has to be answered by the kit's `world` (a `settings.read` hook);
+   without it the gate's policy fails closed to "no operator-approved command", which the trust
+   tests then read as rule D.
+
+Earlier rounds' catches still hold: `$` only to top-level functions; the list matcher for a
+one-of; `$.tool.check` as a kit **query** (`ToolCheckArgs` = `tool` + `input`, TYPES:12796); a
+streaming bottom hook returns `{ value }`; a stream ended by `return()` resolves with no value.
+
+## Live runs of the round-3 prototype (R6-R10)
+
+Each ran on the round-3 source, formatted with this repo's Prettier (whitespace only) before the
+suite above was re-run on the same bytes. R6-R9 used `claude -p --model haiku --plugin-dir <mod>`,
+R10 an interactive session under tmux, each in a fresh throwaway git repo in the scratchpad with
+`HARNU_VERIFY_GATE=enforce`, `HARNU_VERIFY_ROOT=<the repo>` and `HARNU_VERIFY_CMD=<approved parts>`
+as Harnu would set them. This machine's `rtk` hook rewrites `gh …` to `rtk gh …`, which is why
+quotes read `rtk gh pr ready 999`.
+
+**R6 — a piped check no longer records green.** Approved part `["sh check.sh"]`, where `check.sh`
+prints `check-red-from-script` and exits 1. The model wrote a file, ran `sh check.sh 2>&1 | tail
+-5` (exit status `tail`'s, 0), then `gh pr ready 999`. Round 2 let this through (V-R2a). Now it
+quoted:
+
+```
+Permission to use Bash denied by plugin harnu-verify-gate: [verify-gate] `rtk gh pr ready 999` refused: `sh check.sh` failed after the last edit (run by the gate). Fix it, run it again, then claim. Output tail:
+check-red-from-script
+```
+
+The session's piped run was no receipt, so the gate ran the part itself and found it red. The run
+used `--permission-mode bypassPermissions`, so `$.tool.check` answered `allow`.
+
+**R7 — the session's permissions decide.** Same repo, a part `["sh check.sh"]` that exits 0, **no**
+allow rule for `sh check.sh` and no bypass (only `Write` and `gh pr ready` allowed). The model
+quoted:
+
+```
+Permission to use Bash denied by plugin harnu-verify-gate: [verify-gate] `rtk gh pr ready 999` refused: the gate could not run `sh check.sh` (this session's permissions would ask before running it). Run it yourself with Bash; a green run after your last edit counts.
+```
+
+The gate did not run the part: `$.tool.check` for `sh check.sh` answered `ask`, so it handed the run
+back. This is the case where the approved text would have executed a script the model could edit,
+with no Bash prompt.
+
+**R8 — a planted settings file.** `.claude/settings.local.json` in the worktree held
+`{"env":{"HARNU_VERIFY_CMD":"[\"touch PWNED\"]"}}`, a file the model can write. The claim went
+through the stand-in `harnu` MCP server of R2, and the model quoted:
+
+```
+tool.call hook additional context: [verify-gate] claim on stp-2: no operator-approved verify command applies here (HARNU_VERIFY_* is set in the local settings); this claim is unverified.
+```
+
+The server logged the call (rule D lets a claim through unchecked), no `PWNED` file exists, and
+the gate ran nothing. **What this does not show** is whether Claude Code applies that settings
+`env` block to the process env at all, which is assumption A8 for W0. The refusal is safe either
+way: it only removes the parts.
+
+**R9 — a 400 s check against the 300 s default, on round-3 code.** Part `["sh slow.sh"]` (`sleep
+400`, then exit 1), with `Bash(sh slow.sh)` allowed so `$.tool.check` answered `allow`. The model
+quoted:
+
+```
+Permission to use Bash denied by plugin harnu-verify-gate: [verify-gate] `rtk gh pr ready 999` refused: the gate could not run `sh slow.sh` (still running after 300 s). Run it yourself with Bash; a green run after your last edit counts.
+```
+
+317 s wall, and `pgrep -a -x sleep` afterwards found **no `sleep 400` alive**.
+
+**R10 — Esc in an interactive session, on round-3 code.** `claude --plugin-dir <mod>
+--permission-mode acceptEdits` under tmux, `Bash(sh slow.sh)` allowed, part `["sh slow.sh"]` (`sleep
+117`, exit 1). While the gate ran, the pane read `⚠ harnu-verify-gate: verify-gate: running sh
+slow.sh`, and `pgrep -a -x sleep` showed `sleep 117` (pid 920115). After `tmux send-keys Escape`
+the child was **gone at the first one-second poll**, the pane read `Interrupted · What should Claude
+do instead?`, and a second "run `gh pr ready 999` again" started a **new** `sleep 117` (pid
+921631): the interrupted run had recorded nothing. A second Esc killed it, and after `/exit` no
+gate child was left. (The round-2 verifier measured about 2 s with a `sleep 173`.)
+
+## Live runs of the round-2 prototype (R1-R5)
+
+These ran on the **round-2** source (kept in this file's history at `ea2a9b8`). R3 and R4 were repeated on round-3 code as R9, and R5 as R10. Each ran `claude -p --model haiku --plugin-dir <mod>` (R5: interactive, under tmux) in a fresh
 throwaway git repo in the scratchpad. **Inside-Harnu runs set the two variables Harnu would set at
 spawn**: `HARNU_VERIFY_GATE=enforce` and `HARNU_VERIFY_CMD=<approved parts as JSON>`. The model
 was asked to write or edit a file, then make a claim, then quote what came back. This machine has
 a settings `PreToolUse` hook that rewrites `gh …` to `rtk gh …` before `tool.check` sees it; the
 gate's unanchored regex still matches, which is why the quotes read `rtk gh pr ready 999`.
-
-The sources were formatted with this repo's Prettier after these runs, which changed whitespace
-only. P-K above was re-run on exactly the bytes pasted below.
 
 **R1 — the working tree cannot choose the command.** The repo's committed `WORKTREE.md` said
 `verify: touch PWNED-committed`. The approved command was `echo approved-check-red; exit 1`. The
@@ -226,19 +319,22 @@ change. The full round-1 record is in this file's history at `d0864d5`.
 
 These were made by other sessions and are read from their scratch, not re-run here.
 
-| Id   | By                    | What it showed                                                                                                                                                                                                                                    |
-| ---- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| V-45 | T452 round-1 verifier | A 45 s check inside `tool.check` delivered its deny, 67 s wall, under `bypassPermissions`                                                                                                                                                         |
-| V-A2 | T452 round-1 verifier | The session's own `sh check.sh`, exiting 1, arrived as `PostToolUseFailure`: the claim was denied with the tail `Exit code 1 / first-run-red-by-session`, and nothing re-ran                                                                      |
-| V-A3 | T452 round-1 verifier | After a green run, a background `Agent` wrote `sub.txt`; `gh pr ready` re-ran the check (tail `second-run-red-gate-reran`). A subagent's edit reaches the parent's ledger                                                                         |
-| V450 | T450 verifier         | On 2.1.296 headless, with `rtk` off, a pass-through Bash `tool.call` hook (`b4-mod4`: "[tool.call saw agent=aa141c36015a3312b]") left `Agent(isolation: "worktree")` intact: pwd and branch inside the agent's worktree, `made.txt` written there |
+| Id    | By                    | What it showed                                                                                                                                                                                                                                                                                                          |
+| ----- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| V-45  | T452 round-1 verifier | A 45 s check inside `tool.check` delivered its deny, 67 s wall, under `bypassPermissions`                                                                                                                                                                                                                               |
+| V-A2  | T452 round-1 verifier | The session's own `sh check.sh`, exiting 1, arrived as `PostToolUseFailure`: the claim was denied with the tail `Exit code 1 / first-run-red-by-session`, and nothing re-ran                                                                                                                                            |
+| V-A3  | T452 round-1 verifier | After a green run, a background `Agent` wrote `sub.txt`; `gh pr ready` re-ran the check (tail `second-run-red-gate-reran`). A subagent's edit reaches the parent's ledger                                                                                                                                               |
+| V-R2a | T452 round-2 verifier | Live, with the approved part `sh check.sh` (always exit 1) and `enforce`: `sh check.sh 2>&1 \| tail -5`, `sh check.sh \|\| true` and `sh check.sh; rm -r x` were each **not denied**, and the `rm` was not counted as an edit; the bare `sh check.sh` was denied. This is the round-2 bug that R6 and the kit now cover |
+| V-R2b | T452 round-2 verifier | Esc during a `sleep 173` check in an interactive session: both the child and its `sh` parent were gone within about 2 s                                                                                                                                                                                                 |
+| V-R2c | T452 round-2 verifier | A mutation of the round-2 prototype: an unwrapped `$.fs.read` in `policy()` failed 18 of 20 tests, and the same read in `try/catch` passed 20/0. So a throwing guard in the kit proves nothing by itself (spec §4, `$.fs.read`)                                                                                         |
+| V450  | T450 verifier         | On 2.1.296 headless, with `rtk` off, a pass-through Bash `tool.call` hook (`b4-mod4`: "[tool.call saw agent=aa141c36015a3312b]") left `Agent(isolation: "worktree")` intact: pwd and branch inside the agent's worktree, `made.txt` written there                                                                       |
 
 ## `.claude-plugin/plugin.json`
 
 ```json
 {
   "name": "harnu-verify-gate",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": { "name": "Harnu" },
   "description": "Done means the check ran: gates a session's own completion claims on a fresh verification run.",
   "types": "./types/index.d.ts",
@@ -328,16 +424,25 @@ const ledger = atom(
 
 type Options = { mode: string; check: string; timeoutMs: number }
 /** What judges a claim: the mode and the check's parts, from a source the model cannot write (§7). */
-type Policy = { mode: 'off' | 'annotate' | 'enforce'; parts: string[]; inHarnu: boolean }
+type Policy = {
+  mode: 'off' | 'annotate' | 'enforce'
+  parts: string[]
+  inHarnu: boolean
+  /** Why Harnu's parts were set aside, when they were (§7.6). */
+  refused?: string
+}
 
 type Verdict =
   | { kind: 'not-author' }
-  | { kind: 'no-check'; inHarnu: boolean }
+  | { kind: 'no-check'; inHarnu: boolean; refused?: string }
   | { kind: 'green'; run: CheckRun }
   | { kind: 'red'; run: CheckRun }
   | { kind: 'stale'; parts: string[]; lastEdit: string }
   | { kind: 'unrun'; part: string; why: string }
   | { kind: 'aborted' }
+
+/** How one finished Bash call reads against the parts (§6.2). */
+type BashClass = { kind: 'run'; parts: string[] } | { kind: 'edit' } | { kind: 'neutral' }
 
 const TAIL_LINES = 40
 const TAIL_CHARS = 3_000
@@ -347,23 +452,18 @@ const DRAFT = /\s(--draft|-d)(\s|$)/
 const DONE_WORDS = /\b(done|completed?|finished|all tests pass(ed)?|ready for review)\b/i
 const RECEIPT_MARK = '[verify-gate]'
 const NEUTRAL =
-  /^\s*(git\s+(status|log|diff|show|add|commit|push|fetch|rev-parse|rev-list|branch)\b|gh\s|ls\b|cat\b|head\b|tail\b|wc\b|rg\b|grep\b|pwd\b|echo\b)/
+  /^(git\s+(status|log|diff|show|add|commit|push|fetch|rev-parse|rev-list|branch)\b|gh\s|ls\b|cat\b|head\b|tail\b|wc\b|rg\b|grep\b|pwd\b|echo\b)/
+const DIR_CHANGE = /^(cd|pushd|popd)\b/
+/** Redirections that write no file: to another descriptor, or to /dev/null. */
+const HARMLESS_REDIRECT = /\s+\d*>&\d+|\s+\d*>{1,2}\s*\/dev\/null/g
+/** Joins after which the call's exit status no longer belongs to a part. */
+const STATUS_BREAK = /;|\|/
 const SEGMENT = /&&|\|\||;|\|/
 const MODES = ['off', 'annotate', 'enforce']
+const SETTINGS_SOURCES = ['user', 'project', 'local'] as const
 
 const tailOf = (text: string): string =>
   text.split('\n').slice(-TAIL_LINES).join('\n').slice(-TAIL_CHARS)
-
-const REDIRECT = /(\s+\d*[<>]&?\s*\S+)+$/
-
-/** A command's segments, split at `&&`, `||`, `;` and `|`, each without trailing redirections. */
-const segments = (command: string): string[] =>
-  command
-    .split(SEGMENT)
-    .map((s) => s.trim().replace(REDIRECT, ''))
-    .filter((s) => s !== '')
-
-const isNeutral = (command: string): boolean => segments(command).every((s) => NEUTRAL.test(s))
 
 const field = (value: unknown, key: string): string => {
   const v =
@@ -388,21 +488,49 @@ const asMode = (value: string): Policy['mode'] =>
   MODES.includes(value) ? (value as Policy['mode']) : 'annotate'
 
 /**
+ * Classifies one finished Bash call (§6.2). A part counts as run only when the command is parts
+ * and neutral segments joined by `&&`: after `;`, `|` or `||` the call's exit status is not the
+ * part's. Any segment that may write (an unknown command, a `>` into a file) makes it an edit.
+ */
+const classifyBash = (command: string, parts: readonly string[]): BashClass => {
+  const cleaned = command.replace(HARMLESS_REDIRECT, '')
+  const segs = cleaned
+    .split(SEGMENT)
+    .map((s) => s.trim())
+    .filter((s) => s !== '')
+  const isPart = (s: string) => parts.includes(s)
+  const isNarrower = (s: string) => parts.some((p) => s.startsWith(`${p} `))
+  const writes = (s: string) => s.includes('>')
+  const known = (s: string) =>
+    !writes(s) && (isPart(s) || isNarrower(s) || DIR_CHANGE.test(s) || NEUTRAL.test(s))
+  if (!segs.every(known)) return { kind: 'edit' }
+  if (STATUS_BREAK.test(cleaned) || segs.some((s) => DIR_CHANGE.test(s))) return { kind: 'neutral' }
+  const ran = segs.filter(isPart)
+  return ran.length > 0 ? { kind: 'run', parts: ran } : { kind: 'neutral' }
+}
+
+/**
  * Inside Harnu (`HARNU_VERIFY_GATE` set at spawn) the mode and the operator-approved parts come
- * from the spawn's env; nothing in the working tree is read. Outside Harnu, the person's
- * userConfig. The model can write neither (§7.3).
+ * from the spawn's env, bound to the session root they were approved for, and refused when a
+ * settings file the session can write could have planted them. Outside Harnu, the person's
+ * userConfig. Nothing in the working tree is read (§7).
  */
 async function policy($: EngineInterface, opts: Options): Promise<Policy> {
   const mode = await $.env.get('HARNU_VERIFY_GATE')
-  if (mode !== undefined) {
-    return {
-      mode: asMode(mode),
-      parts: parseParts(await $.env.get('HARNU_VERIFY_CMD')),
-      inHarnu: true
-    }
+  if (mode === undefined) {
+    const check = opts.check.trim()
+    return { mode: asMode(opts.mode), parts: check === '' ? [] : [check], inHarnu: false }
   }
-  const check = opts.check.trim()
-  return { mode: asMode(opts.mode), parts: check === '' ? [] : [check], inHarnu: false }
+  const base = { mode: asMode(mode), inHarnu: true }
+  for (const source of SETTINGS_SOURCES) {
+    const env = (await $.settings.read({ source })).env ?? {}
+    if (Object.keys(env).some((k) => k.startsWith('HARNU_VERIFY_')))
+      return { ...base, parts: [], refused: `HARNU_VERIFY_* is set in the ${source} settings` }
+  }
+  const root = await $.env.get('HARNU_VERIFY_ROOT')
+  if (root !== (await $.session.root()))
+    return { ...base, parts: [], refused: 'the approved command belongs to another folder' }
+  return { ...base, parts: parseParts(await $.env.get('HARNU_VERIFY_CMD')) }
 }
 
 async function bump($: EngineInterface, edit?: string): Promise<void> {
@@ -427,7 +555,7 @@ async function record(
   return next.runs[parts[0]!]!
 }
 
-/** One finished tool call into the ledger: an edit, a run of one or more check parts, or neither (§6.2). */
+/** One finished tool call into the ledger: an edit, a run of one or more parts, or neither (§6.2). */
 async function observe(
   $: EngineInterface,
   opts: Options,
@@ -443,23 +571,11 @@ async function observe(
   }
   if (tool !== 'Bash') return
   const command = field(input, 'command')
-  const p = await policy($, opts)
-  const segs = segments(command)
-  // A part counts only when a segment IS the part: `npx vitest run tests/a.test.ts` is no receipt.
-  const parts = p.parts.filter((part) => segs.includes(part))
-  // A narrower run of a part (the part plus arguments) changes nothing: neither receipt nor edit.
-  const narrower = segs.every(
-    (s) => NEUTRAL.test(s) || p.parts.some((part) => s.startsWith(`${part} `))
-  )
-  if (parts.length > 0) {
-    // A background run reports before the check finishes: never a receipt, never an edit.
-    if (field(response, 'backgroundTaskId') !== '') return bump($)
-    await record($, parts, { ok, by: 'session', tail: tailOf(output) })
-  } else if (narrower || isNeutral(command)) {
-    await bump($)
-  } else {
-    await bump($, `Bash: ${command.trim().slice(0, 80)}`)
-  }
+  const c = classifyBash(command, (await policy($, opts)).parts)
+  if (c.kind === 'edit') return bump($, `Bash: ${command.trim().slice(0, 80)}`)
+  // A background run reports before the check finishes: never a receipt.
+  if (c.kind === 'neutral' || field(response, 'backgroundTaskId') !== '') return bump($)
+  await record($, c.parts, { ok, by: 'session', tail: tailOf(output) })
 }
 
 /**
@@ -497,6 +613,18 @@ async function runPart(
   }
 }
 
+/**
+ * The session's own permission mode decides whether the gate may run a part (§8.1): the approved
+ * text runs the branch's scripts, which the model can edit.
+ */
+async function permitted($: EngineInterface, part: string): Promise<string | undefined> {
+  const v = await $.tool.check({ tool: 'Bash', input: { command: part } })
+  if (v.decision === 'allow') return undefined
+  return v.decision === 'ask'
+    ? "this session's permissions would ask before running it"
+    : "this session's permissions refuse it"
+}
+
 /** Does a green run of every part cover the last edit? Runs the missing parts when it may (§5.2, §8). */
 async function judge(
   $: EngineInterface,
@@ -507,7 +635,7 @@ async function judge(
   const l = await read($, ledger)
   if (l.lastEditSeq === 0) return { kind: 'not-author' }
   const p = await policy($, opts)
-  if (p.parts.length === 0) return { kind: 'no-check', inHarnu: p.inHarnu }
+  if (p.parts.length === 0) return { kind: 'no-check', inHarnu: p.inHarnu, refused: p.refused }
   const fresh = (part: string) => {
     const r = l.runs[part]
     return r !== undefined && r.seq > l.lastEditSeq ? r : undefined
@@ -520,6 +648,8 @@ async function judge(
     return { kind: 'stale', parts: missing, lastEdit: l.lastEdit }
   let last: CheckRun | undefined
   for (const part of missing) {
+    const denied = await permitted($, part)
+    if (denied !== undefined) return { kind: 'unrun', part, why: denied }
     $.ui.status(`verify-gate: running ${part}`)
     let ran
     try {
@@ -550,7 +680,7 @@ function wording(v: Verdict, claim: string): { deny: string } | { note: string }
     case 'no-check':
       return {
         note: v.inHarnu
-          ? `${RECEIPT_MARK} ${claim}: this repo has no operator-approved verify command; this claim is unverified.`
+          ? `${RECEIPT_MARK} ${claim}: no operator-approved verify command applies here${v.refused === undefined ? '' : ` (${v.refused})`}; this claim is unverified.`
           : `${RECEIPT_MARK} ${claim}: no check is configured; this claim is unverified.`
       }
     case 'green':
@@ -600,16 +730,20 @@ async function gateBash(
   return w !== undefined && 'deny' in w ? w.deny : undefined
 }
 
-/** The receipt line a completion report carries; never runs anything (§5.1 rows 7 and 12). */
+/**
+ * The receipt line a completion report must carry now; undefined when it needs none or already
+ * carries this exact line. A line copied from an earlier report does not count (§5.1 rows 7, 12).
+ */
 async function receiptLine(
   $: EngineInterface,
   opts: Options,
   text: string
 ): Promise<string | undefined> {
-  if (!DONE_WORDS.test(text) || text.includes(RECEIPT_MARK)) return undefined
+  if (!DONE_WORDS.test(text)) return undefined
   const w = wording(await judge($, opts, false, new AbortController().signal), 'this report')
   if (w === undefined) return undefined
-  return 'deny' in w ? w.deny.split('\n')[0] : w.note
+  const line = 'deny' in w ? w.deny.split('\n')[0]! : w.note
+  return text.includes(line) ? undefined : line
 }
 
 async function staleDone($: EngineInterface, opts: Options): Promise<string | undefined> {
@@ -742,45 +876,70 @@ const CLAIM = {
 
 type Outcome = { code: number; output?: string } | 'hang'
 
+/** What Harnu sets at spawn for an approved repo, bound to the session root. */
+const HARNU = {
+  HARNU_VERIFY_GATE: 'enforce',
+  HARNU_VERIFY_CMD: JSON.stringify(PARTS),
+  HARNU_VERIFY_ROOT: '/repo/wt'
+}
+
+type WorldOptions = {
+  /** The session's permission verdict for a part the gate wants to run. */
+  partVerdict?: 'allow' | 'ask' | 'deny'
+  /** Settings files by source, as `$.settings.read({ source })` answers them. */
+  settings?: Partial<Record<'user' | 'project' | 'local', Record<string, unknown>>>
+}
+
 /**
  * The engine beneath the gate. `env` stands for what Harnu sets at spawn; `outcomes` answer each
- * spawned part in order. Every `fs.read` fails the test: the gate never reads the working tree.
+ * spawned part in order. Every `fs.read` is recorded, and the tests that matter assert none.
  */
 const world = (
   on: On,
   outcomes: Outcome[],
-  env: Record<string, string> = {
-    HARNU_VERIFY_GATE: 'enforce',
-    HARNU_VERIFY_CMD: JSON.stringify(PARTS)
-  }
+  env: Record<string, string> = HARNU,
+  o: WorldOptions = {}
 ) => {
   const clock = mock.clock(on, { now: 1_000 })
   mock.env(on, env)
   const runs: string[] = []
   const reached: string[] = []
   const sent: string[] = []
+  const fsReads: unknown[] = []
+  const asked: string[] = []
   on('fs.read', (_$, e) => {
-    throw new Error(`the gate read a file: ${JSON.stringify(e)}`)
+    fsReads.push(e)
+    throw new Error('the gate read a file')
   })
   on('session.root', () => ({ value: '/repo/wt' }))
+  on('settings.read', (_$, e) => ({
+    value: (e?.source === undefined ? {} : (o.settings?.[e.source as 'user'] ?? {})) as never
+  }))
   on('ui.status', () => ({ value: undefined }))
   on('process.spawn', async function* (_$, e) {
     runs.push(String(e.argv[2]))
-    const o = outcomes[runs.length - 1] ?? { code: 0 }
-    if (o === 'hang') {
+    const out = outcomes[runs.length - 1] ?? { code: 0 }
+    if (out === 'hang') {
       for (;;) {
         await clock.sleep(1_000)
         yield { stream: 'stdout' as const, text: '.' }
       }
     }
-    if (o.output !== undefined) yield { stream: 'stdout' as const, text: o.output }
-    return { value: { code: o.code, signal: null } }
+    if (out.output !== undefined) yield { stream: 'stdout' as const, text: out.output }
+    return { value: { code: out.code, signal: null } }
   })
   on('tool.call', (_$, e) => {
     reached.push(String(e.tool))
     return { result: { ok: true } } as never
   })
-  on('tool.check', () => ({ decision: 'allow' as const }))
+  on('tool.check', (_$, e) => {
+    const command = String((e.input as { command?: unknown }).command ?? '')
+    if (PARTS.includes(command) || command === 'make test') {
+      asked.push(command)
+      return { decision: o.partVerdict ?? 'allow' }
+    }
+    return { decision: 'allow' as const }
+  })
   on('session.send', (_$, e) => {
     sent.push(e.text)
     return { isDelivered: true as const }
@@ -788,7 +947,7 @@ const world = (
   on('classic.PostToolUse', () => ({}))
   on('classic.PostToolUseFailure', () => ({}))
   on('classic.SessionStart', () => ({}))
-  return { clock, runs, reached, sent }
+  return { clock, runs, reached, sent, fsReads, asked }
 }
 
 let n = 0
@@ -838,20 +997,23 @@ test('a red part refuses the claim, says the gate ran it, stops there, and never
 })
 
 test('the working tree cannot choose the command: nothing approved means nothing runs', async ($, on) => {
-  const w = world(on, [], { HARNU_VERIFY_GATE: 'enforce' })
+  const w = world(on, [], { HARNU_VERIFY_GATE: 'enforce', HARNU_VERIFY_ROOT: '/repo/wt' })
   await edit($)
   await edit($, 'WORKTREE.md')
   const r = await $.tool.call(CLAIM)
   expect(r.deny).toBeUndefined()
   expect(w.runs).toEqual([])
-  expect(r.context?.at(-1)).toMatch(/no operator-approved verify command; this claim is unverified/)
+  expect(r.context?.at(-1)).toMatch(
+    /no operator-approved verify command applies here; this claim is unverified/
+  )
+  expect(w.fsReads).toEqual([])
 })
 
 test("the session's own runs count part by part, as separate Bash calls: nothing reruns", async ($, on) => {
   const w = world(on, [])
   await edit($)
   await bash($, 'npm run typecheck')
-  await bash($, 'npx vitest run 2>&1 | tail -40')
+  await bash($, 'npx vitest run > /dev/null 2>&1')
   const r = await $.tool.call(CLAIM)
   expect(r.deny).toBeUndefined()
   expect(w.runs).toEqual([])
@@ -948,10 +1110,7 @@ test(
 )
 
 test('annotate mode lets a stale claim through with a warning and runs nothing', async ($, on) => {
-  const w = world(on, [], {
-    HARNU_VERIFY_GATE: 'annotate',
-    HARNU_VERIFY_CMD: JSON.stringify(PARTS)
-  })
+  const w = world(on, [], { ...HARNU, HARNU_VERIFY_GATE: 'annotate' })
   await edit($)
   const r = await $.tool.call(CLAIM)
   expect(r.deny).toBeUndefined()
@@ -962,7 +1121,7 @@ test('annotate mode lets a stale claim through with a warning and runs nothing',
 })
 
 test('off mode leaves even a red claim alone', async ($, on) => {
-  const w = world(on, [], { HARNU_VERIFY_GATE: 'off', HARNU_VERIFY_CMD: JSON.stringify(PARTS) })
+  const w = world(on, [], { ...HARNU, HARNU_VERIFY_GATE: 'off' })
   await edit($)
   await bash($, 'npm run typecheck', 'Exit code 1')
   const r = await $.tool.call(CLAIM)
@@ -1050,9 +1209,104 @@ test('a "done" reply with no green check since the last edit is annotated', asyn
   await bash($, 'npm run typecheck && npx vitest run')
   expect((await $.turn.complete(done)).text).toBe('Done, all tests pass.')
 })
+
+const ONE = { ...HARNU, HARNU_VERIFY_CMD: JSON.stringify(['sh check.sh']) }
+
+for (const shape of [
+  'sh check.sh 2>&1 | tail -5',
+  'sh check.sh || true',
+  'sh check.sh; rm -r x',
+  'sh check.sh || echo failed',
+  'sh check.sh; echo done'
+]) {
+  test(`\`${shape}\` exiting 0 is no receipt: the gate runs the part itself`, async ($, on) => {
+    const w = world(on, [{ code: 1, output: 'check-red' }], ONE)
+    await edit($)
+    await bash($, shape)
+    const r = await $.tool.call(CLAIM)
+    expect(w.runs).toEqual(['sh check.sh'])
+    expect(r.deny).toMatch(
+      /`sh check.sh` failed after the last edit \(run by the gate\)[\s\S]*check-red/
+    )
+  })
+}
+
+test('control: the bare part exiting 0 is a receipt; a later `; rm -r x` is an edit', async ($, on) => {
+  const w = world(on, [{ code: 0 }], ONE)
+  await edit($)
+  await bash($, 'sh check.sh > /dev/null 2>&1')
+  expect((await $.tool.call(CLAIM)).deny).toBeUndefined()
+  expect(w.runs).toEqual([])
+  await bash($, 'ls; rm -r x')
+  await $.tool.call(CLAIM)
+  expect(w.runs).toEqual(['sh check.sh'])
+})
+
+test('a write through `>` is an edit; `cd elsewhere && <part>` is no receipt and no edit', async ($, on) => {
+  const w = world(on, [{ code: 0 }, { code: 0 }], ONE)
+  await edit($)
+  await bash($, 'sh check.sh')
+  await bash($, 'echo hi > notes.txt')
+  await $.tool.call(CLAIM)
+  expect(w.runs).toEqual(['sh check.sh'])
+  await bash($, 'cat > other.txt')
+  await bash($, 'cd /elsewhere && sh check.sh')
+  await $.tool.call(CLAIM)
+  expect(w.runs).toEqual(['sh check.sh', 'sh check.sh'])
+})
+
+test("a part this session's permissions would ask about is not run: the session runs it", async ($, on) => {
+  const w = world(on, [], HARNU, { partVerdict: 'ask' })
+  await edit($)
+  const r = await $.tool.call(CLAIM)
+  expect(w.asked).toEqual(['npm run typecheck'])
+  expect(w.runs).toEqual([])
+  expect(r.deny).toMatch(
+    /could not run `npm run typecheck` \(this session's permissions would ask before running it\)\. Run it yourself with Bash/
+  )
+})
+
+for (const source of ['project', 'local'] as const) {
+  test(`HARNU_VERIFY_* in the ${source} settings sets Harnu's parts aside`, async ($, on) => {
+    const settings = { [source]: { env: { HARNU_VERIFY_CMD: '["node -e 1"]' } } }
+    const w = world(on, [], HARNU, { settings })
+    await edit($)
+    const r = await $.tool.call(CLAIM)
+    expect(w.runs).toEqual([])
+    expect(r.context?.at(-1)).toMatch(
+      new RegExp(`HARNU_VERIFY_\\* is set in the ${source} settings`)
+    )
+  })
+}
+
+test('parts approved for another folder are set aside', async ($, on) => {
+  const w = world(on, [], { ...HARNU, HARNU_VERIFY_ROOT: '/repo/other-wt' })
+  await edit($)
+  const r = await $.tool.call(CLAIM)
+  expect(w.runs).toEqual([])
+  expect(r.context?.at(-1)).toMatch(/the approved command belongs to another folder/)
+})
+
+test('a receipt line copied from an earlier report does not count', async ($, on) => {
+  const w = world(on, [], ONE)
+  await edit($)
+  await bash($, 'sh check.sh')
+  const msg = {
+    tool: 'mcp__harnu__message_session',
+    sessionId: 'abc',
+    message: 'Done, PR is up.'
+  } as const
+  const old = (await $.tool.call(msg)).deny!.split('\n')[1]!
+  await edit($, 'src/b.ts')
+  const r = await $.tool.call({ ...msg, message: `Done, PR is up.\n${old}` })
+  expect(r.deny).toMatch(
+    /send it again with this line appended, as written:\n\[verify-gate\] this report: no green run since the last edit \(Edit src\/b.ts\)/
+  )
+  expect(w.reached).toEqual([])
+})
 ```
 
-## The stand-in MCP server (R2)
+## The stand-in MCP server (R2, R8)
 
 `server.mjs`, run with `node server.mjs <log path>`:
 
@@ -1107,10 +1361,10 @@ createInterface({ input: process.stdin }).on('line', (line) => {
 
 ## Gaps against the spec
 
-| Spec              | Not in the prototype                                                                                                                            |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| §5.1 rows 3, 4, 8 | `mission_request_close` and `mission_verify_step` notes (W1); noun events (W3)                                                                  |
-| §8.1              | Single-flight for racing claims                                                                                                                 |
-| §7.2, §11         | Everything on Harnu's side: the resolver key (D-1), the approval store and its disclosure, the spawn env, the durable per-session mode, staging |
-| §10.2             | The gate's `api-surface.json`, CLI ceiling and static profile                                                                                   |
-| §9.3              | Every Mission write, and the HEAD sha in the receipt (W3)                                                                                       |
+| Spec              | Not in the prototype                                                                                                                                                                                                        |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| §5.1 rows 3, 4, 8 | `mission_request_close` and `mission_verify_step` notes (W1); noun events (W3)                                                                                                                                              |
+| §8.1              | Single-flight for racing claims                                                                                                                                                                                             |
+| §7.2, §7.6, §11   | Everything on Harnu's side: the resolver key (D-1), the approval store and its disclosure, the spawn env **including deleting inherited values and setting the root**, the durable per-session mode and its re-key, staging |
+| §10.2             | The gate's `api-surface.json`, CLI ceiling and static profile                                                                                                                                                               |
+| §9.3              | Every Mission write, and the HEAD sha in the receipt (W3)                                                                                                                                                                   |
