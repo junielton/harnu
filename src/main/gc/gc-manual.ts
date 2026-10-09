@@ -17,6 +17,7 @@ import type { GcPrefs } from './gc-prefs'
 import { volumeItemId, type OrphanVolumeItem } from './gc-housekeeping-input'
 import type { HousekeepingResult, HousekeepingVolume } from './housekeeping-core'
 import { leftBehind, type Leftover } from './gc-leftovers'
+import { WORK_STAMP_UNKNOWN } from './gc-work-stamp'
 import { runBatch, WORK_CHANGED, type GcItemResult, type GcOps } from './pipeline-core'
 import type { GcCleanAck, GcCleanOptions } from './gc-wire'
 
@@ -102,6 +103,10 @@ export function submitManualClean(
       // is not what the dialog showed: a file edited since then would otherwise go to the trash
       // unseen. The tip is already compared above and again by the reprobe.
       const path = b.item.path
+      // The scan could not read this worktree's work, so there is nothing to compare against.
+      if (forced && path && seen.workStamp === WORK_STAMP_UNKNOWN) {
+        return refused(id, 'work-unreadable')
+      }
       if (forced && path) {
         let live: string | null
         try {

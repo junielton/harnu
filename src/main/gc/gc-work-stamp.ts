@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import type { ExecFn } from '../reaper/dehydrate-shell'
+import type { ReapItem } from '../reaper/reaper-core'
 
 /** A worktree with more dirty paths than this is stamped from `git status` alone beyond it. */
 const STAT_CAP = 2000
@@ -47,4 +48,31 @@ export async function workStampOf(exec: ExecFn, worktreePath: string): Promise<s
     hash.update('\0')
   }
   return hash.digest('hex')
+}
+
+/**
+ * What the scan records when the probe could not answer (an overflow, a git error). It is neither
+ * a stamp nor "no work": the force path refuses such an item (`work-unreadable`) with a message
+ * that says to scan again, instead of comparing a live value against nothing and refusing forever.
+ */
+export const WORK_STAMP_UNKNOWN = 'unknown'
+
+/** The scan's stamp: {@link workStampOf} with the very same git call, or "unknown" if it cannot answer. */
+export async function scanWorkStamp(exec: ExecFn, worktreePath: string): Promise<string | null> {
+  try {
+    return await workStampOf(exec, worktreePath)
+  } catch {
+    return WORK_STAMP_UNKNOWN
+  }
+}
+
+/**
+ * Which scanned worktrees get a stamp: any with uncommitted or untracked work, and any whose status
+ * could not be read (`local-clean` unknown), since the live check may well read work there. A clean
+ * one has none, and a row with no folder has nothing to probe.
+ */
+export function needsWorkStamp(item: ReapItem): boolean {
+  if (!item.path) return false
+  if (item.blockers.includes('dirty') || item.untracked.length > 0) return true
+  return item.checkpoints.find((c) => c.id === 'local-clean')?.state === 'unknown'
 }

@@ -19,6 +19,7 @@ export const REFUSAL_CODES = [
   // up front, from gc:clean
   'changed-since-confirm',
   'work-changed-since-confirm',
+  'work-unreadable',
   'needs-confirmation',
   'missing-expected',
   'no-longer-orphan',

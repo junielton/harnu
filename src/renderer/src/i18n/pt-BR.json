@@ -2618,6 +2618,7 @@
       },
       "refusal": {
         "changedSinceConfirm": "Mudou desde que você confirmou — revise de novo.",
+        "workUnreadable": "O Harnu não conseguiu ler o trabalho não commitado desta worktree ao escanear, então não vai removê-la sem ver. Escaneie de novo e revise.",
         "workChangedSinceConfirm": "O trabalho não commitado mudou depois que você olhou, então nada foi removido. Escaneie de novo e revise.",
         "needsConfirmation": "Precisa da sua confirmação antes. Selecione e escolha Remover.",
         "missingExpected": "A limpeza não conseguiu comparar com o que você viu. Revise e tente de novo.",

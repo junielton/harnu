@@ -2618,6 +2618,7 @@
       },
       "refusal": {
         "changedSinceConfirm": "Changed since you confirmed — review it again.",
+        "workUnreadable": "Harnu could not read this worktree's uncommitted work when it scanned, so it will not remove it unseen. Scan again, then review it.",
         "workChangedSinceConfirm": "Its uncommitted work changed after you looked, so nothing was removed. Scan again and review it.",
         "needsConfirmation": "Needs your confirmation first. Select it and choose Remove.",
         "missingExpected": "Cleanup could not check it against what you were shown. Review it and try again.",

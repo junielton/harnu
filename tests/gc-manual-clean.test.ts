@@ -720,3 +720,23 @@ describe('an edit made WHILE the clean runs halts it too', () => {
     expect(r.done[0]!.results[0]).toMatchObject({ ok: true })
   })
 })
+
+describe('a worktree whose work the scan could not read is refused with a way forward', () => {
+  it('refuses with work-unreadable instead of comparing against nothing, and never probes', async () => {
+    const b = bundle('/ws/wt/a', 'review', { reason: { code: 'dirty', detail: 'x' } })
+    b.item = reapItem('/ws/wt/a', { workStamp: 'unknown' })
+    const r = rig([b], {
+      workStamp: async () => {
+        throw new Error('must not matter')
+      }
+    })
+    submitManualClean(r.deps, [b.item.id], shown([b]))
+    await settle(r)
+    expect(r.done[0]!.results[0]).toMatchObject({
+      ok: false,
+      haltedAt: 'reprobe',
+      error: 'work-unreadable'
+    })
+    expect(r.forced).toEqual([])
+  })
+})

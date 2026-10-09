@@ -116,6 +116,7 @@ export interface GcExpected {
    * Fingerprint of the worktree's uncommitted work as the scan saw it (`item.workStamp`; null
    * when it had none). The force path probes the folder again and refuses (`work-changed-since-
    * confirm`) when the stamp differs: a file edited after the operator looked never rides along.
+   * `'unknown'` means the scan's probe could not answer: the force path refuses it (`work-unreadable`).
    */
   workStamp?: string | null
   /** Orphan volumes only: the compose project shown with the volume. */
