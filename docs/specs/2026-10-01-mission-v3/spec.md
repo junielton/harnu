@@ -300,6 +300,8 @@ Reads never write the mission file. `updatedAt` therefore stays a pure evidence 
 
 **The cue** keeps one key per kind per mission and fires only when **a key appears or a count grows**. A tick, a resolution or a decrease never chimes. Approvals and needs-input stay excluded (they already chime). The 30-minute re-nudge applies to the list as a whole.
 
+> **Amended 2026-10-09 by [Mission cue noise](../2026-10-09-mission-cue-noise/spec.md) (BUG-173).** The sentence "The 30-minute re-nudge applies to the list as a whole" is superseded. Re-nudging is now per owed kind: `close`, `checks` and `review-import` never re-nudge; `rescope`, `blocker` and `human-steps` re-nudge with back-off (30 min, 1 h, 2 h, 4 h) and then stop. The cue memory is persisted across restarts, and the cue posts one grouped Activity entry with a clickable row per mission instead of a new row each time. Everything else in this section stands.
+
 ## 4. Contracts touched
 
 | Area                     | Changes                                                                                                                                                                                                                                                                                                                                                       |
