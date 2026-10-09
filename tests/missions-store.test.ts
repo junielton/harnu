@@ -51,6 +51,11 @@ describe('runDoor — the door answer patches the store at once', () => {
   let listCalls: Array<ReturnType<typeof deferred<ListResult>>>
   let door: ReturnType<typeof vi.fn>
   const mission = (): MissionView => fixtureView('faq-like')
+  /** A second mission: the fixtures derive their id from the name's length, so 'parallel' would collide. */
+  const second = (): MissionView => {
+    const v = fixtureView('parallel')
+    return { ...v, mission: { ...v.mission, id: 'mnt-0000b0b0' } }
+  }
 
   /** A store already holding `views`, with every later list read left pending. */
   async function storeWith(views: MissionView[]): Promise<ReturnType<typeof useMissionsStore>> {
@@ -119,7 +124,7 @@ describe('runDoor — the door answer patches the store at once', () => {
     const v = mission()
     const patched = fixtureView('faq-like', { view: { title: 'after the tick' } })
     door.mockResolvedValue({ ok: true, view: patched })
-    const store = await storeWith([v, fixtureView('parallel')])
+    const store = await storeWith([v, second()])
     await store.runDoor({
       door: 'tickCheck',
       root: '/repo',
@@ -133,7 +138,7 @@ describe('runDoor — the door answer patches the store at once', () => {
 
   it('ignores a door answer for a mission the store no longer holds', async () => {
     const v = mission()
-    const other = fixtureView('parallel')
+    const other = second()
     const d = deferred<MissionDoorResult>()
     door.mockReturnValue(d.promise)
     const store = await storeWith([v, other])
@@ -220,7 +225,7 @@ describe('runDoor — the door answer patches the store at once', () => {
 
   it('an end refused MISSION_CLOSED for a mission still held drops it, silently', async () => {
     const v = mission()
-    const other = fixtureView('parallel')
+    const other = second()
     door.mockResolvedValue({ ok: false, error: 'MISSION_CLOSED: closed by the operator' })
     const store = await storeWith([v, other])
     const res = await store.runDoor({
