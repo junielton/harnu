@@ -8623,10 +8623,35 @@ volume), size right.
   dialog changes (an autopilot cycle or a job refresh), the dialog shows "This changed since you opened it —
   review again" in `--warning` and **disables the confirm until it is reopened**; the confirm never sends facts
   newer than the ones the operator was shown. A rejected `gc:clean` call shows an error toast.
-- **Only what `gc:clean` can remove is listed.** A detached worktree is refused by the engine
-  (`unsupported-kind`), so Remove (selection bar, row, panel) leaves it out of the dialog and raises a
-  Warning toast at the click — "{n} detached worktrees can't be removed here", with the
-  `git worktree remove` hint. When nothing removable is left, no dialog opens; the toast is the answer.
+- **Only what `gc:clean` can remove is offered — one predicate decides it.** `removability(block)`
+  (`lib/gc-removability.ts`) answers from the bundle's own facts, mirroring what main refuses: a detached
+  worktree (`unsupported-kind`), a locked one, a shared stack, a nested or foreign checkout, an idle session
+  still open, an unknown tip, an unresolved path, and the protections (main checkout, never-clean, Keep,
+  In use). The panel, the list row, the selection bar, "Select all in repo", "Remove the ones marked safe",
+  Retry and the **R** shortcut all ask it, so none of them offers a click that ends in "0 cleaned".
+  `tests/gc-removability.test.ts` pins every rule against main's real refusal functions.
+- **"Won't be removed (n)" group.** A selection that mixes removable and refused items still opens ONE
+  dialog. The refused ones sit in their own section under the list (`--bg` fill, `--border`, 8px radius,
+  eyebrow title in `--text-3`, one row per item): the mono `repo › worktree` title, the reason in 11px
+  `--text-3`, and — when a command clears the cause — that command in 11px mono `--text-2`
+  (`git worktree unlock <path>`, `git worktree remove <path>`), selectable in one click. The group is
+  excluded from the breakdown, the footer total, the confirm label and the `gc:clean` request.
+- **Nothing removable → no dialog.** The selection bar's **Remove selected** is disabled (tooltip "Nothing
+  selected can be removed") when no ticked item can be removed; the list row swaps its Remove button for an
+  inert, dimmed `Trash2` carrying the reason as its tooltip and `aria-label`. Any path that still reaches
+  the open step (a marked-safe pre-selection that went stale) raises a Warning toast with the reason — the
+  one sentence when every item shares it, "each for its own reason" otherwise — and opens no dialog.
+- **Panel.** A review item main refuses shows no Remove button; under the actions a 11px `--text-3` line says
+  "Remove is unavailable. {reason}", followed by "Run `{command}`" when there is one. After a refusal a locked
+  item keeps its real reason ("Git has this worktree locked. Unlock it first.") instead of the engine's
+  "couldn't match a single git registration".
+- **A ready item main refused lately** (`bundle.reprobeRefusal`, set by the gatherer) stays on the map but
+  leaves the hero count, the hero's confirm and the autopilot. Its panel carries a Warning-toned note — "The
+  last clean was refused. {reason}" — with **Retry** in place of **Clean now**. After two identical refusals it
+  moves to Needs review with that reason ("Refused {n} times in a row…").
+- **Docker down.** A refusal for `docker-unavailable` reads "Docker is not running … Start Docker, then
+  Retry." and offers Retry. Only a bundle that had Docker stacks at the scan is refused for it; the rest
+  clean as usual.
 - **Keyboard:** Esc or Cancel closes; **focus starts on Cancel, never the confirm button**; Tab cycles
   inside (focus trap); ↩ activates only the focused control.
 

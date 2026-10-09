@@ -15,7 +15,8 @@ import type { GcBlock } from '../lib/gc-model'
 import type { BlockJobState, ItemFailure } from '../lib/gc-jobs'
 import { formatBytes } from './system-monitor-format'
 import { canDehydrate } from './cleanup-row'
-import { reasonKey, refusalKey } from './cleanup-gc-copy'
+import { reasonKey, refusalKey, removalKey } from './cleanup-gc-copy'
+import { removability } from '../lib/gc-removability'
 import Button from './ui/Button.vue'
 import CleanupOpinionChip from './CleanupOpinionChip.vue'
 
@@ -67,6 +68,12 @@ function reasonOf(b: GcBlock): string {
   const refusal = props.failureOf(b.id)?.refusal
   if (refusal) return t(refusalKey(refusal))
   return t(reasonKey(b.reasonCode))
+}
+
+/** Why Remove is not offered for this row, or null when it is. Main would refuse it, so it is not a button. */
+function removeBlockedText(b: GcBlock): string | null {
+  const v = removability(b)
+  return v.ok ? null : t(removalKey(v.reason))
 }
 
 function canDehydrateBlock(b: GcBlock): boolean {
@@ -222,6 +229,7 @@ function onRowKey(e: KeyboardEvent, id: string): void {
             <Bookmark :size="13" :stroke-width="1.7" />
           </button>
           <button
+            v-if="removeBlockedText(b) === null"
             type="button"
             class="flex h-6.5 w-6.5 items-center justify-center rounded-sm border border-border-2 text-text-3 transition hover:border-red hover:bg-red-soft hover:text-red"
             :aria-label="t('cleanup.gc.review.removeAria', { name: b.name })"
@@ -231,6 +239,16 @@ function onRowKey(e: KeyboardEvent, id: string): void {
           >
             <Trash2 :size="13" :stroke-width="1.7" />
           </button>
+          <span
+            v-else
+            class="flex h-6.5 w-6.5 cursor-not-allowed items-center justify-center rounded-sm border border-border text-text-disabled"
+            role="img"
+            :aria-label="removeBlockedText(b) ?? undefined"
+            :title="removeBlockedText(b) ?? undefined"
+            data-testid="review-remove-blocked"
+          >
+            <Trash2 :size="13" :stroke-width="1.7" />
+          </span>
         </span>
       </div>
 

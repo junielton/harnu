@@ -12,6 +12,7 @@ import {
   applyFailures,
   planCycle,
   pruneFailures,
+  rememberReprobeRefusal,
   type CycleFailure,
   type CyclePlan
 } from './autopilot-core'
@@ -186,8 +187,13 @@ export async function runGcCycle(
       const done = toClean.find((b) => b.item.id === r.id)
       if (done) deps.rememberLeftovers?.(leftBehind(done, gathered.housekeeping.volumes))
     }
-    // A refusal at the reprobe changed nothing: that item just re-buckets on the next scan.
-    if (!r.ok && r.haltedAt !== 'reprobe' && r.haltedAt !== null) {
+    // A refusal at the reprobe changed nothing. One that describes the item (a locked worktree, an
+    // unknown tip) is remembered, so the item leaves the hero and the next cycle spends its cap
+    // elsewhere; the rest just re-bucket on the next scan.
+    if (!r.ok && r.haltedAt === 'reprobe') {
+      const done = toClean.find((b) => b.item.id === r.id)
+      rememberReprobeRefusal(deps.state.failures, r, now, done?.localTip ?? null)
+    } else if (!r.ok && r.haltedAt !== null) {
       deps.state.failures.set(r.id, { step: r.haltedAt, error: r.error ?? 'failed', at: now })
     }
   }

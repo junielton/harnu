@@ -1,0 +1,117 @@
+// The one answer to "may Harnu remove this?" for the Cleanup screen. Main refuses a Remove for a
+// handful of reasons it can read straight off a bundle (`refusalFor` in autopilot-core, `refusalOf`
+// in pipeline-core, the reprobe in gc-shell). Offering one of them lets the operator confirm a red
+// dialog that ends in "0 cleaned", so every surface that offers Remove — the panel, a list row, the
+// selection bar, "Select all", "Remove the ones marked safe", Retry — asks this and nothing else.
+// The renderer never imports main code, so the rules are re-stated here from the same facts, and
+// tests/gc-removability.test.ts pins each one against main's real functions.
+//
+// No DOM, no Vue, no i18n.
+
+import type { WorktreeBundle } from '../../../main/gc/bundle-core'
+import type { GcBlock } from './gc-model'
+
+/** Why a Remove cannot go ahead, in the operator's terms (main's codes are finer; see the parity test). */
+export type RemovalRefusal =
+  | 'main-checkout'
+  | 'never-clean'
+  | 'kept'
+  | 'in-use'
+  | 'unsupported-kind'
+  | 'shared-stack'
+  | 'nested-worktree'
+  | 'tip-unknown'
+  | 'grace-not-elapsed'
+  | 'path-unresolved'
+  | 'session-open'
+  | 'locked'
+
+export type Removability =
+  | { ok: true }
+  | {
+      ok: false
+      reason: RemovalRefusal
+      /** A command the operator can run to clear the cause, when there is one. */
+      hint?: string
+    }
+
+/**
+ * The worktree kinds the cleanup executor can remove. Mirrors `CLEANABLE_KINDS` in
+ * `src/main/gc/autopilot-core.ts` (pinned by the parity test): any other kind is refused as
+ * `unsupported-kind` — a detached worktree has no branch to name its archive ref after.
+ */
+const CLEANABLE_WORKTREE_KINDS: readonly string[] = ['worktree', 'hidden-folder']
+
+const DAY_MS = 86_400_000
+
+/** A path as one comparable string: slashes unified, no trailing slash. */
+const looseKey = (p: string): string =>
+  p.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '')
+
+/** `p` as a single shell word: plain paths stay bare, anything else is single-quoted. */
+export function shellQuote(p: string): string {
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(p) ? p : `'${p.replace(/'/g, `'\\''`)}'`
+}
+
+const refused = (reason: RemovalRefusal, hint?: string): Removability =>
+  hint === undefined ? { ok: false, reason } : { ok: false, reason, hint }
+
+/**
+ * Whether `gc:clean` would take this worktree bundle, judged from its facts, in the order main
+ * judges them. `now` is the clock the grace window is held against (main re-checks it at the click).
+ */
+export function bundleRemovability(b: WorktreeBundle, now: number = Date.now()): Removability {
+  const path = b.item.path
+  // refusalFor (autopilot-core)
+  if (b.isMainCheckout || (!!path && looseKey(path) === looseKey(b.item.repoPath))) {
+    return refused('main-checkout')
+  }
+  if (b.neverClean) return refused('never-clean')
+  if (b.keep) return refused('kept')
+  if (b.bucket === 'in-use') return refused('in-use')
+  if (!CLEANABLE_WORKTREE_KINDS.includes(b.item.kind)) {
+    return refused('unsupported-kind', path ? `git worktree remove ${shellQuote(path)}` : undefined)
+  }
+  // refusalOf (pipeline-core): refused even when confirmed
+  const code = b.reason?.code
+  if (b.sharedStackIds.length > 0 || code === 'shared-stack') return refused('shared-stack')
+  // A list that is missing or not a list cannot show there is none.
+  if (
+    !Array.isArray(b.nestedWorktrees) ||
+    b.nestedWorktrees.length > 0 ||
+    !Array.isArray(b.foreignCheckouts) ||
+    b.foreignCheckouts.length > 0 ||
+    code === 'nested-worktree'
+  ) {
+    return refused('nested-worktree')
+  }
+  // The reprobe (gc-shell): what it can refuse from the scan's own facts
+  if (typeof b.localTip !== 'string') return refused('tip-unknown')
+  const known = (n: number | null | undefined): n is number =>
+    Number.isFinite(n) && (n as number) >= 0
+  if (
+    !known(b.lastSignOfLifeAt) ||
+    !known(b.graceDays) ||
+    now - b.lastSignOfLifeAt < b.graceDays * DAY_MS
+  ) {
+    return refused('grace-not-elapsed')
+  }
+  if (!path || b.pathsResolved !== true || code === 'path-unresolved') {
+    return refused('path-unresolved')
+  }
+  // Any running session refuses, even one the scan already saw idle.
+  if (b.session !== 'none' || code === 'open-idle-session') return refused('session-open')
+  if (b.locked === true || code === 'locked') {
+    return refused('locked', `git worktree unlock ${shellQuote(path)}`)
+  }
+  return { ok: true }
+}
+
+/**
+ * Whether a block can be removed. An orphan volume is always offered: what refuses one (a container
+ * took it, its folder is back) is only known to main, at the click, and is reported then.
+ */
+export function removability(b: GcBlock, now: number = Date.now()): Removability {
+  if (b.kind === 'volume' || !b.bundle) return { ok: true }
+  return bundleRemovability(b.bundle, now)
+}

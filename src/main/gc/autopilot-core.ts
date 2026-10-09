@@ -4,7 +4,7 @@
 import type { WorktreeBundle } from './bundle-core'
 import type { GcPrefs } from './gc-prefs'
 import { AS_GIVEN, canonicalPathKey, type CanonicalPath } from './bundle-core'
-import { isMainCheckoutByPath } from './pipeline-core'
+import { isMainCheckoutByPath, type GcItemResult } from './pipeline-core'
 
 export type CycleMode = 'off' | 'report' | 'clean'
 
@@ -81,6 +81,8 @@ export function planCycle(bundles: readonly WorktreeBundle[], prefs: GcPrefs): C
     .filter(
       (b) =>
         b.bucket === 'ready' &&
+        // Refused at the reprobe lately: trying again every cycle only spends the cap on it.
+        !b.reprobeRefusal &&
         CLEANABLE_KINDS.includes(b.item.kind) &&
         !b.keep &&
         !b.isMainCheckout &&
@@ -103,15 +105,80 @@ export function planCycle(bundles: readonly WorktreeBundle[], prefs: GcPrefs): C
 
 // ---- failures: a ready item that keeps failing is a decision, not a retry loop -----------------
 
-/** A halted cleanup, remembered in memory until it succeeds, the worktree is gone, or a day passes. */
+/**
+ * A halted cleanup, or a refusal at the reprobe, remembered in memory until it succeeds, the
+ * worktree is gone, or its TTL passes. A halt after the reprobe carries only `step`, `error` and `at`;
+ * a reprobe refusal (`step: 'reprobe'`, `error` the refusal code) also counts how many times in a row
+ * the same refusal came back.
+ */
 export interface CycleFailure {
   step: string
   error: string
   at: number
+  /** Reprobe refusals only: identical refusals in a row. */
+  count?: number
+  /** Reprobe refusals only: the tip the item was refused at; another tip is another question. */
+  tip?: string | null
 }
 
 /** How long a failed cleanup stays a decision before the autopilot may try it again. */
 export const FAILURE_TTL_MS = 86_400_000
+
+/**
+ * How long a reprobe refusal keeps an item out of the hero and the autopilot. Shorter than a failed
+ * cleanup: nothing was changed, so trying once in a while costs nothing, and a fix made outside Harnu
+ * (an unlocked worktree) is noticed within hours without anyone pressing a button.
+ */
+export const REFUSAL_TTL_MS = 6 * 3_600_000
+
+/** Identical reprobe refusals in a row after which a ready item is demoted to Needs review. */
+export const REFUSAL_DEMOTE_AFTER = 2
+
+/**
+ * The reprobe refusals that describe the ITEM and stay true until someone acts, so remembering them
+ * is honest. The rest are the moment or the click — Docker down, a session that is open right now, a
+ * scan that is out of date, a confirm that went stale — and the next scan or click answers them afresh.
+ */
+const REMEMBERED_REFUSALS: ReadonlySet<string> = new Set([
+  'tip-unknown',
+  'path-unresolved',
+  'not-harvestable',
+  'nested-worktree',
+  'foreign-checkout',
+  'shared-stack',
+  'stack-present',
+  'cannot-unregister',
+  'protected-now'
+])
+
+const codeOf = (error: string): string => error.split(':')[0].trim()
+
+/**
+ * Remembers a reprobe refusal so the item leaves the hero and the autopilot skips it. Returns whether
+ * the result was one worth remembering. `tip` is the bundle's tip, so a new commit forgets the refusal.
+ */
+export function rememberReprobeRefusal(
+  failures: Map<string, CycleFailure>,
+  result: Pick<GcItemResult, 'id' | 'ok' | 'haltedAt' | 'error'>,
+  now: number,
+  tip?: string | null
+): boolean {
+  if (result.ok || result.haltedAt !== 'reprobe') return false
+  const code = codeOf(result.error ?? '')
+  if (!REMEMBERED_REFUSALS.has(code)) return false
+  const prev = failures.get(result.id)
+  const again = prev?.step === 'reprobe' && prev.error === code
+  failures.set(result.id, {
+    step: 'reprobe',
+    error: code,
+    at: now,
+    count: again ? (prev.count ?? 1) + 1 : 1,
+    ...(tip === undefined ? {} : { tip })
+  })
+  return true
+}
+
+const ttlOf = (f: CycleFailure): number => (f.step === 'reprobe' ? REFUSAL_TTL_MS : FAILURE_TTL_MS)
 
 /** Drops failures for worktrees that no longer exist and those old enough to retry. */
 export function pruneFailures(
@@ -119,15 +186,31 @@ export function pruneFailures(
   bundles: readonly WorktreeBundle[],
   now: number
 ): void {
-  const present = new Set(bundles.map((b) => b.item.id))
+  const byId = new Map(bundles.map((b) => [b.item.id, b]))
   for (const [id, f] of failures) {
-    if (!present.has(id) || now - f.at >= FAILURE_TTL_MS) failures.delete(id)
+    const b = byId.get(id)
+    if (!b || now - f.at >= ttlOf(f)) {
+      failures.delete(id)
+      continue
+    }
+    if (f.step !== 'reprobe') continue
+    // A refusal is about a ready item at one commit. Once the scan calls it something else, or it
+    // moved, the scan owns the fact and the memory only gets in the way. A bundle this file already
+    // demoted (applyFailures) still carries the mark, and is ready underneath: keep its memory.
+    const readyUnderneath = b.bucket === 'ready' || b.reprobeRefusal !== undefined
+    if (!readyUnderneath || (f.tip !== undefined && f.tip !== (b.localTip ?? null))) {
+      failures.delete(id)
+    }
   }
 }
 
 /**
  * Spec §4: a halted item reappears in Needs review with the step and the error. Only a ready item is
  * rewritten; anything else is already a decision or off limits.
+ *
+ * A reprobe refusal is gentler: the item stays ready on paper but carries `reprobeRefusal`, so the
+ * hero and the autopilot leave it out and the panel can say why. After REFUSAL_DEMOTE_AFTER identical
+ * refusals it is demoted to Needs review with that reason.
  */
 export function applyFailures(
   bundles: readonly WorktreeBundle[],
@@ -136,6 +219,19 @@ export function applyFailures(
   return bundles.map((b) => {
     const f = b.bucket === 'ready' ? failures.get(b.item.id) : undefined
     if (!f) return b
+    if (f.step === 'reprobe') {
+      const count = f.count ?? 1
+      const marked = { ...b, reprobeRefusal: { code: f.error, count } }
+      if (count < REFUSAL_DEMOTE_AFTER) return marked
+      return {
+        ...marked,
+        bucket: 'review' as const,
+        reason: {
+          code: 'cleanup-failed' as const,
+          detail: `Cleanup was refused before it started (${f.error}), ${count} times in a row.`
+        }
+      }
+    }
     return {
       ...b,
       bucket: 'review' as const,

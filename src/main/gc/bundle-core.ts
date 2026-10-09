@@ -128,6 +128,11 @@ export interface BundleFacts {
 export interface WorktreeBundle extends BundleFacts {
   bucket: Bucket
   reason: ReviewReason | null
+  /**
+   * Set by the gatherer (never the scan) on a ready item that main refused at the reprobe: `code` is
+   * the refusal, `count` how many times in a row. The hero and the autopilot leave such an item out.
+   */
+  reprobeRefusal?: { code: string; count: number }
 }
 
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`

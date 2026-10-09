@@ -2369,8 +2369,11 @@
         "stoppedAt": "Parou em “{step}”",
         "nothingChanged": "Nada foi alterado.",
         "genericStop": "O Harnu parou este item por uma verificação de segurança.",
-        "removeBlocked": "Remover não está disponível: esta pasta contém outro worktree. Remova ou mova esse primeiro.",
-        "removeLocked": "Remover não está disponível: o git tem este worktree bloqueado. Desbloqueie primeiro."
+        "removeUnavailable": "Remover não está disponível. {reason}",
+        "removeCommand": "Rode",
+        "refusedNote": "A última limpeza foi recusada. {reason}",
+        "refusedNoteHint": "Ele fica fora de “Limpar prontos” e o piloto automático o pula até a causa ser resolvida. Tentar de novo tenta mais uma vez.",
+        "refusedRepeat": "Recusado {n} vezes seguidas, então foi para Precisa de revisão."
       },
       "list": {
         "label": "Worktrees por grupo",
@@ -2389,13 +2392,16 @@
         "keep": "Manter",
         "ask": "Pedir uma opinião",
         "shiftHint": "clique para adicionar mais",
+        "removeNone": "Nada do que foi selecionado pode ser removido",
         "clear": "Limpar seleção"
       },
       "confirm": {
         "titleWorktrees": "Remover {n} worktree? | Remover {n} worktrees?",
         "titleItems": "Remover {n} item? | Remover {n} itens?",
-        "detachedSkipped": "{n} worktree detached não pode ser removido aqui | {n} worktrees detached não podem ser removidos aqui",
-        "detachedSkippedHint": "O Harnu ainda não consegue arquivar um worktree sem branch, então não mexe nele. Remova com git worktree remove.",
+        "nothingRemovable": "Nada do que foi selecionado pode ser removido",
+        "nothingRemovableSeveral": "Estes itens não podem ser removidos, cada um por um motivo. Abra um para ver o porquê.",
+        "refusedTitle": "Não serão removidos ({n})",
+        "refusedSub": "O Harnu recusaria estes, então ficam fora da contagem e da requisição.",
         "listLabel": "Itens a remover",
         "worktreeRow": "{repo} › {name}",
         "volumeRow": "Volume Docker {name}",
@@ -2604,6 +2610,22 @@
           "warning": "Um volume removido e os dados dele não podem ser restaurados."
         }
       },
+      "removal": {
+        "reason": {
+          "mainCheckout": "Este é um checkout principal, que nunca é removido.",
+          "neverClean": "Está na sua lista de nunca limpar.",
+          "kept": "Você o marcou como Manter. Tire a marca primeiro.",
+          "inUse": "Está em uso agora.",
+          "unsupportedKind": "Tem um HEAD detached, então não há branch para arquivá-lo. O Harnu ainda não consegue removê-lo.",
+          "sharedStack": "Outra stack também roda a partir deste worktree. Pare essa primeiro.",
+          "nestedWorktree": "Esta pasta contém outro worktree ou checkout. Remova ou mova esse primeiro.",
+          "tipUnknown": "O Harnu não conseguiu saber em qual commit este worktree está.",
+          "graceNotElapsed": "Ainda não ficou parado por tempo suficiente.",
+          "pathUnresolved": "Não foi possível resolver um caminho ligado a este worktree, então o Harnu não sabe o que o usa.",
+          "sessionOpen": "Ainda há uma sessão aberta neste worktree. Feche-a primeiro.",
+          "locked": "O git tem este worktree bloqueado. Desbloqueie primeiro."
+        }
+      },
       "refusal": {
         "changedSinceConfirm": "Mudou desde que você confirmou — revise de novo.",
         "needsConfirmation": "Precisa da sua confirmação antes. Selecione e escolha Remover.",
@@ -2623,7 +2645,7 @@
         "notReady": "Ela não está mais pronta para limpar, então foi deixada como está.",
         "pathUnresolved": "Um caminho ligado a esta worktree não pôde ser resolvido, então o Harnu não sabe o que a usa e a deixou como está.",
         "stackPresent": "Uma stack do Docker está rodando a partir desta worktree, então ela foi deixada como está.",
-        "dockerUnavailable": "O Docker não respondeu, então o Harnu não pôde checar esta worktree com segurança e a deixou como está.",
+        "dockerUnavailable": "O Docker não está rodando, então o Harnu não pôde checar esta worktree com segurança e a deixou como está. Inicie o Docker e tente de novo.",
         "probeFailed": "A checagem desta worktree falhou, então ela foi deixada como está.",
         "nestedWorktree": "Outra worktree vive dentro desta, então ela foi deixada como está.",
         "sharedStack": "Outra stack também roda a partir desta worktree, então ela foi deixada como está.",

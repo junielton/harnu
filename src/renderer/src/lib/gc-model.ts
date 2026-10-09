@@ -3,6 +3,7 @@
 // the `gc:clean` payload. No DOM, no Vue, no i18n — unit-tested in tests/gc-model.test.ts.
 
 import type { Bucket, ReviewCode, WorktreeBundle } from '../../../main/gc/bundle-core'
+import { removability, type RemovalRefusal } from './gc-removability'
 import type {
   GcCleanOptions,
   GcDockerCard,
@@ -67,6 +68,12 @@ export interface GcModel {
   /** Needs review items, biggest first — the "Needs review" list. Orphan volumes included. */
   review: GcBlock[]
   ready: GcBlock[]
+  /**
+   * The ready items one click can clean: ready, not refused on its facts, and not refused by main at
+   * the reprobe lately. The hero, its count and the first-cycle prompt read this; the map and the list
+   * still show every ready item, so one that main keeps refusing stays visible, with the reason.
+   */
+  cleanable: GcBlock[]
   totals: {
     ready: BucketTotal
     review: BucketTotal
@@ -224,6 +231,9 @@ export function buildGcModel(snapshot: GcSnapshot): GcModel {
     byId,
     review: [...worktrees.filter((b) => b.bucket === 'review'), ...volumes].sort(bigFirst),
     ready: worktrees.filter((b) => b.bucket === 'ready').sort(bigFirst),
+    cleanable: worktrees
+      .filter((b) => b.bucket === 'ready' && !b.bundle?.reprobeRefusal && isRemovable(b))
+      .sort(bigFirst),
     totals,
     docker,
     reclaimableBytes:
@@ -252,9 +262,15 @@ export function toggleChecked(
   return next
 }
 
-/** "Select all in repo": that repo's Needs review worktrees. Orphan volumes belong to no repo. */
+/**
+ * "Select all in repo": that repo's Needs review worktrees that can be removed. One main would refuse
+ * can still be ticked by hand (to Keep or Dehydrate it), but a bulk tick never picks it up. Orphan
+ * volumes belong to no repo.
+ */
 export function selectAllInRepo(model: GcModel, repoPath: string): string[] {
-  return model.blocks.filter((b) => b.repoPath === repoPath && isCheckable(b)).map((b) => b.id)
+  return model.blocks
+    .filter((b) => b.repoPath === repoPath && isCheckable(b) && isRemovable(b))
+    .map((b) => b.id)
 }
 
 export function selectionStats(
@@ -302,11 +318,11 @@ export function heroState(
       freedBytes: running.freedBytes
     }
   }
-  if (model.ready.length === 0) return { kind: 'empty' }
+  if (model.cleanable.length === 0) return { kind: 'empty' }
   return {
     kind: 'clean',
-    count: model.ready.length,
-    bytes: model.totals.ready.bytes,
+    count: model.cleanable.length,
+    bytes: model.cleanable.reduce((a, b) => a + b.bytes, 0),
     soft: !firstReportAcknowledged
   }
 }
@@ -331,12 +347,6 @@ export interface DialogRow {
   /** The worktree may hold work no other branch has. */
   risk: boolean
 }
-
-/**
- * Needs review reasons under which the removed code is NOT unique to this worktree. Everything else —
- * including an unknown or failed state — is treated as a risk and gets the stronger warning.
- */
-const NOT_RISKY: ReadonlySet<string> = new Set(['open-idle-session', 'shared-stack'])
 
 export function dialogRows(model: GcModel, ids: readonly string[]): DialogRow[] {
   const rows: DialogRow[] = []
@@ -364,7 +374,9 @@ export function dialogRows(model: GcModel, ids: readonly string[]): DialogRow[] 
       reasonCode: b.reasonCode,
       reasonDetail: b.reasonDetail,
       project: b.project,
-      risk: b.kind === 'worktree' && b.bucket === 'review' && !NOT_RISKY.has(b.reasonCode ?? '')
+      // Any review worktree may hold work no other branch has. The reasons that once read as safe
+      // (an idle session, a shared stack) are refused outright now and never reach this dialog.
+      risk: b.kind === 'worktree' && b.bucket === 'review'
     })
   }
   return rows
@@ -396,25 +408,57 @@ export interface CleanRequest {
 
 const sorted = (xs: readonly string[]): string[] => [...xs].sort()
 
-/**
- * The worktree kinds the cleanup executor can remove. Mirrors `CLEANABLE_KINDS` in
- * `src/main/gc/autopilot-core.ts` (parity is pinned by tests/gc-model.test.ts): main refuses any
- * other kind as `unsupported-kind` — a detached worktree has no branch to name its archive ref
- * after — so offering one would confirm a clean that removes nothing.
- */
-const CLEANABLE_WORKTREE_KINDS: readonly string[] = ['worktree', 'hidden-folder']
-
-/** Whether `gc:clean` can remove this block at all: every orphan volume, a worktree of a cleanable kind. */
-export function isRemovable(b: GcBlock): boolean {
-  return b.kind === 'volume' || CLEANABLE_WORKTREE_KINDS.includes(b.bundle?.item.kind ?? '')
+/** Whether `gc:clean` can take this block, judged from its facts (see gc-removability.ts). */
+export function isRemovable(b: GcBlock, now: number = Date.now()): boolean {
+  return removability(b, now).ok
 }
 
-/** The ids among `ids` the model knows but `gc:clean` cannot remove (today: detached worktrees). */
+/** The ids among `ids` the model knows but `gc:clean` would refuse. */
 export function unremovableIds(model: GcModel, ids: readonly string[]): string[] {
   return ids.filter((id) => {
     const b = model.byId.get(id)
     return !!b && !isRemovable(b)
   })
+}
+
+/** An item left out of a confirm because main would refuse it: the reason, and the command that clears it. */
+export interface RefusedRow {
+  id: string
+  kind: BlockKind
+  repo: string | null
+  name: string
+  refusal: RemovalRefusal
+  hint?: string
+}
+
+/**
+ * The items among `ids` that belong to this mode's bucket and that main would refuse, in the order
+ * given. Ids the model does not know, or that sit in another bucket, are not "refused": they are
+ * dropped, as `cleanRequestFor` drops them.
+ */
+export function refusedRows(
+  model: GcModel,
+  ids: readonly string[],
+  mode: 'ready' | 'review',
+  now: number = Date.now()
+): RefusedRow[] {
+  const want: Bucket = mode === 'ready' ? 'ready' : 'review'
+  const rows: RefusedRow[] = []
+  for (const id of ids) {
+    const b = model.byId.get(id)
+    if (!b || b.bucket !== want) continue
+    const v = removability(b, now)
+    if (v.ok) continue
+    rows.push({
+      id,
+      kind: b.kind,
+      repo: b.repoLabel,
+      name: b.name,
+      refusal: v.reason,
+      ...(v.hint === undefined ? {} : { hint: v.hint })
+    })
+  }
+  return rows
 }
 
 /**
@@ -451,8 +495,8 @@ export function expectedFor(b: GcBlock): GcExpected {
 /**
  * The single place that builds the `gc:clean` payload, so a change of the wire contract is one edit.
  * `ready` is the hero's bulk clean (expected facts, nothing confirmed); `review` is Remove selected
- * (every id confirmed, expected for each). Ids the model no longer knows, and ids main would refuse as
- * `unsupported-kind`, are dropped, never sent blind.
+ * (every id confirmed, expected for each). Ids the model no longer knows, and ids main would refuse
+ * (a detached or locked worktree, a shared stack, an open session…), are dropped, never sent blind.
  */
 export function cleanRequestFor(
   model: GcModel,
@@ -481,6 +525,8 @@ export interface CapturedConfirm {
   /** The ids that survived capture (unknown or wrong-bucket ids are dropped, never sent blind). */
   ids: string[]
   rows: DialogRow[]
+  /** What was asked for but main would refuse: shown apart in the dialog, never counted or sent. */
+  refused: RefusedRow[]
   request: CleanRequest
 }
 
@@ -492,7 +538,13 @@ export function captureConfirm(
 ): CapturedConfirm | null {
   const request = cleanRequestFor(model, ids, mode)
   if (request.ids.length === 0) return null
-  return { mode, ids: request.ids, rows: dialogRows(model, request.ids), request }
+  return {
+    mode,
+    ids: request.ids,
+    rows: dialogRows(model, request.ids),
+    refused: refusedRows(model, ids, mode),
+    request
+  }
 }
 
 const sameList = (a: readonly string[], b: readonly string[]): boolean =>
