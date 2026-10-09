@@ -378,21 +378,14 @@ describe('a locked worktree is review at scan time (delta 6, item 2)', () => {
   })
 })
 
-describe('a finished job takes its cleaned items out of the Reaper snapshot first (F0)', () => {
-  const done = between(ipc, 'emitDone: (d) => {', 'const shellDeps')
-
-  it('forgets the cleaned ids, and does it before the refresh gather reads the snapshot', () => {
-    expect(done).toMatch(/forgetItems\(cleanedIds\(d\.results\)\)/)
-    expect(done.indexOf('forgetItems(')).toBeLessThan(done.indexOf('gather()'))
-  })
-
-  it('the shell drops them from the snapshot and from the fate inputs kept beside it', () => {
-    const forget = between(
-      read('src/main/reaper/scanner-shell.ts'),
-      'export function forgetItems',
-      '\n}\n'
+describe('a finished job runs afterJob with the real seams (F0)', () => {
+  // The behaviour (forget, invalidate, then refresh from a fresh gather) is pinned in
+  // tests/gc-ghosts.test.ts and tests/gc-gatherer.test.ts; this only checks the wiring hands
+  // afterJob the real forget, the gatherer's invalidate and its gather.
+  it('emitDone passes forgetItems, the gatherer invalidate and gather', () => {
+    const done = between(ipc, 'emitDone: (d) => {', 'const shellDeps')
+    expect(done).toMatch(
+      /afterJob\(d, \{ forgetItems, invalidate: \(\) => gatherer\.invalidate\(\), refresh: gather \}\)/
     )
-    expect(forget).toMatch(/withoutItems\(cachedSnapshot/)
-    expect(forget).toMatch(/cachedFate/)
   })
 })

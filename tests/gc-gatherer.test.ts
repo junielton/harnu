@@ -355,3 +355,58 @@ describe('createGatherer: a halted item whose folder is gone stays visible (F0 d
     }
   )
 })
+
+describe('createGatherer: a gather that began before a job ended is stale (F0 delta 1, item 2)', () => {
+  const withIds = (...ids: string[]): GcGathered =>
+    gathered({ bundles: ids.map((id) => bundle(`/srv/ws/${id}`)) })
+  const idsOf = (g: GcGathered): string[] => g.bundles.map((b) => b.item.path as string)
+
+  function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
+    let resolve!: (v: T) => void
+    const promise = new Promise<T>((r) => (resolve = r))
+    return { promise, resolve }
+  }
+
+  it('a gather asked for after invalidate() never returns the one already in flight', async () => {
+    const { spies, gatherer } = setup(withIds('old'))
+    const first = deferred<GcGathered>()
+    spies.gatherGc.mockImplementationOnce(() => first.promise)
+    spies.gatherGc.mockImplementation(async () => withIds('fresh'))
+
+    const stale = gatherer.gather() // began before the job's trash
+    gatherer.invalidate() // the job ended
+    const after = gatherer.gather()
+    first.resolve(withIds('cleaned-worktree'))
+
+    expect(idsOf(await after)).toEqual(['/srv/ws/fresh'])
+    await stale
+    // The stale answer was not kept: neither cached nor fed to the Containers view.
+    expect(idsOf(gatherer.cached()!)).toEqual(['/srv/ws/fresh'])
+    expect(spies.feed).toHaveBeenCalledTimes(1)
+  })
+
+  it('without invalidate() a second caller still shares the gather in flight', async () => {
+    const { spies, gatherer } = setup(withIds('a'))
+    const first = deferred<GcGathered>()
+    spies.gatherGc.mockImplementationOnce(() => first.promise)
+    const one = gatherer.gather()
+    const two = gatherer.gather()
+    first.resolve(withIds('a'))
+    await Promise.all([one, two])
+    expect(spies.gatherGc).toHaveBeenCalledTimes(1)
+  })
+
+  it('callers asked for after invalidate() share one fresh gather', async () => {
+    const { spies, gatherer } = setup(withIds('a'))
+    const first = deferred<GcGathered>()
+    spies.gatherGc.mockImplementationOnce(() => first.promise)
+    spies.gatherGc.mockImplementation(async () => withIds('fresh'))
+    const stale = gatherer.gather()
+    gatherer.invalidate()
+    const x = gatherer.gather()
+    const y = gatherer.gather()
+    first.resolve(withIds('a'))
+    await Promise.all([stale, x, y])
+    expect(spies.gatherGc).toHaveBeenCalledTimes(2)
+  })
+})

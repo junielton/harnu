@@ -45,6 +45,13 @@ export interface GathererDeps {
 
 export interface Gatherer {
   gather(): Promise<GcGathered>
+  /**
+   * Marks every gather now in flight as stale: what it read predates a change (a job just
+   * removed worktrees). Its answer still goes to the callers that already hold it, but it is
+   * neither cached nor fed nor persisted, and a `gather()` asked for from now on starts a new
+   * one instead of sharing it.
+   */
+  invalidate(): void
   /** A gather that STARTS after this call: waits for the one in flight, which may predate it. */
   fresh(): Promise<GcGathered>
   peek(): Promise<GcGathered>
@@ -55,6 +62,9 @@ export interface Gatherer {
 export function createGatherer(deps: GathererDeps): Gatherer {
   let cache: GcGathered | null = null
   let gathering: Promise<GcGathered> | null = null
+  /** Bumped by `invalidate`; a gather is stale when it began under an older number. */
+  let generation = 0
+  let queued: Promise<GcGathered> | null = null
   let peeking: Promise<GcGathered> | null = null
 
   /** The raw gather with the failure overlay on top: a halted item reads Needs review. */
@@ -74,20 +84,43 @@ export function createGatherer(deps: GathererDeps): Gatherer {
     }
   }
 
+  /** The generation the gather now in flight began under. */
+  let startedUnder = 0
+
   const self: Gatherer = {
     cached: () => cache,
     fresh: async () => {
       if (gathering) await gathering.catch(() => undefined)
       return self.gather()
     },
+    invalidate: () => {
+      generation++
+    },
     gather: () => {
+      // A gather in flight that began before an invalidate must not answer this call: queue a
+      // fresh one behind it, shared by every caller that asks in the meantime.
+      if (gathering && startedUnder !== generation) {
+        queued ??= (async () => {
+          try {
+            await gathering?.catch(() => undefined)
+          } finally {
+            queued = null
+          }
+          return self.gather()
+        })()
+        return queued
+      }
       gathering ??= (async () => {
+        const mine = generation
+        startedUnder = mine
         try {
           // Which release marks this gather judged: a release made while it ran is a newer
           // mark, and must survive the verdict on the one it replaced (as a Keep does).
           const startedAt = deps.now()
           const judgedReleases = { ...deps.prefs().released }
           const g = await read(true)
+          // Invalidated while it ran: its callers get the answer, nothing else does.
+          if (mine !== generation) return g
           // A project with no volume left in Docker has nothing to review. Only judged when
           // docker answered: an outage says nothing about what exists.
           if (g.dockerAvailable) {

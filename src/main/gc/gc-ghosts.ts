@@ -5,6 +5,7 @@
 
 import type { ReaperSnapshot } from '../reaper/scan-core'
 import type { GcItemResult } from './pipeline-core'
+import type { GcJobDone } from './gc-jobs-core'
 
 /** The ids of the items a job cleaned all the way. A halted item is still on disk and stays. */
 export function cleanedIds(results: readonly GcItemResult[]): Set<string> {
@@ -23,4 +24,24 @@ export function withoutItems(snap: ReaperSnapshot, ids: ReadonlySet<string>): Re
     ...snap,
     repos: snap.repos.map((r) => ({ ...r, items: r.items.filter((i) => !ids.has(i.id)) }))
   }
+}
+
+export interface AfterJobDeps {
+  /** Drops the ids from the Reaper's cached scan. */
+  forgetItems(ids: ReadonlySet<string>): void
+  /** Marks every gather already in flight as stale. */
+  invalidate(): void
+  /** A gather that starts now. */
+  refresh(): Promise<unknown>
+}
+
+/**
+ * What a finished job does to the picture, in this order: forget what it cleaned, mark the
+ * gathers already running as stale (they read the world before the trash), then refresh from
+ * one that starts now. A failing refresh is logged, never thrown into the job queue.
+ */
+export function afterJob(done: GcJobDone, deps: AfterJobDeps): void {
+  deps.forgetItems(cleanedIds(done.results))
+  deps.invalidate()
+  void deps.refresh().catch((err) => console.error('[gc] refresh after job failed', err))
 }
