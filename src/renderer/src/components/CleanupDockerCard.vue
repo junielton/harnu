@@ -131,6 +131,13 @@ const splitSegments = computed(() =>
         {{ t('cleanup.gc.docker.inspect') }}
       </button>
     </header>
+    <p class="px-3 pb-2 text-caption leading-4 text-text-4" data-testid="docker-scope">
+      {{
+        t('cleanup.gc.docker.scope', prefs.cacheMaxAgeDays, {
+          named: { n: prefs.cacheMaxAgeDays }
+        })
+      }}
+    </p>
     <div
       v-if="splitSegments.length > 0"
       class="mx-3 mb-2 flex h-1 gap-0.5"
@@ -229,9 +236,11 @@ const splitSegments = computed(() =>
           {{
             hidden
               ? t('cleanup.gc.docker.hidden.size')
-              : t('cleanup.gc.docker.volumesCount', orphanVolumes.count, {
-                  named: { n: orphanVolumes.count, size: formatBytes(orphanVolumes.bytes) }
-                })
+              : orphanVolumes.count === 0
+                ? t('cleanup.gc.docker.noOrphanVolumes')
+                : t('cleanup.gc.docker.volumesCount', orphanVolumes.count, {
+                    named: { n: orphanVolumes.count, size: formatBytes(orphanVolumes.bytes) }
+                  })
           }}
         </div>
         <div v-if="hidden" class="flex flex-col gap-1" role="note" data-testid="docker-hidden">

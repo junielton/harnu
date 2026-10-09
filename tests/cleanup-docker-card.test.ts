@@ -56,7 +56,7 @@ describe('CleanupDockerCard', () => {
       docker: { buildCacheReclaimableBytes: 0, danglingImages: { count: 0, bytes: 0 } }
     })
     const volumes = w.get('[data-testid="docker-volumes-size"]')
-    expect(volumes.text()).toBe('0 volumes · 0 B')
+    expect(volumes.text()).toBe('No orphan volumes')
     expect(volumes.classes()).toContain('text-text-3')
     expect(w.get('[data-testid="docker-cache-size"]').text()).toBe('0 B reclaimable')
     expect(w.get('[data-testid="docker-images-size"]').text()).toBe('0 images · 0 B')
@@ -258,6 +258,13 @@ describe('CleanupDockerCard — hidden orphan volumes (S3 delta 4)', () => {
   it('says 0 volumes is not the full story: the volumes block explains instead of a bare zero', () => {
     const w = mountCard({ docker: hidden('unresolved-compose-name', ['/ws/a']) })
     expect(w.get('[data-testid="docker-volumes-size"]').text()).toBe('hidden')
+  })
+
+  it('says what the card counts, and what it never counts', () => {
+    const w = mountCard()
+    const text = w.get('[data-testid="docker-scope"]').text()
+    expect(text).toContain('build cache older than 7 days and dangling images')
+    expect(text).toContain('Images in use and the volumes of live stacks are never counted')
   })
 
   it('has a Portuguese sentence for both reasons', () => {
