@@ -59,6 +59,8 @@ const other = (id: string): MissionView =>
 let wrapper: VueWrapper | null = null
 let doorFn: ReturnType<typeof vi.fn>
 let answers: Record<string, MissionDoorResult>
+/** What the server still lists when the end-of-batch refresh reads it. */
+let serverViews: MissionView[]
 let activate: ReturnType<typeof vi.fn>
 
 const body = (): HTMLElement => document.body
@@ -93,10 +95,12 @@ beforeEach(() => {
   useSessionsStore().folders = [{ path: '/repo', sessions: [] }] as never
   activate = vi.fn(() => true)
   useSessionsStore().activateSession = activate as never
+  useSessionsStore().findSessionById = vi.fn(() => ({})) as never
   answers = {}
+  serverViews = []
   doorFn = vi.fn(async (d: MissionDoor) => answers[d.missionId] ?? { ok: true, view: null })
   ;(window as unknown as { api: unknown }).api = {
-    missionList: vi.fn(async () => ({ views: [], unreadable: [] })),
+    missionList: vi.fn(async () => ({ views: serverViews, unreadable: [] })),
     missionOperatorDoor: doorFn,
     requestAttention: vi.fn(async () => undefined)
   }
@@ -193,10 +197,12 @@ describe('MissionsReviewDialog — selection', () => {
   })
 
   it('disables "Open" when the owner session is not loaded', async () => {
-    activate.mockReturnValue(false)
-    useSessionsStore().sessionById = (() => undefined) as never
+    useSessionsStore().findSessionById = vi.fn(() => null) as never
     await open([other('o1')])
-    await click(q('[data-mission-id="o1"] [data-test="review-open"]'))
+    const openBtn = q('[data-mission-id="o1"] [data-test="review-open"]') as HTMLButtonElement
+    expect(openBtn.disabled).toBe(true)
+    await click(openBtn)
+    expect(activate).not.toHaveBeenCalled()
     expect(useMissionsStore().popoverRequest).toBeNull()
   })
 
@@ -277,6 +283,7 @@ describe('MissionBulkCloseConfirmDialog', () => {
 
   it('on a partial failure: a danger toast, the review stays on the failed row, still selected', async () => {
     answers.r2 = { ok: false, error: 'DOOR_REFUSED: nope' }
+    serverViews = [ready('r2')]
     await open([ready('r1'), ready('r2')])
     await click(q('[data-test="review-close-selected"]'))
     await click(q('[data-test="bulk-close-go"]'))

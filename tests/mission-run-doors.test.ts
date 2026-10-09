@@ -39,6 +39,8 @@ const end = (id: string, reason = 'bulk close'): EndDoor => ({
 let answers: Record<string, MissionDoorResult | Error>
 let doorFn: ReturnType<typeof vi.fn>
 let listFn: ReturnType<typeof vi.fn>
+/** What the server still lists when the end-of-batch refresh reads it. */
+let serverViews: MissionView[]
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -51,7 +53,8 @@ beforeEach(() => {
     if (a instanceof Error) throw a
     return a
   })
-  listFn = vi.fn(async () => ({ views: [], unreadable: [] }))
+  serverViews = []
+  listFn = vi.fn(async () => ({ views: serverViews, unreadable: [] }))
   ;(window as unknown as { api: unknown }).api = {
     missionList: listFn,
     missionOperatorDoor: doorFn,
@@ -127,6 +130,7 @@ describe('runDoors', () => {
     const store = useMissionsStore()
     store.views = [mv('a'), mv('b'), mv('c')]
     answers.b = { ok: false, error: 'DOOR_REFUSED: nope' }
+    serverViews = [mv('b')]
     const res = await store.runDoors([end('a'), end('b'), end('c')])
     expect(doorFn).toHaveBeenCalledTimes(3)
     expect(res).toEqual({ closed: 2, failed: [{ missionId: 'b', error: 'DOOR_REFUSED: nope' }] })

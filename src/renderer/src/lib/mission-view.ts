@@ -14,6 +14,7 @@ import type { MissionView } from '../../../main/mission-ipc'
 import { progressHeadline, type StepState } from '../../../main/mission-progress'
 import type { MissionChildState } from '../../../main/mcp/fleet-snapshot'
 import type { Blocker, Check, MissionStep } from '../../../main/mission-core'
+import { owedKeys } from './mission-cue'
 
 /**
  * `verifiedBy.sessionId` on a step the operator ticked from the UI — mirrors
@@ -342,4 +343,75 @@ export function endWarnings(view: MissionView): EndWarning[] {
         }
     }
   })
+}
+
+/** The review dialog's three groups (BUG-173 S5, spec §3.5). */
+export interface ReviewGroups {
+  /** `delivered` with a requested close: the owner verified the end and asked. */
+  ready: MissionView[]
+  /** `active` and every step done, close never requested: nobody verified the end. */
+  finished: MissionView[]
+  /** Everything else the operator owes — opened one by one, never closed in bulk. */
+  other: MissionView[]
+}
+
+/**
+ * Split the missions that owe the operator something (the cue's owed set) into
+ * the review's groups, keeping the input order. A repeated id keeps its first
+ * view and a closed mission is never listed.
+ */
+export function groupReviewMissions(views: readonly MissionView[]): ReviewGroups {
+  const out: ReviewGroups = { ready: [], finished: [], other: [] }
+  const seen = new Set<string>()
+  for (const v of views) {
+    if (seen.has(v.mission.id)) continue
+    seen.add(v.mission.id)
+    if (v.mission.status === 'closed' || owedKeys(v).size === 0) continue
+    if (v.mission.status === 'delivered' && v.mission.pendingClose) out.ready.push(v)
+    else if (v.mission.status === 'active' && v.progress.allDone) out.finished.push(v)
+    else out.other.push(v)
+  }
+  return out
+}
+
+/** A bulk close may touch this mission: it is in the ready or the finished group. */
+export function isBulkCloseable(view: MissionView): boolean {
+  const m = view.mission
+  if (m.status === 'delivered') return !!m.pendingClose
+  return m.status === 'active' && view.progress.allDone
+}
+
+/** The ids the review pre-selects: the ready group, nothing else. */
+export function readyIds(groups: ReviewGroups): string[] {
+  return groups.ready.map((v) => v.mission.id)
+}
+
+/** The reason every bulk door carries, so a mission's Log shows it was a batch decision. */
+export function bulkCloseReason(text?: string): string {
+  const why = text?.trim()
+  return why ? `bulk close: ${why}` : 'bulk close'
+}
+
+const END_WARNING_KEY: Record<EndWarning['kind'], string> = {
+  'end-unverified': 'endUnverified',
+  'left-behind': 'leftBehind',
+  'checks-open': 'checksOpen',
+  'blockers-open': 'blockersOpen',
+  'rescope-staged': 'rescopeStaged'
+}
+
+/** Kinds whose heading counts matters — the i18n plural takes `count`. */
+const COUNTED_END_WARNINGS: ReadonlySet<EndWarning['kind']> = new Set([
+  'left-behind',
+  'checks-open',
+  'blockers-open'
+])
+
+/** The heading of one end warning, in the `mission.end.warnings.*` copy the End dialog uses. */
+export function endWarningHeading(
+  t: (key: string, plural?: number) => string,
+  w: EndWarning
+): string {
+  const key = `mission.end.warnings.${END_WARNING_KEY[w.kind]}`
+  return COUNTED_END_WARNINGS.has(w.kind) ? t(key, w.count) : t(key)
 }

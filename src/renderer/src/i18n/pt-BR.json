@@ -3648,6 +3648,35 @@
       "reviewAll": "Revisar todas as {n}",
       "ownerMissing": "A sessão dona não está aberta aqui — clique para revisar esta missão.",
       "itemAria": "Abrir a missão {title}"
+    },
+    "review": {
+      "title": "Missões que precisam de você",
+      "intro": "Feche as concluídas de uma vez, ou abra qualquer uma para resolvê-la.",
+      "groups": {
+        "ready": "Prontas para fechar",
+        "finished": "Concluídas, fechamento não pedido",
+        "finishedHint": "Ninguém verificou o fim destas, por isso nenhuma vem selecionada.",
+        "other": "Esperando você por outro motivo"
+      },
+      "selectAllReady": "Selecionar todas as prontas",
+      "selected": "{count} selecionada | {count} selecionadas",
+      "closeSelected": "Fechar {count} como entregue… | Fechar {count} como entregues…",
+      "empty": "Nenhuma missão precisa de você agora.",
+      "openMission": "Abrir",
+      "ownerMissing": "A sessão dona não está aberta aqui, então esta missão não pode ser aberta pela revisão.",
+      "dismiss": "Fechar a revisão"
+    },
+    "bulk": {
+      "title": "Fechar {count} missão como entregue? | Fechar {count} missões como entregues?",
+      "body": "Elas saem da Topbar e da sidebar e não podem ser reabertas. O arquivo de cada missão continua no disco como registro.",
+      "reason": "Motivo (opcional)",
+      "reasonPlaceholder": "Vai para o Log de cada missão",
+      "confirm": "Fechar {count} missão | Fechar {count} missões",
+      "cancel": "Cancelar",
+      "dismiss": "Cancelar e manter as missões abertas",
+      "closing": "Fechando {done} de {total}…",
+      "done": "{count} missão fechada | {count} missões fechadas",
+      "partial": "{failed} de {total} não puderam ser fechadas"
     }
   },
   "harnuMod": {

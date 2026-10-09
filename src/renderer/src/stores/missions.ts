@@ -298,7 +298,7 @@ export const useMissionsStore = defineStore('missions', () => {
 
   /**
    * A pending request to open the Missions review, optionally focused on one
-   * mission. S5's dialog consumes it; until then nothing renders it.
+   * mission. `MissionsReviewDialog` consumes it.
    */
   const reviewRequest = ref<ReviewRequest | null>(null)
 
@@ -391,6 +391,49 @@ export const useMissionsStore = defineStore('missions', () => {
     return res
   }
 
+  /**
+   * Close several missions through the EXISTING end door, one after another
+   * (BUG-173 S5, spec §3.5). Never aborts on a failure: each door answers on its
+   * own. The in-flight counter is raised once for the batch, each answer is
+   * applied as it lands (rows vanish one by one), and ONE refresh follows at the
+   * end. `MISSION_CLOSED` counts as closed, as {@link runDoor} treats it. No
+   * toast here — the caller reports the batch once.
+   */
+  async function runDoors(
+    doors: readonly Extract<MissionDoor, { door: 'end' }>[],
+    onProgress?: (done: number, total: number) => void
+  ): Promise<{ closed: number; failed: { missionId: string; error: string }[] }> {
+    const failed: { missionId: string; error: string }[] = []
+    let closed = 0
+    doorsInFlight.value++
+    try {
+      for (const [i, door] of doors.entries()) {
+        let res: MissionDoorResult
+        try {
+          res = await window.api.missionOperatorDoor(door)
+        } catch (err) {
+          res = { ok: false, error: err instanceof Error ? err.message : String(err) }
+        }
+        if (res.ok) {
+          writeSeq++
+          applyDoorResult(door, res.view)
+          closed++
+        } else if (res.error.startsWith('MISSION_CLOSED')) {
+          writeSeq++
+          applyDoorResult(door, null)
+          closed++
+        } else {
+          failed.push({ missionId: door.missionId, error: res.error })
+        }
+        onProgress?.(i + 1, doors.length)
+      }
+    } finally {
+      doorsInFlight.value--
+    }
+    if (closed > 0) void refreshAfterWrite()
+    return { closed, failed }
+  }
+
   return {
     views,
     refreshedAt,
@@ -400,6 +443,7 @@ export const useMissionsStore = defineStore('missions', () => {
     viewForSession,
     modelForSession,
     runDoor,
+    runDoors,
     popoverRequest,
     requestPopover,
     consumePopoverRequest,
