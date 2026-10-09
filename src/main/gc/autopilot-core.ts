@@ -131,6 +131,13 @@ export const FAILURE_TTL_MS = 86_400_000
  */
 export const REFUSAL_TTL_MS = 6 * 3_600_000
 
+/**
+ * How long the COUNT of identical refusals is remembered. It outlives the hide window above on
+ * purpose: the item rejoins the hero and the autopilot when the window lapses, and the next refusal
+ * must add to the count, not restart it, or an item would be retried forever without a demotion.
+ */
+export const REFUSAL_COUNT_TTL_MS = 7 * 86_400_000
+
 /** Identical reprobe refusals in a row after which a ready item is demoted to Needs review. */
 export const REFUSAL_DEMOTE_AFTER = 2
 
@@ -178,7 +185,8 @@ export function rememberReprobeRefusal(
   return true
 }
 
-const ttlOf = (f: CycleFailure): number => (f.step === 'reprobe' ? REFUSAL_TTL_MS : FAILURE_TTL_MS)
+const ttlOf = (f: CycleFailure): number =>
+  f.step === 'reprobe' ? REFUSAL_COUNT_TTL_MS : FAILURE_TTL_MS
 
 /** Drops failures for worktrees that no longer exist and those old enough to retry. */
 export function pruneFailures(
@@ -209,12 +217,14 @@ export function pruneFailures(
  * rewritten; anything else is already a decision or off limits.
  *
  * A reprobe refusal is gentler: the item stays ready on paper but carries `reprobeRefusal`, so the
- * hero and the autopilot leave it out and the panel can say why. After REFUSAL_DEMOTE_AFTER identical
- * refusals it is demoted to Needs review with that reason.
+ * hero and the autopilot leave it out for REFUSAL_TTL_MS and the panel can say why. When the window
+ * lapses it rejoins them; after REFUSAL_DEMOTE_AFTER identical refusals (counted across windows) it
+ * is demoted to Needs review with that reason, and stays there while the count is remembered.
  */
 export function applyFailures(
   bundles: readonly WorktreeBundle[],
-  failures: ReadonlyMap<string, CycleFailure>
+  failures: ReadonlyMap<string, CycleFailure>,
+  now: number
 ): WorktreeBundle[] {
   return bundles.map((b) => {
     const f = b.bucket === 'ready' ? failures.get(b.item.id) : undefined
@@ -222,7 +232,10 @@ export function applyFailures(
     if (f.step === 'reprobe') {
       const count = f.count ?? 1
       const marked = { ...b, reprobeRefusal: { code: f.error, count } }
-      if (count < REFUSAL_DEMOTE_AFTER) return marked
+      if (count < REFUSAL_DEMOTE_AFTER) {
+        // Hidden only for the window; after it the item is tried again, and the count carries on.
+        return now - f.at < REFUSAL_TTL_MS ? marked : b
+      }
       return {
         ...marked,
         bucket: 'review' as const,

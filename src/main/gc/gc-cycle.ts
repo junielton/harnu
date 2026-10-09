@@ -86,7 +86,7 @@ export interface GcCycleDeps {
  */
 export function withFailures<G extends GcGather>(g: G, state: CycleState, now: number): G {
   pruneFailures(state.failures, g.bundles, now)
-  return { ...g, bundles: applyFailures(g.bundles, state.failures) }
+  return { ...g, bundles: applyFailures(g.bundles, state.failures, now) }
 }
 
 /**

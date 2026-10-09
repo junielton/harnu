@@ -201,7 +201,7 @@ describe('applyFailures / pruneFailures (spec §4)', () => {
   const failure = { step: 'trash', error: 'EBUSY', at: NOW }
 
   it('turns a failed ready item into a cleanup-failed decision', () => {
-    const [b] = applyFailures([ready('a', 5)], new Map([[ready('a', 5).item.id, failure]]))
+    const [b] = applyFailures([ready('a', 5)], new Map([[ready('a', 5).item.id, failure]]), NOW)
     expect(b).toMatchObject({
       bucket: 'review',
       reason: { code: 'cleanup-failed', detail: 'Cleanup stopped at trash: EBUSY' }
@@ -215,7 +215,7 @@ describe('applyFailures / pruneFailures (spec §4)', () => {
       [d.item.id, failure],
       ['unrelated', failure]
     ])
-    expect(applyFailures([a, d], failures)).toEqual([a, d])
+    expect(applyFailures([a, d], failures, NOW)).toEqual([a, d])
   })
 
   it('prunes missing worktrees and failures older than a day', () => {

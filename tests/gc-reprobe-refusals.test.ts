@@ -10,6 +10,7 @@ import {
   pruneFailures,
   rememberReprobeRefusal,
   REFUSAL_DEMOTE_AFTER,
+  REFUSAL_COUNT_TTL_MS,
   REFUSAL_TTL_MS,
   type CycleFailure
 } from '../src/main/gc/autopilot-core'
@@ -112,25 +113,47 @@ describe('applyFailures: a remembered refusal', () => {
 
   it('keeps the item ready but marks it, so the hero and the autopilot can leave it out', () => {
     const a = ready('a')
-    const [out] = applyFailures([a], new Map([[a.item.id, failure(1)]]))
+    const [out] = applyFailures([a], new Map([[a.item.id, failure(1)]]), NOW)
     expect(out.bucket).toBe('ready')
     expect(out.reprobeRefusal).toEqual({ code: 'cannot-unregister', count: 1 })
   })
 
   it('demotes it to Needs review with that reason after identical refusals', () => {
     const a = ready('a')
-    const [out] = applyFailures([a], new Map([[a.item.id, failure(REFUSAL_DEMOTE_AFTER)]]))
+    const [out] = applyFailures([a], new Map([[a.item.id, failure(REFUSAL_DEMOTE_AFTER)]]), NOW)
     expect(out.bucket).toBe('review')
     expect(out.reason).toMatchObject({ code: 'cleanup-failed' })
     expect(out.reason?.detail).toContain('cannot-unregister')
     expect(out.reprobeRefusal).toEqual({ code: 'cannot-unregister', count: REFUSAL_DEMOTE_AFTER })
   })
 
+  it('rejoins the hero once the hide window has lapsed, keeping its count', () => {
+    const a = ready('a')
+    const [out] = applyFailures(
+      [a],
+      new Map([[a.item.id, { ...failure(1), at: NOW - REFUSAL_TTL_MS - 1 }]]),
+      NOW
+    )
+    expect(out.bucket).toBe('ready')
+    expect(out.reprobeRefusal).toBeUndefined()
+  })
+
+  it('demotes on the count alone, even after the hide window lapsed', () => {
+    const a = ready('a')
+    const [out] = applyFailures(
+      [a],
+      new Map([[a.item.id, { ...failure(REFUSAL_DEMOTE_AFTER), at: NOW - REFUSAL_TTL_MS - 1 }]]),
+      NOW
+    )
+    expect(out.bucket).toBe('review')
+  })
+
   it('leaves a halt after the reprobe as it was: an immediate cleanup-failed decision', () => {
     const a = ready('a')
     const [out] = applyFailures(
       [a],
-      new Map([[a.item.id, { step: 'trash', error: 'EBUSY', at: NOW }]])
+      new Map([[a.item.id, { step: 'trash', error: 'EBUSY', at: NOW }]]),
+      NOW
     )
     expect(out.bucket).toBe('review')
     expect(out.reprobeRefusal).toBeUndefined()
@@ -138,11 +161,19 @@ describe('applyFailures: a remembered refusal', () => {
 })
 
 describe('pruneFailures: a remembered refusal', () => {
-  it('lapses after its own, shorter TTL', () => {
+  it('survives the hide window (the count must outlive it) and lapses after the count TTL', () => {
     const a = ready('a')
     const f = new Map<string, CycleFailure>([
       [a.item.id, { step: 'reprobe', error: 'tip-unknown', at: NOW - REFUSAL_TTL_MS - 1, count: 1 }]
     ])
+    pruneFailures(f, [a], NOW)
+    expect(f.size).toBe(1)
+    f.set(a.item.id, {
+      step: 'reprobe',
+      error: 'tip-unknown',
+      at: NOW - REFUSAL_COUNT_TTL_MS - 1,
+      count: 1
+    })
     pruneFailures(f, [a], NOW)
     expect(f.size).toBe(0)
   })
@@ -173,7 +204,8 @@ describe('the autopilot skips a refused item', () => {
     const b = ready('b', 5)
     const [marked, plain] = applyFailures(
       [a, b],
-      new Map([[a.item.id, { step: 'reprobe', error: 'tip-unknown', at: NOW, count: 1 }]])
+      new Map([[a.item.id, { step: 'reprobe', error: 'tip-unknown', at: NOW, count: 1 }]]),
+      NOW
     )
     const plan = planCycle([marked, plain], prefs())
     expect(plan.toClean.map((x) => x.item.path)).toEqual(['/ws/wt/b'])
@@ -182,7 +214,11 @@ describe('the autopilot skips a refused item', () => {
 })
 
 describe('the cycle remembers what the reprobe refused', () => {
-  function cycleRig(bundles: WorktreeBundle[], reprobe: GcOps['reprobe']) {
+  function cycleRig(
+    bundles: WorktreeBundle[],
+    reprobe: GcOps['reprobe'],
+    clock: { t: number } = { t: NOW }
+  ) {
     const reprobed: string[] = []
     const ops: GcOps = {
       reprobe: async (b) => {
@@ -220,7 +256,7 @@ describe('the cycle remembers what the reprobe refused', () => {
       notify: () => undefined,
       emitCycle: () => undefined,
       state,
-      now: () => NOW
+      now: () => clock.t
     }
     return { deps, state, reprobed }
   }
@@ -237,6 +273,21 @@ describe('the cycle remembers what the reprobe refused', () => {
 
     await runGcCycle(r.deps, 'timer')
     expect(r.reprobed).toEqual(['/ws/wt/stuck', '/ws/wt/fine'])
+  })
+
+  it('hourly cycles demote it within K refusals instead of retrying forever', async () => {
+    const stuck = ready('stuck', 9)
+    const clock = { t: NOW }
+    const r = cycleRig([stuck], async () => ({ ok: false, reason: 'cannot-unregister' }), clock)
+    for (let hour = 0; hour < 72; hour++) {
+      await runGcCycle(r.deps, 'timer')
+      clock.t += 3_600_000
+    }
+    // refused once, hidden for the window, refused again, demoted: never reprobed a third time
+    expect(r.reprobed).toHaveLength(REFUSAL_DEMOTE_AFTER)
+    expect(r.state.failures.get(stuck.item.id)?.count).toBe(REFUSAL_DEMOTE_AFTER)
+    const g = withFailures({ bundles: [stuck], housekeeping: {} as never }, r.state, clock.t)
+    expect(g.bundles[0].bucket).toBe('review')
   })
 
   it('forgets a refusal for an item that cleaned', async () => {
