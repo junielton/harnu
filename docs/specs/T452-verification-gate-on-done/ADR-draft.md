@@ -1,100 +1,146 @@
-# ADR-draft — The verification gate is a separate bundled mod, and its check is a `verify:` key in `WORKTREE.md`
+# ADR-draft — The verification gate is a separate bundled mod that runs only an operator-approved command
 
-**Status:** proposed (numbered at merge) · **Date:** 2026-10-09 · **Card:** T452 · **Spec:**
-[`00-spec.md`](00-spec.md)
+**Status:** proposed (numbered at merge) · **Date:** 2026-10-09 (round 2) · **Card:** T452 ·
+**Spec:** [`00-spec.md`](00-spec.md)
 
 ## Context
 
 Ideas 44 and 68 of the mods ideation report propose a gate on "done": when a session claims its
 work is finished, the claim goes through only if the repo's check ran green after the session's
-last edit. A red check turns the claim into a refusal with the failing output. The spec settles two
-architectural questions: where the gate runs, and where its command comes from.
+last edit. A red check turns the claim into a refusal with the failing output. The spec settles
+three architectural questions:
 
-Facts that constrain both (cited in full in the spec):
+- where the gate runs;
+- where its command comes from;
+- who is allowed to choose that command.
 
-1. **The gate must see the session's own edits and runs, and must run a process.** Only code inside
-   the `claude` process sees every tool call, its subagents' included, before and after it runs.
-   Harnu's main process installs no `PostToolUse` hook (`src/main/hook-installer.ts:39-51`), and
-   its MCP transport has no per-session identity (`src/main/mcp/tool-catalog.ts:1312`). So main
-   cannot tell an author's claim from an orchestrator's.
-2. **The companion is forbidden exactly what the gate needs.** T389 SEC-9 forbids `$.process.run`
-   (a), `$.mcp.call` (b) and any Bash `tool.call` matcher (d) in `harnu-companion`
-   (`docs/specs/T389-companion-mod/00-master.md:502`), enforced statically
-   (`scripts/ci/api-surface-scan.mjs:133-175`). Its `tool.call` surface is closed to two matchers
-   (MOD-3, `00-master.md:524`).
-3. **The host cannot run the check for the companion yet.** No `ask` kind is registered
-   (`src/main/companion/host-core.ts:113, :498` has no caller; `server.ts:563-564` answers
-   `FEATURE_DISABLED`). An ask tranche is ≤20 s (MOD-5), while this repo's check measured about 53 s
-   (spec §8.2). MOD-5 also forbids an ask when the session is not interactive.
-4. **A `tool.call` hook on Bash breaks worktree-isolated subagents**, even as a pass-through
-   (`docs/studies/T389-smoke-evidence.md:628-650`). `tool.check` on Bash does not. That held in
-   the spec's live run P4.
-5. **T447 will guard Harnu's MCP server against direct mod calls.** Its `harnu` mod denies every
-   `$.mcp.call` into `harnu`/`capy` from any mod but itself (T447 `03-security.md:50-56`). It
-   offers `missionLog`, `missionBlockerSet` and `missionBlockerClear`, scoped to the caller's own
-   steps (`03-security.md:23`).
-6. **No command exists to run.** A Mission step carries a verification level, not a command
-   (`src/main/mission-core.ts:76-95`). A card AC carries a `verify:` kind by skill convention, with
-   no parser (`resources/skills/skills/orchestrate-delivery/SKILL.md:114`). `WORKTREE.md` has no
-   such key, and drops unknown keys with a warning (`src/main/worktree-manifest.ts:139-148,
-:266-268`).
+Facts that constrain them (cited in full in the spec):
+
+1. **The gate must see the session's own edits and runs, and must run a process.** Only code
+   inside the `claude` process sees every tool call's outcome, its subagents' included. Harnu's main
+   process sees each **attempt** through its `PreToolUse` `*` hook
+   (`src/main/hook-installer.ts:41-50`) but no outcome: it installs no `PostToolUse` (:39). Its MCP
+   transport has no per-session identity (`src/main/mcp/tool-catalog.ts:1312`).
+2. **Running a command from a hook bypasses Claude's permission system.** That matters most in the
+   sessions Harnu deliberately weakened: an MCP-spawned child has its permission flags downgraded
+   (`forceDowngradePermission`, `src/main/pty.ts:811-818`).
+3. **The working tree belongs to the session.** A session can edit `WORKTREE.md` and
+   `WORKTREE.local.md` in its worktree, and in `acceptEdits` it does so without asking. A worktree
+   may also hold an untrusted branch, such as a fork's PR. Round 1 of this spec read the command
+   from there. The round-1 grading found that this is a two-step code-execution path: set
+   `verify: node -e …`, then run `gh pr create`.
+4. **Harnu already has a trusted path for repo commands.** It reads `setup` from the repo's main
+   checkout (`readManifestSources(repoRoot)`, `src/main/worktree-ipc.ts:339-350`). It discloses
+   setup verbatim before an MCP `create_worktree` (`worktree-ipc.ts:470-477`,
+   `DisclosedWorktreeCommands`, `src/main/worktree-manifest.ts:613-625`, "the RCE surface"), and runs
+   it once.
+5. **The companion is forbidden what the gate needs.** T389 SEC-9 forbids process runs (a),
+   `$.mcp.call` (b) and a Bash `tool.call` matcher (d) in `harnu-companion`, and SEC-4 forbids
+   security-relevant reads from env, cwd or project files
+   (`docs/specs/T389-companion-mod/00-master.md:497, :502`).
+6. **The host cannot run the check for the companion yet.** No `ask` kind is registered
+   (`src/main/companion/host-core.ts:113, :498`; `server.ts:563-564`). Ask tranches are ≤20 s,
+   against this repo's measured ~53 s check, and are not allowed in non-interactive sessions (MOD-5).
+7. **A `tool.call` hook on Bash once broke worktree-isolated subagents.** That was on an earlier
+   build (`docs/studies/T389-smoke-evidence.md:628-650`, issue #92533). A probe on 2.1.296 headless
+   found isolation intact (the T450 verifier). `tool.check` and classic hooks are safe either way.
+8. **T447 will guard Harnu's MCP server against direct mod calls**, and offers scoped Mission writes
+   through its noun (T447 `03-security.md:23, :50-56`).
+9. **No command exists to run today.** A step carries a verification level (`src/main/mission-core.ts:76-95`).
+   A card AC carries a `verify:` kind by convention only. `WORKTREE.md` has no such key
+   (`worktree-manifest.ts:139-148`).
 
 ## Decision
 
-**D1. A third bundled mod, `harnu-verify-gate`.** It holds detection, the check run and the
-answer. Harnu stages it like the companion: an immutable versioned copy, one more `--plugin-dir`,
-injected per PTY spawn (ADR-0018 D1). Harnu's main process holds only the preference (global, per
-folder) and passes the resolved mode as one env var, `HARNU_VERIFY_GATE`. The mod is a plain
-plugin too: outside Harnu it runs from its own `userConfig`.
+**D1. A third bundled mod, `harnu-verify-gate`: the first Harnu-staged mod that runs a process.**
 
-**D2. Its hooks, chosen for fact 4.** `tool.check` gates Bash claims (`gh pr create`,
-`gh pr ready`). `classic.PostToolUse` and `classic.PostToolUseFailure` feed the session's ledger of
-edits and check runs. `tool.call` gates the Harnu MCP claims (`mission_update_step` with
-`proof: 'claimed'`, `move_card` to `review`). The mod never registers `tool.call` on Bash, and a
-static test pins that, as for the companion.
+- It holds detection, the run and the answer.
+- Harnu stages it like the companion: an immutable versioned copy, one more `--plugin-dir` per PTY
+  spawn (ADR-0018 D1).
+- Outside Harnu it is a plain plugin.
 
-**D3. Every hook fails open, through `.catch`.** A refusal comes only from a verdict: a red check,
-or a check the gate could not finish (the session can run it itself). A gate that throws lets the
-claim through. Independent verification downstream is the real safeguard, and a broken gate must
-never wedge an unattended executor.
+**D2. The command is the operator's, never the model's.**
 
-**D4. The command is a `verify:` key in `WORKTREE.md`.** It takes one POSIX command line, or a
-list joined with `&&`, the same contract as `setup` (ADR-0005). `WORKTREE.local.md` overrides it.
-The mod reads the file itself, so it works outside Harnu. Harnu's resolver learns the key, so it
-stops warning about it (server dependency D-1). The command never comes from the model, a card body
-or any field an agent can write.
+- **Inside Harnu:**
+  - Harnu's main process reads the `verify:` key from the repo's **main checkout**, with the
+    existing manifest resolver.
+  - It shows the parts verbatim and keys them by a SHA256 hash.
+  - It passes them to the session at spawn (`HARNU_VERIFY_CMD`) **only when the operator has
+    approved that exact hash** for the repo.
+  - A changed command is a new hash, which nobody approved, so the gate runs nothing and asks again.
+  - The mod never reads the working tree.
+- **Outside Harnu:**
+  - The default mode is **annotate**, which runs nothing.
+  - `enforce` runs only the `check` option the person set in their own settings.
 
-**D5. Mission writes go through T447's noun, never around it.** The receipt line in the Mission
-Log and the step blocker on red wait for `$.harnu.missionLog` and `missionBlockerSet`/`Clear`. The
-gate lists `harnu` under `dependencies`. It never calls `$.mcp.call('harnu', …)` directly, which
-T447's guard would refuse.
+**D3. The gate meets the intent of SEC-4 and SEC-9, not just their letter.**
 
-**D6. It is a self-check, never a verification.** The gate never calls `mission_verify_step`,
-never sets a proof label and never ticks a check. The delivery-verifier and `mission_verify_step`
-from a non-authoring session stay the only way a step becomes `verified`.
+- **Project files and cwd: nothing read.** The only env read is two literal names Harnu sets at
+  spawn; the model cannot change the process env.
+- **Process runs** are limited to approved, disclosed text, never a generic runner.
+- **No `$.mcp.call`:** W3's Mission writes go through T447's noun.
+- **No Bash `tool.call`.**
+- A static profile in `scripts/ci/api-surface-scan.mjs` enforces this, as it does for the
+  companion: no `fs.*`, no `http.*`, no `mcp.call`, and `process.spawn` only in the runner.
+
+**D4. Its hooks.**
+
+| Hook                                         | Role                                                                                                                              |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `tool.check`                                 | gates Bash claims (`gh pr create`, `gh pr ready`)                                                                                 |
+| `classic.PostToolUse` / `PostToolUseFailure` | feed the session's ledger of edits and runs, part by part                                                                         |
+| `classic.SessionStart`                       | seeds the ledger on resume and clear                                                                                              |
+| `tool.call`                                  | gates the Harnu MCP claims (`mission_update_step` with `proof: 'claimed'`, `move_card` to `review`) and `message_session` reports |
+| `session.send`                               | appends a receipt line to outgoing reports                                                                                        |
+
+**D5. The run is a `$.process.spawn` loop.**
+
+- An abort of the claim's dispatch (Esc) kills the child and records nothing.
+- A timer's `return()` enforces the per-part timeout (default 300 s, 600 at most).
+- `$.process.run` is not used: it takes no abort signal.
+
+**D6. Every hook fails open, through `.catch`.** A refusal comes only from a verdict:
+
+- a red check;
+- a check that could not finish (the session can run it itself);
+- a resumed session treated as edited.
+
+**D7. Mission writes go through T447's noun**, never a direct `$.mcp.call('harnu', …)`.
+
+**D8. It is a self-check, never a verification.** The gate never calls `mission_verify_step`,
+never sets a proof label and never ticks a check.
 
 ## Alternatives considered
 
-| Alternative                                        | Why not                                                                                                                                                                                                     |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The gate inside `harnu-companion`                  | Facts 2 and 4. It would need SEC-9 (a), (b) and (d) reopened for the one mod that is staged into every session and whose floor ADR-0018 D13 set on purpose.                                                 |
-| The companion asks the host to run the check       | Fact 3: no ask broker exists, the tranche is shorter than the check, headless sessions get no ask, and it would do nothing outside Harnu. Worth revisiting if a host-side runner appears for other reasons. |
-| Main process only, e.g. the server refusing claims | Fact 1: the server cannot see edits, runs or the caller. It would gate the orchestrator, who edited nothing, and miss the executor, who has no MCP.                                                         |
-| Inside T447's `harnu` mod                          | That mod is the noun and its guard. Adding a process runner to it widens the one mod every Harnu-aware mod depends on.                                                                                      |
-| The command in a new Mission step field            | The most common executor shape, an MCP-spawned child, cannot read its mission at all (no Harnu MCP). Per-step commands stay an open question.                                                               |
-| The command guessed from `package.json`            | A guess runs the wrong gate in any repo whose real check is not `npm test`.                                                                                                                                 |
-| `$.mcp.call('harnu', …)` for Mission writes now    | Fact 5: breaks the day T447 ships, and bypasses the scoping T447 adds.                                                                                                                                      |
+| Alternative                                                            | Why not                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read `verify:` from the session's tree (round 1)                       | Fact 3: the model chooses what runs, outside its permissions. Withdrawn.                                                                                                                                                                            |
+| Read `verify:` from the committed `HEAD`, refuse when the tree differs | The session can commit, so `HEAD` is the session's too. `origin/<default>` helps only where the default branch is protected, which Harnu cannot know.                                                                                               |
+| Hash pin with no disclosure                                            | A pin nobody looked at protects nothing.                                                                                                                                                                                                            |
+| The gate inside `harnu-companion`                                      | Fact 5: it would reopen SEC-9 a/b/d for the one mod staged into every session.                                                                                                                                                                      |
+| The companion asks the host to run the check                           | Fact 6: no broker exists yet, tranches are shorter than the check, and headless sessions get no ask. It is the cleanest home for SEC-9's intent, and is revisited when P3W1's broker ships (spec Q12). The pin and disclosure carry over unchanged. |
+| Main process only                                                      | Fact 1: no outcomes and no caller identity.                                                                                                                                                                                                         |
+| Inside T447's `harnu` mod                                              | It is the noun and its guard; a process runner does not belong there.                                                                                                                                                                               |
+| `$.process.run` for the check                                          | No abort signal: an interrupted check ran on for up to 300 s, and its result could still be recorded.                                                                                                                                               |
+| A `tool.call` rewrite of SendMessage                                   | `session.send` is the event built for it, and covers `$.session.send` too.                                                                                                                                                                          |
+| A `tool.call` input rewrite of `message_session`                       | An MCP input rewrite is refused in `auto` mode (T389 P2W5). The gate asks for a re-send instead.                                                                                                                                                    |
 
 ## Consequences
 
-- A second process-running mod ships in every Harnu session. The Mods tab discloses it with the
-  `process`, `files`, `tool-calls`, `permissions` and `env` chips (spec §11.3). The user docs say
-  why it needs each.
-- `WORKTREE.md` gains a meaning beyond provisioning: it now also says what "green" is for the repo.
-  The worktree-manifest skill and `docs/user/` must teach the key.
-- Executors in the most common shape (MCP-spawned, no Harnu MCP) get the Bash gate and the
-  `SendMessage` receipt, but no Mission write. Their orchestrator stays the one that records it.
+- **A repo's `verify:` needs an operator approval before Enforce does anything there.** Until
+  then, Enforce degrades to an "unverified" note, plus a "Needs you" item that shows the parts.
+- The Mods tab must learn to show the gate:
+  - its row, since `planRows` lists only the companion and the skills dir;
+  - its permission-deciding role, since `pickPermissionHookers` skips `source: 'harnu'`;
+  - a chip for a `session.send` hook;
+  - the "with .catch" notes it now reports as unparsed (spec §11.3).
+- The per-session mode must be persisted, because `trustFor`'s inputs are app-run memory
+  (`src/main/companion/spawn-inject.ts:111-119`, `pty.ts:505-514`). Otherwise a resumed agent
+  session would drop to Annotate after a restart.
+- `WORKTREE.md` gains a meaning beyond provisioning: what "green" is for the repo. The
+  worktree-manifest skill and `docs/user/` must teach the key and what approving it means.
+- **Another mod could make the gate run a command of its choosing**, by forging the env or hooking
+  `env.get`. That mod can already run any process itself (ADR-0018 D3), so the gate adds nothing to
+  it. The Mods tab is the disclosure.
 - The gate's value is bounded by its honesty model: it catches a stale "all tests pass", not a
-  forged receipt. That is stated as a non-goal, and the verifier never counts the receipt as proof.
-- The mod has its own CLI ceiling and `api-surface.json`, checked by `scripts/ci/mod-step.mjs`, so a
-  Claude Code update that changes a hook it relies on forces `annotate` instead of a silent change.
+  forged receipt. The verifier never counts the receipt as proof.
