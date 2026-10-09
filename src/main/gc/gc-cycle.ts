@@ -7,14 +7,14 @@
 // bundles the planner called ready items, through ops built for the `autopilot` actor.
 
 import type { InspectedContainer } from '../containers/containers-core'
-import type { WorktreeBundle } from './bundle-core'
 import {
   applyFailures,
+  FAILURE_TTL_MS,
   planCycle,
-  pruneFailures,
   type CycleFailure,
   type CyclePlan
 } from './autopilot-core'
+import type { WorktreeBundle } from './bundle-core'
 import type { JobQueue } from './gc-jobs-core'
 import type { GcPrefs } from './gc-prefs'
 import type { CycleRecord } from './gc-wire'
@@ -84,8 +84,12 @@ export interface GcCycleDeps {
  * the cycle agree; applying it again is a no-op.
  */
 export function withFailures<G extends GcGather>(g: G, state: CycleState, now: number): G {
-  pruneFailures(state.failures, g.bundles, now)
-  return { ...g, bundles: applyFailures(g.bundles, state.failures) }
+  // No pruning here: forgetting a note belongs to the gatherer, which does it only from a
+  // gather that is still current. A prune on this side ran against a gather that a manual
+  // clean could overlap, and deleted the note of an item that clean had just halted. An
+  // expired note is only skipped, never deleted: after a day the autopilot may try again.
+  const live = new Map([...state.failures].filter(([, f]) => now - f.at < FAILURE_TTL_MS))
+  return { ...g, bundles: applyFailures(g.bundles, live) }
 }
 
 /**
