@@ -2626,6 +2626,7 @@
         "dockerUnavailable": "Docker did not answer, so Harnu could not check this worktree safely and left it alone.",
         "probeFailed": "Checking this worktree failed, so it was left alone.",
         "nestedWorktree": "Another worktree lives inside this one, so it was left alone.",
+        "checkFailed": "Harnu could not look inside this worktree, so it was left alone.",
         "sharedStack": "Another stack also runs from this worktree, so it was left alone.",
         "headMoved": "A new commit landed on this worktree, so it was left alone.",
         "notHarvestable": "Cleanup no longer considers it finished, so it was left alone.",

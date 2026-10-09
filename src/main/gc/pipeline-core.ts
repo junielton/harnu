@@ -151,10 +151,13 @@ function refusalOf(b: WorktreeBundle, opts: GcRunOptions): string | null {
   // A nested worktree refuses even a confirmed `review` (delta 6, F1). The reprobe sees this
   // repo's `git worktree list` and, since delta 7, every `.git` on disk inside the worktree,
   // but a nested folder known only as a known folder (no `.git` of its own) passes both. A
-  // list that is missing or not a list cannot show there is none.
-  if (!Array.isArray(b.nestedWorktrees) || b.nestedWorktrees.length > 0) return 'nested-worktree'
+  // list that is missing or not a list cannot show there is none: the probe did not answer
+  // (`check-failed`), which refuses just the same but is not "something lives inside".
+  if (!Array.isArray(b.nestedWorktrees)) return 'check-failed'
+  if (b.nestedWorktrees.length > 0) return 'nested-worktree'
   // So does a foreign checkout the scan found (delta 7), whatever the operator confirmed.
-  if (!Array.isArray(b.foreignCheckouts) || b.foreignCheckouts.length > 0) return 'nested-worktree'
+  if (!Array.isArray(b.foreignCheckouts)) return 'check-failed'
+  if (b.foreignCheckouts.length > 0) return 'nested-worktree'
   const runs = b.bucket === 'ready' || (opts.confirmReview === true && b.bucket === 'review')
   return runs ? null : 'not-ready'
 }

@@ -309,6 +309,7 @@ describe('every code the engine can refuse with is known', () => {
     'docker-unavailable',
     'probe-failed',
     'nested-worktree',
+    'check-failed',
     'shared-stack',
     'head-moved',
     'not-harvestable',

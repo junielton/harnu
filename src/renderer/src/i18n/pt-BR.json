@@ -2626,6 +2626,7 @@
         "dockerUnavailable": "O Docker não respondeu, então o Harnu não pôde checar esta worktree com segurança e a deixou como está.",
         "probeFailed": "A checagem desta worktree falhou, então ela foi deixada como está.",
         "nestedWorktree": "Outra worktree vive dentro desta, então ela foi deixada como está.",
+        "checkFailed": "O Harnu não conseguiu olhar dentro desta worktree, então ela foi deixada como está.",
         "sharedStack": "Outra stack também roda a partir desta worktree, então ela foi deixada como está.",
         "headMoved": "Um commit novo chegou nesta worktree, então ela foi deixada como está.",
         "notHarvestable": "A limpeza não a considera mais concluída, então foi deixada como está.",
