@@ -20,6 +20,9 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   created, newest on top, and activity never moves them. The groups keep their usual order, and
   the minimized strip follows the same order. A new button in the rail header (next to the
   state filter) flips it to oldest first; Harnu remembers your choice.
+### Added
+
+- **Review every mission that needs you, and close the finished ones in one go.** **Review all** on the Activity entry (or a row whose owner session isn't open) now opens **Missions that need you**: your whole pile in three groups — ready to close (the session asked; pre-selected), finished but never verified (listed with the same warnings as the End dialog, not pre-selected) and waiting on you for something else (each has an **Open** button). **Close N as delivered…** opens a confirmation listing each mission and its warnings, with one optional reason; confirming closes them as delivered, one after another, and each mission's log records it as a `bulk close`. If some can't be closed you're told how many, and the review stays open on them. There is no bulk discard, and no session can do this — it only asks for the close.
 
 ### Fixed
 
