@@ -53,11 +53,11 @@ A manual clean is not limited by the autopilot's per-cycle cap: with 24 ready it
 
 ### The map
 
-Below the split bar, each repo is a region sized by its disk use, and inside it each worktree is a block whose **area is its size on disk**. Blocks are grouped by bucket (Ready to clean, Needs review, In use), so the area of each group is itself a number you can read. The biggest blocks are the biggest wins.
+Below the split bar, each repo is a region and inside it each worktree is a block whose **area is its size on disk**. Regions wrap onto as many rows as they need (never narrower than 340 px, with a gap between them), so with many repos the map grows downward and the page scrolls instead of squeezing every repo into one row. Inside a region the groups (Ready to clean, Needs review, In use) are stacked at the region's full width, so the area of each group is itself a number you can read. The biggest blocks are the biggest wins.
 
-- A region header shows the repo name, its worktree count and size, how many are Ready to clean, Needs review and In use, and **Select all in repo**.
-- Each block shows the longest label that fits: the full name, then a ticket id such as `PROJ-0412`, then a number, then only its size. Hover for the full name, repo, size and reason.
-- Worktrees too small to read collapse into one **N smaller** block per group (dotted border); click it to see them as a list.
+- A region header has two lines: the repo name (a long name ends in an ellipsis; hover for the full path) with **Select all in repo**, then its worktree count and size and how many are Ready to clean, Needs review and In use. In a narrow region the worktree count drops before the name does.
+- Every block you see shows its name (or a ticket id such as `PROJ-0412`, then a number) **and its whole size**. A size is never cut off mid-number. Hover a block for its full name, repo, size, and its bucket with the real reason: why it is Ready to clean, why it needs review, or why it is In use (a session is working there, its pull request is open, it is inside the grace period, you marked it Keep…).
+- Worktrees too small to show a name and a size collapse into one **N smaller** block per group (dotted border); click it to see them as a list. A taller map folds fewer of them.
 - Click a repo's name to open it on its own, with a breadcrumb back to **All repos** and a filter (All / Ready to clean / Needs review / In use). Use the filter to look only at the 42 items that need review.
 - Arrow keys move between blocks; **Enter** opens the panel for the focused block; **Space** selects a Needs review block or opens any other.
 - A block that is cleaned fades ("freed") and then the map re-draws without it. The map never re-draws under your pointer while you are aiming at a block.
@@ -142,12 +142,16 @@ A strip under the map covers what is not a worktree:
 
 - **Build cache**, **Dangling images** and **Orphan volumes**. Build cache and dangling images share one automatic-cleaning switch (the same one as in Settings → Cleanup). Orphan volumes have no switch: they are never removed automatically.
 - The build-cache block shows how much Docker could **reclaim right now** and the dangling-image block shows how many images there are and how big. Once an automatic cycle has run, each block also says what the **last cycle reclaimed**. If Docker does not answer for a figure, that block says "Size unavailable — Docker did not answer" rather than show a zero. Both figures count in the reclaimable total at the top while the Docker switch is on.
-- **Orphan volumes** show a count and a size, the compose projects they belonged to, and a "Can't be restored" badge. They are never cleaned automatically; they appear in Needs review and are removed only when you select them and confirm each one. When Harnu cannot tell which volumes are orphans — a compose project name in one of your folders could not be resolved, or the scan of compose files hit its limit — the block reads **hidden** instead of "0 volumes", with a one-line note naming the folders (hover a folder for its full path). It goes away once the name resolves.
+- **Orphan volumes** show a count and a size, the compose projects they belonged to, and a "Can't be restored" badge. They are never cleaned automatically; they appear in Needs review and are removed only when you select them and confirm each one. When Harnu cannot tell which volumes are orphans — a compose project name in one of your folders could not be resolved, or the scan of compose files hit its limit — the block reads **hidden** instead of "0 volumes", with a two-line note — "Orphan volumes hidden: a compose project name couldn't be resolved in 21 folders" — and a **Show folders** link that opens the list of folder names (hover a folder for its full path). It goes away once the name resolves. Each Docker block is only as tall as its own content.
 - **Inspect stacks** in the card header opens the [Containers](containers.md) view, where you can look at each stack and start or stop it.
+
+### Before the first scan
+
+Right after Harnu starts there is nothing to show until the first scan has run. Until then the screen says **Scanning your worktrees…**, the clean button reads **Scanning…** and is disabled, and nothing claims the workspace is clean. If that first scan fails, the screen says so with the error, and **Scan now** tries again.
 
 ### All clean
 
-When there is nothing to reclaim, the screen says **All clean** ("Nothing to reclaim. Autopilot checked 4 min ago."). The map is still there, showing only worktrees that are in use, so it still answers "where did my disk go?".
+When a finished scan finds nothing to reclaim, the screen says **All clean** ("Nothing to reclaim. Autopilot checked 4 min ago."). The map is still there, showing only worktrees that are in use, so it still answers "where did my disk go?".
 
 ### Other leftovers
 

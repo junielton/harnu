@@ -12,11 +12,12 @@ import {
   TriangleAlert
 } from 'lucide-vue-next'
 import type { Bucket } from '../../../main/gc/bundle-core'
-import { floorShares, foldSmall, squarify, type Rect } from '../lib/gc-treemap'
+import { layoutMap, TM, type Rect } from '../lib/gc-treemap'
 import { isCheckable, type GcBlock, type GcModel, type RepoRegion } from '../lib/gc-model'
 import type { BlockJobState } from '../lib/gc-jobs'
 import { formatBytes } from './system-monitor-format'
-import { reasonKey, ticketParts } from './cleanup-gc-copy'
+import { inUseReason, reasonKey, ticketParts } from './cleanup-gc-copy'
+import { relativeTime } from '../composables/useRelativeTime'
 import SegmentedControl from './ui/SegmentedControl.vue'
 
 /**
@@ -24,15 +25,15 @@ import SegmentedControl from './ui/SegmentedControl.vue'
  * bucket group → worktree block. Pure presentation over `GcModel`: the store owns the model, the
  * fade timing and the selection, this component only lays it out and reports what was clicked.
  *
- * Geometry is computed in pixels from the measured canvas width (a fixed 372/520px height) and
- * emitted as percentages, so a resize between measures never tears the layout.
+ * Geometry comes from `layoutMap` (lib/gc-treemap.ts): repo regions on wrapping shelves, bucket groups
+ * stacked at the region's full width, blocks squarified and never smaller than they need to show a label
+ * and a whole size. The canvas height is computed from the data — the map grows downward and the page
+ * scrolls. Rectangles are emitted as percentages of the measured canvas, so a resize between measures
+ * never tears the layout.
  */
 
-const MIB = 1024 ** 2
-const REGION_HEAD = 28
-const GROUP_HEAD = 22
-const OVERVIEW_H = 372
-const DRILLED_H = 520
+const REGION_HEAD = TM.regionHead
+const GROUP_HEAD = TM.groupHead
 const FALLBACK_W = 1000
 
 const props = defineProps<{
@@ -59,10 +60,11 @@ const { t } = useI18n()
 const canvasEl = ref<HTMLElement | null>(null)
 const { width } = useElementSize(canvasEl)
 const canvasW = computed(() => (width.value > 0 ? width.value : FALLBACK_W))
-const canvasH = computed(() => (props.drillRepo ? DRILLED_H : OVERVIEW_H))
 
 type Filter = 'all' | Bucket
 const bucketFilter = ref<Filter>('all')
+/** The bucket filter exists only on the drilled-in view; the overview always shows every bucket. */
+const activeFilter = computed<Filter>(() => (props.drillRepo ? bucketFilter.value : 'all'))
 
 // ---- layout ------------------------------------------------------------------------------------
 
@@ -94,68 +96,44 @@ function styleOf(r: Rect, w: number, h: number): Record<string, string> {
   return { left: pct(r.x, w), top: pct(r.y, h), width: pct(r.w, w), height: pct(r.h, h) }
 }
 
-const threshold = computed(() => (props.drillRepo ? 256 : 330) * MIB)
-
-const layout = computed<RegionLayout[]>(() => {
-  const regions = props.drillRepo
+const shownRegions = computed(() =>
+  props.drillRepo
     ? props.model.regions.filter((r) => r.repoPath === props.drillRepo)
     : props.model.regions
-  if (regions.length === 0) return []
-  const W = canvasW.value
-  const H = canvasH.value
-  const shares = floorShares(
-    regions.map((r) => r.bytes),
-    0.12
-  )
-  const placed = new Map(
-    squarify(
-      regions.map((r, i) => ({ id: r.repoPath, value: shares[i] })),
-      { x: 0, y: 0, w: W, h: H }
-    ).map((p) => [p.id, p.rect])
-  )
+)
+const visibleGroups = (r: RepoRegion): RepoRegion['groups'] =>
+  r.groups.filter((g) => activeFilter.value === 'all' || g.bucket === activeFilter.value)
 
-  return regions.flatMap((region): RegionLayout[] => {
-    const R = placed.get(region.repoPath)
-    if (!R) return []
-    const bodyW = Math.max(R.w - 2, 0)
-    const bodyH = Math.max(R.h - REGION_HEAD - 2, 0)
-    const groups = region.groups.filter(
-      (g) => bucketFilter.value === 'all' || g.bucket === bucketFilter.value
-    )
-    const gShares = floorShares(
-      groups.map((g) => g.bytes),
-      0.15
-    )
-    const gPlaced = new Map(
-      squarify(
-        groups.map((g, i) => ({ id: g.bucket, value: gShares[i] })),
-        { x: 0, y: 0, w: bodyW, h: bodyH }
-      ).map((p) => [p.id, p.rect])
-    )
+const mapLayout = computed(() =>
+  layoutMap(
+    shownRegions.value.map((r) => ({
+      id: r.repoPath,
+      bytes: r.bytes,
+      groups: visibleGroups(r).map((g) => ({
+        id: g.bucket,
+        bytes: g.bytes,
+        // A zero-byte block would be an unclickable sliver; 1 byte folds it into the aggregate.
+        items: g.blocks.map((b) => ({ id: b.id, value: Math.max(b.bytes, 1) }))
+      }))
+    })),
+    canvasW.value
+  )
+)
+const canvasH = computed(() => mapLayout.value.height)
 
-    const groupLayouts = groups.flatMap((g): GroupLayout[] => {
-      const G = gPlaced.get(g.bucket)
-      if (!G) return []
-      const gw = Math.max(G.w - 4, 0)
-      const gh = Math.max(G.h - GROUP_HEAD - 4, 0)
-      // A zero-byte block would be an unclickable sliver; 1 byte folds it into the aggregate.
-      const items = g.blocks.map((b) => ({ id: b.id, value: Math.max(b.bytes, 1) }))
-      const { kept, folded } = foldSmall(items, threshold.value)
+const layout = computed<RegionLayout[]>(() => {
+  const map = mapLayout.value
+  const byRepo = new Map(shownRegions.value.map((r) => [r.repoPath, r]))
+  return map.regions.flatMap((R): RegionLayout[] => {
+    const region = byRepo.get(R.id)
+    if (!region) return []
+    const groups = R.groups.flatMap((G): GroupLayout[] => {
+      const g = region.groups.find((x) => x.bucket === G.id)
+      if (!g) return []
       const byId = new Map(g.blocks.map((b) => [b.id, b]))
-      const foldedBlocks = folded.map((f) => byId.get(f.id)!).filter(Boolean)
-      const all = [...kept]
-      const aggKey = `agg:${region.repoPath}:${g.bucket}`
-      if (foldedBlocks.length > 0) {
-        all.push({
-          id: aggKey,
-          value: Math.max(
-            folded.reduce((a, f) => a + f.value, 0),
-            threshold.value
-          )
-        })
-      }
-      const cells = squarify(all, { x: 0, y: 0, w: gw, h: gh }).map((p): CellLayout => {
-        const isAgg = p.id === aggKey
+      const foldedBlocks = G.folded.map((id) => byId.get(id)).filter((b): b is GcBlock => !!b)
+      const cells = G.cells.map((p): CellLayout => {
+        const isAgg = p.id === G.aggId
         const block = isAgg ? null : (byId.get(p.id) ?? null)
         return {
           key: p.id,
@@ -163,16 +141,21 @@ const layout = computed<RegionLayout[]>(() => {
           folded: isAgg ? foldedBlocks : [],
           bucket: g.bucket,
           bytes: isAgg ? foldedBlocks.reduce((a, b) => a + b.bytes, 0) : (block?.bytes ?? 0),
-          style: styleOf(p.rect, gw, gh),
-          // Centre in canvas coordinates, for arrow-key neighbours.
-          cx: R.x + 1 + G.x + 2 + p.rect.x + p.rect.w / 2,
-          cy: R.y + REGION_HEAD + G.y + GROUP_HEAD + 2 + p.rect.y + p.rect.h / 2
+          style: styleOf(p.rect, G.box.w, G.box.h),
+          cx: p.cx,
+          cy: p.cy
         }
       })
-      return [{ bucket: g.bucket, count: g.blocks.length, style: styleOf(G, bodyW, bodyH), cells }]
+      return [
+        {
+          bucket: g.bucket,
+          count: g.blocks.length,
+          style: styleOf(G.rect, R.body.w, R.body.h),
+          cells
+        }
+      ]
     })
-
-    return [{ region, style: styleOf(R, W, H), groups: groupLayouts }]
+    return [{ region, style: styleOf(R.rect, map.width, map.height), groups }]
   })
 })
 
@@ -244,12 +227,24 @@ function blockLabel(b: GcBlock): string {
     : t('cleanup.gc.map.blockLabel', { name: b.name, bucket: bucketWord(b.bucket), size })
 }
 
+/** The sentence for this block's real bucket: Ready, a Needs review code, or why it is In use. */
+function reasonText(b: GcBlock): string {
+  if (b.bucket === 'in-use' && b.bundle) {
+    const r = inUseReason(b.bundle, Date.now())
+    return t(r.key, {
+      ago: r.lastSignOfLifeAt ? relativeTime(new Date(r.lastSignOfLifeAt).toISOString()) : ''
+    })
+  }
+  return t(reasonKey(b.reasonCode, b.bucket === 'ready'))
+}
+
+/** Name, repo, size, then "bucket — reason"; it keeps every figure a small block hides. */
 function blockTitle(b: GcBlock): string {
   return [
     b.name,
     b.repoLabel ?? '',
     sizeOf(b.bytes, b.hasBytes),
-    t(reasonKey(b.reasonCode, b.bucket === 'ready'))
+    t('cleanup.gc.map.tooltipReason', { bucket: bucketWord(b.bucket), reason: reasonText(b) })
   ]
     .filter(Boolean)
     .join('\n')
@@ -381,49 +376,24 @@ const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
           data-testid="treemap-region"
         >
           <header
-            class="flex items-center gap-2.5 overflow-hidden whitespace-nowrap border-b border-border px-3"
+            class="flex flex-col justify-center gap-1 overflow-hidden whitespace-nowrap border-b border-border px-3"
             :style="{ height: REGION_HEAD + 'px' }"
           >
-            <button
-              type="button"
-              class="max-w-[55%] shrink-0 truncate font-mono text-ui font-semibold text-text-2 transition hover:text-text"
-              :aria-label="t('cleanup.gc.map.drillRepo', { repo: r.region.label })"
-              :title="r.region.repoPath"
-              data-testid="treemap-repo"
-              @click="emit('drill', r.region.repoPath)"
-            >
-              {{ r.region.displayLabel }}
-            </button>
-            <span class="tm-rmeta min-w-0 truncate text-caption text-text-4">
-              {{
-                t(
-                  'cleanup.gc.map.repoMeta',
-                  { count: r.region.worktrees, size: formatBytes(r.region.bytes) },
-                  r.region.worktrees
-                )
-              }}
-            </span>
-            <span class="ml-auto flex shrink-0 items-center gap-1">
-              <template v-for="b in BUCKETS" :key="b">
-                <span
-                  v-if="r.region.counts[b] > 0"
-                  class="tm-badge inline-flex items-center gap-1 rounded-full border px-2 text-caption"
-                  :class="{
-                    'border-green-line bg-green-soft text-green': b === 'ready',
-                    'border-warning-line bg-warning-soft text-warning': b === 'review',
-                    'border-border bg-surface text-text-3': b === 'in-use'
-                  }"
-                  :title="`${bucketWord(b)}: ${r.region.counts[b]}`"
-                  :data-testid="`treemap-count-${b}`"
-                >
-                  <component :is="BUCKET_ICON[b]" :size="10" :stroke-width="1.8" />
-                  {{ r.region.counts[b] }}
-                </span>
-              </template>
+            <div class="flex min-w-0 items-center gap-2">
+              <button
+                type="button"
+                class="min-w-0 flex-1 truncate text-left font-mono text-ui font-semibold text-text-2 transition hover:text-text"
+                :aria-label="t('cleanup.gc.map.drillRepo', { repo: r.region.label })"
+                :title="r.region.repoPath"
+                data-testid="treemap-repo"
+                @click="emit('drill', r.region.repoPath)"
+              >
+                {{ r.region.displayLabel }}
+              </button>
               <template v-if="r.region.counts.review > 0">
                 <button
                   type="button"
-                  class="tm-sel-label ml-1 text-caption text-text-2 transition hover:text-text"
+                  class="tm-sel-label shrink-0 text-caption text-text-2 transition hover:text-text"
                   :aria-label="t('cleanup.gc.map.selectAllAria', { repo: r.region.label })"
                   data-testid="treemap-select-all"
                   @click="emit('selectAllInRepo', r.region.repoPath)"
@@ -432,7 +402,7 @@ const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
                 </button>
                 <button
                   type="button"
-                  class="tm-sel-icon h-5.5 w-5.5 items-center justify-center rounded-sm text-text-2 transition hover:bg-surface-2"
+                  class="tm-sel-icon h-5.5 w-5.5 shrink-0 items-center justify-center rounded-sm text-text-2 transition hover:bg-surface-2"
                   :aria-label="t('cleanup.gc.map.selectAllAria', { repo: r.region.label })"
                   :title="t('cleanup.gc.map.selectAll')"
                   data-testid="treemap-select-all-icon"
@@ -441,7 +411,36 @@ const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
                   <ListChecks :size="13" :stroke-width="1.7" />
                 </button>
               </template>
-            </span>
+            </div>
+            <div class="flex min-w-0 items-center gap-2">
+              <span class="tm-rmeta min-w-0 truncate text-caption text-text-4">
+                <span class="tm-rcount"
+                  >{{
+                    t('cleanup.gc.map.repoCount', { count: r.region.worktrees }, r.region.worktrees)
+                  }}
+                  ·
+                </span>
+                {{ formatBytes(r.region.bytes) }}
+              </span>
+              <span class="ml-auto flex shrink-0 items-center gap-1">
+                <template v-for="b in BUCKETS" :key="b">
+                  <span
+                    v-if="r.region.counts[b] > 0"
+                    class="tm-badge inline-flex items-center gap-1 rounded-full border px-2 text-caption"
+                    :class="{
+                      'border-green-line bg-green-soft text-green': b === 'ready',
+                      'border-warning-line bg-warning-soft text-warning': b === 'review',
+                      'border-border bg-surface text-text-3': b === 'in-use'
+                    }"
+                    :title="`${bucketWord(b)}: ${r.region.counts[b]}`"
+                    :data-testid="`treemap-count-${b}`"
+                  >
+                    <component :is="BUCKET_ICON[b]" :size="10" :stroke-width="1.8" />
+                    {{ r.region.counts[b] }}
+                  </span>
+                </template>
+              </span>
+            </div>
           </header>
 
           <div class="relative" :style="{ height: `calc(100% - ${REGION_HEAD}px)` }">
@@ -453,16 +452,22 @@ const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
               :data-testid="`treemap-group-${g.bucket}`"
             >
               <div class="absolute flex flex-col" style="inset: 2px">
+                <!-- The word is never cut: the count yields first (see .tm-gcount). -->
                 <div
-                  class="flex items-center gap-1.5 overflow-hidden whitespace-nowrap px-1"
+                  class="flex items-center gap-1.5 whitespace-nowrap px-1"
                   :class="INK_CLASS[g.bucket]"
                   :style="{ height: GROUP_HEAD + 'px' }"
                 >
-                  <component :is="BUCKET_ICON[g.bucket]" :size="12" :stroke-width="1.7" />
-                  <span class="eyebrow">
+                  <component
+                    :is="BUCKET_ICON[g.bucket]"
+                    class="shrink-0"
+                    :size="12"
+                    :stroke-width="1.7"
+                  />
+                  <span class="eyebrow shrink-0">
                     {{ t(`cleanup.gc.bucket.header.${g.bucket}`) }}
                   </span>
-                  <span class="ml-auto text-caption text-text-3">{{ g.count }}</span>
+                  <span class="tm-gcount ml-auto text-caption text-text-3">{{ g.count }}</span>
                 </div>
                 <div class="relative flex-1">
                   <div v-for="c in g.cells" :key="c.key" class="tm-cell absolute" :style="c.style">
@@ -593,7 +598,7 @@ const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
 .tm-sel-icon {
   display: none;
 }
-@container tmregion (max-width: 300px) {
+@container tmregion (max-width: 460px) {
   .tm-sel-label {
     display: none;
   }
@@ -601,8 +606,14 @@ const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
     display: inline-flex;
   }
 }
-@container tmregion (max-width: 200px) {
-  .tm-rmeta {
+/* Counts go before the name does: the worktree count first, then the group counts. */
+@container tmregion (max-width: 300px) {
+  .tm-rcount {
+    display: none;
+  }
+}
+@container tmregion (max-width: 220px) {
+  .tm-gcount {
     display: none;
   }
 }
@@ -660,12 +671,19 @@ const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
 }
 .tm-b-name,
 .tm-b-short,
-.tm-b-tiny,
-.tm-b-size {
+.tm-b-tiny {
   overflow: hidden;
   font-size: 11px;
   line-height: 14px;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A number is drawn whole or not at all: no ellipsis here, it hides below 72px (see the ladder). */
+.tm-b-size {
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 14px;
+  text-overflow: clip;
   white-space: nowrap;
 }
 .tm-b-short,
@@ -727,6 +745,12 @@ const BUCKETS: Bucket[] = ['ready', 'review', 'in-use']
   }
   .tm-b-tiny {
     display: inline;
+  }
+}
+@container (max-width: 72px) {
+  .tm-b-size,
+  .tm-b-agg-name {
+    display: none;
   }
 }
 @container (max-width: 60px) {

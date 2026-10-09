@@ -2281,13 +2281,14 @@
         "aggregateLabel": "{count} worktrees menores, {bucket}, {size}",
         "selectAll": "Selecionar tudo no repo",
         "selectAllAria": "Selecionar todos os worktrees a decidir em {repo}",
-        "repoMeta": "{count} worktree · {size} | {count} worktrees · {size}",
         "drillRepo": "Abrir {repo} sozinho",
         "drillBack": "Todos os repos",
         "filterLabel": "Mostrar grupo",
         "filterAll": "Todos",
         "noBytes": "Este sistema não mede o tamanho em disco, então não há o que desenhar. Use a visão em lista.",
-        "empty": "Nenhum worktree para mostrar."
+        "empty": "Nenhum worktree para mostrar.",
+        "repoCount": "{count} worktree | {count} worktrees",
+        "tooltipReason": "{bucket} — {reason}"
       },
       "reason": {
         "dirty": "Mesclado, mas tem alterações não commitadas em arquivos rastreados.",
@@ -2304,7 +2305,16 @@
         "ready": "Mesclado, limpo e parado além do período de carência.",
         "pathUnresolved": "A worktree tem um caminho que o Harnu não conseguiu resolver para o local real, então não sabe o que o usa.",
         "nestedWorktree": "Há outro worktree dentro deste, e remover este também o jogaria no lixo.",
-        "locked": "Este worktree está bloqueado no git"
+        "locked": "Este worktree está bloqueado no git",
+        "inUse": {
+          "mainCheckout": "O checkout principal do repositório. Nunca é tocado.",
+          "neverClean": "Está na sua lista de nunca limpar. Nunca é tocado.",
+          "sessionWorking": "Uma sessão está trabalhando aqui agora.",
+          "openPr": "O pull request dele ainda está aberto.",
+          "unknownAge": "O Harnu não sabe quando ele foi usado pela última vez.",
+          "withinGrace": "Última atividade {ago}, dentro do período de carência.",
+          "kept": "Você marcou como Manter."
+        }
       },
       "step": {
         "stopStack": "Parar a stack",
@@ -2457,8 +2467,11 @@
         "splitLabel": "Números do Docker por tamanho: build cache, imagens dangling, volumes órfãos",
         "hidden": {
           "size": "ocultos",
-          "unresolvedCompose": "Os volumes órfãos estão ocultos porque o nome de um projeto compose não pôde ser resolvido em: {folders}",
-          "scanLimit": "Os volumes órfãos estão ocultos porque a busca por arquivos compose atingiu o limite em: {folders}"
+          "unresolvedCompose": "Volumes órfãos ocultos: o nome de um projeto compose não pôde ser resolvido em {n} pasta | Volumes órfãos ocultos: o nome de um projeto compose não pôde ser resolvido em {n} pastas",
+          "scanLimit": "Volumes órfãos ocultos: a busca por arquivos compose atingiu o limite em {n} pasta | Volumes órfãos ocultos: a busca por arquivos compose atingiu o limite em {n} pastas",
+          "show": "Mostrar pastas",
+          "hide": "Ocultar pastas",
+          "listLabel": "Pastas em que os volumes órfãos estão ocultos"
         }
       },
       "split": {
@@ -2656,6 +2669,12 @@
         "inUse": "Em uso · nunca tocado",
         "area": "Área do bloco = tamanho em disco · clique num bloco para agir",
         "label": "Legenda"
+      },
+      "firstScan": {
+        "title": "Analisando seus worktrees…",
+        "sub": "Procurando branches mescladas, sessões paradas e sobras do Docker.",
+        "failed": "A primeira varredura não terminou: {error}",
+        "hero": "Analisando…"
       }
     }
   },

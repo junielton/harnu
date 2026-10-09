@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { TM } from '../src/renderer/src/lib/gc-treemap'
 
 // design.md "Type and spacing in the Cleanup files": the Cleanup components use the type tokens, the
 // spacing scale and the --gc-* layout variables; the only raw sizes left are the documented exceptions.
@@ -46,11 +47,20 @@ describe('Cleanup components obey the design contract', () => {
   it('declares the layout variables, and the treemap constants match them', () => {
     const themes = css('themes.css')
     expect(themes).toContain('--gc-panel-w: 320px')
-    expect(themes).toContain('--gc-canvas-h: 372px')
-    expect(themes).toContain('--gc-canvas-h-drilled: 520px')
+    // The canvas height is computed from the data (the map grows downward), so it has no token.
+    expect(themes).not.toContain('--gc-canvas-h')
     expect(themes).toContain('--gc-dialog-w: min(720px, 90vw)')
-    const tm = read('CleanupTreemap.vue')
-    expect(tm).toMatch(/OVERVIEW_H = 372/)
-    expect(tm).toMatch(/DRILLED_H = 520/)
+    // The treemap's layout constants are documented in design.md "Treemap geometry".
+    expect(TM).toMatchObject({
+      gap: 8,
+      regionMinW: 340,
+      regionHead: 50,
+      groupHead: 22,
+      cellMinW: 88,
+      cellMinH: 44,
+      groupBodyMin: 48,
+      groupBodyMax: 560
+    })
+    expect(TM.areaPerByte * 1e9).toBe(24_000)
   })
 })

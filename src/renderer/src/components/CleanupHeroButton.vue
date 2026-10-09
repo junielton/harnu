@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Recycle } from 'lucide-vue-next'
+import { Loader2, Recycle } from 'lucide-vue-next'
 import Button from './ui/Button.vue'
 import { formatBytes } from './system-monitor-format'
 import type { HeroState } from '../lib/gc-model'
@@ -12,7 +12,11 @@ import type { HeroState } from '../lib/gc-model'
  * progress chip while a clean runs. It never awaits anything — the chip is fed by `gc:progress`
  * through the store, and there is no cancel because the engine has none.
  */
-const props = defineProps<{ hero: HeroState }>()
+const props = defineProps<{
+  hero: HeroState
+  /** No Reaper scan has finished yet: there is nothing to clean, and "Nothing to clean" would be a result. */
+  scanning?: boolean
+}>()
 const emit = defineEmits<{ click: [] }>()
 const { t } = useI18n()
 
@@ -42,8 +46,13 @@ const pct = computed(() => {
 </script>
 
 <template>
+  <Button v-if="scanning" variant="soft" disabled data-testid="hero-scanning">
+    <Loader2 :size="14" :stroke-width="1.6" class="shrink-0 animate-spin" />
+    {{ t('cleanup.gc.firstScan.hero') }}
+  </Button>
+
   <Button
-    v-if="hero.kind === 'clean'"
+    v-else-if="hero.kind === 'clean'"
     :variant="hero.soft ? 'soft' : 'primary'"
     data-testid="hero-clean"
     @click="emit('click')"

@@ -2281,13 +2281,14 @@
         "aggregateLabel": "{count} smaller worktrees, {bucket}, {size}",
         "selectAll": "Select all in repo",
         "selectAllAria": "Select all Needs review worktrees in {repo}",
-        "repoMeta": "{count} worktree · {size} | {count} worktrees · {size}",
         "drillRepo": "Open {repo} on its own",
         "drillBack": "All repos",
         "filterLabel": "Show bucket",
         "filterAll": "All",
         "noBytes": "This system cannot measure disk sizes, so there is nothing to draw. Use the list view.",
-        "empty": "No worktrees to show."
+        "empty": "No worktrees to show.",
+        "repoCount": "{count} worktree | {count} worktrees",
+        "tooltipReason": "{bucket} — {reason}"
       },
       "reason": {
         "dirty": "Merged, but it has uncommitted changes to tracked files.",
@@ -2304,7 +2305,16 @@
         "ready": "Merged, clean and idle past the grace period.",
         "pathUnresolved": "The worktree has a path Harnu could not resolve to its real location, so it cannot tell what uses it.",
         "nestedWorktree": "Another worktree lives inside this one, and removing this one would trash it too.",
-        "locked": "This worktree is locked in git"
+        "locked": "This worktree is locked in git",
+        "inUse": {
+          "mainCheckout": "The repo's main checkout. Never touched.",
+          "neverClean": "On your never-clean list. Never touched.",
+          "sessionWorking": "A session is working here right now.",
+          "openPr": "Its pull request is still open.",
+          "unknownAge": "Harnu has no sign of when it was last used.",
+          "withinGrace": "Last activity {ago}, inside the grace period.",
+          "kept": "You marked it Keep."
+        }
       },
       "step": {
         "stopStack": "Stop the stack",
@@ -2457,8 +2467,11 @@
         "splitLabel": "Docker figures by size: build cache, dangling images, orphan volumes",
         "hidden": {
           "size": "hidden",
-          "unresolvedCompose": "Orphan volumes are hidden because a compose project name couldn't be resolved in: {folders}",
-          "scanLimit": "Orphan volumes are hidden because the compose scan hit its limit in: {folders}"
+          "unresolvedCompose": "Orphan volumes hidden: a compose project name couldn't be resolved in {n} folder | Orphan volumes hidden: a compose project name couldn't be resolved in {n} folders",
+          "scanLimit": "Orphan volumes hidden: the compose scan hit its limit in {n} folder | Orphan volumes hidden: the compose scan hit its limit in {n} folders",
+          "show": "Show folders",
+          "hide": "Hide folders",
+          "listLabel": "Folders where orphan volumes are hidden"
         }
       },
       "split": {
@@ -2656,6 +2669,12 @@
         "inUse": "In use · never touched",
         "area": "Block area = size on disk · click a block to act",
         "label": "Legend"
+      },
+      "firstScan": {
+        "title": "Scanning your worktrees…",
+        "sub": "Looking for merged branches, idle sessions and Docker leftovers.",
+        "failed": "The first scan didn't finish: {error}",
+        "hero": "Scanning…"
       }
     }
   },

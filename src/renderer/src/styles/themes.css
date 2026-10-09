@@ -57,8 +57,6 @@
 
   /* Cleanup layout dimensions (design.md §4, "Workspace GC — unified Cleanup"). Theme-invariant. */
   --gc-panel-w: 320px;
-  --gc-canvas-h: 372px;
-  --gc-canvas-h-drilled: 520px;
   --gc-dialog-w: min(720px, 90vw);
 
   /* motion */

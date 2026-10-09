@@ -7,8 +7,8 @@ import type { HeroState } from '../src/renderer/src/lib/gc-model'
 
 const MB = 1_000_000
 
-function mountHero(hero: HeroState) {
-  return mount(CleanupHeroButton, { props: { hero }, global: { plugins: [i18n] } })
+function mountHero(hero: HeroState, scanning = false) {
+  return mount(CleanupHeroButton, { props: { hero, scanning }, global: { plugins: [i18n] } })
 }
 
 describe('CleanupHeroButton', () => {
@@ -66,5 +66,13 @@ describe('CleanupHeroButton', () => {
   it('running: a zero total does not divide by zero', () => {
     const w = mountHero({ kind: 'running', done: 0, total: 0, freedBytes: 0 })
     expect(w.get('[data-testid="hero-chip-bar"]').attributes('style')).toContain('width: 0%')
+  })
+
+  it('scanning: a disabled "Scanning…" button — never the "Nothing to clean" result', () => {
+    const w = mountHero({ kind: 'empty' }, true)
+    const btn = w.get('[data-testid="hero-scanning"]')
+    expect(btn.text()).toBe('Scanning…')
+    expect((btn.element as HTMLButtonElement).disabled).toBe(true)
+    expect(w.find('[data-testid="hero-empty"]').exists()).toBe(false)
   })
 })

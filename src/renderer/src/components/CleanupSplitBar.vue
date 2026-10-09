@@ -106,17 +106,19 @@ const lastLine = computed(() => {
       <div
         v-for="s in segments"
         :key="s.key"
-        class="flex min-w-28 flex-col gap-1"
+        class="flex min-w-36 flex-col justify-end gap-1"
         :style="{ flexGrow: grow(s), flexShrink: 1, flexBasis: '0px' }"
         :data-testid="`split-${s.key}`"
       >
-        <span class="truncate eyebrow text-text-4">
+        <!-- A caption that does not fit wraps; the bars stay aligned along the bottom. -->
+        <span class="eyebrow text-text-4">
           {{ t(`cleanup.gc.split.${s.key}`) }}
         </span>
         <span
           class="flex h-8 min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-xs border px-2.5 text-caption"
           :class="SEGMENT_CLASS[s.bucket]"
           :style="s.bucket === 'review' ? { backgroundImage: HATCH } : undefined"
+          :title="t(`cleanup.gc.split.${s.key}`)"
         >
           <component :is="s.icon" :size="12" :stroke-width="1.6" class="shrink-0" />
           <span class="truncate" :data-testid="`split-${s.key}-word`">{{

@@ -306,24 +306,24 @@ Everything outside the sidebar (topbar, buttons, inputs, menus) is density-indep
 
 ### Layout dimensions
 
-| Dimension                          | Value                                                | Use                                                                                                                                                                                   |
-| ---------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sidebar — minimum width            | 200px                                                | Drag-resize floor                                                                                                                                                                     |
-| Sidebar — default width            | 268px                                                | Initial width / reset on double-click                                                                                                                                                 |
-| Sidebar — maximum width            | 480px                                                | Drag-resize ceiling                                                                                                                                                                   |
-| Inbox rail — minimum width         | 260px                                                | Drag-resize floor (4th column, T83)                                                                                                                                                   |
-| Inbox rail — default width         | 300px                                                | Initial width / reset on double-click                                                                                                                                                 |
-| Inbox rail — maximum width         | 440px                                                | Drag-resize ceiling                                                                                                                                                                   |
-| Inbox rail — minimized strip       | 44px                                                 | Fixed width of the `minimized` state (icon + badge; does not resize)                                                                                                                  |
-| Resizable divider — hit area       | 6px                                                  | Handle drag area (`w-1.5`), shared by the sidebar and the split                                                                                                                       |
-| Resizable divider — visible stripe | 1px                                                  | Colored center stripe (`w-px`) inside the 6px hit area                                                                                                                                |
-| Footer / status bar — height       | 24px (`h-6`)                                         | Full-width footer, fixed to the bottom of the shell                                                                                                                                   |
-| Settings dialog — size             | width `min(92vw, 940px)` · height `min(80vh, 720px)` | **Fixed-size** dialog derived from the window — switching tabs or searching does not resize it (nav + pane scroll independently)                                                      |
-| Settings pane — bounded list       | max-height `280px`                                   | A long row list inside a settings pane scrolls in place (`.scrollable overflow-y-auto`) instead of pushing the sections below it off the pane — see §6 "Bounded list (settings pane)" |
-| Cleanup side panel — width         | 320px                                                | Docked detail panel beside the treemap (§6 "Workspace GC — unified Cleanup"); overlays the map below 1100px instead of docking                                                        |
-| Cleanup treemap canvas — height    | 372px overview · 520px drilled into one repo         | Fixed-height drawing area of the map; same status as the Folder View scroll caps                                                                                                      |
-| Cleanup list dialog — width        | `min(720px, 90vw)`                                   | The bulk-clean / remove-selected confirm: wider than the 560px Dialog so a row holds name + chips; its list is capped at `--fv-rail-list-max-h`                                       |
-| macOS window-controls inset        | 78px (macOS only; 0 elsewhere)                       | Left inset on the corner header (sidebar always; topbar when sidebar collapsed) so content clears the macOS traffic lights                                                            |
+| Dimension                              | Value                                                | Use                                                                                                                                                                                                            |
+| -------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sidebar — minimum width                | 200px                                                | Drag-resize floor                                                                                                                                                                                              |
+| Sidebar — default width                | 268px                                                | Initial width / reset on double-click                                                                                                                                                                          |
+| Sidebar — maximum width                | 480px                                                | Drag-resize ceiling                                                                                                                                                                                            |
+| Inbox rail — minimum width             | 260px                                                | Drag-resize floor (4th column, T83)                                                                                                                                                                            |
+| Inbox rail — default width             | 300px                                                | Initial width / reset on double-click                                                                                                                                                                          |
+| Inbox rail — maximum width             | 440px                                                | Drag-resize ceiling                                                                                                                                                                                            |
+| Inbox rail — minimized strip           | 44px                                                 | Fixed width of the `minimized` state (icon + badge; does not resize)                                                                                                                                           |
+| Resizable divider — hit area           | 6px                                                  | Handle drag area (`w-1.5`), shared by the sidebar and the split                                                                                                                                                |
+| Resizable divider — visible stripe     | 1px                                                  | Colored center stripe (`w-px`) inside the 6px hit area                                                                                                                                                         |
+| Footer / status bar — height           | 24px (`h-6`)                                         | Full-width footer, fixed to the bottom of the shell                                                                                                                                                            |
+| Settings dialog — size                 | width `min(92vw, 940px)` · height `min(80vh, 720px)` | **Fixed-size** dialog derived from the window — switching tabs or searching does not resize it (nav + pane scroll independently)                                                                               |
+| Settings pane — bounded list           | max-height `280px`                                   | A long row list inside a settings pane scrolls in place (`.scrollable overflow-y-auto`) instead of pushing the sections below it off the pane — see §6 "Bounded list (settings pane)"                          |
+| Cleanup side panel — width             | 320px                                                | Docked detail panel beside the treemap (§6 "Workspace GC — unified Cleanup"); overlays the map below 1100px instead of docking                                                                                 |
+| Cleanup treemap — region minimum width | 340px                                                | A repo region never lays out narrower; the map wraps onto another shelf (row) instead of squeezing, and the canvas height is computed from the data, not fixed (§6 "Workspace GC — unified Cleanup / Treemap") |
+| Cleanup list dialog — width            | `min(720px, 90vw)`                                   | The bulk-clean / remove-selected confirm: wider than the 560px Dialog so a row holds name + chips; its list is capped at `--fv-rail-list-max-h`                                                                |
+| macOS window-controls inset            | 78px (macOS only; 0 elsewhere)                       | Left inset on the corner header (sidebar always; topbar when sidebar collapsed) so content clears the macOS traffic lights                                                                                     |
 
 Sidebar width is **state persisted globally** (`localStorage`,
 key `om2tab.sidebarWidth`) — same anatomy as the theme. Out of range it is
@@ -8336,8 +8336,8 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
 5. **Split bar** (`.gc-split`): a 32px bar of up to four segments — _Ready to clean_ (ready worktrees only, Ready triple, so
    it agrees with the hero's count), _Docker (cleaned each cycle)_ (build cache + dangling images, Ready triple,
    `Container` icon, left out when there is nothing to take), _Needs review_ (hatch), _In use_. Widths
-   proportional to bytes, `gap: 2px`, segment radius `--radius-sm` (3px), 11px text, label left, size
-   right. A caption row above (eyebrow, 10.5px/500 uppercase `--text-4`) names the groups; the
+   proportional to bytes with a **144px minimum** (so "Docker" and its size both fit), `gap: 2px`, segment radius `--radius-sm` (3px), 11px text, label left, size
+   right. A caption row above (eyebrow, 10.5px/500 uppercase `--text-4`) names the groups — a caption that does not fit wraps onto a second line instead of ending in an ellipsis, and the bars stay aligned along the bottom; the
    last-cycle line (11px `--text-4`) sits under it — **while a job runs it is replaced by "Cleaning now · N left"**
    (11px `--accent`; "Cleaning now" when nothing is left to count). There is no "Cancel after current": the
    engine has no verb to stop a running job, so it is not drawn.
@@ -8352,26 +8352,50 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
 
 - **Data hierarchy:** repo → bucket group → worktree block; the third level (deps / owned volumes /
   checkout) lives in the side panel as the composition bar. Area = bytes on disk.
-- **Layout:** squarified (Bruls et al.), computed in `lib/gc-treemap.ts` from byte sizes; ties break by
-  name so the order is stable between scans. Repos get a width floor (a small repo never collapses to a
-  sliver); byte totals are always printed on the region header. The canvas is **372px** tall in the
-  overview and **520px** once drilled into one repo (§4).
-- **Repo region** (`.tm-region`): `border-border`, radius 7 (`--radius`), `bg-surface`. Header 28px:
-  **repo label** (mono 12.5px/600 `--text-2`) — the last two path segments, `proj/www` or `org/portal`, so a
-  repo with an org parent reads like the mockup's `org/proj/www`; it is **always visible, even in the
-  narrow side regions** (it truncates with an ellipsis, the full path is its `title`, and the meta and badges
-  yield first) — meta 11px `--text-4` (`61 worktrees · 27.8 GB`), count badges
-  (Ready to clean / Needs review / In use) pushed right, then **Select all in repo** (11px link in `--text-2`;
-  icon-only 22px Ghost `list-checks` in the narrow side regions, which have no room for the label).
+- **Layout — shelves, growing downward.** Computed in `lib/gc-treemap.ts` from byte sizes; ties break by name so
+  the order is stable between scans. The operator's rule (BUG-171): _the map may grow downward_ — vertical
+  scrolling is fine, squeezing everything into the fold is not.
+  - **Regions sit on shelves.** A shelf holds as many repo regions as fit at the **340px minimum width**
+    (`floor((W + gap) / (340 + gap))`); regions fill shelves biggest first and the count per shelf is
+    evened out (11 repos at 1298px lay out 3 / 3 / 3 / 2). Inside a shelf the widths are proportional to
+    bytes with a floor at the minimum, so a small repo never collapses to a sliver. Byte totals are
+    always printed on the region header. Gutter: **`s-2` (8px)** between regions and between shelves.
+  - **Groups stack inside a region**, top to bottom (Ready to clean → Needs review → In use), each at the
+    region's **full width** — so a bucket header always has the room for its whole word. A group's body
+    height is its bytes at a fixed density of **24,000 px² per GB**, clamped to **48–560px**; a shelf is as
+    tall as its tallest region, and the shorter ones spread the slack over their groups.
+  - **Blocks inside a group are squarified** (Bruls et al.): area stays proportional to bytes.
+  - The canvas has no fixed height; the page scrolls. Drilled into one repo the single region takes
+    the full width and its groups grow the same way.
+- **Repo region** (`.tm-region`): `border-border`, radius 7 (`--radius`), `bg-surface`. The header is **two
+  lines, 50px**. Line 1: the **repo label** (mono 12.5px/600 `--text-2`, the last two path segments —
+  `proj/www`, `org/portal`) on the whole line, with an ellipsis and the **full path as its `title`**; then
+  **Select all in repo** (11px link in `--text-2`; icon-only 22px Ghost `list-checks` under 460px, which has
+  no room for the label). Line 2: meta 11px `--text-4` (`61 worktrees · 27.8 GB`) and the count badges
+  (Ready to clean / Needs review / In use) pushed right. **Counts go before the name does**: under 300px
+  the worktree count drops from the meta and the size stays; the name is never the first thing to yield.
   Clicking the repo name drills in (breadcrumb + bucket filter `All / Ready to clean / Needs review / In use`).
-- **Bucket group:** 22px header — bucket icon + eyebrow word in the bucket ink, count right in 11px
-  `--text-3`. Its area is itself a readable number.
+- **Bucket group:** 22px header — bucket icon + eyebrow word in the bucket ink (`white-space: nowrap`, never
+  truncated), count right in 11px `--text-3`. **The count drops first**: under 220px of region width it
+  is hidden before any letter of the word is cut. Its area is itself a readable number.
 - **Block** (`.tm-block`): `position: absolute; inset: 2px` inside its cell (a 2px gutter between
   blocks), radius 3, 1px border in the bucket line, `padding: 4px 6px`, 11px/14px text. Label ladder by
-  **container query** on the cell: full name → ticket id (`PROJ-0412`) → `#0412` → size only → icon only;
-  the title tooltip always carries full name, repo, size and reason. Blocks under 256 MiB in a drilled
-  repo (330 MiB in the overview) fold into one **"N smaller"** block per bucket; it is clickable and
-  opens that set as a list.
+  **container query** on the cell: full name → ticket id (`PROJ-0412`) → `#0412` → icon only; a name
+  that does not fit ends in an ellipsis.
+  - **Readability rule — a visible block shows its label AND its whole size.** A block is drawn only when
+    its cell is at least **88 × 44px** (block 84 × 40: icon + name line, size line, padding). Anything
+    smaller folds into the group's **"N smaller"** block, which must meet the same minimum — it is given
+    as much area as it needs, and if that still is not enough it takes in the next smallest block. The threshold is therefore geometric, not a
+    byte constant: a taller map folds less. The "N smaller" block is clickable and opens that set as a list.
+  - **A number is never truncated mid-digit.** The size is drawn whole or not at all: under 72px of cell
+    width it is hidden (the tooltip keeps it); an ellipsis is for names only.
+  - **Tooltip (`title`)** names the block's _real_ bucket and reason, never a borrowed sentence: the name,
+    the repo, the size, then **bucket — reason**. Ready to clean reads "Merged, clean and idle past the
+    grace period."; Needs review reads its reason code's sentence; **In use** reads one sentence derived from
+    the bundle's own facts, first match wins: "the repo's main checkout", "on your never-clean list",
+    "a session is working here right now", "its pull request is still open", "no sign of when it was last
+    used", "last activity {ago}, inside the grace period", "you marked it Keep".
+
 - **States** (the block's whole state machine; the row in Needs review mirrors it):
 
   | State        | Look                                                                                                                                              |
@@ -8409,6 +8433,7 @@ much" and "do it" read as one sentence: `Clean 12 ready · 6.0 GB`. It acts on p
 - **Idle:** Primary, `Recycle` icon, label with count and bytes.
 - **Nothing to clean:** disabled (`opacity: 0.4`), label stays **"Nothing to clean"** — the state is
   readable, not just dimmed.
+- **Before the first scan:** disabled Soft button reading **"Scanning…"** with a spinning `Loader2` (see "First scan"); never "Nothing to clean", which would claim a result.
 - **First-cycle state:** the hero is a **Soft** button, because "Enable autopilot" owns the one Primary.
 - **Running** (the hero stops being a button): a **progress chip** — Badge Accent triple at button height
   (28px): static `--accent` dot (6px, 3px `--accent-soft` halo), `Cleaning 3/12 · 1.4 GB freed`, a
@@ -8582,10 +8607,14 @@ autopilot takes; it carries the Warning badge "can't be
 restored", the project name of each volume and the line "Never removed automatically. Remove each one
 yourself in Needs review." When the snapshot says the orphan list is empty **by construction**
 (`docker.orphanVolumesHidden`: an unresolved compose project name, or the compose scan hit its limit), the
-block's size line reads "hidden" in `--warning` instead of a confident "0 volumes", and a one-line `note` in
-`--warning` with an `EyeOff` icon explains why — "Orphan volumes are hidden because a compose project name
-couldn't be resolved in: {folders}" (or "…because the compose scan hit its limit in: {folders}") — listing the
-folder **basenames**, each with its full path as a tooltip. It disappears once the name resolves. The snapshot's `docker` figures feed the two blocks:
+block's size line reads "hidden" in `--warning` instead of a confident "0 volumes", and a **two-line-at-most**
+`note` in `--warning` with an `EyeOff` icon explains why — "Orphan volumes hidden: a compose project name
+couldn't be resolved in {n} folders" (or "…: the compose scan hit its limit in {n} folders") — followed
+inline by a **"Show folders"** disclosure (`aria-expanded`). The folder names stay out of sight until it is
+opened; opened, they are a mono 11px list of basenames, each with its full path as a tooltip, capped at
+`max-h-32` and scrolling inside — never a comma-separated wall. It disappears once the name resolves.
+**Compact:** the three blocks sit in an auto-fit grid (`minmax(240px, 1fr)`) and are as tall as their own
+content (`items-start`) — a short block is not stretched to the tallest sibling's height. The snapshot's `docker` figures feed the two blocks:
 `buildCacheReclaimableBytes` ("{size} reclaimable") and `danglingImages` ("{n} images · {size}"); a `null`
 figure reads **"Size unavailable — Docker did not answer"** in `--text-3`, never a confident zero. Once a
 cycle has run, a second 11px `--text-3` line adds "Last cycle reclaimed {size}". Both figures count in the
@@ -8599,6 +8628,16 @@ zeros when Docker says so.
 reports; nothing is deleted until you turn it on." Buttons: **Enable autopilot** (the screen's one
 Primary) and **Not now** (Ghost). Enable calls `gc:ackFirstReport` **and** `gc:prefs:set({ autopilot: true })`.
 Ready blocks are dashed ("planned, not done"); the summary reads "autopilot off".
+
+#### First scan — never "All clean" before anything was scanned
+
+The Cleanup gather reads the Reaper's last scan, which does not exist until the first scan has run. While
+`reaper.snapshot` is null the body is a **"Scanning your worktrees…"** state (spinning `Loader2`, 13px
+`--text-2`, a 11px `--text-3` line under it) and nothing else: no split bar, legend, map, Docker card or
+"All clean". The hero is a disabled Soft button reading **"Scanning…"** — there is nothing to clean yet. The
+screen starts that first scan itself and re-reads the gather when it ends. If the scan throws, the body
+reads "The first scan didn't finish" in `--red` with the error and the toolbar's rescan button stays enabled.
+"All clean" below is reserved for a **finished** scan that found nothing.
 
 #### Empty state
 
@@ -8653,7 +8692,7 @@ The Cleanup surfaces use the §3 scale through Tailwind `text-*` tokens declared
 `text-subtitle` 15/22, `text-title` 20/28 with `tracking-title`), spacing on the 4px grid with the 2px half
 step Tailwind v4 allows (`h-5.5` = 22px, `py-0.75` = 3px), and the 3px radius as `rounded-xs`. Text that was
 set at 10, 11.5 or 12px snaps to the nearest scale step (`caption`, `ui`). The layout dimensions of §4 are
-`--gc-panel-w` (side panel 320px), `--gc-canvas-h` / `--gc-canvas-h-drilled` (treemap canvas 372 / 520px) and
+`--gc-panel-w` (side panel 320px) and
 `--gc-dialog-w` (`min(720px, 90vw)`) in `themes.css`, used as `w-(--gc-panel-w)`. The dialog backdrop
 `rgba(0, 0, 0, 0.55)` is the documented one every dialog uses.
 
@@ -8662,13 +8701,12 @@ set at 10, 11.5 or 12px snaps to the nearest scale step (`caption`, `ui`). The l
 - **List-row column templates** — `grid-cols-[20px_1fr_64px]` (bulk dialog rows) and the three review/list
   row grids (`20px` icon · fixed name/branch column · flexible reason · size). They are per-list layouts, not
   reusable steps; a column that is a token elsewhere stays a token.
-- **Treemap geometry** — `REGION_HEAD` (28px) and `GROUP_HEAD` (22px) header heights and the canvas heights
-  (372 / 520px, mirroring `--gc-canvas-h*`) are layout constants of the squarified canvas, applied as inline
-  `height`/`inset` because block rectangles are computed from data. The canvas heights are asserted against the
-  tokens in `tests/cleanup-treemap.test.ts`.
+- **Treemap geometry** — the layout constants of `lib/gc-treemap.ts` (`TM`): region minimum width 340px, gutter
+  8px, region header 50px, group header 22px, minimum cell 88 × 44px, density 24,000 px² per GB, group body
+  48–560px. Block rectangles are computed from data and applied as percentages, so they are not tokens; the
+  constants are asserted in `tests/gc-treemap.test.ts` and `tests/cleanup-design-contract.test.ts`.
 - **The busy dot halo** — `shadow-[0_0_0_3px_var(--color-accent-soft)]` is the 3px `--accent-soft` halo of the
   6px static accent dot (see Motion below).
-- **`max-w-[55%]`** on the repo label is a proportion, not a size.
 - **Settings → Cleanup rows** (`CleanupSettingsPane.vue`) keep the shared Settings-pane anatomy — inline 12px
   labels, 11.5px hints, 12/16px gaps — that every Settings tab uses (`SettingsDialog.vue`). Migrating the
   Settings family to tokens is one change for all panes, not a Cleanup-only one.
@@ -11297,8 +11335,6 @@ codebase is a bug to fix.
 
   /* Cleanup layout dimensions (§4, §6 "Workspace GC — unified Cleanup") */
   --gc-panel-w: 320px;
-  --gc-canvas-h: 372px;
-  --gc-canvas-h-drilled: 520px;
   --gc-dialog-w: min(720px, 90vw);
 
   /* motion */
