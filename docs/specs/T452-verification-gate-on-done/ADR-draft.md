@@ -1,6 +1,6 @@
 # ADR-draft — The verification gate is a separate bundled mod that runs only an operator-approved command
 
-**Status:** proposed (numbered at merge) · **Date:** 2026-10-09 (round 3) · **Card:** T452 ·
+**Status:** proposed (numbered at merge) · **Date:** 2026-10-09 (round 4) · **Card:** T452 ·
 **Spec:** [`00-spec.md`](00-spec.md)
 
 ## Context
@@ -79,8 +79,10 @@ Facts that constrain them (cited in full in the spec):
     `HARNU_SPAWN_TOKEN`, `src/main/companion/spawn-inject.ts:131-141`) and passes the approved
     parts together with `HARNU_VERIFY_ROOT`, the folder they were approved for.
   - The mod never reads the working tree. It checks that the root equals `$.session.root()`, and
-    refuses any `HARNU_VERIFY_*` it finds in the `env` block of the `user`, `project` or `local`
-    settings.
+    refuses any `HARNU_VERIFY_*` it finds in the `env` block of **any** settings source (`user`,
+    `project`, `local`, `flag`, `policy`) or of their merge. A user's Claude Boot args can point
+    `--settings` at a file inside the repo, and Harnu never sets these variables through settings,
+    so a hit anywhere can only be a plant.
 - **Outside Harnu:**
   - The default mode is **annotate**, which runs nothing.
   - `enforce` runs only the `check` option the person set in their own settings.
@@ -89,13 +91,17 @@ Facts that constrain them (cited in full in the spec):
 `$.tool.check({ tool: 'Bash', input: { command: part } })`, the same chain a real Bash call goes
 through, minus the run. It runs the part only on `allow`. On `ask` or `deny` it hands the run back
 ("run it yourself"), and the session's own Bash call, governed by its own prompt or rule, becomes
-the receipt. So the gate never runs what the session could not.
+the receipt. So the gate never runs what the session could not. **A query consults the rules and
+the mode but runs no classic hook** (TYPES:12883), so a blocking `PreToolUse` hook is not asked
+before the gate spawns a part. The gate does not refuse when any such hook exists, because Harnu
+installs its own `PreToolUse` `*` hook in every session (`hook-installer.ts:41-50`); the gap is
+stated in the user doc and listed for W0 (spec §7.6 a, Q14).
 
 **D3. The gate meets the intent of SEC-4 and SEC-9, not just their letter, and says where it
 breaks the letter.**
 
-- **SEC-4's letter is broken knowingly:** the gate reads three literal env names and three
-  settings sources. Its answer to the intent is that **every read can only narrow**: a
+- **SEC-4's letter is broken knowingly:** the gate reads three literal env names and every
+  settings source plus their merge. Its answer to the intent is that **every read can only narrow**: a
   `HARNU_VERIFY_*` key in a settings file or a root that is not the session's removes the parts,
   and nothing in the working tree or cwd is read.
 - **Process runs** are limited to approved, disclosed text that the session's own permissions allow,
@@ -115,11 +121,15 @@ breaks the letter.**
 | `tool.call`                                  | gates the Harnu MCP claims (`mission_update_step` with `proof: 'claimed'`, `move_card` to `review`) and `message_session` reports |
 | `session.send`                               | appends a receipt line to outgoing reports                                                                                        |
 
-**D4b. A part counts as run only when its exit status is the call's.** A Bash call has one exit
-status, the last command's. A part counts when the call is parts and neutral segments joined by
-`&&`. After `;`, `|` or `||`, or after a directory change, the outcome is unknown and is no
-receipt. Any segment that may write is an edit. The round-2 grading showed live that matching the
-part anywhere records `sh check.sh 2>&1 | tail -5` (status `tail`'s) as green.
+**D4b. A part counts as run only when its exit status is the call's, decided by an allowlist.** A
+Bash call has one exit status, the last command's. A call is a receipt only when, after harmless
+trailing redirections are removed, it is exactly approved parts and neutral read-only commands
+joined by `&&`, with **no other shell metacharacter anywhere** (`&`, `;`, `|`, a newline, `$`, a
+backtick, `(`, `)`, `<`, `>`, `{`, `}`, a backslash). Anything else leaves the outcome unknown.
+A separate check marks a call as an edit when it may write: a metacharacter that can embed a
+command or redirect, or any command, however joined, that is not a part, a narrower run, a directory
+change or neutral. Two rounds of patching a separator blocklist were evaded live (round 2: a pipe,
+`||`, `;`; round 3: a lone `&` and a newline), so the rule is inverted.
 
 **D5. The run is a `$.process.spawn` loop.**
 
@@ -144,6 +154,7 @@ never sets a proof label and never ticks a check.
 | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Read `verify:` from the session's tree (round 1)                        | Fact 3: the model chooses what runs, outside its permissions. Withdrawn.                                                                                                                                                                            |
 | Read `verify:` from the committed `HEAD`, refuse when the tree differs  | The session can commit, so `HEAD` is the session's too. `origin/<default>` helps only where the default branch is protected, which Harnu cannot know.                                                                                               |
+| Keep patching the list of shell separators                              | Evaded live in two rounds. An allowlist of what a receipt may look like fails closed for every metacharacter, including the ones nobody listed.                                                                                                     |
 | Run the approved text without asking the session's permissions          | Fact 9: the model edits a script, the gate runs it with no Bash prompt, and `forceDowngradePermission` is defeated for that run.                                                                                                                    |
 | Treat the env as trusted because "the model cannot set the process env" | Fact 10: a settings-file `env` block the model can write, and an inherited env, are two more sources.                                                                                                                                               |
 | Hash pin with no disclosure                                             | A pin nobody looked at protects nothing.                                                                                                                                                                                                            |
@@ -170,7 +181,7 @@ never sets a proof label and never ticks a check.
 - `WORKTREE.md` gains a meaning beyond provisioning: what "green" is for the repo. The
   worktree-manifest skill and `docs/user/` must teach the key and what approving it means.
 - **Another mod could make the gate run a command of its choosing**, by forging the env or hooking
-  `env.get`. That mod can already run any process itself (ADR-0018 Decision 3, :43-45), so the gate
+  `env.get`. That mod can already run any process itself (ADR-0018's third decision point (`## Decision`, :43-45; not sub-decision D3)), so the gate
   adds nothing to it. The Mods tab is the disclosure.
 - **A downgraded session that has no allow rule for the check gets a hand-back**, not a run. Its own
   Bash call is the receipt. That costs one prompt in such a session, and it is the point.

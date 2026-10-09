@@ -1,14 +1,14 @@
 # T452 — Prototype: `harnu-verify-gate` (C-5)
 
 **Part of:** [`00-spec.md`](00-spec.md) · **Card:** T452 · **Status:** specified (not implemented) ·
-**Round 3**
+**Round 4**
 
 The minimal hooks module for the core mechanism:
 
-- the ledger and `classifyBash` (spec §6.2);
+- the ledger and `classifyBash`, an allowlist (spec §6.2);
 - the judgement (§5.2);
-- the policy: Harnu's spawn env bound to the session root, settings files refused, or the person's
-  userConfig outside Harnu (§7.2, §7.6);
+- the policy: Harnu's spawn env bound to the session root, every settings source and their merge
+  refused when they name `HARNU_VERIFY_*`, or the person's userConfig outside Harnu (§7.2, §7.6);
 - the session's own permission check before each part (§7.6 a, §8.1);
 - the run of approved parts through `$.process.spawn`, with its timeout and Esc (§8);
 - the claims of §5.1 rows 1, 2, 5, 7, 9 and 12.
@@ -55,42 +55,97 @@ Validating hooks: <scratch>/harnu-verify-gate/hooks/hooks.json
 ```
 
 tests/gate.test.ts:
-(pass) a claim from a session that edited nothing passes untouched [41.53ms]
-(pass) inside Harnu, a claim after an edit runs each approved part in order; green passes with a receipt [29.20ms]
-(pass) a red part refuses the claim, says the gate ran it, stops there, and never reaches the verb [20.87ms]
-(pass) the working tree cannot choose the command: nothing approved means nothing runs [19.86ms]
-(pass) the session's own runs count part by part, as separate Bash calls: nothing reruns [20.62ms]
-(pass) only the part the session did not run is run by the gate [29.49ms]
-(pass) a focused run is no receipt and no edit; an unknown command is an edit [33.16ms]
-(pass) the session's own red run refuses the claim without a rerun, and says who ran it [23.57ms]
-(pass) an edit after a green check makes it stale; neutral git commands do not [24.49ms]
-(pass) gh pr create: a query runs nothing; a draft is never gated; a red receipt is denied at tool.check [23.52ms]
-(pass) move_card to review is gated, to backlog is not; the legacy capy name is gated too [20.96ms]
-(pass) a part that outlives the timeout is stopped, recorded as nothing, and handed back to the session [540.75ms]
-(pass) annotate mode lets a stale claim through with a warning and runs nothing [21.00ms]
-(pass) off mode leaves even a red claim alone [14.76ms]
-(pass) outside Harnu the default is annotate, and nothing runs [11.99ms]
-(pass) outside Harnu, enforce runs only the userConfig check [16.35ms]
-(pass) a resumed session is treated as edited: its first claim checks [18.54ms]
-(pass) a completion report sent to another session carries the receipt line [17.41ms]
-(pass) message_session asks for a re-send with the receipt line, and passes once it is there [18.59ms]
-(pass) a "done" reply with no green check since the last edit is annotated [17.94ms]
-(pass) `sh check.sh 2>&1 | tail -5` exiting 0 is no receipt: the gate runs the part itself [16.12ms]
-(pass) `sh check.sh || true` exiting 0 is no receipt: the gate runs the part itself [17.34ms]
-(pass) `sh check.sh; rm -r x` exiting 0 is no receipt: the gate runs the part itself [20.43ms]
-(pass) `sh check.sh || echo failed` exiting 0 is no receipt: the gate runs the part itself [15.77ms]
-(pass) `sh check.sh; echo done` exiting 0 is no receipt: the gate runs the part itself [15.98ms]
-(pass) control: the bare part exiting 0 is a receipt; a later `; rm -r x` is an edit [24.82ms]
-(pass) a write through `>` is an edit; `cd elsewhere && <part>` is no receipt and no edit [22.86ms]
-(pass) a part this session's permissions would ask about is not run: the session runs it [12.99ms]
-(pass) HARNU_VERIFY_* in the project settings sets Harnu's parts aside [11.38ms]
-(pass) HARNU_VERIFY_* in the local settings sets Harnu's parts aside [11.70ms]
-(pass) parts approved for another folder are set aside [13.04ms]
-(pass) a receipt line copied from an earlier report does not count [17.48ms]
+(pass) a claim from a session that edited nothing passes untouched [34.36ms]
+(pass) inside Harnu, a claim after an edit runs each approved part in order; green passes with a receipt [33.32ms]
+(pass) a red part refuses the claim, says the gate ran it, stops there, and never reaches the verb [19.59ms]
+(pass) the working tree cannot choose the command: nothing approved means nothing runs [17.76ms]
+(pass) the session's own runs count part by part, as separate Bash calls: nothing reruns [20.70ms]
+(pass) only the part the session did not run is run by the gate [20.41ms]
+(pass) a focused run is no receipt and no edit; an unknown command is an edit [28.34ms]
+(pass) the session's own red run refuses the claim without a rerun, and says who ran it [18.37ms]
+(pass) an edit after a green check makes it stale; neutral git commands do not [25.46ms]
+(pass) gh pr create: a query runs nothing; a draft is never gated; a red receipt is denied at tool.check [21.29ms]
+(pass) move_card to review is gated, to backlog is not; the legacy capy name is gated too [29.54ms]
+(pass) a part that outlives the timeout is stopped, recorded as nothing, and handed back to the session [532.32ms]
+(pass) annotate mode lets a stale claim through with a warning and runs nothing [16.51ms]
+(pass) off mode leaves even a red claim alone [15.29ms]
+(pass) outside Harnu the default is annotate, and nothing runs [11.82ms]
+(pass) outside Harnu, enforce runs only the userConfig check [13.30ms]
+(pass) a resumed session is treated as edited: its first claim checks [17.26ms]
+(pass) a completion report sent to another session carries the receipt line [16.65ms]
+(pass) message_session asks for a re-send with the receipt line, and passes once it is there [23.10ms]
+(pass) a "done" reply with no green check since the last edit is annotated [19.69ms]
+(pass) `sh check.sh 2>&1 | tail -5` exiting 0 is no receipt: the gate runs the part itself [17.18ms]
+(pass) `sh check.sh || true` exiting 0 is no receipt: the gate runs the part itself [17.36ms]
+(pass) `sh check.sh; rm -r x` exiting 0 is no receipt: the gate runs the part itself [16.63ms]
+(pass) `sh check.sh || echo failed` exiting 0 is no receipt: the gate runs the part itself [16.33ms]
+(pass) `sh check.sh; echo done` exiting 0 is no receipt: the gate runs the part itself [16.75ms]
+(pass) control: the bare part exiting 0 is a receipt; a later `; rm -r x` is an edit [21.34ms]
+(pass) a write through `>` is an edit; `cd elsewhere && <part>` is no receipt and no edit [25.72ms]
+(pass) a part this session's permissions would ask about is not run: the session runs it [13.90ms]
+(pass) HARNU_VERIFY_* in the project settings sets Harnu's parts aside [12.11ms]
+(pass) HARNU_VERIFY_* in the local settings sets Harnu's parts aside [12.18ms]
+(pass) parts approved for another folder are set aside [13.16ms]
+(pass) a receipt line copied from an earlier report does not count [17.53ms]
+(pass) "sh check.sh && sh check.sh again & true" is no receipt: the gate runs the part itself [16.16ms]
+(pass) "sh check.sh && sh check.sh again\ntrue" is no receipt: the gate runs the part itself [15.81ms]
+(pass) "sh check.sh && sh check.sh again\r\ntrue" is no receipt: the gate runs the part itself [15.38ms]
+(pass) "sh check.sh x & rm -rf src" is no receipt: the gate runs the part itself [21.59ms]
+(pass) "sh check.sh $(rm -rf src)" is no receipt: the gate runs the part itself [17.73ms]
+(pass) "sh check.sh `rm -rf src`" is no receipt: the gate runs the part itself [16.95ms]
+(pass) "sh check.sh <(rm -rf src)" is no receipt: the gate runs the part itself [18.68ms]
+(pass) "(sh check.sh)" is no receipt: the gate runs the part itself [16.92ms]
+(pass) "{ sh check.sh; }" is no receipt: the gate runs the part itself [15.86ms]
+(pass) "sh check.sh && true" is no receipt: the gate runs the part itself [26.78ms]
+(pass) an honest shape with a trailing echo records nothing green: both parts re-run [19.24ms]
+(pass) parts joined only by && with neutral commands are a receipt [15.02ms]
+(pass) a narrower run of a part joined to the part is no receipt for either [17.31ms]
+(pass) metacharacter lone &: `sh check.sh "&" true` is never a receipt [19.22ms]
+(pass) metacharacter lone &: after a green receipt, `sh check.sh x "&"rm -rf src` is an edit [20.34ms]
+(pass) metacharacter semicolon: `sh check.sh ";" true` is never a receipt [15.14ms]
+(pass) metacharacter semicolon: after a green receipt, `sh check.sh x ";"rm -rf src` is an edit [23.16ms]
+(pass) metacharacter pipe: `sh check.sh "|" true` is never a receipt [16.11ms]
+(pass) metacharacter pipe: after a green receipt, `sh check.sh x "|"rm -rf src` is an edit [19.87ms]
+(pass) metacharacter double pipe: `sh check.sh "||" true` is never a receipt [16.29ms]
+(pass) metacharacter double pipe: after a green receipt, `sh check.sh x "||"rm -rf src` is an edit [23.35ms]
+(pass) metacharacter triple &: `sh check.sh "&&&" true` is never a receipt [16.37ms]
+(pass) metacharacter triple &: after a green receipt, `sh check.sh x "&&&"rm -rf src` is an edit [19.02ms]
+(pass) metacharacter newline: `sh check.sh "\n" true` is never a receipt [18.51ms]
+(pass) metacharacter newline: after a green receipt, `sh check.sh x "\n"rm -rf src` is an edit [18.79ms]
+(pass) metacharacter carriage return: `sh check.sh "\r" true` is never a receipt [16.01ms]
+(pass) metacharacter carriage return: after a green receipt, `sh check.sh x "\r"rm -rf src` is an edit [22.90ms]
+(pass) metacharacter backtick: `sh check.sh "`" true` is never a receipt [15.81ms]
+(pass) metacharacter backtick: after a green receipt, `sh check.sh x "`"rm -rf src` is an edit [18.79ms]
+(pass) metacharacter command substitution: `sh check.sh "$(" true` is never a receipt [15.54ms]
+(pass) metacharacter command substitution: after a green receipt, `sh check.sh x "$("rm -rf src` is an edit [23.56ms]
+(pass) metacharacter process substitution: `sh check.sh "<(" true` is never a receipt [16.44ms]
+(pass) metacharacter process substitution: after a green receipt, `sh check.sh x "<("rm -rf src` is an edit [18.68ms]
+(pass) metacharacter open paren: `sh check.sh "(" true` is never a receipt [18.87ms]
+(pass) metacharacter open paren: after a green receipt, `sh check.sh x "("rm -rf src` is an edit [17.99ms]
+(pass) metacharacter close paren: `sh check.sh ")" true` is never a receipt [15.25ms]
+(pass) metacharacter close paren: after a green receipt, `sh check.sh x ")"rm -rf src` is an edit [28.28ms]
+(pass) metacharacter input redirect: `sh check.sh "<" true` is never a receipt [15.42ms]
+(pass) metacharacter input redirect: after a green receipt, `sh check.sh x "<"rm -rf src` is an edit [18.03ms]
+(pass) metacharacter output redirect: `sh check.sh ">" true` is never a receipt [15.69ms]
+(pass) metacharacter output redirect: after a green receipt, `sh check.sh x ">"rm -rf src` is an edit [22.50ms]
+(pass) metacharacter append redirect: `sh check.sh ">>" true` is never a receipt [14.17ms]
+(pass) metacharacter append redirect: after a green receipt, `sh check.sh x ">>"rm -rf src` is an edit [21.30ms]
+(pass) metacharacter open brace: `sh check.sh "{" true` is never a receipt [14.79ms]
+(pass) metacharacter open brace: after a green receipt, `sh check.sh x "{"rm -rf src` is an edit [17.78ms]
+(pass) metacharacter close brace: `sh check.sh "}" true` is never a receipt [20.11ms]
+(pass) metacharacter close brace: after a green receipt, `sh check.sh x "}"rm -rf src` is an edit [29.25ms]
+(pass) metacharacter backslash: `sh check.sh "\\" true` is never a receipt [29.00ms]
+(pass) metacharacter backslash: after a green receipt, `sh check.sh x "\\"rm -rf src` is an edit [68.99ms]
+(pass) metacharacter dollar sign: `sh check.sh "$" true` is never a receipt [18.70ms]
+(pass) metacharacter dollar sign: after a green receipt, `sh check.sh x "$"rm -rf src` is an edit [21.27ms]
+(pass) HARNU_VERIFY_* in the user settings sets Harnu's parts aside [12.61ms]
+(pass) HARNU_VERIFY_* in the flag settings sets Harnu's parts aside [16.88ms]
+(pass) HARNU_VERIFY_* in the policy settings sets Harnu's parts aside [12.47ms]
+(pass) a hit visible only in the merged read still sets the parts aside [13.27ms]
 
- 32 pass
+ 87 pass
  0 fail
-Ran 32 tests across 1 file. [1.30s]
+Ran 87 tests across 1 file. [2.33s]
 ```
 
 `tsc -p <scratch>/tsc` (the header's `tsconfig.json`, kept outside the mod folder): no output,
@@ -127,39 +182,58 @@ alone proves nothing: the round-2 verifier showed an unwrapped read failing 18 o
 same read inside `try/catch` passing all 20. The proof is two things: validate's `calls:` line
 above lists **no `$.fs`**, and the trust test asserts `fsReads` is empty.
 
-**New in round 3**, all in the suite:
+**The classifier, round 4** (spec §6.2). Rounds 2 and 3 each patched a list of separators and each
+was evaded live. The classifier is now an allowlist, and the suite grew from 32 to 87 tests:
 
-- the three shapes that failed live, `sh check.sh 2>&1 | tail -5`, `sh check.sh || true` and
-  `sh check.sh; rm -r x`, plus `|| echo failed` and `; echo done`, each exiting 0, are **no
-  receipt**: the gate runs the part and denies on its red;
-- `echo hi > f` and `cat > f` are edits, and `cd elsewhere && <part>` is neither a receipt nor an
-  edit;
-- a part the session's permissions would **ask** about is not run, and rule G hands it back;
-- `HARNU_VERIFY_*` in the `project` or `local` settings sets Harnu's parts aside;
-- parts approved for another folder (`HARNU_VERIFY_ROOT`) are set aside;
-- a receipt line copied from an earlier report does not count: the gate compares against the line it
-  just computed.
+- the verifier's evasions, each asserted to be **no receipt** (the gate runs the part and denies on
+  its red): `sh check.sh && sh check.sh again & true`, the same with a newline and with CR LF,
+  `sh check.sh $(…)`, a backtick form, `<(…)`, `(sh check.sh)`, `{ sh check.sh; }` and
+  `sh check.sh && true`;
+- the honest shape `npm run typecheck && npx vitest run --reporter=dot` + newline + `echo "exit=$?"`:
+  neither part is recorded green, so both re-run;
+- a **fuzz table, one row per metacharacter** (19: lone `&`, `;`, `|`, `||`, `&&&`, newline, CR,
+  backtick, `$(`, `<(`, `(`, `)`, `<`, `>`, `>>`, `{`, `}`, `\`, `$`). Each row has two tests:
+  `sh check.sh <c> true` is never a receipt, and after a green receipt `sh check.sh x <c>rm -rf
+src` is an edit (the gate re-runs);
+- parts joined by `&&` with neutral commands are still a receipt, and a part joined to a narrower
+  run of itself is not;
+- `HARNU_VERIFY_*` in the `user`, `flag` or `policy` settings, or visible only in the merged read,
+  sets Harnu's parts aside (the `project` and `local` tests are from round 3).
 
-**Negative control.** With the status-break rule disabled (`STATUS_BREAK` made unmatchable), the
-suite failed exactly the three tests whose commands end in a pipe, `||` and `;` (29 pass, 3 fail).
-With it enabled, all pass.
+**Negative control.** The same 87-test file run against the **round-3** `register.ts` (kept in the
+scratchpad) gives **66 pass, 21 fail**. The failures are the evasions (`& true`, newline, CR LF),
+the honest shape, the narrower-joined case, 13 of the 19 "hidden write" rows, and the three
+settings tests for `flag`, `policy` and the merge. Against the round-4 source, all 87 pass.
 
-**What the round-3 runs caught on the way**, each now fixed in the source below:
-
-1. The round-2 suite asserted the **wrong** behaviour: it treated `npx vitest run 2>&1 | tail -40`
-   as a receipt. That test now uses an unpiped run, and the piped form is a "no receipt" test.
-2. `$.settings.read({ source })` has to be answered by the kit's `world` (a `settings.read` hook);
-   without it the gate's policy fails closed to "no operator-approved command", which the trust
-   tests then read as rule D.
+**What the round-4 runs caught on the way**: the suite's `settings.read` stub had to answer a
+call with no source (the merge), and a stub that answers only per source hides the merge test.
 
 Earlier rounds' catches still hold: `$` only to top-level functions; the list matcher for a
 one-of; `$.tool.check` as a kit **query** (`ToolCheckArgs` = `tool` + `input`, TYPES:12796); a
 streaming bottom hook returns `{ value }`; a stream ended by `return()` resolves with no value.
 
+## Live runs of the round-4 prototype (R11-R13)
+
+`claude -p --model haiku --permission-mode bypassPermissions --plugin-dir <mod>` in a fresh
+throwaway git repo, `HARNU_VERIFY_GATE=enforce`, `HARNU_VERIFY_ROOT=<the repo>` and
+`HARNU_VERIFY_CMD='["sh check.sh"]'` as Harnu would set them, where `check.sh` prints
+`check-red-from-script` and exits 1. Each wrote a file, ran the command below, then `gh pr ready
+999`, and quoted what the Bash tool returned for the last. The three evasions are the ones the
+round-3 verifier ran, now on the round-4 source.
+
+| Run | The session's Bash command                                       | Result                                                                                                                       |
+| --- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| R11 | `sh check.sh && sh check.sh again & true`                        | **denied**: "`sh check.sh` failed after the last edit (run by the gate)", tail `check-red-from-script`                       |
+| R12 | the two-line command `sh check.sh && sh check.sh again` ⏎ `true` | **denied**, same reason and tail                                                                                             |
+| R13 | `sh check.sh $(touch SUB-RAN)`                                   | **denied**, same reason. `SUB-RAN` exists in the repo: the substitution ran, so the call was an **edit** and the gate re-ran |
+
+In each, the verdict text reads `rtk gh pr ready 999`, as on every run on this machine (its `rtk`
+hook rewrites `gh …`). In round 3, R11 and R12 were **not** denied (V-R3).
+
 ## Live runs of the round-3 prototype (R6-R10)
 
-Each ran on the round-3 source, formatted with this repo's Prettier (whitespace only) before the
-suite above was re-run on the same bytes. R6-R9 used `claude -p --model haiku --plugin-dir <mod>`,
+These ran on the **round-3** source (kept in this file's history at `a0ec024`); its classifier was an
+exclusion list of separators, replaced in round 4. R6-R9 used `claude -p --model haiku --plugin-dir <mod>`,
 R10 an interactive session under tmux, each in a fresh throwaway git repo in the scratchpad with
 `HARNU_VERIFY_GATE=enforce`, `HARNU_VERIFY_ROOT=<the repo>` and `HARNU_VERIFY_CMD=<approved parts>`
 as Harnu would set them. This machine's `rtk` hook rewrites `gh …` to `rtk gh …`, which is why
@@ -319,22 +393,23 @@ change. The full round-1 record is in this file's history at `d0864d5`.
 
 These were made by other sessions and are read from their scratch, not re-run here.
 
-| Id    | By                    | What it showed                                                                                                                                                                                                                                                                                                          |
-| ----- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| V-45  | T452 round-1 verifier | A 45 s check inside `tool.check` delivered its deny, 67 s wall, under `bypassPermissions`                                                                                                                                                                                                                               |
-| V-A2  | T452 round-1 verifier | The session's own `sh check.sh`, exiting 1, arrived as `PostToolUseFailure`: the claim was denied with the tail `Exit code 1 / first-run-red-by-session`, and nothing re-ran                                                                                                                                            |
-| V-A3  | T452 round-1 verifier | After a green run, a background `Agent` wrote `sub.txt`; `gh pr ready` re-ran the check (tail `second-run-red-gate-reran`). A subagent's edit reaches the parent's ledger                                                                                                                                               |
-| V-R2a | T452 round-2 verifier | Live, with the approved part `sh check.sh` (always exit 1) and `enforce`: `sh check.sh 2>&1 \| tail -5`, `sh check.sh \|\| true` and `sh check.sh; rm -r x` were each **not denied**, and the `rm` was not counted as an edit; the bare `sh check.sh` was denied. This is the round-2 bug that R6 and the kit now cover |
-| V-R2b | T452 round-2 verifier | Esc during a `sleep 173` check in an interactive session: both the child and its `sh` parent were gone within about 2 s                                                                                                                                                                                                 |
-| V-R2c | T452 round-2 verifier | A mutation of the round-2 prototype: an unwrapped `$.fs.read` in `policy()` failed 18 of 20 tests, and the same read in `try/catch` passed 20/0. So a throwing guard in the kit proves nothing by itself (spec §4, `$.fs.read`)                                                                                         |
-| V450  | T450 verifier         | On 2.1.296 headless, with `rtk` off, a pass-through Bash `tool.call` hook (`b4-mod4`: "[tool.call saw agent=aa141c36015a3312b]") left `Agent(isolation: "worktree")` intact: pwd and branch inside the agent's worktree, `made.txt` written there                                                                       |
+| Id    | By                    | What it showed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ----- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| V-45  | T452 round-1 verifier | A 45 s check inside `tool.check` delivered its deny, 67 s wall, under `bypassPermissions`                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| V-A2  | T452 round-1 verifier | The session's own `sh check.sh`, exiting 1, arrived as `PostToolUseFailure`: the claim was denied with the tail `Exit code 1 / first-run-red-by-session`, and nothing re-ran                                                                                                                                                                                                                                                                                                                                        |
+| V-A3  | T452 round-1 verifier | After a green run, a background `Agent` wrote `sub.txt`; `gh pr ready` re-ran the check (tail `second-run-red-gate-reran`). A subagent's edit reaches the parent's ledger                                                                                                                                                                                                                                                                                                                                           |
+| V-R2a | T452 round-2 verifier | Live, with the approved part `sh check.sh` (always exit 1) and `enforce`: `sh check.sh 2>&1 \| tail -5`, `sh check.sh \|\| true` and `sh check.sh; rm -r x` were each **not denied**, and the `rm` was not counted as an edit; the bare `sh check.sh` was denied. This is the round-2 bug that R6 and the kit now cover                                                                                                                                                                                             |
+| V-R2b | T452 round-2 verifier | Esc during a `sleep 173` check in an interactive session: both the child and its `sh` parent were gone within about 2 s                                                                                                                                                                                                                                                                                                                                                                                             |
+| V-R2c | T452 round-2 verifier | A mutation of the round-2 prototype: an unwrapped `$.fs.read` in `policy()` failed 18 of 20 tests, and the same read in `try/catch` passed 20/0. So a throwing guard in the kit proves nothing by itself (spec §4, `$.fs.read`)                                                                                                                                                                                                                                                                                     |
+| V-R3  | T452 round-3 verifier | Live, with the approved part `sh check.sh` (always exit 1): `sh check.sh && sh check.sh again & true` and `sh check.sh && sh check.sh again` + newline + `true` were **not denied**, and `gh pr ready` ran. The same classifier calls `npm run typecheck && npx vitest run --reporter=dot` + newline + `echo "exit=$?"` a receipt, and `sh check.sh x & rm -rf src` and `sh check.sh $(rm -rf src)` neutral. R11-R13 and the fuzz table cover them. Also: a `$.tool.check` query runs no classic hook (TYPES:12883) |
+| V450  | T450 verifier         | On 2.1.296 headless, with `rtk` off, a pass-through Bash `tool.call` hook (`b4-mod4`: "[tool.call saw agent=aa141c36015a3312b]") left `Agent(isolation: "worktree")` intact: pwd and branch inside the agent's worktree, `made.txt` written there                                                                                                                                                                                                                                                                   |
 
 ## `.claude-plugin/plugin.json`
 
 ```json
 {
   "name": "harnu-verify-gate",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": { "name": "Harnu" },
   "description": "Done means the check ran: gates a session's own completion claims on a fresh verification run.",
   "types": "./types/index.d.ts",
@@ -456,11 +531,13 @@ const NEUTRAL =
 const DIR_CHANGE = /^(cd|pushd|popd)\b/
 /** Redirections that write no file: to another descriptor, or to /dev/null. */
 const HARMLESS_REDIRECT = /\s+\d*>&\d+|\s+\d*>{1,2}\s*\/dev\/null/g
-/** Joins after which the call's exit status no longer belongs to a part. */
-const STATUS_BREAK = /;|\|/
-const SEGMENT = /&&|\|\||;|\|/
+/** Every way one command is followed by another, or goes to the background (`&&` included). */
+const JOIN = /[&;|\n\r]/
+/** Anything that can embed a command, write a file, or hide a separator from a split. */
+const EMBED = /[`$(){}<>\\]/
 const MODES = ['off', 'annotate', 'enforce']
-const SETTINGS_SOURCES = ['user', 'project', 'local'] as const
+/** Each settings source on its own, then the merge: a merge may shadow an `env` block (§7.6 b). */
+const SETTINGS_SOURCES = ['user', 'project', 'local', 'flag', 'policy'] as const
 
 const tailOf = (text: string): string =>
   text.split('\n').slice(-TAIL_LINES).join('\n').slice(-TAIL_CHARS)
@@ -488,25 +565,33 @@ const asMode = (value: string): Policy['mode'] =>
   MODES.includes(value) ? (value as Policy['mode']) : 'annotate'
 
 /**
- * Classifies one finished Bash call (§6.2). A part counts as run only when the command is parts
- * and neutral segments joined by `&&`: after `;`, `|` or `||` the call's exit status is not the
- * part's. Any segment that may write (an unknown command, a `>` into a file) makes it an edit.
+ * Classifies one finished Bash call (§6.2) with a strict allowlist, not a list of bad separators.
+ *
+ * A call is a **receipt** only when, once harmless trailing redirections are removed, it is
+ * nothing but approved parts and neutral read-only commands joined by `&&`, with no other shell
+ * metacharacter anywhere: the call's exit status is then the last command's, and `&&` makes a
+ * failure stop the chain. Anything else leaves the outcome unknown. Separately, a call is an
+ * **edit** when it may write: any metacharacter that can embed a command or redirect, or any
+ * command, however it is joined, that is not a part, a narrower run of a part, a directory change
+ * or neutral. The two checks are independent, and the edit check also fires on unknown runs.
  */
 const classifyBash = (command: string, parts: readonly string[]): BashClass => {
   const cleaned = command.replace(HARMLESS_REDIRECT, '')
-  const segs = cleaned
-    .split(SEGMENT)
+  const isPart = (s: string) => parts.includes(s)
+  const plain = (s: string) => !EMBED.test(s)
+  const isNarrower = (s: string) => plain(s) && parts.some((p) => s.startsWith(`${p} `))
+  const known = (s: string) =>
+    plain(s) && (isPart(s) || isNarrower(s) || DIR_CHANGE.test(s) || NEUTRAL.test(s))
+  const loose = cleaned
+    .split(/[&;|\n\r]+/)
     .map((s) => s.trim())
     .filter((s) => s !== '')
-  const isPart = (s: string) => parts.includes(s)
-  const isNarrower = (s: string) => parts.some((p) => s.startsWith(`${p} `))
-  const writes = (s: string) => s.includes('>')
-  const known = (s: string) =>
-    !writes(s) && (isPart(s) || isNarrower(s) || DIR_CHANGE.test(s) || NEUTRAL.test(s))
-  if (!segs.every(known)) return { kind: 'edit' }
-  if (STATUS_BREAK.test(cleaned) || segs.some((s) => DIR_CHANGE.test(s))) return { kind: 'neutral' }
-  const ran = segs.filter(isPart)
-  return ran.length > 0 ? { kind: 'run', parts: ran } : { kind: 'neutral' }
+  if (EMBED.test(cleaned) || !loose.every(known)) return { kind: 'edit' }
+  const chain = cleaned.split('&&').map((s) => s.trim())
+  const strict =
+    !JOIN.test(cleaned.replaceAll('&&', '')) && chain.every((s) => isPart(s) || NEUTRAL.test(s))
+  const ran = chain.filter(isPart)
+  return strict && ran.length > 0 ? { kind: 'run', parts: ran } : { kind: 'neutral' }
 }
 
 /**
@@ -522,11 +607,17 @@ async function policy($: EngineInterface, opts: Options): Promise<Policy> {
     return { mode: asMode(opts.mode), parts: check === '' ? [] : [check], inHarnu: false }
   }
   const base = { mode: asMode(mode), inHarnu: true }
+  const hit = (env: unknown) =>
+    typeof env === 'object' &&
+    env !== null &&
+    Object.keys(env).some((k) => k.startsWith('HARNU_VERIFY_'))
   for (const source of SETTINGS_SOURCES) {
-    const env = (await $.settings.read({ source })).env ?? {}
-    if (Object.keys(env).some((k) => k.startsWith('HARNU_VERIFY_')))
+    if (hit((await $.settings.read({ source })).env))
       return { ...base, parts: [], refused: `HARNU_VERIFY_* is set in the ${source} settings` }
   }
+  // The merge as the engine runs under it, in case a source's `env` block shadows another's.
+  if (hit((await $.settings.read()).env))
+    return { ...base, parts: [], refused: 'HARNU_VERIFY_* is set in the merged settings' }
   const root = await $.env.get('HARNU_VERIFY_ROOT')
   if (root !== (await $.session.root()))
     return { ...base, parts: [], refused: 'the approved command belongs to another folder' }
@@ -887,7 +978,11 @@ type WorldOptions = {
   /** The session's permission verdict for a part the gate wants to run. */
   partVerdict?: 'allow' | 'ask' | 'deny'
   /** Settings files by source, as `$.settings.read({ source })` answers them. */
-  settings?: Partial<Record<'user' | 'project' | 'local', Record<string, unknown>>>
+  settings?: Partial<
+    Record<'user' | 'project' | 'local' | 'flag' | 'policy', Record<string, unknown>>
+  >
+  /** What the merged read (no source) answers, when it differs from the union of the sources. */
+  merged?: Record<string, unknown>
 }
 
 /**
@@ -912,9 +1007,11 @@ const world = (
     throw new Error('the gate read a file')
   })
   on('session.root', () => ({ value: '/repo/wt' }))
-  on('settings.read', (_$, e) => ({
-    value: (e?.source === undefined ? {} : (o.settings?.[e.source as 'user'] ?? {})) as never
-  }))
+  on('settings.read', (_$, e) => {
+    const src = e?.source as 'user' | undefined
+    if (src !== undefined) return { value: (o.settings?.[src] ?? {}) as never }
+    return { value: (o.merged ?? Object.assign({}, ...Object.values(o.settings ?? {}))) as never }
+  })
   on('ui.status', () => ({ value: undefined }))
   on('process.spawn', async function* (_$, e) {
     runs.push(String(e.argv[2]))
@@ -1304,6 +1401,127 @@ test('a receipt line copied from an earlier report does not count', async ($, on
   )
   expect(w.reached).toEqual([])
 })
+
+// ---- Round 4: the classifier is a strict allowlist (spec §6.2) ----
+
+const EVASIONS = [
+  'sh check.sh && sh check.sh again & true',
+  'sh check.sh && sh check.sh again\ntrue',
+  'sh check.sh && sh check.sh again\r\ntrue',
+  'sh check.sh x & rm -rf src',
+  'sh check.sh $(rm -rf src)',
+  'sh check.sh `rm -rf src`',
+  'sh check.sh <(rm -rf src)',
+  '(sh check.sh)',
+  '{ sh check.sh; }',
+  'sh check.sh && true'
+]
+
+for (const shape of EVASIONS) {
+  test(`${JSON.stringify(shape)} is no receipt: the gate runs the part itself`, async ($, on) => {
+    const w = world(on, [{ code: 1, output: 'check-red' }], ONE)
+    await edit($)
+    await bash($, shape)
+    const r = await $.tool.call(CLAIM)
+    expect(w.runs).toEqual(['sh check.sh'])
+    expect(r.deny).toMatch(
+      /`sh check.sh` failed after the last edit \(run by the gate\)[\s\S]*check-red/
+    )
+  })
+}
+
+test('an honest shape with a trailing echo records nothing green: both parts re-run', async ($, on) => {
+  const w = world(on, [{ code: 0 }, { code: 0 }])
+  await edit($)
+  await bash($, 'npm run typecheck && npx vitest run --reporter=dot\necho "exit=$?"')
+  await $.tool.call(CLAIM)
+  expect(w.runs).toEqual(PARTS)
+})
+
+test('parts joined only by && with neutral commands are a receipt', async ($, on) => {
+  const w = world(on, [], ONE)
+  await edit($)
+  await bash($, 'git status && sh check.sh 2>&1 && git diff --stat > /dev/null')
+  const r = await $.tool.call(CLAIM)
+  expect(w.runs).toEqual([])
+  expect(r.deny).toBeUndefined()
+})
+
+test('a narrower run of a part joined to the part is no receipt for either', async ($, on) => {
+  const w = world(on, [{ code: 0 }, { code: 0 }])
+  await edit($)
+  await bash($, 'npm run typecheck && npx vitest run tests/a.test.ts')
+  await $.tool.call(CLAIM)
+  expect(w.runs).toEqual(PARTS)
+})
+
+/** One row per shell metacharacter: none may turn a failing run into a receipt, none may hide a write. */
+const METACHARS: Record<string, string> = {
+  'lone &': '&',
+  semicolon: ';',
+  pipe: '|',
+  'double pipe': '||',
+  'triple &': '&&&',
+  newline: '\n',
+  'carriage return': '\r',
+  backtick: '`',
+  'command substitution': '$(',
+  'process substitution': '<(',
+  'open paren': '(',
+  'close paren': ')',
+  'input redirect': '<',
+  'output redirect': '>',
+  'append redirect': '>>',
+  'open brace': '{',
+  'close brace': '}',
+  backslash: '\\',
+  'dollar sign': '$'
+}
+
+for (const [name, c] of Object.entries(METACHARS)) {
+  test(`metacharacter ${name}: \`sh check.sh ${JSON.stringify(c)} true\` is never a receipt`, async ($, on) => {
+    const w = world(on, [{ code: 1, output: 'check-red' }], ONE)
+    await edit($)
+    await bash($, `sh check.sh ${c} true`)
+    const r = await $.tool.call(CLAIM)
+    expect(w.runs).toEqual(['sh check.sh'])
+    expect(r.deny).toMatch(/failed after the last edit \(run by the gate\)/)
+  })
+
+  test(`metacharacter ${name}: after a green receipt, \`sh check.sh x ${JSON.stringify(c)}rm -rf src\` is an edit`, async ($, on) => {
+    const w = world(on, [{ code: 0 }], ONE)
+    await edit($)
+    await bash($, 'sh check.sh')
+    expect((await $.tool.call(CLAIM)).deny).toBeUndefined()
+    expect(w.runs).toEqual([])
+    await bash($, `sh check.sh x ${c}rm -rf src`)
+    await $.tool.call(CLAIM)
+    expect(w.runs).toEqual(['sh check.sh'])
+  })
+}
+
+// ---- Round 4: every settings source, and the merge (spec §7.6 b) ----
+
+for (const source of ['user', 'flag', 'policy'] as const) {
+  test(`HARNU_VERIFY_* in the ${source} settings sets Harnu's parts aside`, async ($, on) => {
+    const settings = { [source]: { env: { HARNU_VERIFY_CMD: '["node -e 1"]' } } }
+    const w = world(on, [], HARNU, { settings })
+    await edit($)
+    const r = await $.tool.call(CLAIM)
+    expect(w.runs).toEqual([])
+    expect(r.context?.at(-1)).toMatch(
+      new RegExp(`HARNU_VERIFY_\\* is set in the ${source} settings`)
+    )
+  })
+}
+
+test('a hit visible only in the merged read still sets the parts aside', async ($, on) => {
+  const w = world(on, [], HARNU, { merged: { env: { HARNU_VERIFY_GATE: 'off' } } })
+  await edit($)
+  const r = await $.tool.call(CLAIM)
+  expect(w.runs).toEqual([])
+  expect(r.context?.at(-1)).toMatch(/HARNU_VERIFY_\* is set in the merged settings/)
+})
 ```
 
 ## The stand-in MCP server (R2, R8)
@@ -1368,3 +1586,4 @@ createInterface({ input: process.stdin }).on('line', (line) => {
 | §7.2, §7.6, §11   | Everything on Harnu's side: the resolver key (D-1), the approval store and its disclosure, the spawn env **including deleting inherited values and setting the root**, the durable per-session mode and its re-key, staging |
 | §10.2             | The gate's `api-surface.json`, CLI ceiling and static profile                                                                                                                                                               |
 | §9.3              | Every Mission write, and the HEAD sha in the receipt (W3)                                                                                                                                                                   |
+| §7.6 a            | Any answer to a blocking `PreToolUse` hook (a query consults none): stated, not closed (Q14)                                                                                                                                |
