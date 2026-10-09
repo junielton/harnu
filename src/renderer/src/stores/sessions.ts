@@ -3879,16 +3879,20 @@ export const useSessionsStore = defineStore('sessions', () => {
    * signal, is no longer done here: the `watch(selectedId, …)` below does
    * that for every selection, not just this "jump to session" entry point
    * (reactive-sidebar-sync, 2026-07-19 — see docs/specs/2026-07-19-sidebar-drill-in-navigation.md).
+   *
+   * Returns whether the session was found (BUG-173): `false` is the "owner not
+   * loaded" signal a caller may route to a fallback. Existing callers ignore it.
    */
-  function activateSession(sessionId: string): void {
+  function activateSession(sessionId: string): boolean {
     const session = findSessionById(sessionId)
-    if (!session) return
+    if (!session) return false
     const folder = findFolderBySessionId(sessionId)
     if (folder && filterQuery.value.trim() && !filteredFolders.value.includes(folder)) {
       setFilterQuery('')
     }
     setCursorToSession(sessionId)
     select(sessionId)
+    return true
   }
 
   /** Find the `FolderGroup` (if any) currently rendering under a namespaced group key. */

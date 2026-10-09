@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import { useMissionsStore } from './missions'
 import { useNotificationsStore } from './notifications'
 
 /**
@@ -84,7 +85,7 @@ export type ActiveView = { [K in ViewId]: { id: K; params: ViewParams[K] } }[Vie
  * Every main-pane view (`ViewId`) qualifies, plus `'settings'` — a dialog, not
  * a takeover, but the same deep-linkable shape.
  */
-export type NavigableViewId = ViewId | 'settings'
+export type NavigableViewId = ViewId | 'settings' | 'mission'
 
 /**
  * Params a `NavigableViewId` opener may need beyond the bare id, mirroring what
@@ -98,6 +99,8 @@ export interface NavTargetParams {
   repoLabel?: string
   /** T164: the card whose intent the review pane renders, when one is bound. */
   cardSlug?: string
+  /** BUG-173: the mission whose popover `'mission'` asks the pill to open. */
+  missionId?: string
 }
 
 /** Which tab the Settings dialog should open to. Consumed by SettingsDialog. */
@@ -956,6 +959,13 @@ export const useUiStore = defineStore('ui', () => {
       case 'review': {
         if (!params?.folderPath) return
         openReview(params.folderPath, params.cardSlug ?? null)
+        return
+      }
+      case 'mission': {
+        // Not a takeover: select the owner first (the caller's job), then ask
+        // the missions store to have the pill open this mission's popover.
+        if (!params?.missionId) return
+        useMissionsStore().requestPopover(params.missionId)
         return
       }
     }
