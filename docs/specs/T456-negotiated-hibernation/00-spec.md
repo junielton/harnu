@@ -27,11 +27,11 @@ Six facts shape the design:
    `classic.Stop` and counts its `background_tasks` (`register.ts:1296-1297`,
    `fleet-sensor.ts:354-367`). `session_crons` sits in the same payload, unread
    (TYPES 12117-12132). The remote surfaces are one `$` read (TYPES 2806-2816).
-3. **The answer has authority, so it needs `channel: active`.** `park.query` writes nothing in the
-   session, but its answer can delay a park, and the hook bridge's Stop counts are its legacy rival.
-   In `shadow` such a family gets no authority (ARB-6b, `00-master.md:513`), and a CLI above the
-   tested ceiling is capped at its observe level (ARB-7b, `:514`). So the question runs only under
-   `channel: active`. Every other session, the default `shadow` install included, gets the legacy
+3. **The answer can delay a park, so it needs `channel: active`.** `park.query` writes nothing in
+   the session, but its answer can delay an actuation. Its feature `act.park` follows the actuator
+   rule: its own key on, plus `channel: active`, as `act.plan` does (`01-contract.md:929, 1037`).
+   It is not display-only, so it stays out of the observe-only set that `shadow` allows, and a CLI
+   above the tested ceiling caps its key at the observe level (ARB-7b, `00-master.md:514`). Every other session, the default `shadow` install included, gets the legacy
    Stop facts: the same background-task and wakeup counts, read by the hook bridge (§5.5).
 4. **The mod can never hold RAM for good.** Per cold episode there is a cap on the number of
    declines and a cap on total delay. Only a person ends an episode (focus, or a prompt the legacy
@@ -292,16 +292,17 @@ interface CommandResultData {
 | Wave                                        | T456                                                                                                                                                                                                                                        |
 
 **Not observe-only.** `park.query` stays out of the observe-only set (`contract:785-787`) and out of
-`shadowRefusal` (`command-gate-core.ts:127-144`), so in `shadow` it is refused `MODE_SHADOW`. The
-reason is authority, not side effects. ARB-6b: "`shadow` means no actuation and no authority for a
-family that has a legacy rival" (`00-master.md:513`). The legacy Stop counts of §5.5 are that rival.
-A busy answer in `shadow` would let the mod delay a park the host would otherwise make on legacy
-facts. The parenthetical "display-only, with no legacy rival" (`contract:785-786`) describes the
-current members; it is not the admission test. A default install (`channel: shadow`) is therefore
-**facts-only**, which already covers background tasks, subagents and wakeups. `ask` adds the turn,
-the permission dialog, the remote surface and the retry hint once the operator sets the channel to
-`active`. Recording `park.query` answers in `shadow` for parity, never applied, is possible under
-ARB-6b (Q9) but is not in v1.
+`shadowRefusal` (`command-gate-core.ts:127-144`), so in `shadow` it is refused `MODE_SHADOW`.
+`act.park` has no fact family, so it has "no legacy rival to arbitrate against" (`contract:932`),
+and ARB-6b's family rule does not decide its mode. The actuator rule does. An actuator with no fact
+family "has its own key in `companion-prefs.json`" (ARB-6b, `00-master.md:513`), and every
+non-observe command needs `channel: active` (`contract:1037`). That is exactly how `act.plan` is
+gated (`contract:929`). `park.query` changes nothing in the session, but its answer can delay an
+actuation, the park, so it is classed with the actuators. The observe-only set holds display-only
+commands. A default install (`channel: shadow`) is therefore **facts-only**, which already covers
+background tasks, subagents and wakeups. `ask` adds the turn, the permission dialog, the remote
+surface and the retry hint once the operator sets the channel to `active`. Recording `park.query`
+answers in `shadow` for parity, never applied, is possible under ARB-6b (Q9) but is not in v1.
 
 **Gate row** (`registerGateRow`, the pattern of `command-gate-core.ts:62-73`):
 `registerGateRow('park.query', { feature: 'act.park', internal: ['park'] })`, and `'park.query'`
@@ -377,6 +378,16 @@ crons. It keeps no text. With them a legacy session gets the same busy reasons e
 `needs-input`. The legacy path has no `retryAfterMs`: the host default applies. These counts are
 also the fallback when a mod-backed session is `silent`.
 
+**Where they are read.** The hub's `ingest` drops every event of a parked session
+(`src/main/detect/task-state-hub.ts:182`). It also drops a legacy event for a family the companion
+owns (`:196-201`; ARB-2b, "Legacy input for an owned family is dropped at the adapter boundary",
+`00-master.md:509`). So for a companion-owned session the hub never sees these facts. T456 reads
+`background_tasks`, `session_crons` and `UserPromptSubmit.source` in `hook-bridge.ts`'s request
+handler (`:131-171`), before the event is handed to `ingest` (`:354`). That is not a second writer
+under ARB-2a ("One writer per (session, family) … Two sources are never merged", `:509`). The park
+coordinator is a separate host consumer of the hook body. It folds nothing into the `taskState`
+family, and the hub's state for that session is untouched.
+
 ### 5.6 Revalidation right before the kill
 
 Today the decision and the kill run in the same tick (`pty.ts:651-655`). With T456 there is a gap
@@ -405,6 +416,20 @@ safe here because `park.query`'s handler draws nothing. P4W4's capture may print
 cover two different gaps. `lastPromptAt` comes from the hook bridge's `UserPromptSubmit` edge
 (`hook-installer.ts`, always installed per ARB-1, `00-master.md:508`), not from the mod's
 `turn.started`.
+
+**What revalidation does not check.** It does not re-check that the park is still **needed**. If
+the operator raises `maxLive`, `lruIdleMs` or `hardIdleMs` during the gap, or the session becomes
+an exempt mission owner (a child linked and live), the park still goes ahead. So does a `cap` park
+after another session has exited. The gap is at most `NEG_QUERY_WAIT_MS`, and the cost of such a
+park is a resume, never work: the session was idle, unfocused and unprompted for the whole gap.
+v1 states the gap rather than re-running `explainFleet` before the kill. W1 may close it by
+re-running the policy for that one session and cancelling unless its reason is still `lru` or
+`hard-idle`.
+
+**When P4W4 plugs in.** P4W4's `revalidatePark` checks that "no `turn.started` arrived since
+`requestedAt`" (`P4W4-resume-micro-plan.md:132-133`). That is the mod's sensor edge, the one §6.1
+refuses to use as authority. If P4W4 lands as written, the two stages disagree on what a new turn
+is. Q8 covers aligning them.
 
 ## 6. Bounded (U-3)
 
@@ -679,13 +704,13 @@ Shipped/planned is checked against the code, not against the wave docs. Every wa
 
 Each slice is one PR, in dependency order.
 
-| #   | Slice                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Size | Depends on |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ---------- |
-| W0  | **Spike** (§12): A1 PTY bytes while a background task runs; A2 a finished background task always ends in a fresh main Stop; A3 a park's kill fires `session.end`; A4 `$.session.surfaces()` inside Harnu's PTY with and without a Remote Control client; A5 `os.freemem` on macOS. Record the answers in this spec                                                                                                                                                                                                                                                                                             | S    | —          |
-| W1  | **Coordinator and core, legacy facts only.** `park-negotiation-core.ts` and its suite (ported from `01-prototype.md` §P2); `park-coordinator.ts` with `requestPark` and the §5.6 revalidation; `runPolicy` and `pty:park` route through it; `hook-bridge.ts` keeps the two Stop counts and the `UserPromptSubmit` edge with its `source`; `LiveSession` gains the episode; `explainFleet` gains `'declined'`; **both** producers set it, and the sampler also gains `ownsLiveMission` (§3.3); ledger field; prefs key `park` with `observeCap` (`ask` acts as `facts` until W2); memory reading in the sampler | M    | W0         |
-| W2  | **`park.query`.** Contract and `contract.ts`; host `COMMAND_NAMES`, gate row, feature `act.park` (`channel: active` only, not in the observe-only set); mod `COMMAND_FEATURE` and `IMPLEMENTED_COMMANDS`; `fleet.idle` in the sensor; `runParkQuery` in the closed switch; `api-surface.json`; mod tests ported from `01-prototype.md` §P1; contract fixtures                                                                                                                                                                                                                                                  | M    | W1         |
-| W3  | **Operator UI.** System Monitor chip and tooltip; parked-row explanation; Settings → Hibernation policy group (switch and three bounds); `design.md` §6 entries; i18n in both locales                                                                                                                                                                                                                                                                                                                                                                                                                          | S    | W1         |
-| W4  | **Live verify** (second isolated instance, `docs/dev/live-verify-second-instance.md`): a background `sleep` session survives a forced sweep with a 1-min `lruIdleMs`; parks at the limit; parks under a lowered floor; "Park now" overrides                                                                                                                                                                                                                                                                                                                                                                    | S    | W2, W3     |
+| #   | Slice                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Size | Depends on |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---- | ---------- |
+| W0  | **Spike** (§12): A1 PTY bytes while a background task runs; A2 a finished background task always ends in a fresh main Stop; A3 a park's kill fires `session.end`; A4 `$.session.surfaces()` inside Harnu's PTY with and without a Remote Control client; A5 `os.freemem` on macOS. Record the answers in this spec                                                                                                                                                                                                                                                                                                                                                                                                                         | S    | —          |
+| W1  | **Coordinator and core, legacy facts only.** `park-negotiation-core.ts` and its suite (ported from `01-prototype.md` §P2); `park-coordinator.ts` with `requestPark` and the §5.6 revalidation; `runPolicy` and `pty:park` route through it; `hook-bridge.ts` keeps the two Stop counts and the `UserPromptSubmit` edge with its `source`, read in the request handler **before** `ingest`, because the hub drops them for companion-owned and parked sessions (§5.5); `LiveSession` gains the episode; `explainFleet` gains `'declined'`; **both** producers set it, and the sampler also gains `ownsLiveMission` (§3.3); ledger field; prefs key `park` with `observeCap` (`ask` acts as `facts` until W2); memory reading in the sampler | M    | W0         |
+| W2  | **`park.query`.** Contract and `contract.ts`; host `COMMAND_NAMES`, gate row, feature `act.park` (`channel: active` only, not in the observe-only set); mod `COMMAND_FEATURE` and `IMPLEMENTED_COMMANDS`; `fleet.idle` in the sensor; `runParkQuery` in the closed switch; `api-surface.json`; mod tests ported from `01-prototype.md` §P1; contract fixtures                                                                                                                                                                                                                                                                                                                                                                              | M    | W1         |
+| W3  | **Operator UI.** System Monitor chip and tooltip; parked-row explanation; Settings → Hibernation policy group (switch and three bounds); `design.md` §6 entries; i18n in both locales                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | S    | W1         |
+| W4  | **Live verify** (second isolated instance, `docs/dev/live-verify-second-instance.md`): a background `sleep` session survives a forced sweep with a 1-min `lruIdleMs`; parks at the limit; parks under a lowered floor; "Park now" overrides                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | S    | W2, W3     |
 
 P4W4, when built, plugs in as the coordinator's second stage with no change to W1.
 
@@ -715,7 +740,7 @@ P4W4, when built, plugs in as the coordinator's second stage with no change to W
   session, Then it is deferred.
 - AC-T456-6 [unit] Given a `cap` spawn and a declining coldest session, When `pty:create` runs,
   Then the spawn is not delayed and the next candidate is tried.
-- AC-T456-7 [mod-test] The six tests of `01-prototype.md` §P1.1 (run in §P1.3), ported to `resources/companion/tests/`.
+- AC-T456-7 [mod-test] The seven tests of `01-prototype.md` §P1.1 (run in §P1.3), ported to `resources/companion/tests/`.
 - AC-T456-8 [contract] Given channel `shadow`, When the coordinator enqueues `park.query`, Then it is
   refused `MODE_SHADOW` and the session is decided on legacy facts.
 - AC-T456-9 [live-verify] W4's four scenarios.
@@ -742,18 +767,18 @@ P4W4, when built, plugs in as the coordinator's second stage with no change to W
 
 ## 13. Open questions (C-7)
 
-| #   | Question                                                                                                                                                                                   | Default until settled          | Who decides                           |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------ | ------------------------------------- |
-| Q1  | Is `park: 'ask'` the right default? On a default install it acts as `facts` until the operator sets `channel: active`                                                                      | `ask`                          | operator                              |
-| Q2  | Are the bound defaults right (8 declines, 2 h, floor 1 536 MB)?                                                                                                                            | as §6.2                        | operator, after a week of W1's ledger |
-| Q3  | Should `get_fleet` / `get_session` expose a declining session (`parkDeferred: { reasons, until }`) so an orchestrator can read it? It would be agent-facing (`harnu-features.md` + marker) | no                             | operator                              |
-| Q4  | Should a park that overrode a "busy" answer (`limit`, `memory-pressure`) post a notice to the Activity history?                                                                            | no                             | operator                              |
-| Q5  | Should a session with a known-large context be compacted before a park?                                                                                                                    | no (§7.2)                      | operator, with P4W5's evidence        |
-| Q6  | Should third-party mods get a say, through a `$.harnu` method or a `park` vote on `$.state`?                                                                                               | no; only the companion answers | T447 owner                            |
-| Q7  | Should `remote-surface` alone be a decline, or only together with another reason? An attached phone may simply have been forgotten                                                         | alone                          | operator, after A4                    |
-| Q8  | Should P4W4's coordinator ownership note ("this wave owns `requestPark`", `P4W4:21`) be edited when W1 lands?                                                                              | yes, in W1's change            | T389 owner                            |
-| Q9  | Should `park.query` run in `shadow` with its answers recorded for parity and never applied (ARB-6b allows sensor recording), to gather evidence before `active`?                           | no                             | T389 owner                            |
-| Q10 | Should the memory floor also park sessions that stay warm only because something keeps writing PTY bytes (§6.1)? That changes who becomes a candidate                                      | no                             | operator                              |
+| #   | Question                                                                                                                                                                                                                                                      | Default until settled          | Who decides                           |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------- |
+| Q1  | Is `park: 'ask'` the right default? On a default install it acts as `facts` until the operator sets `channel: active`                                                                                                                                         | `ask`                          | operator                              |
+| Q2  | Are the bound defaults right (8 declines, 2 h, floor 1 536 MB)?                                                                                                                                                                                               | as §6.2                        | operator, after a week of W1's ledger |
+| Q3  | Should `get_fleet` / `get_session` expose a declining session (`parkDeferred: { reasons, until }`) so an orchestrator can read it? It would be agent-facing (`harnu-features.md` + marker)                                                                    | no                             | operator                              |
+| Q4  | Should a park that overrode a "busy" answer (`limit`, `memory-pressure`) post a notice to the Activity history?                                                                                                                                               | no                             | operator                              |
+| Q5  | Should a session with a known-large context be compacted before a park?                                                                                                                                                                                       | no (§7.2)                      | operator, with P4W5's evidence        |
+| Q6  | Should third-party mods get a say, through a `$.harnu` method or a `park` vote on `$.state`?                                                                                                                                                                  | no; only the companion answers | T447 owner                            |
+| Q7  | Should `remote-surface` alone be a decline, or only together with another reason? An attached phone may simply have been forgotten                                                                                                                            | alone                          | operator, after A4                    |
+| Q8  | Should P4W4's coordinator ownership note ("this wave owns `requestPark`", `P4W4:21`) be edited when W1 lands? And should P4W4's `revalidatePark` swap its "no `turn.started`" check (`P4W4:132-133`) for the legacy `UserPromptSubmit` edge T456 uses (§5.6)? | yes, in W1's change            | T389 owner                            |
+| Q9  | Should `park.query` run in `shadow` with its answers recorded for parity and never applied (ARB-6b allows sensor recording), to gather evidence before `active`?                                                                                              | no                             | T389 owner                            |
+| Q10 | Should the memory floor also park sessions that stay warm only because something keeps writing PTY bytes (§6.1)? That changes who becomes a candidate                                                                                                         | no                             | operator                              |
 
 ## 14. Risks
 

@@ -335,6 +335,22 @@ test('a permission dialog shown to a person is busy until its tool settles', asy
   expect((await probe($)).busy).toEqual([])
 })
 
+test('a denied or failed tool settles its dialog too', async ($, on) => {
+  engine(on)
+  await $.session.start(START)
+  await $.classic.PermissionRequest({ ...base, tool_name: 'Bash', tool_input: {} })
+  await $.classic.PermissionRequest({ ...base, tool_name: 'Edit', tool_input: {} })
+  expect((await probe($)).busy).toEqual([{ kind: 'permission', count: 2 }])
+  await $.classic.PostToolUseFailure({
+    ...base,
+    tool_name: 'Bash',
+    tool_input: {},
+    tool_use_id: 'u2',
+    error: 'denied'
+  })
+  expect((await probe($)).busy).toEqual([{ kind: 'permission', count: 1 }])
+})
+
 test('an attached phone is busy, read at ask time', async ($, on) => {
   engine(on, ['terminal', 'mobile'])
   await $.session.start(START)
@@ -375,30 +391,32 @@ Validating hooks: <scratchpad>/harnu-park-negotiator/hooks/hooks.json
 $ claude plugin test <scratchpad>/harnu-park-negotiator
 
 tests/park.test.ts:
-(pass) an idle session with nothing running is not busy [27.41ms]
-(pass) background shell, monitor and a wakeup from the last Stop [11.80ms]
-(pass) a subagent that already stopped is not counted [11.93ms]
-(pass) a turn in flight is busy, and its end clears it [11.26ms]
-(pass) a permission dialog shown to a person is busy until its tool settles [10.99ms]
-(pass) an attached phone is busy, read at ask time [9.62ms]
+(pass) an idle session with nothing running is not busy [26.19ms]
+(pass) background shell, monitor and a wakeup from the last Stop [18.62ms]
+(pass) a subagent that already stopped is not counted [11.83ms]
+(pass) a turn in flight is busy, and its end clears it [11.61ms]
+(pass) a permission dialog shown to a person is busy until its tool settles [11.52ms]
+(pass) a denied or failed tool settles its dialog too [11.19ms]
+(pass) an attached phone is busy, read at ask time [11.60ms]
 
- 6 pass
+ 7 pass
  0 fail
-Ran 6 tests across 1 file. [0.18s]
+Ran 7 tests across 1 file. [0.20s]
 ```
 
 **Negative control.** The same module with its `classic.Stop` hook deleted, against the same test
-file. The two tests that depend on the Stop snapshot fail and the rest pass, so those tests
+file. The two tests that depend on the Stop snapshot fail and the other five pass, so those tests
 exercise the hook rather than passing by default:
 
 ```text
-(pass) an idle session with nothing running is not busy [28.28ms]
-(fail) background shell, monitor and a wakeup from the last Stop [10.99ms]
-(fail) a subagent that already stopped is not counted [11.05ms]
-(pass) a turn in flight is busy, and its end clears it [10.94ms]
-(pass) a permission dialog shown to a person is busy until its tool settles [10.61ms]
-(pass) an attached phone is busy, read at ask time [8.82ms]
- 4 pass
+(pass) an idle session with nothing running is not busy [25.83ms]
+(fail) background shell, monitor and a wakeup from the last Stop [11.97ms]
+(fail) a subagent that already stopped is not counted [11.63ms]
+(pass) a turn in flight is busy, and its end clears it [11.55ms]
+(pass) a permission dialog shown to a person is busy until its tool settles [11.94ms]
+(pass) a denied or failed tool settles its dialog too [11.63ms]
+(pass) an attached phone is busy, read at ask time [10.50ms]
+ 5 pass
  2 fail
 ```
 
