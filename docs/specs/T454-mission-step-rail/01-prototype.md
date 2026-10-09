@@ -1,756 +1,60 @@
 # T454 — Prototype: the mod half of the rail, and its runs
 
 Part of the [T454 spec](00-spec.md) (AC C-5, and the "shown by a run" half of C-1). This file
-holds the complete prototype mod, the real output of `claude plugin validate`, `claude plugin test`
-and `tsc -p`, and the transcript of a live session that drove the same mod by key.
+holds the complete prototype mod (round 2), the real output of `claude plugin validate`,
+`claude plugin test` and `tsc -p`, the round-1 verifier's probes run against it, and the
+transcripts of the live sessions that drove it by key.
 
 ## 1. What the prototype is, and what it is not
 
 It is the **mod half** of the design: the band above the prompt drawn from host-pushed state, the
-fitting table of spec §6.2, the four actions with their confirm and input states, the press that
-leaves as an event carrying the action and the revision only, the TTL, and the fail-open render
-hook. It is a standalone plugin named `rail-proto` so it can run from the session scratchpad.
+one cut order of spec §6.2 with keys reserved first, the four actions with their confirm and
+fields, Retry and Dismiss, the focus rules of spec §7.5, the press that leaves as an event
+carrying the action and the revision only, the TTL, and the fail-open render hook. It is a
+standalone plugin named `rail-proto` so it can run from the session scratchpad.
 
 It is **not** the companion. In the spec the mod half lives in `resources/companion/` (spec §9)
 and talks to Harnu over the companion's command channel: the host pushes the rail inside
-`ui.band.set` and a press leaves as a `ui.action` edge event (spec §4, §7). The prototype replaces
-that channel with one `$.http.fetch` POST to a stand-in host that carries both directions, so the
-kit can script the host with one bottom hook. The host half (resolver, publisher, action executor
-in Harnu main) is specified in spec §7–§8 and is not prototyped.
+`ui.band.set` and a press leaves as a `ui.action` edge event. The prototype replaces that channel
+with one `$.http.fetch` POST to a stand-in host that carries both directions, so the kit can
+script the host with one bottom hook. The host half ([`02-host.md`](02-host.md)) is not
+prototyped.
 
 Files, as run (formatted with the repo's `.prettierrc.yaml`):
 
-| File                         | Role                                                                     |
-| ---------------------------- | ------------------------------------------------------------------------ |
-| `.claude-plugin/plugin.json` | manifest, names the contract                                             |
-| `hooks/hooks.json`           | one module, `./register.ts` (a `.ts` module, as the companion's is)      |
-| `hooks/register.ts`          | owns `$`: the poll, the TTL, the press handlers, the `AbovePrompt` hook  |
-| `hooks/rail-core.ts`         | pure and `$`-free: the status word and the fitting table                 |
-| `hooks/rail-view.tsx`        | pure: the tree, built from the resolved elements and closures, never `$` |
-| `types/index.d.ts`           | the contract: the pushed `RailView` and the local `RailMode`             |
-| `tests/rail.test.ts`         | six kit tests, mounting the band on the `terminal` surface               |
+| File                         | Role                                                                                                |
+| ---------------------------- | --------------------------------------------------------------------------------------------------- |
+| `.claude-plugin/plugin.json` | manifest, names the contract                                                                        |
+| `hooks/hooks.json`           | one module, `./register.ts` (a `.ts` module, as the companion's is)                                 |
+| `hooks/register.ts`          | owns `$`: the poll, the TTL, the presses, the per-instance "drew a key last frame", the render hook |
+| `hooks/rail-core.ts`         | pure and `$`-free: the status word, `fitRow` (the cut order), every row, `reconcile`, `checkTarget` |
+| `hooks/rail-view.tsx`        | pure: the trees, built from the resolved elements and closures, never `$`                           |
+| `types/index.d.ts`           | the contract: the pushed `RailView` and the local `RailMode`                                        |
+| `tests/rail.test.ts`         | nine kit tests, mounting the band on the `terminal` surface                                         |
 
 The split `register.ts` + imported `rail-view.tsx` is the layout T389 P4W2 planned for the
 companion (`surface.tsx` imported by `register.ts`, P4W2 §7.1), and P4W2 §7.4 left open whether
-the engine accepts JSX in a file a `.ts` module imports. The runs below settle it on 2.1.295: it
-validates, tests and draws in a live session.
+the engine accepts JSX in a file a `.ts` module imports. It does on 2.1.295: it validates, tests
+and draws in a live session.
+
+What changed since round 1: notes are fitted inside the row instead of appended after it (no
+overflow at any width, test 9); an open confirm or field is never removed by a push, an expiry or
+a width change, and its target is checked when the person ends it (`checkTarget`); an idle row
+that drew a key keeps one (`keep` keys, Dismiss); the mode is reconciled on every push and expiry
+(`reconcile`); Retry; the owner row matches spec S2.
 
 ## 2. Source
 
-### `.claude-plugin/plugin.json`
-
-```json
-{
-  "name": "rail-proto",
-  "version": "0.1.0",
-  "description": "T454 prototype: the mod half of the mission step rail above the prompt.",
-  "author": {
-    "name": "Harnu"
-  },
-  "types": "./types/index.d.ts"
-}
-```
-
-### `hooks/hooks.json`
-
-```json
-{ "modules": ["./register.ts"] }
-```
-
-### `types/index.d.ts`
-
-```ts
-// T454 prototype contract. Self-contained (no import), as the engine requires.
-export type RailStepState = 'verified' | 'done' | 'running' | 'waiting' | 'blocked' | 'todo'
-export type RailAction = 'claim' | 'block' | 'unblock' | 'log'
-/** What the host pushes (the proposed `ui.band.set` `rail` field). The mod never recounts. */
-export type RailView = {
-  v: 1
-  /** The host's revision for this binding; a press names it and nothing else. */
-  rev: number
-  role: 'owner' | 'child'
-  /** `progressHeadline(derived.progress)` for the owner; the child's own step position for a child. */
-  headline: {
-    kind: 'single' | 'range' | 'done' | 'empty'
-    n: number
-    to: number
-    m: number
-  }
-  step?: {
-    title: string
-    level: 'existence' | 'verifier' | 'human'
-    proof: 'unproven' | 'claimed' | 'self-verified' | 'verified'
-    state: RailStepState
-    blocker?: { reason: string; owner: 'agent' | 'operator' }
-  }
-  staleMin?: number
-  actions: readonly RailAction[]
-  result?: { action: RailAction; ok: boolean; code?: string }
-  /** The mod's clock + TTL at apply time. */
-  expiresAt: number
-}
-export type RailMode =
-  | { kind: 'idle' }
-  | { kind: 'confirm-claim' }
-  | { kind: 'block' }
-  | { kind: 'log' }
-  | { kind: 'sent'; action: RailAction }
-  | { kind: 'unreachable' }
-
-declare module 'claude-code' {
-  interface PluginState {
-    'rail-proto': { rail: RailView | null; mode: RailMode }
-  }
-}
-```
-
-### `hooks/rail-core.ts`
-
-```ts
-import type { RailAction, RailView } from '../types'
-
-/** Pure and `$`-free: what the row says at a given `bodyColumns`. */
-
-export const RAIL_MIN_COLUMNS = 40
-export const ACTIONS_MIN_COLUMNS = 60
-export const TITLE_MIN_COLUMNS = 90
-export const DETAIL_MIN_COLUMNS = 120
-/** A title or reason shorter than this after truncation is dropped instead. */
-export const PART_MIN = 12
-
-export const HOTKEY: Record<RailAction, string> = {
-  claim: 'c',
-  block: 'b',
-  unblock: 'u',
-  log: 'l'
-}
-export const LABEL: Record<RailAction, string> = {
-  claim: 'Claim',
-  block: 'Block',
-  unblock: 'Clear block',
-  log: 'Log'
-}
-const LEVEL: Record<'existence' | 'verifier' | 'human', string> = {
-  existence: 'Existence check',
-  verifier: 'Verifier',
-  human: 'Human'
-}
-
-export function headlineText(h: RailView['headline']): string {
-  if (h.kind === 'empty') return ''
-  if (h.kind === 'done') return `Step ${h.m} of ${h.m} ✓`
-  if (h.kind === 'range') return `Steps ${h.n}–${h.to} of ${h.m}`
-  return `Step ${h.n} of ${h.m}`
-}
-
-/**
- * The step's word, first match wins (spec §6.1). It reads the derived state the host sent and the
- * stored proof; it never decides which step is done.
- */
-export function statusWord(step: NonNullable<RailView['step']>): string {
-  if (step.state === 'verified') return '✓ Verified'
-  if (step.state === 'done') {
-    return step.proof === 'claimed' || step.proof === 'self-verified' ? 'Claimed' : 'Done'
-  }
-  if (step.blocker) return 'Blocked'
-  if (step.state === 'running') return 'Running'
-  if (step.state === 'waiting') return 'Waiting'
-  return 'To do'
-}
-
-export function cut(text: string, max: number): string | null {
-  if (max < PART_MIN) return null
-  return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`
-}
-
-export function formatStale(min: number): string {
-  if (min < 60) return `${min}m`
-  if (min < 24 * 60) return `${Math.floor(min / 60)}h ${min % 60}m`
-  return `${Math.floor(min / 1440)}d ${Math.floor((min % 1440) / 60)}h`
-}
-
-export function actionsWidth(actions: readonly RailAction[]): number {
-  return actions.reduce((w, a, i) => w + (i ? 2 : 0) + HOTKEY[a].length + 2 + LABEL[a].length, 0)
-}
-
-export interface RailRow {
-  text: string
-  actions: RailAction[]
-}
-
-/** The fitting table of spec §6.2. `null` = no row. */
-export function fitRail(rail: RailView, columns: number): RailRow | null {
-  const lead = headlineText(rail.headline)
-  if (columns < RAIL_MIN_COLUMNS || lead === '') return null
-  const head = `◆ ${lead}`
-  const stale = rail.staleMin !== undefined ? `mission stale ${formatStale(rail.staleMin)}` : null
-  if (rail.role === 'owner' || !rail.step) {
-    const wide = stale && columns >= DETAIL_MIN_COLUMNS ? ` · ${stale}` : ''
-    return { text: head + wide, actions: [] }
-  }
-  const step = rail.step
-  const word = statusWord(step)
-  const actions = columns >= ACTIONS_MIN_COLUMNS ? [...rail.actions] : []
-  const reserve = actions.length ? 2 + actionsWidth(actions) : 0
-  if (columns < TITLE_MIN_COLUMNS) {
-    const text = `${head} · ${word}`
-    return text.length + reserve <= columns ? { text, actions } : { text, actions: [] }
-  }
-  // Cut first: the verification level, then the stale age (spec §6.2).
-  const tail: string[] = []
-  if (columns >= DETAIL_MIN_COLUMNS) tail.push(LEVEL[step.level])
-  if (stale) tail.push(stale)
-  const tailText = tail.map((t) => ` · ${t}`).join('')
-  let room = columns - reserve - head.length - tailText.length
-  // Blocked: the reason outranks the title, so it is fitted first and the title takes what is left.
-  let status = word
-  if (step.blocker) {
-    const reason = cut(step.blocker.reason, room - 3 - (word.length + 2))
-    status = reason ? `${word}: ${reason}` : word
-  }
-  room -= 3 + status.length
-  const title = cut(step.title, room - 3)
-  const text = `${head}${title ? ` · ${title}` : ''} · ${status}${tailText}`
-  return { text, actions }
-}
-```
-
-### `hooks/rail-view.tsx`
-
-```tsx
-import type { Elements } from 'claude-code'
-
-import type { RailAction, RailMode } from '../types'
-import { HOTKEY, LABEL, type RailRow } from './rail-core'
-
-/** The rail's tree. Pure: receives the resolved elements and closures, never `$` (MOD-1). */
-export interface RailHandlers {
-  press: (action: RailAction) => void
-  confirmClaim: (yes: boolean) => void
-  submit: (kind: 'block' | 'log', text: string) => void
-}
-
-const MODE_TEXT: Record<'sent' | 'unreachable', string> = {
-  sent: 'Saving…',
-  unreachable: 'Harnu is not reachable. Nothing was saved.'
-}
-
-export function railTree(
-  els: Elements['terminal'],
-  row: RailRow,
-  mode: RailMode,
-  stepLabel: string,
-  confirmNote: string,
-  on: RailHandlers
-): JSX.Element {
-  const { Box, Button, Input, Text } = els
-  if (mode.kind === 'confirm-claim') {
-    return (
-      <Box>
-        <Text>
-          ◆ Claim {stepLabel} as done? {confirmNote}
-          {'  '}
-        </Text>
-        <Button
-          key="rail-yes"
-          hotkey="y"
-          plain
-          label="Claim"
-          onPress={() => on.confirmClaim(true)}
-        />
-        <Text>{'  '}</Text>
-        <Button
-          key="rail-no"
-          hotkey="n"
-          plain
-          label="Cancel"
-          onPress={() => on.confirmClaim(false)}
-        />
-      </Box>
-    )
-  }
-  if (mode.kind === 'block' || mode.kind === 'log') {
-    const kind = mode.kind
-    return (
-      <Box>
-        <Input
-          key={`rail-${kind}`}
-          autoFocus
-          label={kind === 'block' ? `◆ Blocker on ${stepLabel}` : `◆ Log on ${stepLabel}`}
-          placeholder={
-            kind === 'block'
-              ? 'what blocks it (Enter on empty cancels)'
-              : 'note (Enter on empty cancels)'
-          }
-          submitLabel={kind === 'block' ? 'raise' : 'log'}
-          onSubmit={(value) => on.submit(kind, value)}
-        />
-      </Box>
-    )
-  }
-  const suffix =
-    mode.kind === 'sent' || mode.kind === 'unreachable' ? ` · ${MODE_TEXT[mode.kind]}` : ''
-  // Every state keeps a focusable element: a band left with no Button drops the focus, and the
-  // next letter the person types goes to the prompt instead (live check, spec §5.3).
-  const live = row.actions
-  return (
-    <Box>
-      <Text dimColor wrap="truncate-end">
-        {row.text}
-        {suffix}
-      </Text>
-      {live.map((a) => (
-        <Box key={`gap-${a}`}>
-          <Text>{'  '}</Text>
-          <Button
-            key={`rail-${a}`}
-            hotkey={HOTKEY[a]}
-            plain
-            label={LABEL[a]}
-            onPress={() => on.press(a)}
-          />
-        </Box>
-      ))}
-    </Box>
-  )
-}
-
-/** The rail's row above whatever the plugins beneath drew: it wraps, never replaces (P4W2 §7.4). */
-export function stack(
-  els: Elements['terminal'],
-  row: JSX.Element,
-  below: JSX.Element
-): JSX.Element {
-  const { Box } = els
-  return (
-    <Box flexDirection="column">
-      {row}
-      {below}
-    </Box>
-  )
-}
-```
-
-### `hooks/register.ts`
-
-```ts
-import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
-
-import type { RailAction, RailMode, RailView } from '../types'
-import { fitRail } from './rail-core'
-import { railTree, stack, type RailHandlers } from './rail-view'
-
-/**
- * T454 prototype, the mod half. In the spec this lives in `harnu-companion`: the host pushes the
- * rail in `ui.band.set` over the command channel and a press leaves as a `ui.action` edge event.
- * Here one POST to a stand-in host carries both directions so `claude plugin test` can script it.
- */
-const HOST = 'http://localhost:47999/rail'
-const POLL_MS = 2_000
-const TTL_MS = 90_000
-const TEXT_MAX = 200
-
-const railRef = atom({ plugin: 'rail-proto', key: 'rail' } as const, null)
-const modeRef = atom({ plugin: 'rail-proto', key: 'mode' } as const, { kind: 'idle' } as RailMode)
-
-type Pushed = Omit<RailView, 'expiresAt'>
-type RailEvent = {
-  t: 'ui.action'
-  d: { name: `step.${RailAction}`; rev: number; text?: string }
-}
-
-/** One round trip: send queued events, apply the band the host answers. Never rejects. */
-async function sync($: EngineInterface, events: RailEvent[]): Promise<boolean> {
-  try {
-    const res = await $.http.fetch(HOST, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ events })
-    })
-    if (!res.ok) return false
-    const body = JSON.parse(res.text) as { band?: Pushed | null }
-    const now = await $.clock.now()
-    if (body.band === null) await update($, railRef, () => null)
-    else if (body.band) {
-      const pushed = body.band
-      // A lower revision never overwrites a higher one (P4W2 §7.4, `n`).
-      await update($, railRef, (prev) =>
-        prev && prev.rev > pushed.rev ? prev : { ...pushed, expiresAt: now + TTL_MS }
-      )
-    }
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function tick($: EngineInterface): Promise<void> {
-  const ok = await sync($, [])
-  const now = await $.clock.now()
-  // A dead host cannot leave a stale step on screen: the line lives TTL_MS past its last push.
-  await update($, railRef, (prev) => (prev && prev.expiresAt <= now ? null : prev))
-  if (ok)
-    await update($, modeRef, (m): RailMode => (m.kind === 'unreachable' ? { kind: 'idle' } : m))
-}
-
-/** A press carries the action and the revision the operator saw. Never a step id (spec §7.3). */
-async function send(
-  $: EngineInterface,
-  action: RailAction,
-  rev: number,
-  text?: string
-): Promise<void> {
-  await update($, modeRef, (): RailMode => ({ kind: 'sent', action }))
-  const d = {
-    name: `step.${action}` as const,
-    rev,
-    ...(text !== undefined ? { text } : {})
-  }
-  const ok = await sync($, [{ t: 'ui.action', d }])
-  await update($, modeRef, (): RailMode => (ok ? { kind: 'idle' } : { kind: 'unreachable' }))
-}
-
-function handlers($: EngineInterface, rev: number): RailHandlers {
-  return {
-    press: (a) => {
-      void pressWhenIdle($, a, rev)
-    },
-    confirmClaim: (yes) => {
-      if (yes) void send($, 'claim', rev)
-      else void update($, modeRef, (): RailMode => ({ kind: 'idle' }))
-    },
-    submit: (kind, value) => {
-      const text = value.trim().slice(0, TEXT_MAX)
-      if (text === '') void update($, modeRef, (): RailMode => ({ kind: 'idle' }))
-      else void send($, kind, rev, text)
-    }
-  }
-}
-
-/** A press while a previous one is still being saved does nothing. */
-async function pressWhenIdle($: EngineInterface, a: RailAction, rev: number): Promise<void> {
-  const mode = await read($, modeRef)
-  if (mode.kind !== 'idle' && mode.kind !== 'unreachable') return // unreachable: a press retries
-  if (a === 'claim') await update($, modeRef, (): RailMode => ({ kind: 'confirm-claim' }))
-  else if (a === 'block' || a === 'log') await update($, modeRef, (): RailMode => ({ kind: a }))
-  else await send($, a, rev)
-}
-
-/** What a claim leaves undone, by the step's verification level (spec §6.4). */
-function confirmNote(rail: RailView): string {
-  return rail.step?.level === 'human'
-    ? 'You still mark it verified in Harnu.'
-    : 'A verifier still checks it.'
-}
-
-function stepLabel(rail: RailView): string {
-  return rail.headline.kind === 'single' ? `step ${rail.headline.n}` : 'this step'
-}
-
-export const register: Register = (on) => {
-  on('session.start', async ($, e, next) => {
-    void tick($)
-    $.clock.every(POLL_MS, () => {
-      void tick($)
-    })
-    return next(e)
-  })
-
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const below = await next(e)
-    try {
-      if (e.surface !== 'terminal' || e.props.hasSurvey) return below
-      const rail = await read($, railRef)
-      if (rail === null) return below
-      const row = fitRail(rail, e.props.bodyColumns)
-      if (row === null) return below
-      const mode = await read($, modeRef)
-      const els = $.ui.resolve(e)
-      return stack(
-        els,
-        railTree(els, row, mode, stepLabel(rail), confirmNote(rail), handlers($, rail.rev)),
-        below
-      )
-    } catch {
-      return below // fail open: the band is never worse than without the rail
-    }
-  })
-}
-```
-
-### `tests/rail.test.ts`
-
-```ts
-import { expect, mock, test } from 'claude-code/testing'
-import type { On, Register } from 'claude-code'
-
-// A child executor's step, as the host would push it in `ui.band.set` (`rail` field).
-const CHILD = {
-  v: 1,
-  rev: 5,
-  role: 'child',
-  headline: { kind: 'single', n: 3, to: 3, m: 7 },
-  step: {
-    title: 'Wire the rail IPC channel',
-    level: 'verifier',
-    proof: 'unproven',
-    state: 'running'
-  },
-  actions: ['claim', 'block', 'log']
-} as const
-
-const band = (bodyColumns: number, hasSurvey = false) =>
-  ({
-    plugin: 'rail-proto',
-    surface: 'terminal',
-    component: 'AbovePrompt',
-    props: {
-      hasSurvey,
-      isWorking: true,
-      maxRows: 12,
-      bodyColumns,
-      scroll: { offset: 0, bodyRows: 11 },
-      view: {}
-    }
-  }) as const
-
-type Sent = { t: string; d: Record<string, unknown> }
-
-/** A scripted host behind `$.http.fetch`: records the events, answers the current band. */
-function host(on: On, start: unknown) {
-  const s = { band: start as unknown, sent: [] as Sent[], down: false }
-  on('http.fetch', (_$, e) => {
-    if (s.down) throw new Error('connect ECONNREFUSED')
-    const body = JSON.parse(String(e.init?.body ?? '{}')) as {
-      events?: Sent[]
-    }
-    s.sent.push(...(body.events ?? []))
-    return {
-      value: {
-        status: 200,
-        ok: true,
-        headers: {},
-        text: JSON.stringify({ band: s.band })
-      }
-    }
-  })
-  on('session.start', (_$, e) => ({ cwd: e.cwd }))
-  // The engine beneath every plugin: its own (empty) band.
-  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
-    const { Box } = $.ui.resolve(e)
-    return h(Box, { key: 'engine' }) as JSX.Element
-  })
-  return s
-}
-
-test('fits the child row to bodyColumns and cuts in the declared order', async ($, on) => {
-  const clock = mock.clock(on, { now: 1_000 })
-  host(on, CHILD)
-  await $.session.start({
-    cwd: '/work/repo',
-    surface: 'terminal',
-    isInteractive: true
-  })
-  await clock.settle()
-
-  const rows: Record<number, { text: string | undefined; buttons: string[] }> = {}
-  for (const cols of [39, 40, 60, 90, 120]) {
-    const ui = await $.ui.mount(band(cols))
-    const text = (await ui.find({ type: 'Text', text: /^◆/ }))?.text
-    const buttons = (await ui.findAll({ type: 'Button' })).map((b) => b.key ?? '')
-    rows[cols] = { text, buttons }
-    await ui.unmount()
-  }
-  expect(rows[39]).toEqual({ text: undefined, buttons: [] })
-  expect(rows[40]).toEqual({ text: '◆ Step 3 of 7 · Running', buttons: [] })
-  expect(rows[60]).toEqual({
-    text: '◆ Step 3 of 7 · Running',
-    buttons: ['rail-claim', 'rail-block', 'rail-log']
-  })
-  expect(rows[90]?.text).toBe('◆ Step 3 of 7 · Wire the rail IPC channel · Running')
-  expect(rows[120]?.text).toBe('◆ Step 3 of 7 · Wire the rail IPC channel · Running · Verifier')
-})
-
-test('claim is two presses and sends the action and revision, never a step id', async ($, on) => {
-  const clock = mock.clock(on, { now: 1_000 })
-  const h = host(on, CHILD)
-  await $.session.start({
-    cwd: '/work/repo',
-    surface: 'terminal',
-    isInteractive: true
-  })
-  await clock.settle()
-
-  const ui = await $.ui.mount(band(120))
-  await ui.press({ key: 'rail-claim' })
-  expect(h.sent).toEqual([])
-  expect((await ui.find({ type: 'Text', text: /Claim step 3 as done\?/ }))?.text).toBeDefined()
-
-  // The host applies it and answers the next revision.
-  h.band = {
-    ...CHILD,
-    rev: 6,
-    step: { ...CHILD.step, proof: 'claimed', state: 'done' },
-    actions: ['block', 'log']
-  }
-  await ui.press({ key: 'rail-yes' })
-  expect(h.sent).toEqual([{ t: 'ui.action', d: { name: 'step.claim', rev: 5 } }])
-  expect((await ui.find({ type: 'Text', text: /^◆/ }))?.text).toBe(
-    '◆ Step 3 of 7 · Wire the rail IPC channel · Claimed · Verifier'
-  )
-  expect(await ui.find({ key: 'rail-claim' })).toBeUndefined()
-})
-
-test('a blocker reason is typed into the band; an empty one cancels', async ($, on) => {
-  const clock = mock.clock(on, { now: 1_000 })
-  const h = host(on, CHILD)
-  await $.session.start({
-    cwd: '/work/repo',
-    surface: 'terminal',
-    isInteractive: true
-  })
-  await clock.settle()
-
-  const ui = await $.ui.mount(band(120))
-  await ui.press({ key: 'rail-log' })
-  await ui.input({ key: 'rail-log', text: '   ' })
-  expect(h.sent).toEqual([])
-  expect(await ui.find({ key: 'rail-claim' })).toBeDefined()
-
-  await ui.press({ key: 'rail-block' })
-  await ui.input({ key: 'rail-block', text: '  needs the staging API key ' })
-  expect(h.sent).toEqual([
-    {
-      t: 'ui.action',
-      d: { name: 'step.block', rev: 5, text: 'needs the staging API key' }
-    }
-  ])
-})
-
-test('Harnu unreachable: the press says nothing was saved and the line expires', async ($, on) => {
-  const clock = mock.clock(on, { now: 1_000 })
-  const h = host(on, CHILD)
-  await $.session.start({
-    cwd: '/work/repo',
-    surface: 'terminal',
-    isInteractive: true
-  })
-  await clock.settle()
-
-  const ui = await $.ui.mount(band(120))
-  h.down = true
-  await ui.press({ key: 'rail-unblock' }).catch(() => undefined) // not offered: no such button
-  await ui.press({ key: 'rail-claim' })
-  await ui.press({ key: 'rail-yes' })
-  expect((await ui.find({ type: 'Text', text: /^◆/ }))?.text).toMatch(
-    /· Harnu is not reachable\. Nothing was saved\.$/
-  )
-  // The buttons stay: a band with nothing focusable hands the keys back to the prompt (§5.3).
-  expect((await ui.findAll({ type: 'Button' })).map((b) => b.key)).toEqual([
-    'rail-claim',
-    'rail-block',
-    'rail-log'
-  ])
-
-  await clock.advance(92_000)
-  expect(await ui.find({ type: 'Text', text: /^◆/ })).toBeUndefined()
-})
-
-const otherBand: Register = (on) => {
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    await next(e)
-    const { Text } = $.ui.resolve(e)
-    return h(Text, {}, 'other mod row') as JSX.Element
-  })
-}
-
-test(
-  'wraps what another mod drew and yields to a survey',
-  { plugins: [{ name: 'other', register: otherBand }] },
-  async ($, on) => {
-    const clock = mock.clock(on, { now: 1_000 })
-    host(on, CHILD)
-    await $.session.start({
-      cwd: '/work/repo',
-      surface: 'terminal',
-      isInteractive: true
-    })
-    await clock.settle()
-
-    const ui = await $.ui.mount(band(120))
-    expect(await ui.find({ type: 'Text', text: /^◆ Step 3 of 7/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'other mod row' })).toBeDefined()
-    await ui.unmount()
-
-    const survey = await $.ui.mount(band(120, true))
-    expect(await survey.find({ type: 'Text', text: /^◆/ })).toBeUndefined()
-  }
-)
-
-test('blocked: the reason outranks the title, the level goes first', async ($, on) => {
-  const clock = mock.clock(on, { now: 1_000 })
-  host(on, {
-    ...CHILD,
-    step: {
-      ...CHILD.step,
-      state: 'todo',
-      blocker: { reason: 'needs the staging API key', owner: 'operator' }
-    },
-    staleMin: 135,
-    actions: ['unblock', 'log']
-  })
-  await $.session.start({ cwd: '/work/repo', surface: 'terminal', isInteractive: true })
-  await clock.settle()
-
-  const text = async (cols: number) => {
-    const ui = await $.ui.mount(band(cols))
-    const t = (await ui.find({ type: 'Text', text: /^◆/ }))?.text
-    await ui.unmount()
-    return t
-  }
-  expect(await text(139)).toBe(
-    '◆ Step 3 of 7 · Wire the rail IPC channel · Blocked: needs the staging API key · Verifier · mission stale 2h 15m'
-  )
-  expect(await text(115)).toBe(
-    '◆ Step 3 of 7 · Wire the rail… · Blocked: needs the staging API key · mission stale 2h 15m'
-  )
-  expect(await text(75)).toBe('◆ Step 3 of 7 · Blocked')
-})
-```
-
-### The type-check config
-
-Kept outside the mod folder, as the types file's header prescribes for a mod whose types the
-engine has not laid yet. `<types>` is the `claude-code.d.ts` the `plugin-authoring` skill wrote
-for 2.1.295.
-
-```json
-{
-  "compilerOptions": {
-    "target": "es2023",
-    "lib": ["es2023"],
-    "types": [],
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "noEmit": true,
-    "skipLibCheck": true,
-    "allowImportingTsExtensions": true,
-    "jsx": "react",
-    "jsxFactory": "h",
-    "jsxFragmentFactory": "Fragment"
-  },
-  "include": ["<types>", "../rail-proto/hooks", "../rail-proto/types", "../rail-proto/tests"]
-}
-```
-
-## 3. Runs (2026-10-09)
-
-Output pasted as printed; only the scratchpad path is shortened to `<scratchpad>`. The session's
-own Claude Code was 2.1.295; the CLI on `PATH` updated itself to 2.1.296 during the session, so
-the kit runs are shown on both binaries (the 2.1.295 one run by its versioned path).
+The mod is in [`03-prototype-source.md`](03-prototype-source.md); its tests and the type-check
+config are in [`04-prototype-tests.md`](04-prototype-tests.md),
+split out for length.
+
+## 3. Runs (2026-10-09, round 2)
+
+Output pasted as printed; the scratchpad path is shortened to `<scratchpad>`. The session's own
+Claude Code was 2.1.295; the CLI on `PATH` updated itself to 2.1.296 during the session, so the
+kit runs are shown on both binaries (the 2.1.295 one run by its versioned path). Test 9 prints
+every state at 115, 75 and 40 columns; spec §6.3–§6.4 are copied from these lines.
 
 ```
 $ claude plugin validate rail-proto   # Claude Code 2.1.295
@@ -769,49 +73,125 @@ Validating hooks: <scratchpad>/rail-proto/hooks/hooks.json
 ✔ Validation passed
 (exit 0)
 
-$ claude plugin test rail-proto   # Claude Code 2.1.295
-
+$ claude plugin test rail-proto   # Claude Code 2.1.295 (the stand-in host's thrown fetches print one "skipped" line each; filtered here)
+S3 running @115: ◆ Step 3 of 7 · Wire the rail IPC channel · Running · Verifier  c: Claim  b: Block  l: Log
+S3 running @75: ◆ Step 3 of 7 · Wire the rail IPC ch… · Running  c: Claim  b: Block  l: Log
+S3 running @40: ◆ Step 3 of 7 · Running  c: Claim
+S4 blocked, stale @115: ◆ Step 3 of 7 · Wire the rail IPC channel · Blocked: needs the staging API key  u: Clear block  l: Log
+S4 blocked, stale @75: ◆ Step 3 of 7 · Blocked: needs the staging API key  u: Clear block  l: Log
+S4 blocked, stale @40: ◆ Step 3 of 7 · Blocked  u: Clear block
+S5 claimed @115: ◆ Step 3 of 7 · Wire the rail IPC channel · Claimed · Verifier  b: Block  l: Log
+S5 claimed @75: ◆ Step 3 of 7 · Wire the rail IPC channel · Claimed  b: Block  l: Log
+S5 claimed @40: ◆ Step 3 of 7 · Claimed  b: Block
+S5 self-verified @115: ◆ Step 3 of 7 · Wire the rail IPC channel · Claimed · Verifier  b: Block  l: Log
+S5 self-verified @75: ◆ Step 3 of 7 · Wire the rail IPC channel · Claimed  b: Block  l: Log
+S5 self-verified @40: ◆ Step 3 of 7 · Claimed  b: Block
+S5 verified @115: ◆ Step 3 of 7 · Wire the rail IPC channel · ✓ Verified · Verifier  l: Log
+S5 verified @75: ◆ Step 3 of 7 · Wire the rail IPC channel · ✓ Verified · Verifier  l: Log
+S5 verified @40: ◆ Step 3 of 7 · ✓ Verified  l: Log
+S5 done (needs-human) @115: ◆ Step 3 of 7 · Wire the rail IPC channel · Done · Verifier  l: Log
+S5 done (needs-human) @75: ◆ Step 3 of 7 · Wire the rail IPC channel · Done · Verifier  l: Log
+S5 done (needs-human) @40: ◆ Step 3 of 7 · Done  l: Log
+S6 stale @115: ◆ Step 3 of 7 · Wire the rail IPC channel · Waiting · Verifier · mission stale 2h 15m  c: Claim  b: Block  l: Log
+S6 stale @75: ◆ Step 3 of 7 · Wire the rail IPC ch… · Waiting  c: Claim  b: Block  l: Log
+S6 stale @40: ◆ Step 3 of 7 · Waiting  c: Claim
+S2 owner @115: ◆ Harnu Steps 3–4 of 7 · blocked
+S2 owner @75: ◆ Harnu Steps 3–4 of 7 · blocked
+S2 owner @40: ◆ Harnu Steps 3–4 of 7 · blocked
+S7 refused, mission closed @115: ◆ Step 3 of 7 · Wire the rail IPC channel · Not saved: mission closed. · Verifier  c: Claim  b: Block  l: Log
+S7 refused, mission closed @75: ◆ Step 3 of 7 · Not saved: mission closed.  c: Claim  b: Block  l: Log
+S7 refused, mission closed @40: ◆ Step 3 of 7 · Not saved.  c: Claim
+logged @115: ◆ Step 3 of 7 · Wire the rail IPC channel · Logged. · Verifier  c: Claim  b: Block  l: Log
+logged @75: ◆ Step 3 of 7 · Wire the rail IPC ch… · Logged.  c: Claim  b: Block  l: Log
+logged @40: ◆ Step 3 of 7 · Logged.  c: Claim
+claim confirm @115: ◆ Claim step 3 as done? A verifier still checks it.  y: Claim  n: Cancel
+claim confirm @75: ◆ Claim step 3 as done? A verifier still checks it.  y: Claim  n: Cancel
+claim confirm @40: ◆ Claim step 3?  y: Yes  n: No
+claim confirm @30: ◆ Claim step 3?  y: Yes  n: No
+S8 unreachable after a press @115: ◆ Step 3 of 7 · Wire the rail IPC channel · Harnu is not reachable. Nothing was saved.  r: Retry  x: Dismiss
+S8 unreachable after a press @75: ◆ Step 3 of 7 · Nothing was saved.  r: Retry  x: Dismiss
+S8 unreachable after a press @40: ◆ 3/7 · Nothing was saved.  x: Dismiss
+blocker Input @115: ◆ Blocker on step 3: [what blocks it (Enter on empty cancels)] ⏎ raise
+blocker Input @75: ◆ Blocker on step 3: [what blocks it] ⏎ raise
+blocker Input @40: ◆ Block: [] ⏎ raise
+final, mission closed, a press lost @115: ◆ Mission closed or step unlinked. Nothing was saved.  x: Dismiss
+final, mission closed, a press lost @75: ◆ Mission closed or step unlinked. Nothing was saved.  x: Dismiss
+final, mission closed, a press lost @40: ◆ Nothing was saved.  x: Dismiss
+final, step changed, a press lost @115: ◆ The step changed. Nothing was saved.  x: Dismiss
+final, step changed, a press lost @75: ◆ The step changed. Nothing was saved.  x: Dismiss
+final, step changed, a press lost @40: ◆ Nothing was saved.  x: Dismiss
+final, line gone while the band held keys (idle) @115: ◆ Mission closed or step unlinked.  x: Dismiss
+final, line gone while the band held keys (idle) @75: ◆ Mission closed or step unlinked.  x: Dismiss
+final, line gone while the band held keys (idle) @40: ◆ No step now.  x: Dismiss
 tests/rail.test.ts:
-(pass) fits the child row to bodyColumns and cuts in the declared order [44.69ms]
-(pass) claim is two presses and sends the action and revision, never a step id [19.18ms]
-(pass) a blocker reason is typed into the band; an empty one cancels [20.78ms]
-(pass) Harnu unreachable: the press says nothing was saved and the line expires [83.01ms]
-(pass) wraps what another mod drew and yields to a survey [19.94ms]
-(pass) blocked: the reason outranks the title, the level goes first [19.12ms]
-
- 6 pass
+(pass) fits the child row to bodyColumns and cuts in the declared order [48.73ms]
+(pass) claim is two presses and sends the action and revision, never a step id [23.20ms]
+(pass) a blocker reason is typed into the band; an empty one cancels [22.87ms]
+(pass) Harnu unreachable: nothing was saved, Retry and Dismiss, fitted at every width [63.95ms]
+(pass) F-1: an open field or confirm outlives every push, expiry and width; an idle row keeps a key [77.40ms]
+(pass) a refused press says so once, inside the width [22.81ms]
+(pass) blocked: the reason outranks the title, the level goes first [23.74ms]
+(pass) wraps what another mod drew and yields to a survey [29.69ms]
+(pass) every state fits at 115, 75 and 40 (printed) [148.52ms]
+ 9 pass
  0 fail
-Ran 6 tests across 1 file. [0.31s]
+Ran 9 tests across 1 file. [0.58s]
 (exit 0)
 
 $ claude plugin test rail-proto   # Claude Code 2.1.296 (the CLI updated during the session)
- 6 pass
+ 9 pass
  0 fail
-Ran 6 tests across 1 file. [0.32s]
+Ran 9 tests across 1 file. [0.63s]
 
 $ tsc -p tsc-rail   # TypeScript 5.6.3 against the 2.1.295 claude-code.d.ts
 (exit 0, no output)
 ```
 
-The tests were checked against two deliberate breakages before they were trusted: dropping
-`{below}` from `stack` fails "wraps what another mod drew…", and adding a `stepId` to the press
-event fails both press tests. Both were reverted.
+The tests were checked against deliberate breakages before they were trusted. Round 1: dropping
+`{below}` from `stack` fails test 8, and adding a `stepId` to the press event fails tests 2 and 3.
+Round 2: drawing the field only while the line exists fails test 5, and not adding Dismiss to an
+idle row whose actions went away fails test 5. All were reverted.
 
-## 4. Live session (2026-10-09, Claude Code 2.1.295, tmux 3.4)
+**The round-1 verifier's probes**, copied unchanged from its scratchpad and run against this
+prototype (`tests/probe.test.ts` in place of `rail.test.ts`; each line is the row's text and its
+focusable elements):
+
+```
+PROBE75 "◆ Step 3 of 7 · Nothing was saved." 34 rail-retry,rail-dismiss
+PROBE115 "◆ Step 3 of 7 · Wire the rail IPC channel · Harnu is not reachable. Nothing was saved." 86 rail-retry,rail-dismiss
+PROBE before close rail-block
+PROBE after close rail-block undefined
+PROBE ask before rail-claim,rail-block,rail-log
+PROBE ask after rail-dismiss ◆ Step 3 of 7 · Wire the rail IPC channel · Running · Verifier
+PROBE ttl rail-log
+PROBE confirm@59 rail-yes,rail-no ◆ Claim step 3 as done?
+PROBE confirm@39 rail-yes,rail-no
+ 5 pass
+ 0 fail
+```
+
+Every probe now ends with a focusable element: the field stays open when the host pushes `null`
+and when the line expires, the actions give way to `rail-dismiss` when the host turns them off,
+and the confirm keeps both keys at 59 and 39 columns. The unreachable row's text is 34 cells at 75 and 86
+at 115; with its keys it fits both (test 4).
+
+## 4. Live sessions (2026-10-09, Claude Code 2.1.295, tmux 3.4)
 
 `tsc` and the kit exercise the hooks and the tree, never a surface's key routing or paint
-(`TYPES:15584`, and the header at `TYPES:41-44`). The design hinges on three things only a live session shows: that the
-band draws inside a real terminal, which keys reach a band Button, and what happens to the keys
-after a press. So the same mod ran in a real interactive session:
+(`TYPES:15584`, and the header at `TYPES:41-44`). The focus rules depend on key routing, so the
+same mod ran in real interactive sessions:
 
-1. A stand-in host (`node host.mjs`, 23 lines) on `127.0.0.1:47999` answered every POST with the
-   child band of the tests and logged every event; on `step.claim` it bumped `rev` and set the
-   step to `claimed`/`done`.
+1. A stand-in host (`node host.mjs`, 35 lines in its round-2 form) on `127.0.0.1:47999` answered
+   every POST with the child band of the tests and logged every event; on `step.claim` it bumped
+   `rev` and set the step to `claimed`/`done`. A `/set` route let the run change the band: turn
+   the actions off, keep only block and log, change the state, push `null`.
 2. `claude --plugin-dir <scratchpad>/rail-proto` in a detached tmux session, 120 × 30, in an empty
-   folder. No prompt was submitted in the final run.
+   folder.
 3. Keys sent with `tmux send-keys`; after each, the rows holding `◆` and `❯` were captured with
    `tmux capture-pane`. The engine pads the band row to the `[-]` mark at the right edge; that
    padding is collapsed to two spaces below.
+
+### 4.1 Round 1 (the round-1 build)
 
 ```
 == start, 120 columns
@@ -855,37 +235,124 @@ after a press. So the same mod ran in a real interactive session:
 {"at":1791575772049,"ev":{"t":"ui.action","d":{"name":"step.block","rev":6,"text":"needs the staging API key"}}}
 ```
 
-A separate run with the host killed: pressing `l`, typing a note and Enter drew
-`◆ Step 3 of 7 · Wire the rail IPC channel · Claimed · Harnu is not reachable. Nothing was saved.  b: Block  l: Log`,
-and 95 s later the band row was gone (TTL 90 s, poll 2 s): the capture held no `◆` row.
+A separate run with the host killed: pressing `l`, typing a note and Enter drew the unreachable
+note, and 95 s later the band row was gone (TTL 90 s, poll 2 s).
 
-### Finding F-1: a band with nothing focusable hands the keys back to the prompt
+**Finding F-1.** The first round-1 run used a build whose "saving" state drew no Button. After
+`ctrl+x tab`, `c`, `y`, the band held nothing focusable, the keys returned to the prompt, and the
+next `b` and the typed blocker reason went into the prompt; Enter **submitted them to the model as
+a user turn** (`❯ bneeds the staging API key`; the turn was interrupted with Esc before any tool
+ran).
 
-The first live run used a build whose "saving" state drew no Button. After `ctrl+x tab`, `c`, `y`,
-the confirm row's buttons unmounted, nothing in the band could hold the focus, and the keys
-returned to the prompt. The next `b` and the typed blocker reason went into the prompt, and Enter
-**submitted them to the model as a user turn** (`❯ bneeds the staging API key`; the turn was
-interrupted with Esc before any tool ran). In an executor's session that is operator text
-delivered to the executor's model, the very thing the rail must never do.
+### 4.2 Round 2: what moves the keyboard (the round-2 build before the field rule)
 
-The fix, kept in the source above and required by spec §7.5: every rail state draws at least one
-focusable element (the action buttons stay drawn while saving and while Harnu is unreachable; a
-press in those states is ignored or retries). With it, the final run above kept the focus across
-the claim and the blocker input, and `Enter` in the band's `Input` sent the event and submitted
-nothing.
+The first round-2 run did `ctrl+x tab`, had the host turn the actions off, then typed `q`, `x`,
+`q`: all three landed in the prompt (`❯ qxq`). The question was why. Five experiments, each in a
+fresh session:
+
+```
+## E1 focus, then 5 s of polls that change nothing visible, then c
+== c
+◆ Claim step 3 as done? A verifier still checks it.  y: Claim  n: Cancel  [-]
+❯ Try "write a test for <filepath>"
+## E3 focus, the host changes the text only (running -> waiting), then c
+== pushed
+◆ Step 3 of 7 · Wire the rail IPC channel · Waiting · Verifier  c: Claim  b: Block  l: Log  [-]
+❯ Try "how does <filepath> work?"
+== c
+◆ Claim step 3 as done? A verifier still checks it.  y: Claim  n: Cancel  [-]
+❯ Try "how does <filepath> work?"
+## E4 focus, the host removes Claim (block, log stay), then b
+== pushed
+◆ Step 3 of 7 · Wire the rail IPC channel · Running · Verifier  b: Block  l: Log  [-]
+❯ Try "refactor <filepath>"
+== b
+◆ Blocker on step 3: what blocks it (Enter on empty cancels) ⏎ raise  [-]
+❯ Try "refactor <filepath>"
+## E2 focus, the host removes every action (Dismiss drawn), then x
+== pushed
+◆ Step 3 of 7 · Wire the rail IPC channel · Running · Verifier  x: Dismiss  [-]
+❯ Try "fix lint errors"
+== x
+◆ Step 3 of 7 · Wire the rail IPC channel · Running · Verifier  [-]
+❯ Try "fix lint errors"
+## E5 a press, then the host removes every action, then x
+== c, n
+◆ Step 3 of 7 · Wire the rail IPC channel · Running · Verifier  c: Claim  b: Block  l: Log  [-]
+❯ Try "create a util logging.py that..."
+== pushed
+◆ Step 3 of 7 · Wire the rail IPC channel · Running · Verifier  x: Dismiss  [-]
+❯ Try "create a util logging.py that..."
+== x
+◆ Step 3 of 7 · Wire the rail IPC channel · Running · Verifier  [-]
+❯ Try "create a util logging.py that..."
+## E6 focus, then a letter that is no hotkey (q), then c
+== q
+◆ Step 3 of 7 · Wire the rail IPC channel · Running · Verifier  c: Claim  b: Block  l: Log  [-]
+❯ q
+== c
+◆ Step 3 of 7 · Wire the rail IPC channel · Running · Verifier  c: Claim  b: Block  l: Log  [-]
+❯ qc
+```
+
+- E1, E3, E4: polls, a pushed text change and a pushed removal of one key all leave the keyboard
+  in the band.
+- E2, E5: a push that replaces every action with a Dismiss keeps it too: `x` pressed Dismiss.
+- **E6 (spec E15): a letter the band does not bind goes to the prompt, and the keyboard goes with
+  it.** That explains the first run: its `q` left the band. It also shows that a Dismiss row does
+  not protect someone who is typing: their next letters are not `x`.
+
+### 4.3 Round 2: the field and the confirm (the final build)
+
+```
+## E7 the blocker field is open and half typed; the mission closes; typing goes on; Enter
+== ctrl+x tab, b, 'needs the'
+◆ Blocker on step 3: needs the  ⏎ raise  [-]
+❯ Try "refactor <filepath>"
+== the host pushes null
+◆ Blocker on step 3: needs the  ⏎ raise  [-]
+❯ Try "refactor <filepath>"
+== typing goes on
+◆ Blocker on step 3: needs the staging API key  ⏎ raise  [-]
+❯ Try "refactor <filepath>"
+== Enter
+◆ Mission closed or step unlinked. Nothing was saved.  x: Dismiss  [-]
+❯ Try "refactor <filepath>"
+== x
+❯ Try "refactor <filepath>"
+## E8 the claim confirm at 38 columns, then y
+== c, terminal width 38
+◆ Claim step 3?  y: Yes  n: No  [-]
+❯ Try "create a util logging.py that.…
+== y
+◆ Step 3 of 7 · Claimed  b: Block  [-]
+❯ Try "create a util logging.py that.…
+== back to 120
+◆ Step 3 of 7 · Wire the rail IPC channel · Claimed · Verifier  b: Block  l: Log  [-]
+❯ Try "create a util logging.py that..."
+== host log
+{"listening":47999}
+{"at":1791578225687,"set":"/set?band=null"}
+{"listening":47999}
+{"at":1791578242568,"ev":{"t":"ui.action","d":{"name":"step.claim","rev":1791578231}}}
+```
+
+E7 is F-1's scenario with the mission closing mid-sentence: the field kept every key, Enter sent
+nothing and submitted nothing, and the final row said so. E8 is the confirm at 38 columns: both
+keys stayed and `y` sent the claim.
 
 ## 5. What the runs prove, and what they do not
 
-| Claim                                                                                        | Shown by                            |
-| -------------------------------------------------------------------------------------------- | ----------------------------------- |
-| The row is fitted to `bodyColumns` and cut in the order of spec §6.2                         | kit test 1 and 6; live, five widths |
-| `bodyColumns` is the terminal width less 5 (120 columns draw the 90–119 tier)                | live, 120 and 144 columns           |
-| The rail wraps what plugins beneath it drew and yields to a survey                           | kit test 5                          |
-| A press leaves with the action and the revision, never a step id                             | kit tests 2 and 3; live host log    |
-| Claim is two presses; an empty blocker or note cancels                                       | kit tests 2 and 3; live             |
-| Letters reach a band Button only after `ctrl+x tab`; with the prompt focused they are typed  | live (`c` typed into the prompt)    |
-| A digit typed into an empty prompt stays in the prompt when no band Button holds a digit     | live (`1`)                          |
-| The focus survives a press only while the band keeps a focusable element (F-1)               | live, both builds                   |
-| Harnu unreachable: the press says nothing was saved; the line expires after the TTL          | kit test 4; live, host killed       |
-| A `.ts` hooks module may import a `.tsx` view (P4W2 §7.4's open risk)                        | validate, kit, live                 |
-| **Not shown:** the companion channel, the host half, Harnu's xterm.js, the fullscreen layout | spec §12 W0, LV-T454-a/b            |
+| Claim                                                                                        | Shown by                                   |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Every state fits `bodyColumns` at 115, 75 and 40, keys included                              | kit test 9 (assertions and printout)       |
+| The cut order, the reason outranking the title, "Nothing was saved." never cut               | kit tests 1, 4, 6, 7, 9                    |
+| The rail wraps what plugins beneath it drew and yields to a survey                           | kit test 8                                 |
+| A press leaves with the action and the revision, never a step id                             | kit tests 2, 3; live host log              |
+| Claim is two presses; an empty field cancels                                                 | kit tests 2, 3; live                       |
+| An open field or confirm survives a `null` push, the TTL, the host down, a width drop        | kit test 5; verifier's probes; live E7, E8 |
+| An idle row whose keys go away keeps a Dismiss; past the TTL it turns final with Dismiss     | kit tests 4, 5; live E2, E5                |
+| Letters reach the band only after `ctrl+x tab`; an unbound letter returns to the prompt      | live round 1, E6                           |
+| A digit typed into an empty prompt stays there when no band Button holds a digit             | live round 1                               |
+| A `.ts` hooks module may import a `.tsx` view                                                | validate, kit, live                        |
+| **Not shown:** the companion channel, the host half, Harnu's xterm.js, the fullscreen layout | spec §12 W0, LV-T454-a/b                   |
