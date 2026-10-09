@@ -1,6 +1,6 @@
 # ADR-draft — The verification gate is a separate bundled mod that runs only an operator-approved command
 
-**Status:** proposed (numbered at merge) · **Date:** 2026-10-09 (round 4) · **Card:** T452 ·
+**Status:** proposed (numbered at merge) · **Date:** 2026-10-09 (round 5) · **Card:** T452 ·
 **Spec:** [`00-spec.md`](00-spec.md)
 
 ## Context
@@ -121,15 +121,23 @@ breaks the letter.**
 | `tool.call`                                  | gates the Harnu MCP claims (`mission_update_step` with `proof: 'claimed'`, `move_card` to `review`) and `message_session` reports |
 | `session.send`                               | appends a receipt line to outgoing reports                                                                                        |
 
-**D4b. A part counts as run only when its exit status is the call's, decided by an allowlist.** A
-Bash call has one exit status, the last command's. A call is a receipt only when, after harmless
-trailing redirections are removed, it is exactly approved parts and neutral read-only commands
-joined by `&&`, with **no other shell metacharacter anywhere** (`&`, `;`, `|`, a newline, `$`, a
-backtick, `(`, `)`, `<`, `>`, `{`, `}`, a backslash). Anything else leaves the outcome unknown.
-A separate check marks a call as an edit when it may write: a metacharacter that can embed a
-command or redirect, or any command, however joined, that is not a part, a narrower run, a directory
-change or neutral. Two rounds of patching a separator blocklist were evaded live (round 2: a pipe,
-`||`, `;`; round 3: a lone `&` and a newline), so the rule is inverted.
+**D4b. The classifier fails safe in one direction, and trusts only an exact allowlist.**
+
+- **The governing rule.** Calling a Bash call an _edit_ costs the gate one re-run of the check,
+  which is always safe. Calling it a _receipt_ can wave a red tree through, which never is. So a
+  receipt needs certainty, and anything unsure is an edit.
+- **A receipt** is a call that is exactly approved parts and neutral commands joined by `&&`, with
+  no other shell metacharacter, that ran in the approved root. The hook's `cwd` decides the last
+  part, because the Bash tool's directory persists between calls: `cd sub` then `sh check.sh`
+  runs the subdirectory's check.
+- **An edit** is any call that is not made only of parts and an **exact neutral allowlist**
+  (commands with enumerated argument shapes that cannot write, switch the tree or run a program),
+  that embeds a command or a redirect, or that runs a part elsewhere. There is no "narrower run"
+  category: `-u` and `--fix` may write. `git commit`, `git add`, `git push`, `gh pr create` and
+  `gh pr checkout` are edits.
+- **Why a rule and not a list.** Four rounds of grading each found a hole by patching a list
+  (separators in rounds 2 and 3; a `cd`, writing "narrower" runs and writing "neutral" commands in
+  round 4). Inverting to an allowlist means an unlisted shape fails closed.
 
 **D5. The run is a `$.process.spawn` loop.**
 
@@ -154,7 +162,7 @@ never sets a proof label and never ticks a check.
 | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Read `verify:` from the session's tree (round 1)                        | Fact 3: the model chooses what runs, outside its permissions. Withdrawn.                                                                                                                                                                            |
 | Read `verify:` from the committed `HEAD`, refuse when the tree differs  | The session can commit, so `HEAD` is the session's too. `origin/<default>` helps only where the default branch is protected, which Harnu cannot know.                                                                                               |
-| Keep patching the list of shell separators                              | Evaded live in two rounds. An allowlist of what a receipt may look like fails closed for every metacharacter, including the ones nobody listed.                                                                                                     |
+| Keep patching lists (separators, then neutral commands)                 | Evaded live in three rounds. An allowlist of what a receipt and a neutral command may look like fails closed for every shape nobody listed.                                                                                                         |
 | Run the approved text without asking the session's permissions          | Fact 9: the model edits a script, the gate runs it with no Bash prompt, and `forceDowngradePermission` is defeated for that run.                                                                                                                    |
 | Treat the env as trusted because "the model cannot set the process env" | Fact 10: a settings-file `env` block the model can write, and an inherited env, are two more sources.                                                                                                                                               |
 | Hash pin with no disclosure                                             | A pin nobody looked at protects nothing.                                                                                                                                                                                                            |
@@ -183,6 +191,8 @@ never sets a proof label and never ticks a check.
 - **Another mod could make the gate run a command of its choosing**, by forging the env or hooking
   `env.get`. That mod can already run any process itself (ADR-0018's third decision point (`## Decision`, :43-45; not sub-decision D3)), so the gate
   adds nothing to it. The Mods tab is the disclosure.
+- **An honest `git commit` before `gh pr create` costs one extra run of the check at claim time**,
+  because a commit may run hooks that rewrite files. That is the price of the governing rule.
 - **A downgraded session that has no allow rule for the check gets a hand-back**, not a run. Its own
   Bash call is the receipt. That costs one prompt in such a session, and it is the point.
 - The gate's value is bounded by its honesty model: it catches a stale "all tests pass", not a
