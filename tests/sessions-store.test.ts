@@ -2918,6 +2918,65 @@ describe('useSessionsStore identity claims (T389 P1W3)', () => {
     })
   })
 
+  it('T459 AC-7: a claim-bound in-place migration keeps its Fleet-rail position across the next reload', async () => {
+    const BETA = '/repos/beta'
+    const t0 = Date.now()
+    const at = (offsetMs: number): string => new Date(t0 + offsetMs).toISOString()
+    const newer = session({
+      sessionId: 'newer',
+      fullPath: `${BETA}/newer.jsonl`,
+      projectPath: BETA,
+      created: at(1000),
+      modified: at(1000)
+    })
+    disk = [folder(ALPHA, []), folder(BETA, [newer])]
+    const store = useSessionsStore()
+    await store.init()
+    const s1 = store.createNewSession(ALPHA)!
+    const synthRow = store.folders.find((f) => f.path === ALPHA)!.sessions[0]!
+    synthRow.created = at(0)
+
+    // `migrateSyntheticInPlace` via the host's claim: same row object, renamed.
+    push(claim(s1, 'R1'))
+    disk = [
+      folder(ALPHA, [
+        session({ sessionId: 'R1', fullPath: `${ALPHA}/R1.jsonl`, projectPath: ALPHA })
+      ]),
+      folder(BETA, [newer])
+    ]
+    added('R1')
+    await flush()
+    expect(store.folders.find((f) => f.path === ALPHA)!.sessions[0]).toBe(synthRow)
+
+    // Next index update: the disk row's `created` (T0+2s, AFTER `newer`) overwrites it.
+    disk = [
+      folder(ALPHA, [
+        session({
+          sessionId: 'R1',
+          fullPath: `${ALPHA}/R1.jsonl`,
+          projectPath: ALPHA,
+          created: at(2000),
+          modified: at(2000)
+        })
+      ]),
+      folder(BETA, [newer])
+    ]
+    cb.onIndexUpdated!({ slug: 'x' })
+    await flushDebounce()
+
+    const row = store.folders.find((f) => f.path === ALPHA)!.sessions[0]!
+    expect(row.sessionId).toBe('R1')
+    expect(row.created).toBe(at(2000)) // the reconcile really rewrote `created`
+    row.taskState = 'completed'
+    store.folders
+      .find((f) => f.path === BETA)!
+      .sessions.find((x) => x.sessionId === 'newer')!.taskState = 'completed'
+    const order = store.boardBuckets
+      .find((b) => b.state === 'done')!
+      .sessions.map((x) => x.sessionId)
+    expect(order).toEqual(['newer', 'R1'])
+  })
+
   it('claims beat the oldest-correlation order', async () => {
     const store = useSessionsStore()
     await store.init()
