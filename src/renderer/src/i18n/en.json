@@ -2372,6 +2372,8 @@
         "genericStop": "Harnu stopped this item for a safety check.",
         "removeBlocked": "Remove is unavailable: this folder holds another worktree. Remove or move that one first.",
         "removeLocked": "Remove is unavailable: git has this worktree locked. Unlock it first.",
+        "resumeBody": "The clean stopped at “{step}” after the folder was already trashed, so Retry cannot finish it. Run these in a terminal to do the rest:",
+        "resumeArchive": "The archive refs keep the commit recoverable.",
         "removeUnchecked": "Remove is unavailable: Harnu could not look inside this folder. Make sure it is readable, then use {scanNow}."
       },
       "list": {
@@ -2659,6 +2661,7 @@
         "rowAria": "{name}, {size}",
         "selectRow": "Select {name}",
         "removeAria": "Remove {name}",
+        "resume": "Stopped at “{step}”. Open it for the commands to finish by hand.",
         "dehydrateAria": "Dehydrate {name}",
         "keepAria": "Keep {name}",
         "volumeProject": "Docker volume · {project}",

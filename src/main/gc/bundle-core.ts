@@ -129,6 +129,12 @@ export interface BundleFacts {
 export interface WorktreeBundle extends BundleFacts {
   bucket: Bucket
   reason: ReviewReason | null
+  /**
+   * Set when the folder is already gone but a halted cleanup left git steps undone. Retry and
+   * Remove cannot finish those (the engine refuses a folder that is not there), so the screen
+   * offers the commands instead.
+   */
+  folderGone?: boolean
 }
 
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`

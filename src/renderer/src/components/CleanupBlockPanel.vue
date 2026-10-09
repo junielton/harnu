@@ -26,6 +26,8 @@ import {
   type HydrationOp
 } from './cleanup-row'
 import { reasonKey, refusalKey, stepKey } from './cleanup-gc-copy'
+import { resumeHint } from '../lib/gc-resume'
+import type { GcStep } from '../../../main/gc/pipeline-core'
 import Button from './ui/Button.vue'
 import CleanupOpinionChip from './CleanupOpinionChip.vue'
 
@@ -142,13 +144,18 @@ const removeBlockedKey = computed(() =>
   review.value ? (REMOVE_REFUSED[props.block.reasonCode ?? ''] ?? null) : null
 )
 const removeBlocked = computed(() => removeBlockedKey.value !== null)
-const showRemove = computed(() => review.value && !removeBlocked.value)
+/**
+ * A halted clean whose folder is already gone: Retry and Remove cannot finish the git steps (the engine
+ * refuses a folder that is not there), so the panel says which step stopped and the commands instead.
+ */
+const resume = computed(() => resumeHint(props.block))
+const showRemove = computed(() => review.value && !removeBlocked.value && !resume.value)
 const showKeep = computed(() => review.value && !isVolume.value)
 const showAsk = computed(() => review.value)
 const showOpinion = computed(() => review.value && (props.asking || props.opinion !== null))
 const showCleanNow = computed(() => ready.value && !hasFailure.value)
 /** Retry re-opens the confirm for the item's CURRENT bucket, so an in-use item has nothing to retry. */
-const showRetry = computed(() => hasFailure.value && !inUse.value)
+const showRetry = computed(() => hasFailure.value && !inUse.value && !resume.value)
 const showDehydrate = computed(() => {
   const it = item.value
   if (!it || isVolume.value || ready.value) return false
@@ -331,6 +338,23 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
       >
         {{ block.reasonDetail }}
       </p>
+      <div
+        v-if="resume"
+        class="flex flex-col gap-1.5 rounded-sm border border-border-2 bg-surface-2 p-2"
+        data-testid="panel-resume"
+      >
+        <p class="text-caption leading-4 text-text-2">
+          {{ t('cleanup.gc.panel.resumeBody', { step: t(stepKey(resume.step as GcStep)) }) }}
+        </p>
+        <code
+          v-for="cmd in resume.commands"
+          :key="cmd"
+          class="select-all break-all font-mono text-caption text-text"
+          data-testid="panel-resume-command"
+          >{{ cmd }}</code
+        >
+        <p class="text-caption leading-4 text-text-3">{{ t('cleanup.gc.panel.resumeArchive') }}</p>
+      </div>
       <p v-if="inUse" class="text-caption leading-4 text-text-3" data-testid="panel-in-use-note">
         {{ t('cleanup.gc.panel.inUseNote') }}
       </p>

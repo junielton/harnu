@@ -280,6 +280,63 @@ describe('CleanupBlockPanel — a failed item', () => {
     expect(text).not.toMatch(/Remove volumes/i)
   })
 
+  describe('a halted item whose folder is already gone (F0 delta 2)', () => {
+    const goneBlock = (branch: string | null = 'feat/x') => {
+      const b = wt(
+        'x',
+        'review',
+        1200 * MIB,
+        { branch, hydration: hydration(), verdict: 'blocked' },
+        {
+          reason: reviewReason(
+            'cleanup-failed',
+            'Cleanup stopped at branch-delete in /w/repo/.claude/worktrees/x.'
+          )
+        }
+      )
+      ;(b as unknown as { folderGone: boolean }).folderGone = true
+      return blockOf(b)
+    }
+
+    it('hides Retry and Remove, and shows the next step with the exact commands', () => {
+      const w = mountPanel(goneBlock(), { failure: failure({ step: 'branch-delete' }) })
+      expect(has(w, 'panel-retry')).toBe(false)
+      expect(has(w, 'panel-remove')).toBe(false)
+      const hint = w.get('[data-testid="panel-resume"]').text()
+      expect(hint).toContain(t('cleanup.gc.step.branchDelete'))
+      expect(hint).toContain('git -C /w/repo worktree prune')
+      expect(hint).toContain('git -C /w/repo branch -D feat/x')
+      expect(hint).toMatch(/archive refs/)
+    })
+
+    it('still offers Keep', () => {
+      expect(has(mountPanel(goneBlock(), { failure: failure() }), 'panel-keep')).toBe(true)
+    })
+
+    it('says the same in pt-BR, with the commands untouched', () => {
+      const locale = i18n.global.locale as unknown as { value: string }
+      const original = locale.value
+      locale.value = 'pt-BR'
+      try {
+        const hint = mountPanel(goneBlock(), { failure: failure() })
+          .get('[data-testid="panel-resume"]')
+          .text()
+        expect(hint).toContain('git -C /w/repo worktree prune')
+        expect(hint).toContain('git -C /w/repo branch -D feat/x')
+        expect(hint).toMatch(/refs de arquivo/)
+        expect(hint).not.toMatch(/archive refs/)
+      } finally {
+        locale.value = original
+      }
+    })
+
+    it('a halted item whose folder is still there keeps Retry and shows no resume text', () => {
+      const w = mountPanel(failedBlock(), { failure: failure() })
+      expect(has(w, 'panel-retry')).toBe(true)
+      expect(has(w, 'panel-resume')).toBe(false)
+    })
+  })
+
   it('a pre-flight refusal says nothing was changed, in a human sentence', () => {
     const w = mountPanel(failedBlock(), {
       failure: failure({ step: 'reprobe', error: 'tip-unknown', refusal: 'tip-unknown' })

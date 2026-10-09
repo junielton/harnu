@@ -15,7 +15,9 @@ import type { GcBlock } from '../lib/gc-model'
 import type { BlockJobState, ItemFailure } from '../lib/gc-jobs'
 import { formatBytes } from './system-monitor-format'
 import { canDehydrate } from './cleanup-row'
-import { reasonKey, refusalKey } from './cleanup-gc-copy'
+import { reasonKey, refusalKey, stepKey } from './cleanup-gc-copy'
+import { resumeHint } from '../lib/gc-resume'
+import type { GcStep } from '../../../main/gc/pipeline-core'
 import Button from './ui/Button.vue'
 import CleanupOpinionChip from './CleanupOpinionChip.vue'
 
@@ -193,6 +195,13 @@ function onRowKey(e: KeyboardEvent, id: string): void {
           <span class="min-w-0 text-ui text-text-2" data-testid="review-reason">
             {{ reasonOf(b) }}
           </span>
+          <span
+            v-if="resumeHint(b)"
+            class="text-caption leading-4 text-text-3"
+            data-testid="review-resume"
+          >
+            {{ t('cleanup.gc.review.resume', { step: t(stepKey(resumeHint(b)!.step as GcStep)) }) }}
+          </span>
           <CleanupOpinionChip :opinion="opinionOf(b.id)" :pending="isAsking(b.id)" />
         </span>
 
@@ -200,7 +209,7 @@ function onRowKey(e: KeyboardEvent, id: string): void {
 
         <span class="flex items-center justify-end gap-1" @click.stop>
           <button
-            v-if="canDehydrateBlock(b)"
+            v-if="canDehydrateBlock(b) && !resumeHint(b)"
             type="button"
             class="flex h-6.5 w-6.5 items-center justify-center rounded-sm border border-border-2 text-text-3 transition hover:bg-surface-2 hover:text-text"
             :aria-label="t('cleanup.gc.review.dehydrateAria', { name: b.name })"
@@ -222,6 +231,7 @@ function onRowKey(e: KeyboardEvent, id: string): void {
             <Bookmark :size="13" :stroke-width="1.7" />
           </button>
           <button
+            v-if="!resumeHint(b)"
             type="button"
             class="flex h-6.5 w-6.5 items-center justify-center rounded-sm border border-border-2 text-text-3 transition hover:border-red hover:bg-red-soft hover:text-red"
             :aria-label="t('cleanup.gc.review.removeAria', { name: b.name })"

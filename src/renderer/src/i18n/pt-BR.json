@@ -2372,6 +2372,8 @@
         "genericStop": "O Harnu parou este item por uma verificação de segurança.",
         "removeBlocked": "Remover não está disponível: esta pasta contém outro worktree. Remova ou mova esse primeiro.",
         "removeLocked": "Remover não está disponível: o git tem este worktree bloqueado. Desbloqueie primeiro.",
+        "resumeBody": "A limpeza parou em “{step}” depois que a pasta já tinha ido para o lixo, então Tentar de novo não consegue terminar. Rode isto num terminal para fazer o resto:",
+        "resumeArchive": "As refs de arquivo mantêm o commit recuperável.",
         "removeUnchecked": "Remover não está disponível: o Harnu não conseguiu olhar dentro desta pasta. Confira se ela é legível e use {scanNow}."
       },
       "list": {
@@ -2659,6 +2661,7 @@
         "rowAria": "{name}, {size}",
         "selectRow": "Selecionar {name}",
         "removeAria": "Remover {name}",
+        "resume": "Parou em “{step}”. Abra para ver os comandos para terminar à mão.",
         "dehydrateAria": "Dehydrate {name}",
         "keepAria": "Manter {name}",
         "volumeProject": "Volume Docker · {project}",

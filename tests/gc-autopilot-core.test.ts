@@ -228,6 +228,16 @@ describe('applyFailures / pruneFailures (spec §4)', () => {
       new Set([d.item.id])
     )
     expect(out).toMatchObject({ bucket: 'review', reason: { code: 'cleanup-failed' } })
+    // The screen needs to know: Retry cannot resume a clean whose folder is already gone.
+    expect(out).toMatchObject({ folderGone: true })
+  })
+
+  it('a halted item whose folder is still there is not marked folderGone', () => {
+    const [out] = applyFailures(
+      [ready('a', 5)],
+      new Map([[ready('a', 5).item.id, { step: 'trash', error: 'EBUSY', at: NOW }]])
+    )
+    expect(out).not.toHaveProperty('folderGone')
   })
 
   it('a gone-folder id with no failure note, or a failure on a live folder, is left alone', () => {

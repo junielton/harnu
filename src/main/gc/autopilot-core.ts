@@ -144,6 +144,7 @@ export function applyFailures(
     if (!f) return b
     return {
       ...b,
+      ...(goneIds.has(b.item.id) ? { folderGone: true } : {}),
       bucket: 'review' as const,
       reason: {
         code: 'cleanup-failed' as const,
