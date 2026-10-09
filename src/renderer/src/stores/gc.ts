@@ -171,7 +171,7 @@ export const useGcStore = defineStore('gc', () => {
 
   /**
    * "Not now" on the first-cycle banner. A snooze, not an acknowledgement: it lasts until the app
-   * restarts, and never tells the engine the operator has seen the report (TM-03).
+   * restarts, and never tells the engine the operator has seen the report.
    */
   const firstReportSnoozed = ref(false)
 

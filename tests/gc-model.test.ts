@@ -277,7 +277,7 @@ describe('cleanRequestFor — the one place that builds the gc:clean payload', (
     })
   })
 
-  it('a failed ready item (review + retryAs ready) is retried through the ready path: no confirmation (TM-05)', () => {
+  it('a failed ready item (review + retryAs ready) is retried through the ready path: no confirmation', () => {
     const f = bundle('/w/repo/.claude/worktrees/f1', 'review', {
       reason: { code: 'cleanup-failed', detail: 'Cleanup stopped at drop-deps: ENOTEMPTY' },
       retryAs: 'ready'

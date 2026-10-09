@@ -225,7 +225,7 @@ describe('prefs reducers behind the IPC channels', () => {
     expect(out.firstReportAcknowledged).toBe(true)
   })
 
-  it('turning the autopilot on resets the acknowledgement: the next cycle only reports (TM-03)', () => {
+  it('turning the autopilot on resets the acknowledgement: the next cycle only reports', () => {
     const off = { ...base(), autopilot: false, firstReportAcknowledged: true }
     const out = mergeIncomingPrefs(off, { autopilot: true })
     expect(out.autopilot).toBe(true)

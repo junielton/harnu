@@ -94,7 +94,7 @@ export function submitManualClean(
       // the forced ops.
       // A ready item whose cleanup halted is shown as `cleanup-failed` review (`retryAs`), but its
       // facts still say ready: its Retry takes the same guarded path the autopilot did, with the
-      // dirty and unpushed guards and `branch -d`, not the operator's force path (TM-05).
+      // dirty and unpushed guards and `branch -d`, not the operator's force path.
       const retryAsReady = b.bucket === 'review' && b.retryAs === 'ready'
       const forced = b.bucket !== 'ready' && !retryAsReady
       if (forced && !confirmed.has(id)) return refused(id, 'needs-confirmation')

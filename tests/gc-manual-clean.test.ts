@@ -540,7 +540,7 @@ describe('failure bookkeeping shared with the autopilot', () => {
   })
 })
 
-describe('retry of a failed ready item keeps the safe path (TM-05)', () => {
+describe('retry of a failed ready item keeps the safe path', () => {
   const failed = (path: string): WorktreeBundle =>
     bundle(path, 'review', {
       reason: { code: 'cleanup-failed', detail: 'Cleanup stopped at drop-deps: ENOTEMPTY' },
@@ -585,7 +585,7 @@ describe('retry of a failed ready item keeps the safe path (TM-05)', () => {
   })
 })
 
-describe('the forced path refuses work edited after the operator looked (TM-05)', () => {
+describe('the forced path refuses work edited after the operator looked', () => {
   const dirty = (path: string, stamp: string | null): WorktreeBundle => {
     const b = bundle(path, 'review', { reason: { code: 'dirty', detail: 'x' } })
     b.item = reapItem(path, { workStamp: stamp })

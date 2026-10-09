@@ -1,4 +1,4 @@
-// A fingerprint of a worktree's uncommitted work (TM-05). The operator's force path removes a
+// A fingerprint of a worktree's uncommitted work. The operator's force path removes a
 // worktree that has work git would not keep, after showing a dialog; a file edited between the
 // scan the dialog was built from and the removal must stop the removal, not ride into the
 // trash. `git status` alone cannot say that for a file that was already modified, so each

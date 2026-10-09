@@ -1,5 +1,5 @@
 /**
- * TM-02: inside Electron, `node:fs` treats a `*.asar` file as a directory, so a recursive delete
+ * inside Electron, `node:fs` treats a `*.asar` file as a directory, so a recursive delete
  * of a tree holding one (every Electron repo's `node_modules/electron/dist/resources/default_app.asar`)
  * leaves the archive behind and ends `ENOTEMPTY`. That halted every Remove at drop-deps.
  *

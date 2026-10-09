@@ -16,7 +16,7 @@ describe('CleanupFirstCycleBanner', () => {
     expect(mountBanner(1, 5_000_000).text()).toContain('Found 1 ready item, 5 MB')
   })
 
-  it('says exactly what the next cycle will clean once enabled (TM-03)', () => {
+  it('says exactly what the next cycle will clean once enabled', () => {
     const text = mountBanner().text()
     expect(text).toContain('next cycle, in 58 min, will clean 2 items, 6 MB')
     expect(text).not.toContain('nothing is deleted')

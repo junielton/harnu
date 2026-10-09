@@ -829,7 +829,7 @@ async function scanOneRepo(
     if (hydration && item.hydration === null) deriveInto(item, hydration, manifest, null)
   }
 
-  // TM-05: a fingerprint of the uncommitted work, for the force path to compare against. Only a
+  // a fingerprint of the uncommitted work, for the force path to compare against. Only a
   // worktree that has any is probed; a probe that fails leaves null, which the force path reads as
   // "had no work" and so refuses if work shows up later.
   await mapLimit(

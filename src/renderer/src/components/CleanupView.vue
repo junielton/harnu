@@ -378,7 +378,7 @@ const firstCyclePlanned = computed(
 )
 /** The banner itself; "Not now" hides it for the session without acknowledging anything. */
 /**
- * What the autopilot is really doing, not just whether the pref is on (TM-12): paused when the
+ * What the autopilot is really doing, not just whether the pref is on: paused when the
  * background scan is off (no timer, so nothing runs), report only until the first report is
  * acknowledged, otherwise on.
  */

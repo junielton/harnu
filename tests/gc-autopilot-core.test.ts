@@ -209,7 +209,7 @@ describe('applyFailures / pruneFailures (spec §4)', () => {
     })
   })
 
-  it('remembers that the item was ready, so a retry can take the safe path (TM-05)', () => {
+  it('remembers that the item was ready, so a retry can take the safe path', () => {
     const [b] = applyFailures([ready('a', 5)], new Map([[ready('a', 5).item.id, failure]]))
     expect(b!.retryAs).toBe('ready')
   })

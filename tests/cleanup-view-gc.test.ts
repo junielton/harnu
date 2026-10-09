@@ -289,7 +289,7 @@ describe('Cleanup screen — panel', () => {
   })
 })
 
-describe('Cleanup screen — the autopilot badge tells the truth (TM-12)', () => {
+describe('Cleanup screen — the autopilot badge tells the truth', () => {
   const badge = (): string => domGet('[data-testid="cleanup-autopilot-badge"]').text()
 
   it('on and acknowledged: "Autopilot on · every 1 h"', async () => {
@@ -389,7 +389,7 @@ describe('Cleanup screen — first cycle and background run', () => {
     await flushPromises()
   })
 
-  it('"Not now" snoozes the banner and does NOT acknowledge the report (TM-03)', async () => {
+  it('"Not now" snoozes the banner and does NOT acknowledge the report', async () => {
     const api = install(snap({}, { autopilot: false, firstReportAcknowledged: false }))
     await mountView()
     await domGet('[data-testid="first-dismiss"]').trigger('click')
@@ -574,7 +574,7 @@ describe('Cleanup screen — Retry follows the bucket', () => {
     expect(opts.expected[id].bucket).toBe('ready')
   })
 
-  it('a failed READY item (halted mid-clean) retries through the ready confirm, not the review one (TM-05)', async () => {
+  it('a failed READY item (halted mid-clean) retries through the ready confirm, not the review one', async () => {
     const f = wt(
       'halted',
       'review',

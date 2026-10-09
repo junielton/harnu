@@ -8361,7 +8361,7 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
      `{n} GB reclaimable · autopilot on|off · next cycle in {t}`; the size is 600-weight `--text`.
      "Reclaimable" is everything not In use plus orphan volumes (ready + needs review + orphan volumes);
      Docker build cache is added only when the engine reports it (see "Docker card").
-   - Autopilot badge (says what the autopilot is really doing, F1 / TM-12), first match wins: Default
+   - Autopilot badge (says what the autopilot is really doing, F1), first match wins: Default
      "Autopilot off"; **Warning-text** "Autopilot paused — background scan is off" (the Reaper's automatic scan
      is off, so no cycle runs; `snapshot.backgroundScan`); **Accent-soft** "Autopilot on · report only" (the first
      report is unacknowledged, so cycles only report); Success "Autopilot on · every {interval}".
@@ -8674,7 +8674,7 @@ reports; nothing is deleted until you turn it on." Buttons: **Enable autopilot**
 Primary) and **Not now** (Ghost). Enable calls `gc:prefs:set({ autopilot: true })` **and** `gc:ackFirstReport`.
 Ready blocks are dashed ("planned, not done"); the summary reads "autopilot off".
 
-**The promise (decided 2026-10-09, F1 / TM-03): the banner discloses, and Not now only snoozes.** The 11px
+**The promise (decided 2026-10-09, F1): the banner discloses, and Not now only snoozes.** The 11px
 sub-line states exactly what the next cycle will clean — "Enable it and the next cycle, in 40 min, will clean
 2 items, 944 MB." (`snapshot.nextClean`, the same eligibility, order and cap as a clean cycle; with no timer
 scheduled: "…its first cycle will clean … The background scan is off, so none is scheduled."). Enable is the

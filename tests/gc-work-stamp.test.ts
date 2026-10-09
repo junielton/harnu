@@ -8,7 +8,7 @@ import { workStampOf } from '../src/main/gc/gc-work-stamp'
 import type { ExecFn } from '../src/main/reaper/dehydrate-shell'
 
 /**
- * TM-05: the fingerprint the force path compares, against a real git repository. "Edited after
+ * the fingerprint the force path compares, against a real git repository. "Edited after
  * the dialog opened" is a claim about the filesystem, so a stubbed `git status` would only
  * assert the arguments we meant to type.
  */

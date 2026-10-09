@@ -449,7 +449,7 @@ export function cleanRequestFor(
   for (const id of ids) {
     const b = model.byId.get(id)
     // A ready item whose cleanup halted is listed as review (`retryAs`), but its Retry is the
-    // ready path: guarded, and needing no confirmation of its own (TM-05).
+    // ready path: guarded, and needing no confirmation of its own.
     if (!b || (b.bucket !== want && !(mode === 'ready' && isRetryAsReady(b)))) continue
     kept.push(id)
     expected[id] = expectedFor(b)
