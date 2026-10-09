@@ -640,3 +640,83 @@ describe('the forced path refuses work edited after the operator looked', () => 
     expect(structuredClone(expectedOf(b)).workStamp).toBe('stamp-1')
   })
 })
+
+describe('an edit made WHILE the clean runs halts it too', () => {
+  const dirty = (stackIds: string[] = []): WorktreeBundle => {
+    const b = bundle('/ws/wt/a', 'review', { reason: { code: 'dirty', detail: 'x' }, stackIds })
+    b.item = reapItem('/ws/wt/a', { workStamp: 'stamp-1' })
+    return b
+  }
+
+  it('an edit while the stacks stop halts before any dependency is dropped', async () => {
+    const b = dirty(['s1'])
+    let stamp = 'stamp-1'
+    const r = rig([b], {
+      workStamp: async () => stamp,
+      forcedOps: {
+        stopStacks: async () => {
+          stamp = 'edited-meanwhile'
+        },
+        dropDeps: async () => {
+          r.forced.push('dropDeps')
+          return 1
+        }
+      }
+    })
+    submitManualClean(r.deps, [b.item.id], shown([b]))
+    await settle(r)
+    expect(r.done[0]!.results[0]).toMatchObject({
+      ok: false,
+      haltedAt: 'drop-deps',
+      error: 'work-changed-since-confirm'
+    })
+    expect(r.forced).not.toContain('dropDeps')
+    expect(r.forced.some((l) => l.startsWith('cleanGit'))).toBe(false)
+  })
+
+  it('an edit while the dependencies are dropped halts before the checkout is trashed', async () => {
+    const b = dirty()
+    let stamp = 'stamp-1'
+    const r = rig([b], {
+      workStamp: async () => stamp,
+      forcedOps: {
+        dropDeps: async () => {
+          stamp = 'edited-meanwhile'
+          return 7
+        }
+      }
+    })
+    submitManualClean(r.deps, [b.item.id], shown([b]))
+    await settle(r)
+    expect(r.done[0]!.results[0]).toMatchObject({
+      ok: false,
+      haltedAt: 'archive',
+      error: 'work-changed-since-confirm',
+      freedBytes: 7
+    })
+    expect(r.forced.some((l) => l.startsWith('cleanGit'))).toBe(false)
+  })
+
+  it('an unchanged stamp lets the same run finish', async () => {
+    const b = dirty(['s1'])
+    const r = rig([b], { workStamp: async () => 'stamp-1' })
+    submitManualClean(r.deps, [b.item.id], shown([b]))
+    await settle(r)
+    expect(r.done[0]!.results[0]).toMatchObject({ ok: true })
+  })
+
+  it('the guarded retry path does not run the work check (the guards already cover it)', async () => {
+    const b = bundle('/ws/wt/a', 'review', {
+      reason: { code: 'cleanup-failed', detail: 'x' },
+      retryAs: 'ready'
+    })
+    const r = rig([b], {
+      workStamp: async () => {
+        throw new Error('must not be asked')
+      }
+    })
+    submitManualClean(r.deps, [b.item.id], shown([b], [], []))
+    await settle(r)
+    expect(r.done[0]!.results[0]).toMatchObject({ ok: true })
+  })
+})

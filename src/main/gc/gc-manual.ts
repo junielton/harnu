@@ -17,7 +17,7 @@ import type { GcPrefs } from './gc-prefs'
 import { volumeItemId, type OrphanVolumeItem } from './gc-housekeeping-input'
 import type { HousekeepingResult, HousekeepingVolume } from './housekeeping-core'
 import { leftBehind, type Leftover } from './gc-leftovers'
-import { runBatch, type GcItemResult, type GcOps } from './pipeline-core'
+import { runBatch, WORK_CHANGED, type GcItemResult, type GcOps } from './pipeline-core'
 import type { GcCleanAck, GcCleanOptions } from './gc-wire'
 
 const VOLUME_PREFIX = volumeItemId('')
@@ -101,14 +101,15 @@ export function submitManualClean(
       // The force path waives the dirty guard, so it re-reads the uncommitted work and halts when it
       // is not what the dialog showed: a file edited since then would otherwise go to the trash
       // unseen. The tip is already compared above and again by the reprobe.
-      if (forced && b.item.path) {
+      const path = b.item.path
+      if (forced && path) {
         let live: string | null
         try {
-          live = await deps.workStampOf(b.item.path)
+          live = await deps.workStampOf(path)
         } catch (err) {
           return refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
         }
-        if ((seen.workStamp ?? null) !== live) return refused(id, 'work-changed-since-confirm')
+        if ((seen.workStamp ?? null) !== live) return refused(id, WORK_CHANGED)
       }
       const batchOpts: { removeVolumes: boolean; confirmReview?: boolean } = {
         // D1: worktree cleanup never removes a volume, ready or reviewed, bulk or single. What
@@ -121,7 +122,28 @@ export function submitManualClean(
       // The pipeline only runs ready bundles (or a confirmed review one): a retried item runs as
       // the ready item it still is.
       const runnable: WorktreeBundle = retryAsReady ? { ...b, bucket: 'ready', reason: null } : b
-      const [result] = await runBatch([runnable], deps.opsFor('operator', forced), batchOpts)
+      const ops = deps.opsFor('operator', forced)
+      // The same check again at each recheck (before the deps are dropped and before the git
+      // cleanup): the docker steps and the deletion take time, and an edit made meanwhile
+      // must stop the removal, not be archived and trashed unseen.
+      const guarded: GcOps =
+        forced && path
+          ? {
+              ...ops,
+              recheck: async (x) => {
+                const r = await ops.recheck(x)
+                if (!r.ok) return r
+                try {
+                  return (seen.workStamp ?? null) === (await deps.workStampOf(path))
+                    ? r
+                    : { ok: false, reason: WORK_CHANGED }
+                } catch {
+                  return { ok: false, reason: 'probe-failed' }
+                }
+              }
+            }
+          : ops
+      const [result] = await runBatch([runnable], guarded, batchOpts)
       if (result!.ok) {
         deps.rememberLeftovers?.(leftBehind(b, gathered.housekeeping?.volumes ?? []))
       }
