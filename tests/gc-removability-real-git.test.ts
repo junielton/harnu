@@ -243,7 +243,7 @@ describe('the scan fact "locked" is git\'s own, and the predicate and main agree
     cpSync(path.join(admin, name), path.join(admin, `${name}-dup`), { recursive: true })
     // The scan still calls it ready (nothing about the duplicate is a fact the scan reads) …
     expect(bundleRemovability(b, NOW)).toEqual({ ok: true })
-    // … and main refuses it at the reprobe, which is exactly the case TM-11 remembers.
+    // … and main refuses it at the reprobe, which is exactly the case the remembered refusal exists for.
     expect(await mainSays(b)).toBe('cannot-unregister')
   })
 })
