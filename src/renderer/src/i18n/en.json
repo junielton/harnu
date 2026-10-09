@@ -2371,6 +2371,7 @@
         "genericStop": "Harnu stopped this item for a safety check.",
         "removeUnavailable": "Remove is unavailable. {reason}",
         "cleanUnavailable": "Clean now is unavailable. {reason}",
+        "recheck": "Check again",
         "removeCommand": "Run",
         "refusedNote": "The last clean was refused. {reason}",
         "refusedNoteHint": "It stays out of “Clean ready” and the autopilot skips it until the cause is fixed. Retry tries once more.",
@@ -2612,6 +2613,12 @@
           "body": "Cleaning a worktree, by hand or automatically, never removes its volumes. Once the worktree is gone they show up in Needs review as orphan volumes, with their size and compose project, and you remove each one yourself.",
           "warning": "A removed volume and its data cannot be restored."
         }
+      },
+      "recheck": {
+        "cleared": "Checked again: nothing refuses it now",
+        "stillRefused": "Still refused",
+        "unchecked": "Couldn't check it right now",
+        "failed": "Couldn't check again"
       },
       "removal": {
         "reason": {

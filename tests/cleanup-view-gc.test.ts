@@ -43,6 +43,7 @@ interface Api {
   gcKeep: ReturnType<typeof vi.fn>
   gcJobs: ReturnType<typeof vi.fn>
   gcAckFirstReport: ReturnType<typeof vi.fn>
+  gcRecheck: ReturnType<typeof vi.fn>
   gcSetPrefs: ReturnType<typeof vi.fn>
   push: Record<string, (p: unknown) => void>
 }
@@ -68,6 +69,7 @@ function install(first: GcSnapshot, jobs: GcJobInfo[] = [], reaper: ReaperStubs 
     gcKeep: ipcFn(async () => defaultGcPrefs()),
     gcJobs: ipcFn(async () => jobs),
     gcAckFirstReport: ipcFn(async () => defaultGcPrefs()),
+    gcRecheck: ipcFn(async (id: string) => ({ id, outcome: 'cleared' })),
     gcSetPrefs: ipcFn(async (p: unknown) => p)
   }
   const full = {
@@ -945,5 +947,63 @@ describe('Cleanup screen — scanned while Docker was down', () => {
     expect(body('bulk-dialog')).toBeNull()
     expect(api.gcClean).not.toHaveBeenCalled()
     expect(dom('[data-testid="hero-clean"]').exists()).toBe(false)
+  })
+})
+
+describe('Cleanup screen — Check again on a demoted item', () => {
+  const demoted = (): ReturnType<typeof wt> => {
+    const b = wt('x1', 'review', GIB, {}, { reason: reviewReason('cleanup-failed') })
+    b.reprobeRefusal = { code: 'cannot-unregister', count: 2 }
+    return b
+  }
+  const ID = '/w/repo::worktree::x1'
+
+  async function openPanel(api: Api): Promise<void> {
+    void api
+    await mountView()
+    await domGet('[data-testid="review-row"]').trigger('click')
+  }
+
+  it('asks main to recheck that one item and refreshes the snapshot; a fixed item says so', async () => {
+    const api = install(snapshotOf([demoted()]))
+    await openPanel(api)
+    const before = api.gcSnapshot.mock.calls.length
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    await domGet('[data-testid="panel-recheck"]').trigger('click')
+    await flushPromises()
+    expect(api.gcRecheck).toHaveBeenCalledWith(ID)
+    expect(api.gcSnapshot.mock.calls.length).toBeGreaterThan(before)
+    expect(toast.mock.calls[0][0]).toMatchObject({
+      kind: 'success',
+      title: t('cleanup.gc.recheck.cleared')
+    })
+  })
+
+  it('a still-broken item stays demoted and the toast says why', async () => {
+    const api = install(snapshotOf([demoted()]))
+    api.gcRecheck.mockResolvedValue({ id: ID, outcome: 'still-refused', code: 'cannot-unregister' })
+    await openPanel(api)
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    await domGet('[data-testid="panel-recheck"]').trigger('click')
+    await flushPromises()
+    expect(toast.mock.calls[0][0]).toMatchObject({
+      kind: 'warning',
+      title: t('cleanup.gc.recheck.stillRefused'),
+      description: t('cleanup.gc.removal.reason.cannotUnregister')
+    })
+    expect(dom('[data-testid="panel-recheck"]').exists()).toBe(true)
+  })
+
+  it('a check that could not answer says so instead of claiming a result', async () => {
+    const api = install(snapshotOf([demoted()]))
+    api.gcRecheck.mockResolvedValue({ id: ID, outcome: 'unchecked', code: 'docker-unavailable' })
+    await openPanel(api)
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    await domGet('[data-testid="panel-recheck"]').trigger('click')
+    await flushPromises()
+    expect(toast.mock.calls[0][0]).toMatchObject({
+      kind: 'warning',
+      title: t('cleanup.gc.recheck.unchecked')
+    })
   })
 })

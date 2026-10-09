@@ -36,7 +36,9 @@ import {
   type CapturedConfirm
 } from '../lib/gc-model'
 import { nextCycleIn } from '../lib/gc-format'
-import { removalKey } from './cleanup-gc-copy'
+import { refusalKey, removalKey } from './cleanup-gc-copy'
+import { removability } from '../lib/gc-removability'
+import type { RefusalCode } from '../lib/gc-jobs'
 import CleanupTreemap from './CleanupTreemap.vue'
 import CleanupListView from './CleanupListView.vue'
 import CleanupBlockPanel from './CleanupBlockPanel.vue'
@@ -255,6 +257,36 @@ function retry(id: string): void {
   const bucket = model.value?.byId.get(id)?.bucket
   if (bucket === 'ready') openReady([id])
   else if (bucket === 'review') openRemove([id])
+}
+/** "Check again" on a demoted item: main re-asks, the screen refreshes, and the toast says what it found. */
+async function recheck(id: string): Promise<void> {
+  try {
+    const r = await gc.recheck(id)
+    if (r.outcome === 'cleared') {
+      ui.pushToast({ kind: 'success', title: t('cleanup.gc.recheck.cleared'), timeoutMs: 6000 })
+    } else if (r.outcome === 'still-refused') {
+      const block = model.value?.byId.get(id)
+      const v = block ? removability(block) : null
+      ui.pushToast({
+        kind: 'warning',
+        title: t('cleanup.gc.recheck.stillRefused'),
+        description:
+          !v || v.ok
+            ? t(refusalKey((r.code ?? 'not-ready') as RefusalCode))
+            : t(removalKey(v.reason)),
+        timeoutMs: 8000
+      })
+    } else {
+      ui.pushToast({
+        kind: 'warning',
+        title: t('cleanup.gc.recheck.unchecked'),
+        description: r.code ? t(refusalKey(r.code as RefusalCode)) : undefined,
+        timeoutMs: 8000
+      })
+    }
+  } catch (e) {
+    errorToast(t('cleanup.gc.recheck.failed'), e)
+  }
 }
 function errorToast(title: string, e: unknown): void {
   ui.pushToast({
@@ -700,6 +732,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             @close="selectedId = null"
             @remove="openRemove([$event])"
             @retry="retry($event)"
+            @recheck="recheck($event)"
             @clean-now="openReady([$event])"
             @dehydrate="openDehydrate([$event])"
             @rehydrate="rehydrate($event)"

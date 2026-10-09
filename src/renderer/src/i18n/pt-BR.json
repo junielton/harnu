@@ -2371,6 +2371,7 @@
         "genericStop": "O Harnu parou este item por uma verificação de segurança.",
         "removeUnavailable": "Remover não está disponível. {reason}",
         "cleanUnavailable": "Limpar agora não está disponível. {reason}",
+        "recheck": "Verificar de novo",
         "removeCommand": "Rode",
         "refusedNote": "A última limpeza foi recusada. {reason}",
         "refusedNoteHint": "Ele fica fora de “Limpar prontos” e o piloto automático o pula até a causa ser resolvida. Tentar de novo tenta mais uma vez.",
@@ -2612,6 +2613,12 @@
           "body": "Limpar uma worktree, à mão ou automaticamente, nunca remove os volumes dela. Quando a worktree some, eles aparecem em Precisa de revisão como volumes órfãos, com tamanho e projeto do compose, e você remove cada um você mesmo.",
           "warning": "Um volume removido e os dados dele não podem ser restaurados."
         }
+      },
+      "recheck": {
+        "cleared": "Verificado de novo: nada o recusa agora",
+        "stillRefused": "Continua recusado",
+        "unchecked": "Não foi possível verificar agora",
+        "failed": "Não foi possível verificar de novo"
       },
       "removal": {
         "reason": {

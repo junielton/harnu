@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import type { GcPrefs } from '../../../main/gc/gc-prefs'
 import type {
   GcCleanAck,
+  GcRecheckResult,
   GcJobDone,
   GcJobProgress,
   GcOpinion,
@@ -445,6 +446,19 @@ export const useGcStore = defineStore('gc', () => {
     }
   }
 
+  /**
+   * "Check again" on a demoted item: main forgets that item's remembered refusal and reprobes it once.
+   * The screen refreshes either way, so a fixed item reappears as the scan sees it and a still-broken
+   * one stays demoted with its reason.
+   */
+  async function recheck(id: string): Promise<GcRecheckResult> {
+    try {
+      return await window.api.gcRecheck(id)
+    } finally {
+      await refresh()
+    }
+  }
+
   async function unkeep(id: string): Promise<void> {
     await window.api.gcUnkeep(id)
     await refresh()
@@ -499,6 +513,7 @@ export const useGcStore = defineStore('gc', () => {
     submit,
     keep,
     keepMany,
+    recheck,
     unkeep,
     enableAutopilot,
     dismissFirstReport,

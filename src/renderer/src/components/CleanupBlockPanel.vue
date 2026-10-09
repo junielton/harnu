@@ -64,6 +64,7 @@ const emit = defineEmits<{
   ask: [id: string]
   cleanNow: [id: string]
   retry: [id: string]
+  recheck: [id: string]
 }>()
 
 const { t } = useI18n()
@@ -154,6 +155,11 @@ const removeHint = computed(() => {
 /** Main refused the last clean at its pre-flight; the gatherer marks the ready item (see `reprobeRefusal`). */
 const refusalMark = computed(() => props.block.bundle?.reprobeRefusal ?? null)
 const showRemove = computed(() => review.value && verdict.value.ok)
+/**
+ * A demoted item (refused again and again) has no Retry, and its cause may have been fixed outside
+ * Harnu since: "Check again" forgets the remembered refusal and looks once more.
+ */
+const showRecheck = computed(() => review.value && refusalMark.value !== null)
 const showKeep = computed(() => review.value && !isVolume.value)
 const showAsk = computed(() => review.value)
 const showOpinion = computed(() => review.value && (props.asking || props.opinion !== null))
@@ -501,6 +507,17 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
         @click="emit('cleanNow', block.id)"
       >
         <Trash2 :size="13" :stroke-width="1.7" />{{ t('cleanup.gc.panel.cleanNow') }}
+      </Button>
+
+      <Button
+        v-if="showRecheck"
+        variant="soft"
+        class="!justify-start"
+        :disabled="locked"
+        data-testid="panel-recheck"
+        @click="emit('recheck', block.id)"
+      >
+        <RotateCcw :size="13" :stroke-width="1.7" />{{ t('cleanup.gc.panel.recheck') }}
       </Button>
 
       <Button

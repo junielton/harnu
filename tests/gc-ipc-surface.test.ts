@@ -20,6 +20,7 @@ const REQUESTS = [
   'gc:opinion:cached',
   'gc:prefs:get',
   'gc:prefs:set',
+  'gc:recheck',
   'gc:snapshot',
   'gc:unkeep'
 ]

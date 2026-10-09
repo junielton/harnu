@@ -243,6 +243,20 @@ describe('CleanupBlockPanel — a ready item main refused lately', () => {
     )
   })
 
+  it('a demoted item offers Check again, which asks the screen to recheck it', async () => {
+    const b = wt('x', 'review', 1200 * MIB, {}, { reason: reviewReason('cleanup-failed') })
+    b.reprobeRefusal = { code: 'cannot-unregister', count: 2 }
+    const w = mountPanel(blockOf(b))
+    expect(w.get('[data-testid="panel-recheck"]').text()).toBe(t('cleanup.gc.panel.recheck'))
+    await w.get('[data-testid="panel-recheck"]').trigger('click')
+    expect(w.emitted('recheck')).toEqual([['/w/repo::worktree::x']])
+  })
+
+  it('a ready item with one refusal has Retry, not Check again; an ordinary review item has neither', () => {
+    expect(has(mountPanel(stuck()), 'panel-recheck')).toBe(false)
+    expect(has(mountPanel(blockWith('review')), 'panel-recheck')).toBe(false)
+  })
+
   it('a demoted one says how many times, in Needs review', () => {
     const b = wt('x', 'review', 1200 * MIB, {}, { reason: reviewReason('cleanup-failed') })
     b.reprobeRefusal = { code: 'tip-unknown', count: 2 }
