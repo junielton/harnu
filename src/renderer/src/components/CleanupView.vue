@@ -408,6 +408,18 @@ const badge = computed(() => {
   }
 })
 
+/**
+ * The acknowledgement also turns on the Docker housekeeping (build cache past the age limit plus dangling
+ * images), so the banner names it: only when that category is on and Docker answered for at least one figure.
+ */
+const firstCycleDockerDays = computed(() => {
+  const p = prefs.value
+  const d = gc.snapshot?.docker
+  if (!p?.categories.dockerCache || !d) return null
+  const answered = d.buildCacheReclaimableBytes !== null || d.danglingImages !== null
+  return answered ? p.cacheMaxAgeDays : null
+})
+
 const showFirstCycle = computed(() => firstCyclePlanned.value && !gc.firstReportSnoozed)
 /** "58 min" / "2 h" / "1 d" until the next timer tick, whatever the autopilot says; null when none is scheduled. */
 const firstCycleWhen = computed(() => {
@@ -595,6 +607,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
           :clean-count="gc.snapshot?.nextClean?.count ?? 0"
           :clean-bytes="gc.snapshot?.nextClean?.bytes ?? 0"
           :when="firstCycleWhen"
+          :docker-days="firstCycleDockerDays"
           :autopilot-on="prefs.autopilot"
           :pending="firstCyclePending"
           @enable="runFirstCycle(() => gc.enableAutopilot(), t('cleanup.gc.error.autopilot'))"

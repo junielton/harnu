@@ -19,6 +19,12 @@ defineProps<{
   /** Time until the next timer tick ("58 min"), or null when none is scheduled. */
   when: string | null
   autopilotOn?: boolean
+  /**
+   * Days of build cache the Docker housekeeping would prune, or null when it would not run (the
+   * Docker category is off, or Docker did not answer). The acknowledgement turns it on too, so
+   * the banner must say so.
+   */
+  dockerDays?: number | null
   pending?: boolean
 }>()
 const emit = defineEmits<{ enable: []; dismiss: [] }>()
@@ -50,6 +56,9 @@ const { t } = useI18n()
             { named: { n: cleanCount, size: formatBytes(cleanBytes), when } }
           )
         }}
+        <template v-if="dockerDays != null">
+          {{ t('cleanup.gc.firstCycle.dockerPrune', dockerDays, { named: { n: dockerDays } }) }}
+        </template>
       </div>
     </div>
     <Button

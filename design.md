@@ -8678,7 +8678,10 @@ Ready blocks are dashed ("planned, not done"); the summary reads "autopilot off"
 sub-line states exactly what the next cycle will clean — "Enable it and the next cycle, in 40 min, will clean
 2 items, 944 MB." (`snapshot.nextClean`, the same eligibility, order and cap as a clean cycle; with no timer
 scheduled: "…its first cycle will clean … The background scan is off, so none is scheduled."). Enable is the
-informed consent, so it acknowledges. **Not now** hides the banner for the session and acknowledges
+informed consent, so it acknowledges. The acknowledgement also turns on the Docker housekeeping, so when the
+Docker category is on and Docker answered for at least one figure, the sub-line adds "It will also prune Docker
+build cache older than {n} days and dangling images."; with the category off or Docker silent it says nothing
+about Docker. **Not now** hides the banner for the session and acknowledges
 nothing; the ready blocks stay dashed. Turning the autopilot **on** from anywhere (banner or Settings)
 resets the acknowledgement in main, so the first cycle after enabling only reports. When the autopilot was
 turned on in Settings and has only reported, the same banner reads "Autopilot found {n} ready items, {size}"

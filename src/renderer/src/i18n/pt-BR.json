@@ -2444,6 +2444,7 @@
         "onlyReported": "Até agora ele só reportou.",
         "willClean": "Ative e o próximo ciclo, em {when}, vai limpar {n} item, {size}. | Ative e o próximo ciclo, em {when}, vai limpar {n} itens, {size}.",
         "willCleanUnscheduled": "Ative e o primeiro ciclo vai limpar {n} item, {size}. A varredura em segundo plano está desligada, então nenhum está agendado. | Ative e o primeiro ciclo vai limpar {n} itens, {size}. A varredura em segundo plano está desligada, então nenhum está agendado.",
+        "dockerPrune": "Também vai remover o cache de build do Docker com mais de {n} dia e as imagens dangling. | Também vai remover o cache de build do Docker com mais de {n} dias e as imagens dangling.",
         "allowWillClean": "Permita e o próximo ciclo, em {when}, vai limpar {n} item, {size}. | Permita e o próximo ciclo, em {when}, vai limpar {n} itens, {size}.",
         "allowWillCleanUnscheduled": "Permita e o próximo ciclo vai limpar {n} item, {size}. A varredura em segundo plano está desligada, então nenhum está agendado. | Permita e o próximo ciclo vai limpar {n} itens, {size}. A varredura em segundo plano está desligada, então nenhum está agendado.",
         "when": {

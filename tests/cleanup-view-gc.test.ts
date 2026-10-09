@@ -410,6 +410,38 @@ describe('Cleanup screen — first cycle and background run', () => {
     expect(text).toMatch(/next cycle, in \d+ min, will clean 2 items, 944 MB/)
   })
 
+  describe('the banner names the Docker prune only when the category is on and Docker answered', () => {
+    const up = {
+      buildCacheReclaimableBytes: 5 * MIB,
+      danglingImages: { count: 1, bytes: MIB },
+      orphanVolumesHidden: null
+    }
+    const first = { autopilot: false, firstReportAcknowledged: false }
+    const banner = (): string => domGet('[data-testid="first-cycle-banner"]').text()
+
+    it('names it when the category is on and Docker answered', async () => {
+      install(snap({ docker: up }, first))
+      await mountView()
+      expect(banner()).toContain(
+        'also prune Docker build cache older than 7 days and dangling images'
+      )
+    })
+
+    it('does not claim it when the category is off: the ack would not turn it on', async () => {
+      install(
+        snap({ docker: up }, { ...first, categories: { worktrees: true, dockerCache: false } })
+      )
+      await mountView()
+      expect(banner()).not.toContain('Docker')
+    })
+
+    it('does not claim it when Docker did not answer', async () => {
+      install(snap({}, first))
+      await mountView()
+      expect(banner()).not.toContain('Docker')
+    })
+  })
+
   it('with autopilot on and the report unacknowledged the banner offers "Allow cleaning"', async () => {
     const api = install(snap({}, { autopilot: true, firstReportAcknowledged: false }))
     await mountView()
