@@ -576,6 +576,16 @@ async function send(
   )
 }
 
+/**
+ * The person cancels a field or confirm. It does not go straight to `idle`: with the line gone that
+ * would leave the band with nothing to focus (rule 2), so it goes through `reconcile` and ends on
+ * a final row with Dismiss when there is no line (spec §7.5).
+ */
+async function cancel($: EngineInterface): Promise<void> {
+  const rail = await read($, railRef)
+  await update($, modeRef, (): RailMode => reconcile({ kind: 'idle' }, rail, goneWhy))
+}
+
 async function onKey($: EngineInterface, id: KeyId, requestId: string, seen: Seen): Promise<void> {
   const mode = await read($, modeRef)
   const idle = (): RailMode => ({ kind: 'idle' })
@@ -591,10 +601,7 @@ async function onKey($: EngineInterface, id: KeyId, requestId: string, seen: See
   if (id === 'yes' && mode.kind === 'confirm-claim') {
     return send($, 'claim', { rev: mode.rev, n: mode.n })
   }
-  if (id === 'no') {
-    await update($, modeRef, idle)
-    return
-  }
+  if (id === 'no') return cancel($)
   if (mode.kind !== 'idle') return // a press while saving does nothing
   if (id === 'claim') {
     await update($, modeRef, (): RailMode => ({ kind: 'confirm-claim', ...seen }))
@@ -612,9 +619,8 @@ function handlers($: EngineInterface, requestId: string, seen: Seen): RailHandle
       void (async () => {
         const mode = await read($, modeRef)
         const text = value.trim().slice(0, TEXT_MAX)
-        if (text === '' || (mode.kind !== 'block' && mode.kind !== 'log')) {
-          await update($, modeRef, (): RailMode => ({ kind: 'idle' }))
-        } else await send($, kind, { rev: mode.rev, n: mode.n }, text)
+        if (text === '' || (mode.kind !== 'block' && mode.kind !== 'log')) await cancel($)
+        else await send($, kind, { rev: mode.rev, n: mode.n }, text)
       })().catch(() => undefined)
     }
   }

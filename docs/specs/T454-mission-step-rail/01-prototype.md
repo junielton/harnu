@@ -127,25 +127,25 @@ final, line gone while the band held keys (idle) @115: ◆ Mission closed or ste
 final, line gone while the band held keys (idle) @75: ◆ Mission closed or step unlinked.  x: Dismiss
 final, line gone while the band held keys (idle) @40: ◆ No step now.  x: Dismiss
 tests/rail.test.ts:
-(pass) fits the child row to bodyColumns and cuts in the declared order [257.23ms]
-(pass) claim is two presses and sends the action and revision, never a step id [93.16ms]
-(pass) a blocker reason is typed into the band; an empty one cancels [93.17ms]
-(pass) Harnu unreachable: nothing was saved, Retry and Dismiss, fitted at every width [554.81ms]
-(pass) F-1: an open field or confirm outlives every push, expiry and width; an idle row keeps a key [637.50ms]
-(pass) a refused press says so once, inside the width [315.54ms]
-(pass) blocked: the reason outranks the title, the level goes first [145.08ms]
-(pass) wraps what another mod drew and yields to a survey [185.24ms]
-(pass) every state fits at 115, 75 and 40 (printed) [900.71ms]
-(pass) a press carries the revision the person saw, and the field keeps naming its step [134.12ms]
-(pass) a field left open stays, with the line present or gone, for as long as it is left [3866.28ms]
+(pass) fits the child row to bodyColumns and cuts in the declared order [49.71ms]
+(pass) claim is two presses and sends the action and revision, never a step id [23.20ms]
+(pass) a blocker reason is typed into the band; an empty one cancels [23.63ms]
+(pass) Harnu unreachable: nothing was saved, Retry and Dismiss, fitted at every width [60.28ms]
+(pass) F-1: an open field or confirm outlives every push, expiry and width; an idle row keeps a key [83.96ms]
+(pass) a refused press says so once, inside the width [36.19ms]
+(pass) blocked: the reason outranks the title, the level goes first [33.12ms]
+(pass) wraps what another mod drew and yields to a survey [41.03ms]
+(pass) every state fits at 115, 75 and 40 (printed) [165.94ms]
+(pass) a press carries the revision the person saw, and the field keeps naming its step [27.15ms]
+(pass) a field left open stays, with the line present or gone, for as long as it is left [728.39ms]
  11 pass
  0 fail
-Ran 11 tests across 1 file. [7.65s]
+Ran 11 tests across 1 file. [1.41s]
 
 $ claude plugin test rail-proto   # Claude Code 2.1.296 (the CLI updated during the session)
  11 pass
  0 fail
-Ran 11 tests across 1 file. [4.29s]
+Ran 11 tests across 1 file. [1.38s]
 
 $ tsc -p tsc-rail   # TypeScript 5.6.3 against the 2.1.295 claude-code.d.ts
 (exit 0, no output)

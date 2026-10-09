@@ -54,59 +54,89 @@ Round 1 built the id chain from the binding's `sid` plus a `sidHistory` appended
 (`owner.kind === 'pty'`), the trusted id set is built from Harnu's own PTY index,
 `PtySessionIndex` (`pty-session-index.ts`), never from the binding's `sid`:
 
-| Source of an id for the binding's PTY                                                                                                                                                                    | Trusted                                                                     |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| the key the PTY was spawned with (`sessionIndex.register(opts.sessionKey, id)`, `pty.ts:959`): a `--resume <uuid>`, or a synthetic id for a new session                                                  | yes                                                                         |
-| a key the index moved to by a migration Harnu correlated itself: `MigrateVia` `agent-correlation`, `collapse`, `resolved-window` (`stores/sessions.ts:702`), driven by the watcher seeing the transcript | yes                                                                         |
-| a key moved by a `companion` migration (a `/clear` or `/resume` the companion reported, `stores/sessions.ts:5157-5166`; a `resume` claim migrates at once when its target exists on disk, `:5174-5176`)  | **only if all of §1.2's four conditions hold** at the moment of the rebound |
-| the binding's `sid`, a `session.rebound`, anything else the mod says                                                                                                                                     | no                                                                          |
+| Source of an id for the binding's PTY                                                                                                                         | Trusted                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| the key the PTY was spawned with (`sessionIndex.register(opts.sessionKey, id)`, `pty.ts:959`): a `--resume <uuid>`, or a synthetic id for a new session       | yes                                                                                                        |
+| a key the index moved to by a migration Harnu correlated itself: `MigrateVia` `agent-correlation`, `collapse`, `resolved-window` (`stores/sessions.ts:702`)   | yes                                                                                                        |
+| a key moved by a `companion` migration whose claim has `cause: 'spawn'` and binds the PTY's own synthetic row (`bindByClaim`, `stores/sessions.ts:5138-5156`) | **yes, under S1–S5 below** (W1 gives this migration its own `via`, `companion-spawn`)                      |
+| a key moved by a `companion` migration whose claim has `cause: 'clear'` or `'resume'` (a `session.rebound`, `:5157-5176`)                                     | **never**: recorded for the audit and the OQ-8 gesture, flagged contested when a step or an owner links it |
+| the binding's `sid`, a `session.rebound` as such, anything else the mod says                                                                                  | no                                                                                                         |
 
-**The four conditions for a companion-reported id.** It enters the binding's trusted set only
-if, at the moment the rebound reaches the host:
+**Why a spawn claim has to be trusted.** In companion mode `active` (T389's target) the claim path
+runs before every other binder: `reconcileSessionAdded` honours an acting claim first
+(`stores/sessions.ts:5200-5201`), and a claim acts whenever the mode is `active`, the CLI gate is
+ok and the lease is live (`mayAct`, `identity-core.ts:41-48`). So a fresh `create_session`
+executor reaches the real id that `mission_link_child` later links through a **`companion`**
+migration, not `agent-correlation`. Without the third row only `--resume` spawns would keep their
+actions, and the rail would work in the legacy modes only. W0 records the `via` and the claim
+`cause` a fresh executor actually gets in each mode (A-11).
 
-1. its transcript exists on disk and was born after the PTY's spawn. The birth time is the
-   **first timestamped record** of the file, not the file's btime (A-1): `birthtimeMs` is 0 where
-   `statx` is unavailable;
-2. **no live PTY holds it** in the index;
-3. **Harnu never registered it for any other PTY**: `PtySessionIndex` keeps a ledger of every key
-   it was ever handed (`register`) and every key a migration moved to, for the process lifetime,
-   so a sibling executor spawned after this one, since hibernated, closed or finished, still
-   refuses;
-4. **no step of any mission links it**, a `session` link in any mission, open or closed, as the
-   views stand at that moment. A step-linked session that never had a Harnu PTY (one the operator
-   opened by hand) is refused here. A genuine `/clear` produces an id nobody has linked yet.
+**The five conditions on a spawn claim**, all evaluated by Harnu from facts it holds, at the
+`session:added` of the transcript the claim names:
 
-Why these hold: a forged rebound has to name an id that is a real transcript and that some step
-the rail could aim at already links, or that a sibling holds. Condition 4 refuses the first and 3
-refuses a sibling Harnu spawned; 1 and 2 refuse everything older and everything live. A hibernated
-sibling that Harnu respawns with `--resume <its id>` re-registers its own key, so the ledger
-already knows it.
+- **S1** the claim's cause is `spawn`, which only a binding's first hello carries (the hello that
+  redeemed the one-time spawn token), and it migrates the PTY's own synthetic row (`row.synthetic
+=== true`): the key comes from the PTY that carried the token (`:5129-5131`), never from a
+  request. One spawn claim is accepted per PTY.
+- **S2** the transcript landed in the folder the PTY runs in: the event's `slug` resolves to the
+  row's folder. `bindByClaim` takes the folder from the row and ignores the event's slug today;
+  W1 adds the check. A forged `sid` naming a sibling's transcript, which lives in the sibling's
+  worktree, fails here.
+- **S3** no other live PTY and no other unmigrated synthetic row runs in that folder. A shared
+  folder is ambiguous, so its sessions are display-only.
+- **S4** the transcript was born after the PTY's spawn (its first timestamped record, A-1), no
+  live PTY holds the id, and Harnu never registered it for any other PTY (the process-lifetime
+  ledger in `PtySessionIndex`, so a hibernated or finished sibling still refuses).
+- **S5** no step of any mission links the id and no mission has it as `owner.sessionId`, as the
+  views stand at that moment. A fresh executor's id is new, so it is unlinked; the orchestrator
+  links it afterwards, and a link made after the migration does not undo it (a spawn-cause id is
+  trusted, not contested).
 
-**What this means for a `/clear`.** A companion-derived id is admitted only while no step links
-it, and it is distrusted the moment one does. A step's session link is how the rail matches a
-child, so **a companion-derived id can never match a step**: the match uses only spawn keys and
-migrations Harnu correlated itself. In v1 a `/clear` or `/resume` typed in an executor therefore
-costs it its actions, and its display unless a `worktree` link still names its folder (OQ-8 asks
-for an operator gesture to restore them). The ids are still recorded, for the audit and for that
-gesture. This is fail-closed on purpose: the same rule that refuses a forged rebound refuses a
-genuine one, because Harnu cannot tell them apart once a step links the id.
+**Forged-rebound reasoning, re-run against this.**
 
-**What is left of the forged-rebound risk.** Nothing that aims a press. The ids that can match a
-step or an owner are the spawn keys and the migrations Harnu correlated itself, all observed by
-Harnu. A companion-derived id is recorded (the audit, the popover's "contested" mark, the OQ-8
-gesture) and never matches; conditions 1 to 4 decide only whether it is recorded as plausible or as
-contested. Condition 4 also counts `owner.sessionId` of any mission, so a forged rebound to an
-orchestrator's id is contested too.
+- A forged `session.rebound` carries `cause: 'clear'` or `'resume'` and so never matches (row 4).
+  That is the vector round 1 used, closed.
+- A forged **first hello**: a sibling plugin reads `HARNU_SPAWN_TOKEN` (any plugin can
+  `$.env.get` it) and redeems it before the companion, with a `sid` of its choosing. The claim
+  then acts only if a transcript with that id lands in A's own folder (S2) while A's synthetic row
+  is unmigrated, with no other PTY or synthetic there (S3), and the id is new and held by nobody
+  (S4, S5). Naming a sibling executor's id fails S2, S3 or S4. The one id that can pass is a
+  `claude` the person started by hand in A's folder in that window, and the forger then needs an
+  orchestrator to link that session to a step: **K-9's remainder**, three coincidences deep. The
+  real companion's hello then fails (the token is spent), the binding record shows "did not
+  connect" in the Mods tab, and the rail row goes to whichever plugin holds `conn`, so the forger
+  cost the session its own companion.
+- A forged hello cannot be repeated: a second claim for the same PTY is refused (S1).
 
-**When the checks run, and what they read.** Condition 4 runs on every publish, before
-`resolveMissionRole`, against the views of that publish (up to `RAIL_LIST_MS` old, 20 s), and again
-on every mission write. A session link added by a direct edit of a mission file is seen at the next
-tick. A press never rests on that view: the executor reads the mission file fresh under the lock
+**What this means for a `/clear`.** A `/clear` or `/resume` typed in an executor is a rebound with
+`cause: 'clear'` or `'resume'`, so the new id never matches (row 4): the executor keeps its rail
+only through the `worktree` link (display only) until Harnu respawns it (`--resume <its id>`,
+row 1) or the operator uses a gesture (OQ-8). Harnu cannot tell a genuine `/clear` from a forged
+rebound once a step links the id, so this is fail-closed on purpose. Fresh executors and `--resume`
+spawns keep their actions.
+
+**What is left of the forged-rebound risk.** For a rebound, nothing: it never matches. For a
+forged first hello, the remainder named above.
+
+**A stronger option, not adopted: mint the id.** `pty:create` already accepts a caller-minted
+`claudeSessionId` for `claude-new` and emits `--session-id <uuid>` (T245, T344;
+`pty.ts:212-224`, `:698-733`; agent-dispatched spawns skip it today). If every Harnu-spawned
+executor were started that way, the PTY's key would be the real id from the first moment, the
+fact would be `confirmed` (`key === sid`), and no claim would carry the target. It changes every
+dispatch's argv, the synthetic-row machinery and the T245/T344 arming rules, so it is OQ-B for the
+operator, not a decision of this spec.
+
+**When the checks run, and what they read.** S1 to S5 run once, when the spawn claim is evaluated
+at the transcript's `session:added`, against the views of that moment (S5). The _contested_ flag of
+a rebound-derived id is recomputed on every publish, before `resolveMissionRole`, and on every
+mission write, against that publish's views (up to `RAIL_LIST_MS` old, 20 s); a session link added
+by a direct edit of a mission file is seen at the next tick. A press never rests on any of those
+views: the executor reads the mission file fresh under the lock
 (§3.2) and refuses `RAIL_STALE` unless the matched step still holds a `session` link to one of the
 binding's trusted keys.
 
 What changes in code (W1): `PtySessionIndex` keeps, per PTY, a bounded history of
-`{ key, via: 'spawn' | MigrateVia, at }`, plus the process-wide ledger of condition 3; the `pty:rekey` IPC (`pty.ts:1140`, today
+`{ key, via: 'spawn' | MigrateVia, at }`, plus the process-wide ledger of S4; the `pty:rekey` IPC (`pty.ts:1140`, today
 `(fromKey, toKey)`) and the renderer's migrate handler (`registerMigrateHandler`,
 `stores/sessions.ts:1340`, today `(fromId, toId)`) carry the `via` that `fireMigrate` already has
 (`stores/sessions.ts:1741`). The renderer is Harnu's own code, so its `via` is a host fact.
@@ -116,7 +146,7 @@ transcript, `external-corroboration.ts`) for the display row only; they never ge
 
 **Residual, stated.** A plugin in the session could delete and recreate another session's
 transcript file, or write a first record with a late timestamp, to give it a fresh birth time
-(condition 4 and 3 still apply to it). The same plugin can write `.harnu/missions/*.md`
+(S3, S4 and S5 still apply to it). The same plugin can write `.harnu/missions/*.md`
 directly, so this adds no capability it lacked (ADR-0018 Decision 3: a mod is unsandboxed code).
 
 No amendment to SEC-3b is needed: no consumer here trusts an event as authority.
@@ -311,17 +341,21 @@ and the handlers store none. Now:
   for any agent verb. A log press is a `fn` that only returns `logAppend`.
 - **The Log header is not provenance on its own.** The entry's header is `### <iso> · rail ·
 stp-3`, and the verbs build their own headers (`missionLogEntry(before, tag, text)`,
-  `tool-handlers.ts:4362`, tag ` · <stepId>`). But three of them insert caller text raw into
-  `logAppend` or the Log: `mission_log`'s `note`, up to 8000 characters (`TC:1524`,
-  `tool-handlers.ts:4553`), `mission_verify_step`'s `evidence` (`:4524`) and `mission_set_end`'s
-  `reason` (`:4405`); the importer copies a legacy Log verbatim. Any of them can carry `\n\n### <iso>
-· rail · stp-3\n\nClaimed from the terminal rail …` and produce an identical header. So W2 adds
-  **one shared helper, `neutralizeLogText`, applied to every free-text path that reaches the Log**
-  (the three above and the import): each line matching `^ {0,3}#{1,6}(\s|$)`, up to three leading
-  spaces being what CommonMark still renders as a heading, gets a backslash before the `#`.
-  `readMissionLog` is unchanged. With that, a `· rail ·` header can only come from the rail's
-  executor. Even so, the Log is a record for people; what the code and the popover trust is the `via`
-  mark below, which no verb can set.
+  `tool-handlers.ts:4362`, tag ` · <stepId>`). But several of them insert caller text raw: the
+  `note` of `mission_log`, up to 8000 characters (`TC:1524`, `tool-handlers.ts:4553`); the
+  `evidence` of `mission_verify_step` (`:4524`); and in `mission_set_end` the `reason` **and**
+  `declaredEnd.target` and `.evidence`, which are only trimmed (`:4383-4384`) and interpolated
+  through `formatDeclaredEnd` into the `was:` and `now:` lines (`:4405`); the importer copies a
+  legacy Log verbatim. A newline in any of them can start a line that reads `### <iso> · rail ·
+stp-3` and, below it, `Claimed from the terminal rail …`. So W2 adds **one shared helper,
+  `neutralizeLogText`, and every verb applies it to the whole body it composes, after its own
+  header line and not field by field**: each line matching `^ {0,3}#{1,6}(\s|$)`, up to three
+  leading spaces being what CommonMark still renders as a heading, gets a backslash before the `#`.
+  A drift test greps `tool-handlers.ts` and `mission-core.ts` for every `logAppend`,
+  `missionLogEntry` and `createMissionFile` call and fails on one whose body is not wrapped, so a
+  later verb cannot add a raw path. `readMissionLog` is unchanged. With that, a `· rail ·` header
+  can only come from the rail's executor. Even so, the Log is a record for people; what the code
+  and the popover trust is the `via` mark below, which no verb can set.
   Bodies are fixed templates: "Claimed from the terminal rail (operator, session `1a2b3c4d`).",
   "Blocker raised from the terminal rail …", "Blocker cleared from the terminal rail …", and for a
   log press "Operator note: {text}". The session is the first eight characters of the trusted key
@@ -383,6 +417,7 @@ binding, action, mission id, step id, the trusted key the step matched, outcome,
 | Spawned by Harnu for an agent (`agentControlled`), no Harnu MCP | full rail and actions: the data comes over the companion channel, not MCP (§2.1)                                                                         |
 | Spawned by Harnu, operator-started, with Harnu MCP              | same; the rail never uses the MCP server                                                                                                                 |
 | Board or manifest dispatch (trust `agent`)                      | same                                                                                                                                                     |
+| Fresh `create_session` executor, companion `active`             | reaches its real id through a `companion` migration with claim cause `spawn`: trusted under S1–S5, full rail and actions (A-11)                          |
 | A session sharing a worktree with a step's link, not linked     | display only (§1.1, rule 3)                                                                                                                              |
 | Read-only review spawn                                          | display only                                                                                                                                             |
 | Scheduler tick                                                  | nothing: headless, `ui.render` not raised; `ui.band` is never enabled headless (`feature-policy.ts:82`)                                                  |

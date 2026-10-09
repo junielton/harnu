@@ -40,10 +40,13 @@ can live, how a press reaches a mission, and what may aim it:
    that T447's D-A verb can later wrap, each keeping its own role order.
 3. **A write is aimed only with ids Harnu observed.** The ids a press may target are those Harnu's
    PTY index holds for the binding's PTY: the spawn key, migrations Harnu correlated itself, never
-   the binding's `sid` and never a `session.rebound`. A companion-reported change of id is
-   recorded (audit, the operator gesture of OQ-8), flagged contested when a step or an owner links
-   it, and never matches: Harnu cannot tell a genuine `/clear` from a forged rebound once a step
-   links the id, so the rule is fail-closed.
+   the binding's `sid` and never a `session.rebound`. One companion-reported id is trusted: the
+   one a fresh executor's first hello names when it binds the PTY's own synthetic row, under five
+   conditions Harnu checks itself (the transcript landed in the PTY's folder, no other PTY or
+   synthetic row is there, it is new and held by no other PTY, and no mission links it). A rebound
+   (`/clear`, `/resume`) is recorded (audit, the operator gesture of OQ-8), flagged contested when
+   a step or an owner links it, and never matches: Harnu cannot tell a genuine `/clear` from a
+   forged rebound once a step links the id, so that rule is fail-closed.
 4. **A press is an edge event carrying the action and the revision the person saw.** Harnu main
    checks it, takes the mission and step from its own record of that revision (which must still be
    the current target, else `RAIL_STALE`), and applies the verb's own pure mutation together
@@ -69,7 +72,9 @@ can live, how a press reaches a mission, and what may aim it:
   actions" mode the rail is display only.
 - After a `/clear` or `/resume` typed in an executor the rail is display-only through a `worktree`
   link, or absent, until Harnu respawns the session (a spawn key) or the operator uses a gesture
-  (OQ-8). The ids Harnu cannot observe cost the executor its actions.
+  (OQ-8). Fresh executors, which in companion mode `active` reach their real id through a
+  `companion` migration, keep their actions through the spawn-claim rule. A stronger design that
+  needs no claim, minting the id with `--session-id`, is OQ-B.
 - An executor whose band drew keys and whose mission closes shows a Dismiss row until someone
   presses it; the mod cannot tell whether the band had the keyboard.
 - Residual, named: a letter for a key no longer drawn sends the keyboard to the prompt (K-10). A
@@ -102,6 +107,9 @@ can live, how a press reaches a mission, and what may aim it:
 - **Trust the Log header as provenance.** Rejected: `mission_log`, `mission_verify_step` and
   `mission_set_end` insert caller text raw. `via` and `claimedVia` are the marks; one shared helper
   neutralises heading lookalikes in every free-text path to the Log.
+- **Trust no companion-reported id.** Rejected after the round-4 grading: in companion mode
+  `active` a fresh executor reaches its real id through a `companion` migration, so the rail would
+  work in the legacy modes only. The spawn claim is trusted under S1–S5, rebounds never.
 - **Close an abandoned field on a timer.** Rejected after the round-3 grading: to idle it leaves
   nothing focusable when the line is gone, and with the line present the person's next letter
   goes to the prompt. The pinned revision makes a lingering field safe.

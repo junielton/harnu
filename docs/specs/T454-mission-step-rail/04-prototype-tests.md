@@ -488,9 +488,17 @@ test('a field left open stays, with the line present or gone, for as long as it 
   await hold(5)
   expect(await row(ui)).toMatchObject({ inputs: ['rail-log'], text: undefined })
 
-  // The same for the confirm, with the line gone for good.
-  await ui.input({ key: 'rail-log', text: '' }) // Enter on empty cancels
+  // Enter on an empty field cancels, and with the line gone it ends on a final row with Dismiss,
+  // never on a band with nothing to focus (rule 2).
+  await ui.input({ key: 'rail-log', text: '' })
+  expect(await row(ui)).toMatchObject({
+    text: '◆ Mission closed or step unlinked.',
+    buttons: ['x: Dismiss']
+  })
+  await ui.press({ key: 'rail-dismiss' })
   expect((await row(ui)).text).toBeUndefined()
+
+  // The same for the confirm, with the line gone for good.
   h.band = CHILD
   await clock.advance(2_100)
   await ui.press({ key: 'rail-claim' })
@@ -498,6 +506,11 @@ test('a field left open stays, with the line present or gone, for as long as it 
   await clock.advance(2_100)
   await hold(6)
   expect((await row(ui)).buttons).toEqual(['y: Claim', 'n: Cancel'])
+  await ui.press({ key: 'rail-no' }) // cancel with the line gone: a final row, not nothing
+  expect(await row(ui)).toMatchObject({
+    text: '◆ Mission closed or step unlinked.',
+    buttons: ['x: Dismiss']
+  })
   expect(h.sent).toEqual([])
 })
 ```
