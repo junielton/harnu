@@ -20,7 +20,7 @@ watching. Five constraints decide where each part can live:
 4. A hook's `ask` is unreliable as a way to put a refusal to a person. In manual mode the engine's
    dialog does not draw the hook's reason, and in auto mode the mode settles the `ask` without anyone
    (`03-prototype-tests.md` run 10).
-5. Storms are rare and short on this machine (`01-corpus-scan.md`: 19 exact runs ≥ 3 in 114,475
+5. Storms are rare and short on this machine (`01-corpus-scan.md`: 19 exact runs ≥ 3 in 115,595
    calls, none past 5), and 16 of those 19 come from one engine-side cause. The feature must be cheap
    and must not harm the common case.
 
@@ -51,7 +51,11 @@ transcript tail it already parses (`claude-watcher.ts:512`, `transcript-truth.ts
 blocker.
 
 The twin cannot see `tool.check` verdicts or attendance, so it applies the permission exclusion by text
-and uses the trust class. It sees resets and mutes only because the mod writes each into the
+and uses the trust class. It takes that class from main-process state that exists without the
+companion: `spawnOriginForSession` (`pty.ts:1325-1328`) for PTY sessions, a `read-only` class recorded
+beside it at the spawn site, and the Scheduler's own run record for ticks. It must not read the
+companion's binding table (`session-table.ts:2-9`), which has a row only for sessions the companion was
+staged into. It sees resets and mutes only because the mod writes each into the
 transcript as a system notice. Its errors run toward escalating, never toward silence. The mod never
 calls Harnu.
 
@@ -89,5 +93,6 @@ through. This departs on purpose from the types' advice to fail a guard closed (
 - Outside Harnu the breaker works fully in-session and escalates nowhere.
 - Most of what it catches on this machine disappears if the engine's `SendMessage` schema stops
   contradicting its own description (`00-spec.md` §15 F-1). The recommended build is therefore the
-  in-session mod alone at level `notice`, with the host escalation built only if a re-scan after that
-  fix still shows storms in unattended runs.
+  in-session mod alone at level `notice`. The order is: that fix, then a re-scan (a transcript replay
+  that needs no deployed mod), then the mod, and the host escalation only if the re-scan still shows
+  storms in unattended runs.

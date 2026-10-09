@@ -15,7 +15,12 @@ disagree, **this code wins**, and the prose is the bug. Three details the prose 
 - **The shell reader.** `simpleCommands` splits a Bash command into simple commands at unquoted
   `; & | newline ( ) { }`. It keeps `2>&1`, `&>` and `<&` as words, not separators. `commandWords`
   skips shell keywords, `NAME=value` assignments, the wrappers `env nice nohup time command exec sudo`,
-  and `timeout <n>`. It is a reader for command words, not a shell: it never expands anything.
+  and `timeout` with its options (`-s KILL`, `-k 5`, `--signal=…`, `--kill-after=…`) and its duration.
+  When the command word is `bash`, `sh`, `zsh`, `dash` or `ksh` with a `-c` option, the string after it
+  is read again, to depth 3, and replaces the shell word. It is a reader for command words, not a
+  shell: it never expands anything, and `eval`, `xargs`, `ssh host '…'` and script files stay opaque.
+- **Server waits are read from the text.** `isServerWait` looks at the failure's text only, whatever
+  the tool or client (`curl`, `psql`, a test runner, `docker compose exec`, `WebFetch`, any MCP tool).
 - **Unknown means changed.** `isMutation` answers true for any `Bash` command word outside its
   read-only list, for any MCP tool whose verb is not a read verb, and for any built-in outside its
   read-only list. A wrong guess there can only reset a count early, never trip one.
@@ -133,11 +138,12 @@ const KEYWORDS = new Set([
   'fi',
   'done'
 ])
+const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh'])
 const WRAPPERS = new Set(['env', 'nice', 'nohup', 'time', 'command', 'exec', 'sudo'])
 
 /** Each simple command's argv from its command word on, and whether a while/until loop leads it. */
-export function commandWords(command: string): { argv: string[]; looped: boolean }[] {
-  return simpleCommands(command).map((raw) => {
+export function commandWords(command: string, depth = 0): { argv: string[]; looped: boolean }[] {
+  return simpleCommands(command).flatMap((raw) => {
     let i = 0
     let looped = false
     while (i < raw.length) {
@@ -146,11 +152,26 @@ export function commandWords(command: string): { argv: string[]; looped: boolean
         if (w === 'while' || w === 'until') looped = true
         i++
       } else if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(w) || WRAPPERS.has(w)) i++
-      else if (w === 'timeout') i += 2
-      else break
+      else if (w === 'timeout') {
+        i++
+        // timeout's options (`-s KILL`, `-k 5`, `--signal=KILL`), then its duration.
+        while (i < raw.length && (raw[i] as string).startsWith('-')) {
+          i += /^(-s|-k|--signal|--kill-after)$/.test(raw[i] as string) ? 2 : 1
+        }
+        i++
+      } else break
     }
     const argv = raw.slice(i).map((w, n) => (n === 0 ? (w.split('/').pop() ?? w) : w))
-    return { argv, looped }
+    // `bash -c '…'` runs a command string: read it too, in place of the shell word.
+    if (depth < 3 && SHELLS.has(argv[0] ?? '')) {
+      const c = argv.findIndex((a, n) => n > 0 && /^-[a-zA-Z]*c$/.test(a))
+      if (c > 0 && argv[c + 1] !== undefined)
+        return commandWords(argv[c + 1] as string, depth + 1).map((x) => ({
+          argv: x.argv,
+          looped: x.looped || looped
+        }))
+    }
+    return [{ argv, looped }]
   })
 }
 
@@ -186,26 +207,22 @@ export function isPoll(tool: string, input: unknown, text: string): boolean {
   return verb !== undefined && READ_VERB.test(verb) && NOT_YET.test(text)
 }
 
-const PROBES = new Set([
-  'curl',
-  'wget',
-  'http',
-  'https',
-  'nc',
-  'pg_isready',
-  'grpcurl',
-  'redis-cli'
-])
-const REFUSED =
-  /Connection refused|ECONNREFUSED|ERR_CONNECTION_REFUSED|Couldn't connect|Failed to connect|Connection reset|Empty reply from server|\b50[234]\b|not ready|is starting/i
+const REFUSED = new RegExp(
+  [
+    'Connection refused|ECONNREFUSED|ERR_CONNECTION_REFUSED|Couldn.t connect|Failed to connect',
+    'Connection reset|Empty reply from server|not ready|is starting',
+    'returned error: 50[234]|HTTP/[0-9.]+ 50[234]|50[234] (Bad Gateway|Service Unavailable|Gateway Time-?out)'
+  ].join('|'),
+  'i'
+)
 
-/** Waiting for a server (X7): a probe that found nothing listening yet. Never counted. */
-export function isServerWait(tool: string, input: unknown, text: string): boolean {
-  if (!REFUSED.test(text)) return false
-  if (tool !== 'Bash') return tool.startsWith('mcp__')
-  return commandWords(str((input as Record<string, unknown> | undefined)?.command)).some((c) =>
-    PROBES.has(c.argv[0] ?? '')
-  )
+/**
+ * Waiting for a server (X7): something refused or was not up yet. Never counted, whatever the
+ * client: `curl`, `psql`, a test runner, `docker compose exec`, `WebFetch` to localhost. The text is
+ * the evidence, so a `bash -c` wrapper, a `timeout` wrapper or an unknown client does not matter.
+ */
+export function isServerWait(_tool: string, _input: unknown, text: string): boolean {
+  return REFUSED.test(text)
 }
 
 const READ_ONLY_TOOLS = new Set(

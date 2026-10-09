@@ -1,6 +1,6 @@
 # T453 — Corpus scan: how often retry storms happen on this machine
 
-**Part of:** [`00-spec.md`](00-spec.md) §4 (U-2) · **Scanned:** 2026-10-09T17:22-03:00 (round 2) ·
+**Part of:** [`00-spec.md`](00-spec.md) §4 (U-2) · **Scanned:** 2026-10-09T17:56-03:00 (round 2, final) ·
 **Machine:** the operator's workstation
 
 This file is the measurement behind every threshold in the spec: the method, the corpus, the
@@ -19,7 +19,7 @@ rounds disagree where the rules changed; §7 lists what moved.
 1. **Corpus.** Every `*.jsonl` under `~/.claude/projects/` (main transcripts and the `subagents/`
    transcripts beside them). Read-only. **Skipped:** every project directory whose slug starts with
    `-tmp-` (a session whose working directory was under `/tmp`), which is where this spec's live
-   probes, the T389 smoke repos and other verifiers' throwaway repos ran: 253 files.
+   probes, the T389 smoke repos and other verifiers' throwaway repos ran: 290 files.
 2. **Replay.** Each file is read in order. A `tool_use` is remembered by id; when its
    `tool_result` arrives, the call is ticked into its loop and passed to `core.ts`: a success to
    `recordSuccess`, a failure to `exclusion` and then `recordFailure`. This is the same sequence
@@ -48,19 +48,23 @@ labels carry real information at k = 2 and for the same-error rule, where inputs
 
 | Measure                                | Count   |
 | -------------------------------------- | ------- |
-| Transcript files scanned               | 12,049  |
-| Probe files skipped (`-tmp-` projects) | 253     |
-| Loops                                  | 2,795   |
-| Tool calls (distinct `tool_use` ids)   | 114,475 |
-| Failed calls (`is_error: true`)        | 4,008   |
+| Transcript files scanned               | 12,057  |
+| Probe files skipped (`-tmp-` projects) | 290     |
+| Loops                                  | 2,804   |
+| Tool calls (distinct `tool_use` ids)   | 115,595 |
+| Failed calls (`is_error: true`)        | 4,036   |
 | Not counted: permission layer (X3)     | 221     |
 | Not counted: polling (X5)              | 332     |
 | Not counted: the person refused (X1)   | 105     |
-| Not counted: interrupted (X2)          | 22      |
-| Not counted: waiting for a server (X7) | 1       |
+| Not counted: interrupted (X2)          | 24      |
+| Not counted: waiting for a server (X7) | 3       |
 
-The corpus is live: a re-run minutes later found 115,066 calls and one more same-error run of
-length 2, and nothing else moved.
+The corpus is live, so each re-run finds a few more calls. The last replay (17:56) came after the
+detector's final change, which re-reads `bash -c` strings and `timeout` options and reads server waits
+from the failure's text whatever the client (verifier finding E7). It moved one number and no
+threshold: server waits went from 1 to 3 (a `Bash` call, a `WebFetch` and a browser navigation), and
+every rate and bound below is unchanged except the same-error k = 2 row, which gained one run of
+length 2 from the live growth.
 
 **What polling (X5) removed (332):** 290 `Bash` calls (a `sleep` command word 245, `gh pr checks`
 43, `gh run view` 2) and 42 read-verb MCP calls answering "not found / not ready" (design-tool reads
@@ -74,14 +78,14 @@ excluded 9 such calls, so it was dropped from the rule.
 
 | Run length | exact | same-error |
 | ---------- | ----- | ---------- |
-| 2          | 19    | 47         |
+| 2          | 19    | 48         |
 | 3          | 13    | 19         |
 | 4          | 4     | 5          |
 | 5          | 2     | 2          |
 | 6          | 0     | 1          |
 | ≥ 7        | 0     | 0          |
 
-The longest exact run in 114,475 calls is **5**; the longest same-error run is **6**.
+The longest exact run in 115,595 calls is **5**; the longest same-error run is **6**.
 
 ### 3.2 Timing
 
@@ -98,7 +102,7 @@ A trip is a run reaching the threshold.
 | exact      | 3   | 19    | 19    | 0     | 0       | 0 %     | **14.6 %**            |
 | exact      | 4   | 6     | 6     | 0     | 0       | 0 %     | 39.3 %                |
 | exact      | 5   | 2     | 2     | 0     | 0       | 0 %     | 77.6 %                |
-| same-error | 2   | 74    | 61    | 13    | 0       | 17.6 %  | 26.5 %                |
+| same-error | 2   | 75    | 62    | 13    | 0       | 17.3 %  | 26.1 %                |
 | same-error | 3   | 27    | 26    | 1     | 0       | 3.7 %   | 16.4 %                |
 | same-error | 4   | 8     | 8     | 0     | 0       | 0 %     | **31.2 %**            |
 | same-error | 5   | 3     | 3     | 0     | 0       | 0 %     | 63.2 %                |
@@ -130,9 +134,9 @@ Round 1 reported "6 calls" and its script printed "30": the 6 was calls after th
 exact runs after exclusions, and the 30 was calls after the **2nd** failure of all exact runs before
 exclusions. Round 2 reports both thresholds on one basis: 8 at exact 3, 27 at exact 2.
 
-**Against 114,475 calls, that is noise.** The ideation premise, "loops are the single biggest waste
+**Against 115,595 calls, that is noise.** The ideation premise, "loops are the single biggest waste
 of tokens and wall-clock in unattended runs", is not supported by this corpus: storms are rare (19
-exact runs ≥ 3 in 2,795 loops), short (never past 5 exact or 6 same-error) and fast (median 3.3 s).
+exact runs ≥ 3 in 2,804 loops), short (never past 5 exact or 6 same-error) and fast (median 3.3 s).
 Most of them have one engine-side cause (§6 E1). `00-spec.md` §0 and OQ-1 draw the consequence.
 
 ## 4. Live checks of the definition

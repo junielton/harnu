@@ -34,22 +34,22 @@ Seven facts shape the design:
    attended or not (runs 3, 11).
 4. **Who is watching decides the rest.** Attended means an operator's interactive session: the
    dialog, and no automatic abort. Unattended means `-p`, a Scheduler tick, or a session Harnu spawned
-   for an agent: Harnu's escalation and an abort cap.
+   for an agent: Harnu's escalation, and at level `enforce` an abort cap (not at the default `notice`).
 5. **Harnu's escalation runs in Harnu's host.** The mod cannot reach Harnu where it matters, so the
    host runs the same `core.ts` over the transcript it already reads (§5.4).
 6. **Legitimate repetition is excluded by rule.** That covers polling (read from the command words),
    waiting for a server, a re-run after any possibly-mutating success, and refusals by a person or the
    permission layer (§3.4).
 7. **Storms are rare here, and their main cause is in the engine.**
-   - On 114,475 tool calls, 19 exact runs reached 3, none passed 5, and a perfectly obeyed notice
+   - On 115,595 tool calls, 19 exact runs reached 3, none passed 5, and a perfectly obeyed notice
      would have saved 8 calls.
    - 16 of the 19 are one engine-side contradiction in the `SendMessage` tool (§15 F-1).
    - No false positive was observed at the chosen thresholds, but the sample bounds the rate only
      below about 15 % for the notice and 30–40 % for the later rungs.
 
-   **Recommendation (OQ-1):** fix F-1 at its source first, ship only W0 + W1 at the default level
-   `notice`, and build the host escalation only if a re-scan after F-1's fix still shows storms in
-   unattended runs.
+   **Recommendation (OQ-1):** fix F-1 at its source first, then re-scan (a transcript replay: it needs
+   no deployed mod), then ship W0 + W1 at the default level `notice`, and build the host escalation
+   only if the re-scan still shows storms in unattended runs.
 
 ## 1. Origin and scope
 
@@ -131,24 +131,32 @@ folded to `H`, numbers to `N`, whitespace collapsed, 600 characters kept. The he
 
 None of these is ever counted, by either rule.
 
-| Rule   | Excluded                                        | How it is recognised (`core.ts`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ------ | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **X1** | The person refused the call, or chose "clarify" | engine text `The user doesn't want to proceed`, `The user wants to clarify`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| **X2** | The call was interrupted                        | `[Request interrupted`, `Interrupted by user`, `[Tool call interrupted`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| **X3** | The permission layer refused it                 | in-session: its `tool.check` verdict was `deny`, or `ask` while unattended. Text, for the host twin and the scan: the auto-mode classifier's no-verdict, rate limit and `Permission for this action was denied`; `requested permissions … haven't granted`; `This command requires approval`; `Permission to use … denied`; `PreToolUse:<Tool> hook error`                                                                                                                                                                                                                                                                                                                                                                                                          |
-| **X4** | The breaker's own refusal                       | recorded as `deny` by the breaker before it answers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **X5** | **Polling**                                     | **`Bash`:** a simple command whose command word is `sleep`, `watch`, `wait-on`, `wait-for` or `wait-for-it`, or whose argv starts `gh pr checks`, `gh run view`, `gh run watch`, `kubectl rollout status` or `kubectl wait`. Words come from a shell tokenizer (quotes, `;`, `&&`, `\|\|`, `\|`, `&`, keywords, `NAME=value`, `env`/`timeout`/`sudo` wrappers), so `grep -r sleep`, `echo "sleep 5"` and `npm run test:watch` are **not** polls. **MCP:** a read-verb tool (`get_`, `list_`, `read_`, `query_`, `search_`, `find_`, `fetch_`, `wait_`, `poll_`, `status`, `check_`, `describe_`, `show_`) answering not found / not ready / pending / spawning / starting / unavailable, such as `get_session` returning `SESSION_NOT_FOUND` while a session spawns |
-| **X6** | Re-running after a real edit                    | not an exclusion but a reset: R2 below                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| **X7** | **Waiting for a server**                        | a `Bash` probe (`curl`, `wget`, `http`, `nc`, `pg_isready`, `grpcurl`, `redis-cli` as a command word), or any MCP tool, failing with connection refused / reset / `Couldn't connect` / `Empty reply` / 502–504 / not ready / starting                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| **X8** | A bare exit status                              | an error that normalises to `Exit code N` alone never feeds the same-error rule (it still feeds the exact rule)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Rule   | Excluded                                        | How it is recognised (`core.ts`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------ | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **X1** | The person refused the call, or chose "clarify" | engine text `The user doesn't want to proceed`, `The user wants to clarify`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **X2** | The call was interrupted                        | `[Request interrupted`, `Interrupted by user`, `[Tool call interrupted`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **X3** | The permission layer refused it                 | in-session: its `tool.check` verdict was `deny`, or `ask` while unattended. Text, for the host twin and the scan: the auto-mode classifier's no-verdict, rate limit and `Permission for this action was denied`; `requested permissions … haven't granted`; `This command requires approval`; `Permission to use … denied`; `PreToolUse:<Tool> hook error`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **X4** | The breaker's own refusal                       | recorded as `deny` by the breaker before it answers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **X5** | **Polling**                                     | **`Bash`:** a simple command whose command word is `sleep`, `watch`, `wait-on`, `wait-for` or `wait-for-it`, or whose argv starts `gh pr checks`, `gh run view`, `gh run watch`, `kubectl rollout status` or `kubectl wait`. Words come from a shell tokenizer (quotes, `;`, `&&`, `\|\|`, `\|`, `&`, keywords, `NAME=value`, `env`/`sudo` wrappers; `timeout` with its options such as `-s KILL`, `-k 5`, `--signal=KILL`; and the string after `bash`/`sh`/`zsh`/`dash`/`ksh -c`, read again to depth 3), so `grep -r sleep`, `echo "sleep 5"` and `npm run test:watch` are **not** polls. A `curl` is no poll word: `until curl -sf …; do sleep 1; done` is a poll through its `sleep`, and a bare failing `curl` is X7's business. **MCP:** a read-verb tool (`get_`, `list_`, `read_`, `query_`, `search_`, `find_`, `fetch_`, `wait_`, `poll_`, `status`, `check_`, `describe_`, `show_`) answering not found / not ready / pending / spawning / starting / unavailable, such as `get_session` returning `SESSION_NOT_FOUND` while a session spawns |
+| **X6** | Re-running after a real edit                    | not an exclusion but a reset: R2 below                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **X7** | **Waiting for a server**                        | by the **text of the failure, whatever the client**: connection refused / reset, `ECONNREFUSED`, `Couldn't connect`, `Failed to connect`, `Empty reply from server`, `returned error: 50[234]`, `HTTP/x 50[234]`, `50[234] Bad Gateway \| Service Unavailable \| Gateway Timeout`, `not ready`, `is starting`. A `curl`, `psql`, `npx playwright test`, `docker compose exec … pg_isready`, any MCP tool and `WebFetch` to localhost all count. A wrapped wait that only exits `124` is caught by X5 through the `sleep` inside its `bash -c` string                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **X8** | A bare exit status                              | an error that normalises to `Exit code N` alone never feeds the same-error rule (it still feeds the exact rule)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
-**X7's cost, stated:** a model hammering a server that never comes up is not caught by the breaker.
-T175 catches it: `stall-detect.ts` flags a session that makes at least 8 calls in 5 minutes with no
-new fingerprint and no mutation (`stall-detect.ts:21-24`, `:126-131`, `:177`), and a repeated
-identical `curl` is exactly that.
+**X7's cost, stated.**
 
-**What is excluded on this machine** (`01-corpus-scan.md` §2): X3 221, X5 332, X1 105, X2 22, X7 1,
-of 4,008 failures.
+- A model hammering a server that never comes up is not caught by the breaker. T175 catches it:
+  `stall-detect.ts` flags a session that makes at least 8 calls in 5 minutes with no new fingerprint
+  and no mutation (`stall-detect.ts:21-24`, `:126-131`, `:177`).
+- Because X7 reads the text, any failure whose output merely contains one of those phrases is not
+  counted, for example a test that asserts on `ECONNREFUSED`. That errs toward silence, never toward a
+  refusal.
+- What X5 and X7 still cannot read: a wait hidden in a script file (`./wait-for-db.sh`), a command
+  string behind `eval`, `xargs`, `ssh host '…'` or `docker exec … sh -c`, a non-literal `-c "$cmd"`,
+  and a silent probe that exits non-zero with no output and no `sleep` in its command. Each of these
+  counts, and the worst outcome is a notice on the 3rd failure.
+
+**What is excluded on this machine** (`01-corpus-scan.md` §2): X3 221, X5 332, X1 105, X2 24, X7 3,
+of 4,036 failures.
 
 ### 3.5 The two rules and the window
 
@@ -180,7 +188,7 @@ A compaction does not reset: a storm across a compaction is still a storm.
 
 ## 4. Thresholds, measured (U-2)
 
-Round 2 replays every transcript on this machine (12,049 files, 2,795 loops, 114,475 calls, 4,008
+Round 2 replays every transcript on this machine (12,057 files, 2,804 loops, 115,595 calls, 4,036
 failures; this spec's probe sessions under `/tmp` skipped) through the prototype's own `core.ts`.
 Full method, labels, examples and source: [`01-corpus-scan.md`](01-corpus-scan.md).
 
@@ -333,8 +341,23 @@ Run in Harnu's main process, not in the mod (ADR-draft D3).
    `src/main/` (not `src/main/detect/`, which holds PTY-screen and task-state detection). It is called
    where `deriveStagnation` is (`claude-watcher.ts:512`, `transcript-truth.ts:389`), over the same
    transcript entries, and it imports the mod's `hooks/core.ts` unchanged.
-2. **Scope.** Only sessions whose trust class is `agent`, `tick` or `read-only`. An operator's session
-   gets the dialog instead.
+2. **Scope, and where the trust class comes from.** Only sessions whose trust class is `agent`, `tick`
+   or `read-only`; an operator's session gets the dialog instead. The twin must not read the class from
+   the companion's binding table (`session-table.ts:2-9`, `:33`): that table has a row only for a
+   session the companion was staged into, and staging is decoupled from the companion (§9.2), so a
+   companion-off session has none. Its sources, none of which depends on the companion:
+   - **PTY sessions:** `spawnOriginForSession(sessionKey)` (`pty.ts:1325-1328`), which returns
+     `'agent'` or `'operator'`. It is stamped at the spawn site from `opts.spawnedBy` (`pty.ts:945`,
+     `:960`) and is what `message_session` already uses to refuse an operator-owned recipient
+     (`tool-handlers.ts:1885-1893`). It covers MCP `create_session` and board/manifest dispatch.
+   - **Read-only reviewers:** not recorded after spawn today (`readOnly` is read at the spawn site only,
+     `pty.ts:789`, `:838`). W3 records the class next to the origin: compute `trustFor({ readOnly,
+agentControlled, spawnedBy })` (`spawn-inject.ts:111-120`) unconditionally at the spawn site and
+     keep it in a sibling of `sessionSpawnOrigins` (`pty.ts:514`), which the session-key move at
+     `pty.ts:1157-1160` must carry too. Until then a read-only reviewer reads as `operator` and gets no
+     escalation, which is safe.
+   - **Scheduler ticks:** the tick's own run record. The Scheduler spawns the child and knows its worker
+     and run (`scheduler-shell.ts:495-498`), so it runs the twin over that run with the class `tick`.
 3. **Rung 2 → an Activity notification**, through the path the `notify` verb uses
    (`tool-handlers.ts:1220-1240`): "Retry storm in <session>", the tool, the count, the error's head, a
    deep link to the session.
@@ -443,7 +466,7 @@ is 10 s per dispatch, and a `$` call in flight does not count against it (`T:510
 | `.catch` on gating hooks                                               | `R:79`, `T:3940`                                           | validate lists all three                                                                      |
 | hook budget                                                            | `T:5100-5125`, `R:154`                                     | doc                                                                                           |
 | worktree-isolated agents unharmed                                      | `docs/studies/T389-smoke-evidence.md:628-650` (the hazard) | **proven** headless (run 8); interactive and tick unrun (A3)                                  |
-| test kit: `test`, `mock.*`, `$.ui.mount`, `$.command.run`              | `T:15921`, `T:15460-15480`, `T:15800-15835`, `R:81`        | kit (14 pass)                                                                                 |
+| test kit: `test`, `mock.*`, `$.ui.mount`, `$.command.run`              | `T:15921`, `T:15460-15480`, `T:15800-15835`, `R:81`        | kit (15 pass)                                                                                 |
 
 Not relied on: `classic.PostToolUseFailure` (`T:7851`), "never observed firing" in T389's smoke
 (`01-contract.md:665`); `$.ui.notice` (never rendered, ADR-0018:115-116).
@@ -580,7 +603,7 @@ The hooks module, its manifest with `level`, its contract and its tests:
 [`03-prototype-tests.md`](03-prototype-tests.md), with the real output of:
 
 - `claude plugin validate`: passed, no warning;
-- `claude plugin test`: 14 pass, 0 fail;
+- `claude plugin test`: 15 pass, 0 fail;
 - `tsc -p` (TypeScript 5.9.3, the header's options): exit 0;
 - twelve live runs, two of them interactive (§7).
 
@@ -596,31 +619,31 @@ substring polling rule, and the `2>&1` tokenizer bug.
 
 ## 12. Implementation outline (C-6)
 
-**Recommended path (OQ-1):** F-1 upstream + W0 + W1, then stop and re-scan.
+**Recommended path (OQ-1):** F-1 fix → re-scan (a replay of `01-corpus-scan.md`; no deployed mod needed) → W0 → W1. W2–W6 only if the re-scan still shows storms in unattended runs.
 
-| Wave | Size | Depends on  | Delivers                                                                                                                                                                                                   |
-| ---- | ---- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F-1  | S    | none        | report the `SendMessage` schema contradiction upstream (§15); reword `docs/harnu-features.md:347` once the engine's answer is known                                                                        |
-| W0   | S    | none        | spike: A3, A4, A6 (§13); #92533 interactive and in a tick (§8.1)                                                                                                                                           |
-| W1   | S    | W0          | `resources/retry-breaker/` (prototype hardened): copy review, the dialog's focus hint, kit tests in CI; installable standalone; default `notice`                                                           |
-| —    |      |             | **re-scan** with `01-corpus-scan.md`'s replay after F-1 lands; continue only if storms remain in unattended runs                                                                                           |
-| W2   | M    | W1, re-scan | staging of a second bundled mod, decoupled (§9.2); `HARNU_SESSION_ROLE` delete-then-set on PTY and tick spawns; the `retryBreaker` pref and its Settings control; Mods audit discovery of every staged dir |
-| W3   | M    | W1, re-scan | host twin `src/main/retry-storm.ts`; Activity notification for `agent`/`tick`/`read-only`; the Scheduler run record reading it (F-3)                                                                       |
-| W4   | S    | W3          | mission blocker raise/clear, if OQ-2 says yes                                                                                                                                                              |
-| W5   | S    | W2          | Mods audit `transcript` chip                                                                                                                                                                               |
-| W6   | S    | W1          | marketplace publication and the "Also outside Harnu" switch                                                                                                                                                |
+| Wave | Size | Depends on  | Delivers                                                                                                                                                                                                                                       |
+| ---- | ---- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F-1  | S    | none        | the `SendMessage` schema contradiction is reported upstream by the operator through `/feedback` (§15, OQ-7); Harnu's own guidance stays as it is until `"message": ""` is tested                                                               |
+| —    |      | F-1         | **re-scan**: re-run `01-corpus-scan.md`'s replay over the transcripts written after F-1 lands. It needs no mod. Continue only if storms remain                                                                                                 |
+| W0   | S    | re-scan     | spike: A3, A4, A6 (§13); #92533 interactive and in a tick (§8.1)                                                                                                                                                                               |
+| W1   | S    | W0          | `resources/retry-breaker/` (prototype hardened): copy review, the dialog's focus hint, kit tests in CI; installable standalone; default `notice`                                                                                               |
+| W2   | M    | W1, re-scan | staging of a second bundled mod, decoupled (§9.2); `HARNU_SESSION_ROLE` delete-then-set on PTY and tick spawns; the `retryBreaker` pref and its Settings control; Mods audit discovery of every staged dir                                     |
+| W3   | M    | W1, re-scan | host twin `src/main/retry-storm.ts` (trust class from `spawnOriginForSession`, a recorded `read-only` class, and the tick's run record: §5.4); Activity notification for `agent`/`tick`/`read-only`; the Scheduler run record reading it (F-3) |
+| W4   | S    | W3          | mission blocker raise/clear, if OQ-2 says yes                                                                                                                                                                                                  |
+| W5   | S    | W2          | Mods audit `transcript` chip                                                                                                                                                                                                                   |
+| W6   | S    | W1          | marketplace publication and the "Also outside Harnu" switch                                                                                                                                                                                    |
 
 **Contracts the implementation owes:**
 
-| Contract                               | Waves           | What                                                                                                                                   |
-| -------------------------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `CHANGELOG.md`                         | W1–W6           | one user-facing entry per shipped wave                                                                                                 |
-| `docs/harnu-features.md` + marker bump | F-1, W1, W3, W4 | the corrected `SendMessage` subscription wording; agents meet a notice and a refusal text, and Harnu raises blockers on their missions |
-| `docs/user/`                           | W2, W3, W6      | a page for the breaker: what it does, the levels, the dialog, outside Harnu                                                            |
-| `design.md` + `en.json` + `pt-BR.json` | W2, W5          | the Settings control and the audit chip are renderer UI; the mod's own dialog copy is English in the mod, as the companion's is        |
-| `docs/specs/T389-companion-mod/`       | W2, W5          | P1W2 staging list, P4W1 chip table                                                                                                     |
-| ADR                                    | merge           | `ADR-draft.md` numbered                                                                                                                |
-| `tests/no-client-identifiers.test.ts`  | every wave      | fixtures use the neutral vocabulary                                                                                                    |
+| Contract                               | Waves      | What                                                                                                                                                         |
+| -------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `CHANGELOG.md`                         | W1–W6      | one user-facing entry per shipped wave                                                                                                                       |
+| `docs/harnu-features.md` + marker bump | W1, W3, W4 | agents meet a notice and a refusal text, and Harnu raises blockers on their missions. The `SendMessage` wording changes only after `"message": ""` is tested |
+| `docs/user/`                           | W2, W3, W6 | a page for the breaker: what it does, the levels, the dialog, outside Harnu                                                                                  |
+| `design.md` + `en.json` + `pt-BR.json` | W2, W5     | the Settings control and the audit chip are renderer UI; the mod's own dialog copy is English in the mod, as the companion's is                              |
+| `docs/specs/T389-companion-mod/`       | W2, W5     | P1W2 staging list, P4W1 chip table                                                                                                                           |
+| ADR                                    | merge      | `ADR-draft.md` numbered                                                                                                                                      |
+| `tests/no-client-identifiers.test.ts`  | every wave | fixtures use the neutral vocabulary                                                                                                                          |
 
 ## 13. Assumptions the W0 spike must check
 
@@ -635,16 +658,16 @@ substring polling rule, and the `2>&1` tokenizer bug.
 
 ## 14. Open questions (C-7)
 
-| Id   | Question                                                                                                                                                                                                                                                 | Who decides  |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| OQ-1 | **Build it, and how far?** Recommendation: fix F-1 upstream first; ship W0 + W1 at default `notice` (S); re-scan after F-1; build W2–W6 only if unattended storms remain. The data: 8 calls saved in 114,475, and 16 of the 19 storms are one engine bug | operator     |
-| OQ-2 | Should the host twin raise a mission blocker, or only notify? A blocker chimes every 30 minutes until cleared                                                                                                                                            | operator     |
-| OQ-3 | The abort cap (two refused repeats) is unmeasured. Keep it, raise it, or never abort and only refuse?                                                                                                                                                    | operator     |
-| OQ-4 | Is the polling vocabulary (X5) right for the operator's tools, and should it be editable from Settings rather than only in the mod?                                                                                                                      | operator     |
-| OQ-5 | Default level `notice` (recommended) or `enforce`?                                                                                                                                                                                                       | operator     |
-| OQ-6 | Should the same-error rule ever refuse (for example after 6), given E2-type storms ("Do not retry") never have an identical call to refuse?                                                                                                              | operator     |
-| OQ-7 | F-1: who files it upstream, and should Harnu meanwhile tell agents to pass `"message": ""` explicitly (untested whether that parses as a pure subscription)?                                                                                             | orchestrator |
-| OQ-8 | Should the host twin also mark an operator's session row ("retrying") in the fleet view, though the dialog is already on their screen?                                                                                                                   | operator     |
+| Id   | Question                                                                                                                                                                                                                                                                                                          | Who decides |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| OQ-1 | **Build it, and how far?** Recommendation: F-1 fix first; then re-scan; then W0 + W1 at default `notice` (S); W2–W6 only if the re-scan still shows unattended storms. The data: 8 calls saved in 115,595, and 16 of the 19 storms are one engine bug                                                             | operator    |
+| OQ-2 | Should the host twin raise a mission blocker, or only notify? A blocker chimes every 30 minutes until cleared                                                                                                                                                                                                     | operator    |
+| OQ-3 | The abort cap (two refused repeats) is unmeasured. Keep it, raise it, or never abort and only refuse?                                                                                                                                                                                                             | operator    |
+| OQ-4 | Is the polling vocabulary (X5) right for the operator's tools, and should it be editable from Settings rather than only in the mod?                                                                                                                                                                               | operator    |
+| OQ-5 | Default level `notice` (recommended) or `enforce`?                                                                                                                                                                                                                                                                | operator    |
+| OQ-6 | Should the same-error rule ever refuse (for example after 6), given E2-type storms ("Do not retry") never have an identical call to refuse?                                                                                                                                                                       | operator    |
+| OQ-7 | **Answered (orchestrator).** The upstream report on the `SendMessage` schema-versus-description contradiction is drafted and queued for the operator to send through `/feedback`; filing it is the operator's call, not Harnu's. Harnu's guidance is **not** changed to `"message": ""` until that form is tested | answered    |
+| OQ-8 | Should the host twin also mark an operator's session row ("retrying") in the fleet view, though the dialog is already on their screen?                                                                                                                                                                            | operator    |
 
 ## 15. Findings outside the AC list
 
@@ -657,9 +680,9 @@ substring polling rule, and the `2>&1` tokenizer bug.
     for a pure subscription". Its `notify_when_idle` field says "Without a message (omit it)". The
     model tries to follow both and writes a key with no value.
   - **Harnu's part.** `docs/harnu-features.md:347` repeats "and no message". Rewording it cannot fix
-    the schema, but it can steer agents to a form that parses, once a form is known to subscribe
-    without sending (OQ-7).
-  - **Where to fix it.** Upstream, in the tool's schema or description.
+    the schema, and Harnu's guidance stays as it is until `"message": ""` is tested (OQ-7, answered).
+  - **Where to fix it.** Upstream, in the tool's schema or description. The report is drafted and
+    queued for the operator to send through `/feedback`.
 - **F-2 — the operator's Bash rewrite hook trips the worktree guard.** Run 6 and the corpus group
   "this agent is isolated in the worktree …, but this command runs rtk …" show a user-level
   `PreToolUse` rewrite making Claude Code refuse git commands in worktree agents. Not Harnu's code, but

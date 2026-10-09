@@ -126,18 +126,49 @@ test('polling is read from the command words, not from a substring', () => {
   expect(isPoll('mcp__harnu__update_card', { slug: 'x' }, 'NOT_FOUND: card not found')).toBe(false)
 })
 
-test('waiting for a server and an edit by any route never add up', () => {
-  const refused =
-    'Exit code 7\ncurl: (7) Failed to connect to localhost port 5173: Connection refused'
-  expect(isServerWait('Bash', { command: 'curl -sf http://localhost:5173/health' }, refused)).toBe(
+test('wrapped waits are read through bash -c and timeout options', () => {
+  const bash = (command: string) => ({ command })
+  expect(
+    isPoll('Bash', bash("timeout 60 bash -c 'until curl -sf localhost:5173; do sleep 1; done'"), '')
+  ).toBe(true)
+  expect(isPoll('Bash', bash('sh -c "while ! nc -z localhost 5432; do sleep 1; done"'), '')).toBe(
     true
   )
-  expect(isServerWait('Bash', { command: 'cat /repo/missing.txt' }, refused)).toBe(false)
+  expect(isPoll('Bash', bash('timeout -s KILL 30 sleep 20'), '')).toBe(true)
+  expect(isPoll('Bash', bash("timeout --signal=KILL -k 5 30 bash -lc 'sleep 3'"), '')).toBe(true)
+  expect(isPoll('Bash', bash("bash -c 'cat a.ts | head'"), '')).toBe(false)
+  expect(isPoll('Bash', bash('timeout 30 cat a.ts'), '')).toBe(false)
+})
+
+test('waiting for a server, whatever the client, and an edit by any route never add up', () => {
+  const refused =
+    'Exit code 7\ncurl: (7) Failed to connect to localhost port 5173: Connection refused'
+  for (const [tool, input] of [
+    ['Bash', { command: 'curl -sf http://localhost:5173/health' }],
+    ['Bash', { command: 'psql -h localhost -c "select 1"' }],
+    ['Bash', { command: 'npx playwright test' }],
+    ['Bash', { command: 'docker compose exec db pg_isready' }],
+    ['WebFetch', { url: 'http://localhost:5173/', prompt: 'status' }]
+  ] as const)
+    expect(isServerWait(tool, input, refused)).toBe(true)
+  expect(
+    isServerWait(
+      'Bash',
+      { command: 'curl -sf x' },
+      'curl: (22) The requested URL returned error: 502'
+    )
+  ).toBe(true)
+  expect(
+    isServerWait('Bash', { command: 'cat /repo/missing.txt' }, 'cat: missing.txt: No such file')
+  ).toBe(false)
+  expect(isServerWait('Bash', { command: 'npm test' }, 'FAIL src/a.test.ts line 502')).toBe(false)
   expect(isMutation('Bash', { command: "sed -i 's/a/b/' src/a.ts" })).toBe(true)
   expect(isMutation('Bash', { command: 'npx prettier --write src' })).toBe(true)
   expect(isMutation('Bash', { command: 'echo x > src/a.ts' })).toBe(true)
   expect(isMutation('Bash', { command: 'git status && cat a.ts 2>&1 | head' })).toBe(false)
   expect(isMutation('Bash', { command: 'grep -rn foo src > /dev/null' })).toBe(false)
+  expect(isMutation('Bash', { command: "bash -c 'sed -i s/a/b/ a.ts'" })).toBe(true)
+  expect(isMutation('Bash', { command: "bash -c 'cat a.ts'" })).toBe(false)
   expect(isMutation('mcp__harnu__update_card', {})).toBe(true)
   expect(isMutation('mcp__harnu__get_fleet', {})).toBe(false)
 })
@@ -359,24 +390,25 @@ test('a stored notice does not change what counts as the same error', () => {
 $ claude plugin test retry-breaker
 
 tests/breaker.test.ts:
-(pass) the third identical failure carries a notice the model reads [43.90ms]
-(pass) polling is read from the command words, not from a substring [0.65ms]
-(pass) waiting for a server and an edit by any route never add up [0.49ms]
-(pass) polls, person refusals and a success in between never add up [34.77ms]
-(pass) re-running tests after a sed edit or an MCP write starts over [29.19ms]
-(pass) attended: the fourth opens the dialog, the fifth is refused with the reason, no abort [25.25ms]
-(pass) level notice (the default) never refuses [28.92ms]
-(pass) unattended: refused with the reason, then the turn is ended [26.11ms]
-(pass) /retry-breaker reset lifts the refusal and leaves a notice in the transcript [25.74ms]
-(pass) the same error across different inputs warns at four [20.97ms]
-(pass) a subagent counts apart and never opens the dialog [31.35ms]
-(pass) the dialog shows the failures and "Let it retry" lifts the refusal [33.88ms]
-(pass) unattended: a call nobody could approve is never a failure [21.78ms]
-(pass) a stored notice does not change what counts as the same error [0.19ms]
+(pass) the third identical failure carries a notice the model reads [44.08ms]
+(pass) polling is read from the command words, not from a substring [0.68ms]
+(pass) wrapped waits are read through bash -c and timeout options [0.41ms]
+(pass) waiting for a server, whatever the client, and an edit by any route never add up [0.62ms]
+(pass) polls, person refusals and a success in between never add up [36.45ms]
+(pass) re-running tests after a sed edit or an MCP write starts over [40.18ms]
+(pass) attended: the fourth opens the dialog, the fifth is refused with the reason, no abort [39.47ms]
+(pass) level notice (the default) never refuses [42.98ms]
+(pass) unattended: refused with the reason, then the turn is ended [27.67ms]
+(pass) /retry-breaker reset lifts the refusal and leaves a notice in the transcript [48.60ms]
+(pass) the same error across different inputs warns at four [30.75ms]
+(pass) a subagent counts apart and never opens the dialog [30.78ms]
+(pass) the dialog shows the failures and "Let it retry" lifts the refusal [37.17ms]
+(pass) unattended: a call nobody could approve is never a failure [40.64ms]
+(pass) a stored notice does not change what counts as the same error [0.35ms]
 
- 14 pass
+ 15 pass
  0 fail
-Ran 14 tests across 1 file. [0.44s]
+Ran 15 tests across 1 file. [0.55s]
 ```
 
 Tests that exist because a run found a defect:
@@ -387,6 +419,11 @@ Tests that exist because a run found a defect:
   `npm run test:watch` had been excluded by a substring rule (round-1 verifier).
 - "waiting for a server and an edit by any route never add up": the tokenizer had split `2>&1` at
   the `&`, which made `1` a command word and every such command a mutation.
+- "wrapped waits are read through bash -c and timeout options": a `timeout 60 bash -c 'until curl …;
+do sleep 1; done'` read as command word `bash`, and `timeout -s KILL 30 …` as `KILL`, so their
+  `Exit code 124` fed the exact rule (round-2 verifier E7).
+- "waiting for a server, whatever the client": `psql`, `npx playwright test`, `docker compose exec …
+pg_isready` and `WebFetch` to localhost failing with a refusal were counted; X7 now reads the text.
 - "unattended: a call nobody could approve is never a failure": live run 1.
 - "a stored notice does not change what counts as the same error": the transcript check of run 3.
 
@@ -447,6 +484,15 @@ refusal text **4** times (counted as occurrences; the round-1 text said 3 and 2,
 counts).
 
 ### 3.2 Run 10: the attended half, interactive
+
+**Evidence on disk (kept outside this repo).** The session's transcript is
+`~/.claude/projects/<tmp-slug>/c6c7f554-5513-48b2-8445-315cbd92b8f2.jsonl` (the `<tmp-slug>` is the
+scratchpad's `/tmp` path with the slashes turned into dashes; it holds the `[retry-breaker] reset`
+notice once and a `local_command` row for each `/retry-breaker` call). The debug file was
+`<scratch>/probe/live.debug`, from which every `PROBE` and `tool.check` excerpt below is copied. In it:
+`PROBE start interactive=true role=undefined` is line 1 of the hook output, and the "Ask why" answer
+is `PROBE fork isAnswered=true The Read failed because \`missing.txt\` does not exist at that path, …`
+(the full text is drawn in the dialog, item 5).
 
 `claude --plugin-dir <scratch>/probe/live --model haiku` in a detached tmux session (160 × 48),
 keys sent with `tmux send-keys`, the screen read with `tmux capture-pane`. The session opened in the
@@ -523,6 +569,9 @@ instead?`), and the refused call's result, `The user doesn't want to proceed …
    in every mode (`00-spec.md` §5.1, §6.2).
 
 ### 3.3 Run 11: the round-2 rung 3, attended, auto mode
+
+Transcript: `~/.claude/projects/<tmp-slug>/1c450945-c1bb-4ee0-92ed-93ab0cdbd8fb.jsonl`; debug file
+`<scratch>/probe/live2.debug`, from which the excerpt below is copied.
 
 The same set-up, the final build, auto mode, `/retry-breaker enforce`. Told to make the same call 6
 times, the model stopped by itself after the notice on the 3rd failure. Told that advice is not a
