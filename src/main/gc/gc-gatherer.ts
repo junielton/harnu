@@ -68,16 +68,30 @@ export function createGatherer(deps: GathererDeps): Gatherer {
   let peeking: Promise<GcGathered> | null = null
 
   /** The raw gather with the failure overlay on top: a halted item reads Needs review. */
-  const read = async (persisting: boolean): Promise<GcGathered> => {
+  const read = async (persisting: boolean, isCurrent: () => boolean): Promise<GcGathered> => {
     const now = deps.now()
+    // The notes this gather started with: only these may be pruned by what it saw. A note
+    // recorded while it ran (a job halted after the trash) belongs to a world it never looked at.
+    const startedWith = new Map(deps.state.failures)
     const g = await deps.gatherGc(
       deps.prefs(),
       now,
       toDirMap(deps.leftovers.get()),
-      new Set(deps.state.failures.keys())
+      new Set(startedWith.keys())
     )
-    // Pruning forgets failure notes for bundles it cannot see, so only a persisting gather does.
-    if (persisting) pruneFailures(deps.state.failures, g.bundles, now)
+    // Pruning forgets failure notes for bundles it cannot see, so only a persisting gather does,
+    // and only one that is still current: a stale gather would delete the note of an item the
+    // job halted after that gather read the disk.
+    if (persisting && isCurrent()) {
+      const pruned = new Map(startedWith)
+      pruneFailures(pruned, g.bundles, now)
+      for (const id of startedWith.keys()) {
+        // Same note still there: a note replaced meanwhile is a newer halt and stays.
+        if (!pruned.has(id) && deps.state.failures.get(id) === startedWith.get(id)) {
+          deps.state.failures.delete(id)
+        }
+      }
+    }
     return {
       ...g,
       bundles: applyFailures(g.bundles, deps.state.failures, new Set(g.goneItemIds))
@@ -118,7 +132,7 @@ export function createGatherer(deps: GathererDeps): Gatherer {
           // mark, and must survive the verdict on the one it replaced (as a Keep does).
           const startedAt = deps.now()
           const judgedReleases = { ...deps.prefs().released }
-          const g = await read(true)
+          const g = await read(true, () => mine === generation)
           // Invalidated while it ran: its callers get the answer, nothing else does.
           if (mine !== generation) return g
           // A project with no volume left in Docker has nothing to review. Only judged when
@@ -150,7 +164,7 @@ export function createGatherer(deps: GathererDeps): Gatherer {
       return gathering
     },
     peek: () => {
-      peeking ??= read(false).finally(() => {
+      peeking ??= read(false, () => true).finally(() => {
         peeking = null
       })
       return peeking
