@@ -157,8 +157,27 @@ const CASES: { name: string; bundle: WorktreeBundle; refusal: RemovalRefusal | n
   }
 ]
 
+/**
+ * The same facts again as a READY item: main takes a different road for it (the ordinary ops, not the
+ * forced ones), and the predicate must give the same answer on both.
+ */
+const asReady = (c: (typeof CASES)[number]): (typeof CASES)[number] => ({
+  name: `${c.name} (as a ready item)`,
+  refusal: c.refusal,
+  bundle: {
+    ...c.bundle,
+    bucket: 'ready',
+    reason: null,
+    item: { ...c.bundle.item, verdict: 'harvestable', blockers: [], justifiedBy: 'ancestor' }
+  }
+})
+const ROADS = [
+  ...CASES,
+  ...CASES.filter((c) => c.refusal !== 'in-use' && c.bundle.bucket === 'review').map(asReady)
+]
+
 describe('removability agrees with what main does (parity)', () => {
-  for (const c of CASES) {
+  for (const c of ROADS) {
     it(c.name, async () => {
       const verdict = bundleRemovability(c.bundle, NOW)
       const main = await mainSays(c.bundle)
