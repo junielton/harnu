@@ -55,14 +55,26 @@ describe('groupReviewMissions', () => {
     expect(g.other.map((v) => v.mission.id)).toEqual(['o1'])
   })
 
-  it('lists only missions that owe the operator something', () => {
+  it('lists an active, all-done mission in finished even when it owes nothing', () => {
     const quiet = view('q1', { allDone: true, you: [] })
     const g = groupReviewMissions([quiet, ready('r1')])
-    expect([...g.ready, ...g.finished, ...g.other].map((v) => v.mission.id)).toEqual(['r1'])
+    expect(g.finished.map((v) => v.mission.id)).toEqual(['q1'])
+    expect(g.ready.map((v) => v.mission.id)).toEqual(['r1'])
+    expect(g.other).toEqual([])
+  })
+
+  it('does not list an active, not-all-done mission that owes nothing', () => {
+    const quiet = view('q1', { allDone: false, you: [] })
+    expect(groupReviewMissions([quiet])).toEqual({ ready: [], finished: [], other: [] })
+  })
+
+  it('does not preselect or ready-list a quiet finished mission', () => {
+    const g = groupReviewMissions([view('q1', { allDone: true, you: [] }), ready('r1')])
+    expect(readyIds(g)).toEqual(['r1'])
   })
 
   it('does not count approvals or needs-input as owed (the cue never speaks about them)', () => {
-    const quiet = view('q1', { you: [{ kind: 'approvals', count: 2 }] as never })
+    const quiet = view('q1', { allDone: false, you: [{ kind: 'approvals', count: 2 }] as never })
     const g = groupReviewMissions([quiet])
     expect(g).toEqual({ ready: [], finished: [], other: [] })
   })

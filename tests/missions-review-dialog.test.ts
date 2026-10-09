@@ -153,6 +153,20 @@ describe('MissionsReviewDialog — listing', () => {
     expect(warn?.textContent).toContain('Delivered and verified')
   })
 
+  it('lists a finished mission that owes nothing in the finished group, unselected', async () => {
+    const quiet = view('q1', {
+      allDone: true,
+      you: [],
+      warnings: [{ kind: 'end-unverified', detail: '' }] as never
+    })
+    await open([ready('r1'), quiet])
+    expect(rowIds('finished')).toEqual(['q1'])
+    expect((q('[data-mission-id="q1"] input[type="checkbox"]') as HTMLInputElement).checked).toBe(
+      false
+    )
+    expect(q('[data-test="review-count"]')?.textContent).toContain('1 selected')
+  })
+
   it('highlights and scrolls to the focused mission', async () => {
     await open([ready('r1'), other('o1')], 'o1')
     expect(q('[data-mission-id="o1"]')?.dataset.focused).toBe('true')
