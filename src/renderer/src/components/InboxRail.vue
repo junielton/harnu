@@ -47,7 +47,15 @@ import { sessionTitle } from '../lib/session-label'
 import { onClickOutside, onKeyStroke } from '@vueuse/core'
 import { useHoverPreview } from '../composables/useHoverPreview'
 import { useContextMenu } from '../composables/useContextMenu'
-import { Check, ChevronDown, ChevronsRight, ListFilter, TriangleAlert } from 'lucide-vue-next'
+import {
+  ArrowDownWideNarrow,
+  ArrowUpNarrowWide,
+  Check,
+  ChevronDown,
+  ChevronsRight,
+  ListFilter,
+  TriangleAlert
+} from 'lucide-vue-next'
 import { useSessionsStore, type Session } from '../stores/sessions'
 import { useLayoutStore, INBOX_RAIL_FILTERABLE_STATES } from '../stores/layout'
 import { relativeTime } from '../composables/useRelativeTime'
@@ -83,7 +91,9 @@ const minimized = computed(() => layout.inboxRailState === 'minimized')
  * tier order needs-input → errored → stuck → working → idle → done — the
  * SAME order the old sidebar board used): `idle` is dropped (never rendered
  * in the rail — the fleet's own empty state covers an idle-only fleet),
- * everything else keeps its bucket order and per-bucket sort.
+ * everything else keeps its bucket order and per-bucket sort (creation order,
+ * newest first unless the header toggle inverts it — T459). The minimized
+ * strip's minicards flatten the same list, so both views always agree.
  */
 const fleetCards = computed<Array<{ session: Session; folderAlias: string; state: BoardState }>>(
   () => {
@@ -131,11 +141,11 @@ const fleetStateCounts = computed<Record<BoardState, number>>(() => {
   return counts
 })
 
-// Mirrors `sessions.ts`'s `ASCENDING_TIME_TIERS` (needs-input/errored/stuck —
-// the three states that demand action, vs. working/done which don't). Kept
-// as a local literal rather than importing from `stores/sessions.ts`: that
-// file's classifier internals are out of scope for this change (BUG-53 owns
-// them in a parallel unit).
+// The three states that demand action (needs-input/errored/stuck), vs.
+// working/done which don't. Kept as a local literal rather than importing from
+// `stores/sessions.ts`: that file's classifier internals are out of scope for
+// this change (BUG-53 owns them in a parallel unit). Membership only — card
+// ORDER inside a state is creation order for every tier (T459).
 const ATTENTION_TIER_STATES: ReadonlySet<BoardState> = new Set(['needs-input', 'errored', 'stuck'])
 
 /** How many currently-hidden cards are in an attention tier — the count the
@@ -146,6 +156,15 @@ const hiddenAttentionCount = computed(
       (card) =>
         ATTENTION_TIER_STATES.has(card.state) && layout.inboxRailHiddenStates.has(card.state)
     ).length
+)
+
+/** Tooltip + aria-label of the order toggle: current order and what a click does. */
+const orderLabel = computed(() =>
+  t(
+    layout.inboxRailOrder === 'newest-first'
+      ? 'approvalInbox.order.newestFirst'
+      : 'approvalInbox.order.oldestFirst'
+  )
 )
 
 const hasActiveStateFilter = computed(() => layout.inboxRailHiddenStates.size > 0)
@@ -400,6 +419,26 @@ onMounted(() => {
           >{{ sessions.inboxCount }}</span
         >
         <span class="min-w-0 flex-1" />
+
+        <!-- Card order toggle (T459) — cards sit in creation order inside each
+             state group, newest first by default; this inverts it. The icon
+             shows the CURRENT order, the title/aria-label say what a click does. -->
+        <button
+          type="button"
+          class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
+          style="width: 22px; height: 22px"
+          data-dsqa="fleet-rail-order-button"
+          :title="orderLabel"
+          :aria-label="orderLabel"
+          @click="layout.toggleInboxRailOrder()"
+        >
+          <ArrowDownWideNarrow
+            v-if="layout.inboxRailOrder === 'newest-first'"
+            :size="14"
+            :stroke-width="1.7"
+          />
+          <ArrowUpNarrowWide v-else :size="14" :stroke-width="1.7" />
+        </button>
 
         <!-- Fleet rail state filter (T159) — icon + anchored popover, doubles
              as the legend for the dot/ring language the removed bucket

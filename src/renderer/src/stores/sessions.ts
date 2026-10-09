@@ -55,12 +55,7 @@ import {
   type FleetState
 } from './fleet-state'
 import { sortSessions, type SessionSortMode } from '../components/session-sort'
-import {
-  buildBoard,
-  type BoardBucket,
-  type BoardSession,
-  type BoardState
-} from '../components/fleet-board'
+import { buildBoard, type BoardBucket, type BoardSession } from '../components/fleet-board'
 import { sortFolders, type FolderSortMode } from '../components/folder-sort'
 import { isSidebarDensity, type SidebarDensity } from '../components/sidebar-density'
 import { teamHex } from '../components/teammate-grouping'
@@ -2421,22 +2416,21 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   /**
-   * Tiers whose bucket sorts oldest-waiting-first (Fleet rail, T151 — "the
-   * most neglected surfaces on top"), the inverse of `buildBoard`'s default
-   * most-recent-first. Applies to every `boardBuckets` consumer (not just the
-   * rail) — `buildBoard`/`fleet-board.ts` itself stays untouched; this
-   * re-sorts its output per bucket.
+   * Creation-time anchors for the Fleet rail's sort (T459): `realId` → the
+   * `created` of the synthetic placeholder it replaced. When the synthetic row
+   * is DROPPED and a different (disk) row survives (`absorbSyntheticIntoRealRow`,
+   * `collapseResolvedSynthetics`), the survivor's own `created` is the JSONL's
+   * birthtime — seconds after the operator pressed "+ New session" — so keying
+   * the sort on it would make the card jump past newer neighbours. The anchor
+   * is the creation moment as the operator experienced it. An in-place
+   * migration needs none: the same row object keeps its `created`.
+   * `Session.created` itself is never rewritten (twin matching reads it).
    */
-  const ASCENDING_TIME_TIERS: ReadonlySet<BoardState> = new Set(['needs-input', 'errored', 'stuck'])
-
-  function oldestFirst(sessions: readonly BoardSession[]): BoardSession[] {
-    return [...sessions].sort((a, b) => {
-      const am = Date.parse(a.modified)
-      const bm = Date.parse(b.modified)
-      const ak = Number.isFinite(am) ? am : Infinity
-      const bk = Number.isFinite(bm) ? bm : Infinity
-      return ak - bk
-    })
+  const creationAnchors = new Map<string, string>()
+  function anchorCreation(synth: Session, realId: string): void {
+    if (Number.isFinite(Date.parse(synth.created))) {
+      creationAnchors.set(realId, creationAnchors.get(synth.sessionId) ?? synth.created)
+    }
   }
 
   /**
@@ -2444,7 +2438,10 @@ export const useSessionsStore = defineStore('sessions', () => {
    * `folders` data the zones read, re-grouped by session state into urgency
    * buckets. Resolves `folderAlias` once per folder, drops sidechains, honours
    * the inline `filterQuery` per-card, then delegates ordering/grouping to the
-   * pure `buildBoard`. Orthogonal to the zones — never touches folder-zones.ts.
+   * pure `buildBoard`. Cards inside a bucket are in CREATION order (T459 —
+   * never moved by activity), newest first unless the rail's invert toggle
+   * (`layout.inboxRailOrder`) says otherwise. Orthogonal to the zones — never
+   * touches folder-zones.ts.
    */
   const boardBuckets = computed<BoardBucket[]>(() => {
     const q = filterQuery.value.trim()
@@ -2476,16 +2473,13 @@ export const useSessionsStore = defineStore('sessions', () => {
           status: s.status,
           isSidechain: s.isSidechain,
           modified: s.modified,
+          created: creationAnchors.get(s.sessionId) ?? s.created,
           activity: activityOf(s, now),
           folderAlias: f.alias
         })
       }
     }
-    return buildBoard(slices).map((bucket) =>
-      ASCENDING_TIME_TIERS.has(bucket.state)
-        ? { state: bucket.state, sessions: oldestFirst(bucket.sessions) }
-        : bucket
-    )
+    return buildBoard(slices, useLayoutStore().inboxRailOrder)
   })
 
   /**
@@ -5084,6 +5078,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     const realId = realRow.sessionId
     const wasAgentControlled = synth.agentControlled === true
     agentCorrelationMeta.delete(synthId)
+    anchorCreation(synth, realId)
     // T215: carry the ownership marker onto the surviving row. The disk row
     // has no `spawnedBy` (it never appears in the JSONL), and dropping it
     // here would make the session look operator-owned on its NEXT spawn —
@@ -5288,6 +5283,7 @@ export const useSessionsStore = defineStore('sessions', () => {
         }
         if (!twin) continue
         claimed.add(twin.sessionId)
+        anchorCreation(synth, twin.sessionId)
 
         const synthId = synth.sessionId
         folder.sessions.splice(folder.sessions.indexOf(twin), 1)

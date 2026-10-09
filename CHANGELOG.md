@@ -12,6 +12,15 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-10-09
 
+### Changed
+
+- **The Fleet rail no longer jumps around.** Cards used to reshuffle every time a session wrote
+  anything, so with a few sessions running the list never stayed put. Inside each state group
+  (needs input, errored, stuck, working, done) cards now stay in the order the sessions were
+  created, newest on top, and activity never moves them. The groups keep their usual order, and
+  the minimized strip follows the same order. A new button in the rail header (next to the
+  state filter) flips it to oldest first; Harnu remembers your choice.
+
 ### Fixed
 
 - **Cleanup no longer warns about hidden orphan volumes when none could be hidden.** The Docker card said "Orphan volumes: hidden" with a list of folders even when every volume belonged to a running stack. The warning now shows only when some volume is used by no container and a compose project name could not be resolved; otherwise the card reads "No orphan volumes". The card also says plainly that it counts only build cache older than N days and dangling images, never images in use or the volumes of live stacks.
