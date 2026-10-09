@@ -39,10 +39,11 @@ can live, how a press reaches a mission, and what may aim it:
    changes, from a timer it owns and after every mission write. The match is one pure function
    that T447's D-A verb can later wrap, each keeping its own role order.
 3. **A write is aimed only with ids Harnu observed.** The ids a press may target are those Harnu's
-   PTY index holds for the binding's PTY: the spawn key, migrations Harnu correlated itself, and a
-   companion-reported change only under four conditions: its transcript is corroborated on
-   disk and born after the spawn, no live PTY holds it, Harnu never registered it for another
-   PTY (a ledger kept for the process lifetime), and no mission step links it. Never the binding's `sid`, never a `session.rebound` as such.
+   PTY index holds for the binding's PTY: the spawn key, migrations Harnu correlated itself, never
+   the binding's `sid` and never a `session.rebound`. A companion-reported change of id is
+   recorded (audit, the operator gesture of OQ-8), flagged contested when a step or an owner links
+   it, and never matches: Harnu cannot tell a genuine `/clear` from a forged rebound once a step
+   links the id, so the rule is fail-closed.
 4. **A press is an edge event carrying the action and the revision the person saw.** Harnu main
    checks it, takes the mission and step from its own record of that revision (which must still be
    the current target, else `RAIL_STALE`), and applies the verb's own pure mutation together
@@ -66,12 +67,14 @@ can live, how a press reaches a mission, and what may aim it:
   2 s, each under a `· rail ·` header, marked and audited. It can also relabel the rail's Buttons,
   since plugins of one tier are not isolated. The model cannot press. In "Ask before agent
   actions" mode the rail is display only.
-- After a `/clear` the rail is display-only until Harnu's watcher corroborates the new transcript.
+- After a `/clear` or `/resume` typed in an executor the rail is display-only through a `worktree`
+  link, or absent, until Harnu respawns the session (a spawn key) or the operator uses a gesture
+  (OQ-8). The ids Harnu cannot observe cost the executor its actions.
 - An executor whose band drew keys and whose mission closes shows a Dismiss row until someone
   presses it; the mod cannot tell whether the band had the keyboard.
-- Residual, named: a letter for a key no longer drawn sends the keyboard to the prompt (K-10), and
-  an id Harnu never spawned, linked to a step only after a forged rebound, can still be aimed at
-  (K-9's remainder).
+- Residual, named: a letter for a key no longer drawn sends the keyboard to the prompt (K-10). A
+  field the person walks away from stays drawn: no timer closes it, because every close tried
+  either left nothing focusable or sent the person's next letter to the prompt.
 - The companion gains a `ui.render` hook, so the Mods tab shows its `terminal` chip. The mission
   file gains two optional fields (`Blocker.via`, `MissionStep.claimedVia`).
 - P4W2 is amended in eight named places (spec §4.3), including its "no band inside Harnu" rule for
@@ -96,14 +99,18 @@ can live, how a press reaches a mission, and what may aim it:
 - **Send the current revision with a press.** Rejected: a note typed for step 3 would be applied
   to whatever step the host resolves when Enter is pressed. A press names the revision the person
   saw.
-- **Trust the Log header as provenance.** Rejected: `mission_log` inserts its note raw. `via` and
-  `claimedVia` are the marks; `mission_log` also neutralises heading lookalikes.
+- **Trust the Log header as provenance.** Rejected: `mission_log`, `mission_verify_step` and
+  `mission_set_end` insert caller text raw. `via` and `claimedVia` are the marks; one shared helper
+  neutralises heading lookalikes in every free-text path to the Log.
+- **Close an abandoned field on a timer.** Rejected after the round-3 grading: to idle it leaves
+  nothing focusable when the line is gone, and with the line present the person's next letter
+  goes to the prompt. The pinned revision makes a lingering field safe.
 
 ## Kill criteria
 
-- W0 shows that Harnu's watcher does not see a `/clear`'s transcript with a birth time after the
-  PTY's spawn: actions after `/clear` stay off until the orchestrator re-links (OQ-8), and the rail
-  ships display-only for those sessions.
+- W0 shows that Harnu's watcher does not see a `/clear`'s transcript in time: the operator
+  gesture of OQ-8 has nothing to corroborate, and an executor that clears its context stays
+  display-only until it is respawned.
 - W0 shows that a process the Bash tool starts can read `conn`: the action half (W2) does not ship
   until presses carry a proof the model cannot produce.
 - W0 shows that the field rule does not hold in Harnu's xterm.js (keys typed into an open field

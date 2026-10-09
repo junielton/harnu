@@ -469,20 +469,35 @@ test('a press carries the revision the person saw, and the field keeps naming it
   expect(h.sent.at(-1)).toEqual({ t: 'ui.action', d: { name: 'step.claim', rev: 10 } })
 })
 
-test('an untouched field or confirm closes after five minutes; typing keeps it', async ($, on) => {
+test('a field left open stays, with the line present or gone, for as long as it is left', async ($, on) => {
   const { clock, h } = await start($, on, CHILD)
   const ui = await $.ui.mount(band(115))
-  await ui.press({ key: 'rail-log' })
-  await clock.advance(200_000)
-  await ui.input({ key: 'rail-log', text: 'half a note', kind: 'change' })
-  await clock.advance(200_000)
-  expect((await row(ui)).inputs).toEqual(['rail-log']) // 200 s since the last keystroke
-  await clock.advance(110_000)
-  expect(await row(ui)).toMatchObject({ inputs: [], buttons: ['c: Claim', 'b: Block', 'l: Log'] })
+  const hold = async (minutes: number) => {
+    for (let t = 0; t < (minutes * 60) / 10; t++) await clock.advance(10_000)
+  }
 
+  // The field is open with the line present; the person pauses 10 minutes mid-reason.
+  await ui.press({ key: 'rail-log' })
+  await ui.input({ key: 'rail-log', text: 'half a note', kind: 'change' })
+  await hold(10)
+  expect((await row(ui)).inputs).toEqual(['rail-log'])
+
+  // The host pushes null, then 310 s pass: the field is still the only focusable element.
+  h.band = null
+  await clock.advance(2_100)
+  await hold(5)
+  expect(await row(ui)).toMatchObject({ inputs: ['rail-log'], text: undefined })
+
+  // The same for the confirm, with the line gone for good.
+  await ui.input({ key: 'rail-log', text: '' }) // Enter on empty cancels
+  expect((await row(ui)).text).toBeUndefined()
+  h.band = CHILD
+  await clock.advance(2_100)
   await ui.press({ key: 'rail-claim' })
-  await clock.advance(310_000)
-  expect((await row(ui)).buttons).toEqual(['c: Claim', 'b: Block', 'l: Log'])
+  h.band = null
+  await clock.advance(2_100)
+  await hold(6)
+  expect((await row(ui)).buttons).toEqual(['y: Claim', 'n: Cancel'])
   expect(h.sent).toEqual([])
 })
 ```

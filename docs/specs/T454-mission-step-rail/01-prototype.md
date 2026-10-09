@@ -42,8 +42,9 @@ overflow at any width, test 9); an open confirm or field is never removed by a p
 a width change, and its target is checked when the person ends it (`checkTarget`); an idle row
 that drew a key keeps one (`keep` keys, Dismiss); the mode is reconciled on every push and expiry
 (`reconcile`); Retry; the owner row matches spec S2. Round 3: a field or confirm pins the revision and step number it
-opened on and the press names the pinned revision; an untouched field or confirm closes after five
-minutes.
+opened on and the press names the pinned revision; no timer closes an abandoned field (a first
+round-3 build closed it after five minutes and was withdrawn: closing to idle left nothing
+focusable).
 
 ## 2. Source
 
@@ -68,7 +69,7 @@ Validating plugin manifest: <scratchpad>/rail-proto/.claude-plugin/plugin.json
 Validating hooks: <scratchpad>/rail-proto/hooks/hooks.json
 
   ❯ ./register.ts hooks: session.start, ui.render{component=AbovePrompt}
-  ❯ ./register.ts calls: $.clock.every, $.clock.now (via handlers, onKey, sync, tick), $.http.fetch (via sync), $.state.get, $.state.set, $.ui.resolve
+  ❯ ./register.ts calls: $.clock.every, $.clock.now (via sync, tick), $.http.fetch (via sync), $.state.get, $.state.set, $.ui.resolve
   ❯ ./register.ts state writes: rail-proto.mode, rail-proto.rail
   ❯ ./register.ts state reads: rail-proto.mode, rail-proto.rail
 
@@ -126,25 +127,25 @@ final, line gone while the band held keys (idle) @115: ◆ Mission closed or ste
 final, line gone while the band held keys (idle) @75: ◆ Mission closed or step unlinked.  x: Dismiss
 final, line gone while the band held keys (idle) @40: ◆ No step now.  x: Dismiss
 tests/rail.test.ts:
-(pass) fits the child row to bodyColumns and cuts in the declared order [115.07ms]
-(pass) claim is two presses and sends the action and revision, never a step id [62.81ms]
-(pass) a blocker reason is typed into the band; an empty one cancels [62.71ms]
-(pass) Harnu unreachable: nothing was saved, Retry and Dismiss, fitted at every width [240.14ms]
-(pass) F-1: an open field or confirm outlives every push, expiry and width; an idle row keeps a key [245.88ms]
-(pass) a refused press says so once, inside the width [48.86ms]
-(pass) blocked: the reason outranks the title, the level goes first [53.97ms]
-(pass) wraps what another mod drew and yields to a survey [51.31ms]
-(pass) every state fits at 115, 75 and 40 (printed) [322.42ms]
-(pass) a press carries the revision the person saw, and the field keeps naming its step [53.68ms]
-(pass) an untouched field or confirm closes after five minutes; typing keeps it [1205.23ms]
+(pass) fits the child row to bodyColumns and cuts in the declared order [257.23ms]
+(pass) claim is two presses and sends the action and revision, never a step id [93.16ms]
+(pass) a blocker reason is typed into the band; an empty one cancels [93.17ms]
+(pass) Harnu unreachable: nothing was saved, Retry and Dismiss, fitted at every width [554.81ms]
+(pass) F-1: an open field or confirm outlives every push, expiry and width; an idle row keeps a key [637.50ms]
+(pass) a refused press says so once, inside the width [315.54ms]
+(pass) blocked: the reason outranks the title, the level goes first [145.08ms]
+(pass) wraps what another mod drew and yields to a survey [185.24ms]
+(pass) every state fits at 115, 75 and 40 (printed) [900.71ms]
+(pass) a press carries the revision the person saw, and the field keeps naming its step [134.12ms]
+(pass) a field left open stays, with the line present or gone, for as long as it is left [3866.28ms]
  11 pass
  0 fail
-Ran 11 tests across 1 file. [2.68s]
+Ran 11 tests across 1 file. [7.65s]
 
 $ claude plugin test rail-proto   # Claude Code 2.1.296 (the CLI updated during the session)
  11 pass
  0 fail
-Ran 11 tests across 1 file. [2.53s]
+Ran 11 tests across 1 file. [4.29s]
 
 $ tsc -p tsc-rail   # TypeScript 5.6.3 against the 2.1.295 claude-code.d.ts
 (exit 0, no output)
@@ -154,7 +155,7 @@ The tests were checked against deliberate breakages before they were trusted. Ro
 `{below}` from `stack` fails test 8, and adding a `stepId` to the press event fails tests 2 and 3.
 Round 2: drawing the field only while the line exists fails test 5, and not adding Dismiss to an
 idle row whose actions went away fails test 5. Round 3: sending the current revision instead of the
-pinned one fails test 10, and never closing an untouched field fails test 11. All were reverted.
+pinned one fails test 10, and closing a field on a timer (the withdrawn build) fails test 11. All were reverted.
 
 **The round-1 verifier's probes**, copied unchanged from its scratchpad and run against this
 prototype (`tests/probe.test.ts` in place of `rail.test.ts`; each line is the row's text and its
@@ -399,18 +400,18 @@ not the one in force when Enter was pressed:
 
 ## 5. What the runs prove, and what they do not
 
-| Claim                                                                                        | Shown by                                      |
-| -------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| Every state fits `bodyColumns` at 115, 75 and 40, keys included                              | kit test 9 (assertions and printout)          |
-| The cut order, the reason outranking the title, "Nothing was saved." never cut               | kit tests 1, 4, 6, 7, 9                       |
-| The rail wraps what plugins beneath it drew and yields to a survey                           | kit test 8                                    |
-| A press leaves with the action and the revision, never a step id                             | kit tests 2, 3; live host log                 |
-| Claim is two presses; an empty field cancels                                                 | kit tests 2, 3; live                          |
-| An open field or confirm survives a `null` push, the TTL, the host down, a width drop        | kit test 5; verifier's probes; live E7, E8    |
-| An idle row whose keys go away keeps a Dismiss; past the TTL it turns final with Dismiss     | kit tests 4, 5; live E2, E5                   |
-| Letters reach the band only after `ctrl+x tab`; an unbound letter returns to the prompt      | live round 1, E6                              |
-| A press names the revision the person saw; a field keeps naming its step                     | kit test 10; verifier's `sent` probe; live E9 |
-| An untouched field or confirm closes after five minutes; every keystroke restarts the clock  | kit test 11                                   |
-| A digit typed into an empty prompt stays there when no band Button holds a digit             | live round 1                                  |
-| A `.ts` hooks module may import a `.tsx` view                                                | validate, kit, live                           |
-| **Not shown:** the companion channel, the host half, Harnu's xterm.js, the fullscreen layout | spec §12 W0, LV-T454-a/b                      |
+| Claim                                                                                                                       | Shown by                                      |
+| --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| Every state fits `bodyColumns` at 115, 75 and 40, keys included                                                             | kit test 9 (assertions and printout)          |
+| The cut order, the reason outranking the title, "Nothing was saved." never cut                                              | kit tests 1, 4, 6, 7, 9                       |
+| The rail wraps what plugins beneath it drew and yields to a survey                                                          | kit test 8                                    |
+| A press leaves with the action and the revision, never a step id                                                            | kit tests 2, 3; live host log                 |
+| Claim is two presses; an empty field cancels                                                                                | kit tests 2, 3; live                          |
+| An open field or confirm survives a `null` push, the TTL, the host down, a width drop                                       | kit test 5; verifier's probes; live E7, E8    |
+| An idle row whose keys go away keeps a Dismiss; past the TTL it turns final with Dismiss                                    | kit tests 4, 5; live E2, E5                   |
+| Letters reach the band only after `ctrl+x tab`; an unbound letter returns to the prompt                                     | live round 1, E6                              |
+| A press names the revision the person saw; a field keeps naming its step                                                    | kit test 10; verifier's `sent` probe; live E9 |
+| A field or confirm left open stays, for ten minutes with the line present and past the TTL with it gone, and keeps its keys | kit test 11                                   |
+| A digit typed into an empty prompt stays there when no band Button holds a digit                                            | live round 1                                  |
+| A `.ts` hooks module may import a `.tsx` view                                                                               | validate, kit, live                           |
+| **Not shown:** the companion channel, the host half, Harnu's xterm.js, the fullscreen layout                                | spec §12 W0, LV-T454-a/b                      |

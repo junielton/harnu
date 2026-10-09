@@ -82,14 +82,28 @@ refuses a sibling Harnu spawned; 1 and 2 refuse everything older and everything 
 sibling that Harnu respawns with `--resume <its id>` re-registers its own key, so the ledger
 already knows it.
 
-**The named remainder.** An id that Harnu never spawned, that no step links at the moment of the
-rebound, whose transcript is born after this PTY's spawn, and that is linked to a step _later_:
-a session started by hand moments after the forger's spawn and linked afterwards. It needs an
-orchestrator to link a hand-started session, which is not the dispatch path; it is listed as
-K-9's remainder. When such a link appears Harnu re-checks every binding's companion-derived ids
-(condition 4 again): an id that was trusted via the companion and is now linked is distrusted.
-That also drops the genuine case where an orchestrator re-links an executor's post-`/clear` id,
-which is why OQ-8 asks for an operator gesture rather than a re-link.
+**What this means for a `/clear`.** A companion-derived id is admitted only while no step links
+it, and it is distrusted the moment one does. A step's session link is how the rail matches a
+child, so **a companion-derived id can never match a step**: the match uses only spawn keys and
+migrations Harnu correlated itself. In v1 a `/clear` or `/resume` typed in an executor therefore
+costs it its actions, and its display unless a `worktree` link still names its folder (OQ-8 asks
+for an operator gesture to restore them). The ids are still recorded, for the audit and for that
+gesture. This is fail-closed on purpose: the same rule that refuses a forged rebound refuses a
+genuine one, because Harnu cannot tell them apart once a step links the id.
+
+**What is left of the forged-rebound risk.** Nothing that aims a press. The ids that can match a
+step or an owner are the spawn keys and the migrations Harnu correlated itself, all observed by
+Harnu. A companion-derived id is recorded (the audit, the popover's "contested" mark, the OQ-8
+gesture) and never matches; conditions 1 to 4 decide only whether it is recorded as plausible or as
+contested. Condition 4 also counts `owner.sessionId` of any mission, so a forged rebound to an
+orchestrator's id is contested too.
+
+**When the checks run, and what they read.** Condition 4 runs on every publish, before
+`resolveMissionRole`, against the views of that publish (up to `RAIL_LIST_MS` old, 20 s), and again
+on every mission write. A session link added by a direct edit of a mission file is seen at the next
+tick. A press never rests on that view: the executor reads the mission file fresh under the lock
+(§3.2) and refuses `RAIL_STALE` unless the matched step still holds a `session` link to one of the
+binding's trusted keys.
 
 What changes in code (W1): `PtySessionIndex` keeps, per PTY, a bounded history of
 `{ key, via: 'spawn' | MigrateVia, at }`, plus the process-wide ledger of condition 3; the `pty:rekey` IPC (`pty.ts:1140`, today
@@ -111,8 +125,8 @@ No amendment to SEC-3b is needed: no consumer here trusts an event as authority.
 
 The trusted set aims both the display and the actions. A row that shows a step the session cannot
 act on would teach the person to press keys that answer `RAIL_NOT_OFFERED`. After a `/clear` the
-rail therefore shows the step only once the new transcript is corroborated; until then it shows
-the worktree match, display only, or nothing (OQ-8).
+rail therefore shows the step of a trusted key, and after a `/clear` the worktree match, display
+only, or nothing (§1.2, OQ-8).
 
 ### 1.4 T447's finding, D-A, and the order of roles
 
@@ -265,6 +279,11 @@ type RailRefusal =
   | 'REFUSED'
 ```
 
+**Specified, not run.** The host half of the pin (the 32-revision target record, `RAIL_STALE`,
+`RAIL_NOT_OFFERED`, the fresh re-read under the lock) is not prototyped: the kit's stand-in host
+only records the revision it receives. Its L1 tests are W2's, and W0 checks the revision-ring size
+against a real publish rate (A-10).
+
 `KIT` tests 2, 3 and 10 and the `LIVE` host log show step 2: `{"name":"step.claim","rev":5}`, and
 `{"name":"step.log","rev":1791579453,"text":"note for the old step"}`, the revision of the frame
 the field opened on, sent after the host had pushed `null` and a line for step 5 (E9).
@@ -291,15 +310,18 @@ and the handlers store none. Now:
   `logAppend`: no steps are copied. The ctx carries the agent policy (the live `denyFolders`), as
   for any agent verb. A log press is a `fn` that only returns `logAppend`.
 - **The Log header is not provenance on its own.** The entry's header is `### <iso> · rail ·
-stp-3`, and no verb builds that tag: `mission_log` builds its header from
-  `missionLogEntry(before, tag, text)` (`tool-handlers.ts:4362`) with tag ` · <stepId>`. But the
-  verb inserts its `note` raw, up to 8000 characters (`TC:1524`), only trimmed
-  (`tool-handlers.ts:4553`): a note holding `\n\n### <iso> · rail · stp-3\n\nClaimed from the
-terminal rail …` produces an identical header. So W2 makes `mission_log` **neutralize Markdown
-  heading markers at the start of any line of a note** (a line matching `^#{1,6}\s` gets a
-  backslash in front), and `readMissionLog` is unchanged. With that, the `· rail ·` header can only
-  come from the rail's executor. Even so, the Log is a record for people; what the code and the
-  popover trust is the `via` mark below, which no verb can set.
+stp-3`, and the verbs build their own headers (`missionLogEntry(before, tag, text)`,
+  `tool-handlers.ts:4362`, tag ` · <stepId>`). But three of them insert caller text raw into
+  `logAppend` or the Log: `mission_log`'s `note`, up to 8000 characters (`TC:1524`,
+  `tool-handlers.ts:4553`), `mission_verify_step`'s `evidence` (`:4524`) and `mission_set_end`'s
+  `reason` (`:4405`); the importer copies a legacy Log verbatim. Any of them can carry `\n\n### <iso>
+· rail · stp-3\n\nClaimed from the terminal rail …` and produce an identical header. So W2 adds
+  **one shared helper, `neutralizeLogText`, applied to every free-text path that reaches the Log**
+  (the three above and the import): each line matching `^ {0,3}#{1,6}(\s|$)`, up to three leading
+  spaces being what CommonMark still renders as a heading, gets a backslash before the `#`.
+  `readMissionLog` is unchanged. With that, a `· rail ·` header can only come from the rail's
+  executor. Even so, the Log is a record for people; what the code and the popover trust is the `via`
+  mark below, which no verb can set.
   Bodies are fixed templates: "Claimed from the terminal rail (operator, session `1a2b3c4d`).",
   "Blocker raised from the terminal rail …", "Blocker cleared from the terminal rail …", and for a
   log press "Operator note: {text}". The session is the first eight characters of the trusted key
@@ -313,8 +335,11 @@ terminal rail …` produces an identical header. So W2 makes `mission_log` **neu
   blocker with the same `reason` in place (`tool-handlers.ts:4304-4306`: `unblocks` and `owner`
   are overwritten), and `mission_update_step` can set `proof: 'claimed'` again on a claimed step
   (`:4187-4203`). W2 makes both handlers delete `via` and `claimedVia` when they touch the record,
-  so a mark means "this record was last written by a press"; a rail press that updates an existing
-  blocker sets it again.
+  and every other write that changes a step's `proof` does the same: `mission_verify_step`
+  (`:4524` and its proof update) and the operator doors (`applyOperatorVerifyStep`, ticking and
+  unticking a human step), so `claimedVia` never survives a verification. A mark means "this
+  record was last written by a press"; a rail press that updates an existing blocker sets it
+  again.
 
 ### 3.3 Who can press, and what that grants
 
@@ -353,18 +378,18 @@ binding, action, mission id, step id, the trusted key the step matched, outcome,
 
 ## 4. Environments
 
-| Session                                                         | What the rail does                                                                                         |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Spawned by Harnu for an agent (`agentControlled`), no Harnu MCP | full rail and actions: the data comes over the companion channel, not MCP (§2.1)                           |
-| Spawned by Harnu, operator-started, with Harnu MCP              | same; the rail never uses the MCP server                                                                   |
-| Board or manifest dispatch (trust `agent`)                      | same                                                                                                       |
-| A session sharing a worktree with a step's link, not linked     | display only (§1.1, rule 3)                                                                                |
-| Read-only review spawn                                          | display only                                                                                               |
-| Scheduler tick                                                  | nothing: headless, `ui.render` not raised; `ui.band` is never enabled headless (`feature-policy.ts:82`)    |
-| Outside Harnu, P4W3 on                                          | owner row (P4W2 row 4 + Δ5), child row display-only, both after corroboration                              |
-| Companion `off`, CLI below the floor, sideload-blocked          | nothing: no companion, no band                                                                             |
-| Companion `legacy` (loaded, not authoritative)                  | nothing until `ui.band` is enabled for the binding (spec §10)                                              |
-| Harnu quits mid-session                                         | the row turns final after the TTL; an open field or confirm stays until the person ends it (spec S8, §7.5) |
-| Hot reload of the companion                                     | the row redraws from `$.state` (the `band` value survives a reload, `TYPES:3376-3383`)                     |
-| Hibernation, then resume                                        | Harnu respawns with `--resume <uuid>`: the spawn key is trusted (§1.2)                                     |
-| `/clear` or `/resume` typed in the executor                     | display and actions resume once the new transcript is corroborated (A-1); until then display only (OQ-8)   |
+| Session                                                         | What the rail does                                                                                                                                       |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Spawned by Harnu for an agent (`agentControlled`), no Harnu MCP | full rail and actions: the data comes over the companion channel, not MCP (§2.1)                                                                         |
+| Spawned by Harnu, operator-started, with Harnu MCP              | same; the rail never uses the MCP server                                                                                                                 |
+| Board or manifest dispatch (trust `agent`)                      | same                                                                                                                                                     |
+| A session sharing a worktree with a step's link, not linked     | display only (§1.1, rule 3)                                                                                                                              |
+| Read-only review spawn                                          | display only                                                                                                                                             |
+| Scheduler tick                                                  | nothing: headless, `ui.render` not raised; `ui.band` is never enabled headless (`feature-policy.ts:82`)                                                  |
+| Outside Harnu, P4W3 on                                          | owner row (P4W2 row 4 + Δ5), child row display-only, both after corroboration                                                                            |
+| Companion `off`, CLI below the floor, sideload-blocked          | nothing: no companion, no band                                                                                                                           |
+| Companion `legacy` (loaded, not authoritative)                  | nothing until `ui.band` is enabled for the binding (spec §10)                                                                                            |
+| Harnu quits mid-session                                         | the row turns final after the TTL; an open field or confirm stays until the person ends it (spec S8, §7.5)                                               |
+| Hot reload of the companion                                     | the row redraws from `$.state` (the `band` value survives a reload, `TYPES:3376-3383`)                                                                   |
+| Hibernation, then resume                                        | Harnu respawns with `--resume <uuid>`: the spawn key is trusted (§1.2)                                                                                   |
+| `/clear` or `/resume` typed in the executor                     | display only through a `worktree` link, or nothing; actions return with a respawn by Harnu (`--resume`, a spawn key) or an operator gesture (§1.2, OQ-8) |

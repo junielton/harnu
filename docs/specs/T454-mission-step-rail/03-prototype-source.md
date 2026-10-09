@@ -59,7 +59,7 @@ export type RailView = {
 /** Why a final row stands: the rail went away, the step changed, or Harnu stopped answering. */
 export type RailGone = 'gone' | 'changed' | 'unreachable'
 /** What a field or confirm pinned when it opened: the revision and step number the person saw. */
-export type RailPin = { rev: number; n: string; at: number }
+export type RailPin = { rev: number; n: string }
 export type RailMode =
   | { kind: 'idle' }
   | ({ kind: 'confirm-claim' } & RailPin)
@@ -403,7 +403,6 @@ import type { KeyId, RailRow } from './rail-core'
 export interface RailHandlers {
   key: (id: KeyId) => void
   submit: (kind: 'block' | 'log', text: string) => void
-  typed: () => void
 }
 
 export function rowTree(els: Elements['terminal'], row: RailRow, on: RailHandlers): JSX.Element {
@@ -444,7 +443,6 @@ export function inputTree(
         label={labels.label}
         {...(labels.placeholder ? { placeholder: labels.placeholder } : {})}
         submitLabel={labels.submitLabel}
-        onInput={() => on.typed()}
         onSubmit={(value) => on.submit(kind, value)}
       />
     </Box>
@@ -486,7 +484,6 @@ const HOST = 'http://localhost:47999/rail'
 const POLL_MS = 2_000
 const TTL_MS = 90_000
 const TEXT_MAX = 200
-const FIELD_IDLE_MS = 300_000
 
 const railRef = atom({ plugin: 'rail-proto', key: 'rail' } as const, null)
 const modeRef = atom({ plugin: 'rail-proto', key: 'mode' } as const, { kind: 'idle' } as RailMode)
@@ -534,13 +531,6 @@ async function tick($: EngineInterface): Promise<void> {
     await update($, railRef, () => null)
     await update($, modeRef, (m) => reconcile(m, null, 'unreachable'))
   }
-  // A field or confirm nobody has touched for FIELD_IDLE_MS closes (a field left with Esc).
-  await update($, modeRef, (m): RailMode =>
-    (m.kind === 'confirm-claim' || m.kind === 'block' || m.kind === 'log') &&
-    now - m.at > FIELD_IDLE_MS
-      ? { kind: 'idle' }
-      : m
-  )
 }
 
 /**
@@ -606,11 +596,10 @@ async function onKey($: EngineInterface, id: KeyId, requestId: string, seen: See
     return
   }
   if (mode.kind !== 'idle') return // a press while saving does nothing
-  const at = await $.clock.now()
   if (id === 'claim') {
-    await update($, modeRef, (): RailMode => ({ kind: 'confirm-claim', ...seen, at }))
+    await update($, modeRef, (): RailMode => ({ kind: 'confirm-claim', ...seen }))
   } else if (id === 'block' || id === 'log') {
-    await update($, modeRef, (): RailMode => ({ kind: id, ...seen, at }))
+    await update($, modeRef, (): RailMode => ({ kind: id, ...seen }))
   } else if (id === 'unblock') await send($, 'unblock', seen)
 }
 
@@ -626,14 +615,6 @@ function handlers($: EngineInterface, requestId: string, seen: Seen): RailHandle
         if (text === '' || (mode.kind !== 'block' && mode.kind !== 'log')) {
           await update($, modeRef, (): RailMode => ({ kind: 'idle' }))
         } else await send($, kind, { rev: mode.rev, n: mode.n }, text)
-      })().catch(() => undefined)
-    },
-    typed: () => {
-      void (async () => {
-        const at = await $.clock.now()
-        await update($, modeRef, (m): RailMode =>
-          m.kind === 'block' || m.kind === 'log' ? { ...m, at } : m
-        )
       })().catch(() => undefined)
     }
   }
