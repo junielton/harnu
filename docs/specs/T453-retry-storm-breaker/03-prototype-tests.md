@@ -1,27 +1,32 @@
 # T453 — Prototype: tests and live runs
 
 **Part of:** [`00-spec.md`](00-spec.md) §7 and §11 (C-1, C-5) · **Source:**
-[`02-prototype.md`](02-prototype.md)
+[`02-prototype.md`](02-prototype.md), [`04-detector-core.md`](04-detector-core.md)
 
-Two kinds of evidence. `claude plugin test` exercises the mod's own logic against the engine's
-kit, where the test answers everything beneath the plugin (`reference.md:81`). The live runs load
-the mod into real headless sessions with `claude -p --plugin-dir`, so the engine itself raises the
-events: they are what proves the mechanisms the design hinges on (§3).
+Two kinds of evidence. `claude plugin test` exercises the mod's logic against the engine's kit, where
+the test answers everything beneath the plugin (`reference.md:81`). The live runs load the mod into
+real sessions (`claude -p --plugin-dir`, and an interactive `claude --plugin-dir` driven in tmux), so
+the engine itself raises the events and draws the dialog. They are what proves the mechanisms the
+design hinges on (§3).
 
 ## 1. `tests/breaker.test.ts`
 
 The kit stubs every `$` call the plugin makes beneath it (`mock.clock`, `mock.env`, and one test
-hook per `ui.*` / `turn.abort` call): a call with no answer beneath it fails the test with
-`no implementation for <event>`, and an answer in the wrong shape (`{ isPlaced: true }` instead of
-`{ value: { isPlaced: true } }`) is skipped. Both happened on the first run and are fixed below.
+hook per `command.register`, `ui.*` and `turn.abort` call). A call with no answer beneath it fails
+with `no implementation for <event>`; an answer in the wrong shape (`{ isPlaced: true }` instead of
+`{ value: { isPlaced: true } }`) is skipped. `$.command.run` takes `origin` and `presentation`
+from the test.
 
 ```ts
-import { errSig } from '../hooks/core'
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+import { errSig, isMutation, isPoll, isServerWait } from '../hooks/core'
+
 type Seen = { opened: string[]; aborted: string[]; logged: string[] }
+
+const ENFORCE = { options: { level: 'enforce' } }
 
 // Everything beneath the plugin that it calls, answered from memory.
 function world(on: On, role?: string, verdict: 'allow' | 'ask' = 'allow'): Seen {
@@ -30,15 +35,14 @@ function world(on: On, role?: string, verdict: 'allow' | 'ask' = 'allow'): Seen 
   mock.env(on, role ? { HARNU_SESSION_ROLE: role } : {})
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('tool.check', () => ({ decision: verdict }))
   on('ui.open', ($, e) => {
     seen.opened.push(e.id)
     return { value: { isPlaced: true as const } }
   })
   on('ui.close', () => ({ value: undefined }))
-  on('ui.notify', () => ({
-    value: { isSent: false as const, reason: 'no-surface' as const }
-  }))
+  on('ui.notify', () => ({ value: { isSent: false as const, reason: 'no-surface' as const } }))
   on('ui.log', ($, e) => {
     seen.logged.push(e.text)
     return { value: undefined }
@@ -51,11 +55,7 @@ function world(on: On, role?: string, verdict: 'allow' | 'ask' = 'allow'): Seen 
 }
 
 async function start($: Engine, isInteractive = true): Promise<void> {
-  await $.session.start({
-    cwd: '/repo',
-    surface: isInteractive ? 'terminal' : null,
-    isInteractive
-  })
+  await $.session.start({ cwd: '/repo', surface: isInteractive ? 'terminal' : null, isInteractive })
   await $.turn.start({ text: 'fix the build', turnId: 'turn-1' })
 }
 
@@ -102,9 +102,7 @@ async function call(
   return JSON.stringify(stored.message?.content)
 }
 
-const MISSING = {
-  error: 'Exit code 1\ncat: /repo/missing.txt: No such file or directory'
-}
+const MISSING = { error: 'Exit code 1\ncat: /repo/missing.txt: No such file or directory' }
 const cat = { command: 'cat /repo/missing.txt' }
 
 test('the third identical failure carries a notice the model reads', async ($, on) => {
@@ -113,6 +111,35 @@ test('the third identical failure carries a notice the model reads', async ($, o
   expect(await call($, 'Bash', cat, MISSING)).not.toContain('retry-breaker')
   expect(await call($, 'Bash', cat, MISSING)).not.toContain('retry-breaker')
   expect(await call($, 'Bash', cat, MISSING)).toContain('failed 3 times with the same error')
+})
+
+test('polling is read from the command words, not from a substring', () => {
+  const bash = (command: string) => ({ command })
+  expect(isPoll('Bash', bash('sleep 30 && gh pr view 41'), '')).toBe(true)
+  expect(isPoll('Bash', bash('until curl -sf localhost:5173; do sleep 1; done'), '')).toBe(true)
+  expect(isPoll('Bash', bash('gh pr checks 41'), '')).toBe(true)
+  expect(isPoll('Bash', bash('grep -r sleep src'), '')).toBe(false)
+  expect(isPoll('Bash', bash('npm run test:watch'), '')).toBe(false)
+  expect(isPoll('Bash', bash('echo "sleep 5"'), '')).toBe(false)
+  expect(isPoll('Bash', bash('ls | while read f; do cat "$f"; done'), '')).toBe(false)
+  expect(isPoll('mcp__harnu__get_session', { sessionId: 's' }, 'SESSION_NOT_FOUND')).toBe(true)
+  expect(isPoll('mcp__harnu__update_card', { slug: 'x' }, 'NOT_FOUND: card not found')).toBe(false)
+})
+
+test('waiting for a server and an edit by any route never add up', () => {
+  const refused =
+    'Exit code 7\ncurl: (7) Failed to connect to localhost port 5173: Connection refused'
+  expect(isServerWait('Bash', { command: 'curl -sf http://localhost:5173/health' }, refused)).toBe(
+    true
+  )
+  expect(isServerWait('Bash', { command: 'cat /repo/missing.txt' }, refused)).toBe(false)
+  expect(isMutation('Bash', { command: "sed -i 's/a/b/' src/a.ts" })).toBe(true)
+  expect(isMutation('Bash', { command: 'npx prettier --write src' })).toBe(true)
+  expect(isMutation('Bash', { command: 'echo x > src/a.ts' })).toBe(true)
+  expect(isMutation('Bash', { command: 'git status && cat a.ts 2>&1 | head' })).toBe(false)
+  expect(isMutation('Bash', { command: 'grep -rn foo src > /dev/null' })).toBe(false)
+  expect(isMutation('mcp__harnu__update_card', {})).toBe(true)
+  expect(isMutation('mcp__harnu__get_fleet', {})).toBe(false)
 })
 
 test('polls, person refusals and a success in between never add up', async ($, on) => {
@@ -136,78 +163,107 @@ test('polls, person refusals and a success in between never add up', async ($, o
   expect(await call($, 'Bash', cat, MISSING)).not.toContain('retry-breaker')
 })
 
-test('a real edit between runs resets a failing command', async ($, on) => {
+test('re-running tests after a sed edit or an MCP write starts over', async ($, on) => {
   world(on)
   await start($)
   const tests = { command: 'npm test' }
   const red = { error: 'Exit code 1\nFAIL src/a.test.ts > adds' }
   await call($, 'Bash', tests, red)
   await call($, 'Bash', tests, red)
-  await call($, 'Edit', { file_path: '/repo/src/a.ts', old_string: 'a - b' }, { ok: 'edited' })
+  await call($, 'Bash', { command: "sed -i 's/a - b/a + b/' src/a.ts" }, { ok: '' })
   expect(await call($, 'Bash', tests, red)).not.toContain('retry-breaker')
+  await call($, 'Bash', tests, red)
+  await call($, 'mcp__ide__apply_edit', { path: 'src/a.ts' }, { ok: 'applied' })
+  expect(await call($, 'Bash', tests, red)).not.toContain('retry-breaker')
+  // A read in between is no edit: the third identical failure still warns.
+  await call($, 'Bash', { command: 'cat src/a.ts' }, { ok: 'a + b' })
+  expect(await call($, 'Bash', tests, red)).not.toContain('retry-breaker')
+  expect(await call($, 'Bash', tests, red)).toContain('failed 3 times')
 })
 
-test('attended: the fourth opens the dialog, the fifth is put to the person', async ($, on) => {
-  const seen = world(on)
+test(
+  'attended: the fourth opens the dialog, the fifth is refused with the reason, no abort',
+  ENFORCE,
+  async ($, on) => {
+    const seen = world(on)
+    await start($)
+    for (let i = 0; i < 4; i++) await call($, 'Bash', cat, MISSING)
+    expect(seen.opened).toEqual(['retry-breaker'])
+    for (let i = 0; i < 3; i++) {
+      const v = await $.tool.check({ tool: 'Bash', input: cat, tool_use_id: `toolu_next${i}` })
+      expect(v.decision).toBe('deny')
+      expect(v.reason).toContain('failed 4 times')
+    }
+    expect(seen.aborted).toEqual([])
+  }
+)
+
+test('level notice (the default) never refuses', async ($, on) => {
+  world(on, 'agent')
   await start($)
-  for (let i = 0; i < 4; i++) await call($, 'Bash', cat, MISSING)
-  expect(seen.opened).toEqual(['retry-breaker'])
-  const v = await $.tool.check({
-    tool: 'Bash',
-    input: cat,
-    tool_use_id: 'toolu_next'
-  })
-  expect(v.decision).toBe('ask')
-  expect(v.reason).toContain('failed 4 times')
-  expect(seen.aborted).toEqual([])
+  for (let i = 0; i < 6; i++) await call($, 'Bash', cat, MISSING)
+  const v = await $.tool.check({ tool: 'Bash', input: cat, tool_use_id: 'toolu_n' })
+  expect(v.decision).toBe('allow')
 })
 
-test('unattended: refused with the reason, then the turn is ended', async ($, on) => {
+test('unattended: refused with the reason, then the turn is ended', ENFORCE, async ($, on) => {
   const seen = world(on, 'agent')
   await start($)
   for (let i = 0; i < 4; i++) await call($, 'Bash', cat, MISSING)
   expect(seen.opened).toEqual([])
   expect(seen.logged.length).toBe(1)
   for (let i = 0; i < 3; i++) {
-    const v = await $.tool.check({
-      tool: 'Bash',
-      input: cat,
-      tool_use_id: `toolu_r${i}`
-    })
+    const v = await $.tool.check({ tool: 'Bash', input: cat, tool_use_id: `toolu_r${i}` })
     expect(v.decision).toBe('deny')
     expect(v.reason).toContain('/retry-breaker reset')
   }
   expect(seen.aborted).toEqual(['turn-1'])
   // Another call is never refused.
-  expect(
-    (
-      await $.tool.check({
-        tool: 'Bash',
-        input: { command: 'ls' },
-        tool_use_id: 'toolu_x'
-      })
-    ).decision
-  ).toBe('allow')
+  const other = await $.tool.check({
+    tool: 'Bash',
+    input: { command: 'ls' },
+    tool_use_id: 'toolu_x'
+  })
+  expect(other.decision).toBe('allow')
 })
+
+test(
+  '/retry-breaker reset lifts the refusal and leaves a notice in the transcript',
+  ENFORCE,
+  async ($, on) => {
+    world(on, 'agent')
+    const session = mock.session(on)
+    await start($)
+    for (let i = 0; i < 4; i++) await call($, 'Bash', cat, MISSING)
+    const before = await $.tool.check({ tool: 'Bash', input: cat, tool_use_id: 'toolu_a' })
+    expect(before.decision).toBe('deny')
+    const r = await $.command.run({
+      command: 'retry-breaker',
+      args: 'reset',
+      origin: { kind: 'composer' },
+      presentation: { isFullscreen: false, columns: 120 }
+    })
+    expect(JSON.stringify(r)).toContain('cleared')
+    const after = await $.tool.check({ tool: 'Bash', input: cat, tool_use_id: 'toolu_b' })
+    expect(after.decision).toBe('allow')
+    const notices = session.appended().filter((row) => row.message.type === 'system')
+    expect(JSON.stringify(notices.map((row) => row.message.content))).toContain(
+      '[retry-breaker] reset'
+    )
+  }
+)
 
 test('the same error across different inputs warns at four', async ($, on) => {
   world(on)
   await start($)
-  const gone = {
-    error: 'Agent type "verifier" not found. Available agents: general-purpose'
-  }
+  const gone = { error: 'Agent type "verifier" not found. Available agents: general-purpose' }
   let last = ''
   for (let i = 0; i < 4; i++)
-    last = await call(
-      $,
-      'Agent',
-      { subagent_type: 'verifier', prompt: `try ${i}`, isolation: `w${i}` },
-      gone
-    )
+    last = await call($, 'Agent', { subagent_type: `verifier-${i}`, prompt: `try ${i}` }, gone)
   expect(last).toContain('across different inputs')
 })
 
-test('a subagent counts apart and never opens the dialog', async ($, on) => {
+test('a subagent counts apart and never opens the dialog', ENFORCE, async ($, on) => {
   const seen = world(on)
   await start($)
   for (let i = 0; i < 4; i++) await call($, 'Bash', cat, MISSING, 'agent-7')
@@ -219,40 +275,45 @@ test('a subagent counts apart and never opens the dialog', async ($, on) => {
     tool_use_id: 'toolu_s',
     agentId: 'agent-7'
   })
-  expect(v.decision).toBe('ask')
+  expect(v.decision).toBe('deny')
 })
 
-test('the dialog shows the failures and "Let it retry" lifts the refusal', async ($, on) => {
-  world(on)
-  await start($)
-  for (let i = 0; i < 4; i++) await call($, 'Bash', cat, MISSING)
-  for (const surface of ['terminal', 'desktop'] as const) {
-    const ui = await $.ui.mount({
-      plugin: 'retry-breaker',
-      surface,
-      component: 'Pane',
-      requestId: 'retry-breaker',
-      props: {
-        title: 'Retry storm',
-        isFocused: true,
-        bodyColumns: 120,
-        placement: 'dock',
-        scroll: { offset: 0, bodyRows: 20 },
-        view: {}
-      }
-    })
-    expect(await ui.find({ type: 'Text', text: /failed 4× the same way/ })).toBeDefined()
-    expect(await ui.find({ key: 'stop' })).toBeDefined()
-    if (surface === 'desktop') await ui.press({ key: 'retry' })
-    await ui.unmount()
+test(
+  'the dialog shows the failures and "Let it retry" lifts the refusal',
+  ENFORCE,
+  async ($, on) => {
+    world(on)
+    const session = mock.session(on)
+    await start($)
+    for (let i = 0; i < 4; i++) await call($, 'Bash', cat, MISSING)
+    for (const surface of ['terminal', 'desktop'] as const) {
+      const ui = await $.ui.mount({
+        plugin: 'retry-breaker',
+        surface,
+        component: 'Pane',
+        requestId: 'retry-breaker',
+        props: {
+          title: 'Retry storm',
+          isFocused: true,
+          bodyColumns: 120,
+          placement: 'dock',
+          scroll: { offset: 0, bodyRows: 20 },
+          view: {}
+        }
+      })
+      expect(await ui.find({ type: 'Text', text: /failed 4× the same way/ })).toBeDefined()
+      expect(await ui.find({ key: 'stop' })).toBeDefined()
+      if (surface === 'desktop') await ui.press({ key: 'retry' })
+      await ui.unmount()
+    }
+    const v = await $.tool.check({ tool: 'Bash', input: cat, tool_use_id: 'toolu_after' })
+    expect(v.decision).toBe('allow')
+    const notices = session.appended().filter((row) => row.message.type === 'system')
+    expect(JSON.stringify(notices.map((row) => row.message.content))).toContain(
+      '[retry-breaker] muted'
+    )
   }
-  const v = await $.tool.check({
-    tool: 'Bash',
-    input: cat,
-    tool_use_id: 'toolu_after'
-  })
-  expect(v.decision).toBe('allow')
-})
+)
 
 test('unattended: a call nobody could approve is never a failure', async ($, on) => {
   world(on, 'tick', 'ask')
@@ -298,61 +359,66 @@ test('a stored notice does not change what counts as the same error', () => {
 $ claude plugin test retry-breaker
 
 tests/breaker.test.ts:
-(pass) the third identical failure carries a notice the model reads [39.52ms]
-(pass) polls, person refusals and a success in between never add up [32.78ms]
-(pass) a real edit between runs resets a failing command [20.15ms]
-(pass) attended: the fourth opens the dialog, the fifth is put to the person [22.10ms]
-(pass) unattended: refused with the reason, then the turn is ended [20.96ms]
-(pass) the same error across different inputs warns at four [18.50ms]
-(pass) a subagent counts apart and never opens the dialog [19.79ms]
-(pass) the dialog shows the failures and "Let it retry" lifts the refusal [28.19ms]
-(pass) unattended: a call nobody could approve is never a failure [18.83ms]
+(pass) the third identical failure carries a notice the model reads [43.90ms]
+(pass) polling is read from the command words, not from a substring [0.65ms]
+(pass) waiting for a server and an edit by any route never add up [0.49ms]
+(pass) polls, person refusals and a success in between never add up [34.77ms]
+(pass) re-running tests after a sed edit or an MCP write starts over [29.19ms]
+(pass) attended: the fourth opens the dialog, the fifth is refused with the reason, no abort [25.25ms]
+(pass) level notice (the default) never refuses [28.92ms]
+(pass) unattended: refused with the reason, then the turn is ended [26.11ms]
+(pass) /retry-breaker reset lifts the refusal and leaves a notice in the transcript [25.74ms]
+(pass) the same error across different inputs warns at four [20.97ms]
+(pass) a subagent counts apart and never opens the dialog [31.35ms]
+(pass) the dialog shows the failures and "Let it retry" lifts the refusal [33.88ms]
+(pass) unattended: a call nobody could approve is never a failure [21.78ms]
 (pass) a stored notice does not change what counts as the same error [0.19ms]
 
- 10 pass
+ 14 pass
  0 fail
-Ran 10 tests across 1 file. [0.33s]
+Ran 14 tests across 1 file. [0.44s]
 ```
 
-Two tests were added because a run found a real defect, not to raise the count:
+Tests that exist because a run found a defect:
 
-- "polls, person refusals and a success in between never add up" failed first: polls were kept out
-  of the exact rule but still counted under the same-error rule. The fix keeps a poll out of both
-  (spec §3.4 X5).
-- "unattended: a call nobody could approve is never a failure" pins the defect live run 1 found
-  (§3).
-- "a stored notice does not change what counts as the same error" pins what the transcript check
-  found (§3, run 3): the host twin reads stored results, which carry the notice.
+- "polls, person refusals and a success in between never add up": polls had been kept out of the
+  exact rule only.
+- "polling is read from the command words, not from a substring": `grep -r sleep` and
+  `npm run test:watch` had been excluded by a substring rule (round-1 verifier).
+- "waiting for a server and an edit by any route never add up": the tokenizer had split `2>&1` at
+  the `&`, which made `1` a command word and every such command a mutation.
+- "unattended: a call nobody could approve is never a failure": live run 1.
+- "a stored notice does not change what counts as the same error": the transcript check of run 3.
 
 ## 3. Live runs
 
 Each run loaded an instrumented copy of the prototype (the same module plus `$.ui.log(..., { to:
-'debug' })` lines prefixed `PROBE`) from the scratchpad into a headless session in a throwaway git
-repository, `--debug-file` capturing the log. Paths below are replaced by `<scratch>`.
+'debug' })` lines prefixed `PROBE`) from the scratchpad into a session in a throwaway git repository,
+with `--debug-file` capturing the log. Paths are replaced by `<scratch>`. Runs 1–9 used the round-1
+build; runs 10–12 the round-2 build (run 10 before rung 3 became a `deny` everywhere, run 11 after).
 
-| Run | Model  | What it proves                                                                                                                                | Result                                                                                                                                      |
-| --- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | haiku  | `session.append` sees the `tool_use` (door `response`) and its `tool_result` (door `tool-result`) under one id; `tool.check` sees the verdict | proven; and a defect: the headless `ask` became `This command requires approval`, which the classifier counted                              |
-| 2   | haiku  | the fix: an `ask` with nobody attending is a permission outcome                                                                               | proven: no result counted                                                                                                                   |
-| 3   | haiku  | the notice reaches the model; the refusal reaches the model with its reason; the transcript stores both                                       | proven                                                                                                                                      |
-| 4   | haiku  | the abort cap in a natural loop                                                                                                               | not reached: the model stopped at the first refusal                                                                                         |
-| 5   | sonnet | a worktree-isolated subagent: `agentId` on both events, the notice inside the subagent's loop                                                 | proven                                                                                                                                      |
-| 6   | sonnet | Bash in a worktree subagent with the mod loaded                                                                                               | inconclusive: the operator's own Bash-rewrite PreToolUse hook made Claude Code's worktree guard refuse the command (the corpus class of E3) |
-| 7   | haiku  | abort with cap 0                                                                                                                              | not reached: the model stopped after the notice at 3                                                                                        |
-| 8   | sonnet | Bash in a worktree subagent with the mod loaded (plain `pwd`)                                                                                 | proven: it ran in the subagent's worktree (#92533 does not occur)                                                                           |
-| 9   | haiku  | `$.turn.abort` from `tool.check`, with probe-only thresholds (refuse the 2nd attempt, cap 0)                                                  | proven                                                                                                                                      |
+| Run | Session                                 | What it proves                                                                                                                                     | Result                                                                                            |
+| --- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| 1   | `-p`, haiku                             | `session.append` sees the `tool_use` (door `response`) and its `tool_result` (door `tool-result`) under one id; `tool.check` sees the verdict      | proven; and a defect: a headless `ask` became `This command requires approval`, which was counted |
+| 2   | `-p`, haiku                             | the fix: an `ask` with nobody attending is a permission outcome                                                                                    | proven                                                                                            |
+| 3   | `-p`, haiku                             | the notice reaches the model; the refusal reaches it with its reason; the transcript stores both                                                   | proven                                                                                            |
+| 4   | `-p`, haiku                             | the abort cap in a natural loop                                                                                                                    | not reached: the model stopped at the first refusal                                               |
+| 5   | `-p`, sonnet                            | a worktree-isolated subagent: `agentId` on both events, the notice in the subagent's loop                                                          | proven                                                                                            |
+| 6   | `-p`, sonnet                            | Bash in a worktree subagent                                                                                                                        | inconclusive: the operator's own Bash-rewrite hook tripped Claude Code's worktree guard           |
+| 7   | `-p`, haiku                             | abort with cap 0                                                                                                                                   | not reached: the model stopped after the notice                                                   |
+| 8   | `-p`, sonnet                            | Bash in a worktree subagent (plain `pwd`)                                                                                                          | proven: it ran in its own worktree                                                                |
+| 9   | `-p`, haiku                             | `$.turn.abort` from `tool.check`, probe-only thresholds                                                                                            | proven                                                                                            |
+| 10  | **interactive**, tmux, haiku            | `isInteractive: true`; `/retry-breaker`; the dialog drawn live; "Ask why"; an `ask` in manual mode and in auto mode; `/retry-breaker reset` stored | proven, with two findings (§3.2)                                                                  |
+| 11  | **interactive**, tmux, haiku            | the round-2 rung 3: a `deny` with its reason in an attended session in auto mode, and no abort                                                     | proven                                                                                            |
+| 12  | `-p`, haiku, `HARNU_SESSION_ROLE=agent` | the role variable reaches `$.env.get` (A5)                                                                                                         | proven                                                                                            |
 
 Runs 1 and 2 used `Bash` with an allow rule; the operator's user-level `PreToolUse` hook on `Bash`
-rewrites commands, so the rewritten command no longer matched the rule and the verdict stayed
-`ask`. Runs 3–9 use `Read` of a missing file, which needs no permission. That `tool.check` works on
-`Bash`, and does not break worktree agents, is T389's smoke B1.2/B1.6/B4
+rewrites commands, so the rewritten command no longer matched the rule and the verdict stayed `ask`.
+Later runs use `Read` of a missing file, which needs no permission. That `tool.check` works on `Bash`
+and leaves worktree agents alone is T389's smoke B1.2/B1.6/B4
 (`docs/specs/T389-companion-mod/P3W2-structured-sentinel.md:48-53`) and this spec's run 8.
 
-### Run 3 — notice, refusal, transcript
-
-Prompt (abridged): "Use the Read tool on `<scratch>/probe/repo/missing.txt` … make the exact same
-Read call again, unchanged, … until you have made 8 calls in total or a call is refused … quote
-verbatim every line starting with `[retry-breaker]` …".
+### 3.1 Run 3: notice, refusal, transcript
 
 ```text
 PROBE start interactive=false role=undefined
@@ -373,25 +439,125 @@ PROBE check tool=Read id=toolu_015qAVt9d6u4P6qxnhW8S6Rf agent=undefined verdict=
 PROBE deny id=toolu_015qAVt9d6u4P6qxnhW8S6Rf denied=1 turn=ec098148-8fc7-446e-94cb-5dee44c31451
 ```
 
-The model's answer (session `f0a283f0-deb3-4291-997c-df91c4e83201`), abridged:
+The model quoted both notices verbatim and the refusal: `Permission to use Read denied by plugin
+retry-breaker: retry-breaker: this exact Read call already failed 4 times with the same error (...).
+Change the call or the cause first. The person can lift this with /retry-breaker reset.` The stored
+transcript (`~/.claude/projects/<slug>/f0a283f0-….jsonl`) holds the notice text **4** times and the
+refusal text **4** times (counted as occurrences; the round-1 text said 3 and 2, which were line
+counts).
+
+### 3.2 Run 10: the attended half, interactive
+
+`claude --plugin-dir <scratch>/probe/live --model haiku` in a detached tmux session (160 × 48),
+keys sent with `tmux send-keys`, the screen read with `tmux capture-pane`. The session opened in the
+operator's default permission mode, **auto**; it was cycled to **manual** with shift+tab for the
+first storm and back to auto for the second.
+
+1. **`isInteractive: true`** at `session.start`:
+
+   ```text
+   PROBE start interactive=true role=undefined
+   ```
+
+2. **The command.** `/retry-breaker enforce` printed `retry-breaker: Retry-breaker: level enforce for
+this session.` `/retry-breaker reset` later printed `Retry-breaker: every count and mute
+cleared.`, and the transcript stored the system notice `[retry-breaker] reset` (1 occurrence).
+3. **The dialog, drawn by the terminal** on the 4th identical failure, the four failures side by side
+   (paths cut by the column width):
+
+   ```text
+   ╭──────────────────────────────────────────────────────────────────────────────────────────────✕─╮
+   │ Read failed 4× the same way (exact)                                                              │
+   │ #1                       #2                       #3                       #4                    │
+   │ File does not exist.     File does not exist.     File does not exist.     File does not exist.  │
+   │ Note: your current       Note: your current       Note: your current       Note: your current    │
+   │ working directory is     working directory is     working directory is     working directory is  │
+   │ <scratch>/probe/repo     <scratch>/probe/repo     <scratch>/probe/repo     <scratch>/probe/repo  │
+   │ [ Stop the turn ][ Let it retry ][ Ask why ]                                                     │
+   ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+   ```
+
+4. **An `ask` in manual mode reached the person, without its reason.** The 5th identical call drew
+   the engine's own permission dialog:
+
+   ```text
+    Read file
+    Read(<scratch>/probe/repo/missing.txt)
+    Do you want to proceed?
+    ❯ 1. Yes
+      2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session
+      3. No
+    Esc to cancel · Tab to amend
+   ```
+
+   The breaker's reason appears nowhere on screen; it is only in the debug log (`tool.check Read
+toolu_…: allow -> ask by plugin retry-breaker: retry-breaker: this exact Read call already failed 4
+times …`). Answering "3. No" interrupted the turn (`Interrupted · What should Claude do
+instead?`), and the refused call's result, `The user doesn't want to proceed …`, was not counted
+   (X1).
+
+5. **"Ask why".** The dialog takes keys only once focused (`ctrl+x tab`): a `w` sent while a turn
+   ran went to the composer, and in tmux the chord focused the pane in 2 of 4 tries. Focused right
+   after the interrupted turn, the fork answered `nothing-to-fork` and the dialog showed `no answer
+(nothing-to-fork)`. Focused after a turn that ended normally, it answered:
+
+   ```text
+   PROBE fork isAnswered=true The Read failed because `missing.txt` does not exist at that path, which is the condition this test set up. The retry-breaker flagged repeats s…
+   ```
+
+   and the dialog drew the answer between the failures and the buttons.
+
+6. **An `ask` in auto mode was settled by the mode, not by a person.** The 5th and 6th identical calls
+   ran:
+
+   ```text
+   PROBE check tool=Read id=toolu_01Kwxati44cbiyKFSDmHniLv verdict=allow
+   PROBE ask id=toolu_01Kwxati44cbiyKFSDmHniLv
+   tool.check Read toolu_01Kwxati44cbiyKFSDmHniLv: allow -> ask by plugin retry-breaker: retry-breaker: this exact Read call already failed 4 times with the same error ("Fil
+   Skipping auto mode classifier for Read: would be allowed in acceptEdits mode
+   PROBE error id=toolu_01Kwxati44cbiyKFSDmHniLv verdict=allow head=File does not exist. Note: your current working directory is
+   PROBE result id=toolu_01Kwxati44cbiyKFSDmHniLv rung=2 count=5
+   ```
+
+   No one was asked, and the reason was never shown. This, with item 4, is why rung 3 is now a `deny`
+   in every mode (`00-spec.md` §5.1, §6.2).
+
+### 3.3 Run 11: the round-2 rung 3, attended, auto mode
+
+The same set-up, the final build, auto mode, `/retry-breaker enforce`. Told to make the same call 6
+times, the model stopped by itself after the notice on the 3rd failure. Told that advice is not a
+refusal, it made the call 4 more times. The 4th opened the dialog, and the 5th was refused:
 
 ```text
-Calls made: 5. Calls 1–4 failed with "File does not exist". Call 5 was refused by the retry-breaker plugin.
-
-> [retry-breaker] This exact Read call has now failed 3 times with the same error. Repeating it unchanged will fail again: change the input, check the cause, or stop and say what blocks you.
-> [retry-breaker] This exact Read call has now failed 4 times with the same error. …
-
-"Permission to use Read denied by plugin retry-breaker: retry-breaker: this exact Read call already failed 4 times with the same error (...). Change the call or the cause first. The person can lift this with /retry-breaker reset."
+PROBE check tool=Read id=toolu_01NuaQBk2yJpJHAmTwSQpv1s verdict=allow
+PROBE check tool=Read id=toolu_01JQMun3LcCmSvexF8xLLs8c verdict=allow
+PROBE check tool=Read id=toolu_013awpGUDKzkYZ9WyotHkFCS verdict=allow
+PROBE check tool=Read id=toolu_01WSknJqgWW2VZAL53f6Zm1N verdict=allow
+PROBE check tool=Read id=toolu_01G2XoPUtM3ysVF8rUoAiKWM verdict=allow
+PROBE check tool=Read id=toolu_01L1mhzwi8Jo6BDKU3XSppfe verdict=allow
+PROBE check tool=Read id=toolu_018jQUx7YDfEgmwspFoB51SR verdict=allow
+PROBE check tool=Read id=toolu_01KUj4UFWoKxScbEQJVD24KC verdict=allow
+PROBE deny id=toolu_01KUj4UFWoKxScbEQJVD24KC attended=true
 ```
 
-The stored transcript (`~/.claude/projects/<slug>/f0a283f0-….jsonl`) holds the notice text 3 times
-and the refusal text 2 times: the rewrite is what the transcript file keeps, as the event's doc says
-(`types/claude-code.d.ts:4349-4357`).
+The model's answer quoted the refusal verbatim: `Permission to use Read denied by plugin
+retry-breaker: retry-breaker: this exact Read call already failed 4 times with the same error ("File
+does not exist. …"). Change the call or the cause first. The person can lift this with
+/retry-breaker reset.` No `$.turn.abort` line: the session is attended, so the turn went on, and the
+dialog stayed open with its [Stop]. Pressing `r` for "Let it retry" did not reach the dialog in this
+run (the chord did not focus it), so the mute notice is proven in the kit only. The reset notice,
+written the same way through `$.session.append`, is proven live (run 10).
 
-### Run 5 — a worktree-isolated subagent
+### 3.4 Run 12: `HARNU_SESSION_ROLE`
 
-Prompt (abridged): one `Agent` call, `subagent_type: general-purpose`, `isolation: "worktree"`; the
-subagent reads `missing.txt` three times, then runs `pwd && git branch --show-current`.
+```text
+$ HARNU_SESSION_ROLE=agent claude -p --model haiku --plugin-dir <scratch>/probe/live "Reply with the single word OK."
+PROBE start interactive=false role=agent
+```
+
+### 3.5 Runs 5 and 8: worktree-isolated subagents
+
+Run 5 (three `Read` calls in one response inside an `isolation: "worktree"` subagent):
 
 ```text
 PROBE start interactive=false role=undefined
@@ -410,28 +576,13 @@ PROBE response tool_use id=toolu_01EghNSVU1XhWT2QMXL3gZpP name=Bash agent=a1d288
 PROBE check tool=Bash id=toolu_01EghNSVU1XhWT2QMXL3gZpP agent=a1d2888bafc76d450 verdict=ask
 ```
 
-The subagent issued the three `Read` calls in one response (three `tool_use` rows first, then three
-results); they still counted 1, 2, 3, and the notice landed in the subagent's own loop. It reported
-its working directory as `<scratch>/probe/repo/.claude/worktrees/agent-a1d2888bafc76d450`.
+Run 8: the subagent's `pwd` printed `<scratch>/probe/repo/.claude/worktrees/agent-a21d5b305c894331d`.
+With the breaker's `session.append` and `tool.check` hooks loaded, a worktree-isolated agent's Bash ran
+in its own worktree.
 
-### Run 8 — Bash in a worktree subagent
+### 3.6 Run 9: `$.turn.abort`
 
-```text
-PROBE start interactive=false role=undefined
-PROBE response tool_use id=toolu_01XX9u4njDf5jagEErgDtquf name=Agent agent=undefined
-PROBE check tool=Agent id=toolu_01XX9u4njDf5jagEErgDtquf agent=undefined verdict=allow
-PROBE response tool_use id=toolu_01JYp5fC8nMKCxHHX4geNfZf name=Bash agent=a21d5b305c894331d
-PROBE check tool=Bash id=toolu_01JYp5fC8nMKCxHHX4geNfZf agent=a21d5b305c894331d verdict=allow
-```
-
-Answer: the subagent's `pwd` printed `<scratch>/probe/repo/.claude/worktrees/agent-a21d5b305c894331d`.
-With the breaker's `session.append` and `tool.check` hooks loaded, a worktree-isolated agent's Bash
-ran in its own worktree.
-
-### Run 9 — `$.turn.abort`
-
-The probe copy refused the 2nd identical attempt and aborted at once (`ask: 1`, `abortAfterDenied:
-0`), which only a probe does.
+The probe copy refused the 2nd identical attempt and aborted at once (probe-only thresholds).
 
 ```text
 PROBE start interactive=false role=undefined
@@ -445,12 +596,12 @@ PROBE abort turn=0fe5797e-d0e9-4fbd-8fa9-acceea01cdcf
 $.turn.abort (retry-breaker): cancelled turn 0fe5797e-d0e9-4fbd-8fa9-acceea01cdcf
 ```
 
-The `-p` result was `subtype: "success"`, `result: ""`: the model's closing "DONE" never came. A
-host that reads only `subtype` sees a successful run. See spec §5.4 and F-3.
+The `-p` result was `subtype: "success"`, `result: ""`: the model's closing "DONE" never came. A host
+that reads only `subtype` sees a successful run (spec F-3).
 
-### Runs 4 and 7 — the model stops on its own
+### 3.7 Runs 4 and 7: the model stops on its own
 
-Told to keep going "even when a call is refused or advice appears", Haiku still stopped at the
-first refusal (run 4), and in run 7 at the notice on the 3rd failure. That is the behaviour the
-ladder is built to produce, and it is also why the abort rung needed a probe-only threshold to be
-seen at all.
+Told to keep going "even when a call is refused or advice appears", Haiku still stopped at the first
+refusal (run 4), and in run 7 at the notice on the 3rd failure; in run 11 it stopped at the notice
+again. That is the behaviour the ladder exists to produce, and it is why the abort rung needed a
+probe-only threshold to be seen at all.
