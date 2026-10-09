@@ -8623,6 +8623,10 @@ volume), size right.
   dialog changes (an autopilot cycle or a job refresh), the dialog shows "This changed since you opened it —
   review again" in `--warning` and **disables the confirm until it is reopened**; the confirm never sends facts
   newer than the ones the operator was shown. A rejected `gc:clean` call shows an error toast.
+- **Only what `gc:clean` can remove is listed.** A detached worktree is refused by the engine
+  (`unsupported-kind`), so Remove (selection bar, row, panel) leaves it out of the dialog and raises a
+  Warning toast at the click — "{n} detached worktrees can't be removed here", with the
+  `git worktree remove` hint. When nothing removable is left, no dialog opens; the toast is the answer.
 - **Keyboard:** Esc or Cancel closes; **focus starts on Cancel, never the confirm button**; Tab cycles
   inside (focus trap); ↩ activates only the focused control.
 

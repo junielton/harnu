@@ -11,6 +11,8 @@ import {
   expectedFor,
   heroState,
   isCheckable,
+  isRemovable,
+  unremovableIds,
   prunedSelection,
   selectAllInRepo,
   selectionStats,
@@ -21,6 +23,8 @@ import {
 import type { GcSnapshot } from '../src/main/gc/gc-wire'
 import { defaultGcPrefs } from '../src/main/gc/gc-prefs'
 import { expectedOf, orphanExpectedOf } from '../src/main/gc/gc-confirm'
+import { CLEANABLE_KINDS, refusalFor } from '../src/main/gc/autopilot-core'
+import type { ReapItemKind } from '../src/main/reaper/reaper-core'
 import type { Bucket, ReviewReason } from '../src/main/gc/bundle-core'
 
 const GIB = 1024 ** 3
@@ -563,5 +567,60 @@ describe('expectedFor — the worktree path (S3 delta 3: GcExpected.path)', () =
       item: { ...b.item, path: b.item.path.replace(/\/([^/]+)$/, '/./x/../$1') }
     }
     expect(confirmChanged(buildGcModel(snap({ bundles: [same] })), captured)).toBe(false)
+  })
+})
+
+describe('detached worktrees — what gc:clean cannot remove is never sent', () => {
+  function detached(name: string): ReturnType<typeof wt> {
+    const b = wt(name, 'review', GIB, { reason: reason('detached') })
+    b.item.kind = 'detached-worktree'
+    b.item.branch = null
+    b.item.id = `${b.item.repoPath}::detached-worktree::/ws/${name}`
+    return b
+  }
+
+  it("isRemovable agrees with main's CLEANABLE_KINDS for every worktree kind", () => {
+    const kinds: ReapItemKind[] = [
+      'worktree',
+      'detached-worktree',
+      'hidden-folder',
+      'local-branch',
+      'remote-branch'
+    ]
+    for (const kind of kinds) {
+      const b = wt('k', 'review', GIB)
+      b.item.kind = kind
+      const block = buildGcModel(snap({ bundles: [b] })).byId.get(b.item.id)!
+      expect(isRemovable(block), kind).toBe(CLEANABLE_KINDS.includes(kind))
+    }
+  })
+
+  it('a review request leaves out a detached worktree, which main refuses as unsupported-kind', () => {
+    const h = detached('h1')
+    const d = wt('d1', 'review', GIB, { reason: reason('dirty') })
+    const s = snap({ bundles: [h, d] })
+    const m = buildGcModel(s)
+    expect(refusalFor(h, s.prefs, { confirmed: true })).toBe('unsupported-kind')
+    const req = cleanRequestFor(m, [h.item.id, d.item.id], 'review')
+    expect(req.ids).toEqual([d.item.id])
+    expect(req.options.confirmed).toEqual([d.item.id])
+    expect(Object.keys(req.options.expected)).toEqual([d.item.id])
+    expect(unremovableIds(m, [h.item.id, d.item.id, 'ghost'])).toEqual([h.item.id])
+  })
+
+  it('a selection of detached worktrees only captures no dialog at all', () => {
+    const m = buildGcModel(snap({ bundles: [detached('h1'), detached('h2')] }))
+    expect(
+      captureConfirm(
+        m,
+        m.review.map((b) => b.id),
+        'review'
+      )
+    ).toBeNull()
+  })
+
+  it('orphan volumes stay removable', () => {
+    const m = buildGcModel(sample())
+    expect(isRemovable(m.byId.get('volume:pg_data')!)).toBe(true)
   })
 })
