@@ -4,8 +4,7 @@ Part of [`00-spec.md`](00-spec.md). This is the minimal hooks module for the cor
 spec chooses (§5): Harnu main builds the mission brief and delivers it; the mod keeps the latest
 one and hands it back after every compaction of the main conversation, through the
 `session.compact` result's `messages`. It was written and run from the session scratchpad
-(`<scratchpad>/proto/harnu-brief/`), never from this repository. Round 2 (after review) added the
-in-memory twin and the `$.state` read before `next(e)` (spec §6.5, §8.3).
+(`<scratchpad>/proto/harnu-brief/`), never from this repository. Round 2 (after review) added the in-memory twin and the `$.state` read before `next(e)` (spec §6.5, §8.3); round 3 made the lazy fill `twin ??= stored` and added the reload tests.
 
 ## 1. What the prototype stands in for
 
@@ -89,7 +88,8 @@ let twin: Brief | null = null
 async function readBrief($: EngineInterface): Promise<Brief | null> {
   if (twin !== null) return twin
   const saved = await $.state.get(BRIEF)
-  twin = saved.value ?? null
+  // `??=`: a delivery that landed during the await above wins over the older stored value.
+  twin ??= saved.value ?? null
   return twin
 }
 
@@ -293,6 +293,29 @@ test('a brief delivered while the summarizer runs is the one handed back', async
   const r = await $.session.compact({ ...COMPACT, trigger: 'auto' })
   expect(r.messages?.map((m) => m.text)).toEqual([SUMMARY.text, REFRESHED])
 })
+
+for (const isRefused of [false, true]) {
+  test(`after a reload the stored brief is read after next${isRefused ? '; a refused read fails open' : ''}`, async ($, on) => {
+    engine(on)
+    let isAfterNext = false
+    // A brief stored by an earlier load: no delivery in this one, so the twin is empty and the
+    // hook reads `$.state` after `next(e)`. Refused there, the hook rejects after `next`, and
+    // `.catch` replays what `next` settled to.
+    on('state.get', async (_$, e, next) => {
+      if (!isAfterNext) return { value: { value: { rev: 1, text: BRIEF_TEXT }, version: 1 } }
+      return isRefused
+        ? { deny: 'state unavailable' }
+        : { value: { value: { rev: 1, text: BRIEF_TEXT }, version: 1 } }
+    })
+    on('session.compact', async () => {
+      isAfterNext = true
+      return { messages: [SUMMARY] }
+    })
+    await $.session.start(START)
+    const texts = (await $.session.compact(COMPACT)).messages?.map((m) => m.text)
+    expect(texts).toEqual(isRefused ? [SUMMARY.text] : [SUMMARY.text, BRIEF_TEXT])
+  })
+}
 ```
 
 The type-check config, kept outside the mod folder as the types header asks (TYPES:67-77); the
@@ -325,7 +348,7 @@ first `include` entry is the 2.1.295 declaration file the `plugin-authoring` ski
 
 ## 3. Real output
 
-Captured on 2026-10-09 (round 2) with `claude --version` = `2.1.296 (Claude Code)` (the CLI updated itself
+Captured on 2026-10-09 (round 3) with `claude --version` = `2.1.296 (Claude Code)` (the CLI updated itself
 from 2.1.295 during this work; every live run in [`01-evidence.md`](01-evidence.md) also ran on
 2.1.296). `tsc` is the repository's TypeScript 5.9.3, checking against the 2.1.295 declarations.
 
@@ -355,18 +378,20 @@ validate exit 0
 ```text
 
 tests/brief.test.ts:
-(pass) the brief follows the summary after a manual compaction [22.16ms]
-(pass) the brief survives a second compaction, once [9.58ms]
-(pass) precompute and a subagent compaction pass through untouched [9.30ms]
-(pass) a veto passes through [9.43ms]
-(pass) stale, oversized, unframed and dropped deliveries [11.68ms]
-(pass) no brief, no row: a session with no mission compacts as the engine does [10.25ms]
-(pass) a failure in the hook fails open to the engine result [10.98ms]
-(pass) a brief delivered while the summarizer runs is the one handed back [9.64ms]
+(pass) the brief follows the summary after a manual compaction [23.21ms]
+(pass) the brief survives a second compaction, once [10.42ms]
+(pass) precompute and a subagent compaction pass through untouched [9.95ms]
+(pass) a veto passes through [9.49ms]
+(pass) stale, oversized, unframed and dropped deliveries [13.49ms]
+(pass) no brief, no row: a session with no mission compacts as the engine does [8.55ms]
+(pass) a failure in the hook fails open to the engine result [10.36ms]
+(pass) a brief delivered while the summarizer runs is the one handed back [8.36ms]
+(pass) after a reload the stored brief is read after next [8.12ms]
+(pass) after a reload the stored brief is read after next; a refused read fails open [8.61ms]
 
- 8 pass
+ 10 pass
  0 fail
-Ran 8 tests across 1 file. [0.20s]
+Ran 10 tests across 1 file. [0.21s]
 test exit 0
 ```
 
@@ -376,20 +401,19 @@ test exit 0
 tsc exit 0
 ```
 
-The same suite on a copy with the twin removed (`readBrief` reads `$.state` every time; the
-`$.state` read before `next(e)` kept), which is the round-1 verifier's mutation:
+The same suite on a copy with the twin removed (`readBrief` is `return (await $.state.get(BRIEF)).value ?? null`; the `$.state` read before `next(e)` kept), which is the round-1 verifier's mutation:
 
 ```text
 
 tests/brief.test.ts:
-(pass) the brief follows the summary after a manual compaction [22.43ms]
-(pass) the brief survives a second compaction, once [10.48ms]
-(pass) precompute and a subagent compaction pass through untouched [8.88ms]
-(pass) a veto passes through [8.76ms]
-(pass) stale, oversized, unframed and dropped deliveries [9.43ms]
-(pass) no brief, no row: a session with no mission compacts as the engine does [8.66ms]
-(pass) a failure in the hook fails open to the engine result [9.13ms]
-(fail) a brief delivered while the summarizer runs is the one handed back [9.33ms]
+(pass) the brief follows the summary after a manual compaction [22.27ms]
+(pass) the brief survives a second compaction, once [11.09ms]
+(pass) precompute and a subagent compaction pass through untouched [10.20ms]
+(pass) a veto passes through [9.36ms]
+(pass) stale, oversized, unframed and dropped deliveries [9.86ms]
+(pass) no brief, no row: a session with no mission compacts as the engine does [8.49ms]
+(pass) a failure in the hook fails open to the engine result [8.83ms]
+(fail) a brief delivered while the summarizer runs is the one handed back [9.42ms]
   AssertionError: expect(received).toEqual()
 
   Expected: [
@@ -400,10 +424,12 @@ tests/brief.test.ts:
     "This session is being continued…",
     "[Harnu mission brief rev 1] Mission mnt-0000aaaa · step stp-3 · AC U-1 …"
   ]
+(pass) after a reload the stored brief is read after next [8.91ms]
+(pass) after a reload the stored brief is read after next; a refused read fails open [8.47ms]
 
- 7 pass
+ 9 pass
  1 fail
-Ran 8 tests across 1 file. [0.20s]
+Ran 10 tests across 1 file. [0.21s]
 exit 1
 ```
 
@@ -412,17 +438,15 @@ exit 1
 - **Proven in the kit:** the brief follows the summary (manual and auto triggers); a second
   compaction hands it back once, never twice; `precompute` and a subagent's compaction are
   untouched; a `{ skip }` veto passes through; stale, oversized, unframed and dropped deliveries
-  leave no row; with no brief the result is the engine's; a failure in the hook leaves the
-  engine's compaction standing; and a brief delivered while the summarizer runs is the one handed
-  back, **even though the body read `$.state` before `next(e)`**.
+  leave no row; with no brief the result is the engine's; a failure in the hook before `next(e)`, and one after it, both leave the engine's compaction standing; after a reload (an empty twin) the stored brief is read after `next(e)` and handed back; and a brief delivered while the summarizer runs is the one handed back, **even though the body read `$.state` before `next(e)`**.
 - **Why the twin is needed.** "Every `get` of one dispatch reads one moment, whatever is written
   meanwhile" (TYPES:3389-3390): once the body has read `$.state`, a later `$.state` read in the
   same dispatch returns that moment, not the newer delivery. The mutation above shows it: without
-  the twin the refresh test receives rev 1 (7 pass, 1 fail). Round 1 of this prototype read
+  the twin the refresh test receives rev 1 (9 pass, 1 fail of 10). Round 1 of this prototype read
   `$.state` only after `next(e)`, so its first read happened after the delivery and the test
   passed for the wrong reason; round 1 of this spec also misread TYPES:3389-3390 as support. The
   twin makes the refresh independent of whatever the real body reads first.
-- **The engine already fails open.** With the `.catch` removed the suite still passes 8 / 0, and
+- **The engine already fails open.** With the `.catch` removed the suite still passes 10 / 0, and
   `validate` then reports `gating hook without .catch: session.compact`: a hook that throws is
   skipped and the chain continues (REF:78-79). The `.catch` makes the fail-open choice explicit and
   visible in `validate`; it is not what makes it safe. The companion's MOD-2 wrapper
