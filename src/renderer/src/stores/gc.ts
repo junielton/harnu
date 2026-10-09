@@ -484,6 +484,9 @@ export const useGcStore = defineStore('gc', () => {
     const base = prefs.value ?? (await window.api.gcPrefs())
     const saved = await window.api.gcSetPrefs(toIpc({ ...base, ...patch }))
     if (snapshot.value) snapshot.value = { ...snapshot.value, prefs: saved }
+    // The never-clean list is read on real paths in main (a symlinked entry), which the screen cannot
+    // do: a changed list takes a fresh snapshot, whose bundles carry main's answer.
+    if (patch.neverClean !== undefined) void refresh()
     return saved
   }
 

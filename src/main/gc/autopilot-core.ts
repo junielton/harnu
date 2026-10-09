@@ -41,6 +41,24 @@ export function isNeverClean(
 }
 
 /**
+ * The bundles with `neverClean` brought up to the CURRENT prefs, on real paths (an entry spelled
+ * through a symlink is the same folder as the worktree reached by its real spelling). The scan sets the
+ * flag when it runs; a path added to the list since is not in it. The snapshot the screen reads goes
+ * through this, so the renderer — which cannot resolve a symlink — never disagrees with main.
+ * Bundles that need no change are returned as they are.
+ */
+export function withCurrentNeverClean(
+  bundles: readonly WorktreeBundle[],
+  prefs: GcPrefs,
+  canonical: CanonicalPath
+): WorktreeBundle[] {
+  if (prefs.neverClean.length === 0) return [...bundles]
+  return bundles.map((b) =>
+    !b.neverClean && isNeverClean(b, prefs, canonical) ? { ...b, neverClean: true } : b
+  )
+}
+
+/**
  * The reprobe's question, answered from the CURRENT prefs rather than the scan-time flags: a
  * Keep mark or a neverClean path added after the scan, or a main checkout, protects the
  * bundle from any clean. Any Keep mark counts, whatever fate it was made under: a stale

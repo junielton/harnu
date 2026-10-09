@@ -123,7 +123,12 @@ const bigFirst = (a: GcBlock, b: GcBlock): number =>
 const looseKey = (p: string): string =>
   p.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '')
 
-/** Keep and never-clean as the prefs say now. A never-clean repo covers every worktree of it. */
+/**
+ * Keep and never-clean as the prefs say now, so a mark made since the scan hides Remove at once. A
+ * never-clean repo covers every worktree of it. Paths are compared as written, which is a SUBSET of what
+ * main decides on real paths (a symlinked entry): that wider answer arrives with the next snapshot, whose
+ * bundles main brings up to date (`withCurrentNeverClean`), so this can only be early, never wrong.
+ */
 function protectionOf(b: WorktreeBundle, prefs: GcSnapshot['prefs']): GcBlock['protection'] {
   const listed = new Set((prefs.neverClean ?? []).map(looseKey))
   const paths = [b.item.path, b.item.repoPath].filter((p): p is string => !!p)

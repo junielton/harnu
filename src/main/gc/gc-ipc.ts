@@ -46,7 +46,9 @@ import {
 } from './gc-prefs'
 import { parseOptions } from './gc-options'
 import type { GcCleanAck, GcRecheckResult, GcSnapshot, OrphanVolumeItem } from './gc-wire'
-import { createGcOps, defaultGcShellDeps, type GcShellDeps } from './gc-shell'
+import { createGcOps, defaultGcShellDeps, resolveRealPaths, type GcShellDeps } from './gc-shell'
+import { withCurrentNeverClean } from './autopilot-core'
+import { AS_GIVEN } from './bundle-core'
 import { createForcedGcOps } from './gc-forced-ops'
 import { runHousekeeping } from './housekeeping-shell'
 import {
@@ -230,8 +232,23 @@ export async function registerGcHandlers(
   })
 
   const service: GcService = {
-    snapshot: async (opts) =>
-      buildSnapshot(opts?.refresh || !gatherer.cached() ? await gather() : gatherer.cached()!),
+    snapshot: async (opts) => {
+      const g = opts?.refresh || !gatherer.cached() ? await gather() : gatherer.cached()!
+      // A never-clean path added since the scan, read on real paths as main reads it.
+      const paths = [
+        ...prefs.neverClean,
+        ...g.bundles.flatMap((b) => [b.item.path, b.item.repoPath].filter((p): p is string => !!p))
+      ]
+      const canonical =
+        prefs.neverClean.length > 0
+          ? await resolveRealPaths(paths, async (p) => {
+              const real = await shellDeps.realpath(p)
+              if (real === null) throw new Error('unreadable')
+              return real
+            })
+          : AS_GIVEN
+      return buildSnapshot({ ...g, bundles: withCurrentNeverClean(g.bundles, prefs, canonical) })
+    },
     clean: (rawIds, rawOpts) =>
       submitManualClean(
         {

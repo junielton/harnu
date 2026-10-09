@@ -47,6 +47,10 @@ describe('workspace GC IPC surface (AC-10)', () => {
     expect(index).toMatch(/registerGcHandlers\(\(\) => mainWindow, reaperControl, icon\)/)
   })
 
+  it('hands the screen a snapshot whose never-clean flag is read on real paths from the current prefs', () => {
+    expect(ipc).toMatch(/withCurrentNeverClean\(g\.bundles, prefs, canonical\)/)
+  })
+
   it("answers the reprobe's protection question from the live prefs, not the scan-time flags", () => {
     expect(ipc).toMatch(/withActor\(shellDeps, actor, \(\) => prefs\)/)
   })
