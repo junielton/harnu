@@ -7,8 +7,12 @@ import {
   projectNamesFromFiles,
   type FsProbe
 } from '../src/main/gc/gc-project-files'
-import { volumeGuards } from '../src/main/gc/gc-housekeeping-input'
-import { planHousekeeping, type HousekeepingVolume } from '../src/main/gc/housekeeping-core'
+import { hiddenWhenCandidates, volumeGuards } from '../src/main/gc/gc-housekeeping-input'
+import {
+  planHousekeeping,
+  unownedVolumeCount,
+  type HousekeepingVolume
+} from '../src/main/gc/housekeeping-core'
 import {
   COMPOSE_PROJECT_LABEL,
   COMPOSE_WORKING_DIR_LABEL,
@@ -389,5 +393,51 @@ describe('a truncated scan hides orphan volumes (delta 4, N5)', () => {
   it('is null when nothing is hidden, and a folder that is gone hides nothing', () => {
     expect(volumeGuards([{ path: '/ws/ok' }], gone).hidden).toBeNull()
     expect(volumeGuards([{ path: '/ws/old/x', truncated: true }], gone).hidden).toBeNull()
+  })
+})
+
+describe('the hidden warning needs a volume it could be hiding', () => {
+  const container = (volume: string): InspectedContainer => ({
+    id: 'c1',
+    name: 'shop-mysql-1',
+    image: 'mysql',
+    labels: { [COMPOSE_PROJECT_LABEL]: 'shop' },
+    state: 'running',
+    startedAt: null,
+    finishedAt: null,
+    createdAt: null,
+    ports: [],
+    mounts: [{ type: 'volume', source: `/var/lib/docker/volumes/${volume}/_data`, name: volume }]
+  })
+  const vol = (name: string, project: string | null): HousekeepingVolume => ({
+    name,
+    sizeBytes: 10,
+    project
+  })
+  const unresolved = { reason: 'unresolved-compose-name' as const, folders: ['/ws/a'] }
+
+  it('counts only labelled volumes that no container, running or stopped, uses', () => {
+    const volumes = [vol('shop_mysql', 'shop'), vol('old_data', 'old'), vol('anon', null)]
+    expect(unownedVolumeCount(volumes, [container('shop_mysql')])).toBe(1)
+    expect(unownedVolumeCount(volumes, [])).toBe(2)
+  })
+
+  it('does not show hidden when every volume belongs to a live stack, even with an unresolved name', () => {
+    const volumes = [vol('shop_mysql', 'shop'), vol('shop_redis', 'shop')]
+    const containers = [container('shop_mysql'), container('shop_redis')]
+    expect(hiddenWhenCandidates(unresolved, volumes, containers)).toBeNull()
+  })
+
+  it('does not show hidden when docker has no volumes at all', () => {
+    expect(hiddenWhenCandidates(unresolved, [], [])).toBeNull()
+  })
+
+  it('still shows hidden when an unowned volume exists and a name is unresolved', () => {
+    const volumes = [vol('shop_mysql', 'shop'), vol('old_data', 'old')]
+    expect(hiddenWhenCandidates(unresolved, volumes, [container('shop_mysql')])).toEqual(unresolved)
+  })
+
+  it('stays null when nothing is hidden to begin with', () => {
+    expect(hiddenWhenCandidates(null, [vol('old_data', 'old')], [])).toBeNull()
   })
 })

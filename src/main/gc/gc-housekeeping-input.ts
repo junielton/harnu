@@ -9,7 +9,12 @@ import {
   statProvesGone,
   type VolumeFact
 } from '../containers/containers-core'
-import { normalizeComposeProjectName, type HousekeepingVolume } from './housekeeping-core'
+import {
+  normalizeComposeProjectName,
+  unownedVolumeCount,
+  type HousekeepingVolume
+} from './housekeeping-core'
+import type { InspectedContainer } from '../containers/containers-core'
 import { projectNamesFromFiles, readValue, type ProjectFile } from './gc-project-files'
 
 // ---- explicit compose project names -------------------------------------------------
@@ -208,6 +213,19 @@ export function volumeGuards(
         ? { reason: 'scan-limit' as const, folders: limitedFolders }
         : null
   return { knownFolders: existing.map((f) => f.path), protectedProjects: names, unresolved, hidden }
+}
+
+/**
+ * The hidden-volumes warning, kept only when it is true: some volume is used by no container
+ * and so could be an orphan the unresolved name is hiding. With every volume owned by a live
+ * stack (or none at all) the list is empty because there is nothing to list, not by construction.
+ */
+export function hiddenWhenCandidates<H>(
+  hidden: H | null,
+  volumes: readonly HousekeepingVolume[],
+  containers: readonly InspectedContainer[]
+): H | null {
+  return hidden !== null && unownedVolumeCount(volumes, containers) > 0 ? hidden : null
 }
 
 /**

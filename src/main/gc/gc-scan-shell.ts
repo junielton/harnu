@@ -51,6 +51,7 @@ import {
   buildDirExists,
   foldersForBundles,
   existenceCandidates,
+  hiddenWhenCandidates,
   orphanVolumeItems,
   toHousekeepingVolumes,
   volumeGuards,
@@ -382,7 +383,9 @@ export async function gatherGc(
     df,
     dockerAvailable: available,
     // With docker absent there are no volumes to hide, so the card carries no explanation.
-    docker: available ? withOrphanVolumesHidden(docker, guards.hidden) : docker,
+    docker: available
+      ? withOrphanVolumesHidden(docker, hiddenWhenCandidates(guards.hidden, volumes, containers))
+      : docker,
     orphanVolumes: orphanVolumeItems(orphanNames, df),
     staleKeeps,
     staleReleases: staleReleaseIds
