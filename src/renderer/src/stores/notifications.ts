@@ -162,10 +162,37 @@ export const useNotificationsStore = defineStore('notifications', () => {
     records.value = records.value.filter((r) => r.id !== id)
   }
 
+  /**
+   * Quietly rewrite the record holding `group` (BUG-173 quiet sync): applies
+   * `patch` in place, keeping `id` and `ts` — no new "news", no resurrection.
+   * Returns `null` and writes nothing when no record holds the group (it was
+   * dismissed, aged out or never posted), so a sync can never bring back an
+   * entry the operator removed.
+   */
+  function updateGroup(
+    group: string,
+    patch: Partial<
+      Pick<NotificationRecord, 'kind' | 'title' | 'description' | 'sessionId' | 'target' | 'items'>
+    >
+  ): NotificationRecord | null {
+    const existing = records.value.find((r) => r.group === group)
+    if (!existing) return null
+    const updated: NotificationRecord = { ...existing, ...patch, id: existing.id, ts: existing.ts }
+    records.value = records.value.map((r) => (r === existing ? updated : r))
+    return updated
+  }
+
+  /** Remove the record holding `group`; `true` when one was removed. */
+  function removeGroup(group: string): boolean {
+    const had = records.value.some((r) => r.group === group)
+    if (had) records.value = records.value.filter((r) => r.group !== group)
+    return had
+  }
+
   /** Remove every record (T152) — the popover's "Clear all". */
   function clearAll(): void {
     records.value = []
   }
 
-  return { records, list, notify, dismiss, clearAll }
+  return { records, list, notify, updateGroup, removeGroup, dismiss, clearAll }
 })
