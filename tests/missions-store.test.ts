@@ -571,9 +571,10 @@ describe('useMissionsStore — persisted cue memory and stability (BUG-173 S3)',
 
     vi.mocked(playNotificationSound).mockClear()
     const run2 = newRun()
+    const entries = useNotificationsStore().list.length // run 1's entry survives too
     await run2.refresh() // same backlog as last run
     expect(playNotificationSound).not.toHaveBeenCalled()
-    expect(useNotificationsStore().list).toHaveLength(0)
+    expect(useNotificationsStore().list).toHaveLength(entries)
 
     const run3 = newRun()
     current = [
