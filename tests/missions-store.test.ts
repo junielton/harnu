@@ -441,3 +441,79 @@ describe('useMissionsStore — owed-to-operator cue', () => {
     expect(playNotificationSound).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('popoverRequest — open-the-mission request (BUG-173 S2, spec §3.4)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-09T12:00:00Z'))
+    setApi({ missionList: vi.fn(() => new Promise(() => {})) })
+  })
+
+  it('starts empty', () => {
+    expect(useMissionsStore().popoverRequest).toBeNull()
+  })
+
+  it("openNavigableView('mission', { missionId }) records { missionId, at }", () => {
+    const missions = useMissionsStore()
+    useUiStore().openNavigableView('mission', { missionId: 'mis-1' })
+
+    expect(missions.popoverRequest).toEqual({ missionId: 'mis-1', at: Date.now() })
+  })
+
+  it("openNavigableView('mission') without a missionId records nothing", () => {
+    const missions = useMissionsStore()
+    useUiStore().openNavigableView('mission')
+
+    expect(missions.popoverRequest).toBeNull()
+  })
+
+  it('a newer request replaces the older one', () => {
+    const missions = useMissionsStore()
+    const ui = useUiStore()
+    ui.openNavigableView('mission', { missionId: 'mis-1' })
+    vi.advanceTimersByTime(1000)
+    ui.openNavigableView('mission', { missionId: 'mis-2' })
+
+    expect(missions.popoverRequest?.missionId).toBe('mis-2')
+  })
+
+  it('expires after 5 s', () => {
+    const missions = useMissionsStore()
+    useUiStore().openNavigableView('mission', { missionId: 'mis-1' })
+
+    vi.advanceTimersByTime(4999)
+    expect(missions.popoverRequest).not.toBeNull()
+    vi.advanceTimersByTime(1)
+    expect(missions.popoverRequest).toBeNull()
+  })
+
+  it('an expired older request timer does not clear a newer request', () => {
+    const missions = useMissionsStore()
+    const ui = useUiStore()
+    ui.openNavigableView('mission', { missionId: 'mis-1' })
+    vi.advanceTimersByTime(3000)
+    ui.openNavigableView('mission', { missionId: 'mis-2' })
+    vi.advanceTimersByTime(3000) // first request's 5 s have passed; the second's have not
+
+    expect(missions.popoverRequest?.missionId).toBe('mis-2')
+  })
+
+  it('consumePopoverRequest returns the live request once and clears it', () => {
+    const missions = useMissionsStore()
+    useUiStore().openNavigableView('mission', { missionId: 'mis-1' })
+
+    expect(missions.consumePopoverRequest()?.missionId).toBe('mis-1')
+    expect(missions.popoverRequest).toBeNull()
+    expect(missions.consumePopoverRequest()).toBeNull()
+  })
+
+  it('consumePopoverRequest never returns an expired request, even if the timer was throttled', () => {
+    const missions = useMissionsStore()
+    useUiStore().openNavigableView('mission', { missionId: 'mis-1' })
+    // Move the clock without firing the timer (a throttled background tab).
+    vi.setSystemTime(Date.now() + 6000)
+
+    expect(missions.consumePopoverRequest()).toBeNull()
+    expect(missions.popoverRequest).toBeNull()
+  })
+})

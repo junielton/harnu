@@ -1323,6 +1323,16 @@ describe('useSessionsStore activateSession (BUG-31 — reveal + focus)', () => {
     expect(store.keyboardCursor).toBeNull()
   })
 
+  it('returns false for an unknown session id and true for a known one (BUG-173 S2)', async () => {
+    installWindow([folder('/repos/alpha', [session({ sessionId: 's1' })])])
+    const store = useSessionsStore()
+    await store.reloadModel()
+
+    expect(store.activateSession('does-not-exist')).toBe(false)
+    expect(store.activateSession('s1')).toBe(true)
+    expect(store.selectedId).toBe('s1')
+  })
+
   it('clears an active filter that would hide the target session (the one judgment call)', async () => {
     installWindow([
       folder('/repos/alpha', [session({ sessionId: 's1', summary: 'alpha work' })]),
