@@ -606,6 +606,69 @@ describe('useSessionsStore reload coalescing + in-place reconcile (sidebar-freez
     expect(after.sessions.some((s) => s.sessionId === synthId)).toBe(false)
   })
 
+  it('T459 AC-7: a synthetic collapsing into its disk twin keeps its Fleet-rail position', async () => {
+    // A second folder holds a session created just AFTER the synthetic (T0+1s) —
+    // in another folder, so it can never be mistaken for the synthetic's twin.
+    const t0 = Date.now()
+    const at = (offsetMs: number): string => new Date(t0 + offsetMs).toISOString()
+    disk = [
+      folder([session()]),
+      {
+        path: '/repos/beta',
+        alias: 'beta',
+        gitBranch: '',
+        sessions: [
+          session({
+            sessionId: 'newer',
+            fullPath: '/repos/beta/newer.jsonl',
+            projectPath: '/repos/beta',
+            created: at(1000),
+            modified: at(1000)
+          })
+        ]
+      }
+    ]
+    const store = useSessionsStore()
+    await store.init()
+
+    const synthId = store.createNewSession('/repos/alpha')!
+    const synth = store.folders
+      .find((f) => f.path === '/repos/alpha')!
+      .sessions.find((s) => s.sessionId === synthId)!
+    synth.created = at(0)
+    synth.taskState = 'completed'
+
+    // The real twin's transcript is born 2s AFTER T0 — i.e. AFTER `newer` was
+    // created. Keyed by the real row's own `created` the card would jump above it.
+    disk = [
+      folder([
+        session(),
+        session({
+          sessionId: 'real-twin',
+          summary: 'twin',
+          created: at(2000),
+          modified: at(2000)
+        })
+      ]),
+      disk[1]
+    ]
+    cb.onIndexUpdated!({ slug: 'x' })
+    await flushDebounce()
+
+    const alpha = store.folders.find((f) => f.path === '/repos/alpha')!
+    expect(alpha.sessions.some((s) => s.sessionId === synthId)).toBe(false)
+    alpha.sessions.find((s) => s.sessionId === 'real-twin')!.taskState = 'completed'
+    store.folders
+      .find((f) => f.path === '/repos/beta')!
+      .sessions.find((s) => s.sessionId === 'newer')!.taskState = 'completed'
+
+    const order = store.boardBuckets
+      .find((b) => b.state === 'done')!
+      .sessions.map((s) => s.sessionId)
+    // Newest first: `newer` (T0+1s) above the twin, which keeps the synthetic's T0.
+    expect(order).toEqual(['newer', 'real-twin'])
+  })
+
   it('keyboard arrow navigation reaches a folder terminal, and Enter selects it', async () => {
     const store = useSessionsStore()
     await store.init()
