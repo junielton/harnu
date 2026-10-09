@@ -140,8 +140,14 @@ staged beside the companion, and uses a **mix with one owner per direction**:
    loaded in an `observe` tick would hand every write verb to a "read-only" worker. Harnu passes the
    `harnu` mod to interactive spawns only, never to `tickArgv`, and a test pins that; the noun also
    refuses writes whenever `session.start` reported `isInteractive: false`, so a mistaken staging
-   still writes nothing.
-   _Evidence:_ `src/main/scheduler-core.ts:346-395`, :460-498.
+   still writes nothing (`READ_ONLY` keys on `interactive`, not on the spawn token, which a tick
+   can receive). This closes the noun's door into ticks; it does not isolate ticks from mods. A
+   tick inherits Harnu's whole process environment (`tickEnv`, `src/main/companion/spawn-inject.ts:147-155`),
+   so a `CLAUDE_CODE_PLUGIN_DIRS` exported in the shell that launched Harnu loads third-party mods
+   there, with `$.mcp.call` and no guard. That gap predates the noun; the spec proposes scrubbing
+   plugin-loading variables from an `observe` tick's environment as a follow-up.
+   _Evidence:_ `src/main/scheduler-core.ts:346-395`, :460-498; `src/main/scheduler-shell.ts:498-505`;
+   T389 P4W3:323 (the tick case "Expected, not observed").
 
 9. **D9 — One door, honestly labelled.** Context fact 7 means Harnu's server does not stop a mod
    that calls an excluded free verb directly. The `harnu` mod hooks the `mcp.call` op event and
@@ -149,7 +155,8 @@ staged beside the companion, and uses a **mix with one owner per direction**:
    denies. It is a speed bump: a caller's own hook can answer above it or skip it with
    `next.to(e, tier)`, and a mod has `$.process` anyway (ADR-0018 Decision 3). The boundary is
    install-time trust, which the Mods tab must disclose.
-   _Evidence:_ a `claude plugin test` probe on 2.1.295: a dependent's direct
+   _Evidence:_ a `claude plugin test` probe on 2.1.295, probed in the kit and not committed (its
+   full source and output are in spec `03-security.md` §9.7): a dependent's direct
    `$.mcp.call('harnu', 'spawn_terminal', …)` was refused by an inline `harnu` plugin's guard at
    `user` and at `prepend` tier; `src/main/mods-audit-core.ts:368-385` (a hook on `mcp.call`
    produces no chip today).
@@ -204,7 +211,9 @@ staged beside the companion, and uses a **mix with one owner per direction**:
 Evaluated after the W0 spike and again after W3. Any one of them re-opens this decision:
 
 1. A `user`-tier plugin cannot add a noun in a live session on the CLI versions Harnu supports
-   (spec A1, SDK-Q2). Two test-kit probes disagree on this; `--plugin-dir` only ever gives `user`.
+   (spec A1, SDK-Q2). The test kit produces the noun at every tier; the live session is unverified,
+   and so is the inference that a `--plugin-dir` plugin loads at `user` (W0 reads it from
+   `plugin.register`).
 2. `dependencies` does not resolve to a `--plugin-dir` plugin, so dependents cannot load inside
    Harnu without a marketplace install (spec A3).
 3. The `$.mcp.call` round trip makes a 5 s fleet poll across a 20-session fleet measurably costly

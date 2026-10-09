@@ -51,10 +51,11 @@ What the `harnu` mod adds, and its limits:
    `{ deny }` for every call with `server ∈ { harnu, capy }` whose caller (`next.origin.plugin`) is
    neither `harnu` nor `engine`. A mod that wants Harnu goes through the noun, where §9.1's filters
    apply. It is written with a `.catch` that denies (`REF:79`), so a failing guard does not fail
-   open. PROBE (guard-probe): a dependent's direct `$.mcp.call('harnu', 'spawn_terminal', …)` was
-   refused with "harnu: spawn_terminal is not offered to mods (caller guard-probe/user)", with the
-   guard at `user` and at `prepend`; the probe's guard covered four of the free verbs, the real
-   one covers every call.
+   open. **Probed in the kit, not committed** (§9.7 has the full source and output to reproduce
+   it): a dependent's direct `$.mcp.call('harnu', 'spawn_terminal', …)` was refused with "harnu:
+   spawn_terminal is not offered to mods (caller guard-probe/user)", with the guard at `user` and
+   at `prepend`. The probe's guard covered four of the free verbs and let `get_fleet` through; the
+   real one denies every call. A live session is W0.
 2. **It is a speed bump, not a boundary.** A hook of the caller's own placed above the guard can
    answer without reaching it, or skip past it with `next.to(e, tier)`; a mod can also spawn
    `claude`, `curl` the loopback port with the bearer from `harnu.mcp.json`, or run anything with
@@ -111,7 +112,7 @@ The Mods tab reads each mod with `claude plugin validate <root> --json` (T389/P4
 derives chips from a closed table (`deriveCapabilities`, `src/main/mods-audit-core.ts:368-385`):
 `mcp` from **calling** `mcp.call`; `files` from calling `fs.*`; `env` from env reads; `gate`
 **only** from hooking `plugin.register`; `other-mods` **only** from hooks on the `http`, `env`,
-`store`, `state` or `fs` nouns (`OTHER_MODS_NOUNS`, :353). What that gives today:
+`store`, `state` or `fs` nouns (`OTHER_MODS_NOUNS`, :354). What that gives today:
 
 | Mod                                        | Chips today                                                   | What it misses                                                                                                                                                                                                     |
 | ------------------------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -151,3 +152,72 @@ Wording follows SEC-7: "can", never "safe" or "verified".
 - **SDK-S8.** `api-surface.json` lists every `$` call, hook and state key, and the method → chip
   table; a test fails on drift, as for the companion.
 - **SDK-S9.** Never staged into a Scheduler tick; read-only in any non-interactive session (§7.3).
+
+### 9.7 The guard probe (probed in the kit, not committed)
+
+To reproduce on Claude Code 2.1.295: create these three files in an empty folder `guard-probe/`
+(with `hooks/hooks.json` = `{ "modules": ["./register.ts"] }`), then run `claude plugin test .`
+inside it. No `harnu` mod and no Harnu server are needed: the guard is an inline plugin, and a
+bottom hook on `mcp.call` stands for the server.
+
+`.claude-plugin/plugin.json`
+
+<!-- prettier-ignore -->
+```json
+{ "name": "guard-probe", "dependencies": ["harnu"], "version": "0.1.0", "description": "T447 probe: a dependent calling a noun" }
+```
+
+`hooks/register.ts` — the dependent: `/probe <verb>` calls Harnu directly.
+
+<!-- prettier-ignore -->
+```ts
+import type { Register } from 'claude-code'
+export const register: Register = (on) => {
+  on('command.run', { command: 'probe' }, async ($, e) => {
+    try {
+      const r = await $.mcp.call('harnu', e.args, { folder: '/x' })
+      return { text: `ran: ${JSON.stringify(r)}` }
+    } catch (err) {
+      return { text: `refused: ${(err as Error).message}` }
+    }
+  })
+}
+```
+
+`tests/guard.test.ts` — the guard as an inline `harnu` plugin, at two tiers.
+
+<!-- prettier-ignore -->
+```ts
+import { test } from 'claude-code/testing'
+import type { Register } from 'claude-code'
+const guard: Register = (on) => {
+  on('mcp.call', ($, e, next) => {
+    const silent = ['spawn_terminal', 'create_session', 'message_session', 'submit_manifest']
+    if ((e.server === 'harnu' || e.server === 'capy') && silent.includes(e.tool) && next.origin.plugin !== 'harnu') {
+      return { deny: `harnu: ${e.tool} is not offered to mods (caller ${next.origin.plugin}/${next.origin.tier})` }
+    }
+    return next(e)
+  }).catch(($, e, next) => (next.called ? next(e) : { deny: 'harnu guard failed' }))
+}
+const run = (args: string) => ({ command: 'probe', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } }) as const
+for (const tier of ['user', 'prepend'] as const) {
+  test(`guard at ${tier}`, { plugins: [{ name: 'harnu', tier, register: guard }] }, async ($, on) => {
+    on('mcp.call', () => ({ value: { content: [{ type: 'text', text: '{"ok":true}' }] } }) as never)
+    console.log(tier, 'spawn_terminal', JSON.stringify(await $.command.run(run('spawn_terminal'))))
+    console.log(tier, 'get_fleet', JSON.stringify(await $.command.run(run('get_fleet'))))
+  })
+}
+```
+
+Output (2026-10-09, the four `console.log` lines and the summary):
+
+```
+user spawn_terminal {"text":"refused: guard-probe: $.mcp.call: harnu: spawn_terminal is not offered to mods (caller guard-probe/user)"}
+user get_fleet {"text":"ran: {\"content\":[{\"type\":\"text\",\"text\":\"{\\\"ok\\\":true}\"}]}"}
+prepend spawn_terminal {"text":"refused: guard-probe: $.mcp.call: harnu: spawn_terminal is not offered to mods (caller guard-probe/user)"}
+prepend get_fleet {"text":"ran: {\"content\":[{\"type\":\"text\",\"text\":\"{\\\"ok\\\":true}\"}]}"}
+(pass) guard at user [21.44ms]
+(pass) guard at prepend [10.03ms]
+ 2 pass
+ 0 fail
+```

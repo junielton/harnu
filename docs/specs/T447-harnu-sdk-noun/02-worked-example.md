@@ -44,14 +44,14 @@ Validating hooks: <decision-log>/hooks/hooks.json
 
 ```
 tests/decide.test.ts:
-(pass) /decide writes through $.harnu [27.61ms]
-(pass) /decide reports a pending approval, never success [12.50ms]
-(pass) /decide keeps the decision locally when Harnu answers NO_MCP [13.93ms]
-(pass) /decide works with no harnu mod loaded at all [10.45ms]
+(pass) /decide writes through $.harnu [28.13ms]
+(pass) /decide reports a pending approval, never success [12.54ms]
+(pass) /decide keeps the decision locally when Harnu answers NO_MCP [12.80ms]
+(pass) /decide works with no harnu mod loaded at all [9.86ms]
 
  4 pass
  0 fail
-Ran 4 tests across 1 file. [0.17s]
+Ran 4 tests across 1 file. [0.16s]
 ```
 
 `npx -p typescript@5.6 tsc -p .`: no output, exit 0.
@@ -207,7 +207,7 @@ export const register: Register = (on) => {
 
 ## `tests/decide.test.ts`
 
-The stand-in provider of §12.1, plus per-test answers from bottom hooks.
+The stand-in provider of §12.1 at the default `user` tier (the tier Harnu stages the real mod at; the kit gives the same result at every tier), plus per-test answers from bottom hooks.
 
 ```ts
 import { expect, mock, test } from 'claude-code/testing'
@@ -228,7 +228,7 @@ const fakeHarnu: Register = (on) => {
     } as never
   })
 }
-const HARNU = { plugins: [{ name: 'harnu', tier: 'prepend' as const, register: fakeHarnu }] }
+const HARNU = { plugins: [{ name: 'harnu', register: fakeHarnu }] }
 
 const decide = (args: string) =>
   ({

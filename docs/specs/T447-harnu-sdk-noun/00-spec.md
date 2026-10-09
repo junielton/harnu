@@ -225,15 +225,15 @@ without a wire.
 
 ### 3.9 Engine behaviours: verified and assumed
 
-| #   | Claim                                                                                                                                                                                                                                                                                                                                   | Status                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A1  | A `user`-tier plugin may add a noun. `TYPES:4471` fails a `user` step "past its own stub, or adding a seated name". A stub is "a withheld noun … (a step inside withheld it, or the last fold did and this is a reload)" (`TYPES:4494-4496`), so a fresh noun nobody withheld passes no stub. "Seated name" is not defined in the file. | **Conflicting evidence, open (SDK-Q2).** Verifier (round 1): an inline plugin adding `harnu` at the default `user` tier "never produced the noun; at `prepend` it did". This spec's PROBE (tier-probe, tier-probe3): the same shape at `user`, `prepend` and `append` all produced it (`USER {"ok":true,"via":"dep3","tier":"user"}`), with and without `"dependencies": ["harnu"]` on the caller. Neither ran in a `--plugin-dir` session; W0 does. |
-| A2  | The providing plugin can hook its own noun's events and read `next.origin` there.                                                                                                                                                                                                                                                       | **Verified in PROBE** (§3.5). Load-bearing: the noun is built on it (§3.10).                                                                                                                                                                                                                                                                                                                                                                         |
-| A3  | `dependencies` resolves to a plugin loaded through `--plugin-dir` (`harnu@inline`) in a live session, and the contract is laid.                                                                                                                                                                                                         | Assumption; W0. Validation with `"dependencies": ["harnu"]` and no `harnu` present passes (§14).                                                                                                                                                                                                                                                                                                                                                     |
-| A4  | A dependent whose dependency is absent still loads, with `$.harnu` undefined.                                                                                                                                                                                                                                                           | **Verified in PROBE**: with no provider, the dependent loaded and `$.harnu.ping()` threw `undefined is not an object (evaluating '$.harnu.ping')`. Live session: W0.                                                                                                                                                                                                                                                                                 |
-| A5  | _(round 1: "a test's bottom hook on `harnu.<method>` answers when no plugin provides the noun")_                                                                                                                                                                                                                                        | **False on 2.1.295.** Verifier: "registered harnu.memoryAppend, but no loaded plugin provides $.harnu". Replaced by an inline stand-in provider loaded with `test(name, { plugins: [...] }, body)`, beneath which bottom hooks on `harnu.<method>` answer. Verified (§12.1, §14).                                                                                                                                                                    |
-| A6  | A Harnu MCP refusal reaches `$.mcp.call` as `{ isError: true, content: [{ type: 'text', text }] }`, `text` a bare reason or JSON `{ error, message, nextActions }`; a parked confirm reaches it as a **non-error** result whose JSON is `{ status: 'pending', approvalId, … }`.                                                         | Verified on the server side (`src/main/mcp/tool-result.ts:36-38`; `src/main/mcp/server.ts:335-353`, `:1252-1287`). The client side is W0.                                                                                                                                                                                                                                                                                                            |
-| A7  | The companion's bound `sid` is the same id an orchestrator links to a mission step with `mission_link_child` (`kind: 'session'`).                                                                                                                                                                                                       | Assumption: `sid` is "the id the host has for this binding" (`resources/companion/types/index.d.ts:10`), and missions link transcript UUIDs (`docs/harnu-features.md`). W0 checks one dispatched executor.                                                                                                                                                                                                                                           |
+| #   | Claim                                                                                                                                                                                                                                                                                                                                   | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A1  | A `user`-tier plugin may add a noun. `TYPES:4471` fails a `user` step "past its own stub, or adding a seated name". A stub is "a withheld noun … (a step inside withheld it, or the last fold did and this is a reload)" (`TYPES:4494-4496`), so a fresh noun nobody withheld passes no stub. "Seated name" is not defined in the file. | **Verified in the test kit at all three plugin tiers; assumed in a live `--plugin-dir` session (W0, SDK-Q2).** This spec's PROBE (tier-probe, tier-probe3) produced the noun at `user`, `prepend` and `append` (`USER {"ok":true,"via":"dep3","tier":"user"}`), with and without `"dependencies": ["harnu"]` on the caller. The verifier's round-2 matrix (tier {user, prepend, append} × bottom hook {none, on} × dependencies {absent, present}) passed 12/12. Its round-1 user-tier failure was a confound: a missing `clock.now` stub skipped the dependent's `command.run` hook, and the kit then reported "$ build failed (… no loaded plugin provides $.harnu)" although a provider was loaded (a gotcha for authors, §12.1). |
+| A2  | The providing plugin can hook its own noun's events and read `next.origin` there.                                                                                                                                                                                                                                                       | **Verified in PROBE** (§3.5). Load-bearing: the noun is built on it (§3.10).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| A3  | `dependencies` resolves to a plugin loaded through `--plugin-dir` (`harnu@inline`) in a live session, and the contract is laid.                                                                                                                                                                                                         | Assumption; W0. Validation with `"dependencies": ["harnu"]` and no `harnu` present passes (§14).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| A4  | A dependent whose dependency is absent still loads, with `$.harnu` undefined.                                                                                                                                                                                                                                                           | **Verified in PROBE**: with no provider, the dependent loaded and `$.harnu.ping()` threw `undefined is not an object (evaluating '$.harnu.ping')`. Live session: W0.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| A5  | _(round 1: "a test's bottom hook on `harnu.<method>` answers when no plugin provides the noun")_                                                                                                                                                                                                                                        | **False on 2.1.295.** Verifier: "registered harnu.memoryAppend, but no loaded plugin provides $.harnu". Replaced by an inline stand-in provider loaded with `test(name, { plugins: [...] }, body)`, beneath which bottom hooks on `harnu.<method>` answer. Verified (§12.1, §14).                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| A6  | A Harnu MCP refusal reaches `$.mcp.call` as `{ isError: true, content: [{ type: 'text', text }] }`, `text` a bare reason or JSON `{ error, message, nextActions }`; a parked confirm reaches it as a **non-error** result whose JSON is `{ status: 'pending', approvalId, … }`.                                                         | Verified on the server side (`src/main/mcp/tool-result.ts:36-38`; `src/main/mcp/server.ts:335-353`, `:1252-1287`). The client side is W0.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| A7  | The companion's bound `sid` is the same id an orchestrator links to a mission step with `mission_link_child` (`kind: 'session'`), **and it stays that id for the executor's whole task**.                                                                                                                                               | Assumption, and the second half is known to break. `sid` is "the id the host has for this binding" (`resources/companion/types/index.d.ts:10`), and missions link transcript UUIDs (`docs/harnu-features.md`). After `/clear` or a resume the executor gets a new `$.session.id()`: the companion re-keys its binding and reports `session.rebound { prevSid, sid, cause: 'clear' \| 'resume' }` (`resources/companion/hooks/contract.ts:281`), while the mission's link keeps the old UUID, so `missionCurrent` returns `null` and step writes answer `NOT_LINKED` mid-task. §5.4 says how D-A matches instead. W0 checks one dispatched executor across a `/clear` and a resume.                                                   |
 
 ### 3.10 How the noun is implemented
 
@@ -276,11 +276,14 @@ resources/harnu-sdk/
 
 **Staging and tier.** Harnu stages it exactly like the companion (T389 D1: immutable, versioned, a
 dedicated `--plugin-dir`), as a sibling `<userData>/companion/<stageKey>/harnu/`, and passes it as
-one more `--plugin-dir` to every **interactive** session where the companion is passed. A
-`--plugin-dir` plugin loads at the **`user`** tier (provenance `<name>@inline`, `TYPES`
-`PluginRegisterInput`; `prepend` and `append` "are the managed plugins an administrator lists",
-`TYPES:12590-12600`). There is no other tier Harnu can stage at without a managed policy. If W0
-shows that a `user` plugin cannot add a noun in a live session (A1), T447 is blocked as designed
+one more `--plugin-dir` to every **interactive** session where the companion is passed. **Inferred,
+not verified: a `--plugin-dir` plugin loads at the `user` tier.** `PluginRegisterInput` gives only
+its provenance, `<name>@inline` (`TYPES:7684-7688`), not its tier; the inference rests on `user`
+being "everything a person installs" and `prepend`/`append` being "the managed plugins an
+administrator lists" (`TYPES:12590-12600`), and on the T389 master stating that the companion,
+loaded the same way, "Runs at the `user` tier" (T389/00-master.md:44). W0 reads the tier from
+`plugin.register` in a live session. There is no other tier Harnu can stage at without a managed
+policy. If W0 shows that a `user` plugin cannot add a noun in a live session (A1), T447 is blocked as designed
 (ADR-0019 kill criterion 1). A third-party author who loads `harnu` themselves, by `--plugin-dir`
 or `/plugin install`, is at `user` too and hits the same wall; only an administrator listing
 `harnu` as a managed `prepend` plugin would get around it.
@@ -381,15 +384,16 @@ approvalId, message, nextActions }` while the confirm stays live for up to `PARK
    handed out itself (kept in module memory), so it never reads another caller's approval.
 4. **`isError: true`** → parse the first text block as JSON, else take it as a bare string:
 
-   | Text the caller receives                                        | Source                                       | `HarnuErrorCode`                         |
-   | --------------------------------------------------------------- | -------------------------------------------- | ---------------------------------------- |
-   | `{"error":"FOLDER_NOT_ALLOWED",…}` or bare `FOLDER_NOT_ALLOWED` | `permission-core.ts:216-217`, `deny-hint.ts` | `FOLDER_NOT_ALLOWED`                     |
-   | `{"error":"PATH_ESCAPE",…}` or bare `PATH_ESCAPE`               | `permission-core.ts:223-229` (Ask mode only) | `PATH_ESCAPE`                            |
-   | `denied by operator (<reason>)`                                 | `server.ts:1256`, answered inside the window | `CONFIRM_DENIED`, `serverCode: <reason>` |
-   | `denied (<reason>)`, e.g. `DENY_BUSY`, `NO_WINDOW`              | `server.ts:1190`, no confirm could be parked | `CONFIRM_DENIED`, `serverCode: <reason>` |
-   | `TOOL_TIMEOUT`                                                  | the server's 120 s per-call deadline         | `TIMEOUT`                                |
-   | an unknown-tool reply                                           | an older Harnu                               | `UNSUPPORTED`                            |
-   | any other JSON `error`, or any other string                     | a verb's own refusal                         | `REFUSED`, `serverCode` verbatim         |
+   | Text the caller receives                                        | Source                                                                          | `HarnuErrorCode`                                 |
+   | --------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------ |
+   | `{"error":"SERVER_DISABLED",…}` or bare `SERVER_DISABLED`       | `permission-core.ts:49`, :191 (the control server's kill switch, checked first) | `OUTSIDE_HARNU`, `serverCode: 'SERVER_DISABLED'` |
+   | `{"error":"FOLDER_NOT_ALLOWED",…}` or bare `FOLDER_NOT_ALLOWED` | `permission-core.ts:216-217`, `deny-hint.ts`                                    | `FOLDER_NOT_ALLOWED`                             |
+   | `{"error":"PATH_ESCAPE",…}` or bare `PATH_ESCAPE`               | `permission-core.ts:223-229` (Ask mode only)                                    | `PATH_ESCAPE`                                    |
+   | `denied by operator (<reason>)`                                 | `server.ts:1256`, answered inside the window                                    | `CONFIRM_DENIED`, `serverCode: <reason>`         |
+   | `denied (<reason>)`, e.g. `DENY_BUSY`, `NO_WINDOW`              | `server.ts:1190`, no confirm could be parked                                    | `CONFIRM_DENIED`, `serverCode: <reason>`         |
+   | `TOOL_TIMEOUT`                                                  | the server's 120 s per-call deadline                                            | `TIMEOUT`                                        |
+   | an unknown-tool reply                                           | an older Harnu                                                                  | `UNSUPPORTED`                                    |
+   | any other JSON `error`, or any other string                     | a verb's own refusal                                                            | `REFUSED`, `serverCode` verbatim                 |
 
 5. **Success** → parse the JSON ACK. An ACK with `ok: false` is a refusal, not a success
    (`docs/lessons/code-patterns/004-ok-true-ack-must-not-carry-a-nested-error.md`, applied in
@@ -407,8 +411,10 @@ cannot find its mission by owner. `missionCurrent` resolves in this order, and n
 
 1. **Owner.** `mission_get({ folder, ownerSessionId: sessionId })`. Found → `role: 'owner'`,
    `mySteps` = every step.
-2. **Child, v1 (no verb change).** `mission_list({ folder })` (TC:1409), newest first, `active` and
-   `delivered` only, at most 10; for each, `mission_get({ folder, missionId })` until one has a step
+2. **Child, v1 (no verb change).** `mission_list({ folder })` (TC:1409), newest first, `active`, `stale`
+   and `delivered` only (not `closed`; the status values are
+   `draft | active | stale | delivered | closed`, `src/main/mission-core.ts:121`, and `draft` is read
+   as `active`), at most 10; for each, `mission_get({ folder, missionId })` until one has a step
    whose `links` include `{ kind: 'session', ref: sessionId }`. Found → `role: 'child'`, `mySteps`
    = those steps. More than 10 candidates → stop and answer `mission: null` with
    `serverCode: 'TOO_MANY_MISSIONS'` rather than read every mission in the repo.
@@ -416,6 +422,17 @@ cannot find its mission by owner. `missionCurrent` resolves in this order, and n
    server returns the mission whose step links that session, plus `mySteps`. It replaces step 2's
    scan. It is an agent-facing catalog change (a new optional selector on `mission_get`), so it
    ships with its own `docs/harnu-features.md` update; the noun's API does not change.
+
+**Surviving `/clear` and resume (A7).** A link to a transcript UUID goes stale the moment the
+executor's session id changes. D-A should match **by binding first**: Harnu main already learns
+each `session.rebound { prevSid, sid }` from the companion, so it can resolve `childSessionId` to
+the binding's whole id chain and match a step linked to any id in it. **By worktree second**: a step
+with a `worktree` link whose path is the executor's folder matches when no session link does (one
+worktree per card is the dispatch convention, `substrate: 'worktree'`). **Re-linking** (the
+orchestrator calls `mission_link_child` again with the new id) stays the manual fallback; the noun
+cannot do it, since `mission_link_child` is excluded (§9.1). The v1 scan applies the same worktree
+rule on the client and, until D-A lands, also tries `prevSid` from the noun's own record of the
+last `sessionId` it saw this process.
 
 The resolved `missionId` is cached in `harnu.mission` for the session and re-resolved when a step
 write answers `MISSION_CLOSED` or the link disappears. An executor dispatched with a packet that
@@ -426,6 +443,12 @@ may see `mission: null` once and find it on the next `watch` tick. All of this d
 The step methods are scoped by role: a child may claim, log on and block **its own steps only**
 (`mySteps`); mission-level blockers and logs without a `stepId` are the owner's. A request outside
 that is `NOT_LINKED`. Verification (`mission_verify_step`) is never offered (§9.1).
+
+**That scoping holds only through the noun.** `mission_update_step`, `mission_log` and the blocker
+verbs check no owner or link on the server: any caller with the MCP server can write to any step of
+any mission in the folder. A mod that calls `$.mcp.call` directly bypasses `mySteps`, and the guard
+that should stop it is a speed bump (§9.2). The scoping keeps a well-behaved dependent from
+touching the wrong step; it does not protect a mission from a hostile one.
 
 ## 6. Hook budget and latency
 
@@ -440,12 +463,12 @@ live call while drawing.
 
 ### 7.1 The environments and how the noun detects them
 
-| Env             | Detection (at `session.start`, re-checked on failure)                                                                                                                                                                                        |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `inside`        | `$.env.get('HARNU_SPAWN_TOKEN')` is set (the one env var the companion reads, T389/P1W3:474) **and** a probe `get_fleet({ limit: 1 })` over `$.mcp.call('harnu', …)` answers.                                                                |
-| `inside-no-mcp` | Token set, and the probe rejects because no `harnu` server is connected: the `agentControlled` spawn (`src/main/pty.ts:811-818`, flag set at `src/renderer/src/stores/sessions.ts:3231`) and the `readOnly` review spawn (`pty.ts:269-278`). |
-| `outside`       | No token: a session started from a terminal, with or without P4W3's switch; a nested `claude` that inherited a spent token (T389/P4W3:186-187).                                                                                              |
-| `no-harnu`      | The probe fails with a connection error (Harnu quit or restarting).                                                                                                                                                                          |
+| Env             | Detection (at `session.start`, re-checked on failure)                                                                                                                                                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inside`        | `$.env.get('HARNU_SPAWN_TOKEN')` is set (the one env var the companion reads, T389/P1W3:474) **and** a probe `get_fleet({ limit: 1 })` over `$.mcp.call('harnu', …)` answers.                                                                                                         |
+| `inside-no-mcp` | Token set, and the probe rejects because no `harnu` server is connected: the `agentControlled` spawn (`src/main/pty.ts:811-818`, flag set at `src/renderer/src/stores/sessions.ts:3231`) and the `readOnly` review spawn (`pty.ts:789-810`; the option's doc comment is at :269-278). |
+| `outside`       | No token: a session started from a terminal, with or without P4W3's switch; a nested `claude` that inherited a spent token (T389/P4W3:186-187).                                                                                                                                       |
+| `no-harnu`      | The probe fails with a connection error (Harnu quit or restarting).                                                                                                                                                                                                                   |
 
 Orthogonal to `env`, the noun records **`interactive`** from `session.start`'s `isInteractive`, the
 same fact the companion keeps (`boot.isInteractive`, `resources/companion/types/index.d.ts`).
@@ -513,15 +536,32 @@ let any mod in it reach every write verb from a "read-only" worker, which G2 for
    (:460), so if a later change staged the mod there by mistake, every write answers `READ_ONLY`
    and only reads go through. Harnu spawns its own sessions interactive; a headless `claude -p`
    outside Harnu has no MCP anyway.
-3. **No third-party mod reaches an observe tick through the skills dir either**: observe workers
-   refuse a skill that declares hooks (`docs/harnu-features.md`, "rejected skill: /name (declares
-   hooks)"), and `--setting-sources ''` drops the user's `env`, so P4W3's
-   `CLAUDE_CODE_PLUGIN_DIRS` does not apply (T389/P4W3 §8, "Scheduler tick" row).
+3. **Third-party mods in a tick: one door closed, one open.** Observe workers refuse a skill that
+   declares hooks (`docs/harnu-features.md`, "rejected skill: /name (declares hooks)"), and
+   `--setting-sources ''` drops the `env` block of the user's `settings.json`, where P4W3 writes its
+   `CLAUDE_CODE_PLUGIN_DIRS`. But the tick's **process** environment is Harnu's own:
+   `tickEnv(process.env, token)` copies all of it and only adds or strips `HARNU_SPAWN_TOKEN`
+   (`src/main/companion/spawn-inject.ts:147-155`, called at `src/main/scheduler-shell.ts:498-505`).
+   A `CLAUDE_CODE_PLUGIN_DIRS` exported in the shell that launched Harnu therefore reaches every
+   tick, and the mods it names load there. P4W3's own row says the tick case is "Expected, not
+   observed" (T389/P4W3:323).
+
+**Residual, pre-existing, not created by the noun.** A third-party mod loaded through the process
+environment runs inside an `observe` tick with `$.mcp.call` and Harnu's MCP config, so it can reach
+every write verb the native lists were meant to fence off. The `mcp.call` guard (§9.2) is **absent**
+there, because the `harnu` mod is not staged in ticks, by decision 1 above. The noun-level rule
+holds (no noun in a tick, no `READ_ONLY` bypass), but the tick is not isolated from mods. Proposed
+follow-up, outside this spec's scope: `tickEnv` scrubs `CLAUDE_CODE_PLUGIN_DIRS` (and any other
+plugin-loading variable) from the environment it hands an `observe` tick, with a test beside the
+`tickArgv` one. Note also that a tick receives a freshly minted `HARNU_SPAWN_TOKEN` when the
+companion plan allows (`scheduler-shell.ts:500-501`), so a noun in a tick would detect `inside`; the
+`READ_ONLY` rule keys on `interactive`, not on `env`, for exactly that reason.
 
 **G2, re-checked:** in every environment above, the Harnu writes reachable with the noun are the
 same as without it: `inside` (a subset of what an agent there already has), `inside-no-mcp` (none),
 `outside` and `no-harnu` (none), non-interactive sessions and ticks (none through the noun). What
-the noun cannot change is that a mod already holds `$.mcp.call` and `$.process`; that is §9.2.
+the noun cannot change is that a mod already holds `$.mcp.call` and `$.process` (§9.2), and that a
+mod loaded into a tick through the process environment is not fenced (the residual above).
 
 ## 8. Transport (AC-4)
 
@@ -587,11 +627,19 @@ across callers; `unwatch` decrements. Defaults, configurable through the mod's `
 **The board needs one read the catalog lacks.** No verb lists cards with their status: `memory_read`
 without a page returns `hot.md`, the index catalog and the page list, so v1 knows which cards exist
 (added, removed) but not their columns. The minimum read that makes the board topic whole is
-**dependency D-B: a `list_cards({ folder, status? })` read verb** returning
+**dependency D-B: a `list_cards({ folder, status?, limit?, after? })` read verb** returning
 `{ slug, id, title, status, kind, complexity, priority, updatedAt }` per card, from the same board
-store `move_card` writes. It is a read (no confirm; a candidate for the observe allowlist like
-`mission_list`), and an agent-facing catalog change with its own `docs/harnu-features.md` update.
-Until it lands, `boardGet` and the `board` topic answer `partial: true`.
+store `move_card` writes:
+
+- `status`: one value or a list of `backlog | ready | in-progress | review | done`, the board's
+  columns (`COLUMN_ORDER`, `src/main/roadmap-core.ts:81`); omitted, every column. Archived cards
+  are never listed.
+- `limit`: default 100, maximum 500. `after`: an opaque cursor from the previous page's
+  `nextCursor`; the answer carries `nextCursor` while more cards remain and `total` always.
+- Order: `updatedAt` descending, then `slug` ascending as the tie-break, so pages are stable while
+  cards change. It is a read (no confirm; a candidate for the observe allowlist like
+  `mission_list`), and an agent-facing catalog change with its own `docs/harnu-features.md` update.
+  Until it lands, `boardGet` and the `board` topic answer `partial: true`.
 
 On consecutive failures the interval doubles up to 60 s and resets on success. A topic with no
 watcher polls nothing. A hot reload cancels the loop with the old environment (`TYPES:3418-3425`);
@@ -709,11 +757,11 @@ to build `$` ("registered harnu.memoryAppend, but no loaded plugin provides $.ha
 2.1.295). What works, and what §14 runs (4 pass):
 
 1. **An inline stand-in provider.**
-   `test(name, { plugins: [{ name: 'harnu', tier: 'prepend', register: fakeHarnu }] }, body)`,
-   where `fakeHarnu`'s `engine.create` hook does
-   `const built = await next(e); return { ...built, harnu: { … } } as never`, each method
-   answering success. `prepend` follows the verifier's working probe; this spec's probe found `user`
-   works in the kit too (§3.9 A1). The tier does not matter for a test.
+   `test(name, { plugins: [{ name: 'harnu', register: fakeHarnu }] }, body)`, where `fakeHarnu`'s
+   `engine.create` hook does `const built = await next(e); return { ...built, harnu: { … } } as never`,
+   each method answering success. The tier does not change the result in the kit (§3.9 A1); leave it
+   at the default, `user`, because that is the tier Harnu stages the real mod at (§4), so the test
+   mirrors production.
 2. **Per-test answers from bottom hooks.** Because the stand-in cannot close over a fixture, a test
    that needs another answer hooks the method's event beneath it, e.g.
    `on('harnu.memoryAppend', () => ({ value: { ok: false, error: 'PENDING', approvalId: 'appr-1', message: 'Parked.' } }))`.
@@ -722,9 +770,16 @@ to build `$` ("registered harnu.memoryAppend, but no loaded plugin provides $.ha
    over. Stub everything else the dependent touches (`mock.clock(on)`, `mock.store(on)`, or a
    `store.set` hook to assert what was kept): a test's `$` has no `store` noun to read back.
 
+**Gotcha: a misleading kit message.** When a dependent's hook fails for an unrelated reason — a
+missing `clock.now` stub, a read of `$.store` in the test body — the kit can report
+`hooks module did not load: the $ build failed (registered harnu.memoryAppend, but no loaded plugin
+provides $.harnu)` even with a provider loaded. It misled the round-1 verification into a false
+tier result, and it appeared once while §14 was being written. Read it as "a hook beneath failed";
+stub every engine call the hook makes before suspecting the provider.
+
 **The kit Harnu ships (W5).** A copyable `tests/support/fake-harnu.ts` exporting
 `fakeHarnu: Register` (every method of the contract, each answering a typical success) and
-`HARNU = { plugins: [{ name: 'harnu', tier: 'prepend', register: fakeHarnu }] }`, plus a table of
+`HARNU = { plugins: [{ name: 'harnu', register: fakeHarnu }] }`, plus a table of
 per-environment answers to paste into bottom hooks (`NO_MCP`, `OUTSIDE_HARNU`, `PENDING`,
 `FOLDER_NOT_ALLOWED`, `READ_ONLY`). It is copied, not imported across plugins: a plugin imports
 only its own files (`docs/dev/companion-mod.md:57`). It fixes the API's shapes, not Harnu's
@@ -747,8 +802,8 @@ Consistent with the companion's layers (`resources/companion/tests/`, `tests/sup
   the token, `mock.clock` for polls and `approvalWait`, an `on('mcp.call')` bottom hook as a
   scripted Harnu server (answers, refusals, pending handles, rejections, hangs), `fs.read` for the
   disk fallback. One suite per environment row of §7.2, plus the guard: an inline third-party
-  plugin's direct `$.mcp.call('harnu', …)` is denied and the provider's own is not (the guard-probe
-  shape). The `mod` CI step (`scripts/ci/mod-step.mjs`) validates and tests the new folder like the
+  plugin's direct `$.mcp.call('harnu', …)` is denied and the provider's own is not (the shape of the
+  guard probe, `03-security.md` §9.2). The `mod` CI step (`scripts/ci/mod-step.mjs`) validates and tests the new folder like the
   companion's.
 - **L4, real CLI (gated by `HARNU_WITH_CLI=1`).** A real `claude` with the staged `harnu` mod and a
   fixture dependent: the noun exists at `user` tier in a live session (A1), the dependent's types
@@ -798,14 +853,14 @@ Sizes: S ≤ 1 day, M 2–4 days, L a week or more. An outline only; no cards ar
 
 | Wave | Content                                                                                                                                                                                                                                                                                                                                    | Size | Depends on |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---- | ---------- |
-| W0   | **Spike, in a live session.** A throwaway `harnu` mod via `--plugin-dir` and a dependent: settles A1 (the tier conflict), A3, A4, A6, A7 and SDK-Q1/2/7, measures the `$.mcp.call` round trip. Output: an evidence note under `docs/specs/T447-harnu-sdk-noun/`.                                                                           | S    | —          |
+| W0   | **Spike, in a live session.** A throwaway `harnu` mod via `--plugin-dir` and a dependent: settles A1 (live, at the `--plugin-dir` tier), A3, A4, A6, A7 (including across `/clear` and a resume) and SDK-Q1/2/7, measures the `$.mcp.call` round trip. Output: an evidence note under `docs/specs/T447-harnu-sdk-noun/`.                   | S    | —          |
 | W1   | **The mod and its staging.** `resources/harnu-sdk/` with the contract, stubs and method hooks, `identity`, `capabilities`, the read methods, the normaliser (pending included), the §5.4 resolver (v1 scan), L1–L3 tests, `api-surface.json`, the `mod` CI step, staging beside the companion for interactive spawns, the `tickArgv` test. | M    | W0         |
 | W2   | **Writes and the guard.** Memory, card and mission writes with their scoping, `notify`/`speak`/`openFile`, `approvalWait`, the `EXCLUDED`/`NOT_LINKED`/`READ_ONLY` rules, the `mcp.call` guard, the L4 suite. Agent-facing: `docs/harnu-features.md` + marker bump; `docs/user/` page; CHANGELOG.                                          | M    | W1         |
 | W3   | **Subscriptions v1.** `watch`/`unwatch` for four topics, the poll loop, hash-compare writes, staleness, backoff; `board` partial.                                                                                                                                                                                                          | S    | W1         |
 | W4   | **Mods tab.** `harnu-read`/`harnu-write`, `mcp` into `OTHER_MODS_NOUNS`, plugin-noun hooks → `other-mods`, the "depends on" label (P4W1 follow-up).                                                                                                                                                                                        | S    | W2         |
 | W5   | **Dependent kit.** `fake-harnu.ts`, per-environment answers, the `decision-log` example as a CI fixture (validate + test + tsc), user docs for mod authors.                                                                                                                                                                                | S    | W2, W3     |
-| D-A  | **`mission_get({ childSessionId })`.** Server-side child lookup; replaces the §5.4 scan. Agent-facing.                                                                                                                                                                                                                                     | S    | —          |
-| D-B  | **`list_cards({ folder, status? })`.** Read verb; makes the `board` topic whole. Agent-facing.                                                                                                                                                                                                                                             | S    | —          |
+| D-A  | **`mission_get({ childSessionId })`.** Server-side child lookup matching by binding (the `session.rebound` id chain), then by worktree link; replaces the §5.4 scan. Agent-facing.                                                                                                                                                         | S    | —          |
+| D-B  | **`list_cards({ folder, status?, limit?, after? })`.** Read verb, paged and sorted (§10.2); makes the `board` topic whole. Agent-facing.                                                                                                                                                                                                   | S    | —          |
 | W6   | **Attribution.** The P2W5 amendment (§9.4): `mcp.call` stamp + `via`. Ships with or after P2W5, owned there.                                                                                                                                                                                                                               | M    | P2W5, W2   |
 | W7   | **Subscriptions v2.** `sdk.invalidate` command, companion `invalidate` key, enqueue on store changes including card writes, poll fallback kept.                                                                                                                                                                                            | M    | W3, P2W1   |
 | W8   | **Outside Harnu.** P4W3's switch stages the `harnu` folder too; disk fallback for memory; `outside`/`no-harnu` suites.                                                                                                                                                                                                                     | S    | W1, P4W3   |
@@ -816,17 +871,17 @@ code against (the API does not change).
 
 ## 16. Open questions (AC-12)
 
-| #       | Question                                                                                                                                                                                                                                      | Who decides                                    |
-| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| SDK-Q1  | Do plugin nouns and `dependencies` type-laying exist on 2.1.287–2.1.294? If not, is a `minCli` of 2.1.295 for the `harnu` mod acceptable while the companion stays at 2.1.287?                                                                | W0 evidence; then the operator                 |
-| SDK-Q2  | Can a `user`-tier plugin add a noun in a live session? The two probes disagree (§3.9 A1). Harnu can only stage at `user`; if the answer is no, T447 is blocked until the CLI allows it or an administrator lists `harnu` as a managed plugin. | W0 evidence; then the operator                 |
-| SDK-Q3  | How does a mod author without Harnu get the `harnu` contract for their editor and tests: a published marketplace entry (`/plugin install harnu --marketplace …`), or the copyable kit only?                                                   | Operator (distribution)                        |
-| SDK-Q4  | Should a write from a third-party mod need a per-mod opt-in by the operator (a first-write confirm, or a switch on the mod's row in Settings → Mods), beyond today's agent gates? This spec says no for v1.                                   | Operator (security posture)                    |
-| SDK-Q6  | Which excluded-for-now verbs join a later minor: `message_session` (needs P2W3's audit), `archive_card`, `list_cleanup`, `draw_canvas`?                                                                                                       | Operator, per dependent demand                 |
-| SDK-Q7  | Is the `$.mcp.call` loopback round trip fast enough for the 5 s fleet poll across a 20-session fleet, or must W7 come before W3 ships?                                                                                                        | W0 measurement                                 |
-| SDK-Q9  | The guard (§9.2) denies **every** direct `$.mcp.call` into Harnu from another mod. Should a mod be allowed direct read verbs (`get_fleet`, `memory_read`) for compatibility, or is "one door" right from day one?                             | Operator (security posture)                    |
-| SDK-Q10 | Manifest/board-dispatched sessions get the full Harnu server (they carry `spawnedBy: 'agent'`, not `agentControlled`; `src/renderer/src/stores/sessions.ts:333-341`). The noun inherits that: writes work there. Intended?                    | Operator (existing behaviour, not this spec's) |
-| SDK-Q11 | `fleetGet` is a cross-folder read (§9.1). Keep it with the filters, narrow it to this repo's sessions (needs a repo id on `get_fleet` rows, which carry only `folderAlias`), or drop it?                                                      | Operator                                       |
+| #       | Question                                                                                                                                                                                                                                                                                              | Who decides                                    |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| SDK-Q1  | Do plugin nouns and `dependencies` type-laying exist on 2.1.287–2.1.294? If not, is a `minCli` of 2.1.295 for the `harnu` mod acceptable while the companion stays at 2.1.287?                                                                                                                        | W0 evidence; then the operator                 |
+| SDK-Q2  | In a **live** `--plugin-dir` session, does the `harnu` mod load at the `user` tier, and can it add a noun there? The test kit says yes at every tier (§3.9 A1); only the live session is open. If not, T447 is blocked until the CLI allows it or an administrator lists `harnu` as a managed plugin. | W0 evidence; then the operator                 |
+| SDK-Q3  | How does a mod author without Harnu get the `harnu` contract for their editor and tests: a published marketplace entry (`/plugin install harnu --marketplace …`), or the copyable kit only?                                                                                                           | Operator (distribution)                        |
+| SDK-Q4  | Should a write from a third-party mod need a per-mod opt-in by the operator (a first-write confirm, or a switch on the mod's row in Settings → Mods), beyond today's agent gates? This spec says no for v1.                                                                                           | Operator (security posture)                    |
+| SDK-Q6  | Which excluded-for-now verbs join a later minor: `message_session` (needs P2W3's audit), `archive_card`, `list_cleanup`, `draw_canvas`?                                                                                                                                                               | Operator, per dependent demand                 |
+| SDK-Q7  | Is the `$.mcp.call` loopback round trip fast enough for the 5 s fleet poll across a 20-session fleet, or must W7 come before W3 ships?                                                                                                                                                                | W0 measurement                                 |
+| SDK-Q9  | The guard (§9.2) denies **every** direct `$.mcp.call` into Harnu from another mod. Should a mod be allowed direct read verbs (`get_fleet`, `memory_read`) for compatibility, or is "one door" right from day one?                                                                                     | Operator (security posture)                    |
+| SDK-Q10 | Manifest/board-dispatched sessions get the full Harnu server (they carry `spawnedBy: 'agent'`, not `agentControlled`; `src/renderer/src/stores/sessions.ts:333-341`). The noun inherits that: writes work there. Intended?                                                                            | Operator (existing behaviour, not this spec's) |
+| SDK-Q11 | `fleetGet` is a cross-folder read (§9.1). Keep it with the filters, narrow it to this repo's sessions (needs a repo id on `get_fleet` rows, which carry only `folderAlias`), or drop it?                                                                                                              | Operator                                       |
 
 SDK-Q5 (round 1: how an executor finds its mission) and SDK-Q8 (round 1: no verb lists cards) are
 no longer open questions: §5.4 specifies the executor path, with D-A as a dependency, and §10.2
