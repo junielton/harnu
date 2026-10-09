@@ -3644,7 +3644,10 @@
     "sidebarChipNeedsYou": "Missão: {headline} — precisa de você",
     "cue": {
       "one": "A missão “{title}” precisa de você: {what}",
-      "many": "{n} missões precisam de você"
+      "many": "{n} missões precisam de você",
+      "reviewAll": "Revisar todas as {n}",
+      "ownerMissing": "A sessão dona não está aberta aqui — clique para revisar esta missão.",
+      "itemAria": "Abrir a missão {title}"
     }
   },
   "harnuMod": {

@@ -5266,7 +5266,8 @@ Anatomy, inside the normal row (kind-bar, title, relative timestamp, hover ×):
   owner hint (`text-text-4`, tooltip `mission.cue.ownerMissing`) and the click
   opens the review focused on that mission (`openReview(missionId)`) — never a
   dead click. **An item click never dismisses the entry**: it is a list, and the
-  other rows are still owed.
+  other rows are still owed. The bell popover closes once a row or "Review all" has opened
+  its destination.
 - **Replaced in place, kept truthful.** `notify({ group })` is an upsert: the
   first call appends, later calls replace the record's content and keep its
   `id`, so the row state does not flicker and the badge does not grow. `ts`

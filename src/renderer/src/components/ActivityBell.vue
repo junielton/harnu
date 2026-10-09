@@ -36,9 +36,11 @@ import { useI18n } from 'vue-i18n'
 import { Bell, ChevronDown, X } from 'lucide-vue-next'
 import {
   useNotificationsStore,
+  type NotificationItem,
   type NotificationKind,
   type NotificationRecord
 } from '../stores/notifications'
+import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
 import { relativeTime } from '../composables/useRelativeTime'
@@ -46,6 +48,7 @@ import { resolveActionLabel } from '../lib/toast-action-label'
 
 const notifications = useNotificationsStore()
 const sessions = useSessionsStore()
+const missions = useMissionsStore()
 const ui = useUiStore()
 const { t, te } = useI18n()
 
@@ -154,6 +157,36 @@ function activateAndDismiss(n: NotificationRecord): void {
     return
   }
   notifications.dismiss(n.id)
+}
+
+/** Item rows a grouped entry shows before "Review all" takes over (spec §3.4). */
+const MISSION_ROWS_MAX = 5
+
+/** An item whose owner session is not one this window can open (spec §3.4). */
+function ownerMissing(item: NotificationItem): boolean {
+  return !!item.sessionId && sessions.findSessionById(item.sessionId) === null
+}
+
+/**
+ * Item row click (BUG-173): open the row's owner session, then its `target`
+ * through the one `openNavigableView` door — so this stays free of per-view
+ * branches. An owner that is not loaded would be a dead click, so the row opens
+ * the Missions review focused on it instead. The entry is NOT dismissed: it is
+ * a list, and its other rows are still owed (the quiet sync keeps it truthful).
+ */
+function openItem(item: NotificationItem): void {
+  if (item.sessionId && sessions.activateSession(item.sessionId)) {
+    if (item.target) ui.openNavigableView(item.target.view, item.target)
+  } else {
+    missions.openReview(item.id)
+  }
+  popoverOpen.value = false
+}
+
+/** "Review all {n}" — the rows past {@link MISSION_ROWS_MAX} live in the review. */
+function reviewAll(): void {
+  missions.openReview()
+  popoverOpen.value = false
 }
 
 function onDismissClick(id: string, e: MouseEvent): void {
@@ -289,6 +322,44 @@ function actionLabel(n: NotificationRecord): string {
             >
               {{ n.description }}
             </span>
+            <div v-if="n.items?.length" class="flex w-full flex-col" style="margin-top: 4px">
+              <button
+                v-for="item in n.items.slice(0, MISSION_ROWS_MAX)"
+                :key="item.id"
+                type="button"
+                data-dsqa="activity-item"
+                :data-owner-missing="ownerMissing(item) ? 'true' : undefined"
+                :aria-label="$t('mission.cue.itemAria', { title: item.title })"
+                :title="ownerMissing(item) ? $t('mission.cue.ownerMissing') : undefined"
+                class="flex w-full cursor-pointer flex-col items-start border-t border-border text-left transition hover:bg-surface"
+                style="gap: 1px; padding: 5px 0"
+                @click.stop="openItem(item)"
+              >
+                <span
+                  class="max-w-full truncate"
+                  :class="ownerMissing(item) ? 'text-text-3' : 'text-text'"
+                  style="font-size: 12px; font-weight: 500; line-height: 1.4"
+                  >{{ item.title }}</span
+                >
+                <span
+                  v-if="item.description"
+                  class="max-w-full truncate"
+                  :class="ownerMissing(item) ? 'text-text-4' : 'text-text-3'"
+                  style="font-size: 11px; line-height: 1.4"
+                  >{{ item.description }}</span
+                >
+              </button>
+              <button
+                v-if="n.items.length > MISSION_ROWS_MAX"
+                type="button"
+                data-dsqa="activity-review-all"
+                class="cursor-pointer self-start rounded-sm text-accent transition hover:opacity-80"
+                style="padding: 3px 0; font-size: 11px; font-weight: 500"
+                @click.stop="reviewAll()"
+              >
+                {{ $t('mission.cue.reviewAll', { n: n.items.length }) }}
+              </button>
+            </div>
             <div v-if="n.action" class="flex flex-wrap" style="gap: 6px; margin-top: 4px">
               <button
                 type="button"
