@@ -131,7 +131,7 @@ The report ranks the pair fifth of its "Ten I would build first": "Rewrites the 
 | `T447/<file>:n`   | `docs/specs/T447-harnu-sdk-noun/<file>`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `SMOKE:n`         | `docs/studies/T389-smoke-evidence.md`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `DV:n`            | `resources/skills/skills/delivery-verifier/SKILL.md`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `P-K`, `R1`…`R16` | Runs recorded in [`01-prototype.md`](01-prototype.md): `P-K` the round-4 kit suite; `R1`…`R5` live on round-2 code; `R6`…`R10` live on round-3 code; `R11`…`R13` live on round-4 code; `R14`…`R16` live on round-5 code.                                                                                                                                                                                                                                                                                              |
+| `P-K`, `R1`…`R17` | Runs recorded in [`01-prototype.md`](01-prototype.md): `P-K` the current kit suite; `R1`…`R5` live on round-2 code; `R6`…`R10` live on round-3 code; `R11`…`R13` live on round-4 code; `R14`…`R16` live on round-5 code; `R17` live after the redirect fix.                                                                                                                                                                                                                                                           |
 | `P1`…`P6`         | Live runs of the round-1 prototype, kept in `01-prototype.md` for the mechanisms round 2 did not change (the `tool.check` deny, the ledger's classic hooks, worktree isolation).                                                                                                                                                                                                                                                                                                                                      |
 | `V-*`             | Runs by other sessions: `V-45` (a 45 s check), `V-A2` and `V-A3` (the round-1 verifier); `V-R2a`, `V-R2b` and `V-R2c` (the round-2 verifier: the piped-check bug, an Esc kill, an `fs.read` mutation); `V-R3` (the round-3 verifier: the lone-`&` and newline evasions, and the `$.tool.check` hook gap); `V-R4` (the round-4 verifier: the `cd sub` receipt, the "narrower" writes and the broad neutral list); `V450` (the T450 verifier's B4 re-run). All are summarised in `01-prototype.md` §"Independent runs". |
 
@@ -275,7 +275,13 @@ write (`npx vitest run -u`, `npm run lint -- --fix`) and "neutral" commands that
 things the classifier trusted. Round 5 changes the direction: **the classifier trusts only an exact
 allowlist, and everything else is an edit.** Every rule below follows from the governing rule.
 
-`classifyBash` removes the harmless trailing redirections (`2>&1`, `>&2`, `>/dev/null`) and decides:
+`classifyBash` first excises the **complete** harmless redirections, `2>&1`, `>&2` and `>/dev/null`
+(each must end at whitespace or the end of the command, and each leaves a space behind), then
+decides. The whole-token rule matters: bash reads `>&2h` as "both streams to the file `2h`", so a
+prefix match would strip `>&2` and fuse `h` onto the command. `echo payload >&2h2` would then clean
+to `echo payloadh2` and pass as neutral, and a decoy `sh check.s >&2h` would clean to the approved
+`sh check.sh` and pass as a receipt. With whole tokens only, `>&2h`, `2>&1x` and `>/dev/nullx`
+keep their `>`, which rule 2 reads as an edit.
 
 1. **A lone `cd`, `pushd` or `popd`** (nothing joined to it) is **neutral**: it writes nothing, and
    what runs after it is judged by the hook's `cwd`, below.
@@ -334,9 +340,11 @@ lint-staged and `prettier --write`), `git add`, `git push` (pre-push hooks), `gi
 flow "run the check, `git commit`, `gh pr create`" therefore costs one extra run of the check at
 claim time: the commit may have rewritten files, and the gate does not know it did not.
 
-`git diff` and `git log` may run a **textconv** driver configured in `.gitattributes` and
-`.git/config`. That is repository configuration, not an argument the model writes in the call. It
-is a residual, named here and not closed.
+`git diff`, `git log`, `git show` and `git status` can run a program that **repository or user
+configuration** names, not an argument the model writes in the call: a **textconv** driver
+(`.gitattributes` and `.git/config`), `diff.external`, `core.fsmonitor` (which `git status` and
+`git diff` start to watch the tree) and the **pager**. They are a residual, named here and not
+closed. The calls do not widen them: they run the same programs a plain `git status` would.
 
 So the parts count **one by one**:
 
@@ -358,19 +366,23 @@ Other choices:
   (V-A3). A subagent in an isolated worktree runs in another `cwd`, so its part runs are edits.
 - **Equality, not "contains".** A command must equal a part. `echo npm run typecheck` is another
   command, and an `echo` of that text is not a run.
-- **Kit tests, with tables.** 152 tests, all passing:
+- **Kit tests, with tables.** 171 tests, all passing:
   - one row per metacharacter (19 rows, two tests each);
   - the verifier's evasions from rounds 2-4 and the honest shapes;
   - the `cwd` rule: `cd sub` then the part, an unknown `cwd`, a trailing slash, `cd` in a chain;
   - five "narrower" runs that write (`--fix`, `-u`, `vitest run -u`, `lint -- --fix`, a focused
     run);
+  - six **lookalike redirections** (`>&2h`, `>&2h2`, `2>&1x`, `>/dev/nullx`, `>>/dev/nullx`,
+    `2>/dev/nulls`), each as a receipt attempt and as a write that must be an edit, the decoy
+    `sh check.s >&2h`, and six whole-token redirections that must still be receipts;
   - **31 commands that must be an edit** (including each one named in the grading: `gh pr
 checkout`, `git diff/show/log --output`, `git diff --ext-diff`, `git commit`, `rg --pre`) and
     **23 read-only commands that must not stale a receipt**.
-- **Negative control.** The same 152-test file run against the round-4 classifier (kept in the
-  scratchpad) passes 124 and **fails 28**, one for each hole above. Against the new one all 152
-  pass (P-K).
-- **Live** (R14-R16): a receipt cannot come from `sub`, a narrower `--fix` run stales the tree, and
+- **Negative controls.** The 152-test file of the previous round run against the round-4
+  classifier passed 124 and **failed 28**, one for each hole then open. The 171-test file run
+  against the round-5 classifier passes 164 and **fails 7**: the six `echo payload <lookalike>`
+  rows and the decoy. Against the current one all 171 pass (P-K).
+- **Live** (R14-R17): a receipt cannot come from `sub`, a narrower `--fix` run stales the tree, and
   `git diff --output=out.txt` stales it (`01-prototype.md`).
 
 ### 6.3 Lifetime: reload, compaction, resume, clear
@@ -846,7 +858,7 @@ round-2 prototype (P-K):
 | K1  | A model forges a receipt or claims through an unhooked path                                                            | Medium                                     | Non-goal N4. Segment equality defeats `echo <part>` (§6.2). The verifier never counts a receipt as proof (§9.2).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | K2  | Another mod calls `mission_update_step` directly before T447 ships                                                     | Low                                        | §5.1 row 10; closed by T447's guard.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | K3  | The edit rule is too eager: a harmless command counts as an edit, so the gate runs the check once more                 | Low                                        | By design (§6.2): an edit costs a re-run and a wrong receipt costs a red tree. The allowlist grows with evidence, never by default.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| K4  | A tree-changing command is trusted: it reached the neutral allowlist, or a flag turns a read-only command into a write | Medium                                     | The allowlist is exact commands plus enumerated flags with no long options by default (§6.2). A textconv driver on `git diff` is a named residual. Every fuzz row asserts the opposite direction.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| K4  | A tree-changing command is trusted: it reached the neutral allowlist, or a flag turns a read-only command into a write | Medium                                     | The allowlist is exact commands plus enumerated flags with no long options by default (§6.2). The programs git configuration can start (textconv, `diff.external`, `core.fsmonitor`, the pager) are a named residual. Every fuzz row asserts the opposite direction.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | K5  | A slow suite makes every claim wait                                                                                    | Low                                        | Once per edit cycle; parts the session already ran are skipped; Esc kills it (R5); rule G hands it back.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | K6  | #92533's status changes again                                                                                          | Low                                        | The gate never registers `tool.call` on Bash. W0 records the result either way (§13).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | K7  | A later build changes classic-event routing (V-A2, V-A3)                                                               | Medium                                     | W0 re-runs both. A CLI ceiling in the gate's `api-surface.json` forces annotate above the tested build.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |

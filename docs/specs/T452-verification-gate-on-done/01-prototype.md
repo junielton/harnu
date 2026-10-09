@@ -51,167 +51,186 @@ Validating hooks: <scratch>/harnu-verify-gate/hooks/hooks.json
 ✔ Validation passed
 ```
 
-`claude plugin test .` (the test names are in the file below; 152 tests):
+`claude plugin test .` (the test names are in the file below; 171 tests):
 
 ```
 
 tests/gate.test.ts:
-(pass) a claim from a session that edited nothing passes untouched [37.87ms]
-(pass) inside Harnu, a claim after an edit runs each approved part in order; green passes with a receipt [25.14ms]
-(pass) a red part refuses the claim, says the gate ran it, stops there, and never reaches the verb [19.84ms]
-(pass) the working tree cannot choose the command: nothing approved means nothing runs [28.93ms]
-(pass) the session's own runs count part by part, as separate Bash calls: nothing reruns [24.25ms]
-(pass) only the part the session did not run is run by the gate [31.02ms]
-(pass) a focused run is no receipt and an edit: it may write (-u, --fix); so is an unknown command [40.23ms]
-(pass) the session's own red run refuses the claim without a rerun, and says who ran it [21.86ms]
-(pass) an edit after a green check makes it stale; read-only git commands do not [42.09ms]
-(pass) gh pr create: a query runs nothing; a draft is never gated; a red receipt is denied at tool.check [46.93ms]
-(pass) move_card to review is gated, to backlog is not; the legacy capy name is gated too [35.50ms]
-(pass) a part that outlives the timeout is stopped, recorded as nothing, and handed back to the session [539.46ms]
-(pass) annotate mode lets a stale claim through with a warning and runs nothing [26.68ms]
-(pass) off mode leaves even a red claim alone [15.48ms]
-(pass) outside Harnu the default is annotate, and nothing runs [12.61ms]
-(pass) outside Harnu, enforce runs only the userConfig check [14.96ms]
-(pass) a resumed session is treated as edited: its first claim checks [18.15ms]
-(pass) a completion report sent to another session carries the receipt line [18.47ms]
-(pass) message_session asks for a re-send with the receipt line, and passes once it is there [18.86ms]
-(pass) a "done" reply with no green check since the last edit is annotated [16.49ms]
-(pass) `sh check.sh 2>&1 | tail -5` exiting 0 is no receipt: the gate runs the part itself [17.41ms]
-(pass) `sh check.sh || true` exiting 0 is no receipt: the gate runs the part itself [17.53ms]
-(pass) `sh check.sh; rm -r x` exiting 0 is no receipt: the gate runs the part itself [18.38ms]
-(pass) `sh check.sh || echo failed` exiting 0 is no receipt: the gate runs the part itself [17.99ms]
-(pass) `sh check.sh; echo done` exiting 0 is no receipt: the gate runs the part itself [17.07ms]
-(pass) control: the bare part exiting 0 is a receipt; a later `; rm -r x` is an edit [23.63ms]
-(pass) a write through `>` is an edit; `cd elsewhere && <part>` is an edit too [28.33ms]
-(pass) a part this session's permissions would ask about is not run: the session runs it [13.97ms]
-(pass) HARNU_VERIFY_* in the project settings sets Harnu's parts aside [18.66ms]
-(pass) HARNU_VERIFY_* in the local settings sets Harnu's parts aside [12.87ms]
-(pass) parts approved for another folder are set aside [13.85ms]
-(pass) a receipt line copied from an earlier report does not count [22.08ms]
-(pass) "sh check.sh && sh check.sh again & true" is no receipt: the gate runs the part itself [17.23ms]
-(pass) "sh check.sh && sh check.sh again\ntrue" is no receipt: the gate runs the part itself [17.09ms]
-(pass) "sh check.sh && sh check.sh again\r\ntrue" is no receipt: the gate runs the part itself [16.58ms]
-(pass) "sh check.sh x & rm -rf src" is no receipt: the gate runs the part itself [16.40ms]
-(pass) "sh check.sh $(rm -rf src)" is no receipt: the gate runs the part itself [16.36ms]
-(pass) "sh check.sh `rm -rf src`" is no receipt: the gate runs the part itself [28.89ms]
-(pass) "sh check.sh <(rm -rf src)" is no receipt: the gate runs the part itself [17.24ms]
-(pass) "(sh check.sh)" is no receipt: the gate runs the part itself [15.95ms]
-(pass) "{ sh check.sh; }" is no receipt: the gate runs the part itself [16.57ms]
-(pass) "sh check.sh && true" is no receipt: the gate runs the part itself [20.60ms]
-(pass) an honest shape with a trailing echo records nothing green: both parts re-run [17.96ms]
-(pass) parts joined only by && with neutral commands are a receipt [14.86ms]
-(pass) a narrower run of a part joined to the part is no receipt for either [21.34ms]
-(pass) metacharacter lone &: `sh check.sh "&" true` is never a receipt [17.31ms]
-(pass) metacharacter lone &: after a green receipt, `sh check.sh x "&"rm -rf src` is an edit [20.94ms]
-(pass) metacharacter semicolon: `sh check.sh ";" true` is never a receipt [15.70ms]
-(pass) metacharacter semicolon: after a green receipt, `sh check.sh x ";"rm -rf src` is an edit [23.76ms]
-(pass) metacharacter pipe: `sh check.sh "|" true` is never a receipt [16.22ms]
-(pass) metacharacter pipe: after a green receipt, `sh check.sh x "|"rm -rf src` is an edit [19.91ms]
-(pass) metacharacter double pipe: `sh check.sh "||" true` is never a receipt [20.29ms]
-(pass) metacharacter double pipe: after a green receipt, `sh check.sh x "||"rm -rf src` is an edit [19.97ms]
-(pass) metacharacter triple &: `sh check.sh "&&&" true` is never a receipt [16.15ms]
-(pass) metacharacter triple &: after a green receipt, `sh check.sh x "&&&"rm -rf src` is an edit [23.52ms]
-(pass) metacharacter newline: `sh check.sh "\n" true` is never a receipt [16.61ms]
-(pass) metacharacter newline: after a green receipt, `sh check.sh x "\n"rm -rf src` is an edit [21.14ms]
-(pass) metacharacter carriage return: `sh check.sh "\r" true` is never a receipt [20.97ms]
-(pass) metacharacter carriage return: after a green receipt, `sh check.sh x "\r"rm -rf src` is an edit [20.87ms]
-(pass) metacharacter backtick: `sh check.sh "`" true` is never a receipt [20.11ms]
-(pass) metacharacter backtick: after a green receipt, `sh check.sh x "`"rm -rf src` is an edit [24.36ms]
-(pass) metacharacter command substitution: `sh check.sh "$(" true` is never a receipt [18.75ms]
-(pass) metacharacter command substitution: after a green receipt, `sh check.sh x "$("rm -rf src` is an edit [19.85ms]
-(pass) metacharacter process substitution: `sh check.sh "<(" true` is never a receipt [15.11ms]
-(pass) metacharacter process substitution: after a green receipt, `sh check.sh x "<("rm -rf src` is an edit [25.80ms]
-(pass) metacharacter open paren: `sh check.sh "(" true` is never a receipt [20.22ms]
-(pass) metacharacter open paren: after a green receipt, `sh check.sh x "("rm -rf src` is an edit [19.82ms]
-(pass) metacharacter close paren: `sh check.sh ")" true` is never a receipt [15.80ms]
-(pass) metacharacter close paren: after a green receipt, `sh check.sh x ")"rm -rf src` is an edit [23.42ms]
-(pass) metacharacter input redirect: `sh check.sh "<" true` is never a receipt [21.95ms]
-(pass) metacharacter input redirect: after a green receipt, `sh check.sh x "<"rm -rf src` is an edit [20.85ms]
-(pass) metacharacter output redirect: `sh check.sh ">" true` is never a receipt [19.53ms]
-(pass) metacharacter output redirect: after a green receipt, `sh check.sh x ">"rm -rf src` is an edit [20.22ms]
-(pass) metacharacter append redirect: `sh check.sh ">>" true` is never a receipt [15.12ms]
-(pass) metacharacter append redirect: after a green receipt, `sh check.sh x ">>"rm -rf src` is an edit [30.55ms]
-(pass) metacharacter open brace: `sh check.sh "{" true` is never a receipt [15.39ms]
-(pass) metacharacter open brace: after a green receipt, `sh check.sh x "{"rm -rf src` is an edit [18.08ms]
-(pass) metacharacter close brace: `sh check.sh "}" true` is never a receipt [15.82ms]
-(pass) metacharacter close brace: after a green receipt, `sh check.sh x "}"rm -rf src` is an edit [22.55ms]
-(pass) metacharacter backslash: `sh check.sh "\\" true` is never a receipt [14.56ms]
-(pass) metacharacter backslash: after a green receipt, `sh check.sh x "\\"rm -rf src` is an edit [17.02ms]
-(pass) metacharacter dollar sign: `sh check.sh "$" true` is never a receipt [17.21ms]
-(pass) metacharacter dollar sign: after a green receipt, `sh check.sh x "$"rm -rf src` is an edit [17.62ms]
-(pass) HARNU_VERIFY_* in the user settings sets Harnu's parts aside [10.98ms]
-(pass) HARNU_VERIFY_* in the flag settings sets Harnu's parts aside [11.42ms]
-(pass) HARNU_VERIFY_* in the policy settings sets Harnu's parts aside [10.88ms]
-(pass) a hit visible only in the merged read still sets the parts aside [16.45ms]
-(pass) cd sub, then the part in sub: not a receipt for the root (the hook cwd is not the root) [15.24ms]
-(pass) a lone cd is neutral, and a green receipt before it survives [13.72ms]
-(pass) an unknown cwd is no receipt, and a trailing slash on the root is the root [20.09ms]
-(pass) "cd sub && sh check.sh" is an edit even when the hook reports the root [17.03ms]
-(pass) "cd sub && sh check.sh && cd .." is an edit even when the hook reports the root [16.06ms]
-(pass) "cd ..; sh check.sh" is an edit even when the hook reports the root [19.86ms]
-(pass) "sh check.sh --fix" is an edit: it may write [16.95ms]
-(pass) "sh check.sh -u" is an edit: it may write [16.61ms]
-(pass) "npx vitest run -u" is an edit: it may write [18.50ms]
-(pass) "npm run lint -- --fix" is an edit: it may write [20.31ms]
-(pass) "npx vitest run tests/a.test.ts" is an edit: it may write [16.57ms]
-(pass) "gh pr checkout 12" is an edit [16.46ms]
-(pass) "gh pr create --fill" is an edit [20.32ms]
-(pass) "gh pr ready 12" is an edit [16.34ms]
-(pass) "gh pr merge 12" is an edit [16.23ms]
-(pass) "git diff --output=out.txt" is an edit [21.53ms]
-(pass) "git show --output=out.txt" is an edit [16.48ms]
-(pass) "git log --output=out.txt" is an edit [22.09ms]
-(pass) "git diff --ext-diff" is an edit [27.71ms]
-(pass) "git diff --no-index a b --output=c" is an edit [16.65ms]
-(pass) "git commit -m wip" is an edit [17.43ms]
-(pass) "git commit" is an edit [19.40ms]
-(pass) "git add -A" is an edit [21.87ms]
-(pass) "git push" is an edit [15.97ms]
-(pass) "git fetch" is an edit [20.09ms]
-(pass) "git checkout -- ." is an edit [16.45ms]
-(pass) "git stash" is an edit [15.79ms]
-(pass) "git branch -D x" is an edit [24.18ms]
-(pass) "git status --ignored=traditional --output=x" is an edit [18.69ms]
-(pass) "rg --pre ./hook foo" is an edit [15.68ms]
-(pass) "rg --pre-glob x foo" is an edit [21.79ms]
-(pass) "grep --exclude-from=x foo" is an edit [29.12ms]
-(pass) "cat > f" is an edit [19.67ms]
-(pass) "echo hi > f" is an edit [16.93ms]
-(pass) "ls --hyperlink" is an edit [16.64ms]
-(pass) "tee out.txt" is an edit [25.02ms]
-(pass) "touch x" is an edit [17.42ms]
-(pass) "rm -rf src" is an edit [16.44ms]
-(pass) "sed -i s/a/b/ f" is an edit [20.44ms]
-(pass) "make" is an edit [16.28ms]
-(pass) "npm install" is an edit [15.65ms]
-(pass) "node script.js" is an edit [19.27ms]
-(pass) "pwd" is read-only: a green receipt before it survives [14.85ms]
-(pass) "ls" is read-only: a green receipt before it survives [14.14ms]
-(pass) "ls -la src" is read-only: a green receipt before it survives [17.48ms]
-(pass) "cat package.json" is read-only: a green receipt before it survives [15.06ms]
-(pass) "head -n 5 README.md" is read-only: a green receipt before it survives [13.79ms]
-(pass) "tail -20 log.txt" is read-only: a green receipt before it survives [24.97ms]
-(pass) "wc -l src/a.ts" is read-only: a green receipt before it survives [15.27ms]
-(pass) "echo done" is read-only: a green receipt before it survives [14.18ms]
-(pass) "grep -rn foo src" is read-only: a green receipt before it survives [14.61ms]
-(pass) "rg -n foo src" is read-only: a green receipt before it survives [18.86ms]
-(pass) "git status" is read-only: a green receipt before it survives [15.22ms]
-(pass) "git status -sb" is read-only: a green receipt before it survives [14.81ms]
-(pass) "git diff" is read-only: a green receipt before it survives [18.38ms]
-(pass) "git diff --stat" is read-only: a green receipt before it survives [15.43ms]
-(pass) "git diff --cached --name-only" is read-only: a green receipt before it survives [14.73ms]
-(pass) "git log --oneline -5" is read-only: a green receipt before it survives [20.24ms]
-(pass) "git show HEAD" is read-only: a green receipt before it survives [15.11ms]
-(pass) "git rev-parse HEAD" is read-only: a green receipt before it survives [14.23ms]
-(pass) "git rev-list --count HEAD" is read-only: a green receipt before it survives [14.84ms]
-(pass) "git branch --show-current" is read-only: a green receipt before it survives [18.15ms]
-(pass) "gh pr view 12 --json state" is read-only: a green receipt before it survives [14.71ms]
-(pass) "gh pr checks 12" is read-only: a green receipt before it survives [14.43ms]
-(pass) "gh run list" is read-only: a green receipt before it survives [17.62ms]
+(pass) a claim from a session that edited nothing passes untouched [40.02ms]
+(pass) inside Harnu, a claim after an edit runs each approved part in order; green passes with a receipt [29.51ms]
+(pass) a red part refuses the claim, says the gate ran it, stops there, and never reaches the verb [20.72ms]
+(pass) the working tree cannot choose the command: nothing approved means nothing runs [18.54ms]
+(pass) the session's own runs count part by part, as separate Bash calls: nothing reruns [22.13ms]
+(pass) only the part the session did not run is run by the gate [37.32ms]
+(pass) a focused run is no receipt and an edit: it may write (-u, --fix); so is an unknown command [95.54ms]
+(pass) the session's own red run refuses the claim without a rerun, and says who ran it [40.94ms]
+(pass) an edit after a green check makes it stale; read-only git commands do not [43.98ms]
+(pass) gh pr create: a query runs nothing; a draft is never gated; a red receipt is denied at tool.check [37.21ms]
+(pass) move_card to review is gated, to backlog is not; the legacy capy name is gated too [27.61ms]
+(pass) a part that outlives the timeout is stopped, recorded as nothing, and handed back to the session [533.81ms]
+(pass) annotate mode lets a stale claim through with a warning and runs nothing [27.86ms]
+(pass) off mode leaves even a red claim alone [30.58ms]
+(pass) outside Harnu the default is annotate, and nothing runs [24.46ms]
+(pass) outside Harnu, enforce runs only the userConfig check [27.65ms]
+(pass) a resumed session is treated as edited: its first claim checks [20.09ms]
+(pass) a completion report sent to another session carries the receipt line [20.24ms]
+(pass) message_session asks for a re-send with the receipt line, and passes once it is there [31.95ms]
+(pass) a "done" reply with no green check since the last edit is annotated [30.86ms]
+(pass) `sh check.sh 2>&1 | tail -5` exiting 0 is no receipt: the gate runs the part itself [67.78ms]
+(pass) `sh check.sh || true` exiting 0 is no receipt: the gate runs the part itself [32.48ms]
+(pass) `sh check.sh; rm -r x` exiting 0 is no receipt: the gate runs the part itself [25.22ms]
+(pass) `sh check.sh || echo failed` exiting 0 is no receipt: the gate runs the part itself [19.36ms]
+(pass) `sh check.sh; echo done` exiting 0 is no receipt: the gate runs the part itself [31.47ms]
+(pass) control: the bare part exiting 0 is a receipt; a later `; rm -r x` is an edit [42.06ms]
+(pass) a write through `>` is an edit; `cd elsewhere && <part>` is an edit too [57.14ms]
+(pass) a part this session's permissions would ask about is not run: the session runs it [35.25ms]
+(pass) HARNU_VERIFY_* in the project settings sets Harnu's parts aside [26.03ms]
+(pass) HARNU_VERIFY_* in the local settings sets Harnu's parts aside [26.40ms]
+(pass) parts approved for another folder are set aside [27.41ms]
+(pass) a receipt line copied from an earlier report does not count [54.79ms]
+(pass) "sh check.sh && sh check.sh again & true" is no receipt: the gate runs the part itself [26.48ms]
+(pass) "sh check.sh && sh check.sh again\ntrue" is no receipt: the gate runs the part itself [18.72ms]
+(pass) "sh check.sh && sh check.sh again\r\ntrue" is no receipt: the gate runs the part itself [39.33ms]
+(pass) "sh check.sh x & rm -rf src" is no receipt: the gate runs the part itself [24.74ms]
+(pass) "sh check.sh $(rm -rf src)" is no receipt: the gate runs the part itself [17.31ms]
+(pass) "sh check.sh `rm -rf src`" is no receipt: the gate runs the part itself [19.52ms]
+(pass) "sh check.sh <(rm -rf src)" is no receipt: the gate runs the part itself [28.83ms]
+(pass) "(sh check.sh)" is no receipt: the gate runs the part itself [17.72ms]
+(pass) "{ sh check.sh; }" is no receipt: the gate runs the part itself [23.54ms]
+(pass) "sh check.sh && true" is no receipt: the gate runs the part itself [20.58ms]
+(pass) an honest shape with a trailing echo records nothing green: both parts re-run [19.92ms]
+(pass) parts joined only by && with neutral commands are a receipt [19.58ms]
+(pass) a narrower run of a part joined to the part is no receipt for either [20.28ms]
+(pass) metacharacter lone &: `sh check.sh "&" true` is never a receipt [16.86ms]
+(pass) metacharacter lone &: after a green receipt, `sh check.sh x "&"rm -rf src` is an edit [23.23ms]
+(pass) metacharacter semicolon: `sh check.sh ";" true` is never a receipt [21.22ms]
+(pass) metacharacter semicolon: after a green receipt, `sh check.sh x ";"rm -rf src` is an edit [27.81ms]
+(pass) metacharacter pipe: `sh check.sh "|" true` is never a receipt [26.70ms]
+(pass) metacharacter pipe: after a green receipt, `sh check.sh x "|"rm -rf src` is an edit [37.00ms]
+(pass) metacharacter double pipe: `sh check.sh "||" true` is never a receipt [21.01ms]
+(pass) metacharacter double pipe: after a green receipt, `sh check.sh x "||"rm -rf src` is an edit [22.76ms]
+(pass) metacharacter triple &: `sh check.sh "&&&" true` is never a receipt [22.05ms]
+(pass) metacharacter triple &: after a green receipt, `sh check.sh x "&&&"rm -rf src` is an edit [24.07ms]
+(pass) metacharacter newline: `sh check.sh "\n" true` is never a receipt [47.19ms]
+(pass) metacharacter newline: after a green receipt, `sh check.sh x "\n"rm -rf src` is an edit [70.44ms]
+(pass) metacharacter carriage return: `sh check.sh "\r" true` is never a receipt [53.83ms]
+(pass) metacharacter carriage return: after a green receipt, `sh check.sh x "\r"rm -rf src` is an edit [46.54ms]
+(pass) metacharacter backtick: `sh check.sh "`" true` is never a receipt [79.18ms]
+(pass) metacharacter backtick: after a green receipt, `sh check.sh x "`"rm -rf src` is an edit [57.80ms]
+(pass) metacharacter command substitution: `sh check.sh "$(" true` is never a receipt [57.67ms]
+(pass) metacharacter command substitution: after a green receipt, `sh check.sh x "$("rm -rf src` is an edit [91.06ms]
+(pass) metacharacter process substitution: `sh check.sh "<(" true` is never a receipt [48.12ms]
+(pass) metacharacter process substitution: after a green receipt, `sh check.sh x "<("rm -rf src` is an edit [78.34ms]
+(pass) metacharacter open paren: `sh check.sh "(" true` is never a receipt [54.41ms]
+(pass) metacharacter open paren: after a green receipt, `sh check.sh x "("rm -rf src` is an edit [92.50ms]
+(pass) metacharacter close paren: `sh check.sh ")" true` is never a receipt [91.71ms]
+(pass) metacharacter close paren: after a green receipt, `sh check.sh x ")"rm -rf src` is an edit [75.77ms]
+(pass) metacharacter input redirect: `sh check.sh "<" true` is never a receipt [31.94ms]
+(pass) metacharacter input redirect: after a green receipt, `sh check.sh x "<"rm -rf src` is an edit [31.48ms]
+(pass) metacharacter output redirect: `sh check.sh ">" true` is never a receipt [32.39ms]
+(pass) metacharacter output redirect: after a green receipt, `sh check.sh x ">"rm -rf src` is an edit [31.39ms]
+(pass) metacharacter append redirect: `sh check.sh ">>" true` is never a receipt [21.01ms]
+(pass) metacharacter append redirect: after a green receipt, `sh check.sh x ">>"rm -rf src` is an edit [21.46ms]
+(pass) metacharacter open brace: `sh check.sh "{" true` is never a receipt [20.86ms]
+(pass) metacharacter open brace: after a green receipt, `sh check.sh x "{"rm -rf src` is an edit [20.14ms]
+(pass) metacharacter close brace: `sh check.sh "}" true` is never a receipt [16.32ms]
+(pass) metacharacter close brace: after a green receipt, `sh check.sh x "}"rm -rf src` is an edit [20.12ms]
+(pass) metacharacter backslash: `sh check.sh "\\" true` is never a receipt [23.41ms]
+(pass) metacharacter backslash: after a green receipt, `sh check.sh x "\\"rm -rf src` is an edit [21.39ms]
+(pass) metacharacter dollar sign: `sh check.sh "$" true` is never a receipt [31.12ms]
+(pass) metacharacter dollar sign: after a green receipt, `sh check.sh x "$"rm -rf src` is an edit [24.15ms]
+(pass) HARNU_VERIFY_* in the user settings sets Harnu's parts aside [29.96ms]
+(pass) HARNU_VERIFY_* in the flag settings sets Harnu's parts aside [25.23ms]
+(pass) HARNU_VERIFY_* in the policy settings sets Harnu's parts aside [22.63ms]
+(pass) a hit visible only in the merged read still sets the parts aside [15.75ms]
+(pass) cd sub, then the part in sub: not a receipt for the root (the hook cwd is not the root) [32.28ms]
+(pass) a lone cd is neutral, and a green receipt before it survives [34.99ms]
+(pass) an unknown cwd is no receipt, and a trailing slash on the root is the root [41.38ms]
+(pass) "cd sub && sh check.sh" is an edit even when the hook reports the root [25.32ms]
+(pass) "cd sub && sh check.sh && cd .." is an edit even when the hook reports the root [30.74ms]
+(pass) "cd ..; sh check.sh" is an edit even when the hook reports the root [30.12ms]
+(pass) "sh check.sh --fix" is an edit: it may write [40.22ms]
+(pass) "sh check.sh -u" is an edit: it may write [41.36ms]
+(pass) "npx vitest run -u" is an edit: it may write [41.00ms]
+(pass) "npm run lint -- --fix" is an edit: it may write [57.91ms]
+(pass) "npx vitest run tests/a.test.ts" is an edit: it may write [32.33ms]
+(pass) "gh pr checkout 12" is an edit [37.81ms]
+(pass) "gh pr create --fill" is an edit [40.51ms]
+(pass) "gh pr ready 12" is an edit [28.45ms]
+(pass) "gh pr merge 12" is an edit [40.72ms]
+(pass) "git diff --output=out.txt" is an edit [31.61ms]
+(pass) "git show --output=out.txt" is an edit [39.13ms]
+(pass) "git log --output=out.txt" is an edit [22.82ms]
+(pass) "git diff --ext-diff" is an edit [44.24ms]
+(pass) "git diff --no-index a b --output=c" is an edit [36.81ms]
+(pass) "git commit -m wip" is an edit [21.97ms]
+(pass) "git commit" is an edit [21.59ms]
+(pass) "git add -A" is an edit [46.34ms]
+(pass) "git push" is an edit [27.86ms]
+(pass) "git fetch" is an edit [20.61ms]
+(pass) "git checkout -- ." is an edit [23.05ms]
+(pass) "git stash" is an edit [34.15ms]
+(pass) "git branch -D x" is an edit [18.85ms]
+(pass) "git status --ignored=traditional --output=x" is an edit [18.32ms]
+(pass) "rg --pre ./hook foo" is an edit [23.18ms]
+(pass) "rg --pre-glob x foo" is an edit [17.57ms]
+(pass) "grep --exclude-from=x foo" is an edit [19.29ms]
+(pass) "cat > f" is an edit [23.57ms]
+(pass) "echo hi > f" is an edit [18.46ms]
+(pass) "ls --hyperlink" is an edit [19.43ms]
+(pass) "tee out.txt" is an edit [22.85ms]
+(pass) "touch x" is an edit [18.54ms]
+(pass) "rm -rf src" is an edit [33.29ms]
+(pass) "sed -i s/a/b/ f" is an edit [39.52ms]
+(pass) "make" is an edit [33.07ms]
+(pass) "npm install" is an edit [32.00ms]
+(pass) "node script.js" is an edit [22.63ms]
+(pass) "pwd" is read-only: a green receipt before it survives [16.37ms]
+(pass) "ls" is read-only: a green receipt before it survives [16.10ms]
+(pass) "ls -la src" is read-only: a green receipt before it survives [20.73ms]
+(pass) "cat package.json" is read-only: a green receipt before it survives [20.20ms]
+(pass) "head -n 5 README.md" is read-only: a green receipt before it survives [18.96ms]
+(pass) "tail -20 log.txt" is read-only: a green receipt before it survives [33.53ms]
+(pass) "wc -l src/a.ts" is read-only: a green receipt before it survives [26.36ms]
+(pass) "echo done" is read-only: a green receipt before it survives [24.45ms]
+(pass) "grep -rn foo src" is read-only: a green receipt before it survives [21.56ms]
+(pass) "rg -n foo src" is read-only: a green receipt before it survives [24.24ms]
+(pass) "git status" is read-only: a green receipt before it survives [16.31ms]
+(pass) "git status -sb" is read-only: a green receipt before it survives [17.63ms]
+(pass) "git diff" is read-only: a green receipt before it survives [37.38ms]
+(pass) "git diff --stat" is read-only: a green receipt before it survives [17.90ms]
+(pass) "git diff --cached --name-only" is read-only: a green receipt before it survives [19.62ms]
+(pass) "git log --oneline -5" is read-only: a green receipt before it survives [37.46ms]
+(pass) "git show HEAD" is read-only: a green receipt before it survives [20.23ms]
+(pass) "git rev-parse HEAD" is read-only: a green receipt before it survives [17.95ms]
+(pass) "git rev-list --count HEAD" is read-only: a green receipt before it survives [26.25ms]
+(pass) "git branch --show-current" is read-only: a green receipt before it survives [21.55ms]
+(pass) "gh pr view 12 --json state" is read-only: a green receipt before it survives [16.19ms]
+(pass) "gh pr checks 12" is read-only: a green receipt before it survives [17.40ms]
+(pass) "gh run list" is read-only: a green receipt before it survives [23.82ms]
+(pass) lookalike redirect ">&2h": `sh check.sh >&2h` is no receipt [17.60ms]
+(pass) lookalike redirect ">&2h": `echo payload >&2h` is an edit, not neutral [34.62ms]
+(pass) lookalike redirect ">&2h2": `sh check.sh >&2h2` is no receipt [27.80ms]
+(pass) lookalike redirect ">&2h2": `echo payload >&2h2` is an edit, not neutral [31.26ms]
+(pass) lookalike redirect "2>&1x": `sh check.sh 2>&1x` is no receipt [17.40ms]
+(pass) lookalike redirect "2>&1x": `echo payload 2>&1x` is an edit, not neutral [18.56ms]
+(pass) lookalike redirect ">/dev/nullx": `sh check.sh >/dev/nullx` is no receipt [19.16ms]
+(pass) lookalike redirect ">/dev/nullx": `echo payload >/dev/nullx` is an edit, not neutral [18.20ms]
+(pass) lookalike redirect ">>/dev/nullx": `sh check.sh >>/dev/nullx` is no receipt [14.71ms]
+(pass) lookalike redirect ">>/dev/nullx": `echo payload >>/dev/nullx` is an edit, not neutral [32.44ms]
+(pass) lookalike redirect "2>/dev/nulls": `sh check.sh 2>/dev/nulls` is no receipt [18.97ms]
+(pass) lookalike redirect "2>/dev/nulls": `echo payload 2>/dev/nulls` is an edit, not neutral [18.54ms]
+(pass) the decoy: `sh check.s >&2h` must not clean to the approved part `sh check.sh` [15.09ms]
+(pass) whole-token redirect "2>&1": `sh check.sh 2>&1` is still a receipt [21.61ms]
+(pass) whole-token redirect ">&2": `sh check.sh >&2` is still a receipt [13.42ms]
+(pass) whole-token redirect ">/dev/null": `sh check.sh >/dev/null` is still a receipt [13.10ms]
+(pass) whole-token redirect "2>/dev/null": `sh check.sh 2>/dev/null` is still a receipt [14.05ms]
+(pass) whole-token redirect ">> /dev/null": `sh check.sh >> /dev/null` is still a receipt [17.38ms]
+(pass) whole-token redirect "> /dev/null 2>&1": `sh check.sh > /dev/null 2>&1` is still a receipt [14.42ms]
 
- 152 pass
+ 171 pass
  0 fail
-Ran 152 tests across 1 file. [3.58s]
+Ran 171 tests across 1 file. [5.86s]
 ```
 
 `tsc -p <scratch>/tsc` (the header's `tsconfig.json`, kept outside the mod folder): no output,
@@ -250,7 +269,7 @@ above lists **no `$.fs`**, and the trust test asserts `fsReads` is empty.
 
 **The classifier, round 5** (spec §6.2). Rounds 2, 3 and 4 each patched a list and each was evaded
 live, so round 5 changed the rule: **a receipt only when certain, an edit whenever unsure**. The
-suite grew from 87 to 152 tests:
+suite grew from 87 to 152 tests, and to **171** after the redirect fix below:
 
 - **`cwd`:** `cd sub` then the part, run in `<root>/sub`, is not a receipt for the root; a lone `cd`
   is neutral and a receipt before it survives; an empty `cwd` is no receipt; a trailing slash on the
@@ -270,10 +289,21 @@ src`, `git status -sb`, `git diff --stat`, `git log --oneline -5`, `gh pr view 1
 - everything from round 4: the 19-row metacharacter table (two tests each), the verifier's
   evasions, the honest `echo "exit=$?"` shape, the five-source settings read and the merge.
 
-**Negative control.** The same 152-test file run against the **round-4** `register.ts` (kept in
+**Negative control, round 5.** The same 152-test file run against the **round-4** `register.ts` (kept in
 the scratchpad) gives **124 pass, 28 fail**: the `cd sub` receipt, the unknown `cwd`, the three
 `cd`-in-a-chain shapes, `--fix` and `-u`, the focused-run test, and 20 of the 31 "must be an edit" rows. Against
 the round-5 source, all 152 pass.
+
+**Whole-token redirections (after round 5).** The harmless-redirect patterns matched a prefix, so
+`>&2h` (bash: "both streams to the file `2h`") was stripped to `h` fused onto the command.
+`echo payload >&2h2` cleaned to `echo payloadh2` and counted as neutral, and the decoy
+`sh check.s >&2h` cleaned to the approved `sh check.sh` and counted as a receipt. Both patterns now
+end in `(?=\s|$)`, each excision leaves a space, and every other `<` or `>` stays for the
+metacharacter check. 19 tests were added: six lookalikes (`>&2h`, `>&2h2`, `2>&1x`, `>/dev/nullx`,
+`>>/dev/nullx`, `2>/dev/nulls`), each as a receipt attempt and as an `echo payload …` write that
+must be an edit; the decoy; and six whole-token redirections that must still be receipts. The
+171-test file run against the **round-5** `register.ts` gives **164 pass, 7 fail**: the six
+`echo payload <lookalike>` rows and the decoy. Against the current source all 171 pass.
 
 **What the round-5 runs caught on the way**: `shape()` first required flags before arguments, so
 `gh pr view 12 --json state` (an argument, then a long flag) fell off the allowlist and counted as
@@ -283,7 +313,7 @@ Earlier rounds' catches still hold: `$` only to top-level functions; the list ma
 one-of; `$.tool.check` as a kit **query** (`ToolCheckArgs` = `tool` + `input`, TYPES:12796); a
 streaming bottom hook returns `{ value }`; a stream ended by `return()` resolves with no value.
 
-## Live runs of the round-5 prototype (R14-R16)
+## Live runs of the round-5 prototype (R14-R16) and the redirect fix (R17)
 
 Each ran `claude -p --model haiku --permission-mode bypassPermissions --plugin-dir <mod>` in a
 fresh throwaway git repo with `HARNU_VERIFY_GATE=enforce`, `HARNU_VERIFY_ROOT=<the repo>` and
@@ -495,12 +525,19 @@ These were made by other sessions and are read from their scratch, not re-run he
 | V-R4  | T452 round-4 verifier | Live, with the approved part `sh check.sh`: in a repo where the root `check.sh` exits 1 and `sub/check.sh` exits 0, `cd sub` then `sh check.sh` then `gh pr ready 999` was **not denied**: the receipt came from `sub`. Offline: `npx vitest run -u` and `npm run lint -- --fix` classified neutral, and so did `gh pr checkout`, `git diff/show/log --output=f`, `git commit` and `rg --pre`. R14-R16 and the allowlist tables cover them                                                                          |
 | V450  | T450 verifier         | On 2.1.296 headless, with `rtk` off, a pass-through Bash `tool.call` hook (`b4-mod4`: "[tool.call saw agent=aa141c36015a3312b]") left `Agent(isolation: "worktree")` intact: pwd and branch inside the agent's worktree, `made.txt` written there                                                                                                                                                                                                                                                                   |
 
+**R17 — the decoy, after the redirect fix.** The repo holds `check.sh` (prints `real-check-red`,
+exits 1, the approved part) and a committed decoy `check.s` (prints `decoy-green`, exits 0). Calls:
+`sh check.s >&2h`, then `gh pr ready 999`. The call is **denied**: "`sh check.sh` failed after the
+last edit (run by the gate)", tail `real-check-red`. Bash really did write the file `2h` (it is in
+the repo), which is why `>&2h` is a write and not a redirect to a descriptor. With the round-5
+pattern, `sh check.s >&2h` cleaned to `sh check.sh` and counted as a receipt.
+
 ## `.claude-plugin/plugin.json`
 
 ```json
 {
   "name": "harnu-verify-gate",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "author": { "name": "Harnu" },
   "description": "Done means the check ran: gates a session's own completion claims on a fresh verification run.",
   "types": "./types/index.d.ts",
@@ -680,8 +717,12 @@ const NEUTRAL_SHAPES: readonly RegExp[] = [
 const isNeutral = (s: string): boolean => NEUTRAL_SHAPES.some((re) => re.test(s))
 /** A lone directory change writes nothing. What runs after it is judged by the hook's `cwd`. */
 const LONE_CD = new RegExp(`^(?:cd|pushd|popd)(?: ${WORD})?$`)
-/** Redirections that write no file: to another descriptor, or to /dev/null. */
-const HARMLESS_REDIRECT = /\s+\d*>&\d+|\s+\d*>{1,2}\s*\/dev\/null/g
+/**
+ * Redirections that write no file: to another descriptor, or to /dev/null. Each must be a whole
+ * token (`(?=\s|$)`): bash reads `>&2h` as "both streams to the file `2h`", so a prefix match would
+ * strip `>&2` and leave `h` fused to the command.
+ */
+const HARMLESS_REDIRECT = /\s+\d*>&\d+(?=\s|$)|\s+\d*>{1,2}\s*\/dev\/null(?=\s|$)/g
 /** Every way one command is followed by another, or goes to the background (`&&` included). */
 const JOIN = /[&;|\n\r]/
 /** Anything that can embed a command, write a file, or hide a separator from a split. */
@@ -731,7 +772,9 @@ const asMode = (value: string): Policy['mode'] =>
  *   non-writing: a neutral shape, a lone directory change, or a part whose outcome is unknown.
  */
 const classifyBash = (command: string, parts: readonly string[], isInRoot: boolean): BashClass => {
-  const cleaned = command.replace(HARMLESS_REDIRECT, '')
+  // Only complete harmless tokens are excised, and each leaves a space, so nothing fuses; every other
+  // `<` or `>` stays in `cleaned` for the metacharacter check below.
+  const cleaned = command.replace(HARMLESS_REDIRECT, ' ')
   if (LONE_CD.test(cleaned.trim())) return { kind: 'neutral' }
   if (EMBED.test(cleaned)) return { kind: 'edit' }
   const isPart = (s: string) => parts.includes(s)
@@ -1853,6 +1896,47 @@ for (const command of MUST_BE_NEUTRAL) {
     expect(await staleAfter($, w, command)).toBe(false)
   })
 }
+
+// ---- Whole-token redirections (spec §6.2 rule 2) ----
+// bash reads `>&2h` as "both streams to the file 2h", so a harmless-redirect pattern that matches
+// a prefix strips `>&2` and fuses `h` onto the command.
+
+const LOOKALIKES = ['>&2h', '>&2h2', '2>&1x', '>/dev/nullx', '>>/dev/nullx', '2>/dev/nulls']
+
+for (const r of LOOKALIKES) {
+  test(`lookalike redirect ${JSON.stringify(r)}: \`sh check.sh ${r}\` is no receipt`, async ($, on) => {
+    const w = world(on, [{ code: 1, output: 'check-red' }], ONE)
+    await edit($)
+    await bash($, `sh check.sh ${r}`)
+    const r2 = await $.tool.call(CLAIM)
+    expect(w.runs).toEqual(['sh check.sh'])
+    expect(r2.deny).toMatch(/failed after the last edit \(run by the gate\)/)
+  })
+
+  test(`lookalike redirect ${JSON.stringify(r)}: \`echo payload ${r}\` is an edit, not neutral`, async ($, on) => {
+    const w = world(on, [{ code: 0 }], ONE)
+    expect(await staleAfter($, w, `echo payload ${r}`)).toBe(true)
+  })
+}
+
+test('the decoy: `sh check.s >&2h` must not clean to the approved part `sh check.sh`', async ($, on) => {
+  const w = world(on, [{ code: 1, output: 'real-check-red' }], ONE)
+  await edit($)
+  await bash($, 'sh check.s >&2h')
+  const r = await $.tool.call(CLAIM)
+  expect(w.runs).toEqual(['sh check.sh'])
+  expect(r.deny).toMatch(/real-check-red/)
+})
+
+for (const r of ['2>&1', '>&2', '>/dev/null', '2>/dev/null', '>> /dev/null', '> /dev/null 2>&1']) {
+  test(`whole-token redirect ${JSON.stringify(r)}: \`sh check.sh ${r}\` is still a receipt`, async ($, on) => {
+    const w = world(on, [], ONE)
+    await edit($)
+    await bash($, `sh check.sh ${r}`)
+    expect((await $.tool.call(CLAIM)).deny).toBeUndefined()
+    expect(w.runs).toEqual([])
+  })
+}
 ```
 
 ## The stand-in MCP server (R2, R8)
@@ -1918,4 +2002,4 @@ createInterface({ input: process.stdin }).on('line', (line) => {
 | §10.2             | The gate's `api-surface.json`, CLI ceiling and static profile                                                                                                                                                               |
 | §9.3              | Every Mission write, and the HEAD sha in the receipt (W3)                                                                                                                                                                   |
 | §7.6 a            | Any answer to a blocking `PreToolUse` hook (a query consults none): stated, not closed (Q14)                                                                                                                                |
-| §6.2              | A textconv driver on `git diff` / `git log`: a named residual                                                                                                                                                               |
+| §6.2              | Programs git configuration can start (textconv, `diff.external`, `core.fsmonitor`, the pager): a named residual                                                                                                             |
