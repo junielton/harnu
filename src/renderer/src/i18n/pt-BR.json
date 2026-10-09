@@ -2450,6 +2450,8 @@
         "olderThan": "Mais antigo que {n} dia | Mais antigo que {n} dias",
         "danglingSub": "Imagens sem tag que nenhum container usa",
         "volumesCount": "{n} volume · {size} | {n} volumes · {size}",
+        "noOrphanVolumes": "Nenhum volume órfão",
+        "scope": "Conta apenas o cache de build com mais de {n} dia e as imagens dangling. Imagens em uso e volumes de stacks ativas nunca entram na conta. | Conta apenas o cache de build com mais de {n} dias e as imagens dangling. Imagens em uso e volumes de stacks ativas nunca entram na conta.",
         "cantRestore": "Não pode ser restaurado",
         "projects": "Projetos: {names}",
         "more": "+{n} outros",

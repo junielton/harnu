@@ -163,6 +163,22 @@ function orphanVolumeNames(
     .map((v) => v.name)
 }
 
+/**
+ * Volumes that could be orphans once their compose project is known: labelled with a project,
+ * a safe name, and used by no container, running or stopped. A volume of a live stack is never
+ * one, so with none of these there is nothing a hidden project name could be hiding.
+ */
+export function unownedVolumeCount(
+  volumes: readonly HousekeepingVolume[],
+  containers: readonly InspectedContainer[]
+): number {
+  const referenced = new Set<string>()
+  for (const c of containers) for (const m of c.mounts) if (m.name) referenced.add(m.name)
+  return volumes.filter(
+    (v) => !!v.project && SAFE_VOLUME_NAME.test(v.name) && !referenced.has(v.name)
+  ).length
+}
+
 /** One argv per docker invocation, without the leading `docker`. Never `-a`, never `system prune`. */
 export function housekeepingArgv(plan: HousekeepingPlan): string[][] {
   const argv: string[][] = []

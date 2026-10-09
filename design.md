@@ -8613,6 +8613,12 @@ couldn't be resolved in {n} folders" (or "…: the compose scan hit its limit in
 inline by a **"Show folders"** disclosure (`aria-expanded`). The folder names stay out of sight until it is
 opened; opened, they are a mono 11px list of basenames, each with its full path as a tooltip, capped at
 `max-h-32` and scrolling inside — never a comma-separated wall. It disappears once the name resolves.
+The hint is **only shown when it can be true**: the main side keeps `orphanVolumesHidden` only while at least one
+volume is labelled with a compose project and used by no container (running or stopped). When every volume belongs
+to a live stack, or Docker has none, the list is empty because there is nothing to list, and the size line reads
+**"No orphan volumes"** in `--text-3` with no warning note.
+**Scope line:** under the header, one 11px `--text-4` caption states what the card counts — "Counts only build
+cache older than {n} days and dangling images. Images in use and the volumes of live stacks are never counted."
 **Compact:** the three blocks sit in an auto-fit grid (`minmax(240px, 1fr)`) and are as tall as their own
 content (`items-start`) — a short block is not stretched to the tallest sibling's height. The snapshot's `docker` figures feed the two blocks:
 `buildCacheReclaimableBytes` ("{size} reclaimable") and `danglingImages` ("{n} images · {size}"); a `null`

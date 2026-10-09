@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-09
+
+### Fixed
+
+- **Cleanup no longer warns about hidden orphan volumes when none could be hidden.** The Docker card said "Orphan volumes: hidden" with a list of folders even when every volume belonged to a running stack. The warning now shows only when some volume is used by no container and a compose project name could not be resolved; otherwise the card reads "No orphan volumes". The card also says plainly that it counts only build cache older than N days and dangling images, never images in use or the volumes of live stacks.
+
 ## 2026-10-08
 
 ### Added

@@ -67,7 +67,7 @@ export interface GcSnapshot {
    * The Docker card: `buildCacheReclaimableBytes`, `danglingImages { count, bytes }` and
    * `orphanVolumesHidden { reason, folders } | null`. The first two are null when docker was
    * absent or did not answer for them; the last says why the orphan list is empty when an
-   * unresolved compose name or a scan limit hides it (null when nothing is hidden).
+   * unresolved compose name or a scan limit hides it (null when nothing is hidden, and also null when no volume is left unused by a container, since then there is nothing to hide).
    */
   docker: GcDockerCard
   prefs: GcPrefs
