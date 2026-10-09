@@ -202,10 +202,10 @@ describe('applyFailures / pruneFailures (spec §4)', () => {
 
   it('turns a failed ready item into a cleanup-failed decision', () => {
     const [b] = applyFailures([ready('a', 5)], new Map([[ready('a', 5).item.id, failure]]))
-    expect(b).toMatchObject({
-      bucket: 'review',
-      reason: { code: 'cleanup-failed', detail: 'Cleanup stopped at trash: EBUSY' }
-    })
+    expect(b).toMatchObject({ bucket: 'review', reason: { code: 'cleanup-failed' } })
+    // The step and the folder, never the raw error (design.md: a raw engine error is not visible text).
+    expect(b!.reason!.detail).toBe(`Cleanup stopped at trash in ${ready('a', 5).item.path}.`)
+    expect(b!.reason!.detail).not.toContain('EBUSY')
   })
 
   it('leaves other bundles and items that are not ready alone', () => {

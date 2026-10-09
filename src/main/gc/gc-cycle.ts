@@ -189,6 +189,7 @@ export async function runGcCycle(
     // A refusal at the reprobe changed nothing: that item just re-buckets on the next scan.
     if (!r.ok && r.haltedAt !== 'reprobe' && r.haltedAt !== null) {
       deps.state.failures.set(r.id, { step: r.haltedAt, error: r.error ?? 'failed', at: now })
+      console.warn('[gc] cleanup halted', r.id, r.haltedAt, r.error)
     }
   }
 

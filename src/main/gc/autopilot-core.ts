@@ -147,7 +147,8 @@ export function applyFailures(
       bucket: 'review' as const,
       reason: {
         code: 'cleanup-failed' as const,
-        detail: `Cleanup stopped at ${f.step}: ${f.error}`
+        // The step and the folder only: the raw error is for the log, never for the screen.
+        detail: `Cleanup stopped at ${f.step}${b.item.path ? ` in ${b.item.path}` : ''}.`
       }
     }
   })

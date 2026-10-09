@@ -565,3 +565,28 @@ describe('expectedFor — the worktree path (S3 delta 3: GcExpected.path)', () =
     expect(confirmChanged(buildGcModel(snap({ bundles: [same] })), captured)).toBe(false)
   })
 })
+
+describe('a halted item never shows the raw engine error (F0 delta 1, item 4)', () => {
+  it.each([
+    [
+      'a legacy detail with the error',
+      'Cleanup stopped at trash: EBUSY: resource busy, unlink /x/y'
+    ],
+    ['a detail with the folder', 'Cleanup stopped at prune in /ws/a.'],
+    ['a bare step', 'Cleanup stopped at prune'],
+    ['a folder with dots and spaces', 'Cleanup stopped at prune in /ws/my.repo/a b.']
+  ])('%s reads as the step only, plus the folder when there is one', (_label, detail) => {
+    const b = wt('a', 'review', MIB, { reason: { code: 'cleanup-failed', detail } })
+    const m = buildGcModel(snap({ bundles: [b] }))
+    const shown = m.byId.get(b.item.id)!.reasonDetail!
+    expect(shown).toMatch(/^Cleanup stopped at [a-z-]+( in \/[^:]*)?\.$/)
+    expect(shown).not.toMatch(/EBUSY|unlink|resource busy/)
+  })
+
+  it('other reasons keep their own detail untouched', () => {
+    const b = wt('a', 'review', MIB, { reason: { code: 'dirty', detail: '1 blocker: dirty.' } })
+    expect(buildGcModel(snap({ bundles: [b] })).byId.get(b.item.id)!.reasonDetail).toBe(
+      '1 blocker: dirty.'
+    )
+  })
+})
