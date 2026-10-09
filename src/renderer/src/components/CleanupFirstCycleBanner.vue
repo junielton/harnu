@@ -45,7 +45,7 @@ const { t } = useI18n()
         <template v-if="autopilotOn">{{ t('cleanup.gc.firstCycle.onlyReported') }}&nbsp;</template>
         {{
           t(
-            when ? 'cleanup.gc.firstCycle.willClean' : 'cleanup.gc.firstCycle.willCleanUnscheduled',
+            `cleanup.gc.firstCycle.${autopilotOn ? 'allowWillClean' : 'willClean'}${when ? '' : 'Unscheduled'}`,
             cleanCount,
             { named: { n: cleanCount, size: formatBytes(cleanBytes), when } }
           )

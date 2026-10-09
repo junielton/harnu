@@ -32,6 +32,8 @@ describe('CleanupFirstCycleBanner', () => {
     const w = mountBanner(12, 6_000_000_000, { autopilotOn: true })
     expect(w.text()).toContain('Autopilot found 12 ready items')
     expect(w.text()).toContain('only reported so far')
+    expect(w.text()).toContain('Allow it and the next cycle, in 58 min, will clean 2 items, 6 MB')
+    expect(w.text()).not.toContain('Enable it')
     expect(w.get('[data-testid="first-enable"]').text()).toBe('Allow cleaning')
   })
 

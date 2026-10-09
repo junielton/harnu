@@ -2444,6 +2444,8 @@
         "onlyReported": "It has only reported so far.",
         "willClean": "Enable it and the next cycle, in {when}, will clean {n} item, {size}. | Enable it and the next cycle, in {when}, will clean {n} items, {size}.",
         "willCleanUnscheduled": "Enable it and its first cycle will clean {n} item, {size}. The background scan is off, so none is scheduled. | Enable it and its first cycle will clean {n} items, {size}. The background scan is off, so none is scheduled.",
+        "allowWillClean": "Allow it and the next cycle, in {when}, will clean {n} item, {size}. | Allow it and the next cycle, in {when}, will clean {n} items, {size}.",
+        "allowWillCleanUnscheduled": "Allow it and its next cycle will clean {n} item, {size}. The background scan is off, so none is scheduled. | Allow it and its next cycle will clean {n} items, {size}. The background scan is off, so none is scheduled.",
         "when": {
           "minute": "{n} min",
           "hour": "{n} h",
