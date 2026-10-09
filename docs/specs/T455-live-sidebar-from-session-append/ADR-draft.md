@@ -11,10 +11,11 @@ For a running session, Harnu re-reads the session's JSONL to learn what the side
 
 - **The watcher's tail**, within 2 ms of the write: 0.72–1.55 opens per append.
 - **The fleet model's slug pass and other non-immediate readers**, on a ~2 s cadence: 0.78–1.32
-  opens per append. That is 45 % of the live-transcript opens in sweep-free windows.
+  opens per append. That is 45 % of the live-transcript opens in sweep-free windows; T455 removes
+  its slug-pass part, and on-demand readers in the class remain.
 
-Even so, the model's view of a running session lags its last append by p50 258–565 ms and p90
-4.7–8.2 s. Several facts go stale until a reload (F3), `get_fleet` calls every disk session `idle`
+Even so, the first slug-pass reread comes p50 258–565 ms and p90 4.7–8.2 s after a live
+session's last append, so the model's view lags at least that much (inferred). Several facts go stale until a reload (F3), `get_fleet` calls every disk session `idle`
 (F1), and a new session binds to its row through folder and recency guesses (01-inventory.md
 §3.4).
 
@@ -57,14 +58,19 @@ Three constraints bind the design:
    - `session.snapshot` gains an optional `start: { source, transcriptPath }`, and
      `session.rebound` gains `transcriptPath`. No new identity event is added.
    - `forkedFrom` and `resumedFrom` come from a new `PtyRecord.spawnSourceSid`, never from the mod.
+     The PTY record dies with the process (a park included), so the identity adapter persists
+     each lineage once, at bind time, to `<userData>/companion/lineage.json`; cold rows keep it.
 3. **Bind by claim; re-key on proof the model already holds.**
    - A claimed synthetic row shows the pushed facts at once.
    - It is re-keyed through the existing `bindByClaim` migration only once its claim arrives `proven`
      over the existing `companion:identity` push. Main marks it so after its fleet model has inserted the transcript, which it does on the
      watcher's `add` or on a `stat` hit of the validated `transcriptPath`.
    - A reload can then never drop the migrated row.
-   - Pushed facts live in a main-side overlay of the model, so no reload replaces them with a stale
-     header.
+   - For an owned session, the slug pass is replaced by patching the model's entry in place from
+     the tail's delta, the subagent delta and the push. A renderer reload copies the model over the
+     live row, so a skipped pass would otherwise roll the status dot, stuck verdict, `ctxPct` and
+     `agents` back to stale values. Every reader of the model (spec §7.5, verified field by field)
+     gets current values instead, with zero extra file reads.
 4. **A new fact family, `row`, conforming to ARB-2(c) and ARB-3 rather than amending them.**
    - Its fields are partitioned once, at design time, as `telemetry`'s are.
    - The companion owns `prompt`, `count`, `activity` and `assistant`.
@@ -76,18 +82,25 @@ Three constraints bind the design:
      channel is opened.
 5. **Demote the redundant reread only.**
    - For a session whose `row` family is owned, Harnu main skips the slug pass its appends would
-     schedule.
+     schedule, and patches the model from the tail delta and the push instead (decision 3), so the
+     skip starves no reader.
    - For a claimed row, it also skips the post-migration full reload.
    - The watcher's tail runs for every session in every state: it keeps feeding `transcriptState`,
      `ctxPct`, stagnation, title and away summary, their parity streams, and the stuck timer's sign
      of life.
    - On leaving ownership, one slug pass catches the header up.
-6. **Text never rests in the session, and is redacted on the wire.**
-   - `$.state` holds counts only, because any co-loaded mod reads it.
-   - Text fields pass a fixed `redactForWire`, built on T450's high-confidence rules; a field that
-     fails the pass is sent as `null`.
-   - The parity ledger stores verdicts and lengths, never text.
-   - These named fields amend contract §8 and SEC-8.
+6. **SEC-8 is amended for named text fields, with the residual risk stated.** SEC-8 ("no secrets
+   at rest or on the wire") gains one exception: `session.row`'s `firstPrompt`, `lastPrompt`,
+   `lastAssistant` and `title` may cross the local socket, under these conditions.
+   - Never at rest in the session: `$.state` holds counts only, because any co-loaded mod reads it.
+   - Redacted first by `redactForWire`: T450's 17 deterministic rules (its whole table but
+     `high-entropy`), each match replaced by the bare `[REDACTED:<rule>]` (no salted tag). The table
+     is staged from one source into both mods, and a test keeps the copies identical.
+   - Fail-closed per field only when the pass throws. A secret no rule matches (a password in prose,
+     an unknown credential format) **goes out raw**; that is the accepted residual risk, the
+     operator's call (spec Q1).
+   - Never at rest on the host: the patched model is process memory; the parity ledger keeps
+     verdicts and lengths, never text.
 7. **Disclose it, with T450.** Settings → Mods gains one `transcript` chip ("can read or rewrite
    the conversation") for any mod that hooks `session.append` or `session.compact` or calls
    `session.messages`. T450 needs the same chip for rewriting.
@@ -119,8 +132,8 @@ Three constraints bind the design:
 
 - **Text on the local socket.** Prompt and assistant text (240 characters each, redacted) cross
   it, and contract §8 and SEC-8 gain named exceptions (spec Q1).
-- **Harnu main's model gains an overlay**, and the renderer migrates claimed rows only on main's
-  proof event.
+- **Harnu main's model is patched in place for owned sessions** (`patchSession`), and the
+  renderer migrates claimed rows only on main's proof (a claim marked `proven`).
 - **A new parity stream, `row`**, with one gate for the family.
 - **The saving is the pass-class reread and one full reload per new session**, not the tail. The
   sweeps are someone else's bug.

@@ -446,10 +446,17 @@ test('a reload keeps the counts, never stores text, and leaves texts unknown', a
   const first = w.rows()[0]?.d
   expect(first.toolCalls).toBe(7)
   expect(first).not.toHaveProperty('lastPrompt') // absent: the host keeps what it had
+  expect(first).not.toHaveProperty('lastAssistant')
   await $.session.append(prompt('secret-looking prompt', 'u10'))
+  await $.session.append(response([{ type: 'text', text: 'secret-looking answer' }], 'u11'))
   await w.clock.advance(500)
-  expect(w.rows().at(-1)?.d.lastPrompt).toBe('secret-looking prompt')
-  expect(JSON.stringify(w.state.get('row'))).not.toContain('secret-looking prompt')
+  expect(w.rows().at(-1)?.d).toMatchObject({
+    lastPrompt: 'secret-looking prompt',
+    lastAssistant: 'secret-looking answer'
+  })
+  const kept = JSON.stringify(w.state.get('row'))
+  expect(kept).not.toContain('secret-looking prompt')
+  expect(kept).not.toContain('secret-looking answer')
 })
 
 test('outside Harnu nothing is sent', async ($: any, on) => {
@@ -535,17 +542,17 @@ Validating hooks: <scratch>/proto/harnu-row-sensor/hooks/hooks.json
 ```text
 
 tests/row.test.ts:
-(pass) a new session: identity, then one coalesced row per burst [33.10ms]
-(pass) turn.complete flushes at once [16.00ms]
-(pass) a resume starts empty: its history is the host's baseline, never re-read [17.88ms]
-(pass) a fork reports its new id and source; lineage is the host spawn record [12.55ms]
-(pass) a reload keeps the counts, never stores text, and leaves texts unknown [13.11ms]
-(pass) outside Harnu nothing is sent [12.78ms]
-(pass) a /clear starts a fresh fold under the new id [14.39ms]
+(pass) a new session: identity, then one coalesced row per burst [32.04ms]
+(pass) turn.complete flushes at once [19.42ms]
+(pass) a resume starts empty: its history is the host's baseline, never re-read [14.36ms]
+(pass) a fork reports its new id and source; lineage is the host spawn record [12.00ms]
+(pass) a reload keeps the counts, never stores text, and leaves texts unknown [13.69ms]
+(pass) outside Harnu nothing is sent [11.71ms]
+(pass) a /clear starts a fresh fold under the new id [14.36ms]
 
  7 pass
  0 fail
-Ran 7 tests across 1 file. [0.24s]
+Ran 7 tests across 1 file. [0.22s]
 ```
 
 `tsc -p tsconfig.json` (TypeScript 5.9.3, the repo's): **exit 0**, no output.

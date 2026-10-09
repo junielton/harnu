@@ -120,16 +120,19 @@ Run 5 (`attr.py`, 5 × 60 s, 17:12–17:17), per reader:
      windows): 0.72–1.55 opens per append. More than one per append means `claude` writes a row in
      more than one `write`, and the tail reads after each.
    - **The pass class.** It opens the file 0.78–1.32 times per append. Its median gap between
-     opens of the same file is 2,000–2,124 ms in the three windows without a sweep: the slug-pass
-     cadence of `fleet-model.ts:66`. The 952 ms of window 5.4 sits beside a sweep, which hides part
-     of the pass and shortens the visible gaps.
+     opens of the same file is 2,091, 2,000 and 1,721 ms in the three windows without a sweep (5.1–5.3):
+     the slug-pass cadence of `fleet-model.ts:66`. In the two windows with a sweep the gaps are 952
+     and 2,124 ms; a sweep hides part of the pass and shifts the visible gaps.
    - **The split.** In the sweep-free windows the pass class is **45 %** of the live-transcript
-     opens (445 of 995). That class is what T455 removes for an owned session. The tail stays
-     (§7.2 of the spec).
-2. **The model lags the transcript.** The first pass-class open after a live session's last append
-   comes at p50 258–565 ms and p90 4.7–8.2 s. That is how stale `get_fleet`'s and the folder
-   model's view of a running session is, today, before the next reload. The push carries the same
-   facts within ≤ 500 ms (≤ 2 s worst).
+     opens (445 of 995). The class is "the slug pass **or another non-immediate reader**": T455
+     removes the slug-pass part for an owned session. On-demand readers in the same class (a
+     digest's `readSessionTail`, membership passes) remain, and nothing here measures their share;
+     W6 does. The tail stays (§7.2 of the spec).
+2. **The model lags the transcript (inferred).** The first pass-class open after a live session's
+   last append comes at p50 258–565 ms and p90 4.7–8.2 s (a verifier's run: p50 822 ms). A file
+   open is not a model refresh, so `get_fleet`'s and the folder model's staleness is **inferred**
+   from it, at least that large, not measured. The push carries the same facts within ≤ 500 ms
+   (≤ 2 s worst).
 3. **Sweeps are a separate bug.**
    - In 5 of 8 windows of runs 1–3 and 2 of 5 of run 5, Harnu main opened the whole corpus
      (9,576–10,806 distinct transcripts) or the whole home-directory dir: up to 609,765 reads and
@@ -151,13 +154,13 @@ Run 5 (`attr.py`, 5 × 60 s, 17:12–17:17), per reader:
 What T455 removes for a session whose `row` family is owned (§7 of the spec), and what the W6
 performance gate re-measures with `attr.py`:
 
-| Cost today (measured, run 5)                                                                  | After T455, for an owned session                                     |
-| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| pass-class reopens: 0.78–1.32 per append, 45 % of live-transcript opens in sweep-free windows | **0**                                                                |
-| tail-class reopens: 0.72–1.55 per append, p90 2 ms                                            | unchanged (± 20 %): the tail is every other family's legacy input    |
-| model view of a live session: p50 258–565 ms, p90 4.7–8.2 s after its last append             | `modified` / `status` / prompts from the push: ≤ 500 ms, ≤ 2 s worst |
-| one post-migration full `foldersLoad` per new session (`stores/sessions.ts:4967-4989`)        | none for a claimed row (§6 of the spec)                              |
-| sweeps                                                                                        | no claim: a separate bug                                             |
+| Cost today (measured, run 5)                                                                                                | After T455, for an owned session                                      |
+| --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| pass-class reopens: 0.78–1.32 per append, 45 % of live-transcript opens in sweep-free windows                               | ≈ 0 slug-pass opens; residual on-demand reads remain (measured at W6) |
+| tail-class reopens: 0.72–1.55 per append, p90 2 ms                                                                          | unchanged (± 20 %): the tail is every other family's legacy input     |
+| model view of a live session (inferred from the first pass-class open): p50 258–565 ms, p90 4.7–8.2 s after its last append | `modified` / `status` / prompts from the push: ≤ 500 ms, ≤ 2 s worst  |
+| one post-migration full `foldersLoad` per new session (`stores/sessions.ts:4967-4989`)                                      | none for a claimed row (§6 of the spec)                               |
+| sweeps                                                                                                                      | no claim: a separate bug                                              |
 
 The cost T455 adds inside each session was measured by the engine's own debug log on Claude Code
 2.1.296 for the prototype (03-prototype.md §P.3):

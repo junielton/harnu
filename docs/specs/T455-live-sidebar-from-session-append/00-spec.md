@@ -41,18 +41,22 @@ Six facts shape the design:
 5. **The tail stays, for every session.** The watcher's tail is the legacy writer of
    `transcriptState`, `ctxPct`, the stagnation verdict, the title and the away summary. It is also
    the sign of life of the "stuck" timer (ARB-2(b), R11). T455 removes only the slug-pass reread and
-   the post-migration full reload for a session whose `row` family is owned (§7).
+   the post-migration full reload for a session whose `row` family is owned, and patches main's
+   model from the tail's delta and the push instead, so no reader of the model goes stale (§6.6,
+   §7.5).
 6. **The legacy path never goes away** (ARB-8, P5W1 §7.6). Mod `off` or `shadow`, a lease lost, a
    CLI outside the gate, a session started outside Harnu, a cold row: each behaves exactly as today.
 
 The measured prize (02-cost.md, 543 appends attributed reader by reader):
 
 - The slug pass and other non-immediate readers reopen a live transcript 0.78–1.32 times per append
-  (596 opens). In sweep-free windows that is 45 % of the live-transcript opens (445 of 995), and T455 removes it
-  for owned sessions.
+  (596 opens). In sweep-free windows that is 45 % of the live-transcript opens (445 of 995). T455
+  removes the slug-pass part of it for owned sessions; the on-demand readers in the same class
+  (a digest's `readSessionTail`, membership passes) remain, and W6 measures that residue.
 - The tail's 0.72–1.55 opens per append (713 opens, within 2 ms of the write) stay.
-- `get_fleet`'s view of a live session refreshes 258–565 ms (p50) and 4.7–8.2 s (p90) after its
-  last append; the push makes it ≤ 500 ms, ≤ 2 s worst.
+- The first slug-pass-class reopen comes 258–565 ms (p50) and 4.7–8.2 s (p90) after a live
+  session's last append (a verifier's p50 reached 822 ms). Inferred, not measured: `get_fleet`'s
+  view of that session is at least that stale. The push bounds it at ≤ 500 ms, ≤ 2 s worst.
 - The whole-corpus and home-dir sweeps seen in some windows are **not** caused by appends and are
   not T455's gain. They are a separate reader bug (§8).
 
@@ -183,7 +187,7 @@ spec:
 | tool calls                                          | `tool_use` blocks of main-loop `response` rows; subagents' counted apart                                | `session.row.toolCalls`, `subagentToolCalls`  | coalesced                             | **no, recorded only**: stagnation stays with `stall-detect` (§7.1) | `stall-detect.ts` 5-min window (`:21`, `:76-103`)            |
 | start source, transcript path                       | `classic.SessionStart.source` and `transcript_path`                                                     | `session.snapshot.start` (extended, §5.3)     | once per conversation                 | `identity` family (claim facts)                                    | the PTY spawn kind; the watcher's `add` path                 |
 | new conversation's path after `/clear` or `/resume` | the same classic payload                                                                                | `session.rebound.transcriptPath`              | once                                  | `identity` family                                                  | the watcher's `add` path                                     |
-| `forkedFrom`, `resumedFrom`                         | **not the mod**: Harnu's PTY record (§6.3)                                                              | a host-side field of the identity claim       | —                                     | `identity` family                                                  | `forkSourceId` (`stores/sessions.ts:3406`)                   |
+| `forkedFrom`, `resumedFrom`                         | **not the mod**: Harnu's PTY record, persisted to `lineage.json` (§6.3)                                 | a host-side field of the identity claim       | —                                     | `identity` family                                                  | `forkSourceId` (`stores/sessions.ts:3406`)                   |
 
 The away summary is **not** pushed: the tail keeps delivering it (`claude-watcher.ts:510-511`),
 and a push would gain nothing.
@@ -210,7 +214,11 @@ interface EventPayloads {
     openAttention: { kind: AttentionKind; toolUseId?: string }[]
     runningSubagents: number
     probes: { classic: boolean; toolCheck: boolean }
-    /** Absent until a classic hook has run. */
+    /**
+     * Absent until a classic hook has run. The mod holds it in module memory only, so a hot reload
+     * loses it and the re-hello's snapshot omits it: the host keeps the last `start` it received
+     * for the binding and never clears it on an absent field.
+     */
     start?: {
       source: 'startup' | 'resume' | 'clear' | 'compact' | 'fork'
       /** classic hooks' transcript_path; ≤ 4,096 chars; validated by the host (§6.1). */
@@ -296,15 +304,25 @@ wire", `00-master.md:501`) for these named fields:
 subagentToolCalls, userRows, lastRowAt, lastUuid } }` only. Any co-loaded mod can read
    `$.state` (§5.1, T447). Texts live in module memory and die with a reload (fact: the
    kit test "a reload keeps the counts, never stores text").
-2. **Redacted on the wire.** The fold reads the row as stored. With T450 loaded, that is already
-   the scrubbed row (§5.1). Without it, the mod runs each text field through a fixed, pure
-   `redactForWire` before the push:
-   - It replaces any match of T450's high-confidence rule set with T450's placeholder shape.
-   - W1 imports that rule table if T450 has merged by then; otherwise it copies the
-     high-confidence prefix rules (provider tokens, private-key headers, JWT shape) and records the
-     copy as debt.
-   - A text that fails the pass is sent as `null`, never raw. This is fail-closed for the field
-     only; the session is never affected.
+2. **Redacted on the wire, with a stated limit.** The fold reads the row as stored. With T450
+   loaded, that is already the scrubbed row (§5.1). Without it, the mod runs each text field
+   through a fixed, pure `redactForWire` before the push:
+   - **The rules:** the 17 deterministic rules of T450's table (`T450-secret-scrubber/01-detection.md` at `f61faf7`,
+     §2: every row but `high-entropy`, so `private-key`, the provider token formats, `jwt`,
+     `url-credentials`, `auth-header` and `secret-assignment`). **No entropy rule**: it is the one
+     rule that guesses, and its false positives (T450 §5.3) would blank ordinary prompts.
+   - **The placeholder:** the bare rule id, `[REDACTED:<rule>]`. The companion does not reproduce
+     T450's `[REDACTED:<rule>#<tag>]`: the tag needs T450's per-install salt in `$.store`, and a
+     preview has no use for telling two secrets apart.
+   - **What still goes out raw:** any secret no deterministic rule matches — a password typed in
+     prose, a credential in a format not in the table, a high-entropy key with no known prefix.
+     Fail-closed (the field sent as `null`) fires only when the pass itself throws, never because a
+     text "looks secret". This is the residual risk Q1 asks the operator to accept.
+   - **Drift:** while T450 is unmerged, W1 ships a copy of its table, and two copies drift. To avoid
+     that, the table lives once, in a plain-data module both mods stage (`hooks/lib/secret-rules.ts`
+     generated at staging from one source, as `hooks/coords.gen.ts` already is, MOD-1 allowing
+     imports inside the plugin dir only), and a repo test asserts the two staged copies are
+     byte-identical. Until T450 lands, the source lives with the companion and T450 adopts it.
 3. **No text at rest on the host.** The row adapter keeps the latest values in memory, in main's
    fleet model, the same process memory the reader's folds already use. The parity ledger stores
    only an equality verdict and lengths. Its detail keys avoid `DENIED_KEY`
@@ -332,11 +350,11 @@ disk**. T455 changes three things:
 | 1    | `createNewSession` mints `synthetic-<uuid>` and arms the 120 s reaper                                                        | unchanged                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 2    | the PTY spawns with `HARNU_SPAWN_TOKEN`                                                                                      | unchanged                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 3    | (mod) hello `{sid, spawn}` → claim, recorded only                                                                            | the `classic.SessionStart` step stores `{source:'startup', transcriptPath}`; `session.snapshot.start` carries it. The claim gains `transcriptPath` (kept only if its realpath is under `~/.claude/projects/` and its basename is `<sid>.jsonl`) and `lineage: { kind: 'new' }`                                                                                                                                                                                                                                     |
-| 4    | —                                                                                                                            | `session.row` snapshots reach the row adapter. It writes them into main's fleet-model overlay (§6.6) and into the renderer through the existing `claude:session:updated` shape, keyed by the claim's `key`: **the synthetic row**. Label fallback, subtitle and preview move from the first prompt on. No re-key.                                                                                                                                                                                                  |
+| 4    | —                                                                                                                            | `session.row` snapshots reach the row adapter. It writes them into main's fleet model, patched in place (§6.6), and into the renderer through the existing `claude:session:updated` shape, keyed by the claim's `key`: **the synthetic row**. Label fallback, subtitle and preview move from the first prompt on. No re-key.                                                                                                                                                                                       |
 | 5    | the first prompt makes the CLI write the transcript; the watcher's `add` reads the whole file → `session:added`              | the watcher's `add` is unchanged: the tail still needs its baseline. **In addition**, main `stat`s the claimed `transcriptPath` on each `session.row` (at most every 2 s) until it exists.                                                                                                                                                                                                                                                                                                                         |
 | 6    | `session:added` goes to the renderer at once (`claude-watcher.ts:825-827`) and can outrun the 250 ms model refresh (BUG-147) | for a **claimed** sid, main does not let the proof race the model. On the first of (`add`, `stat` hit), the fleet model inserts that one file (a header read of one transcript, the existing `scrapeJsonlHeaderCached`), commits membership, and only then marks the claim `proven: true` in the claim list it already pushes over `companion:identity` (`identity-adapter.ts:210-237`, sent at `host.ts:289-296`; an additive field of `IdentityClaim`, `identity-core.ts`). An unclaimed sid keeps today's path. |
 | 7    | `reconcileSessionAdded`: claim, slug guess, re-home, 10 s correlation, newest-synthetic recency, 5-min `pendingCollapse`     | the renderer migrates a claimed row **only when its claim arrives `proven`** (in `applyIdentityClaims`, `stores/sessions.ts:5179-5196`, which already receives every claim-list push); its `session:added` for that sid is a no-op. That calls `bindByClaim` (`stores/sessions.ts:5134-5169`): `migrateSyntheticInPlace`, `fireMigrate`, the PTY re-key. A reload after the proof reads a model that already holds the session, so it cannot drop the row (§6.6).                                                  |
-| 8    | `backfillMigratedSessionMeta`: a full `foldersLoad` (`stores/sessions.ts:4967-4989`)                                         | **skipped** for a claimed row: the model already has it with the overlay merged.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| 8    | `backfillMigratedSessionMeta`: a full `foldersLoad` (`stores/sessions.ts:4967-4989`)                                         | **skipped** for a claimed row: the model already has it, patched (§6.6).                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 9    | Haiku auto-name from the delta's `firstPromptCandidate`                                                                      | from the pushed `firstPrompt`, at the first `session.row` that carries one                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 A session that never gets a prompt never writes a transcript. Its row stays synthetic with live
@@ -365,13 +383,13 @@ pins it.
 
 ### 6.3 Fork (`--resume <src> --fork-session`)
 
-| Step | Today                                                                                                                                               | With T455                                                                                                                                                                                                                                                                                                                                                                  |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | `createForkedSession`: no dedupe, **no boot reaper** (F5)                                                                                           | arms `armAgentBootDeadline` like every other synthetic (fixes F5)                                                                                                                                                                                                                                                                                                          |
-| 2    | `pty.ts:743-752` builds argv `['--resume', opts.claudeSessionId, '--fork-session']`; the PTY record keeps only `kind` (`pty.ts:349`, set at `:939`) | **new state:** `PtyRecord.spawnSourceSid?: string`, set at `:939` from `opts.claudeSessionId` for the `claude-resume` and `claude-fork` kinds. It is read by a new `setCompanionSpawnSourceResolver(owner => ptys.get(owner.ptyId)?.spawnSourceSid ?? null)`, registered beside the shipped spawn-kind resolver (`pty.ts:546-548`). A parked PTY keeps it with its record. |
-| 3    | the new id's JSONL lands in the cwd's slug; route 1 resolves it through the source's `fullPath`, then the newest-synthetic pick                     | the snapshot gives `{ source: 'fork', transcriptPath }`. The identity adapter joins `lineage: { kind: 'fork', from: spawnSourceSid }`, never from the mod. Binding is by claim, with **no cwd → slug guess**; the proof follows §6.1 steps 5–7.                                                                                                                            |
-| 4    | `forkSourceId` lives in the renderer and is cleared on migration (`stores/sessions.ts:5058`)                                                        | `lineage.from` stays on the claim and on the real row after migration; `get_session` reports `forkedFrom` (W3)                                                                                                                                                                                                                                                             |
-| 5    | the `add` reads the whole fork transcript (it holds the copied history)                                                                             | unchanged: the tail needs its baseline. The cold baseline is the **source** row's (§6.2), and the push composes over it.                                                                                                                                                                                                                                                   |
+| Step | Today                                                                                                                                               | With T455                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | `createForkedSession`: no dedupe, **no boot reaper** (F5)                                                                                           | arms `armAgentBootDeadline` like every other synthetic (fixes F5)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 2    | `pty.ts:743-752` builds argv `['--resume', opts.claudeSessionId, '--fork-session']`; the PTY record keeps only `kind` (`pty.ts:349`, set at `:939`) | **new state, two pieces:** (1) `PtyRecord.spawnSourceSid?: string`, set at `:939` from `opts.claudeSessionId` for the `claude-resume` and `claude-fork` kinds, read by a new `setCompanionSpawnSourceResolver(owner => ptys.get(owner.ptyId)?.spawnSourceSid ?? null)` beside the shipped spawn-kind resolver (`pty.ts:546-548`). It lives only as long as the PTY: the record is deleted on every exit, a park included (`pty.ts:1045-1055`, `:1109`), and a claim is dropped once its binding unbinds (`identity-adapter.ts:211-215`). (2) So lineage is **persisted** the first time a claim binds with a lineage that names another session (a fork; an in-session `/resume` or `/clear` rebound with its `prevSid`): the identity adapter appends `{ sid, kind, from, at }` to `<userData>/companion/lineage.json` (written atomically, mode 0600, like `endpoint.json`; at most 10,000 entries, oldest dropped; session ids only, no text). The fleet model reads it to set `forkedFrom` on the session entry, live or cold, and `get_session` reports it from there. |
+| 3    | the new id's JSONL lands in the cwd's slug; route 1 resolves it through the source's `fullPath`, then the newest-synthetic pick                     | the snapshot gives `{ source: 'fork', transcriptPath }`. The identity adapter joins `lineage: { kind: 'fork', from: spawnSourceSid }`, never from the mod. Binding is by claim, with **no cwd → slug guess**; the proof follows §6.1 steps 5–7.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 4    | `forkSourceId` lives in the renderer and is cleared on migration (`stores/sessions.ts:5058`)                                                        | `lineage.json` keeps it past the PTY, a park and a restart; the model's entry carries `forkedFrom`; `get_session` reports it for live and cold rows (W3)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 5    | the `add` reads the whole fork transcript (it holds the copied history)                                                                             | unchanged: the tail needs its baseline. The cold baseline is the **source** row's (§6.2), and the push composes over it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 ### 6.4 In-session `/clear` and `/resume`
 
@@ -395,26 +413,52 @@ proof arrives through the §6.1 step 6 ordering, through `bindByClaim`'s non-syn
 | the reader, `transcript-truth.ts`, `stall-detect.ts`                                                                                                         | **must stay** (ARB-8)                                                                                                                                                         |
 | BUG-77's filter of Harnu's own `claude -p` probes                                                                                                            | must stay                                                                                                                                                                     |
 
-### 6.6 Reloads: pushed facts are never overwritten by stale disk values
+### 6.6 Reloads: the model is patched in place, never left stale
 
-`reloadModelOnce` (`stores/sessions.ts:4645`) rebuilds every real row from `foldersLoad`. It
-re-injects only synthetic rows and shell terminals (`:4656-4667`), and re-applies only the
-task-state, `aiSummary` and failure overlays, captured after the await (`:4672-4694`,
-`:4739-4741`). Pushed values held only in the renderer would therefore be lost on any reload.
-Once W4 stops the owned session's slug passes, the disk header they would be replaced with is also
-stale.
+**Why a skipped slug pass would be visible.** A renderer reload replaces almost every field of a
+live row with the model's value:
 
-**The rule: the overlay lives in main, so every reader of the model gets it.**
+- `reloadModelOnce` (`stores/sessions.ts:4645`) awaits `foldersLoad`, the model (`index.ts:819` →
+  `scanFolders` → `getFleetFolders`, `claude-reader.ts:1533-1538`).
+- `mergeFolders` spreads `...entry` (`merge-folders.ts:211-214`).
+- `reconcileSessions` copies every differing key (`stores/sessions.ts:4317-4351`).
+- Only the task-state, `aiSummary` and failure overlays (`:4690-4697`, `:4735-4750`) and
+  `RENDERER_ONLY_SESSION_KEYS` (`:4310-4315`) survive.
 
-- Main's fleet model keeps `rowFacts: Map<sid, ComposedRow>` for each owned session: the composed
-  values of §6.2.
-- The model merges them over the header fields when it serves `foldersLoad`, `get_fleet` and
-  `get_session`. The merged fields are `firstPrompt`, the "what's happening" line, `messageCount`,
-  `modified` and `status`; `lastAssistant` is new.
-- A reload in the renderer reads the model, so it sees the pushed values, never the stale header.
-- The renderer needs no new overlay of its own: the overlay is applied before the data reaches it.
-- Entries are dropped when the session leaves ownership. That happens only after the catch-up pass
-  of §7.4 has refreshed the header.
+So `transcriptState`, `ctxPct`, `stagnation`, `awaySummary`, `summary`, `modified`, `fileMtime`,
+`whatsHappening`, `messageCount`, `resumable`, `bridged` and `agents` all come back from the model.
+The watcher's delta handler had written several of them into the live row
+(`stores/sessions.ts:5501-5522`). With the slug pass skipped for an owned session, the model would
+freeze them at the last membership pass. Any reload, which a membership change in any folder
+triggers (`:4505-4519`), would then restore a stale dot or stuck verdict, and nothing would correct
+it once the session went idle. Main-side readers would go stale the same way (§7.5).
+
+**The rule: for an owned session, the model is patched from in-memory sources instead of rescanned.**
+The slug pass existed to refresh one session entry from the file. Every fact it would refresh is
+already computed in main, from bytes the tail has just read or from the push. So the model applies
+them to the entry directly, through a new `patchSession(sid, fields)` in `fleet-model-core.ts`, and
+reads no file:
+
+| Model field                                                    | Patched from                                                                                                                                                                                                                                   |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `transcriptState`, `ctxPct`, `awaySummary`, `stagnation`       | the tail's `SessionUpdatePayload`, the same object the watcher sends the renderer (`claude-watcher.ts:506-513`)                                                                                                                                |
+| `summary`                                                      | the tail's `renameTitle` (always wins) / `aiTitle` (fills an empty one), the renderer's own rule (`stores/sessions.ts:5506-5507`)                                                                                                              |
+| `bridged`                                                      | a new optional `bridged` on the tail's delta, set when the tail reads a `bridge-session` line (the reader's rule, `claude-reader.ts:597`)                                                                                                      |
+| `fileMtime`, `modified`                                        | `max(the tail's stat of the file, the push's lastRowAt)`; the tail already stats the file before each read (`claude-watcher.ts:418-432`)                                                                                                       |
+| `firstPrompt`, `whatsHappening`, `messageCount`, `status`      | the push, composed as in §6.2 (`status: 'active'` while rows arrive, `'idle'` 5 s after the last one, the renderer's own window, `:501`)                                                                                                       |
+| `resumable`                                                    | `true` once the push has folded an assistant row in this process, or the baseline was already `true` (the reader's `turnCount > 0`, `:598-600`)                                                                                                |
+| `agents`                                                       | the subagent delta the watcher already builds (`claude-watcher.ts:1239-1245`): the agent's `fileMtime`, `modified` and `status: 'running'`, with the renderer's 15 s done rule (`stores/sessions.ts:4847-4858`)                                |
+| `projectPath`, `gitBranch`, `teamName`, `agentName` (set once) | the one-file header read at the proof (§6.1 step 6). If a set-once field is still empty there (the insert saw the file before its `cwd` line), the first patch that finds it empty runs one single-file header re-read for that session, once. |
+
+What follows from patching:
+
+- Every reader of the model sees current values, with no new overlay to forget: the renderer's
+  reload, `get_fleet`, `get_session`, `mission_get`, the Cleanup dossier and the Containers clock
+  (§7.5).
+- The renderer needs nothing of its own. A reload now returns what the deltas just set.
+- The patch is idempotent and applied in arrival order. Fields not in a delta are left alone.
+- On leaving ownership, the catch-up pass of §7.4 rescans the file and supersedes every patched
+  value.
 
 **The migration race** is closed by the ordering of §6.1 step 6. The proof that migrates a claimed
 row is emitted only after the model has committed membership for that sid, so the reload that
@@ -459,7 +503,7 @@ adapter feeds the two existing shapes and opens no new renderer channel:
   `lastAssistant` and `lastActivityMs`. The adapter emits it with `source: 'companion'`. It is an
   additive change to an existing shape; the watcher may fill `lastPrompt` and `messageCount` too,
   which would also fix F3 for un-owned sessions (Q4).
-- **Main:** the fleet model's per-session record, through the `rowFacts` overlay (§6.6).
+- **Main:** the fleet model's per-session record, patched in place (§6.6).
 
 `session.row` is not a task-state event, so the task-state hub is not its entry point. A parked
 session has no process and sends nothing, so the `isHibernated` guard is not bypassed.
@@ -482,9 +526,11 @@ session has no process and sends nothing, so the `isHibernated` guard is not byp
   continue whether those families are `shadow` or `active`;
 - every delta still counts as a sign of life for the stuck timer (ARB-2(b), R11).
 
-The slug pass that T455 skips feeds only main's model header for that session. The `rowFacts`
-overlay supplies those fields; no family reads them as legacy input. W0 lists every reader of the
-model's per-session fields to confirm it (A-D1).
+Skipping the slug pass would starve the model, not the tail: a renderer reload copies the model's
+`transcriptState`, `ctxPct`, `stagnation`, `agents` and the rest over the live row (§6.6). T455
+therefore never skips a pass without patching the model from the same tail delta and push (§6.6).
+Every reader of the model (§7.5) then gets the values the slug pass would have produced, and the
+families that read the tail get them through the model too.
 
 ### 7.3 Parity: what is measured to decide the flip
 
@@ -518,15 +564,48 @@ hash, detail keys `group`, `verdict`, `cls`, `lenPush` and `lenLegacy`, and no t
 - The `identity` family has flipped first, on its own P1W3 gate
   (`P1W3-handshake-identity.md:744-767`).
 - The **performance gate**: the attribution script of 02-cost.md §8.6, run at comparable load,
-  shows **zero pass-class opens** of owned transcripts, a tail-class rate unchanged (±20 %), and
+  shows **zero slug-pass opens** of owned transcripts (confirmed by a debug counter on skipped passes), the residual pass-class opens (on-demand readers) reported as a number, a tail-class rate unchanged (±20 %), and
   the main process's read syscalls/s and CPU before and after, reported.
 
 ### 7.4 Leaving ownership
 
 On lease loss, a failed proof or a sticky reversion, the host runs **one** slug pass for that
 session's file: the incremental fold, or a head + tail scrape if the fold was evicted
-(`claude-reader.ts:954`). It then drops the `rowFacts` entry. The header is exact the moment legacy
+(`claude-reader.ts:954`), which supersedes every patched value. The entry is exact the moment legacy
 takes over. A session end does the same, which is what keeps a cold row identical to today's.
+
+### 7.5 Every reader of the slug pass's per-session data (A-D1, verified)
+
+Round 2 left this as assumption A-D1. It is now verified against every caller of `getFleetFolders` /
+`scanFolders` in `src/main` and the renderer reload. Each field a slug pass refreshes on an append,
+and who reads it from the model:
+
+| Field                                                    | Main readers (file:line)                                                                                                                                                                                                                                                                                                                                                                                                                   | Renderer (via reload, §6.6)                                        | Patched from (§6.6) |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------------- |
+| `modified`                                               | Cleanup dossier `gc/opinion-shell.ts:57-61` (picks the latest session, LLM-facing); Containers clock `containers/containers-shell.ts:174-178` (`unusedForMs`, "session working · ago"); `toFleetInputs` `mcp/tool-handlers.ts:325` → `get_fleet` row, sort, `sinceMinutes` and `limit` (`mcp/fleet-snapshot.ts:465-474`), `get_session`, `mission_get` children (`fleet-snapshot.ts:412`); model folder sort `fleet-model-core.ts:266-274` | times and sorting, stuck anchor (`fleet-state.ts:175`)             | tail stat, push     |
+| `fileMtime`                                              | Containers clock `containers-shell.ts:176`; model folder sort `fleet-model-core.ts:270`; Cleanup gather `gc/gc-sessions.ts:34` (masked: it re-stats every JSONL, `gc-transcripts.ts:117-131`)                                                                                                                                                                                                                                              | folder-sort fallback `components/folder-sort.ts:37`                | tail stat           |
+| `summary`, `firstPrompt`                                 | Cleanup dossier `opinion-shell.ts:61`; `get_session` preview `tool-handlers.ts:568-570`; memory digest fallback `memory-digest.ts:292-295` (it prefers fresh transcript titles, `:288-291`)                                                                                                                                                                                                                                                | label (`session-label.ts:49-51`)                                   | tail delta, push    |
+| `whatsHappening`                                         | memory digest fallback `memory-digest.ts:293`                                                                                                                                                                                                                                                                                                                                                                                              | `SessionPreview.vue:68`                                            | push                |
+| `messageCount`, `resumable`, `bridged`                   | none                                                                                                                                                                                                                                                                                                                                                                                                                                       | footer count, not-resumable badge and resume guard, cloud panel    | push, tail delta    |
+| `transcriptState`, `ctxPct`, `awaySummary`, `stagnation` | none (the comment at `fleet-model.ts:39-42` says otherwise; it is wrong)                                                                                                                                                                                                                                                                                                                                                                   | status dot, stuck verdict, previews: rolled back by any reload     | tail delta          |
+| `agents`                                                 | none                                                                                                                                                                                                                                                                                                                                                                                                                                       | running-subagent count → activity (`stores/sessions.ts:1892-1898`) | subagent delta      |
+
+Readers that use folder paths or membership only, unaffected:
+
+- `gc-scan-shell.ts:159`;
+- `reaper/scanner-shell.ts:160`, `:186-196` (`sessionId` joined to live task states);
+- `user-projects.ts:1196`;
+- `markdown-read.ts:116`, `memory-location-ipc.ts:80`, `memory-ipc.ts:37`;
+- `mcp/server.ts:959` gates (`sessionId` → `projectPath`);
+- `message_session` and the folder-scoped verbs;
+- `plan_mission` (`tool-handlers.ts:1019`);
+- the membership signature `fleet-model-core.ts:257-263`.
+
+The full rescan `claude:rescan` (`index.ts:852`) is unaffected.
+
+**Consequence for the design:** with the patch of §6.6, every row of this table stays as fresh as
+today's slug pass makes it, or fresher, since the patch runs on every delta rather than at most
+every 2 s.
 
 ## 8. Cost (U-5)
 
@@ -538,14 +617,14 @@ show. It is corrected after verification round 1:
 - A verifier saw that dir swept in full with **no** append in it. The cold opens are periodic
   sweeps, not caused by appends; T455 claims no gain from them.
 
-| Measured today (§8.3, run 5: 5 × 60 s, 543 appends, 2026-10-09)                                                                           | Value                                                                                     | After T455, for an owned session                              |
-| ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| tail-class opens of a live transcript (≤ 50 ms after its append; p90 2 ms)                                                                | 713 opens; 0.72–1.55 per append                                                           | unchanged: the tail stays (§7.2)                              |
-| pass-class opens (neither immediate nor in a sweep; median gap between them 0.95–2.1 s, the 2 s slug-pass cadence of `fleet-model.ts:66`) | 596 opens; 0.78–1.32 per append (45 % of the live-transcript opens in sweep-free windows) | **0**                                                         |
-| sweep-class opens (≥ 50 other transcripts opened within ±1 s)                                                                             | 243 opens, in 2 of 5 windows                                                              | not T455's: a separate reader bug                             |
-| how long after its last append the model rereads a live transcript (first pass-class open)                                                | p50 258–565 ms, p90 4.7–8.2 s                                                             | `get_fleet` / `modified` from the push: ≤ 500 ms, ≤ 2 s worst |
-| one full `foldersLoad` per migrated new session                                                                                           | by construction (`stores/sessions.ts:4967-4989`)                                          | 0 for a claimed row                                           |
-| in-session cost added (prototype)                                                                                                         | —                                                                                         | 0.3–1.8 ms per row; 4 POSTs for a 26-row turn                 |
+| Measured today (§8.3, run 5: 5 × 60 s, 543 appends, 2026-10-09)                                                                                                | Value                                                                                     | After T455, for an owned session                                                                                       |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| tail-class opens of a live transcript (≤ 50 ms after its append; p90 2 ms)                                                                                     | 713 opens; 0.72–1.55 per append                                                           | unchanged: the tail stays (§7.2)                                                                                       |
+| pass-class opens (neither immediate nor in a sweep; median gap between them 1.7–2.1 s in sweep-free windows, the 2 s slug-pass cadence of `fleet-model.ts:66`) | 596 opens; 0.78–1.32 per append (45 % of the live-transcript opens in sweep-free windows) | ≈ 0 slug-pass opens; residual on-demand reads (a digest's `readSessionTail`, membership passes) remain, measured at W6 |
+| sweep-class opens (≥ 50 other transcripts opened within ±1 s)                                                                                                  | 243 opens, in 2 of 5 windows                                                              | not T455's: a separate reader bug                                                                                      |
+| how long after its last append the model rereads a live transcript (first pass-class open; `get_fleet`'s staleness is inferred from it, not measured)          | p50 258–565 ms, p90 4.7–8.2 s (a verifier's p50: 822 ms)                                  | `get_fleet` / `modified` from the push: ≤ 500 ms, ≤ 2 s worst                                                          |
+| one full `foldersLoad` per migrated new session                                                                                                                | by construction (`stores/sessions.ts:4967-4989`)                                          | 0 for a claimed row                                                                                                    |
+| in-session cost added (prototype)                                                                                                                              | —                                                                                         | 0.3–1.8 ms per row; 4 POSTs for a 26-row turn                                                                          |
 
 The round-1 latency row ("append → next reread, p90 215–1,484 ms") is withdrawn. It mixed the
 tail and the slug pass, so it moved with the share of each, and a verifier got 12 ms and 100 ms.
@@ -630,18 +709,17 @@ real audit in W5): prompts, **transcript**, permissions, network, files, env, ga
 
 ## 11. Assumptions the W0 spike checks first
 
-| Id   | Assumption                                                                                                                                                         | How W0 checks it                                                                                      |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| A-E1 | An interactive session raises the same doors, order and uuids as the `-p` runs                                                                                     | the probe, loaded with `--plugin-dir` in an interactive scratch session                               |
-| A-E2 | `classic.SessionStart` precedes `session.start` interactively too (the companion's own comment says so)                                                            | same run                                                                                              |
-| A-E3 | a mid-session `/rename` reaches the next `classic.UserPromptSubmit.session_title`                                                                                  | same run, `/rename` then a prompt (it only informs the recorded `title` group)                        |
-| A-T2 | an `ai-title` reaches `session_title`                                                                                                                              | same run, after the CLI writes `ai-title` (it only informs a later partition change)                  |
-| A-E4 | a live `/clear` is `classic.SessionStart{source:'clear'}` with the new id and its `transcript_path`                                                                | same run                                                                                              |
-| A-E5 | a subagent's rows carry `agentId`, and its `tool_use` blocks are the subagent's                                                                                    | same run with one Agent call                                                                          |
-| A-P1 | `door: 'prompt'` rows not typed by the person (task notifications, auto-continuation) are `isMeta` or need an origin filter                                        | parity `E-ORIGIN` counts; W0 lists the `origin.kind` of every prompt row (`PromptOrigin`, types 8865) |
-| A-M1 | a `claude` process never reads its own transcript after boot                                                                                                       | `fdattr.py` on the spike's own sessions                                                               |
-| A-D1 | no reader of the model's per-session header fields other than `foldersLoad`, `get_fleet`, `get_session` and the folder sort depends on a slug pass after an append | grep for every consumer of the model's session records; a debug counter on skipped passes             |
-| A-H1 | the model's one-file insert after a `stat` hit sees the same header the watcher's `add` would                                                                      | log both for 50 new sessions                                                                          |
+| Id   | Assumption                                                                                                                  | How W0 checks it                                                                                      |
+| ---- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| A-E1 | An interactive session raises the same doors, order and uuids as the `-p` runs                                              | the probe, loaded with `--plugin-dir` in an interactive scratch session                               |
+| A-E2 | `classic.SessionStart` precedes `session.start` interactively too (the companion's own comment says so)                     | same run                                                                                              |
+| A-E3 | a mid-session `/rename` reaches the next `classic.UserPromptSubmit.session_title`                                           | same run, `/rename` then a prompt (it only informs the recorded `title` group)                        |
+| A-T2 | an `ai-title` reaches `session_title`                                                                                       | same run, after the CLI writes `ai-title` (it only informs a later partition change)                  |
+| A-E4 | a live `/clear` is `classic.SessionStart{source:'clear'}` with the new id and its `transcript_path`                         | same run                                                                                              |
+| A-E5 | a subagent's rows carry `agentId`, and its `tool_use` blocks are the subagent's                                             | same run with one Agent call                                                                          |
+| A-P1 | `door: 'prompt'` rows not typed by the person (task notifications, auto-continuation) are `isMeta` or need an origin filter | parity `E-ORIGIN` counts; W0 lists the `origin.kind` of every prompt row (`PromptOrigin`, types 8865) |
+| A-M1 | a `claude` process never reads its own transcript after boot                                                                | `fdattr.py` on the spike's own sessions                                                               |
+| A-H1 | the model's one-file insert after a `stat` hit sees the same header the watcher's `add` would                               | log both for 50 new sessions                                                                          |
 
 ## 12. Implementation outline (C-6)
 
@@ -649,9 +727,9 @@ real audit in W5): prompts, **transcript**, permissions, network, files, env, ga
 | ---- | ---- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | W0   | S    | —            | Spike: §11; a baseline re-run of 02-cost.md §8.6                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | none (scratch only)                                                                                                                                                                                                                                    |
 | W1   | M    | W0           | **Mod half** in `resources/companion/`:<br>• `hooks/lib/row-fold.ts` (pure: the prototype's `row.ts` plus `title`, `userRows`, `lastRowAt`);<br>• `hooks/lib/redact-wire.ts`;<br>• the `session.append` hook;<br>• steps in `classic.SessionStart`, `classic.UserPromptSubmit` (new), `session.start` and `turn.complete`;<br>• the coalescer;<br>• `session.snapshot.start` and `session.rebound.transcriptPath`;<br>• `$.state` key `row` (counts only);<br>• `api-surface.json`;<br>• golden traces in `tests/` | `docs/dev/companion-mod.md`; T389 `01-contract.md` §8 (named text fields), §11.1, §22; SEC-8's amendment (§5.5)                                                                                                                                        |
-| W2   | M    | W1           | **Host ingest in shadow:**<br>• `wire-core.ts` caps;<br>• `ingest/row-adapter.ts`;<br>• the feature policy;<br>• `FactFamily` `row` with its design-time partition;<br>• the `row` parity stream and its rules (§7.3);<br>• claim `transcriptPath` + `lineage`;<br>• `PtyRecord.spawnSourceSid` and its resolver (§6.3)                                                                                                                                                                                            | none visible (shadow)                                                                                                                                                                                                                                  |
-| W3   | M    | W2           | **Active consumers:**<br>• the model's `rowFacts` overlay (§6.6);<br>• the `SessionUpdatePayload` fields;<br>• the preview's last-assistant line;<br>• `get_fleet` `status` / `modified` for owned sessions (fixes F1, F4 for them);<br>• `get_session` `forkedFrom` / `resumedFrom`                                                                                                                                                                                                                               | CHANGELOG;<br>`design.md` §6 (the preview's new line) + `en.json` / `pt-BR.json`;<br>`docs/harnu-features.md` (`get_fleet` / `get_session` semantics) + marker bump;<br>T447's `01-contract.md` note on `status` (§5.1);<br>`docs/user/` (the preview) |
-| W4   | M    | W3           | **Demotion for owned sessions:**<br>• no slug pass on their appends;<br>• the proof ordering (§6.1 step 6);<br>• no full backfill for claimed rows;<br>• the catch-up on leaving ownership (§7.4);<br>• the fork boot reaper (F5)                                                                                                                                                                                                                                                                                  | CHANGELOG (fix F5; fresher sidebar)                                                                                                                                                                                                                    |
+| W2   | M    | W1           | **Host ingest in shadow:**<br>• `wire-core.ts` caps;<br>• `ingest/row-adapter.ts`;<br>• the feature policy;<br>• `FactFamily` `row` with its design-time partition;<br>• the `row` parity stream and its rules (§7.3);<br>• claim `transcriptPath` + `lineage`;<br>• `PtyRecord.spawnSourceSid`, its resolver and `lineage.json` (§6.3)                                                                                                                                                                            | none visible (shadow)                                                                                                                                                                                                                                  |
+| W3   | M    | W2           | **Active consumers:**<br>• `patchSession` and the model patch from the tail delta, the subagent delta and the push (§6.6), plus the delta's new `bridged` field;<br>• the `SessionUpdatePayload` fields;<br>• the preview's last-assistant line;<br>• `get_fleet` `status` / `modified` for owned sessions (fixes F1, F4 for them);<br>• `get_session` `forkedFrom` / `resumedFrom`                                                                                                                                | CHANGELOG;<br>`design.md` §6 (the preview's new line) + `en.json` / `pt-BR.json`;<br>`docs/harnu-features.md` (`get_fleet` / `get_session` semantics) + marker bump;<br>T447's `01-contract.md` note on `status` (§5.1);<br>`docs/user/` (the preview) |
+| W4   | M    | W3           | **Demotion for owned sessions:**<br>• no slug pass on their appends, never without W3's model patch;<br>• the proof ordering (§6.1 step 6);<br>• no full backfill for claimed rows;<br>• the catch-up on leaving ownership (§7.4);<br>• the fork boot reaper (F5)                                                                                                                                                                                                                                                  | CHANGELOG (fix F5; fresher sidebar)                                                                                                                                                                                                                    |
 | W5   | S    | — (any time) | The Mods audit chip `transcript` (§10.3), shared with T450                                                                                                                                                                                                                                                                                                                                                                                                                                                         | CHANGELOG;<br>`en.json` / `pt-BR.json` `modsAudit.cap.transcript`;<br>`docs/user/` (the Mods page)                                                                                                                                                     |
 | W6   | S    | W4 + gates   | The flip PRs: `identity` (its P1W3 gate), then `row` (§7.3), then the performance gate                                                                                                                                                                                                                                                                                                                                                                                                                             | CHANGELOG per flip; `docs/user/` if what the user sees changes                                                                                                                                                                                         |
 
@@ -679,7 +757,7 @@ Every wave keeps the T389 authoring rules (`00-master.md:519-529`, MOD-1 … MOD
 | --- | --------------------------------------------------------------------------------------------------------------------- |
 | U-1 | 01-inventory.md; §3                                                                                                   |
 | U-2 | §5.1 (shipped vs specified), §5.2 (fact → event → rate → twin), §5.3 (wire), §5.4 (rates), §5.5 (privacy)             |
-| U-3 | §7                                                                                                                    |
+| U-3 | §7 (incl. §7.5)                                                                                                       |
 | U-4 | §6                                                                                                                    |
 | U-5 | 02-cost.md; §8                                                                                                        |
 | C-1 | §4; 03-prototype.md §P.2–§P.4                                                                                         |
