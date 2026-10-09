@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 
@@ -253,6 +253,19 @@ describe('gatherGc: no ghost bundles for a folder that is gone (F0)', () => {
     stale()
     const g = await gatherGc({ ...released(), graceDays: 2 }, NOW)
     expect(g.bundles).toEqual([])
+  })
+
+  it('a dangling symlink is not a gone folder: the item stays and needs review', async () => {
+    // The link exists, its target does not. Cleanup removes the worktree itself, so a broken
+    // link is something to look at, not something already cleaned.
+    mkdirSync(path.dirname(wt), { recursive: true })
+    symlinkSync(path.join(root, 'nowhere'), wt)
+    stale()
+    const g = await gatherGc({ ...released(), graceDays: 2 }, NOW)
+    expect(g.bundles).toHaveLength(1)
+    expect(g.bundles[0]!.bucket).toBe('review')
+    // Its release mark is not "cleaned" either.
+    expect(g.staleReleases).not.toContain(item().id)
   })
 
   it('a halted item (it has a failure note) stays even though its folder is gone', async () => {

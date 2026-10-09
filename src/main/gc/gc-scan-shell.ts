@@ -189,7 +189,8 @@ async function missingFolders(paths: readonly string[]): Promise<Set<string>> {
   await Promise.all(
     [...new Set(paths)].map(async (p) => {
       try {
-        await fs.stat(p)
+        // lstat: a dangling symlink is still there (its target is what is missing).
+        await fs.lstat(p)
       } catch (err) {
         const code = (err as NodeJS.ErrnoException).code
         if (code === 'ENOENT' || code === 'ENOTDIR') gone.add(p)
