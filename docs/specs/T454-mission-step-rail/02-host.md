@@ -77,13 +77,25 @@ actions, and the rail would work in the legacy modes only. W0 records the `via` 
 - **S1** the claim's cause is `spawn`, which only a binding's first hello carries (the hello that
   redeemed the one-time spawn token), and it migrates the PTY's own synthetic row (`row.synthetic
 === true`): the key comes from the PTY that carried the token (`:5129-5131`), never from a
-  request. One spawn claim is accepted per PTY.
+  request. **The sid is locked at the first redeem.** A spawn token can be redeemed again, still
+  as kind `spawn`, while the conn it issued is unused (`session-table.ts:430-436`: `b.sid =
+req.sid`), and the claim's cause defaults to `spawn` when none was recorded
+  (`identity-adapter.ts:221`). So W1 stores the sid of the first redeem on the binding as the
+  spawn claim's sid and refuses a later redeem, or any later `rebind`, that changes it, for the
+  claim's purposes; and the default becomes `unknown`, so only a hello that set `spawn` counts.
+  One spawn claim is accepted per PTY, and it keeps the first sid.
 - **S2** the transcript landed in the folder the PTY runs in: the event's `slug` resolves to the
   row's folder. `bindByClaim` takes the folder from the row and ignores the event's slug today;
   W1 adds the check. A forged `sid` naming a sibling's transcript, which lives in the sibling's
   worktree, fails here.
-- **S3** no other live PTY and no other unmigrated synthetic row runs in that folder. A shared
-  folder is ambiguous, so its sessions are display-only.
+- **S3** no other live **`claude`** PTY (kind `claude-new`, `claude-resume`, `claude-fork`) and no
+  other unmigrated synthetic row runs in that folder. A shared folder is ambiguous, so its
+  sessions are display-only (through a `worktree` link) or absent. **The cost, stated:** two
+  executors dispatched into one folder; an executor in the orchestrator's own folder (the folder
+  substrate); an executor in a folder where another `claude` is already live. A plain shell tab
+  does not count: it is not a session Harnu tracks and cannot write a transcript by itself. A
+  `claude` typed by hand into such a shell tab is exactly K-9's remainder, which is why the shell
+  is not counted as safe, only as not ambiguous.
 - **S4** the transcript was born after the PTY's spawn (its first timestamped record, A-1), no
   live PTY holds the id, and Harnu never registered it for any other PTY (the process-lifetime
   ledger in `PtySessionIndex`, so a hibernated or finished sibling still refuses).
@@ -412,19 +424,20 @@ binding, action, mission id, step id, the trusted key the step matched, outcome,
 
 ## 4. Environments
 
-| Session                                                         | What the rail does                                                                                                                                       |
-| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Spawned by Harnu for an agent (`agentControlled`), no Harnu MCP | full rail and actions: the data comes over the companion channel, not MCP (§2.1)                                                                         |
-| Spawned by Harnu, operator-started, with Harnu MCP              | same; the rail never uses the MCP server                                                                                                                 |
-| Board or manifest dispatch (trust `agent`)                      | same                                                                                                                                                     |
-| Fresh `create_session` executor, companion `active`             | reaches its real id through a `companion` migration with claim cause `spawn`: trusted under S1–S5, full rail and actions (A-11)                          |
-| A session sharing a worktree with a step's link, not linked     | display only (§1.1, rule 3)                                                                                                                              |
-| Read-only review spawn                                          | display only                                                                                                                                             |
-| Scheduler tick                                                  | nothing: headless, `ui.render` not raised; `ui.band` is never enabled headless (`feature-policy.ts:82`)                                                  |
-| Outside Harnu, P4W3 on                                          | owner row (P4W2 row 4 + Δ5), child row display-only, both after corroboration                                                                            |
-| Companion `off`, CLI below the floor, sideload-blocked          | nothing: no companion, no band                                                                                                                           |
-| Companion `legacy` (loaded, not authoritative)                  | nothing until `ui.band` is enabled for the binding (spec §10)                                                                                            |
-| Harnu quits mid-session                                         | the row turns final after the TTL; an open field or confirm stays until the person ends it (spec S8, §7.5)                                               |
-| Hot reload of the companion                                     | the row redraws from `$.state` (the `band` value survives a reload, `TYPES:3376-3383`)                                                                   |
-| Hibernation, then resume                                        | Harnu respawns with `--resume <uuid>`: the spawn key is trusted (§1.2)                                                                                   |
-| `/clear` or `/resume` typed in the executor                     | display only through a `worktree` link, or nothing; actions return with a respawn by Harnu (`--resume`, a spawn key) or an operator gesture (§1.2, OQ-8) |
+| Session                                                                                                                            | What the rail does                                                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Spawned by Harnu for an agent (`agentControlled`), no Harnu MCP                                                                    | full rail and actions: the data comes over the companion channel, not MCP (§2.1)                                                                         |
+| Spawned by Harnu, operator-started, with Harnu MCP                                                                                 | same; the rail never uses the MCP server                                                                                                                 |
+| Board or manifest dispatch (trust `agent`)                                                                                         | same                                                                                                                                                     |
+| Fresh `create_session` executor, companion `active`                                                                                | reaches its real id through a `companion` migration with claim cause `spawn`: trusted under S1–S5, full rail and actions (A-11)                          |
+| A session sharing a worktree with a step's link, not linked                                                                        | display only (§1.1, rule 3)                                                                                                                              |
+| Executor sharing its folder with another live `claude` (two executors in one folder; an executor in the orchestrator's own folder) | display only through a `worktree` link, or absent: S3 refuses the spawn claim, so its id is not trusted. A shell tab in the folder does not count        |
+| Read-only review spawn                                                                                                             | display only                                                                                                                                             |
+| Scheduler tick                                                                                                                     | nothing: headless, `ui.render` not raised; `ui.band` is never enabled headless (`feature-policy.ts:82`)                                                  |
+| Outside Harnu, P4W3 on                                                                                                             | owner row (P4W2 row 4 + Δ5), child row display-only, both after corroboration                                                                            |
+| Companion `off`, CLI below the floor, sideload-blocked                                                                             | nothing: no companion, no band                                                                                                                           |
+| Companion `legacy` (loaded, not authoritative)                                                                                     | nothing until `ui.band` is enabled for the binding (spec §10)                                                                                            |
+| Harnu quits mid-session                                                                                                            | the row turns final after the TTL; an open field or confirm stays until the person ends it (spec S8, §7.5)                                               |
+| Hot reload of the companion                                                                                                        | the row redraws from `$.state` (the `band` value survives a reload, `TYPES:3376-3383`)                                                                   |
+| Hibernation, then resume                                                                                                           | Harnu respawns with `--resume <uuid>`: the spawn key is trusted (§1.2)                                                                                   |
+| `/clear` or `/resume` typed in the executor                                                                                        | display only through a `worktree` link, or nothing; actions return with a respawn by Harnu (`--resume`, a spawn key) or an operator gesture (§1.2, OQ-8) |
