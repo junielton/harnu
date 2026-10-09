@@ -735,3 +735,31 @@ describe('honest Remove: what main refuses is never offered, whatever the surfac
     expect(removability(m.byId.get(b.item.id)!)).toMatchObject({ ok: false, reason: 'locked' })
   })
 })
+
+describe('a scan that could not see Docker: the hero says so instead of offering a clean main would refuse', () => {
+  const blind = (name: string): ReturnType<typeof wt> => {
+    const b = wt(name, 'ready', 400 * MIB)
+    b.dockerBlind = true
+    return b
+  }
+
+  it('leaves the blind ones out of what a click cleans', () => {
+    const m = buildGcModel(snap({ bundles: [blind('a'), blind('b')] }))
+    expect(m.cleanable).toEqual([])
+    expect(m.ready).toHaveLength(2)
+  })
+
+  it('the hero is blocked, naming how many wait for Docker', () => {
+    const m = buildGcModel(snap({ bundles: [blind('a'), blind('b')] }))
+    expect(heroState(m, null, true)).toEqual({ kind: 'blind', count: 2, bytes: 800 * MIB })
+  })
+
+  it('a blocked hero never turns into a running one: a clean in flight still shows its chip', () => {
+    const m = buildGcModel(snap({ bundles: [blind('a')] }))
+    expect(heroState(m, { done: 1, total: 2, freedBytes: 5 }, true).kind).toBe('running')
+  })
+
+  it('stays empty when there is nothing ready at all', () => {
+    expect(heroState(buildGcModel(snap()), null, true)).toEqual({ kind: 'empty' })
+  })
+})

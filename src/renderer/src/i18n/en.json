@@ -2382,6 +2382,8 @@
       "hero": {
         "clean": "Clean {n} ready · {size} | Clean {n} ready · {size}",
         "empty": "Nothing to clean",
+        "blind": "Start Docker to clean these",
+        "blindTitle": "Docker wasn't running when Harnu scanned, so it could not see which stacks run from these worktrees. Start Docker, then Scan now.",
         "chip": "Cleaning {done}/{total} · {size} freed"
       },
       "selection": {
@@ -2626,6 +2628,7 @@
           "locked": "Git has this worktree locked. Unlock it first.",
           "cannotUnregister": "Git has no single, unlocked registration for this worktree, so Harnu cannot unregister it and refused it more than once. Check git worktree list.",
           "protectedNow": "It is protected now (a main checkout, a never-clean path or a Keep mark), and Harnu refused it more than once.",
+          "scanBlind": "Docker wasn't running when Harnu scanned, so it could not see this worktree's stacks. Start Docker, then Scan now.",
           "stackPresent": "A Docker stack is running from this worktree, and Harnu refused it more than once. Stop the stack first."
         }
       },

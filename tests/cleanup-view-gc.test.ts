@@ -931,3 +931,19 @@ describe('Cleanup screen — a ready item main refused leaves the hero', () => {
     expect(api.gcClean.mock.calls[0][0]).toEqual(['/w/repo::worktree::c2'])
   })
 })
+
+describe('Cleanup screen — scanned while Docker was down', () => {
+  it('the hero is disabled and says to start Docker; no clean can be opened', async () => {
+    const a = wt('c1', 'ready', 500 * MIB)
+    a.dockerBlind = true
+    const api = install(snapshotOf([a, { ...wt('c2', 'ready', 400 * MIB), dockerBlind: true }]))
+    await mountView()
+    const hero = domGet('[data-testid="hero-blind"]')
+    expect(hero.attributes('disabled')).toBeDefined()
+    expect(hero.text()).toContain(t('cleanup.gc.hero.blind'))
+    await hero.trigger('click')
+    expect(body('bulk-dialog')).toBeNull()
+    expect(api.gcClean).not.toHaveBeenCalled()
+    expect(dom('[data-testid="hero-clean"]').exists()).toBe(false)
+  })
+})

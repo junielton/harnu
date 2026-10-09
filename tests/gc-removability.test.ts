@@ -251,6 +251,14 @@ describe('removability of a block', () => {
     expect(bundleRemovability(demoted, NOW)).toMatchObject({ ok: false, reason })
   })
 
+  it('refuses everything from a scan that could not see Docker, with a command-less reason', () => {
+    for (const bucket of ['ready', 'review'] as const) {
+      const blind = b(bucket)
+      blind.dockerBlind = true
+      expect(bundleRemovability(blind, NOW)).toEqual({ ok: false, reason: 'scan-blind' })
+    }
+  })
+
   it('a ready item marked after one refusal may still be retried on purpose', () => {
     const marked = b('ready')
     marked.reprobeRefusal = { code: 'cannot-unregister', count: 1 }

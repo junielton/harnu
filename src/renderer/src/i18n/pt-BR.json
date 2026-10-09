@@ -2382,6 +2382,8 @@
       "hero": {
         "clean": "Limpar {n} pronto · {size} | Limpar {n} prontos · {size}",
         "empty": "Nada para limpar",
+        "blind": "Inicie o Docker para limpar estes",
+        "blindTitle": "O Docker não estava rodando quando o Harnu escaneou, então ele não viu quais stacks rodam a partir destes worktrees. Inicie o Docker e use Escanear agora.",
         "chip": "Limpando {done}/{total} · {size} liberados"
       },
       "selection": {
@@ -2626,6 +2628,7 @@
           "locked": "O git tem este worktree bloqueado. Desbloqueie primeiro.",
           "cannotUnregister": "O git não tem um registro único e desbloqueado para este worktree, então o Harnu não consegue desregistrá-lo e o recusou mais de uma vez. Confira git worktree list.",
           "protectedNow": "Ele está protegido agora (um checkout principal, um caminho de nunca limpar ou uma marca Manter), e o Harnu o recusou mais de uma vez.",
+          "scanBlind": "O Docker não estava rodando quando o Harnu escaneou, então ele não viu as stacks deste worktree. Inicie o Docker e use Escanear agora.",
           "stackPresent": "Uma stack do Docker está rodando a partir deste worktree, e o Harnu o recusou mais de uma vez. Pare a stack primeiro."
         }
       },

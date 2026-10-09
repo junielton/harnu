@@ -28,6 +28,7 @@ export type RemovalRefusal =
   | 'cannot-unregister'
   | 'protected-now'
   | 'stack-present'
+  | 'scan-blind'
 
 export type Removability =
   | { ok: true }
@@ -88,6 +89,8 @@ export function bundleRemovability(b: WorktreeBundle, now: number = Date.now()):
   if (b.neverClean) return refused('never-clean')
   if (b.keep) return refused('kept')
   if (b.bucket === 'in-use') return refused('in-use')
+  // Scanned while Docker was down: its stacks were never seen, and main refuses it until a scan does.
+  if (b.dockerBlind === true) return refused('scan-blind')
   if (!CLEANABLE_WORKTREE_KINDS.includes(b.item.kind)) {
     return refused('unsupported-kind', path ? `git worktree remove ${shellQuote(path)}` : undefined)
   }

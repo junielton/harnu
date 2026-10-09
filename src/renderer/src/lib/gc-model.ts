@@ -302,6 +302,8 @@ export function prunedSelection(model: GcModel, selection: ReadonlySet<string>):
 
 export type HeroState =
   | { kind: 'clean'; count: number; bytes: number; soft: boolean }
+  /** Ready items exist, but the scan could not see Docker: cleaning waits for Docker and a new scan. */
+  | { kind: 'blind'; count: number; bytes: number }
   | { kind: 'empty' }
   | { kind: 'running'; done: number; total: number; freedBytes: number }
 
@@ -318,7 +320,13 @@ export function heroState(
       freedBytes: running.freedBytes
     }
   }
-  if (model.cleanable.length === 0) return { kind: 'empty' }
+  if (model.cleanable.length === 0) {
+    const blind = model.ready.filter((b) => b.bundle?.dockerBlind === true)
+    if (blind.length > 0) {
+      return { kind: 'blind', count: blind.length, bytes: blind.reduce((a, b) => a + b.bytes, 0) }
+    }
+    return { kind: 'empty' }
+  }
   return {
     kind: 'clean',
     count: model.cleanable.length,
