@@ -54,20 +54,45 @@ Round 1 built the id chain from the binding's `sid` plus a `sidHistory` appended
 (`owner.kind === 'pty'`), the trusted id set is built from Harnu's own PTY index,
 `PtySessionIndex` (`pty-session-index.ts`), never from the binding's `sid`:
 
-| Source of an id for the binding's PTY                                                                                                                                                                    | Trusted                                                                                                                                      |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| the key the PTY was spawned with (`sessionIndex.register(opts.sessionKey, id)`, `pty.ts:959`): a `--resume <uuid>`, or a synthetic id for a new session                                                  | yes                                                                                                                                          |
-| a key the index moved to by a migration Harnu correlated itself: `MigrateVia` `agent-correlation`, `collapse`, `resolved-window` (`stores/sessions.ts:702`), driven by the watcher seeing the transcript | yes                                                                                                                                          |
-| a key moved by a `companion` migration (a `/clear` or `/resume` the companion reported, `stores/sessions.ts:5157-5166`; a `resume` claim migrates at once when its target exists on disk, `:5174-5176`)  | **only if corroborated**: the transcript of that id has a birth time after the PTY's spawn, and no other live PTY holds that id in the index |
-| the binding's `sid`, a `session.rebound`, anything else the mod says                                                                                                                                     | no                                                                                                                                           |
+| Source of an id for the binding's PTY                                                                                                                                                                    | Trusted                                                                     |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| the key the PTY was spawned with (`sessionIndex.register(opts.sessionKey, id)`, `pty.ts:959`): a `--resume <uuid>`, or a synthetic id for a new session                                                  | yes                                                                         |
+| a key the index moved to by a migration Harnu correlated itself: `MigrateVia` `agent-correlation`, `collapse`, `resolved-window` (`stores/sessions.ts:702`), driven by the watcher seeing the transcript | yes                                                                         |
+| a key moved by a `companion` migration (a `/clear` or `/resume` the companion reported, `stores/sessions.ts:5157-5166`; a `resume` claim migrates at once when its target exists on disk, `:5174-5176`)  | **only if all of §1.2's four conditions hold** at the moment of the rebound |
+| the binding's `sid`, a `session.rebound`, anything else the mod says                                                                                                                                     | no                                                                          |
 
-Why the corroboration rule holds: a forged rebound has to name an id some mission already links,
-and a linked id belongs to a session that existed before this PTY (its transcript was born
-earlier) or is live in another PTY. A genuine `/clear` produces a transcript born after the
-spawn, in this PTY alone. Whether Harnu's watcher sees a `/clear`'s transcript in time is A-1.
+**The four conditions for a companion-reported id.** It enters the binding's trusted set only
+if, at the moment the rebound reaches the host:
+
+1. its transcript exists on disk and was born after the PTY's spawn. The birth time is the
+   **first timestamped record** of the file, not the file's btime (A-1): `birthtimeMs` is 0 where
+   `statx` is unavailable;
+2. **no live PTY holds it** in the index;
+3. **Harnu never registered it for any other PTY**: `PtySessionIndex` keeps a ledger of every key
+   it was ever handed (`register`) and every key a migration moved to, for the process lifetime,
+   so a sibling executor spawned after this one, since hibernated, closed or finished, still
+   refuses;
+4. **no step of any mission links it**, a `session` link in any mission, open or closed, as the
+   views stand at that moment. A step-linked session that never had a Harnu PTY (one the operator
+   opened by hand) is refused here. A genuine `/clear` produces an id nobody has linked yet.
+
+Why these hold: a forged rebound has to name an id that is a real transcript and that some step
+the rail could aim at already links, or that a sibling holds. Condition 4 refuses the first and 3
+refuses a sibling Harnu spawned; 1 and 2 refuse everything older and everything live. A hibernated
+sibling that Harnu respawns with `--resume <its id>` re-registers its own key, so the ledger
+already knows it.
+
+**The named remainder.** An id that Harnu never spawned, that no step links at the moment of the
+rebound, whose transcript is born after this PTY's spawn, and that is linked to a step _later_:
+a session started by hand moments after the forger's spawn and linked afterwards. It needs an
+orchestrator to link a hand-started session, which is not the dispatch path; it is listed as
+K-9's remainder. When such a link appears Harnu re-checks every binding's companion-derived ids
+(condition 4 again): an id that was trusted via the companion and is now linked is distrusted.
+That also drops the genuine case where an orchestrator re-links an executor's post-`/clear` id,
+which is why OQ-8 asks for an operator gesture rather than a re-link.
 
 What changes in code (W1): `PtySessionIndex` keeps, per PTY, a bounded history of
-`{ key, via: 'spawn' | MigrateVia, at }`; the `pty:rekey` IPC (`pty.ts:1140`, today
+`{ key, via: 'spawn' | MigrateVia, at }`, plus the process-wide ledger of condition 3; the `pty:rekey` IPC (`pty.ts:1140`, today
 `(fromKey, toKey)`) and the renderer's migrate handler (`registerMigrateHandler`,
 `stores/sessions.ts:1340`, today `(fromId, toId)`) carry the `via` that `fireMigrate` already has
 (`stores/sessions.ts:1741`). The renderer is Harnu's own code, so its `via` is a host fact.
@@ -76,7 +101,8 @@ What changes in code (W1): `PtySessionIndex` keeps, per PTY, a bounded history o
 transcript, `external-corroboration.ts`) for the display row only; they never get an action.
 
 **Residual, stated.** A plugin in the session could delete and recreate another session's
-transcript file to give it a fresh birth time. The same plugin can write `.harnu/missions/*.md`
+transcript file, or write a first record with a late timestamp, to give it a fresh birth time
+(condition 4 and 3 still apply to it). The same plugin can write `.harnu/missions/*.md`
 directly, so this adds no capability it lacked (ADR-0018 Decision 3: a mod is unsandboxed code).
 
 No amendment to SEC-3b is needed: no consumer here trusts an event as authority.
@@ -205,14 +231,21 @@ in an executor at all.
    - the binding is bound with a live lease, profile `interactive`, trust `agent` or `operator`,
      owned by a PTY, and has `ui.rail` enabled (`RAIL_NOT_ENABLED`);
    - "Ask before agent actions" is off (`ASK_MODE`; §3.3);
-   - `rev` equals the binding's current rail revision (`RAIL_STALE`) and the action is in that
-     revision's `actions`, which only a child matched by a trusted session link ever has
-     (`RAIL_NOT_OFFERED`);
+   - **`rev` is the revision the person saw when the key was drawn or the field opened**, pinned
+     by the mod (spec §7.5, rule 1). The host keeps, per binding, the target (`missionId`,
+     `stepId`) of each of its last 32 published revisions. If `rev` is not among them, or the
+     target it names differs from the binding's current target, the answer is `RAIL_STALE`: a
+     note typed for step 3 never lands on step 5, whether another mission arrived or the child
+     moved to its next step (`KIT` test 10; `LIVE` E9). A pinned revision whose target is still
+     the current one is accepted even though a later push bumped the revision (a stale age
+     ticking over must not void a note);
+   - the action is in the **current** revision's `actions`, which only a child matched by a
+     trusted session link ever has (`RAIL_NOT_OFFERED`);
    - `text`, when the action takes one, is 1–200 characters after trimming and stripping control
      characters (`BAD_TEXT`);
    - at most one action per `RAIL_MIN_INTERVAL_MS` (2 000) per binding (`TOO_FAST`).
-4. Harnu main takes `missionId` and `stepId` from **its own** snapshot of that revision and applies
-   the write of §3.2.
+4. Harnu main takes `missionId` and `stepId` from **its own** record of the target of the pinned
+   revision (which step 3 required to equal the current target) and applies the write of §3.2.
 5. It writes one audit record (§3.4), re-derives the mission and publishes the next revision with
    `result`. No toast, no `$.ui.status`: P4W2 keeps the band and the status line from saying the
    same thing (P4W2 §7.4).
@@ -232,8 +265,9 @@ type RailRefusal =
   | 'REFUSED'
 ```
 
-`KIT` tests 2 and 3 and the `LIVE` host log show step 2: `{"name":"step.claim","rev":5}` and
-`{"name":"step.block","rev":6,"text":"needs the staging API key"}`.
+`KIT` tests 2, 3 and 10 and the `LIVE` host log show step 2: `{"name":"step.claim","rev":5}`, and
+`{"name":"step.log","rev":1791579453,"text":"note for the old step"}`, the revision of the frame
+the field opened on, sent after the host had pushed `null` and a line for step 5 (E9).
 
 ### 3.2 One locked write, with provenance
 
@@ -248,26 +282,39 @@ and the handlers store none. Now:
   `PROOF_NOT_CLAIMABLE` refusals), `applySetBlocker(m, stepId, b)` (`:4291-4323`),
   `applyClearBlocker(m, stepId, reason)` (`:4325-4357`). The handlers call them; so does the rail.
   One mutation path, one set of refusals.
-- **One write.** The rail's executor runs, under the same per-mission lock
-  (`withMissionIdMintLock`), the same steps as `editMission` (`tool-handlers.ts:4051-4084`): load,
-  refuse `MISSION_CLOSED`, refuse a blocked folder with the agent policy (`missionFolderRefusal`,
-  `:3887`, with the live `denyFolders`), apply, stamp `updatedAt`, and write the frontmatter **and**
-  the Log entry in one `atomicWriteFile`, the way `editMission` writes `loaded.log +
-edit.logAppend`. A log press is one append of the same entry.
-- **A header no verb can write.** The entry's header is `### <iso> · rail · stp-3`. `mission_log`
-  builds its own header from `missionLogEntry(before, tag, text)` (`tool-handlers.ts:4362`), whose
-  tag is ` · <stepId>`, and `stepId` must name an existing step (`:4564-4566`); step ids are minted
-  `stp-<n>` by the server. So no verb can produce `· rail ·` in a header; a forged body text sits
-  under a verb's ordinary header. Bodies are fixed templates: "Claimed from the terminal rail
-  (operator, session `1a2b3c4d`).", "Blocker raised from the terminal rail …", "Blocker cleared
-  from the terminal rail …", and for a log press "Operator note: {text}". The session is the first
-  eight characters of the trusted key the step matched.
+- **One write, through `editMission`.** `editMission(args, ctx, fn)` (`tool-handlers.ts:4051-4084`)
+  already does everything a locked write needs: load under `withMissionIdMintLock`, refuse
+  `MISSION_CLOSED`, refuse a blocked folder (`missionFolderRefusal`), stamp `updatedAt`, and write
+  the frontmatter **and** `edit.logAppend` in one `atomicWriteFile`; its `fn` may return
+  `logAppend` (`MissionEdit`, `:4020-4026`). W2 exports a thin `editMissionFor(root, id, ctx, fn)`
+  with that body and the rail calls it with a `fn` that applies the shared mutation and returns
+  `logAppend`: no steps are copied. The ctx carries the agent policy (the live `denyFolders`), as
+  for any agent verb. A log press is a `fn` that only returns `logAppend`.
+- **The Log header is not provenance on its own.** The entry's header is `### <iso> · rail ·
+stp-3`, and no verb builds that tag: `mission_log` builds its header from
+  `missionLogEntry(before, tag, text)` (`tool-handlers.ts:4362`) with tag ` · <stepId>`. But the
+  verb inserts its `note` raw, up to 8000 characters (`TC:1524`), only trimmed
+  (`tool-handlers.ts:4553`): a note holding `\n\n### <iso> · rail · stp-3\n\nClaimed from the
+terminal rail …` produces an identical header. So W2 makes `mission_log` **neutralize Markdown
+  heading markers at the start of any line of a note** (a line matching `^#{1,6}\s` gets a
+  backslash in front), and `readMissionLog` is unchanged. With that, the `· rail ·` header can only
+  come from the rail's executor. Even so, the Log is a record for people; what the code and the
+  popover trust is the `via` mark below, which no verb can set.
+  Bodies are fixed templates: "Claimed from the terminal rail (operator, session `1a2b3c4d`).",
+  "Blocker raised from the terminal rail …", "Blocker cleared from the terminal rail …", and for a
+  log press "Operator note: {text}". The session is the first eight characters of the trusted key
+  the step matched.
 - **A mark on the record.** The rail sets `via: 'rail'` on a blocker it raises
   (`Blocker.via?: 'rail'`) and `claimedVia: 'rail'` on a step it claims. No verb accepts either
   field (`mission_update_step` refuses unknown `set` keys, `BAD_ARGS`; `mission_set_blocker` takes
   `reason`, `unblocks`, `owner` only), and W2 adds both, optional, to the mission file's validator.
   The popover shows "from the terminal rail" beside such a blocker or claim (`mission.viaRail`,
-  both locales).
+  both locales). **The mark must not outlive the act it describes.** `mission_set_blocker` updates a
+  blocker with the same `reason` in place (`tool-handlers.ts:4304-4306`: `unblocks` and `owner`
+  are overwritten), and `mission_update_step` can set `proof: 'claimed'` again on a claimed step
+  (`:4187-4203`). W2 makes both handlers delete `via` and `claimedVia` when they touch the record,
+  so a mark means "this record was last written by a press"; a rail press that updates an existing
+  blocker sets it again.
 
 ### 3.3 Who can press, and what that grants
 

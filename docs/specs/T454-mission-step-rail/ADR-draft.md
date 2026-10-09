@@ -40,12 +40,15 @@ can live, how a press reaches a mission, and what may aim it:
    that T447's D-A verb can later wrap, each keeping its own role order.
 3. **A write is aimed only with ids Harnu observed.** The ids a press may target are those Harnu's
    PTY index holds for the binding's PTY: the spawn key, migrations Harnu correlated itself, and a
-   companion-reported change only once its transcript is corroborated on disk (born after the
-   spawn, held by no other live PTY). Never the binding's `sid`, never a `session.rebound` as such.
-4. **A press is an edge event carrying the action and the revision only.** Harnu main checks it,
-   takes the mission and step from its own snapshot of that revision, and applies the verb's own
-   pure mutation together with a Log entry in one locked write, under a `· rail ·` header no verb
-   can produce and with a `via: 'rail'` mark on the record. It never reaches an operator door
+   companion-reported change only under four conditions: its transcript is corroborated on
+   disk and born after the spawn, no live PTY holds it, Harnu never registered it for another
+   PTY (a ledger kept for the process lifetime), and no mission step links it. Never the binding's `sid`, never a `session.rebound` as such.
+4. **A press is an edge event carrying the action and the revision the person saw.** Harnu main
+   checks it, takes the mission and step from its own record of that revision (which must still be
+   the current target, else `RAIL_STALE`), and applies the verb's own pure mutation together
+   with a Log entry in one locked write, under a `· rail ·` header (`mission_log` neutralises
+   heading lookalikes) and with a `via: 'rail'` mark on the record, which no verb can set and
+   every verb clears. It never reaches an operator door
    (verify, checks, re-scope, end).
 5. **What the person started, the person ends.** An open confirm or text field is never removed by
    a push, an expiry or a width change; its target is checked when the person ends it. An idle
@@ -66,6 +69,9 @@ can live, how a press reaches a mission, and what may aim it:
 - After a `/clear` the rail is display-only until Harnu's watcher corroborates the new transcript.
 - An executor whose band drew keys and whose mission closes shows a Dismiss row until someone
   presses it; the mod cannot tell whether the band had the keyboard.
+- Residual, named: a letter for a key no longer drawn sends the keyboard to the prompt (K-10), and
+  an id Harnu never spawned, linked to a step only after a forged rebound, can still be aimed at
+  (K-9's remainder).
 - The companion gains a `ui.render` hook, so the Mods tab shows its `terminal` chip. The mission
   file gains two optional fields (`Blocker.via`, `MissionStep.claimedVia`).
 - P4W2 is amended in eight named places (spec §4.3), including its "no band inside Harnu" rule for
@@ -87,6 +93,11 @@ can live, how a press reaches a mission, and what may aim it:
   only from renderer IPC by design, and a press arrives over an untrusted channel.
 - **Replace a field with a final row when its target goes.** Rejected after the live run: the
   person's next letters would go to the prompt.
+- **Send the current revision with a press.** Rejected: a note typed for step 3 would be applied
+  to whatever step the host resolves when Enter is pressed. A press names the revision the person
+  saw.
+- **Trust the Log header as provenance.** Rejected: `mission_log` inserts its note raw. `via` and
+  `claimedVia` are the marks; `mission_log` also neutralises heading lookalikes.
 
 ## Kill criteria
 

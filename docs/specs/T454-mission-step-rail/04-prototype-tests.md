@@ -1,4 +1,4 @@
-# T454 — Prototype tests (round 2)
+# T454 — Prototype tests (round 3)
 
 The prototype's kit tests and its type-check config, split out for length. The mod they test is
 in [`03-prototype-source.md`](03-prototype-source.md); their output is in
@@ -429,6 +429,61 @@ test('every state fits at 115, 75 and 40 (printed)', async ($, on) => {
     )
   }
   console.log(out.join('\n'))
+})
+
+test('a press carries the revision the person saw, and the field keeps naming its step', async ($, on) => {
+  const { clock, h } = await start($, on, CHILD)
+  const ui = await $.ui.mount(band(115))
+
+  // The log field opens on step 3 at rev 5. The mission closes, then a new line arrives: rev 9,
+  // "Step 5 of 9". Enter with a note must name rev 5, so the host answers RAIL_STALE.
+  await ui.press({ key: 'rail-log' })
+  h.band = null
+  await clock.advance(2_100)
+  h.band = { ...CHILD, rev: 9, headline: { kind: 'single', n: 5, to: 5, m: 9 } }
+  await clock.advance(2_100)
+  expect((await row(ui)).inputs).toEqual(['rail-log'])
+  const field = await ui.find({ key: 'rail-log' })
+  expect(field?.props.label).toBe('◆ Log on step 3')
+  await ui.input({ key: 'rail-log', text: 'note' })
+  expect(h.sent).toEqual([{ t: 'ui.action', d: { name: 'step.log', rev: 5, text: 'note' } }])
+
+  // The host's answer is a revision with the refusal; the row says so once.
+  h.band = {
+    ...CHILD,
+    rev: 10,
+    headline: { kind: 'single', n: 5, to: 5, m: 9 },
+    result: { action: 'log', ok: false, code: 'RAIL_STALE' }
+  }
+  await clock.advance(2_100)
+  expect((await row(ui)).text).toBe(
+    '◆ Step 5 of 9 · Wire the rail IPC channel · Not saved: the step changed, look again.'
+  )
+
+  // The confirm pins too: opened at rev 10, a newer push does not change what `y` names.
+  await ui.press({ key: 'rail-claim' })
+  h.band = { ...CHILD, rev: 11, headline: { kind: 'single', n: 6, to: 6, m: 9 } }
+  await clock.advance(2_100)
+  expect((await row(ui)).text).toBe('◆ Claim step 5 as done? A verifier still checks it.')
+  await ui.press({ key: 'rail-yes' })
+  expect(h.sent.at(-1)).toEqual({ t: 'ui.action', d: { name: 'step.claim', rev: 10 } })
+})
+
+test('an untouched field or confirm closes after five minutes; typing keeps it', async ($, on) => {
+  const { clock, h } = await start($, on, CHILD)
+  const ui = await $.ui.mount(band(115))
+  await ui.press({ key: 'rail-log' })
+  await clock.advance(200_000)
+  await ui.input({ key: 'rail-log', text: 'half a note', kind: 'change' })
+  await clock.advance(200_000)
+  expect((await row(ui)).inputs).toEqual(['rail-log']) // 200 s since the last keystroke
+  await clock.advance(110_000)
+  expect(await row(ui)).toMatchObject({ inputs: [], buttons: ['c: Claim', 'b: Block', 'l: Log'] })
+
+  await ui.press({ key: 'rail-claim' })
+  await clock.advance(310_000)
+  expect((await row(ui)).buttons).toEqual(['c: Claim', 'b: Block', 'l: Log'])
+  expect(h.sent).toEqual([])
 })
 ```
 

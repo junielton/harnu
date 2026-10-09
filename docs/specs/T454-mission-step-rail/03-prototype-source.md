@@ -1,4 +1,4 @@
-# T454 — Prototype source (round 2)
+# T454 — Prototype source (round 3)
 
 The prototype mod described in [`01-prototype.md`](01-prototype.md): its manifest, contract and
 hooks module, split out for length. Its tests and type-check config are in
@@ -58,13 +58,15 @@ export type RailView = {
 }
 /** Why a final row stands: the rail went away, the step changed, or Harnu stopped answering. */
 export type RailGone = 'gone' | 'changed' | 'unreachable'
+/** What a field or confirm pinned when it opened: the revision and step number the person saw. */
+export type RailPin = { rev: number; n: string; at: number }
 export type RailMode =
   | { kind: 'idle' }
-  | { kind: 'confirm-claim' }
-  | { kind: 'block' }
-  | { kind: 'log' }
+  | ({ kind: 'confirm-claim' } & RailPin)
+  | ({ kind: 'block' } & RailPin)
+  | ({ kind: 'log' } & RailPin)
   | { kind: 'sent'; action: RailAction }
-  | { kind: 'unreachable'; action: RailAction; text?: string }
+  | { kind: 'unreachable'; action: RailAction; text?: string; rev: number; n: string }
   /** `unsaved`: a press the person started was lost; drawn until Dismiss, whatever the focus. */
   | { kind: 'final'; why: RailGone; unsaved: boolean }
 
@@ -401,6 +403,7 @@ import type { KeyId, RailRow } from './rail-core'
 export interface RailHandlers {
   key: (id: KeyId) => void
   submit: (kind: 'block' | 'log', text: string) => void
+  typed: () => void
 }
 
 export function rowTree(els: Elements['terminal'], row: RailRow, on: RailHandlers): JSX.Element {
@@ -441,6 +444,7 @@ export function inputTree(
         label={labels.label}
         {...(labels.placeholder ? { placeholder: labels.placeholder } : {})}
         submitLabel={labels.submitLabel}
+        onInput={() => on.typed()}
         onSubmit={(value) => on.submit(kind, value)}
       />
     </Box>
@@ -482,6 +486,7 @@ const HOST = 'http://localhost:47999/rail'
 const POLL_MS = 2_000
 const TTL_MS = 90_000
 const TEXT_MAX = 200
+const FIELD_IDLE_MS = 300_000
 
 const railRef = atom({ plugin: 'rail-proto', key: 'rail' } as const, null)
 const modeRef = atom({ plugin: 'rail-proto', key: 'mode' } as const, { kind: 'idle' } as RailMode)
@@ -529,10 +534,36 @@ async function tick($: EngineInterface): Promise<void> {
     await update($, railRef, () => null)
     await update($, modeRef, (m) => reconcile(m, null, 'unreachable'))
   }
+  // A field or confirm nobody has touched for FIELD_IDLE_MS closes (a field left with Esc).
+  await update($, modeRef, (m): RailMode =>
+    (m.kind === 'confirm-claim' || m.kind === 'block' || m.kind === 'log') &&
+    now - m.at > FIELD_IDLE_MS
+      ? { kind: 'idle' }
+      : m
+  )
 }
 
+/**
+ * What the person saw when a key was drawn: the revision and the step number of that frame. A
+ * press names this revision, never the current one: the host answers `RAIL_STALE` when the step
+ * that revision showed is no longer the one it resolves (spec §7.3). The label of an open field
+ * keeps naming the step it opened on.
+ */
+interface Seen {
+  rev: number
+  n: string
+}
+
+const stepNOf = (rail: RailView | null): string =>
+  rail?.headline.kind === 'single' ? String(rail.headline.n) : 'this'
+
 /** A press carries the action and the revision the person saw. Never a step id (spec §7.3). */
-async function send($: EngineInterface, action: RailAction, text?: string): Promise<void> {
+async function send(
+  $: EngineInterface,
+  action: RailAction,
+  seen: Seen,
+  text?: string
+): Promise<void> {
   const rail = await read($, railRef)
   const gone = checkTarget(rail, action, goneWhy)
   if (gone) {
@@ -542,7 +573,7 @@ async function send($: EngineInterface, action: RailAction, text?: string): Prom
   await update($, modeRef, (): RailMode => ({ kind: 'sent', action }))
   const d = {
     name: `step.${action}` as const,
-    rev: rail?.rev ?? 0,
+    rev: seen.rev,
     ...(text !== undefined ? { text } : {})
   }
   const ok = await sync($, [{ t: 'ui.action', d }])
@@ -551,50 +582,61 @@ async function send($: EngineInterface, action: RailAction, text?: string): Prom
       ? m.kind === 'sent'
         ? { kind: 'idle' }
         : m
-      : { kind: 'unreachable', action, ...(text ? { text } : {}) }
+      : { kind: 'unreachable', action, rev: seen.rev, n: seen.n, ...(text ? { text } : {}) }
   )
 }
 
-async function onKey($: EngineInterface, id: KeyId, requestId: string): Promise<void> {
+async function onKey($: EngineInterface, id: KeyId, requestId: string, seen: Seen): Promise<void> {
   const mode = await read($, modeRef)
+  const idle = (): RailMode => ({ kind: 'idle' })
   if (id === 'dismiss') {
     // The one press that may leave the band with nothing focusable: the person asked for it.
     lastFocusable.set(requestId, false)
-    await update($, modeRef, (): RailMode => ({ kind: 'idle' }))
+    await update($, modeRef, idle)
     return
   }
-  if (id === 'retry' && mode.kind === 'unreachable') return send($, mode.action, mode.text)
-  if (id === 'yes' && mode.kind === 'confirm-claim') return send($, 'claim')
+  if (id === 'retry' && mode.kind === 'unreachable') {
+    return send($, mode.action, { rev: mode.rev, n: mode.n }, mode.text)
+  }
+  if (id === 'yes' && mode.kind === 'confirm-claim') {
+    return send($, 'claim', { rev: mode.rev, n: mode.n })
+  }
   if (id === 'no') {
-    await update($, modeRef, (): RailMode => ({ kind: 'idle' }))
+    await update($, modeRef, idle)
     return
   }
   if (mode.kind !== 'idle') return // a press while saving does nothing
-  if (id === 'claim') await update($, modeRef, (): RailMode => ({ kind: 'confirm-claim' }))
-  else if (id === 'block' || id === 'log') await update($, modeRef, (): RailMode => ({ kind: id }))
-  else if (id === 'unblock') await send($, 'unblock')
+  const at = await $.clock.now()
+  if (id === 'claim') {
+    await update($, modeRef, (): RailMode => ({ kind: 'confirm-claim', ...seen, at }))
+  } else if (id === 'block' || id === 'log') {
+    await update($, modeRef, (): RailMode => ({ kind: id, ...seen, at }))
+  } else if (id === 'unblock') await send($, 'unblock', seen)
 }
 
-function handlers($: EngineInterface, requestId: string): RailHandlers {
+function handlers($: EngineInterface, requestId: string, seen: Seen): RailHandlers {
   return {
     key: (id) => {
-      void onKey($, id, requestId).catch(() => undefined)
+      void onKey($, id, requestId, seen).catch(() => undefined)
     },
     submit: (kind, value) => {
-      const text = value.trim().slice(0, TEXT_MAX)
-      if (text === '')
-        void update($, modeRef, (): RailMode => ({ kind: 'idle' })).catch(() => undefined)
-      else void send($, kind, text).catch(() => undefined)
+      void (async () => {
+        const mode = await read($, modeRef)
+        const text = value.trim().slice(0, TEXT_MAX)
+        if (text === '' || (mode.kind !== 'block' && mode.kind !== 'log')) {
+          await update($, modeRef, (): RailMode => ({ kind: 'idle' }))
+        } else await send($, kind, { rev: mode.rev, n: mode.n }, text)
+      })().catch(() => undefined)
+    },
+    typed: () => {
+      void (async () => {
+        const at = await $.clock.now()
+        await update($, modeRef, (m): RailMode =>
+          m.kind === 'block' || m.kind === 'log' ? { ...m, at } : m
+        )
+      })().catch(() => undefined)
     }
   }
-}
-
-/** The step number last drawn: an open field keeps naming it after its line went away. */
-let lastStepN = 'this'
-
-function stepN(rail: RailView | null): string {
-  if (rail?.headline.kind === 'single') lastStepN = String(rail.headline.n)
-  return lastStepN
 }
 
 export const register: Register = (on) => {
@@ -615,19 +657,21 @@ export const register: Register = (on) => {
       const cols = e.props.bodyColumns
       const held = lastFocusable.get(e.requestId) ?? false
       const els = $.ui.resolve(e)
-      const act = handlers($, e.requestId)
-      // An open Input or confirm stays drawn whatever the push, the TTL or the width (spec §7.5).
+      const seen: Seen = { rev: rail?.rev ?? 0, n: stepNOf(rail) }
+      const act = handlers($, e.requestId, seen)
+      // An open Input or confirm stays drawn whatever the push, the TTL or the width (spec §7.5),
+      // and keeps naming the step it opened on.
       if (mode.kind === 'block' || mode.kind === 'log') {
         lastFocusable.set(e.requestId, true)
         return stack(
           els,
-          inputTree(els, mode.kind, inputLabels(mode.kind, stepN(rail), cols), act),
+          inputTree(els, mode.kind, inputLabels(mode.kind, mode.n, cols), act),
           below
         )
       }
       const row =
         mode.kind === 'confirm-claim'
-          ? confirmRow(stepN(rail), rail?.step?.level ?? 'verifier', cols)
+          ? confirmRow(mode.n, rail?.step?.level ?? 'verifier', cols)
           : railRow(rail, mode, cols, held)
       lastFocusable.set(e.requestId, (row?.keys.length ?? 0) > 0)
       return row === null ? below : stack(els, rowTree(els, row, act), below)
