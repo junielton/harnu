@@ -11,7 +11,7 @@ path, project name or file content leaves it.
 | Source                               | `~/.claude/projects/*/*.jsonl` (main loops) and `*/*/subagents/*.jsonl` (subagents)        |
 | Transcript files                     | 12,066 (10,803 main loops, 1,263 subagent loops)                                           |
 | Size                                 | 3.98 GB                                                                                    |
-| Time span                            | 2026-07-15 → 2026-10-09 (55 distinct days with rows)                                       |
+| Time span                            | 2026-07-15 → 2026-10-09: an 86-day span, with rows on 55 of those days                     |
 | Claude Code versions in rows         | 2.1.210 → 2.1.295                                                                          |
 | Loops that called Read at least once | 837 main, 680 subagent                                                                     |
 | Read calls                           | 6,954 main + 3,255 subagent = 10,209                                                       |
@@ -19,34 +19,35 @@ path, project name or file content leaves it.
 | Compaction boundaries                | 41                                                                                         |
 | Bash calls                           | 53,504 main + 16,803 subagent                                                              |
 
-The scan ran before any of the prototype's live runs (`02-prototype.md` §3), so none of their
-transcripts are in it.
+This first scan (round 0) ran before any of the prototype's live runs (`02-prototype.md` §3), so
+none of their transcripts are in it. Every later scan of this machine does include them, under the
+project folder of the scratchpad's `live` directory: §3.1 says how much they move the numbers and
+how the scanner leaves them out.
 
 ## 2. Method
 
 1. **One loop at a time.** Each transcript file is one conversation: a main loop or one subagent's.
    A main loop's file and its subagents' files are scanned separately, because a subagent has its
    own history.
-2. **Context windows.** A window ends at a `system` row with `subtype: compact_boundary`. A
-   `/clear` starts a new file, so it is a boundary by construction. A resume is not split; see
-   threats below.
+2. **Context windows.** A window ends at a `system` row with `subtype: compact_boundary`. A `/clear`
+   starts a new file, so it is a boundary by construction. A resume is not split; see threats below.
 3. **Key.** A Read is keyed by `(file_path, offset, limit, pages)` as the model wrote them.
-4. **Repeat.** A Read whose key was already read earlier in the same window, where that earlier
-   Read was not cut to its token cap (`truncatedByTokenCap`).
-5. **Unchanged repeat.** The model-visible tool_result text of the repeat is byte-identical
-   (sha256) to the earlier one; for an image, the image bytes are hashed. Anything else is a
-   **changed repeat**. A cross-check compared the numbered lines (`N<tab>text`) instead of the whole
-   text, to catch a repeat hidden by a varying reminder: it found **0** extra repeats.
+4. **Repeat.** A Read whose key was already read earlier in the same window, where that earlier Read
+   was not cut to its token cap (`truncatedByTokenCap`).
+5. **Unchanged repeat.** The model-visible tool_result text of the repeat is byte-identical (sha256)
+   to the earlier one; for an image, the image bytes are hashed. Anything else is a **changed
+   repeat**. A cross-check compared the numbered lines (`N<tab>text`) instead of the whole text, to
+   catch a repeat hidden by a varying reminder: it found **0** extra repeats.
 6. **Covered Read.** A ranged Read (`offset` or `limit` set) whose every line is present, with the
    same text, in the latest whole-file Read of that path in the window. The cache of the spec does
    not answer these (different key); they are counted to size the variant that would (§5.2 of the
    spec).
 7. **Gap.** Minutes between the earlier result's row and the repeat's call. Claude Code's
-   keep-recent micro-compaction clears old tool results only after a long idle (§5.4 and A-1 of the spec),
-   so repeats within 60 minutes are the conservative subset.
-8. **Tokens.** Characters of the tool_result text divided by a characters-per-token ratio
-   measured on the same corpus: for every Read result over 20,000 characters that was the only row
-   between two assistant responses, the growth of the request's input
+   keep-recent micro-compaction clears old tool results only after a long idle (§5.4 and A-1 of the
+   spec), so repeats within 60 minutes are the conservative subset.
+8. **Tokens.** Characters of the tool_result text divided by a characters-per-token ratio measured
+   on the same corpus: for every Read result over 20,000 characters that was the only row between
+   two assistant responses, the growth of the request's input
    (`input_tokens + cache_creation_input_tokens + cache_read_input_tokens`) minus the previous
    response's `output_tokens` is taken as that result's tokens. 887 samples; median **2.245**
    characters per token (quartiles 1.726 and 2.461). The growth also holds the reminders the engine
@@ -80,30 +81,54 @@ transcripts are in it.
 The sizes of the nine unchanged text repeats, in characters: 87, 87, 509, 1,577, 2,387, 3,304,
 6,803, 7,579, 9,708 (32,041 together).
 
-**Reading it.** Over 55 days and 10,209 Reads, the cache would have answered nine, and saved about
-14 thousand tokens: **0.08 %** of the tokens Read results put into main-loop context (0.04 % of all
-Read tokens). The large pile of re-reads is a different behaviour: re-reading a file after editing
-it (88 repeats, ~304 k tokens, twenty times more), where the content did change and nothing can be
-deduplicated.
+**Reading it.** Over 55 active days (an 86-day span) and 10,209 Reads, the cache would have answered
+nine, and saved about 14 thousand tokens: **0.08 %** of the tokens Read results put into main-loop
+context (0.04 % of all Read tokens). The large pile of re-reads is a different behaviour: re-reading
+a file after editing it (88 repeats, ~304 k tokens, twenty times more), where the content did change
+and nothing can be deduplicated.
 
 **Threats to validity.** (a) Resumed sessions that kept their file are one window across the resume;
 that can only overcount (the mod starts empty after a resume, §5.4 of the spec). (b) Keep-recent
 micro-compaction and budget cuts are not in the transcript (reference.md:141), so a repeat counted
 here may have followed a cleared result; the 60-minute subset bounds that. (c) The corpus is one
-operator's 55 days, dominated by Harnu orchestration sessions and short scheduler ticks; a
-different workload (long single-agent refactors) may re-read more. The scanner below is the way to
-re-measure on any machine.
+operator's 55 active days (an 86-day span), dominated by Harnu orchestration sessions and short
+scheduler ticks; a different workload (long single-agent refactors) may re-read more. The scanner
+below is the way to re-measure on any machine. (d) The prototype's own live runs (§3.1) re-read one
+small file on purpose; a scan that does not exclude them counts their repeats.
+
+### 3.1 Re-scan for round 1 (2026-10-09, 17:21)
+
+Run twice with the round 1 scanner (§4): as is, and with `--exclude scratchpad-live`, which leaves
+out the 41 transcript files of the prototype's live runs. Other sessions kept writing in between, so
+the corpus grew slightly.
+
+| Measure                                                                                                                      | With the live runs       | Without them (`--exclude`)                    |
+| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------ | --------------------------------------------- |
+| Transcript files                                                                                                             | 12,174                   | 12,133 (10,840 main, 1,293 subagent), 4.05 GB |
+| Read calls                                                                                                                   | 10,326                   | 10,290 (7,019 main, 3,271 subagent)           |
+| Unchanged text repeats, main loops                                                                                           | 13                       | **9** (32,041 characters, as in §3)           |
+| — **quiet**: no gap over 60 minutes between two rows of the loop since the window began (the spec's idle rule, §5.1 check 6) | 10                       | **6** (29,058 characters, **~12.9 k tokens**) |
+| Characters per token (median, quartiles, samples)                                                                            | 2.251 (1.742–2.493, 909) | same                                          |
+
+The four extra repeats with the live runs are the prototype's own. Without them nothing changed but
+the corpus size: the nine repeats are the same, and the idle rule keeps six of them, about 12.9 k of
+the ~14.3 k tokens (the three it drops are the small ones). The auto-compaction margin of §5.1 check
+7 cannot be measured here: the transcript does not record the auto-compaction threshold that was in
+force.
 
 ## 4. The scanner
 
-Run as `python3 -I scan.py [root]` (default `~/.claude/projects`); it prints one JSON object. It ran
-in about 12 seconds over the corpus above.
+Run as `python3 -I scan.py [root] [--exclude SUBSTRING …]` (default `~/.claude/projects`); it prints
+one JSON object. It runs in about 12 seconds over the corpus above. This is the round 1 version: it
+adds the `quiet` cut and `--exclude` to the round 0 scanner and changes none of the lines that
+compute the round 0 counters (`diff` of the two scripts: every other line is added; the only two
+removed are the usage line and the line that picks the root folder).
 
 ```python
 #!/usr/bin/env python3
 """T449 corpus scan: repeat Reads of an unchanged file within one context window.
 
-Usage: python3 -I scan.py [root]   (default ~/.claude/projects)
+Usage: python3 -I scan.py [root] [--exclude SUBSTRING ...]   (default ~/.claude/projects)
 Prints aggregate numbers only (no paths), as JSON.
 
 Definitions
@@ -121,14 +146,23 @@ Definitions
 - gap: wall-clock minutes between R1's result and R2's call (keep-recent microcompact
   clears old tool results only after ~65 min idle, so gap <= 60 is the safe subset).
 - Bash repeat: identical command string, identical tool_result text, same window.
+- quiet: an unchanged repeat with no gap of more than 60 minutes between two consecutive rows
+  of its loop, from the window's start to the repeat (the spec's idle rule, check 6).
+- --exclude: skip transcript files whose path contains the substring (for example the live
+  runs of the prototype).
 - tokens: tool_result chars / CPT, CPT calibrated from usage deltas (see calib).
 """
 import glob, hashlib, json, os, re, statistics, sys
 from collections import Counter, defaultdict
 from datetime import datetime
 
-root = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser('~/.claude/projects')
+args = sys.argv[1:]
+excludes = [args[i + 1] for i, a in enumerate(args) if a == '--exclude' and i + 1 < len(args)]
+positional = [a for i, a in enumerate(args) if a != '--exclude' and (i == 0 or args[i - 1] != '--exclude')]
+root = positional[0] if positional else os.path.expanduser('~/.claude/projects')
 files = glob.glob(os.path.join(root, '*', '*.jsonl')) + glob.glob(os.path.join(root, '*', '*', 'subagents', '*.jsonl'))
+excluded = [f for f in files if any(x in f for x in excludes)]
+files = [f for f in files if f not in set(excluded)]
 
 def h(s):
     return hashlib.sha256(s.encode('utf-8', 'replace')).hexdigest()
@@ -192,6 +226,8 @@ for f in files:
         continue
     S['loops_' + kind] += 1
     window = 0
+    last_row_t = None
+    noisy = False        # a gap of more than 60 minutes between two rows in this window
     uses = {}            # tool_use_id -> (name, input, window, t)
     seen = {}            # key -> (texthash, chars, window, t_result)
     full = {}            # path -> (window, numbered dict)
@@ -212,8 +248,14 @@ for f in files:
             versions[d['version']] += 0  # presence only
         if d.get('timestamp'):
             days.add(d['timestamp'][:10])
+        rt = ts(d) if t in ('user', 'assistant') else None
+        if rt is not None:
+            if last_row_t is not None and rt - last_row_t > 3600:
+                noisy = True
+            last_row_t = rt
         if t == 'system' and d.get('subtype') == 'compact_boundary':
             window += 1
+            noisy = False
             S['compact_boundaries'] += 1
             continue
         m = d.get('message') or {}
@@ -280,6 +322,9 @@ for f in files:
                                 S['unchanged_text_le60_' + kind] += 1
                                 S['unchanged_text_le60_chars_' + kind] += len(text)
                             textsizes.append(len(text))
+                            if not noisy:
+                                S['unchanged_text_quiet_' + kind] += 1
+                                S['unchanged_text_quiet_chars_' + kind] += len(text)
                         if gap is not None:
                             gaps.append(gap)
                             if gap <= 60:
@@ -347,6 +392,7 @@ cpt = statistics.median(calib) if calib else 4.0
 q = statistics.quantiles(calib, n=4) if len(calib) > 4 else [cpt, cpt, cpt]
 out = {
     'files': len(files),
+    'excluded_files': len(excluded),
     'bytes': total_bytes,
     'counts': dict(S),
     'read_result_types': dict(read_types),
@@ -370,6 +416,7 @@ for kind in ('main', 'sub'):
     out['est_tokens_unchanged_text_' + kind] = round(S['unchanged_text_chars_' + kind] / cpt)
     out['est_tokens_unchanged_text_le60_' + kind] = round(S['unchanged_text_le60_chars_' + kind] / cpt)
 out['unchanged_text_sizes'] = sorted(textsizes)
+out['est_tokens_unchanged_text_quiet_main'] = round(S['unchanged_text_quiet_chars_main'] / cpt)
 out['days'] = [min(days), max(days), len(days)] if days else None
 out['est_tokens_bash_unchanged'] = round((S['bash_unchanged_chars_main'] + S['bash_unchanged_chars_sub']) / cpt)
 out['est_tokens_bash_filedump_unchanged'] = round(S['bash_unchanged_filedump_chars'] / cpt)

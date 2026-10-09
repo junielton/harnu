@@ -75,17 +75,23 @@ export type ReadDedupeEntry = {
   mtimeMs: number
   turn: number
   tokens: number
+  /** `$.session.turns()` when this mod last answered the key; the compaction repair reads it. */
+  answeredTurn?: number
   /** True right after this mod answered the key: the next identical Read runs. */
   answered: boolean
 }
 
 export type ReadDedupeSaved = { tokens: number; reads: number }
 
+/** Per loop: when its conversation last gained a row, and whether a long gap ever came between two. */
+export type ReadDedupeRow = { at: number; idle: boolean }
+
 declare module 'claude-code' {
   interface PluginState {
     'read-dedupe': {
       entries: Record<string, ReadDedupeEntry>
       saved: ReadDedupeSaved
+      rows: Record<string, ReadDedupeRow>
     }
   }
 }
@@ -98,6 +104,16 @@ declare module 'claude-code' {
 
 /** Median characters per token of a Read result, measured on this machine's transcripts. */
 export const CHARS_PER_TOKEN = 2.245
+
+/**
+ * A gap between two rows of a loop's conversation past which this mod stops answering in that
+ * loop until its next compaction: under the 3,900 s idle that the engine's tool-result clearing
+ * (`clear_tool_uses_20250919`) and its own Read dedupe key on, with margin.
+ */
+export const IDLE_GUARD_MS = 60 * 60 * 1000
+
+/** Answer only below this share of the auto-compaction threshold (the race with a compaction). */
+export const COMPACT_MARGIN = 0.8
 
 /** The model's own wording when a re-Read is still needed: the escape it is told about. */
 export const ESCAPE = 'If you need the text re-sent, call Read again with the same arguments.'
@@ -148,6 +164,11 @@ export function toolResultText(
   return undefined
 }
 
+/** The note appended when a compaction stood right after this mod answered in the same turn. */
+export const repairNote = (paths: readonly string[]): string =>
+  `read-dedupe: a compaction ran after this session answered a Read of ${paths.join(', ')} as ` +
+  `unchanged; that file's earlier content may no longer be in context. Read it again if you need it.`
+
 export const formatTokens = (n: number): string =>
   n < 1000 ? `${Math.round(n)}` : `${(n / 1000).toFixed(1)}k`
 
@@ -161,11 +182,14 @@ export const statusLine = (tokens: number, reads: number): string =>
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import type { ReadDedupeEntry, ReadDedupeSaved } from '../types'
+import type { ReadDedupeEntry, ReadDedupeRow, ReadDedupeSaved } from '../types'
 import {
   CHARS_PER_TOKEN,
+  COMPACT_MARGIN,
   ESCAPE,
+  IDLE_GUARD_MS,
   keyOf,
+  repairNote,
   sha256,
   sliceLines,
   statusLine,
@@ -181,10 +205,18 @@ const saved = atom(
   { tokens: 0, reads: 0 } as ReadDedupeSaved
 )
 
+const rows = atom(
+  { plugin: 'read-dedupe', key: 'rows' } as const,
+  {} as Record<string, ReadDedupeRow>
+)
+
 const drop = (
   all: Record<string, ReadDedupeEntry>,
   keep: (one: ReadDedupeEntry, key: string) => boolean
 ) => Object.fromEntries(Object.entries(all).filter(([key, one]) => keep(one, key)))
+
+const drop2 = <T>(all: Record<string, T>, key: string): Record<string, T> =>
+  Object.fromEntries(Object.entries(all).filter(([k]) => k !== key))
 
 export const register: Register = (on, options) => {
   if (options['enabled'] === false) return
@@ -196,7 +228,10 @@ export const register: Register = (on, options) => {
     const key = keyOf(sid, loop, e.file_path, e.offset, e.limit)
     const prior = (await read($, entries))[key]
 
-    if (prior !== undefined && !prior.answered) {
+    // v1 answers in the main loop only: the auto-compaction reading below is the main window's.
+    const row = (await read($, rows))[loop]
+    const isQuiet = e.agentId === undefined && row !== undefined && !row.idle
+    if (prior !== undefined && !prior.answered && isQuiet) {
       const stat = await $.fs.stat(e.file_path).catch(() => undefined)
       const disk =
         stat?.size === prior.size && stat.mtimeMs === prior.mtimeMs
@@ -205,13 +240,27 @@ export const register: Register = (on, options) => {
       const isSame =
         disk !== undefined &&
         (await sha256(sliceLines(disk, prior.startLine, prior.numLines))) === prior.contentHash
-      const shown = isSame ? await $.session.messages({ as: 'api', agentId: e.agentId }) : []
+      const fill = isSame
+        ? (await $.session.usage({ breakdown: 'summary' })).context.breakdown
+        : undefined
+      const isFarFromCompaction =
+        fill !== undefined &&
+        (!fill.isAutoCompactEnabled ||
+          (fill.autoCompactThreshold !== undefined &&
+            fill.totalTokens < COMPACT_MARGIN * fill.autoCompactThreshold))
+      const shown = isFarFromCompaction
+        ? await $.session.messages({ as: 'api', agentId: e.agentId })
+        : []
       const seen = Array.isArray(shown) ? toolResultText(shown, prior.toolUseId) : undefined
       if (
         seen !== undefined &&
         (await sha256(seen.slice(0, prior.textLength))) === prior.textHash
       ) {
-        await update($, entries, (all) => ({ ...all, [key]: { ...prior, answered: true } }))
+        const answeredTurn = await $.session.turns()
+        await update($, entries, (all) => ({
+          ...all,
+          [key]: { ...prior, answered: true, answeredTurn }
+        }))
         const total = await update($, saved, (s) => ({
           tokens: s.tokens + prior.tokens,
           reads: s.reads + 1
@@ -275,13 +324,40 @@ export const register: Register = (on, options) => {
     const done = await next(e)
     if (done.skip === undefined && e.trigger !== 'precompute') {
       const loop = e.agentId ?? 'main'
+      const turn = await $.session.turns()
+      const owed = Object.values(await read($, entries)).filter(
+        (one) => one.loop === loop && one.answeredTurn === turn
+      )
       await update($, entries, (all) => drop(all, (one) => one.loop !== loop))
+      await update($, rows, (all) => drop2(all, loop))
+      // The race: an answer of this turn may not have reached a model request before the compaction.
+      if (owed.length > 0)
+        await $.session.append({
+          message: {
+            type: 'user',
+            content: [{ type: 'text', text: repairNote([...new Set(owed.map((one) => one.path))]) }]
+          },
+          agentId: e.agentId
+        })
     }
     return done
   }).catch(($, e, next) => next(e))
 
+  // Every row a loop keeps: the time between two rows is the idle the engine's clearing keys on.
+  on('session.append', async ($, e, next) => {
+    const now = await $.clock.now()
+    const loop = e.agentId ?? 'main'
+    await update($, rows, (all) => {
+      const was = all[loop]
+      const idle = (was?.idle ?? false) || (was !== undefined && now - was.at > IDLE_GUARD_MS)
+      return { ...all, [loop]: { at: now, idle } }
+    })
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
   on('session.end', async ($, e, next) => {
     await update($, entries, (all) => drop(all, (one) => one.sid !== e.sessionId))
+    await update($, rows, () => ({}))
     return next(e)
   }).catch(($, e, next) => next(e))
 }
@@ -291,6 +367,7 @@ export const register: Register = (on, options) => {
 
 ```ts
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 const PATH = '/repo/src/a.ts'
@@ -300,7 +377,10 @@ type Disk = { text: string; size: number; mtimeMs: number }
 
 /** The engine beneath the plugin: a file, the Read tool, and the messages the next request holds. */
 function world(on: On) {
-  mock.clock(on, { now: 1_000 })
+  const clock = mock.clock(on, { now: 1_000 })
+  const session = mock.session(on)
+  // The main window, as `$.session.usage({ breakdown: 'summary' })` reads it.
+  const fill = { isAutoCompactEnabled: true, autoCompactThreshold: 160_000, totalTokens: 20_000 }
   const disk: Disk = { text: TEXT, size: TEXT.length, mtimeMs: 500 }
   const shown = new Map<string, string>() // tool_use_id -> tool_result text in context
   const runs: string[] = []
@@ -319,6 +399,9 @@ function world(on: On) {
       role: 'user' as const,
       content: [{ type: 'tool_result', tool_use_id: id, content: text }]
     }))
+  }))
+  on('session.usage', async () => ({
+    value: { startedAt: 0, context: { window: 200_000, breakdown: fill as never }, rateLimits: [] }
   }))
   on('session.compact', async () => ({
     messages: [{ role: 'user' as const, text: 'summary', toolUses: [] }]
@@ -345,11 +428,22 @@ function world(on: On) {
     }
   })
   on('tool.call', { tool: 'Edit' }, async () => ({ result: { filePath: PATH } as never }))
-  return { disk, shown, runs, status, truncate }
+  return { disk, shown, runs, status, truncate, clock, session, fill }
 }
+
+/** A prompt row of the main conversation, raised as a session raises one. */
+let rowCount = 0
+const row = ($: Engine) =>
+  $.session.append({
+    message: { type: 'user', role: 'user', content: [{ type: 'text', text: 'go' }] },
+    door: 'prompt',
+    origin: { kind: 'composer' },
+    uuid: `row-uuid-${++rowCount}`
+  })
 
 test('an unchanged re-Read still in context is answered without running Read', async ($, on) => {
   const w = world(on)
+  await row($)
   await $.tool.call({ tool: 'Read', file_path: PATH })
   const again = await $.tool.call({ tool: 'Read', file_path: PATH })
 
@@ -361,6 +455,7 @@ test('an unchanged re-Read still in context is answered without running Read', a
 
 test('a changed file runs Read again', async ($, on) => {
   const w = world(on)
+  await row($)
   await $.tool.call({ tool: 'Read', file_path: PATH })
   w.disk.text = 'export const a = 9\nexport const b = 2\n'
   w.disk.mtimeMs = 900
@@ -371,6 +466,7 @@ test('a changed file runs Read again', async ($, on) => {
 
 test('a same-size, same-mtime rewrite is caught by the content hash', async ($, on) => {
   const w = world(on)
+  await row($)
   await $.tool.call({ tool: 'Read', file_path: PATH })
   w.disk.text = 'export const a = 7\nexport const b = 2\n'
   await $.tool.call({ tool: 'Read', file_path: PATH })
@@ -380,6 +476,7 @@ test('a same-size, same-mtime rewrite is caught by the content hash', async ($, 
 
 test('an earlier result no longer in context is never short-circuited', async ($, on) => {
   const w = world(on)
+  await row($)
   await $.tool.call({ tool: 'Read', file_path: PATH })
   w.shown.clear() // compaction, /clear or a cleared tool result: the request no longer holds it
   await $.tool.call({ tool: 'Read', file_path: PATH })
@@ -389,6 +486,7 @@ test('an earlier result no longer in context is never short-circuited', async ($
 
 test('an earlier result whose text the engine cut is never short-circuited', async ($, on) => {
   const w = world(on)
+  await row($)
   await $.tool.call({ tool: 'Read', file_path: PATH })
   const [id] = [...w.shown.keys()]
   w.shown.set(id!, '[Old tool result content cleared]')
@@ -399,6 +497,7 @@ test('an earlier result whose text the engine cut is never short-circuited', asy
 
 test('a Read cut to its token cap is not recorded', async ($, on) => {
   const w = world(on)
+  await row($)
   w.truncate.value = true
   await $.tool.call({ tool: 'Read', file_path: PATH })
   await $.tool.call({ tool: 'Read', file_path: PATH })
@@ -406,8 +505,9 @@ test('a Read cut to its token cap is not recorded', async ($, on) => {
   expect(w.runs.length).toBe(2)
 })
 
-test('asking again right after an answer runs Read (the escape)', async ($, on) => {
+test('the next identical Read after an answer runs (the escape)', async ($, on) => {
   const w = world(on)
+  await row($)
   await $.tool.call({ tool: 'Read', file_path: PATH })
   await $.tool.call({ tool: 'Read', file_path: PATH })
   await $.tool.call({ tool: 'Read', file_path: PATH })
@@ -417,6 +517,7 @@ test('asking again right after an answer runs Read (the escape)', async ($, on) 
 
 test('a different range is a different key', async ($, on) => {
   const w = world(on)
+  await row($)
   await $.tool.call({ tool: 'Read', file_path: PATH })
   await $.tool.call({ tool: 'Read', file_path: PATH, offset: 1, limit: 2 })
 
@@ -425,6 +526,7 @@ test('a different range is a different key', async ($, on) => {
 
 test('an Edit of the file evicts it', async ($, on) => {
   const w = world(on)
+  await row($)
   await $.tool.call({ tool: 'Read', file_path: PATH })
   await $.tool.call({ tool: 'Edit', file_path: PATH, old_string: 'a', new_string: 'a' })
   await $.tool.call({ tool: 'Read', file_path: PATH })
@@ -434,6 +536,7 @@ test('an Edit of the file evicts it', async ($, on) => {
 
 test('a compaction of the main loop evicts its entries', async ($, on) => {
   const w = world(on)
+  await row($)
   await $.tool.call({ tool: 'Read', file_path: PATH })
   await $.session.compact({
     trigger: 'manual',
@@ -446,10 +549,52 @@ test('a compaction of the main loop evicts its entries', async ($, on) => {
 
 test('turned off, every Read runs', { options: { enabled: false } }, async ($, on) => {
   const w = world(on)
+  await row($)
   await $.tool.call({ tool: 'Read', file_path: PATH })
   await $.tool.call({ tool: 'Read', file_path: PATH })
 
   expect(w.runs.length).toBe(2)
+})
+
+test('near the auto-compaction threshold the Read runs (the race with a compaction)', async ($, on) => {
+  const w = world(on)
+  await row($)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  w.fill.totalTokens = 150_000 // over 80 % of 160,000
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+
+  expect(w.runs.length).toBe(2)
+})
+
+test('a gap of more than an hour between two rows stops answers until a compaction', async ($, on) => {
+  const w = world(on)
+  await row($)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  await w.clock.advance(61 * 60 * 1000)
+  await row($)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+
+  expect(w.runs.length).toBe(3)
+})
+
+test('a compaction in the turn of an answer appends a note naming the file', async ($, on) => {
+  const w = world(on)
+  await row($)
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  await $.tool.call({ tool: 'Read', file_path: PATH })
+  await $.session.compact({
+    trigger: 'auto',
+    messages: [{ role: 'user', text: 'read a.ts', toolUses: [] }]
+  })
+  const notes = w.session
+    .appended()
+    .filter((one) => one.door === 'note')
+    .map((one) => one.message.content.map((b) => b['text']).join(''))
+
+  expect(w.runs.length).toBe(1)
+  expect(notes.length).toBe(1)
+  expect(notes[0]).toContain(`answered a Read of ${PATH} as unchanged`)
 })
 ```
 
@@ -463,17 +608,18 @@ test('turned off, every Read runs', { options: { enabled: false } }, async ($, o
 Validating plugin manifest: <scratchpad>/read-dedupe/.claude-plugin/plugin.json
 
   ❯ types ./types/index.d.ts declares on $: nothing (no EngineInterface member)
-  ❯ types ./types/index.d.ts declares state: read-dedupe.entries, read-dedupe.saved
+  ❯ types ./types/index.d.ts declares state: read-dedupe.entries, read-dedupe.saved, read-dedupe.rows
 
 Validating hooks: <scratchpad>/read-dedupe/hooks/hooks.json
 
-  ❯ ./register.ts hooks: tool.call{tool=Read}, tool.call{tool=/"^(Edit|Write|NotebookEdit)$"/}, session.compact, session.end
+  ❯ ./register.ts hooks: tool.call{tool=Read}, tool.call{tool=/"^(Edit|Write|NotebookEdit)$"/}, session.compact, session.append, session.end
   ❯ ./register.ts gating hook with .catch: tool.call{tool=Read}
   ❯ ./register.ts gating hook with .catch: tool.call{tool=/"^(Edit|Write|NotebookEdit)$"/}
   ❯ ./register.ts gating hook with .catch: session.compact
-  ❯ ./register.ts calls: $.fs.read, $.fs.stat, $.session.id, $.session.messages, $.session.turns, $.state.get, $.state.set, $.ui.status
-  ❯ ./register.ts state writes: read-dedupe.entries, read-dedupe.saved
-  ❯ ./register.ts state reads: read-dedupe.entries, read-dedupe.saved
+  ❯ ./register.ts gating hook with .catch: session.append
+  ❯ ./register.ts calls: $.clock.now, $.fs.read, $.fs.stat, $.session.append, $.session.id, $.session.messages, $.session.turns, $.session.usage, $.state.get, $.state.set, $.ui.status
+  ❯ ./register.ts state writes: read-dedupe.entries, read-dedupe.rows, read-dedupe.saved
+  ❯ ./register.ts state reads: read-dedupe.entries, read-dedupe.rows, read-dedupe.saved
 
 ✔ Validation passed
 ```
@@ -485,21 +631,24 @@ Validating hooks: <scratchpad>/read-dedupe/hooks/hooks.json
 ```text
 
 tests/read-dedupe.test.ts:
-(pass) an unchanged re-Read still in context is answered without running Read [32.64ms]
-(pass) a changed file runs Read again [16.02ms]
-(pass) a same-size, same-mtime rewrite is caught by the content hash [16.46ms]
-(pass) an earlier result no longer in context is never short-circuited [16.21ms]
-(pass) an earlier result whose text the engine cut is never short-circuited [16.64ms]
-(pass) a Read cut to its token cap is not recorded [13.02ms]
-(pass) asking again right after an answer runs Read (the escape) [16.06ms]
-(pass) a different range is a different key [12.90ms]
-(pass) an Edit of the file evicts it [14.61ms]
-(pass) a compaction of the main loop evicts its entries [13.72ms]
-(pass) turned off, every Read runs [10.53ms]
+(pass) an unchanged re-Read still in context is answered without running Read [35.27ms]
+(pass) a changed file runs Read again [16.13ms]
+(pass) a same-size, same-mtime rewrite is caught by the content hash [15.57ms]
+(pass) an earlier result no longer in context is never short-circuited [15.88ms]
+(pass) an earlier result whose text the engine cut is never short-circuited [21.87ms]
+(pass) a Read cut to its token cap is not recorded [12.71ms]
+(pass) the next identical Read after an answer runs (the escape) [15.65ms]
+(pass) a different range is a different key [14.18ms]
+(pass) an Edit of the file evicts it [13.86ms]
+(pass) a compaction of the main loop evicts its entries [15.62ms]
+(pass) turned off, every Read runs [10.81ms]
+(pass) near the auto-compaction threshold the Read runs (the race with a compaction) [13.33ms]
+(pass) a gap of more than an hour between two rows stops answers until a compaction [14.75ms]
+(pass) a compaction in the turn of an answer appends a note naming the file [15.48ms]
 
- 11 pass
+ 14 pass
  0 fail
-Ran 11 tests across 1 file. [0.28s]
+Ran 14 tests across 1 file. [0.34s]
 ```
 
 ### 2.3 Type-check
@@ -545,10 +694,10 @@ exit 0
 The kit tests stand in for the engine: nothing sits beneath the plugin but the test's own hooks
 (reference.md:81). Four facts the design rests on can only come from a real session, so each was
 run with `claude -p --plugin-dir <scratchpad>/read-dedupe --model haiku --output-format
-stream-json --verbose --allowedTools=Read` (plus `Agent` for run 10) on a three-line file
+stream-json --verbose --allowedTools=Read` (plus `Agent` for runs 10 and 13) on a three-line file
 `notes.txt` (`alpha line one`, `beta line two`, `gamma line three`, trailing newline). Turn-by-turn
 runs (7, 8, 9) were driven with `--input-format stream-json`, one user message sent after each
-`result` line. Cost of all eleven runs together: 0.09 USD (the sum of each run's reported `total_cost_usd`).
+`result` line. Cost of all fifteen runs together: 0.12 USD (the sum of each run's reported `total_cost_usd`).
 
 | Run | Setup                                                                                           | What happened                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Proves                                                                                                           |
 | --- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
@@ -561,7 +710,13 @@ runs (7, 8, 9) were driven with `--input-format stream-json`, one user message s
 | 8   | Same, `session.compact` hook **removed**, trace on                                              | After `/compact` the API view held 5 messages and **no** tool_result for the first Read (`seen=undefined`), so the second Read ran                                                                                                                                                                                                                                                                                                                                                                                                  | The context check alone catches a compaction                                                                     |
 | 9   | Read, `/clear`, Read                                                                            | The session id changed (`c04f107f…` → `6c2eb543…`); no entry matched the new id; the Read ran                                                                                                                                                                                                                                                                                                                                                                                                                                       | `/clear` never reuses an entry                                                                                   |
 | 10  | Main Read, then a `general-purpose` subagent reads twice                                        | The main loop's entry did not answer the subagent's first Read; the subagent's second Read was answered from its own history                                                                                                                                                                                                                                                                                                                                                                                                        | Per-loop keys and `$.session.messages({ as: 'api', agentId })` work in a subagent                                |
-| 11  | The final module (after the last Prettier pass and the `SHA256` respelling), the run 4 scenario | Second Read answered in 3.8 ms, same mapped text                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Runs 4–10 used the module before that pass, which changed formatting and that one spelling only                  |
+| 11  | The round 0 module after its last Prettier pass and the `SHA256` respelling, the run 4 scenario | Second Read answered in 3.8 ms, same mapped text                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Runs 4–10 used the round 0 module before that pass, which changed formatting and that one spelling only          |
+| 12  | Round 1 module (checks 0, 6, 7 of spec §5.1), two Reads                                         | Both ran: the model put both Reads in one response, so they ran in parallel and the second found no entry yet                                                                                                                                                                                                                                                                                                                                                                                                                       | Parallel identical Reads are never answered (a safe miss, spec §5.4)                                             |
+| 13  | Round 1 module, a main Read, then a subagent reading twice                                      | All three Reads ran                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | v1 answers in the main loop only (check 0)                                                                       |
+| 14  | Round 1 module with a trace written through `$.fs.write`                                        | Row present, not idle; `$.session.usage({ breakdown: 'summary' })` read `totalTokens` 41,385 against `autoCompactThreshold` 967,000 with auto-compaction on (`window` 1,000,000); the second Read was answered                                                                                                                                                                                                                                                                                                                      | The fill reading and the row guard work live                                                                     |
+| 15  | Final round 1 module, the two Reads in separate steps                                           | Answered in 26.4 ms (the usage read is the added cost)                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | The final module answers live                                                                                    |
 
-Runs 1 to 3 are the reason C-1 asks for runs: all eleven kit tests passed against the first version,
+Runs 1–11 used the round 0 module (no checks 0, 6 and 7); runs 12–15 the round 1 module pasted above.
+
+Runs 1 to 3 are the reason C-1 asks for runs: all eleven kit tests of the time passed against the first version,
 whose comparison could never match in a real session.
