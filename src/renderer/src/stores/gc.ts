@@ -169,9 +169,19 @@ export const useGcStore = defineStore('gc', () => {
   const running = computed(() => runningJob(jobs.value))
   const states = computed(() => blockStates(jobs.value))
 
+  /**
+   * "Not now" on the first-cycle banner. A snooze, not an acknowledgement: it lasts until the app
+   * restarts, and never tells the engine the operator has seen the report (TM-03).
+   */
+  const firstReportSnoozed = ref(false)
+
   const hero = computed(() =>
     model.value
-      ? heroState(model.value, running.value, prefs.value?.firstReportAcknowledged ?? false)
+      ? heroState(
+          model.value,
+          running.value,
+          (prefs.value?.firstReportAcknowledged ?? false) || firstReportSnoozed.value
+        )
       : ({ kind: 'empty' } as const)
   )
 
@@ -450,7 +460,12 @@ export const useGcStore = defineStore('gc', () => {
     await refresh()
   }
 
-  /** "Enable autopilot" on the first-cycle banner: acknowledge the report AND turn the pref on. */
+  /**
+   * "Enable autopilot" / "Allow cleaning" on the first-cycle banner: turn the pref on AND
+   * acknowledge the report. The banner states what the next cycle will clean before this runs,
+   * which is what makes the acknowledgement informed. Turning the pref on resets the ack in main
+   * (a fresh promise), so the ack always comes after it.
+   */
   async function enableAutopilot(): Promise<void> {
     const current = prefs.value ?? (await window.api.gcPrefs())
     // Prefs first: if turning it on fails, the report stays unacknowledged and the banner stays up to retry.
@@ -459,10 +474,9 @@ export const useGcStore = defineStore('gc', () => {
     await refresh()
   }
 
-  /** "Not now": acknowledge the report without turning the autopilot on. */
-  async function dismissFirstReport(): Promise<void> {
-    await window.api.gcAckFirstReport()
-    await refresh()
+  /** "Not now": hide the banner for this session. Nothing is acknowledged and nothing is enabled. */
+  function dismissFirstReport(): void {
+    firstReportSnoozed.value = true
   }
 
   /** Settings: always the whole object — main fills a missing field with its default. */
@@ -502,6 +516,7 @@ export const useGcStore = defineStore('gc', () => {
     unkeep,
     enableAutopilot,
     dismissFirstReport,
+    firstReportSnoozed,
     savePrefs,
     pruneSelection,
     opinions,

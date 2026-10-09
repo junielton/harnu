@@ -2440,8 +2440,17 @@
       "firstCycle": {
         "label": "First cleanup report",
         "title": "Found {n} ready item, {size} — enable autopilot? | Found {n} ready items, {size} — enable autopilot?",
-        "sub": "The first cycle only reports; nothing is deleted until you turn it on.",
+        "titleOn": "Autopilot found {n} ready item, {size} | Autopilot found {n} ready items, {size}",
+        "onlyReported": "It has only reported so far.",
+        "willClean": "Enable it and the next cycle, in {when}, will clean {n} item, {size}. | Enable it and the next cycle, in {when}, will clean {n} items, {size}.",
+        "willCleanUnscheduled": "Enable it and its first cycle will clean {n} item, {size}. The background scan is off, so none is scheduled. | Enable it and its first cycle will clean {n} items, {size}. The background scan is off, so none is scheduled.",
+        "when": {
+          "minute": "{n} min",
+          "hour": "{n} h",
+          "day": "{n} d"
+        },
         "enable": "Enable autopilot",
+        "allow": "Allow cleaning",
         "dismiss": "Not now"
       },
       "docker": {
@@ -2666,8 +2675,7 @@
       "error": {
         "clean": "Could not start the clean",
         "keep": "Could not keep that",
-        "autopilot": "Could not enable the autopilot",
-        "dismiss": "Could not save that"
+        "autopilot": "Could not enable the autopilot"
       },
       "legend": {
         "ready": "Ready to clean · cleaned by one click or the autopilot",

@@ -101,6 +101,23 @@ export function planCycle(bundles: readonly WorktreeBundle[], prefs: GcPrefs): C
   }
 }
 
+/**
+ * What the next cycle would clean if cleaning were allowed right now: the answer to "if I enable
+ * it, what goes?". Same eligibility, order and cap as a `clean` cycle, whatever the autopilot or
+ * acknowledgement say today. Null when the worktrees category is off (nothing would ever run).
+ */
+export function planNextClean(
+  bundles: readonly WorktreeBundle[],
+  prefs: GcPrefs
+): { count: number; bytes: number } | null {
+  if (!prefs.categories.worktrees) return null
+  const plan = planCycle(bundles, { ...prefs, autopilot: true, firstReportAcknowledged: true })
+  return {
+    count: plan.toClean.length,
+    bytes: plan.toClean.reduce((sum, b) => sum + (b.item.diskBytes ?? 0), 0)
+  }
+}
+
 // ---- failures: a ready item that keeps failing is a decision, not a retry loop -----------------
 
 /** A halted cleanup, remembered in memory until it succeeds, the worktree is gone, or a day passes. */

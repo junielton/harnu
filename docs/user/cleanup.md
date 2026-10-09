@@ -134,7 +134,7 @@ When it ends, a toast says **Freed 6.0 GB · 12 ready items cleaned**. If someth
 
 ### The first run only reports (the banner)
 
-Until you acknowledge the first report, the screen shows a banner: **"Found 12 ready items, 6.0 GB — enable autopilot?"** with **Enable autopilot** and **Not now**. The ready blocks are drawn with a dashed border: planned, not done. **Enable autopilot** acknowledges the report and turns the autopilot on in one step. **Not now** acknowledges the report and leaves the autopilot off. Either way nothing is deleted by the banner itself.
+Until you acknowledge the first report, the screen shows a banner: **"Found 12 ready items, 6.0 GB — enable autopilot?"** with **Enable autopilot** and **Not now**. Under the title it says exactly what the next cycle will clean: _"Enable it and the next cycle, in 40 min, will clean 12 items, 6.0 GB."_ (If the background scan is off it says no cycle is scheduled.) The ready blocks are drawn with a dashed border: planned, not done. **Enable autopilot** turns the autopilot on and acknowledges the report in one step, so you have agreed to exactly what the banner said. **Not now** only hides the banner until Harnu restarts: it does not acknowledge anything, and it does not turn the autopilot on. If you turn the autopilot on in Settings instead, its first cycle only reports, and the banner comes back as **"Autopilot found 12 ready items"** with an **Allow cleaning** button.
 
 ### Docker
 
@@ -337,7 +337,7 @@ The autopilot cleans **Ready to clean** worktrees on a timer, with no click. It 
 
 ### The first run only reports
 
-Turning the autopilot on does not clean anything. The first cycle runs the same checks and stops at the count: _"Found 12 ready items, 6.0 GB — enable autopilot?"_ This is the banner described above. Nothing is deleted until you acknowledge that report, and acknowledging is a separate step from turning the autopilot on (the banner's **Enable autopilot** does both at once). From the next cycle on, it cleans, at most **20 worktrees per cycle** by default (the oldest first; the rest wait for the next cycle). A cycle that cleaned something posts one notification with how much it freed.
+Turning the autopilot on does not clean anything. The first cycle runs the same checks and stops at the count: _"Found 12 ready items, 6.0 GB — enable autopilot?"_ This is the banner described above. Nothing is deleted until you acknowledge that report. Turning the autopilot off and on again starts over: the first cycle after it is back on only reports. From the next cycle on, it cleans, at most **20 worktrees per cycle** by default (the oldest first; the rest wait for the next cycle). A cycle that cleaned something posts one notification with how much it freed.
 
 The cycle runs on the same timer as the background scan, right after it, so switching the background scan off also stops the autopilot. A cleaning job you started by hand takes priority: a cycle that comes due waits for it, and a manual request made during a cycle waits for the cycle.
 

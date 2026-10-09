@@ -2440,8 +2440,17 @@
       "firstCycle": {
         "label": "Primeiro relatório de limpeza",
         "title": "Encontrei {n} item pronto, {size} — ativar o autopilot? | Encontrei {n} itens prontos, {size} — ativar o autopilot?",
-        "sub": "O primeiro ciclo só reporta; nada é apagado até você ativar.",
+        "titleOn": "O autopilot encontrou {n} item pronto, {size} | O autopilot encontrou {n} itens prontos, {size}",
+        "onlyReported": "Até agora ele só reportou.",
+        "willClean": "Ative e o próximo ciclo, em {when}, vai limpar {n} item, {size}. | Ative e o próximo ciclo, em {when}, vai limpar {n} itens, {size}.",
+        "willCleanUnscheduled": "Ative e o primeiro ciclo vai limpar {n} item, {size}. A varredura em segundo plano está desligada, então nenhum está agendado. | Ative e o primeiro ciclo vai limpar {n} itens, {size}. A varredura em segundo plano está desligada, então nenhum está agendado.",
+        "when": {
+          "minute": "{n} min",
+          "hour": "{n} h",
+          "day": "{n} d"
+        },
         "enable": "Ativar autopilot",
+        "allow": "Permitir limpeza",
         "dismiss": "Agora não"
       },
       "docker": {
@@ -2666,8 +2675,7 @@
       "error": {
         "clean": "Não foi possível iniciar a limpeza",
         "keep": "Não foi possível manter isso",
-        "autopilot": "Não foi possível ativar o autopilot",
-        "dismiss": "Não foi possível salvar isso"
+        "autopilot": "Não foi possível ativar o autopilot"
       },
       "legend": {
         "ready": "Pronto para limpar · limpo com um clique ou pelo autopilot",

@@ -74,6 +74,12 @@ export interface GcSnapshot {
   lastCycle: CycleRecord | null
   /** When the next timer tick fires, or null when the Reaper background scan is off. */
   nextCycleAt: number | null
+  /**
+   * What the next cycle would clean once cleaning is allowed (autopilot on, report acknowledged):
+   * the figure the first-cycle banner discloses before the operator enables it. Null when the
+   * worktrees category is off.
+   */
+  nextClean: { count: number; bytes: number } | null
 }
 
 /**

@@ -5,6 +5,7 @@ import {
   applyFailures,
   isProtectedNow,
   planCycle,
+  planNextClean,
   pruneFailures,
   refusalFor
 } from '../src/main/gc/autopilot-core'
@@ -282,5 +283,33 @@ describe('never-clean is judged on real paths (delta 3b, item 12)', () => {
     const here = bundle('/real/wt', 'ready')
     expect(isProtectedNow(here, prefs({ neverClean: ['/link/wt'] }), canonical)).toBe(true)
     expect(isProtectedNow(here, prefs({ neverClean: ['/link/wt'] }))).toBe(false)
+  })
+})
+
+describe('planNextClean: what the next cycle would delete once cleaning is allowed', () => {
+  it('counts the ready items a clean cycle would take, oldest first, up to the cap', () => {
+    const plan = planNextClean(
+      [ready('a', 5, 2_000), ready('b', 9, 3_000), ready('c', 7, 4_000)],
+      prefs({ firstReportAcknowledged: false, maxItemsPerCycle: 2 })
+    )
+    expect(plan).toEqual({ count: 2, bytes: 7_000 })
+  })
+
+  it('ignores the acknowledgement: it answers "if I enable it now"', () => {
+    const bundles = [ready('a', 5, 2_000)]
+    expect(planNextClean(bundles, prefs({ firstReportAcknowledged: false }))).toEqual({
+      count: 1,
+      bytes: 2_000
+    })
+    expect(planNextClean(bundles, prefs({ autopilot: false }))).toEqual({ count: 1, bytes: 2_000 })
+  })
+
+  it('skips neverClean items and is null when the worktrees category is off', () => {
+    expect(
+      planNextClean([ready('a', 5), ready('b', 6)], prefs({ neverClean: ['/ws/wt/a'] }))?.count
+    ).toBe(1)
+    expect(
+      planNextClean([ready('a', 5)], prefs({ categories: { worktrees: false, dockerCache: true } }))
+    ).toBeNull()
   })
 })

@@ -8668,8 +8668,18 @@ zeros when Docker says so.
 `.fc`: `--accent-soft` fill, `--accent-line` border, radius 7, `padding: 12px 16px`, `Recycle` icon in
 `--accent`. Text 13px/500: "Found {n} ready items, {size} — enable autopilot?", 11px sub-line "The first cycle only
 reports; nothing is deleted until you turn it on." Buttons: **Enable autopilot** (the screen's one
-Primary) and **Not now** (Ghost). Enable calls `gc:ackFirstReport` **and** `gc:prefs:set({ autopilot: true })`.
+Primary) and **Not now** (Ghost). Enable calls `gc:prefs:set({ autopilot: true })` **and** `gc:ackFirstReport`.
 Ready blocks are dashed ("planned, not done"); the summary reads "autopilot off".
+
+**The promise (decided 2026-10-09, F1 / TM-03): the banner discloses, and Not now only snoozes.** The 11px
+sub-line states exactly what the next cycle will clean — "Enable it and the next cycle, in 40 min, will clean
+2 items, 944 MB." (`snapshot.nextClean`, the same eligibility, order and cap as a clean cycle; with no timer
+scheduled: "…its first cycle will clean … The background scan is off, so none is scheduled."). Enable is the
+informed consent, so it acknowledges. **Not now** hides the banner for the session and acknowledges
+nothing; the ready blocks stay dashed. Turning the autopilot **on** from anywhere (banner or Settings)
+resets the acknowledgement in main, so the first cycle after enabling only reports. When the autopilot was
+turned on in Settings and has only reported, the same banner reads "Autopilot found {n} ready items, {size}"
+with "It has only reported so far." and the button **Allow cleaning**.
 
 #### First scan — never "All clean" before anything was scanned
 

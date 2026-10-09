@@ -5,11 +5,22 @@ import Button from './ui/Button.vue'
 import { formatBytes } from './system-monitor-format'
 
 /**
- * First-cycle report-only prompt (design.md "Workspace GC — unified Cleanup / First-cycle banner").
- * Holds the screen's one Primary button, so the hero turns Soft while this is up. Enabling calls
- * `gc:ackFirstReport` and `gc:prefs:set({ autopilot: true })` — the store does both.
+ * First-cycle prompt (design.md "Workspace GC — unified Cleanup / First-cycle banner"). Holds the
+ * screen's one Primary button, so the hero turns Soft while this is up. The button is the
+ * operator's informed consent: the sub-line states what the next cycle will clean (`cleanCount`,
+ * `cleanBytes`, `when`) before it turns cleaning on. With the autopilot already on (turned on in
+ * Settings, so it has only reported) the same button reads "Allow cleaning".
  */
-defineProps<{ count: number; bytes: number; pending?: boolean }>()
+defineProps<{
+  count: number
+  bytes: number
+  cleanCount: number
+  cleanBytes: number
+  /** Time until the next timer tick ("58 min"), or null when none is scheduled. */
+  when: string | null
+  autopilotOn?: boolean
+  pending?: boolean
+}>()
 const emit = defineEmits<{ enable: []; dismiss: [] }>()
 const { t } = useI18n()
 </script>
@@ -25,10 +36,21 @@ const { t } = useI18n()
     <div class="min-w-0 flex-1">
       <div class="text-body font-medium leading-5 text-text">
         {{
-          t('cleanup.gc.firstCycle.title', count, { named: { n: count, size: formatBytes(bytes) } })
+          t(autopilotOn ? 'cleanup.gc.firstCycle.titleOn' : 'cleanup.gc.firstCycle.title', count, {
+            named: { n: count, size: formatBytes(bytes) }
+          })
         }}
       </div>
-      <div class="text-caption leading-4 text-text-3">{{ t('cleanup.gc.firstCycle.sub') }}</div>
+      <div class="text-caption leading-4 text-text-3" data-testid="first-cycle-sub">
+        <template v-if="autopilotOn">{{ t('cleanup.gc.firstCycle.onlyReported') }}&nbsp;</template>
+        {{
+          t(
+            when ? 'cleanup.gc.firstCycle.willClean' : 'cleanup.gc.firstCycle.willCleanUnscheduled',
+            cleanCount,
+            { named: { n: cleanCount, size: formatBytes(cleanBytes), when } }
+          )
+        }}
+      </div>
     </div>
     <Button
       variant="primary"
@@ -36,7 +58,7 @@ const { t } = useI18n()
       data-testid="first-enable"
       @click="emit('enable')"
     >
-      {{ t('cleanup.gc.firstCycle.enable') }}
+      {{ t(autopilotOn ? 'cleanup.gc.firstCycle.allow' : 'cleanup.gc.firstCycle.enable') }}
     </Button>
     <Button
       variant="ghost"

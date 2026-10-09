@@ -351,14 +351,34 @@ describe('Cleanup screen — first cycle and background run', () => {
     await flushPromises()
   })
 
-  it('"Not now" acknowledges through a real clone and reports a failure', async () => {
+  it('"Not now" snoozes the banner and does NOT acknowledge the report (TM-03)', async () => {
     const api = install(snap({}, { autopilot: false, firstReportAcknowledged: false }))
     await mountView()
-    const toast = vi.spyOn(useUiStore(), 'pushToast')
-    api.gcAckFirstReport.mockRejectedValueOnce(new Error('nope'))
     await domGet('[data-testid="first-dismiss"]').trigger('click')
     await flushPromises()
-    expect(toast.mock.calls[0][0]).toMatchObject({ title: t('cleanup.gc.error.dismiss') })
+    expect(api.gcAckFirstReport).not.toHaveBeenCalled()
+    expect(dom('[data-testid="first-enable"]').exists()).toBe(false)
+  })
+
+  it('the banner states what the next cycle will clean, from the snapshot', async () => {
+    install(
+      snap(
+        { nextClean: { count: 2, bytes: 900 * MIB }, nextCycleAt: Date.now() + 40 * 60_000 },
+        { autopilot: false, firstReportAcknowledged: false }
+      )
+    )
+    await mountView()
+    const text = domGet('[data-testid="first-cycle-banner"]').text()
+    expect(text).toMatch(/next cycle, in \d+ min, will clean 2 items, 944 MB/)
+  })
+
+  it('with autopilot on and the report unacknowledged the banner offers "Allow cleaning"', async () => {
+    const api = install(snap({}, { autopilot: true, firstReportAcknowledged: false }))
+    await mountView()
+    expect(domGet('[data-testid="first-enable"]').text()).toBe('Allow cleaning')
+    await domGet('[data-testid="first-enable"]').trigger('click')
+    await flushPromises()
+    expect(api.gcAckFirstReport).toHaveBeenCalledTimes(1)
   })
 
   it('no banner once the first report is acknowledged', async () => {

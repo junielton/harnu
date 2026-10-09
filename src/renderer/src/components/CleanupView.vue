@@ -369,10 +369,18 @@ const nextText = computed(() => {
   return t(`cleanup.gc.status.next.${n.unit}`, { n: n.n })
 })
 
-const showFirstCycle = computed(
+/** A report exists that nothing has acted on: the ready blocks read "planned, not done". */
+const firstCyclePlanned = computed(
   () =>
     !!prefs.value && !prefs.value.firstReportAcknowledged && (model.value?.ready.length ?? 0) > 0
 )
+/** The banner itself; "Not now" hides it for the session without acknowledging anything. */
+const showFirstCycle = computed(() => firstCyclePlanned.value && !gc.firstReportSnoozed)
+/** "58 min" / "2 h" / "1 d" until the next timer tick, whatever the autopilot says; null when none is scheduled. */
+const firstCycleWhen = computed(() => {
+  const n = nextCycleIn(gc.snapshot?.nextCycleAt ?? null, now.value.getTime())
+  return n ? t(`cleanup.gc.firstCycle.when.${n.unit}`, { n: n.n }) : null
+})
 const allClean = computed(() => {
   const tt = model.value?.totals
   return !!tt && tt.ready.count + tt.review.count + tt.orphanVolumes.count === 0
@@ -559,9 +567,13 @@ async function copyRestoreHint(hint: string): Promise<void> {
           v-if="showFirstCycle"
           :count="model.ready.length"
           :bytes="model.totals.ready.bytes"
+          :clean-count="gc.snapshot?.nextClean?.count ?? 0"
+          :clean-bytes="gc.snapshot?.nextClean?.bytes ?? 0"
+          :when="firstCycleWhen"
+          :autopilot-on="prefs.autopilot"
           :pending="firstCyclePending"
           @enable="runFirstCycle(() => gc.enableAutopilot(), t('cleanup.gc.error.autopilot'))"
-          @dismiss="runFirstCycle(() => gc.dismissFirstReport(), t('cleanup.gc.error.dismiss'))"
+          @dismiss="gc.dismissFirstReport()"
         />
       </div>
 
@@ -605,7 +617,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             :checked="checked"
             :selected-id="selectedId"
             :linked-id="linkedId"
-            :planned="showFirstCycle"
+            :planned="firstCyclePlanned"
             :drill-repo="drillRepo"
             @select="onSelect"
             @toggle="onToggle"

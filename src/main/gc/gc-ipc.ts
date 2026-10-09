@@ -20,6 +20,7 @@ import { prefsPath as reaperPrefsPath } from '../reaper/prefs'
 import type { ReaperControl } from '../reaper/reaper-ipc'
 import { bucketFeed, setInheritedBuckets } from './gc-buckets'
 import { withActor } from './gc-actor'
+import { planNextClean } from './autopilot-core'
 import { pressKeep, protectedFromGather } from './gc-keep'
 import {
   LEFTOVERS_FILE,
@@ -210,7 +211,8 @@ export async function registerGcHandlers(
     docker: g.docker,
     prefs: livePrefs(),
     lastCycle: state.last,
-    nextCycleAt: reaper.autoScan() ? reaper.nextTickAt() : null
+    nextCycleAt: reaper.autoScan() ? reaper.nextTickAt() : null,
+    nextClean: planNextClean(g.bundles, livePrefs())
   })
 
   // The advisor is reachable from the `gc:opinion` handler below and from nowhere else: the

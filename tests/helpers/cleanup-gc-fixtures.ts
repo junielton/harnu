@@ -53,7 +53,8 @@ export function snapshotOf(
     docker: { buildCacheReclaimableBytes: null, danglingImages: null },
     prefs: defaultGcPrefs(),
     lastCycle: null,
-    nextCycleAt: null
+    nextCycleAt: null,
+    nextClean: null
   }
 }
 
