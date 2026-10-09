@@ -325,6 +325,22 @@ describe('CleanupBlockPanel — a failed item', () => {
       expect(late.get('[data-testid="panel-resume"]').text()).not.toMatch(/trashed/i)
     })
 
+    it('hides Dehydrate and Rehydrate too, and the D shortcut does nothing', () => {
+      // The item still carries a hydration record from the last scan (it was dehydratable), but
+      // its folder is gone: there is nothing to dehydrate.
+      const w = mountPanel(goneBlock(), { failure: failure(), attachTo: document.body } as never)
+      expect(has(w, 'panel-dehydrate')).toBe(false)
+      expect(has(w, 'panel-rehydrate')).toBe(false)
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'd' }))
+      expect(w.emitted('dehydrate')).toBeUndefined()
+      w.unmount()
+    })
+
+    it('a halted item whose folder is still there keeps Dehydrate', () => {
+      const w = mountPanel(failedBlock(), { failure: failure() })
+      expect(has(w, 'panel-dehydrate')).toBe(true)
+    })
+
     it('still offers Keep', () => {
       expect(has(mountPanel(goneBlock(), { failure: failure() }), 'panel-keep')).toBe(true)
     })

@@ -158,13 +158,14 @@ const showCleanNow = computed(() => ready.value && !hasFailure.value)
 const showRetry = computed(() => hasFailure.value && !inUse.value && !resume.value)
 const showDehydrate = computed(() => {
   const it = item.value
-  if (!it || isVolume.value || ready.value) return false
+  // A folder that is already gone has nothing to dehydrate.
+  if (!it || isVolume.value || ready.value || resume.value) return false
   if (inUse.value) return isIdleDehydratable(it, props.dehydrateIdleDays)
   return canDehydrate(it)
 })
 const showRehydrate = computed(() => {
   const it = item.value
-  return !!it && !isVolume.value && canRehydrate(it)
+  return !!it && !isVolume.value && !resume.value && canRehydrate(it)
 })
 const hydrationDisabled = computed(() => locked.value || props.hydrationBusy !== null)
 
