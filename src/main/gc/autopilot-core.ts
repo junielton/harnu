@@ -187,6 +187,23 @@ export function rememberReprobeRefusal(
   return true
 }
 
+/** Whether a reprobe refusal describes the item (and so is worth remembering), not the moment. */
+export const isRememberedRefusal = (code: string): boolean => REMEMBERED_REFUSALS.has(code)
+
+/**
+ * A "check again" that still finds the item refused: it goes back to the demoted state with the cause
+ * main just gave, not one step short of it. A fixed item simply has no entry left.
+ */
+export function restoreDemotedRefusal(
+  failures: Map<string, CycleFailure>,
+  id: string,
+  code: string,
+  now: number,
+  tip: string | null
+): void {
+  failures.set(id, { step: 'reprobe', error: code, at: now, count: REFUSAL_DEMOTE_AFTER, tip })
+}
+
 const ttlOf = (f: CycleFailure): number =>
   f.step === 'reprobe' ? REFUSAL_COUNT_TTL_MS : FAILURE_TTL_MS
 

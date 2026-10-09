@@ -131,3 +131,15 @@ export interface GcCleanAck {
   /** True when another job was already running and this one waits its turn. */
   queued: boolean
 }
+
+/**
+ * `gc:recheck`: what "Check again" found for one item. `cleared`: nothing refuses it now (the
+ * remembered refusal is gone and the next gather shows it as the scan sees it). `still-refused`: main
+ * refuses it again for `code`, and it stays demoted. `unchecked`: the check itself could not answer
+ * (Docker down, a probe that failed), so nothing was concluded. `unknown-item`: not in the gather.
+ */
+export interface GcRecheckResult {
+  id: string
+  outcome: 'cleared' | 'still-refused' | 'unchecked' | 'unknown-item'
+  code?: string
+}
