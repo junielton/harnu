@@ -25,6 +25,7 @@ const REASON_SUFFIX: Record<string, string> = {
   'cleanup-failed': 'cleanupFailed',
   'path-unresolved': 'pathUnresolved',
   'nested-worktree': 'nestedWorktree',
+  'check-failed': 'checkFailed',
   'no-known-worktree': 'noKnownWorktree'
 }
 

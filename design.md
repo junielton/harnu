@@ -8498,9 +8498,9 @@ only the step an item halted at and why, so the panel says **"Stopped at {step}"
 for the reason, or, for a refusal made before anything ran (the pre-flight re-probe), **"Nothing was
 changed"** plus the sentence. **A raw engine error is never visible text**: a code the catalog knows gets
 its own sentence, anything else reads "Harnu stopped this item for a safety check." and the raw text travels
-only with the **Copy error** action. A review item whose reason is `nested-worktree` or `locked` has **no Remove (and no
-R)** — main always refuses it (removing the folder would trash the inner worktree too; git has the worktree
-locked) — and an 11px `--text-3` line says which. It never draws ✓ for a step it was not told
+only with the **Copy error** action. A review item whose reason is `nested-worktree`, `check-failed` or `locked` has **no Remove (and no
+R)** — main always refuses it (removing the folder would trash the inner worktree too; Harnu could not look
+inside the folder to tell; git has the worktree locked) — and an 11px `--text-3` line says which. It never draws ✓ for a step it was not told
 ran, and it never shows volumes as removed — a worktree clean never removes one. Actions: **Retry**,
 **Keep**, **Remove**. **Retry follows the item's _current_ bucket**: a ready item re-opens the ready
 (bulk-style) confirm for that one id, a review item the review confirm — never a dialog that would send

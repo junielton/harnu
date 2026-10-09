@@ -130,11 +130,12 @@ const inUse = computed(() => props.block.bucket === 'in-use')
 const hasFailure = computed(() => props.failure !== null)
 
 /**
- * Main always refuses a worktree that holds another one (removing it would trash the inner one too) and one
- * git has locked. `locked` is compared by string: its main-side type has not reached this branch yet.
+ * Main always refuses a worktree that holds another one (removing it would trash the inner one too), one it
+ * could not look inside, and one git has locked. `locked` is compared by string: its main-side type has not reached this branch yet.
  */
 const REMOVE_REFUSED: Readonly<Record<string, string>> = {
   'nested-worktree': 'cleanup.gc.panel.removeBlocked',
+  'check-failed': 'cleanup.gc.panel.removeUnchecked',
   locked: 'cleanup.gc.panel.removeLocked'
 }
 const removeBlockedKey = computed(() =>

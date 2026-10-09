@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { collectForeignCheckouts, explainFailedWalks } from '../src/main/gc/gc-foreign'
+import { collectForeignCheckouts } from '../src/main/gc/gc-foreign'
 import { AS_GIVEN, buildBundles, type CanonicalPath } from '../src/main/gc/bundle-core'
-import { NOW, WT, collect, scanInput } from './gc-scan-fixtures'
+import { NOW, collect, scanInput } from './gc-scan-fixtures'
 import { reapItem } from './gc-fixtures'
 
 const items = (...paths: string[]) => paths.map((p) => reapItem(p))
@@ -119,35 +119,11 @@ describe('a worktree that was not walked is never ready, and says why (S2 delta 
     expect(build(new Map()).bucket).toBe('review')
   })
 
-  it('names the cause of a failed walk in the review reason', () => {
+  it('says it could not look inside, with the path and no raw error', () => {
     const b = build(new Map())
-    const failed = new Map([
-      [b.item.id, "EACCES: permission denied, scandir '/ws/org/proj/worktrees/x/secret'"]
-    ])
-    const [explained] = explainFailedWalks([b], failed)
-    expect(explained!.reason?.code).toBe('nested-worktree')
-    expect(explained!.reason?.detail).toContain('permission denied')
-    expect(explained!.reason?.detail).toContain('/secret')
-    expect(explained!.bucket).toBe('review')
-  })
-
-  it('leaves a bundle alone when its walk did not fail', () => {
-    const b = build(new Map())
-    expect(explainFailedWalks([b], new Map())[0]).toBe(b)
-  })
-
-  it('does not overwrite a different review reason', () => {
-    const { items: its, fateInputs } = collect(scanInput({ prByBranch: new Map() }))
-    expect(its.length).toBeGreaterThan(0)
-    const b = { ...build(new Map()), reason: { code: 'dirty' as const, detail: 'x' } }
-    const out = explainFailedWalks([b], new Map([[b.item.id, 'EACCES']]))
-    expect(out[0]!.reason?.code).toBe('dirty')
-    expect(fateInputs.size).toBeGreaterThan(0)
-    expect(WT).toBeTruthy()
-  })
-
-  it('does not touch a bundle that is not in review', () => {
-    const b = { ...build(new Map()), bucket: 'in-use' as const, reason: null }
-    expect(explainFailedWalks([b], new Map([[b.item.id, 'EACCES']]))[0]).toBe(b)
+    expect(b.bucket).toBe('review')
+    expect(b.reason?.code).toBe('check-failed')
+    expect(b.reason?.detail).toContain(b.item.path as string)
+    expect(b.reason?.detail).not.toMatch(/EACCES|scandir|permission denied/)
   })
 })

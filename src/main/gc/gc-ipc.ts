@@ -18,6 +18,8 @@ import { buildNotificationOptions } from '../notifications'
 import { prefsFile as containersPrefsFile } from '../containers/containers-prefs'
 import { prefsPath as reaperPrefsPath } from '../reaper/prefs'
 import type { ReaperControl } from '../reaper/reaper-ipc'
+import { forgetItems } from '../reaper/scanner-shell'
+import { cleanedIds } from './gc-ghosts'
 import { bucketFeed, setInheritedBuckets } from './gc-buckets'
 import { withActor } from './gc-actor'
 import { pressKeep, protectedFromGather } from './gc-keep'
@@ -156,6 +158,9 @@ export async function registerGcHandlers(
     emitProgress: (p) => send('gc:progress', p),
     emitDone: (d) => {
       send('gc:done', d)
+      // The Reaper's last scan still lists what the job just removed: forget it before the
+      // gather below reads that scan, or the cleaned worktrees come back as review ghosts.
+      forgetItems(cleanedIds(d.results))
       // The world changed: refresh what the Cleanup surface and the Containers view read.
       void gather().catch((err) => console.error('[gc] refresh after job failed', err))
     }

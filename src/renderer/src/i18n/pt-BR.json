@@ -2309,6 +2309,7 @@
         "ready": "Mesclado, limpo e parado além do período de carência.",
         "pathUnresolved": "A worktree tem um caminho que o Harnu não conseguiu resolver para o local real, então não sabe o que o usa.",
         "nestedWorktree": "Há outro worktree dentro deste, e remover este também o jogaria no lixo.",
+        "checkFailed": "O Harnu não conseguiu olhar dentro deste worktree, então não sabe se removê-lo levaria outro checkout junto.",
         "locked": "Este worktree está bloqueado no git",
         "inUse": {
           "mainCheckout": "O checkout principal do repositório. Nunca é tocado.",
@@ -2370,7 +2371,8 @@
         "nothingChanged": "Nada foi alterado.",
         "genericStop": "O Harnu parou este item por uma verificação de segurança.",
         "removeBlocked": "Remover não está disponível: esta pasta contém outro worktree. Remova ou mova esse primeiro.",
-        "removeLocked": "Remover não está disponível: o git tem este worktree bloqueado. Desbloqueie primeiro."
+        "removeLocked": "Remover não está disponível: o git tem este worktree bloqueado. Desbloqueie primeiro.",
+        "removeUnchecked": "Remover não está disponível: o Harnu não conseguiu olhar dentro desta pasta. Confira se ela é legível e use Scan now."
       },
       "list": {
         "label": "Worktrees por grupo",

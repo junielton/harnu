@@ -40,6 +40,7 @@ import { readUserProjects } from '../user-projects'
 import { getFleetFolders } from '../fleet-model'
 import { getTaskStates } from '../hook-bridge'
 import { spawnEnvOnce } from '../appimage-env'
+import { withoutItems } from '../gc/gc-ghosts'
 import { liveSessionKeys } from '../pty'
 import { probeGitMetaBatch } from '../git-probe'
 import { probeWorktreeStatus, hasUnpushedCommits, readManifestSources } from '../worktree-ipc'
@@ -873,6 +874,17 @@ let inflight: Promise<ReaperSnapshot> | null = null
 /** The last computed snapshot, or `null` before the first scan. */
 export function lastSnapshot(): ReaperSnapshot | null {
   return cachedSnapshot
+}
+
+/**
+ * Drops items a clean job just removed from the last scan, so what reads that scan next (the
+ * workspace GC's gather, `reaper:snapshot`) does not see them until the next real scan. Without
+ * it a cleaned worktree came back as a "Needs review" ghost.
+ */
+export function forgetItems(ids: ReadonlySet<string>): void {
+  if (ids.size === 0) return
+  if (cachedSnapshot) cachedSnapshot = withoutItems(cachedSnapshot, ids)
+  for (const repo of cachedFate.values()) for (const id of ids) repo.delete(id)
 }
 
 /**

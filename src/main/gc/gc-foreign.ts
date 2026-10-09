@@ -2,10 +2,11 @@
 // of another repo or a plain clone inside a worktree carries its own `.git`, and trashing the
 // worktree would take that checkout's uncommitted work with it. S2's bundle builder needs one
 // answer per worktree: a worktree without an answer is never ready. This module gets those
-// answers, and keeps the reason when a walk fails, so the review reason can name it (a
-// root-owned folder, say) instead of the failure being silent. Pure over an injected walk.
+// answers, and keeps the cause when a walk fails so the shell can log it (a root-owned folder,
+// say) instead of the failure being silent; the review reason itself is worded by S2's
+// `bucketOf` ("check-failed", with the path, never the raw error). Pure over an injected walk.
 
-import type { CanonicalPath, WorktreeBundle } from './bundle-core'
+import type { CanonicalPath } from './bundle-core'
 import type { ReapItem } from '../reaper/reaper-core'
 
 const WALKED_KINDS = new Set(['worktree', 'detached-worktree'])
@@ -46,27 +47,4 @@ export async function collectForeignCheckouts(
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, todo.length) }, worker))
   return out
-}
-
-/**
- * S2 words a worktree with no walk answer generically. Where the cause is known, say it:
- * only a bundle sitting in review on that very reason is rewritten, never one that is in use
- * or held for another reason.
- */
-export function explainFailedWalks(
-  bundles: readonly WorktreeBundle[],
-  failed: ReadonlyMap<string, string>
-): WorktreeBundle[] {
-  return bundles.map((b) => {
-    const cause = failed.get(b.item.id)
-    if (cause === undefined || b.bucket !== 'review' || b.reason?.code !== 'nested-worktree')
-      return b
-    return {
-      ...b,
-      reason: {
-        code: 'nested-worktree' as const,
-        detail: `Harnu could not look inside this worktree for other checkouts, so it cannot tell whether removing it would take one along: ${cause}`
-      }
-    }
-  })
 }

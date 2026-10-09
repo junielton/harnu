@@ -99,11 +99,15 @@ export const opinionOf = (map: OpinionMap, id: string): GcOpinion | null =>
   map.get(id)?.opinion ?? null
 
 /**
- * Reasons for which main always refuses a removal (a worktree that holds another one, a worktree git
- * has locked); the panel hides Remove for them. An opinion on such an item is still shown, but it is
+ * Reasons for which main always refuses a removal (a worktree that holds another one, one it could not
+ * look inside, a worktree git has locked); the panel hides Remove for them. An opinion on such an item is still shown, but it is
  * never material for the "marked safe" shortcut, which would only pre-select a removal main refuses.
  */
-export const REMOVE_REFUSED_REASONS: ReadonlySet<string> = new Set(['nested-worktree', 'locked'])
+export const REMOVE_REFUSED_REASONS: ReadonlySet<string> = new Set([
+  'nested-worktree',
+  'check-failed',
+  'locked'
+])
 
 /**
  * The items "Remove the ones marked safe" pre-selects: current Needs review items whose opinion

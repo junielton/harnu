@@ -37,7 +37,7 @@ import {
   type CanonicalPath
 } from './bundle-core'
 import { dockerIsUnavailable, findForeignCheckouts, resolveRealPaths } from './gc-shell'
-import { collectForeignCheckouts, explainFailedWalks } from './gc-foreign'
+import { collectForeignCheckouts } from './gc-foreign'
 import { lockedItemIds } from './gc-locked'
 import { sessionsFromFleet } from './gc-sessions'
 import {
@@ -204,7 +204,12 @@ export async function gatherGc(
   rememberedDirs: ReadonlyMap<string, readonly string[]> = new Map()
 ): Promise<GcGathered> {
   const snap = lastSnapshot()
-  const items = snap?.repos.flatMap((r) => r.items) ?? []
+  const listed = snap?.repos.flatMap((r) => r.items) ?? []
+  // The last scan can still list a worktree that is gone (a clean job just removed it, or
+  // someone deleted it by hand). A folder that is not there is not a bundle: left in, it only
+  // fails every probe and reads as a "Needs review" ghost. An unreadable folder is not gone.
+  const gone = await missingFolders(listed.flatMap((i) => (i.path ? [i.path] : [])))
+  const items = listed.filter((i) => !i.path || !gone.has(i.path))
   const repoPaths = snap?.repos.map((r) => r.repoPath) ?? []
   const itemPaths = items.flatMap((i) => (i.path ? [i.path] : []))
 
@@ -331,7 +336,9 @@ export async function gatherGc(
   let bundles = buildBundles({ ...input, keep: new Set() })
   const { keep, stale: staleKeeps } = judgeKeeps(bundles, prefs.keep)
   if (keep.size > 0) bundles = buildBundles({ ...input, keep })
-  bundles = explainFailedWalks(bundles, foreign.failed)
+  // The review reason names the path and says the probe failed; the cause stays in the log.
+  for (const [id, cause] of foreign.failed)
+    console.warn('[gc] foreign-checkout walk failed', id, cause)
   // An unreadable transcripts root says nothing about recent activity: nothing is ready.
   if (transcripts.rootUnreadable) bundles = withGraceUnknown(bundles)
 

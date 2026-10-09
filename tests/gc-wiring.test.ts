@@ -306,12 +306,12 @@ describe('the bundle builder gets only the folders that cannot fake a nested wor
 })
 
 describe('foreign checkouts are walked in the gather (S2 delta 7)', () => {
-  it('feeds the bundle builder the walk results and explains a failed walk', () => {
+  it('feeds the bundle builder the walk results; a failed walk leaves no entry, so it reads check-failed', () => {
     expect(scan).toMatch(/await collectForeignCheckouts\(/)
     expect(between(scan, 'const input = {', 'let bundles')).toMatch(
       /foreignCheckouts: foreign\.found/
     )
-    expect(scan).toMatch(/explainFailedWalks\(/)
+    expect(scan).not.toMatch(/explainFailedWalks/)
   })
 })
 
@@ -375,5 +375,24 @@ describe('a locked worktree is review at scan time (delta 6, item 2)', () => {
     expect(scan).toMatch(/listLockedWorktreePaths\(/)
     expect(scan).toMatch(/lockedItemIds\(/)
     expect(scan).toMatch(/locked: /)
+  })
+})
+
+describe('a finished job takes its cleaned items out of the Reaper snapshot first (F0)', () => {
+  const done = between(ipc, 'emitDone: (d) => {', 'const shellDeps')
+
+  it('forgets the cleaned ids, and does it before the refresh gather reads the snapshot', () => {
+    expect(done).toMatch(/forgetItems\(cleanedIds\(d\.results\)\)/)
+    expect(done.indexOf('forgetItems(')).toBeLessThan(done.indexOf('gather()'))
+  })
+
+  it('the shell drops them from the snapshot and from the fate inputs kept beside it', () => {
+    const forget = between(
+      read('src/main/reaper/scanner-shell.ts'),
+      'export function forgetItems',
+      '\n}\n'
+    )
+    expect(forget).toMatch(/withoutItems\(cachedSnapshot/)
+    expect(forget).toMatch(/cachedFate/)
   })
 })

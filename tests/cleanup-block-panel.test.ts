@@ -104,6 +104,19 @@ describe('CleanupBlockPanel — a nested-worktree item can never be removed from
     )
   })
 
+  it('a worktree Harnu could not look inside gets its own Remove-blocked sentence', () => {
+    const unchecked = blockWith(
+      'review',
+      {},
+      reviewReason('check-failed' as never, 'Harnu could not look inside /srv/ws/x.')
+    )
+    const w = mountPanel(unchecked)
+    expect(has(w, 'panel-remove')).toBe(false)
+    const text = w.get('[data-testid="panel-remove-blocked"]').text()
+    expect(text).toMatch(/could not look inside/)
+    expect(text).not.toMatch(/holds another worktree/)
+  })
+
   it('keeps Keep and the other actions that do not delete the folder', () => {
     const w = mountPanel(nested())
     expect(has(w, 'panel-keep')).toBe(true)
