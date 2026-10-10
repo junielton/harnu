@@ -397,6 +397,27 @@ export interface CleanRequest {
 const sorted = (xs: readonly string[]): string[] => [...xs].sort()
 
 /**
+ * The worktree kinds the cleanup executor can remove. Mirrors `CLEANABLE_KINDS` in
+ * `src/main/gc/autopilot-core.ts` (parity is pinned by tests/gc-model.test.ts): main refuses any
+ * other kind as `unsupported-kind` — a detached worktree has no branch to name its archive ref
+ * after — so offering one would confirm a clean that removes nothing.
+ */
+const CLEANABLE_WORKTREE_KINDS: readonly string[] = ['worktree', 'hidden-folder']
+
+/** Whether `gc:clean` can remove this block at all: every orphan volume, a worktree of a cleanable kind. */
+export function isRemovable(b: GcBlock): boolean {
+  return b.kind === 'volume' || CLEANABLE_WORKTREE_KINDS.includes(b.bundle?.item.kind ?? '')
+}
+
+/** The ids among `ids` the model knows but `gc:clean` cannot remove (today: detached worktrees). */
+export function unremovableIds(model: GcModel, ids: readonly string[]): string[] {
+  return ids.filter((id) => {
+    const b = model.byId.get(id)
+    return !!b && !isRemovable(b)
+  })
+}
+
+/**
  * The facts a row showed for one item, in the shape `gc:clean` compares them with a fresh gather.
  * Mirrors `expectedOf` / `orphanExpectedOf` in `src/main/gc/gc-confirm.ts` (same semantics; the
  * renderer never imports main code). A worktree's `bytes` is sent but not compared; a volume's size
@@ -430,7 +451,8 @@ export function expectedFor(b: GcBlock): GcExpected {
 /**
  * The single place that builds the `gc:clean` payload, so a change of the wire contract is one edit.
  * `ready` is the hero's bulk clean (expected facts, nothing confirmed); `review` is Remove selected
- * (every id confirmed, expected for each). Ids the model no longer knows are dropped, never sent blind.
+ * (every id confirmed, expected for each). Ids the model no longer knows, and ids main would refuse as
+ * `unsupported-kind`, are dropped, never sent blind.
  */
 export function cleanRequestFor(
   model: GcModel,
@@ -442,7 +464,7 @@ export function cleanRequestFor(
   const expected: Record<string, GcExpected> = {}
   for (const id of ids) {
     const b = model.byId.get(id)
-    if (!b || b.bucket !== want) continue
+    if (!b || b.bucket !== want || !isRemovable(b)) continue
     kept.push(id)
     expected[id] = expectedFor(b)
   }

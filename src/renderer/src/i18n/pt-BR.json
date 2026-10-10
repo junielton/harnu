@@ -2394,6 +2394,8 @@
       "confirm": {
         "titleWorktrees": "Remover {n} worktree? | Remover {n} worktrees?",
         "titleItems": "Remover {n} item? | Remover {n} itens?",
+        "detachedSkipped": "{n} worktree detached não pode ser removido aqui | {n} worktrees detached não podem ser removidos aqui",
+        "detachedSkippedHint": "O Harnu ainda não consegue arquivar um worktree sem branch, então não mexe nele. Remova com git worktree remove.",
         "listLabel": "Itens a remover",
         "worktreeRow": "{repo} › {name}",
         "volumeRow": "Volume Docker {name}",

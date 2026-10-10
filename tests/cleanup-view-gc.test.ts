@@ -7,6 +7,7 @@ import { i18n } from '@renderer/i18n'
 import { useUiStore } from '../src/renderer/src/stores/ui'
 import { defaultGcPrefs, type GcPrefs } from '../src/main/gc/gc-prefs'
 import type { GcJobInfo, GcSnapshot } from '../src/main/gc/gc-wire'
+import { refusalFor } from '../src/main/gc/autopilot-core'
 import { ipcFn } from './helpers/ipc-clone'
 import { GIB, MIB, reviewReason, snapshotOf, volume, wt } from './helpers/cleanup-gc-fixtures'
 
@@ -696,5 +697,90 @@ describe('Cleanup screen — toolbar and legend parity with the mockup', () => {
     const bar = document.body.querySelector('[data-testid="split-bar"]')!
     const legend = document.body.querySelector('[data-testid="legend"]')!
     expect(bar.compareDocumentPosition(legend) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})
+
+describe('Cleanup screen — detached worktrees cannot be removed yet', () => {
+  // A worktree with a detached HEAD lands in Needs review (`detached`), but main refuses every one
+  // as `unsupported-kind`: the executor has no branch to name its archive ref after. The fake
+  // `gc:clean` here judges each id with main's own `refusalFor`, as `submitManualClean` does.
+  const detached = (name: string): ReturnType<typeof wt> =>
+    wt(
+      name,
+      'review',
+      GIB,
+      { kind: 'detached-worktree', branch: null, id: `/w/repo::detached-worktree::${name}` },
+      { reason: reviewReason('detached') }
+    )
+
+  function installJudged(s: GcSnapshot): Api {
+    const api = install(s)
+    api.gcClean.mockImplementation(async (ids: string[]) => {
+      const results = ids.map((id) => {
+        const b = s.bundles.find((x) => x.item.id === id)!
+        const hard = refusalFor(b, s.prefs, { confirmed: true })
+        return hard
+          ? { id, ok: false, haltedAt: 'reprobe', error: hard, freedBytes: 0 }
+          : { id, ok: true, haltedAt: null, freedBytes: 0 }
+      })
+      queueMicrotask(() =>
+        api.push.done({
+          jobId: 'j1',
+          kind: 'manual',
+          done: ids.length,
+          total: ids.length,
+          freedBytes: 0,
+          results,
+          error: null
+        })
+      )
+      return { jobId: 'j1', queued: false }
+    })
+    return api
+  }
+
+  async function selectAndRemove(): Promise<void> {
+    for (const c of domAll('[data-testid="review-check"]')) await c.setValue(true)
+    await domGet('[data-testid="sel-remove"]').trigger('click')
+    await flushPromises()
+  }
+
+  it('Remove on detached worktrees only never opens a confirm that would clean nothing, and says why', async () => {
+    const api = installJudged(snapshotOf([detached('h1'), detached('h2')]))
+    await mountView()
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    await selectAndRemove()
+    expect(body('bulk-dialog')).toBeNull()
+    expect(api.gcClean).not.toHaveBeenCalled()
+    expect(toast).toHaveBeenCalledTimes(1)
+    expect(toast.mock.calls[0][0]).toMatchObject({
+      kind: 'warning',
+      title: i18n.global.t('cleanup.gc.confirm.detachedSkipped', 2, { named: { n: 2 } })
+    })
+  })
+
+  it('a mixed selection confirms only what main can clean, and says what was left out', async () => {
+    const s = snapshotOf([
+      detached('h1'),
+      wt('d1', 'review', 2 * GIB, {}, { reason: reviewReason('dirty') })
+    ])
+    const api = installJudged(s)
+    await mountView()
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    await selectAndRemove()
+    expect(document.body.querySelectorAll('[data-testid="bulk-row"]')).toHaveLength(1)
+    expect(toast.mock.calls[0][0]).toMatchObject({
+      kind: 'warning',
+      title: i18n.global.t('cleanup.gc.confirm.detachedSkipped', 1, { named: { n: 1 } })
+    })
+    ;(body('bulk-confirm') as HTMLButtonElement).click()
+    await flushPromises()
+    const [ids] = api.gcClean.mock.calls[0]
+    expect(ids).toEqual(['/w/repo::worktree::d1'])
+    // Every id that reached main is one main accepts.
+    for (const id of ids as string[]) {
+      const b = s.bundles.find((x) => x.item.id === id)!
+      expect(refusalFor(b, s.prefs, { confirmed: true })).toBeNull()
+    }
   })
 })

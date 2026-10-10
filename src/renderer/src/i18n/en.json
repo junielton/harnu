@@ -2394,6 +2394,8 @@
       "confirm": {
         "titleWorktrees": "Remove {n} worktree? | Remove {n} worktrees?",
         "titleItems": "Remove {n} item? | Remove {n} items?",
+        "detachedSkipped": "{n} detached worktree can't be removed here | {n} detached worktrees can't be removed here",
+        "detachedSkippedHint": "Harnu cannot archive a worktree with no branch yet, so it leaves it alone. Remove it with git worktree remove.",
         "listLabel": "Items to remove",
         "worktreeRow": "{repo} › {name}",
         "volumeRow": "Docker volume {name}",

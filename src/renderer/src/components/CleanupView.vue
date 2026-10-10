@@ -28,6 +28,7 @@ import { identText } from './cleanup-ident'
 import {
   captureConfirm,
   confirmChanged,
+  unremovableIds,
   selectionStats,
   toggleChecked,
   type CapturedConfirm
@@ -217,6 +218,19 @@ function openReady(ids?: string[]): void {
 }
 function openRemove(ids: string[]): void {
   if (dialogOpen.value || !model.value) return
+  // Main refuses a detached worktree outright, so it is never put in the dialog: the operator is
+  // told now, not by a job that removed nothing.
+  const skipped = unremovableIds(model.value, ids)
+  if (skipped.length > 0) {
+    ui.pushToast({
+      kind: 'warning',
+      title: t('cleanup.gc.confirm.detachedSkipped', skipped.length, {
+        named: { n: skipped.length }
+      }),
+      description: t('cleanup.gc.confirm.detachedSkippedHint'),
+      timeoutMs: 8000
+    })
+  }
   const c = captureConfirm(model.value, ids, 'review')
   if (c) confirmDialog.value = c
 }
