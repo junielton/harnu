@@ -361,8 +361,12 @@ describe('useMissionsStore — owed-to-operator cue', () => {
     expect(activity.list[0]).toMatchObject({
       kind: 'warning',
       title: 'Mission “Ship T373” needs you: Tick 2 due checks on Build the API.',
-      sessionId: OWNER
+      group: 'mission-cue'
     })
+    // The owner opens from the mission's own row, not the entry (BUG-173 S4).
+    expect(activity.list[0].items).toEqual([
+      expect.objectContaining({ id: 'mnt-00000001', sessionId: OWNER })
+    ])
     await store.refresh()
     expect(playNotificationSound).toHaveBeenCalledTimes(1)
     expect(activity.list).toHaveLength(1)
@@ -416,7 +420,7 @@ describe('useMissionsStore — owed-to-operator cue', () => {
     expect(requestAttention).toHaveBeenCalledTimes(1)
     expect(activity.list).toHaveLength(1)
     expect(activity.list[0].title).toBe('2 missions need you')
-    expect(activity.list[0].description).toBe('Ship T373 · Docs pass')
+    expect(activity.list[0].items?.map((i) => i.title)).toEqual(['Ship T373', 'Docs pass'])
     expect(activity.list[0].sessionId).toBeUndefined()
   })
 
@@ -446,8 +450,8 @@ describe('useMissionsStore — owed-to-operator cue', () => {
     await vi.advanceTimersByTimeAsync(2 * 60 * 1000) // the poll past 30 min
     expect(playNotificationSound).toHaveBeenCalledTimes(2)
     expect(requestAttention).toHaveBeenCalledTimes(2)
-    // One Activity entry per cue (S4 turns this into an in-place update).
-    expect(useNotificationsStore().list).toHaveLength(2)
+    // The re-nudge replaces the one grouped entry in place (BUG-173 S4).
+    expect(useNotificationsStore().list).toHaveLength(1)
     await vi.advanceTimersByTimeAsync(50 * 60 * 1000) // 1 h is the next wait
     expect(playNotificationSound).toHaveBeenCalledTimes(2)
     await vi.advanceTimersByTimeAsync(11 * 60 * 1000)

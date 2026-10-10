@@ -330,6 +330,24 @@ describe('an item main always refuses to remove is never marked-safe material', 
     expect(safeIds(map, m)).toEqual([ok])
   })
 
+  it('safeIds leaves out every other item main refuses, judged on its facts', () => {
+    const detached = wt('det', 'review', 400 * MIB, { reason: { code: 'detached', detail: 'x' } })
+    detached.item.kind = 'detached-worktree'
+    const shared = wt('sh', 'review', 400 * MIB, {
+      reason: { code: 'shared-stack', detail: 'x' },
+      sharedStackIds: ['other']
+    })
+    const open = wt('op', 'review', 400 * MIB, {
+      reason: { code: 'open-idle-session', detail: 'x' },
+      session: 'open-idle'
+    })
+    const ok = wt('ok', 'review', 900 * MIB)
+    const m = buildGcModel(snap([ok, detached, shared, open]))
+    let map: OpinionMap = new Map()
+    for (const b of [ok, detached, shared, open]) map = recordOpinion(map, op(b.item.id, 'safe'), m)
+    expect(safeIds(map, m)).toEqual([ok.item.id])
+  })
+
   it('still records and shows their opinion: it is advice, only the removal shortcut skips them', () => {
     const { m, nested } = mixed()
     expect(opinionOf(recordOpinion(new Map(), op(nested, 'safe'), m), nested)?.verdict).toBe('safe')

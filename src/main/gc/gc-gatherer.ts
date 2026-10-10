@@ -77,7 +77,8 @@ export function createGatherer(deps: GathererDeps): Gatherer {
       deps.prefs(),
       now,
       toDirMap(deps.leftovers.get()),
-      new Set(startedWith.keys())
+      // A refusal changed nothing, so its folder gone since is just gone; a halt keeps the item.
+      new Set([...startedWith].filter(([, f]) => f.step !== 'reprobe').map(([id]) => id))
     )
     // Pruning forgets failure notes for bundles it cannot see, so only a persisting gather does,
     // and only one that is still current: a stale gather would delete the note of an item the
@@ -94,7 +95,7 @@ export function createGatherer(deps: GathererDeps): Gatherer {
     }
     return {
       ...g,
-      bundles: applyFailures(g.bundles, deps.state.failures, new Set(g.goneItemIds))
+      bundles: applyFailures(g.bundles, deps.state.failures, now, new Set(g.goneItemIds))
     }
   }
 

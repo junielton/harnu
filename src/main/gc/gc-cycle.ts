@@ -9,8 +9,9 @@
 import type { InspectedContainer } from '../containers/containers-core'
 import {
   applyFailures,
-  FAILURE_TTL_MS,
   planCycle,
+  pruneFailures,
+  rememberReprobeRefusal,
   type CycleFailure,
   type CyclePlan
 } from './autopilot-core'
@@ -84,12 +85,14 @@ export interface GcCycleDeps {
  * the cycle agree; applying it again is a no-op.
  */
 export function withFailures<G extends GcGather>(g: G, state: CycleState, now: number): G {
-  // No pruning here: forgetting a note belongs to the gatherer, which does it only from a
-  // gather that is still current. A prune on this side ran against a gather that a manual
-  // clean could overlap, and deleted the note of an item that clean had just halted. An
-  // expired note is only skipped, never deleted: after a day the autopilot may try again.
-  const live = new Map([...state.failures].filter(([, f]) => now - f.at < FAILURE_TTL_MS))
-  return { ...g, bundles: applyFailures(g.bundles, live) }
+  // No pruning of the shared notes here: forgetting a note belongs to the gatherer, which does it
+  // only from a gather that is still current. A prune on this side ran against a gather that a
+  // manual clean could overlap, and deleted the note of an item that clean had just halted. The
+  // same rules run on a copy instead, so an expired note or a refusal the scan has moved past is
+  // only skipped, never deleted: after its TTL the autopilot may try again.
+  const live = new Map(state.failures)
+  pruneFailures(live, g.bundles, now)
+  return { ...g, bundles: applyFailures(g.bundles, live, now) }
 }
 
 /**
@@ -190,8 +193,13 @@ export async function runGcCycle(
       const done = toClean.find((b) => b.item.id === r.id)
       if (done) deps.rememberLeftovers?.(leftBehind(done, gathered.housekeeping.volumes))
     }
-    // A refusal at the reprobe changed nothing: that item just re-buckets on the next scan.
-    if (!r.ok && r.haltedAt !== 'reprobe' && r.haltedAt !== null) {
+    // A refusal at the reprobe changed nothing. One that describes the item (a locked worktree, an
+    // unknown tip) is remembered, so the item leaves the hero and the next cycle spends its cap
+    // elsewhere; the rest just re-bucket on the next scan.
+    if (!r.ok && r.haltedAt === 'reprobe') {
+      const done = toClean.find((b) => b.item.id === r.id)
+      rememberReprobeRefusal(deps.state.failures, r, now, done?.localTip ?? null)
+    } else if (!r.ok && r.haltedAt !== null) {
       deps.state.failures.set(r.id, { step: r.haltedAt, error: r.error ?? 'failed', at: now })
       console.warn('[gc] cleanup halted', r.id, r.haltedAt, r.error)
     }

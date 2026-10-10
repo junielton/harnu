@@ -9,10 +9,17 @@ import { formatBytes } from './system-monitor-format'
  * anatomy" #3). Shown only while at least one Needs review block is checked. "Ask for an opinion"
  * asks the read-only advisor about the checked items; it is advisory and never removes anything.
  */
-withDefaults(defineProps<{ count: number; bytes: number; canKeep?: boolean; asking?: boolean }>(), {
-  canKeep: true,
-  asking: false
-})
+withDefaults(
+  defineProps<{
+    count: number
+    bytes: number
+    canKeep?: boolean
+    asking?: boolean
+    /** At least one selected item can be removed; with none, Remove is disabled and says why. */
+    canRemove?: boolean
+  }>(),
+  { canKeep: true, asking: false, canRemove: true }
+)
 const emit = defineEmits<{ remove: []; dehydrate: []; keep: []; ask: []; clear: [] }>()
 const { t } = useI18n()
 </script>
@@ -36,10 +43,18 @@ const { t } = useI18n()
         </template>
       </i18n-t>
     </span>
-    <Button variant="danger" data-testid="sel-remove" @click="emit('remove')">
-      <Trash2 :size="13" :stroke-width="1.6" class="shrink-0" />
-      {{ t('cleanup.gc.selection.remove') }}
-    </Button>
+    <!-- A disabled button swallows hover, so the tooltip rides on a wrapper. -->
+    <span :title="canRemove ? undefined : t('cleanup.gc.selection.removeNone')" class="inline-flex">
+      <Button
+        variant="danger"
+        :disabled="!canRemove"
+        data-testid="sel-remove"
+        @click="emit('remove')"
+      >
+        <Trash2 :size="13" :stroke-width="1.6" class="shrink-0" />
+        {{ t('cleanup.gc.selection.remove') }}
+      </Button>
+    </span>
     <Button variant="soft" data-testid="sel-dehydrate" @click="emit('dehydrate')">
       <PackageMinus :size="13" :stroke-width="1.6" class="shrink-0" />
       {{ t('cleanup.gc.selection.dehydrate') }}

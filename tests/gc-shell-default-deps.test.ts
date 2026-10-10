@@ -190,10 +190,19 @@ describe('reprobe over the default deps', () => {
     }
   })
 
-  it('refuses as docker-unavailable when the daemon is down', async () => {
+  it('refuses a bundle that had a stack as docker-unavailable when the daemon is down', async () => {
     h.inspectAll.mockRejectedValue(daemonDownError())
     const ops = createGcOps(await defaultGcShellDeps(() => null))
-    expect(await ops.reprobe(harvestable())).toEqual({ ok: false, reason: 'docker-unavailable' })
+    expect(await ops.reprobe({ ...harvestable(), stackIds: ['app'] })).toEqual({
+      ok: false,
+      reason: 'docker-unavailable'
+    })
+  })
+
+  it('still cleans a stackless bundle when the daemon is down: one outage is not every clean', async () => {
+    h.inspectAll.mockRejectedValue(daemonDownError())
+    const ops = createGcOps(await defaultGcShellDeps(() => null))
+    expect(await ops.reprobe(harvestable())).toEqual({ ok: true })
   })
 
   it('still cleans a stackless bundle when the docker CLI is not installed', async () => {
