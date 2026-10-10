@@ -5598,6 +5598,104 @@ bg-accent-soft`): **Close as delivered** ("The work is done.") and
   "Safety confirms — sound + attention" pair, independent of the Sound switch.
   Once per opening.
 
+#### Missions review dialog (`MissionsReviewDialog.vue`, BUG-173 S5, spec §3.5)
+
+"Missions that need you": the whole pile of missions that owe the operator
+something, plus every finished mission nobody asked to close, in one place, and the only bulk action Harnu offers — **close
+finished missions as delivered**. It is opened from the grouped Activity entry's
+**Review all {n}** button and from an orphan row (a mission whose owner session
+is not loaded), through `useMissionsStore().openReview(focusMissionId?)`. It is
+mounted once in `App.vue` and consumes `missions.reviewRequest`, so it works with
+no session selected. It is **not** a Topbar control (a rare chore does not earn an
+always-on affordance).
+
+- **Anatomy:** the End dialog's `Dialog` variant — Teleport to `<body>`, z-60,
+  backdrop `rgba(0,0,0,0.55)` + `.anim-overlay-fade`, card `bg-surface
+border-border-2`, radius 9px, `--shadow-pop`, `.anim-fade-in-scale`, focus trap
+  — at width `min(560px, 92vw)`, `max-height: 80vh`. No new token, size or keyframe.
+- **Header** (`padding: 14px 18px 10px`, `border-b border-border`): title
+  "Missions that need you" (`13.5px / 600`) + the `X` button.
+- **Intro + selection bar** (`padding: 10px 18px`, `border-b border-border`): a
+  one-line intro (`12px`, `text-text-3`), then a row with the **Select all ready**
+  checkbox (shown only when group 1 is non-empty) on the left and the
+  **{count} selected** counter (`11px`, `tabular-nums`, `text-text-3`) on the right.
+- **Body** (scrollable, `padding: 6px 18px 12px`): up to three groups, each an
+  eyebrow heading (`9.5px / 700`, uppercase, `letter-spacing: 0.06em`,
+  `text-text-3`, `padding: 10px 0 4px`) over its rows. An empty group renders
+  nothing; with all three empty the body shows the empty line.
+  1. **Ready to close** — `status: 'delivered'` with `pendingClose`: the owner
+     verified the end and asked. **Pre-selected.**
+  2. **Finished, close never requested** — `status: 'active'` and
+     `progress.allDone`, nothing asked — listed whether or not it owes anything else
+     (its row then reads its headline, "Step N of N ✓"). **Not** pre-selected, with a hint
+     under the heading ("Nobody verified the end of these") and each row's
+     `closeWarnings` inline (Warning callout look, below).
+  3. **Waiting on you for something else** — every other owed mission. **No
+     checkbox**; the row's **Open** action (Button `ghost`, `11px`) selects the
+     owner and opens its popover like an Activity row, closing the review; when the
+     owner is not loaded the action is disabled and its tooltip says why. The
+     dialog never offers to close these in bulk.
+- **Row** (`border-t border-border` between rows, `padding: 7px 0`, `gap: 8px`): a
+  checkbox (`accent-color: var(--color-accent)`) for groups 1 and 2, the mission
+  title (`12px / 500`, `text-text`, truncated) with what it owes under it
+  (`11px`, `text-text-3`, truncated). A **focused** row (the request named a
+  mission) is scrolled into view once and wears `border-accent-line bg-accent-soft`
+  with `rounded-sm` and a `padding: 7px 8px` inset; the highlight clears when the
+  operator toggles anything.
+- **Inline warnings (group 2):** under the row, `text-warning` `11px`, one line per
+  warning with the same copy as the End dialog (`mission.end.warnings.*`: step
+  titles, never ids). They are information; they never disable a row.
+- **Footer** (`border-t border-border`, `padding: 12px 18px`, `gap: 8px`,
+  right-aligned): **Cancel** (Button `ghost`) + **Close {count} as delivered…**
+  (Button `success`, `check` 14px). The primary is **disabled at 0 selected**. It
+  only **opens** the confirm; it never closes anything itself.
+- **Exits:** Cancel, `X`, `Esc` and a backdrop click dismiss it (not while a bulk
+  close is running, and `Esc` goes to the confirm first when that is open). It also
+  closes itself when the pile is empty after a successful close.
+- **Selection state:** local to the dialog. Group 1 starts selected, group 2
+  unselected. A poll that removes a mission drops it from the selection; one that
+  adds a mission never selects it (no surprise pre-selection mid-review).
+
+#### Bulk close confirm (`MissionBulkCloseConfirmDialog.vue`, BUG-173 S5)
+
+The irreversible step of the review. The **End dialog's anatomy, copied**
+(Teleport, z-60 above the review, overlay fade, fade-in-scale card, focus trap,
+`Esc` and backdrop cancel, **initial focus on Cancel**, the confirm chime and
+`requestAttention()` once on open — an irreversible decision is never silent),
+at width `min(480px, 90vw)`.
+
+- **Header:** "Close {count} missions as delivered?" (plural) + the `X` button.
+- **Body:** one sentence ("They leave the Topbar and the sidebar and can't be
+  reopened. Each mission file stays on disk as the record."), then a list with one
+  block per mission: the title (`12px / 500`, `text-text`) and, when the server
+  returned `closeWarnings`, the same Warning callout look as the End dialog
+  (`triangle-alert` 13px, one line per warning with the step titles beneath, never
+  ids). Then **Reason (optional)** — a single label + a 2-row textarea that
+  applies to every mission and goes to every Log, prefixed `bulk close` so an
+  owner reading its Log can tell it was a batch decision. Warnings **never**
+  disable the confirm.
+- **Footer:** **Cancel** (Button `ghost`) + **Close {count} missions** (Button
+  `success`, `check` 14px). The only outcome is `closedAs: 'delivered'`. **There is
+  no Discard here**: discarding says "dead or abandoned", a per-mission judgment
+  that stays on the End dialog.
+- **In flight:** the confirm button reads "Closing {done} of {total}…" and
+  everything is disabled. Doors run **one after another**, never in parallel, and
+  never abort on the first error; rows leave the review as each answer lands.
+- **Outcome:** all closed → a **success** toast ("{count} missions closed") and the
+  confirm closes (the review closes with it when nothing is left). Any failure → a
+  **danger** toast ("{failed} of {total} could not be closed"); the confirm closes,
+  the review stays open on the failed rows with their selection kept, so the
+  operator can retry or open the mission. A mission closed elsewhere meanwhile
+  (`MISSION_CLOSED`) counts as closed.
+- **Operator-only:** no MCP verb reaches this path, now or later. An agent can only
+  stage a close (`mission_request_close`).
+
+**Don't**
+
+- ❌ Pre-select group 2, or offer a bulk **discard**.
+- ❌ Add a bulk IPC door: the batch is N calls of the existing `end` door.
+- ❌ Let the review's primary button close anything without the confirm.
+
 #### Sidebar indicator (`SidebarFolder.vue`)
 
 The **last** (rightmost) entry of the session row's trailing chip cluster:

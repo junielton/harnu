@@ -3687,6 +3687,35 @@
       "reviewAll": "Review all {n}",
       "ownerMissing": "The owner session isn’t open here — click to review this mission instead.",
       "itemAria": "Open mission {title}"
+    },
+    "review": {
+      "title": "Missions that need you",
+      "intro": "Close the finished ones in one go, or open any of them to handle it.",
+      "groups": {
+        "ready": "Ready to close",
+        "finished": "Finished, close never requested",
+        "finishedHint": "Nobody verified the end of these, so none is pre-selected.",
+        "other": "Waiting on you for something else"
+      },
+      "selectAllReady": "Select all ready",
+      "selected": "{count} selected",
+      "closeSelected": "Close {count} as delivered…",
+      "empty": "No mission needs you right now.",
+      "openMission": "Open",
+      "ownerMissing": "The owner session isn’t open here, so this mission can’t be opened from the review.",
+      "dismiss": "Close the review"
+    },
+    "bulk": {
+      "title": "Close {count} mission as delivered? | Close {count} missions as delivered?",
+      "body": "They leave the Topbar and the sidebar and can’t be reopened. Each mission file stays on disk as the record.",
+      "reason": "Reason (optional)",
+      "reasonPlaceholder": "Goes to every mission’s Log",
+      "confirm": "Close {count} mission | Close {count} missions",
+      "cancel": "Cancel",
+      "dismiss": "Cancel and keep the missions open",
+      "closing": "Closing {done} of {total}…",
+      "done": "{count} mission closed | {count} missions closed",
+      "partial": "{failed} of {total} could not be closed"
     }
   },
   "harnuMod": {
