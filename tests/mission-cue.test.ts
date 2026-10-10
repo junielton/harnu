@@ -109,6 +109,17 @@ describe('decideCue — appear or grow only', () => {
     expect(decideCue([owedView('a', 'checks:2')], back.memory, T0 + 3 * POLL).cue).toBe(true)
   })
 
+  // BUG-173 S1 (spec §3.1): defence in depth behind the dedupe in main.
+  it('a repeated mission id in views cues once and counts once', () => {
+    const decision = decideCue(
+      [owedView('a', 'close'), owedView('a', 'close'), owedView('b', 'close')],
+      empty(),
+      T0
+    )
+    expect(decision.missionIds).toEqual(['a', 'b'])
+    expect(decision.memory.owed.size).toBe(2)
+  })
+
   it('a tick that clears the last due check never chimes', () => {
     const first = decideCue([owedView('a', 'checks:1')], empty(), T0)
     const ticked = decideCue([view({ id: 'a' })], first.memory, T0 + POLL)

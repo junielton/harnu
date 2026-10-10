@@ -116,14 +116,18 @@ export const useMissionsStore = defineStore('missions', () => {
       // A door landed while this read was in flight: its list predates the
       // write. The read the door scheduled supplies the truth.
       if (startedAt !== writeSeq) return
-      views.value = res.views
+      // Main lists each mission once; drop a repeated id anyway (BUG-173 defence in depth).
+      const list = res.views.filter(
+        (v, i, all) => all.findIndex((x) => x.mission.id === v.mission.id) === i
+      )
+      views.value = list
       refreshedAt.value = Date.now()
-      const decision = decideCue(res.views, cueMemory, Date.now())
+      const decision = decideCue(list, cueMemory, Date.now())
       cueMemory = decision.memory
       if (decision.cue) {
         playNotificationSound()
         void window.api.requestAttention()
-        postMissionActivity(decision.missionIds, res.views)
+        postMissionActivity(decision.missionIds, list)
       }
     } catch {
       // A failed read keeps the last good list — the surfaces never flash empty.
