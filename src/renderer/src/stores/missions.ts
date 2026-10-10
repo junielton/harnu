@@ -35,6 +35,15 @@ import { useUiStore } from './ui'
 
 const POLL_MS = 20_000
 
+/** How long an open-the-popover request stays claimable (BUG-173, spec §3.4). */
+export const POPOVER_REQUEST_TTL_MS = 5_000
+
+/** "Open this mission's popover" — set by `openNavigableView('mission')`, consumed by `MissionPill`. */
+export interface PopoverRequest {
+  missionId: string
+  at: number
+}
+
 /** What the operator owes, as the cue's `{what}`: the first owed item in words. */
 function owedWhat(view: MissionView): string {
   const { t } = i18n.global
@@ -105,6 +114,13 @@ export const useMissionsStore = defineStore('missions', () => {
   let timer: ReturnType<typeof setInterval> | null = null
   let inFlight: Promise<void> | null = null
   let cueMemory: CueMemory = { owed: new Map(), primed: false }
+  /**
+   * A pending request to open a mission's popover. It lives for
+   * {@link POPOVER_REQUEST_TTL_MS}, so one that never finds a pill (owner not
+   * shown) cannot pop a popover open later at a surprising moment.
+   */
+  const popoverRequest = ref<PopoverRequest | null>(null)
+  let popoverTimer: ReturnType<typeof setTimeout> | null = null
   /** Bumped by every door that took effect: a list read started before it is stale. */
   let writeSeq = 0
 
@@ -149,6 +165,29 @@ export const useMissionsStore = defineStore('missions', () => {
   async function refreshAfterWrite(): Promise<void> {
     if (inFlight) await inFlight
     await refresh()
+  }
+
+  function clearPopoverRequest(): void {
+    if (popoverTimer) clearTimeout(popoverTimer)
+    popoverTimer = null
+    popoverRequest.value = null
+  }
+
+  /** Ask the pill that owns `missionId` to open its popover; a newer request replaces an older one. */
+  function requestPopover(missionId: string): void {
+    clearPopoverRequest()
+    popoverRequest.value = { missionId, at: Date.now() }
+    popoverTimer = setTimeout(clearPopoverRequest, POPOVER_REQUEST_TTL_MS)
+  }
+
+  /**
+   * Claim the pending request: returns it and clears it, or `null` when there is
+   * none or it is older than the TTL (a throttled timer must not revive it).
+   */
+  function consumePopoverRequest(): PopoverRequest | null {
+    const req = popoverRequest.value
+    clearPopoverRequest()
+    return req && Date.now() - req.at < POPOVER_REQUEST_TTL_MS ? req : null
   }
 
   /** Start polling once; later calls are no-ops. */
@@ -236,6 +275,9 @@ export const useMissionsStore = defineStore('missions', () => {
     ensureStarted,
     viewForSession,
     modelForSession,
-    runDoor
+    runDoor,
+    popoverRequest,
+    requestPopover,
+    consumePopoverRequest
   }
 })
