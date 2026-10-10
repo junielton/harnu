@@ -6836,15 +6836,32 @@ global shortcut would die).
     `needs-input → errored → stuck → working → done` — a lower tier can
     **never** render above a higher one, so a session that just turned
     `working` can never push above something that still needs attention.
-    Within the three **attention tiers** (`needs-input`/`errored`/`stuck`),
-    cards sort **oldest-waiting first** (most neglected on top) — the
-    inverse of `working`/`done`, which stay most-recent-first. This flip
-    happens inside `sessions.boardBuckets` (`stores/sessions.ts`) by
-    re-sorting `buildBoard`'s per-tier output for those three states;
-    `buildBoard` itself (`fleet-board.ts`) is untouched. It applies to every
-    `boardBuckets` consumer (the old sidebar board included) — "most
-    neglected on top" is a universal improvement for any attention-tier
-    bucket, not a rail-only rule.
+    **Inside a tier, cards are in creation order** (T459) — by the
+    session's `created` time, **never** by `modified`, so a transcript write
+    can no longer move a card. **Newest on top** by default; the
+    [order toggle](#fleet-rail-order-toggle) inverts it. The same rule covers
+    every tier, the three attention tiers (`needs-input`/`errored`/`stuck`)
+    included — the old "oldest-waiting first" flip is gone. A session with a
+    missing/invalid `created` sorts after every valid one in both directions;
+    ties break on `sessionId`. A synthetic placeholder that is replaced by its
+    disk twin keeps the placeholder's creation time as its sort key, so the
+    card does not jump when the real transcript lands. The sort lives in
+    `buildBoard(sessions, order)` (`fleet-board.ts`); `sessions.boardBuckets`
+    passes it `layout.inboxRailOrder`, and the expanded cards and the
+    minimized minicards both flatten that one projection.
+  - <a id="fleet-rail-order-toggle"></a>**Order toggle.** A `22×22` icon
+    button in the header, immediately left of the state filter (same anatomy as
+    the minimize button). Icon (Lucide, §5): `ArrowDownWideNarrow` while
+    **newest first**, `ArrowUpNarrowWide` while **oldest first** — the icon
+    shows the _current_ order. `title` and `aria-label` carry the same string,
+    naming the current order and what a click does (`approvalInbox.order.*`:
+    "Newest first — click for oldest first"). It inverts the order inside
+    **every** state group; the groups themselves stay in tier order. No accent
+    dot: oldest-first is a preference, not hidden content. Persistence:
+    `om2tab.inboxRailOrder` (`'newest-first'` default / `'oldest-first'`,
+    `stores/layout.ts` next to `inboxRailHiddenStates`; an unknown stored value
+    falls back to newest-first). The minimized strip has no header, so it just
+    follows the persisted direction.
   - **Card inset:** 8px left/right margin + 4px bottom margin per card
     (`FleetBoardCard.vue`, not a wrapper's padding) + 6px top padding on the
     scroll body, so the first card's ring never touches the header's

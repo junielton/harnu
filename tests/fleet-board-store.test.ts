@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
 import type { Session } from '../src/renderer/src/stores/sessions'
+import { useLayoutStore } from '../src/renderer/src/stores/layout'
 
 /** A full Session slice (mirrors the session() factory in sessions-store.test.ts). */
 function session(over: Partial<Session> = {}): Session {
@@ -183,53 +184,137 @@ describe('boardBuckets projection', () => {
     expect(store.boardBuckets.flatMap((b) => b.sessions).length).toBe(2)
   })
 
-  it('T151: sorts attention tiers (needs-input/errored/stuck) oldest-waiting-first', () => {
+  const inTier = (store: ReturnType<typeof useSessionsStore>, state: string): string[] =>
+    store.boardBuckets.find((b) => b.state === state)?.sessions.map((s) => s.sessionId) ?? []
+
+  it('T459 AC-1/AC-5: attention tiers order by creation (newest first), not by modified', () => {
     const store = useSessionsStore()
     seed(store, [
       {
         alias: 'api',
         sessions: [
           session({
-            sessionId: 'newer',
+            sessionId: 'created-first',
             taskState: 'needs-input',
-            modified: new Date(Date.now() - 60_000).toISOString()
+            created: '2026-05-01T00:00:00.000Z',
+            modified: new Date().toISOString()
           }),
           session({
-            sessionId: 'older',
+            sessionId: 'created-last',
             taskState: 'needs-input',
+            created: '2026-05-02T00:00:00.000Z',
             modified: new Date(Date.now() - 600_000).toISOString()
           })
         ]
       }
     ])
-    const bucket = store.boardBuckets.find((b) => b.state === 'needs-input')
-    expect(bucket?.sessions.map((s) => s.sessionId)).toEqual(['older', 'newer'])
+    expect(inTier(store, 'needs-input')).toEqual(['created-last', 'created-first'])
   })
 
-  it('T151: keeps working/done buckets most-recent-first (unchanged)', () => {
+  it('T459 AC-1: a modified bump on a working session never reorders the bucket', () => {
+    const store = useSessionsStore()
+    seed(store, [
+      {
+        alias: 'api',
+        sessions: ['a', 'b', 'c'].map((id, i) =>
+          session({
+            sessionId: id,
+            taskState: 'working',
+            status: 'active',
+            created: `2026-05-0${i + 1}T00:00:00.000Z`,
+            // Well under STUCK_AFTER_MS (3min) — stays `working`, not `stuck`.
+            modified: new Date(Date.now() - (30 - i) * 1000).toISOString()
+          })
+        )
+      }
+    ])
+    expect(inTier(store, 'working')).toEqual(['c', 'b', 'a'])
+    // The oldest-created session is now the most recently active one.
+    store.folders[0].sessions.find((s) => s.sessionId === 'a')!.modified = new Date().toISOString()
+    expect(inTier(store, 'working')).toEqual(['c', 'b', 'a'])
+  })
+
+  it('T459 AC-2: tiers stay in BOARD_STATES order and a state change moves the session', () => {
     const store = useSessionsStore()
     seed(store, [
       {
         alias: 'api',
         sessions: [
           session({
-            sessionId: 'older',
+            sessionId: 'w',
             taskState: 'working',
             status: 'active',
-            // Well under STUCK_AFTER_MS (3min) — stays `working`, not `stuck`.
-            modified: new Date(Date.now() - 30_000).toISOString()
+            modified: new Date().toISOString(),
+            created: '2026-05-03T00:00:00.000Z'
           }),
           session({
-            sessionId: 'newer',
-            taskState: 'working',
-            status: 'active',
-            modified: new Date().toISOString()
-          })
+            sessionId: 'n',
+            taskState: 'needs-input',
+            created: '2026-05-01T00:00:00.000Z'
+          }),
+          session({ sessionId: 'd', taskState: 'completed', created: '2026-05-09T00:00:00.000Z' })
         ]
       }
     ])
-    const bucket = store.boardBuckets.find((b) => b.state === 'working')
-    expect(bucket?.sessions.map((s) => s.sessionId)).toEqual(['newer', 'older'])
+    expect(store.boardBuckets.map((b) => b.state)).toEqual(['needs-input', 'working', 'done'])
+    store.folders[0].sessions.find((s) => s.sessionId === 'w')!.taskState = 'failed'
+    expect(store.boardBuckets.map((b) => b.state)).toEqual(['needs-input', 'errored', 'done'])
+  })
+
+  it('T459 AC-3/AC-4: the layout toggle inverts every group, and it round-trips', () => {
+    const store = useSessionsStore()
+    const layout = useLayoutStore()
+    seed(store, [
+      {
+        alias: 'api',
+        sessions: [
+          session({
+            sessionId: 'n1',
+            taskState: 'needs-input',
+            created: '2026-05-01T00:00:00.000Z'
+          }),
+          session({
+            sessionId: 'n2',
+            taskState: 'needs-input',
+            created: '2026-05-02T00:00:00.000Z'
+          }),
+          session({ sessionId: 'd1', taskState: 'completed', created: '2026-05-03T00:00:00.000Z' }),
+          session({ sessionId: 'd2', taskState: 'completed', created: '2026-05-04T00:00:00.000Z' })
+        ]
+      }
+    ])
+    expect(layout.inboxRailOrder).toBe('newest-first')
+    expect(inTier(store, 'needs-input')).toEqual(['n2', 'n1'])
+    expect(inTier(store, 'done')).toEqual(['d2', 'd1'])
+    layout.toggleInboxRailOrder()
+    expect(layout.inboxRailOrder).toBe('oldest-first')
+    expect(inTier(store, 'needs-input')).toEqual(['n1', 'n2'])
+    expect(inTier(store, 'done')).toEqual(['d1', 'd2'])
+    expect(store.boardBuckets.map((b) => b.state)).toEqual(['needs-input', 'done'])
+    layout.toggleInboxRailOrder()
+    expect(inTier(store, 'needs-input')).toEqual(['n2', 'n1'])
+  })
+
+  it('T459 AC-7: a session with an invalid created sorts last in both directions', () => {
+    const store = useSessionsStore()
+    const layout = useLayoutStore()
+    seed(store, [
+      {
+        alias: 'api',
+        sessions: [
+          session({ sessionId: 'bad', taskState: 'completed', created: '' }),
+          session({
+            sessionId: 'ok1',
+            taskState: 'completed',
+            created: '2026-05-01T00:00:00.000Z'
+          }),
+          session({ sessionId: 'ok2', taskState: 'completed', created: '2026-05-02T00:00:00.000Z' })
+        ]
+      }
+    ])
+    expect(inTier(store, 'done')).toEqual(['ok2', 'ok1', 'bad'])
+    layout.toggleInboxRailOrder()
+    expect(inTier(store, 'done')).toEqual(['ok1', 'ok2', 'bad'])
   })
 
   it('recomputes reactively when a session taskState changes', () => {

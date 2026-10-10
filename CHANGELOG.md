@@ -12,6 +12,15 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-10-09
 
+### Changed
+
+- **The Fleet rail no longer jumps around.** Cards used to reshuffle every time a session wrote
+  anything, so with a few sessions running the list never stayed put. Inside each state group
+  (needs input, errored, stuck, working, done) cards now stay in the order the sessions were
+  created, newest on top, and activity never moves them. The groups keep their usual order, and
+  the minimized strip follows the same order. A new button in the rail header (next to the
+  state filter) flips it to oldest first; Harnu remembers your choice.
+
 ### Fixed
 
 - **A mission no longer appears twice when two clones of a repo hold the same mission files.** Missions are now listed once by id, in the app and for the agent's `mission_list`: the newest copy wins, and a mission you closed stays closed even if an older clone still says it is active. This also stops the "N missions need you" notice from counting and naming the same mission twice.

@@ -37,6 +37,13 @@ export interface BoardSession {
   isSidechain: boolean
   modified: string
   /**
+   * Session creation time (ISO) — the board's ONLY ordering key (T459). Unlike
+   * `modified` it never changes with activity, so cards do not reshuffle as
+   * transcripts grow. Optional: a slice without a parseable value is the
+   * "missing" case and sorts after every valid one.
+   */
+  created?: string
+  /**
    * Live-activity verdict from the canonical `resolveActivity`, resolved by the
    * store (it owns the clock, `agents`, and the quiet threshold). Drives the
    * working / stuck / idle bucketing so the board matches the sidebar dot.
@@ -46,7 +53,16 @@ export interface BoardSession {
   folderAlias: string
 }
 
-/** A renderable bucket: a state + its already-ordered cards (recent desc). */
+/**
+ * Direction of the creation-order sort inside every bucket (T459). The bucket
+ * (tier) order itself is fixed by `BOARD_STATES` and never inverts.
+ */
+export type BoardOrder = 'newest-first' | 'oldest-first'
+
+/** The rail's default direction — newest session on top. */
+export const DEFAULT_BOARD_ORDER: BoardOrder = 'newest-first'
+
+/** A renderable bucket: a state + its already-ordered cards (creation order). */
 export interface BoardBucket {
   state: BoardState
   sessions: BoardSession[]
@@ -70,27 +86,47 @@ export function classifyBoardState(
   return s.activity
 }
 
-/** Parse `modified` to a sortable number; invalid/empty sinks to the end. */
-function recentKey(modified: string): number {
-  const ms = Date.parse(modified)
-  return Number.isFinite(ms) ? ms : -Infinity
+/** Parse `created` to a sortable number; missing/invalid → `null`. */
+function createdKey(created: string | undefined): number | null {
+  if (!created) return null
+  const ms = Date.parse(created)
+  return Number.isFinite(ms) ? ms : null
+}
+
+/**
+ * Total order for cards inside one bucket (T459): by creation time in the
+ * requested direction; a missing/invalid `created` sorts AFTER every valid one
+ * in BOTH directions (inverting must not promote bad data to the top); ties —
+ * including two invalid values — break on `sessionId` ascending, so the result
+ * never depends on input order and refreshes can never shuffle equal cards.
+ */
+function compareCreated(a: BoardSession, b: BoardSession, order: BoardOrder): number {
+  const ak = createdKey(a.created)
+  const bk = createdKey(b.created)
+  if (ak !== null && bk !== null && ak !== bk) {
+    return order === 'newest-first' ? bk - ak : ak - bk
+  }
+  if (ak === null && bk !== null) return 1
+  if (ak !== null && bk === null) return -1
+  return a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0
 }
 
 /**
  * Group sessions into buckets in BOARD_STATES order, sort each bucket by
- * `modified` desc (stable: equal keys keep input order, via index tiebreak),
- * and DROP empty buckets. Pure + stable; never mutates the input. Sidechains
- * are assumed pre-filtered by the caller.
+ * creation time (T459 — stable, activity never moves a card; `order` picks the
+ * direction, default newest first), and DROP empty buckets. Pure; never
+ * mutates the input. Sidechains are assumed pre-filtered by the caller.
  */
-export function buildBoard(sessions: readonly BoardSession[]): BoardBucket[] {
+export function buildBoard(
+  sessions: readonly BoardSession[],
+  order: BoardOrder = DEFAULT_BOARD_ORDER
+): BoardBucket[] {
   const buckets: BoardBucket[] = []
   for (const state of BOARD_STATES) {
-    const decorated = sessions
-      .map((s, i) => ({ s, i }))
-      .filter((d) => classifyBoardState(d.s) === state)
-    if (decorated.length === 0) continue
-    decorated.sort((a, b) => recentKey(b.s.modified) - recentKey(a.s.modified) || a.i - b.i)
-    buckets.push({ state, sessions: decorated.map((d) => d.s) })
+    const inState = sessions.filter((s) => classifyBoardState(s) === state)
+    if (inState.length === 0) continue
+    inState.sort((a, b) => compareCreated(a, b, order))
+    buckets.push({ state, sessions: inState })
   }
   return buckets
 }

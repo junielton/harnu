@@ -1595,6 +1595,10 @@
     "missionsStrip": {
       "title": "Active missions"
     },
+    "order": {
+      "newestFirst": "Newest first — click for oldest first",
+      "oldestFirst": "Oldest first — click for newest first"
+    },
     "filter": {
       "title": "Filter states",
       "showAll": "Show all",
