@@ -734,12 +734,31 @@ store's existing 20 s poll — no per-mission timer):
   count (a blocker and a re-scope key on their reason / target, so a different
   blocker is a new key). A cue fires when a key **appears** or its **count
   grows** — due checks going 1 → 2 cue; 2 → 1, a tick, a resolution or any
-  decrease never does. A later poll that sees the same keys stays silent.
-- **Re-nudge every 30 min** (fixed, no Setting) while the mission still owes
-  anything — the list as a whole, not per key. A mission that stops owing is
-  forgotten; it never re-nudges.
-- **Start/restart:** the first poll gives **one combined cue** for every
-  mission already owed — never one per mission, never one per poll.
+  decrease never does. A later poll that sees the same keys stays silent. Growth
+  or a new key restarts that key's schedule.
+- **Standing vs blocking kinds** (BUG-173, spec §3.2). _Standing_ kinds —
+  `close`, `checks`, `review-import` — are a to-do nobody is waiting on: they
+  cue once when they appear (or `checks` grows) and **never re-nudge**; the
+  pill, the bell entry and the review dialog keep showing them. _Blocking_
+  kinds — `rescope`, `blocker`, `human-steps` — are something an agent or a
+  later step waits on: they re-nudge with **back-off**, **30 min, 1 h, 2 h,
+  4 h** after the key's last cue, then go **silent** until the key changes (one
+  fixed constant, `BLOCKING_NUDGE_MS`, no Setting). Each key keeps its own clock.
+- **One sound per poll.** Every key that cues in the same poll, across all
+  missions, produces ONE chime, ONE `requestAttention()` and ONE Activity
+  post.
+- **Start/restart:** the cue memory is **persisted** (`localStorage`
+  `om2tab.missionCues`), so a restart continues where the last run stopped: the
+  first poll cues only what is **new or grown** since the app last ran — the
+  same backlog as yesterday is silent, and a blocker that came due while the app
+  was closed fires once, not once per missed interval. With **no memory at all**
+  (first run of this version, or a corrupt value) the first poll **seeds** it
+  silently from the current lists — no chime, no entry — because the operator
+  already has that backlog on screen.
+- **Stable within a run.** No cue decision is made while the sidebar folders
+  are not loaded or the read failed. A mission absent from a poll keeps its
+  memory for 24 h, is never cued while absent, and returns without re-cueing
+  the backlog.
 - **Only what a poll sees.** A blocker raised and cleared between two polls
   never cues.
 - **Excluded:** pending **approvals** and a child's **needs-input** — the
@@ -5280,8 +5299,8 @@ There is **no draft** and no Approve door (spec §3.4): a legacy `draft` file
 reads `active`. No surface shows a draft state, callout or button.
 
 **Cue (Mission v3 §3.12).** Each poll decides whether a mission newly owes the
-operator something — chime + OS attention + one Activity entry, re-nudged
-every 30 min. Rules under Notifications, "Mission owes the operator — sound +
+operator something — chime + OS attention + one Activity entry; blocking kinds
+re-nudge with back-off and then stop, standing kinds never do. Rules under Notifications, "Mission owes the operator — sound +
 attention + Activity".
 
 #### The headline — "Step N of M"

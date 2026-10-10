@@ -19,17 +19,29 @@
  *
  * Each poll also decides the owed-to-operator cue (Mission v3 §3.12,
  * `lib/mission-cue.ts`): chime + OS attention + one Activity entry when a
- * mission's owed list gains a kind or a count grows, re-nudged every 30 min.
- * The poll is its only clock — no per-mission timer.
+ * mission's owed list gains a kind or a count grows; blocking kinds are
+ * re-nudged on a back-off, standing kinds never (BUG-173 S3, spec §3.2). The
+ * cue memory is persisted (`om2tab.missionCues`), so a restart does not
+ * re-announce the backlog. The poll is its only clock — no per-mission timer.
  */
 import { defineStore } from 'pinia'
 import { computed, ref, shallowRef } from 'vue'
 import type { MissionDoor, MissionDoorResult, MissionView } from '../../../main/mission-ipc'
 import { i18n } from '../i18n'
-import { decideCue, firstOwed, type CueMemory } from '../lib/mission-cue'
+import {
+  decideCue,
+  deserializeCueMemory,
+  firstOwed,
+  isPersistedCueMemory,
+  seedCueMemory,
+  serializeCueMemory,
+  type CueMemory,
+  type PersistedCueMemory
+} from '../lib/mission-cue'
 import { buildMissionModel, missionForSession, type MissionModel } from '../lib/mission-view'
 import { playNotificationSound } from '../lib/notification-sound'
 import { useNotificationsStore } from './notifications'
+import { persistedRef } from './persisted'
 import { useSessionsStore } from './sessions'
 import { useUiStore } from './ui'
 
@@ -113,7 +125,15 @@ export const useMissionsStore = defineStore('missions', () => {
   const doorInFlight = computed(() => doorsInFlight.value > 0)
   let timer: ReturnType<typeof setInterval> | null = null
   let inFlight: Promise<void> | null = null
-  let cueMemory: CueMemory = { owed: new Map(), primed: false }
+  /**
+   * What the cue has already told the operator, mirrored to `localStorage` so a
+   * restart continues instead of starting over. `null` = no usable memory (first
+   * run, or a corrupt value): the first real poll seeds it silently.
+   */
+  const storedCues = persistedRef<PersistedCueMemory | null>('om2tab.missionCues', null, {
+    validate: (v) => isPersistedCueMemory(v)
+  })
+  let cueMemory: CueMemory | null = storedCues.value ? deserializeCueMemory(storedCues.value) : null
   /**
    * A pending request to open a mission's popover. It lives for
    * {@link POPOVER_REQUEST_TTL_MS}, so one that never finds a pill (owner not
@@ -138,8 +158,19 @@ export const useMissionsStore = defineStore('missions', () => {
       )
       views.value = list
       refreshedAt.value = Date.now()
-      const decision = decideCue(list, cueMemory, Date.now())
+      // Sidebar folders not loaded yet: the list says nothing about reality, and a
+      // decision now would rebuild the memory empty and re-cue the backlog later.
+      if (folders.length === 0) return
+      const now = Date.now()
+      if (!cueMemory) {
+        // No memory: the backlog the operator already has on screen is not news.
+        cueMemory = seedCueMemory(list, now)
+        storedCues.value = serializeCueMemory(cueMemory)
+        return
+      }
+      const decision = decideCue(list, cueMemory, now)
       cueMemory = decision.memory
+      storedCues.value = serializeCueMemory(cueMemory)
       if (decision.cue) {
         playNotificationSound()
         void window.api.requestAttention()

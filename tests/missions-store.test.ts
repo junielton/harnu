@@ -10,14 +10,19 @@
  *
  * The store also plays the owed-to-operator cue off its own poll (§3.12): chime
  * + OS attention + one Activity entry when a mission's owed list gains a kind
- * or a count grows, silence on a decrease, a re-nudge after 30 min, one combined
- * cue for a start with several missions owed, and never for a dead legacy draft.
+ * or a count grows, silence on a decrease, a back-off re-nudge for blocking kinds
+ * (BUG-173 S3), one combined cue for several missions newly owed, and never for a
+ * dead legacy draft. The cue memory is persisted (`om2tab.missionCues`): a start
+ * with no memory seeds silently, one with a memory cues only what is new or
+ * grown, and a poll with no folders loaded decides nothing.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import type { MissionDoor, MissionDoorResult, MissionView } from '../src/main/mission-ipc'
 import { useMissionsStore } from '../src/renderer/src/stores/missions'
 import { useNotificationsStore } from '../src/renderer/src/stores/notifications'
+import { useSessionsStore } from '../src/renderer/src/stores/sessions'
 import { useUiStore } from '../src/renderer/src/stores/ui'
 import { playNotificationSound } from '../src/renderer/src/lib/notification-sound'
 import { i18n } from '../src/renderer/src/i18n'
@@ -327,12 +332,22 @@ describe('useMissionsStore — owed-to-operator cue', () => {
   const due = (id: string, title: string, count: number): MissionView =>
     owed(id, title, { you: [{ kind: 'checks', count, stepIds: ['stp-2'] }] })
 
+  const CUES_KEY = 'om2tab.missionCues'
+
+  /** The sidebar has loaded a folder — the precondition for any cue decision. */
+  function loadFolders(): void {
+    useSessionsStore().folders = [{ path: '/repo', sessions: [] }] as never
+  }
+
   beforeEach(() => {
     current = []
     list = vi.fn(async () => ({ views: current, unreadable: [] }))
     requestAttention = vi.fn(async () => undefined)
     setApi({ missionList: list, missionOperatorDoor: vi.fn(), requestAttention })
     localStorage.clear()
+    // A previous run left an (empty) memory: this is not a first run, so cues play.
+    localStorage.setItem(CUES_KEY, JSON.stringify({ v: 1, owed: {} }))
+    loadFolders()
   })
 
   it('cues due checks once — chime, attention, one Activity entry — and not on the next poll', async () => {
@@ -417,7 +432,7 @@ describe('useMissionsStore — owed-to-operator cue', () => {
     expect(useNotificationsStore().list).toHaveLength(0)
   })
 
-  it('stays quiet on the 20 s polls, then re-nudges after 30 minutes while unchanged', async () => {
+  it('stays quiet on the 20 s polls, then re-nudges a blocker on the back-off, then stops', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_790_000_000_000)
     const store = useMissionsStore()
@@ -431,9 +446,40 @@ describe('useMissionsStore — owed-to-operator cue', () => {
     await vi.advanceTimersByTimeAsync(2 * 60 * 1000) // the poll past 30 min
     expect(playNotificationSound).toHaveBeenCalledTimes(2)
     expect(requestAttention).toHaveBeenCalledTimes(2)
+    // One Activity entry per cue (S4 turns this into an in-place update).
     expect(useNotificationsStore().list).toHaveLength(2)
-    await vi.advanceTimersByTimeAsync(10 * 60 * 1000)
+    await vi.advanceTimersByTimeAsync(50 * 60 * 1000) // 1 h is the next wait
     expect(playNotificationSound).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(11 * 60 * 1000)
+    expect(playNotificationSound).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000) // 2 h + 4 h, then silence
+    expect(playNotificationSound).toHaveBeenCalledTimes(5)
+  })
+
+  it('a delivered mission awaiting its close cues once and is never re-nudged', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_790_000_000_000)
+    const store = useMissionsStore()
+    current = [owed('mnt-00000002', 'Docs pass', { status: 'delivered', you: [{ kind: 'close' }] })]
+    store.ensureStarted()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(12 * 60 * 60 * 1000)
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+  })
+
+  it('one chime, one attention and one Activity post per poll, however many missions cue', async () => {
+    const store = useMissionsStore()
+    current = [
+      blocked('mnt-00000001', 'A', 'merge'),
+      due('mnt-00000002', 'B', 2),
+      owed('mnt-00000003', 'C', { status: 'delivered', you: [{ kind: 'close' }] })
+    ]
+    await store.refresh()
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+    expect(requestAttention).toHaveBeenCalledTimes(1)
+    expect(useNotificationsStore().list).toHaveLength(1)
+    expect(useNotificationsStore().list[0].title).toBe('3 missions need you')
   })
 
   it('a failed read neither cues nor forgets what was already heard', async () => {
@@ -444,6 +490,141 @@ describe('useMissionsStore — owed-to-operator cue', () => {
     await store.refresh()
     await store.refresh()
     expect(playNotificationSound).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('useMissionsStore — persisted cue memory and stability (BUG-173 S3)', () => {
+  const CUES_KEY = 'om2tab.missionCues'
+  let list: ReturnType<typeof vi.fn>
+  let requestAttention: ReturnType<typeof vi.fn>
+  let current: MissionView[]
+
+  const view = (id: string, you: MissionView['you'], status = 'active'): MissionView =>
+    ({
+      root: '/repo',
+      mission: { id, status, owner: { sessionId: 's', folder: '/repo' }, steps: [] },
+      title: `Mission ${id}`,
+      derived: { stale: false },
+      you,
+      closeWarnings: []
+    }) as unknown as MissionView
+
+  function newRun(): ReturnType<typeof useMissionsStore> {
+    // A fresh pinia = an app restart: nothing survives but localStorage.
+    setActivePinia(createPinia())
+    useSessionsStore().folders = [{ path: '/repo', sessions: [] }] as never
+    return useMissionsStore()
+  }
+
+  beforeEach(() => {
+    current = []
+    list = vi.fn(async () => ({ views: current, unreadable: [] }))
+    requestAttention = vi.fn(async () => undefined)
+    setApi({ missionList: list, missionOperatorDoor: vi.fn(), requestAttention })
+    localStorage.clear()
+  })
+
+  it('no memory at all: the first poll seeds it silently — no chime, no attention, no entry', async () => {
+    const store = newRun()
+    current = [
+      view('mnt-00000001', [{ kind: 'close' }], 'delivered'),
+      view('mnt-00000002', [{ kind: 'checks', count: 2, stepIds: [] }])
+    ]
+    await store.refresh()
+    expect(playNotificationSound).not.toHaveBeenCalled()
+    expect(requestAttention).not.toHaveBeenCalled()
+    expect(useNotificationsStore().list).toHaveLength(0)
+    await nextTick() // persistedRef flushes through a watcher
+    const stored = JSON.parse(localStorage.getItem(CUES_KEY) ?? 'null')
+    expect(stored.v).toBe(1)
+    expect(Object.keys(stored.owed).sort()).toEqual(['mnt-00000001', 'mnt-00000002'])
+    // …and what was seeded stays quiet on later polls, while something new cues.
+    await store.refresh()
+    expect(playNotificationSound).not.toHaveBeenCalled()
+    current = [...current, view('mnt-00000003', [{ kind: 'close' }], 'delivered')]
+    await store.refresh()
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+  })
+
+  it('a corrupt memory is treated as a first run: seeds silently', async () => {
+    for (const bad of ['not json', '{"v":2,"owed":{}}', '{"v":1}', 'null']) {
+      vi.mocked(playNotificationSound).mockClear()
+      localStorage.setItem(CUES_KEY, bad)
+      const store = newRun()
+      current = [view('mnt-00000001', [{ kind: 'close' }], 'delivered')]
+      await store.refresh()
+      expect(playNotificationSound).not.toHaveBeenCalled()
+    }
+  })
+
+  it('a restart with the same backlog is silent; only what is new or grown cues', async () => {
+    const run1 = newRun()
+    current = [view('mnt-00000001', [{ kind: 'checks', count: 1, stepIds: [] }])]
+    await run1.refresh() // seeds
+    current = [
+      view('mnt-00000001', [{ kind: 'checks', count: 1, stepIds: [] }]),
+      view('mnt-00000002', [{ kind: 'close' }], 'delivered')
+    ]
+    await run1.refresh() // cues mnt-00000002
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+    await nextTick()
+
+    vi.mocked(playNotificationSound).mockClear()
+    const run2 = newRun()
+    const entries = useNotificationsStore().list.length // run 1's entry survives too
+    await run2.refresh() // same backlog as last run
+    expect(playNotificationSound).not.toHaveBeenCalled()
+    expect(useNotificationsStore().list).toHaveLength(entries)
+
+    const run3 = newRun()
+    current = [
+      view('mnt-00000001', [{ kind: 'checks', count: 2, stepIds: [] }]),
+      view('mnt-00000002', [{ kind: 'close' }], 'delivered')
+    ]
+    await run3.refresh() // a check was added while Harnu was closed
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+    expect(requestAttention).toHaveBeenCalledTimes(2)
+  })
+
+  it('a poll with no folders loaded decides nothing, so the backlog is not re-cued once they load', async () => {
+    localStorage.setItem(CUES_KEY, JSON.stringify({ v: 1, owed: {} }))
+    setActivePinia(createPinia())
+    const sessions = useSessionsStore()
+    const store = useMissionsStore()
+    const backlog = [view('mnt-00000001', [{ kind: 'blocker', reason: 'merge', unblocks: 'x' }])]
+    current = backlog
+    await store.refresh() // folders still empty
+    expect(playNotificationSound).not.toHaveBeenCalled()
+    expect(JSON.parse(localStorage.getItem(CUES_KEY) ?? '{}').owed).toEqual({})
+    sessions.folders = [{ path: '/repo', sessions: [] }] as never
+    await store.refresh() // first real decision: the mission is new vs the empty memory
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+    await store.refresh()
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+  })
+
+  it('an empty folders poll on a seeded run never seeds an empty memory', async () => {
+    setActivePinia(createPinia())
+    const store = useMissionsStore() // no folders, no memory
+    current = [view('mnt-00000001', [{ kind: 'close' }], 'delivered')]
+    await store.refresh()
+    expect(localStorage.getItem(CUES_KEY)).toBeNull()
+    useSessionsStore().folders = [{ path: '/repo', sessions: [] }] as never
+    await store.refresh() // THIS poll seeds, silently
+    expect(playNotificationSound).not.toHaveBeenCalled()
+  })
+
+  it('a mission missing from one poll does not re-cue the backlog when it returns', async () => {
+    const store = newRun()
+    const m = view('mnt-00000001', [{ kind: 'close' }], 'delivered')
+    const other = view('mnt-00000002', [{ kind: 'close' }], 'delivered')
+    current = [m, other]
+    await store.refresh() // seed
+    current = [other]
+    await store.refresh()
+    current = [m, other]
+    await store.refresh()
+    expect(playNotificationSound).not.toHaveBeenCalled()
   })
 })
 
