@@ -489,6 +489,7 @@ describe('list_cleanup handler (T445)', () => {
         'shared-stack',
         'path-unresolved',
         'nested-worktree',
+        'check-failed',
         'locked'
       ] as const
       const bundles = codes.map((code, i) =>

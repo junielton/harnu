@@ -2309,6 +2309,7 @@
         "ready": "Mesclado, limpo e parado além do período de carência.",
         "pathUnresolved": "A worktree tem um caminho que o Harnu não conseguiu resolver para o local real, então não sabe o que o usa.",
         "nestedWorktree": "Há outro worktree dentro deste, e remover este também o jogaria no lixo.",
+        "checkFailed": "O Harnu não conseguiu olhar dentro deste worktree, então não sabe se removê-lo levaria outro checkout junto.",
         "locked": "Este worktree está bloqueado no git",
         "inUse": {
           "mainCheckout": "O checkout principal do repositório. Nunca é tocado.",
@@ -2369,8 +2370,16 @@
         "stoppedAt": "Parou em “{step}”",
         "nothingChanged": "Nada foi alterado.",
         "genericStop": "O Harnu parou este item por uma verificação de segurança.",
-        "removeBlocked": "Remover não está disponível: esta pasta contém outro worktree. Remova ou mova esse primeiro.",
-        "removeLocked": "Remover não está disponível: o git tem este worktree bloqueado. Desbloqueie primeiro."
+        "removeUnavailable": "Remover não está disponível. {reason}",
+        "cleanUnavailable": "Limpar agora não está disponível. {reason}",
+        "recheck": "Verificar de novo",
+        "removeCommand": "Rode",
+        "refusedNote": "A última limpeza foi recusada. {reason}",
+        "refusedNoteHint": "Ele fica fora de “Limpar prontos” e o piloto automático o pula até a causa ser resolvida. Tentar de novo tenta mais uma vez.",
+        "refusedRepeat": "Recusado {n} vezes seguidas, então foi para Precisa de revisão.",
+        "resumeBody": "A pasta não existe mais, e a limpeza parou em “{step}”, então Tentar de novo não consegue terminar. Rode isto num terminal para fazer o resto:",
+        "resumeUnarchived": "Se o git recusar, esta branch tem commits que não estão na sua branch padrão: mantenha-a ou arquive-a primeiro.",
+        "resumeArchive": "As refs de arquivo mantêm o commit recuperável."
       },
       "list": {
         "label": "Worktrees por grupo",
@@ -2379,6 +2388,8 @@
       "hero": {
         "clean": "Limpar {n} pronto · {size} | Limpar {n} prontos · {size}",
         "empty": "Nada para limpar",
+        "blind": "Inicie o Docker para limpar estes",
+        "blindTitle": "O Docker não estava rodando quando o Harnu escaneou, então ele não viu quais stacks rodam a partir destes worktrees. Inicie o Docker e use Escanear agora.",
         "chip": "Limpando {done}/{total} · {size} liberados"
       },
       "selection": {
@@ -2389,11 +2400,16 @@
         "keep": "Manter",
         "ask": "Pedir uma opinião",
         "shiftHint": "clique para adicionar mais",
+        "removeNone": "Nada do que foi selecionado pode ser removido",
         "clear": "Limpar seleção"
       },
       "confirm": {
         "titleWorktrees": "Remover {n} worktree? | Remover {n} worktrees?",
         "titleItems": "Remover {n} item? | Remover {n} itens?",
+        "nothingRemovable": "Nada do que foi selecionado pode ser removido",
+        "nothingRemovableSeveral": "Estes itens não podem ser removidos, cada um por um motivo. Abra um para ver o porquê.",
+        "refusedTitle": "Não serão removidos ({n})",
+        "refusedSub": "O Harnu recusaria estes, então ficam fora da contagem e da requisição.",
         "listLabel": "Itens a remover",
         "worktreeRow": "{repo} › {name}",
         "volumeRow": "Volume Docker {name}",
@@ -2618,6 +2634,34 @@
           "warning": "Um volume removido e os dados dele não podem ser restaurados."
         }
       },
+      "recheck": {
+        "cleared": "Verificado de novo: nada o recusa agora",
+        "stillRefused": "Continua recusado",
+        "unchecked": "Não foi possível verificar agora",
+        "failed": "Não foi possível verificar de novo"
+      },
+      "removal": {
+        "reason": {
+          "mainCheckout": "Este é um checkout principal, que nunca é removido.",
+          "neverClean": "Está na sua lista de nunca limpar.",
+          "kept": "Você o marcou como Manter. Tire a marca primeiro.",
+          "inUse": "Está em uso agora.",
+          "unsupportedKind": "Tem um HEAD detached, então não há branch para arquivá-lo. O Harnu ainda não consegue removê-lo.",
+          "sharedStack": "Outra stack também roda a partir deste worktree. Pare essa primeiro.",
+          "nestedWorktree": "Esta pasta contém outro worktree ou checkout. Remova ou mova esse primeiro.",
+          "checkFailed": "O Harnu não conseguiu olhar dentro desta pasta em busca de outros worktrees ou checkouts. Confira se ela é legível e use Escanear agora.",
+          "folderGone": "A pasta não existe mais e a limpeza parou no meio. Termine com os comandos do painel dela.",
+          "tipUnknown": "O Harnu não conseguiu saber em qual commit este worktree está.",
+          "graceNotElapsed": "Ainda não ficou parado por tempo suficiente.",
+          "pathUnresolved": "Não foi possível resolver um caminho ligado a este worktree, então o Harnu não sabe o que o usa.",
+          "sessionOpen": "Ainda há uma sessão aberta neste worktree. Feche-a primeiro.",
+          "locked": "O git tem este worktree bloqueado. Desbloqueie primeiro.",
+          "cannotUnregister": "O git não tem um registro único e desbloqueado para este worktree, então o Harnu não consegue desregistrá-lo e o recusou mais de uma vez. Confira git worktree list.",
+          "protectedNow": "Ele está protegido agora (um checkout principal, um caminho de nunca limpar ou uma marca Manter), e o Harnu o recusou mais de uma vez.",
+          "scanBlind": "O Docker não estava rodando quando o Harnu escaneou, então ele não viu as stacks deste worktree. Inicie o Docker e use Escanear agora.",
+          "stackPresent": "Uma stack do Docker está rodando a partir deste worktree, e o Harnu o recusou mais de uma vez. Pare a stack primeiro."
+        }
+      },
       "refusal": {
         "changedSinceConfirm": "Mudou desde que você confirmou — revise de novo.",
         "workUnreadable": "O Harnu não conseguiu ler o trabalho não commitado desta worktree ao escanear, então não vai removê-la sem ver. Escaneie de novo e revise.",
@@ -2639,9 +2683,11 @@
         "notReady": "Ela não está mais pronta para limpar, então foi deixada como está.",
         "pathUnresolved": "Um caminho ligado a esta worktree não pôde ser resolvido, então o Harnu não sabe o que a usa e a deixou como está.",
         "stackPresent": "Uma stack do Docker está rodando a partir desta worktree, então ela foi deixada como está.",
-        "dockerUnavailable": "O Docker não respondeu, então o Harnu não pôde checar esta worktree com segurança e a deixou como está.",
+        "dockerUnavailable": "O Docker não está rodando, então o Harnu não pôde checar esta worktree com segurança e a deixou como está. Inicie o Docker e tente de novo.",
+        "scanBlind": "O Docker não estava rodando quando o Harnu varreu, então ele não pôde ver as stacks deste worktree e o deixou como está. Inicie o Docker e use Escanear agora.",
         "probeFailed": "A checagem desta worktree falhou, então ela foi deixada como está.",
         "nestedWorktree": "Outra worktree vive dentro desta, então ela foi deixada como está.",
+        "checkFailed": "O Harnu não conseguiu olhar dentro desta worktree, então ela foi deixada como está.",
         "sharedStack": "Outra stack também roda a partir desta worktree, então ela foi deixada como está.",
         "headMoved": "Um commit novo chegou nesta worktree, então ela foi deixada como está.",
         "notHarvestable": "A limpeza não a considera mais concluída, então foi deixada como está.",
@@ -2674,6 +2720,7 @@
         "rowAria": "{name}, {size}",
         "selectRow": "Selecionar {name}",
         "removeAria": "Remover {name}",
+        "resume": "Parou em “{step}”. Abra para ver os comandos para terminar à mão.",
         "dehydrateAria": "Dehydrate {name}",
         "keepAria": "Manter {name}",
         "volumeProject": "Volume Docker · {project}",
@@ -3661,7 +3708,39 @@
     "sidebarChipNeedsYou": "Missão: {headline} — precisa de você",
     "cue": {
       "one": "A missão “{title}” precisa de você: {what}",
-      "many": "{n} missões precisam de você"
+      "many": "{n} missões precisam de você",
+      "reviewAll": "Revisar todas as {n}",
+      "ownerMissing": "A sessão dona não está aberta aqui — clique para revisar esta missão.",
+      "itemAria": "Abrir a missão {title}"
+    },
+    "review": {
+      "title": "Missões que precisam de você",
+      "intro": "Feche as concluídas de uma vez, ou abra qualquer uma para resolvê-la.",
+      "groups": {
+        "ready": "Prontas para fechar",
+        "finished": "Concluídas, fechamento não pedido",
+        "finishedHint": "Ninguém verificou o fim destas, por isso nenhuma vem selecionada.",
+        "other": "Esperando você por outro motivo"
+      },
+      "selectAllReady": "Selecionar todas as prontas",
+      "selected": "{count} selecionada | {count} selecionadas",
+      "closeSelected": "Fechar {count} como entregue… | Fechar {count} como entregues…",
+      "empty": "Nenhuma missão precisa de você agora.",
+      "openMission": "Abrir",
+      "ownerMissing": "A sessão dona não está aberta aqui, então esta missão não pode ser aberta pela revisão.",
+      "dismiss": "Fechar a revisão"
+    },
+    "bulk": {
+      "title": "Fechar {count} missão como entregue? | Fechar {count} missões como entregues?",
+      "body": "Elas saem da Topbar e da sidebar e não podem ser reabertas. O arquivo de cada missão continua no disco como registro.",
+      "reason": "Motivo (opcional)",
+      "reasonPlaceholder": "Vai para o Log de cada missão",
+      "confirm": "Fechar {count} missão | Fechar {count} missões",
+      "cancel": "Cancelar",
+      "dismiss": "Cancelar e manter as missões abertas",
+      "closing": "Fechando {done} de {total}…",
+      "done": "{count} missão fechada | {count} missões fechadas",
+      "partial": "{failed} de {total} não puderam ser fechadas"
     }
   },
   "harnuMod": {

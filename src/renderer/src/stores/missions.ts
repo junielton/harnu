@@ -23,6 +23,11 @@
  * re-nudged on a back-off, standing kinds never (BUG-173 S3, spec §3.2). The
  * cue memory is persisted (`om2tab.missionCues`), so a restart does not
  * re-announce the backlog. The poll is its only clock — no per-mission timer.
+ *
+ * The cue's Activity entry is ONE grouped record (`'mission-cue'`, BUG-173 S4):
+ * a snapshot of every mission owed right now, one clickable row each. A poll that
+ * cues replaces it in place and moves its `ts`; every other poll only syncs it
+ * quietly ({@link syncMissionActivity}).
  */
 import { defineStore } from 'pinia'
 import { computed, ref, shallowRef } from 'vue'
@@ -33,6 +38,7 @@ import {
   deserializeCueMemory,
   firstOwed,
   isPersistedCueMemory,
+  owedKeys,
   seedCueMemory,
   serializeCueMemory,
   type CueMemory,
@@ -40,7 +46,11 @@ import {
 } from '../lib/mission-cue'
 import { buildMissionModel, missionForSession, type MissionModel } from '../lib/mission-view'
 import { playNotificationSound } from '../lib/notification-sound'
-import { useNotificationsStore } from './notifications'
+import {
+  useNotificationsStore,
+  type NotificationItem,
+  type NotificationRecord
+} from './notifications'
 import { persistedRef } from './persisted'
 import { useSessionsStore } from './sessions'
 import { useUiStore } from './ui'
@@ -53,6 +63,13 @@ export const POPOVER_REQUEST_TTL_MS = 5_000
 /** "Open this mission's popover" — set by `openNavigableView('mission')`, consumed by `MissionPill`. */
 export interface PopoverRequest {
   missionId: string
+  at: number
+}
+
+/** "Open the Missions review" — set by {@link useMissionsStore}`.openReview`, consumed by the review dialog (S5). */
+export interface ReviewRequest {
+  /** The mission the review opens focused on, or `null` for the whole pile. */
+  missionId: string | null
   at: number
 }
 
@@ -90,29 +107,84 @@ function stepTitles(view: MissionView, ids: readonly string[]): string {
   return ids.map((id) => view.mission.steps.find((s) => s.id === id)?.title || id).join(', ')
 }
 
-/** The cue's one Activity entry — one mission names itself and opens its owner session. */
-function postMissionActivity(missionIds: readonly string[], views: readonly MissionView[]): void {
-  const { t } = i18n.global
-  const cued = views.filter((v) => missionIds.includes(v.mission.id))
-  if (cued.length === 0) return
-  const [only] = cued
-  useNotificationsStore().notify(
-    cued.length === 1
-      ? {
-          ts: Date.now(),
-          source: 'app',
-          kind: 'warning',
-          title: t('mission.cue.one', { title: only.title, what: owedWhat(only) }),
-          sessionId: only.mission.owner.sessionId
-        }
-      : {
-          ts: Date.now(),
-          source: 'app',
-          kind: 'warning',
-          title: t('mission.cue.many', { n: cued.length }),
-          description: cued.map((v) => v.title).join(' · ')
-        }
+/** Upsert key of the cue's one Activity entry — at most one mission record in the bell. */
+const CUE_GROUP = 'mission-cue'
+
+/** Kinds an agent or a later step waits on — they sort ahead of standing to-dos. */
+const BLOCKING_KINDS: ReadonlySet<string> = new Set(['rescope', 'blocker', 'human-steps'])
+
+/** Every mission that owes the operator something the cue speaks about, once per id. */
+function owedViews(views: readonly MissionView[]): MissionView[] {
+  const seen = new Set<string>()
+  return views.filter((v) => {
+    if (seen.has(v.mission.id) || owedKeys(v).size === 0) return false
+    seen.add(v.mission.id)
+    return true
+  })
+}
+
+/** Cued this poll first, then blocking kinds, then newest `updatedAt` (spec §3.3). */
+function orderOwed(owed: MissionView[], cuedIds: ReadonlySet<string>): MissionView[] {
+  const cued = (v: MissionView): number => (cuedIds.has(v.mission.id) ? 0 : 1)
+  const blocking = (v: MissionView): number =>
+    BLOCKING_KINDS.has(firstOwed(v)?.kind ?? '') ? 0 : 1
+  const updated = (v: MissionView): number => Date.parse(v.mission.updatedAt) || 0
+  return [...owed].sort(
+    (a, b) => cued(a) - cued(b) || blocking(a) - blocking(b) || updated(b) - updated(a)
   )
+}
+
+/** One mission's row in the grouped entry: names itself, says what it owes, opens its owner. */
+function activityItem(view: MissionView): NotificationItem {
+  return {
+    id: view.mission.id,
+    title: view.title,
+    description: owedWhat(view),
+    sessionId: view.mission.owner.sessionId,
+    target: { view: 'mission', missionId: view.mission.id }
+  }
+}
+
+/** The entry's headline and rows for what is owed right now. */
+function cueEntry(owed: readonly MissionView[]): Pick<NotificationRecord, 'title' | 'items'> {
+  const { t } = i18n.global
+  return {
+    title:
+      owed.length === 1
+        ? t('mission.cue.one', { title: owed[0].title, what: owedWhat(owed[0]) })
+        : t('mission.cue.many', { n: owed.length }),
+    items: owed.map(activityItem)
+  }
+}
+
+/**
+ * The cue's one Activity entry: replaces the `'mission-cue'` record in place (or
+ * appends it) with everything owed now, and moves its `ts` — this poll is news.
+ */
+function postMissionActivity(missionIds: readonly string[], views: readonly MissionView[]): void {
+  const cued = new Set(missionIds)
+  const owed = orderOwed(owedViews(views), cued)
+  if (owed.length === 0) return
+  useNotificationsStore().notify({
+    ts: Date.now(),
+    source: 'app',
+    kind: 'warning',
+    group: CUE_GROUP,
+    ...cueEntry(owed)
+  })
+}
+
+/**
+ * The quiet sync after every poll (spec §3.3): rewrite the entry's title and rows
+ * from what is owed now WITHOUT touching its `ts`, and remove it when nothing is.
+ * `updateGroup` finds nothing for an entry the operator dismissed, so a sync can
+ * never bring it back.
+ */
+export function syncMissionActivity(views: readonly MissionView[]): void {
+  const activity = useNotificationsStore()
+  const owed = orderOwed(owedViews(views), new Set())
+  if (owed.length === 0) activity.removeGroup(CUE_GROUP)
+  else activity.updateGroup(CUE_GROUP, cueEntry(owed))
 }
 
 export const useMissionsStore = defineStore('missions', () => {
@@ -166,6 +238,7 @@ export const useMissionsStore = defineStore('missions', () => {
         // No memory: the backlog the operator already has on screen is not news.
         cueMemory = seedCueMemory(list, now)
         storedCues.value = serializeCueMemory(cueMemory)
+        syncMissionActivity(res.views)
         return
       }
       const decision = decideCue(list, cueMemory, now)
@@ -175,6 +248,8 @@ export const useMissionsStore = defineStore('missions', () => {
         playNotificationSound()
         void window.api.requestAttention()
         postMissionActivity(decision.missionIds, list)
+      } else {
+        syncMissionActivity(list)
       }
     } catch {
       // A failed read keeps the last good list — the surfaces never flash empty.
@@ -219,6 +294,24 @@ export const useMissionsStore = defineStore('missions', () => {
     const req = popoverRequest.value
     clearPopoverRequest()
     return req && Date.now() - req.at < POPOVER_REQUEST_TTL_MS ? req : null
+  }
+
+  /**
+   * A pending request to open the Missions review, optionally focused on one
+   * mission. `MissionsReviewDialog` consumes it.
+   */
+  const reviewRequest = ref<ReviewRequest | null>(null)
+
+  /** Ask for the Missions review — focused on `missionId`, or the whole pile when omitted. */
+  function openReview(missionId?: string): void {
+    reviewRequest.value = { missionId: missionId ?? null, at: Date.now() }
+  }
+
+  /** Claim the pending review request: returns it and clears it, or `null` when there is none. */
+  function consumeReviewRequest(): ReviewRequest | null {
+    const req = reviewRequest.value
+    reviewRequest.value = null
+    return req
   }
 
   /** Start polling once; later calls are no-ops. */
@@ -298,6 +391,49 @@ export const useMissionsStore = defineStore('missions', () => {
     return res
   }
 
+  /**
+   * Close several missions through the EXISTING end door, one after another
+   * (BUG-173 S5, spec §3.5). Never aborts on a failure: each door answers on its
+   * own. The in-flight counter is raised once for the batch, each answer is
+   * applied as it lands (rows vanish one by one), and ONE refresh follows at the
+   * end. `MISSION_CLOSED` counts as closed, as {@link runDoor} treats it. No
+   * toast here — the caller reports the batch once.
+   */
+  async function runDoors(
+    doors: readonly Extract<MissionDoor, { door: 'end' }>[],
+    onProgress?: (done: number, total: number) => void
+  ): Promise<{ closed: number; failed: { missionId: string; error: string }[] }> {
+    const failed: { missionId: string; error: string }[] = []
+    let closed = 0
+    doorsInFlight.value++
+    try {
+      for (const [i, door] of doors.entries()) {
+        let res: MissionDoorResult
+        try {
+          res = await window.api.missionOperatorDoor(door)
+        } catch (err) {
+          res = { ok: false, error: err instanceof Error ? err.message : String(err) }
+        }
+        if (res.ok) {
+          writeSeq++
+          applyDoorResult(door, res.view)
+          closed++
+        } else if (res.error.startsWith('MISSION_CLOSED')) {
+          writeSeq++
+          applyDoorResult(door, null)
+          closed++
+        } else {
+          failed.push({ missionId: door.missionId, error: res.error })
+        }
+        onProgress?.(i + 1, doors.length)
+      }
+    } finally {
+      doorsInFlight.value--
+    }
+    if (closed > 0) void refreshAfterWrite()
+    return { closed, failed }
+  }
+
   return {
     views,
     refreshedAt,
@@ -307,8 +443,12 @@ export const useMissionsStore = defineStore('missions', () => {
     viewForSession,
     modelForSession,
     runDoor,
+    runDoors,
     popoverRequest,
     requestPopover,
-    consumePopoverRequest
+    consumePopoverRequest,
+    reviewRequest,
+    openReview,
+    consumeReviewRequest
   }
 })

@@ -66,6 +66,7 @@ export type ReviewCode =
   | 'cleanup-failed'
   | 'path-unresolved'
   | 'nested-worktree'
+  | 'check-failed'
   | 'locked'
 
 /** `detail` is one English sentence with the concrete fact; the renderer translates by `code`. */
@@ -134,6 +135,29 @@ export interface WorktreeBundle extends BundleFacts {
    * uses, not the operator's force path. Never set by the scan itself.
    */
   retryAs?: 'ready'
+  /**
+   * Set when the folder is already gone but a halted cleanup left git steps undone. Retry and
+   * Remove cannot finish those (the engine refuses a folder that is not there), so the screen
+   * offers the commands instead.
+   */
+  folderGone?: boolean
+  /**
+   * Set by the gatherer (never the scan) on a ready item that main refused at the reprobe: `code` is
+   * the refusal, `count` how many times in a row. The hero and the autopilot leave such an item out.
+   */
+  reprobeRefusal?: { code: string; count: number }
+  /**
+   * Set when the scan ran while the Docker daemon was down. Its empty `stackIds` then mean "could
+   * not see", not "none", so the reprobe refuses the bundle (`scan-blind`) whatever Docker says at
+   * clean time, until a scan that saw Docker replaces it. Absent when Docker answered, and when
+   * there is no Docker CLI at all (nothing to stop).
+   */
+  dockerBlind?: boolean
+}
+
+/** Every bundle of a gather that could not see Docker, marked so none is cleaned on a blind "no stacks". */
+export function withDockerBlind(bundles: readonly WorktreeBundle[]): WorktreeBundle[] {
+  return bundles.map((b) => ({ ...b, dockerBlind: true }))
 }
 
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`
@@ -276,12 +300,15 @@ export function bucketOf(
   // A worktree nested inside this one (Claude Code's worktree command run from inside a
   // linked worktree puts it at `.claude/worktrees/*`) would be trashed with it, and its git
   // status shows only `?? .claude/`, so the parent reads clean (delta 6, F1). A list that
-  // is missing or not a list cannot show there is none.
-  if (!Array.isArray(f.nestedWorktrees))
-    return review(
-      'nested-worktree',
-      'Whether another worktree lives inside this one could not be checked.'
+  // is missing or not a list cannot show there is none: that is a probe that did not answer
+  // (`check-failed`), a different fact from one that found something inside.
+  const where = f.item.path ?? f.item.repoPath
+  const unchecked = (): { bucket: Bucket; reason: ReviewReason } =>
+    review(
+      'check-failed',
+      `Harnu could not look inside ${where} for other worktrees or checkouts, so it cannot tell whether removing it would take one along.`
     )
+  if (!Array.isArray(f.nestedWorktrees)) return unchecked()
   if (f.nestedWorktrees.length > 0) {
     const n = f.nestedWorktrees.length
     return review(
@@ -291,12 +318,7 @@ export function bucketOf(
   }
 
   // A worktree of another repo or a plain clone inside this one (delta 7) goes with it too.
-  // Same code as above, so the UI needs no new label.
-  if (!Array.isArray(f.foreignCheckouts))
-    return review(
-      'nested-worktree',
-      'Whether a checkout of another repo lives inside this worktree could not be checked.'
-    )
+  if (!Array.isArray(f.foreignCheckouts)) return unchecked()
   if (f.foreignCheckouts.length > 0) {
     const n = f.foreignCheckouts.length
     return review(

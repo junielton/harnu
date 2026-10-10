@@ -814,7 +814,8 @@ describe('runBundle refuses a bundle with a nested worktree (delta 6, F1)', () =
     if (value === undefined) delete (b as Partial<WorktreeBundle>).nestedWorktrees
     else (b as unknown as Record<string, unknown>).nestedWorktrees = value
     const r = await runBundle(b, f.ops, confirm)
-    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'nested-worktree' })
+    // Nothing was found inside: the probe did not answer, which is not "a worktree lives inside".
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'check-failed' })
     expect(f.calls).toEqual([])
   })
 
@@ -868,7 +869,7 @@ describe('runBundle refuses a bundle with a foreign checkout (delta 7)', () => {
     if (value === undefined) delete (b as Partial<WorktreeBundle>).foreignCheckouts
     else (b as unknown as Record<string, unknown>).foreignCheckouts = value
     const r = await runBundle(b, f.ops, confirm)
-    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'nested-worktree' })
+    expect(r).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'check-failed' })
     expect(f.calls).toEqual([])
   })
 

@@ -20,6 +20,7 @@ import OpenSubfolderDialog from './components/OpenSubfolderDialog.vue'
 import RenameFolderDialog from './components/RenameFolderDialog.vue'
 import RenameRepoDialog from './components/RenameRepoDialog.vue'
 import MemoryLocationDialog from './components/MemoryLocationDialog.vue'
+import MissionsReviewDialog from './components/MissionsReviewDialog.vue'
 import SessionMenu from './components/SessionMenu.vue'
 import SidebarHiddenPopover from './components/SidebarHiddenPopover.vue'
 import FolderMenu from './components/FolderMenu.vue'
@@ -1045,6 +1046,7 @@ onUnmounted(() => {
       <RenameFolderDialog />
       <RenameRepoDialog />
       <MemoryLocationDialog />
+      <MissionsReviewDialog />
       <CommandPalette />
       <McpConfirmOverlay />
       <ToastStack />

@@ -69,7 +69,14 @@ function mountPanel(block: GcBlock, props: Props = {}) {
 const has = (w: ReturnType<typeof mountPanel>, id: string): boolean =>
   w.find(`[data-testid="${id}"]`).exists()
 
-describe('CleanupBlockPanel — a nested-worktree item can never be removed from here', () => {
+const itemFailure = (over: Partial<ItemFailure> = {}): ItemFailure => ({
+  step: 'reprobe',
+  error: 'x',
+  refusal: null,
+  ...over
+})
+
+describe('CleanupBlockPanel — Remove is only offered for what main takes', () => {
   const nested = () =>
     blockWith(
       'review',
@@ -79,39 +86,259 @@ describe('CleanupBlockPanel — a nested-worktree item can never be removed from
         '1 other worktree lives inside this one: .claude/worktrees/spike.'
       )
     )
+  const withFacts = (reason: ReturnType<typeof reviewReason>, facts: Record<string, unknown>) =>
+    blockOf(wt('x', 'review', 1200 * MIB, {}, { reason, ...facts }))
 
   it('hides Remove and does not act on R, and says why', async () => {
     const w = mountPanel(nested(), { attachTo: document.body } as never)
     expect(has(w, 'panel-remove')).toBe(false)
     expect(w.get('[data-testid="panel-remove-blocked"]').text()).toBe(
-      'Remove is unavailable: this folder holds another worktree. Remove or move that one first.'
+      'Remove is unavailable. This folder holds another worktree or checkout. Remove or move that one first.'
     )
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r' }))
     expect(w.emitted('remove')).toBeUndefined()
     w.unmount()
   })
 
-  it('a locked worktree (git refuses to remove it) gets the same treatment', () => {
-    const locked = blockWith(
-      'review',
-      {},
-      reviewReason('locked' as never, 'This worktree is locked in git.')
-    )
+  it('a locked worktree gets the same treatment, with the command that unlocks it', () => {
+    const locked = withFacts(reviewReason('locked' as never, 'This worktree is locked in git.'), {
+      locked: true
+    })
     const w = mountPanel(locked)
     expect(has(w, 'panel-remove')).toBe(false)
     expect(w.get('[data-testid="panel-remove-blocked"]').text()).toBe(
-      'Remove is unavailable: git has this worktree locked. Unlock it first.'
+      'Remove is unavailable. Git has this worktree locked. Unlock it first.'
+    )
+    expect(w.get('[data-testid="panel-remove-hint"]').text()).toBe(
+      'Run git worktree unlock /w/repo/.claude/worktrees/x'
     )
   })
+
+  it.each([
+    [
+      'a shared stack',
+      reviewReason('shared-stack'),
+      { sharedStackIds: ['other'] },
+      'Another stack'
+    ],
+    [
+      'an idle session still open',
+      reviewReason('open-idle-session'),
+      { session: 'open-idle' },
+      'A session is still open'
+    ],
+    [
+      'an unknown tip',
+      reviewReason('unknown-fate'),
+      { localTip: null },
+      'could not tell which commit'
+    ],
+    [
+      'an unresolved path',
+      reviewReason('path-unresolved'),
+      { pathsResolved: false },
+      'could not be resolved'
+    ]
+  ])('%s: no Remove, no R, and the reason', (_name, reason, facts, text) => {
+    const w = mountPanel(withFacts(reason, facts), { attachTo: document.body } as never)
+    expect(has(w, 'panel-remove')).toBe(false)
+    expect(w.get('[data-testid="panel-remove-blocked"]').text()).toContain(text)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r' }))
+    expect(w.emitted('remove')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('a detached worktree names the command that removes it by hand', () => {
+    const detached = blockOf(
+      wt(
+        'x',
+        'review',
+        1200 * MIB,
+        { kind: 'detached-worktree', branch: null },
+        { reason: reviewReason('detached') }
+      )
+    )
+    const w = mountPanel(detached)
+    expect(has(w, 'panel-remove')).toBe(false)
+    expect(w.get('[data-testid="panel-remove-hint"]').text()).toContain('git worktree remove')
+  })
+
+  it('a worktree Harnu could not look inside gets its own Remove-blocked sentence', () => {
+    const unchecked = blockWith(
+      'review',
+      {},
+      reviewReason('check-failed' as never, 'Harnu could not look inside /srv/ws/x.')
+    )
+    const w = mountPanel(unchecked)
+    expect(has(w, 'panel-remove')).toBe(false)
+    const text = w.get('[data-testid="panel-remove-blocked"]').text()
+    expect(text).toMatch(/could not look inside/)
+    expect(text).not.toMatch(/holds another worktree/)
+  })
+
+  it.each(['en', 'pt-BR'])(
+    '%s: the could-not-look-inside sentence names the real Scan now button',
+    (lang) => {
+      const locale = i18n.global.locale as unknown as { value: string }
+      const original = locale.value
+      locale.value = lang
+      try {
+        const unchecked = blockWith(
+          'review',
+          {},
+          reviewReason('check-failed' as never, 'Harnu could not look inside /srv/ws/x.')
+        )
+        const text = mountPanel(unchecked).get('[data-testid="panel-remove-blocked"]').text()
+        // Whatever the button is called in this language is what the sentence must say.
+        expect(text).toContain(i18n.global.t('cleanup.scanNow'))
+        expect(text).not.toContain('{')
+        if (lang === 'pt-BR') expect(text).not.toContain('Scan now')
+      } finally {
+        locale.value = original
+      }
+    }
+  )
 
   it('keeps Keep and the other actions that do not delete the folder', () => {
     const w = mountPanel(nested())
     expect(has(w, 'panel-keep')).toBe(true)
   })
 
+  it('a failed item that main refuses on its facts has nothing to Retry', () => {
+    const locked = withFacts(reviewReason('locked' as never), { locked: true })
+    const w = mountPanel(locked, {
+      failure: itemFailure({
+        step: 'reprobe',
+        error: 'cannot-unregister',
+        refusal: 'cannot-unregister'
+      })
+    })
+    expect(has(w, 'panel-retry')).toBe(false)
+  })
+
+  it('a locked item keeps its real reason after a refusal, not "couldn\'t match a registration"', () => {
+    const locked = withFacts(reviewReason('locked' as never), { locked: true })
+    const w = mountPanel(locked, {
+      failure: itemFailure({
+        step: 'reprobe',
+        error: 'cannot-unregister',
+        refusal: 'cannot-unregister'
+      })
+    })
+    const text = w.get('[data-testid="panel-refusal"]').text()
+    expect(text).toBe('Git has this worktree locked. Unlock it first.')
+    expect(text).not.toContain('single git registration')
+  })
+
+  it('without the locked fact, cannot-unregister keeps its own sentence', () => {
+    const w = mountPanel(blockWith('review'), {
+      failure: itemFailure({
+        step: 'reprobe',
+        error: 'cannot-unregister',
+        refusal: 'cannot-unregister'
+      })
+    })
+    expect(w.get('[data-testid="panel-refusal"]').text()).toContain('single git registration')
+  })
+
   it('every other review reason still offers Remove', () => {
     expect(has(mountPanel(blockWith('review')), 'panel-remove')).toBe(true)
     expect(has(mountPanel(blockWith('review')), 'panel-remove-blocked')).toBe(false)
+  })
+})
+
+describe('CleanupBlockPanel — a ready item main refused lately', () => {
+  const stuck = (count = 1): GcBlock => {
+    const b = wt('x', 'ready', 1200 * MIB, { verdict: 'harvestable', blockers: [] })
+    b.reprobeRefusal = { code: 'cannot-unregister', count }
+    return blockOf(b)
+  }
+
+  it('says it was refused and why, and offers Retry instead of Clean now', () => {
+    const w = mountPanel(stuck())
+    expect(w.get('[data-testid="panel-refused"]').attributes('data-refusal')).toBe(
+      'cannot-unregister'
+    )
+    expect(w.get('[data-testid="panel-refused"]').text()).toContain('The last clean was refused')
+    expect(has(w, 'panel-retry')).toBe(true)
+    expect(has(w, 'panel-clean-now')).toBe(false)
+  })
+
+  it('a demoted one offers neither Remove nor Retry, and names the real reason', () => {
+    const b = wt('x', 'review', 1200 * MIB, {}, { reason: reviewReason('cleanup-failed') })
+    b.reprobeRefusal = { code: 'cannot-unregister', count: 2 }
+    const w = mountPanel(blockOf(b))
+    expect(has(w, 'panel-remove')).toBe(false)
+    expect(has(w, 'panel-retry')).toBe(false)
+    expect(w.get('[data-testid="panel-remove-blocked"]').text()).toContain(
+      t('cleanup.gc.removal.reason.cannotUnregister')
+    )
+    expect(w.get('[data-testid="panel-remove-hint"]').text()).toContain('git worktree list')
+    expect(w.get('[data-testid="panel-reason"]').text()).toBe(
+      t('cleanup.gc.removal.reason.cannotUnregister')
+    )
+  })
+
+  it('a demoted item offers Check again, which asks the screen to recheck it', async () => {
+    const b = wt('x', 'review', 1200 * MIB, {}, { reason: reviewReason('cleanup-failed') })
+    b.reprobeRefusal = { code: 'cannot-unregister', count: 2 }
+    const w = mountPanel(blockOf(b))
+    expect(w.get('[data-testid="panel-recheck"]').text()).toBe(t('cleanup.gc.panel.recheck'))
+    await w.get('[data-testid="panel-recheck"]').trigger('click')
+    expect(w.emitted('recheck')).toEqual([['/w/repo::worktree::x']])
+  })
+
+  it('a ready item with one refusal has Retry, not Check again; an ordinary review item has neither', () => {
+    expect(has(mountPanel(stuck()), 'panel-recheck')).toBe(false)
+    expect(has(mountPanel(blockWith('review')), 'panel-recheck')).toBe(false)
+  })
+
+  it('a demoted one says how many times, in Needs review', () => {
+    const b = wt('x', 'review', 1200 * MIB, {}, { reason: reviewReason('cleanup-failed') })
+    b.reprobeRefusal = { code: 'tip-unknown', count: 2 }
+    const w = mountPanel(blockOf(b))
+    expect(w.get('[data-testid="panel-refused-hint"]').text()).toContain('2 times in a row')
+  })
+})
+
+describe('CleanupBlockPanel — Clean now follows the same predicate as Remove', () => {
+  const readyWith = (facts: Record<string, unknown>): GcBlock =>
+    blockOf(wt('x', 'ready', 1200 * MIB, { verdict: 'harvestable', blockers: [] }, facts))
+
+  it('offers Clean now for a ready item main takes', () => {
+    expect(has(mountPanel(readyWith({})), 'panel-clean-now')).toBe(true)
+  })
+
+  it.each([
+    [
+      'a scan that could not see Docker',
+      { dockerBlind: true },
+      'cleanup.gc.removal.reason.scanBlind'
+    ],
+    ['a locked worktree', { locked: true }, 'cleanup.gc.removal.reason.locked'],
+    ['a shared stack', { sharedStackIds: ['o'] }, 'cleanup.gc.removal.reason.sharedStack']
+  ])('hides Clean now for %s and says why', (_n, facts, key) => {
+    const w = mountPanel(readyWith(facts))
+    expect(has(w, 'panel-clean-now')).toBe(false)
+    expect(w.get('[data-testid="panel-remove-blocked"]').text()).toBe(
+      t('cleanup.gc.panel.cleanUnavailable', { reason: t(key) })
+    )
+  })
+})
+
+describe('CleanupBlockPanel — Docker down', () => {
+  it('tells the operator to start Docker, then Retry, and offers Retry', () => {
+    const w = mountPanel(blockWith('ready', { verdict: 'harvestable', blockers: [] }), {
+      failure: itemFailure({
+        step: 'reprobe',
+        error: 'docker-unavailable',
+        refusal: 'docker-unavailable'
+      })
+    })
+    expect(w.get('[data-testid="panel-refusal"]').text()).toBe(
+      'Docker is not running, so Harnu could not check this worktree safely and left it alone. Start Docker, then Retry.'
+    )
+    expect(has(w, 'panel-retry')).toBe(true)
   })
 })
 
@@ -242,6 +469,102 @@ describe('CleanupBlockPanel — a failed item', () => {
     expect(text).not.toContain(t('cleanup.gc.step.archive'))
     expect(text).not.toContain(t('cleanup.gc.step.stopStack'))
     expect(text).not.toMatch(/Remove volumes/i)
+  })
+
+  describe('a halted item whose folder is already gone (F0 delta 2)', () => {
+    const goneBlock = (branch: string | null = 'feat/x') => {
+      const b = wt(
+        'x',
+        'review',
+        1200 * MIB,
+        { branch, hydration: hydration(), verdict: 'blocked' },
+        {
+          reason: reviewReason(
+            'cleanup-failed',
+            'Cleanup stopped at branch-delete in /w/repo/.claude/worktrees/x.'
+          )
+        }
+      )
+      ;(b as unknown as { folderGone: boolean }).folderGone = true
+      return blockOf(b)
+    }
+
+    it('hides Retry and Remove, and shows the next step with the exact commands', () => {
+      const w = mountPanel(goneBlock(), { failure: failure({ step: 'branch-delete' }) })
+      expect(has(w, 'panel-retry')).toBe(false)
+      expect(has(w, 'panel-remove')).toBe(false)
+      const hint = w.get('[data-testid="panel-resume"]').text()
+      expect(hint).toContain(t('cleanup.gc.step.branchDelete'))
+      expect(hint).toContain('git -C /w/repo worktree prune')
+      expect(hint).toContain('git -C /w/repo branch -D feat/x')
+      expect(hint).toMatch(/archive refs/)
+    })
+
+    it('words it neutrally (the folder may have been deleted by hand) and claims the archive only when it ran', () => {
+      const early = goneBlock()
+      const b = early.bundle!
+      b.reason = { code: 'cleanup-failed', detail: 'Cleanup stopped at drop-deps in /w/repo/x.' }
+      const w = mountPanel(blockOf(b), { failure: failure({ step: 'drop-deps' }) })
+      const hint = w.get('[data-testid="panel-resume"]').text()
+      expect(hint).toMatch(/folder is gone/i)
+      expect(hint).not.toMatch(/trashed/i)
+      // Nothing was archived: the safe -d (it refuses unmerged commits), never -D, plus the warning.
+      expect(hint).toContain('git -C /w/repo branch -d feat/x')
+      expect(hint).not.toContain('branch -D')
+      expect(hint).toContain(i18n.global.t('cleanup.gc.panel.resumeUnarchived'))
+      expect(hint).toMatch(/If git refuses/)
+      expect(hint).not.toMatch(/archive refs/)
+      // After the archive step the refs exist and the line is shown.
+      const late = mountPanel(goneBlock(), { failure: failure({ step: 'branch-delete' }) })
+      expect(late.get('[data-testid="panel-resume"]').text()).toMatch(/archive refs/)
+      expect(late.get('[data-testid="panel-resume"]').text()).toContain('branch -D')
+      expect(late.get('[data-testid="panel-resume"]').text()).not.toMatch(/If git refuses/)
+      expect(late.get('[data-testid="panel-resume"]').text()).not.toMatch(/trashed/i)
+    })
+
+    it('hides Dehydrate and Rehydrate too, and the D shortcut does nothing', () => {
+      // The item still carries a hydration record from the last scan (it was dehydratable), but
+      // its folder is gone: there is nothing to dehydrate.
+      const w = mountPanel(goneBlock(), { failure: failure(), attachTo: document.body } as never)
+      expect(has(w, 'panel-dehydrate')).toBe(false)
+      expect(has(w, 'panel-rehydrate')).toBe(false)
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'd' }))
+      expect(w.emitted('dehydrate')).toBeUndefined()
+      w.unmount()
+    })
+
+    it('a halted item whose folder is still there keeps Dehydrate', () => {
+      const w = mountPanel(failedBlock(), { failure: failure() })
+      expect(has(w, 'panel-dehydrate')).toBe(true)
+    })
+
+    it('still offers Keep', () => {
+      expect(has(mountPanel(goneBlock(), { failure: failure() }), 'panel-keep')).toBe(true)
+    })
+
+    it('says the same in pt-BR, with the commands untouched', () => {
+      const locale = i18n.global.locale as unknown as { value: string }
+      const original = locale.value
+      locale.value = 'pt-BR'
+      try {
+        const hint = mountPanel(goneBlock(), { failure: failure() })
+          .get('[data-testid="panel-resume"]')
+          .text()
+        expect(hint).toContain('git -C /w/repo worktree prune')
+        expect(hint).toContain('git -C /w/repo branch -D feat/x')
+        // The pt-BR sentence, read from the locale rather than spelled out here (English gate).
+        expect(hint).toContain(i18n.global.t('cleanup.gc.panel.resumeArchive'))
+        expect(hint).not.toMatch(/archive refs/)
+      } finally {
+        locale.value = original
+      }
+    })
+
+    it('a halted item whose folder is still there keeps Retry and shows no resume text', () => {
+      const w = mountPanel(failedBlock(), { failure: failure() })
+      expect(has(w, 'panel-retry')).toBe(true)
+      expect(has(w, 'panel-resume')).toBe(false)
+    })
   })
 
   it('a pre-flight refusal says nothing was changed, in a human sentence', () => {

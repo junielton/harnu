@@ -22,6 +22,7 @@ const CODES = [
   'cleanup-failed',
   'path-unresolved',
   'nested-worktree',
+  'check-failed',
   'locked',
   'no-known-worktree'
 ] as const
@@ -39,6 +40,13 @@ describe('reasonKey — every review code has a sentence in both locales', () =>
   }
   it('names the nested worktree problem', () => {
     expect(at(load('en'), reasonKey('nested-worktree'))).toMatch(/inside/)
+  })
+  it('a probe that failed reads differently from a worktree that was found inside', () => {
+    for (const locale of ['en', 'pt-BR']) {
+      const failed = at(load(locale), reasonKey('check-failed'))
+      expect(failed, locale).not.toBe(at(load(locale), reasonKey('nested-worktree')))
+    }
+    expect(at(load('en'), reasonKey('check-failed'))).toMatch(/could not look inside/)
   })
 })
 

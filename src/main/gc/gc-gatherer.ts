@@ -27,7 +27,9 @@ export interface GathererDeps {
   gatherGc: (
     prefs: GcPrefs,
     now: number,
-    remembered: ReadonlyMap<string, readonly string[]>
+    remembered: ReadonlyMap<string, readonly string[]>,
+    /** Items with a pending failure note: kept in the gather even when their folder is gone. */
+    keepGone: ReadonlySet<string>
   ) => Promise<GcGathered>
   state: CycleState
   leftovers: { get: () => LeftoverFile; set: (next: LeftoverFile) => void }
@@ -43,6 +45,13 @@ export interface GathererDeps {
 
 export interface Gatherer {
   gather(): Promise<GcGathered>
+  /**
+   * Marks every gather now in flight as stale: what it read predates a change (a job just
+   * removed worktrees). Its answer still goes to the callers that already hold it, but it is
+   * neither cached nor fed nor persisted, and a `gather()` asked for from now on starts a new
+   * one instead of sharing it.
+   */
+  invalidate(): void
   /** A gather that STARTS after this call: waits for the one in flight, which may predate it. */
   fresh(): Promise<GcGathered>
   peek(): Promise<GcGathered>
@@ -53,16 +62,45 @@ export interface Gatherer {
 export function createGatherer(deps: GathererDeps): Gatherer {
   let cache: GcGathered | null = null
   let gathering: Promise<GcGathered> | null = null
+  /** Bumped by `invalidate`; a gather is stale when it began under an older number. */
+  let generation = 0
+  let queued: Promise<GcGathered> | null = null
   let peeking: Promise<GcGathered> | null = null
 
   /** The raw gather with the failure overlay on top: a halted item reads Needs review. */
-  const read = async (persisting: boolean): Promise<GcGathered> => {
+  const read = async (persisting: boolean, isCurrent: () => boolean): Promise<GcGathered> => {
     const now = deps.now()
-    const g = await deps.gatherGc(deps.prefs(), now, toDirMap(deps.leftovers.get()))
-    // Pruning forgets failure notes for bundles it cannot see, so only a persisting gather does.
-    if (persisting) pruneFailures(deps.state.failures, g.bundles, now)
-    return { ...g, bundles: applyFailures(g.bundles, deps.state.failures) }
+    // The notes this gather started with: only these may be pruned by what it saw. A note
+    // recorded while it ran (a job halted after the trash) belongs to a world it never looked at.
+    const startedWith = new Map(deps.state.failures)
+    const g = await deps.gatherGc(
+      deps.prefs(),
+      now,
+      toDirMap(deps.leftovers.get()),
+      // A refusal changed nothing, so its folder gone since is just gone; a halt keeps the item.
+      new Set([...startedWith].filter(([, f]) => f.step !== 'reprobe').map(([id]) => id))
+    )
+    // Pruning forgets failure notes for bundles it cannot see, so only a persisting gather does,
+    // and only one that is still current: a stale gather would delete the note of an item the
+    // job halted after that gather read the disk.
+    if (persisting && isCurrent()) {
+      const pruned = new Map(startedWith)
+      pruneFailures(pruned, g.bundles, now)
+      for (const id of startedWith.keys()) {
+        // Same note still there: a note replaced meanwhile is a newer halt and stays.
+        if (!pruned.has(id) && deps.state.failures.get(id) === startedWith.get(id)) {
+          deps.state.failures.delete(id)
+        }
+      }
+    }
+    return {
+      ...g,
+      bundles: applyFailures(g.bundles, deps.state.failures, now, new Set(g.goneItemIds))
+    }
   }
+
+  /** The generation the gather now in flight began under. */
+  let startedUnder = 0
 
   const self: Gatherer = {
     cached: () => cache,
@@ -70,14 +108,34 @@ export function createGatherer(deps: GathererDeps): Gatherer {
       if (gathering) await gathering.catch(() => undefined)
       return self.gather()
     },
+    invalidate: () => {
+      generation++
+    },
     gather: () => {
+      // A gather in flight that began before an invalidate must not answer this call: queue a
+      // fresh one behind it, shared by every caller that asks in the meantime.
+      if (gathering && startedUnder !== generation) {
+        queued ??= (async () => {
+          try {
+            await gathering?.catch(() => undefined)
+          } finally {
+            queued = null
+          }
+          return self.gather()
+        })()
+        return queued
+      }
       gathering ??= (async () => {
+        const mine = generation
+        startedUnder = mine
         try {
           // Which release marks this gather judged: a release made while it ran is a newer
           // mark, and must survive the verdict on the one it replaced (as a Keep does).
           const startedAt = deps.now()
           const judgedReleases = { ...deps.prefs().released }
-          const g = await read(true)
+          const g = await read(true, () => mine === generation)
+          // Invalidated while it ran: its callers get the answer, nothing else does.
+          if (mine !== generation) return g
           // A project with no volume left in Docker has nothing to review. Only judged when
           // docker answered: an outage says nothing about what exists.
           if (g.dockerAvailable) {
@@ -107,7 +165,7 @@ export function createGatherer(deps: GathererDeps): Gatherer {
       return gathering
     },
     peek: () => {
-      peeking ??= read(false).finally(() => {
+      peeking ??= read(false, () => true).finally(() => {
         peeking = null
       })
       return peeking

@@ -9,7 +9,7 @@
 // against the current prefs before any op runs.
 
 import type { WorktreeBundle } from './bundle-core'
-import { refusalFor } from './autopilot-core'
+import { refusalFor, rememberReprobeRefusal } from './autopilot-core'
 import { bundleChangedSince, volumeChangedSince } from './gc-confirm'
 import type { CycleState } from './gc-cycle'
 import type { JobQueue } from './gc-jobs-core'
@@ -193,12 +193,22 @@ export function submitManualClean(
       const result = id.startsWith(VOLUME_PREFIX) ? await cleanVolume(id) : await cleanBundle(id)
       results.push(result)
       if (result.ok) deps.state.failures.delete(id)
-      else if (result.haltedAt !== 'reprobe' && result.haltedAt !== null) {
+      else if (result.haltedAt === 'reprobe') {
+        // The engine's own refusals (a locked worktree, an unknown tip) are remembered; the
+        // click-time ones (a stale confirm, a missing confirmation) are not facts about the item.
+        rememberReprobeRefusal(
+          deps.state.failures,
+          result,
+          deps.now(),
+          bundles.get(id)?.localTip ?? null
+        )
+      } else if (result.haltedAt !== null) {
         deps.state.failures.set(id, {
           step: result.haltedAt,
           error: result.error ?? 'failed',
           at: deps.now()
         })
+        console.warn('[gc] cleanup halted', id, result.haltedAt, result.error)
       }
       reporter.onItem(result)
     }

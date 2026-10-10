@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 
@@ -13,7 +13,11 @@ import * as path from 'node:path'
 const h = vi.hoisted(() => ({
   userData: '',
   snapshot: null as null | { repos: Array<{ repoPath: string; items: unknown[] }> },
-  fateInputs: new Map<string, unknown>()
+  fateInputs: new Map<string, unknown>(),
+  /** When set, the foreign-checkout walk rejects with it (a folder the process cannot read). */
+  walkError: null as null | NodeJS.ErrnoException,
+  /** Docker CLI present, daemon not answering. False with `dockerIsUnavailable` true = no CLI at all. */
+  daemonDown: false
 }))
 
 vi.mock('electron', () => ({
@@ -57,7 +61,14 @@ vi.mock('../src/main/gc/gc-shell', async () => {
   return {
     presenceFromSets: () => 'none',
     dockerIsUnavailable: () => true,
-    findForeignCheckouts: async () => [],
+    dockerDaemonDown: () => h.daemonDown,
+    // Like the real walk: the root must be readable, so a folder that is gone rejects ENOENT.
+    findForeignCheckouts: async (p: string) => {
+      if (h.walkError) throw h.walkError
+      const { promises } = await import('node:fs')
+      await promises.readdir(p)
+      return []
+    },
     resolveRealPaths: async () => AS_GIVEN
   }
 })
@@ -144,6 +155,8 @@ beforeEach(() => {
   mkdirSync(repo, { recursive: true })
   h.snapshot = null
   h.fateInputs = new Map()
+  h.walkError = null
+  h.daemonDown = false
 })
 
 afterEach(() => {
@@ -184,6 +197,29 @@ describe('gatherGc: a release mark reaches the bundle builder (G3)', () => {
     scanWithWorktree()
     const g = await gatherGc({ ...released({}, 'b'.repeat(40)), graceDays: 2 }, NOW)
     expect(g.staleReleases).toEqual([item().id])
+  })
+})
+
+describe('gatherGc: a scan that could not see Docker says so on every bundle', () => {
+  function scan(): void {
+    mkdirSync(wt, { recursive: true })
+    h.snapshot = { repos: [{ repoPath: repo, items: [item()] }] }
+    h.fateInputs = new Map([[item().id, { facts: facts(), localTip: TIP }]])
+  }
+
+  it('daemon down while scanning: every bundle is blind', async () => {
+    scan()
+    h.daemonDown = true
+    const g = await gatherGc({ ...released(), graceDays: 2 }, NOW)
+    expect(g.bundles).toHaveLength(1)
+    expect(g.bundles.every((b) => b.dockerBlind === true)).toBe(true)
+  })
+
+  it('no Docker CLI at all: nothing to stop, so no bundle is blind', async () => {
+    scan()
+    const g = await gatherGc({ ...released(), graceDays: 2 }, NOW)
+    expect(g.bundles[0]!.bucket).toBe('ready')
+    expect(g.bundles[0]!.dockerBlind).toBeUndefined()
   })
 })
 
@@ -230,5 +266,99 @@ describe('gatherGc: a cleaned worktree drops its mark, nothing else does (G1, G2
     const g = await gatherGc(prefs, NOW)
     chmodSync(locked, 0o755)
     expect(g.staleReleases).toEqual([])
+  })
+})
+
+describe('gatherGc: no ghost bundles for a folder that is gone (F0)', () => {
+  const stale = (): void => {
+    // The Reaper's last scan still lists the worktree; the clean job already removed its folder.
+    h.snapshot = { repos: [{ repoPath: repo, items: [item()] }] }
+    h.fateInputs = new Map([[item().id, { facts: facts(), localTip: TIP }]])
+  }
+
+  it('an item whose folder no longer exists is absent, not "needs review"', async () => {
+    stale()
+    const g = await gatherGc({ ...released(), graceDays: 2 }, NOW)
+    expect(g.bundles).toEqual([])
+  })
+
+  it('a dangling symlink is not a gone folder: the item stays and needs review', async () => {
+    // The link exists, its target does not. Cleanup removes the worktree itself, so a broken
+    // link is something to look at, not something already cleaned.
+    mkdirSync(path.dirname(wt), { recursive: true })
+    symlinkSync(path.join(root, 'nowhere'), wt)
+    stale()
+    const g = await gatherGc({ ...released(), graceDays: 2 }, NOW)
+    expect(g.bundles).toHaveLength(1)
+    expect(g.bundles[0]!.bucket).toBe('review')
+    // Its release mark is not "cleaned" either.
+    expect(g.staleReleases).not.toContain(item().id)
+  })
+
+  it('a halted item (it has a failure note) stays even though its folder is gone', async () => {
+    stale()
+    const g = await gatherGc({ ...released(), graceDays: 2 }, NOW, new Map(), new Set([item().id]))
+    expect(g.bundles.map((b) => b.item.id)).toEqual([item().id])
+    expect(g.goneItemIds).toEqual([item().id])
+  })
+
+  it('a kept gone item is not walked for foreign checkouts', async () => {
+    stale()
+    h.walkError = Object.assign(new Error('walked a folder that is gone'), { code: 'ENOENT' })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await gatherGc({ ...released(), graceDays: 2 }, NOW, new Map(), new Set([item().id]))
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('a failure note for another item keeps nothing else', async () => {
+    stale()
+    const g = await gatherGc({ ...released(), graceDays: 2 }, NOW, new Map(), new Set(['other']))
+    expect(g.bundles).toEqual([])
+    expect(g.goneItemIds).toEqual([])
+  })
+
+  it('its release mark is still dropped, since the bundle is gone', async () => {
+    stale()
+    const g = await gatherGc({ ...released(), graceDays: 2 }, NOW)
+    expect(g.staleReleases).toEqual([item().id])
+  })
+
+  it('one cleaned item among live ones leaves only the live ones', async () => {
+    const live = { ...item(), id: `${repo}::worktree::feat/live`, branch: 'feat/live' }
+    const livePath = path.join(root, 'trees', 'PROJ-2-live')
+    mkdirSync(livePath, { recursive: true })
+    live.path = livePath
+    h.snapshot = { repos: [{ repoPath: repo, items: [item(), live] }] }
+    h.fateInputs = new Map([[live.id, { facts: { ...facts(), path: livePath }, localTip: TIP }]])
+    const g = await gatherGc({ ...defaultGcPrefs(), graceDays: 2 }, NOW)
+    expect(g.bundles.map((b) => b.item.id)).toEqual([live.id])
+  })
+
+  it('a folder that exists but cannot be read is still judged, never dropped as gone', async () => {
+    mkdirSync(wt, { recursive: true })
+    h.snapshot = { repos: [{ repoPath: repo, items: [item()] }] }
+    h.fateInputs = new Map([[item().id, { facts: facts(), localTip: TIP }]])
+    h.walkError = Object.assign(new Error(`EACCES: permission denied, scandir '${wt}'`), {
+      code: 'EACCES'
+    })
+    const g = await gatherGc({ ...released(), graceDays: 2 }, NOW)
+    expect(g.bundles).toHaveLength(1)
+    expect(g.bundles[0]!.bucket).toBe('review')
+    expect(g.bundles[0]!.reason?.code).toBe('check-failed')
+  })
+
+  it('a failed probe says so in a sentence with the path, never the raw error', async () => {
+    mkdirSync(wt, { recursive: true })
+    h.snapshot = { repos: [{ repoPath: repo, items: [item()] }] }
+    h.fateInputs = new Map([[item().id, { facts: facts(), localTip: TIP }]])
+    h.walkError = Object.assign(new Error(`EACCES: permission denied, scandir '${wt}/secret'`), {
+      code: 'EACCES'
+    })
+    const g = await gatherGc({ ...released(), graceDays: 2 }, NOW)
+    const detail = g.bundles[0]!.reason!.detail
+    expect(detail).toContain(wt)
+    expect(detail).not.toMatch(/EACCES|scandir|permission denied/)
+    expect(detail).not.toMatch(/lives inside|live inside/)
   })
 })

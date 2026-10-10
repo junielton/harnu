@@ -34,10 +34,16 @@ import {
   buildBundles,
   containerFolderPaths,
   staleReleases,
+  withDockerBlind,
   type CanonicalPath
 } from './bundle-core'
-import { dockerIsUnavailable, findForeignCheckouts, resolveRealPaths } from './gc-shell'
-import { collectForeignCheckouts, explainFailedWalks } from './gc-foreign'
+import {
+  dockerDaemonDown,
+  dockerIsUnavailable,
+  findForeignCheckouts,
+  resolveRealPaths
+} from './gc-shell'
+import { collectForeignCheckouts } from './gc-foreign'
 import { lockedItemIds } from './gc-locked'
 import { sessionsFromFleet } from './gc-sessions'
 import {
@@ -84,6 +90,8 @@ export interface GcGathered extends GcGather {
   staleKeeps: StaleKeep[]
   /** Releases whose bundle is gone or no longer strongly merged; the caller clears them. */
   staleReleases: string[]
+  /** Items kept although their folder is gone, because a halted cleanup left a note on them. */
+  goneItemIds: string[]
 }
 
 const COMPOSE_FILES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml']
@@ -143,12 +151,16 @@ async function dockerPicture(): Promise<{
   containers: InspectedContainer[]
   df: Map<string, VolumeFact>
   available: boolean
+  /** The CLI is there but the daemon did not answer: what is "none" here was really "unseen". */
+  blind: boolean
 }> {
   try {
     const containers = await inspectAll({ strict: true })
-    return { containers, df: await strictVolumeFacts(), available: true }
+    return { containers, df: await strictVolumeFacts(), available: true, blind: false }
   } catch (err) {
-    if (dockerIsUnavailable(err)) return { containers: [], df: new Map(), available: false }
+    if (dockerIsUnavailable(err)) {
+      return { containers: [], df: new Map(), available: false, blind: dockerDaemonDown(err) }
+    }
     throw err
   }
 }
@@ -187,7 +199,8 @@ async function missingFolders(paths: readonly string[]): Promise<Set<string>> {
   await Promise.all(
     [...new Set(paths)].map(async (p) => {
       try {
-        await fs.stat(p)
+        // lstat: a dangling symlink is still there (its target is what is missing).
+        await fs.lstat(p)
       } catch (err) {
         const code = (err as NodeJS.ErrnoException).code
         if (code === 'ENOENT' || code === 'ENOTDIR') gone.add(p)
@@ -201,14 +214,26 @@ export async function gatherGc(
   prefs: GcPrefs,
   now: number,
   /** Compose project → folders a cleaned worktree ran from (gc-leftovers.ts). */
-  rememberedDirs: ReadonlyMap<string, readonly string[]> = new Map()
+  rememberedDirs: ReadonlyMap<string, readonly string[]> = new Map(),
+  /**
+   * Items with a pending failure note. A cleanup that halted after the trash (prune,
+   * branch-delete) leaves the folder gone but a git registration and a branch behind: such an
+   * item stays visible, so what is left is never silently dropped.
+   */
+  keepGone: ReadonlySet<string> = new Set()
 ): Promise<GcGathered> {
   const snap = lastSnapshot()
-  const items = snap?.repos.flatMap((r) => r.items) ?? []
+  const listed = snap?.repos.flatMap((r) => r.items) ?? []
+  // The last scan can still list a worktree that is gone (a clean job just removed it, or
+  // someone deleted it by hand). A folder that is not there is not a bundle: left in, it only
+  // fails every probe and reads as a "Needs review" ghost. An unreadable folder is not gone.
+  const gone = await missingFolders(listed.flatMap((i) => (i.path ? [i.path] : [])))
+  const items = listed.filter((i) => !i.path || !gone.has(i.path) || keepGone.has(i.id))
+  const goneItemIds = items.filter((i) => i.path && gone.has(i.path)).map((i) => i.id)
   const repoPaths = snap?.repos.map((r) => r.repoPath) ?? []
   const itemPaths = items.flatMap((i) => (i.path ? [i.path] : []))
 
-  const [{ containers, df, available }, sets, fleet, known, journal, lockedPaths] =
+  const [{ containers, df, available, blind }, sets, fleet, known, journal, lockedPaths] =
     await Promise.all([
       dockerPicture(),
       computeFolderSets(),
@@ -299,7 +324,12 @@ export async function gatherGc(
   // Is another checkout (a worktree of another repo, a plain clone) hiding inside a worktree?
   // One walk per worktree on its real path; a walk that fails leaves the worktree out of the
   // answers, so it can never be ready, and its cause is named in the review reason.
-  const foreign = await collectForeignCheckouts(items, canonical, (p) => findForeignCheckouts(p))
+  // A folder that is gone has nothing to walk.
+  const foreign = await collectForeignCheckouts(
+    items.filter((i) => !goneItemIds.includes(i.id)),
+    canonical,
+    (p) => findForeignCheckouts(p)
+  )
 
   // Only folders that cannot pose as a worktree nested in a bundle (see foldersForBundles).
   const bundleFolders = foldersForBundles(guards.knownFolders, itemPaths, repoPaths)
@@ -331,9 +361,13 @@ export async function gatherGc(
   let bundles = buildBundles({ ...input, keep: new Set() })
   const { keep, stale: staleKeeps } = judgeKeeps(bundles, prefs.keep)
   if (keep.size > 0) bundles = buildBundles({ ...input, keep })
-  bundles = explainFailedWalks(bundles, foreign.failed)
+  // The review reason names the path and says the probe failed; the cause stays in the log.
+  for (const [id, cause] of foreign.failed)
+    console.warn('[gc] foreign-checkout walk failed', id, cause)
   // An unreadable transcripts root says nothing about recent activity: nothing is ready.
   if (transcripts.rootUnreadable) bundles = withGraceUnknown(bundles)
+  // A daemon that was down at this scan says nothing about the stacks: no bundle was judged on them.
+  if (blind) bundles = withDockerBlind(bundles)
 
   // A release is dropped only when its bundle is in this gather and no longer strongly merged,
   // so a branch that reopens does not come back pre-released. A gather that cannot see the
@@ -388,6 +422,7 @@ export async function gatherGc(
       : docker,
     orphanVolumes: orphanVolumeItems(orphanNames, df),
     staleKeeps,
-    staleReleases: staleReleaseIds
+    staleReleases: staleReleaseIds,
+    goneItemIds
   }
 }

@@ -766,12 +766,13 @@ store's existing 20 s poll — no per-mission timer):
   closed mission is gone from the list, so nothing fires after close. There is
   no draft kind: a dead legacy draft reads `active` + stale, and stale is not
   owed, so it never cues.
-- **Copy** (`mission.cue.*`): one mission → "Mission “{title}” needs you:
-  {what}", where `{what}` is the first owed item in words (the blocker's
-  reason, "re-scope awaiting your approval", "delivered, awaiting your close",
-  "2 due checks", …); clicking it opens the owner session (where the pill
-  lives). Several → "{n} missions need you", with the titles as the
-  description.
+- **Copy** (`mission.cue.*`): the cue posts **one** Activity entry, in place —
+  a snapshot of everything currently owed (see _Activity bell → Grouped
+  entry_). One mission owed → "Mission “{title}” needs you: {what}", where
+  `{what}` is the first owed item in words (the blocker's reason, "re-scope
+  awaiting your approval", "delivered, awaiting your close", "2 due checks", …);
+  several → "{n} missions need you". Each owed mission is its own clickable row
+  inside the entry.
 
 **Agent-opened pane alert (2026-07-13 agent-pane-routing design).** A pane an
 agent opens (`open_file`, `spawn_terminal`, …) into a
@@ -5240,18 +5241,59 @@ own border without colliding with the row divider below):
   — replaced by the dismiss × on row hover (above).
 - Rows separated by a `1px --border` top rule; **order: most-recent-first**.
 
+**Grouped entry (BUG-173).** A record that carries `items` is a **list
+entry**, not a single message — today only the mission cue posts one, under the
+single `group: 'mission-cue'`, so the bell holds **at most one mission entry**.
+Anatomy, inside the normal row (kind-bar, title, relative timestamp, hover ×):
+
+- **Title** — the record's `title` ("{n} missions need you", or the single
+  mission's sentence). The title is a label, not a destination: clicking the
+  entry's body or title does nothing.
+- **Item rows** — up to **5** (`MISSION_ROWS_MAX`), one per subject, under the
+  title, separated by the same `1px --border` rule as the rows. Each row is a
+  `button` (`cursor-pointer`, `hover:bg-surface-2`, `aria-label`
+  `mission.cue.itemAria`): the subject's title (`text-text`, 12px / 500, one
+  line, truncated) and what it owes (`text-text-3`, 11px, one line, truncated).
+  Tokens and spacing are the Activity row's; no new color, radius or row height.
+- **"Review all {n}"** — when there are more than 5, the rest collapse into a
+  `text-accent` text button (`mission.cue.reviewAll`, 11px / 500) below the rows.
+  It opens the Missions review (`useMissionsStore().openReview()`).
+- **Item click** — with the owner session loaded: `activateSession(sessionId)`
+  (the BUG-31 reveal), then the item's `target` through
+  `openNavigableView('mission', { missionId })`, which asks the missions store to
+  have the selected session's pill open that mission's popover (the request
+  expires after 5 s). With the owner **not loaded** the row carries a muted
+  owner hint (`text-text-4`, tooltip `mission.cue.ownerMissing`) and the click
+  opens the review focused on that mission (`openReview(missionId)`) — never a
+  dead click. **An item click never dismisses the entry**: it is a list, and the
+  other rows are still owed. The bell popover closes once a row or "Review all" has opened
+  its destination.
+- **Replaced in place, kept truthful.** `notify({ group })` is an upsert: the
+  first call appends, later calls replace the record's content and keep its
+  `id`, so the row state does not flicker and the badge does not grow. `ts`
+  moves only when a poll **cued** (the entry's "this is news" signal). After
+  **every** poll a quiet sync rewrites the title and rows from what is owed now
+  **without** touching `ts`, and removes the entry when nothing is owed. A sync
+  never resurrects an entry the operator dismissed.
+- Records without `items` render and behave exactly as before.
+
 **Empty state:** "You're all caught up" (`--text-4`, centered, 28px vertical
 padding) — the popover header also drops its count and Clear all button in
 this state, matching the mockup's `activity-popover--empty` variant.
 
 **Store.** `stores/notifications.ts` — a `NotificationRecord` (`id`, `ts`,
 `source`, `kind`, `title`, `description?`, `sessionId?`, `folderPath?`,
-`notificationType?`, `action?`) ring buffer, persisted to `localStorage` the
+`notificationType?`, `action?`, `group?`, `items?`) ring buffer, persisted to `localStorage` the
 same way as `theme`/`layout` (`persistedRef`), capped by **count (200)** and
 **age (7 days)** — whichever trims more wins. `useUiStore`'s `pushToast` is
 the funnel: every toast becomes a record by default (`persist: true`); a call
 site opts out (`persist: false`) for trivia not worth a history row (e.g.
 "copied to clipboard").
+`group?` is an upsert key (at most one record per group; `notify` replaces in
+place, `updateGroup` patches without moving `ts`, `removeGroup` removes) and
+`items?` are the per-subject rows of a grouped entry (`id`, `title`,
+`description?`, `sessionId?`, `target?`). Both are optional, so every record
+persisted before them stays valid.
 
 **Not virtualized.** Unlike the old rail section (BUG-36, `useVirtualList`,
 needed because the rail was _always mounted_), the popover only exists in the
@@ -5267,6 +5309,11 @@ no virtualization dependency needed here.
 - ❌ Show the expand chevron on a row whose text actually fits — that's a
   minor cosmetic miss, not a contract break, but the reverse (hiding a
   chevron a truly-clamped row needs) is a text-loss bug.
+- ❌ Stack a new row per cue for the same subject. A subject that keeps
+  re-cueing (a mission) lives in ONE grouped entry that is replaced in place.
+- ❌ Dismiss a grouped entry on an item click, or give it a mission-specific
+  branch in `ActivityBell.vue`: rows are generic `items`, and the click goes
+  through `openNavigableView` / the store's `openReview`.
 
 ### Mission progress (pill, popover, sidebar indicator)
 
@@ -5299,9 +5346,13 @@ There is **no draft** and no Approve door (spec §3.4): a legacy `draft` file
 reads `active`. No surface shows a draft state, callout or button.
 
 **Cue (Mission v3 §3.12).** Each poll decides whether a mission newly owes the
-operator something — chime + OS attention + one Activity entry; blocking kinds
-re-nudge with back-off and then stop, standing kinds never do. Rules under Notifications, "Mission owes the operator — sound +
-attention + Activity".
+operator something — chime + OS attention + **one** Activity entry that lists
+every owed mission as its own clickable row (Activity bell → _Grouped entry_);
+blocking kinds re-nudge with back-off and then stop, standing kinds never do.
+A row opens the owner session and this popover (`missions.popoverRequest`,
+consumed by the pill, 5 s expiry); an orphaned owner opens the review instead
+(`missions.openReview`). Rules under Notifications, "Mission owes the operator —
+sound + attention + Activity".
 
 #### The headline — "Step N of M"
 
@@ -5546,6 +5597,104 @@ bg-accent-soft`): **Close as delivered** ("The work is done.") and
   (`playNotificationSound()`) and calls `window.api.requestAttention()` — the
   "Safety confirms — sound + attention" pair, independent of the Sound switch.
   Once per opening.
+
+#### Missions review dialog (`MissionsReviewDialog.vue`, BUG-173 S5, spec §3.5)
+
+"Missions that need you": the whole pile of missions that owe the operator
+something, plus every finished mission nobody asked to close, in one place, and the only bulk action Harnu offers — **close
+finished missions as delivered**. It is opened from the grouped Activity entry's
+**Review all {n}** button and from an orphan row (a mission whose owner session
+is not loaded), through `useMissionsStore().openReview(focusMissionId?)`. It is
+mounted once in `App.vue` and consumes `missions.reviewRequest`, so it works with
+no session selected. It is **not** a Topbar control (a rare chore does not earn an
+always-on affordance).
+
+- **Anatomy:** the End dialog's `Dialog` variant — Teleport to `<body>`, z-60,
+  backdrop `rgba(0,0,0,0.55)` + `.anim-overlay-fade`, card `bg-surface
+border-border-2`, radius 9px, `--shadow-pop`, `.anim-fade-in-scale`, focus trap
+  — at width `min(560px, 92vw)`, `max-height: 80vh`. No new token, size or keyframe.
+- **Header** (`padding: 14px 18px 10px`, `border-b border-border`): title
+  "Missions that need you" (`13.5px / 600`) + the `X` button.
+- **Intro + selection bar** (`padding: 10px 18px`, `border-b border-border`): a
+  one-line intro (`12px`, `text-text-3`), then a row with the **Select all ready**
+  checkbox (shown only when group 1 is non-empty) on the left and the
+  **{count} selected** counter (`11px`, `tabular-nums`, `text-text-3`) on the right.
+- **Body** (scrollable, `padding: 6px 18px 12px`): up to three groups, each an
+  eyebrow heading (`9.5px / 700`, uppercase, `letter-spacing: 0.06em`,
+  `text-text-3`, `padding: 10px 0 4px`) over its rows. An empty group renders
+  nothing; with all three empty the body shows the empty line.
+  1. **Ready to close** — `status: 'delivered'` with `pendingClose`: the owner
+     verified the end and asked. **Pre-selected.**
+  2. **Finished, close never requested** — `status: 'active'` and
+     `progress.allDone`, nothing asked — listed whether or not it owes anything else
+     (its row then reads its headline, "Step N of N ✓"). **Not** pre-selected, with a hint
+     under the heading ("Nobody verified the end of these") and each row's
+     `closeWarnings` inline (Warning callout look, below).
+  3. **Waiting on you for something else** — every other owed mission. **No
+     checkbox**; the row's **Open** action (Button `ghost`, `11px`) selects the
+     owner and opens its popover like an Activity row, closing the review; when the
+     owner is not loaded the action is disabled and its tooltip says why. The
+     dialog never offers to close these in bulk.
+- **Row** (`border-t border-border` between rows, `padding: 7px 0`, `gap: 8px`): a
+  checkbox (`accent-color: var(--color-accent)`) for groups 1 and 2, the mission
+  title (`12px / 500`, `text-text`, truncated) with what it owes under it
+  (`11px`, `text-text-3`, truncated). A **focused** row (the request named a
+  mission) is scrolled into view once and wears `border-accent-line bg-accent-soft`
+  with `rounded-sm` and a `padding: 7px 8px` inset; the highlight clears when the
+  operator toggles anything.
+- **Inline warnings (group 2):** under the row, `text-warning` `11px`, one line per
+  warning with the same copy as the End dialog (`mission.end.warnings.*`: step
+  titles, never ids). They are information; they never disable a row.
+- **Footer** (`border-t border-border`, `padding: 12px 18px`, `gap: 8px`,
+  right-aligned): **Cancel** (Button `ghost`) + **Close {count} as delivered…**
+  (Button `success`, `check` 14px). The primary is **disabled at 0 selected**. It
+  only **opens** the confirm; it never closes anything itself.
+- **Exits:** Cancel, `X`, `Esc` and a backdrop click dismiss it (not while a bulk
+  close is running, and `Esc` goes to the confirm first when that is open). It also
+  closes itself when the pile is empty after a successful close.
+- **Selection state:** local to the dialog. Group 1 starts selected, group 2
+  unselected. A poll that removes a mission drops it from the selection; one that
+  adds a mission never selects it (no surprise pre-selection mid-review).
+
+#### Bulk close confirm (`MissionBulkCloseConfirmDialog.vue`, BUG-173 S5)
+
+The irreversible step of the review. The **End dialog's anatomy, copied**
+(Teleport, z-60 above the review, overlay fade, fade-in-scale card, focus trap,
+`Esc` and backdrop cancel, **initial focus on Cancel**, the confirm chime and
+`requestAttention()` once on open — an irreversible decision is never silent),
+at width `min(480px, 90vw)`.
+
+- **Header:** "Close {count} missions as delivered?" (plural) + the `X` button.
+- **Body:** one sentence ("They leave the Topbar and the sidebar and can't be
+  reopened. Each mission file stays on disk as the record."), then a list with one
+  block per mission: the title (`12px / 500`, `text-text`) and, when the server
+  returned `closeWarnings`, the same Warning callout look as the End dialog
+  (`triangle-alert` 13px, one line per warning with the step titles beneath, never
+  ids). Then **Reason (optional)** — a single label + a 2-row textarea that
+  applies to every mission and goes to every Log, prefixed `bulk close` so an
+  owner reading its Log can tell it was a batch decision. Warnings **never**
+  disable the confirm.
+- **Footer:** **Cancel** (Button `ghost`) + **Close {count} missions** (Button
+  `success`, `check` 14px). The only outcome is `closedAs: 'delivered'`. **There is
+  no Discard here**: discarding says "dead or abandoned", a per-mission judgment
+  that stays on the End dialog.
+- **In flight:** the confirm button reads "Closing {done} of {total}…" and
+  everything is disabled. Doors run **one after another**, never in parallel, and
+  never abort on the first error; rows leave the review as each answer lands.
+- **Outcome:** all closed → a **success** toast ("{count} missions closed") and the
+  confirm closes (the review closes with it when nothing is left). Any failure → a
+  **danger** toast ("{failed} of {total} could not be closed"); the confirm closes,
+  the review stays open on the failed rows with their selection kept, so the
+  operator can retry or open the mission. A mission closed elsewhere meanwhile
+  (`MISSION_CLOSED`) counts as closed.
+- **Operator-only:** no MCP verb reaches this path, now or later. An agent can only
+  stage a close (`mission_request_close`).
+
+**Don't**
+
+- ❌ Pre-select group 2, or offer a bulk **discard**.
+- ❌ Add a bulk IPC door: the batch is N calls of the existing `end` door.
+- ❌ Let the review's primary button close anything without the confirm.
 
 #### Sidebar indicator (`SidebarFolder.vue`)
 
@@ -8501,9 +8650,9 @@ only the step an item halted at and why, so the panel says **"Stopped at {step}"
 for the reason, or, for a refusal made before anything ran (the pre-flight re-probe), **"Nothing was
 changed"** plus the sentence. **A raw engine error is never visible text**: a code the catalog knows gets
 its own sentence, anything else reads "Harnu stopped this item for a safety check." and the raw text travels
-only with the **Copy error** action. A review item whose reason is `nested-worktree` or `locked` has **no Remove (and no
-R)** — main always refuses it (removing the folder would trash the inner worktree too; git has the worktree
-locked) — and an 11px `--text-3` line says which. It never draws ✓ for a step it was not told
+only with the **Copy error** action. A halted item whose folder is already gone (`folderGone`) has **no Retry and no Remove**: the panel shows a bordered `--surface-2` note with the step it stopped at, the exact shell commands (`git -C <repo> worktree prune`, plus `branch -D` while the branch remains and is archived, else the safe `branch -d` and a `--warning` line) in mono, and the line that the archive refs keep the commit recoverable; its list row shows a one-line hint instead of the Remove and Dehydrate buttons. A review item whose reason is `nested-worktree`, `check-failed` or `locked` has **no Remove (and no
+R)** — main always refuses it (removing the folder would trash the inner worktree too; Harnu could not look
+inside the folder to tell; git has the worktree locked) — and an 11px `--text-3` line says which. It never draws ✓ for a step it was not told
 ran, and it never shows volumes as removed — a worktree clean never removes one. Actions: **Retry**,
 **Keep**, **Remove**. **Retry follows the item's _current_ bucket**: a ready item re-opens the ready
 (bulk-style) confirm for that one id, a review item the review confirm — never a dialog that would send
@@ -8626,6 +8775,47 @@ volume), size right.
   dialog changes (an autopilot cycle or a job refresh), the dialog shows "This changed since you opened it —
   review again" in `--warning` and **disables the confirm until it is reopened**; the confirm never sends facts
   newer than the ones the operator was shown. A rejected `gc:clean` call shows an error toast.
+- **Only what `gc:clean` can remove is offered — one predicate decides it.** `removability(block)`
+  (`lib/gc-removability.ts`) answers from the bundle's own facts, mirroring what main refuses: a detached
+  worktree (`unsupported-kind`), a locked one, a shared stack, a nested or foreign checkout, an idle session
+  still open, an unknown tip, an unresolved path, and the protections (main checkout, never-clean, Keep,
+  In use). The panel, the list row, the selection bar, "Select all in repo", "Remove the ones marked safe",
+  Retry and the **R** shortcut all ask it, so none of them offers a click that ends in "0 cleaned".
+  `tests/gc-removability.test.ts` pins every rule against main's real refusal functions.
+- **"Won't be removed (n)" group.** A selection that mixes removable and refused items still opens ONE
+  dialog. The refused ones sit in their own section under the list (`--bg` fill, `--border`, 8px radius,
+  eyebrow title in `--text-3`, one row per item): the mono `repo › worktree` title, the reason in 11px
+  `--text-3`, and — when a command clears the cause — that command in 11px mono `--text-2`
+  (`git worktree unlock <path>`, `git worktree remove <path>`), selectable in one click. The group is
+  excluded from the breakdown, the footer total, the confirm label and the `gc:clean` request.
+- **Nothing removable → no dialog.** The selection bar's **Remove selected** is disabled (tooltip "Nothing
+  selected can be removed") when no ticked item can be removed; the list row swaps its Remove button for an
+  inert, dimmed `Trash2` carrying the reason as its tooltip and `aria-label`. Any path that still reaches
+  the open step (a marked-safe pre-selection that went stale) raises a Warning toast with the reason — the
+  one sentence when every item shares it, "each for its own reason" otherwise — and opens no dialog.
+- **Panel.** A review item main refuses shows no Remove button; under the actions a 11px `--text-3` line says
+  "Remove is unavailable. {reason}", followed by "Run `{command}`" when there is one. After a refusal a locked
+  item keeps its real reason ("Git has this worktree locked. Unlock it first.") instead of the engine's
+  "couldn't match a single git registration".
+- **A ready item main refused lately** (`bundle.reprobeRefusal`, set by the gatherer) stays on the map but
+  leaves the hero count, the hero's confirm and the autopilot. Its panel carries a Warning-toned note — "The
+  last clean was refused. {reason}" — with **Retry** in place of **Clean now**. After two identical refusals it
+  moves to Needs review with that reason ("Refused {n} times in a row…"); there the panel and the list row
+  show the real cause, and neither Remove nor Retry is offered. The count outlives the pause.
+  A **Check again** soft button (`RotateCcw`, `data-testid="panel-recheck"`) sits among the panel actions for a
+  demoted item: it asks main (`gc:recheck`) to forget that item's remembered refusal and reprobe it once, then
+  a Success toast ("Checked again: nothing refuses it now"), or a Warning toast ("Still refused" + the
+  reason, or "Couldn't check it right now" when the check itself could not answer).
+- **Docker down.** A scan that ran with the daemon down marks every bundle `dockerBlind`: its empty stack
+  list means "unseen", so main refuses it (`scan-blind`) in the autopilot and in a manual clean alike, with
+  no override. The hero becomes a **disabled soft button** — "Start Docker to clean these", tooltip
+  "Docker wasn't running when Harnu scanned … Start Docker, then Scan now." (`data-testid="hero-blind"`) —
+  and a panel for a ready item swaps **Clean now** for the line "Clean now is unavailable. {reason}". No
+  Docker CLI at all is not blind. A refusal for `docker-unavailable` (the daemon stopped after a scan that
+  saw it, for a bundle that had stacks) reads "Docker is not running … Start Docker, then Retry." and offers
+  Retry.
+- **Marks are read from the current prefs.** Keep and never-clean come from the snapshot's prefs, not the
+  bundle's scan-time flags, so a mark added since the scan hides Remove (and the hero count) at once.
 - **Keyboard:** Esc or Cancel closes; **focus starts on Cancel, never the confirm button**; Tab cycles
   inside (focus trap); ↩ activates only the focused control.
 

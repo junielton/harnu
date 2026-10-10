@@ -47,6 +47,21 @@ function toggle(): void {
   void missions.refresh()
 }
 
+// An Activity row asked for this mission's popover (BUG-173). The request can
+// predate this pill (the owner was just selected) or the mission's view, so the
+// watch re-checks when either arrives; `post` runs after the session-change
+// close above, so that close cannot swallow the open. A request for another
+// mission is left pending for the pill that owns it (it expires on its own).
+watch(
+  () => [missions.popoverRequest, view.value?.mission.id] as const,
+  ([req, id]) => {
+    if (!req || !id || req.missionId !== id) return
+    if (!missions.consumePopoverRequest()) return
+    if (!open.value) toggle()
+  },
+  { immediate: true, flush: 'post' }
+)
+
 const STATE_KEY: Record<MissionState, string> = {
   active: 'active',
   blocked: 'blocked',

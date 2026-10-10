@@ -61,6 +61,18 @@ const pct = computed(() => {
     {{ cleanLabel }}
   </Button>
 
+  <!-- Scanned while Docker was down: the click would be refused, so say what to do instead. -->
+  <Button
+    v-else-if="hero.kind === 'blind'"
+    variant="soft"
+    disabled
+    :title="t('cleanup.gc.hero.blindTitle')"
+    data-testid="hero-blind"
+  >
+    <Recycle :size="14" :stroke-width="1.6" class="shrink-0" />
+    {{ t('cleanup.gc.hero.blind') }}
+  </Button>
+
   <!-- Nothing to clean keeps its label: the state is readable, not just dimmed. -->
   <Button v-else-if="hero.kind === 'empty'" variant="soft" disabled data-testid="hero-empty">
     <Recycle :size="14" :stroke-width="1.6" class="shrink-0" />

@@ -18,6 +18,8 @@ import { buildNotificationOptions } from '../notifications'
 import { prefsFile as containersPrefsFile } from '../containers/containers-prefs'
 import { prefsPath as reaperPrefsPath } from '../reaper/prefs'
 import type { ReaperControl } from '../reaper/reaper-ipc'
+import { forgetItems } from '../reaper/scanner-shell'
+import { afterJob } from './gc-ghosts'
 import { bucketFeed, setInheritedBuckets } from './gc-buckets'
 import { withActor } from './gc-actor'
 import { planNextClean } from './autopilot-core'
@@ -37,6 +39,7 @@ import { createAgentService, createGatherer } from './gc-gatherer'
 import { setGcService } from './gc-service-registry'
 import { createJobQueue, type GcJobInfo } from './gc-jobs-core'
 import { submitManualClean } from './gc-manual'
+import { recheckItem } from './gc-recheck'
 import {
   mergeIncomingPrefs,
   prefsFile,
@@ -47,8 +50,10 @@ import {
   type GcPrefs
 } from './gc-prefs'
 import { parseOptions } from './gc-options'
-import type { GcCleanAck, GcSnapshot, OrphanVolumeItem } from './gc-wire'
-import { createGcOps, defaultGcShellDeps, type GcShellDeps } from './gc-shell'
+import type { GcCleanAck, GcRecheckResult, GcSnapshot, OrphanVolumeItem } from './gc-wire'
+import { createGcOps, defaultGcShellDeps, resolveRealPaths, type GcShellDeps } from './gc-shell'
+import { withCurrentNeverClean } from './autopilot-core'
+import { AS_GIVEN } from './bundle-core'
 import { createForcedGcOps } from './gc-forced-ops'
 import { runHousekeeping } from './housekeeping-shell'
 import {
@@ -66,6 +71,8 @@ export interface GcService {
   clean(ids: unknown, opts: unknown): GcCleanAck
   keep(id: unknown): Promise<GcPrefs>
   unkeep(id: unknown): Promise<GcPrefs>
+  /** "Check again" on a demoted item: forgets its remembered refusal and reprobes it once (read-only). */
+  recheck(id: unknown): Promise<GcRecheckResult>
   prefs(): GcPrefs
   setPrefs(raw: unknown): Promise<GcPrefs>
   ackFirstReport(): Promise<GcPrefs>
@@ -159,8 +166,10 @@ export async function registerGcHandlers(
     emitProgress: (p) => send('gc:progress', p),
     emitDone: (d) => {
       send('gc:done', d)
-      // The world changed: refresh what the Cleanup surface and the Containers view read.
-      void gather().catch((err) => console.error('[gc] refresh after job failed', err))
+      // The Reaper's last scan still lists what the job just removed, and a gather already in
+      // flight read the world before the trash: forget, invalidate, then refresh from a gather
+      // that starts now (gc-ghosts), or the cleaned worktrees come back as review ghosts.
+      afterJob(d, { forgetItems, invalidate: () => gatherer.invalidate(), refresh: gather })
     }
   })
 
@@ -232,8 +241,23 @@ export async function registerGcHandlers(
   })
 
   const service: GcService = {
-    snapshot: async (opts) =>
-      buildSnapshot(opts?.refresh || !gatherer.cached() ? await gather() : gatherer.cached()!),
+    snapshot: async (opts) => {
+      const g = opts?.refresh || !gatherer.cached() ? await gather() : gatherer.cached()!
+      // A never-clean path added since the scan, read on real paths as main reads it.
+      const paths = [
+        ...prefs.neverClean,
+        ...g.bundles.flatMap((b) => [b.item.path, b.item.repoPath].filter((p): p is string => !!p))
+      ]
+      const canonical =
+        prefs.neverClean.length > 0
+          ? await resolveRealPaths(paths, async (p) => {
+              const real = await shellDeps.realpath(p)
+              if (real === null) throw new Error('unreadable')
+              return real
+            })
+          : AS_GIVEN
+      return buildSnapshot({ ...g, bundles: withCurrentNeverClean(g.bundles, prefs, canonical) })
+    },
     clean: (rawIds, rawOpts) =>
       submitManualClean(
         {
@@ -278,6 +302,19 @@ export async function registerGcHandlers(
       void gather().catch((err) => console.error('[gc] refresh after unkeep failed', err))
       return next
     },
+    recheck: async (rawId) => {
+      if (typeof rawId !== 'string') throw new Error('gc:recheck expects a bundle id')
+      return recheckItem(
+        {
+          gather: () => gatherer.fresh(),
+          // The ordinary ops: their reprobe only reads, and never archives or touches the item.
+          reprobe: (b) => createGcOps(withRun('operator')).reprobe(b),
+          state,
+          now: () => Date.now()
+        },
+        rawId
+      )
+    },
     prefs: () => livePrefs(),
     setPrefs: async (raw) => {
       const next = mergeIncomingPrefs(livePrefs(), raw)
@@ -310,6 +347,7 @@ export async function registerGcHandlers(
   ipcMain.handle('gc:clean', (_e, ids: unknown, opts: unknown) => service.clean(ids, opts))
   ipcMain.handle('gc:keep', (_e, id: unknown) => service.keep(id))
   ipcMain.handle('gc:unkeep', (_e, id: unknown) => service.unkeep(id))
+  ipcMain.handle('gc:recheck', (_e, id: unknown) => service.recheck(id))
   ipcMain.handle('gc:prefs:get', () => service.prefs())
   ipcMain.handle('gc:prefs:set', (_e, raw: unknown) => service.setPrefs(raw))
   ipcMain.handle('gc:ackFirstReport', () => service.ackFirstReport())
