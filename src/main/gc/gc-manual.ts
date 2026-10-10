@@ -17,7 +17,8 @@ import type { GcPrefs } from './gc-prefs'
 import { volumeItemId, type OrphanVolumeItem } from './gc-housekeeping-input'
 import type { HousekeepingResult, HousekeepingVolume } from './housekeeping-core'
 import { leftBehind, type Leftover } from './gc-leftovers'
-import { runBatch, type GcItemResult, type GcOps } from './pipeline-core'
+import { WORK_STAMP_UNKNOWN } from './gc-work-stamp'
+import { runBatch, WORK_CHANGED, type GcItemResult, type GcOps } from './pipeline-core'
 import type { GcCleanAck, GcCleanOptions } from './gc-wire'
 
 const VOLUME_PREFIX = volumeItemId('')
@@ -40,6 +41,11 @@ export interface ManualCleanDeps {
    * since then keeps it.
    */
   freshOrphans(): Promise<OrphanVolumeItem[]>
+  /**
+   * A fresh fingerprint of the uncommitted work in a worktree (null when none); throws when it
+   * cannot be read. The force path compares it with the one the dialog was built from.
+   */
+  workStampOf(path: string): Promise<string | null>
   /** `docker volume rm` for exactly these names. */
   removeOrphanVolumes(names: string[]): Promise<HousekeepingResult>
   /** What a cleaned worktree leaves in Docker, so its volumes can be offered for review. */
@@ -87,8 +93,29 @@ export function submitManualClean(
       if (bundleChangedSince(b, seen)) return refused(id, 'changed-since-confirm')
       // Anything that is not a proven ready item needs its OWN confirmation, and then takes
       // the forced ops.
-      const forced = b.bucket !== 'ready'
+      // A ready item whose cleanup halted is shown as `cleanup-failed` review (`retryAs`), but its
+      // facts still say ready: its Retry takes the same guarded path the autopilot did, with the
+      // dirty and unpushed guards and `branch -d`, not the operator's force path.
+      const retryAsReady = b.bucket === 'review' && b.retryAs === 'ready'
+      const forced = b.bucket !== 'ready' && !retryAsReady
       if (forced && !confirmed.has(id)) return refused(id, 'needs-confirmation')
+      // The force path waives the dirty guard, so it re-reads the uncommitted work and halts when it
+      // is not what the dialog showed: a file edited since then would otherwise go to the trash
+      // unseen. The tip is already compared above and again by the reprobe.
+      const path = b.item.path
+      // The scan could not read this worktree's work, so there is nothing to compare against.
+      if (forced && path && seen.workStamp === WORK_STAMP_UNKNOWN) {
+        return refused(id, 'work-unreadable')
+      }
+      if (forced && path) {
+        let live: string | null
+        try {
+          live = await deps.workStampOf(path)
+        } catch (err) {
+          return refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
+        }
+        if ((seen.workStamp ?? null) !== live) return refused(id, WORK_CHANGED)
+      }
       const batchOpts: { removeVolumes: boolean; confirmReview?: boolean } = {
         // D1: worktree cleanup never removes a volume, ready or reviewed, bulk or single. What
         // it leaves behind comes back as an orphan-volume review item.
@@ -97,7 +124,31 @@ export function submitManualClean(
         // never by the autopilot.
         confirmReview: forced
       }
-      const [result] = await runBatch([b], deps.opsFor('operator', forced), batchOpts)
+      // The pipeline only runs ready bundles (or a confirmed review one): a retried item runs as
+      // the ready item it still is.
+      const runnable: WorktreeBundle = retryAsReady ? { ...b, bucket: 'ready', reason: null } : b
+      const ops = deps.opsFor('operator', forced)
+      // The same check again at each recheck (before the deps are dropped and before the git
+      // cleanup): the docker steps and the deletion take time, and an edit made meanwhile
+      // must stop the removal, not be archived and trashed unseen.
+      const guarded: GcOps =
+        forced && path
+          ? {
+              ...ops,
+              recheck: async (x) => {
+                const r = await ops.recheck(x)
+                if (!r.ok) return r
+                try {
+                  return (seen.workStamp ?? null) === (await deps.workStampOf(path))
+                    ? r
+                    : { ok: false, reason: WORK_CHANGED }
+                } catch {
+                  return { ok: false, reason: 'probe-failed' }
+                }
+              }
+            }
+          : ops
+      const [result] = await runBatch([runnable], guarded, batchOpts)
       if (result!.ok) {
         deps.rememberLeftovers?.(leftBehind(b, gathered.housekeeping?.volumes ?? []))
       }

@@ -130,6 +130,12 @@ export interface WorktreeBundle extends BundleFacts {
   bucket: Bucket
   reason: ReviewReason | null
   /**
+   * Set when a cleanup of a proven ready item halted and the item is shown as `cleanup-failed`
+   * review: the facts still say ready, so a Retry takes the SAME guarded path the autopilot
+   * uses, not the operator's force path. Never set by the scan itself.
+   */
+  retryAs?: 'ready'
+  /**
    * Set when the folder is already gone but a halted cleanup left git steps undone. Retry and
    * Remove cannot finish those (the engine refuses a folder that is not there), so the screen
    * offers the commands instead.

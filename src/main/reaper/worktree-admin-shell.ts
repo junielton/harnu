@@ -7,6 +7,7 @@
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { matchAdminDir } from './executor-core'
+import { rawRm } from '../raw-fs'
 
 /**
  * The admin directory of the worktree at `worktreePath`, or null: nothing is registered for it,
@@ -82,6 +83,6 @@ export async function removeWorktreeAdmin(
 ): Promise<boolean> {
   const mine = await findAdminDir(repoPath, worktreePath, git)
   if (!mine) return false
-  await fs.rm(mine, { recursive: true, force: true })
+  await rawRm(mine, { recursive: true, force: true })
   return true
 }

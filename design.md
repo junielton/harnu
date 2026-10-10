@@ -8507,10 +8507,13 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
    `layout-grid` / `list`, 12px) and a **rescan icon button** (Ghost, icon-only, `RefreshCw` — it spins while
    a scan runs; `aria-label` "Scan now").
    - Summary line: `Recycle` icon (`--green`), 13px/20px `--text-2`, then
-     `{n} GB reclaimable · autopilot on|off · next cycle in {t}`; the size is 600-weight `--text`.
+     `{n} GB reclaimable · autopilot on|report only|paused|off · next cycle in {t}` (the same state as the badge below; one computed drives both); the size is 600-weight `--text`.
      "Reclaimable" is everything not In use plus orphan volumes (ready + needs review + orphan volumes);
      Docker build cache is added only when the engine reports it (see "Docker card").
-   - Autopilot badge: Badge Success "Autopilot on · every {interval}" or Default "Autopilot off".
+   - Autopilot badge (says what the autopilot is really doing, F1), first match wins: Default
+     "Autopilot off"; **Warning-text** "Autopilot paused — background scan is off" (the Reaper's automatic scan
+     is off, so no cycle runs; `snapshot.backgroundScan`); **Accent-soft** "Autopilot on · report only" (the first
+     report is unacknowledged, so cycles only report); Success "Autopilot on · every {interval}".
 3. **Selection bar** (only with ≥1 checked block) — the takeover's existing selection band
    (`border-b border-border bg-surface-2`, `padding: 8px 22px`): `square-check` icon (`--accent`), the
    count `N selected · X GB` (13px; numbers 600-weight `--text`), then **Remove selected** (Danger,
@@ -8858,8 +8861,22 @@ zeros when Docker says so.
 `.fc`: `--accent-soft` fill, `--accent-line` border, radius 7, `padding: 12px 16px`, `Recycle` icon in
 `--accent`. Text 13px/500: "Found {n} ready items, {size} — enable autopilot?", 11px sub-line "The first cycle only
 reports; nothing is deleted until you turn it on." Buttons: **Enable autopilot** (the screen's one
-Primary) and **Not now** (Ghost). Enable calls `gc:ackFirstReport` **and** `gc:prefs:set({ autopilot: true })`.
+Primary) and **Not now** (Ghost). Enable calls `gc:prefs:set({ autopilot: true })` **and** `gc:ackFirstReport`.
 Ready blocks are dashed ("planned, not done"); the summary reads "autopilot off".
+
+**The promise (decided 2026-10-09, F1): the banner discloses, and Not now only snoozes.** The 11px
+sub-line states what the next cycle may clean (a cap, and today's count — a snapshot, not a promise) — "Enable it and the next cycle, in 40 min, will clean the
+ready items it finds then, up to 20 per cycle. Right now that is 2 items, 944 MB." (`snapshot.nextClean` is only
+today's count, the cap is the bound; same eligibility and order as a clean cycle); with no timer
+scheduled: "…its first cycle will clean … The background scan is off, so none is scheduled."). Enable is the
+informed consent, so it acknowledges. The acknowledgement also turns on the Docker housekeeping, so when the
+Docker category is on and Docker answered for at least one figure, the sub-line adds "It will also prune Docker
+build cache older than {n} days and dangling images."; with the category off or Docker silent it says nothing
+about Docker. **Not now** hides the banner for the session and acknowledges
+nothing; the ready blocks stay dashed. Turning the autopilot **on** from anywhere (banner or Settings)
+resets the acknowledgement in main, so the first cycle after enabling only reports. When the autopilot was
+turned on in Settings and has only reported, the same banner reads "Autopilot found {n} ready items, {size}"
+with "It has only reported so far." and the button **Allow cleaning**.
 
 #### First scan — never "All clean" before anything was scanned
 

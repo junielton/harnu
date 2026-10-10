@@ -225,6 +225,24 @@ describe('prefs reducers behind the IPC channels', () => {
     expect(out.firstReportAcknowledged).toBe(true)
   })
 
+  it('turning the autopilot on resets the acknowledgement: the next cycle only reports', () => {
+    const off = { ...base(), autopilot: false, firstReportAcknowledged: true }
+    const out = mergeIncomingPrefs(off, { autopilot: true })
+    expect(out.autopilot).toBe(true)
+    expect(out.firstReportAcknowledged).toBe(false)
+  })
+
+  it('a write that leaves the autopilot on keeps the acknowledgement', () => {
+    const out = mergeIncomingPrefs(base(), { autopilot: true, graceDays: 9 })
+    expect(out.firstReportAcknowledged).toBe(true)
+  })
+
+  it('turning the autopilot off keeps the acknowledgement until it is turned on again', () => {
+    const out = mergeIncomingPrefs(base(), { autopilot: false })
+    expect(out.firstReportAcknowledged).toBe(true)
+    expect(mergeIncomingPrefs(out, { autopilot: true }).firstReportAcknowledged).toBe(false)
+  })
+
   it('cannot acknowledge the first report through a write', () => {
     const fresh = { ...defaultGcPrefs(), autopilot: true }
     expect(

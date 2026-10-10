@@ -280,8 +280,53 @@ describe('cleanRequestFor — the one place that builds the gc:clean payload', (
       stackIds: ['s1'],
       ownedVolumes: ['v1'],
       bytes: 512 * MIB,
-      path: c.item.path
+      path: c.item.path,
+      workStamp: null
     })
+  })
+
+  it('a failed ready item (review + retryAs ready) is retried through the ready path: no confirmation', () => {
+    const f = bundle('/w/repo/.claude/worktrees/f1', 'review', {
+      reason: { code: 'cleanup-failed', detail: 'Cleanup stopped at drop-deps: ENOTEMPTY' },
+      retryAs: 'ready'
+    })
+    const m = buildGcModel(snap({ bundles: [f] }))
+    const req = cleanRequestFor(m, [f.item.id], 'ready')
+    expect(req.ids).toEqual([f.item.id])
+    expect(req.options.confirmed).toBeUndefined()
+    // The facts shown are the real ones, so main can tell if the item changed since.
+    expect(req.options.expected[f.item.id]).toMatchObject({
+      bucket: 'review',
+      reasonCode: 'cleanup-failed'
+    })
+  })
+
+  it('a failed ready item main would refuse is dropped from the ready path and listed as refused', () => {
+    const f = bundle('/w/repo/.claude/worktrees/f2', 'review', {
+      reason: { code: 'cleanup-failed', detail: 'Cleanup stopped at prune.' },
+      retryAs: 'ready',
+      locked: true
+    })
+    const m = buildGcModel(snap({ bundles: [f] }))
+    expect(cleanRequestFor(m, [f.item.id], 'ready').ids).toEqual([])
+    expect(refusedRows(m, [f.item.id], 'ready').map((r) => r.refusal)).toEqual(['locked'])
+  })
+
+  it('a review item that was never ready still cannot go through the ready path', () => {
+    const d = bundle('/w/repo/.claude/worktrees/d1', 'review', {
+      reason: { code: 'cleanup-failed', detail: 'x' }
+    })
+    const m = buildGcModel(snap({ bundles: [d] }))
+    expect(cleanRequestFor(m, [d.item.id], 'ready').ids).toEqual([])
+  })
+
+  it('carries the work stamp the scan took into the facts the dialog sends', () => {
+    const d = wt('d1', 'review', 1)
+    d.item.workStamp = 'abc'
+    const m = buildGcModel(snap({ bundles: [d] }))
+    expect(cleanRequestFor(m, [d.item.id], 'review').options.expected[d.item.id]!.workStamp).toBe(
+      'abc'
+    )
   })
 
   it('remove selected: every id is confirmed and has an expected entry, volumes included', () => {

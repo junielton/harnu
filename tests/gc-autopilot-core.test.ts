@@ -5,6 +5,7 @@ import {
   applyFailures,
   isProtectedNow,
   planCycle,
+  planNextClean,
   pruneFailures,
   refusalFor
 } from '../src/main/gc/autopilot-core'
@@ -208,6 +209,11 @@ describe('applyFailures / pruneFailures (spec §4)', () => {
     expect(b!.reason!.detail).not.toContain('EBUSY')
   })
 
+  it('remembers that the item was ready, so a retry can take the safe path', () => {
+    const [b] = applyFailures([ready('a', 5)], new Map([[ready('a', 5).item.id, failure]]))
+    expect(b!.retryAs).toBe('ready')
+  })
+
   it('leaves other bundles and items that are not ready alone', () => {
     const a = ready('a', 5)
     const d = bundle('/ws/wt/d', 'review')
@@ -231,6 +237,8 @@ describe('applyFailures / pruneFailures (spec §4)', () => {
     expect(out).toMatchObject({ bucket: 'review', reason: { code: 'cleanup-failed' } })
     // The screen needs to know: Retry cannot resume a clean whose folder is already gone.
     expect(out).toMatchObject({ folderGone: true })
+    // Nor is it rewritten as a ready item to retry: its scan does not say ready any more.
+    expect(out).not.toHaveProperty('retryAs')
   })
 
   it('a reprobe refusal on an item whose folder is gone since is not a halted clean', () => {
@@ -249,6 +257,7 @@ describe('applyFailures / pruneFailures (spec §4)', () => {
       NOW
     )
     expect(out).not.toHaveProperty('folderGone')
+    expect(out).toMatchObject({ retryAs: 'ready' })
   })
 
   it('a gone-folder id with no failure note, or a failure on a live folder, is left alone', () => {
@@ -322,5 +331,33 @@ describe('never-clean is judged on real paths (delta 3b, item 12)', () => {
     const here = bundle('/real/wt', 'ready')
     expect(isProtectedNow(here, prefs({ neverClean: ['/link/wt'] }), canonical)).toBe(true)
     expect(isProtectedNow(here, prefs({ neverClean: ['/link/wt'] }))).toBe(false)
+  })
+})
+
+describe('planNextClean: what the next cycle would delete once cleaning is allowed', () => {
+  it('counts the ready items a clean cycle would take, oldest first, up to the cap', () => {
+    const plan = planNextClean(
+      [ready('a', 5, 2_000), ready('b', 9, 3_000), ready('c', 7, 4_000)],
+      prefs({ firstReportAcknowledged: false, maxItemsPerCycle: 2 })
+    )
+    expect(plan).toEqual({ count: 2, bytes: 7_000 })
+  })
+
+  it('ignores the acknowledgement: it answers "if I enable it now"', () => {
+    const bundles = [ready('a', 5, 2_000)]
+    expect(planNextClean(bundles, prefs({ firstReportAcknowledged: false }))).toEqual({
+      count: 1,
+      bytes: 2_000
+    })
+    expect(planNextClean(bundles, prefs({ autopilot: false }))).toEqual({ count: 1, bytes: 2_000 })
+  })
+
+  it('skips neverClean items and is null when the worktrees category is off', () => {
+    expect(
+      planNextClean([ready('a', 5), ready('b', 6)], prefs({ neverClean: ['/ws/wt/a'] }))?.count
+    ).toBe(1)
+    expect(
+      planNextClean([ready('a', 5)], prefs({ categories: { worktrees: false, dockerCache: true } }))
+    ).toBeNull()
   })
 })

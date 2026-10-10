@@ -221,7 +221,8 @@ export async function writeGcPrefs(file: string, prefs: GcPrefs): Promise<void> 
 /**
  * A write from the renderer, whole or partial: it changes only what it names. `keep`, `released`
  * and the acknowledgement have their own channels, so a stale settings form can neither wipe the
- * operator's Keep marks or an agent's releases nor acknowledge a report it never showed.
+ * operator's Keep marks or an agent's releases nor acknowledge a report it never showed. Turning
+ * the autopilot on (off to on) resets the acknowledgement.
  */
 export function mergeIncomingPrefs(current: GcPrefs, raw: unknown): GcPrefs {
   const incoming =
@@ -244,7 +245,11 @@ export function mergeIncomingPrefs(current: GcPrefs, raw: unknown): GcPrefs {
     keep: current.keep,
     released: current.released,
     releasedFrom: current.releasedFrom,
-    firstReportAcknowledged: current.firstReportAcknowledged
+    // Turning the autopilot ON starts a new promise: its first cycle only reports. A write
+    // cannot acknowledge (see above), but it can take the acknowledgement away, so an operator
+    // who dismissed the banner, or ran the autopilot before, is never cleaned for on a stale ack.
+    firstReportAcknowledged:
+      !current.autopilot && next.autopilot ? false : current.firstReportAcknowledged
   }
 }
 

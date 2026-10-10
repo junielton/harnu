@@ -74,6 +74,14 @@ export interface GcSnapshot {
   lastCycle: CycleRecord | null
   /** When the next timer tick fires, or null when the Reaper background scan is off. */
   nextCycleAt: number | null
+  /**
+   * What the next cycle would clean once cleaning is allowed (autopilot on, report acknowledged):
+   * the figure the first-cycle banner discloses before the operator enables it. Null when the
+   * worktrees category is off.
+   */
+  nextClean: { count: number; bytes: number } | null
+  /** The Reaper's "Automatic background scan" toggle: with it off no cycle ever runs. */
+  backgroundScan: boolean
 }
 
 /**
@@ -104,6 +112,13 @@ export interface GcExpected {
    * normalization (slashes, `.` and `..`), so a spelling difference is not a change.
    */
   path: string | null
+  /**
+   * Fingerprint of the worktree's uncommitted work as the scan saw it (`item.workStamp`; null
+   * when it had none). The force path probes the folder again and refuses (`work-changed-since-
+   * confirm`) when the stamp differs: a file edited after the operator looked never rides along.
+   * `'unknown'` means the scan's probe could not answer: the force path refuses it (`work-unreadable`).
+   */
+  workStamp?: string | null
   /** Orphan volumes only: the compose project shown with the volume. */
   project?: string | null
 }

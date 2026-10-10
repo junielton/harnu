@@ -66,6 +66,7 @@ import {
   type ExecFn
 } from './dehydrate-shell'
 import { readHydrationFile, updateHydrationFile } from './hydration-store'
+import { needsWorkStamp, scanWorkStamp } from '../gc/gc-work-stamp'
 
 export { ghCacheFresh }
 
@@ -828,6 +829,13 @@ async function scanOneRepo(
     const hydration = pending.get(item.id)
     if (hydration && item.hydration === null) deriveInto(item, hydration, manifest, null)
   }
+
+  // A fingerprint of the uncommitted work, for the force path to compare against. A probe that
+  // cannot answer is recorded as "unknown", never as "no work", so the force path says so instead
+  // of comparing a live value against nothing.
+  await mapLimit(items.filter(needsWorkStamp), MEASURE_CONCURRENCY, async (item) => {
+    item.workStamp = await scanWorkStamp(reaperExec, item.path!)
+  })
 
   const reconcile = [...pending.entries()].flatMap(([id, h]) => {
     const item = items.find((i) => i.id === id)

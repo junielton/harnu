@@ -489,11 +489,10 @@ export function refusedRows(
   mode: 'ready' | 'review',
   now: number = Date.now()
 ): RefusedRow[] {
-  const want: Bucket = mode === 'ready' ? 'ready' : 'review'
   const rows: RefusedRow[] = []
   for (const id of ids) {
     const b = model.byId.get(id)
-    if (!b || b.bucket !== want) continue
+    if (!b || !inMode(b, mode)) continue
     const v = removability(b, now)
     if (v.ok) continue
     rows.push({
@@ -535,8 +534,19 @@ export function expectedFor(b: GcBlock): GcExpected {
     stackIds: sorted(b.stackIds),
     ownedVolumes: sorted(b.ownedVolumes),
     bytes: b.hasBytes ? b.bytes : null,
-    path: b.bundle?.item.path ?? null
+    path: b.bundle?.item.path ?? null,
+    workStamp: b.bundle?.item.workStamp ?? null
   }
+}
+
+/** A halted ready item: shown as review (`cleanup-failed`), retried as the ready item it still is. */
+export function isRetryAsReady(b: GcBlock): boolean {
+  return b.kind === 'worktree' && b.bucket === 'review' && b.bundle?.retryAs === 'ready'
+}
+
+/** Whether a confirm in `mode` takes this block: its bucket, or a halted ready item on the ready path. */
+function inMode(b: GcBlock, mode: 'ready' | 'review'): boolean {
+  return b.bucket === mode || (mode === 'ready' && isRetryAsReady(b))
 }
 
 /**
@@ -550,12 +560,13 @@ export function cleanRequestFor(
   ids: readonly string[],
   mode: 'ready' | 'review'
 ): CleanRequest {
-  const want: Bucket = mode === 'ready' ? 'ready' : 'review'
   const kept: string[] = []
   const expected: Record<string, GcExpected> = {}
   for (const id of ids) {
     const b = model.byId.get(id)
-    if (!b || b.bucket !== want || !isRemovable(b)) continue
+    // A ready item whose cleanup halted is listed as review (`retryAs`), but its Retry is the
+    // ready path: guarded, and needing no confirmation of its own.
+    if (!b || !inMode(b, mode) || !isRemovable(b)) continue
     kept.push(id)
     expected[id] = expectedFor(b)
   }

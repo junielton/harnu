@@ -98,6 +98,8 @@ export function snapshot(
     prefs: { ...defaultGcPrefs(), ...prefs },
     lastCycle: null,
     nextCycleAt: NOW + 3_600_000,
+    nextClean: null,
+    backgroundScan: true,
     ...rest
   }
 }

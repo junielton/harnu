@@ -278,6 +278,21 @@ describe('runBundle — recheck right before cleanGit (delta 2, item 4)', () => 
     expect(f.calls).not.toContain('cleanGit')
   })
 
+  it('a recheck that says the confirmed work changed names that, not changed-mid-run', async () => {
+    const f = fakeOps(
+      { recheck: passesOnce(async () => ({ ok: false, reason: 'work-changed-since-confirm' })) },
+      8192
+    )
+    const r = await runBundle(bundle('a'), f.ops, OPTS)
+    expect(r).toMatchObject({ ok: false, haltedAt: 'archive', error: 'work-changed-since-confirm' })
+    expect(f.calls).not.toContain('cleanGit')
+  })
+
+  it('any other recheck reason, even a made-up one, still reads changed-mid-run', async () => {
+    const f = fakeOps({ recheck: async () => ({ ok: false, reason: 'because i said so' }) })
+    expect(await runBundle(bundle('a'), f.ops, OPTS)).toMatchObject({ error: 'changed-mid-run' })
+  })
+
   it('a throwing recheck halts the same way', async () => {
     const f = fakeOps({ recheck: passesOnce(boom('presence unavailable')) }, 8192)
     const r = await runBundle(bundle('a'), f.ops, OPTS)

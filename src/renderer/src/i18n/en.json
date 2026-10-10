@@ -2456,8 +2456,20 @@
       "firstCycle": {
         "label": "First cleanup report",
         "title": "Found {n} ready item, {size} — enable autopilot? | Found {n} ready items, {size} — enable autopilot?",
-        "sub": "The first cycle only reports; nothing is deleted until you turn it on.",
+        "titleOn": "Autopilot found {n} ready item, {size} | Autopilot found {n} ready items, {size}",
+        "onlyReported": "It has only reported so far.",
+        "willClean": "Enable it and the next cycle, in {when}, will clean the ready items it finds then, up to {max} per cycle. Right now that is {n} item, {size}. | Enable it and the next cycle, in {when}, will clean the ready items it finds then, up to {max} per cycle. Right now that is {n} items, {size}.",
+        "willCleanUnscheduled": "Enable it and its first cycle will clean the ready items it finds then, up to {max} per cycle. Right now that is {n} item, {size}. The background scan is off, so none is scheduled. | Enable it and its first cycle will clean the ready items it finds then, up to {max} per cycle. Right now that is {n} items, {size}. The background scan is off, so none is scheduled.",
+        "dockerPrune": "It will also prune Docker build cache older than {n} day and dangling images. | It will also prune Docker build cache older than {n} days and dangling images.",
+        "allowWillClean": "Allow it and the next cycle, in {when}, will clean the ready items it finds then, up to {max} per cycle. Right now that is {n} item, {size}. | Allow it and the next cycle, in {when}, will clean the ready items it finds then, up to {max} per cycle. Right now that is {n} items, {size}.",
+        "allowWillCleanUnscheduled": "Allow it and its next cycle will clean the ready items it finds then, up to {max} per cycle. Right now that is {n} item, {size}. The background scan is off, so none is scheduled. | Allow it and its next cycle will clean the ready items it finds then, up to {max} per cycle. Right now that is {n} items, {size}. The background scan is off, so none is scheduled.",
+        "when": {
+          "minute": "{n} min",
+          "hour": "{n} h",
+          "day": "{n} d"
+        },
         "enable": "Enable autopilot",
+        "allow": "Allow cleaning",
         "dismiss": "Not now"
       },
       "docker": {
@@ -2513,6 +2525,8 @@
         "reclaimable": "{size} reclaimable",
         "autopilotOn": "autopilot on",
         "autopilotOff": "autopilot off",
+        "autopilotPaused": "autopilot paused",
+        "autopilotReportOnly": "autopilot report only",
         "next": {
           "minute": "next cycle in {n} min",
           "hour": "next cycle in {n} h",
@@ -2520,6 +2534,8 @@
         },
         "badgeOn": "Autopilot on · every {every}",
         "badgeOff": "Autopilot off",
+        "badgeReportOnly": "Autopilot on · report only",
+        "badgePaused": "Autopilot paused — background scan is off",
         "everyMinutes": "{n} min",
         "everyHours": "{n} h",
         "everyDay": "day"
@@ -2648,6 +2664,8 @@
       },
       "refusal": {
         "changedSinceConfirm": "Changed since you confirmed — review it again.",
+        "workUnreadable": "Harnu could not read this worktree's uncommitted work when it scanned, so it will not remove it unseen. Scan again, then review it.",
+        "workChangedSinceConfirm": "Its uncommitted work changed after you looked, so nothing was removed. Scan again and review it.",
         "needsConfirmation": "Needs your confirmation first. Select it and choose Remove.",
         "missingExpected": "Cleanup could not check it against what you were shown. Review it and try again.",
         "noLongerOrphan": "This volume is in use again, so it was left alone.",
@@ -2713,8 +2731,7 @@
       "error": {
         "clean": "Could not start the clean",
         "keep": "Could not keep that",
-        "autopilot": "Could not enable the autopilot",
-        "dismiss": "Could not save that"
+        "autopilot": "Could not enable the autopilot"
       },
       "legend": {
         "ready": "Ready to clean · cleaned by one click or the autopilot",

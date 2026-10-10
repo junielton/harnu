@@ -11,6 +11,7 @@
 import { promises as fs } from 'node:fs'
 import { createHash } from 'node:crypto'
 import * as path from 'node:path'
+import { rawRm } from '../raw-fs'
 import {
   parseDuMulti,
   parseTrackedStatus,
@@ -230,7 +231,9 @@ export async function removeEphemeralDir(abs: string): Promise<void> {
   }
   // `maxRetries` absorbs the transient EBUSY/EPERM Windows raises mid-walk; a
   // failure that survives it is reported per path by the caller.
-  await fs.rm(abs, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 })
+  // `rawRm`, not `fs.rm`: inside Electron `node:fs` mistakes a `*.asar` file for a directory and
+  // cannot delete it, which halted every Remove of an Electron repo at this step.
+  await rawRm(abs, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 })
 }
 
 // ---- disk measurement, cached ---------------------------------------------------

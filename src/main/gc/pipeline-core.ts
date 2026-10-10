@@ -261,7 +261,8 @@ async function runChecked(
   // folder under it, must keep its deps. dehydrateItem's own live check matches the exact
   // folder only, so the full recheck runs first.
   progress.step = 'drop-deps'
-  if (!(await rechecked(ops, b))) return fail('drop-deps', 'changed-mid-run')
+  const beforeDeps = await rechecked(ops, b)
+  if (beforeDeps) return fail('drop-deps', beforeDeps)
 
   // Accepted spec §4 deviation: cleanItem is one call, and its archive skips the ignored dirs.
   halted = await step('drop-deps', async () => {
@@ -276,7 +277,8 @@ async function runChecked(
 
   // The deps are already gone, so their bytes stay counted whatever the recheck says.
   progress.step = 'archive'
-  if (!(await rechecked(ops, b))) return fail('archive', 'changed-mid-run')
+  const beforeGit = await rechecked(ops, b)
+  if (beforeGit) return fail('archive', beforeGit)
 
   try {
     await ops.cleanGit(b)
@@ -287,16 +289,22 @@ async function runChecked(
   return { id: b.item.id, ok: true, haltedAt: null, freedBytes, ...skipped() }
 }
 
+/** The one refusal a recheck may name itself: the operator's confirmed work changed mid-run. */
+export const WORK_CHANGED = 'work-changed-since-confirm'
+
 /**
- * True only for a recheck that answered a real `ok: true`. One that throws, or answers in
- * any other shape, cannot show nothing changed, so it is not a green light.
+ * Null only for a recheck that answered a real `ok: true`. One that throws, or answers in any
+ * other shape, cannot show nothing changed, so it is not a green light: the error is
+ * `changed-mid-run`, or `work-changed-since-confirm` when the recheck says the uncommitted
+ * work moved (the force path's own check).
  */
-async function rechecked(ops: GcOps, b: WorktreeBundle): Promise<boolean> {
+async function rechecked(ops: GcOps, b: WorktreeBundle): Promise<string | null> {
   try {
     const r: unknown = await ops.recheck(b)
-    return isProbeAnswer(r) && r.ok === true
+    if (isProbeAnswer(r) && r.ok === true) return null
+    return isProbeAnswer(r) && r.reason === WORK_CHANGED ? WORK_CHANGED : 'changed-mid-run'
   } catch {
-    return false
+    return 'changed-mid-run'
   }
 }
 

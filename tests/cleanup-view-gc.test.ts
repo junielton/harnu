@@ -292,6 +292,78 @@ describe('Cleanup screen — panel', () => {
   })
 })
 
+describe('Cleanup screen — the autopilot badge tells the truth', () => {
+  const badge = (): string => domGet('[data-testid="cleanup-autopilot-badge"]').text()
+
+  it('on and acknowledged: "Autopilot on · every 1 h"', async () => {
+    install(snap({}, { autopilot: true, firstReportAcknowledged: true }))
+    await mountView()
+    expect(badge()).toBe(
+      t('cleanup.gc.status.badgeOn', { every: t('cleanup.gc.status.everyHours', { n: 1 }) })
+    )
+  })
+
+  it('on but the first report is unacknowledged: it says report only, not "on"', async () => {
+    install(snap({}, { autopilot: true, firstReportAcknowledged: false }))
+    await mountView()
+    expect(badge()).toBe(t('cleanup.gc.status.badgeReportOnly'))
+    expect(badge()).toContain('report only')
+  })
+
+  it('on but the background scan is off: it says paused, because nothing will run', async () => {
+    install(snap({ backgroundScan: false }, { autopilot: true, firstReportAcknowledged: true }))
+    await mountView()
+    expect(badge()).toBe(t('cleanup.gc.status.badgePaused'))
+    expect(badge()).toContain('background scan is off')
+  })
+
+  it('paused wins over report only: with the scan off no report is produced either', async () => {
+    install(snap({ backgroundScan: false }, { autopilot: true, firstReportAcknowledged: false }))
+    await mountView()
+    expect(badge()).toBe(t('cleanup.gc.status.badgePaused'))
+  })
+
+  describe('the summary line and the badge never disagree', () => {
+    const summary = (): string => domGet('[data-testid="cleanup-summary"]').text()
+
+    it('on and acknowledged: both say on', async () => {
+      install(snap({}, { autopilot: true, firstReportAcknowledged: true }))
+      await mountView()
+      expect(summary()).toContain('autopilot on')
+      expect(badge()).toContain('Autopilot on · every')
+    })
+
+    it('unacknowledged: the summary says report only, not on', async () => {
+      install(snap({}, { autopilot: true, firstReportAcknowledged: false }))
+      await mountView()
+      expect(summary()).toContain('autopilot report only')
+      expect(summary()).not.toContain('autopilot on')
+      expect(badge()).toContain('report only')
+    })
+
+    it('scan off: the summary says paused, not on', async () => {
+      install(snap({ backgroundScan: false }, { autopilot: true, firstReportAcknowledged: true }))
+      await mountView()
+      expect(summary()).toContain('autopilot paused')
+      expect(summary()).not.toContain('autopilot on')
+      expect(badge()).toContain('paused')
+    })
+
+    it('off: both say off', async () => {
+      install(snap({}, { autopilot: false }))
+      await mountView()
+      expect(summary()).toContain('autopilot off')
+      expect(badge()).toBe('Autopilot off')
+    })
+  })
+
+  it('off stays "Autopilot off" whatever the scan does', async () => {
+    install(snap({ backgroundScan: false }, { autopilot: false }))
+    await mountView()
+    expect(badge()).toBe(t('cleanup.gc.status.badgeOff'))
+  })
+})
+
 describe('Cleanup screen — first cycle and background run', () => {
   it('the first-cycle banner enables autopilot: acknowledges AND sets the pref', async () => {
     const api = install(snap({}, { autopilot: false, firstReportAcknowledged: false }))
@@ -354,14 +426,68 @@ describe('Cleanup screen — first cycle and background run', () => {
     await flushPromises()
   })
 
-  it('"Not now" acknowledges through a real clone and reports a failure', async () => {
+  it('"Not now" snoozes the banner and does NOT acknowledge the report', async () => {
     const api = install(snap({}, { autopilot: false, firstReportAcknowledged: false }))
     await mountView()
-    const toast = vi.spyOn(useUiStore(), 'pushToast')
-    api.gcAckFirstReport.mockRejectedValueOnce(new Error('nope'))
     await domGet('[data-testid="first-dismiss"]').trigger('click')
     await flushPromises()
-    expect(toast.mock.calls[0][0]).toMatchObject({ title: t('cleanup.gc.error.dismiss') })
+    expect(api.gcAckFirstReport).not.toHaveBeenCalled()
+    expect(dom('[data-testid="first-enable"]').exists()).toBe(false)
+  })
+
+  it('the banner states what the next cycle will clean, from the snapshot', async () => {
+    install(
+      snap(
+        { nextClean: { count: 2, bytes: 900 * MIB }, nextCycleAt: Date.now() + 40 * 60_000 },
+        { autopilot: false, firstReportAcknowledged: false }
+      )
+    )
+    await mountView()
+    const text = domGet('[data-testid="first-cycle-banner"]').text()
+    expect(text).toMatch(
+      /next cycle, in \d+ min, will clean the ready items it finds then, up to 20 per cycle\. Right now that is 2 items, 944 MB/
+    )
+  })
+
+  describe('the banner names the Docker prune only when the category is on and Docker answered', () => {
+    const up = {
+      buildCacheReclaimableBytes: 5 * MIB,
+      danglingImages: { count: 1, bytes: MIB },
+      orphanVolumesHidden: null
+    }
+    const first = { autopilot: false, firstReportAcknowledged: false }
+    const banner = (): string => domGet('[data-testid="first-cycle-banner"]').text()
+
+    it('names it when the category is on and Docker answered', async () => {
+      install(snap({ docker: up }, first))
+      await mountView()
+      expect(banner()).toContain(
+        'also prune Docker build cache older than 7 days and dangling images'
+      )
+    })
+
+    it('does not claim it when the category is off: the ack would not turn it on', async () => {
+      install(
+        snap({ docker: up }, { ...first, categories: { worktrees: true, dockerCache: false } })
+      )
+      await mountView()
+      expect(banner()).not.toContain('Docker')
+    })
+
+    it('does not claim it when Docker did not answer', async () => {
+      install(snap({}, first))
+      await mountView()
+      expect(banner()).not.toContain('Docker')
+    })
+  })
+
+  it('with autopilot on and the report unacknowledged the banner offers "Allow cleaning"', async () => {
+    const api = install(snap({}, { autopilot: true, firstReportAcknowledged: false }))
+    await mountView()
+    expect(domGet('[data-testid="first-enable"]').text()).toBe('Allow cleaning')
+    await domGet('[data-testid="first-enable"]').trigger('click')
+    await flushPromises()
+    expect(api.gcAckFirstReport).toHaveBeenCalledTimes(1)
   })
 
   it('no banner once the first report is acknowledged', async () => {
@@ -517,6 +643,31 @@ describe('Cleanup screen — Retry follows the bucket', () => {
     expect(ids).toEqual([id])
     expect(opts.confirmed).toBeUndefined() // a ready item needs no confirmation of its own
     expect(opts.expected[id].bucket).toBe('ready')
+  })
+
+  it('a failed READY item (halted mid-clean) retries through the ready confirm, not the review one', async () => {
+    const f = wt(
+      'halted',
+      'review',
+      500 * MIB,
+      {},
+      {
+        reason: { code: 'cleanup-failed', detail: 'Cleanup stopped at drop-deps: ENOTEMPTY' },
+        retryAs: 'ready'
+      }
+    )
+    const api = install(snap({ bundles: [f] }))
+    await mountView()
+    const id = f.item.id
+    await failed(api, id)
+    await dom(`[data-block-id="${id}"]`).trigger('click')
+    await dom('[data-testid="panel-retry"]').trigger('click')
+    expect(body('bulk-confirm')!.className).not.toContain('text-red')
+    ;(body('bulk-confirm') as HTMLButtonElement).click()
+    await flushPromises()
+    const [ids, opts] = api.gcClean.mock.calls[0]
+    expect(ids).toEqual([id])
+    expect(opts.confirmed).toBeUndefined() // the guarded path needs no force confirmation
   })
 
   it('a failed review item opens the review confirm — Danger, and confirmed', async () => {

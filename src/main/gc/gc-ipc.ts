@@ -22,6 +22,9 @@ import { forgetItems } from '../reaper/scanner-shell'
 import { afterJob } from './gc-ghosts'
 import { bucketFeed, setInheritedBuckets } from './gc-buckets'
 import { withActor } from './gc-actor'
+import { planNextClean } from './autopilot-core'
+import { workStampOf } from './gc-work-stamp'
+import { reaperExec } from '../reaper/scanner-shell'
 import { pressKeep, protectedFromGather } from './gc-keep'
 import {
   LEFTOVERS_FILE,
@@ -219,7 +222,9 @@ export async function registerGcHandlers(
     docker: g.docker,
     prefs: livePrefs(),
     lastCycle: state.last,
-    nextCycleAt: reaper.autoScan() ? reaper.nextTickAt() : null
+    nextCycleAt: reaper.autoScan() ? reaper.nextTickAt() : null,
+    nextClean: planNextClean(g.bundles, livePrefs()),
+    backgroundScan: reaper.autoScan()
   })
 
   // The advisor is reachable from the `gc:opinion` handler below and from nowhere else: the
@@ -262,6 +267,7 @@ export async function registerGcHandlers(
             forced ? createForcedGcOps(withRun('operator')) : createGcOps(withRun('operator')),
           // S4's runner builds the argv itself (`docker volume rm <name>`, name-checked).
           freshOrphans,
+          workStampOf: (p) => workStampOf(reaperExec, p),
           removeOrphanVolumes: (names) =>
             runHousekeeping({
               builderPruneUntilHours: null,

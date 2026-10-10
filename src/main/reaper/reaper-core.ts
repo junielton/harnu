@@ -232,6 +232,12 @@ export interface ReapItem {
    * one of them before anything is deleted (BUG-75). Never a blocker.
    */
   untracked: string[]
+  /**
+   * A fingerprint of the uncommitted work (`git status` plus each path's size and mtime) taken at
+   * scan time, only for a worktree that has any (null otherwise). The force path compares it with
+   * a fresh probe, so a file edited after the operator looked halts the removal.
+   */
+  workStamp?: string | null
   justifiedBy: MergeSignal | null
   /**
    * Dependency-directory state (T250), for `worktree` and `detached-worktree`

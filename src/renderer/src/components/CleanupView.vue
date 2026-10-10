@@ -29,6 +29,7 @@ import {
   captureConfirm,
   confirmChanged,
   isRemovable,
+  isRetryAsReady,
   refusedRows,
   selectAllInRepo,
   selectionStats,
@@ -254,9 +255,10 @@ function openRemove(ids: string[]): void {
 }
 /** Retry re-opens the confirm for the item's CURRENT bucket — never a dialog that would send nothing. */
 function retry(id: string): void {
-  const bucket = model.value?.byId.get(id)?.bucket
-  if (bucket === 'ready') openReady([id])
-  else if (bucket === 'review') openRemove([id])
+  const block = model.value?.byId.get(id)
+  // A ready item that halted mid-clean is listed under review, but its retry is the guarded ready path.
+  if (block?.bucket === 'ready' || (block && isRetryAsReady(block))) openReady([id])
+  else if (block?.bucket === 'review') openRemove([id])
 }
 /** "Check again" on a demoted item: main re-asks, the screen refreshes, and the toast says what it found. */
 async function recheck(id: string): Promise<void> {
@@ -431,12 +433,81 @@ const nextText = computed(() => {
   return t(`cleanup.gc.status.next.${n.unit}`, { n: n.n })
 })
 
-const showFirstCycle = computed(
+/** A report exists that nothing has acted on: the ready blocks read "planned, not done". */
+const firstCyclePlanned = computed(
   () =>
     !!prefs.value &&
     !prefs.value.firstReportAcknowledged &&
     (model.value?.cleanable.length ?? 0) > 0
 )
+/** The banner itself; "Not now" hides it for the session without acknowledging anything. */
+/**
+ * What the autopilot is really doing, not just whether the pref is on: paused when the
+ * background scan is off (no timer, so nothing runs), report only until the first report is
+ * acknowledged, otherwise on.
+ */
+const autopilotState = computed<'off' | 'paused' | 'report-only' | 'on'>(() => {
+  const p = prefs.value
+  if (!p?.autopilot) return 'off'
+  if (gc.snapshot && !gc.snapshot.backgroundScan) return 'paused'
+  if (!p.firstReportAcknowledged) return 'report-only'
+  return 'on'
+})
+
+/** The badge and the summary line both read `autopilotState`, so they can never disagree. */
+const badge = computed(() => {
+  switch (autopilotState.value) {
+    case 'off':
+      return {
+        text: t('cleanup.gc.status.badgeOff'),
+        classes: 'border-border bg-surface text-text-3'
+      }
+    case 'paused':
+      return {
+        text: t('cleanup.gc.status.badgePaused'),
+        classes: 'border-border bg-surface text-warning'
+      }
+    case 'report-only':
+      return {
+        text: t('cleanup.gc.status.badgeReportOnly'),
+        classes: 'border-accent-line bg-accent-soft text-accent'
+      }
+    default:
+      return {
+        text: t('cleanup.gc.status.badgeOn', { every: intervalText.value }),
+        classes: 'border-green-line bg-green-soft text-green'
+      }
+  }
+})
+const summaryAutopilot = computed(() =>
+  t(
+    {
+      off: 'cleanup.gc.status.autopilotOff',
+      paused: 'cleanup.gc.status.autopilotPaused',
+      'report-only': 'cleanup.gc.status.autopilotReportOnly',
+      on: 'cleanup.gc.status.autopilotOn'
+    }[autopilotState.value]
+  )
+)
+
+/**
+ * The acknowledgement also turns on the Docker housekeeping (build cache past the age limit plus dangling
+ * images), so the banner names it: only when that category is on and Docker answered for at least one figure.
+ */
+const firstCycleDockerDays = computed(() => {
+  const p = prefs.value
+  const d = gc.snapshot?.docker
+  if (!p?.categories.dockerCache || !d) return null
+  const answered = d.buildCacheReclaimableBytes !== null || d.danglingImages !== null
+  return answered ? p.cacheMaxAgeDays : null
+})
+
+const showFirstCycle = computed(() => firstCyclePlanned.value && !gc.firstReportSnoozed)
+/** "58 min" / "2 h" / "1 d" until the next timer tick, whatever the autopilot says; null when none is scheduled. */
+const firstCycleWhen = computed(() => {
+  const n = nextCycleIn(gc.snapshot?.nextCycleAt ?? null, now.value.getTime())
+  return n ? t(`cleanup.gc.firstCycle.when.${n.unit}`, { n: n.n }) : null
+})
 const allClean = computed(() => {
   const tt = model.value?.totals
   return !!tt && tt.ready.count + tt.review.count + tt.orphanVolumes.count === 0
@@ -510,11 +581,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
           </template>
         </i18n-t>
         <span class="text-text-4">·</span>
-        <span>{{
-          prefs?.autopilot
-            ? t('cleanup.gc.status.autopilotOn')
-            : t('cleanup.gc.status.autopilotOff')
-        }}</span>
+        <span data-testid="cleanup-summary-autopilot">{{ summaryAutopilot }}</span>
         <template v-if="nextText">
           <span class="text-text-4">·</span>
           <span>{{ nextText }}</span>
@@ -526,18 +593,10 @@ async function copyRestoreHint(hint: string): Promise<void> {
 
     <span
       class="inline-flex items-center rounded-full border px-2 py-0.5 text-caption"
-      :class="
-        prefs?.autopilot
-          ? 'border-green-line bg-green-soft text-green'
-          : 'border-border bg-surface text-text-3'
-      "
+      :class="badge.classes"
       data-testid="cleanup-autopilot-badge"
     >
-      {{
-        prefs?.autopilot
-          ? t('cleanup.gc.status.badgeOn', { every: intervalText })
-          : t('cleanup.gc.status.badgeOff')
-      }}
+      {{ badge.text }}
     </span>
     <Button
       variant="ghost"
@@ -624,9 +683,15 @@ async function copyRestoreHint(hint: string): Promise<void> {
           v-if="showFirstCycle"
           :count="model.cleanable.length"
           :bytes="model.cleanable.reduce((a, b) => a + b.bytes, 0)"
+          :clean-count="gc.snapshot?.nextClean?.count ?? 0"
+          :clean-bytes="gc.snapshot?.nextClean?.bytes ?? 0"
+          :max-items="prefs.maxItemsPerCycle"
+          :when="firstCycleWhen"
+          :docker-days="firstCycleDockerDays"
+          :autopilot-on="prefs.autopilot"
           :pending="firstCyclePending"
           @enable="runFirstCycle(() => gc.enableAutopilot(), t('cleanup.gc.error.autopilot'))"
-          @dismiss="runFirstCycle(() => gc.dismissFirstReport(), t('cleanup.gc.error.dismiss'))"
+          @dismiss="gc.dismissFirstReport()"
         />
       </div>
 
@@ -670,7 +735,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             :checked="checked"
             :selected-id="selectedId"
             :linked-id="linkedId"
-            :planned="showFirstCycle"
+            :planned="firstCyclePlanned"
             :drill-repo="drillRepo"
             @select="onSelect"
             @toggle="onToggle"

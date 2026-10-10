@@ -11,7 +11,7 @@ import { buildGcModel, type GcBlock, type GcModel } from '../../src/renderer/src
 export const MIB = 1024 ** 2
 export const GIB = 1024 ** 3
 
-type Opts = Partial<BundleFacts> & { reason?: ReviewReason | null }
+type Opts = Partial<BundleFacts> & { reason?: ReviewReason | null; retryAs?: 'ready' }
 
 /** One worktree bundle. `item` overrides land on the `ReapItem` (repo, hydration, age…). */
 export function wt(
@@ -53,7 +53,9 @@ export function snapshotOf(
     docker: { buildCacheReclaimableBytes: null, danglingImages: null },
     prefs: defaultGcPrefs(),
     lastCycle: null,
-    nextCycleAt: null
+    nextCycleAt: null,
+    nextClean: null,
+    backgroundScan: true
   }
 }
 

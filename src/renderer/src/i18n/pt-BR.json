@@ -2456,8 +2456,20 @@
       "firstCycle": {
         "label": "Primeiro relatório de limpeza",
         "title": "Encontrei {n} item pronto, {size} — ativar o autopilot? | Encontrei {n} itens prontos, {size} — ativar o autopilot?",
-        "sub": "O primeiro ciclo só reporta; nada é apagado até você ativar.",
+        "titleOn": "O autopilot encontrou {n} item pronto, {size} | O autopilot encontrou {n} itens prontos, {size}",
+        "onlyReported": "Até agora ele só reportou.",
+        "willClean": "Ative e o próximo ciclo, em {when}, vai limpar os itens prontos que encontrar nessa hora, até {max} por ciclo. Hoje são {n} item, {size}. | Ative e o próximo ciclo, em {when}, vai limpar os itens prontos que encontrar nessa hora, até {max} por ciclo. Hoje são {n} itens, {size}.",
+        "willCleanUnscheduled": "Ative e o primeiro ciclo vai limpar os itens prontos que encontrar nessa hora, até {max} por ciclo. Hoje são {n} item, {size}. A varredura em segundo plano está desligada, então nenhum está agendado. | Ative e o primeiro ciclo vai limpar os itens prontos que encontrar nessa hora, até {max} por ciclo. Hoje são {n} itens, {size}. A varredura em segundo plano está desligada, então nenhum está agendado.",
+        "dockerPrune": "Também vai remover o cache de build do Docker com mais de {n} dia e as imagens dangling. | Também vai remover o cache de build do Docker com mais de {n} dias e as imagens dangling.",
+        "allowWillClean": "Permita e o próximo ciclo, em {when}, vai limpar os itens prontos que encontrar nessa hora, até {max} por ciclo. Hoje são {n} item, {size}. | Permita e o próximo ciclo, em {when}, vai limpar os itens prontos que encontrar nessa hora, até {max} por ciclo. Hoje são {n} itens, {size}.",
+        "allowWillCleanUnscheduled": "Permita e o próximo ciclo vai limpar os itens prontos que encontrar nessa hora, até {max} por ciclo. Hoje são {n} item, {size}. A varredura em segundo plano está desligada, então nenhum está agendado. | Permita e o próximo ciclo vai limpar os itens prontos que encontrar nessa hora, até {max} por ciclo. Hoje são {n} itens, {size}. A varredura em segundo plano está desligada, então nenhum está agendado.",
+        "when": {
+          "minute": "{n} min",
+          "hour": "{n} h",
+          "day": "{n} d"
+        },
         "enable": "Ativar autopilot",
+        "allow": "Permitir limpeza",
         "dismiss": "Agora não"
       },
       "docker": {
@@ -2513,6 +2525,8 @@
         "reclaimable": "{size} recuperáveis",
         "autopilotOn": "autopilot ligado",
         "autopilotOff": "autopilot desligado",
+        "autopilotPaused": "autopilot pausado",
+        "autopilotReportOnly": "autopilot só reporta",
         "next": {
           "minute": "próximo ciclo em {n} min",
           "hour": "próximo ciclo em {n} h",
@@ -2520,6 +2534,8 @@
         },
         "badgeOn": "Autopilot ligado · a cada {every}",
         "badgeOff": "Autopilot desligado",
+        "badgeReportOnly": "Autopilot ligado · só reporta",
+        "badgePaused": "Autopilot pausado — a varredura em segundo plano está desligada",
         "everyMinutes": "{n} min",
         "everyHours": "{n} h",
         "everyDay": "dia"
@@ -2648,6 +2664,8 @@
       },
       "refusal": {
         "changedSinceConfirm": "Mudou desde que você confirmou — revise de novo.",
+        "workUnreadable": "O Harnu não conseguiu ler o trabalho não commitado desta worktree ao escanear, então não vai removê-la sem ver. Escaneie de novo e revise.",
+        "workChangedSinceConfirm": "O trabalho não commitado mudou depois que você olhou, então nada foi removido. Escaneie de novo e revise.",
         "needsConfirmation": "Precisa da sua confirmação antes. Selecione e escolha Remover.",
         "missingExpected": "A limpeza não conseguiu comparar com o que você viu. Revise e tente de novo.",
         "noLongerOrphan": "Este volume voltou a ser usado, então foi deixado como está.",
@@ -2713,8 +2731,7 @@
       "error": {
         "clean": "Não foi possível iniciar a limpeza",
         "keep": "Não foi possível manter isso",
-        "autopilot": "Não foi possível ativar o autopilot",
-        "dismiss": "Não foi possível salvar isso"
+        "autopilot": "Não foi possível ativar o autopilot"
       },
       "legend": {
         "ready": "Pronto para limpar · limpo com um clique ou pelo autopilot",
