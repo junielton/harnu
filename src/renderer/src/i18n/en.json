@@ -3646,7 +3646,10 @@
     "sidebarChipNeedsYou": "Mission: {headline} — needs you",
     "cue": {
       "one": "Mission “{title}” needs you: {what}",
-      "many": "{n} missions need you"
+      "many": "{n} missions need you",
+      "reviewAll": "Review all {n}",
+      "ownerMissing": "The owner session isn’t open here — click to review this mission instead.",
+      "itemAria": "Open mission {title}"
     }
   },
   "harnuMod": {

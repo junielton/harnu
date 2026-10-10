@@ -766,12 +766,13 @@ store's existing 20 s poll — no per-mission timer):
   closed mission is gone from the list, so nothing fires after close. There is
   no draft kind: a dead legacy draft reads `active` + stale, and stale is not
   owed, so it never cues.
-- **Copy** (`mission.cue.*`): one mission → "Mission “{title}” needs you:
-  {what}", where `{what}` is the first owed item in words (the blocker's
-  reason, "re-scope awaiting your approval", "delivered, awaiting your close",
-  "2 due checks", …); clicking it opens the owner session (where the pill
-  lives). Several → "{n} missions need you", with the titles as the
-  description.
+- **Copy** (`mission.cue.*`): the cue posts **one** Activity entry, in place —
+  a snapshot of everything currently owed (see _Activity bell → Grouped
+  entry_). One mission owed → "Mission “{title}” needs you: {what}", where
+  `{what}` is the first owed item in words (the blocker's reason, "re-scope
+  awaiting your approval", "delivered, awaiting your close", "2 due checks", …);
+  several → "{n} missions need you". Each owed mission is its own clickable row
+  inside the entry.
 
 **Agent-opened pane alert (2026-07-13 agent-pane-routing design).** A pane an
 agent opens (`open_file`, `spawn_terminal`, …) into a
@@ -5240,18 +5241,59 @@ own border without colliding with the row divider below):
   — replaced by the dismiss × on row hover (above).
 - Rows separated by a `1px --border` top rule; **order: most-recent-first**.
 
+**Grouped entry (BUG-173).** A record that carries `items` is a **list
+entry**, not a single message — today only the mission cue posts one, under the
+single `group: 'mission-cue'`, so the bell holds **at most one mission entry**.
+Anatomy, inside the normal row (kind-bar, title, relative timestamp, hover ×):
+
+- **Title** — the record's `title` ("{n} missions need you", or the single
+  mission's sentence). The title is a label, not a destination: clicking the
+  entry's body or title does nothing.
+- **Item rows** — up to **5** (`MISSION_ROWS_MAX`), one per subject, under the
+  title, separated by the same `1px --border` rule as the rows. Each row is a
+  `button` (`cursor-pointer`, `hover:bg-surface-2`, `aria-label`
+  `mission.cue.itemAria`): the subject's title (`text-text`, 12px / 500, one
+  line, truncated) and what it owes (`text-text-3`, 11px, one line, truncated).
+  Tokens and spacing are the Activity row's; no new color, radius or row height.
+- **"Review all {n}"** — when there are more than 5, the rest collapse into a
+  `text-accent` text button (`mission.cue.reviewAll`, 11px / 500) below the rows.
+  It opens the Missions review (`useMissionsStore().openReview()`).
+- **Item click** — with the owner session loaded: `activateSession(sessionId)`
+  (the BUG-31 reveal), then the item's `target` through
+  `openNavigableView('mission', { missionId })`, which asks the missions store to
+  have the selected session's pill open that mission's popover (the request
+  expires after 5 s). With the owner **not loaded** the row carries a muted
+  owner hint (`text-text-4`, tooltip `mission.cue.ownerMissing`) and the click
+  opens the review focused on that mission (`openReview(missionId)`) — never a
+  dead click. **An item click never dismisses the entry**: it is a list, and the
+  other rows are still owed. The bell popover closes once a row or "Review all" has opened
+  its destination.
+- **Replaced in place, kept truthful.** `notify({ group })` is an upsert: the
+  first call appends, later calls replace the record's content and keep its
+  `id`, so the row state does not flicker and the badge does not grow. `ts`
+  moves only when a poll **cued** (the entry's "this is news" signal). After
+  **every** poll a quiet sync rewrites the title and rows from what is owed now
+  **without** touching `ts`, and removes the entry when nothing is owed. A sync
+  never resurrects an entry the operator dismissed.
+- Records without `items` render and behave exactly as before.
+
 **Empty state:** "You're all caught up" (`--text-4`, centered, 28px vertical
 padding) — the popover header also drops its count and Clear all button in
 this state, matching the mockup's `activity-popover--empty` variant.
 
 **Store.** `stores/notifications.ts` — a `NotificationRecord` (`id`, `ts`,
 `source`, `kind`, `title`, `description?`, `sessionId?`, `folderPath?`,
-`notificationType?`, `action?`) ring buffer, persisted to `localStorage` the
+`notificationType?`, `action?`, `group?`, `items?`) ring buffer, persisted to `localStorage` the
 same way as `theme`/`layout` (`persistedRef`), capped by **count (200)** and
 **age (7 days)** — whichever trims more wins. `useUiStore`'s `pushToast` is
 the funnel: every toast becomes a record by default (`persist: true`); a call
 site opts out (`persist: false`) for trivia not worth a history row (e.g.
 "copied to clipboard").
+`group?` is an upsert key (at most one record per group; `notify` replaces in
+place, `updateGroup` patches without moving `ts`, `removeGroup` removes) and
+`items?` are the per-subject rows of a grouped entry (`id`, `title`,
+`description?`, `sessionId?`, `target?`). Both are optional, so every record
+persisted before them stays valid.
 
 **Not virtualized.** Unlike the old rail section (BUG-36, `useVirtualList`,
 needed because the rail was _always mounted_), the popover only exists in the
@@ -5267,6 +5309,11 @@ no virtualization dependency needed here.
 - ❌ Show the expand chevron on a row whose text actually fits — that's a
   minor cosmetic miss, not a contract break, but the reverse (hiding a
   chevron a truly-clamped row needs) is a text-loss bug.
+- ❌ Stack a new row per cue for the same subject. A subject that keeps
+  re-cueing (a mission) lives in ONE grouped entry that is replaced in place.
+- ❌ Dismiss a grouped entry on an item click, or give it a mission-specific
+  branch in `ActivityBell.vue`: rows are generic `items`, and the click goes
+  through `openNavigableView` / the store's `openReview`.
 
 ### Mission progress (pill, popover, sidebar indicator)
 
@@ -5299,9 +5346,13 @@ There is **no draft** and no Approve door (spec §3.4): a legacy `draft` file
 reads `active`. No surface shows a draft state, callout or button.
 
 **Cue (Mission v3 §3.12).** Each poll decides whether a mission newly owes the
-operator something — chime + OS attention + one Activity entry; blocking kinds
-re-nudge with back-off and then stop, standing kinds never do. Rules under Notifications, "Mission owes the operator — sound +
-attention + Activity".
+operator something — chime + OS attention + **one** Activity entry that lists
+every owed mission as its own clickable row (Activity bell → _Grouped entry_);
+blocking kinds re-nudge with back-off and then stop, standing kinds never do.
+A row opens the owner session and this popover (`missions.popoverRequest`,
+consumed by the pill, 5 s expiry); an orphaned owner opens the review instead
+(`missions.openReview`). Rules under Notifications, "Mission owes the operator —
+sound + attention + Activity".
 
 #### The headline — "Step N of M"
 
