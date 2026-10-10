@@ -779,6 +779,57 @@ describe('reprobe (AC-5)', () => {
     expect(h.stop).not.toHaveBeenCalled()
   })
 
+  describe('with the daemon down, only a bundle that had stacks at the scan is refused', () => {
+    const stackless = (): WorktreeBundle => bundle({ stackIds: [], ownedVolumes: [] })
+    const down = (h: Harness): void => {
+      h.listStacks.mockRejectedValue(new DockerUnavailableError('daemon down'))
+    }
+
+    it('reprobes a stackless bundle as ok: there is no stack for a stopped daemon to hide', async () => {
+      const h = harness()
+      down(h)
+      expect(await createGcOps(h.deps).reprobe(stackless())).toEqual({ ok: true })
+    })
+
+    it('still refuses a bundle with a stack of its own: its containers come back with the daemon', async () => {
+      const h = harness()
+      down(h)
+      expect(await createGcOps(h.deps).reprobe(bundle())).toEqual({
+        ok: false,
+        reason: 'docker-unavailable'
+      })
+    })
+
+    it('rechecks a stackless bundle as ok too, so a run is not halted halfway by the same outage', async () => {
+      const h = harness()
+      down(h)
+      expect(await createGcOps(h.deps).recheck(stackless())).toEqual({ ok: true })
+    })
+
+    it('does not recheck a bundle that had a stack as ok', async () => {
+      const h = harness()
+      down(h)
+      const r = await createGcOps(h.deps).recheck(bundle())
+      expect(r.ok).toBe(false)
+    })
+
+    it('cleans a stackless bundle end to end without a single docker call', async () => {
+      const h = harness()
+      down(h)
+      const r = await runBundle(stackless(), createGcOps(h.deps), { removeVolumes: false })
+      expect(r).toMatchObject({ ok: true, haltedAt: null })
+      expect(h.stop).not.toHaveBeenCalled()
+      expect(h.removeContainers).not.toHaveBeenCalled()
+    })
+
+    it('another listing failure is still probe-failed, stackless or not', async () => {
+      const h = harness()
+      h.listStacks.mockRejectedValue(new Error('docker said something odd'))
+      const r = await createGcOps(h.deps).reprobe(stackless())
+      expect(r.ok === false && r.reason).toMatch(/^probe-failed/)
+    })
+  })
+
   it('reports a throwing stack listing as probe-failed', async () => {
     const h = harness()
     h.listStacks.mockRejectedValueOnce(new Error('docker gone'))

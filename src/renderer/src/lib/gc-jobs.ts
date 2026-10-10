@@ -36,6 +36,7 @@ export const REFUSAL_CODES = [
   'path-unresolved',
   'stack-present',
   'docker-unavailable',
+  'scan-blind',
   'probe-failed',
   'nested-worktree',
   'shared-stack',

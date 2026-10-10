@@ -19,7 +19,8 @@ import Button from './ui/Button.vue'
 import { formatBytes } from './system-monitor-format'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import type { GcOpinion } from '../../../main/gc/gc-wire'
-import { dialogBreakdown, type DialogRow, type RemovalChip } from '../lib/gc-model'
+import { dialogBreakdown, type DialogRow, type RefusedRow, type RemovalChip } from '../lib/gc-model'
+import { removalKey } from './cleanup-gc-copy'
 import CleanupOpinionChip from './CleanupOpinionChip.vue'
 
 /**
@@ -35,13 +36,15 @@ import CleanupOpinionChip from './CleanupOpinionChip.vue'
 const props = withDefaults(
   defineProps<{
     rows: DialogRow[]
+    /** Items main would refuse, left out of `rows`, the count and the request: listed apart, with why. */
+    refused?: RefusedRow[]
     mode: 'ready' | 'review'
     /** The facts behind the open dialog moved since it opened: confirm stays disabled until it is reopened. */
     stale?: boolean
     /** The advisor's verdict on a row, when it was asked. Shown with its evidence; never decides. */
     opinionOf?: (id: string) => GcOpinion | null
   }>(),
-  { stale: false }
+  { stale: false, refused: () => [] }
 )
 const emit = defineEmits<{ confirm: []; cancel: [] }>()
 const { t, te } = useI18n()
@@ -95,6 +98,14 @@ function reasonText(row: DialogRow): string {
   if (!row.reasonCode) return ''
   const key = `cleanup.gc.reason.${row.reasonCode}`
   return te(key) ? t(key) : (row.reasonDetail ?? '')
+}
+
+function refusedTitle(row: RefusedRow): string {
+  return row.kind === 'volume'
+    ? t('cleanup.gc.confirm.volumeRow', { name: row.name })
+    : row.repo
+      ? t('cleanup.gc.confirm.worktreeRow', { repo: row.repo, name: row.name })
+      : row.name
 }
 
 function rowTitle(row: DialogRow): string {
@@ -282,6 +293,39 @@ function onBackdropMousedown(e: MouseEvent): void {
             }}</span>
           </div>
         </div>
+
+        <section
+          v-if="refused.length > 0"
+          class="mx-5 mt-3 flex flex-col gap-1.5 rounded-sm border border-border bg-bg px-3 py-2.5"
+          data-testid="bulk-refused"
+        >
+          <div class="flex items-baseline gap-2">
+            <span class="eyebrow text-text-3" data-testid="bulk-refused-title">{{
+              t('cleanup.gc.confirm.refusedTitle', { n: refused.length })
+            }}</span>
+            <span class="text-caption text-text-4">{{ t('cleanup.gc.confirm.refusedSub') }}</span>
+          </div>
+          <ul class="m-0 flex list-none flex-col gap-1.5 p-0">
+            <li
+              v-for="row in refused"
+              :key="row.id"
+              class="flex flex-col gap-0.5"
+              data-testid="bulk-refused-row"
+              :data-refusal="row.refusal"
+            >
+              <span class="truncate font-mono text-ui text-text-2">{{ refusedTitle(row) }}</span>
+              <span class="text-caption leading-4 text-text-3" data-testid="bulk-refused-reason">{{
+                t(removalKey(row.refusal))
+              }}</span>
+              <code
+                v-if="row.hint"
+                class="select-all break-all font-mono text-caption text-text-2"
+                data-testid="bulk-refused-hint"
+                >{{ row.hint }}</code
+              >
+            </li>
+          </ul>
+        </section>
 
         <div
           class="mx-5 mt-3 flex items-start gap-2.5 rounded-sm border border-warning-line bg-warning-soft px-3 py-2.5"

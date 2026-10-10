@@ -47,6 +47,10 @@ Right after the summary line sits the screen's one big button: **Clean 12 ready 
 
 Clicking it opens **one** confirm dialog. It lists every ready item: `repo › worktree`, the branch, its size, and small chips for what goes with it (the Docker stack's containers, dependencies, the checkout, the branch). A warning says plainly that **volumes are kept** (they show up in Needs review afterwards) and what can come back and how (see [What you can get back](#what-you-can-get-back)). Esc or **Cancel** closes it; the focus starts on Cancel, never on the confirm button. Confirming closes the dialog at once and the cleaning runs in the background.
 
+An item that Harnu tried to clean and was refused at the last check (for example, git cannot unregister it) leaves the count: it stays on the map as ready, its panel says "The last clean was refused" and why, and the automatic cycle skips it, instead of failing the same way every hour. **Retry** in its panel tries once more. After two identical refusals in a row it moves to Needs review with that reason. The pause lasts a few hours; the count of refusals is remembered for a week, so a worktree that keeps being refused every few hours is demoted instead of being retried forever. It is forgotten as soon as the scan sees the item differently or its commit changes.
+
+If Docker is installed but not running, Harnu cannot see which stacks run from your worktrees, so it does not guess: **with Docker stopped, nothing cleans, by hand or by the automatic cycle, until you start Docker and scan again.** A clean you start by hand looks at Docker again at the moment you click, so it too is refused ("Docker wasn't running when Harnu scanned. Start Docker, then Scan now.") for every item while the daemon is down. The big button reads **Start Docker to clean these** and is disabled, and each worktree's panel says the same. Start Docker and press **Scan now**. With no Docker installed at all there is nothing to stop, so worktrees clean as usual. The one narrow exception is a daemon that stops in the seconds between an automatic cycle's own look at Docker and its clean: a worktree that had no stack still cleans, and one that had a stack is refused with "Start Docker, then Retry".
+
 With nothing to clean, the button is disabled and reads **Nothing to clean**. Before you have acknowledged the first report (see below), it is a quieter button, because **Enable autopilot** is the one big button on that screen. Cleaning by hand still works then.
 
 A manual clean is not limited by the autopilot's per-cycle cap: with 24 ready items, the button says 24.
@@ -87,9 +91,27 @@ A ranked list under the map, biggest first: every Needs review item with its one
 
 ### Selecting several at once
 
-**Shift+click** a Needs review block (or tick a row in Needs review) to select it, and again to deselect. **Select all in repo** selects every Needs review block in that repo. Only Needs review blocks can be selected: ready items are cleaned by the hero button, and In use blocks are never touched. **Esc** clears the selection.
+**Shift+click** a Needs review block (or tick a row in Needs review) to select it, and again to deselect. **Select all in repo** selects every Needs review block in that repo that Harnu can remove (one it would refuse, such as a locked worktree, is left unticked; you can still tick it by hand to Keep or Dehydrate it). Only Needs review blocks can be selected: ready items are cleaned by the hero button, and In use blocks are never touched. **Esc** clears the selection.
 
 A selection bar appears under the toolbar: `4 selected · 3.4 GB`, with **Remove selected**, **Dehydrate**, **Keep** and **Ask for an opinion**. **Remove selected** opens the same kind of dialog as the hero button, with differences that matter: each row carries its reason, and a stronger warning says how many of the worktrees you picked hold work that no other branch has. Their code stays recoverable from the archive refs and the system trash. Those items were not proven safe, so the confirm button is red rather than green. Harnu checks every item again at the moment you confirm; one that changed in the meantime is skipped and shown as "Changed since you confirmed — review again."
+
+### Remove only offers what Harnu can do
+
+Some Needs review items can never be removed from here, whatever you confirm. Harnu knows which from the facts it already has, so it does not offer a click that would end in "0 cleaned · N need review":
+
+- a **detached** worktree (no branch to archive it under): remove it yourself with `git worktree remove <path>`;
+- a **locked** worktree: `git worktree unlock <path>` first;
+- a worktree whose Docker stack is **shared** with another folder;
+- a folder that **holds another worktree** or checkout;
+- a worktree with a **session still open** in it (even an idle one);
+- a worktree whose **commit could not be read**, or whose paths could not be resolved;
+- a main checkout, a never-clean path, a worktree you marked **Keep**, and anything in use.
+
+For these, the panel has no **Remove** button and no **R** shortcut and says why ("Remove is unavailable. Git has this worktree locked. Unlock it first."), with the command that clears it. The row in Needs review shows a dimmed trash icon with the reason as its tooltip, **Remove selected** is disabled when nothing you ticked can be removed, and **Remove the N marked safe** never picks them up.
+
+If you tick a mix, the dialog still opens once and lists what will be removed. A separate **Won't be removed (n)** section lists the rest, each with its reason and the command to fix it. That section is not in the count, the total or the request. If nothing you picked can be removed, no dialog opens and a toast tells you why.
+
+After a refusal, an item keeps its real reason: a locked worktree says it is locked, not "couldn't match a single git registration". An item that Harnu refused twice at the last check is moved to Needs review with Remove and Retry hidden, and its panel names the real cause (for instance, git has no single unlocked registration for it: look at `git worktree list`). **Check again** in its panel forgets that refusal and looks once more, for when you fixed the cause outside Harnu (a repaired registration, a stopped stack): a fixed item is ready again, one that is still refused stays in Needs review with its reason. A Keep mark or a never-clean path you add takes effect at once, without a new scan (a path spelled through a symlink is compared on its real location, the same way Harnu compares it when it cleans), and **Clean now** on a ready item is hidden for the same reasons as **Remove**.
 
 ### Ask for an opinion
 
@@ -192,7 +214,7 @@ Cleanup used to leave these out of the list entirely. On one real repo that was 
 
 They now get a block on the map of their own, in **Needs review**, showing the folder and how much disk it takes, and a panel that says how old the commit it sits on is. (The commit sha itself is recorded but not yet on the row — it needs a slot on the meta line that doesn't exist yet.) Because there is no branch, there is no PR, no ancestry and no remote to check — so every branch checkpoint reads as "not applicable" rather than borrowing an answer from a branch that happens to point at the same commit.
 
-**A detached worktree is never ready to clean and can never be removed**, on its own or inside a selection. It is listed in **Needs review**, with "Detached HEAD, so there is no branch to judge." as the reason — unless a Harnu session is running in that folder, in which case Cleanup hides it while the session is live, exactly as it does for every other folder in use. Cleanup is telling you the folder is there and costing you disk, not that it is safe to delete. Most of that disk is usually installed dependencies, and **Dehydrate** reaches detached worktrees like any other (see below) — it needs no branch. To reclaim the checkout itself, attach it to a branch (`git switch -c <name>`) so the normal checkpoints apply, or remove it yourself with `git worktree remove`.
+**A detached worktree is never ready to clean and can never be removed**, on its own or inside a selection. Remove is not offered for it (see [Remove only offers what Harnu can do](#remove-only-offers-what-harnu-can-do)); if you pick it with others it is listed under **Won't be removed**, with the `git worktree remove` command. It is listed in **Needs review**, with "Detached HEAD, so there is no branch to judge." as the reason — unless a Harnu session is running in that folder, in which case Cleanup hides it while the session is live, exactly as it does for every other folder in use. Cleanup is telling you the folder is there and costing you disk, not that it is safe to delete. Most of that disk is usually installed dependencies, and **Dehydrate** reaches detached worktrees like any other (see below) — it needs no branch. To reclaim the checkout itself, attach it to a branch (`git switch -c <name>`) so the normal checkpoints apply, or remove it yourself with `git worktree remove`.
 
 ## Dehydrate: reclaim dependency space without deleting work
 
