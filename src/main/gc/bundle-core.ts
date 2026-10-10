@@ -66,6 +66,7 @@ export type ReviewCode =
   | 'cleanup-failed'
   | 'path-unresolved'
   | 'nested-worktree'
+  | 'check-failed'
   | 'locked'
 
 /** `detail` is one English sentence with the concrete fact; the renderer translates by `code`. */
@@ -128,6 +129,12 @@ export interface BundleFacts {
 export interface WorktreeBundle extends BundleFacts {
   bucket: Bucket
   reason: ReviewReason | null
+  /**
+   * Set when the folder is already gone but a halted cleanup left git steps undone. Retry and
+   * Remove cannot finish those (the engine refuses a folder that is not there), so the screen
+   * offers the commands instead.
+   */
+  folderGone?: boolean
   /**
    * Set by the gatherer (never the scan) on a ready item that main refused at the reprobe: `code` is
    * the refusal, `count` how many times in a row. The hero and the autopilot leave such an item out.
@@ -287,12 +294,15 @@ export function bucketOf(
   // A worktree nested inside this one (Claude Code's worktree command run from inside a
   // linked worktree puts it at `.claude/worktrees/*`) would be trashed with it, and its git
   // status shows only `?? .claude/`, so the parent reads clean (delta 6, F1). A list that
-  // is missing or not a list cannot show there is none.
-  if (!Array.isArray(f.nestedWorktrees))
-    return review(
-      'nested-worktree',
-      'Whether another worktree lives inside this one could not be checked.'
+  // is missing or not a list cannot show there is none: that is a probe that did not answer
+  // (`check-failed`), a different fact from one that found something inside.
+  const where = f.item.path ?? f.item.repoPath
+  const unchecked = (): { bucket: Bucket; reason: ReviewReason } =>
+    review(
+      'check-failed',
+      `Harnu could not look inside ${where} for other worktrees or checkouts, so it cannot tell whether removing it would take one along.`
     )
+  if (!Array.isArray(f.nestedWorktrees)) return unchecked()
   if (f.nestedWorktrees.length > 0) {
     const n = f.nestedWorktrees.length
     return review(
@@ -302,12 +312,7 @@ export function bucketOf(
   }
 
   // A worktree of another repo or a plain clone inside this one (delta 7) goes with it too.
-  // Same code as above, so the UI needs no new label.
-  if (!Array.isArray(f.foreignCheckouts))
-    return review(
-      'nested-worktree',
-      'Whether a checkout of another repo lives inside this worktree could not be checked.'
-    )
+  if (!Array.isArray(f.foreignCheckouts)) return unchecked()
   if (f.foreignCheckouts.length > 0) {
     const n = f.foreignCheckouts.length
     return review(

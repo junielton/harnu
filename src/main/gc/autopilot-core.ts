@@ -171,6 +171,7 @@ const REMEMBERED_REFUSALS: ReadonlySet<string> = new Set([
   'path-unresolved',
   'not-harvestable',
   'nested-worktree',
+  'check-failed',
   'foreign-checkout',
   'shared-stack',
   'stack-present',
@@ -222,7 +223,8 @@ export function restoreDemotedRefusal(
   failures.set(id, { step: 'reprobe', error: code, at: now, count: REFUSAL_DEMOTE_AFTER, tip })
 }
 
-const ttlOf = (f: CycleFailure): number =>
+/** How long a failure note is worth anything: a refusal's count outlives a halt's note. */
+export const ttlOf = (f: CycleFailure): number =>
   f.step === 'reprobe' ? REFUSAL_COUNT_TTL_MS : FAILURE_TTL_MS
 
 /** Drops failures for worktrees that no longer exist and those old enough to retry. */
@@ -261,12 +263,21 @@ export function pruneFailures(
 export function applyFailures(
   bundles: readonly WorktreeBundle[],
   failures: ReadonlyMap<string, CycleFailure>,
-  now: number
+  now: number,
+  /**
+   * Items whose folder is already gone. A halt after the trash (prune, branch-delete) leaves
+   * the folder gone while git still holds a registration and a branch, so the probes fail and
+   * the bundle is anything but ready: it must still say what stopped.
+   */
+  goneIds: ReadonlySet<string> = new Set()
 ): WorktreeBundle[] {
   return bundles.map((b) => {
-    const f = b.bucket === 'ready' ? failures.get(b.item.id) : undefined
+    const gone = goneIds.has(b.item.id)
+    const f = b.bucket === 'ready' || gone ? failures.get(b.item.id) : undefined
     if (!f) return b
     if (f.step === 'reprobe') {
+      // A refusal changed nothing, so a folder gone since then is just gone: no halted step to tell.
+      if (b.bucket !== 'ready') return b
       const count = f.count ?? 1
       const marked = { ...b, reprobeRefusal: { code: f.error, count } }
       if (count < REFUSAL_DEMOTE_AFTER) {
@@ -284,10 +295,12 @@ export function applyFailures(
     }
     return {
       ...b,
+      ...(gone ? { folderGone: true } : {}),
       bucket: 'review' as const,
       reason: {
         code: 'cleanup-failed' as const,
-        detail: `Cleanup stopped at ${f.step}: ${f.error}`
+        // The step and the folder only: the raw error is for the log, never for the screen.
+        detail: `Cleanup stopped at ${f.step}${b.item.path ? ` in ${b.item.path}` : ''}.`
       }
     }
   })

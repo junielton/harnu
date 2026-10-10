@@ -120,6 +120,21 @@ export function repoDisplayLabel(repoPath: string): string {
 const bigFirst = (a: GcBlock, b: GcBlock): number =>
   b.bytes - a.bytes || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
 
+/**
+ * The detail line under a reason. A halted cleanup reads "Cleanup stopped at <step>" and, when
+ * known, the folder; anything after that (the raw git or file-system error) is cut, so no
+ * producer can put engine text on screen. Other reasons keep their own sentence.
+ */
+export function shownDetail(reason: { code: string; detail: string } | null): string | null {
+  if (!reason) return null
+  if (reason.code !== 'cleanup-failed') return reason.detail
+  const m = /^Cleanup stopped at ([a-z][a-z-]*)(.*)$/s.exec(reason.detail)
+  if (!m) return null
+  // Only the exact shape main writes carries a folder; a ": <error>" tail is cut.
+  const folder = /^ in (\/.+?)\.?$/s.exec(m[2]!)?.[1]
+  return `Cleanup stopped at ${m[1]}${folder ? ` in ${folder}` : ''}.`
+}
+
 const looseKey = (p: string): string =>
   p.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '')
 
@@ -151,7 +166,7 @@ function worktreeBlock(b: WorktreeBundle, prefs: GcSnapshot['prefs']): GcBlock {
     bytes: bytes ?? 0,
     hasBytes: bytes !== null && bytes !== undefined,
     reasonCode: b.reason?.code ?? null,
-    reasonDetail: b.reason?.detail ?? null,
+    reasonDetail: shownDetail(b.reason),
     project: null,
     stackIds: b.stackIds,
     ownedVolumes: b.ownedVolumes,

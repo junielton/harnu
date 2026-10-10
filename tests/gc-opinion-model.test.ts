@@ -314,6 +314,15 @@ describe('an item main always refuses to remove is never marked-safe material', 
     return { m, ok: ok.item.id, nested: nested.item.id, locked: locked.item.id }
   }
 
+  it('safeIds leaves out an item Harnu could not look inside', () => {
+    const ok = wt('ok', 'review', 900 * MIB)
+    const unchecked = refused('unchecked', 'check-failed')
+    const m = buildGcModel(snap([ok, unchecked]))
+    let map: OpinionMap = new Map()
+    for (const id of [ok.item.id, unchecked.item.id]) map = recordOpinion(map, op(id, 'safe'), m)
+    expect(safeIds(map, m)).toEqual([ok.item.id])
+  })
+
   it('safeIds leaves out a nested-worktree and a locked item even when their chip says safe', () => {
     const { m, ok, nested, locked } = mixed()
     let map: OpinionMap = new Map()

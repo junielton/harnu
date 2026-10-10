@@ -157,6 +157,7 @@ export function submitManualClean(
           error: result.error ?? 'failed',
           at: deps.now()
         })
+        console.warn('[gc] cleanup halted', id, result.haltedAt, result.error)
       }
       reporter.onItem(result)
     }

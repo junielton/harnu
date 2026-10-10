@@ -317,3 +317,148 @@ describe('createAgentService (T445 delta 2)', () => {
     expect(Object.keys(svc).sort()).toEqual(['release', 'snapshot'])
   })
 })
+
+describe('createGatherer: a halted item whose folder is gone stays visible (F0 delta 1, item 1)', () => {
+  // `cleanItem` trashes the folder before prune and branch-delete. If it halts there the
+  // folder is gone but git still holds a registration and a branch: the item must keep its
+  // note and keep reading "Cleanup stopped at …", gather after gather.
+  const halted = (): GcGathered => {
+    const b = bundle(WT_READY, { bucket: 'review' })
+    return gathered({ bundles: [b], goneItemIds: [b.item.id] } as Partial<GcGathered>)
+  }
+
+  it('asks the gather to keep the ids that have a failure note', async () => {
+    const g = halted()
+    const { spies, gatherer } = setup(g)
+    spies.state.failures.set(g.bundles[0]!.item.id, { step: 'prune', error: 'locked', at: NOW })
+    await gatherer.gather()
+    const keep = spies.gatherGc.mock.calls[0]![3] as ReadonlySet<string>
+    expect([...keep]).toEqual([g.bundles[0]!.item.id])
+  })
+
+  it.each(['prune', 'branch-delete'])(
+    'a halt at %s reads cleanup-failed on every gather',
+    async (step) => {
+      const g = halted()
+      const id = g.bundles[0]!.item.id
+      const { spies, gatherer } = setup(g)
+      spies.state.failures.set(id, { step, error: 'fatal: Unable to create index.lock', at: NOW })
+      for (let i = 0; i < 3; i++) {
+        const out = await gatherer.gather()
+        expect(out.bundles).toHaveLength(1)
+        expect(out.bundles[0]).toMatchObject({
+          bucket: 'review',
+          reason: { code: 'cleanup-failed' }
+        })
+        expect(spies.state.failures.has(id)).toBe(true)
+      }
+    }
+  )
+})
+
+describe('createGatherer: a gather that began before a job ended is stale (F0 delta 1, item 2)', () => {
+  const withIds = (...ids: string[]): GcGathered =>
+    gathered({ bundles: ids.map((id) => bundle(`/srv/ws/${id}`)) })
+  const idsOf = (g: GcGathered): string[] => g.bundles.map((b) => b.item.path as string)
+
+  function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
+    let resolve!: (v: T) => void
+    const promise = new Promise<T>((r) => (resolve = r))
+    return { promise, resolve }
+  }
+
+  it('a gather asked for after invalidate() never returns the one already in flight', async () => {
+    const { spies, gatherer } = setup(withIds('old'))
+    const first = deferred<GcGathered>()
+    spies.gatherGc.mockImplementationOnce(() => first.promise)
+    spies.gatherGc.mockImplementation(async () => withIds('fresh'))
+
+    const stale = gatherer.gather() // began before the job's trash
+    gatherer.invalidate() // the job ended
+    const after = gatherer.gather()
+    first.resolve(withIds('cleaned-worktree'))
+
+    expect(idsOf(await after)).toEqual(['/srv/ws/fresh'])
+    await stale
+    // The stale answer was not kept: neither cached nor fed to the Containers view.
+    expect(idsOf(gatherer.cached()!)).toEqual(['/srv/ws/fresh'])
+    expect(spies.feed).toHaveBeenCalledTimes(1)
+  })
+
+  it('without invalidate() a second caller still shares the gather in flight', async () => {
+    const { spies, gatherer } = setup(withIds('a'))
+    const first = deferred<GcGathered>()
+    spies.gatherGc.mockImplementationOnce(() => first.promise)
+    const one = gatherer.gather()
+    const two = gatherer.gather()
+    first.resolve(withIds('a'))
+    await Promise.all([one, two])
+    expect(spies.gatherGc).toHaveBeenCalledTimes(1)
+  })
+
+  it('callers asked for after invalidate() share one fresh gather', async () => {
+    const { spies, gatherer } = setup(withIds('a'))
+    const first = deferred<GcGathered>()
+    spies.gatherGc.mockImplementationOnce(() => first.promise)
+    spies.gatherGc.mockImplementation(async () => withIds('fresh'))
+    const stale = gatherer.gather()
+    gatherer.invalidate()
+    const x = gatherer.gather()
+    const y = gatherer.gather()
+    first.resolve(withIds('a'))
+    await Promise.all([stale, x, y])
+    expect(spies.gatherGc).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('createGatherer: a stale gather does not prune failure notes (F0 delta 3, A)', () => {
+  function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
+    let resolve!: (v: T) => void
+    const promise = new Promise<T>((r) => (resolve = r))
+    return { promise, resolve }
+  }
+  const note = { step: 'branch-delete', error: 'locked', at: NOW }
+
+  it('a note recorded while a gather ran, then invalidate(), survives that gather', async () => {
+    // The gather began before the trash, so it does not list the halted item.
+    const { spies, gatherer } = setup(gathered({ bundles: [] }))
+    const first = deferred<GcGathered>()
+    spies.gatherGc.mockImplementationOnce(() => first.promise)
+    const inFlight = gatherer.gather()
+    spies.state.failures.set('X', note) // the job halts after the trash
+    gatherer.invalidate() // the job ends
+    first.resolve(gathered({ bundles: [] }))
+    await inFlight
+    expect(spies.state.failures.has('X')).toBe(true)
+  })
+
+  it('a note recorded while a gather ran survives it even without an invalidate', async () => {
+    const { spies, gatherer } = setup(gathered({ bundles: [] }))
+    const first = deferred<GcGathered>()
+    spies.gatherGc.mockImplementationOnce(() => first.promise)
+    const inFlight = gatherer.gather()
+    spies.state.failures.set('X', note)
+    first.resolve(gathered({ bundles: [] }))
+    await inFlight
+    expect(spies.state.failures.has('X')).toBe(true)
+  })
+
+  it('a note that existed when the gather began is still pruned when its bundle is gone', async () => {
+    const { spies, gatherer } = setup(gathered({ bundles: [] }))
+    spies.state.failures.set('old', note)
+    await gatherer.gather()
+    expect(spies.state.failures.has('old')).toBe(false)
+  })
+
+  it('a note replaced while the gather ran is not pruned either', async () => {
+    const { spies, gatherer } = setup(gathered({ bundles: [] }))
+    const first = deferred<GcGathered>()
+    spies.state.failures.set('X', note)
+    spies.gatherGc.mockImplementationOnce(() => first.promise)
+    const inFlight = gatherer.gather()
+    spies.state.failures.set('X', { ...note, at: NOW + 1 }) // a newer halt of the same item
+    first.resolve(gathered({ bundles: [] }))
+    await inFlight
+    expect(spies.state.failures.get('X')?.at).toBe(NOW + 1)
+  })
+})

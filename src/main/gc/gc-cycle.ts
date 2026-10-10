@@ -7,7 +7,6 @@
 // bundles the planner called ready items, through ops built for the `autopilot` actor.
 
 import type { InspectedContainer } from '../containers/containers-core'
-import type { WorktreeBundle } from './bundle-core'
 import {
   applyFailures,
   planCycle,
@@ -16,6 +15,7 @@ import {
   type CycleFailure,
   type CyclePlan
 } from './autopilot-core'
+import type { WorktreeBundle } from './bundle-core'
 import type { JobQueue } from './gc-jobs-core'
 import type { GcPrefs } from './gc-prefs'
 import type { CycleRecord } from './gc-wire'
@@ -85,8 +85,14 @@ export interface GcCycleDeps {
  * the cycle agree; applying it again is a no-op.
  */
 export function withFailures<G extends GcGather>(g: G, state: CycleState, now: number): G {
-  pruneFailures(state.failures, g.bundles, now)
-  return { ...g, bundles: applyFailures(g.bundles, state.failures, now) }
+  // No pruning of the shared notes here: forgetting a note belongs to the gatherer, which does it
+  // only from a gather that is still current. A prune on this side ran against a gather that a
+  // manual clean could overlap, and deleted the note of an item that clean had just halted. The
+  // same rules run on a copy instead, so an expired note or a refusal the scan has moved past is
+  // only skipped, never deleted: after its TTL the autopilot may try again.
+  const live = new Map(state.failures)
+  pruneFailures(live, g.bundles, now)
+  return { ...g, bundles: applyFailures(g.bundles, live, now) }
 }
 
 /**
@@ -195,6 +201,7 @@ export async function runGcCycle(
       rememberReprobeRefusal(deps.state.failures, r, now, done?.localTip ?? null)
     } else if (!r.ok && r.haltedAt !== null) {
       deps.state.failures.set(r.id, { step: r.haltedAt, error: r.error ?? 'failed', at: now })
+      console.warn('[gc] cleanup halted', r.id, r.haltedAt, r.error)
     }
   }
 

@@ -2309,6 +2309,7 @@
         "ready": "Mesclado, limpo e parado além do período de carência.",
         "pathUnresolved": "A worktree tem um caminho que o Harnu não conseguiu resolver para o local real, então não sabe o que o usa.",
         "nestedWorktree": "Há outro worktree dentro deste, e remover este também o jogaria no lixo.",
+        "checkFailed": "O Harnu não conseguiu olhar dentro deste worktree, então não sabe se removê-lo levaria outro checkout junto.",
         "locked": "Este worktree está bloqueado no git",
         "inUse": {
           "mainCheckout": "O checkout principal do repositório. Nunca é tocado.",
@@ -2375,7 +2376,10 @@
         "removeCommand": "Rode",
         "refusedNote": "A última limpeza foi recusada. {reason}",
         "refusedNoteHint": "Ele fica fora de “Limpar prontos” e o piloto automático o pula até a causa ser resolvida. Tentar de novo tenta mais uma vez.",
-        "refusedRepeat": "Recusado {n} vezes seguidas, então foi para Precisa de revisão."
+        "refusedRepeat": "Recusado {n} vezes seguidas, então foi para Precisa de revisão.",
+        "resumeBody": "A pasta não existe mais, e a limpeza parou em “{step}”, então Tentar de novo não consegue terminar. Rode isto num terminal para fazer o resto:",
+        "resumeUnarchived": "Se o git recusar, esta branch tem commits que não estão na sua branch padrão: mantenha-a ou arquive-a primeiro.",
+        "resumeArchive": "As refs de arquivo mantêm o commit recuperável."
       },
       "list": {
         "label": "Worktrees por grupo",
@@ -2629,6 +2633,8 @@
           "unsupportedKind": "Tem um HEAD detached, então não há branch para arquivá-lo. O Harnu ainda não consegue removê-lo.",
           "sharedStack": "Outra stack também roda a partir deste worktree. Pare essa primeiro.",
           "nestedWorktree": "Esta pasta contém outro worktree ou checkout. Remova ou mova esse primeiro.",
+          "checkFailed": "O Harnu não conseguiu olhar dentro desta pasta em busca de outros worktrees ou checkouts. Confira se ela é legível e use Escanear agora.",
+          "folderGone": "A pasta não existe mais e a limpeza parou no meio. Termine com os comandos do painel dela.",
           "tipUnknown": "O Harnu não conseguiu saber em qual commit este worktree está.",
           "graceNotElapsed": "Ainda não ficou parado por tempo suficiente.",
           "pathUnresolved": "Não foi possível resolver um caminho ligado a este worktree, então o Harnu não sabe o que o usa.",
@@ -2663,6 +2669,7 @@
         "scanBlind": "O Docker não estava rodando quando o Harnu varreu, então ele não pôde ver as stacks deste worktree e o deixou como está. Inicie o Docker e use Escanear agora.",
         "probeFailed": "A checagem desta worktree falhou, então ela foi deixada como está.",
         "nestedWorktree": "Outra worktree vive dentro desta, então ela foi deixada como está.",
+        "checkFailed": "O Harnu não conseguiu olhar dentro desta worktree, então ela foi deixada como está.",
         "sharedStack": "Outra stack também roda a partir desta worktree, então ela foi deixada como está.",
         "headMoved": "Um commit novo chegou nesta worktree, então ela foi deixada como está.",
         "notHarvestable": "A limpeza não a considera mais concluída, então foi deixada como está.",
@@ -2695,6 +2702,7 @@
         "rowAria": "{name}, {size}",
         "selectRow": "Selecionar {name}",
         "removeAria": "Remover {name}",
+        "resume": "Parou em “{step}”. Abra para ver os comandos para terminar à mão.",
         "dehydrateAria": "Dehydrate {name}",
         "keepAria": "Manter {name}",
         "volumeProject": "Volume Docker · {project}",

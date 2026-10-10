@@ -20,6 +20,8 @@ export type RemovalRefusal =
   | 'unsupported-kind'
   | 'shared-stack'
   | 'nested-worktree'
+  | 'check-failed'
+  | 'folder-gone'
   | 'tip-unknown'
   | 'grace-not-elapsed'
   | 'path-unresolved'
@@ -69,6 +71,7 @@ const REMEMBERED: Readonly<Record<string, RemovalRefusal>> = {
   'tip-unknown': 'tip-unknown',
   'path-unresolved': 'path-unresolved',
   'nested-worktree': 'nested-worktree',
+  'check-failed': 'check-failed',
   'foreign-checkout': 'nested-worktree',
   'shared-stack': 'shared-stack'
 }
@@ -94,6 +97,9 @@ export function bundleRemovability(
   if (b.neverClean || protection === 'never-clean') return refused('never-clean')
   if (b.keep || protection === 'kept') return refused('kept')
   if (b.bucket === 'in-use') return refused('in-use')
+  // A clean that stopped after the trash: the engine refuses a folder that is not there, and what
+  // is left (prune, branch-delete) is finished by hand with the commands the panel shows.
+  if (b.folderGone === true) return refused('folder-gone')
   // Scanned while Docker was down: its stacks were never seen, and main refuses it until a scan does.
   if (b.dockerBlind === true) return refused('scan-blind')
   if (!CLEANABLE_WORKTREE_KINDS.includes(b.item.kind)) {
@@ -102,16 +108,16 @@ export function bundleRemovability(
   // refusalOf (pipeline-core): refused even when confirmed
   const code = b.reason?.code
   if (b.sharedStackIds.length > 0 || code === 'shared-stack') return refused('shared-stack')
-  // A list that is missing or not a list cannot show there is none.
-  if (
-    !Array.isArray(b.nestedWorktrees) ||
-    b.nestedWorktrees.length > 0 ||
-    !Array.isArray(b.foreignCheckouts) ||
-    b.foreignCheckouts.length > 0 ||
-    code === 'nested-worktree'
-  ) {
-    return refused('nested-worktree')
-  }
+  // In refusalOf's order. A list that is missing or not a list cannot show there is none: the
+  // probe did not answer (`check-failed`), which refuses just the same but is not "something
+  // lives inside"; a list with entries is (`nested-worktree`).
+  const nested = b.nestedWorktrees
+  const foreign = b.foreignCheckouts
+  if (!Array.isArray(nested)) return refused('check-failed')
+  if (nested.length > 0) return refused('nested-worktree')
+  if (!Array.isArray(foreign)) return refused('check-failed')
+  if (foreign.length > 0 || code === 'nested-worktree') return refused('nested-worktree')
+  if (code === 'check-failed') return refused('check-failed')
   // The reprobe (gc-shell): what it can refuse from the scan's own facts
   if (typeof b.localTip !== 'string') return refused('tip-unknown')
   const known = (n: number | null | undefined): n is number =>

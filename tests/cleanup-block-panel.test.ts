@@ -163,6 +163,42 @@ describe('CleanupBlockPanel — Remove is only offered for what main takes', () 
     expect(w.get('[data-testid="panel-remove-hint"]').text()).toContain('git worktree remove')
   })
 
+  it('a worktree Harnu could not look inside gets its own Remove-blocked sentence', () => {
+    const unchecked = blockWith(
+      'review',
+      {},
+      reviewReason('check-failed' as never, 'Harnu could not look inside /srv/ws/x.')
+    )
+    const w = mountPanel(unchecked)
+    expect(has(w, 'panel-remove')).toBe(false)
+    const text = w.get('[data-testid="panel-remove-blocked"]').text()
+    expect(text).toMatch(/could not look inside/)
+    expect(text).not.toMatch(/holds another worktree/)
+  })
+
+  it.each(['en', 'pt-BR'])(
+    '%s: the could-not-look-inside sentence names the real Scan now button',
+    (lang) => {
+      const locale = i18n.global.locale as unknown as { value: string }
+      const original = locale.value
+      locale.value = lang
+      try {
+        const unchecked = blockWith(
+          'review',
+          {},
+          reviewReason('check-failed' as never, 'Harnu could not look inside /srv/ws/x.')
+        )
+        const text = mountPanel(unchecked).get('[data-testid="panel-remove-blocked"]').text()
+        // Whatever the button is called in this language is what the sentence must say.
+        expect(text).toContain(i18n.global.t('cleanup.scanNow'))
+        expect(text).not.toContain('{')
+        if (lang === 'pt-BR') expect(text).not.toContain('Scan now')
+      } finally {
+        locale.value = original
+      }
+    }
+  )
+
   it('keeps Keep and the other actions that do not delete the folder', () => {
     const w = mountPanel(nested())
     expect(has(w, 'panel-keep')).toBe(true)
@@ -433,6 +469,102 @@ describe('CleanupBlockPanel — a failed item', () => {
     expect(text).not.toContain(t('cleanup.gc.step.archive'))
     expect(text).not.toContain(t('cleanup.gc.step.stopStack'))
     expect(text).not.toMatch(/Remove volumes/i)
+  })
+
+  describe('a halted item whose folder is already gone (F0 delta 2)', () => {
+    const goneBlock = (branch: string | null = 'feat/x') => {
+      const b = wt(
+        'x',
+        'review',
+        1200 * MIB,
+        { branch, hydration: hydration(), verdict: 'blocked' },
+        {
+          reason: reviewReason(
+            'cleanup-failed',
+            'Cleanup stopped at branch-delete in /w/repo/.claude/worktrees/x.'
+          )
+        }
+      )
+      ;(b as unknown as { folderGone: boolean }).folderGone = true
+      return blockOf(b)
+    }
+
+    it('hides Retry and Remove, and shows the next step with the exact commands', () => {
+      const w = mountPanel(goneBlock(), { failure: failure({ step: 'branch-delete' }) })
+      expect(has(w, 'panel-retry')).toBe(false)
+      expect(has(w, 'panel-remove')).toBe(false)
+      const hint = w.get('[data-testid="panel-resume"]').text()
+      expect(hint).toContain(t('cleanup.gc.step.branchDelete'))
+      expect(hint).toContain('git -C /w/repo worktree prune')
+      expect(hint).toContain('git -C /w/repo branch -D feat/x')
+      expect(hint).toMatch(/archive refs/)
+    })
+
+    it('words it neutrally (the folder may have been deleted by hand) and claims the archive only when it ran', () => {
+      const early = goneBlock()
+      const b = early.bundle!
+      b.reason = { code: 'cleanup-failed', detail: 'Cleanup stopped at drop-deps in /w/repo/x.' }
+      const w = mountPanel(blockOf(b), { failure: failure({ step: 'drop-deps' }) })
+      const hint = w.get('[data-testid="panel-resume"]').text()
+      expect(hint).toMatch(/folder is gone/i)
+      expect(hint).not.toMatch(/trashed/i)
+      // Nothing was archived: the safe -d (it refuses unmerged commits), never -D, plus the warning.
+      expect(hint).toContain('git -C /w/repo branch -d feat/x')
+      expect(hint).not.toContain('branch -D')
+      expect(hint).toContain(i18n.global.t('cleanup.gc.panel.resumeUnarchived'))
+      expect(hint).toMatch(/If git refuses/)
+      expect(hint).not.toMatch(/archive refs/)
+      // After the archive step the refs exist and the line is shown.
+      const late = mountPanel(goneBlock(), { failure: failure({ step: 'branch-delete' }) })
+      expect(late.get('[data-testid="panel-resume"]').text()).toMatch(/archive refs/)
+      expect(late.get('[data-testid="panel-resume"]').text()).toContain('branch -D')
+      expect(late.get('[data-testid="panel-resume"]').text()).not.toMatch(/If git refuses/)
+      expect(late.get('[data-testid="panel-resume"]').text()).not.toMatch(/trashed/i)
+    })
+
+    it('hides Dehydrate and Rehydrate too, and the D shortcut does nothing', () => {
+      // The item still carries a hydration record from the last scan (it was dehydratable), but
+      // its folder is gone: there is nothing to dehydrate.
+      const w = mountPanel(goneBlock(), { failure: failure(), attachTo: document.body } as never)
+      expect(has(w, 'panel-dehydrate')).toBe(false)
+      expect(has(w, 'panel-rehydrate')).toBe(false)
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'd' }))
+      expect(w.emitted('dehydrate')).toBeUndefined()
+      w.unmount()
+    })
+
+    it('a halted item whose folder is still there keeps Dehydrate', () => {
+      const w = mountPanel(failedBlock(), { failure: failure() })
+      expect(has(w, 'panel-dehydrate')).toBe(true)
+    })
+
+    it('still offers Keep', () => {
+      expect(has(mountPanel(goneBlock(), { failure: failure() }), 'panel-keep')).toBe(true)
+    })
+
+    it('says the same in pt-BR, with the commands untouched', () => {
+      const locale = i18n.global.locale as unknown as { value: string }
+      const original = locale.value
+      locale.value = 'pt-BR'
+      try {
+        const hint = mountPanel(goneBlock(), { failure: failure() })
+          .get('[data-testid="panel-resume"]')
+          .text()
+        expect(hint).toContain('git -C /w/repo worktree prune')
+        expect(hint).toContain('git -C /w/repo branch -D feat/x')
+        // The pt-BR sentence, read from the locale rather than spelled out here (English gate).
+        expect(hint).toContain(i18n.global.t('cleanup.gc.panel.resumeArchive'))
+        expect(hint).not.toMatch(/archive refs/)
+      } finally {
+        locale.value = original
+      }
+    })
+
+    it('a halted item whose folder is still there keeps Retry and shows no resume text', () => {
+      const w = mountPanel(failedBlock(), { failure: failure() })
+      expect(has(w, 'panel-retry')).toBe(true)
+      expect(has(w, 'panel-resume')).toBe(false)
+    })
   })
 
   it('a pre-flight refusal says nothing was changed, in a human sentence', () => {

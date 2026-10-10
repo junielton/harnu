@@ -2309,6 +2309,7 @@
         "ready": "Merged, clean and idle past the grace period.",
         "pathUnresolved": "The worktree has a path Harnu could not resolve to its real location, so it cannot tell what uses it.",
         "nestedWorktree": "Another worktree lives inside this one, and removing this one would trash it too.",
+        "checkFailed": "Harnu could not look inside this worktree, so it cannot tell whether removing it would take another checkout along.",
         "locked": "This worktree is locked in git",
         "inUse": {
           "mainCheckout": "The repo's main checkout. Never touched.",
@@ -2375,7 +2376,10 @@
         "removeCommand": "Run",
         "refusedNote": "The last clean was refused. {reason}",
         "refusedNoteHint": "It stays out of “Clean ready” and the autopilot skips it until the cause is fixed. Retry tries once more.",
-        "refusedRepeat": "Refused {n} times in a row, so it moved to Needs review."
+        "refusedRepeat": "Refused {n} times in a row, so it moved to Needs review.",
+        "resumeBody": "The folder is gone, and the clean stopped at “{step}”, so Retry cannot finish it. Run these in a terminal to do the rest:",
+        "resumeUnarchived": "If git refuses, this branch has commits that aren't in your default branch: keep it, or archive it first.",
+        "resumeArchive": "The archive refs keep the commit recoverable."
       },
       "list": {
         "label": "Worktrees by bucket",
@@ -2629,6 +2633,8 @@
           "unsupportedKind": "It has a detached HEAD, so there is no branch to archive it under. Harnu cannot remove it yet.",
           "sharedStack": "Another stack also runs from this worktree. Stop that one first.",
           "nestedWorktree": "This folder holds another worktree or checkout. Remove or move that one first.",
+          "checkFailed": "Harnu could not look inside this folder for other worktrees or checkouts. Make sure it is readable, then use Scan now.",
+          "folderGone": "The folder is gone and the clean stopped partway. Finish it with the commands in its panel.",
           "tipUnknown": "Harnu could not tell which commit this worktree is on.",
           "graceNotElapsed": "It has not been quiet long enough yet.",
           "pathUnresolved": "A path tied to this worktree could not be resolved, so Harnu cannot tell what uses it.",
@@ -2663,6 +2669,7 @@
         "scanBlind": "Docker wasn't running when Harnu scanned, so it could not see this worktree's stacks and left it alone. Start Docker, then Scan now.",
         "probeFailed": "Checking this worktree failed, so it was left alone.",
         "nestedWorktree": "Another worktree lives inside this one, so it was left alone.",
+        "checkFailed": "Harnu could not look inside this worktree, so it was left alone.",
         "sharedStack": "Another stack also runs from this worktree, so it was left alone.",
         "headMoved": "A new commit landed on this worktree, so it was left alone.",
         "notHarvestable": "Cleanup no longer considers it finished, so it was left alone.",
@@ -2695,6 +2702,7 @@
         "rowAria": "{name}, {size}",
         "selectRow": "Select {name}",
         "removeAria": "Remove {name}",
+        "resume": "Stopped at “{step}”. Open it for the commands to finish by hand.",
         "dehydrateAria": "Dehydrate {name}",
         "keepAria": "Keep {name}",
         "volumeProject": "Docker volume · {project}",

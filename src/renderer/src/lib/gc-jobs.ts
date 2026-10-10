@@ -39,6 +39,7 @@ export const REFUSAL_CODES = [
   'scan-blind',
   'probe-failed',
   'nested-worktree',
+  'check-failed',
   'shared-stack',
   'head-moved',
   'not-harvestable',

@@ -49,6 +49,35 @@ const reviewModel = () =>
 
 const rows = (w: ReturnType<typeof mountList>) => w.findAll('[data-testid="review-row"]')
 
+describe('CleanupReviewList: a halted item whose folder is gone (F0 delta 2)', () => {
+  const goneModel = () => {
+    const b = wt(
+      'g',
+      'review',
+      1 * GIB,
+      { branch: 'feat/g' },
+      {
+        reason: reviewReason(
+          'cleanup-failed',
+          'Cleanup stopped at prune in /w/repo/.claude/worktrees/g.'
+        )
+      }
+    )
+    ;(b as unknown as { folderGone: boolean }).folderGone = true
+    return modelOf([b, wt('d', 'review', 1 * MIB, {}, { reason: reviewReason('dirty') })])
+  }
+
+  it('offers no Remove for it, and says what to do next; other rows keep theirs', () => {
+    const m = goneModel()
+    const w = mountList(m.review)
+    const [gone, other] = rows(w)
+    expect(gone.find('[data-testid="review-remove"]').exists()).toBe(false)
+    expect(gone.get('[data-testid="review-resume"]').text()).toContain(t('cleanup.gc.step.prune'))
+    expect(other.find('[data-testid="review-remove"]').exists()).toBe(true)
+    expect(other.find('[data-testid="review-resume"]').exists()).toBe(false)
+  })
+})
+
 describe('CleanupReviewList', () => {
   it('lists Needs review items biggest first with their translated reason and size', () => {
     const m = reviewModel()

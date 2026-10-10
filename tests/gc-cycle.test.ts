@@ -440,12 +440,8 @@ describe('runGcCycle: a failing ready item is not retried every hour (spec §4)'
     expect(cleanedPaths(later)).toEqual(['/ws/wt/a'])
   })
 
-  it('forgets a failure once the worktree is gone', async () => {
-    const state = createCycleState()
-    await runGcCycle(rig([ready('a')], live(), { ops: failing, state }).deps, 'timer')
-    await runGcCycle(rig([], live(), { state }).deps, 'timer')
-    expect(state.failures.size).toBe(0)
-  })
+  // Forgetting a failure once the worktree is gone is the gatherer's job, from a gather that is
+  // still current (tests/gc-gatherer.test.ts), not the cycle's.
 })
 
 describe('runGcCycle: shares the queue with manual cleaning (AC-4)', () => {
@@ -542,14 +538,15 @@ describe('withFailures: every consumer sees a halted item as Needs review (delta
     expect(feed.get('/ws/wt/a')).toBe('review')
   })
 
-  it('drops failures that expired or whose worktree is gone', () => {
+  it('never prunes: only the gatherer forgets a note, and only from a gather that is still current', () => {
+    // A note for an item this gather does not list (the job halted it after the gather read
+    // the disk) must survive; expiry and gone items are the gatherer's job (gc-gatherer).
     const state = createCycleState()
     state.failures.set('gone', failure)
     const a = ready('a')
     state.failures.set(a.item.id, { ...failure, at: NOW - 25 * 3_600_000 })
-    const out = withFailures({ bundles: [a], housekeeping: noHousekeeping }, state, NOW)
-    expect(out.bundles[0]!.bucket).toBe('ready')
-    expect(state.failures.size).toBe(0)
+    withFailures({ bundles: [a], housekeeping: noHousekeeping }, state, NOW)
+    expect([...state.failures.keys()].sort()).toEqual(['gone', a.item.id].sort())
   })
 
   it('is idempotent, so the cycle can apply it again', () => {
@@ -558,6 +555,28 @@ describe('withFailures: every consumer sees a halted item as Needs review (delta
     state.failures.set(a.item.id, failure)
     const once = withFailures({ bundles: [a], housekeeping: noHousekeeping }, state, NOW)
     expect(withFailures(once, state, NOW).bundles).toEqual(once.bundles)
+  })
+})
+
+describe('runGcCycle: a note recorded while its gather ran survives the cycle (F0 delta 4)', () => {
+  it('a manual clean halts X after the trash while the cycle is gathering; X keeps its note', async () => {
+    const state = createCycleState()
+    const x = ready('x')
+    let release!: () => void
+    const r = rig([], live(), {
+      state,
+      gather: async () => {
+        // The cycle's gather is in flight and does not list X yet.
+        await new Promise<void>((resolve) => (release = resolve))
+        return { bundles: [], housekeeping: noHousekeeping }
+      }
+    })
+    const cycle = runGcCycle(r.deps, 'timer')
+    // Meanwhile a manual clean trashes X and halts at branch-delete, recording the note.
+    state.failures.set(x.item.id, { step: 'branch-delete', error: 'locked', at: NOW })
+    release()
+    await cycle
+    expect(state.failures.has(x.item.id)).toBe(true)
   })
 })
 

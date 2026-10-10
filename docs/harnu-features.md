@@ -578,7 +578,8 @@ reportOnly, graceDays }, nextCycleAt }`. Read `bucket`, `reasonCode` and `reason
   path ever appears. `folderAlias` is a basename and `id` a readable label
   (`<repo>::<kind>::<branch>::<hash>`, unique even for two repos that share a name). A review
   `reason` is a fixed sentence per `reasonCode` (a halted cleanup reads "Cleanup stopped at
-  <step>."), never the raw git or file-system error, and any other text a field carries has
+  <step>."; `check-failed` means Harnu could not look inside the folder, which is not the same
+  as `nested-worktree`, where something was found inside), never the raw git or file-system error, and any other text a field carries has
   each path cut down to its basename. A worktree in a folder the operator
   blocked still lists with `agentControllable: false` — report it, leave it alone. `folder`
   narrows `bundles` and `totals` to that repo and its worktrees (and leaves out

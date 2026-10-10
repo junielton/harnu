@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import CleanupBulkConfirmDialog from '../src/renderer/src/components/CleanupBulkConfirmDialog.vue'
 import { i18n } from '@renderer/i18n'
 import type { DialogRow } from '../src/renderer/src/lib/gc-model'
+import { reasonKey } from '../src/renderer/src/components/cleanup-gc-copy'
 
 const MB = 1_000_000
 
@@ -385,4 +386,45 @@ describe('CleanupBulkConfirmDialog — parity with the approved mockup', () => {
     await open([reviewRow()], 'review')
     expect(q('[data-testid="bulk-confirm"] svg')!.getAttribute('class')).toContain('trash')
   })
+})
+
+describe('CleanupBulkConfirmDialog: the reason is the translated one for every code (F0 delta 1, item 6)', () => {
+  const CODES = [
+    'dirty',
+    'unpushed',
+    'open-idle-session',
+    'closed-unmerged',
+    'remote-gone',
+    'detached',
+    'unknown-fate',
+    'weak-merge-signal',
+    'shared-stack',
+    'cleanup-failed',
+    'path-unresolved',
+    'nested-worktree',
+    'check-failed',
+    'locked',
+    'no-known-worktree'
+  ]
+  const locale = i18n.global.locale as unknown as { value: string }
+  const original = locale.value
+  afterEach(() => {
+    locale.value = original
+  })
+
+  for (const lang of ['en', 'pt-BR']) {
+    it.each(CODES)(
+      `${lang}: %s reads as its i18n sentence, not the English engine detail`,
+      async (code) => {
+        locale.value = lang
+        await open(
+          [reviewRow({ reasonCode: code as never, reasonDetail: 'ENGINE-DETAIL' })],
+          'review'
+        )
+        const text = q('[data-testid="bulk-reason"]')!.textContent!.trim()
+        expect(text).toBe(i18n.global.t(reasonKey(code as never)))
+        expect(text).not.toBe('ENGINE-DETAIL')
+      }
+    )
+  }
 })

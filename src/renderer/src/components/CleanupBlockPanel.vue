@@ -27,7 +27,9 @@ import {
 } from './cleanup-row'
 import { reasonKey, refusalKey, removalKey, stepKey } from './cleanup-gc-copy'
 import { removability } from '../lib/gc-removability'
+import { resumeHint } from '../lib/gc-resume'
 import type { RefusalCode } from '../lib/gc-jobs'
+import type { GcStep } from '../../../main/gc/pipeline-core'
 import Button from './ui/Button.vue'
 import CleanupOpinionChip from './CleanupOpinionChip.vue'
 
@@ -137,9 +139,17 @@ const hasFailure = computed(() => props.failure !== null)
  * the list row, the selection bar and the dialog use, so Remove is never offered for a click that
  * ends in "0 cleaned".
  */
+/**
+ * A halted clean whose folder is already gone: Retry and Remove cannot finish the git steps (the engine
+ * refuses a folder that is not there), so the panel says which step stopped and the commands instead.
+ */
+const resume = computed(() => resumeHint(props.block))
 const verdict = computed(() => removability(props.block))
 // Both buttons that start a clean (Remove for review, Clean now for ready) wait on the same answer.
-const removeBlocked = computed(() => (review.value || ready.value) && !verdict.value.ok)
+// A gone folder's panel shows the resume commands instead of an "unavailable" sentence.
+const removeBlocked = computed(
+  () => (review.value || ready.value) && !verdict.value.ok && !resume.value
+)
 const removeBlockedText = computed(() => {
   const v = verdict.value
   if (v.ok) return ''
@@ -154,7 +164,7 @@ const removeHint = computed(() => {
 })
 /** Main refused the last clean at its pre-flight; the gatherer marks the ready item (see `reprobeRefusal`). */
 const refusalMark = computed(() => props.block.bundle?.reprobeRefusal ?? null)
-const showRemove = computed(() => review.value && verdict.value.ok)
+const showRemove = computed(() => review.value && verdict.value.ok && !resume.value)
 /**
  * A demoted item (refused again and again) has no Retry, and its cause may have been fixed outside
  * Harnu since: "Check again" forgets the remembered refusal and looks once more.
@@ -168,20 +178,26 @@ const showCleanNow = computed(
 )
 /**
  * Retry re-opens the confirm for the item's CURRENT bucket, so an in-use item has nothing to retry,
- * and neither has one main refuses on its facts: that needs a fix first, not another click.
+ * and neither has one main refuses on its facts: that needs a fix first, not another click. Nor a
+ * halted item whose folder is gone: the engine refuses it, so the panel offers the commands instead.
  */
 const showRetry = computed(
-  () => (hasFailure.value || refusalMark.value !== null) && !inUse.value && verdict.value.ok
+  () =>
+    (hasFailure.value || refusalMark.value !== null) &&
+    !inUse.value &&
+    verdict.value.ok &&
+    !resume.value
 )
 const showDehydrate = computed(() => {
   const it = item.value
-  if (!it || isVolume.value || ready.value) return false
+  // A folder that is already gone has nothing to dehydrate.
+  if (!it || isVolume.value || ready.value || resume.value) return false
   if (inUse.value) return isIdleDehydratable(it, props.dehydrateIdleDays)
   return canDehydrate(it)
 })
 const showRehydrate = computed(() => {
   const it = item.value
-  return !!it && !isVolume.value && canRehydrate(it)
+  return !!it && !isVolume.value && !resume.value && canRehydrate(it)
 })
 const hydrationDisabled = computed(() => locked.value || props.hydrationBusy !== null)
 
@@ -376,6 +392,32 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
       >
         {{ block.reasonDetail }}
       </p>
+      <div
+        v-if="resume"
+        class="flex flex-col gap-1.5 rounded-sm border border-border-2 bg-surface-2 p-2"
+        data-testid="panel-resume"
+      >
+        <p class="text-caption leading-4 text-text-2">
+          {{ t('cleanup.gc.panel.resumeBody', { step: t(stepKey(resume.step as GcStep)) }) }}
+        </p>
+        <code
+          v-for="cmd in resume.commands"
+          :key="cmd"
+          class="select-all break-all font-mono text-caption text-text"
+          data-testid="panel-resume-command"
+          >{{ cmd }}</code
+        >
+        <p
+          v-if="resume.unarchivedWarning"
+          class="text-caption leading-4 text-warning"
+          data-testid="panel-resume-warning"
+        >
+          {{ t('cleanup.gc.panel.resumeUnarchived') }}
+        </p>
+        <p v-if="resume.archived" class="text-caption leading-4 text-text-3">
+          {{ t('cleanup.gc.panel.resumeArchive') }}
+        </p>
+      </div>
       <p v-if="inUse" class="text-caption leading-4 text-text-3" data-testid="panel-in-use-note">
         {{ t('cleanup.gc.panel.inUseNote') }}
       </p>

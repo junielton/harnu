@@ -202,10 +202,10 @@ describe('applyFailures / pruneFailures (spec §4)', () => {
 
   it('turns a failed ready item into a cleanup-failed decision', () => {
     const [b] = applyFailures([ready('a', 5)], new Map([[ready('a', 5).item.id, failure]]), NOW)
-    expect(b).toMatchObject({
-      bucket: 'review',
-      reason: { code: 'cleanup-failed', detail: 'Cleanup stopped at trash: EBUSY' }
-    })
+    expect(b).toMatchObject({ bucket: 'review', reason: { code: 'cleanup-failed' } })
+    // The step and the folder, never the raw error (design.md: a raw engine error is not visible text).
+    expect(b!.reason!.detail).toBe(`Cleanup stopped at trash in ${ready('a', 5).item.path}.`)
+    expect(b!.reason!.detail).not.toContain('EBUSY')
   })
 
   it('leaves other bundles and items that are not ready alone', () => {
@@ -216,6 +216,46 @@ describe('applyFailures / pruneFailures (spec §4)', () => {
       ['unrelated', failure]
     ])
     expect(applyFailures([a, d], failures, NOW)).toEqual([a, d])
+  })
+
+  it('a halted item whose folder is already gone reads cleanup-failed whatever its bucket', () => {
+    // The trash ran, then prune or branch-delete halted: the folder is gone, so the probes
+    // fail and the bundle is review (or anything), never ready. It must still say what stopped.
+    const d = bundle('/ws/wt/d', 'review')
+    const [out] = applyFailures(
+      [d],
+      new Map([[d.item.id, { step: 'prune', error: 'index.lock exists', at: NOW }]]),
+      NOW,
+      new Set([d.item.id])
+    )
+    expect(out).toMatchObject({ bucket: 'review', reason: { code: 'cleanup-failed' } })
+    // The screen needs to know: Retry cannot resume a clean whose folder is already gone.
+    expect(out).toMatchObject({ folderGone: true })
+  })
+
+  it('a reprobe refusal on an item whose folder is gone since is not a halted clean', () => {
+    // A refusal changed nothing: there is no step left to finish, so no resume note either.
+    const d = bundle('/ws/wt/d', 'review')
+    const notes = new Map([
+      [d.item.id, { step: 'reprobe', error: 'tip-unknown', at: NOW, count: 1 }]
+    ])
+    expect(applyFailures([d], notes, NOW, new Set([d.item.id]))).toEqual([d])
+  })
+
+  it('a halted item whose folder is still there is not marked folderGone', () => {
+    const [out] = applyFailures(
+      [ready('a', 5)],
+      new Map([[ready('a', 5).item.id, { step: 'trash', error: 'EBUSY', at: NOW }]]),
+      NOW
+    )
+    expect(out).not.toHaveProperty('folderGone')
+  })
+
+  it('a gone-folder id with no failure note, or a failure on a live folder, is left alone', () => {
+    const d = bundle('/ws/wt/d', 'review')
+    const e = bundle('/ws/wt/e', 'review')
+    const notes = new Map([[e.item.id, failure]])
+    expect(applyFailures([d, e], notes, NOW, new Set([d.item.id]))).toEqual([d, e])
   })
 
   it('prunes missing worktrees and failures older than a day', () => {
