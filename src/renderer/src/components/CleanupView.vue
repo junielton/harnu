@@ -28,12 +28,17 @@ import { identText } from './cleanup-ident'
 import {
   captureConfirm,
   confirmChanged,
-  unremovableIds,
+  isRemovable,
+  refusedRows,
+  selectAllInRepo,
   selectionStats,
   toggleChecked,
   type CapturedConfirm
 } from '../lib/gc-model'
 import { nextCycleIn } from '../lib/gc-format'
+import { refusalKey, removalKey } from './cleanup-gc-copy'
+import { removability } from '../lib/gc-removability'
+import type { RefusalCode } from '../lib/gc-jobs'
 import CleanupTreemap from './CleanupTreemap.vue'
 import CleanupListView from './CleanupListView.vue'
 import CleanupBlockPanel from './CleanupBlockPanel.vue'
@@ -116,6 +121,13 @@ const checked = ref<Set<string>>(new Set())
 const selectedBlock = computed(() =>
   selectedId.value && model.value ? (model.value.byId.get(selectedId.value) ?? null) : null
 )
+/** Remove is offered while at least one ticked item can be removed; the rest go in the dialog's refused group. */
+const canRemoveSelection = computed(() =>
+  [...checked.value].some((id) => {
+    const b = model.value?.byId.get(id)
+    return !!b && isRemovable(b)
+  })
+)
 const stats = computed(() =>
   model.value ? selectionStats(model.value, checked.value) : { count: 0, bytes: 0 }
 )
@@ -155,9 +167,8 @@ function onToggle(id: string): void {
 function onSelectAllInRepo(repoPath: string): void {
   const m = model.value
   if (!m) return
-  const next = new Set(checked.value)
-  for (const b of m.blocks) if (b.repoPath === repoPath && b.bucket === 'review') next.add(b.id)
-  checked.value = next
+  // Only what main would take: a bulk tick never picks up a locked or detached worktree.
+  checked.value = new Set([...checked.value, ...selectAllInRepo(m, repoPath)])
 }
 function clearSelection(): void {
   checked.value = new Set()
@@ -211,34 +222,71 @@ const confirmStale = computed(
   () => !!confirmDialog.value && !!model.value && confirmChanged(model.value, confirmDialog.value)
 )
 
-function openReady(ids?: string[]): void {
+/**
+ * Opens the one confirm. Whatever main would refuse is listed apart in the dialog (never counted, never
+ * sent); when nothing is left to remove no dialog opens, and a toast says why instead.
+ */
+function openConfirm(ids: string[], mode: 'ready' | 'review'): void {
   if (dialogOpen.value || !model.value) return
-  const c = captureConfirm(model.value, ids ?? model.value.ready.map((b) => b.id), 'ready')
-  if (c) confirmDialog.value = c
+  const c = captureConfirm(model.value, ids, mode)
+  if (c) {
+    confirmDialog.value = c
+    return
+  }
+  const refused = refusedRows(model.value, ids, mode)
+  if (refused.length === 0) return
+  const reasons = new Set(refused.map((r) => r.refusal))
+  ui.pushToast({
+    kind: 'warning',
+    title: t('cleanup.gc.confirm.nothingRemovable'),
+    description:
+      reasons.size === 1
+        ? t(removalKey(refused[0].refusal))
+        : t('cleanup.gc.confirm.nothingRemovableSeveral'),
+    timeoutMs: 8000
+  })
+}
+function openReady(ids?: string[]): void {
+  openConfirm(ids ?? model.value?.cleanable.map((b) => b.id) ?? [], 'ready')
 }
 function openRemove(ids: string[]): void {
-  if (dialogOpen.value || !model.value) return
-  // Main refuses a detached worktree outright, so it is never put in the dialog: the operator is
-  // told now, not by a job that removed nothing.
-  const skipped = unremovableIds(model.value, ids)
-  if (skipped.length > 0) {
-    ui.pushToast({
-      kind: 'warning',
-      title: t('cleanup.gc.confirm.detachedSkipped', skipped.length, {
-        named: { n: skipped.length }
-      }),
-      description: t('cleanup.gc.confirm.detachedSkippedHint'),
-      timeoutMs: 8000
-    })
-  }
-  const c = captureConfirm(model.value, ids, 'review')
-  if (c) confirmDialog.value = c
+  openConfirm(ids, 'review')
 }
 /** Retry re-opens the confirm for the item's CURRENT bucket — never a dialog that would send nothing. */
 function retry(id: string): void {
   const bucket = model.value?.byId.get(id)?.bucket
   if (bucket === 'ready') openReady([id])
   else if (bucket === 'review') openRemove([id])
+}
+/** "Check again" on a demoted item: main re-asks, the screen refreshes, and the toast says what it found. */
+async function recheck(id: string): Promise<void> {
+  try {
+    const r = await gc.recheck(id)
+    if (r.outcome === 'cleared') {
+      ui.pushToast({ kind: 'success', title: t('cleanup.gc.recheck.cleared'), timeoutMs: 6000 })
+    } else if (r.outcome === 'still-refused') {
+      const block = model.value?.byId.get(id)
+      const v = block ? removability(block) : null
+      ui.pushToast({
+        kind: 'warning',
+        title: t('cleanup.gc.recheck.stillRefused'),
+        description:
+          !v || v.ok
+            ? t(refusalKey((r.code ?? 'not-ready') as RefusalCode))
+            : t(removalKey(v.reason)),
+        timeoutMs: 8000
+      })
+    } else {
+      ui.pushToast({
+        kind: 'warning',
+        title: t('cleanup.gc.recheck.unchecked'),
+        description: r.code ? t(refusalKey(r.code as RefusalCode)) : undefined,
+        timeoutMs: 8000
+      })
+    }
+  } catch (e) {
+    errorToast(t('cleanup.gc.recheck.failed'), e)
+  }
 }
 function errorToast(title: string, e: unknown): void {
   ui.pushToast({
@@ -385,7 +433,9 @@ const nextText = computed(() => {
 
 const showFirstCycle = computed(
   () =>
-    !!prefs.value && !prefs.value.firstReportAcknowledged && (model.value?.ready.length ?? 0) > 0
+    !!prefs.value &&
+    !prefs.value.firstReportAcknowledged &&
+    (model.value?.cleanable.length ?? 0) > 0
 )
 const allClean = computed(() => {
   const tt = model.value?.totals
@@ -531,6 +581,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
     :count="stats.count"
     :bytes="stats.bytes"
     :can-keep="canKeepSelection"
+    :can-remove="canRemoveSelection"
     :asking="askingSelection"
     @remove="openRemove([...checked])"
     @dehydrate="openDehydrate([...checked])"
@@ -571,8 +622,8 @@ async function copyRestoreHint(hint: string): Promise<void> {
       <div class="px-5.5 pt-3">
         <CleanupFirstCycleBanner
           v-if="showFirstCycle"
-          :count="model.ready.length"
-          :bytes="model.totals.ready.bytes"
+          :count="model.cleanable.length"
+          :bytes="model.cleanable.reduce((a, b) => a + b.bytes, 0)"
           :pending="firstCyclePending"
           @enable="runFirstCycle(() => gc.enableAutopilot(), t('cleanup.gc.error.autopilot'))"
           @dismiss="runFirstCycle(() => gc.dismissFirstReport(), t('cleanup.gc.error.dismiss'))"
@@ -681,6 +732,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             @close="selectedId = null"
             @remove="openRemove([$event])"
             @retry="retry($event)"
+            @recheck="recheck($event)"
             @clean-now="openReady([$event])"
             @dehydrate="openDehydrate([$event])"
             @rehydrate="rehydrate($event)"
@@ -735,6 +787,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
   <CleanupBulkConfirmDialog
     v-if="confirmDialog"
     :rows="confirmDialog.rows"
+    :refused="confirmDialog.refused"
     :mode="confirmDialog.mode"
     :stale="confirmStale"
     :opinion-of="gc.opinionFor"

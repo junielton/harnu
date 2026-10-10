@@ -2369,8 +2369,13 @@
         "stoppedAt": "Stopped at “{step}”",
         "nothingChanged": "Nothing was changed.",
         "genericStop": "Harnu stopped this item for a safety check.",
-        "removeBlocked": "Remove is unavailable: this folder holds another worktree. Remove or move that one first.",
-        "removeLocked": "Remove is unavailable: git has this worktree locked. Unlock it first."
+        "removeUnavailable": "Remove is unavailable. {reason}",
+        "cleanUnavailable": "Clean now is unavailable. {reason}",
+        "recheck": "Check again",
+        "removeCommand": "Run",
+        "refusedNote": "The last clean was refused. {reason}",
+        "refusedNoteHint": "It stays out of “Clean ready” and the autopilot skips it until the cause is fixed. Retry tries once more.",
+        "refusedRepeat": "Refused {n} times in a row, so it moved to Needs review."
       },
       "list": {
         "label": "Worktrees by bucket",
@@ -2379,6 +2384,8 @@
       "hero": {
         "clean": "Clean {n} ready · {size} | Clean {n} ready · {size}",
         "empty": "Nothing to clean",
+        "blind": "Start Docker to clean these",
+        "blindTitle": "Docker wasn't running when Harnu scanned, so it could not see which stacks run from these worktrees. Start Docker, then Scan now.",
         "chip": "Cleaning {done}/{total} · {size} freed"
       },
       "selection": {
@@ -2389,13 +2396,16 @@
         "keep": "Keep",
         "ask": "Ask for an opinion",
         "shiftHint": "click to add more",
+        "removeNone": "Nothing selected can be removed",
         "clear": "Clear selection"
       },
       "confirm": {
         "titleWorktrees": "Remove {n} worktree? | Remove {n} worktrees?",
         "titleItems": "Remove {n} item? | Remove {n} items?",
-        "detachedSkipped": "{n} detached worktree can't be removed here | {n} detached worktrees can't be removed here",
-        "detachedSkippedHint": "Harnu cannot archive a worktree with no branch yet, so it leaves it alone. Remove it with git worktree remove.",
+        "nothingRemovable": "Nothing selected can be removed",
+        "nothingRemovableSeveral": "These items can't be removed, each for its own reason. Open one to see why.",
+        "refusedTitle": "Won't be removed ({n})",
+        "refusedSub": "Harnu would refuse these, so they are left out of the count and of the request.",
         "listLabel": "Items to remove",
         "worktreeRow": "{repo} › {name}",
         "volumeRow": "Docker volume {name}",
@@ -2604,6 +2614,32 @@
           "warning": "A removed volume and its data cannot be restored."
         }
       },
+      "recheck": {
+        "cleared": "Checked again: nothing refuses it now",
+        "stillRefused": "Still refused",
+        "unchecked": "Couldn't check it right now",
+        "failed": "Couldn't check again"
+      },
+      "removal": {
+        "reason": {
+          "mainCheckout": "This is a main checkout, which is never removed.",
+          "neverClean": "It is on your never-clean list.",
+          "kept": "You marked it Keep. Remove the mark first.",
+          "inUse": "It is in use right now.",
+          "unsupportedKind": "It has a detached HEAD, so there is no branch to archive it under. Harnu cannot remove it yet.",
+          "sharedStack": "Another stack also runs from this worktree. Stop that one first.",
+          "nestedWorktree": "This folder holds another worktree or checkout. Remove or move that one first.",
+          "tipUnknown": "Harnu could not tell which commit this worktree is on.",
+          "graceNotElapsed": "It has not been quiet long enough yet.",
+          "pathUnresolved": "A path tied to this worktree could not be resolved, so Harnu cannot tell what uses it.",
+          "sessionOpen": "A session is still open in this worktree. Close it first.",
+          "locked": "Git has this worktree locked. Unlock it first.",
+          "cannotUnregister": "Git has no single, unlocked registration for this worktree, so Harnu cannot unregister it and refused it more than once. Check git worktree list.",
+          "protectedNow": "It is protected now (a main checkout, a never-clean path or a Keep mark), and Harnu refused it more than once.",
+          "scanBlind": "Docker wasn't running when Harnu scanned, so it could not see this worktree's stacks. Start Docker, then Scan now.",
+          "stackPresent": "A Docker stack is running from this worktree, and Harnu refused it more than once. Stop the stack first."
+        }
+      },
       "refusal": {
         "changedSinceConfirm": "Changed since you confirmed — review it again.",
         "needsConfirmation": "Needs your confirmation first. Select it and choose Remove.",
@@ -2623,7 +2659,8 @@
         "notReady": "It is no longer ready to clean, so it was left alone.",
         "pathUnresolved": "A path tied to this worktree could not be resolved, so Harnu cannot tell what uses it and left it alone.",
         "stackPresent": "A Docker stack is running from this worktree, so it was left alone.",
-        "dockerUnavailable": "Docker did not answer, so Harnu could not check this worktree safely and left it alone.",
+        "dockerUnavailable": "Docker is not running, so Harnu could not check this worktree safely and left it alone. Start Docker, then Retry.",
+        "scanBlind": "Docker wasn't running when Harnu scanned, so it could not see this worktree's stacks and left it alone. Start Docker, then Scan now.",
         "probeFailed": "Checking this worktree failed, so it was left alone.",
         "nestedWorktree": "Another worktree lives inside this one, so it was left alone.",
         "sharedStack": "Another stack also runs from this worktree, so it was left alone.",

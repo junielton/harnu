@@ -128,6 +128,23 @@ export interface BundleFacts {
 export interface WorktreeBundle extends BundleFacts {
   bucket: Bucket
   reason: ReviewReason | null
+  /**
+   * Set by the gatherer (never the scan) on a ready item that main refused at the reprobe: `code` is
+   * the refusal, `count` how many times in a row. The hero and the autopilot leave such an item out.
+   */
+  reprobeRefusal?: { code: string; count: number }
+  /**
+   * Set when the scan ran while the Docker daemon was down. Its empty `stackIds` then mean "could
+   * not see", not "none", so the reprobe refuses the bundle (`scan-blind`) whatever Docker says at
+   * clean time, until a scan that saw Docker replaces it. Absent when Docker answered, and when
+   * there is no Docker CLI at all (nothing to stop).
+   */
+  dockerBlind?: boolean
+}
+
+/** Every bundle of a gather that could not see Docker, marked so none is cleaned on a blind "no stacks". */
+export function withDockerBlind(bundles: readonly WorktreeBundle[]): WorktreeBundle[] {
+  return bundles.map((b) => ({ ...b, dockerBlind: true }))
 }
 
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`

@@ -406,6 +406,22 @@ export function createGcOps(deps: GcShellDeps): GcOps {
   }
 
   /**
+   * The stacks running now. A stopped daemon is no answer for a bundle that had stacks at the scan
+   * (its containers come back with the daemon), but a bundle that had none has nothing a stopped
+   * daemon could be hiding from this clean: it reads as "no stacks", so one outage does not turn
+   * every unrelated clean into a refusal. Any other listing failure still throws.
+   */
+  const stacksNow = async (b: WorktreeBundle): Promise<{ stacks: StackGroup[] }> => {
+    try {
+      return await deps.listStacks()
+    } catch (err) {
+      const hadStacks = b.stackIds.length > 0 || b.sharedStackIds.length > 0
+      if (err instanceof DockerUnavailableError && !hadStacks) return { stacks: [] }
+      throw err
+    }
+  }
+
+  /**
    * Container ids of the named stacks, from a listing taken now rather than at scan time.
    * Throws before any docker call unless each stack passed a reprobe and still has exactly
    * the containers that reprobe saw, all inside its worktree: a container that started in
@@ -448,6 +464,9 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       } catch (err) {
         return { ok: false, reason: `probe-failed: ${messageOf(err)}` }
       }
+      // The scan could not see Docker, so its "no stacks" proves nothing about this worktree: refuse
+      // before any probe, whatever Docker says now. A scan that saw Docker is what lifts it.
+      if (b.dockerBlind === true) return { ok: false, reason: 'scan-blind' }
       const item = b.item
       // cleanItem refuses a non-harvestable item at its first guard, after the docker steps
       // would already have run, so refuse here before anything destructive.
@@ -517,7 +536,7 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         if (!(await deps.executor.canUnregister(item.repoPath, path))) {
           return { ok: false, reason: 'cannot-unregister' }
         }
-        const { stacks } = await deps.listStacks()
+        const { stacks } = await stacksNow(b)
         // Every container folder on its real path. One that cannot be read and lies inside
         // the worktree or above it may run from it under another name.
         const canonical = await realPaths(folderPathsOf(stacks))
@@ -610,7 +629,7 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         // reprobe, so any stack still touching the worktree would run from a folder about to
         // be trashed, whatever its id: a `compose up` during drop-deps brings the same project
         // id back. Same attribution as the scan and the reprobe.
-        const { stacks } = await deps.listStacks()
+        const { stacks } = await stacksNow(b)
         const canonical = await realPaths([path, ...folderPathsOf(stacks)])
         if (!canonical(path).resolved) return { ok: false, reason: 'path-unresolved' }
         const root = canonicalPathKey(canonical(path).path, platform)

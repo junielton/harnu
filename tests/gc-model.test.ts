@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { bundle, NOW, reapItem } from './gc-fixtures'
+import { removability } from '../src/renderer/src/lib/gc-removability'
 import {
   buildGcModel,
   cleanRequestFor,
+  refusedRows,
   dialogRows,
   captureConfirm,
   dialogBreakdown,
@@ -236,13 +238,15 @@ describe('dialogRows', () => {
     expect(rows[0].chips).not.toContain('volume')
   })
 
-  it('flags rows that hold work no other branch has', () => {
-    const risky = wt('d1', 'review', 1, { reason: reason('closed-unmerged') })
-    const safe = wt('d2', 'review', 1, { reason: reason('open-idle-session') })
-    const m = buildGcModel(snap({ bundles: [risky, safe] }))
-    const rows = dialogRows(m, [risky.item.id, safe.item.id])
+  it('flags every review worktree as one that may hold work no other branch has', () => {
+    const a = wt('d1', 'review', 1, { reason: reason('closed-unmerged') })
+    const b = wt('d2', 'review', 1, { reason: reason('dirty') })
+    const ready = wt('c1', 'ready', 1)
+    const m = buildGcModel(snap({ bundles: [a, b, ready] }))
+    const rows = dialogRows(m, [a.item.id, b.item.id, ready.item.id])
     expect(rows.find((r) => r.name === 'd1')!.risk).toBe(true)
-    expect(rows.find((r) => r.name === 'd2')!.risk).toBe(false)
+    expect(rows.find((r) => r.name === 'd2')!.risk).toBe(true)
+    expect(rows.find((r) => r.name === 'c1')!.risk).toBe(false)
     expect(rows.find((r) => r.name === 'd1')!.reasonCode).toBe('closed-unmerged')
   })
 
@@ -622,5 +626,180 @@ describe('detached worktrees — what gc:clean cannot remove is never sent', () 
   it('orphan volumes stay removable', () => {
     const m = buildGcModel(sample())
     expect(isRemovable(m.byId.get('volume:pg_data')!)).toBe(true)
+  })
+})
+
+describe('honest Remove: what main refuses is never offered, whatever the surface', () => {
+  const lockedB = (name: string): ReturnType<typeof wt> =>
+    wt(name, 'review', GIB, { reason: reason('locked'), locked: true })
+
+  function mixedSnap(): {
+    s: GcSnapshot
+    ok: string
+    locked: string
+    shared: string
+    open: string
+  } {
+    const ok = wt('ok', 'review', 2 * GIB, { reason: reason('dirty') })
+    const locked = wt('locked', 'review', GIB, { reason: reason('locked'), locked: true })
+    const shared = wt('shared', 'review', GIB, {
+      reason: reason('shared-stack'),
+      sharedStackIds: ['other']
+    })
+    const open = wt('open', 'review', GIB, {
+      reason: reason('open-idle-session'),
+      session: 'open-idle'
+    })
+    return {
+      s: snap({ bundles: [ok, locked, shared, open] }),
+      ok: ok.item.id,
+      locked: locked.item.id,
+      shared: shared.item.id,
+      open: open.item.id
+    }
+  }
+
+  it('a review request carries only what main takes, and confirms only those', () => {
+    const { s, ok, locked, shared, open } = mixedSnap()
+    const req = cleanRequestFor(buildGcModel(s), [ok, locked, shared, open], 'review')
+    expect(req.ids).toEqual([ok])
+    expect(req.options.confirmed).toEqual([ok])
+    expect(Object.keys(req.options.expected)).toEqual([ok])
+  })
+
+  it('the captured confirm lists the refused ones apart, with the reason and the command to fix it', () => {
+    const { s, ok, locked, shared, open } = mixedSnap()
+    const c = captureConfirm(buildGcModel(s), [ok, locked, shared, open], 'review')!
+    expect(c.ids).toEqual([ok])
+    expect(c.rows.map((r) => r.id)).toEqual([ok])
+    expect(c.refused.map((r) => [r.id, r.refusal])).toEqual([
+      [locked, 'locked'],
+      [shared, 'shared-stack'],
+      [open, 'session-open']
+    ])
+    expect(c.refused[0].hint).toBe('git worktree unlock /ws/locked')
+    // The refused group is not in the count the dialog shows, nor in the request.
+    expect(dialogBreakdown(c.rows).worktrees).toBe(1)
+    expect(c.request.ids).toEqual([ok])
+  })
+
+  it('no dialog opens when nothing is removable, but the reasons are still there to explain it', () => {
+    const { s, locked, shared, open } = mixedSnap()
+    const m = buildGcModel(s)
+    expect(captureConfirm(m, [locked, shared, open], 'review')).toBeNull()
+    expect(refusedRows(m, [locked, shared, open, 'ghost'], 'review').map((r) => r.refusal)).toEqual(
+      ['locked', 'shared-stack', 'session-open']
+    )
+  })
+
+  it('"Select all" in a repo ticks only what can be removed', () => {
+    const { s, ok } = mixedSnap()
+    const m = buildGcModel(s)
+    expect(selectAllInRepo(m, '/ws/org/proj/www')).toEqual([ok])
+  })
+
+  it('an item that is refused can still be ticked one by one (to Keep or Dehydrate it)', () => {
+    const { s, locked } = mixedSnap()
+    const m = buildGcModel(s)
+    expect(toggleChecked(m, new Set(), locked).has(locked)).toBe(true)
+  })
+
+  it('the hero counts only what a click can clean: not a refused item, not one main refused lately', () => {
+    const fine = wt('c1', 'ready', 500 * MIB)
+    const stuck = wt('c2', 'ready', 400 * MIB)
+    stuck.reprobeRefusal = { code: 'cannot-unregister', count: 1 }
+    const m = buildGcModel(snap({ bundles: [fine, stuck] }))
+    expect(m.cleanable.map((b) => b.id)).toEqual([fine.item.id])
+    expect(m.ready).toHaveLength(2) // the map and the list still show it as ready
+    expect(heroState(m, null, true)).toMatchObject({ kind: 'clean', count: 1, bytes: 500 * MIB })
+  })
+
+  it('the hero is empty when every ready item was refused', () => {
+    const stuck = wt('c2', 'ready', 400 * MIB)
+    stuck.reprobeRefusal = { code: 'tip-unknown', count: 1 }
+    expect(heroState(buildGcModel(snap({ bundles: [stuck] })), null, true)).toEqual({
+      kind: 'empty'
+    })
+  })
+
+  it('a ready request still carries the item the operator retries on purpose', () => {
+    const stuck = wt('c2', 'ready', 400 * MIB)
+    stuck.reprobeRefusal = { code: 'cannot-unregister', count: 1 }
+    const m = buildGcModel(snap({ bundles: [stuck] }))
+    expect(cleanRequestFor(m, [stuck.item.id], 'ready').ids).toEqual([stuck.item.id])
+  })
+
+  it('a locked item keeps removability reason "locked" while its failure says cannot-unregister', () => {
+    const b = lockedB('l')
+    const m = buildGcModel(snap({ bundles: [b] }))
+    expect(removability(m.byId.get(b.item.id)!)).toMatchObject({ ok: false, reason: 'locked' })
+  })
+})
+
+describe('a scan that could not see Docker: the hero says so instead of offering a clean main would refuse', () => {
+  const blind = (name: string): ReturnType<typeof wt> => {
+    const b = wt(name, 'ready', 400 * MIB)
+    b.dockerBlind = true
+    return b
+  }
+
+  it('leaves the blind ones out of what a click cleans', () => {
+    const m = buildGcModel(snap({ bundles: [blind('a'), blind('b')] }))
+    expect(m.cleanable).toEqual([])
+    expect(m.ready).toHaveLength(2)
+  })
+
+  it('the hero is blocked, naming how many wait for Docker', () => {
+    const m = buildGcModel(snap({ bundles: [blind('a'), blind('b')] }))
+    expect(heroState(m, null, true)).toEqual({ kind: 'blind', count: 2, bytes: 800 * MIB })
+  })
+
+  it('a blocked hero never turns into a running one: a clean in flight still shows its chip', () => {
+    const m = buildGcModel(snap({ bundles: [blind('a')] }))
+    expect(heroState(m, { done: 1, total: 2, freedBytes: 5 }, true).kind).toBe('running')
+  })
+
+  it('stays empty when there is nothing ready at all', () => {
+    expect(heroState(buildGcModel(snap()), null, true)).toEqual({ kind: 'empty' })
+  })
+})
+
+describe('Keep and never-clean are read from the current prefs, not the scan-time flags', () => {
+  const prefsWith = (over: Partial<ReturnType<typeof defaultGcPrefs>>): GcSnapshot['prefs'] => ({
+    ...defaultGcPrefs(),
+    ...over
+  })
+
+  it('a Keep mark added since the scan hides Remove at once', () => {
+    const d = wt('d1', 'review', GIB, { reason: reason('dirty') })
+    const m = buildGcModel(
+      snap({ bundles: [d], prefs: prefsWith({ keep: { [d.item.id]: 'merged' as never } }) })
+    )
+    expect(removability(m.byId.get(d.item.id)!)).toEqual({ ok: false, reason: 'kept' })
+    expect(cleanRequestFor(m, [d.item.id], 'review').ids).toEqual([])
+    expect(selectAllInRepo(m, d.item.repoPath)).toEqual([])
+  })
+
+  it('a worktree path added to neverClean since the scan hides Remove at once', () => {
+    const d = wt('d1', 'review', GIB, { reason: reason('dirty') })
+    const m = buildGcModel(snap({ bundles: [d], prefs: prefsWith({ neverClean: ['/ws/d1/'] }) }))
+    expect(removability(m.byId.get(d.item.id)!)).toEqual({ ok: false, reason: 'never-clean' })
+  })
+
+  it('so does the repo path, which covers every worktree of that repo', () => {
+    const a = wt('a', 'ready', GIB)
+    const m = buildGcModel(
+      snap({ bundles: [a], prefs: prefsWith({ neverClean: [a.item.repoPath] }) })
+    )
+    expect(removability(m.byId.get(a.item.id)!)).toEqual({ ok: false, reason: 'never-clean' })
+    expect(m.cleanable).toEqual([])
+  })
+
+  it('leaves everything else removable', () => {
+    const d = wt('d1', 'review', GIB, { reason: reason('dirty') })
+    const m = buildGcModel(
+      snap({ bundles: [d], prefs: prefsWith({ neverClean: ['/elsewhere'], keep: {} }) })
+    )
+    expect(removability(m.byId.get(d.item.id)!)).toEqual({ ok: true })
   })
 })

@@ -13,7 +13,9 @@ import * as path from 'node:path'
 const h = vi.hoisted(() => ({
   userData: '',
   snapshot: null as null | { repos: Array<{ repoPath: string; items: unknown[] }> },
-  fateInputs: new Map<string, unknown>()
+  fateInputs: new Map<string, unknown>(),
+  /** Docker CLI present, daemon not answering. False with `dockerIsUnavailable` true = no CLI at all. */
+  daemonDown: false
 }))
 
 vi.mock('electron', () => ({
@@ -57,6 +59,7 @@ vi.mock('../src/main/gc/gc-shell', async () => {
   return {
     presenceFromSets: () => 'none',
     dockerIsUnavailable: () => true,
+    dockerDaemonDown: () => h.daemonDown,
     findForeignCheckouts: async () => [],
     resolveRealPaths: async () => AS_GIVEN
   }
@@ -144,6 +147,7 @@ beforeEach(() => {
   mkdirSync(repo, { recursive: true })
   h.snapshot = null
   h.fateInputs = new Map()
+  h.daemonDown = false
 })
 
 afterEach(() => {
@@ -184,6 +188,29 @@ describe('gatherGc: a release mark reaches the bundle builder (G3)', () => {
     scanWithWorktree()
     const g = await gatherGc({ ...released({}, 'b'.repeat(40)), graceDays: 2 }, NOW)
     expect(g.staleReleases).toEqual([item().id])
+  })
+})
+
+describe('gatherGc: a scan that could not see Docker says so on every bundle', () => {
+  function scan(): void {
+    mkdirSync(wt, { recursive: true })
+    h.snapshot = { repos: [{ repoPath: repo, items: [item()] }] }
+    h.fateInputs = new Map([[item().id, { facts: facts(), localTip: TIP }]])
+  }
+
+  it('daemon down while scanning: every bundle is blind', async () => {
+    scan()
+    h.daemonDown = true
+    const g = await gatherGc({ ...released(), graceDays: 2 }, NOW)
+    expect(g.bundles).toHaveLength(1)
+    expect(g.bundles.every((b) => b.dockerBlind === true)).toBe(true)
+  })
+
+  it('no Docker CLI at all: nothing to stop, so no bundle is blind', async () => {
+    scan()
+    const g = await gatherGc({ ...released(), graceDays: 2 }, NOW)
+    expect(g.bundles[0]!.bucket).toBe('ready')
+    expect(g.bundles[0]!.dockerBlind).toBeUndefined()
   })
 })
 
