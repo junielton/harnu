@@ -32,6 +32,8 @@ function rig(opts: {
   /** Replaces the real reprobe: the refusal the remove still meets AFTER the prep ran. */
   reprobe?: GcOps['reprobe']
   workStamp?: (path: string) => Promise<string | null>
+  /** More bundles in the same gather (a second id in the same job). */
+  extra?: WorktreeBundle[]
   /** What the git side does: throws a GcStepError to halt at that step. */
   cleanGit?: GcOps['cleanGit']
   folderExists?: (path: string) => Promise<boolean>
@@ -69,7 +71,10 @@ function rig(opts: {
   const deps: ManualCleanDeps = {
     prefs: () => ({ ...defaultGcPrefs(), ...opts.prefs }),
     gather: async () => ({
-      bundles: [structuredClone(prepared && opts.after ? opts.after : opts.before)],
+      bundles: [
+        structuredClone(prepared && opts.after ? opts.after : opts.before),
+        ...structuredClone(opts.extra ?? [])
+      ],
       orphanVolumes: []
     }),
     gatherFresh: async () => ({
@@ -621,6 +626,81 @@ describe('several preps for one item (delta 2)', () => {
     })
     const res = await run(r, before, asked(before, [UNLOCK, STOP]))
     expect(res).toMatchObject({ ok: false, error: 'nested-worktree' })
+    expect(r.log.filter((l) => l.startsWith('prepare'))).toEqual([])
+  })
+})
+
+// Delta 3 item 2: a prep that THROWS (instead of answering) is an ordinary failure of that item.
+describe('a prep that throws is rolled back and does not stop the job (delta 3)', () => {
+  const UNLOCK: GcPrep = { kind: 'unlock' }
+  const CLOSE: GcPrep = { kind: 'close-session' }
+  const both = () =>
+    bundle(PATH, 'review', {
+      locked: true,
+      session: 'open-idle',
+      reason: { code: 'locked', detail: 'x' }
+    })
+
+  const throwingClose =
+    (log: string[], undoThrows = false): ManualCleanDeps['prepare'] =>
+    async (p, _b, o) => {
+      if (o?.dry) return { ok: true }
+      if (p.kind === 'close-session') throw new Error('boom')
+      log.push(`prepare ${p.kind}`)
+      return {
+        ok: true,
+        undo: async () => {
+          log.push(`undo ${p.kind}`)
+          if (undoThrows) throw new Error('git is gone')
+        }
+      }
+    }
+
+  it('the steps that ran are undone, in reverse, and the item gets a recorded result', async () => {
+    const before = both()
+    const log: string[] = []
+    const r = rig({ before, after: unlocked(), prepare: throwingClose(log) })
+    const res = await run(r, before, asked(before, [UNLOCK, CLOSE]))
+    expect(log).toEqual(['prepare unlock', 'undo unlock'])
+    expect(res).toMatchObject({ ok: false, haltedAt: 'reprobe' })
+    expect(res!.error).toMatch(/^prep-failed: boom/)
+    expect(r.log).not.toContain('cleanGit')
+  })
+
+  it('an undo that fails too is said, next to the cause', async () => {
+    const before = both()
+    const log: string[] = []
+    const r = rig({ before, after: unlocked(), prepare: throwingClose(log, true) })
+    const res = await run(r, before, asked(before, [UNLOCK, CLOSE]))
+    expect(res!.error).toMatch(/^prep-failed: boom/)
+    expect(res!.error).toContain('rollback-failed (git is gone)')
+  })
+
+  it('the next id in the same job is still processed', async () => {
+    const before = both()
+    const next = bundle('/ws/wt/b', 'ready')
+    const log: string[] = []
+    const r = rig({ before, after: unlocked(), extra: [next], prepare: throwingClose(log) })
+    const o = asked(before, [UNLOCK, CLOSE])
+    o.expected![next.item.id] = expectedOf(next)
+    submitManualClean(r.deps, [before.item.id, next.item.id], o)
+    await r.deps.queue.idle()
+    const results = r.done[0].results
+    expect(results.map((x) => x.ok)).toEqual([false, true])
+    expect(r.log).toContain('cleanGit')
+  })
+
+  it('a throw while validating the dry run is the same failure, with nothing run', async () => {
+    const before = both()
+    const r = rig({
+      before,
+      after: unlocked(),
+      prepare: async () => {
+        throw new Error('probe exploded')
+      }
+    })
+    const res = await run(r, before, asked(before, [UNLOCK, CLOSE]))
+    expect(res!.error).toMatch(/^prep-failed: probe exploded/)
     expect(r.log.filter((l) => l.startsWith('prepare'))).toEqual([])
   })
 })

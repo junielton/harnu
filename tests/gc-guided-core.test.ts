@@ -96,6 +96,7 @@ function deps(
       )
     },
     sessionFolders: async () => [],
+    worktreeRoots: async () => [],
     walkForeign: async () => [],
     ownerOf: async () => 'root',
     currentUser: () => 'me',
@@ -909,5 +910,68 @@ describe('the prep is journalled before it changes anything (delta 2 item 6)', (
       containerNames: ['ctr-c1', 'ctr-c2'],
       bindSources: expect.arrayContaining([`${WT}/x`])
     })
+  })
+})
+
+// Delta 3 item 1: "main checkout" is the main checkout's OWN tree. Harnu keeps its worktrees inside it
+// (`.claude/worktrees/*`), and a bind source under one of those belongs to that worktree.
+describe('the main checkout excludes the worktrees nested inside it (delta 3)', () => {
+  const MAIN = OTHER // review() uses it as the repo's main checkout
+  const run = (mounts: string[], over: Partial<GuidedDeps> = {}, dry = true) =>
+    prepareClean(
+      { kind: 'stop-stack', stackIds: ['infra'] },
+      review({ sharedStackIds: ['infra'] }, 'shared-stack'),
+      deps(fresh(), {
+        stacks: [stack('infra', [container('c1', '/ws/infra', [...mounts, `${WT}/data`])])],
+        ...over
+      }),
+      { dry }
+    )
+
+  it('a stack mounting two nested worktrees (and no session) may be stopped', async () => {
+    const r = await run([`${MAIN}/.claude/worktrees/a/src`, `${MAIN}/.claude/worktrees/b/src`])
+    expect(r).toMatchObject({ ok: true })
+  })
+
+  it('a bind source in the main checkout’s own tree is still refused', async () => {
+    expect(await run([`${MAIN}/src`])).toEqual({ ok: false, error: 'stack-is-main-checkout' })
+    expect(await run([MAIN])).toEqual({ ok: false, error: 'stack-is-main-checkout' })
+  })
+
+  it('a nested worktree and the main tree together: the main tree decides', async () => {
+    expect(await run([`${MAIN}/.claude/worktrees/a/src`, `${MAIN}/src`])).toEqual({
+      ok: false,
+      error: 'stack-is-main-checkout'
+    })
+  })
+
+  it('any path git lists as a worktree counts, wherever it sits inside main', async () => {
+    const listed = { worktreeRoots: async () => [MAIN, `${MAIN}/packages/wt-c`] }
+    expect(await run([`${MAIN}/packages/wt-c/src`], listed)).toMatchObject({ ok: true })
+    expect(await run([`${MAIN}/packages/other/src`], listed)).toEqual({
+      ok: false,
+      error: 'stack-is-main-checkout'
+    })
+  })
+
+  it('a nested worktree with a live session still keeps the stack off the table', async () => {
+    const r = await run([`${MAIN}/.claude/worktrees/a/src`], {
+      sessionFolders: async () => [{ folder: `${MAIN}/.claude/worktrees/a`, state: 'live' }]
+    })
+    expect(r).toEqual({ ok: false, error: 'stack-used-elsewhere' })
+  })
+
+  it('the guidance does not call it the main checkout either', async () => {
+    const g = await guidanceFor(
+      review({ sharedStackIds: ['infra'] }, 'shared-stack'),
+      deps(fresh(), {
+        stacks: [
+          stack('infra', [
+            container('c1', '/ws/infra', [`${MAIN}/.claude/worktrees/a/src`, `${WT}/d`])
+          ])
+        ]
+      })
+    )
+    expect(g.stacks[0].stopBlocked).toBeNull()
   })
 })

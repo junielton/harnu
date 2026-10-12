@@ -64,6 +64,8 @@ export interface GuidedDeps {
   /** Parks (kills, keeps the conversation) one session. */
   park(key: string): void
   listStacks(): Promise<{ stacks: StackGroup[] }>
+  /** Every path git lists as a worktree of this repo (the main checkout included). */
+  worktreeRoots(repoPath: string): Promise<string[]>
   /** Every folder with a running Harnu session (`live`) or one parked on disk (`parked`). */
   sessionFolders(): Promise<Array<{ folder: string; state: 'live' | 'parked' }>>
   realPaths(paths: string[]): Promise<CanonicalPath>
@@ -164,6 +166,15 @@ export function parseLockReasons(porcelain: string): Map<string, string | null> 
   return out
 }
 
+/** The paths of the `worktree <path>` lines of `git worktree list --porcelain`, unquoted. */
+export function parseWorktreePaths(porcelain: string): string[] {
+  return porcelain
+    .split(/\r?\n/)
+    .filter((l) => l.startsWith('worktree '))
+    .map((l) => unquoteGitC(l.slice('worktree '.length)))
+    .filter(Boolean)
+}
+
 /** The command that starts Docker on this platform; null where it is an app to open by hand. */
 export function dockerStartHint(platform: string): string | null {
   if (platform === 'darwin') return 'open -a Docker'
@@ -207,10 +218,12 @@ async function stackViews(
   const wanted = stacks.filter((s) => ids.includes(s.id))
   const raw = wanted.flatMap((s) => s.containers.flatMap(containerFolderPaths))
   const sessions = await deps.sessionFolders()
+  const listed = await deps.worktreeRoots(b.item.repoPath).catch(() => [])
   const canonical = await deps.realPaths([
     path,
     b.item.repoPath,
     ...raw,
+    ...listed,
     ...sessions.map((s) => s.folder)
   ])
   const root = canonicalPathKey(canonical(path).path, deps.platform)
@@ -220,6 +233,18 @@ async function stackViews(
     .map((s) => canonicalPathKey(canonical(s.folder).path, deps.platform))
     .filter((f) => !isInside(f, root))
   const main = canonicalPathKey(canonical(b.item.repoPath).path, deps.platform)
+  // The main checkout is its OWN tree: Harnu keeps worktrees inside it (`.claude/worktrees/*`), and git
+  // may list others, so a folder under any of those belongs to that worktree, not to main.
+  const nestedRoots = [
+    ...listed
+      .map((p) => canonicalPathKey(canonical(p).path, deps.platform))
+      .filter((p) => p !== main),
+    `${main}/.claude/worktrees`
+  ]
+  const ownsMain = (d: string): boolean =>
+    (d === main || isInside(d, main)) &&
+    !nestedRoots.some((r) => d !== r && isInside(d, r)) &&
+    d !== `${main}/.claude/worktrees`
   return Promise.all(
     wanted.map(async (stack): Promise<StackView> => {
       const dirs = [
@@ -229,7 +254,7 @@ async function stackViews(
       // The main checkout's own stack is never stopped from here (a conservative reading: any folder
       // of the repo that is not this worktree counts when it lies under the main checkout).
       let blocked: StackView['blocked'] = null
-      if (others.some((d) => d === main || isInside(d, main))) blocked = 'main-checkout'
+      if (others.some(ownsMain)) blocked = 'main-checkout'
       else if (holders.some((f) => others.some((d) => isInside(f, d) || isInside(d, f)))) {
         blocked = 'in-use-elsewhere'
       }

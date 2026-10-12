@@ -4,7 +4,13 @@
 
 import type { GcShellDeps } from './gc-shell'
 import type { GuidedDeps, GuidedSession } from './gc-guided'
-import { createGitGuided, sessionCountsHere, sessionStateOf, userNameOfUid } from './gc-guided'
+import {
+  createGitGuided,
+  parseWorktreePaths,
+  sessionCountsHere,
+  sessionStateOf,
+  userNameOfUid
+} from './gc-guided'
 
 export async function defaultGuidedDeps(shellDeps: GcShellDeps): Promise<GuidedDeps> {
   const [fsp, os, pty, hookBridge, fleet, hibernation, containersCore, shell, containersShell] =
@@ -86,6 +92,10 @@ export async function defaultGuidedDeps(shellDeps: GcShellDeps): Promise<GuidedD
       }
       return out
     },
+    worktreeRoots: async (repoPath) =>
+      parseWorktreePaths(
+        await shellDeps.executor.git(repoPath, ['worktree', 'list', '--porcelain'])
+      ),
     listStacks: () => shellDeps.listStacks(),
     realPaths: (paths) => shell.resolveRealPaths(paths, (p) => fsp.realpath(p)),
     docker: containersShell.dockerActions,

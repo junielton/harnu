@@ -239,59 +239,67 @@ export function submitManualClean(
         for (const step of ran.splice(0)) await step.settle?.()
       }
       if (preps.length > 0) {
-        if (!confirmed.has(id)) return refused(id, 'needs-confirmation')
-        if (!deps.prepare || !deps.gatherFresh || !deps.dryReprobe) {
-          return refused(id, 'prep-not-applicable')
-        }
-        const forcedPre = b.bucket !== 'ready' && !retryOf(b)
-        // 1. The work guards, before anything is touched.
-        const work = await workRefusal(b, forcedPre)
-        if (work) return refused(id, work)
-        // 2. Everything else the remove would meet, with every step's own cause assumed fixed.
-        const adapted = assumeFor(preps, b)
-        const pipeline = pipelineRefusal(adapted, {
-          removeVolumes: false,
-          confirmReview: forcedPre
-        })
-        if (pipeline) return refused(id, pipeline)
-        for (const prep of preps) {
-          const vetted = await deps.prepare(prep, b, { dry: true })
-          if (!vetted.ok) return refused(id, vetted.error)
-        }
+        // Nothing a step does may escape: a throw is that item's failure, the steps that ran are put back
+        // (in reverse), and the job goes on with the next id.
         try {
-          const dry = await deps.dryReprobe(
-            retryOf(adapted) ? { ...adapted, bucket: 'ready', reason: null } : adapted,
-            forcedPre
-          )
-          if (!dry.ok) return refused(id, dry.reason)
-        } catch (err) {
-          return refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
-        }
-        // 3. Only now the steps, in order. A failing step puts back the ones before it.
-        for (const prep of preps) {
-          const prepared = await deps.prepare(prep, b)
-          if (!prepared.ok) return bail(refused(id, prepared.error))
-          ran.push({ undo: prepared.undo ?? null, settle: prepared.settle ?? null })
-        }
-        let again: WorktreeBundle | undefined
-        try {
-          again = (await deps.gatherFresh()).bundles.find((x) => x.item.id === id)
+          if (!confirmed.has(id)) return refused(id, 'needs-confirmation')
+          if (!deps.prepare || !deps.gatherFresh || !deps.dryReprobe) {
+            return refused(id, 'prep-not-applicable')
+          }
+          const forcedPre = b.bucket !== 'ready' && !retryOf(b)
+          // 1. The work guards, before anything is touched.
+          const work = await workRefusal(b, forcedPre)
+          if (work) return refused(id, work)
+          // 2. Everything else the remove would meet, with every step's own cause assumed fixed.
+          const adapted = assumeFor(preps, b)
+          const pipeline = pipelineRefusal(adapted, {
+            removeVolumes: false,
+            confirmReview: forcedPre
+          })
+          if (pipeline) return refused(id, pipeline)
+          for (const prep of preps) {
+            const vetted = await deps.prepare(prep, b, { dry: true })
+            if (!vetted.ok) return refused(id, vetted.error)
+          }
+          try {
+            const dry = await deps.dryReprobe(
+              retryOf(adapted) ? { ...adapted, bucket: 'ready', reason: null } : adapted,
+              forcedPre
+            )
+            if (!dry.ok) return refused(id, dry.reason)
+          } catch (err) {
+            return refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
+          }
+          // 3. Only now the steps, in order. A failing step puts back the ones before it.
+          for (const prep of preps) {
+            const prepared = await deps.prepare(prep, b)
+            if (!prepared.ok) return bail(refused(id, prepared.error))
+            ran.push({ undo: prepared.undo ?? null, settle: prepared.settle ?? null })
+          }
+          let again: WorktreeBundle | undefined
+          try {
+            again = (await deps.gatherFresh()).bundles.find((x) => x.item.id === id)
+          } catch (err) {
+            return bail(
+              refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
+            )
+          }
+          if (!again) return bail(refused(id, 'unknown-item'))
+          const hardAgain = refusalFor(again, prefs, { confirmed: true })
+          if (hardAgain) return bail(refused(id, hardAgain))
+          // Everything the operator saw must still hold; only the bucket and reason may differ now.
+          const drift = bundleChangedSince(again, {
+            ...seen,
+            bucket: again.bucket,
+            reasonCode: again.reason?.code ?? null
+          })
+          if (drift) return bail(refused(id, 'changed-since-confirm'))
+          b = afterPrep(preps, again)
         } catch (err) {
           return bail(
-            refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
+            refused(id, `prep-failed: ${err instanceof Error ? err.message : String(err)}`)
           )
         }
-        if (!again) return bail(refused(id, 'unknown-item'))
-        const hardAgain = refusalFor(again, prefs, { confirmed: true })
-        if (hardAgain) return bail(refused(id, hardAgain))
-        // Everything the operator saw must still hold; only the bucket and reason may differ now.
-        const drift = bundleChangedSince(again, {
-          ...seen,
-          bucket: again.bucket,
-          reasonCode: again.reason?.code ?? null
-        })
-        if (drift) return bail(refused(id, 'changed-since-confirm'))
-        b = afterPrep(preps, again)
       }
       // Anything that is not a proven ready item needs its OWN confirmation, and then takes
       // the forced ops.
@@ -393,7 +401,13 @@ export function submitManualClean(
 
     for (const id of unique) {
       reporter.onStart(id)
-      const result = id.startsWith(VOLUME_PREFIX) ? await cleanVolume(id) : await cleanBundle(id)
+      // The last net: whatever throws for one id is that id's failure, never the whole job's.
+      let result: GcItemResult
+      try {
+        result = id.startsWith(VOLUME_PREFIX) ? await cleanVolume(id) : await cleanBundle(id)
+      } catch (err) {
+        result = refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
       results.push(result)
       if (result.ok) deps.state.failures.delete(id)
       else if (result.haltedAt === 'reprobe') {
