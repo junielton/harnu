@@ -8833,7 +8833,11 @@ volume), size right.
   or base, GitHub does not protect it (branch protection or an active ruleset), it tracks an upstream
   remote whose tip is the local tip or one of its ancestors, it is not in the Reaper's protected list, and
   the remote-delete kill switch (Settings → Cleanup) is off. Any answer Harnu could not get (`gh`
-  missing, a non-GitHub remote, a failed call) means the box is not drawn. The delete goes to the
+  missing, a non-GitHub remote, a failed call) means the box is not drawn. The answers are **asked when
+  the dialog opens**, never on a scan, and only for the rows that could qualify: until main answers, an
+  11px `--text-3` line "Checking whether the branch can be deleted on GitHub…" (`data-testid=
+"bulk-remote-checking"`, `role="status"`) stands where the box will be, then the box appears or nothing
+  does. Answers are shared and kept ten minutes; main asks again when you confirm. The delete goes to the
   branch's own upstream remote, never an assumed `origin`. When only some rows
   qualify, an 11px `--text-3` count under it reads "Applies to {n} of {total}". Confirm then sends
   `deleteRemote: [ids of the qualifying rows]`; unticked it sends nothing. A remote that refuses is
@@ -8907,8 +8911,20 @@ now is not), and no existing folder spells the same slug.
   has memory notes a second line "{n} of them also hold Claude memory notes for that folder."
   (`orphan-dialog-memory`); footer "{n} folders · {size}" (`orphan-dialog-total`), **Cancel**
   (focused first) and **Move to trash** (`Trash2`, Danger). Esc closes the dialog only.
-- Confirming sends `gc:clean(ids, { confirmed, expected })`, each id `transcripts:<slug>` confirmed by
-  its own entry; main looks again right before the trash and refuses what changed ("a session wrote more")
+- **Proven gone, or only "Folder not found".** A folder counts as gone only when that is **positively
+  proven**: Harnu removed it itself (its own ledger), git lists it as prunable in a repo that still exists,
+  or it sits under a known worktrees parent (`<repo>/.claude/worktrees`, `<repo>-worktrees`) that exists
+  and can be read. A folder that is merely missing (an sshfs share or a USB disk that is not connected looks
+  the same) is listed apart under a **"Folder not found"** eyebrow in `--warning`, with a 11px `--text-3`
+  note ("Harnu can't confirm these folders were deleted. They may be on a drive that is not connected.
+  Check before you delete."), **the full path** of each folder in 12px mono `--text` (`data-testid=
+"orphan-fullpath"`, wrapping, no ellipsis) and its own **Delete all** (`orphan-notfound-delete-all`).
+  Its confirm dialog shows the full paths too and adds a checkbox, "I checked: this folder is really gone,
+  not on a drive that's unplugged." (`orphan-dialog-ack`); **Move to trash stays disabled until it is
+  ticked**. The recency rule (nothing written in the last 24 hours) applies to both groups, and both go to
+  the trash.
+- Confirming sends `gc:clean(ids, { confirmed, expected })` (plus `confirmedNotFound` for the ticked
+  not-found ids), each id `transcripts:<slug>` confirmed by its own entry; main looks again right before the trash and refuses what changed ("a session wrote more")
   or is no longer an orphan. A refusal is shown by the usual toast.
 
 **Left by removed worktrees (unit D, AC-D3).** A fourth block on the Docker card, drawn only when the
