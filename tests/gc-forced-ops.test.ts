@@ -76,6 +76,7 @@ function rig(
     presence?: SessionPresence
     head?: string | null
     archiveWipThrows?: boolean
+    archiveReflogThrows?: boolean
     trackedDirty?: boolean
   } = {}
 ): Rig {
@@ -109,6 +110,7 @@ function rig(
     },
     archiveReflog: async (_repo, prefix) => {
       order.push('archiveReflog')
+      if (over.archiveReflogThrows) throw new Error('reflog-limit: too many')
       return [`${prefix}/aaaaaaaaaaaa`]
     },
     detachSidebar: async () => undefined,
@@ -283,11 +285,22 @@ describe('a detached worktree is archived by its HEAD sha, then removed (NDE-A, 
     })
   })
 
+  it('a reflog refusal stops the run before ANY archive ref is written (delta-3)', async () => {
+    const r = rig({ archiveReflogThrows: true })
+    const result = await run(detachedBundle(), r)
+    expect(result).toMatchObject({ ok: false, haltedAt: 'reprobe' })
+    expect(result.error).toContain('archive-failed: reflog-limit')
+    expect(r.order).toEqual(['archiveReflog'])
+    expect(r.archived).toEqual([])
+  })
+
   it('also archives the reflog-only commits in the reprobe, before anything destructive (delta-1, item 6)', async () => {
     const r = rig()
     await run(detachedBundle(), r)
     const at = (what: string): number => r.order.indexOf(what)
-    expect(at('archiveReflog')).toBeGreaterThan(at('archiveWip'))
+    // first: a reflog refusal (too many commits) must leave no tip or wip ref behind
+    expect(at('archiveReflog')).toBeGreaterThanOrEqual(0)
+    expect(at('archiveReflog')).toBeLessThan(at('archiveTip'))
     for (const destructive of ['docker stop', 'docker rm', 'removeDir', 'trash']) {
       expect(at(destructive), destructive).toBeGreaterThan(at('archiveReflog'))
     }

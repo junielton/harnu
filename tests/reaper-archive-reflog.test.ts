@@ -10,6 +10,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import {
   REFLOG_REF_LIMIT,
+  archiveReflog,
   createReflogArchiver,
   defaultReflogIo,
   type ReflogIo
@@ -95,7 +96,7 @@ describe('archiveReflog — nothing is dropped silently (delta-2, item 1)', () =
 
     const prefix = `refs/archive/detached/scale-b-${n}/reflog`
     await expect(createReflogArchiver().archive(repo, prefix, wt)).rejects.toThrow(
-      new RegExp(`reflog-limit.*600.*${REFLOG_REF_LIMIT}`, 's')
+      new RegExp(`reflog-limit.*600 separate lines.*more than the ${REFLOG_REF_LIMIT} tips`, 's')
     )
     expect(refsUnder(prefix)).toEqual([])
   })
@@ -114,54 +115,69 @@ describe('archiveReflog — nothing is dropped silently (delta-2, item 1)', () =
   })
 })
 
-describe('archiveReflog — a handful of git calls, not one per entry (delta-2, item 3)', () => {
-  it('reads the reflog, checks the objects and the reachability in bulk', async () => {
+describe('archiveReflog — a handful of git calls, not one per entry (delta-2, item 3; delta-3)', () => {
+  it('reads the reflog, checks the objects and the reachability in bulk, and writes the refs in ONE call', async () => {
     const { wt, moveTo } = worktree()
     for (let i = 0; i < 80; i++) moveTo(leaf(i))
     moveTo(git(repo, 'rev-parse', 'HEAD'))
     const { io, calls } = counting()
     const prefix = `refs/archive/detached/scale-d-${n}/reflog`
-    await createReflogArchiver({ io }).archive(repo, prefix, wt)
-    const reads = calls.filter((a) => a[0] !== 'update-ref')
-    expect(reads.map((a) => a[0])).toEqual(['reflog', 'cat-file', 'rev-list'])
-    expect(calls.filter((a) => a[0] === 'update-ref')).toHaveLength(80)
+    const written = await createReflogArchiver({ io }).archive(repo, prefix, wt)
+    expect(written).toHaveLength(80)
+    expect(calls.map((a) => a[0])).toEqual(['reflog', 'cat-file', 'rev-list', 'update-ref'])
+    expect(calls.at(-1)).toEqual(['update-ref', '--stdin'])
+    expect(refsUnder(prefix)).toHaveLength(80)
   })
 
-  it('skips the whole second pass when the same reflog was just archived', async () => {
+  it('a second pass is idempotent but never cached: it asks reachability again', async () => {
     const { wt, moveTo } = worktree()
     for (let i = 0; i < 5; i++) moveTo(leaf(i))
     moveTo(git(repo, 'rev-parse', 'HEAD'))
     const { io, calls } = counting()
     const archiver = createReflogArchiver({ io })
     const prefix = `refs/archive/detached/scale-e-${n}/reflog`
-    const first = await archiver.archive(repo, prefix, wt)
+    expect(await archiver.archive(repo, prefix, wt)).toHaveLength(5)
     calls.length = 0
-    const second = await archiver.archive(repo, prefix, wt)
-    expect(second).toEqual(first)
-    // the reflog is read (that is the fingerprint) and the refs confirmed; nothing is recomputed
-    expect(calls.map((a) => a[0]).sort()).toEqual(['for-each-ref', 'reflog'])
+    // our own refs now reach every commit, so there is nothing new to write ...
+    expect(await archiver.archive(repo, prefix, wt)).toEqual([])
+    // ... but that was ANSWERED by git, not remembered
+    expect(calls.map((a) => a[0])).toEqual(['reflog', 'cat-file', 'rev-list'])
   })
 
-  it('does the full pass again when the reflog grew, even to the same HEAD', async () => {
+  it('a commit that WAS reachable and no longer is gets its ref on the next pass (the tag-deleted repro)', async () => {
+    const { wt, moveTo } = worktree()
+    const home = git(repo, 'rev-parse', 'HEAD')
+    const c = leaf(7)
+    git(repo, 'tag', `keep-${n}`, c)
+    moveTo(c)
+    moveTo(home)
+    const archiver = createReflogArchiver()
+    const prefix = `refs/archive/detached/scale-h-${n}/reflog`
+    // pass 1: the tag holds C, so there is nothing to write
+    expect(await archiver.archive(repo, prefix, wt)).toEqual([])
+    git(repo, 'tag', '-d', `keep-${n}`)
+    // pass 2, same instance, same reflog bytes: C is now held by nothing but the reflog
+    expect(await archiver.archive(repo, prefix, wt)).toEqual([`${prefix}/${c.slice(0, 12)}`])
+    git(repo, 'reflog', 'expire', '--expire=now', '--all')
+    git(repo, 'gc', '--prune=now', '-q')
+    git(repo, 'cat-file', '-e', `${c}^{commit}`)
+  })
+
+  it('does the full pass when the reflog grew, even to the same HEAD', async () => {
     const { wt, moveTo } = worktree()
     const home = git(wt, 'rev-parse', 'HEAD')
     moveTo(leaf(1))
     moveTo(home)
-    const { io, calls } = counting()
-    const archiver = createReflogArchiver({ io })
+    const archiver = createReflogArchiver()
     const prefix = `refs/archive/detached/scale-f-${n}/reflog`
     await archiver.archive(repo, prefix, wt)
-    // out to a new commit and back to where HEAD was: same HEAD, a longer history
     const other = leaf(2)
     moveTo(other)
     moveTo(home)
-    calls.length = 0
-    const again = await archiver.archive(repo, prefix, wt)
-    expect(calls.map((a) => a[0])).toContain('rev-list')
-    expect(again).toContain(`${prefix}/${other.slice(0, 12)}`)
+    expect(await archiver.archive(repo, prefix, wt)).toContain(`${prefix}/${other.slice(0, 12)}`)
   })
 
-  it('does the full pass again when an archived ref was deleted in between', async () => {
+  it('writes the ref back when an archived ref was deleted in between', async () => {
     const { wt, moveTo } = worktree()
     moveTo(leaf(1))
     moveTo(git(repo, 'rev-parse', 'HEAD'))
@@ -171,5 +187,31 @@ describe('archiveReflog — a handful of git calls, not one per entry (delta-2, 
     git(repo, 'update-ref', '-d', ref!)
     expect(await archiver.archive(repo, prefix, wt)).toEqual([ref])
     git(repo, 'cat-file', '-e', ref!)
+  })
+
+  it('the shared archiver keeps nothing between runs either', async () => {
+    const { wt, moveTo } = worktree()
+    const home = git(repo, 'rev-parse', 'HEAD')
+    const c = leaf(9)
+    git(repo, 'tag', `keep2-${n}`, c)
+    moveTo(c)
+    moveTo(home)
+    const prefix = `refs/archive/detached/scale-i-${n}/reflog`
+    expect(await archiveReflog(repo, prefix, wt)).toEqual([])
+    git(repo, 'tag', '-d', `keep2-${n}`)
+    expect(await archiveReflog(repo, prefix, wt)).toEqual([`${prefix}/${c.slice(0, 12)}`])
+  })
+})
+
+describe('archiveReflog — the limit counts tips, and says so (delta-3)', () => {
+  it('refuses with the number of tips, writing nothing', async () => {
+    const { wt, moveTo } = worktree()
+    for (let i = 0; i < 6; i++) moveTo(leaf(i))
+    moveTo(git(repo, 'rev-parse', 'HEAD'))
+    const prefix = `refs/archive/detached/scale-j-${n}/reflog`
+    await expect(createReflogArchiver({ limit: 5 }).archive(repo, prefix, wt)).rejects.toThrow(
+      /reflog-limit: .*6 separate lines of commits.*more than the 5 tips/s
+    )
+    expect(refsUnder(prefix)).toEqual([])
   })
 })

@@ -15,7 +15,7 @@ import { refusalFor } from '../src/main/gc/autopilot-core'
 import { defaultGcPrefs } from '../src/main/gc/gc-prefs'
 import type { GcShellDeps } from '../src/main/gc/gc-shell'
 import { runBundle } from '../src/main/gc/pipeline-core'
-import { archiveReflog, archiveTip, archiveWip } from '../src/main/reaper/archive-shell'
+import { archiveTip, archiveWip, createReflogArchiver } from '../src/main/reaper/archive-shell'
 import type { ExecutorDeps } from '../src/main/reaper/executor-core'
 import { canUnregister, removeWorktreeAdmin } from '../src/main/reaper/worktree-admin-shell'
 import { bundleRemovability } from '../src/renderer/src/lib/gc-removability'
@@ -70,6 +70,8 @@ const detachedBundle = () => {
   return b
 }
 
+let reflog = createReflogArchiver()
+
 /** Real git and real archive shells; docker and sessions are the only fakes. */
 function realWorld(over: Partial<ExecutorDeps> = {}): GcShellDeps {
   const executor: ExecutorDeps = {
@@ -89,7 +91,7 @@ function realWorld(over: Partial<ExecutorDeps> = {}): GcShellDeps {
     },
     archiveTip,
     archiveWip,
-    archiveReflog,
+    archiveReflog: (r, prefix, w) => reflog.archive(r, prefix, w),
     canUnregister: (r, p) => canUnregister(r, p, gitRun),
     removeWorktreeAdmin: (r, p) => removeWorktreeAdmin(r, p, gitRun),
     detachSidebar: async () => undefined,
@@ -251,5 +253,26 @@ describe('removing a detached worktree from review (AC-A1, AC-A2)', () => {
     expect(git(repo, 'for-each-ref', '--format=%(refname)', `${ns}/reflog`).trim()).toContain(
       b.slice(0, 12)
     )
+  })
+
+  it('a reflog-limit refusal leaves NO archive ref behind and the folder as it was (delta-3)', async () => {
+    const id = ['-c', 'user.name=t', '-c', 'user.email=t@example.com']
+    // two commits only the reflog reaches, against a limit of one
+    for (const f of ['a.txt', 'b.txt']) {
+      writeFileSync(path.join(wt, f), f)
+      git(wt, 'add', f)
+      git(wt, ...id, 'commit', '-q', '-m', f)
+      git(wt, 'checkout', '-q', '--detach', head)
+    }
+    reflog = createReflogArchiver({ limit: 1 })
+    try {
+      const result = await runBundle(detachedBundle(), createForcedGcOps(realWorld()), FORCE)
+      expect(result).toMatchObject({ ok: false, haltedAt: 'reprobe' })
+      expect(result.error).toContain('archive-failed: reflog-limit')
+      expect(git(repo, 'for-each-ref', 'refs/archive').trim()).toBe('')
+      expect(existsSync(wt)).toBe(true)
+    } finally {
+      reflog = createReflogArchiver()
+    }
   })
 })

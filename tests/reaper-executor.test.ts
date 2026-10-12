@@ -653,7 +653,7 @@ describe('cleanItem — a detached worktree (NDE-A, AC-A1/A2)', () => {
     expect(journal[0].archiveWipRef).toBeNull()
   })
 
-  it('also archives the commits only the HEAD reflog holds, under <ns>/reflog, before trashing (delta-1, item 6)', async () => {
+  it('archives the commits only the HEAD reflog holds first, under <ns>/reflog, then the tip and wip (delta-1, delta-3)', async () => {
     const order: string[] = []
     const { deps } = fakeDeps({
       resolveSha: vi.fn(async (_r, rev) => rev),
@@ -676,7 +676,8 @@ describe('cleanItem — a detached worktree (NDE-A, AC-A1/A2)', () => {
       `${DETACHED_NS}/reflog`,
       '/repo/wt-det'
     )
-    expect(order).toEqual(['wip', 'reflog', 'trash'])
+    // the reflog first: a refusal for too many commits must leave no tip or wip ref behind
+    expect(order).toEqual(['reflog', 'wip', 'trash'])
   })
 
   it('halts at archive and trashes nothing when the reflog commits cannot be archived', async () => {
@@ -693,6 +694,9 @@ describe('cleanItem — a detached worktree (NDE-A, AC-A1/A2)', () => {
       error: 'cannot read the reflog'
     })
     expect(deps.trash).not.toHaveBeenCalled()
+    // nothing else was written first: a reflog refusal leaves the item as it was
+    expect(deps.archiveTip).not.toHaveBeenCalled()
+    expect(deps.archiveWip).not.toHaveBeenCalled()
   })
 
   it('never asks for reflog commits of a branch worktree: its branch holds them', async () => {
