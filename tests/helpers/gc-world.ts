@@ -51,6 +51,7 @@ export function worldFor(b: WorktreeBundle, over: Partial<GcShellDeps> = {}): Gc
     resolveSha: async () => TIP,
     archiveTip: async (_repo, ref) => ref,
     archiveWip: async (_repo, ref) => ref,
+    archiveReflog: async () => [],
     detachSidebar: async () => undefined,
     canUnregister: async () => !(b.locked === true || b.reason?.code === 'locked'),
     removeWorktreeAdmin: async () => true,

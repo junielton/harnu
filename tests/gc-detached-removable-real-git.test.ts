@@ -15,7 +15,7 @@ import { refusalFor } from '../src/main/gc/autopilot-core'
 import { defaultGcPrefs } from '../src/main/gc/gc-prefs'
 import type { GcShellDeps } from '../src/main/gc/gc-shell'
 import { runBundle } from '../src/main/gc/pipeline-core'
-import { archiveTip, archiveWip } from '../src/main/reaper/archive-shell'
+import { archiveReflog, archiveTip, archiveWip } from '../src/main/reaper/archive-shell'
 import type { ExecutorDeps } from '../src/main/reaper/executor-core'
 import { canUnregister, removeWorktreeAdmin } from '../src/main/reaper/worktree-admin-shell'
 import { bundleRemovability } from '../src/renderer/src/lib/gc-removability'
@@ -89,6 +89,7 @@ function realWorld(over: Partial<ExecutorDeps> = {}): GcShellDeps {
     },
     archiveTip,
     archiveWip,
+    archiveReflog,
     canUnregister: (r, p) => canUnregister(r, p, gitRun),
     removeWorktreeAdmin: (r, p) => removeWorktreeAdmin(r, p, gitRun),
     detachSidebar: async () => undefined,
@@ -226,5 +227,25 @@ describe('removing a detached worktree from review (AC-A1, AC-A2)', () => {
     expect(sha).toBe(firstWip)
     git(repo, 'gc', '--prune=now', '-q')
     git(repo, 'cat-file', '-e', firstWip)
+  })
+
+  it('keeps a commit made while detached and then left behind: it survives the removal and a gc', async () => {
+    // commit B on the detached HEAD, then check out the original commit: only the reflog reaches B
+    const id = ['-c', 'user.name=t', '-c', 'user.email=t@example.com']
+    writeFileSync(path.join(wt, 'left-behind.txt'), 'b\n')
+    git(wt, 'add', 'left-behind.txt')
+    git(wt, ...id, 'commit', '-q', '-m', 'left behind')
+    const b = git(wt, 'rev-parse', 'HEAD').trim()
+    git(wt, 'checkout', '-q', '--detach', head)
+    expect(git(repo, 'for-each-ref', '--contains', b).trim()).toBe('')
+
+    // the bundle was scanned at `head`, which is where the worktree is again
+    const result = await runBundle(detachedBundle(), createForcedGcOps(realWorld()), FORCE)
+    expect(result).toMatchObject({ ok: true, haltedAt: null })
+    expect(existsSync(wt)).toBe(false)
+    git(repo, 'gc', '--prune=now', '-q')
+    git(repo, 'cat-file', '-e', `${b}^{commit}`)
+    const ns = `refs/archive/detached/bisect-1-${head.slice(0, 12)}`
+    expect(git(repo, 'for-each-ref', '--format=%(refname)', `${ns}/reflog`).trim()).toContain(b.slice(0, 12))
   })
 })

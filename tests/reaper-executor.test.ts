@@ -54,6 +54,7 @@ function fakeDeps(overrides: Partial<ExecutorDeps> = {}): {
       archived.push(ref)
       return 'wipsha1'
     }),
+    archiveReflog: vi.fn(async () => [] as string[]),
     detachSidebar: vi.fn(async () => undefined),
     canUnregister: vi.fn(async () => true),
     removeWorktreeAdmin: vi.fn(async () => true),
@@ -652,7 +653,52 @@ describe('cleanItem — a detached worktree (NDE-A, AC-A1/A2)', () => {
     expect(journal[0].archiveWipRef).toBeNull()
   })
 
+  it('also archives the commits only the HEAD reflog holds, under <ns>/reflog, before trashing (delta-1, item 6)', async () => {
+    const order: string[] = []
+    const { deps } = fakeDeps({
+      resolveSha: vi.fn(async (_r, rev) => rev),
+      archiveWip: vi.fn(async () => {
+        order.push('wip')
+        return 'w'
+      }),
+      archiveReflog: vi.fn(async () => {
+        order.push('reflog')
+        return [`${DETACHED_NS}/reflog/aaaaaaaaaaaa`]
+      }),
+      trash: vi.fn(async () => {
+        order.push('trash')
+      })
+    })
+    const result = await cleanItem(detachedItem(), { deleteRemote: false }, deps)
+    expect(result.ok).toBe(true)
+    expect(deps.archiveReflog).toHaveBeenCalledWith('/repo', `${DETACHED_NS}/reflog`, '/repo/wt-det')
+    expect(order).toEqual(['wip', 'reflog', 'trash'])
+  })
+
+  it('halts at archive and trashes nothing when the reflog commits cannot be archived', async () => {
+    const { deps } = fakeDeps({
+      resolveSha: vi.fn(async (_r, rev) => rev),
+      archiveReflog: vi.fn(async () => {
+        throw new Error('cannot read the reflog')
+      })
+    })
+    const result = await cleanItem(detachedItem(), { deleteRemote: false }, deps)
+    expect(result.ok).toBe(false)
+    expect(result.steps.find((s) => s.id === 'archive')).toMatchObject({
+      ok: false,
+      error: 'cannot read the reflog'
+    })
+    expect(deps.trash).not.toHaveBeenCalled()
+  })
+
+  it('never asks for reflog commits of a branch worktree: its branch holds them', async () => {
+    const { deps } = fakeDeps()
+    await cleanItem(harvestableItem(), { deleteRemote: false }, deps)
+    expect(deps.archiveReflog).not.toHaveBeenCalled()
+  })
+
   it('halts at archive and trashes nothing when the HEAD cannot be resolved', async () => {
+
     const { deps } = fakeDeps({ resolveSha: vi.fn(async () => null) })
     const result = await cleanItem(detachedItem(), { deleteRemote: false }, deps)
 

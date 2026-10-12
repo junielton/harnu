@@ -107,6 +107,10 @@ function rig(
       archived.push(ref)
       return ref
     },
+    archiveReflog: async (_repo, prefix) => {
+      order.push('archiveReflog')
+      return [`${prefix}/aaaaaaaaaaaa`]
+    },
     detachSidebar: async () => undefined,
     canUnregister: async () => true,
     removeWorktreeAdmin: async () => true,
@@ -277,6 +281,16 @@ describe('a detached worktree is archived by its HEAD sha, then removed (NDE-A, 
       archiveTipRef: `${HEAD_NS}/tip`,
       archiveWipRef: `${HEAD_NS}/wip`
     })
+  })
+
+  it('also archives the reflog-only commits in the reprobe, before anything destructive (delta-1, item 6)', async () => {
+    const r = rig()
+    await run(detachedBundle(), r)
+    const at = (what: string): number => r.order.indexOf(what)
+    expect(at('archiveReflog')).toBeGreaterThan(at('archiveWip'))
+    for (const destructive of ['docker stop', 'docker rm', 'removeDir', 'trash']) {
+      expect(at(destructive), destructive).toBeGreaterThan(at('archiveReflog'))
+    }
   })
 
   it('refuses without touching docker or the disk when the archive fails', async () => {
