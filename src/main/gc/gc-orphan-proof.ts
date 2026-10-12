@@ -10,7 +10,6 @@
 // the evidence is gathered by gc-orphan-shell.
 
 import { posix } from 'node:path'
-import { parseWorktreeList } from '../worktree-core'
 import { canonicalPathKey } from './bundle-core'
 
 export interface RemovalEvidence {
@@ -27,23 +26,75 @@ export type GoneProof = 'removed-by-harnu' | 'git-prunable' | 'under-worktrees-p
 const isUnder = (key: string, base: string): boolean =>
   base !== '' && (key === base || key.startsWith(base === '/' ? '/' : `${base}/`))
 
-/** The proof that `folder` is gone, or null when it is merely not found. */
+/**
+ * Every way the evidence could prove `folder` gone, each with the ROOT it rests on: the exact
+ * folder Harnu removed, the worktree git lists as prunable, or the segment directly under the known
+ * worktrees parent. A proof stands only while its root is itself missing (see {@link proveGone}).
+ */
+export function proofRoots(
+  folder: string,
+  ev: RemovalEvidence,
+  platform: string = process.platform
+): Array<{ proof: GoneProof; root: string }> {
+  const key = canonicalPathKey(folder, platform)
+  if (!key) return []
+  const k = (p: string): string => canonicalPathKey(p, platform)
+  const out: Array<{ proof: GoneProof; root: string }> = []
+  for (const r of ev.removed)
+    if (isUnder(key, k(r))) out.push({ proof: 'removed-by-harnu', root: r })
+  for (const p of ev.prunable) if (isUnder(key, k(p))) out.push({ proof: 'git-prunable', root: p })
+  for (const w of ev.worktreeParents) {
+    const base = k(w.parent)
+    if (!w.readable || key === base || !isUnder(key, base)) continue
+    // The worktree root is the segment directly under the parent, in the folder's own spelling.
+    const depth = base.split('/').filter(Boolean).length + 1
+    const segments = posix.resolve(folder).split('/').filter(Boolean)
+    out.push({ proof: 'under-worktrees-parent', root: `/${segments.slice(0, depth).join('/')}` })
+  }
+  return out
+}
+
+/** The first proof the evidence offers for `folder`, or null when it is merely not found. */
 export function provenGone(
   folder: string,
   ev: RemovalEvidence,
   platform: string = process.platform
 ): GoneProof | null {
-  const key = canonicalPathKey(folder, platform)
-  if (!key) return null
-  const k = (p: string): string => canonicalPathKey(p, platform)
-  if (ev.removed.some((r) => isUnder(key, k(r)))) return 'removed-by-harnu'
-  if (ev.prunable.some((p) => isUnder(key, k(p)))) return 'git-prunable'
-  if (
-    ev.worktreeParents.some((w) => w.readable && key !== k(w.parent) && isUnder(key, k(w.parent)))
-  ) {
-    return 'under-worktrees-parent'
+  return proofRoots(folder, ev, platform)[0]?.proof ?? null
+}
+
+/**
+ * Whether `folder` is positively gone: some proof applies AND the root it rests on is itself missing
+ * right now. A dangling symlink or an empty mount point where the worktree was (its drive is not
+ * mounted), or a folder that exists again, is not a missing root, so it proves nothing.
+ */
+export async function proveGone(
+  folder: string,
+  ev: RemovalEvidence,
+  existence: (p: string) => Promise<'exists' | 'missing' | 'unknown'>,
+  platform: string = process.platform
+): Promise<boolean> {
+  for (const { root } of proofRoots(folder, ev, platform)) {
+    if ((await existence(root).catch(() => 'unknown' as const)) === 'missing') return true
   }
-  return null
+  return false
+}
+
+/** git's own words for a worktree whose directory is gone; any other reason is not proof. */
+const PRUNABLE_GONE = 'gitdir file points to non-existent location'
+
+/** The worktrees git lists as prunable for exactly that reason. */
+function prunableWorktrees(porcelain: string): string[] {
+  const out: string[] = []
+  let current: string | null = null
+  for (const raw of porcelain.split(/\r?\n/)) {
+    const line = raw.replace(/\s+$/, '')
+    if (line.startsWith('worktree ')) current = line.slice('worktree '.length).trim()
+    else if (current && (line === 'prunable' || line.startsWith('prunable '))) {
+      if (line.includes(PRUNABLE_GONE)) out.push(current)
+    }
+  }
+  return out
 }
 
 /** The worktrees parents a known repo implies: `<repo>/.claude/worktrees` and `<repo>-worktrees`. */
@@ -84,9 +135,7 @@ export async function evidenceFromGit(deps: GitEvidenceDeps): Promise<RemovalEvi
   const prunable: string[] = []
   for (const repo of existing) {
     try {
-      for (const w of parseWorktreeList(await deps.worktreeList(repo))) {
-        if (w.prunable) prunable.push(w.path)
-      }
+      prunable.push(...prunableWorktrees(await deps.worktreeList(repo)))
     } catch {
       // git could not say: no proof from this repo
     }

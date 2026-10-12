@@ -8,7 +8,7 @@ import { execFile } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import { promisify } from 'node:util'
 import { fsOrphanProbe, fsPathExistence, planOrphanTranscripts } from './gc-orphan-transcripts'
-import { evidenceFromGit, provenGone } from './gc-orphan-proof'
+import { evidenceFromGit, proveGone } from './gc-orphan-proof'
 import { readRemovedFolders } from './gc-removed-folders'
 import type { OrphanTranscriptItem } from './gc-orphan-transcripts'
 
@@ -68,7 +68,7 @@ export const realOrphanSource: OrphanSource = async (ctx) => {
       protectedSessionIds: protectedIds,
       protectedFolders: alive,
       repoPaths: ctx.repoPaths,
-      proof: (folder) => provenGone(folder, evidence) !== null
+      proof: (folder) => proveGone(folder, evidence, fsPathExistence)
     })
   } catch (err) {
     console.warn('[gc] orphan transcripts not listed', err instanceof Error ? err.message : err)

@@ -85,7 +85,7 @@ export interface OrphanInput {
    * Whether a missing folder is positively proven gone (see gc-orphan-proof.ts). Absent proves
    * nothing: every missing folder is then only "not found".
    */
-  proof?: (folder: string) => boolean
+  proof?: (folder: string) => boolean | Promise<boolean>
   /** The clock (epoch ms); defaults to now. */
   now?: number
   /**
@@ -180,6 +180,11 @@ export async function planOrphanTranscripts(input: OrphanInput): Promise<OrphanT
     // A folder a known, existing folder is slug-equal to may be the same project.
     if (folders.some((f) => aliveSlugs.has(slugOfPath(f)))) continue
     const newest = newestWrite
+    const proven = input.proof
+      ? (
+          await Promise.all(folders.map((f) => Promise.resolve(input.proof!(f)).catch(() => false)))
+        ).every(Boolean)
+      : false
     items.push({
       id: orphanTranscriptId(slug),
       slug,
@@ -187,7 +192,7 @@ export async function planOrphanTranscripts(input: OrphanInput): Promise<OrphanT
       repoLabel: repoLabelFor(folders[0]!, input.repoPaths),
       bytes: facts.files.reduce((a, f) => a + f.bytes, 0) + facts.extraBytes,
       sessionCount: facts.files.length,
-      proof: input.proof && folders.every((f) => input.proof!(f)) ? 'proven' : 'not-found',
+      proof: proven ? 'proven' : 'not-found',
       newestAt: Number.isFinite(newest) ? newest : null,
       hasMemory: facts.hasMemory
     })
