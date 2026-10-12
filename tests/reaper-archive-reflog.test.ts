@@ -15,7 +15,6 @@ import {
   type ReflogIo
 } from '../src/main/reaper/archive-shell'
 
-
 vi.setConfig({ testTimeout: 180_000 })
 
 const git = (cwd: string, ...args: string[]): string =>
@@ -91,6 +90,8 @@ describe('archiveReflog — nothing is dropped silently (delta-2, item 1)', () =
   it('refuses with a clear reason, writing nothing, when more commits than the cap need archiving', async () => {
     const { wt, moveTo } = worktree()
     for (let i = 0; i < 600; i++) moveTo(leaf(i))
+    // HEAD ends back at A: the commit it sits on is the tip ref's business, not the reflog's
+    moveTo(git(repo, 'rev-parse', 'HEAD'))
 
     const prefix = `refs/archive/detached/scale-b-${n}/reflog`
     await expect(createReflogArchiver().archive(repo, prefix, wt)).rejects.toThrow(
@@ -106,6 +107,7 @@ describe('archiveReflog — nothing is dropped silently (delta-2, item 1)', () =
       parent = leaf(i, parent)
       moveTo(parent)
     }
+    moveTo(git(repo, 'rev-parse', 'HEAD'))
     const prefix = `refs/archive/detached/scale-c-${n}/reflog`
     const written = await createReflogArchiver().archive(repo, prefix, wt)
     expect(written).toEqual([`${prefix}/${parent.slice(0, 12)}`])
@@ -116,6 +118,7 @@ describe('archiveReflog — a handful of git calls, not one per entry (delta-2, 
   it('reads the reflog, checks the objects and the reachability in bulk', async () => {
     const { wt, moveTo } = worktree()
     for (let i = 0; i < 80; i++) moveTo(leaf(i))
+    moveTo(git(repo, 'rev-parse', 'HEAD'))
     const { io, calls } = counting()
     const prefix = `refs/archive/detached/scale-d-${n}/reflog`
     await createReflogArchiver({ io }).archive(repo, prefix, wt)
@@ -127,6 +130,7 @@ describe('archiveReflog — a handful of git calls, not one per entry (delta-2, 
   it('skips the whole second pass when the same reflog was just archived', async () => {
     const { wt, moveTo } = worktree()
     for (let i = 0; i < 5; i++) moveTo(leaf(i))
+    moveTo(git(repo, 'rev-parse', 'HEAD'))
     const { io, calls } = counting()
     const archiver = createReflogArchiver({ io })
     const prefix = `refs/archive/detached/scale-e-${n}/reflog`
@@ -142,6 +146,7 @@ describe('archiveReflog — a handful of git calls, not one per entry (delta-2, 
     const { wt, moveTo } = worktree()
     const home = git(wt, 'rev-parse', 'HEAD')
     moveTo(leaf(1))
+    moveTo(home)
     const { io, calls } = counting()
     const archiver = createReflogArchiver({ io })
     const prefix = `refs/archive/detached/scale-f-${n}/reflog`
@@ -159,6 +164,7 @@ describe('archiveReflog — a handful of git calls, not one per entry (delta-2, 
   it('does the full pass again when an archived ref was deleted in between', async () => {
     const { wt, moveTo } = worktree()
     moveTo(leaf(1))
+    moveTo(git(repo, 'rev-parse', 'HEAD'))
     const archiver = createReflogArchiver()
     const prefix = `refs/archive/detached/scale-g-${n}/reflog`
     const [ref] = await archiver.archive(repo, prefix, wt)

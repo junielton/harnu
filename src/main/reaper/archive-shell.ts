@@ -15,7 +15,8 @@
  * object store.
  */
 
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { promisify } from 'node:util'
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
@@ -142,8 +143,42 @@ export async function archiveWip(
   }
 }
 
-/** The most reflog entries read for one worktree: git expires them after 90 days by default anyway. */
-const REFLOG_LIMIT = 500
+/** The most commits one removal will archive for a worktree's HEAD reflog; more is refused, never truncated. */
+export const REFLOG_REF_LIMIT = 500
+
+/** The git calls the reflog archiver makes, injectable so a test can count them. */
+export interface ReflogIo {
+  run(cwd: string, args: string[]): Promise<string>
+  /** Runs git with `input` on stdin (a long list of revisions never goes through argv). */
+  runIn(cwd: string, args: string[], input: string): Promise<string>
+}
+
+export const defaultReflogIo: ReflogIo = {
+  run: (cwd, args) => git(cwd, args),
+  runIn: (cwd, args, input) =>
+    new Promise((resolve, reject) => {
+      const child = spawn('git', ['-C', cwd, ...args], { windowsHide: true })
+      let out = ''
+      let err = ''
+      const timer = setTimeout(() => child.kill(), GIT_OPTS.timeout)
+      child.stdout.on('data', (d: Buffer) => (out += d.toString()))
+      child.stderr.on('data', (d: Buffer) => (err += d.toString()))
+      child.on('error', (e) => {
+        clearTimeout(timer)
+        reject(e)
+      })
+      child.on('close', (code) => {
+        clearTimeout(timer)
+        if (code === 0) resolve(out)
+        else reject(new Error(`git ${args[0]} failed (${code}): ${err.trim()}`))
+      })
+      child.stdin.on('error', () => undefined)
+      child.stdin.end(input)
+    })
+}
+
+/** How many archived reflogs are remembered, so the second pass of one removal can be skipped. */
+const REFLOG_MEMORY = 64
 
 /**
  * Points a ref under `refPrefix` at every commit in the HEAD reflog of `worktreePath` that no ref
@@ -151,29 +186,116 @@ const REFLOG_LIMIT = 500
  *
  * A detached HEAD has no branch, so a commit made while detached and then left behind (check out
  * another commit, a rebase or bisect that moved on) is held by nothing but that worktree's own
- * reflog, which goes with the folder. Newest first: archiving a commit makes its ancestors
- * reachable, so the older entries it contains are skipped. The ref is named by the commit's own
- * short sha, so a second removal can never overwrite a different commit's ref. Throws if the reflog
- * cannot be read or a ref cannot be written, which aborts the item before anything is trashed.
+ * reflog, which goes with the folder. Three bulk git calls, whatever the history: which entries still
+ * exist, which of them no ref reaches (with their parents), and one `update-ref` per commit that
+ * needs one. Only the tips are kept: archiving a commit makes its ancestors reachable. The ref is
+ * named by the commit's own short sha, so a second removal can never overwrite a different commit's
+ * ref.
+ *
+ * Never silent: more than {@link REFLOG_REF_LIMIT} commits to archive is refused with
+ * `reflog-limit`, before any ref is written, so the item stops at the archive step and nothing is
+ * trashed. The same goes for a reflog that cannot be read or a ref that cannot be written.
+ *
+ * "Reaches" is `git rev-list --all`, which also counts the HEAD each worktree stands on now: that
+ * commit and its ancestry are the tip ref's, written before this runs.
+ *
+ * One removal asks twice (the forced reprobe, then the executor). The second call with the same
+ * reflog, and every ref it made still there, returns the first answer without recomputing.
  */
-export async function archiveReflog(
+export function createReflogArchiver(opts: { io?: ReflogIo } = {}): {
+  archive(repoPath: string, refPrefix: string, worktreePath: string): Promise<string[]>
+} {
+  const io = opts.io ?? defaultReflogIo
+  const memory = new Map<string, { fingerprint: string; refs: string[] }>()
+
+  const unreachableTips = async (repoPath: string, entries: string[]): Promise<string[]> => {
+    // Entries whose object was pruned cannot be preserved, and are not a commit we could lose.
+    const checked = await io.runIn(
+      repoPath,
+      ['cat-file', '--batch-check'],
+      `${entries.join('\n')}\n`
+    )
+    const commits = checked
+      .split('\n')
+      .map((l) => l.split(' '))
+      .filter((f) => f[1] === 'commit')
+      .map((f) => f[0]!)
+    if (commits.length === 0) return []
+    // What the entries reach that no ref does, with each commit's parents.
+    const listed = await io.runIn(
+      repoPath,
+      ['rev-list', '--parents', '--stdin', '--not', '--all'],
+      `${commits.join('\n')}\n`
+    )
+    const parents = new Map<string, string[]>()
+    for (const line of listed.split('\n')) {
+      const [sha, ...ps] = line.trim().split(' ')
+      if (sha) parents.set(sha, ps)
+    }
+    const unreachable = commits.filter((sha) => parents.has(sha))
+    // A commit that another unreachable entry descends from is kept by that entry's ref.
+    const covered = new Set<string>()
+    for (const start of unreachable) {
+      const stack = [...(parents.get(start) ?? [])]
+      while (stack.length > 0) {
+        const sha = stack.pop()!
+        if (covered.has(sha) || !parents.has(sha)) continue
+        covered.add(sha)
+        stack.push(...parents.get(sha)!)
+      }
+    }
+    return unreachable.filter((sha) => !covered.has(sha))
+  }
+
+  return {
+    async archive(repoPath, refPrefix, worktreePath) {
+      const log = await io.run(worktreePath, ['reflog', 'show', '--format=%H', 'HEAD'])
+      const entries = [
+        ...new Set(
+          log
+            .split('\n')
+            .map((l) => l.trim())
+            .filter(Boolean)
+        )
+      ]
+      if (entries.length === 0) return []
+
+      const key = `${repoPath}\0${refPrefix}\0${worktreePath}`
+      const fingerprint = createHash('sha256').update(log).digest('hex')
+      const seen = memory.get(key)
+      if (seen && seen.fingerprint === fingerprint) {
+        const held = new Set(
+          (await io.run(repoPath, ['for-each-ref', '--format=%(refname)', `${refPrefix}/`]))
+            .split('\n')
+            .filter(Boolean)
+        )
+        if (seen.refs.every((r) => held.has(r))) return seen.refs
+      }
+
+      const tips = await unreachableTips(repoPath, entries)
+      if (tips.length > REFLOG_REF_LIMIT) {
+        throw new Error(
+          `reflog-limit: this worktree's history holds ${tips.length} commits that no branch, tag or ref reaches, more than the ${REFLOG_REF_LIMIT} Harnu keeps for one removal. Nothing was removed. Keep the ones you want with git branch <name> <sha>, or remove the folder yourself.`
+        )
+      }
+      const written: string[] = []
+      for (const sha of tips) {
+        const ref = `${refPrefix}/${sha.slice(0, 12)}`
+        await io.run(repoPath, ['update-ref', ref, sha])
+        written.push(ref)
+      }
+      memory.set(key, { fingerprint, refs: written })
+      if (memory.size > REFLOG_MEMORY) memory.delete(memory.keys().next().value!)
+      return written
+    }
+  }
+}
+
+const reflogArchiver = createReflogArchiver()
+
+/** See {@link createReflogArchiver}. */
+export const archiveReflog = (
   repoPath: string,
   refPrefix: string,
   worktreePath: string
-): Promise<string[]> {
-  const entries = (await git(worktreePath, ['reflog', 'show', '--format=%H', 'HEAD']))
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean)
-  const written: string[] = []
-  for (const sha of [...new Set(entries)].slice(0, REFLOG_LIMIT)) {
-    // An entry whose object was pruned cannot be preserved, and is not a commit we could lose.
-    if (!(await resolveRef(repoPath, sha))) continue
-    const holders = await git(repoPath, ['for-each-ref', '--contains', sha, '--count=1'])
-    if (holders.trim() !== '') continue
-    const ref = `${refPrefix}/${sha.slice(0, 12)}`
-    await git(repoPath, ['update-ref', ref, sha])
-    written.push(ref)
-  }
-  return written
-}
+): Promise<string[]> => reflogArchiver.archive(repoPath, refPrefix, worktreePath)
