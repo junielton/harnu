@@ -28,17 +28,21 @@ import { identText } from './cleanup-ident'
 import {
   captureConfirm,
   confirmChanged,
+  guidedChanged,
+  guidedRequestFor,
   isRemovable,
   isRetryAsReady,
   refusedRows,
   selectAllInRepo,
   selectionStats,
   toggleChecked,
-  type CapturedConfirm
+  type CapturedConfirm,
+  type CleanRequest
 } from '../lib/gc-model'
+import { removalSummary, type GuidedAction, type RefusalGroup } from '../lib/gc-guidance'
 import { nextCycleIn } from '../lib/gc-format'
 import { refusalKey, removalKey } from './cleanup-gc-copy'
-import { removability } from '../lib/gc-removability'
+import { removability, type RemovalRefusal } from '../lib/gc-removability'
 import type { RefusalCode } from '../lib/gc-jobs'
 import CleanupTreemap from './CleanupTreemap.vue'
 import CleanupListView from './CleanupListView.vue'
@@ -51,10 +55,15 @@ import CleanupDockerCard from './CleanupDockerCard.vue'
 import CleanupSplitBar from './CleanupSplitBar.vue'
 import CleanupLegend from './CleanupLegend.vue'
 import CleanupBulkConfirmDialog from './CleanupBulkConfirmDialog.vue'
+import CleanupGuidedDialog, {
+  type GuidedDialogAction,
+  type GuidedRow
+} from './CleanupGuidedDialog.vue'
 import CleanupOtherItems from './CleanupOtherItems.vue'
 import DehydrateConfirmDialog from './DehydrateConfirmDialog.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
 import Button from './ui/Button.vue'
+import type { GcGuidance, GcPrep } from '../../../main/gc/gc-wire'
 import type { ReapItem, Tombstone } from '../../../preload'
 
 /**
@@ -128,6 +137,10 @@ const canRemoveSelection = computed(() =>
     const b = model.value?.byId.get(id)
     return !!b && isRemovable(b)
   })
+)
+/** What Remove would take from the ticked items and why it would not take the rest ("No dead ends"). */
+const removal = computed(() =>
+  model.value ? removalSummary(model.value, [...checked.value], now.value.getTime()) : null
 )
 const stats = computed(() =>
   model.value ? selectionStats(model.value, checked.value) : { count: 0, bytes: 0 }
@@ -216,7 +229,9 @@ async function removeMarkedSafe(): Promise<void> {
 /** What the open dialog showed — rows AND the exact request — frozen at the moment it opened. */
 const confirmDialog = ref<CapturedConfirm | null>(null)
 const dehydrateItems = ref<ReapItem[] | null>(null)
-const dialogOpen = computed(() => confirmDialog.value !== null || dehydrateItems.value !== null)
+const dialogOpen = computed(
+  () => confirmDialog.value !== null || dehydrateItems.value !== null || guided.value !== null
+)
 
 /** The data behind the open dialog moved (a cycle or a job refreshed it): block the confirm. */
 const confirmStale = computed(
@@ -312,6 +327,218 @@ async function runFirstCycle(action: () => Promise<void>, failureTitle: string):
   } finally {
     firstCyclePending.value = false
   }
+}
+
+// ---- guided actions ("No dead ends") --------------------------------------------------------------
+// Where Remove is refused, the refusal names its cause and offers the action that clears it. The ones
+// that end in a removal run as ONE `gc:clean` job whose items each carry a prep (unlock, close an idle
+// session, stop or leave a stack); main checks what the operator was shown, prepares, then judges the
+// item again on a fresh gather and removes it the ordinary guarded way.
+
+interface GuidedState {
+  action: GuidedDialogAction
+  ids: string[]
+  rows: GuidedRow[]
+  guidance: Record<string, GcGuidance> | null
+  loadError: boolean
+  pending: boolean
+  /** The facts the dialog opened on; null for the two that remove nothing (unreadable, Docker). */
+  captured: { ids: string[]; request: CleanRequest } | null
+}
+const guided = ref<GuidedState | null>(null)
+/** Stands in for the real prep while the facts are captured; the confirm replaces it per item. */
+const PLACEHOLDER_PREP: GcPrep = { kind: 'unlock' }
+
+/** The data behind the open guided dialog moved: block its confirm. */
+const guidedStale = computed(
+  () =>
+    !!guided.value?.captured && !!model.value && guidedChanged(model.value, guided.value.captured)
+)
+
+function prepFor(
+  action: GuidedDialogAction,
+  choice: 'stop' | 'leave' | null,
+  g: GcGuidance | undefined
+): GcPrep | null {
+  if (action === 'unlock-remove') return { kind: 'unlock' }
+  if (action === 'close-session-remove') return { kind: 'close-session' }
+  const stackIds = g?.stacks.map((s) => s.id) ?? []
+  if (action !== 'shared-stack' || stackIds.length === 0) return null
+  return { kind: choice === 'leave' ? 'leave-stack' : 'stop-stack', stackIds }
+}
+
+async function loadGuidance(g: GuidedState): Promise<void> {
+  g.loadError = false
+  try {
+    const list = await Promise.all(g.ids.map((id) => window.api.gcGuide(id)))
+    if (guided.value?.ids !== g.ids) return
+    g.guidance = Object.fromEntries(list.map((x) => [x.id, x]))
+  } catch {
+    if (guided.value?.ids === g.ids) g.loadError = true
+  }
+}
+
+async function openGuided(action: GuidedDialogAction, ids: readonly string[]): Promise<void> {
+  const m = model.value
+  if (dialogOpen.value || !m) return
+  const blocks = ids.map((id) => m.byId.get(id)).filter((b) => !!b && b.kind === 'worktree')
+  if (blocks.length === 0) return
+  const removes = action !== 'fix-unreadable' && action !== 'docker'
+  const request = removes
+    ? guidedRequestFor(m, ids, () => PLACEHOLDER_PREP, now.value.getTime())
+    : null
+  if (request && request.ids.length === 0) return
+  const rowIds = request ? request.ids : blocks.map((b) => b!.id)
+  guided.value = {
+    action,
+    ids: rowIds,
+    rows: rowIds.map((id) => {
+      const b = m.byId.get(id)!
+      return {
+        id,
+        title: b.repoLabel
+          ? t('cleanup.gc.confirm.worktreeRow', { repo: b.repoLabel, name: b.name })
+          : b.name,
+        sub: b.branch ?? undefined
+      }
+    }),
+    guidance: null,
+    loadError: false,
+    pending: false,
+    captured: request ? { ids: request.ids, request } : null
+  }
+  await loadGuidance(guided.value)
+}
+
+async function confirmGuided(choice: 'stop' | 'leave' | null): Promise<void> {
+  const g = guided.value
+  if (!g || g.pending || guidedStale.value || !g.captured || !g.guidance) return
+  const prepare: Record<string, GcPrep> = {}
+  for (const id of g.captured.ids) {
+    const prep = prepFor(g.action, choice, g.guidance[id])
+    if (!prep) return
+    prepare[id] = prep
+  }
+  const req: CleanRequest = {
+    ids: g.captured.ids,
+    options: { ...g.captured.request.options, prepare }
+  }
+  g.pending = true
+  try {
+    await gc.submit(req)
+  } catch (e) {
+    g.pending = false
+    errorToast(t('cleanup.gc.error.clean'), e)
+    return
+  }
+  guided.value = null
+  const rest = new Set(checked.value)
+  for (const id of req.ids) rest.delete(id)
+  checked.value = rest
+}
+
+/** "Check again" after the operator fixed the folder outside Harnu: rescan, then read the facts again. */
+async function recheckGuided(): Promise<void> {
+  const g = guided.value
+  if (!g || g.pending) return
+  g.pending = true
+  try {
+    await reaper.scanNow()
+    await gc.refresh()
+    await loadGuidance(g)
+    const stillBad = Object.values(g.guidance ?? {}).some((x) => x.unreadable !== null)
+    ui.pushToast({
+      kind: stillBad ? 'warning' : 'success',
+      title: t(`cleanup.gc.guided.toast.${stillBad ? 'recheckedStill' : 'recheckedOk'}`),
+      timeoutMs: stillBad ? 8000 : 6000
+    })
+  } catch (e) {
+    errorToast(t('cleanup.gc.guided.toast.recheckFailed'), e)
+  } finally {
+    g.pending = false
+  }
+}
+
+/** "Scan again": the Reaper scans, Cleanup gathers, and a toast says what came of it. */
+async function scanAgain(ids: readonly string[]): Promise<void> {
+  try {
+    await reaper.scanNow()
+    await gc.refresh()
+    const blind = ids.some((id) => model.value?.byId.get(id)?.bundle?.dockerBlind === true)
+    ui.pushToast({
+      kind: blind ? 'warning' : 'success',
+      title: t(`cleanup.gc.guided.toast.${blind ? 'scanStillBlind' : 'scanned'}`),
+      timeoutMs: blind ? 8000 : 6000
+    })
+  } catch (e) {
+    errorToast(t('cleanup.gc.guided.toast.scanFailed'), e)
+  }
+}
+
+async function scanFromDialog(): Promise<void> {
+  const g = guided.value
+  if (!g || g.pending) return
+  g.pending = true
+  const ids = g.ids
+  try {
+    await scanAgain(ids)
+  } finally {
+    g.pending = false
+  }
+  guided.value = null
+}
+
+async function removeKeepMarks(ids: readonly string[]): Promise<void> {
+  try {
+    for (const id of ids) await gc.unkeep(id)
+    ui.pushToast({
+      kind: 'success',
+      title: t('cleanup.gc.guided.toast.unkept', ids.length, { named: { n: ids.length } }),
+      timeoutMs: 6000
+    })
+  } catch (e) {
+    errorToast(t('cleanup.gc.guided.toast.unkeepFailed'), e)
+  }
+}
+
+/** The one door every guided action goes through: the selection bar's groups, the panel, a list row. */
+function openGuide(action: GuidedAction, ids: readonly string[], reason: RemovalRefusal): void {
+  switch (action) {
+    case 'unlock-remove':
+    case 'close-session-remove':
+    case 'shared-stack':
+    case 'fix-unreadable':
+      void openGuided(action, ids)
+      break
+    case 'scan-again':
+      if (reason === 'scan-blind') void openGuided('docker', ids)
+      else void scanAgain(ids)
+      break
+    case 'check-again': {
+      // A demoted item remembers its refusal: asking main to forget it and look again is the real check.
+      const demoted = ids.filter((id) => model.value?.byId.get(id)?.bundle?.reprobeRefusal)
+      if (demoted.length > 0) for (const id of demoted) void recheck(id)
+      else void scanAgain(ids)
+      break
+    }
+    case 'dehydrate':
+      openDehydrate([...ids])
+      break
+    case 'unkeep':
+      void removeKeepMarks(ids)
+      break
+    case 'open-settings':
+      ui.openSettings('cleanup')
+      break
+    case 'manual':
+    case 'explain':
+      // The panel carries the reason and the command to run by hand.
+      selectedId.value = ids[0] ?? null
+      break
+  }
+}
+function onGuideGroup(group: RefusalGroup): void {
+  openGuide(group.action, group.ids, group.reason)
 }
 
 async function confirmClean(): Promise<void> {
@@ -641,7 +868,9 @@ async function copyRestoreHint(hint: string): Promise<void> {
     :bytes="stats.bytes"
     :can-keep="canKeepSelection"
     :can-remove="canRemoveSelection"
+    :summary="removal"
     :asking="askingSelection"
+    @guide="onGuideGroup"
     @remove="openRemove([...checked])"
     @dehydrate="openDehydrate([...checked])"
     @keep="keepIds([...checked])"
@@ -776,6 +1005,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             @keep="keepIds([$event])"
             @ask-all="askAllOpinions()"
             @remove-safe="removeMarkedSafe()"
+            @guide="(id, action, reason) => openGuide(action, [id], reason)"
           />
         </div>
 
@@ -803,6 +1033,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             @rehydrate="rehydrate($event)"
             @keep="keepIds([$event])"
             @ask="askOpinion([$event])"
+            @guide="(id, action, reason) => openGuide(action, [id], reason)"
           />
         </aside>
       </div>
@@ -858,6 +1089,19 @@ async function copyRestoreHint(hint: string): Promise<void> {
     :opinion-of="gc.opinionFor"
     @confirm="confirmClean()"
     @cancel="confirmDialog = null"
+  />
+  <CleanupGuidedDialog
+    v-if="guided"
+    :action="guided.action"
+    :rows="guided.rows"
+    :guidance="guided.guidance"
+    :load-error="guided.loadError"
+    :pending="guided.pending"
+    :stale="guidedStale"
+    @confirm="confirmGuided($event)"
+    @recheck="recheckGuided()"
+    @scan="scanFromDialog()"
+    @cancel="guided = null"
   />
   <DehydrateConfirmDialog v-if="dehydrateItems" :items="dehydrateItems" @close="closeDehydrate()" />
 

@@ -2855,7 +2855,17 @@
         "cancel": "Cancelar",
         "close": "Fechar",
         "pending": "Trabalhando…",
-        "stale": "Isto mudou desde que você abriu — abra de novo."
+        "stale": "Isto mudou desde que você abriu — abra de novo.",
+        "toast": {
+          "scanned": "Escaneado de novo",
+          "scanStillBlind": "Escaneado de novo, mas o Docker ainda não responde",
+          "scanFailed": "Não deu para escanear de novo",
+          "unkept": "Marca Manter removida | Marcas Manter removidas",
+          "unkeepFailed": "Não deu para tirar a marca Manter",
+          "recheckedOk": "Conferido de novo: o Harnu consegue ler agora",
+          "recheckedStill": "Conferido de novo: o Harnu ainda não consegue ler",
+          "recheckFailed": "Não deu para conferir de novo"
+        }
       }
     }
   },

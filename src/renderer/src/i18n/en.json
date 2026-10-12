@@ -2855,7 +2855,17 @@
         "cancel": "Cancel",
         "close": "Close",
         "pending": "Working…",
-        "stale": "This changed since you opened it — open it again."
+        "stale": "This changed since you opened it — open it again.",
+        "toast": {
+          "scanned": "Scanned again",
+          "scanStillBlind": "Scanned again, but Docker still isn't answering",
+          "scanFailed": "Couldn't scan again",
+          "unkept": "Keep mark removed | Keep marks removed",
+          "unkeepFailed": "Couldn't remove the Keep mark",
+          "recheckedOk": "Checked again: Harnu can read it now",
+          "recheckedStill": "Checked again: Harnu still can't read it",
+          "recheckFailed": "Couldn't check again"
+        }
       }
     }
   },
