@@ -183,6 +183,13 @@ describe('CleanupSelectionBar — a group is busy while its action runs (delta 2
 })
 
 describe('CleanupSelectionBar — groups are keyed by their cause set (delta 3)', () => {
+  it('never keys a group by its first cause alone: two groups can share it', async () => {
+    const { readFileSync } = await import('node:fs')
+    const src = readFileSync('src/renderer/src/components/CleanupSelectionBar.vue', 'utf8')
+    expect(src).not.toMatch(/:key="g\.reason"/)
+    expect(src).toMatch(/:key="[^"]*causes[^"]*"/)
+  })
+
   const group = (causes: string[], action: string, ids: string[]) => ({
     reason: 'locked',
     causes,
@@ -219,6 +226,11 @@ describe('CleanupSelectionBar — groups are keyed by their cause set (delta 3)'
     })
     expect(w.find('[data-testid="sel-guide-combined"]').exists()).toBe(true)
     expect(w.find('[data-testid="sel-guide-locked"]').exists()).toBe(true)
+    // Each group is its own element, in order, with its own text.
+    expect(w.findAll('[data-testid^="sel-guide-"]').map((b) => b.text())).toEqual([
+      '2 locked in git + shared Docker stack',
+      '1 locked in git'
+    ])
     const dup = warn.mock.calls.filter((c) => String(c[0]).includes('Duplicate keys'))
     warn.mockRestore()
     expect(dup).toEqual([])
