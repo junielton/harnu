@@ -2437,7 +2437,12 @@
         "totalReady": "{n} prontos · {size}",
         "totalSelected": "{n} selecionados · {size}",
         "close": "Fechar",
-        "branchSub": "branch {branch}"
+        "branchSub": "branch {branch}",
+        "remote": {
+          "label": "Excluir também a branch no remoto",
+          "hint": "Roda git push --delete. Branches protegidas e branches que mudaram no remoto são puladas.",
+          "some": "Vale para {n} de {total}"
+        }
       },
       "chip": {
         "stack": "stack",
@@ -2564,6 +2569,7 @@
         "success": "{size} liberados · {count} item pronto limpo | {size} liberados · {count} itens prontos limpos",
         "partial": "{cleaned} limpos · {failed} precisa de revisão | {cleaned} limpos · {failed} precisam de revisão",
         "review": "Revisar",
+        "remoteLeft": "A branch continua no remoto: {error} | {count} branches continuam no remoto. Primeiro erro: {error}",
         "viewJournal": "Ver diário"
       },
       "footer": {

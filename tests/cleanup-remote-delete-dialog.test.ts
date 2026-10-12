@@ -152,3 +152,55 @@ describe('the dialog checkbox', () => {
     expect(w.emitted('confirm')![1]).toEqual([{ deleteRemote: true }])
   })
 })
+
+describe('the done summary names a remote branch that stayed', () => {
+  it('a clean whose remote delete failed is a warning that carries the error', async () => {
+    const { doneSummary } = await import('../src/renderer/src/lib/gc-jobs')
+    const done = {
+      jobId: 'j',
+      kind: 'manual',
+      results: [
+        {
+          id: 'a',
+          ok: true,
+          haltedAt: null,
+          freedBytes: 5,
+          remoteDelete: { branch: 'feat/a', ok: false, error: 'remote rejected' }
+        },
+        {
+          id: 'b',
+          ok: true,
+          haltedAt: null,
+          freedBytes: 5,
+          remoteDelete: { branch: 'feat/b', ok: true }
+        }
+      ],
+      freedBytes: 10,
+      error: null
+    } as unknown as Parameters<typeof doneSummary>[0]
+    const s = doneSummary(done)
+    expect(s.tone).toBe('warning')
+    expect(s.cleaned).toBe(2)
+    expect(s.remoteLeft).toEqual({ count: 1, error: 'remote rejected' })
+  })
+  it('a clean whose remote delete worked stays a plain success', async () => {
+    const { doneSummary } = await import('../src/renderer/src/lib/gc-jobs')
+    const s = doneSummary({
+      jobId: 'j',
+      kind: 'manual',
+      results: [
+        {
+          id: 'b',
+          ok: true,
+          haltedAt: null,
+          freedBytes: 5,
+          remoteDelete: { branch: 'x', ok: true }
+        }
+      ],
+      freedBytes: 5,
+      error: null
+    } as unknown as Parameters<typeof doneSummary>[0])
+    expect(s.tone).toBe('success')
+    expect(s.remoteLeft).toBeNull()
+  })
+})

@@ -4,6 +4,7 @@
 
 import type { Bucket, ReviewCode, WorktreeBundle } from '../../../main/gc/bundle-core'
 import { removability, type RemovalRefusal } from './gc-removability'
+import { remoteDeleteOffered, type RemotePolicy } from './gc-remote-delete'
 import type {
   GcCleanOptions,
   GcDockerCard,
@@ -403,9 +404,16 @@ export interface DialogRow {
   project: string | null
   /** The worktree may hold work no other branch has. */
   risk: boolean
+  /** "Also delete the branch on the remote" can apply to this row (AC-D5). Absent means no. */
+  remoteEligible?: boolean
 }
 
-export function dialogRows(model: GcModel, ids: readonly string[]): DialogRow[] {
+export function dialogRows(
+  model: GcModel,
+  ids: readonly string[],
+  /** The Reaper's remote-delete protections; unknown (null) offers no remote delete at all. */
+  remotePolicy: RemotePolicy | null = null
+): DialogRow[] {
   const rows: DialogRow[] = []
   for (const id of ids) {
     const b = model.byId.get(id)
@@ -433,7 +441,8 @@ export function dialogRows(model: GcModel, ids: readonly string[]): DialogRow[] 
       project: b.project,
       // Any review worktree may hold work no other branch has. The reasons that once read as safe
       // (an idle session, a shared stack) are refused outright now and never reach this dialog.
-      risk: b.kind === 'worktree' && b.bucket === 'review'
+      risk: b.kind === 'worktree' && b.bucket === 'review',
+      remoteEligible: remoteDeleteOffered(b, remotePolicy)
     })
   }
   return rows
@@ -460,10 +469,28 @@ export function dialogBreakdown(rows: readonly DialogRow[]): DialogBreakdown {
 
 export interface CleanRequest {
   ids: string[]
-  options: Required<Pick<GcCleanOptions, 'expected'>> & Pick<GcCleanOptions, 'confirmed'>
+  options: Required<Pick<GcCleanOptions, 'expected'>> &
+    Pick<GcCleanOptions, 'confirmed' | 'deleteRemote'>
 }
 
 const sorted = (xs: readonly string[]): string[] => [...xs].sort()
+
+/**
+ * The request with the operator's "Also delete the branch on the remote" choice applied: the ids
+ * of the rows that qualified, or the request unchanged when the box is unticked.
+ */
+export function withRemoteDelete(
+  req: CleanRequest,
+  rows: readonly DialogRow[],
+  checked: boolean
+): CleanRequest {
+  if (!checked) return req
+  const ids = rows
+    .filter((r) => r.remoteEligible === true && req.ids.includes(r.id))
+    .map((r) => r.id)
+  if (ids.length === 0) return req
+  return { ...req, options: { ...req.options, deleteRemote: ids } }
+}
 
 /** Whether `gc:clean` can take this block, judged from its facts (see gc-removability.ts). */
 export function isRemovable(b: GcBlock, now: number = Date.now()): boolean {
@@ -602,14 +629,15 @@ export interface CapturedConfirm {
 export function captureConfirm(
   model: GcModel,
   ids: readonly string[],
-  mode: 'ready' | 'review'
+  mode: 'ready' | 'review',
+  remotePolicy: RemotePolicy | null = null
 ): CapturedConfirm | null {
   const request = cleanRequestFor(model, ids, mode)
   if (request.ids.length === 0) return null
   return {
     mode,
     ids: request.ids,
-    rows: dialogRows(model, request.ids),
+    rows: dialogRows(model, request.ids, remotePolicy),
     refused: refusedRows(model, ids, mode),
     request
   }

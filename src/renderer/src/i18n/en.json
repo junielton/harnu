@@ -2437,7 +2437,12 @@
         "totalReady": "{n} ready · {size}",
         "totalSelected": "{n} selected · {size}",
         "close": "Close",
-        "branchSub": "branch {branch}"
+        "branchSub": "branch {branch}",
+        "remote": {
+          "label": "Also delete the branch on the remote",
+          "hint": "Runs git push --delete. Protected branches and branches that moved on the remote are skipped.",
+          "some": "Applies to {n} of {total}"
+        }
       },
       "chip": {
         "stack": "stack",
@@ -2564,6 +2569,7 @@
         "success": "Freed {size} · {count} ready item cleaned | Freed {size} · {count} ready items cleaned",
         "partial": "{cleaned} cleaned · {failed} needs review | {cleaned} cleaned · {failed} need review",
         "review": "Review",
+        "remoteLeft": "The branch is still on the remote: {error} | {count} branches are still on the remote. First error: {error}",
         "viewJournal": "View journal"
       },
       "footer": {

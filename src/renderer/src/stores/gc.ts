@@ -241,12 +241,19 @@ export const useGcStore = defineStore('gc', () => {
     const { t } = i18n.global
     const ui = useUiStore()
     const warning = s.tone === 'warning'
+    // A remote branch that stayed is a warning on a clean that otherwise worked: no "partial" title.
+    const partial = s.failed > 0 || !!d.error
     const entry = {
       kind: warning ? ('warning' as const) : ('success' as const),
-      title: warning
+      title: partial
         ? t('cleanup.gc.toast.partial', { cleaned: s.cleaned, failed: s.failed }, s.failed)
         : t('cleanup.gc.toast.success', { size: formatBytes(s.freedBytes), count: s.cleaned }),
-      description: refusalDescription(s) ?? d.error ?? undefined,
+      description:
+        refusalDescription(s) ??
+        d.error ??
+        (s.remoteLeft
+          ? t('cleanup.gc.toast.remoteLeft', { error: s.remoteLeft.error }, s.remoteLeft.count)
+          : undefined),
       timeoutMs: warning ? 8000 : 6000,
       target: { view: 'cleanup' as const },
       // Both open Cleanup, where the journal ("Recent cleanups") sits under the map.

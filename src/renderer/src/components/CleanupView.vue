@@ -27,6 +27,7 @@ import { canDehydrate, canRehydrate } from './cleanup-row'
 import { identText } from './cleanup-ident'
 import {
   captureConfirm,
+  withRemoteDelete,
   confirmChanged,
   isRemovable,
   isRetryAsReady,
@@ -229,7 +230,7 @@ const confirmStale = computed(
  */
 function openConfirm(ids: string[], mode: 'ready' | 'review'): void {
   if (dialogOpen.value || !model.value) return
-  const c = captureConfirm(model.value, ids, mode)
+  const c = captureConfirm(model.value, ids, mode, reaper.remotePolicy)
   if (c) {
     confirmDialog.value = c
     return
@@ -314,13 +315,14 @@ async function runFirstCycle(action: () => Promise<void>, failureTitle: string):
   }
 }
 
-async function confirmClean(): Promise<void> {
+async function confirmClean(opts: { deleteRemote: boolean }): Promise<void> {
   const d = confirmDialog.value
   if (!d || confirmStale.value) return
   // Close first, then start: the clean is a background job, the view is never blocked on it.
   confirmDialog.value = null
   try {
-    await gc.submit(d.request)
+    // "Also delete the branch on the remote": only the rows that qualified, only when ticked.
+    await gc.submit(withRemoteDelete(d.request, d.rows, opts.deleteRemote))
   } catch (e) {
     errorToast(t('cleanup.gc.error.clean'), e)
     return
@@ -856,7 +858,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
     :mode="confirmDialog.mode"
     :stale="confirmStale"
     :opinion-of="gc.opinionFor"
-    @confirm="confirmClean()"
+    @confirm="confirmClean($event)"
     @cancel="confirmDialog = null"
   />
   <DehydrateConfirmDialog v-if="dehydrateItems" :items="dehydrateItems" @close="closeDehydrate()" />

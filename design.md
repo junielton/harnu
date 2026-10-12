@@ -8824,6 +8824,16 @@ volume), size right.
   Retry.
 - **Marks are read from the current prefs.** Keep and never-clean come from the snapshot's prefs, not the
   bundle's scan-time flags, so a mark added since the scan hides Remove (and the hero count) at once.
+- **"Also delete the branch on the remote" (unit D, AC-D5).** A checkbox row between the warning callout
+  and the footer (`data-testid="bulk-remote-delete"`, native checkbox, 13px `--text`, **unchecked by
+  default**, label "Also delete the branch on the remote", a `GitBranch` 12px icon, and an 11px `--text-3`
+  hint "git push --delete. Skipped for protected branches."). It is drawn **only when at least one row
+  qualifies**: its branch is merged by strong proof, still exists on the remote, is not in the Reaper's
+  protected list, and the remote-delete kill switch (Settings → Cleanup) is off. When only some rows
+  qualify, an 11px `--text-3` count under it reads "Applies to {n} of {total}". Confirm then sends
+  `deleteRemote: [ids of the qualifying rows]`; unticked it sends nothing. A remote that refuses is
+  reported on the item's result (a Warning toast "Cleaned, but the branch is still on the remote: {error}")
+  and never undoes or blocks the local clean. The autopilot never has this option.
 - **Keyboard:** Esc or Cancel closes; **focus starts on Cancel, never the confirm button**; Tab cycles
   inside (focus trap); ↩ activates only the focused control.
 

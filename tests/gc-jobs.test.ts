@@ -146,7 +146,8 @@ describe('doneSummary', () => {
       failed: 0,
       freedBytes: 300,
       refusals: {},
-      refused: 0
+      refused: 0,
+      remoteLeft: null
     })
   })
 
