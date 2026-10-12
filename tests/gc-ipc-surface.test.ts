@@ -24,10 +24,10 @@ const REQUESTS = [
   'gc:prefs:get',
   'gc:prefs:set',
   'gc:recheck',
-  'gc:remoteFacts',
   'gc:recovery:ack',
   'gc:recovery:act',
   'gc:recovery:list',
+  'gc:remoteFacts',
   'gc:snapshot',
   'gc:trash:empty',
   'gc:unkeep'
