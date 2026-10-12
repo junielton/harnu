@@ -138,6 +138,51 @@ export interface GcExpected {
 export interface GcCleanOptions {
   confirmed?: string[]
   expected?: Record<string, GcExpected>
+  /**
+   * A guided action's one preparatory step, per id, run inside the job before that item is judged
+   * for the ordinary guarded remove ("No dead ends"). Only a confirmed review worktree takes one, and
+   * only when it still applies to what main finds (see `prepareClean`).
+   */
+  prepare?: Record<string, GcPrep>
+}
+
+/** The step a guided "…and remove" runs first. */
+export type GcPrep =
+  /** `git worktree unlock` on a locked worktree. */
+  | { kind: 'unlock' }
+  /** Park the idle Harnu sessions open in the worktree. Never a working one. */
+  | { kind: 'close-session' }
+  /** Stop and remove the containers of these shared stacks. Volumes are never touched. */
+  | { kind: 'stop-stack'; stackIds: string[] }
+  /** Remove the worktree and leave these shared stacks running (only when none binds the folder). */
+  | { kind: 'leave-stack'; stackIds: string[] }
+
+/** One stack other folders use too, as a guided dialog shows it. */
+export interface GcGuidedStack {
+  id: string
+  name: string
+  /** Folders (other than this worktree) the stack's containers run from or mount. */
+  otherFolders: string[]
+  /** Whether any container of the stack runs from, or bind-mounts, this worktree. */
+  bindsThisFolder: boolean
+  containers: number
+}
+
+/**
+ * `gc:guide`: what main sees about a refused item right now, for the guided dialog. Each part is
+ * null when it does not apply. Read-only.
+ */
+export interface GcGuidance {
+  id: string
+  /** Git lists the worktree as locked; `reason` is what `git worktree lock --reason` recorded. */
+  lock: { reason: string | null } | null
+  /** Harnu sessions open in it: those idle (closable) and those working or waiting (never closed). */
+  sessions: { idle: number; busy: number } | null
+  stacks: GcGuidedStack[]
+  /** The exact folder the scan could not read, who owns it and a command that fixes it. */
+  unreadable: { path: string; owner: string | null; fixCommand: string } | null
+  /** The scan ran without Docker: the command that starts it on this platform, when there is one. */
+  docker: { hint: string | null } | null
 }
 
 /** `gc:clean` acknowledges at once; the work streams on `gc:progress` and ends on `gc:done`. */
