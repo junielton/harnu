@@ -26,8 +26,9 @@
 /* -------------------------------------------------------------------------- */
 
 /**
- * Every action id that can be dispatched. The 24 rebindable renderer bindings
- * (7 of them — the Topbar's per-folder actions — ship with no default chord)
+ * Every action id that can be dispatched. The 26 rebindable renderer bindings
+ * (8 of them — the Topbar's per-folder actions and the usage overview — ship
+ * with no default chord)
  * plus the reserved `app.*` menu roles. Kept here (not in `menu.ts`) so both
  * processes share one union; `menu.ts` re-exports it for back-compat.
  */
@@ -48,6 +49,8 @@ export type ShortcutActionId =
   | 'folder.openGithubPulls'
   | 'folder.browseFiles'
   | 'folder.newTerminal'
+  | 'view.settings'
+  | 'view.usageDashboard'
   | 'session.resumeLast'
   | 'session.rename'
   | 'session.close'
@@ -224,6 +227,27 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
     menu: true,
     reserved: false,
     labelKey: 'keybindings.actions.folder.newTerminal'
+  },
+  {
+    // ⌘, / Ctrl+, — the platform convention for an app's settings (macOS
+    // "Settings…", VS Code "Preferences"). Lives in the app menu on macOS and
+    // the File menu elsewhere.
+    id: 'view.settings',
+    defaultKeys: 'Cmd+,',
+    scope: 'global',
+    menu: true,
+    reserved: false,
+    labelKey: 'keybindings.actions.view.settings'
+  },
+  {
+    // The Usage Dashboard takeover (the footer's usage panel → "Open dashboard").
+    // No default chord.
+    id: 'view.usageDashboard',
+    defaultKeys: null,
+    scope: 'global',
+    menu: true,
+    reserved: false,
+    labelKey: 'keybindings.actions.view.usageDashboard'
   },
   {
     id: 'session.resumeLast',

@@ -1134,12 +1134,14 @@ Badges).
 to `keybindings.json` and apply live. A ghost **Reset all** sits top-right, disabled
 when every row is already a default.
 
-**One row per rebindable action** (the 24; the reserved `app.*` five are not shown —
+**One row per rebindable action** (the 26; the reserved `app.*` five are not shown —
 they cannot be rebound). Seven of them — the Topbar's per-folder actions (`view.roadmap`,
 `view.prStack`, `folder.openInFileManager`, `folder.openInVSCode`,
 `folder.openGithubPulls`, `folder.browseFiles`, `folder.newTerminal`) — ship with no
-default chord, so their rows start on the empty "Set a shortcut…" state. They are
-`menu: true`, backed by a native **Folder** menu, so a bound chord fires over the terminal. Left: the action name (`--text-2` 12px, from
+default chord, so their rows start on the empty "Set a shortcut…" state, as does
+`view.usageDashboard` (View menu). They are `menu: true`, backed by a native **Folder**
+menu, so a bound chord fires over the terminal. `view.settings` defaults to `⌘,` /
+`Ctrl+,` and sits in the app menu on macOS, the File menu elsewhere. Left: the action name (`--text-2` 12px, from
 `keybindings.actions.<id>`). Then the **capture control** — a `<kbd>`-styled button
 showing the resolved chord; empty rows read "Set a shortcut…" in `--text-4`. Clicking
 it enters **recording**: the button border goes `--accent-line`, the label reads

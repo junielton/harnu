@@ -98,6 +98,12 @@ export function buildAppMenu(
             submenu: [
               { role: 'about' },
               { type: 'separator' },
+              {
+                label: 'Settings…',
+                accelerator: a('view.settings'),
+                click: (): void => emit('view.settings')
+              },
+              { type: 'separator' },
               { role: 'services' },
               { type: 'separator' },
               { role: 'hide' },
@@ -140,10 +146,16 @@ export function buildAppMenu(
           // closes the active tab.
           click: (): void => emit('session.close')
         },
-        // On Linux/Windows the application menu also owns Quit (macOS has
-        // it in the app menu above).
+        // On Linux/Windows the application menu also owns Settings and Quit
+        // (macOS has both in the app menu above).
         ...((!isMac
           ? [
+              { type: 'separator' },
+              {
+                label: 'Settings…',
+                accelerator: a('view.settings'),
+                click: (): void => emit('view.settings')
+              },
               { type: 'separator' },
               {
                 label: 'Quit',
@@ -273,6 +285,13 @@ export function buildAppMenu(
           label: 'Toggle Panel',
           accelerator: a('view.toggleHelper'),
           click: (): void => emit('view.toggleHelper')
+        },
+        {
+          // No default accelerator; present so a chord the user binds is owned
+          // at the OS level, like the Folder menu items.
+          label: 'Usage Overview',
+          accelerator: a('view.usageDashboard'),
+          click: (): void => emit('view.usageDashboard')
         },
         { type: 'separator' },
         {

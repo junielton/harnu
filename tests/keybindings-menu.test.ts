@@ -52,6 +52,13 @@ describe('accel — override-aware menu accelerators', () => {
     expect(accel('app.fullscreen', resolved)).toBe('F11')
   })
 
+  it('binds Settings to CmdOrCtrl+, and leaves the usage dashboard unbound', () => {
+    expect(accel('view.settings')).toBe('CmdOrCtrl+,')
+    expect(accel('view.usageDashboard')).toBeUndefined()
+    const resolved = resolveKeybindings([{ key: 'Cmd+Shift+U', command: 'view.usageDashboard' }])
+    expect(accel('view.usageDashboard', resolved)).toBe('CmdOrCtrl+Shift+U')
+  })
+
   it('resolves the T1 P5 open-keybindings accelerator', () => {
     expect(accel('app.openKeybindings')).toBe('CmdOrCtrl+Alt+K')
     // Reserved — an override in the file can never move it.

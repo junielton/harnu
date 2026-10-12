@@ -116,6 +116,7 @@ a binding written as `Cmd+K` is `⌘K` on a Mac and `Ctrl+K` elsewhere.
 | `Cmd/Ctrl+N`       | New session                                          |
 | `Cmd/Ctrl+K`       | Open command palette                                 |
 | `Cmd/Ctrl+O`       | Add folder                                           |
+| `Cmd/Ctrl+,`       | Open Settings                                        |
 | `Cmd/Ctrl+R`       | Rename the selected session                          |
 | `Cmd/Ctrl+Shift+R` | Resume your most-recently-modified session           |
 | `Cmd/Ctrl+W`       | Close/deselect the current session tab               |
@@ -131,7 +132,8 @@ a binding written as `Cmd+K` is `⌘K` on a Mac and `Ctrl+K` elsewhere.
 
 The Topbar's folder actions — roadmap board, PR Stack, open in file manager,
 open in VS Code, pull requests on GitHub, Browse files, and open a terminal —
-have no shortcut out of the box, but you can give each one a chord (see
+have no shortcut out of the box, and neither does the usage overview, but you
+can give each one a chord (see
 [Customizing shortcuts](#customizing-shortcuts)). They're also in the native
 **Folder** menu, so a chord you bind works even while the terminal has focus.
 
@@ -162,7 +164,8 @@ It's a VS Code-shaped array, one entry per action, merged over the defaults:
 The Topbar's folder actions have no default chord. Their command ids are
 `view.roadmap`, `view.prStack`, `folder.openInFileManager`,
 `folder.openInVSCode`, `folder.openGithubPulls`, `folder.browseFiles`, and
-`folder.newTerminal`.
+`folder.newTerminal`. The usage overview is `view.usageDashboard`, and Settings
+(`Cmd/Ctrl+,` by default) is `view.settings`.
 
 - `Cmd` means ⌘ on macOS and `Ctrl` on Linux/Windows — one file works on every
   platform. `//` and `/* */` comments are allowed.

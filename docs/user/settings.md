@@ -38,7 +38,7 @@ The per-session state is in the hover preview and in the [System Monitor](system
 
 **Settings → Keyboard Shortcuts** is a point-and-click editor for the same `keybindings.json` covered in [Sessions → Customizing shortcuts](sessions.md#customizing-shortcuts) — you never have to open the file by hand.
 
-- One row per rebindable action, showing its current chord. The Topbar's folder actions (roadmap board, PR Stack, open in file manager, open in VS Code, pull requests on GitHub, Browse files, open a terminal) are listed too; they ship with no chord and read **Set a shortcut…** until you give them one. **Click the chord, then press the keys you want.** `Esc` cancels the recording, `Backspace` unbinds the action.
+- One row per rebindable action, showing its current chord. The Topbar's folder actions (roadmap board, PR Stack, open in file manager, open in VS Code, pull requests on GitHub, Browse files, open a terminal) are listed too, along with the usage overview; they ship with no chord and read **Set a shortcut…** until you give them one. Settings itself opens with `Cmd/Ctrl+,`, which you can rebind here too. **Click the chord, then press the keys you want.** `Esc` cancels the recording, `Backspace` unbinds the action.
 - **Reset** on a row drops your override and restores the built-in default; **Unbind** clears the chord entirely. A row already at its default hides **Reset** (nothing to reset) but still offers **Unbind** — unless it has no chord at all.
 - **Reset all** (top right) clears every override at once.
 - If two actions end up on the same chord, both get a **conflict** badge naming the other. The chord still fires once — the first-registered action wins and the other stays inert — so nothing breaks silently, but you'll want to rebind one.

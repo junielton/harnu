@@ -1167,6 +1167,8 @@
       "folder.openGithubPulls": "Open pull requests on GitHub",
       "folder.browseFiles": "Browse files",
       "folder.newTerminal": "Open a terminal",
+      "view.settings": "Open Settings",
+      "view.usageDashboard": "Toggle the usage overview",
       "session.resumeLast": "Resume last session",
       "session.rename": "Rename the selected session",
       "session.close": "Close the current session tab",

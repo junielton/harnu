@@ -30,6 +30,11 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   chord — give them one in the pane or in `keybindings.json`. A new native
   **Folder** menu carries the same actions, so a chord you bind fires even while
   the terminal has focus.
+- **`Cmd/Ctrl+,` opens Settings.** It's also in the menu (Harnu → Settings… on
+  macOS, File → Settings… elsewhere) and can be rebound like any other shortcut.
+- **A shortcut slot for the usage overview.** The Usage Dashboard is now listed
+  in Settings → Keyboard Shortcuts and in the View menu. It has no chord until
+  you give it one.
 
 ### Changed
 

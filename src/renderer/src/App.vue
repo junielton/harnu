@@ -657,6 +657,22 @@ useShortcuts(
       handler: () => folderActions.newTerminal()
     },
     {
+      // ⌘, / Ctrl+, — opens Settings on its default tab. While the dialog is up
+      // it holds the `'modal'` scope, so a second press is inert (Esc closes).
+      id: 'view.settings',
+      scope: 'global',
+      keys: kb('view.settings'),
+      handler: () => ui.openSettings()
+    },
+    {
+      // Toggles the Usage Dashboard takeover — same gesture as the Topbar's
+      // per-repo views. No default chord.
+      id: 'view.usageDashboard',
+      scope: 'global',
+      keys: kb('view.usageDashboard'),
+      handler: () => ui.toggleUsageDashboard()
+    },
+    {
       id: 'session.resumeLast',
       scope: 'global',
       keys: kb('session.resumeLast'),
