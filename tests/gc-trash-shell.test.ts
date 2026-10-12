@@ -572,3 +572,62 @@ describe('an unmounted volume is unknown, never gone (delta-1 item 6)', () => {
     expect(r.gone.map((e) => e.key)).toEqual([entry.key])
   })
 })
+
+describe('no symlink between the trash dir and the entry (delta-2 item 2)', () => {
+  async function harnuEntry(): Promise<TrashedEntry> {
+    const folder = makeFolder(path.join(root, 'ws', 'wt-a'))
+    const record = await recordTrash(env, folder, async () => {
+      osTrash(trash, folder, NOW)
+    })
+    return asEntry(folder, NOW, record)
+  }
+
+  /** A folder the attacker (or a mistake) points `files/` at, holding a same-named entry of value. */
+  function precious(): string {
+    const dir = path.join(root, 'precious')
+    mkdirSync(path.join(dir, 'wt-a'), { recursive: true })
+    writeFileSync(path.join(dir, 'wt-a', 'keep.txt'), 'keep me')
+    return dir
+  }
+
+  it('files/ swapped for a symlink AFTER the check: nothing outside the trash is deleted', async () => {
+    const entry = await harnuEntry()
+    const target = precious()
+    const result = await emptyHarnuTrash([entry], [entry.key], env, {
+      beforeDelete: async () => {
+        renameSync(path.join(trash, 'files'), path.join(root, 'files-moved'))
+        symlinkSync(target, path.join(trash, 'files'))
+      }
+    })
+    expect(result.emptied).toEqual([])
+    expect(existsSync(path.join(target, 'wt-a', 'keep.txt'))).toBe(true)
+  })
+
+  it('files/ already a symlink to a folder holding the very same entry: refused', async () => {
+    const entry = await harnuEntry()
+    const moved = path.join(root, 'files-moved')
+    renameSync(path.join(trash, 'files'), moved)
+    symlinkSync(moved, path.join(trash, 'files'))
+    const result = await emptyHarnuTrash([entry], [entry.key], env)
+    expect(result.emptied).toEqual([])
+    expect(result.changed).toEqual([entry.key])
+    expect(existsSync(path.join(moved, 'wt-a', 'data.txt'))).toBe(true)
+  })
+
+  it('info/ swapped for a symlink after the check: the record outside the trash is not deleted either', async () => {
+    const entry = await harnuEntry()
+    const target = path.join(root, 'elsewhere')
+    mkdirSync(target)
+    writeFileSync(path.join(target, 'wt-a.trashinfo'), 'not a trash record')
+    await emptyHarnuTrash([entry], [entry.key], env, {
+      beforeDelete: async () => {
+        // The data goes first; swap info/ just before its record is removed.
+      },
+      betweenDeletes: async () => {
+        renameSync(path.join(trash, 'info'), path.join(root, 'info-moved'))
+        symlinkSync(target, path.join(trash, 'info'))
+      }
+    })
+    expect(existsSync(path.join(target, 'wt-a.trashinfo'))).toBe(true)
+  })
+})
