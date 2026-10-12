@@ -272,7 +272,7 @@ describe('runGcCycle: one notification at most (AC-3)', () => {
     const r = rig([ready('a'), ready('b')], live())
     const record = await runGcCycle(r.deps, 'timer')
     expect(r.notices).toHaveLength(1)
-    expect(r.notices[0]!.body).toBe('Cleaned 2 worktrees, freed 200 B')
+    expect(r.notices[0]!.body).toBe('Cleaned 2 worktrees, 200 B freed now · 2.00 GB in the trash')
     expect(record.notified).toBe(true)
   })
 
@@ -374,7 +374,7 @@ describe('runGcCycle: Docker housekeeping (AC-6)', () => {
     expect(record.freedBytes).toBe(100 + 3 * GB)
     expect(record.housekeeping).toMatchObject({ buildCacheBytes: 2 * GB, imageBytes: GB })
     expect(r.notices).toHaveLength(1)
-    expect(r.notices[0]!.body).toBe('Cleaned 1 worktree, freed 3.00 GB')
+    expect(r.notices[0]!.body).toBe('Cleaned 1 worktree, 3.00 GB freed now · 1000 MB in the trash')
   })
 
   it('notifies once when only the Docker cache was reclaimed', async () => {

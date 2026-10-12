@@ -345,11 +345,11 @@ export type HeroState =
   /** Ready items exist, but the scan could not see Docker: cleaning waits for Docker and a new scan. */
   | { kind: 'blind'; count: number; bytes: number }
   | { kind: 'empty' }
-  | { kind: 'running'; done: number; total: number; freedBytes: number }
+  | { kind: 'running'; done: number; total: number; freedBytes: number; trashedBytes: number }
 
 export function heroState(
   model: GcModel,
-  running: { done: number; total: number; freedBytes: number } | null,
+  running: { done: number; total: number; freedBytes: number; trashedBytes?: number } | null,
   firstReportAcknowledged: boolean
 ): HeroState {
   if (running) {
@@ -357,7 +357,8 @@ export function heroState(
       kind: 'running',
       done: running.done,
       total: running.total,
-      freedBytes: running.freedBytes
+      freedBytes: running.freedBytes,
+      trashedBytes: running.trashedBytes ?? 0
     }
   }
   if (model.cleanable.length === 0) {

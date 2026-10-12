@@ -6,6 +6,7 @@ import type { WorktreeStatus } from '../worktree-core'
 import { isAbsolute, resolve } from 'node:path'
 import { planArchive } from './archive-core'
 import { restoreHintFor, restoreHintForDetached, type Tombstone } from './journal'
+import type { TrashEntryRecord } from '../gc/trash-core'
 
 export type CleanStepId =
   | 'guard'
@@ -28,6 +29,11 @@ export interface CleanResult {
   itemId: string
   ok: boolean
   steps: CleanStepResult[]
+  /**
+   * Bytes the folder held when it was moved to the OS trash. Absent when nothing was trashed or
+   * the size could not be measured. Those bytes are still on disk until the trash is emptied.
+   */
+  trashedBytes?: number
 }
 
 export interface ExecutorDeps {
@@ -41,7 +47,17 @@ export interface ExecutorDeps {
    */
   probeStatus(path: string): Promise<WorktreeStatus>
   hasUnpushed(path: string): Promise<boolean>
-  trash(path: string): Promise<void>
+  /**
+   * Moves the folder to the OS trash. May answer the exact trash entry the move created, so the
+   * journal can name it and "Empty" can find exactly it again.
+   */
+  trash(path: string): Promise<void | { trashEntry?: TrashEntryRecord | null }>
+  /**
+   * The folder's size on disk right now, asked just before it is trashed (null when it cannot be
+   * told). Optional and best effort: a failure here never stops a clean. The number is what the
+   * trash then holds, and what "in the trash" reports until it is emptied.
+   */
+  measureBytes?(path: string): Promise<number | null>
   git(repoPath: string, args: string[]): Promise<string>
   resolveSha(repoPath: string, rev: string): Promise<string | null>
   /** Points an archive ref at an already-resolved commit sha. */
@@ -181,6 +197,12 @@ export async function cleanItem(
   // A holder, not two `let`s: these are assigned inside the archive step's
   // closure, and only a ref that was actually written may reach the tombstone.
   const archived: { tip: string | null; wip: string | null } = { tip: null, wip: null }
+  // What the OS trash now holds because of this clean: set only once the move succeeded.
+  const trashed: {
+    path: string | null
+    bytes: number | null
+    entry: TrashEntryRecord | null
+  } = { path: null, bytes: null, entry: null }
   let halted = false
 
   const run = async (
@@ -286,7 +308,16 @@ export async function cleanItem(
         'cannot-unregister: no matching, unlocked registration for this worktree in git; nothing was removed'
       )
     }
-    await deps.trash(item.path!)
+    let bytes: number | null = null
+    try {
+      bytes = (await deps.measureBytes?.(item.path!)) ?? null
+    } catch {
+      // The size is a report, not a guard: an unreadable folder is trashed all the same.
+    }
+    const moved = await deps.trash(item.path!)
+    trashed.entry = moved?.trashEntry ?? null
+    trashed.path = item.path!
+    trashed.bytes = typeof bytes === 'number' && Number.isFinite(bytes) && bytes >= 0 ? bytes : null
   })
 
   // The step keeps its id for the journal and the pipeline, but it only unregisters THIS
@@ -350,7 +381,15 @@ export async function cleanItem(
         ? restoreHintForDetached(item.repoPath, item.path, archived.tip)
         : restoreHintFor(item.branch ?? null, sha),
     archiveTipRef: archived.tip,
-    archiveWipRef: archived.wip
+    archiveWipRef: archived.wip,
+    ...(trashed.path !== null
+      ? {
+          trashedPath: trashed.path,
+          trashedBytes: trashed.bytes,
+          trashedAt: deps.now(),
+          trashEntry: trashed.entry
+        }
+      : {})
   }
   // appendTombstone propagates append failures; a lost restore record is a
   // failed step and fails the overall result.
@@ -362,7 +401,12 @@ export async function cleanItem(
     halted = true
   }
 
-  return { itemId: item.id, ok: !halted, steps }
+  return {
+    itemId: item.id,
+    ok: !halted,
+    steps,
+    ...(trashed.bytes !== null ? { trashedBytes: trashed.bytes } : {})
+  }
 }
 
 export async function sweep(

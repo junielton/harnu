@@ -333,6 +333,9 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Cleanup interrupted-cleans notices (unit B)        | `src/renderer/src/components/CleanupRecoveryNotices.vue`                         |
 | Cleanup Docker card (T443)                         | `src/renderer/src/components/CleanupDockerCard.vue`                              |
 | Cleanup split bar (T443)                           | `src/renderer/src/components/CleanupSplitBar.vue`                                |
+| Cleanup Archives card (unit C)                     | `src/renderer/src/components/CleanupArchivesCard.vue`                            |
+| Cleanup in-the-trash strip (unit C)                | `src/renderer/src/components/CleanupTrashCard.vue`                               |
+| Cleanup archives / git gc / empty-trash confirm    | `src/renderer/src/components/CleanupExhaustDialog.vue`                           |
 | Cleanup legend row (T443)                          | `src/renderer/src/components/CleanupLegend.vue`                                  |
 | Cleanup "Other leftovers" (branches/folders, T443) | `src/renderer/src/components/CleanupOtherItems.vue`                              |
 | Workspace GC store + view model (T443)             | `src/renderer/src/stores/gc.ts` + `lib/gc-model.ts` + `lib/gc-jobs.ts`           |

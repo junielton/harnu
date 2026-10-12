@@ -10,6 +10,8 @@ import type { HousekeepingResult } from './housekeeping-core'
 import type { OrphanVolumeItem } from './gc-housekeeping-input'
 import type { GcJobDone, GcJobInfo, GcJobProgress } from './gc-jobs-core'
 import type { GcDockerCard, OrphanVolumesHidden } from './gc-docker-card'
+import type { ArchiveEntry, ArchiveRepoGroup, GcArchivesCard } from './archives-core'
+import type { GcTrashCard, TrashListEntry } from './trash-core'
 import type {
   GcOpinionAck,
   GcOpinionDone,
@@ -20,6 +22,11 @@ import type {
 } from './opinion-core'
 
 export type {
+  ArchiveEntry,
+  ArchiveRepoGroup,
+  GcArchivesCard,
+  GcTrashCard,
+  TrashListEntry,
   GcDockerCard,
   OrphanVolumesHidden,
   GcOpinionAck,
@@ -46,8 +53,12 @@ export interface CycleRecord {
   /** Disk those ready items occupy. */
   foundBytes: number
   cleaned: GcItemResult[]
-  /** Bytes the worktree cleanups freed plus what Docker housekeeping reclaimed. */
+  /** Bytes actually deleted: the dependency folders plus what Docker housekeeping reclaimed. */
   freedBytes: number
+  /** Bytes of checkouts moved to the OS trash by this cycle: on disk until the trash is emptied. */
+  trashedBytes: number
+  /** Archive refs the autopilot deleted this cycle (0 unless "Expire archives automatically"). */
+  archivesExpired: number
   /** Eligible ready items the per-cycle cap left for a later cycle. */
   deferred: number
   housekeeping: HousekeepingResult | null
@@ -82,6 +93,10 @@ export interface GcSnapshot {
   nextClean: { count: number; bytes: number } | null
   /** The Reaper's "Automatic background scan" toggle: with it off no cycle ever runs. */
   backgroundScan: boolean
+  /** Every repo's `refs/archive/**`: what Cleanup's own removals left behind, and the retention. */
+  archives: GcArchivesCard
+  /** What Harnu moved to the OS trash that is still there (see `trash-core.ts`). */
+  trash: GcTrashCard
 }
 
 /**

@@ -47,11 +47,13 @@ import {
 } from './dehydrate-core'
 import {
   forgetMeasure,
+  measureFolder,
   probeEphemeralEntries,
   removeEphemeralDir,
   trackedFingerprint
 } from './dehydrate-shell'
 import { updateHydrationFile } from './hydration-store'
+import { defaultTrashEnv, recordTrash } from '../gc/trash-shell'
 import {
   probeWorktreeStatus,
   hasUnpushedCommits,
@@ -92,7 +94,17 @@ export function buildDeps(getWindow: () => BrowserWindow | null): ExecutorDeps {
     // stays wired to `worktree:remove`, whose stricter gate this must not touch.
     probeStatus: probeWorktreeStatus,
     hasUnpushed: hasUnpushedCommits,
-    trash: (p) => shell.trashItem(p),
+    // The move names the exact trash entry it created (the trash listing before and after), so
+    // "Empty what Harnu moved to the trash" deletes that entry and never one it only resembles.
+    trash: async (p) => ({
+      trashEntry: await recordTrash(defaultTrashEnv(), p, () => shell.trashItem(p))
+    }),
+    // Right before the move, so the figure is what the trash will hold (deps already dropped).
+    // Windows has no `du`: the size is then unknown and the pipeline estimates it.
+    measureBytes: async (p) => {
+      forgetMeasure(p)
+      return (await measureFolder(reaperExec, p, [], Date.now())).total
+    },
     git,
     resolveSha: async (repo, rev) => {
       try {

@@ -58,6 +58,9 @@ import CleanupSelectionBar from './CleanupSelectionBar.vue'
 import CleanupFirstCycleBanner from './CleanupFirstCycleBanner.vue'
 import CleanupRecoveryNotices from './CleanupRecoveryNotices.vue'
 import CleanupDockerCard from './CleanupDockerCard.vue'
+import CleanupArchivesCard from './CleanupArchivesCard.vue'
+import CleanupTrashCard from './CleanupTrashCard.vue'
+import CleanupExhaustDialog from './CleanupExhaustDialog.vue'
 import CleanupSplitBar from './CleanupSplitBar.vue'
 import CleanupLegend from './CleanupLegend.vue'
 import CleanupBulkConfirmDialog from './CleanupBulkConfirmDialog.vue'
@@ -72,6 +75,7 @@ import SegmentedControl from './ui/SegmentedControl.vue'
 import Button from './ui/Button.vue'
 import type { GcGuidance, GcPrep } from '../../../main/gc/gc-wire'
 import type { ReapItem, Tombstone } from '../../../preload'
+import type { ArchiveEntry, ArchiveRepoGroup, TrashListEntry } from '../../../main/gc/gc-wire'
 
 /**
  * Cleanup takeover — the single home of cleaning (design.md "Workspace GC — unified Cleanup").
@@ -868,6 +872,33 @@ function agoText(atMs: number): string {
 async function copyRestoreHint(hint: string): Promise<void> {
   await navigator.clipboard.writeText(hint)
 }
+
+// ---- Cleanup's own exhaust: archive refs, git gc, and what Harnu put in the trash --------------
+/** The one open confirm of those three; what it lists is captured when it opens. */
+type ExhaustDialog =
+  | { mode: 'delete'; group: ArchiveRepoGroup; entries: ArchiveEntry[] }
+  | { mode: 'gc'; group: ArchiveRepoGroup }
+  | { mode: 'trash'; entries: TrashListEntry[] }
+const exhaustDialog = ref<ExhaustDialog | null>(null)
+const archives = computed(() => gc.snapshot?.archives ?? null)
+const trash = computed(() => gc.snapshot?.trash ?? null)
+
+async function confirmExhaust(): Promise<void> {
+  const d = exhaustDialog.value
+  exhaustDialog.value = null
+  if (!d) return
+  if (d.mode === 'delete') {
+    await gc.deleteArchives(
+      d.group.repoPath,
+      d.entries.map((e) => ({ namespace: e.namespace, tipSha: e.tipSha, wipSha: e.wipSha }))
+    )
+  } else if (d.mode === 'gc') {
+    await gc.runArchiveGc(d.group.repoPath, d.group.repoAlias)
+  } else {
+    // The ids the dialog LISTED: whatever was trashed since is not in them.
+    await gc.emptyTrash(d.entries.map((e) => e.id))
+  }
+}
 </script>
 
 <template>
@@ -1072,6 +1103,19 @@ async function copyRestoreHint(hint: string): Promise<void> {
             "
           />
 
+          <CleanupArchivesCard
+            v-if="archives && archives.count > 0"
+            :archives="archives"
+            :never-clean="prefs?.neverClean ?? []"
+            @delete="(group, entries) => (exhaustDialog = { mode: 'delete', group, entries })"
+            @gc="(group) => (exhaustDialog = { mode: 'gc', group })"
+          />
+          <CleanupTrashCard
+            v-if="trash && (trash.inTrashCount > 0 || trash.unverifiedCount > 0)"
+            :trash="trash"
+            @empty="exhaustDialog = { mode: 'trash', entries: [...trash.entries] }"
+          />
+
           <CleanupReviewList
             v-if="model.review.length > 0"
             :blocks="model.review"
@@ -1192,6 +1236,15 @@ async function copyRestoreHint(hint: string): Promise<void> {
     @cancel="guided = null"
   />
   <DehydrateConfirmDialog v-if="dehydrateItems" :items="dehydrateItems" @close="closeDehydrate()" />
+  <CleanupExhaustDialog
+    v-if="exhaustDialog"
+    :mode="exhaustDialog.mode"
+    :entries="exhaustDialog.mode === 'delete' ? exhaustDialog.entries : undefined"
+    :repo="exhaustDialog.mode === 'trash' ? undefined : exhaustDialog.group.repoAlias"
+    :trash-entries="exhaustDialog.mode === 'trash' ? exhaustDialog.entries : undefined"
+    @confirm="confirmExhaust()"
+    @cancel="exhaustDialog = null"
+  />
 
   <!-- T300/U3: header markup rendered into the shared TakeoverShell (design.md §6
        "TakeoverShell — shared chrome") via Teleport. Placed after the real body content so this

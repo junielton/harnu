@@ -72,6 +72,16 @@ export interface GcCycleDeps {
   emitCycle(r: CycleRecord): void
   /** What a cleaned worktree leaves in Docker, so its volumes can be offered for review. */
   rememberLeftovers?(entries: Leftover[]): void
+  /**
+   * Deletes the archive refs older than `keepDays` in every known repo (never `git gc`). Called
+   * only when the operator turned "Expire archives automatically" on, the autopilot is on and the
+   * first report was acknowledged: it is the one place the autopilot deletes refs.
+   */
+  expireArchives?(
+    keepDays: number,
+    now: number,
+    neverClean: readonly string[]
+  ): Promise<{ deleted: number; failed: number }>
   /** Called with every gather, whether or not the cycle cleans: the Containers feed reads it. */
   onGathered?(g: GcGather): void
   state: CycleState
@@ -108,6 +118,16 @@ export function formatBytes(bytes: number): string {
   if (n >= 1e6) return Math.round(n / 1e6) + ' MB'
   if (n >= 1e3) return Math.round(n / 1e3) + ' KB'
   return Math.round(n) + ' B'
+}
+
+/**
+ * "400 MB freed now · 2.00 GB in the trash": what a clean really returned, next to what only moved
+ * to the OS trash. The renderer says the same words (`cleanup.gc.freed.*`), so the screen and the
+ * notification never give two amounts for one clean.
+ */
+export function freedSplit(freedBytes: number, trashedBytes: number): string {
+  const now = `${formatBytes(freedBytes)} freed now`
+  return trashedBytes > 0 ? `${now} · ${formatBytes(trashedBytes)} in the trash` : now
 }
 
 const NOTICE_TITLE = 'Workspace cleanup'
@@ -205,8 +225,26 @@ export async function runGcCycle(
     }
   }
 
+  // The one place the autopilot deletes refs: only on the operator's explicit, separate setting,
+  // and never in report-only mode. A failure is logged and never fails the cycle.
+  let archivesExpired = 0
+  const expireOn =
+    prefs.autopilot &&
+    prefs.firstReportAcknowledged &&
+    prefs.archiveAutoExpire &&
+    !!deps.expireArchives
+  if (expireOn) {
+    try {
+      archivesExpired = (await deps.expireArchives!(prefs.archiveKeepDays, now, prefs.neverClean))
+        .deleted
+    } catch (err) {
+      console.warn('[gc] archive expiry failed', messageOf(err))
+    }
+  }
+
   const doneCount = cleaned.filter((r) => r.ok).length
   const freedBytes = cleaned.reduce((sum, r) => sum + r.freedBytes, 0) + reclaimed(housekeeping)
+  const trashedBytes = cleaned.reduce((sum, r) => sum + (r.trashedBytes ?? 0), 0)
 
   let notice: string | null = null
   if (plan.mode === 'report') {
@@ -217,11 +255,18 @@ export async function runGcCycle(
     deps.state.lastReportKey = key
   } else {
     deps.state.lastReportKey = null
+    let cleaning: string | null = null
     if (doneCount > 0) {
-      notice = `Cleaned ${doneCount} ${plural(doneCount, 'worktree')}, freed ${formatBytes(freedBytes)}`
+      cleaning = `Cleaned ${doneCount} ${plural(doneCount, 'worktree')}, ${freedSplit(freedBytes, trashedBytes)}`
     } else if (reclaimed(housekeeping) > 0) {
-      notice = `Freed ${formatBytes(reclaimed(housekeeping))} of Docker cache`
+      cleaning = `Freed ${formatBytes(reclaimed(housekeeping))} of Docker cache`
     }
+    // Always said when it happened, whatever else the cycle did: refs were deleted.
+    const expiry =
+      archivesExpired > 0
+        ? `Deleted ${archivesExpired} ${plural(archivesExpired, 'archive')} older than ${prefs.archiveKeepDays} ${plural(prefs.archiveKeepDays, 'day')}. Git reclaims their space on its next gc.`
+        : null
+    notice = cleaning && expiry ? `${cleaning}. ${expiry}` : (cleaning ?? expiry)
   }
   if (notice) deps.notify({ title: NOTICE_TITLE, body: notice })
 
@@ -233,6 +278,8 @@ export async function runGcCycle(
     foundBytes: plan.reportBytes,
     cleaned,
     freedBytes,
+    trashedBytes,
+    archivesExpired,
     deferred: plan.deferred,
     housekeeping,
     notified: notice !== null,

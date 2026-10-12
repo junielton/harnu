@@ -99,6 +99,8 @@ describe('CleanupSettingsPane — every GcPrefs field has a control', () => {
       'gc-cat-worktrees',
       'gc-cat-docker-cache',
       'gc-cache-age',
+      'gc-archive-keep',
+      'gc-archive-expire',
       'gc-never-input'
     ]) {
       expect(w.find(`[data-testid="${id}"]`).exists(), id).toBe(true)
@@ -120,6 +122,8 @@ describe('CleanupSettingsPane — every GcPrefs field has a control', () => {
         'maxItemsPerCycle',
         'categories',
         'cacheMaxAgeDays',
+        'archiveKeepDays',
+        'archiveAutoExpire',
         'neverClean'
       ].sort()
     )

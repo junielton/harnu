@@ -91,6 +91,7 @@ export interface JobView {
   done: number
   total: number
   freedBytes: number
+  trashedBytes: number
   current: string | null
   results: GcItemResult[]
   error: string | null
@@ -114,7 +115,7 @@ export function attachJobs(s: JobsState, infos: readonly GcJobInfo[]): JobsState
   for (const i of infos) {
     // A done event already landed here; a stale `running` row must not reopen it.
     if (finished(next.jobs[i.jobId]) && i.state !== 'done') continue
-    next = put(next, { ...i, results: [...i.results] })
+    next = put(next, { ...i, trashedBytes: i.trashedBytes ?? 0, results: [...i.results] })
   }
   return next
 }
@@ -129,6 +130,7 @@ export function applyProgress(s: JobsState, p: GcJobProgress): JobsState {
     done: p.done,
     total: p.total,
     freedBytes: p.freedBytes,
+    trashedBytes: p.trashedBytes ?? 0,
     current: p.current,
     results: [...p.results],
     error: null
@@ -143,6 +145,7 @@ export function applyDone(s: JobsState, d: GcJobDone): JobsState {
     done: d.done,
     total: d.total,
     freedBytes: d.freedBytes,
+    trashedBytes: d.trashedBytes ?? 0,
     current: null,
     results: [...d.results],
     error: d.error
@@ -159,10 +162,18 @@ export function dropFinished(s: JobsState): JobsState {
 /** The job the chip shows: one that runs, else the first that waits. */
 export function runningJob(
   s: JobsState
-): { jobId: string; done: number; total: number; freedBytes: number } | null {
+): { jobId: string; done: number; total: number; freedBytes: number; trashedBytes: number } | null {
   const live = Object.values(s.jobs).filter((j) => j.state !== 'done')
   const j = live.find((x) => x.state === 'running') ?? live[0]
-  return j ? { jobId: j.jobId, done: j.done, total: j.total, freedBytes: j.freedBytes } : null
+  return j
+    ? {
+        jobId: j.jobId,
+        done: j.done,
+        total: j.total,
+        freedBytes: j.freedBytes,
+        trashedBytes: j.trashedBytes
+      }
+    : null
 }
 
 export type BlockJobState = 'busy' | 'done' | 'failed'
@@ -182,6 +193,8 @@ export interface DoneSummary {
   cleaned: number
   failed: number
   freedBytes: number
+  /** Bytes of checkouts that only moved to the OS trash: not free until it is emptied. */
+  trashedBytes: number
   /** Failed items that were refused up front, by code. */
   refusals: Partial<Record<RefusalCode, number>>
   /** How many items were refused (any code). */
@@ -221,6 +234,7 @@ export function doneSummary(d: GcJobDone): DoneSummary {
     cleaned,
     failed,
     freedBytes: d.freedBytes,
+    trashedBytes: d.trashedBytes ?? 0,
     refusals,
     refused,
     rollbackFailed,

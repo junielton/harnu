@@ -19,6 +19,8 @@ import * as path from 'node:path'
 import { bucketOf, type Bucket, type WorktreeBundle } from '../gc/bundle-core'
 import type { OrphanVolumeItem } from '../gc/gc-housekeeping-input'
 import type { GcSnapshot } from '../gc/gc-wire'
+import { NO_ARCHIVES, expiredArchives } from '../gc/archives-core'
+import { NO_TRASH } from '../gc/trash-core'
 import type { NextAction } from './deny-hint'
 import { isFolderDenied, isWithinRoot, normalizePath } from './permission-core'
 import { redactTranscript } from './transcript-redact'
@@ -54,6 +56,17 @@ export interface ListedOrphanVolume {
   reason: string
 }
 
+/** One repo's archives (`refs/archive/**`; a tip and its working state count once), path-free. */
+export interface ListedArchiveRepo {
+  /** Basename of the repo folder. */
+  repoAlias: string
+  count: number
+  /** Estimated bytes only the archives keep alive; null when git could not say. */
+  bytes: number | null
+  /** How many are older than the operator's retention. */
+  expired: number
+}
+
 export interface CleanupTotals {
   ready: number
   readyBytes: number
@@ -62,6 +75,16 @@ export interface CleanupTotals {
   inUse: number
   orphanVolumes: number
   orphanVolumeBytes: number
+  /** Archives across the listed repos (a tip and its working state count once). */
+  archives: number
+  /** Estimated bytes only they keep alive (repos git could not size count as 0). */
+  archiveBytes: number
+  /** What Harnu moved to the OS trash and verified to still be there: not freed until emptied. */
+  inTrashBytes: number
+  inTrashCount: number
+  /** What it moved but can no longer check (no exact record, or a trash it cannot read): never counted above. */
+  trashUnverifiedBytes: number
+  trashUnverifiedCount: number
 }
 
 /** The `list_cleanup` payload: a {@link GcSnapshot}, redacted and optionally scoped. */
@@ -69,7 +92,13 @@ export interface CleanupListing {
   scannedAt: number
   bundles: ListedBundle[]
   orphanVolumes: ListedOrphanVolume[]
+  archives: ListedArchiveRepo[]
   totals: CleanupTotals
+  /**
+   * The last autopilot or manual cycle's bytes, split the way the screen shows them: what was
+   * deleted from disk now, and what only moved to the OS trash. Null before any cycle.
+   */
+  lastCycle: { at: number; freedNowBytes: number; trashedBytes: number } | null
   autopilot: {
     enabled: boolean
     /** True until the operator acknowledges the first report: the autopilot only counts. */
@@ -291,7 +320,14 @@ function listVolume(v: OrphanVolumeItem, home: string): ListedOrphanVolume {
 
 function totalsOf(
   bundles: readonly ListedBundle[],
-  volumes: readonly ListedOrphanVolume[]
+  volumes: readonly ListedOrphanVolume[],
+  archives: readonly ListedArchiveRepo[],
+  trash: {
+    inTrashBytes: number
+    inTrashCount: number
+    unverifiedBytes?: number
+    unverifiedCount?: number
+  }
 ): CleanupTotals {
   const sum = (bucket: Bucket): number =>
     bundles.filter((b) => b.bucket === bucket).reduce((n, b) => n + (b.bytes ?? 0), 0)
@@ -303,7 +339,13 @@ function totalsOf(
     reviewBytes: sum('review'),
     inUse: count('in-use'),
     orphanVolumes: volumes.length,
-    orphanVolumeBytes: volumes.reduce((n, v) => n + (v.sizeBytes ?? 0), 0)
+    orphanVolumeBytes: volumes.reduce((n, v) => n + (v.sizeBytes ?? 0), 0),
+    archives: archives.reduce((n, a) => n + a.count, 0),
+    archiveBytes: archives.reduce((n, a) => n + (a.bytes ?? 0), 0),
+    inTrashBytes: trash.inTrashBytes,
+    inTrashCount: trash.inTrashCount,
+    trashUnverifiedBytes: trash.unverifiedBytes ?? 0,
+    trashUnverifiedCount: trash.unverifiedCount ?? 0
   }
 }
 
@@ -319,11 +361,35 @@ export function cleanupListing(snap: GcSnapshot, opts: CleanupListingOptions): C
     .filter((b) => (scoped ? inScope(b, repos, roots, opts.home) : true))
     .map((b) => listBundle(b, snap, opts))
   const orphanVolumes = scoped ? [] : snap.orphanVolumes.map((v) => listVolume(v, opts.home))
+  // An archive belongs to its repo, so a scoped listing keeps the repos it covers. The trash
+  // belongs to no folder, like an orphan volume: a scoped listing leaves it out.
+  const archives = (snap.archives ?? NO_ARCHIVES).repos
+    .filter((r) => {
+      if (!scoped) return true
+      const repo = normalizePath(r.repoPath, opts.home)
+      return repos.has(repo) || roots.some((root) => isWithinRoot(repo, root))
+    })
+    .map((r) => ({
+      repoAlias: safe(r.repoAlias, opts.home),
+      count: r.count,
+      bytes: r.bytes,
+      expired: expiredArchives(r.entries, (snap.archives ?? NO_ARCHIVES).keepDays, snap.scannedAt)
+        .length
+    }))
+  const trash = scoped ? NO_TRASH : (snap.trash ?? NO_TRASH)
   return {
     scannedAt: snap.scannedAt,
     bundles,
     orphanVolumes,
-    totals: totalsOf(bundles, orphanVolumes),
+    archives,
+    totals: totalsOf(bundles, orphanVolumes, archives, trash),
+    lastCycle: snap.lastCycle
+      ? {
+          at: snap.lastCycle.at,
+          freedNowBytes: snap.lastCycle.freedBytes,
+          trashedBytes: snap.lastCycle.trashedBytes ?? 0
+        }
+      : null,
     autopilot: {
       enabled: snap.prefs.autopilot,
       reportOnly: !snap.prefs.firstReportAcknowledged,

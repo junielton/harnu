@@ -690,11 +690,13 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       // Remote branch deletion never happens through the cleanup pipeline, so the flag is a
       // literal rather than anything read from settings or from the item.
       const result = await cleanItem(b.item, { deleteRemote: false }, deps.executor)
-      if (result.ok) return
+      const trashed = result.trashedBytes === undefined ? {} : { trashedBytes: result.trashedBytes }
+      if (result.ok) return result.trashedBytes === undefined ? undefined : trashed
       const failed = result.steps.find((s) => !s.ok)
       throw new GcStepError(
         failed ? STEP_OF[failed.id] : 'archive',
-        `${failed?.id ?? 'clean'}: ${failed?.error ?? 'failed'}`
+        `${failed?.id ?? 'clean'}: ${failed?.error ?? 'failed'}`,
+        trashed
       )
     }
   }
