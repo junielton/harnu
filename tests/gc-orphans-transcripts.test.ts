@@ -434,3 +434,45 @@ describe('the manual clean of orphan transcripts', () => {
     expect(r.reconciled).toEqual([])
   })
 })
+
+describe('the recency guard (delta-1 item 4)', () => {
+  const HOUR = 3_600_000
+  const probeWithAge = (ageMs: number[]): OrphanProbe =>
+    probeOf({
+      slug: 's',
+      files: ageMs.map((age, i) => ({
+        name: `s${i}.jsonl`,
+        sessionId: `id${i}`,
+        bytes: 100,
+        mtimeMs: NOW - age,
+        cwd: GONE
+      })),
+      extraBytes: 0,
+      hasMemory: false
+    })
+  const plan = (probe: OrphanProbe) =>
+    planOrphanTranscripts({
+      probe,
+      exists: allGone,
+      protectedSessionIds: new Set(),
+      protectedFolders: [],
+      repoPaths: [],
+      now: NOW
+    })
+
+  it('refuses a project whose newest transcript was written within the last 24 hours', async () => {
+    // A session still writing from a terminal outside Harnu, in a folder that is gone.
+    expect(await plan(probeWithAge([HOUR, 10 * 24 * HOUR]))).toEqual([])
+    expect(await plan(probeWithAge([23 * HOUR]))).toEqual([])
+  })
+
+  it('lists it once everything in it is older than that', async () => {
+    expect((await plan(probeWithAge([25 * HOUR, 10 * 24 * HOUR]))).map((i) => i.slug)).toEqual([
+      's'
+    ])
+  })
+
+  it('a transcript dated in the future counts as just written', async () => {
+    expect(await plan(probeWithAge([-HOUR]))).toEqual([])
+  })
+})
