@@ -151,7 +151,7 @@ describe('the lazy, cached remote facts', () => {
 describe('a partial failure is never cached (delta-3 item 5)', () => {
   const countingService = (answer: RemoteFacts) => {
     let calls = 0
-    let t = 1_000_000
+    const t = 1_000_000
     const service = createRemoteFactsService({
       now: () => t,
       probe: async () => {
