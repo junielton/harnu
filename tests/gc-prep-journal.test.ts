@@ -17,8 +17,12 @@ import {
   listRecovery,
   recoverPrepJournal,
   type LockIdentity,
+  type PrepJournal,
   type RecoveryDeps
 } from '../src/main/gc/gc-prep-journal'
+
+/** The next run's journal over the same file: what was left `pending` is an orphan to it. */
+const boot = (): PrepJournal => createPrepJournal(file, 'boot')
 
 let dir = ''
 let file = ''
@@ -75,7 +79,7 @@ function world(over: Partial<RecoveryDeps> = {}): { calls: Calls; deps: Recovery
 
 describe('the prep journal', () => {
   it('survives a restart: an entry written is read back, byte for byte', async () => {
-    const j = createPrepJournal(file)
+    const j = createPrepJournal(file, 'previous-run')
     const id = await j.begin(unlockEntry)
     const again = await createPrepJournal(file).entries()
     expect(again).toHaveLength(1)
@@ -83,7 +87,7 @@ describe('the prep journal', () => {
   })
 
   it('end removes only its own entry', async () => {
-    const j = createPrepJournal(file)
+    const j = createPrepJournal(file, 'previous-run')
     const a = await j.begin(unlockEntry)
     await j.begin(stopEntry)
     await j.end(a)
@@ -98,22 +102,36 @@ describe('the prep journal', () => {
   })
 })
 
+describe('boot recovery leaves this run’s own entries alone', () => {
+  it('an entry written by the running Harnu is a prep in flight, not an orphan', async () => {
+    const mine = createPrepJournal(file, 'run-now')
+    await mine.begin(unlockEntry)
+    const { deps, calls } = world()
+    await recoverPrepJournal(mine, deps)
+    expect(calls.lock).toEqual([])
+    expect((await mine.entries())[0]).toMatchObject({ state: 'pending' })
+    // The next run sees it as an orphan.
+    await recoverPrepJournal(createPrepJournal(file, 'run-next'), deps)
+    expect(calls.lock).toHaveLength(1)
+  })
+})
+
 describe('boot recovery: a lock', () => {
   it('is put back when it is provably the same worktree, and announced once', async () => {
-    const j = createPrepJournal(file)
+    const j = createPrepJournal(file, 'previous-run')
     await j.begin(unlockEntry)
     const { deps, calls } = world()
-    await recoverPrepJournal(j, deps)
+    await recoverPrepJournal(boot(), deps)
     expect(calls.lock).toEqual([['/r/wt', 'café "x" 日本']])
     const items = await listRecovery(j)
     expect(items).toEqual([expect.objectContaining({ state: 'resolved', outcome: 'relocked' })])
   })
 
   it('is NOT put back on a folder re-created at the same path (a different admin dir)', async () => {
-    const j = createPrepJournal(file)
+    const j = createPrepJournal(file, 'previous-run')
     await j.begin(unlockEntry)
     const { deps, calls } = world({ identityOf: async () => ({ ...ID, adminId: 'wt1' }) })
-    await recoverPrepJournal(j, deps)
+    await recoverPrepJournal(boot(), deps)
     expect(calls.lock).toEqual([])
     expect(await listRecovery(j)).toEqual([
       expect.objectContaining({ state: 'notice', notice: 'lock-skipped', path: '/r/wt' })
@@ -127,47 +145,51 @@ describe('boot recovery: a lock', () => {
     // but it is a new admin directory.
     ['admin directory (re-created with the same names)', { inode: 43, birth: 2_000 }]
   ])('is NOT put back when the %s changed', async (_what, change) => {
-    const j = createPrepJournal(file)
+    const j = createPrepJournal(file, 'previous-run')
     await j.begin(unlockEntry)
     const { deps, calls } = world({ identityOf: async () => ({ ...ID, ...change }) })
-    await recoverPrepJournal(j, deps)
+    await recoverPrepJournal(boot(), deps)
     expect(calls.lock).toEqual([])
     expect((await listRecovery(j))[0]).toMatchObject({ notice: 'lock-skipped' })
   })
 
   it('is NOT put back when no identity was recorded', async () => {
-    const j = createPrepJournal(file)
+    const j = createPrepJournal(file, 'previous-run')
     await j.begin({ ...unlockEntry, identity: null })
     const { deps, calls } = world()
-    await recoverPrepJournal(j, deps)
+    await recoverPrepJournal(boot(), deps)
     expect(calls.lock).toEqual([])
     expect((await listRecovery(j))[0]).toMatchObject({ notice: 'lock-skipped' })
   })
 
-  it('already locked again, or a folder that is gone: nothing to do, nothing to announce', async () => {
-    const j = createPrepJournal(file)
+  it('already locked again: nothing to do, nothing to announce', async () => {
+    const j = createPrepJournal(file, 'previous-run')
     await j.begin(unlockEntry)
-    await j.begin(unlockEntry)
-    let n = 0
-    const { deps, calls } = world({
-      lockReason: async () => (n++ === 0 ? 'x' : undefined),
-      exists: async () => n < 2
-    })
-    await recoverPrepJournal(j, deps)
+    const { deps, calls } = world({ lockReason: async () => 'x' })
+    await recoverPrepJournal(boot(), deps)
     expect(calls.lock).toEqual([])
     expect(await listRecovery(j)).toEqual([])
     expect(await j.entries()).toEqual([])
   })
 
+  it('a folder that is gone: nothing to do, nothing to announce', async () => {
+    const j = createPrepJournal(file, 'previous-run')
+    await j.begin(unlockEntry)
+    const { deps, calls } = world({ exists: async () => false })
+    await recoverPrepJournal(boot(), deps)
+    expect(calls.lock).toEqual([])
+    expect(await j.entries()).toEqual([])
+  })
+
   it('a lock that cannot be put back becomes a notice, never a silent failure', async () => {
-    const j = createPrepJournal(file)
+    const j = createPrepJournal(file, 'previous-run')
     await j.begin(unlockEntry)
     const { deps } = world({
       lock: async () => {
         throw new Error('git is gone')
       }
     })
-    await recoverPrepJournal(j, deps)
+    await recoverPrepJournal(boot(), deps)
     expect((await listRecovery(j))[0]).toMatchObject({
       state: 'notice',
       notice: 'lock-skipped',
@@ -178,10 +200,10 @@ describe('boot recovery: a lock', () => {
 
 describe('boot recovery: containers are never started by Harnu on its own', () => {
   it('an interrupted stop is a notice naming the containers, and nothing is started', async () => {
-    const j = createPrepJournal(file)
+    const j = createPrepJournal(file, 'previous-run')
     await j.begin(stopEntry)
     const { deps, calls } = world()
-    await recoverPrepJournal(j, deps)
+    await recoverPrepJournal(boot(), deps)
     expect(calls.started).toEqual([])
     expect(await listRecovery(j)).toEqual([
       expect.objectContaining({ state: 'notice', notice: 'stack-stopped', detail: 'n1, n2' })
@@ -189,18 +211,18 @@ describe('boot recovery: containers are never started by Harnu on its own', () =
   })
 
   it('containers that no longer exist: one notice, dismissable', async () => {
-    const j = createPrepJournal(file)
+    const j = createPrepJournal(file, 'previous-run')
     await j.begin(stopEntry)
     const { deps } = world({ containersPresent: async () => [] })
-    await recoverPrepJournal(j, deps)
+    await recoverPrepJournal(boot(), deps)
     expect((await listRecovery(j))[0]).toMatchObject({ notice: 'containers-gone' })
   })
 
   it('a folder that is gone is dropped without a notice', async () => {
-    const j = createPrepJournal(file)
+    const j = createPrepJournal(file, 'previous-run')
     await j.begin(stopEntry)
     const { deps } = world({ exists: async () => false })
-    await recoverPrepJournal(j, deps)
+    await recoverPrepJournal(boot(), deps)
     expect(await listRecovery(j)).toEqual([])
     expect(await j.entries()).toEqual([])
   })
@@ -208,10 +230,10 @@ describe('boot recovery: containers are never started by Harnu on its own', () =
 
 describe('notices are announced once, kept until dismissed, and survive a lost announcement', () => {
   it('the next boot does not process or announce them again', async () => {
-    const j = createPrepJournal(file)
+    const j = createPrepJournal(file, 'previous-run')
     await j.begin(stopEntry)
     const first = world()
-    await recoverPrepJournal(j, first.deps)
+    await recoverPrepJournal(boot(), first.deps)
     const items = await listRecovery(j)
     await ackRecovery(
       j,
@@ -219,7 +241,7 @@ describe('notices are announced once, kept until dismissed, and survive a lost a
     )
 
     const second = world()
-    await recoverPrepJournal(j, second.deps)
+    await recoverPrepJournal(boot(), second.deps)
     const after = await listRecovery(j)
     expect(after).toHaveLength(1)
     expect(after[0]).toMatchObject({ id: items[0].id, announced: true })
@@ -227,19 +249,19 @@ describe('notices are announced once, kept until dismissed, and survive a lost a
   })
 
   it('an announcement nobody acknowledged is listed again, so it cannot be lost', async () => {
-    const j = createPrepJournal(file)
+    const j = createPrepJournal(file, 'previous-run')
     await j.begin(unlockEntry)
-    await recoverPrepJournal(j, world().deps)
+    await recoverPrepJournal(boot(), world().deps)
     expect((await listRecovery(j))[0]).toMatchObject({ announced: false })
     // The renderer never acknowledged (it was not up yet): the next listing still has it.
     expect((await listRecovery(j))[0]).toMatchObject({ announced: false })
   })
 
   it('acknowledging a resolved entry removes it; a notice stays', async () => {
-    const j = createPrepJournal(file)
+    const j = createPrepJournal(file, 'previous-run')
     await j.begin(unlockEntry)
     await j.begin(stopEntry)
-    await recoverPrepJournal(j, world().deps)
+    await recoverPrepJournal(boot(), world().deps)
     const items = await listRecovery(j)
     await ackRecovery(
       j,
@@ -254,9 +276,9 @@ describe('the operator answers a notice', () => {
     entry: Parameters<ReturnType<typeof createPrepJournal>['begin']>[0],
     deps: RecoveryDeps
   ) => {
-    const j = createPrepJournal(file)
+    const j = createPrepJournal(file, 'previous-run')
     await j.begin(entry)
-    await recoverPrepJournal(j, deps)
+    await recoverPrepJournal(boot(), deps)
     return { j, id: (await listRecovery(j))[0].id }
   }
 

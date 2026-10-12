@@ -157,12 +157,24 @@ export type GcPrep =
   /** Remove the worktree and leave these shared stacks running (only when none binds the folder). */
   | { kind: 'leave-stack'; stackIds: string[] }
 
-/** What boot recovery did about one orphaned guided prep (see gc-prep-journal.ts). */
-export interface GcRecoveryReport {
-  outcome: 'relocked' | 'restarted' | 'left' | 'dropped' | 'failed'
+/** What the operator can answer to a recovery notice. */
+export type GcRecoveryAction = 'start' | 'lock' | 'dismiss'
+
+/**
+ * One thing the prep journal wants the operator to know (see gc-prep-journal.ts): a `notice` stays until it
+ * is answered or dismissed; a `resolved` one (a lock Harnu put back) is shown once and then goes.
+ */
+export interface GcRecoveryItem {
+  id: string
+  state: 'notice' | 'resolved'
   kind: 'unlock' | 'stop-stack'
+  notice?: 'stack-stopped' | 'lock-skipped' | 'containers-gone'
+  outcome?: 'relocked'
   path: string
+  /** Container names for a stack, or what went wrong. */
   detail: string
+  /** Already announced in Activity: it is not announced again. */
+  announced: boolean
 }
 
 /** One stack other folders use too, as a guided dialog shows it. */
