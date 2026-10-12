@@ -657,7 +657,7 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       // literal rather than anything read from settings or from the item.
       const result = await cleanItem(b.item, { deleteRemote: false }, deps.executor)
       const trashed = result.trashedBytes === undefined ? {} : { trashedBytes: result.trashedBytes }
-      if (result.ok) return trashed
+      if (result.ok) return result.trashedBytes === undefined ? undefined : trashed
       const failed = result.steps.find((s) => !s.ok)
       throw new GcStepError(
         failed ? STEP_OF[failed.id] : 'archive',

@@ -2581,6 +2581,32 @@ const api = {
    */
   gcOpinionCached: (ids: string[]): Promise<Record<string, GcOpinion>> =>
     ipcRenderer.invoke('gc:opinion:cached', ids),
+  /**
+   * Deletes the archive refs (`refs/archive/**`) the operator confirmed in one repo. Each is
+   * deleted only if it still has the shas it was listed with. Never runs `git gc`.
+   */
+  gcDeleteArchives: (req: {
+    repoPath: string
+    archives: Array<{ namespace: string; tipSha: string | null; wipSha: string | null }>
+  }): Promise<{
+    ok: boolean
+    deleted: number
+    failed: number
+    changed: string[]
+    unknownRepo?: boolean
+  }> => ipcRenderer.invoke('gc:archives:delete', req),
+  /** "Run git gc now" in one repo, after its own confirm. */
+  gcRunArchiveGc: (repoPath: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('gc:archives:gc', repoPath),
+  /** "Empty what Harnu moved to the trash": only those items; never the user's other trash. */
+  gcEmptyTrash: (): Promise<{
+    unsupported: boolean
+    emptiedBytes: number
+    emptied: number
+    missing: number
+    failed: number
+    location: string
+  }> => ipcRenderer.invoke('gc:trash:empty'),
   onGcOpinionResult: (cb: (r: GcOpinionResult) => void): (() => void) =>
     subscribe('gc:opinion:result', cb),
   onGcOpinionDone: (cb: (d: GcOpinionDone) => void): (() => void) =>

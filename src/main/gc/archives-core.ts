@@ -35,6 +35,11 @@ export interface ArchiveEntry {
   branch: string | null
   /** True when the namespace says the source was a detached HEAD. */
   detached: boolean
+  /**
+   * The folder the sweep removed, when the journal remembers it (its `trashedPath`); null for an
+   * archive older than that record or one written by something else. Filled by `withFolders`.
+   */
+  folder: string | null
   /** When it was archived, in ms; NaN when neither the name nor the commit says. */
   at: number
   /** `git branch <name> <sha>`, ready to paste; null when there is no tip to restore. */
@@ -112,6 +117,7 @@ function finish(repoPath: string, d: Draft): ArchiveEntry {
     hasWip: wipSha !== null,
     branch: d.branch,
     detached: d.detached,
+    folder: null,
     at: d.stampAt ?? d.fallbackAt,
     restoreCommand,
     wipRestoreCommand: wipSha
@@ -187,6 +193,59 @@ export function expiredArchives(
   if (!Number.isFinite(keepDays) || keepDays <= 0) return []
   const cutoff = now - keepDays * DAY_MS
   return entries.filter((e) => Number.isFinite(e.at) && e.at < cutoff).sort((a, b) => a.at - b.at)
+}
+
+/**
+ * Names the folder each entry came from, using the journal lines whose archive refs are the
+ * entry's own. Matching is by ref name: the journal records exactly the refs it wrote.
+ */
+export function withFolders(
+  entries: readonly ArchiveEntry[],
+  journal: ReadonlyArray<{
+    archiveTipRef: string | null
+    archiveWipRef: string | null
+    trashedPath?: string | null
+  }>
+): ArchiveEntry[] {
+  const byRef = new Map<string, string>()
+  for (const t of journal) {
+    if (typeof t.trashedPath !== 'string' || !t.trashedPath) continue
+    for (const ref of [t.archiveTipRef, t.archiveWipRef]) if (ref) byRef.set(ref, t.trashedPath)
+  }
+  return entries.map((e) => ({
+    ...e,
+    folder: e.refs.map((r) => byRef.get(r)).find((f): f is string => !!f) ?? null
+  }))
+}
+
+/** What the operator confirmed deleting: one entry as the screen showed it. */
+export interface ConfirmedArchive {
+  namespace: string
+  tipSha: string | null
+  wipSha: string | null
+}
+
+/**
+ * The fresh entries that match what the operator confirmed, and the namespaces that no longer do.
+ * An entry is deleted only if its namespace still exists with exactly the tip and wip shas the
+ * confirm listed: a ref that moved, vanished or gained a wip since is `changed` and left alone.
+ */
+export function confirmedArchives(
+  fresh: readonly ArchiveEntry[],
+  requested: readonly ConfirmedArchive[]
+): { entries: ArchiveEntry[]; changed: string[] } {
+  const byNamespace = new Map(fresh.map((e) => [e.namespace, e]))
+  const entries: ArchiveEntry[] = []
+  const changed: string[] = []
+  const seen = new Set<string>()
+  for (const r of requested) {
+    if (seen.has(r.namespace)) continue
+    seen.add(r.namespace)
+    const e = byNamespace.get(r.namespace)
+    if (e && e.tipSha === r.tipSha && e.wipSha === r.wipSha) entries.push(e)
+    else changed.push(r.namespace)
+  }
+  return { entries, changed }
 }
 
 // ---- the card the snapshot carries --------------------------------------------------------------

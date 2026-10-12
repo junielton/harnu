@@ -22,6 +22,8 @@ describe('defaultGcPrefs', () => {
       maxItemsPerCycle: 20,
       categories: { worktrees: true, dockerCache: true },
       cacheMaxAgeDays: 7,
+      archiveKeepDays: 30,
+      archiveAutoExpire: false,
       neverClean: [],
       keep: {},
       released: {},

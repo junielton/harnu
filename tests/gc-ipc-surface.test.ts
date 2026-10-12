@@ -13,6 +13,8 @@ const channels = (src: string, re: RegExp): string[] =>
 
 const REQUESTS = [
   'gc:ackFirstReport',
+  'gc:archives:delete',
+  'gc:archives:gc',
   'gc:clean',
   'gc:jobs',
   'gc:keep',
@@ -22,6 +24,7 @@ const REQUESTS = [
   'gc:prefs:set',
   'gc:recheck',
   'gc:snapshot',
+  'gc:trash:empty',
   'gc:unkeep'
 ]
 const EVENTS = ['gc:cycle', 'gc:done', 'gc:opinion:done', 'gc:opinion:result', 'gc:progress']

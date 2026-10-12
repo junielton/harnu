@@ -71,6 +71,8 @@ import {
   withOrphanVolumesHidden,
   type GcDockerCard
 } from './gc-docker-card'
+import { gatherArchives, gatherTrash } from './gc-exhaust-shell'
+import type { GcArchivesCard, GcTrashCard } from './gc-wire'
 import type { GcGather } from './gc-cycle'
 import { judgeKeeps, type StaleKeep } from './gc-keep'
 import type { GcPrefs } from './gc-prefs'
@@ -92,6 +94,10 @@ export interface GcGathered extends GcGather {
   staleReleases: string[]
   /** Items kept although their folder is gone, because a halted cleanup left a note on them. */
   goneItemIds: string[]
+  /** What Cleanup's own removals left behind in git: every repo's `refs/archive/**`. */
+  archives: GcArchivesCard
+  /** What Harnu moved to the OS trash that is still there. */
+  trash: GcTrashCard
 }
 
 const COMPOSE_FILES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml']
@@ -423,6 +429,9 @@ export async function gatherGc(
     orphanVolumes: orphanVolumeItems(orphanNames, df),
     staleKeeps,
     staleReleases: staleReleaseIds,
-    goneItemIds
+    goneItemIds,
+    // Their own try/catch inside: a git or trash hiccup never fails the gather.
+    archives: await gatherArchives(prefs, now),
+    trash: await gatherTrash()
   }
 }

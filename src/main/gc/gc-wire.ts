@@ -56,6 +56,8 @@ export interface CycleRecord {
   freedBytes: number
   /** Bytes of checkouts moved to the OS trash by this cycle: on disk until the trash is emptied. */
   trashedBytes: number
+  /** Archive refs the autopilot deleted this cycle (0 unless "Expire archives automatically"). */
+  archivesExpired: number
   /** Eligible ready items the per-cycle cap left for a later cycle. */
   deferred: number
   housekeeping: HousekeepingResult | null

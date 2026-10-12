@@ -63,6 +63,17 @@ import {
   type Opinion as GcOpinion
 } from './opinion-core'
 import { createOpinionShell } from './opinion-shell'
+import {
+  deleteConfirmedArchives,
+  emptyHarnuTrashNow,
+  expireArchivesNow,
+  runGcInRepo,
+  type ArchiveDeleteAck,
+  type ArchiveDeleteRequest,
+  type EmptyTrashAck
+} from './gc-exhaust-shell'
+import { NO_ARCHIVES } from './archives-core'
+import { NO_TRASH } from './trash-core'
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
@@ -81,6 +92,15 @@ export interface GcService {
   opinion(ids: unknown): GcOpinionAck
   /** The peek: cached opinions that still match their item. Never asks the model. */
   opinionCached(ids: unknown): Promise<Record<string, GcOpinion>>
+  /**
+   * Deletes the archive refs the operator confirmed in one repo, each only if it still has the shas
+   * it was shown with. Deletes refs only: git reclaims the space on its next gc.
+   */
+  deleteArchives(raw: unknown): Promise<ArchiveDeleteAck>
+  /** "Run git gc now" for one repo, after its own confirm. */
+  runArchiveGc(repoPath: unknown): Promise<{ ok: boolean; error?: string }>
+  /** "Empty what Harnu moved to the trash": only those items, never the autopilot. */
+  emptyTrash(): Promise<EmptyTrashAck>
 }
 
 /** Ids from an untrusted payload: strings only, bounded. */
@@ -90,6 +110,25 @@ function parseIds(raw: unknown): string[] {
   if (ids.length !== raw.length) throw new Error('gc:clean ids must be non-empty strings')
   if (ids.length > 500) throw new Error('gc:clean takes at most 500 ids')
   return ids
+}
+
+/** The `gc:archives:delete` payload from the renderer: one repo and the archives it confirmed. */
+function parseArchiveRequest(raw: unknown): ArchiveDeleteRequest {
+  const r = raw as { repoPath?: unknown; archives?: unknown } | null
+  if (!r || typeof r.repoPath !== 'string' || !r.repoPath || !Array.isArray(r.archives)) {
+    throw new Error('gc:archives:delete expects { repoPath, archives }')
+  }
+  if (r.archives.length > 5000) throw new Error('gc:archives:delete takes at most 5000 archives')
+  const sha = (v: unknown): string | null => (typeof v === 'string' && v ? v : null)
+  return {
+    repoPath: r.repoPath,
+    archives: r.archives.map((a: { namespace?: unknown; tipSha?: unknown; wipSha?: unknown }) => {
+      if (typeof a?.namespace !== 'string' || !a.namespace.startsWith('refs/archive/')) {
+        throw new Error('gc:archives:delete: not an archive namespace')
+      }
+      return { namespace: a.namespace, tipSha: sha(a.tipSha), wipSha: sha(a.wipSha) }
+    })
+  }
 }
 
 /** Registers the handlers and arms the cycle on the Reaper tick. */
@@ -203,6 +242,9 @@ export async function registerGcHandlers(
     notify,
     emitCycle: (record) => send('gc:cycle', record),
     rememberLeftovers: remember,
+    // The one place the autopilot deletes refs: the cycle calls it only when the operator turned
+    // "Expire archives automatically" on.
+    expireArchives: (keepDays, now) => expireArchivesNow(keepDays, now),
     state,
     now: () => Date.now()
   }
@@ -224,7 +266,9 @@ export async function registerGcHandlers(
     lastCycle: state.last,
     nextCycleAt: reaper.autoScan() ? reaper.nextTickAt() : null,
     nextClean: planNextClean(g.bundles, livePrefs()),
-    backgroundScan: reaper.autoScan()
+    backgroundScan: reaper.autoScan(),
+    archives: g.archives ?? NO_ARCHIVES,
+    trash: g.trash ?? NO_TRASH
   })
 
   // The advisor is reachable from the `gc:opinion` handler below and from nowhere else: the
@@ -327,7 +371,24 @@ export async function registerGcHandlers(
     ackFirstReport: () => persist(withAcknowledged(prefs)),
     jobs: () => queue.jobs(),
     opinion: (ids) => opinions.start(ids),
-    opinionCached: (ids) => opinions.cached(ids)
+    opinionCached: (ids) => opinions.cached(ids),
+    deleteArchives: async (raw) => {
+      const ack = await deleteConfirmedArchives(parseArchiveRequest(raw))
+      void gatherer.fresh().catch((err) => console.error('[gc] refresh after archives failed', err))
+      return ack
+    },
+    runArchiveGc: async (repoPath) => {
+      if (typeof repoPath !== 'string' || !repoPath)
+        throw new Error('gc:archives:gc expects a repo path')
+      const ack = await runGcInRepo(repoPath)
+      void gatherer.fresh().catch((err) => console.error('[gc] refresh after git gc failed', err))
+      return ack
+    },
+    emptyTrash: async () => {
+      const ack = await emptyHarnuTrashNow()
+      void gatherer.fresh().catch((err) => console.error('[gc] refresh after emptying failed', err))
+      return ack
+    }
   }
 
   // The agent-facing seam (T445). Deliberately narrow: no clean, keep or prefs method, and its
@@ -354,6 +415,9 @@ export async function registerGcHandlers(
   ipcMain.handle('gc:jobs', () => service.jobs())
   ipcMain.handle('gc:opinion', (_e, ids: unknown) => service.opinion(ids))
   ipcMain.handle('gc:opinion:cached', (_e, ids: unknown) => service.opinionCached(ids))
+  ipcMain.handle('gc:archives:delete', (_e, raw: unknown) => service.deleteArchives(raw))
+  ipcMain.handle('gc:archives:gc', (_e, repoPath: unknown) => service.runArchiveGc(repoPath))
+  ipcMain.handle('gc:trash:empty', () => service.emptyTrash())
 
   // Seed the Containers feed once at start-up so the view is right before the first tick.
   void gather().catch((err) => console.error('[gc] first gather failed:', messageOf(err)))

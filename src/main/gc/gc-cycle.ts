@@ -72,6 +72,12 @@ export interface GcCycleDeps {
   emitCycle(r: CycleRecord): void
   /** What a cleaned worktree leaves in Docker, so its volumes can be offered for review. */
   rememberLeftovers?(entries: Leftover[]): void
+  /**
+   * Deletes the archive refs older than `keepDays` in every known repo (never `git gc`). Called
+   * only when the operator turned "Expire archives automatically" on, the autopilot is on and the
+   * first report was acknowledged: it is the one place the autopilot deletes refs.
+   */
+  expireArchives?(keepDays: number, now: number): Promise<{ deleted: number; failed: number }>
   /** Called with every gather, whether or not the cycle cleans: the Containers feed reads it. */
   onGathered?(g: GcGather): void
   state: CycleState
@@ -215,6 +221,22 @@ export async function runGcCycle(
     }
   }
 
+  // The one place the autopilot deletes refs: only on the operator's explicit, separate setting,
+  // and never in report-only mode. A failure is logged and never fails the cycle.
+  let archivesExpired = 0
+  const expireOn =
+    prefs.autopilot &&
+    prefs.firstReportAcknowledged &&
+    prefs.archiveAutoExpire &&
+    !!deps.expireArchives
+  if (expireOn) {
+    try {
+      archivesExpired = (await deps.expireArchives!(prefs.archiveKeepDays, now)).deleted
+    } catch (err) {
+      console.warn('[gc] archive expiry failed', messageOf(err))
+    }
+  }
+
   const doneCount = cleaned.filter((r) => r.ok).length
   const freedBytes = cleaned.reduce((sum, r) => sum + r.freedBytes, 0) + reclaimed(housekeeping)
   const trashedBytes = cleaned.reduce((sum, r) => sum + (r.trashedBytes ?? 0), 0)
@@ -232,6 +254,8 @@ export async function runGcCycle(
       notice = `Cleaned ${doneCount} ${plural(doneCount, 'worktree')}, ${freedSplit(freedBytes, trashedBytes)}`
     } else if (reclaimed(housekeeping) > 0) {
       notice = `Freed ${formatBytes(reclaimed(housekeeping))} of Docker cache`
+    } else if (archivesExpired > 0) {
+      notice = `Deleted ${archivesExpired} archive ${plural(archivesExpired, 'ref')} older than ${prefs.archiveKeepDays} ${plural(prefs.archiveKeepDays, 'day')}. Git reclaims their space on its next gc.`
     }
   }
   if (notice) deps.notify({ title: NOTICE_TITLE, body: notice })
@@ -245,6 +269,7 @@ export async function runGcCycle(
     cleaned,
     freedBytes,
     trashedBytes,
+    archivesExpired,
     deferred: plan.deferred,
     housekeeping,
     notified: notice !== null,

@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  withFolders,
   expiredArchives,
   groupArchiveRefs,
   parseArchiveStamp,
@@ -158,5 +159,26 @@ describe('expiredArchives', () => {
       { ref: 'refs/archive/mystery', sha: sha('f'), at: Number.NaN }
     ])
     expect(expiredArchives(unknown, 1, NOW + 400 * DAY)).toEqual([])
+  })
+})
+
+describe('withFolders', () => {
+  it('names the folder a sweep removed from the journal line that wrote the very same refs', () => {
+    const entries = groupArchiveRefs(REPO, [
+      ref('refs/archive/feat/login/20261002T101500Z/tip', sha('a')),
+      ref('refs/archive/feat/login/20261002T101500Z/wip', sha('b')),
+      ref('refs/archive/feat/other/20261003T101500Z/tip', sha('c'))
+    ])
+    const out = withFolders(entries, [
+      {
+        archiveTipRef: 'refs/archive/feat/login/20261002T101500Z/tip',
+        archiveWipRef: 'refs/archive/feat/login/20261002T101500Z/wip',
+        trashedPath: '/ws/org/wt-login'
+      },
+      // A line that trashed nothing (a branch-only sweep) names no folder.
+      { archiveTipRef: 'refs/archive/feat/other/20261003T101500Z/tip', archiveWipRef: null }
+    ])
+    expect(out.find((e) => e.branch === 'feat/login')!.folder).toBe('/ws/org/wt-login')
+    expect(out.find((e) => e.branch === 'feat/other')!.folder).toBeNull()
   })
 })
