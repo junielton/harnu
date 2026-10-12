@@ -16,7 +16,14 @@ import type { BlockJobState, ItemFailure } from '../lib/gc-jobs'
 import { formatBytes } from './system-monitor-format'
 import { canDehydrate } from './cleanup-row'
 import { reasonKey, refusalKey, removalKey, stepKey } from './cleanup-gc-copy'
-import { removability } from '../lib/gc-removability'
+import { removability, type RemovalRefusal } from '../lib/gc-removability'
+import {
+  depsOf,
+  guideLabelKey,
+  guidedActionFor,
+  hasGuideButton,
+  type GuidedAction
+} from '../lib/gc-guidance'
 import { resumeHint } from '../lib/gc-resume'
 import type { GcStep } from '../../../main/gc/pipeline-core'
 import Button from './ui/Button.vue'
@@ -51,6 +58,8 @@ const emit = defineEmits<{
   keep: [id: string]
   askAll: []
   removeSafe: []
+  /** The guided action that clears this row's refusal ("No dead ends"). */
+  guide: [id: string, action: GuidedAction, reason: RemovalRefusal]
 }>()
 
 const { t } = useI18n()
@@ -79,6 +88,18 @@ function reasonOf(b: GcBlock): string {
 function removeBlockedText(b: GcBlock): string | null {
   const v = removability(b)
   return v.ok ? null : t(removalKey(v.reason))
+}
+
+/** The way out of a refusal, when it needs a button of its own (Dehydrate and the manual command have theirs). */
+function guideOf(
+  b: GcBlock
+): { action: GuidedAction; reason: RemovalRefusal; label: string } | null {
+  const v = removability(b)
+  if (v.ok || resumeHint(b)) return null
+  const action = guidedActionFor(v.reason, { hasDeps: depsOf(b) > 0 })
+  return hasGuideButton(action)
+    ? { action, reason: v.reason, label: t(guideLabelKey(action, v.reason)) }
+    : null
 }
 
 function canDehydrateBlock(b: GcBlock): boolean {
@@ -239,6 +260,15 @@ function onRowKey(e: KeyboardEvent, id: string): void {
             @click="emit('keep', b.id)"
           >
             <Bookmark :size="13" :stroke-width="1.7" />
+          </button>
+          <button
+            v-if="removeBlockedText(b) !== null && guideOf(b)"
+            type="button"
+            class="cursor-pointer whitespace-nowrap rounded-sm px-1 text-caption text-accent underline-offset-2 hover:underline"
+            data-testid="review-guide"
+            @click.stop="emit('guide', b.id, guideOf(b)!.action, guideOf(b)!.reason)"
+          >
+            {{ guideOf(b)!.label }}
           </button>
           <button
             v-if="removeBlockedText(b) === null"
