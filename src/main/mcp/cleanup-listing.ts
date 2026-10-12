@@ -194,7 +194,7 @@ const REVIEW_SENTENCES: Record<string, string> = {
     'Harnu could not check this worktree for other checkouts, so it cannot tell whether removing it would take one along.',
   locked: 'This worktree is locked in git; release it there first.',
   'operation-in-progress':
-    'A rebase or bisect is in progress in this worktree; finish or abort it first.'
+    'A rebase, bisect or git am is in progress in this worktree; finish or abort it first.'
 }
 
 const GENERIC_REVIEW_SENTENCE = 'This worktree needs your review.'

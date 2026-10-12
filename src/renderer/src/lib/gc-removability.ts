@@ -70,6 +70,7 @@ export function shellQuote(p: string): string {
 const REMEMBERED: Readonly<Record<string, RemovalRefusal>> = {
   'cannot-unregister': 'cannot-unregister',
   'protected-now': 'protected-now',
+  'operation-in-progress': 'operation-in-progress',
   'stack-present': 'stack-present',
   'tip-unknown': 'tip-unknown',
   'path-unresolved': 'path-unresolved',
@@ -78,6 +79,13 @@ const REMEMBERED: Readonly<Record<string, RemovalRefusal>> = {
   'foreign-checkout': 'nested-worktree',
   'shared-stack': 'shared-stack'
 }
+
+/** The command that ends each operation that keeps its state in the worktree. */
+const OPERATION_ABORT = {
+  rebase: 'rebase --abort',
+  bisect: 'bisect reset',
+  am: 'am --abort'
+} as const
 
 const refused = (reason: RemovalRefusal, hint?: string): Removability =>
   hint === undefined ? { ok: false, reason } : { ok: false, reason, hint }
@@ -152,7 +160,7 @@ export function bundleRemovability(
       'operation-in-progress',
       b.operation === undefined || !path
         ? undefined
-        : `git -C ${shellQuote(path)} ${b.operation === 'rebase' ? 'rebase --abort' : 'bisect reset'}`
+        : `git -C ${shellQuote(path)} ${OPERATION_ABORT[b.operation]}`
     )
   }
   // Demoted after repeated refusals: main said no again and again, and nothing here shows what changed.

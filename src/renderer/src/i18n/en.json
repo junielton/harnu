@@ -2311,7 +2311,7 @@
         "nestedWorktree": "Another worktree lives inside this one, and removing this one would trash it too.",
         "checkFailed": "Harnu could not look inside this worktree, so it cannot tell whether removing it would take another checkout along.",
         "locked": "This worktree is locked in git",
-        "operationInProgress": "A rebase or bisect is still in progress in this worktree",
+        "operationInProgress": "A rebase, bisect or git am is still in progress in this worktree",
         "inUse": {
           "mainCheckout": "The repo's main checkout. Never touched.",
           "neverClean": "On your never-clean list. Never touched.",
@@ -2661,7 +2661,7 @@
           "pathUnresolved": "A path tied to this worktree could not be resolved, so Harnu cannot tell what uses it.",
           "sessionOpen": "A session is still open in this worktree. Close it first.",
           "locked": "Git has this worktree locked. Unlock it first.",
-          "operationInProgress": "A rebase or bisect is still in progress here, and its state would be lost with the folder. Finish or abort it, then use Scan now.",
+          "operationInProgress": "A rebase, bisect or git am is still in progress here, and its state would be lost with the folder. Finish or abort it, then use Scan now.",
           "cannotUnregister": "Git has no single, unlocked registration for this worktree, so Harnu cannot unregister it and refused it more than once. Check git worktree list.",
           "protectedNow": "It is protected now (a main checkout, a never-clean path or a Keep mark), and Harnu refused it more than once.",
           "scanBlind": "Docker wasn't running when Harnu scanned, so it could not see this worktree's stacks. Start Docker, then Scan now.",
@@ -2704,7 +2704,7 @@
         "dirty": "It has uncommitted changes now, so it was left alone.",
         "foreignCheckout": "Another repository is checked out inside this folder, so it was left alone.",
         "cannotUnregister": "Harnu couldn't match this worktree to a single git registration, so nothing was touched.",
-        "operationInProgress": "A rebase or bisect is in progress in this worktree, so it was left alone. Finish or abort it, then Scan now."
+        "operationInProgress": "A rebase, bisect or git am is in progress in this worktree, so it was left alone. Finish or abort it, then Scan now."
       },
       "opinion": {
         "safe": "Safe",

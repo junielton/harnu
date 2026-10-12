@@ -75,7 +75,7 @@ export interface GcShellDeps {
    * The rebase or bisect in progress in a worktree, or null. Optional: the scan already recorded
    * what it saw (`bundle.operation`), and this looks again right before the clean.
    */
-  operationOf?(path: string): Promise<'rebase' | 'bisect' | null>
+  operationOf?(path: string): Promise<'rebase' | 'bisect' | 'am' | null>
 }
 
 /**

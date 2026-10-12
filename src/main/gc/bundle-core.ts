@@ -126,11 +126,11 @@ export interface BundleFacts {
    */
   locked?: boolean
   /**
-   * A rebase or a bisect is in progress in this (detached) worktree: its state would go with the
+   * A rebase, a bisect or a `git am` is in progress in this worktree: its state would go with the
    * folder, so it is never ready and Remove is refused until it is finished or aborted. Optional,
    * and absent means none; the reprobe looks again before any step.
    */
-  operation?: 'rebase' | 'bisect'
+  operation?: 'rebase' | 'bisect' | 'am'
 }
 
 export interface WorktreeBundle extends BundleFacts {
@@ -339,7 +339,7 @@ export function bucketOf(
   if (f.operation !== undefined)
     return review(
       'operation-in-progress',
-      `A ${f.operation} is in progress in this worktree. Finish or abort it before removing it.`
+      `${f.operation === 'am' ? 'A git am' : `A ${f.operation}`} is in progress in this worktree. Finish or abort it before removing it.`
     )
 
   if (f.pathsResolved !== true)
@@ -429,8 +429,8 @@ export interface BuildBundlesInput {
   foreignCheckouts: ReadonlyMap<string, string[]>
   /** Ids of the items git lists as locked (delta 6); absent means none. See {@link lockedItemIds}. */
   locked?: ReadonlySet<string>
-  /** The rebase or bisect in progress in each detached worktree, by item id; absent means none. */
-  operations?: ReadonlyMap<string, 'rebase' | 'bisect'>
+  /** The rebase, bisect or git am in progress in each worktree, by item id; absent means none. */
+  operations?: ReadonlyMap<string, 'rebase' | 'bisect' | 'am'>
 }
 
 /** Merge time from the `pr-merged` checkpoint detail; anything that is not a date is ignored. */

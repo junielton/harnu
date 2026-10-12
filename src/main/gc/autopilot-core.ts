@@ -202,7 +202,8 @@ const REMEMBERED_REFUSALS: ReadonlySet<string> = new Set([
   'shared-stack',
   'stack-present',
   'cannot-unregister',
-  'protected-now'
+  'protected-now',
+  'operation-in-progress'
 ])
 
 const codeOf = (error: string): string => error.split(':')[0].trim()

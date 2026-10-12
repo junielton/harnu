@@ -11,11 +11,15 @@ import { promisify } from 'node:util'
 
 const run = promisify(execFile)
 
-export type GitOperation = 'rebase' | 'bisect'
+export type GitOperation = 'rebase' | 'bisect' | 'am'
 
-/** The marker each operation leaves in the git dir, in the order they are reported. */
+/**
+ * The marker each operation leaves in the git dir, most specific first. `git am` and the
+ * `--apply` rebase backend share `rebase-apply`: only `am` writes `applying` inside it.
+ */
 const MARKERS: ReadonlyArray<readonly [GitOperation, string]> = [
   ['rebase', 'rebase-merge'],
+  ['am', 'rebase-apply/applying'],
   ['rebase', 'rebase-apply'],
   ['bisect', 'BISECT_LOG']
 ]
@@ -45,4 +49,24 @@ export async function gitOperationOf(worktreePath: string): Promise<GitOperation
     if (p && (await exists(path.resolve(worktreePath, p)))) return op
   }
   return null
+}
+
+/**
+ * The operation in progress in each worktree of `items`, by item id. EVERY worktree is asked, not
+ * only the detached ones: `git am` keeps HEAD on its branch, and a bisect that was only started has
+ * not moved HEAD yet.
+ */
+export async function operationsOf(
+  items: ReadonlyArray<{ id: string; kind: string; path?: string | null }>
+): Promise<Map<string, GitOperation>> {
+  const out = new Map<string, GitOperation>()
+  await Promise.all(
+    items
+      .filter((i) => i.path && i.kind !== 'local-branch' && i.kind !== 'remote-branch')
+      .map(async (i) => {
+        const op = await gitOperationOf(i.path as string)
+        if (op) out.set(i.id, op)
+      })
+  )
+  return out
 }
