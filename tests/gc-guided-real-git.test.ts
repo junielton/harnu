@@ -59,6 +59,21 @@ describe('unlocking a real locked worktree', () => {
     expect(await canUnregister(repo, wt, git)).toBe(false)
   })
 
+  it('a reason git C-quotes round-trips byte for byte through the read and the rollback (delta 2)', async () => {
+    const reason = 'não mexer "x" \\ fim'
+    execFileSync('git', ['-C', repo, 'worktree', 'lock', '--reason', reason, wt])
+    const g = createGitGuided(git)
+    const read = await g.lockReason(repo, wt)
+    expect(read).toBe(reason)
+
+    await g.unlock(repo, wt)
+    await g.lock(repo, wt, read ?? null)
+
+    expect(await g.lockReason(repo, wt)).toBe(reason)
+    const file = path.join(repo, '.git', 'worktrees', path.basename(wt), 'locked')
+    expect(readFileSync(file, 'utf8')).toBe(reason)
+  })
+
   it('a lock that had no reason goes back with none', async () => {
     const g = createGitGuided(git)
     await g.lock(repo, wt, null)

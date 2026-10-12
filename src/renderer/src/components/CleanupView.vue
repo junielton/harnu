@@ -1076,6 +1076,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             :opinion-of="gc.opinionFor"
             :is-asking="gc.isAsking"
             :safe-count="gc.safeOpinionIds.length"
+            :guide-busy="guideBusy"
             @toggle="onToggle"
             @select="onSelect"
             @hover="linkedId = $event"
@@ -1084,7 +1085,6 @@ async function copyRestoreHint(hint: string): Promise<void> {
             @keep="keepIds([$event])"
             @ask-all="askAllOpinions()"
             @remove-safe="removeMarkedSafe()"
-            :guide-busy="guideBusy"
             @guide="(id, action, reason) => openGuide(action, [id], reason)"
           />
         </div>
@@ -1104,6 +1104,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             :hydration-busy="hydrationBusy(selectedBlock.id)"
             :opinion="gc.opinionFor(selectedBlock.id)"
             :asking="gc.isAsking(selectedBlock.id)"
+            :guide-busy="guideBusy"
             @close="selectedId = null"
             @remove="openRemove([$event])"
             @retry="retry($event)"
@@ -1113,7 +1114,6 @@ async function copyRestoreHint(hint: string): Promise<void> {
             @rehydrate="rehydrate($event)"
             @keep="keepIds([$event])"
             @ask="askOpinion([$event])"
-            :guide-busy="guideBusy"
             @guide="(id, action, reason) => openGuide(action, [id], reason)"
           />
         </aside>

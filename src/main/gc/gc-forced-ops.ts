@@ -18,7 +18,7 @@
 import type { WorktreeBundle } from './bundle-core'
 import { createGcOps, type GcShellDeps } from './gc-shell'
 import type { GcOps } from './pipeline-core'
-import { planArchive } from '../reaper/archive-core'
+import { planArchive, type ArchiveRefPlan } from '../reaper/archive-core'
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
@@ -39,7 +39,11 @@ export function asExecutable(b: WorktreeBundle): WorktreeBundle {
 }
 
 /** What would be archived, read-only: throws (so refuses) when nothing could preserve the worktree. */
-async function planPreserve(b: WorktreeBundle, deps: GcShellDeps, at: number) {
+async function planPreserve(
+  b: WorktreeBundle,
+  deps: GcShellDeps,
+  at: number
+): Promise<{ tip: ArchiveRefPlan; wip: ArchiveRefPlan; sha: string }> {
   const plan = planArchive(b.item, at)
   // A folder that would be removed with nothing preserving it is never removed.
   if (!plan.tip || !plan.wip) throw new Error('nothing would preserve this worktree')
