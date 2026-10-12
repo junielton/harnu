@@ -178,7 +178,8 @@ describe('refusals come only from removability() (AC-B8)', () => {
     vi.resetModules()
     vi.doMock('../src/renderer/src/lib/gc-removability', async (orig) => ({
       ...(await orig<typeof import('../src/renderer/src/lib/gc-removability')>()),
-      removability: () => ({ ok: true })
+      removability: () => ({ ok: true }),
+      removabilityAll: () => []
     }))
     const { buildGcModel: build } = await import('../src/renderer/src/lib/gc-model')
     const { removalSummary: summary } = await import('../src/renderer/src/lib/gc-guidance')
@@ -230,5 +231,60 @@ describe('what a guided action reports when its prep fails (AC-B9)', () => {
       expect(code, error).not.toBeNull()
       expect(i18n.global.te(refusalKey(code!)), `${code} has a sentence`).toBe(true)
     }
+  })
+})
+
+// Delta 2 item 2: stacked causes are ONE combined action when every cause can be fixed by a prep, and
+// otherwise the cause no prep can fix is the one shown (never a misleading one).
+describe('stacked causes (delta 2)', () => {
+  const sum = (b: ReturnType<typeof wt>) => {
+    const m = modelOf([b])
+    return removalSummary(m, [...m.byId.keys()], NOW)
+  }
+
+  it('a shared stack AND a lock: one combined action naming both causes', () => {
+    const s = sum(wt('x', { sharedStackIds: ['web'], locked: true }, {}, 'shared-stack'))
+    expect(s.refused).toHaveLength(1)
+    expect(s.refused[0]).toMatchObject({
+      action: 'combined',
+      causes: ['shared-stack', 'locked'],
+      count: 1
+    })
+  })
+
+  it('an idle session AND a lock: combined', () => {
+    const s = sum(wt('x', { session: 'open-idle', locked: true }, {}, 'open-idle-session'))
+    expect(s.refused[0]).toMatchObject({ action: 'combined', causes: ['session-open', 'locked'] })
+  })
+
+  it('a cause no prep can fix is shown first, not the fixable one before it', () => {
+    const s = sum(
+      wt('x', { sharedStackIds: ['web'], nestedWorktrees: ['/ws/x/n'] }, {}, 'shared-stack')
+    )
+    expect(s.refused[0].reason).toBe('nested-worktree')
+    expect(s.refused[0].action).not.toBe('combined')
+  })
+
+  it('a Keep mark with a lock shows the Keep mark, which is the operator’s own choice', () => {
+    const s = sum(wt('x', { locked: true, keep: true }, {}, 'locked'))
+    expect(s.refused[0].reason).toBe('kept')
+    expect(s.refused[0].action).toBe('unkeep')
+  })
+
+  it('a single fixable cause is not combined', () => {
+    const s = sum(wt('x', { locked: true }, {}, 'locked'))
+    expect(s.refused[0]).toMatchObject({ action: 'unlock-remove', causes: ['locked'] })
+  })
+
+  it('items with the same stacked causes share a group; different ones do not', () => {
+    const a = wt('a', { sharedStackIds: ['w'], locked: true }, {}, 'shared-stack')
+    const b = wt('b', { sharedStackIds: ['w'], locked: true }, {}, 'shared-stack')
+    const c = wt('c', { locked: true }, {}, 'locked')
+    const m = modelOf([a, b, c])
+    const s = removalSummary(m, [...m.byId.keys()], NOW)
+    expect(s.refused.map((g) => [g.action, g.count])).toEqual([
+      ['combined', 2],
+      ['unlock-remove', 1]
+    ])
   })
 })

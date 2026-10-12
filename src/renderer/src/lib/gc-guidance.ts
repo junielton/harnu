@@ -8,7 +8,7 @@
 import type { ReapItem } from '../../../preload'
 import { canDehydrate } from '../components/cleanup-row'
 import type { GcModel } from './gc-model'
-import { removability, type RemovalRefusal } from './gc-removability'
+import { removabilityAll, type RemovalRefusal } from './gc-removability'
 
 /** What the operator can do about a refusal, in the order of how much it does for them. */
 export type GuidedAction =
@@ -29,11 +29,16 @@ export type GuidedAction =
   | 'unkeep'
   | 'open-settings'
   | 'check-again'
+  /** Several stacked causes that a prep can each fix: one confirm, every step listed, all rolled back together. */
+  | 'combined'
   /** A rule that is the point of the refusal (a main checkout is never removed): the reason is the answer. */
   | 'explain'
 
 export interface RefusalGroup {
+  /** The cause shown first (for a combined group, the first of `causes`). */
   reason: RemovalRefusal
+  /** Every cause this group's items share; more than one only for a combined action. */
+  causes: RemovalRefusal[]
   count: number
   ids: string[]
   action: GuidedAction
@@ -48,6 +53,38 @@ export interface RemovalSummary {
   refused: RefusalGroup[]
   /** The best partial win: what dropping the installed deps of the refused items frees. */
   dehydrate: { count: number; bytes: number; ids: string[] } | null
+}
+
+/** The causes a guided prep can fix (each has a reversible step, or the one irreversible step, last). */
+export const PREPABLE: ReadonlySet<RemovalRefusal> = new Set([
+  'locked',
+  'session-open',
+  'shared-stack'
+])
+
+/** The steps of a combined action, in the order they run (the irreversible one, closing a session, last). */
+export type CombinedStep = 'unlock' | 'shared-stack' | 'close-session'
+export function combinedSteps(causes: readonly RemovalRefusal[]): CombinedStep[] {
+  const out: CombinedStep[] = []
+  if (causes.includes('locked')) out.push('unlock')
+  if (causes.includes('shared-stack')) out.push('shared-stack')
+  if (causes.includes('session-open')) out.push('close-session')
+  return out
+}
+
+/**
+ * What to offer for ONE item whose causes are `causes` (the whole list, first first). A cause no prep can
+ * fix is shown first, alone: a guided action over the fixable ones would only meet it. When every cause is
+ * fixable and there are several, one combined action fixes them together.
+ */
+export function guideFor(
+  causes: readonly RemovalRefusal[],
+  ctx: { hasDeps: boolean }
+): { reason: RemovalRefusal; causes: RemovalRefusal[]; action: GuidedAction } {
+  const blocker = causes.find((c) => !PREPABLE.has(c))
+  if (blocker) return { reason: blocker, causes: [blocker], action: guidedActionFor(blocker, ctx) }
+  if (causes.length > 1) return { reason: causes[0]!, causes: [...causes], action: 'combined' }
+  return { reason: causes[0]!, causes: [...causes], action: guidedActionFor(causes[0]!, ctx) }
 }
 
 /** The guided action for one refusal; `hasDeps` says whether Dehydrate would free something. */
@@ -111,34 +148,44 @@ export function removalSummary(
   now: number = Date.now()
 ): RemovalSummary {
   const removable: string[] = []
-  const groups = new Map<RemovalRefusal, { ids: string[]; hint?: string; deps: number }>()
+  const groups = new Map<
+    string,
+    { reason: RemovalRefusal; causes: RemovalRefusal[]; ids: string[]; hint?: string; deps: number }
+  >()
   const dehydrate = { count: 0, bytes: 0, ids: [] as string[] }
   for (const id of ids) {
     const b = model.byId.get(id)
     if (!b) continue
-    const v = removability(b, now)
-    if (v.ok) {
+    const all = removabilityAll(b, now)
+    if (all.length === 0) {
       removable.push(id)
       continue
     }
-    const g = groups.get(v.reason) ?? { ids: [], deps: 0 }
-    g.ids.push(id)
-    if (g.hint === undefined && v.hint !== undefined) g.hint = v.hint
     const deps = depsOf(b)
-    g.deps += deps
-    groups.set(v.reason, g)
+    const g = guideFor(
+      all.map((r) => r.reason),
+      { hasDeps: deps > 0 }
+    )
+    const key = `${g.action}:${g.causes.join('+')}`
+    const grp = groups.get(key) ?? { reason: g.reason, causes: g.causes, ids: [], deps: 0 }
+    grp.ids.push(id)
+    const hint = all.find((r) => r.reason === g.reason)?.hint
+    if (grp.hint === undefined && hint !== undefined) grp.hint = hint
+    grp.deps += deps
+    groups.set(key, grp)
     if (deps > 0) {
       dehydrate.count++
       dehydrate.bytes += deps
       dehydrate.ids.push(id)
     }
   }
-  const refused: RefusalGroup[] = [...groups]
-    .map(([reason, g]) => ({
-      reason,
+  const refused: RefusalGroup[] = [...groups.values()]
+    .map((g) => ({
+      reason: g.reason,
+      causes: g.causes,
       count: g.ids.length,
       ids: g.ids,
-      action: guidedActionFor(reason, { hasDeps: g.deps > 0 }),
+      action: guideFor(g.causes, { hasDeps: g.deps > 0 }).action,
       ...(g.hint === undefined ? {} : { hint: g.hint })
     }))
     .sort((a, b) => b.count - a.count)
