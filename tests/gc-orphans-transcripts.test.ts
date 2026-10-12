@@ -75,7 +75,9 @@ describe('planOrphanTranscripts', () => {
         bytes: 1_000 + 2_000 + 500,
         sessionCount: 2,
         newestAt: NOW - 86_400_000,
-        hasMemory: false
+        hasMemory: false,
+        // Nothing proved it gone: it is only "not found".
+        proof: 'not-found'
       }
     ])
   })
@@ -307,6 +309,7 @@ function item(over: Partial<OrphanTranscriptItem> = {}): OrphanTranscriptItem {
     sessionCount: 2,
     newestAt: NOW - 86_400_000,
     hasMemory: false,
+    proof: 'proven',
     ...over
   }
 }
@@ -474,5 +477,97 @@ describe('the recency guard (delta-1 item 4)', () => {
 
   it('a transcript dated in the future counts as just written', async () => {
     expect(await plan(probeWithAge([-HOUR]))).toEqual([])
+  })
+})
+
+describe('"gone" is proven, otherwise "not found" (delta-2 item 1)', () => {
+  const plan = (over: Record<string, unknown> = {}, facts = facts_('s', [GONE])) =>
+    planOrphanTranscripts({
+      probe: probeOf(facts),
+      exists: allGone,
+      protectedSessionIds: new Set(),
+      protectedFolders: [],
+      repoPaths: [],
+      now: NOW + 10 * 86_400_000,
+      ...over
+    })
+  function facts_(slug: string, cwds: Array<string | null>) {
+    return facts(slug, cwds)
+  }
+
+  it('a missing folder nothing proves gone (sshfs, an unplugged drive) is listed as not found, not dropped', async () => {
+    const [it1] = await plan({}, facts('s', ['/home/u/remote/proj']))
+    expect(it1).toMatchObject({ folder: '/home/u/remote/proj', proof: 'not-found' })
+  })
+
+  it('every folder proven gone makes it proven; one that is not makes it not found', async () => {
+    const yes = (): boolean => true
+    expect((await plan({ proof: yes }))[0]!.proof).toBe('proven')
+    const some = (f: string): boolean => f === '/a'
+    expect((await plan({ proof: some }, facts('s', ['/a', '/b'])))[0]!.proof).toBe('not-found')
+    expect((await plan({ proof: some }, facts('s', ['/a', '/a'])))[0]!.proof).toBe('proven')
+  })
+
+  it('a folder Harnu could not even look at is never listed', async () => {
+    expect(await plan({ exists: async () => 'unknown' })).toEqual([])
+  })
+
+  it('the 24-hour guard and every other protection apply to both groups', async () => {
+    const recent = facts('s', [GONE])
+    recent.files[0]!.mtimeMs = NOW + 10 * 86_400_000 - 3_600_000
+    expect(await plan({ proof: () => true }, recent)).toEqual([])
+    expect(await plan({ proof: () => false }, recent)).toEqual([])
+  })
+})
+
+describe('a not-found folder needs the stronger confirm (delta-2 item 1)', () => {
+  const nf = item({ proof: 'not-found' })
+
+  it('parseOptions carries confirmedNotFound, strings only', () => {
+    const o = parseOptions(structuredClone({ confirmedNotFound: ['a', 3, 'b'] }))
+    expect(o.confirmedNotFound).toEqual(['a', 'b'])
+    expect(parseOptions({}).confirmedNotFound).toBeUndefined()
+  })
+
+  it('is refused with the ordinary confirm alone, and goes with the stronger one', async () => {
+    const a = rig([nf])
+    const [refused] = await run(a, [nf.id], sent(nf))
+    expect(refused).toMatchObject({ ok: false, error: 'needs-not-found-confirmation' })
+    expect(a.trashed).toEqual([])
+    const b = rig([nf])
+    const [ok] = await run(b, [nf.id], sent(nf, { confirmedNotFound: [nf.id] }))
+    expect(ok).toMatchObject({ ok: true })
+    expect(b.trashed).toEqual(['slug-a'])
+  })
+
+  it('a proven folder needs only the ordinary confirm', async () => {
+    const it1 = item({ proof: 'proven' })
+    const r = rig([it1])
+    const [ok] = await run(r, [it1.id], sent(it1))
+    expect(ok).toMatchObject({ ok: true })
+  })
+
+  it('a folder that was proven when shown and is only "not found" now is a change', async () => {
+    const shown = item({ proof: 'proven' })
+    const r = rig([{ ...shown, proof: 'not-found' }])
+    const [res] = await run(r, [shown.id], sent(shown, { confirmedNotFound: [shown.id] }))
+    expect(res).toMatchObject({ ok: false, error: 'changed-since-confirm' })
+  })
+
+  it('the stronger confirm is not a blanket: it covers only the ids it names', async () => {
+    const other = item({ id: 'transcripts:slug-b', slug: 'slug-b', proof: 'not-found' })
+    const r = rig([nf, other])
+    const opts = parseOptions(
+      structuredClone({
+        confirmed: [nf.id, other.id],
+        confirmedNotFound: [nf.id],
+        expected: { [nf.id]: orphanExpectedOf(nf), [other.id]: orphanExpectedOf(other) }
+      })
+    )
+    submitManualClean(r.deps, [nf.id, other.id], opts)
+    await r.deps.queue.idle()
+    const res = r.done[0]!.results
+    expect(res[0]).toMatchObject({ ok: true })
+    expect(res[1]).toMatchObject({ ok: false, error: 'needs-not-found-confirmation' })
   })
 })
