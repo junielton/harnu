@@ -54,7 +54,7 @@ function probeOf(...slugs: SlugFacts[]): OrphanProbe {
   }
 }
 
-const allGone = async (): Promise<'gone'> => 'gone'
+const allGone = async (): Promise<'missing'> => 'missing'
 
 describe('planOrphanTranscripts', () => {
   it('lists a gone folder with its size, sessions and newest activity', async () => {
@@ -83,7 +83,7 @@ describe('planOrphanTranscripts', () => {
   it('never lists a slug whose folder still exists', async () => {
     const items = await planOrphanTranscripts({
       probe: probeOf(facts(slugOfPath(LIVE_DIR), [LIVE_DIR])),
-      exists: async (p) => (p === LIVE_DIR ? 'exists' : 'gone'),
+      exists: async (p) => (p === LIVE_DIR ? 'exists' : 'missing'),
       protectedSessionIds: new Set(),
       protectedFolders: [],
       repoPaths: []
@@ -109,7 +109,7 @@ describe('planOrphanTranscripts', () => {
   ] as const)('fails closed when %s', async (_why, cwds) => {
     const items = await planOrphanTranscripts({
       probe: probeOf(facts('s', [...cwds])),
-      exists: async (p) => (p === LIVE_DIR ? 'exists' : 'gone'),
+      exists: async (p) => (p === LIVE_DIR ? 'exists' : 'missing'),
       protectedSessionIds: new Set(),
       protectedFolders: [],
       repoPaths: []
@@ -274,7 +274,7 @@ describe('against a fake HOME/.claude/projects', () => {
 
   it('fsPathExistence: a missing path is gone, a present one exists', async () => {
     expect(await fsPathExistence(aliveDir)).toBe('exists')
-    expect(await fsPathExistence(path.join(home, 'nope'))).toBe('gone')
+    expect(await fsPathExistence(path.join(home, 'nope'))).toBe('missing')
   })
 
   it('trashTranscriptSlug moves exactly one project folder and refuses anything else', async () => {

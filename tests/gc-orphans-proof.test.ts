@@ -73,7 +73,7 @@ describe('provenGone', () => {
     expect(provenGone('/Volumes/Disk/proj/wt', ev, 'darwin')).toBeNull()
     expect(provenGone('/Users/u/remote/proj', ev, 'darwin')).toBeNull()
     // and on Linux the same paths differing only in case are different folders
-    expect(provenGone('/Users/u/work/repo/.claude/worktrees/feat-a/api', ev, 'linux')).toBeNull()
+    expect(provenGone('/Users/U/Work/Repo/.claude/worktrees/feat-a/api', ev, 'linux')).toBeNull()
   })
 })
 
