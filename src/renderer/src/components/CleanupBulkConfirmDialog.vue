@@ -79,7 +79,7 @@ const riskCount = computed(() => props.rows.filter((r) => r.risk).length)
 /** A worktree's volumes are never removed with it (they become orphan volumes, reviewed one by one). */
 const hasWorktreeRow = computed(() => props.rows.some((r) => r.kind === 'worktree'))
 /** Detached worktrees have no branch: their commit is kept under refs/archive/detached/… instead. */
-const detachedCount = computed(() => props.rows.filter((r) => r.detachedAt !== null).length)
+const detachedCount = computed(() => props.rows.filter((r) => !!r.detachedAt).length)
 
 const title = computed(() => {
   if (props.mode === 'ready') {
@@ -276,6 +276,16 @@ function onBackdropMousedown(e: MouseEvent): void {
                 :pending="false"
                 show-evidence
               />
+              <span
+                v-if="row.untracked?.length"
+                class="break-words text-caption leading-4 text-text-3"
+                data-testid="bulk-untracked"
+                >{{
+                  t('cleanup.gc.confirm.untracked', row.untracked.length, {
+                    named: { n: row.untracked.length, names: row.untracked.join(', ') }
+                  })
+                }}</span
+              >
               <span class="mt-1 flex flex-wrap gap-1">
                 <span
                   v-for="chip in row.chips"

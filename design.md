@@ -8800,6 +8800,17 @@ volume), size right.
   detached worktree has no branch. Its commit stays under refs/archive/detached/…, and `git worktree add
 <path> <ref>` brings it back._ The confirm is the Danger button already used for remove-selected. The
   panel's **Takes with it** list swaps the branch line for _Its commit stays under refs/archive/detached/…_.
+- **Untracked files are named.** A row whose folder holds untracked files lists every one of them in
+  the dialog, under the reason (11px/16px `--text-3`, `break-words`, comma-separated, never truncated to
+  a count): _{n} untracked files, saved in the wip ref: a.md, b/c.txt_. They are in no commit and the
+  `wip` ref is where they are kept, so the operator reads exactly what will be archived. A detached
+  worktree carries them too (its scan probes the status, as a branch worktree's does).
+- **A rebase or bisect in progress refuses the removal (delta-1).** Its state lives in the folder and
+  would go with it, so a detached worktree mid-operation is not offered: the panel says _A rebase or
+  bisect is still in progress here… Finish or abort it, then use Scan now_ and names the command
+  (`git -C <path> rebase --abort` / `git -C <path> bisect reset`); the reason chip reads _A rebase or
+  bisect is still in progress in this worktree_. Commits only its HEAD reflog reaches are archived under
+  `…/reflog/<sha12>` before the folder goes.
 - **Nothing removable → no dialog.** The selection bar's **Remove selected** is disabled (tooltip "Nothing
   selected can be removed") when no ticked item can be removed; the list row swaps its Remove button for an
   inert, dimmed `Trash2` carrying the reason as its tooltip and `aria-label`. Any path that still reaches

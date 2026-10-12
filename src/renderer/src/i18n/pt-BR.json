@@ -2441,6 +2441,7 @@
         "close": "Fechar",
         "branchSub": "branch {branch}",
         "detachedSub": "detached em {sha}",
+        "untracked": "{n} arquivo não rastreado, salvo na ref wip: {names} | {n} arquivos não rastreados, salvos na ref wip: {names}",
         "warnDetached": "{n} worktree detached não tem branch. O commit dela fica em refs/archive/detached/…, e git worktree add traz de volta. | {n} worktrees detached não têm branch. Os commits delas ficam em refs/archive/detached/…, e git worktree add traz de volta."
       },
       "chip": {
