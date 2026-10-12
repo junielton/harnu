@@ -254,6 +254,14 @@ describe('createGatherer: a read-only gather writes nothing (T445 delta 2, 5)', 
     expect(spies.state.failures.has('some-other-bundle')).toBe(true)
   })
 
+  it('tells the scan it is read-only, so nothing under it (the trash ledger) may write', async () => {
+    const { spies, gatherer } = setup(gathered())
+    await gatherer.peek()
+    expect(spies.gatherGc.mock.calls[0]![4]).toBe(false)
+    await gatherer.gather()
+    expect(spies.gatherGc.mock.calls[1]![4]).toBe(true)
+  })
+
   it('is single-flight too', async () => {
     const { spies, gatherer } = setup(gathered())
     await Promise.all([gatherer.peek(), gatherer.peek()])

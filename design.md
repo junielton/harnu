@@ -8517,7 +8517,7 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
 3. **Selection bar** (only with ≥1 checked block) — the takeover's existing selection band
    (`border-b border-border bg-surface-2`, `padding: 8px 22px`): `square-check` icon (`--accent`), the
    count `N selected · X GB` (13px; numbers 600-weight `--text`), then **Remove selected** (Danger,
-   `trash-2`), **Dehydrate** (Soft, `package-minus`), **Keep** (Ghost, `bookmark`) — the same icons as the side
+   `trash-2`), **Dehydrate** (Soft, `package-minus`; reads "Dehydrate frees {size} and keeps the code" when the refused items carry deps), **Keep** (Ghost, `bookmark`) — the same icons as the side
    panel's actions — **Ask for an opinion** (Soft, `sparkles`; enabled whenever the selection
    holds Needs review items — see "Opinion chip"), a `⇧` hint (`kbd`) and a right-aligned "Clear selection" ghost link.
 4. **First-cycle banner** (only while `firstReportAcknowledged` is false and a report exists): see below.
@@ -8533,7 +8533,8 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
    word in the bucket ink + a short gloss ("Ready to clean · cleaned by one click or the autopilot",
    "Needs review · your call", "In use · never touched") — then, pushed right in `--text-3`,
    **"Block area = size on disk · click a block to act"**. Without byte sizes the area note is dropped.
-6. **Map** (or the List fallback), then the **Docker card**, then **Needs review**, then **Other leftovers**
+6. **Map** (or the List fallback), then the **Docker card**, then the **Archives card** and the **in-the-trash
+   strip** (both drawn only when there is something to show), then **Needs review**, then **Other leftovers**
    and **Recent cleanups** (the existing tombstone footer).
 
 #### Treemap
@@ -8586,16 +8587,16 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
 
 - **States** (the block's whole state machine; the row in Needs review mirrors it):
 
-  | State        | Look                                                                                                                                              |
-  | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | rest         | bucket triple                                                                                                                                     |
-  | hover-linked | `box-shadow: 0 0 0 1px var(--color-text-2)` — the list row under the pointer outlines its block                                                   |
-  | selected     | single block whose panel is open: `border-color: --accent` + `box-shadow: 0 0 0 1px --accent`, **no badge**                                       |
-  | checked      | multi-select: the selected outline **plus** a 16px check badge (top-right, `--accent` fill, `--accent-ink` `check` glyph) — never colour alone    |
-  | planned      | dashed border (first cycle)                                                                                                                       |
-  | busy         | `--accent-soft` fill, `--accent-line` border, a 6px `--accent` dot with a 3px `--accent-soft` halo, and a 2px determinate sliver along the bottom |
-  | done         | `opacity: 0.45`, dashed border, word "freed" + `check`; after `--dur-slow` it is removed and the layout is recomputed                             |
-  | failed       | `--color-red-line` border + `triangle-alert` in `--red`; it is a Needs review block again                                                         |
+  | State        | Look                                                                                                                                                                          |
+  | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | rest         | bucket triple                                                                                                                                                                 |
+  | hover-linked | `box-shadow: 0 0 0 1px var(--color-text-2)` — the list row under the pointer outlines its block                                                                               |
+  | selected     | single block whose panel is open: `border-color: --accent` + `box-shadow: 0 0 0 1px --accent`, **no badge**                                                                   |
+  | checked      | multi-select: the selected outline **plus** a 16px check badge (top-right, `--accent` fill, `--accent-ink` `check` glyph) — never colour alone                                |
+  | planned      | dashed border (first cycle)                                                                                                                                                   |
+  | busy         | `--accent-soft` fill, `--accent-line` border, a 6px `--accent` dot with a 3px `--accent-soft` halo, and a 2px determinate sliver along the bottom                             |
+  | done         | `opacity: 0.45`, dashed border, word "cleaned" + `check` (never "freed": the checkout only moved to the trash); after `--dur-slow` it is removed and the layout is recomputed |
+  | failed       | `--color-red-line` border + `triangle-alert` in `--red`; it is a Needs review block again                                                                                     |
 
   Only **Needs review** blocks are checkable; ready items are cleaned by the hero, In use blocks are never touched.
 
@@ -8624,7 +8625,8 @@ much" and "do it" read as one sentence: `Clean 12 ready · 6.0 GB`. It acts on p
 - **Before the first scan:** disabled Soft button reading **"Scanning…"** with a spinning `Loader2` (see "First scan"); never "Nothing to clean", which would claim a result.
 - **First-cycle state:** the hero is a **Soft** button, because "Enable autopilot" owns the one Primary.
 - **Running** (the hero stops being a button): a **progress chip** — Badge Accent triple at button height
-  (28px): static `--accent` dot (6px, 3px `--accent-soft` halo), `Cleaning 3/12 · 1.4 GB freed`, a
+  (28px): static `--accent` dot (6px, 3px `--accent-soft` halo), `Cleaning 3/12 · 1.4 GB freed now · 2.1 GB in the trash`
+  (the **freed split**, see below; `· … in the trash` is left out while nothing has been trashed), a
   **40 × 4px determinate bar** (`--accent` on `--border-2`, radius full) counting items, not bytes.
   `aria-live="polite"`, announcing at most once per finished item. The chip has no control: the engine
   has no cancel, so "Cancel after current" is **not drawn**.
@@ -8785,7 +8787,8 @@ volume), size right.
   newer than the ones the operator was shown. A rejected `gc:clean` call shows an error toast.
 - **Only what `gc:clean` can remove is offered — one predicate decides it.** `removability(block)`
   (`lib/gc-removability.ts`) answers from the bundle's own facts, mirroring what main refuses: a detached
-  worktree (`unsupported-kind`), a locked one, a shared stack, a nested or foreign checkout, an idle session
+  worktree that is not in Needs review (`unsupported-kind`, with no command: a detached worktree in
+  review **is** removable, see "Detached worktrees" below), a locked one, a shared stack, a nested or foreign checkout, an idle session
   still open, an unknown tip, an unresolved path, and the protections (main checkout, never-clean, Keep,
   In use). The panel, the list row, the selection bar, "Select all in repo", "Remove the ones marked safe",
   Retry and the **R** shortcut all ask it, so none of them offers a click that ends in "0 cleaned".
@@ -8794,10 +8797,38 @@ volume), size right.
   dialog. The refused ones sit in their own section under the list (`--bg` fill, `--border`, 8px radius,
   eyebrow title in `--text-3`, one row per item): the mono `repo › worktree` title, the reason in 11px
   `--text-3`, and — when a command clears the cause — that command in 11px mono `--text-2`
-  (`git worktree unlock <path>`, `git worktree remove <path>`), selectable in one click. The group is
+  (`git worktree unlock <path>`), selectable in one click. The group is
   excluded from the breakdown, the footer total, the confirm label and the `gc:clean` request.
+- **Detached worktrees (NDE-A).** A worktree with a detached HEAD has no branch to name an archive ref
+  after, so Harnu names it after what it has: the folder and the commit. A confirmed Remove from Needs
+  review first writes `refs/archive/detached/<folder>-<shortsha>/tip` (the commit) and, beside it, `/wip`
+  (every uncommitted and untracked file), then trashes the folder and unregisters it from git. There is no
+  branch step. It is **review-only**: it is never a ready item, never part of the hero or the autopilot, and
+  `unsupported-kind` is what main answers for one that somehow is. In the dialog a detached row has no
+  `branch` chip and its mono sub-line reads `detached at {shortsha}` (11px `--text-4`). The dialog's
+  Warning callout gains one paragraph while any detached row is listed, in `--warning`, bold lead: _{n}
+  detached worktree has no branch. Its commit stays under refs/archive/detached/…, and `git worktree add
+<path> <ref>` brings it back._ The confirm is the Danger button already used for remove-selected. The
+  panel's **Takes with it** list swaps the branch line for _Its commit stays under refs/archive/detached/…_.
+- **Untracked files are named.** A row whose folder holds untracked files lists them in the dialog,
+  under the reason (11px/16px `--text-3`, `break-words`, comma-separated): _{n} untracked files, saved
+  in the wip ref: a.md, b/c.txt_. A row names at most **10**, then _and N more_; the full list is the
+  element's tooltip, and one line in the callout totals them across the dialog (_{n} untracked files in
+  total, each saved in its wip ref._). Nothing is dropped: every path is in the wip ref whether it is
+  named or not. A detached worktree carries them too (its scan probes the status, as a branch
+  worktree's does).
+- **A rebase, bisect or `git am` in progress refuses the removal (delta-1, delta-2).** Its state lives
+  in the folder and would go with it, so a worktree mid-operation is not offered, detached or on a
+  branch (`git am` keeps HEAD on its branch; a bisect that was only started has not moved it yet): the
+  panel says _A rebase, bisect or git am is still in progress here… Finish or abort it, then use Scan
+  now_ and names the command (`git -C <path> rebase --abort` / `bisect reset` / `am --abort`); the
+  reason chip reads _A rebase, bisect or git am is still in progress in this worktree_. A refusal
+  remembered twice keeps the item in Needs review with the same reason. Commits only its HEAD reflog
+  reaches are archived under `…/reflog/<sha12>`, one ref per chain **tip**, before anything else is
+  written; a history with more than 500 such tips is refused (`reflog-limit`, nothing removed, no tip
+  or wip ref either) rather than archived in part.
 - **Nothing removable → no dialog.** The selection bar's **Remove selected** is disabled (tooltip "Nothing
-  selected can be removed") when no ticked item can be removed; the list row swaps its Remove button for an
+  selected can be removed", and the inline "{n} can't be removed: …" line above says why) when no ticked item can be removed; the list row swaps its Remove button for an
   inert, dimmed `Trash2` carrying the reason as its tooltip and `aria-label`. Any path that still reaches
   the open step (a marked-safe pre-selection that went stale) raises a Warning toast with the reason — the
   one sentence when every item shares it, "each for its own reason" otherwise — and opens no dialog.
@@ -8822,6 +8853,60 @@ volume), size right.
   Docker CLI at all is not blind. A refusal for `docker-unavailable` (the daemon stopped after a scan that
   saw it, for a bundle that had stacks) reads "Docker is not running … Start Docker, then Retry." and offers
   Retry.
+- **No dead ends — every refusal names its cause and offers a way out (unit B).** A bare disabled button
+  pushes the operator to `rm -rf`, which skips the archive ref, the trash and every guard. So wherever Remove
+  is unavailable or partial, the reason is **inline text**, never only a tooltip, and each cause links to the
+  guided action that clears it. `lib/gc-guidance.ts` (`removalSummary`) derives all of it from
+  `removability()` and nothing else: no UI file names a cause of its own (a detached worktree in review is no
+  group at all, since main archives and removes it; one outside review is still refused as an unsupported
+  kind, with no command).
+  - **Selection bar.** A second line (`basis-full`, `text-caption`, `--text-3`, `data-testid="sel-why"`)
+    under the buttons. Nothing removable: "{n} can't be removed: {groups}". Partly removable: "Removes {k} ·
+    {n} can't: {groups}". Each group is "{count} {cause}" (e.g. "11 locked in git", "2 session open")
+    as a link-style button (`--accent`, underline on hover, `data-testid="sel-guide-<reason>"`) that opens
+    its guided action; groups run biggest first and are separated by " · ". When the refused items carry
+    installed dependencies the **Dehydrate** button promotes its real bytes: "Dehydrate frees {size} and
+    keeps the code" (Soft, `package-minus`). **Remove selected** stays Danger and is disabled only when
+    nothing in the selection can go — the line above is then what the operator reads, the tooltip repeats it.
+  - **Panel.** Under "Remove is unavailable. {reason}" a **guided action** button (Soft, `data-testid="panel-guide"`)
+    carries the cause's action: "Unlock and remove…", "Close session and remove…", "Choose what to do with
+    the stack…", "Show how to fix it…", "Scan again", "Dehydrate — frees {size}", "Remove the Keep mark",
+    "Open Settings"; a cause with no action in Harnu (a main checkout) states the reason as the answer.
+  - **Guided dialog** (`CleanupGuidedDialog.vue`, `data-testid="guided-dialog"`): the standard 480px confirm
+    dialog. Eyebrow = the cause; body = the facts main read just now (`gc:guide`): the lock reason git
+    recorded, the idle sessions that would be parked, each shared stack with the other folders using it,
+    the unreadable path with its owner and a copyable fix command (`sudo chown -R $USER <path>`, mono
+    `--text-2`, one-click copy), or the Docker hint. Buttons: Cancel (focused first), then the action — Danger
+    when it ends in a removal ("Unlock and remove", "Close session and remove", "Stop stack and remove"),
+    Soft otherwise ("Check again", "Scan again"). A shared stack offers a choice of two radio rows: **Stop
+    stack and remove** (stops and removes that stack's containers, never its volumes) and **Remove the
+    worktree and leave the stack** (offered only when no container of the stack bind-mounts this folder;
+    otherwise the row is absent and one line says why).
+  - **The prep is the LAST step, and it is undone when the removal still refuses.** Main runs a dry run of
+    everything else first (the work-stamp guards, the pipeline's refusals, the reprobe with the prep's own
+    cause assumed fixed), and the prep runs only when nothing else refuses. A refusal afterwards locks the
+    worktree again with its original reason and starts again exactly the containers it stopped; a failed
+    undo is said in the toast. **Stop stack** only stops (never removes), lists the containers by name in the
+    choice, and is not offered for the main checkout's own stack or a stack another folder uses with a live
+    or parked session (one line says which). **Close session** treats only idle / completed / stopped as
+    idle, warns "Parking closes its terminal; background processes it started (dev servers, shells) stop.
+    The conversation is kept and can be resumed." and adds "{n} of them you opened yourself, not an agent."
+    when it applies. **Unlock** sends only the rows still locked and says how many were left out.
+  - **Stacked causes are one combined action.** `removabilityAll()` lists every cause; a cause no step can fix
+    is shown first, alone; when every cause is fixable and there are several, the bar group reads
+    "{n} locked in git + shared Docker stack", the button "Unlock, stop stack and remove…", and the dialog
+    shows an ordered list of the steps (unlock, stop/leave the stack, close the session) ending in the
+    removal, behind a single confirm. Steps run in that order (closing a session, which cannot be undone,
+    last) and are undone in reverse. A rollback happens only while the folder still exists; Scan again and
+    removing a Keep mark disable their links while they run, and the unmark's toast has **Undo**.
+  - **Interrupted cleans** (`CleanupRecoveryNotices.vue`, `data-testid="recovery-notices"`): above the
+    first-cycle banner, one warning-toned row per notice (`bg-warning-soft`, `border-warning-line`, 14px
+    `triangle-alert`), text in `--text-2`, then the answers: Soft **Start again** / Ghost **Leave stopped** for
+    a stack stop, Soft **Lock again** / Ghost **Dismiss** for a lock, Ghost **Dismiss** for containers that
+    are gone. A notice stays until answered; Harnu never starts containers on its own.
+  - **Every guided action ends in a toast.** While it runs the confirm shows a spinner and disables;
+    success is a Success toast with the bytes freed ("Removed 1 worktree · 3.4 GB freed"); failure is a
+    Danger toast naming the cause in one sentence. Nothing a guided action does is silent.
 - **Marks are read from the current prefs.** Keep and never-clean come from the snapshot's prefs, not the
   bundle's scan-time flags, so a mark added since the scan hides Remove (and the hero count) at once.
 - **"Also delete the branch on the remote" (unit D, AC-D5).** A checkbox row between the warning callout
@@ -8956,6 +9041,81 @@ up" (stack) or Danger "Remove {n} volumes" (volumes). Esc closes only this dialo
 networks are removed one at a time without force, and a refusal from Docker (a container that turned out
 to be running, a network with active endpoints) is reported in the toast while the rest still go.
 
+#### The freed split — "freed now" vs "in the trash" (unit C, AC-C4)
+
+A clean does not delete a checkout: it moves it to the OS trash, so that space is still on disk until
+the trash is emptied. Claiming it as "freed" was a lie, so every surface that reports a clean's bytes
+says **two** numbers, in **one** wording, built from one pair of i18n keys (`cleanup.gc.freed.*`):
+
+- **`{freed} freed now · {trash} in the trash`** — _freed now_ is what was really deleted (the dependency
+  folders, Docker volumes and Docker cache); _in the trash_ is the checkout that only moved.
+  Nothing in the trash: **`{freed} freed now`** alone, never a "0 B in the trash".
+- It appears in exactly four places and they must agree: the **hero's progress chip**, the **success toast**,
+  the split bar's **last-cycle line** (`Last cycle {ago}: cleaned {n}, {freed split}`) and the autopilot's
+  native notification (`Cleaned {n} worktrees, {freed split}`). Same decimal units as every Cleanup size.
+- `list_cleanup` carries the same pair (`lastCycle.freedNowBytes` / `trashedBytes`) plus what Harnu still
+  has in the trash (`totals.inTrashBytes` / `inTrashCount`).
+
+#### Archives card (unit C, AC-C1..C3)
+
+Cleanup cleans its own exhaust. Every removal writes `refs/archive/<branch>/<stamp>/{tip,wip}`; they keep
+git objects alive forever and a `wip` can hold a large binary or an `.env`. Own region under the Docker card
+(`data-testid="archives-card"`, same card anatomy: `border-border`, radius 7, `bg-surface`; header `Archive`
+icon 14px, title **Archives**, an 11px `--text-4` subtitle).
+
+- **Header numbers:** `{n} archives · ≈ {size}` where the size is **estimated** (the objects reachable only
+  from `refs/archive/*`, `git rev-list --objects --disk-usage`) and so always carries a leading **≈**. When git
+  cannot say (older than git 2.31) the size is dropped, never invented. Zero archives: the card is **not
+  drawn**.
+- **One row per repo** (`{repo} · {n} archives · ≈ {size}`), each a disclosure (`aria-expanded`) that lists
+  that repo's archives newest first. Over 8 rows the list scrolls inside (`max-h-64`).
+- **Archive row (browse):** the **source** — the removed folder's name when the journal remembers it, the
+  branch (mono), or the word **detached** — the date (relative, absolute on hover), the **tip SHA** (mono,
+  7 chars, full on hover), a **wip** badge (Default badge, `has working state`) when a working-state ref exists,
+  and a copy button **"Copy restore command"** (`Copy` icon, ghost) that puts `git branch <name> <sha>` on the
+  clipboard (a hostile branch name is shell-quoted); a wip row has a second **"Copy wip command"** (`git
+worktree add --detach ../restored-… <sha>`). A row past the retention has a Warning-text "expired" word.
+- **Retention note** under the header: one 11px `--text-4` line, "Deleting archives frees disk space only after
+  git's next gc. Archives older than {n} days: {k}". Each **repo row** that has archives past the retention
+  carries a Soft button **"Delete {k} older than {n} days…"** that opens the **archive confirm dialog**
+  (`CleanupExhaustDialog.vue`, mode `delete`); a repo row never mixes another repo's refs into its list.
+- **Archive confirm dialog** (`CleanupExhaustDialog.vue`, the Bulk dialog's chrome and focus rules:
+  Esc/Cancel closes, focus starts on **Cancel**, Tab trapped): title **"Delete {k} archives?"**, a note in
+  `--warning-soft` — "This removes the archive refs. The branch tips and working states they keep can no
+  longer be restored from here. Git frees the disk space on its next gc." — then the **list** (one line each:
+  source, date, tip SHA, wip badge; scrolls past 8) and a Danger **"Delete {k} archives"**. It never runs `git gc`.
+- **Run git gc now…** — a ghost link on each repo row, with **its own confirm** (the same dialog, mode `gc`): "Run git gc in {repo}? It deletes unreachable git objects older
+  than an hour, so the deleted archives' space comes back. Don't run it while another git command is
+  writing in this repository." Primary **"Run git gc"**, Cancel first in focus.
+- **Never clean:** a repo on the never-clean list (or under a path on it) keeps its archives: the autopilot's expiry
+  skips it and deleting by hand is refused with a toast. An archive whose removed folder stood under such a path is
+  skipped too. The row of an archive with no stamp reads **age unknown** (also in the confirm list), never a dash.
+- **Autopilot:** the card says nothing about it; it is the setting **Expire archives automatically** (Settings →
+  Cleanup, off by default). The autopilot never deletes a ref otherwise.
+
+#### In-the-trash card (unit C, AC-C5)
+
+A strip under the Archives card (`data-testid="trash-card"`, `Trash2` icon). Line one, drawn when Harnu has
+verified entries still in the trash: **"{size} in the trash · {n} folders Harnu moved there"** and the Soft button
+**"Empty what Harnu moved to the trash ({size})"**. Line two, drawn when it has entries it can no longer check:
+11px `--text-3`, **"{size} moved to the trash by Harnu (can't check what's still there)"**, never added to line one.
+
+- It empties **only the exact entries Harnu created**. At trash time Harnu lists the trash before and after the move
+  and records the one new entry with a fingerprint (name, the record's date, inode and mtime, the folder's inode and
+  change time); "Empty" deletes an entry only while all of it still matches. It never matches by original path and
+  time: a folder the user restored and trashed again is theirs. Two new entries at once record nothing.
+- The confirm dialog (`CleanupExhaustDialog.vue`, mode `trash`) **lists the folders** (name, size) and the button
+  sends exactly their ids; anything trashed after the dialog opened is not in the list and stays. Title **"Empty
+  what Harnu moved to the trash?"**, "This permanently deletes {n} folders Harnu moved to the trash, {size}. Anything
+  else in your trash stays." Danger **"Empty {size}"**, Cancel first in focus. The autopilot never does this.
+- Where Harnu cannot empty it safely (macOS, Windows) the button is not drawn; a 11px `--text-3` line says "Harnu
+  can't empty it for you on this system. Open {location} and empty it there." The location is a path, or the
+  translated **Recycle Bin** on Windows (i18n, never a literal).
+- A skipped entry is said in the toast with its REAL cause, once per cause: its disk is not mounted or can't be read,
+  it is no longer what Harnu moved, or Harnu has no exact record of that move. When nothing was emptied the toast
+  says "Nothing was emptied: those folders are no longer in the trash", never "Emptied 0 B". An entry that changed
+  stays on the line-two list ("can't check"); only a missing one is forgotten.
+
 #### First-cycle banner
 
 `.fc`: `--accent-soft` fill, `--accent-line` border, radius 7, `padding: 12px 16px`, `Recycle` icon in
@@ -9014,10 +9174,11 @@ nothing running and nothing needing attention. An optional hover popover (the fo
 
 The documented Toast with an optional description and an action link — no new variant.
 
-| Outcome         | Kind      | Title                                    | Action         |
-| --------------- | --------- | ---------------------------------------- | -------------- |
-| all ok          | `success` | `Freed {size} · {n} ready items cleaned` | "View journal" |
-| partial failure | `warning` | `{n} cleaned · {m} needs review`         | "Review"       |
+| Outcome                           | Kind      | Title                                                              | Action         |
+| --------------------------------- | --------- | ------------------------------------------------------------------ | -------------- |
+| all ok                            | `success` | `{freed split} · {n} ready items cleaned`                          | "View journal" |
+| all ok, removed from Needs review | `success` | `{freed split} · {n} items removed` (never "ready": they were not) | "View journal" |
+| partial failure                   | `warning` | `{n} cleaned · {m} needs review`                                   | "Review"       |
 
 The count behind **attention** is the items that need operator action: a failed item, or a refusal the
 operator did not choose. A refusal that is the operator's own setting (`kept`, `never-clean`) is not counted.
@@ -9079,6 +9240,10 @@ control-right rows with `SettingHint`). Groups, 16px apart, every control writin
   age** (days); and, instead of a volumes switch, a `--warning-soft` note: **Docker volumes are always
   kept** — cleaning a worktree never removes its volumes; they show up in Needs review as orphan volumes
   and each one is removed by hand — with "a removed volume cannot be restored" in `--warning`.
+- **Archives** — **Keep archives for** (days, default 30; `archiveKeepDays`) and **Expire archives
+  automatically** (toggle, off by default; `archiveAutoExpire`): when on, and only then, the autopilot deletes
+  the archive refs older than the retention (never `git gc`). The hint says the refs go, the git objects go
+  on git's next gc, and that a deleted archive cannot be restored.
 - **Never clean** — a list of absolute repo or worktree paths (`neverClean`), add/remove.
 - **Scan** (Reaper-only, kept): scan in the background, notify, never delete remote branches, protected
   branches, minimum age. These are not GC prefs and are not duplicated anywhere.
@@ -9092,6 +9257,7 @@ that belong to no worktree) and states that worktree-bound stacks are cleaned by
 `CleanupSelectionBar.vue` · `CleanupDockerCard.vue` · `CleanupReviewList.vue` · `CleanupListView.vue` ·
 `CleanupSplitBar.vue` · `CleanupLegend.vue` · `CleanupFirstCycleBanner.vue` · `CleanupBulkConfirmDialog.vue` · `CleanupOtherItems.vue` ·
 `CleanupTranscriptsConfirmDialog.vue` · `CleanupDockerConfirmDialog.vue` · `lib/gc-orphans.ts` ·
+`CleanupArchivesCard.vue` · `CleanupExhaustDialog.vue` · `CleanupTrashCard.vue` ·
 `CleanupOpinionChip.vue` · `lib/gc-opinion.ts` · `stores/gc.ts` · `lib/gc-treemap.ts` · `lib/gc-model.ts` · `lib/gc-jobs.ts`.
 
 ### Containers takeover (ContainersView.vue)

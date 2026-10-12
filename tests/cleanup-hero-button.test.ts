@@ -54,7 +54,7 @@ describe('CleanupHeroButton', () => {
     expect(w.find('button').exists()).toBe(false)
     expect(chip.attributes('role')).toBe('status')
     expect(chip.attributes('aria-live')).toBe('polite')
-    expect(chip.text()).toBe('Cleaning 3/12 · 1.40 GB freed')
+    expect(chip.text()).toBe('Cleaning 3/12 · 1.40 GB freed now')
     expect(w.get('[data-testid="hero-chip-bar"]').attributes('style')).toContain('width: 25%')
   })
 

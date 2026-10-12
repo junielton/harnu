@@ -5,7 +5,8 @@ import { overridesAncestryCheck, type ReapItem } from './reaper-core'
 import type { WorktreeStatus } from '../worktree-core'
 import { isAbsolute, resolve } from 'node:path'
 import { planArchive } from './archive-core'
-import { restoreHintFor, type Tombstone } from './journal'
+import { restoreHintFor, restoreHintForDetached, type Tombstone } from './journal'
+import type { TrashEntryRecord } from '../gc/trash-core'
 
 export type CleanStepId =
   | 'guard'
@@ -28,6 +29,11 @@ export interface CleanResult {
   itemId: string
   ok: boolean
   steps: CleanStepResult[]
+  /**
+   * Bytes the folder held when it was moved to the OS trash. Absent when nothing was trashed or
+   * the size could not be measured. Those bytes are still on disk until the trash is emptied.
+   */
+  trashedBytes?: number
 }
 
 export interface ExecutorDeps {
@@ -41,13 +47,29 @@ export interface ExecutorDeps {
    */
   probeStatus(path: string): Promise<WorktreeStatus>
   hasUnpushed(path: string): Promise<boolean>
-  trash(path: string): Promise<void>
+  /**
+   * Moves the folder to the OS trash. May answer the exact trash entry the move created, so the
+   * journal can name it and "Empty" can find exactly it again.
+   */
+  trash(path: string): Promise<void | { trashEntry?: TrashEntryRecord | null }>
+  /**
+   * The folder's size on disk right now, asked just before it is trashed (null when it cannot be
+   * told). Optional and best effort: a failure here never stops a clean. The number is what the
+   * trash then holds, and what "in the trash" reports until it is emptied.
+   */
+  measureBytes?(path: string): Promise<number | null>
   git(repoPath: string, args: string[]): Promise<string>
   resolveSha(repoPath: string, rev: string): Promise<string | null>
   /** Points an archive ref at an already-resolved commit sha. */
   archiveTip(repoPath: string, ref: string, sha: string): Promise<string>
   /** Captures a worktree's tracked + untracked working state and points `ref` at it. */
   archiveWip(repoPath: string, ref: string, worktreePath: string): Promise<string>
+  /**
+   * Points a ref under `refPrefix` at each commit in the HEAD reflog of `worktreePath` that no ref
+   * reaches, and returns the refs written. A detached worktree only: its branchless HEAD reflog is the
+   * one place such a commit lives, and it goes with the folder.
+   */
+  archiveReflog(repoPath: string, refPrefix: string, worktreePath: string): Promise<string[]>
   detachSidebar(path: string): Promise<void>
   /**
    * Unregisters exactly this worktree from git: removes its own admin directory, found by the
@@ -61,7 +83,11 @@ export interface ExecutorDeps {
    * one unlocked match. Asked BEFORE the folder is trashed, while git can still be asked to do
    * it instead; false means the unregistration would otherwise be skipped.
    */
-  canUnregister(repoPath: string, worktreePath: string): Promise<boolean>
+  canUnregister(
+    repoPath: string,
+    worktreePath: string,
+    opts?: { assumeUnlocked?: boolean }
+  ): Promise<boolean>
   appendTombstone(t: Tombstone): Promise<void>
   now(): number
 }
@@ -118,7 +144,10 @@ export async function cleanItem(
   deps: ExecutorDeps
 ): Promise<CleanResult> {
   const steps: CleanStepResult[] = []
-  const hasFolder = item.kind === 'worktree' || item.kind === 'hidden-folder'
+  // A detached worktree owns a folder too; it has no branch, so `hasLocalBranch` stays false and
+  // its archive is keyed by the HEAD sha instead (`planArchive`).
+  const hasFolder =
+    item.kind === 'worktree' || item.kind === 'hidden-folder' || item.kind === 'detached-worktree'
   const hasLocalBranch = item.kind !== 'remote-branch' && !!item.branch
 
   if (item.verdict !== 'harvestable') {
@@ -183,6 +212,12 @@ export async function cleanItem(
   // A holder, not two `let`s: these are assigned inside the archive step's
   // closure, and only a ref that was actually written may reach the tombstone.
   const archived: { tip: string | null; wip: string | null } = { tip: null, wip: null }
+  // What the OS trash now holds because of this clean: set only once the move succeeded.
+  const trashed: {
+    path: string | null
+    bytes: number | null
+    entry: TrashEntryRecord | null
+  } = { path: null, bytes: null, entry: null }
   let halted = false
 
   const run = async (
@@ -210,10 +245,11 @@ export async function cleanItem(
   const plan = planArchive(item, deps.now())
 
   // Fail-closed backstop for AC-1: an item that would delete something but for
-  // which the planner preserves nothing must abort, not sweep unarchived. No
-  // item shape reaches this today (every folder item carries a branch); a
-  // future one — a detached worktree, say — has to fail loudly here rather than
-  // slip past the archive because it did not fit the plan.
+  // which the planner preserves nothing must abort, not sweep unarchived. A
+  // folder item with no branch (a plain worktree whose branch is unknown) and a
+  // detached worktree whose scan recorded no HEAD both reach it: neither can be
+  // named or resolved, so each fails loudly here rather than slip past the
+  // archive because it did not fit the plan.
   const unpreserved: string[] = []
   if (hasFolder && !plan.wip) unpreserved.push('working state')
   if ((hasLocalBranch || item.kind === 'remote-branch') && !plan.tip) {
@@ -262,6 +298,11 @@ export async function cleanItem(
   // branch. A ref name is recorded only after its write returned, so a
   // tombstone never claims a ref that does not exist.
   await run('archive', plan.refs.length > 0, async () => {
+    // A detached worktree's reflog first: it is the only step that can refuse for size, and a
+    // refusal must leave no tip or wip ref behind. Nothing it writes is needed by the others.
+    if (item.kind === 'detached-worktree' && plan.namespace && item.path) {
+      await deps.archiveReflog(item.repoPath, `${plan.namespace}/reflog`, item.path)
+    }
     if (plan.tip) {
       await deps.archiveTip(item.repoPath, plan.tip.ref, sha!)
       archived.tip = plan.tip.ref
@@ -283,7 +324,16 @@ export async function cleanItem(
         'cannot-unregister: no matching, unlocked registration for this worktree in git; nothing was removed'
       )
     }
-    await deps.trash(item.path!)
+    let bytes: number | null = null
+    try {
+      bytes = (await deps.measureBytes?.(item.path!)) ?? null
+    } catch {
+      // The size is a report, not a guard: an unreadable folder is trashed all the same.
+    }
+    const moved = await deps.trash(item.path!)
+    trashed.entry = moved?.trashEntry ?? null
+    trashed.path = item.path!
+    trashed.bytes = typeof bytes === 'number' && Number.isFinite(bytes) && bytes >= 0 ? bytes : null
   })
 
   // The step keeps its id for the journal and the pipeline, but it only unregisters THIS
@@ -348,9 +398,20 @@ export async function cleanItem(
     sha,
     deleted,
     justifiedBy: item.justifiedBy,
-    restoreHint: restoreHintFor(item.branch ?? null, sha),
+    restoreHint:
+      item.kind === 'detached-worktree'
+        ? restoreHintForDetached(item.repoPath, item.path, archived.tip)
+        : restoreHintFor(item.branch ?? null, sha),
     archiveTipRef: archived.tip,
-    archiveWipRef: archived.wip
+    archiveWipRef: archived.wip,
+    ...(trashed.path !== null
+      ? {
+          trashedPath: trashed.path,
+          trashedBytes: trashed.bytes,
+          trashedAt: deps.now(),
+          trashEntry: trashed.entry
+        }
+      : {})
   }
   // appendTombstone propagates append failures; a lost restore record is a
   // failed step and fails the overall result.
@@ -362,7 +423,12 @@ export async function cleanItem(
     halted = true
   }
 
-  return { itemId: item.id, ok: !halted, steps }
+  return {
+    itemId: item.id,
+    ok: !halted,
+    steps,
+    ...(trashed.bytes !== null ? { trashedBytes: trashed.bytes } : {})
+  }
 }
 
 export async function sweep(

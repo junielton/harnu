@@ -51,6 +51,16 @@ export const REFUSAL_CODES = [
   'dirty',
   'foreign-checkout',
   'cannot-unregister',
+  // a guided action's prep (gc-guided.ts `prepareClean`): the item was left as it was
+  'unlock-failed',
+  'session-busy',
+  'session-not-closable',
+  'stack-stop-failed',
+  'stack-is-main-checkout',
+  'stack-used-elsewhere',
+  'stack-binds-folder',
+  'prep-not-applicable',
+  'operation-in-progress',
   // mid-run
   'changed-mid-run'
 ] as const
@@ -81,6 +91,7 @@ export interface JobView {
   done: number
   total: number
   freedBytes: number
+  trashedBytes: number
   current: string | null
   results: GcItemResult[]
   error: string | null
@@ -104,7 +115,7 @@ export function attachJobs(s: JobsState, infos: readonly GcJobInfo[]): JobsState
   for (const i of infos) {
     // A done event already landed here; a stale `running` row must not reopen it.
     if (finished(next.jobs[i.jobId]) && i.state !== 'done') continue
-    next = put(next, { ...i, results: [...i.results] })
+    next = put(next, { ...i, trashedBytes: i.trashedBytes ?? 0, results: [...i.results] })
   }
   return next
 }
@@ -119,6 +130,7 @@ export function applyProgress(s: JobsState, p: GcJobProgress): JobsState {
     done: p.done,
     total: p.total,
     freedBytes: p.freedBytes,
+    trashedBytes: p.trashedBytes ?? 0,
     current: p.current,
     results: [...p.results],
     error: null
@@ -133,6 +145,7 @@ export function applyDone(s: JobsState, d: GcJobDone): JobsState {
     done: d.done,
     total: d.total,
     freedBytes: d.freedBytes,
+    trashedBytes: d.trashedBytes ?? 0,
     current: null,
     results: [...d.results],
     error: d.error
@@ -149,10 +162,18 @@ export function dropFinished(s: JobsState): JobsState {
 /** The job the chip shows: one that runs, else the first that waits. */
 export function runningJob(
   s: JobsState
-): { jobId: string; done: number; total: number; freedBytes: number } | null {
+): { jobId: string; done: number; total: number; freedBytes: number; trashedBytes: number } | null {
   const live = Object.values(s.jobs).filter((j) => j.state !== 'done')
   const j = live.find((x) => x.state === 'running') ?? live[0]
-  return j ? { jobId: j.jobId, done: j.done, total: j.total, freedBytes: j.freedBytes } : null
+  return j
+    ? {
+        jobId: j.jobId,
+        done: j.done,
+        total: j.total,
+        freedBytes: j.freedBytes,
+        trashedBytes: j.trashedBytes
+      }
+    : null
 }
 
 export type BlockJobState = 'busy' | 'done' | 'failed'
@@ -172,12 +193,20 @@ export interface DoneSummary {
   cleaned: number
   failed: number
   freedBytes: number
+  /** Bytes of checkouts that only moved to the OS trash: not free until it is emptied. */
+  trashedBytes: number
   /** Failed items that were refused up front, by code. */
   refusals: Partial<Record<RefusalCode, number>>
   /** How many items were refused (any code). */
   refused: number
   /** Items cleaned locally whose requested remote-branch delete did not happen (AC-D5); null when none. */
   remoteLeft: { count: number; error: string } | null
+  /** Items whose guided prep (an unlock, a stopped stack) could NOT be put back after the remove refused. */
+  rollbackFailed: number
+  /** What each could not put back (e.g. which containers were left stopped), for the toast. */
+  rollbackDetails: string[]
+  /** Items whose shared stack was stopped and left stopped because the worktree was removed anyway. */
+  prepLeft: number
 }
 
 export function doneSummary(d: GcJobDone): DoneSummary {
@@ -192,10 +221,32 @@ export function doneSummary(d: GcJobDone): DoneSummary {
   const left = d.results.filter((r) => r.remoteDelete && !r.remoteDelete.ok)
   const remoteLeft =
     left.length > 0 ? { count: left.length, error: left[0]!.remoteDelete!.error ?? '' } : null
+  const rollbackDetails = d.results.flatMap((r) => {
+    const m = r.ok ? null : /rollback-failed \((.*)\)\s*$/.exec(r.error ?? '')
+    return m ? [m[1]!] : []
+  })
+  const prepLeft = d.results.filter(
+    (r) => !r.ok && (r.error ?? '').includes('prep-left (stack-stopped)')
+  ).length
+  const rollbackFailed = d.results.filter(
+    (r) => !r.ok && (r.error ?? '').includes('rollback-failed')
+  ).length
   let tone: DoneSummary['tone'] = 'success'
   if (failed > 0 || d.error || remoteLeft) tone = 'warning'
   else if (d.results.length === 0 && d.freedBytes === 0) tone = 'none'
-  return { tone, cleaned, failed, freedBytes: d.freedBytes, refusals, refused, remoteLeft }
+  return {
+    tone,
+    cleaned,
+    failed,
+    freedBytes: d.freedBytes,
+    trashedBytes: d.trashedBytes ?? 0,
+    refusals,
+    refused,
+    remoteLeft,
+    rollbackFailed,
+    rollbackDetails,
+    prepLeft
+  }
 }
 
 export interface ItemFailure {

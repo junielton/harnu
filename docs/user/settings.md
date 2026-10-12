@@ -55,7 +55,7 @@ The alert lives in the other tab: **Settings → General**, in the **OS notifica
 
 ## Cleanup
 
-**Settings → Cleanup** is the one place that controls how Harnu cleans up after finished work. Every change saves as you make it, and the numbers you type are applied about half a second after you stop typing. If you type a value outside the allowed range, Harnu keeps the nearest allowed one and the field shows what it kept. The tab is the settings behind the [Cleanup](cleanup.md) screen, in four groups.
+**Settings → Cleanup** is the one place that controls how Harnu cleans up after finished work. Every change saves as you make it, and the numbers you type are applied about half a second after you stop typing. If you type a value outside the allowed range, Harnu keeps the nearest allowed one and the field shows what it kept. The tab is the settings behind the [Cleanup](cleanup.md) screen, in five groups.
 
 **Autopilot**
 
@@ -77,6 +77,13 @@ The autopilot rides the background scan, so it needs **Automatic background scan
 | Build cache max age                    | 7 days  | Build cache older than this is pruned (1 - 365 days).                                  |
 
 **Docker volumes are always kept.** There is no switch for this: cleaning a worktree, by hand or automatically, never removes its volumes. Once the worktree is gone they appear in Needs review as orphan volumes, with their size and compose project, and you remove each one yourself. A removed volume and its data cannot be restored.
+
+**Archives** (what every removal leaves behind in git; see [Archives and the trash](cleanup.md#archives-and-the-trash--cleanup-cleans-its-own-leftovers))
+
+| Setting                       | Default | What it does                                                                                                                                                                                       |
+| ----------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Keep archives for             | 30 days | Archive refs older than this are offered for deletion on the Cleanup screen, after you confirm the list (1 - 3650 days).                                                                           |
+| Expire archives automatically | off     | On: the autopilot itself deletes the archive refs older than the setting above. A deleted archive cannot be restored, and git frees the space on its next gc (Harnu never runs `git gc` for this). |
 
 **Never clean**
 

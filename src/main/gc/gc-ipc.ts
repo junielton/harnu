@@ -45,6 +45,17 @@ import { createAgentService, createGatherer } from './gc-gatherer'
 import { setGcService } from './gc-service-registry'
 import { createJobQueue, type GcJobInfo } from './gc-jobs-core'
 import { submitManualClean } from './gc-manual'
+import { guidanceFor, prepareClean } from './gc-guided'
+import { defaultGuidedDeps } from './gc-guided-shell'
+import {
+  PREP_JOURNAL_FILE,
+  ackRecovery,
+  actOnRecovery,
+  createPrepJournal,
+  listRecovery,
+  recoverPrepJournal,
+  type RecoveryDeps
+} from './gc-prep-journal'
 import { recheckItem } from './gc-recheck'
 import {
   mergeIncomingPrefs,
@@ -56,11 +67,17 @@ import {
   type GcPrefs
 } from './gc-prefs'
 import { parseOptions } from './gc-options'
-import type { GcCleanAck, GcRecheckResult, GcSnapshot, OrphanVolumeItem } from './gc-wire'
+import type {
+  GcCleanAck,
+  GcGuidance,
+  GcRecheckResult,
+  GcSnapshot,
+  OrphanVolumeItem
+} from './gc-wire'
 import { createGcOps, defaultGcShellDeps, resolveRealPaths, type GcShellDeps } from './gc-shell'
 import { withCurrentNeverClean } from './autopilot-core'
 import { AS_GIVEN } from './bundle-core'
-import { createForcedGcOps } from './gc-forced-ops'
+import { createDryReprobe, createForcedGcOps } from './gc-forced-ops'
 import { runHousekeeping } from './housekeeping-shell'
 import {
   createOpinionCache,
@@ -71,6 +88,17 @@ import {
 import { createOpinionShell } from './opinion-shell'
 import { remoteFactsService } from './gc-remote-shell'
 import type { RemoteFacts } from './gc-remote-delete'
+import {
+  deleteConfirmedArchives,
+  emptyHarnuTrashNow,
+  expireArchivesNow,
+  runGcInRepo,
+  type ArchiveDeleteAck,
+  type ArchiveDeleteRequest,
+  type EmptyTrashAck
+} from './gc-exhaust-shell'
+import { NO_ARCHIVES } from './archives-core'
+import { NO_TRASH } from './trash-core'
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
@@ -90,10 +118,24 @@ export interface GcService {
   setPrefs(raw: unknown): Promise<GcPrefs>
   ackFirstReport(): Promise<GcPrefs>
   jobs(): GcJobInfo[]
+  /** What main sees about a refused item right now (lock reason, sessions, shared stacks, …). Read-only. */
+  guide(id: unknown): Promise<GcGuidance>
   /** "Ask for an opinion": on demand only, read-only, advisory. Never removes anything. */
   opinion(ids: unknown): GcOpinionAck
   /** The peek: cached opinions that still match their item. Never asks the model. */
   opinionCached(ids: unknown): Promise<Record<string, GcOpinion>>
+  /**
+   * Deletes the archive refs the operator confirmed in one repo, each only if it still has the shas
+   * it was shown with. Deletes refs only: git reclaims the space on its next gc.
+   */
+  deleteArchives(raw: unknown): Promise<ArchiveDeleteAck>
+  /** "Run git gc now" for one repo, after its own confirm. */
+  runArchiveGc(repoPath: unknown): Promise<{ ok: boolean; error?: string }>
+  /**
+   * "Empty what Harnu moved to the trash": only the entries the operator confirmed by id, each only
+   * while it is still exactly the entry Harnu recorded. Never the autopilot.
+   */
+  emptyTrash(ids: unknown): Promise<EmptyTrashAck>
 }
 
 /** Ids from an untrusted payload: strings only, bounded. */
@@ -103,6 +145,25 @@ function parseIds(raw: unknown): string[] {
   if (ids.length !== raw.length) throw new Error('gc:clean ids must be non-empty strings')
   if (ids.length > 500) throw new Error('gc:clean takes at most 500 ids')
   return ids
+}
+
+/** The `gc:archives:delete` payload from the renderer: one repo and the archives it confirmed. */
+function parseArchiveRequest(raw: unknown): ArchiveDeleteRequest {
+  const r = raw as { repoPath?: unknown; archives?: unknown } | null
+  if (!r || typeof r.repoPath !== 'string' || !r.repoPath || !Array.isArray(r.archives)) {
+    throw new Error('gc:archives:delete expects { repoPath, archives }')
+  }
+  if (r.archives.length > 5000) throw new Error('gc:archives:delete takes at most 5000 archives')
+  const sha = (v: unknown): string | null => (typeof v === 'string' && v ? v : null)
+  return {
+    repoPath: r.repoPath,
+    archives: r.archives.map((a: { namespace?: unknown; tipSha?: unknown; wipSha?: unknown }) => {
+      if (typeof a?.namespace !== 'string' || !a.namespace.startsWith('refs/archive/')) {
+        throw new Error('gc:archives:delete: not an archive namespace')
+      }
+      return { namespace: a.namespace, tipSha: sha(a.tipSha), wipSha: sha(a.wipSha) }
+    })
+  }
 }
 
 /** Registers the handlers and arms the cycle on the Reaper tick. */
@@ -196,8 +257,12 @@ export async function registerGcHandlers(
   })
 
   const shellDeps = await defaultGcShellDeps(getWindow)
+  const prepJournal = createPrepJournal(path.join(userData, PREP_JOURNAL_FILE))
+  const guidedDeps = { ...(await defaultGuidedDeps(shellDeps)), journal: prepJournal }
   const withRun = (actor: 'operator' | 'autopilot'): GcShellDeps =>
     withActor(shellDeps, actor, () => prefs)
+
+  const recoveryChanged = (): void => send('gc:recovery:changed', null)
 
   const notify = (n: { title: string; body: string }): void => {
     try {
@@ -215,6 +280,45 @@ export async function registerGcHandlers(
       console.error('[gc] notification failed', err)
     }
   }
+  // What a guided prep had changed when Harnu last stopped (see gc-prep-journal.ts): a lock goes back only
+  // on the very same worktree, containers are never started by Harnu on its own, and whatever needs the
+  // operator stays as a notice until it is answered. A notice is announced once, and kept until the
+  // renderer acknowledges it, so a boot that finishes before the window is up loses nothing.
+  const recoveryDeps: RecoveryDeps = {
+    exists: (p) =>
+      import('node:fs/promises').then((fs) =>
+        fs.access(p).then(
+          () => true,
+          () => false
+        )
+      ),
+    lockReason: (repo, p) => guidedDeps.lockReason(repo, p),
+    identityOf: (repo, p) => guidedDeps.identityOf(repo, p),
+    lock: (repo, p, reason) => guidedDeps.lock(repo, p, reason),
+    // Of these ids, the containers that still exist (a docker that cannot answer counts them all present).
+    containersPresent: async (ids) => {
+      try {
+        const { stacks } = await shellDeps.listStacks()
+        const all = new Set(stacks.flatMap((s) => s.containers.map((c) => c.id)))
+        return ids.filter((id) => all.has(id))
+      } catch {
+        return ids
+      }
+    },
+    start: (ids) => guidedDeps.docker.start(ids)
+  }
+  void recoverPrepJournal(prepJournal, recoveryDeps)
+    .then(async () => {
+      const fresh = (await listRecovery(prepJournal)).filter((i) => !i.announced)
+      if (fresh.length > 0) {
+        notify({
+          title: 'Harnu has something to tell you about an interrupted clean',
+          body: `${fresh.length} item(s) in Cleanup.`
+        })
+      }
+      recoveryChanged()
+    })
+    .catch((err) => console.error('[gc] prep journal recovery failed', messageOf(err)))
 
   const cycleDeps: GcCycleDeps = {
     prefs: () => prefs,
@@ -225,6 +329,9 @@ export async function registerGcHandlers(
     notify,
     emitCycle: (record) => send('gc:cycle', record),
     rememberLeftovers: remember,
+    // The one place the autopilot deletes refs: the cycle calls it only when the operator turned
+    // "Expire archives automatically" on.
+    expireArchives: (keepDays, now, neverClean) => expireArchivesNow(keepDays, now, neverClean),
     state,
     now: () => Date.now()
   }
@@ -248,7 +355,9 @@ export async function registerGcHandlers(
     lastCycle: state.last,
     nextCycleAt: reaper.autoScan() ? reaper.nextTickAt() : null,
     nextClean: planNextClean(g.bundles, livePrefs()),
-    backgroundScan: reaper.autoScan()
+    backgroundScan: reaper.autoScan(),
+    archives: g.archives ?? NO_ARCHIVES,
+    trash: g.trash ?? NO_TRASH
   })
 
   // The advisor is reachable from the `gc:opinion` handler below and from nowhere else: the
@@ -311,6 +420,18 @@ export async function registerGcHandlers(
             trashTranscriptSlug(transcriptsRoot, slug, (p) => shell.trashItem(p)),
           reconcileFolder: (folder) =>
             removeGhostFoldersUnder(getWindow, folder).then(() => undefined),
+          folderExists: (p) =>
+            import('node:fs/promises').then((fs) =>
+              fs.access(p).then(
+                () => true,
+                () => false
+              )
+            ),
+          // A guided "…and remove": its one prep step, then a gather that starts after it.
+          gatherFresh,
+          prepare: (prep, b, o) => prepareClean(prep, b, guidedDeps, o),
+          // The same reprobe the remove runs, read-only, on the bundle with the prep's cause assumed fixed.
+          dryReprobe: (b, forced) => createDryReprobe(withRun('operator'), forced)(b),
           workStampOf: (p) => workStampOf(reaperExec, p),
           removeOrphanVolumes: (names) =>
             runHousekeeping({
@@ -367,6 +488,15 @@ export async function registerGcHandlers(
         remoteFactsService().facts(g.bundles.filter((b) => ids.has(b.item.id)))
       )
     },
+    guide: async (rawId) => {
+      if (typeof rawId !== 'string') throw new Error('gc:guide expects a bundle id')
+      const g = gatherer.cached() ?? (await gather())
+      const b = g.bundles.find((x) => x.item.id === rawId)
+      if (!b) {
+        return { id: rawId, lock: null, sessions: null, stacks: [], unreadable: null, docker: null }
+      }
+      return guidanceFor(b, guidedDeps)
+    },
     prefs: () => livePrefs(),
     setPrefs: async (raw) => {
       const next = mergeIncomingPrefs(livePrefs(), raw)
@@ -379,7 +509,28 @@ export async function registerGcHandlers(
     ackFirstReport: () => persist(withAcknowledged(prefs)),
     jobs: () => queue.jobs(),
     opinion: (ids) => opinions.start(ids),
-    opinionCached: (ids) => opinions.cached(ids)
+    opinionCached: (ids) => opinions.cached(ids),
+    deleteArchives: async (raw) => {
+      const ack = await deleteConfirmedArchives(parseArchiveRequest(raw), prefs.neverClean)
+      void gatherer.fresh().catch((err) => console.error('[gc] refresh after archives failed', err))
+      return ack
+    },
+    runArchiveGc: async (repoPath) => {
+      if (typeof repoPath !== 'string' || !repoPath)
+        throw new Error('gc:archives:gc expects a repo path')
+      const ack = await runGcInRepo(repoPath)
+      void gatherer.fresh().catch((err) => console.error('[gc] refresh after git gc failed', err))
+      return ack
+    },
+    emptyTrash: async (rawIds) => {
+      if (!Array.isArray(rawIds) || rawIds.some((x) => typeof x !== 'string')) {
+        throw new Error('gc:trash:empty expects the ids of the entries the dialog listed')
+      }
+      if (rawIds.length > 5000) throw new Error('gc:trash:empty takes at most 5000 ids')
+      const ack = await emptyHarnuTrashNow(rawIds as string[])
+      void gatherer.fresh().catch((err) => console.error('[gc] refresh after emptying failed', err))
+      return ack
+    }
   }
 
   // The agent-facing seam (T445). Deliberately narrow: no clean, keep or prefs method, and its
@@ -401,12 +552,39 @@ export async function registerGcHandlers(
   ipcMain.handle('gc:unkeep', (_e, id: unknown) => service.unkeep(id))
   ipcMain.handle('gc:recheck', (_e, id: unknown) => service.recheck(id))
   ipcMain.handle('gc:remoteFacts', (_e, ids: unknown) => service.remoteFacts(ids))
+  ipcMain.handle('gc:guide', (_e, id: unknown) => service.guide(id))
+  ipcMain.handle('gc:recovery:list', () => listRecovery(prepJournal, recoveryDeps))
+  ipcMain.handle('gc:recovery:ack', async (_e, ids: unknown) => {
+    if (!Array.isArray(ids)) return
+    await ackRecovery(
+      prepJournal,
+      ids.filter((x): x is string => typeof x === 'string')
+    )
+  })
+  ipcMain.handle('gc:recovery:act', async (_e, raw: unknown) => {
+    const r = (raw ?? {}) as { id?: unknown; action?: unknown }
+    if (
+      typeof r.id !== 'string' ||
+      (r.action !== 'start' &&
+        r.action !== 'lock' &&
+        r.action !== 'lock-anyway' &&
+        r.action !== 'dismiss')
+    ) {
+      return { ok: false, error: 'bad request' }
+    }
+    const out = await actOnRecovery(prepJournal, r.id, r.action, recoveryDeps)
+    recoveryChanged()
+    return out
+  })
   ipcMain.handle('gc:prefs:get', () => service.prefs())
   ipcMain.handle('gc:prefs:set', (_e, raw: unknown) => service.setPrefs(raw))
   ipcMain.handle('gc:ackFirstReport', () => service.ackFirstReport())
   ipcMain.handle('gc:jobs', () => service.jobs())
   ipcMain.handle('gc:opinion', (_e, ids: unknown) => service.opinion(ids))
   ipcMain.handle('gc:opinion:cached', (_e, ids: unknown) => service.opinionCached(ids))
+  ipcMain.handle('gc:archives:delete', (_e, raw: unknown) => service.deleteArchives(raw))
+  ipcMain.handle('gc:archives:gc', (_e, repoPath: unknown) => service.runArchiveGc(repoPath))
+  ipcMain.handle('gc:trash:empty', (_e, ids: unknown) => service.emptyTrash(ids))
 
   // Seed the Containers feed once at start-up so the view is right before the first tick.
   void gather().catch((err) => console.error('[gc] first gather failed:', messageOf(err)))

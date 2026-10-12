@@ -13,7 +13,7 @@ import {
   X
 } from 'lucide-vue-next'
 import type { GcOpinion } from '../../../main/gc/gc-wire'
-import type { GcBlock } from '../lib/gc-model'
+import { isDetachedBlock, type GcBlock } from '../lib/gc-model'
 import { haltOf, type BlockJobState, type ItemFailure } from '../lib/gc-jobs'
 import { formatBytes } from './system-monitor-format'
 import { identText } from './cleanup-ident'
@@ -26,7 +26,8 @@ import {
   type HydrationOp
 } from './cleanup-row'
 import { reasonKey, refusalKey, removalKey, stepKey } from './cleanup-gc-copy'
-import { removability } from '../lib/gc-removability'
+import { removability, removabilityAll, type RemovalRefusal } from '../lib/gc-removability'
+import { depsOf, guideFor, guideLabel, hasGuideButton, type GuidedAction } from '../lib/gc-guidance'
 import { resumeHint } from '../lib/gc-resume'
 import type { RefusalCode } from '../lib/gc-jobs'
 import type { GcStep } from '../../../main/gc/pipeline-core'
@@ -53,8 +54,16 @@ const props = withDefaults(
     opinion?: GcOpinion | null
     /** A request for this item's opinion is in flight. */
     asking?: boolean
+    /** A guided action that is not a dialog (scan, unmark) is running elsewhere. */
+    guideBusy?: boolean
   }>(),
-  { dehydrateIdleDays: 7, hydrationBusy: null, opinion: null, asking: false }
+  {
+    dehydrateIdleDays: 7,
+    hydrationBusy: null,
+    opinion: null,
+    asking: false,
+    guideBusy: false
+  }
 )
 
 const emit = defineEmits<{
@@ -67,6 +76,8 @@ const emit = defineEmits<{
   cleanNow: [id: string]
   retry: [id: string]
   recheck: [id: string]
+  /** The guided action that clears the refusal ("No dead ends"); the screen opens it. */
+  guide: [id: string, action: GuidedAction, reason: RemovalRefusal]
 }>()
 
 const { t } = useI18n()
@@ -121,6 +132,8 @@ const takes = computed<string[]>(() => {
   if ((b.depsBytes ?? 0) > 0) out.push(t('cleanup.gc.panel.takes.deps'))
   out.push(t('cleanup.gc.panel.takes.checkout'))
   if (b.branch) out.push(t('cleanup.gc.panel.takes.branch', { branch: b.branch }))
+  // No branch to keep: the commit stays reachable under the sha-keyed archive refs instead.
+  if (isDetachedBlock(b)) out.push(t('cleanup.gc.panel.takes.detached'))
   return out
 })
 /** Only an orphan volume's own removal loses data; a worktree's volumes are kept, never removed with it. */
@@ -157,6 +170,24 @@ const removeBlockedText = computed(() => {
     ? 'cleanup.gc.panel.removeUnavailable'
     : 'cleanup.gc.panel.cleanUnavailable'
   return t(key, { reason: t(removalKey(v.reason)) })
+})
+/** What Dehydrate would free here: promoted next to a refusal Remove cannot lift. */
+const dehydrateBytes = computed(() => depsOf(props.block))
+/** The guided action for this refusal, when it needs a button of its own. */
+const guide = computed(() => {
+  const all = removabilityAll(props.block)
+  if (!removeBlocked.value || all.length === 0) return null
+  // Every cause counts: a cause no prep fixes comes first, and stacked fixable ones are one action.
+  const g = guideFor(
+    all.map((r) => r.reason),
+    { hasDeps: dehydrateBytes.value > 0 }
+  )
+  if (!hasGuideButton(g.action)) return null
+  return {
+    action: g.action,
+    reason: g.reason,
+    label: guideLabel(t, g.action, g.reason, g.causes)
+  }
 })
 const removeHint = computed(() => {
   const v = verdict.value
@@ -581,6 +612,16 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
           {{ t('cleanup.gc.panel.removeCommand') }}
           <code class="select-all break-all font-mono text-text-2">{{ removeHint }}</code>
         </p>
+        <Button
+          v-if="guide"
+          variant="soft"
+          class="!justify-start"
+          :disabled="locked || guideBusy"
+          data-testid="panel-guide"
+          @click="emit('guide', block.id, guide.action, guide.reason)"
+        >
+          {{ guide.label }}
+        </Button>
       </div>
 
       <Button
@@ -605,7 +646,11 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
         data-testid="panel-dehydrate"
         @click="emit('dehydrate', block.id)"
       >
-        <PackageMinus :size="13" :stroke-width="1.7" />{{ t('cleanup.gc.panel.dehydrate') }}
+        <PackageMinus :size="13" :stroke-width="1.7" />{{
+          removeBlocked && dehydrateBytes > 0
+            ? t('cleanup.gc.guide.dehydrateWin', { size: formatBytes(dehydrateBytes) })
+            : t('cleanup.gc.panel.dehydrate')
+        }}
         <kbd class="ml-auto font-mono text-eyebrow text-text-3">D</kbd>
       </Button>
 

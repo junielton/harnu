@@ -14,7 +14,7 @@ import { promisify } from 'node:util'
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { archiveTip, archiveWip } from '../src/main/reaper/archive-shell'
+import { archiveReflog, archiveTip, archiveWip } from '../src/main/reaper/archive-shell'
 
 const run = promisify(execFile)
 const git = async (cwd: string, args: string[]): Promise<string> =>
@@ -213,5 +213,61 @@ describe('archiveWip against a linked worktree (the production shape)', () => {
     // The tip is still reachable too, and the worktree's own index was never used.
     expect((await git(repo2, ['rev-parse', `${NS2}/tip`])).trim()).toBeTruthy()
     expect((await git(repo2, ['stash', 'list'])).trim()).toBe('')
+  })
+})
+
+/**
+ * A detached HEAD's reflog is the only place a commit made while detached and then left behind
+ * lives: no branch, no tag, no ref. Removing the worktree takes its per-worktree reflog with it.
+ */
+describe('archiveReflog — commits only the detached HEAD reflog reaches (delta-1, item 6)', () => {
+  let rootR: string
+  let repoR: string
+  let wtR: string
+  let a: string
+  let b: string
+  const PREFIX = 'refs/archive/detached/wt-x/reflog'
+
+  beforeAll(async () => {
+    rootR = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-reflog-'))
+    repoR = path.join(rootR, 'repo')
+    await fs.mkdir(repoR)
+    await git(repoR, ['init', '-q', '-b', 'main'])
+    await git(repoR, ['config', 'user.email', 'test@harnu.run'])
+    await git(repoR, ['config', 'user.name', 'Test'])
+    await fs.writeFile(path.join(repoR, 'f.txt'), 'a\n')
+    await git(repoR, ['add', '-A'])
+    await git(repoR, ['commit', '-qm', 'A'])
+    a = (await git(repoR, ['rev-parse', 'HEAD'])).trim()
+    wtR = path.join(rootR, 'wt')
+    await git(repoR, ['worktree', 'add', '-q', '--detach', wtR])
+    // commit B while detached, then leave it: HEAD goes back to A and nothing reaches B but the reflog
+    await fs.writeFile(path.join(wtR, 'only-b.txt'), 'b\n')
+    await git(wtR, ['add', '-A'])
+    await git(wtR, ['commit', '-qm', 'B']) // identity comes from the repo config
+    b = (await git(wtR, ['rev-parse', 'HEAD'])).trim()
+    await git(wtR, ['checkout', '-q', '--detach', a])
+  })
+
+  afterAll(async () => {
+    await fs.rm(rootR, { recursive: true, force: true })
+  })
+
+  it('writes a ref for the commit no ref reaches, and none for what is already reachable', async () => {
+    const written = await archiveReflog(repoR, PREFIX, wtR)
+    expect(written).toEqual([`${PREFIX}/${b.slice(0, 12)}`])
+    expect((await git(repoR, ['rev-parse', written[0]])).trim()).toBe(b)
+  })
+
+  it('keeps that commit through the removal: folder gone, registration pruned, gc --prune=now', async () => {
+    await fs.rm(wtR, { recursive: true, force: true })
+    await git(repoR, ['worktree', 'prune'])
+    await git(repoR, ['gc', '--prune=now', '-q'])
+    await git(repoR, ['cat-file', '-e', `${b}^{commit}`])
+  })
+
+  it('is idempotent: a second call finds everything already reachable', async () => {
+    // from the repo itself: the worktree is gone, so its reflog is unreadable and nothing is added
+    expect(await archiveReflog(repoR, PREFIX, repoR)).toEqual([])
   })
 })

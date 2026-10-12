@@ -86,6 +86,25 @@ const deleteRemote = ref(false)
 const riskCount = computed(() => props.rows.filter((r) => r.risk).length)
 /** A worktree's volumes are never removed with it (they become orphan volumes, reviewed one by one). */
 const hasWorktreeRow = computed(() => props.rows.some((r) => r.kind === 'worktree'))
+/** Names shown per row; the rest read "and N more", the whole list on hover. */
+const UNTRACKED_SHOWN = 10
+const untrackedTotal = computed(() =>
+  props.rows.reduce((a, r) => a + (r.untracked?.length ?? 0), 0)
+)
+
+function untrackedText(row: DialogRow): string {
+  const all = row.untracked ?? []
+  const n = all.length
+  if (n <= UNTRACKED_SHOWN) {
+    return t('cleanup.gc.confirm.untracked', n, { named: { n, names: all.join(', ') } })
+  }
+  return t('cleanup.gc.confirm.untrackedMore', n, {
+    named: { n, names: all.slice(0, UNTRACKED_SHOWN).join(', '), more: n - UNTRACKED_SHOWN }
+  })
+}
+
+/** Detached worktrees have no branch: their commit is kept under refs/archive/detached/… instead. */
+const detachedCount = computed(() => props.rows.filter((r) => !!r.detachedAt).length)
 
 const title = computed(() => {
   if (props.mode === 'ready') {
@@ -132,6 +151,7 @@ function rowSub(row: DialogRow): string {
       ? t('cleanup.gc.confirm.volumeProject', { project: row.project })
       : t('cleanup.gc.confirm.noWorktree')
   }
+  if (row.detachedAt) return t('cleanup.gc.confirm.detachedSub', { sha: row.detachedAt })
   return row.branch ? t('cleanup.gc.confirm.branchSub', { branch: row.branch }) : ''
 }
 
@@ -281,6 +301,13 @@ function onBackdropMousedown(e: MouseEvent): void {
                 :pending="false"
                 show-evidence
               />
+              <span
+                v-if="row.untracked?.length"
+                class="break-words text-caption leading-4 text-text-3"
+                :title="row.untracked.join('\n')"
+                data-testid="bulk-untracked"
+                >{{ untrackedText(row) }}</span
+              >
               <span class="mt-1 flex flex-wrap gap-1">
                 <span
                   v-for="chip in row.chips"
@@ -352,6 +379,24 @@ function onBackdropMousedown(e: MouseEvent): void {
               <b class="font-semibold text-warning">{{
                 t('cleanup.gc.confirm.warnRisk', riskCount, { named: { n: riskCount } })
               }}</b>
+            </p>
+            <p
+              v-if="mode === 'review' && detachedCount > 0"
+              class="m-0 mb-1"
+              data-testid="bulk-detached"
+            >
+              <b class="font-semibold text-warning">{{
+                t('cleanup.gc.confirm.warnDetached', detachedCount, {
+                  named: { n: detachedCount }
+                })
+              }}</b>
+            </p>
+            <p v-if="untrackedTotal > 0" class="m-0 mb-1" data-testid="bulk-untracked-total">
+              {{
+                t('cleanup.gc.confirm.untrackedTotal', untrackedTotal, {
+                  named: { n: untrackedTotal }
+                })
+              }}
             </p>
             <p class="m-0">
               <b

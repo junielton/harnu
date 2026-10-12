@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { Loader2, Recycle } from 'lucide-vue-next'
 import Button from './ui/Button.vue'
 import { formatBytes } from './system-monitor-format'
+import { freedText } from '../lib/gc-freed'
 import type { HeroState } from '../lib/gc-model'
 
 /**
@@ -33,7 +34,7 @@ const chipLabel = computed(() =>
     ? t('cleanup.gc.hero.chip', {
         done: props.hero.done,
         total: props.hero.total,
-        size: formatBytes(props.hero.freedBytes)
+        freed: freedText(t, props.hero.freedBytes, props.hero.trashedBytes)
       })
     : ''
 )

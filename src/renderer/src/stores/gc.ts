@@ -9,12 +9,15 @@ import type {
   GcOpinion,
   GcOpinionDone,
   GcOpinionResult,
+  GcRecoveryAction,
+  GcRecoveryItem,
   GcSnapshot
 } from '../../../main/gc/gc-wire'
 import type { RemoteFacts } from '../../../main/gc/gc-remote-delete'
 import { i18n } from '../i18n'
 import { toIpc } from '../lib/to-ipc'
 import { formatBytes } from '../components/system-monitor-format'
+import { freedText } from '../lib/gc-freed'
 import { refusalKey } from '../components/cleanup-gc-copy'
 import {
   buildGcModel,
@@ -80,9 +83,19 @@ function sendClean(req: CleanRequest): Promise<GcCleanAck> {
 function refusalDescription(s: DoneSummary): string | undefined {
   const codes = Object.keys(s.refusals) as RefusalCode[]
   const { t } = i18n.global
-  if (codes.length === 1) return t(refusalKey(codes[0]))
-  if (codes.length > 1) return t('cleanup.gc.refusal.several', { n: s.refused })
-  return undefined
+  let out: string | undefined
+  if (codes.length === 1) out = t(refusalKey(codes[0]))
+  else if (codes.length > 1) out = t('cleanup.gc.refusal.several', { n: s.refused })
+  if (s.prepLeft > 0) {
+    const left = t('cleanup.gc.refusal.prepLeftStack')
+    out = out ? `${out} ${left}` : left
+  }
+  // A guided prep that could not be put back is the one thing the operator must know about.
+  if (s.rollbackFailed > 0) {
+    const warn = [t('cleanup.gc.refusal.rollbackFailed'), ...s.rollbackDetails].join(' ')
+    out = out ? `${out} ${warn}` : warn
+  }
+  return out
 }
 
 export const useGcStore = defineStore('gc', () => {
@@ -98,6 +111,12 @@ export const useGcStore = defineStore('gc', () => {
   const opinions = ref<OpinionMap>(new Map())
   const pendingOpinions = ref<ReadonlySet<string>>(new Set())
 
+  /**
+   * The jobs that carry items the operator confirmed by hand (Needs review). Their toast says
+   * "removed", not "ready items cleaned": they were never ready. Keyed by job, so a ready job queued
+   * behind (or ahead of) a review job keeps its own wording.
+   */
+  const reviewJobs = new Set<string>()
   let unsubs: Array<() => void> = []
   let initialised = false
   const fadeTimers = new Set<ReturnType<typeof setTimeout>>()
@@ -244,11 +263,15 @@ export const useGcStore = defineStore('gc', () => {
     const warning = s.tone === 'warning'
     // A remote branch that stayed is a warning on a clean that otherwise worked: no "partial" title.
     const partial = s.failed > 0 || !!d.error
+    const fromReview = reviewJobs.has(d.jobId)
     const entry = {
       kind: warning ? ('warning' as const) : ('success' as const),
       title: partial
         ? t('cleanup.gc.toast.partial', { cleaned: s.cleaned, failed: s.failed }, s.failed)
-        : t('cleanup.gc.toast.success', { size: formatBytes(s.freedBytes), count: s.cleaned }),
+        : t(fromReview ? 'cleanup.gc.toast.successReview' : 'cleanup.gc.toast.success', {
+            freed: freedText(t, s.freedBytes, s.trashedBytes),
+            count: s.cleaned
+          }),
       description:
         refusalDescription(s) ??
         d.error ??
@@ -322,6 +345,83 @@ export const useGcStore = defineStore('gc', () => {
     fadeTimers.clear()
   }
 
+  // ---- the prep journal (see main's gc-prep-journal.ts) ---------------------------------------------
+  const camel = (s: string): string => s.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())
+  /** What still needs the operator: an interrupted stack stop, a lock that was not put back. */
+  const recovery = ref<GcRecoveryItem[]>([])
+  /** Announced in Activity during this session, so a listing that comes back before the ack lands is quiet. */
+  const announcedHere = new Set<string>()
+
+  /**
+   * Lists what main's journal wants the operator to know. Notices stay in `recovery` until answered;
+   * each new one (or put-back report) is announced in Activity ONCE, and main is told, so it is kept
+   * until acknowledged: an acknowledgement that fails is simply tried again at the next listing.
+   */
+  async function loadRecovery(): Promise<void> {
+    let answer: unknown
+    try {
+      answer = await window.api.gcRecoveryList()
+    } catch {
+      return
+    }
+    if (!Array.isArray(answer)) return
+    const items = answer as GcRecoveryItem[]
+    recovery.value = items.filter((i) => i.state === 'notice')
+    const { t } = i18n.global
+    const notes = useNotificationsStore()
+    const fresh = items.filter((i) => !i.announced)
+    for (const r of fresh) {
+      if (announcedHere.has(r.id)) continue
+      announcedHere.add(r.id)
+      const resolved = r.state === 'resolved'
+      notes.notify({
+        ts: Date.now(),
+        source: 'app',
+        kind: resolved ? 'success' : 'warning',
+        title: t(
+          `cleanup.gc.recovered.${resolved ? 'relocked' : camel(r.notice ?? 'stack-stopped')}`,
+          {
+            path: r.path
+          }
+        ),
+        description: r.detail || undefined,
+        target: { view: 'cleanup' as const }
+      })
+    }
+    if (fresh.length > 0) {
+      try {
+        await window.api.gcRecoveryAck(fresh.map((r) => r.id))
+      } catch {
+        // main still has them as unannounced: the next listing acknowledges again
+      }
+    }
+  }
+
+  /** "Start again" / "Lock again" / "Leave stopped (dismiss)": main does it, the list is read again. */
+  async function answerRecovery(id: string, action: GcRecoveryAction): Promise<void> {
+    try {
+      const r = await window.api.gcRecoveryAct(id, action)
+      // A lock that is not the same worktree is not an error: the notice itself now says so.
+      if (!r.ok && !r.mismatch) {
+        useUiStore().pushToast({
+          kind: 'danger',
+          title: i18n.global.t('cleanup.gc.recovered.failed'),
+          description: r.error,
+          timeoutMs: 8000
+        })
+      }
+    } catch (e) {
+      useUiStore().pushToast({
+        kind: 'danger',
+        title: i18n.global.t('cleanup.gc.recovered.failed'),
+        description: e instanceof Error ? e.message : String(e),
+        timeoutMs: 8000
+      })
+    } finally {
+      await loadRecovery()
+    }
+  }
+
   async function init(): Promise<void> {
     if (initialised) return
     initialised = true
@@ -333,6 +433,8 @@ export const useGcStore = defineStore('gc', () => {
         window.api.onGcDone((d) => void onDone(d)),
         // A cycle finished (autopilot tick or manual): the world changed.
         window.api.onGcCycle(() => void refresh()),
+        // The prep journal changed (boot recovery finished, a notice was answered).
+        window.api.onGcRecoveryChanged(() => void loadRecovery()),
         window.api.onGcOpinionResult(onOpinionResult),
         window.api.onGcOpinionDone(onOpinionDone)
       ]
@@ -342,6 +444,7 @@ export const useGcStore = defineStore('gc', () => {
       ])
       snapshot.value = snap
       jobs.value = attachJobs(jobs.value, live)
+      void loadRecovery()
     } catch (e) {
       loadError.value = e instanceof Error ? e.message : String(e)
       initialised = false
@@ -366,7 +469,11 @@ export const useGcStore = defineStore('gc', () => {
   function submit(req: CleanRequest): Promise<GcCleanAck | null> {
     if (req.ids.length === 0) return Promise.resolve(null)
     failures.value = new Map() // a new run replaces what the last one left behind
-    return sendClean(req)
+    const confirmed = (req.options.confirmed ?? []).length > 0
+    return sendClean(req).then((ack) => {
+      if (confirmed) reviewJobs.add(ack.jobId)
+      return ack
+    })
   }
 
   /**
@@ -524,6 +631,145 @@ export const useGcStore = defineStore('gc', () => {
     return saved
   }
 
+  // ---- Cleanup's own exhaust: archive refs and what Harnu put in the trash ---------------------
+
+  /**
+   * Deletes the archives the operator confirmed in one repo. Main re-lists and deletes only what
+   * still has the shas the confirm showed; whatever changed is left alone and said so.
+   */
+  async function deleteArchives(
+    repoPath: string,
+    archives: Array<{ namespace: string; tipSha: string | null; wipSha: string | null }>
+  ): Promise<void> {
+    const { t } = i18n.global
+    const ui = useUiStore()
+    try {
+      const ack = await window.api.gcDeleteArchives(toIpc({ repoPath, archives }))
+      if (ack.archives > 0) {
+        ui.pushToast({
+          kind: 'success',
+          title: t('cleanup.gc.archives.toast.deleted', ack.archives, {
+            named: { n: ack.archives }
+          }),
+          description: t('cleanup.gc.archives.toast.deletedSub'),
+          timeoutMs: 6000
+        })
+      }
+      if (ack.neverClean) {
+        ui.pushToast({
+          kind: 'warning',
+          title: t('cleanup.gc.archives.toast.neverClean'),
+          timeoutMs: 8000
+        })
+      }
+      // Name every cause that left something alone, once each, in one toast.
+      const causes: string[] = []
+      const changed = ack.changed.length
+      if (changed > 0) {
+        causes.push(t('cleanup.gc.archives.toast.changed', changed, { named: { n: changed } }))
+      }
+      if (ack.failed > 0) {
+        causes.push(t('cleanup.gc.archives.toast.failed', ack.failed, { named: { n: ack.failed } }))
+      }
+      const guarded = ack.protectedArchives ?? 0
+      if (guarded > 0) {
+        causes.push(t('cleanup.gc.archives.toast.protected', guarded, { named: { n: guarded } }))
+      }
+      if (causes.length > 0) {
+        ui.pushToast({ kind: 'warning', title: causes.join(' · '), timeoutMs: 8000 })
+      }
+    } catch (e) {
+      ui.pushToast({
+        kind: 'danger',
+        title: t('cleanup.gc.archives.toast.failed', 1, { named: { n: 1 } }),
+        description: e instanceof Error ? e.message : String(e),
+        timeoutMs: 8000
+      })
+    } finally {
+      await refresh()
+    }
+  }
+
+  /** "Run git gc now": one repo, after its own confirm. */
+  async function runArchiveGc(repoPath: string, repoName: string): Promise<void> {
+    const { t } = i18n.global
+    const ui = useUiStore()
+    try {
+      const ack = await window.api.gcRunArchiveGc(repoPath)
+      ui.pushToast({
+        kind: ack.ok ? 'success' : 'danger',
+        title: t(
+          ack.ok ? 'cleanup.gc.archives.toast.gcDone' : 'cleanup.gc.archives.toast.gcFailed',
+          {
+            repo: repoName
+          }
+        ),
+        description: ack.ok ? undefined : ack.error,
+        timeoutMs: ack.ok ? 6000 : 8000
+      })
+    } finally {
+      await refresh()
+    }
+  }
+
+  /**
+   * "Empty what Harnu moved to the trash": the entries the confirm LISTED, by id. Main deletes only
+   * those, each only while it is still exactly the entry Harnu recorded, so what was trashed after the
+   * dialog opened, or restored and trashed again by the user, is left alone and said so.
+   */
+  async function emptyTrash(ids: readonly string[]): Promise<void> {
+    const { t } = i18n.global
+    const ui = useUiStore()
+    try {
+      const ack = await window.api.gcEmptyTrash([...ids])
+      if (ack.unsupported) {
+        ui.pushToast({
+          kind: 'warning',
+          title: t('cleanup.gc.trash.toast.unsupported', {
+            location: ack.location ?? t('cleanup.gc.trash.recycleBin')
+          }),
+          timeoutMs: 8000
+        })
+      } else if (ack.failed > 0 || ack.skipped > 0) {
+        // Name the real cause of what was left in the trash, once per cause.
+        const causes: string[] = []
+        if (ack.failed > 0) {
+          causes.push(t('cleanup.gc.trash.toast.failed', ack.failed, { named: { n: ack.failed } }))
+        }
+        const left = (key: string, n: number): void => {
+          if (n > 0) causes.push(t(`cleanup.gc.trash.toast.${key}`, n, { named: { n } }))
+        }
+        left('skippedUnreachable', ack.unreachable)
+        left('skippedChanged', ack.changed)
+        left('skippedNoRecord', ack.unverifiable)
+        ui.pushToast({
+          kind: 'warning',
+          title: causes.join(' · '),
+          description:
+            ack.emptied > 0
+              ? t('cleanup.gc.trash.toast.emptied', { size: formatBytes(ack.emptiedBytes) })
+              : undefined,
+          timeoutMs: 8000
+        })
+      } else if (ack.emptied === 0) {
+        // Everything on the list was already gone: say so, never "Emptied 0 B".
+        ui.pushToast({
+          kind: 'info',
+          title: t('cleanup.gc.trash.toast.nothing'),
+          timeoutMs: 6000
+        })
+      } else {
+        ui.pushToast({
+          kind: 'success',
+          title: t('cleanup.gc.trash.toast.emptied', { size: formatBytes(ack.emptiedBytes) }),
+          timeoutMs: 6000
+        })
+      }
+    } finally {
+      await refresh()
+    }
+  }
+
   /** Selection that survives a refresh only for the items that are still Needs review. */
   function pruneSelection(selection: ReadonlySet<string>): Set<string> {
     return model.value ? prunedSelection(model.value, selection) : new Set()
@@ -556,7 +802,13 @@ export const useGcStore = defineStore('gc', () => {
     enableAutopilot,
     dismissFirstReport,
     firstReportSnoozed,
+    recovery,
+    loadRecovery,
+    answerRecovery,
     savePrefs,
+    deleteArchives,
+    runArchiveGc,
+    emptyTrash,
     pruneSelection,
     opinions,
     pendingOpinions,

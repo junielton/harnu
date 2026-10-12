@@ -25,7 +25,10 @@ export interface ArchiveRefPlan {
 }
 
 export interface ArchivePlan {
-  /** `refs/archive/<branch>/<stamp>`, or null when nothing can be archived. */
+  /**
+   * `refs/archive/<branch>/<stamp>`, or `refs/archive/detached/<folder>-<shortsha>` for a detached
+   * worktree, or null when nothing can be archived.
+   */
   namespace: string | null
   tip: ArchiveRefPlan | null
   wip: ArchiveRefPlan | null
@@ -63,6 +66,34 @@ export function archiveNamespace(branch: string, at: number): string {
   return `refs/archive/${branch}/${formatArchiveStamp(at)}`
 }
 
+/** Where every detached worktree's archive lives: no branch name exists to key it by. */
+export const DETACHED_ARCHIVE_PREFIX = 'refs/archive/detached/'
+
+/** Characters of the HEAD sha that go into the namespace: short enough to read, long enough not to collide. */
+const SHORT_SHA_LENGTH = 12
+
+/** The folder's own name as one legal ref component: no spaces, no `..`, no `.lock`, no leading dot or dash. */
+function folderSlug(path: string): string {
+  const base = path.replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop() ?? ''
+  const slug = base
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/\.{2,}/g, '.')
+    .replace(/\.lock$/, '-lock')
+    .replace(/^[^A-Za-z0-9]+/, '')
+    .replace(/[.-]+$/, '')
+  return slug === '' ? 'worktree' : slug
+}
+
+/**
+ * `refs/archive/detached/<folder>-<shortsha>` — the namespace of a detached worktree, keyed by what
+ * identifies it: the folder it lived in and the commit it was on. There is no stamp: the key is
+ * the identity, so removing the same folder at the same commit again lands on the same refs (the
+ * tip is the very same commit; `archiveWip` keeps an earlier working state reachable).
+ */
+export function detachedArchiveNamespace(path: string, headSha: string): string {
+  return `${DETACHED_ARCHIVE_PREFIX}${folderSlug(path)}-${headSha.slice(0, SHORT_SHA_LENGTH)}`
+}
+
 /** The revision a kind's tip is resolved from, or null when the kind has no local tip. */
 function tipRevFor(kind: ReapItemKind, branch: string): string | null {
   // A remote-branch item has no local branch: its only local copy of the tip is
@@ -81,12 +112,23 @@ function hasWorkingTree(kind: ReapItemKind): boolean {
  * Plan the refs that must exist before this item may be swept.
  *
  * A branch-only item (`local-branch`) plans a tip and no wip — it owns no
- * checkout, so there is no working state to lose. A folder item plans both.
+ * checkout, so there is no working state to lose. A folder item plans both,
+ * and so does a detached worktree, keyed by its HEAD sha instead of a branch.
  */
 export function planArchive(
-  item: Pick<ReapItem, 'kind' | 'branch' | 'path'>,
+  item: Pick<ReapItem, 'kind' | 'branch' | 'path' | 'headSha'>,
   at: number
 ): ArchivePlan {
+  // A detached worktree has no branch to name its refs after: its checked-out commit and its folder
+  // do. Without either, nothing can be named or resolved, and the executor halts at the archive.
+  if (item.kind === 'detached-worktree') {
+    if (!item.path || !item.headSha) return { namespace: null, tip: null, wip: null, refs: [] }
+    const namespace = detachedArchiveNamespace(item.path, item.headSha)
+    const tip: ArchiveRefPlan = { role: 'tip', ref: `${namespace}/tip`, rev: item.headSha }
+    const wip: ArchiveRefPlan = { role: 'wip', ref: `${namespace}/wip`, worktreePath: item.path }
+    return { namespace, tip, wip, refs: [tip, wip] }
+  }
+
   const branch = item.branch
   if (!branch) return { namespace: null, tip: null, wip: null, refs: [] }
 

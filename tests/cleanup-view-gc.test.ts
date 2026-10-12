@@ -854,7 +854,8 @@ describe('Cleanup screen — toolbar and legend parity with the mockup', () => {
 })
 
 describe('Cleanup screen — Remove is honest: what main refuses is never offered', () => {
-  // Main refuses a Remove for a detached worktree, a locked one, a shared stack, an open session…
+  // Main refuses a Remove for a locked worktree, a shared stack, an open session… (a detached one is
+  // taken from review, archived by its HEAD sha first).
   // The fake `gc:clean` here judges each id with main's own `refusalFor`, as `submitManualClean` does,
   // so a click that would have ended in "0 cleaned" fails the test instead of the operator.
   const detached = (name: string): ReturnType<typeof wt> =>
@@ -909,7 +910,7 @@ describe('Cleanup screen — Remove is honest: what main refuses is never offere
   }
 
   it('the selection bar disables Remove when nothing ticked can be removed, and says why', async () => {
-    const api = installJudged(snapshotOf([detached('h1'), locked('l1')]))
+    const api = installJudged(snapshotOf([sharedStack('s1'), locked('l1')]))
     await mountView()
     await tickAll()
     const remove = domGet('[data-testid="sel-remove"]')
@@ -923,13 +924,7 @@ describe('Cleanup screen — Remove is honest: what main refuses is never offere
   })
 
   it('a mixed selection opens ONE dialog: what main takes counted and sent, the rest listed apart with why', async () => {
-    const s = snapshotOf([
-      detached('h1'),
-      locked('l1'),
-      sharedStack('s1'),
-      sessionOpen('o1'),
-      fine('d1')
-    ])
+    const s = snapshotOf([locked('l1'), sharedStack('s1'), sessionOpen('o1'), fine('d1')])
     const api = installJudged(s)
     await mountView()
     await tickAll()
@@ -939,15 +934,14 @@ describe('Cleanup screen — Remove is honest: what main refuses is never offere
     expect(body('bulk-confirm')!.textContent).toContain('1')
     // listed apart: each refused item, its reason, and the fix when there is a command
     const refused = domAll('[data-testid="bulk-refused-row"]')
-    expect(refused).toHaveLength(4)
+    expect(refused).toHaveLength(3)
     expect(domGet('[data-testid="bulk-refused-title"]').text()).toBe(
-      t('cleanup.gc.confirm.refusedTitle', { n: 4 })
+      t('cleanup.gc.confirm.refusedTitle', { n: 3 })
     )
     const byRefusal = (r: string): Q =>
       new Q(document.body.querySelector(`[data-testid="bulk-refused-row"][data-refusal="${r}"]`))
     expect(byRefusal('locked').text()).toContain(t('cleanup.gc.removal.reason.locked'))
     expect(byRefusal('locked').text()).toContain('git worktree unlock /w/repo/.claude/worktrees/l1')
-    expect(byRefusal('unsupported-kind').text()).toContain('git worktree remove')
     expect(byRefusal('shared-stack').text()).toContain(t('cleanup.gc.removal.reason.sharedStack'))
     expect(byRefusal('session-open').text()).toContain(t('cleanup.gc.removal.reason.sessionOpen'))
     ;(body('bulk-confirm') as HTMLButtonElement).click()
@@ -989,12 +983,12 @@ describe('Cleanup screen — Remove is honest: what main refuses is never offere
   })
 
   it('different reasons get the "each for its own reason" description', async () => {
-    installJudged(snapshotOf([locked('l1'), detached('h1')]))
+    installJudged(snapshotOf([locked('l1'), sharedStack('s1')]))
     const w = await mountView()
     const toast = vi.spyOn(useUiStore(), 'pushToast')
     ;(w.vm as unknown as { openRemove(ids: string[]): void }).openRemove([
       '/w/repo::worktree::l1',
-      '/w/repo::detached-worktree::h1'
+      '/w/repo::worktree::s1'
     ])
     await flushPromises()
     expect(toast.mock.calls[0][0]).toMatchObject({
@@ -1010,7 +1004,7 @@ describe('Cleanup screen — Remove is honest: what main refuses is never offere
     expect(blocked.attributes('title')).toBe(t('cleanup.gc.removal.reason.locked'))
   })
 
-  it('"Select all" in a repo ticks only the items main takes', async () => {
+  it('"Select all" in a repo ticks only the items main takes — a detached worktree is one of them', async () => {
     installJudged(snapshotOf([locked('l1'), detached('h1'), fine('d1')]))
     const w = await mountView()
     ;(w.vm as unknown as { onSelectAllInRepo(repo: string): void }).onSelectAllInRepo('/w/repo')
@@ -1018,8 +1012,41 @@ describe('Cleanup screen — Remove is honest: what main refuses is never offere
     const ticked = domAll('[data-testid="review-check"]').filter(
       (c) => (c.el as HTMLInputElement).checked
     )
-    expect(ticked).toHaveLength(1)
-    expect(domGet('[data-testid="sel-count"]').text()).toContain('1')
+    expect(ticked).toHaveLength(2)
+    expect(domGet('[data-testid="sel-count"]').text()).toContain('2')
+  })
+
+  it('a detached worktree opens a Danger dialog that says its commit is kept under refs/archive/detached', async () => {
+    const s = snapshotOf([detached('h1')])
+    const api = installJudged(s)
+    await mountView()
+    await tickAll()
+    await removeSelected()
+    // the row names the commit that will be archived, and there is no branch chip
+    const row = domGet('[data-testid="bulk-row"]')
+    expect(row.text()).toContain(t('cleanup.gc.confirm.detachedSub', { sha: 'aaaaaaaaaaaa' }))
+    expect(row.el!.querySelector('[data-chip="branch"]')).toBeNull()
+    expect(row.el!.querySelector('[data-chip="checkout"]')).not.toBeNull()
+    // the warning says where the commit stays and how it comes back
+    const warn = domGet('[data-testid="bulk-detached"]').text()
+    expect(warn).toContain('refs/archive/detached/')
+    expect(warn).toContain('git worktree add')
+    expect(warn).toBe(t('cleanup.gc.confirm.warnDetached', 1, { named: { n: 1 } }))
+    // the confirm is the red one, and sends the id as an explicit confirmation
+    expect(body('bulk-confirm')!.className).toMatch(/danger|red/)
+    ;(body('bulk-confirm') as HTMLButtonElement).click()
+    await flushPromises()
+    const [ids, opts] = api.gcClean.mock.calls[0]
+    expect(ids).toEqual(['/w/repo::detached-worktree::h1'])
+    expect(opts.confirmed).toEqual(['/w/repo::detached-worktree::h1'])
+  })
+
+  it('a dialog with no detached worktree carries no detached paragraph', async () => {
+    installJudged(snapshotOf([fine('d1')]))
+    await mountView()
+    await tickAll()
+    await removeSelected()
+    expect(body('bulk-detached')).toBeNull()
   })
 
   it('a demoted item shows its real reason in the list and a blocked Remove', async () => {

@@ -47,6 +47,7 @@ import {
 } from './gc-shell'
 import { collectForeignCheckouts } from './gc-foreign'
 import { lockedItemIds } from './gc-locked'
+import { operationsOf } from './gc-operation'
 import { sessionsFromFleet } from './gc-sessions'
 import {
   attributeBySlug,
@@ -73,6 +74,8 @@ import {
   withOrphanVolumesHidden,
   type GcDockerCard
 } from './gc-docker-card'
+import { gatherArchives, gatherTrash } from './gc-exhaust-shell'
+import type { GcArchivesCard, GcTrashCard } from './gc-wire'
 import type { GcGather } from './gc-cycle'
 import { realOrphanSource, type OrphanSource } from './gc-orphan-shell'
 import {
@@ -110,6 +113,10 @@ export interface GcGathered extends GcGather {
   staleReleases: string[]
   /** Items kept although their folder is gone, because a halted cleanup left a note on them. */
   goneItemIds: string[]
+  /** What Cleanup's own removals left behind in git: every repo's `refs/archive/**`. */
+  archives: GcArchivesCard
+  /** What Harnu moved to the OS trash that is still there. */
+  trash: GcTrashCard
 }
 
 const COMPOSE_FILES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml']
@@ -239,6 +246,11 @@ export async function gatherGc(
    * item stays visible, so what is left is never silently dropped.
    */
   keepGone: ReadonlySet<string> = new Set(),
+  /**
+   * False for a read-only gather (an agent's `list_cleanup`): it must not write a file, so the trash
+   * ledger is read but not tidied.
+   */
+  persisting = true,
   /** Where the orphaned transcript folders come from; the real filesystem unless a test says otherwise. */
   orphanSource: OrphanSource = realOrphanSource
 ): Promise<GcGathered> {
@@ -374,7 +386,9 @@ export async function gatherGc(
     released: new Map(Object.entries(prefs.released)),
     releasedTips: releasedTipsOf(prefs),
     // Git's own lock: such a worktree cannot be unregistered, so it is review, not ready.
-    locked: lockedItemIds(items, lockedPaths, canonical, process.platform)
+    locked: lockedItemIds(items, lockedPaths, canonical, process.platform),
+    // A rebase, bisect or git am keeps its state in the folder, on a branch worktree as well.
+    operations: await operationsOf(items)
   }
   // A Keep mark holds only while the fate it was made under still holds: judge the fates
   // first, then rebuild with the marks that are still valid.
@@ -485,6 +499,9 @@ export async function gatherGc(
     orphanTranscripts: await orphanSource({ known, repoPaths }),
     staleKeeps,
     staleReleases: staleReleaseIds,
-    goneItemIds
+    goneItemIds,
+    // Their own try/catch inside: a git or trash hiccup never fails the gather.
+    archives: await gatherArchives(prefs, now),
+    trash: await gatherTrash(undefined, { persist: persisting })
   }
 }

@@ -328,12 +328,17 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Cleanup hero button / progress chip (T443)         | `src/renderer/src/components/CleanupHeroButton.vue`                              |
 | Cleanup selection bar (T443)                       | `src/renderer/src/components/CleanupSelectionBar.vue`                            |
 | Cleanup bulk-clean confirm dialog (T443)           | `src/renderer/src/components/CleanupBulkConfirmDialog.vue`                       |
+| Cleanup guided dialog — "No dead ends" (unit B)    | `src/renderer/src/components/CleanupGuidedDialog.vue` + `lib/gc-guidance.ts`     |
 | Cleanup first-cycle banner (T443)                  | `src/renderer/src/components/CleanupFirstCycleBanner.vue`                        |
+| Cleanup interrupted-cleans notices (unit B)        | `src/renderer/src/components/CleanupRecoveryNotices.vue`                         |
 | Cleanup Docker card (T443)                         | `src/renderer/src/components/CleanupDockerCard.vue`                              |
 | Cleanup Docker confirm — leftovers (unit D)        | `src/renderer/src/components/CleanupDockerConfirmDialog.vue`                     |
 | Cleanup transcripts confirm (unit D)               | `src/renderer/src/components/CleanupTranscriptsConfirmDialog.vue`                |
 | Cleanup leftovers view helpers (unit D)            | `src/renderer/src/lib/gc-orphans.ts`                                             |
 | Cleanup split bar (T443)                           | `src/renderer/src/components/CleanupSplitBar.vue`                                |
+| Cleanup Archives card (unit C)                     | `src/renderer/src/components/CleanupArchivesCard.vue`                            |
+| Cleanup in-the-trash strip (unit C)                | `src/renderer/src/components/CleanupTrashCard.vue`                               |
+| Cleanup archives / git gc / empty-trash confirm    | `src/renderer/src/components/CleanupExhaustDialog.vue`                           |
 | Cleanup legend row (T443)                          | `src/renderer/src/components/CleanupLegend.vue`                                  |
 | Cleanup "Other leftovers" (branches/folders, T443) | `src/renderer/src/components/CleanupOtherItems.vue`                              |
 | Workspace GC store + view model (T443)             | `src/renderer/src/stores/gc.ts` + `lib/gc-model.ts` + `lib/gc-jobs.ts`           |

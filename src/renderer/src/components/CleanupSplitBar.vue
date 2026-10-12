@@ -3,6 +3,7 @@ import { computed, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CircleCheck, CircleHelp, Container, Lock } from 'lucide-vue-next'
 import { formatBytes } from './system-monitor-format'
+import { freedText } from '../lib/gc-freed'
 import { relativeTime } from '../composables/useRelativeTime'
 import type { GcModel } from '../lib/gc-model'
 import type { CycleRecord } from '../../../main/gc/gc-wire'
@@ -91,7 +92,11 @@ const lastLine = computed(() => {
     })
   }
   const cleaned = c.cleaned.filter((r) => r.ok).length
-  return t('cleanup.gc.split.lastCycle', { ago, n: cleaned, size: formatBytes(c.freedBytes) })
+  return t('cleanup.gc.split.lastCycle', {
+    ago,
+    n: cleaned,
+    freed: freedText(t, c.freedBytes, c.trashedBytes)
+  })
 })
 </script>
 

@@ -121,7 +121,7 @@ describe('CleanupSplitBar', () => {
       jobId: null
     } as CycleRecord
     expect(mountBar({ lastCycle: base }).get('[data-testid="split-last-cycle"]').text()).toBe(
-      'Last cycle 4m ago: cleaned 1, freed 400 MB'
+      'Last cycle 4m ago: cleaned 1, 400 MB freed now'
     )
     const report = { ...base, mode: 'report' } as CycleRecord
     expect(mountBar({ lastCycle: report }).get('[data-testid="split-last-cycle"]').text()).toBe(

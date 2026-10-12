@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
+  CLEANABLE_KINDS,
+  REVIEW_CLEANABLE_KINDS,
   isNeverClean,
   FAILURE_TTL_MS,
   applyFailures,
@@ -9,6 +11,7 @@ import {
   pruneFailures,
   refusalFor
 } from '../src/main/gc/autopilot-core'
+import type { WorktreeBundle } from '../src/main/gc/bundle-core'
 import { defaultGcPrefs, type GcPrefs } from '../src/main/gc/gc-prefs'
 import { bundle, DAY, NOW, reapItem } from './gc-fixtures'
 
@@ -190,10 +193,46 @@ describe('refusalFor: what a manual clean may take (AC-8)', () => {
     expect(refusalFor(bundle('/ws/wt/k', 'in-use', { keep: true }), prefs(), confirm)).toBe('kept')
   })
 
-  it('refuses a detached worktree: the executor cannot clean one', () => {
-    const d = bundle('/ws/wt/x', 'review', {
-      item: reapItem('/ws/wt/x', { kind: 'detached-worktree' })
+  describe('a detached worktree (NDE-A, AC-A3): review-only, and only on an explicit confirm', () => {
+    const detached = (bucket: 'ready' | 'review' | 'in-use' = 'review'): WorktreeBundle =>
+      bundle('/ws/wt/x', bucket, {
+        item: reapItem('/ws/wt/x', { kind: 'detached-worktree', branch: undefined })
+      })
+
+    it('is taken from review once the operator confirmed it', () => {
+      expect(refusalFor(detached(), prefs(), confirm)).toBeNull()
     })
+
+    it('needs that confirmation: an unconfirmed click never removes it', () => {
+      expect(refusalFor(detached(), prefs(), { confirmed: false })).toBe('needs-confirmation')
+    })
+
+    it('is never taken as a ready item, whatever a hand-built bundle says', () => {
+      expect(refusalFor(detached('ready'), prefs(), confirm)).toBe('unsupported-kind')
+      expect(refusalFor(detached('ready'), prefs(), { confirmed: false })).toBe('unsupported-kind')
+    })
+
+    it('keeps every hard refusal: in-use, kept, neverClean, main checkout', () => {
+      expect(refusalFor(detached('in-use'), prefs(), confirm)).toBe('in-use')
+      expect(refusalFor({ ...detached(), keep: true }, prefs(), confirm)).toBe('kept')
+      expect(refusalFor({ ...detached(), neverClean: true }, prefs(), confirm)).toBe('never-clean')
+      expect(refusalFor({ ...detached(), isMainCheckout: true }, prefs(), confirm)).toBe(
+        'main-checkout'
+      )
+    })
+
+    it('stays out of the autopilot: not a cleanable kind, so no cycle ever plans it', () => {
+      expect(CLEANABLE_KINDS).not.toContain('detached-worktree')
+      expect(REVIEW_CLEANABLE_KINDS).toContain('detached-worktree')
+      const acked = { ...prefs(), autopilot: true, firstReportAcknowledged: true }
+      const plan = planCycle([detached('ready')], acked)
+      expect(plan.toClean).toEqual([])
+      expect(plan.found).toBe(0)
+    })
+  })
+
+  it('refuses a kind that is neither a worktree nor a hidden folder', () => {
+    const d = bundle('/ws/wt/x', 'review', { item: reapItem('/ws/wt/x', { kind: 'local-branch' }) })
     expect(refusalFor(d, prefs(), confirm)).toBe('unsupported-kind')
   })
 })

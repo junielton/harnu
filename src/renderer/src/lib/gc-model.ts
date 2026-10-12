@@ -3,13 +3,14 @@
 // the `gc:clean` payload. No DOM, no Vue, no i18n — unit-tested in tests/gc-model.test.ts.
 
 import type { Bucket, ReviewCode, WorktreeBundle } from '../../../main/gc/bundle-core'
-import { removability, type RemovalRefusal } from './gc-removability'
+import { removability, removabilityAll, type RemovalRefusal } from './gc-removability'
 import { remoteDeleteOffered, type RemotePolicy } from './gc-remote-delete'
 import type { RemoteFacts } from '../../../main/gc/gc-remote-delete'
 import type {
   GcCleanOptions,
   GcDockerCard,
   GcExpected,
+  GcPrep,
   GcSnapshot,
   OrphanVolumeItem
 } from '../../../main/gc/gc-wire'
@@ -356,11 +357,11 @@ export type HeroState =
   /** Ready items exist, but the scan could not see Docker: cleaning waits for Docker and a new scan. */
   | { kind: 'blind'; count: number; bytes: number }
   | { kind: 'empty' }
-  | { kind: 'running'; done: number; total: number; freedBytes: number }
+  | { kind: 'running'; done: number; total: number; freedBytes: number; trashedBytes: number }
 
 export function heroState(
   model: GcModel,
-  running: { done: number; total: number; freedBytes: number } | null,
+  running: { done: number; total: number; freedBytes: number; trashedBytes?: number } | null,
   firstReportAcknowledged: boolean
 ): HeroState {
   if (running) {
@@ -368,7 +369,8 @@ export function heroState(
       kind: 'running',
       done: running.done,
       total: running.total,
-      freedBytes: running.freedBytes
+      freedBytes: running.freedBytes,
+      trashedBytes: running.trashedBytes ?? 0
     }
   }
   if (model.cleanable.length === 0) {
@@ -407,6 +409,15 @@ export interface DialogRow {
   risk: boolean
   /** "Also delete the branch on the remote" can apply to this row (AC-D5). Absent means no. */
   remoteEligible?: boolean
+  /** The 12-character HEAD sha (the one its archive ref is named with) of a detached worktree, whose commit is archived by it; null for any other row. */
+  detachedAt: string | null
+  /** Every untracked path in the folder, sorted: named in the confirm, archived in the wip ref. */
+  untracked: string[]
+}
+
+/** A worktree with no branch: its commit is archived by sha when it is removed. */
+export function isDetachedBlock(b: Pick<GcBlock, 'bundle'>): boolean {
+  return b.bundle?.item.kind === 'detached-worktree'
 }
 
 export function dialogRows(
@@ -445,7 +456,9 @@ export function dialogRows(
       // Any review worktree may hold work no other branch has. The reasons that once read as safe
       // (an idle session, a shared stack) are refused outright now and never reach this dialog.
       risk: b.kind === 'worktree' && b.bucket === 'review',
-      remoteEligible: remoteDeleteOffered(b, remotePolicy, remoteFacts[id])
+      remoteEligible: remoteDeleteOffered(b, remotePolicy, remoteFacts[id]),
+      detachedAt: isDetachedBlock(b) ? (b.bundle?.localTip ?? '').slice(0, 12) || null : null,
+      untracked: [...(b.bundle?.item.untracked ?? [])].sort()
     })
   }
   return rows
@@ -473,7 +486,7 @@ export function dialogBreakdown(rows: readonly DialogRow[]): DialogBreakdown {
 export interface CleanRequest {
   ids: string[]
   options: Required<Pick<GcCleanOptions, 'expected'>> &
-    Pick<GcCleanOptions, 'confirmed' | 'deleteRemote' | 'confirmedNotFound'>
+    Pick<GcCleanOptions, 'confirmed' | 'deleteRemote' | 'confirmedNotFound' | 'prepare'>
 }
 
 const sorted = (xs: readonly string[]): string[] => [...xs].sort()
@@ -686,4 +699,57 @@ export function confirmChanged(model: GcModel, captured: CapturedConfirm): boole
   return captured.ids.some(
     (id) => !sameFacts(fresh.options.expected[id], captured.request.options.expected[id])
   )
+}
+
+// ---- guided "…and remove": the request carries each item's prep ------------------------------------
+
+/** What no prep can lift: the operator's own protections and an item that is working right now. */
+const NOT_GUIDABLE: ReadonlySet<RemovalRefusal> = new Set([
+  'main-checkout',
+  'never-clean',
+  'kept',
+  'in-use'
+])
+
+/**
+ * The `gc:clean` payload of a guided "…and remove" ("No dead ends"). Built although `removability()`
+ * refuses these items today: the prep (unlock, close the idle session, stop or leave a stack) is what
+ * lifts the refusal, and main re-judges the item on a fresh gather after it. Still every id is confirmed
+ * by name and bound to the facts shown; an id the model lost, one with no prep, or one a prep cannot
+ * lift (a Keep mark, a main checkout, a working session) is dropped, never sent.
+ */
+export function guidedRequestFor(
+  model: GcModel,
+  ids: readonly string[],
+  prepFor: (id: string) => GcPrep | GcPrep[] | null,
+  now: number = Date.now()
+): CleanRequest {
+  const kept: string[] = []
+  const expected: Record<string, GcExpected> = {}
+  const prepare: Record<string, GcPrep | GcPrep[]> = {}
+  for (const id of ids) {
+    const b = model.byId.get(id)
+    if (!b || b.kind !== 'worktree') continue
+    // Any cause a prep cannot lift (a Keep mark, a main checkout, a working session) rules the item out,
+    // whatever other causes are stacked with it.
+    if (removabilityAll(b, now).some((r) => NOT_GUIDABLE.has(r.reason))) continue
+    const prep = prepFor(id)
+    if (!prep) continue
+    kept.push(id)
+    expected[id] = expectedFor(b)
+    prepare[id] = prep
+  }
+  return { ids: kept, options: { expected, confirmed: [...kept], prepare } }
+}
+
+/** Whether what a guided dialog captured is no longer what the model shows (it blocks its confirm). */
+export function guidedChanged(
+  model: GcModel,
+  captured: { ids: readonly string[]; request: CleanRequest }
+): boolean {
+  return captured.ids.some((id) => {
+    const b = model.byId.get(id)
+    const before = captured.request.options.expected[id]
+    return !b || !before || !sameFacts(expectedFor(b), before)
+  })
 }

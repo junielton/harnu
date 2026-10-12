@@ -107,3 +107,49 @@ describe('resumeHint', () => {
     expect(resumeHint(dirty)).toBeNull()
   })
 })
+
+describe('resumeHint — a detached worktree (NDE-A, AC-A5)', () => {
+  const detachedHalt = (detail: string, folderGone = true) => {
+    const b = wt(
+      'det',
+      'review',
+      1000,
+      { branch: null, kind: 'detached-worktree' },
+      { reason: reviewReason('cleanup-failed', detail) }
+    )
+    if (folderGone) (b as unknown as { folderGone: boolean }).folderGone = true
+    return blockOf(b)
+  }
+
+  // A detached worktree only ever leaves through the operator's forced path, and that path writes
+  // the archive refs inside the reprobe, before any docker or disk step. So every halt after the
+  // reprobe passed has the refs; only a halt AT the reprobe (which includes a failed archive) may not.
+  it.each([
+    'stop-stack',
+    'rm-containers',
+    'rm-volumes',
+    'drop-deps',
+    'archive',
+    'trash',
+    'prune',
+    'detach'
+  ])('a halt at %s: the reprobe already archived it, only the prune is left', (step) => {
+    const hint = resumeHint(detachedHalt(`Cleanup stopped at ${step} in /w/det.`))!
+    expect(hint.commands).toEqual(['git -C /w/repo worktree prune'])
+    expect(hint.commands.join('\n')).not.toMatch(/branch/)
+    expect(hint.archived).toBe(true)
+    expect(hint.unarchivedWarning).toBe(false)
+  })
+
+  it('a halt at the reprobe may not have archived anything: not archived, and no branch to warn about', () => {
+    const hint = resumeHint(detachedHalt('Cleanup stopped at reprobe in /w/det.'))!
+    expect(hint.commands).toEqual(['git -C /w/repo worktree prune'])
+    expect(hint.archived).toBe(false)
+    expect(hint.unarchivedWarning).toBe(false)
+  })
+
+  it('leaves a branch worktree alone: its halts before the archive step are still not archived', () => {
+    const branch = halted('Cleanup stopped at drop-deps in /w/x.')
+    expect(resumeHint(branch)!.archived).toBe(false)
+  })
+})

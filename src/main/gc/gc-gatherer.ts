@@ -29,7 +29,9 @@ export interface GathererDeps {
     now: number,
     remembered: ReadonlyMap<string, readonly string[]>,
     /** Items with a pending failure note: kept in the gather even when their folder is gone. */
-    keepGone: ReadonlySet<string>
+    keepGone: ReadonlySet<string>,
+    /** False for an agent's read-only gather: nothing under the scan may write a file. */
+    persisting: boolean
   ) => Promise<GcGathered>
   state: CycleState
   leftovers: { get: () => LeftoverFile; set: (next: LeftoverFile) => void }
@@ -78,7 +80,8 @@ export function createGatherer(deps: GathererDeps): Gatherer {
       now,
       toDirMap(deps.leftovers.get()),
       // A refusal changed nothing, so its folder gone since is just gone; a halt keeps the item.
-      new Set([...startedWith].filter(([, f]) => f.step !== 'reprobe').map(([id]) => id))
+      new Set([...startedWith].filter(([, f]) => f.step !== 'reprobe').map(([id]) => id)),
+      persisting
     )
     // Pruning forgets failure notes for bundles it cannot see, so only a persisting gather does,
     // and only one that is still current: a stale gather would delete the note of an item the
