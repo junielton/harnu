@@ -237,10 +237,12 @@ If any ref cannot be written, the removal is refused before anything is touched 
 
 Two things stop it before it starts, each with a reason in the panel rather than a silent "0 cleaned":
 
-- **A rebase or bisect in progress.** Their unfinished state lives in the folder and would be trashed with it, so Remove is not offered until you finish or abort the operation. The panel names the command: `git -C <path> rebase --abort` or `git -C <path> bisect reset`. Then **Scan now**.
+- **A rebase, bisect or `git am` in progress** (on a detached worktree or on a branch one: `git am` keeps HEAD on its branch). Their unfinished state lives in the folder and would be trashed with it, so Remove is not offered until you finish or abort the operation. The panel names the command: `git -C <path> rebase --abort`, `bisect reset` or `am --abort`. Then **Scan now**. If Harnu refused it more than once, it moves to Needs review and keeps saying so until you do.
 - **A session running in it, a lock, a nested checkout**, like any other worktree.
 
-The confirm dialog lists every untracked file of the folder by name (they are in no commit, and the `wip` ref is where they are kept).
+The confirm dialog names the untracked files of each folder (they are in no commit, and the `wip` ref is where they are kept): the first 10 per row, then "and N more" with the whole list on hover, and one total for the dialog. Every path is saved whether it is named or not.
+
+If the history holds more than **500** commits that no branch, tag or ref reaches, the removal is refused with `reflog-limit` and nothing is removed, rather than keeping only some of them. Keep the ones you want with `git branch <name> <sha>`, or remove the folder yourself.
 
 Removing a folder with the same name at the same commit a second time reuses the same names. A `wip` with different files than the one already there does not overwrite it: the earlier one moves to a sibling ref, `…/wip-<yyyymmddhhmmss>`, so `git show …/wip` is always a plain diff against the tip and nothing is lost. List every earlier one with `git for-each-ref 'refs/archive/detached/*/wip-*'`.
 
