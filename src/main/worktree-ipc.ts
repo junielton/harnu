@@ -1617,6 +1617,9 @@ export async function removeWorktree(
     // (and its HEAD) is gone, so we can't ask it for its branch anymore. Skipped
     // when the directory is already gone: there's no HEAD left to read.
     const branch = deleteBranch && plan.readBranch ? await currentBranch(worktreePath) : null
+    // Its Docker stack leaves containers and a network behind: remember the compose projects that
+    // run from this folder, while it still exists to be read, so Cleanup can offer them afterwards.
+    await (await import('./gc/gc-removed-stacks')).rememberStacksOfFolder(worktreePath)
     const args = [
       '-C',
       repoPath,

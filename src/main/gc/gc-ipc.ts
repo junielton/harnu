@@ -38,6 +38,7 @@ import {
   writeLeftovers,
   type Leftover
 } from './gc-leftovers'
+import { setLeftoverRememberer } from './gc-leftover-registry'
 import { createCycleState, runGcCycle, type GcCycleDeps, type GcGather } from './gc-cycle'
 import { gatherGc, type GcGathered } from './gc-scan-shell'
 import { createAgentService, createGatherer } from './gc-gatherer'
@@ -121,6 +122,8 @@ export async function registerGcHandlers(
     leftovers = withLeftovers(leftovers, entries)
     writeLeftovers(leftoversFile, leftovers)
   }
+  // The sidebar's own Remove hands its stacks to this same writer (gc-leftover-registry).
+  setLeftoverRememberer(remember)
   const send = (channel: string, payload: unknown): void => {
     const win = getWindow()
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
