@@ -132,3 +132,29 @@ describe('canUnregister as if unlocked, against real admin directories (delta 2)
     expect(await unlockedAnswer()).toBe(false)
   })
 })
+
+describe('a worktree’s identity, against real git (delta 3)', () => {
+  it('is stable while the worktree lives, and changes when it is removed and added again', async () => {
+    const g = createGitGuided(git)
+    const a = await g.identityOf(repo, wt)
+    expect(a).toMatchObject({ adminId: path.basename(wt), gitdir: `${wt}/.git` })
+    expect(typeof a?.head).toBe('string')
+    expect(await g.identityOf(repo, wt)).toEqual(a)
+
+    execFileSync('git', ['-C', repo, 'worktree', 'remove', '--force', wt])
+    await new Promise((r) => setTimeout(r, 25))
+    execFileSync('git', ['-C', repo, 'worktree', 'add', '-q', '-b', 'feat/again', wt])
+    const b = await g.identityOf(repo, wt)
+    expect(b).not.toBeNull()
+    expect(b).not.toEqual(a)
+  })
+
+  it('works for a locked worktree, which is what an interrupted unlock has', async () => {
+    execFileSync('git', ['-C', repo, 'worktree', 'lock', wt])
+    expect(await createGitGuided(git).identityOf(repo, wt)).not.toBeNull()
+  })
+
+  it('is null for a folder git has no registration for', async () => {
+    expect(await createGitGuided(git).identityOf(repo, path.join(root, 'nowhere'))).toBeNull()
+  })
+})

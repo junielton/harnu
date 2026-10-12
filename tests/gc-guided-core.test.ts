@@ -97,6 +97,7 @@ function deps(
     },
     sessionFolders: async () => [],
     worktreeRoots: async () => [],
+    identityOf: async () => null,
     walkForeign: async () => [],
     ownerOf: async () => 'root',
     currentUser: () => 'me',
@@ -803,6 +804,34 @@ describe('a restart that fails after a partial stop is reported, not swallowed (
       }
     )
     expect((r as { error: string }).error).toContain('left stopped: ctr-c1')
+  })
+})
+
+describe('the unlock entry records who the worktree is (delta 3)', () => {
+  it('writes the identity read BEFORE the unlock', async () => {
+    const entries: unknown[] = []
+    const id = { adminId: 'wt', gitdir: '/x/.git', head: 'h', inode: 1, birth: 2 }
+    const d: GuidedDeps = {
+      ...deps(fresh(), { lockReason: async () => 'usb', identityOf: async () => id }),
+      journal: { begin: async (e) => (entries.push(e), 'tok'), end: async () => undefined }
+    }
+    await prepareClean({ kind: 'unlock' }, review({ locked: true }, 'locked'), d)
+    expect(entries[0]).toMatchObject({ kind: 'unlock', reason: 'usb', identity: id })
+  })
+
+  it('an identity that cannot be read is recorded as null, so a boot recovery will not trust it', async () => {
+    const entries: unknown[] = []
+    const d: GuidedDeps = {
+      ...deps(fresh(), {
+        lockReason: async () => null,
+        identityOf: async () => {
+          throw new Error('unreadable')
+        }
+      }),
+      journal: { begin: async (e) => (entries.push(e), 'tok'), end: async () => undefined }
+    }
+    await prepareClean({ kind: 'unlock' }, review({ locked: true }, 'locked'), d)
+    expect(entries[0]).toMatchObject({ identity: null })
   })
 })
 
