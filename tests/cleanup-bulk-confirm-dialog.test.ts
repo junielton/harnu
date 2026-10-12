@@ -449,6 +449,44 @@ describe('CleanupBulkConfirmDialog: the reason is the translated one for every c
       expect(q('[data-testid="bulk-untracked"]')).toBeNull()
     })
 
+    const files = (n: number, from = 1): string[] =>
+      Array.from({ length: n }, (_, i) => `f${String(from + i).padStart(2, '0')}.md`)
+
+    it('names at most 10 per row and says how many more, the full list on hover (delta-2, item 4)', async () => {
+      await open([reviewRow({ untracked: files(25) })], 'review')
+      const el = q('[data-testid="bulk-untracked"]')!
+      for (const p of files(10)) expect(el.textContent).toContain(p)
+      expect(el.textContent).not.toContain('f11.md')
+      expect(el.textContent).toContain('25')
+      expect(el.textContent).toMatch(/15 more/)
+      for (const p of files(25)) expect(el.getAttribute('title')).toContain(p)
+    })
+
+    it('exactly 10 names fit: no "more"', async () => {
+      await open([reviewRow({ untracked: files(10) })], 'review')
+      const el = q('[data-testid="bulk-untracked"]')!
+      expect(el.textContent).toContain('f10.md')
+      expect(el.textContent).not.toMatch(/more/)
+    })
+
+    it('gives the dialog one total across its rows, only when there are untracked files', async () => {
+      await open(
+        [
+          reviewRow({ id: 'a', untracked: files(25) }),
+          reviewRow({ id: 'b', untracked: files(3) }),
+          reviewRow({ id: 'c' })
+        ],
+        'review'
+      )
+      const total = q('[data-testid="bulk-untracked-total"]')!
+      expect(total.textContent).toContain('28')
+    })
+
+    it('has no total when nothing is untracked', async () => {
+      await open([reviewRow()], 'review')
+      expect(q('[data-testid="bulk-untracked-total"]')).toBeNull()
+    })
+
     it('a row without the new fields is neither detached nor untracked', async () => {
       const legacy = { ...reviewRow() } as Partial<DialogRow>
       delete legacy.detachedAt
