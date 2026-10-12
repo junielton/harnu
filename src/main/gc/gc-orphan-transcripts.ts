@@ -74,7 +74,18 @@ export interface OrphanInput {
   protectedFolders: readonly string[]
   /** Known repo checkouts, to name the group a folder belongs to. */
   repoPaths: readonly string[]
+  /** The clock (epoch ms); defaults to now. */
+  now?: number
+  /**
+   * A project whose newest transcript is younger than this is never listed (default 24 h): a
+   * session still writing from a terminal outside Harnu is invisible to every other check, and
+   * the parked-session set is in memory only, so it is empty after a restart.
+   */
+  quietMs?: number
 }
+
+/** The default quiet period before a project can be an orphan. */
+export const ORPHAN_QUIET_MS = 24 * 3_600_000
 
 const GENERIC_PARENTS = new Set(['worktrees', '.worktrees', 'trees', 'wt', 'tmp'])
 
@@ -122,6 +133,8 @@ export async function planOrphanTranscripts(input: OrphanInput): Promise<OrphanT
   } catch {
     return []
   }
+  const now = input.now ?? Date.now()
+  const quietMs = input.quietMs ?? ORPHAN_QUIET_MS
   const aliveSlugs = new Set(input.protectedFolders.map(slugOfPath))
   const existence = new Map<string, Promise<Existence>>()
   const existsOnce = (folder: string): Promise<Existence> => {
@@ -143,6 +156,9 @@ export async function planOrphanTranscripts(input: OrphanInput): Promise<OrphanT
     }
     if (facts.unlistable || facts.files.length === 0) continue
     if (facts.files.some((f) => input.protectedSessionIds.has(f.sessionId))) continue
+    // Anything written lately may belong to a live session we cannot see; a mtime in the future counts too.
+    const newestWrite = Math.max(...facts.files.map((f) => f.mtimeMs))
+    if (!Number.isFinite(newestWrite) || now - newestWrite < quietMs) continue
     const cwds = facts.files.map((f) => f.cwd)
     if (cwds.some((c) => c === null)) continue
     const folders = [...new Set(cwds as string[])]
@@ -150,7 +166,7 @@ export async function planOrphanTranscripts(input: OrphanInput): Promise<OrphanT
     if (states.some((s) => s !== 'gone')) continue
     // A folder a known, existing folder is slug-equal to may be the same project.
     if (folders.some((f) => aliveSlugs.has(slugOfPath(f)))) continue
-    const newest = Math.max(...facts.files.map((f) => f.mtimeMs))
+    const newest = newestWrite
     items.push({
       id: orphanTranscriptId(slug),
       slug,
