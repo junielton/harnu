@@ -43,9 +43,12 @@ import { guidanceFor, prepareClean } from './gc-guided'
 import { defaultGuidedDeps } from './gc-guided-shell'
 import {
   PREP_JOURNAL_FILE,
+  ackRecovery,
+  actOnRecovery,
   createPrepJournal,
+  listRecovery,
   recoverPrepJournal,
-  type RecoveryReport
+  type RecoveryDeps
 } from './gc-prep-journal'
 import { recheckItem } from './gc-recheck'
 import {
@@ -192,33 +195,10 @@ export async function registerGcHandlers(
   const shellDeps = await defaultGcShellDeps(getWindow)
   const prepJournal = createPrepJournal(path.join(userData, PREP_JOURNAL_FILE))
   const guidedDeps = { ...(await defaultGuidedDeps(shellDeps)), journal: prepJournal }
-  // What a guided prep had changed when Harnu last stopped is put back now; the renderer reads the
-  // report once (`gc:recovered`) and shows it in Activity.
-  let recovered: RecoveryReport[] = []
-  void recoverPrepJournal(prepJournal, {
-    exists: (p) =>
-      import('node:fs/promises').then((fs) =>
-        fs.access(p).then(
-          () => true,
-          () => false
-        )
-      ),
-    lockReason: (repo, p) => guidedDeps.lockReason(repo, p),
-    lock: (repo, p, reason) => guidedDeps.lock(repo, p, reason),
-    start: (ids) => guidedDeps.docker.start(ids)
-  })
-    .then((r) => {
-      recovered = r
-      for (const x of r) {
-        notify({
-          title: 'Harnu put back what an action had changed',
-          body: `${x.path}: ${x.outcome}${x.detail ? ` (${x.detail})` : ''}`
-        })
-      }
-    })
-    .catch((err) => console.error('[gc] prep journal recovery failed', messageOf(err)))
   const withRun = (actor: 'operator' | 'autopilot'): GcShellDeps =>
     withActor(shellDeps, actor, () => prefs)
+
+  const recoveryChanged = (): void => send('gc:recovery:changed', null)
 
   const notify = (n: { title: string; body: string }): void => {
     try {
@@ -236,6 +216,45 @@ export async function registerGcHandlers(
       console.error('[gc] notification failed', err)
     }
   }
+  // What a guided prep had changed when Harnu last stopped (see gc-prep-journal.ts): a lock goes back only
+  // on the very same worktree, containers are never started by Harnu on its own, and whatever needs the
+  // operator stays as a notice until it is answered. A notice is announced once, and kept until the
+  // renderer acknowledges it, so a boot that finishes before the window is up loses nothing.
+  const recoveryDeps: RecoveryDeps = {
+    exists: (p) =>
+      import('node:fs/promises').then((fs) =>
+        fs.access(p).then(
+          () => true,
+          () => false
+        )
+      ),
+    lockReason: (repo, p) => guidedDeps.lockReason(repo, p),
+    identityOf: (repo, p) => guidedDeps.identityOf(repo, p),
+    lock: (repo, p, reason) => guidedDeps.lock(repo, p, reason),
+    // Of these ids, the containers that still exist (a docker that cannot answer counts them all present).
+    containersPresent: async (ids) => {
+      try {
+        const { stacks } = await shellDeps.listStacks()
+        const all = new Set(stacks.flatMap((s) => s.containers.map((c) => c.id)))
+        return ids.filter((id) => all.has(id))
+      } catch {
+        return ids
+      }
+    },
+    start: (ids) => guidedDeps.docker.start(ids)
+  }
+  void recoverPrepJournal(prepJournal, recoveryDeps)
+    .then(async () => {
+      const fresh = (await listRecovery(prepJournal)).filter((i) => !i.announced)
+      if (fresh.length > 0) {
+        notify({
+          title: 'Harnu has something to tell you about an interrupted clean',
+          body: `${fresh.length} item(s) in Cleanup.`
+        })
+      }
+      recoveryChanged()
+    })
+    .catch((err) => console.error('[gc] prep journal recovery failed', messageOf(err)))
 
   const cycleDeps: GcCycleDeps = {
     prefs: () => prefs,
@@ -413,9 +432,24 @@ export async function registerGcHandlers(
   ipcMain.handle('gc:unkeep', (_e, id: unknown) => service.unkeep(id))
   ipcMain.handle('gc:recheck', (_e, id: unknown) => service.recheck(id))
   ipcMain.handle('gc:guide', (_e, id: unknown) => service.guide(id))
-  ipcMain.handle('gc:recovered', () => {
-    const out = recovered
-    recovered = []
+  ipcMain.handle('gc:recovery:list', () => listRecovery(prepJournal))
+  ipcMain.handle('gc:recovery:ack', async (_e, ids: unknown) => {
+    if (!Array.isArray(ids)) return
+    await ackRecovery(
+      prepJournal,
+      ids.filter((x): x is string => typeof x === 'string')
+    )
+  })
+  ipcMain.handle('gc:recovery:act', async (_e, raw: unknown) => {
+    const r = (raw ?? {}) as { id?: unknown; action?: unknown }
+    if (
+      typeof r.id !== 'string' ||
+      (r.action !== 'start' && r.action !== 'lock' && r.action !== 'dismiss')
+    ) {
+      return { ok: false, error: 'bad request' }
+    }
+    const out = await actOnRecovery(prepJournal, r.id, r.action, recoveryDeps)
+    recoveryChanged()
     return out
   })
   ipcMain.handle('gc:prefs:get', () => service.prefs())

@@ -6,8 +6,8 @@
 //
 // Every effect is injected; the real wiring is `defaultGuidedDeps` in gc-guided-shell.ts.
 
-import { readFile } from 'node:fs/promises'
-import { join as joinPath } from 'node:path'
+import { readFile, stat } from 'node:fs/promises'
+import { basename, join as joinPath } from 'node:path'
 import { findAdminDir } from '../reaper/worktree-admin-shell'
 import {
   canonicalPathKey,
@@ -19,7 +19,7 @@ import {
 import { isHolding, isInside, type StackGroup } from '../containers/containers-core'
 import type { DockerBatchResult } from '../containers/containers-actions'
 import type { GcGuidance, GcGuidedStack, GcPrep } from './gc-wire'
-import type { PrepEntryInput } from './gc-prep-journal'
+import type { LockIdentity, PrepEntryInput } from './gc-prep-journal'
 
 /** A Harnu-owned session running in, or under, a folder. */
 export interface GuidedSession {
@@ -60,6 +60,8 @@ export interface GuidedDeps {
   /** What git recorded with the lock: a string (possibly empty→null), or `undefined` when not locked. */
   lockReason(repoPath: string, path: string): Promise<string | null | undefined>
   unlock(repoPath: string, path: string): Promise<void>
+  /** Who the worktree at `path` is (admin dir, gitdir, HEAD); null when git has no single registration for it. */
+  identityOf(repoPath: string, path: string): Promise<LockIdentity | null>
   /** `git worktree lock [--reason <reason>]`: puts a lock back exactly as it was (the rollback of an unlock). */
   lock(repoPath: string, path: string, reason: string | null): Promise<void>
   /** Running Harnu sessions (live PTYs) whose folder is `path` or under it. Never a session Harnu does not own. */
@@ -354,12 +356,15 @@ export async function prepareClean(
     }
     if (opts.dry) return { ok: true }
     // Written BEFORE the unlock: if Harnu quits right after it, the next boot puts the lock back.
+    // ...with who the worktree is, so the next boot puts the lock back only on the SAME worktree.
+    const identity = await deps.identityOf(b.item.repoPath, path).catch(() => null)
     const token = await deps.journal?.begin({
       kind: 'unlock',
       at: Date.now(),
       repoPath: b.item.repoPath,
       path,
-      reason
+      reason,
+      identity
     })
     const settle = async (): Promise<void> => {
       if (token !== undefined) await deps.journal?.end(token)
@@ -491,7 +496,7 @@ export async function prepareClean(
 /** The two git-backed deps, over any `git -C <repo> …` runner (the executor's, or a test's real one). */
 export function createGitGuided(
   git: (repo: string, args: string[]) => Promise<string>
-): Pick<GuidedDeps, 'lockReason' | 'unlock' | 'lock'> {
+): Pick<GuidedDeps, 'lockReason' | 'unlock' | 'lock' | 'identityOf'> {
   const key = (p: string): string => canonicalPathKey(p, process.platform)
   return {
     async lockReason(repoPath, path) {
@@ -514,6 +519,31 @@ export function createGitGuided(
       const want = key(path)
       for (const [p, reason] of reasons) if (key(p) === want) return reason
       return undefined
+    },
+    async identityOf(repoPath, path) {
+      const admin = await findAdminDir(repoPath, path, git, { assumeUnlocked: true }).catch(
+        () => null
+      )
+      if (!admin) return null
+      try {
+        const [st, gitdir, head] = await Promise.all([
+          stat(admin),
+          readFile(joinPath(admin, 'gitdir'), 'utf8'),
+          git(path, ['rev-parse', 'HEAD']).then(
+            (h) => h.trim() || null,
+            () => null
+          )
+        ])
+        return {
+          adminId: basename(admin),
+          gitdir: gitdir.trim(),
+          head,
+          inode: st.ino,
+          birth: st.birthtimeMs
+        }
+      } catch {
+        return null
+      }
     },
     async unlock(repoPath, path) {
       await git(repoPath, ['worktree', 'unlock', path])

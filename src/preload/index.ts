@@ -143,7 +143,8 @@ import type {
   GcCleanAck,
   GcRecheckResult,
   GcGuidance,
-  GcRecoveryReport,
+  GcRecoveryItem,
+  GcRecoveryAction,
   GcCleanOptions,
   GcJobDone,
   GcJobInfo,
@@ -2564,8 +2565,19 @@ const api = {
   gcRecheck: (id: string): Promise<GcRecheckResult> => ipcRenderer.invoke('gc:recheck', id),
   /** What main sees about a refused item right now: the data a guided Cleanup action shows. */
   gcGuide: (id: string): Promise<GcGuidance> => ipcRenderer.invoke('gc:guide', id),
-  /** What boot recovery put back after Harnu quit mid-action; read once, then cleared. */
-  gcRecovered: (): Promise<GcRecoveryReport[]> => ipcRenderer.invoke('gc:recovered'),
+  /** What the prep journal wants the operator to know: notices until answered, put-back reports until acknowledged. */
+  gcRecoveryList: (): Promise<GcRecoveryItem[]> => ipcRenderer.invoke('gc:recovery:list'),
+  /** The renderer showed these in Activity: they are not announced again. */
+  gcRecoveryAck: (ids: string[]): Promise<void> => ipcRenderer.invoke('gc:recovery:ack', ids),
+  /** The operator's answer to a notice: start the containers again, lock the worktree again, or dismiss. */
+  gcRecoveryAct: (
+    id: string,
+    action: GcRecoveryAction
+  ): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('gc:recovery:act', { id, action }),
+  /** The journal changed (boot recovery finished, a notice was answered). */
+  onGcRecoveryChanged: (cb: () => void): (() => void) =>
+    subscribe('gc:recovery:changed', () => cb()),
   gcPrefs: (): Promise<GcPrefs> => ipcRenderer.invoke('gc:prefs:get'),
   /** Whole-object write, clamped in main. `keep` and the acknowledgement are not writable here. */
   gcSetPrefs: (prefs: GcPrefs): Promise<GcPrefs> => ipcRenderer.invoke('gc:prefs:set', prefs),

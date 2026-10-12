@@ -22,11 +22,20 @@ const REQUESTS = [
   'gc:prefs:get',
   'gc:prefs:set',
   'gc:recheck',
-  'gc:recovered',
+  'gc:recovery:ack',
+  'gc:recovery:act',
+  'gc:recovery:list',
   'gc:snapshot',
   'gc:unkeep'
 ]
-const EVENTS = ['gc:cycle', 'gc:done', 'gc:opinion:done', 'gc:opinion:result', 'gc:progress']
+const EVENTS = [
+  'gc:cycle',
+  'gc:done',
+  'gc:opinion:done',
+  'gc:opinion:result',
+  'gc:progress',
+  'gc:recovery:changed'
+]
 
 describe('workspace GC IPC surface (AC-10)', () => {
   it('registers exactly the request channels the card names', () => {
