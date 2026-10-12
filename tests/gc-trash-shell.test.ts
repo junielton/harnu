@@ -646,3 +646,32 @@ describe('a changed entry is not forgotten (delta-2 item 4)', () => {
     expect(r.present).toEqual([])
   })
 })
+
+describe('the first trash onto a volume is recorded too (delta-2 item 5)', () => {
+  it('a .Trash-<uid> that the move itself creates is diffed after the move', async () => {
+    const mount = path.join(root, 'mnt', 'fresh')
+    mkdirSync(mount, { recursive: true })
+    const volTrash = path.join(mount, '.Trash-1000')
+    expect(existsSync(volTrash)).toBe(false)
+    const folder = makeFolder(path.join(mount, 'work', 'wt-a'))
+    const volEnv: TrashEnv = { ...env, isMountPoint: async (p) => p === mount }
+    const record = await recordTrash(volEnv, folder, async () => {
+      osTrash(volTrash, folder, NOW, folder, mount)
+    })
+    expect(record).toMatchObject({ trashDir: volTrash, name: 'wt-a' })
+  })
+
+  it('still records nothing when TWO new entries show up in the fresh directory', async () => {
+    const mount = path.join(root, 'mnt', 'fresh')
+    mkdirSync(mount, { recursive: true })
+    const volTrash = path.join(mount, '.Trash-1000')
+    const mine = makeFolder(path.join(mount, 'work', 'wt-a'))
+    const users = makeFolder(path.join(mount, 'work', 'notes'))
+    const volEnv: TrashEnv = { ...env, isMountPoint: async (p) => p === mount }
+    const record = await recordTrash(volEnv, mine, async () => {
+      osTrash(volTrash, mine, NOW, mine, mount)
+      osTrash(volTrash, users, NOW, users, mount)
+    })
+    expect(record).toBeNull()
+  })
+})
