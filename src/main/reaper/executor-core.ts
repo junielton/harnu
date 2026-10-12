@@ -107,6 +107,13 @@ export async function cleanItem(
      * the step and the rest (sidebar, journal) still runs.
      */
     remoteFailureFatal?: boolean
+    /**
+     * The remote to delete on (the branch's own upstream). Absent keeps the Reaper's old `origin`.
+     * Given, the delete no longer depends on the scan's origin-based `needsRemoteDelete`.
+     */
+    remote?: string
+    /** The remote tip the delete is leased against (the live, verified one); else the scan's. */
+    remoteSha?: string | null
   },
   deps: ExecutorDeps
 ): Promise<CleanResult> {
@@ -311,22 +318,17 @@ export async function cleanItem(
 
   await run(
     'remote-delete',
-    opts.deleteRemote && item.needsRemoteDelete,
+    opts.deleteRemote && (opts.remote !== undefined || item.needsRemoteDelete),
     async () => {
-      // Lease-guard the deletion against the OID observed at scan time: if the
-      // remote branch moved since, the push is rejected instead of dropping
-      // commits pushed in the meantime. Fall back to a plain delete only when the
-      // scan couldn't capture the remote OID.
-      const lease = item.remoteSha
+      // Lease-guard the deletion against the OID observed (at scan time, or the live one the
+      // caller verified): if the remote branch moved since, the push is rejected instead of
+      // dropping commits pushed in the meantime. A plain delete only when no OID is known.
+      const remote = opts.remote ?? 'origin'
+      if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(remote)) throw new Error('unsafe remote name')
+      const lease = opts.remoteSha !== undefined ? opts.remoteSha : item.remoteSha
       const args = lease
-        ? [
-            'push',
-            'origin',
-            `--force-with-lease=${item.branch!}:${lease}`,
-            '--delete',
-            item.branch!
-          ]
-        : ['push', 'origin', '--delete', item.branch!]
+        ? ['push', remote, `--force-with-lease=${item.branch!}:${lease}`, '--delete', item.branch!]
+        : ['push', remote, '--delete', item.branch!]
       await deps.git(item.repoPath, args)
     },
     opts.remoteFailureFatal !== false

@@ -15,7 +15,7 @@ import {
   type GcOps,
   type GcStep
 } from './pipeline-core'
-import { remoteDeleteRefusal, type RemotePolicy } from './gc-remote-delete'
+import { remoteDeleteRefusal, type RemoteFacts, type RemotePolicy } from './gc-remote-delete'
 import {
   AS_GIVEN,
   canonicalPathKey,
@@ -45,6 +45,8 @@ export interface GcShellDeps {
   allowRemoteDelete?: boolean
   /** The Reaper's remote-delete protections, read when a clean asks for it (never cached). */
   remotePolicy?(): Promise<RemotePolicy>
+  /** What the remote holds of a branch right now (never cached); absent means nothing was verified. */
+  remoteFacts?(b: WorktreeBundle): Promise<RemoteFacts>
   dehydrate: DehydrateDeps
   docker: {
     stop(ids: string[]): Promise<DockerBatchResult>
@@ -466,15 +468,21 @@ export function createGcOps(deps: GcShellDeps): GcOps {
     return [...new Set(out)]
   }
 
-  /** Why a requested remote delete may not run now, or null. Fails closed when the policy cannot be read. */
-  async function remoteRefusal(b: WorktreeBundle): Promise<string | null> {
-    if (deps.allowRemoteDelete !== true) return 'not-allowed-here'
+  /**
+   * Why a requested remote delete may not run now (or null), with the facts it was judged on.
+   * Fails closed: a policy or a probe that cannot answer refuses.
+   */
+  async function remoteDecision(
+    b: WorktreeBundle
+  ): Promise<{ refusal: string | null; facts: RemoteFacts | null }> {
+    if (deps.allowRemoteDelete !== true) return { refusal: 'not-allowed-here', facts: null }
     try {
       const policy = await deps.remotePolicy?.()
-      if (!policy) return 'policy-unknown'
-      return remoteDeleteRefusal(b, policy)
+      if (!policy) return { refusal: 'policy-unknown', facts: null }
+      const facts = (await deps.remoteFacts?.(b)) ?? null
+      return { refusal: remoteDeleteRefusal(b, policy, facts), facts }
     } catch {
-      return 'policy-unknown'
+      return { refusal: 'unverified', facts: null }
     }
   }
 
@@ -683,13 +691,18 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       // The remote branch goes only when the operator asked, this run is an operator's, and the
       // protections still allow it right now. Anything else leaves the remote alone and says why.
       const wants = opts?.deleteRemote === true
-      let refusal: string | null = null
-      if (wants) {
-        refusal = await remoteRefusal(b)
-      }
+      const decision = wants ? await remoteDecision(b) : null
+      const allowed = decision !== null && decision.refusal === null && decision.facts !== null
       const result = await cleanItem(
         b.item,
-        { deleteRemote: wants && refusal === null, remoteFailureFatal: false },
+        {
+          deleteRemote: allowed,
+          remoteFailureFatal: false,
+          // The branch's own upstream remote and its verified live tip, never an assumed origin.
+          ...(allowed
+            ? { remote: decision!.facts!.remote!, remoteSha: decision!.facts!.remoteSha }
+            : {})
+        },
         deps.executor
       )
       if (!result.ok) {
@@ -701,8 +714,14 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       }
       if (!wants) return
       const branch = b.item.branch ?? ''
-      if (refusal !== null) {
-        return { remoteDelete: { branch, ok: false, error: `refused: ${refusal}` } }
+      if (!allowed) {
+        return {
+          remoteDelete: {
+            branch,
+            ok: false,
+            error: `refused: ${decision!.refusal ?? 'unverified'}`
+          }
+        }
       }
       const step = result.steps.find((s) => s.id === 'remote-delete')
       if (!step || step.skipped) {
@@ -750,6 +769,8 @@ export async function defaultGcShellDeps(
   }
   return {
     executor,
+    // Probed on every ask, never cached: what the remote holds can change any time.
+    remoteFacts: async (b) => (await import('./gc-remote-shell')).realRemoteFacts(b),
     // Read on every ask, never cached: the kill switch and the protected list may change any time.
     remotePolicy: async () => {
       const prefs = await readReaperPrefs()

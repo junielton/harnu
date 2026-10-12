@@ -74,6 +74,7 @@ import {
 } from './gc-docker-card'
 import type { GcGather } from './gc-cycle'
 import { realOrphanSource, type OrphanSource } from './gc-orphan-shell'
+import { attachRemoteFacts } from './gc-remote-shell'
 import {
   listComposeNetworks,
   planStackLeftovers,
@@ -380,6 +381,9 @@ export async function gatherGc(
   let bundles = buildBundles({ ...input, keep: new Set() })
   const { keep, stale: staleKeeps } = judgeKeeps(bundles, prefs.keep)
   if (keep.size > 0) bundles = buildBundles({ ...input, keep })
+  // What the remote holds of every strongly merged branch, so the remove confirm offers the remote
+  // delete only when it can work. Never throws, never blocks a gather on one slow remote.
+  bundles = await attachRemoteFacts(bundles)
   // The review reason names the path and says the probe failed; the cause stays in the log.
   for (const [id, cause] of foreign.failed)
     console.warn('[gc] foreign-checkout walk failed', id, cause)

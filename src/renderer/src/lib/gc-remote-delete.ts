@@ -1,8 +1,9 @@
-// Whether the remove confirm may offer "Also delete the branch on the remote" for a block (AC-D5).
-// The renderer never imports main code, so the rule is restated here from the same facts as
-// `remoteDeleteRefusal` in src/main/gc/gc-remote-delete.ts, and
-// tests/cleanup-remote-delete-dialog.test.ts pins the two against each other. Main decides again
-// when the clean runs; this only keeps the checkbox from promising what main would refuse.
+// Whether the remove confirm may offer "Also delete the branch on the remote" for a block (AC-D5,
+// hardened in delta-1). The renderer never imports main code, so the rule is restated here from the
+// same facts as `remoteDeleteRefusal` in src/main/gc/gc-remote-delete.ts, and
+// tests/cleanup-remote-delete-dialog.test.ts pins the two against each other. Main decides again,
+// from a fresh probe, when the clean runs; this only keeps the checkbox from promising what main would
+// refuse. A bundle whose remote facts were not probed is never offered.
 //
 // No DOM, no Vue, no i18n.
 
@@ -21,6 +22,15 @@ export function remoteDeleteOffered(b: GcBlock, policy: RemotePolicy | null): bo
   const branch = bundle.item.branch
   if (!branch) return false
   if (bundle.fate.fate !== 'merged' || !bundle.fate.strong) return false
-  if (!bundle.item.needsRemoteDelete) return false
-  return !policy.protectedBranches.includes(branch)
+  if (policy.protectedBranches.includes(branch)) return false
+  if (bundle.fate.signal !== 'gh-merged') return false
+  const f = bundle.remoteFacts
+  if (!f) return false
+  return (
+    f.remote !== null &&
+    f.remoteSha !== null &&
+    f.openPr === false &&
+    f.ghProtected === false &&
+    f.remoteMatchesLocal === true
+  )
 }

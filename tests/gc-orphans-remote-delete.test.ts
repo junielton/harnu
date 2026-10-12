@@ -11,7 +11,12 @@ import { createJobQueue } from '../src/main/gc/gc-jobs-core'
 import { defaultGcPrefs } from '../src/main/gc/gc-prefs'
 import { createGcOps, type GcShellDeps } from '../src/main/gc/gc-shell'
 import { withActor } from '../src/main/gc/gc-actor'
-import { remoteDeleteRefusal, type RemotePolicy } from '../src/main/gc/gc-remote-delete'
+import {
+  remoteDeleteRefusal,
+  type RemoteFacts,
+  type RemotePolicy
+} from '../src/main/gc/gc-remote-delete'
+import { probeRemoteFacts } from '../src/main/gc/gc-remote-facts'
 import { runBatch, type GcOps } from '../src/main/gc/pipeline-core'
 import type { WorktreeBundle } from '../src/main/gc/bundle-core'
 import type { ExecutorDeps } from '../src/main/reaper/executor-core'
@@ -26,18 +31,34 @@ import { bundle, NOW, reapItem } from './gc-fixtures'
 
 const POLICY: RemotePolicy = { neverDeleteRemote: false, protectedBranches: ['main', 'develop'] }
 
+/** Everything the remote said is fine (delta-1: a merged PR, no open PR, no protection, same tip). */
+const GOOD: RemoteFacts = {
+  remote: 'origin',
+  remoteSha: 'a'.repeat(40),
+  remoteMatchesLocal: true,
+  openPr: false,
+  ghProtected: false
+}
+
 function eligible(over: Partial<WorktreeBundle> = {}, itemOver = {}): WorktreeBundle {
   const b = bundle('/ws/wt/feat-x', 'ready')
   return {
     ...b,
-    item: reapItem('/ws/wt/feat-x', { branch: 'feat/x', needsRemoteDelete: true, ...itemOver }),
+    fate: { fate: 'merged', signal: 'gh-merged', strong: true },
+    item: reapItem('/ws/wt/feat-x', {
+      branch: 'feat/x',
+      needsRemoteDelete: true,
+      justifiedBy: 'gh-merged',
+      ...itemOver
+    }),
+    remoteFacts: GOOD,
     ...over
   }
 }
 
 describe('remoteDeleteRefusal (the one eligibility rule)', () => {
   it('accepts a strongly merged branch that still exists on the remote', () => {
-    expect(remoteDeleteRefusal(eligible(), POLICY)).toBeNull()
+    expect(remoteDeleteRefusal(eligible(), POLICY, GOOD)).toBeNull()
   })
 
   it.each([
@@ -57,13 +78,13 @@ describe('remoteDeleteRefusal (the one eligibility rule)', () => {
     ],
     [
       'the remote branch is already gone',
-      eligible({}, { needsRemoteDelete: false }),
+      eligible({ remoteFacts: { ...GOOD, remoteSha: null } }),
       POLICY,
       'no-remote-branch'
     ],
     ['there is no branch', eligible({}, { branch: undefined }), POLICY, 'no-branch']
   ] as const)('refuses when %s', (_why, b, policy, code) => {
-    expect(remoteDeleteRefusal(b, policy)).toBe(code)
+    expect(remoteDeleteRefusal(b, policy, b.remoteFacts)).toBe(code)
   })
 })
 
@@ -194,7 +215,8 @@ describe('against a real bare remote', () => {
     git(repo, 'remote', 'add', 'origin', remote)
     git(repo, 'push', '-q', 'origin', 'main')
     git(repo, 'branch', 'feat/x')
-    git(repo, 'push', '-q', 'origin', 'feat/x')
+    // The branch tracks origin: the delete goes to the branch's own upstream remote.
+    git(repo, 'push', '-q', '-u', 'origin', 'feat/x')
   })
   afterEach(() => rmSync(root, { recursive: true, force: true }))
 
@@ -221,7 +243,18 @@ describe('against a real bare remote', () => {
     return {
       executor,
       remotePolicy: async () => POLICY,
-      allowRemoteDelete: true
+      allowRemoteDelete: true,
+      // Real git for the remote; no GitHub here, so the two GitHub answers are stated.
+      remoteFacts: async (b: WorktreeBundle) => ({
+        ...(await probeRemoteFacts(b, {
+          git: run,
+          gh: async () => {
+            throw new Error('no gh')
+          }
+        })),
+        openPr: false,
+        ghProtected: false
+      })
     } as unknown as GcShellDeps
   }
 
@@ -235,7 +268,8 @@ describe('against a real bare remote', () => {
         path: WT,
         remoteSha: git(repo, 'rev-parse', 'feat/x'),
         ...over
-      }
+      },
+      localTip: git(repo, 'rev-parse', 'feat/x')
     }
   }
 

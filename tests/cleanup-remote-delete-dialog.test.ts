@@ -23,40 +23,82 @@ const POLICY = { neverDeleteRemote: false, protectedBranches: ['main', 'develop'
 const t = (key: string, named?: Record<string, unknown>): string =>
   (named ? i18n.global.t(key, named) : i18n.global.t(key)) as string
 
+const GOOD = {
+  remote: 'origin',
+  remoteSha: 'a'.repeat(40),
+  remoteMatchesLocal: true,
+  openPr: false,
+  ghProtected: false
+}
+/** A bundle the remote delete may take: a merged PR, and the remote said everything is fine. */
+const mergedOpts = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+  fate: { fate: 'merged', signal: 'gh-merged', strong: true },
+  remoteFacts: GOOD,
+  ...over
+})
+
 describe('the renderer offers exactly what main honours', () => {
-  const merged = { fate: 'merged' as const, signal: 'ancestor' as const, strong: true }
+  const merged = { fate: 'merged' as const, signal: 'gh-merged' as const, strong: true }
   const cases = [
-    ['strong merge, remote branch present', {}, {}, POLICY],
+    ['strong merge by a merged PR, remote verified', {}, {}, POLICY],
     ['kill switch on', {}, {}, { ...POLICY, neverDeleteRemote: true }],
     ['protected branch', { branch: 'develop' }, {}, POLICY],
-    ['remote branch already gone', { needsRemoteDelete: false }, {}, POLICY],
+    ['remote branch already gone', {}, { remoteFacts: { ...GOOD, remoteSha: null } }, POLICY],
+    ['an open PR uses the branch', {}, { remoteFacts: { ...GOOD, openPr: true } }, POLICY],
+    ['the open-PR check failed', {}, { remoteFacts: { ...GOOD, openPr: null } }, POLICY],
+    ['GitHub protects it', {}, { remoteFacts: { ...GOOD, ghProtected: true } }, POLICY],
+    ['no upstream remote', {}, { remoteFacts: { ...GOOD, remote: null } }, POLICY],
+    ['the remote moved', {}, { remoteFacts: { ...GOOD, remoteMatchesLocal: false } }, POLICY],
+    ['nothing was probed', {}, { remoteFacts: undefined }, POLICY],
+    ['merged only as an ancestor of main', {}, { fate: { ...merged, signal: 'ancestor' } }, POLICY],
     ['weak signal', {}, { fate: { ...merged, strong: false } }, POLICY],
     ['not merged', {}, { fate: { fate: 'closed-unmerged', signal: null, strong: false } }, POLICY]
   ] as const
 
   it.each(cases)('%s', (_name, itemOver, bundleOver, policy) => {
-    const b = wt(
-      'x',
-      'review',
-      MIB,
-      { needsRemoteDelete: true, branch: 'feat/x', ...itemOver },
-      { reason: reviewReason('dirty'), ...bundleOver }
-    )
+    const b = wt('x', 'review', MIB, { needsRemoteDelete: true, branch: 'feat/x', ...itemOver }, {
+      reason: reviewReason('dirty'),
+      ...mergedOpts(),
+      ...bundleOver
+    } as never)
     const block = modelOf([b]).blocks[0]!
-    expect(remoteDeleteOffered(block, policy)).toBe(remoteDeleteRefusal(b, policy) === null)
+    expect(remoteDeleteOffered(block, policy)).toBe(
+      remoteDeleteRefusal(b, policy, b.remoteFacts) === null
+    )
+  })
+
+  it('offers it for the first case and for none of the others (the table is not vacuous)', () => {
+    const offered = cases.map(([, itemOver, bundleOver, policy]) => {
+      const b = wt('x', 'review', MIB, { needsRemoteDelete: true, branch: 'feat/x', ...itemOver }, {
+        reason: reviewReason('dirty'),
+        ...mergedOpts(),
+        ...bundleOver
+      } as never)
+      return remoteDeleteOffered(modelOf([b]).blocks[0]!, policy)
+    })
+    expect(offered).toEqual([true, ...Array(cases.length - 1).fill(false)])
   })
 
   it('never offers anything while the policy is unknown (fail closed) or for a volume', () => {
-    const b = wt('x', 'review', MIB, { needsRemoteDelete: true }, { reason: reviewReason('dirty') })
+    const b = wt('x', 'review', MIB, { needsRemoteDelete: true }, {
+      reason: reviewReason('dirty'),
+      ...mergedOpts()
+    } as never)
     expect(remoteDeleteOffered(modelOf([b]).blocks[0]!, null)).toBe(false)
   })
 })
 
 describe('dialogRows marks the eligible rows', () => {
-  it('only a strongly merged branch with a remote copy', () => {
+  it('only a strongly merged branch whose remote copy was verified', () => {
     const m = modelOf([
-      wt('a', 'ready', MIB, { needsRemoteDelete: true, branch: 'feat/a' }),
-      wt('b', 'ready', MIB, { needsRemoteDelete: false, branch: 'feat/b' })
+      wt('a', 'ready', MIB, { needsRemoteDelete: true, branch: 'feat/a' }, mergedOpts() as never),
+      wt(
+        'b',
+        'ready',
+        MIB,
+        { needsRemoteDelete: true, branch: 'feat/b' },
+        mergedOpts({ remoteFacts: { ...GOOD, openPr: true } }) as never
+      )
     ])
     const ids = m.blocks.map((b) => b.id)
     const rows = dialogRows(m, ids, POLICY)
@@ -72,8 +114,14 @@ describe('dialogRows marks the eligible rows', () => {
 describe('withRemoteDelete builds the request', () => {
   it('adds the ids of the eligible rows only, and survives a structured clone', () => {
     const m = modelOf([
-      wt('a', 'ready', MIB, { needsRemoteDelete: true, branch: 'feat/a' }),
-      wt('b', 'ready', MIB, { needsRemoteDelete: false, branch: 'feat/b' })
+      wt('a', 'ready', MIB, { needsRemoteDelete: true, branch: 'feat/a' }, mergedOpts() as never),
+      wt(
+        'b',
+        'ready',
+        MIB,
+        { needsRemoteDelete: true, branch: 'feat/b' },
+        mergedOpts({ remoteFacts: { ...GOOD, ghProtected: true } }) as never
+      )
     ])
     const ids = m.blocks.map((b) => b.id)
     const req = cleanRequestFor(m, ids, 'ready')

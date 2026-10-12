@@ -42,7 +42,7 @@ function mergedBundle(over: Partial<WorktreeBundle> = {}, branch = 'feat/x'): Wo
   return {
     ...b,
     fate: { fate: 'merged', signal: 'gh-merged', strong: true },
-    item: reapItem('/ws/wt/feat-x', { branch, needsRemoteDelete: true }),
+    item: reapItem('/ws/wt/feat-x', { branch, needsRemoteDelete: true, justifiedBy: 'gh-merged' }),
     ...over
   }
 }
