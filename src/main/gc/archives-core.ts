@@ -182,6 +182,20 @@ export function groupArchiveRefs(
     )
 }
 
+/**
+ * Whether `p` is one of `paths` or lies under one, compared as written (slashes and trailing
+ * separators normalised). The renderer uses it to leave protected archives out of a list it offers;
+ * main re-checks on real paths and has the last word.
+ */
+export function coveredBy(p: string, paths: readonly string[]): boolean {
+  const norm = (x: string): string => x.replace(/\\/g, '/').replace(/\/+$/, '')
+  const target = norm(p)
+  return paths.some((q) => {
+    const k = norm(q)
+    return k !== '' && (target === k || target.startsWith(`${k}/`))
+  })
+}
+
 const DAY_MS = 86_400_000
 
 /**

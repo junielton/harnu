@@ -13,7 +13,7 @@ import {
 import Button from './ui/Button.vue'
 import { formatBytes } from './system-monitor-format'
 import { relativeTime } from '../composables/useRelativeTime'
-import { expiredArchives } from '../../../main/gc/archives-core'
+import { coveredBy, expiredArchives } from '../../../main/gc/archives-core'
 import type { ArchiveEntry, ArchiveRepoGroup, GcArchivesCard } from '../../../main/gc/gc-wire'
 
 /**
@@ -26,6 +26,8 @@ const props = defineProps<{
   archives: GcArchivesCard
   /** The clock, so the "expired" word and the relative dates are testable. */
   now?: number
+  /** The never-clean paths: archives under them are not offered for deletion (main re-checks). */
+  neverClean?: readonly string[]
 }>()
 const emit = defineEmits<{
   /** Open the delete confirm for these entries of one repo. */
@@ -52,8 +54,13 @@ function groupSub(g: ArchiveRepoGroup): string {
     : t('cleanup.gc.archives.sub', g.count, { named: { n: g.count, size: formatBytes(g.bytes) } })
 }
 
+/** The repo, or the folder the archive came from, is on (or under) the never-clean list. */
+const isProtected = (g: ArchiveRepoGroup, e: ArchiveEntry): boolean =>
+  coveredBy(g.repoPath, props.neverClean ?? []) ||
+  (e.folder !== null && coveredBy(e.folder, props.neverClean ?? []))
+
 const expiredOf = (g: ArchiveRepoGroup): ArchiveEntry[] =>
-  expiredArchives(g.entries, props.archives.keepDays, clock.value)
+  expiredArchives(g.entries, props.archives.keepDays, clock.value).filter((e) => !isProtected(g, e))
 
 function toggle(g: ArchiveRepoGroup): void {
   const next = new Set(open.value)
@@ -210,8 +217,10 @@ async function copy(id: string, text: string | null): Promise<void> {
               <button
                 type="button"
                 class="inline-flex items-center gap-1.5 rounded-sm border border-border bg-bg px-2 py-0.75 text-eyebrow text-text-3 transition hover:border-red-line hover:text-red"
+                :disabled="isProtected(g, e)"
+                :title="isProtected(g, e) ? t('cleanup.gc.archives.protected') : undefined"
                 data-testid="archive-delete"
-                @click="emit('delete', g, [e])"
+                @click="!isProtected(g, e) && emit('delete', g, [e])"
               >
                 <Trash2 :size="10" :stroke-width="1.7" />
                 {{ t('cleanup.gc.archives.deleteOne') }}

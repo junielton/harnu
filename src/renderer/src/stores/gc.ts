@@ -550,16 +550,21 @@ export const useGcStore = defineStore('gc', () => {
           timeoutMs: 8000
         })
       }
-      const left = ack.changed.length
-      if (left > 0 || ack.failed > 0) {
-        ui.pushToast({
-          kind: 'warning',
-          title:
-            left > 0
-              ? t('cleanup.gc.archives.toast.changed', left, { named: { n: left } })
-              : t('cleanup.gc.archives.toast.failed', ack.failed, { named: { n: ack.failed } }),
-          timeoutMs: 8000
-        })
+      // Name every cause that left something alone, once each, in one toast.
+      const causes: string[] = []
+      const changed = ack.changed.length
+      if (changed > 0) {
+        causes.push(t('cleanup.gc.archives.toast.changed', changed, { named: { n: changed } }))
+      }
+      if (ack.failed > 0) {
+        causes.push(t('cleanup.gc.archives.toast.failed', ack.failed, { named: { n: ack.failed } }))
+      }
+      const guarded = ack.protectedArchives ?? 0
+      if (guarded > 0) {
+        causes.push(t('cleanup.gc.archives.toast.protected', guarded, { named: { n: guarded } }))
+      }
+      if (causes.length > 0) {
+        ui.pushToast({ kind: 'warning', title: causes.join(' · '), timeoutMs: 8000 })
       }
     } catch (e) {
       ui.pushToast({

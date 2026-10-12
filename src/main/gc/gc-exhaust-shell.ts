@@ -190,6 +190,8 @@ export interface ArchiveDeleteAck {
   unknownRepo?: boolean
   /** The repo is on the never-clean list: nothing in it was touched. */
   neverClean?: boolean
+  /** Archives left alone because their folder stood under a never-clean path. */
+  protectedArchives?: number
 }
 
 /**
@@ -210,15 +212,26 @@ export async function deleteConfirmedArchives(
     return { ok: false, deleted: 0, archives: 0, failed: 0, changed: [], neverClean: true }
   }
   const fresh = await listRepoArchives(git, req.repoPath)
-  const { entries, changed } = confirmedArchives(fresh, req.archives)
+  const confirmed = confirmedArchives(fresh, req.archives)
+  const { changed } = confirmed
+  // The same filter as the autopilot's expiry: an archive of a folder that stood under a never-clean
+  // path stays, even in a repo that is not on the list.
+  const protectedBy = await protectedPaths(neverClean)
+  const entries: ArchiveEntry[] = []
+  let protectedArchives = 0
+  for (const e of withFolders(confirmed.entries, await readJournalCached())) {
+    if (e.folder !== null && (await protectedBy.covers(e.folder))) protectedArchives++
+    else entries.push(e)
+  }
   const result: DeleteArchivesResult = await deleteArchiveEntries(git, req.repoPath, entries)
   sizeCache.delete(req.repoPath)
   return {
-    ok: result.failed.length === 0 && changed.length === 0,
+    ok: result.failed.length === 0 && changed.length === 0 && protectedArchives === 0,
     deleted: result.deleted.length,
     archives: result.archives,
     failed: result.failed.length,
-    changed
+    changed,
+    protectedArchives
   }
 }
 

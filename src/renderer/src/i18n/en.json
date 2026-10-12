@@ -2804,10 +2804,12 @@
           "failed": "Could not delete {n} archive ref | Could not delete {n} archive refs",
           "gcDone": "git gc finished in {repo}",
           "gcFailed": "git gc failed in {repo}",
-          "neverClean": "This repo is on the never-clean list, so its archives were left alone."
+          "neverClean": "This repo is on the never-clean list, so its archives were left alone.",
+          "protected": "{n} archive was left alone: its folder is on the never-clean list | {n} archives were left alone: their folders are on the never-clean list"
         },
         "ageUnknown": "age unknown",
-        "deleteOne": "Delete…"
+        "deleteOne": "Delete…",
+        "protected": "On the never-clean list"
       },
       "trash": {
         "title": "In the trash",

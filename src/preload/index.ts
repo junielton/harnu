@@ -2596,6 +2596,7 @@ const api = {
     changed: string[]
     unknownRepo?: boolean
     neverClean?: boolean
+    protectedArchives?: number
   }> => ipcRenderer.invoke('gc:archives:delete', req),
   /** "Run git gc now" in one repo, after its own confirm. */
   gcRunArchiveGc: (repoPath: string): Promise<{ ok: boolean; error?: string }> =>

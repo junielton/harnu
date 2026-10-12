@@ -792,6 +792,7 @@ async function confirmExhaust(): Promise<void> {
           <CleanupArchivesCard
             v-if="archives && archives.count > 0"
             :archives="archives"
+            :never-clean="prefs?.neverClean ?? []"
             @delete="(group, entries) => (exhaustDialog = { mode: 'delete', group, entries })"
             @gc="(group) => (exhaustDialog = { mode: 'gc', group })"
           />

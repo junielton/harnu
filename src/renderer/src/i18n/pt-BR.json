@@ -2804,10 +2804,12 @@
           "failed": "Não foi possível apagar {n} ref de arquivo | Não foi possível apagar {n} refs de arquivo",
           "gcDone": "git gc terminou em {repo}",
           "gcFailed": "git gc falhou em {repo}",
-          "neverClean": "Este repo está na lista de nunca limpar, então os arquivos dele foram deixados quietos."
+          "neverClean": "Este repo está na lista de nunca limpar, então os arquivos dele foram deixados quietos.",
+          "protected": "{n} arquivo foi deixado quieto: a pasta dele está na lista de nunca limpar | {n} arquivos foram deixados quietos: as pastas deles estão na lista de nunca limpar"
         },
         "ageUnknown": "idade desconhecida",
-        "deleteOne": "Apagar…"
+        "deleteOne": "Apagar…",
+        "protected": "Está na lista de nunca limpar"
       },
       "trash": {
         "title": "Na lixeira",
