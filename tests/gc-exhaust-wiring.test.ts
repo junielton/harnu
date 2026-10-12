@@ -339,3 +339,27 @@ describe('never-clean protects archives too (delta-2 item 1)', () => {
     expect(has(repo)).toBe(true)
   })
 })
+
+describe('a read-only gather writes nothing (delta-2 item 3)', () => {
+  const settledFile = (): string => path.join(h.userData, 'gc-trash-settled.json')
+
+  it('gatherTrash with persist:false leaves the settled file alone, even for an entry that is gone', async () => {
+    const wtA = folder('wt-a')
+    await harnuClean(wtA)
+    // The user restored it: the ledger would settle it as gone on a persisting gather.
+    renameSync(path.join(trash, 'files', 'wt-a'), wtA)
+    rmSync(path.join(trash, 'info', 'wt-a.trashinfo'))
+    const card = await gatherTrash(env, { persist: false })
+    expect(card.inTrashCount).toBe(0)
+    expect(existsSync(settledFile())).toBe(false)
+  })
+
+  it("a persisting gather does settle it (the operator's and the timer's gathers keep the ledger tidy)", async () => {
+    const wtA = folder('wt-a')
+    await harnuClean(wtA)
+    renameSync(path.join(trash, 'files', 'wt-a'), wtA)
+    rmSync(path.join(trash, 'info', 'wt-a.trashinfo'))
+    await gatherTrash(env)
+    expect(existsSync(settledFile())).toBe(true)
+  })
+})
