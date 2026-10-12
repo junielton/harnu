@@ -1214,3 +1214,40 @@ export async function removeGhostFolder(
     removed: { path: normalizedPath, unpinned: wasPinned, sessionsDropped }
   }
 }
+
+/** True when `child` is `parent` or lies under it, by path segment (a sibling `parent-x` is not). */
+function isPathInside(child: string, parent: string): boolean {
+  return (
+    child === parent || child.startsWith(parent.endsWith(path.sep) ? parent : parent + path.sep)
+  )
+}
+
+/**
+ * Reconciles a removed folder AND every gone folder under it (unit D, AC-D2). A session started
+ * in a subfolder (`WT/api`, `WT/.claude/worktrees/x`) is its own path-keyed folder, pinned, hidden
+ * or known only from its transcripts, so reconciling the worktree's own path alone left those as
+ * ghost rows. Each candidate goes through {@link removeGhostFolder}, so one that still exists on
+ * disk is never touched. Returns what was actually removed; never throws on a refused candidate.
+ */
+export async function removeGhostFoldersUnder(
+  getWindow: () => BrowserWindow | null,
+  rootPath: string
+): Promise<RemoveGhostFolderSuccess['removed'][]> {
+  const root = await normalizePath(rootPath)
+  const file = await readUserProjects()
+  const known = await scanFolders()
+  const candidates = new Set(
+    [
+      root,
+      ...file.projects.map((p) => p.path),
+      ...(file.hiddenPaths ?? []),
+      ...known.map((f) => f.path)
+    ].filter((p) => isPathInside(p, root))
+  )
+  const removed: RemoveGhostFolderSuccess['removed'][] = []
+  for (const candidate of candidates) {
+    const result = await removeGhostFolder(getWindow, candidate)
+    if (result.ok) removed.push(result.removed)
+  }
+  return removed
+}
