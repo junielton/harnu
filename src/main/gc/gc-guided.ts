@@ -6,6 +6,9 @@
 //
 // Every effect is injected; the real wiring is `defaultGuidedDeps` in gc-guided-shell.ts.
 
+import { readFile } from 'node:fs/promises'
+import { join as joinPath } from 'node:path'
+import { findAdminDir } from '../reaper/worktree-admin-shell'
 import {
   canonicalPathKey,
   containerFolderPaths,
@@ -492,6 +495,21 @@ export function createGitGuided(
   const key = (p: string): string => canonicalPathKey(p, process.platform)
   return {
     async lockReason(repoPath, path) {
+      // The reason exactly as recorded: read from git's own `locked` file, because the porcelain output
+      // trims it and quotes it. The file is the reason plus one newline; no reason is an empty file.
+      const admin = await findAdminDir(repoPath, path, git, { assumeUnlocked: true }).catch(
+        () => null
+      )
+      if (admin) {
+        try {
+          const raw = await readFile(joinPath(admin, 'locked'), 'utf8')
+          const reason = raw.endsWith('\n') ? raw.slice(0, -1) : raw
+          return reason === '' ? null : reason
+        } catch {
+          return undefined // no `locked` file: not locked
+        }
+      }
+      // No unique admin directory to read: the porcelain listing is the best that is left.
       const reasons = parseLockReasons(await git(repoPath, ['worktree', 'list', '--porcelain']))
       const want = key(path)
       for (const [p, reason] of reasons) if (key(p) === want) return reason
