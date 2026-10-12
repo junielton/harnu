@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "batch": "CATALOG — the §3.3 deltas; a batch copies the entries that apply to ITS dialogs and narrows `dialog`",
+  "deltas": [
+    {
+      "dialog": "Card*",
+      "property": "scrim.style.background-color",
+      "from": "rgba(0, 0, 0, 0.4)",
+      "to": "rgba(0, 0, 0, 0.55)",
+      "reason": "§3.3 scrim .40 → .55 (Card×2, dispatch overlay)"
+    },
+    {
+      "dialog": "RoadmapBoard*",
+      "property": "scrim.style.background-color",
+      "from": "rgba(0, 0, 0, 0.4)",
+      "to": "rgba(0, 0, 0, 0.55)",
+      "reason": "§3.3 scrim .40 → .55 (dispatch overlay)"
+    },
+    {
+      "dialog": "*",
+      "property": "card.style.border-top-left-radius",
+      "from": "9px",
+      "to": "10px",
+      "reason": "§3.3 radius 9 → 10 (D3)"
+    },
+    {
+      "dialog": "*",
+      "property": "card.style.width",
+      "from": "440px",
+      "to": "480px",
+      "reason": "§3.3 width 440 → 480 (D1)"
+    },
+    {
+      "dialog": "*",
+      "property": "card.style.width",
+      "from": "460px",
+      "to": "480px",
+      "reason": "§3.3 width 460 → 480 (D1)"
+    },
+    {
+      "dialog": "*",
+      "property": "card.style.width",
+      "from": "520px",
+      "to": "560px",
+      "reason": "§3.3 width 520 → 560 (D1)"
+    },
+    {
+      "dialog": "*",
+      "property": "card.style.width",
+      "from": "540px",
+      "to": "560px",
+      "reason": "§3.3 width 540 → 560 (D1)"
+    },
+    {
+      "dialog": "Card*",
+      "property": "card.style.width",
+      "from": "760px",
+      "to": "720px",
+      "reason": "§3.3 width 760 → 720 (D2)"
+    },
+    {
+      "dialog": "*",
+      "property": "card.style.max-height",
+      "reason": "§3.3 max-height unified to the cap (--dialog-max-h)"
+    },
+    {
+      "dialog": "*",
+      "property": "card.rect.*",
+      "reason": "§3.3 follows from width / cap / centered placement of the same card"
+    },
+    {
+      "dialog": "*",
+      "property": "body.rect.*",
+      "reason": "§3.3 follows from the unified card geometry"
+    },
+    {
+      "dialog": "*",
+      "property": "body.scrollHeight",
+      "reason": "§3.3 follows from the unified card geometry"
+    },
+    {
+      "dialog": "*",
+      "property": "body.clientHeight",
+      "reason": "§3.3 follows from the unified card geometry"
+    },
+    {
+      "dialog": "Dehydrate*",
+      "property": "header.*",
+      "reason": "§3.3 header rhythm unified (18/20/6 → 14/18/10)"
+    },
+    {
+      "dialog": "Sweep*",
+      "property": "header.*",
+      "reason": "§3.3 header rhythm unified (18/20/6 → 14/18/10)"
+    },
+    {
+      "dialog": "Dehydrate*",
+      "property": "footer.*",
+      "reason": "§3.3 footer rhythm unified (20 → 18 side padding)"
+    },
+    {
+      "dialog": "Sweep*",
+      "property": "footer.*",
+      "reason": "§3.3 footer rhythm unified (20 → 18 side padding)"
+    },
+    {
+      "dialog": "Cleanup*",
+      "property": "title.style.*",
+      "reason": "§3.3 title unified to the dialog title token (15/500 → 13.5/600)"
+    },
+    {
+      "dialog": "Dehydrate*",
+      "property": "title.style.*",
+      "reason": "§3.3 title unified to the dialog title token (15/500 → 13.5/600)"
+    },
+    {
+      "dialog": "Sweep*",
+      "property": "title.style.*",
+      "reason": "§3.3 title unified to the dialog title token (15/500 → 13.5/600)"
+    },
+    {
+      "dialog": "Cleanup*",
+      "property": "header.*",
+      "reason": "§3.3 pinned header / footer on a capped card (BUG-184 class)"
+    },
+    {
+      "dialog": "Cleanup*",
+      "property": "footer.*",
+      "reason": "§3.3 pinned header / footer on a capped card (BUG-184 class)"
+    },
+    {
+      "dialog": "RemoveWorktreeDialog",
+      "property": "activeElement",
+      "reason": "§3.3 initial focus moves from the destructive button to Cancel (D7)"
+    },
+    {
+      "dialog": "Sweep*",
+      "property": "activeElement",
+      "reason": "§3.3 initial focus moves from the destructive button to Cancel (D7)"
+    },
+    {
+      "dialog": "Dehydrate*",
+      "property": "activeElement",
+      "reason": "§3.3 initial focus moves from the destructive button to Cancel (D7)"
+    },
+    {
+      "dialog": "Card*",
+      "property": "activeElement",
+      "reason": "§3.3 a focus trap is added: initial focus is the first focusable"
+    },
+    {
+      "dialog": "RoadmapBoard*",
+      "property": "activeElement",
+      "reason": "§3.3 a focus trap is added: initial focus is the first focusable"
+    }
+  ]
+}
