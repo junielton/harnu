@@ -198,3 +198,24 @@ describe('refusals come only from removability() (AC-B8)', () => {
     expect(s.refused).toEqual([])
   })
 })
+
+describe('what a guided action reports when its prep fails (AC-B9)', () => {
+  it('every prep failure is a refusal the screen can word', async () => {
+    const { refusalOf } = await import('../src/renderer/src/lib/gc-jobs')
+    const { refusalKey } = await import('../src/renderer/src/components/cleanup-gc-copy')
+    const { i18n } = await import('@renderer/i18n')
+    const errors = [
+      'unlock-failed: fatal: not locked',
+      'session-busy',
+      'session-not-closable',
+      'stack-stop-failed: daemon gone',
+      'stack-binds-folder',
+      'prep-not-applicable'
+    ]
+    for (const error of errors) {
+      const code = refusalOf({ ok: false, error })
+      expect(code, error).not.toBeNull()
+      expect(i18n.global.te(refusalKey(code!)), `${code} has a sentence`).toBe(true)
+    }
+  })
+})
