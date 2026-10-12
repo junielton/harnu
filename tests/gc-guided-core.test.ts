@@ -747,3 +747,58 @@ describe('stop-stack refuses a stack a session holds a mount of (delta 2)', () =
     expect(g.stacks[0].stopBlocked).toBe('in-use-elsewhere')
   })
 })
+
+describe('a restart that fails after a partial stop is reported, not swallowed (delta 2 item 4)', () => {
+  it('names the containers that were left stopped', async () => {
+    const calls = fresh()
+    const base = deps(calls, {
+      stacks: [
+        stack('web', [
+          container('c1', ELSE, [`${WT}/x`]),
+          container('c2', ELSE),
+          container('c3', ELSE)
+        ])
+      ]
+    })
+    const r = await prepareClean(
+      { kind: 'stop-stack', stackIds: ['web'] },
+      review({ sharedStackIds: ['web'] }, 'shared-stack'),
+      {
+        ...base,
+        docker: {
+          ...base.docker,
+          stop: async () => ({ done: ['c1', 'c2'], error: 'daemon gone' }),
+          start: async () => ({ done: ['c1'], error: 'no such container' })
+        }
+      }
+    )
+    expect(r.ok).toBe(false)
+    const error = (r as { error: string }).error
+    expect(error).toMatch(/^stack-stop-failed: daemon gone/)
+    expect(error).toContain('rollback-failed')
+    // c2 did not start again; c1 did. Named by container name, not id.
+    expect(error).toContain('ctr-c2')
+    expect(error).not.toContain('ctr-c1')
+  })
+
+  it('a start that throws names everything it had stopped', async () => {
+    const base = deps(fresh(), {
+      stacks: [stack('web', [container('c1', ELSE, [`${WT}/x`]), container('c2', ELSE)])]
+    })
+    const r = await prepareClean(
+      { kind: 'stop-stack', stackIds: ['web'] },
+      review({ sharedStackIds: ['web'] }, 'shared-stack'),
+      {
+        ...base,
+        docker: {
+          ...base.docker,
+          stop: async () => ({ done: ['c1'], error: 'daemon gone' }),
+          start: async () => {
+            throw new Error('docker is gone')
+          }
+        }
+      }
+    )
+    expect((r as { error: string }).error).toContain('left stopped: ctr-c1')
+  })
+})

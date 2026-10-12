@@ -329,6 +329,8 @@ describe('gc store', () => {
     const d = toast.mock.calls[0][0].description as string
     expect(d).toContain(t('cleanup.gc.refusal.cannotUnregister'))
     expect(d).toContain(t('cleanup.gc.refusal.rollbackFailed'))
+    // What was left, by name, so the operator knows exactly what to put back.
+    expect(d).toContain('git is gone')
   })
 
   it('names the refusal in the toast when every refused item has the same reason', async () => {

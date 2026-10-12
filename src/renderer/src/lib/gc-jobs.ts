@@ -187,6 +187,8 @@ export interface DoneSummary {
   refused: number
   /** Items whose guided prep (an unlock, a stopped stack) could NOT be put back after the remove refused. */
   rollbackFailed: number
+  /** What each could not put back (e.g. which containers were left stopped), for the toast. */
+  rollbackDetails: string[]
 }
 
 export function doneSummary(d: GcJobDone): DoneSummary {
@@ -198,13 +200,26 @@ export function doneSummary(d: GcJobDone): DoneSummary {
     if (code) refusals[code] = (refusals[code] ?? 0) + 1
   }
   const refused = Object.values(refusals).reduce((a, n) => a + (n ?? 0), 0)
+  const rollbackDetails = d.results.flatMap((r) => {
+    const m = r.ok ? null : /rollback-failed \((.*)\)\s*$/.exec(r.error ?? '')
+    return m ? [m[1]!] : []
+  })
   const rollbackFailed = d.results.filter(
     (r) => !r.ok && (r.error ?? '').includes('rollback-failed')
   ).length
   let tone: DoneSummary['tone'] = 'success'
   if (failed > 0 || d.error) tone = 'warning'
   else if (d.results.length === 0 && d.freedBytes === 0) tone = 'none'
-  return { tone, cleaned, failed, freedBytes: d.freedBytes, refusals, refused, rollbackFailed }
+  return {
+    tone,
+    cleaned,
+    failed,
+    freedBytes: d.freedBytes,
+    refusals,
+    refused,
+    rollbackFailed,
+    rollbackDetails
+  }
 }
 
 export interface ItemFailure {

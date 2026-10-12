@@ -361,25 +361,45 @@ export async function prepareClean(
     )
   ]
   if (running.length === 0) return { ok: true }
-  const restart = (ids: string[]): Promise<void> =>
-    deps.docker.start(ids).then((r) => {
-      if (r.error || r.done.length < ids.length) {
-        throw new Error(r.error ?? 'not every container started again')
+  const nameOf = new Map(
+    views.flatMap((v) => v.stack.containers.map((c) => [c.id, c.name] as const))
+  )
+  /** Starts `ids` again; throws, naming by container name the ones that are still stopped. */
+  const restart = async (ids: string[]): Promise<void> => {
+    let left = ids
+    try {
+      const r = await deps.docker.start(ids)
+      const started = new Set(r.done)
+      left = ids.filter((id) => !started.has(id))
+    } catch {
+      // nothing is known to have started
+    }
+    if (left.length > 0) {
+      throw new Error(`left stopped: ${left.map((id) => nameOf.get(id) ?? id).join(', ')}`)
+    }
+  }
+  /** The refusal, with what could not be put back said out loud (never swallowed). */
+  const failed = async (cause: string, toRestart: string[]): Promise<PrepResult> => {
+    let rollback = ''
+    if (toRestart.length > 0) {
+      try {
+        await restart(toRestart)
+      } catch (err) {
+        rollback = `; rollback-failed (${messageOf(err)})`
       }
-    })
+    }
+    return { ok: false, error: `stack-stop-failed: ${cause}${rollback}` }
+  }
   let stopped: DockerBatchResult
   try {
     stopped = await deps.docker.stop(running)
   } catch (err) {
-    return { ok: false, error: `stack-stop-failed: ${messageOf(err)}` }
+    // Which containers stopped before the throw is unknown; starting a running one is a no-op.
+    return failed(messageOf(err), running)
   }
   if (stopped.error || stopped.done.length < running.length) {
     // A partial stop is put back before the refusal is reported: the stack runs as it did.
-    if (stopped.done.length > 0) await restart(stopped.done).catch(() => undefined)
-    return {
-      ok: false,
-      error: `stack-stop-failed: ${stopped.error ?? 'not every container stopped'}`
-    }
+    return failed(stopped.error ?? 'not every container stopped', stopped.done)
   }
   return { ok: true, undo: () => restart(running) }
 }

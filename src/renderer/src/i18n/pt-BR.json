@@ -2701,7 +2701,7 @@
         "unlockFailed": "O git não quis desbloquear este worktree, então ele foi deixado como estava.",
         "sessionBusy": "Uma sessão neste worktree está trabalhando ou esperando por você, então o Harnu não a fechou e deixou o worktree como estava.",
         "sessionNotClosable": "A sessão aberta aqui não é uma que o Harnu possa fechar, então o worktree foi deixado como estava.",
-        "stackStopFailed": "O Docker não conseguiu parar a stack inteira, então o Harnu subiu de novo o que tinha parado e deixou o worktree como estava.",
+        "stackStopFailed": "O Docker não conseguiu parar a stack inteira. O Harnu tentou subir de novo o que tinha parado e deixou o worktree como estava.",
         "stackBindsFolder": "Essa stack usa esta pasta, então não pode ficar rodando. Pare-a ou escolha de novo.",
         "prepNotApplicable": "O que você escolheu não vale mais para este worktree, então ele foi deixado como estava. Escaneie de novo e revise.",
         "stackIsMainCheckout": "Essa stack é do checkout principal, então o Harnu não a para e deixou o worktree como estava.",

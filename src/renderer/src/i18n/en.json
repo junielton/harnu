@@ -2701,7 +2701,7 @@
         "unlockFailed": "Git would not unlock this worktree, so it was left alone.",
         "sessionBusy": "A session in this worktree is working or waiting for you, so Harnu did not close it and left the worktree alone.",
         "sessionNotClosable": "The session open here is not one Harnu can close, so the worktree was left alone.",
-        "stackStopFailed": "Docker could not stop the whole stack, so Harnu started again what it had stopped and left the worktree alone.",
+        "stackStopFailed": "Docker could not stop the whole stack. Harnu tried to restart what it had stopped, then left the worktree alone.",
         "stackBindsFolder": "That stack uses this folder, so it cannot be left running. Stop it or choose again.",
         "prepNotApplicable": "What you chose no longer applies to this worktree, so it was left alone. Scan again and review it.",
         "stackIsMainCheckout": "That stack belongs to the main checkout, so Harnu does not stop it and left the worktree alone.",

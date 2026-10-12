@@ -147,7 +147,8 @@ describe('doneSummary', () => {
       freedBytes: 300,
       refusals: {},
       refused: 0,
-      rollbackFailed: 0
+      rollbackFailed: 0,
+      rollbackDetails: []
     })
   })
 
@@ -157,7 +158,11 @@ describe('doneSummary', () => {
       done: 1,
       total: 2
     })
-    expect(doneSummary(d)).toMatchObject({ failed: 1, rollbackFailed: 1 })
+    expect(doneSummary(d)).toMatchObject({
+      failed: 1,
+      rollbackFailed: 1,
+      rollbackDetails: ['x']
+    })
   })
 
   it('partial failure → warning, counting what needs the operator', () => {
