@@ -321,8 +321,9 @@ async function writeSettled(settled: ReadonlySet<string>): Promise<void> {
 
 /**
  * What Harnu moved to the trash, checked entry by entry against the exact record made when it moved
- * them. An entry the user emptied, restored or replaced stops counting (it is settled); one that
- * cannot be checked is reported apart and never counted as space in the trash. Never throws.
+ * them. An entry that is no longer there (the user emptied it, or restored it and did not trash it
+ * again) stops counting and is settled. One that changed, or cannot be checked, is NOT forgotten: it is
+ * reported apart as "can't check" and never counted as space in the trash. Never throws.
  */
 export async function gatherTrash(
   env: TrashEnv = defaultTrashEnv(),
