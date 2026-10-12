@@ -60,7 +60,8 @@ interface Api {
   gcOpinionCached: ReturnType<typeof vi.fn>
 }
 
-let recovered: unknown[] = []
+let recoveryItems: Array<Record<string, unknown>> = []
+let recoveryAnswer: (() => unknown) | null = null
 
 function installApi(first: GcSnapshot = snap(), jobs: GcJobInfo[] = []): Api {
   const push: Api['push'] = {}
@@ -85,7 +86,10 @@ function installApi(first: GcSnapshot = snap(), jobs: GcJobInfo[] = []): Api {
   ;(globalThis as unknown as { window: unknown }).window = {
     api: {
       ...api,
-      gcRecovered: vi.fn(async () => recovered),
+      gcRecoveryList: vi.fn(async () => (recoveryAnswer ? recoveryAnswer() : recoveryItems)),
+      gcRecoveryAck: vi.fn(async () => undefined),
+      gcRecoveryAct: vi.fn(async () => ({ ok: true })),
+      onGcRecoveryChanged: sub('recovery'),
       onGcProgress: sub('progress'),
       onGcDone: sub('done'),
       onGcCycle: sub('cycle'),
@@ -362,35 +366,111 @@ describe('gc store', () => {
     expect(toast.mock.calls[0][0].description).toContain(t('cleanup.gc.refusal.prepLeftStack'))
   })
 
-  it('reports in Activity what boot recovery put back after Harnu quit mid-action (delta 2)', async () => {
-    recovered = [
-      { outcome: 'relocked', kind: 'unlock', path: '/r/wt', detail: 'usb' },
-      { outcome: 'restarted', kind: 'stop-stack', path: '/r/wt', detail: 'web-1, web-2' },
-      { outcome: 'failed', kind: 'unlock', path: '/r/x', detail: 'git is gone' }
-    ]
-    installApi()
-    const notes = useNotificationsStore()
-    const notify = vi.spyOn(notes, 'notify')
-    await useGcStore().init()
-    await vi.runAllTimersAsync()
-    recovered = []
-    expect(notify).toHaveBeenCalledTimes(3)
-    const titles = notify.mock.calls.map((c) => c[0].title)
-    expect(titles[0]).toContain('/r/wt')
-    expect(notify.mock.calls[1][0].description).toContain('web-1, web-2')
-    expect(notify.mock.calls[2][0].kind).toBe('warning')
-    expect(notify.mock.calls[2][0].description).toContain('git is gone')
-  })
+  describe('recovery notices (delta 3)', () => {
+    const item = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+      id: 'n1',
+      state: 'notice',
+      kind: 'stop-stack',
+      notice: 'stack-stopped',
+      path: '/r/wt',
+      detail: 'web-1, web-2',
+      announced: false,
+      ...over
+    })
+    afterEach(() => {
+      recoveryItems = []
+      recoveryAnswer = null
+    })
+    const api = (): Record<string, ReturnType<typeof vi.fn>> =>
+      (globalThis as unknown as { window: { api: Record<string, ReturnType<typeof vi.fn>> } })
+        .window.api
 
-  it('an answer that is not a list (an older preload) is ignored, never thrown on (delta 2)', async () => {
-    installApi()
-    ;(
-      globalThis as unknown as { window: { api: Record<string, unknown> } }
-    ).window.api.gcRecovered = vi.fn(async () => () => undefined)
-    const notify = vi.spyOn(useNotificationsStore(), 'notify')
-    await useGcStore().init()
-    await vi.runAllTimersAsync()
-    expect(notify).not.toHaveBeenCalled()
+    it('keeps the notices for the view, announces each new one in Activity once, then acknowledges', async () => {
+      recoveryItems = [
+        item(),
+        item({
+          id: 'r1',
+          state: 'resolved',
+          kind: 'unlock',
+          notice: undefined,
+          outcome: 'relocked',
+          detail: ''
+        }),
+        item({ id: 'old', announced: true })
+      ]
+      installApi()
+      const notify = vi.spyOn(useNotificationsStore(), 'notify')
+      const gc = useGcStore()
+      await gc.init()
+      await vi.runAllTimersAsync()
+      expect(gc.recovery.map((i) => i.id)).toEqual(['n1', 'old'])
+      expect(notify).toHaveBeenCalledTimes(2)
+      expect(notify.mock.calls[0][0].description).toContain('web-1, web-2')
+      expect(api().gcRecoveryAck).toHaveBeenCalledWith(['n1', 'r1'])
+    })
+
+    it('never announces the same item twice, even when the list comes back before the ack lands', async () => {
+      recoveryItems = [item()]
+      installApi()
+      const notify = vi.spyOn(useNotificationsStore(), 'notify')
+      const gc = useGcStore()
+      await gc.init()
+      await vi.runAllTimersAsync()
+      await gc.loadRecovery()
+      await gc.loadRecovery()
+      expect(notify).toHaveBeenCalledTimes(1)
+    })
+
+    it('a boot that finishes AFTER the store started is not lost: the changed event lists again', async () => {
+      const handle = installApi()
+      const gc = useGcStore()
+      const notify = vi.spyOn(useNotificationsStore(), 'notify')
+      await gc.init()
+      await vi.runAllTimersAsync()
+      expect(gc.recovery).toEqual([])
+      recoveryItems = [item()]
+      handle.push.recovery(null)
+      await vi.runAllTimersAsync()
+      expect(gc.recovery.map((i) => i.id)).toEqual(['n1'])
+      expect(notify).toHaveBeenCalledTimes(1)
+    })
+
+    it('an acknowledgement that fails is retried at the next listing, not given up on', async () => {
+      recoveryItems = [item()]
+      installApi()
+      api().gcRecoveryAck.mockRejectedValueOnce(new Error('ipc down'))
+      const gc = useGcStore()
+      await gc.init()
+      await vi.runAllTimersAsync()
+      await gc.loadRecovery()
+      expect(api().gcRecoveryAck).toHaveBeenCalledTimes(2)
+    })
+
+    it('an answer that is not a list (an older preload) is ignored, never thrown on', async () => {
+      recoveryAnswer = () => () => undefined
+      installApi()
+      const notify = vi.spyOn(useNotificationsStore(), 'notify')
+      await useGcStore().init()
+      await vi.runAllTimersAsync()
+      expect(notify).not.toHaveBeenCalled()
+    })
+
+    it('answering a notice asks main, then lists again; a refusal says why in a toast', async () => {
+      recoveryItems = [item({ announced: true })]
+      installApi()
+      const gc = useGcStore()
+      const toast = vi.spyOn(useUiStore(), 'pushToast')
+      await gc.init()
+      await vi.runAllTimersAsync()
+      await gc.answerRecovery('n1', 'dismiss')
+      expect(api().gcRecoveryAct).toHaveBeenCalledWith('n1', 'dismiss')
+      api().gcRecoveryAct.mockResolvedValueOnce({ ok: false, error: 'daemon gone' })
+      await gc.answerRecovery('n1', 'start')
+      expect(toast.mock.calls.at(-1)![0]).toMatchObject({
+        kind: 'danger',
+        description: 'daemon gone'
+      })
+    })
   })
 
   it('names the refusal in the toast when every refused item has the same reason', async () => {
