@@ -39,10 +39,15 @@ import {
   type CapturedConfirm,
   type CleanRequest
 } from '../lib/gc-model'
-import { removalSummary, type GuidedAction, type RefusalGroup } from '../lib/gc-guidance'
+import {
+  combinedSteps,
+  removalSummary,
+  type GuidedAction,
+  type RefusalGroup
+} from '../lib/gc-guidance'
 import { nextCycleIn } from '../lib/gc-format'
 import { refusalKey, removalKey } from './cleanup-gc-copy'
-import { removability, type RemovalRefusal } from '../lib/gc-removability'
+import { removability, removabilityAll, type RemovalRefusal } from '../lib/gc-removability'
 import type { RefusalCode } from '../lib/gc-jobs'
 import CleanupTreemap from './CleanupTreemap.vue'
 import CleanupListView from './CleanupListView.vue'
@@ -57,7 +62,8 @@ import CleanupLegend from './CleanupLegend.vue'
 import CleanupBulkConfirmDialog from './CleanupBulkConfirmDialog.vue'
 import CleanupGuidedDialog, {
   type GuidedDialogAction,
-  type GuidedRow
+  type GuidedRow,
+  type GuidedStepKind
 } from './CleanupGuidedDialog.vue'
 import CleanupOtherItems from './CleanupOtherItems.vue'
 import DehydrateConfirmDialog from './DehydrateConfirmDialog.vue'
@@ -337,6 +343,8 @@ async function runFirstCycle(action: () => Promise<void>, failureTitle: string):
 
 interface GuidedState {
   action: GuidedDialogAction
+  /** What the action does, in running order (one for a single action, several for a combined one). */
+  steps: GuidedStepKind[]
   ids: string[]
   rows: GuidedRow[]
   guidance: Record<string, GcGuidance> | null
@@ -355,16 +363,44 @@ const guidedStale = computed(
     !!guided.value?.captured && !!model.value && guidedChanged(model.value, guided.value.captured)
 )
 
-function prepFor(
-  action: GuidedDialogAction,
+const SINGLE_STEPS: Partial<Record<GuidedDialogAction, GuidedStepKind[]>> = {
+  'unlock-remove': ['unlock'],
+  'close-session-remove': ['close-session'],
+  'shared-stack': ['shared-stack']
+}
+
+/** The steps THIS item needs, from its own causes (a combined dialog may hold items with different ones). */
+function stepsOfItem(id: string): GuidedStepKind[] {
+  const b = model.value?.byId.get(id)
+  return b ? combinedSteps(removabilityAll(b).map((r) => r.reason)) : []
+}
+
+/**
+ * The preps one item carries: each step of the action that the item itself needs. An item git no longer
+ * lists as locked gets no unlock (it is left out when nothing else remains); a stack that is gone makes
+ * the whole confirm impossible (null).
+ */
+function prepsFor(
+  steps: readonly GuidedStepKind[],
   choice: 'stop' | 'leave' | null,
-  g: GcGuidance | undefined
-): GcPrep | null {
-  if (action === 'unlock-remove') return { kind: 'unlock' }
-  if (action === 'close-session-remove') return { kind: 'close-session' }
-  const stackIds = g?.stacks.map((s) => s.id) ?? []
-  if (action !== 'shared-stack' || stackIds.length === 0) return null
-  return { kind: choice === 'leave' ? 'leave-stack' : 'stop-stack', stackIds }
+  g: GcGuidance | undefined,
+  id: string
+): GcPrep[] | null {
+  const own = stepsOfItem(id)
+  const out: GcPrep[] = []
+  for (const s of steps) {
+    if (!own.includes(s)) continue
+    if (s === 'unlock') {
+      if (g?.lock != null) out.push({ kind: 'unlock' })
+    } else if (s === 'close-session') {
+      out.push({ kind: 'close-session' })
+    } else {
+      const stackIds = g?.stacks.map((x) => x.id) ?? []
+      if (stackIds.length === 0) return null
+      out.push({ kind: choice === 'leave' ? 'leave-stack' : 'stop-stack', stackIds })
+    }
+  }
+  return out
 }
 
 async function loadGuidance(g: GuidedState): Promise<void> {
@@ -378,7 +414,11 @@ async function loadGuidance(g: GuidedState): Promise<void> {
   }
 }
 
-async function openGuided(action: GuidedDialogAction, ids: readonly string[]): Promise<void> {
+async function openGuided(
+  action: GuidedDialogAction,
+  ids: readonly string[],
+  steps: GuidedStepKind[] = SINGLE_STEPS[action] ?? []
+): Promise<void> {
   const m = model.value
   if (dialogOpen.value || !m) return
   const blocks = ids.map((id) => m.byId.get(id)).filter((b) => !!b && b.kind === 'worktree')
@@ -391,6 +431,7 @@ async function openGuided(action: GuidedDialogAction, ids: readonly string[]): P
   const rowIds = request ? request.ids : blocks.map((b) => b!.id)
   guided.value = {
     action,
+    steps,
     ids: rowIds,
     rows: rowIds.map((id) => {
       const b = m.byId.get(id)!
@@ -413,19 +454,20 @@ async function openGuided(action: GuidedDialogAction, ids: readonly string[]): P
 async function confirmGuided(choice: 'stop' | 'leave' | null): Promise<void> {
   const g = guided.value
   if (!g || g.pending || guidedStale.value || !g.captured || !g.guidance) return
-  // Unlock goes only to the rows git still lists as locked; the rest are left out, not sent to fail.
-  const sendIds = g.captured.ids.filter(
-    (id) => g.action !== 'unlock-remove' || g.guidance![id]?.lock != null
-  )
-  if (sendIds.length === 0) return
-  const prepare: Record<string, GcPrep> = {}
+  // Each row carries only the steps it needs; one git no longer lists as locked, with nothing else to
+  // do, is left out rather than sent to fail.
+  const prepare: Record<string, GcPrep | GcPrep[]> = {}
   const expected: CleanRequest['options']['expected'] = {}
-  for (const id of sendIds) {
+  const sendIds: string[] = []
+  for (const id of g.captured.ids) {
+    const preps = prepsFor(g.steps, choice, g.guidance[id], id)
+    if (!preps) return
+    if (preps.length === 0) continue
+    sendIds.push(id)
     expected[id] = g.captured.request.options.expected[id]
-    const prep = prepFor(g.action, choice, g.guidance[id])
-    if (!prep) return
-    prepare[id] = prep
+    prepare[id] = preps.length === 1 ? preps[0]! : preps
   }
+  if (sendIds.length === 0) return
   const req: CleanRequest = {
     ids: sendIds,
     options: { expected, confirmed: [...sendIds], prepare }
@@ -534,6 +576,15 @@ function openGuide(action: GuidedAction, ids: readonly string[], reason: Removal
     case 'fix-unreadable':
       void openGuided(action, ids)
       break
+    case 'combined': {
+      // Every cause the items share, as steps in the order they run.
+      const causes = ids.flatMap((id) => {
+        const b = model.value?.byId.get(id)
+        return b ? removabilityAll(b).map((r) => r.reason) : []
+      })
+      void openGuided('combined', ids, combinedSteps(causes))
+      break
+    }
     case 'scan-again':
       if (reason === 'scan-blind') void openGuided('docker-down', ids)
       else void whileBusy(() => scanAgain(ids))
@@ -1123,6 +1174,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
   <CleanupGuidedDialog
     v-if="guided"
     :action="guided.action"
+    :steps="guided.steps"
     :rows="guided.rows"
     :guidance="guided.guidance"
     :load-error="guided.loadError"

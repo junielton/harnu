@@ -90,37 +90,71 @@ const refused = (id: string, error: string): GcItemResult => ({
 /** The steps after the folder is trashed: once one of these halts, the folder is gone. */
 const POST_TRASH: ReadonlySet<string> = new Set(['prune', 'branch-delete', 'detach'])
 
-/** The bundle as the dry run judges it: the prep's own cause is taken as fixed, nothing else is. */
-function assumeFor(prep: GcPrep, b: WorktreeBundle): WorktreeBundle {
-  switch (prep.kind) {
-    case 'unlock':
-      return { ...b, assume: { unlock: true } }
-    case 'close-session':
-      return { ...b, assume: { closeSession: true } }
-    case 'stop-stack':
-      return { ...b, assume: { stoppedStacks: prep.stackIds } }
-    case 'leave-stack':
-      return { ...b, sharedStackIds: b.sharedStackIds.filter((x) => !prep.stackIds.includes(x)) }
+/** The order the steps run in: reversible ones first, the one that cannot be undone (a parked session) last. */
+const STEP_ORDER: Record<GcPrep['kind'], number> = {
+  unlock: 0,
+  'stop-stack': 1,
+  'leave-stack': 1,
+  'close-session': 2
+}
+
+/** What was asked for one id, as a list in running order. */
+function prepsOf(raw: GcPrep | GcPrep[] | undefined): GcPrep[] {
+  if (raw === undefined) return []
+  return (Array.isArray(raw) ? [...raw] : [raw]).sort(
+    (x, y) => STEP_ORDER[x.kind] - STEP_ORDER[y.kind]
+  )
+}
+
+/** The bundle as the dry run judges it: every step's own cause is taken as fixed, nothing else is. */
+function assumeFor(preps: readonly GcPrep[], b: WorktreeBundle): WorktreeBundle {
+  let out: WorktreeBundle = b
+  for (const prep of preps) {
+    switch (prep.kind) {
+      case 'unlock':
+        out = { ...out, assume: { ...out.assume, unlock: true } }
+        break
+      case 'close-session':
+        out = { ...out, assume: { ...out.assume, closeSession: true } }
+        break
+      case 'stop-stack':
+        out = {
+          ...out,
+          assume: {
+            ...out.assume,
+            stoppedStacks: [...(out.assume?.stoppedStacks ?? []), ...prep.stackIds]
+          }
+        }
+        break
+      case 'leave-stack':
+        out = {
+          ...out,
+          sharedStackIds: out.sharedStackIds.filter((x) => !prep.stackIds.includes(x))
+        }
+        break
+    }
   }
+  return out
 }
 
 /**
- * The fresh bundle once the prep ran. The lock and the session are really gone (the reprobe checks
- * them for real now); stopped stacks stay listed, with stopped containers, and a left stack is
- * simply no longer counted against the worktree.
+ * The fresh bundle once the steps ran. The lock and the session are really gone (the reprobe checks them
+ * for real now); stopped stacks stay listed, with stopped containers, and a left stack is simply no
+ * longer counted against the worktree.
  */
-function afterPrep(prep: GcPrep, again: WorktreeBundle): WorktreeBundle {
-  switch (prep.kind) {
-    case 'stop-stack':
-      return { ...again, assume: { stoppedStacks: prep.stackIds } }
-    case 'leave-stack':
-      return {
-        ...again,
-        sharedStackIds: again.sharedStackIds.filter((x) => !prep.stackIds.includes(x))
+function afterPrep(preps: readonly GcPrep[], again: WorktreeBundle): WorktreeBundle {
+  let out: WorktreeBundle = again
+  for (const prep of preps) {
+    if (prep.kind === 'stop-stack') {
+      out = {
+        ...out,
+        assume: { stoppedStacks: [...(out.assume?.stoppedStacks ?? []), ...prep.stackIds] }
       }
-    default:
-      return again
+    } else if (prep.kind === 'leave-stack') {
+      out = { ...out, sharedStackIds: out.sharedStackIds.filter((x) => !prep.stackIds.includes(x)) }
+    }
   }
+  return out
 }
 
 export function submitManualClean(
@@ -174,30 +208,37 @@ export function submitManualClean(
       // The step is the LAST thing standing between the item and a successful remove: every other
       // guard is judged first, as a dry run that treats the step's own cause as already fixed, and the
       // step runs only when nothing else refuses. What it changed is put back if the remove then fails.
-      const prep = opts.prepare?.[id]
-      let undo: (() => Promise<void>) | null = null
-      /** Clears the journal entry when the item ends without needing the undo. */
-      let settle: (() => Promise<void>) | null = null
-      /** Ends the item as `r`, first putting back what the prep changed (when it still can be). */
-      const bail = async (r: GcItemResult): Promise<GcItemResult> => {
-        const back = undo
-        const done = settle
-        undo = null
-        settle = null
-        if (!back) {
-          await done?.()
-          return r
+      const preps = prepsOf(opts.prepare?.[id])
+      /** What each step that ran can do to put itself back (and clear its journal entry), in running order. */
+      const ran: Array<{
+        undo: (() => Promise<void>) | null
+        settle: (() => Promise<void>) | null
+      }> = []
+      /** Puts back what ran, in reverse; the error text gains what could not be put back. */
+      const rollBack = async (error: string | undefined): Promise<string | undefined> => {
+        const failures: string[] = []
+        for (const step of ran.splice(0).reverse()) {
+          try {
+            if (step.undo) await step.undo()
+            else await step.settle?.()
+          } catch (err) {
+            failures.push(err instanceof Error ? err.message : String(err))
+          }
         }
-        try {
-          await back()
-        } catch (err) {
-          const e = r.error ?? 'failed'
-          const why = err instanceof Error ? err.message : String(err)
-          return { ...r, error: `${e}${e.includes(':') ? '; ' : ': '}rollback-failed (${why})` }
-        }
-        return r
+        if (failures.length === 0) return error
+        const e = error ?? 'failed'
+        return `${e}${e.includes(':') ? '; ' : ': '}rollback-failed (${failures.join('; ')})`
       }
-      if (prep) {
+      /** Ends the item as `r`, first putting back what the prep steps changed (when they still can be). */
+      const bail = async (r: GcItemResult): Promise<GcItemResult> => {
+        if (ran.length === 0) return r
+        const error = await rollBack(r.error)
+        return error === r.error ? r : { ...r, error }
+      }
+      const settleAll = async (): Promise<void> => {
+        for (const step of ran.splice(0)) await step.settle?.()
+      }
+      if (preps.length > 0) {
         if (!confirmed.has(id)) return refused(id, 'needs-confirmation')
         if (!deps.prepare || !deps.gatherFresh || !deps.dryReprobe) {
           return refused(id, 'prep-not-applicable')
@@ -206,15 +247,17 @@ export function submitManualClean(
         // 1. The work guards, before anything is touched.
         const work = await workRefusal(b, forcedPre)
         if (work) return refused(id, work)
-        // 2. Everything else the remove would meet, with the step's own cause assumed fixed.
-        const adapted = assumeFor(prep, b)
+        // 2. Everything else the remove would meet, with every step's own cause assumed fixed.
+        const adapted = assumeFor(preps, b)
         const pipeline = pipelineRefusal(adapted, {
           removeVolumes: false,
           confirmReview: forcedPre
         })
         if (pipeline) return refused(id, pipeline)
-        const vetted = await deps.prepare(prep, b, { dry: true })
-        if (!vetted.ok) return refused(id, vetted.error)
+        for (const prep of preps) {
+          const vetted = await deps.prepare(prep, b, { dry: true })
+          if (!vetted.ok) return refused(id, vetted.error)
+        }
         try {
           const dry = await deps.dryReprobe(
             retryOf(adapted) ? { ...adapted, bucket: 'ready', reason: null } : adapted,
@@ -224,11 +267,12 @@ export function submitManualClean(
         } catch (err) {
           return refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
         }
-        // 3. Only now the step itself.
-        const prepared = await deps.prepare(prep, b)
-        if (!prepared.ok) return refused(id, prepared.error)
-        undo = prepared.undo ?? null
-        settle = prepared.settle ?? null
+        // 3. Only now the steps, in order. A failing step puts back the ones before it.
+        for (const prep of preps) {
+          const prepared = await deps.prepare(prep, b)
+          if (!prepared.ok) return bail(refused(id, prepared.error))
+          ran.push({ undo: prepared.undo ?? null, settle: prepared.settle ?? null })
+        }
         let again: WorktreeBundle | undefined
         try {
           again = (await deps.gatherFresh()).bundles.find((x) => x.item.id === id)
@@ -247,7 +291,7 @@ export function submitManualClean(
           reasonCode: again.reason?.code ?? null
         })
         if (drift) return bail(refused(id, 'changed-since-confirm'))
-        b = afterPrep(prep, again)
+        b = afterPrep(preps, again)
       }
       // Anything that is not a proven ready item needs its OWN confirmation, and then takes
       // the forced ops.
@@ -295,7 +339,7 @@ export function submitManualClean(
       const [result] = await runBatch([runnable], guarded, batchOpts)
       if (result!.ok) {
         deps.rememberLeftovers?.(leftBehind(b, gathered.housekeeping?.volumes ?? []))
-        await settle?.()
+        await settleAll()
         return result!
       }
       // Still refused (or stopped) after the prep: the lock goes back, the containers restart, as long
@@ -308,9 +352,8 @@ export function submitManualClean(
           ? !(await deps.folderExists(path))
           : false)
       if (!gone) return bail(r)
-      undo = null
-      await settle?.()
-      return prep?.kind === 'stop-stack'
+      await settleAll()
+      return preps.some((p) => p.kind === 'stop-stack')
         ? { ...r, error: `${r.error ?? 'failed'}; prep-left (stack-stopped)` }
         : r
     }

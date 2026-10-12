@@ -23,7 +23,16 @@ import type { GcGuidance } from '../../../main/gc/gc-wire'
  * Focus starts on Cancel, never on a confirm.
  */
 export type GuidedDialogAction =
-  'unlock-remove' | 'close-session-remove' | 'shared-stack' | 'fix-unreadable' | 'docker-down'
+  | 'unlock-remove'
+  | 'close-session-remove'
+  | 'shared-stack'
+  /** Several stacked causes, fixed by one confirm that lists every step. */
+  | 'combined'
+  | 'fix-unreadable'
+  | 'docker-down'
+
+/** One thing a removal's prep does; a combined action has several, in the order they run. */
+export type GuidedStepKind = 'unlock' | 'shared-stack' | 'close-session'
 
 export interface GuidedRow {
   id: string
@@ -34,6 +43,8 @@ export interface GuidedRow {
 const props = withDefaults(
   defineProps<{
     action: GuidedDialogAction
+    /** For `combined`: the steps, in running order. The single actions have exactly their own. */
+    steps?: GuidedStepKind[]
     rows: GuidedRow[]
     /** Per item id; null while main is still being asked. */
     guidance: Record<string, GcGuidance> | null
@@ -53,7 +64,22 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 
+const SINGLE_STEP: Partial<Record<GuidedDialogAction, GuidedStepKind>> = {
+  'unlock-remove': 'unlock',
+  'close-session-remove': 'close-session',
+  'shared-stack': 'shared-stack'
+}
+const stepKinds = computed<GuidedStepKind[]>(() =>
+  props.action === 'combined'
+    ? (props.steps ?? [])
+    : SINGLE_STEP[props.action]
+      ? [SINGLE_STEP[props.action]!]
+      : []
+)
+const has = (k: GuidedStepKind): boolean => stepKinds.value.includes(k)
+
 const TITLE: Record<GuidedDialogAction, string> = {
+  combined: 'combined',
   'unlock-remove': 'unlockRemove',
   'close-session-remove': 'closeSession',
   'shared-stack': 'sharedStack',
@@ -92,22 +118,21 @@ const unlockLeftOut = computed(() => facts.value.filter(({ g }) => g && g.lock =
 
 // ---- what each action needs before it can go ------------------------------------------------------
 const canGo = computed(() => {
-  if (!ready.value) return false
+  if (!ready.value || stepKinds.value.length === 0) return false
   const f = facts.value
-  switch (props.action) {
-    case 'unlock-remove':
-      return f.some(({ g }) => g?.lock != null)
-    case 'close-session-remove':
-      return f.every(({ g }) => !!g?.sessions && g.sessions.busy === 0 && g.sessions.idle > 0)
-    case 'shared-stack':
-      return everyStackThere.value && (choice.value === 'stop' ? canStop.value : canLeave.value)
-    default:
-      return false
-  }
+  // Every step of the action must be possible: one that is not blocks them all.
+  return stepKinds.value.every((k) => {
+    switch (k) {
+      case 'unlock':
+        return f.some(({ g }) => g?.lock != null)
+      case 'close-session':
+        return f.every(({ g }) => !!g?.sessions && g.sessions.busy === 0 && g.sessions.idle > 0)
+      case 'shared-stack':
+        return everyStackThere.value && (choice.value === 'stop' ? canStop.value : canLeave.value)
+    }
+  })
 })
-const hasConfirm = computed(
-  () => props.action !== 'fix-unreadable' && props.action !== 'docker-down'
-)
+const hasConfirm = computed(() => stepKinds.value.length > 0)
 const disabled = computed(() => !canGo.value || props.pending || props.stale)
 
 const confirmLabel = computed(() => {
@@ -116,13 +141,26 @@ const confirmLabel = computed(() => {
       return t('cleanup.gc.guided.confirm.unlock')
     case 'close-session-remove':
       return t('cleanup.gc.guided.confirm.closeSession')
+    case 'combined': {
+      const words = stepKinds.value.map((k) =>
+        t(
+          k === 'unlock'
+            ? 'cleanup.gc.guided.confirm.word.unlock'
+            : k === 'close-session'
+              ? 'cleanup.gc.guided.confirm.word.session'
+              : `cleanup.gc.guided.confirm.word.${choice.value === 'leave' ? 'leave' : 'stop'}`
+        )
+      )
+      const steps = words.map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+      return t('cleanup.gc.guided.confirm.combined', { steps: steps.join(', ') })
+    }
     default:
       return t(`cleanup.gc.guided.confirm.${choice.value}`)
   }
 })
 function onConfirm(): void {
   if (disabled.value) return
-  emit('confirm', props.action === 'shared-stack' ? choice.value : null)
+  emit('confirm', has('shared-stack') ? choice.value : null)
 }
 
 // ---- unreadable: copy the fix ---------------------------------------------------------------------
@@ -245,7 +283,7 @@ function onBackdropMousedown(e: MouseEvent): void {
             <template v-if="g">
               <!-- AC-B3: the lock and the reason git recorded -->
               <p
-                v-if="action === 'unlock-remove'"
+                v-if="has('unlock')"
                 class="m-0 flex items-start gap-1.5 text-ui text-text-2"
                 data-testid="guided-lock"
               >
@@ -259,7 +297,7 @@ function onBackdropMousedown(e: MouseEvent): void {
 
               <!-- AC-B4: the idle sessions it would close, or why it will not -->
               <p
-                v-else-if="action === 'close-session-remove'"
+                v-if="has('close-session')"
                 class="m-0 text-ui text-text-2"
                 data-testid="guided-sessions"
               >
@@ -284,7 +322,7 @@ function onBackdropMousedown(e: MouseEvent): void {
 
               <!-- AC-B5: each stack, and who else uses it -->
               <div
-                v-else-if="action === 'shared-stack'"
+                v-if="has('shared-stack')"
                 class="flex flex-col gap-1"
                 data-testid="guided-stack"
               >
@@ -306,7 +344,7 @@ function onBackdropMousedown(e: MouseEvent): void {
 
               <!-- AC-B6: the exact path, its owner, and the command that fixes it -->
               <div
-                v-else-if="action === 'fix-unreadable'"
+                v-if="action === 'fix-unreadable'"
                 class="flex flex-col gap-1.5"
                 data-testid="guided-unreadable"
               >
@@ -346,7 +384,7 @@ function onBackdropMousedown(e: MouseEvent): void {
 
               <!-- AC-B7: Docker was down at scan time -->
               <div
-                v-else-if="action === 'docker-down'"
+                v-if="action === 'docker-down'"
                 class="flex flex-col gap-1.5"
                 data-testid="guided-docker"
               >
@@ -369,8 +407,26 @@ function onBackdropMousedown(e: MouseEvent): void {
           </div>
         </div>
 
+        <ol
+          v-if="action === 'combined' && ready"
+          class="mx-5 mb-2 mt-1 flex list-decimal flex-col gap-1 pl-5 text-ui text-text-2"
+          data-testid="guided-steps"
+        >
+          <li v-if="has('unlock')">{{ t('cleanup.gc.guided.step.unlock') }}</li>
+          <li v-if="has('shared-stack')">
+            {{
+              choice === 'leave'
+                ? t('cleanup.gc.guided.step.leave')
+                : t('cleanup.gc.guided.step.stop', {
+                    names: allStacks.flatMap((s) => s.containerNames).join(', ')
+                  })
+            }}
+          </li>
+          <li v-if="has('close-session')">{{ t('cleanup.gc.guided.step.session') }}</li>
+          <li>{{ t('cleanup.gc.guided.step.remove') }}</li>
+        </ol>
         <p
-          v-if="action === 'unlock-remove' && ready && unlockLeftOut > 0"
+          v-if="has('unlock') && ready && unlockLeftOut > 0"
           class="mx-5 mt-3 text-ui text-text-3"
           data-testid="guided-unlock-left-out"
         >
@@ -379,7 +435,7 @@ function onBackdropMousedown(e: MouseEvent): void {
 
         <!-- AC-B5: the choice -->
         <fieldset
-          v-if="action === 'shared-stack' && ready"
+          v-if="has('shared-stack') && ready"
           class="mx-5 mt-3 flex flex-col gap-2 border-0 p-0"
           data-testid="guided-choices"
         >

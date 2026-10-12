@@ -280,3 +280,102 @@ describe('a guided action never goes silent (AC-B9)', () => {
     expect(w!.emitted('cancel')!.length).toBeGreaterThanOrEqual(1)
   })
 })
+
+// Delta 2 item 2: stacked causes in ONE confirm that lists every step.
+describe('a combined action (delta 2)', () => {
+  const stacked = (over: Partial<GcGuidance> = {}): GcGuidance =>
+    base({
+      lock: { reason: 'usb' },
+      stacks: [
+        {
+          id: 'web',
+          name: 'web',
+          otherFolders: ['/ws/org/proj/other'],
+          bindsThisFolder: false,
+          containers: 2,
+          containerNames: ['ctr-web-1', 'ctr-web-2'],
+          stopBlocked: null
+        }
+      ],
+      ...over
+    })
+
+  it('lists every step, then the removal, and names them all in the confirm', async () => {
+    await open({
+      action: 'combined',
+      steps: ['unlock', 'shared-stack'],
+      guidance: { a: stacked() }
+    })
+    const steps = text('[data-testid="guided-steps"]')
+    expect(steps).toContain('Unlock')
+    expect(steps).toContain('Stop')
+    expect(steps).toContain('ctr-web-1')
+    expect(steps).toContain('removed')
+    expect(text('[data-testid="guided-lock"]')).toContain('usb')
+    expect(text('[data-testid="guided-confirm"]')).toBe('Unlock, stop stack and remove')
+    q('[data-testid="guided-confirm"]')!.click()
+    expect(w!.emitted('confirm')).toEqual([['stop']])
+  })
+
+  it('leaving the stack changes the confirm and what it sends', async () => {
+    await open({
+      action: 'combined',
+      steps: ['unlock', 'shared-stack'],
+      guidance: { a: stacked() }
+    })
+    ;(q('[data-testid="guided-choice-leave"] input') as HTMLInputElement).click()
+    await flushPromises()
+    expect(text('[data-testid="guided-confirm"]')).toBe('Unlock, leave the stack and remove')
+    q('[data-testid="guided-confirm"]')!.click()
+    expect(w!.emitted('confirm')).toEqual([['leave']])
+  })
+
+  it('with a session: warns about parking, and a busy session blocks the whole action', async () => {
+    await open({
+      action: 'combined',
+      steps: ['unlock', 'close-session'],
+      guidance: {
+        a: base({
+          lock: { reason: null },
+          sessions: { idle: 1, busy: 0, userOpened: 1 }
+        })
+      }
+    })
+    expect(text('[data-testid="guided-sessions"]')).toContain('Parking closes its terminal')
+    expect(text('[data-testid="guided-confirm"]')).toBe('Unlock, close session and remove')
+    expect((q('[data-testid="guided-confirm"]') as HTMLButtonElement).disabled).toBe(false)
+    w!.unmount()
+    document.body.innerHTML = ''
+    await open({
+      action: 'combined',
+      steps: ['unlock', 'close-session'],
+      guidance: {
+        a: base({ lock: { reason: null }, sessions: { idle: 1, busy: 1, userOpened: 0 } })
+      }
+    })
+    expect((q('[data-testid="guided-confirm"]') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('every step must be possible: a stack that cannot be stopped nor left blocks it', async () => {
+    await open({
+      action: 'combined',
+      steps: ['unlock', 'shared-stack'],
+      guidance: {
+        a: stacked({
+          stacks: [
+            {
+              id: 'web',
+              name: 'web',
+              otherFolders: [],
+              bindsThisFolder: true,
+              containers: 1,
+              containerNames: ['ctr-web-1'],
+              stopBlocked: 'main-checkout'
+            }
+          ]
+        })
+      }
+    })
+    expect((q('[data-testid="guided-confirm"]') as HTMLButtonElement).disabled).toBe(true)
+  })
+})

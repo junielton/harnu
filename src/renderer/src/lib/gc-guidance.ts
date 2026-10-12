@@ -72,6 +72,12 @@ export function combinedSteps(causes: readonly RemovalRefusal[]): CombinedStep[]
   return out
 }
 
+const STEP_RANK: Partial<Record<RemovalRefusal, number>> = {
+  locked: 0,
+  'shared-stack': 1,
+  'session-open': 2
+}
+
 /**
  * What to offer for ONE item whose causes are `causes` (the whole list, first first). A cause no prep can
  * fix is shown first, alone: a guided action over the fixable ones would only meet it. When every cause is
@@ -83,7 +89,11 @@ export function guideFor(
 ): { reason: RemovalRefusal; causes: RemovalRefusal[]; action: GuidedAction } {
   const blocker = causes.find((c) => !PREPABLE.has(c))
   if (blocker) return { reason: blocker, causes: [blocker], action: guidedActionFor(blocker, ctx) }
-  if (causes.length > 1) return { reason: causes[0]!, causes: [...causes], action: 'combined' }
+  if (causes.length > 1) {
+    // Listed in the order the steps run, so the causes read the way the action's label does.
+    const ordered = [...causes].sort((a, b) => STEP_RANK[a]! - STEP_RANK[b]!)
+    return { reason: ordered[0]!, causes: ordered, action: 'combined' }
+  }
   return { reason: causes[0]!, causes: [...causes], action: guidedActionFor(causes[0]!, ctx) }
 }
 
@@ -125,6 +135,28 @@ export function guidedActionFor(reason: RemovalRefusal, ctx: { hasDeps: boolean 
 /** Whether the action is a button of its own (Dehydrate has one; a manual command and a plain reason do not need one). */
 export const hasGuideButton = (action: GuidedAction): boolean =>
   action !== 'explain' && action !== 'manual' && action !== 'dehydrate'
+
+/**
+ * The label of a guided action's button. A combined action names its steps ("Unlock, stop stack and
+ * remove…"); the others have one fixed label.
+ */
+export function guideLabel(
+  t: (key: string, params?: Record<string, unknown>) => string,
+  action: GuidedAction,
+  reason: RemovalRefusal,
+  causes: readonly RemovalRefusal[] = [reason]
+): string {
+  if (action !== 'combined') return t(guideLabelKey(action, reason))
+  const words = combinedSteps(causes).map((s) =>
+    t(
+      `cleanup.gc.guide.combined.${s === 'unlock' ? 'unlock' : s === 'shared-stack' ? 'stack' : 'session'}`
+    )
+  )
+  const steps = words.map((w, i) =>
+    i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w.charAt(0).toLowerCase() + w.slice(1)
+  )
+  return t('cleanup.gc.guide.combined.label', { steps: steps.join(', ') })
+}
 
 /** `cleanup.gc.guide.action.*` key: the label of a guided action (scan-blind has its own wording). */
 export function guideLabelKey(action: GuidedAction, reason: RemovalRefusal): string {

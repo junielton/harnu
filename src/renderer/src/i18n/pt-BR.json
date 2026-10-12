@@ -2793,6 +2793,12 @@
           "unkeep": "Tirar a marca Manter",
           "open-settings": "Abrir Ajustes",
           "dockerDown": "O Docker não estava rodando — e agora?"
+        },
+        "combined": {
+          "label": "{steps} e remover…",
+          "unlock": "Desbloquear",
+          "stack": "parar a stack",
+          "session": "fechar a sessão"
         }
       },
       "guided": {
@@ -2801,14 +2807,16 @@
           "closeSession": "Fechar a sessão e remover",
           "sharedStack": "Uma stack é compartilhada com outras pastas",
           "fixUnreadable": "O Harnu não consegue ler esta pasta",
-          "dockerDown": "O Docker não estava rodando"
+          "dockerDown": "O Docker não estava rodando",
+          "combined": "Vários passos, depois a remoção"
         },
         "subtitle": {
           "unlockRemove": "O git bloqueou este worktree. Depois de desbloquear, a remoção é a de sempre: arquivado primeiro, depois movido para a lixeira.",
           "closeSession": "Ainda há uma sessão aberta aqui. Fechar uma ociosa mantém a conversa em disco; a remoção que segue é a de sempre.",
           "sharedStack": "Outras pastas rodam contêineres da mesma stack do Docker, então o Harnu não mexe nela a menos que você escolha.",
           "fixUnreadable": "O Harnu não sabe o que há dentro, então não remove a pasta sem ver. Corrija a permissão e confira de novo.",
-          "dockerDown": "Sem o Docker, o Harnu não viu quais stacks rodam dos seus worktrees, então não os remove."
+          "dockerDown": "Sem o Docker, o Harnu não viu quais stacks rodam dos seus worktrees, então não os remove.",
+          "combined": "Duas ou mais coisas separam este worktree da remoção. O Harnu as faz nesta ordem e desfaz o que mudou se a remoção ainda for recusada."
         },
         "loading": "Lendo o que o git e o Docker dizem agora…",
         "loadError": "Não deu para ler os fatos atuais. Feche e tente de novo.",
@@ -2859,7 +2867,14 @@
           "unlock": "Desbloquear e remover",
           "closeSession": "Fechar sessão e remover",
           "stop": "Parar a stack e remover",
-          "leave": "Remover e deixar a stack"
+          "leave": "Remover e deixar a stack",
+          "combined": "{steps} e remover",
+          "word": {
+            "unlock": "desbloquear",
+            "stop": "parar a stack",
+            "leave": "deixar a stack",
+            "session": "fechar a sessão"
+          }
         },
         "recheck": "Conferir de novo",
         "scan": "Escanear de novo",
@@ -2877,6 +2892,13 @@
           "recheckedStill": "Conferido de novo: o Harnu ainda não consegue ler",
           "recheckFailed": "Não deu para conferir de novo",
           "undo": "Desfazer"
+        },
+        "step": {
+          "unlock": "Desbloquear o worktree no git.",
+          "stop": "Parar estes contêineres (eles não são removidos): {names}.",
+          "leave": "Deixar a stack rodando.",
+          "session": "Fechar a sessão ociosa aberta aqui (estacionar; a conversa é mantida).",
+          "remove": "Depois remover o worktree do jeito de sempre: arquivado primeiro, depois movido para a lixeira."
         }
       },
       "recovered": {

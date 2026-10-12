@@ -1037,3 +1037,26 @@ describe('CleanupBlockPanel — every refusal has a guided action', () => {
     expect(has(mountPanel(blockWith('review')), 'panel-guide')).toBe(false)
   })
 })
+
+describe('CleanupBlockPanel — stacked causes (delta 2)', () => {
+  it('offers one combined action naming every step, and emits it', async () => {
+    const block = blockOf(
+      wt(
+        'x',
+        'review',
+        1200 * MIB,
+        {},
+        {
+          reason: reviewReason('shared-stack'),
+          sharedStackIds: ['web'],
+          locked: true
+        }
+      )
+    )
+    const w = mountPanel(block)
+    const btn = w.get('[data-testid="panel-guide"]')
+    expect(btn.text()).toBe('Unlock, stop stack and remove…')
+    await btn.trigger('click')
+    expect(w.emitted('guide')).toEqual([[expect.any(String), 'combined', 'locked']])
+  })
+})

@@ -65,6 +65,25 @@ function parsePrep(raw: unknown): GcPrep | null {
 }
 
 /**
+ * One prep, or a list of them for an item with stacked causes: at most one of each kind, never both stack
+ * kinds, never more than three. Anything malformed drops the whole entry, so that id gets no prep.
+ */
+function parsePreps(raw: unknown): GcPrep | GcPrep[] | null {
+  if (!Array.isArray(raw)) return parsePrep(raw)
+  if (raw.length === 0 || raw.length > 3) return null
+  const out: GcPrep[] = []
+  for (const x of raw) {
+    const p = parsePrep(x)
+    if (!p) return null
+    out.push(p)
+  }
+  const kinds = new Set(out.map((p) => p.kind))
+  if (kinds.size !== out.length) return null
+  if (kinds.has('stop-stack') && kinds.has('leave-stack')) return null
+  return out
+}
+
+/**
  * `confirmed`, `expected` and `prepare` from an untrusted payload. There is deliberately no blanket
  * "confirm everything" flag: a stray `confirmDecide` or `confirmReview` is ignored, so it confirms nothing.
  */
@@ -80,10 +99,10 @@ export function parseOptions(raw: unknown): GcCleanOptions {
       if (parsed) expected[id] = parsed
     }
   }
-  const prepare: Record<string, GcPrep> = {}
+  const prepare: Record<string, GcPrep | GcPrep[]> = {}
   if (r.prepare && typeof r.prepare === 'object' && !Array.isArray(r.prepare)) {
     for (const [id, value] of Object.entries(r.prepare as Record<string, unknown>)) {
-      const parsed = parsePrep(value)
+      const parsed = parsePreps(value)
       if (parsed) prepare[id] = parsed
     }
   }

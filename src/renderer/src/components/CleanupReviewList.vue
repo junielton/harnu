@@ -16,14 +16,8 @@ import type { BlockJobState, ItemFailure } from '../lib/gc-jobs'
 import { formatBytes } from './system-monitor-format'
 import { canDehydrate } from './cleanup-row'
 import { reasonKey, refusalKey, removalKey, stepKey } from './cleanup-gc-copy'
-import { removability, type RemovalRefusal } from '../lib/gc-removability'
-import {
-  depsOf,
-  guideLabelKey,
-  guidedActionFor,
-  hasGuideButton,
-  type GuidedAction
-} from '../lib/gc-guidance'
+import { removability, removabilityAll, type RemovalRefusal } from '../lib/gc-removability'
+import { depsOf, guideFor, guideLabel, hasGuideButton, type GuidedAction } from '../lib/gc-guidance'
 import { resumeHint } from '../lib/gc-resume'
 import type { GcStep } from '../../../main/gc/pipeline-core'
 import Button from './ui/Button.vue'
@@ -96,11 +90,15 @@ function removeBlockedText(b: GcBlock): string | null {
 function guideOf(
   b: GcBlock
 ): { action: GuidedAction; reason: RemovalRefusal; label: string } | null {
-  const v = removability(b)
-  if (v.ok || resumeHint(b)) return null
-  const action = guidedActionFor(v.reason, { hasDeps: depsOf(b) > 0 })
-  return hasGuideButton(action)
-    ? { action, reason: v.reason, label: t(guideLabelKey(action, v.reason)) }
+  const all = removabilityAll(b)
+  if (all.length === 0 || resumeHint(b)) return null
+  // Every cause counts: a cause no prep fixes comes first, and stacked fixable ones are one action.
+  const g = guideFor(
+    all.map((r) => r.reason),
+    { hasDeps: depsOf(b) > 0 }
+  )
+  return hasGuideButton(g.action)
+    ? { action: g.action, reason: g.reason, label: guideLabel(t, g.action, g.reason, g.causes) }
     : null
 }
 

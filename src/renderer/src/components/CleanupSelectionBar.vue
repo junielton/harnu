@@ -126,10 +126,15 @@ const refusedCount = computed(() => props.summary?.refused.reduce((n, g) => n + 
           type="button"
           class="cursor-pointer text-accent underline-offset-2 hover:underline disabled:cursor-wait disabled:opacity-60"
           :disabled="busy"
-          :data-testid="`sel-guide-${g.reason}`"
+          :data-testid="`sel-guide-${g.action === 'combined' ? 'combined' : g.reason}`"
           @click="emit('guide', g)"
         >
-          {{ t('cleanup.gc.guide.group', { count: g.count, cause: t(guideCauseKey(g.reason)) }) }}
+          {{
+            t('cleanup.gc.guide.group', {
+              count: g.count,
+              cause: g.causes.map((c) => t(guideCauseKey(c))).join(' + ')
+            })
+          }}
         </button>
       </template>
     </p>

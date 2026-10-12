@@ -102,7 +102,7 @@ function rig(opts: {
   return { deps, log, done }
 }
 
-const asked = (b: WorktreeBundle, prep?: GcPrep, confirmed = true): GcCleanOptions =>
+const asked = (b: WorktreeBundle, prep?: GcPrep | GcPrep[], confirmed = true): GcCleanOptions =>
   structuredClone({
     expected: { [b.item.id]: expectedOf(b) },
     ...(confirmed ? { confirmed: [b.item.id] } : {}),
@@ -491,6 +491,140 @@ describe('the journal entry is settled when the item ends (delta 2 item 6)', () 
   })
 })
 
+// Delta 2 item 2: stacked causes. Every step is validated and assumed fixed in the dry run, they run in
+// a fixed order (the irreversible one last), and a refusal rolls back every step that ran, in reverse.
+describe('several preps for one item (delta 2)', () => {
+  const stacked = (over: Partial<Parameters<typeof bundle>[2]> = {}) =>
+    bundle(PATH, 'review', {
+      locked: true,
+      sharedStackIds: ['web'],
+      reason: { code: 'shared-stack', detail: 'x' },
+      ...over
+    })
+  const afterAll = () => bundle(PATH, 'review', { reason: { code: 'dirty', detail: 'x' } })
+  const UNLOCK: GcPrep = { kind: 'unlock' }
+  const STOP: GcPrep = { kind: 'stop-stack', stackIds: ['web'] }
+  const CLOSE: GcPrep = { kind: 'close-session' }
+
+  it('validates every step, assumes every cause fixed, then runs them in order', async () => {
+    const before = stacked()
+    const seen: WorktreeBundle[] = []
+    const r = rig({
+      before,
+      after: afterAll(),
+      dry: (b) => (seen.push(b), { ok: true })
+    })
+    const res = await run(r, before, asked(before, [UNLOCK, STOP]))
+    expect(res).toMatchObject({ ok: true })
+    expect(r.log).toEqual([
+      'validate unlock',
+      'validate stop-stack',
+      'dry-reprobe',
+      'prepare unlock',
+      'prepare stop-stack',
+      'reprobe',
+      'cleanGit'
+    ])
+    expect(seen[0].assume).toEqual({ unlock: true, stoppedStacks: ['web'] })
+  })
+
+  it('the order does not depend on the order asked: the session, which cannot be undone, is last', async () => {
+    const before = stacked({ session: 'open-idle' })
+    const r = rig({ before, after: afterAll() })
+    await run(r, before, asked(before, [CLOSE, STOP, UNLOCK]))
+    expect(r.log.filter((l) => l.startsWith('prepare'))).toEqual([
+      'prepare unlock',
+      'prepare stop-stack',
+      'prepare close-session'
+    ])
+  })
+
+  it('one step that cannot be validated stops them all, before any runs', async () => {
+    const before = stacked()
+    const r = rig({
+      before,
+      after: afterAll(),
+      prepare: async (p, _b, o) => {
+        if (o?.dry) {
+          r0.log.push(`validate ${p.kind}`)
+          return p.kind === 'stop-stack'
+            ? { ok: false as const, error: 'stack-used-elsewhere' }
+            : { ok: true as const }
+        }
+        return { ok: true as const }
+      }
+    })
+    const r0 = r
+    const res = await run(r, before, asked(before, [UNLOCK, STOP]))
+    expect(res).toMatchObject({ ok: false, error: 'stack-used-elsewhere' })
+    expect(r.log).toEqual(['validate unlock', 'validate stop-stack'])
+  })
+
+  it('the second step fails: the first is undone, nothing is removed', async () => {
+    const before = stacked()
+    const log: string[] = []
+    const r = rig({
+      before,
+      after: afterAll(),
+      prepare: async (p, _b, o) => {
+        if (o?.dry) return { ok: true }
+        if (p.kind === 'stop-stack') {
+          log.push('prepare stop-stack')
+          return { ok: false, error: 'stack-stop-failed: daemon gone' }
+        }
+        log.push(`prepare ${p.kind}`)
+        return { ok: true, undo: async () => void log.push(`undo ${p.kind}`) }
+      }
+    })
+    const res = await run(r, before, asked(before, [UNLOCK, STOP]))
+    expect(res).toMatchObject({ ok: false, error: 'stack-stop-failed: daemon gone' })
+    expect(log).toEqual(['prepare unlock', 'prepare stop-stack', 'undo unlock'])
+    expect(r.log).not.toContain('cleanGit')
+  })
+
+  it('the remove refuses afterwards: every step is undone, in reverse order', async () => {
+    const before = stacked()
+    const r = rig({
+      before,
+      after: afterAll(),
+      reprobe: async () => ({ ok: false, reason: 'stack-present' })
+    })
+    await run(r, before, asked(before, [UNLOCK, STOP]))
+    expect(r.log.filter((l) => l.startsWith('undo'))).toEqual(['undo stop-stack', 'undo unlock'])
+  })
+
+  it('a parked session is not undone, but the steps before it are', async () => {
+    const before = stacked({ session: 'open-idle', sharedStackIds: [] })
+    const log: string[] = []
+    const r = rig({
+      before,
+      after: afterAll(),
+      reprobe: async () => ({ ok: false, reason: 'cannot-unregister' }),
+      prepare: async (p, _b, o) =>
+        o?.dry
+          ? { ok: true }
+          : p.kind === 'close-session'
+            ? (log.push('park'), { ok: true })
+            : (log.push(`prepare ${p.kind}`),
+              { ok: true, undo: async () => void log.push(`undo ${p.kind}`) })
+    })
+    await run(r, before, asked(before, [UNLOCK, CLOSE]))
+    expect(log).toEqual(['prepare unlock', 'park', 'undo unlock'])
+  })
+
+  it('a dry-run refusal elsewhere stops the combined action before any step', async () => {
+    const before = stacked()
+    const r = rig({
+      before,
+      after: afterAll(),
+      dry: () => ({ ok: false, reason: 'nested-worktree' })
+    })
+    const res = await run(r, before, asked(before, [UNLOCK, STOP]))
+    expect(res).toMatchObject({ ok: false, error: 'nested-worktree' })
+    expect(r.log.filter((l) => l.startsWith('prepare'))).toEqual([])
+  })
+})
+
 describe('parseOptions keeps only well-formed preps', () => {
   const parse = (prepare: unknown) =>
     parseOptions({ confirmed: ['a'], expected: {}, prepare }).prepare
@@ -520,6 +654,30 @@ describe('parseOptions keeps only well-formed preps', () => {
       })
     ).toBeUndefined()
   })
+  it('accepts a list of preps for one id, in any order, up to one of each kind', () => {
+    expect(
+      parse({
+        a: [{ kind: 'close-session' }, { kind: 'stop-stack', stackIds: ['x'] }, { kind: 'unlock' }]
+      })
+    ).toEqual({
+      a: [{ kind: 'close-session' }, { kind: 'stop-stack', stackIds: ['x'] }, { kind: 'unlock' }]
+    })
+  })
+
+  it('drops a list with a repeated kind, an unknown kind, both stack kinds, or nothing in it', () => {
+    expect(
+      parse({
+        a: [{ kind: 'unlock' }, { kind: 'unlock' }],
+        b: [{ kind: 'unlock' }, { kind: 'rm-rf' }],
+        c: [
+          { kind: 'stop-stack', stackIds: ['x'] },
+          { kind: 'leave-stack', stackIds: ['x'] }
+        ],
+        d: []
+      })
+    ).toBeUndefined()
+  })
+
   it('is absent when none was sent', () => {
     expect(parseOptions({ confirmed: [], expected: {} }).prepare).toBeUndefined()
   })

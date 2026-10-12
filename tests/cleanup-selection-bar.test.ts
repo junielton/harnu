@@ -90,6 +90,7 @@ describe('CleanupSelectionBar — Keep only when something can be kept', () => {
 describe('CleanupSelectionBar — says why Remove is unavailable', () => {
   const group = (reason: string, count: number, action = 'dehydrate') => ({
     reason,
+    causes: [reason],
     count,
     ids: Array.from({ length: count }, (_, i) => `id-${reason}-${i}`),
     action
@@ -167,7 +168,9 @@ describe('CleanupSelectionBar — a group is busy while its action runs (delta 2
         busy: true,
         summary: {
           removable: [],
-          refused: [{ reason: 'kept', count: 2, ids: ['a', 'b'], action: 'unkeep' }],
+          refused: [
+            { reason: 'kept', causes: ['kept'], count: 2, ids: ['a', 'b'], action: 'unkeep' }
+          ],
           dehydrate: null
         } as never
       },

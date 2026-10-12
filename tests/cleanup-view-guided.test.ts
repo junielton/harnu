@@ -408,6 +408,124 @@ describe('Docker was not running at scan time (AC-B7)', () => {
   })
 })
 
+describe('stacked causes: one combined action (delta 2)', () => {
+  const stackG = (id: string, over: Partial<GcGuidance> = {}) =>
+    guidance(id, {
+      lock: { reason: 'usb' },
+      stacks: [
+        {
+          id: 'web',
+          name: 'web',
+          otherFolders: ['/ws/org/proj/other'],
+          bindsThisFolder: false,
+          containers: 2,
+          containerNames: ['ctr-web-1', 'ctr-web-2'],
+          stopBlocked: null
+        }
+      ],
+      ...over
+    })
+  const both = () =>
+    wt(
+      'x1',
+      'review',
+      GIB,
+      {},
+      {
+        reason: reviewReason('shared-stack'),
+        sharedStackIds: ['web'],
+        locked: true
+      }
+    )
+
+  it('the bar names both causes and offers ONE action', async () => {
+    install(snap([both()]), { [idOf('x1')]: stackG(idOf('x1')) })
+    await mountView()
+    await tickAll()
+    expect(text('sel-why')).toBe("1 can't be removed: 1 locked in git + shared Docker stack")
+    expect(el('sel-guide-combined')).not.toBeNull()
+  })
+
+  it('shared stack + lock: one job carrying BOTH preps', async () => {
+    const api = install(snap([both()]), { [idOf('x1')]: stackG(idOf('x1')) })
+    await mountView()
+    await tickAll()
+    await click('sel-guide-combined')
+    expect(text('guided-steps')).toContain('Unlock')
+    await click('guided-confirm')
+    expect(api.gcClean).toHaveBeenCalledTimes(1)
+    const [ids, opts] = api.gcClean.mock.calls[0]
+    expect(ids).toEqual([idOf('x1')])
+    const preps = [opts.prepare[idOf('x1')]].flat()
+    expect(preps).toEqual(
+      expect.arrayContaining([{ kind: 'unlock' }, { kind: 'stop-stack', stackIds: ['web'] }])
+    )
+    expect(preps).toHaveLength(2)
+  })
+
+  it('session + lock: unlock and close the session in one job', async () => {
+    const b = wt(
+      'x2',
+      'review',
+      GIB,
+      {},
+      {
+        reason: reviewReason('open-idle-session'),
+        session: 'open-idle',
+        locked: true
+      }
+    )
+    const api = install(snap([b]), {
+      [idOf('x2')]: guidance(idOf('x2'), {
+        lock: { reason: null },
+        sessions: { idle: 1, busy: 0, userOpened: 0 }
+      })
+    })
+    await mountView()
+    await tickAll()
+    expect(text('sel-why')).toContain('locked in git + session open')
+    await click('sel-guide-combined')
+    await click('guided-confirm')
+    const preps = [api.gcClean.mock.calls[0][1].prepare[idOf('x2')]].flat()
+    expect(preps).toEqual(expect.arrayContaining([{ kind: 'unlock' }, { kind: 'close-session' }]))
+  })
+
+  it('a cause no prep can fix is the one shown, not a combined action', async () => {
+    const b = wt(
+      'x3',
+      'review',
+      GIB,
+      {},
+      {
+        reason: reviewReason('shared-stack'),
+        sharedStackIds: ['web'],
+        locked: true,
+        keep: true
+      }
+    )
+    install(snap([b]), {})
+    await mountView()
+    await tickAll()
+    expect(el('sel-guide-combined')).toBeNull()
+    expect(text('sel-why')).toContain('marked Keep')
+  })
+
+  it('the panel offers the same combined action', async () => {
+    const api = install(snap([both()]), { [idOf('x1')]: stackG(idOf('x1')) })
+    await mountView()
+    ;(
+      document.body.querySelector(
+        '[data-testid="treemap-block"][data-bucket="review"]'
+      ) as HTMLElement
+    ).click()
+    await flushPromises()
+    expect(text('panel-guide')).toBe('Unlock, stop stack and remove…')
+    await click('panel-guide')
+    await click('guided-confirm')
+    expect(api.gcClean).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('removing a Keep mark and scanning again are never silent (delta 2)', () => {
   const keptSnap = () => {
     const k1 = wt('k1', 'review', GIB, {}, { reason: reviewReason('dirty') })

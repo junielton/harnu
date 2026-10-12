@@ -143,7 +143,7 @@ export interface GcCleanOptions {
    * for the ordinary guarded remove ("No dead ends"). Only a confirmed review worktree takes one, and
    * only when it still applies to what main finds (see `prepareClean`).
    */
-  prepare?: Record<string, GcPrep>
+  prepare?: Record<string, GcPrep | GcPrep[]>
 }
 
 /** The step a guided "…and remove" runs first. */

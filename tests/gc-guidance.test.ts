@@ -247,14 +247,14 @@ describe('stacked causes (delta 2)', () => {
     expect(s.refused).toHaveLength(1)
     expect(s.refused[0]).toMatchObject({
       action: 'combined',
-      causes: ['shared-stack', 'locked'],
+      causes: ['locked', 'shared-stack'],
       count: 1
     })
   })
 
   it('an idle session AND a lock: combined', () => {
     const s = sum(wt('x', { session: 'open-idle', locked: true }, {}, 'open-idle-session'))
-    expect(s.refused[0]).toMatchObject({ action: 'combined', causes: ['session-open', 'locked'] })
+    expect(s.refused[0]).toMatchObject({ action: 'combined', causes: ['locked', 'session-open'] })
   })
 
   it('a cause no prep can fix is shown first, not the fixable one before it', () => {

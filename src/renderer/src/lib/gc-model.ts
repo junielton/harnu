@@ -3,7 +3,7 @@
 // the `gc:clean` payload. No DOM, no Vue, no i18n — unit-tested in tests/gc-model.test.ts.
 
 import type { Bucket, ReviewCode, WorktreeBundle } from '../../../main/gc/bundle-core'
-import { removability, type RemovalRefusal } from './gc-removability'
+import { removability, removabilityAll, type RemovalRefusal } from './gc-removability'
 import type {
   GcCleanOptions,
   GcDockerCard,
@@ -669,17 +669,18 @@ const NOT_GUIDABLE: ReadonlySet<RemovalRefusal> = new Set([
 export function guidedRequestFor(
   model: GcModel,
   ids: readonly string[],
-  prepFor: (id: string) => GcPrep | null,
+  prepFor: (id: string) => GcPrep | GcPrep[] | null,
   now: number = Date.now()
 ): CleanRequest {
   const kept: string[] = []
   const expected: Record<string, GcExpected> = {}
-  const prepare: Record<string, GcPrep> = {}
+  const prepare: Record<string, GcPrep | GcPrep[]> = {}
   for (const id of ids) {
     const b = model.byId.get(id)
     if (!b || b.kind !== 'worktree') continue
-    const v = removability(b, now)
-    if (!v.ok && NOT_GUIDABLE.has(v.reason)) continue
+    // Any cause a prep cannot lift (a Keep mark, a main checkout, a working session) rules the item out,
+    // whatever other causes are stacked with it.
+    if (removabilityAll(b, now).some((r) => NOT_GUIDABLE.has(r.reason))) continue
     const prep = prepFor(id)
     if (!prep) continue
     kept.push(id)

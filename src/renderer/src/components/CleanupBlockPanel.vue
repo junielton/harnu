@@ -26,14 +26,8 @@ import {
   type HydrationOp
 } from './cleanup-row'
 import { reasonKey, refusalKey, removalKey, stepKey } from './cleanup-gc-copy'
-import { removability, type RemovalRefusal } from '../lib/gc-removability'
-import {
-  depsOf,
-  guideLabelKey,
-  guidedActionFor,
-  hasGuideButton,
-  type GuidedAction
-} from '../lib/gc-guidance'
+import { removability, removabilityAll, type RemovalRefusal } from '../lib/gc-removability'
+import { depsOf, guideFor, guideLabel, hasGuideButton, type GuidedAction } from '../lib/gc-guidance'
 import { resumeHint } from '../lib/gc-resume'
 import type { RefusalCode } from '../lib/gc-jobs'
 import type { GcStep } from '../../../main/gc/pipeline-core'
@@ -179,11 +173,19 @@ const removeBlockedText = computed(() => {
 const dehydrateBytes = computed(() => depsOf(props.block))
 /** The guided action for this refusal, when it needs a button of its own. */
 const guide = computed(() => {
-  const v = verdict.value
-  if (!removeBlocked.value || v.ok) return null
-  const action = guidedActionFor(v.reason, { hasDeps: dehydrateBytes.value > 0 })
-  if (!hasGuideButton(action)) return null
-  return { action, reason: v.reason, label: t(guideLabelKey(action, v.reason)) }
+  const all = removabilityAll(props.block)
+  if (!removeBlocked.value || all.length === 0) return null
+  // Every cause counts: a cause no prep fixes comes first, and stacked fixable ones are one action.
+  const g = guideFor(
+    all.map((r) => r.reason),
+    { hasDeps: dehydrateBytes.value > 0 }
+  )
+  if (!hasGuideButton(g.action)) return null
+  return {
+    action: g.action,
+    reason: g.reason,
+    label: guideLabel(t, g.action, g.reason, g.causes)
+  }
 })
 const removeHint = computed(() => {
   const v = verdict.value

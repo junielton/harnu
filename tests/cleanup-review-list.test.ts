@@ -335,3 +335,26 @@ describe('CleanupReviewList: a refused row offers its guided action', () => {
     expect(w.find('[data-testid="review-guide"]').exists()).toBe(false)
   })
 })
+
+describe('CleanupReviewList — stacked causes (delta 2)', () => {
+  it('a row with a shared stack and a lock offers the combined action', async () => {
+    const m = modelOf([
+      wt(
+        's',
+        'review',
+        GIB,
+        {},
+        {
+          reason: reviewReason('shared-stack'),
+          sharedStackIds: ['web'],
+          locked: true
+        }
+      )
+    ])
+    const w = mountList(m.review)
+    const guide = w.get('[data-testid="review-guide"]')
+    expect(guide.text()).toBe('Unlock, stop stack and remove…')
+    await guide.trigger('click')
+    expect(w.emitted('guide')).toEqual([[m.review[0].id, 'combined', 'locked']])
+  })
+})
