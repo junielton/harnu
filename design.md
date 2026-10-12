@@ -8842,6 +8842,16 @@ volume), size right.
     stack and remove** (stops and removes that stack's containers, never its volumes) and **Remove the
     worktree and leave the stack** (offered only when no container of the stack bind-mounts this folder;
     otherwise the row is absent and one line says why).
+  - **The prep is the LAST step, and it is undone when the removal still refuses.** Main runs a dry run of
+    everything else first (the work-stamp guards, the pipeline's refusals, the reprobe with the prep's own
+    cause assumed fixed), and the prep runs only when nothing else refuses. A refusal afterwards locks the
+    worktree again with its original reason and starts again exactly the containers it stopped; a failed
+    undo is said in the toast. **Stop stack** only stops (never removes), lists the containers by name in the
+    choice, and is not offered for the main checkout's own stack or a stack another folder uses with a live
+    or parked session (one line says which). **Close session** treats only idle / completed / stopped as
+    idle, warns "Parking closes its terminal; background processes it started (dev servers, shells) stop.
+    The conversation is kept and can be resumed." and adds "{n} of them you opened yourself, not an agent."
+    when it applies. **Unlock** sends only the rows still locked and says how many were left out.
   - **Every guided action ends in a toast.** While it runs the confirm shows a spinner and disables;
     success is a Success toast with the bytes freed ("Removed 1 worktree · 3.4 GB freed"); failure is a
     Danger toast naming the cause in one sentence. Nothing a guided action does is silent.
