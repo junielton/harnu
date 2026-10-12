@@ -1,22 +1,39 @@
-// AC-C5: "Empty what Harnu moved to the trash" deletes ONLY the items Harnu itself trashed, found
-// through the freedesktop trash's own `.trashinfo` records, against a FAKE trash directory. Never
-// the user's other trash, never a later trashing of a folder at the same path.
+// AC-C5: "Empty what Harnu moved to the trash" deletes ONLY the exact trash entry Harnu created.
+//
+// The entry is identified AT TRASH TIME (the trash listing before and after the move, plus a
+// fingerprint of the entry: its name, the `.trashinfo`'s date, inode and mtime, and the trashed
+// folder's own inode), and "Empty" deletes an entry only when ALL of that still matches. It never
+// matches by original path and time: a user who restores a folder and trashes it again gets a new
+// entry with the same path, and that one is theirs. Everything runs against a FAKE trash dir.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { emptyHarnuTrash, presentInTrash, type TrashEnv } from '../src/main/gc/trash-shell'
+import { setTimeout as sleep } from 'node:timers/promises'
 import {
-  matchesTrashed,
+  emptyHarnuTrash,
+  observeTrashEntries,
+  recordTrash,
+  type TrashEnv
+} from '../src/main/gc/trash-shell'
+import {
   parseTrashInfo,
   trashKey,
   trashedEntries,
   type TrashedEntry
 } from '../src/main/gc/trash-core'
 import type { Tombstone } from '../src/main/reaper/journal'
-
-const MIN = 60_000
 
 /** `2026-10-12T09:30:00`: a trashinfo date is local wall-clock time, with no zone. */
 function localStamp(ms: number): string {
@@ -30,42 +47,67 @@ function localStamp(ms: number): string {
 let root: string
 let trash: string
 let env: TrashEnv
+const NOW = Date.parse('2026-10-12T09:30:00')
 
-/** Puts an item in the fake trash the way the OS does: the data under files/, a record under info/. */
-function trashItem(
+/**
+ * What the OS does when something is trashed: the folder is RENAMED into `files/` (so it keeps its
+ * inode) and a fresh `.trashinfo` is written. Returns the name it took.
+ */
+function osTrash(
   trashDir: string,
-  name: string,
-  originalPath: string,
+  folder: string,
   at: number,
-  encoded = originalPath
+  encodedPath = folder,
+  relativeTo?: string
 ): string {
-  mkdirSync(path.join(trashDir, 'files', name), { recursive: true })
-  writeFileSync(path.join(trashDir, 'files', name, 'data.txt'), 'x')
+  mkdirSync(path.join(trashDir, 'files'), { recursive: true })
   mkdirSync(path.join(trashDir, 'info'), { recursive: true })
+  let name = path.basename(folder)
+  for (let n = 2; existsSync(path.join(trashDir, 'info', `${name}.trashinfo`)); n++) {
+    name = `${path.basename(folder)}.${n}`
+  }
+  renameSync(folder, path.join(trashDir, 'files', name))
+  const recorded = relativeTo ? path.relative(relativeTo, folder) : encodedPath
   writeFileSync(
     path.join(trashDir, 'info', `${name}.trashinfo`),
-    `[Trash Info]\nPath=${encoded}\nDeletionDate=${localStamp(at)}\n`
+    `[Trash Info]\nPath=${recorded}\nDeletionDate=${localStamp(at)}\n`
   )
-  return path.join(trashDir, 'files', name)
+  return name
 }
 
-const entry = (p: string, at: number, bytes: number | null = 1000): TrashedEntry => ({
+/** What the user does in the file manager: Restore. */
+function osRestore(trashDir: string, name: string, to: string): void {
+  renameSync(path.join(trashDir, 'files', name), to)
+  rmSync(path.join(trashDir, 'info', `${name}.trashinfo`))
+}
+
+function makeFolder(p: string): string {
+  mkdirSync(p, { recursive: true })
+  writeFileSync(path.join(p, 'data.txt'), 'x')
+  return p
+}
+
+const asEntry = (
+  p: string,
+  at: number,
+  exact: TrashedEntry['exact'],
+  bytes: number | null = 1000
+): TrashedEntry => ({
   key: trashKey(at, p),
   path: p,
   bytes,
   at,
   repoPath: '/ws/repo',
-  branch: 'feat/x'
+  branch: 'feat/x',
+  exact
 })
-
-const NOW = Date.parse('2026-10-12T09:30:00')
 
 beforeEach(() => {
   root = mkdtempSync(path.join(os.tmpdir(), 'harnu-trash-'))
   trash = path.join(root, 'home', '.local', 'share', 'Trash')
   mkdirSync(path.join(trash, 'files'), { recursive: true })
   mkdirSync(path.join(trash, 'info'), { recursive: true })
-  env = { platform: 'linux', homeTrash: trash, uid: 1000 }
+  env = { platform: 'linux', homeTrash: trash, uid: 1000, isMountPoint: async () => false }
 })
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
@@ -77,14 +119,9 @@ describe('parseTrashInfo', () => {
     expect(info).toEqual({
       path: '/ws/my repo/wt-a',
       relative: false,
+      deletionDate: '2026-10-12T09:30:00',
       deletedAt: new Date(2026, 9, 12, 9, 30, 0).getTime()
     })
-  })
-
-  it('a relative path (a per-volume trash) is flagged relative', () => {
-    expect(
-      parseTrashInfo('[Trash Info]\nPath=work/wt-a\nDeletionDate=2026-10-12T09:30:00')?.relative
-    ).toBe(true)
   })
 
   it('is null for a file that is not a trashinfo, and NaN for an unreadable date', () => {
@@ -93,22 +130,272 @@ describe('parseTrashInfo', () => {
   })
 })
 
-describe('matchesTrashed', () => {
-  const info = (p: string, at: number) =>
-    parseTrashInfo(`[Trash Info]\nPath=${p}\nDeletionDate=${localStamp(at)}`)!
-
-  it('needs the same path AND the same moment, give or take the clock', () => {
-    const e = entry('/ws/wt-a', NOW)
-    expect(matchesTrashed(info('/ws/wt-a', NOW - 20_000), e, null)).toBe(true)
-    expect(matchesTrashed(info('/ws/wt-a', NOW + 3 * MIN), e, null)).toBe(false)
-    expect(matchesTrashed(info('/ws/wt-a', NOW - 3 * MIN), e, null)).toBe(false)
-    expect(matchesTrashed(info('/ws/wt-b', NOW), e, null)).toBe(false)
+describe('recordTrash: identifying the exact entry at trash time', () => {
+  it('records the one new entry: where it is, its name, its date and its fingerprint', async () => {
+    const folder = makeFolder(path.join(root, 'ws', 'wt-a'))
+    const ino = lstatSync(folder).ino
+    const record = await recordTrash(env, folder, async () => {
+      osTrash(trash, folder, NOW)
+    })
+    expect(record).toMatchObject({
+      kind: 'freedesktop',
+      trashDir: trash,
+      name: 'wt-a',
+      deletionDate: localStamp(NOW),
+      ino
+    })
+    expect(record!.infoIno).toBe(lstatSync(path.join(trash, 'info', 'wt-a.trashinfo')).ino)
   })
 
-  it('a relative path joins the trash top directory', () => {
-    const e = entry('/mnt/disk/wt-a', NOW)
-    expect(matchesTrashed(info('wt-a', NOW), e, '/mnt/disk')).toBe(true)
-    expect(matchesTrashed(info('wt-a', NOW), e, null)).toBe(false)
+  it('takes the renamed name when the trash already holds one of that name', async () => {
+    osTrash(trash, makeFolder(path.join(root, 'old', 'wt-a')), NOW - 3_600_000)
+    const folder = makeFolder(path.join(root, 'ws', 'wt-a'))
+    const record = await recordTrash(env, folder, async () => {
+      osTrash(trash, folder, NOW)
+    })
+    expect(record).toMatchObject({ name: 'wt-a.2' })
+  })
+
+  it('records NOTHING when two entries appeared at once: it cannot tell which is its own', async () => {
+    const mine = makeFolder(path.join(root, 'ws', 'wt-a'))
+    const users = makeFolder(path.join(root, 'ws', 'notes'))
+    const record = await recordTrash(env, mine, async () => {
+      osTrash(trash, mine, NOW)
+      osTrash(trash, users, NOW)
+    })
+    expect(record).toBeNull()
+  })
+
+  it('records nothing when the one new entry came from somewhere else', async () => {
+    const mine = makeFolder(path.join(root, 'ws', 'wt-a'))
+    const users = makeFolder(path.join(root, 'ws', 'notes'))
+    const record = await recordTrash(env, mine, async () => {
+      // The OS trashed `mine` elsewhere (not seen), while the user trashed another folder here.
+      rmSync(mine, { recursive: true })
+      osTrash(trash, users, NOW)
+    })
+    expect(record).toBeNull()
+  })
+
+  it('reads a percent-encoded original path with spaces', async () => {
+    const folder = makeFolder(path.join(root, 'my ws', 'wt a'))
+    const record = await recordTrash(env, folder, async () => {
+      osTrash(trash, folder, NOW, folder.replace(/ /g, '%20'))
+    })
+    expect(record?.name).toBe('wt a')
+  })
+
+  it('finds an entry in a per-volume trash, with a path relative to the mount point', async () => {
+    const mount = path.join(root, 'mnt', 'disk')
+    const volTrash = path.join(mount, '.Trash-1000')
+    mkdirSync(volTrash, { recursive: true })
+    const folder = makeFolder(path.join(mount, 'work', 'wt-a'))
+    const volEnv: TrashEnv = { ...env, isMountPoint: async (p) => p === mount }
+    const record = await recordTrash(volEnv, folder, async () => {
+      osTrash(volTrash, folder, NOW, folder, mount)
+    })
+    expect(record).toMatchObject({ trashDir: volTrash, name: 'wt-a' })
+  })
+
+  it('records nothing on a platform whose trash it cannot read', async () => {
+    const folder = makeFolder(path.join(root, 'ws', 'wt-a'))
+    const record = await recordTrash({ ...env, platform: 'win32' }, folder, async () => {
+      rmSync(folder, { recursive: true })
+    })
+    expect(record).toBeNull()
+  })
+
+  it('on macOS the entry is the new name in ~/.Trash with its inode', async () => {
+    const macTrash = path.join(root, 'home', '.Trash')
+    mkdirSync(macTrash, { recursive: true })
+    const folder = makeFolder(path.join(root, 'ws', 'wt-a'))
+    const ino = lstatSync(folder).ino
+    const record = await recordTrash(
+      { ...env, platform: 'darwin', homeTrash: macTrash },
+      folder,
+      async () => renameSync(folder, path.join(macTrash, 'wt-a'))
+    )
+    expect(record).toMatchObject({ kind: 'macos', trashDir: macTrash, name: 'wt-a', ino })
+  })
+})
+
+describe('emptyHarnuTrash: only the exact entry (AC-C5)', () => {
+  /** Harnu trashes `folder` and records the entry, as the executor does. */
+  async function harnuTrash(folder: string, at = NOW): Promise<TrashedEntry> {
+    const record = await recordTrash(env, folder, async () => {
+      osTrash(trash, folder, at)
+    })
+    return asEntry(folder, at, record)
+  }
+
+  it("removes Harnu's entry (data and record) and leaves the user's other trash alone", async () => {
+    const ours = await harnuTrash(makeFolder(path.join(root, 'ws', 'wt-a')))
+    const theirs = osTrash(trash, makeFolder(path.join(root, 'docs', 'holiday')), NOW - 3_600_000)
+    const result = await emptyHarnuTrash([ours], [ours.key], env)
+    expect(result.emptied).toEqual([ours.key])
+    expect(existsSync(path.join(trash, 'files', 'wt-a'))).toBe(false)
+    expect(existsSync(path.join(trash, 'info', 'wt-a.trashinfo'))).toBe(false)
+    expect(existsSync(path.join(trash, 'files', theirs))).toBe(true)
+  })
+
+  it('PROBE A: the user restored the folder and re-trashed it 30 s later — their item survives', async () => {
+    const folder = makeFolder(path.join(root, 'ws', 'wt-a'))
+    const ours = await harnuTrash(folder)
+    osRestore(trash, 'wt-a', folder)
+    osTrash(trash, folder, NOW + 30_000) // the user's own trashing, same path, same name
+    const result = await emptyHarnuTrash([ours], [ours.key], env)
+    expect(result.emptied).toEqual([])
+    expect(result.changed).toEqual([ours.key])
+    expect(existsSync(path.join(trash, 'files', 'wt-a', 'data.txt'))).toBe(true)
+    expect(existsSync(path.join(trash, 'info', 'wt-a.trashinfo'))).toBe(true)
+  })
+
+  it("restored and re-trashed within the same second: still not Harnu's (the rename touched the folder)", async () => {
+    const folder = makeFolder(path.join(root, 'ws', 'wt-a'))
+    const ours = await harnuTrash(folder)
+    await sleep(25)
+    osRestore(trash, 'wt-a', folder)
+    await sleep(25)
+    osTrash(trash, folder, NOW) // same name, same date string, same inode of the folder
+    const result = await emptyHarnuTrash([ours], [ours.key], env)
+    expect(result.emptied).toEqual([])
+    expect(result.changed).toEqual([ours.key])
+    expect(existsSync(path.join(trash, 'files', 'wt-a', 'data.txt'))).toBe(true)
+  })
+
+  it('restored and NOT re-trashed: reported gone, the restored folder untouched', async () => {
+    const folder = makeFolder(path.join(root, 'ws', 'wt-a'))
+    const ours = await harnuTrash(folder)
+    osRestore(trash, 'wt-a', folder)
+    const result = await emptyHarnuTrash([ours], [ours.key], env)
+    expect(result.emptied).toEqual([])
+    expect(result.missing).toEqual([ours.key])
+    expect(existsSync(path.join(folder, 'data.txt'))).toBe(true)
+  })
+
+  it('two entries for the same path: only the exactly identified one goes, whatever readdir lists first', async () => {
+    // The user's copy is trashed first and sorts first; Harnu's is wt-a.2.
+    const users = osTrash(trash, makeFolder(path.join(root, 'ws', 'wt-a')), NOW - 5_000)
+    const ours = await harnuTrash(makeFolder(path.join(root, 'ws', 'wt-a')), NOW)
+    expect(ours.exact).toMatchObject({ name: 'wt-a.2' })
+    const result = await emptyHarnuTrash([ours], [ours.key], env)
+    expect(result.emptied).toEqual([ours.key])
+    expect(existsSync(path.join(trash, 'files', users))).toBe(true)
+    expect(existsSync(path.join(trash, 'files', 'wt-a.2'))).toBe(false)
+  })
+
+  it('an entry with no exact record is never touched, and says so', async () => {
+    const folder = makeFolder(path.join(root, 'ws', 'wt-a'))
+    osTrash(trash, folder, NOW)
+    const legacy = asEntry(folder, NOW, null)
+    const result = await emptyHarnuTrash([legacy], [legacy.key], env)
+    expect(result.emptied).toEqual([])
+    expect(result.unverifiable).toEqual([legacy.key])
+    expect(existsSync(path.join(trash, 'files', 'wt-a'))).toBe(true)
+  })
+
+  it("a different folder moved into the same name is not Harnu's (the folder's own inode differs)", async () => {
+    const folder = makeFolder(path.join(root, 'ws', 'wt-a'))
+    const ours = await harnuTrash(folder)
+    // Swap the data under the same name and keep a copy of the info file's identity as it was.
+    rmSync(path.join(trash, 'files', 'wt-a'), { recursive: true })
+    makeFolder(path.join(trash, 'files', 'wt-a'))
+    const result = await emptyHarnuTrash([ours], [ours.key], env)
+    expect(result.emptied).toEqual([])
+    expect(result.changed).toEqual([ours.key])
+    expect(existsSync(path.join(trash, 'files', 'wt-a', 'data.txt'))).toBe(true)
+  })
+
+  it('removes a symlink inside a trashed folder, never follows it out of the trash', async () => {
+    const outside = path.join(root, 'precious')
+    mkdirSync(outside)
+    writeFileSync(path.join(outside, 'keep.txt'), 'keep me')
+    const folder = makeFolder(path.join(root, 'ws', 'wt-a'))
+    symlinkSync(outside, path.join(folder, 'link-out'))
+    const ours = await harnuTrash(folder)
+    await emptyHarnuTrash([ours], [ours.key], env)
+    expect(existsSync(path.join(trash, 'files', 'wt-a'))).toBe(false)
+    expect(existsSync(path.join(outside, 'keep.txt'))).toBe(true)
+  })
+
+  it('does nothing where the trash cannot be read item by item', async () => {
+    const ours = await harnuTrash(makeFolder(path.join(root, 'ws', 'wt-a')))
+    const result = await emptyHarnuTrash([ours], [ours.key], { ...env, platform: 'darwin' })
+    expect(result.unsupported).toBe(true)
+    expect(existsSync(path.join(trash, 'files', 'wt-a'))).toBe(true)
+  })
+
+  it('reports the bytes it emptied, from what the journal recorded', async () => {
+    const a = await harnuTrash(makeFolder(path.join(root, 'ws', 'wt-a')))
+    const b = await harnuTrash(makeFolder(path.join(root, 'ws', 'wt-b')), NOW + 1000)
+    const result = await emptyHarnuTrash(
+      [
+        { ...a, bytes: 400 },
+        { ...b, bytes: 600 }
+      ],
+      [a.key, b.key],
+      env
+    )
+    expect(result.emptiedBytes).toBe(1000)
+  })
+})
+
+describe('observeTrashEntries: is it still there?', () => {
+  it('present, gone and changed are told apart; none of it reads a directory listing', async () => {
+    const present = asEntry(
+      '/ws/a',
+      NOW,
+      await recordTrash(env, makeFolder(path.join(root, 'ws', 'a')), async () => {
+        osTrash(trash, path.join(root, 'ws', 'a'), NOW)
+      })
+    )
+    const goneFolder = makeFolder(path.join(root, 'ws', 'b'))
+    const goneEntry = asEntry(
+      '/ws/b',
+      NOW,
+      await recordTrash(env, goneFolder, async () => {
+        osTrash(trash, goneFolder, NOW + 1000)
+      })
+    )
+    osRestore(trash, 'b', goneFolder)
+    const r = await observeTrashEntries([present, goneEntry], env)
+    expect(r.present.map((e) => e.key)).toEqual([present.key])
+    expect(r.gone.map((e) => e.key)).toEqual([goneEntry.key])
+    expect(r.unknown).toEqual([])
+  })
+
+  it('on macOS an entry is verified by its recorded name and inode in ~/.Trash', async () => {
+    const macTrash = path.join(root, 'home', '.Trash')
+    mkdirSync(macTrash, { recursive: true })
+    const macEnv: TrashEnv = { ...env, platform: 'darwin', homeTrash: macTrash }
+    const folder = makeFolder(path.join(root, 'ws', 'wt-a'))
+    const record = await recordTrash(macEnv, folder, async () =>
+      renameSync(folder, path.join(macTrash, 'wt-a'))
+    )
+    const entry = asEntry(folder, NOW, record)
+    expect((await observeTrashEntries([entry], macEnv)).present).toHaveLength(1)
+    rmSync(path.join(macTrash, 'wt-a'), { recursive: true })
+    expect((await observeTrashEntries([entry], macEnv)).gone).toHaveLength(1)
+  })
+
+  it('where presence cannot be verified (Windows, or a journal line with no record) it says unknown', async () => {
+    const legacy = asEntry('/ws/a', NOW, null)
+    expect((await observeTrashEntries([legacy], env)).unknown.map((e) => e.key)).toEqual([
+      legacy.key
+    ])
+    const withRecord = asEntry('/ws/a', NOW, {
+      kind: 'freedesktop',
+      trashDir: trash,
+      name: 'a',
+      deletionDate: localStamp(NOW),
+      dev: 1,
+      ino: 1,
+      infoIno: 1,
+      infoMtimeMs: 1
+    })
+    expect(
+      (await observeTrashEntries([withRecord], { ...env, platform: 'win32' })).unknown
+    ).toHaveLength(1)
   })
 })
 
@@ -126,131 +413,39 @@ describe('trashedEntries (the journal as the ledger)', () => {
     archiveWipRef: null,
     ...over
   })
+  const exact = {
+    kind: 'freedesktop' as const,
+    trashDir: '/t',
+    name: 'new',
+    deletionDate: '2026-10-12T09:30:00',
+    dev: 1,
+    ino: 2,
+    infoIno: 3,
+    infoMtimeMs: 4
+  }
 
-  it('lists only lines that recorded a trashed path, newest first', () => {
+  it('lists lines that recorded a trashed path, newest first, with their exact entry', () => {
     const entries = trashedEntries(
       [
         line({ at: NOW - 5000, trashedPath: '/ws/old', trashedBytes: 5, trashedAt: NOW - 5000 }),
-        line({ at: NOW }), // nothing trashed (a branch-only item, or an older line)
-        line({ at: NOW - 1000, trashedPath: '/ws/new', trashedBytes: 7, trashedAt: NOW - 1000 })
+        line({ at: NOW }), // nothing trashed
+        line({
+          at: NOW - 1000,
+          trashedPath: '/ws/new',
+          trashedBytes: 7,
+          trashedAt: NOW - 1000,
+          trashEntry: exact
+        })
       ],
       new Set()
     )
     expect(entries.map((e) => e.path)).toEqual(['/ws/new', '/ws/old'])
-    expect(entries[0]).toMatchObject({ bytes: 7, at: NOW - 1000 })
+    expect(entries[0]).toMatchObject({ bytes: 7, exact })
+    expect(entries[1]!.exact).toBeNull()
   })
 
-  it('skips what is already settled (emptied, or found gone)', () => {
+  it('skips what is already settled', () => {
     const l = line({ trashedPath: '/ws/a', trashedBytes: 5, trashedAt: NOW })
     expect(trashedEntries([l], new Set([trashKey(NOW, '/ws/a')]))).toEqual([])
-  })
-})
-
-describe('emptyHarnuTrash (AC-C5)', () => {
-  it("removes Harnu's item and its record, and leaves the user's other trash alone", async () => {
-    const ours = trashItem(trash, 'wt-a', '/ws/org/wt-a', NOW)
-    const theirs = trashItem(trash, 'holiday-photos', '/home/u/holiday-photos', NOW - 60 * MIN)
-    const result = await emptyHarnuTrash([entry('/ws/org/wt-a', NOW)], env)
-    expect(result.emptied).toEqual([trashKey(NOW, '/ws/org/wt-a')])
-    expect(existsSync(ours)).toBe(false)
-    expect(existsSync(path.join(trash, 'info', 'wt-a.trashinfo'))).toBe(false)
-    expect(existsSync(theirs)).toBe(true)
-    expect(existsSync(path.join(trash, 'info', 'holiday-photos.trashinfo'))).toBe(true)
-  })
-
-  it('never takes a later trashing of a folder at the same path (the user recreated it)', async () => {
-    trashItem(trash, 'wt-a', '/ws/org/wt-a', NOW)
-    const later = trashItem(trash, 'wt-a.2', '/ws/org/wt-a', NOW + 24 * 60 * MIN)
-    const result = await emptyHarnuTrash([entry('/ws/org/wt-a', NOW)], env)
-    expect(result.emptied).toHaveLength(1)
-    expect(existsSync(later)).toBe(true)
-  })
-
-  it('finds the renamed copy when two items shared a name (wt-a.2)', async () => {
-    trashItem(trash, 'wt-a', '/ws/org/wt-a', NOW - 90 * MIN)
-    const ours = trashItem(trash, 'wt-a.2', '/ws/org/wt-a', NOW)
-    const result = await emptyHarnuTrash([entry('/ws/org/wt-a', NOW)], env)
-    expect(result.emptied).toHaveLength(1)
-    expect(existsSync(ours)).toBe(false)
-    expect(existsSync(path.join(trash, 'files', 'wt-a'))).toBe(true)
-  })
-
-  it('reads a percent-encoded path with spaces', async () => {
-    const ours = trashItem(trash, 'wt a', '/ws/my repo/wt a', NOW, '/ws/my%20repo/wt%20a')
-    const result = await emptyHarnuTrash([entry('/ws/my repo/wt a', NOW)], env)
-    expect(result.emptied).toHaveLength(1)
-    expect(existsSync(ours)).toBe(false)
-  })
-
-  it('an item the user already emptied is reported missing, not an error', async () => {
-    const result = await emptyHarnuTrash([entry('/ws/org/gone', NOW)], env)
-    expect(result.emptied).toEqual([])
-    expect(result.missing).toEqual([trashKey(NOW, '/ws/org/gone')])
-    expect(result.failed).toEqual([])
-  })
-
-  it('reports the bytes it emptied, from what the journal recorded', async () => {
-    trashItem(trash, 'wt-a', '/ws/org/wt-a', NOW)
-    trashItem(trash, 'wt-b', '/ws/org/wt-b', NOW + MIN)
-    const result = await emptyHarnuTrash(
-      [
-        entry('/ws/org/wt-a', NOW, 400),
-        entry('/ws/org/wt-b', NOW + MIN, 600),
-        entry('/ws/org/x', NOW, 999)
-      ],
-      env
-    )
-    expect(result.emptiedBytes).toBe(1000)
-  })
-
-  it('does not follow a symlink inside a trashed folder out of the trash', async () => {
-    const outside = path.join(root, 'precious')
-    mkdirSync(outside)
-    writeFileSync(path.join(outside, 'keep.txt'), 'keep me')
-    const ours = trashItem(trash, 'wt-a', '/ws/org/wt-a', NOW)
-    symlinkSync(outside, path.join(ours, 'link-out'))
-    await emptyHarnuTrash([entry('/ws/org/wt-a', NOW)], env)
-    expect(existsSync(ours)).toBe(false)
-    expect(existsSync(path.join(outside, 'keep.txt'))).toBe(true)
-  })
-
-  it('finds an item in a per-volume trash (a relative Path= under <mount>/.Trash-<uid>)', async () => {
-    const mount = path.join(root, 'mnt', 'disk')
-    const volTrash = path.join(mount, '.Trash-1000')
-    const ours = trashItem(volTrash, 'wt-a', 'work/wt-a', NOW)
-    const result = await emptyHarnuTrash([entry(path.join(mount, 'work', 'wt-a'), NOW)], env)
-    expect(result.emptied).toHaveLength(1)
-    expect(existsSync(ours)).toBe(false)
-  })
-
-  it('does nothing on a platform whose trash it cannot read selectively', async () => {
-    const ours = trashItem(trash, 'wt-a', '/ws/org/wt-a', NOW)
-    const result = await emptyHarnuTrash([entry('/ws/org/wt-a', NOW)], {
-      ...env,
-      platform: 'darwin'
-    })
-    expect(result.unsupported).toBe(true)
-    expect(result.emptied).toEqual([])
-    expect(existsSync(ours)).toBe(true)
-  })
-})
-
-describe('presentInTrash', () => {
-  it('splits the ledger into what is still in the trash and what is gone', async () => {
-    trashItem(trash, 'wt-a', '/ws/org/wt-a', NOW)
-    const there = entry('/ws/org/wt-a', NOW)
-    const gone = entry('/ws/org/wt-b', NOW)
-    const r = await presentInTrash([there, gone], env)
-    expect(r.present.map((e) => e.path)).toEqual(['/ws/org/wt-a'])
-    expect(r.gone.map((e) => e.path)).toEqual(['/ws/org/wt-b'])
-    expect(r.unsupported).toBe(false)
-  })
-
-  it('cannot tell on another platform: everything counts as present, and it says so', async () => {
-    const e = entry('/ws/org/wt-a', NOW)
-    const r = await presentInTrash([e], { ...env, platform: 'darwin' })
-    expect(r.unsupported).toBe(true)
-    expect(r.present).toEqual([e])
-    expect(r.gone).toEqual([])
   })
 })
