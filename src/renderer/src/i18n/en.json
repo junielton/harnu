@@ -2778,7 +2778,84 @@
           "stackPresent": "Docker stack running",
           "scanBlind": "scanned without Docker"
         },
-        "dehydrateWin": "Dehydrate frees {size} and keeps the code"
+        "dehydrateWin": "Dehydrate frees {size} and keeps the code",
+        "action": {
+          "unlock-remove": "Unlock and remove…",
+          "close-session-remove": "Close session and remove…",
+          "shared-stack": "Choose what to do with the stack…",
+          "fix-unreadable": "Show how to fix it…",
+          "scan-again": "Scan again",
+          "check-again": "Check again",
+          "unkeep": "Remove the Keep mark",
+          "open-settings": "Open Settings",
+          "docker": "Docker wasn't running — what now?"
+        }
+      },
+      "guided": {
+        "title": {
+          "unlockRemove": "Unlock and remove",
+          "closeSession": "Close the session and remove",
+          "sharedStack": "A stack is shared with other folders",
+          "fixUnreadable": "Harnu can't read this folder",
+          "docker": "Docker wasn't running"
+        },
+        "subtitle": {
+          "unlockRemove": "Git has this worktree locked. After the unlock the remove is the usual one: archived first, then moved to the trash.",
+          "closeSession": "A session is still open here. Closing an idle one keeps its conversation on disk; the remove that follows is the usual one.",
+          "sharedStack": "Other folders run containers from the same Docker stack, so Harnu will not touch it unless you choose to.",
+          "fixUnreadable": "Harnu can't tell what is inside, so it won't remove the folder unseen. Fix the permission, then check again.",
+          "docker": "Without Docker, Harnu could not see which stacks run from your worktrees, so it won't remove them."
+        },
+        "loading": "Reading what git and Docker say right now…",
+        "loadError": "Couldn't read the current facts. Close this and try again.",
+        "lock": {
+          "reason": "Git recorded this reason: “{reason}”",
+          "none": "Git has it locked and recorded no reason.",
+          "gone": "Git no longer lists it as locked."
+        },
+        "sessions": {
+          "idle": "{n} idle session will be closed. Its conversation stays on disk. | {n} idle sessions will be closed. Their conversations stay on disk.",
+          "busy": "A session here is working or waiting for you, so Harnu will not close it. Finish or close it yourself first.",
+          "foreign": "The session open here is not one Harnu started, so Harnu cannot close it. Close it where it runs."
+        },
+        "stack": {
+          "runs": "{name} also runs from {folders}",
+          "uses": "It uses this folder.",
+          "none": "This stack is gone now. Scan again."
+        },
+        "choice": {
+          "stop": "Stop stack and remove",
+          "stopBody": "Stops and removes this stack's containers, so the other folders have to start it again. Its volumes are kept.",
+          "leave": "Remove the worktree and leave the stack",
+          "leaveBody": "The stack keeps running. None of its containers uses this folder.",
+          "leaveUnavailable": "This stack uses this folder, so it cannot be left running."
+        },
+        "unreadable": {
+          "where": "Harnu couldn't read {path}.",
+          "owner": "It belongs to {owner}.",
+          "ownerUnknown": "Harnu couldn't tell who owns it.",
+          "fix": "Run this, then check again:",
+          "ok": "Harnu can read it now. Check again to continue."
+        },
+        "copy": "Copy",
+        "copied": "Copied",
+        "docker": {
+          "down": "Docker wasn't running when Harnu scanned, so it could not see this worktree's stacks.",
+          "start": "Start Docker, then scan again:",
+          "app": "Open Docker from your applications, then scan again."
+        },
+        "confirm": {
+          "unlock": "Unlock and remove",
+          "closeSession": "Close session and remove",
+          "stop": "Stop stack and remove",
+          "leave": "Remove and leave the stack"
+        },
+        "recheck": "Check again",
+        "scan": "Scan again",
+        "cancel": "Cancel",
+        "close": "Close",
+        "pending": "Working…",
+        "stale": "This changed since you opened it — open it again."
       }
     }
   },

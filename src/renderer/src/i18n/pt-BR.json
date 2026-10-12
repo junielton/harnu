@@ -2778,7 +2778,84 @@
           "stackPresent": "stack Docker rodando",
           "scanBlind": "escaneado sem o Docker"
         },
-        "dehydrateWin": "Dehydrate libera {size} e mantém o código"
+        "dehydrateWin": "Dehydrate libera {size} e mantém o código",
+        "action": {
+          "unlock-remove": "Desbloquear e remover…",
+          "close-session-remove": "Fechar sessão e remover…",
+          "shared-stack": "Escolher o que fazer com a stack…",
+          "fix-unreadable": "Ver como corrigir…",
+          "scan-again": "Escanear de novo",
+          "check-again": "Conferir de novo",
+          "unkeep": "Tirar a marca Manter",
+          "open-settings": "Abrir Ajustes",
+          "docker": "O Docker não estava rodando — e agora?"
+        }
+      },
+      "guided": {
+        "title": {
+          "unlockRemove": "Desbloquear e remover",
+          "closeSession": "Fechar a sessão e remover",
+          "sharedStack": "Uma stack é compartilhada com outras pastas",
+          "fixUnreadable": "O Harnu não consegue ler esta pasta",
+          "docker": "O Docker não estava rodando"
+        },
+        "subtitle": {
+          "unlockRemove": "O git bloqueou este worktree. Depois de desbloquear, a remoção é a de sempre: arquivado primeiro, depois movido para a lixeira.",
+          "closeSession": "Ainda há uma sessão aberta aqui. Fechar uma ociosa mantém a conversa em disco; a remoção que segue é a de sempre.",
+          "sharedStack": "Outras pastas rodam contêineres da mesma stack do Docker, então o Harnu não mexe nela a menos que você escolha.",
+          "fixUnreadable": "O Harnu não sabe o que há dentro, então não remove a pasta sem ver. Corrija a permissão e confira de novo.",
+          "docker": "Sem o Docker, o Harnu não viu quais stacks rodam dos seus worktrees, então não os remove."
+        },
+        "loading": "Lendo o que o git e o Docker dizem agora…",
+        "loadError": "Não deu para ler os fatos atuais. Feche e tente de novo.",
+        "lock": {
+          "reason": "O git registrou este motivo: “{reason}”",
+          "none": "O git bloqueou e não registrou motivo.",
+          "gone": "O git não lista mais como bloqueado."
+        },
+        "sessions": {
+          "idle": "{n} sessão ociosa será fechada. A conversa continua em disco. | {n} sessões ociosas serão fechadas. As conversas continuam em disco.",
+          "busy": "Uma sessão aqui está trabalhando ou esperando por você, então o Harnu não a fecha. Termine ou feche você mesmo antes.",
+          "foreign": "A sessão aberta aqui não foi iniciada pelo Harnu, então ele não pode fechá-la. Feche onde ela roda."
+        },
+        "stack": {
+          "runs": "{name} também roda de {folders}",
+          "uses": "Ela usa esta pasta.",
+          "none": "Esta stack não existe mais. Escaneie de novo."
+        },
+        "choice": {
+          "stop": "Parar a stack e remover",
+          "stopBody": "Para e remove os contêineres desta stack, então as outras pastas precisam subir de novo. Os volumes são mantidos.",
+          "leave": "Remover o worktree e deixar a stack",
+          "leaveBody": "A stack continua rodando. Nenhum contêiner dela usa esta pasta.",
+          "leaveUnavailable": "Esta stack usa esta pasta, então não pode ficar rodando."
+        },
+        "unreadable": {
+          "where": "O Harnu não conseguiu ler {path}.",
+          "owner": "Pertence a {owner}.",
+          "ownerUnknown": "O Harnu não soube dizer quem é o dono.",
+          "fix": "Rode isto e confira de novo:",
+          "ok": "O Harnu consegue ler agora. Confira de novo para continuar."
+        },
+        "copy": "Copiar",
+        "copied": "Copiado",
+        "docker": {
+          "down": "O Docker não estava rodando quando o Harnu escaneou, então ele não viu as stacks deste worktree.",
+          "start": "Inicie o Docker e escaneie de novo:",
+          "app": "Abra o Docker pelos seus aplicativos e escaneie de novo."
+        },
+        "confirm": {
+          "unlock": "Desbloquear e remover",
+          "closeSession": "Fechar sessão e remover",
+          "stop": "Parar a stack e remover",
+          "leave": "Remover e deixar a stack"
+        },
+        "recheck": "Conferir de novo",
+        "scan": "Escanear de novo",
+        "cancel": "Cancelar",
+        "close": "Fechar",
+        "pending": "Trabalhando…",
+        "stale": "Isto mudou desde que você abriu — abra de novo."
       }
     }
   },
