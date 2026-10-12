@@ -52,12 +52,13 @@ async function preserve(b: WorktreeBundle, deps: GcShellDeps, at: number): Promi
   if (!plan.tip || !plan.wip) throw new Error('nothing would preserve this worktree')
   const sha = await executor.resolveSha(b.item.repoPath, plan.tip.rev!)
   if (!sha) throw new Error(`could not resolve '${plan.tip.rev}' before removal`)
-  await executor.archiveTip(b.item.repoPath, plan.tip.ref, sha)
-  await executor.archiveWip(b.item.repoPath, plan.wip.ref, plan.wip.worktreePath!)
-  // Commits only a detached HEAD's reflog reaches go with the folder: keep them reachable too.
+  // Commits only a detached HEAD's reflog reaches go with the folder: keep them reachable too. First,
+  // because it is the one step that can refuse for size, and a refusal leaves no tip or wip behind.
   if (b.item.kind === 'detached-worktree' && plan.namespace && b.item.path) {
     await executor.archiveReflog(b.item.repoPath, `${plan.namespace}/reflog`, b.item.path)
   }
+  await executor.archiveTip(b.item.repoPath, plan.tip.ref, sha)
+  await executor.archiveWip(b.item.repoPath, plan.wip.ref, plan.wip.worktreePath!)
 }
 
 export function createForcedGcOps(deps: GcShellDeps): GcOps {

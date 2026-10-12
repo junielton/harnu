@@ -226,7 +226,7 @@ What happens when you confirm, in this order, and nothing after a step that fail
    ```
    refs/archive/detached/<folder>-<short sha>/tip             # the commit it was on, even if no branch holds it
    refs/archive/detached/<folder>-<short sha>/wip             # everything uncommitted or untracked, if there was any
-   refs/archive/detached/<folder>-<short sha>/reflog/<sha12>  # one per commit only this worktree's HEAD history reaches
+   refs/archive/detached/<folder>-<short sha>/reflog/<sha12>  # one per line of commits only this worktree's HEAD history reaches (its newest commit)
    ```
 
    The `reflog` refs matter when you committed while detached and then moved on (`git checkout <other>`): that commit is on no branch, and only the worktree's own history of where HEAD has been mentions it, which goes with the folder. Harnu keeps each one reachable.
@@ -242,7 +242,7 @@ Two things stop it before it starts, each with a reason in the panel rather than
 
 The confirm dialog names the untracked files of each folder (they are in no commit, and the `wip` ref is where they are kept): the first 10 per row, then "and N more" with the whole list on hover, and one total for the dialog. Every path is saved whether it is named or not.
 
-If the history holds more than **500** commits that no branch, tag or ref reaches, the removal is refused with `reflog-limit` and nothing is removed, rather than keeping only some of them. Keep the ones you want with `git branch <name> <sha>`, or remove the folder yourself.
+If the history holds more than **500 separate lines of commits** (500 tips: a run of commits on top of one another counts once) that no branch, tag or ref reaches, the removal is refused with `reflog-limit` and nothing is removed, not even the `tip` and `wip` refs, rather than keeping only some of them. Keep the ones you want with `git branch <name> <sha>`, or remove the folder yourself.
 
 Removing a folder with the same name at the same commit a second time reuses the same names. A `wip` with different files than the one already there does not overwrite it: the earlier one moves to a sibling ref, `…/wip-<yyyymmddhhmmss>`, so `git show …/wip` is always a plain diff against the tip and nothing is lost. List every earlier one with `git for-each-ref 'refs/archive/detached/*/wip-*'`.
 

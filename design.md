@@ -8814,8 +8814,9 @@ volume), size right.
   now_ and names the command (`git -C <path> rebase --abort` / `bisect reset` / `am --abort`); the
   reason chip reads _A rebase, bisect or git am is still in progress in this worktree_. A refusal
   remembered twice keeps the item in Needs review with the same reason. Commits only its HEAD reflog
-  reaches are archived under `…/reflog/<sha12>` before the folder goes; a history with more than 500
-  such commits is refused (`reflog-limit`, nothing removed) rather than archived in part.
+  reaches are archived under `…/reflog/<sha12>`, one ref per chain **tip**, before anything else is
+  written; a history with more than 500 such tips is refused (`reflog-limit`, nothing removed, no tip
+  or wip ref either) rather than archived in part.
 - **Nothing removable → no dialog.** The selection bar's **Remove selected** is disabled (tooltip "Nothing
   selected can be removed") when no ticked item can be removed; the list row swaps its Remove button for an
   inert, dimmed `Trash2` carrying the reason as its tooltip and `aria-label`. Any path that still reaches

@@ -78,7 +78,6 @@ const totalText = computed(() =>
 const riskCount = computed(() => props.rows.filter((r) => r.risk).length)
 /** A worktree's volumes are never removed with it (they become orphan volumes, reviewed one by one). */
 const hasWorktreeRow = computed(() => props.rows.some((r) => r.kind === 'worktree'))
-/** Detached worktrees have no branch: their commit is kept under refs/archive/detached/… instead. */
 /** Names shown per row; the rest read "and N more", the whole list on hover. */
 const UNTRACKED_SHOWN = 10
 const untrackedTotal = computed(() =>
@@ -96,6 +95,7 @@ function untrackedText(row: DialogRow): string {
   })
 }
 
+/** Detached worktrees have no branch: their commit is kept under refs/archive/detached/… instead. */
 const detachedCount = computed(() => props.rows.filter((r) => !!r.detachedAt).length)
 
 const title = computed(() => {

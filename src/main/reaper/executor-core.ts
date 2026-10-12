@@ -256,6 +256,11 @@ export async function cleanItem(
   // branch. A ref name is recorded only after its write returned, so a
   // tombstone never claims a ref that does not exist.
   await run('archive', plan.refs.length > 0, async () => {
+    // A detached worktree's reflog first: it is the only step that can refuse for size, and a
+    // refusal must leave no tip or wip ref behind. Nothing it writes is needed by the others.
+    if (item.kind === 'detached-worktree' && plan.namespace && item.path) {
+      await deps.archiveReflog(item.repoPath, `${plan.namespace}/reflog`, item.path)
+    }
     if (plan.tip) {
       await deps.archiveTip(item.repoPath, plan.tip.ref, sha!)
       archived.tip = plan.tip.ref
@@ -263,9 +268,6 @@ export async function cleanItem(
     if (plan.wip) {
       await deps.archiveWip(item.repoPath, plan.wip.ref, plan.wip.worktreePath!)
       archived.wip = plan.wip.ref
-    }
-    if (item.kind === 'detached-worktree' && plan.namespace && item.path) {
-      await deps.archiveReflog(item.repoPath, `${plan.namespace}/reflog`, item.path)
     }
   })
 

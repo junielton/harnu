@@ -1,7 +1,8 @@
-// Whether a detached worktree is in the middle of a rebase or a bisect. Both keep their state in the
-// worktree's own git dir (the rebase todo list, the bisect log), which goes with the folder when it is
-// removed: the commits are archived by sha, but the unfinished operation is not, and a detached HEAD
-// is exactly where they run. So Cleanup refuses to remove one until it is finished or aborted.
+// Whether a worktree is in the middle of a rebase, a bisect or a `git am`. Each keeps its state in the
+// worktree's own git dir (the rebase todo list, the bisect log, the mailbox), which goes with the folder
+// when it is removed: the commits are archived, but the unfinished operation is not. It happens on a
+// detached HEAD (rebase, bisect) and on a branch (`git am` keeps HEAD on it; a bisect only started has
+// not moved it yet). So Cleanup refuses to remove one until it is finished or aborted.
 // env-bound (git + fs); the decision to refuse is in bundle-core, gc-shell and gc-removability.
 
 import { execFile } from 'node:child_process'

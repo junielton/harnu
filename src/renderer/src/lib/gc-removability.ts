@@ -154,7 +154,8 @@ export function bundleRemovability(
   if (b.locked === true || code === 'locked') {
     return refused('locked', `git worktree unlock ${shellQuote(path)}`)
   }
-  // A rebase or bisect in a detached worktree keeps its state in the folder, which Remove would trash.
+  // A rebase, bisect or git am keeps its state in the folder, which Remove would trash — on a detached
+  // worktree or a branch one.
   if (b.operation !== undefined || code === 'operation-in-progress') {
     return refused(
       'operation-in-progress',

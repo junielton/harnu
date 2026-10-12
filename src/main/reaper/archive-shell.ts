@@ -16,7 +16,6 @@
  */
 
 import { execFile, spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { promisify } from 'node:util'
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
@@ -143,7 +142,7 @@ export async function archiveWip(
   }
 }
 
-/** The most commits one removal will archive for a worktree's HEAD reflog; more is refused, never truncated. */
+/** The most chain tips one removal will archive for a worktree's HEAD reflog; more is refused, never truncated. */
 export const REFLOG_REF_LIMIT = 500
 
 /** The git calls the reflog archiver makes, injectable so a test can count them. */
@@ -177,36 +176,34 @@ export const defaultReflogIo: ReflogIo = {
     })
 }
 
-/** How many archived reflogs are remembered, so the second pass of one removal can be skipped. */
-const REFLOG_MEMORY = 64
-
 /**
  * Points a ref under `refPrefix` at every commit in the HEAD reflog of `worktreePath` that no ref
  * reaches, and returns the ref names written.
  *
  * A detached HEAD has no branch, so a commit made while detached and then left behind (check out
  * another commit, a rebase or bisect that moved on) is held by nothing but that worktree's own
- * reflog, which goes with the folder. Three bulk git calls, whatever the history: which entries still
- * exist, which of them no ref reaches (with their parents), and one `update-ref` per commit that
- * needs one. Only the tips are kept: archiving a commit makes its ancestors reachable. The ref is
- * named by the commit's own short sha, so a second removal can never overwrite a different commit's
- * ref.
+ * reflog, which goes with the folder. Three bulk git calls to decide, whatever the history: which
+ * entries still exist, which of them no ref reaches (with their parents), and one
+ * `update-ref --stdin` for all the refs. One ref per chain TIP, not per commit: archiving a tip makes
+ * its ancestors reachable. The ref is named by the tip's own short sha, so a second removal can never
+ * overwrite a different commit's ref.
  *
- * Never silent: more than {@link REFLOG_REF_LIMIT} commits to archive is refused with
- * `reflog-limit`, before any ref is written, so the item stops at the archive step and nothing is
- * trashed. The same goes for a reflog that cannot be read or a ref that cannot be written.
+ * Never silent: more than the limit ({@link REFLOG_REF_LIMIT} tips) is refused with `reflog-limit`
+ * BEFORE any ref is written, so the item stops at the archive step and nothing is trashed. The same
+ * goes for a reflog that cannot be read or a ref that cannot be written (the update is one
+ * transaction).
+ *
+ * Nothing is remembered between calls. What no ref reaches changes the moment a tag or a branch is
+ * deleted, and a removal asks twice (the forced reprobe, then the executor): each pass asks git again.
  *
  * "Reaches" is `git rev-list --all`, which also counts the HEAD each worktree stands on now: that
- * commit and its ancestry are the tip ref's, written before this runs.
- *
- * One removal asks twice (the forced reprobe, then the executor). The second call with the same
- * reflog, and every ref it made still there, returns the first answer without recomputing.
+ * commit and its ancestry are the tip ref's, written right after this runs.
  */
-export function createReflogArchiver(opts: { io?: ReflogIo } = {}): {
+export function createReflogArchiver(opts: { io?: ReflogIo; limit?: number } = {}): {
   archive(repoPath: string, refPrefix: string, worktreePath: string): Promise<string[]>
 } {
   const io = opts.io ?? defaultReflogIo
-  const memory = new Map<string, { fingerprint: string; refs: string[] }>()
+  const limit = opts.limit ?? REFLOG_REF_LIMIT
 
   const unreachableTips = async (repoPath: string, entries: string[]): Promise<string[]> => {
     // Entries whose object was pruned cannot be preserved, and are not a commit we could lose.
@@ -260,33 +257,20 @@ export function createReflogArchiver(opts: { io?: ReflogIo } = {}): {
       ]
       if (entries.length === 0) return []
 
-      const key = `${repoPath}\0${refPrefix}\0${worktreePath}`
-      const fingerprint = createHash('sha256').update(log).digest('hex')
-      const seen = memory.get(key)
-      if (seen && seen.fingerprint === fingerprint) {
-        const held = new Set(
-          (await io.run(repoPath, ['for-each-ref', '--format=%(refname)', `${refPrefix}/`]))
-            .split('\n')
-            .filter(Boolean)
-        )
-        if (seen.refs.every((r) => held.has(r))) return seen.refs
-      }
-
       const tips = await unreachableTips(repoPath, entries)
-      if (tips.length > REFLOG_REF_LIMIT) {
+      if (tips.length > limit) {
         throw new Error(
-          `reflog-limit: this worktree's history holds ${tips.length} commits that no branch, tag or ref reaches, more than the ${REFLOG_REF_LIMIT} Harnu keeps for one removal. Nothing was removed. Keep the ones you want with git branch <name> <sha>, or remove the folder yourself.`
+          `reflog-limit: this worktree's history holds ${tips.length} separate lines of commits that no branch, tag or ref reaches (one tip each), more than the ${limit} tips Harnu keeps for one removal. Nothing was removed. Keep the ones you want with git branch <name> <sha>, or remove the folder yourself.`
         )
       }
-      const written: string[] = []
-      for (const sha of tips) {
-        const ref = `${refPrefix}/${sha.slice(0, 12)}`
-        await io.run(repoPath, ['update-ref', ref, sha])
-        written.push(ref)
-      }
-      memory.set(key, { fingerprint, refs: written })
-      if (memory.size > REFLOG_MEMORY) memory.delete(memory.keys().next().value!)
-      return written
+      if (tips.length === 0) return []
+      const refs = tips.map((sha) => `${refPrefix}/${sha.slice(0, 12)}`)
+      await io.runIn(
+        repoPath,
+        ['update-ref', '--stdin'],
+        `${tips.map((sha, i) => `update ${refs[i]} ${sha}`).join('\n')}\n`
+      )
+      return refs
     }
   }
 }
