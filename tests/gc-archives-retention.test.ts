@@ -135,11 +135,18 @@ describe('the autopilot expires archives only when told to', () => {
     const expire = vi.fn(async () => ({ deleted: 3, failed: 0 }))
     const r = rig(live({ archiveAutoExpire: true, archiveKeepDays: 14 }), expire)
     const rec = await runGcCycle(r.deps, 'timer')
-    expect(expire).toHaveBeenCalledWith(14, NOW)
+    expect(expire).toHaveBeenCalledWith(14, NOW, [])
     expect(rec.archivesExpired).toBe(3)
     expect(r.notices).toEqual([
       'Deleted 3 archives older than 14 days. Git reclaims their space on its next gc.'
     ])
+  })
+
+  it('hands the never-clean list to the expiry, so those repos are never touched', async () => {
+    const expire = vi.fn(async () => ({ deleted: 0, failed: 0 }))
+    const r = rig(live({ archiveAutoExpire: true, neverClean: ['/ws/protected'] }), expire)
+    await runGcCycle(r.deps, 'timer')
+    expect(expire).toHaveBeenCalledWith(30, NOW, ['/ws/protected'])
   })
 
   it('stays out of it before the first report is acknowledged, and with the autopilot off', async () => {

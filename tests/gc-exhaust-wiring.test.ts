@@ -11,6 +11,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync
 } from 'node:fs'
 import * as os from 'node:os'
@@ -28,7 +29,13 @@ vi.mock('../src/main/reaper/scanner-shell', () => ({ lastSnapshot: () => null })
 import { cleanItem, type ExecutorDeps } from '../src/main/reaper/executor-core'
 import { appendTombstone } from '../src/main/reaper/journal'
 import { recordTrash, type TrashEnv } from '../src/main/gc/trash-shell'
-import { emptyHarnuTrashNow, gatherTrash } from '../src/main/gc/gc-exhaust-shell'
+import {
+  deleteConfirmedArchives,
+  emptyHarnuTrashNow,
+  expireArchivesNow,
+  gatherTrash
+} from '../src/main/gc/gc-exhaust-shell'
+import { execFileSync } from 'node:child_process'
 import type { ReapItem } from '../src/main/reaper/reaper-core'
 
 let root: string
@@ -231,5 +238,104 @@ describe('clean → list → empty, against a fake trash', () => {
     expect(readdir.mock.calls.filter((c) => String(c[0]).startsWith(trash))).toEqual([])
     readFile.mockRestore()
     readdir.mockRestore()
+  })
+})
+
+describe('never-clean protects archives too (delta-2 item 1)', () => {
+  const ENV = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 't',
+    GIT_AUTHOR_EMAIL: 't@example.com',
+    GIT_COMMITTER_NAME: 't',
+    GIT_COMMITTER_EMAIL: 't@example.com'
+  }
+  const gitIn = (cwd: string, ...a: string[]): string =>
+    execFileSync('git', ['-C', cwd, ...a], { encoding: 'utf8', env: ENV }).trim()
+  const OLD = 'refs/archive/feat/old/20260101T000000Z/tip'
+
+  /** A repo with one old archive, and a journal line naming it so Cleanup knows the repo. */
+  async function repoWithOldArchive(name: string): Promise<string> {
+    const repo = path.join(root, 'repos', name)
+    mkdirSync(repo, { recursive: true })
+    execFileSync('git', ['init', '-q', '-b', 'main', repo], { env: ENV })
+    writeFileSync(path.join(repo, 'a.txt'), name)
+    gitIn(repo, 'add', '-A')
+    gitIn(repo, 'commit', '-q', '-m', 'x')
+    gitIn(repo, 'update-ref', OLD, 'HEAD')
+    await appendTombstone({
+      at: Date.parse('2026-01-01T00:00:00Z'),
+      repoPath: repo,
+      kind: 'worktree',
+      branch: 'feat/old',
+      sha: 'x',
+      deleted: [],
+      justifiedBy: null,
+      restoreHint: null,
+      archiveTipRef: OLD,
+      archiveWipRef: null
+    })
+    return repo
+  }
+  const has = (repo: string): boolean =>
+    gitIn(repo, 'for-each-ref', 'refs/archive/').includes('feat/old')
+  const NOW_MS = Date.parse('2026-10-12T12:00:00Z')
+
+  it('the autopilot expiry skips a repo on the never-clean list, and expires the others', async () => {
+    const kept = await repoWithOldArchive('kept')
+    const other = await repoWithOldArchive('other')
+    const r = await expireArchivesNow(30, NOW_MS, [kept])
+    expect(r.deleted).toBe(1)
+    expect(has(kept)).toBe(true)
+    expect(has(other)).toBe(false)
+  })
+
+  it('a never-clean path ABOVE the repo protects it too, and so does a symlinked spelling', async () => {
+    const repo = await repoWithOldArchive('inside')
+    const link = path.join(root, 'link-to-repo')
+    symlinkSync(repo, link)
+    expect((await expireArchivesNow(30, NOW_MS, [path.join(root, 'repos')])).deleted).toBe(0)
+    expect((await expireArchivesNow(30, NOW_MS, [link])).deleted).toBe(0)
+    expect(has(repo)).toBe(true)
+  })
+
+  it('an archive of a folder that was under a never-clean path is protected, in a repo that is not', async () => {
+    const repo = await repoWithOldArchive('plain')
+    const protectedDir = path.join(root, 'protected-ws')
+    await appendTombstone({
+      at: Date.parse('2026-01-02T00:00:00Z'),
+      repoPath: repo,
+      kind: 'worktree',
+      branch: 'feat/mine',
+      sha: 'y',
+      deleted: [],
+      justifiedBy: null,
+      restoreHint: null,
+      archiveTipRef: 'refs/archive/feat/mine/20260102T000000Z/tip',
+      archiveWipRef: null,
+      trashedPath: path.join(protectedDir, 'wt-mine'),
+      trashedAt: Date.parse('2026-01-02T00:00:00Z')
+    })
+    gitIn(repo, 'update-ref', 'refs/archive/feat/mine/20260102T000000Z/tip', 'HEAD')
+    const r = await expireArchivesNow(30, NOW_MS, [protectedDir])
+    expect(r.deleted).toBe(1) // feat/old goes
+    expect(gitIn(repo, 'for-each-ref', 'refs/archive/')).toContain('feat/mine')
+    expect(has(repo)).toBe(false)
+  })
+
+  it('deleting by hand refuses a never-clean repo too ("never cleaned, automatically or by hand")', async () => {
+    const repo = await repoWithOldArchive('manual')
+    const tip = gitIn(repo, 'rev-parse', OLD)
+    const ack = await deleteConfirmedArchives(
+      {
+        repoPath: repo,
+        archives: [
+          { namespace: 'refs/archive/feat/old/20260101T000000Z', tipSha: tip, wipSha: null }
+        ]
+      },
+      [repo]
+    )
+    expect(ack.neverClean).toBe(true)
+    expect(ack.deleted).toBe(0)
+    expect(has(repo)).toBe(true)
   })
 })
