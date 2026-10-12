@@ -56,6 +56,7 @@ import CleanupReviewList from './CleanupReviewList.vue'
 import CleanupHeroButton from './CleanupHeroButton.vue'
 import CleanupSelectionBar from './CleanupSelectionBar.vue'
 import CleanupFirstCycleBanner from './CleanupFirstCycleBanner.vue'
+import CleanupRecoveryNotices from './CleanupRecoveryNotices.vue'
 import CleanupDockerCard from './CleanupDockerCard.vue'
 import CleanupSplitBar from './CleanupSplitBar.vue'
 import CleanupLegend from './CleanupLegend.vue'
@@ -987,6 +988,11 @@ async function copyRestoreHint(hint: string): Promise<void> {
 
     <div v-else-if="model && prefs" class="relative">
       <div class="px-5.5 pt-3">
+        <CleanupRecoveryNotices
+          :items="gc.recovery"
+          class="mb-3"
+          @answer="(id, action) => void gc.answerRecovery(id, action)"
+        />
         <CleanupFirstCycleBanner
           v-if="showFirstCycle"
           :count="model.cleanable.length"

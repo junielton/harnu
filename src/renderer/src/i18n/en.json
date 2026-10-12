@@ -2907,6 +2907,16 @@
         "lockSkipped": "Harnu unlocked a worktree during a clean that didn't finish",
         "containersGone": "Harnu stopped containers during a clean that didn't finish; they are gone now",
         "failed": "Couldn't do that"
+      },
+      "recovery": {
+        "label": "Interrupted cleans",
+        "stackStopped": "Harnu stopped {names} during a clean that didn't finish.",
+        "containersGone": "Harnu stopped {names} during a clean that didn't finish; they no longer exist.",
+        "lockSkipped": "Harnu unlocked {path} during a clean that didn't finish, and it is not the same worktree any more (or that could not be confirmed), so the lock was not put back.",
+        "start": "Start again",
+        "leave": "Leave stopped",
+        "lock": "Lock again",
+        "dismiss": "Dismiss"
       }
     }
   },

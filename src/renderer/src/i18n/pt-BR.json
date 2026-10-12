@@ -2907,6 +2907,16 @@
         "lockSkipped": "O Harnu desbloqueou um worktree durante uma limpeza que não terminou",
         "containersGone": "O Harnu parou contêineres durante uma limpeza que não terminou; eles não existem mais",
         "failed": "Não deu para fazer isso"
+      },
+      "recovery": {
+        "label": "Limpezas interrompidas",
+        "stackStopped": "O Harnu parou {names} durante uma limpeza que não terminou.",
+        "containersGone": "O Harnu parou {names} durante uma limpeza que não terminou; eles não existem mais.",
+        "lockSkipped": "O Harnu desbloqueou {path} durante uma limpeza que não terminou, e não é mais o mesmo worktree (ou não deu para confirmar), então o bloqueio não foi recolocado.",
+        "start": "Subir de novo",
+        "leave": "Deixar parado",
+        "lock": "Bloquear de novo",
+        "dismiss": "Dispensar"
       }
     }
   },
