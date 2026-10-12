@@ -223,3 +223,103 @@ describe('transcript heads are read once while the file is unchanged', () => {
     expect(reads).toHaveLength(2)
   })
 })
+
+describe('one fresh gather per request, whatever its kinds (delta-2 item 3)', () => {
+  const volume = (n: string) => ({
+    id: `volume:${n}`,
+    name: n,
+    sizeBytes: 100,
+    project: 'p',
+    reason: { code: 'no-known-worktree' as const, detail: 'x' }
+  })
+
+  it('volumes, transcripts and stack leftovers in one request cost one gather', async () => {
+    const vols = [volume('v1'), volume('v2'), volume('v3')]
+    const t: OrphanTranscriptItem = {
+      id: 'transcripts:s',
+      slug: 's',
+      folder: '/gone/s',
+      repoLabel: 'r',
+      bytes: 10,
+      sessionCount: 1,
+      newestAt: 0,
+      hasMemory: false
+    }
+    const st: StackLeftoverItem = {
+      id: stackLeftoverId('pj'),
+      project: 'pj',
+      dirs: ['/gone'],
+      containers: [{ id: 'c1', name: 'c', state: 'exited' }],
+      networks: [],
+      volumes: []
+    }
+    let gathers = 0
+    let q = 0
+    const done: Array<{ results: Array<Record<string, unknown>> }> = []
+    const deps: ManualCleanDeps = {
+      prefs: () => defaultGcPrefs(),
+      gather: async () => ({
+        bundles: [],
+        orphanVolumes: structuredClone(vols),
+        orphanTranscripts: [structuredClone(t)],
+        stackLeftovers: [structuredClone(st)]
+      }),
+      opsFor: () => {
+        throw new Error('no ops')
+      },
+      // The one door: every kind is read from the same fresh gather.
+      freshGather: async () => {
+        gathers++
+        return {
+          orphanVolumes: structuredClone(vols),
+          orphanTranscripts: [structuredClone(t)],
+          stackLeftovers: [structuredClone(st)]
+        }
+      },
+      freshOrphans: async () => {
+        throw new Error('legacy per-kind look used')
+      },
+      freshOrphanTranscripts: async () => {
+        throw new Error('legacy per-kind look used')
+      },
+      freshStackLeftovers: async () => {
+        throw new Error('legacy per-kind look used')
+      },
+      trashTranscripts: async () => undefined,
+      removeStackLeftovers: async () => ({ removedContainers: 1, removedNetworks: 0, errors: [] }),
+      workStampOf: async () => null,
+      removeOrphanVolumes: async (names) => ({
+        buildCacheBytes: 0,
+        imageBytes: 0,
+        volumeBytes: 100 * names.length,
+        errors: []
+      }),
+      queue: createJobQueue({
+        newId: () => `j${++q}`,
+        emitProgress: () => undefined,
+        emitDone: (d) => done.push(d as never)
+      }),
+      state: createCycleState(),
+      now: () => NOW
+    }
+    const ids = [...vols.map((v) => v.id), t.id, st.id]
+    const expected: Record<string, unknown> = {}
+    for (const v of vols)
+      expected[v.id] = {
+        bucket: 'orphan-volume',
+        reasonCode: 'no-known-worktree',
+        headSha: null,
+        stackIds: [],
+        ownedVolumes: [v.name],
+        bytes: 100,
+        path: null,
+        project: 'p'
+      }
+    expected[t.id] = orphanExpectedOf(t)
+    expected[st.id] = stackLeftoverExpectedOf(st)
+    submitManualClean(deps, ids, parseOptions(structuredClone({ confirmed: ids, expected })))
+    await deps.queue.idle()
+    expect(done[0]!.results.map((r) => r.ok)).toEqual([true, true, true, true, true])
+    expect(gathers).toBe(1)
+  })
+})
