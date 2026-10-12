@@ -6,7 +6,7 @@ import Button from './ui/Button.vue'
 import { formatBytes } from './system-monitor-format'
 import { relativeTime } from '../composables/useRelativeTime'
 import { useFocusTrap } from '../composables/useFocusTrap'
-import type { ArchiveEntry } from '../../../main/gc/gc-wire'
+import type { ArchiveEntry, TrashListEntry } from '../../../main/gc/gc-wire'
 
 /**
  * The confirm of what Cleanup deletes from its own exhaust (design.md "Archives card"): the archives
@@ -20,17 +20,18 @@ const props = defineProps<{
   entries?: ArchiveEntry[]
   /** `delete` and `gc`: the repo's short name. */
   repo?: string
-  /** `trash`: how many folders and how many bytes. */
-  trashCount?: number
-  trashBytes?: number
+  /** `trash`: the entries listed, which are exactly the ones deleted. */
+  trashEntries?: TrashListEntry[]
 }>()
 const emit = defineEmits<{ confirm: []; cancel: [] }>()
 const { t } = useI18n()
 
 const n = computed(() =>
-  props.mode === 'delete' ? (props.entries?.length ?? 0) : (props.trashCount ?? 0)
+  props.mode === 'delete' ? (props.entries?.length ?? 0) : (props.trashEntries?.length ?? 0)
 )
-const size = computed(() => formatBytes(props.trashBytes ?? 0))
+const size = computed(() =>
+  formatBytes((props.trashEntries ?? []).reduce((sum, e) => sum + (e.bytes ?? 0), 0))
+)
 
 const title = computed(() => {
   if (props.mode === 'delete') {
@@ -164,6 +165,32 @@ function onBackdropMousedown(e: MouseEvent): void {
               class="inline-flex items-center rounded-full border border-border bg-surface px-2 py-0.5 text-eyebrow text-text-3"
               >{{ t('cleanup.gc.archives.wip') }}</span
             >
+          </li>
+        </ul>
+
+        <ul
+          v-if="mode === 'trash'"
+          class="scrollable m-0 mx-5 mt-3 flex max-h-(--fv-rail-list-max-h) list-none flex-col gap-1.5 overflow-y-auto p-0 pr-1"
+          tabindex="0"
+          :aria-label="t('cleanup.gc.archives.dialog.trashListLabel')"
+          data-testid="exhaust-trash-list"
+        >
+          <li
+            v-for="e in trashEntries"
+            :key="e.id"
+            class="flex shrink-0 items-center gap-3 rounded-sm border border-border bg-surface-2 px-2.5 py-2"
+            data-testid="exhaust-row"
+          >
+            <Trash2
+              :size="12"
+              :stroke-width="1.6"
+              class="shrink-0 text-text-3"
+              aria-hidden="true"
+            />
+            <span class="min-w-0 flex-1 truncate font-mono text-ui text-text">{{ e.name }}</span>
+            <span class="text-caption tabular-nums text-text-3">{{
+              e.bytes === null ? '—' : formatBytes(e.bytes)
+            }}</span>
           </li>
         </ul>
 

@@ -582,22 +582,37 @@ export const useGcStore = defineStore('gc', () => {
     }
   }
 
-  /** "Empty what Harnu moved to the trash": only those folders; never the user's other trash. */
-  async function emptyTrash(): Promise<void> {
+  /**
+   * "Empty what Harnu moved to the trash": the entries the confirm LISTED, by id. Main deletes only
+   * those, each only while it is still exactly the entry Harnu recorded, so what was trashed after the
+   * dialog opened, or restored and trashed again by the user, is left alone and said so.
+   */
+  async function emptyTrash(ids: readonly string[]): Promise<void> {
     const { t } = i18n.global
     const ui = useUiStore()
     try {
-      const ack = await window.api.gcEmptyTrash()
+      const ack = await window.api.gcEmptyTrash([...ids])
       if (ack.unsupported) {
         ui.pushToast({
           kind: 'warning',
-          title: t('cleanup.gc.trash.toast.unsupported', { location: ack.location }),
+          title: t('cleanup.gc.trash.toast.unsupported', {
+            location: ack.location ?? t('cleanup.gc.trash.recycleBin')
+          }),
           timeoutMs: 8000
         })
-      } else if (ack.failed > 0) {
+      } else if (ack.failed > 0 || ack.skipped > 0) {
+        const n = ack.failed > 0 ? ack.failed : ack.skipped
         ui.pushToast({
           kind: 'warning',
-          title: t('cleanup.gc.trash.toast.failed', ack.failed, { named: { n: ack.failed } }),
+          title: t(
+            ack.failed > 0 ? 'cleanup.gc.trash.toast.failed' : 'cleanup.gc.trash.toast.skipped',
+            n,
+            { named: { n } }
+          ),
+          description:
+            ack.emptied > 0
+              ? t('cleanup.gc.trash.toast.emptied', { size: formatBytes(ack.emptiedBytes) })
+              : undefined,
           timeoutMs: 8000
         })
       } else {

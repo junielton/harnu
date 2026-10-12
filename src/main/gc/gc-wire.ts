@@ -11,7 +11,7 @@ import type { OrphanVolumeItem } from './gc-housekeeping-input'
 import type { GcJobDone, GcJobInfo, GcJobProgress } from './gc-jobs-core'
 import type { GcDockerCard, OrphanVolumesHidden } from './gc-docker-card'
 import type { ArchiveEntry, ArchiveRepoGroup, GcArchivesCard } from './archives-core'
-import type { GcTrashCard } from './trash-core'
+import type { GcTrashCard, TrashListEntry } from './trash-core'
 import type {
   GcOpinionAck,
   GcOpinionDone,
@@ -26,6 +26,7 @@ export type {
   ArchiveRepoGroup,
   GcArchivesCard,
   GcTrashCard,
+  TrashListEntry,
   GcDockerCard,
   OrphanVolumesHidden,
   GcOpinionAck,

@@ -59,7 +59,7 @@ import DehydrateConfirmDialog from './DehydrateConfirmDialog.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
 import Button from './ui/Button.vue'
 import type { ReapItem, Tombstone } from '../../../preload'
-import type { ArchiveEntry, ArchiveRepoGroup } from '../../../main/gc/gc-wire'
+import type { ArchiveEntry, ArchiveRepoGroup, TrashListEntry } from '../../../main/gc/gc-wire'
 
 /**
  * Cleanup takeover — the single home of cleaning (design.md "Workspace GC — unified Cleanup").
@@ -572,7 +572,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
 type ExhaustDialog =
   | { mode: 'delete'; group: ArchiveRepoGroup; entries: ArchiveEntry[] }
   | { mode: 'gc'; group: ArchiveRepoGroup }
-  | { mode: 'trash'; count: number; bytes: number }
+  | { mode: 'trash'; entries: TrashListEntry[] }
 const exhaustDialog = ref<ExhaustDialog | null>(null)
 const archives = computed(() => gc.snapshot?.archives ?? null)
 const trash = computed(() => gc.snapshot?.trash ?? null)
@@ -589,7 +589,8 @@ async function confirmExhaust(): Promise<void> {
   } else if (d.mode === 'gc') {
     await gc.runArchiveGc(d.group.repoPath, d.group.repoAlias)
   } else {
-    await gc.emptyTrash()
+    // The ids the dialog LISTED: whatever was trashed since is not in them.
+    await gc.emptyTrash(d.entries.map((e) => e.id))
   }
 }
 </script>
@@ -795,15 +796,9 @@ async function confirmExhaust(): Promise<void> {
             @gc="(group) => (exhaustDialog = { mode: 'gc', group })"
           />
           <CleanupTrashCard
-            v-if="trash && trash.inTrashCount > 0"
+            v-if="trash && (trash.inTrashCount > 0 || trash.unverifiedCount > 0)"
             :trash="trash"
-            @empty="
-              exhaustDialog = {
-                mode: 'trash',
-                count: trash.inTrashCount,
-                bytes: trash.inTrashBytes
-              }
-            "
+            @empty="exhaustDialog = { mode: 'trash', entries: [...trash.entries] }"
           />
 
           <CleanupReviewList
@@ -913,8 +908,7 @@ async function confirmExhaust(): Promise<void> {
     :mode="exhaustDialog.mode"
     :entries="exhaustDialog.mode === 'delete' ? exhaustDialog.entries : undefined"
     :repo="exhaustDialog.mode === 'trash' ? undefined : exhaustDialog.group.repoAlias"
-    :trash-count="exhaustDialog.mode === 'trash' ? exhaustDialog.count : undefined"
-    :trash-bytes="exhaustDialog.mode === 'trash' ? exhaustDialog.bytes : undefined"
+    :trash-entries="exhaustDialog.mode === 'trash' ? exhaustDialog.entries : undefined"
     @confirm="confirmExhaust()"
     @cancel="exhaustDialog = null"
   />

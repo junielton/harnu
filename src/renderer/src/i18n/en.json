@@ -2794,7 +2794,8 @@
           "trashBody": "This permanently deletes {n} folder Harnu moved to the trash, {size}. Anything else in your trash stays. | This permanently deletes {n} folders Harnu moved to the trash, {size}. Anything else in your trash stays.",
           "trashConfirm": "Empty {size}",
           "cancel": "Cancel",
-          "close": "Close"
+          "close": "Close",
+          "trashListLabel": "Folders to delete from the trash"
         },
         "toast": {
           "deleted": "Deleted {n} archive ref | Deleted {n} archive refs",
@@ -2813,8 +2814,11 @@
         "toast": {
           "emptied": "Emptied {size} from the trash",
           "failed": "Could not empty {n} folder from the trash | Could not empty {n} folders from the trash",
-          "unsupported": "Harnu can't empty the trash on this system. Open {location}."
-        }
+          "unsupported": "Harnu can't empty the trash on this system. Open {location}.",
+          "skipped": "{n} folder was left in the trash: it is no longer what Harnu moved | {n} folders were left in the trash: they are no longer what Harnu moved"
+        },
+        "unverified": "{size} moved to the trash by Harnu (can't check what's still there)",
+        "recycleBin": "Recycle Bin"
       }
     }
   },

@@ -2794,7 +2794,8 @@
           "trashBody": "Isso apaga em definitivo {n} pasta que o Harnu mandou para a lixeira, {size}. O resto da sua lixeira fica como está. | Isso apaga em definitivo {n} pastas que o Harnu mandou para a lixeira, {size}. O resto da sua lixeira fica como está.",
           "trashConfirm": "Esvaziar {size}",
           "cancel": "Cancelar",
-          "close": "Fechar"
+          "close": "Fechar",
+          "trashListLabel": "Pastas a apagar da lixeira"
         },
         "toast": {
           "deleted": "{n} ref de arquivo apagada | {n} refs de arquivo apagadas",
@@ -2813,8 +2814,11 @@
         "toast": {
           "emptied": "{size} esvaziados da lixeira",
           "failed": "Não foi possível esvaziar {n} pasta da lixeira | Não foi possível esvaziar {n} pastas da lixeira",
-          "unsupported": "O Harnu não consegue esvaziar a lixeira neste sistema. Abra {location}."
-        }
+          "unsupported": "O Harnu não consegue esvaziar a lixeira neste sistema. Abra {location}.",
+          "skipped": "{n} pasta ficou na lixeira: não é mais o que o Harnu moveu | {n} pastas ficaram na lixeira: não são mais o que o Harnu moveu"
+        },
+        "unverified": "{size} que o Harnu mandou para a lixeira (não dá para checar o que ainda está lá)",
+        "recycleBin": "Lixeira"
       }
     }
   },
