@@ -221,16 +221,28 @@ They now get a block on the map of their own, in **Needs review**, showing the f
 
 What happens when you confirm, in this order, and nothing after a step that failed:
 
-1. Harnu writes two refs named after the folder and the commit it was on. With no branch to name them, that pair is the key:
+1. Harnu writes the refs, named after the folder and the commit it was on (with no branch to name them, that pair is the key; the short sha is the first 12 characters, the same ones the dialog shows):
 
    ```
-   refs/archive/detached/<folder>-<short sha>/tip   # the commit it was on, even if no branch holds it
-   refs/archive/detached/<folder>-<short sha>/wip   # everything uncommitted or untracked, if there was any
+   refs/archive/detached/<folder>-<short sha>/tip             # the commit it was on, even if no branch holds it
+   refs/archive/detached/<folder>-<short sha>/wip             # everything uncommitted or untracked, if there was any
+   refs/archive/detached/<folder>-<short sha>/reflog/<sha12>  # one per commit only this worktree's HEAD history reaches
    ```
+
+   The `reflog` refs matter when you committed while detached and then moved on (`git checkout <other>`): that commit is on no branch, and only the worktree's own history of where HEAD has been mentions it, which goes with the folder. Harnu keeps each one reachable.
 
 2. The folder goes to the system trash and is unregistered from git. No branch is deleted, because there was none.
 
-If either ref cannot be written, the item stops at the archive step and the folder is left exactly where it was. Removing a folder with the same name at the same commit a second time reuses the same names; the earlier `wip` stays reachable from the new one, so the first copy of your uncommitted work is never overwritten.
+If any ref cannot be written, the removal is refused before anything is touched (`archive-failed`, with the reason) and the folder stays exactly where it was.
+
+Two things stop it before it starts, each with a reason in the panel rather than a silent "0 cleaned":
+
+- **A rebase or bisect in progress.** Their unfinished state lives in the folder and would be trashed with it, so Remove is not offered until you finish or abort the operation. The panel names the command: `git -C <path> rebase --abort` or `git -C <path> bisect reset`. Then **Scan now**.
+- **A session running in it, a lock, a nested checkout**, like any other worktree.
+
+The confirm dialog lists every untracked file of the folder by name (they are in no commit, and the `wip` ref is where they are kept).
+
+Removing a folder with the same name at the same commit a second time reuses the same names. A `wip` with different files than the one already there does not overwrite it: the earlier one moves to a sibling ref, `…/wip-<yyyymmddhhmmss>`, so `git show …/wip` is always a plain diff against the tip and nothing is lost. List every earlier one with `git for-each-ref 'refs/archive/detached/*/wip-*'`.
 
 To get one back (list them with `git for-each-ref refs/archive/detached`):
 
@@ -238,9 +250,12 @@ To get one back (list them with `git for-each-ref refs/archive/detached`):
 # the commit, as a worktree again
 git worktree add <path> refs/archive/detached/<folder>-<short sha>/tip
 
-# the uncommitted work too, or the commit as a branch you can keep working on
+# the uncommitted work too
 git worktree add <path> refs/archive/detached/<folder>-<short sha>/wip
+
+# the commit as a branch you can keep working on, or a commit only the history held
 git checkout -b <name> refs/archive/detached/<folder>-<short sha>/tip
+git checkout -b <name> refs/archive/detached/<folder>-<short sha>/reflog/<sha12>
 ```
 
 The cleanup journal line for it carries the first command ready to copy. If a removal stops after the folder was trashed, the panel says which step and shows `git worktree prune`; the refs already hold the commit.
@@ -420,7 +435,7 @@ In the same cycle, when the Docker cache setting is on, Harnu runs `docker build
 
 ### Removing a Needs review item on purpose
 
-Needs review items are removed only after you confirm, and the confirmation is for what you were looking at: if the worktree changed between your click and the job (a new commit, a Docker stack that started, a different reason it is listed), Harnu refuses it with _changed since you confirmed_ and you look again. Confirming one item never confirms another, and an orphan volume needs its own confirmation. The same check applies to a worktree you remove by hand that Harnu already considers finished. Before anything is stopped or deleted, Harnu writes the branch tip and the working state (tracked and untracked files) to `refs/archive/…`; if that fails, nothing is touched. It still refuses a worktree with a running session, a folder whose Docker stacks changed since the scan, a main checkout, a path on your never-clean list and a worktree with a detached HEAD (there is no branch to preserve or delete). The branch is then deleted even though git does not consider it merged, because its tip is archived.
+Needs review items are removed only after you confirm, and the confirmation is for what you were looking at: if the worktree changed between your click and the job (a new commit, a Docker stack that started, a different reason it is listed), Harnu refuses it with _changed since you confirmed_ and you look again. Confirming one item never confirms another, and an orphan volume needs its own confirmation. The same check applies to a worktree you remove by hand that Harnu already considers finished. Before anything is stopped or deleted, Harnu writes the branch tip and the working state (tracked and untracked files) to `refs/archive/…`; if that fails, nothing is touched. It still refuses a worktree with a running session, a folder whose Docker stacks changed since the scan, a main checkout, a path on your never-clean list and a detached worktree with a rebase or bisect still in progress (see [Detached worktrees](#detached-worktrees)). A branch is then deleted even though git does not consider it merged, because its tip is archived; a detached worktree has no branch, so its commit is archived under `refs/archive/detached/…` instead and nothing is deleted from git but the registration.
 
 ### What you can get back
 
