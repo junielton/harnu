@@ -2818,7 +2818,10 @@
           "emptied": "{size} esvaziados da lixeira",
           "failed": "Não foi possível esvaziar {n} pasta da lixeira | Não foi possível esvaziar {n} pastas da lixeira",
           "unsupported": "O Harnu não consegue esvaziar a lixeira neste sistema. Abra {location}.",
-          "skipped": "{n} pasta ficou na lixeira: não é mais o que o Harnu moveu | {n} pastas ficaram na lixeira: não são mais o que o Harnu moveu"
+          "skippedChanged": "{n} pasta ficou na lixeira: não é mais o que o Harnu moveu | {n} pastas ficaram na lixeira: não são mais o que o Harnu moveu",
+          "skippedUnreachable": "{n} pasta ficou na lixeira: o disco dela não está montado ou não pode ser lido | {n} pastas ficaram na lixeira: o disco delas não está montado ou não pode ser lido",
+          "skippedNoRecord": "{n} pasta ficou na lixeira: o Harnu não tem registro exato dessa movimentação | {n} pastas ficaram na lixeira: o Harnu não tem registro exato dessas movimentações",
+          "nothing": "Nada foi esvaziado: essas pastas não estão mais na lixeira"
         },
         "unverified": "{size} que o Harnu mandou para a lixeira (não dá para checar o que ainda está lá)",
         "recycleBin": "Lixeira"

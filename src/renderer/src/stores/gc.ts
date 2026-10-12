@@ -614,19 +614,32 @@ export const useGcStore = defineStore('gc', () => {
           timeoutMs: 8000
         })
       } else if (ack.failed > 0 || ack.skipped > 0) {
-        const n = ack.failed > 0 ? ack.failed : ack.skipped
+        // Name the real cause of what was left in the trash, once per cause.
+        const causes: string[] = []
+        if (ack.failed > 0) {
+          causes.push(t('cleanup.gc.trash.toast.failed', ack.failed, { named: { n: ack.failed } }))
+        }
+        const left = (key: string, n: number): void => {
+          if (n > 0) causes.push(t(`cleanup.gc.trash.toast.${key}`, n, { named: { n } }))
+        }
+        left('skippedUnreachable', ack.unreachable)
+        left('skippedChanged', ack.changed)
+        left('skippedNoRecord', ack.unverifiable)
         ui.pushToast({
           kind: 'warning',
-          title: t(
-            ack.failed > 0 ? 'cleanup.gc.trash.toast.failed' : 'cleanup.gc.trash.toast.skipped',
-            n,
-            { named: { n } }
-          ),
+          title: causes.join(' · '),
           description:
             ack.emptied > 0
               ? t('cleanup.gc.trash.toast.emptied', { size: formatBytes(ack.emptiedBytes) })
               : undefined,
           timeoutMs: 8000
+        })
+      } else if (ack.emptied === 0) {
+        // Everything on the list was already gone: say so, never "Emptied 0 B".
+        ui.pushToast({
+          kind: 'info',
+          title: t('cleanup.gc.trash.toast.nothing'),
+          timeoutMs: 6000
         })
       } else {
         ui.pushToast({

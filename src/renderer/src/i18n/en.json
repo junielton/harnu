@@ -2818,7 +2818,10 @@
           "emptied": "Emptied {size} from the trash",
           "failed": "Could not empty {n} folder from the trash | Could not empty {n} folders from the trash",
           "unsupported": "Harnu can't empty the trash on this system. Open {location}.",
-          "skipped": "{n} folder was left in the trash: it is no longer what Harnu moved | {n} folders were left in the trash: they are no longer what Harnu moved"
+          "skippedChanged": "{n} folder was left in the trash: it is no longer what Harnu moved | {n} folders were left in the trash: they are no longer what Harnu moved",
+          "skippedUnreachable": "{n} folder was left in the trash: its disk is not mounted or can't be read | {n} folders were left in the trash: their disk is not mounted or can't be read",
+          "skippedNoRecord": "{n} folder was left in the trash: Harnu has no exact record of that move | {n} folders were left in the trash: Harnu has no exact record of those moves",
+          "nothing": "Nothing was emptied: those folders are no longer in the trash"
         },
         "unverified": "{size} moved to the trash by Harnu (can't check what's still there)",
         "recycleBin": "Recycle Bin"
