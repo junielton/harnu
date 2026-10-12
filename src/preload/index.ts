@@ -2612,6 +2612,9 @@ const api = {
     emptied: number
     missing: number
     skipped: number
+    changed: number
+    unverifiable: number
+    unreachable: number
     failed: number
     location: string | null
   }> => ipcRenderer.invoke('gc:trash:empty', ids),

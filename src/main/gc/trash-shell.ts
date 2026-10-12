@@ -276,6 +276,19 @@ async function nearestDev(p: string): Promise<number | null> {
   return null
 }
 
+/**
+ * Every directory from the trash dir down to the entry's parent is a REAL directory (not a symlink),
+ * and the entry itself is not reached through one. lstat on each component: `fs.lstat(a/b/c)` alone
+ * follows symlinks in `a` and `b`, which is exactly how a swapped `files/` redirects a delete.
+ */
+async function chainIsReal(dirs: readonly string[]): Promise<boolean> {
+  for (const d of dirs) if (!isRealDir(await lstatOrNull(d))) return false
+  return true
+}
+
+const dataDirs = (rec: TrashEntryRecord): string[] =>
+  rec.kind === 'macos' ? [rec.trashDir] : [rec.trashDir, path.join(rec.trashDir, 'files')]
+
 export async function observeEntry(rec: TrashEntryRecord, env: TrashEnv): Promise<Observed> {
   if (!canRecord(env.platform)) return 'unknown'
   if (!allowedTrashDir(rec, env) || !safeName(rec.name)) return 'changed'
@@ -287,6 +300,11 @@ export async function observeEntry(rec: TrashEntryRecord, env: TrashEnv): Promis
     return dev !== null && dev !== rec.dev ? 'unknown' : 'gone'
   }
   if (!isRealDir(dirStat)) return 'changed'
+  // `files/` (and, for the record, `info/`) must be real directories too, not links to somewhere else.
+  if (!(await chainIsReal(dataDirs(rec)))) return 'changed'
+  if (rec.kind === 'freedesktop' && !(await chainIsReal([path.join(rec.trashDir, 'info')]))) {
+    return 'changed'
+  }
   const dataPath =
     rec.kind === 'macos'
       ? path.join(rec.trashDir, rec.name)
@@ -370,8 +388,10 @@ export interface EmptyResult {
   missing: string[]
   /** Ledger keys whose entry is no longer exactly what Harnu moved: left alone. */
   changed: string[]
-  /** Ledger keys that cannot be told (no exact record, a volume not mounted): left alone. */
+  /** Ledger keys with no exact record (a clean from before it existed): never emptied by Harnu. */
   unverifiable: string[]
+  /** Ledger keys whose trash cannot be read right now (a disk not mounted): left alone, still listed. */
+  unreachable: string[]
   failed: Array<{ key: string; error: string }>
   /** Bytes of what was emptied, from the journal. */
   emptiedBytes: number
@@ -388,13 +408,19 @@ export interface EmptyResult {
 export async function emptyHarnuTrash(
   entries: readonly TrashedEntry[],
   ids: readonly string[],
-  env: TrashEnv
+  env: TrashEnv,
+  /** Seams for tests: something that happens between the check and the delete. */
+  hooks: {
+    beforeDelete?: (e: TrashedEntry) => Promise<void>
+    betweenDeletes?: (e: TrashedEntry) => Promise<void>
+  } = {}
 ): Promise<EmptyResult> {
   const result: EmptyResult = {
     emptied: [],
     missing: [],
     changed: [],
     unverifiable: [],
+    unreachable: [],
     failed: [],
     emptiedBytes: 0,
     unsupported: !canEmptySelectively(env.platform)
@@ -410,18 +436,27 @@ export async function emptyHarnuTrash(
     const seen = await observeEntry(e.exact, env).catch((): Observed => 'unknown')
     if (seen === 'gone') result.missing.push(e.key)
     else if (seen === 'changed') result.changed.push(e.key)
-    else if (seen === 'unknown') result.unverifiable.push(e.key)
+    else if (seen === 'unknown') result.unreachable.push(e.key)
     else {
+      const rec = e.exact
       try {
+        await hooks.beforeDelete?.(e)
+        // The check above and the delete below are two moments: re-lstat every component right
+        // before each delete, so a directory swapped for a symlink in between redirects nothing.
+        if (!(await chainIsReal(dataDirs(rec)))) {
+          result.changed.push(e.key)
+          continue
+        }
         // The data first: a record left behind without its data is harmless, the reverse is an
         // orphan the file manager cannot show.
-        await rawRm(path.join(e.exact.trashDir, 'files', e.exact.name), {
-          recursive: true,
-          force: true
-        })
-        await rawRm(path.join(e.exact.trashDir, 'info', `${e.exact.name}.trashinfo`), {
-          force: true
-        })
+        await rawRm(path.join(rec.trashDir, 'files', rec.name), { recursive: true, force: true })
+        await hooks.betweenDeletes?.(e)
+        if (
+          rec.kind === 'freedesktop' &&
+          (await chainIsReal([rec.trashDir, path.join(rec.trashDir, 'info')]))
+        ) {
+          await rawRm(path.join(rec.trashDir, 'info', `${rec.name}.trashinfo`), { force: true })
+        }
         result.emptied.push(e.key)
         result.emptiedBytes += e.bytes ?? 0
       } catch (err) {

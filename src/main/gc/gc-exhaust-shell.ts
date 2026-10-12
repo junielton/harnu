@@ -333,8 +333,14 @@ export interface EmptyTrashAck {
   emptied: number
   /** Entries that were no longer in the trash. */
   missing: number
-  /** Entries that are no longer exactly what Harnu moved, or cannot be told: left alone. */
+  /** Entries left alone, for any reason below. */
   skipped: number
+  /** ...no longer exactly what Harnu moved. */
+  changed: number
+  /** ...no exact record of the move (a clean from before it was recorded). */
+  unverifiable: number
+  /** ...their trash cannot be read right now (a disk that is not mounted). */
+  unreachable: number
   failed: number
   /** Where the OS keeps the trash (null on Windows): what to show when `unsupported`. */
   location: string | null
@@ -361,7 +367,10 @@ export async function emptyHarnuTrashNow(
     emptiedBytes: result.emptiedBytes,
     emptied: result.emptied.length,
     missing: result.missing.length,
-    skipped: result.changed.length + result.unverifiable.length,
+    skipped: result.changed.length + result.unverifiable.length + result.unreachable.length,
+    changed: result.changed.length,
+    unverifiable: result.unverifiable.length,
+    unreachable: result.unreachable.length,
     failed: result.failed.length,
     location: trashLocation(env.platform, env.homeTrash)
   }
