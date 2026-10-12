@@ -176,11 +176,18 @@ export function submitManualClean(
       // step runs only when nothing else refuses. What it changed is put back if the remove then fails.
       const prep = opts.prepare?.[id]
       let undo: (() => Promise<void>) | null = null
+      /** Clears the journal entry when the item ends without needing the undo. */
+      let settle: (() => Promise<void>) | null = null
       /** Ends the item as `r`, first putting back what the prep changed (when it still can be). */
       const bail = async (r: GcItemResult): Promise<GcItemResult> => {
         const back = undo
+        const done = settle
         undo = null
-        if (!back) return r
+        settle = null
+        if (!back) {
+          await done?.()
+          return r
+        }
         try {
           await back()
         } catch (err) {
@@ -221,6 +228,7 @@ export function submitManualClean(
         const prepared = await deps.prepare(prep, b)
         if (!prepared.ok) return refused(id, prepared.error)
         undo = prepared.undo ?? null
+        settle = prepared.settle ?? null
         let again: WorktreeBundle | undefined
         try {
           again = (await deps.gatherFresh()).bundles.find((x) => x.item.id === id)
@@ -287,6 +295,7 @@ export function submitManualClean(
       const [result] = await runBatch([runnable], guarded, batchOpts)
       if (result!.ok) {
         deps.rememberLeftovers?.(leftBehind(b, gathered.housekeeping?.volumes ?? []))
+        await settle?.()
         return result!
       }
       // Still refused (or stopped) after the prep: the lock goes back, the containers restart, as long
@@ -300,6 +309,7 @@ export function submitManualClean(
           : false)
       if (!gone) return bail(r)
       undo = null
+      await settle?.()
       return prep?.kind === 'stop-stack'
         ? { ...r, error: `${r.error ?? 'failed'}; prep-left (stack-stopped)` }
         : r

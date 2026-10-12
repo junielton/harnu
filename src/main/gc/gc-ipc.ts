@@ -41,6 +41,12 @@ import { createJobQueue, type GcJobInfo } from './gc-jobs-core'
 import { submitManualClean } from './gc-manual'
 import { guidanceFor, prepareClean } from './gc-guided'
 import { defaultGuidedDeps } from './gc-guided-shell'
+import {
+  PREP_JOURNAL_FILE,
+  createPrepJournal,
+  recoverPrepJournal,
+  type RecoveryReport
+} from './gc-prep-journal'
 import { recheckItem } from './gc-recheck'
 import {
   mergeIncomingPrefs,
@@ -184,7 +190,33 @@ export async function registerGcHandlers(
   })
 
   const shellDeps = await defaultGcShellDeps(getWindow)
-  const guidedDeps = await defaultGuidedDeps(shellDeps)
+  const prepJournal = createPrepJournal(path.join(userData, PREP_JOURNAL_FILE))
+  const guidedDeps = { ...(await defaultGuidedDeps(shellDeps)), journal: prepJournal }
+  // What a guided prep had changed when Harnu last stopped is put back now; the renderer reads the
+  // report once (`gc:recovered`) and shows it in Activity.
+  let recovered: RecoveryReport[] = []
+  void recoverPrepJournal(prepJournal, {
+    exists: (p) =>
+      import('node:fs/promises').then((fs) =>
+        fs.access(p).then(
+          () => true,
+          () => false
+        )
+      ),
+    lockReason: (repo, p) => guidedDeps.lockReason(repo, p),
+    lock: (repo, p, reason) => guidedDeps.lock(repo, p, reason),
+    start: (ids) => guidedDeps.docker.start(ids)
+  })
+    .then((r) => {
+      recovered = r
+      for (const x of r) {
+        notify({
+          title: 'Harnu put back what an action had changed',
+          body: `${x.path}: ${x.outcome}${x.detail ? ` (${x.detail})` : ''}`
+        })
+      }
+    })
+    .catch((err) => console.error('[gc] prep journal recovery failed', messageOf(err)))
   const withRun = (actor: 'operator' | 'autopilot'): GcShellDeps =>
     withActor(shellDeps, actor, () => prefs)
 
@@ -381,6 +413,11 @@ export async function registerGcHandlers(
   ipcMain.handle('gc:unkeep', (_e, id: unknown) => service.unkeep(id))
   ipcMain.handle('gc:recheck', (_e, id: unknown) => service.recheck(id))
   ipcMain.handle('gc:guide', (_e, id: unknown) => service.guide(id))
+  ipcMain.handle('gc:recovered', () => {
+    const out = recovered
+    recovered = []
+    return out
+  })
   ipcMain.handle('gc:prefs:get', () => service.prefs())
   ipcMain.handle('gc:prefs:set', (_e, raw: unknown) => service.setPrefs(raw))
   ipcMain.handle('gc:ackFirstReport', () => service.ackFirstReport())

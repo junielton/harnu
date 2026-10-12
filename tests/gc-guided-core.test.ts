@@ -802,3 +802,110 @@ describe('a restart that fails after a partial stop is reported, not swallowed (
     expect((r as { error: string }).error).toContain('left stopped: ctr-c1')
   })
 })
+
+describe('the prep is journalled before it changes anything (delta 2 item 6)', () => {
+  const journalDeps = (log: string[], over: Partial<GuidedDeps> = {}): GuidedDeps => ({
+    ...deps(fresh(), {
+      lockReason: async () => 'usb',
+      unlock: async () => void log.push('unlock'),
+      lock: async () => void log.push('lock'),
+      ...over
+    }),
+    journal: {
+      begin: async (e) => (log.push(`begin ${e.kind}`), 'tok'),
+      end: async () => void log.push('end')
+    }
+  })
+
+  it('unlock: the entry is written BEFORE the unlock, and cleared by the undo', async () => {
+    const log: string[] = []
+    const r = await prepareClean(
+      { kind: 'unlock' },
+      review({ locked: true }, 'locked'),
+      journalDeps(log)
+    )
+    expect(log).toEqual(['begin unlock', 'unlock'])
+    await (r as { undo: () => Promise<void> }).undo()
+    expect(log).toEqual(['begin unlock', 'unlock', 'lock', 'end'])
+  })
+
+  it('unlock: a successful remove settles the entry without touching the lock', async () => {
+    const log: string[] = []
+    const r = await prepareClean(
+      { kind: 'unlock' },
+      review({ locked: true }, 'locked'),
+      journalDeps(log)
+    )
+    await (r as { settle: () => Promise<void> }).settle()
+    expect(log).toEqual(['begin unlock', 'unlock', 'end'])
+  })
+
+  it('unlock: an undo that fails keeps the entry, so the next boot retries it', async () => {
+    const log: string[] = []
+    const r = await prepareClean(
+      { kind: 'unlock' },
+      review({ locked: true }, 'locked'),
+      journalDeps(log, {
+        lock: async () => {
+          throw new Error('git is gone')
+        }
+      })
+    )
+    await expect((r as { undo: () => Promise<void> }).undo()).rejects.toThrow()
+    expect(log).not.toContain('end')
+  })
+
+  it('unlock: nothing is left in the journal when the unlock itself fails', async () => {
+    const log: string[] = []
+    const r = await prepareClean(
+      { kind: 'unlock' },
+      review({ locked: true }, 'locked'),
+      journalDeps(log, {
+        unlock: async () => {
+          throw new Error('nope')
+        }
+      })
+    )
+    expect(r.ok).toBe(false)
+    expect(log).toEqual(['begin unlock', 'end'])
+  })
+
+  it('a dry run writes nothing', async () => {
+    const log: string[] = []
+    await prepareClean({ kind: 'unlock' }, review({ locked: true }, 'locked'), journalDeps(log), {
+      dry: true
+    })
+    expect(log).toEqual([])
+  })
+
+  it('stop-stack: the stopped ids and their bind sources are written BEFORE the stop', async () => {
+    const entries: unknown[] = []
+    const order: string[] = []
+    const base = deps(fresh(), {
+      stacks: [stack('web', [container('c1', ELSE, [`${WT}/x`]), container('c2', ELSE)])]
+    })
+    const d: GuidedDeps = {
+      ...base,
+      docker: {
+        ...base.docker,
+        stop: async (ids) => (order.push('stop'), { done: ids, error: null })
+      },
+      journal: {
+        begin: async (e) => (entries.push(e), order.push('begin'), 'tok'),
+        end: async () => void order.push('end')
+      }
+    }
+    await prepareClean(
+      { kind: 'stop-stack', stackIds: ['web'] },
+      review({ sharedStackIds: ['web'] }, 'shared-stack'),
+      d
+    )
+    expect(order).toEqual(['begin', 'stop'])
+    expect(entries[0]).toMatchObject({
+      kind: 'stop-stack',
+      containerIds: ['c1', 'c2'],
+      containerNames: ['ctr-c1', 'ctr-c2'],
+      bindSources: expect.arrayContaining([`${WT}/x`])
+    })
+  })
+})

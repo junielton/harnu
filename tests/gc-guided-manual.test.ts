@@ -442,6 +442,55 @@ describe('no rollback after the folder is gone (delta 2)', () => {
   })
 })
 
+describe('the journal entry is settled when the item ends (delta 2 item 6)', () => {
+  const withSettle =
+    (log: string[]): ManualCleanDeps['prepare'] =>
+    async (_p, _b, o) =>
+      o?.dry
+        ? { ok: true }
+        : {
+            ok: true,
+            undo: async () => void log.push('undo'),
+            settle: async () => void log.push('settle')
+          }
+
+  it('a successful remove settles it (and does not undo)', async () => {
+    const before = locked()
+    const log: string[] = []
+    const r = rig({ before, after: unlocked(), prepare: withSettle(log) })
+    await run(r, before, asked(before, { kind: 'unlock' }))
+    expect(log).toEqual(['settle'])
+  })
+
+  it('a refusal undoes it (the undo clears the entry itself)', async () => {
+    const before = locked()
+    const log: string[] = []
+    const r = rig({
+      before,
+      after: unlocked(),
+      prepare: withSettle(log),
+      reprobe: async () => ({ ok: false, reason: 'cannot-unregister' })
+    })
+    await run(r, before, asked(before, { kind: 'unlock' }))
+    expect(log).toEqual(['undo'])
+  })
+
+  it('a halt after the folder was trashed settles it: there is nothing to retry at the next boot', async () => {
+    const before = locked()
+    const log: string[] = []
+    const r = rig({
+      before,
+      after: unlocked(),
+      prepare: withSettle(log),
+      cleanGit: async () => {
+        throw new GcStepError('prune', 'prune failed')
+      }
+    })
+    await run(r, before, asked(before, { kind: 'unlock' }))
+    expect(log).toEqual(['settle'])
+  })
+})
+
 describe('parseOptions keeps only well-formed preps', () => {
   const parse = (prepare: unknown) =>
     parseOptions({ confirmed: ['a'], expected: {}, prepare }).prepare

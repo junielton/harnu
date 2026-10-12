@@ -13,6 +13,7 @@ import type {
 } from '../src/main/gc/gc-wire'
 import type { Bucket, ReviewReason } from '../src/main/gc/bundle-core'
 import { useGcStore } from '../src/renderer/src/stores/gc'
+import { useNotificationsStore } from '../src/renderer/src/stores/notifications'
 import { useUiStore } from '../src/renderer/src/stores/ui'
 import { captureConfirm } from '../src/renderer/src/lib/gc-model'
 import { CHANGED_SINCE_CONFIRM } from '../src/renderer/src/lib/gc-jobs'
@@ -59,6 +60,8 @@ interface Api {
   gcOpinionCached: ReturnType<typeof vi.fn>
 }
 
+let recovered: unknown[] = []
+
 function installApi(first: GcSnapshot = snap(), jobs: GcJobInfo[] = []): Api {
   const push: Api['push'] = {}
   const sub =
@@ -82,6 +85,7 @@ function installApi(first: GcSnapshot = snap(), jobs: GcJobInfo[] = []): Api {
   ;(globalThis as unknown as { window: unknown }).window = {
     api: {
       ...api,
+      gcRecovered: vi.fn(async () => recovered),
       onGcProgress: sub('progress'),
       onGcDone: sub('done'),
       onGcCycle: sub('cycle'),
@@ -356,6 +360,26 @@ describe('gc store', () => {
     )
     await vi.runAllTimersAsync()
     expect(toast.mock.calls[0][0].description).toContain(t('cleanup.gc.refusal.prepLeftStack'))
+  })
+
+  it('reports in Activity what boot recovery put back after Harnu quit mid-action (delta 2)', async () => {
+    recovered = [
+      { outcome: 'relocked', kind: 'unlock', path: '/r/wt', detail: 'usb' },
+      { outcome: 'restarted', kind: 'stop-stack', path: '/r/wt', detail: 'web-1, web-2' },
+      { outcome: 'failed', kind: 'unlock', path: '/r/x', detail: 'git is gone' }
+    ]
+    installApi()
+    const notes = useNotificationsStore()
+    const notify = vi.spyOn(notes, 'notify')
+    await useGcStore().init()
+    await vi.runAllTimersAsync()
+    recovered = []
+    expect(notify).toHaveBeenCalledTimes(3)
+    const titles = notify.mock.calls.map((c) => c[0].title)
+    expect(titles[0]).toContain('/r/wt')
+    expect(notify.mock.calls[1][0].description).toContain('web-1, web-2')
+    expect(notify.mock.calls[2][0].kind).toBe('warning')
+    expect(notify.mock.calls[2][0].description).toContain('git is gone')
   })
 
   it('names the refusal in the toast when every refused item has the same reason', async () => {

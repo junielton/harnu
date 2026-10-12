@@ -22,6 +22,7 @@ const REQUESTS = [
   'gc:prefs:get',
   'gc:prefs:set',
   'gc:recheck',
+  'gc:recovered',
   'gc:snapshot',
   'gc:unkeep'
 ]

@@ -157,6 +157,14 @@ export type GcPrep =
   /** Remove the worktree and leave these shared stacks running (only when none binds the folder). */
   | { kind: 'leave-stack'; stackIds: string[] }
 
+/** What boot recovery did about one orphaned guided prep (see gc-prep-journal.ts). */
+export interface GcRecoveryReport {
+  outcome: 'relocked' | 'restarted' | 'left' | 'dropped' | 'failed'
+  kind: 'unlock' | 'stop-stack'
+  path: string
+  detail: string
+}
+
 /** One stack other folders use too, as a guided dialog shows it. */
 export interface GcGuidedStack {
   id: string

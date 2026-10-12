@@ -16,6 +16,7 @@ import {
 import { isHolding, isInside, type StackGroup } from '../containers/containers-core'
 import type { DockerBatchResult } from '../containers/containers-actions'
 import type { GcGuidance, GcGuidedStack, GcPrep } from './gc-wire'
+import type { PrepEntryInput } from './gc-prep-journal'
 
 /** A Harnu-owned session running in, or under, a folder. */
 export interface GuidedSession {
@@ -77,13 +78,25 @@ export interface GuidedDeps {
   ownerOf(path: string): Promise<string | null>
   currentUser(): string
   platform: string
+  /** Written before a prep changes anything, cleared when the item ends (see gc-prep-journal.ts). */
+  journal?: {
+    begin(entry: PrepEntryInput): Promise<string>
+    end(id: string): Promise<void>
+  }
 }
 
 /**
  * `undo` puts back what the prep changed, for when the remove that follows still refuses. A prep that
  * cannot be undone (a parked session) has none, which is exactly why it runs last, after a dry run.
  */
-export type PrepResult = { ok: true; undo?: () => Promise<void> } | { ok: false; error: string }
+export type PrepResult =
+  | {
+      ok: true
+      undo?: () => Promise<void>
+      /** The item ended without needing the undo: clears the journal entry. */
+      settle?: () => Promise<void>
+    }
+  | { ok: false; error: string }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
@@ -312,12 +325,32 @@ export async function prepareClean(
       return { ok: false, error: `unlock-failed: ${messageOf(err)}` }
     }
     if (opts.dry) return { ok: true }
+    // Written BEFORE the unlock: if Harnu quits right after it, the next boot puts the lock back.
+    const token = await deps.journal?.begin({
+      kind: 'unlock',
+      at: Date.now(),
+      repoPath: b.item.repoPath,
+      path,
+      reason
+    })
+    const settle = async (): Promise<void> => {
+      if (token !== undefined) await deps.journal?.end(token)
+    }
     try {
       await deps.unlock(b.item.repoPath, path)
     } catch (err) {
+      await settle()
       return { ok: false, error: `unlock-failed: ${messageOf(err)}` }
     }
-    return { ok: true, undo: () => deps.lock(b.item.repoPath, path, reason) }
+    return {
+      ok: true,
+      // A failed re-lock throws before the entry is cleared, so the next boot retries it.
+      undo: async () => {
+        await deps.lock(b.item.repoPath, path, reason)
+        await settle()
+      },
+      settle
+    }
   }
 
   if (prep.kind === 'close-session') {
@@ -364,6 +397,20 @@ export async function prepareClean(
   const nameOf = new Map(
     views.flatMap((v) => v.stack.containers.map((c) => [c.id, c.name] as const))
   )
+  // Written BEFORE the stop: if Harnu quits right after it, the next boot starts these again.
+  const token = await deps.journal?.begin({
+    kind: 'stop-stack',
+    at: Date.now(),
+    path,
+    containerIds: running,
+    containerNames: running.map((id) => nameOf.get(id) ?? id),
+    bindSources: [
+      ...new Set(views.flatMap((v) => v.stack.containers.flatMap(containerFolderPaths)))
+    ]
+  })
+  const settle = async (): Promise<void> => {
+    if (token !== undefined) await deps.journal?.end(token)
+  }
   /** Starts `ids` again; throws, naming by container name the ones that are still stopped. */
   const restart = async (ids: string[]): Promise<void> => {
     let left = ids
@@ -385,9 +432,11 @@ export async function prepareClean(
       try {
         await restart(toRestart)
       } catch (err) {
+        // The entry stays: the next boot retries what could not be started now.
         rollback = `; rollback-failed (${messageOf(err)})`
       }
     }
+    if (rollback === '') await settle()
     return { ok: false, error: `stack-stop-failed: ${cause}${rollback}` }
   }
   let stopped: DockerBatchResult
@@ -401,7 +450,14 @@ export async function prepareClean(
     // A partial stop is put back before the refusal is reported: the stack runs as it did.
     return failed(stopped.error ?? 'not every container stopped', stopped.done)
   }
-  return { ok: true, undo: () => restart(running) }
+  return {
+    ok: true,
+    undo: async () => {
+      await restart(running)
+      await settle()
+    },
+    settle
+  }
 }
 
 /** The two git-backed deps, over any `git -C <repo> …` runner (the executor's, or a test's real one). */

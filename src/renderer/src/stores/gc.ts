@@ -324,6 +324,30 @@ export const useGcStore = defineStore('gc', () => {
     fadeTimers.clear()
   }
 
+  /** What boot recovery put back after Harnu quit mid-action: one Activity entry each (read once). */
+  async function reportRecovered(): Promise<void> {
+    let items: Awaited<ReturnType<typeof window.api.gcRecovered>> = []
+    try {
+      items = (await window.api.gcRecovered()) ?? []
+    } catch {
+      return
+    }
+    const { t } = i18n.global
+    const notes = useNotificationsStore()
+    for (const r of items) {
+      if (r.outcome === 'dropped') continue
+      const failed = r.outcome === 'failed'
+      notes.notify({
+        ts: Date.now(),
+        source: 'app',
+        kind: failed || r.outcome === 'left' ? 'warning' : 'success',
+        title: t(`cleanup.gc.recovered.${r.outcome}`, { path: r.path }),
+        description: r.detail || undefined,
+        target: { view: 'cleanup' as const }
+      })
+    }
+  }
+
   async function init(): Promise<void> {
     if (initialised) return
     initialised = true
@@ -344,6 +368,7 @@ export const useGcStore = defineStore('gc', () => {
       ])
       snapshot.value = snap
       jobs.value = attachJobs(jobs.value, live)
+      void reportRecovered()
     } catch (e) {
       loadError.value = e instanceof Error ? e.message : String(e)
       initialised = false
