@@ -108,6 +108,10 @@ export function submitManualClean(
     const gathered = await deps.gather()
     const bundles = new Map(gathered.bundles.map((b) => [b.item.id, b]))
     const orphans = new Map(gathered.orphanVolumes.map((o) => [o.id, o]))
+    // One fresh look per batch, taken by the first id that needs it and shared by the rest: a
+    // batch of N ids must not cost N full gathers. A failing look refuses every id of the batch.
+    let freshTranscripts: Promise<OrphanTranscriptItem[]> | null = null
+    let freshStacks: Promise<StackLeftoverItem[]> | null = null
     const transcripts = new Map((gathered.orphanTranscripts ?? []).map((o) => [o.id, o]))
     const stacks = new Map((gathered.stackLeftovers ?? []).map((o) => [o.id, o]))
     const results: GcItemResult[] = []
@@ -241,7 +245,8 @@ export function submitManualClean(
       // Right before the trash, look again with a gather that starts now. Failing to look refuses.
       let fresh: OrphanTranscriptItem | undefined
       try {
-        fresh = (await deps.freshOrphanTranscripts()).find((o) => o.id === id)
+        freshTranscripts ??= deps.freshOrphanTranscripts()
+        fresh = (await freshTranscripts).find((o) => o.id === id)
       } catch (err) {
         return refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
       }
@@ -277,7 +282,8 @@ export function submitManualClean(
       // be a part of what was shown (anything new is a change, refused above).
       let fresh: StackLeftoverItem | undefined
       try {
-        fresh = (await deps.freshStackLeftovers()).find((o) => o.id === id)
+        freshStacks ??= deps.freshStackLeftovers()
+        fresh = (await freshStacks).find((o) => o.id === id)
       } catch (err) {
         return refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
       }

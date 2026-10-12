@@ -231,13 +231,34 @@ async function treeBytes(dir: string, budget: { left: number }): Promise<number>
   return total
 }
 
-async function cwdOfFile(file: string): Promise<string | null> {
+/**
+ * A transcript's folder never changes as it grows, so the answer is kept for as long as the file
+ * is the same file: keyed by path, modification time and size. An unreadable head is not an answer
+ * and is read again next time.
+ */
+const headCache = new Map<string, string>()
+const HEAD_CACHE_MAX = 5_000
+
+async function cwdOfFile(
+  file: string,
+  st: { mtimeMs: number; size: number },
+  onRead?: (file: string) => void
+): Promise<string | null> {
+  const key = `${file}\0${st.mtimeMs}\0${st.size}`
+  const known = headCache.get(key)
+  if (known) return known
+  onRead?.(file)
   let fh: import('node:fs/promises').FileHandle | undefined
   try {
     fh = await fs.open(file, 'r')
     const buf = Buffer.alloc(HEAD_BYTES)
     const { bytesRead } = await fh.read(buf, 0, HEAD_BYTES, 0)
-    return cwdFromTranscriptHead(buf.toString('utf8', 0, bytesRead))
+    const cwd = cwdFromTranscriptHead(buf.toString('utf8', 0, bytesRead))
+    if (cwd) {
+      if (headCache.size >= HEAD_CACHE_MAX) headCache.clear()
+      headCache.set(key, cwd)
+    }
+    return cwd
   } catch {
     return null
   } finally {
@@ -245,7 +266,11 @@ async function cwdOfFile(file: string): Promise<string | null> {
   }
 }
 
-export function fsOrphanProbe(root = path.join(homedir(), '.claude', 'projects')): OrphanProbe {
+export function fsOrphanProbe(
+  root = path.join(homedir(), '.claude', 'projects'),
+  /** Test seam: called whenever a transcript head is actually read from disk. */
+  opts: { onHeadRead?: (file: string) => void } = {}
+): OrphanProbe {
   return {
     listSlugs: async () =>
       (await fs.readdir(root, { withFileTypes: true }))
@@ -273,7 +298,7 @@ export function fsOrphanProbe(root = path.join(homedir(), '.claude', 'projects')
             sessionId: e.name.slice(0, -'.jsonl'.length),
             bytes: st.size,
             mtimeMs: st.mtimeMs,
-            cwd: await cwdOfFile(p)
+            cwd: await cwdOfFile(p, st, opts.onHeadRead)
           })
         } else if (e.isDirectory()) {
           const size = await treeBytes(p, budget)
