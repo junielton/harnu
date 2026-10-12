@@ -58,6 +58,15 @@ async function headSha(worktreePath: string): Promise<string | null> {
   }
 }
 
+/** The commit `ref` points at in `repoPath`, or null when it does not exist. */
+async function resolveRef(repoPath: string, ref: string): Promise<string | null> {
+  try {
+    return (await git(repoPath, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])).trim()
+  } catch {
+    return null
+  }
+}
+
 /**
  * Captures the worktree's *working state* — tracked modifications, staged or
  * not, plus untracked files — as a dangling commit, and points `ref` at it so
@@ -96,6 +105,12 @@ export async function archiveWip(
 
     const args = ['commit-tree', tree]
     if (parent) args.push('-p', parent)
+    // A ref that already exists is an earlier working state under the same name — a detached
+    // worktree's refs are keyed by folder and commit, not by sweep, so removing the same folder at
+    // the same commit twice lands here. Keeping it as a parent leaves it reachable from the new ref,
+    // so overwriting the name can never drop the only copy of the first state.
+    const earlier = await resolveRef(repoPath, ref)
+    if (earlier && earlier !== parent) args.push('-p', earlier)
     args.push('-m', `harnu-archive: working state of ${worktreePath}`)
     const commit = (await git(worktreePath, args, ARCHIVE_IDENTITY)).trim()
 

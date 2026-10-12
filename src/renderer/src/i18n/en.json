@@ -2349,7 +2349,8 @@
           "volume": "Volumes: {names}",
           "deps": "Its dependency folders",
           "checkout": "The checkout",
-          "branch": "The local branch {branch}"
+          "branch": "The local branch {branch}",
+          "detached": "Its commit stays under refs/archive/detached/…"
         },
         "volumesCannotRestore": "Volumes cannot be restored.",
         "copyError": "Copy error",
@@ -2437,7 +2438,9 @@
         "totalReady": "{n} ready · {size}",
         "totalSelected": "{n} selected · {size}",
         "close": "Close",
-        "branchSub": "branch {branch}"
+        "branchSub": "branch {branch}",
+        "detachedSub": "detached at {sha}",
+        "warnDetached": "{n} detached worktree has no branch. Its commit stays under refs/archive/detached/…, and git worktree add brings it back. | {n} detached worktrees have no branch. Their commits stay under refs/archive/detached/…, and git worktree add brings them back."
       },
       "chip": {
         "stack": "stack",
@@ -2646,7 +2649,7 @@
           "neverClean": "It is on your never-clean list.",
           "kept": "You marked it Keep. Remove the mark first.",
           "inUse": "It is in use right now.",
-          "unsupportedKind": "It has a detached HEAD, so there is no branch to archive it under. Harnu cannot remove it yet.",
+          "unsupportedKind": "Harnu only removes this kind of folder from Needs review, after you confirm it.",
           "sharedStack": "Another stack also runs from this worktree. Stop that one first.",
           "nestedWorktree": "This folder holds another worktree or checkout. Remove or move that one first.",
           "checkFailed": "Harnu could not look inside this folder for other worktrees or checkouts. Make sure it is readable, then use Scan now.",

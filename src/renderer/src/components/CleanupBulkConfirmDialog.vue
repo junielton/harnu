@@ -78,6 +78,8 @@ const totalText = computed(() =>
 const riskCount = computed(() => props.rows.filter((r) => r.risk).length)
 /** A worktree's volumes are never removed with it (they become orphan volumes, reviewed one by one). */
 const hasWorktreeRow = computed(() => props.rows.some((r) => r.kind === 'worktree'))
+/** Detached worktrees have no branch: their commit is kept under refs/archive/detached/… instead. */
+const detachedCount = computed(() => props.rows.filter((r) => r.detachedAt !== null).length)
 
 const title = computed(() => {
   if (props.mode === 'ready') {
@@ -124,6 +126,7 @@ function rowSub(row: DialogRow): string {
       ? t('cleanup.gc.confirm.volumeProject', { project: row.project })
       : t('cleanup.gc.confirm.noWorktree')
   }
+  if (row.detachedAt) return t('cleanup.gc.confirm.detachedSub', { sha: row.detachedAt })
   return row.branch ? t('cleanup.gc.confirm.branchSub', { branch: row.branch }) : ''
 }
 
@@ -343,6 +346,17 @@ function onBackdropMousedown(e: MouseEvent): void {
             <p v-if="mode === 'review' && riskCount > 0" class="m-0 mb-1" data-testid="bulk-risk">
               <b class="font-semibold text-warning">{{
                 t('cleanup.gc.confirm.warnRisk', riskCount, { named: { n: riskCount } })
+              }}</b>
+            </p>
+            <p
+              v-if="mode === 'review' && detachedCount > 0"
+              class="m-0 mb-1"
+              data-testid="bulk-detached"
+            >
+              <b class="font-semibold text-warning">{{
+                t('cleanup.gc.confirm.warnDetached', detachedCount, {
+                  named: { n: detachedCount }
+                })
               }}</b>
             </p>
             <p class="m-0">

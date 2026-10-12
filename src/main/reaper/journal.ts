@@ -104,6 +104,20 @@ export function restoreHintFor(branch: string | null, sha: string | null): strin
   return `git branch ${shellQuote(branch)} ${shellQuote(sha)}`
 }
 
+/**
+ * `git -C <repo> worktree add <path> <ref>` — the restore hint of a detached worktree, which has no
+ * branch to name. `ref` is the archive tip ref the clean wrote; null (nothing was archived) gives no
+ * hint rather than one that points at a ref that does not exist.
+ */
+export function restoreHintForDetached(
+  repoPath: string,
+  worktreePath: string | null | undefined,
+  tipRef: string | null
+): string | null {
+  if (!worktreePath || !tipRef) return null
+  return `git -C ${shellQuote(repoPath)} worktree add ${shellQuote(worktreePath)} ${shellQuote(tipRef)}`
+}
+
 export function journalPath(): string {
   return path.join(app.getPath('userData'), 'reaper-log.jsonl')
 }

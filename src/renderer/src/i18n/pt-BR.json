@@ -2349,7 +2349,8 @@
           "volume": "Volumes: {names}",
           "deps": "Suas pastas de dependências",
           "checkout": "O checkout",
-          "branch": "A branch local {branch}"
+          "branch": "A branch local {branch}",
+          "detached": "O commit dela fica em refs/archive/detached/…"
         },
         "volumesCannotRestore": "Volumes não podem ser restaurados.",
         "copyError": "Copiar erro",
@@ -2437,7 +2438,9 @@
         "totalReady": "{n} prontos · {size}",
         "totalSelected": "{n} selecionados · {size}",
         "close": "Fechar",
-        "branchSub": "branch {branch}"
+        "branchSub": "branch {branch}",
+        "detachedSub": "detached em {sha}",
+        "warnDetached": "{n} worktree detached não tem branch. O commit dela fica em refs/archive/detached/…, e git worktree add traz de volta. | {n} worktrees detached não têm branch. Os commits delas ficam em refs/archive/detached/…, e git worktree add traz de volta."
       },
       "chip": {
         "stack": "stack",
@@ -2646,7 +2649,7 @@
           "neverClean": "Está na sua lista de nunca limpar.",
           "kept": "Você o marcou como Manter. Tire a marca primeiro.",
           "inUse": "Está em uso agora.",
-          "unsupportedKind": "Tem um HEAD detached, então não há branch para arquivá-lo. O Harnu ainda não consegue removê-lo.",
+          "unsupportedKind": "O Harnu só remove este tipo de pasta a partir de Precisa de revisão, depois que você confirmar.",
           "sharedStack": "Outra stack também roda a partir deste worktree. Pare essa primeiro.",
           "nestedWorktree": "Esta pasta contém outro worktree ou checkout. Remova ou mova esse primeiro.",
           "checkFailed": "O Harnu não conseguiu olhar dentro desta pasta em busca de outros worktrees ou checkouts. Confira se ela é legível e use Escanear agora.",

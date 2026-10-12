@@ -5,7 +5,7 @@ import { overridesAncestryCheck, type ReapItem } from './reaper-core'
 import type { WorktreeStatus } from '../worktree-core'
 import { isAbsolute, resolve } from 'node:path'
 import { planArchive } from './archive-core'
-import { restoreHintFor, type Tombstone } from './journal'
+import { restoreHintFor, restoreHintForDetached, type Tombstone } from './journal'
 
 export type CleanStepId =
   | 'guard'
@@ -103,7 +103,10 @@ export async function cleanItem(
   deps: ExecutorDeps
 ): Promise<CleanResult> {
   const steps: CleanStepResult[] = []
-  const hasFolder = item.kind === 'worktree' || item.kind === 'hidden-folder'
+  // A detached worktree owns a folder too; it has no branch, so `hasLocalBranch` stays false and
+  // its archive is keyed by the HEAD sha instead (`planArchive`).
+  const hasFolder =
+    item.kind === 'worktree' || item.kind === 'hidden-folder' || item.kind === 'detached-worktree'
   const hasLocalBranch = item.kind !== 'remote-branch' && !!item.branch
 
   if (item.verdict !== 'harvestable') {
@@ -194,10 +197,11 @@ export async function cleanItem(
   const plan = planArchive(item, deps.now())
 
   // Fail-closed backstop for AC-1: an item that would delete something but for
-  // which the planner preserves nothing must abort, not sweep unarchived. No
-  // item shape reaches this today (every folder item carries a branch); a
-  // future one — a detached worktree, say — has to fail loudly here rather than
-  // slip past the archive because it did not fit the plan.
+  // which the planner preserves nothing must abort, not sweep unarchived. A
+  // folder item with no branch (a plain worktree whose branch is unknown) and a
+  // detached worktree whose scan recorded no HEAD both reach it: neither can be
+  // named or resolved, so each fails loudly here rather than slip past the
+  // archive because it did not fit the plan.
   const unpreserved: string[] = []
   if (hasFolder && !plan.wip) unpreserved.push('working state')
   if ((hasLocalBranch || item.kind === 'remote-branch') && !plan.tip) {
@@ -326,7 +330,10 @@ export async function cleanItem(
     sha,
     deleted,
     justifiedBy: item.justifiedBy,
-    restoreHint: restoreHintFor(item.branch ?? null, sha),
+    restoreHint:
+      item.kind === 'detached-worktree'
+        ? restoreHintForDetached(item.repoPath, item.path, archived.tip)
+        : restoreHintFor(item.branch ?? null, sha),
     archiveTipRef: archived.tip,
     archiveWipRef: archived.wip
   }
