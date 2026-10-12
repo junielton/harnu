@@ -12,8 +12,11 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import * as os from 'node:os'
 import * as path from 'node:path'
-import { Notification, app, ipcMain, type BrowserWindow } from 'electron'
+import { Notification, app, ipcMain, shell, type BrowserWindow } from 'electron'
+import { removeGhostFoldersUnder } from '../user-projects'
+import { trashTranscriptSlug, type OrphanTranscriptItem } from './gc-orphan-transcripts'
 import { buildNotificationOptions } from '../notifications'
 import { prefsFile as containersPrefsFile } from '../containers/containers-prefs'
 import { prefsPath as reaperPrefsPath } from '../reaper/prefs'
@@ -157,6 +160,10 @@ export async function registerGcHandlers(
 
   /** Orphan volumes per a gather that starts now (see ManualCleanDeps.freshOrphans). */
   const freshOrphans = async (): Promise<OrphanVolumeItem[]> => (await gatherFresh()).orphanVolumes
+  /** Orphaned transcript folders per a gather that starts now (checked right before the trash). */
+  const freshOrphanTranscripts = async (): Promise<OrphanTranscriptItem[]> =>
+    (await gatherFresh()).orphanTranscripts
+  const transcriptsRoot = path.join(os.homedir(), '.claude', 'projects')
 
   const queue = createJobQueue({
     newId: () => randomUUID(),
@@ -219,6 +226,7 @@ export async function registerGcHandlers(
     scannedAt: g.scannedAt,
     bundles: g.bundles,
     orphanVolumes: g.orphanVolumes,
+    orphanTranscripts: g.orphanTranscripts,
     docker: g.docker,
     prefs: livePrefs(),
     lastCycle: state.last,
@@ -267,6 +275,12 @@ export async function registerGcHandlers(
             forced ? createForcedGcOps(withRun('operator')) : createGcOps(withRun('operator')),
           // S4's runner builds the argv itself (`docker volume rm <name>`, name-checked).
           freshOrphans,
+          freshOrphanTranscripts,
+          // One project folder of ~/.claude/projects, to the OS trash; a slug is never a path.
+          trashTranscripts: (slug) =>
+            trashTranscriptSlug(transcriptsRoot, slug, (p) => shell.trashItem(p)),
+          reconcileFolder: (folder) =>
+            removeGhostFoldersUnder(getWindow, folder).then(() => undefined),
           workStampOf: (p) => workStampOf(reaperExec, p),
           removeOrphanVolumes: (names) =>
             runHousekeeping({

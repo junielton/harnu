@@ -17,7 +17,8 @@ function parseExpected(raw: unknown): GcExpected | null {
     (bucket !== 'ready' &&
       bucket !== 'review' &&
       bucket !== 'in-use' &&
-      bucket !== 'orphan-volume') ||
+      bucket !== 'orphan-volume' &&
+      bucket !== 'orphan-transcripts') ||
     !stackIds ||
     !ownedVolumes ||
     !(e.reasonCode === null || typeof e.reasonCode === 'string') ||

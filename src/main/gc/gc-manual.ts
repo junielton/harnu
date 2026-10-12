@@ -20,6 +20,11 @@ import { leftBehind, type Leftover } from './gc-leftovers'
 import { WORK_STAMP_UNKNOWN } from './gc-work-stamp'
 import { runBatch, WORK_CHANGED, type GcItemResult, type GcOps } from './pipeline-core'
 import type { GcCleanAck, GcCleanOptions } from './gc-wire'
+import {
+  ORPHAN_TRANSCRIPT_PREFIX,
+  transcriptsChangedSince,
+  type OrphanTranscriptItem
+} from './gc-orphan-transcripts'
 
 const VOLUME_PREFIX = volumeItemId('')
 
@@ -30,6 +35,7 @@ export interface ManualCleanDeps {
   gather(): Promise<{
     bundles: WorktreeBundle[]
     orphanVolumes: OrphanVolumeItem[]
+    orphanTranscripts?: OrphanTranscriptItem[]
     housekeeping?: { volumes: HousekeepingVolume[] }
   }>
   /** `forced` ops archive before anything destructive and waive the review-only guards. */
@@ -46,6 +52,15 @@ export interface ManualCleanDeps {
    * cannot be read. The force path compares it with the one the dialog was built from.
    */
   workStampOf(path: string): Promise<string | null>
+  /**
+   * The orphaned transcript folders according to a gather that STARTS now, for the check right
+   * before the trash (a session may have started writing since the click).
+   */
+  freshOrphanTranscripts?(): Promise<OrphanTranscriptItem[]>
+  /** Moves one `~/.claude/projects/<slug>` folder to the OS trash. Throws when it cannot. */
+  trashTranscripts?(slug: string): Promise<void>
+  /** Drops the sidebar's ghost rows for a folder that is gone (best-effort, never throws into the job). */
+  reconcileFolder?(folder: string): Promise<void>
   /** `docker volume rm` for exactly these names. */
   removeOrphanVolumes(names: string[]): Promise<HousekeepingResult>
   /** What a cleaned worktree leaves in Docker, so its volumes can be offered for review. */
@@ -81,6 +96,7 @@ export function submitManualClean(
     const gathered = await deps.gather()
     const bundles = new Map(gathered.bundles.map((b) => [b.item.id, b]))
     const orphans = new Map(gathered.orphanVolumes.map((o) => [o.id, o]))
+    const transcripts = new Map((gathered.orphanTranscripts ?? []).map((o) => [o.id, o]))
     const results: GcItemResult[] = []
 
     const cleanBundle = async (id: string): Promise<GcItemResult> => {
@@ -192,9 +208,51 @@ export function submitManualClean(
       return { id, ok: true, haltedAt: null, freedBytes: item.sizeBytes ?? 0 }
     }
 
+    const cleanTranscripts = async (id: string): Promise<GcItemResult> => {
+      if (!confirmed.has(id)) return refused(id, 'needs-confirmation')
+      const seen = expected[id]
+      if (!seen) return refused(id, 'missing-expected')
+      if (!deps.trashTranscripts || !deps.freshOrphanTranscripts) {
+        return refused(id, 'unsupported')
+      }
+      const item = transcripts.get(id)
+      // A session started writing, or the folder came back, since the click: no longer an orphan.
+      if (!item) return refused(id, 'no-longer-orphan')
+      if (transcriptsChangedSince(item, seen)) return refused(id, 'changed-since-confirm')
+      // Right before the trash, look again with a gather that starts now. Failing to look refuses.
+      let fresh: OrphanTranscriptItem | undefined
+      try {
+        fresh = (await deps.freshOrphanTranscripts()).find((o) => o.id === id)
+      } catch (err) {
+        return refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+      if (!fresh) return refused(id, 'no-longer-orphan')
+      if (transcriptsChangedSince(fresh, seen)) return refused(id, 'changed-since-confirm')
+      try {
+        await deps.trashTranscripts(item.slug)
+      } catch (err) {
+        return {
+          id,
+          ok: false,
+          haltedAt: 'trash',
+          error: err instanceof Error ? err.message : String(err),
+          freedBytes: 0
+        }
+      }
+      // The folder is already gone, so its sidebar rows go too; a failure here is not the job's.
+      await deps
+        .reconcileFolder?.(item.folder)
+        .catch((err) => console.warn('[gc] ghost-folder reconcile after transcripts failed', err))
+      return { id, ok: true, haltedAt: null, freedBytes: item.bytes }
+    }
+
     for (const id of unique) {
       reporter.onStart(id)
-      const result = id.startsWith(VOLUME_PREFIX) ? await cleanVolume(id) : await cleanBundle(id)
+      const result = id.startsWith(VOLUME_PREFIX)
+        ? await cleanVolume(id)
+        : id.startsWith(ORPHAN_TRANSCRIPT_PREFIX)
+          ? await cleanTranscripts(id)
+          : await cleanBundle(id)
       results.push(result)
       if (result.ok) deps.state.failures.delete(id)
       else if (result.haltedAt === 'reprobe') {

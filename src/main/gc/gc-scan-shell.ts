@@ -72,6 +72,8 @@ import {
   type GcDockerCard
 } from './gc-docker-card'
 import type { GcGather } from './gc-cycle'
+import { realOrphanSource, type OrphanSource } from './gc-orphan-shell'
+import type { OrphanTranscriptItem } from './gc-orphan-transcripts'
 import { judgeKeeps, type StaleKeep } from './gc-keep'
 import type { GcPrefs } from './gc-prefs'
 
@@ -86,6 +88,8 @@ export interface GcGathered extends GcGather {
   /** The Docker card's figures; null inside when docker could not answer. */
   docker: GcDockerCard
   orphanVolumes: OrphanVolumeItem[]
+  /** Transcript folders of folders that are gone, none of them live or parked (AC-D1). */
+  orphanTranscripts: OrphanTranscriptItem[]
   /** Keep marks whose branch fate has changed since; the caller clears them from the prefs. */
   staleKeeps: StaleKeep[]
   /** Releases whose bundle is gone or no longer strongly merged; the caller clears them. */
@@ -220,7 +224,9 @@ export async function gatherGc(
    * branch-delete) leaves the folder gone but a git registration and a branch behind: such an
    * item stays visible, so what is left is never silently dropped.
    */
-  keepGone: ReadonlySet<string> = new Set()
+  keepGone: ReadonlySet<string> = new Set(),
+  /** Where the orphaned transcript folders come from; the real filesystem unless a test says otherwise. */
+  orphanSource: OrphanSource = realOrphanSource
 ): Promise<GcGathered> {
   const snap = lastSnapshot()
   const listed = snap?.repos.flatMap((r) => r.items) ?? []
@@ -421,6 +427,7 @@ export async function gatherGc(
       ? withOrphanVolumesHidden(docker, hiddenWhenCandidates(guards.hidden, volumes, containers))
       : docker,
     orphanVolumes: orphanVolumeItems(orphanNames, df),
+    orphanTranscripts: await orphanSource({ known, repoPaths }),
     staleKeeps,
     staleReleases: staleReleaseIds,
     goneItemIds

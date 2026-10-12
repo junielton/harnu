@@ -70,7 +70,8 @@ describe('planOrphanTranscripts', () => {
         id: orphanTranscriptId(slugOfPath(GONE)),
         slug: slugOfPath(GONE),
         folder: GONE,
-        repoLabel: 'www',
+        // Not inside the known repo `www`: the generic `worktrees` parent names the repo above it.
+        repoLabel: 'proj',
         bytes: 1_000 + 2_000 + 500,
         sessionCount: 2,
         newestAt: NOW - 86_400_000,

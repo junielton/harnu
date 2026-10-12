@@ -10,6 +10,7 @@ import type { HousekeepingResult } from './housekeeping-core'
 import type { OrphanVolumeItem } from './gc-housekeeping-input'
 import type { GcJobDone, GcJobInfo, GcJobProgress } from './gc-jobs-core'
 import type { GcDockerCard, OrphanVolumesHidden } from './gc-docker-card'
+import type { OrphanTranscriptItem } from './gc-orphan-transcripts'
 import type {
   GcOpinionAck,
   GcOpinionDone,
@@ -33,6 +34,7 @@ export type {
   GcJobInfo,
   GcJobProgress,
   OrphanVolumeItem,
+  OrphanTranscriptItem,
   GcItemResult
 }
 
@@ -63,6 +65,12 @@ export interface GcSnapshot {
   bundles: WorktreeBundle[]
   /** Orphan volumes offered in Needs review. Removed only by an explicit, confirmed action. */
   orphanVolumes: OrphanVolumeItem[]
+  /**
+   * Claude transcript folders whose project folder is gone and that no live or parked session uses,
+   * listed under "Other leftovers". Moved to the trash only by an explicit, confirmed action
+   * (`gc:clean` with id `transcripts:<slug>`, its own entry in `confirmed`, bucket `orphan-transcripts`).
+   */
+  orphanTranscripts: OrphanTranscriptItem[]
   /**
    * The Docker card: `buildCacheReclaimableBytes`, `danglingImages { count, bytes }` and
    * `orphanVolumesHidden { reason, folders } | null`. The first two are null when docker was
@@ -99,7 +107,7 @@ export interface GcSnapshot {
  * compared: disk use drifts without anything having changed.
  */
 export interface GcExpected {
-  bucket: 'ready' | 'review' | 'in-use' | 'orphan-volume'
+  bucket: 'ready' | 'review' | 'in-use' | 'orphan-volume' | 'orphan-transcripts'
   reasonCode: string | null
   headSha: string | null
   stackIds: string[]
