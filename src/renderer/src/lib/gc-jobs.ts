@@ -60,6 +60,7 @@ export const REFUSAL_CODES = [
   'stack-used-elsewhere',
   'stack-binds-folder',
   'prep-not-applicable',
+  'operation-in-progress',
   // mid-run
   'changed-mid-run'
 ] as const

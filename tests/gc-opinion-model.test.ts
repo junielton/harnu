@@ -331,8 +331,6 @@ describe('an item main always refuses to remove is never marked-safe material', 
   })
 
   it('safeIds leaves out every other item main refuses, judged on its facts', () => {
-    const detached = wt('det', 'review', 400 * MIB, { reason: { code: 'detached', detail: 'x' } })
-    detached.item.kind = 'detached-worktree'
     const shared = wt('sh', 'review', 400 * MIB, {
       reason: { code: 'shared-stack', detail: 'x' },
       sharedStackIds: ['other']
@@ -342,10 +340,20 @@ describe('an item main always refuses to remove is never marked-safe material', 
       session: 'open-idle'
     })
     const ok = wt('ok', 'review', 900 * MIB)
-    const m = buildGcModel(snap([ok, detached, shared, open]))
+    const m = buildGcModel(snap([ok, shared, open]))
     let map: OpinionMap = new Map()
-    for (const b of [ok, detached, shared, open]) map = recordOpinion(map, op(b.item.id, 'safe'), m)
+    for (const b of [ok, shared, open]) map = recordOpinion(map, op(b.item.id, 'safe'), m)
     expect(safeIds(map, m)).toEqual([ok.item.id])
+  })
+
+  it('a detached worktree is no longer refused: main archives it by sha and takes it once confirmed', () => {
+    const detached = wt('det', 'review', 400 * MIB, { reason: { code: 'detached', detail: 'x' } })
+    detached.item.kind = 'detached-worktree'
+    const ok = wt('ok', 'review', 900 * MIB)
+    const m = buildGcModel(snap([ok, detached]))
+    let map: OpinionMap = new Map()
+    for (const b of [ok, detached]) map = recordOpinion(map, op(b.item.id, 'safe'), m)
+    expect(safeIds(map, m)).toEqual([ok.item.id, detached.item.id])
   })
 
   it('still records and shows their opinion: it is advice, only the removal shortcut skips them', () => {

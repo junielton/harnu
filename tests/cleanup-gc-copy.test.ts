@@ -24,6 +24,7 @@ const CODES = [
   'nested-worktree',
   'check-failed',
   'locked',
+  'operation-in-progress',
   'no-known-worktree'
 ] as const
 

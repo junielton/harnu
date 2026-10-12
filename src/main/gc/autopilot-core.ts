@@ -20,8 +20,17 @@ export interface CyclePlan {
   reportBytes: number
 }
 
-/** The item kinds the cleanup executor can actually remove; a detached worktree is not one. */
+/**
+ * The item kinds the autopilot and the ready path may clean. A detached worktree is not one: it has
+ * no merge proof, so it only ever leaves through the operator's confirmed Remove from review.
+ */
 export const CLEANABLE_KINDS: readonly string[] = ['worktree', 'hidden-folder']
+
+/**
+ * The kinds a confirmed Remove from Needs review may take: the above plus a detached worktree, which
+ * the executor archives by its HEAD sha (`refs/archive/detached/…`) before it trashes anything.
+ */
+export const REVIEW_CLEANABLE_KINDS: readonly string[] = [...CLEANABLE_KINDS, 'detached-worktree']
 
 /** True when the bundle's worktree, or the repo it belongs to, is on the neverClean list. */
 export function isNeverClean(
@@ -193,7 +202,8 @@ const REMEMBERED_REFUSALS: ReadonlySet<string> = new Set([
   'shared-stack',
   'stack-present',
   'cannot-unregister',
-  'protected-now'
+  'protected-now',
+  'operation-in-progress'
 ])
 
 const codeOf = (error: string): string => error.split(':')[0].trim()
@@ -346,8 +356,10 @@ export function refusalFor(
   if (isNeverClean(b, prefs)) return 'never-clean'
   if (b.keep) return 'kept'
   if (b.bucket === 'in-use') return 'in-use'
-  // The cleanup executor skips the folder of a detached worktree, so "success" would be a lie.
-  if (!CLEANABLE_KINDS.includes(b.item.kind)) return 'unsupported-kind'
+  // A detached worktree is review-only: archived by sha and removed on the operator's confirm, never
+  // as a ready item (no merge proof to stand on). Any other kind the executor cannot clean.
+  if (!REVIEW_CLEANABLE_KINDS.includes(b.item.kind)) return 'unsupported-kind'
+  if (!CLEANABLE_KINDS.includes(b.item.kind) && b.bucket !== 'review') return 'unsupported-kind'
   if (b.bucket === 'review' && !opts.confirmed) return 'needs-confirmation'
   return null
 }

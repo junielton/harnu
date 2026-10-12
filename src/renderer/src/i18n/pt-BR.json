@@ -2311,6 +2311,7 @@
         "nestedWorktree": "Há outro worktree dentro deste, e remover este também o jogaria no lixo.",
         "checkFailed": "O Harnu não conseguiu olhar dentro deste worktree, então não sabe se removê-lo levaria outro checkout junto.",
         "locked": "Este worktree está bloqueado no git",
+        "operationInProgress": "Um rebase, bisect ou git am ainda está em andamento neste worktree",
         "inUse": {
           "mainCheckout": "O checkout principal do repositório. Nunca é tocado.",
           "neverClean": "Está na sua lista de nunca limpar. Nunca é tocado.",
@@ -2349,7 +2350,8 @@
           "volume": "Volumes: {names}",
           "deps": "Suas pastas de dependências",
           "checkout": "O checkout",
-          "branch": "A branch local {branch}"
+          "branch": "A branch local {branch}",
+          "detached": "O commit dela fica em refs/archive/detached/…"
         },
         "volumesCannotRestore": "Volumes não podem ser restaurados.",
         "copyError": "Copiar erro",
@@ -2437,7 +2439,12 @@
         "totalReady": "{n} prontos · {size}",
         "totalSelected": "{n} selecionados · {size}",
         "close": "Fechar",
-        "branchSub": "branch {branch}"
+        "branchSub": "branch {branch}",
+        "detachedSub": "detached em {sha}",
+        "untrackedMore": "{n} arquivos não rastreados, salvos na ref wip: {names} e mais {more} | {n} arquivos não rastreados, salvos na ref wip: {names} e mais {more}",
+        "untrackedTotal": "{n} arquivo não rastreado no total, cada um salvo na sua ref wip. | {n} arquivos não rastreados no total, cada um salvo na sua ref wip.",
+        "untracked": "{n} arquivo não rastreado, salvo na ref wip: {names} | {n} arquivos não rastreados, salvos na ref wip: {names}",
+        "warnDetached": "{n} worktree detached não tem branch. O commit dela fica em refs/archive/detached/…, e git worktree add traz de volta. | {n} worktrees detached não têm branch. Os commits delas ficam em refs/archive/detached/…, e git worktree add traz de volta."
       },
       "chip": {
         "stack": "stack",
@@ -2646,7 +2653,7 @@
           "neverClean": "Está na sua lista de nunca limpar.",
           "kept": "Você o marcou como Manter. Tire a marca primeiro.",
           "inUse": "Está em uso agora.",
-          "unsupportedKind": "Tem um HEAD detached, então não há branch para arquivá-lo. O Harnu ainda não consegue removê-lo.",
+          "unsupportedKind": "O Harnu só remove este tipo de pasta a partir de Precisa de revisão, depois que você confirmar.",
           "sharedStack": "Outra stack também roda a partir deste worktree. Pare essa primeiro.",
           "nestedWorktree": "Esta pasta contém outro worktree ou checkout. Remova ou mova esse primeiro.",
           "checkFailed": "O Harnu não conseguiu olhar dentro desta pasta em busca de outros worktrees ou checkouts. Confira se ela é legível e use Escanear agora.",
@@ -2656,6 +2663,7 @@
           "pathUnresolved": "Não foi possível resolver um caminho ligado a este worktree, então o Harnu não sabe o que o usa.",
           "sessionOpen": "Ainda há uma sessão aberta neste worktree. Feche-a primeiro.",
           "locked": "O git tem este worktree bloqueado. Desbloqueie primeiro.",
+          "operationInProgress": "Um rebase, bisect ou git am ainda está em andamento aqui, e o estado dele se perderia junto com a pasta. Termine ou aborte, depois use Scan now.",
           "cannotUnregister": "O git não tem um registro único e desbloqueado para este worktree, então o Harnu não consegue desregistrá-lo e o recusou mais de uma vez. Confira git worktree list.",
           "protectedNow": "Ele está protegido agora (um checkout principal, um caminho de nunca limpar ou uma marca Manter), e o Harnu o recusou mais de uma vez.",
           "scanBlind": "O Docker não estava rodando quando o Harnu escaneou, então ele não viu as stacks deste worktree. Inicie o Docker e use Escanear agora.",
@@ -2707,7 +2715,8 @@
         "stackIsMainCheckout": "Essa stack é do checkout principal, então o Harnu não a para e deixou o worktree como estava.",
         "stackUsedElsewhere": "Outra pasta com uma sessão usa essa stack, então o Harnu não a parou e deixou o worktree como estava.",
         "rollbackFailed": "O que a ação tinha mudado (um bloqueio, uma stack parada) não pôde ser desfeito: confira.",
-        "prepLeftStack": "O worktree foi removido depois de o Harnu parar a stack compartilhada, então a stack ficou parada porque a pasta dela sumiu."
+        "prepLeftStack": "O worktree foi removido depois de o Harnu parar a stack compartilhada, então a stack ficou parada porque a pasta dela sumiu.",
+        "operationInProgress": "Um rebase, bisect ou git am está em andamento neste worktree, então ele foi deixado como estava. Termine ou aborte, depois Scan now."
       },
       "opinion": {
         "safe": "Seguro",

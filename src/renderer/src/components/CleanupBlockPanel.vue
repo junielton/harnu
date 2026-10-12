@@ -13,7 +13,7 @@ import {
   X
 } from 'lucide-vue-next'
 import type { GcOpinion } from '../../../main/gc/gc-wire'
-import type { GcBlock } from '../lib/gc-model'
+import { isDetachedBlock, type GcBlock } from '../lib/gc-model'
 import { haltOf, type BlockJobState, type ItemFailure } from '../lib/gc-jobs'
 import { formatBytes } from './system-monitor-format'
 import { identText } from './cleanup-ident'
@@ -132,6 +132,8 @@ const takes = computed<string[]>(() => {
   if ((b.depsBytes ?? 0) > 0) out.push(t('cleanup.gc.panel.takes.deps'))
   out.push(t('cleanup.gc.panel.takes.checkout'))
   if (b.branch) out.push(t('cleanup.gc.panel.takes.branch', { branch: b.branch }))
+  // No branch to keep: the commit stays reachable under the sha-keyed archive refs instead.
+  if (isDetachedBlock(b)) out.push(t('cleanup.gc.panel.takes.detached'))
   return out
 })
 /** Only an orphan volume's own removal loses data; a worktree's volumes are kept, never removed with it. */

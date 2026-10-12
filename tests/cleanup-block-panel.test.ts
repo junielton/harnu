@@ -148,7 +148,7 @@ describe('CleanupBlockPanel — Remove is only offered for what main takes', () 
     w.unmount()
   })
 
-  it('a detached worktree names the command that removes it by hand', () => {
+  it('a detached worktree is removable from review: Remove is offered and its commit is named as kept (AC-A3/A4)', () => {
     const detached = blockOf(
       wt(
         'x',
@@ -159,8 +159,13 @@ describe('CleanupBlockPanel — Remove is only offered for what main takes', () 
       )
     )
     const w = mountPanel(detached)
-    expect(has(w, 'panel-remove')).toBe(false)
-    expect(w.get('[data-testid="panel-remove-hint"]').text()).toContain('git worktree remove')
+    expect(has(w, 'panel-remove')).toBe(true)
+    // the old "git worktree remove" hint is gone: that command would delete it with nothing archived
+    expect(has(w, 'panel-remove-hint')).toBe(false)
+    expect(has(w, 'panel-remove-blocked')).toBe(false)
+    expect(w.get('[data-testid="panel-takes"]').text()).toContain(
+      t('cleanup.gc.panel.takes.detached')
+    )
   })
 
   it('a worktree Harnu could not look inside gets its own Remove-blocked sentence', () => {

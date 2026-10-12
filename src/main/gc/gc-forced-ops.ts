@@ -12,13 +12,16 @@
 //   3. only then does the normal pipeline run, with the executor's own dirty/unpushed/merged
 //      guards waived, because step 2 is what makes waiving them recoverable.
 //
-// What stays refused: a main checkout, a neverClean path, an in-use bundle and a detached
-// worktree are turned away before these ops are even built (autopilot-core `refusalFor`).
+// What stays refused: a main checkout, a neverClean path, an in-use bundle and a worktree with a
+// rebase or bisect in progress are turned away before these ops are even built or at the reprobe
+// (autopilot-core `refusalFor`, gc-shell). A detached worktree is NOT one of them any more: with no
+// branch to name its refs it is archived by its HEAD sha first (`refs/archive/detached/…`), with the
+// commits only its reflog holds, and only on the operator's confirm.
 
 import type { WorktreeBundle } from './bundle-core'
 import { createGcOps, type GcShellDeps } from './gc-shell'
 import type { GcOps } from './pipeline-core'
-import { planArchive, type ArchiveRefPlan } from '../reaper/archive-core'
+import { planArchive, type ArchivePlan, type ArchiveRefPlan } from '../reaper/archive-core'
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
@@ -43,20 +46,29 @@ async function planPreserve(
   b: WorktreeBundle,
   deps: GcShellDeps,
   at: number
-): Promise<{ tip: ArchiveRefPlan; wip: ArchiveRefPlan; sha: string }> {
+): Promise<{ plan: ArchivePlan; tip: ArchiveRefPlan; wip: ArchiveRefPlan; sha: string }> {
   const plan = planArchive(b.item, at)
   // A folder that would be removed with nothing preserving it is never removed.
   if (!plan.tip || !plan.wip) throw new Error('nothing would preserve this worktree')
   const sha = await deps.executor.resolveSha(b.item.repoPath, plan.tip.rev!)
   if (!sha) throw new Error(`could not resolve '${plan.tip.rev}' before removal`)
-  return { tip: plan.tip, wip: plan.wip, sha }
+  return { plan, tip: plan.tip, wip: plan.wip, sha }
 }
 
-/** Writes `refs/archive/<branch>/<stamp>/{tip,wip}`; throws, and so refuses, if it cannot. */
+/**
+ * Writes `refs/archive/<branch>/<stamp>/{tip,wip}`, or `refs/archive/detached/<folder>-<sha>/{tip,wip,reflog/*}`
+ * for a detached worktree; throws, and so refuses, if it cannot.
+ */
 async function preserve(b: WorktreeBundle, deps: GcShellDeps, at: number): Promise<void> {
-  const { tip, wip, sha } = await planPreserve(b, deps, at)
-  await deps.executor.archiveTip(b.item.repoPath, tip.ref, sha)
-  await deps.executor.archiveWip(b.item.repoPath, wip.ref, wip.worktreePath!)
+  const { plan, tip, wip, sha } = await planPreserve(b, deps, at)
+  const { executor } = deps
+  // Commits only a detached HEAD's reflog reaches go with the folder: keep them reachable too. First,
+  // because it is the one step that can refuse for size, and a refusal leaves no tip or wip behind.
+  if (b.item.kind === 'detached-worktree' && plan.namespace && b.item.path) {
+    await executor.archiveReflog(b.item.repoPath, `${plan.namespace}/reflog`, b.item.path)
+  }
+  await executor.archiveTip(b.item.repoPath, tip.ref, sha)
+  await executor.archiveWip(b.item.repoPath, wip.ref, wip.worktreePath!)
 }
 
 /** The shell deps the force path runs on: the executor's dirty / unpushed / merged guards waived. */

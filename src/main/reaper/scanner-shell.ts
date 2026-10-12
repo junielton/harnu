@@ -438,7 +438,7 @@ async function probeStatusUnpushed(
   const statusByPath = new Map<string, WorktreeStatus | null>()
   const unpushedByPath = new Map<string, boolean | null>()
   for (const w of worktrees) {
-    if (w.bare || w.detached || w.path === mainWorktreePath) continue
+    if (w.bare || w.path === mainWorktreePath) continue
     try {
       // BUG-75: the split probe, never `isWorktreeDirty` — an untracked file
       // must not read as a blocker here.
@@ -446,6 +446,8 @@ async function probeStatusUnpushed(
     } catch {
       statusByPath.set(w.path, null)
     }
+    // A detached HEAD has no upstream to be ahead of: only its untracked files are disclosed.
+    if (w.detached || !w.branch) continue
     try {
       unpushedByPath.set(w.path, await hasUnpushedCommits(w.path))
     } catch {

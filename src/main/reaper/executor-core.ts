@@ -5,7 +5,7 @@ import { overridesAncestryCheck, type ReapItem } from './reaper-core'
 import type { WorktreeStatus } from '../worktree-core'
 import { isAbsolute, resolve } from 'node:path'
 import { planArchive } from './archive-core'
-import { restoreHintFor, type Tombstone } from './journal'
+import { restoreHintFor, restoreHintForDetached, type Tombstone } from './journal'
 
 export type CleanStepId =
   | 'guard'
@@ -48,6 +48,12 @@ export interface ExecutorDeps {
   archiveTip(repoPath: string, ref: string, sha: string): Promise<string>
   /** Captures a worktree's tracked + untracked working state and points `ref` at it. */
   archiveWip(repoPath: string, ref: string, worktreePath: string): Promise<string>
+  /**
+   * Points a ref under `refPrefix` at each commit in the HEAD reflog of `worktreePath` that no ref
+   * reaches, and returns the refs written. A detached worktree only: its branchless HEAD reflog is the
+   * one place such a commit lives, and it goes with the folder.
+   */
+  archiveReflog(repoPath: string, refPrefix: string, worktreePath: string): Promise<string[]>
   detachSidebar(path: string): Promise<void>
   /**
    * Unregisters exactly this worktree from git: removes its own admin directory, found by the
@@ -107,7 +113,10 @@ export async function cleanItem(
   deps: ExecutorDeps
 ): Promise<CleanResult> {
   const steps: CleanStepResult[] = []
-  const hasFolder = item.kind === 'worktree' || item.kind === 'hidden-folder'
+  // A detached worktree owns a folder too; it has no branch, so `hasLocalBranch` stays false and
+  // its archive is keyed by the HEAD sha instead (`planArchive`).
+  const hasFolder =
+    item.kind === 'worktree' || item.kind === 'hidden-folder' || item.kind === 'detached-worktree'
   const hasLocalBranch = item.kind !== 'remote-branch' && !!item.branch
 
   if (item.verdict !== 'harvestable') {
@@ -198,10 +207,11 @@ export async function cleanItem(
   const plan = planArchive(item, deps.now())
 
   // Fail-closed backstop for AC-1: an item that would delete something but for
-  // which the planner preserves nothing must abort, not sweep unarchived. No
-  // item shape reaches this today (every folder item carries a branch); a
-  // future one — a detached worktree, say — has to fail loudly here rather than
-  // slip past the archive because it did not fit the plan.
+  // which the planner preserves nothing must abort, not sweep unarchived. A
+  // folder item with no branch (a plain worktree whose branch is unknown) and a
+  // detached worktree whose scan recorded no HEAD both reach it: neither can be
+  // named or resolved, so each fails loudly here rather than slip past the
+  // archive because it did not fit the plan.
   const unpreserved: string[] = []
   if (hasFolder && !plan.wip) unpreserved.push('working state')
   if ((hasLocalBranch || item.kind === 'remote-branch') && !plan.tip) {
@@ -250,6 +260,11 @@ export async function cleanItem(
   // branch. A ref name is recorded only after its write returned, so a
   // tombstone never claims a ref that does not exist.
   await run('archive', plan.refs.length > 0, async () => {
+    // A detached worktree's reflog first: it is the only step that can refuse for size, and a
+    // refusal must leave no tip or wip ref behind. Nothing it writes is needed by the others.
+    if (item.kind === 'detached-worktree' && plan.namespace && item.path) {
+      await deps.archiveReflog(item.repoPath, `${plan.namespace}/reflog`, item.path)
+    }
     if (plan.tip) {
       await deps.archiveTip(item.repoPath, plan.tip.ref, sha!)
       archived.tip = plan.tip.ref
@@ -330,7 +345,10 @@ export async function cleanItem(
     sha,
     deleted,
     justifiedBy: item.justifiedBy,
-    restoreHint: restoreHintFor(item.branch ?? null, sha),
+    restoreHint:
+      item.kind === 'detached-worktree'
+        ? restoreHintForDetached(item.repoPath, item.path, archived.tip)
+        : restoreHintFor(item.branch ?? null, sha),
     archiveTipRef: archived.tip,
     archiveWipRef: archived.wip
   }

@@ -31,6 +31,7 @@ export type RemovalRefusal =
   | 'protected-now'
   | 'stack-present'
   | 'scan-blind'
+  | 'operation-in-progress'
 
 export type Removability =
   | { ok: true }
@@ -42,11 +43,13 @@ export type Removability =
     }
 
 /**
- * The worktree kinds the cleanup executor can remove. Mirrors `CLEANABLE_KINDS` in
- * `src/main/gc/autopilot-core.ts` (pinned by the parity test): any other kind is refused as
- * `unsupported-kind` — a detached worktree has no branch to name its archive ref after.
+ * The worktree kinds a Remove can take. Mirror `CLEANABLE_KINDS` and `REVIEW_CLEANABLE_KINDS` in
+ * `src/main/gc/autopilot-core.ts` (pinned by the parity test). A detached worktree is the second
+ * list only: it is archived by its HEAD sha and removed from Needs review on the operator's
+ * confirm, and is never a ready item.
  */
 const CLEANABLE_WORKTREE_KINDS: readonly string[] = ['worktree', 'hidden-folder']
+const REVIEW_ONLY_WORKTREE_KINDS: readonly string[] = ['detached-worktree']
 
 const DAY_MS = 86_400_000
 
@@ -67,6 +70,7 @@ export function shellQuote(p: string): string {
 const REMEMBERED: Readonly<Record<string, RemovalRefusal>> = {
   'cannot-unregister': 'cannot-unregister',
   'protected-now': 'protected-now',
+  'operation-in-progress': 'operation-in-progress',
   'stack-present': 'stack-present',
   'tip-unknown': 'tip-unknown',
   'path-unresolved': 'path-unresolved',
@@ -75,6 +79,13 @@ const REMEMBERED: Readonly<Record<string, RemovalRefusal>> = {
   'foreign-checkout': 'nested-worktree',
   'shared-stack': 'shared-stack'
 }
+
+/** The command that ends each operation that keeps its state in the worktree. */
+const OPERATION_ABORT = {
+  rebase: 'rebase --abort',
+  bisect: 'bisect reset',
+  am: 'am --abort'
+} as const
 
 const refused = (reason: RemovalRefusal, hint?: string): Removability =>
   hint === undefined ? { ok: false, reason } : { ok: false, reason, hint }
@@ -110,8 +121,14 @@ export function bundleRemovabilityAll(
   if (b.folderGone === true) add('folder-gone')
   // Scanned while Docker was down: its stacks were never seen, and main refuses it until a scan does.
   if (b.dockerBlind === true) add('scan-blind')
-  if (!CLEANABLE_WORKTREE_KINDS.includes(b.item.kind)) {
-    add('unsupported-kind', path ? `git worktree remove ${shellQuote(path)}` : undefined)
+  // No hint for what is left here: `git worktree remove` would delete a detached worktree with
+  // nothing archived, which is exactly what Remove now does safely from review.
+  const kind = b.item.kind
+  if (
+    !CLEANABLE_WORKTREE_KINDS.includes(kind) &&
+    !(REVIEW_ONLY_WORKTREE_KINDS.includes(kind) && b.bucket === 'review')
+  ) {
+    add('unsupported-kind')
   }
   // refusalOf (pipeline-core): refused even when confirmed
   const code = b.reason?.code
@@ -142,6 +159,16 @@ export function bundleRemovabilityAll(
   if (b.session !== 'none' || code === 'open-idle-session') add('session-open')
   if (b.locked === true || code === 'locked') {
     add('locked', path ? `git worktree unlock ${shellQuote(path)}` : undefined)
+  }
+  // A rebase, bisect or git am keeps its state in the folder, which Remove would trash — on a detached
+  // worktree or a branch one.
+  if (b.operation !== undefined || code === 'operation-in-progress') {
+    add(
+      'operation-in-progress',
+      b.operation === undefined || !path
+        ? undefined
+        : `git -C ${shellQuote(path)} ${OPERATION_ABORT[b.operation]}`
+    )
   }
   // Demoted after repeated refusals: main said no again and again, and nothing here shows what changed.
   // It is only the answer when nothing above explains the refusal.
