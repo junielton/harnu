@@ -479,3 +479,28 @@ describe('volumes are never cleaned with the stack (D1)', () => {
     expect(stackLeftoverExpectedOf(it1).ownedVolumes).toEqual([])
   })
 })
+
+describe('a compose name shared with a live folder is never a leftover (delta-2 item 4)', () => {
+  const remembered = new Map([['myapp', [GONE]]])
+  const stopped = [container('c1', 'myapp')]
+  const nets = [{ id: 'n1', name: 'myapp_default', project: 'myapp' }]
+
+  it('a project pinned by the main checkout or any existing worktree is left alone entirely', () => {
+    const args = {
+      remembered,
+      dirExists: dirGone,
+      containers: stopped,
+      networks: nets,
+      orphanVolumes: [orphan('myapp_data', 'myapp')]
+    }
+    expect(planStackLeftovers(args)).toHaveLength(1)
+    expect(planStackLeftovers({ ...args, protectedProjects: new Set(['myapp']) })).toEqual([])
+  })
+
+  it('the gather hands the planner the names live folders pin and the default names they run as', () => {
+    const src = readFileSync(new URL('../src/main/gc/gc-scan-shell.ts', import.meta.url), 'utf8')
+    const call = src.slice(src.indexOf('planStackLeftovers({'))
+    expect(call.slice(0, 500)).toMatch(/protectedProjects/)
+    expect(src).toMatch(/composeDefaultProject/)
+  })
+})
