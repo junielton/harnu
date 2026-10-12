@@ -76,6 +76,25 @@ describe('unlocking a real locked worktree', () => {
     expect(readFileSync(file).equals(original)).toBe(true)
   })
 
+  it('leading and trailing spaces in the reason are kept, byte for byte (delta 3)', async () => {
+    const reason = '  padded  '
+    execFileSync('git', ['-C', repo, 'worktree', 'lock', '--reason', reason, wt])
+    const g = createGitGuided(git)
+    const file = path.join(repo, '.git', 'worktrees', path.basename(wt), 'locked')
+    const original = readFileSync(file)
+    expect(await g.lockReason(repo, wt)).toBe(reason)
+
+    await g.unlock(repo, wt)
+    await g.lock(repo, wt, reason)
+
+    expect(readFileSync(file).equals(original)).toBe(true)
+  })
+
+  it('a reason that is only spaces is a reason, not "no reason" (delta 3)', async () => {
+    execFileSync('git', ['-C', repo, 'worktree', 'lock', '--reason', '   ', wt])
+    expect(await createGitGuided(git).lockReason(repo, wt)).toBe('   ')
+  })
+
   it('a lock that had no reason goes back with none', async () => {
     const g = createGitGuided(git)
     await g.lock(repo, wt, null)
