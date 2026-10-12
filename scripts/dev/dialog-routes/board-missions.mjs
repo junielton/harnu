@@ -240,7 +240,7 @@ function ensureCueMissions(seed) {
   const raw = readFileSync(join(dir, src), 'utf8')
   let wrote = false
   for (const n of ['b1', 'b2']) {
-    const id = `mnt-000000${n}`
+    const id = `mnt-${String(n).padStart(8, '0')}`
     const file = join(dir, `${id}-seed-cue-mission-${n}.md`)
     if (existsSync(file)) continue
     writeFileSync(

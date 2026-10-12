@@ -8,7 +8,7 @@
  *   - pinned folders (`<userData>/projects.json`): the `org/proj/www` git repo
  *     (main checkout) and one plain non-git folder;
  *   - the folder-menu dialogs: the repo has one LINKED worktree (RemoveWorktree
- *     needs it) — it is one of the long-list worktrees, `PROJ-231-wave-01`;
+ *     needs it) — it is one of the long-list worktrees, the first of them;
  *   - the long-list world (the BUG-184 shape): the same repo with
  *     `LONG_LIST_WORKTREES` linked worktrees on merged branches, a block of them
  *     in a state main refuses to clean (locked / detached HEAD / a worktree
@@ -240,13 +240,16 @@ function mission(
  * empty). `worktrees` defaults to {@link LONG_LIST_WORKTREES}; a smaller
  * number is for a fast smoke of the seed itself. Throws if `git` fails.
  */
-export function seedDialogWorld(opts: { worktrees?: number; root?: string } = {}): DialogSeed {
+export function seedDialogWorld(
+  opts: { worktrees?: number; root?: string; userData?: string } = {}
+): DialogSeed {
   const total = opts.worktrees ?? LONG_LIST_WORKTREES
   // `root` makes the world's absolute paths identical across two builds (the baseline driver
-  // passes the same relative layout under a per-side dir); without it the dir is a fresh mkdtemp.
+  // passes ONE fixed world path for both sides, because the path appears in on-screen hints and
+  // a longer path wraps differently); without it the dir is a fresh mkdtemp.
   const root = opts.root ?? mkdtempSync(join(tmpdir(), 'harnu-dialogs-'))
   mkdirSync(root, { recursive: true })
-  const userData = join(root, 'home')
+  const userData = opts.userData ?? join(root, 'home')
   mkdirSync(userData, { recursive: true })
 
   // ---- the repo: org/proj/www, with a bare "origin" so origin/main exists ----
