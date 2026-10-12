@@ -7,30 +7,31 @@
 
 ## 0. Summary and the decisions that need a human
 
-Harnu has **26 modal-like surfaces** (24 own components + 2 inline overlays) and **no shared shell**. Each re-implements Teleport, scrim, card, header, footer, Esc, backdrop-close and (mostly) focus handling, and they have drifted: 5 `max-height` values + 2 dialogs with none + 2 fixed heights, 9 widths, 3 radii, 2 scrim values (3 counting the viewer), 4 z-index values among dialogs, 3 close-state idioms, and no dirty-guard convention beyond two components. BUG-184 is just the first drift that hurt.
+Harnu has **26 modal-like surfaces** (24 own components + 2 inline overlays) and **no shared shell**. Each re-implements Teleport, scrim, card, header, footer, Esc, backdrop-close and (mostly) focus handling, and they have drifted: 5 `max-height` values + 2 dialogs with none + 2 fixed heights, 9 widths, 3 radii, 2 scrim values (3 counting the viewer), 3 z-index values (60/65/70), 3 close-state idioms, and no dirty-guard convention beyond two components. BUG-184 is just the first drift that hurt.
 
-**Recommendation.** Build one `components/ui/Dialog.vue` (+ `useDialogStack`), tokenize the scrim / cap / z-layers, and migrate in **9 PRs behind a characterization-test net that lands first**. Land **BUG-184 first as a standalone fix, written in the primitive's final shape** (§7). The migration is a _shell swap_: component names, emits, store contracts and every `data-testid` / `data-test` / `data-dsqa` stay exactly where they are.
+**Recommendation.** Build one `components/ui/Dialog.vue` (+ `useDialogStack`), tokenize the scrim / cap / z-layers, and migrate in **11 PRs (batch 0 safety net, BUG-184, then batches 1–8) behind a characterization-test net that lands first**. Land **BUG-184 first as a standalone fix, written in the primitive's final shape** (§7). The migration is a _shell swap_: component names, emits, store contracts and every `data-testid` / `data-test` / `data-dsqa` stay exactly where they are.
 
 **Corrections to the audit this unit started from** (re-verified, per the card's instruction):
 
-| Card said                                              | Tree says                                                                                                                                                                                                                                                                                                                                                    |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| "no shared focus trap"                                 | `composables/useFocusTrap.ts` exists and **21 of the 26 surfaces already use it** (design.md §5.5 documents it). The 5 without: CardCreateModal, CardDetailModal, ImageLightbox, the RoadmapBoard dispatch overlay, the ReviewPane submit-confirm.                                                                                                           |
-| "`design.md` has widths only, no Dialog anatomy in §6" | §6 **has** a `### Dialog` block (design.md:5730) — but it is stale: footer background `#0f0f12` (a raw colour the contract forbids), radius `9px` while §4 says dialogs are `10px`, no viewport cap, "click outside = close" without saying mousedown, no focus/ARIA/z rules. The Settings and Cleanup-list widths live in the §4 "Layout dimensions" table. |
-| "32 components carry their own Escape handler"         | 48 renderer files mention Escape; most are menus/popovers/comboboxes. Of the 26 modal surfaces, **24 have one** — all but McpConfirmOverlay (intentional) and the ReviewPane confirm — and one of those 24 (the RoadmapBoard overlay) only fires with focus already inside the scrim.                                                                        |
-| "backdrop `rgba(0,0,0,0.55)` inline in 22 files"       | Confirmed: 22 files. (Includes McpConfirmOverlay, CommandPalette and the ReviewPane confirm. ImageLightbox uses `0.82`; CardCreate/CardDetail/RoadmapBoard use `bg-black/40`.)                                                                                                                                                                               |
+| Card said                                              | Tree says                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "no shared focus trap"                                 | `composables/useFocusTrap.ts` exists and **21 of the 26 surfaces already use it** (its docblock cites a design.md §5.5 that does not exist; the rule only appears inline in per-dialog sections, e.g. design.md:5560, :5614, :5840). The 5 without: CardCreateModal, CardDetailModal, ImageLightbox, the RoadmapBoard dispatch overlay, the ReviewPane submit-confirm. |
+| "`design.md` has widths only, no Dialog anatomy in §6" | §6 **has** a `### Dialog` block (design.md:5730) — but it is stale: footer background `#0f0f12` (a raw colour the contract forbids), radius `9px` while §4 says dialogs are `10px`, no viewport cap, "click outside = close" without saying mousedown, no focus/ARIA/z rules. The Settings and Cleanup-list widths live in the §4 "Layout dimensions" table.           |
+| "32 components carry their own Escape handler"         | 48 renderer files mention Escape; most are menus/popovers/comboboxes. Of the 26 modal surfaces, **24 have one** — all but McpConfirmOverlay (intentional) and the ReviewPane confirm — and one of those 24 (the RoadmapBoard overlay) only fires with focus already inside the scrim.                                                                                  |
+| "backdrop `rgba(0,0,0,0.55)` inline in 22 files"       | Confirmed: 22 files. (Includes McpConfirmOverlay, CommandPalette and the ReviewPane confirm. ImageLightbox uses `0.82`; CardCreate/CardDetail/RoadmapBoard use `bg-black/40`.)                                                                                                                                                                                         |
 
-**Decisions needed (each has a recommendation; none blocks starting batch 0 and BUG-184):**
+**Decisions needed** (each has a recommendation; none blocks starting batch 0 and BUG-184):
 
 | #   | Decision                              | Options                                                                                                                                                                         | Recommendation                                                                                                                                                                                                                           |
 | --- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | Size scale                            | (a) `sm 480 · md 560 · lg 720 · xl 940-fixed` (b) keep 440/520/540 as extra sizes                                                                                               | **(a).** 440/460→480 and 520/540→560 widen by ≤40px; text content reflows, nothing clips.                                                                                                                                                |
+| D1  | Size scale                            | (a) `sm 480 · md 560 · lg 720 · xl 940-fixed` (b) keep 440/520/540 as extra sizes                                                                                               | **(a).** 440/460→480 and 520/540→560 widen by ≤40px; text reflows, nothing clips.                                                                                                                                                        |
 | D2  | Card dossier width                    | `lg` = 720 (CardDetail/CardCreate shrink 760→720) or `lg` = 760 (Cleanup list grows 720→760)                                                                                    | **720.** Cleanup's width is a documented token (`--gc-dialog-w`) with a design.md row; the dossier is the outlier. Needs a visual check in batch 6 — if it genuinely needs 760 it becomes a documented `lg` exception, not a fifth size. |
 | D3  | Dialog radius                         | 9px (15 dialogs today) or `--radius-lg` 10px (8 dialogs + design.md §4)                                                                                                         | **10px.** One token, §4 already says so; 1px change.                                                                                                                                                                                     |
-| D4  | Surface fill of the card modals       | keep `bg-bg` + `border-border` (Card*, dispatch) or move to the standard `bg-surface` + `border-border-2`                                                                       | **Standard.** The only reason they differ is history; keeping a second fill means a second token path. Flag for the DSQA pass in batch 6.                                                                                                |
-| D5  | BUG-184 order                         | standalone first, or fold into batch 1                                                                                                                                          | **Standalone first**, in the primitive's final shape (§7).                                                                                                                                                                               |
-| D7  | Initial focus on destructive confirms | keep as is (Remove worktree, Sweep, Dehydrate focus the **confirm** button; Cleanup-bulk, Containers-remove, Mission×2, mods confirm focus **Cancel**) or standardize on Cancel | **Cancel.** With confirm focused, a stray Enter deletes. This is a behaviour change on 3 dialogs, listed in §3.3, and it is the one delta that is _safer_, not just different.                                                           |
-| D6  | Surfaces that keep their own shell    | CommandPalette, ImageLightbox                                                                                                                                                   | **Do not migrate the shell**; adopt only the scrim/z tokens (§5.3). Both have no header/footer anatomy to standardize.                                                                                                                   |
+| D4  | Surface fill of the card modals       | keep `bg-bg` + `border-border` (Card×2, dispatch) or the standard `bg-surface` + `border-border-2`                                                                              | **Standard.** The only reason they differ is history; a second fill means a second token path. Flag for the DSQA pass in batch 6.                                                                                                        |
+| D5  | BUG-184 order                         | standalone first, or fold into batch 1                                                                                                                                          | **Standalone first**, in the primitive's final shape (§7.1).                                                                                                                                                                             |
+| D6  | Surfaces that keep their own shell    | CommandPalette, ImageLightbox                                                                                                                                                   | **Do not migrate the shell**; adopt only the scrim/z tokens (§5.4). Neither has header/footer anatomy to standardize.                                                                                                                    |
+| D7  | Initial focus on destructive confirms | keep as is (Remove worktree, Sweep, Dehydrate focus the **confirm** button; Cleanup-bulk, Containers-remove, Mission×2, mods confirm focus **Cancel**) or standardize on Cancel | **Cancel.** With the destructive button focused, a stray Enter deletes. A behaviour change on 3 dialogs (listed in §3.3) and the one delta that is _safer_, not just different.                                                          |
+| D8  | Dialog title type                     | keep the dominant `13.5px/20px · 600` (≥14 dialogs) as a documented exception, or follow §3's Subtitle `15/22/500` (3 dialogs do)                                               | **Keep the dominant**, named as a type token (§4.1). Following §3 changes 14 dialogs for no functional gain.                                                                                                                             |
 
 ---
 
@@ -195,16 +196,390 @@ _Files_ = files beyond the §3.1 shared set. _Catch_ = tests that would fail if 
 
 The card says behaviour "must not change beyond consistency". These are the consistency changes — every one is visible in the baseline diff (§6.3) and must be listed in the batch PR rather than discovered by a reviewer:
 
-| Delta                                                                             | Affects                                                                                  |
-| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Scrim `.40` → `.55`                                                               | Card×2, dispatch overlay                                                                 |
-| Radius 9 → 10px                                                                   | 15 dialogs (D3)                                                                          |
-| Width 440/460 → 480; 520/540 → 560; 760 → 720                                     | 11 dialogs (D1/D2)                                                                       |
-| `max-height` unified to the cap; fixed-height dialogs keep `fixedHeight`          | all                                                                                      |
-| Header/footer rhythm and title size unified                                       | Dehydrate, Sweep, MCP, CleanupBulk, ContainersRemove, ReviewPane                         |
-| CleanupBulk / ContainersRemove / ReviewPane gain a cap and a pinned header/footer | BUG-184 class                                                                            |
-| Focus trap + focus restore added                                                  | CardCreate, CardDetail, dispatch, ReviewPane confirm                                     |
-| Initial focus moves from the destructive button to Cancel                         | RemoveWorktree, Sweep, Dehydrate (D7)                                                    |
-| Esc now works                                                                     | ReviewPane confirm, dispatch overlay (keyboard-reachable even with focus outside)        |
-| One Esc dismisses only the topmost dialog                                         | every stacked pair (§5.2)                                                                |
-| `aria-label="Command palette"` becomes i18n                                       | (only if the palette adopts the shared label helper — otherwise a separate one-line fix) |
+| Delta                                                                                      | Affects                                                                                  |
+| ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Scrim `.40` → `.55`                                                                        | Card×2, dispatch overlay                                                                 |
+| Radius 9 → 10px                                                                            | 15 dialogs (D3)                                                                          |
+| Width 440/460 → 480; 520/540 → 560; 760 → 720                                              | 11 dialogs (D1/D2)                                                                       |
+| `max-height` unified to the cap; fixed-height dialogs keep `fixedHeight`                   | all                                                                                      |
+| Header/footer rhythm and title size unified                                                | Dehydrate, Sweep, MCP, CleanupBulk, ContainersRemove, ReviewPane                         |
+| CleanupBulk / ContainersRemove / ReviewPane gain a cap and a pinned header/footer          | BUG-184 class                                                                            |
+| Focus trap + focus restore added                                                           | CardCreate, CardDetail, dispatch, ReviewPane confirm                                     |
+| Initial focus moves from the destructive button to Cancel                                  | RemoveWorktree, Sweep, Dehydrate (D7)                                                    |
+| Esc now works                                                                              | ReviewPane confirm, dispatch overlay (keyboard-reachable even with focus outside)        |
+| One Esc dismisses only the topmost dialog                                                  | every stacked pair (§5.2)                                                                |
+| Esc is swallowed while the MCP gate is open (today it passes through to a takeover behind) | McpConfirmOverlay                                                                        |
+| `aria-label="Command palette"` becomes i18n                                                | (only if the palette adopts the shared label helper — otherwise a separate one-line fix) |
+
+---
+
+## 4. Standard layout (AC-4)
+
+Everything below is **the paste-ready replacement for the `### Dialog` block at design.md:5730** (and its satellites: the §4 "Layout dimensions" rows, the §6 "Floating surfaces" table, the "Form controls — canonical components" list). **`design.md` is not edited in this PR** — it is edited in batch 1, together with the code that implements it, per the design contract in `CLAUDE.md`.
+
+### 4.1 Decisions baked into the draft
+
+- **Title type is a documented exception, not §3's Subtitle.** 14+ dialogs ship `13.5px/20px · 600`; §3 says dialog titles are Subtitle `15/22/500` and only Dehydrate, Sweep and CleanupBulk follow it. Moving 14 dialogs to follow §3 is the bigger visual change, so the standard keeps the dominant value and names it as a type token (`--text-dialog-title`) rather than a raw `13.5px` (decision **D8**, recommendation: keep dominant).
+- **The stale footer rule is dropped.** design.md:5736 says the footer has a `#0f0f12` background. No shipped dialog does that, and a raw colour is forbidden by the contract; the footer is transparent on the card's `--color-surface`.
+- **`role="dialog"` everywhere.** `alertdialog` is tempting for destructive confirms but `cleanup-bulk-confirm-dialog.test.ts` and `containers-view.test.ts` select on `[role="dialog"]`; changing the role is a test-visible behaviour change with no user benefit in v1. Destructive confirms get `aria-describedby` instead.
+
+### 4.2 Draft (copy from here)
+
+````markdown
+### Dialog
+
+The one modal shell (`components/ui/Dialog.vue`). Every blocking overlay with a card is a
+`Dialog`; **hand-rolled scrims are a bug** (a contract test enforces it — see "Enforcement"). Two
+surfaces deliberately keep their own shell because they have no header/footer anatomy: the
+**Command palette** and the **Image lightbox**; they use the same scrim and z tokens.
+
+#### Anatomy
+
+```
+Scrim  (--color-scrim, fixed, inset 0, flex-centered)           z = layer
+└─ Card (--color-surface, 1px --color-border-2, --radius-lg, --shadow-pop)
+   ├─ Header   shrink-0 · padding 14/18/10 · border-b --color-border
+   │     [icon] Title (13.5/20 600)  [subtitle: mono 11.5 --color-text-4]        [✕ 24×24]
+   ├─ Body     flex-1 · min-h-0 · overflow-y-auto (.scrollable) · padding 14/18   ← the ONLY scroller
+   └─ Footer   shrink-0 · padding 12/18 · border-t --color-border
+         [meta · left, optional]                         [Cancel] [Primary]   gap 8, right-aligned
+```
+
+- **The card never scrolls and is never taller than the cap.** Header and footer are `shrink-0`; the
+  body is `flex-1 min-h-0 overflow-y-auto`. A secondary section (e.g. a "refused" list) lives _inside_
+  the body — it does not get its own cap unless it is a self-contained widget (a code `<pre>`, a
+  filmstrip), and never grows the card.
+- **No footer** is allowed (a viewer-style or single-action card); **no header** is not — a dialog
+  always has an accessible name (title, or `aria-label` when the header is a custom slot).
+- Footer actions use `ui/Button` (`ghost` Cancel, `primary` or `danger` action). Order: dismiss left of
+  commit. The destructive action uses `variant="danger"`; it is never the default (Enter) action.
+- The close button is 24×24, `X` icon 14px/1.5, `--color-text-3` → `--color-text` + `--color-surface-2`
+  on hover, labelled by the shared key `dialog.close`. It is absent when the dialog is not dismissible.
+
+#### Size scale
+
+Width is always `min(<size>, 90vw)`. A dialog picks a size; it does not invent a width.
+
+| Size | Token           | Width | Use                                                            | Replaces (today)                                                                                                                                                                    |
+| ---- | --------------- | ----- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sm` | `--dialog-w-sm` | 480px | Confirms and one-field forms                                   | 440 (Mission close, mods confirm), 460 (Containers remove, Review confirm), 480 (Remove worktree, Rename ×2, Bulk close)                                                            |
+| `md` | `--dialog-w-md` | 560px | **Default.** Forms, plans, launch options                      | 520 (New folder, Memory location), 540 (New session, MCP confirm), 560 (Add folder, Claude Boot, New worktree, Open subfolder, Dehydrate, Sweep, Missions review, dispatch confirm) |
+| `lg` | `--dialog-w-lg` | 720px | Long lists with chips; the card dossier                        | 720 (Cleanup list — replaces `--gc-dialog-w`), 760 (Card create, Card detail)                                                                                                       |
+| `xl` | `--dialog-w-xl` | 940px | Tabbed/navigated surfaces. **Must pass `height`** (fixed size) | 940 (Settings)                                                                                                                                                                      |
+
+#### Viewport cap (mandatory)
+
+`max-height: var(--dialog-max-h)` = `84vh` on **every** card. There is no variant without it. 84vh is the
+middle of the shipped 80–88vh range and leaves ≥ 8vh above and below. A fixed `height`
+(`xl` Settings `min(80vh, 720px)`, Open subfolder `min(70vh, 560px)`) is allowed only if it is ≤ the cap, so
+the card is still capped and the nav/pane or list keeps its own scroll inside the body.
+At a 560px-tall window the card is 470px: header + footer ≈ 100px, the body scrolls the rest.
+
+#### Placement
+
+Centered (default). `placement="top"` (`margin-top: 10–12vh`) is for the MCP confirm (the palette keeps its own shell and its own top anchor)
+only — surfaces whose height changes as the user types or as a queue grows, so a centered card would
+jump.
+
+#### Variants (content, not shells)
+
+| Variant                 | Size                                      | What differs                                                                                                                                                                                                                  |
+| ----------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Confirm**             | `sm`                                      | Body is a sentence + optional callout (`--color-warning-soft`). Footer: Cancel + primary. **Initial focus: Cancel.**                                                                                                          |
+| **Destructive confirm** | `sm`/`md`                                 | Header gets a leading `--color-red` icon; body names exactly what is lost; callout uses `--color-red-soft`; action is `danger`. `aria-describedby` → the body copy. **Initial focus: Cancel** (never the destructive button). |
+| **Form**                | `sm`/`md`                                 | Label (11px / 500 / eyebrow case) + input (32px, `--radius-sm`) + hint. Enter submits; the secondary action ("Reset") goes in the footer's left (`meta`) slot. Initial focus: the first input.                                |
+| **Long list**           | `lg`                                      | One scroll region (the body). Totals live in the footer `meta`. Rows are 28–34px; chips/sizes right-aligned. Secondary sections (refused, warnings) scroll with the rest.                                                     |
+| **Large / tabbed**      | `xl` + `height`                           | Settings. The body hosts two independent scrollers (nav, pane); the card never resizes between tabs.                                                                                                                          |
+| **Dossier**             | `lg`                                      | Card detail/create. A custom `header` slot (status chip, kind/tier pickers, close) replaces the title row; `aria-label` names it.                                                                                             |
+| **Gate**                | `md`, `placement="top"`, `layer="raised"` | MCP confirm. Not dismissible: no ✕, Esc and scrim clicks do nothing (but Esc is swallowed so it cannot reach a takeover behind).                                                                                              |
+
+#### Layers (z-order)
+
+Added to the "Floating surfaces" table as the only z-index source for dialogs:
+
+| Token               | Value | Surface                                                                       |
+| ------------------- | ----- | ----------------------------------------------------------------------------- |
+| `--z-dialog`        | 60    | every Dialog; the Image lightbox                                              |
+| `--z-dialog-raised` | 65    | fail-closed gates that no other surface may cover (MCP confirm)               |
+| `--z-palette`       | 70    | Command palette; comboboxes' dropdown panels (they must float above a dialog) |
+
+Card create / Card detail / dispatch confirm are `z-[65]` today with no recoverable reason
+(history is squashed); they move to `--z-dialog` unless batch 6 finds one.
+Raw `z-index` / `z-[N]` on a dialog is a bug, as before.
+
+#### Scrim and tokens
+
+| Token                                          | Value                           | Used by                                                                                                                 |
+| ---------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `--color-scrim`                                | `rgba(0, 0, 0, 0.55)`           | every Dialog and the palette (`bg-scrim`)                                                                               |
+| `--color-scrim-strong`                         | `rgba(0, 0, 0, 0.82)`           | Image lightbox only (`bg-scrim-strong`)                                                                                 |
+| `--dialog-max-h`                               | `84vh`                          | the cap                                                                                                                 |
+| `--dialog-w-sm / -md / -lg / -xl`              | `480px / 560px / 720px / 940px` | size scale                                                                                                              |
+| `--z-dialog / --z-dialog-raised / --z-palette` | `60 / 65 / 70`                  | layers                                                                                                                  |
+| `--text-dialog-title` (+ `--line-height`)      | `13.5px / 20px`                 | header title (documented type exception; weight via `font-semibold`) — in `main.css @theme`, with the other type tokens |
+
+All theme-invariant (declared once in `@theme`, like the shape/motion tokens); the scrim stays black at
+0.55 in light themes, which is today's behaviour. The Cleanup list's `--gc-dialog-w` becomes
+`--dialog-w-lg` (same value).
+
+#### Motion
+
+Scrim: `.anim-overlay-fade`. Card: `.anim-fade-in-scale`. No exit animation (the surface unmounts), as
+today. `prefers-reduced-motion` is handled by the global reset in `main.css`. No ad-hoc keyframes.
+
+#### Keyboard
+
+- **Esc** closes **only the topmost** dialog and never reaches a takeover behind it. Ignored when the
+  event originates inside a nested dropdown panel (`[data-esc-owner]`, and the existing
+  `[data-branch-combobox-panel]`), which owns that Esc.
+- **Scrim closes on `mousedown` where `target === currentTarget`**, never on `click` (so a drag that
+  ends outside the card does not dismiss it).
+- **Tab / Shift+Tab** wrap inside the card. Initial focus: the dialog's declared field/button, else the
+  first focusable, else the card. Closing restores focus to the opener.
+- A dirty or busy dialog keeps its own guard: the primitive emits `close(reason)`; the owner decides
+  (toast-with-Discard, flush a debounced save, ignore while `busy`).
+
+#### Accessibility
+
+`role="dialog"`, `aria-modal="true"`, `aria-labelledby` → the title element (or `aria-label` for a custom
+header; always an i18n string), `aria-describedby` for confirms. The scrim is `role="presentation"`.
+The page behind is not scrollable (`html, body, #app { overflow: hidden }`), so no scroll lock is
+needed — a contract test pins that assumption.
+
+#### Enforcement
+
+`tests/dialog-shell-ratchet.test.ts` fails on `fixed inset-0` together with a raw black scrim
+(`rgba(0, 0, 0` / `bg-black/`) in any component except `ui/Dialog.vue` and an explicit allow-list that
+may only shrink.
+````
+
+### 4.3 Where each new token lives
+
+`themes.css` `@theme`: `--color-scrim`, `--color-scrim-strong`, `--dialog-max-h`, `--dialog-w-*`, `--z-dialog*`, `--z-palette` (the file already holds the theme-invariant `--fv-*` and `--gc-*` layout vars, with the rule that a size read by several components belongs here). `main.css` `@theme`: `--text-dialog-title`. `design.md` §9 gets the matching rows ("adding/removing any token requires the matching entry in design.md").
+
+---
+
+## 5. Component API (AC-5)
+
+### 5.1 `components/ui/Dialog.vue` — controlled, emits instead of closing
+
+The primitive **never closes itself**: it emits `close(reason)` and the owner runs the close logic it already has. That single decision is what lets one component serve all four close idioms (§1.2) with no rewrite — `ui.closeDialog()`, an `emit('cancel')`, a local ref, and a dirty/busy guard are all just the handler wired to `@close`.
+
+```ts
+// props
+open: boolean                              // required; the owner keeps its own state (store flag, v-if, local ref)
+size?: 'sm' | 'md' | 'lg' | 'xl'           // default 'md'
+height?: string                            // CSS height for fixed-size cards (Settings, Open subfolder); must be ≤ the cap
+placement?: 'center' | 'top'               // default 'center'
+layer?: 'dialog' | 'raised'                // default 'dialog'  (60 | 65)
+title?: string                             // header title; or use #header
+subtitle?: string                          // mono, text-4
+ariaLabel?: string                         // required when #header replaces the title (Card modals)
+describedby?: string                       // id of the body copy (confirms)
+dismissible?: boolean                      // default true; false = no ✕, Esc/scrim do nothing (MCP gate)
+initialFocus?: string | (() => HTMLElement | null)   // selector within the card, or a getter; default first focusable
+escIgnore?: string                         // default '[data-esc-owner],[data-branch-combobox-panel]'
+
+// emits
+close: [reason: 'esc' | 'scrim' | 'button']
+
+// slots
+icon      // leading header icon (destructive red icon, shield)
+header    // replaces the whole title row (Card modals, MCP gate)
+default   // body — the only scroll region
+meta      // footer left (totals, "Reset")
+footer    // footer right (actions); omit for no footer
+```
+
+Fall-through: `inheritAttrs: false`, `$attrs` bound to the **card** element. That is where `data-testid="bulk-dialog"`, `:data-mode`, `data-dsqa="containers-remove-dialog--orphan"` live today, so selectors keep resolving. `Teleport to="body"` is inside the primitive (as in every dialog now); the redundant outer Teleport in `App.vue` is left alone.
+
+### 5.2 `composables/useDialogStack.ts` (new) and a small change to `useFocusTrap`
+
+- **`useDialogStack`**: a module-level ordered list of open dialogs and **one** window-capture `keydown` listener (installed on first open, removed on last close). On `Esc`: skip if the target is inside an `escIgnore` match; otherwise route to the **top** entry only and `stopPropagation()`. This replaces N per-dialog capture listeners, and with them the hand-written guards (`confirming`, `busy`, the combobox exemption) that exist only because every listener fires.
+- **`useFocusTrap` gains suspension** (the one change to an existing composable): while a dialog is not the top of the stack its trap neither handles Tab **nor restores focus**; when it becomes top again it refocuses the element that had focus inside it. Today `MissionsReviewDialog` achieves this with `active: open && !confirming`, but deactivation _restores focus to the page opener_ — it works there by timing. This is the riskiest 20 lines of the project and gets its own contract cases (§6.1, C14..16).
+- Initial focus and focus restore stay `useFocusTrap`'s job; `Dialog` calls it.
+
+### 5.3 What does **not** go in the API
+
+`beforeClose` (the owner's `@close` handler is the hook), a `role` prop (always `dialog`, §4.1), `closeOnEsc` / `closeOnScrim` (one `dismissible` switch; the two have never differed except in the gate), animation props, a native `<dialog>`.
+
+**Native `<dialog>.showModal()` was considered and rejected for v1.** It would give top-layer stacking, built-in inerting and Esc for free, but the top layer paints above every `z-index` — including the comboboxes' dropdown panels (z-70) that `NewWorktreeDialog` depends on to appear above the card. Re-evaluate once the combobox panels are popovers in the top layer too.
+
+### 5.4 Mapping — every inventoried surface
+
+_Batch_ = where it migrates (§7). `—` = props not needed.
+
+| #   | Surface               | Size · variant         | Props / slots                                                                   | Owner's `@close`                          | Batch         | Note                                                                         |
+| --- | --------------------- | ---------------------- | ------------------------------------------------------------------------------- | ----------------------------------------- | ------------- | ---------------------------------------------------------------------------- |
+| 21  | RenameFolder          | `sm` · form            | `title`, `subtitle`=path, `meta`=Reset, `initialFocus`=name input               | `ui.closeDialog()`                        | **1 (pilot)** | smallest, store-driven                                                       |
+| 22  | RenameRepo            | `sm` · form            | same                                                                            | `ui.closeDialog()`                        | **1 (pilot)** |                                                                              |
+| 20  | RemoveWorktree        | `sm` · destructive     | `#icon` red, `describedby`, `initialFocus`=Cancel                               | `ui.closeDialog()`                        | 2a            | focus moves confirm→Cancel (D7)                                              |
+| 7   | ContainersRemove      | `sm` · destructive     | attrs: 2 testids + `data-dsqa`                                                  | `emit('close', null)`                     | 2a            | gains cap                                                                    |
+| 14  | MissionClose          | `sm` · confirm         | `initialFocus`=Cancel                                                           | `emit('cancel')`                          | 2a            | over a popover                                                               |
+| 26  | ReviewPane confirm    | `sm` · confirm         | —                                                                               | `dismissConfirm` (no-op while submitting) | 2a            | gains Esc + trap                                                             |
+| 9   | HarnuModExternal      | `sm` · confirm         | `initialFocus`=Cancel                                                           | `confirming=false`                        | 2a            | over Settings                                                                |
+| 5   | CleanupBulkConfirm    | `lg` · long list       | attrs `data-testid`, `:data-mode`; `#icon`; `meta`=total; `initialFocus`=Cancel | `emit('cancel')`                          | 2b            | the BUG-184 dialog; top→center                                               |
+| 24  | SweepConfirm          | `md` · destructive     | —                                                                               | `emit('close', false)`                    | 2b            | focus confirm→Cancel (D7)                                                    |
+| 8   | DehydrateConfirm      | `md` · destructive     | `data-testid`                                                                   | `emit('close', false)`                    | 2b            | focus confirm→Cancel (D7)                                                    |
+| 1   | AddFolder             | `md` · form            | `initialFocus`=alias                                                            | `ui.closeDialog()`                        | 3             |                                                                              |
+| 16  | NewFolder             | `md` · form            | `initialFocus`=name                                                             | `ui.closeDialog()`                        | 3             |                                                                              |
+| 17  | NewSession            | `md` · form            | `initialFocus`=Start                                                            | `ui.closeDialog()`                        | 3             |                                                                              |
+| 12  | MemoryLocation        | `md` · form            | —                                                                               | `ui.closeDialog()`                        | 3             |                                                                              |
+| 4   | ClaudeBoot            | `md` · form (autosave) | `initialFocus`=✕                                                                | the component's `close()` (flush first)   | 3             | every reason must reach `close()`                                            |
+| 19  | OpenSubfolder         | `md` · list            | `height="min(70vh, 560px)"`, `initialFocus`=search                              | `ui.closeDialog()`                        | 3             | listbox arrow keys stay in the component                                     |
+| 15  | MissionsReview        | `md` · list            | `initialFocus`=✕                                                                | local `dismiss()`                         | 4             | stack parent                                                                 |
+| 13  | MissionBulkClose      | `sm` · confirm         | `initialFocus`=Cancel                                                           | `emit('cancel')` unless `busy`            | 4             | stack child                                                                  |
+| 18  | NewWorktree           | `md` · form → stepper  | `initialFocus`=branch input; default `escIgnore` already covers its combobox    | `ui.closeDialog()`                        | 5             |                                                                              |
+| 2   | CardCreate            | `lg` · dossier         | `#header`, `ariaLabel`                                                          | `attemptClose` (dirty guard)              | 6             | D2/D4                                                                        |
+| 3   | CardDetail            | `lg` · dossier         | `#header`, `ariaLabel`=card title                                               | `attemptCloseModal`                       | 6             | D2/D4; **delete uses `window.confirm`** (`:329`) — out of scope, see §8      |
+| 25  | RoadmapBoard dispatch | `md` · confirm         | `ariaLabel` (currently none)                                                    | `cancelDispatch`                          | 6             | gains trap                                                                   |
+| 23  | Settings              | `xl` · tabbed          | `height="min(80vh, 720px)"`, `initialFocus`=✕                                   | `ui.closeDialog()`                        | 7             | shell only; panes untouched                                                  |
+| 11  | McpConfirmOverlay     | `md` · gate            | `dismissible=false`, `layer="raised"`, `placement="top"`, `#header`             | none (IPC verdict)                        | 7             | if the queue/anatomy needs a prop _only it_ uses, it stays on tokens instead |
+| 6   | CommandPalette        | —                      | **not migrated**                                                                | —                                         | 8 (tokens)    | `bg-scrim`, `z-(--z-palette)`, i18n label                                    |
+| 10  | ImageLightbox         | —                      | **not migrated**                                                                | —                                         | 8 (tokens)    | `bg-scrim-strong`, `z-(--z-dialog)`; optional follow-up: trap + stack Esc    |
+
+**Never migrated:** CommandPalette (bare, top-anchored, no header/footer, results list is its body) and ImageLightbox (full-viewport viewer). **Migrated last and with the heaviest checklist:** Settings, McpConfirmOverlay, CardDetail — each for the reason in §3.2 (size, security, no tests).
+
+---
+
+## 6. Regression-safety strategy (AC-3)
+
+The honest starting point: **15 of the 26 surfaces have no behavioural test** (§1.2 ¹), jsdom cannot measure layout, and only one e2e spec opens a dialog. A migration "that keeps the tests green" proves nothing for most of them. So the net is built **before** anything migrates, and its expected values are the _current_ behaviour.
+
+### 6.1 (a) Behaviour-contract suite for the primitive — `tests/dialog-contract.test.ts` (batch 1)
+
+jsdom + `@vue/test-utils`, mounting `ui/Dialog.vue` with probe content. One assertion per row; IDs (C01–C22) are stable so a failing PR can name them.
+
+| ID  | Contract                                                                                                                                                                                                                                 |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C01 | Renders into `document.body` (Teleport), not in place; `open=false` renders nothing                                                                                                                                                      |
+| C02 | Card has `role="dialog"`, `aria-modal="true"`; scrim has `role="presentation"`                                                                                                                                                           |
+| C03 | `aria-labelledby` resolves to an element whose text is the title; with `#header` + `ariaLabel`, `aria-label` is set instead; never neither                                                                                               |
+| C04 | `describedby` is forwarded when given                                                                                                                                                                                                    |
+| C05 | `Esc` emits `close('esc')` once                                                                                                                                                                                                          |
+| C06 | `Esc` is swallowed (`stopPropagation`): a bubbling listener on `document` does not see it                                                                                                                                                |
+| C07 | `dismissible=false`: `Esc` and scrim `mousedown` emit nothing; no ✕ rendered; `Esc` still does not reach `document`                                                                                                                      |
+| C08 | Scrim `mousedown` with `target === currentTarget` emits `close('scrim')`; `mousedown` inside the card does not; `mousedown` inside + `mouseup` on the scrim does not (drag-out)                                                          |
+| C09 | ✕ emits `close('button')`; its `aria-label` is `t('dialog.close')`                                                                                                                                                                       |
+| C10 | `Esc` whose target is inside `[data-esc-owner]` / `[data-branch-combobox-panel]` does **not** emit                                                                                                                                       |
+| C11 | Initial focus: `initialFocus` selector/getter wins; else first focusable; else the card                                                                                                                                                  |
+| C12 | `Tab` on the last focusable wraps to the first; `Shift+Tab` on the first wraps to the last; `Tab` with focus outside the card pulls it in                                                                                                |
+| C13 | Closing restores focus to the previously focused element; if that element was removed, no throw and focus falls back to `body`                                                                                                           |
+| C14 | **Stack:** with two open, `Esc` emits only from the top one                                                                                                                                                                              |
+| C15 | **Stack:** while a child is open the parent's trap neither handles `Tab` nor restores focus; when the child closes, focus returns **inside the parent** (not to the page opener)                                                         |
+| C16 | **Stack:** closing the parent first, then the child (out-of-order) leaves no dangling listener                                                                                                                                           |
+| C17 | Structure (a class/inline-style contract — jsdom does not resolve Tailwind classes into computed styles): card is `flex flex-col`; header and footer carry `shrink-0` and no `overflow-*`; body carries `min-h-0 flex-1 overflow-y-auto` |
+| C18 | Cap present: every `size` renders `max-height: var(--dialog-max-h)`; `height` prop longer than the cap is rejected in dev (console error)                                                                                                |
+| C19 | `$attrs` land on the card (`data-testid`, `data-dsqa`, `class`), not on the scrim                                                                                                                                                        |
+| C20 | Layer → z: `dialog` → `var(--z-dialog)`, `raised` → `var(--z-dialog-raised)`                                                                                                                                                             |
+| C21 | Unmount while open removes the keydown listener (spy on `removeEventListener` count == `addEventListener` count)                                                                                                                         |
+| C22 | Shell invariant: `main.css` still declares `overflow: hidden` on `html, body, #app` (reads the file) — **the scroll-lock non-requirement is pinned**, so if the shell ever scrolls this fails and a lock becomes a requirement           |
+
+C17/18 are the ones jsdom can only approximate; their real-layout twin is the baseline geometry check in §6.3. Do not claim them as layout proof.
+
+### 6.2 (b) Preserving `data-testid`s and existing tests
+
+1. **Rule: a migration PR adds tests; it does not edit an existing assertion.** If one must change (the 280px-cap and "mockup parity" checks in `cleanup-bulk-confirm-dialog.test.ts` are the likely case), that change is its own commit, justified in the PR, and reviewed as a behaviour change.
+2. **Hook snapshot.** Before touching a file: `git grep -nohE 'data-(testid|test|dsqa)="[^"]+"|role="[^"]+"|aria-[a-z]+="[^"]*"' -- <file> | sort > before.txt`; after: same → `after.txt`; `diff` must be empty except for the intended ARIA moves (e.g. `aria-labelledby` now generated by the primitive). Pasted in the PR body.
+3. **Where a hook lives matters.** The primitive forwards `$attrs` to the **card**, which is where `bulk-dialog` / `data-dsqa=…--orphan` are today. Hooks on inner elements (every other testid) stay on their elements because the slot content is unchanged.
+4. **Characterization net (batch 0, `tests/dialog-surfaces.characterization.test.ts`).** Table-driven over the 24 components that can be mounted headlessly (the two inline overlays are covered separately, below). Per surface it asserts what is true **today**: `role`/`aria-modal`, labelled name, `Esc` closes (or doesn't), scrim `mousedown` closes (or doesn't), a trap is present (or not), initial-focus element, close payload (`emit` shape / store flag). The known behavioural deviations (§3.3: missing trap, missing or focus-dependent Esc, `click.self` scrim, no cap, destructive-button initial focus) are encoded **as the current expected value** (e.g. `RoadmapBoard dispatch: trap=false`) in a `KNOWN_DEVIATIONS` table; the batch that fixes one flips that row in the same commit, which is how an intentional delta stays visible in the diff. The suite passes on `main` unmodified — that is its acceptance test.
+5. **The two inline overlays** (`RoadmapBoard.vue` 1504 lines, `ReviewPane.vue` 1373 lines) cannot be mounted cheaply. ReviewPane's confirm is already pinned by `review-pane-contract.test.ts`. RoadmapBoard's dispatch overlay has no test and is **not characterizable without mounting the board**: batch 6 handles it with the baseline run and a human check, stated as a gap, not papered over.
+6. **Ratchet.** `tests/dialog-shell-ratchet.test.ts` (batch 0): lists the 24 files that still hand-roll a shell. A file not in the list must be clean; a file in the list must still be dirty — so migrating a dialog _forces_ removing it from the list, and a new hand-rolled dialog fails CI.
+
+### 6.3 (c) Before/after visual baseline against the real app
+
+jsdom cannot tell you the footer is on screen. The real app can.
+
+1. **Instance.** An isolated second instance per `docs/dev/live-verify-second-instance.md` (`scripts/dev/qa-parallel.sh up` for a worktree-scoped one, or the CDP launch with `--user-data-dir` and a non-9222 port). One instance per label: `before` (built from the batch's merge-base) and `after` (the branch).
+2. **Driver — `scripts/dev/dialog-baseline.mjs` (new, batch 0).** Uses `playwright-core` (already a dependency) via `chromium.connectOverCDP`, the same way `tests/e2e/folder-sort.spec.ts` drives the app. For each surface it opens the dialog through its real UI route (table below), waits for `[role="dialog"]`, and records, **at two window heights — 1280×900 and 1280×560** (`page.setViewportSize`):
+   - a PNG of the viewport (for the human look);
+   - JSON: bounding rects of the card, header, body, footer; computed `width`, `max-height`, `height`, `border-radius`, `background-color`, `padding`, the title's `font-size`/`font-weight`; the scrim's `background-color` and `z-index`; `getComputedStyle(body).overflowY`; `document.activeElement` (tag + `data-*`/`aria-label`); `scrollHeight`/`clientHeight` of the body.
+3. **Diff — `dialog-baseline.mjs diff <before> <after>`.** Prints a per-dialog table of changed properties and fails on any change **not listed** in the batch's `expected-deltas` (copied from §3.3). Independent of the delta list, it asserts these **geometry invariants on `after`**, at 560px: `card.top ≥ 0`, `footer.bottom ≤ innerHeight`, header and footer visible, `body.scrollHeight > body.clientHeight` when the content is long. These are the BUG-184 acceptance criteria turned into a loop over every dialog.
+4. **Output** under `.harnu/out/dialog-baseline/<label>/` (gitignored); the PR body carries the diff table and 2–3 hand-picked PNG pairs, not the whole set.
+5. **Themes.** Default dark + `light` for every batch; one more dark theme and one more light theme once per batch (scrim at `.55` over a light theme is the one thing a dark-only run would hide).
+
+**How each surface is reached** (the driver's route table; "seed" = needs state a clean `userData` doesn't have):
+
+| Surface(s)                                                                                               | Route                                                                                                       | Seed                                                                                                                                                                                      |
+| -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AddFolder                                                                                                | ⌘O                                                                                                          | —                                                                                                                                                                                         |
+| Rename ×2, NewFolder, NewSession, OpenSubfolder, NewWorktree, RemoveWorktree, MemoryLocation, ClaudeBoot | FolderMenu items on a pinned folder (git folder; linked worktree for Remove)                                | a scratch git repo + 1 linked worktree                                                                                                                                                    |
+| Settings                                                                                                 | sidebar gear                                                                                                | —                                                                                                                                                                                         |
+| CommandPalette                                                                                           | ⌘K                                                                                                          | — (reference only)                                                                                                                                                                        |
+| CleanupBulk, Dehydrate, Sweep                                                                            | Cleanup takeover → Clean / Dehydrate / Sweep                                                                | scratch repo with **40 worktrees**; ≥16 in a state Harnu refuses to remove (the BUG-184 scenario — batch 2b confirms which states produce the refused section); untracked paths for Sweep |
+| CardCreate, CardDetail, dispatch                                                                         | Roadmap board → new card / click card / drag to Ready                                                       | a scratch repo with a `.harnu/memory/roadmap/` board and a few cards                                                                                                                      |
+| MissionClose, MissionsReview, MissionBulkClose                                                           | Topbar pill → End mission…; Activity bell → Review                                                          | missions created through the `mission_*` verbs (fixtures in `tests/fixtures/mission-v3/`)                                                                                                 |
+| HarnuModExternal                                                                                         | Settings → Mods → outside-Harnu toggle                                                                      | —                                                                                                                                                                                         |
+| ContainersRemove                                                                                         | Containers takeover → Remove…                                                                               | Docker; **otherwise unit-test only** (`containers-view.test.ts`)                                                                                                                          |
+| ReviewPane confirm                                                                                       | Review takeover → verdict                                                                                   | a PR; **otherwise unit-test only** (`review-pane-contract.test.ts`)                                                                                                                       |
+| McpConfirmOverlay                                                                                        | an MCP mutating call with "Ask before agent actions" on (`tests/e2e/mcp-control.spec.ts` shows the harness) | MCP server on                                                                                                                                                                             |
+| ImageLightbox                                                                                            | footer images popover → tile                                                                                | a pasted image                                                                                                                                                                            |
+
+Open items about the driver itself are in §8 (store-only dialogs reached only through UI; macOS/Wayland not covered).
+
+### 6.4 (d) Per-batch checklist (a migration PR must check every box, in the PR body)
+
+- [ ] Hook snapshot diff is empty (§6.2.2), pasted.
+- [ ] No existing test assertion edited (or the edit is its own commit, justified).
+- [ ] `tests/dialog-contract.test.ts`, `tests/dialog-surfaces.characterization.test.ts` and `tests/dialog-shell-ratchet.test.ts` green; the ratchet allow-list shrank by exactly this batch's files; the `KNOWN_DEVIATIONS` rows this batch fixes are flipped in the same commit.
+- [ ] `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test` green; `node scripts/ci/i18n-parity.mjs` green.
+- [ ] Baseline diff at 900 and 560: only §3.3 deltas for these dialogs; geometry invariants hold; table pasted.
+- [ ] Keyboard pass by a human on each dialog in the batch: `Tab` ×N wraps, `Shift+Tab`, `Esc` (and `Esc` inside a nested dropdown for the dialogs that have one), scrim click vs drag-out, focus returns to the opener.
+- [ ] Theme pass: default dark + light + one more of each family.
+- [ ] `design.md`: the dialog's own §6 subsection no longer states a width/radius/z that now comes from "Dialog"; the Floating-surfaces row cites the layer token; `CHANGELOG.md` entry if any §3.3 delta is user-visible.
+- [ ] Opener flows exercised once end-to-end (the "Opened from" column) — at least one per batch for every dialog with more than one entry point (NewSession has five).
+
+### 6.5 What is **not** covered by automation (a human must check)
+
+- **Motion feel** (the 140ms scale-in, reduced-motion) — only asserted to be the same classes.
+- **Screen readers.** `aria-modal` + labelled/described is asserted structurally; actual announcements in VoiceOver / NVDA / Orca are not.
+- **macOS and Windows** window chrome and focus behaviour; the CDP baseline runs on Linux only (Wayland quirks per `CLAUDE.md` apply).
+- **IME / composition** inside the form dialogs' inputs while `Esc` is pressed.
+- **xterm focus return.** Closing a dialog restores focus to the opener; when the opener was the terminal, whether the cursor is live again is checked by hand.
+- **The two surfaces nobody can characterize headlessly:** the RoadmapBoard dispatch overlay and the ReviewPane confirm in a live PR flow; and Containers remove without Docker.
+- **MCP gate fail-closed semantics under timeout** (timeout → deny) — the primitive must not change it, and only a real MCP round-trip proves it.
+- **Light-theme scrim contrast** beyond the sampled themes (12 themes ship).
+
+---
+
+## 7. Migration plan (AC-6)
+
+### 7.1 BUG-184: standalone first, in the primitive's final shape (D5)
+
+**Land BUG-184 first as its own PR; do not fold it into batch 1.**
+
+- It is a user-facing defect marked `priority: high` that needs ~one component and one token, while batch 1 is a primitive + composable change + design contract + test suite. Folding makes the primitive PR hold a hotfix hostage to a design review — and makes the primitive PR unreviewable.
+- It is **the best regression case the primitive will get.** Its acceptance criteria (33+ rows, 16+ refused, 1080p and ~700px, header/footer pinned) are exactly C17/18 plus the baseline's geometry invariants; shipping the fix first means batch 2b migrates a dialog that already has the right shape and a measured before/after.
+- The coupling is one token, and it is cheap to share: BUG-184 introduces `--dialog-max-h` (and may reuse `--gc-dialog-w` for width), and writes the card as **flex column · header/footer `shrink-0` · body `min-h-0 flex-1 overflow-y-auto` · `max-height: var(--dialog-max-h)`** — i.e. the exact structure `Dialog.vue` will render. Batch 2b then swaps the shell mechanically.
+- Include `ContainersRemoveDialog` in the same PR (the card already says to check it; it is the second dialog with no cap).
+- BUG-184 must **not** introduce anything the primitive cannot express (no per-dialog scroller on the refused section, no centered/top flip) — the card's "the refused section gets its own bounded scroller _or shares the body scroll_" resolves to **shares the body scroll** here.
+
+### 7.2 Batches (each = one PR)
+
+| #       | Batch                                                             | Scope                                                                                                                                                                                                                                                                                                                            | Acceptance criteria                                                                                                                                                                                                                                                                                                         | Depends on                             |
+| ------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| **0**   | **Safety net** (tests + tooling only; no `src/` behaviour change) | `tests/dialog-surfaces.characterization.test.ts`, `tests/dialog-shell-ratchet.test.ts`, `scripts/dev/dialog-baseline.mjs` (+ route table, `expected-deltas` schema), a captured `main` baseline                                                                                                                                  | Passes on unmodified `main`; every one of the 24 mountable components appears in the table; `KNOWN_DEVIATIONS` lists every behavioural deviation in §3.3 (missing trap, missing or focus-dependent Esc, `click.self` scrim, no cap, destructive-button focus); baseline JSON attached to the PR (not committed to the tree) | —                                      |
+| BUG-184 | Cleanup bulk + Containers remove height cap (standalone card)     | `CleanupBulkConfirmDialog.vue`, `ContainersRemoveDialog.vue`, `themes.css` (`--dialog-max-h`), `design.md` §4 row + §9, `CHANGELOG.md`                                                                                                                                                                                           | The card's ACs; header/footer visible at 560px with 33 rows + 16 refused; existing testids unchanged; batch-0 net green                                                                                                                                                                                                     | 0 (recommended; may start in parallel) |
+| **1**   | **Primitive + pilot**                                             | `ui/Dialog.vue`, `useDialogStack`, `useFocusTrap` suspension, tokens in `themes.css`/`main.css`, `dialog.close` in **both** locale files, `design.md` §6 "Dialog" rewrite + §4/§6/§9 rows + "canonical components" entry, `CLAUDE.md` file map row, `tests/dialog-contract.test.ts`; migrate **RenameFolder** and **RenameRepo** | C01..22 green; pilots pass characterization unmodified; baseline diff only the pilots' §3.3 deltas; design.md and code agree token for token                                                                                                                                                                                | 0                                      |
+| **2a**  | Small confirms                                                    | RemoveWorktree, ContainersRemove, MissionClose, ReviewPane confirm, HarnuModExternal                                                                                                                                                                                                                                             | checklist §6.4; D7 focus change documented in `CHANGELOG`; MissionClose still passes "click inside doesn't close the popover"                                                                                                                                                                                               | 1                                      |
+| **2b**  | Cleanup trio                                                      | CleanupBulk, SweepConfirm, DehydrateConfirm                                                                                                                                                                                                                                                                                      | checklist; `cleanup-bulk-confirm-dialog.test.ts` unmodified or the edit isolated; BUG-184 geometry invariants still hold on the primitive                                                                                                                                                                                   | 1, **BUG-184 merged**                  |
+| **3**   | Forms                                                             | AddFolder, NewFolder, NewSession, MemoryLocation, ClaudeBoot, OpenSubfolder                                                                                                                                                                                                                                                      | checklist; ClaudeBoot's pending save is flushed on every close reason; OpenSubfolder keeps `height ≤ cap` and arrow-key nav                                                                                                                                                                                                 | 1                                      |
+| **4**   | Stacked pair                                                      | MissionsReview + MissionBulkClose                                                                                                                                                                                                                                                                                                | C14..16 exercised through the real pair; the Esc-order tests in `missions-review-dialog.test.ts` pass unmodified; `busy` blocks Esc/scrim                                                                                                                                                                                   | 1 (2a recommended first, same author)  |
+| **5**   | NewWorktree                                                       | NewWorktree alone                                                                                                                                                                                                                                                                                                                | `new-worktree-dialog-escape.test.ts` and `…slugify-strip.test.ts` unmodified; stepper phase does not move the card (cap holds while content height changes); combobox Esc leaves the dialog open                                                                                                                            | 1                                      |
+| **6**   | Card modals + dispatch                                            | CardCreate, CardDetail, RoadmapBoard dispatch                                                                                                                                                                                                                                                                                    | D2/D4 decided and recorded; dirty guard (toast + Discard) behaves as before; the dispatch overlay's gain of a trap/Esc is verified live (it has no test); z-65 reason searched for and either found or retired                                                                                                              | 1; D2, D4                              |
+| **7**   | Heavy shells                                                      | SettingsDialog (shell only), McpConfirmOverlay                                                                                                                                                                                                                                                                                   | Settings: `voice-pane.test.ts` + `folder-sort.spec.ts` green, `ui.settingsTab` open-edge preserved, claude-config dirty indicator unchanged; MCP: no Esc/scrim/✕, timeout-deny and queue verified by a real MCP round-trip, **or** a written note (in the PR and §5.4) that it stays on tokens                              | 1, 6 not required                      |
+| **8**   | Close-out                                                         | Palette and Lightbox adopt `bg-scrim`/`bg-scrim-strong`/z tokens; palette `aria-label` → i18n; ratchet allow-list reaches empty (except the two documented exceptions); dead per-dialog `*.close` i18n keys removed; "Floating surfaces" table finalized                                                                         | `rg 'rgba\(0, ?0, ?0, ?0\.55\)'` over `src/renderer` returns nothing; ratchet allow-list = {CommandPalette, ImageLightbox} with reasons; T460's parent AC ("zero dialogs without a max-height; one scrim token, one z scale") demonstrably true                                                                             | 2a–7                                   |
+
+Parallelism: after batch 1, batches 2a, 3, 5, 6 are independent and can run as separate sessions in separate worktrees; 2b waits for BUG-184, 4 for the stack semantics, 7 last by risk. **11 PRs** (batch 0, BUG-184, batches 1–8 incl. 2a/2b).
+
+---
+
+## 8. Not decided / open
+
+1. **Why `z-[65]` on the card modals** — history is squashed (`Initial public release`), so the reason is unrecoverable from `git log -S`. Batch 6 verifies by opening a card modal over the Settings dialog and over a takeover before retiring it.
+2. **Can the CDP driver open store-only dialogs?** Eleven dialogs open via `ui.openDialog(id)`; the Pinia store is not known to be reachable from `window`. The route table drives the UI (menu clicks, shortcuts) instead — slower and more fragile. If a debug hook exists or is cheap to add behind `is.dev`, batch 0 should use it; this spec does not assume one.
+3. **`CardDetailModal`'s delete uses a blocking `window.confirm`** (`:329`) while the file's own comment says confirmations are non-blocking. Out of scope (it is not a shell concern) but it is the one place a _native_ dialog interrupts the app; it deserves its own card.
+4. **`SettingsDialog` does not guard close against unsaved Claude-config edits** (it only shows a dirty indicator). The primitive makes a guard trivial (`@close` handler) — whether to add one is a product decision, not a migration one.
+5. **`NewWorktreeDialog` discards typed input on Esc** (pinned by its escape test's docblock). Unchanged; noted so nobody "fixes" it inside a shell swap.
+6. **Command palette `aria-label="Command palette"` is not i18n.** A one-line fix independent of this work; batch 8 absorbs it if nothing else does first.
+7. **Mockup coverage:** `mockup.html` shows size scale, confirm, destructive confirm, form, long-list at a short viewport (today vs standard) in dark and light with the real tokens. It does **not** show the dossier header, the tabbed `xl` interior or the MCP gate — those variants are described in §4.2 and will need their own mock if the operator wants a visual contract for them before batch 6/7.
