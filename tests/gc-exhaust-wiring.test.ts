@@ -167,8 +167,13 @@ describe('clean → list → empty, against a fake trash', () => {
     )
     expect(ack.emptied).toBe(0)
     expect(ack.skipped).toBe(1)
+    expect(ack.changed).toBe(1)
     expect(inTrash('wt-a')).toBe(true)
     expect(readFileSync(path.join(trash, 'files', 'wt-a', 'data.txt'), 'utf8')).toBe('wt-a')
+    // Not settled: it stays listed as something Harnu moved and can no longer check.
+    const after = await gatherTrash(env)
+    expect(after.inTrashCount).toBe(0)
+    expect(after.unverifiedCount).toBe(1)
   })
 
   it('what Harnu trashes while the dialog is open is not deleted by it (only the ids it listed)', async () => {

@@ -631,3 +631,18 @@ describe('no symlink between the trash dir and the entry (delta-2 item 2)', () =
     expect(existsSync(path.join(target, 'wt-a.trashinfo'))).toBe(true)
   })
 })
+
+describe('a changed entry is not forgotten (delta-2 item 4)', () => {
+  it('is reported as unknown ("can\'t check"), not gone: a remount that changes a device number must not make real entries vanish', async () => {
+    const folder = makeFolder(path.join(root, 'ws', 'wt-a'))
+    const record = await recordTrash(env, folder, async () => {
+      osTrash(trash, folder, NOW)
+    })
+    // The same entry, but the device number it was recorded with is not the one it reports now.
+    const entry = asEntry(folder, NOW, { ...record!, dev: record!.dev + 1 } as typeof record)
+    const r = await observeTrashEntries([entry], env)
+    expect(r.unknown.map((e) => e.key)).toEqual([entry.key])
+    expect(r.gone).toEqual([])
+    expect(r.present).toEqual([])
+  })
+})
