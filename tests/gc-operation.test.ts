@@ -9,7 +9,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { AS_GIVEN, buildBundles, type BuildBundlesInput } from '../src/main/gc/bundle-core'
-import { gitOperationOf } from '../src/main/gc/gc-operation'
+import { gitOperationOf, operationsOf } from '../src/main/gc/gc-operation'
+import { isRememberedRefusal } from '../src/main/gc/autopilot-core'
 import { createGcOps } from '../src/main/gc/gc-shell'
 import { bundleRemovability } from '../src/renderer/src/lib/gc-removability'
 import { collect, scanInput } from './gc-scan-fixtures'
@@ -68,9 +69,66 @@ describe('gitOperationOf — a real repository', () => {
   it('is null for a folder git cannot read: the scan does not guess', async () => {
     expect(await gitOperationOf(path.join(root, 'nowhere'))).toBeNull()
   })
+
+  /** A patch that cannot apply, so `git am` stops with its state in `rebase-apply`. */
+  const stoppedAm = (cwd: string): void => {
+    writeFileSync(path.join(repo, 'f2.txt'), 'changed on main\n')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'touch f2')
+    const patch = path.join(root, 'p.patch')
+    writeFileSync(
+      patch,
+      git(repo, 'format-patch', '--stdout', '-1', 'HEAD').replace('changed on main', 'x')
+    )
+    try {
+      git(cwd, 'am', '-q', patch)
+    } catch {
+      // stops mid-way, which is the state under test
+    }
+  }
+
+  it('reads a git am that stopped as "am", not as a rebase (both use rebase-apply)', async () => {
+    git(wt, 'checkout', '-q', '--detach', 'HEAD~1')
+    stoppedAm(wt)
+    expect(await gitOperationOf(wt)).toBe('am')
+  })
+
+  it('reads a git am on a BRANCH worktree: HEAD stays on the branch, so it is no detached item', async () => {
+    const onBranch = path.join(root, 'on-branch')
+    git(repo, 'worktree', 'add', '-q', '-b', 'feat/x', onBranch, 'HEAD~1')
+    stoppedAm(onBranch)
+    expect(git(onBranch, 'rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('feat/x')
+    expect(await gitOperationOf(onBranch)).toBe('am')
+  })
+
+  it('reads a bisect that was only started on a BRANCH worktree', async () => {
+    const onBranch = path.join(root, 'on-branch2')
+    git(repo, 'worktree', 'add', '-q', '-b', 'feat/y', onBranch)
+    git(onBranch, 'bisect', 'start')
+    expect(git(onBranch, 'rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('feat/y')
+    expect(await gitOperationOf(onBranch)).toBe('bisect')
+  })
+
+  it('operationsOf looks at EVERY worktree of the scan, not only the detached ones', async () => {
+    const onBranch = path.join(root, 'on-branch3')
+    git(repo, 'worktree', 'add', '-q', '-b', 'feat/z', onBranch)
+    git(onBranch, 'bisect', 'start')
+    git(wt, 'bisect', 'start')
+    const found = await operationsOf([
+      { id: 'branch', kind: 'worktree', path: onBranch },
+      { id: 'hidden', kind: 'hidden-folder', path: onBranch },
+      { id: 'detached', kind: 'detached-worktree', path: wt },
+      { id: 'nopath', kind: 'worktree', path: null }
+    ])
+    expect(Object.fromEntries(found)).toEqual({
+      branch: 'bisect',
+      hidden: 'bisect',
+      detached: 'bisect'
+    })
+  })
 })
 
-const build = (operations?: ReadonlyMap<string, 'rebase' | 'bisect'>) => {
+const build = (operations?: ReadonlyMap<string, 'rebase' | 'bisect' | 'am'>) => {
   const { items, fateInputs } = collect(scanInput())
   const input: BuildBundlesInput = {
     items,
@@ -115,6 +173,17 @@ describe('the reprobe refuses it, before anything is touched', () => {
     operation: op
   })
 
+  it('for a branch worktree too (a git am keeps HEAD on its branch)', async () => {
+    const b = {
+      ...bundle(WT, 'review', { reason: { code: 'operation-in-progress' as never, detail: 'x' } }),
+      operation: 'am' as const
+    }
+    expect(await createGcOps(worldFor(b)).reprobe(b)).toEqual({
+      ok: false,
+      reason: 'operation-in-progress'
+    })
+  })
+
   it('on the fact the scan recorded', async () => {
     const b = mid('rebase')
     const ops = createGcOps(worldFor(b))
@@ -153,5 +222,39 @@ describe('the Remove predicate says so, with the command that ends the operation
       reason: 'operation-in-progress',
       hint: `git -C ${WT} bisect reset`
     })
+  })
+})
+
+describe('git am and the remembered refusal', () => {
+  const am = {
+    ...bundle(WT, 'review', { reason: { code: 'operation-in-progress' as never, detail: 'x' } }),
+    operation: 'am' as const
+  }
+
+  it('names git am --abort for it, on a branch worktree', () => {
+    expect(bundleRemovability(am, NOW)).toEqual({
+      ok: false,
+      reason: 'operation-in-progress',
+      hint: `git -C ${WT} am --abort`
+    })
+  })
+
+  it('is a refusal main remembers, and the predicate keeps refusing a demoted item for it', () => {
+    expect(isRememberedRefusal('operation-in-progress')).toBe(true)
+    const demoted = {
+      ...bundle(WT, 'review', { reason: { code: 'cleanup-failed', detail: 'x' } }),
+      reprobeRefusal: { code: 'operation-in-progress', count: 2 }
+    }
+    expect(bundleRemovability(demoted, NOW)).toMatchObject({
+      ok: false,
+      reason: 'operation-in-progress'
+    })
+  })
+
+  it('the scan reason says which operation it is', () => {
+    const id = build().items[0]!.id
+    const b = build(new Map([[id, 'am' as const]])).bundles[0]!
+    expect(b.operation).toBe('am')
+    expect(b.reason?.detail).toMatch(/git am/)
   })
 })
