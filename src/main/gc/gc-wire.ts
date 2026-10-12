@@ -168,7 +168,7 @@ export interface GcRecoveryItem {
   id: string
   state: 'notice' | 'resolved'
   kind: 'unlock' | 'stop-stack'
-  notice?: 'stack-stopped' | 'lock-skipped' | 'containers-gone'
+  notice?: 'stack-stopped' | 'lock-skipped' | 'lock-failed' | 'containers-gone'
   outcome?: 'relocked'
   path: string
   /** Container names for a stack, or what went wrong. */

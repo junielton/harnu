@@ -51,7 +51,7 @@ export interface StopEntry {
 
 export type PrepEntryInput = UnlockEntry | StopEntry
 
-export type NoticeKind = 'stack-stopped' | 'lock-skipped' | 'containers-gone'
+export type NoticeKind = 'stack-stopped' | 'lock-skipped' | 'lock-failed' | 'containers-gone'
 
 export type PrepEntry = PrepEntryInput & {
   id: string
@@ -177,9 +177,10 @@ export async function recoverPrepJournal(journal: PrepJournal, deps: RecoveryDep
             await deps.lock(e.repoPath, e.path, e.reason)
             await journal.update(e.id, { state: 'resolved', outcome: 'relocked' })
           } catch (err) {
+            // The worktree IS the same one; the lock itself failed: say that.
             await journal.update(e.id, {
               state: 'notice',
-              notice: 'lock-skipped',
+              notice: 'lock-failed',
               detail: messageOf(err)
             })
           }
@@ -198,7 +199,7 @@ export async function recoverPrepJournal(journal: PrepJournal, deps: RecoveryDep
       // Whatever could not even be judged waits for the operator rather than being retried silently.
       await journal.update(e.id, {
         state: 'notice',
-        notice: e.kind === 'unlock' ? 'lock-skipped' : 'stack-stopped',
+        notice: e.kind === 'unlock' ? 'lock-failed' : 'stack-stopped',
         detail: messageOf(err)
       })
     }
