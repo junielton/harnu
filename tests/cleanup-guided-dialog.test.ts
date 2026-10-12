@@ -105,7 +105,10 @@ describe('close the session and remove (AC-B4)', () => {
 })
 
 describe('a stack shared with other folders (AC-B5)', () => {
-  const shared = (binds: boolean): GcGuidance =>
+  const shared = (
+    binds: boolean,
+    stopBlocked: 'main-checkout' | 'in-use-elsewhere' | null = null
+  ): GcGuidance =>
     base({
       stacks: [
         {
@@ -113,7 +116,9 @@ describe('a stack shared with other folders (AC-B5)', () => {
           name: 'web',
           otherFolders: ['/ws/org/proj/www'],
           bindsThisFolder: binds,
-          containers: 3
+          containers: 3,
+          containerNames: ['ctr-web-1', 'ctr-web-2', 'ctr-web-3'],
+          stopBlocked
         }
       ]
     })
@@ -138,9 +143,33 @@ describe('a stack shared with other folders (AC-B5)', () => {
 
   it('stopping is the default, and never touches a volume', async () => {
     await open({ action: 'shared-stack', guidance: { a: shared(false) } })
-    expect(text('[data-testid="guided-choice-stop"]')).toContain('volumes are kept')
+    expect(text('[data-testid="guided-choice-stop"]')).toContain('neither are its volumes')
     q('[data-testid="guided-confirm"]')!.click()
     expect(w!.emitted('confirm')).toEqual([['stop']])
+  })
+
+  it('lists, by name, the containers it will stop, and says they are not removed', async () => {
+    await open({ action: 'shared-stack', guidance: { a: shared(false) } })
+    const stop = text('[data-testid="guided-choice-stop"]')
+    for (const n of ['ctr-web-1', 'ctr-web-2', 'ctr-web-3']) expect(stop).toContain(n)
+    expect(stop).toContain('not removed')
+    expect(stop).not.toMatch(/stops and removes/i)
+  })
+
+  it('does not offer to stop the main checkout’s stack, and says why', async () => {
+    await open({ action: 'shared-stack', guidance: { a: shared(false, 'main-checkout') } })
+    expect(q('[data-testid="guided-choice-stop"]')).toBeNull()
+    expect(text('[data-testid="guided-stop-unavailable"]')).toContain('main checkout')
+    // Leaving it running is still possible, so that is what the confirm now does.
+    expect(text('[data-testid="guided-confirm"]')).toBe('Remove and leave the stack')
+  })
+
+  it('does not offer to stop a stack another folder is using, and says why', async () => {
+    await open({ action: 'shared-stack', guidance: { a: shared(true, 'in-use-elsewhere') } })
+    expect(q('[data-testid="guided-choice-stop"]')).toBeNull()
+    expect(text('[data-testid="guided-stop-unavailable"]')).toContain('session')
+    // Binds this folder and cannot be stopped: there is nothing to confirm.
+    expect((q('[data-testid="guided-confirm"]') as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('does not offer to leave a stack that uses this folder, and says why', async () => {

@@ -24,6 +24,8 @@ import { bundle, reapItem } from './gc-fixtures'
 
 const WT = '/ws/org/proj/worktrees/PROJ-1-slug'
 const OTHER = '/ws/org/proj/www'
+/** Another worktree of the same repo that uses the stack: not the main checkout. */
+const ELSE = '/ws/org/proj/worktrees/PROJ-2-other'
 
 function container(id: string, dir: string, binds: string[] = []): InspectedContainer {
   return {
@@ -89,6 +91,7 @@ function deps(
         { done: names, error: null }
       )
     },
+    folderHasSession: async () => 'none',
     walkForeign: async () => [],
     ownerOf: async () => 'root',
     currentUser: () => 'me',
@@ -161,23 +164,31 @@ describe('guidanceFor (AC-B3 lock reason, AC-B4 sessions, AC-B5 stacks)', () => 
   })
 
   it('names a shared stack, the other folders that use it, and whether it binds this folder', async () => {
-    const shared = stack('web', [container('c1', OTHER, [`${WT}/data`]), container('c2', OTHER)])
+    const shared = stack('web', [container('c1', ELSE, [`${WT}/data`]), container('c2', ELSE)])
     const g = await guidanceFor(
       review({ sharedStackIds: ['web'] }, 'shared-stack'),
       deps(fresh(), { stacks: [shared] })
     )
     expect(g.stacks).toEqual([
-      { id: 'web', name: 'web', otherFolders: [OTHER], bindsThisFolder: true, containers: 2 }
+      {
+        id: 'web',
+        name: 'web',
+        otherFolders: [ELSE],
+        bindsThisFolder: true,
+        containers: 2,
+        containerNames: ['ctr-c1', 'ctr-c2'],
+        stopBlocked: null
+      }
     ])
   })
 
   it('a stack that only touches this folder by attribution does not bind it', async () => {
-    const shared = stack('web', [container('c1', OTHER)])
+    const shared = stack('web', [container('c1', ELSE)])
     const g = await guidanceFor(
       review({ sharedStackIds: ['web'] }, 'shared-stack'),
       deps(fresh(), { stacks: [shared] })
     )
-    expect(g.stacks[0]).toMatchObject({ bindsThisFolder: false, otherFolders: [OTHER] })
+    expect(g.stacks[0]).toMatchObject({ bindsThisFolder: false, otherFolders: [ELSE] })
   })
 
   it('gives the Docker start hint of the platform when the scan was blind', async () => {
@@ -262,9 +273,9 @@ describe('prepareClean (AC-B3, AC-B4, AC-B5)', () => {
     expect(calls.parked).toEqual([])
   })
 
-  it('stop-stack: stops and removes that stack’s containers and never a volume', async () => {
+  it('stop-stack: stops that stack’s running containers, never removes one and never a volume', async () => {
     const calls = fresh()
-    const shared = stack('web', [container('c1', OTHER, [`${WT}/data`]), container('c2', OTHER)])
+    const shared = stack('web', [container('c1', ELSE, [`${WT}/data`]), container('c2', ELSE)])
     const r = await prepareClean(
       { kind: 'stop-stack', stackIds: ['web'] },
       review({ sharedStackIds: ['web'] }, 'shared-stack'),
@@ -272,8 +283,83 @@ describe('prepareClean (AC-B3, AC-B4, AC-B5)', () => {
     )
     expect(r).toMatchObject({ ok: true })
     expect(calls.stopped).toEqual([['c1', 'c2']])
-    expect(calls.removedContainers).toEqual([['c1', 'c2']])
+    expect(calls.removedContainers).toEqual([])
     expect(calls.removedVolumes).toEqual([])
+  })
+
+  it('stop-stack: containers that are already stopped are left alone', async () => {
+    const calls = fresh()
+    const stopped = {
+      ...container('c1', ELSE, [`${WT}/data`]),
+      state: 'exited'
+    } as InspectedContainer
+    const r = await prepareClean(
+      { kind: 'stop-stack', stackIds: ['web'] },
+      review({ sharedStackIds: ['web'] }, 'shared-stack'),
+      deps(calls, { stacks: [stack('web', [stopped, container('c2', ELSE)])] })
+    )
+    expect(r).toMatchObject({ ok: true })
+    expect(calls.stopped).toEqual([['c2']])
+  })
+
+  it('stop-stack: the undo starts exactly the containers it stopped', async () => {
+    const calls = fresh()
+    const r = await prepareClean(
+      { kind: 'stop-stack', stackIds: ['web'] },
+      review({ sharedStackIds: ['web'] }, 'shared-stack'),
+      deps(calls, {
+        stacks: [stack('web', [container('c1', ELSE, [`${WT}/d`]), container('c2', ELSE)])]
+      })
+    )
+    await (r as { undo: () => Promise<void> }).undo()
+    expect(calls.started).toEqual([['c1', 'c2']])
+  })
+
+  it('stop-stack: the main checkout’s own stack is refused, and nothing is stopped', async () => {
+    const calls = fresh()
+    const r = await prepareClean(
+      { kind: 'stop-stack', stackIds: ['web'] },
+      review({ sharedStackIds: ['web'] }, 'shared-stack'),
+      deps(calls, { stacks: [stack('web', [container('c1', OTHER, [`${WT}/data`])])] })
+    )
+    expect(r).toEqual({ ok: false, error: 'stack-is-main-checkout' })
+    expect(calls.stopped).toEqual([])
+  })
+
+  it.each(['live', 'parked'] as const)(
+    'stop-stack: a stack another folder uses with a %s session is refused',
+    async (state) => {
+      const calls = fresh()
+      const r = await prepareClean(
+        { kind: 'stop-stack', stackIds: ['web'] },
+        review({ sharedStackIds: ['web'] }, 'shared-stack'),
+        deps(calls, {
+          stacks: [stack('web', [container('c1', ELSE, [`${WT}/data`])])],
+          folderHasSession: async (f) => (f === ELSE ? state : 'none')
+        })
+      )
+      expect(r).toEqual({ ok: false, error: 'stack-used-elsewhere' })
+      expect(calls.stopped).toEqual([])
+    }
+  )
+
+  it('stop-stack: a dry run refuses the same things and stops nothing', async () => {
+    const calls = fresh()
+    const r = await prepareClean(
+      { kind: 'stop-stack', stackIds: ['web'] },
+      review({ sharedStackIds: ['web'] }, 'shared-stack'),
+      deps(calls, { stacks: [stack('web', [container('c1', OTHER, [`${WT}/data`])])] }),
+      { dry: true }
+    )
+    expect(r).toEqual({ ok: false, error: 'stack-is-main-checkout' })
+    const ok = await prepareClean(
+      { kind: 'stop-stack', stackIds: ['web'] },
+      review({ sharedStackIds: ['web'] }, 'shared-stack'),
+      deps(calls, { stacks: [stack('web', [container('c1', ELSE, [`${WT}/data`])])] }),
+      { dry: true }
+    )
+    expect(ok).toMatchObject({ ok: true })
+    expect(calls.stopped).toEqual([])
   })
 
   it('stop-stack: refuses a stack the bundle does not list as shared', async () => {
@@ -281,24 +367,33 @@ describe('prepareClean (AC-B3, AC-B4, AC-B5)', () => {
     const r = await prepareClean(
       { kind: 'stop-stack', stackIds: ['db'] },
       review({ sharedStackIds: ['web'] }, 'shared-stack'),
-      deps(calls, { stacks: [stack('db', [container('c9', OTHER)])] })
+      deps(calls, { stacks: [stack('db', [container('c9', ELSE)])] })
     )
     expect(r).toEqual({ ok: false, error: 'prep-not-applicable' })
     expect(calls.stopped).toEqual([])
   })
 
-  it('stop-stack: a failed docker stop is named and nothing is removed', async () => {
+  it('stop-stack: a failed stop restarts what it had stopped and says so', async () => {
     const calls = fresh()
-    const base = deps(calls, { stacks: [stack('web', [container('c1', OTHER, [`${WT}/x`])])] })
+    const base = deps(calls, {
+      stacks: [
+        stack('web', [
+          container('c1', ELSE, [`${WT}/x`]),
+          container('c2', ELSE),
+          container('c3', ELSE)
+        ])
+      ]
+    })
     const r = await prepareClean(
       { kind: 'stop-stack', stackIds: ['web'] },
       review({ sharedStackIds: ['web'] }, 'shared-stack'),
       {
         ...base,
-        docker: { ...base.docker, stop: async () => ({ done: [], error: 'daemon gone' }) }
+        docker: { ...base.docker, stop: async () => ({ done: ['c1', 'c2'], error: 'daemon gone' }) }
       }
     )
     expect(r).toEqual({ ok: false, error: 'stack-stop-failed: daemon gone' })
+    expect(calls.started).toEqual([['c1', 'c2']])
     expect(calls.removedContainers).toEqual([])
   })
 
@@ -307,7 +402,7 @@ describe('prepareClean (AC-B3, AC-B4, AC-B5)', () => {
     const r = await prepareClean(
       { kind: 'leave-stack', stackIds: ['web'] },
       review({ sharedStackIds: ['web'] }, 'shared-stack'),
-      deps(calls, { stacks: [stack('web', [container('c1', OTHER)])] })
+      deps(calls, { stacks: [stack('web', [container('c1', ELSE)])] })
     )
     expect(r).toMatchObject({ ok: true })
     expect(calls.stopped).toEqual([])
@@ -318,9 +413,30 @@ describe('prepareClean (AC-B3, AC-B4, AC-B5)', () => {
     const r = await prepareClean(
       { kind: 'leave-stack', stackIds: ['web'] },
       review({ sharedStackIds: ['web'] }, 'shared-stack'),
-      deps(calls, { stacks: [stack('web', [container('c1', OTHER, [`${WT}/data`])])] })
+      deps(calls, { stacks: [stack('web', [container('c1', ELSE, [`${WT}/data`])])] })
     )
     expect(r).toEqual({ ok: false, error: 'stack-binds-folder' })
+  })
+})
+
+describe('guidanceFor — why a stack cannot be stopped (delta 1)', () => {
+  it('the main checkout’s stack says so', async () => {
+    const g = await guidanceFor(
+      review({ sharedStackIds: ['web'] }, 'shared-stack'),
+      deps(fresh(), { stacks: [stack('web', [container('c1', OTHER, [`${WT}/data`])])] })
+    )
+    expect(g.stacks[0].stopBlocked).toBe('main-checkout')
+  })
+
+  it('a stack another folder uses with a session says so', async () => {
+    const g = await guidanceFor(
+      review({ sharedStackIds: ['web'] }, 'shared-stack'),
+      deps(fresh(), {
+        stacks: [stack('web', [container('c1', ELSE)])],
+        folderHasSession: async () => 'live'
+      })
+    )
+    expect(g.stacks[0].stopBlocked).toBe('in-use-elsewhere')
   })
 })
 

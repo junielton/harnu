@@ -2703,7 +2703,9 @@
         "sessionNotClosable": "A sessão aberta aqui não é uma que o Harnu possa fechar, então o worktree foi deixado como estava.",
         "stackStopFailed": "O Docker não conseguiu parar a stack compartilhada, então o worktree foi deixado como estava.",
         "stackBindsFolder": "Essa stack usa esta pasta, então não pode ficar rodando. Pare-a ou escolha de novo.",
-        "prepNotApplicable": "O que você escolheu não vale mais para este worktree, então ele foi deixado como estava. Escaneie de novo e revise."
+        "prepNotApplicable": "O que você escolheu não vale mais para este worktree, então ele foi deixado como estava. Escaneie de novo e revise.",
+        "stackIsMainCheckout": "Essa stack é do checkout principal, então o Harnu não a para e deixou o worktree como estava.",
+        "stackUsedElsewhere": "Outra pasta com uma sessão usa essa stack, então o Harnu não a parou e deixou o worktree como estava."
       },
       "opinion": {
         "safe": "Seguro",
@@ -2825,10 +2827,14 @@
         },
         "choice": {
           "stop": "Parar a stack e remover",
-          "stopBody": "Para e remove os contêineres desta stack, então as outras pastas precisam subir de novo. Os volumes são mantidos.",
+          "stopBody": "Para estes contêineres: {names}. Eles não são removidos, e os volumes também não.",
           "leave": "Remover o worktree e deixar a stack",
           "leaveBody": "A stack continua rodando. Nenhum contêiner dela usa esta pasta.",
-          "leaveUnavailable": "Esta stack usa esta pasta, então não pode ficar rodando."
+          "leaveUnavailable": "Esta stack usa esta pasta, então não pode ficar rodando.",
+          "stopBlocked": {
+            "main-checkout": "Esta stack é do checkout principal, então o Harnu não a para.",
+            "in-use-elsewhere": "Outra pasta com uma sessão usa esta stack, então o Harnu não a para."
+          }
         },
         "unreadable": {
           "where": "O Harnu não conseguiu ler {path}.",

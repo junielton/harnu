@@ -2703,7 +2703,9 @@
         "sessionNotClosable": "The session open here is not one Harnu can close, so the worktree was left alone.",
         "stackStopFailed": "Docker could not stop the shared stack, so the worktree was left alone.",
         "stackBindsFolder": "That stack uses this folder, so it cannot be left running. Stop it or choose again.",
-        "prepNotApplicable": "What you chose no longer applies to this worktree, so it was left alone. Scan again and review it."
+        "prepNotApplicable": "What you chose no longer applies to this worktree, so it was left alone. Scan again and review it.",
+        "stackIsMainCheckout": "That stack belongs to the main checkout, so Harnu does not stop it and left the worktree alone.",
+        "stackUsedElsewhere": "Another folder with a session uses that stack, so Harnu did not stop it and left the worktree alone."
       },
       "opinion": {
         "safe": "Safe",
@@ -2825,10 +2827,14 @@
         },
         "choice": {
           "stop": "Stop stack and remove",
-          "stopBody": "Stops and removes this stack's containers, so the other folders have to start it again. Its volumes are kept.",
+          "stopBody": "Stops these containers: {names}. They are not removed, and neither are its volumes.",
           "leave": "Remove the worktree and leave the stack",
           "leaveBody": "The stack keeps running. None of its containers uses this folder.",
-          "leaveUnavailable": "This stack uses this folder, so it cannot be left running."
+          "leaveUnavailable": "This stack uses this folder, so it cannot be left running.",
+          "stopBlocked": {
+            "main-checkout": "This stack belongs to the main checkout, so Harnu will not stop it.",
+            "in-use-elsewhere": "Another folder with a session uses this stack, so Harnu will not stop it."
+          }
         },
         "unreadable": {
           "where": "Harnu couldn't read {path}.",

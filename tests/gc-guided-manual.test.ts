@@ -214,6 +214,29 @@ describe('a guided remove prepares, then removes the ordinary guarded way (AC-B3
     ])
   })
 
+  it('stop-stack: the dry run assumes the stack stopped, and the remove then runs with it assumed', async () => {
+    const before = bundle(PATH, 'review', {
+      sharedStackIds: ['web'],
+      reason: { code: 'shared-stack', detail: 'x' }
+    })
+    const seenByDry: WorktreeBundle[] = []
+    const r = rig({ before, dry: (b) => (seenByDry.push(b), { ok: true }) })
+    const res = await run(r, before, asked(before, { kind: 'stop-stack', stackIds: ['web'] }))
+    expect(res).toMatchObject({ ok: true })
+    expect(seenByDry[0].assume).toEqual({ stoppedStacks: ['web'] })
+  })
+
+  it('stop-stack: the remove still refuses afterwards, so the stack is started again', async () => {
+    const before = bundle(PATH, 'review', {
+      sharedStackIds: ['web'],
+      reason: { code: 'shared-stack', detail: 'x' }
+    })
+    const r = rig({ before, reprobe: async () => ({ ok: false, reason: 'stack-present' }) })
+    const res = await run(r, before, asked(before, { kind: 'stop-stack', stackIds: ['web'] }))
+    expect(res).toMatchObject({ ok: false })
+    expect(r.log).toContain('undo stop-stack')
+  })
+
   it('without the leave step the shared stack still refuses the remove', async () => {
     const before = bundle(PATH, 'review', {
       sharedStackIds: ['web'],

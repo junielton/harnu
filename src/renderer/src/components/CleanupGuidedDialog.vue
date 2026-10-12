@@ -67,7 +67,19 @@ const facts = computed(() => props.rows.map((r) => ({ row: r, g: props.guidance?
 const ready = computed(() => props.guidance !== null && !props.loadError)
 
 // ---- shared stacks: a choice ----------------------------------------------------------------------
-const choice = ref<'stop' | 'leave'>('stop')
+const picked = ref<'stop' | 'leave'>('stop')
+const allStacks = computed(() => facts.value.flatMap(({ g }) => g?.stacks ?? []))
+/** Stopping is off the table for the main checkout's stack and for one another folder is using. */
+const stopBlocks = computed(() => [
+  ...new Set(
+    allStacks.value.map((s) => s.stopBlocked).filter((x): x is NonNullable<typeof x> => !!x)
+  )
+])
+const canStop = computed(() => stopBlocks.value.length === 0)
+const choice = computed<'stop' | 'leave'>({
+  get: () => (picked.value === 'stop' && !canStop.value ? 'leave' : picked.value),
+  set: (v) => (picked.value = v)
+})
 const stacksUseFolder = computed(() =>
   facts.value.some(({ g }) => g?.stacks.some((s) => s.bindsThisFolder))
 )
@@ -85,7 +97,7 @@ const canGo = computed(() => {
     case 'close-session-remove':
       return f.every(({ g }) => !!g?.sessions && g.sessions.busy === 0 && g.sessions.idle > 0)
     case 'shared-stack':
-      return everyStackThere.value && (choice.value === 'stop' || canLeave.value)
+      return everyStackThere.value && (choice.value === 'stop' ? canStop.value : canLeave.value)
     default:
       return false
   }
@@ -355,6 +367,7 @@ function onBackdropMousedown(e: MouseEvent): void {
           data-testid="guided-choices"
         >
           <label
+            v-if="canStop"
             class="flex cursor-pointer items-start gap-2 rounded-sm border border-border bg-surface-2 px-2.5 py-2"
             data-testid="guided-choice-stop"
           >
@@ -362,7 +375,9 @@ function onBackdropMousedown(e: MouseEvent): void {
             <span class="flex flex-col gap-0.5">
               <b class="text-ui font-medium text-text">{{ t('cleanup.gc.guided.choice.stop') }}</b>
               <span class="text-caption text-text-3">{{
-                t('cleanup.gc.guided.choice.stopBody')
+                t('cleanup.gc.guided.choice.stopBody', {
+                  names: allStacks.flatMap((s) => s.containerNames).join(', ')
+                })
               }}</span>
             </span>
           </label>
@@ -379,7 +394,18 @@ function onBackdropMousedown(e: MouseEvent): void {
               }}</span>
             </span>
           </label>
-          <p v-else class="m-0 text-caption text-text-3" data-testid="guided-leave-unavailable">
+          <p
+            v-if="!canStop"
+            class="m-0 text-caption text-text-3"
+            data-testid="guided-stop-unavailable"
+          >
+            {{ stopBlocks.map((b) => t(`cleanup.gc.guided.choice.stopBlocked.${b}`)).join(' ') }}
+          </p>
+          <p
+            v-if="!canLeave"
+            class="m-0 text-caption text-text-3"
+            data-testid="guided-leave-unavailable"
+          >
             {{ t('cleanup.gc.guided.choice.leaveUnavailable') }}
           </p>
         </fieldset>

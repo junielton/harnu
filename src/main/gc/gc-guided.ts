@@ -13,7 +13,7 @@ import {
   type CanonicalPath,
   type WorktreeBundle
 } from './bundle-core'
-import { isInside, type StackGroup } from '../containers/containers-core'
+import { isHolding, isInside, type StackGroup } from '../containers/containers-core'
 import type { DockerBatchResult } from '../containers/containers-actions'
 import type { GcGuidance, GcGuidedStack, GcPrep } from './gc-wire'
 
@@ -34,6 +34,8 @@ export interface GuidedDeps {
   /** Parks (kills, keeps the conversation) one session. */
   park(key: string): void
   listStacks(): Promise<{ stacks: StackGroup[] }>
+  /** Whether a folder has a running Harnu session (`live`) or one parked on disk (`parked`). */
+  folderHasSession(folder: string): Promise<'none' | 'live' | 'parked'>
   realPaths(paths: string[]): Promise<CanonicalPath>
   docker: {
     start(ids: string[]): Promise<DockerBatchResult>
@@ -95,6 +97,8 @@ interface StackView {
   stack: StackGroup
   dirs: string[]
   inside: boolean
+  /** Why stopping it is off the table, or null. */
+  blocked: 'main-checkout' | 'in-use-elsewhere' | null
 }
 
 /** Each listed stack read against this worktree's real folder. */
@@ -108,14 +112,27 @@ async function stackViews(
   const { stacks } = await deps.listStacks()
   const wanted = stacks.filter((s) => ids.includes(s.id))
   const raw = wanted.flatMap((s) => s.containers.flatMap(containerFolderPaths))
-  const canonical = await deps.realPaths([path, ...raw])
+  const canonical = await deps.realPaths([path, b.item.repoPath, ...raw])
   const root = canonicalPathKey(canonical(path).path, deps.platform)
-  return wanted.map((stack) => {
-    const dirs = [
-      ...new Set(stack.containers.flatMap((c) => containerFolders(c, deps.platform, canonical)))
-    ].filter((d) => d !== '')
-    return { stack, dirs, inside: dirs.some((d) => isInside(d, root)) }
-  })
+  const main = canonicalPathKey(canonical(b.item.repoPath).path, deps.platform)
+  return Promise.all(
+    wanted.map(async (stack): Promise<StackView> => {
+      const dirs = [
+        ...new Set(stack.containers.flatMap((c) => containerFolders(c, deps.platform, canonical)))
+      ].filter((d) => d !== '')
+      const others = dirs.filter((d) => !isInside(d, root))
+      // The main checkout's own stack is never stopped from here (a conservative reading: any folder
+      // of the repo that is not this worktree counts when it lies under the main checkout).
+      let blocked: StackView['blocked'] = null
+      if (others.some((d) => d === main || isInside(d, main))) blocked = 'main-checkout'
+      else {
+        for (const d of others) {
+          if ((await deps.folderHasSession(d)) !== 'none') blocked = 'in-use-elsewhere'
+        }
+      }
+      return { stack, dirs, inside: dirs.some((d) => isInside(d, root)), blocked }
+    })
+  )
 }
 
 /** What main sees about a refused item right now. Read-only; each part is null where it does not apply. */
@@ -151,7 +168,9 @@ export async function guidanceFor(b: WorktreeBundle, deps: GuidedDeps): Promise<
       name: v.stack.name,
       otherFolders: v.dirs.filter((d) => !isInside(d, root)).sort(),
       bindsThisFolder: v.inside,
-      containers: v.stack.containers.length
+      containers: v.stack.containers.length,
+      containerNames: v.stack.containers.map((c) => c.name),
+      stopBlocked: v.blocked
     }))
   }
 
@@ -235,30 +254,43 @@ export async function prepareClean(
   if (prep.kind === 'leave-stack') {
     return views.some((v) => v.inside) ? { ok: false, error: 'stack-binds-folder' } : { ok: true }
   }
+  // stop-stack. Never the main checkout's own stack, and never one another folder is using with a live
+  // or parked session: those are somebody's running work.
+  for (const v of views) {
+    if (v.blocked === 'main-checkout') return { ok: false, error: 'stack-is-main-checkout' }
+    if (v.blocked === 'in-use-elsewhere') return { ok: false, error: 'stack-used-elsewhere' }
+  }
   if (opts.dry) return { ok: true }
 
-  // stop-stack: the stack's containers go (stopped, then removed, as for an exclusive stack); its volumes never do.
-  const containers = [...new Set(views.flatMap((v) => v.stack.containers.map((c) => c.id)))]
-  if (containers.length === 0) return { ok: true }
+  // It only STOPS. The stopped containers stay (Cleanup's leftovers flow removes them, behind its own
+  // confirm) and so do the stack's volumes. What this stops, `undo` starts again.
+  const running = [
+    ...new Set(
+      views.flatMap((v) => v.stack.containers.filter((c) => isHolding(c.state)).map((c) => c.id))
+    )
+  ]
+  if (running.length === 0) return { ok: true }
+  const restart = (ids: string[]): Promise<void> =>
+    deps.docker.start(ids).then((r) => {
+      if (r.error || r.done.length < ids.length) {
+        throw new Error(r.error ?? 'not every container started again')
+      }
+    })
+  let stopped: Awaited<ReturnType<GuidedDeps['docker']['stop']>>
   try {
-    const stopped = await deps.docker.stop(containers)
-    if (stopped.error || stopped.done.length < containers.length) {
-      return {
-        ok: false,
-        error: `stack-stop-failed: ${stopped.error ?? 'not every container stopped'}`
-      }
-    }
-    const removed = await deps.docker.removeContainers(containers)
-    if (removed.error || removed.done.length < containers.length) {
-      return {
-        ok: false,
-        error: `stack-stop-failed: ${removed.error ?? 'not every container was removed'}`
-      }
-    }
+    stopped = await deps.docker.stop(running)
   } catch (err) {
     return { ok: false, error: `stack-stop-failed: ${messageOf(err)}` }
   }
-  return { ok: true }
+  if (stopped.error || stopped.done.length < running.length) {
+    // A partial stop is put back before the refusal is reported: the stack runs as it did.
+    if (stopped.done.length > 0) await restart(stopped.done).catch(() => undefined)
+    return {
+      ok: false,
+      error: `stack-stop-failed: ${stopped.error ?? 'not every container stopped'}`
+    }
+  }
+  return { ok: true, undo: () => restart(running) }
 }
 
 /** The two git-backed deps, over any `git -C <repo> …` runner (the executor's, or a test's real one). */

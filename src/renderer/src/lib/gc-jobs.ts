@@ -56,6 +56,8 @@ export const REFUSAL_CODES = [
   'session-busy',
   'session-not-closable',
   'stack-stop-failed',
+  'stack-is-main-checkout',
+  'stack-used-elsewhere',
   'stack-binds-folder',
   'prep-not-applicable',
   // mid-run

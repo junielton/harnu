@@ -166,6 +166,13 @@ export interface GcGuidedStack {
   /** Whether any container of the stack runs from, or bind-mounts, this worktree. */
   bindsThisFolder: boolean
   containers: number
+  /** The containers a "Stop stack" would stop, by name: the confirm lists them. */
+  containerNames: string[]
+  /**
+   * Why the stack must not be stopped, when it must not: it is the main checkout's own stack, or a
+   * folder that has a live or parked session uses it too.
+   */
+  stopBlocked: 'main-checkout' | 'in-use-elsewhere' | null
 }
 
 /**
