@@ -595,7 +595,8 @@ nextCycleAt }`. Read `bucket`, `reasonCode` and `reason`; never
   (`<repo>::<kind>::<branch>::<hash>`, unique even for two repos that share a name). A review
   `reason` is a fixed sentence per `reasonCode` (a halted cleanup reads "Cleanup stopped at
   <step>."; `check-failed` means Harnu could not look inside the folder, which is not the same
-  as `nested-worktree`, where something was found inside), never the raw git or file-system error, and any other text a field carries has
+  as `nested-worktree`, where something was found inside; `operation-in-progress` means a rebase, bisect or
+  git am is still running in a worktree and must be finished or aborted first), never the raw git or file-system error, and any other text a field carries has
   each path cut down to its basename. A worktree in a folder the operator
   blocked still lists with `agentControllable: false` — report it, leave it alone. `folder`
   narrows `bundles` and `totals` to that repo and its worktrees (and leaves out

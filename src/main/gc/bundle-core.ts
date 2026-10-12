@@ -68,6 +68,7 @@ export type ReviewCode =
   | 'nested-worktree'
   | 'check-failed'
   | 'locked'
+  | 'operation-in-progress'
 
 /** `detail` is one English sentence with the concrete fact; the renderer translates by `code`. */
 export interface ReviewReason {
@@ -124,6 +125,12 @@ export interface BundleFacts {
    * ready. Optional, and absent means unlocked: the reprobe asks git again before any step.
    */
   locked?: boolean
+  /**
+   * A rebase, a bisect or a `git am` is in progress in this worktree: its state would go with the
+   * folder, so it is never ready and Remove is refused until it is finished or aborted. Optional,
+   * and absent means none; the reprobe looks again before any step.
+   */
+  operation?: 'rebase' | 'bisect' | 'am'
 }
 
 export interface WorktreeBundle extends BundleFacts {
@@ -153,6 +160,19 @@ export interface WorktreeBundle extends BundleFacts {
    * there is no Docker CLI at all (nothing to stop).
    */
   dockerBlind?: boolean
+  /**
+   * Set only by `gc-manual` for a guided action, never by a gather: what the action's prep fixes (the dry
+   * run, before it runs) or has just fixed. The reprobe and the recheck skip exactly that one check, so
+   * the dry run judges everything else; any other refusal still refuses.
+   */
+  assume?: {
+    /** The worktree's git lock is the cause being fixed. */
+    unlock?: boolean
+    /** An idle Harnu session open in the worktree is the cause being fixed. */
+    closeSession?: boolean
+    /** Shared stacks that are being (or have been) stopped; their stopped containers are not "present". */
+    stoppedStacks?: string[]
+  }
 }
 
 /** Every bundle of a gather that could not see Docker, marked so none is cleaned on a blind "no stacks". */
@@ -329,6 +349,12 @@ export function bucketOf(
 
   if (f.locked === true) return review('locked', 'This worktree is locked in git.')
 
+  if (f.operation !== undefined)
+    return review(
+      'operation-in-progress',
+      `${f.operation === 'am' ? 'A git am' : `A ${f.operation}`} is in progress in this worktree. Finish or abort it before removing it.`
+    )
+
   if (f.pathsResolved !== true)
     return review(
       'path-unresolved',
@@ -416,6 +442,8 @@ export interface BuildBundlesInput {
   foreignCheckouts: ReadonlyMap<string, string[]>
   /** Ids of the items git lists as locked (delta 6); absent means none. See {@link lockedItemIds}. */
   locked?: ReadonlySet<string>
+  /** The rebase, bisect or git am in progress in each worktree, by item id; absent means none. */
+  operations?: ReadonlyMap<string, 'rebase' | 'bisect' | 'am'>
 }
 
 /** Merge time from the `pr-merged` checkpoint detail; anything that is not a date is ignored. */
@@ -666,7 +694,8 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
       // Passed through as given: a missing or malformed entry stays so, and bucketOf and
       // refusalOf both fail closed on it.
       foreignCheckouts: input.foreignCheckouts.get(item.id) as string[],
-      ...(input.locked?.has(item.id) ? { locked: true } : {})
+      ...(input.locked?.has(item.id) ? { locked: true } : {}),
+      ...(input.operations?.has(item.id) ? { operation: input.operations.get(item.id) } : {})
     }
     return { ...facts, ...bucketOf(facts, input.now, graceDays) }
   })

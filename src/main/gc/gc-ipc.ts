@@ -39,6 +39,17 @@ import { createAgentService, createGatherer } from './gc-gatherer'
 import { setGcService } from './gc-service-registry'
 import { createJobQueue, type GcJobInfo } from './gc-jobs-core'
 import { submitManualClean } from './gc-manual'
+import { guidanceFor, prepareClean } from './gc-guided'
+import { defaultGuidedDeps } from './gc-guided-shell'
+import {
+  PREP_JOURNAL_FILE,
+  ackRecovery,
+  actOnRecovery,
+  createPrepJournal,
+  listRecovery,
+  recoverPrepJournal,
+  type RecoveryDeps
+} from './gc-prep-journal'
 import { recheckItem } from './gc-recheck'
 import {
   mergeIncomingPrefs,
@@ -50,11 +61,17 @@ import {
   type GcPrefs
 } from './gc-prefs'
 import { parseOptions } from './gc-options'
-import type { GcCleanAck, GcRecheckResult, GcSnapshot, OrphanVolumeItem } from './gc-wire'
+import type {
+  GcCleanAck,
+  GcGuidance,
+  GcRecheckResult,
+  GcSnapshot,
+  OrphanVolumeItem
+} from './gc-wire'
 import { createGcOps, defaultGcShellDeps, resolveRealPaths, type GcShellDeps } from './gc-shell'
 import { withCurrentNeverClean } from './autopilot-core'
 import { AS_GIVEN } from './bundle-core'
-import { createForcedGcOps } from './gc-forced-ops'
+import { createDryReprobe, createForcedGcOps } from './gc-forced-ops'
 import { runHousekeeping } from './housekeeping-shell'
 import {
   createOpinionCache,
@@ -88,6 +105,8 @@ export interface GcService {
   setPrefs(raw: unknown): Promise<GcPrefs>
   ackFirstReport(): Promise<GcPrefs>
   jobs(): GcJobInfo[]
+  /** What main sees about a refused item right now (lock reason, sessions, shared stacks, …). Read-only. */
+  guide(id: unknown): Promise<GcGuidance>
   /** "Ask for an opinion": on demand only, read-only, advisory. Never removes anything. */
   opinion(ids: unknown): GcOpinionAck
   /** The peek: cached opinions that still match their item. Never asks the model. */
@@ -216,8 +235,12 @@ export async function registerGcHandlers(
   })
 
   const shellDeps = await defaultGcShellDeps(getWindow)
+  const prepJournal = createPrepJournal(path.join(userData, PREP_JOURNAL_FILE))
+  const guidedDeps = { ...(await defaultGuidedDeps(shellDeps)), journal: prepJournal }
   const withRun = (actor: 'operator' | 'autopilot'): GcShellDeps =>
     withActor(shellDeps, actor, () => prefs)
+
+  const recoveryChanged = (): void => send('gc:recovery:changed', null)
 
   const notify = (n: { title: string; body: string }): void => {
     try {
@@ -235,6 +258,45 @@ export async function registerGcHandlers(
       console.error('[gc] notification failed', err)
     }
   }
+  // What a guided prep had changed when Harnu last stopped (see gc-prep-journal.ts): a lock goes back only
+  // on the very same worktree, containers are never started by Harnu on its own, and whatever needs the
+  // operator stays as a notice until it is answered. A notice is announced once, and kept until the
+  // renderer acknowledges it, so a boot that finishes before the window is up loses nothing.
+  const recoveryDeps: RecoveryDeps = {
+    exists: (p) =>
+      import('node:fs/promises').then((fs) =>
+        fs.access(p).then(
+          () => true,
+          () => false
+        )
+      ),
+    lockReason: (repo, p) => guidedDeps.lockReason(repo, p),
+    identityOf: (repo, p) => guidedDeps.identityOf(repo, p),
+    lock: (repo, p, reason) => guidedDeps.lock(repo, p, reason),
+    // Of these ids, the containers that still exist (a docker that cannot answer counts them all present).
+    containersPresent: async (ids) => {
+      try {
+        const { stacks } = await shellDeps.listStacks()
+        const all = new Set(stacks.flatMap((s) => s.containers.map((c) => c.id)))
+        return ids.filter((id) => all.has(id))
+      } catch {
+        return ids
+      }
+    },
+    start: (ids) => guidedDeps.docker.start(ids)
+  }
+  void recoverPrepJournal(prepJournal, recoveryDeps)
+    .then(async () => {
+      const fresh = (await listRecovery(prepJournal)).filter((i) => !i.announced)
+      if (fresh.length > 0) {
+        notify({
+          title: 'Harnu has something to tell you about an interrupted clean',
+          body: `${fresh.length} item(s) in Cleanup.`
+        })
+      }
+      recoveryChanged()
+    })
+    .catch((err) => console.error('[gc] prep journal recovery failed', messageOf(err)))
 
   const cycleDeps: GcCycleDeps = {
     prefs: () => prefs,
@@ -314,6 +376,18 @@ export async function registerGcHandlers(
             forced ? createForcedGcOps(withRun('operator')) : createGcOps(withRun('operator')),
           // S4's runner builds the argv itself (`docker volume rm <name>`, name-checked).
           freshOrphans,
+          folderExists: (p) =>
+            import('node:fs/promises').then((fs) =>
+              fs.access(p).then(
+                () => true,
+                () => false
+              )
+            ),
+          // A guided "…and remove": its one prep step, then a gather that starts after it.
+          gatherFresh,
+          prepare: (prep, b, o) => prepareClean(prep, b, guidedDeps, o),
+          // The same reprobe the remove runs, read-only, on the bundle with the prep's cause assumed fixed.
+          dryReprobe: (b, forced) => createDryReprobe(withRun('operator'), forced)(b),
           workStampOf: (p) => workStampOf(reaperExec, p),
           removeOrphanVolumes: (names) =>
             runHousekeeping({
@@ -361,6 +435,15 @@ export async function registerGcHandlers(
         },
         rawId
       )
+    },
+    guide: async (rawId) => {
+      if (typeof rawId !== 'string') throw new Error('gc:guide expects a bundle id')
+      const g = gatherer.cached() ?? (await gather())
+      const b = g.bundles.find((x) => x.item.id === rawId)
+      if (!b) {
+        return { id: rawId, lock: null, sessions: null, stacks: [], unreadable: null, docker: null }
+      }
+      return guidanceFor(b, guidedDeps)
     },
     prefs: () => livePrefs(),
     setPrefs: async (raw) => {
@@ -416,6 +499,30 @@ export async function registerGcHandlers(
   ipcMain.handle('gc:keep', (_e, id: unknown) => service.keep(id))
   ipcMain.handle('gc:unkeep', (_e, id: unknown) => service.unkeep(id))
   ipcMain.handle('gc:recheck', (_e, id: unknown) => service.recheck(id))
+  ipcMain.handle('gc:guide', (_e, id: unknown) => service.guide(id))
+  ipcMain.handle('gc:recovery:list', () => listRecovery(prepJournal, recoveryDeps))
+  ipcMain.handle('gc:recovery:ack', async (_e, ids: unknown) => {
+    if (!Array.isArray(ids)) return
+    await ackRecovery(
+      prepJournal,
+      ids.filter((x): x is string => typeof x === 'string')
+    )
+  })
+  ipcMain.handle('gc:recovery:act', async (_e, raw: unknown) => {
+    const r = (raw ?? {}) as { id?: unknown; action?: unknown }
+    if (
+      typeof r.id !== 'string' ||
+      (r.action !== 'start' &&
+        r.action !== 'lock' &&
+        r.action !== 'lock-anyway' &&
+        r.action !== 'dismiss')
+    ) {
+      return { ok: false, error: 'bad request' }
+    }
+    const out = await actOnRecovery(prepJournal, r.id, r.action, recoveryDeps)
+    recoveryChanged()
+    return out
+  })
   ipcMain.handle('gc:prefs:get', () => service.prefs())
   ipcMain.handle('gc:prefs:set', (_e, raw: unknown) => service.setPrefs(raw))
   ipcMain.handle('gc:ackFirstReport', () => service.ackFirstReport())

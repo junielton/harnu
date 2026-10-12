@@ -643,6 +643,8 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     getWindow()?.webContents.send('pty:hibernated', { sessionKey })
   }
 
+  parkSessionImpl = hibernateSession
+
   /**
    * Run the policy for one trigger and park whatever it names. Reads the persisted
    * policy (T127 S4) on every call rather than caching it, so an edit in Settings
@@ -1269,6 +1271,18 @@ export function killAllPtys(): void {
  */
 export function liveSessionKeys(): ReadonlySet<string> {
   return sessionIndex.liveKeys()
+}
+
+/**
+ * The parking transaction `registerPtyHandlers` owns (`hibernateSession`), reachable from the Cleanup
+ * guided "Close session and remove". Parking keeps the conversation on disk; only the process goes.
+ * `false` when handlers are not registered yet or Harnu holds no live process for the key.
+ */
+let parkSessionImpl: ((sessionKey: string) => void) | null = null
+export function parkSessionByKey(sessionKey: string): boolean {
+  if (!parkSessionImpl || !sessionIndex.has(sessionKey)) return false
+  parkSessionImpl(sessionKey)
+  return true
 }
 
 /**

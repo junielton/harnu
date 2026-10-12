@@ -18,10 +18,12 @@ import {
   type SessionPresence,
   type WorktreeBundle
 } from './bundle-core'
+import { gitOperationOf } from './gc-operation'
 import { cleanItem, type CleanStepId, type ExecutorDeps } from '../reaper/executor-core'
 import { dehydrateItem, type DehydrateDeps } from '../reaper/dehydrate-core'
 import {
   groupStacks,
+  isHolding,
   isInside,
   type InspectedContainer,
   type StackGroup
@@ -70,6 +72,11 @@ export interface GcShellDeps {
    * Rejects when the walk cannot read a folder. The reprobe and the recheck refuse on any.
    */
   findForeignCheckouts(path: string): Promise<string[]>
+  /**
+   * The rebase or bisect in progress in a worktree, or null. Optional: the scan already recorded
+   * what it saw (`bundle.operation`), and this looks again right before the clean.
+   */
+  operationOf?(path: string): Promise<'rebase' | 'bisect' | 'am' | null>
 }
 
 /**
@@ -489,6 +496,10 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       }
       const path = item.path
       if (!path) return { ok: false, reason: 'changed-since-scan' }
+      // An unfinished rebase or bisect lives in the folder and would be trashed with it.
+      if (b.operation !== undefined || (deps.operationOf && (await deps.operationOf(path)))) {
+        return { ok: false, reason: 'operation-in-progress' }
+      }
       try {
         // Real paths before any comparison: a symlinked worktree may be the main checkout,
         // and one whose path cannot be read may be an alias of anything.
@@ -517,7 +528,10 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         // Any running session refuses, even one the scan already saw idle: dehydrateItem
         // refuses a live worktree, which would halt the run after the docker steps.
         const presence = await deps.presenceOf(path)
-        if (presence !== 'none') {
+        // The one tolerated exception: an IDLE session that a guided action is about to close.
+        const closing =
+          b.assume?.closeSession === true && presence === 'open-idle' && b.session === 'open-idle'
+        if (presence !== 'none' && !closing) {
           const changed = sameState(presence) !== sameState(b.session)
           return { ok: false, reason: changed ? 'changed-since-scan' : 'session-open' }
         }
@@ -533,7 +547,13 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         if (foreign) return { ok: false, reason: foreign }
         // A worktree git cannot unregister (locked, no unique registration) would halt at the
         // trash, after the stack was stopped and the deps dropped: refuse before any of that.
-        if (!(await deps.executor.canUnregister(item.repoPath, path))) {
+        // With the unlock assumed (a guided dry run) the lock is waved but the rest of the question is
+        // still asked: a missing or ambiguous registration refuses just the same.
+        const registered =
+          b.assume?.unlock === true
+            ? await deps.executor.canUnregister(item.repoPath, path, { assumeUnlocked: true })
+            : await deps.executor.canUnregister(item.repoPath, path)
+        if (!registered) {
           return { ok: false, reason: 'cannot-unregister' }
         }
         const { stacks } = await stacksNow(b)
@@ -553,8 +573,14 @@ export function createGcOps(deps: GcShellDeps): GcOps {
           }
           pass.set(id, { root, ids: new Set(s.containers.map((c) => c.id)) })
         }
-        const fresh = stackIdsInside(stacks, root, platform, canonical)
-        const scanned = [...b.stackIds, ...b.sharedStackIds].sort()
+        // Shared stacks a guided action stops (or has stopped) are not a change of the stack set.
+        const stopping = new Set(b.assume?.stoppedStacks ?? [])
+        const fresh = stackIdsInside(stacks, root, platform, canonical).filter(
+          (id) => !stopping.has(id)
+        )
+        const scanned = [...b.stackIds, ...b.sharedStackIds]
+          .filter((id) => !stopping.has(id))
+          .sort()
         if (fresh.length !== scanned.length || fresh.some((id, i) => id !== scanned[i])) {
           return { ok: false, reason: 'changed-since-scan' }
         }
@@ -637,7 +663,15 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         if (unresolvedNear(stacks, canonical, roots, platform)) {
           return { ok: false, reason: 'path-unresolved' }
         }
-        if (stackIdsInside(stacks, root, platform, canonical).length > 0) {
+        // A shared stack that was stopped for this removal stays listed (its containers still exist, but
+        // stopped): it is not "present" unless something started it again.
+        const stopped = new Set(b.assume?.stoppedStacks ?? [])
+        const present = stackIdsInside(stacks, root, platform, canonical).filter(
+          (id) =>
+            !stopped.has(id) ||
+            (stacks.find((s) => s.id === id)?.containers ?? []).some((c) => isHolding(c.state))
+        )
+        if (present.length > 0) {
           return { ok: false, reason: 'stack-present' }
         }
         // A worktree nested inside this one may be created mid-run too (delta 6, F1).
@@ -730,6 +764,7 @@ export async function defaultGcShellDeps(
     // A git failure rejects, so the reprobe and the recheck refuse as probe-failed.
     listWorktrees: async (repoPath) =>
       parseWorktreeList(await executor.git(repoPath, ['worktree', 'list', '--porcelain'])),
-    findForeignCheckouts
+    findForeignCheckouts,
+    operationOf: gitOperationOf
   }
 }

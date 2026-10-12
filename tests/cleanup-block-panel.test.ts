@@ -148,7 +148,7 @@ describe('CleanupBlockPanel — Remove is only offered for what main takes', () 
     w.unmount()
   })
 
-  it('a detached worktree names the command that removes it by hand', () => {
+  it('a detached worktree is removable from review: Remove is offered and its commit is named as kept (AC-A3/A4)', () => {
     const detached = blockOf(
       wt(
         'x',
@@ -159,8 +159,13 @@ describe('CleanupBlockPanel — Remove is only offered for what main takes', () 
       )
     )
     const w = mountPanel(detached)
-    expect(has(w, 'panel-remove')).toBe(false)
-    expect(w.get('[data-testid="panel-remove-hint"]').text()).toContain('git worktree remove')
+    expect(has(w, 'panel-remove')).toBe(true)
+    // the old "git worktree remove" hint is gone: that command would delete it with nothing archived
+    expect(has(w, 'panel-remove-hint')).toBe(false)
+    expect(has(w, 'panel-remove-blocked')).toBe(false)
+    expect(w.get('[data-testid="panel-takes"]').text()).toContain(
+      t('cleanup.gc.panel.takes.detached')
+    )
   })
 
   it('a worktree Harnu could not look inside gets its own Remove-blocked sentence', () => {
@@ -945,5 +950,137 @@ describe('CleanupBlockPanel — R / D / K / A on the open panel', () => {
     w.unmount()
     press('r')
     expect(w.emitted('remove')).toBeUndefined()
+  })
+})
+
+// "No dead ends" (unit B, AC-B1 … B8): under "Remove is unavailable" the panel offers the action that
+// clears the cause, and promotes Dehydrate with its real bytes for a worktree it cannot remove.
+describe('CleanupBlockPanel — every refusal has a guided action', () => {
+  const refused = (reason: ReturnType<typeof reviewReason>, facts: Record<string, unknown> = {}) =>
+    blockOf(wt('x', 'review', 1200 * MIB, {}, { reason, ...facts }))
+
+  it.each([
+    [
+      'locked',
+      reviewReason('locked' as never),
+      { locked: true },
+      'Unlock and remove…',
+      'unlock-remove'
+    ],
+    [
+      'session-open',
+      reviewReason('open-idle-session'),
+      { session: 'open-idle' },
+      'Close session and remove…',
+      'close-session-remove'
+    ],
+    [
+      'shared-stack',
+      reviewReason('shared-stack'),
+      { sharedStackIds: ['web'] },
+      'Choose what to do with the stack…',
+      'shared-stack'
+    ],
+    [
+      'check-failed',
+      reviewReason('check-failed'),
+      { nestedWorktrees: undefined },
+      'Show how to fix it…',
+      'fix-unreadable'
+    ],
+    [
+      'scan-blind',
+      reviewReason('dirty'),
+      { dockerBlind: true },
+      "Docker wasn't running — what now?",
+      'scan-again'
+    ]
+  ])(
+    '%s offers its action and emits it with the reason',
+    async (reason, why, facts, label, action) => {
+      const w = mountPanel(refused(why, facts))
+      const btn = w.get('[data-testid="panel-guide"]')
+      expect(btn.text()).toBe(label)
+      await btn.trigger('click')
+      expect(w.emitted('guide')).toEqual([[expect.any(String), action, reason]])
+    }
+  )
+
+  it('a main checkout has no action: the reason is the answer', () => {
+    const w = mountPanel(refused(reviewReason('dirty'), { isMainCheckout: true }))
+    expect(has(w, 'panel-guide')).toBe(false)
+    expect(has(w, 'panel-remove-blocked')).toBe(true)
+  })
+
+  it('a Keep mark added since the scan is one click from being removed', async () => {
+    const block = refused(reviewReason('dirty'))
+    block.protection = 'kept'
+    const w = mountPanel(block)
+    expect(w.get('[data-testid="panel-guide"]').text()).toBe('Remove the Keep mark')
+  })
+
+  it('a refused worktree promotes Dehydrate with the bytes it frees, with no guide button of its own', () => {
+    const block = blockOf(
+      wt(
+        'x',
+        'review',
+        1200 * MIB,
+        { hydration: hydration() },
+        { reason: reviewReason('dirty'), depsBytes: 480_000_000, isMainCheckout: true }
+      )
+    )
+    const w = mountPanel(block)
+    expect(w.get('[data-testid="panel-dehydrate"]').text()).toContain(
+      'Dehydrate frees 480 MB and keeps the code'
+    )
+    // Dehydrate is its own button: the guide button does not repeat it.
+    expect(has(w, 'panel-guide')).toBe(false)
+  })
+
+  // Unit A: a detached worktree is archived by its HEAD sha and removed from Needs review, so unit B's
+  // guided explanation for it is gone by itself: it was driven by removability(), nothing else.
+  it('a detached worktree in review has no refusal, no guide and no manual command', () => {
+    const w = mountPanel(
+      blockOf(
+        wt(
+          'x',
+          'review',
+          1200 * MIB,
+          { kind: 'detached-worktree', branch: null, hydration: hydration() },
+          { reason: reviewReason('unknown-fate'), depsBytes: 480_000_000 }
+        )
+      )
+    )
+    expect(has(w, 'panel-remove')).toBe(true)
+    expect(has(w, 'panel-remove-blocked')).toBe(false)
+    expect(has(w, 'panel-guide')).toBe(false)
+    expect(has(w, 'panel-remove-hint')).toBe(false)
+  })
+
+  it('an item Remove takes shows no guide at all', () => {
+    expect(has(mountPanel(blockWith('review')), 'panel-guide')).toBe(false)
+  })
+})
+
+describe('CleanupBlockPanel — stacked causes (delta 2)', () => {
+  it('offers one combined action naming every step, and emits it', async () => {
+    const block = blockOf(
+      wt(
+        'x',
+        'review',
+        1200 * MIB,
+        {},
+        {
+          reason: reviewReason('shared-stack'),
+          sharedStackIds: ['web'],
+          locked: true
+        }
+      )
+    )
+    const w = mountPanel(block)
+    const btn = w.get('[data-testid="panel-guide"]')
+    expect(btn.text()).toBe('Unlock, stop stack and remove…')
+    await btn.trigger('click')
+    expect(w.emitted('guide')).toEqual([[expect.any(String), 'combined', 'locked']])
   })
 })

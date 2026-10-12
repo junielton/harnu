@@ -45,6 +45,7 @@ import {
 } from './gc-shell'
 import { collectForeignCheckouts } from './gc-foreign'
 import { lockedItemIds } from './gc-locked'
+import { operationsOf } from './gc-operation'
 import { sessionsFromFleet } from './gc-sessions'
 import {
   attributeBySlug,
@@ -365,7 +366,9 @@ export async function gatherGc(
     released: new Map(Object.entries(prefs.released)),
     releasedTips: releasedTipsOf(prefs),
     // Git's own lock: such a worktree cannot be unregistered, so it is review, not ready.
-    locked: lockedItemIds(items, lockedPaths, canonical, process.platform)
+    locked: lockedItemIds(items, lockedPaths, canonical, process.platform),
+    // A rebase, bisect or git am keeps its state in the folder, on a branch worktree as well.
+    operations: await operationsOf(items)
   }
   // A Keep mark holds only while the fate it was made under still holds: judge the fates
   // first, then rebuild with the marks that are still valid.

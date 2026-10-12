@@ -2311,6 +2311,7 @@
         "nestedWorktree": "Another worktree lives inside this one, and removing this one would trash it too.",
         "checkFailed": "Harnu could not look inside this worktree, so it cannot tell whether removing it would take another checkout along.",
         "locked": "This worktree is locked in git",
+        "operationInProgress": "A rebase, bisect or git am is still in progress in this worktree",
         "inUse": {
           "mainCheckout": "The repo's main checkout. Never touched.",
           "neverClean": "On your never-clean list. Never touched.",
@@ -2349,7 +2350,8 @@
           "volume": "Volumes: {names}",
           "deps": "Its dependency folders",
           "checkout": "The checkout",
-          "branch": "The local branch {branch}"
+          "branch": "The local branch {branch}",
+          "detached": "Its commit stays under refs/archive/detached/…"
         },
         "volumesCannotRestore": "Volumes cannot be restored.",
         "copyError": "Copy error",
@@ -2437,7 +2439,12 @@
         "totalReady": "{n} ready · {size}",
         "totalSelected": "{n} selected · {size}",
         "close": "Close",
-        "branchSub": "branch {branch}"
+        "branchSub": "branch {branch}",
+        "detachedSub": "detached at {sha}",
+        "untrackedMore": "{n} untracked files, saved in the wip ref: {names} and {more} more | {n} untracked files, saved in the wip ref: {names} and {more} more",
+        "untrackedTotal": "{n} untracked file in total, each saved in its wip ref. | {n} untracked files in total, each saved in its wip ref.",
+        "untracked": "{n} untracked file, saved in the wip ref: {names} | {n} untracked files, saved in the wip ref: {names}",
+        "warnDetached": "{n} detached worktree has no branch. Its commit stays under refs/archive/detached/…, and git worktree add brings it back. | {n} detached worktrees have no branch. Their commits stay under refs/archive/detached/…, and git worktree add brings them back."
       },
       "chip": {
         "stack": "stack",
@@ -2659,7 +2666,7 @@
           "neverClean": "It is on your never-clean list.",
           "kept": "You marked it Keep. Remove the mark first.",
           "inUse": "It is in use right now.",
-          "unsupportedKind": "It has a detached HEAD, so there is no branch to archive it under. Harnu cannot remove it yet.",
+          "unsupportedKind": "Harnu only removes this kind of folder from Needs review, after you confirm it.",
           "sharedStack": "Another stack also runs from this worktree. Stop that one first.",
           "nestedWorktree": "This folder holds another worktree or checkout. Remove or move that one first.",
           "checkFailed": "Harnu could not look inside this folder for other worktrees or checkouts. Make sure it is readable, then use Scan now.",
@@ -2669,6 +2676,7 @@
           "pathUnresolved": "A path tied to this worktree could not be resolved, so Harnu cannot tell what uses it.",
           "sessionOpen": "A session is still open in this worktree. Close it first.",
           "locked": "Git has this worktree locked. Unlock it first.",
+          "operationInProgress": "A rebase, bisect or git am is still in progress here, and its state would be lost with the folder. Finish or abort it, then use Scan now.",
           "cannotUnregister": "Git has no single, unlocked registration for this worktree, so Harnu cannot unregister it and refused it more than once. Check git worktree list.",
           "protectedNow": "It is protected now (a main checkout, a never-clean path or a Keep mark), and Harnu refused it more than once.",
           "scanBlind": "Docker wasn't running when Harnu scanned, so it could not see this worktree's stacks. Start Docker, then Scan now.",
@@ -2710,7 +2718,18 @@
         "changedMidRun": "It changed while the clean was running, so Harnu stopped.",
         "dirty": "It has uncommitted changes now, so it was left alone.",
         "foreignCheckout": "Another repository is checked out inside this folder, so it was left alone.",
-        "cannotUnregister": "Harnu couldn't match this worktree to a single git registration, so nothing was touched."
+        "cannotUnregister": "Harnu couldn't match this worktree to a single git registration, so nothing was touched.",
+        "unlockFailed": "Git would not unlock this worktree, so it was left alone.",
+        "sessionBusy": "A session in this worktree is working or waiting for you, so Harnu did not close it and left the worktree alone.",
+        "sessionNotClosable": "The session open here is not one Harnu can close, so the worktree was left alone.",
+        "stackStopFailed": "Docker could not stop the whole stack. Harnu tried to restart what it had stopped, then left the worktree alone.",
+        "stackBindsFolder": "That stack uses this folder, so it cannot be left running. Stop it or choose again.",
+        "prepNotApplicable": "What you chose no longer applies to this worktree, so it was left alone. Scan again and review it.",
+        "stackIsMainCheckout": "That stack belongs to the main checkout, so Harnu does not stop it and left the worktree alone.",
+        "stackUsedElsewhere": "Another folder with a session uses that stack, so Harnu did not stop it and left the worktree alone.",
+        "rollbackFailed": "What the action had changed (a lock, a stopped stack) could not be put back: check it.",
+        "prepLeftStack": "The worktree was removed after Harnu stopped its shared stack, so the stack was left stopped because its folder is gone.",
+        "operationInProgress": "A rebase, bisect or git am is in progress in this worktree, so it was left alone. Finish or abort it, then Scan now."
       },
       "opinion": {
         "safe": "Safe",
@@ -2827,6 +2846,172 @@
         },
         "unverified": "{size} moved to the trash by Harnu (can't check what's still there)",
         "recycleBin": "Recycle Bin"
+      },
+      "guide": {
+        "why": {
+          "none": "{n} can't be removed:",
+          "partial": "Removes {k} · {n} can't:"
+        },
+        "group": "{count} {cause}",
+        "cause": {
+          "mainCheckout": "main checkout",
+          "neverClean": "on your never-clean list",
+          "kept": "marked Keep",
+          "inUse": "in use",
+          "unsupportedKind": "detached (no branch)",
+          "sharedStack": "shared Docker stack",
+          "nestedWorktree": "holds another worktree",
+          "checkFailed": "unreadable folder",
+          "folderGone": "folder gone",
+          "tipUnknown": "commit unknown",
+          "graceNotElapsed": "not quiet long enough",
+          "pathUnresolved": "path unresolved",
+          "sessionOpen": "session open",
+          "locked": "locked in git",
+          "cannotUnregister": "git can't unregister it",
+          "protectedNow": "protected now",
+          "stackPresent": "Docker stack running",
+          "scanBlind": "scanned without Docker"
+        },
+        "dehydrateWin": "Dehydrate frees {size} and keeps the code",
+        "action": {
+          "unlock-remove": "Unlock and remove…",
+          "close-session-remove": "Close session and remove…",
+          "shared-stack": "Choose what to do with the stack…",
+          "fix-unreadable": "Show how to fix it…",
+          "scan-again": "Scan again",
+          "check-again": "Check again",
+          "unkeep": "Remove the Keep mark",
+          "open-settings": "Open Settings",
+          "dockerDown": "Docker wasn't running — what now?"
+        },
+        "combined": {
+          "label": "{steps} and remove…",
+          "unlock": "Unlock",
+          "stack": "stop stack",
+          "session": "close session"
+        }
+      },
+      "guided": {
+        "title": {
+          "unlockRemove": "Unlock and remove",
+          "closeSession": "Close the session and remove",
+          "sharedStack": "A stack is shared with other folders",
+          "fixUnreadable": "Harnu can't read this folder",
+          "dockerDown": "Docker wasn't running",
+          "combined": "Several steps, then the removal"
+        },
+        "subtitle": {
+          "unlockRemove": "Git has this worktree locked. After the unlock the remove is the usual one: archived first, then moved to the trash.",
+          "closeSession": "A session is still open here. Closing an idle one keeps its conversation on disk; the remove that follows is the usual one.",
+          "sharedStack": "Other folders run containers from the same Docker stack, so Harnu will not touch it unless you choose to.",
+          "fixUnreadable": "Harnu can't tell what is inside, so it won't remove the folder unseen. Fix the permission, then check again.",
+          "dockerDown": "Without Docker, Harnu could not see which stacks run from your worktrees, so it won't remove them.",
+          "combined": "Two or more things stand between this worktree and its removal. Harnu does them in this order, and puts back what it changed if the removal is still refused."
+        },
+        "loading": "Reading what git and Docker say right now…",
+        "loadError": "Couldn't read the current facts. Close this and try again.",
+        "lock": {
+          "reason": "Git recorded this reason: “{reason}”",
+          "none": "Git has it locked and recorded no reason.",
+          "gone": "Git no longer lists it as locked.",
+          "leftOut": "{n} no longer locked, so they are left out."
+        },
+        "sessions": {
+          "idle": "{n} idle session will be closed. Its conversation stays on disk. | {n} idle sessions will be closed. Their conversations stay on disk.",
+          "busy": "A session here is working or waiting for you, so Harnu will not close it. Finish or close it yourself first.",
+          "foreign": "The session open here is not one Harnu started, so Harnu cannot close it. Close it where it runs.",
+          "parkWarning": "Parking closes its terminal; background processes it started (dev servers, shells) stop. The conversation is kept and can be resumed.",
+          "userOpened": "{n} of them you opened yourself, not an agent."
+        },
+        "stack": {
+          "runs": "{name} also runs from {folders}",
+          "uses": "It uses this folder.",
+          "none": "This stack is gone now. Scan again."
+        },
+        "choice": {
+          "stop": "Stop stack and remove",
+          "stopBody": "Stops these containers: {names}. They are not removed, and neither are its volumes.",
+          "leave": "Remove the worktree and leave the stack",
+          "leaveBody": "The stack keeps running. None of its containers uses this folder.",
+          "leaveUnavailable": "This stack uses this folder, so it cannot be left running.",
+          "stopBlocked": {
+            "main-checkout": "This stack belongs to the main checkout, so Harnu will not stop it.",
+            "in-use-elsewhere": "Another folder with a session uses this stack, so Harnu will not stop it."
+          }
+        },
+        "unreadable": {
+          "where": "Harnu couldn't read {path}.",
+          "owner": "It belongs to {owner}.",
+          "ownerUnknown": "Harnu couldn't tell who owns it.",
+          "fix": "Run this, then check again:",
+          "ok": "Harnu can read it now. Check again to continue."
+        },
+        "copy": "Copy",
+        "copied": "Copied",
+        "docker": {
+          "down": "Docker wasn't running when Harnu scanned, so it could not see this worktree's stacks.",
+          "start": "Start Docker, then scan again:",
+          "app": "Open Docker from your applications, then scan again."
+        },
+        "confirm": {
+          "unlock": "Unlock and remove",
+          "closeSession": "Close session and remove",
+          "stop": "Stop stack and remove",
+          "leave": "Remove and leave the stack",
+          "combined": "{steps} and remove",
+          "word": {
+            "unlock": "unlock",
+            "stop": "stop stack",
+            "leave": "leave the stack",
+            "session": "close session"
+          }
+        },
+        "recheck": "Check again",
+        "scan": "Scan again",
+        "cancel": "Cancel",
+        "close": "Close",
+        "pending": "Working…",
+        "stale": "This changed since you opened it — open it again.",
+        "toast": {
+          "scanned": "Scanned again",
+          "scanStillBlind": "Scanned again, but Docker still isn't answering",
+          "scanFailed": "Couldn't scan again",
+          "unkept": "Keep mark removed | Keep marks removed",
+          "unkeepFailed": "Couldn't remove the Keep mark",
+          "recheckedOk": "Checked again: Harnu can read it now",
+          "recheckedStill": "Checked again: Harnu still can't read it",
+          "recheckFailed": "Couldn't check again",
+          "undo": "Undo"
+        },
+        "step": {
+          "unlock": "Unlock the worktree in git.",
+          "stop": "Stop these containers (they are not removed): {names}.",
+          "leave": "Leave the stack running.",
+          "session": "Close the idle session open here (parking; its conversation is kept).",
+          "remove": "Then remove the worktree the usual way: archived first, then moved to the trash."
+        }
+      },
+      "recovered": {
+        "relocked": "Put the lock back on {path} after Harnu quit mid-action",
+        "stackStopped": "Harnu stopped a stack during a clean that didn't finish",
+        "lockSkipped": "Harnu unlocked a worktree during a clean that didn't finish",
+        "containersGone": "Harnu stopped containers during a clean that didn't finish; they are gone now",
+        "failed": "Couldn't do that",
+        "lockFailed": "Harnu unlocked a worktree during a clean that didn't finish and could not lock it again"
+      },
+      "recovery": {
+        "label": "Interrupted cleans",
+        "stackStopped": "Harnu stopped {names} during a clean that didn't finish.",
+        "containersGone": "Harnu stopped {names} during a clean that didn't finish; they no longer exist.",
+        "lockSkipped": "Harnu unlocked {path} during a clean that didn't finish, and it is not the same worktree any more (or that could not be confirmed), so the lock was not put back.",
+        "start": "Start again",
+        "leave": "Leave stopped",
+        "lock": "Lock again",
+        "dismiss": "Dismiss",
+        "lockFailed": "Harnu unlocked {path} during a clean that didn't finish and could not lock it again:",
+        "lockMismatch": "Harnu unlocked {path} during a clean that didn't finish, and the check just now says this is not clearly the same worktree:",
+        "lockAnyway": "Lock this worktree anyway"
       }
     }
   },

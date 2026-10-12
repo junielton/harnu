@@ -14,6 +14,7 @@ import type { RemovalRefusal } from '../lib/gc-removability'
 // merged the main-side type that names it.
 const REASON_SUFFIX: Record<string, string> = {
   locked: 'locked',
+  'operation-in-progress': 'operationInProgress',
   dirty: 'dirty',
   unpushed: 'unpushed',
   'open-idle-session': 'openIdleSession',
@@ -107,4 +108,9 @@ export function refusalKey(code: RefusalCode): string {
 /** `cleanup.gc.removal.reason.*` key: why a Remove cannot go ahead, in one sentence. */
 export function removalKey(reason: RemovalRefusal): string {
   return `cleanup.gc.removal.reason.${reason.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())}`
+}
+
+/** `cleanup.gc.guide.cause.*` key: the short noun phrase a refusal wears in the selection bar. */
+export function guideCauseKey(reason: RemovalRefusal): string {
+  return `cleanup.gc.guide.cause.${reason.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())}`
 }
