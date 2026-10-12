@@ -8,6 +8,7 @@ import type {
   GcCleanOptions,
   GcDockerCard,
   GcExpected,
+  GcPrep,
   GcSnapshot,
   OrphanVolumeItem
 } from '../../../main/gc/gc-wire'
@@ -450,7 +451,8 @@ export function dialogBreakdown(rows: readonly DialogRow[]): DialogBreakdown {
 
 export interface CleanRequest {
   ids: string[]
-  options: Required<Pick<GcCleanOptions, 'expected'>> & Pick<GcCleanOptions, 'confirmed'>
+  options: Required<Pick<GcCleanOptions, 'expected'>> &
+    Pick<GcCleanOptions, 'confirmed' | 'prepare'>
 }
 
 const sorted = (xs: readonly string[]): string[] => [...xs].sort()
@@ -645,4 +647,56 @@ export function confirmChanged(model: GcModel, captured: CapturedConfirm): boole
   return captured.ids.some(
     (id) => !sameFacts(fresh.options.expected[id], captured.request.options.expected[id])
   )
+}
+
+// ---- guided "…and remove": the request carries each item's prep ------------------------------------
+
+/** What no prep can lift: the operator's own protections and an item that is working right now. */
+const NOT_GUIDABLE: ReadonlySet<RemovalRefusal> = new Set([
+  'main-checkout',
+  'never-clean',
+  'kept',
+  'in-use'
+])
+
+/**
+ * The `gc:clean` payload of a guided "…and remove" ("No dead ends"). Built although `removability()`
+ * refuses these items today: the prep (unlock, close the idle session, stop or leave a stack) is what
+ * lifts the refusal, and main re-judges the item on a fresh gather after it. Still every id is confirmed
+ * by name and bound to the facts shown; an id the model lost, one with no prep, or one a prep cannot
+ * lift (a Keep mark, a main checkout, a working session) is dropped, never sent.
+ */
+export function guidedRequestFor(
+  model: GcModel,
+  ids: readonly string[],
+  prepFor: (id: string) => GcPrep | null,
+  now: number = Date.now()
+): CleanRequest {
+  const kept: string[] = []
+  const expected: Record<string, GcExpected> = {}
+  const prepare: Record<string, GcPrep> = {}
+  for (const id of ids) {
+    const b = model.byId.get(id)
+    if (!b || b.kind !== 'worktree') continue
+    const v = removability(b, now)
+    if (!v.ok && NOT_GUIDABLE.has(v.reason)) continue
+    const prep = prepFor(id)
+    if (!prep) continue
+    kept.push(id)
+    expected[id] = expectedFor(b)
+    prepare[id] = prep
+  }
+  return { ids: kept, options: { expected, confirmed: [...kept], prepare } }
+}
+
+/** Whether what a guided dialog captured is no longer what the model shows (it blocks its confirm). */
+export function guidedChanged(
+  model: GcModel,
+  captured: { ids: readonly string[]; request: CleanRequest }
+): boolean {
+  return captured.ids.some((id) => {
+    const b = model.byId.get(id)
+    const before = captured.request.options.expected[id]
+    return !b || !before || !sameFacts(expectedFor(b), before)
+  })
 }
