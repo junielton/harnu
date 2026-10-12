@@ -174,21 +174,24 @@ export async function recordTrash(
     await doTrash()
     return null
   }
-  let dirs: TrashDir[] = []
-  let before: Array<Set<string>> | null = null
+  // The trash directories and what they hold BEFORE the move, keyed by directory.
+  let before: Map<string, Set<string>> | null = null
   try {
-    dirs = await candidateTrashes(original, env)
-    before = await Promise.all(dirs.map((d) => namesIn(d, env)))
+    before = new Map()
+    for (const d of await candidateTrashes(original, env)) before.set(d.dir, await namesIn(d, env))
   } catch {
     before = null
   }
   await doTrash()
   if (!before) return null
   try {
+    // The candidates again AFTER the move: the first trash onto a volume creates its `.Trash-<uid>`
+    // in the move itself, and a directory that was not there before has every entry new.
     const fresh: Array<{ dir: TrashDir; name: string }> = []
-    for (const [i, d] of dirs.entries()) {
+    for (const d of await candidateTrashes(original, env)) {
+      const seen = before.get(d.dir)
       for (const name of await namesIn(d, env)) {
-        if (!before[i]!.has(name)) fresh.push({ dir: d, name })
+        if (!seen?.has(name)) fresh.push({ dir: d, name })
       }
     }
     if (fresh.length !== 1 || !safeName(fresh[0]!.name)) return null
