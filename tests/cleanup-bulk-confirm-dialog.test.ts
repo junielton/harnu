@@ -501,3 +501,29 @@ describe('CleanupBulkConfirmDialog: the reason is the translated one for every c
     })
   })
 })
+
+describe('CleanupBulkConfirmDialog — the stale alert stays out of the scrolling body (BUG-184)', () => {
+  it('renders in the card, outside bulk-body, when stale — so it cannot scroll out of sight', async () => {
+    await open([row()], 'ready', true)
+    const alert = q('[data-testid="bulk-stale"]')!
+    expect(alert).not.toBeNull()
+    expect(alert.getAttribute('role')).toBe('alert')
+    expect(q('[data-testid="bulk-dialog"]')!.contains(alert)).toBe(true)
+    expect(q('[data-testid="bulk-body"]')!.contains(alert)).toBe(false)
+    expect(alert.className).toContain('shrink-0')
+  })
+
+  it('sits between the body and the footer', async () => {
+    await open([row()], 'ready', true)
+    const body = q('[data-testid="bulk-body"]')!
+    const alert = q('[data-testid="bulk-stale"]')!
+    const total = q('[data-testid="bulk-total"]')!
+    expect(body.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(alert.compareDocumentPosition(total) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('is absent when the dialog is not stale', async () => {
+    await open([row()], 'ready', false)
+    expect(q('[data-testid="bulk-stale"]')).toBeNull()
+  })
+})

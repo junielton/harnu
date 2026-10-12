@@ -458,22 +458,23 @@ function onBackdropMousedown(e: MouseEvent): void {
               >
             </span>
           </label>
-
-          <p
-            v-if="stale"
-            class="mx-5 mt-3 flex items-start gap-2 text-ui text-warning"
-            role="alert"
-            data-testid="bulk-stale"
-          >
-            <TriangleAlert
-              :size="14"
-              :stroke-width="1.6"
-              class="mt-0.5 shrink-0"
-              aria-hidden="true"
-            />
-            {{ t('cleanup.gc.confirm.changed') }}
-          </p>
         </div>
+
+        <!-- Outside the scrolling body: it explains why Remove is disabled, so it must never scroll out of sight. -->
+        <p
+          v-if="stale"
+          class="mx-5 mb-3 flex shrink-0 items-start gap-2 text-ui text-warning"
+          role="alert"
+          data-testid="bulk-stale"
+        >
+          <TriangleAlert
+            :size="14"
+            :stroke-width="1.6"
+            class="mt-0.5 shrink-0"
+            aria-hidden="true"
+          />
+          {{ t('cleanup.gc.confirm.changed') }}
+        </p>
 
         <div class="flex shrink-0 items-center gap-2 border-t border-border px-5 py-3">
           <span
