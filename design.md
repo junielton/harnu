@@ -8893,7 +8893,7 @@ no session in it is live or parked, and no existing folder spells the same slug.
   icon-only **Delete** button (`Trash2`, red on hover, `aria-label` "Delete the transcripts of {name}",
   `orphan-delete`), disabled while that row's delete is running.
 - **Confirm dialog** (`CleanupTranscriptsConfirmDialog.vue`, `data-testid="orphan-dialog"`, the bulk
-  dialog's anatomy at `min(560px, 90vw)`, Danger confirm): title "Move {n} transcript folder to the trash? |
+  dialog's anatomy and width (`--gc-dialog-w`), Danger confirm): title "Move {n} transcript folder to the trash? |
   Move {n} transcript folders to the trash?", subtitle "The folders these sessions ran in are gone, so Claude
   can no longer resume them here."; a bounded list of rows (mono folder, `{n} sessions`, size); a Warning
   callout "They go to the OS trash, so you can bring them back." (`orphan-dialog-recoverable`); when any row

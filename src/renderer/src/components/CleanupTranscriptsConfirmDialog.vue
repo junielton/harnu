@@ -58,7 +58,7 @@ function onBackdropMousedown(e: MouseEvent): void {
     >
       <div
         ref="dialogRef"
-        class="anim-fade-in-scale mb-6 flex w-[min(560px,90vw)] flex-col rounded-lg border border-border-2 bg-surface text-text shadow-pop"
+        class="anim-fade-in-scale mb-6 flex w-(--gc-dialog-w) flex-col rounded-lg border border-border-2 bg-surface text-text shadow-pop"
         role="dialog"
         aria-modal="true"
         aria-labelledby="cleanup-orphan-dialog-title"
