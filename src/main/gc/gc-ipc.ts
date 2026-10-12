@@ -432,7 +432,7 @@ export async function registerGcHandlers(
   ipcMain.handle('gc:unkeep', (_e, id: unknown) => service.unkeep(id))
   ipcMain.handle('gc:recheck', (_e, id: unknown) => service.recheck(id))
   ipcMain.handle('gc:guide', (_e, id: unknown) => service.guide(id))
-  ipcMain.handle('gc:recovery:list', () => listRecovery(prepJournal))
+  ipcMain.handle('gc:recovery:list', () => listRecovery(prepJournal, recoveryDeps))
   ipcMain.handle('gc:recovery:ack', async (_e, ids: unknown) => {
     if (!Array.isArray(ids)) return
     await ackRecovery(

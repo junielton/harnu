@@ -199,11 +199,38 @@ export async function recoverPrepJournal(journal: PrepJournal, deps: RecoveryDep
   }
 }
 
-/** What the renderer shows: notices (until answered) and put-back reports (until acknowledged). */
-export async function listRecovery(journal: PrepJournal): Promise<GcRecoveryItem[]> {
-  return (await journal.entries())
-    .filter((e) => e.state === 'notice' || (e.state === 'resolved' && !e.announced))
-    .map((e): GcRecoveryItem => ({
+/**
+ * Why containers must not be started again, or null when they may: starting them with a folder or a
+ * bind source gone makes docker recreate those as empty folders.
+ */
+async function cannotStart(
+  e: StopEntry,
+  deps: Pick<RecoveryDeps, 'exists'>
+): Promise<string | null> {
+  for (const p of [e.path, ...e.bindSources]) {
+    if (!(await deps.exists(p))) {
+      return `its folder is gone (${p}); starting it would recreate empty folders`
+    }
+  }
+  return null
+}
+
+/**
+ * What the renderer shows: notices (until answered) and put-back reports (until acknowledged). With
+ * `deps`, a stack notice also says whether starting it again is possible right now.
+ */
+export async function listRecovery(
+  journal: PrepJournal,
+  deps?: Pick<RecoveryDeps, 'exists'>
+): Promise<GcRecoveryItem[]> {
+  const out: GcRecoveryItem[] = []
+  for (const e of await journal.entries()) {
+    if (!(e.state === 'notice' || (e.state === 'resolved' && !e.announced))) continue
+    const why =
+      deps && e.kind === 'stop-stack' && e.notice === 'stack-stopped'
+        ? await cannotStart(e, deps)
+        : undefined
+    out.push({
       id: e.id,
       state: e.state as 'notice' | 'resolved',
       kind: e.kind,
@@ -211,8 +238,11 @@ export async function listRecovery(journal: PrepJournal): Promise<GcRecoveryItem
       ...(e.outcome ? { outcome: e.outcome } : {}),
       path: e.path,
       detail: e.detail ?? '',
-      announced: e.announced
-    }))
+      announced: e.announced,
+      ...(why !== undefined ? { canStart: why === null, ...(why ? { cannotStart: why } : {}) } : {})
+    })
+  }
+  return out
 }
 
 /** The renderer showed these in Activity: they are not announced again, and a put-back report is done. */
@@ -239,6 +269,9 @@ export async function actOnRecovery(
   }
   try {
     if (action === 'start' && e.kind === 'stop-stack') {
+      // Checked again NOW: a folder may have gone since the notice was listed.
+      const why = await cannotStart(e, deps)
+      if (why) return { ok: false, error: why }
       const r = await deps.start(e.containerIds)
       if (r.error || r.done.length < e.containerIds.length) {
         return { ok: false, error: r.error ?? 'not every container started' }

@@ -175,6 +175,10 @@ export interface GcRecoveryItem {
   detail: string
   /** Already announced in Activity: it is not announced again. */
   announced: boolean
+  /** A stopped stack: whether starting it again is possible now (its folders still exist). */
+  canStart?: boolean
+  /** Why it is not: starting it would recreate empty folders. */
+  cannotStart?: string
 }
 
 /** One stack other folders use too, as a guided dialog shows it. */

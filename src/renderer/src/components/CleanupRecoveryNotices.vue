@@ -48,8 +48,15 @@ const { t } = useI18n()
           <span v-if="n.detail" class="font-mono text-caption text-text-3">{{ n.detail }}</span>
         </template>
       </p>
+      <p
+        v-if="n.notice === 'stack-stopped' && n.canStart === false"
+        class="m-0 basis-full text-caption text-text-3"
+        data-testid="recovery-cannot-start"
+      >
+        {{ n.cannotStart }}
+      </p>
       <Button
-        v-if="n.notice === 'stack-stopped'"
+        v-if="n.notice === 'stack-stopped' && n.canStart !== false"
         variant="soft"
         data-testid="recovery-start"
         @click="emit('answer', n.id, 'start')"
