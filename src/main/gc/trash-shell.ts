@@ -9,6 +9,7 @@
 
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
+import { rawRm } from '../raw-fs'
 import { matchesTrashed, parseTrashInfo, type GcTrashCard, type TrashedEntry } from './trash-core'
 
 export interface TrashEnv {
@@ -182,8 +183,8 @@ export async function emptyHarnuTrash(
     try {
       // The data first: a record left behind without its data is harmless, the reverse is an
       // orphan the file manager cannot show.
-      await fs.rm(path.join(found.trashDir, 'files', found.name), { recursive: true, force: true })
-      await fs.rm(path.join(found.trashDir, 'info', `${found.name}.trashinfo`), { force: true })
+      await rawRm(path.join(found.trashDir, 'files', found.name), { recursive: true, force: true })
+      await rawRm(path.join(found.trashDir, 'info', `${found.name}.trashinfo`), { force: true })
       result.emptied.push(e.key)
       result.emptiedBytes += e.bytes ?? 0
     } catch (err) {
