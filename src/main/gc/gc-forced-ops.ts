@@ -12,8 +12,11 @@
 //   3. only then does the normal pipeline run, with the executor's own dirty/unpushed/merged
 //      guards waived, because step 2 is what makes waiving them recoverable.
 //
-// What stays refused: a main checkout, a neverClean path, an in-use bundle and a detached
-// worktree are turned away before these ops are even built (autopilot-core `refusalFor`).
+// What stays refused: a main checkout, a neverClean path, an in-use bundle and a worktree with a
+// rebase or bisect in progress are turned away before these ops are even built or at the reprobe
+// (autopilot-core `refusalFor`, gc-shell). A detached worktree is NOT one of them any more: with no
+// branch to name its refs it is archived by its HEAD sha first (`refs/archive/detached/…`), with the
+// commits only its reflog holds, and only on the operator's confirm.
 
 import type { WorktreeBundle } from './bundle-core'
 import { createGcOps, type GcShellDeps } from './gc-shell'
