@@ -368,3 +368,24 @@ describe('Start again checks the folders are still there (delta 4)', () => {
     expect(await actOnRecovery(j, item.id, 'dismiss', gone.deps)).toEqual({ ok: true })
   })
 })
+
+// Delta 4 item 5: a birth time of 0 is "unknown" (the filesystem did not say), which proves nothing.
+describe('an unknown birth time is not a match (delta 4)', () => {
+  it('both sides 0: the lock is NOT put back, and the operator is told', async () => {
+    const j = createPrepJournal(file, 'previous-run')
+    const unknown = { ...ID, birth: 0 }
+    await j.begin({ ...unlockEntry, identity: unknown })
+    const { deps, calls } = world({ identityOf: async () => unknown })
+    await recoverPrepJournal(boot(), deps)
+    expect(calls.lock).toEqual([])
+    expect((await listRecovery(j))[0]).toMatchObject({ state: 'notice', notice: 'lock-skipped' })
+  })
+
+  it('a known birth time on both sides still matches', async () => {
+    const j = createPrepJournal(file, 'previous-run')
+    await j.begin(unlockEntry)
+    const { deps, calls } = world()
+    await recoverPrepJournal(boot(), deps)
+    expect(calls.lock).toHaveLength(1)
+  })
+})
