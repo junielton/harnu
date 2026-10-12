@@ -63,6 +63,8 @@ describe('unlocking a real locked worktree', () => {
     const reason = 'não mexer "x" \\ fim'
     execFileSync('git', ['-C', repo, 'worktree', 'lock', '--reason', reason, wt])
     const g = createGitGuided(git)
+    const file = path.join(repo, '.git', 'worktrees', path.basename(wt), 'locked')
+    const original = readFileSync(file)
     const read = await g.lockReason(repo, wt)
     expect(read).toBe(reason)
 
@@ -70,8 +72,8 @@ describe('unlocking a real locked worktree', () => {
     await g.lock(repo, wt, read ?? null)
 
     expect(await g.lockReason(repo, wt)).toBe(reason)
-    const file = path.join(repo, '.git', 'worktrees', path.basename(wt), 'locked')
-    expect(readFileSync(file, 'utf8')).toBe(reason)
+    // The very bytes git had recorded.
+    expect(readFileSync(file).equals(original)).toBe(true)
   })
 
   it('a lock that had no reason goes back with none', async () => {
