@@ -79,6 +79,23 @@ const riskCount = computed(() => props.rows.filter((r) => r.risk).length)
 /** A worktree's volumes are never removed with it (they become orphan volumes, reviewed one by one). */
 const hasWorktreeRow = computed(() => props.rows.some((r) => r.kind === 'worktree'))
 /** Detached worktrees have no branch: their commit is kept under refs/archive/detached/… instead. */
+/** Names shown per row; the rest read "and N more", the whole list on hover. */
+const UNTRACKED_SHOWN = 10
+const untrackedTotal = computed(() =>
+  props.rows.reduce((a, r) => a + (r.untracked?.length ?? 0), 0)
+)
+
+function untrackedText(row: DialogRow): string {
+  const all = row.untracked ?? []
+  const n = all.length
+  if (n <= UNTRACKED_SHOWN) {
+    return t('cleanup.gc.confirm.untracked', n, { named: { n, names: all.join(', ') } })
+  }
+  return t('cleanup.gc.confirm.untrackedMore', n, {
+    named: { n, names: all.slice(0, UNTRACKED_SHOWN).join(', '), more: n - UNTRACKED_SHOWN }
+  })
+}
+
 const detachedCount = computed(() => props.rows.filter((r) => !!r.detachedAt).length)
 
 const title = computed(() => {
@@ -279,12 +296,9 @@ function onBackdropMousedown(e: MouseEvent): void {
               <span
                 v-if="row.untracked?.length"
                 class="break-words text-caption leading-4 text-text-3"
+                :title="row.untracked.join('\n')"
                 data-testid="bulk-untracked"
-                >{{
-                  t('cleanup.gc.confirm.untracked', row.untracked.length, {
-                    named: { n: row.untracked.length, names: row.untracked.join(', ') }
-                  })
-                }}</span
+                >{{ untrackedText(row) }}</span
               >
               <span class="mt-1 flex flex-wrap gap-1">
                 <span
@@ -368,6 +382,13 @@ function onBackdropMousedown(e: MouseEvent): void {
                   named: { n: detachedCount }
                 })
               }}</b>
+            </p>
+            <p v-if="untrackedTotal > 0" class="m-0 mb-1" data-testid="bulk-untracked-total">
+              {{
+                t('cleanup.gc.confirm.untrackedTotal', untrackedTotal, {
+                  named: { n: untrackedTotal }
+                })
+              }}
             </p>
             <p class="m-0">
               <b
