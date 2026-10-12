@@ -384,6 +384,9 @@ describe('gc store', () => {
       emptied: 1,
       missing: 0,
       skipped: 1,
+      changed: 1,
+      unverifiable: 0,
+      unreachable: 0,
       failed: 0,
       location: null
     })
@@ -410,6 +413,62 @@ describe('gc store', () => {
     })
     await gc.deleteArchives('/ws/repo', [])
     expect(toast.mock.calls[0][0].title).toBe('Deleted 3 archives')
+  })
+
+  const emptyAck = (over: Record<string, unknown>) => ({
+    unsupported: false,
+    emptiedBytes: 0,
+    emptied: 0,
+    missing: 0,
+    skipped: 0,
+    changed: 0,
+    unverifiable: 0,
+    unreachable: 0,
+    failed: 0,
+    location: null,
+    ...over
+  })
+
+  it('empty trash that emptied nothing says so: never "Emptied 0 B"', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.gcEmptyTrash.mockResolvedValueOnce(emptyAck({ missing: 2 }))
+    await gc.emptyTrash(['a', 'b'])
+    expect(toast.mock.calls[0][0].title).toBe(
+      'Nothing was emptied: those folders are no longer in the trash'
+    )
+    expect(JSON.stringify(toast.mock.calls[0][0])).not.toContain('Emptied')
+  })
+
+  it.each([
+    [
+      { skipped: 1, unreachable: 1 },
+      "1 folder was left in the trash: its disk is not mounted or can't be read"
+    ],
+    [
+      { skipped: 1, changed: 1 },
+      '1 folder was left in the trash: it is no longer what Harnu moved'
+    ],
+    [
+      { skipped: 1, unverifiable: 1 },
+      '1 folder was left in the trash: Harnu has no exact record of that move'
+    ],
+    [
+      { skipped: 3, changed: 1, unreachable: 2 },
+      "2 folders were left in the trash: their disk is not mounted or can't be read · 1 folder was left in the trash: it is no longer what Harnu moved"
+    ]
+  ])('empty trash skipped (%j) names the real cause', async (over, title) => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.gcEmptyTrash.mockResolvedValueOnce(emptyAck(over))
+    await gc.emptyTrash(['a'])
+    expect(toast.mock.calls[0][0].title).toBe(title)
   })
 
   it('a partial failure toasts a warning and the failed item is back in Needs review with what ran', async () => {
