@@ -32,6 +32,9 @@ function rig(opts: {
   /** Replaces the real reprobe: the refusal the remove still meets AFTER the prep ran. */
   reprobe?: GcOps['reprobe']
   workStamp?: (path: string) => Promise<string | null>
+  /** Replaces the ops the remove runs on (e.g. to make building them throw). */
+  opsFor?: () => GcOps
+  rememberLeftovers?: ManualCleanDeps['rememberLeftovers']
   /** More bundles in the same gather (a second id in the same job). */
   extra?: WorktreeBundle[]
   /** What the git side does: throws a GcStepError to halt at that step. */
@@ -86,7 +89,8 @@ function rig(opts: {
       log.push('dry-reprobe')
       return opts.dry ? opts.dry(b) : { ok: true }
     },
-    opsFor: () => ops,
+    opsFor: opts.opsFor ?? (() => ops),
+    ...(opts.rememberLeftovers ? { rememberLeftovers: opts.rememberLeftovers } : {}),
     freshOrphans: async () => [],
     workStampOf: opts.workStamp ?? (async () => null),
     ...(opts.folderExists ? { folderExists: opts.folderExists } : {}),
@@ -702,6 +706,81 @@ describe('a prep that throws is rolled back and does not stop the job (delta 3)'
     const res = await run(r, before, asked(before, [UNLOCK, CLOSE]))
     expect(res!.error).toMatch(/^prep-failed: probe exploded/)
     expect(r.log.filter((l) => l.startsWith('prepare'))).toEqual([])
+  })
+})
+
+// Delta 4 item 4: nothing after the prep may escape the rollback, and bookkeeping after a SUCCESSFUL
+// remove must not turn it into a failure.
+describe('the steps after the prep are covered too (delta 4)', () => {
+  const UNLOCK: GcPrep = { kind: 'unlock' }
+  const withSettle =
+    (log: string[], settleThrows: boolean): ManualCleanDeps['prepare'] =>
+    async (_p, _b, o) =>
+      o?.dry
+        ? { ok: true }
+        : {
+            ok: true,
+            undo: async () => void log.push('undo'),
+            settle: async () => {
+              log.push('settle')
+              if (settleThrows) throw new Error('journal disk is full')
+            }
+          }
+
+  it('a throw after the prep but before the folder is gone is rolled back and recorded', async () => {
+    const before = locked()
+    const log: string[] = []
+    const r = rig({
+      before,
+      after: unlocked(),
+      prepare: withSettle(log, false),
+      opsFor: () => {
+        throw new Error('ops exploded')
+      }
+    })
+    const res = await run(r, before, asked(before, UNLOCK))
+    expect(log).toEqual(['undo'])
+    expect(res).toMatchObject({ ok: false })
+    expect(res!.error).toMatch(/^prep-failed: ops exploded/)
+  })
+
+  it('a settle that throws after a successful remove does NOT make the item a failure', async () => {
+    const before = locked()
+    const log: string[] = []
+    const r = rig({ before, after: unlocked(), prepare: withSettle(log, true) })
+    const res = await run(r, before, asked(before, UNLOCK))
+    expect(res).toMatchObject({ ok: true })
+    expect(res!.error).toBeUndefined()
+    expect(log).toEqual(['settle'])
+  })
+
+  it('bookkeeping that throws after a successful remove does not either', async () => {
+    const before = locked()
+    const r = rig({
+      before,
+      after: unlocked(),
+      rememberLeftovers: () => {
+        throw new Error('leftovers file locked')
+      }
+    })
+    const res = await run(r, before, asked(before, UNLOCK))
+    expect(res).toMatchObject({ ok: true })
+  })
+
+  it('a settle that throws after the folder was trashed keeps the real halt, not a reprobe refusal', async () => {
+    const before = locked()
+    const log: string[] = []
+    const r = rig({
+      before,
+      after: unlocked(),
+      prepare: withSettle(log, true),
+      cleanGit: async () => {
+        throw new GcStepError('prune', 'prune failed')
+      }
+    })
+    const res = await run(r, before, asked(before, UNLOCK))
+    expect(res).toMatchObject({ ok: false, haltedAt: 'prune' })
+    expect(res!.error).toContain('prune failed')
   })
 })
 
