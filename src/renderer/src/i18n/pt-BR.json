@@ -2745,6 +2745,34 @@
         "sub": "Procurando branches mescladas, sessões paradas e sobras do Docker.",
         "failed": "A primeira varredura não terminou: {error}",
         "hero": "Analisando…"
+      },
+      "guide": {
+        "why": {
+          "none": "{n} não podem ser removidos:",
+          "partial": "Remove {k} · {n} não podem:"
+        },
+        "group": "{count} {cause}",
+        "cause": {
+          "mainCheckout": "checkout principal",
+          "neverClean": "na sua lista de nunca limpar",
+          "kept": "marcado como Manter",
+          "inUse": "em uso",
+          "unsupportedKind": "detached (sem branch)",
+          "sharedStack": "stack Docker compartilhada",
+          "nestedWorktree": "contém outro worktree",
+          "checkFailed": "pasta ilegível",
+          "folderGone": "pasta sumiu",
+          "tipUnknown": "commit desconhecido",
+          "graceNotElapsed": "ainda não ficou quieto o bastante",
+          "pathUnresolved": "caminho não resolvido",
+          "sessionOpen": "sessão aberta",
+          "locked": "bloqueado no git",
+          "cannotUnregister": "o git não consegue desregistrar",
+          "protectedNow": "protegido agora",
+          "stackPresent": "stack Docker rodando",
+          "scanBlind": "escaneado sem o Docker"
+        },
+        "dehydrateWin": "Dehydrate libera {size} e mantém o código"
       }
     }
   },

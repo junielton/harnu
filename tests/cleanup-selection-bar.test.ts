@@ -148,7 +148,7 @@ describe('CleanupSelectionBar — says why Remove is unavailable', () => {
       false
     )
     expect(w.get('[data-testid="sel-dehydrate"]').text()).toBe(
-      'Dehydrate frees 11.7 GB and keeps the code'
+      'Dehydrate frees 11.70 GB and keeps the code'
     )
   })
 

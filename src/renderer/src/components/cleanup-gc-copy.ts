@@ -108,3 +108,8 @@ export function refusalKey(code: RefusalCode): string {
 export function removalKey(reason: RemovalRefusal): string {
   return `cleanup.gc.removal.reason.${reason.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())}`
 }
+
+/** `cleanup.gc.guide.cause.*` key: the short noun phrase a refusal wears in the selection bar. */
+export function guideCauseKey(reason: RemovalRefusal): string {
+  return `cleanup.gc.guide.cause.${reason.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())}`
+}

@@ -1,15 +1,18 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Bookmark, PackageMinus, SquareCheck, Sparkles, Trash2 } from 'lucide-vue-next'
 import Button from './ui/Button.vue'
 import { formatBytes } from './system-monitor-format'
+import { guideCauseKey } from './cleanup-gc-copy'
+import type { RefusalGroup, RemovalSummary } from '../lib/gc-guidance'
 
 /**
  * Multi-select band of the Cleanup takeover (design.md "Workspace GC — unified Cleanup / Page
  * anatomy" #3). Shown only while at least one Needs review block is checked. "Ask for an opinion"
  * asks the read-only advisor about the checked items; it is advisory and never removes anything.
  */
-withDefaults(
+const props = withDefaults(
   defineProps<{
     count: number
     bytes: number
@@ -17,11 +20,25 @@ withDefaults(
     asking?: boolean
     /** At least one selected item can be removed; with none, Remove is disabled and says why. */
     canRemove?: boolean
+    /**
+     * What Remove would take and what it would not, by cause (`removalSummary`). Drives the inline
+     * "why" line, the groups' guided actions and the Dehydrate promotion.
+     */
+    summary?: RemovalSummary | null
   }>(),
-  { canKeep: true, asking: false, canRemove: true }
+  { canKeep: true, asking: false, canRemove: true, summary: null }
 )
-const emit = defineEmits<{ remove: []; dehydrate: []; keep: []; ask: []; clear: [] }>()
+const emit = defineEmits<{
+  remove: []
+  dehydrate: []
+  keep: []
+  ask: []
+  clear: []
+  guide: [group: RefusalGroup]
+}>()
 const { t } = useI18n()
+
+const refusedCount = computed(() => props.summary?.refused.reduce((n, g) => n + g.count, 0) ?? 0)
 </script>
 
 <template>
@@ -57,7 +74,11 @@ const { t } = useI18n()
     </span>
     <Button variant="soft" data-testid="sel-dehydrate" @click="emit('dehydrate')">
       <PackageMinus :size="13" :stroke-width="1.6" class="shrink-0" />
-      {{ t('cleanup.gc.selection.dehydrate') }}
+      {{
+        summary?.dehydrate
+          ? t('cleanup.gc.guide.dehydrateWin', { size: formatBytes(summary.dehydrate.bytes) })
+          : t('cleanup.gc.selection.dehydrate')
+      }}
     </Button>
     <Button v-if="canKeep" variant="ghost" data-testid="sel-keep" @click="emit('keep')">
       <Bookmark :size="13" :stroke-width="1.6" class="shrink-0" />
@@ -85,5 +106,28 @@ const { t } = useI18n()
     >
       {{ t('cleanup.gc.selection.clear') }}
     </button>
+    <!-- Why Remove is unavailable or partial: inline text, one door per cause (design.md "No dead ends"). -->
+    <p
+      v-if="summary && summary.refused.length > 0"
+      class="m-0 basis-full text-caption text-text-3"
+      data-testid="sel-why"
+    >
+      {{
+        summary.removable.length === 0
+          ? t('cleanup.gc.guide.why.none', { n: refusedCount })
+          : t('cleanup.gc.guide.why.partial', { k: summary.removable.length, n: refusedCount })
+      }}
+      <template v-for="(g, i) in summary.refused" :key="g.reason">
+        <span v-if="i > 0" aria-hidden="true"> · </span>
+        <button
+          type="button"
+          class="cursor-pointer text-accent underline-offset-2 hover:underline"
+          :data-testid="`sel-guide-${g.reason}`"
+          @click="emit('guide', g)"
+        >
+          {{ t('cleanup.gc.guide.group', { count: g.count, cause: t(guideCauseKey(g.reason)) }) }}
+        </button>
+      </template>
+    </p>
   </div>
 </template>

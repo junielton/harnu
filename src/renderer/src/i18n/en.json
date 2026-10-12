@@ -2745,6 +2745,34 @@
         "sub": "Looking for merged branches, idle sessions and Docker leftovers.",
         "failed": "The first scan didn't finish: {error}",
         "hero": "Scanning…"
+      },
+      "guide": {
+        "why": {
+          "none": "{n} can't be removed:",
+          "partial": "Removes {k} · {n} can't:"
+        },
+        "group": "{count} {cause}",
+        "cause": {
+          "mainCheckout": "main checkout",
+          "neverClean": "on your never-clean list",
+          "kept": "marked Keep",
+          "inUse": "in use",
+          "unsupportedKind": "detached (no branch)",
+          "sharedStack": "shared Docker stack",
+          "nestedWorktree": "holds another worktree",
+          "checkFailed": "unreadable folder",
+          "folderGone": "folder gone",
+          "tipUnknown": "commit unknown",
+          "graceNotElapsed": "not quiet long enough",
+          "pathUnresolved": "path unresolved",
+          "sessionOpen": "session open",
+          "locked": "locked in git",
+          "cannotUnregister": "git can't unregister it",
+          "protectedNow": "protected now",
+          "stackPresent": "Docker stack running",
+          "scanBlind": "scanned without Docker"
+        },
+        "dehydrateWin": "Dehydrate frees {size} and keeps the code"
       }
     }
   },
