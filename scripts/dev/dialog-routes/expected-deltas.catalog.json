@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "batch": "CATALOG \u2014 the \u00a73.3 deltas. NOT a file to pass to `diff --expected`: copy the entries that apply to YOUR batch's dialogs and narrow `dialog`. The `*` placeholder entries (card.rect.*, body.rect.*, body.scrollHeight, body.clientHeight, card.style.max-height) MUST be narrowed per dialog before use.",
+  "batch": "CATALOG \u2014 the \u00a73.3 deltas. NOT a file to pass to `diff --expected`: copy the entries that apply to YOUR batch's dialogs and narrow `dialog`. EVERY entry with `dialog: \"*\"` is a PLACEHOLDER (the five wildcard properties AND the concrete width/radius ones): copied wholesale it would permit that change on any dialog. Narrow `dialog` to your batch's dialogs before use.",
   "deltas": [
     {
       "dialog": "Card*",
@@ -21,35 +21,35 @@
       "property": "card.style.border-top-left-radius",
       "from": "9px",
       "to": "10px",
-      "reason": "\u00a73.3 radius 9 \u2192 10 (D3)"
+      "reason": "PLACEHOLDER (narrow `dialog` before use) \u2014 \u00a73.3 radius 9 \u2192 10 (D3)"
     },
     {
       "dialog": "*",
       "property": "card.style.width",
       "from": "440px",
       "to": "480px",
-      "reason": "\u00a73.3 width 440 \u2192 480 (D1)"
+      "reason": "PLACEHOLDER (narrow `dialog` before use) \u2014 \u00a73.3 width 440 \u2192 480 (D1)"
     },
     {
       "dialog": "*",
       "property": "card.style.width",
       "from": "460px",
       "to": "480px",
-      "reason": "\u00a73.3 width 460 \u2192 480 (D1)"
+      "reason": "PLACEHOLDER (narrow `dialog` before use) \u2014 \u00a73.3 width 460 \u2192 480 (D1)"
     },
     {
       "dialog": "*",
       "property": "card.style.width",
       "from": "520px",
       "to": "560px",
-      "reason": "\u00a73.3 width 520 \u2192 560 (D1)"
+      "reason": "PLACEHOLDER (narrow `dialog` before use) \u2014 \u00a73.3 width 520 \u2192 560 (D1)"
     },
     {
       "dialog": "*",
       "property": "card.style.width",
       "from": "540px",
       "to": "560px",
-      "reason": "\u00a73.3 width 540 \u2192 560 (D1)"
+      "reason": "PLACEHOLDER (narrow `dialog` before use) \u2014 \u00a73.3 width 540 \u2192 560 (D1)"
     },
     {
       "dialog": "Card*",

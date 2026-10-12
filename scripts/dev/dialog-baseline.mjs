@@ -18,7 +18,7 @@
  *  2. `_electron.launch()`, NO `--remote-debugging-port`. Exactly as tests/e2e/ci/* does it:
  *     `args: ['out/main/index.js', '--user-data-dir=<dir>', '--no-sandbox', '--disable-gpu']`,
  *     `env: { ...process.env, HOME: <dir> }`, cwd = that side's worktree. Each side has its OWN
- *     `<dir>` (`<tmp>/dialog-baseline-<label>`): the single-instance lock is keyed on userData, so
+ *     `<dir>` (`<tmp>/dialog-baseline-<user>/side-<label>`): the single-instance lock is keyed on userData, so
  *     the two sides — and the user's own running Harnu — never collide. A CDP port would flip
  *     IS_DEV (docs/dev/live-verify-second-instance.md) and send the window to :5174, which two
  *     sides cannot both own; with no port each side loads its own `out/renderer`. The two Electron
@@ -26,6 +26,13 @@
  *     by every capture, so run the sides one after the other, never concurrently.
  *  3. Seed: tests/e2e/ci/fixtures/dialog-seed.ts (`seedDialogWorld`) — the long-list repo (67
  *     worktrees, BUG-184's shape), pinned folders, a roadmap, missions. Fixed names, fixed commit dates, no randomness.
+ *     DOCKER IS A STAND-IN: the seed puts a `docker` shim first on the app's PATH
+ *     (`seedLaunchEnv`) that reports an empty, healthy daemon — no containers, no volumes, no
+ *     images, no build cache. Docker rows (volumes, build cache, the Docker card's sizes) are
+ *     therefore NEVER real in this baseline, which is what makes it identical on a laptop and a CI
+ *     runner (a blind or cache-heavy daemon changes what Cleanup offers). It also means
+ *     ContainersRemoveDialog stays unreachable here (it needs a real stack); see
+ *     scripts/dev/dialog-routes/unreachable.mjs for every surface with no route.
  *  4. Per theme × window height (1280×900 and 1280×560, `BrowserWindow.setContentSize`) × route
  *     (scripts/dev/dialog-routes/*, one entry per way of opening a dialog) it records a viewport
  *     PNG and a JSON measurement: rects of card / header / body / footer, computed width,
@@ -66,7 +73,7 @@
  * pasted image) — they stay on unit tests + the human pass.
  */
 import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { tmpdir, userInfo } from 'node:os'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { validateDeltas } from './dialog-routes/deltas.mjs'
@@ -109,6 +116,10 @@ async function capture(argv) {
   const { measureDialog } = await import('./dialog-routes/measure.mjs')
 
   const label = values.label
+  // The label becomes a directory name that is `rm -rf`-ed: no separators, no `..`, no dot-leading names.
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(label) || label.includes('..')) {
+    throw new Error(`--label "${label}" must be a plain name (letters, digits, . _ -), e.g. before`)
+  }
   const outDir = resolve(values.out, label)
   rmSync(outDir, { recursive: true, force: true })
   mkdirSync(outDir, { recursive: true })
@@ -117,8 +128,13 @@ async function capture(argv) {
   // is printed in on-screen hints (`git worktree unlock <path>`), and a longer path wraps to more
   // lines, which moved the bulk dialog's height by 128px between two captures of the same build.
   // The world is rebuilt from scratch on every capture, so run the two sides one after the other.
-  const root = join(tmpdir(), 'dialog-baseline-world')
-  const userData = join(tmpdir(), `dialog-baseline-${label}`)
+  // Scoped to the OS user so two users on one machine never share (or delete) each other's world.
+  const scratch = join(
+    tmpdir(),
+    `dialog-baseline-${userInfo().username.replace(/[^A-Za-z0-9._-]/g, '_')}`
+  )
+  const root = join(scratch, 'world')
+  const userData = join(scratch, `side-${label}`)
   rmSync(root, { recursive: true, force: true })
   rmSync(userData, { recursive: true, force: true })
   const seed = seedDialogWorld({ root, userData })

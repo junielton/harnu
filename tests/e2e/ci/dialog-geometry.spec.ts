@@ -146,23 +146,36 @@ test.describe('dialog geometry invariants (T460 batch 0)', () => {
     }
   }
 
-  test('every route the CI app cannot reach says why, and each is reported, not skipped silently', () => {
-    const unreachable = ROUTES.filter((r: { reach: string }) => r.reach !== 'seed') as {
+  // The six surfaces this net does NOT measure, each reported in the Playwright report with its
+  // reason. Five cannot be opened from a seeded headless app; one is reachable and excluded by design.
+  test('every surface the geometry net does not measure is listed with its reason', () => {
+    const rest = ROUTES.filter((r: { reach: string }) => r.reach !== 'seed') as {
       id: string
       reach: string
       note?: string
     }[]
-    expect(unreachable.map((r) => r.id).sort()).toEqual([
-      'CommandPalette',
+    const notReachable = rest.filter((r) => r.reach !== 'reference')
+    const excluded = rest.filter((r) => r.reach === 'reference')
+    expect(notReachable.map((r) => r.id).sort()).toEqual([
       'ContainersRemoveDialog',
-      'HarnuModExternal'
+      'HarnuModExternal',
+      'ImageLightbox',
+      'McpConfirmOverlay',
+      'ReviewPane.submitConfirm'
     ])
-    for (const r of unreachable) {
-      expect(r.note, `${r.id} (${r.reach}) needs a reason`).toBeTruthy()
-      // Visible in the Playwright report: the geometry of these is NOT proven by this run.
+    expect(excluded.map((r) => r.id)).toEqual(['CommandPalette'])
+    for (const r of rest) expect(r.note, `${r.id} (${r.reach}) needs a reason`).toBeTruthy()
+    // Visible in the Playwright report: the geometry of these is NOT proven by this run.
+    for (const r of notReachable) {
       test
         .info()
         .annotations.push({ type: 'not-reachable-in-ci', description: `${r.id}: ${r.note}` })
+    }
+    // Reachable (Ctrl+K) but keeps its own shell by decision D6 — spec §5.4; never migrated.
+    for (const r of excluded) {
+      test
+        .info()
+        .annotations.push({ type: 'excluded-by-design', description: `${r.id}: ${r.note}` })
     }
   })
 

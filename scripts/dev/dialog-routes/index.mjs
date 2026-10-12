@@ -24,8 +24,14 @@
 import { ROUTES_FOLDER_GLOBAL } from './folder-global.mjs'
 import { ROUTES_CLEANUP } from './cleanup.mjs'
 import { ROUTES_BOARD_MISSIONS } from './board-missions.mjs'
+import { ROUTES_UNREACHABLE } from './unreachable.mjs'
 
-export const ROUTES = [...ROUTES_FOLDER_GLOBAL, ...ROUTES_CLEANUP, ...ROUTES_BOARD_MISSIONS]
+export const ROUTES = [
+  ...ROUTES_FOLDER_GLOBAL,
+  ...ROUTES_CLEANUP,
+  ...ROUTES_BOARD_MISSIONS,
+  ...ROUTES_UNREACHABLE
+]
 
 /**
  * Routes a headless `ci` launch can open with nothing but the seed. (The seed reaches everything

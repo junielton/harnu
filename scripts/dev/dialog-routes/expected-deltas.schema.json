@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "dialog-baseline-expected-deltas",
   "title": "T460 dialog baseline \u2014 expected deltas",
-  "description": "What a migration batch PROMISES will change in the before/after baseline (spec \u00a76.3 step 5, \u00a73.3). `dialog-baseline.mjs diff --expected <file>` exits 1 on any changed property no entry covers, and reports every entry that matched nothing. PLACEHOLDERS: in the catalog, the entries for `card.rect.*`, `body.rect.*`, `body.scrollHeight`, `body.clientHeight` and `card.style.max-height` carry `dialog: \"*\"` only so the catalog stays one flat list \u2014 a batch MUST narrow `dialog` to its own dialogs (and add `from`/`to` where it can) before using them; a wildcard dialog would hide a regression in every other dialog.",
+  "description": "What a migration batch PROMISES will change in the before/after baseline (spec \u00a76.3 step 5, \u00a73.3). `dialog-baseline.mjs diff --expected <file>` exits 1 on any changed property no entry covers, and reports every entry that matched nothing. PLACEHOLDERS: in the catalog, EVERY entry that carries `dialog: \"*\"` (the wildcard properties and the concrete width / radius values alike) is there only so the catalog stays one flat list \u2014 a batch MUST narrow `dialog` to its own dialogs (and add `from`/`to` where it can) before using them; a wildcard dialog would hide a regression in every other dialog.",
   "type": "object",
   "required": ["version", "deltas"],
   "additionalProperties": false,

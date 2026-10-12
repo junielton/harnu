@@ -77,20 +77,31 @@ describe('expected-deltas schema + catalog', () => {
     for (const d of catalog.deltas) expect(d.reason, JSON.stringify(d)).toMatch(/§3\.3|PLACEHOLDER/)
   })
 
-  it('every wildcard-dialog placeholder is marked PLACEHOLDER, and nothing else is', () => {
+  it('EVERY entry with `dialog: "*"` is marked PLACEHOLDER, and no narrowed entry is', () => {
+    for (const d of catalog.deltas) {
+      if (d.dialog === '*') expect(d.reason, `${d.property} ${d.reason}`).toMatch(/^PLACEHOLDER/)
+      else expect(d.reason, `${d.dialog} ${d.property}`).not.toMatch(/^PLACEHOLDER/)
+    }
+  })
+
+  it('the five wildcard properties are all present and all wildcard-dialog entries', () => {
     const wild = catalog.deltas.filter((d) => PLACEHOLDER_PROPERTIES.includes(d.property))
     expect(wild.map((d) => d.property).sort()).toEqual([...PLACEHOLDER_PROPERTIES].sort())
-    for (const d of wild) {
-      expect(d.dialog, d.property).toBe('*')
-      expect(d.reason, d.property).toMatch(/^PLACEHOLDER/)
-    }
-    const others = catalog.deltas.filter((d) => !PLACEHOLDER_PROPERTIES.includes(d.property))
-    for (const d of others) expect(d.reason, d.property).not.toMatch(/^PLACEHOLDER/)
+    for (const d of wild) expect(d.dialog, d.property).toBe('*')
+  })
+
+  it('concrete width / radius values on `*` are placeholders too (copied wholesale they allow any dialog)', () => {
+    const concrete = catalog.deltas.filter(
+      (d) => d.dialog === '*' && /^card\.style\.(width|border-top-left-radius)$/.test(d.property)
+    )
+    expect(concrete.length).toBeGreaterThanOrEqual(5)
+    for (const d of concrete) expect(d.reason).toMatch(/^PLACEHOLDER/)
   })
 
   it('the schema and the catalog header both say placeholders must be narrowed', () => {
     expect(schema.description).toMatch(/MUST narrow/)
-    expect(catalog.batch).toMatch(/narrowed/)
+    expect(catalog.batch).toMatch(/Narrow `dialog`/)
+    expect(catalog.batch).toMatch(/EVERY entry/)
   })
 
   describe('the validator can fail', () => {
