@@ -33,6 +33,7 @@ import {
 } from '../containers/containers-core'
 import {
   buildBundles,
+  composeDefaultProject,
   containerFolderPaths,
   staleReleases,
   withDockerBlind,
@@ -448,7 +449,13 @@ export async function gatherGc(
           dirExists,
           containers,
           networks,
-          orphanVolumes: orphanVolumeList
+          orphanVolumes: orphanVolumeList,
+          // What a live folder owns is never a leftover: the names the main checkout and every
+          // existing worktree pin, and the default name each one runs as.
+          protectedProjects: new Set([
+            ...guards.protectedProjects,
+            ...known.filter((p) => dirExists(p)).map(composeDefaultProject)
+          ])
         })
   const leftoverProjectsAlive =
     networks === null

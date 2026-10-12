@@ -52,6 +52,13 @@ export interface StackLeftoverInput {
   networks: readonly NetworkFact[]
   /** The orphan volumes the housekeeping rules cleared (their own list, their own confirm). */
   orphanVolumes: readonly OrphanVolumeItem[]
+  /**
+   * Compose project names a live folder owns: the names the main checkout and every existing
+   * worktree pin, and the default name each runs as. A remembered project with one of these names
+   * is somebody's stack (`myapp` pinned by the main checkout), not a leftover: none of its
+   * containers or networks is ever offered.
+   */
+  protectedProjects?: ReadonlySet<string>
 }
 
 /**
@@ -63,6 +70,7 @@ export function planStackLeftovers(input: StackLeftoverInput): StackLeftoverItem
   const items: StackLeftoverItem[] = []
   for (const [project, dirs] of input.remembered) {
     if (!SAFE_DOCKER_REF.test(project) || dirs.length === 0) continue
+    if (input.protectedProjects?.has(project)) continue
     if (dirs.some((d) => input.dirExists(d))) continue
     const mine = input.containers.filter((c) => c.labels[COMPOSE_PROJECT_LABEL] === project)
     if (mine.some((c) => ACTIVE_STATES.has(c.state))) continue
