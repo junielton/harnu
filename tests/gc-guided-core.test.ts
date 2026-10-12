@@ -983,6 +983,25 @@ describe('the main checkout excludes the worktrees nested inside it (delta 3)', 
     })
   })
 
+  it('a mount EQUAL to a git-listed worktree root is that worktree’s, not main’s (delta 4)', async () => {
+    const listed = { worktreeRoots: async () => [MAIN, `${MAIN}/packages/wt-c`] }
+    expect(await run([`${MAIN}/packages/wt-c`], listed)).toMatchObject({ ok: true })
+  })
+
+  it('so is a compose working directory equal to it (delta 4)', async () => {
+    const listed = { worktreeRoots: async () => [MAIN, `${MAIN}/packages/wt-c`] }
+    const r = await prepareClean(
+      { kind: 'stop-stack', stackIds: ['infra'] },
+      review({ sharedStackIds: ['infra'] }, 'shared-stack'),
+      deps(fresh(), {
+        ...listed,
+        stacks: [stack('infra', [container('c1', `${MAIN}/packages/wt-c`, [`${WT}/data`])])]
+      }),
+      { dry: true }
+    )
+    expect(r).toMatchObject({ ok: true })
+  })
+
   it('a nested worktree with a live session still keeps the stack off the table', async () => {
     const r = await run([`${MAIN}/.claude/worktrees/a/src`], {
       sessionFolders: async () => [{ folder: `${MAIN}/.claude/worktrees/a`, state: 'live' }]
