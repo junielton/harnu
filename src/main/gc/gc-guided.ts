@@ -63,8 +63,8 @@ export interface GuidedDeps {
   /** Parks (kills, keeps the conversation) one session. */
   park(key: string): void
   listStacks(): Promise<{ stacks: StackGroup[] }>
-  /** Whether a folder has a running Harnu session (`live`) or one parked on disk (`parked`). */
-  folderHasSession(folder: string): Promise<'none' | 'live' | 'parked'>
+  /** Every folder with a running Harnu session (`live`) or one parked on disk (`parked`). */
+  sessionFolders(): Promise<Array<{ folder: string; state: 'live' | 'parked' }>>
   realPaths(paths: string[]): Promise<CanonicalPath>
   docker: {
     start(ids: string[]): Promise<DockerBatchResult>
@@ -193,8 +193,19 @@ async function stackViews(
   const { stacks } = await deps.listStacks()
   const wanted = stacks.filter((s) => ids.includes(s.id))
   const raw = wanted.flatMap((s) => s.containers.flatMap(containerFolderPaths))
-  const canonical = await deps.realPaths([path, b.item.repoPath, ...raw])
+  const sessions = await deps.sessionFolders()
+  const canonical = await deps.realPaths([
+    path,
+    b.item.repoPath,
+    ...raw,
+    ...sessions.map((s) => s.folder)
+  ])
   const root = canonicalPathKey(canonical(path).path, deps.platform)
+  // A live or parked session outside this worktree HOLDS a mount of the stack when its folder lies inside
+  // a mount source or contains one (a session at a worktree's root holds that worktree's `src`).
+  const holders = sessions
+    .map((s) => canonicalPathKey(canonical(s.folder).path, deps.platform))
+    .filter((f) => !isInside(f, root))
   const main = canonicalPathKey(canonical(b.item.repoPath).path, deps.platform)
   return Promise.all(
     wanted.map(async (stack): Promise<StackView> => {
@@ -206,10 +217,8 @@ async function stackViews(
       // of the repo that is not this worktree counts when it lies under the main checkout).
       let blocked: StackView['blocked'] = null
       if (others.some((d) => d === main || isInside(d, main))) blocked = 'main-checkout'
-      else {
-        for (const d of others) {
-          if ((await deps.folderHasSession(d)) !== 'none') blocked = 'in-use-elsewhere'
-        }
+      else if (holders.some((f) => others.some((d) => isInside(f, d) || isInside(d, f)))) {
+        blocked = 'in-use-elsewhere'
       }
       return { stack, dirs, inside: dirs.some((d) => isInside(d, root)), blocked }
     })

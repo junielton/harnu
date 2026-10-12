@@ -95,7 +95,7 @@ function deps(
         { done: names, error: null }
       )
     },
-    folderHasSession: async () => 'none',
+    sessionFolders: async () => [],
     walkForeign: async () => [],
     ownerOf: async () => 'root',
     currentUser: () => 'me',
@@ -355,7 +355,7 @@ describe('prepareClean (AC-B3, AC-B4, AC-B5)', () => {
         review({ sharedStackIds: ['web'] }, 'shared-stack'),
         deps(calls, {
           stacks: [stack('web', [container('c1', ELSE, [`${WT}/data`])])],
-          folderHasSession: async (f) => (f === ELSE ? state : 'none')
+          sessionFolders: async () => [{ folder: ELSE, state }]
         })
       )
       expect(r).toEqual({ ok: false, error: 'stack-used-elsewhere' })
@@ -453,7 +453,7 @@ describe('guidanceFor — why a stack cannot be stopped (delta 1)', () => {
       review({ sharedStackIds: ['web'] }, 'shared-stack'),
       deps(fresh(), {
         stacks: [stack('web', [container('c1', ELSE)])],
-        folderHasSession: async () => 'live'
+        sessionFolders: async () => [{ folder: ELSE, state: 'live' }]
       })
     )
     expect(g.stacks[0].stopBlocked).toBe('in-use-elsewhere')
@@ -687,5 +687,63 @@ describe('userNameOfUid — the owner is a name, not a number (delta 1)', () => 
   it('falls back to the number when nobody has it, or the file is unreadable', () => {
     expect(userNameOfUid(4242, passwd)).toBe('4242')
     expect(userNameOfUid(1000, null)).toBe('1000')
+  })
+})
+
+// Delta 2 item 3: a live or parked session that HOLDS a bind mount of the stack — from inside the
+// mount source or from a folder that contains it — keeps the stack off the table.
+describe('stop-stack refuses a stack a session holds a mount of (delta 2)', () => {
+  const INFRA = '/ws/infra'
+  const A = '/ws/wtA'
+  const B = '/ws/wtB'
+  const infra = () =>
+    stack('infra', [
+      container('c1', INFRA, [`${A}/src`, `${B}/src`, `${WT}/data`]),
+      container('c2', INFRA)
+    ])
+  const run = (sessions: Array<{ folder: string; state: 'live' | 'parked' }>, dry = false) =>
+    prepareClean(
+      { kind: 'stop-stack', stackIds: ['infra'] },
+      review({ sharedStackIds: ['infra'] }, 'shared-stack'),
+      deps(fresh(), { stacks: [infra()], sessionFolders: async () => sessions }),
+      { dry }
+    )
+
+  it('a live session at the root of a worktree whose src is mounted: refused', async () => {
+    expect(await run([{ folder: B, state: 'live' }])).toEqual({
+      ok: false,
+      error: 'stack-used-elsewhere'
+    })
+  })
+  it('a parked one, too', async () => {
+    expect(await run([{ folder: A, state: 'parked' }])).toEqual({
+      ok: false,
+      error: 'stack-used-elsewhere'
+    })
+  })
+  it('a session inside a mount source: refused', async () => {
+    expect(await run([{ folder: `${B}/src/app`, state: 'live' }])).toMatchObject({ ok: false })
+  })
+  it('a session at an ancestor that contains a mount source: refused', async () => {
+    expect(await run([{ folder: '/ws', state: 'live' }])).toMatchObject({ ok: false })
+  })
+  it('a session that has nothing to do with the mounts: allowed', async () => {
+    expect(await run([{ folder: '/ws/elsewhere', state: 'live' }], true)).toMatchObject({
+      ok: true
+    })
+  })
+  it('a session in THIS worktree is not counted: the same action closes it', async () => {
+    expect(await run([{ folder: WT, state: 'live' }], true)).toMatchObject({ ok: true })
+    expect(await run([{ folder: `${WT}/api`, state: 'live' }], true)).toMatchObject({ ok: true })
+  })
+  it('the guidance says why', async () => {
+    const g = await guidanceFor(
+      review({ sharedStackIds: ['infra'] }, 'shared-stack'),
+      deps(fresh(), {
+        stacks: [infra()],
+        sessionFolders: async () => [{ folder: B, state: 'live' }]
+      })
+    )
+    expect(g.stacks[0].stopBlocked).toBe('in-use-elsewhere')
   })
 })

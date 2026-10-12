@@ -74,19 +74,17 @@ export async function defaultGuidedDeps(shellDeps: GcShellDeps): Promise<GuidedD
     ...createGitGuided((repo, args) => shellDeps.executor.git(repo, args)),
     sessionsIn,
     park: (key) => void pty.parkSessionByKey(key),
-    folderHasSession: async (folder) => {
-      const where = await real(folder)
+    sessionFolders: async () => {
       const running = pty.liveSessionKeys()
       const parked = hibernation.hibernatedKeys()
-      let state: 'none' | 'live' | 'parked' = 'none'
+      const out: Array<{ folder: string; state: 'live' | 'parked' }> = []
       for (const f of await fleet.getFleetFolders()) {
-        if (!containersCore.isInside(await real(f.path), where)) continue
-        for (const s of f.sessions) {
-          if (running.has(s.sessionId)) return 'live'
-          if (parked.has(s.sessionId)) state = 'parked'
-        }
+        const live = f.sessions.some((s) => running.has(s.sessionId))
+        const resting = f.sessions.some((s) => parked.has(s.sessionId))
+        if (live || resting)
+          out.push({ folder: await real(f.path), state: live ? 'live' : 'parked' })
       }
-      return state
+      return out
     },
     listStacks: () => shellDeps.listStacks(),
     realPaths: (paths) => shell.resolveRealPaths(paths, (p) => fsp.realpath(p)),
