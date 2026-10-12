@@ -398,7 +398,7 @@ export interface DialogRow {
 }
 
 /** A worktree with no branch: its commit is archived by sha when it is removed. */
-export function isDetachedBlock(b: GcBlock): boolean {
+export function isDetachedBlock(b: Pick<GcBlock, 'bundle'>): boolean {
   return b.bundle?.item.kind === 'detached-worktree'
 }
 
