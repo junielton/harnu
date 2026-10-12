@@ -25,8 +25,10 @@ const props = withDefaults(
      * "why" line, the groups' guided actions and the Dehydrate promotion.
      */
     summary?: RemovalSummary | null
+    /** A guided action that is not a dialog (scan, unmark) is running: the groups wait. */
+    busy?: boolean
   }>(),
-  { canKeep: true, asking: false, canRemove: true, summary: null }
+  { canKeep: true, asking: false, canRemove: true, summary: null, busy: false }
 )
 const emit = defineEmits<{
   remove: []
@@ -111,6 +113,7 @@ const refusedCount = computed(() => props.summary?.refused.reduce((n, g) => n + 
       v-if="summary && summary.refused.length > 0"
       class="m-0 basis-full text-caption text-text-3"
       data-testid="sel-why"
+      :aria-busy="busy ? 'true' : undefined"
     >
       {{
         summary.removable.length === 0
@@ -121,7 +124,8 @@ const refusedCount = computed(() => props.summary?.refused.reduce((n, g) => n + 
         <span v-if="i > 0" aria-hidden="true"> · </span>
         <button
           type="button"
-          class="cursor-pointer text-accent underline-offset-2 hover:underline"
+          class="cursor-pointer text-accent underline-offset-2 hover:underline disabled:cursor-wait disabled:opacity-60"
+          :disabled="busy"
           :data-testid="`sel-guide-${g.reason}`"
           @click="emit('guide', g)"
         >

@@ -2875,7 +2875,8 @@
           "unkeepFailed": "Não deu para tirar a marca Manter",
           "recheckedOk": "Conferido de novo: o Harnu consegue ler agora",
           "recheckedStill": "Conferido de novo: o Harnu ainda não consegue ler",
-          "recheckFailed": "Não deu para conferir de novo"
+          "recheckFailed": "Não deu para conferir de novo",
+          "undo": "Desfazer"
         }
       },
       "recovered": {

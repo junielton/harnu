@@ -2875,7 +2875,8 @@
           "unkeepFailed": "Couldn't remove the Keep mark",
           "recheckedOk": "Checked again: Harnu can read it now",
           "recheckedStill": "Checked again: Harnu still can't read it",
-          "recheckFailed": "Couldn't check again"
+          "recheckFailed": "Couldn't check again",
+          "undo": "Undo"
         }
       },
       "recovered": {

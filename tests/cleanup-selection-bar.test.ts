@@ -157,3 +157,24 @@ describe('CleanupSelectionBar — says why Remove is unavailable', () => {
     expect(w.get('[data-testid="sel-dehydrate"]').text()).toBe('Dehydrate')
   })
 })
+
+describe('CleanupSelectionBar — a group is busy while its action runs (delta 2)', () => {
+  it('disables every group and marks the line busy', () => {
+    const w = mount(CleanupSelectionBar, {
+      props: {
+        count: 2,
+        bytes: 1,
+        busy: true,
+        summary: {
+          removable: [],
+          refused: [{ reason: 'kept', count: 2, ids: ['a', 'b'], action: 'unkeep' }],
+          dehydrate: null
+        } as never
+      },
+      global: { plugins: [i18n] }
+    })
+    const g = w.get('[data-testid="sel-guide-kept"]')
+    expect((g.element as HTMLButtonElement).disabled).toBe(true)
+    expect(w.get('[data-testid="sel-why"]').attributes('aria-busy')).toBe('true')
+  })
+})

@@ -495,13 +495,30 @@ async function scanFromDialog(): Promise<void> {
   guided.value = null
 }
 
+/** One guided action that is not a dialog (scan, unmark) runs at a time; its buttons wait meanwhile. */
+const guideBusy = ref(false)
+async function whileBusy(work: () => Promise<void>): Promise<void> {
+  if (guideBusy.value) return
+  guideBusy.value = true
+  try {
+    await work()
+  } finally {
+    guideBusy.value = false
+  }
+}
+
 async function removeKeepMarks(ids: readonly string[]): Promise<void> {
   try {
     for (const id of ids) await gc.unkeep(id)
     ui.pushToast({
       kind: 'success',
       title: t('cleanup.gc.guided.toast.unkept', ids.length, { named: { n: ids.length } }),
-      timeoutMs: 6000
+      timeoutMs: 8000,
+      // The mark was the operator's own choice: taking it off can be taken back.
+      action: {
+        label: t('cleanup.gc.guided.toast.undo'),
+        handler: () => void keepIds(ids)
+      }
     })
   } catch (e) {
     errorToast(t('cleanup.gc.guided.toast.unkeepFailed'), e)
@@ -519,20 +536,23 @@ function openGuide(action: GuidedAction, ids: readonly string[], reason: Removal
       break
     case 'scan-again':
       if (reason === 'scan-blind') void openGuided('docker-down', ids)
-      else void scanAgain(ids)
+      else void whileBusy(() => scanAgain(ids))
       break
     case 'check-again': {
       // A demoted item remembers its refusal: asking main to forget it and look again is the real check.
       const demoted = ids.filter((id) => model.value?.byId.get(id)?.bundle?.reprobeRefusal)
-      if (demoted.length > 0) for (const id of demoted) void recheck(id)
-      else void scanAgain(ids)
+      if (demoted.length > 0) {
+        void whileBusy(async () => {
+          for (const id of demoted) await recheck(id)
+        })
+      } else void whileBusy(() => scanAgain(ids))
       break
     }
     case 'dehydrate':
       openDehydrate([...ids])
       break
     case 'unkeep':
-      void removeKeepMarks(ids)
+      void whileBusy(() => removeKeepMarks(ids))
       break
     case 'open-settings':
       ui.openSettings('cleanup')
@@ -876,6 +896,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
     :can-keep="canKeepSelection"
     :can-remove="canRemoveSelection"
     :summary="removal"
+    :busy="guideBusy"
     :asking="askingSelection"
     @guide="onGuideGroup"
     @remove="openRemove([...checked])"
@@ -1012,6 +1033,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             @keep="keepIds([$event])"
             @ask-all="askAllOpinions()"
             @remove-safe="removeMarkedSafe()"
+            :guide-busy="guideBusy"
             @guide="(id, action, reason) => openGuide(action, [id], reason)"
           />
         </div>
@@ -1040,6 +1062,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
             @rehydrate="rehydrate($event)"
             @keep="keepIds([$event])"
             @ask="askOpinion([$event])"
+            :guide-busy="guideBusy"
             @guide="(id, action, reason) => openGuide(action, [id], reason)"
           />
         </aside>

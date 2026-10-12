@@ -60,8 +60,16 @@ const props = withDefaults(
     opinion?: GcOpinion | null
     /** A request for this item's opinion is in flight. */
     asking?: boolean
+    /** A guided action that is not a dialog (scan, unmark) is running elsewhere. */
+    guideBusy?: boolean
   }>(),
-  { dehydrateIdleDays: 7, hydrationBusy: null, opinion: null, asking: false }
+  {
+    dehydrateIdleDays: 7,
+    hydrationBusy: null,
+    opinion: null,
+    asking: false,
+    guideBusy: false
+  }
 )
 
 const emit = defineEmits<{
@@ -604,7 +612,7 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
           v-if="guide"
           variant="soft"
           class="!justify-start"
-          :disabled="locked"
+          :disabled="locked || guideBusy"
           data-testid="panel-guide"
           @click="emit('guide', block.id, guide.action, guide.reason)"
         >

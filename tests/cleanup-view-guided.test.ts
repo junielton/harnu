@@ -408,6 +408,80 @@ describe('Docker was not running at scan time (AC-B7)', () => {
   })
 })
 
+describe('removing a Keep mark and scanning again are never silent (delta 2)', () => {
+  const keptSnap = () => {
+    const k1 = wt('k1', 'review', GIB, {}, { reason: reviewReason('dirty') })
+    const k2 = wt('k2', 'review', GIB, {}, { reason: reviewReason('dirty') })
+    const s = snap([k1, k2])
+    s.prefs = { ...s.prefs, keep: { [idOf('k1')]: 'open', [idOf('k2')]: 'open' } } as never
+    return s
+  }
+
+  it('the Keep mark comes off, and an Undo toast puts it back', async () => {
+    const api = install(keptSnap(), {}, {})
+    ;(window as unknown as { api: Record<string, unknown> }).api.gcKeep = ipcFn(async () =>
+      defaultGcPrefs()
+    )
+    await mountView()
+    await tickAll()
+    await click('sel-guide-kept')
+    expect(api.gcUnkeep.mock.calls.map((c) => c[0]).sort()).toEqual([idOf('k1'), idOf('k2')])
+    const undo = useUiStore().toasts.find((t) => t.action)
+    expect(undo?.action?.label).toBe('Undo')
+    undo!.action!.handler()
+    await flushPromises()
+    const keep = (window as unknown as { api: { gcKeep: { mock: { calls: unknown[][] } } } }).api
+      .gcKeep
+    expect(keep.mock.calls.map((c) => c[0]).sort()).toEqual([idOf('k1'), idOf('k2')])
+  })
+
+  it('the group is disabled while the unmark runs, so a second click cannot repeat it', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((res) => (release = res))
+    const api = install(
+      keptSnap(),
+      {},
+      {
+        gcUnkeep: ipcFn(async () => (await gate, defaultGcPrefs())) as never
+      }
+    )
+    await mountView()
+    await tickAll()
+    await click('sel-guide-kept')
+    expect((el('sel-guide-kept') as HTMLButtonElement).disabled).toBe(true)
+    await click('sel-guide-kept')
+    // The first mark is still being taken off; the second click started nothing.
+    expect(api.gcUnkeep).toHaveBeenCalledTimes(1)
+    release()
+    await flushPromises()
+    expect(api.gcUnkeep).toHaveBeenCalledTimes(2) // one each for k1 and k2, no repeats
+    expect(el('sel-guide-kept')).toBeNull() // the marks are gone: nothing refuses these any more
+  })
+
+  it('Scan again is disabled while it runs', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((res) => (release = res))
+    const blind = wt('b1', 'review', GIB, {}, { reason: reviewReason('dirty'), dockerBlind: true })
+    const api = install(
+      snap([blind]),
+      {
+        [idOf('b1')]: guidance(idOf('b1'), { docker: { hint: null } })
+      },
+      {
+        reaperScan: ipcFn(async () => (await gate, { scannedAt: Date.now(), repos: [] })) as never
+      }
+    )
+    await mountView()
+    await tickAll()
+    await click('sel-guide-scan-blind')
+    await click('guided-scan')
+    expect((el('guided-scan') as HTMLButtonElement).disabled).toBe(true)
+    release()
+    await flushPromises()
+    expect(api.reaperScan).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('the panel opens the same guided actions', () => {
   it('Unlock and remove from the panel of one locked worktree', async () => {
     const api = install(snap([locked('l1')]), {

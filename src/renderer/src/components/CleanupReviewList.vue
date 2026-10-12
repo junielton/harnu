@@ -47,6 +47,8 @@ const props = defineProps<{
   isAsking: (id: string) => boolean
   /** How many current opinions say safe: "Remove the {n} marked safe" shows only above zero. */
   safeCount: number
+  /** A guided action that is not a dialog (scan, unmark) is running: the row links wait. */
+  guideBusy?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -236,7 +238,8 @@ function onRowKey(e: KeyboardEvent, id: string): void {
           <button
             v-if="removeBlockedText(b) !== null && guideOf(b)"
             type="button"
-            class="cursor-pointer whitespace-nowrap rounded-sm px-1 text-caption text-accent underline-offset-2 hover:underline"
+            class="cursor-pointer whitespace-nowrap rounded-sm px-1 text-caption text-accent underline-offset-2 hover:underline disabled:cursor-wait disabled:opacity-60"
+            :disabled="guideBusy"
             data-testid="review-guide"
             @click.stop="emit('guide', b.id, guideOf(b)!.action, guideOf(b)!.reason)"
           >

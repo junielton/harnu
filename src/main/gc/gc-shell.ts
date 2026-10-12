@@ -539,14 +539,11 @@ export function createGcOps(deps: GcShellDeps): GcOps {
         // trash, after the stack was stopped and the deps dropped: refuse before any of that.
         // With the unlock assumed (a guided dry run) the lock is waved but the rest of the question is
         // still asked: a missing or ambiguous registration refuses just the same.
-        const unlocking = b.assume?.unlock === true
-        if (
-          !(await deps.executor.canUnregister(
-            item.repoPath,
-            path,
-            unlocking ? { assumeUnlocked: true } : undefined
-          ))
-        ) {
+        const registered =
+          b.assume?.unlock === true
+            ? await deps.executor.canUnregister(item.repoPath, path, { assumeUnlocked: true })
+            : await deps.executor.canUnregister(item.repoPath, path)
+        if (!registered) {
           return { ok: false, reason: 'cannot-unregister' }
         }
         const { stacks } = await stacksNow(b)
