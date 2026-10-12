@@ -5,6 +5,7 @@
 import type { Bucket, ReviewCode, WorktreeBundle } from '../../../main/gc/bundle-core'
 import { removability, type RemovalRefusal } from './gc-removability'
 import { remoteDeleteOffered, type RemotePolicy } from './gc-remote-delete'
+import type { RemoteFacts } from '../../../main/gc/gc-remote-delete'
 import type {
   GcCleanOptions,
   GcDockerCard,
@@ -412,7 +413,9 @@ export function dialogRows(
   model: GcModel,
   ids: readonly string[],
   /** The Reaper's remote-delete protections; unknown (null) offers no remote delete at all. */
-  remotePolicy: RemotePolicy | null = null
+  remotePolicy: RemotePolicy | null = null,
+  /** What the probe found, by block id; a row nobody probed is never offered the remote delete. */
+  remoteFacts: Readonly<Record<string, RemoteFacts>> = {}
 ): DialogRow[] {
   const rows: DialogRow[] = []
   for (const id of ids) {
@@ -442,7 +445,7 @@ export function dialogRows(
       // Any review worktree may hold work no other branch has. The reasons that once read as safe
       // (an idle session, a shared stack) are refused outright now and never reach this dialog.
       risk: b.kind === 'worktree' && b.bucket === 'review',
-      remoteEligible: remoteDeleteOffered(b, remotePolicy)
+      remoteEligible: remoteDeleteOffered(b, remotePolicy, remoteFacts[id])
     })
   }
   return rows

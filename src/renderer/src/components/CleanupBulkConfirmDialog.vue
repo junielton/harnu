@@ -42,10 +42,12 @@ const props = withDefaults(
     mode: 'ready' | 'review'
     /** The facts behind the open dialog moved since it opened: confirm stays disabled until it is reopened. */
     stale?: boolean
+    /** The remote facts are still being asked (the box shows "Checking…" instead of nothing). */
+    remoteChecking?: boolean
     /** The advisor's verdict on a row, when it was asked. Shown with its evidence; never decides. */
     opinionOf?: (id: string) => GcOpinion | null
   }>(),
-  { stale: false, refused: () => [] }
+  { stale: false, refused: () => [], remoteChecking: false }
 )
 const emit = defineEmits<{ confirm: [opts: { deleteRemote: boolean }]; cancel: [] }>()
 const { t, te } = useI18n()
@@ -369,6 +371,14 @@ function onBackdropMousedown(e: MouseEvent): void {
           </div>
         </div>
 
+        <p
+          v-if="remoteChecking && remoteRows.length === 0"
+          class="mx-5 mt-3 text-caption text-text-3"
+          role="status"
+          data-testid="bulk-remote-checking"
+        >
+          {{ t('cleanup.gc.confirm.remote.checking') }}
+        </p>
         <label
           v-if="remoteRows.length > 0"
           class="mx-5 mt-3 flex cursor-pointer items-start gap-2.5"

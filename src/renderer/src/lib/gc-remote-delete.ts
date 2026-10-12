@@ -7,6 +7,7 @@
 //
 // No DOM, no Vue, no i18n.
 
+import type { RemoteFacts } from '../../../main/gc/gc-remote-delete'
 import type { GcBlock } from './gc-model'
 
 export interface RemotePolicy {
@@ -14,8 +15,12 @@ export interface RemotePolicy {
   protectedBranches: readonly string[]
 }
 
-/** True when the block's branch may be deleted on the remote. An unknown policy offers nothing. */
-export function remoteDeleteOffered(b: GcBlock, policy: RemotePolicy | null): boolean {
+/**
+ * Whether the block's branch could be offered at all: a merged PR's strong proof, a branch not on the
+ * protected list, the kill switch off. Cheap, from the snapshot alone: it decides which rows the
+ * dialog asks main to probe (nothing is probed for the others).
+ */
+export function remoteDeleteCandidate(b: GcBlock, policy: RemotePolicy | null): boolean {
   if (!policy || policy.neverDeleteRemote) return false
   const bundle = b.bundle
   if (b.kind !== 'worktree' || !bundle) return false
@@ -23,14 +28,24 @@ export function remoteDeleteOffered(b: GcBlock, policy: RemotePolicy | null): bo
   if (!branch) return false
   if (bundle.fate.fate !== 'merged' || !bundle.fate.strong) return false
   if (policy.protectedBranches.includes(branch)) return false
-  if (bundle.fate.signal !== 'gh-merged') return false
-  const f = bundle.remoteFacts
-  if (!f) return false
+  return bundle.fate.signal === 'gh-merged'
+}
+
+/**
+ * True when the block's branch may be deleted on the remote, given what the probe found. A branch
+ * nobody probed (no facts) is never offered.
+ */
+export function remoteDeleteOffered(
+  b: GcBlock,
+  policy: RemotePolicy | null,
+  facts: RemoteFacts | null | undefined
+): boolean {
+  if (!remoteDeleteCandidate(b, policy) || !facts) return false
   return (
-    f.remote !== null &&
-    f.remoteSha !== null &&
-    f.openPr === false &&
-    f.ghProtected === false &&
-    f.remoteMatchesLocal === true
+    facts.remote !== null &&
+    facts.remoteSha !== null &&
+    facts.openPr === false &&
+    facts.ghProtected === false &&
+    facts.remoteMatchesLocal === true
   )
 }

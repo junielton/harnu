@@ -2439,6 +2439,7 @@
         "close": "Close",
         "branchSub": "branch {branch}",
         "remote": {
+          "checking": "Checking whether the branch can be deleted on GitHub…",
           "label": "Also delete the branch on the remote",
           "hint": "Runs git push --delete. Protected branches and branches that moved on the remote are skipped.",
           "some": "Applies to {n} of {total}"

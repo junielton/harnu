@@ -11,6 +11,7 @@ import type {
   GcOpinionResult,
   GcSnapshot
 } from '../../../main/gc/gc-wire'
+import type { RemoteFacts } from '../../../main/gc/gc-remote-delete'
 import { i18n } from '../i18n'
 import { toIpc } from '../lib/to-ipc'
 import { formatBytes } from '../components/system-monitor-format'
@@ -476,6 +477,18 @@ export const useGcStore = defineStore('gc', () => {
     }
   }
 
+  /**
+   * What GitHub and the remote say about these branches, asked once when the remove dialog opens
+   * (the snapshot never carries it). A failure is "could not tell": the box is simply not offered.
+   */
+  async function probeRemote(ids: string[]): Promise<Record<string, RemoteFacts>> {
+    try {
+      return await window.api.gcRemoteFacts(toIpc(ids))
+    } catch {
+      return {}
+    }
+  }
+
   async function unkeep(id: string): Promise<void> {
     await window.api.gcUnkeep(id)
     await refresh()
@@ -535,6 +548,7 @@ export const useGcStore = defineStore('gc', () => {
     dispose,
     refresh,
     submit,
+    probeRemote,
     keep,
     keepMany,
     recheck,

@@ -27,6 +27,7 @@ import { canDehydrate, canRehydrate } from './cleanup-row'
 import { identText } from './cleanup-ident'
 import {
   captureConfirm,
+  dialogRows,
   withRemoteDelete,
   confirmChanged,
   isRemovable,
@@ -38,6 +39,7 @@ import {
   type CapturedConfirm
 } from '../lib/gc-model'
 import { nextCycleIn } from '../lib/gc-format'
+import { remoteDeleteCandidate } from '../lib/gc-remote-delete'
 import { leftoverVolumeRequest, stackCleanRequest, transcriptCleanRequest } from '../lib/gc-orphans'
 import type { OrphanTranscriptItem, StackLeftoverItem } from '../../../main/gc/gc-wire'
 import { refusalKey, removalKey } from './cleanup-gc-copy'
@@ -237,6 +239,7 @@ function openConfirm(ids: string[], mode: 'ready' | 'review'): void {
   const c = captureConfirm(model.value, ids, mode, reaper.remotePolicy)
   if (c) {
     confirmDialog.value = c
+    void probeRemoteFor(c)
     return
   }
   const refused = refusedRows(model.value, ids, mode)
@@ -251,6 +254,31 @@ function openConfirm(ids: string[], mode: 'ready' | 'review'): void {
         : t('cleanup.gc.confirm.nothingRemovableSeveral'),
     timeoutMs: 8000
   })
+}
+/**
+ * "Also delete the branch on the remote" is decided from what GitHub and the remote say, which costs
+ * network calls, so it is asked here, when the confirm opens, only for the branches it lists and
+ * only those a merged PR vouches for. Until it answers the dialog says it is checking; if the dialog
+ * closed or was replaced meanwhile the answer is dropped.
+ */
+const remoteChecking = ref(false)
+let remoteProbeSeq = 0
+async function probeRemoteFor(c: CapturedConfirm): Promise<void> {
+  const m = model.value
+  if (!m) return
+  const ids = c.ids.filter((id) => {
+    const b = m.byId.get(id)
+    return !!b && remoteDeleteCandidate(b, reaper.remotePolicy)
+  })
+  if (ids.length === 0) return
+  const seq = ++remoteProbeSeq
+  remoteChecking.value = true
+  const facts = await gc.probeRemote(ids)
+  if (seq !== remoteProbeSeq) return
+  remoteChecking.value = false
+  const open = confirmDialog.value
+  if (!open || open.request.ids.join() !== c.request.ids.join()) return
+  confirmDialog.value = { ...c, rows: dialogRows(m, c.ids, reaper.remotePolicy, facts) }
 }
 function openReady(ids?: string[]): void {
   openConfirm(ids ?? model.value?.cleanable.map((b) => b.id) ?? [], 'ready')
@@ -375,6 +403,13 @@ async function confirmTranscripts(): Promise<void> {
     // stops a second click while the request is being handed over.
     busyTranscriptIds.value = busyTranscriptIds.value.filter((x) => !ids.includes(x))
   }
+}
+
+/** Closes the confirm and drops any remote answer still on its way. */
+function closeConfirm(): void {
+  remoteProbeSeq++
+  remoteChecking.value = false
+  confirmDialog.value = null
 }
 
 async function confirmClean(opts: { deleteRemote: boolean }): Promise<void> {
@@ -926,9 +961,10 @@ async function copyRestoreHint(hint: string): Promise<void> {
     :refused="confirmDialog.refused"
     :mode="confirmDialog.mode"
     :stale="confirmStale"
+    :remote-checking="remoteChecking"
     :opinion-of="gc.opinionFor"
     @confirm="confirmClean($event)"
-    @cancel="confirmDialog = null"
+    @cancel="closeConfirm()"
   />
   <DehydrateConfirmDialog v-if="dehydrateItems" :items="dehydrateItems" @close="closeDehydrate()" />
   <CleanupDockerConfirmDialog

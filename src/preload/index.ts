@@ -138,6 +138,7 @@ import type { Tombstone } from '../main/reaper/journal'
 import type { ReaperPrefs } from '../main/reaper/prefs'
 import type { HarvestableAlert } from '../main/reaper/reaper-ipc'
 import type { GcPrefs } from '../main/gc/gc-prefs'
+import type { RemoteFacts } from '../main/gc/gc-remote-delete'
 import type {
   CycleRecord as GcCycleRecord,
   GcCleanAck,
@@ -2560,6 +2561,12 @@ const api = {
   gcUnkeep: (id: string): Promise<GcPrefs> => ipcRenderer.invoke('gc:unkeep', id),
   /** "Check again" on a demoted item: forgets its remembered refusal and reprobes it once (read-only). */
   gcRecheck: (id: string): Promise<GcRecheckResult> => ipcRenderer.invoke('gc:recheck', id),
+  /**
+   * What GitHub and the remote say about these branches, asked when the remove dialog opens (a gather
+   * never asks): by bundle id, for branches a merged PR vouches for. Cached ten minutes in main.
+   */
+  gcRemoteFacts: (ids: string[]): Promise<Record<string, RemoteFacts>> =>
+    ipcRenderer.invoke('gc:remoteFacts', ids),
   gcPrefs: (): Promise<GcPrefs> => ipcRenderer.invoke('gc:prefs:get'),
   /** Whole-object write, clamped in main. `keep` and the acknowledgement are not writable here. */
   gcSetPrefs: (prefs: GcPrefs): Promise<GcPrefs> => ipcRenderer.invoke('gc:prefs:set', prefs),

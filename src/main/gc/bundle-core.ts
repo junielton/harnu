@@ -5,7 +5,6 @@
 
 import { posix, win32 } from 'node:path'
 import { resolveDetachedFate, resolveFate, type FateResult } from './fate-core'
-import type { RemoteFacts } from './gc-remote-delete'
 import type { BranchFacts, ReapItem } from '../reaper/reaper-core'
 import {
   COMPOSE_PROJECT_LABEL,
@@ -125,12 +124,6 @@ export interface BundleFacts {
    * ready. Optional, and absent means unlocked: the reprobe asks git again before any step.
    */
   locked?: boolean
-  /**
-   * What the remote holds of this branch (its upstream remote, the live tip, open pull requests,
-   * GitHub protection), probed by the gather for a strongly merged branch so the remove confirm can
-   * offer "Also delete the branch on the remote" only when it can work. Absent means not probed.
-   */
-  remoteFacts?: RemoteFacts
 }
 
 export interface WorktreeBundle extends BundleFacts {

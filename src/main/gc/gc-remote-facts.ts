@@ -5,6 +5,14 @@
 import type { WorktreeBundle } from './bundle-core'
 import type { RemoteFacts } from './gc-remote-delete'
 
+/** Whether a bundle's branch is a candidate for the remote delete at all: a merged PR's strong proof. */
+export const isRemoteCandidate = (b: WorktreeBundle): boolean =>
+  !!b.item.branch &&
+  b.fate.fate === 'merged' &&
+  b.fate.strong &&
+  b.fate.signal === 'gh-merged' &&
+  (b.bucket === 'ready' || b.bucket === 'review')
+
 export interface RemoteRunners {
   /** `git -C <repo> <args>`; rejects on a non-zero exit (the error carries `code`). */
   git(repo: string, args: string[]): Promise<string>
@@ -53,6 +61,106 @@ export function parseOpenPrs(
   return rows.length >= limit ? null : false
 }
 
+export interface OpenPrRefs {
+  heads: string[]
+  bases: string[]
+}
+
+/** The heads and bases of an open-PR list, or null when it is malformed or a full page (incomplete). */
+export function parseOpenPrRefs(stdout: string, limit = OPEN_PR_LIMIT): OpenPrRefs | null {
+  let rows: unknown
+  try {
+    rows = JSON.parse(stdout)
+  } catch {
+    return null
+  }
+  if (!Array.isArray(rows) || rows.length >= limit) return null
+  const heads: string[] = []
+  const bases: string[] = []
+  for (const r of rows) {
+    const x = r as { headRefName?: unknown; baseRefName?: unknown }
+    if (typeof x?.headRefName !== 'string' || typeof x?.baseRefName !== 'string') return null
+    heads.push(x.headRefName)
+    bases.push(x.baseRefName)
+  }
+  return { heads, bases }
+}
+
+/**
+ * The open pull requests out of the scanner's bulk PR list (its cache entry), when that list can
+ * answer: it is fresh, current-version, not capped, and every open row carries its base. Otherwise
+ * null, and the caller asks `gh` once for the repo.
+ */
+export function openPrRefsFromCache(
+  entry: unknown,
+  isFresh: boolean,
+  version: number
+): OpenPrRefs | null {
+  const e = entry as { version?: unknown; complete?: unknown; prs?: unknown } | null
+  if (!e || typeof e !== 'object' || !isFresh) return null
+  if (e.version !== version || e.complete !== true || !Array.isArray(e.prs)) return null
+  const heads: string[] = []
+  const bases: string[] = []
+  for (const r of e.prs) {
+    const x = r as { state?: unknown; headRefName?: unknown; baseRefName?: unknown }
+    if (x?.state !== 'OPEN') continue
+    if (typeof x.headRefName !== 'string' || typeof x.baseRefName !== 'string') return null
+    heads.push(x.headRefName)
+    bases.push(x.baseRefName)
+  }
+  return { heads, bases }
+}
+
+export interface OpenPrListerDeps {
+  now(): number
+  /** The scanner's list for a repo, or null when it cannot answer. */
+  fromScanner(repo: string): Promise<OpenPrRefs | null>
+  /** `gh pr list --state open … --json headRefName,baseRefName` for a GitHub repo; rejects on failure. */
+  list(repo: string, slug: string): Promise<string>
+  ttlMs?: number
+}
+
+/**
+ * "Does an open pull request use this branch as head or base?", answered from the scanner's bulk
+ * list when it can, else from ONE `gh` list per GitHub repo (kept for ten minutes), never one per
+ * branch. A failure is null ("could not tell") and is retried, not remembered.
+ */
+export function createOpenPrLister(
+  deps: OpenPrListerDeps
+): (repo: string, slug: string, branch: string) => Promise<boolean | null> {
+  const ttl = deps.ttlMs ?? 10 * 60_000
+  const lists = new Map<string, { at: number; refs: Promise<OpenPrRefs | null> }>()
+  const has = (r: OpenPrRefs, branch: string): boolean =>
+    r.heads.includes(branch) || r.bases.includes(branch)
+  return async (repo, slug, branch) => {
+    try {
+      const scanned = await deps.fromScanner(repo)
+      if (scanned) return has(scanned, branch)
+    } catch {
+      // fall through to gh
+    }
+    const known = lists.get(slug)
+    let entry = known && deps.now() - known.at < ttl ? known : undefined
+    if (!entry) {
+      entry = {
+        at: deps.now(),
+        refs: deps
+          .list(repo, slug)
+          .then((out) => parseOpenPrRefs(out))
+          .catch(() => null)
+      }
+      lists.set(slug, entry)
+    }
+    const refs = await entry.refs
+    if (!refs) {
+      // Not remembered: the next ask tries again.
+      if (lists.get(slug) === entry) lists.delete(slug)
+      return null
+    }
+    return has(refs, branch)
+  }
+}
+
 /** GitHub protects the branch: the branch's own flag, or any active rule that applies to it. */
 export function parseProtection(branchFlag: string, rules: string): boolean | null {
   const flag = branchFlag.trim()
@@ -67,6 +175,20 @@ export function parseProtection(branchFlag: string, rules: string): boolean | nu
   return flag === 'true' || list.length > 0
 }
 
+/** The `gh` arguments for the open pull requests of a GitHub repo. */
+export const openPrListArgs = (slug: string): string[] => [
+  'pr',
+  'list',
+  '-R',
+  slug,
+  '--state',
+  'open',
+  '--limit',
+  String(OPEN_PR_LIMIT),
+  '--json',
+  'headRefName,baseRefName'
+]
+
 const encodeRef = (branch: string): string => branch.split('/').map(encodeURIComponent).join('/')
 
 const NONE: RemoteFacts = {
@@ -78,7 +200,16 @@ const NONE: RemoteFacts = {
 }
 
 /** What the remote holds of this bundle's branch right now. Never throws. */
-export async function probeRemoteFacts(b: WorktreeBundle, r: RemoteRunners): Promise<RemoteFacts> {
+export interface ProbeHooks {
+  /** Answers "does an open PR use this branch?" from a shared list; absent means ask `gh` directly. */
+  openPr?(repo: string, slug: string, branch: string): Promise<boolean | null>
+}
+
+export async function probeRemoteFacts(
+  b: WorktreeBundle,
+  r: RemoteRunners,
+  hooks: ProbeHooks = {}
+): Promise<RemoteFacts> {
   const branch = b.item.branch
   const repo = b.item.repoPath
   if (!branch || !SAFE_BRANCH.test(branch) || branch.includes('..')) return { ...NONE }
@@ -136,21 +267,9 @@ export async function probeRemoteFacts(b: WorktreeBundle, r: RemoteRunners): Pro
   if (!gh) return facts
   const slug = `${gh.owner}/${gh.repo}`
   try {
-    facts.openPr = parseOpenPrs(
-      await r.gh(repo, [
-        'pr',
-        'list',
-        '-R',
-        slug,
-        '--state',
-        'open',
-        '--limit',
-        String(OPEN_PR_LIMIT),
-        '--json',
-        'headRefName,baseRefName'
-      ]),
-      branch
-    )
+    facts.openPr = hooks.openPr
+      ? await hooks.openPr(repo, slug, branch)
+      : parseOpenPrs(await r.gh(repo, openPrListArgs(slug)), branch)
   } catch {
     // gh unavailable: unknown
   }

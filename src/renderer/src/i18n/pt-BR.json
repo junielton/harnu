@@ -2439,6 +2439,7 @@
         "close": "Fechar",
         "branchSub": "branch {branch}",
         "remote": {
+          "checking": "Verificando se a branch pode ser excluída no GitHub…",
           "label": "Excluir também a branch no remoto",
           "hint": "Roda git push --delete. Branches protegidas e branches que mudaram no remoto são puladas.",
           "some": "Vale para {n} de {total}"

@@ -69,6 +69,8 @@ import {
   type Opinion as GcOpinion
 } from './opinion-core'
 import { createOpinionShell } from './opinion-shell'
+import { remoteFactsService } from './gc-remote-shell'
+import type { RemoteFacts } from './gc-remote-delete'
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
@@ -79,6 +81,11 @@ export interface GcService {
   unkeep(id: unknown): Promise<GcPrefs>
   /** "Check again" on a demoted item: forgets its remembered refusal and reprobes it once (read-only). */
   recheck(id: unknown): Promise<GcRecheckResult>
+  /**
+   * What GitHub and the remote say about these branches, probed when the remove dialog opens (never
+   * on a gather): by bundle id, only for branches a merged PR vouches for. Shared and cached ten minutes.
+   */
+  remoteFacts(ids: unknown): Promise<Record<string, RemoteFacts>>
   prefs(): GcPrefs
   setPrefs(raw: unknown): Promise<GcPrefs>
   ackFirstReport(): Promise<GcPrefs>
@@ -352,6 +359,14 @@ export async function registerGcHandlers(
         rawId
       )
     },
+    remoteFacts: (rawIds) => {
+      if (!Array.isArray(rawIds))
+        return Promise.reject(new Error('gc:remoteFacts expects an array of ids'))
+      const ids = new Set(rawIds.filter((x): x is string => typeof x === 'string').slice(0, 500))
+      return (gatherer.cached() ? Promise.resolve(gatherer.cached()!) : gather()).then((g) =>
+        remoteFactsService().facts(g.bundles.filter((b) => ids.has(b.item.id)))
+      )
+    },
     prefs: () => livePrefs(),
     setPrefs: async (raw) => {
       const next = mergeIncomingPrefs(livePrefs(), raw)
@@ -385,6 +400,7 @@ export async function registerGcHandlers(
   ipcMain.handle('gc:keep', (_e, id: unknown) => service.keep(id))
   ipcMain.handle('gc:unkeep', (_e, id: unknown) => service.unkeep(id))
   ipcMain.handle('gc:recheck', (_e, id: unknown) => service.recheck(id))
+  ipcMain.handle('gc:remoteFacts', (_e, ids: unknown) => service.remoteFacts(ids))
   ipcMain.handle('gc:prefs:get', () => service.prefs())
   ipcMain.handle('gc:prefs:set', (_e, raw: unknown) => service.setPrefs(raw))
   ipcMain.handle('gc:ackFirstReport', () => service.ackFirstReport())

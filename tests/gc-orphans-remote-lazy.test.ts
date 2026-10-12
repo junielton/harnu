@@ -219,8 +219,8 @@ describe('wiring', () => {
   })
 
   it('the probe is reached from one request channel, registered in main and the preload', () => {
-    expect(read('src/main/gc/gc-ipc.ts')).toMatch(/ipcMain\.handle\('gc:remote-facts'/)
-    expect(read('src/preload/index.ts')).toMatch(/invoke\(\s*'gc:remote-facts'/)
+    expect(read('src/main/gc/gc-ipc.ts')).toMatch(/ipcMain\.handle\('gc:remoteFacts'/)
+    expect(read('src/preload/index.ts')).toMatch(/invoke\(\s*'gc:remoteFacts'/)
   })
 
   it('the screen probes when the confirm opens, not when the snapshot loads', () => {
