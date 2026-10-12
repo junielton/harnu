@@ -7,6 +7,7 @@ import type { MemoryLocationConfig } from './mcp/memory-core'
 import { canonicalWorktreeParentRepo } from './worktree-core'
 import { scanFolders } from './claude-reader'
 import { recordRemovedFolder } from './gc/gc-removed-folders'
+import { fsPathExistence } from './gc/gc-orphan-existence'
 import { migrateFolderDataDirLazily } from './migrations/data-dir-boot'
 
 /**
@@ -1261,11 +1262,23 @@ function isPathInside(child: string, parent: string): boolean {
  */
 export async function detachFromSidebar(
   getWindow: () => BrowserWindow | null,
-  removedPath: string
+  removedPath: string,
+  opts: {
+    /**
+     * Whether the folder was really there right before the removal. A plain `git worktree remove` of a
+     * directory somebody had already deleted exits 0, and that is not a removal by Harnu: pass false and
+     * nothing is recorded. Absent means yes (the engine only detaches after it trashed the folder).
+     */
+    existedBefore?: boolean
+  } = {}
 ): Promise<void> {
-  // Harnu's own record that this folder is gone (proof for the orphan-transcript listing): both
-  // spellings, since transcripts name it as the session saw it.
-  for (const spelling of await spellingsOf(removedPath)) await recordRemovedFolder(spelling)
+  // Harnu's own record that this folder is gone (proof for the orphan-transcript listing): only when it
+  // was there before and is missing now, in both spellings (transcripts name it as the session saw it).
+  if (opts.existedBefore !== false) {
+    for (const spelling of await spellingsOf(removedPath)) {
+      if ((await fsPathExistence(spelling)) === 'missing') await recordRemovedFolder(spelling)
+    }
+  }
   await removeGhostFoldersUnder(getWindow, removedPath)
 }
 

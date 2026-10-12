@@ -1597,8 +1597,11 @@ export async function removeWorktree(
   force: boolean,
   deleteBranch: boolean
 ): Promise<void> {
+  // Whether the folder was really there right before the remove (it is the ledger's precondition).
+  let existedBefore = false
   try {
     const dirExists = await fileExists(worktreePath)
+    existedBefore = dirExists
     const plan = resolveWorktreeRemovalPlan({ dirExists, force })
     if (plan.runPreflight) {
       const [dirty, unpushed] = await Promise.all([
@@ -1645,7 +1648,7 @@ export async function removeWorktree(
   // worktree remove` succeeded) — clean up Harnu's own sidebar bookkeeping so
   // the folder + its sessions don't linger as a ghost. Best-effort: a failed
   // cleanup here must not turn an already-succeeded removal into an error.
-  await detachFromSidebar(getWindowRef, worktreePath).catch((err) =>
+  await detachFromSidebar(getWindowRef, worktreePath, { existedBefore }).catch((err) =>
     console.warn(`[worktree-ipc] ghost-folder cleanup failed for ${worktreePath}:`, err)
   )
 }
