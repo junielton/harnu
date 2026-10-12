@@ -7,7 +7,15 @@ import type { BrowserWindow } from 'electron'
 import type { Dirent } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { join, resolve as resolveLexically } from 'node:path'
-import { GcStepError, isMainCheckoutByPath, type GcOps, type GcStep } from './pipeline-core'
+import {
+  GcStepError,
+  isMainCheckoutByPath,
+  type CleanGitOptions,
+  type CleanGitOutcome,
+  type GcOps,
+  type GcStep
+} from './pipeline-core'
+import { remoteDeleteRefusal, type RemotePolicy } from './gc-remote-delete'
 import {
   AS_GIVEN,
   canonicalPathKey,
@@ -30,6 +38,13 @@ import type { DockerBatchResult } from '../containers/containers-actions'
 
 export interface GcShellDeps {
   executor: ExecutorDeps
+  /**
+   * Whether this run may delete a remote branch at all (AC-D5). Only an operator's own clean sets
+   * it (`withActor`); absent means no, so the autopilot cannot reach a remote by any path.
+   */
+  allowRemoteDelete?: boolean
+  /** The Reaper's remote-delete protections, read when a clean asks for it (never cached). */
+  remotePolicy?(): Promise<RemotePolicy>
   dehydrate: DehydrateDeps
   docker: {
     stop(ids: string[]): Promise<DockerBatchResult>
@@ -451,6 +466,18 @@ export function createGcOps(deps: GcShellDeps): GcOps {
     return [...new Set(out)]
   }
 
+  /** Why a requested remote delete may not run now, or null. Fails closed when the policy cannot be read. */
+  async function remoteRefusal(b: WorktreeBundle): Promise<string | null> {
+    if (deps.allowRemoteDelete !== true) return 'not-allowed-here'
+    try {
+      const policy = await deps.remotePolicy?.()
+      if (!policy) return 'policy-unknown'
+      return remoteDeleteRefusal(b, policy)
+    } catch {
+      return 'policy-unknown'
+    }
+  }
+
   return {
     async reprobe(b: WorktreeBundle) {
       // Whatever an earlier pass vetted for these stacks no longer stands once we re-ask.
@@ -652,16 +679,38 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       }
     },
 
-    async cleanGit(b) {
-      // Remote branch deletion never happens through the cleanup pipeline, so the flag is a
-      // literal rather than anything read from settings or from the item.
-      const result = await cleanItem(b.item, { deleteRemote: false }, deps.executor)
-      if (result.ok) return
-      const failed = result.steps.find((s) => !s.ok)
-      throw new GcStepError(
-        failed ? STEP_OF[failed.id] : 'archive',
-        `${failed?.id ?? 'clean'}: ${failed?.error ?? 'failed'}`
+    async cleanGit(b, opts?: CleanGitOptions): Promise<CleanGitOutcome | void> {
+      // The remote branch goes only when the operator asked, this run is an operator's, and the
+      // protections still allow it right now. Anything else leaves the remote alone and says why.
+      const wants = opts?.deleteRemote === true
+      let refusal: string | null = null
+      if (wants) {
+        refusal = await remoteRefusal(b)
+      }
+      const result = await cleanItem(
+        b.item,
+        { deleteRemote: wants && refusal === null, remoteFailureFatal: false },
+        deps.executor
       )
+      if (!result.ok) {
+        const failed = result.steps.find((s) => !s.ok)
+        throw new GcStepError(
+          failed ? STEP_OF[failed.id] : 'archive',
+          `${failed?.id ?? 'clean'}: ${failed?.error ?? 'failed'}`
+        )
+      }
+      if (!wants) return
+      const branch = b.item.branch ?? ''
+      if (refusal !== null) {
+        return { remoteDelete: { branch, ok: false, error: `refused: ${refusal}` } }
+      }
+      const step = result.steps.find((s) => s.id === 'remote-delete')
+      if (!step || step.skipped) {
+        return { remoteDelete: { branch, ok: false, error: 'refused: no-remote-branch' } }
+      }
+      return step.ok
+        ? { remoteDelete: { branch, ok: true } }
+        : { remoteDelete: { branch, ok: false, error: step.error ?? 'failed' } }
     }
   }
 }
@@ -681,6 +730,7 @@ export async function defaultGcShellDeps(
     import('node:fs/promises')
   ])
   const executor = buildDeps(getWindow)
+  const { readPrefs: readReaperPrefs } = await import('../reaper/prefs')
   // Every set member and the queried path on their real paths, so a session reached
   // through a symlink still counts for the worktree it runs in.
   const presenceOf = async (path: string): Promise<SessionPresence> => {
@@ -700,6 +750,14 @@ export async function defaultGcShellDeps(
   }
   return {
     executor,
+    // Read on every ask, never cached: the kill switch and the protected list may change any time.
+    remotePolicy: async () => {
+      const prefs = await readReaperPrefs()
+      return {
+        neverDeleteRemote: prefs.neverDeleteRemote,
+        protectedBranches: prefs.protectedBranches
+      }
+    },
     // dehydrateItem's own live check (isFolderInUse) matches the exact folder only; a
     // session in WT/api must keep WT's deps too, so it asks the segment-containing presence.
     dehydrate: {

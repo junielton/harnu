@@ -1550,7 +1550,13 @@ describe('cleanGit', () => {
     await createGcOps(h.deps).cleanGit(bundle({ item }))
 
     expect(cleanItem).toHaveBeenCalledTimes(1)
-    expect(cleanItem).toHaveBeenCalledWith(item, { deleteRemote: false }, h.executor)
+    // Unit D adds the opt-in remote delete; unasked it is still literally off, and a remote
+    // failure would never be fatal to the local clean.
+    expect(cleanItem).toHaveBeenCalledWith(
+      item,
+      { deleteRemote: false, remoteFailureFatal: false },
+      h.executor
+    )
     expect(h.gitCalls.some((args) => args.includes('push'))).toBe(false)
     // The local side did run: the branch was deleted, so the spy is not vacuous.
     expect(h.gitCalls).toContainEqual(['branch', '-d', 'feat/PROJ-0000-slug'])

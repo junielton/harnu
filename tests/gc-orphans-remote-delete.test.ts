@@ -80,7 +80,7 @@ describe('parseOptions carries deleteRemote', () => {
 
 describe('a manual clean passes the remote choice only for the ids that asked', () => {
   function rig(bundles: WorktreeBundle[]) {
-    const seen: Array<{ id: string; deleteRemote: boolean | undefined }> = []
+    const seen: Array<{ id: string; deleteRemote: boolean }> = []
     const ops: GcOps = {
       reprobe: async () => ({ ok: true }),
       stopStacks: async () => undefined,
@@ -89,7 +89,7 @@ describe('a manual clean passes the remote choice only for the ids that asked', 
       dropDeps: async () => 0,
       recheck: async () => ({ ok: true }),
       cleanGit: async (b, o) => {
-        seen.push({ id: b.item.id, deleteRemote: o?.deleteRemote })
+        seen.push({ id: b.item.id, deleteRemote: o?.deleteRemote === true })
         return o?.deleteRemote
           ? { remoteDelete: { branch: b.item.branch!, ok: false, error: 'remote said no' } }
           : undefined

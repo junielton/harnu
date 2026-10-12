@@ -61,5 +61,8 @@ export function parseOptions(raw: unknown): GcCleanOptions {
       if (parsed) expected[id] = parsed
     }
   }
-  return { confirmed, expected }
+  const deleteRemote = Array.isArray(r.deleteRemote)
+    ? r.deleteRemote.filter((x): x is string => typeof x === 'string').slice(0, 500)
+    : undefined
+  return { confirmed, expected, ...(deleteRemote ? { deleteRemote } : {}) }
 }

@@ -138,6 +138,13 @@ export interface GcExpected {
 export interface GcCleanOptions {
   confirmed?: string[]
   expected?: Record<string, GcExpected>
+  /**
+   * Ids of the worktrees whose branch the operator also wants deleted on the remote ("Also delete
+   * the branch on the remote", off by default). Main honours it per item only for a branch merged
+   * by strong proof, not protected, with the remote delete switched on; otherwise the item is
+   * cleaned locally and its result says why the remote was left. Absent means none.
+   */
+  deleteRemote?: string[]
 }
 
 /** `gc:clean` acknowledges at once; the work streams on `gc:progress` and ends on `gc:done`. */

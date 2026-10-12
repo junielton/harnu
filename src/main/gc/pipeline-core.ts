@@ -3,6 +3,7 @@
 // unit-tested in tests/gc-pipeline-core.test.ts without touching docker, git or disk.
 
 import { canonicalPathKey, type WorktreeBundle } from './bundle-core'
+import type { RemoteDeleteOutcome } from './gc-remote-delete'
 
 export type GcStep =
   | 'reprobe'
@@ -36,8 +37,20 @@ export interface GcOps {
    * refuses, a scanned one included: by then the run removed every stack it may remove.
    */
   recheck(b: WorktreeBundle): Promise<{ ok: true } | { ok: false; reason: string }>
-  /** archive → trash → prune → branch-delete → detach, remote branch deletion forced off. */
-  cleanGit(b: WorktreeBundle): Promise<void>
+  /**
+   * archive → trash → prune → branch-delete → (remote delete) → detach. The remote branch is only
+   * deleted when `opts.deleteRemote` is set, which only an operator's manual clean ever does; its
+   * outcome comes back instead of failing the clean (AC-D5).
+   */
+  cleanGit(b: WorktreeBundle, opts?: CleanGitOptions): Promise<void | CleanGitOutcome>
+}
+
+export interface CleanGitOptions {
+  deleteRemote?: boolean
+}
+
+export interface CleanGitOutcome {
+  remoteDelete?: RemoteDeleteOutcome
 }
 
 /** A volume the run left in place because a container still mounted it at execution time. */
@@ -54,6 +67,8 @@ export interface GcItemResult {
   freedBytes: number
   /** Present only when non-empty, on success and on a later failure alike. */
   skippedVolumes?: SkippedVolume[]
+  /** Present only when the operator asked for the remote branch to go too: what happened to it. */
+  remoteDelete?: RemoteDeleteOutcome
 }
 
 /**
@@ -119,6 +134,8 @@ function skippedOf(r: unknown): SkippedVolume[] {
 }
 
 export interface GcRunOptions {
+  /** Also delete the branch on the remote. Set only by an operator's manual clean, never by the autopilot. */
+  deleteRemote?: boolean
   removeVolumes: boolean
   /** The operator explicitly chose to clean `review` bundles too. Never set by default. */
   confirmReview?: boolean
@@ -280,13 +297,25 @@ async function runChecked(
   const beforeGit = await rechecked(ops, b)
   if (beforeGit) return fail('archive', beforeGit)
 
+  let remoteDelete: RemoteDeleteOutcome | undefined
   try {
-    await ops.cleanGit(b)
+    const out = await ops.cleanGit(
+      b,
+      opts.deleteRemote === true ? { deleteRemote: true } : undefined
+    )
+    if (out && typeof out === 'object' && out.remoteDelete) remoteDelete = out.remoteDelete
   } catch (err) {
     // The deps are already gone, so their bytes stay counted.
     return fail(err instanceof GcStepError ? err.step : 'archive', messageOf(err))
   }
-  return { id: b.item.id, ok: true, haltedAt: null, freedBytes, ...skipped() }
+  return {
+    id: b.item.id,
+    ok: true,
+    haltedAt: null,
+    freedBytes,
+    ...skipped(),
+    ...(remoteDelete ? { remoteDelete } : {})
+  }
 }
 
 /** The one refusal a recheck may name itself: the operator's confirmed work changed mid-run. */

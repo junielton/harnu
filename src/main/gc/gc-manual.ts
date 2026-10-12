@@ -72,6 +72,8 @@ export function submitManualClean(
   // Only an id the operator named confirms itself; there is no blanket flag.
   const confirmed = new Set(opts.confirmed ?? [])
   const expected = opts.expected ?? {}
+  // Only an id the operator ticked "Also delete the branch on the remote" for (AC-D5).
+  const deleteRemote = new Set(opts.deleteRemote ?? [])
   const queued = deps.queue.busy()
 
   const { jobId } = deps.queue.submit('manual', unique, async (reporter) => {
@@ -116,14 +118,16 @@ export function submitManualClean(
         }
         if ((seen.workStamp ?? null) !== live) return refused(id, WORK_CHANGED)
       }
-      const batchOpts: { removeVolumes: boolean; confirmReview?: boolean } = {
-        // D1: worktree cleanup never removes a volume, ready or reviewed, bulk or single. What
-        // it leaves behind comes back as an orphan-volume review item.
-        removeVolumes: false,
-        // S2's own gate: set ONLY for an item the operator confirmed by id (checked above),
-        // never by the autopilot.
-        confirmReview: forced
-      }
+      const batchOpts: { removeVolumes: boolean; confirmReview?: boolean; deleteRemote: boolean } =
+        {
+          deleteRemote: deleteRemote.has(id),
+          // D1: worktree cleanup never removes a volume, ready or reviewed, bulk or single. What
+          // it leaves behind comes back as an orphan-volume review item.
+          removeVolumes: false,
+          // S2's own gate: set ONLY for an item the operator confirmed by id (checked above),
+          // never by the autopilot.
+          confirmReview: forced
+        }
       // The pipeline only runs ready bundles (or a confirmed review one): a retried item runs as
       // the ready item it still is.
       const runnable: WorktreeBundle = retryAsReady ? { ...b, bucket: 'ready', reason: null } : b
