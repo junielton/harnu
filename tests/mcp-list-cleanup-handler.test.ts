@@ -210,7 +210,9 @@ describe('list_cleanup handler (T445)', () => {
       archives: 0,
       archiveBytes: 0,
       inTrashBytes: 0,
-      inTrashCount: 0
+      inTrashCount: 0,
+      trashUnverifiedBytes: 0,
+      trashUnverifiedCount: 0
     })
   })
 

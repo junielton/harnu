@@ -151,6 +151,8 @@ export interface ArchiveDeleteAck {
   ok: boolean
   /** Refs deleted. */
   deleted: number
+  /** Archives deleted: a tip and its wip are one. This is the number to tell the operator. */
+  archives: number
   /** Refs git refused to delete. */
   failed: number
   /** Archives that no longer match what the operator confirmed, left alone. */
@@ -169,7 +171,7 @@ export async function deleteConfirmedArchives(
 ): Promise<ArchiveDeleteAck> {
   const known = await archiveRepos()
   if (!known.includes(req.repoPath)) {
-    return { ok: false, deleted: 0, failed: 0, changed: [], unknownRepo: true }
+    return { ok: false, deleted: 0, archives: 0, failed: 0, changed: [], unknownRepo: true }
   }
   const fresh = await listRepoArchives(git, req.repoPath)
   const { entries, changed } = confirmedArchives(fresh, req.archives)
@@ -178,6 +180,7 @@ export async function deleteConfirmedArchives(
   return {
     ok: result.failed.length === 0 && changed.length === 0,
     deleted: result.deleted.length,
+    archives: result.archives,
     failed: result.failed.length,
     changed
   }
@@ -199,7 +202,7 @@ export async function expireArchivesNow(
       const expired = expiredArchives(await listRepoArchives(git, repo), keepDays, now)
       if (expired.length === 0) continue
       const r = await deleteArchiveEntries(git, repo, expired)
-      deleted += r.deleted.length
+      deleted += r.archives
       failed += r.failed.length
       sizeCache.delete(repo)
     } catch (err) {

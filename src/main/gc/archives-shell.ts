@@ -68,7 +68,10 @@ export async function archiveBytes(git: GitRunner, repo: string): Promise<number
       `--glob=${ARCHIVE_PREFIX}*`,
       '--not',
       `--exclude=${ARCHIVE_PREFIX}*`,
-      '--all'
+      '--all',
+      // Reflogs and the index keep objects alive too: what they reach is not freed by deleting an archive.
+      '--reflog',
+      '--indexed-objects'
     ])
     const n = Number(out.trim())
     return Number.isFinite(n) && n >= 0 ? n : null
@@ -80,6 +83,8 @@ export async function archiveBytes(git: GitRunner, repo: string): Promise<number
 export interface DeleteArchivesResult {
   /** The refs that were deleted. */
   deleted: string[]
+  /** How many ARCHIVES that is: an entry counts once, when every ref it holds was deleted. */
+  archives: number
   /** The refs that were not, with git's own reason. */
   failed: Array<{ ref: string; error: string }>
 }
@@ -96,12 +101,13 @@ export async function deleteArchiveEntries(
   repo: string,
   entries: readonly ArchiveEntry[]
 ): Promise<DeleteArchivesResult> {
-  const result: DeleteArchivesResult = { deleted: [], failed: [] }
+  const result: DeleteArchivesResult = { deleted: [], archives: 0, failed: [] }
   for (const entry of entries) {
     const targets: Array<{ ref: string | null; sha: string | null }> = [
       { ref: entry.tipRef, sha: entry.tipSha },
       { ref: entry.wipRef, sha: entry.wipSha }
     ]
+    const failedBefore = result.failed.length
     for (const { ref, sha } of targets) {
       if (!ref) continue
       if (!ref.startsWith(ARCHIVE_PREFIX) || !sha) {
@@ -115,6 +121,7 @@ export async function deleteArchiveEntries(
         result.failed.push({ ref, error: messageOf(err) })
       }
     }
+    if (result.failed.length === failedBefore && entry.refs.length > 0) result.archives++
   }
   return result
 }

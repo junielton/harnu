@@ -15,6 +15,7 @@ import {
 } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { promises as fsp } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const h = vi.hoisted(() => ({ userData: '' }))
@@ -210,5 +211,25 @@ describe('clean → list → empty, against a fake trash', () => {
     expect(card.unverifiedBytes).toBe(777)
     await emptyHarnuTrashNow(['anything'], env)
     expect(inTrash(name)).toBe(true)
+  })
+
+  it('a gather does not re-read the journal or any trash directory per entry (delta-1 item 10)', async () => {
+    for (const n of ['wt-a', 'wt-b', 'wt-c']) {
+      await harnuClean(folder(n))
+      await sleep(5)
+    }
+    const readFile = vi.spyOn(fsp, 'readFile')
+    const readdir = vi.spyOn(fsp, 'readdir')
+    await gatherTrash(env)
+    await gatherTrash(env)
+    const journalReads = readFile.mock.calls.filter((c) =>
+      String(c[0]).endsWith('reaper-log.jsonl')
+    )
+    // Read once for both gathers (it only changes by appending), not once per entry or per gather.
+    expect(journalReads.length).toBeLessThanOrEqual(1)
+    // Each entry is checked by its recorded name: no directory of the trash is listed at all.
+    expect(readdir.mock.calls.filter((c) => String(c[0]).startsWith(trash))).toEqual([])
+    readFile.mockRestore()
+    readdir.mockRestore()
   })
 })

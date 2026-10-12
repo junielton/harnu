@@ -8587,16 +8587,16 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
 
 - **States** (the block's whole state machine; the row in Needs review mirrors it):
 
-  | State        | Look                                                                                                                                              |
-  | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | rest         | bucket triple                                                                                                                                     |
-  | hover-linked | `box-shadow: 0 0 0 1px var(--color-text-2)` — the list row under the pointer outlines its block                                                   |
-  | selected     | single block whose panel is open: `border-color: --accent` + `box-shadow: 0 0 0 1px --accent`, **no badge**                                       |
-  | checked      | multi-select: the selected outline **plus** a 16px check badge (top-right, `--accent` fill, `--accent-ink` `check` glyph) — never colour alone    |
-  | planned      | dashed border (first cycle)                                                                                                                       |
-  | busy         | `--accent-soft` fill, `--accent-line` border, a 6px `--accent` dot with a 3px `--accent-soft` halo, and a 2px determinate sliver along the bottom |
-  | done         | `opacity: 0.45`, dashed border, word "freed" + `check`; after `--dur-slow` it is removed and the layout is recomputed                             |
-  | failed       | `--color-red-line` border + `triangle-alert` in `--red`; it is a Needs review block again                                                         |
+  | State        | Look                                                                                                                                                                          |
+  | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | rest         | bucket triple                                                                                                                                                                 |
+  | hover-linked | `box-shadow: 0 0 0 1px var(--color-text-2)` — the list row under the pointer outlines its block                                                                               |
+  | selected     | single block whose panel is open: `border-color: --accent` + `box-shadow: 0 0 0 1px --accent`, **no badge**                                                                   |
+  | checked      | multi-select: the selected outline **plus** a 16px check badge (top-right, `--accent` fill, `--accent-ink` `check` glyph) — never colour alone                                |
+  | planned      | dashed border (first cycle)                                                                                                                                                   |
+  | busy         | `--accent-soft` fill, `--accent-line` border, a 6px `--accent` dot with a 3px `--accent-soft` halo, and a 2px determinate sliver along the bottom                             |
+  | done         | `opacity: 0.45`, dashed border, word "cleaned" + `check` (never "freed": the checkout only moved to the trash); after `--dur-slow` it is removed and the layout is recomputed |
+  | failed       | `--color-red-line` border + `triangle-alert` in `--red`; it is a Needs review block again                                                                                     |
 
   Only **Needs review** blocks are checkable; ready items are cleaned by the hero, In use blocks are never touched.
 
@@ -8909,18 +8909,24 @@ worktree add --detach ../restored-… <sha>`). A row past the retention has a Wa
 
 #### In-the-trash card (unit C, AC-C5)
 
-A one-line strip under the Archives card (`data-testid="trash-card"`, `Trash2` icon): **"{size} in the trash ·
-{n} folders Harnu moved there"** and the Soft button **"Empty what Harnu moved to the trash ({size})"**. Drawn
-only when something is in the trash.
+A strip under the Archives card (`data-testid="trash-card"`, `Trash2` icon). Line one, drawn when Harnu has
+verified entries still in the trash: **"{size} in the trash · {n} folders Harnu moved there"** and the Soft button
+**"Empty what Harnu moved to the trash ({size})"**. Line two, drawn when it has entries it can no longer check:
+11px `--text-3`, **"{size} moved to the trash by Harnu (can't check what's still there)"**, never added to line one.
 
-- It empties **only** the folders Harnu itself moved there (recorded in the journal at trash time and matched
-  against the OS trash's own records), never the user's other trash. The confirm dialog (mode `trash`) says so: **"Empty what
-  Harnu moved to the trash?"**, "This permanently deletes {n} folders Harnu moved to the trash, {size}. Anything
+- It empties **only the exact entries Harnu created**. At trash time Harnu lists the trash before and after the move
+  and records the one new entry with a fingerprint (name, the record's date, inode and mtime, the folder's inode and
+  change time); "Empty" deletes an entry only while all of it still matches. It never matches by original path and
+  time: a folder the user restored and trashed again is theirs. Two new entries at once record nothing.
+- The confirm dialog (`CleanupExhaustDialog.vue`, mode `trash`) **lists the folders** (name, size) and the button
+  sends exactly their ids; anything trashed after the dialog opened is not in the list and stays. Title **"Empty
+  what Harnu moved to the trash?"**, "This permanently deletes {n} folders Harnu moved to the trash, {size}. Anything
   else in your trash stays." Danger **"Empty {size}"**, Cancel first in focus. The autopilot never does this.
-- **Where Harnu cannot tell its items from the user's** (macOS, Windows) the button is not drawn; the strip
-  reads "{size} in the trash · Harnu can't empty it for you here. Open {location} and empty it there." with the
-  OS's location. The figure is then what Harnu moved, not verified against the trash.
-- After it runs: a success toast "Emptied {size} from the trash".
+- Where Harnu cannot empty it safely (macOS, Windows) the button is not drawn; a 11px `--text-3` line says "Harnu
+  can't empty it for you on this system. Open {location} and empty it there." The location is a path, or the
+  translated **Recycle Bin** on Windows (i18n, never a literal).
+- A skipped entry (no longer exactly Harnu's) is said in the toast: "{n} folders were left in the trash: they are
+  no longer what Harnu moved".
 
 #### First-cycle banner
 

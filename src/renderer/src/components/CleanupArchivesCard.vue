@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Archive, ChevronDown, ChevronRight, Copy, GitBranch, Folder } from 'lucide-vue-next'
+import {
+  Archive,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  GitBranch,
+  Folder,
+  Trash2
+} from 'lucide-vue-next'
 import Button from './ui/Button.vue'
 import { formatBytes } from './system-monitor-format'
 import { relativeTime } from '../composables/useRelativeTime'
@@ -66,9 +74,11 @@ function sourceOf(e: ArchiveEntry): {
 }
 
 const dateOf = (e: ArchiveEntry): string =>
-  Number.isFinite(e.at) ? relativeTime(new Date(e.at).toISOString()) : '—'
+  e.ageKnown && Number.isFinite(e.at)
+    ? relativeTime(new Date(e.at).toISOString())
+    : t('cleanup.gc.archives.ageUnknown')
 const absoluteDate = (e: ArchiveEntry): string =>
-  Number.isFinite(e.at) ? new Date(e.at).toLocaleString() : ''
+  e.ageKnown && Number.isFinite(e.at) ? new Date(e.at).toLocaleString() : ''
 
 async function copy(id: string, text: string | null): Promise<void> {
   if (!text) return
@@ -197,6 +207,15 @@ async function copy(id: string, text: string | null): Promise<void> {
               >{{ t('cleanup.gc.archives.expired') }}</span
             >
             <span class="ml-auto flex items-center gap-1.5">
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 rounded-sm border border-border bg-bg px-2 py-0.75 text-eyebrow text-text-3 transition hover:border-red-line hover:text-red"
+                data-testid="archive-delete"
+                @click="emit('delete', g, [e])"
+              >
+                <Trash2 :size="10" :stroke-width="1.7" />
+                {{ t('cleanup.gc.archives.deleteOne') }}
+              </button>
               <button
                 v-if="e.restoreCommand"
                 type="button"

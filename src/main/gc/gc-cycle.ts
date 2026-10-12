@@ -250,13 +250,18 @@ export async function runGcCycle(
     deps.state.lastReportKey = key
   } else {
     deps.state.lastReportKey = null
+    let cleaning: string | null = null
     if (doneCount > 0) {
-      notice = `Cleaned ${doneCount} ${plural(doneCount, 'worktree')}, ${freedSplit(freedBytes, trashedBytes)}`
+      cleaning = `Cleaned ${doneCount} ${plural(doneCount, 'worktree')}, ${freedSplit(freedBytes, trashedBytes)}`
     } else if (reclaimed(housekeeping) > 0) {
-      notice = `Freed ${formatBytes(reclaimed(housekeeping))} of Docker cache`
-    } else if (archivesExpired > 0) {
-      notice = `Deleted ${archivesExpired} archive ${plural(archivesExpired, 'ref')} older than ${prefs.archiveKeepDays} ${plural(prefs.archiveKeepDays, 'day')}. Git reclaims their space on its next gc.`
+      cleaning = `Freed ${formatBytes(reclaimed(housekeeping))} of Docker cache`
     }
+    // Always said when it happened, whatever else the cycle did: refs were deleted.
+    const expiry =
+      archivesExpired > 0
+        ? `Deleted ${archivesExpired} ${plural(archivesExpired, 'archive')} older than ${prefs.archiveKeepDays} ${plural(prefs.archiveKeepDays, 'day')}. Git reclaims their space on its next gc.`
+        : null
+    notice = cleaning && expiry ? `${cleaning}. ${expiry}` : (cleaning ?? expiry)
   }
   if (notice) deps.notify({ title: NOTICE_TITLE, body: notice })
 

@@ -99,10 +99,11 @@ export const useGcStore = defineStore('gc', () => {
   const pendingOpinions = ref<ReadonlySet<string>>(new Set())
 
   /**
-   * The ids the operator confirmed by hand in the last request (Needs review items). Their toast
-   * says "removed", not "ready items cleaned": they were never ready.
+   * The jobs that carry items the operator confirmed by hand (Needs review). Their toast says
+   * "removed", not "ready items cleaned": they were never ready. Keyed by job, so a ready job queued
+   * behind (or ahead of) a review job keeps its own wording.
    */
-  let lastConfirmed: ReadonlySet<string> = new Set()
+  const reviewJobs = new Set<string>()
   let unsubs: Array<() => void> = []
   let initialised = false
   const fadeTimers = new Set<ReturnType<typeof setTimeout>>()
@@ -247,7 +248,7 @@ export const useGcStore = defineStore('gc', () => {
     const { t } = i18n.global
     const ui = useUiStore()
     const warning = s.tone === 'warning'
-    const fromReview = d.results.some((r) => r.ok && lastConfirmed.has(r.id))
+    const fromReview = reviewJobs.has(d.jobId)
     const entry = {
       kind: warning ? ('warning' as const) : ('success' as const),
       title: warning
@@ -368,8 +369,11 @@ export const useGcStore = defineStore('gc', () => {
   function submit(req: CleanRequest): Promise<GcCleanAck | null> {
     if (req.ids.length === 0) return Promise.resolve(null)
     failures.value = new Map() // a new run replaces what the last one left behind
-    lastConfirmed = new Set(req.options.confirmed ?? [])
-    return sendClean(req)
+    const confirmed = (req.options.confirmed ?? []).length > 0
+    return sendClean(req).then((ack) => {
+      if (confirmed) reviewJobs.add(ack.jobId)
+      return ack
+    })
   }
 
   /**
@@ -529,10 +533,12 @@ export const useGcStore = defineStore('gc', () => {
     const ui = useUiStore()
     try {
       const ack = await window.api.gcDeleteArchives(toIpc({ repoPath, archives }))
-      if (ack.deleted > 0) {
+      if (ack.archives > 0) {
         ui.pushToast({
           kind: 'success',
-          title: t('cleanup.gc.archives.toast.deleted', ack.deleted, { named: { n: ack.deleted } }),
+          title: t('cleanup.gc.archives.toast.deleted', ack.archives, {
+            named: { n: ack.archives }
+          }),
           description: t('cleanup.gc.archives.toast.deletedSub'),
           timeoutMs: 6000
         })

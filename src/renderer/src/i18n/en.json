@@ -2277,10 +2277,10 @@
         "blockLabelState": "{name}, {bucket}, {size}, {state}",
         "state": {
           "busy": "cleaning",
-          "done": "freed",
+          "done": "cleaned",
           "failed": "failed"
         },
-        "freed": "freed",
+        "freed": "cleaned",
         "aggregate": "{count} smaller",
         "aggregateLabel": "{count} smaller worktrees, {bucket}, {size}",
         "selectAll": "Select all in repo",
@@ -2798,13 +2798,15 @@
           "trashListLabel": "Folders to delete from the trash"
         },
         "toast": {
-          "deleted": "Deleted {n} archive ref | Deleted {n} archive refs",
+          "deleted": "Deleted {n} archive | Deleted {n} archives",
           "deletedSub": "Git frees their disk space on its next gc.",
           "changed": "{n} archive changed since you looked and was left alone | {n} archives changed since you looked and were left alone",
           "failed": "Could not delete {n} archive ref | Could not delete {n} archive refs",
           "gcDone": "git gc finished in {repo}",
           "gcFailed": "git gc failed in {repo}"
-        }
+        },
+        "ageUnknown": "age unknown",
+        "deleteOne": "Delete…"
       },
       "trash": {
         "title": "In the trash",

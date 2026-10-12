@@ -79,9 +79,12 @@ export interface CleanupTotals {
   archives: number
   /** Estimated bytes only they keep alive (repos git could not size count as 0). */
   archiveBytes: number
-  /** What Harnu moved to the OS trash and that is still there: not freed until it is emptied. */
+  /** What Harnu moved to the OS trash and verified to still be there: not freed until emptied. */
   inTrashBytes: number
   inTrashCount: number
+  /** What it moved but can no longer check (no exact record, or a trash it cannot read): never counted above. */
+  trashUnverifiedBytes: number
+  trashUnverifiedCount: number
 }
 
 /** The `list_cleanup` payload: a {@link GcSnapshot}, redacted and optionally scoped. */
@@ -317,7 +320,12 @@ function totalsOf(
   bundles: readonly ListedBundle[],
   volumes: readonly ListedOrphanVolume[],
   archives: readonly ListedArchiveRepo[],
-  trash: { inTrashBytes: number; inTrashCount: number }
+  trash: {
+    inTrashBytes: number
+    inTrashCount: number
+    unverifiedBytes?: number
+    unverifiedCount?: number
+  }
 ): CleanupTotals {
   const sum = (bucket: Bucket): number =>
     bundles.filter((b) => b.bucket === bucket).reduce((n, b) => n + (b.bytes ?? 0), 0)
@@ -333,7 +341,9 @@ function totalsOf(
     archives: archives.reduce((n, a) => n + a.count, 0),
     archiveBytes: archives.reduce((n, a) => n + (a.bytes ?? 0), 0),
     inTrashBytes: trash.inTrashBytes,
-    inTrashCount: trash.inTrashCount
+    inTrashCount: trash.inTrashCount,
+    trashUnverifiedBytes: trash.unverifiedBytes ?? 0,
+    trashUnverifiedCount: trash.unverifiedCount ?? 0
   }
 }
 

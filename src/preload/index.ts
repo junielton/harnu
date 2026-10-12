@@ -2591,6 +2591,7 @@ const api = {
   }): Promise<{
     ok: boolean
     deleted: number
+    archives: number
     failed: number
     changed: string[]
     unknownRepo?: boolean

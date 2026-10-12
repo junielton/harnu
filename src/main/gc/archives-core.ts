@@ -40,8 +40,14 @@ export interface ArchiveEntry {
    * archive older than that record or one written by something else. Filled by `withFolders`.
    */
   folder: string | null
-  /** When it was archived, in ms; NaN when neither the name nor the commit says. */
+  /** When it was archived, in ms; NaN when the name carries no stamp (it is never guessed). */
   at: number
+  /**
+   * Whether `at` is known: only a stamp in the ref name says when something was archived. A ref
+   * without one (hand-made, or another tool's) is listed with an unknown age and is never expired
+   * automatically; only a manual delete removes it.
+   */
+  ageKnown: boolean
   /** `git branch <name> <sha>`, ready to paste; null when there is no tip to restore. */
   restoreCommand: string | null
   /** A detached worktree on the working-state commit; null when there is no wip. */
@@ -92,7 +98,6 @@ interface Draft {
   branch: string | null
   detached: boolean
   stampAt: number | null
-  fallbackAt: number
   tip: ArchiveRefInfo | null
   wip: ArchiveRefInfo | null
 }
@@ -118,7 +123,8 @@ function finish(repoPath: string, d: Draft): ArchiveEntry {
     branch: d.branch,
     detached: d.detached,
     folder: null,
-    at: d.stampAt ?? d.fallbackAt,
+    at: d.stampAt ?? Number.NaN,
+    ageKnown: d.stampAt !== null,
     restoreCommand,
     wipRestoreCommand: wipSha
       ? `git worktree add --detach ../restored-${wipSha.slice(0, SHORT)} ${wipSha}`
@@ -145,7 +151,6 @@ export function groupArchiveRefs(
         branch: null,
         detached: false,
         stampAt: null,
-        fallbackAt: r.at,
         tip: r,
         wip: null
       })
@@ -161,7 +166,6 @@ export function groupArchiveRefs(
         branch: detached ? null : branch,
         detached,
         stampAt: parseArchiveStamp(stamp),
-        fallbackAt: r.at,
         tip: null,
         wip: null
       }
@@ -182,8 +186,8 @@ const DAY_MS = 86_400_000
 
 /**
  * The entries strictly older than `keepDays`, oldest first. Fails closed: a retention that is
- * not a positive finite number expires nothing, and an entry whose date is unknown is never
- * expired (nothing says how old it is).
+ * not a positive finite number expires nothing, and an entry whose age is unknown (no stamp in its
+ * name) is never expired: nothing says how old it is.
  */
 export function expiredArchives(
   entries: readonly ArchiveEntry[],
@@ -192,7 +196,9 @@ export function expiredArchives(
 ): ArchiveEntry[] {
   if (!Number.isFinite(keepDays) || keepDays <= 0) return []
   const cutoff = now - keepDays * DAY_MS
-  return entries.filter((e) => Number.isFinite(e.at) && e.at < cutoff).sort((a, b) => a.at - b.at)
+  return entries
+    .filter((e) => e.ageKnown && Number.isFinite(e.at) && e.at < cutoff)
+    .sort((a, b) => a.at - b.at)
 }
 
 /**

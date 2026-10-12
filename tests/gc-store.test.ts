@@ -323,9 +323,27 @@ describe('gc store', () => {
       freedBytes: 0,
       trashedBytes: 10
     })
-    api.push.done(done({ jobId: 'j-review', done: 1, total: 1, results: [okResult('r1')] }))
+    api.push.done(
+      done({
+        jobId: 'j-review',
+        done: 1,
+        total: 1,
+        freedBytes: 0,
+        trashedBytes: 10,
+        results: [okResult('r1')]
+      })
+    )
     await vi.runAllTimersAsync()
-    api.push.done(done({ jobId: 'j-ready', done: 1, total: 1, results: [okResult('a')] }))
+    api.push.done(
+      done({
+        jobId: 'j-ready',
+        done: 1,
+        total: 1,
+        freedBytes: 0,
+        trashedBytes: 10,
+        results: [okResult('a')]
+      })
+    )
     await vi.runAllTimersAsync()
     expect(toast.mock.calls[0][0].title).toBe('0 B freed now · 10 B in the trash · 1 item removed')
     expect(toast.mock.calls[1][0].title).toBe(

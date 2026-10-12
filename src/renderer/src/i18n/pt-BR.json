@@ -2277,10 +2277,10 @@
         "blockLabelState": "{name}, {bucket}, {size}, {state}",
         "state": {
           "busy": "limpando",
-          "done": "liberado",
+          "done": "limpo",
           "failed": "falhou"
         },
-        "freed": "liberado",
+        "freed": "limpo",
         "aggregate": "{count} menores",
         "aggregateLabel": "{count} worktrees menores, {bucket}, {size}",
         "selectAll": "Selecionar tudo no repo",
@@ -2798,13 +2798,15 @@
           "trashListLabel": "Pastas a apagar da lixeira"
         },
         "toast": {
-          "deleted": "{n} ref de arquivo apagada | {n} refs de arquivo apagadas",
+          "deleted": "{n} arquivo apagado | {n} arquivos apagados",
           "deletedSub": "O git libera o espaço em disco no próximo gc.",
           "changed": "{n} arquivo mudou desde que você olhou e foi deixado quieto | {n} arquivos mudaram desde que você olhou e foram deixados quietos",
           "failed": "Não foi possível apagar {n} ref de arquivo | Não foi possível apagar {n} refs de arquivo",
           "gcDone": "git gc terminou em {repo}",
           "gcFailed": "git gc falhou em {repo}"
-        }
+        },
+        "ageUnknown": "idade desconhecida",
+        "deleteOne": "Apagar…"
       },
       "trash": {
         "title": "Na lixeira",

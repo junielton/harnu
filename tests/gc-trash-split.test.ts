@@ -340,6 +340,9 @@ describe('list_cleanup carries the matching totals (agent-facing)', () => {
       trash: {
         inTrashBytes: 3 * GB,
         inTrashCount: 2,
+        entries: [],
+        unverifiedBytes: 1 * GB,
+        unverifiedCount: 4,
         canEmpty: true,
         location: '~/.local/share/Trash'
       }
@@ -352,6 +355,9 @@ describe('list_cleanup carries the matching totals (agent-facing)', () => {
     })
     expect(listing.totals.inTrashBytes).toBe(3 * GB)
     expect(listing.totals.inTrashCount).toBe(2)
+    // What Harnu can no longer check is reported apart, never added to what is in the trash.
+    expect(listing.totals.trashUnverifiedBytes).toBe(1 * GB)
+    expect(listing.totals.trashUnverifiedCount).toBe(4)
   })
 
   it('has null/zero totals before any cycle or trashed item, never undefined', () => {

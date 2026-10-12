@@ -1,4 +1,4 @@
-<!-- harnu-features v82 (2026-10-12) -->
+<!-- harnu-features v83 (2026-10-12) -->
 
 # You are running inside Harnu
 
@@ -571,7 +571,8 @@ containers, but only after the operator confirms.)
   `{ ok, scannedAt, bundles: [{ id, folderAlias, branch, bucket, reason, reasonCode, bytes,
 depsBytes, released, agentControllable }], orphanVolumes, archives: [{ repoAlias, count,
 bytes, expired }], totals: { ready, readyBytes, review, reviewBytes, inUse, orphanVolumes,
-orphanVolumeBytes, archives, archiveBytes, inTrashBytes, inTrashCount }, lastCycle: { at,
+orphanVolumeBytes, archives, archiveBytes, inTrashBytes, inTrashCount, trashUnverifiedBytes,
+trashUnverifiedCount }, lastCycle: { at,
 freedNowBytes, trashedBytes } | null, autopilot: { enabled, reportOnly, graceDays },
 nextCycleAt }`. Read `bucket`, `reasonCode` and `reason`; never
   re-derive them. `totals` counts each bucket on its own — `ready` and `readyBytes`, `review`
@@ -580,7 +581,9 @@ nextCycleAt }`. Read `bucket`, `reasonCode` and `reason`; never
   so `lastCycle` splits the last cycle's bytes into `freedNowBytes` (really deleted: dependency
   folders, Docker) and `trashedBytes` (still on disk until the trash is emptied) — never add them
   up and call it freed. `totals.inTrashBytes` / `inTrashCount` is what Harnu moved to the trash
-  and that is still there. `archives` lists each repo's `refs/archive/**` (`count`, `bytes` the
+  and verified to still be there, entry by entry; `trashUnverifiedBytes` / `trashUnverifiedCount` is
+  what it moved but can no longer check (older journal lines, a trash it cannot read, an unmounted
+  disk): report it as "moved by Harnu, can't check", never as space in the trash. `archives` lists each repo's `refs/archive/**` (`count`, `bytes` the
   estimated size only those refs keep alive, `expired` how many are past the operator's retention);
   `totals.archives` / `archiveBytes` sum them. Deleting archives and emptying the trash are the
   operator's confirmed buttons in Cleanup (and the autopilot's expiry of archives, only when the
