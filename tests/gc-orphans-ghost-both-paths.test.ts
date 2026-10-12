@@ -27,6 +27,7 @@ vi.mock('../src/main/claude-reader', () => ({
 
 import { addUserProject, hideUserProject, readUserProjects } from '../src/main/user-projects'
 import { removeWorktree, registerWorktreeHandlers } from '../src/main/worktree-ipc'
+import { readRemovedFolders } from '../src/main/gc/gc-removed-folders'
 
 const git = (cwd: string, ...args: string[]): string =>
   execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim()
@@ -105,5 +106,49 @@ describe('removing a worktree leaves no ghost row under it', () => {
     )
     expect((await readUserProjects()).projects.map((p) => p.path)).toEqual([])
     expect(h.sent.filter((s) => s.channel === 'folders:removed')).toHaveLength(4)
+  })
+})
+
+describe('Harnu records a removal only when it really removed the folder (delta-3 item 4)', () => {
+  let root: string
+  let repo: string
+  let wt: string
+  beforeEach(() => {
+    h.userData = mkdtempSync(path.join(os.tmpdir(), 'harnu-ledger4-ud-'))
+    h.known = []
+    h.sent = []
+    root = mkdtempSync(path.join(os.tmpdir(), 'harnu-ledger4-'))
+    repo = path.join(root, 'repo')
+    mkdirSync(repo)
+    execFileSync('git', ['init', '-q', '-b', 'main', repo])
+    git(repo, 'config', 'user.email', 'a@b.c')
+    git(repo, 'config', 'user.name', 'T')
+    writeFileSync(path.join(repo, 'f.txt'), '1')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-q', '-m', 'one')
+    wt = path.join(root, 'repo-wt')
+    git(repo, 'worktree', 'add', '-q', '-b', 'feat/x', wt)
+    registerWorktreeHandlers(() => null)
+  })
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(h.userData, { recursive: true, force: true })
+  })
+
+  it('a worktree Harnu removed is recorded', async () => {
+    await removeWorktree(repo, wt, true, false)
+    expect(await readRemovedFolders()).toContain(wt)
+  })
+
+  it('a folder somebody had already deleted (git exits 0 on the missing directory) is not recorded as Harnu’s', async () => {
+    rmSync(wt, { recursive: true, force: true })
+    await removeWorktree(repo, wt, true, false)
+    expect(await readRemovedFolders()).not.toContain(wt)
+  })
+
+  it('a folder that still exists is never recorded, whatever the caller says', async () => {
+    const { detachFromSidebar } = await import('../src/main/user-projects')
+    await detachFromSidebar(() => null, wt)
+    expect(await readRemovedFolders()).not.toContain(wt)
   })
 })
