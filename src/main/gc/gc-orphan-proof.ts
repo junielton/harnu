@@ -9,7 +9,7 @@
 // Everything else is "not found", offered apart with a stronger confirm. Pure over the evidence;
 // the evidence is gathered by gc-orphan-shell.
 
-import { posix } from 'node:path'
+import { posix, win32 } from 'node:path'
 import { canonicalPathKey } from './bundle-core'
 
 export interface RemovalEvidence {
@@ -22,6 +22,34 @@ export interface RemovalEvidence {
 }
 
 export type GoneProof = 'removed-by-harnu' | 'git-prunable' | 'under-worktrees-parent'
+
+/** The path module of a platform, so a Windows path is never read as a posix one (and the reverse). */
+const pathModule = (platform: string): typeof posix | typeof win32 =>
+  platform === 'win32' ? win32 : posix
+
+/**
+ * The worktree root of `folder` under `parent`: the folder's first segment below the parent, in the
+ * folder's own spelling and the platform's separators. Handles drive letters and UNC shares, compares
+ * without case on Windows and macOS, and answers null (not provable) for anything it cannot root
+ * reliably: a relative or drive-relative path, another drive or share, or a folder not below the parent.
+ */
+function worktreeRootOf(folder: string, parent: string, platform: string): string | null {
+  const pm = pathModule(platform)
+  if (!pm.isAbsolute(folder) || !pm.isAbsolute(parent)) return null
+  const ci = platform === 'win32' || platform === 'darwin'
+  const same = (a: string, b: string): boolean =>
+    ci ? a.toLowerCase() === b.toLowerCase() : a === b
+  const f = pm.resolve(folder)
+  const p = pm.resolve(parent)
+  const fRoot = pm.parse(f).root
+  if (!fRoot || !same(fRoot, pm.parse(p).root)) return null
+  const segments = (full: string, root: string): string[] =>
+    full.slice(root.length).split(pm.sep).filter(Boolean)
+  const fs = segments(f, fRoot)
+  const ps = segments(p, fRoot)
+  if (fs.length <= ps.length || !ps.every((seg, i) => same(seg, fs[i]!))) return null
+  return pm.join(fRoot, ...fs.slice(0, ps.length + 1))
+}
 
 const isUnder = (key: string, base: string): boolean =>
   base !== '' && (key === base || key.startsWith(base === '/' ? '/' : `${base}/`))
@@ -47,9 +75,9 @@ export function proofRoots(
     const base = k(w.parent)
     if (!w.readable || key === base || !isUnder(key, base)) continue
     // The worktree root is the segment directly under the parent, in the folder's own spelling.
-    const depth = base.split('/').filter(Boolean).length + 1
-    const segments = posix.resolve(folder).split('/').filter(Boolean)
-    out.push({ proof: 'under-worktrees-parent', root: `/${segments.slice(0, depth).join('/')}` })
+    // When it cannot be computed reliably the answer is "not proven", never a guess.
+    const root = worktreeRootOf(folder, w.parent, platform)
+    if (root) out.push({ proof: 'under-worktrees-parent', root })
   }
   return out
 }
@@ -102,12 +130,12 @@ export function worktreeParentsOf(
   repoPaths: readonly string[],
   platform: string = process.platform
 ): string[] {
-  void platform
+  const pm = pathModule(platform)
   const out = new Set<string>()
   for (const repo of repoPaths) {
     const r = repo.replace(/[\\/]+$/, '')
     if (!r) continue
-    out.add(posix.join(r, '.claude', 'worktrees'))
+    out.add(pm.join(r, '.claude', 'worktrees'))
     out.add(`${r}-worktrees`)
   }
   return [...out]
