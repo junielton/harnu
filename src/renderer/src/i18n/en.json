@@ -2903,9 +2903,10 @@
       },
       "recovered": {
         "relocked": "Put the lock back on {path} after Harnu quit mid-action",
-        "restarted": "Started a stack again after Harnu quit mid-action ({path})",
-        "left": "A stack stays stopped: its folder is gone ({path})",
-        "failed": "Couldn't put back what Harnu changed on {path} before it quit"
+        "stackStopped": "Harnu stopped a stack during a clean that didn't finish",
+        "lockSkipped": "Harnu unlocked a worktree during a clean that didn't finish",
+        "containersGone": "Harnu stopped containers during a clean that didn't finish; they are gone now",
+        "failed": "Couldn't do that"
       }
     }
   },

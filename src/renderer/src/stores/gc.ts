@@ -9,6 +9,8 @@ import type {
   GcOpinion,
   GcOpinionDone,
   GcOpinionResult,
+  GcRecoveryAction,
+  GcRecoveryItem,
   GcSnapshot
 } from '../../../main/gc/gc-wire'
 import { i18n } from '../i18n'
@@ -324,29 +326,79 @@ export const useGcStore = defineStore('gc', () => {
     fadeTimers.clear()
   }
 
-  /** What boot recovery put back after Harnu quit mid-action: one Activity entry each (read once). */
-  async function reportRecovered(): Promise<void> {
-    let items: Awaited<ReturnType<typeof window.api.gcRecovered>> = []
+  // ---- the prep journal (see main's gc-prep-journal.ts) ---------------------------------------------
+  const camel = (s: string): string => s.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())
+  /** What still needs the operator: an interrupted stack stop, a lock that was not put back. */
+  const recovery = ref<GcRecoveryItem[]>([])
+  /** Announced in Activity during this session, so a listing that comes back before the ack lands is quiet. */
+  const announcedHere = new Set<string>()
+
+  /**
+   * Lists what main's journal wants the operator to know. Notices stay in `recovery` until answered;
+   * each new one (or put-back report) is announced in Activity ONCE, and main is told, so it is kept
+   * until acknowledged: an acknowledgement that fails is simply tried again at the next listing.
+   */
+  async function loadRecovery(): Promise<void> {
+    let answer: unknown
     try {
-      const answer: unknown = await window.api.gcRecovered()
-      if (!Array.isArray(answer)) return
-      items = answer as typeof items
+      answer = await window.api.gcRecoveryList()
     } catch {
       return
     }
+    if (!Array.isArray(answer)) return
+    const items = answer as GcRecoveryItem[]
+    recovery.value = items.filter((i) => i.state === 'notice')
     const { t } = i18n.global
     const notes = useNotificationsStore()
-    for (const r of items) {
-      if (r.outcome === 'dropped') continue
-      const failed = r.outcome === 'failed'
+    const fresh = items.filter((i) => !i.announced)
+    for (const r of fresh) {
+      if (announcedHere.has(r.id)) continue
+      announcedHere.add(r.id)
+      const resolved = r.state === 'resolved'
       notes.notify({
         ts: Date.now(),
         source: 'app',
-        kind: failed || r.outcome === 'left' ? 'warning' : 'success',
-        title: t(`cleanup.gc.recovered.${r.outcome}`, { path: r.path }),
+        kind: resolved ? 'success' : 'warning',
+        title: t(
+          `cleanup.gc.recovered.${resolved ? 'relocked' : camel(r.notice ?? 'stack-stopped')}`,
+          {
+            path: r.path
+          }
+        ),
         description: r.detail || undefined,
         target: { view: 'cleanup' as const }
       })
+    }
+    if (fresh.length > 0) {
+      try {
+        await window.api.gcRecoveryAck(fresh.map((r) => r.id))
+      } catch {
+        // main still has them as unannounced: the next listing acknowledges again
+      }
+    }
+  }
+
+  /** "Start again" / "Lock again" / "Leave stopped (dismiss)": main does it, the list is read again. */
+  async function answerRecovery(id: string, action: GcRecoveryAction): Promise<void> {
+    try {
+      const r = await window.api.gcRecoveryAct(id, action)
+      if (!r.ok) {
+        useUiStore().pushToast({
+          kind: 'danger',
+          title: i18n.global.t('cleanup.gc.recovered.failed'),
+          description: r.error,
+          timeoutMs: 8000
+        })
+      }
+    } catch (e) {
+      useUiStore().pushToast({
+        kind: 'danger',
+        title: i18n.global.t('cleanup.gc.recovered.failed'),
+        description: e instanceof Error ? e.message : String(e),
+        timeoutMs: 8000
+      })
+    } finally {
+      await loadRecovery()
     }
   }
 
@@ -361,6 +413,8 @@ export const useGcStore = defineStore('gc', () => {
         window.api.onGcDone((d) => void onDone(d)),
         // A cycle finished (autopilot tick or manual): the world changed.
         window.api.onGcCycle(() => void refresh()),
+        // The prep journal changed (boot recovery finished, a notice was answered).
+        window.api.onGcRecoveryChanged(() => void loadRecovery()),
         window.api.onGcOpinionResult(onOpinionResult),
         window.api.onGcOpinionDone(onOpinionDone)
       ]
@@ -370,7 +424,7 @@ export const useGcStore = defineStore('gc', () => {
       ])
       snapshot.value = snap
       jobs.value = attachJobs(jobs.value, live)
-      void reportRecovered()
+      void loadRecovery()
     } catch (e) {
       loadError.value = e instanceof Error ? e.message : String(e)
       initialised = false
@@ -572,6 +626,9 @@ export const useGcStore = defineStore('gc', () => {
     enableAutopilot,
     dismissFirstReport,
     firstReportSnoozed,
+    recovery,
+    loadRecovery,
+    answerRecovery,
     savePrefs,
     pruneSelection,
     opinions,

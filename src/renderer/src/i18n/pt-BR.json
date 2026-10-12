@@ -2903,9 +2903,10 @@
       },
       "recovered": {
         "relocked": "Recoloquei o bloqueio em {path} depois que o Harnu fechou no meio de uma ação",
-        "restarted": "Subi uma stack de novo depois que o Harnu fechou no meio de uma ação ({path})",
-        "left": "Uma stack continua parada: a pasta dela sumiu ({path})",
-        "failed": "Não deu para desfazer o que o Harnu mudou em {path} antes de fechar"
+        "stackStopped": "O Harnu parou uma stack durante uma limpeza que não terminou",
+        "lockSkipped": "O Harnu desbloqueou um worktree durante uma limpeza que não terminou",
+        "containersGone": "O Harnu parou contêineres durante uma limpeza que não terminou; eles não existem mais",
+        "failed": "Não deu para fazer isso"
       }
     }
   },
