@@ -204,7 +204,13 @@ describe('heroState', () => {
       { jobId: 'j', done: 3, total: 12, freedBytes: 1397 * MIB },
       true
     )
-    expect(h).toEqual({ kind: 'running', done: 3, total: 12, freedBytes: 1397 * MIB })
+    expect(h).toEqual({
+      kind: 'running',
+      done: 3,
+      total: 12,
+      freedBytes: 1397 * MIB,
+      trashedBytes: 0
+    })
   })
 
   it('is Soft before the first report is acknowledged (Enable autopilot owns the Primary)', () => {

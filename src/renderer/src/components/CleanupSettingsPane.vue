@@ -39,16 +39,19 @@ const numText = ref<Record<NumField, string>>({
   graceDays: '',
   maxItemsPerCycle: '',
   cacheMaxAgeDays: '',
+  archiveKeepDays: '',
   minAgeDays: ''
 })
 
-type NumField = 'graceDays' | 'maxItemsPerCycle' | 'cacheMaxAgeDays' | 'minAgeDays'
+type NumField =
+  'graceDays' | 'maxItemsPerCycle' | 'cacheMaxAgeDays' | 'archiveKeepDays' | 'minAgeDays'
 
 /** Mirrors the bounds in `src/main/gc/gc-prefs.ts`; main clamps again, so these only keep the UI honest. */
 const BOUNDS: Record<Exclude<NumField, 'minAgeDays'>, { min: number; max: number }> = {
   graceDays: { min: 0, max: 30 },
   maxItemsPerCycle: { min: 1, max: 200 },
-  cacheMaxAgeDays: { min: 1, max: 365 }
+  cacheMaxAgeDays: { min: 1, max: 365 },
+  archiveKeepDays: { min: 1, max: 3650 }
 }
 
 const DEBOUNCE_MS = 400
@@ -67,6 +70,7 @@ function applyGc(p: GcPrefs): void {
   numText.value.graceDays = String(p.graceDays)
   numText.value.maxItemsPerCycle = String(p.maxItemsPerCycle)
   numText.value.cacheMaxAgeDays = String(p.cacheMaxAgeDays)
+  numText.value.archiveKeepDays = String(p.archiveKeepDays)
   // The Reaper timer is the one clock: keep our copy of its prefs from reverting a new interval.
   if (reaper.value) reaper.value = { ...reaper.value, intervalMs: p.intervalMs }
 }
@@ -379,6 +383,57 @@ const EYEBROW_STYLE =
             t('cleanup.gc.settings.daysSuffix')
           }}</span>
         </div>
+      </div>
+    </section>
+
+    <!-- Archives: the refs every removal leaves behind, and when they may go -->
+    <section style="margin-bottom: 16px" data-testid="cleanup-settings-archives">
+      <div class="text-text-3" :style="EYEBROW_STYLE">
+        {{ t('cleanup.gc.settings.archives.eyebrow') }}
+      </div>
+      <p class="text-text-3" style="font-size: 11.5px; line-height: 1.5; margin-bottom: 14px">
+        {{ t('cleanup.gc.settings.archives.intro') }}
+      </p>
+
+      <div class="flex items-start justify-between" style="gap: 12px">
+        <div style="flex: 1; min-width: 0">
+          <div class="text-text-2" style="font-size: 12px">
+            {{ t('cleanup.gc.settings.archives.keepDays.label') }}
+          </div>
+          <SettingHint>{{ t('cleanup.gc.settings.archives.keepDays.hint') }}</SettingHint>
+        </div>
+        <div class="flex items-center" style="gap: 6px">
+          <input
+            type="number"
+            min="1"
+            max="3650"
+            step="1"
+            class="bg-surface text-text"
+            :style="`${INPUT_STYLE}; width: 72px`"
+            data-testid="gc-archive-keep"
+            :value="numText.archiveKeepDays"
+            :aria-label="t('cleanup.gc.settings.archives.keepDays.label')"
+            @input="onNumberInput('archiveKeepDays', ($event.target as HTMLInputElement).value)"
+          />
+          <span class="text-text-3" style="font-size: 11.5px">{{
+            t('cleanup.gc.settings.daysSuffix')
+          }}</span>
+        </div>
+      </div>
+
+      <div class="flex items-start justify-between" style="gap: 12px; margin-top: 14px">
+        <div style="flex: 1; min-width: 0">
+          <div class="text-text-2" style="font-size: 12px">
+            {{ t('cleanup.gc.settings.archives.autoExpire.label') }}
+          </div>
+          <SettingHint>{{ t('cleanup.gc.settings.archives.autoExpire.hint') }}</SettingHint>
+        </div>
+        <ToggleSwitch
+          data-testid="gc-archive-expire"
+          :model-value="prefs.archiveAutoExpire"
+          :aria-label="t('cleanup.gc.settings.archives.autoExpire.label')"
+          @update:model-value="(v: boolean) => saveGc({ archiveAutoExpire: v })"
+        />
       </div>
     </section>
 

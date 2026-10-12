@@ -2390,7 +2390,7 @@
         "empty": "Nothing to clean",
         "blind": "Start Docker to clean these",
         "blindTitle": "Docker wasn't running when Harnu scanned, so it could not see which stacks run from these worktrees. Start Docker, then Scan now.",
-        "chip": "Cleaning {done}/{total} · {size} freed"
+        "chip": "Cleaning {done}/{total} · {freed}"
       },
       "selection": {
         "label": "Selection",
@@ -2513,7 +2513,7 @@
         "auto": "Ready to clean",
         "untouched": "In use",
         "count": "{n} item | {n} items",
-        "lastCycle": "Last cycle {ago}: cleaned {n}, freed {size}",
+        "lastCycle": "Last cycle {ago}: cleaned {n}, {freed}",
         "lastCycleReport": "Last cycle {ago}: found {n} ready item, {size} (report only) | Last cycle {ago}: found {n} ready items, {size} (report only)",
         "review": "Needs review",
         "running": "Cleaning now · {n} left",
@@ -2561,7 +2561,7 @@
         "intro": "Branches and folders that are not worktrees."
       },
       "toast": {
-        "success": "Freed {size} · {count} ready item cleaned | Freed {size} · {count} ready items cleaned",
+        "success": "{freed} · {count} ready item cleaned | {freed} · {count} ready items cleaned",
         "partial": "{cleaned} cleaned · {failed} needs review | {cleaned} cleaned · {failed} need review",
         "review": "Review",
         "viewJournal": "View journal"
@@ -2632,6 +2632,18 @@
           "title": "Docker volumes are always kept",
           "body": "Cleaning a worktree, by hand or automatically, never removes its volumes. Once the worktree is gone they show up in Needs review as orphan volumes, with their size and compose project, and you remove each one yourself.",
           "warning": "A removed volume and its data cannot be restored."
+        },
+        "archives": {
+          "eyebrow": "Archives",
+          "intro": "Every removal keeps the branch tip and the working state in git as archive refs, so nothing is lost. They pile up, so Cleanup can delete the old ones.",
+          "keepDays": {
+            "label": "Keep archives for",
+            "hint": "Archives older than this are offered for deletion in Cleanup, after you confirm the list."
+          },
+          "autoExpire": {
+            "label": "Expire archives automatically",
+            "hint": "When on, the autopilot deletes the archive refs older than the setting above. A deleted archive can't be restored. Git frees the space on its next gc."
+          }
         }
       },
       "recheck": {
@@ -2745,6 +2757,63 @@
         "sub": "Looking for merged branches, idle sessions and Docker leftovers.",
         "failed": "The first scan didn't finish: {error}",
         "hero": "Scanning…"
+      },
+      "freed": {
+        "now": "{freed} freed now",
+        "split": "{freed} freed now · {trash} in the trash"
+      },
+      "archives": {
+        "title": "Archives",
+        "sub": "{n} archive · ≈ {size} | {n} archives · ≈ {size}",
+        "subNoSize": "{n} archive | {n} archives",
+        "toggleRepo": "Show the archives of {repo}",
+        "listLabel": "Archives of {repo}",
+        "detached": "detached",
+        "unknownSource": "unknown source",
+        "tip": "tip {sha}",
+        "wip": "has working state",
+        "wipTitle": "The uncommitted and untracked files of the removed folder are archived too",
+        "expired": "expired",
+        "copyRestore": "Copy restore command",
+        "copyWip": "Copy wip command",
+        "copied": "Copied",
+        "retention": "Archives older than {n} day: {k} | Archives older than {n} days: {k}",
+        "deleteOlder": "Delete {k} older than {n} day… | Delete {k} older than {n} days…",
+        "gcNow": "Run git gc now…",
+        "note": "Deleting archives frees disk space only after git's next gc.",
+        "dialog": {
+          "deleteTitle": "Delete {n} archive? | Delete {n} archives?",
+          "deleteWarn": "This removes the archive refs. The branch tips and working states they keep can no longer be restored from here. Git frees the disk space on its next gc.",
+          "deleteConfirm": "Delete {n} archive | Delete {n} archives",
+          "listLabel": "Archives to delete",
+          "gcTitle": "Run git gc in {repo}?",
+          "gcBody": "It deletes unreachable git objects older than an hour, so the space of deleted archives comes back. Don't run it while another git command is writing in this repository.",
+          "gcConfirm": "Run git gc",
+          "trashTitle": "Empty what Harnu moved to the trash?",
+          "trashBody": "This permanently deletes {n} folder Harnu moved to the trash, {size}. Anything else in your trash stays. | This permanently deletes {n} folders Harnu moved to the trash, {size}. Anything else in your trash stays.",
+          "trashConfirm": "Empty {size}",
+          "cancel": "Cancel",
+          "close": "Close"
+        },
+        "toast": {
+          "deleted": "Deleted {n} archive ref | Deleted {n} archive refs",
+          "deletedSub": "Git frees their disk space on its next gc.",
+          "changed": "{n} archive changed since you looked and was left alone | {n} archives changed since you looked and were left alone",
+          "failed": "Could not delete {n} archive ref | Could not delete {n} archive refs",
+          "gcDone": "git gc finished in {repo}",
+          "gcFailed": "git gc failed in {repo}"
+        }
+      },
+      "trash": {
+        "title": "In the trash",
+        "strip": "{size} in the trash · {n} folder Harnu moved there | {size} in the trash · {n} folders Harnu moved there",
+        "empty": "Empty what Harnu moved to the trash ({size})",
+        "cantEmpty": "Harnu can't empty it for you on this system. Open {location} and empty it there.",
+        "toast": {
+          "emptied": "Emptied {size} from the trash",
+          "failed": "Could not empty {n} folder from the trash | Could not empty {n} folders from the trash",
+          "unsupported": "Harnu can't empty the trash on this system. Open {location}."
+        }
       }
     }
   },

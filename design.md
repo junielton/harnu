@@ -8533,7 +8533,8 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
    word in the bucket ink + a short gloss ("Ready to clean · cleaned by one click or the autopilot",
    "Needs review · your call", "In use · never touched") — then, pushed right in `--text-3`,
    **"Block area = size on disk · click a block to act"**. Without byte sizes the area note is dropped.
-6. **Map** (or the List fallback), then the **Docker card**, then **Needs review**, then **Other leftovers**
+6. **Map** (or the List fallback), then the **Docker card**, then the **Archives card** and the **in-the-trash
+   strip** (both drawn only when there is something to show), then **Needs review**, then **Other leftovers**
    and **Recent cleanups** (the existing tombstone footer).
 
 #### Treemap
@@ -8624,7 +8625,8 @@ much" and "do it" read as one sentence: `Clean 12 ready · 6.0 GB`. It acts on p
 - **Before the first scan:** disabled Soft button reading **"Scanning…"** with a spinning `Loader2` (see "First scan"); never "Nothing to clean", which would claim a result.
 - **First-cycle state:** the hero is a **Soft** button, because "Enable autopilot" owns the one Primary.
 - **Running** (the hero stops being a button): a **progress chip** — Badge Accent triple at button height
-  (28px): static `--accent` dot (6px, 3px `--accent-soft` halo), `Cleaning 3/12 · 1.4 GB freed`, a
+  (28px): static `--accent` dot (6px, 3px `--accent-soft` halo), `Cleaning 3/12 · 1.4 GB freed now · 2.1 GB in the trash`
+  (the **freed split**, see below; `· … in the trash` is left out while nothing has been trashed), a
   **40 × 4px determinate bar** (`--accent` on `--border-2`, radius full) counting items, not bytes.
   `aria-live="polite"`, announcing at most once per finished item. The chip has no control: the engine
   has no cancel, so "Cancel after current" is **not drawn**.
@@ -8856,6 +8858,70 @@ cycle has run, a second 11px `--text-3` line adds "Last cycle reclaimed {size}".
 summary line and in the split bar's Ready segment while `categories.dockerCache` is on. Zero state: real
 zeros when Docker says so.
 
+#### The freed split — "freed now" vs "in the trash" (unit C, AC-C4)
+
+A clean does not delete a checkout: it moves it to the OS trash, so that space is still on disk until
+the trash is emptied. Claiming it as "freed" was a lie, so every surface that reports a clean's bytes
+says **two** numbers, in **one** wording, built from one pair of i18n keys (`cleanup.gc.freed.*`):
+
+- **`{freed} freed now · {trash} in the trash`** — _freed now_ is what was really deleted (the dependency
+  folders, Docker volumes and Docker cache); _in the trash_ is the checkout that only moved.
+  Nothing in the trash: **`{freed} freed now`** alone, never a "0 B in the trash".
+- It appears in exactly four places and they must agree: the **hero's progress chip**, the **success toast**,
+  the split bar's **last-cycle line** (`Last cycle {ago}: cleaned {n}, {freed split}`) and the autopilot's
+  native notification (`Cleaned {n} worktrees, {freed split}`). Same decimal units as every Cleanup size.
+- `list_cleanup` carries the same pair (`lastCycle.freedNowBytes` / `trashedBytes`) plus what Harnu still
+  has in the trash (`totals.inTrashBytes` / `inTrashCount`).
+
+#### Archives card (unit C, AC-C1..C3)
+
+Cleanup cleans its own exhaust. Every removal writes `refs/archive/<branch>/<stamp>/{tip,wip}`; they keep
+git objects alive forever and a `wip` can hold a large binary or an `.env`. Own region under the Docker card
+(`data-testid="archives-card"`, same card anatomy: `border-border`, radius 7, `bg-surface`; header `Archive`
+icon 14px, title **Archives**, an 11px `--text-4` subtitle).
+
+- **Header numbers:** `{n} archives · ≈ {size}` where the size is **estimated** (the objects reachable only
+  from `refs/archive/*`, `git rev-list --objects --disk-usage`) and so always carries a leading **≈**. When git
+  cannot say (older than git 2.31) the size is dropped, never invented. Zero archives: the card is **not
+  drawn**.
+- **One row per repo** (`{repo} · {n} archives · ≈ {size}`), each a disclosure (`aria-expanded`) that lists
+  that repo's archives newest first. Over 8 rows the list scrolls inside (`max-h-64`).
+- **Archive row (browse):** the **source** — the removed folder's name when the journal remembers it, the
+  branch (mono), or the word **detached** — the date (relative, absolute on hover), the **tip SHA** (mono,
+  7 chars, full on hover), a **wip** badge (Default badge, `has working state`) when a working-state ref exists,
+  and a copy button **"Copy restore command"** (`Copy` icon, ghost) that puts `git branch <name> <sha>` on the
+  clipboard (a hostile branch name is shell-quoted); a wip row has a second **"Copy wip command"** (`git
+worktree add --detach ../restored-… <sha>`). A row past the retention has a Warning-text "expired" word.
+- **Retention note** under the header: one 11px `--text-4` line, "Deleting archives frees disk space only after
+  git's next gc. Archives older than {n} days: {k}". Each **repo row** that has archives past the retention
+  carries a Soft button **"Delete {k} older than {n} days…"** that opens the **archive confirm dialog**
+  (`CleanupExhaustDialog.vue`, mode `delete`); a repo row never mixes another repo's refs into its list.
+- **Archive confirm dialog** (`CleanupExhaustDialog.vue`, the Bulk dialog's chrome and focus rules:
+  Esc/Cancel closes, focus starts on **Cancel**, Tab trapped): title **"Delete {k} archives?"**, a note in
+  `--warning-soft` — "This removes the archive refs. The branch tips and working states they keep can no
+  longer be restored from here. Git frees the disk space on its next gc." — then the **list** (one line each:
+  source, date, tip SHA, wip badge; scrolls past 8) and a Danger **"Delete {k} archives"**. It never runs `git gc`.
+- **Run git gc now…** — a ghost link on each repo row, with **its own confirm** (the same dialog, mode `gc`): "Run git gc in {repo}? It deletes unreachable git objects older
+  than an hour, so the deleted archives' space comes back. Don't run it while another git command is
+  writing in this repository." Primary **"Run git gc"**, Cancel first in focus.
+- **Autopilot:** the card says nothing about it; it is the setting **Expire archives automatically** (Settings →
+  Cleanup, off by default). The autopilot never deletes a ref otherwise.
+
+#### In-the-trash card (unit C, AC-C5)
+
+A one-line strip under the Archives card (`data-testid="trash-card"`, `Trash2` icon): **"{size} in the trash ·
+{n} folders Harnu moved there"** and the Soft button **"Empty what Harnu moved to the trash ({size})"**. Drawn
+only when something is in the trash.
+
+- It empties **only** the folders Harnu itself moved there (recorded in the journal at trash time and matched
+  against the OS trash's own records), never the user's other trash. The confirm dialog (mode `trash`) says so: **"Empty what
+  Harnu moved to the trash?"**, "This permanently deletes {n} folders Harnu moved to the trash, {size}. Anything
+  else in your trash stays." Danger **"Empty {size}"**, Cancel first in focus. The autopilot never does this.
+- **Where Harnu cannot tell its items from the user's** (macOS, Windows) the button is not drawn; the strip
+  reads "{size} in the trash · Harnu can't empty it for you here. Open {location} and empty it there." with the
+  OS's location. The figure is then what Harnu moved, not verified against the trash.
+- After it runs: a success toast "Emptied {size} from the trash".
+
 #### First-cycle banner
 
 `.fc`: `--accent-soft` fill, `--accent-line` border, radius 7, `padding: 12px 16px`, `Recycle` icon in
@@ -8914,10 +8980,10 @@ nothing running and nothing needing attention. An optional hover popover (the fo
 
 The documented Toast with an optional description and an action link — no new variant.
 
-| Outcome         | Kind      | Title                                    | Action         |
-| --------------- | --------- | ---------------------------------------- | -------------- |
-| all ok          | `success` | `Freed {size} · {n} ready items cleaned` | "View journal" |
-| partial failure | `warning` | `{n} cleaned · {m} needs review`         | "Review"       |
+| Outcome         | Kind      | Title                                     | Action         |
+| --------------- | --------- | ----------------------------------------- | -------------- |
+| all ok          | `success` | `{freed split} · {n} ready items cleaned` | "View journal" |
+| partial failure | `warning` | `{n} cleaned · {m} needs review`          | "Review"       |
 
 The count behind **attention** is the items that need operator action: a failed item, or a refusal the
 operator did not choose. A refusal that is the operator's own setting (`kept`, `never-clean`) is not counted.
@@ -8979,6 +9045,10 @@ control-right rows with `SettingHint`). Groups, 16px apart, every control writin
   age** (days); and, instead of a volumes switch, a `--warning-soft` note: **Docker volumes are always
   kept** — cleaning a worktree never removes its volumes; they show up in Needs review as orphan volumes
   and each one is removed by hand — with "a removed volume cannot be restored" in `--warning`.
+- **Archives** — **Keep archives for** (days, default 30; `archiveKeepDays`) and **Expire archives
+  automatically** (toggle, off by default; `archiveAutoExpire`): when on, and only then, the autopilot deletes
+  the archive refs older than the retention (never `git gc`). The hint says the refs go, the git objects go
+  on git's next gc, and that a deleted archive cannot be restored.
 - **Never clean** — a list of absolute repo or worktree paths (`neverClean`), add/remove.
 - **Scan** (Reaper-only, kept): scan in the background, notify, never delete remote branches, protected
   branches, minimum age. These are not GC prefs and are not duplicated anywhere.
@@ -8990,7 +9060,8 @@ that belong to no worktree) and states that worktree-bound stacks are cleaned by
 
 `CleanupView.vue` (shell) · `CleanupTreemap.vue` · `CleanupBlockPanel.vue` · `CleanupHeroButton.vue` ·
 `CleanupSelectionBar.vue` · `CleanupDockerCard.vue` · `CleanupReviewList.vue` · `CleanupListView.vue` ·
-`CleanupSplitBar.vue` · `CleanupLegend.vue` · `CleanupFirstCycleBanner.vue` · `CleanupBulkConfirmDialog.vue` · `CleanupOtherItems.vue` ·
+`CleanupSplitBar.vue` · `CleanupLegend.vue` · `CleanupArchivesCard.vue` · `CleanupExhaustDialog.vue` ·
+`CleanupTrashCard.vue` · `CleanupFirstCycleBanner.vue` · `CleanupBulkConfirmDialog.vue` · `CleanupOtherItems.vue` ·
 `CleanupOpinionChip.vue` · `lib/gc-opinion.ts` · `stores/gc.ts` · `lib/gc-treemap.ts` · `lib/gc-model.ts` · `lib/gc-jobs.ts`.
 
 ### Containers takeover (ContainersView.vue)

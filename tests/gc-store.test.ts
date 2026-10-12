@@ -203,7 +203,13 @@ describe('gc store', () => {
     const api = installApi(snap(), [running])
     const gc = useGcStore()
     await gc.init()
-    expect(gc.hero).toEqual({ kind: 'running', done: 3, total: 12, freedBytes: 1397 * MIB })
+    expect(gc.hero).toEqual({
+      kind: 'running',
+      done: 3,
+      total: 12,
+      freedBytes: 1397 * MIB,
+      trashedBytes: 0
+    })
     api.push.progress(progress({ jobId: 'j9', done: 4, total: 12, freedBytes: 1500 * MIB }))
     expect(gc.hero).toMatchObject({ done: 4 })
     expect(gc.pill).toEqual({ kind: 'running', done: 4, total: 12 })

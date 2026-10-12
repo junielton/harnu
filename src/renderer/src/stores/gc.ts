@@ -14,6 +14,7 @@ import type {
 import { i18n } from '../i18n'
 import { toIpc } from '../lib/to-ipc'
 import { formatBytes } from '../components/system-monitor-format'
+import { freedText } from '../lib/gc-freed'
 import { refusalKey } from '../components/cleanup-gc-copy'
 import {
   buildGcModel,
@@ -245,7 +246,10 @@ export const useGcStore = defineStore('gc', () => {
       kind: warning ? ('warning' as const) : ('success' as const),
       title: warning
         ? t('cleanup.gc.toast.partial', { cleaned: s.cleaned, failed: s.failed }, s.failed)
-        : t('cleanup.gc.toast.success', { size: formatBytes(s.freedBytes), count: s.cleaned }),
+        : t('cleanup.gc.toast.success', {
+            freed: freedText(t, s.freedBytes, s.trashedBytes),
+            count: s.cleaned
+          }),
       description: refusalDescription(s) ?? d.error ?? undefined,
       timeoutMs: warning ? 8000 : 6000,
       target: { view: 'cleanup' as const },
@@ -504,6 +508,103 @@ export const useGcStore = defineStore('gc', () => {
     return saved
   }
 
+  // ---- Cleanup's own exhaust: archive refs and what Harnu put in the trash ---------------------
+
+  /**
+   * Deletes the archives the operator confirmed in one repo. Main re-lists and deletes only what
+   * still has the shas the confirm showed; whatever changed is left alone and said so.
+   */
+  async function deleteArchives(
+    repoPath: string,
+    archives: Array<{ namespace: string; tipSha: string | null; wipSha: string | null }>
+  ): Promise<void> {
+    const { t } = i18n.global
+    const ui = useUiStore()
+    try {
+      const ack = await window.api.gcDeleteArchives(toIpc({ repoPath, archives }))
+      if (ack.deleted > 0) {
+        ui.pushToast({
+          kind: 'success',
+          title: t('cleanup.gc.archives.toast.deleted', ack.deleted, { named: { n: ack.deleted } }),
+          description: t('cleanup.gc.archives.toast.deletedSub'),
+          timeoutMs: 6000
+        })
+      }
+      const left = ack.changed.length
+      if (left > 0 || ack.failed > 0) {
+        ui.pushToast({
+          kind: 'warning',
+          title:
+            left > 0
+              ? t('cleanup.gc.archives.toast.changed', left, { named: { n: left } })
+              : t('cleanup.gc.archives.toast.failed', ack.failed, { named: { n: ack.failed } }),
+          timeoutMs: 8000
+        })
+      }
+    } catch (e) {
+      ui.pushToast({
+        kind: 'danger',
+        title: t('cleanup.gc.archives.toast.failed', 1, { named: { n: 1 } }),
+        description: e instanceof Error ? e.message : String(e),
+        timeoutMs: 8000
+      })
+    } finally {
+      await refresh()
+    }
+  }
+
+  /** "Run git gc now": one repo, after its own confirm. */
+  async function runArchiveGc(repoPath: string, repoName: string): Promise<void> {
+    const { t } = i18n.global
+    const ui = useUiStore()
+    try {
+      const ack = await window.api.gcRunArchiveGc(repoPath)
+      ui.pushToast({
+        kind: ack.ok ? 'success' : 'danger',
+        title: t(
+          ack.ok ? 'cleanup.gc.archives.toast.gcDone' : 'cleanup.gc.archives.toast.gcFailed',
+          {
+            repo: repoName
+          }
+        ),
+        description: ack.ok ? undefined : ack.error,
+        timeoutMs: ack.ok ? 6000 : 8000
+      })
+    } finally {
+      await refresh()
+    }
+  }
+
+  /** "Empty what Harnu moved to the trash": only those folders; never the user's other trash. */
+  async function emptyTrash(): Promise<void> {
+    const { t } = i18n.global
+    const ui = useUiStore()
+    try {
+      const ack = await window.api.gcEmptyTrash()
+      if (ack.unsupported) {
+        ui.pushToast({
+          kind: 'warning',
+          title: t('cleanup.gc.trash.toast.unsupported', { location: ack.location }),
+          timeoutMs: 8000
+        })
+      } else if (ack.failed > 0) {
+        ui.pushToast({
+          kind: 'warning',
+          title: t('cleanup.gc.trash.toast.failed', ack.failed, { named: { n: ack.failed } }),
+          timeoutMs: 8000
+        })
+      } else {
+        ui.pushToast({
+          kind: 'success',
+          title: t('cleanup.gc.trash.toast.emptied', { size: formatBytes(ack.emptiedBytes) }),
+          timeoutMs: 6000
+        })
+      }
+    } finally {
+      await refresh()
+    }
+  }
+
   /** Selection that survives a refresh only for the items that are still Needs review. */
   function pruneSelection(selection: ReadonlySet<string>): Set<string> {
     return model.value ? prunedSelection(model.value, selection) : new Set()
@@ -536,6 +637,9 @@ export const useGcStore = defineStore('gc', () => {
     dismissFirstReport,
     firstReportSnoozed,
     savePrefs,
+    deleteArchives,
+    runArchiveGc,
+    emptyTrash,
     pruneSelection,
     opinions,
     pendingOpinions,

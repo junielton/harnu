@@ -2390,7 +2390,7 @@
         "empty": "Nada para limpar",
         "blind": "Inicie o Docker para limpar estes",
         "blindTitle": "O Docker não estava rodando quando o Harnu escaneou, então ele não viu quais stacks rodam a partir destes worktrees. Inicie o Docker e use Escanear agora.",
-        "chip": "Limpando {done}/{total} · {size} liberados"
+        "chip": "Limpando {done}/{total} · {freed}"
       },
       "selection": {
         "label": "Seleção",
@@ -2513,7 +2513,7 @@
         "auto": "Pronto para limpar",
         "untouched": "Em uso",
         "count": "{n} item | {n} itens",
-        "lastCycle": "Último ciclo {ago}: {n} limpos, {size} liberados",
+        "lastCycle": "Último ciclo {ago}: {n} limpos, {freed}",
         "lastCycleReport": "Último ciclo {ago}: {n} item pronto encontrado, {size} (só relatório) | Último ciclo {ago}: {n} itens prontos encontrados, {size} (só relatório)",
         "review": "Precisa de revisão",
         "running": "Limpando agora · faltam {n}",
@@ -2561,7 +2561,7 @@
         "intro": "Branches e pastas que não são worktrees."
       },
       "toast": {
-        "success": "{size} liberados · {count} item pronto limpo | {size} liberados · {count} itens prontos limpos",
+        "success": "{freed} · {count} item pronto limpo | {freed} · {count} itens prontos limpos",
         "partial": "{cleaned} limpos · {failed} precisa de revisão | {cleaned} limpos · {failed} precisam de revisão",
         "review": "Revisar",
         "viewJournal": "Ver diário"
@@ -2632,6 +2632,18 @@
           "title": "Os volumes do Docker são sempre mantidos",
           "body": "Limpar uma worktree, à mão ou automaticamente, nunca remove os volumes dela. Quando a worktree some, eles aparecem em Precisa de revisão como volumes órfãos, com tamanho e projeto do compose, e você remove cada um você mesmo.",
           "warning": "Um volume removido e os dados dele não podem ser restaurados."
+        },
+        "archives": {
+          "eyebrow": "Arquivos",
+          "intro": "Toda remoção guarda a ponta da branch e o estado de trabalho no git como refs de arquivo, então nada se perde. Elas se acumulam, então a Limpeza pode apagar as antigas.",
+          "keepDays": {
+            "label": "Manter arquivos por",
+            "hint": "Arquivos mais antigos que isso são oferecidos para exclusão na Limpeza, depois que você confirma a lista."
+          },
+          "autoExpire": {
+            "label": "Expirar arquivos automaticamente",
+            "hint": "Ligado, o piloto automático apaga as refs de arquivo mais antigas que o valor acima. Um arquivo apagado não pode ser restaurado. O git libera o espaço no próximo gc."
+          }
         }
       },
       "recheck": {
@@ -2745,6 +2757,63 @@
         "sub": "Procurando branches mescladas, sessões paradas e sobras do Docker.",
         "failed": "A primeira varredura não terminou: {error}",
         "hero": "Analisando…"
+      },
+      "freed": {
+        "now": "{freed} liberados agora",
+        "split": "{freed} liberados agora · {trash} na lixeira"
+      },
+      "archives": {
+        "title": "Arquivos",
+        "sub": "{n} arquivo · ≈ {size} | {n} arquivos · ≈ {size}",
+        "subNoSize": "{n} arquivo | {n} arquivos",
+        "toggleRepo": "Mostrar os arquivos de {repo}",
+        "listLabel": "Arquivos de {repo}",
+        "detached": "detached",
+        "unknownSource": "origem desconhecida",
+        "tip": "tip {sha}",
+        "wip": "tem estado de trabalho",
+        "wipTitle": "Os arquivos não commitados e não rastreados da pasta removida também foram arquivados",
+        "expired": "expirado",
+        "copyRestore": "Copiar comando de restauração",
+        "copyWip": "Copiar comando do wip",
+        "copied": "Copiado",
+        "retention": "Arquivos com mais de {n} dia: {k} | Arquivos com mais de {n} dias: {k}",
+        "deleteOlder": "Apagar {k} com mais de {n} dia… | Apagar {k} com mais de {n} dias…",
+        "gcNow": "Rodar git gc agora…",
+        "note": "Apagar arquivos só libera espaço em disco no próximo gc do git.",
+        "dialog": {
+          "deleteTitle": "Apagar {n} arquivo? | Apagar {n} arquivos?",
+          "deleteWarn": "Isso remove as refs de arquivo. As pontas de branch e os estados de trabalho que elas guardam não poderão mais ser restaurados daqui. O git libera o espaço em disco no próximo gc.",
+          "deleteConfirm": "Apagar {n} arquivo | Apagar {n} arquivos",
+          "listLabel": "Arquivos a apagar",
+          "gcTitle": "Rodar git gc em {repo}?",
+          "gcBody": "Ele apaga objetos git inalcançáveis com mais de uma hora, então o espaço dos arquivos apagados volta. Não rode enquanto outro comando git estiver escrevendo neste repositório.",
+          "gcConfirm": "Rodar git gc",
+          "trashTitle": "Esvaziar o que o Harnu mandou para a lixeira?",
+          "trashBody": "Isso apaga em definitivo {n} pasta que o Harnu mandou para a lixeira, {size}. O resto da sua lixeira fica como está. | Isso apaga em definitivo {n} pastas que o Harnu mandou para a lixeira, {size}. O resto da sua lixeira fica como está.",
+          "trashConfirm": "Esvaziar {size}",
+          "cancel": "Cancelar",
+          "close": "Fechar"
+        },
+        "toast": {
+          "deleted": "{n} ref de arquivo apagada | {n} refs de arquivo apagadas",
+          "deletedSub": "O git libera o espaço em disco no próximo gc.",
+          "changed": "{n} arquivo mudou desde que você olhou e foi deixado quieto | {n} arquivos mudaram desde que você olhou e foram deixados quietos",
+          "failed": "Não foi possível apagar {n} ref de arquivo | Não foi possível apagar {n} refs de arquivo",
+          "gcDone": "git gc terminou em {repo}",
+          "gcFailed": "git gc falhou em {repo}"
+        }
+      },
+      "trash": {
+        "title": "Na lixeira",
+        "strip": "{size} na lixeira · {n} pasta que o Harnu mandou para lá | {size} na lixeira · {n} pastas que o Harnu mandou para lá",
+        "empty": "Esvaziar o que o Harnu mandou para a lixeira ({size})",
+        "cantEmpty": "O Harnu não consegue esvaziá-la para você neste sistema. Abra {location} e esvazie lá.",
+        "toast": {
+          "emptied": "{size} esvaziados da lixeira",
+          "failed": "Não foi possível esvaziar {n} pasta da lixeira | Não foi possível esvaziar {n} pastas da lixeira",
+          "unsupported": "O Harnu não consegue esvaziar a lixeira neste sistema. Abra {location}."
+        }
       }
     }
   },

@@ -145,6 +145,7 @@ describe('doneSummary', () => {
       cleaned: 3,
       failed: 0,
       freedBytes: 300,
+      trashedBytes: 0,
       refusals: {},
       refused: 0
     })
