@@ -35,7 +35,8 @@ function transcriptsRig(n: number) {
     bytes: 1_000 + i,
     sessionCount: 1,
     newestAt: NOW - 1e9,
-    hasMemory: false
+    hasMemory: false,
+    proof: 'proven' as const
   }))
   const state = { fresh: 0, gathers: 0, trashed: [] as string[] }
   let q = 0
@@ -243,7 +244,8 @@ describe('one fresh gather per request, whatever its kinds (delta-2 item 3)', ()
       bytes: 10,
       sessionCount: 1,
       newestAt: 0,
-      hasMemory: false
+      hasMemory: false,
+      proof: 'proven'
     }
     const st: StackLeftoverItem = {
       id: stackLeftoverId('pj'),

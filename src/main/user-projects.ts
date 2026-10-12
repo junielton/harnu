@@ -6,6 +6,7 @@ import { removeHelpersForWorktree } from './helpers-store'
 import type { MemoryLocationConfig } from './mcp/memory-core'
 import { canonicalWorktreeParentRepo } from './worktree-core'
 import { scanFolders } from './claude-reader'
+import { recordRemovedFolder } from './gc/gc-removed-folders'
 import { migrateFolderDataDirLazily } from './migrations/data-dir-boot'
 
 /**
@@ -1262,6 +1263,9 @@ export async function detachFromSidebar(
   getWindow: () => BrowserWindow | null,
   removedPath: string
 ): Promise<void> {
+  // Harnu's own record that this folder is gone (proof for the orphan-transcript listing): both
+  // spellings, since transcripts name it as the session saw it.
+  for (const spelling of await spellingsOf(removedPath)) await recordRemovedFolder(spelling)
   await removeGhostFoldersUnder(getWindow, removedPath)
 }
 

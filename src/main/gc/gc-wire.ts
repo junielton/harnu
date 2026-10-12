@@ -140,6 +140,8 @@ export interface GcExpected {
   project?: string | null
   /** Stack leftovers only: the networks that were shown (container ids ride in `stackIds`). */
   networkIds?: string[]
+  /** Orphan transcripts only: whether the folder was proven gone or only not found when shown. */
+  proof?: 'proven' | 'not-found'
 }
 
 /**
@@ -164,6 +166,12 @@ export interface GcCleanOptions {
    * cleaned locally and its result says why the remote was left. Absent means none.
    */
   deleteRemote?: string[]
+  /**
+   * Ids of orphaned transcript folders the operator confirmed with the STRONGER confirm: their
+   * folder is missing but nothing proves it gone ("I checked: it is not on a drive that is
+   * unplugged"). A `not-found` item without its own entry here is refused, whatever `confirmed` says.
+   */
+  confirmedNotFound?: string[]
 }
 
 /** `gc:clean` acknowledges at once; the work streams on `gc:progress` and ends on `gc:done`. */

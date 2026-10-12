@@ -111,6 +111,8 @@ export function submitManualClean(
   const expected = opts.expected ?? {}
   // Only an id the operator ticked "Also delete the branch on the remote" for (AC-D5).
   const deleteRemote = new Set(opts.deleteRemote ?? [])
+  // The stronger confirm of a folder that is missing but not proven gone, per id.
+  const confirmedNotFound = new Set(opts.confirmedNotFound ?? [])
   const queued = deps.queue.busy()
 
   const { jobId } = deps.queue.submit('manual', unique, async (reporter) => {
@@ -267,6 +269,11 @@ export function submitManualClean(
       // A session started writing, or the folder came back, since the click: no longer an orphan.
       if (!item) return refused(id, 'no-longer-orphan')
       if (transcriptsChangedSince(item, seen)) return refused(id, 'changed-since-confirm')
+      // A folder nothing proves gone (it may be on a drive that is unplugged) needs its own,
+      // stronger confirmation: the ordinary one never covers it.
+      if (item.proof === 'not-found' && !confirmedNotFound.has(id)) {
+        return refused(id, 'needs-not-found-confirmation')
+      }
       // Right before the trash, look again with a gather that starts now. Failing to look refuses.
       let fresh: OrphanTranscriptItem | undefined
       try {

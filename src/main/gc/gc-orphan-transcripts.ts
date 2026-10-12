@@ -29,6 +29,13 @@ export interface OrphanTranscriptItem {
   bytes: number
   /** How many sessions (top-level transcripts) it holds. */
   sessionCount: number
+  /**
+   * `proven`: the folder is positively known to be gone (Harnu removed it, git lists it as
+   * prunable, or it sat under a known worktrees parent). `not-found`: it is missing and nothing
+   * proves it gone (it could be on a drive that is not mounted): offered apart, with a stronger
+   * confirm.
+   */
+  proof: 'proven' | 'not-found'
   /** The newest transcript's modification time, or null. */
   newestAt: number | null
   /** The project folder also holds Claude's auto-memory notes for that folder. */
@@ -74,6 +81,11 @@ export interface OrphanInput {
   protectedFolders: readonly string[]
   /** Known repo checkouts, to name the group a folder belongs to. */
   repoPaths: readonly string[]
+  /**
+   * Whether a missing folder is positively proven gone (see gc-orphan-proof.ts). Absent proves
+   * nothing: every missing folder is then only "not found".
+   */
+  proof?: (folder: string) => boolean
   /** The clock (epoch ms); defaults to now. */
   now?: number
   /**
@@ -163,7 +175,8 @@ export async function planOrphanTranscripts(input: OrphanInput): Promise<OrphanT
     if (cwds.some((c) => c === null)) continue
     const folders = [...new Set(cwds as string[])]
     const states = await Promise.all(folders.map(existsOnce))
-    if (states.some((s) => s !== 'gone')) continue
+    // Missing is the only state that can be an orphan; a folder Harnu could not even look at is not.
+    if (states.some((s) => s !== 'missing')) continue
     // A folder a known, existing folder is slug-equal to may be the same project.
     if (folders.some((f) => aliveSlugs.has(slugOfPath(f)))) continue
     const newest = newestWrite
@@ -174,6 +187,7 @@ export async function planOrphanTranscripts(input: OrphanInput): Promise<OrphanT
       repoLabel: repoLabelFor(folders[0]!, input.repoPaths),
       bytes: facts.files.reduce((a, f) => a + f.bytes, 0) + facts.extraBytes,
       sessionCount: facts.files.length,
+      proof: input.proof && folders.every((f) => input.proof!(f)) ? 'proven' : 'not-found',
       newestAt: Number.isFinite(newest) ? newest : null,
       hasMemory: facts.hasMemory
     })
@@ -191,7 +205,8 @@ export function orphanExpectedOf(item: OrphanTranscriptItem): GcExpected {
     ownedVolumes: [],
     bytes: item.bytes,
     path: item.folder,
-    project: item.slug
+    project: item.slug,
+    proof: item.proof
   }
 }
 
@@ -199,11 +214,13 @@ export function orphanExpectedOf(item: OrphanTranscriptItem): GcExpected {
 export function transcriptsChangedSince(
   item: OrphanTranscriptItem,
   seen: GcExpected
-): 'bucket' | 'path' | 'size' | 'project' | null {
+): 'bucket' | 'path' | 'size' | 'project' | 'proof' | null {
   if (seen.bucket !== 'orphan-transcripts') return 'bucket'
   if (item.folder !== seen.path) return 'path'
   if (item.slug !== (seen.project ?? null)) return 'project'
   if (item.bytes !== seen.bytes) return 'size'
+  // The folder was proven gone when shown and is only "not found" now (or the other way round).
+  if ((item.proof ?? null) !== (seen.proof ?? null)) return 'proof'
   return null
 }
 

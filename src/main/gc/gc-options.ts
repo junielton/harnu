@@ -29,6 +29,7 @@ function parseExpected(raw: unknown): GcExpected | null {
   ) {
     return null
   }
+  if (!(e.proof === undefined || e.proof === 'proven' || e.proof === 'not-found')) return null
   const networkIds = e.networkIds === undefined ? undefined : strings(e.networkIds)
   if (networkIds === null) return null
   const project = e.project === undefined || typeof e.project === 'string' || e.project === null
@@ -46,7 +47,8 @@ function parseExpected(raw: unknown): GcExpected | null {
     path: e.path,
     ...(e.workStamp !== undefined ? { workStamp: e.workStamp as string | null } : {}),
     ...(e.project !== undefined ? { project: e.project as string | null } : {}),
-    ...(networkIds ? { networkIds } : {})
+    ...(networkIds ? { networkIds } : {}),
+    ...(e.proof !== undefined ? { proof: e.proof } : {})
   }
 }
 
@@ -69,5 +71,13 @@ export function parseOptions(raw: unknown): GcCleanOptions {
   const deleteRemote = Array.isArray(r.deleteRemote)
     ? r.deleteRemote.filter((x): x is string => typeof x === 'string').slice(0, 500)
     : undefined
-  return { confirmed, expected, ...(deleteRemote ? { deleteRemote } : {}) }
+  const confirmedNotFound = Array.isArray(r.confirmedNotFound)
+    ? r.confirmedNotFound.filter((x): x is string => typeof x === 'string').slice(0, 500)
+    : undefined
+  return {
+    confirmed,
+    expected,
+    ...(deleteRemote ? { deleteRemote } : {}),
+    ...(confirmedNotFound ? { confirmedNotFound } : {})
+  }
 }
