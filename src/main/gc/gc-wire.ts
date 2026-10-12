@@ -150,9 +150,9 @@ export interface GcCleanOptions {
 export type GcPrep =
   /** `git worktree unlock` on a locked worktree. */
   | { kind: 'unlock' }
-  /** Park the idle Harnu sessions open in the worktree. Never a working one. */
+  /** Park the idle Harnu sessions open in the worktree (only an explicit idle, completed or stopped one). */
   | { kind: 'close-session' }
-  /** Stop and remove the containers of these shared stacks. Volumes are never touched. */
+  /** Stop (never remove) the running containers of these shared stacks; started again if the remove refuses. */
   | { kind: 'stop-stack'; stackIds: string[] }
   /** Remove the worktree and leave these shared stacks running (only when none binds the folder). */
   | { kind: 'leave-stack'; stackIds: string[] }
