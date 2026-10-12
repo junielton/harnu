@@ -8777,7 +8777,8 @@ volume), size right.
   newer than the ones the operator was shown. A rejected `gc:clean` call shows an error toast.
 - **Only what `gc:clean` can remove is offered — one predicate decides it.** `removability(block)`
   (`lib/gc-removability.ts`) answers from the bundle's own facts, mirroring what main refuses: a detached
-  worktree (`unsupported-kind`), a locked one, a shared stack, a nested or foreign checkout, an idle session
+  worktree that is not in Needs review (`unsupported-kind`, with no command: a detached worktree in
+  review **is** removable, see "Detached worktrees" below), a locked one, a shared stack, a nested or foreign checkout, an idle session
   still open, an unknown tip, an unresolved path, and the protections (main checkout, never-clean, Keep,
   In use). The panel, the list row, the selection bar, "Select all in repo", "Remove the ones marked safe",
   Retry and the **R** shortcut all ask it, so none of them offers a click that ends in "0 cleaned".
@@ -8786,8 +8787,19 @@ volume), size right.
   dialog. The refused ones sit in their own section under the list (`--bg` fill, `--border`, 8px radius,
   eyebrow title in `--text-3`, one row per item): the mono `repo › worktree` title, the reason in 11px
   `--text-3`, and — when a command clears the cause — that command in 11px mono `--text-2`
-  (`git worktree unlock <path>`, `git worktree remove <path>`), selectable in one click. The group is
+  (`git worktree unlock <path>`), selectable in one click. The group is
   excluded from the breakdown, the footer total, the confirm label and the `gc:clean` request.
+- **Detached worktrees (NDE-A).** A worktree with a detached HEAD has no branch to name an archive ref
+  after, so Harnu names it after what it has: the folder and the commit. A confirmed Remove from Needs
+  review first writes `refs/archive/detached/<folder>-<shortsha>/tip` (the commit) and, beside it, `/wip`
+  (every uncommitted and untracked file), then trashes the folder and unregisters it from git. There is no
+  branch step. It is **review-only**: it is never a ready item, never part of the hero or the autopilot, and
+  `unsupported-kind` is what main answers for one that somehow is. In the dialog a detached row has no
+  `branch` chip and its mono sub-line reads `detached at {shortsha}` (11px `--text-4`). The dialog's
+  Warning callout gains one paragraph while any detached row is listed, in `--warning`, bold lead: _{n}
+  detached worktree has no branch. Its commit stays under refs/archive/detached/…, and `git worktree add
+<path> <ref>` brings it back._ The confirm is the Danger button already used for remove-selected. The
+  panel's **Takes with it** list swaps the branch line for _Its commit stays under refs/archive/detached/…_.
 - **Nothing removable → no dialog.** The selection bar's **Remove selected** is disabled (tooltip "Nothing
   selected can be removed") when no ticked item can be removed; the list row swaps its Remove button for an
   inert, dimmed `Trash2` carrying the reason as its tooltip and `aria-label`. Any path that still reaches

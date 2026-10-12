@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-12
+
+### Fixed
+
+- **A detached worktree can now be removed from Cleanup.** These were most of what Needs review held on disk, and every Remove of one was refused, which sent people to `rm -rf` and skipped every safety net. Remove now works on them from Needs review, after you confirm in the red dialog. Harnu first saves the commit and any uncommitted or untracked work under `refs/archive/detached/<folder>-<short sha>/` (so a commit that no branch holds stays recoverable), then trashes the folder and unregisters it from git. If the refs cannot be written, nothing is removed. A detached worktree is still never part of the hero button or the autopilot, and the old "run `git worktree remove`" hint is gone. How to get one back is in the Cleanup page of the user docs.
+
 ## 2026-10-09
 
 ### Changed

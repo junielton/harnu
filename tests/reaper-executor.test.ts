@@ -629,9 +629,7 @@ describe('cleanItem — a detached worktree (NDE-A, AC-A1/A2)', () => {
       archiveWipRef: `${DETACHED_NS}/wip`
     })
     // The journal says how to get the folder back: from the archive ref, not a branch that never was.
-    expect(journal[0].restoreHint).toBe(
-      `git -C /repo worktree add /repo/wt-det ${DETACHED_NS}/tip`
-    )
+    expect(journal[0].restoreHint).toBe(`git -C /repo worktree add /repo/wt-det ${DETACHED_NS}/tip`)
   })
 
   it('halts at archive and trashes nothing when the archive refs cannot be written', async () => {
@@ -666,11 +664,7 @@ describe('cleanItem — a detached worktree (NDE-A, AC-A1/A2)', () => {
 
   it('halts at archive when the scan recorded no HEAD: nothing would preserve it', async () => {
     const { deps } = fakeDeps()
-    const result = await cleanItem(
-      detachedItem({ headSha: null }),
-      { deleteRemote: false },
-      deps
-    )
+    const result = await cleanItem(detachedItem({ headSha: null }), { deleteRemote: false }, deps)
 
     expect(result.ok).toBe(false)
     const archive = result.steps.find((s) => s.id === 'archive')!

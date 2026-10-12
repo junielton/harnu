@@ -264,7 +264,12 @@ describe('a detached worktree is archived by its HEAD sha, then removed (NDE-A, 
       expect(at(destructive), destructive).toBeGreaterThan(at('archiveWip'))
     }
     // The reprobe wrote them, the executor's own archive step rewrote the very same two.
-    expect(r.archived).toEqual([`${HEAD_NS}/tip`, `${HEAD_NS}/wip`, `${HEAD_NS}/tip`, `${HEAD_NS}/wip`])
+    expect(r.archived).toEqual([
+      `${HEAD_NS}/tip`,
+      `${HEAD_NS}/wip`,
+      `${HEAD_NS}/tip`,
+      `${HEAD_NS}/wip`
+    ])
     expect(r.git.filter((a) => a[0] === 'branch')).toEqual([])
     expect(r.tombstones[0]).toMatchObject({
       kind: 'detached-worktree',
