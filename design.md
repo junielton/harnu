@@ -8859,6 +8859,11 @@ volume), size right.
     removal, behind a single confirm. Steps run in that order (closing a session, which cannot be undone,
     last) and are undone in reverse. A rollback happens only while the folder still exists; Scan again and
     removing a Keep mark disable their links while they run, and the unmark's toast has **Undo**.
+  - **Interrupted cleans** (`CleanupRecoveryNotices.vue`, `data-testid="recovery-notices"`): above the
+    first-cycle banner, one warning-toned row per notice (`bg-warning-soft`, `border-warning-line`, 14px
+    `triangle-alert`), text in `--text-2`, then the answers: Soft **Start again** / Ghost **Leave stopped** for
+    a stack stop, Soft **Lock again** / Ghost **Dismiss** for a lock, Ghost **Dismiss** for containers that
+    are gone. A notice stays until answered; Harnu never starts containers on its own.
   - **Every guided action ends in a toast.** While it runs the confirm shows a spinner and disables;
     success is a Success toast with the bytes freed ("Removed 1 worktree · 3.4 GB freed"); failure is a
     Danger toast naming the cause in one sentence. Nothing a guided action does is silent.
