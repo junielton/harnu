@@ -191,7 +191,18 @@ describe('removing a detached worktree from review (AC-A1, AC-A2)', () => {
     expect(git(repo, 'worktree', 'list', '--porcelain')).toContain('bisect-1')
   })
 
-  it('archives a second removal of the same folder at the same commit without losing the first wip', async () => {
+  it('a single run leaves a plain one-parent wip, so `git show <wip>` is a diff against the tip', async () => {
+    await runBundle(detachedBundle(), createForcedGcOps(realWorld()), FORCE)
+    const ns = `refs/archive/detached/bisect-1-${head.slice(0, 12)}`
+    // The reprobe and the executor both write the same ref in one run: no sibling, no second parent.
+    expect(git(repo, 'rev-list', '--parents', '-n', '1', `${ns}/wip`).trim().split(' ')).toHaveLength(2)
+    expect(git(repo, 'show', '--stat', '--format=%s', `${ns}/wip`)).toContain('notes.md')
+    expect(
+      git(repo, 'for-each-ref', '--format=%(refname)', `${ns}/wip-*`).trim()
+    ).toBe('')
+  })
+
+  it('keeps the first wip of an earlier removal under a timestamped sibling ref, not as a second parent', async () => {
     const ns = `refs/archive/detached/bisect-1-${head.slice(0, 12)}`
     await runBundle(detachedBundle(), createForcedGcOps(realWorld()), FORCE)
     const firstWip = git(repo, 'rev-parse', `${ns}/wip`).trim()
@@ -203,8 +214,16 @@ describe('removing a detached worktree from review (AC-A1, AC-A2)', () => {
 
     const secondWip = git(repo, 'rev-parse', `${ns}/wip`).trim()
     expect(secondWip).not.toBe(firstWip)
-    // The first wip is still reachable from the ref, so a gc cannot reclaim it.
-    git(repo, 'merge-base', '--is-ancestor', firstWip, `${ns}/wip`)
+    // The new wip is still a plain diff against the tip ...
+    expect(git(repo, 'rev-list', '--parents', '-n', '1', secondWip).trim().split(' ')).toHaveLength(2)
+    // ... and the first one is reachable under `wip-<yyyymmddhhmmss>`, so a gc cannot reclaim it.
+    const siblings = git(repo, 'for-each-ref', '--format=%(refname) %(objectname)', `${ns}/wip-*`)
+      .trim()
+      .split('\n')
+    expect(siblings).toHaveLength(1)
+    const [name, sha] = siblings[0].split(' ')
+    expect(name).toMatch(/\/wip-\d{14}$/)
+    expect(sha).toBe(firstWip)
     git(repo, 'gc', '--prune=now', '-q')
     git(repo, 'cat-file', '-e', firstWip)
   })
