@@ -14,6 +14,7 @@ const channels = (src: string, re: RegExp): string[] =>
 const REQUESTS = [
   'gc:ackFirstReport',
   'gc:clean',
+  'gc:guide',
   'gc:jobs',
   'gc:keep',
   'gc:opinion',

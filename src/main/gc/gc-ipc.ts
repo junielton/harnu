@@ -39,6 +39,8 @@ import { createAgentService, createGatherer } from './gc-gatherer'
 import { setGcService } from './gc-service-registry'
 import { createJobQueue, type GcJobInfo } from './gc-jobs-core'
 import { submitManualClean } from './gc-manual'
+import { guidanceFor, prepareClean } from './gc-guided'
+import { defaultGuidedDeps } from './gc-guided-shell'
 import { recheckItem } from './gc-recheck'
 import {
   mergeIncomingPrefs,
@@ -50,7 +52,13 @@ import {
   type GcPrefs
 } from './gc-prefs'
 import { parseOptions } from './gc-options'
-import type { GcCleanAck, GcRecheckResult, GcSnapshot, OrphanVolumeItem } from './gc-wire'
+import type {
+  GcCleanAck,
+  GcGuidance,
+  GcRecheckResult,
+  GcSnapshot,
+  OrphanVolumeItem
+} from './gc-wire'
 import { createGcOps, defaultGcShellDeps, resolveRealPaths, type GcShellDeps } from './gc-shell'
 import { withCurrentNeverClean } from './autopilot-core'
 import { AS_GIVEN } from './bundle-core'
@@ -77,6 +85,8 @@ export interface GcService {
   setPrefs(raw: unknown): Promise<GcPrefs>
   ackFirstReport(): Promise<GcPrefs>
   jobs(): GcJobInfo[]
+  /** What main sees about a refused item right now (lock reason, sessions, shared stacks, …). Read-only. */
+  guide(id: unknown): Promise<GcGuidance>
   /** "Ask for an opinion": on demand only, read-only, advisory. Never removes anything. */
   opinion(ids: unknown): GcOpinionAck
   /** The peek: cached opinions that still match their item. Never asks the model. */
@@ -174,6 +184,7 @@ export async function registerGcHandlers(
   })
 
   const shellDeps = await defaultGcShellDeps(getWindow)
+  const guidedDeps = await defaultGuidedDeps(shellDeps)
   const withRun = (actor: 'operator' | 'autopilot'): GcShellDeps =>
     withActor(shellDeps, actor, () => prefs)
 
@@ -267,6 +278,9 @@ export async function registerGcHandlers(
             forced ? createForcedGcOps(withRun('operator')) : createGcOps(withRun('operator')),
           // S4's runner builds the argv itself (`docker volume rm <name>`, name-checked).
           freshOrphans,
+          // A guided "…and remove": its one prep step, then a gather that starts after it.
+          gatherFresh,
+          prepare: (prep, b) => prepareClean(prep, b, guidedDeps),
           workStampOf: (p) => workStampOf(reaperExec, p),
           removeOrphanVolumes: (names) =>
             runHousekeeping({
@@ -315,6 +329,15 @@ export async function registerGcHandlers(
         rawId
       )
     },
+    guide: async (rawId) => {
+      if (typeof rawId !== 'string') throw new Error('gc:guide expects a bundle id')
+      const g = gatherer.cached() ?? (await gather())
+      const b = g.bundles.find((x) => x.item.id === rawId)
+      if (!b) {
+        return { id: rawId, lock: null, sessions: null, stacks: [], unreadable: null, docker: null }
+      }
+      return guidanceFor(b, guidedDeps)
+    },
     prefs: () => livePrefs(),
     setPrefs: async (raw) => {
       const next = mergeIncomingPrefs(livePrefs(), raw)
@@ -348,6 +371,7 @@ export async function registerGcHandlers(
   ipcMain.handle('gc:keep', (_e, id: unknown) => service.keep(id))
   ipcMain.handle('gc:unkeep', (_e, id: unknown) => service.unkeep(id))
   ipcMain.handle('gc:recheck', (_e, id: unknown) => service.recheck(id))
+  ipcMain.handle('gc:guide', (_e, id: unknown) => service.guide(id))
   ipcMain.handle('gc:prefs:get', () => service.prefs())
   ipcMain.handle('gc:prefs:set', (_e, raw: unknown) => service.setPrefs(raw))
   ipcMain.handle('gc:ackFirstReport', () => service.ackFirstReport())

@@ -142,6 +142,7 @@ import type {
   CycleRecord as GcCycleRecord,
   GcCleanAck,
   GcRecheckResult,
+  GcGuidance,
   GcCleanOptions,
   GcJobDone,
   GcJobInfo,
@@ -2560,6 +2561,8 @@ const api = {
   gcUnkeep: (id: string): Promise<GcPrefs> => ipcRenderer.invoke('gc:unkeep', id),
   /** "Check again" on a demoted item: forgets its remembered refusal and reprobes it once (read-only). */
   gcRecheck: (id: string): Promise<GcRecheckResult> => ipcRenderer.invoke('gc:recheck', id),
+  /** What main sees about a refused item right now: the data a guided Cleanup action shows. */
+  gcGuide: (id: string): Promise<GcGuidance> => ipcRenderer.invoke('gc:guide', id),
   gcPrefs: (): Promise<GcPrefs> => ipcRenderer.invoke('gc:prefs:get'),
   /** Whole-object write, clamped in main. `keep` and the acknowledgement are not writable here. */
   gcSetPrefs: (prefs: GcPrefs): Promise<GcPrefs> => ipcRenderer.invoke('gc:prefs:set', prefs),
