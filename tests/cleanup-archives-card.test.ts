@@ -321,3 +321,20 @@ describe('CleanupExhaustDialog (trash): the dialog lists what it will delete', (
     w.unmount()
   })
 })
+
+describe('CleanupExhaustDialog (delete): an archive of unknown age (delta-2 item 7)', () => {
+  it('says "age unknown", not a dash', () => {
+    const entries = groupArchiveRefs(REPO, [
+      { ref: 'refs/archive/hand-made', sha: sha('f'), at: Date.parse('2020-01-01T00:00:00Z') }
+    ])
+    const w = mount(CleanupExhaustDialog, {
+      props: { mode: 'delete', entries, repo: 'www' },
+      global: { plugins: [i18n] },
+      attachTo: document.body
+    })
+    const row = document.body.querySelector('[data-testid="exhaust-row"]')!.textContent!
+    expect(row).toContain('age unknown')
+    expect(row).not.toContain('—')
+    w.unmount()
+  })
+})
