@@ -325,3 +325,106 @@ describe('one fresh gather per request, whatever its kinds (delta-2 item 3)', ()
     expect(gathers).toBe(1)
   })
 })
+
+describe('a minutes-old fresh view never gates a trash (delta-3 item 6)', () => {
+  function rig(n: number, stepMs: number) {
+    const items: OrphanTranscriptItem[] = Array.from({ length: n }, (_v, i) => ({
+      id: `transcripts:s${i}`,
+      slug: `s${i}`,
+      folder: `/gone/${i}`,
+      repoLabel: 'r',
+      bytes: 10 + i,
+      sessionCount: 1,
+      newestAt: 0,
+      hasMemory: false,
+      proof: 'proven' as const
+    }))
+    let clock = NOW
+    let looks = 0
+    let q = 0
+    const done: Array<{ results: Array<Record<string, unknown>> }> = []
+    const deps: ManualCleanDeps = {
+      prefs: () => defaultGcPrefs(),
+      gather: async () => ({
+        bundles: [],
+        orphanVolumes: [],
+        orphanTranscripts: structuredClone(items)
+      }),
+      opsFor: () => {
+        throw new Error('no ops')
+      },
+      freshGather: async () => {
+        looks++
+        return { orphanVolumes: [], orphanTranscripts: structuredClone(items), stackLeftovers: [] }
+      },
+      freshOrphans: async () => [],
+      // Each trash takes `stepMs` of the (fake) clock.
+      trashTranscripts: async () => {
+        clock += stepMs
+      },
+      workStampOf: async () => null,
+      removeOrphanVolumes: async () => ({
+        buildCacheBytes: 0,
+        imageBytes: 0,
+        volumeBytes: 0,
+        errors: []
+      }),
+      queue: createJobQueue({
+        newId: () => `j${++q}`,
+        emitProgress: () => undefined,
+        emitDone: (d) => done.push(d as never)
+      }),
+      state: createCycleState(),
+      now: () => clock
+    }
+    const opts = parseOptions(
+      structuredClone({
+        confirmed: items.map((i) => i.id),
+        expected: Object.fromEntries(items.map((i) => [i.id, orphanExpectedOf(i)]))
+      })
+    )
+    return { deps, items, opts, looks: () => looks, done }
+  }
+
+  it('a quick batch shares one look', async () => {
+    const r = rig(5, 100)
+    submitManualClean(
+      r.deps,
+      r.items.map((i) => i.id),
+      r.opts
+    )
+    await r.deps.queue.idle()
+    expect(r.looks()).toBe(1)
+  })
+
+  it('when each step takes long, the view is renewed before the next trash', async () => {
+    const r = rig(4, 15_000)
+    submitManualClean(
+      r.deps,
+      r.items.map((i) => i.id),
+      r.opts
+    )
+    await r.deps.queue.idle()
+    expect(r.looks()).toBe(4)
+    expect(r.done[0]!.results.every((x) => x.ok === true)).toBe(true)
+  })
+
+  it('exactly at the limit still shares, one millisecond past it renews', async () => {
+    const at = rig(2, 10_000)
+    submitManualClean(
+      at.deps,
+      at.items.map((i) => i.id),
+      at.opts
+    )
+    await at.deps.queue.idle()
+    expect(at.looks()).toBe(1)
+    const past = rig(2, 10_001)
+    submitManualClean(
+      past.deps,
+      past.items.map((i) => i.id),
+      past.opts
+    )
+    await past.deps.queue.idle()
+    expect(past.looks()).toBe(2)
+  })
+})
