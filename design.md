@@ -8828,8 +8828,13 @@ volume), size right.
   and the footer (`data-testid="bulk-remote-delete"`, native checkbox, 13px `--text`, **unchecked by
   default**, label "Also delete the branch on the remote", a `GitBranch` 12px icon, and an 11px `--text-3`
   hint "git push --delete. Skipped for protected branches."). It is drawn **only when at least one row
-  qualifies**: its branch is merged by strong proof, still exists on the remote, is not in the Reaper's
-  protected list, and the remote-delete kill switch (Settings → Cleanup) is off. When only some rows
+  qualifies**: its branch is merged by strong proof **recorded by a merged pull request** (an ancestor of
+  `main` with no PR, such as `staging` or `release/x`, never qualifies), no OPEN pull request has it as head
+  or base, GitHub does not protect it (branch protection or an active ruleset), it tracks an upstream
+  remote whose tip is the local tip or one of its ancestors, it is not in the Reaper's protected list, and
+  the remote-delete kill switch (Settings → Cleanup) is off. Any answer Harnu could not get (`gh`
+  missing, a non-GitHub remote, a failed call) means the box is not drawn. The delete goes to the
+  branch's own upstream remote, never an assumed `origin`. When only some rows
   qualify, an 11px `--text-3` count under it reads "Applies to {n} of {total}". Confirm then sends
   `deleteRemote: [ids of the qualifying rows]`; unticked it sends nothing. A remote that refuses is
   reported on the item's result (a Warning toast "Cleaned, but the branch is still on the remote: {error}")
@@ -8880,7 +8885,9 @@ Removing a worktree takes the folder and never the Claude transcripts under `~/.
 so Cleanup lists them itself, in the **Other leftovers** section under the Reaper rows (the section shows
 when either has something; its `intro` line reads "Branches, folders and transcripts that are not
 worktrees."). A project folder is listed only when **every** transcript in it names a folder that is gone,
-no session in it is live or parked, and no existing folder spells the same slug.
+no session in it is live or parked, nothing in it was written in the last 24 hours (a session still writing
+from a terminal outside Harnu), the folder is provably gone (a folder on a drive that is not mounted right
+now is not), and no existing folder spells the same slug.
 
 - **Group header** (`data-testid="orphan-group"`), one per repo, biggest first: eyebrow label (the repo
   name, `data-testid="orphan-group-label"`), then `{n} folders · {size}` in 11px `--text-4`, and a ghost
