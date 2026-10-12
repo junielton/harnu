@@ -3,8 +3,13 @@
 // so `transcriptExpectedFor` restates `orphanExpectedOf` (src/main/gc/gc-orphan-transcripts.ts);
 // tests/cleanup-orphan-transcripts.test.ts pins the two against each other.
 
-import type { GcCleanOptions, GcExpected, OrphanTranscriptItem } from '../../../main/gc/gc-wire'
-import type { CleanRequest } from './gc-model'
+import type {
+  GcCleanOptions,
+  GcExpected,
+  OrphanTranscriptItem,
+  StackLeftoverItem
+} from '../../../main/gc/gc-wire'
+import { cleanRequestFor, type CleanRequest, type GcModel } from './gc-model'
 
 export interface OrphanGroup {
   repoLabel: string
@@ -52,4 +57,41 @@ export function transcriptCleanRequest(items: readonly OrphanTranscriptItem[]): 
     confirmed: [...ids]
   }
   return { ids, options }
+}
+
+const sorted = (xs: readonly string[]): string[] => [...xs].sort()
+
+/** The facts a stack leftover showed: its containers and networks (volumes have their own confirm). */
+export function stackExpectedFor(item: StackLeftoverItem): GcExpected {
+  return {
+    bucket: 'stack-leftover',
+    reasonCode: null,
+    headSha: null,
+    stackIds: sorted(item.containers.map((c) => c.id)),
+    ownedVolumes: [],
+    networkIds: sorted(item.networks.map((n) => n.id)),
+    bytes: null,
+    path: null,
+    project: item.project
+  }
+}
+
+/** The `gc:clean` payload for these leftovers: each project confirmed on its own, never a volume. */
+export function stackCleanRequest(items: readonly StackLeftoverItem[]): CleanRequest {
+  const expected: Record<string, GcExpected> = {}
+  for (const i of items) expected[i.id] = stackExpectedFor(i)
+  const ids = items.map((i) => i.id)
+  const options: GcCleanOptions & { expected: Record<string, GcExpected> } = {
+    expected,
+    confirmed: [...ids]
+  }
+  return { ids, options }
+}
+
+/**
+ * The ordinary orphan-volume request for these volume ids (`volume:<name>`): every id confirmed, each
+ * with the facts its row showed. Volumes are removed only through here, one explicit confirm.
+ */
+export function leftoverVolumeRequest(model: GcModel, ids: readonly string[]): CleanRequest {
+  return cleanRequestFor(model, ids, 'review')
 }

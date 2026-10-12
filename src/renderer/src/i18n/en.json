@@ -2490,6 +2490,24 @@
         "noOrphanVolumes": "No orphan volumes",
         "scope": "Counts only build cache older than {n} day and dangling images. Images in use and the volumes of live stacks are never counted. | Counts only build cache older than {n} days and dangling images. Images in use and the volumes of live stacks are never counted.",
         "cantRestore": "Can't be restored",
+        "leftovers": {
+          "title": "Left by removed worktrees",
+          "stack": "Stopped containers: {c} · networks: {n}",
+          "projects": "Projects: {names}",
+          "clean": "Clean up",
+          "volumesLine": "{n} volume · {size} | {n} volumes · {size}",
+          "volumesNote": "Never removed automatically. They go only after their own confirm.",
+          "volumesRemove": "Remove volumes…"
+        },
+        "confirm": {
+          "stackTitle": "Clean up the leftovers of {n} removed worktree? | Clean up the leftovers of {n} removed worktrees?",
+          "volumesTitle": "Remove {n} volume? | Remove {n} volumes?",
+          "listLabel": "Items to clean up",
+          "stackNote": "Stopped containers and networks can be recreated by starting the stack again. Volumes are not touched.",
+          "volumesNote": "Volumes cannot be restored.",
+          "stackConfirm": "Clean up",
+          "volumesConfirm": "Remove {n} volume | Remove {n} volumes"
+        },
         "projects": "Projects: {names}",
         "more": "+{n} more",
         "toggleCache": "Clean build cache automatically",

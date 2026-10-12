@@ -38,8 +38,8 @@ import {
   type CapturedConfirm
 } from '../lib/gc-model'
 import { nextCycleIn } from '../lib/gc-format'
-import { transcriptCleanRequest } from '../lib/gc-orphans'
-import type { OrphanTranscriptItem } from '../../../main/gc/gc-wire'
+import { leftoverVolumeRequest, stackCleanRequest, transcriptCleanRequest } from '../lib/gc-orphans'
+import type { OrphanTranscriptItem, StackLeftoverItem } from '../../../main/gc/gc-wire'
 import { refusalKey, removalKey } from './cleanup-gc-copy'
 import { removability } from '../lib/gc-removability'
 import type { RefusalCode } from '../lib/gc-jobs'
@@ -56,6 +56,7 @@ import CleanupLegend from './CleanupLegend.vue'
 import CleanupBulkConfirmDialog from './CleanupBulkConfirmDialog.vue'
 import CleanupOtherItems from './CleanupOtherItems.vue'
 import CleanupTranscriptsConfirmDialog from './CleanupTranscriptsConfirmDialog.vue'
+import CleanupDockerConfirmDialog from './CleanupDockerConfirmDialog.vue'
 import DehydrateConfirmDialog from './DehydrateConfirmDialog.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
 import Button from './ui/Button.vue'
@@ -327,6 +328,37 @@ function openTranscripts(ids: string[]): void {
   if (dialogOpen.value || transcriptItems.value) return
   const items = orphanTranscripts.value.filter((i) => ids.includes(i.id))
   if (items.length > 0) transcriptItems.value = items
+}
+/**
+ * What removed worktrees left in Docker (unit D, AC-D3). `stack` cleans stopped containers and
+ * networks; `volumes` removes volumes, which has its own, stronger confirm and goes through the
+ * ordinary orphan-volume request. The dialog freezes the items it showed; the request is built from them.
+ */
+const stackLeftovers = computed(() => gc.snapshot?.stackLeftovers ?? [])
+const dockerConfirm = ref<{ kind: 'stack' | 'volumes'; items: StackLeftoverItem[] } | null>(null)
+function openDockerConfirm(kind: 'stack' | 'volumes', ids: string[]): void {
+  if (dialogOpen.value || transcriptItems.value || dockerConfirm.value) return
+  const items = stackLeftovers.value.filter((l) =>
+    kind === 'stack' ? ids.includes(l.id) : l.volumes.some((v) => ids.includes(v.id))
+  )
+  if (items.length > 0) dockerConfirm.value = { kind, items }
+}
+async function confirmDocker(): Promise<void> {
+  const d = dockerConfirm.value
+  if (!d || !model.value) return
+  dockerConfirm.value = null
+  try {
+    await gc.submit(
+      d.kind === 'stack'
+        ? stackCleanRequest(d.items)
+        : leftoverVolumeRequest(
+            model.value,
+            d.items.flatMap((l) => l.volumes.map((v) => v.id))
+          )
+    )
+  } catch (e) {
+    errorToast(t('cleanup.gc.error.clean'), e)
+  }
 }
 async function confirmTranscripts(): Promise<void> {
   const items = transcriptItems.value
@@ -783,6 +815,9 @@ async function copyRestoreHint(hint: string): Promise<void> {
             :docker="model.docker"
             :last-cycle="gc.snapshot?.lastCycle ?? null"
             :prefs="prefs"
+            :leftovers="stackLeftovers"
+            @clean-leftovers="openDockerConfirm('stack', $event)"
+            @remove-leftover-volumes="openDockerConfirm('volumes', $event)"
             @inspect="ui.openContainers()"
             @toggle="
               (category, value) =>
@@ -896,6 +931,13 @@ async function copyRestoreHint(hint: string): Promise<void> {
     @cancel="confirmDialog = null"
   />
   <DehydrateConfirmDialog v-if="dehydrateItems" :items="dehydrateItems" @close="closeDehydrate()" />
+  <CleanupDockerConfirmDialog
+    v-if="dockerConfirm"
+    :kind="dockerConfirm.kind"
+    :items="dockerConfirm.items"
+    @confirm="confirmDocker()"
+    @cancel="dockerConfirm = null"
+  />
   <CleanupTranscriptsConfirmDialog
     v-if="transcriptItems"
     :items="transcriptItems"

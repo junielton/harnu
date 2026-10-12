@@ -8904,6 +8904,35 @@ no session in it is live or parked, and no existing folder spells the same slug.
   its own entry; main looks again right before the trash and refuses what changed ("a session wrote more")
   or is no longer an orphan. A refusal is shown by the usual toast.
 
+**Left by removed worktrees (unit D, AC-D3).** A fourth block on the Docker card, drawn only when the
+snapshot's `stackLeftovers` is not empty (`data-testid="docker-leftovers"`, the Needs review (warning)
+triple, spanning the card's width). It lists what a removed worktree's stack left in Docker, project by
+project: header "Left by removed worktrees" with the project names (3 then "+n more") in 11px
+`--text-3`. Two parts, never mixed:
+
+- **Stopped containers and networks** (`docker-leftovers-stack`): "{c} stopped containers · {n} networks"
+  (13px `--text`), and a Soft **Clean up** button (`docker-leftovers-clean`, `Recycle` 12px) that opens
+  the confirm. Hidden when the projects hold only volumes.
+- **Volumes** (`docker-leftovers-volumes`, set apart by a 1px `--border` rule): "{v} volumes · {size}",
+  the Warning badge "can't be restored" and the line "Never removed automatically. They go only after
+  their own confirm." with a Soft **Remove volumes…** button (`docker-leftovers-volumes-remove`,
+  `Trash2` 12px). Hidden when there are none.
+
+Only a compose project the cleanup remembers is ever listed, and only while none of its folders exists
+and nothing of it runs (no running, restarting or paused container).
+
+**Docker confirm (`CleanupDockerConfirmDialog.vue`, `data-testid="docker-confirm"`).** The bulk dialog's
+anatomy and width. Props `kind: 'stack' | 'volumes'`. Title "Clean up the leftovers of {n} removed
+worktree? | …of {n} removed worktrees?" (stack) or "Remove {n} volume? | Remove {n} volumes?" (volumes);
+one row per project (mono project name, 11px `--text-4` "{c} containers · {n} networks", or per volume
+its name, project and size). Callout in Warning: stack — "Stopped containers and networks can be
+recreated by starting the stack again. Volumes are not touched."; volumes — "Volumes cannot be
+restored." in `--warning` weight 600. Footer: **Cancel** (focused first) and the confirm — Success "Clean
+up" (stack) or Danger "Remove {n} volumes" (volumes). Esc closes only this dialog. Confirming sends
+`gc:clean` with every id in `confirmed` and the facts shown in `expected`; a project's containers and
+networks are removed one at a time without force, and a refusal from Docker (a container that turned out
+to be running, a network with active endpoints) is reported in the toast while the rest still go.
+
 #### First-cycle banner
 
 `.fc`: `--accent-soft` fill, `--accent-line` border, radius 7, `padding: 12px 16px`, `Recycle` icon in
@@ -9039,7 +9068,7 @@ that belong to no worktree) and states that worktree-bound stacks are cleaned by
 `CleanupView.vue` (shell) · `CleanupTreemap.vue` · `CleanupBlockPanel.vue` · `CleanupHeroButton.vue` ·
 `CleanupSelectionBar.vue` · `CleanupDockerCard.vue` · `CleanupReviewList.vue` · `CleanupListView.vue` ·
 `CleanupSplitBar.vue` · `CleanupLegend.vue` · `CleanupFirstCycleBanner.vue` · `CleanupBulkConfirmDialog.vue` · `CleanupOtherItems.vue` ·
-`CleanupTranscriptsConfirmDialog.vue` · `lib/gc-orphans.ts` ·
+`CleanupTranscriptsConfirmDialog.vue` · `CleanupDockerConfirmDialog.vue` · `lib/gc-orphans.ts` ·
 `CleanupOpinionChip.vue` · `lib/gc-opinion.ts` · `stores/gc.ts` · `lib/gc-treemap.ts` · `lib/gc-model.ts` · `lib/gc-jobs.ts`.
 
 ### Containers takeover (ContainersView.vue)

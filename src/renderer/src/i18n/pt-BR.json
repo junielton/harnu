@@ -2490,6 +2490,24 @@
         "noOrphanVolumes": "Nenhum volume órfão",
         "scope": "Conta apenas o cache de build com mais de {n} dia e as imagens dangling. Imagens em uso e volumes de stacks ativas nunca entram na conta. | Conta apenas o cache de build com mais de {n} dias e as imagens dangling. Imagens em uso e volumes de stacks ativas nunca entram na conta.",
         "cantRestore": "Não pode ser restaurado",
+        "leftovers": {
+          "title": "Deixados por worktrees removidos",
+          "stack": "Contêineres parados: {c} · redes: {n}",
+          "projects": "Projetos: {names}",
+          "clean": "Limpar",
+          "volumesLine": "{n} volume · {size} | {n} volumes · {size}",
+          "volumesNote": "Nunca removidos automaticamente. Só saem depois da confirmação própria deles.",
+          "volumesRemove": "Remover volumes…"
+        },
+        "confirm": {
+          "stackTitle": "Limpar o que {n} worktree removido deixou? | Limpar o que {n} worktrees removidos deixaram?",
+          "volumesTitle": "Remover {n} volume? | Remover {n} volumes?",
+          "listLabel": "Itens a limpar",
+          "stackNote": "Contêineres parados e redes podem ser recriados ao subir a stack de novo. Os volumes não são tocados.",
+          "volumesNote": "Volumes não podem ser restaurados.",
+          "stackConfirm": "Limpar",
+          "volumesConfirm": "Remover {n} volume | Remover {n} volumes"
+        },
         "projects": "Projetos: {names}",
         "more": "+{n} outros",
         "toggleCache": "Limpar o build cache automaticamente",
