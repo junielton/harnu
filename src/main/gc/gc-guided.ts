@@ -239,3 +239,21 @@ export async function prepareClean(
   }
   return { ok: true }
 }
+
+/** The two git-backed deps, over any `git -C <repo> …` runner (the executor's, or a test's real one). */
+export function createGitGuided(
+  git: (repo: string, args: string[]) => Promise<string>
+): Pick<GuidedDeps, 'lockReason' | 'unlock'> {
+  const key = (p: string): string => canonicalPathKey(p, process.platform)
+  return {
+    async lockReason(repoPath, path) {
+      const reasons = parseLockReasons(await git(repoPath, ['worktree', 'list', '--porcelain']))
+      const want = key(path)
+      for (const [p, reason] of reasons) if (key(p) === want) return reason
+      return undefined
+    },
+    async unlock(repoPath, path) {
+      await git(repoPath, ['worktree', 'unlock', path])
+    }
+  }
+}
