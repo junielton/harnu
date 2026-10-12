@@ -90,29 +90,37 @@ const OPERATION_ABORT = {
 const refused = (reason: RemovalRefusal, hint?: string): Removability =>
   hint === undefined ? { ok: false, reason } : { ok: false, reason, hint }
 
+type Refusal = Extract<Removability, { ok: false }>
+
 /**
- * Whether `gc:clean` would take this worktree bundle, judged from its facts, in the order main
- * judges them. `now` is the clock the grace window is held against (main re-checks it at the click).
+ * EVERY reason `gc:clean` would refuse this worktree bundle for, from its facts, in the order main judges
+ * them (the first is what {@link bundleRemovability} answers). A guided action needs the whole list: two
+ * stacked causes (a shared stack and a lock) must be fixed together, or each one's dry run meets the other.
+ * `now` is the clock the grace window is held against (main re-checks it at the click).
  */
-export function bundleRemovability(
+export function bundleRemovabilityAll(
   b: WorktreeBundle,
   now: number = Date.now(),
   /** What the CURRENT prefs say about this bundle; a mark made since the scan is not in its flags. */
   protection: 'never-clean' | 'kept' | null = null
-): Removability {
+): Refusal[] {
+  const out: Refusal[] = []
+  const add = (reason: RemovalRefusal, hint?: string): void => {
+    if (!out.some((r) => r.reason === reason)) out.push(refused(reason, hint) as Refusal)
+  }
   const path = b.item.path
   // refusalFor (autopilot-core)
   if (b.isMainCheckout || (!!path && looseKey(path) === looseKey(b.item.repoPath))) {
-    return refused('main-checkout')
+    add('main-checkout')
   }
-  if (b.neverClean || protection === 'never-clean') return refused('never-clean')
-  if (b.keep || protection === 'kept') return refused('kept')
-  if (b.bucket === 'in-use') return refused('in-use')
+  if (b.neverClean || protection === 'never-clean') add('never-clean')
+  if (b.keep || protection === 'kept') add('kept')
+  if (b.bucket === 'in-use') add('in-use')
   // A clean that stopped after the trash: the engine refuses a folder that is not there, and what
   // is left (prune, branch-delete) is finished by hand with the commands the panel shows.
-  if (b.folderGone === true) return refused('folder-gone')
+  if (b.folderGone === true) add('folder-gone')
   // Scanned while Docker was down: its stacks were never seen, and main refuses it until a scan does.
-  if (b.dockerBlind === true) return refused('scan-blind')
+  if (b.dockerBlind === true) add('scan-blind')
   // No hint for what is left here: `git worktree remove` would delete a detached worktree with
   // nothing archived, which is exactly what Remove now does safely from review.
   const kind = b.item.kind
@@ -120,23 +128,23 @@ export function bundleRemovability(
     !CLEANABLE_WORKTREE_KINDS.includes(kind) &&
     !(REVIEW_ONLY_WORKTREE_KINDS.includes(kind) && b.bucket === 'review')
   ) {
-    return refused('unsupported-kind')
+    add('unsupported-kind')
   }
   // refusalOf (pipeline-core): refused even when confirmed
   const code = b.reason?.code
-  if (b.sharedStackIds.length > 0 || code === 'shared-stack') return refused('shared-stack')
+  if (b.sharedStackIds.length > 0 || code === 'shared-stack') add('shared-stack')
   // In refusalOf's order. A list that is missing or not a list cannot show there is none: the
   // probe did not answer (`check-failed`), which refuses just the same but is not "something
   // lives inside"; a list with entries is (`nested-worktree`).
   const nested = b.nestedWorktrees
   const foreign = b.foreignCheckouts
-  if (!Array.isArray(nested)) return refused('check-failed')
-  if (nested.length > 0) return refused('nested-worktree')
-  if (!Array.isArray(foreign)) return refused('check-failed')
-  if (foreign.length > 0 || code === 'nested-worktree') return refused('nested-worktree')
-  if (code === 'check-failed') return refused('check-failed')
+  if (!Array.isArray(nested)) add('check-failed')
+  else if (nested.length > 0) add('nested-worktree')
+  if (!Array.isArray(foreign)) add('check-failed')
+  else if (foreign.length > 0 || code === 'nested-worktree') add('nested-worktree')
+  if (code === 'check-failed') add('check-failed')
   // The reprobe (gc-shell): what it can refuse from the scan's own facts
-  if (typeof b.localTip !== 'string') return refused('tip-unknown')
+  if (typeof b.localTip !== 'string') add('tip-unknown')
   const known = (n: number | null | undefined): n is number =>
     Number.isFinite(n) && (n as number) >= 0
   if (
@@ -144,20 +152,18 @@ export function bundleRemovability(
     !known(b.graceDays) ||
     now - b.lastSignOfLifeAt < b.graceDays * DAY_MS
   ) {
-    return refused('grace-not-elapsed')
+    add('grace-not-elapsed')
   }
-  if (!path || b.pathsResolved !== true || code === 'path-unresolved') {
-    return refused('path-unresolved')
-  }
+  if (!path || b.pathsResolved !== true || code === 'path-unresolved') add('path-unresolved')
   // Any running session refuses, even one the scan already saw idle.
-  if (b.session !== 'none' || code === 'open-idle-session') return refused('session-open')
+  if (b.session !== 'none' || code === 'open-idle-session') add('session-open')
   if (b.locked === true || code === 'locked') {
-    return refused('locked', `git worktree unlock ${shellQuote(path)}`)
+    add('locked', path ? `git worktree unlock ${shellQuote(path)}` : undefined)
   }
   // A rebase, bisect or git am keeps its state in the folder, which Remove would trash — on a detached
   // worktree or a branch one.
   if (b.operation !== undefined || code === 'operation-in-progress') {
-    return refused(
+    add(
       'operation-in-progress',
       b.operation === undefined || !path
         ? undefined
@@ -165,14 +171,29 @@ export function bundleRemovability(
     )
   }
   // Demoted after repeated refusals: main said no again and again, and nothing here shows what changed.
-  const remembered = b.bucket === 'review' ? REMEMBERED[b.reprobeRefusal?.code ?? ''] : undefined
-  if (remembered) {
-    return refused(
-      remembered,
-      remembered === 'cannot-unregister' ? 'git worktree list --porcelain' : undefined
-    )
+  // It is only the answer when nothing above explains the refusal.
+  if (out.length === 0 && b.bucket === 'review') {
+    const remembered = REMEMBERED[b.reprobeRefusal?.code ?? '']
+    if (remembered) {
+      add(
+        remembered,
+        remembered === 'cannot-unregister' ? 'git worktree list --porcelain' : undefined
+      )
+    }
   }
-  return { ok: true }
+  return out
+}
+
+/**
+ * Whether `gc:clean` would take this worktree bundle, judged from its facts, in the order main
+ * judges them: the first of {@link bundleRemovabilityAll}.
+ */
+export function bundleRemovability(
+  b: WorktreeBundle,
+  now: number = Date.now(),
+  protection: 'never-clean' | 'kept' | null = null
+): Removability {
+  return bundleRemovabilityAll(b, now, protection)[0] ?? { ok: true }
 }
 
 /**
@@ -182,4 +203,10 @@ export function bundleRemovability(
 export function removability(b: GcBlock, now: number = Date.now()): Removability {
   if (b.kind === 'volume' || !b.bundle) return { ok: true }
   return bundleRemovability(b.bundle, now, b.protection)
+}
+
+/** Every reason a block cannot be removed, first one first; an orphan volume has none (main decides at the click). */
+export function removabilityAll(b: GcBlock, now: number = Date.now()): Refusal[] {
+  if (b.kind === 'volume' || !b.bundle) return []
+  return bundleRemovabilityAll(b.bundle, now, b.protection)
 }

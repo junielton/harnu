@@ -84,3 +84,155 @@ describe('CleanupSelectionBar — Keep only when something can be kept', () => {
     expect(mountBar(1).find('[data-testid="sel-keep"]').exists()).toBe(true)
   })
 })
+
+// "No dead ends" (unit B, AC-B1 / AC-B2): the reason Remove is unavailable is inline text, grouped by
+// cause with counts, each group is the door to its guided action, and Dehydrate shows what it frees.
+describe('CleanupSelectionBar — says why Remove is unavailable', () => {
+  const group = (reason: string, count: number, action = 'dehydrate') => ({
+    reason,
+    causes: [reason],
+    count,
+    ids: Array.from({ length: count }, (_, i) => `id-${reason}-${i}`),
+    action
+  })
+  const mountWith = (summary: unknown, canRemove: boolean) =>
+    mount(CleanupSelectionBar, {
+      props: { count: 11, bytes: 12_000_000_000, canRemove, summary: summary as never },
+      global: { plugins: [i18n] }
+    })
+
+  it('nothing removable: states the count and the cause inline, not only in a tooltip', () => {
+    const w = mountWith(
+      { removable: [], refused: [group('unsupported-kind', 11)], dehydrate: null },
+      false
+    )
+    expect(w.get('[data-testid="sel-why"]').text()).toBe(
+      "11 can't be removed: 11 detached (no branch)"
+    )
+  })
+
+  it('a partial selection says what goes and what does not, with every cause counted', () => {
+    const w = mountWith(
+      {
+        removable: ['a', 'b', 'c'],
+        refused: [group('unsupported-kind', 6), group('locked', 2, 'unlock-remove')],
+        dehydrate: null
+      },
+      true
+    )
+    expect(w.get('[data-testid="sel-why"]').text()).toBe(
+      "Removes 3 · 8 can't: 6 detached (no branch) · 2 locked in git"
+    )
+  })
+
+  it('each group is a door to its guided action', async () => {
+    const w = mountWith(
+      { removable: [], refused: [group('locked', 2, 'unlock-remove')], dehydrate: null },
+      false
+    )
+    await w.get('[data-testid="sel-guide-locked"]').trigger('click')
+    expect(w.emitted('guide')).toEqual([[expect.objectContaining({ reason: 'locked', count: 2 })]])
+  })
+
+  it('shows nothing when the whole selection can be removed', () => {
+    const w = mountWith({ removable: ['a'], refused: [], dehydrate: null }, true)
+    expect(w.find('[data-testid="sel-why"]').exists()).toBe(false)
+  })
+
+  it('promotes Dehydrate with the real bytes the refused items carry', () => {
+    const w = mountWith(
+      {
+        removable: [],
+        refused: [group('unsupported-kind', 11)],
+        dehydrate: { count: 11, bytes: 11_700_000_000, ids: [] }
+      },
+      false
+    )
+    expect(w.get('[data-testid="sel-dehydrate"]').text()).toBe(
+      'Dehydrate frees 11.70 GB and keeps the code'
+    )
+  })
+
+  it('keeps the plain Dehydrate label when there is nothing to promote', () => {
+    const w = mountWith({ removable: ['a'], refused: [], dehydrate: null }, true)
+    expect(w.get('[data-testid="sel-dehydrate"]').text()).toBe('Dehydrate')
+  })
+})
+
+describe('CleanupSelectionBar — a group is busy while its action runs (delta 2)', () => {
+  it('disables every group and marks the line busy', () => {
+    const w = mount(CleanupSelectionBar, {
+      props: {
+        count: 2,
+        bytes: 1,
+        busy: true,
+        summary: {
+          removable: [],
+          refused: [
+            { reason: 'kept', causes: ['kept'], count: 2, ids: ['a', 'b'], action: 'unkeep' }
+          ],
+          dehydrate: null
+        } as never
+      },
+      global: { plugins: [i18n] }
+    })
+    const g = w.get('[data-testid="sel-guide-kept"]')
+    expect((g.element as HTMLButtonElement).disabled).toBe(true)
+    expect(w.get('[data-testid="sel-why"]').attributes('aria-busy')).toBe('true')
+  })
+})
+
+describe('CleanupSelectionBar — groups are keyed by their cause set (delta 3)', () => {
+  it('never keys a group by its first cause alone: two groups can share it', async () => {
+    const { readFileSync } = await import('node:fs')
+    const src = readFileSync('src/renderer/src/components/CleanupSelectionBar.vue', 'utf8')
+    expect(src).not.toMatch(/:key="g\.reason"/)
+    expect(src).toMatch(/:key="[^"]*causes[^"]*"/)
+  })
+
+  const group = (causes: string[], action: string, ids: string[]) => ({
+    reason: 'locked',
+    causes,
+    count: ids.length,
+    ids,
+    action
+  })
+
+  it('a plain lock next to a lock + shared stack renders both, with no duplicate-key warning', async () => {
+    const { vi } = await import('vitest')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const w = mount(CleanupSelectionBar, {
+      props: {
+        count: 3,
+        bytes: 1,
+        summary: {
+          removable: [],
+          refused: [group(['locked'], 'unlock-remove', ['c'])],
+          dehydrate: null
+        } as never
+      },
+      global: { plugins: [i18n] }
+    })
+    // Vue reports a duplicate key when the list is PATCHED, so the selection changes under it.
+    await w.setProps({
+      summary: {
+        removable: [],
+        refused: [
+          group(['locked', 'shared-stack'], 'combined', ['a', 'b']),
+          group(['locked'], 'unlock-remove', ['c'])
+        ],
+        dehydrate: null
+      } as never
+    })
+    expect(w.find('[data-testid="sel-guide-combined"]').exists()).toBe(true)
+    expect(w.find('[data-testid="sel-guide-locked"]').exists()).toBe(true)
+    // Each group is its own element, in order, with its own text.
+    expect(w.findAll('[data-testid^="sel-guide-"]').map((b) => b.text())).toEqual([
+      '2 locked in git + shared Docker stack',
+      '1 locked in git'
+    ])
+    const dup = warn.mock.calls.filter((c) => String(c[0]).includes('Duplicate keys'))
+    warn.mockRestore()
+    expect(dup).toEqual([])
+  })
+})

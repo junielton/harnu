@@ -2706,6 +2706,16 @@
         "dirty": "Agora há alterações não commitadas, então foi deixado como está.",
         "foreignCheckout": "Há outro repositório com checkout dentro desta pasta, então foi deixado como está.",
         "cannotUnregister": "O Harnu não conseguiu associar este worktree a um único registro do git, então nada foi tocado.",
+        "unlockFailed": "O git não quis desbloquear este worktree, então ele foi deixado como estava.",
+        "sessionBusy": "Uma sessão neste worktree está trabalhando ou esperando por você, então o Harnu não a fechou e deixou o worktree como estava.",
+        "sessionNotClosable": "A sessão aberta aqui não é uma que o Harnu possa fechar, então o worktree foi deixado como estava.",
+        "stackStopFailed": "O Docker não conseguiu parar a stack inteira. O Harnu tentou subir de novo o que tinha parado e deixou o worktree como estava.",
+        "stackBindsFolder": "Essa stack usa esta pasta, então não pode ficar rodando. Pare-a ou escolha de novo.",
+        "prepNotApplicable": "O que você escolheu não vale mais para este worktree, então ele foi deixado como estava. Escaneie de novo e revise.",
+        "stackIsMainCheckout": "Essa stack é do checkout principal, então o Harnu não a para e deixou o worktree como estava.",
+        "stackUsedElsewhere": "Outra pasta com uma sessão usa essa stack, então o Harnu não a parou e deixou o worktree como estava.",
+        "rollbackFailed": "O que a ação tinha mudado (um bloqueio, uma stack parada) não pôde ser desfeito: confira.",
+        "prepLeftStack": "O worktree foi removido depois de o Harnu parar a stack compartilhada, então a stack ficou parada porque a pasta dela sumiu.",
         "operationInProgress": "Um rebase, bisect ou git am está em andamento neste worktree, então ele foi deixado como estava. Termine ou aborte, depois Scan now."
       },
       "opinion": {
@@ -2754,6 +2764,172 @@
         "sub": "Procurando branches mescladas, sessões paradas e sobras do Docker.",
         "failed": "A primeira varredura não terminou: {error}",
         "hero": "Analisando…"
+      },
+      "guide": {
+        "why": {
+          "none": "{n} não podem ser removidos:",
+          "partial": "Remove {k} · {n} não podem:"
+        },
+        "group": "{count} {cause}",
+        "cause": {
+          "mainCheckout": "checkout principal",
+          "neverClean": "na sua lista de nunca limpar",
+          "kept": "marcado como Manter",
+          "inUse": "em uso",
+          "unsupportedKind": "detached (sem branch)",
+          "sharedStack": "stack Docker compartilhada",
+          "nestedWorktree": "contém outro worktree",
+          "checkFailed": "pasta ilegível",
+          "folderGone": "pasta sumiu",
+          "tipUnknown": "commit desconhecido",
+          "graceNotElapsed": "ainda não ficou quieto o bastante",
+          "pathUnresolved": "caminho não resolvido",
+          "sessionOpen": "sessão aberta",
+          "locked": "bloqueado no git",
+          "cannotUnregister": "o git não consegue desregistrar",
+          "protectedNow": "protegido agora",
+          "stackPresent": "stack Docker rodando",
+          "scanBlind": "escaneado sem o Docker"
+        },
+        "dehydrateWin": "Dehydrate libera {size} e mantém o código",
+        "action": {
+          "unlock-remove": "Desbloquear e remover…",
+          "close-session-remove": "Fechar sessão e remover…",
+          "shared-stack": "Escolher o que fazer com a stack…",
+          "fix-unreadable": "Ver como corrigir…",
+          "scan-again": "Escanear de novo",
+          "check-again": "Conferir de novo",
+          "unkeep": "Tirar a marca Manter",
+          "open-settings": "Abrir Ajustes",
+          "dockerDown": "O Docker não estava rodando — e agora?"
+        },
+        "combined": {
+          "label": "{steps} e remover…",
+          "unlock": "Desbloquear",
+          "stack": "parar a stack",
+          "session": "fechar a sessão"
+        }
+      },
+      "guided": {
+        "title": {
+          "unlockRemove": "Desbloquear e remover",
+          "closeSession": "Fechar a sessão e remover",
+          "sharedStack": "Uma stack é compartilhada com outras pastas",
+          "fixUnreadable": "O Harnu não consegue ler esta pasta",
+          "dockerDown": "O Docker não estava rodando",
+          "combined": "Vários passos, depois a remoção"
+        },
+        "subtitle": {
+          "unlockRemove": "O git bloqueou este worktree. Depois de desbloquear, a remoção é a de sempre: arquivado primeiro, depois movido para a lixeira.",
+          "closeSession": "Ainda há uma sessão aberta aqui. Fechar uma ociosa mantém a conversa em disco; a remoção que segue é a de sempre.",
+          "sharedStack": "Outras pastas rodam contêineres da mesma stack do Docker, então o Harnu não mexe nela a menos que você escolha.",
+          "fixUnreadable": "O Harnu não sabe o que há dentro, então não remove a pasta sem ver. Corrija a permissão e confira de novo.",
+          "dockerDown": "Sem o Docker, o Harnu não viu quais stacks rodam dos seus worktrees, então não os remove.",
+          "combined": "Duas ou mais coisas separam este worktree da remoção. O Harnu as faz nesta ordem e desfaz o que mudou se a remoção ainda for recusada."
+        },
+        "loading": "Lendo o que o git e o Docker dizem agora…",
+        "loadError": "Não deu para ler os fatos atuais. Feche e tente de novo.",
+        "lock": {
+          "reason": "O git registrou este motivo: “{reason}”",
+          "none": "O git bloqueou e não registrou motivo.",
+          "gone": "O git não lista mais como bloqueado.",
+          "leftOut": "{n} não estão mais bloqueados, então ficam de fora."
+        },
+        "sessions": {
+          "idle": "{n} sessão ociosa será fechada. A conversa continua em disco. | {n} sessões ociosas serão fechadas. As conversas continuam em disco.",
+          "busy": "Uma sessão aqui está trabalhando ou esperando por você, então o Harnu não a fecha. Termine ou feche você mesmo antes.",
+          "foreign": "A sessão aberta aqui não foi iniciada pelo Harnu, então ele não pode fechá-la. Feche onde ela roda.",
+          "parkWarning": "Estacionar fecha o terminal; processos em segundo plano que ele iniciou (servidores de dev, shells) param. A conversa é mantida e pode ser retomada.",
+          "userOpened": "{n} delas você abriu por conta própria, não um agente."
+        },
+        "stack": {
+          "runs": "{name} também roda de {folders}",
+          "uses": "Ela usa esta pasta.",
+          "none": "Esta stack não existe mais. Escaneie de novo."
+        },
+        "choice": {
+          "stop": "Parar a stack e remover",
+          "stopBody": "Para estes contêineres: {names}. Eles não são removidos, e os volumes também não.",
+          "leave": "Remover o worktree e deixar a stack",
+          "leaveBody": "A stack continua rodando. Nenhum contêiner dela usa esta pasta.",
+          "leaveUnavailable": "Esta stack usa esta pasta, então não pode ficar rodando.",
+          "stopBlocked": {
+            "main-checkout": "Esta stack é do checkout principal, então o Harnu não a para.",
+            "in-use-elsewhere": "Outra pasta com uma sessão usa esta stack, então o Harnu não a para."
+          }
+        },
+        "unreadable": {
+          "where": "O Harnu não conseguiu ler {path}.",
+          "owner": "Pertence a {owner}.",
+          "ownerUnknown": "O Harnu não soube dizer quem é o dono.",
+          "fix": "Rode isto e confira de novo:",
+          "ok": "O Harnu consegue ler agora. Confira de novo para continuar."
+        },
+        "copy": "Copiar",
+        "copied": "Copiado",
+        "docker": {
+          "down": "O Docker não estava rodando quando o Harnu escaneou, então ele não viu as stacks deste worktree.",
+          "start": "Inicie o Docker e escaneie de novo:",
+          "app": "Abra o Docker pelos seus aplicativos e escaneie de novo."
+        },
+        "confirm": {
+          "unlock": "Desbloquear e remover",
+          "closeSession": "Fechar sessão e remover",
+          "stop": "Parar a stack e remover",
+          "leave": "Remover e deixar a stack",
+          "combined": "{steps} e remover",
+          "word": {
+            "unlock": "desbloquear",
+            "stop": "parar a stack",
+            "leave": "deixar a stack",
+            "session": "fechar a sessão"
+          }
+        },
+        "recheck": "Conferir de novo",
+        "scan": "Escanear de novo",
+        "cancel": "Cancelar",
+        "close": "Fechar",
+        "pending": "Trabalhando…",
+        "stale": "Isto mudou desde que você abriu — abra de novo.",
+        "toast": {
+          "scanned": "Escaneado de novo",
+          "scanStillBlind": "Escaneado de novo, mas o Docker ainda não responde",
+          "scanFailed": "Não deu para escanear de novo",
+          "unkept": "Marca Manter removida | Marcas Manter removidas",
+          "unkeepFailed": "Não deu para tirar a marca Manter",
+          "recheckedOk": "Conferido de novo: o Harnu consegue ler agora",
+          "recheckedStill": "Conferido de novo: o Harnu ainda não consegue ler",
+          "recheckFailed": "Não deu para conferir de novo",
+          "undo": "Desfazer"
+        },
+        "step": {
+          "unlock": "Desbloquear o worktree no git.",
+          "stop": "Parar estes contêineres (eles não são removidos): {names}.",
+          "leave": "Deixar a stack rodando.",
+          "session": "Fechar a sessão ociosa aberta aqui (estacionar; a conversa é mantida).",
+          "remove": "Depois remover o worktree do jeito de sempre: arquivado primeiro, depois movido para a lixeira."
+        }
+      },
+      "recovered": {
+        "relocked": "Recoloquei o bloqueio em {path} depois que o Harnu fechou no meio de uma ação",
+        "stackStopped": "O Harnu parou uma stack durante uma limpeza que não terminou",
+        "lockSkipped": "O Harnu desbloqueou um worktree durante uma limpeza que não terminou",
+        "containersGone": "O Harnu parou contêineres durante uma limpeza que não terminou; eles não existem mais",
+        "failed": "Não deu para fazer isso",
+        "lockFailed": "O Harnu desbloqueou um worktree durante uma limpeza que não terminou e não conseguiu bloquear de novo"
+      },
+      "recovery": {
+        "label": "Limpezas interrompidas",
+        "stackStopped": "O Harnu parou {names} durante uma limpeza que não terminou.",
+        "containersGone": "O Harnu parou {names} durante uma limpeza que não terminou; eles não existem mais.",
+        "lockSkipped": "O Harnu desbloqueou {path} durante uma limpeza que não terminou, e não é mais o mesmo worktree (ou não deu para confirmar), então o bloqueio não foi recolocado.",
+        "start": "Subir de novo",
+        "leave": "Deixar parado",
+        "lock": "Bloquear de novo",
+        "dismiss": "Dispensar",
+        "lockFailed": "O Harnu desbloqueou {path} durante uma limpeza que não terminou e não conseguiu bloquear de novo:",
+        "lockMismatch": "O Harnu desbloqueou {path} durante uma limpeza que não terminou, e a conferência agora diz que não é claramente o mesmo worktree:",
+        "lockAnyway": "Bloquear este worktree mesmo assim"
       }
     }
   },

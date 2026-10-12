@@ -21,7 +21,7 @@
 import type { WorktreeBundle } from './bundle-core'
 import { createGcOps, type GcShellDeps } from './gc-shell'
 import type { GcOps } from './pipeline-core'
-import { planArchive } from '../reaper/archive-core'
+import { planArchive, type ArchivePlan, type ArchiveRefPlan } from '../reaper/archive-core'
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
@@ -41,31 +41,39 @@ export function asExecutable(b: WorktreeBundle): WorktreeBundle {
   }
 }
 
+/** What would be archived, read-only: throws (so refuses) when nothing could preserve the worktree. */
+async function planPreserve(
+  b: WorktreeBundle,
+  deps: GcShellDeps,
+  at: number
+): Promise<{ plan: ArchivePlan; tip: ArchiveRefPlan; wip: ArchiveRefPlan; sha: string }> {
+  const plan = planArchive(b.item, at)
+  // A folder that would be removed with nothing preserving it is never removed.
+  if (!plan.tip || !plan.wip) throw new Error('nothing would preserve this worktree')
+  const sha = await deps.executor.resolveSha(b.item.repoPath, plan.tip.rev!)
+  if (!sha) throw new Error(`could not resolve '${plan.tip.rev}' before removal`)
+  return { plan, tip: plan.tip, wip: plan.wip, sha }
+}
+
 /**
  * Writes `refs/archive/<branch>/<stamp>/{tip,wip}`, or `refs/archive/detached/<folder>-<sha>/{tip,wip,reflog/*}`
  * for a detached worktree; throws, and so refuses, if it cannot.
  */
 async function preserve(b: WorktreeBundle, deps: GcShellDeps, at: number): Promise<void> {
+  const { plan, tip, wip, sha } = await planPreserve(b, deps, at)
   const { executor } = deps
-  const plan = planArchive(b.item, at)
-  // A folder that would be removed with nothing preserving it is never removed.
-  if (!plan.tip || !plan.wip) throw new Error('nothing would preserve this worktree')
-  const sha = await executor.resolveSha(b.item.repoPath, plan.tip.rev!)
-  if (!sha) throw new Error(`could not resolve '${plan.tip.rev}' before removal`)
   // Commits only a detached HEAD's reflog reaches go with the folder: keep them reachable too. First,
   // because it is the one step that can refuse for size, and a refusal leaves no tip or wip behind.
   if (b.item.kind === 'detached-worktree' && plan.namespace && b.item.path) {
     await executor.archiveReflog(b.item.repoPath, `${plan.namespace}/reflog`, b.item.path)
   }
-  await executor.archiveTip(b.item.repoPath, plan.tip.ref, sha)
-  await executor.archiveWip(b.item.repoPath, plan.wip.ref, plan.wip.worktreePath!)
+  await executor.archiveTip(b.item.repoPath, tip.ref, sha)
+  await executor.archiveWip(b.item.repoPath, wip.ref, wip.worktreePath!)
 }
 
-export function createForcedGcOps(deps: GcShellDeps): GcOps {
-  // One stamp for the whole run: the archive step inside cleanItem then writes the very refs
-  // written here instead of a second set.
-  const at = deps.executor.now()
-  const forcedDeps: GcShellDeps = {
+/** The shell deps the force path runs on: the executor's dirty / unpushed / merged guards waived. */
+function forcedShellDeps(deps: GcShellDeps, at: number): GcShellDeps {
+  return {
     ...deps,
     executor: {
       ...deps.executor,
@@ -85,6 +93,42 @@ export function createForcedGcOps(deps: GcShellDeps): GcOps {
         )
     }
   }
+}
+
+/**
+ * The reprobe a guided action's DRY RUN uses: the very one the confirmed remove will run (the review
+ * path with its guards waived, or the ordinary one), but read-only, so it never writes the archive refs
+ * the real reprobe writes. A dry run that judged by stricter rules would refuse what the remove accepts.
+ */
+export function createDryReprobe(
+  deps: GcShellDeps,
+  forced: boolean
+): (b: WorktreeBundle) => ReturnType<GcOps['reprobe']> {
+  if (!forced) {
+    const ops = createGcOps(deps)
+    return (b) => ops.reprobe(b)
+  }
+  const at = deps.executor.now()
+  const base = createGcOps(forcedShellDeps(deps, at))
+  return async (b) => {
+    const verdict = await base.reprobe(asExecutable(b))
+    if (!verdict.ok) return verdict
+    // The real reprobe archives before anything destructive; if that would fail, say so NOW, before a
+    // guided action has parked a session it cannot un-park.
+    try {
+      await planPreserve(b, deps, at)
+    } catch (err) {
+      return { ok: false, reason: `archive-failed: ${messageOf(err)}` }
+    }
+    return verdict
+  }
+}
+
+export function createForcedGcOps(deps: GcShellDeps): GcOps {
+  // One stamp for the whole run: the archive step inside cleanItem then writes the very refs
+  // written here instead of a second set.
+  const at = deps.executor.now()
+  const forcedDeps = forcedShellDeps(deps, at)
   const base = createGcOps(forcedDeps)
   return {
     ...base,

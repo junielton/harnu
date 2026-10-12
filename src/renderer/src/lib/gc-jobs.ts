@@ -51,6 +51,15 @@ export const REFUSAL_CODES = [
   'dirty',
   'foreign-checkout',
   'cannot-unregister',
+  // a guided action's prep (gc-guided.ts `prepareClean`): the item was left as it was
+  'unlock-failed',
+  'session-busy',
+  'session-not-closable',
+  'stack-stop-failed',
+  'stack-is-main-checkout',
+  'stack-used-elsewhere',
+  'stack-binds-folder',
+  'prep-not-applicable',
   'operation-in-progress',
   // mid-run
   'changed-mid-run'
@@ -177,6 +186,12 @@ export interface DoneSummary {
   refusals: Partial<Record<RefusalCode, number>>
   /** How many items were refused (any code). */
   refused: number
+  /** Items whose guided prep (an unlock, a stopped stack) could NOT be put back after the remove refused. */
+  rollbackFailed: number
+  /** What each could not put back (e.g. which containers were left stopped), for the toast. */
+  rollbackDetails: string[]
+  /** Items whose shared stack was stopped and left stopped because the worktree was removed anyway. */
+  prepLeft: number
 }
 
 export function doneSummary(d: GcJobDone): DoneSummary {
@@ -188,10 +203,30 @@ export function doneSummary(d: GcJobDone): DoneSummary {
     if (code) refusals[code] = (refusals[code] ?? 0) + 1
   }
   const refused = Object.values(refusals).reduce((a, n) => a + (n ?? 0), 0)
+  const rollbackDetails = d.results.flatMap((r) => {
+    const m = r.ok ? null : /rollback-failed \((.*)\)\s*$/.exec(r.error ?? '')
+    return m ? [m[1]!] : []
+  })
+  const prepLeft = d.results.filter(
+    (r) => !r.ok && (r.error ?? '').includes('prep-left (stack-stopped)')
+  ).length
+  const rollbackFailed = d.results.filter(
+    (r) => !r.ok && (r.error ?? '').includes('rollback-failed')
+  ).length
   let tone: DoneSummary['tone'] = 'success'
   if (failed > 0 || d.error) tone = 'warning'
   else if (d.results.length === 0 && d.freedBytes === 0) tone = 'none'
-  return { tone, cleaned, failed, freedBytes: d.freedBytes, refusals, refused }
+  return {
+    tone,
+    cleaned,
+    failed,
+    freedBytes: d.freedBytes,
+    refusals,
+    refused,
+    rollbackFailed,
+    rollbackDetails,
+    prepLeft
+  }
 }
 
 export interface ItemFailure {

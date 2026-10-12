@@ -8517,7 +8517,7 @@ A block that is **planned, not done** (first-cycle report-only) takes a dashed b
 3. **Selection bar** (only with ≥1 checked block) — the takeover's existing selection band
    (`border-b border-border bg-surface-2`, `padding: 8px 22px`): `square-check` icon (`--accent`), the
    count `N selected · X GB` (13px; numbers 600-weight `--text`), then **Remove selected** (Danger,
-   `trash-2`), **Dehydrate** (Soft, `package-minus`), **Keep** (Ghost, `bookmark`) — the same icons as the side
+   `trash-2`), **Dehydrate** (Soft, `package-minus`; reads "Dehydrate frees {size} and keeps the code" when the refused items carry deps), **Keep** (Ghost, `bookmark`) — the same icons as the side
    panel's actions — **Ask for an opinion** (Soft, `sparkles`; enabled whenever the selection
    holds Needs review items — see "Opinion chip"), a `⇧` hint (`kbd`) and a right-aligned "Clear selection" ghost link.
 4. **First-cycle banner** (only while `firstReportAcknowledged` is false and a report exists): see below.
@@ -8818,7 +8818,7 @@ volume), size right.
   written; a history with more than 500 such tips is refused (`reflog-limit`, nothing removed, no tip
   or wip ref either) rather than archived in part.
 - **Nothing removable → no dialog.** The selection bar's **Remove selected** is disabled (tooltip "Nothing
-  selected can be removed") when no ticked item can be removed; the list row swaps its Remove button for an
+  selected can be removed", and the inline "{n} can't be removed: …" line above says why) when no ticked item can be removed; the list row swaps its Remove button for an
   inert, dimmed `Trash2` carrying the reason as its tooltip and `aria-label`. Any path that still reaches
   the open step (a marked-safe pre-selection that went stale) raises a Warning toast with the reason — the
   one sentence when every item shares it, "each for its own reason" otherwise — and opens no dialog.
@@ -8843,6 +8843,60 @@ volume), size right.
   Docker CLI at all is not blind. A refusal for `docker-unavailable` (the daemon stopped after a scan that
   saw it, for a bundle that had stacks) reads "Docker is not running … Start Docker, then Retry." and offers
   Retry.
+- **No dead ends — every refusal names its cause and offers a way out (unit B).** A bare disabled button
+  pushes the operator to `rm -rf`, which skips the archive ref, the trash and every guard. So wherever Remove
+  is unavailable or partial, the reason is **inline text**, never only a tooltip, and each cause links to the
+  guided action that clears it. `lib/gc-guidance.ts` (`removalSummary`) derives all of it from
+  `removability()` and nothing else: no UI file names a cause of its own (a detached worktree in review is no
+  group at all, since main archives and removes it; one outside review is still refused as an unsupported
+  kind, with no command).
+  - **Selection bar.** A second line (`basis-full`, `text-caption`, `--text-3`, `data-testid="sel-why"`)
+    under the buttons. Nothing removable: "{n} can't be removed: {groups}". Partly removable: "Removes {k} ·
+    {n} can't: {groups}". Each group is "{count} {cause}" (e.g. "11 locked in git", "2 session open")
+    as a link-style button (`--accent`, underline on hover, `data-testid="sel-guide-<reason>"`) that opens
+    its guided action; groups run biggest first and are separated by " · ". When the refused items carry
+    installed dependencies the **Dehydrate** button promotes its real bytes: "Dehydrate frees {size} and
+    keeps the code" (Soft, `package-minus`). **Remove selected** stays Danger and is disabled only when
+    nothing in the selection can go — the line above is then what the operator reads, the tooltip repeats it.
+  - **Panel.** Under "Remove is unavailable. {reason}" a **guided action** button (Soft, `data-testid="panel-guide"`)
+    carries the cause's action: "Unlock and remove…", "Close session and remove…", "Choose what to do with
+    the stack…", "Show how to fix it…", "Scan again", "Dehydrate — frees {size}", "Remove the Keep mark",
+    "Open Settings"; a cause with no action in Harnu (a main checkout) states the reason as the answer.
+  - **Guided dialog** (`CleanupGuidedDialog.vue`, `data-testid="guided-dialog"`): the standard 480px confirm
+    dialog. Eyebrow = the cause; body = the facts main read just now (`gc:guide`): the lock reason git
+    recorded, the idle sessions that would be parked, each shared stack with the other folders using it,
+    the unreadable path with its owner and a copyable fix command (`sudo chown -R $USER <path>`, mono
+    `--text-2`, one-click copy), or the Docker hint. Buttons: Cancel (focused first), then the action — Danger
+    when it ends in a removal ("Unlock and remove", "Close session and remove", "Stop stack and remove"),
+    Soft otherwise ("Check again", "Scan again"). A shared stack offers a choice of two radio rows: **Stop
+    stack and remove** (stops and removes that stack's containers, never its volumes) and **Remove the
+    worktree and leave the stack** (offered only when no container of the stack bind-mounts this folder;
+    otherwise the row is absent and one line says why).
+  - **The prep is the LAST step, and it is undone when the removal still refuses.** Main runs a dry run of
+    everything else first (the work-stamp guards, the pipeline's refusals, the reprobe with the prep's own
+    cause assumed fixed), and the prep runs only when nothing else refuses. A refusal afterwards locks the
+    worktree again with its original reason and starts again exactly the containers it stopped; a failed
+    undo is said in the toast. **Stop stack** only stops (never removes), lists the containers by name in the
+    choice, and is not offered for the main checkout's own stack or a stack another folder uses with a live
+    or parked session (one line says which). **Close session** treats only idle / completed / stopped as
+    idle, warns "Parking closes its terminal; background processes it started (dev servers, shells) stop.
+    The conversation is kept and can be resumed." and adds "{n} of them you opened yourself, not an agent."
+    when it applies. **Unlock** sends only the rows still locked and says how many were left out.
+  - **Stacked causes are one combined action.** `removabilityAll()` lists every cause; a cause no step can fix
+    is shown first, alone; when every cause is fixable and there are several, the bar group reads
+    "{n} locked in git + shared Docker stack", the button "Unlock, stop stack and remove…", and the dialog
+    shows an ordered list of the steps (unlock, stop/leave the stack, close the session) ending in the
+    removal, behind a single confirm. Steps run in that order (closing a session, which cannot be undone,
+    last) and are undone in reverse. A rollback happens only while the folder still exists; Scan again and
+    removing a Keep mark disable their links while they run, and the unmark's toast has **Undo**.
+  - **Interrupted cleans** (`CleanupRecoveryNotices.vue`, `data-testid="recovery-notices"`): above the
+    first-cycle banner, one warning-toned row per notice (`bg-warning-soft`, `border-warning-line`, 14px
+    `triangle-alert`), text in `--text-2`, then the answers: Soft **Start again** / Ghost **Leave stopped** for
+    a stack stop, Soft **Lock again** / Ghost **Dismiss** for a lock, Ghost **Dismiss** for containers that
+    are gone. A notice stays until answered; Harnu never starts containers on its own.
+  - **Every guided action ends in a toast.** While it runs the confirm shows a spinner and disables;
+    success is a Success toast with the bytes freed ("Removed 1 worktree · 3.4 GB freed"); failure is a
+    Danger toast naming the cause in one sentence. Nothing a guided action does is silent.
 - **Marks are read from the current prefs.** Keep and never-clean come from the snapshot's prefs, not the
   bundle's scan-time flags, so a mark added since the scan hides Remove (and the hero count) at once.
 - **Keyboard:** Esc or Cancel closes; **focus starts on Cancel, never the confirm button**; Tab cycles

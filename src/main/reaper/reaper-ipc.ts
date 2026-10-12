@@ -106,7 +106,7 @@ export function buildDeps(getWindow: () => BrowserWindow | null): ExecutorDeps {
     archiveTip,
     archiveWip,
     archiveReflog,
-    canUnregister: (repo, wt) => canUnregister(repo, wt, git),
+    canUnregister: (repo, wt, opts) => canUnregister(repo, wt, git, opts),
     removeWorktreeAdmin: (repo, wt) => removeWorktreeAdmin(repo, wt, git),
     detachSidebar: async (p) => {
       await removeGhostFolder(getWindow, p)
