@@ -1188,12 +1188,21 @@ export async function removeGhostFolder(
   if (existsSync(normalizedPath)) {
     return { ok: false, error: 'DIRECTORY_STILL_EXISTS' }
   }
+  return reconcileGhost(getWindow, normalizedPath, await readUserProjects(), await scanFolders())
+}
 
-  const file = await readUserProjects()
+/**
+ * The reconcile of one already-normalized, already-missing path against a snapshot of the pinned
+ * file and of the known folders. Split out so a tree of ghosts reads both once, not once per row.
+ */
+async function reconcileGhost(
+  getWindow: () => BrowserWindow | null,
+  normalizedPath: string,
+  file: UserProjectsFile,
+  known: Awaited<ReturnType<typeof scanFolders>>
+): Promise<RemoveGhostFolderResult> {
   const wasPinned = file.projects.some((p) => p.path === normalizedPath)
   const wasHidden = (file.hiddenPaths ?? []).includes(normalizedPath)
-
-  const known = await scanFolders()
   const knownEntry = known.find((f) => f.path === normalizedPath)
   const sessionsDropped = knownEntry?.sessions.length ?? 0
 
@@ -1212,6 +1221,28 @@ export async function removeGhostFolder(
   return {
     ok: true,
     removed: { path: normalizedPath, unpinned: wasPinned, sessionsDropped }
+  }
+}
+
+/**
+ * Every spelling of a (possibly missing) folder: as given, and with its nearest existing ancestor
+ * resolved through symlinks. Rows are stored under either, depending on how the folder was reached.
+ */
+async function spellingsOf(rootPath: string): Promise<string[]> {
+  const expanded = rootPath.startsWith('~') ? path.join(os.homedir(), rootPath.slice(1)) : rootPath
+  const given = stripTrailingSeparator(path.normalize(path.resolve(expanded)))
+  const rest: string[] = []
+  let cur = given
+  for (;;) {
+    try {
+      const real = await fs.realpath(cur)
+      return [...new Set([given, stripTrailingSeparator(path.join(real, ...rest))])]
+    } catch {
+      const parent = path.dirname(cur)
+      if (parent === cur) return [given]
+      rest.unshift(path.basename(cur))
+      cur = parent
+    }
   }
 }
 
@@ -1245,20 +1276,26 @@ export async function removeGhostFoldersUnder(
   getWindow: () => BrowserWindow | null,
   rootPath: string
 ): Promise<RemoveGhostFolderSuccess['removed'][]> {
-  const root = await normalizePath(rootPath)
+  const roots = await spellingsOf(rootPath)
   const file = await readUserProjects()
   const known = await scanFolders()
-  const candidates = new Set(
-    [
-      root,
-      ...file.projects.map((p) => p.path),
-      ...(file.hiddenPaths ?? []),
-      ...known.map((f) => f.path)
-    ].filter((p) => isPathInside(p, root))
-  )
+  // A row matches when any spelling of it lies under any spelling of the root: a row stored through
+  // a link and a root given by its real path (or the other way round) are the same folder.
+  const candidates = new Set<string>(roots)
+  const stored = [
+    ...file.projects.map((p) => p.path),
+    ...(file.hiddenPaths ?? []),
+    ...known.map((f) => f.path)
+  ]
+  for (const c of new Set(stored)) {
+    const forms = await spellingsOf(c)
+    if (forms.some((f) => roots.some((r) => isPathInside(f, r)))) candidates.add(c)
+  }
   const removed: RemoveGhostFolderSuccess['removed'][] = []
   for (const candidate of candidates) {
-    const result = await removeGhostFolder(getWindow, candidate)
+    const normalized = await normalizePath(candidate)
+    if (existsSync(normalized)) continue
+    const result = await reconcileGhost(getWindow, normalized, file, known)
     if (result.ok) removed.push(result.removed)
   }
   return removed
