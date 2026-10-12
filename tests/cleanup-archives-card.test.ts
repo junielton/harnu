@@ -338,3 +338,67 @@ describe('CleanupExhaustDialog (delete): an archive of unknown age (delta-2 item
     w.unmount()
   })
 })
+
+describe('CleanupArchivesCard: never-clean (delta-3 item 1)', () => {
+  const protectedCard = () => {
+    const entries = withFolders(
+      groupArchiveRefs(REPO, [
+        { ref: 'refs/archive/feat/a/20260101T000000Z/tip', sha: sha('a'), at: 0 },
+        { ref: 'refs/archive/feat/b/20260101T000000Z/tip', sha: sha('b'), at: 0 }
+      ]),
+      [
+        {
+          archiveTipRef: 'refs/archive/feat/a/20260101T000000Z/tip',
+          archiveWipRef: null,
+          trashedPath: '/ws/protected/wt-a'
+        },
+        {
+          archiveTipRef: 'refs/archive/feat/b/20260101T000000Z/tip',
+          archiveWipRef: null,
+          trashedPath: '/ws/open/wt-b'
+        }
+      ]
+    )
+    return buildArchivesCard(
+      [{ repoPath: REPO, entries, bytes: 10 }],
+      { keepDays: 30, autoExpire: false },
+      NOW
+    )
+  }
+  const mountWith = (neverClean: string[]) =>
+    mount(CleanupArchivesCard, {
+      props: { archives: protectedCard(), now: NOW, neverClean },
+      global: { plugins: [i18n] }
+    })
+
+  it('"Delete expired" leaves out archives whose folder is under a never-clean path', async () => {
+    const w = mountWith(['/ws/protected'])
+    const btn = w.get('[data-testid="archives-delete-older"]')
+    expect(btn.text()).toBe('Delete 1 older than 30 days…')
+    await btn.trigger('click')
+    const [, entries] = w.emitted('delete')![0] as [unknown, Array<{ branch: string }>]
+    expect(entries.map((e) => e.branch)).toEqual(['feat/b'])
+  })
+
+  it('offers no "Delete expired" at all when every expired archive is protected, or the repo is', () => {
+    expect(
+      mountWith(['/ws/protected', '/ws/open'])
+        .find('[data-testid="archives-delete-older"]')
+        .exists()
+    ).toBe(false)
+    expect(mountWith([REPO]).find('[data-testid="archives-delete-older"]').exists()).toBe(false)
+  })
+
+  it('the per-archive Delete is disabled for a protected archive, and says why', async () => {
+    const w = mountWith(['/ws/protected'])
+    await w.get('[data-testid="archives-repo-toggle"]').trigger('click')
+    const rows = w.findAll('[data-testid="archive-row"]')
+    const protectedRow = rows.find((r) => r.text().includes('wt-a'))!
+    const openRow = rows.find((r) => r.text().includes('wt-b'))!
+    expect(protectedRow.get('[data-testid="archive-delete"]').attributes('disabled')).toBeDefined()
+    expect(protectedRow.get('[data-testid="archive-delete"]').attributes('title')).toContain(
+      'never-clean'
+    )
+    expect(openRow.get('[data-testid="archive-delete"]').attributes('disabled')).toBeUndefined()
+  })
+})

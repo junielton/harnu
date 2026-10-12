@@ -327,6 +327,49 @@ describe('never-clean protects archives too (delta-2 item 1)', () => {
     expect(has(repo)).toBe(false)
   })
 
+  it('deleting by hand skips an archive whose folder stood under a never-clean path, in an unprotected repo', async () => {
+    const repo = await repoWithOldArchive('plain-manual')
+    const protectedDir = path.join(root, 'protected-ws')
+    const MINE = 'refs/archive/feat/mine/20260102T000000Z/tip'
+    await appendTombstone({
+      at: Date.parse('2026-01-02T00:00:00Z'),
+      repoPath: repo,
+      kind: 'worktree',
+      branch: 'feat/mine',
+      sha: 'y',
+      deleted: [],
+      justifiedBy: null,
+      restoreHint: null,
+      archiveTipRef: MINE,
+      archiveWipRef: null,
+      trashedPath: path.join(protectedDir, 'wt-mine'),
+      trashedAt: Date.parse('2026-01-02T00:00:00Z')
+    })
+    gitIn(repo, 'update-ref', MINE, 'HEAD')
+    const sha = gitIn(repo, 'rev-parse', 'HEAD')
+    const ack = await deleteConfirmedArchives(
+      {
+        repoPath: repo,
+        archives: [
+          { namespace: 'refs/archive/feat/mine/20260102T000000Z', tipSha: sha, wipSha: null }
+        ]
+      },
+      [protectedDir]
+    )
+    expect(ack.deleted).toBe(0)
+    expect(ack.archives).toBe(0)
+    expect(ack.protectedArchives).toBe(1)
+    expect(gitIn(repo, 'for-each-ref', 'refs/archive/')).toContain('feat/mine')
+    // The same request without the never-clean entry does delete it.
+    const free = await deleteConfirmedArchives({
+      repoPath: repo,
+      archives: [
+        { namespace: 'refs/archive/feat/mine/20260102T000000Z', tipSha: sha, wipSha: null }
+      ]
+    })
+    expect(free.archives).toBe(1)
+  })
+
   it('deleting by hand refuses a never-clean repo too ("never cleaned, automatically or by hand")', async () => {
     const repo = await repoWithOldArchive('manual')
     const tip = gitIn(repo, 'rev-parse', OLD)

@@ -398,6 +398,27 @@ describe('gc store', () => {
     )
   })
 
+  it('the manual archive delete toast names BOTH causes when changed and failed are both non-zero', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.gcDeleteArchives.mockResolvedValueOnce({
+      ok: false,
+      deleted: 0,
+      archives: 0,
+      failed: 2,
+      changed: ['refs/archive/a/20260101T000000Z'],
+      protectedArchives: 1
+    })
+    await gc.deleteArchives('/ws/repo', [])
+    const titles = toast.mock.calls.map((c) => c[0].title)
+    expect(titles).toEqual([
+      '1 archive changed since you looked and was left alone · Could not delete 2 archive refs · 1 archive was left alone: its folder is on the never-clean list'
+    ])
+  })
+
   it('the delete toast counts archives, not refs: a tip and a wip are ONE archive', async () => {
     const api = installApi()
     const gc = useGcStore()

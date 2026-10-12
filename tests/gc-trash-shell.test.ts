@@ -675,3 +675,49 @@ describe('the first trash onto a volume is recorded too (delta-2 item 5)', () =>
     expect(record).toBeNull()
   })
 })
+
+describe('a parent of the trash dir swapped between the check and the delete (delta-3 item 2)', () => {
+  it('redirects nothing: the entry is checked again against the record, on the same real path', async () => {
+    const folder = makeFolder(path.join(root, 'ws', 'wt-a'))
+    const record = await recordTrash(env, folder, async () => {
+      osTrash(trash, folder, NOW)
+    })
+    const entry = asEntry(folder, NOW, record)
+    // A decoy tree with the same layout and a same-named entry of value.
+    const decoyShare = path.join(root, 'decoy', 'share')
+    mkdirSync(path.join(decoyShare, 'Trash', 'files', 'wt-a'), { recursive: true })
+    mkdirSync(path.join(decoyShare, 'Trash', 'info'), { recursive: true })
+    writeFileSync(path.join(decoyShare, 'Trash', 'files', 'wt-a', 'keep.txt'), 'keep me')
+    writeFileSync(path.join(decoyShare, 'Trash', 'info', 'wt-a.trashinfo'), 'decoy record')
+    const share = path.join(root, 'home', '.local', 'share')
+    const result = await emptyHarnuTrash([entry], [entry.key], env, {
+      beforeDelete: async () => {
+        renameSync(share, path.join(root, 'share-moved'))
+        symlinkSync(decoyShare, share)
+      }
+    })
+    expect(result.emptied).toEqual([])
+    expect(existsSync(path.join(decoyShare, 'Trash', 'files', 'wt-a', 'keep.txt'))).toBe(true)
+    expect(existsSync(path.join(decoyShare, 'Trash', 'info', 'wt-a.trashinfo'))).toBe(true)
+  })
+
+  it('also between the two deletes: the record is not removed through a swapped parent', async () => {
+    const folder = makeFolder(path.join(root, 'ws', 'wt-a'))
+    const record = await recordTrash(env, folder, async () => {
+      osTrash(trash, folder, NOW)
+    })
+    const entry = asEntry(folder, NOW, record)
+    const decoyShare = path.join(root, 'decoy', 'share')
+    mkdirSync(path.join(decoyShare, 'Trash', 'files'), { recursive: true })
+    mkdirSync(path.join(decoyShare, 'Trash', 'info'), { recursive: true })
+    writeFileSync(path.join(decoyShare, 'Trash', 'info', 'wt-a.trashinfo'), 'decoy record')
+    const share = path.join(root, 'home', '.local', 'share')
+    await emptyHarnuTrash([entry], [entry.key], env, {
+      betweenDeletes: async () => {
+        renameSync(share, path.join(root, 'share-moved'))
+        symlinkSync(decoyShare, share)
+      }
+    })
+    expect(existsSync(path.join(decoyShare, 'Trash', 'info', 'wt-a.trashinfo'))).toBe(true)
+  })
+})
