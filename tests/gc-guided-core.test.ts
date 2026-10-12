@@ -119,7 +119,9 @@ describe('unquoteGitC — git C-quotes what it prints (delta 2)', () => {
     expect(unquoteGitC('on the usb disk')).toBe('on the usb disk')
   })
   it('unquotes escapes and octal UTF-8 bytes', () => {
-    expect(unquoteGitC('"n\\303\\243o mexer \\"x\\""')).toBe('não mexer "x"')
+    expect(unquoteGitC('"caf\\303\\251 \\"x\\" \\346\\227\\245\\346\\234\\254"')).toBe(
+      'café "x" 日本'
+    )
     expect(unquoteGitC('"a\\\\b"')).toBe('a\\b')
     expect(unquoteGitC('"tab\\there\\nnew"')).toBe('tab\there\nnew')
   })
@@ -146,8 +148,8 @@ describe('parseLockReasons', () => {
     ].join('\n')
     const m = parseLockReasons(out)
     expect(m.get('/a')).toBe('on a usb stick')
-    const q = parseLockReasons(['worktree /c', 'locked "n\\303\\243o \\"x\\""', ''].join('\n'))
-    expect(q.get('/c')).toBe('não "x"')
+    const q = parseLockReasons(['worktree /c', 'locked "caf\\303\\251 \\"x\\""', ''].join('\n'))
+    expect(q.get('/c')).toBe('café "x"')
     expect(m.get('/b')).toBeNull()
     expect(m.has('/c')).toBe(false)
   })

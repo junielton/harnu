@@ -21,7 +21,7 @@ const unlockEntry = {
   at: 1,
   repoPath: '/r',
   path: '/r/wt',
-  reason: 'não mexer "x"'
+  reason: 'café "x" 日本'
 }
 const stopEntry = {
   kind: 'stop-stack' as const,
@@ -78,7 +78,7 @@ describe('boot recovery', () => {
     await j.begin(unlockEntry)
     const { deps: d, calls } = deps()
     const report = await recoverPrepJournal(j, d)
-    expect(calls.lock).toEqual([['/r/wt', 'não mexer "x"']])
+    expect(calls.lock).toEqual([['/r/wt', 'café "x" 日本']])
     expect(report).toEqual([expect.objectContaining({ outcome: 'relocked', path: '/r/wt' })])
     expect(await j.entries()).toEqual([])
   })

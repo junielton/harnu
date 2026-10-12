@@ -60,7 +60,7 @@ describe('unlocking a real locked worktree', () => {
   })
 
   it('a reason git C-quotes round-trips byte for byte through the read and the rollback (delta 2)', async () => {
-    const reason = 'não mexer "x" \\ fim'
+    const reason = 'café "x" \\ 日本'
     execFileSync('git', ['-C', repo, 'worktree', 'lock', '--reason', reason, wt])
     const g = createGitGuided(git)
     const file = path.join(repo, '.git', 'worktrees', path.basename(wt), 'locked')
