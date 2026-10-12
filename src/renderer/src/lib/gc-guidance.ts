@@ -85,7 +85,20 @@ export function guidedActionFor(reason: RemovalRefusal, ctx: { hasDeps: boolean 
   }
 }
 
-const depsOf = (b: { depsBytes: number | null; bundle: { item: ReapItem } | null }): number => {
+/** Whether the action is a button of its own (Dehydrate has one; a manual command and a plain reason do not need one). */
+export const hasGuideButton = (action: GuidedAction): boolean =>
+  action !== 'explain' && action !== 'manual' && action !== 'dehydrate'
+
+/** `cleanup.gc.guide.action.*` key: the label of a guided action (scan-blind has its own wording). */
+export function guideLabelKey(action: GuidedAction, reason: RemovalRefusal): string {
+  return `cleanup.gc.guide.action.${action === 'scan-again' && reason === 'scan-blind' ? 'docker' : action}`
+}
+
+/** The bytes Dehydrate would free on one block (0 when it cannot be dehydrated). */
+export const depsOf = (b: {
+  depsBytes: number | null
+  bundle: { item: ReapItem } | null
+}): number => {
   const item = b.bundle?.item
   if (!item || !canDehydrate(item)) return 0
   return b.depsBytes ?? item.hydration?.reclaimableBytes ?? 0

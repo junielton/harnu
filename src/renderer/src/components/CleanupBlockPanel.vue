@@ -26,7 +26,14 @@ import {
   type HydrationOp
 } from './cleanup-row'
 import { reasonKey, refusalKey, removalKey, stepKey } from './cleanup-gc-copy'
-import { removability } from '../lib/gc-removability'
+import { removability, type RemovalRefusal } from '../lib/gc-removability'
+import {
+  depsOf,
+  guideLabelKey,
+  guidedActionFor,
+  hasGuideButton,
+  type GuidedAction
+} from '../lib/gc-guidance'
 import { resumeHint } from '../lib/gc-resume'
 import type { RefusalCode } from '../lib/gc-jobs'
 import type { GcStep } from '../../../main/gc/pipeline-core'
@@ -67,6 +74,8 @@ const emit = defineEmits<{
   cleanNow: [id: string]
   retry: [id: string]
   recheck: [id: string]
+  /** The guided action that clears the refusal ("No dead ends"); the screen opens it. */
+  guide: [id: string, action: GuidedAction, reason: RemovalRefusal]
 }>()
 
 const { t } = useI18n()
@@ -157,6 +166,16 @@ const removeBlockedText = computed(() => {
     ? 'cleanup.gc.panel.removeUnavailable'
     : 'cleanup.gc.panel.cleanUnavailable'
   return t(key, { reason: t(removalKey(v.reason)) })
+})
+/** What Dehydrate would free here: promoted next to a refusal Remove cannot lift. */
+const dehydrateBytes = computed(() => depsOf(props.block))
+/** The guided action for this refusal, when it needs a button of its own. */
+const guide = computed(() => {
+  const v = verdict.value
+  if (!removeBlocked.value || v.ok) return null
+  const action = guidedActionFor(v.reason, { hasDeps: dehydrateBytes.value > 0 })
+  if (!hasGuideButton(action)) return null
+  return { action, reason: v.reason, label: t(guideLabelKey(action, v.reason)) }
 })
 const removeHint = computed(() => {
   const v = verdict.value
@@ -581,6 +600,16 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
           {{ t('cleanup.gc.panel.removeCommand') }}
           <code class="select-all break-all font-mono text-text-2">{{ removeHint }}</code>
         </p>
+        <Button
+          v-if="guide"
+          variant="soft"
+          class="!justify-start"
+          :disabled="locked"
+          data-testid="panel-guide"
+          @click="emit('guide', block.id, guide.action, guide.reason)"
+        >
+          {{ guide.label }}
+        </Button>
       </div>
 
       <Button
@@ -605,7 +634,11 @@ const showDetail = computed(() => !ready.value && !!props.block.reasonDetail)
         data-testid="panel-dehydrate"
         @click="emit('dehydrate', block.id)"
       >
-        <PackageMinus :size="13" :stroke-width="1.7" />{{ t('cleanup.gc.panel.dehydrate') }}
+        <PackageMinus :size="13" :stroke-width="1.7" />{{
+          removeBlocked && dehydrateBytes > 0
+            ? t('cleanup.gc.guide.dehydrateWin', { size: formatBytes(dehydrateBytes) })
+            : t('cleanup.gc.panel.dehydrate')
+        }}
         <kbd class="ml-auto font-mono text-eyebrow text-text-3">D</kbd>
       </Button>
 

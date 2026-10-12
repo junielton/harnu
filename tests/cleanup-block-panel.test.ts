@@ -1026,7 +1026,7 @@ describe('CleanupBlockPanel — every refusal has a guided action', () => {
     )
     const w = mountPanel(block)
     expect(w.get('[data-testid="panel-dehydrate"]').text()).toContain(
-      'Dehydrate frees 480.00 MB and keeps the code'
+      'Dehydrate frees 480 MB and keeps the code'
     )
     expect(w.get('[data-testid="panel-remove-hint"]').text()).toContain('git worktree remove')
     // Dehydrate is its own button: the guide button does not repeat it.
