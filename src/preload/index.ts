@@ -2598,15 +2598,21 @@ const api = {
   /** "Run git gc now" in one repo, after its own confirm. */
   gcRunArchiveGc: (repoPath: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('gc:archives:gc', repoPath),
-  /** "Empty what Harnu moved to the trash": only those items; never the user's other trash. */
-  gcEmptyTrash: (): Promise<{
+  /**
+   * "Empty what Harnu moved to the trash": only the entries named by `ids` (the ones the confirm
+   * listed), each only while it is still exactly the entry Harnu recorded. Never the user's other trash.
+   */
+  gcEmptyTrash: (
+    ids: string[]
+  ): Promise<{
     unsupported: boolean
     emptiedBytes: number
     emptied: number
     missing: number
+    skipped: number
     failed: number
-    location: string
-  }> => ipcRenderer.invoke('gc:trash:empty'),
+    location: string | null
+  }> => ipcRenderer.invoke('gc:trash:empty', ids),
   onGcOpinionResult: (cb: (r: GcOpinionResult) => void): (() => void) =>
     subscribe('gc:opinion:result', cb),
   onGcOpinionDone: (cb: (d: GcOpinionDone) => void): (() => void) =>

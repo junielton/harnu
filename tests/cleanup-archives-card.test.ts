@@ -138,37 +138,83 @@ describe('CleanupArchivesCard', () => {
   })
 })
 
+const MB = 1_000_000
+const ENTRIES = [
+  { id: '1|/ws/wt-a', name: 'wt-a', bytes: 2 * MB, at: 1 },
+  { id: '2|/ws/wt-b', name: 'wt-b', bytes: 1 * MB, at: 2 }
+]
+const trashCard = (over: Record<string, unknown> = {}) => ({
+  inTrashBytes: 3 * MB,
+  inTrashCount: 2,
+  entries: ENTRIES,
+  unverifiedBytes: 0,
+  unverifiedCount: 0,
+  canEmpty: true,
+  location: '~/.local/share/Trash',
+  ...over
+})
+
 describe('CleanupTrashCard', () => {
   it('names what Harnu moved to the trash and offers to empty exactly that', async () => {
     const w = mount(CleanupTrashCard, {
-      props: {
-        trash: {
-          inTrashBytes: 3_000_000_000,
-          inTrashCount: 2,
-          canEmpty: true,
-          location: '~/.local/share/Trash'
-        }
-      },
+      props: { trash: trashCard() },
       global: { plugins: [i18n] }
     })
     expect(w.get('[data-testid="trash-strip"]').text()).toBe(
-      '3.00 GB in the trash · 2 folders Harnu moved there'
+      '3 MB in the trash · 2 folders Harnu moved there'
     )
     const btn = w.get('[data-testid="trash-empty"]')
-    expect(btn.text()).toBe('Empty what Harnu moved to the trash (3.00 GB)')
+    expect(btn.text()).toBe('Empty what Harnu moved to the trash (3 MB)')
     await btn.trigger('click')
     expect(w.emitted('empty')).toHaveLength(1)
   })
 
-  it("where Harnu cannot tell its items from the user's it draws no button and says where the trash is", () => {
+  it('what it cannot check is said apart and never counted as space in the trash', () => {
     const w = mount(CleanupTrashCard, {
       props: {
-        trash: { inTrashBytes: 1_000_000, inTrashCount: 1, canEmpty: false, location: '~/.Trash' }
+        trash: trashCard({
+          entries: [],
+          inTrashBytes: 0,
+          inTrashCount: 0,
+          unverifiedBytes: 5 * MB,
+          unverifiedCount: 3
+        })
       },
+      global: { plugins: [i18n] }
+    })
+    expect(w.find('[data-testid="trash-strip"]').exists()).toBe(false)
+    expect(w.find('[data-testid="trash-empty"]').exists()).toBe(false)
+    expect(w.get('[data-testid="trash-unverified"]').text()).toBe(
+      "5 MB moved to the trash by Harnu (can't check what's still there)"
+    )
+  })
+
+  it('shows both lines when some entries are verified and some are not', () => {
+    const w = mount(CleanupTrashCard, {
+      props: { trash: trashCard({ unverifiedBytes: 1 * MB, unverifiedCount: 1 }) },
+      global: { plugins: [i18n] }
+    })
+    expect(w.find('[data-testid="trash-strip"]').exists()).toBe(true)
+    expect(w.find('[data-testid="trash-unverified"]').exists()).toBe(true)
+  })
+
+  it('where Harnu cannot empty it it draws no button and says where the trash is', () => {
+    const w = mount(CleanupTrashCard, {
+      props: { trash: trashCard({ canEmpty: false, location: '~/.Trash' }) },
       global: { plugins: [i18n] }
     })
     expect(w.find('[data-testid="trash-empty"]').exists()).toBe(false)
     expect(w.get('[data-testid="trash-cant-empty"]').text()).toContain('~/.Trash')
+  })
+
+  it('on Windows the location comes from i18n, not a hard-coded English word', () => {
+    const w = mount(CleanupTrashCard, {
+      props: { trash: trashCard({ canEmpty: false, location: null }) },
+      global: { plugins: [i18n] }
+    })
+    expect(w.get('[data-testid="trash-cant-empty"]').text()).toContain(
+      i18n.global.t('cleanup.gc.trash.recycleBin') as string
+    )
   })
 })
 
@@ -198,7 +244,7 @@ describe('CleanupExhaustDialog', () => {
 
   it('confirm and Cancel emit; Esc cancels', async () => {
     const w = mount(CleanupExhaustDialog, {
-      props: { mode: 'trash', trashCount: 2, trashBytes: 3_000_000_000 },
+      props: { mode: 'trash', trashEntries: ENTRIES },
       global: { plugins: [i18n] },
       attachTo: document.body
     })
@@ -221,6 +267,23 @@ describe('CleanupExhaustDialog', () => {
     const text = document.body.querySelector('[data-testid="exhaust-dialog"]')!.textContent!
     expect(text).toContain('Run git gc in www?')
     expect(text).toContain('another git command is writing')
+    w.unmount()
+  })
+})
+
+describe('CleanupExhaustDialog (trash): the dialog lists what it will delete', () => {
+  it('lists each folder with its size, and says how many and how much', () => {
+    const w = mount(CleanupExhaustDialog, {
+      props: { mode: 'trash', trashEntries: ENTRIES },
+      global: { plugins: [i18n] },
+      attachTo: document.body
+    })
+    const rows = [...document.body.querySelectorAll('[data-testid="exhaust-row"]')].map((r) =>
+      r.textContent!.replace(/\s+/g, ' ').trim()
+    )
+    expect(rows).toEqual(['wt-a 2 MB', 'wt-b 1 MB'])
+    const text = document.body.querySelector('[data-testid="exhaust-dialog"]')!.textContent!
+    expect(text).toContain('2 folders Harnu moved to the trash, 3 MB')
     w.unmount()
   })
 })

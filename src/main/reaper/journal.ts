@@ -5,6 +5,7 @@ import { app } from 'electron'
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import type { MergeSignal } from './reaper-core'
+import type { TrashEntryRecord } from '../gc/trash-core'
 
 export interface Tombstone {
   at: number
@@ -39,6 +40,12 @@ export interface Tombstone {
   trashedPath?: string | null
   trashedBytes?: number | null
   trashedAt?: number | null
+  /**
+   * The exact entry the move created in the OS trash, identified at trash time (the trash listing
+   * before and after, plus a fingerprint). Null or absent when it could not be told; such an entry
+   * is never emptied by Harnu.
+   */
+  trashEntry?: TrashEntryRecord | null
 }
 
 /** Serializes a tombstone to a single JSON line (with trailing newline). */
@@ -63,13 +70,30 @@ function isTombstone(v: unknown): v is Tombstone {
     (t.actor === undefined || t.actor === 'operator' || t.actor === 'autopilot') &&
     isOptional(t.trashedPath, 'string') &&
     isOptional(t.trashedBytes, 'number') &&
-    isOptional(t.trashedAt, 'number')
+    isOptional(t.trashedAt, 'number') &&
+    (t.trashEntry === undefined || t.trashEntry === null || isTrashEntry(t.trashEntry))
   )
 }
 
 /** A field that older lines lack: absent, null or the expected type. */
 function isOptional(v: unknown, type: 'string' | 'number'): boolean {
   return v === undefined || v === null || typeof v === type
+}
+
+/** The shape of a recorded trash entry; anything else is treated as not recorded at all. */
+function isTrashEntry(v: unknown): boolean {
+  if (!v || typeof v !== 'object') return false
+  const e = v as Record<string, unknown>
+  const num = (k: string): boolean => typeof e[k] === 'number' && Number.isFinite(e[k] as number)
+  if (typeof e.trashDir !== 'string' || typeof e.name !== 'string') return false
+  if (!num('dev') || !num('ino') || !num('ctimeMs')) return false
+  if (e.kind === 'macos') return true
+  return (
+    e.kind === 'freedesktop' &&
+    typeof e.deletionDate === 'string' &&
+    num('infoIno') &&
+    num('infoMtimeMs')
+  )
 }
 
 /** Archive refs are absent on journal lines written before T254; treat that as null. */

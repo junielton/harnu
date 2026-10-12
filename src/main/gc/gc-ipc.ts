@@ -99,8 +99,11 @@ export interface GcService {
   deleteArchives(raw: unknown): Promise<ArchiveDeleteAck>
   /** "Run git gc now" for one repo, after its own confirm. */
   runArchiveGc(repoPath: unknown): Promise<{ ok: boolean; error?: string }>
-  /** "Empty what Harnu moved to the trash": only those items, never the autopilot. */
-  emptyTrash(): Promise<EmptyTrashAck>
+  /**
+   * "Empty what Harnu moved to the trash": only the entries the operator confirmed by id, each only
+   * while it is still exactly the entry Harnu recorded. Never the autopilot.
+   */
+  emptyTrash(ids: unknown): Promise<EmptyTrashAck>
 }
 
 /** Ids from an untrusted payload: strings only, bounded. */
@@ -384,8 +387,12 @@ export async function registerGcHandlers(
       void gatherer.fresh().catch((err) => console.error('[gc] refresh after git gc failed', err))
       return ack
     },
-    emptyTrash: async () => {
-      const ack = await emptyHarnuTrashNow()
+    emptyTrash: async (rawIds) => {
+      if (!Array.isArray(rawIds) || rawIds.some((x) => typeof x !== 'string')) {
+        throw new Error('gc:trash:empty expects the ids of the entries the dialog listed')
+      }
+      if (rawIds.length > 5000) throw new Error('gc:trash:empty takes at most 5000 ids')
+      const ack = await emptyHarnuTrashNow(rawIds as string[])
       void gatherer.fresh().catch((err) => console.error('[gc] refresh after emptying failed', err))
       return ack
     }
@@ -417,7 +424,7 @@ export async function registerGcHandlers(
   ipcMain.handle('gc:opinion:cached', (_e, ids: unknown) => service.opinionCached(ids))
   ipcMain.handle('gc:archives:delete', (_e, raw: unknown) => service.deleteArchives(raw))
   ipcMain.handle('gc:archives:gc', (_e, repoPath: unknown) => service.runArchiveGc(repoPath))
-  ipcMain.handle('gc:trash:empty', () => service.emptyTrash())
+  ipcMain.handle('gc:trash:empty', (_e, ids: unknown) => service.emptyTrash(ids))
 
   // Seed the Containers feed once at start-up so the view is right before the first tick.
   void gather().catch((err) => console.error('[gc] first gather failed:', messageOf(err)))

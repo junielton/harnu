@@ -57,6 +57,7 @@ interface Api {
   gcSetPrefs: ReturnType<typeof vi.fn>
   gcOpinion: ReturnType<typeof vi.fn>
   gcOpinionCached: ReturnType<typeof vi.fn>
+  gcEmptyTrash: ReturnType<typeof vi.fn>
 }
 
 function installApi(first: GcSnapshot = snap(), jobs: GcJobInfo[] = []): Api {
@@ -77,7 +78,16 @@ function installApi(first: GcSnapshot = snap(), jobs: GcJobInfo[] = []): Api {
     gcAckFirstReport: vi.fn(async () => ({ ...defaultGcPrefs(), firstReportAcknowledged: true })),
     gcSetPrefs: vi.fn(async (p: unknown) => p),
     gcOpinion: vi.fn(async () => ({ jobId: 'o1' })),
-    gcOpinionCached: vi.fn(async () => ({}))
+    gcOpinionCached: vi.fn(async () => ({})),
+    gcEmptyTrash: vi.fn(async () => ({
+      unsupported: false,
+      emptiedBytes: 0,
+      emptied: 0,
+      missing: 0,
+      skipped: 0,
+      failed: 0,
+      location: null
+    }))
   }
   ;(globalThis as unknown as { window: unknown }).window = {
     api: {
@@ -305,6 +315,29 @@ describe('gc store', () => {
     )
     await vi.runAllTimersAsync()
     expect(toast.mock.calls[0][0].title).toBe('100 B freed now · 1 ready item cleaned')
+  })
+
+  it('empty trash sends exactly the ids the dialog listed, and says what it skipped', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.gcEmptyTrash.mockResolvedValueOnce({
+      unsupported: false,
+      emptiedBytes: 3_000_000,
+      emptied: 1,
+      missing: 0,
+      skipped: 1,
+      failed: 0,
+      location: null
+    })
+    await gc.emptyTrash(['1|/ws/wt-a', '2|/ws/wt-b'])
+    expect(api.gcEmptyTrash).toHaveBeenCalledWith(['1|/ws/wt-a', '2|/ws/wt-b'])
+    expect(toast.mock.calls[0][0]).toMatchObject({ kind: 'warning' })
+    expect(toast.mock.calls[0][0].title).toBe(
+      '1 folder was left in the trash: it is no longer what Harnu moved'
+    )
   })
 
   it('a partial failure toasts a warning and the failed item is back in Needs review with what ran', async () => {

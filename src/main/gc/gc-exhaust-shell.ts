@@ -8,10 +8,9 @@
 // explicit action: the autopilot never calls into this file's trash functions.
 
 import { promises as fs } from 'node:fs'
-import * as os from 'node:os'
 import * as path from 'node:path'
 import { app } from 'electron'
-import { readJournal } from '../reaper/journal'
+import { journalPath, readJournal, type Tombstone } from '../reaper/journal'
 import { lastSnapshot } from '../reaper/scanner-shell'
 import {
   NO_ARCHIVES,
@@ -35,16 +34,34 @@ import {
 import type { GcPrefs } from './gc-prefs'
 import { NO_TRASH, trashedEntries, type GcTrashCard } from './trash-core'
 import {
-  canEmptySelectively,
+  defaultTrashEnv,
   emptyHarnuTrash,
-  presentInTrash,
+  observeTrashEntries,
   trashCard,
   trashLocation,
-  type EmptyResult,
   type TrashEnv
 } from './trash-shell'
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
+
+/**
+ * The journal parsed once per change: a gather asks for it three times (the repos, the archives'
+ * folders, the trash), and it only ever grows by appending, so it is re-read only when it changed.
+ */
+let journalCache: { mtimeMs: number; size: number; lines: Tombstone[] } | null = null
+async function readJournalCached(): Promise<Tombstone[]> {
+  try {
+    const st = await fs.stat(journalPath())
+    if (journalCache && journalCache.mtimeMs === st.mtimeMs && journalCache.size === st.size) {
+      return journalCache.lines
+    }
+    const lines = await readJournal(JOURNAL_LINES)
+    journalCache = { mtimeMs: st.mtimeMs, size: st.size, lines }
+    return lines
+  } catch {
+    return []
+  }
+}
 
 /** How many journal lines the ledger reads: every clean writes one, so this is years of use. */
 const JOURNAL_LINES = 20_000
@@ -67,7 +84,7 @@ async function isGitRepo(p: string): Promise<boolean> {
  */
 export async function archiveRepos(): Promise<string[]> {
   const scanned = lastSnapshot()?.repos.map((r) => r.repoPath) ?? []
-  const journal = await readJournal(JOURNAL_LINES)
+  const journal = await readJournalCached()
   const journaled = journal.filter((t) => t.archiveTipRef || t.archiveWipRef).map((t) => t.repoPath)
   const all = [...new Set([...scanned, ...journaled])]
   const alive = await Promise.all(all.map(async (p) => ((await isGitRepo(p)) ? p : null)))
@@ -106,7 +123,7 @@ export async function gatherArchives(
 ): Promise<GcArchivesCard> {
   const policy = { keepDays: prefs.archiveKeepDays, autoExpire: prefs.archiveAutoExpire }
   try {
-    const [repos, journal] = await Promise.all([archiveRepos(), readJournal(JOURNAL_LINES)])
+    const [repos, journal] = await Promise.all([archiveRepos(), readJournalCached()])
     const perRepo = await Promise.all(
       repos.map(async (repoPath) => {
         try {
@@ -213,18 +230,6 @@ export async function runGcInRepo(
 const SETTLED_FILE = 'gc-trash-settled.json'
 const SETTLED_MAX = 20_000
 
-function trashEnv(): TrashEnv {
-  const dataHome = process.env.XDG_DATA_HOME
-  return {
-    platform: process.platform,
-    homeTrash: path.join(
-      dataHome && path.isAbsolute(dataHome) ? dataHome : path.join(os.homedir(), '.local', 'share'),
-      'Trash'
-    ),
-    uid: typeof process.getuid === 'function' ? process.getuid() : null
-  }
-}
-
 async function readSettled(): Promise<Set<string>> {
   try {
     const raw = JSON.parse(
@@ -248,59 +253,61 @@ async function writeSettled(settled: ReadonlySet<string>): Promise<void> {
 }
 
 /**
- * What Harnu moved to the trash and that is still there. An item the user emptied or restored
- * themselves is remembered as settled, so it stops counting. Never throws.
+ * What Harnu moved to the trash, checked entry by entry against the exact record made when it moved
+ * them. An entry the user emptied, restored or replaced stops counting (it is settled); one that
+ * cannot be checked is reported apart and never counted as space in the trash. Never throws.
  */
-export async function gatherTrash(): Promise<GcTrashCard> {
-  const env = trashEnv()
+export async function gatherTrash(env: TrashEnv = defaultTrashEnv()): Promise<GcTrashCard> {
   try {
-    const [journal, settled] = await Promise.all([readJournal(JOURNAL_LINES), readSettled()])
-    const entries = trashedEntries(journal, settled)
-    if (entries.length === 0) {
-      return {
-        ...NO_TRASH,
-        canEmpty: canEmptySelectively(env.platform),
-        location: trashLocation(env.platform, env.homeTrash)
-      }
-    }
-    const { present, gone, unsupported } = await presentInTrash(entries, env)
-    if (gone.length > 0) {
+    const [journal, settled] = await Promise.all([readJournalCached(), readSettled()])
+    const ledger = await observeTrashEntries(trashedEntries(journal, settled), env)
+    if (ledger.gone.length > 0) {
       const next = new Set(settled)
-      for (const e of gone) next.add(e.key)
+      for (const e of ledger.gone) next.add(e.key)
       await writeSettled(next).catch(() => undefined)
     }
-    return trashCard(present, unsupported, env)
+    return trashCard(ledger, env)
   } catch (err) {
     console.warn('[gc] gathering the trash failed', messageOf(err))
     return { ...NO_TRASH, location: trashLocation(env.platform, env.homeTrash) }
   }
 }
 
-export interface EmptyTrashAck extends Omit<EmptyResult, 'emptied' | 'missing' | 'failed'> {
+export interface EmptyTrashAck {
+  unsupported: boolean
+  emptiedBytes: number
   emptied: number
+  /** Entries that were no longer in the trash. */
   missing: number
+  /** Entries that are no longer exactly what Harnu moved, or cannot be told: left alone. */
+  skipped: number
   failed: number
-  /** Where the OS keeps the trash: what to show when `unsupported`. */
-  location: string
+  /** Where the OS keeps the trash (null on Windows): what to show when `unsupported`. */
+  location: string | null
 }
 
 /**
- * Permanently removes what Harnu moved to the trash and nothing else, on an explicit operator
- * action (the UI confirms first). The autopilot has no path here.
+ * Permanently removes the trash entries the operator confirmed by id and nothing else, each only
+ * while it is still exactly the entry Harnu recorded. Anything trashed since the dialog opened is not
+ * in `ids` and stays. The autopilot has no path here.
  */
-export async function emptyHarnuTrashNow(): Promise<EmptyTrashAck> {
-  const env = trashEnv()
-  const [journal, settled] = await Promise.all([readJournal(JOURNAL_LINES), readSettled()])
-  const result = await emptyHarnuTrash(trashedEntries(journal, settled), env)
+export async function emptyHarnuTrashNow(
+  ids: readonly string[],
+  env: TrashEnv = defaultTrashEnv()
+): Promise<EmptyTrashAck> {
+  const [journal, settled] = await Promise.all([readJournalCached(), readSettled()])
+  const result = await emptyHarnuTrash(trashedEntries(journal, settled), ids, env)
   const next = new Set(settled)
-  // Removed, or no longer there: either way the ledger has nothing left to empty for them.
-  for (const key of [...result.emptied, ...result.missing]) next.add(key)
+  // Removed, or no longer there: either way the ledger has nothing left to empty for them. An
+  // entry that changed is no longer Harnu's either.
+  for (const key of [...result.emptied, ...result.missing, ...result.changed]) next.add(key)
   if (next.size !== settled.size) await writeSettled(next).catch(() => undefined)
   return {
     unsupported: result.unsupported,
     emptiedBytes: result.emptiedBytes,
     emptied: result.emptied.length,
     missing: result.missing.length,
+    skipped: result.changed.length + result.unverifiable.length,
     failed: result.failed.length,
     location: trashLocation(env.platform, env.homeTrash)
   }

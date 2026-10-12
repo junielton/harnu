@@ -6,6 +6,7 @@ import type { WorktreeStatus } from '../worktree-core'
 import { isAbsolute, resolve } from 'node:path'
 import { planArchive } from './archive-core'
 import { restoreHintFor, type Tombstone } from './journal'
+import type { TrashEntryRecord } from '../gc/trash-core'
 
 export type CleanStepId =
   | 'guard'
@@ -46,7 +47,11 @@ export interface ExecutorDeps {
    */
   probeStatus(path: string): Promise<WorktreeStatus>
   hasUnpushed(path: string): Promise<boolean>
-  trash(path: string): Promise<void>
+  /**
+   * Moves the folder to the OS trash. May answer the exact trash entry the move created, so the
+   * journal can name it and "Empty" can find exactly it again.
+   */
+  trash(path: string): Promise<void | { trashEntry?: TrashEntryRecord | null }>
   /**
    * The folder's size on disk right now, asked just before it is trashed (null when it cannot be
    * told). Optional and best effort: a failure here never stops a clean. The number is what the
@@ -180,7 +185,11 @@ export async function cleanItem(
   // closure, and only a ref that was actually written may reach the tombstone.
   const archived: { tip: string | null; wip: string | null } = { tip: null, wip: null }
   // What the OS trash now holds because of this clean: set only once the move succeeded.
-  const trashed: { path: string | null; bytes: number | null } = { path: null, bytes: null }
+  const trashed: {
+    path: string | null
+    bytes: number | null
+    entry: TrashEntryRecord | null
+  } = { path: null, bytes: null, entry: null }
   let halted = false
 
   const run = async (
@@ -286,7 +295,8 @@ export async function cleanItem(
     } catch {
       // The size is a report, not a guard: an unreadable folder is trashed all the same.
     }
-    await deps.trash(item.path!)
+    const moved = await deps.trash(item.path!)
+    trashed.entry = moved?.trashEntry ?? null
     trashed.path = item.path!
     trashed.bytes = typeof bytes === 'number' && Number.isFinite(bytes) && bytes >= 0 ? bytes : null
   })
@@ -351,7 +361,12 @@ export async function cleanItem(
     archiveTipRef: archived.tip,
     archiveWipRef: archived.wip,
     ...(trashed.path !== null
-      ? { trashedPath: trashed.path, trashedBytes: trashed.bytes, trashedAt: deps.now() }
+      ? {
+          trashedPath: trashed.path,
+          trashedBytes: trashed.bytes,
+          trashedAt: deps.now(),
+          trashEntry: trashed.entry
+        }
       : {})
   }
   // appendTombstone propagates append failures; a lost restore record is a

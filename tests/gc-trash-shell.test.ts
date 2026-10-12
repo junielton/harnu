@@ -8,6 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -447,5 +448,128 @@ describe('trashedEntries (the journal as the ledger)', () => {
   it('skips what is already settled', () => {
     const l = line({ trashedPath: '/ws/a', trashedBytes: 5, trashedAt: NOW })
     expect(trashedEntries([l], new Set([trashKey(NOW, '/ws/a')]))).toEqual([])
+  })
+})
+
+describe('only real trash directories count (freedesktop spec)', () => {
+  it('a symlinked .Trash-<uid> is never a candidate, so nothing is recorded in it', async () => {
+    const mount = path.join(root, 'mnt', 'disk')
+    const elsewhere = path.join(root, 'elsewhere')
+    mkdirSync(path.join(elsewhere, 'files'), { recursive: true })
+    mkdirSync(path.join(elsewhere, 'info'), { recursive: true })
+    mkdirSync(mount, { recursive: true })
+    symlinkSync(elsewhere, path.join(mount, '.Trash-1000'))
+    const folder = makeFolder(path.join(mount, 'work', 'wt-a'))
+    const volEnv: TrashEnv = { ...env, isMountPoint: async (p) => p === mount }
+    const record = await recordTrash(volEnv, folder, async () => {
+      osTrash(elsewhere, folder, NOW, folder, mount)
+    })
+    expect(record).toBeNull()
+  })
+
+  it('a per-volume trash under a directory that is NOT a mount point is ignored', async () => {
+    const notMount = path.join(root, 'plain', 'dir')
+    const volTrash = path.join(notMount, '.Trash-1000')
+    mkdirSync(volTrash, { recursive: true })
+    const folder = makeFolder(path.join(notMount, 'wt-a'))
+    const record = await recordTrash(env, folder, async () => {
+      osTrash(volTrash, folder, NOW, folder, notMount)
+    })
+    expect(record).toBeNull()
+  })
+
+  it('a shared .Trash/<uid> needs a real .Trash with the sticky bit', async () => {
+    const mount = path.join(root, 'mnt', 'disk')
+    const shared = path.join(mount, '.Trash')
+    const mine = path.join(shared, '1000')
+    mkdirSync(mine, { recursive: true })
+    const volEnv: TrashEnv = { ...env, isMountPoint: async (p) => p === mount }
+    const withoutSticky = makeFolder(path.join(mount, 'a', 'wt-a'))
+    expect(
+      await recordTrash(volEnv, withoutSticky, async () => {
+        osTrash(mine, withoutSticky, NOW, withoutSticky, mount)
+      })
+    ).toBeNull()
+    chmodSync(shared, 0o1777)
+    const withSticky = makeFolder(path.join(mount, 'b', 'wt-b'))
+    const record = await recordTrash(volEnv, withSticky, async () => {
+      osTrash(mine, withSticky, NOW, withSticky, mount)
+    })
+    expect(record).toMatchObject({ trashDir: mine, name: 'wt-b' })
+  })
+
+  it('"Empty" refuses a record whose trash directory became a symlink', async () => {
+    const folder = makeFolder(path.join(root, 'ws', 'wt-a'))
+    const record = await recordTrash(env, folder, async () => {
+      osTrash(trash, folder, NOW)
+    })
+    const entry = asEntry(folder, NOW, record)
+    const moved = path.join(root, 'moved-trash')
+    renameSync(trash, moved)
+    symlinkSync(moved, trash)
+    const result = await emptyHarnuTrash([entry], [entry.key], env)
+    expect(result.emptied).toEqual([])
+    expect(result.changed).toEqual([entry.key])
+    expect(existsSync(path.join(moved, 'files', 'wt-a', 'data.txt'))).toBe(true)
+  })
+
+  it('"Empty" refuses a record that points outside any trash directory of this user', async () => {
+    const outside = path.join(root, 'not-a-trash')
+    mkdirSync(path.join(outside, 'files', 'x'), { recursive: true })
+    const lstat = lstatSync(path.join(outside, 'files', 'x'))
+    const entry = asEntry('/ws/x', NOW, {
+      kind: 'freedesktop',
+      trashDir: outside,
+      name: 'x',
+      deletionDate: localStamp(NOW),
+      dev: lstat.dev,
+      ino: lstat.ino,
+      ctimeMs: lstat.ctimeMs,
+      infoIno: 1,
+      infoMtimeMs: 1
+    })
+    const result = await emptyHarnuTrash([entry], [entry.key], env)
+    expect(result.emptied).toEqual([])
+    expect(existsSync(path.join(outside, 'files', 'x'))).toBe(true)
+  })
+})
+
+describe('an unmounted volume is unknown, never gone (delta-1 item 6)', () => {
+  const rec = (trashDir: string, dev: number) =>
+    ({
+      kind: 'freedesktop',
+      trashDir,
+      name: 'wt-a',
+      deletionDate: localStamp(NOW),
+      dev,
+      ino: 5,
+      ctimeMs: 1,
+      infoIno: 6,
+      infoMtimeMs: 1
+    }) as const
+
+  it('the trash dir is missing and the mount point sits on another device: unknown', async () => {
+    const mount = path.join(root, 'mnt', 'disk') // exists, but "the disk" is not mounted on it
+    mkdirSync(mount, { recursive: true })
+    const entry = asEntry(
+      path.join(mount, 'wt-a'),
+      NOW,
+      rec(path.join(mount, '.Trash-1000'), 424242)
+    )
+    const r = await observeTrashEntries([entry], env)
+    expect(r.unknown.map((e) => e.key)).toEqual([entry.key])
+    expect(r.gone).toEqual([])
+  })
+
+  it('the same missing dir on the SAME device is a trash that was really deleted: gone', async () => {
+    const mount = path.join(root, 'mnt', 'disk')
+    mkdirSync(mount, { recursive: true })
+    const entry = asEntry(
+      path.join(mount, 'wt-a'),
+      NOW,
+      rec(path.join(mount, '.Trash-1000'), lstatSync(mount).dev)
+    )
+    const r = await observeTrashEntries([entry], env)
+    expect(r.gone.map((e) => e.key)).toEqual([entry.key])
   })
 })
