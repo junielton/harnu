@@ -120,7 +120,7 @@ const refusedCount = computed(() => props.summary?.refused.reduce((n, g) => n + 
           ? t('cleanup.gc.guide.why.none', { n: refusedCount })
           : t('cleanup.gc.guide.why.partial', { k: summary.removable.length, n: refusedCount })
       }}
-      <template v-for="(g, i) in summary.refused" :key="g.reason">
+      <template v-for="(g, i) in summary.refused" :key="`${g.action}:${g.causes.join('+')}`">
         <span v-if="i > 0" aria-hidden="true"> · </span>
         <button
           type="button"
