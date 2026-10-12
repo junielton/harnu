@@ -279,7 +279,7 @@ describe('CleanupExhaustDialog (trash): the dialog lists what it will delete', (
       attachTo: document.body
     })
     const rows = [...document.body.querySelectorAll('[data-testid="exhaust-row"]')].map((r) =>
-      r.textContent!.replace(/\s+/g, ' ').trim()
+      [...r.querySelectorAll('span')].map((x) => x.textContent!.trim()).join(' ')
     )
     expect(rows).toEqual(['wt-a 2 MB', 'wt-b 1 MB'])
     const text = document.body.querySelector('[data-testid="exhaust-dialog"]')!.textContent!
