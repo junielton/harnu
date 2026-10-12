@@ -2,7 +2,7 @@
 // send well-formed facts; a malformed entry is dropped, which makes that id fail closed with
 // `missing-expected` instead of being compared against something invented.
 
-import type { GcCleanOptions, GcExpected } from './gc-wire'
+import type { GcCleanOptions, GcExpected, GcPrep } from './gc-wire'
 
 /** Narrows an untrusted `expected` entry; anything malformed is dropped, which refuses that id. */
 function parseExpected(raw: unknown): GcExpected | null {
@@ -45,8 +45,27 @@ function parseExpected(raw: unknown): GcExpected | null {
   }
 }
 
+/** Narrows an untrusted guided prep; anything else is dropped, so that id gets no prep. */
+function parsePrep(raw: unknown): GcPrep | null {
+  if (!raw || typeof raw !== 'object') return null
+  const p = raw as Record<string, unknown>
+  if (p.kind === 'unlock' || p.kind === 'close-session') return { kind: p.kind }
+  if (p.kind === 'stop-stack' || p.kind === 'leave-stack') {
+    const ids = p.stackIds
+    if (
+      Array.isArray(ids) &&
+      ids.length > 0 &&
+      ids.length <= 50 &&
+      ids.every((x) => typeof x === 'string' && x.length > 0)
+    ) {
+      return { kind: p.kind, stackIds: ids as string[] }
+    }
+  }
+  return null
+}
+
 /**
- * `confirmed` and `expected` from an untrusted payload. There is deliberately no blanket
+ * `confirmed`, `expected` and `prepare` from an untrusted payload. There is deliberately no blanket
  * "confirm everything" flag: a stray `confirmDecide` or `confirmReview` is ignored, so it confirms nothing.
  */
 export function parseOptions(raw: unknown): GcCleanOptions {
@@ -61,5 +80,12 @@ export function parseOptions(raw: unknown): GcCleanOptions {
       if (parsed) expected[id] = parsed
     }
   }
-  return { confirmed, expected }
+  const prepare: Record<string, GcPrep> = {}
+  if (r.prepare && typeof r.prepare === 'object' && !Array.isArray(r.prepare)) {
+    for (const [id, value] of Object.entries(r.prepare as Record<string, unknown>)) {
+      const parsed = parsePrep(value)
+      if (parsed) prepare[id] = parsed
+    }
+  }
+  return { confirmed, expected, ...(Object.keys(prepare).length > 0 ? { prepare } : {}) }
 }

@@ -231,7 +231,7 @@ describe('parseOptions keeps only well-formed preps', () => {
         d: 'unlock',
         e: { kind: 'leave-stack', stackIds: [] }
       })
-    ).toEqual({})
+    ).toBeUndefined()
   })
   it('is absent when none was sent', () => {
     expect(parseOptions({ confirmed: [], expected: {} }).prepare).toBeUndefined()

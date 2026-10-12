@@ -19,7 +19,8 @@ import type { HousekeepingResult, HousekeepingVolume } from './housekeeping-core
 import { leftBehind, type Leftover } from './gc-leftovers'
 import { WORK_STAMP_UNKNOWN } from './gc-work-stamp'
 import { runBatch, WORK_CHANGED, type GcItemResult, type GcOps } from './pipeline-core'
-import type { GcCleanAck, GcCleanOptions } from './gc-wire'
+import type { PrepResult } from './gc-guided'
+import type { GcCleanAck, GcCleanOptions, GcPrep } from './gc-wire'
 
 const VOLUME_PREFIX = volumeItemId('')
 
@@ -41,6 +42,13 @@ export interface ManualCleanDeps {
    * since then keeps it.
    */
   freshOrphans(): Promise<OrphanVolumeItem[]>
+  /**
+   * A gather that STARTS now, for the facts a guided action's prep just changed (the lock, the
+   * session, the stack). Required, with `prepare`, for any id that carries a prep.
+   */
+  gatherFresh?(): Promise<{ bundles: WorktreeBundle[] }>
+  /** The one preparatory step of a guided "…and remove" (see gc-guided.ts `prepareClean`). */
+  prepare?(prep: GcPrep, b: WorktreeBundle): Promise<PrepResult>
   /**
    * A fresh fingerprint of the uncommitted work in a worktree (null when none); throws when it
    * cannot be read. The force path compares it with the one the dialog was built from.
@@ -82,7 +90,7 @@ export function submitManualClean(
     const results: GcItemResult[] = []
 
     const cleanBundle = async (id: string): Promise<GcItemResult> => {
-      const b = bundles.get(id)
+      let b = bundles.get(id)
       if (!b) return refused(id, 'unknown-item')
       // The hard refusals come first and no confirmation lifts them.
       const hard = refusalFor(b, prefs, { confirmed: true })
@@ -91,6 +99,42 @@ export function submitManualClean(
       const seen = expected[id]
       if (!seen) return refused(id, 'missing-expected')
       if (bundleChangedSince(b, seen)) return refused(id, 'changed-since-confirm')
+      // A guided action's one preparatory step ("Unlock and remove", "Close session and remove", ...).
+      // It needs the item's OWN confirmation, runs only on what the operator was shown (checked
+      // above), and then the item is judged again on a fresh gather: the prep changes the reason
+      // (a lock lifted), never what the operator saw (folder, head, stacks).
+      const prep = opts.prepare?.[id]
+      if (prep) {
+        if (!confirmed.has(id)) return refused(id, 'needs-confirmation')
+        if (!deps.prepare || !deps.gatherFresh) return refused(id, 'prep-not-applicable')
+        const prepared = await deps.prepare(prep, b)
+        if (!prepared.ok) return refused(id, prepared.error)
+        let again: WorktreeBundle | undefined
+        try {
+          again = (await deps.gatherFresh()).bundles.find((x) => x.item.id === id)
+        } catch (err) {
+          return refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
+        }
+        if (!again) return refused(id, 'unknown-item')
+        const hardAgain = refusalFor(again, prefs, { confirmed: true })
+        if (hardAgain) return refused(id, hardAgain)
+        // Everything the operator saw must still hold; only the bucket and reason may differ now.
+        const drift = bundleChangedSince(again, {
+          ...seen,
+          bucket: again.bucket,
+          reasonCode: again.reason?.code ?? null
+        })
+        if (drift) return refused(id, 'changed-since-confirm')
+        // Leaving a stack: it no longer counts against this worktree. The pipeline's own reprobe
+        // still compares the stacks it finds with what is left.
+        b =
+          prep.kind === 'leave-stack'
+            ? {
+                ...again,
+                sharedStackIds: again.sharedStackIds.filter((x) => !prep.stackIds.includes(x))
+              }
+            : again
+      }
       // Anything that is not a proven ready item needs its OWN confirmation, and then takes
       // the forced ops.
       // A ready item whose cleanup halted is shown as `cleanup-failed` review (`retryAs`), but its
