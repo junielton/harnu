@@ -276,7 +276,7 @@ export async function prepareClean(
         throw new Error(r.error ?? 'not every container started again')
       }
     })
-  let stopped: Awaited<ReturnType<GuidedDeps['docker']['stop']>>
+  let stopped: DockerBatchResult
   try {
     stopped = await deps.docker.stop(running)
   } catch (err) {
