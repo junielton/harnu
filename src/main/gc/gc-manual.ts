@@ -235,8 +235,15 @@ export function submitManualClean(
         const error = await rollBack(r.error)
         return error === r.error ? r : { ...r, error }
       }
+      /** The item ended without needing the undo: clear the journal. A failure here is logged, never the item's. */
       const settleAll = async (): Promise<void> => {
-        for (const step of ran.splice(0)) await step.settle?.()
+        for (const step of ran.splice(0)) {
+          try {
+            await step.settle?.()
+          } catch (err) {
+            console.warn('[gc] clearing the prep journal failed', err)
+          }
+        }
       }
       if (preps.length > 0) {
         // Nothing a step does may escape: a throw is that item's failure, the steps that ran are put back
@@ -308,52 +315,69 @@ export function submitManualClean(
       // dirty and unpushed guards and `branch -d`, not the operator's force path.
       const retryAsReady = retryOf(b)
       const forced = b.bucket !== 'ready' && !retryAsReady
-      if (forced && !confirmed.has(id)) return bail(refused(id, 'needs-confirmation'))
       const path = b.item.path
-      const work = await workRefusal(b, forced)
-      if (work) return bail(refused(id, work))
-      const batchOpts: { removeVolumes: boolean; confirmReview?: boolean } = {
-        // D1: worktree cleanup never removes a volume, ready or reviewed, bulk or single. What
-        // it leaves behind comes back as an orphan-volume review item.
-        removeVolumes: false,
-        // S2's own gate: set ONLY for an item the operator confirmed by id (checked above),
-        // never by the autopilot.
-        confirmReview: forced
-      }
-      // The pipeline only runs ready bundles (or a confirmed review one): a retried item runs as
-      // the ready item it still is.
-      const runnable: WorktreeBundle = retryAsReady ? { ...b, bucket: 'ready', reason: null } : b
-      const ops = deps.opsFor('operator', forced)
-      // The same check again at each recheck (before the deps are dropped and before the git
-      // cleanup): the docker steps and the deletion take time, and an edit made meanwhile
-      // must stop the removal, not be archived and trashed unseen.
-      const guarded: GcOps =
-        forced && path
-          ? {
-              ...ops,
-              recheck: async (x) => {
-                const r = await ops.recheck(x)
-                if (!r.ok) return r
-                try {
-                  return (seen.workStamp ?? null) === (await deps.workStampOf(path))
-                    ? r
-                    : { ok: false, reason: WORK_CHANGED }
-                } catch {
-                  return { ok: false, reason: 'probe-failed' }
+      let result: GcItemResult
+      try {
+        if (forced && !confirmed.has(id)) return bail(refused(id, 'needs-confirmation'))
+        const work = await workRefusal(b, forced)
+        if (work) return bail(refused(id, work))
+        const batchOpts: { removeVolumes: boolean; confirmReview?: boolean } = {
+          // D1: worktree cleanup never removes a volume, ready or reviewed, bulk or single. What
+          // it leaves behind comes back as an orphan-volume review item.
+          removeVolumes: false,
+          // S2's own gate: set ONLY for an item the operator confirmed by id (checked above),
+          // never by the autopilot.
+          confirmReview: forced
+        }
+        // The pipeline only runs ready bundles (or a confirmed review one): a retried item runs as
+        // the ready item it still is.
+        const runnable: WorktreeBundle = retryAsReady ? { ...b, bucket: 'ready', reason: null } : b
+        const ops = deps.opsFor('operator', forced)
+        // The same check again at each recheck (before the deps are dropped and before the git
+        // cleanup): the docker steps and the deletion take time, and an edit made meanwhile
+        // must stop the removal, not be archived and trashed unseen.
+        const guarded: GcOps =
+          forced && path
+            ? {
+                ...ops,
+                recheck: async (x) => {
+                  const r = await ops.recheck(x)
+                  if (!r.ok) return r
+                  try {
+                    return (seen.workStamp ?? null) === (await deps.workStampOf(path))
+                      ? r
+                      : { ok: false, reason: WORK_CHANGED }
+                  } catch {
+                    return { ok: false, reason: 'probe-failed' }
+                  }
                 }
               }
-            }
-          : ops
-      const [result] = await runBatch([runnable], guarded, batchOpts)
-      if (result!.ok) {
-        deps.rememberLeftovers?.(leftBehind(b, gathered.housekeeping?.volumes ?? []))
+            : ops
+        result = (await runBatch([runnable], guarded, batchOpts))[0]!
+      } catch (err) {
+        // Nothing after the prep may escape the rollback: the steps that ran are put back (the folder is
+        // still there, or this would not have thrown before the remove), and the item records why.
+        return bail(
+          refused(
+            id,
+            `${preps.length > 0 ? 'prep-failed' : 'probe-failed'}: ${err instanceof Error ? err.message : String(err)}`
+          )
+        )
+      }
+      if (result.ok) {
+        // The item IS removed: bookkeeping that fails now is logged, never turned into a failure.
+        try {
+          deps.rememberLeftovers?.(leftBehind(b, gathered.housekeeping?.volumes ?? []))
+        } catch (err) {
+          console.warn('[gc] remembering leftovers failed', err)
+        }
         await settleAll()
-        return result!
+        return result
       }
       // Still refused (or stopped) after the prep: the lock goes back, the containers restart, as long
       // as the folder is still there. Once it is trashed there is nothing to roll back to: re-locking
       // a registration that is gone, or starting containers whose bind source is gone, would be wrong.
-      const r = result!
+      const r = result
       const gone =
         POST_TRASH.has(r.haltedAt ?? '') ||
         (r.haltedAt === 'trash' && !!path && deps.folderExists
