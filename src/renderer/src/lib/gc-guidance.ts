@@ -91,7 +91,7 @@ export const hasGuideButton = (action: GuidedAction): boolean =>
 
 /** `cleanup.gc.guide.action.*` key: the label of a guided action (scan-blind has its own wording). */
 export function guideLabelKey(action: GuidedAction, reason: RemovalRefusal): string {
-  return `cleanup.gc.guide.action.${action === 'scan-again' && reason === 'scan-blind' ? 'docker' : action}`
+  return `cleanup.gc.guide.action.${action === 'scan-again' && reason === 'scan-blind' ? 'dockerDown' : action}`
 }
 
 /** The bytes Dehydrate would free on one block (0 when it cannot be dehydrated). */

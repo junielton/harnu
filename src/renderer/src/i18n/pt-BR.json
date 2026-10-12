@@ -2788,7 +2788,7 @@
           "check-again": "Conferir de novo",
           "unkeep": "Tirar a marca Manter",
           "open-settings": "Abrir Ajustes",
-          "docker": "O Docker não estava rodando — e agora?"
+          "dockerDown": "O Docker não estava rodando — e agora?"
         }
       },
       "guided": {
@@ -2797,14 +2797,14 @@
           "closeSession": "Fechar a sessão e remover",
           "sharedStack": "Uma stack é compartilhada com outras pastas",
           "fixUnreadable": "O Harnu não consegue ler esta pasta",
-          "docker": "O Docker não estava rodando"
+          "dockerDown": "O Docker não estava rodando"
         },
         "subtitle": {
           "unlockRemove": "O git bloqueou este worktree. Depois de desbloquear, a remoção é a de sempre: arquivado primeiro, depois movido para a lixeira.",
           "closeSession": "Ainda há uma sessão aberta aqui. Fechar uma ociosa mantém a conversa em disco; a remoção que segue é a de sempre.",
           "sharedStack": "Outras pastas rodam contêineres da mesma stack do Docker, então o Harnu não mexe nela a menos que você escolha.",
           "fixUnreadable": "O Harnu não sabe o que há dentro, então não remove a pasta sem ver. Corrija a permissão e confira de novo.",
-          "docker": "Sem o Docker, o Harnu não viu quais stacks rodam dos seus worktrees, então não os remove."
+          "dockerDown": "Sem o Docker, o Harnu não viu quais stacks rodam dos seus worktrees, então não os remove."
         },
         "loading": "Lendo o que o git e o Docker dizem agora…",
         "loadError": "Não deu para ler os fatos atuais. Feche e tente de novo.",

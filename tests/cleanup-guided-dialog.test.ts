@@ -187,7 +187,7 @@ describe('an unreadable folder (AC-B6)', () => {
 describe('Docker was not running at scan time (AC-B7)', () => {
   it('offers Scan again, with the command that starts Docker where the platform has one', async () => {
     await open({
-      action: 'docker',
+      action: 'docker-down',
       guidance: { a: base({ docker: { hint: 'open -a Docker' } }) }
     })
     expect(text('[data-testid="guided-docker"]')).toContain("Docker wasn't running")
@@ -197,7 +197,7 @@ describe('Docker was not running at scan time (AC-B7)', () => {
   })
 
   it('points at the Docker app where there is no command', async () => {
-    await open({ action: 'docker', guidance: { a: base({ docker: { hint: null } }) } })
+    await open({ action: 'docker-down', guidance: { a: base({ docker: { hint: null } }) } })
     expect(q('[data-testid="guided-docker-hint"]')).toBeNull()
     expect(text('[data-testid="guided-docker-app"]')).toContain('Docker')
   })

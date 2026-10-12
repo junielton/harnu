@@ -2788,7 +2788,7 @@
           "check-again": "Check again",
           "unkeep": "Remove the Keep mark",
           "open-settings": "Open Settings",
-          "docker": "Docker wasn't running — what now?"
+          "dockerDown": "Docker wasn't running — what now?"
         }
       },
       "guided": {
@@ -2797,14 +2797,14 @@
           "closeSession": "Close the session and remove",
           "sharedStack": "A stack is shared with other folders",
           "fixUnreadable": "Harnu can't read this folder",
-          "docker": "Docker wasn't running"
+          "dockerDown": "Docker wasn't running"
         },
         "subtitle": {
           "unlockRemove": "Git has this worktree locked. After the unlock the remove is the usual one: archived first, then moved to the trash.",
           "closeSession": "A session is still open here. Closing an idle one keeps its conversation on disk; the remove that follows is the usual one.",
           "sharedStack": "Other folders run containers from the same Docker stack, so Harnu will not touch it unless you choose to.",
           "fixUnreadable": "Harnu can't tell what is inside, so it won't remove the folder unseen. Fix the permission, then check again.",
-          "docker": "Without Docker, Harnu could not see which stacks run from your worktrees, so it won't remove them."
+          "dockerDown": "Without Docker, Harnu could not see which stacks run from your worktrees, so it won't remove them."
         },
         "loading": "Reading what git and Docker say right now…",
         "loadError": "Couldn't read the current facts. Close this and try again.",

@@ -383,7 +383,7 @@ async function openGuided(action: GuidedDialogAction, ids: readonly string[]): P
   if (dialogOpen.value || !m) return
   const blocks = ids.map((id) => m.byId.get(id)).filter((b) => !!b && b.kind === 'worktree')
   if (blocks.length === 0) return
-  const removes = action !== 'fix-unreadable' && action !== 'docker'
+  const removes = action !== 'fix-unreadable' && action !== 'docker-down'
   const request = removes
     ? guidedRequestFor(m, ids, () => PLACEHOLDER_PREP, now.value.getTime())
     : null
@@ -511,7 +511,7 @@ function openGuide(action: GuidedAction, ids: readonly string[], reason: Removal
       void openGuided(action, ids)
       break
     case 'scan-again':
-      if (reason === 'scan-blind') void openGuided('docker', ids)
+      if (reason === 'scan-blind') void openGuided('docker-down', ids)
       else void scanAgain(ids)
       break
     case 'check-again': {

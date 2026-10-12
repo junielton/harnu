@@ -23,7 +23,7 @@ import type { GcGuidance } from '../../../main/gc/gc-wire'
  * Focus starts on Cancel, never on a confirm.
  */
 export type GuidedDialogAction =
-  'unlock-remove' | 'close-session-remove' | 'shared-stack' | 'fix-unreadable' | 'docker'
+  'unlock-remove' | 'close-session-remove' | 'shared-stack' | 'fix-unreadable' | 'docker-down'
 
 export interface GuidedRow {
   id: string
@@ -58,7 +58,7 @@ const TITLE: Record<GuidedDialogAction, string> = {
   'close-session-remove': 'closeSession',
   'shared-stack': 'sharedStack',
   'fix-unreadable': 'fixUnreadable',
-  docker: 'docker'
+  'docker-down': 'dockerDown'
 }
 const title = computed(() => t(`cleanup.gc.guided.title.${TITLE[props.action]}`))
 const subtitle = computed(() => t(`cleanup.gc.guided.subtitle.${TITLE[props.action]}`))
@@ -90,7 +90,9 @@ const canGo = computed(() => {
       return false
   }
 })
-const hasConfirm = computed(() => props.action !== 'fix-unreadable' && props.action !== 'docker')
+const hasConfirm = computed(
+  () => props.action !== 'fix-unreadable' && props.action !== 'docker-down'
+)
 const disabled = computed(() => !canGo.value || props.pending || props.stale)
 
 const confirmLabel = computed(() => {
@@ -323,7 +325,7 @@ function onBackdropMousedown(e: MouseEvent): void {
 
               <!-- AC-B7: Docker was down at scan time -->
               <div
-                v-else-if="action === 'docker'"
+                v-else-if="action === 'docker-down'"
                 class="flex flex-col gap-1.5"
                 data-testid="guided-docker"
               >
@@ -426,7 +428,7 @@ function onBackdropMousedown(e: MouseEvent): void {
             {{ t('cleanup.gc.guided.recheck') }}
           </Button>
           <Button
-            v-if="action === 'docker'"
+            v-if="action === 'docker-down'"
             variant="soft"
             :disabled="pending"
             data-testid="guided-scan"
