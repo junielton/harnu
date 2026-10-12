@@ -330,6 +330,9 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Cleanup bulk-clean confirm dialog (T443)           | `src/renderer/src/components/CleanupBulkConfirmDialog.vue`                       |
 | Cleanup first-cycle banner (T443)                  | `src/renderer/src/components/CleanupFirstCycleBanner.vue`                        |
 | Cleanup Docker card (T443)                         | `src/renderer/src/components/CleanupDockerCard.vue`                              |
+| Cleanup Docker confirm — leftovers (unit D)        | `src/renderer/src/components/CleanupDockerConfirmDialog.vue`                     |
+| Cleanup transcripts confirm (unit D)               | `src/renderer/src/components/CleanupTranscriptsConfirmDialog.vue`                |
+| Cleanup leftovers view helpers (unit D)            | `src/renderer/src/lib/gc-orphans.ts`                                             |
 | Cleanup split bar (T443)                           | `src/renderer/src/components/CleanupSplitBar.vue`                                |
 | Cleanup legend row (T443)                          | `src/renderer/src/components/CleanupLegend.vue`                                  |
 | Cleanup "Other leftovers" (branches/folders, T443) | `src/renderer/src/components/CleanupOtherItems.vue`                              |

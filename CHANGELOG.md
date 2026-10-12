@@ -10,6 +10,20 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-12
+
+### Added
+
+- **Cleanup now cleans what its own removals leave behind.** Removing a worktree used to leave things only a terminal could clear; each now has an in-app path, behind a confirm, and nothing alive is ever touched.
+  - **Claude transcripts of folders that are gone.** **Other leftovers** lists the `~/.claude/projects` folders whose every transcript names a folder that no longer exists, grouped by repo with their size, sessions and when they were last used. **Delete** (or **Delete all** for a repo) asks first and moves them to the system trash, so you can bring them back. A project whose folder still exists, one that holds a running or parked session, or one Harnu cannot read is never listed. A folder that also holds Claude's memory notes says so.
+  - **Containers and networks of a stack whose worktree Harnu removed.** The Docker card has a **Left by removed worktrees** block with the stopped containers and the networks (`docker rm` used to leave the network behind) and a **Clean up** button with its own confirm. Anything running, or a project whose folder came back, is left alone. Volumes are listed apart with **Remove volumes…** behind a stronger confirm (they cannot be restored) and are never removed with the stack or automatically.
+  - **"Also delete the branch on the remote"** in the remove confirm, off by default. It appears only when the branch is merged by strong proof, still exists on the remote and is not protected, and runs `git push --delete`. If the remote refuses, the toast says so and the local clean still stands. The autopilot never does it, and the Settings → Cleanup switch that forbids remote deletes is honoured.
+  - **A dehydrated worktree says what is left.** In Needs review its row reads "Dehydrated · 6 MB left" and keeps the normal **Remove**. Dehydrating never changed its verdict: a merged one still becomes ready after the grace period, like a hydrated one.
+
+### Fixed
+
+- **A removed worktree's subfolders no longer linger as ghost rows in the sidebar.** A session started in a subfolder (`api/`, a nested `.claude/worktrees/…`) is its own folder in the sidebar; cleaning the worktree used to drop only the worktree's own row. Every gone folder under it, pinned, hidden or known only from its transcripts, is now dropped too.
+
 ## 2026-10-09
 
 ### Changed
