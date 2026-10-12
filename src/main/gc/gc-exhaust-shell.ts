@@ -12,6 +12,7 @@ import * as path from 'node:path'
 import { app } from 'electron'
 import { journalPath, readJournal, type Tombstone } from '../reaper/journal'
 import { lastSnapshot } from '../reaper/scanner-shell'
+import { canonicalPathKey } from './bundle-core'
 import {
   NO_ARCHIVES,
   buildArchivesCard,
@@ -60,6 +61,34 @@ async function readJournalCached(): Promise<Tombstone[]> {
     return lines
   } catch {
     return []
+  }
+}
+
+/**
+ * The never-clean list as a test of "is this path one of them, or under one", on real paths where they
+ * can be read (a symlinked spelling of a protected repo is still protected) and as written otherwise.
+ */
+async function protectedPaths(
+  neverClean: readonly string[]
+): Promise<{ covers(p: string): Promise<boolean> }> {
+  const real = async (p: string): Promise<string> => {
+    try {
+      return await fs.realpath(p)
+    } catch {
+      return p
+    }
+  }
+  const platform = process.platform
+  const keys = new Set<string>()
+  for (const p of neverClean) {
+    keys.add(canonicalPathKey(p, platform))
+    keys.add(canonicalPathKey(await real(p), platform))
+  }
+  return {
+    covers: async (p) => {
+      const candidates = [canonicalPathKey(p, platform), canonicalPathKey(await real(p), platform)]
+      return candidates.some((c) => [...keys].some((k) => c === k || c.startsWith(`${k}/`)))
+    }
   }
 }
 
@@ -159,6 +188,8 @@ export interface ArchiveDeleteAck {
   changed: string[]
   /** The repo is not one Cleanup knows. */
   unknownRepo?: boolean
+  /** The repo is on the never-clean list: nothing in it was touched. */
+  neverClean?: boolean
 }
 
 /**
@@ -167,11 +198,16 @@ export interface ArchiveDeleteAck {
  */
 export async function deleteConfirmedArchives(
   req: ArchiveDeleteRequest,
+  neverClean: readonly string[] = [],
   git: GitRunner = execGit
 ): Promise<ArchiveDeleteAck> {
   const known = await archiveRepos()
   if (!known.includes(req.repoPath)) {
     return { ok: false, deleted: 0, archives: 0, failed: 0, changed: [], unknownRepo: true }
+  }
+  // "Never clean" holds by hand too: a repo the operator listed is not touched at all.
+  if (await (await protectedPaths(neverClean)).covers(req.repoPath)) {
+    return { ok: false, deleted: 0, archives: 0, failed: 0, changed: [], neverClean: true }
   }
   const fresh = await listRepoArchives(git, req.repoPath)
   const { entries, changed } = confirmedArchives(fresh, req.archives)
@@ -193,13 +229,28 @@ export async function deleteConfirmedArchives(
 export async function expireArchivesNow(
   keepDays: number,
   now: number,
+  neverClean: readonly string[] = [],
   git: GitRunner = execGit
 ): Promise<{ deleted: number; failed: number }> {
   let deleted = 0
   let failed = 0
+  const protectedBy = await protectedPaths(neverClean)
+  const journal = await readJournalCached()
   for (const repo of await archiveRepos()) {
+    // A repo on the never-clean list, or inside a path that is, is never touched.
+    if (await protectedBy.covers(repo)) continue
     try {
-      const expired = expiredArchives(await listRepoArchives(git, repo), keepDays, now)
+      // An archive of a folder that stood under a never-clean path is protected as well, even in
+      // a repo that is not.
+      const old = expiredArchives(
+        withFolders(await listRepoArchives(git, repo), journal),
+        keepDays,
+        now
+      )
+      const expired: ArchiveEntry[] = []
+      for (const e of old) {
+        if (e.folder === null || !(await protectedBy.covers(e.folder))) expired.push(e)
+      }
       if (expired.length === 0) continue
       const r = await deleteArchiveEntries(git, repo, expired)
       deleted += r.archives

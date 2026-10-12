@@ -247,7 +247,7 @@ export async function registerGcHandlers(
     rememberLeftovers: remember,
     // The one place the autopilot deletes refs: the cycle calls it only when the operator turned
     // "Expire archives automatically" on.
-    expireArchives: (keepDays, now) => expireArchivesNow(keepDays, now),
+    expireArchives: (keepDays, now, neverClean) => expireArchivesNow(keepDays, now, neverClean),
     state,
     now: () => Date.now()
   }
@@ -376,7 +376,7 @@ export async function registerGcHandlers(
     opinion: (ids) => opinions.start(ids),
     opinionCached: (ids) => opinions.cached(ids),
     deleteArchives: async (raw) => {
-      const ack = await deleteConfirmedArchives(parseArchiveRequest(raw))
+      const ack = await deleteConfirmedArchives(parseArchiveRequest(raw), prefs.neverClean)
       void gatherer.fresh().catch((err) => console.error('[gc] refresh after archives failed', err))
       return ack
     },

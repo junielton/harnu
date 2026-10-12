@@ -77,7 +77,11 @@ export interface GcCycleDeps {
    * only when the operator turned "Expire archives automatically" on, the autopilot is on and the
    * first report was acknowledged: it is the one place the autopilot deletes refs.
    */
-  expireArchives?(keepDays: number, now: number): Promise<{ deleted: number; failed: number }>
+  expireArchives?(
+    keepDays: number,
+    now: number,
+    neverClean: readonly string[]
+  ): Promise<{ deleted: number; failed: number }>
   /** Called with every gather, whether or not the cycle cleans: the Containers feed reads it. */
   onGathered?(g: GcGather): void
   state: CycleState
@@ -231,7 +235,8 @@ export async function runGcCycle(
     !!deps.expireArchives
   if (expireOn) {
     try {
-      archivesExpired = (await deps.expireArchives!(prefs.archiveKeepDays, now)).deleted
+      archivesExpired = (await deps.expireArchives!(prefs.archiveKeepDays, now, prefs.neverClean))
+        .deleted
     } catch (err) {
       console.warn('[gc] archive expiry failed', messageOf(err))
     }

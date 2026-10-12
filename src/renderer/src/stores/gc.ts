@@ -543,6 +543,13 @@ export const useGcStore = defineStore('gc', () => {
           timeoutMs: 6000
         })
       }
+      if (ack.neverClean) {
+        ui.pushToast({
+          kind: 'warning',
+          title: t('cleanup.gc.archives.toast.neverClean'),
+          timeoutMs: 8000
+        })
+      }
       const left = ack.changed.length
       if (left > 0 || ack.failed > 0) {
         ui.pushToast({

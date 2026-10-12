@@ -2803,7 +2803,8 @@
           "changed": "{n} archive changed since you looked and was left alone | {n} archives changed since you looked and were left alone",
           "failed": "Could not delete {n} archive ref | Could not delete {n} archive refs",
           "gcDone": "git gc finished in {repo}",
-          "gcFailed": "git gc failed in {repo}"
+          "gcFailed": "git gc failed in {repo}",
+          "neverClean": "This repo is on the never-clean list, so its archives were left alone."
         },
         "ageUnknown": "age unknown",
         "deleteOne": "Delete…"
