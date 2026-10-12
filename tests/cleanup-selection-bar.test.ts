@@ -183,6 +183,14 @@ describe('CleanupSelectionBar — a group is busy while its action runs (delta 2
 })
 
 describe('CleanupSelectionBar — groups are keyed by their cause set (delta 3)', () => {
+  const group = (causes: string[], action: string, ids: string[]) => ({
+    reason: 'locked',
+    causes,
+    count: ids.length,
+    ids,
+    action
+  })
+
   it('a plain lock next to a lock + shared stack renders both, with no duplicate-key warning', async () => {
     const { vi } = await import('vitest')
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
@@ -192,25 +200,27 @@ describe('CleanupSelectionBar — groups are keyed by their cause set (delta 3)'
         bytes: 1,
         summary: {
           removable: [],
-          refused: [
-            {
-              reason: 'locked',
-              causes: ['locked', 'shared-stack'],
-              count: 2,
-              ids: ['a', 'b'],
-              action: 'combined'
-            },
-            { reason: 'locked', causes: ['locked'], count: 1, ids: ['c'], action: 'unlock-remove' }
-          ],
+          refused: [group(['locked'], 'unlock-remove', ['c'])],
           dehydrate: null
         } as never
       },
       global: { plugins: [i18n] }
     })
+    // Vue reports a duplicate key when the list is PATCHED, so the selection changes under it.
+    await w.setProps({
+      summary: {
+        removable: [],
+        refused: [
+          group(['locked', 'shared-stack'], 'combined', ['a', 'b']),
+          group(['locked'], 'unlock-remove', ['c'])
+        ],
+        dehydrate: null
+      } as never
+    })
     expect(w.find('[data-testid="sel-guide-combined"]').exists()).toBe(true)
     expect(w.find('[data-testid="sel-guide-locked"]').exists()).toBe(true)
-    const keys = warn.mock.calls.filter((c) => String(c[0]).includes('Duplicate keys'))
+    const dup = warn.mock.calls.filter((c) => String(c[0]).includes('Duplicate keys'))
     warn.mockRestore()
-    expect(keys).toEqual([])
+    expect(dup).toEqual([])
   })
 })
