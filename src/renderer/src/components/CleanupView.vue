@@ -38,6 +38,8 @@ import {
   type CapturedConfirm
 } from '../lib/gc-model'
 import { nextCycleIn } from '../lib/gc-format'
+import { transcriptCleanRequest } from '../lib/gc-orphans'
+import type { OrphanTranscriptItem } from '../../../main/gc/gc-wire'
 import { refusalKey, removalKey } from './cleanup-gc-copy'
 import { removability } from '../lib/gc-removability'
 import type { RefusalCode } from '../lib/gc-jobs'
@@ -53,6 +55,7 @@ import CleanupSplitBar from './CleanupSplitBar.vue'
 import CleanupLegend from './CleanupLegend.vue'
 import CleanupBulkConfirmDialog from './CleanupBulkConfirmDialog.vue'
 import CleanupOtherItems from './CleanupOtherItems.vue'
+import CleanupTranscriptsConfirmDialog from './CleanupTranscriptsConfirmDialog.vue'
 import DehydrateConfirmDialog from './DehydrateConfirmDialog.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
 import Button from './ui/Button.vue'
@@ -312,6 +315,33 @@ async function runFirstCycle(action: () => Promise<void>, failureTitle: string):
     errorToast(failureTitle, e)
   } finally {
     firstCyclePending.value = false
+  }
+}
+
+/** The orphaned transcript folders (unit D, AC-D1) and the confirm that moves them to the trash. */
+const orphanTranscripts = computed(() => gc.snapshot?.orphanTranscripts ?? [])
+/** What the open transcript dialog listed, frozen when it opened (the request is built from it). */
+const transcriptItems = ref<OrphanTranscriptItem[] | null>(null)
+const busyTranscriptIds = ref<string[]>([])
+function openTranscripts(ids: string[]): void {
+  if (dialogOpen.value || transcriptItems.value) return
+  const items = orphanTranscripts.value.filter((i) => ids.includes(i.id))
+  if (items.length > 0) transcriptItems.value = items
+}
+async function confirmTranscripts(): Promise<void> {
+  const items = transcriptItems.value
+  if (!items) return
+  transcriptItems.value = null
+  const ids = items.map((i) => i.id)
+  busyTranscriptIds.value = [...busyTranscriptIds.value, ...ids]
+  try {
+    await gc.submit(transcriptCleanRequest(items))
+  } catch (e) {
+    errorToast(t('cleanup.gc.error.clean'), e)
+  } finally {
+    // The job runs in the background and the next snapshot drops what it removed; this only
+    // stops a second click while the request is being handed over.
+    busyTranscriptIds.value = busyTranscriptIds.value.filter((x) => !ids.includes(x))
   }
 }
 
@@ -809,7 +839,11 @@ async function copyRestoreHint(hint: string): Promise<void> {
         </aside>
       </div>
 
-      <CleanupOtherItems />
+      <CleanupOtherItems
+        :transcripts="orphanTranscripts"
+        :busy="busyTranscriptIds"
+        @delete-transcripts="openTranscripts($event)"
+      />
 
       <template v-if="reaper.journal.length > 0">
         <div
@@ -862,6 +896,12 @@ async function copyRestoreHint(hint: string): Promise<void> {
     @cancel="confirmDialog = null"
   />
   <DehydrateConfirmDialog v-if="dehydrateItems" :items="dehydrateItems" @close="closeDehydrate()" />
+  <CleanupTranscriptsConfirmDialog
+    v-if="transcriptItems"
+    :items="transcriptItems"
+    @confirm="confirmTranscripts()"
+    @cancel="transcriptItems = null"
+  />
 
   <!-- T300/U3: header markup rendered into the shared TakeoverShell (design.md §6
        "TakeoverShell — shared chrome") via Teleport. Placed after the real body content so this

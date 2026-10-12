@@ -2563,7 +2563,24 @@
       "loadError": "Não foi possível carregar o relatório de limpeza: {error}",
       "other": {
         "title": "Outros resíduos",
-        "intro": "Branches e pastas que não são worktrees."
+        "intro": "Branches, pastas e transcrições que não são worktrees."
+      },
+      "orphans": {
+        "groupMeta": "{n} pasta · {size} | {n} pastas · {size}",
+        "deleteAll": "Apagar tudo",
+        "deleteAria": "Apagar as transcrições de {name}",
+        "sessions": "{n} sessão | {n} sessões",
+        "last": "última {ago}",
+        "memory": "inclui notas de memória",
+        "confirm": {
+          "title": "Mover {n} pasta de transcrições para a lixeira? | Mover {n} pastas de transcrições para a lixeira?",
+          "subtitle": "As pastas em que essas sessões rodavam não existem mais, então o Claude não consegue mais retomá-las aqui.",
+          "listLabel": "Pastas de transcrições a mover para a lixeira",
+          "recoverable": "Elas vão para a lixeira do sistema, então dá para trazê-las de volta.",
+          "memory": "{n} delas também guarda notas de memória do Claude para essa pasta. | {n} delas também guardam notas de memória do Claude para essa pasta.",
+          "total": "{n} pasta · {size} | {n} pastas · {size}",
+          "confirm": "Mover para a lixeira"
+        }
       },
       "toast": {
         "success": "{size} liberados · {count} item pronto limpo | {size} liberados · {count} itens prontos limpos",

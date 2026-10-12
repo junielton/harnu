@@ -8874,6 +8874,36 @@ cycle has run, a second 11px `--text-3` line adds "Last cycle reclaimed {size}".
 summary line and in the split bar's Ready segment while `categories.dockerCache` is on. Zero state: real
 zeros when Docker says so.
 
+#### Other leftovers — transcripts of folders that are gone (unit D, AC-D1)
+
+Removing a worktree takes the folder and never the Claude transcripts under `~/.claude/projects/<slug>/`,
+so Cleanup lists them itself, in the **Other leftovers** section under the Reaper rows (the section shows
+when either has something; its `intro` line reads "Branches, folders and transcripts that are not
+worktrees."). A project folder is listed only when **every** transcript in it names a folder that is gone,
+no session in it is live or parked, and no existing folder spells the same slug.
+
+- **Group header** (`data-testid="orphan-group"`), one per repo, biggest first: eyebrow label (the repo
+  name, `data-testid="orphan-group-label"`), then `{n} folders · {size}` in 11px `--text-4`, and a ghost
+  button **Delete all** (`data-testid="orphan-delete-all"`, `Trash2` 12px) on the right.
+- **Row** (`data-testid="orphan-row"`): grid `20px 1fr 90px 40px`, `min-h-12`, the Reaper row's hover. A
+  `MessagesSquare` icon (`--text-4`, 14px); the folder's name in 12px mono `--text` (`orphan-folder`, full
+  path as the tooltip) over a one-line meta in 11px `--text-4`: "{n} sessions · last {ago}"; when the project
+  folder also holds Claude's auto-memory notes, a `Warning`-ink chip **"includes memory notes"**
+  (`orphan-memory`, 10.5px, `--warning-soft` / `--warning-line`). The size right (13px, tabular), then an
+  icon-only **Delete** button (`Trash2`, red on hover, `aria-label` "Delete the transcripts of {name}",
+  `orphan-delete`), disabled while that row's delete is running.
+- **Confirm dialog** (`CleanupTranscriptsConfirmDialog.vue`, `data-testid="orphan-dialog"`, the bulk
+  dialog's anatomy at `min(560px, 90vw)`, Danger confirm): title "Move {n} transcript folder to the trash? |
+  Move {n} transcript folders to the trash?", subtitle "The folders these sessions ran in are gone, so Claude
+  can no longer resume them here."; a bounded list of rows (mono folder, `{n} sessions`, size); a Warning
+  callout "They go to the OS trash, so you can bring them back." (`orphan-dialog-recoverable`); when any row
+  has memory notes a second line "{n} of them also hold Claude memory notes for that folder."
+  (`orphan-dialog-memory`); footer "{n} folders · {size}" (`orphan-dialog-total`), **Cancel**
+  (focused first) and **Move to trash** (`Trash2`, Danger). Esc closes the dialog only.
+- Confirming sends `gc:clean(ids, { confirmed, expected })`, each id `transcripts:<slug>` confirmed by
+  its own entry; main looks again right before the trash and refuses what changed ("a session wrote more")
+  or is no longer an orphan. A refusal is shown by the usual toast.
+
 #### First-cycle banner
 
 `.fc`: `--accent-soft` fill, `--accent-line` border, radius 7, `padding: 12px 16px`, `Recycle` icon in
@@ -9009,6 +9039,7 @@ that belong to no worktree) and states that worktree-bound stacks are cleaned by
 `CleanupView.vue` (shell) · `CleanupTreemap.vue` · `CleanupBlockPanel.vue` · `CleanupHeroButton.vue` ·
 `CleanupSelectionBar.vue` · `CleanupDockerCard.vue` · `CleanupReviewList.vue` · `CleanupListView.vue` ·
 `CleanupSplitBar.vue` · `CleanupLegend.vue` · `CleanupFirstCycleBanner.vue` · `CleanupBulkConfirmDialog.vue` · `CleanupOtherItems.vue` ·
+`CleanupTranscriptsConfirmDialog.vue` · `lib/gc-orphans.ts` ·
 `CleanupOpinionChip.vue` · `lib/gc-opinion.ts` · `stores/gc.ts` · `lib/gc-treemap.ts` · `lib/gc-model.ts` · `lib/gc-jobs.ts`.
 
 ### Containers takeover (ContainersView.vue)

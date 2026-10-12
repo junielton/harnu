@@ -2563,7 +2563,24 @@
       "loadError": "Could not load the cleanup report: {error}",
       "other": {
         "title": "Other leftovers",
-        "intro": "Branches and folders that are not worktrees."
+        "intro": "Branches, folders and transcripts that are not worktrees."
+      },
+      "orphans": {
+        "groupMeta": "{n} folder · {size} | {n} folders · {size}",
+        "deleteAll": "Delete all",
+        "deleteAria": "Delete the transcripts of {name}",
+        "sessions": "{n} session | {n} sessions",
+        "last": "last {ago}",
+        "memory": "includes memory notes",
+        "confirm": {
+          "title": "Move {n} transcript folder to the trash? | Move {n} transcript folders to the trash?",
+          "subtitle": "The folders these sessions ran in are gone, so Claude can no longer resume them here.",
+          "listLabel": "Transcript folders to move to the trash",
+          "recoverable": "They go to the OS trash, so you can bring them back.",
+          "memory": "{n} of them also holds Claude memory notes for that folder. | {n} of them also hold Claude memory notes for that folder.",
+          "total": "{n} folder · {size} | {n} folders · {size}",
+          "confirm": "Move to trash"
+        }
       },
       "toast": {
         "success": "Freed {size} · {count} ready item cleaned | Freed {size} · {count} ready items cleaned",
