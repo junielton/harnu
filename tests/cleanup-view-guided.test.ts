@@ -455,7 +455,8 @@ describe('removing a Keep mark and scanning again are never silent (delta 2)', (
     release()
     await flushPromises()
     expect(api.gcUnkeep).toHaveBeenCalledTimes(2) // one each for k1 and k2, no repeats
-    expect(el('sel-guide-kept')).toBeNull() // the marks are gone: nothing refuses these any more
+    // Done: the group is usable again.
+    expect((el('sel-guide-kept') as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('Scan again is disabled while it runs', async () => {
