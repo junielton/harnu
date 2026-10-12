@@ -184,7 +184,7 @@ export interface GcGuidance {
   /** Git lists the worktree as locked; `reason` is what `git worktree lock --reason` recorded. */
   lock: { reason: string | null } | null
   /** Harnu sessions open in it: those idle (closable) and those working or waiting (never closed). */
-  sessions: { idle: number; busy: number } | null
+  sessions: { idle: number; busy: number; userOpened: number } | null
   stacks: GcGuidedStack[]
   /** The exact folder the scan could not read, who owns it and a command that fixes it. */
   unreadable: { path: string; owner: string | null; fixCommand: string } | null

@@ -266,11 +266,17 @@ function onBackdropMousedown(e: MouseEvent): void {
                 <template v-else-if="g.sessions.busy > 0">{{
                   t('cleanup.gc.guided.sessions.busy')
                 }}</template>
-                <template v-else>{{
-                  t('cleanup.gc.guided.sessions.idle', g.sessions.idle, {
-                    named: { n: g.sessions.idle }
-                  })
-                }}</template>
+                <template v-else>
+                  {{
+                    t('cleanup.gc.guided.sessions.idle', g.sessions.idle, {
+                      named: { n: g.sessions.idle }
+                    })
+                  }}
+                  {{ t('cleanup.gc.guided.sessions.parkWarning') }}
+                  <template v-if="g.sessions.userOpened > 0">
+                    {{ t('cleanup.gc.guided.sessions.userOpened', { n: g.sessions.userOpened }) }}
+                  </template>
+                </template>
               </p>
 
               <!-- AC-B5: each stack, and who else uses it -->

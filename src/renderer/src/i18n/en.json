@@ -2818,7 +2818,9 @@
         "sessions": {
           "idle": "{n} idle session will be closed. Its conversation stays on disk. | {n} idle sessions will be closed. Their conversations stay on disk.",
           "busy": "A session here is working or waiting for you, so Harnu will not close it. Finish or close it yourself first.",
-          "foreign": "The session open here is not one Harnu started, so Harnu cannot close it. Close it where it runs."
+          "foreign": "The session open here is not one Harnu started, so Harnu cannot close it. Close it where it runs.",
+          "parkWarning": "Parking closes its terminal; background processes it started (dev servers, shells) stop. The conversation is kept and can be resumed.",
+          "userOpened": "{n} of them you opened yourself, not an agent."
         },
         "stack": {
           "runs": "{name} also runs from {folders}",

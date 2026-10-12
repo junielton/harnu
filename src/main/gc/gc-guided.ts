@@ -21,6 +21,35 @@ import type { GcGuidance, GcGuidedStack, GcPrep } from './gc-wire'
 export interface GuidedSession {
   key: string
   state: 'idle' | 'working' | 'needs-input'
+  /** Who started it: the operator by hand, or an agent. Anything unknown reads as the operator. */
+  origin?: 'operator' | 'agent'
+}
+
+/**
+ * The hook state a session reports → what a guided action may do with it. Only an explicit resting state
+ * (idle, completed, stopped) is idle; "no hook has arrived", a failed run and anything else are busy, and
+ * so is the owner of a mission with a live child. Parking cannot be undone, so doubt means busy.
+ */
+export function sessionStateOf(
+  hook: 'working' | 'needs-input' | 'idle' | 'completed' | 'failed' | 'stopped' | null | undefined,
+  ownsLiveMission: boolean
+): GuidedSession['state'] {
+  if (ownsLiveMission) return 'working'
+  if (hook === 'idle' || hook === 'completed' || hook === 'stopped') return 'idle'
+  return hook === 'needs-input' ? 'needs-input' : 'working'
+}
+
+/**
+ * Whether a session's folder is "in" a worktree: the worktree itself or a plain subfolder, never a
+ * nested worktree (or anything under one), which is another worktree's session.
+ */
+export function sessionCountsHere(
+  folder: string,
+  root: string,
+  nested: readonly string[],
+  inside: (child: string, parent: string) => boolean
+): boolean {
+  return inside(folder, root) && !nested.some((n) => inside(folder, n))
 }
 
 export interface GuidedDeps {
@@ -30,7 +59,7 @@ export interface GuidedDeps {
   /** `git worktree lock [--reason <reason>]`: puts a lock back exactly as it was (the rollback of an unlock). */
   lock(repoPath: string, path: string, reason: string | null): Promise<void>
   /** Running Harnu sessions (live PTYs) whose folder is `path` or under it. Never a session Harnu does not own. */
-  sessionsIn(path: string): Promise<GuidedSession[]>
+  sessionsIn(path: string, nestedWorktrees: readonly string[]): Promise<GuidedSession[]>
   /** Parks (kills, keeps the conversation) one session. */
   park(key: string): void
   listStacks(): Promise<{ stacks: StackGroup[] }>
@@ -154,10 +183,11 @@ export async function guidanceFor(b: WorktreeBundle, deps: GuidedDeps): Promise<
   }
 
   if (b.session !== 'none') {
-    const open = await deps.sessionsIn(path)
+    const open = await deps.sessionsIn(path, b.nestedWorktrees ?? [])
     out.sessions = {
       idle: open.filter((s) => s.state === 'idle').length,
-      busy: open.filter((s) => s.state !== 'idle').length
+      busy: open.filter((s) => s.state !== 'idle').length,
+      userOpened: open.filter((s) => s.origin !== 'agent').length
     }
   }
 
@@ -231,7 +261,7 @@ export async function prepareClean(
 
   if (prep.kind === 'close-session') {
     if (b.session !== 'open-idle') return NOT_APPLICABLE
-    const open = await deps.sessionsIn(path)
+    const open = await deps.sessionsIn(path, b.nestedWorktrees ?? [])
     // A session Harnu does not own never shows up here: it is not Harnu's to close.
     if (open.length === 0) return { ok: false, error: 'session-not-closable' }
     // One that is working or waiting for the operator is never closed, and then none is.

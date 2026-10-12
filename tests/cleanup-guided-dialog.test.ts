@@ -78,17 +78,37 @@ describe('close the session and remove (AC-B4)', () => {
   it('says how many idle sessions it will close, and that the conversation stays', async () => {
     await open({
       action: 'close-session-remove',
-      guidance: { a: base({ sessions: { idle: 2, busy: 0 } }) }
+      guidance: { a: base({ sessions: { idle: 2, busy: 0, userOpened: 0 } }) }
     })
     expect(text('[data-testid="guided-sessions"]')).toContain('2 idle sessions')
     expect(text('[data-testid="guided-confirm"]')).toBe('Close session and remove')
     expect((q('[data-testid="guided-confirm"]') as HTMLButtonElement).disabled).toBe(false)
   })
 
+  it('warns what parking does, and that the conversation is kept', async () => {
+    await open({
+      action: 'close-session-remove',
+      guidance: { a: base({ sessions: { idle: 1, busy: 0, userOpened: 0 } }) }
+    })
+    const t = text('[data-testid="guided-sessions"]')
+    expect(t).toContain('Parking closes its terminal')
+    expect(t).toContain('dev servers')
+    expect(t).toContain('can be resumed')
+    expect(t).not.toContain('opened by you')
+  })
+
+  it('says so explicitly when the operator opened the session themself', async () => {
+    await open({
+      action: 'close-session-remove',
+      guidance: { a: base({ sessions: { idle: 2, busy: 0, userOpened: 1 } }) }
+    })
+    expect(text('[data-testid="guided-sessions"]')).toContain('1 of them you opened yourself')
+  })
+
   it('never offers to close a session that is working, and says why', async () => {
     await open({
       action: 'close-session-remove',
-      guidance: { a: base({ sessions: { idle: 1, busy: 1 } }) }
+      guidance: { a: base({ sessions: { idle: 1, busy: 1, userOpened: 0 } }) }
     })
     expect(text('[data-testid="guided-sessions"]')).toContain('working or waiting')
     expect((q('[data-testid="guided-confirm"]') as HTMLButtonElement).disabled).toBe(true)
@@ -97,7 +117,7 @@ describe('close the session and remove (AC-B4)', () => {
   it('says a session outside Harnu is not Harnu’s to close', async () => {
     await open({
       action: 'close-session-remove',
-      guidance: { a: base({ sessions: { idle: 0, busy: 0 } }) }
+      guidance: { a: base({ sessions: { idle: 0, busy: 0, userOpened: 0 } }) }
     })
     expect(text('[data-testid="guided-sessions"]')).toContain('not one Harnu')
     expect((q('[data-testid="guided-confirm"]') as HTMLButtonElement).disabled).toBe(true)

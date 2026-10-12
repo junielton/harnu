@@ -17,6 +17,8 @@ import {
   guidanceFor,
   parseLockReasons,
   prepareClean,
+  sessionCountsHere,
+  sessionStateOf,
   type GuidedDeps
 } from '../src/main/gc/gc-guided'
 import { findForeignCheckouts } from '../src/main/gc/gc-shell'
@@ -155,12 +157,12 @@ describe('guidanceFor (AC-B3 lock reason, AC-B4 sessions, AC-B5 stacks)', () => 
       review({ session: 'open-idle' }, 'open-idle-session'),
       deps(fresh(), {
         sessionsIn: async () => [
-          { key: 'a', state: 'idle' },
-          { key: 'b', state: 'working' }
+          { key: 'a', state: 'idle', origin: 'agent' },
+          { key: 'b', state: 'working', origin: 'agent' }
         ]
       })
     )
-    expect(g.sessions).toEqual({ idle: 1, busy: 1 })
+    expect(g.sessions).toEqual({ idle: 1, busy: 1, userOpened: 0 })
   })
 
   it('names a shared stack, the other folders that use it, and whether it binds this folder', async () => {
@@ -585,5 +587,69 @@ describe('prepareClean — dry run and undo', () => {
     )
     expect(r).toMatchObject({ ok: true })
     expect((r as { undo?: unknown }).undo).toBeUndefined()
+  })
+})
+
+// Delta 1 (findings 4 and 5): "idle" is strict, and a session in a nested worktree is not this one's.
+describe('sessionStateOf — only an explicit resting state is idle', () => {
+  it.each([
+    ['idle', 'idle'],
+    ['completed', 'idle'],
+    ['stopped', 'idle'],
+    ['working', 'working'],
+    ['needs-input', 'needs-input'],
+    ['failed', 'working'],
+    [null, 'working'],
+    [undefined, 'working']
+  ] as const)('%s → %s', (hook, expected) => {
+    expect(sessionStateOf(hook, false)).toBe(expected)
+  })
+
+  it('the owner of a mission with a live child is never idle', () => {
+    expect(sessionStateOf('idle', true)).toBe('working')
+  })
+})
+
+describe('sessionCountsHere — a nested worktree’s sessions are not this worktree’s', () => {
+  const inside = (c: string, p: string): boolean => c === p || c.startsWith(p + '/')
+  it('counts the worktree itself and a plain subfolder', () => {
+    expect(sessionCountsHere(WT, WT, [], inside)).toBe(true)
+    expect(sessionCountsHere(`${WT}/api`, WT, [], inside)).toBe(true)
+  })
+  it('does not count a folder outside it', () => {
+    expect(sessionCountsHere('/ws/other', WT, [], inside)).toBe(false)
+  })
+  it('does not count a nested worktree, or anything under it', () => {
+    const nested = [`${WT}/.claude/worktrees/x`]
+    expect(sessionCountsHere(nested[0], WT, nested, inside)).toBe(false)
+    expect(sessionCountsHere(`${nested[0]}/src`, WT, nested, inside)).toBe(false)
+    expect(sessionCountsHere(`${WT}/api`, WT, nested, inside)).toBe(true)
+  })
+})
+
+describe('sessions are looked up without the nested worktrees, and user-opened ones are counted', () => {
+  it('passes the bundle’s nested worktrees down, for guidance and for the prep', async () => {
+    const seen: string[][] = []
+    const nested = [`${WT}/.claude/worktrees/x`]
+    const d = deps(fresh(), {
+      sessionsIn: async (_p, n) => (seen.push(n), [{ key: 'i', state: 'idle' }])
+    })
+    const b = review({ session: 'open-idle', nestedWorktrees: nested }, 'open-idle-session')
+    await guidanceFor(b, d)
+    await prepareClean({ kind: 'close-session' }, b, d, { dry: true })
+    expect(seen).toEqual([nested, nested])
+  })
+
+  it('says how many of the sessions the operator opened themself', async () => {
+    const g = await guidanceFor(
+      review({ session: 'open-idle' }, 'open-idle-session'),
+      deps(fresh(), {
+        sessionsIn: async () => [
+          { key: 'a', state: 'idle', origin: 'operator' },
+          { key: 'b', state: 'idle', origin: 'agent' }
+        ]
+      })
+    )
+    expect(g.sessions).toEqual({ idle: 2, busy: 0, userOpened: 1 })
   })
 })

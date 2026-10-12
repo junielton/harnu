@@ -4,7 +4,7 @@
 
 import type { GcShellDeps } from './gc-shell'
 import type { GuidedDeps, GuidedSession } from './gc-guided'
-import { createGitGuided } from './gc-guided'
+import { createGitGuided, sessionCountsHere, sessionStateOf } from './gc-guided'
 
 export async function defaultGuidedDeps(shellDeps: GcShellDeps): Promise<GuidedDeps> {
   const [fsp, os, pty, hookBridge, fleet, hibernation, containersCore, shell, containersShell] =
@@ -33,8 +33,12 @@ export async function defaultGuidedDeps(shellDeps: GcShellDeps): Promise<GuidedD
    * started in a terminal outside Harnu has no PTY here, so it can never be closed from here. A session
    * working or waiting for the operator is busy, and so is the owner of a mission with a live child.
    */
-  const sessionsIn = async (path: string): Promise<GuidedSession[]> => {
+  const sessionsIn = async (
+    path: string,
+    nestedWorktrees: readonly string[]
+  ): Promise<GuidedSession[]> => {
     const root = await real(path)
+    const nested = await Promise.all(nestedWorktrees.map(real))
     const running = pty.liveSessionKeys()
     const states = hookBridge.getTaskStates()
     const folders = await fleet.getFleetFolders()
@@ -42,7 +46,7 @@ export async function defaultGuidedDeps(shellDeps: GcShellDeps): Promise<GuidedD
     for (const folder of folders) {
       if (!folder.sessions.some((s) => running.has(s.sessionId))) continue
       const where = await real(folder.path)
-      if (!containersCore.isInside(where, root)) continue
+      if (!sessionCountsHere(where, root, nested, containersCore.isInside)) continue
       for (const s of folder.sessions) {
         if (running.has(s.sessionId)) found.push({ key: s.sessionId, cwd: folder.path })
       }
@@ -50,14 +54,11 @@ export async function defaultGuidedDeps(shellDeps: GcShellDeps): Promise<GuidedD
     const owners = hibernation.missionOwnersWithLiveChildren(
       found.map((f) => ({ sessionKey: f.key, cwd: f.cwd }))
     )
-    return found.map((f) => {
-      const state = states.get(f.key)
-      const busy = state === 'working' || state === 'needs-input'
-      return {
-        key: f.key,
-        state: busy ? state : owners.has(f.key) ? 'working' : 'idle'
-      } as GuidedSession
-    })
+    return found.map((f): GuidedSession => ({
+      key: f.key,
+      state: sessionStateOf(states.get(f.key), owners.has(f.key)),
+      origin: pty.spawnOriginForSession(f.key) === 'agent' ? 'agent' : 'operator'
+    }))
   }
 
   const ownerOf = async (path: string): Promise<string | null> => {

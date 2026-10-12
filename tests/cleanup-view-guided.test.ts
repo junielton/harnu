@@ -228,8 +228,8 @@ describe('Close session and remove (AC-B4)', () => {
       }
     )
     const api = install(snap([idle, busy]), {
-      [idOf('s1')]: guidance(idOf('s1'), { sessions: { idle: 1, busy: 0 } }),
-      [idOf('s2')]: guidance(idOf('s2'), { sessions: { idle: 1, busy: 1 } })
+      [idOf('s1')]: guidance(idOf('s1'), { sessions: { idle: 1, busy: 0, userOpened: 0 } }),
+      [idOf('s2')]: guidance(idOf('s2'), { sessions: { idle: 1, busy: 1, userOpened: 0 } })
     })
     await mountView()
     await tickAll()

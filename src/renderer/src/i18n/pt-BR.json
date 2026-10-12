@@ -2818,7 +2818,9 @@
         "sessions": {
           "idle": "{n} sessão ociosa será fechada. A conversa continua em disco. | {n} sessões ociosas serão fechadas. As conversas continuam em disco.",
           "busy": "Uma sessão aqui está trabalhando ou esperando por você, então o Harnu não a fecha. Termine ou feche você mesmo antes.",
-          "foreign": "A sessão aberta aqui não foi iniciada pelo Harnu, então ele não pode fechá-la. Feche onde ela roda."
+          "foreign": "A sessão aberta aqui não foi iniciada pelo Harnu, então ele não pode fechá-la. Feche onde ela roda.",
+          "parkWarning": "Estacionar fecha o terminal; processos em segundo plano que ele iniciou (servidores de dev, shells) param. A conversa é mantida e pode ser retomada.",
+          "userOpened": "{n} delas você abriu por conta própria, não um agente."
         },
         "stack": {
           "runs": "{name} também roda de {folders}",
