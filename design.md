@@ -8852,6 +8852,13 @@ volume), size right.
     idle, warns "Parking closes its terminal; background processes it started (dev servers, shells) stop.
     The conversation is kept and can be resumed." and adds "{n} of them you opened yourself, not an agent."
     when it applies. **Unlock** sends only the rows still locked and says how many were left out.
+  - **Stacked causes are one combined action.** `removabilityAll()` lists every cause; a cause no step can fix
+    is shown first, alone; when every cause is fixable and there are several, the bar group reads
+    "{n} locked in git + shared Docker stack", the button "Unlock, stop stack and remove…", and the dialog
+    shows an ordered list of the steps (unlock, stop/leave the stack, close the session) ending in the
+    removal, behind a single confirm. Steps run in that order (closing a session, which cannot be undone,
+    last) and are undone in reverse. A rollback happens only while the folder still exists; Scan again and
+    removing a Keep mark disable their links while they run, and the unmark's toast has **Undo**.
   - **Every guided action ends in a toast.** While it runs the confirm shows a spinner and disables;
     success is a Success toast with the bytes freed ("Removed 1 worktree · 3.4 GB freed"); failure is a
     Danger toast naming the cause in one sentence. Nothing a guided action does is silent.
