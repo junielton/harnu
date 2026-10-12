@@ -33,6 +33,19 @@ export function groupOrphanTranscripts(items: readonly OrphanTranscriptItem[]): 
     .sort((a, b) => b.bytes - a.bytes || (a.repoLabel < b.repoLabel ? -1 : 1))
 }
 
+/** The items whose folder is proven gone, and those that are only missing ("Folder not found"). */
+export function splitByProof(items: readonly OrphanTranscriptItem[]): {
+  proven: OrphanTranscriptItem[]
+  notFound: OrphanTranscriptItem[]
+} {
+  const bySize = (a: OrphanTranscriptItem, b: OrphanTranscriptItem): number =>
+    b.bytes - a.bytes || (a.slug < b.slug ? -1 : 1)
+  return {
+    proven: items.filter((i) => i.proof !== 'not-found'),
+    notFound: items.filter((i) => i.proof === 'not-found').sort(bySize)
+  }
+}
+
 /** The facts a row showed, in the shape `gc:clean` compares with a fresh gather. */
 export function transcriptExpectedFor(item: OrphanTranscriptItem): GcExpected {
   return {
@@ -43,18 +56,27 @@ export function transcriptExpectedFor(item: OrphanTranscriptItem): GcExpected {
     ownedVolumes: [],
     bytes: item.bytes,
     path: item.folder,
-    project: item.slug
+    project: item.slug,
+    proof: item.proof
   }
 }
 
-/** The `gc:clean` payload for these items: every id confirmed on its own, each with the facts shown. */
-export function transcriptCleanRequest(items: readonly OrphanTranscriptItem[]): CleanRequest {
+/**
+ * The `gc:clean` payload for these items: every id confirmed on its own, each with the facts shown.
+ * A not-found folder also carries the stronger confirm, but only when the operator ticked "I checked".
+ */
+export function transcriptCleanRequest(
+  items: readonly OrphanTranscriptItem[],
+  notFoundAck = false
+): CleanRequest {
   const expected: Record<string, GcExpected> = {}
   for (const i of items) expected[i.id] = transcriptExpectedFor(i)
   const ids = items.map((i) => i.id)
+  const notFoundIds = items.filter((i) => i.proof === 'not-found').map((i) => i.id)
   const options: GcCleanOptions & { expected: Record<string, GcExpected> } = {
     expected,
-    confirmed: [...ids]
+    confirmed: [...ids],
+    ...(notFoundAck && notFoundIds.length > 0 ? { confirmedNotFound: notFoundIds } : {})
   }
   return { ids, options }
 }

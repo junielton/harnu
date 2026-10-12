@@ -2590,6 +2590,11 @@
         "deleteAria": "Apagar as transcrições de {name}",
         "sessions": "{n} sessão | {n} sessões",
         "last": "última {ago}",
+        "notFound": {
+          "title": "Pasta não encontrada",
+          "note": "O Harnu não consegue confirmar que essas pastas foram apagadas. Elas podem estar em um disco que não está conectado. Confira antes de apagar.",
+          "ack": "Eu conferi: essa pasta realmente não existe mais, não está em um disco desconectado."
+        },
         "memory": "inclui notas de memória",
         "confirm": {
           "title": "Mover {n} pasta de transcrições para a lixeira? | Mover {n} pastas de transcrições para a lixeira?",

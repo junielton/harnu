@@ -388,14 +388,14 @@ async function confirmDocker(): Promise<void> {
     errorToast(t('cleanup.gc.error.clean'), e)
   }
 }
-async function confirmTranscripts(): Promise<void> {
+async function confirmTranscripts(opts: { notFoundAck: boolean }): Promise<void> {
   const items = transcriptItems.value
   if (!items) return
   transcriptItems.value = null
   const ids = items.map((i) => i.id)
   busyTranscriptIds.value = [...busyTranscriptIds.value, ...ids]
   try {
-    await gc.submit(transcriptCleanRequest(items))
+    await gc.submit(transcriptCleanRequest(items, opts.notFoundAck))
   } catch (e) {
     errorToast(t('cleanup.gc.error.clean'), e)
   } finally {
@@ -977,7 +977,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
   <CleanupTranscriptsConfirmDialog
     v-if="transcriptItems"
     :items="transcriptItems"
-    @confirm="confirmTranscripts()"
+    @confirm="confirmTranscripts($event)"
     @cancel="transcriptItems = null"
   />
 

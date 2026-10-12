@@ -473,7 +473,7 @@ export function dialogBreakdown(rows: readonly DialogRow[]): DialogBreakdown {
 export interface CleanRequest {
   ids: string[]
   options: Required<Pick<GcCleanOptions, 'expected'>> &
-    Pick<GcCleanOptions, 'confirmed' | 'deleteRemote'>
+    Pick<GcCleanOptions, 'confirmed' | 'deleteRemote' | 'confirmedNotFound'>
 }
 
 const sorted = (xs: readonly string[]): string[] => [...xs].sort()

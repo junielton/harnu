@@ -13,11 +13,15 @@ import type { OrphanTranscriptItem } from '../../../main/gc/gc-wire'
  * request will name; focus starts on Cancel, never on the confirm, and Esc closes only this dialog.
  */
 const props = defineProps<{ items: OrphanTranscriptItem[] }>()
-const emit = defineEmits<{ confirm: []; cancel: [] }>()
+const emit = defineEmits<{ confirm: [opts: { notFoundAck: boolean }]; cancel: [] }>()
 const { t } = useI18n()
 
 const count = computed(() => props.items.length)
 const totalBytes = computed(() => props.items.reduce((a, i) => a + i.bytes, 0))
+/** Some folder is only missing, not proven gone: the full path shows and the stronger confirm applies. */
+const hasNotFound = computed(() => props.items.some((i) => i.proof === 'not-found'))
+const ack = ref(false)
+const canConfirm = computed(() => !hasNotFound.value || ack.value)
 const withMemory = computed(() => props.items.filter((i) => i.hasMemory).length)
 
 const nameOf = (folder: string): string =>
@@ -99,7 +103,13 @@ function onBackdropMousedown(e: MouseEvent): void {
             data-testid="orphan-dialog-row"
           >
             <span class="flex min-w-0 flex-col gap-0.5">
-              <span class="truncate font-mono text-ui text-text" :title="i.folder">{{
+              <span
+                v-if="i.proof === 'not-found'"
+                class="break-all font-mono text-ui text-text"
+                data-testid="orphan-dialog-fullpath"
+                >{{ i.folder }}</span
+              >
+              <span v-else class="truncate font-mono text-ui text-text" :title="i.folder">{{
                 nameOf(i.folder)
               }}</span>
               <span class="truncate text-caption text-text-4"
@@ -131,6 +141,20 @@ function onBackdropMousedown(e: MouseEvent): void {
           </div>
         </div>
 
+        <label
+          v-if="hasNotFound"
+          class="mx-5 mt-3 flex cursor-pointer items-start gap-2.5"
+          data-testid="orphan-dialog-ack-label"
+        >
+          <input
+            v-model="ack"
+            type="checkbox"
+            class="mt-0.5 h-4 w-4 shrink-0 cursor-pointer"
+            data-testid="orphan-dialog-ack"
+          />
+          <span class="text-ui text-text">{{ t('cleanup.gc.orphans.notFound.ack') }}</span>
+        </label>
+
         <div class="mt-3 flex items-center gap-2 border-t border-border px-5 py-3">
           <span
             class="mr-auto text-ui font-medium tabular-nums text-text"
@@ -151,7 +175,12 @@ function onBackdropMousedown(e: MouseEvent): void {
           >
             {{ t('cleanup.gc.confirm.cancel') }}
           </Button>
-          <Button variant="danger" data-testid="orphan-dialog-confirm" @click="emit('confirm')">
+          <Button
+            variant="danger"
+            :disabled="!canConfirm"
+            data-testid="orphan-dialog-confirm"
+            @click="canConfirm && emit('confirm', { notFoundAck: hasNotFound && ack })"
+          >
             <Trash2 :size="14" :stroke-width="1.6" class="shrink-0" />
             {{ t('cleanup.gc.orphans.confirm.confirm') }}
           </Button>

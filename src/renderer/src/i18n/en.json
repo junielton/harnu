@@ -2590,6 +2590,11 @@
         "deleteAria": "Delete the transcripts of {name}",
         "sessions": "{n} session | {n} sessions",
         "last": "last {ago}",
+        "notFound": {
+          "title": "Folder not found",
+          "note": "Harnu can't confirm these folders were deleted. They may be on a drive that is not connected. Check before you delete.",
+          "ack": "I checked: this folder is really gone, not on a drive that's unplugged."
+        },
         "memory": "includes memory notes",
         "confirm": {
           "title": "Move {n} transcript folder to the trash? | Move {n} transcript folders to the trash?",
