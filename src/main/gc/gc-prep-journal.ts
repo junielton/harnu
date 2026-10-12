@@ -63,6 +63,8 @@ export type PrepEntry = PrepEntryInput & {
   notice?: NoticeKind
   detail?: string
   outcome?: 'relocked'
+  /** The click-time identity check failed: "Lock this worktree anyway" is now the only way to lock it. */
+  needsConfirm?: boolean
 }
 
 export const PREP_JOURNAL_FILE = 'gc-prep-journal.json'
@@ -141,6 +143,24 @@ export interface RecoveryDeps {
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
+
+/** What differs between who the worktree was and who it is now, in words ([] when provably the same). */
+export function describeMismatch(was: LockIdentity | null, now: LockIdentity | null): string[] {
+  if (!now) return ['git has no registration for it any more']
+  if (!was) return ['who it was when Harnu unlocked it was not recorded']
+  const out: string[] = []
+  if (was.birth === 0 || now.birth === 0) {
+    out.push(
+      'its creation time could not be read, so the admin directory cannot be told from a new one'
+    )
+  } else if (was.inode !== now.inode || was.birth !== now.birth) {
+    out.push('the admin directory is a different one (it was removed and added again)')
+  }
+  if (was.adminId !== now.adminId) out.push('the admin directory has another name')
+  if (was.gitdir !== now.gitdir) out.push('the gitdir points somewhere else')
+  if (was.head !== now.head) out.push('it is on another commit')
+  return out
+}
 
 /**
  * Whether two readings are provably the same worktree. A creation time of 0 means the filesystem did not
@@ -243,6 +263,7 @@ export async function listRecovery(
       kind: e.kind,
       ...(e.notice ? { notice: e.notice } : {}),
       ...(e.outcome ? { outcome: e.outcome } : {}),
+      ...(e.needsConfirm ? { mismatch: e.detail ?? '' } : {}),
       path: e.path,
       detail: e.detail ?? '',
       announced: e.announced,
@@ -267,7 +288,7 @@ export async function actOnRecovery(
   id: string,
   action: GcRecoveryAction,
   deps: RecoveryDeps
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true } | { ok: false; error: string; mismatch?: string }> {
   const e = (await journal.entries()).find((x) => x.id === id && x.state === 'notice')
   if (!e) return { ok: false, error: 'no such notice' }
   if (action === 'dismiss') {
@@ -284,6 +305,18 @@ export async function actOnRecovery(
         return { ok: false, error: r.error ?? 'not every container started' }
       }
     } else if (action === 'lock' && e.kind === 'unlock') {
+      // Who the worktree is NOW decides. A mismatch never locks silently: the notice changes to "Lock this
+      // worktree anyway", naming it.
+      const differs = describeMismatch(e.identity, await deps.identityOf(e.repoPath, e.path))
+      if (differs.length > 0) {
+        const mismatch = differs.join('; ')
+        await journal.update(id, { needsConfirm: true, detail: mismatch })
+        return { ok: false, error: mismatch, mismatch }
+      }
+      await deps.lock(e.repoPath, e.path, e.reason)
+    } else if (action === 'lock-anyway' && e.kind === 'unlock') {
+      if (!e.needsConfirm) return { ok: false, error: 'check the worktree first' }
+      if (!(await deps.exists(e.path))) return { ok: false, error: 'the folder is gone' }
       await deps.lock(e.repoPath, e.path, e.reason)
     } else {
       return { ok: false, error: 'that answer does not fit this notice' }

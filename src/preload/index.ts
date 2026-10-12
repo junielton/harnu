@@ -2573,7 +2573,7 @@ const api = {
   gcRecoveryAct: (
     id: string,
     action: GcRecoveryAction
-  ): Promise<{ ok: true } | { ok: false; error: string }> =>
+  ): Promise<{ ok: true } | { ok: false; error: string; mismatch?: string }> =>
     ipcRenderer.invoke('gc:recovery:act', { id, action }),
   /** The journal changed (boot recovery finished, a notice was answered). */
   onGcRecoveryChanged: (cb: () => void): (() => void) =>

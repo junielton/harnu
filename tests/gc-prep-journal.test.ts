@@ -306,11 +306,13 @@ describe('the operator answers a notice', () => {
     expect(await j.entries()).toHaveLength(1)
   })
 
-  it('Lock again locks the worktree with its recorded reason, then clears it', async () => {
+  it('Lock again locks the worktree with its recorded reason once it checks out, then clears it', async () => {
     const w = world({ identityOf: async () => ({ ...ID, adminId: 'other' }) })
     const { j, id } = await noticeFor(unlockEntry, w.deps)
-    expect(await actOnRecovery(j, id, 'lock', w.deps)).toEqual({ ok: true })
-    expect(w.calls.lock).toEqual([['/r/wt', 'café "x" 日本']])
+    // The click re-checks who it is now: it is the recorded worktree again.
+    const click = world()
+    expect(await actOnRecovery(j, id, 'lock', click.deps)).toEqual({ ok: true })
+    expect(click.calls.lock).toEqual([['/r/wt', 'café "x" 日本']])
     expect(await j.entries()).toEqual([])
   })
 

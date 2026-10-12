@@ -43,6 +43,10 @@ const { t } = useI18n()
         <template v-else-if="n.notice === 'containers-gone'">{{
           t('cleanup.gc.recovery.containersGone', { names: n.detail })
         }}</template>
+        <template v-else-if="n.mismatch">
+          {{ t('cleanup.gc.recovery.lockMismatch', { path: n.path }) }}
+          <span class="text-caption text-text-3">{{ n.mismatch }}</span>
+        </template>
         <template v-else-if="n.notice === 'lock-failed'">
           {{ t('cleanup.gc.recovery.lockFailed', { path: n.path }) }}
           <span v-if="n.detail" class="font-mono text-caption text-text-3">{{ n.detail }}</span>
@@ -68,7 +72,15 @@ const { t } = useI18n()
         {{ t('cleanup.gc.recovery.start') }}
       </Button>
       <Button
-        v-if="n.notice === 'lock-skipped' || n.notice === 'lock-failed'"
+        v-if="n.mismatch"
+        variant="soft"
+        data-testid="recovery-lock-anyway"
+        @click="emit('answer', n.id, 'lock-anyway')"
+      >
+        {{ t('cleanup.gc.recovery.lockAnyway') }}
+      </Button>
+      <Button
+        v-else-if="n.notice === 'lock-skipped' || n.notice === 'lock-failed'"
         variant="soft"
         data-testid="recovery-lock"
         @click="emit('answer', n.id, 'lock')"

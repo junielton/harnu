@@ -2918,7 +2918,9 @@
         "leave": "Deixar parado",
         "lock": "Bloquear de novo",
         "dismiss": "Dispensar",
-        "lockFailed": "O Harnu desbloqueou {path} durante uma limpeza que não terminou e não conseguiu bloquear de novo:"
+        "lockFailed": "O Harnu desbloqueou {path} durante uma limpeza que não terminou e não conseguiu bloquear de novo:",
+        "lockMismatch": "O Harnu desbloqueou {path} durante uma limpeza que não terminou, e a conferência agora diz que não é claramente o mesmo worktree:",
+        "lockAnyway": "Bloquear este worktree mesmo assim"
       }
     }
   },

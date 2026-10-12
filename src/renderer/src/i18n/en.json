@@ -2918,7 +2918,9 @@
         "leave": "Leave stopped",
         "lock": "Lock again",
         "dismiss": "Dismiss",
-        "lockFailed": "Harnu unlocked {path} during a clean that didn't finish and could not lock it again:"
+        "lockFailed": "Harnu unlocked {path} during a clean that didn't finish and could not lock it again:",
+        "lockMismatch": "Harnu unlocked {path} during a clean that didn't finish, and the check just now says this is not clearly the same worktree:",
+        "lockAnyway": "Lock this worktree anyway"
       }
     }
   },

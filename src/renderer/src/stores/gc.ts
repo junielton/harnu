@@ -382,7 +382,8 @@ export const useGcStore = defineStore('gc', () => {
   async function answerRecovery(id: string, action: GcRecoveryAction): Promise<void> {
     try {
       const r = await window.api.gcRecoveryAct(id, action)
-      if (!r.ok) {
+      // A lock that is not the same worktree is not an error: the notice itself now says so.
+      if (!r.ok && !r.mismatch) {
         useUiStore().pushToast({
           kind: 'danger',
           title: i18n.global.t('cleanup.gc.recovered.failed'),

@@ -444,7 +444,10 @@ export async function registerGcHandlers(
     const r = (raw ?? {}) as { id?: unknown; action?: unknown }
     if (
       typeof r.id !== 'string' ||
-      (r.action !== 'start' && r.action !== 'lock' && r.action !== 'dismiss')
+      (r.action !== 'start' &&
+        r.action !== 'lock' &&
+        r.action !== 'lock-anyway' &&
+        r.action !== 'dismiss')
     ) {
       return { ok: false, error: 'bad request' }
     }

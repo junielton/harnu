@@ -158,7 +158,7 @@ export type GcPrep =
   | { kind: 'leave-stack'; stackIds: string[] }
 
 /** What the operator can answer to a recovery notice. */
-export type GcRecoveryAction = 'start' | 'lock' | 'dismiss'
+export type GcRecoveryAction = 'start' | 'lock' | 'lock-anyway' | 'dismiss'
 
 /**
  * One thing the prep journal wants the operator to know (see gc-prep-journal.ts): a `notice` stays until it
@@ -175,6 +175,8 @@ export interface GcRecoveryItem {
   detail: string
   /** Already announced in Activity: it is not announced again. */
   announced: boolean
+  /** A lock: the click-time identity check failed again, in words; only "Lock this worktree anyway" is left. */
+  mismatch?: string
   /** A stopped stack: whether starting it again is possible now (its folders still exist). */
   canStart?: boolean
   /** Why it is not: starting it would recreate empty folders. */
