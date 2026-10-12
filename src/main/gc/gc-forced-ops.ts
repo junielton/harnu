@@ -50,11 +50,9 @@ async function preserve(b: WorktreeBundle, deps: GcShellDeps, at: number): Promi
   await executor.archiveWip(b.item.repoPath, plan.wip.ref, plan.wip.worktreePath!)
 }
 
-export function createForcedGcOps(deps: GcShellDeps): GcOps {
-  // One stamp for the whole run: the archive step inside cleanItem then writes the very refs
-  // written here instead of a second set.
-  const at = deps.executor.now()
-  const forcedDeps: GcShellDeps = {
+/** The shell deps the force path runs on: the executor's dirty / unpushed / merged guards waived. */
+function forcedShellDeps(deps: GcShellDeps, at: number): GcShellDeps {
+  return {
     ...deps,
     executor: {
       ...deps.executor,
@@ -74,6 +72,30 @@ export function createForcedGcOps(deps: GcShellDeps): GcOps {
         )
     }
   }
+}
+
+/**
+ * The reprobe a guided action's DRY RUN uses: the very one the confirmed remove will run (the review
+ * path with its guards waived, or the ordinary one), but read-only, so it never writes the archive refs
+ * the real reprobe writes. A dry run that judged by stricter rules would refuse what the remove accepts.
+ */
+export function createDryReprobe(
+  deps: GcShellDeps,
+  forced: boolean
+): (b: WorktreeBundle) => ReturnType<GcOps['reprobe']> {
+  if (!forced) {
+    const ops = createGcOps(deps)
+    return (b) => ops.reprobe(b)
+  }
+  const base = createGcOps(forcedShellDeps(deps, deps.executor.now()))
+  return (b) => base.reprobe(asExecutable(b))
+}
+
+export function createForcedGcOps(deps: GcShellDeps): GcOps {
+  // One stamp for the whole run: the archive step inside cleanItem then writes the very refs
+  // written here instead of a second set.
+  const at = deps.executor.now()
+  const forcedDeps = forcedShellDeps(deps, at)
   const base = createGcOps(forcedDeps)
   return {
     ...base,

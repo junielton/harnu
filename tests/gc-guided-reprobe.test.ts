@@ -106,3 +106,38 @@ describe('recheck with assume', () => {
     expect(r).toMatchObject({ ok: false, reason: 'stack-present' })
   })
 })
+
+// Found live: the dry run must judge the item exactly as the confirmed remove will — the review path
+// waives the dirty / unpushed guards (it archives first) — and must write nothing while doing it.
+import { createDryReprobe } from '../src/main/gc/gc-forced-ops'
+
+describe('the dry reprobe is the remove’s own reprobe, read-only', () => {
+  const unpushed = () => {
+    const b = review()
+    b.item = { ...b.item, justifiedBy: null, blockers: ['unpushed'] }
+    return b
+  }
+
+  it('a confirmed review item with unpushed commits passes (the forced path waives it)', async () => {
+    const b = unpushed()
+    expect(await createDryReprobe(worldFor(b), true)(b)).toEqual({ ok: true })
+  })
+
+  it('the ordinary (ready) path still refuses unpushed commits', async () => {
+    const b = unpushed()
+    expect(await createDryReprobe(worldFor(b), false)(b)).toMatchObject({
+      ok: false,
+      reason: 'unpushed'
+    })
+  })
+
+  it('writes nothing: no archive ref, no trash', async () => {
+    const b = unpushed()
+    const world = worldFor(b)
+    const archiveTip = (world.executor.archiveTip = async () => {
+      throw new Error('the dry run archived')
+    })
+    void archiveTip
+    await expect(createDryReprobe(world, true)(b)).resolves.toEqual({ ok: true })
+  })
+})

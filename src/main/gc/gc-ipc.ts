@@ -62,7 +62,7 @@ import type {
 import { createGcOps, defaultGcShellDeps, resolveRealPaths, type GcShellDeps } from './gc-shell'
 import { withCurrentNeverClean } from './autopilot-core'
 import { AS_GIVEN } from './bundle-core'
-import { asExecutable, createForcedGcOps } from './gc-forced-ops'
+import { createDryReprobe, createForcedGcOps } from './gc-forced-ops'
 import { runHousekeeping } from './housekeeping-shell'
 import {
   createOpinionCache,
@@ -282,8 +282,7 @@ export async function registerGcHandlers(
           gatherFresh,
           prepare: (prep, b, o) => prepareClean(prep, b, guidedDeps, o),
           // The same reprobe the remove runs, read-only, on the bundle with the prep's cause assumed fixed.
-          dryReprobe: (b, forced) =>
-            createGcOps(withRun('operator')).reprobe(forced ? asExecutable(b) : b),
+          dryReprobe: (b, forced) => createDryReprobe(withRun('operator'), forced)(b),
           workStampOf: (p) => workStampOf(reaperExec, p),
           removeOrphanVolumes: (names) =>
             runHousekeeping({
