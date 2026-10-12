@@ -142,9 +142,15 @@ export interface RecoveryDeps {
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
+/**
+ * Whether two readings are provably the same worktree. A creation time of 0 means the filesystem did not
+ * say, which proves nothing: without it the admin directory cannot be told from a re-created one.
+ */
 const sameIdentity = (a: LockIdentity | null, b: LockIdentity | null): boolean =>
   !!a &&
   !!b &&
+  a.birth !== 0 &&
+  b.birth !== 0 &&
   a.adminId === b.adminId &&
   a.gitdir === b.gitdir &&
   a.head === b.head &&
