@@ -320,3 +320,51 @@ describe('the operator answers a notice', () => {
     expect(await actOnRecovery(j, 'nope', 'dismiss', w.deps)).toMatchObject({ ok: false })
   })
 })
+
+// Delta 4 item 2: starting containers whose folders are gone would make docker recreate empty folders.
+describe('Start again checks the folders are still there (delta 4)', () => {
+  const noticeOf = async (deps: RecoveryDeps) => {
+    const j = createPrepJournal(file, 'previous-run')
+    await j.begin(stopEntry)
+    await recoverPrepJournal(boot(), world().deps)
+    const [item] = await listRecovery(j, deps)
+    return { j, item }
+  }
+
+  it('offers Start again only when the worktree and every bind source exist', async () => {
+    const w = world()
+    const { item } = await noticeOf(w.deps)
+    expect(item).toMatchObject({ notice: 'stack-stopped', canStart: true })
+  })
+
+  it('a missing bind source: no Start again, and the reason says why', async () => {
+    const w = world({ exists: async (p) => p !== '/ws/infra' })
+    const { item } = await noticeOf(w.deps)
+    expect(item.canStart).toBe(false)
+    expect(item.cannotStart).toContain('/ws/infra')
+    expect(item.cannotStart).toMatch(/recreate empty folders/)
+  })
+
+  it('a missing worktree folder: no Start again', async () => {
+    const w = world({ exists: async (p) => p !== '/r/wt' })
+    const { item } = await noticeOf(w.deps)
+    expect(item.canStart).toBe(false)
+  })
+
+  it('the click re-checks: a folder that vanished since the listing refuses, and starts nothing', async () => {
+    const w = world()
+    const { j, item } = await noticeOf(w.deps)
+    const gone = world({ exists: async (p) => p !== '/ws/infra' })
+    const r = await actOnRecovery(j, item.id, 'start', gone.deps)
+    expect(r).toMatchObject({ ok: false })
+    expect((r as { error: string }).error).toMatch(/recreate empty folders/)
+    expect(gone.calls.started).toEqual([])
+    expect(await j.entries()).toHaveLength(1)
+  })
+
+  it('Dismiss is still answerable when starting is not', async () => {
+    const gone = world({ exists: async () => false })
+    const { j, item } = await noticeOf(world().deps)
+    expect(await actOnRecovery(j, item.id, 'dismiss', gone.deps)).toEqual({ ok: true })
+  })
+})

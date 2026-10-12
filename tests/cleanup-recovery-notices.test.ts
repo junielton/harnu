@@ -40,6 +40,18 @@ describe('CleanupRecoveryNotices', () => {
     ])
   })
 
+  it('no Start again when the folders are gone: the reason, and only Dismiss (delta 4)', () => {
+    const w = mountIt([
+      item({
+        canStart: false,
+        cannotStart: 'its folder is gone (/ws/infra); starting it would recreate empty folders'
+      })
+    ])
+    expect(w.find('[data-testid="recovery-start"]').exists()).toBe(false)
+    expect(w.get('[data-testid="recovery-notice"]').text()).toContain('recreate empty folders')
+    expect(w.get('[data-testid="recovery-dismiss"]').text()).toBe('Leave stopped')
+  })
+
   it('a lock that was not put back says why and offers Lock again / Dismiss', async () => {
     const w = mountIt([item({ id: 'l1', kind: 'unlock', notice: 'lock-skipped', detail: '' })])
     expect(w.get('[data-testid="recovery-notice"]').text()).toContain('/r/wt')
