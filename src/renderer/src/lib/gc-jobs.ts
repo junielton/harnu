@@ -51,6 +51,13 @@ export const REFUSAL_CODES = [
   'dirty',
   'foreign-checkout',
   'cannot-unregister',
+  // a guided action's prep (gc-guided.ts `prepareClean`): the item was left as it was
+  'unlock-failed',
+  'session-busy',
+  'session-not-closable',
+  'stack-stop-failed',
+  'stack-binds-folder',
+  'prep-not-applicable',
   // mid-run
   'changed-mid-run'
 ] as const

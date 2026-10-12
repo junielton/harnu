@@ -2697,7 +2697,13 @@
         "changedMidRun": "Ela mudou durante a limpeza, então o Harnu parou.",
         "dirty": "Agora há alterações não commitadas, então foi deixado como está.",
         "foreignCheckout": "Há outro repositório com checkout dentro desta pasta, então foi deixado como está.",
-        "cannotUnregister": "O Harnu não conseguiu associar este worktree a um único registro do git, então nada foi tocado."
+        "cannotUnregister": "O Harnu não conseguiu associar este worktree a um único registro do git, então nada foi tocado.",
+        "unlockFailed": "O git não quis desbloquear este worktree, então ele foi deixado como estava.",
+        "sessionBusy": "Uma sessão neste worktree está trabalhando ou esperando por você, então o Harnu não a fechou e deixou o worktree como estava.",
+        "sessionNotClosable": "A sessão aberta aqui não é uma que o Harnu possa fechar, então o worktree foi deixado como estava.",
+        "stackStopFailed": "O Docker não conseguiu parar a stack compartilhada, então o worktree foi deixado como estava.",
+        "stackBindsFolder": "Essa stack usa esta pasta, então não pode ficar rodando. Pare-a ou escolha de novo.",
+        "prepNotApplicable": "O que você escolheu não vale mais para este worktree, então ele foi deixado como estava. Escaneie de novo e revise."
       },
       "opinion": {
         "safe": "Seguro",
