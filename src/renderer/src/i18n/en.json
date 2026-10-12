@@ -2706,7 +2706,8 @@
         "prepNotApplicable": "What you chose no longer applies to this worktree, so it was left alone. Scan again and review it.",
         "stackIsMainCheckout": "That stack belongs to the main checkout, so Harnu does not stop it and left the worktree alone.",
         "stackUsedElsewhere": "Another folder with a session uses that stack, so Harnu did not stop it and left the worktree alone.",
-        "rollbackFailed": "What the action had changed (a lock, a stopped stack) could not be put back: check it."
+        "rollbackFailed": "What the action had changed (a lock, a stopped stack) could not be put back: check it.",
+        "prepLeftStack": "The worktree was removed after Harnu stopped its shared stack, so the stack was left stopped because its folder is gone."
       },
       "opinion": {
         "safe": "Safe",

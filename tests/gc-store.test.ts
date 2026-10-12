@@ -333,6 +333,31 @@ describe('gc store', () => {
     expect(d).toContain('git is gone')
   })
 
+  it('says a stack was left stopped when its worktree was removed anyway (delta 2)', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.push.done(
+      done({
+        done: 0,
+        total: 1,
+        results: [
+          {
+            id: 'x',
+            ok: false,
+            haltedAt: 'prune',
+            error: 'prune: failed; prep-left (stack-stopped)',
+            freedBytes: 0
+          }
+        ]
+      })
+    )
+    await vi.runAllTimersAsync()
+    expect(toast.mock.calls[0][0].description).toContain(t('cleanup.gc.refusal.prepLeftStack'))
+  })
+
   it('names the refusal in the toast when every refused item has the same reason', async () => {
     const api = installApi()
     const gc = useGcStore()

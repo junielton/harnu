@@ -54,6 +54,8 @@ export interface ManualCleanDeps {
    */
   gatherFresh?(): Promise<{ bundles: WorktreeBundle[] }>
   /** The one preparatory step of a guided "…and remove" (see gc-guided.ts `prepareClean`). */
+  /** Whether a worktree folder is still on disk; used to tell a halt that left it from one that trashed it. */
+  folderExists?(path: string): Promise<boolean>
   prepare?(prep: GcPrep, b: WorktreeBundle, opts?: { dry?: boolean }): Promise<PrepResult>
   /**
    * The read-only reprobe of the ordinary ops on `b` (carrying `assume`): what the remove would say if
@@ -84,6 +86,9 @@ const refused = (id: string, error: string): GcItemResult => ({
   error,
   freedBytes: 0
 })
+
+/** The steps after the folder is trashed: once one of these halts, the folder is gone. */
+const POST_TRASH: ReadonlySet<string> = new Set(['prune', 'branch-delete', 'detach'])
 
 /** The bundle as the dry run judges it: the prep's own cause is taken as fixed, nothing else is. */
 function assumeFor(prep: GcPrep, b: WorktreeBundle): WorktreeBundle {
@@ -284,8 +289,20 @@ export function submitManualClean(
         deps.rememberLeftovers?.(leftBehind(b, gathered.housekeeping?.volumes ?? []))
         return result!
       }
-      // Still refused (or stopped) after the prep: the lock goes back, the containers restart.
-      return bail(result!)
+      // Still refused (or stopped) after the prep: the lock goes back, the containers restart, as long
+      // as the folder is still there. Once it is trashed there is nothing to roll back to: re-locking
+      // a registration that is gone, or starting containers whose bind source is gone, would be wrong.
+      const r = result!
+      const gone =
+        POST_TRASH.has(r.haltedAt ?? '') ||
+        (r.haltedAt === 'trash' && !!path && deps.folderExists
+          ? !(await deps.folderExists(path))
+          : false)
+      if (!gone) return bail(r)
+      undo = null
+      return prep?.kind === 'stop-stack'
+        ? { ...r, error: `${r.error ?? 'failed'}; prep-left (stack-stopped)` }
+        : r
     }
 
     const cleanVolume = async (id: string): Promise<GcItemResult> => {

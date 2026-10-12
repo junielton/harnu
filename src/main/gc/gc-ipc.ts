@@ -278,6 +278,13 @@ export async function registerGcHandlers(
             forced ? createForcedGcOps(withRun('operator')) : createGcOps(withRun('operator')),
           // S4's runner builds the argv itself (`docker volume rm <name>`, name-checked).
           freshOrphans,
+          folderExists: (p) =>
+            import('node:fs/promises').then((fs) =>
+              fs.access(p).then(
+                () => true,
+                () => false
+              )
+            ),
           // A guided "…and remove": its one prep step, then a gather that starts after it.
           gatherFresh,
           prepare: (prep, b, o) => prepareClean(prep, b, guidedDeps, o),

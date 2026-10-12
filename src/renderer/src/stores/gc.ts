@@ -82,6 +82,10 @@ function refusalDescription(s: DoneSummary): string | undefined {
   let out: string | undefined
   if (codes.length === 1) out = t(refusalKey(codes[0]))
   else if (codes.length > 1) out = t('cleanup.gc.refusal.several', { n: s.refused })
+  if (s.prepLeft > 0) {
+    const left = t('cleanup.gc.refusal.prepLeftStack')
+    out = out ? `${out} ${left}` : left
+  }
   // A guided prep that could not be put back is the one thing the operator must know about.
   if (s.rollbackFailed > 0) {
     const warn = [t('cleanup.gc.refusal.rollbackFailed'), ...s.rollbackDetails].join(' ')

@@ -9,7 +9,7 @@ import { createCycleState } from '../src/main/gc/gc-cycle'
 import { createJobQueue, type GcJobDone } from '../src/main/gc/gc-jobs-core'
 import { defaultGcPrefs } from '../src/main/gc/gc-prefs'
 import { parseOptions } from '../src/main/gc/gc-options'
-import type { GcOps } from '../src/main/gc/pipeline-core'
+import { GcStepError, type GcOps } from '../src/main/gc/pipeline-core'
 import type { WorktreeBundle } from '../src/main/gc/bundle-core'
 import type { GcCleanOptions, GcPrep } from '../src/main/gc/gc-wire'
 import { bundle, NOW } from './gc-fixtures'
@@ -32,6 +32,9 @@ function rig(opts: {
   /** Replaces the real reprobe: the refusal the remove still meets AFTER the prep ran. */
   reprobe?: GcOps['reprobe']
   workStamp?: (path: string) => Promise<string | null>
+  /** What the git side does: throws a GcStepError to halt at that step. */
+  cleanGit?: GcOps['cleanGit']
+  folderExists?: (path: string) => Promise<boolean>
 }) {
   const log: string[] = []
   let prepared = false
@@ -44,7 +47,9 @@ function rig(opts: {
     removeVolumes: async () => undefined,
     dropDeps: async () => 9,
     recheck: async () => ({ ok: true }),
-    cleanGit: async () => void log.push('cleanGit')
+    cleanGit: opts.cleanGit
+      ? async (b) => (log.push('cleanGit'), opts.cleanGit!(b))
+      : async () => void log.push('cleanGit')
   }
   const done: GcJobDone[] = []
   let n = 0
@@ -79,6 +84,7 @@ function rig(opts: {
     opsFor: () => ops,
     freshOrphans: async () => [],
     workStampOf: opts.workStamp ?? (async () => null),
+    ...(opts.folderExists ? { folderExists: opts.folderExists } : {}),
     removeOrphanVolumes: async () => ({
       buildCacheBytes: 0,
       imageBytes: 0,
@@ -373,6 +379,66 @@ describe('the prep runs last and is rolled back (delta 1)', () => {
     expect(res).toMatchObject({ ok: false })
     expect(res!.error).toMatch(/^cannot-unregister/)
     expect(res!.error).toContain('rollback-failed')
+  })
+})
+
+// Delta 2 item 5: once the folder is trashed there is nothing to roll back to.
+describe('no rollback after the folder is gone (delta 2)', () => {
+  const haltAt = (step: 'archive' | 'trash' | 'prune' | 'branch-delete') => async () => {
+    throw new GcStepError(step, `${step} failed`)
+  }
+
+  it.each(['prune', 'branch-delete'] as const)(
+    'a halt at %s: the lock is NOT put back and no container is restarted',
+    async (step) => {
+      const before = locked()
+      const r = rig({ before, after: unlocked(), cleanGit: haltAt(step) })
+      const res = await run(r, before, asked(before, { kind: 'unlock' }))
+      expect(res).toMatchObject({ ok: false, haltedAt: step })
+      expect(r.log).not.toContain('undo unlock')
+    }
+  )
+
+  it('a stack stopped for a worktree that was then trashed is reported as left stopped', async () => {
+    const before = bundle(PATH, 'review', {
+      sharedStackIds: ['web'],
+      reason: { code: 'shared-stack', detail: 'x' }
+    })
+    const r = rig({ before, cleanGit: haltAt('prune') })
+    const res = await run(r, before, asked(before, { kind: 'stop-stack', stackIds: ['web'] }))
+    expect(r.log).not.toContain('undo stop-stack')
+    expect(res!.error).toContain('prep-left (stack-stopped)')
+  })
+
+  it('a halt AT the trash with the folder still there is rolled back', async () => {
+    const before = locked()
+    const r = rig({
+      before,
+      after: unlocked(),
+      cleanGit: haltAt('trash'),
+      folderExists: async () => true
+    })
+    await run(r, before, asked(before, { kind: 'unlock' }))
+    expect(r.log).toContain('undo unlock')
+  })
+
+  it('a halt at the trash with the folder gone is not rolled back', async () => {
+    const before = locked()
+    const r = rig({
+      before,
+      after: unlocked(),
+      cleanGit: haltAt('trash'),
+      folderExists: async () => false
+    })
+    await run(r, before, asked(before, { kind: 'unlock' }))
+    expect(r.log).not.toContain('undo unlock')
+  })
+
+  it('a halt before the trash (archive) is rolled back', async () => {
+    const before = locked()
+    const r = rig({ before, after: unlocked(), cleanGit: haltAt('archive') })
+    await run(r, before, asked(before, { kind: 'unlock' }))
+    expect(r.log).toContain('undo unlock')
   })
 })
 

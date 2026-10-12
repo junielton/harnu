@@ -189,6 +189,8 @@ export interface DoneSummary {
   rollbackFailed: number
   /** What each could not put back (e.g. which containers were left stopped), for the toast. */
   rollbackDetails: string[]
+  /** Items whose shared stack was stopped and left stopped because the worktree was removed anyway. */
+  prepLeft: number
 }
 
 export function doneSummary(d: GcJobDone): DoneSummary {
@@ -204,6 +206,9 @@ export function doneSummary(d: GcJobDone): DoneSummary {
     const m = r.ok ? null : /rollback-failed \((.*)\)\s*$/.exec(r.error ?? '')
     return m ? [m[1]!] : []
   })
+  const prepLeft = d.results.filter(
+    (r) => !r.ok && (r.error ?? '').includes('prep-left (stack-stopped)')
+  ).length
   const rollbackFailed = d.results.filter(
     (r) => !r.ok && (r.error ?? '').includes('rollback-failed')
   ).length
@@ -218,7 +223,8 @@ export function doneSummary(d: GcJobDone): DoneSummary {
     refusals,
     refused,
     rollbackFailed,
-    rollbackDetails
+    rollbackDetails,
+    prepLeft
   }
 }
 

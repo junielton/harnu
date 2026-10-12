@@ -148,7 +148,8 @@ describe('doneSummary', () => {
       refusals: {},
       refused: 0,
       rollbackFailed: 0,
-      rollbackDetails: []
+      rollbackDetails: [],
+      prepLeft: 0
     })
   })
 
@@ -163,6 +164,15 @@ describe('doneSummary', () => {
       rollbackFailed: 1,
       rollbackDetails: ['x']
     })
+  })
+
+  it('counts a stack that was left stopped because its folder was then removed', () => {
+    const d = done({
+      results: [bad('a', 'prune', 'prune failed; prep-left (stack-stopped)'), ok('b')],
+      done: 1,
+      total: 2
+    })
+    expect(doneSummary(d)).toMatchObject({ prepLeft: 1 })
   })
 
   it('partial failure → warning, counting what needs the operator', () => {

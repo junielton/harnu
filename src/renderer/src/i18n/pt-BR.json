@@ -2706,7 +2706,8 @@
         "prepNotApplicable": "O que você escolheu não vale mais para este worktree, então ele foi deixado como estava. Escaneie de novo e revise.",
         "stackIsMainCheckout": "Essa stack é do checkout principal, então o Harnu não a para e deixou o worktree como estava.",
         "stackUsedElsewhere": "Outra pasta com uma sessão usa essa stack, então o Harnu não a parou e deixou o worktree como estava.",
-        "rollbackFailed": "O que a ação tinha mudado (um bloqueio, uma stack parada) não pôde ser desfeito: confira."
+        "rollbackFailed": "O que a ação tinha mudado (um bloqueio, uma stack parada) não pôde ser desfeito: confira.",
+        "prepLeftStack": "O worktree foi removido depois de o Harnu parar a stack compartilhada, então a stack ficou parada porque a pasta dela sumiu."
       },
       "opinion": {
         "safe": "Seguro",
