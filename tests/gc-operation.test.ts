@@ -70,16 +70,15 @@ describe('gitOperationOf — a real repository', () => {
     expect(await gitOperationOf(path.join(root, 'nowhere'))).toBeNull()
   })
 
-  /** A patch that cannot apply, so `git am` stops with its state in `rebase-apply`. */
+  /** A patch that cannot apply (it edits a file the worktree never had), so `git am` stops in `rebase-apply`. */
   const stoppedAm = (cwd: string): void => {
-    writeFileSync(path.join(repo, 'f2.txt'), 'changed on main\n')
+    writeFileSync(path.join(repo, 'g.txt'), 'one\n')
     git(repo, 'add', '-A')
-    git(repo, 'commit', '-qm', 'touch f2')
-    const patch = path.join(root, 'p.patch')
-    writeFileSync(
-      patch,
-      git(repo, 'format-patch', '--stdout', '-1', 'HEAD').replace('changed on main', 'x')
-    )
+    git(repo, 'commit', '-qm', 'add g')
+    writeFileSync(path.join(repo, 'g.txt'), 'two\n')
+    git(repo, 'commit', '-qam', 'edit g')
+    const patch = path.join(root, `p-${Math.random().toString(36).slice(2)}.patch`)
+    writeFileSync(patch, git(repo, 'format-patch', '--stdout', '-1', 'HEAD'))
     try {
       git(cwd, 'am', '-q', patch)
     } catch {
@@ -88,14 +87,14 @@ describe('gitOperationOf — a real repository', () => {
   }
 
   it('reads a git am that stopped as "am", not as a rebase (both use rebase-apply)', async () => {
-    git(wt, 'checkout', '-q', '--detach', 'HEAD~1')
     stoppedAm(wt)
     expect(await gitOperationOf(wt)).toBe('am')
   })
 
   it('reads a git am on a BRANCH worktree: HEAD stays on the branch, so it is no detached item', async () => {
     const onBranch = path.join(root, 'on-branch')
-    git(repo, 'worktree', 'add', '-q', '-b', 'feat/x', onBranch, 'HEAD~1')
+    const base = git(repo, 'rev-parse', 'HEAD').trim()
+    git(repo, 'worktree', 'add', '-q', '-b', 'feat/x', onBranch, base)
     stoppedAm(onBranch)
     expect(git(onBranch, 'rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('feat/x')
     expect(await gitOperationOf(onBranch)).toBe('am')
