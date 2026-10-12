@@ -8914,7 +8914,7 @@ now is not), and no existing folder spells the same slug.
 - **Proven gone, or only "Folder not found".** A folder counts as gone only when that is **positively
   proven**: Harnu removed it itself (its own ledger), git lists it as prunable in a repo that still exists,
   or it sits under a known worktrees parent (`<repo>/.claude/worktrees`, `<repo>-worktrees`) that exists
-  and can be read. A folder that is merely missing (an sshfs share or a USB disk that is not connected looks
+  and can be read. The proof holds only while the worktree's own folder (the segment directly under that parent, the folder Harnu removed, the worktree git lists) is itself **missing**: a dangling link or an empty mount point there, or a folder that exists again, proves nothing. A folder that is merely missing (an sshfs share or a USB disk that is not connected looks
   the same) is listed apart under a **"Folder not found"** eyebrow in `--warning`, with a 11px `--text-3`
   note ("Harnu can't confirm these folders were deleted. They may be on a drive that is not connected.
   Check before you delete."), **the full path** of each folder in 12px mono `--text` (`data-testid=
