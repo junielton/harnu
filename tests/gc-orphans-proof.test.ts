@@ -266,3 +266,78 @@ describe('git’s prunable reason (delta-3 item 1, proof b)', () => {
     expect(await mk('prunable')).toEqual([])
   })
 })
+
+// ---- delta-4: Windows paths ------------------------------------------------------------------------------
+
+describe('the worktree root on Windows (delta-4)', () => {
+  const parent = 'C:\\Users\\u\\repo\\.claude\\worktrees'
+  const ev = (p = parent): RemovalEvidence => ({
+    removed: [],
+    prunable: [],
+    worktreeParents: [{ parent: p, readable: true }]
+  })
+  const missing = async (): Promise<'missing'> => 'missing'
+  const present = async (): Promise<'exists'> => 'exists'
+
+  it('a drive path: the root is the folder directly under the parent, in drive-letter form', () => {
+    expect(proofRoots(`${parent}\\wt\\api\\src`, ev(), 'win32')).toEqual([
+      { proof: 'under-worktrees-parent', root: 'C:\\Users\\u\\repo\\.claude\\worktrees\\wt' }
+    ])
+  })
+
+  it('a UNC path keeps its server and share', () => {
+    const unc = '\\\\srv\\share\\repo\\.claude\\worktrees'
+    expect(proofRoots(`${unc}\\wt\\api`, ev(unc), 'win32')).toEqual([
+      { proof: 'under-worktrees-parent', root: '\\\\srv\\share\\repo\\.claude\\worktrees\\wt' }
+    ])
+    // a different share is a different place
+    expect(
+      proofRoots('\\\\srv\\other\\repo\\.claude\\worktrees\\wt\\api', ev(unc), 'win32')
+    ).toEqual([])
+  })
+
+  it('compares without case and across slash styles, and keeps the folder’s own spelling', () => {
+    expect(proofRoots('c:/USERS/U/Repo/.claude/Worktrees/WT/api', ev(), 'win32')).toEqual([
+      { proof: 'under-worktrees-parent', root: 'c:\\USERS\\U\\Repo\\.claude\\Worktrees\\WT' }
+    ])
+    // another drive is another place
+    expect(proofRoots('D:\\Users\\u\\repo\\.claude\\worktrees\\wt\\api', ev(), 'win32')).toEqual([])
+  })
+
+  it('never builds a posix-looking nonsense root (the old split of a drive path)', () => {
+    for (const { root } of proofRoots(`${parent}\\wt\\api`, ev(), 'win32')) {
+      expect(root).not.toMatch(/^\/|\/\//)
+      expect(root.startsWith('C:\\')).toBe(true)
+    }
+  })
+
+  it('a relative or drive-relative folder cannot be rooted reliably: no proof', () => {
+    expect(proofRoots('worktrees\\wt\\api', ev('worktrees'), 'win32')).toEqual([])
+    expect(proofRoots('C:wt\\api', ev(), 'win32')).toEqual([])
+  })
+
+  it('the parent itself and a sibling that shares its prefix are not under it', () => {
+    expect(proofRoots(parent, ev(), 'win32')).toEqual([])
+    expect(proofRoots(`${parent}-x\\wt\\api`, ev(), 'win32')).toEqual([])
+  })
+
+  it('a really gone root is proven; a junction or an empty mount point there is not', async () => {
+    const folder = `${parent}\\wt\\api`
+    expect(await proveGone(folder, ev(), missing, 'win32')).toBe(true)
+    // a junction or an empty mount point still lstats as something
+    expect(await proveGone(folder, ev(), present, 'win32')).toBe(false)
+    expect(await proveGone(folder, ev(), async () => 'unknown', 'win32')).toBe(false)
+  })
+
+  it('the root handed to the existence check is the Windows one', async () => {
+    const asked: string[] = []
+    await proveGone(`${parent}\\wt\\api`, ev(), async (p) => (asked.push(p), 'missing'), 'win32')
+    expect(asked).toEqual(['C:\\Users\\u\\repo\\.claude\\worktrees\\wt'])
+  })
+
+  it('worktree parents of a Windows repo use Windows separators', () => {
+    expect(worktreeParentsOf(['C:\\w\\repo'], 'win32').sort()).toEqual(
+      ['C:\\w\\repo-worktrees', 'C:\\w\\repo\\.claude\\worktrees'].sort()
+    )
+  })
+})
