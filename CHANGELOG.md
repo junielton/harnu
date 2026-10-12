@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-12
+
+### Added
+
+- **Cleanup never leaves you at a dead end.** When **Remove** is unavailable, the selection bar now says why in plain text, grouped by cause with counts ("11 can't be removed: 11 detached (no branch)", "Removes 3 · 8 can't: …"), and each cause links to the action that clears it. The same actions are in the item's panel and its Needs review row: **Unlock and remove…** (shows the lock reason git recorded), **Close session and remove…** (parks only an idle Harnu session, never a working one), **Choose what to do with the stack…** (stop a Docker stack other folders share, or remove the worktree and leave it running when it doesn't use the folder; volumes are always kept), **Show how to fix it…** for a folder Harnu can't read (the exact path, its owner and a command to copy, then **Check again**), and a Docker-wasn't-running prompt with **Scan again**. When the refused items carry installed dependencies, **Dehydrate** now says what it frees: "Dehydrate frees 11.70 GB and keeps the code". Each action is one confirm and one background job, removes through the usual guarded steps, shows a spinner while it runs and ends in a toast with the bytes freed or the reason it stopped.
+
 ## 2026-10-09
 
 ### Changed
