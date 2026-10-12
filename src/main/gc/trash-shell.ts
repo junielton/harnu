@@ -446,10 +446,18 @@ export async function emptyHarnuTrash(
     else {
       const rec = e.exact
       try {
+        // Where the trash directory really is, as seen at the check. A PARENT of it swapped for a
+        // symlink afterwards leaves its own path unchanged but moves its real location.
+        const realAtCheck = await fs.realpath(rec.trashDir)
         await hooks.beforeDelete?.(e)
-        // The check above and the delete below are two moments: re-lstat every component right
-        // before each delete, so a directory swapped for a symlink in between redirects nothing.
-        if (!(await chainIsReal(dataDirs(rec)))) {
+        // The check above and the delete below are two moments: right before the delete, look
+        // again. Every component still a real directory, the trash directory still where it was,
+        // and the entry still carrying the recorded dev, inode and change time.
+        if (
+          !(await chainIsReal(dataDirs(rec))) ||
+          (await fs.realpath(rec.trashDir)) !== realAtCheck ||
+          (await observeEntry(rec, env)) !== 'present'
+        ) {
           result.changed.push(e.key)
           continue
         }
@@ -459,7 +467,8 @@ export async function emptyHarnuTrash(
         await hooks.betweenDeletes?.(e)
         if (
           rec.kind === 'freedesktop' &&
-          (await chainIsReal([rec.trashDir, path.join(rec.trashDir, 'info')]))
+          (await chainIsReal([rec.trashDir, path.join(rec.trashDir, 'info')])) &&
+          (await fs.realpath(rec.trashDir).catch(() => null)) === realAtCheck
         ) {
           await rawRm(path.join(rec.trashDir, 'info', `${rec.name}.trashinfo`), { force: true })
         }
