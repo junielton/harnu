@@ -116,8 +116,7 @@ export function guidedActionFor(reason: RemovalRefusal, ctx: { hasDeps: boolean 
       return ctx.hasDeps ? 'dehydrate' : 'manual'
     case 'folder-gone':
     case 'cannot-unregister':
-    // A rebase, bisect or git am the operator ends by hand: the refusal's hint is the abort command.
-    case 'operation-in-progress':
+    case 'operation-in-progress': // ended by hand: the refusal's hint is the abort command
       return 'manual'
     case 'kept':
       return 'unkeep'
