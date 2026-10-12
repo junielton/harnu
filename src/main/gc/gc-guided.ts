@@ -92,17 +92,59 @@ function shellQuote(p: string): string {
   return /^[A-Za-z0-9_@%+=:,./-]+$/.test(p) ? p : `'${p.replace(/'/g, `'\\''`)}'`
 }
 
+const C_ESCAPES: Record<string, number> = {
+  a: 7,
+  b: 8,
+  f: 12,
+  n: 10,
+  r: 13,
+  t: 9,
+  v: 11,
+  '\\': 92,
+  '"': 34
+}
+
 /**
- * The reasons in `git worktree list --porcelain`: path → the text after `locked` (null when git
- * recorded none). A worktree that is not locked has no entry.
+ * Undoes git's C-style quoting (`core.quotePath`): a value with a quote, a backslash, a control character
+ * or a non-ASCII byte is printed as `"…"` with `\"`, `\\`, `\n`… and `\303\243` octal UTF-8 bytes. A value
+ * that is not wrapped in quotes was printed as is.
+ */
+export function unquoteGitC(value: string): string {
+  if (value.length < 2 || !value.startsWith('"') || !value.endsWith('"')) return value
+  const inner = value.slice(1, -1)
+  const bytes: number[] = []
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i]!
+    if (ch !== '\\') {
+      bytes.push(...Buffer.from(ch, 'utf8'))
+      continue
+    }
+    const next = inner[++i] ?? ''
+    if (/[0-7]/.test(next)) {
+      let octal = next
+      while (octal.length < 3 && /[0-7]/.test(inner[i + 1] ?? '')) octal += inner[++i]
+      bytes.push(parseInt(octal, 8) & 255)
+    } else if (next in C_ESCAPES) {
+      bytes.push(C_ESCAPES[next]!)
+    } else {
+      bytes.push(92, ...Buffer.from(next, 'utf8'))
+    }
+  }
+  return Buffer.from(bytes).toString('utf8')
+}
+
+/**
+ * The reasons in `git worktree list --porcelain`: path → the text after `locked`, exactly as it was
+ * recorded (git C-quotes it in this output, so it is unquoted here), or null when git recorded none.
+ * A worktree that is not locked has no entry.
  */
 export function parseLockReasons(porcelain: string): Map<string, string | null> {
   const out = new Map<string, string | null>()
   let current: string | null = null
   for (const raw of porcelain.split(/\r?\n/)) {
-    if (raw.startsWith('worktree ')) current = raw.slice('worktree '.length)
+    if (raw.startsWith('worktree ')) current = unquoteGitC(raw.slice('worktree '.length))
     else if (current !== null && (raw === 'locked' || raw.startsWith('locked '))) {
-      const reason = raw.slice('locked'.length).trim()
+      const reason = raw === 'locked' ? '' : unquoteGitC(raw.slice('locked '.length))
       out.set(current, reason === '' ? null : reason)
     }
   }

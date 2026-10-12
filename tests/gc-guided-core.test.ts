@@ -19,6 +19,7 @@ import {
   prepareClean,
   sessionCountsHere,
   sessionStateOf,
+  unquoteGitC,
   userNameOfUid,
   type GuidedDeps
 } from '../src/main/gc/gc-guided'
@@ -113,6 +114,20 @@ const fresh = (): Calls => ({
   removedVolumes: []
 })
 
+describe('unquoteGitC — git C-quotes what it prints (delta 2)', () => {
+  it('leaves an unquoted value alone', () => {
+    expect(unquoteGitC('on the usb disk')).toBe('on the usb disk')
+  })
+  it('unquotes escapes and octal UTF-8 bytes', () => {
+    expect(unquoteGitC('"n\\303\\243o mexer \\"x\\""')).toBe('não mexer "x"')
+    expect(unquoteGitC('"a\\\\b"')).toBe('a\\b')
+    expect(unquoteGitC('"tab\\there\\nnew"')).toBe('tab\there\nnew')
+  })
+  it('a quote that is part of the value, not a wrapper, stays', () => {
+    expect(unquoteGitC('say "hi"')).toBe('say "hi"')
+  })
+})
+
 describe('parseLockReasons', () => {
   it('reads the reason git recorded, and none when it recorded none', () => {
     const out = [
@@ -131,6 +146,8 @@ describe('parseLockReasons', () => {
     ].join('\n')
     const m = parseLockReasons(out)
     expect(m.get('/a')).toBe('on a usb stick')
+    const q = parseLockReasons(['worktree /c', 'locked "n\\303\\243o \\"x\\""', ''].join('\n'))
+    expect(q.get('/c')).toBe('não "x"')
     expect(m.get('/b')).toBeNull()
     expect(m.has('/c')).toBe(false)
   })
