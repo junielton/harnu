@@ -1223,6 +1223,18 @@ function isPathInside(child: string, parent: string): boolean {
 }
 
 /**
+ * The one door every removal path uses to tell the sidebar a worktree is gone: the engine's
+ * sidebar-detach step and the sidebar's own Remove both end here (unit D, AC-D2), so neither can
+ * leave a subfolder ghost behind. Never throws on a refused candidate.
+ */
+export async function detachFromSidebar(
+  getWindow: () => BrowserWindow | null,
+  removedPath: string
+): Promise<void> {
+  await removeGhostFoldersUnder(getWindow, removedPath)
+}
+
+/**
  * Reconciles a removed folder AND every gone folder under it (unit D, AC-D2). A session started
  * in a subfolder (`WT/api`, `WT/.claude/worktrees/x`) is its own path-keyed folder, pinned, hidden
  * or known only from its transcripts, so reconciling the worktree's own path alone left those as

@@ -100,11 +100,11 @@ describe('removeGhostFoldersUnder', () => {
 
 describe('the sidebar-detach step reconciles the whole tree (wiring)', () => {
   const reaper = readFileSync(new URL('../src/main/reaper/reaper-ipc.ts', import.meta.url), 'utf8')
-  it('detachSidebar calls removeGhostFoldersUnder, not the single-path function', () => {
+  it('detachSidebar uses the shared detachFromSidebar door, not the single-path function (behaviour: tests/gc-orphans-ghost-both-paths.test.ts)', () => {
     const start = reaper.indexOf('detachSidebar: async')
     expect(start).toBeGreaterThan(0)
     const body = reaper.slice(start, reaper.indexOf('},', start))
-    expect(body).toMatch(/removeGhostFoldersUnder\(getWindow, p\)/)
+    expect(body).toMatch(/detachFromSidebar\(getWindow, p\)/)
     expect(body).not.toMatch(/removeGhostFolder\(/)
   })
 })

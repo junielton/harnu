@@ -93,6 +93,7 @@ import { probeGitMeta } from './git-probe'
 import {
   addUserProject,
   isUserProjectAgentAllowed,
+  detachFromSidebar,
   removeGhostFolder,
   resolveBornFrom,
   type RemoveGhostFolderResult
@@ -1641,7 +1642,7 @@ export async function removeWorktree(
   // worktree remove` succeeded) — clean up Harnu's own sidebar bookkeeping so
   // the folder + its sessions don't linger as a ghost. Best-effort: a failed
   // cleanup here must not turn an already-succeeded removal into an error.
-  await removeGhostFolder(getWindowRef, worktreePath).catch((err) =>
+  await detachFromSidebar(getWindowRef, worktreePath).catch((err) =>
     console.warn(`[worktree-ipc] ghost-folder cleanup failed for ${worktreePath}:`, err)
   )
 }

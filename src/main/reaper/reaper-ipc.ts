@@ -59,7 +59,7 @@ import {
   assertPosixShellAvailable
 } from '../worktree-ipc'
 import { spawnEnvOnce } from '../appimage-env'
-import { removeGhostFoldersUnder } from '../user-projects'
+import { detachFromSidebar } from '../user-projects'
 
 const runFile = promisify(execFile)
 const GIT_OPTS = { windowsHide: true, timeout: 30_000, maxBuffer: 1 << 20 } as const
@@ -110,7 +110,7 @@ export function buildDeps(getWindow: () => BrowserWindow | null): ExecutorDeps {
     detachSidebar: async (p) => {
       // The worktree's own row AND every gone folder under it (AC-D2): a session started in a
       // subfolder is its own folder, and would otherwise stay behind as a ghost row.
-      await removeGhostFoldersUnder(getWindow, p)
+      await detachFromSidebar(getWindow, p)
     },
     appendTombstone,
     now: () => Date.now()
