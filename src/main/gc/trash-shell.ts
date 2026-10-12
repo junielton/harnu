@@ -332,9 +332,9 @@ export async function observeEntry(rec: TrashEntryRecord, env: TrashEnv): Promis
 export interface ObservedLedger {
   /** Exactly Harnu's, still there. */
   present: TrashedEntry[]
-  /** No longer Harnu's to empty: gone, or replaced by something that is not its entry. */
+  /** Nothing is there any more (the user emptied or restored it): settled. */
   gone: TrashedEntry[]
-  /** Cannot be checked. Never counted as space in the trash, never deleted. */
+  /** Cannot be checked, or no longer exactly what Harnu moved. Never counted as space in the trash, never deleted, never forgotten. */
   unknown: TrashedEntry[]
 }
 
@@ -354,8 +354,11 @@ export async function observeTrashEntries(
     }
     const seen = await observeEntry(e.exact, env).catch((): Observed => 'unknown')
     if (seen === 'present') out.present.push(e)
-    else if (seen === 'unknown') out.unknown.push(e)
-    else out.gone.push(e)
+    // Only a missing entry is settled. One that CHANGED (or cannot be read) stays listed as
+    // something Harnu moved and can't check: a remount that renumbers a device must not make real
+    // entries vanish from the ledger for good.
+    else if (seen === 'gone') out.gone.push(e)
+    else out.unknown.push(e)
   }
   return out
 }

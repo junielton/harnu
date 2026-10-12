@@ -363,8 +363,8 @@ export async function emptyHarnuTrashNow(
   const result = await emptyHarnuTrash(trashedEntries(journal, settled), ids, env)
   const next = new Set(settled)
   // Removed, or no longer there: either way the ledger has nothing left to empty for them. An
-  // entry that changed is no longer Harnu's either.
-  for (const key of [...result.emptied, ...result.missing, ...result.changed]) next.add(key)
+  // entry that changed stays listed (as "can't check"): it is not forgotten.
+  for (const key of [...result.emptied, ...result.missing]) next.add(key)
   if (next.size !== settled.size) await writeSettled(next).catch(() => undefined)
   return {
     unsupported: result.unsupported,
