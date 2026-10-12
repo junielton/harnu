@@ -4,7 +4,7 @@
 
 import type { GcShellDeps } from './gc-shell'
 import type { GuidedDeps, GuidedSession } from './gc-guided'
-import { createGitGuided, sessionCountsHere, sessionStateOf } from './gc-guided'
+import { createGitGuided, sessionCountsHere, sessionStateOf, userNameOfUid } from './gc-guided'
 
 export async function defaultGuidedDeps(shellDeps: GcShellDeps): Promise<GuidedDeps> {
   const [fsp, os, pty, hookBridge, fleet, hibernation, containersCore, shell, containersShell] =
@@ -64,11 +64,10 @@ export async function defaultGuidedDeps(shellDeps: GcShellDeps): Promise<GuidedD
   const ownerOf = async (path: string): Promise<string | null> => {
     const st = await fsp.stat(path)
     if (process.platform === 'win32') return null
-    try {
-      return os.userInfo().uid === st.uid ? os.userInfo().username : String(st.uid)
-    } catch {
-      return String(st.uid)
-    }
+    if (os.userInfo().uid === st.uid) return os.userInfo().username
+    // Another user: their name from /etc/passwd, or the number when it cannot be read.
+    const passwd = await fsp.readFile('/etc/passwd', 'utf8').catch(() => null)
+    return userNameOfUid(st.uid, passwd)
   }
 
   return {

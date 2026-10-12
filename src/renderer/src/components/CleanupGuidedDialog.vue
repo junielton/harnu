@@ -87,6 +87,9 @@ const canLeave = computed(() => !stacksUseFolder.value)
 /** A stack that is gone leaves nothing to stop or leave: the operator scans again. */
 const everyStackThere = computed(() => facts.value.every(({ g }) => (g?.stacks.length ?? 0) > 0))
 
+/** Rows git no longer lists as locked: they are left out of the unlock, not sent to fail. */
+const unlockLeftOut = computed(() => facts.value.filter(({ g }) => g && g.lock === null).length)
+
 // ---- what each action needs before it can go ------------------------------------------------------
 const canGo = computed(() => {
   if (!ready.value) return false
@@ -365,6 +368,14 @@ function onBackdropMousedown(e: MouseEvent): void {
             </template>
           </div>
         </div>
+
+        <p
+          v-if="action === 'unlock-remove' && ready && unlockLeftOut > 0"
+          class="mx-5 mt-3 text-ui text-text-3"
+          data-testid="guided-unlock-left-out"
+        >
+          {{ t('cleanup.gc.guided.lock.leftOut', { n: unlockLeftOut }) }}
+        </p>
 
         <!-- AC-B5: the choice -->
         <fieldset

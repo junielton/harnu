@@ -146,8 +146,18 @@ describe('doneSummary', () => {
       failed: 0,
       freedBytes: 300,
       refusals: {},
-      refused: 0
+      refused: 0,
+      rollbackFailed: 0
     })
+  })
+
+  it('counts a guided prep that could not be put back after the remove refused', () => {
+    const d = done({
+      results: [bad('a', 'reprobe', 'cannot-unregister: rollback-failed (x)'), ok('b')],
+      done: 1,
+      total: 2
+    })
+    expect(doneSummary(d)).toMatchObject({ failed: 1, rollbackFailed: 1 })
   })
 
   it('partial failure → warning, counting what needs the operator', () => {

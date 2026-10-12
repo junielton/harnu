@@ -413,15 +413,22 @@ async function openGuided(action: GuidedDialogAction, ids: readonly string[]): P
 async function confirmGuided(choice: 'stop' | 'leave' | null): Promise<void> {
   const g = guided.value
   if (!g || g.pending || guidedStale.value || !g.captured || !g.guidance) return
+  // Unlock goes only to the rows git still lists as locked; the rest are left out, not sent to fail.
+  const sendIds = g.captured.ids.filter(
+    (id) => g.action !== 'unlock-remove' || g.guidance![id]?.lock != null
+  )
+  if (sendIds.length === 0) return
   const prepare: Record<string, GcPrep> = {}
-  for (const id of g.captured.ids) {
+  const expected: CleanRequest['options']['expected'] = {}
+  for (const id of sendIds) {
+    expected[id] = g.captured.request.options.expected[id]
     const prep = prepFor(g.action, choice, g.guidance[id])
     if (!prep) return
     prepare[id] = prep
   }
   const req: CleanRequest = {
-    ids: g.captured.ids,
-    options: { ...g.captured.request.options, prepare }
+    ids: sendIds,
+    options: { expected, confirmed: [...sendIds], prepare }
   }
   g.pending = true
   try {
@@ -872,7 +879,7 @@ async function copyRestoreHint(hint: string): Promise<void> {
     :asking="askingSelection"
     @guide="onGuideGroup"
     @remove="openRemove([...checked])"
-    @dehydrate="openDehydrate([...checked])"
+    @dehydrate="openDehydrate(removal?.dehydrate?.ids ?? [...checked])"
     @keep="keepIds([...checked])"
     @ask="askOpinion([...checked])"
     @clear="clearSelection()"

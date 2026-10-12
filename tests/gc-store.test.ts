@@ -304,6 +304,33 @@ describe('gc store', () => {
     expect(toast.mock.calls[0][0].description).toBe(t('cleanup.gc.refusal.changedSinceConfirm'))
   })
 
+  it('a refusal after a guided prep says whether the prep could be put back (delta 1)', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.push.done(
+      done({
+        done: 0,
+        total: 1,
+        results: [
+          {
+            id: 'x',
+            ok: false,
+            haltedAt: 'reprobe',
+            error: 'cannot-unregister: rollback-failed (git is gone)',
+            freedBytes: 0
+          }
+        ]
+      })
+    )
+    await vi.runAllTimersAsync()
+    const d = toast.mock.calls[0][0].description as string
+    expect(d).toContain(t('cleanup.gc.refusal.cannotUnregister'))
+    expect(d).toContain(t('cleanup.gc.refusal.rollbackFailed'))
+  })
+
   it('names the refusal in the toast when every refused item has the same reason', async () => {
     const api = installApi()
     const gc = useGcStore()

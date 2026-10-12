@@ -199,6 +199,17 @@ describe('refusals come only from removability() (AC-B8)', () => {
   })
 })
 
+describe('the copy tells the truth about what a failed prep left behind (delta 1)', () => {
+  it('a stack that could not be stopped says what was started again', async () => {
+    const { i18n } = await import('@renderer/i18n')
+    const en = i18n.global.t('cleanup.gc.refusal.stackStopFailed') as string
+    expect(en).toMatch(/started again|restarted/i)
+    expect(en).not.toMatch(
+      /^Docker could not stop the shared stack, so the worktree was left alone\.$/
+    )
+  })
+})
+
 describe('what a guided action reports when its prep fails (AC-B9)', () => {
   it('every prep failure is a refusal the screen can word', async () => {
     const { refusalOf } = await import('../src/renderer/src/lib/gc-jobs')

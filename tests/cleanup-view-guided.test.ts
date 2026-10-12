@@ -205,6 +205,61 @@ describe('Unlock and remove (AC-B3)', () => {
   })
 })
 
+describe('unlock sends only the rows that are still locked (delta 1)', () => {
+  it('a row git no longer lists as locked is left out of the request, and the dialog says so', async () => {
+    const api = install(snap([locked('l1'), locked('l2')]), {
+      [idOf('l1')]: guidance(idOf('l1'), { lock: { reason: 'usb' } }),
+      [idOf('l2')]: guidance(idOf('l2'), { lock: null })
+    })
+    await mountView()
+    await tickAll()
+    await click('sel-guide-locked')
+    expect(text('guided-dialog')).toContain('no longer locked')
+    await click('guided-confirm')
+    const [ids, opts] = api.gcClean.mock.calls[0]
+    expect(ids).toEqual([idOf('l1')])
+    expect(Object.keys(opts.expected)).toEqual([idOf('l1')])
+    expect(Object.keys(opts.prepare)).toEqual([idOf('l1')])
+  })
+})
+
+describe('Dehydrate does what its label counts (delta 1)', () => {
+  const withDeps = (name: string, branch: string, over: Record<string, unknown> = {}) =>
+    wt(
+      name,
+      'review',
+      GIB,
+      {
+        branch,
+        hydration: {
+          state: 'hydrated',
+          removable: ['node_modules'],
+          skipped: [],
+          reclaimableBytes: 100 * MIB,
+          canRehydrate: true,
+          rehydrateChanged: []
+        } as never
+      },
+      { depsBytes: 100 * MIB, ...over }
+    )
+
+  it('the button counts the refused items’ deps and dehydrates exactly those, not the removable one', async () => {
+    const lockedItem = withDeps('l1', 'feat/refused-one', {
+      reason: reviewReason('locked' as never),
+      locked: true
+    })
+    const removable = withDeps('p1', 'feat/removable-one', { reason: reviewReason('dirty') })
+    install(snap([lockedItem, removable]))
+    await mountView()
+    await tickAll()
+    expect(text('sel-dehydrate')).toContain('105 MB')
+    await click('sel-dehydrate')
+    const dialog = text('dehydrate-confirm')
+    expect(dialog).toContain('refused-one')
+    expect(dialog).not.toContain('removable-one')
+  })
+})
+
 describe('Close session and remove (AC-B4)', () => {
   it('sends the close-session prep for an idle session and never for a working one', async () => {
     const idle = wt(

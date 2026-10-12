@@ -116,6 +116,16 @@ export function dockerStartHint(platform: string): string | null {
   return null
 }
 
+/** A uid as a user name, from the text of /etc/passwd; the number itself when there is none to read. */
+export function userNameOfUid(uid: number, passwd: string | null): string {
+  for (const line of (passwd ?? '').split('\n')) {
+    if (line.startsWith('#')) continue
+    const [name, , id] = line.split(':')
+    if (name && id === String(uid)) return name
+  }
+  return String(uid)
+}
+
 /** The fix for a folder nobody can read: a chmod when it is ours, a chown when it is not. */
 function fixFor(path: string, owner: string | null, me: string): string {
   const q = shellQuote(path)

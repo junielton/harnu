@@ -185,6 +185,8 @@ export interface DoneSummary {
   refusals: Partial<Record<RefusalCode, number>>
   /** How many items were refused (any code). */
   refused: number
+  /** Items whose guided prep (an unlock, a stopped stack) could NOT be put back after the remove refused. */
+  rollbackFailed: number
 }
 
 export function doneSummary(d: GcJobDone): DoneSummary {
@@ -196,10 +198,13 @@ export function doneSummary(d: GcJobDone): DoneSummary {
     if (code) refusals[code] = (refusals[code] ?? 0) + 1
   }
   const refused = Object.values(refusals).reduce((a, n) => a + (n ?? 0), 0)
+  const rollbackFailed = d.results.filter(
+    (r) => !r.ok && (r.error ?? '').includes('rollback-failed')
+  ).length
   let tone: DoneSummary['tone'] = 'success'
   if (failed > 0 || d.error) tone = 'warning'
   else if (d.results.length === 0 && d.freedBytes === 0) tone = 'none'
-  return { tone, cleaned, failed, freedBytes: d.freedBytes, refusals, refused }
+  return { tone, cleaned, failed, freedBytes: d.freedBytes, refusals, refused, rollbackFailed }
 }
 
 export interface ItemFailure {

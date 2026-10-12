@@ -19,6 +19,7 @@ import {
   prepareClean,
   sessionCountsHere,
   sessionStateOf,
+  userNameOfUid,
   type GuidedDeps
 } from '../src/main/gc/gc-guided'
 import { findForeignCheckouts } from '../src/main/gc/gc-shell'
@@ -651,5 +652,23 @@ describe('sessions are looked up without the nested worktrees, and user-opened o
       })
     )
     expect(g.sessions).toEqual({ idle: 2, busy: 0, userOpened: 1 })
+  })
+})
+
+describe('userNameOfUid — the owner is a name, not a number (delta 1)', () => {
+  const passwd = [
+    'root:x:0:0:root:/root:/bin/bash',
+    'daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin',
+    '# a comment',
+    'junie:x:1000:1000:Junie,,,:/home/junie:/bin/zsh',
+    'broken line'
+  ].join('\n')
+  it('resolves a uid from /etc/passwd', () => {
+    expect(userNameOfUid(0, passwd)).toBe('root')
+    expect(userNameOfUid(1000, passwd)).toBe('junie')
+  })
+  it('falls back to the number when nobody has it, or the file is unreadable', () => {
+    expect(userNameOfUid(4242, passwd)).toBe('4242')
+    expect(userNameOfUid(1000, null)).toBe('1000')
   })
 })

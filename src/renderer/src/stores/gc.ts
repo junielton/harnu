@@ -79,9 +79,15 @@ function sendClean(req: CleanRequest): Promise<GcCleanAck> {
 function refusalDescription(s: DoneSummary): string | undefined {
   const codes = Object.keys(s.refusals) as RefusalCode[]
   const { t } = i18n.global
-  if (codes.length === 1) return t(refusalKey(codes[0]))
-  if (codes.length > 1) return t('cleanup.gc.refusal.several', { n: s.refused })
-  return undefined
+  let out: string | undefined
+  if (codes.length === 1) out = t(refusalKey(codes[0]))
+  else if (codes.length > 1) out = t('cleanup.gc.refusal.several', { n: s.refused })
+  // A guided prep that could not be put back is the one thing the operator must know about.
+  if (s.rollbackFailed > 0) {
+    const warn = t('cleanup.gc.refusal.rollbackFailed')
+    out = out ? `${out} ${warn}` : warn
+  }
+  return out
 }
 
 export const useGcStore = defineStore('gc', () => {
