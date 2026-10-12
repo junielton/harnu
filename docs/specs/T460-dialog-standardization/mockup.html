@@ -1,0 +1,1131 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>T460 · Dialog standard — mockup v1</title>
+    <!--
+      T460 planning mockup — the shared Dialog primitive (proposal, NOT shipped).
+      Self-contained: no network, no imports. Colours, radii, motion and shadow are the REAL
+      tokens copied verbatim from src/renderer/src/styles/themes.css (default "Harnu" dark in
+      @theme, and :root[data-theme='light']). Anything NOT in themes.css today lives in the
+      clearly marked PROPOSED block and is named exactly as spec.md §4 proposes it.
+      URL params: ?theme=dark|light  ·  ?open=long (open the long-list dialog as a REAL
+      full-viewport modal, so you can resize the window and watch header/footer stay pinned).
+    -->
+    <style>
+      /* ─── REAL tokens — copied verbatim from themes.css (default theme, `@theme`) ─── */
+      :root {
+        /* core surfaces — Ink ramp (warm neutral) */
+        --color-bg: #17120e;
+        --color-sidebar: #211c18;
+        --color-surface: #251f1b;
+        --color-surface-2: #29231f;
+        --color-border: #302a25;
+        --color-border-2: #38312c;
+
+        /* text scale — Ink ramp (warm neutral) */
+        --color-text: #faf8f6;
+        --color-text-2: #ada59d;
+        --color-text-3: #948b80;
+        --color-text-4: #8e867e;
+        --color-text-disabled: #4a423c;
+
+        /* accent + semantic — Dusk accent, desaturated status hues */
+        --color-accent: #8090b4;
+        --color-accent-soft: rgba(128, 144, 180, 0.12);
+        --color-accent-line: rgba(128, 144, 180, 0.35);
+        --color-accent-ink: #17120e;
+        --color-green: #7a9455;
+        --color-green-soft: rgba(122, 148, 85, 0.18);
+        --color-red: #d1717c;
+        --color-red-soft: rgba(209, 113, 124, 0.1);
+        --color-warning: #c08a3e;
+        --color-green-line: rgba(122, 148, 85, 0.35);
+        --color-red-line: rgba(209, 113, 124, 0.3);
+        --color-warning-soft: rgba(192, 138, 62, 0.1);
+        --color-warning-line: rgba(192, 138, 62, 0.3);
+
+        /* shape */
+        --radius-sm: 5px;
+        --radius: 7px;
+        --radius-lg: 10px;
+
+        /* Folder View scroll caps (design.md §6 "Folder View → Height caps"). The
+   * two long lists cap their own height and scroll inside themselves instead of
+   * running off the bottom of the page: measured on a 102-worktree, 128-card
+   * repo, the fan-out alone pushed the Sessions block three screens down.
+   * Theme-invariant, like the shape and motion tokens above — they are read by
+   * three components, and a height that lives in one of them is a height the
+   * other two can drift from. */
+        --fv-fanout-max-h: 380px;
+        --fv-rail-list-max-h: 280px;
+
+        /* Cleanup layout dimensions (design.md §4, "Workspace GC — unified Cleanup"). Theme-invariant. */
+        --gc-panel-w: 320px;
+        --gc-dialog-w: min(720px, 90vw);
+
+        /* motion */
+        --ease: cubic-bezier(0.16, 1, 0.3, 1);
+        --dur-fast: 100ms;
+        --dur: 140ms;
+        --dur-slow: 220ms;
+
+        /* shadow (popovers only) */
+        --shadow-pop:
+          0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 12px 32px rgba(0, 0, 0, 0.45),
+          0 2px 8px rgba(0, 0, 0, 0.3);
+      }
+      /* ─── REAL tokens — :root[data-theme='light'] verbatim ─── */
+      :root[data-theme='light'] {
+        --color-bg: #fafafa;
+        --color-sidebar: #ffffff;
+        --color-surface: #f4f4f5;
+        --color-surface-2: #ececef;
+        --color-border: #e4e4e7;
+        --color-border-2: #d4d4d8;
+
+        --color-text: #18181b;
+        --color-text-2: #3f3f46;
+        --color-text-3: #71717a;
+        --color-text-4: #a1a1aa;
+        --color-text-disabled: #d4d4d8;
+
+        --color-accent: #c2410c;
+        --color-accent-soft: rgba(194, 65, 12, 0.1);
+        --color-accent-line: rgba(194, 65, 12, 0.3);
+        --color-accent-ink: #fff7ed;
+
+        --color-green: #16a34a;
+        --color-green-soft: rgba(22, 163, 74, 0.15);
+        --color-red: #dc2626;
+        --color-red-soft: rgba(220, 38, 38, 0.1);
+        --color-warning: #ca8a04;
+        --color-green-line: rgba(22, 163, 74, 0.35);
+        --color-red-line: rgba(220, 38, 38, 0.3);
+        --color-warning-soft: rgba(202, 138, 4, 0.1);
+        --color-warning-line: rgba(202, 138, 4, 0.3);
+
+        /* diff surfaces (design.md §6 "Review pane", §9) — word-level intra-line
+   * marks. The LINE backgrounds reuse --color-green-soft/--color-red-soft;
+   * only the word marks need their own weight, since anything soft enough
+   * to be a line background disappears when painted on top of one. */
+        --diff-add-word: rgba(22, 163, 74, 0.3);
+        --diff-del-word: rgba(220, 38, 38, 0.22);
+
+        --term-ansi-black: #18181b;
+        --term-ansi-red: #dc2626;
+        --term-ansi-green: #16a34a;
+        --term-ansi-yellow: #ca8a04;
+        --term-ansi-blue: #2563eb;
+        --term-ansi-magenta: #9333ea;
+        --term-ansi-cyan: #0891b2;
+        --term-ansi-white: #71717a;
+        --term-ansi-bright-black: #3f3f46;
+        --term-ansi-bright-red: #ef4444;
+        --term-ansi-bright-green: #22c55e;
+        --term-ansi-bright-yellow: #eab308;
+        --term-ansi-bright-blue: #3b82f6;
+        --term-ansi-bright-magenta: #a855f7;
+        --term-ansi-bright-cyan: #06b6d4;
+        --term-ansi-bright-white: #18181b;
+      }
+      /* ─── PROPOSED tokens (spec.md §4) — theme-invariant, to be added to themes.css @theme ─── */
+      :root {
+        --color-scrim: rgba(
+          0,
+          0,
+          0,
+          0.55
+        ); /* replaces 22× inline rgba(0,0,0,0.55) and 3× bg-black/40 */
+        --color-scrim-strong: rgba(0, 0, 0, 0.82); /* media viewer (ImageLightbox) */
+        --dialog-max-h: 84vh; /* mandatory viewport cap */
+        --dialog-w-sm: 480px;
+        --dialog-w-md: 560px;
+        --dialog-w-lg: 720px;
+        --dialog-w-xl: 940px; /* fixed-size: Settings */
+        --z-dialog: 60;
+        --z-dialog-raised: 65;
+        --z-palette: 70;
+      }
+
+      /* ─── page chrome (mockup only — not part of the proposal) ─── */
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+      }
+      body {
+        background: var(--color-bg);
+        color: var(--color-text);
+        font-family:
+          'Inter',
+          -apple-system,
+          BlinkMacSystemFont,
+          system-ui,
+          sans-serif;
+        font-size: 13px;
+        line-height: 20px;
+        font-feature-settings: 'cv11', 'ss01', 'ss03';
+      }
+      .mono {
+        font-family:
+          'JetBrainsMono Nerd Font Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo,
+          monospace;
+      }
+      .page {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 0 24px 64px;
+      }
+      .toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 24px;
+        background: var(--color-sidebar);
+        border-bottom: 1px solid var(--color-border);
+      }
+      .toolbar h1 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .toolbar .sp {
+        flex: 1;
+      }
+      .seg {
+        display: inline-flex;
+        border: 1px solid var(--color-border-2);
+        border-radius: var(--radius-sm);
+        overflow: hidden;
+      }
+      .seg button {
+        font: inherit;
+        font-size: 12px;
+        padding: 4px 12px;
+        background: transparent;
+        color: var(--color-text-2);
+        border: 0;
+        cursor: pointer;
+      }
+      .seg button[aria-pressed='true'] {
+        background: var(--color-accent-soft);
+        color: var(--color-accent);
+      }
+      h2.sec {
+        margin: 40px 0 4px;
+        font-size: 15px;
+        line-height: 22px;
+        font-weight: 500;
+      }
+      p.lede {
+        margin: 0 0 14px;
+        color: var(--color-text-3);
+        max-width: 760px;
+      }
+      .eyebrow {
+        font-size: 10.5px;
+        line-height: 14px;
+        font-weight: 500;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--color-text-4);
+      }
+      .note {
+        font-size: 11px;
+        line-height: 16px;
+        color: var(--color-text-3);
+        margin-top: 6px;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 10.5px;
+        padding: 1px 7px;
+        border-radius: 999px;
+        border: 1px solid var(--color-border-2);
+        color: var(--color-text-2);
+      }
+      .tag.bad {
+        border-color: var(--color-red-line);
+        color: var(--color-red);
+        background: var(--color-red-soft);
+      }
+      .tag.good {
+        border-color: var(--color-green-line);
+        color: var(--color-green);
+        background: var(--color-green-soft);
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      @media (max-width: 900px) {
+        .grid2 {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* fake "app behind the scrim", so the backdrop reads as a backdrop */
+      .stage {
+        position: relative;
+        container-type: size;
+        overflow: hidden;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        background: var(--color-bg);
+      }
+      .stage .app {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        grid-template-columns: 22% 1fr;
+      }
+      .stage .app .sb {
+        background: var(--color-sidebar);
+        border-right: 1px solid var(--color-border);
+        padding: 12px;
+      }
+      .stage .app .ln {
+        height: 8px;
+        border-radius: 4px;
+        background: var(--color-surface-2);
+        margin-bottom: 9px;
+      }
+      .stage .app .main {
+        padding: 14px;
+      }
+      .scrim {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--color-scrim);
+        animation: overlay-fade var(--dur) var(--ease) both;
+      }
+
+      /* ─── the proposed Dialog anatomy (spec.md §4) ─── */
+      .dlg {
+        --w: var(--dialog-w-md);
+        display: flex;
+        flex-direction: column;
+        width: min(var(--w), 90cqw, 90vw);
+        max-height: min(var(--dialog-max-h), 100cqh);
+        background: var(--color-surface);
+        color: var(--color-text);
+        border: 1px solid var(--color-border-2);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-pop);
+        animation: fade-in-scale var(--dur) var(--ease) both;
+      }
+      .stage .dlg {
+        max-height: min(
+          84cqh,
+          840px
+        ); /* = --dialog-max-h, in container units so the stage can stand in for a window */
+      }
+      .dlg.sm {
+        --w: var(--dialog-w-sm);
+      }
+      .dlg.md {
+        --w: var(--dialog-w-md);
+      }
+      .dlg.lg {
+        --w: var(--dialog-w-lg);
+      }
+      .dlg.xl {
+        --w: var(--dialog-w-xl);
+      }
+      .dlg-h {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-shrink: 0;
+        padding: 14px 18px 10px;
+        border-bottom: 1px solid var(--color-border);
+      }
+      .dlg-h .ttl {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        min-width: 0;
+      }
+      .dlg-h h3 {
+        margin: 0;
+        font-size: 13.5px;
+        line-height: 20px;
+        font-weight: 600;
+      }
+      .dlg-h .sub {
+        font-size: 11.5px;
+        color: var(--color-text-4);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .dlg-h .ico {
+        display: inline-flex;
+        margin-right: 8px;
+        align-self: center;
+      }
+      .xbtn {
+        width: 24px;
+        height: 24px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        background: transparent;
+        color: var(--color-text-3);
+        border-radius: 4px;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+      .xbtn:hover {
+        background: var(--color-surface-2);
+        color: var(--color-text);
+      }
+      .dlg-b {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 14px 18px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--color-border-2) transparent;
+      }
+      .dlg-f {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        flex-shrink: 0;
+        padding: 12px 18px;
+        border-top: 1px solid var(--color-border);
+      }
+      .dlg-f .meta {
+        margin-right: auto;
+        font-size: 11px;
+        color: var(--color-text-3);
+      }
+      .btn {
+        font: inherit;
+        font-size: 12.5px;
+        font-weight: 500;
+        padding: 7px 14px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--color-border);
+        background: var(--color-surface);
+        color: var(--color-text);
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      .btn.ghost {
+        background: transparent;
+        color: var(--color-text-2);
+      }
+      .btn.primary {
+        background: var(--color-accent);
+        color: var(--color-accent-ink);
+        border-color: transparent;
+      }
+      .btn.danger {
+        background: transparent;
+        color: var(--color-red);
+        border-color: var(--color-red-line);
+      }
+      .btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      label.fl {
+        display: block;
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--color-text-3);
+        margin-bottom: 6px;
+      }
+      .inp {
+        width: 100%;
+        height: 32px;
+        padding: 8px 10px;
+        font: inherit;
+        font-size: 13px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        background: var(--color-bg);
+        color: var(--color-text);
+        outline: none;
+      }
+      .inp:focus {
+        border-color: var(--color-accent-line);
+      }
+      .hint {
+        font-size: 11px;
+        color: var(--color-text-3);
+        margin: 6px 0 0;
+      }
+      .callout {
+        display: flex;
+        gap: 10px;
+        padding: 10px 12px;
+        border: 1px solid var(--color-warning-line);
+        background: var(--color-warning-soft);
+        border-radius: var(--radius-sm);
+        color: var(--color-text-2);
+        font-size: 12.5px;
+        line-height: 18px;
+        margin-top: 12px;
+      }
+      .callout.danger {
+        border-color: var(--color-red-line);
+        background: var(--color-red-soft);
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+        border-radius: var(--radius-sm);
+        font-size: 12.5px;
+      }
+      .row:nth-child(odd) {
+        background: var(--color-surface-2);
+      }
+      .row .nm {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .row .sz {
+        color: var(--color-text-3);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+      .chip {
+        font-size: 10.5px;
+        padding: 0 6px;
+        border-radius: 3px;
+        border: 1px solid var(--color-border-2);
+        color: var(--color-text-3);
+      }
+      .refused {
+        margin-top: 12px;
+      }
+      .refused .why {
+        font-size: 11.5px;
+        color: var(--color-text-3);
+        padding: 4px 8px 8px;
+      }
+      .refused code {
+        display: block;
+        font-size: 11px;
+        color: var(--color-text-2);
+        background: var(--color-bg);
+        border: 1px solid var(--color-border);
+        border-radius: 4px;
+        padding: 3px 7px;
+        margin: 2px 8px 6px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .sizeline {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0 0 10px;
+      }
+      .sizeline .tag {
+        white-space: nowrap;
+      }
+      .sizeline b {
+        font-weight: 600;
+      }
+      .tabs {
+        display: grid;
+        grid-template-columns: 190px 1fr;
+        min-height: 150px;
+      }
+      .tabs .nav {
+        border-right: 1px solid var(--color-border);
+        padding: 8px;
+      }
+      .tabs .nav div {
+        padding: 5px 8px;
+        border-radius: var(--radius-sm);
+        color: var(--color-text-2);
+        font-size: 12.5px;
+      }
+      .tabs .nav div.on {
+        background: var(--color-accent-soft);
+        color: var(--color-accent);
+      }
+      .anat {
+        position: relative;
+        padding: 6px 0 6px 0;
+      }
+      .anat .lab {
+        position: absolute;
+        right: -2px;
+        transform: translateX(100%);
+        font-size: 11px;
+        color: var(--color-accent);
+        white-space: nowrap;
+        padding-left: 10px;
+      }
+      /* the current (BUG-184) shape, reproduced for comparison */
+      .scrim.today {
+        align-items: flex-start;
+        overflow-y: auto;
+        padding-top: 72px;
+      }
+      .scrim.today .dlg {
+        max-height: none;
+        margin-bottom: 24px;
+        flex-shrink: 0;
+      }
+      .scrim.today .listcap {
+        max-height: 280px; /* --fv-rail-list-max-h: only the main list is capped today */
+        overflow-y: auto;
+      }
+      /* the REAL full-viewport modal (?open=long) */
+      .live {
+        position: fixed;
+        inset: 0;
+        z-index: var(--z-dialog);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: var(--color-scrim);
+        animation: overlay-fade var(--dur) var(--ease) both;
+      }
+      .live.open {
+        display: flex;
+      }
+      .live .dlg {
+        --w: var(--dialog-w-lg);
+        width: min(var(--w), 90vw);
+        max-height: var(--dialog-max-h);
+      }
+      @keyframes fade-in-scale {
+        from {
+          opacity: 0;
+          transform: scale(0.97);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+      @keyframes overlay-fade {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .dlg,
+        .scrim,
+        .live {
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="toolbar">
+      <h1>T460 · Dialog standard <span class="tag">mockup v1 · proposal</span></h1>
+      <span class="sp"></span>
+      <span class="eyebrow">Theme</span>
+      <span class="seg" id="themeSeg">
+        <button data-theme-btn="dark" aria-pressed="true">Dark</button>
+        <button data-theme-btn="light" aria-pressed="false">Light</button>
+      </span>
+      <button class="btn primary" id="openLive">Open long list as a real modal</button>
+    </div>
+
+    <div class="page">
+      <!-- ───────────────────────── 1 · anatomy ───────────────────────── -->
+      <h2 class="sec">1 · Anatomy</h2>
+      <p class="lede">
+        One shell, three zones. The <b>header</b> and <b>footer never scroll</b>; only the
+        <b>body</b> does. The card is capped to the viewport (<span class="mono"
+          >--dialog-max-h</span
+        >) — there is no variant without a cap.
+      </p>
+      <div class="stage" style="height: 330px">
+        <div class="app">
+          <div class="sb">
+            <div class="ln" style="width: 70%"></div>
+            <div class="ln" style="width: 50%"></div>
+            <div class="ln" style="width: 62%"></div>
+          </div>
+          <div class="main">
+            <div class="ln" style="width: 40%"></div>
+          </div>
+        </div>
+        <div class="scrim">
+          <div
+            class="dlg md"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="t-anat"
+            style="--w: 520px"
+          >
+            <div class="dlg-h">
+              <div class="ttl">
+                <h3 id="t-anat">Rename folder</h3>
+                <span class="sub mono">org/proj/www</span>
+              </div>
+              <button class="xbtn" aria-label="Close"><!--X--></button>
+            </div>
+            <div class="dlg-b">
+              <label class="fl" for="anat-in">Name</label>
+              <input class="inp" id="anat-in" value="www · org-a" />
+              <p class="hint">Leave empty to go back to the folder name.</p>
+            </div>
+            <div class="dlg-f">
+              <span class="meta">meta · optional</span>
+              <button class="btn ghost">Cancel</button>
+              <button class="btn primary">Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note">
+        Header: title (13.5/600) + optional subtitle (mono 11.5) + close · Body: padding 14/18, the
+        only scroller · Footer: padding 12/18, optional left-aligned meta, actions right-aligned.
+        Radius <span class="mono">--radius-lg</span> (10px), shadow
+        <span class="mono">--shadow-pop</span>, border <span class="mono">--color-border-2</span>.
+      </p>
+
+      <!-- ───────────────────────── 2 · size scale ───────────────────────── -->
+      <h2 class="sec">2 · Size scale</h2>
+      <p class="lede">
+        Four sizes replace nine ad-hoc widths (440 · 460 · 480 · 520 · 540 · 560 · 720 · 760 · 940).
+        Every size is
+        <span class="mono">min(N, 90vw)</span>. <b>sm</b> = confirms, <b>md</b> = the default form,
+        <b>lg</b> = long lists and the card dossier, <b>xl</b> = Settings (fixed size).
+      </p>
+      <div class="stage" style="height: 1010px; container-type: inline-size; padding: 18px">
+        <div style="display: flex; flex-direction: column; gap: 18px; align-items: flex-start">
+          <div class="sizeline">
+            <span class="tag good">sm · 480</span
+            ><span class="note" style="margin: 0"
+              >440 · 460 · 480 → sm — Mission close, mods confirm, containers remove, review submit,
+              Remove worktree, Rename ×2, Bulk close</span
+            >
+          </div>
+          <div class="dlg sm">
+            <div class="dlg-h">
+              <div class="ttl">
+                <h3>sm</h3>
+                <span class="sub mono">480px</span>
+              </div>
+              <button class="xbtn" aria-label="Close"><!--X--></button>
+            </div>
+            <div class="dlg-b">
+              <div class="hint" style="margin: 0">Short copy, one decision.</div>
+            </div>
+            <div class="dlg-f">
+              <button class="btn ghost">Cancel</button><button class="btn primary">Confirm</button>
+            </div>
+          </div>
+          <div class="sizeline">
+            <span class="tag good">md · 560</span
+            ><span class="note" style="margin: 0"
+              >520 · 540 · 560 → md — Add folder, New folder, New session, New worktree, Open
+              subfolder, Boot, Memory location, Sweep, Dehydrate, Missions review, dispatch confirm,
+              MCP confirm</span
+            >
+          </div>
+          <div class="dlg md">
+            <div class="dlg-h">
+              <div class="ttl">
+                <h3>md</h3>
+                <span class="sub mono">560px</span>
+              </div>
+              <button class="xbtn" aria-label="Close"><!--X--></button>
+            </div>
+            <div class="dlg-b">
+              <div class="hint" style="margin: 0">The default. Forms and plans.</div>
+            </div>
+            <div class="dlg-f">
+              <button class="btn ghost">Cancel</button><button class="btn primary">Create</button>
+            </div>
+          </div>
+          <div class="sizeline">
+            <span class="tag good">lg · 720</span
+            ><span class="note" style="margin: 0"
+              >720 · 760 → lg — Cleanup list dialog, Card create, Card detail
+              <b>(decision D2: 760 → 720)</b></span
+            >
+          </div>
+          <div class="dlg lg">
+            <div class="dlg-h">
+              <div class="ttl">
+                <h3>lg</h3>
+                <span class="sub mono">720px</span>
+              </div>
+              <button class="xbtn" aria-label="Close"><!--X--></button>
+            </div>
+            <div class="dlg-b">
+              <div class="hint" style="margin: 0">Long lists with chips; the dossier.</div>
+            </div>
+            <div class="dlg-f">
+              <button class="btn ghost">Cancel</button><button class="btn primary">Apply</button>
+            </div>
+          </div>
+          <div class="sizeline">
+            <span class="tag good">xl · 940 × min(80vh, 720px)</span
+            ><span class="note" style="margin: 0"
+              >Settings only — <b>fixed size</b> (nav + pane scroll independently), via the
+              <span class="mono">height</span> prop</span
+            >
+          </div>
+          <div class="dlg xl" style="height: 240px">
+            <div class="dlg-h">
+              <div class="ttl">
+                <h3>Settings</h3>
+                <span class="sub mono">xl · fixed</span>
+              </div>
+              <button class="xbtn" aria-label="Close"><!--X--></button>
+            </div>
+            <div class="dlg-b" style="padding: 0">
+              <div class="tabs">
+                <div class="nav">
+                  <div class="on">General</div>
+                  <div>Claude Code</div>
+                  <div>Cleanup</div>
+                  <div>Changelog</div>
+                </div>
+                <div style="padding: 14px 18px">
+                  <div class="hint" style="margin: 0">
+                    Pane scrolls on its own; the card never resizes between tabs.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ───────────────────────── 3 · confirm ───────────────────────── -->
+      <h2 class="sec">3 · Confirm <span class="tag">sm</span></h2>
+      <p class="lede">
+        Neutral confirmation: primary action is the accent button; Cancel gets initial focus.
+      </p>
+      <div class="stage" style="height: 320px">
+        <div class="app">
+          <div class="sb">
+            <div class="ln" style="width: 70%"></div>
+            <div class="ln" style="width: 50%"></div>
+          </div>
+          <div class="main"><div class="ln" style="width: 40%"></div></div>
+        </div>
+        <div class="scrim">
+          <div class="dlg sm" role="dialog" aria-modal="true" aria-labelledby="t-confirm">
+            <div class="dlg-h">
+              <div class="ttl"><h3 id="t-confirm">Close this mission as delivered?</h3></div>
+              <button class="xbtn" aria-label="Close"><!--X--></button>
+            </div>
+            <div class="dlg-b">
+              <p style="margin: 0; color: var(--color-text-2)">
+                Step 4 of 4 is verified. The mission keeps its file as the record and stops
+                accepting updates.
+              </p>
+              <div class="callout">
+                <span><!--WARN--></span
+                ><span>1 check is still unticked on <b>Delivered and verified</b>.</span>
+              </div>
+            </div>
+            <div class="dlg-f">
+              <button class="btn ghost">Cancel</button
+              ><button class="btn primary">Close as delivered</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ───────────────────────── 4 · destructive ───────────────────────── -->
+      <h2 class="sec">4 · Destructive confirm <span class="tag">sm</span></h2>
+      <p class="lede">
+        Same shell. Differences are only <b>content</b>: red icon in the header, the
+        <b>danger</b> Button variant, and <b>Cancel</b> — not the destructive action — holds the
+        initial focus (decision D7; today Remove worktree, Sweep and Dehydrate focus the destructive
+        button).
+      </p>
+      <div class="stage" style="height: 360px">
+        <div class="app">
+          <div class="sb">
+            <div class="ln" style="width: 70%"></div>
+            <div class="ln" style="width: 50%"></div>
+          </div>
+          <div class="main"><div class="ln" style="width: 40%"></div></div>
+        </div>
+        <div class="scrim">
+          <div
+            class="dlg sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="t-destr"
+            aria-describedby="d-destr"
+          >
+            <div class="dlg-h">
+              <div class="ttl">
+                <span class="ico" style="color: var(--color-red)"><!--TRASH--></span>
+                <h3 id="t-destr">Remove worktree</h3>
+                <span class="sub mono">PROJ-231-wave-2</span>
+              </div>
+              <button class="xbtn" aria-label="Close"><!--X--></button>
+            </div>
+            <div class="dlg-b">
+              <p id="d-destr" style="margin: 0; color: var(--color-text-2)">
+                This deletes the checkout and its branch. Uncommitted work in it is lost.
+              </p>
+              <div class="callout danger">
+                <span style="color: var(--color-red)"><!--WARN--></span
+                ><span>2 unpushed commits on <span class="mono">PROJ-231-wave-2</span>.</span>
+              </div>
+            </div>
+            <div class="dlg-f">
+              <button class="btn ghost">Cancel</button
+              ><button class="btn danger">Remove worktree</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ───────────────────────── 5 · form ───────────────────────── -->
+      <h2 class="sec">5 · Form <span class="tag">md</span></h2>
+      <p class="lede">
+        Label, input, hint; footer carries the secondary action on the left (<span class="mono"
+          >meta</span
+        >
+        slot) and Cancel / Save on the right. Enter submits.
+      </p>
+      <div class="stage" style="height: 400px">
+        <div class="app">
+          <div class="sb">
+            <div class="ln" style="width: 70%"></div>
+            <div class="ln" style="width: 50%"></div>
+          </div>
+          <div class="main"><div class="ln" style="width: 40%"></div></div>
+        </div>
+        <div class="scrim">
+          <div class="dlg md" role="dialog" aria-modal="true" aria-labelledby="t-form">
+            <div class="dlg-h">
+              <div class="ttl">
+                <h3 id="t-form">New worktree</h3>
+                <span class="sub mono">org/proj/www</span>
+              </div>
+              <button class="xbtn" aria-label="Close"><!--X--></button>
+            </div>
+            <div class="dlg-b">
+              <label class="fl" for="f-branch">Branch</label>
+              <input class="inp mono" id="f-branch" value="PROJ-347-wave-2" />
+              <p class="hint">
+                Forks from <span class="mono">origin/main</span> unless a base is chosen.
+              </p>
+              <label class="fl" for="f-base" style="margin-top: 14px">Base</label>
+              <input class="inp mono" id="f-base" value="PROJ-347-wave-1" />
+              <p class="hint">A stacked branch — the new worktree starts on that tip.</p>
+            </div>
+            <div class="dlg-f">
+              <span class="meta">dry-run · 3 steps</span><button class="btn ghost">Cancel</button
+              ><button class="btn primary">Create worktree</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ───────────────────────── 6 · long list ───────────────────────── -->
+      <h2 class="sec">
+        6 · Long list at a short viewport — the BUG-184 shape <span class="tag">lg</span>
+      </h2>
+      <p class="lede">
+        Both stages below are a <b>420px-tall window</b> with the same content: 33 selected rows and
+        16 refused ones. Left: how it behaves today (no card cap, the overlay scrolls, the footer is
+        below the fold). Right: the standard — the card is capped, header and footer stay pinned,
+        <b>only the body scrolls</b>.
+      </p>
+      <div class="grid2">
+        <div>
+          <div class="eyebrow" style="margin-bottom: 6px">
+            Today <span class="tag bad">overflows</span>
+          </div>
+          <div class="stage" style="height: 420px">
+            <div class="app">
+              <div class="sb">
+                <div class="ln" style="width: 70%"></div>
+                <div class="ln" style="width: 50%"></div>
+              </div>
+              <div class="main"><div class="ln" style="width: 40%"></div></div>
+            </div>
+            <div class="scrim today" id="stageToday"></div>
+          </div>
+          <p class="note">
+            No card <span class="mono">max-height</span>: the footer (total + Cancel/Remove) sits
+            below the window edge; the user has to scroll the backdrop to find it.
+          </p>
+        </div>
+        <div>
+          <div class="eyebrow" style="margin-bottom: 6px">
+            Standard <span class="tag good">pinned</span>
+          </div>
+          <div class="stage" style="height: 420px">
+            <div class="app">
+              <div class="sb">
+                <div class="ln" style="width: 70%"></div>
+                <div class="ln" style="width: 50%"></div>
+              </div>
+              <div class="main"><div class="ln" style="width: 40%"></div></div>
+            </div>
+            <div class="scrim" id="stageStd"></div>
+          </div>
+          <p class="note">
+            Card = <span class="mono">min(84vh, …)</span>; body is
+            <span class="mono">flex: 1; min-height: 0; overflow-y: auto</span>. Refused rows scroll
+            with the rest.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- the real full-viewport modal (resize the window to prove the pinning) -->
+    <div class="live" id="live" role="presentation">
+      <div
+        class="dlg lg"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="t-live"
+        id="liveCard"
+      ></div>
+    </div>
+
+    <script>
+      const X =
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>'
+      const WARN =
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>'
+      const TRASH =
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>'
+      document.body.innerHTML = document.body.innerHTML
+        .replaceAll('<!--X-->', X)
+        .replaceAll('<!--WARN-->', WARN)
+        .replaceAll('<!--TRASH-->', TRASH)
+
+      const NAMES = [
+        'PROJ-231-wave-1',
+        'PROJ-231-wave-2',
+        'PROJ-347-spike',
+        'ACME-10996-hotfix',
+        'example-web-refactor',
+        'api-gateway-auth',
+        'portal-onboarding',
+        'web-api-retry'
+      ]
+      const mb = (i) => ((i * 37) % 900) + 80
+      function rows(n) {
+        let h = ''
+        for (let i = 0; i < n; i++) {
+          const nm =
+            NAMES[i % NAMES.length] +
+            (i >= NAMES.length ? '-' + (Math.floor(i / NAMES.length) + 1) : '')
+          h +=
+            '<div class="row"><span class="nm mono">' +
+            nm +
+            '</span><span class="chip">stack</span><span class="chip">deps</span><span class="chip">branch</span><span class="sz">' +
+            mb(i) +
+            ' MB</span></div>'
+        }
+        return h
+      }
+      function refused(n) {
+        let h =
+          '<div class="refused"><div class="eyebrow" style="padding: 0 8px 4px">Cannot remove yet · ' +
+          n +
+          '</div>'
+        for (let i = 0; i < n; i++) {
+          const nm = NAMES[(i + 3) % NAMES.length] + '-r' + (i + 1)
+          h +=
+            '<div class="row"><span class="nm mono">' +
+            nm +
+            '</span><span class="chip">refused</span></div><div class="why">Harnu cannot remove it yet.</div><code class="mono">git worktree remove ../' +
+            nm +
+            '</code>'
+        }
+        return h + '</div>'
+      }
+      function longDialog(opts) {
+        return (
+          '<div class="dlg-h"><div class="ttl"><span class="ico" style="color: var(--color-red)">' +
+          TRASH +
+          '</span><h3 id="' +
+          (opts.id || 't-long') +
+          '">Remove 33 selected</h3><span class="sub mono">org/proj/www</span></div><button class="xbtn" aria-label="Close">' +
+          X +
+          '</button></div>' +
+          '<div class="dlg-b">' +
+          (opts.capMain ? '<div class="listcap">' + rows(33) + '</div>' : rows(33)) +
+          refused(16) +
+          '</div>' +
+          '<div class="dlg-f"><span class="meta">33 selected · 14.2 GB</span><button class="btn ghost">Cancel</button><button class="btn danger">Remove 33</button></div>'
+        )
+      }
+      // Today: card has no cap; the overlay scrolls; only the main list is capped (--fv-rail-list-max-h = 280px)
+      const today = document.getElementById('stageToday')
+      today.innerHTML =
+        '<div class="dlg lg" role="dialog" aria-modal="true" aria-labelledby="t-today">' +
+        longDialog({ capMain: true, id: 't-today' }) +
+        '</div>'
+      // Standard: capped card, one scroller
+      const std = document.getElementById('stageStd')
+      std.innerHTML =
+        '<div class="dlg lg" role="dialog" aria-modal="true" aria-labelledby="t-std">' +
+        longDialog({ capMain: false, id: 't-std' }) +
+        '</div>'
+      document.getElementById('liveCard').innerHTML = longDialog({ capMain: false, id: 't-live' })
+
+      // theme + live modal controls
+      const q = new URLSearchParams(location.search)
+      function setTheme(t) {
+        document.documentElement.dataset.theme = t
+        document
+          .querySelectorAll('[data-theme-btn]')
+          .forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.themeBtn === t)))
+      }
+      document
+        .querySelectorAll('[data-theme-btn]')
+        .forEach((b) => b.addEventListener('click', () => setTheme(b.dataset.themeBtn)))
+      setTheme(q.get('theme') === 'light' ? 'light' : 'dark')
+      const live = document.getElementById('live')
+      const openLive = () => live.classList.add('open')
+      const closeLive = () => live.classList.remove('open')
+      document.getElementById('openLive').addEventListener('click', openLive)
+      live.addEventListener('mousedown', (e) => {
+        if (e.target === live) closeLive()
+      })
+      live.addEventListener('click', (e) => {
+        if (e.target.closest('.xbtn') || e.target.closest('.btn.ghost')) closeLive()
+      })
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeLive()
+      })
+      if (q.get('open') === 'long') openLive()
+    </script>
+  </body>
+</html>
