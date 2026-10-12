@@ -19,6 +19,17 @@ export interface RemoteFactsDeps {
   timeoutMs?: number
 }
 
+/**
+ * Only a fully answered probe is worth keeping: any unknown (a failed `gh`, an unreachable remote, tips
+ * that could not be compared) may be an error, and an error must not be served for ten minutes.
+ */
+const isComplete = (f: RemoteFacts): boolean =>
+  f.remote !== null &&
+  f.remoteSha !== null &&
+  f.remoteMatchesLocal !== null &&
+  f.openPr !== null &&
+  f.ghProtected !== null
+
 const UNKNOWN: RemoteFacts = {
   remote: null,
   remoteSha: null,
@@ -83,7 +94,7 @@ export function createRemoteFactsService(deps: RemoteFactsDeps): RemoteFactsServ
     if (pending) return pending
     const p = run(b)
       .then((facts) => {
-        if (facts) cache.set(key, { at: deps.now(), facts })
+        if (facts && isComplete(facts)) cache.set(key, { at: deps.now(), facts })
         return facts ?? { ...UNKNOWN }
       })
       .finally(() => inFlight.delete(key))
