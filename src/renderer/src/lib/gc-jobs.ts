@@ -51,6 +51,7 @@ export const REFUSAL_CODES = [
   'dirty',
   'foreign-checkout',
   'cannot-unregister',
+  'operation-in-progress',
   // mid-run
   'changed-mid-run'
 ] as const

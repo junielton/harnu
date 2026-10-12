@@ -13,7 +13,8 @@ import * as path from 'node:path'
 const h = vi.hoisted(() => ({
   userData: '',
   snapshot: null as null | { repos: Array<{ repoPath: string; items: unknown[] }> },
-  fateInputs: new Map<string, unknown>()
+  fateInputs: new Map<string, unknown>(),
+  transcripts: [] as Array<{ cwd: string; mtimeMs: number }>
 }))
 
 vi.mock('electron', () => ({
@@ -53,10 +54,12 @@ vi.mock('../src/main/reaper/scanner-shell', async () => {
 vi.mock('../src/main/gc/gc-transcripts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/gc/gc-transcripts')>()),
   fsTranscriptProbe: () => ({
-    listProjectDirs: async () => [],
+    listProjectDirs: async () => h.transcripts.map((_, i) => `proj-${i}`),
     readIndex: async () => null,
-    listJsonl: async () => [],
-    cwdOf: async () => null
+    listJsonl: async (slug: string) => [
+      { name: 'a.jsonl', mtimeMs: h.transcripts[Number(slug.slice(5))]!.mtimeMs }
+    ],
+    cwdOf: async (slug: string) => h.transcripts[Number(slug.slice(5))]!.cwd
   })
 }))
 vi.mock('../src/main/containers/containers-shell', () => ({
@@ -89,7 +92,11 @@ import { defaultGcPrefs } from '../src/main/gc/gc-prefs'
 import { runBundle } from '../src/main/gc/pipeline-core'
 import { canUnregister } from '../src/main/reaper/worktree-admin-shell'
 import type { WorktreeBundle } from '../src/main/gc/bundle-core'
-import type { BranchFacts, ReapItem } from '../src/main/reaper/reaper-core'
+import {
+  classifyDetachedWorktree,
+  type BranchFacts,
+  type ReapItem
+} from '../src/main/reaper/reaper-core'
 import { bundleRemovability } from '../src/renderer/src/lib/gc-removability'
 import { worldFor } from './helpers/gc-world'
 
@@ -201,6 +208,7 @@ beforeEach(() => {
   mkdirSync(repo, { recursive: true })
   h.snapshot = null
   h.fateInputs = new Map()
+  h.transcripts = []
   git(repo, 'init', '-q', '-b', 'main')
   git(
     repo,
@@ -244,6 +252,48 @@ describe('the scan fact "locked" is git\'s own, and the predicate and main agree
     // The scan still calls it ready (nothing about the duplicate is a fact the scan reads) …
     expect(bundleRemovability(b, NOW)).toEqual({ ok: true })
     // … and main refuses it at the reprobe, which is exactly the case the remembered refusal exists for.
+    expect(await mainSays(b)).toBe('cannot-unregister')
+  })
+})
+
+describe('a detached worktree: the predicate and main agree on a real scan (NDE-A delta-1)', () => {
+  /** A real detached worktree, classified by the real classifier and bucketed by the real gather. */
+  async function scannedDetached(setup: (wt: string) => void = () => {}): Promise<WorktreeBundle> {
+    const wt = path.join(root, 'trees', 'det')
+    git(repo, 'worktree', 'add', '-q', '--detach', wt)
+    setup(wt)
+    const head = git(wt, 'rev-parse', 'HEAD').trim()
+    const item = classifyDetachedWorktree(
+      {
+        repoPath: repo,
+        path: wt,
+        head,
+        hidden: false,
+        sessionLive: false,
+        lastCommitAt: NOW - 11 * 86_400_000,
+        diskBytes: 10
+      },
+      NOW
+    )
+    h.snapshot = { repos: [{ repoPath: repo, items: [item] }] }
+    // the sign of life a real session leaves, older than the grace window
+    h.transcripts = [{ cwd: wt, mtimeMs: NOW - 10 * 86_400_000 }]
+    const g = await gatherGc({ ...defaultGcPrefs(), graceDays: 2 }, NOW)
+    return g.bundles.find((b) => b.item.id === item.id)!
+  }
+
+  it('is review, offered by the predicate, and taken by main', async () => {
+    const b = await scannedDetached()
+    expect(b.bucket).toBe('review')
+    expect(b.item.kind).toBe('detached-worktree')
+    expect(bundleRemovability(b, NOW)).toEqual({ ok: true })
+    expect(await mainSays(b)).toBeNull()
+  })
+
+  it('a detached worktree that is locked is refused by both', async () => {
+    const b = await scannedDetached((wt) => git(repo, 'worktree', 'lock', wt))
+    expect(b.locked).toBe(true)
+    expect(bundleRemovability(b, NOW)).toMatchObject({ ok: false, reason: 'locked' })
     expect(await mainSays(b)).toBe('cannot-unregister')
   })
 })

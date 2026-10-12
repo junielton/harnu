@@ -14,6 +14,7 @@ import type { RemovalRefusal } from '../lib/gc-removability'
 // merged the main-side type that names it.
 const REASON_SUFFIX: Record<string, string> = {
   locked: 'locked',
+  'operation-in-progress': 'operationInProgress',
   dirty: 'dirty',
   unpushed: 'unpushed',
   'open-idle-session': 'openIdleSession',

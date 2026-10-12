@@ -490,7 +490,8 @@ describe('list_cleanup handler (T445)', () => {
         'path-unresolved',
         'nested-worktree',
         'check-failed',
-        'locked'
+        'locked',
+        'operation-in-progress'
       ] as const
       const bundles = codes.map((code, i) =>
         bundle(`${MAIN}/.claude/worktrees/PROJ-${i}-c`, {

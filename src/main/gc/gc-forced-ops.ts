@@ -12,8 +12,11 @@
 //   3. only then does the normal pipeline run, with the executor's own dirty/unpushed/merged
 //      guards waived, because step 2 is what makes waiving them recoverable.
 //
-// What stays refused: a main checkout, a neverClean path, an in-use bundle and a detached
-// worktree are turned away before these ops are even built (autopilot-core `refusalFor`).
+// What stays refused: a main checkout, a neverClean path, an in-use bundle and a worktree with a
+// rebase or bisect in progress are turned away before these ops are even built or at the reprobe
+// (autopilot-core `refusalFor`, gc-shell). A detached worktree is NOT one of them any more: with no
+// branch to name its refs it is archived by its HEAD sha first (`refs/archive/detached/…`), with the
+// commits only its reflog holds, and only on the operator's confirm.
 
 import type { WorktreeBundle } from './bundle-core'
 import { createGcOps, type GcShellDeps } from './gc-shell'
@@ -38,7 +41,10 @@ export function asExecutable(b: WorktreeBundle): WorktreeBundle {
   }
 }
 
-/** Writes `refs/archive/<branch>/<stamp>/{tip,wip}`; throws, and so refuses, if it cannot. */
+/**
+ * Writes `refs/archive/<branch>/<stamp>/{tip,wip}`, or `refs/archive/detached/<folder>-<sha>/{tip,wip,reflog/*}`
+ * for a detached worktree; throws, and so refuses, if it cannot.
+ */
 async function preserve(b: WorktreeBundle, deps: GcShellDeps, at: number): Promise<void> {
   const { executor } = deps
   const plan = planArchive(b.item, at)
@@ -46,6 +52,11 @@ async function preserve(b: WorktreeBundle, deps: GcShellDeps, at: number): Promi
   if (!plan.tip || !plan.wip) throw new Error('nothing would preserve this worktree')
   const sha = await executor.resolveSha(b.item.repoPath, plan.tip.rev!)
   if (!sha) throw new Error(`could not resolve '${plan.tip.rev}' before removal`)
+  // Commits only a detached HEAD's reflog reaches go with the folder: keep them reachable too. First,
+  // because it is the one step that can refuse for size, and a refusal leaves no tip or wip behind.
+  if (b.item.kind === 'detached-worktree' && plan.namespace && b.item.path) {
+    await executor.archiveReflog(b.item.repoPath, `${plan.namespace}/reflog`, b.item.path)
+  }
   await executor.archiveTip(b.item.repoPath, plan.tip.ref, sha)
   await executor.archiveWip(b.item.repoPath, plan.wip.ref, plan.wip.worktreePath!)
 }

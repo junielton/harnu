@@ -664,7 +664,8 @@ export function buildRepoItems(input: RepoScanInput): ReapItem[] {
           hidden: hiddenSet.has(w.path),
           sessionLive: liveFolders.has(w.path),
           lastCommitAt: commitDateBySha?.get(w.head) ?? null,
-          diskBytes: diskBytesByPath?.get(w.path) ?? null
+          diskBytes: diskBytesByPath?.get(w.path) ?? null,
+          untracked: statusByPath.get(w.path)?.untracked ?? []
         },
         now
       )

@@ -465,6 +465,8 @@ export interface DetachedWorktreeFacts {
   lastCommitAt: number | null
   /** Measured size of the checkout in bytes, or null when it was not measured. */
   diskBytes: number | null
+  /** Untracked paths in the checkout, when its status was probed: a disclosure, never a blocker. */
+  untracked?: string[]
 }
 
 /** The only two verdicts a detached worktree can carry — `harvestable` is not among them. */
@@ -511,9 +513,9 @@ export function classifyDetachedWorktree(
     needsRemoteDelete: false,
     remoteSha: null,
     headSha: facts.head,
-    // Never probed for a detached worktree — it is `blocked` regardless, so
-    // there is nothing a disclosure list could unblock.
-    untracked: [],
+    // A disclosure for the confirm, never a blocker: the item is `blocked` regardless, so nothing here
+    // can unblock it. Empty when the status was not probed.
+    untracked: facts.untracked ?? [],
     justifiedBy: null,
     hydration: null
   }

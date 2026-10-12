@@ -8777,7 +8777,8 @@ volume), size right.
   newer than the ones the operator was shown. A rejected `gc:clean` call shows an error toast.
 - **Only what `gc:clean` can remove is offered — one predicate decides it.** `removability(block)`
   (`lib/gc-removability.ts`) answers from the bundle's own facts, mirroring what main refuses: a detached
-  worktree (`unsupported-kind`), a locked one, a shared stack, a nested or foreign checkout, an idle session
+  worktree that is not in Needs review (`unsupported-kind`, with no command: a detached worktree in
+  review **is** removable, see "Detached worktrees" below), a locked one, a shared stack, a nested or foreign checkout, an idle session
   still open, an unknown tip, an unresolved path, and the protections (main checkout, never-clean, Keep,
   In use). The panel, the list row, the selection bar, "Select all in repo", "Remove the ones marked safe",
   Retry and the **R** shortcut all ask it, so none of them offers a click that ends in "0 cleaned".
@@ -8786,8 +8787,36 @@ volume), size right.
   dialog. The refused ones sit in their own section under the list (`--bg` fill, `--border`, 8px radius,
   eyebrow title in `--text-3`, one row per item): the mono `repo › worktree` title, the reason in 11px
   `--text-3`, and — when a command clears the cause — that command in 11px mono `--text-2`
-  (`git worktree unlock <path>`, `git worktree remove <path>`), selectable in one click. The group is
+  (`git worktree unlock <path>`), selectable in one click. The group is
   excluded from the breakdown, the footer total, the confirm label and the `gc:clean` request.
+- **Detached worktrees (NDE-A).** A worktree with a detached HEAD has no branch to name an archive ref
+  after, so Harnu names it after what it has: the folder and the commit. A confirmed Remove from Needs
+  review first writes `refs/archive/detached/<folder>-<shortsha>/tip` (the commit) and, beside it, `/wip`
+  (every uncommitted and untracked file), then trashes the folder and unregisters it from git. There is no
+  branch step. It is **review-only**: it is never a ready item, never part of the hero or the autopilot, and
+  `unsupported-kind` is what main answers for one that somehow is. In the dialog a detached row has no
+  `branch` chip and its mono sub-line reads `detached at {shortsha}` (11px `--text-4`). The dialog's
+  Warning callout gains one paragraph while any detached row is listed, in `--warning`, bold lead: _{n}
+  detached worktree has no branch. Its commit stays under refs/archive/detached/…, and `git worktree add
+<path> <ref>` brings it back._ The confirm is the Danger button already used for remove-selected. The
+  panel's **Takes with it** list swaps the branch line for _Its commit stays under refs/archive/detached/…_.
+- **Untracked files are named.** A row whose folder holds untracked files lists them in the dialog,
+  under the reason (11px/16px `--text-3`, `break-words`, comma-separated): _{n} untracked files, saved
+  in the wip ref: a.md, b/c.txt_. A row names at most **10**, then _and N more_; the full list is the
+  element's tooltip, and one line in the callout totals them across the dialog (_{n} untracked files in
+  total, each saved in its wip ref._). Nothing is dropped: every path is in the wip ref whether it is
+  named or not. A detached worktree carries them too (its scan probes the status, as a branch
+  worktree's does).
+- **A rebase, bisect or `git am` in progress refuses the removal (delta-1, delta-2).** Its state lives
+  in the folder and would go with it, so a worktree mid-operation is not offered, detached or on a
+  branch (`git am` keeps HEAD on its branch; a bisect that was only started has not moved it yet): the
+  panel says _A rebase, bisect or git am is still in progress here… Finish or abort it, then use Scan
+  now_ and names the command (`git -C <path> rebase --abort` / `bisect reset` / `am --abort`); the
+  reason chip reads _A rebase, bisect or git am is still in progress in this worktree_. A refusal
+  remembered twice keeps the item in Needs review with the same reason. Commits only its HEAD reflog
+  reaches are archived under `…/reflog/<sha12>`, one ref per chain **tip**, before anything else is
+  written; a history with more than 500 such tips is refused (`reflog-limit`, nothing removed, no tip
+  or wip ref either) rather than archived in part.
 - **Nothing removable → no dialog.** The selection bar's **Remove selected** is disabled (tooltip "Nothing
   selected can be removed") when no ticked item can be removed; the list row swaps its Remove button for an
   inert, dimmed `Trash2` carrying the reason as its tooltip and `aria-label`. Any path that still reaches

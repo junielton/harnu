@@ -393,6 +393,15 @@ export interface DialogRow {
   project: string | null
   /** The worktree may hold work no other branch has. */
   risk: boolean
+  /** The 12-character HEAD sha (the one its archive ref is named with) of a detached worktree, whose commit is archived by it; null for any other row. */
+  detachedAt: string | null
+  /** Every untracked path in the folder, sorted: named in the confirm, archived in the wip ref. */
+  untracked: string[]
+}
+
+/** A worktree with no branch: its commit is archived by sha when it is removed. */
+export function isDetachedBlock(b: Pick<GcBlock, 'bundle'>): boolean {
+  return b.bundle?.item.kind === 'detached-worktree'
 }
 
 export function dialogRows(model: GcModel, ids: readonly string[]): DialogRow[] {
@@ -423,7 +432,9 @@ export function dialogRows(model: GcModel, ids: readonly string[]): DialogRow[] 
       project: b.project,
       // Any review worktree may hold work no other branch has. The reasons that once read as safe
       // (an idle session, a shared stack) are refused outright now and never reach this dialog.
-      risk: b.kind === 'worktree' && b.bucket === 'review'
+      risk: b.kind === 'worktree' && b.bucket === 'review',
+      detachedAt: isDetachedBlock(b) ? (b.bundle?.localTip ?? '').slice(0, 12) || null : null,
+      untracked: [...(b.bundle?.item.untracked ?? [])].sort()
     })
   }
   return rows

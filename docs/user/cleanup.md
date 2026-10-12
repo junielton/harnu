@@ -101,9 +101,8 @@ If a clean of a ready worktree stops half way, it shows up in Needs review as "C
 
 ### Remove only offers what Harnu can do
 
-Some Needs review items can never be removed from here, whatever you confirm. Harnu knows which from the facts it already has, so it does not offer a click that would end in "0 cleaned · N need review":
+Some Needs review items can never be removed from here, whatever you confirm. (A detached worktree is not one of them: it is archived by its commit and removed, see [Detached worktrees](#detached-worktrees).) Harnu knows which from the facts it already has, so it does not offer a click that would end in "0 cleaned · N need review":
 
-- a **detached** worktree (no branch to archive it under): remove it yourself with `git worktree remove <path>`;
 - a **locked** worktree: `git worktree unlock <path>` first;
 - a worktree whose Docker stack is **shared** with another folder;
 - a folder that **holds another worktree** or checkout;
@@ -218,7 +217,52 @@ Cleanup used to leave these out of the list entirely. On one real repo that was 
 
 They now get a block on the map of their own, in **Needs review**, showing the folder and how much disk it takes, and a panel that says how old the commit it sits on is. (The commit sha itself is recorded but not yet on the row — it needs a slot on the meta line that doesn't exist yet.) Because there is no branch, there is no PR, no ancestry and no remote to check — so every branch checkpoint reads as "not applicable" rather than borrowing an answer from a branch that happens to point at the same commit.
 
-**A detached worktree is never ready to clean and can never be removed**, on its own or inside a selection. Remove is not offered for it (see [Remove only offers what Harnu can do](#remove-only-offers-what-harnu-can-do)); if you pick it with others it is listed under **Won't be removed**, with the `git worktree remove` command. It is listed in **Needs review**, with "Detached HEAD, so there is no branch to judge." as the reason — unless a Harnu session is running in that folder, in which case Cleanup hides it while the session is live, exactly as it does for every other folder in use. Cleanup is telling you the folder is there and costing you disk, not that it is safe to delete. Most of that disk is usually installed dependencies, and **Dehydrate** reaches detached worktrees like any other (see below) — it needs no branch. To reclaim the checkout itself, attach it to a branch (`git switch -c <name>`) so the normal checkpoints apply, or remove it yourself with `git worktree remove`.
+**A detached worktree is never ready to clean, but you can remove it from Needs review.** It is never part of the hero button and the autopilot never touches it: with no branch there is no merge proof to stand on, so Harnu will not decide by itself that it is safe. You decide. Select it and choose **Remove** (or press **R** in its panel). The confirm is the red one, and a detached row in it reads `detached at <short sha>`, with one extra line: _the commit stays under `refs/archive/detached/…`, and `git worktree add` brings it back._
+
+What happens when you confirm, in this order, and nothing after a step that failed:
+
+1. Harnu writes the refs, named after the folder and the commit it was on (with no branch to name them, that pair is the key; the short sha is the first 12 characters, the same ones the dialog shows):
+
+   ```
+   refs/archive/detached/<folder>-<short sha>/tip             # the commit it was on, even if no branch holds it
+   refs/archive/detached/<folder>-<short sha>/wip             # everything uncommitted or untracked, if there was any
+   refs/archive/detached/<folder>-<short sha>/reflog/<sha12>  # one per line of commits only this worktree's HEAD history reaches (its newest commit)
+   ```
+
+   The `reflog` refs matter when you committed while detached and then moved on (`git checkout <other>`): that commit is on no branch, and only the worktree's own history of where HEAD has been mentions it, which goes with the folder. Harnu keeps each one reachable.
+
+2. The folder goes to the system trash and is unregistered from git. No branch is deleted, because there was none.
+
+If any ref cannot be written, the removal is refused before anything is touched (`archive-failed`, with the reason) and the folder stays exactly where it was.
+
+Two things stop it before it starts, each with a reason in the panel rather than a silent "0 cleaned":
+
+- **A rebase, bisect or `git am` in progress** (on a detached worktree or on a branch one: `git am` keeps HEAD on its branch). Their unfinished state lives in the folder and would be trashed with it, so Remove is not offered until you finish or abort the operation. The panel names the command: `git -C <path> rebase --abort`, `bisect reset` or `am --abort`. Then **Scan now**. If Harnu refused it more than once, it moves to Needs review and keeps saying so until you do.
+- **A session running in it, a lock, a nested checkout**, like any other worktree.
+
+The confirm dialog names the untracked files of each folder (they are in no commit, and the `wip` ref is where they are kept): the first 10 per row, then "and N more" with the whole list on hover, and one total for the dialog. Every path is saved whether it is named or not.
+
+If the history holds more than **500 separate lines of commits** (500 tips: a run of commits on top of one another counts once) that no branch, tag or ref reaches, the removal is refused with `reflog-limit` and nothing is removed, not even the `tip` and `wip` refs, rather than keeping only some of them. Keep the ones you want with `git branch <name> <sha>`, or remove the folder yourself.
+
+Removing a folder with the same name at the same commit a second time reuses the same names. A `wip` with different files than the one already there does not overwrite it: the earlier one moves to a sibling ref, `…/wip-<yyyymmddhhmmss>`, so `git show …/wip` is always a plain diff against the tip and nothing is lost. List every earlier one with `git for-each-ref 'refs/archive/detached/*/wip-*'`.
+
+To get one back (list them with `git for-each-ref refs/archive/detached`):
+
+```bash
+# the commit, as a worktree again
+git worktree add <path> refs/archive/detached/<folder>-<short sha>/tip
+
+# the uncommitted work too
+git worktree add <path> refs/archive/detached/<folder>-<short sha>/wip
+
+# the commit as a branch you can keep working on, or a commit only the history held
+git checkout -b <name> refs/archive/detached/<folder>-<short sha>/tip
+git checkout -b <name> refs/archive/detached/<folder>-<short sha>/reflog/<sha12>
+```
+
+The cleanup journal line for it carries the first command ready to copy. If a removal stops after the folder was trashed, the panel says which step and shows `git worktree prune`; the refs already hold the commit.
+
+It is listed in **Needs review**, with "Detached HEAD, so there is no branch to judge." as the reason — unless a Harnu session is running in that folder, in which case Cleanup hides it while the session is live, exactly as it does for every other folder in use. Most of its disk is usually installed dependencies, and **Dehydrate** reaches detached worktrees like any other (see below) — it needs no branch. If you would rather keep the checkout, attach it to a branch (`git switch -c <name>`) so the normal checkpoints apply.
 
 ## Dehydrate: reclaim dependency space without deleting work
 
@@ -393,13 +437,13 @@ In the same cycle, when the Docker cache setting is on, Harnu runs `docker build
 
 ### Removing a Needs review item on purpose
 
-Needs review items are removed only after you confirm, and the confirmation is for what you were looking at: if the worktree changed between your click and the job (a new commit, a Docker stack that started, a different reason it is listed), Harnu refuses it with _changed since you confirmed_ and you look again. Confirming one item never confirms another, and an orphan volume needs its own confirmation. The same check applies to a worktree you remove by hand that Harnu already considers finished. Before anything is stopped or deleted, Harnu writes the branch tip and the working state (tracked and untracked files) to `refs/archive/…`; if that fails, nothing is touched. It still refuses a worktree with a running session, a folder whose Docker stacks changed since the scan, a main checkout, a path on your never-clean list and a worktree with a detached HEAD (there is no branch to preserve or delete). The branch is then deleted even though git does not consider it merged, because its tip is archived.
+Needs review items are removed only after you confirm, and the confirmation is for what you were looking at: if the worktree changed between your click and the job (a new commit, a Docker stack that started, a different reason it is listed), Harnu refuses it with _changed since you confirmed_ and you look again. Confirming one item never confirms another, and an orphan volume needs its own confirmation. The same check applies to a worktree you remove by hand that Harnu already considers finished. Before anything is stopped or deleted, Harnu writes the branch tip and the working state (tracked and untracked files) to `refs/archive/…`; if that fails, nothing is touched. It still refuses a worktree with a running session, a folder whose Docker stacks changed since the scan, a main checkout, a path on your never-clean list and a detached worktree with a rebase or bisect still in progress (see [Detached worktrees](#detached-worktrees)). A branch is then deleted even though git does not consider it merged, because its tip is archived; a detached worktree has no branch, so its commit is archived under `refs/archive/detached/…` instead and nothing is deleted from git but the registration.
 
 ### What you can get back
 
 | What                                        | Restorable? | How                                                                                                                                                                                                                           |
 | ------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Code, uncommitted work and the local branch | Yes         | The `refs/archive/…` refs and the system trash. The cleanup journal line carries the command.                                                                                                                                 |
+| Code, uncommitted work and the local branch | Yes         | The `refs/archive/…` refs and the system trash (`refs/archive/detached/…` for a detached worktree, which has no branch). The cleanup journal line carries the command.                                                        |
 | Containers                                  | Yes         | `docker compose -p <project> --project-directory <folder> up -d`, while the folder exists.                                                                                                                                    |
 | Dependencies                                | Yes         | Rehydrate, which re-runs the repo's `setup`.                                                                                                                                                                                  |
 | **Volumes**                                 | **No**      | A removed volume and its data are gone. This is the only step that cannot be undone, so no cleanup ever does it: a volume is removed only when you confirm that one volume, and Harnu checks it is still what you were shown. |

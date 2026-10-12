@@ -3,7 +3,7 @@
 // steps; until a resume path exists the screen says which step stopped and the exact commands.
 // Pure: the panel and the list both read it.
 
-import type { GcBlock } from './gc-model'
+import { isDetachedBlock, type GcBlock } from './gc-model'
 
 export interface ResumeHint {
   /** The pipeline step the clean stopped at ("prune", "branch-delete", …). */
@@ -40,7 +40,11 @@ export function resumeHint(
   const repo = shq(block.repoPath)
   const commands = [`git -C ${repo} worktree prune`]
   // A halt before the trash with the folder deleted by hand leaves the branch alone, too.
-  const archived = ARCHIVED.has(step)
+  // A detached worktree only leaves through the forced path, which writes the archive refs inside
+  // the reprobe, before any other step: every halt after it has them. A halt at the reprobe itself
+  // (a failed archive included) may not. A branch worktree may also have come through the guarded
+  // retry, which archives later, so it keeps the stricter reading.
+  const archived = isDetachedBlock(block) ? step !== 'reprobe' : ARCHIVED.has(step)
   const branchStays = !!block.branch && step !== BRANCH_GONE_AFTER
   if (block.branch && branchStays) {
     // `-D` only when the archive refs hold the commit. Without them the branch may carry the
