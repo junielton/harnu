@@ -8904,6 +8904,9 @@ worktree add --detach ../restored-… <sha>`). A row past the retention has a Wa
 - **Run git gc now…** — a ghost link on each repo row, with **its own confirm** (the same dialog, mode `gc`): "Run git gc in {repo}? It deletes unreachable git objects older
   than an hour, so the deleted archives' space comes back. Don't run it while another git command is
   writing in this repository." Primary **"Run git gc"**, Cancel first in focus.
+- **Never clean:** a repo on the never-clean list (or under a path on it) keeps its archives: the autopilot's expiry
+  skips it and deleting by hand is refused with a toast. An archive whose removed folder stood under such a path is
+  skipped too. The row of an archive with no stamp reads **age unknown** (also in the confirm list), never a dash.
 - **Autopilot:** the card says nothing about it; it is the setting **Expire archives automatically** (Settings →
   Cleanup, off by default). The autopilot never deletes a ref otherwise.
 
@@ -8925,8 +8928,10 @@ verified entries still in the trash: **"{size} in the trash · {n} folders Harnu
 - Where Harnu cannot empty it safely (macOS, Windows) the button is not drawn; a 11px `--text-3` line says "Harnu
   can't empty it for you on this system. Open {location} and empty it there." The location is a path, or the
   translated **Recycle Bin** on Windows (i18n, never a literal).
-- A skipped entry (no longer exactly Harnu's) is said in the toast: "{n} folders were left in the trash: they are
-  no longer what Harnu moved".
+- A skipped entry is said in the toast with its REAL cause, once per cause: its disk is not mounted or can't be read,
+  it is no longer what Harnu moved, or Harnu has no exact record of that move. When nothing was emptied the toast
+  says "Nothing was emptied: those folders are no longer in the trash", never "Emptied 0 B". An entry that changed
+  stays on the line-two list ("can't check"); only a missing one is forgotten.
 
 #### First-cycle banner
 

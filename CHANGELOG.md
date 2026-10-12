@@ -21,6 +21,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
+- **Never clean now protects archives too.** A repo on the never-clean list keeps its archives: the autopilot's expiry skips it and deleting them by hand is refused.
+- **Emptying the trash is safer and clearer.** Harnu re-checks every directory between the trash folder and the entry right before each delete, so a link swapped in at the last moment redirects nothing. A trash entry that is no longer exactly what Harnu moved stays listed as "can't check" instead of being forgotten (a remounted disk no longer makes real entries vanish), and the first trash onto a new disk is recorded too. Toasts say when nothing was emptied, and why a folder was left (disk not mounted, changed, or no exact record). The agent's `list_cleanup` no longer touches the trash ledger at all.
 - **Archive sizes ignore what a reflog or the index also keeps, and archives without a time stamp never expire on their own.** The autopilot's notice always mentions the archives it deleted, and the toast counts archives (a tip and its working state are one), not refs.
 - **"Freed" no longer counts what is still sitting in the trash.** A clean moves the checkout to the system trash, so its disk space only comes back when the trash is emptied. The progress chip, the success toast, the "Last cycle" line and the autopilot's notification now all say **"400 MB freed now · 2.00 GB in the trash"** (just the first part when nothing was trashed). Removing items from Needs review no longer reports "Freed 0 B · 3 ready items cleaned": it counts the trashed checkouts and says "3 items removed".
 

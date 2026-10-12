@@ -155,7 +155,9 @@ function onBackdropMousedown(e: MouseEvent): void {
             />
             <span class="truncate font-mono text-ui text-text">{{ sourceOf(e) }}</span>
             <span class="text-caption text-text-3">{{
-              Number.isFinite(e.at) ? relativeTime(new Date(e.at).toISOString()) : '—'
+              e.ageKnown && Number.isFinite(e.at)
+                ? relativeTime(new Date(e.at).toISOString())
+                : t('cleanup.gc.archives.ageUnknown')
             }}</span>
             <span class="font-mono text-caption text-text-3">{{
               e.tipSha ? t('cleanup.gc.archives.tip', { sha: e.tipSha.slice(0, 7) }) : '—'

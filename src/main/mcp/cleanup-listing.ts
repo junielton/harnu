@@ -56,7 +56,7 @@ export interface ListedOrphanVolume {
   reason: string
 }
 
-/** One repo's archive refs (`refs/archive/**`), path-free. */
+/** One repo's archives (`refs/archive/**`; a tip and its working state count once), path-free. */
 export interface ListedArchiveRepo {
   /** Basename of the repo folder. */
   repoAlias: string
@@ -75,7 +75,7 @@ export interface CleanupTotals {
   inUse: number
   orphanVolumes: number
   orphanVolumeBytes: number
-  /** Archive refs across the listed repos. */
+  /** Archives across the listed repos (a tip and its working state count once). */
   archives: number
   /** Estimated bytes only they keep alive (repos git could not size count as 0). */
   archiveBytes: number
