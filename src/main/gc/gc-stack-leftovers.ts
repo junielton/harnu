@@ -59,6 +59,11 @@ export interface StackLeftoverInput {
    * containers or networks is ever offered.
    */
   protectedProjects?: ReadonlySet<string>
+  /**
+   * A compose project name somewhere could not be resolved, so no project is provably nobody's: offer
+   * nothing at all, exactly as the orphan-volume planner does.
+   */
+  protectAll?: boolean
 }
 
 /**
@@ -68,6 +73,7 @@ export interface StackLeftoverInput {
  */
 export function planStackLeftovers(input: StackLeftoverInput): StackLeftoverItem[] {
   const items: StackLeftoverItem[] = []
+  if (input.protectAll) return items
   for (const [project, dirs] of input.remembered) {
     if (!SAFE_DOCKER_REF.test(project) || dirs.length === 0) continue
     if (input.protectedProjects?.has(project)) continue

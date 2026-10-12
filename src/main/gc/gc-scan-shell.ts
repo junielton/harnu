@@ -446,6 +446,8 @@ export async function gatherGc(
           containers,
           networks,
           orphanVolumes: orphanVolumeList,
+          // A compose name somewhere could not be resolved: no project is provably nobody's.
+          protectAll: guards.unresolved,
           // What a live folder owns is never a leftover: the names the main checkout and every
           // existing worktree pin, and the default name each one runs as.
           protectedProjects: new Set([
