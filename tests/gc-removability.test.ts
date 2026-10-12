@@ -76,13 +76,14 @@ const CASES: { name: string; bundle: WorktreeBundle; refusal: RemovalRefusal | n
     refusal: null
   },
   {
-    name: 'a detached worktree',
+    // NDE-A: archived by its HEAD sha first, so a confirmed review Remove takes it.
+    name: 'a detached worktree (the operator confirmed it)',
     bundle: b(
       'review',
       { reason: { code: 'detached', detail: 'x' } },
-      { kind: 'detached-worktree' }
+      { kind: 'detached-worktree', branch: undefined, headSha: 'a'.repeat(40) }
     ),
-    refusal: 'unsupported-kind'
+    refusal: null
   },
   {
     name: 'a locked worktree',
@@ -163,7 +164,8 @@ const CASES: { name: string; bundle: WorktreeBundle; refusal: RemovalRefusal | n
  */
 const asReady = (c: (typeof CASES)[number]): (typeof CASES)[number] => ({
   name: `${c.name} (as a ready item)`,
-  refusal: c.refusal,
+  // A detached worktree is review-only: as a "ready" item main refuses it, whatever the facts say.
+  refusal: c.bundle.item.kind === 'detached-worktree' ? 'unsupported-kind' : c.refusal,
   bundle: {
     ...c.bundle,
     bucket: 'ready',
@@ -195,7 +197,7 @@ describe('removability agrees with what main does (parity)', () => {
   }
 
   it('covers every refusal reason the predicate can give', () => {
-    const covered = new Set(CASES.map((c) => c.refusal))
+    const covered = new Set(ROADS.map((c) => c.refusal))
     for (const reason of Object.keys(MAIN_CODES) as RemovalRefusal[]) {
       expect(covered.has(reason), reason).toBe(true)
     }
@@ -224,18 +226,19 @@ describe('removability of a block', () => {
     expect(removability(m.byId.get('volume:pg')!, NOW)).toEqual({ ok: true })
   })
 
-  it('names the command that fixes a locked worktree, and a detached one', () => {
+  it('names the command that fixes a locked worktree, and no command for a detached one (AC-A4)', () => {
     const locked = bundleRemovability(
       b('review', { locked: true, reason: { code: 'locked', detail: 'x' } }),
       NOW
     )
     expect(locked).toEqual({ ok: false, reason: 'locked', hint: `git worktree unlock ${WT}` })
+    // Review mode: allowed, and the old "git worktree remove" hint is gone — that command would
+    // delete the folder with nothing archived, which is the very thing Remove now does safely.
     const detached = bundleRemovability(b('review', {}, { kind: 'detached-worktree' }), NOW)
-    expect(detached).toEqual({
-      ok: false,
-      reason: 'unsupported-kind',
-      hint: `git worktree remove ${WT}`
-    })
+    expect(detached).toEqual({ ok: true })
+    // Anywhere but review it stays refused, with no hint either.
+    const ready = bundleRemovability(b('ready', {}, { kind: 'detached-worktree' }), NOW)
+    expect(ready).toEqual({ ok: false, reason: 'unsupported-kind' })
   })
 
   it('judges a bucket reason code as a fact too (the row shows it to the operator)', () => {

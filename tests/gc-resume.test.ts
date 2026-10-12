@@ -107,3 +107,38 @@ describe('resumeHint', () => {
     expect(resumeHint(dirty)).toBeNull()
   })
 })
+
+describe('resumeHint — a detached worktree (NDE-A, AC-A5)', () => {
+  const detachedHalt = (detail: string, folderGone = true) => {
+    const b = wt(
+      'det',
+      'review',
+      1000,
+      { branch: null, kind: 'detached-worktree' },
+      { reason: reviewReason('cleanup-failed', detail) }
+    )
+    if (folderGone) (b as unknown as { folderGone: boolean }).folderGone = true
+    return blockOf(b)
+  }
+
+  it.each(['trash', 'prune', 'detach'])(
+    'a halt after the archive (%s): only the prune, never a branch command, and the refs hold the commit',
+    (step) => {
+      const hint = resumeHint(detachedHalt(`Cleanup stopped at ${step} in /w/det.`))!
+      expect(hint.commands).toEqual(['git -C /w/repo worktree prune'])
+      expect(hint.commands.join('\n')).not.toMatch(/branch/)
+      expect(hint.archived).toBe(true)
+      expect(hint.unarchivedWarning).toBe(false)
+    }
+  )
+
+  it.each(['reprobe', 'stop-stack', 'rm-containers', 'rm-volumes', 'drop-deps', 'archive'])(
+    'a halt before the archive (%s): not archived, and no warning — there is no branch holding a commit',
+    (step) => {
+      const hint = resumeHint(detachedHalt(`Cleanup stopped at ${step} in /w/det.`))!
+      expect(hint.commands).toEqual(['git -C /w/repo worktree prune'])
+      expect(hint.archived).toBe(false)
+      expect(hint.unarchivedWarning).toBe(false)
+    }
+  )
+})

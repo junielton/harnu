@@ -236,6 +236,64 @@ describe('the forced path archives before anything destructive (AC-8)', () => {
   })
 })
 
+describe('a detached worktree is archived by its HEAD sha, then removed (NDE-A, AC-A1/A2)', () => {
+  const HEAD_NS = `refs/archive/detached/PROJ-0000-slug-${TIP.slice(0, 12)}`
+
+  /** A review bundle the scan called detached: no branch, the checked-out commit is its tip. */
+  const detachedBundle = (): WorktreeBundle =>
+    reviewBundle({
+      reason: { code: 'detached', detail: 'x' },
+      item: reapItem(WT, {
+        kind: 'detached-worktree',
+        branch: undefined,
+        headSha: TIP,
+        verdict: 'blocked',
+        blockers: ['detached-head'],
+        justifiedBy: null
+      })
+    })
+
+  it('writes the sha-keyed tip and wip before anything destructive, with no branch command', async () => {
+    const r = rig()
+    const result = await run(detachedBundle(), r)
+    expect(result).toMatchObject({ ok: true, haltedAt: null })
+    const at = (what: string): number => r.order.indexOf(what)
+    expect(at('archiveTip')).toBeGreaterThanOrEqual(0)
+    expect(at('archiveWip')).toBeGreaterThan(at('archiveTip'))
+    for (const destructive of ['docker stop', 'docker rm', 'removeDir', 'trash']) {
+      expect(at(destructive), destructive).toBeGreaterThan(at('archiveWip'))
+    }
+    // The reprobe wrote them, the executor's own archive step rewrote the very same two.
+    expect(r.archived).toEqual([`${HEAD_NS}/tip`, `${HEAD_NS}/wip`, `${HEAD_NS}/tip`, `${HEAD_NS}/wip`])
+    expect(r.git.filter((a) => a[0] === 'branch')).toEqual([])
+    expect(r.tombstones[0]).toMatchObject({
+      kind: 'detached-worktree',
+      branch: null,
+      archiveTipRef: `${HEAD_NS}/tip`,
+      archiveWipRef: `${HEAD_NS}/wip`
+    })
+  })
+
+  it('refuses without touching docker or the disk when the archive fails', async () => {
+    const r = rig({ archiveWipThrows: true })
+    const result = await run(detachedBundle(), r)
+    expect(result).toMatchObject({ ok: false, haltedAt: 'reprobe' })
+    expect(result.error).toContain('archive-failed: disk full')
+    for (const destructive of ['docker stop', 'docker rm', 'removeDir', 'trash']) {
+      expect(r.order, destructive).not.toContain(destructive)
+    }
+  })
+
+  it('refuses a detached worktree whose scan recorded no HEAD: nothing would preserve it', async () => {
+    const r = rig()
+    const noHead = detachedBundle()
+    noHead.item = { ...noHead.item, headSha: null }
+    const result = await run(noHead, r)
+    expect(result.ok).toBe(false)
+    expect(r.order).toEqual([])
+  })
+})
+
 describe('the executor guards are waived only inside the forced ops (AC-8)', () => {
   it('cleans a still-dirty, unpushed, unmerged worktree', async () => {
     const r = rig({ trackedDirty: true })

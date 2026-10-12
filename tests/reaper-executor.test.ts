@@ -590,6 +590,108 @@ describe('cleanItem — archive backstop (T254, AC-1)', () => {
   })
 })
 
+// ---- NDE-A: a detached worktree is archived by its HEAD sha, then removed -------------------
+
+const DETACHED_HEAD = 'abcdef0123456789abcdef0123456789abcdef01'
+const DETACHED_NS = 'refs/archive/detached/wt-det-abcdef012345'
+
+function detachedItem(over: Partial<ReapItem> = {}): ReapItem {
+  return harvestableItem({
+    id: '/repo::detached-worktree::/repo/wt-det',
+    kind: 'detached-worktree',
+    branch: undefined,
+    path: '/repo/wt-det',
+    headSha: DETACHED_HEAD,
+    justifiedBy: null,
+    ...over
+  })
+}
+
+describe('cleanItem — a detached worktree (NDE-A, AC-A1/A2)', () => {
+  it('archives the tip by its sha and the working state, then trashes and unregisters — no branch step', async () => {
+    const { deps, journal, archived } = fakeDeps({ resolveSha: vi.fn(async (_r, rev) => rev) })
+    const result = await cleanItem(detachedItem(), { deleteRemote: false }, deps)
+
+    expect(result.ok).toBe(true)
+    expect(archived).toEqual([`${DETACHED_NS}/tip`, `${DETACHED_NS}/wip`])
+    expect(deps.archiveTip).toHaveBeenCalledWith('/repo', `${DETACHED_NS}/tip`, DETACHED_HEAD)
+    expect(deps.archiveWip).toHaveBeenCalledWith('/repo', `${DETACHED_NS}/wip`, '/repo/wt-det')
+    expect(deps.trash).toHaveBeenCalledWith('/repo/wt-det')
+    expect(deps.removeWorktreeAdmin).toHaveBeenCalledWith('/repo', '/repo/wt-det')
+    // No branch to delete: the step is skipped and git is never asked to delete one.
+    expect(result.steps.find((s) => s.id === 'branch-delete')).toMatchObject({ skipped: true })
+    expect(deps.git).not.toHaveBeenCalled()
+    expect(journal[0]).toMatchObject({
+      kind: 'detached-worktree',
+      branch: null,
+      sha: DETACHED_HEAD,
+      archiveTipRef: `${DETACHED_NS}/tip`,
+      archiveWipRef: `${DETACHED_NS}/wip`
+    })
+    // The journal says how to get the folder back: from the archive ref, not a branch that never was.
+    expect(journal[0].restoreHint).toBe(
+      `git -C /repo worktree add /repo/wt-det ${DETACHED_NS}/tip`
+    )
+  })
+
+  it('halts at archive and trashes nothing when the archive refs cannot be written', async () => {
+    const { deps, journal } = fakeDeps({
+      resolveSha: vi.fn(async (_r, rev) => rev),
+      archiveWip: vi.fn(async () => {
+        throw new Error('disk full')
+      })
+    })
+    const result = await cleanItem(detachedItem(), { deleteRemote: false }, deps)
+
+    expect(result.ok).toBe(false)
+    expect(result.steps.find((s) => s.id === 'archive')).toMatchObject({
+      ok: false,
+      error: 'disk full'
+    })
+    expect(deps.trash).not.toHaveBeenCalled()
+    expect(deps.removeWorktreeAdmin).not.toHaveBeenCalled()
+    expect(journal[0].deleted).toEqual([])
+    expect(journal[0].archiveWipRef).toBeNull()
+  })
+
+  it('halts at archive and trashes nothing when the HEAD cannot be resolved', async () => {
+    const { deps } = fakeDeps({ resolveSha: vi.fn(async () => null) })
+    const result = await cleanItem(detachedItem(), { deleteRemote: false }, deps)
+
+    expect(result.ok).toBe(false)
+    expect(result.steps.find((s) => s.id === 'archive')!.error).toContain(DETACHED_HEAD)
+    expect(deps.archiveTip).not.toHaveBeenCalled()
+    expect(deps.trash).not.toHaveBeenCalled()
+  })
+
+  it('halts at archive when the scan recorded no HEAD: nothing would preserve it', async () => {
+    const { deps } = fakeDeps()
+    const result = await cleanItem(
+      detachedItem({ headSha: null }),
+      { deleteRemote: false },
+      deps
+    )
+
+    expect(result.ok).toBe(false)
+    const archive = result.steps.find((s) => s.id === 'archive')!
+    expect(archive.ok).toBe(false)
+    expect(archive.error).toContain('nothing would preserve')
+    expect(deps.trash).not.toHaveBeenCalled()
+    expect(deps.removeWorktreeAdmin).not.toHaveBeenCalled()
+  })
+
+  it('still refuses to trash a branchless plain worktree: only a detached one is keyed by sha', async () => {
+    const { deps } = fakeDeps()
+    const result = await cleanItem(
+      harvestableItem({ branch: undefined, headSha: DETACHED_HEAD }),
+      { deleteRemote: false },
+      deps
+    )
+    expect(result.ok).toBe(false)
+    expect(deps.trash).not.toHaveBeenCalled()
+  })
+})
+
 // ---- BUG-93 / BUG-46: the delete path must know every merge signal -----------
 
 describe('cleanItem — squash-equivalent (BUG-93, AC-2)', () => {
