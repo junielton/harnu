@@ -84,3 +84,76 @@ describe('CleanupSelectionBar — Keep only when something can be kept', () => {
     expect(mountBar(1).find('[data-testid="sel-keep"]').exists()).toBe(true)
   })
 })
+
+// "No dead ends" (unit B, AC-B1 / AC-B2): the reason Remove is unavailable is inline text, grouped by
+// cause with counts, each group is the door to its guided action, and Dehydrate shows what it frees.
+describe('CleanupSelectionBar — says why Remove is unavailable', () => {
+  const group = (reason: string, count: number, action = 'dehydrate') => ({
+    reason,
+    count,
+    ids: Array.from({ length: count }, (_, i) => `id-${reason}-${i}`),
+    action
+  })
+  const mountWith = (summary: unknown, canRemove: boolean) =>
+    mount(CleanupSelectionBar, {
+      props: { count: 11, bytes: 12_000_000_000, canRemove, summary: summary as never },
+      global: { plugins: [i18n] }
+    })
+
+  it('nothing removable: states the count and the cause inline, not only in a tooltip', () => {
+    const w = mountWith(
+      { removable: [], refused: [group('unsupported-kind', 11)], dehydrate: null },
+      false
+    )
+    expect(w.get('[data-testid="sel-why"]').text()).toBe(
+      "11 can't be removed: 11 detached (no branch)"
+    )
+  })
+
+  it('a partial selection says what goes and what does not, with every cause counted', () => {
+    const w = mountWith(
+      {
+        removable: ['a', 'b', 'c'],
+        refused: [group('unsupported-kind', 6), group('locked', 2, 'unlock-remove')],
+        dehydrate: null
+      },
+      true
+    )
+    expect(w.get('[data-testid="sel-why"]').text()).toBe(
+      "Removes 3 · 8 can't: 6 detached (no branch) · 2 locked in git"
+    )
+  })
+
+  it('each group is a door to its guided action', async () => {
+    const w = mountWith(
+      { removable: [], refused: [group('locked', 2, 'unlock-remove')], dehydrate: null },
+      false
+    )
+    await w.get('[data-testid="sel-guide-locked"]').trigger('click')
+    expect(w.emitted('guide')).toEqual([[expect.objectContaining({ reason: 'locked', count: 2 })]])
+  })
+
+  it('shows nothing when the whole selection can be removed', () => {
+    const w = mountWith({ removable: ['a'], refused: [], dehydrate: null }, true)
+    expect(w.find('[data-testid="sel-why"]').exists()).toBe(false)
+  })
+
+  it('promotes Dehydrate with the real bytes the refused items carry', () => {
+    const w = mountWith(
+      {
+        removable: [],
+        refused: [group('unsupported-kind', 11)],
+        dehydrate: { count: 11, bytes: 11_700_000_000, ids: [] }
+      },
+      false
+    )
+    expect(w.get('[data-testid="sel-dehydrate"]').text()).toBe(
+      'Dehydrate frees 11.7 GB and keeps the code'
+    )
+  })
+
+  it('keeps the plain Dehydrate label when there is nothing to promote', () => {
+    const w = mountWith({ removable: ['a'], refused: [], dehydrate: null }, true)
+    expect(w.get('[data-testid="sel-dehydrate"]').text()).toBe('Dehydrate')
+  })
+})

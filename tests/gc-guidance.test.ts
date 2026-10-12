@@ -29,7 +29,19 @@ const detached = (name: string, deps = 1_000_000_000) =>
   wt(
     name,
     { depsBytes: deps },
-    { kind: 'detached-worktree', branch: null, hydration: null },
+    {
+      kind: 'detached-worktree',
+      branch: null,
+      hydration:
+        deps > 0
+          ? ({
+              state: 'hydrated',
+              removable: ['node_modules'],
+              reclaimableBytes: deps,
+              canRehydrate: true
+            } as never)
+          : null
+    },
     'unknown-fate'
   )
 
@@ -150,14 +162,6 @@ describe('guided action per refusal (AC-B3 … B8)', () => {
 describe('the best partial win (AC-B2)', () => {
   it('promotes dehydrate with the real bytes of what the refused items carry', () => {
     const deps = [detached('d1', 6_000_000_000), detached('d2', 5_700_000_000)]
-    for (const b of deps) {
-      b.item.hydration = {
-        state: 'hydrated',
-        removable: ['node_modules'],
-        reclaimableBytes: b.depsBytes,
-        canRehydrate: true
-      } as never
-    }
     const m = modelOf(deps)
     const s = removalSummary(m, [...m.byId.keys()], NOW)
     expect(s.dehydrate).toEqual({ count: 2, bytes: 11_700_000_000, ids: expect.any(Array) })
