@@ -1,4 +1,4 @@
-<!-- harnu-features v81 (2026-10-09) -->
+<!-- harnu-features v82 (2026-10-12) -->
 
 # You are running inside Harnu
 
@@ -569,11 +569,24 @@ containers, but only after the operator confirms.)
 
 - `list_cleanup({ folder? })` reads the picture. ACK
   `{ ok, scannedAt, bundles: [{ id, folderAlias, branch, bucket, reason, reasonCode, bytes,
-depsBytes, released, agentControllable }], orphanVolumes, totals: { ready, readyBytes,
-review, reviewBytes, inUse, orphanVolumes, orphanVolumeBytes }, autopilot: { enabled,
-reportOnly, graceDays }, nextCycleAt }`. Read `bucket`, `reasonCode` and `reason`; never
+depsBytes, released, agentControllable }], orphanVolumes, archives: [{ repoAlias, count,
+bytes, expired }], totals: { ready, readyBytes, review, reviewBytes, inUse, orphanVolumes,
+orphanVolumeBytes, archives, archiveBytes, inTrashBytes, inTrashCount }, lastCycle: { at,
+freedNowBytes, trashedBytes } | null, autopilot: { enabled, reportOnly, graceDays },
+nextCycleAt }`. Read `bucket`, `reasonCode` and `reason`; never
   re-derive them. `totals` counts each bucket on its own — `ready` and `readyBytes`, `review`
-  and `reviewBytes`, `inUse` — plus `orphanVolumes` and `orphanVolumeBytes`. It reads the last scan Harnu made (the timer refreshes it), so look at
+  and `reviewBytes`, `inUse` — plus `orphanVolumes` and `orphanVolumeBytes`.
+  **Cleanup's own leftovers:** a clean moves the checkout to the OS trash, it does not delete it,
+  so `lastCycle` splits the last cycle's bytes into `freedNowBytes` (really deleted: dependency
+  folders, Docker) and `trashedBytes` (still on disk until the trash is emptied) — never add them
+  up and call it freed. `totals.inTrashBytes` / `inTrashCount` is what Harnu moved to the trash
+  and that is still there. `archives` lists each repo's `refs/archive/**` (`count`, `bytes` the
+  estimated size only those refs keep alive, `expired` how many are past the operator's retention);
+  `totals.archives` / `archiveBytes` sum them. Deleting archives and emptying the trash are the
+  operator's confirmed buttons in Cleanup (and the autopilot's expiry of archives, only when the
+  operator turned it on): no verb does either, so point the operator at the Archives card or the
+  in-the-trash strip. A scoped `folder` keeps the archives of its repos and leaves the trash totals
+  out, like orphan volumes. It reads the last scan Harnu made (the timer refreshes it), so look at
   `scannedAt` to see how old the picture is; the call never writes anything. No absolute
   path ever appears. `folderAlias` is a basename and `id` a readable label
   (`<repo>::<kind>::<branch>::<hash>`, unique even for two repos that share a name). A review

@@ -10,6 +10,19 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-12
+
+### Added
+
+- **Cleanup now cleans its own leftovers: archives and the trash.** Every removal Harnu makes keeps the branch tip and your working state in git as `refs/archive/…` refs, and moves the folder to the system trash. Neither ever went away. A new **Archives** card on the Cleanup screen lists them per repo (**"3 archives · ≈ 2 MB"**, the size being what only those refs keep alive, so always an estimate), and each one shows where it came from (the removed folder or branch, or "detached"), when, its tip, whether a working state was kept, and a button that copies the command to restore it. A new **In the trash** strip says how much of your trash is Harnu's.
+- **Archive retention.** Settings → Cleanup has **Keep archives for N days** (30 by default). Cleanup offers **Delete N older than 30 days…** on each repo, with a confirm that lists exactly what will go. The autopilot only deletes expired archives if you also turn on **Expire archives automatically** (off by default). Deleting archives never runs `git gc`: git frees the space on its next gc, or you can use **Run git gc now…**, which has its own confirm.
+- **Empty what Harnu moved to the trash.** A button that permanently deletes only the folders Harnu itself moved to the trash — recorded when it moved them, and matched against the trash's own records — and never the rest of your trash. It always asks first and the autopilot never does it. It works with the Linux (freedesktop) trash; on macOS and Windows Harnu can't tell its items from yours, so it says where the trash is instead.
+- **`list_cleanup` reports archives and the trash.** New `archives` (per repo: count, estimated bytes, how many are past retention), `lastCycle` (`freedNowBytes` / `trashedBytes`) and `totals.archives`, `archiveBytes`, `inTrashBytes`, `inTrashCount`.
+
+### Changed
+
+- **"Freed" no longer counts what is still sitting in the trash.** A clean moves the checkout to the system trash, so its disk space only comes back when the trash is emptied. The progress chip, the success toast, the "Last cycle" line and the autopilot's notification now all say **"400 MB freed now · 2.00 GB in the trash"** (just the first part when nothing was trashed).
+
 ## 2026-10-09
 
 ### Changed
