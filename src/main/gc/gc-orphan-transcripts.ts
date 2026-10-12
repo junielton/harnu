@@ -61,7 +61,9 @@ export interface OrphanProbe {
   readSlug(slug: string): Promise<SlugFacts>
 }
 
-export type Existence = 'exists' | 'gone' | 'unknown'
+export type { Existence } from './gc-orphan-existence'
+import type { Existence } from './gc-orphan-existence'
+export { fsPathExistence } from './gc-orphan-existence'
 
 export interface OrphanInput {
   probe: OrphanProbe
@@ -269,18 +271,6 @@ export function fsOrphanProbe(root = path.join(homedir(), '.claude', 'projects')
       }
       return { slug, files, extraBytes, hasMemory }
     }
-  }
-}
-
-/** Only a missing entry proves a folder gone; any other failure leaves it counted as existing. */
-export async function fsPathExistence(p: string): Promise<Existence> {
-  try {
-    // lstat: a dangling symlink is still there (its target is what is missing).
-    await fs.lstat(p)
-    return 'exists'
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code
-    return code === 'ENOENT' || code === 'ENOTDIR' ? 'gone' : 'unknown'
   }
 }
 
