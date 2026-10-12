@@ -91,11 +91,15 @@ describe('CleanupBulkConfirmDialog — what it discloses', () => {
     expect(rows[0].textContent).toContain('512 MB')
   })
 
-  it('bounds the list at the existing 280px cap and makes it focusable and scrollable', async () => {
+  it('lets the card body scroll the list (one scroll region) and keeps the list focusable', async () => {
     await open([row()])
+    const body = q('[data-testid="bulk-body"]')!
+    expect(body.className).toContain('overflow-y-auto')
+    expect(body.className).toContain('min-h-0')
     const list = q('[data-testid="bulk-list"]')!
-    expect(list.className).toContain('max-h-(--fv-rail-list-max-h)')
-    expect(list.className).toContain('overflow-y-auto')
+    expect(body.contains(list)).toBe(true)
+    expect(list.className).not.toContain('overflow-y-auto')
+    expect(list.className).not.toContain('max-h-')
     expect(list.getAttribute('tabindex')).toBe('0')
   })
 
