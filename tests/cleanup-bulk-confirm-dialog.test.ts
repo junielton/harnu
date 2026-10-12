@@ -24,6 +24,8 @@ function row(over: Partial<DialogRow> = {}): DialogRow {
     reasonDetail: null,
     project: null,
     risk: false,
+    detachedAt: null,
+    untracked: [],
     ...over
   }
 }
@@ -428,4 +430,31 @@ describe('CleanupBulkConfirmDialog: the reason is the translated one for every c
       }
     )
   }
+
+  describe('untracked files are named, never counted away (delta-1, item 8)', () => {
+    it('lists every untracked path of a row by name, with where they go', async () => {
+      await open(
+        [reviewRow({ untracked: ['notes.md', 'sketch/a.png', 'deep/er/b.txt'] })],
+        'review'
+      )
+      const el = q('[data-testid="bulk-untracked"]')!
+      expect(el).not.toBeNull()
+      for (const p of ['notes.md', 'sketch/a.png', 'deep/er/b.txt']) expect(el.textContent).toContain(p)
+      expect(el.textContent).toContain('3')
+    })
+
+    it('shows nothing for a row with no untracked files', async () => {
+      await open([reviewRow()], 'review')
+      expect(q('[data-testid="bulk-untracked"]')).toBeNull()
+    })
+
+    it('a row without the new fields is neither detached nor untracked', async () => {
+      const legacy = { ...reviewRow() } as Partial<DialogRow>
+      delete legacy.detachedAt
+      delete legacy.untracked
+      await open([legacy as DialogRow], 'review')
+      expect(q('[data-testid="bulk-detached"]')).toBeNull()
+      expect(q('[data-testid="bulk-untracked"]')).toBeNull()
+    })
+  })
 })

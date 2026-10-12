@@ -636,6 +636,32 @@ describe('buildRepoItems', () => {
     expect(matches[0].diskBytes).toBe(7_340_032)
   })
 
+  it('carries the untracked paths of a detached worktree, as a disclosure and never a blocker (delta-1, item 8)', () => {
+    const input = baseInput({
+      worktrees: [
+        wt({ path: '/repo', branch: 'main' }),
+        wt({ path: '/repo/wt-detached', branch: '', head: 'deadbeef', detached: true })
+      ],
+      statusByPath: new Map([
+        ['/repo/wt-detached', { trackedDirty: true, untracked: ['notes.md', 'sketch/a.png'] }]
+      ])
+    })
+    const item = buildRepoItems(input).find((i) => i.path === '/repo/wt-detached')!
+    expect(item.untracked).toEqual(['notes.md', 'sketch/a.png'])
+    expect(item.verdict).toBe('blocked')
+    expect(item.blockers).toEqual(['detached-head'])
+  })
+
+  it('has no untracked paths for a detached worktree whose status was not probed', () => {
+    const input = baseInput({
+      worktrees: [
+        wt({ path: '/repo', branch: 'main' }),
+        wt({ path: '/repo/wt-detached', branch: '', head: 'deadbeef', detached: true })
+      ]
+    })
+    expect(buildRepoItems(input).find((i) => i.path === '/repo/wt-detached')!.untracked).toEqual([])
+  })
+
   it('reports a null age and null disk for a detached worktree when neither was probed', () => {
     const input = baseInput({
       worktrees: [

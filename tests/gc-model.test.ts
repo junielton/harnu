@@ -231,6 +231,13 @@ describe('dialogRows', () => {
     })
   })
 
+  it('carries the untracked paths of a row, sorted, for the dialog to name (delta-1, item 8)', () => {
+    const b = wt('c1', 'review', 1, {}, { reason: reason('dirty') })
+    b.item.untracked = ['z.md', 'a/b.txt']
+    const [row] = dialogRows(buildGcModel(snap({ bundles: [b] })), [b.item.id])
+    expect(row.untracked).toEqual(['a/b.txt', 'z.md'])
+  })
+
   it("never lists a worktree's volumes as removed (D1: they are kept), nor stack/deps chips that are absent", () => {
     const b = wt('c1', 'ready', 1, { ownedVolumes: ['v1'] })
     const rows = dialogRows(buildGcModel(snap({ bundles: [b] })), [b.item.id])
