@@ -9,6 +9,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import * as path from 'node:path'
 import type { WorktreeBundle } from './bundle-core'
 import type { HousekeepingVolume } from './housekeeping-core'
+import { COMPOSE_PROJECT_LABEL, type InspectedContainer } from '../containers/containers-core'
 
 export interface LeftoverFile {
   version: 1
@@ -29,7 +30,12 @@ export const emptyLeftovers = (): LeftoverFile => ({ version: 1, projects: {} })
  * The compose projects whose volumes a cleaned bundle leaves, with the folder they ran from.
  * Only a volume that carries a project label can be tied to anything, so only those count.
  */
-export function leftBehind(b: WorktreeBundle, volumes: readonly HousekeepingVolume[]): Leftover[] {
+export function leftBehind(
+  b: WorktreeBundle,
+  volumes: readonly HousekeepingVolume[],
+  /** Every container docker listed: a compose stack the bundle ran is remembered by its project too (AC-D3). */
+  containers: readonly InspectedContainer[] = []
+): Leftover[] {
   const dir = b.item.path
   if (!dir) return []
   const byName = new Map(volumes.map((v) => [v.name, v]))
@@ -38,6 +44,13 @@ export function leftBehind(b: WorktreeBundle, volumes: readonly HousekeepingVolu
     const project = byName.get(name)?.project
     if (project) projects.add(project)
   }
+  // A stack id is its compose project's name; a standalone container's id is no project.
+  const composeProjects = new Set(
+    containers.flatMap((c) =>
+      c.labels[COMPOSE_PROJECT_LABEL] ? [c.labels[COMPOSE_PROJECT_LABEL]!] : []
+    )
+  )
+  for (const id of b.stackIds) if (composeProjects.has(id)) projects.add(id)
   return [...projects].map((project) => ({ project, dir }))
 }
 
@@ -52,12 +65,16 @@ export function withLeftovers(file: LeftoverFile, entries: readonly Leftover[]):
   return { version: 1, projects }
 }
 
-/** Forgets a project once Docker has no volume of it: there is nothing left to review. */
+/**
+ * Forgets a project once Docker has nothing of it: no volume, and none of the projects named in
+ * `otherAlive` (those with a container or a network left). There is nothing left to review.
+ */
 export function pruneLeftovers(
   file: LeftoverFile,
-  volumes: readonly HousekeepingVolume[]
+  volumes: readonly HousekeepingVolume[],
+  otherAlive: ReadonlySet<string> = new Set()
 ): LeftoverFile {
-  const alive = new Set(volumes.flatMap((v) => (v.project ? [v.project] : [])))
+  const alive = new Set([...volumes.flatMap((v) => (v.project ? [v.project] : [])), ...otherAlive])
   return {
     version: 1,
     projects: Object.fromEntries(Object.entries(file.projects).filter(([p]) => alive.has(p)))

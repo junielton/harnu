@@ -11,6 +11,7 @@ import type { OrphanVolumeItem } from './gc-housekeeping-input'
 import type { GcJobDone, GcJobInfo, GcJobProgress } from './gc-jobs-core'
 import type { GcDockerCard, OrphanVolumesHidden } from './gc-docker-card'
 import type { OrphanTranscriptItem } from './gc-orphan-transcripts'
+import type { StackLeftoverItem } from './gc-stack-leftovers'
 import type {
   GcOpinionAck,
   GcOpinionDone,
@@ -35,6 +36,7 @@ export type {
   GcJobProgress,
   OrphanVolumeItem,
   OrphanTranscriptItem,
+  StackLeftoverItem,
   GcItemResult
 }
 
@@ -72,6 +74,13 @@ export interface GcSnapshot {
    */
   orphanTranscripts: OrphanTranscriptItem[]
   /**
+   * What worktrees Harnu removed left in Docker: their stopped containers and networks (cleaned by
+   * `gc:clean` with id `stack-leftover:<project>`, its own entry in `confirmed`, bucket
+   * `stack-leftover`) and, listed apart, their orphan volumes (removed only through the
+   * `volume:<name>` ids, each with its own confirm: volumes are never removed with the stack).
+   */
+  stackLeftovers: StackLeftoverItem[]
+  /**
    * The Docker card: `buildCacheReclaimableBytes`, `danglingImages { count, bytes }` and
    * `orphanVolumesHidden { reason, folders } | null`. The first two are null when docker was
    * absent or did not answer for them; the last says why the orphan list is empty when an
@@ -107,7 +116,7 @@ export interface GcSnapshot {
  * compared: disk use drifts without anything having changed.
  */
 export interface GcExpected {
-  bucket: 'ready' | 'review' | 'in-use' | 'orphan-volume' | 'orphan-transcripts'
+  bucket: 'ready' | 'review' | 'in-use' | 'orphan-volume' | 'orphan-transcripts' | 'stack-leftover'
   reasonCode: string | null
   headSha: string | null
   stackIds: string[]
@@ -129,6 +138,8 @@ export interface GcExpected {
   workStamp?: string | null
   /** Orphan volumes only: the compose project shown with the volume. */
   project?: string | null
+  /** Stack leftovers only: the networks that were shown (container ids ride in `stackIds`). */
+  networkIds?: string[]
 }
 
 /**

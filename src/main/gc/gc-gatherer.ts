@@ -140,7 +140,11 @@ export function createGatherer(deps: GathererDeps): Gatherer {
           // docker answered: an outage says nothing about what exists.
           if (g.dockerAvailable) {
             const current = deps.leftovers.get()
-            const pruned = pruneLeftovers(current, g.housekeeping.volumes)
+            const pruned = pruneLeftovers(
+              current,
+              g.housekeeping.volumes,
+              new Set(g.leftoverProjectsAlive ?? [])
+            )
             if (Object.keys(pruned.projects).length !== Object.keys(current.projects).length) {
               deps.leftovers.set(pruned)
             }

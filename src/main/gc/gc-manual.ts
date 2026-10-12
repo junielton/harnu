@@ -21,6 +21,13 @@ import { WORK_STAMP_UNKNOWN } from './gc-work-stamp'
 import { runBatch, WORK_CHANGED, type GcItemResult, type GcOps } from './pipeline-core'
 import type { GcCleanAck, GcCleanOptions } from './gc-wire'
 import {
+  STACK_LEFTOVER_PREFIX,
+  stackLeftoversChangedSince,
+  type StackCleanupResult,
+  type StackLeftoverItem
+} from './gc-stack-leftovers'
+import type { InspectedContainer } from '../containers/containers-core'
+import {
   ORPHAN_TRANSCRIPT_PREFIX,
   transcriptsChangedSince,
   type OrphanTranscriptItem
@@ -36,7 +43,8 @@ export interface ManualCleanDeps {
     bundles: WorktreeBundle[]
     orphanVolumes: OrphanVolumeItem[]
     orphanTranscripts?: OrphanTranscriptItem[]
-    housekeeping?: { volumes: HousekeepingVolume[] }
+    stackLeftovers?: StackLeftoverItem[]
+    housekeeping?: { volumes: HousekeepingVolume[]; containers?: InspectedContainer[] }
   }>
   /** `forced` ops archive before anything destructive and waive the review-only guards. */
   opsFor(actor: 'operator', forced: boolean): GcOps
@@ -57,6 +65,10 @@ export interface ManualCleanDeps {
    * before the trash (a session may have started writing since the click).
    */
   freshOrphanTranscripts?(): Promise<OrphanTranscriptItem[]>
+  /** The stack leftovers according to a gather that STARTS now, for the check right before docker is asked. */
+  freshStackLeftovers?(): Promise<StackLeftoverItem[]>
+  /** Removes exactly this item's stopped containers and networks (never a volume). */
+  removeStackLeftovers?(item: StackLeftoverItem): Promise<StackCleanupResult>
   /** Moves one `~/.claude/projects/<slug>` folder to the OS trash. Throws when it cannot. */
   trashTranscripts?(slug: string): Promise<void>
   /** Drops the sidebar's ghost rows for a folder that is gone (best-effort, never throws into the job). */
@@ -97,6 +109,7 @@ export function submitManualClean(
     const bundles = new Map(gathered.bundles.map((b) => [b.item.id, b]))
     const orphans = new Map(gathered.orphanVolumes.map((o) => [o.id, o]))
     const transcripts = new Map((gathered.orphanTranscripts ?? []).map((o) => [o.id, o]))
+    const stacks = new Map((gathered.stackLeftovers ?? []).map((o) => [o.id, o]))
     const results: GcItemResult[] = []
 
     const cleanBundle = async (id: string): Promise<GcItemResult> => {
@@ -170,7 +183,13 @@ export function submitManualClean(
           : ops
       const [result] = await runBatch([runnable], guarded, batchOpts)
       if (result!.ok) {
-        deps.rememberLeftovers?.(leftBehind(b, gathered.housekeeping?.volumes ?? []))
+        deps.rememberLeftovers?.(
+          leftBehind(
+            b,
+            gathered.housekeeping?.volumes ?? [],
+            gathered.housekeeping?.containers ?? []
+          )
+        )
       }
       return result!
     }
@@ -246,13 +265,46 @@ export function submitManualClean(
       return { id, ok: true, haltedAt: null, freedBytes: item.bytes }
     }
 
+    const cleanStack = async (id: string): Promise<GcItemResult> => {
+      if (!confirmed.has(id)) return refused(id, 'needs-confirmation')
+      const seen = expected[id]
+      if (!seen) return refused(id, 'missing-expected')
+      if (!deps.removeStackLeftovers || !deps.freshStackLeftovers) return refused(id, 'unsupported')
+      const item = stacks.get(id)
+      if (!item) return refused(id, 'no-longer-leftover')
+      if (stackLeftoversChangedSince(item, seen)) return refused(id, 'changed-since-confirm')
+      // Right before docker is asked, look again; remove what that look still lists, which can only
+      // be a part of what was shown (anything new is a change, refused above).
+      let fresh: StackLeftoverItem | undefined
+      try {
+        fresh = (await deps.freshStackLeftovers()).find((o) => o.id === id)
+      } catch (err) {
+        return refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+      if (!fresh) return refused(id, 'no-longer-leftover')
+      if (stackLeftoversChangedSince(fresh, seen)) return refused(id, 'changed-since-confirm')
+      const r = await deps.removeStackLeftovers(fresh)
+      if (r.errors.length > 0) {
+        return {
+          id,
+          ok: false,
+          haltedAt: 'rm-containers',
+          error: r.errors.join('; '),
+          freedBytes: 0
+        }
+      }
+      return { id, ok: true, haltedAt: null, freedBytes: 0 }
+    }
+
     for (const id of unique) {
       reporter.onStart(id)
-      const result = id.startsWith(VOLUME_PREFIX)
-        ? await cleanVolume(id)
-        : id.startsWith(ORPHAN_TRANSCRIPT_PREFIX)
-          ? await cleanTranscripts(id)
-          : await cleanBundle(id)
+      const result = id.startsWith(STACK_LEFTOVER_PREFIX)
+        ? await cleanStack(id)
+        : id.startsWith(VOLUME_PREFIX)
+          ? await cleanVolume(id)
+          : id.startsWith(ORPHAN_TRANSCRIPT_PREFIX)
+            ? await cleanTranscripts(id)
+            : await cleanBundle(id)
       results.push(result)
       if (result.ok) deps.state.failures.delete(id)
       else if (result.haltedAt === 'reprobe') {

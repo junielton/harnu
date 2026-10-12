@@ -17,6 +17,8 @@ import * as path from 'node:path'
 import { Notification, app, ipcMain, shell, type BrowserWindow } from 'electron'
 import { removeGhostFoldersUnder } from '../user-projects'
 import { trashTranscriptSlug, type OrphanTranscriptItem } from './gc-orphan-transcripts'
+import { runStackLeftoverCleanup, type StackLeftoverItem } from './gc-stack-leftovers'
+import { runDocker } from '../containers/containers-shell'
 import { buildNotificationOptions } from '../notifications'
 import { prefsFile as containersPrefsFile } from '../containers/containers-prefs'
 import { prefsPath as reaperPrefsPath } from '../reaper/prefs'
@@ -163,6 +165,9 @@ export async function registerGcHandlers(
   /** Orphaned transcript folders per a gather that starts now (checked right before the trash). */
   const freshOrphanTranscripts = async (): Promise<OrphanTranscriptItem[]> =>
     (await gatherFresh()).orphanTranscripts
+  /** Stack leftovers per a gather that starts now (checked right before docker is asked). */
+  const freshStackLeftovers = async (): Promise<StackLeftoverItem[]> =>
+    (await gatherFresh()).stackLeftovers
   const transcriptsRoot = path.join(os.homedir(), '.claude', 'projects')
 
   const queue = createJobQueue({
@@ -227,6 +232,7 @@ export async function registerGcHandlers(
     bundles: g.bundles,
     orphanVolumes: g.orphanVolumes,
     orphanTranscripts: g.orphanTranscripts,
+    stackLeftovers: g.stackLeftovers,
     docker: g.docker,
     prefs: livePrefs(),
     lastCycle: state.last,
@@ -276,6 +282,12 @@ export async function registerGcHandlers(
           // S4's runner builds the argv itself (`docker volume rm <name>`, name-checked).
           freshOrphans,
           freshOrphanTranscripts,
+          freshStackLeftovers,
+          // Containers and networks only, one id per call: never a volume (rule D1).
+          removeStackLeftovers: (item) =>
+            runStackLeftoverCleanup(item, (argv) =>
+              runDocker(argv, { windowsHide: true, timeout: 120_000, maxBuffer: 4 << 20 })
+            ),
           // One project folder of ~/.claude/projects, to the OS trash; a slug is never a path.
           trashTranscripts: (slug) =>
             trashTranscriptSlug(transcriptsRoot, slug, (p) => shell.trashItem(p)),

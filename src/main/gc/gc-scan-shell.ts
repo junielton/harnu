@@ -20,6 +20,7 @@ import {
 import { inspectAll, runDocker } from '../containers/containers-shell'
 import { journalFile, readJournal as readContainersJournal } from '../containers/containers-journal'
 import {
+  COMPOSE_PROJECT_LABEL,
   COMPOSE_WORKING_DIR_LABEL,
   attributionRung,
   groupStacks,
@@ -73,6 +74,11 @@ import {
 } from './gc-docker-card'
 import type { GcGather } from './gc-cycle'
 import { realOrphanSource, type OrphanSource } from './gc-orphan-shell'
+import {
+  listComposeNetworks,
+  planStackLeftovers,
+  type StackLeftoverItem
+} from './gc-stack-leftovers'
 import type { OrphanTranscriptItem } from './gc-orphan-transcripts'
 import { judgeKeeps, type StaleKeep } from './gc-keep'
 import type { GcPrefs } from './gc-prefs'
@@ -90,6 +96,13 @@ export interface GcGathered extends GcGather {
   orphanVolumes: OrphanVolumeItem[]
   /** Transcript folders of folders that are gone, none of them live or parked (AC-D1). */
   orphanTranscripts: OrphanTranscriptItem[]
+  /** Stopped containers, networks and volumes a removed worktree's stack left in Docker (AC-D3). */
+  stackLeftovers: StackLeftoverItem[]
+  /**
+   * Compose projects Docker still holds anything of (a container or a network), or every
+   * remembered project when the network listing failed: the leftovers file forgets none of these.
+   */
+  leftoverProjectsAlive: string[]
   /** Keep marks whose branch fate has changed since; the caller clears them from the prefs. */
   staleKeeps: StaleKeep[]
   /** Releases whose bundle is gone or no longer strongly merged; the caller clears them. */
@@ -415,6 +428,37 @@ export async function gatherGc(
     guards.unresolved
   ).orphanVolumes
 
+  // The stack leftovers: what the cleanup remembers of removed worktrees' projects. A network
+  // listing that fails is "unknown", never "none": nothing is offered and nothing is forgotten.
+  const orphanVolumeList = orphanVolumeItems(orphanNames, df)
+  const networks = available
+    ? await listComposeNetworks((argv) =>
+        runDocker(argv, { windowsHide: true, timeout: 60_000, maxBuffer: 8 << 20 })
+      ).catch(() => null)
+    : []
+  const stackLeftovers =
+    networks === null
+      ? []
+      : planStackLeftovers({
+          remembered: rememberedDirs,
+          dirExists,
+          containers,
+          networks,
+          orphanVolumes: orphanVolumeList
+        })
+  const leftoverProjectsAlive =
+    networks === null
+      ? [...rememberedDirs.keys()]
+      : [
+          ...new Set([
+            ...containers.flatMap((c) => {
+              const project = c.labels[COMPOSE_PROJECT_LABEL]
+              return project ? [project] : []
+            }),
+            ...networks.map((n) => n.project)
+          ])
+        ]
+
   return {
     bundles,
     housekeeping,
@@ -426,7 +470,9 @@ export async function gatherGc(
     docker: available
       ? withOrphanVolumesHidden(docker, hiddenWhenCandidates(guards.hidden, volumes, containers))
       : docker,
-    orphanVolumes: orphanVolumeItems(orphanNames, df),
+    orphanVolumes: orphanVolumeList,
+    stackLeftovers,
+    leftoverProjectsAlive,
     orphanTranscripts: await orphanSource({ known, repoPaths }),
     staleKeeps,
     staleReleases: staleReleaseIds,
