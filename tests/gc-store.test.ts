@@ -257,6 +257,56 @@ describe('gc store', () => {
     expect(gc.pill).toEqual({ kind: 'idle' })
   })
 
+  it('a Needs review removal says what it really did: both byte counts, and never "ready items"', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.gcSnapshot.mockResolvedValueOnce(snap({ bundles: [] }))
+    // The operator confirmed these two review items by id, so they ran through the force path.
+    await gc.submit({
+      ids: ['x', 'y'],
+      options: { confirmed: ['x', 'y'], expected: {} }
+    } as never)
+    api.push.done(
+      done({
+        freedBytes: 0,
+        trashedBytes: 1_000_000_000,
+        results: [
+          { id: 'x', ok: true, haltedAt: null, freedBytes: 0, trashedBytes: 600_000_000 },
+          { id: 'y', ok: true, haltedAt: null, freedBytes: 0, trashedBytes: 400_000_000 }
+        ]
+      })
+    )
+    await vi.runAllTimersAsync()
+    const title = toast.mock.calls[0][0].title as string
+    // Not "Freed 0 B": the checkouts that went to the trash are counted, as "in the trash".
+    expect(title).toBe('0 B freed now · 1.00 GB in the trash · 2 items removed')
+    expect(title).not.toContain('ready')
+  })
+
+  it('a ready clean keeps saying "ready items cleaned"', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.gcSnapshot.mockResolvedValueOnce(snap({ bundles: [] }))
+    await gc.submit({ ids: ['a'], options: { expected: {} } } as never)
+    api.push.done(
+      done({
+        freedBytes: 100,
+        trashedBytes: 0,
+        done: 1,
+        total: 1,
+        results: [{ id: 'a', ok: true, haltedAt: null, freedBytes: 100 }]
+      })
+    )
+    await vi.runAllTimersAsync()
+    expect(toast.mock.calls[0][0].title).toBe('100 B freed now · 1 ready item cleaned')
+  })
+
   it('a partial failure toasts a warning and the failed item is back in Needs review with what ran', async () => {
     const api = installApi()
     const gc = useGcStore()

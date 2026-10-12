@@ -98,6 +98,11 @@ export const useGcStore = defineStore('gc', () => {
   const opinions = ref<OpinionMap>(new Map())
   const pendingOpinions = ref<ReadonlySet<string>>(new Set())
 
+  /**
+   * The ids the operator confirmed by hand in the last request (Needs review items). Their toast
+   * says "removed", not "ready items cleaned": they were never ready.
+   */
+  let lastConfirmed: ReadonlySet<string> = new Set()
   let unsubs: Array<() => void> = []
   let initialised = false
   const fadeTimers = new Set<ReturnType<typeof setTimeout>>()
@@ -242,11 +247,12 @@ export const useGcStore = defineStore('gc', () => {
     const { t } = i18n.global
     const ui = useUiStore()
     const warning = s.tone === 'warning'
+    const fromReview = d.results.some((r) => r.ok && lastConfirmed.has(r.id))
     const entry = {
       kind: warning ? ('warning' as const) : ('success' as const),
       title: warning
         ? t('cleanup.gc.toast.partial', { cleaned: s.cleaned, failed: s.failed }, s.failed)
-        : t('cleanup.gc.toast.success', {
+        : t(fromReview ? 'cleanup.gc.toast.successReview' : 'cleanup.gc.toast.success', {
             freed: freedText(t, s.freedBytes, s.trashedBytes),
             count: s.cleaned
           }),
@@ -362,6 +368,7 @@ export const useGcStore = defineStore('gc', () => {
   function submit(req: CleanRequest): Promise<GcCleanAck | null> {
     if (req.ids.length === 0) return Promise.resolve(null)
     failures.value = new Map() // a new run replaces what the last one left behind
+    lastConfirmed = new Set(req.options.confirmed ?? [])
     return sendClean(req)
   }
 

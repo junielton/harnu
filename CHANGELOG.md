@@ -21,7 +21,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
-- **"Freed" no longer counts what is still sitting in the trash.** A clean moves the checkout to the system trash, so its disk space only comes back when the trash is emptied. The progress chip, the success toast, the "Last cycle" line and the autopilot's notification now all say **"400 MB freed now · 2.00 GB in the trash"** (just the first part when nothing was trashed).
+- **"Freed" no longer counts what is still sitting in the trash.** A clean moves the checkout to the system trash, so its disk space only comes back when the trash is emptied. The progress chip, the success toast, the "Last cycle" line and the autopilot's notification now all say **"400 MB freed now · 2.00 GB in the trash"** (just the first part when nothing was trashed). Removing items from Needs review no longer reports "Freed 0 B · 3 ready items cleaned": it counts the trashed checkouts and says "3 items removed".
 
 ## 2026-10-09
 

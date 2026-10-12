@@ -2564,7 +2564,8 @@
         "success": "{freed} · {count} item pronto limpo | {freed} · {count} itens prontos limpos",
         "partial": "{cleaned} limpos · {failed} precisa de revisão | {cleaned} limpos · {failed} precisam de revisão",
         "review": "Revisar",
-        "viewJournal": "Ver diário"
+        "viewJournal": "Ver diário",
+        "successReview": "{freed} · {count} item removido | {freed} · {count} itens removidos"
       },
       "footer": {
         "running": "Limpando {done}/{total}",

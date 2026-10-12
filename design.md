@@ -8980,10 +8980,11 @@ nothing running and nothing needing attention. An optional hover popover (the fo
 
 The documented Toast with an optional description and an action link — no new variant.
 
-| Outcome         | Kind      | Title                                     | Action         |
-| --------------- | --------- | ----------------------------------------- | -------------- |
-| all ok          | `success` | `{freed split} · {n} ready items cleaned` | "View journal" |
-| partial failure | `warning` | `{n} cleaned · {m} needs review`          | "Review"       |
+| Outcome                           | Kind      | Title                                                              | Action         |
+| --------------------------------- | --------- | ------------------------------------------------------------------ | -------------- |
+| all ok                            | `success` | `{freed split} · {n} ready items cleaned`                          | "View journal" |
+| all ok, removed from Needs review | `success` | `{freed split} · {n} items removed` (never "ready": they were not) | "View journal" |
+| partial failure                   | `warning` | `{n} cleaned · {m} needs review`                                   | "Review"       |
 
 The count behind **attention** is the items that need operator action: a failed item, or a refusal the
 operator did not choose. A refusal that is the operator's own setting (`kept`, `never-clean`) is not counted.

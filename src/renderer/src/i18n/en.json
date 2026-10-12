@@ -2564,7 +2564,8 @@
         "success": "{freed} · {count} ready item cleaned | {freed} · {count} ready items cleaned",
         "partial": "{cleaned} cleaned · {failed} needs review | {cleaned} cleaned · {failed} need review",
         "review": "Review",
-        "viewJournal": "View journal"
+        "viewJournal": "View journal",
+        "successReview": "{freed} · {count} item removed | {freed} · {count} items removed"
       },
       "footer": {
         "running": "Cleaning {done}/{total}",
