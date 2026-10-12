@@ -7,6 +7,7 @@ import CleanupTranscriptsConfirmDialog from '../src/renderer/src/components/Clea
 import { i18n } from '@renderer/i18n'
 import {
   groupOrphanTranscripts,
+  splitByProof,
   transcriptCleanRequest,
   transcriptExpectedFor
 } from '../src/renderer/src/lib/gc-orphans'
@@ -32,6 +33,7 @@ function item(slug: string, over: Partial<OrphanTranscriptItem> = {}): OrphanTra
     sessionCount: 3,
     newestAt: Date.parse('2026-10-01T12:00:00Z'),
     hasMemory: false,
+    proof: 'proven',
     ...over
   }
 }
@@ -178,5 +180,117 @@ describe('CleanupTranscriptsConfirmDialog', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     expect(w.emitted('cancel')).toBeTruthy()
+  })
+})
+
+describe('"Folder not found": missing, but nothing proves it gone (delta-2 item 1)', () => {
+  const nf = (slug: string, over: Partial<OrphanTranscriptItem> = {}): OrphanTranscriptItem =>
+    item(slug, { proof: 'not-found', folder: `/home/u/remote/${slug}`, ...over })
+
+  it('splitByProof keeps the two groups apart', () => {
+    const { proven, notFound } = splitByProof([item('a'), nf('b'), item('c')])
+    expect(proven.map((i) => i.slug)).toEqual(['a', 'c'])
+    expect(notFound.map((i) => i.slug)).toEqual(['b'])
+  })
+
+  it('the request adds the stronger confirm for not-found ids only, and only when acknowledged', () => {
+    const a = item('a')
+    const b = nf('b')
+    const withAck = structuredClone(transcriptCleanRequest([a, b], true))
+    expect(withAck.options.confirmed).toEqual([a.id, b.id])
+    expect(withAck.options.confirmedNotFound).toEqual([b.id])
+    expect(withAck.options.expected[b.id]).toEqual(orphanExpectedOf(b))
+    expect(transcriptCleanRequest([a, b], false).options.confirmedNotFound).toBeUndefined()
+    expect(transcriptCleanRequest([a], true).options.confirmedNotFound).toBeUndefined()
+  })
+
+  describe('on the screen', () => {
+    let wrapper: VueWrapper | null = null
+    afterEach(() => {
+      wrapper?.unmount()
+      wrapper = null
+      document.body.innerHTML = ''
+    })
+    const mountIt = (transcripts: OrphanTranscriptItem[]): VueWrapper => {
+      setActivePinia(createPinia())
+      wrapper = mount(CleanupOtherItems, {
+        props: { transcripts },
+        global: { plugins: [i18n] },
+        attachTo: document.body
+      })
+      return wrapper
+    }
+
+    it('lists them in their own section with the FULL path, apart from the proven ones', () => {
+      const w = mountIt([item('a'), nf('b')])
+      expect(w.findAll('[data-testid="orphan-group"]')).toHaveLength(1)
+      const section = w.get('[data-testid="orphan-notfound"]')
+      expect(section.text()).toContain(t('cleanup.gc.orphans.notFound.title'))
+      expect(section.text()).toContain(t('cleanup.gc.orphans.notFound.note'))
+      expect(section.get('[data-testid="orphan-fullpath"]').text()).toBe('/home/u/remote/b')
+    })
+
+    it('has no such section when everything is proven', () => {
+      expect(
+        mountIt([item('a')])
+          .find('[data-testid="orphan-notfound"]')
+          .exists()
+      ).toBe(false)
+    })
+
+    it('Delete on a not-found row asks for that row; Delete all in the section for the section', async () => {
+      const b = nf('b')
+      const c = nf('c')
+      const w = mountIt([item('a'), b, c])
+      await w
+        .findAll('[data-testid="orphan-notfound"] [data-testid="orphan-delete"]')[0]!
+        .trigger('click')
+      expect(w.emitted('deleteTranscripts')![0]).toEqual([[b.id]])
+      await w.get('[data-testid="orphan-notfound-delete-all"]').trigger('click')
+      expect(w.emitted('deleteTranscripts')![1]).toEqual([[b.id, c.id]])
+    })
+  })
+
+  describe('the confirm', () => {
+    let wrapper: VueWrapper | null = null
+    afterEach(() => {
+      wrapper?.unmount()
+      wrapper = null
+      document.body.innerHTML = ''
+    })
+    const open = async (items: OrphanTranscriptItem[]): Promise<VueWrapper> => {
+      wrapper = mount(CleanupTranscriptsConfirmDialog, {
+        props: { items },
+        global: { plugins: [i18n] },
+        attachTo: document.body
+      })
+      await flushPromises()
+      return wrapper
+    }
+    const q = (sel: string): HTMLElement | null => document.body.querySelector<HTMLElement>(sel)
+
+    it('a proven-only dialog has no acknowledgement and confirms with ack false', async () => {
+      const w = await open([item('a')])
+      expect(q('[data-testid="orphan-dialog-ack"]')).toBeNull()
+      q('[data-testid="orphan-dialog-confirm"]')!.click()
+      expect(w.emitted('confirm')![0]).toEqual([{ notFoundAck: false }])
+    })
+
+    it('a not-found dialog shows the full paths and will not confirm until the box is ticked', async () => {
+      const w = await open([nf('b')])
+      expect(q('[data-testid="orphan-dialog"]')!.textContent).toContain('/home/u/remote/b')
+      expect(q('[data-testid="orphan-dialog"]')!.textContent).toContain(
+        t('cleanup.gc.orphans.notFound.ack')
+      )
+      const confirm = q('[data-testid="orphan-dialog-confirm"]') as HTMLButtonElement
+      expect(confirm.disabled).toBe(true)
+      confirm.click()
+      expect(w.emitted('confirm')).toBeUndefined()
+      q('[data-testid="orphan-dialog-ack"]')!.click()
+      await flushPromises()
+      expect((q('[data-testid="orphan-dialog-confirm"]') as HTMLButtonElement).disabled).toBe(false)
+      q('[data-testid="orphan-dialog-confirm"]')!.click()
+      expect(w.emitted('confirm')![0]).toEqual([{ notFoundAck: true }])
+    })
   })
 })
