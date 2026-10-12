@@ -13,7 +13,6 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   renameSync,
   rmSync,
   symlinkSync,
