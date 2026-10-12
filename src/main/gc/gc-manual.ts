@@ -61,6 +61,16 @@ export interface ManualCleanDeps {
    */
   workStampOf(path: string): Promise<string | null>
   /**
+   * ONE fresh gather for the whole request, whatever kinds it names: its volumes, transcript
+   * folders and stack leftovers are all read from it. When present it replaces the three per-kind
+   * looks below, so a request of N ids, or of mixed kinds, costs a single gather.
+   */
+  freshGather?(): Promise<{
+    orphanVolumes: OrphanVolumeItem[]
+    orphanTranscripts: OrphanTranscriptItem[]
+    stackLeftovers: StackLeftoverItem[]
+  }>
+  /**
    * The orphaned transcript folders according to a gather that STARTS now, for the check right
    * before the trash (a session may have started writing since the click).
    */
@@ -110,8 +120,23 @@ export function submitManualClean(
     const orphans = new Map(gathered.orphanVolumes.map((o) => [o.id, o]))
     // One fresh look per batch, taken by the first id that needs it and shared by the rest: a
     // batch of N ids must not cost N full gathers. A failing look refuses every id of the batch.
+    let freshView: ReturnType<NonNullable<ManualCleanDeps['freshGather']>> | null = null
+    let freshVolumes: Promise<OrphanVolumeItem[]> | null = null
     let freshTranscripts: Promise<OrphanTranscriptItem[]> | null = null
     let freshStacks: Promise<StackLeftoverItem[]> | null = null
+    const view = (): NonNullable<typeof freshView> => (freshView ??= deps.freshGather!())
+    const lookVolumes = (): Promise<OrphanVolumeItem[]> =>
+      (freshVolumes ??= deps.freshGather
+        ? view().then((v) => v.orphanVolumes)
+        : deps.freshOrphans())
+    const lookTranscripts = (): Promise<OrphanTranscriptItem[]> =>
+      (freshTranscripts ??= deps.freshGather
+        ? view().then((v) => v.orphanTranscripts)
+        : deps.freshOrphanTranscripts!())
+    const lookStacks = (): Promise<StackLeftoverItem[]> =>
+      (freshStacks ??= deps.freshGather
+        ? view().then((v) => v.stackLeftovers)
+        : deps.freshStackLeftovers!())
     const transcripts = new Map((gathered.orphanTranscripts ?? []).map((o) => [o.id, o]))
     const stacks = new Map((gathered.stackLeftovers ?? []).map((o) => [o.id, o]))
     const results: GcItemResult[] = []
@@ -211,7 +236,7 @@ export function submitManualClean(
       // folder and the containers that reference the volume. Failing to look is a refusal.
       let fresh: OrphanVolumeItem | undefined
       try {
-        fresh = (await deps.freshOrphans()).find((o) => o.id === id)
+        fresh = (await lookVolumes()).find((o) => o.id === id)
       } catch (err) {
         return refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
       }
@@ -235,7 +260,7 @@ export function submitManualClean(
       if (!confirmed.has(id)) return refused(id, 'needs-confirmation')
       const seen = expected[id]
       if (!seen) return refused(id, 'missing-expected')
-      if (!deps.trashTranscripts || !deps.freshOrphanTranscripts) {
+      if (!deps.trashTranscripts || !(deps.freshGather || deps.freshOrphanTranscripts)) {
         return refused(id, 'unsupported')
       }
       const item = transcripts.get(id)
@@ -245,8 +270,7 @@ export function submitManualClean(
       // Right before the trash, look again with a gather that starts now. Failing to look refuses.
       let fresh: OrphanTranscriptItem | undefined
       try {
-        freshTranscripts ??= deps.freshOrphanTranscripts()
-        fresh = (await freshTranscripts).find((o) => o.id === id)
+        fresh = (await lookTranscripts()).find((o) => o.id === id)
       } catch (err) {
         return refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
       }
@@ -274,7 +298,9 @@ export function submitManualClean(
       if (!confirmed.has(id)) return refused(id, 'needs-confirmation')
       const seen = expected[id]
       if (!seen) return refused(id, 'missing-expected')
-      if (!deps.removeStackLeftovers || !deps.freshStackLeftovers) return refused(id, 'unsupported')
+      if (!deps.removeStackLeftovers || !(deps.freshGather || deps.freshStackLeftovers)) {
+        return refused(id, 'unsupported')
+      }
       const item = stacks.get(id)
       if (!item) return refused(id, 'no-longer-leftover')
       if (stackLeftoversChangedSince(item, seen)) return refused(id, 'changed-since-confirm')
@@ -282,8 +308,7 @@ export function submitManualClean(
       // be a part of what was shown (anything new is a change, refused above).
       let fresh: StackLeftoverItem | undefined
       try {
-        freshStacks ??= deps.freshStackLeftovers()
-        fresh = (await freshStacks).find((o) => o.id === id)
+        fresh = (await lookStacks()).find((o) => o.id === id)
       } catch (err) {
         return refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
       }

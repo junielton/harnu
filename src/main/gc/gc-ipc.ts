@@ -284,6 +284,14 @@ export async function registerGcHandlers(
             forced ? createForcedGcOps(withRun('operator')) : createGcOps(withRun('operator')),
           // S4's runner builds the argv itself (`docker volume rm <name>`, name-checked).
           freshOrphans,
+          // One gather per request, whatever its kinds; the three per-kind looks below are only
+          // the fallback of an older caller.
+          freshGather: () =>
+            gatherFresh().then((g) => ({
+              orphanVolumes: g.orphanVolumes,
+              orphanTranscripts: g.orphanTranscripts,
+              stackLeftovers: g.stackLeftovers
+            })),
           freshOrphanTranscripts,
           freshStackLeftovers,
           // Containers and networks only, one id per call: never a volume (rule D1).
