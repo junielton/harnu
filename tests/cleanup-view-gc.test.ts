@@ -1024,7 +1024,7 @@ describe('Cleanup screen — Remove is honest: what main refuses is never offere
     await removeSelected()
     // the row names the commit that will be archived, and there is no branch chip
     const row = domGet('[data-testid="bulk-row"]')
-    expect(row.text()).toContain(t('cleanup.gc.confirm.detachedSub', { sha: 'aaaaaaa' }))
+    expect(row.text()).toContain(t('cleanup.gc.confirm.detachedSub', { sha: 'aaaaaaaaaaaa' }))
     expect(row.el!.querySelector('[data-chip="branch"]')).toBeNull()
     expect(row.el!.querySelector('[data-chip="checkout"]')).not.toBeNull()
     // the warning says where the commit stays and how it comes back

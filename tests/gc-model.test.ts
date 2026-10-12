@@ -682,6 +682,14 @@ describe('detached worktrees — removable from review, never from ready', () =>
     expect(unremovableIds(m, [h.item.id, d.item.id, 'ghost'])).toEqual([])
   })
 
+  it('a detached dialog row shows the 12-character sha the archive ref is built from (delta-1, item 5)', () => {
+    const h = detached('h1')
+    h.localTip = 'abcdef0123456789abcdef0123456789abcdef01'
+    const m = buildGcModel(snap({ bundles: [h] }))
+    const [row] = dialogRows(m, [h.item.id])
+    expect(row.detachedAt).toBe('abcdef012345')
+  })
+
   it('a ready-mode request never carries a detached worktree', () => {
     const h = detached('h1')
     const m = buildGcModel(snap({ bundles: [h] }))
