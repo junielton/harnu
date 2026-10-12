@@ -190,9 +190,10 @@ describe('boot recovery: a lock', () => {
       }
     })
     await recoverPrepJournal(boot(), deps)
+    // The worktree IS the same one: the notice must say the lock failed, not that it is a different worktree.
     expect((await listRecovery(j))[0]).toMatchObject({
       state: 'notice',
-      notice: 'lock-skipped',
+      notice: 'lock-failed',
       detail: expect.stringContaining('git is gone')
     })
   })

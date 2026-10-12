@@ -62,11 +62,15 @@ describe('CleanupRecoveryNotices', () => {
     expect(w.emitted('answer')).toEqual([['l1', 'lock']])
   })
 
-  it('a lock that failed to go back shows what git said', () => {
+  it('a lock that failed to go back says the LOCK failed, with what git said (delta 4)', () => {
     const w = mountIt([
-      item({ id: 'l2', kind: 'unlock', notice: 'lock-skipped', detail: 'git is gone' })
+      item({ id: 'l2', kind: 'unlock', notice: 'lock-failed', detail: 'git is gone' })
     ])
-    expect(w.get('[data-testid="recovery-notice"]').text()).toContain('git is gone')
+    const text = w.get('[data-testid="recovery-notice"]').text()
+    expect(text).toContain('git is gone')
+    expect(text).toContain('could not lock it again')
+    expect(text).not.toContain('not the same worktree')
+    expect(w.get('[data-testid="recovery-lock"]').text()).toBe('Lock again')
   })
 
   it('containers that no longer exist are one dismissable notice, with nothing to start', async () => {
