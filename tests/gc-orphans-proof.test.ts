@@ -156,3 +156,113 @@ describe('fsPathExistence is now only "is it there" (it proves nothing about bei
     expect(await fsPathExistence(`${root}/\0bad`)).toBe('unknown')
   })
 })
+
+// ---- delta-3: the root of the removed worktree must itself be missing ---------------------------------
+
+import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { proofRoots, proveGone } from '../src/main/gc/gc-orphan-proof'
+
+describe('proof holds only while the worktree root itself is missing (delta-3 items 1 and 3)', () => {
+  let root: string
+  let parent: string
+  beforeEach(() => {
+    root = mkdtempSync(path.join(os.tmpdir(), 'harnu-proofroot-'))
+    parent = path.join(root, 'repo', '.claude', 'worktrees')
+    mkdirSync(parent, { recursive: true })
+  })
+  afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  const evidence = (over: Partial<RemovalEvidence> = {}): RemovalEvidence => ({
+    removed: [],
+    prunable: [],
+    worktreeParents: [{ parent, readable: true }],
+    ...over
+  })
+
+  it('proofRoots names the segment directly under the parent, the prunable entry, the ledger entry', () => {
+    const ev = evidence({ removed: ['/x/removed'], prunable: ['/x/pruned'] })
+    expect(proofRoots(path.join(parent, 'wt', 'api', 'src'), ev)).toEqual([
+      { proof: 'under-worktrees-parent', root: path.join(parent, 'wt') }
+    ])
+    expect(proofRoots('/x/pruned/sub', ev)).toEqual([{ proof: 'git-prunable', root: '/x/pruned' }])
+    expect(proofRoots('/x/removed/sub', ev)).toEqual([
+      { proof: 'removed-by-harnu', root: '/x/removed' }
+    ])
+  })
+
+  it('a worktree that is really gone proves its subfolders', async () => {
+    expect(await proveGone(path.join(parent, 'wt', 'api'), evidence(), fsPathExistence)).toBe(true)
+  })
+
+  it('a dangling symlink where the worktree was (its drive is unmounted) proves nothing', async () => {
+    symlinkSync('/nonexistent/unmounted/drive/wt', path.join(parent, 'wt'))
+    expect(await proveGone(path.join(parent, 'wt', 'api'), evidence(), fsPathExistence)).toBe(false)
+  })
+
+  it('an empty mount point where the worktree was proves nothing', async () => {
+    mkdirSync(path.join(parent, 'wt'))
+    expect(await proveGone(path.join(parent, 'wt', 'api'), evidence(), fsPathExistence)).toBe(false)
+  })
+
+  it('a worktree directory that exists is not gone, whatever is missing inside it', async () => {
+    mkdirSync(path.join(parent, 'wt'))
+    writeFileSync(path.join(parent, 'wt', 'f.txt'), 'x')
+    expect(await proveGone(path.join(parent, 'wt', 'api'), evidence(), fsPathExistence)).toBe(false)
+  })
+
+  it('a folder git lists as prunable proves nothing once its root is back (even as an empty mount point)', async () => {
+    const wt = path.join(root, 'trees', 'wt-9')
+    const ev = evidence({ prunable: [wt] })
+    expect(await proveGone(path.join(wt, 'sub'), ev, fsPathExistence)).toBe(true)
+    mkdirSync(wt, { recursive: true })
+    expect(await proveGone(path.join(wt, 'sub'), ev, fsPathExistence)).toBe(false)
+  })
+
+  it('a ledger entry stops proving anything under it once that folder exists again (item 3)', async () => {
+    const removed = path.join(root, 'work', 'feat-a')
+    const ev = evidence({ removed: [removed] })
+    expect(await proveGone(path.join(removed, 'api'), ev, fsPathExistence)).toBe(true)
+    mkdirSync(removed, { recursive: true })
+    expect(await proveGone(path.join(removed, 'api'), ev, fsPathExistence)).toBe(false)
+  })
+
+  it('any one proof that holds is enough', async () => {
+    const removed = path.join(parent, 'wt')
+    mkdirSync(removed) // the ledger entry is back...
+    const ev = evidence({ removed: [removed], prunable: [path.join(parent, 'wt', 'api')] })
+    // ...but git still lists the subfolder's own registration as prunable and it is missing.
+    expect(await proveGone(path.join(parent, 'wt', 'api', 'x'), ev, fsPathExistence)).toBe(true)
+  })
+})
+
+describe('git’s prunable reason (delta-3 item 1, proof b)', () => {
+  const block = (reason: string): string =>
+    [
+      'worktree /w/repo',
+      'HEAD a',
+      'branch refs/heads/main',
+      '',
+      'worktree /w/wt',
+      'HEAD b',
+      'branch refs/heads/x',
+      reason,
+      ''
+    ].join('\n')
+
+  it('only "gitdir file points to non-existent location" counts', async () => {
+    const mk = async (reason: string) =>
+      (
+        await evidenceFromGit({
+          repoPaths: ['/w/repo'],
+          repoExists: async () => true,
+          worktreeList: async () => block(reason),
+          readable: async () => true,
+          removed: []
+        })
+      ).prunable
+    expect(await mk('prunable gitdir file points to non-existent location')).toEqual(['/w/wt'])
+    expect(await mk('prunable gitdir file does not exist')).toEqual([])
+    expect(await mk('prunable invalid gitdir file')).toEqual([])
+    expect(await mk('prunable')).toEqual([])
+  })
+})
