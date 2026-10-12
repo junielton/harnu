@@ -8671,6 +8671,14 @@ the count, and two header buttons that act on the **whole list** — "Ask for an
 is current). Each row carries its **opinion chip** under the reason (see "Opinion chip"). Hovering a row
 outlines its block. Footer: the keyboard hints (`kbd`).
 
+**Dehydrated rows (unit D, AC-D4).** A worktree whose dependencies were dropped (`hydration.state ===
+'dehydrated'`) is still judged by its branch fate, exactly like a hydrated one: merged and past grace it is
+Ready, otherwise it carries its ordinary review reason. In Needs review its row adds one 11px `--text-3`
+line under the reason, **"Dehydrated · {size} left"** (`data-testid="review-dehydrated"`, `PackageMinus`
+icon at 11px; `{size}` is what the checkout still holds on disk), and keeps the normal **Remove**
+(same guarded path, same confirm). A dehydrated row never offers Dehydrate again. The block panel's
+existing `dehydrated` marker stays as it is.
+
 #### Opinion chip ("Ask for an opinion", T444)
 
 An **advisory, on-demand** verdict on a Needs review item, produced by a read-only headless session.

@@ -212,6 +212,18 @@ function onRowKey(e: KeyboardEvent, id: string): void {
           >
             {{ t('cleanup.gc.review.resume', { step: t(stepKey(resumeHint(b)!.step as GcStep)) }) }}
           </span>
+          <span
+            v-if="b.hydration"
+            class="inline-flex items-center gap-1 text-caption leading-4 text-text-3"
+            data-testid="review-dehydrated"
+          >
+            <PackageMinus :size="11" :stroke-width="1.7" aria-hidden="true" />
+            {{
+              t('cleanup.gc.review.dehydratedLeft', {
+                size: b.hydration.bytesLeft === null ? '—' : formatBytes(b.hydration.bytesLeft)
+              })
+            }}
+          </span>
           <CleanupOpinionChip :opinion="opinionOf(b.id)" :pending="isAsking(b.id)" />
         </span>
 

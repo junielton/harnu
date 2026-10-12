@@ -5,6 +5,7 @@ import CleanupReviewList from '../src/renderer/src/components/CleanupReviewList.
 import { i18n } from '@renderer/i18n'
 import type { GcBlock } from '../src/renderer/src/lib/gc-model'
 import type { HydrationInfo } from '../src/main/reaper/reaper-core'
+import { formatBytes } from '../src/renderer/src/components/system-monitor-format'
 import { MIB, modelOf, reviewReason, wt } from './helpers/cleanup-gc-fixtures'
 
 /**
@@ -61,7 +62,7 @@ describe('a dehydrated worktree in Needs review (AC-D4)', () => {
     const skel = rows.find((r) => r.attributes('data-id')!.endsWith('skel'))!
     const full = rows.find((r) => r.attributes('data-id')!.endsWith('full'))!
     expect(skel.get('[data-testid="review-dehydrated"]').text()).toBe(
-      t('cleanup.gc.review.dehydratedLeft', { size: '6.29 MB' })
+      t('cleanup.gc.review.dehydratedLeft', { size: formatBytes(6 * MIB) })
     )
     expect(full.find('[data-testid="review-dehydrated"]').exists()).toBe(false)
   })

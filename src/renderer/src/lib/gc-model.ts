@@ -34,6 +34,11 @@ export interface GcBlock {
   ownedVolumes: string[]
   depsBytes: number | null
   /**
+   * Set for a worktree whose dependencies were dropped (AC-D4): `bytesLeft` is what the checkout
+   * still holds on disk. Dehydration never moves the bucket, so this only changes what a row says.
+   */
+  hydration: { state: 'dehydrated'; bytesLeft: number | null } | null
+  /**
    * What the CURRENT prefs say protects this worktree: a Keep mark or a never-clean path added since
    * the scan is not in the bundle's flags, but Remove must stop being offered at once.
    */
@@ -171,6 +176,10 @@ function worktreeBlock(b: WorktreeBundle, prefs: GcSnapshot['prefs']): GcBlock {
     stackIds: b.stackIds,
     ownedVolumes: b.ownedVolumes,
     depsBytes: b.depsBytes,
+    hydration:
+      item.hydration?.state === 'dehydrated'
+        ? { state: 'dehydrated', bytesLeft: bytes ?? null }
+        : null,
     protection: protectionOf(b, prefs),
     bundle: b,
     volume: null
@@ -194,6 +203,7 @@ function volumeBlock(v: OrphanVolumeItem): GcBlock {
     stackIds: [],
     ownedVolumes: [v.name],
     depsBytes: null,
+    hydration: null,
     protection: null,
     bundle: null,
     volume: v

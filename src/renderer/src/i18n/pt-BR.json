@@ -2722,6 +2722,7 @@
         "removeAria": "Remover {name}",
         "resume": "Parou em “{step}”. Abra para ver os comandos para terminar à mão.",
         "dehydrateAria": "Dehydrate {name}",
+        "dehydratedLeft": "Desidratado · {size} restantes",
         "keepAria": "Manter {name}",
         "volumeProject": "Volume Docker · {project}",
         "volumeUnknown": "Volume Docker · projeto desconhecido",
