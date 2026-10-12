@@ -35,6 +35,9 @@ import {
 
 const VOLUME_PREFIX = volumeItemId('')
 
+/** How long one fresh look may gate destructive steps before it is taken again. */
+export const MAX_VIEW_AGE_MS = 10_000
+
 export interface ManualCleanDeps {
   /** Read fresh: `neverClean` may have changed since the snapshot the operator clicked on. */
   prefs(): GcPrefs
@@ -120,25 +123,28 @@ export function submitManualClean(
     const gathered = await deps.gather()
     const bundles = new Map(gathered.bundles.map((b) => [b.item.id, b]))
     const orphans = new Map(gathered.orphanVolumes.map((o) => [o.id, o]))
-    // One fresh look per batch, taken by the first id that needs it and shared by the rest: a
-    // batch of N ids must not cost N full gathers. A failing look refuses every id of the batch.
-    let freshView: ReturnType<NonNullable<ManualCleanDeps['freshGather']>> | null = null
-    let freshVolumes: Promise<OrphanVolumeItem[]> | null = null
-    let freshTranscripts: Promise<OrphanTranscriptItem[]> | null = null
-    let freshStacks: Promise<StackLeftoverItem[]> | null = null
-    const view = (): NonNullable<typeof freshView> => (freshView ??= deps.freshGather!())
-    const lookVolumes = (): Promise<OrphanVolumeItem[]> =>
-      (freshVolumes ??= deps.freshGather
-        ? view().then((v) => v.orphanVolumes)
-        : deps.freshOrphans())
-    const lookTranscripts = (): Promise<OrphanTranscriptItem[]> =>
-      (freshTranscripts ??= deps.freshGather
-        ? view().then((v) => v.orphanTranscripts)
-        : deps.freshOrphanTranscripts!())
-    const lookStacks = (): Promise<StackLeftoverItem[]> =>
-      (freshStacks ??= deps.freshGather
-        ? view().then((v) => v.stackLeftovers)
-        : deps.freshStackLeftovers!())
+    // One fresh look per batch, taken by the first id that needs it and shared by the rest: a batch of
+    // N ids must not cost N full gathers. But a look is only good for a few seconds: a view older than
+    // that is taken again before the next destructive step, so a minutes-old one never gates a trash.
+    // A failing look refuses every id that relies on it.
+    const aged = <T>(take: () => Promise<T>): (() => Promise<T>) => {
+      let held: { at: number; look: Promise<T> } | null = null
+      return () => {
+        const at = deps.now()
+        if (!held || at - held.at > MAX_VIEW_AGE_MS) held = { at, look: take() }
+        return held.look
+      }
+    }
+    const view = aged(() => deps.freshGather!())
+    const lookVolumes: () => Promise<OrphanVolumeItem[]> = deps.freshGather
+      ? () => view().then((v) => v.orphanVolumes)
+      : aged(() => deps.freshOrphans())
+    const lookTranscripts: () => Promise<OrphanTranscriptItem[]> = deps.freshGather
+      ? () => view().then((v) => v.orphanTranscripts)
+      : aged(() => deps.freshOrphanTranscripts!())
+    const lookStacks: () => Promise<StackLeftoverItem[]> = deps.freshGather
+      ? () => view().then((v) => v.stackLeftovers)
+      : aged(() => deps.freshStackLeftovers!())
     const transcripts = new Map((gathered.orphanTranscripts ?? []).map((o) => [o.id, o]))
     const stacks = new Map((gathered.stackLeftovers ?? []).map((o) => [o.id, o]))
     const results: GcItemResult[] = []
