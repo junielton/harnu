@@ -148,6 +148,49 @@ describe('the lazy, cached remote facts', () => {
   })
 })
 
+describe('a partial failure is never cached (delta-3 item 5)', () => {
+  const countingService = (answer: RemoteFacts) => {
+    let calls = 0
+    let t = 1_000_000
+    const service = createRemoteFactsService({
+      now: () => t,
+      probe: async () => {
+        calls++
+        return answer
+      }
+    })
+    return { service, calls: () => calls }
+  }
+
+  it.each([
+    ['gh failed (open-PR answer missing)', { ...GOOD, openPr: null }],
+    ['the protection check failed', { ...GOOD, ghProtected: null }],
+    [
+      'ls-remote failed (remote tip missing)',
+      { ...GOOD, remoteSha: null, remoteMatchesLocal: null }
+    ],
+    ['the tips could not be compared', { ...GOOD, remoteMatchesLocal: null }],
+    [
+      'everything came back null',
+      { remote: null, remoteSha: null, remoteMatchesLocal: null, openPr: null, ghProtected: null }
+    ]
+  ] as const)('%s: asked again next time', async (_why, facts) => {
+    const h = countingService(facts as RemoteFacts)
+    const b = candidate(1)
+    await h.service.facts([b])
+    await h.service.facts([b])
+    expect(h.calls()).toBe(2)
+  })
+
+  it('a complete answer is still cached', async () => {
+    const h = countingService(GOOD)
+    const b = candidate(1)
+    await h.service.facts([b])
+    await h.service.facts([b])
+    expect(h.calls()).toBe(1)
+  })
+})
+
 describe('the open pull requests come from the scanner list when it can answer', () => {
   const fresh = (rows: unknown[], over: Record<string, unknown> = {}) => ({
     version: 3,
