@@ -52,7 +52,9 @@ export function worldFor(b: WorktreeBundle, over: Partial<GcShellDeps> = {}): Gc
     archiveTip: async (_repo, ref) => ref,
     archiveWip: async (_repo, ref) => ref,
     detachSidebar: async () => undefined,
-    canUnregister: async () => !(b.locked === true || b.reason?.code === 'locked'),
+    // As the real one: a lock refuses, unless the caller asks "as if unlocked" (a guided dry run).
+    canUnregister: async (_repo, _path, o) =>
+      o?.assumeUnlocked === true || !(b.locked === true || b.reason?.code === 'locked'),
     removeWorktreeAdmin: async () => true,
     appendTombstone: async () => undefined,
     now: () => NOW

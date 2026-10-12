@@ -61,7 +61,11 @@ export interface ExecutorDeps {
    * one unlocked match. Asked BEFORE the folder is trashed, while git can still be asked to do
    * it instead; false means the unregistration would otherwise be skipped.
    */
-  canUnregister(repoPath: string, worktreePath: string): Promise<boolean>
+  canUnregister(
+    repoPath: string,
+    worktreePath: string,
+    opts?: { assumeUnlocked?: boolean }
+  ): Promise<boolean>
   appendTombstone(t: Tombstone): Promise<void>
   now(): number
 }

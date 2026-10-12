@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { cpSync as copyDir } from 'node:fs'
 import { createGitGuided } from '../src/main/gc/gc-guided'
 import { canUnregister } from '../src/main/reaper/worktree-admin-shell'
 
@@ -73,5 +74,25 @@ describe('unlocking a real locked worktree', () => {
 
   it('names git’s own complaint when the worktree is not locked', async () => {
     await expect(createGitGuided(git).unlock(repo, wt)).rejects.toThrow(/not locked/i)
+  })
+})
+
+describe('canUnregister as if unlocked, against real admin directories (delta 2)', () => {
+  const unlockedAnswer = (): Promise<boolean> =>
+    canUnregister(repo, wt, git, { assumeUnlocked: true })
+
+  it('a locked worktree can be unregistered once unlocked, and not before', async () => {
+    execFileSync('git', ['-C', repo, 'worktree', 'lock', wt])
+    expect(await canUnregister(repo, wt, git)).toBe(false)
+    expect(await unlockedAnswer()).toBe(true)
+  })
+
+  it('an AMBIGUOUS registration is still refused as if unlocked', async () => {
+    const admin = path.join(repo, '.git', 'worktrees')
+    copyDir(path.join(admin, path.basename(wt)), path.join(admin, 'stale-duplicate'), {
+      recursive: true
+    })
+    execFileSync('git', ['-C', repo, 'worktree', 'lock', wt])
+    expect(await unlockedAnswer()).toBe(false)
   })
 })

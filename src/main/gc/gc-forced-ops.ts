@@ -38,16 +38,21 @@ export function asExecutable(b: WorktreeBundle): WorktreeBundle {
   }
 }
 
-/** Writes `refs/archive/<branch>/<stamp>/{tip,wip}`; throws, and so refuses, if it cannot. */
-async function preserve(b: WorktreeBundle, deps: GcShellDeps, at: number): Promise<void> {
-  const { executor } = deps
+/** What would be archived, read-only: throws (so refuses) when nothing could preserve the worktree. */
+async function planPreserve(b: WorktreeBundle, deps: GcShellDeps, at: number) {
   const plan = planArchive(b.item, at)
   // A folder that would be removed with nothing preserving it is never removed.
   if (!plan.tip || !plan.wip) throw new Error('nothing would preserve this worktree')
-  const sha = await executor.resolveSha(b.item.repoPath, plan.tip.rev!)
+  const sha = await deps.executor.resolveSha(b.item.repoPath, plan.tip.rev!)
   if (!sha) throw new Error(`could not resolve '${plan.tip.rev}' before removal`)
-  await executor.archiveTip(b.item.repoPath, plan.tip.ref, sha)
-  await executor.archiveWip(b.item.repoPath, plan.wip.ref, plan.wip.worktreePath!)
+  return { tip: plan.tip, wip: plan.wip, sha }
+}
+
+/** Writes `refs/archive/<branch>/<stamp>/{tip,wip}`; throws, and so refuses, if it cannot. */
+async function preserve(b: WorktreeBundle, deps: GcShellDeps, at: number): Promise<void> {
+  const { tip, wip, sha } = await planPreserve(b, deps, at)
+  await deps.executor.archiveTip(b.item.repoPath, tip.ref, sha)
+  await deps.executor.archiveWip(b.item.repoPath, wip.ref, wip.worktreePath!)
 }
 
 /** The shell deps the force path runs on: the executor's dirty / unpushed / merged guards waived. */
@@ -87,8 +92,20 @@ export function createDryReprobe(
     const ops = createGcOps(deps)
     return (b) => ops.reprobe(b)
   }
-  const base = createGcOps(forcedShellDeps(deps, deps.executor.now()))
-  return (b) => base.reprobe(asExecutable(b))
+  const at = deps.executor.now()
+  const base = createGcOps(forcedShellDeps(deps, at))
+  return async (b) => {
+    const verdict = await base.reprobe(asExecutable(b))
+    if (!verdict.ok) return verdict
+    // The real reprobe archives before anything destructive; if that would fail, say so NOW, before a
+    // guided action has parked a session it cannot un-park.
+    try {
+      await planPreserve(b, deps, at)
+    } catch (err) {
+      return { ok: false, reason: `archive-failed: ${messageOf(err)}` }
+    }
+    return verdict
+  }
 }
 
 export function createForcedGcOps(deps: GcShellDeps): GcOps {

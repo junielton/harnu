@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { createGcOps } from '../src/main/gc/gc-shell'
+import { createDryReprobe } from '../src/main/gc/gc-forced-ops'
 import {
   COMPOSE_WORKING_DIR_LABEL,
   type InspectedContainer,
@@ -109,7 +110,6 @@ describe('recheck with assume', () => {
 
 // Found live: the dry run must judge the item exactly as the confirmed remove will — the review path
 // waives the dirty / unpushed guards (it archives first) — and must write nothing while doing it.
-import { createDryReprobe } from '../src/main/gc/gc-forced-ops'
 
 describe('the dry reprobe is the remove’s own reprobe, read-only', () => {
   const unpushed = () => {
@@ -139,5 +139,79 @@ describe('the dry reprobe is the remove’s own reprobe, read-only', () => {
     })
     void archiveTip
     await expect(createDryReprobe(world, true)(b)).resolves.toEqual({ ok: true })
+  })
+})
+
+// Delta 2 item 7: the dry run is as exact as the remove.
+describe('assume.unlock still asks git whether the worktree can be unregistered (delta 2)', () => {
+  it('asks canUnregister as if unlocked, instead of skipping the question', async () => {
+    const asked: Array<boolean | undefined> = []
+    const b = review({ locked: true })
+    const world = worldFor(b)
+    world.executor.canUnregister = async (_r, _p, o) => (asked.push(o?.assumeUnlocked), true)
+    expect(await createGcOps(world).reprobe({ ...b, assume: { unlock: true } })).toEqual({
+      ok: true
+    })
+    expect(asked).toEqual([true])
+  })
+
+  it('an ambiguous registration still refuses, lock or no lock', async () => {
+    const b = review({ locked: true })
+    const world = worldFor(b)
+    world.executor.canUnregister = async () => false
+    expect(await createGcOps(world).reprobe({ ...b, assume: { unlock: true } })).toEqual({
+      ok: false,
+      reason: 'cannot-unregister'
+    })
+  })
+
+  it('the real reprobe, without the assumption, asks the ordinary question', async () => {
+    const asked: Array<boolean | undefined> = []
+    const b = review()
+    const world = worldFor(b)
+    world.executor.canUnregister = async (_r, _p, o) => (asked.push(o?.assumeUnlocked), true)
+    await createGcOps(world).reprobe(b)
+    expect(asked).toEqual([undefined])
+  })
+})
+
+describe('the dry reprobe checks the archive is possible, read-only (delta 2)', () => {
+  const forcedItem = () => {
+    const b = review()
+    b.item = { ...b.item, branch: 'feat/x', justifiedBy: null, blockers: ['dirty'] }
+    return b
+  }
+
+  it('a tip that cannot be resolved refuses, before anything is parked', async () => {
+    const b = forcedItem()
+    const world = worldFor(b)
+    world.executor.resolveSha = async () => null
+    const r = await createDryReprobe(world, true)(b)
+    expect(r).toMatchObject({ ok: false })
+    expect((r as { reason: string }).reason).toMatch(/^archive-failed/)
+  })
+
+  it('a worktree with no branch has nothing to archive under, so it refuses', async () => {
+    const b = forcedItem()
+    b.item = { ...b.item, branch: null }
+    const r = await createDryReprobe(worldFor(b), true)(b)
+    expect((r as { reason: string }).reason).toMatch(/^archive-failed/)
+  })
+
+  it('and never writes a ref while checking', async () => {
+    const b = forcedItem()
+    const world = worldFor(b)
+    let wrote = 0
+    world.executor.archiveTip = async () => (wrote++, 'x')
+    world.executor.archiveWip = async () => (wrote++, 'x')
+    await createDryReprobe(world, true)(b)
+    expect(wrote).toBe(0)
+  })
+
+  it('the ordinary path has no archive to check', async () => {
+    const b = review()
+    const world = worldFor(b)
+    world.executor.resolveSha = async () => null
+    expect(await createDryReprobe(world, false)(b)).toEqual({ ok: true })
   })
 })
