@@ -8847,11 +8847,12 @@ volume), size right.
   pushes the operator to `rm -rf`, which skips the archive ref, the trash and every guard. So wherever Remove
   is unavailable or partial, the reason is **inline text**, never only a tooltip, and each cause links to the
   guided action that clears it. `lib/gc-guidance.ts` (`removalSummary`) derives all of it from
-  `removability()` and nothing else: no UI file names a cause of its own (a detached worktree appears only
-  while `removability()` still refuses it, and stops the day main can archive one).
+  `removability()` and nothing else: no UI file names a cause of its own (a detached worktree in review is no
+  group at all, since main archives and removes it; one outside review is still refused as an unsupported
+  kind, with no command).
   - **Selection bar.** A second line (`basis-full`, `text-caption`, `--text-3`, `data-testid="sel-why"`)
     under the buttons. Nothing removable: "{n} can't be removed: {groups}". Partly removable: "Removes {k} ·
-    {n} can't: {groups}". Each group is "{count} {cause}" (e.g. "11 detached (no branch)", "2 locked in git")
+    {n} can't: {groups}". Each group is "{count} {cause}" (e.g. "11 locked in git", "2 session open")
     as a link-style button (`--accent`, underline on hover, `data-testid="sel-guide-<reason>"`) that opens
     its guided action; groups run biggest first and are separated by " · ". When the refused items carry
     installed dependencies the **Dehydrate** button promotes its real bytes: "Dehydrate frees {size} and

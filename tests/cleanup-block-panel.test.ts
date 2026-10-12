@@ -1019,23 +1019,42 @@ describe('CleanupBlockPanel — every refusal has a guided action', () => {
     expect(w.get('[data-testid="panel-guide"]').text()).toBe('Remove the Keep mark')
   })
 
-  it('a detached worktree promotes Dehydrate with the bytes it frees, and shows the manual command', () => {
+  it('a refused worktree promotes Dehydrate with the bytes it frees, with no guide button of its own', () => {
     const block = blockOf(
       wt(
         'x',
         'review',
         1200 * MIB,
-        { kind: 'detached-worktree', branch: null, hydration: hydration() },
-        { reason: reviewReason('unknown-fate'), depsBytes: 480_000_000 }
+        { hydration: hydration() },
+        { reason: reviewReason('dirty'), depsBytes: 480_000_000, isMainCheckout: true }
       )
     )
     const w = mountPanel(block)
     expect(w.get('[data-testid="panel-dehydrate"]').text()).toContain(
       'Dehydrate frees 480 MB and keeps the code'
     )
-    expect(w.get('[data-testid="panel-remove-hint"]').text()).toContain('git worktree remove')
     // Dehydrate is its own button: the guide button does not repeat it.
     expect(has(w, 'panel-guide')).toBe(false)
+  })
+
+  // Unit A: a detached worktree is archived by its HEAD sha and removed from Needs review, so unit B's
+  // guided explanation for it is gone by itself: it was driven by removability(), nothing else.
+  it('a detached worktree in review has no refusal, no guide and no manual command', () => {
+    const w = mountPanel(
+      blockOf(
+        wt(
+          'x',
+          'review',
+          1200 * MIB,
+          { kind: 'detached-worktree', branch: null, hydration: hydration() },
+          { reason: reviewReason('unknown-fate'), depsBytes: 480_000_000 }
+        )
+      )
+    )
+    expect(has(w, 'panel-remove')).toBe(true)
+    expect(has(w, 'panel-remove-blocked')).toBe(false)
+    expect(has(w, 'panel-guide')).toBe(false)
+    expect(has(w, 'panel-remove-hint')).toBe(false)
   })
 
   it('an item Remove takes shows no guide at all', () => {

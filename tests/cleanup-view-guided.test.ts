@@ -121,12 +121,22 @@ async function tickAll(): Promise<void> {
 const toasts = (): string[] => useUiStore().toasts.map((t) => t.title)
 
 describe('the selection bar says why Remove is unavailable (AC-B1, AC-B8)', () => {
-  it('names the cause and the count inline, and promotes the manual way out for a detached worktree', async () => {
+  it('names the cause and the count inline for a refused selection', async () => {
+    install(snap([locked('l1'), locked('l2'), locked('l3')]))
+    await mountView()
+    await tickAll()
+    expect(text('sel-why')).toContain("3 can't be removed")
+    expect((el('sel-remove') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  // Unit A: a detached worktree is archived by its HEAD sha and removed from Needs review, so unit B's
+  // "detached (no branch)" refusal group is gone by itself: it was driven by removability(), nothing else.
+  it('says nothing about a detached worktree in review: Remove takes it', async () => {
     install(snap([detached('d1'), detached('d2'), detached('d3')]))
     await mountView()
     await tickAll()
-    expect(text('sel-why')).toBe("3 can't be removed: 3 detached (no branch)")
-    expect((el('sel-remove') as HTMLButtonElement).disabled).toBe(true)
+    expect(text('sel-why')).toBe('')
+    expect((el('sel-remove') as HTMLButtonElement).disabled).toBe(false)
   })
 })
 

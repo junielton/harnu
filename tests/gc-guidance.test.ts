@@ -25,25 +25,36 @@ function wt(
   return b
 }
 
+// A detached worktree is removable from Needs review (it is archived by its HEAD sha first), so the
+// refusal groups below need one outside review: that is still refused as an unsupported kind, the one way
+// Remove still turns a detached folder away. Its hint is gone too: `git worktree remove` would delete it
+// with nothing archived.
 const detached = (name: string, deps = 1_000_000_000) =>
-  wt(
-    name,
-    { depsBytes: deps },
-    {
-      kind: 'detached-worktree',
-      branch: null,
-      hydration:
-        deps > 0
-          ? ({
-              state: 'hydrated',
-              removable: ['node_modules'],
-              reclaimableBytes: deps,
-              canRehydrate: true
-            } as never)
-          : null
-    },
-    'unknown-fate'
+  outsideReview(
+    wt(
+      name,
+      { depsBytes: deps },
+      {
+        kind: 'detached-worktree',
+        branch: null,
+        hydration:
+          deps > 0
+            ? ({
+                state: 'hydrated',
+                removable: ['node_modules'],
+                reclaimableBytes: deps,
+                canRehydrate: true
+              } as never)
+            : null
+      },
+      'unknown-fate'
+    )
   )
+
+function outsideReview(b: ReturnType<typeof bundle>): ReturnType<typeof bundle> {
+  b.bucket = 'ready'
+  return b
+}
 
 function modelOf(bundles: ReturnType<typeof bundle>[]): GcModel {
   const snap: GcSnapshot = {
@@ -123,7 +134,15 @@ describe('guided action per refusal (AC-B3 … B8)', () => {
       return removalSummary(m, [...m.byId.keys()], NOW).refused[0]
     })()
     expect(s.action).toBe('dehydrate')
-    expect(s.hint).toContain('git worktree remove')
+    expect(s.hint).toBeUndefined()
+  })
+  it('a detached worktree in review is no refusal group: Remove takes it (unit A)', () => {
+    const b = detached('r')
+    b.bucket = 'review'
+    const m = modelOf([b])
+    const s = removalSummary(m, [...m.byId.keys()], NOW)
+    expect(s.removable).toHaveLength(1)
+    expect(s.refused).toEqual([])
   })
   it('a Keep mark → remove the mark', () => {
     expect(actionOf(wt('k', { keep: true }))).toBe('unkeep')
