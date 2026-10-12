@@ -393,7 +393,7 @@ export interface DialogRow {
   project: string | null
   /** The worktree may hold work no other branch has. */
   risk: boolean
-  /** The short HEAD sha of a detached worktree, whose commit is archived by it; null for any other row. */
+  /** The 12-character HEAD sha (the one its archive ref is named with) of a detached worktree, whose commit is archived by it; null for any other row. */
   detachedAt: string | null
 }
 
@@ -431,7 +431,7 @@ export function dialogRows(model: GcModel, ids: readonly string[]): DialogRow[] 
       // Any review worktree may hold work no other branch has. The reasons that once read as safe
       // (an idle session, a shared stack) are refused outright now and never reach this dialog.
       risk: b.kind === 'worktree' && b.bucket === 'review',
-      detachedAt: isDetachedBlock(b) ? (b.bundle?.localTip ?? '').slice(0, 7) || null : null
+      detachedAt: isDetachedBlock(b) ? (b.bundle?.localTip ?? '').slice(0, 12) || null : null
     })
   }
   return rows
