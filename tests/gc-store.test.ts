@@ -382,6 +382,17 @@ describe('gc store', () => {
     expect(notify.mock.calls[2][0].description).toContain('git is gone')
   })
 
+  it('an answer that is not a list (an older preload) is ignored, never thrown on (delta 2)', async () => {
+    installApi()
+    ;(
+      globalThis as unknown as { window: { api: Record<string, unknown> } }
+    ).window.api.gcRecovered = vi.fn(async () => () => undefined)
+    const notify = vi.spyOn(useNotificationsStore(), 'notify')
+    await useGcStore().init()
+    await vi.runAllTimersAsync()
+    expect(notify).not.toHaveBeenCalled()
+  })
+
   it('names the refusal in the toast when every refused item has the same reason', async () => {
     const api = installApi()
     const gc = useGcStore()

@@ -328,7 +328,9 @@ export const useGcStore = defineStore('gc', () => {
   async function reportRecovered(): Promise<void> {
     let items: Awaited<ReturnType<typeof window.api.gcRecovered>> = []
     try {
-      items = (await window.api.gcRecovered()) ?? []
+      const answer: unknown = await window.api.gcRecovered()
+      if (!Array.isArray(answer)) return
+      items = answer as typeof items
     } catch {
       return
     }
