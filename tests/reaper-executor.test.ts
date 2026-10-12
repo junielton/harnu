@@ -671,7 +671,11 @@ describe('cleanItem — a detached worktree (NDE-A, AC-A1/A2)', () => {
     })
     const result = await cleanItem(detachedItem(), { deleteRemote: false }, deps)
     expect(result.ok).toBe(true)
-    expect(deps.archiveReflog).toHaveBeenCalledWith('/repo', `${DETACHED_NS}/reflog`, '/repo/wt-det')
+    expect(deps.archiveReflog).toHaveBeenCalledWith(
+      '/repo',
+      `${DETACHED_NS}/reflog`,
+      '/repo/wt-det'
+    )
     expect(order).toEqual(['wip', 'reflog', 'trash'])
   })
 
@@ -698,7 +702,6 @@ describe('cleanItem — a detached worktree (NDE-A, AC-A1/A2)', () => {
   })
 
   it('halts at archive and trashes nothing when the HEAD cannot be resolved', async () => {
-
     const { deps } = fakeDeps({ resolveSha: vi.fn(async () => null) })
     const result = await cleanItem(detachedItem(), { deleteRemote: false }, deps)
 

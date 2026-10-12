@@ -196,11 +196,11 @@ describe('removing a detached worktree from review (AC-A1, AC-A2)', () => {
     await runBundle(detachedBundle(), createForcedGcOps(realWorld()), FORCE)
     const ns = `refs/archive/detached/bisect-1-${head.slice(0, 12)}`
     // The reprobe and the executor both write the same ref in one run: no sibling, no second parent.
-    expect(git(repo, 'rev-list', '--parents', '-n', '1', `${ns}/wip`).trim().split(' ')).toHaveLength(2)
-    expect(git(repo, 'show', '--stat', '--format=%s', `${ns}/wip`)).toContain('notes.md')
     expect(
-      git(repo, 'for-each-ref', '--format=%(refname)', `${ns}/wip-*`).trim()
-    ).toBe('')
+      git(repo, 'rev-list', '--parents', '-n', '1', `${ns}/wip`).trim().split(' ')
+    ).toHaveLength(2)
+    expect(git(repo, 'show', '--stat', '--format=%s', `${ns}/wip`)).toContain('notes.md')
+    expect(git(repo, 'for-each-ref', '--format=%(refname)', `${ns}/wip-*`).trim()).toBe('')
   })
 
   it('keeps the first wip of an earlier removal under a timestamped sibling ref, not as a second parent', async () => {
@@ -216,7 +216,9 @@ describe('removing a detached worktree from review (AC-A1, AC-A2)', () => {
     const secondWip = git(repo, 'rev-parse', `${ns}/wip`).trim()
     expect(secondWip).not.toBe(firstWip)
     // The new wip is still a plain diff against the tip ...
-    expect(git(repo, 'rev-list', '--parents', '-n', '1', secondWip).trim().split(' ')).toHaveLength(2)
+    expect(git(repo, 'rev-list', '--parents', '-n', '1', secondWip).trim().split(' ')).toHaveLength(
+      2
+    )
     // ... and the first one is reachable under `wip-<yyyymmddhhmmss>`, so a gc cannot reclaim it.
     const siblings = git(repo, 'for-each-ref', '--format=%(refname) %(objectname)', `${ns}/wip-*`)
       .trim()
@@ -246,6 +248,8 @@ describe('removing a detached worktree from review (AC-A1, AC-A2)', () => {
     git(repo, 'gc', '--prune=now', '-q')
     git(repo, 'cat-file', '-e', `${b}^{commit}`)
     const ns = `refs/archive/detached/bisect-1-${head.slice(0, 12)}`
-    expect(git(repo, 'for-each-ref', '--format=%(refname)', `${ns}/reflog`).trim()).toContain(b.slice(0, 12))
+    expect(git(repo, 'for-each-ref', '--format=%(refname)', `${ns}/reflog`).trim()).toContain(
+      b.slice(0, 12)
+    )
   })
 })

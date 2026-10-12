@@ -439,7 +439,8 @@ describe('CleanupBulkConfirmDialog: the reason is the translated one for every c
       )
       const el = q('[data-testid="bulk-untracked"]')!
       expect(el).not.toBeNull()
-      for (const p of ['notes.md', 'sketch/a.png', 'deep/er/b.txt']) expect(el.textContent).toContain(p)
+      for (const p of ['notes.md', 'sketch/a.png', 'deep/er/b.txt'])
+        expect(el.textContent).toContain(p)
       expect(el.textContent).toContain('3')
     })
 
