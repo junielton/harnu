@@ -312,3 +312,26 @@ describe('CleanupListView (the List fallback)', () => {
     expect(r.find((x) => x.text().includes('c2'))!.attributes('disabled')).toBeDefined()
   })
 })
+
+// "No dead ends" (unit B): a row whose Remove main would refuse is not a dimmed icon with a tooltip —
+// it names the way out as a link and opens the same guided action as the panel and the selection bar.
+describe('CleanupReviewList: a refused row offers its guided action', () => {
+  const lockedModel = () =>
+    modelOf([wt('l', 'review', GIB, {}, { reason: reviewReason('locked' as never), locked: true })])
+
+  it('shows the action next to the inert Remove and emits it with the reason', async () => {
+    const m = lockedModel()
+    const w = mountList(m.review)
+    const guide = w.get('[data-testid="review-guide"]')
+    expect(guide.text()).toBe('Unlock and remove…')
+    await guide.trigger('click')
+    expect(w.emitted('guide')).toEqual([[m.review[0].id, 'unlock-remove', 'locked']])
+    // The click is the guide's own: it does not select the row.
+    expect(w.emitted('select')).toBeUndefined()
+  })
+
+  it('a row Remove takes has no guide', () => {
+    const w = mountList(reviewModel().review)
+    expect(w.find('[data-testid="review-guide"]').exists()).toBe(false)
+  })
+})
