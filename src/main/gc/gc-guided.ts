@@ -240,16 +240,16 @@ async function stackViews(
   const main = canonicalPathKey(canonical(b.item.repoPath).path, deps.platform)
   // The main checkout is its OWN tree: Harnu keeps worktrees inside it (`.claude/worktrees/*`), and git
   // may list others, so a folder under any of those belongs to that worktree, not to main.
-  const nestedRoots = [
-    ...listed
-      .map((p) => canonicalPathKey(canonical(p).path, deps.platform))
-      .filter((p) => p !== main),
-    `${main}/.claude/worktrees`
-  ]
+  const listedRoots = listed
+    .map((p) => canonicalPathKey(canonical(p).path, deps.platform))
+    .filter((p) => p !== main)
+  const harnuRoot = `${main}/.claude/worktrees`
   const ownsMain = (d: string): boolean =>
     (d === main || isInside(d, main)) &&
-    !nestedRoots.some((r) => d !== r && isInside(d, r)) &&
-    d !== `${main}/.claude/worktrees`
+    // A git-listed worktree owns its root itself and everything under it.
+    !listedRoots.some((r) => isInside(d, r)) &&
+    // Harnu's own layout: the folders under .claude/worktrees (the folder holding them is main's).
+    !(d !== harnuRoot && isInside(d, harnuRoot))
   return Promise.all(
     wanted.map(async (stack): Promise<StackView> => {
       const dirs = [
