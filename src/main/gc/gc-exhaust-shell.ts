@@ -311,11 +311,15 @@ async function writeSettled(settled: ReadonlySet<string>): Promise<void> {
  * them. An entry the user emptied, restored or replaced stops counting (it is settled); one that
  * cannot be checked is reported apart and never counted as space in the trash. Never throws.
  */
-export async function gatherTrash(env: TrashEnv = defaultTrashEnv()): Promise<GcTrashCard> {
+export async function gatherTrash(
+  env: TrashEnv = defaultTrashEnv(),
+  opts: { persist?: boolean } = {}
+): Promise<GcTrashCard> {
   try {
     const [journal, settled] = await Promise.all([readJournalCached(), readSettled()])
     const ledger = await observeTrashEntries(trashedEntries(journal, settled), env)
-    if (ledger.gone.length > 0) {
+    // Tidying the ledger writes a file, so a read-only gather (an agent's `list_cleanup`) never does.
+    if (opts.persist !== false && ledger.gone.length > 0) {
       const next = new Set(settled)
       for (const e of ledger.gone) next.add(e.key)
       await writeSettled(next).catch(() => undefined)

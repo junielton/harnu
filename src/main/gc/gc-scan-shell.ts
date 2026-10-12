@@ -226,7 +226,12 @@ export async function gatherGc(
    * branch-delete) leaves the folder gone but a git registration and a branch behind: such an
    * item stays visible, so what is left is never silently dropped.
    */
-  keepGone: ReadonlySet<string> = new Set()
+  keepGone: ReadonlySet<string> = new Set(),
+  /**
+   * False for a read-only gather (an agent's `list_cleanup`): it must not write a file, so the trash
+   * ledger is read but not tidied.
+   */
+  persisting = true
 ): Promise<GcGathered> {
   const snap = lastSnapshot()
   const listed = snap?.repos.flatMap((r) => r.items) ?? []
@@ -432,6 +437,6 @@ export async function gatherGc(
     goneItemIds,
     // Their own try/catch inside: a git or trash hiccup never fails the gather.
     archives: await gatherArchives(prefs, now),
-    trash: await gatherTrash()
+    trash: await gatherTrash(undefined, { persist: persisting })
   }
 }
