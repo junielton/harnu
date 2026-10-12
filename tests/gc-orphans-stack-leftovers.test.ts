@@ -504,3 +504,22 @@ describe('a compose name shared with a live folder is never a leftover (delta-2 
     expect(src).toMatch(/composeDefaultProject/)
   })
 })
+
+describe('no stack leftovers while a compose name is unresolved (delta-3 item 2)', () => {
+  const args = {
+    remembered: new Map([['pj', [GONE]]]),
+    dirExists: dirGone,
+    containers: [container('c1', 'pj')],
+    networks: [{ id: 'n1', name: 'pj_default', project: 'pj' }],
+    orphanVolumes: [] as OrphanVolumeItem[]
+  }
+  it('offers nothing while a pin could not be resolved, like the orphan-volume planner', () => {
+    expect(planStackLeftovers(args)).toHaveLength(1)
+    expect(planStackLeftovers({ ...args, protectAll: true })).toEqual([])
+  })
+  it('the gather passes the unresolved flag it already computes for volumes', () => {
+    const src = readFileSync(new URL('../src/main/gc/gc-scan-shell.ts', import.meta.url), 'utf8')
+    const call = src.slice(src.indexOf('planStackLeftovers({'))
+    expect(call.slice(0, 900)).toMatch(/protectAll:\s*guards\.unresolved/)
+  })
+})
