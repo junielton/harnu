@@ -455,6 +455,22 @@ describe('gc store', () => {
       expect(notify).not.toHaveBeenCalled()
     })
 
+    it('a lock refused for a mismatch shows no error toast: the notice itself changes (delta 4)', async () => {
+      recoveryItems = [item({ announced: true, kind: 'unlock', notice: 'lock-skipped' })]
+      installApi()
+      const gc = useGcStore()
+      const toast = vi.spyOn(useUiStore(), 'pushToast')
+      await gc.init()
+      await vi.runAllTimersAsync()
+      api().gcRecoveryAct.mockResolvedValueOnce({
+        ok: false,
+        error: 'x',
+        mismatch: 'the gitdir differs'
+      })
+      await gc.answerRecovery('n1', 'lock')
+      expect(toast).not.toHaveBeenCalled()
+    })
+
     it('answering a notice asks main, then lists again; a refusal says why in a toast', async () => {
       recoveryItems = [item({ announced: true })]
       installApi()

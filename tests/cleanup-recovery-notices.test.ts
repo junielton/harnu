@@ -62,6 +62,25 @@ describe('CleanupRecoveryNotices', () => {
     expect(w.emitted('answer')).toEqual([['l1', 'lock']])
   })
 
+  it('after the check fails again, the button becomes "Lock this worktree anyway" and names the mismatch (delta 4)', async () => {
+    const w = mountIt([
+      item({
+        id: 'l3',
+        kind: 'unlock',
+        notice: 'lock-skipped',
+        mismatch: 'the admin directory is a different one'
+      })
+    ])
+    expect(w.find('[data-testid="recovery-lock"]').exists()).toBe(false)
+    expect(w.get('[data-testid="recovery-notice"]').text()).toContain(
+      'the admin directory is a different one'
+    )
+    const anyway = w.get('[data-testid="recovery-lock-anyway"]')
+    expect(anyway.text()).toBe('Lock this worktree anyway')
+    await anyway.trigger('click')
+    expect(w.emitted('answer')).toEqual([['l3', 'lock-anyway']])
+  })
+
   it('a lock that failed to go back says the LOCK failed, with what git said (delta 4)', () => {
     const w = mountIt([
       item({ id: 'l2', kind: 'unlock', notice: 'lock-failed', detail: 'git is gone' })

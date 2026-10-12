@@ -390,3 +390,74 @@ describe('an unknown birth time is not a match (delta 4)', () => {
     expect(calls.lock).toHaveLength(1)
   })
 })
+
+// Delta 4 item 3: "Lock again" checks who the worktree is NOW, and never locks silently.
+describe('Lock again re-checks the identity at click time (delta 4)', () => {
+  const skipped = async (identityNow: LockIdentity | null) => {
+    const j = createPrepJournal(file, 'previous-run')
+    await j.begin(unlockEntry)
+    const w = world({ identityOf: async () => ({ ...ID, adminId: 'other' }) })
+    await recoverPrepJournal(boot(), w.deps)
+    const [item] = await listRecovery(j)
+    const click = world({ identityOf: async () => identityNow })
+    return { j, item, click }
+  }
+
+  it('an identity that matches now: locked with the recorded reason', async () => {
+    const { j, item, click } = await skipped(ID)
+    expect(await actOnRecovery(j, item.id, 'lock', click.deps)).toEqual({ ok: true })
+    expect(click.calls.lock).toEqual([['/r/wt', 'café "x" 日本']])
+    expect(await j.entries()).toEqual([])
+  })
+
+  it('an identity that still does not match: NOT locked, and the mismatch is named', async () => {
+    const { j, item, click } = await skipped({ ...ID, adminId: 'other' })
+    const r = await actOnRecovery(j, item.id, 'lock', click.deps)
+    expect(r).toMatchObject({ ok: false })
+    expect((r as { mismatch: string }).mismatch).toContain('admin directory')
+    expect(click.calls.lock).toEqual([])
+    expect((await listRecovery(j))[0].mismatch).toContain('admin directory')
+  })
+
+  it.each([
+    ['gitdir', { gitdir: '/elsewhere/.git' }, 'gitdir'],
+    ['HEAD', { head: 'b'.repeat(40) }, 'commit'],
+    ['creation time', { birth: 0 }, 'creation time']
+  ])('names a %s mismatch', async (_n, change, word) => {
+    const { j, item, click } = await skipped({ ...ID, ...change })
+    const r = await actOnRecovery(j, item.id, 'lock', click.deps)
+    expect((r as { mismatch: string }).mismatch).toContain(word)
+  })
+
+  it('git no longer has a registration for it: said, not locked', async () => {
+    const { j, item, click } = await skipped(null)
+    const r = await actOnRecovery(j, item.id, 'lock', click.deps)
+    expect((r as { mismatch: string }).mismatch).toContain('no registration')
+    expect(click.calls.lock).toEqual([])
+  })
+
+  it('"Lock this worktree anyway" is only possible after the mismatch was shown', async () => {
+    const { j, item, click } = await skipped({ ...ID, adminId: 'other' })
+    const early = await actOnRecovery(j, item.id, 'lock-anyway', click.deps)
+    expect(early).toMatchObject({ ok: false })
+    expect(click.calls.lock).toEqual([])
+    await actOnRecovery(j, item.id, 'lock', click.deps)
+    expect(await actOnRecovery(j, item.id, 'lock-anyway', click.deps)).toEqual({ ok: true })
+    expect(click.calls.lock).toEqual([['/r/wt', 'café "x" 日本']])
+    expect(await j.entries()).toEqual([])
+  })
+
+  it('anyway still needs the folder, and does not fit a stack notice', async () => {
+    const { j, item, click } = await skipped({ ...ID, adminId: 'other' })
+    await actOnRecovery(j, item.id, 'lock', click.deps)
+    const gone = world({ exists: async () => false })
+    expect(await actOnRecovery(j, item.id, 'lock-anyway', gone.deps)).toMatchObject({ ok: false })
+    const j2 = createPrepJournal(file, 'previous-run')
+    await j2.begin(stopEntry)
+    await recoverPrepJournal(boot(), world().deps)
+    const stack = (await listRecovery(j2)).find((i) => i.kind === 'stop-stack')!
+    expect(await actOnRecovery(j2, stack.id, 'lock-anyway', world().deps)).toMatchObject({
+      ok: false
+    })
+  })
+})
