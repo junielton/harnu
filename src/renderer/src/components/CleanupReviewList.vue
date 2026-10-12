@@ -233,6 +233,15 @@ function onRowKey(e: KeyboardEvent, id: string): void {
           >
             {{ t('cleanup.gc.review.resume', { step: t(stepKey(resumeHint(b)!.step as GcStep)) }) }}
           </span>
+          <button
+            v-if="removeBlockedText(b) !== null && guideOf(b)"
+            type="button"
+            class="cursor-pointer whitespace-nowrap rounded-sm px-1 text-caption text-accent underline-offset-2 hover:underline"
+            data-testid="review-guide"
+            @click.stop="emit('guide', b.id, guideOf(b)!.action, guideOf(b)!.reason)"
+          >
+            {{ guideOf(b)!.label }}
+          </button>
           <CleanupOpinionChip :opinion="opinionOf(b.id)" :pending="isAsking(b.id)" />
         </span>
 
@@ -260,15 +269,6 @@ function onRowKey(e: KeyboardEvent, id: string): void {
             @click="emit('keep', b.id)"
           >
             <Bookmark :size="13" :stroke-width="1.7" />
-          </button>
-          <button
-            v-if="removeBlockedText(b) !== null && guideOf(b)"
-            type="button"
-            class="cursor-pointer whitespace-nowrap rounded-sm px-1 text-caption text-accent underline-offset-2 hover:underline"
-            data-testid="review-guide"
-            @click.stop="emit('guide', b.id, guideOf(b)!.action, guideOf(b)!.reason)"
-          >
-            {{ guideOf(b)!.label }}
           </button>
           <button
             v-if="removeBlockedText(b) === null"
