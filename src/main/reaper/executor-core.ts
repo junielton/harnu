@@ -48,6 +48,12 @@ export interface ExecutorDeps {
   archiveTip(repoPath: string, ref: string, sha: string): Promise<string>
   /** Captures a worktree's tracked + untracked working state and points `ref` at it. */
   archiveWip(repoPath: string, ref: string, worktreePath: string): Promise<string>
+  /**
+   * Points a ref under `refPrefix` at each commit in the HEAD reflog of `worktreePath` that no ref
+   * reaches, and returns the refs written. A detached worktree only: its branchless HEAD reflog is the
+   * one place such a commit lives, and it goes with the folder.
+   */
+  archiveReflog(repoPath: string, refPrefix: string, worktreePath: string): Promise<string[]>
   detachSidebar(path: string): Promise<void>
   /**
    * Unregisters exactly this worktree from git: removes its own admin directory, found by the
@@ -257,6 +263,9 @@ export async function cleanItem(
     if (plan.wip) {
       await deps.archiveWip(item.repoPath, plan.wip.ref, plan.wip.worktreePath!)
       archived.wip = plan.wip.ref
+    }
+    if (item.kind === 'detached-worktree' && plan.namespace && item.path) {
+      await deps.archiveReflog(item.repoPath, `${plan.namespace}/reflog`, item.path)
     }
   })
 

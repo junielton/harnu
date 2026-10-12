@@ -38,7 +38,10 @@ export function asExecutable(b: WorktreeBundle): WorktreeBundle {
   }
 }
 
-/** Writes `refs/archive/<branch>/<stamp>/{tip,wip}`; throws, and so refuses, if it cannot. */
+/**
+ * Writes `refs/archive/<branch>/<stamp>/{tip,wip}`, or `refs/archive/detached/<folder>-<sha>/{tip,wip,reflog/*}`
+ * for a detached worktree; throws, and so refuses, if it cannot.
+ */
 async function preserve(b: WorktreeBundle, deps: GcShellDeps, at: number): Promise<void> {
   const { executor } = deps
   const plan = planArchive(b.item, at)
@@ -48,6 +51,10 @@ async function preserve(b: WorktreeBundle, deps: GcShellDeps, at: number): Promi
   if (!sha) throw new Error(`could not resolve '${plan.tip.rev}' before removal`)
   await executor.archiveTip(b.item.repoPath, plan.tip.ref, sha)
   await executor.archiveWip(b.item.repoPath, plan.wip.ref, plan.wip.worktreePath!)
+  // Commits only a detached HEAD's reflog reaches go with the folder: keep them reachable too.
+  if (b.item.kind === 'detached-worktree' && plan.namespace && b.item.path) {
+    await executor.archiveReflog(b.item.repoPath, `${plan.namespace}/reflog`, b.item.path)
+  }
 }
 
 export function createForcedGcOps(deps: GcShellDeps): GcOps {

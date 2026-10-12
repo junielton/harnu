@@ -141,3 +141,39 @@ export async function archiveWip(
     await fs.rm(tmpIndex, { force: true }).catch(() => undefined)
   }
 }
+
+/** The most reflog entries read for one worktree: git expires them after 90 days by default anyway. */
+const REFLOG_LIMIT = 500
+
+/**
+ * Points a ref under `refPrefix` at every commit in the HEAD reflog of `worktreePath` that no ref
+ * reaches, and returns the ref names written.
+ *
+ * A detached HEAD has no branch, so a commit made while detached and then left behind (check out
+ * another commit, a rebase or bisect that moved on) is held by nothing but that worktree's own
+ * reflog, which goes with the folder. Newest first: archiving a commit makes its ancestors
+ * reachable, so the older entries it contains are skipped. The ref is named by the commit's own
+ * short sha, so a second removal can never overwrite a different commit's ref. Throws if the reflog
+ * cannot be read or a ref cannot be written, which aborts the item before anything is trashed.
+ */
+export async function archiveReflog(
+  repoPath: string,
+  refPrefix: string,
+  worktreePath: string
+): Promise<string[]> {
+  const entries = (await git(worktreePath, ['reflog', 'show', '--format=%H', 'HEAD']))
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+  const written: string[] = []
+  for (const sha of [...new Set(entries)].slice(0, REFLOG_LIMIT)) {
+    // An entry whose object was pruned cannot be preserved, and is not a commit we could lose.
+    if (!(await resolveRef(repoPath, sha))) continue
+    const holders = await git(repoPath, ['for-each-ref', '--contains', sha, '--count=1'])
+    if (holders.trim() !== '') continue
+    const ref = `${refPrefix}/${sha.slice(0, 12)}`
+    await git(repoPath, ['update-ref', ref, sha])
+    written.push(ref)
+  }
+  return written
+}
