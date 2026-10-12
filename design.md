@@ -1134,8 +1134,12 @@ Badges).
 to `keybindings.json` and apply live. A ghost **Reset all** sits top-right, disabled
 when every row is already a default.
 
-**One row per rebindable action** (the 17; the reserved `app.*` five are not shown —
-they cannot be rebound). Left: the action name (`--text-2` 12px, from
+**One row per rebindable action** (the 24; the reserved `app.*` five are not shown —
+they cannot be rebound). Seven of them — the Topbar's per-folder actions (`view.roadmap`,
+`view.prStack`, `folder.openInFileManager`, `folder.openInVSCode`,
+`folder.openGithubPulls`, `folder.browseFiles`, `folder.newTerminal`) — ship with no
+default chord, so their rows start on the empty "Set a shortcut…" state. They are
+`menu: true`, backed by a native **Folder** menu, so a bound chord fires over the terminal. Left: the action name (`--text-2` 12px, from
 `keybindings.actions.<id>`). Then the **capture control** — a `<kbd>`-styled button
 showing the resolved chord; empty rows read "Set a shortcut…" in `--text-4`. Clicking
 it enters **recording**: the button border goes `--accent-line`, the label reads
@@ -1155,7 +1159,8 @@ new chord is written and the control leaves recording.
   clash is visible; the chord dispatches exactly once — the first-registered action
   (`App.vue` declaration order) fires and the others stay inert until you resolve it.
 - **↺ Reset** — ghost button, drops this row's override. Hidden on a default row.
-- **⌫ Unbind** — ghost button, sets the chord to `null`. Hidden when already unbound.
+- **⌫ Unbind** — ghost button, sets the chord to `null`. Hidden whenever the row has no
+  chord (already unbound, or a no-default action not yet bound).
 
 **Reset all** clears every override at once (writes `[]`). Like the per-row Reset it
 goes through `keybindings.json`, so a hand-editor and this pane never disagree —

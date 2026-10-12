@@ -36,9 +36,9 @@ const isMac = process.platform === 'darwin'
  * to the canonical default from `keybindings-core.ts` otherwise. Reserved ids
  * (`app.*`) are never in the resolved map, so they always take their default.
  *
- * Returns `undefined` when the action is unbound (`"key": null`) so the menu
- * item is built without an accelerator — the OS-level chord goes away, matching
- * the renderer.
+ * Returns `undefined` when the action is unbound (`"key": null`), or has no
+ * default chord and no override, so the menu item is built without an
+ * accelerator — the OS-level chord goes away, matching the renderer.
  *
  * Throws only on a programming error: a chord that does not parse / is not an
  * accelerator. Default chords are asserted by `keybindings-core.test.ts`; a
@@ -205,6 +205,53 @@ export function buildAppMenu(
           label: 'Forward',
           accelerator: isMac ? 'Cmd+]' : 'Alt+Right',
           click: (): void => emit('nav.forward')
+        }
+      ]
+    },
+
+    {
+      // The Topbar's per-folder actions. They ship with no default accelerator;
+      // the items exist so a chord the user binds in keybindings.json is owned at
+      // the OS level (and so fires over the terminal pane), like every other
+      // menu-backed action.
+      label: 'F&older',
+      submenu: [
+        {
+          label: 'Roadmap Board',
+          accelerator: a('view.roadmap'),
+          click: (): void => emit('view.roadmap')
+        },
+        {
+          label: 'PR Stack',
+          accelerator: a('view.prStack'),
+          click: (): void => emit('view.prStack')
+        },
+        { type: 'separator' },
+        {
+          label: 'Browse Files',
+          accelerator: a('folder.browseFiles'),
+          click: (): void => emit('folder.browseFiles')
+        },
+        {
+          label: 'New Terminal',
+          accelerator: a('folder.newTerminal'),
+          click: (): void => emit('folder.newTerminal')
+        },
+        { type: 'separator' },
+        {
+          label: 'Open in File Manager',
+          accelerator: a('folder.openInFileManager'),
+          click: (): void => emit('folder.openInFileManager')
+        },
+        {
+          label: 'Open in VS Code',
+          accelerator: a('folder.openInVSCode'),
+          click: (): void => emit('folder.openInVSCode')
+        },
+        {
+          label: 'Pull Requests on GitHub',
+          accelerator: a('folder.openGithubPulls'),
+          click: (): void => emit('folder.openGithubPulls')
         }
       ]
     },

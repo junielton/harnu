@@ -70,6 +70,23 @@ describe('setBinding', () => {
   })
 })
 
+describe('an action with no default chord', () => {
+  it('starts with no chord, takes one, and resets back to none', async () => {
+    const store = useKeybindingsStore()
+
+    expect(store.resolved.byId['view.roadmap']?.keys).toBeNull()
+    expect(store.resolved.byId['view.roadmap']?.source).toBe('default')
+
+    await store.setBinding('view.roadmap', 'Cmd+Shift+M')
+    expect(store.resolved.byId['view.roadmap']?.keys).toBe('Cmd+Shift+M')
+    expect(lastSavedResolved().byId['view.roadmap']?.source).toBe('override')
+
+    await store.resetBinding('view.roadmap')
+    expect(store.resolved.byId['view.roadmap']?.keys).toBeNull()
+    expect(store.resolved.byId['view.roadmap']?.source).toBe('default')
+  })
+})
+
 describe('resetBinding', () => {
   it('drops one override and leaves the rest', async () => {
     const store = useKeybindingsStore()

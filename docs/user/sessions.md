@@ -129,6 +129,12 @@ a binding written as `Cmd+K` is `⌘K` on a Mac and `Ctrl+K` elsewhere.
 | `Alt+→` / `Cmd+]`  | Forward again after going back                       |
 | Arrow keys / Enter | Move and activate the keyboard cursor in the sidebar |
 
+The Topbar's folder actions — roadmap board, PR Stack, open in file manager,
+open in VS Code, pull requests on GitHub, Browse files, and open a terminal —
+have no shortcut out of the box, but you can give each one a chord (see
+[Customizing shortcuts](#customizing-shortcuts)). They're also in the native
+**Folder** menu, so a chord you bind works even while the terminal has focus.
+
 Renderer-only shortcuts (`Cmd/Ctrl+Shift+A`, `+Shift+B`, `+Shift+D`, and the
 sidebar arrow keys) don't fire while the terminal pane has keyboard focus —
 the terminal captures those keys. The rest are bound in the native menu and
@@ -148,9 +154,15 @@ It's a VS Code-shaped array, one entry per action, merged over the defaults:
 [
   { "key": "Cmd+J", "command": "view.review" },
   { "key": "Cmd+Shift+K", "command": "app.search" },
-  { "key": null, "command": "session.resumeLast" } // unbind a default
+  { "key": null, "command": "session.resumeLast" }, // unbind a default
+  { "key": "Cmd+Shift+M", "command": "view.roadmap" } // bind an action with no default
 ]
 ```
+
+The Topbar's folder actions have no default chord. Their command ids are
+`view.roadmap`, `view.prStack`, `folder.openInFileManager`,
+`folder.openInVSCode`, `folder.openGithubPulls`, `folder.browseFiles`, and
+`folder.newTerminal`.
 
 - `Cmd` means ⌘ on macOS and `Ctrl` on Linux/Windows — one file works on every
   platform. `//` and `/* */` comments are allowed.

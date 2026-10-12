@@ -43,6 +43,7 @@ import { useCompanionStore } from './stores/companion'
 import { useShortcuts, pushScope, popScope, activeScope } from './composables/useShortcuts'
 import { isMac } from './lib/platform'
 import { useKeybindingsStore } from './stores/keybindings'
+import { useFolderActions } from './composables/useFolderActions'
 import { DESCRIPTOR_BY_ID, type ShortcutActionId } from '../../main/keybindings-core'
 import { useTerminalFocus } from './composables/useTerminalFocus'
 import type { Session } from './stores/sessions'
@@ -61,6 +62,7 @@ const companion = useCompanionStore()
 // defaults synchronously; `keybindings.init()` (main.ts) loads the file, and
 // `useShortcuts` below re-keys its renderer watchers whenever `resolved` changes.
 const keybindings = useKeybindingsStore()
+const folderActions = useFolderActions()
 
 // T22: any interactive overlay shadows global shortcuts. One aggregate boolean
 // (NOT per-surface pushes) so exactly one 'modal' is ever on the stack — the
@@ -599,6 +601,60 @@ useShortcuts(
         const folder = sessions.activeFolderPath
         if (folder) ui.toggleReview(folder)
       }
+    },
+    // The Topbar's per-folder actions (roadmap board, PR Stack, open folder,
+    // VS Code, GitHub pulls, Browse files, terminal). They ship with no default
+    // chord — `kb()` is `undefined` until the user binds one — and run the same
+    // `useFolderActions` code as the Topbar buttons. Each no-ops with no active
+    // folder.
+    {
+      id: 'view.roadmap',
+      scope: 'global',
+      keys: kb('view.roadmap'),
+      enabled: () => !!sessions.activeFolderPath,
+      handler: () => folderActions.toggleRoadmap()
+    },
+    {
+      id: 'view.prStack',
+      scope: 'global',
+      keys: kb('view.prStack'),
+      enabled: () => !!sessions.activeFolderPath,
+      handler: () => folderActions.togglePrStack()
+    },
+    {
+      id: 'folder.openInFileManager',
+      scope: 'global',
+      keys: kb('folder.openInFileManager'),
+      enabled: () => !!sessions.activeFolderPath,
+      handler: () => folderActions.openInFileManager()
+    },
+    {
+      id: 'folder.openInVSCode',
+      scope: 'global',
+      keys: kb('folder.openInVSCode'),
+      enabled: () => !!sessions.activeFolderPath,
+      handler: () => folderActions.openInVSCode()
+    },
+    {
+      id: 'folder.openGithubPulls',
+      scope: 'global',
+      keys: kb('folder.openGithubPulls'),
+      enabled: () => !!sessions.activeFolderPath,
+      handler: () => folderActions.openGithubPulls()
+    },
+    {
+      id: 'folder.browseFiles',
+      scope: 'global',
+      keys: kb('folder.browseFiles'),
+      enabled: () => !!sessions.activeFolderPath,
+      handler: () => folderActions.browseFiles()
+    },
+    {
+      id: 'folder.newTerminal',
+      scope: 'global',
+      keys: kb('folder.newTerminal'),
+      enabled: () => !!sessions.activeFolderPath,
+      handler: () => folderActions.newTerminal()
     },
     {
       id: 'session.resumeLast',

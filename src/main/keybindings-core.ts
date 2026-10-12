@@ -26,7 +26,8 @@
 /* -------------------------------------------------------------------------- */
 
 /**
- * Every action id that can be dispatched. The 17 rebindable renderer bindings
+ * Every action id that can be dispatched. The 24 rebindable renderer bindings
+ * (7 of them — the Topbar's per-folder actions — ship with no default chord)
  * plus the reserved `app.*` menu roles. Kept here (not in `menu.ts`) so both
  * processes share one union; `menu.ts` re-exports it for back-compat.
  */
@@ -40,6 +41,13 @@ export type ShortcutActionId =
   | 'project.switch'
   | 'folder.add'
   | 'view.review'
+  | 'view.roadmap'
+  | 'view.prStack'
+  | 'folder.openInFileManager'
+  | 'folder.openInVSCode'
+  | 'folder.openGithubPulls'
+  | 'folder.browseFiles'
+  | 'folder.newTerminal'
   | 'session.resumeLast'
   | 'session.rename'
   | 'session.close'
@@ -157,6 +165,65 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
     menu: false,
     reserved: false,
     labelKey: 'keybindings.actions.view.review'
+  },
+  // The Topbar's per-folder actions. No default chord — they ship unbound and
+  // are listed so the user can give them one. `menu: true` (the `&Folder` menu
+  // in `menu.ts`) so a chord the user binds still fires over the terminal pane.
+  {
+    id: 'view.roadmap',
+    defaultKeys: null,
+    scope: 'global',
+    menu: true,
+    reserved: false,
+    labelKey: 'keybindings.actions.view.roadmap'
+  },
+  {
+    id: 'view.prStack',
+    defaultKeys: null,
+    scope: 'global',
+    menu: true,
+    reserved: false,
+    labelKey: 'keybindings.actions.view.prStack'
+  },
+  {
+    id: 'folder.openInFileManager',
+    defaultKeys: null,
+    scope: 'global',
+    menu: true,
+    reserved: false,
+    labelKey: 'keybindings.actions.folder.openInFileManager'
+  },
+  {
+    id: 'folder.openInVSCode',
+    defaultKeys: null,
+    scope: 'global',
+    menu: true,
+    reserved: false,
+    labelKey: 'keybindings.actions.folder.openInVSCode'
+  },
+  {
+    id: 'folder.openGithubPulls',
+    defaultKeys: null,
+    scope: 'global',
+    menu: true,
+    reserved: false,
+    labelKey: 'keybindings.actions.folder.openGithubPulls'
+  },
+  {
+    id: 'folder.browseFiles',
+    defaultKeys: null,
+    scope: 'global',
+    menu: true,
+    reserved: false,
+    labelKey: 'keybindings.actions.folder.browseFiles'
+  },
+  {
+    id: 'folder.newTerminal',
+    defaultKeys: null,
+    scope: 'global',
+    menu: true,
+    reserved: false,
+    labelKey: 'keybindings.actions.folder.newTerminal'
   },
   {
     id: 'session.resumeLast',

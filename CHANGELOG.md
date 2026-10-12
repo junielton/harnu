@@ -24,6 +24,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   - **Containers and networks of a stack whose worktree Harnu removed.** The Docker card has a **Left by removed worktrees** block with the stopped containers and the networks (`docker rm` used to leave the network behind) and a **Clean up** button with its own confirm. Anything running, or a project whose folder came back, is left alone. Volumes are listed apart with **Remove volumes…** behind a stronger confirm (they cannot be restored) and are never removed with the stack or automatically.
   - **"Also delete the branch on the remote"** in the remove confirm, off by default. It appears only when a merged pull request records the merge (an ancestor of `main` with no PR, like `staging` or `release/x`, never qualifies), no open pull request uses the branch as head or base, GitHub does not protect it, and the remote tip is your tip or older. It deletes on the branch's own upstream remote, never an assumed `origin`, with `git push --delete`. The answers are asked when the dialog opens (never on a scan), shared and kept for ten minutes, and asked again when you confirm. If `gh` or the remote cannot be asked, the box is not shown. If the remote refuses, the toast says so and the local clean still stands. The autopilot never does it, and the Settings → Cleanup switch that forbids remote deletes is honoured.
   - **A dehydrated worktree says what is left.** In Needs review its row reads "Dehydrated · 6 MB left" and keeps the normal **Remove**. Dehydrating never changed its verdict: a merged one still becomes ready after the grace period, like a hydrated one.
+- **Shortcuts for the Topbar's folder actions.** Settings → Keyboard Shortcuts
+  now lists the roadmap board, PR Stack, open in file manager, open in VS Code,
+  pull requests on GitHub, Browse files, and open a terminal. They ship with no
+  chord — give them one in the pane or in `keybindings.json`. A new native
+  **Folder** menu carries the same actions, so a chord you bind fires even while
+  the terminal has focus.
 
 ### Changed
 

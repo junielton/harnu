@@ -220,8 +220,10 @@ onBeforeUnmount(stopRecording)
             {{ t('keybindings.pane.reset') }}
           </button>
 
+          <!-- Only when there is a chord to drop: an unbound row, or one that
+               ships with no default and hasn't been given one, has nothing. -->
           <button
-            v-if="b.source !== 'unbound'"
+            v-if="b.keys"
             type="button"
             class="flex shrink-0 items-center text-text-3 transition hover:text-text"
             style="

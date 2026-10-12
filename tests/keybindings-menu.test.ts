@@ -95,4 +95,32 @@ describe('buildAppMenu — threads the resolved table into every item', () => {
     )
     expect(item?.accelerator).toBe('CmdOrCtrl+Alt+K')
   })
+
+  it('adds the Folder menu with no accelerators until the user binds one', () => {
+    function folderItem(
+      template: MenuItemConstructorOptions[],
+      label: string
+    ): MenuItemConstructorOptions | undefined {
+      const folder = template.find((m) => m.label === 'F&older')
+      return (folder?.submenu as MenuItemConstructorOptions[]).find((i) => i.label === label)
+    }
+    const defaults = buildAppMenu(() => null) as unknown as MenuItemConstructorOptions[]
+    for (const label of [
+      'Roadmap Board',
+      'PR Stack',
+      'Browse Files',
+      'New Terminal',
+      'Open in File Manager',
+      'Open in VS Code',
+      'Pull Requests on GitHub'
+    ]) {
+      const item = folderItem(defaults, label)
+      expect(item, label).toBeDefined()
+      expect(item?.accelerator, label).toBeUndefined()
+    }
+
+    const resolved = resolveKeybindings([{ key: 'Cmd+Shift+M', command: 'view.roadmap' }])
+    const bound = buildAppMenu(() => null, resolved) as unknown as MenuItemConstructorOptions[]
+    expect(folderItem(bound, 'Roadmap Board')?.accelerator).toBe('CmdOrCtrl+Shift+M')
+  })
 })
