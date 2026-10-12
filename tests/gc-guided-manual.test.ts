@@ -166,7 +166,7 @@ describe('a guided remove prepares, then removes the ordinary guarded way (AC-B3
       haltedAt: 'reprobe',
       error: 'unlock-failed: fatal: nope'
     })
-    expect(r.log).toEqual([])
+    expect(r.log).toEqual(['dry-reprobe']) // the dry run came first; nothing was removed
   })
 
   it('a worktree that became busy during the prep is refused, not removed', async () => {

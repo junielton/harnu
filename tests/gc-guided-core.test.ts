@@ -197,7 +197,7 @@ describe('prepareClean (AC-B3, AC-B4, AC-B5)', () => {
     const r = await prepareClean(
       { kind: 'unlock' },
       review({ locked: true }, 'locked'),
-      deps(calls)
+      deps(calls, { lockReason: async () => null })
     )
     expect(r).toMatchObject({ ok: true })
     expect(calls.unlock).toEqual([WT])
@@ -215,6 +215,7 @@ describe('prepareClean (AC-B3, AC-B4, AC-B5)', () => {
       { kind: 'unlock' },
       review({ locked: true }, 'locked'),
       deps(fresh(), {
+        lockReason: async () => null,
         unlock: async () => {
           throw new Error('fatal: not locked')
         }

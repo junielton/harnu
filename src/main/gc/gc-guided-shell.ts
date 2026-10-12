@@ -7,16 +7,18 @@ import type { GuidedDeps, GuidedSession } from './gc-guided'
 import { createGitGuided } from './gc-guided'
 
 export async function defaultGuidedDeps(shellDeps: GcShellDeps): Promise<GuidedDeps> {
-  const [fsp, os, pty, hookBridge, fleet, hibernation, containersCore, shell] = await Promise.all([
-    import('node:fs/promises'),
-    import('node:os'),
-    import('../pty'),
-    import('../hook-bridge'),
-    import('../fleet-model'),
-    import('../hibernation'),
-    import('../containers/containers-core'),
-    import('./gc-shell')
-  ])
+  const [fsp, os, pty, hookBridge, fleet, hibernation, containersCore, shell, containersShell] =
+    await Promise.all([
+      import('node:fs/promises'),
+      import('node:os'),
+      import('../pty'),
+      import('../hook-bridge'),
+      import('../fleet-model'),
+      import('../hibernation'),
+      import('../containers/containers-core'),
+      import('./gc-shell'),
+      import('../containers/containers-shell')
+    ])
 
   const real = async (p: string): Promise<string> => {
     try {
@@ -74,7 +76,7 @@ export async function defaultGuidedDeps(shellDeps: GcShellDeps): Promise<GuidedD
     park: (key) => void pty.parkSessionByKey(key),
     listStacks: () => shellDeps.listStacks(),
     realPaths: (paths) => shell.resolveRealPaths(paths, (p) => fsp.realpath(p)),
-    docker: shellDeps.docker,
+    docker: containersShell.dockerActions,
     walkForeign: (root) => shell.findForeignCheckouts(root),
     ownerOf,
     currentUser: () => os.userInfo().username,

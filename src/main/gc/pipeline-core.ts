@@ -145,9 +145,11 @@ export function isMainCheckoutByPath(b: WorktreeBundle): boolean {
  * stacks, so the folder would be trashed under a foreign stack that still runs from it.
  * Returns the refusal, or null when the bundle may run.
  */
-function refusalOf(b: WorktreeBundle, opts: GcRunOptions): string | null {
+export function refusalOf(b: WorktreeBundle, opts: GcRunOptions): string | null {
   if (b.isMainCheckout || b.neverClean || b.keep || isMainCheckoutByPath(b)) return 'not-ready'
-  if (b.sharedStackIds.length > 0) return 'shared-stack'
+  // A shared stack a guided action is stopping is the cause being fixed, not a second refusal.
+  const stopping = new Set(b.assume?.stoppedStacks ?? [])
+  if (b.sharedStackIds.some((id) => !stopping.has(id))) return 'shared-stack'
   // A nested worktree refuses even a confirmed `review` (delta 6, F1). The reprobe sees this
   // repo's `git worktree list` and, since delta 7, every `.git` on disk inside the worktree,
   // but a nested folder known only as a known folder (no `.git` of its own) passes both. A

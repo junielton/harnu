@@ -27,6 +27,8 @@ export interface GuidedDeps {
   /** What git recorded with the lock: a string (possibly empty→null), or `undefined` when not locked. */
   lockReason(repoPath: string, path: string): Promise<string | null | undefined>
   unlock(repoPath: string, path: string): Promise<void>
+  /** `git worktree lock [--reason <reason>]`: puts a lock back exactly as it was (the rollback of an unlock). */
+  lock(repoPath: string, path: string, reason: string | null): Promise<void>
   /** Running Harnu sessions (live PTYs) whose folder is `path` or under it. Never a session Harnu does not own. */
   sessionsIn(path: string): Promise<GuidedSession[]>
   /** Parks (kills, keeps the conversation) one session. */
@@ -34,6 +36,7 @@ export interface GuidedDeps {
   listStacks(): Promise<{ stacks: StackGroup[] }>
   realPaths(paths: string[]): Promise<CanonicalPath>
   docker: {
+    start(ids: string[]): Promise<DockerBatchResult>
     stop(ids: string[]): Promise<DockerBatchResult>
     removeContainers(ids: string[]): Promise<DockerBatchResult>
     removeVolumes(names: string[]): Promise<DockerBatchResult>
@@ -45,7 +48,11 @@ export interface GuidedDeps {
   platform: string
 }
 
-export type PrepResult = { ok: true } | { ok: false; error: string }
+/**
+ * `undo` puts back what the prep changed, for when the remove that follows still refuses. A prep that
+ * cannot be undone (a parked session) has none, which is exactly why it runs last, after a dry run.
+ */
+export type PrepResult = { ok: true; undo?: () => Promise<void> } | { ok: false; error: string }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
@@ -176,19 +183,31 @@ const NOT_APPLICABLE: PrepResult = { ok: false, error: 'prep-not-applicable' }
 export async function prepareClean(
   prep: GcPrep,
   b: WorktreeBundle,
-  deps: GuidedDeps
+  deps: GuidedDeps,
+  /** `dry`: validate everything the prep needs and change nothing. */
+  opts: { dry?: boolean } = {}
 ): Promise<PrepResult> {
   const path = b.item.path
   if (!path) return NOT_APPLICABLE
 
   if (prep.kind === 'unlock') {
     if (b.locked !== true && b.reason?.code !== 'locked') return NOT_APPLICABLE
+    // What git recorded with the lock, read BEFORE the unlock: it is what a rollback puts back.
+    let reason: string | null
     try {
-      await deps.unlock(b.item.repoPath, path)
-      return { ok: true }
+      const r = await deps.lockReason(b.item.repoPath, path)
+      if (r === undefined) return NOT_APPLICABLE
+      reason = r
     } catch (err) {
       return { ok: false, error: `unlock-failed: ${messageOf(err)}` }
     }
+    if (opts.dry) return { ok: true }
+    try {
+      await deps.unlock(b.item.repoPath, path)
+    } catch (err) {
+      return { ok: false, error: `unlock-failed: ${messageOf(err)}` }
+    }
+    return { ok: true, undo: () => deps.lock(b.item.repoPath, path, reason) }
   }
 
   if (prep.kind === 'close-session') {
@@ -198,6 +217,7 @@ export async function prepareClean(
     if (open.length === 0) return { ok: false, error: 'session-not-closable' }
     // One that is working or waiting for the operator is never closed, and then none is.
     if (open.some((s) => s.state !== 'idle')) return { ok: false, error: 'session-busy' }
+    if (opts.dry) return { ok: true }
     for (const s of open) deps.park(s.key)
     return { ok: true }
   }
@@ -215,6 +235,7 @@ export async function prepareClean(
   if (prep.kind === 'leave-stack') {
     return views.some((v) => v.inside) ? { ok: false, error: 'stack-binds-folder' } : { ok: true }
   }
+  if (opts.dry) return { ok: true }
 
   // stop-stack: the stack's containers go (stopped, then removed, as for an exclusive stack); its volumes never do.
   const containers = [...new Set(views.flatMap((v) => v.stack.containers.map((c) => c.id)))]
@@ -243,7 +264,7 @@ export async function prepareClean(
 /** The two git-backed deps, over any `git -C <repo> …` runner (the executor's, or a test's real one). */
 export function createGitGuided(
   git: (repo: string, args: string[]) => Promise<string>
-): Pick<GuidedDeps, 'lockReason' | 'unlock'> {
+): Pick<GuidedDeps, 'lockReason' | 'unlock' | 'lock'> {
   const key = (p: string): string => canonicalPathKey(p, process.platform)
   return {
     async lockReason(repoPath, path) {
@@ -254,6 +275,9 @@ export function createGitGuided(
     },
     async unlock(repoPath, path) {
       await git(repoPath, ['worktree', 'unlock', path])
+    },
+    async lock(repoPath, path, reason) {
+      await git(repoPath, ['worktree', 'lock', ...(reason ? ['--reason', reason] : []), path])
     }
   }
 }

@@ -153,6 +153,19 @@ export interface WorktreeBundle extends BundleFacts {
    * there is no Docker CLI at all (nothing to stop).
    */
   dockerBlind?: boolean
+  /**
+   * Set only by `gc-manual` for a guided action, never by a gather: what the action's prep fixes (the dry
+   * run, before it runs) or has just fixed. The reprobe and the recheck skip exactly that one check, so
+   * the dry run judges everything else; any other refusal still refuses.
+   */
+  assume?: {
+    /** The worktree's git lock is the cause being fixed. */
+    unlock?: boolean
+    /** An idle Harnu session open in the worktree is the cause being fixed. */
+    closeSession?: boolean
+    /** Shared stacks that are being (or have been) stopped; their stopped containers are not "present". */
+    stoppedStacks?: string[]
+  }
 }
 
 /** Every bundle of a gather that could not see Docker, marked so none is cleaned on a blind "no stacks". */
