@@ -408,6 +408,42 @@ describe('Docker was not running at scan time (AC-B7)', () => {
   })
 })
 
+describe('recovery notices on the Cleanup screen (delta 3)', () => {
+  const notice = {
+    id: 'n1',
+    state: 'notice',
+    kind: 'stop-stack',
+    notice: 'stack-stopped',
+    path: '/r/wt',
+    detail: 'web-1, web-2',
+    announced: true
+  }
+
+  it('shows an interrupted stack stop, and Start again asks main (never automatic)', async () => {
+    const act = ipcFn(async () => ({ ok: true }))
+    install(snap([wt('p1', 'review', GIB, {}, { reason: reviewReason('dirty') })]))
+    const api = (window as unknown as { api: Record<string, unknown> }).api
+    api.gcRecoveryList = ipcFn(async () => [notice])
+    api.gcRecoveryAct = act
+    await mountView()
+    expect(text('recovery-notice')).toContain('web-1, web-2')
+    expect(act).not.toHaveBeenCalled()
+    await click('recovery-start')
+    expect(act).toHaveBeenCalledWith('n1', 'start')
+  })
+
+  it('Leave stopped (dismiss) answers dismiss', async () => {
+    const act = ipcFn(async () => ({ ok: true }))
+    install(snap([wt('p1', 'review', GIB, {}, { reason: reviewReason('dirty') })]))
+    const api = (window as unknown as { api: Record<string, unknown> }).api
+    api.gcRecoveryList = ipcFn(async () => [notice])
+    api.gcRecoveryAct = act
+    await mountView()
+    await click('recovery-dismiss')
+    expect(act).toHaveBeenCalledWith('n1', 'dismiss')
+  })
+})
+
 describe('stacked causes: one combined action (delta 2)', () => {
   const stackG = (id: string, over: Partial<GcGuidance> = {}) =>
     guidance(id, {
