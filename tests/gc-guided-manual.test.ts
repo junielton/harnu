@@ -27,11 +27,18 @@ function rig(opts: {
   after?: WorktreeBundle
   prepare?: ManualCleanDeps['prepare'] | null
   prefs?: Partial<ReturnType<typeof defaultGcPrefs>>
+  /** What the dry run (everything but the prep's own cause) says; default: nothing else refuses. */
+  dry?: (b: WorktreeBundle) => { ok: true } | { ok: false; reason: string }
+  /** Replaces the real reprobe: the refusal the remove still meets AFTER the prep ran. */
+  reprobe?: GcOps['reprobe']
+  workStamp?: (path: string) => Promise<string | null>
 }) {
   const log: string[] = []
   let prepared = false
   const ops: GcOps = {
-    reprobe: async () => (log.push('reprobe'), { ok: true }),
+    reprobe: opts.reprobe
+      ? async (b) => (log.push('reprobe'), opts.reprobe!(b))
+      : async () => (log.push('reprobe'), { ok: true }),
     stopStacks: async () => undefined,
     removeContainers: async () => undefined,
     removeVolumes: async () => undefined,
@@ -45,10 +52,14 @@ function rig(opts: {
     opts.prepare === null
       ? undefined
       : (opts.prepare ??
-        (async (prep: GcPrep) => {
+        (async (prep: GcPrep, _b: WorktreeBundle, o?: { dry?: boolean }) => {
+          if (o?.dry) {
+            log.push(`validate ${prep.kind}`)
+            return { ok: true as const }
+          }
           log.push(`prepare ${prep.kind}`)
           prepared = true
-          return { ok: true as const }
+          return { ok: true as const, undo: async () => void log.push(`undo ${prep.kind}`) }
         }))
   const deps: ManualCleanDeps = {
     prefs: () => ({ ...defaultGcPrefs(), ...opts.prefs }),
@@ -61,9 +72,13 @@ function rig(opts: {
       orphanVolumes: []
     }),
     prepare: prepare as ManualCleanDeps['prepare'],
+    dryReprobe: async (b) => {
+      log.push('dry-reprobe')
+      return opts.dry ? opts.dry(b) : { ok: true }
+    },
     opsFor: () => ops,
     freshOrphans: async () => [],
-    workStampOf: async () => null,
+    workStampOf: opts.workStamp ?? (async () => null),
     removeOrphanVolumes: async () => ({
       buildCacheBytes: 0,
       imageBytes: 0,
@@ -100,7 +115,13 @@ describe('a guided remove prepares, then removes the ordinary guarded way (AC-B3
     const r = rig({ before, after: unlocked() })
     const res = await run(r, before, asked(before, { kind: 'unlock' }))
     expect(res).toMatchObject({ ok: true })
-    expect(r.log).toEqual(['prepare unlock', 'reprobe', 'cleanGit'])
+    expect(r.log).toEqual([
+      'validate unlock',
+      'dry-reprobe',
+      'prepare unlock',
+      'reprobe',
+      'cleanGit'
+    ])
   })
 
   it('without the prep the same locked item is not touched by the pipeline', async () => {
@@ -136,7 +157,8 @@ describe('a guided remove prepares, then removes the ordinary guarded way (AC-B3
     const r = rig({
       before,
       after: unlocked(),
-      prepare: async () => ({ ok: false, error: 'unlock-failed: fatal: nope' })
+      prepare: async (_p, _b, o) =>
+        o?.dry ? { ok: true } : { ok: false, error: 'unlock-failed: fatal: nope' }
     })
     const res = await run(r, before, asked(before, { kind: 'unlock' }))
     expect(res).toMatchObject({
@@ -153,7 +175,7 @@ describe('a guided remove prepares, then removes the ordinary guarded way (AC-B3
     const r = rig({ before, after: busy })
     const res = await run(r, before, asked(before, { kind: 'unlock' }))
     expect(res).toMatchObject({ ok: false, error: 'in-use' })
-    expect(r.log).toEqual(['prepare unlock'])
+    expect(r.log).toContain('prepare unlock')
   })
 
   it('a worktree that moved or advanced during the prep is refused', async () => {
@@ -163,7 +185,7 @@ describe('a guided remove prepares, then removes the ordinary guarded way (AC-B3
     const r = rig({ before, after: moved })
     const res = await run(r, before, asked(before, { kind: 'unlock' }))
     expect(res).toMatchObject({ ok: false, error: 'changed-since-confirm' })
-    expect(r.log).toEqual(['prepare unlock'])
+    expect(r.log).toContain('prepare unlock')
   })
 
   it('protections still win: a Keep mark is refused before any prep', async () => {
@@ -183,7 +205,13 @@ describe('a guided remove prepares, then removes the ordinary guarded way (AC-B3
     const r = rig({ before })
     const res = await run(r, before, asked(before, { kind: 'leave-stack', stackIds: ['web'] }))
     expect(res).toMatchObject({ ok: true })
-    expect(r.log).toEqual(['prepare leave-stack', 'reprobe', 'cleanGit'])
+    expect(r.log).toEqual([
+      'validate leave-stack',
+      'dry-reprobe',
+      'prepare leave-stack',
+      'reprobe',
+      'cleanGit'
+    ])
   })
 
   it('without the leave step the shared stack still refuses the remove', async () => {
@@ -201,6 +229,127 @@ describe('a guided remove prepares, then removes the ordinary guarded way (AC-B3
     const r = rig({ before, prepare: null })
     const res = await run(r, before, asked(before, { kind: 'unlock' }))
     expect(res).toMatchObject({ ok: false, error: 'prep-not-applicable' })
+  })
+})
+
+// Delta 1 (findings 1 and 2): a prep is the LAST thing standing between the item and a successful
+// remove. Everything else is judged first, as a dry run that treats the prep's own cause as fixed, and
+// whatever the prep changed is put back when the remove still refuses.
+describe('the prep runs last and is rolled back (delta 1)', () => {
+  it('work changed since the dialog: nothing is unlocked', async () => {
+    const before = locked()
+    before.item.workStamp = 'seen'
+    const r = rig({ before, after: unlocked(), workStamp: async () => 'edited-since' })
+    const res = await run(r, before, asked(before, { kind: 'unlock' }))
+    expect(res).toMatchObject({ ok: false, error: 'work-changed-since-confirm' })
+    expect(r.log.filter((l) => l.startsWith('prepare'))).toEqual([])
+  })
+
+  it('work unreadable at the scan: nothing is unlocked', async () => {
+    const before = locked()
+    before.item.workStamp = 'unknown'
+    const r = rig({ before, after: unlocked() })
+    const res = await run(r, before, asked(before, { kind: 'unlock' }))
+    expect(res).toMatchObject({ ok: false, error: 'work-unreadable' })
+    expect(r.log.filter((l) => l.startsWith('prepare'))).toEqual([])
+  })
+
+  it('any OTHER refusal the dry run finds stops it before the prep', async () => {
+    const before = locked()
+    const r = rig({
+      before,
+      after: unlocked(),
+      dry: () => ({ ok: false, reason: 'nested-worktree' })
+    })
+    const res = await run(r, before, asked(before, { kind: 'unlock' }))
+    expect(res).toMatchObject({ ok: false, haltedAt: 'reprobe', error: 'nested-worktree' })
+    expect(r.log).toEqual(['validate unlock', 'dry-reprobe'])
+  })
+
+  it('a pipeline refusal (a shared stack that is not the one being fixed) stops it before the prep', async () => {
+    const before = bundle(PATH, 'review', {
+      locked: true,
+      sharedStackIds: ['other'],
+      reason: { code: 'locked', detail: 'x' }
+    })
+    const r = rig({ before })
+    const res = await run(r, before, asked(before, { kind: 'unlock' }))
+    expect(res).toMatchObject({ ok: false, error: 'shared-stack' })
+    expect(r.log.filter((l) => l.startsWith('prepare'))).toEqual([])
+  })
+
+  it(
+    'the prep' +
+      "'" +
+      's own refusal does not count against it: the dry run sees the lock as fixed',
+    async () => {
+      const before = locked()
+      const seenByDry: WorktreeBundle[] = []
+      const r = rig({
+        before,
+        after: unlocked(),
+        dry: (b) => (seenByDry.push(b), { ok: true })
+      })
+      await run(r, before, asked(before, { kind: 'unlock' }))
+      expect(seenByDry[0].assume).toEqual({ unlock: true })
+    }
+  )
+
+  it('the remove still refuses after the unlock: the worktree is locked again', async () => {
+    const before = locked()
+    const r = rig({
+      before,
+      after: unlocked(),
+      reprobe: async () => ({ ok: false, reason: 'cannot-unregister' })
+    })
+    const res = await run(r, before, asked(before, { kind: 'unlock' }))
+    expect(res).toMatchObject({ ok: false, error: 'cannot-unregister' })
+    expect(r.log).toEqual([
+      'validate unlock',
+      'dry-reprobe',
+      'prepare unlock',
+      'reprobe',
+      'undo unlock'
+    ])
+  })
+
+  it('the item changed between the prep and the remove: still rolled back', async () => {
+    const before = locked()
+    const moved = unlocked()
+    moved.localTip = 'd'.repeat(40)
+    const r = rig({ before, after: moved })
+    const res = await run(r, before, asked(before, { kind: 'unlock' }))
+    expect(res).toMatchObject({ ok: false, error: 'changed-since-confirm' })
+    expect(r.log).toContain('undo unlock')
+  })
+
+  it('a successful remove is not rolled back', async () => {
+    const before = locked()
+    const r = rig({ before, after: unlocked() })
+    await run(r, before, asked(before, { kind: 'unlock' }))
+    expect(r.log).not.toContain('undo unlock')
+  })
+
+  it('an undo that fails is said, not swallowed', async () => {
+    const before = locked()
+    const r = rig({
+      before,
+      after: unlocked(),
+      reprobe: async () => ({ ok: false, reason: 'cannot-unregister' }),
+      prepare: async (_p, _b, o) =>
+        o?.dry
+          ? { ok: true }
+          : {
+              ok: true,
+              undo: async () => {
+                throw new Error('git is gone')
+              }
+            }
+    })
+    const res = await run(r, before, asked(before, { kind: 'unlock' }))
+    expect(res).toMatchObject({ ok: false })
+    expect(res!.error).toMatch(/^cannot-unregister/)
+    expect(res!.error).toContain('rollback-failed')
   })
 })
 

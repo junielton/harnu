@@ -45,6 +45,25 @@ describe('unlocking a real locked worktree', () => {
     expect(await canUnregister(repo, wt, git)).toBe(true)
   })
 
+  it('puts the lock back with its ORIGINAL reason (rollback after a refused remove)', async () => {
+    execFileSync('git', ['-C', repo, 'worktree', 'lock', '--reason', 'usb', wt])
+    const g = createGitGuided(git)
+    const reason = await g.lockReason(repo, wt)
+    await g.unlock(repo, wt)
+    expect(await g.lockReason(repo, wt)).toBeUndefined()
+
+    await g.lock(repo, wt, reason ?? null)
+
+    expect(await g.lockReason(repo, wt)).toBe('usb')
+    expect(await canUnregister(repo, wt, git)).toBe(false)
+  })
+
+  it('a lock that had no reason goes back with none', async () => {
+    const g = createGitGuided(git)
+    await g.lock(repo, wt, null)
+    expect(await g.lockReason(repo, wt)).toBeNull()
+  })
+
   it('a lock with no reason reads as null, an unlocked worktree as undefined', async () => {
     const g = createGitGuided(git)
     expect(await g.lockReason(repo, wt)).toBeUndefined()

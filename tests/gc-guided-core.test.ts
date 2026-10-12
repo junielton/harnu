@@ -55,6 +55,8 @@ function review(over: Partial<WorktreeBundle> = {}, code = 'dirty'): WorktreeBun
 }
 
 interface Calls {
+  lock: Array<[string, string | null]>
+  started: string[][]
   unlock: string[]
   parked: string[]
   stopped: string[][]
@@ -70,11 +72,13 @@ function deps(
   return {
     lockReason: async () => undefined,
     unlock: async (_repo, p) => void calls.unlock.push(p),
+    lock: async (_repo, p, reason) => void calls.lock.push([p, reason]),
     sessionsIn: async () => [],
     park: (key) => void calls.parked.push(key),
     listStacks: async () => ({ stacks }),
     realPaths: async () => AS_GIVEN,
     docker: {
+      start: async (ids) => (calls.started.push(ids), { done: ids, error: null }),
       stop: async (ids) => (calls.stopped.push(ids), { done: ids, error: null }),
       removeContainers: async (ids) => (
         calls.removedContainers.push(ids),
@@ -94,6 +98,8 @@ function deps(
 }
 
 const fresh = (): Calls => ({
+  lock: [],
+  started: [],
   unlock: [],
   parked: [],
   stopped: [],
@@ -193,7 +199,7 @@ describe('prepareClean (AC-B3, AC-B4, AC-B5)', () => {
       review({ locked: true }, 'locked'),
       deps(calls)
     )
-    expect(r).toEqual({ ok: true })
+    expect(r).toMatchObject({ ok: true })
     expect(calls.unlock).toEqual([WT])
   })
 
@@ -224,7 +230,7 @@ describe('prepareClean (AC-B3, AC-B4, AC-B5)', () => {
       review({ session: 'open-idle' }, 'open-idle-session'),
       deps(calls, { sessionsIn: async () => [{ key: 'idle-1', state: 'idle' }] })
     )
-    expect(r).toEqual({ ok: true })
+    expect(r).toMatchObject({ ok: true })
     expect(calls.parked).toEqual(['idle-1'])
   })
 
@@ -263,7 +269,7 @@ describe('prepareClean (AC-B3, AC-B4, AC-B5)', () => {
       review({ sharedStackIds: ['web'] }, 'shared-stack'),
       deps(calls, { stacks: [shared] })
     )
-    expect(r).toEqual({ ok: true })
+    expect(r).toMatchObject({ ok: true })
     expect(calls.stopped).toEqual([['c1', 'c2']])
     expect(calls.removedContainers).toEqual([['c1', 'c2']])
     expect(calls.removedVolumes).toEqual([])
@@ -302,7 +308,7 @@ describe('prepareClean (AC-B3, AC-B4, AC-B5)', () => {
       review({ sharedStackIds: ['web'] }, 'shared-stack'),
       deps(calls, { stacks: [stack('web', [container('c1', OTHER)])] })
     )
-    expect(r).toEqual({ ok: true })
+    expect(r).toMatchObject({ ok: true })
     expect(calls.stopped).toEqual([])
   })
 
@@ -380,5 +386,87 @@ describe('an unreadable folder (AC-B6, real filesystem)', () => {
       deps(fresh(), { walkForeign: async () => [] })
     )
     expect(g.unreadable).toBeNull()
+  })
+})
+
+// Delta 1 (findings 1 and 2): a prep that ran must be undoable, and a dry run must change nothing.
+describe('prepareClean — dry run and undo', () => {
+  it('a dry run validates and touches nothing', async () => {
+    const calls = fresh()
+    const r = await prepareClean(
+      { kind: 'unlock' },
+      review({ locked: true }, 'locked'),
+      deps(calls, { lockReason: async () => 'usb' }),
+      { dry: true }
+    )
+    expect(r).toMatchObject({ ok: true })
+    expect(calls.unlock).toEqual([])
+    const p = await prepareClean(
+      { kind: 'close-session' },
+      review({ session: 'open-idle' }, 'open-idle-session'),
+      deps(calls, { sessionsIn: async () => [{ key: 'i', state: 'idle' }] }),
+      { dry: true }
+    )
+    expect(p).toMatchObject({ ok: true })
+    expect(calls.parked).toEqual([])
+  })
+
+  it('a dry run still refuses what the real one would', async () => {
+    const r = await prepareClean(
+      { kind: 'close-session' },
+      review({ session: 'open-idle' }, 'open-idle-session'),
+      deps(fresh(), { sessionsIn: async () => [{ key: 'b', state: 'working' }] }),
+      { dry: true }
+    )
+    expect(r).toEqual({ ok: false, error: 'session-busy' })
+  })
+
+  it('unlock hands back an undo that locks again with the ORIGINAL reason', async () => {
+    const calls = fresh()
+    const r = await prepareClean(
+      { kind: 'unlock' },
+      review({ locked: true }, 'locked'),
+      deps(calls, { lockReason: async () => 'usb' })
+    )
+    expect(r.ok).toBe(true)
+    await (r as { undo: () => Promise<void> }).undo()
+    expect(calls.lock).toEqual([[WT, 'usb']])
+  })
+
+  it('a lock that had no reason is locked again with none', async () => {
+    const calls = fresh()
+    const r = await prepareClean(
+      { kind: 'unlock' },
+      review({ locked: true }, 'locked'),
+      deps(calls, { lockReason: async () => null })
+    )
+    await (r as { undo: () => Promise<void> }).undo()
+    expect(calls.lock).toEqual([[WT, null]])
+  })
+
+  it('a failed unlock leaves nothing to undo and nothing changed', async () => {
+    const calls = fresh()
+    const r = await prepareClean(
+      { kind: 'unlock' },
+      review({ locked: true }, 'locked'),
+      deps(calls, {
+        lockReason: async () => 'usb',
+        unlock: async () => {
+          throw new Error('nope')
+        }
+      })
+    )
+    expect(r).toEqual({ ok: false, error: 'unlock-failed: nope' })
+    expect(calls.lock).toEqual([])
+  })
+
+  it('closing a session cannot be undone, which is why it runs last', async () => {
+    const r = await prepareClean(
+      { kind: 'close-session' },
+      review({ session: 'open-idle' }, 'open-idle-session'),
+      deps(fresh(), { sessionsIn: async () => [{ key: 'i', state: 'idle' }] })
+    )
+    expect(r).toMatchObject({ ok: true })
+    expect((r as { undo?: unknown }).undo).toBeUndefined()
   })
 })
