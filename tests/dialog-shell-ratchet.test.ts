@@ -13,6 +13,14 @@
  * `ui/Dialog.vue` (batch 1) is the one component allowed to own a shell; it is
  * exempt by path and does not exist yet.
  *
+ * What the rule sees (hardened after review): a full-viewport fixed layer spelled `fixed inset-0`,
+ * `inset-x-0 inset-y-0`, `top-0 right-0 bottom-0 left-0`, or `position: fixed` with `inset: 0` / all
+ * four sides 0; combined with a raw black scrim (`rgba(0,0,0,…)`, `rgb(0 0 0 / …)`, `#000…` with
+ * alpha, `bg-black/N`) or a translucent token / arbitrary-colour backdrop (`bg-bg/80`,
+ * `bg-[#1a1a1f]/50`). BLIND SPOTS: a scrim coloured by a CSS variable the file does not spell, a
+ * shell built in a `.ts` render function, and a dialog with no scrim at all — the characterization
+ * net's name-based coverage test (`*Dialog` / `*Modal`) is the second net for those.
+ *
  * Hub-file rule (spec §7.3.b.3): one entry per line, keyed by component
  * filename, sorted. A batch deletes only its own dialogs' lines, so two
  * batches' edits are different lines and merge without conflict; a sort or a
@@ -129,6 +137,30 @@ describe('dialog-shell ratchet — the detection rule can fail', () => {
     expect(
       isHandRolledShell(`<div style="position: fixed; inset: 0; background: rgba(0,0,0,.5)"></div>`)
     ).toBe(true)
+  })
+  it.each([
+    [
+      'top/right/bottom/left classes',
+      `<div class="left-0 bottom-0 fixed top-0 right-0 bg-black/50"></div>`
+    ],
+    ['inset-x + inset-y', `<div class="fixed inset-x-0 inset-y-0 bg-black/50"></div>`],
+    [
+      'style with four sides',
+      `<div style="position: fixed; top: 0; right: 0; bottom: 0; left: 0; background: rgba(0,0,0,.4)"></div>`
+    ],
+    ['translucent token', `<div class="fixed inset-0 bg-bg/80"></div>`],
+    ['translucent arbitrary hex', `<div class="fixed inset-0 bg-[#1a1a1f]/50"></div>`],
+    ['hex with alpha', `<div style="position: fixed; inset: 0; background: #00000080"></div>`],
+    [
+      'space-separated rgb',
+      `<div style="position: fixed; inset: 0; background: rgb(0 0 0 / 0.5)"></div>`
+    ]
+  ])('flags a spelling the first version missed: %s', (_name, src) => {
+    expect(isHandRolledShell(src)).toBe(true)
+  })
+  it('still ignores a fixed layer that is not full-viewport, and a translucent backdrop that is not fixed', () => {
+    expect(isHandRolledShell(`<div class="fixed top-0 right-0 bg-black/50"></div>`)).toBe(false)
+    expect(isHandRolledShell(`<div class="absolute inset-0 bg-bg/80"></div>`)).toBe(false)
   })
   it('does not flag a fixed overlay with no raw black (the token scrim)', () => {
     expect(isHandRolledShell(`<div class="fixed inset-0 bg-scrim"></div>`)).toBe(false)

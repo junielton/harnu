@@ -1,16 +1,18 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "dialog-baseline-expected-deltas",
-  "title": "T460 dialog baseline — expected deltas",
-  "description": "What a migration batch PROMISES will change in the before/after baseline (spec §6.3 step 5, §3.3). `dialog-baseline.mjs diff --expected <file>` exits 1 on any changed property no entry covers, and reports every entry that matched nothing.",
+  "title": "T460 dialog baseline \u2014 expected deltas",
+  "description": "What a migration batch PROMISES will change in the before/after baseline (spec \u00a76.3 step 5, \u00a73.3). `dialog-baseline.mjs diff --expected <file>` exits 1 on any changed property no entry covers, and reports every entry that matched nothing. PLACEHOLDERS: in the catalog, the entries for `card.rect.*`, `body.rect.*`, `body.scrollHeight`, `body.clientHeight` and `card.style.max-height` carry `dialog: \"*\"` only so the catalog stays one flat list \u2014 a batch MUST narrow `dialog` to its own dialogs (and add `from`/`to` where it can) before using them; a wildcard dialog would hide a regression in every other dialog.",
   "type": "object",
   "required": ["version", "deltas"],
   "additionalProperties": false,
   "properties": {
-    "version": { "const": 1 },
+    "version": {
+      "const": 1
+    },
     "batch": {
       "type": "string",
-      "description": "Free text: which batch this file belongs to (e.g. \"1 — pilot\")."
+      "description": "Free text: which batch this file belongs to (e.g. \"1 \u2014 pilot\")."
     },
     "deltas": {
       "type": "array",
@@ -27,8 +29,12 @@
             "type": "string",
             "description": "Dotted path into one measurement (see scripts/dev/dialog-routes/measure.mjs), e.g. `card.style.border-top-left-radius`, `scrim.style.background-color`, `card.rect.top`. `*` globs: `card.rect.*`."
           },
-          "from": { "description": "The `before` value (compared as text). Omit to accept any." },
-          "to": { "description": "The `after` value (compared as text). Omit to accept any." },
+          "from": {
+            "description": "The `before` value (compared as text). Omit to accept any."
+          },
+          "to": {
+            "description": "The `after` value (compared as text). Omit to accept any."
+          },
           "height": {
             "type": "integer",
             "description": "Only at this window height (900 or 560). Omit for both."
@@ -39,7 +45,7 @@
           },
           "reason": {
             "type": "string",
-            "description": "Why — cite the spec row (§3.3) or decision (D1…D9)."
+            "description": "Why \u2014 cite the spec row (\u00a73.3) or decision (D1\u2026D9)."
           }
         }
       }

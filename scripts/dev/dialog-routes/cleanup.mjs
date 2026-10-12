@@ -24,7 +24,14 @@ const SETTLE_MS = 300
 
 const DIALOG = '[role="dialog"]'
 
-/** Open the Cleanup takeover (footer pill) and wait for its first scan; idempotent. */
+/**
+ * Open the Cleanup takeover and wait for its first scan; idempotent.
+ *
+ * Reached through the repo group's "Group actions" menu → "Cleanup…", NOT the footer pill: the
+ * pill only renders while something is reclaimable, and on a machine with no Docker build cache
+ * (a CI runner) a scan that has not finished yet leaves it absent — the first CI run timed out
+ * waiting for it. The group menu entry is always there for a repo group.
+ */
 async function ensureCleanup(page) {
   if (
     !(await page
@@ -32,7 +39,12 @@ async function ensureCleanup(page) {
       .isVisible()
       .catch(() => false))
   ) {
-    await page.locator('[data-dsqa="cleanup-footer-pill"]').click()
+    const header = page.locator('aside button.sidebar-row:has(svg.lucide-git-branch)').first()
+    await header.waitFor({ state: 'visible', timeout: 30_000 })
+    await header.click({ button: 'right' })
+    const menu = page.getByRole('menu', { name: 'Group actions' })
+    await menu.waitFor({ state: 'visible' })
+    await menu.getByRole('menuitem', { name: /^Cleanup/ }).click()
   }
   // The scan is done once the summary is no longer "scanning" and a body (hero or all-clean) rendered.
   await page.locator('[data-testid="cleanup-body"]').waitFor({ state: 'visible', timeout: 60_000 })
@@ -57,6 +69,16 @@ async function tickAllReview(page) {
   const checks = page.locator('[data-testid="review-check"]')
   const n = await checks.count()
   for (let i = 0; i < n; i++) await checks.nth(i).click()
+  await page.locator('[data-testid="selection-bar"]').waitFor({ state: 'visible' })
+}
+
+/** Tick only the Needs-review rows whose worktree name is in `names`. */
+async function tickRows(page, names) {
+  await clearSelection(page)
+  for (const name of names) {
+    const row = page.locator('[data-testid="review-row"]', { hasText: name }).first()
+    await row.locator('[data-testid="review-check"]').click()
+  }
   await page.locator('[data-testid="selection-bar"]').waitFor({ state: 'visible' })
 }
 
@@ -103,11 +125,30 @@ export const ROUTES_CLEANUP = [
     file: 'CleanupBulkConfirmDialog.vue',
     reach: 'seed',
     longContent: true,
-    note: 'Tick every Needs-review row, then Remove: removable (dirty) rows plus a "won\'t be removed" group of locked and nested worktrees — the BUG-184 shape.',
+    note: 'Tick every Needs-review row, then Remove: 33 removable (dirty) rows plus a "won\'t be removed" group of 16 locked and nested worktrees — the literal BUG-184 shape.',
     /** @param {RouteCtx} ctx */
     async open({ page }) {
       await ensureCleanup(page)
       await tickAllReview(page)
+      await page.locator('[data-testid="sel-remove"]').click()
+      await waitDialog(page, 'bulk-dialog')
+    },
+    close: closeAndReset
+  },
+  {
+    id: 'CleanupBulkConfirmDialog#review-few',
+    file: 'CleanupBulkConfirmDialog.vue',
+    reach: 'seed',
+    longContent: false,
+    note: 'Tick every locked and nested worktree plus ONE dirty one, then Remove: 1 removable row + 16 refused — a refused-dominated confirm (the other end of the BUG-184 shape).',
+    /** @param {RouteCtx} ctx */
+    async open({ page, seed }) {
+      await ensureCleanup(page)
+      await tickRows(page, [
+        ...seed.states.locked,
+        ...seed.states.nestedOuter,
+        seed.states.dirty[0]
+      ])
       await page.locator('[data-testid="sel-remove"]').click()
       await waitDialog(page, 'bulk-dialog')
     },

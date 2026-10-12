@@ -6,7 +6,7 @@ import {
   type Page
 } from '@playwright/test'
 import { rmSync } from 'node:fs'
-import { seedDialogWorld, type DialogSeed } from './fixtures/dialog-seed'
+import { seedDialogWorld, seedLaunchEnv, type DialogSeed } from './fixtures/dialog-seed'
 import { SEEDED_ROUTES, ROUTES, closeRoute } from '../../../scripts/dev/dialog-routes/index.mjs'
 import { measureDialog, violations } from '../../../scripts/dev/dialog-routes/measure.mjs'
 
@@ -49,14 +49,20 @@ const WIDTH = 1280
  */
 const KNOWN_VIOLATORS: Record<string, string> = {
   // KNOWN_VIOLATORS:BEGIN — one entry per line, sorted. The batch that fixes one deletes its line.
-  // BUG-184: the bulk-clean card has no max-height, so with a long list its footer (ready @560)
-  // or its header and footer (review @900, @560) leave the viewport. BUG-184 owns the flip.
+  // BUG-184: the bulk-clean card has no max-height. With a long list the FOOTER leaves the viewport
+  // (ready @560: the card ends at 580 in a 560px window) or the HEADER does (review @900/@560: the
+  // card is taller than the window and is centered, so its top is above the viewport and its footer
+  // stays visible). BUG-184 owns the flip.
   'CleanupBulkConfirmDialog#ready@560':
     'BUG-184 — the card is 517px tall with no cap; its footer ends at 580px in a 560px window',
+  'CleanupBulkConfirmDialog#review-few@560':
+    'BUG-184 — 1 row + 16 refused make the card 1257px tall with no cap; its header is above the viewport',
+  'CleanupBulkConfirmDialog#review-few@900':
+    'BUG-184 — 1 row + 16 refused make the card 1257px tall with no cap; its header is above the viewport',
   'CleanupBulkConfirmDialog#review@560':
-    'BUG-184 — 6 rows + 16 refused make the card 1423px tall with no cap; its header is above the viewport',
+    'BUG-184 — 33 rows + 16 refused make the card 1423px tall with no cap; its header is above the viewport',
   'CleanupBulkConfirmDialog#review@900':
-    'BUG-184 — 6 rows + 16 refused make the card 1423px tall with no cap; its header is above the viewport'
+    'BUG-184 — 33 rows + 16 refused make the card 1423px tall with no cap; its header is above the viewport'
   // KNOWN_VIOLATORS:END
 }
 
@@ -74,7 +80,7 @@ test.describe('dialog geometry invariants (T460 batch 0)', () => {
         '--no-sandbox',
         '--disable-gpu'
       ],
-      env: { ...process.env, HOME: seed.userData }
+      env: seedLaunchEnv(seed)
     })
     page = await app.firstWindow()
     await expect(page.locator('body')).toBeVisible()
@@ -140,15 +146,77 @@ test.describe('dialog geometry invariants (T460 batch 0)', () => {
     }
   }
 
-  test('every route the seed cannot reach says why', () => {
-    const unreachable = ROUTES.filter((r: { reach: string }) => r.reach !== 'seed')
-    for (const r of unreachable as { id: string; note?: string }[]) {
-      expect(r.note, `${r.id} is not seedable: it needs a reason`).toBeTruthy()
+  test('every route the CI app cannot reach says why, and each is reported, not skipped silently', () => {
+    const unreachable = ROUTES.filter((r: { reach: string }) => r.reach !== 'seed') as {
+      id: string
+      reach: string
+      note?: string
+    }[]
+    expect(unreachable.map((r) => r.id).sort()).toEqual([
+      'CommandPalette',
+      'ContainersRemoveDialog',
+      'HarnuModExternal'
+    ])
+    for (const r of unreachable) {
+      expect(r.note, `${r.id} (${r.reach}) needs a reason`).toBeTruthy()
+      // Visible in the Playwright report: the geometry of these is NOT proven by this run.
+      test
+        .info()
+        .annotations.push({ type: 'not-reachable-in-ci', description: `${r.id}: ${r.note}` })
     }
   })
 
-  test('the seeded world has the BUG-184 shape: 40 worktrees, long lists, refused rows', async () => {
-    expect(seed.worktrees.length).toBeGreaterThanOrEqual(40)
+  test('the seeded world has BUG-184 shape: 33+ removable review rows and 16 refused', async () => {
+    expect(seed.worktrees.length).toBeGreaterThanOrEqual(67)
+    expect(seed.states.dirty.length).toBeGreaterThanOrEqual(33)
     expect(seed.states.locked.length + seed.states.nestedOuter.length).toBeGreaterThanOrEqual(16)
   })
+
+  // The seed's INPUTS are not the finding — what the live dialog shows is. This pins, against the
+  // running app, which worktree states reach the bulk dialog's refused section (spec §6.3 step 3):
+  // locked and nested-worktree do; detached HEAD (filed as In use) and a plain merged worktree do not.
+  for (const [id, rows, refused] of [
+    [
+      'CleanupBulkConfirmDialog#ready',
+      () => seed.states.plain.length + seed.states.nestedInner.length,
+      () => 0
+    ],
+    [
+      'CleanupBulkConfirmDialog#review',
+      () => seed.states.dirty.length,
+      () => seed.states.locked.length + seed.states.nestedOuter.length
+    ],
+    [
+      'CleanupBulkConfirmDialog#review-few',
+      () => 1,
+      () => seed.states.locked.length + seed.states.nestedOuter.length
+    ]
+  ] as const) {
+    test(`${id} lists exactly the seeded rows and refused rows`, async () => {
+      const route = SEEDED_ROUTES.find((r: { id: string }) => r.id === id)
+      expect(route, `route ${id}`).toBeTruthy()
+      const ctx = { page, app, seed }
+      await route.open(ctx)
+      try {
+        expect(
+          await page.locator('[data-testid="bulk-row"]').count(),
+          `${id}: removable rows`
+        ).toBe(rows())
+        const refusedRows = page.locator('[data-testid="bulk-refused-row"]')
+        expect(await refusedRows.count(), `${id}: refused rows`).toBe(refused())
+        // Which states: only locked and nested-worktree, by their on-screen reason.
+        const texts = (await refusedRows.allInnerTexts()).join('\n')
+        const locked = (texts.match(/locked/gi) ?? []).length
+        const nested = (texts.match(/another worktree or checkout/gi) ?? []).length
+        expect(locked, `${id}: locked`).toBe(refused() === 0 ? 0 : seed.states.locked.length)
+        expect(nested, `${id}: nested`).toBe(refused() === 0 ? 0 : seed.states.nestedOuter.length)
+        // Detached worktrees never appear anywhere in the dialog.
+        const dialog = await page.locator('[data-testid="bulk-dialog"]').innerText()
+        for (const name of seed.states.detached)
+          expect(dialog, `${id}: ${name}`).not.toContain(name)
+      } finally {
+        await closeRoute(route, ctx)
+      }
+    })
+  }
 })

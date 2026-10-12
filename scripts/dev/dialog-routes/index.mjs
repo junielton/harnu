@@ -10,7 +10,7 @@
  *   {
  *     id:     'CleanupBulkConfirmDialog#review'   // component name, `#variant` when one file has several states
  *     file:   'CleanupBulkConfirmDialog.vue'
- *     reach:  'seed' | 'reference' | 'not-seedable'
+ *     reach:  'seed' | 'needs-claude' | 'reference' | 'not-seedable'
  *     note?:  string                               // required for anything that is not `seed`
  *     longContent?: boolean                        // the seed fills the body: it MUST scroll
  *     open:   async ({ page, app, seed }) => void  // resolves once [role="dialog"] is visible and settled
@@ -27,8 +27,20 @@ import { ROUTES_BOARD_MISSIONS } from './board-missions.mjs'
 
 export const ROUTES = [...ROUTES_FOLDER_GLOBAL, ...ROUTES_CLEANUP, ...ROUTES_BOARD_MISSIONS]
 
-/** Routes a headless `ci` launch can open (the seed reaches everything but four surfaces). */
+/**
+ * Routes a headless `ci` launch can open with nothing but the seed. (The seed reaches everything
+ * but four surfaces; see `reach` below.)
+ */
 export const SEEDED_ROUTES = ROUTES.filter((r) => r.reach === 'seed')
+
+/**
+ * Routes the before/after baseline measures: everything the seed reaches, plus the routes that also
+ * need a real `claude` binary on PATH (`needs-claude`) — a developer machine has one, the CI runner
+ * does not, so the geometry spec lists those as unreachable-in-CI with their reason.
+ */
+export const MEASURED_ROUTES = ROUTES.filter(
+  (r) => r.reach === 'seed' || r.reach === 'needs-claude'
+)
 
 /** Default `close`: Escape, then wait until no dialog is left. */
 export async function closeRoute(route, ctx) {

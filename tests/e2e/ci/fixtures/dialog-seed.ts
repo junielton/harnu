@@ -31,17 +31,21 @@
  * state, not disk state — the geometry spec types into the card to make one.
  */
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-/** How many linked worktrees the long-list repo carries (BUG-184: 33+ rows, 16+ refused). */
-export const LONG_LIST_WORKTREES = 40
+/**
+ * How many linked worktrees the long-list repo carries. BUG-184's literal scenario is a confirm
+ * with 33+ removable rows AND 16 refused ones; 67 = 33 dirty (removable) + 8 locked + 8 nested
+ * (refused) + 4 detached + 14 plain (+ 8 nested inner checkouts, which are extra worktrees).
+ */
+export const LONG_LIST_WORKTREES = 67
 
-/** A commit date old enough that every worktree is far past any grace window, and fixed forever. */
 /** Merged local branches with no worktree — they populate Cleanup's "Other leftovers" (Sweep). */
 export const LEFTOVER_BRANCHES = 3
 
+/** A commit date old enough that every worktree is far past any grace window, and fixed forever. */
 export const SEED_DATE = '2026-01-15T12:00:00+00:00'
 
 /**
@@ -61,9 +65,10 @@ export const REFUSAL_PLAN = {
   /**
    * A tracked file modified after the merge: Needs review (`dirty`) but REMOVABLE once confirmed.
    * These are what make a Remove-selected confirm open at all with the refused ones ticked
-   * alongside — the dialog only exists while at least one ticked row can be removed.
+   * alongside — the dialog only exists while at least one ticked row can be removed — and 33 of
+   * them make the confirm BUG-184's literal shape (33 removable rows + 16 refused).
    */
-  dirty: 6
+  dirty: 33
 } as const
 
 export interface DialogSeed {
@@ -71,6 +76,8 @@ export interface DialogSeed {
   root: string
   /** Pass as `--user-data-dir` and as `HOME`. */
   userData: string
+  /** A directory holding a stand-in `docker` executable; `seedLaunchEnv` puts it first on PATH. */
+  dockerShimDir: string
   /** The `org/proj/www` main checkout. */
   repo: string
   /** A pinned folder that is not a git repo. */
@@ -233,6 +240,40 @@ function mission(
     ...over
   }
   return m
+}
+
+/**
+ * A stand-in `docker` that reports a healthy, EMPTY daemon: `version` answers, there are no
+ * containers, no volumes, no images. Why the seed owns one: Cleanup's scan is "blind" when the
+ * daemon does not answer (every removal is then refused as `scan-blind` and the hero never
+ * appears), and a developer machine and a CI runner differ in whether Docker runs and how much
+ * build cache it holds (1.53 GB locally, none on the runner). A shim makes the world — and the
+ * baseline — identical everywhere. The app finds it through PATH only.
+ */
+function writeDockerShim(root: string): string {
+  const dir = join(root, 'bin')
+  mkdirSync(dir, { recursive: true })
+  const script = [
+    '#!/bin/sh',
+    'case "$1" in',
+    '  version) echo 24.0.0 ;;',
+    '  system) case "$*" in *"json .Volumes"*) echo "[]" ;; esac ;;',
+    'esac',
+    'exit 0',
+    ''
+  ].join('\n')
+  writeFileSync(join(dir, 'docker'), script)
+  chmodSync(join(dir, 'docker'), 0o755)
+  return dir
+}
+
+/** The environment to launch the app with: HOME in the isolated userData, the docker shim first on PATH. */
+export function seedLaunchEnv(seed: DialogSeed): Record<string, string> {
+  return {
+    ...(process.env as Record<string, string>),
+    HOME: seed.userData,
+    PATH: `${seed.dockerShimDir}:${process.env.PATH ?? ''}`
+  }
 }
 
 /**
@@ -464,6 +505,7 @@ export function seedDialogWorld(
   return {
     root,
     userData,
+    dockerShimDir: writeDockerShim(root),
     repo: www,
     plainFolder,
     linkedWorktree,

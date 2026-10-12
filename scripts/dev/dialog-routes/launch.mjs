@@ -13,12 +13,13 @@ export const WIDTH = 1280
 export const HEIGHTS = [900, 560]
 
 /**
- * @param {{ buildDir: string, userData: string, width?: number, height?: number, extraArgs?: string[] }} o
+ * @param {{ buildDir: string, userData: string, env?: Record<string, string>, width?: number, height?: number, extraArgs?: string[] }} o
  * @returns {Promise<{ app: import('@playwright/test').ElectronApplication, page: import('@playwright/test').Page }>}
  */
 export async function launchSide({
   buildDir,
   userData,
+  env,
   width = WIDTH,
   height = 900,
   extraArgs = []
@@ -32,7 +33,7 @@ export async function launchSide({
       ...extraArgs
     ],
     cwd: buildDir,
-    env: { ...process.env, HOME: userData }
+    env: env ?? { ...process.env, HOME: userData }
   })
   const page = await app.firstWindow()
   await page.locator('body').waitFor({ state: 'visible' })

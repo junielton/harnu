@@ -268,11 +268,12 @@ export const ROUTES_FOLDER_GLOBAL = [
   {
     id: 'HarnuModExternal',
     file: 'HarnuModExternal.vue',
-    reach: 'seed',
+    reach: 'needs-claude',
     note:
       'Settings → Mods → "Advanced" → "outside Harnu" switch → confirm. Stacks OVER Settings, so `close` ' +
-      'closes both. The switch is disabled until the Harnu mod is loaded (companion on); `open` throws a ' +
-      'descriptive error when that is the case.',
+      'closes both. The switch is disabled until the Harnu mod is loaded, and the mod only loads when a ' +
+      '`claude` binary of a supported version is on PATH: a developer machine reaches it, the CI runner ' +
+      '(no claude) does not. `open` throws a descriptive error when the switch is disabled.',
     async open({ page }) {
       await page
         .locator('aside footer')

@@ -21,10 +21,11 @@
  *     `<dir>` (`<tmp>/dialog-baseline-<label>`): the single-instance lock is keyed on userData, so
  *     the two sides — and the user's own running Harnu — never collide. A CDP port would flip
  *     IS_DEV (docs/dev/live-verify-second-instance.md) and send the window to :5174, which two
- *     sides cannot both own; with no port each side loads its own `out/renderer`, so the sides may
- *     run at the same time or one after the other.
- *  3. Seed: tests/e2e/ci/fixtures/dialog-seed.ts (`seedDialogWorld`) — the 40-worktree long-list
- *     repo, pinned folders, a roadmap, missions. Fixed names, fixed commit dates, no randomness.
+ *     sides cannot both own; with no port each side loads its own `out/renderer`. The two Electron
+ *     processes would not collide, but both sides use ONE seeded world path (step 3) that is rebuilt
+ *     by every capture, so run the sides one after the other, never concurrently.
+ *  3. Seed: tests/e2e/ci/fixtures/dialog-seed.ts (`seedDialogWorld`) — the long-list repo (67
+ *     worktrees, BUG-184's shape), pinned folders, a roadmap, missions. Fixed names, fixed commit dates, no randomness.
  *  4. Per theme × window height (1280×900 and 1280×560, `BrowserWindow.setContentSize`) × route
  *     (scripts/dev/dialog-routes/*, one entry per way of opening a dialog) it records a viewport
  *     PNG and a JSON measurement: rects of card / header / body / footer, computed width,
@@ -68,6 +69,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
+import { validateDeltas } from './dialog-routes/deltas.mjs'
 
 const HERE = new URL('.', import.meta.url).pathname
 
@@ -99,11 +101,11 @@ async function capture(argv) {
   }
 
   // Imported lazily so `diff` needs neither Playwright nor git.
-  const { seedDialogWorld } = await import(
+  const { seedDialogWorld, seedLaunchEnv } = await import(
     new URL('../../tests/e2e/ci/fixtures/dialog-seed.ts', import.meta.url).href
   )
   const { launchSide, setViewport, setTheme } = await import('./dialog-routes/launch.mjs')
-  const { ROUTES, closeRoute } = await import('./dialog-routes/index.mjs')
+  const { ROUTES, MEASURED_ROUTES, closeRoute } = await import('./dialog-routes/index.mjs')
   const { measureDialog } = await import('./dialog-routes/measure.mjs')
 
   const label = values.label
@@ -126,7 +128,12 @@ async function capture(argv) {
   const themes = values.themes.split(',').filter(Boolean)
   const heights = values.heights.split(',').map(Number)
 
-  const { app, page } = await launchSide({ buildDir, userData: seed.userData, height: heights[0] })
+  const { app, page } = await launchSide({
+    buildDir,
+    userData: seed.userData,
+    env: seedLaunchEnv(seed),
+    height: heights[0]
+  })
   const results = {
     version: 1,
     label,
@@ -147,7 +154,7 @@ async function capture(argv) {
         await page.waitForTimeout(250)
         for (const route of routes) {
           const key = { id: route.id, theme, height }
-          if (route.reach !== 'seed') {
+          if (!MEASURED_ROUTES.includes(route)) {
             results.entries.push({ ...key, reach: route.reach, note: route.note ?? null })
             continue
           }
@@ -162,7 +169,7 @@ async function capture(argv) {
             }
             results.entries.push({
               ...key,
-              reach: 'seed',
+              reach: route.reach,
               longContent: !!route.longContent,
               measured
             })
@@ -170,7 +177,7 @@ async function capture(argv) {
           } catch (err) {
             results.entries.push({
               ...key,
-              reach: 'seed',
+              reach: route.reach,
               error: String(err?.message ?? err).slice(0, 400)
             })
             console.log(
@@ -219,30 +226,6 @@ function normalize(v, root) {
 
 const globToRe = (g) =>
   new RegExp(`^${g.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`)
-
-/** Validate an expected-deltas document against the schema's rules (no ajv dependency). */
-function validateDeltas(doc) {
-  if (doc?.version !== 1 || !Array.isArray(doc.deltas)) {
-    throw new Error('expected-deltas: need { "version": 1, "deltas": [...] }')
-  }
-  doc.deltas.forEach((d, i) => {
-    if (
-      typeof d.dialog !== 'string' ||
-      typeof d.property !== 'string' ||
-      typeof d.reason !== 'string'
-    ) {
-      throw new Error(
-        `expected-deltas[${i}]: "dialog", "property" and "reason" are required strings`
-      )
-    }
-    for (const k of Object.keys(d)) {
-      if (!['dialog', 'property', 'from', 'to', 'height', 'theme', 'reason'].includes(k)) {
-        throw new Error(`expected-deltas[${i}]: unknown key "${k}"`)
-      }
-    }
-  })
-  return doc
-}
 
 function isExpected(deltas, id, theme, height, prop, before, after) {
   return deltas.find((d) => {
