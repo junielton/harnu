@@ -110,6 +110,16 @@ export function formatBytes(bytes: number): string {
   return Math.round(n) + ' B'
 }
 
+/**
+ * "400 MB freed now · 2.00 GB in the trash": what a clean really returned, next to what only moved
+ * to the OS trash. The renderer says the same words (`cleanup.gc.freed.*`), so the screen and the
+ * notification never give two amounts for one clean.
+ */
+export function freedSplit(freedBytes: number, trashedBytes: number): string {
+  const now = `${formatBytes(freedBytes)} freed now`
+  return trashedBytes > 0 ? `${now} · ${formatBytes(trashedBytes)} in the trash` : now
+}
+
 const NOTICE_TITLE = 'Workspace cleanup'
 const plural = (n: number, one: string, many = `${one}s`): string => (n === 1 ? one : many)
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
@@ -207,6 +217,7 @@ export async function runGcCycle(
 
   const doneCount = cleaned.filter((r) => r.ok).length
   const freedBytes = cleaned.reduce((sum, r) => sum + r.freedBytes, 0) + reclaimed(housekeeping)
+  const trashedBytes = cleaned.reduce((sum, r) => sum + (r.trashedBytes ?? 0), 0)
 
   let notice: string | null = null
   if (plan.mode === 'report') {
@@ -218,7 +229,7 @@ export async function runGcCycle(
   } else {
     deps.state.lastReportKey = null
     if (doneCount > 0) {
-      notice = `Cleaned ${doneCount} ${plural(doneCount, 'worktree')}, freed ${formatBytes(freedBytes)}`
+      notice = `Cleaned ${doneCount} ${plural(doneCount, 'worktree')}, ${freedSplit(freedBytes, trashedBytes)}`
     } else if (reclaimed(housekeeping) > 0) {
       notice = `Freed ${formatBytes(reclaimed(housekeeping))} of Docker cache`
     }
@@ -233,6 +244,7 @@ export async function runGcCycle(
     foundBytes: plan.reportBytes,
     cleaned,
     freedBytes,
+    trashedBytes,
     deferred: plan.deferred,
     housekeeping,
     notified: notice !== null,

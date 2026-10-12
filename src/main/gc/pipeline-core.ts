@@ -36,8 +36,12 @@ export interface GcOps {
    * refuses, a scanned one included: by then the run removed every stack it may remove.
    */
   recheck(b: WorktreeBundle): Promise<{ ok: true } | { ok: false; reason: string }>
-  /** archive → trash → prune → branch-delete → detach, remote branch deletion forced off. */
-  cleanGit(b: WorktreeBundle): Promise<void>
+  /**
+   * archive → trash → prune → branch-delete → detach, remote branch deletion forced off.
+   * May answer the bytes the folder held when it went to the OS trash; without an answer the
+   * pipeline estimates them from the scan.
+   */
+  cleanGit(b: WorktreeBundle): Promise<void | { trashedBytes?: number }>
 }
 
 /** A volume the run left in place because a container still mounted it at execution time. */
@@ -51,7 +55,14 @@ export interface GcItemResult {
   ok: boolean
   haltedAt: GcStep | null
   error?: string
+  /** Bytes actually deleted from disk: the dependency folders. Docker volumes count here too. */
   freedBytes: number
+  /**
+   * Bytes the checkout held when it moved to the OS trash. They are still on disk until the
+   * trash is emptied, so they are never part of `freedBytes`. Absent on a result that trashed
+   * nothing, and on a manual volume removal.
+   */
+  trashedBytes?: number
   /** Present only when non-empty, on success and on a later failure alike. */
   skippedVolumes?: SkippedVolume[]
 }
@@ -63,12 +74,21 @@ export interface GcItemResult {
 export class GcStepError extends Error {
   constructor(
     readonly step: GcStep,
-    message: string
+    message: string,
+    /**
+     * What had already gone to the trash when the step failed: a halt after the trash (prune,
+     * branch-delete) leaves the folder there, and the report must still say so.
+     */
+    readonly detail: { trashedBytes?: number } = {}
   ) {
     super(message)
     this.name = 'GcStepError'
   }
 }
+
+/** A byte count an op reported: finite and not negative, or nothing. */
+const validBytes = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isFinite(v) && v >= 0
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
@@ -181,7 +201,7 @@ export async function runBundle(
 ): Promise<GcItemResult> {
   // Where the run is, so a throw nobody expected still reports the step it happened in and
   // the bytes already freed, never "nothing was touched" after the docker steps ran.
-  const progress: { step: GcStep; freedBytes: number } = { step: 'reprobe', freedBytes: 0 }
+  const progress: Progress = { step: 'reprobe', freedBytes: 0, trashedBytes: 0 }
   try {
     return await runChecked(b, ops, opts, progress)
   } catch {
@@ -191,16 +211,27 @@ export async function runBundle(
       ok: false,
       haltedAt: progress.step,
       error: PROBE_FAILED,
-      freedBytes: progress.freedBytes
+      freedBytes: progress.freedBytes,
+      ...trashedOf(progress.trashedBytes)
     }
   }
 }
+
+interface Progress {
+  step: GcStep
+  freedBytes: number
+  trashedBytes: number
+}
+
+/** The optional field, present only when something went to the trash. */
+const trashedOf = (bytes: number): Pick<GcItemResult, 'trashedBytes'> =>
+  bytes > 0 ? { trashedBytes: bytes } : {}
 
 async function runChecked(
   b: WorktreeBundle,
   ops: GcOps,
   opts: GcRunOptions,
-  progress: { step: GcStep; freedBytes: number }
+  progress: Progress
 ): Promise<GcItemResult> {
   // Throws on a malformed bundle, which runBundle reports as probe-failed at the reprobe.
   if (!wellFormed(b)) throw new TypeError('malformed bundle')
@@ -209,6 +240,7 @@ async function runChecked(
     return { id: b.item.id, ok: false, haltedAt: 'reprobe', error: refused, freedBytes: 0 }
   }
   let freedBytes = 0
+  let trashedBytes = 0
   let skippedVolumes: SkippedVolume[] = []
   const skipped = (): Pick<GcItemResult, 'skippedVolumes'> =>
     skippedVolumes.length > 0 ? { skippedVolumes } : {}
@@ -218,6 +250,7 @@ async function runChecked(
     haltedAt,
     error,
     freedBytes,
+    ...trashedOf(trashedBytes),
     ...skipped()
   })
   /** Runs one step; returns the failure when it throws, null otherwise. */
@@ -280,13 +313,31 @@ async function runChecked(
   const beforeGit = await rechecked(ops, b)
   if (beforeGit) return fail('archive', beforeGit)
 
+  // The checkout is moved to the OS trash, not deleted: its bytes are reported apart from what the
+  // deps freed. The executor's own measurement wins; without one the scan's disk size, less the
+  // deps just dropped, stands in for it.
+  const estimate = Math.max(0, (b.item.diskBytes ?? 0) - freedBytes)
   try {
-    await ops.cleanGit(b)
+    const answer: unknown = await ops.cleanGit(b)
+    const reported = (answer as { trashedBytes?: unknown } | null | undefined)?.trashedBytes
+    trashedBytes = validBytes(reported) ? reported : estimate
+    progress.trashedBytes = trashedBytes
   } catch (err) {
-    // The deps are already gone, so their bytes stay counted.
+    // The deps are already gone, so their bytes stay counted; so are the bytes of a folder that
+    // reached the trash before the step failed.
+    if (err instanceof GcStepError && validBytes(err.detail.trashedBytes)) {
+      trashedBytes = err.detail.trashedBytes
+    }
     return fail(err instanceof GcStepError ? err.step : 'archive', messageOf(err))
   }
-  return { id: b.item.id, ok: true, haltedAt: null, freedBytes, ...skipped() }
+  return {
+    id: b.item.id,
+    ok: true,
+    haltedAt: null,
+    freedBytes,
+    trashedBytes,
+    ...skipped()
+  }
 }
 
 /** The one refusal a recheck may name itself: the operator's confirmed work changed mid-run. */

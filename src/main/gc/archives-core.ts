@@ -188,3 +188,75 @@ export function expiredArchives(
   const cutoff = now - keepDays * DAY_MS
   return entries.filter((e) => Number.isFinite(e.at) && e.at < cutoff).sort((a, b) => a.at - b.at)
 }
+
+// ---- the card the snapshot carries --------------------------------------------------------------
+
+/** One repo's archives, newest first. */
+export interface ArchiveRepoGroup {
+  repoPath: string
+  /** Basename of the repo folder: what a path-free surface (the agent listing) names it by. */
+  repoAlias: string
+  count: number
+  /** Estimated bytes only the archives keep alive; null when git could not say. */
+  bytes: number | null
+  entries: ArchiveEntry[]
+}
+
+/** The Archives category of the Cleanup screen: every repo's `refs/archive/**`, plus the policy. */
+export interface GcArchivesCard {
+  repos: ArchiveRepoGroup[]
+  count: number
+  /** Sum of the repos whose size is known; null when archives exist and none could be sized. */
+  bytes: number | null
+  /** How many entries are past `keepDays` right now. */
+  expiredCount: number
+  keepDays: number
+  /** "Expire archives automatically": the autopilot may delete the expired ones. */
+  autoExpire: boolean
+}
+
+export const NO_ARCHIVES: GcArchivesCard = {
+  repos: [],
+  count: 0,
+  bytes: 0,
+  expiredCount: 0,
+  keepDays: 30,
+  autoExpire: false
+}
+
+const aliasOf = (p: string): string =>
+  p
+    .replace(/[\\/]+$/, '')
+    .split(/[\\/]/)
+    .pop() || p
+
+/** Joins what the shell read per repo into the card. Repos with no archives are left out. */
+export function buildArchivesCard(
+  perRepo: ReadonlyArray<{ repoPath: string; entries: ArchiveEntry[]; bytes: number | null }>,
+  policy: { keepDays: number; autoExpire: boolean },
+  now: number
+): GcArchivesCard {
+  const repos: ArchiveRepoGroup[] = perRepo
+    .filter((r) => r.entries.length > 0)
+    .map((r) => ({
+      repoPath: r.repoPath,
+      repoAlias: aliasOf(r.repoPath),
+      count: r.entries.length,
+      bytes: r.bytes,
+      entries: r.entries
+    }))
+    .sort((a, b) => a.repoAlias.localeCompare(b.repoAlias) || a.repoPath.localeCompare(b.repoPath))
+  const sized = repos.filter((r) => r.bytes !== null)
+  return {
+    repos,
+    count: repos.reduce((n, r) => n + r.count, 0),
+    bytes:
+      repos.length === 0 ? 0 : sized.length === 0 ? null : sized.reduce((n, r) => n + r.bytes!, 0),
+    expiredCount: repos.reduce(
+      (n, r) => n + expiredArchives(r.entries, policy.keepDays, now).length,
+      0
+    ),
+    keepDays: policy.keepDays,
+    autoExpire: policy.autoExpire
+  }
+}

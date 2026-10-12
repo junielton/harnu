@@ -30,6 +30,15 @@ export interface Tombstone {
    * was an operator click; `autopilot` marks an unattended cycle on the Reaper timer.
    */
   actor?: 'operator' | 'autopilot'
+  /**
+   * Where the folder stood when Harnu moved it to the OS trash, absent when nothing was trashed
+   * (and on every line written before the trash was recorded). The Cleanup screen reads these to
+   * tell what Harnu itself put in the trash from whatever else the user keeps there, so it can
+   * empty only the former. The timestamp narrows a match against the OS trash to this very move.
+   */
+  trashedPath?: string | null
+  trashedBytes?: number | null
+  trashedAt?: number | null
 }
 
 /** Serializes a tombstone to a single JSON line (with trailing newline). */
@@ -51,8 +60,16 @@ function isTombstone(v: unknown): v is Tombstone {
     (typeof t.restoreHint === 'string' || t.restoreHint === null) &&
     isOptionalRef(t.archiveTipRef) &&
     isOptionalRef(t.archiveWipRef) &&
-    (t.actor === undefined || t.actor === 'operator' || t.actor === 'autopilot')
+    (t.actor === undefined || t.actor === 'operator' || t.actor === 'autopilot') &&
+    isOptional(t.trashedPath, 'string') &&
+    isOptional(t.trashedBytes, 'number') &&
+    isOptional(t.trashedAt, 'number')
   )
+}
+
+/** A field that older lines lack: absent, null or the expected type. */
+function isOptional(v: unknown, type: 'string' | 'number'): boolean {
+  return v === undefined || v === null || typeof v === type
 }
 
 /** Archive refs are absent on journal lines written before T254; treat that as null. */

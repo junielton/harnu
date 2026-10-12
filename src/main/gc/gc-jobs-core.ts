@@ -15,6 +15,8 @@ export interface GcJobProgress {
   done: number
   total: number
   freedBytes: number
+  /** Bytes moved to the OS trash so far: still on disk until it is emptied. */
+  trashedBytes: number
   /** The item that runs next, or null after the last one. */
   current: string | null
   /** Every result so far, oldest first. */
@@ -28,6 +30,7 @@ export interface GcJobDone {
   done: number
   total: number
   freedBytes: number
+  trashedBytes: number
   results: GcItemResult[]
   /** Set when the run threw; the results so far are still reported. */
   error: string | null
@@ -41,6 +44,7 @@ export interface GcJobInfo {
   done: number
   total: number
   freedBytes: number
+  trashedBytes: number
   /** The item in flight (running) or next (between items); null when not running. */
   current: string | null
   results: GcItemResult[]
@@ -91,6 +95,9 @@ interface Job extends GcJobInfo {
 const sumFreed = (results: readonly GcItemResult[]): number =>
   results.reduce((sum, r) => sum + r.freedBytes, 0)
 
+const sumTrashed = (results: readonly GcItemResult[]): number =>
+  results.reduce((sum, r) => sum + (r.trashedBytes ?? 0), 0)
+
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
 export function createJobQueue(deps: JobQueueDeps): JobQueue {
@@ -106,6 +113,7 @@ export function createJobQueue(deps: JobQueueDeps): JobQueue {
     done: j.done,
     total: j.total,
     freedBytes: j.freedBytes,
+    trashedBytes: j.trashedBytes,
     current: j.state === 'running' ? j.current : null,
     results: [...j.results],
     error: j.error
@@ -120,6 +128,7 @@ export function createJobQueue(deps: JobQueueDeps): JobQueue {
         job.results.push(result)
         job.done = job.results.length
         job.freedBytes = sumFreed(job.results)
+        job.trashedBytes = sumTrashed(job.results)
         job.current = job.ids[job.done] ?? null
         // A listener that throws (a closed window, say) must not fail the job: the work is
         // what matters, the event is a courtesy.
@@ -129,6 +138,7 @@ export function createJobQueue(deps: JobQueueDeps): JobQueue {
             done: job.done,
             total: job.total,
             freedBytes: job.freedBytes,
+            trashedBytes: job.trashedBytes,
             current: job.current,
             results: [...job.results]
           })
@@ -154,6 +164,7 @@ export function createJobQueue(deps: JobQueueDeps): JobQueue {
       done: job.done,
       total: job.total,
       freedBytes: job.freedBytes,
+      trashedBytes: job.trashedBytes,
       results: [...job.results],
       error: job.error
     }
@@ -200,6 +211,7 @@ export function createJobQueue(deps: JobQueueDeps): JobQueue {
         done: 0,
         total: ids.length,
         freedBytes: 0,
+        trashedBytes: 0,
         current: null,
         results: [],
         error: null,

@@ -47,6 +47,7 @@ import {
 } from './dehydrate-core'
 import {
   forgetMeasure,
+  measureFolder,
   probeEphemeralEntries,
   removeEphemeralDir,
   trackedFingerprint
@@ -93,6 +94,12 @@ export function buildDeps(getWindow: () => BrowserWindow | null): ExecutorDeps {
     probeStatus: probeWorktreeStatus,
     hasUnpushed: hasUnpushedCommits,
     trash: (p) => shell.trashItem(p),
+    // Right before the move, so the figure is what the trash will hold (deps already dropped).
+    // Windows has no `du`: the size is then unknown and the pipeline estimates it.
+    measureBytes: async (p) => {
+      forgetMeasure(p)
+      return (await measureFolder(reaperExec, p, [], Date.now())).total
+    },
     git,
     resolveSha: async (repo, rev) => {
       try {

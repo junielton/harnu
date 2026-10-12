@@ -259,20 +259,17 @@ function cycleRig(cleaned: { freed: number; trashed: number }) {
     lastSignOfLifeAt: NOW - 5 * DAY,
     item: reapItem('/ws/wt/c', { diskBytes: GB })
   })
-  const gather: GcGather = {
-    bundles: [b],
-    housekeeping: {
-      volumes: [],
-      containers: [],
-      dirExists: () => true,
-      knownFolders: [],
-      protectedProjects: new Set()
-    }
+  const housekeeping: GcGather['housekeeping'] = {
+    volumes: [],
+    containers: [],
+    dirExists: () => true,
+    knownFolders: [],
+    protectedProjects: new Set()
   }
   let n = 0
   const deps: GcCycleDeps = {
     prefs: () => ({ ...defaultGcPrefs(), autopilot: true, firstReportAcknowledged: true }),
-    gather: async () => structuredClone(gather),
+    gather: async () => ({ bundles: structuredClone([b]), housekeeping }),
     opsFor: () =>
       pipelineOps({
         dropDeps: async () => cleaned.freed,
