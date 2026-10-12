@@ -1,0 +1,190 @@
+// Pure core of the Cleanup "Archives" category (unit C). Every removal Harnu makes writes
+// `refs/archive/<branch>/<stamp>/{tip,wip}` (reaper/archive-core.ts) so the work stays
+// recoverable. Nothing ever deleted them, and each keeps its git objects alive for good, so Cleanup
+// has to be able to clean its own exhaust: this file groups the refs into one entry per archived
+// thing, decides which have outlived the retention, and builds the restore commands the UI copies.
+//
+// It lists `refs/archive/**` GENERICALLY. A ref of a shape it does not know (another unit's
+// naming for a detached worktree, a hand-made ref) is still an entry, with its source unknown,
+// so it can be seen, restored and, when it expires, removed. No I/O here: the git that reads
+// and deletes lives in archives-shell.ts.
+
+export const ARCHIVE_PREFIX = 'refs/archive/'
+
+/** One ref under `refs/archive/`, as `git for-each-ref` reports it. */
+export interface ArchiveRefInfo {
+  ref: string
+  sha: string
+  /** Committer date of the ref's commit, in ms. Only a fallback: the stamp in the name wins. */
+  at: number
+}
+
+/** One archived thing: a sweep's tip and working state, or a lone generic ref. Plain data. */
+export interface ArchiveEntry {
+  repoPath: string
+  /** `refs/archive/<branch>/<stamp>` for a sweep; the ref itself for a generic one. */
+  namespace: string
+  /** Every ref of the entry, tip first. */
+  refs: string[]
+  tipRef: string | null
+  tipSha: string | null
+  wipRef: string | null
+  wipSha: string | null
+  hasWip: boolean
+  /** The branch the sweep removed, or null for a detached or unknown source. */
+  branch: string | null
+  /** True when the namespace says the source was a detached HEAD. */
+  detached: boolean
+  /** When it was archived, in ms; NaN when neither the name nor the commit says. */
+  at: number
+  /** `git branch <name> <sha>`, ready to paste; null when there is no tip to restore. */
+  restoreCommand: string | null
+  /** A detached worktree on the working-state commit; null when there is no wip. */
+  wipRestoreCommand: string | null
+}
+
+/** `20261002T101500Z` → ms, or null when it is not the compact stamp the Reaper writes. */
+export function parseArchiveStamp(stamp: string): number | null {
+  const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(stamp)
+  if (!m) return null
+  const [, y, mo, d, h, mi, s] = m.map(Number) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number
+  ]
+  const at = Date.UTC(y, mo - 1, d, h, mi, s)
+  // `Date.UTC` rolls 13/40 over into the next period; only an exact round trip is a real stamp.
+  const back = new Date(at)
+  const same =
+    back.getUTCFullYear() === y &&
+    back.getUTCMonth() === mo - 1 &&
+    back.getUTCDate() === d &&
+    back.getUTCHours() === h &&
+    back.getUTCMinutes() === mi &&
+    back.getUTCSeconds() === s
+  return same ? at : null
+}
+
+// Same rule as the journal's restore hint: a value that is already a safe bare shell word stays
+// bare; anything else is single-quoted, so a hostile branch name stays literal when pasted.
+const SHELL_SAFE = /^[A-Za-z0-9,._+:@%/-]+$/
+function shellQuote(value: string): string {
+  if (SHELL_SAFE.test(value)) return value
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+const SHORT = 7
+
+/** The sweep shape: `refs/archive/<branch>/<stamp>/<tip|wip>`. */
+const SWEEP_REF = /^refs\/archive\/(.+)\/(\d{8}T\d{6}Z)\/(tip|wip)$/
+
+interface Draft {
+  namespace: string
+  branch: string | null
+  detached: boolean
+  stampAt: number | null
+  fallbackAt: number
+  tip: ArchiveRefInfo | null
+  wip: ArchiveRefInfo | null
+}
+
+function finish(repoPath: string, d: Draft): ArchiveEntry {
+  const refs = [d.tip?.ref, d.wip?.ref].filter((r): r is string => !!r)
+  const tipSha = d.tip?.sha ?? null
+  const wipSha = d.wip?.sha ?? null
+  let restoreCommand: string | null = null
+  if (tipSha) {
+    const name = d.branch ?? `restored-${tipSha.slice(0, SHORT)}`
+    restoreCommand = `git branch ${shellQuote(name)} ${tipSha}`
+  }
+  return {
+    repoPath,
+    namespace: d.namespace,
+    refs,
+    tipRef: d.tip?.ref ?? null,
+    tipSha,
+    wipRef: d.wip?.ref ?? null,
+    wipSha,
+    hasWip: wipSha !== null,
+    branch: d.branch,
+    detached: d.detached,
+    at: d.stampAt ?? d.fallbackAt,
+    restoreCommand,
+    wipRestoreCommand: wipSha
+      ? `git worktree add --detach ../restored-${wipSha.slice(0, SHORT)} ${wipSha}`
+      : null
+  }
+}
+
+/**
+ * One entry per archived thing, newest first. A tip and a wip that share a namespace are one
+ * entry; any ref of another shape stands alone. A ref whose name is not under `refs/archive/`
+ * is ignored here, so nothing outside the namespace can ever be offered for removal.
+ */
+export function groupArchiveRefs(
+  repoPath: string,
+  refs: readonly ArchiveRefInfo[]
+): ArchiveEntry[] {
+  const drafts = new Map<string, Draft>()
+  for (const r of refs) {
+    if (!r.ref.startsWith(ARCHIVE_PREFIX)) continue
+    const m = SWEEP_REF.exec(r.ref)
+    if (!m) {
+      drafts.set(r.ref, {
+        namespace: r.ref,
+        branch: null,
+        detached: false,
+        stampAt: null,
+        fallbackAt: r.at,
+        tip: r,
+        wip: null
+      })
+      continue
+    }
+    const [, branch, stamp, role] = m as unknown as [string, string, string, 'tip' | 'wip']
+    const namespace = `${ARCHIVE_PREFIX}${branch}/${stamp}`
+    let d = drafts.get(namespace)
+    if (!d) {
+      const detached = branch === 'detached'
+      d = {
+        namespace,
+        branch: detached ? null : branch,
+        detached,
+        stampAt: parseArchiveStamp(stamp),
+        fallbackAt: r.at,
+        tip: null,
+        wip: null
+      }
+      drafts.set(namespace, d)
+    }
+    if (role === 'tip') d.tip = r
+    else d.wip = r
+  }
+  // A wip-only entry has no tip ref to hang its date on: its own commit date is the fallback.
+  return [...drafts.values()]
+    .map((d) => finish(repoPath, d))
+    .sort(
+      (a, b) => (Number.isNaN(b.at) ? -Infinity : b.at) - (Number.isNaN(a.at) ? -Infinity : a.at)
+    )
+}
+
+const DAY_MS = 86_400_000
+
+/**
+ * The entries strictly older than `keepDays`, oldest first. Fails closed: a retention that is
+ * not a positive finite number expires nothing, and an entry whose date is unknown is never
+ * expired (nothing says how old it is).
+ */
+export function expiredArchives(
+  entries: readonly ArchiveEntry[],
+  keepDays: number,
+  now: number
+): ArchiveEntry[] {
+  if (!Number.isFinite(keepDays) || keepDays <= 0) return []
+  const cutoff = now - keepDays * DAY_MS
+  return entries.filter((e) => Number.isFinite(e.at) && e.at < cutoff).sort((a, b) => a.at - b.at)
+}
