@@ -67,6 +67,23 @@ async function resolveRef(repoPath: string, ref: string): Promise<string | null>
   }
 }
 
+/** The tree of a commit, or null when it cannot be read. */
+async function treeOf(repoPath: string, commit: string): Promise<string | null> {
+  try {
+    return (await git(repoPath, ['rev-parse', '--verify', '--quiet', `${commit}^{tree}`])).trim()
+  } catch {
+    return null
+  }
+}
+
+/** `yyyymmddhhmmss` (UTC): the suffix of the sibling ref an earlier working state moves to. */
+function siblingStamp(): string {
+  return new Date()
+    .toISOString()
+    .replace(/\.\d{3}Z$/, '')
+    .replace(/[-:T]/g, '')
+}
+
 /**
  * Captures the worktree's *working state* — tracked modifications, staged or
  * not, plus untracked files — as a dangling commit, and points `ref` at it so
@@ -105,15 +122,19 @@ export async function archiveWip(
 
     const args = ['commit-tree', tree]
     if (parent) args.push('-p', parent)
-    // A ref that already exists is an earlier working state under the same name — a detached
-    // worktree's refs are keyed by folder and commit, not by sweep, so removing the same folder at
-    // the same commit twice lands here. Keeping it as a parent leaves it reachable from the new ref,
-    // so overwriting the name can never drop the only copy of the first state.
-    const earlier = await resolveRef(repoPath, ref)
-    if (earlier && earlier !== parent) args.push('-p', earlier)
     args.push('-m', `harnu-archive: working state of ${worktreePath}`)
     const commit = (await git(worktreePath, args, ARCHIVE_IDENTITY)).trim()
 
+    // A ref that already exists is an earlier working state under the same name — a detached
+    // worktree's refs are keyed by folder and commit, not by sweep, so removing the same folder at
+    // the same commit twice lands here. One with the same files is the same work (the reprobe and the
+    // executor both write the ref in one run) and is simply replaced. One with different files is
+    // kept under a timestamped sibling, so overwriting the name never drops the only copy of it, and
+    // the new ref stays a plain one-parent diff against the tip.
+    const earlier = await resolveRef(repoPath, ref)
+    if (earlier && (await treeOf(repoPath, earlier)) !== tree) {
+      await git(repoPath, ['update-ref', `${ref}-${siblingStamp()}`, earlier])
+    }
     await git(repoPath, ['update-ref', ref, commit])
     return commit
   } finally {
