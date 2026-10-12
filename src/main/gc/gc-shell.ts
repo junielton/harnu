@@ -18,6 +18,7 @@ import {
   type SessionPresence,
   type WorktreeBundle
 } from './bundle-core'
+import { gitOperationOf } from './gc-operation'
 import { cleanItem, type CleanStepId, type ExecutorDeps } from '../reaper/executor-core'
 import { dehydrateItem, type DehydrateDeps } from '../reaper/dehydrate-core'
 import {
@@ -70,6 +71,11 @@ export interface GcShellDeps {
    * Rejects when the walk cannot read a folder. The reprobe and the recheck refuse on any.
    */
   findForeignCheckouts(path: string): Promise<string[]>
+  /**
+   * The rebase or bisect in progress in a worktree, or null. Optional: the scan already recorded
+   * what it saw (`bundle.operation`), and this looks again right before the clean.
+   */
+  operationOf?(path: string): Promise<'rebase' | 'bisect' | null>
 }
 
 /**
@@ -489,6 +495,10 @@ export function createGcOps(deps: GcShellDeps): GcOps {
       }
       const path = item.path
       if (!path) return { ok: false, reason: 'changed-since-scan' }
+      // An unfinished rebase or bisect lives in the folder and would be trashed with it.
+      if (b.operation !== undefined || (deps.operationOf && (await deps.operationOf(path)))) {
+        return { ok: false, reason: 'operation-in-progress' }
+      }
       try {
         // Real paths before any comparison: a symlinked worktree may be the main checkout,
         // and one whose path cannot be read may be an alias of anything.
@@ -728,6 +738,7 @@ export async function defaultGcShellDeps(
     // A git failure rejects, so the reprobe and the recheck refuse as probe-failed.
     listWorktrees: async (repoPath) =>
       parseWorktreeList(await executor.git(repoPath, ['worktree', 'list', '--porcelain'])),
-    findForeignCheckouts
+    findForeignCheckouts,
+    operationOf: gitOperationOf
   }
 }

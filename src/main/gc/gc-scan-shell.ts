@@ -45,6 +45,7 @@ import {
 } from './gc-shell'
 import { collectForeignCheckouts } from './gc-foreign'
 import { lockedItemIds } from './gc-locked'
+import { gitOperationOf } from './gc-operation'
 import { sessionsFromFleet } from './gc-sessions'
 import {
   attributeBySlug,
@@ -210,6 +211,22 @@ async function missingFolders(paths: readonly string[]): Promise<Set<string>> {
   return gone
 }
 
+/** The rebase or bisect in progress in each detached worktree of `items`, by item id. */
+async function operationsOf(
+  items: ReadonlyArray<{ id: string; kind: string; path?: string | null }>
+): Promise<Map<string, 'rebase' | 'bisect'>> {
+  const out = new Map<string, 'rebase' | 'bisect'>()
+  await Promise.all(
+    items
+      .filter((i) => i.kind === 'detached-worktree' && i.path)
+      .map(async (i) => {
+        const op = await gitOperationOf(i.path as string)
+        if (op) out.set(i.id, op)
+      })
+  )
+  return out
+}
+
 export async function gatherGc(
   prefs: GcPrefs,
   now: number,
@@ -354,7 +371,9 @@ export async function gatherGc(
     released: new Map(Object.entries(prefs.released)),
     releasedTips: releasedTipsOf(prefs),
     // Git's own lock: such a worktree cannot be unregistered, so it is review, not ready.
-    locked: lockedItemIds(items, lockedPaths, canonical, process.platform)
+    locked: lockedItemIds(items, lockedPaths, canonical, process.platform),
+    // A rebase or bisect keeps its state in the folder: only a detached HEAD can be in one.
+    operations: await operationsOf(items)
   }
   // A Keep mark holds only while the fate it was made under still holds: judge the fates
   // first, then rebuild with the marks that are still valid.

@@ -31,6 +31,7 @@ export type RemovalRefusal =
   | 'protected-now'
   | 'stack-present'
   | 'scan-blind'
+  | 'operation-in-progress'
 
 export type Removability =
   | { ok: true }
@@ -144,6 +145,15 @@ export function bundleRemovability(
   if (b.session !== 'none' || code === 'open-idle-session') return refused('session-open')
   if (b.locked === true || code === 'locked') {
     return refused('locked', `git worktree unlock ${shellQuote(path)}`)
+  }
+  // A rebase or bisect in a detached worktree keeps its state in the folder, which Remove would trash.
+  if (b.operation !== undefined || code === 'operation-in-progress') {
+    return refused(
+      'operation-in-progress',
+      b.operation === undefined || !path
+        ? undefined
+        : `git -C ${shellQuote(path)} ${b.operation === 'rebase' ? 'rebase --abort' : 'bisect reset'}`
+    )
   }
   // Demoted after repeated refusals: main said no again and again, and nothing here shows what changed.
   const remembered = b.bucket === 'review' ? REMEMBERED[b.reprobeRefusal?.code ?? ''] : undefined

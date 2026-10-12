@@ -38,6 +38,7 @@ const MAIN_CODES: Record<RemovalRefusal, string[]> = {
   kept: ['kept', 'not-ready'],
   'in-use': ['in-use'],
   'unsupported-kind': ['unsupported-kind'],
+  'operation-in-progress': ['operation-in-progress'],
   'shared-stack': ['shared-stack'],
   'nested-worktree': ['nested-worktree', 'foreign-checkout'],
   'tip-unknown': ['tip-unknown'],
@@ -84,6 +85,18 @@ const CASES: { name: string; bundle: WorktreeBundle; refusal: RemovalRefusal | n
       { kind: 'detached-worktree', branch: undefined, headSha: 'a'.repeat(40) }
     ),
     refusal: null
+  },
+  {
+    name: 'a detached worktree in the middle of a rebase',
+    bundle: {
+      ...b(
+        'review',
+        { reason: { code: 'operation-in-progress', detail: 'x' } },
+        { kind: 'detached-worktree', branch: undefined, headSha: 'a'.repeat(40) }
+      ),
+      operation: 'rebase'
+    },
+    refusal: 'operation-in-progress'
   },
   {
     name: 'a locked worktree',

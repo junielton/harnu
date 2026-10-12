@@ -404,6 +404,7 @@ describe('CleanupBulkConfirmDialog: the reason is the translated one for every c
     'nested-worktree',
     'check-failed',
     'locked',
+    'operation-in-progress',
     'no-known-worktree'
   ]
   const locale = i18n.global.locale as unknown as { value: string }

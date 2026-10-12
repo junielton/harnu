@@ -2311,6 +2311,7 @@
         "nestedWorktree": "Há outro worktree dentro deste, e remover este também o jogaria no lixo.",
         "checkFailed": "O Harnu não conseguiu olhar dentro deste worktree, então não sabe se removê-lo levaria outro checkout junto.",
         "locked": "Este worktree está bloqueado no git",
+        "operationInProgress": "Um rebase ou bisect ainda está em andamento neste worktree",
         "inUse": {
           "mainCheckout": "O checkout principal do repositório. Nunca é tocado.",
           "neverClean": "Está na sua lista de nunca limpar. Nunca é tocado.",
@@ -2659,6 +2660,7 @@
           "pathUnresolved": "Não foi possível resolver um caminho ligado a este worktree, então o Harnu não sabe o que o usa.",
           "sessionOpen": "Ainda há uma sessão aberta neste worktree. Feche-a primeiro.",
           "locked": "O git tem este worktree bloqueado. Desbloqueie primeiro.",
+          "operationInProgress": "Um rebase ou bisect ainda está em andamento aqui, e o estado dele se perderia junto com a pasta. Termine ou aborte, depois use Scan now.",
           "cannotUnregister": "O git não tem um registro único e desbloqueado para este worktree, então o Harnu não consegue desregistrá-lo e o recusou mais de uma vez. Confira git worktree list.",
           "protectedNow": "Ele está protegido agora (um checkout principal, um caminho de nunca limpar ou uma marca Manter), e o Harnu o recusou mais de uma vez.",
           "scanBlind": "O Docker não estava rodando quando o Harnu escaneou, então ele não viu as stacks deste worktree. Inicie o Docker e use Escanear agora.",
@@ -2700,7 +2702,8 @@
         "changedMidRun": "Ela mudou durante a limpeza, então o Harnu parou.",
         "dirty": "Agora há alterações não commitadas, então foi deixado como está.",
         "foreignCheckout": "Há outro repositório com checkout dentro desta pasta, então foi deixado como está.",
-        "cannotUnregister": "O Harnu não conseguiu associar este worktree a um único registro do git, então nada foi tocado."
+        "cannotUnregister": "O Harnu não conseguiu associar este worktree a um único registro do git, então nada foi tocado.",
+        "operationInProgress": "Um rebase ou bisect está em andamento neste worktree, então ele foi deixado como estava. Termine ou aborte, depois Scan now."
       },
       "opinion": {
         "safe": "Seguro",

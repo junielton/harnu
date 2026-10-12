@@ -68,6 +68,7 @@ export type ReviewCode =
   | 'nested-worktree'
   | 'check-failed'
   | 'locked'
+  | 'operation-in-progress'
 
 /** `detail` is one English sentence with the concrete fact; the renderer translates by `code`. */
 export interface ReviewReason {
@@ -124,6 +125,12 @@ export interface BundleFacts {
    * ready. Optional, and absent means unlocked: the reprobe asks git again before any step.
    */
   locked?: boolean
+  /**
+   * A rebase or a bisect is in progress in this (detached) worktree: its state would go with the
+   * folder, so it is never ready and Remove is refused until it is finished or aborted. Optional,
+   * and absent means none; the reprobe looks again before any step.
+   */
+  operation?: 'rebase' | 'bisect'
 }
 
 export interface WorktreeBundle extends BundleFacts {
@@ -329,6 +336,12 @@ export function bucketOf(
 
   if (f.locked === true) return review('locked', 'This worktree is locked in git.')
 
+  if (f.operation !== undefined)
+    return review(
+      'operation-in-progress',
+      `A ${f.operation} is in progress in this worktree. Finish or abort it before removing it.`
+    )
+
   if (f.pathsResolved !== true)
     return review(
       'path-unresolved',
@@ -416,6 +429,8 @@ export interface BuildBundlesInput {
   foreignCheckouts: ReadonlyMap<string, string[]>
   /** Ids of the items git lists as locked (delta 6); absent means none. See {@link lockedItemIds}. */
   locked?: ReadonlySet<string>
+  /** The rebase or bisect in progress in each detached worktree, by item id; absent means none. */
+  operations?: ReadonlyMap<string, 'rebase' | 'bisect'>
 }
 
 /** Merge time from the `pr-merged` checkpoint detail; anything that is not a date is ignored. */
@@ -666,7 +681,8 @@ export function buildBundles(input: BuildBundlesInput): WorktreeBundle[] {
       // Passed through as given: a missing or malformed entry stays so, and bucketOf and
       // refusalOf both fail closed on it.
       foreignCheckouts: input.foreignCheckouts.get(item.id) as string[],
-      ...(input.locked?.has(item.id) ? { locked: true } : {})
+      ...(input.locked?.has(item.id) ? { locked: true } : {}),
+      ...(input.operations?.has(item.id) ? { operation: input.operations.get(item.id) } : {})
     }
     return { ...facts, ...bucketOf(facts, input.now, graceDays) }
   })
