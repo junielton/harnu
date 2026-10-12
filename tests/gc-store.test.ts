@@ -58,6 +58,7 @@ interface Api {
   gcOpinion: ReturnType<typeof vi.fn>
   gcOpinionCached: ReturnType<typeof vi.fn>
   gcEmptyTrash: ReturnType<typeof vi.fn>
+  gcDeleteArchives: ReturnType<typeof vi.fn>
 }
 
 function installApi(first: GcSnapshot = snap(), jobs: GcJobInfo[] = []): Api {
@@ -79,6 +80,13 @@ function installApi(first: GcSnapshot = snap(), jobs: GcJobInfo[] = []): Api {
     gcSetPrefs: vi.fn(async (p: unknown) => p),
     gcOpinion: vi.fn(async () => ({ jobId: 'o1' })),
     gcOpinionCached: vi.fn(async () => ({})),
+    gcDeleteArchives: vi.fn(async () => ({
+      ok: true,
+      deleted: 0,
+      archives: 0,
+      failed: 0,
+      changed: []
+    })),
     gcEmptyTrash: vi.fn(async () => ({
       unsupported: false,
       emptiedBytes: 0,
@@ -296,6 +304,35 @@ describe('gc store', () => {
     expect(title).not.toContain('ready')
   })
 
+  it('the review wording follows the JOB, not the last request (a ready job queued behind it keeps "ready")', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.gcSnapshot.mockResolvedValue(snap({ bundles: [] }))
+    api.gcClean
+      .mockResolvedValueOnce({ jobId: 'j-review', queued: false })
+      .mockResolvedValueOnce({ jobId: 'j-ready', queued: true })
+    await gc.submit({ ids: ['r1'], options: { confirmed: ['r1'], expected: {} } } as never)
+    await gc.submit({ ids: ['a'], options: { expected: {} } } as never)
+    const okResult = (id: string) => ({
+      id,
+      ok: true,
+      haltedAt: null,
+      freedBytes: 0,
+      trashedBytes: 10
+    })
+    api.push.done(done({ jobId: 'j-review', done: 1, total: 1, results: [okResult('r1')] }))
+    await vi.runAllTimersAsync()
+    api.push.done(done({ jobId: 'j-ready', done: 1, total: 1, results: [okResult('a')] }))
+    await vi.runAllTimersAsync()
+    expect(toast.mock.calls[0][0].title).toBe('0 B freed now · 10 B in the trash · 1 item removed')
+    expect(toast.mock.calls[1][0].title).toBe(
+      '0 B freed now · 10 B in the trash · 1 ready item cleaned'
+    )
+  })
+
   it('a ready clean keeps saying "ready items cleaned"', async () => {
     const api = installApi()
     const gc = useGcStore()
@@ -338,6 +375,23 @@ describe('gc store', () => {
     expect(toast.mock.calls[0][0].title).toBe(
       '1 folder was left in the trash: it is no longer what Harnu moved'
     )
+  })
+
+  it('the delete toast counts archives, not refs: a tip and a wip are ONE archive', async () => {
+    const api = installApi()
+    const gc = useGcStore()
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    await gc.init()
+    api.gcDeleteArchives.mockResolvedValueOnce({
+      ok: true,
+      deleted: 6,
+      archives: 3,
+      failed: 0,
+      changed: []
+    })
+    await gc.deleteArchives('/ws/repo', [])
+    expect(toast.mock.calls[0][0].title).toBe('Deleted 3 archives')
   })
 
   it('a partial failure toasts a warning and the failed item is back in Needs review with what ran', async () => {

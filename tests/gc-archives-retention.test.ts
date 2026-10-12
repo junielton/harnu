@@ -138,7 +138,7 @@ describe('the autopilot expires archives only when told to', () => {
     expect(expire).toHaveBeenCalledWith(14, NOW)
     expect(rec.archivesExpired).toBe(3)
     expect(r.notices).toEqual([
-      'Deleted 3 archive refs older than 14 days. Git reclaims their space on its next gc.'
+      'Deleted 3 archives older than 14 days. Git reclaims their space on its next gc.'
     ])
   })
 
@@ -160,5 +160,61 @@ describe('the autopilot expires archives only when told to', () => {
     const rec = await runGcCycle(r.deps, 'timer')
     expect(rec.archivesExpired).toBe(0)
     expect(r.cycles).toHaveLength(1)
+  })
+})
+
+describe('the expiry is always mentioned (delta-1 item 12)', () => {
+  it('a cycle that also cleaned a worktree says both, not only the cleaning', async () => {
+    const { bundle, reapItem, DAY } = await import('./gc-fixtures')
+    const b = bundle('/ws/wt/a', 'ready', {
+      lastSignOfLifeAt: NOW - 5 * DAY,
+      item: reapItem('/ws/wt/a', { diskBytes: 1_000_000 })
+    })
+    const notices: string[] = []
+    let n = 0
+    const deps: GcCycleDeps = {
+      prefs: () => ({
+        ...defaultGcPrefs(),
+        autopilot: true,
+        firstReportAcknowledged: true,
+        archiveAutoExpire: true,
+        archiveKeepDays: 30
+      }),
+      gather: async () => ({
+        bundles: structuredClone([b]),
+        housekeeping: {
+          volumes: [],
+          containers: [],
+          dirExists: () => true,
+          knownFolders: [],
+          protectedProjects: new Set()
+        }
+      }),
+      opsFor: () => ({
+        reprobe: async () => ({ ok: true }),
+        stopStacks: async () => undefined,
+        removeContainers: async () => undefined,
+        removeVolumes: async () => undefined,
+        dropDeps: async () => 100,
+        recheck: async () => ({ ok: true }),
+        cleanGit: async () => ({ trashedBytes: 900 })
+      }),
+      queue: createJobQueue({
+        newId: () => `job-${++n}`,
+        emitProgress: () => undefined,
+        emitDone: () => undefined
+      }),
+      housekeeping: async () => ({ buildCacheBytes: 0, imageBytes: 0, volumeBytes: 0, errors: [] }),
+      notify: (x) => notices.push(x.body),
+      emitCycle: () => undefined,
+      expireArchives: async () => ({ deleted: 2, failed: 0 }),
+      state: createCycleState(),
+      now: () => NOW
+    }
+    await runGcCycle(deps, 'timer')
+    expect(notices).toHaveLength(1)
+    expect(notices[0]).toBe(
+      'Cleaned 1 worktree, 100 B freed now · 900 B in the trash. Deleted 2 archives older than 30 days. Git reclaims their space on its next gc.'
+    )
   })
 })

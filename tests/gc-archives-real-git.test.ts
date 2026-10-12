@@ -58,6 +58,9 @@ async function archiveFeature(branch: string, stamp: string, withWip: boolean): 
   }
   git(repo, 'checkout', '-q', 'main')
   git(repo, 'branch', '-D', branch)
+  // A real removal leaves no reflog behind (the branch's own log goes with the branch, and a
+  // worktree's HEAD log with the worktree). Here the main checkout's HEAD log still names the tip.
+  git(repo, 'reflog', 'expire', '--expire=now', '--all')
   return tip
 }
 
@@ -79,6 +82,37 @@ describe('archiveBytes (AC-C1)', () => {
     const tip = await archiveFeature('feat/login', '20261002T101500Z', false)
     git(repo, 'branch', 'kept', tip)
     expect(await archiveBytes(execGit, repo)).toBe(0)
+  })
+
+  it('an archive whose commit is also reachable from the reflog estimates 0: deleting it frees nothing', async () => {
+    // No reflog expiry here: HEAD's log (still holding the feature tip) keeps the objects alive.
+    git(repo, 'checkout', '-q', '-b', 'feat/login')
+    const tip = commitBlob('login.bin', 2_000_000, 'work on login')
+    await archiveTip(repo, 'refs/archive/feat/login/20261002T101500Z/tip', tip)
+    git(repo, 'checkout', '-q', 'main')
+    git(repo, 'branch', '-D', 'feat/login')
+    expect(git(repo, 'reflog', '-n', '5')).toContain('login')
+    expect(await archiveBytes(execGit, repo)).toBe(0)
+  })
+
+  it('an object the index holds is not archive-only either', async () => {
+    const bytes = randomBytes(1_500_000)
+    git(repo, 'checkout', '-q', '-b', 'feat/x')
+    writeFileSync(path.join(repo, 'staged.bin'), bytes)
+    git(repo, 'add', 'staged.bin')
+    git(repo, 'commit', '-q', '-m', 'x')
+    const tip = git(repo, 'rev-parse', 'HEAD')
+    await archiveTip(repo, 'refs/archive/feat/x/20261002T101500Z/tip', tip)
+    git(repo, 'checkout', '-q', 'main')
+    git(repo, 'branch', '-D', 'feat/x')
+    git(repo, 'reflog', 'expire', '--expire=now', '--all')
+    const before = await archiveBytes(execGit, repo)
+    expect(before!).toBeGreaterThan(1_400_000)
+    // The same content staged in main's index: it now lives there too, whatever happens to the archive.
+    writeFileSync(path.join(repo, 'staged.bin'), bytes)
+    git(repo, 'add', 'staged.bin')
+    const after = await archiveBytes(execGit, repo)
+    expect(after!).toBeLessThan(before! - 1_400_000)
   })
 
   it('is null when git cannot answer, never a made-up figure', async () => {
@@ -129,6 +163,7 @@ describe('deleteArchiveEntries + retention (AC-C2)', () => {
     const result = await deleteArchiveEntries(execGit, repo, expired)
     expect(result.failed).toEqual([])
     expect(result.deleted).toHaveLength(2) // the tip ref and the wip ref
+    expect(result.archives).toBe(1) // ...of ONE archive
 
     const left = git(repo, 'for-each-ref', '--format=%(refname)', 'refs/archive/')
     expect(left).not.toContain('feat/old')
@@ -171,6 +206,20 @@ describe('deleteArchiveEntries + retention (AC-C2)', () => {
     expect(result.deleted).toEqual([])
     expect(result.failed).toHaveLength(1)
     expect(git(repo, 'rev-parse', '--verify', 'refs/heads/main')).toMatch(/^[0-9a-f]{40}$/)
+  })
+})
+
+describe('hand-made refs never auto-expire (delta-1 item 7)', () => {
+  it('a ref with no stamp in its name has an unknown age and is never expired', async () => {
+    const head = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'update-ref', 'refs/archive/hand-made', head)
+    git(repo, 'update-ref', 'refs/archive/detached/20260101T000000Z/tip', head)
+    const entries = await listRepoArchives(execGit, repo)
+    const handMade = entries.find((e) => e.namespace === 'refs/archive/hand-made')!
+    expect(handMade.ageKnown).toBe(false)
+    const far = Date.parse('2030-01-01T00:00:00Z')
+    const expired = expiredArchives(entries, 1, far)
+    expect(expired.map((e) => e.namespace)).toEqual(['refs/archive/detached/20260101T000000Z'])
   })
 })
 

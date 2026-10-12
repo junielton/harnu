@@ -79,8 +79,10 @@ describe('groupArchiveRefs', () => {
       branch: null,
       tipSha: sha('c'),
       hasWip: false,
-      at: Date.parse('2026-09-01T00:00:00Z')
+      ageKnown: false
     })
+    // The commit's date is not when it was archived: the age is unknown, and is never guessed.
+    expect(entries[0]!.at).toBeNaN()
   })
 
   it("reads a `detached/` namespace as a detached archive, never as a branch called 'detached'", () => {
@@ -180,5 +182,23 @@ describe('withFolders', () => {
     ])
     expect(out.find((e) => e.branch === 'feat/login')!.folder).toBe('/ws/org/wt-login')
     expect(out.find((e) => e.branch === 'feat/other')!.folder).toBeNull()
+  })
+})
+
+describe('ageKnown', () => {
+  it('is true only when the stamp in the ref name says when it was archived', () => {
+    const entries = groupArchiveRefs(REPO, [
+      ref('refs/archive/feat/x/20261002T101500Z/tip', sha('a')),
+      ref('refs/archive/hand-made', sha('b'), Date.parse('2020-01-01T00:00:00Z'))
+    ])
+    expect(entries.find((e) => e.branch === 'feat/x')!.ageKnown).toBe(true)
+    expect(entries.find((e) => e.namespace === 'refs/archive/hand-made')!.ageKnown).toBe(false)
+  })
+
+  it('an old-looking commit date never expires an unstamped ref', () => {
+    const entries = groupArchiveRefs(REPO, [
+      ref('refs/archive/hand-made', sha('b'), Date.parse('2020-01-01T00:00:00Z'))
+    ])
+    expect(expiredArchives(entries, 1, NOW)).toEqual([])
   })
 })

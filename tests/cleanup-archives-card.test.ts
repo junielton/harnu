@@ -154,6 +154,40 @@ const trashCard = (over: Record<string, unknown> = {}) => ({
   ...over
 })
 
+describe('CleanupArchivesCard: hand-made archives and manual delete', () => {
+  const handMade = () => {
+    const entries = groupArchiveRefs(REPO, [
+      { ref: 'refs/archive/hand-made', sha: sha('f'), at: Date.parse('2020-01-01T00:00:00Z') }
+    ])
+    return buildArchivesCard(
+      [{ repoPath: REPO, entries, bytes: 10 }],
+      { keepDays: 30, autoExpire: true },
+      NOW
+    )
+  }
+
+  it('says "age unknown" for a ref with no stamp, and never calls it expired', async () => {
+    const w = mountCard(handMade())
+    await w.get('[data-testid="archives-repo-toggle"]').trigger('click')
+    const row = w.get('[data-testid="archive-row"]')
+    expect(row.get('[data-testid="archive-date"]').text()).toBe('age unknown')
+    expect(row.find('[data-testid="archive-expired"]').exists()).toBe(false)
+    expect(w.find('[data-testid="archives-delete-older"]').exists()).toBe(false)
+  })
+
+  it('every archive can be deleted by hand, with the same confirm', async () => {
+    const w = mountCard(handMade())
+    await w.get('[data-testid="archives-repo-toggle"]').trigger('click')
+    await w.get('[data-testid="archive-delete"]').trigger('click')
+    const [group, entries] = w.emitted('delete')![0] as [
+      { repoPath: string },
+      Array<{ namespace: string }>
+    ]
+    expect(group.repoPath).toBe(REPO)
+    expect(entries.map((e) => e.namespace)).toEqual(['refs/archive/hand-made'])
+  })
+})
+
 describe('CleanupTrashCard', () => {
   it('names what Harnu moved to the trash and offers to empty exactly that', async () => {
     const w = mount(CleanupTrashCard, {
