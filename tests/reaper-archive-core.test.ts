@@ -95,16 +95,16 @@ describe('planArchive', () => {
 const HEAD = 'abcdef0123456789abcdef0123456789abcdef01'
 
 describe('detachedArchiveNamespace', () => {
-  it('keys the namespace by the folder name and the short HEAD sha, with no stamp', () => {
-    expect(detachedArchiveNamespace('/ws/org/proj/worktrees/bisect-1', HEAD)).toBe(
-      'refs/archive/detached/bisect-1-abcdef012345'
+  it('puts the archive time first, then the folder name and the short HEAD sha (AC-E2)', () => {
+    expect(detachedArchiveNamespace('/ws/org/proj/worktrees/bisect-1', HEAD, AT)).toBe(
+      'refs/archive/detached/20260828T182233Z/bisect-1-abcdef012345'
     )
   })
 
   it('turns a folder name git would refuse into a legal ref component', () => {
     for (const name of ['my wt', '.hidden', 'a..b', 'x.lock', 'we~ird^name:1', '-dash', '']) {
-      const ns = detachedArchiveNamespace(`/ws/${name}`, HEAD)
-      const leaf = ns.slice('refs/archive/detached/'.length)
+      const ns = detachedArchiveNamespace(`/ws/${name}`, HEAD, AT)
+      const leaf = ns.slice('refs/archive/detached/20260828T182233Z/'.length)
       expect(leaf, name).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]*-abcdef012345$/)
       expect(leaf, name).not.toContain('..')
       expect(leaf, name).not.toMatch(/\.lock-/)
@@ -112,9 +112,16 @@ describe('detachedArchiveNamespace', () => {
   })
 
   it('tells two folders with the same HEAD apart by name, and one folder at two commits by sha', () => {
-    const a = detachedArchiveNamespace('/ws/a', HEAD)
-    expect(detachedArchiveNamespace('/ws/b', HEAD)).not.toBe(a)
-    expect(detachedArchiveNamespace('/ws/a', 'f'.repeat(40))).not.toBe(a)
+    const a = detachedArchiveNamespace('/ws/a', HEAD, AT)
+    expect(detachedArchiveNamespace('/ws/b', HEAD, AT)).not.toBe(a)
+    expect(detachedArchiveNamespace('/ws/a', 'f'.repeat(40), AT)).not.toBe(a)
+  })
+
+  it('gives two removals of the same folder at the same commit their own dated namespace', () => {
+    const first = detachedArchiveNamespace('/ws/a', HEAD, AT)
+    const second = detachedArchiveNamespace('/ws/a', HEAD, AT + 86_400_000)
+    expect(second).not.toBe(first)
+    expect(second).toBe('refs/archive/detached/20260829T182233Z/a-abcdef012345')
   })
 })
 
@@ -130,16 +137,17 @@ describe('planArchive — a detached worktree', () => {
 
   it('plans a tip at the HEAD sha and a wip of the folder, under refs/archive/detached', () => {
     const plan = planArchive(detached(), AT)
-    expect(plan.namespace).toBe('refs/archive/detached/bisect-1-abcdef012345')
+    const NS = 'refs/archive/detached/20260828T182233Z/bisect-1-abcdef012345'
+    expect(plan.namespace).toBe(NS)
     expect(plan.refs.map((r) => r.role)).toEqual(['tip', 'wip'])
     expect(plan.tip).toEqual({
       role: 'tip',
-      ref: 'refs/archive/detached/bisect-1-abcdef012345/tip',
+      ref: `${NS}/tip`,
       rev: HEAD
     })
     expect(plan.wip).toEqual({
       role: 'wip',
-      ref: 'refs/archive/detached/bisect-1-abcdef012345/wip',
+      ref: `${NS}/wip`,
       worktreePath: '/ws/org/proj/worktrees/bisect-1'
     })
   })

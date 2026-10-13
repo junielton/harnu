@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  confirmedArchives,
   withFolders,
   expiredArchives,
   groupArchiveRefs,
@@ -200,5 +201,109 @@ describe('ageKnown', () => {
       ref('refs/archive/hand-made', sha('b'), Date.parse('2020-01-01T00:00:00Z'))
     ])
     expect(expiredArchives(entries, 1, NOW)).toEqual([])
+  })
+})
+
+// ---- AC-E2: a detached removal is ONE archive, with a date ---------------------------------------
+
+describe('a detached removal groups into one archive (AC-E2)', () => {
+  const NS = 'refs/archive/detached/20261002T101500Z/bisect-1-abcdef012345'
+  const removal = (ns = NS): ArchiveRefInfo[] => [
+    ref(`${ns}/tip`, sha('a')),
+    ref(`${ns}/wip`, sha('b')),
+    ref(`${ns}/wip-20261002101501`, sha('c')),
+    ref(`${ns}/reflog/111111111111`, sha('d')),
+    ref(`${ns}/reflog/222222222222`, sha('e')),
+    ref(`${ns}/reflog/333333333333`, sha('f'))
+  ]
+
+  it('is one entry for tip, wip, the wip sibling and every reflog ref', () => {
+    const entries = groupArchiveRefs(REPO, removal())
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({
+      namespace: NS,
+      detached: true,
+      branch: null,
+      tipSha: sha('a'),
+      wipSha: sha('b'),
+      hasWip: true,
+      reflogCount: 3
+    })
+    expect(entries[0]!.refs).toHaveLength(6)
+    expect(entries[0]!.members.map((m) => m.ref).sort()).toEqual(
+      removal()
+        .map((r) => r.ref)
+        .sort()
+    )
+    // Each member carries its own sha, so a delete can be checked ref by ref.
+    expect(entries[0]!.members.find((m) => m.ref.endsWith('/reflog/222222222222'))?.sha).toBe(
+      sha('e')
+    )
+  })
+
+  it('takes the date from the stamp in the path, so the archive can expire', () => {
+    const [e] = groupArchiveRefs(REPO, removal())
+    expect(e).toMatchObject({ ageKnown: true, at: Date.parse('2026-10-02T10:15:00Z') })
+    expect(expiredArchives([e!], 7, NOW)).toEqual([e])
+    expect(expiredArchives([e!], 30, NOW)).toEqual([])
+  })
+
+  it('keeps two removals of the same folder at the same commit apart, each with its own date', () => {
+    const later = 'refs/archive/detached/20261010T080000Z/bisect-1-abcdef012345'
+    const entries = groupArchiveRefs(REPO, [...removal(), ...removal(later)])
+    expect(entries.map((e) => e.namespace)).toEqual([later, NS])
+    expect(entries.map((e) => e.refs.length)).toEqual([6, 6])
+  })
+
+  it('a removal with only a tip is still one entry, with no reflog', () => {
+    const [e] = groupArchiveRefs(REPO, [ref(`${NS}/tip`, sha('a'))])
+    expect(e).toMatchObject({ reflogCount: 0, hasWip: false, tipSha: sha('a') })
+    expect(e!.members).toHaveLength(1)
+  })
+
+  it('refs an old Harnu wrote without a stamp are grouped too, and their age stays unknown', () => {
+    const OLD = 'refs/archive/detached/bisect-1-abcdef012345'
+    const entries = groupArchiveRefs(REPO, removal(OLD))
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({
+      namespace: OLD,
+      detached: true,
+      ageKnown: false,
+      reflogCount: 3
+    })
+    expect(entries[0]!.at).toBeNaN()
+    expect(expiredArchives(entries, 1, NOW + 3650 * DAY)).toEqual([])
+  })
+
+  it('does not swallow a sweep of an ordinary branch, nor another removal', () => {
+    const entries = groupArchiveRefs(REPO, [
+      ...removal(),
+      ref('refs/archive/feat/login/20261002T101500Z/tip', sha('1')),
+      ref('refs/archive/feat/login/20261002T101500Z/wip', sha('2'))
+    ])
+    expect(entries.map((e) => e.namespace).sort()).toEqual([
+      'refs/archive/feat/login/20261002T101500Z',
+      NS
+    ])
+  })
+
+  it('restore commands still name the tip and the working state', () => {
+    const [e] = groupArchiveRefs(REPO, removal())
+    expect(e!.restoreCommand).toBe(`git branch restored-${'a'.repeat(7)} ${sha('a')}`)
+    expect(e!.wipRestoreCommand).toBe(
+      `git worktree add --detach ../restored-${'b'.repeat(7)} ${sha('b')}`
+    )
+  })
+
+  it('a delete asks for exactly the members it was shown', () => {
+    const [e] = groupArchiveRefs(REPO, removal())
+    const fresh = [e!]
+    const shown = { namespace: NS, tipSha: sha('a'), wipSha: sha('b'), memberCount: 6 }
+    expect(confirmedArchives(fresh, [shown]).entries).toEqual([e])
+    // A ref that appeared (or vanished) since the confirm is a change, never a silent extra delete.
+    expect(confirmedArchives(fresh, [{ ...shown, memberCount: 5 }])).toEqual({
+      entries: [],
+      changed: [NS]
+    })
   })
 })
