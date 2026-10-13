@@ -16,7 +16,10 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { Notification, app, ipcMain, shell, type BrowserWindow } from 'electron'
 import { removeGhostFoldersUnder } from '../user-projects'
-import { trashTranscriptSlug, type OrphanTranscriptItem } from './gc-orphan-transcripts'
+import type { OrphanTranscriptItem } from './gc-orphan-transcripts'
+import { trashTranscriptsRecorded } from './gc-orphan-trash'
+import { appendTombstone } from '../reaper/journal'
+import { defaultTrashEnv } from './trash-shell'
 import { runStackLeftoverCleanup, type StackLeftoverItem } from './gc-stack-leftovers'
 import { runDocker } from '../containers/containers-shell'
 import { buildNotificationOptions } from '../notifications'
@@ -157,12 +160,36 @@ function parseArchiveRequest(raw: unknown): ArchiveDeleteRequest {
   const sha = (v: unknown): string | null => (typeof v === 'string' && v ? v : null)
   return {
     repoPath: r.repoPath,
-    archives: r.archives.map((a: { namespace?: unknown; tipSha?: unknown; wipSha?: unknown }) => {
-      if (typeof a?.namespace !== 'string' || !a.namespace.startsWith('refs/archive/')) {
-        throw new Error('gc:archives:delete: not an archive namespace')
+    archives: r.archives.map(
+      (a: { namespace?: unknown; tipSha?: unknown; wipSha?: unknown; members?: unknown }) => {
+        if (typeof a?.namespace !== 'string' || !a.namespace.startsWith('refs/archive/')) {
+          throw new Error('gc:archives:delete: not an archive namespace')
+        }
+        let members: Array<{ ref: string; sha: string }> | undefined
+        if (a.members !== undefined) {
+          if (!Array.isArray(a.members) || a.members.length > 2000) {
+            throw new Error('gc:archives:delete: bad members')
+          }
+          members = a.members.map((m: { ref?: unknown; sha?: unknown }) => {
+            if (
+              typeof m?.ref !== 'string' ||
+              !m.ref.startsWith('refs/archive/') ||
+              typeof m.sha !== 'string' ||
+              !/^[0-9a-f]{40,64}$/.test(m.sha)
+            ) {
+              throw new Error('gc:archives:delete: not an archive member')
+            }
+            return { ref: m.ref, sha: m.sha }
+          })
+        }
+        return {
+          namespace: a.namespace,
+          tipSha: sha(a.tipSha),
+          wipSha: sha(a.wipSha),
+          ...(members ? { members } : {})
+        }
       }
-      return { namespace: a.namespace, tipSha: sha(a.tipSha), wipSha: sha(a.wipSha) }
-    })
+    )
   }
 }
 
@@ -416,8 +443,17 @@ export async function registerGcHandlers(
               runDocker(argv, { windowsHide: true, timeout: 120_000, maxBuffer: 4 << 20 })
             ),
           // One project folder of ~/.claude/projects, to the OS trash; a slug is never a path.
-          trashTranscripts: (slug) =>
-            trashTranscriptSlug(transcriptsRoot, slug, (p) => shell.trashItem(p)),
+          // The move is recorded as an exact trash entry, like a worktree removal's.
+          trashTranscripts: (slug, facts) =>
+            trashTranscriptsRecorded({
+              root: transcriptsRoot,
+              slug,
+              facts,
+              env: defaultTrashEnv(),
+              trash: (p) => shell.trashItem(p),
+              appendTombstone,
+              now: () => Date.now()
+            }),
           reconcileFolder: (folder) =>
             removeGhostFoldersUnder(getWindow, folder).then(() => undefined),
           folderExists: (p) =>

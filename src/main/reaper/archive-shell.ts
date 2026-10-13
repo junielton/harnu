@@ -20,6 +20,7 @@ import { promisify } from 'node:util'
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { detachedArchiveKey, newestReusableStamp } from './archive-core'
 
 const runFile = promisify(execFile)
 
@@ -85,6 +86,61 @@ function siblingStamp(): string {
 }
 
 /**
+ * The stamp of the newest detached archive of this folder and commit that a retried removal should
+ * write into (see `newestReusableStamp`); null when there is none or git cannot say.
+ */
+export async function findDetachedArchiveAt(
+  repoPath: string,
+  worktreePath: string,
+  headSha: string,
+  now: number
+): Promise<number | null> {
+  const key = detachedArchiveKey(worktreePath, headSha)
+  try {
+    const out = await git(repoPath, [
+      'for-each-ref',
+      '--format=%(refname) %(objectname)',
+      `refs/archive/detached/*/${key}/tip`
+    ])
+    const tips = out
+      .split('\n')
+      .map((l) => l.trim().split(' '))
+      .filter((f) => f.length === 2)
+      .map(([ref, sha]) => ({ ref: ref!, sha: sha! }))
+    return newestReusableStamp(tips, key, now)
+  } catch {
+    return null
+  }
+}
+
+/** An all-zero object name: as the old value of `update-ref`, "this ref must not exist yet". */
+const ZERO_OID = '0'.repeat(40)
+
+/** How many same-second siblings one ref will take before it gives up (never loops forever). */
+const SIBLING_LIMIT = 1000
+
+/**
+ * Points a sibling of `ref` (`<ref>-<yyyymmddhhmmss>`, then `-2`, `-3`… when that name is taken) at
+ * `commit`. Created with a zero old value, so git itself refuses to move a ref that already exists:
+ * a second working state archived within the same second can never replace the first one's only ref.
+ */
+async function keepAsSibling(repoPath: string, ref: string, commit: string): Promise<string> {
+  const base = `${ref}-${siblingStamp()}`
+  for (let n = 1; n <= SIBLING_LIMIT; n++) {
+    const name = n === 1 ? base : `${base}-${n}`
+    try {
+      await git(repoPath, ['update-ref', name, commit, ZERO_OID])
+      return name
+    } catch (err) {
+      // Only "that name exists" moves on to the next one; a failure that is not that must surface.
+      if (await resolveRef(repoPath, name)) continue
+      throw err
+    }
+  }
+  throw new Error(`could not find a free sibling name for ${ref}`)
+}
+
+/**
  * Captures the worktree's *working state* — tracked modifications, staged or
  * not, plus untracked files — as a dangling commit, and points `ref` at it so
  * `git gc` can never reclaim it.
@@ -129,11 +185,12 @@ export async function archiveWip(
     // worktree's refs are keyed by folder and commit, not by sweep, so removing the same folder at
     // the same commit twice lands here. One with the same files is the same work (the reprobe and the
     // executor both write the ref in one run) and is simply replaced. One with different files is
-    // kept under a timestamped sibling, so overwriting the name never drops the only copy of it, and
+    // kept under a timestamped sibling (with a counter when that name is taken), so overwriting the
+    // name never drops the only copy of it, and
     // the new ref stays a plain one-parent diff against the tip.
     const earlier = await resolveRef(repoPath, ref)
     if (earlier && (await treeOf(repoPath, earlier)) !== tree) {
-      await git(repoPath, ['update-ref', `${ref}-${siblingStamp()}`, earlier])
+      await keepAsSibling(repoPath, ref, earlier)
     }
     await git(repoPath, ['update-ref', ref, commit])
     return commit
@@ -201,6 +258,12 @@ export const defaultReflogIo: ReflogIo = {
  */
 export function createReflogArchiver(opts: { io?: ReflogIo; limit?: number } = {}): {
   archive(repoPath: string, refPrefix: string, worktreePath: string): Promise<string[]>
+  /**
+   * The same count and the same refusal as `archive`, read-only: throws `reflog-limit` when the
+   * worktree holds more tips than one removal keeps, and writes nothing otherwise. A dry run uses it
+   * so a removal that the archive step would stop is refused before anything is prepared.
+   */
+  check(repoPath: string, worktreePath: string): Promise<void>
 } {
   const io = opts.io ?? defaultReflogIo
   const limit = opts.limit ?? REFLOG_REF_LIMIT
@@ -244,25 +307,34 @@ export function createReflogArchiver(opts: { io?: ReflogIo; limit?: number } = {
     return unreachable.filter((sha) => !covered.has(sha))
   }
 
-  return {
-    async archive(repoPath, refPrefix, worktreePath) {
-      const log = await io.run(worktreePath, ['reflog', 'show', '--format=%H', 'HEAD'])
-      const entries = [
-        ...new Set(
-          log
-            .split('\n')
-            .map((l) => l.trim())
-            .filter(Boolean)
-        )
-      ]
-      if (entries.length === 0) return []
+  /** The tips this worktree's removal would have to keep; throws when there are more than the limit. */
+  const tipsToKeep = async (repoPath: string, worktreePath: string): Promise<string[]> => {
+    const log = await io.run(worktreePath, ['reflog', 'show', '--format=%H', 'HEAD'])
+    const entries = [
+      ...new Set(
+        log
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
+      )
+    ]
+    if (entries.length === 0) return []
 
-      const tips = await unreachableTips(repoPath, entries)
-      if (tips.length > limit) {
-        throw new Error(
-          `reflog-limit: this worktree's history holds ${tips.length} separate lines of commits that no branch, tag or ref reaches (one tip each), more than the ${limit} tips Harnu keeps for one removal. Nothing was removed. Keep the ones you want with git branch <name> <sha>, or remove the folder yourself.`
-        )
-      }
+    const tips = await unreachableTips(repoPath, entries)
+    if (tips.length > limit) {
+      throw new Error(
+        `reflog-limit: this worktree's history holds ${tips.length} separate lines of commits that no branch, tag or ref reaches (one tip each), more than the ${limit} tips Harnu keeps for one removal. Nothing was removed. Keep the ones you want with git branch <name> <sha>, or remove the folder yourself.`
+      )
+    }
+    return tips
+  }
+
+  return {
+    async check(repoPath, worktreePath) {
+      await tipsToKeep(repoPath, worktreePath)
+    },
+    async archive(repoPath, refPrefix, worktreePath) {
+      const tips = await tipsToKeep(repoPath, worktreePath)
       if (tips.length === 0) return []
       const refs = tips.map((sha) => `${refPrefix}/${sha.slice(0, 12)}`)
       await io.runIn(
@@ -283,3 +355,7 @@ export const archiveReflog = (
   refPrefix: string,
   worktreePath: string
 ): Promise<string[]> => reflogArchiver.archive(repoPath, refPrefix, worktreePath)
+
+/** See {@link createReflogArchiver}: the read-only count a dry run asks for. */
+export const checkReflog = (repoPath: string, worktreePath: string): Promise<void> =>
+  reflogArchiver.check(repoPath, worktreePath)

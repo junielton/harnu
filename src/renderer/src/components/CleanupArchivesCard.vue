@@ -208,6 +208,15 @@ async function copy(id: string, text: string | null): Promise<void> {
               >{{ t('cleanup.gc.archives.wip') }}</span
             >
             <span
+              v-if="e.reflogCount > 0"
+              class="inline-flex items-center rounded-full border border-border bg-surface-2 px-2 py-0.5 text-eyebrow text-text-3"
+              :title="t('cleanup.gc.archives.reflogTitle')"
+              data-testid="archive-reflog"
+              >{{
+                t('cleanup.gc.archives.reflog', e.reflogCount, { named: { n: e.reflogCount } })
+              }}</span
+            >
+            <span
               v-if="expiredArchives([e], archives.keepDays, clock).length > 0"
               class="text-caption text-warning"
               data-testid="archive-expired"

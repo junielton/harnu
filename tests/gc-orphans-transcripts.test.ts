@@ -383,7 +383,7 @@ describe('the manual clean of orphan transcripts', () => {
     const it1 = item()
     const r = rig([it1])
     const [res] = await run(r, [it1.id], sent(it1))
-    expect(res).toMatchObject({ id: it1.id, ok: true, freedBytes: 4_096 })
+    expect(res).toMatchObject({ id: it1.id, ok: true, freedBytes: 0, trashedBytes: 4_096 })
     expect(r.trashed).toEqual(['slug-a'])
     expect(r.reconciled).toEqual([GONE])
   })

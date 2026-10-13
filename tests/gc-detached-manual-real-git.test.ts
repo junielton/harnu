@@ -105,6 +105,7 @@ import { bundleRemovability } from '../src/renderer/src/lib/gc-removability'
 import { buildGcModel, cleanRequestFor } from '../src/renderer/src/lib/gc-model'
 import type { GcSnapshot } from '../src/main/gc/gc-wire'
 import { NOW, DAY } from './gc-fixtures'
+import { formatArchiveStamp } from '../src/main/reaper/archive-core'
 
 vi.setConfig({ testTimeout: 60_000 })
 
@@ -306,7 +307,7 @@ describe('a detached worktree through the real scan and the real gc:clean entry 
     expect(job!.results).toEqual([
       expect.objectContaining({ id: itemId, ok: true, haltedAt: null })
     ])
-    const ns = `refs/archive/detached/bisect-1-${head.slice(0, 12)}`
+    const ns = `refs/archive/detached/${formatArchiveStamp(NOW)}/bisect-1-${head.slice(0, 12)}`
     expect(
       git(repo, 'for-each-ref', '--format=%(refname)', 'refs/archive/detached')
         .trim()

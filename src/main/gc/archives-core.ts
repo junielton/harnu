@@ -19,6 +19,12 @@ export interface ArchiveRefInfo {
   at: number
 }
 
+/** One ref of an archive, with the sha it had when listed: a delete is checked against it. */
+export interface ArchiveMember {
+  ref: string
+  sha: string
+}
+
 /** One archived thing: a sweep's tip and working state, or a lone generic ref. Plain data. */
 export interface ArchiveEntry {
   repoPath: string
@@ -26,6 +32,14 @@ export interface ArchiveEntry {
   namespace: string
   /** Every ref of the entry, tip first. */
   refs: string[]
+  /**
+   * Every ref of the entry with its sha, tip first. A sweep has a tip and a wip; a detached removal
+   * also has the earlier-wip siblings and one ref per line of commits only its reflog reached. Deleting
+   * the entry deletes every member, each against its own sha.
+   */
+  members: ArchiveMember[]
+  /** How many of the members keep a commit only the removed worktree's reflog reached (detached only). */
+  reflogCount: number
   tipRef: string | null
   tipSha: string | null
   wipRef: string | null
@@ -93,6 +107,16 @@ const SHORT = 7
 /** The sweep shape: `refs/archive/<branch>/<stamp>/<tip|wip>`. */
 const SWEEP_REF = /^refs\/archive\/(.+)\/(\d{8}T\d{6}Z)\/(tip|wip)$/
 
+/**
+ * A ref of one detached removal: `refs/archive/detached/<stamp>/<folder>-<sha12>/<role>`, or the
+ * shape older Harnu wrote, `refs/archive/detached/<folder>-<sha12>/<role>`, with no time in it. The
+ * role is the tip, the working state, an earlier working state kept as `wip-<yyyymmddhhmmss>` (plus `-2`, `-3`… in the same second), or one
+ * ref per line of commits only the worktree's reflog reached (`reflog/<sha12>`). Group 1 is the
+ * removal's namespace under `detached/`; every ref sharing it is ONE archive.
+ */
+const DETACHED_REF =
+  /^refs\/archive\/detached\/(\d{8}T\d{6}Z\/[^/]+|[^/]+)\/(tip|wip|wip-\d{14}(?:-\d+)?|reflog\/[^/]+)$/
+
 interface Draft {
   namespace: string
   branch: string | null
@@ -100,10 +124,27 @@ interface Draft {
   stampAt: number | null
   tip: ArchiveRefInfo | null
   wip: ArchiveRefInfo | null
+  /** Siblings of the wip and the reflog refs: members of a detached removal that are neither tip nor wip. */
+  extra: ArchiveRefInfo[]
+}
+
+/** The members of an entry, whatever built it: older hand-made entries carry only a tip and a wip. */
+export function membersOf(
+  e: Pick<ArchiveEntry, 'tipRef' | 'tipSha' | 'wipRef' | 'wipSha'> & { members?: ArchiveMember[] }
+): Array<{ ref: string; sha: string | null }> {
+  if (e.members) return e.members
+  return [
+    { ref: e.tipRef, sha: e.tipSha },
+    { ref: e.wipRef, sha: e.wipSha }
+  ].filter((m): m is { ref: string; sha: string | null } => m.ref !== null)
 }
 
 function finish(repoPath: string, d: Draft): ArchiveEntry {
-  const refs = [d.tip?.ref, d.wip?.ref].filter((r): r is string => !!r)
+  const extra = [...d.extra].sort((a, b) => a.ref.localeCompare(b.ref))
+  const members = [d.tip, d.wip, ...extra]
+    .filter((r): r is ArchiveRefInfo => !!r)
+    .map((r) => ({ ref: r.ref, sha: r.sha }))
+  const refs = members.map((m) => m.ref)
   const tipSha = d.tip?.sha ?? null
   const wipSha = d.wip?.sha ?? null
   let restoreCommand: string | null = null
@@ -115,6 +156,8 @@ function finish(repoPath: string, d: Draft): ArchiveEntry {
     repoPath,
     namespace: d.namespace,
     refs,
+    members,
+    reflogCount: extra.filter((r) => r.ref.includes('/reflog/')).length,
     tipRef: d.tip?.ref ?? null,
     tipSha,
     wipRef: d.wip?.ref ?? null,
@@ -142,8 +185,19 @@ export function groupArchiveRefs(
   refs: readonly ArchiveRefInfo[]
 ): ArchiveEntry[] {
   const drafts = new Map<string, Draft>()
+  const candidates = new Map<string, Array<{ info: ArchiveRefInfo; role: string }>>()
   for (const r of refs) {
     if (!r.ref.startsWith(ARCHIVE_PREFIX)) continue
+    // The refs of one detached removal are collected first and judged as a group below. A key that
+    // is only a time (`detached/<stamp>/tip`) is not a folder's: it takes the sweep path as before.
+    const det = DETACHED_REF.exec(r.ref)
+    if (det && parseArchiveStamp(det[1]!) === null) {
+      const key = det[1]!
+      const group = candidates.get(key)
+      if (group) group.push({ info: r, role: det[2]! })
+      else candidates.set(key, [{ info: r, role: det[2]! }])
+      continue
+    }
     const m = SWEEP_REF.exec(r.ref)
     if (!m) {
       drafts.set(r.ref, {
@@ -152,7 +206,8 @@ export function groupArchiveRefs(
         detached: false,
         stampAt: null,
         tip: r,
-        wip: null
+        wip: null,
+        extra: []
       })
       continue
     }
@@ -167,12 +222,47 @@ export function groupArchiveRefs(
         detached,
         stampAt: parseArchiveStamp(stamp),
         tip: null,
-        wip: null
+        wip: null,
+        extra: []
       }
       drafts.set(namespace, d)
     }
     if (role === 'tip') d.tip = r
     else d.wip = r
+  }
+  // A detached group is Harnu's only when its folder segment ends in `-<12 hex>` AND its tip points
+  // at a commit that starts with that hex: Harnu names it from the HEAD it archived. Anything else
+  // under `detached/` (a hand-made ref, another tool's) is listed one ref at a time, with an unknown
+  // age, so nothing that is not Harnu's is ever expired on its own.
+  for (const [key, members] of candidates) {
+    const hex = /-([0-9a-f]{12})$/.exec(key.split('/').pop()!)?.[1]
+    const tip = members.find((m) => m.role === 'tip')?.info
+    if (hex && tip && tip.sha.startsWith(hex)) {
+      const namespace = `${ARCHIVE_PREFIX}detached/${key}`
+      const d: Draft = {
+        namespace,
+        branch: null,
+        detached: true,
+        // Only the stamp in the name says when it was archived; an older removal has none.
+        stampAt: parseArchiveStamp(key.split('/')[0]!),
+        tip,
+        wip: members.find((m) => m.role === 'wip')?.info ?? null,
+        extra: members.filter((m) => m.role !== 'tip' && m.role !== 'wip').map((m) => m.info)
+      }
+      drafts.set(namespace, d)
+    } else {
+      for (const m of members) {
+        drafts.set(m.info.ref, {
+          namespace: m.info.ref,
+          branch: null,
+          detached: false,
+          stampAt: null,
+          tip: m.info,
+          wip: null,
+          extra: []
+        })
+      }
+    }
   }
   // A wip-only entry has no tip ref to hang its date on: its own commit date is the fallback.
   return [...drafts.values()]
@@ -243,6 +333,21 @@ export interface ConfirmedArchive {
   namespace: string
   tipSha: string | null
   wipSha: string | null
+  /**
+   * Every ref of the entry with the sha the operator was shown. When present the entry is deleted
+   * only if its members now are EXACTLY these (same names, same shas), and only these are deleted,
+   * each against its shown sha: a ref that appeared, vanished, was renamed or re-pointed since is a
+   * change, never a silent extra delete. Absent from older callers, which confirm on the tip and
+   * wip shas alone.
+   */
+  members?: ArchiveMember[]
+}
+
+/** The same set of (ref, sha) pairs, whatever the order. */
+function sameMembers(a: readonly ArchiveMember[], b: readonly ArchiveMember[]): boolean {
+  if (a.length !== b.length) return false
+  const shas = new Map(a.map((m) => [m.ref, m.sha]))
+  return shas.size === a.length && b.every((m) => shas.get(m.ref) === m.sha)
 }
 
 /**
@@ -262,8 +367,15 @@ export function confirmedArchives(
     if (seen.has(r.namespace)) continue
     seen.add(r.namespace)
     const e = byNamespace.get(r.namespace)
-    if (e && e.tipSha === r.tipSha && e.wipSha === r.wipSha) entries.push(e)
-    else changed.push(r.namespace)
+    if (
+      e &&
+      e.tipSha === r.tipSha &&
+      e.wipSha === r.wipSha &&
+      (r.members === undefined || sameMembers(membersOf(e) as ArchiveMember[], r.members))
+    ) {
+      // Delete what was shown, each ref against its shown sha.
+      entries.push(r.members ? { ...e, members: r.members.map((m) => ({ ...m })) } : e)
+    } else changed.push(r.namespace)
   }
   return { entries, changed }
 }

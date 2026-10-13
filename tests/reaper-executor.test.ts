@@ -13,6 +13,7 @@ import {
   type ReapItem
 } from '../src/main/reaper/reaper-core'
 import type { Tombstone } from '../src/main/reaper/journal'
+import { formatArchiveStamp } from '../src/main/reaper/archive-core'
 
 function harvestableItem(over: Partial<ReapItem> = {}): ReapItem {
   return {
@@ -594,7 +595,7 @@ describe('cleanItem — archive backstop (T254, AC-1)', () => {
 // ---- NDE-A: a detached worktree is archived by its HEAD sha, then removed -------------------
 
 const DETACHED_HEAD = 'abcdef0123456789abcdef0123456789abcdef01'
-const DETACHED_NS = 'refs/archive/detached/wt-det-abcdef012345'
+const DETACHED_NS = `refs/archive/detached/${formatArchiveStamp(1_800_000_000_000)}/wt-det-abcdef012345`
 
 function detachedItem(over: Partial<ReapItem> = {}): ReapItem {
   return harvestableItem({

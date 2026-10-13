@@ -4,7 +4,7 @@
 import { overridesAncestryCheck, type ReapItem } from './reaper-core'
 import type { WorktreeStatus } from '../worktree-core'
 import { isAbsolute, resolve } from 'node:path'
-import { planArchive } from './archive-core'
+import { archiveAtFor, planArchive } from './archive-core'
 import { restoreHintFor, restoreHintForDetached, type Tombstone } from './journal'
 import type { TrashEntryRecord } from '../gc/trash-core'
 
@@ -70,6 +70,22 @@ export interface ExecutorDeps {
    * one place such a commit lives, and it goes with the folder.
    */
   archiveReflog(repoPath: string, refPrefix: string, worktreePath: string): Promise<string[]>
+  /**
+   * Read-only twin of `archiveReflog`: throws the same `reflog-limit` refusal when the worktree holds
+   * more reflog-only tips than one removal keeps, and writes nothing. Optional: a dry run without it
+   * judges as before.
+   */
+  checkReflog?(repoPath: string, worktreePath: string): Promise<void>
+  /**
+   * The stamp of the newest recent detached archive of this folder and commit, so a retried removal
+   * writes into it instead of opening a second group. Null (or absent): make a new archive.
+   */
+  findDetachedArchiveAt?(
+    repoPath: string,
+    worktreePath: string,
+    headSha: string,
+    now: number
+  ): Promise<number | null>
   detachSidebar(path: string): Promise<void>
   /**
    * Unregisters exactly this worktree from git: removes its own admin directory, found by the
@@ -242,7 +258,7 @@ export async function cleanItem(
 
   // T254 — preserve before sweeping. What gets archived is decided purely
   // (`planArchive`); the git that writes it lives in `archive-shell.ts`.
-  const plan = planArchive(item, deps.now())
+  const plan = planArchive(item, await archiveAtFor(item, deps.now(), deps.findDetachedArchiveAt))
 
   // Fail-closed backstop for AC-1: an item that would delete something but for
   // which the planner preserves nothing must abort, not sweep unarchived. A

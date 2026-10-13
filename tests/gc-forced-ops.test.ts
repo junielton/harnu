@@ -14,6 +14,7 @@ import {
   type StackGroup
 } from '../src/main/containers/containers-core'
 import { bundle, DAY, NOW, reapItem } from './gc-fixtures'
+import { formatArchiveStamp } from '../src/main/reaper/archive-core'
 
 const WT = '/ws/org/proj/worktrees/PROJ-0000-slug'
 const TIP = 'a'.repeat(40)
@@ -243,7 +244,7 @@ describe('the forced path archives before anything destructive (AC-8)', () => {
 })
 
 describe('a detached worktree is archived by its HEAD sha, then removed (NDE-A, AC-A1/A2)', () => {
-  const HEAD_NS = `refs/archive/detached/PROJ-0000-slug-${TIP.slice(0, 12)}`
+  const HEAD_NS = `refs/archive/detached/${formatArchiveStamp(NOW)}/PROJ-0000-slug-${TIP.slice(0, 12)}`
 
   /** A review bundle the scan called detached: no branch, the checked-out commit is its tip. */
   const detachedBundle = (): WorktreeBundle =>

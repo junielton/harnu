@@ -20,6 +20,7 @@ import type { ExecutorDeps } from '../src/main/reaper/executor-core'
 import { canUnregister, removeWorktreeAdmin } from '../src/main/reaper/worktree-admin-shell'
 import { bundleRemovability } from '../src/renderer/src/lib/gc-removability'
 import { bundle, DAY, NOW, reapItem } from './gc-fixtures'
+import { formatArchiveStamp } from '../src/main/reaper/archive-core'
 
 const git = (cwd: string, ...args: string[]): string =>
   execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' })
@@ -147,7 +148,7 @@ describe('removing a detached worktree from review (AC-A1, AC-A2)', () => {
     const result = await runBundle(b, createForcedGcOps(realWorld()), FORCE)
     expect(result).toMatchObject({ ok: true, haltedAt: null })
 
-    const ns = `refs/archive/detached/bisect-1-${head.slice(0, 12)}`
+    const ns = `refs/archive/detached/${formatArchiveStamp(NOW)}/bisect-1-${head.slice(0, 12)}`
     expect(refs()).toEqual([`${ns}/tip`, `${ns}/wip`])
     // Both objects exist and the tip is the commit that was on no branch.
     expect(git(repo, 'rev-parse', `${ns}/tip`).trim()).toBe(head)
@@ -169,7 +170,7 @@ describe('removing a detached worktree from review (AC-A1, AC-A2)', () => {
 
   it('restores with the documented commands: the commit as a worktree, the work as a branch', async () => {
     await runBundle(detachedBundle(), createForcedGcOps(realWorld()), FORCE)
-    const ns = `refs/archive/detached/bisect-1-${head.slice(0, 12)}`
+    const ns = `refs/archive/detached/${formatArchiveStamp(NOW)}/bisect-1-${head.slice(0, 12)}`
 
     const back = path.join(root, 'restored')
     git(repo, 'worktree', 'add', '-q', back, `${ns}/tip`)
@@ -196,7 +197,7 @@ describe('removing a detached worktree from review (AC-A1, AC-A2)', () => {
 
   it('a single run leaves a plain one-parent wip, so `git show <wip>` is a diff against the tip', async () => {
     await runBundle(detachedBundle(), createForcedGcOps(realWorld()), FORCE)
-    const ns = `refs/archive/detached/bisect-1-${head.slice(0, 12)}`
+    const ns = `refs/archive/detached/${formatArchiveStamp(NOW)}/bisect-1-${head.slice(0, 12)}`
     // The reprobe and the executor both write the same ref in one run: no sibling, no second parent.
     expect(
       git(repo, 'rev-list', '--parents', '-n', '1', `${ns}/wip`).trim().split(' ')
@@ -206,7 +207,7 @@ describe('removing a detached worktree from review (AC-A1, AC-A2)', () => {
   })
 
   it('keeps the first wip of an earlier removal under a timestamped sibling ref, not as a second parent', async () => {
-    const ns = `refs/archive/detached/bisect-1-${head.slice(0, 12)}`
+    const ns = `refs/archive/detached/${formatArchiveStamp(NOW)}/bisect-1-${head.slice(0, 12)}`
     await runBundle(detachedBundle(), createForcedGcOps(realWorld()), FORCE)
     const firstWip = git(repo, 'rev-parse', `${ns}/wip`).trim()
 
@@ -249,7 +250,7 @@ describe('removing a detached worktree from review (AC-A1, AC-A2)', () => {
     expect(existsSync(wt)).toBe(false)
     git(repo, 'gc', '--prune=now', '-q')
     git(repo, 'cat-file', '-e', `${b}^{commit}`)
-    const ns = `refs/archive/detached/bisect-1-${head.slice(0, 12)}`
+    const ns = `refs/archive/detached/${formatArchiveStamp(NOW)}/bisect-1-${head.slice(0, 12)}`
     expect(git(repo, 'for-each-ref', '--format=%(refname)', `${ns}/reflog`).trim()).toContain(
       b.slice(0, 12)
     )

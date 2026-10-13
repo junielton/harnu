@@ -2628,7 +2628,12 @@ const api = {
    */
   gcDeleteArchives: (req: {
     repoPath: string
-    archives: Array<{ namespace: string; tipSha: string | null; wipSha: string | null }>
+    archives: Array<{
+      namespace: string
+      tipSha: string | null
+      wipSha: string | null
+      members?: Array<{ ref: string; sha: string }>
+    }>
   }): Promise<{
     ok: boolean
     deleted: number

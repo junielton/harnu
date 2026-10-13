@@ -989,7 +989,13 @@ async function confirmExhaust(): Promise<void> {
   if (d.mode === 'delete') {
     await gc.deleteArchives(
       d.group.repoPath,
-      d.entries.map((e) => ({ namespace: e.namespace, tipSha: e.tipSha, wipSha: e.wipSha }))
+      d.entries.map((e) => ({
+        namespace: e.namespace,
+        tipSha: e.tipSha,
+        wipSha: e.wipSha,
+        // Every ref and sha the dialog listed: what is deleted is exactly that.
+        members: e.members.map((m) => ({ ref: m.ref, sha: m.sha }))
+      }))
     )
   } else if (d.mode === 'gc') {
     await gc.runArchiveGc(d.group.repoPath, d.group.repoAlias)

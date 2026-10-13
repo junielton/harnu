@@ -639,7 +639,12 @@ export const useGcStore = defineStore('gc', () => {
    */
   async function deleteArchives(
     repoPath: string,
-    archives: Array<{ namespace: string; tipSha: string | null; wipSha: string | null }>
+    archives: Array<{
+      namespace: string
+      tipSha: string | null
+      wipSha: string | null
+      members?: Array<{ ref: string; sha: string }>
+    }>
   ): Promise<void> {
     const { t } = i18n.global
     const ui = useUiStore()

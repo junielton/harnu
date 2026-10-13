@@ -26,8 +26,8 @@ export interface ArchiveRefPlan {
 
 export interface ArchivePlan {
   /**
-   * `refs/archive/<branch>/<stamp>`, or `refs/archive/detached/<folder>-<shortsha>` for a detached
-   * worktree, or null when nothing can be archived.
+   * `refs/archive/<branch>/<stamp>`, or `refs/archive/detached/<stamp>/<folder>-<shortsha>` for a
+   * detached worktree, or null when nothing can be archived.
    */
   namespace: string | null
   tip: ArchiveRefPlan | null
@@ -85,13 +85,92 @@ function folderSlug(path: string): string {
 }
 
 /**
- * `refs/archive/detached/<folder>-<shortsha>` — the namespace of a detached worktree, keyed by what
- * identifies it: the folder it lived in and the commit it was on. There is no stamp: the key is
- * the identity, so removing the same folder at the same commit again lands on the same refs (the
- * tip is the very same commit; `archiveWip` keeps an earlier working state reachable).
+ * `refs/archive/detached/<stamp>/<folder>-<shortsha>` — the namespace of a detached worktree: WHEN it
+ * was archived, then what identifies it, the folder it lived in and the commit it was on. The stamp
+ * is what dates the archive (a ref's own commit date says when the commit was made, not when it was
+ * archived), so Cleanup can group every ref of one removal under it, show its age, and expire it with
+ * the retention like any other archive. One removal is one stamp: the forced reprobe and the executor
+ * share the run's time, so they write the very same refs. The same folder at the same commit removed
+ * on another day is a separate archive (`archiveWip` still keeps an earlier working state under a
+ * sibling ref when one run writes the same name twice).
+ *
+ * Before unit E the namespace was `refs/archive/detached/<folder>-<shortsha>`, with no time in it;
+ * those refs are still listed, as one archive of unknown age.
  */
-export function detachedArchiveNamespace(path: string, headSha: string): string {
-  return `${DETACHED_ARCHIVE_PREFIX}${folderSlug(path)}-${headSha.slice(0, SHORT_SHA_LENGTH)}`
+export function detachedArchiveNamespace(path: string, headSha: string, at: number): string {
+  return `${DETACHED_ARCHIVE_PREFIX}${formatArchiveStamp(at)}/${detachedArchiveKey(path, headSha)}`
+}
+
+/** `<folder>-<sha12>`: what identifies one detached removal's archive under its time stamp. */
+export function detachedArchiveKey(path: string, headSha: string): string {
+  return `${folderSlug(path)}-${headSha.slice(0, SHORT_SHA_LENGTH)}`
+}
+
+/**
+ * How long after a detached archive was made a removal of the same folder at the same commit still
+ * counts as a retry of it. A removal that stopped partway is retried within minutes or hours; one
+ * made days later is a new removal and gets its own date (so its refs do not expire with the old one).
+ */
+export const DETACHED_REUSE_WINDOW_MS = 24 * 3_600_000
+
+/**
+ * The stamp of the newest detached archive of this folder and commit that a retry should write
+ * into, from the `<stamp>/<key>/tip` refs that exist: only one made by Harnu (its tip is the commit
+ * the key names), not in the future, and within {@link DETACHED_REUSE_WINDOW_MS}. Null when there is
+ * none, and a new archive is made.
+ */
+export function newestReusableStamp(
+  tips: ReadonlyArray<{ ref: string; sha: string }>,
+  key: string,
+  now: number
+): number | null {
+  const hex = /-([0-9a-f]{12})$/.exec(key)?.[1]
+  if (!hex) return null
+  let best: number | null = null
+  for (const t of tips) {
+    const m = /^refs\/archive\/detached\/(\d{8}T\d{6}Z)\/(.+)\/tip$/.exec(t.ref)
+    if (!m || m[2] !== key || !t.sha.startsWith(hex)) continue
+    const at = parseStamp(m[1]!)
+    if (at === null || at > now || now - at > DETACHED_REUSE_WINDOW_MS) continue
+    if (best === null || at > best) best = at
+  }
+  return best
+}
+
+/** `20260828T182233Z` → ms, or null when it is not the compact stamp this file writes. */
+function parseStamp(stamp: string): number | null {
+  const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(stamp)
+  if (!m) return null
+  const [y, mo, d, h, mi, s] = m.slice(1).map(Number) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number
+  ]
+  const at = Date.UTC(y, mo - 1, d, h, mi, s)
+  return formatArchiveStamp(at) === stamp ? at : null
+}
+
+/**
+ * The time a removal's archive is stamped with: now, or — for a detached worktree whose folder and
+ * commit already have a recent archive — that archive's own stamp, so a retried removal writes into
+ * the same group instead of leaving a second one. `find` is the lookup of existing refs (git).
+ */
+export async function archiveAtFor(
+  item: Pick<ReapItem, 'kind' | 'path' | 'headSha' | 'repoPath'>,
+  now: number,
+  find:
+    | ((repoPath: string, path: string, headSha: string, now: number) => Promise<number | null>)
+    | undefined
+): Promise<number> {
+  if (item.kind !== 'detached-worktree' || !item.path || !item.headSha || !find) return now
+  try {
+    return (await find(item.repoPath, item.path, item.headSha, now)) ?? now
+  } catch {
+    return now
+  }
 }
 
 /** The revision a kind's tip is resolved from, or null when the kind has no local tip. */
@@ -123,7 +202,7 @@ export function planArchive(
   // do. Without either, nothing can be named or resolved, and the executor halts at the archive.
   if (item.kind === 'detached-worktree') {
     if (!item.path || !item.headSha) return { namespace: null, tip: null, wip: null, refs: [] }
-    const namespace = detachedArchiveNamespace(item.path, item.headSha)
+    const namespace = detachedArchiveNamespace(item.path, item.headSha, at)
     const tip: ArchiveRefPlan = { role: 'tip', ref: `${namespace}/tip`, rev: item.headSha }
     const wip: ArchiveRefPlan = { role: 'wip', ref: `${namespace}/wip`, worktreePath: item.path }
     return { namespace, tip, wip, refs: [tip, wip] }

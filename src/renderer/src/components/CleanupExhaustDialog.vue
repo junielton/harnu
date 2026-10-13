@@ -167,6 +167,13 @@ function onBackdropMousedown(e: MouseEvent): void {
               class="inline-flex items-center rounded-full border border-border bg-surface px-2 py-0.5 text-eyebrow text-text-3"
               >{{ t('cleanup.gc.archives.wip') }}</span
             >
+            <span
+              v-if="e.reflogCount > 0"
+              class="inline-flex items-center rounded-full border border-border bg-surface px-2 py-0.5 text-eyebrow text-text-3"
+              >{{
+                t('cleanup.gc.archives.reflog', e.reflogCount, { named: { n: e.reflogCount } })
+              }}</span
+            >
           </li>
         </ul>
 

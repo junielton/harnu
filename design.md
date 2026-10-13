@@ -8893,7 +8893,7 @@ volume), size right.
   excluded from the breakdown, the footer total, the confirm label and the `gc:clean` request.
 - **Detached worktrees (NDE-A).** A worktree with a detached HEAD has no branch to name an archive ref
   after, so Harnu names it after what it has: the folder and the commit. A confirmed Remove from Needs
-  review first writes `refs/archive/detached/<folder>-<shortsha>/tip` (the commit) and, beside it, `/wip`
+  review first writes `refs/archive/detached/<time>/<folder>-<shortsha>/tip` (the commit) and, beside it, `/wip`
   (every uncommitted and untracked file), then trashes the folder and unregisters it from git. There is no
   branch step. It is **review-only**: it is never a ready item, never part of the hero or the autopilot, and
   `unsupported-kind` is what main answers for one that somehow is. In the dialog a detached row has no
@@ -9164,9 +9164,16 @@ icon 14px, title **Archives**, an 11px `--text-4` subtitle).
 - **Archive row (browse):** the **source** — the removed folder's name when the journal remembers it, the
   branch (mono), or the word **detached** — the date (relative, absolute on hover), the **tip SHA** (mono,
   7 chars, full on hover), a **wip** badge (Default badge, `has working state`) when a working-state ref exists,
-  and a copy button **"Copy restore command"** (`Copy` icon, ghost) that puts `git branch <name> <sha>` on the
+  a **reflog** badge (same Default badge, `{n} reflog commits`, only when n > 0; hover explains that they are
+  commits only the removed worktree's history reached), and a copy button **"Copy restore command"** (`Copy` icon, ghost) that puts `git branch <name> <sha>` on the
   clipboard (a hostile branch name is shell-quoted); a wip row has a second **"Copy wip command"** (`git
 worktree add --detach ../restored-… <sha>`). A row past the retention has a Warning-text "expired" word.
+- **A detached removal is ONE row** (unit E): the tip, the working state, the earlier-wip siblings and every
+  `reflog/*` ref a detached worktree's removal writes share one namespace
+  (`refs/archive/detached/<stamp>/<folder>-<sha12>/…`), and the row stands for all of them: the date comes from
+  the stamp, retention and "Delete {k} older…" apply to the row as a whole, **Delete** removes every ref of it,
+  and the confirm dialog lists it as one line. Refs an older Harnu wrote without a stamp
+  (`refs/archive/detached/<folder>-<sha12>/…`) are one row too, with **age unknown**.
 - **Retention note** under the header: one 11px `--text-4` line, "Deleting archives frees disk space only after
   git's next gc. Archives older than {n} days: {k}". Each **repo row** that has archives past the retention
   carries a Soft button **"Delete {k} older than {n} days…"** that opens the **archive confirm dialog**
