@@ -2,7 +2,7 @@
 /**
  * T460 batch 0 — the dialog characterization net (spec §6.2.4).
  *
- * Table-driven over the 24 dialog components that can be mounted headlessly. For each one the
+ * Table-driven over the 28 dialog components that can be mounted headlessly. For each one the
  * test MOUNTS the real component (`tests/dialog-surfaces/*`), MEASURES what it does — dispatches
  * Esc from `<body>` and from inside the card, `mousedown` and a bare `click` on the scrim,
  * `mousedown` inside the card, Tab on the last focusable; reads which element holds focus after
@@ -94,13 +94,17 @@ const ui = (f: string, init: string, name: Row['accessibleName'] = 'labelledby')
 })
 const STORE = 'ui.dialog=null'
 
-/** The 24 mountable components — spec §1.2 "Surface" rows, current behaviour. */
+/** The 28 mountable components — spec §1.2 "Surface" rows, current behaviour. */
 const TABLE: Record<string, Row> = {
   'AddFolderDialog.vue': ui(STORE, 'input'),
   'CardCreateModal.vue': ui('close[[]]', 'input', 'label'),
   'CardDetailModal.vue': ui('close[[]]', 'none', 'label'),
   'ClaudeBootDialog.vue': ui(STORE, 'close'),
   'CleanupBulkConfirmDialog.vue': ui('cancel[]', 'cancel'),
+  'CleanupDockerConfirmDialog.vue': ui('cancel[]', 'cancel'),
+  'CleanupExhaustDialog.vue': ui('cancel[]', 'cancel'),
+  'CleanupGuidedDialog.vue': ui('cancel[]', 'cancel'),
+  'CleanupTranscriptsConfirmDialog.vue': ui('cancel[]', 'cancel'),
   'CommandPalette.vue': ui('ui.palette.open=false', 'input', 'label'),
   'ContainersRemoveDialog.vue': ui('close[null]', 'cancel'),
   'DehydrateConfirmDialog.vue': ui('close[false]', 'cancel'),
@@ -128,6 +132,10 @@ const KNOWN_DEVIATIONS: Record<string, readonly Deviation[]> = {
   'CardCreateModal.vue': ['no-trap', 'scrim-click-self'],
   'CardDetailModal.vue': ['no-trap', 'scrim-click-self'],
   'CleanupBulkConfirmDialog.vue': ['no-cap'],
+  'CleanupDockerConfirmDialog.vue': ['no-cap'],
+  'CleanupExhaustDialog.vue': ['no-cap'],
+  'CleanupGuidedDialog.vue': ['no-cap'],
+  'CleanupTranscriptsConfirmDialog.vue': ['no-cap'],
   'CommandPalette.vue': ['aria-label-not-i18n', 'no-trap'],
   'ContainersRemoveDialog.vue': ['no-cap'],
   'DehydrateConfirmDialog.vue': ['initial-focus-destructive'],
@@ -189,7 +197,7 @@ describe('characterization table — coverage (AC-2)', () => {
       .sort()
     // `ui/` primitives live in a subfolder and are not listed by this top-level read.
     expect(Object.keys(TABLE).sort()).toEqual(onDisk)
-    expect(Object.keys(TABLE)).toHaveLength(24)
+    expect(Object.keys(TABLE)).toHaveLength(28)
   })
 
   it('lists the two inline overlays with a reason instead of mounting them', () => {

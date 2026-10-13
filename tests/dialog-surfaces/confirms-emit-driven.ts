@@ -1,6 +1,7 @@
 /**
  * T460 batch 0 — headless `SurfaceSpec`s for the emit/local-driven confirm
- * dialogs (group B): CleanupBulkConfirm, ContainersRemove, DehydrateConfirm,
+ * dialogs (group B): CleanupBulkConfirm, CleanupDockerConfirm, CleanupExhaust,
+ * CleanupGuided, CleanupTranscriptsConfirm, ContainersRemove, DehydrateConfirm,
  * SweepConfirm, MissionBulkCloseConfirm, MissionCloseConfirm, MissionsReview
  * and HarnuModExternal's confirm.
  *
@@ -16,6 +17,10 @@ import { nextTick } from 'vue'
 import { vi } from 'vitest'
 import { i18n } from '@renderer/i18n'
 import CleanupBulkConfirmDialog from '../../src/renderer/src/components/CleanupBulkConfirmDialog.vue'
+import CleanupDockerConfirmDialog from '../../src/renderer/src/components/CleanupDockerConfirmDialog.vue'
+import CleanupExhaustDialog from '../../src/renderer/src/components/CleanupExhaustDialog.vue'
+import CleanupGuidedDialog from '../../src/renderer/src/components/CleanupGuidedDialog.vue'
+import CleanupTranscriptsConfirmDialog from '../../src/renderer/src/components/CleanupTranscriptsConfirmDialog.vue'
 import ContainersRemoveDialog from '../../src/renderer/src/components/ContainersRemoveDialog.vue'
 import DehydrateConfirmDialog from '../../src/renderer/src/components/DehydrateConfirmDialog.vue'
 import SweepConfirmDialog from '../../src/renderer/src/components/SweepConfirmDialog.vue'
@@ -27,6 +32,7 @@ import { useReaperStore } from '../../src/renderer/src/stores/reaper'
 import { useMissionsStore } from '../../src/renderer/src/stores/missions'
 import { useSessionsStore } from '../../src/renderer/src/stores/sessions'
 import type { DialogRow } from '../../src/renderer/src/lib/gc-model'
+import type { OrphanTranscriptItem, StackLeftoverItem } from '../../src/main/gc/gc-wire'
 import type { MissionView } from '../../src/main/mission-ipc'
 import type { ReapItem, HydrationInfo, StackRow } from '../../src/preload'
 import { stack as stackFixture } from '../helpers/containers-fixtures'
@@ -112,6 +118,106 @@ const cleanupBulk: SurfaceSpec = {
       cancel: () => q('[data-testid="bulk-cancel"]'),
       confirm: () => q('[data-testid="bulk-confirm"]'),
       list: () => q('[data-testid="bulk-list"]')
+    })
+  }
+}
+
+// ---- Cleanup leftovers / archives / guided (units B–D: emit `cancel` / `confirm`) ---------------------
+
+const cleanupDockerConfirm: SurfaceSpec = {
+  file: 'CleanupDockerConfirmDialog.vue',
+  async open(): Promise<OpenedSurface> {
+    const item: StackLeftoverItem = {
+      id: 'stack-leftover:pj',
+      project: 'pj',
+      dirs: ['/ws/gone'],
+      containers: [{ id: 'c1', name: 'pj-web-1', state: 'exited' }],
+      networks: [{ id: 'n1', name: 'pj_default' }],
+      volumes: [{ id: 'volume:pj_data', name: 'pj_data', sizeBytes: 5_000_000 }]
+    }
+    const w = mount(CleanupDockerConfirmDialog, {
+      props: { kind: 'stack', items: [item] },
+      global: { plugins: [i18n] },
+      attachTo: document.body
+    })
+    return emitSurface(w, ['cancel', 'confirm'], {
+      cancel: () => q('[data-testid="docker-confirm-cancel"]'),
+      confirm: () => q('[data-testid="docker-confirm-confirm"]'),
+      // The ✕ has no test hook and there is no <header>: it is the first button in the card.
+      close: () => q('[role="dialog"] button')
+    })
+  }
+}
+
+const cleanupExhaust: SurfaceSpec = {
+  file: 'CleanupExhaustDialog.vue',
+  async open(): Promise<OpenedSurface> {
+    const w = mount(CleanupExhaustDialog, {
+      props: { mode: 'gc', repo: 'www' },
+      global: { plugins: [i18n] },
+      attachTo: document.body
+    })
+    return emitSurface(w, ['cancel', 'confirm'], {
+      cancel: () => q('[data-testid="exhaust-cancel"]'),
+      confirm: () => q('[data-testid="exhaust-confirm"]'),
+      close: () => q('[data-testid="exhaust-close"]')
+    })
+  }
+}
+
+const cleanupGuided: SurfaceSpec = {
+  file: 'CleanupGuidedDialog.vue',
+  async open(): Promise<OpenedSurface> {
+    const w = mount(CleanupGuidedDialog, {
+      props: {
+        action: 'unlock-remove',
+        rows: [{ id: 'a', title: 'www › PROJ-231-feature', sub: 'feat/proj-231' }],
+        guidance: {
+          a: {
+            id: 'a',
+            lock: { reason: 'held by a running build' },
+            sessions: null,
+            stacks: [],
+            unreadable: null,
+            docker: null
+          }
+        }
+      } as never,
+      global: { plugins: [i18n] },
+      attachTo: document.body
+    })
+    return emitSurface(w, ['cancel', 'confirm'], {
+      cancel: () => q('[data-testid="guided-cancel"]'),
+      confirm: () => q('[data-testid="guided-confirm"]'),
+      close: () => q('[data-testid="guided-close"]')
+    })
+  }
+}
+
+const cleanupTranscripts: SurfaceSpec = {
+  file: 'CleanupTranscriptsConfirmDialog.vue',
+  async open(): Promise<OpenedSurface> {
+    const item: OrphanTranscriptItem = {
+      id: 'transcripts:wt-a',
+      slug: 'wt-a',
+      folder: '/ws/org/proj/worktrees/wt-a',
+      repoLabel: 'proj',
+      bytes: 10 * 1024 ** 2,
+      sessionCount: 3,
+      newestAt: Date.parse('2026-10-01T12:00:00Z'),
+      hasMemory: false,
+      proof: 'proven'
+    }
+    const w = mount(CleanupTranscriptsConfirmDialog, {
+      props: { items: [item] },
+      global: { plugins: [i18n] },
+      attachTo: document.body
+    })
+    return emitSurface(w, ['cancel', 'confirm'], {
+      cancel: () => q('[data-testid="orphan-dialog-cancel"]'),
+      confirm: () => q('[data-testid="orphan-dialog-confirm"]'),
+      // The ✕ has no test hook and there is no <header>: it is the first button in the card.
+      close: () => q('[role="dialog"] button')
     })
   }
 }
@@ -375,6 +481,10 @@ const harnuModExternal: SurfaceSpec = {
 
 export const SURFACES_B: SurfaceSpec[] = [
   cleanupBulk,
+  cleanupDockerConfirm,
+  cleanupExhaust,
+  cleanupGuided,
+  cleanupTranscripts,
   containersRemove,
   dehydrateConfirm,
   harnuModExternal,
