@@ -7458,6 +7458,25 @@ parked — always sorts last, never mixed with real numbers):
   parked row's idle clock has stopped. A live row whose `sweepRank === 1` (the
   coldest hard-idle candidate — i.e. `evaluateFleet`'s next actual sweep victim) gets
   a small `--warning` "next to be swept" note.
+- **"Asked to stay" chip (T456).** A live row whose `reason` is `'declined'` — the session
+  said it is busy (background tasks, a scheduled wakeup, …) and Harnu granted it a delay —
+  replaces the mono reason chip with one text chip: `rounded bg-surface-2 px-1.5 py-0.5
+text-[11px] text-text-2`, sans (not mono: it is a sentence, not a code), reading
+  **Asked to stay · 2 background tasks**. At most two reasons show, then `+N`; the full list
+  lives in the chip's native `title`, one line each: every reason with its count, **Asked 3 of 8
+  times**, **Asks again in 9 min**. It is informational, never `--warning` or `--red` — the
+  system is working as designed — and it carries no icon, no toast, no sound and no
+  notification: a decline is not an event worth interrupting for (T178). A row that is not
+  declining shows no chip. The idle duration still follows the chip, as for `lru`/`hard-idle`.
+  A declined row never gets the "next to be swept" note: it is not a sweep candidate while it
+  holds a delay.
+- **Parked-row explanation (T456).** When the park ledger recorded how the park came about, the
+  explain row's text gains one clause between the reason chip and the "saved ~…" figure, plain
+  `--text-3` like the rest of the line: **Parked after 8 declines (background task)**,
+  **Parked under memory pressure; the session said busy**, **Parked by you; it had asked to
+  stay (background task)**. One clause per ledger `why` (`free`, `silent`, `limit`,
+  `memory-pressure`, `operator`). A park with no ledger `negotiation` (the `park` key is `off`)
+  keeps the old line unchanged.
 - **Per-row actions.** A live, resumable session row (`parkable: true`)
   gets a `Pause`-icon **Park now** button (`--warning`); every session row gets an
   `X`-icon **Close** button (`--red`). Both render at `22×22px`, `hover:bg-surface-2`,
@@ -7501,6 +7520,11 @@ any one of the three closes the other two.
 names, the policy `reason` codes `lru`/`hard-idle`/`selected`/`active`/`not-parkable`/
 `parked`) stay untranslated, same rule as git branches and tool names elsewhere;
 everything else (state words, hints, column headers) goes through `$t()`.
+The "Asked to stay" chip and the parked-row clause follow §8 (T456): the chip is a short label
+(no trailing period); the clause is a fragment of the line, no trailing period; the reasons are
+named in plain words (`background task`, `scheduled wakeup`, `turn in progress`, `permission
+request`, `background subagent`, `remote client`), counted with a plural form when the session
+reported a count. The tooltip lines are short labels.
 
 ### Hibernation policy pane (Settings tab)
 
@@ -7531,6 +7555,29 @@ field always shows what was actually persisted, never a stale optimistic guess.
 **No restart, no rebuild.** `pty.ts`'s `runPolicy()` reads the persisted policy
 (`monitor:policyGet`'s backing store) on every cap/sweep check rather than a cached
 constant — a save here changes real hibernation behavior on the very next check.
+
+**Group: "Ask before parking" (T456).** A second group under the three fields, in the same
+plain stack (no card, no border), separated by `margin-top: 24px` and its own uppercase
+eyebrow (same `11px`/`0.06em` style as the pane's first eyebrow) plus a muted intro line. Four
+rows, each label-left/control-right with a one-line `SettingHint`:
+
+- **Ask the session before parking** — the canonical `ToggleSwitch`. On writes the prefs key
+  `park` = `ask`; off writes `off` (today's behavior exactly). A stored `facts` value
+  (facts only, no question sent) reads as on and is left alone until the operator toggles; a muted
+  one-line note under the hint then says so. The three rows below dim (`opacity-40`, inputs
+  `disabled`) while the switch is off — their values are kept.
+- **Max asks per session** (`maxDeclines`) — an integer input, `1`–`100`, `times` suffix.
+- **Longest delay** (`maxDeferMs`) — a number input **in minutes**, `0`–`1440` (24 h), `min`
+  suffix, converted to/from ms at the edges like the idle thresholds.
+- **Memory floor** (`pressureFloorMb`) — an integer input in MB, `0` and up, `MB` suffix: below
+  this much available memory a session is parked without being asked.
+
+Same input anatomy and 300 ms debounce as the three fields above (pending edits to different
+rows in the group merge into one write). The main process clamps and the displayed value
+re-syncs from its response. A policy edit above does not touch these values.
+
+**Copy (§8):** labels are short, no trailing period; hints are one sentence with a period;
+the suffixes are `times`, `min`, `MB`.
 
 ### Cleanup takeover (CleanupView.vue, Reaper PR3)
 
