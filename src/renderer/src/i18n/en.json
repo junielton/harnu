@@ -2182,7 +2182,7 @@
       "factsOnly": "Currently reading background tasks and wakeups only; the session itself is not asked.",
       "maxDeclines": {
         "label": "Max asks per session",
-        "hint": "How many times a session can ask to stay before it is parked anyway. Selecting it or typing into it resets the count."
+        "hint": "How many times a session can ask to stay before it is parked anyway. Selecting it resets the count."
       },
       "maxDeferMs": {
         "label": "Longest delay",

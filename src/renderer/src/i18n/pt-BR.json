@@ -2182,7 +2182,7 @@
       "factsOnly": "No momento só lê tarefas em segundo plano e despertares; a sessão em si não é consultada.",
       "maxDeclines": {
         "label": "Máximo de perguntas por sessão",
-        "hint": "Quantas vezes uma sessão pode pedir para ficar antes de ser hibernada mesmo assim. Selecioná-la ou digitar nela zera a contagem."
+        "hint": "Quantas vezes uma sessão pode pedir para ficar antes de ser hibernada mesmo assim. Selecioná-la zera a contagem."
       },
       "maxDeferMs": {
         "label": "Maior adiamento",
