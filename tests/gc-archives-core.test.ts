@@ -207,9 +207,11 @@ describe('ageKnown', () => {
 // ---- AC-E2: a detached removal is ONE archive, with a date ---------------------------------------
 
 describe('a detached removal groups into one archive (AC-E2)', () => {
+  /** A Harnu group's folder segment ends in the first 12 hex of its tip's sha: that is what proves it. */
+  const TIP = 'abcdef012345'.padEnd(40, 'a')
   const NS = 'refs/archive/detached/20261002T101500Z/bisect-1-abcdef012345'
   const removal = (ns = NS): ArchiveRefInfo[] => [
-    ref(`${ns}/tip`, sha('a')),
+    ref(`${ns}/tip`, TIP),
     ref(`${ns}/wip`, sha('b')),
     ref(`${ns}/wip-20261002101501`, sha('c')),
     ref(`${ns}/reflog/111111111111`, sha('d')),
@@ -224,7 +226,7 @@ describe('a detached removal groups into one archive (AC-E2)', () => {
       namespace: NS,
       detached: true,
       branch: null,
-      tipSha: sha('a'),
+      tipSha: TIP,
       wipSha: sha('b'),
       hasWip: true,
       reflogCount: 3
@@ -256,8 +258,8 @@ describe('a detached removal groups into one archive (AC-E2)', () => {
   })
 
   it('a removal with only a tip is still one entry, with no reflog', () => {
-    const [e] = groupArchiveRefs(REPO, [ref(`${NS}/tip`, sha('a'))])
-    expect(e).toMatchObject({ reflogCount: 0, hasWip: false, tipSha: sha('a') })
+    const [e] = groupArchiveRefs(REPO, [ref(`${NS}/tip`, TIP)])
+    expect(e).toMatchObject({ reflogCount: 0, hasWip: false, tipSha: TIP })
     expect(e!.members).toHaveLength(1)
   })
 
@@ -289,7 +291,7 @@ describe('a detached removal groups into one archive (AC-E2)', () => {
 
   it('restore commands still name the tip and the working state', () => {
     const [e] = groupArchiveRefs(REPO, removal())
-    expect(e!.restoreCommand).toBe(`git branch restored-${'a'.repeat(7)} ${sha('a')}`)
+    expect(e!.restoreCommand).toBe(`git branch restored-${TIP.slice(0, 7)} ${TIP}`)
     expect(e!.wipRestoreCommand).toBe(
       `git worktree add --detach ../restored-${'b'.repeat(7)} ${sha('b')}`
     )
@@ -298,12 +300,64 @@ describe('a detached removal groups into one archive (AC-E2)', () => {
   it('a delete asks for exactly the members it was shown', () => {
     const [e] = groupArchiveRefs(REPO, removal())
     const fresh = [e!]
-    const shown = { namespace: NS, tipSha: sha('a'), wipSha: sha('b'), memberCount: 6 }
+    const shown = { namespace: NS, tipSha: TIP, wipSha: sha('b'), memberCount: 6 }
     expect(confirmedArchives(fresh, [shown]).entries).toEqual([e])
     // A ref that appeared (or vanished) since the confirm is a change, never a silent extra delete.
     expect(confirmedArchives(fresh, [{ ...shown, memberCount: 5 }])).toEqual({
       entries: [],
       changed: [NS]
+    })
+  })
+
+  // ---- delta 1, item 2: only Harnu's own group is recognised ----------------------------------
+  describe('a hand-made ref under detached/ is never taken for a Harnu group', () => {
+    const handMade = [
+      'refs/archive/detached/20261002T101500Z/my-notes',
+      'refs/archive/detached/20261002T101500Z/my-notes-abcdef012345',
+      'refs/archive/detached/my-notes'
+    ]
+
+    it('a folder segment without the tip’s hex stays generic and never expires', () => {
+      for (const ns of handMade) {
+        const entries = groupArchiveRefs(REPO, [
+          ref(`${ns}/tip`, sha('a')),
+          ref(`${ns}/wip`, sha('b'))
+        ])
+        expect(
+          entries.map((e) => e.refs.length),
+          ns
+        ).toEqual([1, 1])
+        expect(
+          entries.every((e) => !e.ageKnown),
+          ns
+        ).toBe(true)
+        expect(expiredArchives(entries, 1, NOW + 3650 * DAY), ns).toEqual([])
+      }
+    })
+
+    it('a folder whose hex is NOT the tip’s sha is generic too', () => {
+      const ns = 'refs/archive/detached/20261002T101500Z/bisect-1-abcdef012345'
+      const entries = groupArchiveRefs(REPO, [
+        ref(`${ns}/tip`, sha('9')),
+        ref(`${ns}/wip`, sha('b'))
+      ])
+      expect(entries).toHaveLength(2)
+      expect(entries.every((e) => !e.ageKnown)).toBe(true)
+      expect(expiredArchives(entries, 1, NOW + 3650 * DAY)).toEqual([])
+    })
+
+    it('a group with no tip cannot be proven Harnu’s, so it is generic', () => {
+      const entries = groupArchiveRefs(REPO, [
+        ref(`${NS}/wip`, sha('b')),
+        ref(`${NS}/reflog/111111111111`, sha('d'))
+      ])
+      expect(entries).toHaveLength(2)
+      expect(entries.every((e) => !e.ageKnown)).toBe(true)
+    })
+
+    it('the same folder name with the right hex and tip is still a group', () => {
+      const [e] = groupArchiveRefs(REPO, removal())
+      expect(e).toMatchObject({ ageKnown: true, reflogCount: 3 })
     })
   })
 })
