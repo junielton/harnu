@@ -681,8 +681,9 @@ background shell or Monitor, a background subagent, `CronCreate`, `ScheduleWakeu
 is deferred instead of parked and checked again later. The deferral is bounded, never a
 pin: after a fixed number of deferrals or a fixed total delay (defaults 8 and 2 hours), under
 memory pressure (Linux only for now; off on macOS and Windows), or on the operator's "Park
-now", it is parked anyway, and its own wakeups
-do not reset the count — only the operator selecting it or typing into it does. So a long
+now", it is parked anyway. Only the operator selecting the session resets the count — not
+its own wakeups and, on this Claude Code version, not a typed prompt (a prompt that arrives
+while Harnu is mid-check still cancels that one park). So a long
 background job CAN still be parked out from under a session you dispatched; nothing in
 `get_fleet` shows a deferral yet.
 
