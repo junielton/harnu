@@ -627,6 +627,55 @@ describe('mods-audit-core', () => {
     expect(Object.keys(ok.entries)).toEqual(['k'])
   })
 
+  it('re-derives chips from the stored facts when a cache file is read', () => {
+    // an entry written before the `transcript` rule: the old chip set, same hooks and calls
+    const stale = (over: Partial<ModAnalysis>): { rowKey: string; analysis: ModAnalysis } => ({
+      rowKey: 'r',
+      analysis: analysis({ capabilities: ['prompts'], ...over })
+    })
+    const text = JSON.stringify({
+      v: 1,
+      entries: {
+        hook: stale({
+          hooks: [
+            { file: './r.ts', event: 'prompt.submit', opaque: false },
+            { file: './r.ts', event: 'session.append', opaque: false }
+          ]
+        }),
+        call: stale({ calls: [{ file: './r.ts', op: 'session.messages' }] }),
+        // nothing the new rule covers: the stored chips are unchanged
+        plain: stale({ hooks: [{ file: './r.ts', event: 'prompt.submit', opaque: false }] }),
+        // a mod that lost nothing and gained nothing, but whose stored chips were wrong
+        wrong: stale({ capabilities: ['gate'], hooks: [], calls: [] }),
+        // no report was ever produced: no facts, no chips
+        failed: stale({ status: 'failed', hasModule: false, capabilities: [] })
+      }
+    })
+    const read = parseCacheFile(text).entries
+    expect(read['hook']!.analysis.capabilities).toEqual(['prompts', 'transcript'])
+    expect(read['call']!.analysis.capabilities).toEqual(['transcript'])
+    expect(read['plain']!.analysis.capabilities).toEqual(['prompts'])
+    expect(read['wrong']!.analysis.capabilities).toEqual([])
+    expect(read['failed']!.analysis.capabilities).toEqual([])
+    // everything else in the stored analysis is carried through as written
+    expect(read['hook']!.analysis.hash).toBe('h1')
+    expect(read['hook']!.analysis.analysedAt).toBe(1000)
+  })
+
+  it('keeps an old cache entry whose facts are missing or malformed', () => {
+    const text = JSON.stringify({
+      v: 1,
+      entries: {
+        k: {
+          rowKey: 'r',
+          analysis: { ...analysis({ capabilities: ['prompts'] }), hooks: 'nope', calls: null }
+        }
+      }
+    })
+    const read = parseCacheFile(text).entries['k']!.analysis
+    expect(read.capabilities).toEqual(['prompts'])
+  })
+
   it('evicts the oldest cache entries first', () => {
     const entries: Record<string, { rowKey: string; analysis: ModAnalysis }> = {}
     for (let i = 0; i < 5; i++)
