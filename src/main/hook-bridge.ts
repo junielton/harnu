@@ -45,6 +45,7 @@ import {
 import { interceptActivePaths } from './user-projects'
 import { registerApprovalResolver, closeApprovals } from './approval-resolver'
 import { registerSentinel } from './sentinel-resolver'
+import { legacyParkFacts } from './park-coordinator'
 
 // The public surface moved to the hub; re-exported so no importer changes (ARB-5).
 export {
@@ -159,6 +160,17 @@ export function startHookServer(
         // `agent_id` marks a subagent's own tool call; the main thread never sends one.
         const agentId =
           typeof body.agent_id === 'string' && body.agent_id !== '' ? body.agent_id : undefined
+        // T456 §5.5: the park coordinator's legacy facts (a main Stop's background-task and cron
+        // counts, the UserPromptSubmit edge and its `source`) are read HERE, before `onEvent`
+        // hands the event to the hub — which drops every event of a parked session and a legacy
+        // event for a family the companion owns. Counts and labels only; no text is kept.
+        if (sessionId && event) {
+          try {
+            legacyParkFacts.noteHookBody(sessionId, event, body, Date.now())
+          } catch {
+            // Never let the park's bookkeeping break the observer.
+          }
+        }
         if (sessionId && event)
           onEvent({
             sessionId,
