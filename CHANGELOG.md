@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-13
+
+### Added
+
+- **Settings → Mods now tells you when a mod can read or rewrite the conversation.** A mod that hooks each message as it is added to the conversation, or when it is compacted, or that reads its messages, gets a new chip: "can read or rewrite the conversation". Before, such a mod showed no chip for it, so the row said less than the mod could do.
+
 ## 2026-10-09
 
 ### Fixed

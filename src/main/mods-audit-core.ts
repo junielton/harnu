@@ -24,6 +24,7 @@ export type CapabilityId =
   | 'network'
   | 'files'
   | 'prompts'
+  | 'transcript'
   | 'system-prompt'
   | 'tool-calls'
   | 'permissions'
@@ -42,6 +43,7 @@ export const CAPABILITY_ORDER: readonly CapabilityId[] = [
   'network',
   'files',
   'prompts',
+  'transcript',
   'system-prompt',
   'tool-calls',
   'permissions',
@@ -377,6 +379,9 @@ export function deriveCapabilities(facts: CapabilityFacts): CapabilityId[] {
     network: calls('http.fetch'),
     files: facts.calls.some((c) => c.op.startsWith('fs.')),
     prompts: hooks('prompt.submit', 'turn.start', 'classic.UserPromptSubmit'),
+    // One chip for reading AND rewriting the conversation: a static read cannot tell the two
+    // apart (both are `on('session.append')`). Shared by every mod that touches the transcript.
+    transcript: hooks('session.append', 'session.compact') || calls('session.messages'),
     'system-prompt': hooks('prompt.compose', 'prompt.section', 'prompt.context'),
     'tool-calls': hooks('tool.call', 'classic.PreToolUse'),
     permissions: hooks('tool.check', 'classic.PermissionRequest'),

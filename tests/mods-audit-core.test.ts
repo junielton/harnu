@@ -390,6 +390,7 @@ describe('mods-audit-core', () => {
         hook('tool.call'),
         hook('prompt.compose'),
         hook('prompt.submit'),
+        hook('session.append'),
         hook('x.y', true)
       ],
       [
@@ -403,7 +404,7 @@ describe('mods-audit-core', () => {
       { reads: ['HOME'], writes: [] }
     )
     expect(everything).toEqual([...CAPABILITY_ORDER])
-    expect(CAPABILITY_ORDER).toHaveLength(15)
+    expect(CAPABILITY_ORDER).toHaveLength(16)
   })
 
   it('shows one transcript chip for a hook on session.append or session.compact, or a call to session.messages', () => {
@@ -464,6 +465,8 @@ describe('mods-audit-core', () => {
       'process',
       'files',
       'prompts',
+      // this report calls `session.messages`
+      'transcript',
       'tool-calls',
       'env',
       'terminal',

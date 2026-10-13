@@ -1701,6 +1701,7 @@
       "network": "can use the network",
       "files": "can read and write files",
       "prompts": "can read every prompt",
+      "transcript": "can read or rewrite the conversation",
       "system-prompt": "can change the system prompt",
       "tool-calls": "can rewrite or block tool calls",
       "permissions": "can decide permissions",
