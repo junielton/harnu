@@ -79,19 +79,46 @@ export function clearParking(ptyId: string): void {
  */
 export type WakeGesture = 'select' | 'restart' | 'notification-click' | 'peer-message' | 'unknown'
 
+/**
+ * T456 (spec §6.5): how the park coordinator reached this park. Absent when negotiation did not
+ * run (the `park` key `off`: today's behavior exactly).
+ *
+ * `why`: `free` (it said nothing was running), `silent` (no answer, and no legacy Stop fact said
+ * busy), `limit` (`maxDeclines` or `maxDeferMs` reached), `memory-pressure` (MemAvailable under
+ * the floor), `operator` ("Park now"). `override` marks a "Park now" on a session that was
+ * declining at that moment. `reasons` are labels only, never text from the session (§5.3).
+ */
+export interface ParkNegotiation {
+  declines: number
+  reasons: string[]
+  why: 'free' | 'silent' | 'limit' | 'memory-pressure' | 'operator'
+  override?: true
+}
+
 export interface ParkEvent {
   sessionKey: string
   parkedAt: number
   wokenAt: number | null
   wakeGesture: WakeGesture | null
+  negotiation?: ParkNegotiation
 }
 
 const PARK_HISTORY_CAP = 200
 const parkLedger: ParkEvent[] = []
 
 /** Record a park. Called alongside `markHibernated`, with a caller-injected clock. */
-export function recordPark(sessionKey: string, atMs: number): void {
-  parkLedger.push({ sessionKey, parkedAt: atMs, wokenAt: null, wakeGesture: null })
+export function recordPark(
+  sessionKey: string,
+  atMs: number,
+  negotiation?: ParkNegotiation | null
+): void {
+  parkLedger.push({
+    sessionKey,
+    parkedAt: atMs,
+    wokenAt: null,
+    wakeGesture: null,
+    ...(negotiation ? { negotiation } : {})
+  })
   if (parkLedger.length > PARK_HISTORY_CAP) parkLedger.shift()
 }
 

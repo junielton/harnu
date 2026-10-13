@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { cpus } from 'node:os'
-import { parseProcStat, parseProcStatm } from './proc-parse'
+import { parseMemAvailableMb, parseProcStat, parseProcStatm } from './proc-parse'
 
 /**
  * `/proc` walk (T127) — the thin shell behind `proc-parse.ts`'s pure parsers. Reads
@@ -96,4 +96,20 @@ class NullProcessSampler implements ProcessSampler {
 
 export function createSampler(): ProcessSampler {
   return process.platform === 'linux' ? new LinuxProcessSampler() : new NullProcessSampler()
+}
+
+/**
+ * T456 (spec §6.3): the machine's `MemAvailable` in MB, read from `/proc/meminfo` beside the
+ * per-session RSS the sampler already measures. `null` off Linux: whether `os.freemem()` on macOS
+ * and Windows compares to `MemAvailable` is assumption A5, so the memory floor stays off there
+ * until W0 settles it. Synchronous and cheap (a memory-backed file), so it is read at decision
+ * time rather than cached.
+ */
+export function readMemAvailableMb(): number | null {
+  if (process.platform !== 'linux') return null
+  try {
+    return parseMemAvailableMb(readFileSync('/proc/meminfo', 'utf8'))
+  } catch {
+    return null
+  }
 }
