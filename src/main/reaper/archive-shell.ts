@@ -84,6 +84,33 @@ function siblingStamp(): string {
     .replace(/[-:T]/g, '')
 }
 
+/** An all-zero object name: as the old value of `update-ref`, "this ref must not exist yet". */
+const ZERO_OID = '0'.repeat(40)
+
+/** How many same-second siblings one ref will take before it gives up (never loops forever). */
+const SIBLING_LIMIT = 1000
+
+/**
+ * Points a sibling of `ref` (`<ref>-<yyyymmddhhmmss>`, then `-2`, `-3`… when that name is taken) at
+ * `commit`. Created with a zero old value, so git itself refuses to move a ref that already exists:
+ * a second working state archived within the same second can never replace the first one's only ref.
+ */
+async function keepAsSibling(repoPath: string, ref: string, commit: string): Promise<string> {
+  const base = `${ref}-${siblingStamp()}`
+  for (let n = 1; n <= SIBLING_LIMIT; n++) {
+    const name = n === 1 ? base : `${base}-${n}`
+    try {
+      await git(repoPath, ['update-ref', name, commit, ZERO_OID])
+      return name
+    } catch (err) {
+      // Only "that name exists" moves on to the next one; a failure that is not that must surface.
+      if (await resolveRef(repoPath, name)) continue
+      throw err
+    }
+  }
+  throw new Error(`could not find a free sibling name for ${ref}`)
+}
+
 /**
  * Captures the worktree's *working state* — tracked modifications, staged or
  * not, plus untracked files — as a dangling commit, and points `ref` at it so
@@ -129,11 +156,12 @@ export async function archiveWip(
     // worktree's refs are keyed by folder and commit, not by sweep, so removing the same folder at
     // the same commit twice lands here. One with the same files is the same work (the reprobe and the
     // executor both write the ref in one run) and is simply replaced. One with different files is
-    // kept under a timestamped sibling, so overwriting the name never drops the only copy of it, and
+    // kept under a timestamped sibling (with a counter when that name is taken), so overwriting the
+    // name never drops the only copy of it, and
     // the new ref stays a plain one-parent diff against the tip.
     const earlier = await resolveRef(repoPath, ref)
     if (earlier && (await treeOf(repoPath, earlier)) !== tree) {
-      await git(repoPath, ['update-ref', `${ref}-${siblingStamp()}`, earlier])
+      await keepAsSibling(repoPath, ref, earlier)
     }
     await git(repoPath, ['update-ref', ref, commit])
     return commit

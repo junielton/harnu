@@ -110,12 +110,12 @@ const SWEEP_REF = /^refs\/archive\/(.+)\/(\d{8}T\d{6}Z)\/(tip|wip)$/
 /**
  * A ref of one detached removal: `refs/archive/detached/<stamp>/<folder>-<sha12>/<role>`, or the
  * shape older Harnu wrote, `refs/archive/detached/<folder>-<sha12>/<role>`, with no time in it. The
- * role is the tip, the working state, an earlier working state kept as `wip-<yyyymmddhhmmss>`, or one
+ * role is the tip, the working state, an earlier working state kept as `wip-<yyyymmddhhmmss>` (plus `-2`, `-3`… in the same second), or one
  * ref per line of commits only the worktree's reflog reached (`reflog/<sha12>`). Group 1 is the
  * removal's namespace under `detached/`; every ref sharing it is ONE archive.
  */
 const DETACHED_REF =
-  /^refs\/archive\/detached\/(\d{8}T\d{6}Z\/[^/]+|[^/]+)\/(tip|wip|wip-\d{14}|reflog\/[^/]+)$/
+  /^refs\/archive\/detached\/(\d{8}T\d{6}Z\/[^/]+|[^/]+)\/(tip|wip|wip-\d{14}(?:-\d+)?|reflog\/[^/]+)$/
 
 interface Draft {
   namespace: string
