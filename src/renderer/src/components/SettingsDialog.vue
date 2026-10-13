@@ -20,6 +20,7 @@ import type { SidebarDensity } from './sidebar-density'
 import type { ResponderMode, UserProject } from '../../../preload'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import ChangelogPane from './ChangelogPane.vue'
+import KeybindingsPane from './KeybindingsPane.vue'
 import UsageHistoryPane from './UsageHistoryPane.vue'
 import ClaudeChangelogPane from './ClaudeChangelogPane.vue'
 import ClaudeConfigPane from './ClaudeConfigPane.vue'
@@ -121,6 +122,26 @@ const tabs: Array<{ id: SettingsTabId; labelKey: string; keywords: string[] }> =
       'telemetry',
       'telemetria',
       'statusline'
+    ]
+  },
+  {
+    id: 'keybindings',
+    labelKey: 'settings.tabs.keybindings',
+    keywords: [
+      'keybinding',
+      'keybindings',
+      'keyboard',
+      'teclado',
+      'shortcut',
+      'shortcuts',
+      'atalho',
+      'atalhos',
+      'chord',
+      'accelerator',
+      'acelerador',
+      'rebind',
+      'remapear',
+      'hotkey'
     ]
   },
   {
@@ -1050,6 +1071,7 @@ onBeforeUnmount(() => {
           <!-- Content pane -->
           <div class="scrollable min-w-0 flex-1 overflow-y-auto" style="padding: 14px 18px">
             <ChangelogPane v-if="activeTab === 'changelog'" />
+            <KeybindingsPane v-else-if="activeTab === 'keybindings'" />
             <ClaudeConfigPane v-else-if="activeTab === 'claudeConfig'" ref="claudeConfigPaneRef" />
             <UsageHistoryPane v-else-if="activeTab === 'usageHistory'" />
             <ClaudeChangelogPane v-else-if="activeTab === 'claudeCode'" />

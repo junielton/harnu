@@ -1,6 +1,12 @@
-import { onBeforeUnmount, watch } from 'vue'
+import { onBeforeUnmount, watch, type WatchStopHandle } from 'vue'
 import { useMagicKeys } from '@vueuse/core'
 import { isMac } from '../lib/platform'
+import {
+  parseChord,
+  scopeChordKey,
+  type ResolvedKeybindings,
+  type ShortcutActionId
+} from '../../../main/keybindings-core'
 
 /**
  * Keyboard-shortcut composable for the renderer.
@@ -222,6 +228,21 @@ function declaredModifiers(keysStr: string): Set<ModifierKey> {
 }
 
 /**
+ * When `chordStr`'s primary key is one `useMagicKeys`' `/[+_-]/` tokenizer would
+ * eat, the `useMagicKeys` prop to watch instead, else `null`. In Harnu's grammar
+ * that key is only `-` (`=` and the rest survive the tokenizer). `keys['Cmd+-']`
+ * is permanently `false` (`['cmd','','']` → a `.every(Boolean)` computed), and
+ * `keys['-']` is no better since `e.key` flips to `'_'` when Shift is held. The
+ * `e.code` name is layout- and Shift-stable — `Minus` lowercased to `'minus'`,
+ * a single token the tokenizer leaves alone — and vueuse tracks a ref for it.
+ */
+function splitHostileKey(chordStr: string): string | null {
+  const r = parseChord(chordStr)
+  if (!r.ok) return null
+  return r.chord.key === '-' ? 'minus' : null
+}
+
+/**
  * True iff the currently-held modifiers EXACTLY match `declared` (none extra, none
  * missing). `useMagicKeys` combos are SUBSET matches — `control+b` stays true while
  * `control+shift+b` is held — so without this Ctrl+Shift+B would spuriously fire the
@@ -382,41 +403,102 @@ export function popScope(scope: ShortcutScope): void {
  *       // `shortcut:fired` over IPC (T-4.1).
  *       { id: 'project.switch', scope: 'global',                    handler: () => ui.openSwitchProject() },
  *     ])
+ *
+ * Pass `resolvedKeybindings` (a getter for the keybindings store's resolved
+ * table, T1 P2) to make the renderer-level chord watchers track
+ * `keybindings.json` overrides: the effective chord for a binding becomes
+ * `resolved.byId[id].keys` (falling back to the binding's own `keys` for ids the
+ * table doesn't cover), and the watchers are torn down + rebuilt whenever the
+ * resolved table changes — so a hand-edit re-keys the app live. `keys === null`
+ * in the resolved table means the user unbound the action: no renderer watcher
+ * is wired for it.
  */
-export function useShortcuts(bindings: ShortcutBinding[]): void {
+export function useShortcuts(
+  bindings: ShortcutBinding[],
+  resolvedKeybindings?: () => ResolvedKeybindings | null
+): void {
   // 1. Append every binding to the registry. We keep a local snapshot
   //    of the exact references so the unmount hook can splice them out
   //    without ambiguity (in case the caller mutates the input array).
   const owned = [...bindings]
   registrations.push(...owned)
 
-  // 2. Wire renderer-level key watchers for every binding that declared
-  //    a `keys` field. `useMagicKeys` produces a ComputedRef<boolean>
-  //    per chord; we watch each ref and dispatch on the rising edge. The
-  //    watcher uses the component scope, so cleanup is automatic on
-  //    unmount.
+  // 2. Wire renderer-level key watchers for every binding whose effective
+  //    chord is non-empty. `useMagicKeys` produces a ComputedRef<boolean>
+  //    per chord; we watch each ref and dispatch on the rising edge. When
+  //    `resolved` is supplied the wiring is rebuilt on every change to it,
+  //    so an override applied at runtime re-keys the watchers.
   const keys = getMagic()
-  for (const binding of owned) {
-    if (!binding.keys) continue
-    const chord = keys[binding.keys]
-    if (!chord) {
-      // This shouldn't happen — useMagicKeys creates refs lazily for any
-      // accessed prop — but guard anyway in case vueuse internals change.
-      console.warn(`[useShortcuts] could not resolve key "${binding.keys}" for id="${binding.id}".`)
-      continue
+
+  /** Effective chord for a binding: the resolved override, else its own `keys`. */
+  function effectiveChord(binding: ShortcutBinding): string | undefined {
+    const resolved = resolvedKeybindings?.()
+    if (resolved) {
+      const rb = resolved.byId[binding.id as ShortcutActionId]
+      // A row in the table wins outright — including `keys: null` (unbound),
+      // which yields `undefined` here so no watcher is wired.
+      if (rb) return rb.keys ?? undefined
     }
-    // The exact set of modifiers this chord declares — checked at fire time so a
-    // superset chord (Ctrl+Shift+B) never trips this subset binding (Ctrl+B). BUG-21.
-    const declaredMods = declaredModifiers(binding.keys)
-    watch(chord, (pressed) => {
-      // Fire only on the rising edge. `useMagicKeys` flips the ref to
-      // `true` on keydown and `false` on keyup, so we'd dispatch twice
-      // per chord without this guard.
-      if (!pressed) return
-      if (!modifiersMatchExactly(keys, declaredMods)) return
-      dispatch(binding.id, 'keys')
-    })
+    return binding.keys
   }
+
+  let keyWatchStops: WatchStopHandle[] = []
+  function rewireKeyWatchers(): void {
+    for (const stop of keyWatchStops) stop()
+    keyWatchStops = []
+    // "First-registered wins, the chord still dispatches once" (spec Q7): when
+    // two bindings resolve to the same chord in the same scope, only the
+    // earlier-registered one gets a renderer watcher. Both are still badged as a
+    // conflict (`conflictsWith` in the resolved table); the loser just doesn't
+    // fire a second handler off one physical press. `owned` is in `App.vue`
+    // declaration order, which IS the registration order the spec means.
+    const claimedChords = new Set<string>()
+    for (const binding of owned) {
+      const chordStr = effectiveChord(binding)
+      if (!chordStr) continue
+      const claimKey = scopeChordKey(binding.scope, chordStr, isMac)
+      if (claimedChords.has(claimKey)) continue
+      claimedChords.add(claimKey)
+      // The exact set of modifiers this chord declares — checked at fire time so a
+      // superset chord (Ctrl+Shift+B) never trips this subset binding (Ctrl+B). BUG-21.
+      const declaredMods = declaredModifiers(chordStr)
+
+      // `useMagicKeys`' string proxy tokenizes on `/[+_-]/`, so a chord whose
+      // PRIMARY key is `-` (e.g. `Cmd+-`, spec-legal — `-` is in the key
+      // grammar) becomes `['cmd','','']` and its computed is permanently
+      // `false`: a silently dead binding, with no menu leg to fall back on for a
+      // `menu: false` action. Address those by the layout-stable `e.code` name
+      // (`Minus`), which vueuse still tracks a ref for. (`-` is the only grammar
+      // key the tokenizer eats; `=` and the rest are safe.)
+      const watchKey = splitHostileKey(chordStr) ?? chordStr
+      const chord = keys[watchKey]
+      if (!chord) {
+        // Shouldn't happen — useMagicKeys creates refs lazily for any accessed
+        // prop — but guard in case vueuse internals change.
+        console.warn(`[useShortcuts] could not resolve key "${watchKey}" for id="${binding.id}".`)
+        continue
+      }
+      const pressedRef = (): boolean => chord.value
+
+      keyWatchStops.push(
+        watch(pressedRef, (pressed) => {
+          // Fire only on the rising edge. `useMagicKeys` flips to `true` on
+          // keydown and `false` on keyup, so we'd dispatch twice without this.
+          if (!pressed) return
+          if (!modifiersMatchExactly(keys, declaredMods)) return
+          dispatch(binding.id, 'keys')
+        })
+      )
+    }
+  }
+  rewireKeyWatchers()
+  // Rebuild the watchers whenever the resolved table is replaced (the store
+  // swaps the whole object on load / `keybindings:changed`, so a shallow watch
+  // on the getter is enough). Kept out of `keyWatchStops` so a rewire doesn't
+  // stop itself.
+  const stopResolvedWatch = resolvedKeybindings
+    ? watch(resolvedKeybindings, rewireKeyWatchers)
+    : null
 
   // 3. On the first installation, subscribe to the OS-menu IPC channel.
   //    Subsequent installations share the same subscription. The disposer
@@ -429,14 +511,18 @@ export function useShortcuts(bindings: ShortcutBinding[]): void {
     }
   }
 
-  // 4. Cleanup. Watchers above auto-clean via component scope; we only
-  //    need to splice our bindings out and decrement the installation
-  //    counter. The IPC subscription is released when the counter hits
-  //    zero. Note: we do NOT clear the scope stack here — pushScope /
-  //    popScope are the responsibility of whichever component pushed
-  //    the scope, and an unrelated useShortcuts unmount should not
-  //    yank scopes pushed by other components.
+  // 4. Cleanup. Explicitly stop the chord watchers + the resolved-table
+  //    watcher (they're rebuilt on every rewire, so component-scope
+  //    auto-cleanup isn't enough to bound their count), splice our bindings
+  //    out, and decrement the installation counter. The IPC subscription is
+  //    released when the counter hits zero. Note: we do NOT clear the scope
+  //    stack here — pushScope / popScope are the responsibility of whichever
+  //    component pushed the scope, and an unrelated useShortcuts unmount
+  //    should not yank scopes pushed by other components.
   onBeforeUnmount(() => {
+    for (const stop of keyWatchStops) stop()
+    keyWatchStops = []
+    stopResolvedWatch?.()
     for (const binding of owned) {
       const i = registrations.indexOf(binding)
       if (i >= 0) registrations.splice(i, 1)

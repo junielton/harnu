@@ -75,6 +75,12 @@ export type MarkdownDenyCode =
   | 'not-found'
   | 'read-failed'
   | 'write-failed'
+  /**
+   * The path is a symlink and was admitted only by an exact-path exception
+   * (T1 P5 — `keybindings.json`). Following it would let the exception resolve
+   * to a file outside every known root, so we refuse instead.
+   */
+  | 'symlink'
 
 /** Pure: does this path end in an extension the pane renders as parsed
  * markdown prose (`.md`/`.markdown`)? Everything else that's openable (Cluster

@@ -36,6 +36,7 @@ export default defineConfig({
         // unit-tested); these shells only marshal the effect. Verified
         // by: unit-tested pure core + local smoke e2e (tests/e2e/*.spec.ts) +
         // headless e2e in CI where signature-free (server/prefs, T05 track 2).
+        'src/main/keybindings.ts', // T1 P2: ipcMain + chokidar shell for keybindings.json; every fs/parse decision is pure in keybindings-file.ts + keybindings-core.ts (both tested)
         'src/main/mcp/server.ts', // MCP Streamable-HTTP loopback server + SDK transport
         'src/main/mcp/tool-handlers.ts', // T120: per-op handler shell (Electron/fs/bridge) — same reason as server.ts; the dispatch (`op` → handler) is pure in tool-catalog.ts (tested)
         'src/main/mcp/memory-store.ts', // .harnu/memory/ I/O + git-probe (T79; pure logic in memory-core, tested)

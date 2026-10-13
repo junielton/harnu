@@ -530,11 +530,12 @@ session timestamps, chart axes, separators, and icons.
 - Border-radius: 3px
 - Padding: `2px 6px`
 - Line-height: 14px
-- Always use the **Mac symbol** (`⌘`, `⇧`, `⌥`, `⌃`, `↩`, `⌫`) — we assume macOS as primary, but the app supports Linux/Win via Electron
+- **Render for the viewer's platform** (T1). On macOS use the symbols (`⌘`, `⇧`, `⌥`, `⌃`, `↩`, `⌫`) concatenated with no separator (`⌘⇧P`); on every other platform spell the modifiers out (`Ctrl`, `Shift`, `Alt`) and join with `+` (`Ctrl+Shift+P`). `Cmd`/`Mod` resolves to Control off macOS, so a `Cmd+K` binding shows as `⌘K` on a Mac and `Ctrl+K` on Linux — same binding, honest hint. Arrows stay `↑ ↓ ← →` everywhere.
+- **Every displayed chord is derived, never a literal.** The one source of truth is `src/main/keybindings-core.ts` (`KEYBINDINGS` + `renderChord`); `App.vue`, `menu.ts`, `EmptyState.vue` and the `SessionMenu` rename hint all read from it. A `<kbd>` that disagrees with the chord that fires is a bug the structure now prevents. Hints reflect the user's resolved `keybindings.json`, not just the default, and update live on save — the native menu is rebuilt on the same change so its accelerators stay in step.
 
-Examples: `⌘K` (search), `⌘N` (new session), `⌘⇧P` (switch project), `F2` (rename), `⌫` (delete).
+Examples: `⌘K` / `Ctrl+K` (search), `⌘N` / `Ctrl+N` (new session), `⌘⇧P` / `Ctrl+Shift+P` (switch project), `⌘R` / `Ctrl+R` (rename), `⌫` (delete).
 
-**Shortcut table** (renderer; the app's native menu mirrors the same ones):
+**Shortcut table** (renderer; the app's native menu mirrors the same ones — Mac notation shown, see the platform-rendering rule above):
 
 | Shortcut           | Action                                                                                                                                                                                                                     | Scope    | Notes                                                                                                                                                                                                               |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -551,7 +552,8 @@ Examples: `⌘K` (search), `⌘N` (new session), `⌘⇧P` (switch project), `F2
 | `⌥→` / `⌘]`        | Forward through the session history after a Back (also mouse button 4 — forward)                                                                                                                                           | global   | Same scheme. Skips closed sessions; silent at the ends; 50 entries, in memory only. `⌥←`/`⌥→` no longer reach the terminal                                                                                          |
 | `↑ / ↓ / ← / →`    | Sidebar navigation                                                                                                                                                                                                         | sidebar  | Only when the sidebar has focus                                                                                                                                                                                     |
 | `Esc`              | Cancel edit / close overlay                                                                                                                                                                                                | modal    | Priority: palette > popover > input                                                                                                                                                                                 |
-| `F2`               | Rename (Linux/Win)                                                                                                                                                                                                         | global   | Alias for `⌘R`                                                                                                                                                                                                      |
+| `⌘⇧B`              | Toggle the Fleet rail                                                                                                                                                                                                      | global   | Renderer-only (no menu item) — does not fire while the terminal pane has focus                                                                                                                                      |
+| `⌘⇧D`              | Review the active folder's branch                                                                                                                                                                                          | global   | Renderer-only; opens the Review pane (T164)                                                                                                                                                                         |
 | `⌘C` / `⌃⇧C`       | Copy terminal selection                                                                                                                                                                                                    | terminal | Only with a selection; reads `term.getSelection()` (xterm's selection isn't a native DOM selection). On Mac, `editMenu` may intercept `⌘C` before xterm — see `menu.ts`                                             |
 | `⌘V` / `⌃⇧V`       | Paste into the terminal                                                                                                                                                                                                    | terminal | Via `term.paste()` — respects _bracketed paste_, so a multi-line paste doesn't auto-submit in the Claude TUI                                                                                                        |
 | `⇧↩`               | Line break (without sending)                                                                                                                                                                                               | terminal | Sends `\u000a` (LF, = Ctrl+J) to the PTY — Claude treats it as a newline; `Enter` alone (`\r`) sends. xterm's default ignores `Shift` and would send                                                                |
@@ -1103,6 +1105,94 @@ installed.
 
 Technical nouns (`kokoro`, `en-US`, `{folder}`, the command, the path) stay
 untranslated (§8).
+
+### Keyboard Shortcuts (Settings → Keyboard Shortcuts, T1 P4)
+
+Dedicated **Keyboard Shortcuts** tab of the Settings dialog (`KeybindingsPane.vue`),
+entering the `tabs` array right after **General** — it is a global preference, not a
+feature of its own. It is the mouse-reachable twin of hand-editing `keybindings.json`
+(Q5's un-brick guarantee: the file can always be fixed from here). **No new token, no
+new component** — the row reuses the `<kbd>` chip (`§6` → "Keyboard shortcuts"), the
+ghost/accent buttons, `SettingHint`, the eyebrow, and the Accent/Warning badges (§6
+Badges).
+
+```
++-------------------------------------------------------------------------+
+| Rebind any shortcut. Edits save to keybindings.json and apply at once.  |
+|                                                    [ Reset all ]        |
+|                                                                        |
+| New session               [ ⌘N ]            default ⌘N                 |
+| Open command palette       [ ⌘K ]            default ⌘K                 |
+| Toggle the Fleet rail      [ ⌘⇧B ]  not in terminal    ↺ Reset  ⌫ Unbind|
+| Review the active branch   [ ⌘⇧B ]  conflict: Toggle the Fleet rail    |
+| Resume last session        [ Set a shortcut… ]  unbound  ↺ Reset       |
+|  ...                                                                    |
++-------------------------------------------------------------------------+
+```
+
+**Intro line** — one `--text-3` 11.5px paragraph: rebinding is the point, edits write
+to `keybindings.json` and apply live. A ghost **Reset all** sits top-right, disabled
+when every row is already a default.
+
+**One row per rebindable action** (the 26; the reserved `app.*` five are not shown —
+they cannot be rebound). Seven of them — the Topbar's per-folder actions (`view.roadmap`,
+`view.prStack`, `folder.openInFileManager`, `folder.openInVSCode`,
+`folder.openGithubPulls`, `folder.browseFiles`, `folder.newTerminal`) — ship with no
+default chord, so their rows start on the empty "Set a shortcut…" state, as does
+`view.usageDashboard` (View menu). They are `menu: true`, backed by a native **Folder**
+menu, so a bound chord fires over the terminal. `view.settings` defaults to `⌘,` /
+`Ctrl+,` and sits in the app menu on macOS, the File menu elsewhere. Left: the action name (`--text-2` 12px, from
+`keybindings.actions.<id>`). Then the **capture control** — a `<kbd>`-styled button
+showing the resolved chord; empty rows read "Set a shortcut…" in `--text-4`. Clicking
+it enters **recording**: the button border goes `--accent-line`, the label reads
+"Press a shortcut…", and the next physical key press (via `chordFromEvent`) is captured
+— a lone modifier does not commit, `Esc` cancels, `Backspace` unbinds. On commit the
+new chord is written and the control leaves recording.
+
+**Trailing metadata**, in this order, each only when it applies:
+
+- **`default ⌘N`** — a muted `--text-4` 11px reminder of the built-in chord, shown
+  whenever the row is overridden or unbound.
+- **not in terminal** — a plain `--text-4` marker for a `menu: false` action, whose
+  rebound chord will not fire while the terminal pane holds focus (it has no native
+  menu item). Derived from the descriptor, not user-set.
+- **conflict: {other}** — the **Warning** badge (§6 Badges) naming every other action
+  that resolves to the same chord in the same scope. Every participant is badged, so the
+  clash is visible; the chord dispatches exactly once — the first-registered action
+  (`App.vue` declaration order) fires and the others stay inert until you resolve it.
+- **↺ Reset** — ghost button, drops this row's override. Hidden on a default row.
+- **⌫ Unbind** — ghost button, sets the chord to `null`. Hidden whenever the row has no
+  chord (already unbound, or a no-default action not yet bound).
+
+**Reset all** clears every override at once (writes `[]`). Like the per-row Reset it
+goes through `keybindings.json`, so a hand-editor and this pane never disagree —
+whichever wrote last wins, and the chokidar watch reconciles the other.
+
+#### Open + discover (T1 P5)
+
+Three routes, one destination — the raw `keybindings.json` opened in a `MarkdownPane`
+helper pane (edit mode), for the reader who prefers JSON to the row editor:
+
+- **`app.openKeybindings`** — a fifth reserved (un-rebindable) action, default
+  `⌘⌥K` / `Ctrl+Alt+K`, `menu: true` so the OS consumes the chord even over the
+  terminal pane. Not shown in the pane's rows (reserved), same as the other four.
+- **View → "Keyboard Shortcuts…"** — a native menu item next to the layout toggles,
+  emitting `app.openKeybindings`.
+- **"Open keybindings.json"** — a ghost button in the pane header, left of **Reset
+  all**, calling the same store action.
+
+The pane lands in the **active folder's** helper stack (`currentWorktreePath`); with
+no folder selected (Onboarding / empty state) it can't — a toast says to open a folder
+first. `keybindings.json` lives beside `settings.json`, outside every known Harnu root,
+so the confined file gate (`isPathAllowed`) would refuse it: the three channels the
+pane uses (`markdown:read` / `markdown:write` / `markdown:watch`) take an **exact-path
+exception** for this one path. The MCP `open_file` validator does **not** — an agent
+still can't reach the file, which is why this ships with no `docs/harnu-features.md`
+bump.
+
+This is the un-brick guarantee (Q5): a `keybindings.json` so broken it drops every
+chord still leaves this tab reachable by mouse from the gear menu, and the file itself
+one click from an editor.
 
 ### Badges
 

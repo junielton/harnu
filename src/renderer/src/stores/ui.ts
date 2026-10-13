@@ -106,6 +106,7 @@ export interface NavTargetParams {
 /** Which tab the Settings dialog should open to. Consumed by SettingsDialog. */
 export type SettingsTabId =
   | 'general'
+  | 'keybindings'
   | 'interceptor'
   | 'appearance'
   | 'startup'

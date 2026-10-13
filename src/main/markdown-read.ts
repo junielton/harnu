@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import { promises as fs } from 'node:fs'
 import { resolve } from 'node:path'
 import { isPathAllowed } from './settings'
+import { keybindingsFilePath } from './keybindings'
 import { readUserProjects } from './user-projects'
 import { scanFolders } from './claude-reader'
 import {
@@ -81,13 +82,42 @@ export type MarkdownReadResult = MarkdownReadOk | MarkdownReadErr
  * opened as text now, and only the binary sniff (content, checked once the
  * bytes are on hand) or the size cap can still refuse it. Exported for unit
  * tests (containment: `..`, absolute, false-positive prefix).
+ *
+ * `allowExact` (T1 P5) is a single absolute path that passes the gate even when
+ * it lives outside every known root — `keybindings.json`, which the editor pane
+ * reaches through `markdown:read` / `markdown:write` / `markdown:watch`. Only
+ * those three channels pass it; the MCP `open_file` validator calls this with
+ * two args, so an agent still cannot read the file.
  */
 export function checkMarkdownReadAllowed(
   resolvedPath: string,
-  roots: string[]
+  roots: string[],
+  allowExact?: string | null
 ): { ok: true } | { ok: false; code: Extract<MarkdownDenyCode, 'outside-roots'> } {
+  if (allowExact && resolve(allowExact) === resolvedPath) return { ok: true }
   if (!isPathAllowed(resolvedPath, roots)) return { ok: false, code: 'outside-roots' }
   return { ok: true }
+}
+
+/**
+ * True when `resolvedPath` is admitted *only* by the exact-path exception
+ * (T1 P5) AND the file on disk is a symlink. `checkMarkdownReadAllowed` skips
+ * the known-roots containment for the exact path, so without this a symlink
+ * planted at `keybindings.json` would let `fs.readFile` / `fs.writeFile`
+ * (which follow links) resolve to a target outside every known root. The
+ * reader and writer both refuse in that case; the watcher already sets
+ * chokidar's `followSymlinks: false`.
+ */
+export async function isExactPathSymlink(
+  resolvedPath: string,
+  allowExact?: string | null
+): Promise<boolean> {
+  if (!allowExact || resolve(allowExact) !== resolvedPath) return false
+  try {
+    return (await fs.lstat(resolvedPath)).isSymbolicLink()
+  } catch {
+    return false // absent / unreadable — the normal open path reports that
+  }
 }
 
 /** English fallbacks — the renderer keys its own localized copy off `code`. */
@@ -98,7 +128,8 @@ const DENY_MESSAGE: Record<MarkdownDenyCode, string> = {
   'too-large': 'file is too large to preview',
   'not-found': 'file not found',
   'read-failed': 'failed to read file',
-  'write-failed': 'failed to write file'
+  'write-failed': 'failed to write file',
+  symlink: 'refusing to follow a symlink at this path'
 }
 
 function deny(code: MarkdownDenyCode): MarkdownReadErr {
@@ -131,14 +162,16 @@ export async function markdownKnownRoots(): Promise<string[]> {
  */
 export async function readMarkdownFile(
   rawPath: string,
-  base?: string
+  base?: string,
+  allowExact?: string | null
 ): Promise<MarkdownReadResult> {
   if (typeof rawPath !== 'string' || rawPath.length === 0) return deny('invalid-path')
   const resolved =
     typeof base === 'string' && base.length > 0 ? resolve(base, rawPath) : resolve(rawPath)
 
-  const gate = checkMarkdownReadAllowed(resolved, await markdownKnownRoots())
+  const gate = checkMarkdownReadAllowed(resolved, await markdownKnownRoots(), allowExact)
   if (!gate.ok) return deny(gate.code)
+  if (await isExactPathSymlink(resolved, allowExact)) return deny('symlink')
 
   let size: number
   try {
@@ -183,7 +216,9 @@ export function registerMarkdownReadHandlers(): void {
     'markdown:read',
     (_e, args: { path: string; base?: string }): Promise<MarkdownReadResult> => {
       const { path, base } = args ?? ({} as { path: string; base?: string })
-      return readMarkdownFile(path, base)
+      // T1 P5: the editor pane reads `keybindings.json` through this channel; it
+      // lives outside every known root, so pass it as the exact-path exception.
+      return readMarkdownFile(path, base, keybindingsFilePath())
     }
   )
 }

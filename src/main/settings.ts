@@ -169,6 +169,16 @@ function currentSettingsPath(): string {
 }
 
 /**
+ * The directory the active settings.json lives in. `keybindings.json` sits
+ * beside it and follows its relocation (T1, Q3) — `src/main/keybindings.ts`
+ * derives its path from here, recomputed per call so a mid-session relocation
+ * is picked up on the next `keybindings:load`.
+ */
+export function settingsDir(): string {
+  return dirname(currentSettingsPath())
+}
+
+/**
  * Resolve a renderer-supplied path and confine it to the allowed roots. Throws
  * (rejecting the IPC) when the path escapes — legitimate paths handed back by
  * `settings:defaultPath` / `settings:changeLocation` always pass.

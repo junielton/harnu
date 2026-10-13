@@ -311,7 +311,8 @@ function errorKey(code: string): string {
     'not-found': 'notFound',
     'read-failed': 'readFailed',
     'write-failed': 'writeFailed',
-    'invalid-path': 'readFailed'
+    'invalid-path': 'readFailed',
+    symlink: 'symlink'
   }
   return `markdownPane.error.${map[code] ?? 'readFailed'}`
 }

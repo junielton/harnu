@@ -24,6 +24,17 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   - **Containers and networks of a stack whose worktree Harnu removed.** The Docker card has a **Left by removed worktrees** block with the stopped containers and the networks (`docker rm` used to leave the network behind) and a **Clean up** button with its own confirm. Anything running, or a project whose folder came back, is left alone. Volumes are listed apart with **Remove volumes…** behind a stronger confirm (they cannot be restored) and are never removed with the stack or automatically.
   - **"Also delete the branch on the remote"** in the remove confirm, off by default. It appears only when a merged pull request records the merge (an ancestor of `main` with no PR, like `staging` or `release/x`, never qualifies), no open pull request uses the branch as head or base, GitHub does not protect it, and the remote tip is your tip or older. It deletes on the branch's own upstream remote, never an assumed `origin`, with `git push --delete`. The answers are asked when the dialog opens (never on a scan), shared and kept for ten minutes, and asked again when you confirm. If `gh` or the remote cannot be asked, the box is not shown. If the remote refuses, the toast says so and the local clean still stands. The autopilot never does it, and the Settings → Cleanup switch that forbids remote deletes is honoured.
   - **A dehydrated worktree says what is left.** In Needs review its row reads "Dehydrated · 6 MB left" and keeps the normal **Remove**. Dehydrating never changed its verdict: a merged one still becomes ready after the grace period, like a hydrated one.
+- **Shortcuts for the Topbar's folder actions.** Settings → Keyboard Shortcuts
+  now lists the roadmap board, PR Stack, open in file manager, open in VS Code,
+  pull requests on GitHub, Browse files, and open a terminal. They ship with no
+  chord — give them one in the pane or in `keybindings.json`. A new native
+  **Folder** menu carries the same actions, so a chord you bind fires even while
+  the terminal has focus.
+- **`Cmd/Ctrl+,` opens Settings.** It's also in the menu (Harnu → Settings… on
+  macOS, File → Settings… elsewhere) and can be rebound like any other shortcut.
+- **A shortcut slot for the usage overview.** The Usage Dashboard is now listed
+  in Settings → Keyboard Shortcuts and in the View menu. It has no chord until
+  you give it one.
 
 ### Changed
 
@@ -124,12 +135,39 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   state), so asking again costs nothing, and the chips come back by themselves after you reload
   the window.
 - Scheduler workers have a **Network access** switch (Settings → Permission, `observe` workers only). It is off by default. Turning it on gives that worker `WebFetch` and shows a red warning, because a worker that can read any file and also reach the internet can be talked into sending a file out by anything malicious it reads. Workers you already had start with it off, and one Activity entry lists the ones whose prompt mentions a URL or `WebFetch`, so you can switch it back on. When a Claude session asks to turn it on through `create_worker` or `update_worker`, Harnu now asks you first.
+- **Rebind Harnu's keyboard shortcuts.** Drop a `keybindings.json` next to your
+  `settings.json` — a VS Code-shaped array of `{ "key", "command" }` entries —
+  and Harnu merges it over the built-in defaults. `Cmd` maps to ⌘ on macOS and
+  `Ctrl` elsewhere, so one file works everywhere; `"key": null` unbinds an
+  action; `//` comments are fine. Edits apply on save with no restart — the
+  in-app shortcuts, the `⌘K`-style hints, and the native menu (File, View, …)
+  all re-bind live. A broken file falls back to the defaults with a toast, and a
+  few actions (quit, reload, DevTools, fullscreen) stay reserved.
+- **Settings → Keyboard Shortcuts.** A new Settings tab lists every rebindable
+  action with its current chord. Click a shortcut and press the keys you want —
+  Esc cancels, Backspace clears it. Each row has Reset (back to the default) and
+  Unbind, there's a Reset all, and any two actions that land on the same chord
+  both get a conflict badge. Renderer-only actions are marked "not in terminal".
+  It writes the same `keybindings.json`, so hand-edits and the pane stay in sync.
+- **Open keybindings.json in one step.** A new **View → "Keyboard Shortcuts…"**
+  menu item and a `Cmd/Ctrl+Alt+K` shortcut (plus an "Open keybindings.json"
+  button in the Settings pane) open the raw file in a split-pane editor for when
+  you'd rather edit the JSON directly. That chord is reserved, like quit and
+  reload.
 
 ### Changed
 
 - **Cleanup polish.** Docker bytes now get their own "Docker (cleaned each cycle)" segment in the split bar, so "Ready to clean" agrees with the big button. While a clean runs, the line under the bar reads "Cleaning now · N left". The selection bar's Remove, Dehydrate and Keep have icons. The dialog and the side panel use the same `proj/www` repo label as the map, so two repos called `www` stay apart. Portuguese now calls the review group "Precisa de revisão" everywhere in Cleanup.
 - **Cleanup now matches the approved mockup more closely.** Every map region shows its repo as a monospace `proj/www`-style label (the full path on hover), a legend row under the split bar names the three groups and says what a block's area means, Map / List and Scan now have icons, and the Docker card has a "runs each cycle" subtitle, a split bar of cache, images and orphan volumes, and draws orphan volumes in the amber review colour. The confirm dialog gained a close button, icons on the chips and the confirm button, monospace row titles, a one-line breakdown ("3 stacks stopped · 12 dependency folders removed · 12 worktrees trashed") and a "12 ready · 6.44 GB" footer.
 - **One unit everywhere in Cleanup.** Sizes use the app's decimal GB/MB on every surface; the docs examples follow.
+- **Keyboard-shortcut hints now match your platform.** Every `⌘K`-style hint —
+  the empty-state card, the session right-click menu, the shortcut reference —
+  is now derived from one source of truth and rendered for the OS you're on:
+  `⌘⇧P` on macOS, `Ctrl+Shift+P` on Linux and Windows, instead of always
+  showing Mac symbols. Groundwork for rebindable shortcuts.
+- The keybindings core's chord/scope comparison key uses a visible separator
+  instead of an embedded NUL byte, and the resolved table's `byId` map is typed
+  `Partial` to match reality (the reserved actions aren't in it).
 
 ### Fixed
 
@@ -152,6 +190,39 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - Scheduler `observe` workers no longer have a shell. Their allowlist used to include `git log`, `git diff`, `git show`, `git status` and a few `gh` commands, and a "read-only" `git` command can still write a file: `git log --output=<path>` overwrites any path, so text from a commit message could land in `.git/config` and run as a command on the next `git status`. `Bash` is now denied outright in `observe` mode; the delivery watchdog reads worktrees and PRs through Harnu's own tools instead. The **Extra read commands** field is gone from worker settings, and any saved rules are ignored and listed as `rejected rule` in the Runs tab. `act` workers are unchanged.
 - Closed the rest of the same hole for `observe` workers: Harnu now starts each tick with `--tools Read,Grep,Glob,Skill` (plus `WebFetch` only for a worker you opted in to Network access), so the CLI loads no other built-in tool. Before this, `Monitor` (which runs commands), `EnterWorktree` (which runs `git worktree add` and any `post-checkout` hook), the scheduled-task, workflow and `SendMessage` tools and `ToolSearch` were still loaded and callable even with `Bash` denied. They are also denied by name as a second layer, and so are the Harnu tools an `observe` worker may not call, so they no longer appear in its tool list at all.
 - **Saving the Containers settings can no longer come back as the defaults.** If the settings were still loading in the background when you saved (a slow disk, a busy machine), the save was written correctly but the window briefly showed the default values instead of what you had just saved. The saved values now always stand.
+- **Custom shortcuts recorded on Linux/Windows now behave like the defaults.**
+  A chord recorded in Settings → Keyboard Shortcuts off macOS came out as
+  `Ctrl+…` while every built-in default is written `Cmd+…`, so re-recording a
+  row's own default never returned it to "default", two bindings that share a
+  physical key (`Ctrl+B` vs `Cmd+B`) weren't flagged as conflicting, and a
+  recorded `Ctrl+Q` slipped past the reserved-chord guard. `Ctrl` now folds onto
+  `Cmd` at capture time and in conflict / reserved-chord detection on those
+  platforms; a hand-edited `Ctrl+Q` is likewise caught.
+- **A rejected rebind no longer lingers in `keybindings.json`.** Binding an
+  action to a reserved chord (or a chord the native menu can't express) is
+  ignored by the resolver — but the Settings pane used to still write it to the
+  file, so every reconcile re-raised the "some shortcuts were ignored" toast.
+  The pane now persists only what the resolver accepted, and surfaces the
+  warning immediately instead of a file-watch round-trip later.
+- **Two actions on the same chord fire once, not twice.** Per the spec the
+  first-registered action wins; the renderer was wiring a watcher per binding,
+  so a shared chord ran both handlers (e.g. two toggles cancelling out). This
+  now also covers the off-macOS case where a hand-edited `Ctrl+B` and a default
+  `Cmd+B` are the same physical key.
+- **`keybindings.json` writes are atomic** (temp file + rename) and the Settings
+  pane serializes its saves, so two quick edits can't interleave into a
+  truncated or out-of-order file. A `keybindings.json` symlinked into a dotfiles
+  repo is followed to its target rather than replaced with a plain file.
+- **A chord whose key is `-` (e.g. `Cmd+-`) works as a renderer shortcut**
+  instead of silently doing nothing, including with Shift held.
+- **Symlinks are refused at the `keybindings.json` editor path.** The exact-path
+  exception the editor pane uses skipped the known-folders check; a symlink
+  planted there could have redirected a read or write outside Harnu's folders.
+- Recording capture no longer stays armed after you click away without pressing
+  a key (it could rebind the next character you typed elsewhere in Settings).
+- The in-app shortcut hints show a dash for an unbound action rather than a
+  blank gap, and the "recording" label / a couple of doc lines now match the
+  design spec.
 
 ## 2026-10-07
 

@@ -107,21 +107,83 @@ Harnu remembers the sessions you viewed, like a browser's history. Press the mou
 
 ## Shortcuts
 
+Harnu shows each shortcut in your platform's notation — `⌘⇧P` on macOS,
+`Ctrl+Shift+P` on Linux and Windows. `Cmd` and `Ctrl` are the same key here:
+a binding written as `Cmd+K` is `⌘K` on a Mac and `Ctrl+K` elsewhere.
+
 | Shortcut           | Action                                               |
 | ------------------ | ---------------------------------------------------- |
 | `Cmd/Ctrl+N`       | New session                                          |
 | `Cmd/Ctrl+K`       | Open command palette                                 |
 | `Cmd/Ctrl+O`       | Add folder                                           |
+| `Cmd/Ctrl+,`       | Open Settings                                        |
 | `Cmd/Ctrl+R`       | Rename the selected session                          |
 | `Cmd/Ctrl+Shift+R` | Resume your most-recently-modified session           |
 | `Cmd/Ctrl+W`       | Close/deselect the current session tab               |
 | `Cmd/Ctrl+B`       | Toggle the left sidebar                              |
 | `Cmd/Ctrl+Alt+B`   | Toggle the right split panel                         |
-| `Cmd/Ctrl+Shift+A` | Toggle the Fleet rail                                |
+| `Cmd/Ctrl+Shift+A` | Toggle the Approval Inbox rail                       |
 | `Cmd/Ctrl+Shift+B` | Toggle the Fleet rail                                |
+| `Cmd/Ctrl+Shift+D` | Review the active folder's branch                    |
+| `Cmd/Ctrl+Shift+P` | Switch project (currently opens the command palette) |
 | `Alt+←` / `Cmd+[`  | Back to the previous session you viewed              |
 | `Alt+→` / `Cmd+]`  | Forward again after going back                       |
 | Arrow keys / Enter | Move and activate the keyboard cursor in the sidebar |
+
+The Topbar's folder actions — roadmap board, PR Stack, open in file manager,
+open in VS Code, pull requests on GitHub, Browse files, and open a terminal —
+have no shortcut out of the box, and neither does the usage overview, but you
+can give each one a chord (see
+[Customizing shortcuts](#customizing-shortcuts)). They're also in the native
+**Folder** menu, so a chord you bind works even while the terminal has focus.
+
+Renderer-only shortcuts (`Cmd/Ctrl+Shift+A`, `+Shift+B`, `+Shift+D`, and the
+sidebar arrow keys) don't fire while the terminal pane has keyboard focus —
+the terminal captures those keys. The rest are bound in the native menu and
+work everywhere.
+
+### Customizing shortcuts
+
+Harnu reads shortcut overrides from a `keybindings.json` file kept in the same
+folder as `settings.json` (Settings → the folder shown under "Settings file").
+The file is optional — without it every shortcut uses the built-in default
+above.
+
+It's a VS Code-shaped array, one entry per action, merged over the defaults:
+
+```jsonc
+// Harnu keybindings — overrides merged over the built-in defaults.
+[
+  { "key": "Cmd+J", "command": "view.review" },
+  { "key": "Cmd+Shift+K", "command": "app.search" },
+  { "key": null, "command": "session.resumeLast" }, // unbind a default
+  { "key": "Cmd+Shift+M", "command": "view.roadmap" } // bind an action with no default
+]
+```
+
+The Topbar's folder actions have no default chord. Their command ids are
+`view.roadmap`, `view.prStack`, `folder.openInFileManager`,
+`folder.openInVSCode`, `folder.openGithubPulls`, `folder.browseFiles`, and
+`folder.newTerminal`. The usage overview is `view.usageDashboard`, and Settings
+(`Cmd/Ctrl+,` by default) is `view.settings`.
+
+- `Cmd` means ⌘ on macOS and `Ctrl` on Linux/Windows — one file works on every
+  platform. `//` and `/* */` comments are allowed.
+- `"key": null` (or a `-` in front of the command) unbinds that action.
+- Edits apply on save — no restart. The renderer-level shortcuts, the
+  `⌘K`-style hints, and the native menu (File, View, …) all re-bind live. A
+  malformed file is ignored with a toast and the defaults stay active, so you
+  can't lock yourself out.
+- A handful of actions are reserved and can't be rebound: quit, reload,
+  toggle DevTools, toggle fullscreen, and "open Keyboard Shortcuts"
+  (`Cmd/Ctrl+Alt+K`).
+- [Back and forward](#going-back-and-forward) (`Alt+←` / `Alt+→`, `Cmd+[` /
+  `Cmd+]` on macOS) can't be rebound yet either.
+- Prefer not to edit JSON by hand? **Settings → Keyboard Shortcuts** is a
+  point-and-click editor for this same file — see
+  [Settings → Keyboard Shortcuts](settings.md#keyboard-shortcuts). To jump
+  straight to the raw file, use **View → Keyboard Shortcuts…** or
+  `Cmd/Ctrl+Alt+K` — it opens `keybindings.json` in a split-pane editor.
 
 ### Terminal shortcuts
 

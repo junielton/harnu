@@ -79,7 +79,8 @@ import { registerFolderOpsHandlers } from './folder-ops'
 import { registerExplorerHandlers } from './explorer-ipc'
 import { startClaudeWatcher, type WatcherHandle } from './claude-watcher'
 import { registerWorktreeTracker } from './worktree-tracker-wiring'
-import { registerAppMenu } from './menu'
+import { registerAppMenu, rebuildAppMenu } from './menu'
+import { registerKeybindings, closeKeybindingsWatcher, getResolvedKeybindings } from './keybindings'
 import { registerUpdater } from './updater'
 import {
   addUserProject,
@@ -576,6 +577,16 @@ app.whenReady().then(async () => {
   registerRoadmapHandlers(() => mainWindow)
   registerHelpersHandlers()
   registerSettingsHandlers(() => mainWindow)
+  // T1: the `keybindings.json` override layer. Sits next to settings.json and
+  // follows its relocation. The renderer store calls `keybindings:load` at boot;
+  // a hand-edit re-resolves and pushes `keybindings:changed`. P3: the resolved
+  // table is seeded synchronously here and every change rebuilds the native menu
+  // so its accelerators track the user's overrides (`registerAppMenu` below
+  // reads the seeded table).
+  registerKeybindings(
+    () => mainWindow,
+    (resolved) => rebuildAppMenu(() => mainWindow, resolved)
+  )
   // "Claude Boot" launch-options config (global + per-folder). Read by the PTY
   // spawn path to build the `claude` argv.
   registerClaudeConfigHandlers()
@@ -781,7 +792,9 @@ app.whenReady().then(async () => {
   // intercept. On macOS this is the visible menubar; on Linux/Windows the
   // bar stays hidden via the window's `autoHideMenuBar: true` setting but
   // the accelerators still fire. See `findings/07-shortcuts-palette.md` §3.
-  registerAppMenu(() => mainWindow)
+  // Built from the resolved keybindings table (seeded synchronously by
+  // `registerKeybindings` above); a later `keybindings.json` edit rebuilds it.
+  registerAppMenu(() => mainWindow, getResolvedKeybindings())
   // Auto-update via GitHub Releases. No-op in dev (the function itself
   // guards on `app.isPackaged`); in packaged builds it polls 5s after ready
   // and then hourly. Per finding 06 §8: AppImage updates in place, the
@@ -1098,6 +1111,7 @@ app.on('before-quit', async (event) => {
       /* swallow — best effort */
     }
     await closeSettingsWatcher()
+    await closeKeybindingsWatcher()
     app.quit()
   } else {
     // No claude watcher running (e.g. renderer never called `folders:load`),
@@ -1105,6 +1119,7 @@ app.on('before-quit', async (event) => {
     // best-effort (the config file is force-rewritten on next boot regardless).
     void closeMcpServer()
     void closeSettingsWatcher()
+    void closeKeybindingsWatcher()
   }
 })
 

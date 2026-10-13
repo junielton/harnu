@@ -6,7 +6,7 @@
     "titleAttentionPrefix": "({n})"
   },
   "sidebar": {
-    "search": "Buscar (⌘K)",
+    "search": "Buscar",
     "addFolder": "Adicionar pasta",
     "newSession": "Nova sessão",
     "showOlder": "Mostrar {n} sessões mais antigas",
@@ -189,7 +189,8 @@
       "tooLarge": "Arquivo grande demais para pré-visualizar.",
       "notFound": "Arquivo não encontrado.",
       "readFailed": "Não foi possível ler este arquivo.",
-      "writeFailed": "Não foi possível salvar este arquivo."
+      "writeFailed": "Não foi possível salvar este arquivo.",
+      "symlink": "Este caminho é um symlink — o Harnu não vai segui-lo."
     }
   },
   "diagramPane": {
@@ -979,6 +980,7 @@
     },
     "tabs": {
       "general": "Geral",
+      "keybindings": "Atalhos de teclado",
       "interceptor": "Interceptor",
       "appearance": "Aparência",
       "startup": "Inicialização",
@@ -1119,6 +1121,67 @@
     "claudeStatus": {
       "label": "Alertas do serviço Claude",
       "description": "Receba uma notificação nativa quando o status.claude.com reportar um novo incidente, uma piora ou uma recuperação. O dot no footer continua ativo de qualquer forma."
+    }
+  },
+  "keybindings": {
+    "toast": {
+      "warnings": {
+        "title": "Alguns atalhos no keybindings.json foram ignorados",
+        "description": "O keybindings.json tem entradas que o Harnu não conseguiu aplicar ({count} ignoradas). Seus outros atalhos continuam iguais."
+      },
+      "openNeedsFolder": {
+        "title": "Abra uma pasta primeiro",
+        "description": "O keybindings.json abre em um painel dividido, que precisa de uma pasta ativa. Selecione uma e tente de novo."
+      }
+    },
+    "pane": {
+      "eyebrow": "Atalhos",
+      "intro": "Remapeie qualquer atalho abaixo. As edições são salvas no keybindings.json e valem na hora — sem reiniciar.",
+      "resetAll": "Restaurar tudo",
+      "openFile": "Abrir keybindings.json",
+      "capture": "Gravar um novo atalho para {action}",
+      "captureHint": "Clique em um atalho e pressione as teclas. Esc cancela, Backspace remove.",
+      "recording": "Pressione um atalho…",
+      "empty": "Definir um atalho…",
+      "unbound": "Sem atalho",
+      "default": "padrão {chord}",
+      "notInTerminal": "não no terminal",
+      "conflict": "conflito: {names}",
+      "reset": "Restaurar",
+      "unbind": "Remover"
+    },
+    "actions": {
+      "session.new": "Nova sessão",
+      "app.search": "Abrir a paleta de comandos",
+      "inbox.toggle": "Alternar a coluna de Aprovações",
+      "view.fleetRail": "Alternar a coluna da Frota",
+      "view.toggleSidebar": "Alternar a barra lateral esquerda",
+      "view.toggleHelper": "Alternar o painel dividido à direita",
+      "project.switch": "Trocar de projeto",
+      "folder.add": "Adicionar pasta",
+      "view.review": "Revisar o branch da pasta ativa",
+      "view.roadmap": "Alternar o quadro de roadmap",
+      "view.prStack": "Alternar o PR Stack",
+      "folder.openInFileManager": "Abrir a pasta ativa no gerenciador de arquivos",
+      "folder.openInVSCode": "Abrir a pasta ativa no VS Code",
+      "folder.openGithubPulls": "Abrir os pull requests no GitHub",
+      "folder.browseFiles": "Navegar pelos arquivos",
+      "folder.newTerminal": "Abrir um terminal",
+      "view.settings": "Abrir as Configurações",
+      "view.usageDashboard": "Alternar a visão geral de uso",
+      "session.resumeLast": "Retomar a última sessão",
+      "session.rename": "Renomear a sessão selecionada",
+      "session.close": "Fechar a aba da sessão atual",
+      "sidebar.cursor.down": "Cursor da barra lateral: baixo",
+      "sidebar.cursor.up": "Cursor da barra lateral: cima",
+      "sidebar.cursor.right": "Cursor da barra lateral: expandir / entrar",
+      "sidebar.cursor.left": "Cursor da barra lateral: recolher / sair",
+      "sidebar.cursor.activate": "Cursor da barra lateral: abrir",
+      "app.reload": "Recarregar a janela",
+      "app.devtools": "Alternar o DevTools",
+      "app.quit": "Sair do Harnu",
+      "app.fullscreen": "Alternar tela cheia",
+      "app.openKeybindings": "Abrir Atalhos de teclado"
     }
   },
   "notifications": {

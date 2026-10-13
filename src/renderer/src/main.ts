@@ -8,6 +8,7 @@ import App from './App.vue'
 import { i18n } from './i18n'
 import { useSessionsStore } from './stores/sessions'
 import { useSettingsStore } from './stores/settings'
+import { useKeybindingsStore } from './stores/keybindings'
 import { useUsageStore } from './stores/usage'
 import { useDailyBudgetStore } from './stores/daily-budget'
 import { useClaudeStatusStore } from './stores/claude-status'
@@ -37,6 +38,14 @@ if (import.meta.env.DEV) {
 const settings = useSettingsStore()
 settings.init().catch((err) => {
   console.error('[settings] init failed', err)
+})
+
+// Resolve keybindings.json (T1) and start its file watch. Fire-and-forget: the
+// store is seeded with the built-in defaults, so shortcuts work correctly in the
+// gap before the file loads, and `useShortcuts` re-keys once it does.
+const keybindings = useKeybindingsStore()
+keybindings.init().catch((err) => {
+  console.error('[keybindings] init failed', err)
 })
 
 // Plan-usage panel data (plan-usage-widget spec). Fire-and-forget; the panel

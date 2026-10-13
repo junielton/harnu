@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { i18n } from '../i18n'
 import { useUiStore } from './ui'
+import { useKeybindingsStore } from './keybindings'
 import type { SettingsData } from '../../../preload'
 
 /**
@@ -142,6 +143,12 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.setItem(PATH_KEY, res.path)
     // Re-establish the watch on the new location.
     await window.api.settingsLoad(res.path)
+    // keybindings.json's *path* is derived next to settings.json, so it follows
+    // this relocation (T1, Q3): re-resolve + re-target its watch at the new
+    // directory. An existing overrides file is NOT copied (same "we don't touch
+    // user files on relocation" rule as settings.json itself), so if the new
+    // directory has none the table resolves to defaults until the user edits.
+    await useKeybindingsStore().reload()
   }
 
   function reveal(): void {

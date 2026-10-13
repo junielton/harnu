@@ -6,7 +6,7 @@
     "titleAttentionPrefix": "({n})"
   },
   "sidebar": {
-    "search": "Search (⌘K)",
+    "search": "Search",
     "addFolder": "Add folder",
     "newSession": "New session",
     "showOlder": "Show {n} older sessions",
@@ -189,7 +189,8 @@
       "tooLarge": "This file is too large to preview.",
       "notFound": "File not found.",
       "readFailed": "Couldn't read this file.",
-      "writeFailed": "Couldn't save this file."
+      "writeFailed": "Couldn't save this file.",
+      "symlink": "This path is a symlink — Harnu won't follow it."
     }
   },
   "diagramPane": {
@@ -979,6 +980,7 @@
     },
     "tabs": {
       "general": "General",
+      "keybindings": "Keyboard Shortcuts",
       "interceptor": "Interceptor",
       "appearance": "Appearance",
       "startup": "Startup",
@@ -1119,6 +1121,67 @@
     "claudeStatus": {
       "label": "Claude service alerts",
       "description": "Get a native notification when status.claude.com reports a new incident, a worsening outage, or a recovery. The footer dot stays live regardless."
+    }
+  },
+  "keybindings": {
+    "toast": {
+      "warnings": {
+        "title": "Some shortcuts in keybindings.json were ignored",
+        "description": "keybindings.json has entries Harnu couldn't apply ({count} skipped). Your other shortcuts are unchanged."
+      },
+      "openNeedsFolder": {
+        "title": "Open a folder first",
+        "description": "keybindings.json opens in a split pane, which needs an active folder. Select one, then try again."
+      }
+    },
+    "pane": {
+      "eyebrow": "Shortcuts",
+      "intro": "Rebind any shortcut below. Edits save to keybindings.json and apply right away — no restart.",
+      "resetAll": "Reset all",
+      "openFile": "Open keybindings.json",
+      "capture": "Record a new shortcut for {action}",
+      "captureHint": "Click a shortcut, then press the keys. Esc cancels, Backspace unbinds.",
+      "recording": "Press a shortcut…",
+      "empty": "Set a shortcut…",
+      "unbound": "Unbound",
+      "default": "default {chord}",
+      "notInTerminal": "not in terminal",
+      "conflict": "conflict: {names}",
+      "reset": "Reset",
+      "unbind": "Unbind"
+    },
+    "actions": {
+      "session.new": "New session",
+      "app.search": "Open command palette",
+      "inbox.toggle": "Toggle the Approval Inbox rail",
+      "view.fleetRail": "Toggle the Fleet rail",
+      "view.toggleSidebar": "Toggle the left sidebar",
+      "view.toggleHelper": "Toggle the right split panel",
+      "project.switch": "Switch project",
+      "folder.add": "Add folder",
+      "view.review": "Review the active folder's branch",
+      "view.roadmap": "Toggle the roadmap board",
+      "view.prStack": "Toggle the PR Stack",
+      "folder.openInFileManager": "Open the active folder in the file manager",
+      "folder.openInVSCode": "Open the active folder in VS Code",
+      "folder.openGithubPulls": "Open pull requests on GitHub",
+      "folder.browseFiles": "Browse files",
+      "folder.newTerminal": "Open a terminal",
+      "view.settings": "Open Settings",
+      "view.usageDashboard": "Toggle the usage overview",
+      "session.resumeLast": "Resume last session",
+      "session.rename": "Rename the selected session",
+      "session.close": "Close the current session tab",
+      "sidebar.cursor.down": "Sidebar cursor: down",
+      "sidebar.cursor.up": "Sidebar cursor: up",
+      "sidebar.cursor.right": "Sidebar cursor: expand / into",
+      "sidebar.cursor.left": "Sidebar cursor: collapse / out",
+      "sidebar.cursor.activate": "Sidebar cursor: open",
+      "app.reload": "Reload the window",
+      "app.devtools": "Toggle DevTools",
+      "app.quit": "Quit Harnu",
+      "app.fullscreen": "Toggle fullscreen",
+      "app.openKeybindings": "Open Keyboard Shortcuts"
     }
   },
   "notifications": {
