@@ -27,8 +27,23 @@ import {
 } from './pipeline-core'
 import type { PrepResult } from './gc-guided'
 import type { GcCleanAck, GcCleanOptions, GcPrep } from './gc-wire'
+import {
+  STACK_LEFTOVER_PREFIX,
+  stackLeftoversChangedSince,
+  type StackCleanupResult,
+  type StackLeftoverItem
+} from './gc-stack-leftovers'
+import type { InspectedContainer } from '../containers/containers-core'
+import {
+  ORPHAN_TRANSCRIPT_PREFIX,
+  transcriptsChangedSince,
+  type OrphanTranscriptItem
+} from './gc-orphan-transcripts'
 
 const VOLUME_PREFIX = volumeItemId('')
+
+/** How long one fresh look may gate destructive steps before it is taken again. */
+export const MAX_VIEW_AGE_MS = 10_000
 
 export interface ManualCleanDeps {
   /** Read fresh: `neverClean` may have changed since the snapshot the operator clicked on. */
@@ -37,7 +52,9 @@ export interface ManualCleanDeps {
   gather(): Promise<{
     bundles: WorktreeBundle[]
     orphanVolumes: OrphanVolumeItem[]
-    housekeeping?: { volumes: HousekeepingVolume[] }
+    orphanTranscripts?: OrphanTranscriptItem[]
+    stackLeftovers?: StackLeftoverItem[]
+    housekeeping?: { volumes: HousekeepingVolume[]; containers?: InspectedContainer[] }
   }>
   /** `forced` ops archive before anything destructive and waive the review-only guards. */
   opsFor(actor: 'operator', forced: boolean): GcOps
@@ -70,6 +87,29 @@ export interface ManualCleanDeps {
    * cannot be read. The force path compares it with the one the dialog was built from.
    */
   workStampOf(path: string): Promise<string | null>
+  /**
+   * ONE fresh gather for the whole request, whatever kinds it names: its volumes, transcript
+   * folders and stack leftovers are all read from it. When present it replaces the three per-kind
+   * looks below, so a request of N ids, or of mixed kinds, costs a single gather.
+   */
+  freshGather?(): Promise<{
+    orphanVolumes: OrphanVolumeItem[]
+    orphanTranscripts: OrphanTranscriptItem[]
+    stackLeftovers: StackLeftoverItem[]
+  }>
+  /**
+   * The orphaned transcript folders according to a gather that STARTS now, for the check right
+   * before the trash (a session may have started writing since the click).
+   */
+  freshOrphanTranscripts?(): Promise<OrphanTranscriptItem[]>
+  /** The stack leftovers according to a gather that STARTS now, for the check right before docker is asked. */
+  freshStackLeftovers?(): Promise<StackLeftoverItem[]>
+  /** Removes exactly this item's stopped containers and networks (never a volume). */
+  removeStackLeftovers?(item: StackLeftoverItem): Promise<StackCleanupResult>
+  /** Moves one `~/.claude/projects/<slug>` folder to the OS trash. Throws when it cannot. */
+  trashTranscripts?(slug: string): Promise<void>
+  /** Drops the sidebar's ghost rows for a folder that is gone (best-effort, never throws into the job). */
+  reconcileFolder?(folder: string): Promise<void>
   /** `docker volume rm` for exactly these names. */
   removeOrphanVolumes(names: string[]): Promise<HousekeepingResult>
   /** What a cleaned worktree leaves in Docker, so its volumes can be offered for review. */
@@ -166,6 +206,10 @@ export function submitManualClean(
   // Only an id the operator named confirms itself; there is no blanket flag.
   const confirmed = new Set(opts.confirmed ?? [])
   const expected = opts.expected ?? {}
+  // Only an id the operator ticked "Also delete the branch on the remote" for (AC-D5).
+  const deleteRemote = new Set(opts.deleteRemote ?? [])
+  // The stronger confirm of a folder that is missing but not proven gone, per id.
+  const confirmedNotFound = new Set(opts.confirmedNotFound ?? [])
   const queued = deps.queue.busy()
 
   const { jobId } = deps.queue.submit('manual', unique, async (reporter) => {
@@ -173,6 +217,30 @@ export function submitManualClean(
     const gathered = await deps.gather()
     const bundles = new Map(gathered.bundles.map((b) => [b.item.id, b]))
     const orphans = new Map(gathered.orphanVolumes.map((o) => [o.id, o]))
+    // One fresh look per batch, taken by the first id that needs it and shared by the rest: a batch of
+    // N ids must not cost N full gathers. But a look is only good for a few seconds: a view older than
+    // that is taken again before the next destructive step, so a minutes-old one never gates a trash.
+    // A failing look refuses every id that relies on it.
+    const aged = <T>(take: () => Promise<T>): (() => Promise<T>) => {
+      let held: { at: number; look: Promise<T> } | null = null
+      return () => {
+        const at = deps.now()
+        if (!held || at - held.at > MAX_VIEW_AGE_MS) held = { at, look: take() }
+        return held.look
+      }
+    }
+    const view = aged(() => deps.freshGather!())
+    const lookVolumes: () => Promise<OrphanVolumeItem[]> = deps.freshGather
+      ? () => view().then((v) => v.orphanVolumes)
+      : aged(() => deps.freshOrphans())
+    const lookTranscripts: () => Promise<OrphanTranscriptItem[]> = deps.freshGather
+      ? () => view().then((v) => v.orphanTranscripts)
+      : aged(() => deps.freshOrphanTranscripts!())
+    const lookStacks: () => Promise<StackLeftoverItem[]> = deps.freshGather
+      ? () => view().then((v) => v.stackLeftovers)
+      : aged(() => deps.freshStackLeftovers!())
+    const transcripts = new Map((gathered.orphanTranscripts ?? []).map((o) => [o.id, o]))
+    const stacks = new Map((gathered.stackLeftovers ?? []).map((o) => [o.id, o]))
     const results: GcItemResult[] = []
 
     const cleanBundle = async (id: string): Promise<GcItemResult> => {
@@ -321,7 +389,13 @@ export function submitManualClean(
         if (forced && !confirmed.has(id)) return bail(refused(id, 'needs-confirmation'))
         const work = await workRefusal(b, forced)
         if (work) return bail(refused(id, work))
-        const batchOpts: { removeVolumes: boolean; confirmReview?: boolean } = {
+        const batchOpts: {
+          removeVolumes: boolean
+          confirmReview?: boolean
+          deleteRemote: boolean
+        } = {
+          // Only an id the operator ticked "Also delete the branch on the remote" for (AC-D5).
+          deleteRemote: deleteRemote.has(id),
           // D1: worktree cleanup never removes a volume, ready or reviewed, bulk or single. What
           // it leaves behind comes back as an orphan-volume review item.
           removeVolumes: false,
@@ -367,7 +441,13 @@ export function submitManualClean(
       if (result.ok) {
         // The item IS removed: bookkeeping that fails now is logged, never turned into a failure.
         try {
-          deps.rememberLeftovers?.(leftBehind(b, gathered.housekeeping?.volumes ?? []))
+          deps.rememberLeftovers?.(
+            leftBehind(
+              b,
+              gathered.housekeeping?.volumes ?? [],
+              gathered.housekeeping?.containers ?? []
+            )
+          )
         } catch (err) {
           console.warn('[gc] remembering leftovers failed', err)
         }
@@ -403,7 +483,7 @@ export function submitManualClean(
       // folder and the containers that reference the volume. Failing to look is a refusal.
       let fresh: OrphanVolumeItem | undefined
       try {
-        fresh = (await deps.freshOrphans()).find((o) => o.id === id)
+        fresh = (await lookVolumes()).find((o) => o.id === id)
       } catch (err) {
         return refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
       }
@@ -423,12 +503,94 @@ export function submitManualClean(
       return { id, ok: true, haltedAt: null, freedBytes: item.sizeBytes ?? 0 }
     }
 
+    const cleanTranscripts = async (id: string): Promise<GcItemResult> => {
+      if (!confirmed.has(id)) return refused(id, 'needs-confirmation')
+      const seen = expected[id]
+      if (!seen) return refused(id, 'missing-expected')
+      if (!deps.trashTranscripts || !(deps.freshGather || deps.freshOrphanTranscripts)) {
+        return refused(id, 'unsupported')
+      }
+      const item = transcripts.get(id)
+      // A session started writing, or the folder came back, since the click: no longer an orphan.
+      if (!item) return refused(id, 'no-longer-orphan')
+      if (transcriptsChangedSince(item, seen)) return refused(id, 'changed-since-confirm')
+      // A folder nothing proves gone (it may be on a drive that is unplugged) needs its own,
+      // stronger confirmation: the ordinary one never covers it.
+      if (item.proof === 'not-found' && !confirmedNotFound.has(id)) {
+        return refused(id, 'needs-not-found-confirmation')
+      }
+      // Right before the trash, look again with a gather that starts now. Failing to look refuses.
+      let fresh: OrphanTranscriptItem | undefined
+      try {
+        fresh = (await lookTranscripts()).find((o) => o.id === id)
+      } catch (err) {
+        return refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+      if (!fresh) return refused(id, 'no-longer-orphan')
+      if (transcriptsChangedSince(fresh, seen)) return refused(id, 'changed-since-confirm')
+      try {
+        await deps.trashTranscripts(item.slug)
+      } catch (err) {
+        return {
+          id,
+          ok: false,
+          haltedAt: 'trash',
+          error: err instanceof Error ? err.message : String(err),
+          freedBytes: 0
+        }
+      }
+      // The folder is already gone, so its sidebar rows go too; a failure here is not the job's.
+      await deps
+        .reconcileFolder?.(item.folder)
+        .catch((err) => console.warn('[gc] ghost-folder reconcile after transcripts failed', err))
+      return { id, ok: true, haltedAt: null, freedBytes: item.bytes }
+    }
+
+    const cleanStack = async (id: string): Promise<GcItemResult> => {
+      if (!confirmed.has(id)) return refused(id, 'needs-confirmation')
+      const seen = expected[id]
+      if (!seen) return refused(id, 'missing-expected')
+      if (!deps.removeStackLeftovers || !(deps.freshGather || deps.freshStackLeftovers)) {
+        return refused(id, 'unsupported')
+      }
+      const item = stacks.get(id)
+      if (!item) return refused(id, 'no-longer-leftover')
+      if (stackLeftoversChangedSince(item, seen)) return refused(id, 'changed-since-confirm')
+      // Right before docker is asked, look again; remove what that look still lists, which can only
+      // be a part of what was shown (anything new is a change, refused above).
+      let fresh: StackLeftoverItem | undefined
+      try {
+        fresh = (await lookStacks()).find((o) => o.id === id)
+      } catch (err) {
+        return refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+      if (!fresh) return refused(id, 'no-longer-leftover')
+      if (stackLeftoversChangedSince(fresh, seen)) return refused(id, 'changed-since-confirm')
+      const r = await deps.removeStackLeftovers(fresh)
+      if (r.errors.length > 0) {
+        return {
+          id,
+          ok: false,
+          haltedAt: 'rm-containers',
+          error: r.errors.join('; '),
+          freedBytes: 0
+        }
+      }
+      return { id, ok: true, haltedAt: null, freedBytes: 0 }
+    }
+
     for (const id of unique) {
       reporter.onStart(id)
       // The last net: whatever throws for one id is that id's failure, never the whole job's.
       let result: GcItemResult
       try {
-        result = id.startsWith(VOLUME_PREFIX) ? await cleanVolume(id) : await cleanBundle(id)
+        result = id.startsWith(STACK_LEFTOVER_PREFIX)
+          ? await cleanStack(id)
+          : id.startsWith(VOLUME_PREFIX)
+            ? await cleanVolume(id)
+            : id.startsWith(ORPHAN_TRANSCRIPT_PREFIX)
+              ? await cleanTranscripts(id)
+              : await cleanBundle(id)
       } catch (err) {
         result = refused(id, `probe-failed: ${err instanceof Error ? err.message : String(err)}`)
       }

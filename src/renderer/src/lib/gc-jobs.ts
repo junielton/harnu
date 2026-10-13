@@ -199,6 +199,8 @@ export interface DoneSummary {
   refusals: Partial<Record<RefusalCode, number>>
   /** How many items were refused (any code). */
   refused: number
+  /** Items cleaned locally whose requested remote-branch delete did not happen (AC-D5); null when none. */
+  remoteLeft: { count: number; error: string } | null
   /** Items whose guided prep (an unlock, a stopped stack) could NOT be put back after the remove refused. */
   rollbackFailed: number
   /** What each could not put back (e.g. which containers were left stopped), for the toast. */
@@ -216,6 +218,9 @@ export function doneSummary(d: GcJobDone): DoneSummary {
     if (code) refusals[code] = (refusals[code] ?? 0) + 1
   }
   const refused = Object.values(refusals).reduce((a, n) => a + (n ?? 0), 0)
+  const left = d.results.filter((r) => r.remoteDelete && !r.remoteDelete.ok)
+  const remoteLeft =
+    left.length > 0 ? { count: left.length, error: left[0]!.remoteDelete!.error ?? '' } : null
   const rollbackDetails = d.results.flatMap((r) => {
     const m = r.ok ? null : /rollback-failed \((.*)\)\s*$/.exec(r.error ?? '')
     return m ? [m[1]!] : []
@@ -227,7 +232,7 @@ export function doneSummary(d: GcJobDone): DoneSummary {
     (r) => !r.ok && (r.error ?? '').includes('rollback-failed')
   ).length
   let tone: DoneSummary['tone'] = 'success'
-  if (failed > 0 || d.error) tone = 'warning'
+  if (failed > 0 || d.error || remoteLeft) tone = 'warning'
   else if (d.results.length === 0 && d.freedBytes === 0) tone = 'none'
   return {
     tone,
@@ -237,6 +242,7 @@ export function doneSummary(d: GcJobDone): DoneSummary {
     trashedBytes: d.trashedBytes ?? 0,
     refusals,
     refused,
+    remoteLeft,
     rollbackFailed,
     rollbackDetails,
     prepLeft

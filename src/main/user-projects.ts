@@ -6,6 +6,8 @@ import { removeHelpersForWorktree } from './helpers-store'
 import type { MemoryLocationConfig } from './mcp/memory-core'
 import { canonicalWorktreeParentRepo } from './worktree-core'
 import { scanFolders } from './claude-reader'
+import { recordRemovedFolder } from './gc/gc-removed-folders'
+import { fsPathExistence } from './gc/gc-orphan-existence'
 import { migrateFolderDataDirLazily } from './migrations/data-dir-boot'
 
 /**
@@ -1188,12 +1190,21 @@ export async function removeGhostFolder(
   if (existsSync(normalizedPath)) {
     return { ok: false, error: 'DIRECTORY_STILL_EXISTS' }
   }
+  return reconcileGhost(getWindow, normalizedPath, await readUserProjects(), await scanFolders())
+}
 
-  const file = await readUserProjects()
+/**
+ * The reconcile of one already-normalized, already-missing path against a snapshot of the pinned
+ * file and of the known folders. Split out so a tree of ghosts reads both once, not once per row.
+ */
+async function reconcileGhost(
+  getWindow: () => BrowserWindow | null,
+  normalizedPath: string,
+  file: UserProjectsFile,
+  known: Awaited<ReturnType<typeof scanFolders>>
+): Promise<RemoveGhostFolderResult> {
   const wasPinned = file.projects.some((p) => p.path === normalizedPath)
   const wasHidden = (file.hiddenPaths ?? []).includes(normalizedPath)
-
-  const known = await scanFolders()
   const knownEntry = known.find((f) => f.path === normalizedPath)
   const sessionsDropped = knownEntry?.sessions.length ?? 0
 
@@ -1213,4 +1224,96 @@ export async function removeGhostFolder(
     ok: true,
     removed: { path: normalizedPath, unpinned: wasPinned, sessionsDropped }
   }
+}
+
+/**
+ * Every spelling of a (possibly missing) folder: as given, and with its nearest existing ancestor
+ * resolved through symlinks. Rows are stored under either, depending on how the folder was reached.
+ */
+async function spellingsOf(rootPath: string): Promise<string[]> {
+  const expanded = rootPath.startsWith('~') ? path.join(os.homedir(), rootPath.slice(1)) : rootPath
+  const given = stripTrailingSeparator(path.normalize(path.resolve(expanded)))
+  const rest: string[] = []
+  let cur = given
+  for (;;) {
+    try {
+      const real = await fs.realpath(cur)
+      return [...new Set([given, stripTrailingSeparator(path.join(real, ...rest))])]
+    } catch {
+      const parent = path.dirname(cur)
+      if (parent === cur) return [given]
+      rest.unshift(path.basename(cur))
+      cur = parent
+    }
+  }
+}
+
+/** True when `child` is `parent` or lies under it, by path segment (a sibling `parent-x` is not). */
+function isPathInside(child: string, parent: string): boolean {
+  return (
+    child === parent || child.startsWith(parent.endsWith(path.sep) ? parent : parent + path.sep)
+  )
+}
+
+/**
+ * The one door every removal path uses to tell the sidebar a worktree is gone: the engine's
+ * sidebar-detach step and the sidebar's own Remove both end here (unit D, AC-D2), so neither can
+ * leave a subfolder ghost behind. Never throws on a refused candidate.
+ */
+export async function detachFromSidebar(
+  getWindow: () => BrowserWindow | null,
+  removedPath: string,
+  opts: {
+    /**
+     * Whether the folder was really there right before the removal. A plain `git worktree remove` of a
+     * directory somebody had already deleted exits 0, and that is not a removal by Harnu: pass false and
+     * nothing is recorded. Absent means yes (the engine only detaches after it trashed the folder).
+     */
+    existedBefore?: boolean
+  } = {}
+): Promise<void> {
+  // Harnu's own record that this folder is gone (proof for the orphan-transcript listing): only when it
+  // was there before and is missing now, in both spellings (transcripts name it as the session saw it).
+  if (opts.existedBefore !== false) {
+    for (const spelling of await spellingsOf(removedPath)) {
+      if ((await fsPathExistence(spelling)) === 'missing') await recordRemovedFolder(spelling)
+    }
+  }
+  await removeGhostFoldersUnder(getWindow, removedPath)
+}
+
+/**
+ * Reconciles a removed folder AND every gone folder under it (unit D, AC-D2). A session started
+ * in a subfolder (`WT/api`, `WT/.claude/worktrees/x`) is its own path-keyed folder, pinned, hidden
+ * or known only from its transcripts, so reconciling the worktree's own path alone left those as
+ * ghost rows. Each candidate goes through {@link removeGhostFolder}, so one that still exists on
+ * disk is never touched. Returns what was actually removed; never throws on a refused candidate.
+ */
+export async function removeGhostFoldersUnder(
+  getWindow: () => BrowserWindow | null,
+  rootPath: string
+): Promise<RemoveGhostFolderSuccess['removed'][]> {
+  const roots = await spellingsOf(rootPath)
+  const file = await readUserProjects()
+  const known = await scanFolders()
+  // A row matches when any spelling of it lies under any spelling of the root: a row stored through
+  // a link and a root given by its real path (or the other way round) are the same folder.
+  const candidates = new Set<string>(roots)
+  const stored = [
+    ...file.projects.map((p) => p.path),
+    ...(file.hiddenPaths ?? []),
+    ...known.map((f) => f.path)
+  ]
+  for (const c of new Set(stored)) {
+    const forms = await spellingsOf(c)
+    if (forms.some((f) => roots.some((r) => isPathInside(f, r)))) candidates.add(c)
+  }
+  const removed: RemoveGhostFolderSuccess['removed'][] = []
+  for (const candidate of candidates) {
+    const normalized = await normalizePath(candidate)
+    if (existsSync(normalized)) continue
+    const result = await reconcileGhost(getWindow, normalized, file, known)
+    if (result.ok) removed.push(result.removed)
+  }
+  return removed
 }

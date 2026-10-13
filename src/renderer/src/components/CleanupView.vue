@@ -27,6 +27,8 @@ import { canDehydrate, canRehydrate } from './cleanup-row'
 import { identText } from './cleanup-ident'
 import {
   captureConfirm,
+  dialogRows,
+  withRemoteDelete,
   confirmChanged,
   guidedChanged,
   guidedRequestFor,
@@ -46,6 +48,9 @@ import {
   type RefusalGroup
 } from '../lib/gc-guidance'
 import { nextCycleIn } from '../lib/gc-format'
+import { remoteDeleteCandidate } from '../lib/gc-remote-delete'
+import { leftoverVolumeRequest, stackCleanRequest, transcriptCleanRequest } from '../lib/gc-orphans'
+import type { OrphanTranscriptItem, StackLeftoverItem } from '../../../main/gc/gc-wire'
 import { refusalKey, removalKey } from './cleanup-gc-copy'
 import { removability, removabilityAll, type RemovalRefusal } from '../lib/gc-removability'
 import type { RefusalCode } from '../lib/gc-jobs'
@@ -70,6 +75,8 @@ import CleanupGuidedDialog, {
   type GuidedStepKind
 } from './CleanupGuidedDialog.vue'
 import CleanupOtherItems from './CleanupOtherItems.vue'
+import CleanupTranscriptsConfirmDialog from './CleanupTranscriptsConfirmDialog.vue'
+import CleanupDockerConfirmDialog from './CleanupDockerConfirmDialog.vue'
 import DehydrateConfirmDialog from './DehydrateConfirmDialog.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
 import Button from './ui/Button.vue'
@@ -255,9 +262,10 @@ const confirmStale = computed(
  */
 function openConfirm(ids: string[], mode: 'ready' | 'review'): void {
   if (dialogOpen.value || !model.value) return
-  const c = captureConfirm(model.value, ids, mode)
+  const c = captureConfirm(model.value, ids, mode, reaper.remotePolicy)
   if (c) {
     confirmDialog.value = c
+    void probeRemoteFor(c)
     return
   }
   const refused = refusedRows(model.value, ids, mode)
@@ -272,6 +280,31 @@ function openConfirm(ids: string[], mode: 'ready' | 'review'): void {
         : t('cleanup.gc.confirm.nothingRemovableSeveral'),
     timeoutMs: 8000
   })
+}
+/**
+ * "Also delete the branch on the remote" is decided from what GitHub and the remote say, which costs
+ * network calls, so it is asked here, when the confirm opens, only for the branches it lists and
+ * only those a merged PR vouches for. Until it answers the dialog says it is checking; if the dialog
+ * closed or was replaced meanwhile the answer is dropped.
+ */
+const remoteChecking = ref(false)
+let remoteProbeSeq = 0
+async function probeRemoteFor(c: CapturedConfirm): Promise<void> {
+  const m = model.value
+  if (!m) return
+  const ids = c.ids.filter((id) => {
+    const b = m.byId.get(id)
+    return !!b && remoteDeleteCandidate(b, reaper.remotePolicy)
+  })
+  if (ids.length === 0) return
+  const seq = ++remoteProbeSeq
+  remoteChecking.value = true
+  const facts = await gc.probeRemote(ids)
+  if (seq !== remoteProbeSeq) return
+  remoteChecking.value = false
+  const open = confirmDialog.value
+  if (!open || open.request.ids.join() !== c.request.ids.join()) return
+  confirmDialog.value = { ...c, rows: dialogRows(m, c.ids, reaper.remotePolicy, facts) }
 }
 function openReady(ids?: string[]): void {
   openConfirm(ids ?? model.value?.cleanable.map((b) => b.id) ?? [], 'ready')
@@ -338,6 +371,71 @@ async function runFirstCycle(action: () => Promise<void>, failureTitle: string):
   } finally {
     firstCyclePending.value = false
   }
+}
+
+/** The orphaned transcript folders (unit D, AC-D1) and the confirm that moves them to the trash. */
+const orphanTranscripts = computed(() => gc.snapshot?.orphanTranscripts ?? [])
+/** What the open transcript dialog listed, frozen when it opened (the request is built from it). */
+const transcriptItems = ref<OrphanTranscriptItem[] | null>(null)
+const busyTranscriptIds = ref<string[]>([])
+function openTranscripts(ids: string[]): void {
+  if (dialogOpen.value || transcriptItems.value) return
+  const items = orphanTranscripts.value.filter((i) => ids.includes(i.id))
+  if (items.length > 0) transcriptItems.value = items
+}
+/**
+ * What removed worktrees left in Docker (unit D, AC-D3). `stack` cleans stopped containers and
+ * networks; `volumes` removes volumes, which has its own, stronger confirm and goes through the
+ * ordinary orphan-volume request. The dialog freezes the items it showed; the request is built from them.
+ */
+const stackLeftovers = computed(() => gc.snapshot?.stackLeftovers ?? [])
+const dockerConfirm = ref<{ kind: 'stack' | 'volumes'; items: StackLeftoverItem[] } | null>(null)
+function openDockerConfirm(kind: 'stack' | 'volumes', ids: string[]): void {
+  if (dialogOpen.value || transcriptItems.value || dockerConfirm.value) return
+  const items = stackLeftovers.value.filter((l) =>
+    kind === 'stack' ? ids.includes(l.id) : l.volumes.some((v) => ids.includes(v.id))
+  )
+  if (items.length > 0) dockerConfirm.value = { kind, items }
+}
+async function confirmDocker(): Promise<void> {
+  const d = dockerConfirm.value
+  if (!d || !model.value) return
+  dockerConfirm.value = null
+  try {
+    await gc.submit(
+      d.kind === 'stack'
+        ? stackCleanRequest(d.items)
+        : leftoverVolumeRequest(
+            model.value,
+            d.items.flatMap((l) => l.volumes.map((v) => v.id))
+          )
+    )
+  } catch (e) {
+    errorToast(t('cleanup.gc.error.clean'), e)
+  }
+}
+async function confirmTranscripts(opts: { notFoundAck: boolean }): Promise<void> {
+  const items = transcriptItems.value
+  if (!items) return
+  transcriptItems.value = null
+  const ids = items.map((i) => i.id)
+  busyTranscriptIds.value = [...busyTranscriptIds.value, ...ids]
+  try {
+    await gc.submit(transcriptCleanRequest(items, opts.notFoundAck))
+  } catch (e) {
+    errorToast(t('cleanup.gc.error.clean'), e)
+  } finally {
+    // The job runs in the background and the next snapshot drops what it removed; this only
+    // stops a second click while the request is being handed over.
+    busyTranscriptIds.value = busyTranscriptIds.value.filter((x) => !ids.includes(x))
+  }
+}
+
+/** Closes the confirm and drops any remote answer still on its way. */
+function closeConfirm(): void {
+  remoteProbeSeq++
+  remoteChecking.value = false
+  confirmDialog.value = null
 }
 
 // ---- guided actions ("No dead ends") --------------------------------------------------------------
@@ -624,13 +722,14 @@ function onGuideGroup(group: RefusalGroup): void {
   openGuide(group.action, group.ids, group.reason)
 }
 
-async function confirmClean(): Promise<void> {
+async function confirmClean(opts: { deleteRemote: boolean }): Promise<void> {
   const d = confirmDialog.value
   if (!d || confirmStale.value) return
   // Close first, then start: the clean is a background job, the view is never blocked on it.
   confirmDialog.value = null
   try {
-    await gc.submit(d.request)
+    // "Also delete the branch on the remote": only the rows that qualified, only when ticked.
+    await gc.submit(withRemoteDelete(d.request, d.rows, opts.deleteRemote))
   } catch (e) {
     errorToast(t('cleanup.gc.error.clean'), e)
     return
@@ -1096,6 +1195,9 @@ async function confirmExhaust(): Promise<void> {
             :docker="model.docker"
             :last-cycle="gc.snapshot?.lastCycle ?? null"
             :prefs="prefs"
+            :leftovers="stackLeftovers"
+            @clean-leftovers="openDockerConfirm('stack', $event)"
+            @remove-leftover-volumes="openDockerConfirm('volumes', $event)"
             @inspect="ui.openContainers()"
             @toggle="
               (category, value) =>
@@ -1169,7 +1271,11 @@ async function confirmExhaust(): Promise<void> {
         </aside>
       </div>
 
-      <CleanupOtherItems />
+      <CleanupOtherItems
+        :transcripts="orphanTranscripts"
+        :busy="busyTranscriptIds"
+        @delete-transcripts="openTranscripts($event)"
+      />
 
       <template v-if="reaper.journal.length > 0">
         <div
@@ -1217,9 +1323,10 @@ async function confirmExhaust(): Promise<void> {
     :refused="confirmDialog.refused"
     :mode="confirmDialog.mode"
     :stale="confirmStale"
+    :remote-checking="remoteChecking"
     :opinion-of="gc.opinionFor"
-    @confirm="confirmClean()"
-    @cancel="confirmDialog = null"
+    @confirm="confirmClean($event)"
+    @cancel="closeConfirm()"
   />
   <CleanupGuidedDialog
     v-if="guided"
@@ -1236,6 +1343,19 @@ async function confirmExhaust(): Promise<void> {
     @cancel="guided = null"
   />
   <DehydrateConfirmDialog v-if="dehydrateItems" :items="dehydrateItems" @close="closeDehydrate()" />
+  <CleanupDockerConfirmDialog
+    v-if="dockerConfirm"
+    :kind="dockerConfirm.kind"
+    :items="dockerConfirm.items"
+    @confirm="confirmDocker()"
+    @cancel="dockerConfirm = null"
+  />
+  <CleanupTranscriptsConfirmDialog
+    v-if="transcriptItems"
+    :items="transcriptItems"
+    @confirm="confirmTranscripts($event)"
+    @cancel="transcriptItems = null"
+  />
   <CleanupExhaustDialog
     v-if="exhaustDialog"
     :mode="exhaustDialog.mode"

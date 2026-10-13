@@ -12,8 +12,13 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import * as os from 'node:os'
 import * as path from 'node:path'
-import { Notification, app, ipcMain, type BrowserWindow } from 'electron'
+import { Notification, app, ipcMain, shell, type BrowserWindow } from 'electron'
+import { removeGhostFoldersUnder } from '../user-projects'
+import { trashTranscriptSlug, type OrphanTranscriptItem } from './gc-orphan-transcripts'
+import { runStackLeftoverCleanup, type StackLeftoverItem } from './gc-stack-leftovers'
+import { runDocker } from '../containers/containers-shell'
 import { buildNotificationOptions } from '../notifications'
 import { prefsFile as containersPrefsFile } from '../containers/containers-prefs'
 import { prefsPath as reaperPrefsPath } from '../reaper/prefs'
@@ -33,6 +38,7 @@ import {
   writeLeftovers,
   type Leftover
 } from './gc-leftovers'
+import { setLeftoverRememberer } from './gc-leftover-registry'
 import { createCycleState, runGcCycle, type GcCycleDeps, type GcGather } from './gc-cycle'
 import { gatherGc, type GcGathered } from './gc-scan-shell'
 import { createAgentService, createGatherer } from './gc-gatherer'
@@ -80,6 +86,8 @@ import {
   type Opinion as GcOpinion
 } from './opinion-core'
 import { createOpinionShell } from './opinion-shell'
+import { remoteFactsService } from './gc-remote-shell'
+import type { RemoteFacts } from './gc-remote-delete'
 import {
   deleteConfirmedArchives,
   emptyHarnuTrashNow,
@@ -101,6 +109,11 @@ export interface GcService {
   unkeep(id: unknown): Promise<GcPrefs>
   /** "Check again" on a demoted item: forgets its remembered refusal and reprobes it once (read-only). */
   recheck(id: unknown): Promise<GcRecheckResult>
+  /**
+   * What GitHub and the remote say about these branches, probed when the remove dialog opens (never
+   * on a gather): by bundle id, only for branches a merged PR vouches for. Shared and cached ten minutes.
+   */
+  remoteFacts(ids: unknown): Promise<Record<string, RemoteFacts>>
   prefs(): GcPrefs
   setPrefs(raw: unknown): Promise<GcPrefs>
   ackFirstReport(): Promise<GcPrefs>
@@ -177,6 +190,8 @@ export async function registerGcHandlers(
     leftovers = withLeftovers(leftovers, entries)
     writeLeftovers(leftoversFile, leftovers)
   }
+  // The sidebar's own Remove hands its stacks to this same writer (gc-leftover-registry).
+  setLeftoverRememberer(remember)
   const send = (channel: string, payload: unknown): void => {
     const win = getWindow()
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
@@ -218,6 +233,13 @@ export async function registerGcHandlers(
 
   /** Orphan volumes per a gather that starts now (see ManualCleanDeps.freshOrphans). */
   const freshOrphans = async (): Promise<OrphanVolumeItem[]> => (await gatherFresh()).orphanVolumes
+  /** Orphaned transcript folders per a gather that starts now (checked right before the trash). */
+  const freshOrphanTranscripts = async (): Promise<OrphanTranscriptItem[]> =>
+    (await gatherFresh()).orphanTranscripts
+  /** Stack leftovers per a gather that starts now (checked right before docker is asked). */
+  const freshStackLeftovers = async (): Promise<StackLeftoverItem[]> =>
+    (await gatherFresh()).stackLeftovers
+  const transcriptsRoot = path.join(os.homedir(), '.claude', 'projects')
 
   const queue = createJobQueue({
     newId: () => randomUUID(),
@@ -326,6 +348,8 @@ export async function registerGcHandlers(
     scannedAt: g.scannedAt,
     bundles: g.bundles,
     orphanVolumes: g.orphanVolumes,
+    orphanTranscripts: g.orphanTranscripts,
+    stackLeftovers: g.stackLeftovers,
     docker: g.docker,
     prefs: livePrefs(),
     lastCycle: state.last,
@@ -376,6 +400,26 @@ export async function registerGcHandlers(
             forced ? createForcedGcOps(withRun('operator')) : createGcOps(withRun('operator')),
           // S4's runner builds the argv itself (`docker volume rm <name>`, name-checked).
           freshOrphans,
+          // One gather per request, whatever its kinds; the three per-kind looks below are only
+          // the fallback of an older caller.
+          freshGather: () =>
+            gatherFresh().then((g) => ({
+              orphanVolumes: g.orphanVolumes,
+              orphanTranscripts: g.orphanTranscripts,
+              stackLeftovers: g.stackLeftovers
+            })),
+          freshOrphanTranscripts,
+          freshStackLeftovers,
+          // Containers and networks only, one id per call: never a volume (rule D1).
+          removeStackLeftovers: (item) =>
+            runStackLeftoverCleanup(item, (argv) =>
+              runDocker(argv, { windowsHide: true, timeout: 120_000, maxBuffer: 4 << 20 })
+            ),
+          // One project folder of ~/.claude/projects, to the OS trash; a slug is never a path.
+          trashTranscripts: (slug) =>
+            trashTranscriptSlug(transcriptsRoot, slug, (p) => shell.trashItem(p)),
+          reconcileFolder: (folder) =>
+            removeGhostFoldersUnder(getWindow, folder).then(() => undefined),
           folderExists: (p) =>
             import('node:fs/promises').then((fs) =>
               fs.access(p).then(
@@ -434,6 +478,14 @@ export async function registerGcHandlers(
           now: () => Date.now()
         },
         rawId
+      )
+    },
+    remoteFacts: (rawIds) => {
+      if (!Array.isArray(rawIds))
+        return Promise.reject(new Error('gc:remoteFacts expects an array of ids'))
+      const ids = new Set(rawIds.filter((x): x is string => typeof x === 'string').slice(0, 500))
+      return (gatherer.cached() ? Promise.resolve(gatherer.cached()!) : gather()).then((g) =>
+        remoteFactsService().facts(g.bundles.filter((b) => ids.has(b.item.id)))
       )
     },
     guide: async (rawId) => {
@@ -499,6 +551,7 @@ export async function registerGcHandlers(
   ipcMain.handle('gc:keep', (_e, id: unknown) => service.keep(id))
   ipcMain.handle('gc:unkeep', (_e, id: unknown) => service.unkeep(id))
   ipcMain.handle('gc:recheck', (_e, id: unknown) => service.recheck(id))
+  ipcMain.handle('gc:remoteFacts', (_e, ids: unknown) => service.remoteFacts(ids))
   ipcMain.handle('gc:guide', (_e, id: unknown) => service.guide(id))
   ipcMain.handle('gc:recovery:list', () => listRecovery(prepJournal, recoveryDeps))
   ipcMain.handle('gc:recovery:ack', async (_e, ids: unknown) => {

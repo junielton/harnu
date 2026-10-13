@@ -8673,6 +8673,14 @@ the count, and two header buttons that act on the **whole list** — "Ask for an
 is current). Each row carries its **opinion chip** under the reason (see "Opinion chip"). Hovering a row
 outlines its block. Footer: the keyboard hints (`kbd`).
 
+**Dehydrated rows (unit D, AC-D4).** A worktree whose dependencies were dropped (`hydration.state ===
+'dehydrated'`) is still judged by its branch fate, exactly like a hydrated one: merged and past grace it is
+Ready, otherwise it carries its ordinary review reason. In Needs review its row adds one 11px `--text-3`
+line under the reason, **"Dehydrated · {size} left"** (`data-testid="review-dehydrated"`, `PackageMinus`
+icon at 11px; `{size}` is what the checkout still holds on disk), and keeps the normal **Remove**
+(same guarded path, same confirm). A dehydrated row never offers Dehydrate again. The block panel's
+existing `dehydrated` marker stays as it is.
+
 #### Opinion chip ("Ask for an opinion", T444)
 
 An **advisory, on-demand** verdict on a Needs review item, produced by a read-only headless session.
@@ -8901,6 +8909,25 @@ volume), size right.
     Danger toast naming the cause in one sentence. Nothing a guided action does is silent.
 - **Marks are read from the current prefs.** Keep and never-clean come from the snapshot's prefs, not the
   bundle's scan-time flags, so a mark added since the scan hides Remove (and the hero count) at once.
+- **"Also delete the branch on the remote" (unit D, AC-D5).** A checkbox row between the warning callout
+  and the footer (`data-testid="bulk-remote-delete"`, native checkbox, 13px `--text`, **unchecked by
+  default**, label "Also delete the branch on the remote", a `GitBranch` 12px icon, and an 11px `--text-3`
+  hint "git push --delete. Skipped for protected branches."). It is drawn **only when at least one row
+  qualifies**: its branch is merged by strong proof **recorded by a merged pull request** (an ancestor of
+  `main` with no PR, such as `staging` or `release/x`, never qualifies), no OPEN pull request has it as head
+  or base, GitHub does not protect it (branch protection or an active ruleset), it tracks an upstream
+  remote whose tip is the local tip or one of its ancestors, it is not in the Reaper's protected list, and
+  the remote-delete kill switch (Settings → Cleanup) is off. Any answer Harnu could not get (`gh`
+  missing, a non-GitHub remote, a failed call) means the box is not drawn. The answers are **asked when
+  the dialog opens**, never on a scan, and only for the rows that could qualify: until main answers, an
+  11px `--text-3` line "Checking whether the branch can be deleted on GitHub…" (`data-testid=
+"bulk-remote-checking"`, `role="status"`) stands where the box will be, then the box appears or nothing
+  does. Answers are shared and kept ten minutes; main asks again when you confirm. The delete goes to the
+  branch's own upstream remote, never an assumed `origin`. When only some rows
+  qualify, an 11px `--text-3` count under it reads "Applies to {n} of {total}". Confirm then sends
+  `deleteRemote: [ids of the qualifying rows]`; unticked it sends nothing. A remote that refuses is
+  reported on the item's result (a Warning toast "Cleaned, but the branch is still on the remote: {error}")
+  and never undoes or blocks the local clean. The autopilot never has this option.
 - **Keyboard:** Esc or Cancel closes; **focus starts on Cancel, never the confirm button**; Tab cycles
   inside (focus trap); ↩ activates only the focused control.
 
@@ -8940,6 +8967,79 @@ figure reads **"Size unavailable — Docker did not answer"** in `--text-3`, nev
 cycle has run, a second 11px `--text-3` line adds "Last cycle reclaimed {size}". Both figures count in the
 summary line and in the split bar's Ready segment while `categories.dockerCache` is on. Zero state: real
 zeros when Docker says so.
+
+#### Other leftovers — transcripts of folders that are gone (unit D, AC-D1)
+
+Removing a worktree takes the folder and never the Claude transcripts under `~/.claude/projects/<slug>/`,
+so Cleanup lists them itself, in the **Other leftovers** section under the Reaper rows (the section shows
+when either has something; its `intro` line reads "Branches, folders and transcripts that are not
+worktrees."). A project folder is listed only when **every** transcript in it names a folder that is gone,
+no session in it is live or parked, nothing in it was written in the last 24 hours (a session still writing
+from a terminal outside Harnu), the folder is provably gone (a folder on a drive that is not mounted right
+now is not), and no existing folder spells the same slug.
+
+- **Group header** (`data-testid="orphan-group"`), one per repo, biggest first: eyebrow label (the repo
+  name, `data-testid="orphan-group-label"`), then `{n} folders · {size}` in 11px `--text-4`, and a ghost
+  button **Delete all** (`data-testid="orphan-delete-all"`, `Trash2` 12px) on the right.
+- **Row** (`data-testid="orphan-row"`): grid `20px 1fr 90px 40px`, `min-h-12`, the Reaper row's hover. A
+  `MessagesSquare` icon (`--text-4`, 14px); the folder's name in 12px mono `--text` (`orphan-folder`, full
+  path as the tooltip) over a one-line meta in 11px `--text-4`: "{n} sessions · last {ago}"; when the project
+  folder also holds Claude's auto-memory notes, a `Warning`-ink chip **"includes memory notes"**
+  (`orphan-memory`, 10.5px, `--warning-soft` / `--warning-line`). The size right (13px, tabular), then an
+  icon-only **Delete** button (`Trash2`, red on hover, `aria-label` "Delete the transcripts of {name}",
+  `orphan-delete`), disabled while that row's delete is running.
+- **Confirm dialog** (`CleanupTranscriptsConfirmDialog.vue`, `data-testid="orphan-dialog"`, the bulk
+  dialog's anatomy and width (`--gc-dialog-w`), Danger confirm): title "Move {n} transcript folder to the trash? |
+  Move {n} transcript folders to the trash?", subtitle "The folders these sessions ran in are gone, so Claude
+  can no longer resume them here."; a bounded list of rows (mono folder, `{n} sessions`, size); a Warning
+  callout "They go to the OS trash, so you can bring them back." (`orphan-dialog-recoverable`); when any row
+  has memory notes a second line "{n} of them also hold Claude memory notes for that folder."
+  (`orphan-dialog-memory`); footer "{n} folders · {size}" (`orphan-dialog-total`), **Cancel**
+  (focused first) and **Move to trash** (`Trash2`, Danger). Esc closes the dialog only.
+- **Proven gone, or only "Folder not found".** A folder counts as gone only when that is **positively
+  proven**: Harnu removed it itself (its own ledger), git lists it as prunable in a repo that still exists,
+  or it sits under a known worktrees parent (`<repo>/.claude/worktrees`, `<repo>-worktrees`) that exists
+  and can be read. The proof holds only while the worktree's own folder (the segment directly under that parent, the folder Harnu removed, the worktree git lists) is itself **missing**: a dangling link or an empty mount point there, or a folder that exists again, proves nothing. A folder that is merely missing (an sshfs share or a USB disk that is not connected looks
+  the same) is listed apart under a **"Folder not found"** eyebrow in `--warning`, with a 11px `--text-3`
+  note ("Harnu can't confirm these folders were deleted. They may be on a drive that is not connected.
+  Check before you delete."), **the full path** of each folder in 12px mono `--text` (`data-testid=
+"orphan-fullpath"`, wrapping, no ellipsis) and its own **Delete all** (`orphan-notfound-delete-all`).
+  Its confirm dialog shows the full paths too and adds a checkbox, "I checked: this folder is really gone,
+  not on a drive that's unplugged." (`orphan-dialog-ack`); **Move to trash stays disabled until it is
+  ticked**. The recency rule (nothing written in the last 24 hours) applies to both groups, and both go to
+  the trash.
+- Confirming sends `gc:clean(ids, { confirmed, expected })` (plus `confirmedNotFound` for the ticked
+  not-found ids), each id `transcripts:<slug>` confirmed by its own entry; main looks again right before the trash and refuses what changed ("a session wrote more")
+  or is no longer an orphan. A refusal is shown by the usual toast.
+
+**Left by removed worktrees (unit D, AC-D3).** A fourth block on the Docker card, drawn only when the
+snapshot's `stackLeftovers` is not empty (`data-testid="docker-leftovers"`, the Needs review (warning)
+triple, spanning the card's width). It lists what a removed worktree's stack left in Docker, project by
+project: header "Left by removed worktrees" with the project names (3 then "+n more") in 11px
+`--text-3`. Two parts, never mixed:
+
+- **Stopped containers and networks** (`docker-leftovers-stack`): "{c} stopped containers · {n} networks"
+  (13px `--text`), and a Soft **Clean up** button (`docker-leftovers-clean`, `Recycle` 12px) that opens
+  the confirm. Hidden when the projects hold only volumes.
+- **Volumes** (`docker-leftovers-volumes`, set apart by a 1px `--border` rule): "{v} volumes · {size}",
+  the Warning badge "can't be restored" and the line "Never removed automatically. They go only after
+  their own confirm." with a Soft **Remove volumes…** button (`docker-leftovers-volumes-remove`,
+  `Trash2` 12px). Hidden when there are none.
+
+Only a compose project the cleanup remembers is ever listed, and only while none of its folders exists
+and nothing of it runs (no running, restarting or paused container).
+
+**Docker confirm (`CleanupDockerConfirmDialog.vue`, `data-testid="docker-confirm"`).** The bulk dialog's
+anatomy and width. Props `kind: 'stack' | 'volumes'`. Title "Clean up the leftovers of {n} removed
+worktree? | …of {n} removed worktrees?" (stack) or "Remove {n} volume? | Remove {n} volumes?" (volumes);
+one row per project (mono project name, 11px `--text-4` "{c} containers · {n} networks", or per volume
+its name, project and size). Callout in Warning: stack — "Stopped containers and networks can be
+recreated by starting the stack again. Volumes are not touched."; volumes — "Volumes cannot be
+restored." in `--warning` weight 600. Footer: **Cancel** (focused first) and the confirm — Success "Clean
+up" (stack) or Danger "Remove {n} volumes" (volumes). Esc closes only this dialog. Confirming sends
+`gc:clean` with every id in `confirmed` and the facts shown in `expected`; a project's containers and
+networks are removed one at a time without force, and a refusal from Docker (a container that turned out
+to be running, a network with active endpoints) is reported in the toast while the rest still go.
 
 #### The freed split — "freed now" vs "in the trash" (unit C, AC-C4)
 
@@ -9155,8 +9255,9 @@ that belong to no worktree) and states that worktree-bound stacks are cleaned by
 
 `CleanupView.vue` (shell) · `CleanupTreemap.vue` · `CleanupBlockPanel.vue` · `CleanupHeroButton.vue` ·
 `CleanupSelectionBar.vue` · `CleanupDockerCard.vue` · `CleanupReviewList.vue` · `CleanupListView.vue` ·
-`CleanupSplitBar.vue` · `CleanupLegend.vue` · `CleanupArchivesCard.vue` · `CleanupExhaustDialog.vue` ·
-`CleanupTrashCard.vue` · `CleanupFirstCycleBanner.vue` · `CleanupBulkConfirmDialog.vue` · `CleanupOtherItems.vue` ·
+`CleanupSplitBar.vue` · `CleanupLegend.vue` · `CleanupFirstCycleBanner.vue` · `CleanupBulkConfirmDialog.vue` · `CleanupOtherItems.vue` ·
+`CleanupTranscriptsConfirmDialog.vue` · `CleanupDockerConfirmDialog.vue` · `lib/gc-orphans.ts` ·
+`CleanupArchivesCard.vue` · `CleanupExhaustDialog.vue` · `CleanupTrashCard.vue` ·
 `CleanupOpinionChip.vue` · `lib/gc-opinion.ts` · `stores/gc.ts` · `lib/gc-treemap.ts` · `lib/gc-model.ts` · `lib/gc-jobs.ts`.
 
 ### Containers takeover (ContainersView.vue)

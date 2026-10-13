@@ -65,6 +65,7 @@ import {
   stillModified,
   type ExecFn
 } from './dehydrate-shell'
+import { openPrRefsFromCache, type OpenPrRefs } from '../gc/gc-remote-facts'
 import { readHydrationFile, updateHydrationFile } from './hydration-store'
 import { needsWorkStamp, scanWorkStamp } from '../gc/gc-work-stamp'
 
@@ -145,6 +146,20 @@ async function readGhCache(): Promise<GhCacheFile> {
   } catch {
     return {}
   }
+}
+
+/**
+ * The open pull requests (heads and bases) out of the bulk PR list the last scan cached for a repo,
+ * or null when that list cannot answer (stale, capped, an older cache without base refs). The
+ * remove dialog reads this instead of asking `gh` again (delta-2 item 2).
+ */
+export async function readOpenPrRefs(repoPath: string): Promise<OpenPrRefs | null> {
+  const entry = (await readGhCache())[repoPath]
+  return openPrRefsFromCache(
+    entry,
+    !!entry && typeof entry.fetchedAt === 'number' && ghCacheFresh(entry.fetchedAt, Date.now()),
+    GH_CACHE_VERSION
+  )
 }
 
 async function writeGhCache(cache: GhCacheFile): Promise<void> {
@@ -367,7 +382,7 @@ async function fetchPrFacts(
           '--limit',
           String(PR_LIST_LIMIT),
           '--json',
-          'headRefName,headRefOid,number,state,mergedAt,reviewDecision,statusCheckRollup'
+          'headRefName,baseRefName,headRefOid,number,state,mergedAt,reviewDecision,statusCheckRollup'
         ],
         { ...GH_PR_LIST_OPTS, cwd: repoPath }
       )

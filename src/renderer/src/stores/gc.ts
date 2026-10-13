@@ -13,6 +13,7 @@ import type {
   GcRecoveryItem,
   GcSnapshot
 } from '../../../main/gc/gc-wire'
+import type { RemoteFacts } from '../../../main/gc/gc-remote-delete'
 import { i18n } from '../i18n'
 import { toIpc } from '../lib/to-ipc'
 import { formatBytes } from '../components/system-monitor-format'
@@ -260,16 +261,23 @@ export const useGcStore = defineStore('gc', () => {
     const { t } = i18n.global
     const ui = useUiStore()
     const warning = s.tone === 'warning'
+    // A remote branch that stayed is a warning on a clean that otherwise worked: no "partial" title.
+    const partial = s.failed > 0 || !!d.error
     const fromReview = reviewJobs.has(d.jobId)
     const entry = {
       kind: warning ? ('warning' as const) : ('success' as const),
-      title: warning
+      title: partial
         ? t('cleanup.gc.toast.partial', { cleaned: s.cleaned, failed: s.failed }, s.failed)
         : t(fromReview ? 'cleanup.gc.toast.successReview' : 'cleanup.gc.toast.success', {
             freed: freedText(t, s.freedBytes, s.trashedBytes),
             count: s.cleaned
           }),
-      description: refusalDescription(s) ?? d.error ?? undefined,
+      description:
+        refusalDescription(s) ??
+        d.error ??
+        (s.remoteLeft
+          ? t('cleanup.gc.toast.remoteLeft', { error: s.remoteLeft.error }, s.remoteLeft.count)
+          : undefined),
       timeoutMs: warning ? 8000 : 6000,
       target: { view: 'cleanup' as const },
       // Both open Cleanup, where the journal ("Recent cleanups") sits under the map.
@@ -576,6 +584,18 @@ export const useGcStore = defineStore('gc', () => {
     }
   }
 
+  /**
+   * What GitHub and the remote say about these branches, asked once when the remove dialog opens
+   * (the snapshot never carries it). A failure is "could not tell": the box is simply not offered.
+   */
+  async function probeRemote(ids: string[]): Promise<Record<string, RemoteFacts>> {
+    try {
+      return await window.api.gcRemoteFacts(toIpc(ids))
+    } catch {
+      return {}
+    }
+  }
+
   async function unkeep(id: string): Promise<void> {
     await window.api.gcUnkeep(id)
     await refresh()
@@ -774,6 +794,7 @@ export const useGcStore = defineStore('gc', () => {
     dispose,
     refresh,
     submit,
+    probeRemote,
     keep,
     keepMany,
     recheck,

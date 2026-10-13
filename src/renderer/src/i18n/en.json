@@ -2444,7 +2444,13 @@
         "untrackedMore": "{n} untracked files, saved in the wip ref: {names} and {more} more | {n} untracked files, saved in the wip ref: {names} and {more} more",
         "untrackedTotal": "{n} untracked file in total, each saved in its wip ref. | {n} untracked files in total, each saved in its wip ref.",
         "untracked": "{n} untracked file, saved in the wip ref: {names} | {n} untracked files, saved in the wip ref: {names}",
-        "warnDetached": "{n} detached worktree has no branch. Its commit stays under refs/archive/detached/…, and git worktree add brings it back. | {n} detached worktrees have no branch. Their commits stay under refs/archive/detached/…, and git worktree add brings them back."
+        "warnDetached": "{n} detached worktree has no branch. Its commit stays under refs/archive/detached/…, and git worktree add brings it back. | {n} detached worktrees have no branch. Their commits stay under refs/archive/detached/…, and git worktree add brings them back.",
+        "remote": {
+          "checking": "Checking whether the branch can be deleted on GitHub…",
+          "label": "Also delete the branch on the remote",
+          "hint": "Runs git push --delete. Protected branches and branches that moved on the remote are skipped.",
+          "some": "Applies to {n} of {total}"
+        }
       },
       "chip": {
         "stack": "stack",
@@ -2492,6 +2498,24 @@
         "noOrphanVolumes": "No orphan volumes",
         "scope": "Counts only build cache older than {n} day and dangling images. Images in use and the volumes of live stacks are never counted. | Counts only build cache older than {n} days and dangling images. Images in use and the volumes of live stacks are never counted.",
         "cantRestore": "Can't be restored",
+        "leftovers": {
+          "title": "Left by removed worktrees",
+          "stack": "Stopped containers: {c} · networks: {n}",
+          "projects": "Projects: {names}",
+          "clean": "Clean up",
+          "volumesLine": "{n} volume · {size} | {n} volumes · {size}",
+          "volumesNote": "Never removed automatically. They go only after their own confirm.",
+          "volumesRemove": "Remove volumes…"
+        },
+        "confirm": {
+          "stackTitle": "Clean up the leftovers of {n} removed worktree? | Clean up the leftovers of {n} removed worktrees?",
+          "volumesTitle": "Remove {n} volume? | Remove {n} volumes?",
+          "listLabel": "Items to clean up",
+          "stackNote": "Stopped containers and networks can be recreated by starting the stack again. Volumes are not touched.",
+          "volumesNote": "Volumes cannot be restored.",
+          "stackConfirm": "Clean up",
+          "volumesConfirm": "Remove {n} volume | Remove {n} volumes"
+        },
         "projects": "Projects: {names}",
         "more": "+{n} more",
         "toggleCache": "Clean build cache automatically",
@@ -2565,12 +2589,35 @@
       "loadError": "Could not load the cleanup report: {error}",
       "other": {
         "title": "Other leftovers",
-        "intro": "Branches and folders that are not worktrees."
+        "intro": "Branches, folders and transcripts that are not worktrees."
+      },
+      "orphans": {
+        "groupMeta": "{n} folder · {size} | {n} folders · {size}",
+        "deleteAll": "Delete all",
+        "deleteAria": "Delete the transcripts of {name}",
+        "sessions": "{n} session | {n} sessions",
+        "last": "last {ago}",
+        "notFound": {
+          "title": "Folder not found",
+          "note": "Harnu can't confirm these folders were deleted. They may be on a drive that is not connected. Check before you delete.",
+          "ack": "I checked: this folder is really gone, not on a drive that's unplugged."
+        },
+        "memory": "includes memory notes",
+        "confirm": {
+          "title": "Move {n} transcript folder to the trash? | Move {n} transcript folders to the trash?",
+          "subtitle": "The folders these sessions ran in are gone, so Claude can no longer resume them here.",
+          "listLabel": "Transcript folders to move to the trash",
+          "recoverable": "They go to the OS trash, so you can bring them back.",
+          "memory": "{n} of them also holds Claude memory notes for that folder. | {n} of them also hold Claude memory notes for that folder.",
+          "total": "{n} folder · {size} | {n} folders · {size}",
+          "confirm": "Move to trash"
+        }
       },
       "toast": {
         "success": "{freed} · {count} ready item cleaned | {freed} · {count} ready items cleaned",
         "partial": "{cleaned} cleaned · {failed} needs review | {cleaned} cleaned · {failed} need review",
         "review": "Review",
+        "remoteLeft": "The branch is still on the remote: {error} | {count} branches are still on the remote. First error: {error}",
         "viewJournal": "View journal",
         "successReview": "{freed} · {count} item removed | {freed} · {count} items removed"
       },
@@ -2754,6 +2801,7 @@
         "removeAria": "Remove {name}",
         "resume": "Stopped at “{step}”. Open it for the commands to finish by hand.",
         "dehydrateAria": "Dehydrate {name}",
+        "dehydratedLeft": "Dehydrated · {size} left",
         "keepAria": "Keep {name}",
         "volumeProject": "Docker volume · {project}",
         "volumeUnknown": "Docker volume · unknown project",

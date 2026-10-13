@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { computed, ref, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Trash2, GitBranch, Archive, Cloud, TriangleAlert } from 'lucide-vue-next'
+import { Trash2, GitBranch, Archive, Cloud, MessagesSquare, TriangleAlert } from 'lucide-vue-next'
 import { useReaperStore } from '../stores/reaper'
 import { formatBytes } from './system-monitor-format'
 import { identText, identTitle } from './cleanup-ident'
 import { reasonLine } from './cleanup-row'
+import { groupOrphanTranscripts, splitByProof } from '../lib/gc-orphans'
+import { relativeTime } from '../composables/useRelativeTime'
 import CleanupTimeline from './CleanupTimeline.vue'
 import SweepConfirmDialog from './SweepConfirmDialog.vue'
 import Button from './ui/Button.vue'
 import type { ReapItem, ReapItemKind } from '../../../preload'
+import type { OrphanTranscriptItem } from '../../../main/gc/gc-wire'
 
 /**
  * "Other leftovers" (design.md "Workspace GC — unified Cleanup", entity map): the Reaper items the GC
@@ -17,8 +20,28 @@ import type { ReapItem, ReapItemKind } from '../../../preload'
  * map; these keep the row UI and `SweepConfirmDialog` they always had, so folding the screens into
  * one door loses no capability. Renders nothing when there is nothing to show.
  */
+const props = withDefaults(
+  defineProps<{
+    /** Transcript folders of folders that are gone (unit D, AC-D1), listed under their repo. */
+    transcripts?: OrphanTranscriptItem[]
+    /** Ids whose delete is running: their button stays disabled. */
+    busy?: string[]
+  }>(),
+  { transcripts: () => [], busy: () => [] }
+)
+const emit = defineEmits<{ deleteTranscripts: [ids: string[]] }>()
 const store = useReaperStore()
 const { t } = useI18n()
+
+const split = computed(() => splitByProof(props.transcripts))
+const orphanGroups = computed(() => groupOrphanTranscripts(split.value.proven))
+/** Missing, but nothing proves them gone (an unplugged drive looks the same): apart, full paths. */
+const notFound = computed(() => split.value.notFound)
+const folderName = (folder: string): string =>
+  folder
+    .replace(/[\\/]+$/, '')
+    .split(/[\\/]/)
+    .pop() || folder
 
 const OTHER_KINDS: ReadonlySet<ReapItemKind> = new Set([
   'local-branch',
@@ -63,7 +86,11 @@ function repoLabel(item: ReapItem): string {
 </script>
 
 <template>
-  <section v-if="rows.length > 0" class="px-5.5 pb-2 pt-4" data-testid="cleanup-other">
+  <section
+    v-if="rows.length > 0 || transcripts.length > 0"
+    class="px-5.5 pb-2 pt-4"
+    data-testid="cleanup-other"
+  >
     <div class="flex items-center gap-3 pb-2">
       <span class="eyebrow text-text-4">
         {{ t('cleanup.gc.other.title') }}
@@ -150,6 +177,163 @@ function repoLabel(item: ReapItem): string {
           <Trash2 :size="13" :stroke-width="1.7" />
         </button>
       </span>
+    </div>
+
+    <div
+      v-for="g in orphanGroups"
+      :key="g.repoLabel"
+      class="mt-3 flex flex-col"
+      data-testid="orphan-group"
+    >
+      <div class="flex items-center gap-3 pb-1">
+        <span class="eyebrow text-text-3" data-testid="orphan-group-label">{{ g.repoLabel }}</span>
+        <span class="text-caption text-text-4">{{
+          t(
+            'cleanup.gc.orphans.groupMeta',
+            { n: g.items.length, size: formatBytes(g.bytes) },
+            g.items.length
+          )
+        }}</span>
+        <Button
+          class="ml-auto"
+          variant="ghost"
+          :disabled="g.items.every((i) => busy.includes(i.id))"
+          data-testid="orphan-delete-all"
+          @click="
+            emit(
+              'deleteTranscripts',
+              g.items.map((i) => i.id)
+            )
+          "
+        >
+          <Trash2 :size="12" :stroke-width="1.7" />
+          {{ t('cleanup.gc.orphans.deleteAll') }}
+        </Button>
+      </div>
+      <div
+        v-for="i in g.items"
+        :key="i.id"
+        class="grid min-h-12 grid-cols-[20px_1fr_90px_40px] items-center gap-3.5 rounded border border-transparent p-2 hover:border-border hover:bg-surface"
+        data-testid="orphan-row"
+      >
+        <MessagesSquare :size="14" :stroke-width="1.6" class="text-text-4" aria-hidden="true" />
+        <span class="flex min-w-0 flex-col gap-0.75">
+          <span
+            class="truncate font-mono text-ui text-text"
+            :title="i.folder"
+            data-testid="orphan-folder"
+            >{{ folderName(i.folder) }}</span
+          >
+          <span class="flex min-w-0 items-center gap-2 text-eyebrow text-text-4">
+            <span class="truncate"
+              >{{ t('cleanup.gc.orphans.sessions', { n: i.sessionCount }, i.sessionCount)
+              }}<template v-if="i.newestAt !== null">
+                ·
+                {{
+                  t('cleanup.gc.orphans.last', {
+                    ago: relativeTime(new Date(i.newestAt).toISOString())
+                  })
+                }}</template
+              ></span
+            >
+            <span
+              v-if="i.hasMemory"
+              class="shrink-0 rounded-xs border border-warning-line bg-warning-soft px-1.5 py-px text-eyebrow text-warning"
+              data-testid="orphan-memory"
+              >{{ t('cleanup.gc.orphans.memory') }}</span
+            >
+          </span>
+        </span>
+        <span class="text-right text-ui tabular-nums text-text">{{ formatBytes(i.bytes) }}</span>
+        <span class="flex justify-end">
+          <button
+            class="flex h-6.5 w-6.5 items-center justify-center rounded-sm border border-border-2 text-text-3 transition hover:border-red hover:bg-red-soft hover:text-red disabled:cursor-not-allowed disabled:opacity-40"
+            :aria-label="t('cleanup.gc.orphans.deleteAria', { name: folderName(i.folder) })"
+            :title="t('cleanup.gc.orphans.deleteAria', { name: folderName(i.folder) })"
+            :disabled="busy.includes(i.id)"
+            data-testid="orphan-delete"
+            @click="emit('deleteTranscripts', [i.id])"
+          >
+            <Trash2 :size="13" :stroke-width="1.7" />
+          </button>
+        </span>
+      </div>
+    </div>
+
+    <div v-if="notFound.length > 0" class="mt-5 flex flex-col" data-testid="orphan-notfound">
+      <div class="flex items-center gap-3 pb-1">
+        <span class="eyebrow text-warning">{{ t('cleanup.gc.orphans.notFound.title') }}</span>
+        <span class="text-caption text-text-4">{{
+          t(
+            'cleanup.gc.orphans.groupMeta',
+            { n: notFound.length, size: formatBytes(notFound.reduce((a, i) => a + i.bytes, 0)) },
+            notFound.length
+          )
+        }}</span>
+        <Button
+          class="ml-auto"
+          variant="ghost"
+          :disabled="notFound.every((i) => busy.includes(i.id))"
+          data-testid="orphan-notfound-delete-all"
+          @click="
+            emit(
+              'deleteTranscripts',
+              notFound.map((i) => i.id)
+            )
+          "
+        >
+          <Trash2 :size="12" :stroke-width="1.7" />
+          {{ t('cleanup.gc.orphans.deleteAll') }}
+        </Button>
+      </div>
+      <p class="m-0 pb-2 text-caption leading-4 text-text-3">
+        {{ t('cleanup.gc.orphans.notFound.note') }}
+      </p>
+      <div
+        v-for="i in notFound"
+        :key="i.id"
+        class="grid min-h-12 grid-cols-[20px_1fr_90px_40px] items-center gap-3.5 rounded border border-transparent p-2 hover:border-border hover:bg-surface"
+        data-testid="orphan-row"
+      >
+        <MessagesSquare :size="14" :stroke-width="1.6" class="text-warning" aria-hidden="true" />
+        <span class="flex min-w-0 flex-col gap-0.75">
+          <span class="break-all font-mono text-ui text-text" data-testid="orphan-fullpath">{{
+            i.folder
+          }}</span>
+          <span class="flex min-w-0 items-center gap-2 text-eyebrow text-text-4">
+            <span class="truncate"
+              >{{ t('cleanup.gc.orphans.sessions', { n: i.sessionCount }, i.sessionCount)
+              }}<template v-if="i.newestAt !== null">
+                ·
+                {{
+                  t('cleanup.gc.orphans.last', {
+                    ago: relativeTime(new Date(i.newestAt).toISOString())
+                  })
+                }}</template
+              ></span
+            >
+            <span
+              v-if="i.hasMemory"
+              class="shrink-0 rounded-xs border border-warning-line bg-warning-soft px-1.5 py-px text-eyebrow text-warning"
+              data-testid="orphan-memory"
+              >{{ t('cleanup.gc.orphans.memory') }}</span
+            >
+          </span>
+        </span>
+        <span class="text-right text-ui tabular-nums text-text">{{ formatBytes(i.bytes) }}</span>
+        <span class="flex justify-end">
+          <button
+            class="flex h-6.5 w-6.5 items-center justify-center rounded-sm border border-border-2 text-text-3 transition hover:border-red hover:bg-red-soft hover:text-red disabled:cursor-not-allowed disabled:opacity-40"
+            :aria-label="t('cleanup.gc.orphans.deleteAria', { name: i.folder })"
+            :title="t('cleanup.gc.orphans.deleteAria', { name: i.folder })"
+            :disabled="busy.includes(i.id)"
+            data-testid="orphan-delete"
+            @click="emit('deleteTranscripts', [i.id])"
+          >
+            <Trash2 :size="13" :stroke-width="1.7" />
+          </button>
+        </span>
+      </div>
     </div>
 
     <SweepConfirmDialog v-if="sweepItems" :items="sweepItems" @close="sweepItems = null" />

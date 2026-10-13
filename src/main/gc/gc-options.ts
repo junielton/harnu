@@ -17,7 +17,9 @@ function parseExpected(raw: unknown): GcExpected | null {
     (bucket !== 'ready' &&
       bucket !== 'review' &&
       bucket !== 'in-use' &&
-      bucket !== 'orphan-volume') ||
+      bucket !== 'orphan-volume' &&
+      bucket !== 'orphan-transcripts' &&
+      bucket !== 'stack-leftover') ||
     !stackIds ||
     !ownedVolumes ||
     !(e.reasonCode === null || typeof e.reasonCode === 'string') ||
@@ -27,6 +29,9 @@ function parseExpected(raw: unknown): GcExpected | null {
   ) {
     return null
   }
+  if (!(e.proof === undefined || e.proof === 'proven' || e.proof === 'not-found')) return null
+  const networkIds = e.networkIds === undefined ? undefined : strings(e.networkIds)
+  if (networkIds === null) return null
   const project = e.project === undefined || typeof e.project === 'string' || e.project === null
   if (!project) return null
   if (!(e.workStamp === undefined || e.workStamp === null || typeof e.workStamp === 'string')) {
@@ -41,7 +46,9 @@ function parseExpected(raw: unknown): GcExpected | null {
     bytes: e.bytes,
     path: e.path,
     ...(e.workStamp !== undefined ? { workStamp: e.workStamp as string | null } : {}),
-    ...(e.project !== undefined ? { project: e.project as string | null } : {})
+    ...(e.project !== undefined ? { project: e.project as string | null } : {}),
+    ...(networkIds ? { networkIds } : {}),
+    ...(e.proof !== undefined ? { proof: e.proof } : {})
   }
 }
 
@@ -99,6 +106,12 @@ export function parseOptions(raw: unknown): GcCleanOptions {
       if (parsed) expected[id] = parsed
     }
   }
+  const deleteRemote = Array.isArray(r.deleteRemote)
+    ? r.deleteRemote.filter((x): x is string => typeof x === 'string').slice(0, 500)
+    : undefined
+  const confirmedNotFound = Array.isArray(r.confirmedNotFound)
+    ? r.confirmedNotFound.filter((x): x is string => typeof x === 'string').slice(0, 500)
+    : undefined
   const prepare: Record<string, GcPrep | GcPrep[]> = {}
   if (r.prepare && typeof r.prepare === 'object' && !Array.isArray(r.prepare)) {
     for (const [id, value] of Object.entries(r.prepare as Record<string, unknown>)) {
@@ -106,5 +119,11 @@ export function parseOptions(raw: unknown): GcCleanOptions {
       if (parsed) prepare[id] = parsed
     }
   }
-  return { confirmed, expected, ...(Object.keys(prepare).length > 0 ? { prepare } : {}) }
+  return {
+    confirmed,
+    expected,
+    ...(deleteRemote ? { deleteRemote } : {}),
+    ...(confirmedNotFound ? { confirmedNotFound } : {}),
+    ...(Object.keys(prepare).length > 0 ? { prepare } : {})
+  }
 }

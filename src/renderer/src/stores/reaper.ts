@@ -13,6 +13,7 @@ import { toIpc } from '../lib/to-ipc'
 import { useNotificationsStore } from './notifications'
 import { formatBytes } from '../components/system-monitor-format'
 import { isIdleDehydratable, type HydrationOp } from '../components/cleanup-row'
+import type { RemotePolicy } from '../lib/gc-remote-delete'
 
 /** Mirrors `defaultPrefs().dehydrateIdleDays` until the real prefs arrive. */
 const DEFAULT_DEHYDRATE_IDLE_DAYS = 7
@@ -58,6 +59,11 @@ export const useReaperStore = defineStore('reaper', () => {
   const hydrationOps = ref<Map<string, HydrationOp>>(new Map())
   /** `ReaperPrefs.dehydrateIdleDays` — the repo pill's "idle" threshold. */
   const dehydrateIdleDays = ref(DEFAULT_DEHYDRATE_IDLE_DAYS)
+  /**
+   * The remote-delete protections (`neverDeleteRemote`, `protectedBranches`), or null until the prefs
+   * arrive: the remove confirm offers "Also delete the branch on the remote" only once they are known.
+   */
+  const remotePolicy = ref<RemotePolicy | null>(null)
 
   let unsubUpdate: (() => void) | null = null
   let unsubProgress: (() => void) | null = null
@@ -121,6 +127,16 @@ export const useReaperStore = defineStore('reaper', () => {
       const prefs = await window.api.reaperPrefs()
       if (prefs && typeof prefs.dehydrateIdleDays === 'number') {
         dehydrateIdleDays.value = prefs.dehydrateIdleDays
+      }
+      if (
+        prefs &&
+        typeof prefs.neverDeleteRemote === 'boolean' &&
+        Array.isArray(prefs.protectedBranches)
+      ) {
+        remotePolicy.value = {
+          neverDeleteRemote: prefs.neverDeleteRemote,
+          protectedBranches: prefs.protectedBranches
+        }
       }
     } catch {
       // keep the default; the pill's threshold is a convenience, not a guard
@@ -241,6 +257,7 @@ export const useReaperStore = defineStore('reaper', () => {
     dehydrateProgress,
     hydrationOps,
     dehydrateIdleDays,
+    remotePolicy,
     idleDehydratable,
     init,
     scanNow,

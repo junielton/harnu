@@ -144,6 +144,6 @@ export function createForcedGcOps(deps: GcShellDeps): GcOps {
       return verdict
     },
     dropDeps: (b) => base.dropDeps(asExecutable(b)),
-    cleanGit: (b) => base.cleanGit(asExecutable(b))
+    cleanGit: (b, opts) => base.cleanGit(asExecutable(b), opts)
   }
 }

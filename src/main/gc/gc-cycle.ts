@@ -211,7 +211,10 @@ export async function runGcCycle(
     if (r.ok) {
       deps.state.failures.delete(r.id)
       const done = toClean.find((b) => b.item.id === r.id)
-      if (done) deps.rememberLeftovers?.(leftBehind(done, gathered.housekeeping.volumes))
+      if (done)
+        deps.rememberLeftovers?.(
+          leftBehind(done, gathered.housekeeping.volumes, gathered.housekeeping.containers)
+        )
     }
     // A refusal at the reprobe changed nothing. One that describes the item (a locked worktree, an
     // unknown tip) is remembered, so the item leaves the hero and the next cycle spends its cap

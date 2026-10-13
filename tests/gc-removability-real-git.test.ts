@@ -62,6 +62,8 @@ vi.mock('../src/main/gc/gc-transcripts', async (importOriginal) => ({
     cwdOf: async (slug: string) => h.transcripts[Number(slug.slice(5))]!.cwd
   })
 }))
+// Hermetic: the real source reads ~/.claude/projects and the PTY layer.
+vi.mock('../src/main/gc/gc-orphan-shell', () => ({ realOrphanSource: async () => [] }))
 vi.mock('../src/main/containers/containers-shell', () => ({
   inspectAll: async () => {
     throw Object.assign(new Error('docker: command not found'), { code: 'ENOENT' })

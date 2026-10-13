@@ -93,6 +93,7 @@ import { probeGitMeta } from './git-probe'
 import {
   addUserProject,
   isUserProjectAgentAllowed,
+  detachFromSidebar,
   removeGhostFolder,
   resolveBornFrom,
   type RemoveGhostFolderResult
@@ -1596,8 +1597,11 @@ export async function removeWorktree(
   force: boolean,
   deleteBranch: boolean
 ): Promise<void> {
+  // Whether the folder was really there right before the remove (it is the ledger's precondition).
+  let existedBefore = false
   try {
     const dirExists = await fileExists(worktreePath)
+    existedBefore = dirExists
     const plan = resolveWorktreeRemovalPlan({ dirExists, force })
     if (plan.runPreflight) {
       const [dirty, unpushed] = await Promise.all([
@@ -1616,6 +1620,9 @@ export async function removeWorktree(
     // (and its HEAD) is gone, so we can't ask it for its branch anymore. Skipped
     // when the directory is already gone: there's no HEAD left to read.
     const branch = deleteBranch && plan.readBranch ? await currentBranch(worktreePath) : null
+    // Its Docker stack leaves containers and a network behind: remember the compose projects that
+    // run from this folder, while it still exists to be read, so Cleanup can offer them afterwards.
+    await (await import('./gc/gc-removed-stacks')).rememberStacksOfFolder(worktreePath)
     const args = [
       '-C',
       repoPath,
@@ -1641,7 +1648,7 @@ export async function removeWorktree(
   // worktree remove` succeeded) — clean up Harnu's own sidebar bookkeeping so
   // the folder + its sessions don't linger as a ghost. Best-effort: a failed
   // cleanup here must not turn an already-succeeded removal into an error.
-  await removeGhostFolder(getWindowRef, worktreePath).catch((err) =>
+  await detachFromSidebar(getWindowRef, worktreePath, { existedBefore }).catch((err) =>
     console.warn(`[worktree-ipc] ghost-folder cleanup failed for ${worktreePath}:`, err)
   )
 }

@@ -3,6 +3,7 @@
 // unit-tested in tests/gc-pipeline-core.test.ts without touching docker, git or disk.
 
 import { canonicalPathKey, type WorktreeBundle } from './bundle-core'
+import type { RemoteDeleteOutcome } from './gc-remote-delete'
 
 export type GcStep =
   | 'reprobe'
@@ -37,11 +38,22 @@ export interface GcOps {
    */
   recheck(b: WorktreeBundle): Promise<{ ok: true } | { ok: false; reason: string }>
   /**
-   * archive → trash → prune → branch-delete → detach, remote branch deletion forced off.
+   * archive → trash → prune → branch-delete → (remote delete) → detach. The remote branch is only
+   * deleted when `opts.deleteRemote` is set, which only an operator's manual clean ever does; its
+   * outcome comes back instead of failing the clean (AC-D5).
    * May answer the bytes the folder held when it went to the OS trash; without an answer the
    * pipeline estimates them from the scan.
    */
-  cleanGit(b: WorktreeBundle): Promise<void | { trashedBytes?: number }>
+  cleanGit(b: WorktreeBundle, opts?: CleanGitOptions): Promise<void | CleanGitOutcome>
+}
+
+export interface CleanGitOptions {
+  deleteRemote?: boolean
+}
+
+export interface CleanGitOutcome {
+  remoteDelete?: RemoteDeleteOutcome
+  trashedBytes?: number
 }
 
 /** A volume the run left in place because a container still mounted it at execution time. */
@@ -65,6 +77,8 @@ export interface GcItemResult {
   trashedBytes?: number
   /** Present only when non-empty, on success and on a later failure alike. */
   skippedVolumes?: SkippedVolume[]
+  /** Present only when the operator asked for the remote branch to go too: what happened to it. */
+  remoteDelete?: RemoteDeleteOutcome
 }
 
 /**
@@ -139,6 +153,8 @@ function skippedOf(r: unknown): SkippedVolume[] {
 }
 
 export interface GcRunOptions {
+  /** Also delete the branch on the remote. Set only by an operator's manual clean, never by the autopilot. */
+  deleteRemote?: boolean
   removeVolumes: boolean
   /** The operator explicitly chose to clean `review` bundles too. Never set by default. */
   confirmReview?: boolean
@@ -319,9 +335,15 @@ async function runChecked(
   // deps freed. The executor's own measurement wins; without one the scan's disk size, less the
   // deps just dropped, stands in for it.
   const estimate = Math.max(0, (b.item.diskBytes ?? 0) - freedBytes)
+  let remoteDelete: RemoteDeleteOutcome | undefined
   try {
-    const answer: unknown = await ops.cleanGit(b)
-    const reported = (answer as { trashedBytes?: unknown } | null | undefined)?.trashedBytes
+    const out = await ops.cleanGit(
+      b,
+      opts.deleteRemote === true ? { deleteRemote: true } : undefined
+    )
+    const answer = out && typeof out === 'object' ? out : undefined
+    if (answer?.remoteDelete) remoteDelete = answer.remoteDelete
+    const reported = (answer as { trashedBytes?: unknown } | undefined)?.trashedBytes
     trashedBytes = validBytes(reported) ? reported : estimate
     progress.trashedBytes = trashedBytes
   } catch (err) {
@@ -338,7 +360,8 @@ async function runChecked(
     haltedAt: null,
     freedBytes,
     trashedBytes,
-    ...skipped()
+    ...skipped(),
+    ...(remoteDelete ? { remoteDelete } : {})
   }
 }
 

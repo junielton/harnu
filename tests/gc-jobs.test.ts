@@ -148,6 +148,7 @@ describe('doneSummary', () => {
       trashedBytes: 0,
       refusals: {},
       refused: 0,
+      remoteLeft: null,
       rollbackFailed: 0,
       rollbackDetails: [],
       prepLeft: 0

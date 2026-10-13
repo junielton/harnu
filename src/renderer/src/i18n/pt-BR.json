@@ -2444,7 +2444,13 @@
         "untrackedMore": "{n} arquivos não rastreados, salvos na ref wip: {names} e mais {more} | {n} arquivos não rastreados, salvos na ref wip: {names} e mais {more}",
         "untrackedTotal": "{n} arquivo não rastreado no total, cada um salvo na sua ref wip. | {n} arquivos não rastreados no total, cada um salvo na sua ref wip.",
         "untracked": "{n} arquivo não rastreado, salvo na ref wip: {names} | {n} arquivos não rastreados, salvos na ref wip: {names}",
-        "warnDetached": "{n} worktree detached não tem branch. O commit dela fica em refs/archive/detached/…, e git worktree add traz de volta. | {n} worktrees detached não têm branch. Os commits delas ficam em refs/archive/detached/…, e git worktree add traz de volta."
+        "warnDetached": "{n} worktree detached não tem branch. O commit dela fica em refs/archive/detached/…, e git worktree add traz de volta. | {n} worktrees detached não têm branch. Os commits delas ficam em refs/archive/detached/…, e git worktree add traz de volta.",
+        "remote": {
+          "checking": "Verificando se a branch pode ser excluída no GitHub…",
+          "label": "Excluir também a branch no remoto",
+          "hint": "Roda git push --delete. Branches protegidas e branches que mudaram no remoto são puladas.",
+          "some": "Vale para {n} de {total}"
+        }
       },
       "chip": {
         "stack": "stack",
@@ -2492,6 +2498,24 @@
         "noOrphanVolumes": "Nenhum volume órfão",
         "scope": "Conta apenas o cache de build com mais de {n} dia e as imagens dangling. Imagens em uso e volumes de stacks ativas nunca entram na conta. | Conta apenas o cache de build com mais de {n} dias e as imagens dangling. Imagens em uso e volumes de stacks ativas nunca entram na conta.",
         "cantRestore": "Não pode ser restaurado",
+        "leftovers": {
+          "title": "Deixados por worktrees removidos",
+          "stack": "Contêineres parados: {c} · redes: {n}",
+          "projects": "Projetos: {names}",
+          "clean": "Limpar",
+          "volumesLine": "{n} volume · {size} | {n} volumes · {size}",
+          "volumesNote": "Nunca removidos automaticamente. Só saem depois da confirmação própria deles.",
+          "volumesRemove": "Remover volumes…"
+        },
+        "confirm": {
+          "stackTitle": "Limpar o que {n} worktree removido deixou? | Limpar o que {n} worktrees removidos deixaram?",
+          "volumesTitle": "Remover {n} volume? | Remover {n} volumes?",
+          "listLabel": "Itens a limpar",
+          "stackNote": "Contêineres parados e redes podem ser recriados ao subir a stack de novo. Os volumes não são tocados.",
+          "volumesNote": "Volumes não podem ser restaurados.",
+          "stackConfirm": "Limpar",
+          "volumesConfirm": "Remover {n} volume | Remover {n} volumes"
+        },
         "projects": "Projetos: {names}",
         "more": "+{n} outros",
         "toggleCache": "Limpar o build cache automaticamente",
@@ -2565,12 +2589,35 @@
       "loadError": "Não foi possível carregar o relatório de limpeza: {error}",
       "other": {
         "title": "Outros resíduos",
-        "intro": "Branches e pastas que não são worktrees."
+        "intro": "Branches, pastas e transcrições que não são worktrees."
+      },
+      "orphans": {
+        "groupMeta": "{n} pasta · {size} | {n} pastas · {size}",
+        "deleteAll": "Apagar tudo",
+        "deleteAria": "Apagar as transcrições de {name}",
+        "sessions": "{n} sessão | {n} sessões",
+        "last": "última {ago}",
+        "notFound": {
+          "title": "Pasta não encontrada",
+          "note": "O Harnu não consegue confirmar que essas pastas foram apagadas. Elas podem estar em um disco que não está conectado. Confira antes de apagar.",
+          "ack": "Eu conferi: essa pasta realmente não existe mais, não está em um disco desconectado."
+        },
+        "memory": "inclui notas de memória",
+        "confirm": {
+          "title": "Mover {n} pasta de transcrições para a lixeira? | Mover {n} pastas de transcrições para a lixeira?",
+          "subtitle": "As pastas em que essas sessões rodavam não existem mais, então o Claude não consegue mais retomá-las aqui.",
+          "listLabel": "Pastas de transcrições a mover para a lixeira",
+          "recoverable": "Elas vão para a lixeira do sistema, então dá para trazê-las de volta.",
+          "memory": "{n} delas também guarda notas de memória do Claude para essa pasta. | {n} delas também guardam notas de memória do Claude para essa pasta.",
+          "total": "{n} pasta · {size} | {n} pastas · {size}",
+          "confirm": "Mover para a lixeira"
+        }
       },
       "toast": {
         "success": "{freed} · {count} item pronto limpo | {freed} · {count} itens prontos limpos",
         "partial": "{cleaned} limpos · {failed} precisa de revisão | {cleaned} limpos · {failed} precisam de revisão",
         "review": "Revisar",
+        "remoteLeft": "A branch continua no remoto: {error} | {count} branches continuam no remoto. Primeiro erro: {error}",
         "viewJournal": "Ver diário",
         "successReview": "{freed} · {count} item removido | {freed} · {count} itens removidos"
       },
@@ -2754,6 +2801,7 @@
         "removeAria": "Remover {name}",
         "resume": "Parou em “{step}”. Abra para ver os comandos para terminar à mão.",
         "dehydrateAria": "Dehydrate {name}",
+        "dehydratedLeft": "Desidratado · {size} restantes",
         "keepAria": "Manter {name}",
         "volumeProject": "Volume Docker · {project}",
         "volumeUnknown": "Volume Docker · projeto desconhecido",

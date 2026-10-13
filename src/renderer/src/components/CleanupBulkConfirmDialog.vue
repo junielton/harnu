@@ -42,12 +42,14 @@ const props = withDefaults(
     mode: 'ready' | 'review'
     /** The facts behind the open dialog moved since it opened: confirm stays disabled until it is reopened. */
     stale?: boolean
+    /** The remote facts are still being asked (the box shows "Checking…" instead of nothing). */
+    remoteChecking?: boolean
     /** The advisor's verdict on a row, when it was asked. Shown with its evidence; never decides. */
     opinionOf?: (id: string) => GcOpinion | null
   }>(),
-  { stale: false, refused: () => [] }
+  { stale: false, refused: () => [], remoteChecking: false }
 )
-const emit = defineEmits<{ confirm: []; cancel: [] }>()
+const emit = defineEmits<{ confirm: [opts: { deleteRemote: boolean }]; cancel: [] }>()
 const { t, te } = useI18n()
 
 const count = computed(() => props.rows.length)
@@ -75,6 +77,12 @@ const totalText = computed(() =>
     size: formatBytes(totalBytes.value)
   })
 )
+/** "Also delete the branch on the remote" (AC-D5): offered only when a row qualifies, off by default. */
+const remoteRows = computed(() =>
+  props.rows.filter((r) => r.kind === 'worktree' && r.remoteEligible === true)
+)
+const deleteRemote = ref(false)
+
 const riskCount = computed(() => props.rows.filter((r) => r.risk).length)
 /** A worktree's volumes are never removed with it (they become orphan volumes, reviewed one by one). */
 const hasWorktreeRow = computed(() => props.rows.some((r) => r.kind === 'worktree'))
@@ -409,6 +417,44 @@ function onBackdropMousedown(e: MouseEvent): void {
         </div>
 
         <p
+          v-if="remoteChecking && remoteRows.length === 0"
+          class="mx-5 mt-3 text-caption text-text-3"
+          role="status"
+          data-testid="bulk-remote-checking"
+        >
+          {{ t('cleanup.gc.confirm.remote.checking') }}
+        </p>
+        <label
+          v-if="remoteRows.length > 0"
+          class="mx-5 mt-3 flex cursor-pointer items-start gap-2.5"
+          data-testid="bulk-remote-label"
+        >
+          <input
+            v-model="deleteRemote"
+            type="checkbox"
+            class="mt-0.5 h-4 w-4 shrink-0 cursor-pointer"
+            data-testid="bulk-remote-delete"
+          />
+          <span class="flex min-w-0 flex-col gap-0.5">
+            <span class="inline-flex items-center gap-1.5 text-ui text-text">
+              <GitBranch :size="12" :stroke-width="1.7" class="shrink-0" aria-hidden="true" />
+              {{ t('cleanup.gc.confirm.remote.label') }}
+            </span>
+            <span class="text-caption leading-4 text-text-3">{{
+              t('cleanup.gc.confirm.remote.hint')
+            }}</span>
+            <span
+              v-if="remoteRows.length < rows.length"
+              class="text-caption leading-4 text-text-3"
+              data-testid="bulk-remote-count"
+              >{{
+                t('cleanup.gc.confirm.remote.some', { n: remoteRows.length, total: rows.length })
+              }}</span
+            >
+          </span>
+        </label>
+
+        <p
           v-if="stale"
           class="mx-5 mt-3 flex items-start gap-2 text-ui text-warning"
           role="alert"
@@ -441,7 +487,9 @@ function onBackdropMousedown(e: MouseEvent): void {
             :variant="mode === 'ready' ? 'success' : 'danger'"
             :disabled="stale"
             data-testid="bulk-confirm"
-            @click="!stale && emit('confirm')"
+            @click="
+              !stale && emit('confirm', { deleteRemote: remoteRows.length > 0 && deleteRemote })
+            "
           >
             <Recycle v-if="mode === 'ready'" :size="14" :stroke-width="1.6" class="shrink-0" />
             <Trash2 v-else :size="14" :stroke-width="1.6" class="shrink-0" />
