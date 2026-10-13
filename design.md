@@ -8801,7 +8801,7 @@ volume), size right.
   excluded from the breakdown, the footer total, the confirm label and the `gc:clean` request.
 - **Detached worktrees (NDE-A).** A worktree with a detached HEAD has no branch to name an archive ref
   after, so Harnu names it after what it has: the folder and the commit. A confirmed Remove from Needs
-  review first writes `refs/archive/detached/<folder>-<shortsha>/tip` (the commit) and, beside it, `/wip`
+  review first writes `refs/archive/detached/<time>/<folder>-<shortsha>/tip` (the commit) and, beside it, `/wip`
   (every uncommitted and untracked file), then trashes the folder and unregisters it from git. There is no
   branch step. It is **review-only**: it is never a ready item, never part of the hero or the autopilot, and
   `unsupported-kind` is what main answers for one that somehow is. In the dialog a detached row has no

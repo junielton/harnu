@@ -56,7 +56,7 @@ async function planPreserve(
 }
 
 /**
- * Writes `refs/archive/<branch>/<stamp>/{tip,wip}`, or `refs/archive/detached/<folder>-<sha>/{tip,wip,reflog/*}`
+ * Writes `refs/archive/<branch>/<stamp>/{tip,wip}`, or `refs/archive/detached/<stamp>/<folder>-<sha>/{tip,wip,reflog/*}`
  * for a detached worktree; throws, and so refuses, if it cannot.
  */
 async function preserve(b: WorktreeBundle, deps: GcShellDeps, at: number): Promise<void> {
