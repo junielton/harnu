@@ -82,6 +82,7 @@ import { getNegotiationBounds, getPolicy } from './monitor/policy-store'
 import { readMemAvailableMb } from './monitor/proc-linux'
 import {
   createParkCoordinator,
+  createParkQuery,
   legacyParkFacts,
   parkModeNow,
   runParkPolicy,
@@ -698,8 +699,10 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     parkMode: parkModeNow,
     bounds: getNegotiationBounds,
     memAvailableMb: readMemAvailableMb,
-    facts: legacyParkFacts
-    // `ask` (park.query) arrives with T456 W2; until then `ask` acts as `facts`.
+    facts: legacyParkFacts,
+    // `park.query` through the command channel: only `channel: active` admits it; anything else
+    // is `silent` and the legacy facts decide (T456 §5.4).
+    ask: createParkQuery()
   })
 
   /**

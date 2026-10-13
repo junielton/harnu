@@ -77,8 +77,8 @@ describe('the contract and the surface manifest carry it', () => {
     )
     expect(doc).toMatch(/\| `park\.query` +\|/)
     expect(doc).toMatch(/\| `act\.park` +\| actuator/)
-    expect(doc).toContain(
-      'idle: { tasks: { id: string; type: string }[]; crons: { recurring: boolean }[] } | null'
+    expect(doc).toMatch(
+      /idle: \{ tasks: \{ id: string; type: string \}\[\]; crons: \{ recurring: boolean \}\[\] \} \\?\| null/
     )
   })
 

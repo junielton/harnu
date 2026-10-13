@@ -447,6 +447,8 @@ export interface ParkQueryData {
 
 /** At most this many `BackgroundTaskSummary.type` labels in one `background-task` reason. */
 export const PARK_TYPES_MAX = 4
+/** `park.query`'s own TTL: the host's wait for its answer, so a late answer is `CMD_EXPIRED`. */
+export const PARK_QUERY_TTL_MS = 5_000
 
 export interface SubmitResultData {
   submitted: true | false | 'unknown'

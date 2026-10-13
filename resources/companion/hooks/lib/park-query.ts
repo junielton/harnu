@@ -8,7 +8,7 @@ import type { FleetSensorState } from './fleet-sensor'
 
 /**
  * T456: the answer to `park.query` (spec §5.2), ported from `01-prototype.md` §P1. Pure and
- * `$`-free (MOD-1): `register.ts` reads `$.session.surfaces()` at ask time and hands it here with
+ * `$`-free (MOD-1): `register.ts` reads the session's surfaces at ask time and hands them here with
  * the fleet sensor's kept state. Counts and type labels only (SEC-8).
  *
  * Every fact fails toward "less busy": a sensor that missed an event makes Harnu park as it does

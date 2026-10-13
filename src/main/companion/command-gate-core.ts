@@ -34,7 +34,8 @@ export const COMMAND_NAMES: readonly CommandName[] = [
   'guard.set',
   'sentinel.set',
   'ui.band.set',
-  'plan.capture'
+  'plan.capture',
+  'park.query'
 ]
 
 export interface GateRow {

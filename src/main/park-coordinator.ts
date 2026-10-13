@@ -5,10 +5,11 @@
  * killer, `pty.ts#hibernateSession`. P4W4's capture plugs in later as the stage between the
  * revalidation and the kill.
  *
- * W1 runs on LEGACY facts only: the background-task and cron counts of the last main `Stop` the
- * hook bridge saw (§5.5). There is no `park.query` yet (W2), so the key `park` = `ask` behaves as
- * `facts`. The `ask` dependency is the seam W2 fills; with none injected the answer is `silent`
- * and the legacy facts stand in for it, which is exactly the shadow / no-binding row of §5.4.
+ * The session is consulted through `park.query` (W2, {@link createParkQuery}) when the key `park`
+ * is `ask`. The command needs the feature `act.park`, which the host enables only under
+ * `channel: active` (§5.2), so on a default install (`channel: shadow`) the enqueue is refused and
+ * the answer is `silent`. A `silent` answer falls back to the LEGACY facts: the background-task
+ * and cron counts of the last main `Stop` the hook bridge saw (§5.5).
  *
  * Every failure ends at today's behavior, which is parking (§9.2): a throw while consulting reads
  * as `silent`, a missing answer reads as `silent`, and `silent` with no legacy fact parks.
@@ -33,14 +34,19 @@ import {
 import { parkCandidates, type LiveSession, type Policy, type Trigger } from './fleet-policy'
 import type { ParkNegotiation } from './hibernation'
 import { getCompanionPrefs, prefsKey, registerPrefsKey } from './companion/companion-prefs'
+import { enqueue, type EnqueueRequest, type EnqueueResult } from './companion/command-channel'
+import { registerGateRow, type ChannelMode } from './companion/command-gate-core'
+import type { CommandOutcome } from './companion/command-types'
+import { PARK_QUERY_TTL_MS } from './companion/contract'
+import { registerFeaturePolicy } from './companion/feature-policy'
 
 export type { ParkNegotiation } from './hibernation'
 
 // ---- the `park` key (spec §9.1) -------------------------------------------------------------
 
 /**
- * `ask` — negotiate through the mod where the channel can carry it (W2), legacy facts elsewhere;
- *   until W2 it behaves as `facts`.
+ * `ask` — negotiate through the mod where the channel can carry it (`channel: active`), legacy
+ *   facts elsewhere.
  * `facts` — legacy Stop facts only, for every session; no command is sent.
  * `off` — today's behavior exactly; the facts are not read either.
  */
@@ -70,6 +76,105 @@ export function parkModeNow(): ParkMode {
   const capped = prefsKey<ParkMode>('park')
   const stored = getCompanionPrefs().keys['park']
   return stored === 'off' ? 'off' : capped
+}
+
+// ---- `park.query`: the gate row, the feature and the question (spec §5.2, §5.4) ------------
+
+/** The one cause that may queue `park.query`: this coordinator (SEC-5c). */
+export const PARK_QUERY_SUBSYSTEM = 'park'
+
+/**
+ * The command's own TTL (contract §7.2), the same as the coordinator's wait (§5.4, pinned by a
+ * test): a late answer is refused `CMD_EXPIRED` by the mod and never acted on.
+ */
+export { PARK_QUERY_TTL_MS }
+
+const PARK_CAUSES: readonly ParkCause[] = ['cap', 'sweep', 'manual']
+
+const validParkQueryArgs = (a: unknown): boolean =>
+  isObject(a) && Object.keys(a).length === 1 && PARK_CAUSES.includes(a.cause as ParkCause)
+
+/**
+ * The gate row and the feature rule of `park.query`. `act.park` is an actuator (its answer can
+ * delay an actuation, the park), so it follows the actuator rule as `act.plan` does: its own key
+ * on (`park` = `ask`) AND `channel` = `active`. It is NOT observe-only, so `shadow` refuses it
+ * (`shadowRefusal`). Above the tested CLI ceiling `prefsKey` caps `park` at `facts` and `channel`
+ * at `shadow` (ARB-7b), so the rule fails with no special case. Idempotent.
+ */
+export function registerParkQueryPolicies(): void {
+  registerGateRow('park.query', {
+    feature: 'act.park',
+    internal: [PARK_QUERY_SUBSYSTEM],
+    validate: validParkQueryArgs
+  })
+  registerFeaturePolicy(
+    'act.park',
+    () => prefsKey<ParkMode>('park') === 'ask' && prefsKey<ChannelMode>('channel') === 'active'
+  )
+}
+registerParkQueryPolicies()
+
+const BUSY_KINDS: ReadonlySet<string> = new Set([
+  'turn',
+  'permission',
+  'background-task',
+  'background-subagent',
+  'scheduled-wakeup',
+  'remote-surface'
+])
+/** More reasons than the six kinds can produce is not an answer. */
+const BUSY_MAX = 16
+
+/**
+ * A settled `park.query`, read as untrusted input (SEC-3b): `busy` with its reason kinds and a
+ * finite hint, `free` for `busy: []`, and `silent` for everything else — a refusal (`CMD_*`,
+ * `FEATURE_DISABLED`), an expiry, a loss, a drop (`revoked`), no data or a malformed one. The hint
+ * is clamped by the core, not here. A reason kind this host does not know is dropped (a newer mod,
+ * contract §14), which errs toward parking.
+ */
+export function parkQueryAnswer(outcome: CommandOutcome | null | undefined): Answer {
+  const silent: Answer = { kind: 'silent' }
+  if (!outcome || outcome.state !== 'resulted' || !outcome.ok) return silent
+  const data = outcome.data
+  if (!isObject(data) || !Array.isArray(data.busy) || data.busy.length > BUSY_MAX) return silent
+  const reasons: string[] = []
+  for (const r of data.busy) {
+    if (!isObject(r) || typeof r.kind !== 'string') return silent
+    if (BUSY_KINDS.has(r.kind) && !reasons.includes(r.kind)) reasons.push(r.kind)
+  }
+  if (reasons.length === 0) return { kind: 'free' }
+  const hint = data.retryAfterMs
+  return typeof hint === 'number' && Number.isFinite(hint) && hint >= 0
+    ? { kind: 'busy', reasons, retryAfterMs: hint }
+    : { kind: 'busy', reasons }
+}
+
+type SendParkQuery = (req: EnqueueRequest<'park.query'>) => EnqueueResult
+
+/**
+ * The coordinator's `ask`: enqueue `park.query` through the one `enqueue()` (audited, gated) and
+ * read its settlement. A refusal (`NO_BINDING`, `FEATURE_OFF`, `MODE_SHADOW`, …) or a throw is
+ * `silent` at once; the wait itself is bounded by the coordinator (`NEG_QUERY_WAIT_MS`). Never
+ * rejects.
+ */
+export function createParkQuery(
+  send: SendParkQuery = enqueue
+): (sessionKey: string, cause: ParkCause) => Promise<Answer> {
+  return async (sessionKey, cause) => {
+    try {
+      const out = send({
+        sessionKey,
+        name: 'park.query',
+        args: { cause },
+        cause: { kind: 'internal', subsystem: PARK_QUERY_SUBSYSTEM },
+        ttlMs: PARK_QUERY_TTL_MS
+      })
+      if (!out.ok) return { kind: 'silent' }
+      return parkQueryAnswer(await out.settled)
+    } catch {
+      return { kind: 'silent' }
+    }
+  }
 }
 
 // ---- legacy facts, kept from the hook bridge's request handler (spec §5.5) ------------------
@@ -188,7 +293,7 @@ export interface ParkCoordinatorDeps {
   /** MemAvailable in MB; `null` where it cannot be read (the floor is then off). */
   memAvailableMb(): number | null
   facts: LegacyParkFacts
-  /** W2's `park.query`. Absent in W1: every consultation is `silent`. */
+  /** `park.query` ({@link createParkQuery}). Absent: every consultation is `silent`. */
   ask?: (sessionKey: string, cause: ParkCause) => Promise<Answer>
 }
 
@@ -202,7 +307,7 @@ export type ParkOutcome =
 export interface ParkCoordinator {
   /**
    * Decide, consult, revalidate, park. Returns at once to a caller that does not await it; the
-   * decide → park path (operator, disabled, memory pressure, limit) and the W1 facts path run
+   * decide → park path (operator, disabled, memory pressure, limit) and the `facts` path run
    * synchronously, so "Park now" has killed the process before the promise settles.
    */
   requestPark(sessionKey: string, cause: ParkCause): Promise<ParkOutcome>
@@ -329,7 +434,7 @@ export function createParkCoordinator(deps: ParkCoordinatorDeps): ParkCoordinato
       )
     }
 
-    // `ask`: consult the session (W2) or, failing that, the legacy facts.
+    // `ask`: consult the session (`park.query`) or, failing that, the legacy facts.
     let answer: Answer = { kind: 'silent' }
     if (mode === 'ask' && deps.ask) {
       inFlight.add(sessionKey)
