@@ -241,23 +241,24 @@ a second probe.
 Chips are facts derived from `hooks` and `calls`. All use the **Default** badge variant
 (`design.md` §6 Badges): colour would read as a verdict. Order is fixed as listed.
 
-| `CapabilityId`  | Chip (`en`)                     | Derived from                                                               |
-| --------------- | ------------------------------- | -------------------------------------------------------------------------- |
-| `process`       | can run processes               | call `$.process.run` or `$.process.spawn`                                  |
-| `network`       | can use the network             | call `$.http.fetch`                                                        |
-| `files`         | can read and write files        | any call `$.fs.*`                                                          |
-| `prompts`       | can read every prompt           | hook `prompt.submit`, `turn.start` or `classic.UserPromptSubmit`           |
-| `system-prompt` | can change the system prompt    | hook `prompt.compose`, `prompt.section` or `prompt.context`                |
-| `tool-calls`    | can rewrite or block tool calls | hook `tool.call` or `classic.PreToolUse`                                   |
-| `permissions`   | can decide permissions          | hook `tool.check` or `classic.PermissionRequest`                           |
-| `submit`        | can submit prompts              | call `$.prompt.submit`, `$.command.run` or `$.session.send`                |
-| `model`         | can call the model              | call `$.model.complete`, `$.model.fork` or `$.model.classify`              |
-| `mcp`           | can call MCP tools              | call `$.mcp.call`                                                          |
-| `other-mods`    | can read other mods' calls      | hook on an op name (`http.fetch`, `env.get`, `store.*`, `state.*`, `fs.*`) |
-| `gate`          | can refuse other mods           | hook `plugin.register`                                                     |
-| `env`           | can read environment variables  | non-empty `env.reads`                                                      |
-| `terminal`      | draws in the terminal           | hook `ui.render`                                                           |
-| `opaque`        | has matchers Harnu cannot read  | any hook with `opaque: true`                                               |
+| `CapabilityId`  | Chip (`en`)                          | Derived from                                                               |
+| --------------- | ------------------------------------ | -------------------------------------------------------------------------- |
+| `process`       | can run processes                    | call `$.process.run` or `$.process.spawn`                                  |
+| `network`       | can use the network                  | call `$.http.fetch`                                                        |
+| `files`         | can read and write files             | any call `$.fs.*`                                                          |
+| `prompts`       | can read every prompt                | hook `prompt.submit`, `turn.start` or `classic.UserPromptSubmit`           |
+| `transcript`    | can read or rewrite the conversation | hook `session.append` or `session.compact`, or call `$.session.messages`   |
+| `system-prompt` | can change the system prompt         | hook `prompt.compose`, `prompt.section` or `prompt.context`                |
+| `tool-calls`    | can rewrite or block tool calls      | hook `tool.call` or `classic.PreToolUse`                                   |
+| `permissions`   | can decide permissions               | hook `tool.check` or `classic.PermissionRequest`                           |
+| `submit`        | can submit prompts                   | call `$.prompt.submit`, `$.command.run` or `$.session.send`                |
+| `model`         | can call the model                   | call `$.model.complete`, `$.model.fork` or `$.model.classify`              |
+| `mcp`           | can call MCP tools                   | call `$.mcp.call`                                                          |
+| `other-mods`    | can read other mods' calls           | hook on an op name (`http.fetch`, `env.get`, `store.*`, `state.*`, `fs.*`) |
+| `gate`          | can refuse other mods                | hook `plugin.register`                                                     |
+| `env`           | can read environment variables       | non-empty `env.reads`                                                      |
+| `terminal`      | draws in the terminal                | hook `ui.render`                                                           |
+| `opaque`        | has matchers Harnu cannot read       | any hook with `opaque: true`                                               |
 
 **`permissionHookers` (master Q31).** P3W1's `contested / other-mod` coverage reason needs to know
 whether a co-loaded mod can decide a permission. This wave offers
@@ -389,7 +390,7 @@ i18n keys, added to **both** `en.json` and `pt-BR.json` (technical nouns stay un
 | `modsAudit.source.installed`   | installed · {scope}                                                                                           |
 | `modsAudit.source.skillsDir`   | skills folder                                                                                                 |
 | `modsAudit.source.bootArg`     | `--plugin-dir`                                                                                                |
-| `modsAudit.cap.<CapabilityId>` | the fifteen chip strings of §7.5                                                                              |
+| `modsAudit.cap.<CapabilityId>` | the sixteen chip strings of §7.5                                                                              |
 | `modsAudit.analysing`          | Analysing…                                                                                                    |
 | `modsAudit.status.invalid`     | The CLI reported errors in this mod.                                                                          |
 | `modsAudit.status.failed`      | Could not analyse this mod.                                                                                   |

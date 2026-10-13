@@ -6153,7 +6153,7 @@ new token, no new component**: `SegmentedControl`, `SettingHint`, the bordered
   radius `999px`, 11px). **Colour would read as a verdict, so no chip is ever Accent,
   Warning or Danger.** A chip is a fact in the form "can …" ("can run processes", "can
   read every prompt"); the closed set and its source facts are in the spec table
-  (15 chips). Order is fixed.
+  (16 chips). Order is fixed.
 - **Status lines** (under the chips, 11px): `Analysing…` in `--text-4` while the read is
   pending; `Changed since {date}.` in `--text-3` when the content hash differs from the
   previous analysis; for a failed read, `triangle-alert` 12px + `--text-3` text and a

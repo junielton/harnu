@@ -690,6 +690,23 @@ export function emptyCache(): CacheFile {
   return { v: 1, entries: {} }
 }
 
+/**
+ * The chips are derived from the stored hooks, calls and env, so an entry written before a
+ * rule existed would keep the old set until its hash or the CLI version changed. Derive them
+ * again on every read; an entry whose facts are not readable keeps what it stored.
+ */
+function withCurrentCapabilities(a: ModAnalysis): ModAnalysis {
+  const { hooks, calls, env } = a
+  const readable =
+    Array.isArray(hooks) &&
+    hooks.every((h) => !!h && typeof h.event === 'string') &&
+    Array.isArray(calls) &&
+    calls.every((c) => !!c && typeof c.op === 'string') &&
+    !!env &&
+    Array.isArray(env.reads)
+  return readable ? { ...a, capabilities: deriveCapabilities({ hooks, calls, env }) } : a
+}
+
 /** A corrupt or foreign file is an empty cache; a bad entry is dropped, not the file. */
 export function parseCacheFile(text: string): CacheFile {
   let raw: unknown
@@ -715,7 +732,7 @@ export function parseCacheFile(text: string): CacheFile {
       typeof a.hash === 'string' &&
       typeof a.analysedAt === 'number'
     ) {
-      entries[k] = { rowKey: e.rowKey, analysis: a }
+      entries[k] = { rowKey: e.rowKey, analysis: withCurrentCapabilities(a) }
     }
   }
   return { v: 1, entries }
