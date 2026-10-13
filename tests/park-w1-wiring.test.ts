@@ -105,6 +105,16 @@ describe('prefs key park (§9.1)', () => {
     setCompanionCliGate('above')
     expect(parkModeNow()).toBe('facts')
   })
+
+  it('the cap only lowers: a stored off stays off above the ceiling, so the switch can work', () => {
+    setCompanionCliGate('above')
+    setPrefsKey('park', 'off')
+    expect(parkModeNow()).toBe('off')
+    setPrefsKey('park', 'facts')
+    expect(parkModeNow()).toBe('facts')
+    setPrefsKey('park', 'ask')
+    expect(parkModeNow()).toBe('facts')
+  })
 })
 
 describe('negotiation bounds beside the policy (§9.1, §6.2)', () => {
