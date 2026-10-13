@@ -127,13 +127,30 @@ describe('a detached removal is one archive in the Archives category (A × C × 
       namespace: ns,
       tipSha: shown!.tipSha,
       wipSha: shown!.wipSha,
-      memberCount: shown!.refs.length
+      members: shown!.members.map((m) => ({ ref: m.ref, sha: m.sha }))
     }
     // A ref is added to the group after the operator was shown it.
     git(repo, 'update-ref', `${ns}/reflog/ffffffffffff`, shown!.tipSha!)
     const fresh = await listRepoArchives(execGit, repo)
     expect(confirmedArchives(fresh, [confirm])).toEqual({ entries: [], changed: [ns] })
     expect(allRefs().length).toBe(shown!.refs.length + 1)
+  })
+
+  it('leaves the group alone when a member was re-pointed and the count did not change', async () => {
+    const ns = await archiveTheWayARemovalDoes()
+    const [shown] = await listRepoArchives(execGit, repo)
+    const confirm = {
+      namespace: ns,
+      tipSha: shown!.tipSha,
+      wipSha: shown!.wipSha,
+      members: shown!.members.map((m) => ({ ref: m.ref, sha: m.sha }))
+    }
+    const reflogRef = shown!.refs.find((r) => r.includes('/reflog/'))!
+    // Re-point one reflog ref at another commit (same name, same count).
+    git(repo, 'update-ref', reflogRef, shown!.tipSha!)
+    const fresh = await listRepoArchives(execGit, repo)
+    expect(fresh[0]!.refs.length).toBe(shown!.refs.length)
+    expect(confirmedArchives(fresh, [confirm])).toEqual({ entries: [], changed: [ns] })
   })
 
   it('restores with the copied commands: the tip as a branch, the working state as a worktree', async () => {

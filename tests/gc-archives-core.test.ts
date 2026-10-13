@@ -297,16 +297,54 @@ describe('a detached removal groups into one archive (AC-E2)', () => {
     )
   })
 
-  it('a delete asks for exactly the members it was shown', () => {
+  it('a delete asks for exactly the members it was shown, ref by ref and sha by sha', () => {
     const [e] = groupArchiveRefs(REPO, removal())
     const fresh = [e!]
-    const shown = { namespace: NS, tipSha: TIP, wipSha: sha('b'), memberCount: 6 }
-    expect(confirmedArchives(fresh, [shown]).entries).toEqual([e])
+    const shown = {
+      namespace: NS,
+      tipSha: TIP,
+      wipSha: sha('b'),
+      members: e!.members.map((m) => ({ ref: m.ref, sha: m.sha }))
+    }
+    const ok = confirmedArchives(fresh, [shown])
+    expect(ok.entries).toHaveLength(1)
+    // What is deleted is what was shown: each member against the sha the operator saw.
+    expect(ok.entries[0]!.members).toEqual(shown.members)
     // A ref that appeared (or vanished) since the confirm is a change, never a silent extra delete.
-    expect(confirmedArchives(fresh, [{ ...shown, memberCount: 5 }])).toEqual({
+    expect(confirmedArchives(fresh, [{ ...shown, members: shown.members.slice(1) }])).toEqual({
       entries: [],
       changed: [NS]
     })
+    expect(
+      confirmedArchives(fresh, [
+        {
+          ...shown,
+          members: [...shown.members, { ref: `${NS}/reflog/ffffffffffff`, sha: sha('f') }]
+        }
+      ])
+    ).toEqual({ entries: [], changed: [NS] })
+  })
+
+  it('a member swapped for another while the count stays the same is a change', () => {
+    const [e] = groupArchiveRefs(REPO, removal())
+    const members = e!.members.map((m) => ({ ref: m.ref, sha: m.sha }))
+    // The operator saw one reflog ref pointing at X; it now points at Y (same count, same names).
+    const swapped = members.map((m) =>
+      m.ref.endsWith('/reflog/222222222222') ? { ...m, sha: sha('9') } : m
+    )
+    const fresh = groupArchiveRefs(
+      REPO,
+      removal().map((r) => (r.ref.endsWith('/reflog/222222222222') ? { ...r, sha: sha('7') } : r))
+    )
+    const shown = { namespace: NS, tipSha: TIP, wipSha: sha('b'), members: swapped }
+    expect(confirmedArchives(fresh, [shown])).toEqual({ entries: [], changed: [NS] })
+    // Same names, different set of names (one renamed): also a change.
+    const renamed = members.map((m) =>
+      m.ref.endsWith('/reflog/222222222222') ? { ...m, ref: `${NS}/reflog/444444444444` } : m
+    )
+    expect(
+      confirmedArchives([e!], [{ namespace: NS, tipSha: TIP, wipSha: sha('b'), members: renamed }])
+    ).toEqual({ entries: [], changed: [NS] })
   })
 
   // ---- delta 1, item 2: only Harnu's own group is recognised ----------------------------------
