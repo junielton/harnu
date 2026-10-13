@@ -2616,7 +2616,7 @@ const api = {
       namespace: string
       tipSha: string | null
       wipSha: string | null
-      memberCount?: number
+      members?: Array<{ ref: string; sha: string }>
     }>
   }): Promise<{
     ok: boolean

@@ -161,15 +161,33 @@ function parseArchiveRequest(raw: unknown): ArchiveDeleteRequest {
   return {
     repoPath: r.repoPath,
     archives: r.archives.map(
-      (a: { namespace?: unknown; tipSha?: unknown; wipSha?: unknown; memberCount?: unknown }) => {
+      (a: { namespace?: unknown; tipSha?: unknown; wipSha?: unknown; members?: unknown }) => {
         if (typeof a?.namespace !== 'string' || !a.namespace.startsWith('refs/archive/')) {
           throw new Error('gc:archives:delete: not an archive namespace')
         }
-        const count =
-          typeof a.memberCount === 'number' && Number.isInteger(a.memberCount) && a.memberCount >= 0
-            ? { memberCount: a.memberCount }
-            : {}
-        return { namespace: a.namespace, tipSha: sha(a.tipSha), wipSha: sha(a.wipSha), ...count }
+        let members: Array<{ ref: string; sha: string }> | undefined
+        if (a.members !== undefined) {
+          if (!Array.isArray(a.members) || a.members.length > 2000) {
+            throw new Error('gc:archives:delete: bad members')
+          }
+          members = a.members.map((m: { ref?: unknown; sha?: unknown }) => {
+            if (
+              typeof m?.ref !== 'string' ||
+              !m.ref.startsWith('refs/archive/') ||
+              typeof m.sha !== 'string' ||
+              !/^[0-9a-f]{40,64}$/.test(m.sha)
+            ) {
+              throw new Error('gc:archives:delete: not an archive member')
+            }
+            return { ref: m.ref, sha: m.sha }
+          })
+        }
+        return {
+          namespace: a.namespace,
+          tipSha: sha(a.tipSha),
+          wipSha: sha(a.wipSha),
+          ...(members ? { members } : {})
+        }
       }
     )
   }

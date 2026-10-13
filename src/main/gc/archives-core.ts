@@ -334,11 +334,20 @@ export interface ConfirmedArchive {
   tipSha: string | null
   wipSha: string | null
   /**
-   * How many refs the entry held when the operator was shown it. Present for an archive with more
-   * than a tip and a wip (a detached removal), so a ref that appeared since is a change, never a
-   * silent extra delete. Absent from older callers, which then confirm on the shas alone.
+   * Every ref of the entry with the sha the operator was shown. When present the entry is deleted
+   * only if its members now are EXACTLY these (same names, same shas), and only these are deleted,
+   * each against its shown sha: a ref that appeared, vanished, was renamed or re-pointed since is a
+   * change, never a silent extra delete. Absent from older callers, which confirm on the tip and
+   * wip shas alone.
    */
-  memberCount?: number
+  members?: ArchiveMember[]
+}
+
+/** The same set of (ref, sha) pairs, whatever the order. */
+function sameMembers(a: readonly ArchiveMember[], b: readonly ArchiveMember[]): boolean {
+  if (a.length !== b.length) return false
+  const shas = new Map(a.map((m) => [m.ref, m.sha]))
+  return shas.size === a.length && b.every((m) => shas.get(m.ref) === m.sha)
 }
 
 /**
@@ -362,9 +371,10 @@ export function confirmedArchives(
       e &&
       e.tipSha === r.tipSha &&
       e.wipSha === r.wipSha &&
-      (r.memberCount === undefined || r.memberCount === membersOf(e).length)
+      (r.members === undefined || sameMembers(membersOf(e) as ArchiveMember[], r.members))
     ) {
-      entries.push(e)
+      // Delete what was shown, each ref against its shown sha.
+      entries.push(r.members ? { ...e, members: r.members.map((m) => ({ ...m })) } : e)
     } else changed.push(r.namespace)
   }
   return { entries, changed }

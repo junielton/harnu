@@ -993,8 +993,8 @@ async function confirmExhaust(): Promise<void> {
         namespace: e.namespace,
         tipSha: e.tipSha,
         wipSha: e.wipSha,
-        // What the dialog listed: a ref that appeared since is a change, not an extra delete.
-        memberCount: e.members.length
+        // Every ref and sha the dialog listed: what is deleted is exactly that.
+        members: e.members.map((m) => ({ ref: m.ref, sha: m.sha }))
       }))
     )
   } else if (d.mode === 'gc') {

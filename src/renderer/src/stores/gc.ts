@@ -643,7 +643,7 @@ export const useGcStore = defineStore('gc', () => {
       namespace: string
       tipSha: string | null
       wipSha: string | null
-      memberCount?: number
+      members?: Array<{ ref: string; sha: string }>
     }>
   ): Promise<void> {
     const { t } = i18n.global
