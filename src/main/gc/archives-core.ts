@@ -185,30 +185,17 @@ export function groupArchiveRefs(
   refs: readonly ArchiveRefInfo[]
 ): ArchiveEntry[] {
   const drafts = new Map<string, Draft>()
+  const candidates = new Map<string, Array<{ info: ArchiveRefInfo; role: string }>>()
   for (const r of refs) {
     if (!r.ref.startsWith(ARCHIVE_PREFIX)) continue
-    // One detached removal is one entry, whatever its refs are called.
+    // The refs of one detached removal are collected first and judged as a group below. A key that
+    // is only a time (`detached/<stamp>/tip`) is not a folder's: it takes the sweep path as before.
     const det = DETACHED_REF.exec(r.ref)
-    if (det) {
-      const [, key, role] = det as unknown as [string, string, string]
-      const namespace = `${ARCHIVE_PREFIX}detached/${key}`
-      let d = drafts.get(namespace)
-      if (!d) {
-        d = {
-          namespace,
-          branch: null,
-          detached: true,
-          // Only the stamp in the name says when it was archived; an older removal has none.
-          stampAt: parseArchiveStamp(key.split('/')[0]!),
-          tip: null,
-          wip: null,
-          extra: []
-        }
-        drafts.set(namespace, d)
-      }
-      if (role === 'tip') d.tip = r
-      else if (role === 'wip') d.wip = r
-      else d.extra.push(r)
+    if (det && parseArchiveStamp(det[1]!) === null) {
+      const key = det[1]!
+      const group = candidates.get(key)
+      if (group) group.push({ info: r, role: det[2]! })
+      else candidates.set(key, [{ info: r, role: det[2]! }])
       continue
     }
     const m = SWEEP_REF.exec(r.ref)
@@ -242,6 +229,40 @@ export function groupArchiveRefs(
     }
     if (role === 'tip') d.tip = r
     else d.wip = r
+  }
+  // A detached group is Harnu's only when its folder segment ends in `-<12 hex>` AND its tip points
+  // at a commit that starts with that hex: Harnu names it from the HEAD it archived. Anything else
+  // under `detached/` (a hand-made ref, another tool's) is listed one ref at a time, with an unknown
+  // age, so nothing that is not Harnu's is ever expired on its own.
+  for (const [key, members] of candidates) {
+    const hex = /-([0-9a-f]{12})$/.exec(key.split('/').pop()!)?.[1]
+    const tip = members.find((m) => m.role === 'tip')?.info
+    if (hex && tip && tip.sha.startsWith(hex)) {
+      const namespace = `${ARCHIVE_PREFIX}detached/${key}`
+      const d: Draft = {
+        namespace,
+        branch: null,
+        detached: true,
+        // Only the stamp in the name says when it was archived; an older removal has none.
+        stampAt: parseArchiveStamp(key.split('/')[0]!),
+        tip,
+        wip: members.find((m) => m.role === 'wip')?.info ?? null,
+        extra: members.filter((m) => m.role !== 'tip' && m.role !== 'wip').map((m) => m.info)
+      }
+      drafts.set(namespace, d)
+    } else {
+      for (const m of members) {
+        drafts.set(m.info.ref, {
+          namespace: m.info.ref,
+          branch: null,
+          detached: false,
+          stampAt: null,
+          tip: m.info,
+          wip: null,
+          extra: []
+        })
+      }
+    }
   }
   // A wip-only entry has no tip ref to hang its date on: its own commit date is the fallback.
   return [...drafts.values()]
