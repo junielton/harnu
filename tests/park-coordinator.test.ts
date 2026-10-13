@@ -549,3 +549,13 @@ describe('AC-T456-11 — only a person closes an episode', () => {
     expect(c.episodeFor('s1')).not.toBeNull()
   })
 })
+
+describe('T456 W1 review — key `off` hands the policy no episodes', () => {
+  test('an episode opened before the switch no longer defers the session', async () => {
+    const { f, c } = setup({ ask: async () => busyAnswer(30 * MIN) })
+    await c.requestPark('s1', 'sweep')
+    expect(c.policyEpisodes().has('s1')).toBe(true)
+    f.mode = 'off'
+    expect(c.policyEpisodes().has('s1')).toBe(false)
+  })
+})

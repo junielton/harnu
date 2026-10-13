@@ -369,7 +369,10 @@ export function createParkCoordinator(deps: ParkCoordinatorDeps): ParkCoordinato
     requestPark,
     requestCapParks,
     episodeFor: (sessionKey) => episodes.get(sessionKey) ?? null,
-    policyEpisodes: () => (underPressure() ? new Map() : new Map(episodes)),
+    // Key `off` is today's behavior exactly: an episode opened before the switch must not keep
+    // a session out of the candidate list.
+    policyEpisodes: () =>
+      underPressure() || deps.parkMode() === 'off' ? new Map() : new Map(episodes),
     onFocus(sessionKey) {
       const ep = episodes.get(sessionKey)
       if (ep && resetEpisode(ep, { kind: 'focus' }) === null) episodes.delete(sessionKey)

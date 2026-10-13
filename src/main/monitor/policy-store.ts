@@ -122,7 +122,7 @@ export function setPolicy(patch: Partial<Policy>): Policy {
   return next
 }
 
-/** T456: the negotiation bounds, read on every park decision so a file edit applies at once. */
+/** T456: the negotiation bounds, read on every park decision (cached with the policy, so a hand edit of the file applies after a restart). */
 export function getNegotiationBounds(): NegotiationBounds {
   load()
   return { ...(cachedBounds ?? DEFAULT_BOUNDS) }
