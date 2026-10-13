@@ -70,3 +70,15 @@ export function parseProcStatm(statm: string, pageSizeBytes = PAGE_SIZE_BYTES): 
   if (!Number.isFinite(residentPages)) return null
   return residentPages * pageSizeBytes
 }
+
+/**
+ * T456 (spec §6.3): `MemAvailable` from `/proc/meminfo`, in whole MB (floored), or `null` when
+ * the line is missing or unreadable. The park coordinator's memory floor reads this; `null` turns
+ * the override off and leaves the two caps to bound everything.
+ */
+export function parseMemAvailableMb(meminfo: string): number | null {
+  const m = /^MemAvailable:\s+(\d+)\s+kB$/m.exec(meminfo)
+  if (!m) return null
+  const kb = Number(m[1])
+  return Number.isFinite(kb) ? Math.floor(kb / 1024) : null
+}

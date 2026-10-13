@@ -23,13 +23,15 @@ Each live session also shows the state of the [Harnu mod](settings.md#harnu-mod)
 
 Hover a live session whose Harnu mod is `live` and a **Test Harnu mod channel** button appears beside Park now and Close. It sends the session a quick check through the mod: you get a toast with the round trip ("Harnu mod channel answered in 42 ms"), and the session shows a short `harnu-companion: Harnu mod channel check` line in its own terminal for a few seconds. The line is drawn by Claude Code and its prefix cannot be changed. If the channel is not available the toast says why — `this session runs on hooks`, `the channel is observing only` or `this is a headless session` — and if nothing answers it says so. The check changes nothing in the session and carries no text from you or from an agent.
 
-A session that's live but getting cold enough to be the next one hibernated gets a small "next to be swept" note, so you're never surprised by a session disappearing from the live list.
+A session that's live but getting cold enough to be the next one hibernated gets a small "next to be swept" note, so you're never surprised by a session disappearing from the live list. A session that owns an active mission with a running child is never hibernated, and no longer gets that note.
+
+A cold session that is still waiting on background work or a scheduled wakeup is not hibernated straight away: Harnu puts the park off and checks again later, within limits (see [Hibernated sessions](sessions.md#hibernated-sessions)). The monitor does not mark such a session yet; it simply stays in the live list without the "next to be swept" note until the next check.
 
 ## Acting on a row
 
 Hover a session row and two buttons appear:
 
-- **Park now** — parks the session immediately, the same way the automatic hibernation sweep would. The row updates on the next sample: an em-dash cost, the reason, and roughly how much RAM it freed. Only shown for a live, resumable session (there's nothing to park in a synthetic session with no transcript yet, or one that's already parked).
+- **Park now** — parks the session immediately, the same way the automatic hibernation sweep would. It does not wait for background work: a session Harnu was holding back because something was still running is parked anyway. The row updates on the next sample: an em-dash cost, the reason, and roughly how much RAM it freed. Only shown for a live, resumable session (there's nothing to park in a synthetic session with no transcript yet, or one that's already parked).
 - **Close** — closes the session, the same as closing it from the sidebar.
 
 Waking a parked session is still the normal path: select it in the sidebar and it resumes.
@@ -51,3 +53,5 @@ Click the gauge any time to open the full System Monitor and see exactly what's 
 ## The hibernation policy
 
 How many sessions stay live, and how long an idle one waits before it's a candidate for parking, is configurable in **Settings → Hibernation policy** — see [Settings](settings.md#hibernation-policy). The footer's "Edit hibernation policy" link (in the monitor's own footer bar) jumps straight there. A change takes effect on the very next hibernation check — no restart needed.
+
+The limits on putting a park off — how many times (`maxDeclines`, default 8), for how long in total (`maxDeferMs`, default 2 hours) and below how much available memory a session is parked at once (`pressureFloorMb`, default 1536 MB; Linux only for now) — are not in Settings yet. They live in the same `monitor-policy.json` file in Harnu's user-data folder. Harnu reads that file once per run, so a hand edit takes effect after you restart Harnu. Change the hibernation policy in Settings only after that restart: saving it before then writes the old limits back.

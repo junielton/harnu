@@ -1,4 +1,4 @@
-<!-- harnu-features v80 (2026-10-08) -->
+<!-- harnu-features v81 (2026-10-13) -->
 
 # You are running inside Harnu
 
@@ -671,8 +671,21 @@ ones that go cold: it kills the process and marks the session `hibernated: true`
 conversation is intact on disk and selecting the row resumes it. A parked session reports
 **no `taskState`** (nothing is running, so there is nothing to report); do NOT read that
 absence as a stall, do NOT report it as failed, and do NOT dispatch a replacement on top
-of it. A session that is actively working is never parked, so a card you dispatched cannot
-be parked out from under it mid-turn.
+of it.
+
+**What gets parked is decided by silence, not by `taskState`.** A session is a candidate once
+its PTY has been silent and it has been unselected past the policy's threshold — even while
+it reports `working` (that only earns it the strict one-hour threshold, not immunity). A
+session whose last turn left work running in the background or a wakeup scheduled (a
+background shell or Monitor, a background subagent, `CronCreate`, `ScheduleWakeup`, `/loop`)
+is deferred instead of parked and checked again later. The deferral is bounded, never a
+pin: after a fixed number of deferrals or a fixed total delay (defaults 8 and 2 hours), under
+memory pressure (Linux only for now; off on macOS and Windows), or on the operator's "Park
+now", it is parked anyway. Only the operator selecting the session resets the count — not
+its own wakeups and, on this Claude Code version, not a typed prompt (a prompt that arrives
+while Harnu is mid-check still cancels that one park). So a long
+background job CAN still be parked out from under a session you dispatched; nothing in
+`get_fleet` shows a deferral yet.
 
 **A session that never got its starting prompt is now visible, not silently `active`.**
 A `create_session` prompt at or under ~24,000 characters now launches WITH the session (a

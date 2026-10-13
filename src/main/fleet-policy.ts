@@ -21,7 +21,7 @@ export interface LiveSession {
   taskState: FleetTaskState
   /** Epoch ms the operator last selected this session. */
   lastFocusedAt: number
-  /** Epoch ms of the session's last pulse — a PTY byte flush OR a hook-bridge event. */
+  /** Epoch ms of the session's last pulse — a PTY byte flush (no hook-bridge event stamps it). */
   lastActivityAt: number
   isSelected: boolean
   hasPendingApproval: boolean
@@ -31,6 +31,23 @@ export interface LiveSession {
    * "no", so every caller that predates missions keeps its exact behavior.
    */
   ownsLiveMission?: boolean
+  /**
+   * T456: the session's open park episode (`park-negotiation-core.ts#Episode`) — it said busy and
+   * was granted a delay until `until`. Optional, like `ownsLiveMission`: an absent episode reads
+   * as "never asked", so every caller that predates negotiation keeps its exact behavior. The
+   * coordinator hands the policy no episode under memory pressure, so a deferred session is a
+   * candidate again there (spec §6.3).
+   */
+  episode?: ParkEpisodeView
+}
+
+/** The part of a park episode the policy reads. Structural, to keep this module a leaf. */
+export interface ParkEpisodeView {
+  firstDeclineAt: number
+  declines: number
+  /** No question and no park before this. */
+  until: number
+  reasons: readonly string[]
 }
 
 export interface Policy {
@@ -82,7 +99,18 @@ function idleMs(s: LiveSession, now: number): number {
   return Math.min(now - s.lastFocusedAt, now - s.lastActivityAt)
 }
 
-function isEligible(s: LiveSession, now: number, policy: Policy, thresholdMs: number): boolean {
+/** T456: inside a granted delay — not a victim of either trigger until `until` (spec §6.5). */
+function isDeferred(s: LiveSession, now: number): boolean {
+  return s.episode !== undefined && now < s.episode.until
+}
+
+function isEligible(
+  s: LiveSession,
+  now: number,
+  policy: Policy,
+  thresholdMs: number,
+  honourDeferral = true
+): boolean {
   if (!isParkable(s.kind)) return false
   if (s.isSelected) return false
   // Parking would strand the confirm in the Approval Inbox.
@@ -92,6 +120,7 @@ function isEligible(s: LiveSession, now: number, policy: Policy, thresholdMs: nu
   // an on-disk `active` mission plus a child with a live PTY, and it releases on its own
   // once every child is parked or gone — so an absolute veto cannot leak a slot for good.
   if (s.ownsLiveMission) return false
+  if (honourDeferral && isDeferred(s, now)) return false
 
   // A `working` claim is CORROBORATED, not trusted.
   //
@@ -153,6 +182,8 @@ export interface FleetExplanation {
    * `'selected'` — the one session the operator has open.
    * `'pending-approval'` — parking would strand a confirm in the Approval Inbox.
    * `'mission-owner'` — owns an active mission with a live child (T363); never parked.
+   * `'declined'` — cold enough to be a candidate, but it said busy and is inside the delay it was
+   *   granted (T456); asked again after `episode.until`, within the operator's bounds.
    * `'hard-idle'` — cold enough to be swept under the strict threshold.
    * `'lru'` — cold enough to be evicted under the cap's lenient threshold, not yet hard-idle.
    * `'active'` — parkable, but not cold enough for either threshold.
@@ -162,6 +193,7 @@ export interface FleetExplanation {
     | 'selected'
     | 'pending-approval'
     | 'mission-owner'
+    | 'declined'
     | 'hard-idle'
     | 'lru'
     | 'active'
@@ -188,6 +220,8 @@ export function explainFleet(
     else if (s.isSelected) reason = 'selected'
     else if (s.hasPendingApproval) reason = 'pending-approval'
     else if (s.ownsLiveMission) reason = 'mission-owner'
+    else if (isDeferred(s, now) && isEligible(s, now, policy, policy.lruIdleMs, false))
+      reason = 'declined'
     else if (hardEligible.has(s.sessionKey)) reason = 'hard-idle'
     else if (lruEligible.has(s.sessionKey)) reason = 'lru'
     else reason = 'active'
@@ -201,21 +235,28 @@ export function explainFleet(
   })
 }
 
-export function evaluateFleet(
+/**
+ * T456: every candidate a trigger may park, coldest first, and how many it needs. `evaluateFleet`
+ * is the first `slots` of these; the park coordinator walks the whole list so a `cap` candidate
+ * that declines passes the slot to the next one (spec §5.1). A session inside a granted delay is
+ * never listed (`declined`).
+ */
+export function parkCandidates(
   sessions: readonly LiveSession[],
   now: number,
   policy: Policy,
   trigger: Trigger
-): string[] {
+): { candidates: string[]; slots: number } {
   const explained = explainFleet(sessions, now, policy)
 
   if (trigger === 'sweep') {
     // Every hard-idle candidate, coldest first — `sweepRank` was assigned in that
     // exact order, so sorting by it reproduces the LRU ordering without re-deriving it.
-    return explained
+    const candidates = explained
       .filter((e): e is FleetExplanation & { sweepRank: number } => e.sweepRank !== null)
       .sort((a, b) => a.sweepRank - b.sweepRank)
       .map((e) => e.sessionKey)
+    return { candidates, slots: candidates.length }
   }
 
   // `cap` runs from `pty:create`, so one MORE session is about to exist: free
@@ -228,10 +269,21 @@ export function evaluateFleet(
   // session was always also lru-eligible — this is the same union `evaluateFleet`
   // computed before `explainFleet` existed, just read off the `reason` label instead
   // of re-filtering.
-  const capCandidates = explained
+  const slots = sessions.length - policy.maxLive + 1
+  if (slots <= 0) return { candidates: [], slots: 0 }
+  const candidates = explained
     .filter((e) => e.reason === 'lru' || e.reason === 'hard-idle')
     .sort((a, b) => b.idleMs - a.idleMs)
-  const slotsToFree = sessions.length - policy.maxLive + 1
-  if (slotsToFree <= 0) return []
-  return capCandidates.slice(0, slotsToFree).map((e) => e.sessionKey)
+    .map((e) => e.sessionKey)
+  return { candidates, slots }
+}
+
+export function evaluateFleet(
+  sessions: readonly LiveSession[],
+  now: number,
+  policy: Policy,
+  trigger: Trigger
+): string[] {
+  const { candidates, slots } = parkCandidates(sessions, now, policy, trigger)
+  return candidates.slice(0, slots)
 }

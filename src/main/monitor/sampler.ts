@@ -133,7 +133,11 @@ function liveSessionRows(
     isSelected: d.isSelected,
     // The Approval Inbox lives outside pty.ts's tracked state — same "wired false
     // deliberately" posture as `fleetSnapshot()` in pty.ts.
-    hasPendingApproval: false
+    hasPendingApproval: false,
+    // T456 W1 (spec §3.3, §6.5): the same two fields `fleetSnapshot()` sets, or this row
+    // would read "next to be swept" for a session the policy will not park.
+    ...(d.ownsLiveMission ? { ownsLiveMission: true } : {}),
+    ...(d.episode ? { episode: d.episode } : {})
   }))
   const explanationBySessionKey = new Map(
     explainFleet(liveSessions, atMs, policy).map((e) => [e.sessionKey, e])

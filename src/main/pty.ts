@@ -71,14 +71,23 @@ import {
 } from './hibernation'
 import { harnuOwnsSession, type SpawnOrigin } from './messaging-socket'
 import {
-  evaluateFleet,
   type LiveSession,
+  type ParkEpisodeView,
   type Trigger,
   type FleetKind,
   type FleetTaskState
 } from './fleet-policy'
 import { getTaskStates } from './hook-bridge'
-import { getPolicy } from './monitor/policy-store'
+import { getNegotiationBounds, getPolicy } from './monitor/policy-store'
+import { readMemAvailableMb } from './monitor/proc-linux'
+import {
+  createParkCoordinator,
+  legacyParkFacts,
+  parkModeNow,
+  runParkPolicy,
+  type ParkCoordinator,
+  type ParkNegotiation
+} from './park-coordinator'
 
 /**
  * Resolve a requested cwd to a directory that actually exists on disk.
@@ -529,6 +538,24 @@ let selectedSessionKey: string | null = null
 const SWEEP_INTERVAL_MS = 60_000
 let sweepTimer: ReturnType<typeof setInterval> | null = null
 
+/**
+ * T456: every park goes through this coordinator (`park-coordinator.ts`) — the cap, the sweep and
+ * "Park now". Created by `registerPtyHandlers`, which owns the killer it calls.
+ */
+let parkCoordinator: ParkCoordinator | null = null
+
+/**
+ * The mission owners `fleetSnapshot()` last exempted (T363), kept so the System Monitor reads the
+ * same exemption without a disk read of its own (T127's hard rule). At most one sweep (60 s) old.
+ */
+let lastMissionOwners: ReadonlySet<string> = new Set()
+
+/** A PTY is gone for good (closed or exited): drop its park episode and legacy facts (T456). */
+function forgetParkState(sessionKey: string): void {
+  parkCoordinator?.forget(sessionKey)
+  legacyParkFacts.forget(sessionKey)
+}
+
 /** Stop the hibernation sweep. Called from `before-quit`, beside `killAllPtys`. */
 export function stopHibernationSweep(): void {
   if (sweepTimer) {
@@ -582,9 +609,12 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
    */
   function fleetSnapshot(): LiveSession[] {
     const states = getTaskStates()
+    // T456: the episodes the coordinator wants honoured (none under memory pressure, §6.3).
+    const episodes = parkCoordinator?.policyEpisodes() ?? new Map()
     const out: LiveSession[] = []
     for (const rec of ptys.values()) {
       if (!rec.sessionKey) continue
+      const episode = episodes.get(rec.sessionKey)
       out.push({
         sessionKey: rec.sessionKey,
         kind: rec.kind,
@@ -596,7 +626,8 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
         // `needs-input` in the hook FSM, which is NOT in the immunity list — parking it
         // is safe (the confirm is re-raised on resume). Wired as `false` deliberately,
         // not forgotten; revisit if a confirm is ever found to be lost on wake.
-        hasPendingApproval: false
+        hasPendingApproval: false,
+        ...(episode ? { episode } : {})
       })
     }
     // T363: never park an active mission's owner while one of its children is live.
@@ -606,6 +637,7 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
       )
     )
     for (const s of out) if (owners.has(s.sessionKey)) s.ownsLiveMission = true
+    lastMissionOwners = owners
     return out
   }
 
@@ -615,8 +647,11 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
    * The conversation is NOT lost — it lives in the JSONL, and the next `activate()` takes
    * the existing `claude-resume` path, indistinguishable from opening a cold disk session.
    * That is why this needs no new resume machinery.
+   *
+   * T456: the ONLY killer, reached only through the park coordinator (cap, sweep and "Park now"),
+   * after its revalidation. `negotiation` is what the ledger records about how it got here.
    */
-  function hibernateSession(sessionKey: string): void {
+  function hibernateSession(sessionKey: string, negotiation: ParkNegotiation | null = null): void {
     const ptyId = sessionIndex.getPtyId(sessionKey)
     if (!ptyId) return
     const rec = ptys.get(ptyId)
@@ -638,20 +673,45 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     sessionIndex.removeByPtyId(ptyId)
     pruneTaskState(sessionKey)
     lastFocusedAt.delete(sessionKey)
+    forgetParkState(sessionKey)
     markHibernated(sessionKey)
-    recordPark(sessionKey, Date.now())
+    recordPark(sessionKey, Date.now(), negotiation)
     getWindow()?.webContents.send('pty:hibernated', { sessionKey })
   }
 
+  parkCoordinator?.dispose()
+  parkCoordinator = createParkCoordinator({
+    now: () => Date.now(),
+    snapshot: (sessionKey) => {
+      const ptyId = sessionIndex.getPtyId(sessionKey)
+      const rec = ptyId ? ptys.get(ptyId) : undefined
+      if (!ptyId || !rec) return null
+      return {
+        ptyId,
+        isSelected: sessionKey === selectedSessionKey,
+        lastFocusedAt: lastFocusedAt.get(sessionKey) ?? rec.startedAt,
+        lastActivityAt: rec.lastActivityAt,
+        lastPromptAt: legacyParkFacts.lastPromptAt(sessionKey)
+      }
+    },
+    hibernate: (sessionKey, negotiation) => hibernateSession(sessionKey, negotiation),
+    parkMode: parkModeNow,
+    bounds: getNegotiationBounds,
+    memAvailableMb: readMemAvailableMb,
+    facts: legacyParkFacts
+    // `ask` (park.query) arrives with T456 W2; until then `ask` acts as `facts`.
+  })
+
   /**
-   * Run the policy for one trigger and park whatever it names. Reads the persisted
-   * policy (T127 S4) on every call rather than caching it, so an edit in Settings
-   * takes effect on the very next cap/sweep check — no restart.
+   * Run the policy for one trigger and hand its candidates to the park coordinator (T456),
+   * which may defer a session that is waiting on background work, within the operator's
+   * bounds. Reads the persisted policy (T127 S4) on every call rather than caching it, so an
+   * edit in Settings takes effect on the very next cap/sweep check — no restart. Returns at
+   * once: a `cap` spawn never waits for a park.
    */
-  function runPolicy(trigger: Trigger): string[] {
-    const victims = evaluateFleet(fleetSnapshot(), Date.now(), getPolicy(), trigger)
-    for (const key of victims) hibernateSession(key)
-    return victims
+  function runPolicy(trigger: Trigger): void {
+    if (!parkCoordinator) return
+    runParkPolicy(parkCoordinator, fleetSnapshot(), Date.now(), getPolicy(), trigger)
   }
 
   ipcMain.handle('pty:create', async (_e, opts: CreateOpts): Promise<string> => {
@@ -1056,7 +1116,10 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
         // Prune the dead session's hook state (T13/BUG-1) before dropping the index
         // entry — resolve the key while the reverse lookup still holds it.
         const exitedKey = sessionIndex.getSessionKey(id)
-        if (exitedKey) pruneTaskState(exitedKey)
+        if (exitedKey) {
+          pruneTaskState(exitedKey)
+          forgetParkState(exitedKey)
+        }
         sessionIndex.removeByPtyId(id)
       })
     }
@@ -1085,14 +1148,17 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
 
   /**
    * BUG-69: the ONE way to park a session, used by both the manual "Park now"
-   * action and (indirectly, via `runPolicy`) the automatic sweep/cap. Delegates
-   * to `hibernateSession`, which kills + flags + broadcasts as a single
+   * action and (indirectly, via `runPolicy`) the automatic sweep/cap. T456: it goes
+   * through the park coordinator as cause `manual`, which parks without asking the
+   * session (the operator pointed at it) and runs synchronously into
+   * `hibernateSession`, which kills + flags + broadcasts as a single
    * transaction — no separate flag-only path can leave the flag set without the
    * renderer's terminal actually disposed. An unknown/dead sessionKey is a
    * no-op (`hibernateSession` returns early), not a throw.
    */
   ipcMain.handle('pty:park', (_e, sessionKey: string): void => {
-    hibernateSession(sessionKey)
+    if (parkCoordinator) void parkCoordinator.requestPark(sessionKey, 'manual')
+    else hibernateSession(sessionKey)
   })
 
   ipcMain.on('pty:destroy', (_e, id: string) => {
@@ -1108,7 +1174,10 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     }
     ptys.delete(id)
     const destroyedKey = sessionIndex.getSessionKey(id)
-    if (destroyedKey) pruneTaskState(destroyedKey)
+    if (destroyedKey) {
+      pruneTaskState(destroyedKey)
+      forgetParkState(destroyedKey)
+    }
     sessionIndex.removeByPtyId(id)
   })
 
@@ -1178,6 +1247,8 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
   ipcMain.on('pty:touchFocus', (_e, sessionKey: string) => {
     lastFocusedAt.set(sessionKey, Date.now())
     selectedSessionKey = sessionKey
+    // T456: a person is back — the session's park episode ends (spec §6.1).
+    parkCoordinator?.onFocus(sessionKey)
   })
 
   // Enumerate live PTYs that carry a logical session key, so a freshly-mounted
@@ -1384,6 +1455,10 @@ export interface LivePtyDescriptor {
   isSelected: boolean
   /** The hook FSM's live claim, or `null` when no hook has reported yet. */
   taskState: FleetTaskState
+  /** T363, as the policy last saw it (`fleetSnapshot()`, at most one sweep old). */
+  ownsLiveMission: boolean
+  /** T456: the open park episode the policy honours, or `null`. */
+  episode: ParkEpisodeView | null
 }
 
 /**
@@ -1399,6 +1474,7 @@ export interface LivePtyDescriptor {
  */
 export function livePtyDescriptors(): LivePtyDescriptor[] {
   const states = getTaskStates()
+  const episodes = parkCoordinator?.policyEpisodes() ?? new Map()
   const out: LivePtyDescriptor[] = []
   for (const [id, rec] of ptys) {
     if (!rec.sessionKey) continue
@@ -1411,7 +1487,9 @@ export function livePtyDescriptors(): LivePtyDescriptor[] {
       lastActivityAt: rec.lastActivityAt,
       lastFocusedAt: lastFocusedAt.get(rec.sessionKey) ?? rec.startedAt,
       isSelected: rec.sessionKey === selectedSessionKey,
-      taskState: states.get(rec.sessionKey) ?? null
+      taskState: states.get(rec.sessionKey) ?? null,
+      ownsLiveMission: lastMissionOwners.has(rec.sessionKey),
+      episode: episodes.get(rec.sessionKey) ?? null
     })
   }
   return out
