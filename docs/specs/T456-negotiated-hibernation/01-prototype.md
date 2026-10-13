@@ -1004,54 +1004,182 @@ $ node --experimental-strip-types repro.mts
 explain row 1             : {"sessionKey":"bg-e2e","parkable":true,"idleMs":960000,"reason":"lru","sweepRank":null}
 ```
 
-## P4. The A1 measurement (not run)
+## P4. The W0 spike: the A1 harness and the probe mod (run 2026-10-13)
 
-This script would settle assumption A1: does an idle interactive `claude` with a background task
-emit PTY bytes? It spawns `claude --model haiku` under a pseudo-terminal in an empty scratch folder,
-with a minimal environment (no Harnu tokens, so no companion binding). It asks for one
-`sleep 300` with `run_in_background`, then counts the bytes per 10 s window for 230 s, and kills
-the process and its descendants. Starting it was **refused by this session's permission classifier**
-(it spawns a new agent), and it was not retried. It is the first step of the W0 spike; the A1b
-variant swaps the prompt for a 300 s `ScheduleWakeup`.
+The harness below settles A1, A1b, A2, A7 and A8. A second, tiny mod (P4.2) settles A3, A4 and A8 inside a
+second, isolated Harnu instance. Both ran on **Claude Code 2.1.296** (Linux, kernel 7.0.0, Electron 39.8.10
+for the Harnu instance). The answers, with the raw counts, are in `00-spec.md` §12.1.
+
+Two defects of the first draft of this script (it had not been run) were fixed:
+
+- `--allowedTools` takes a variadic value, so `--allowedTools X PROMPT` swallowed the prompt and the session
+  sat at an empty prompt. The script now passes `--allowedTools=X`.
+- It logged bytes only. A second channel now records each hook the CLI fires (`Stop`, `UserPromptSubmit`,
+  `PermissionRequest`, `SessionStart`, `SessionEnd`) as one JSON line, so a byte count can be lined up
+  with the session's own idea of "turn over, task running".
+
+The user's settings set `remoteControlAtStartup: true`, so every session auto-connects Remote Control
+(`/rc connecting…` in the footer). The harness has `--norc` to switch it off for one run; the runs below say
+which they used.
+
+### P4.1 The harness
 
 ```python
-# Measures PTY bytes emitted by an interactive `claude` that sits idle at its prompt while a
-# background Bash task it started is still running. Usage: python3 -I run.py <claude-bin> <cwd> <log>
-import os, pty, sys, time, select, signal, json, struct, fcntl, termios
-binp, cwd, logp = sys.argv[1], sys.argv[2], sys.argv[3]
-PROMPT = ("Use the Bash tool with run_in_background set to true to run exactly: sleep 300 . "
-          "Do not wait for it, do not check on it. Then reply with the single word: started")
-env = {k: os.environ[k] for k in ("HOME", "PATH", "USER", "LANG") if k in os.environ}
-env["TERM"] = "xterm-256color"
+# W0 harness: spawn an interactive `claude` under a PTY, count PTY bytes per 10 s window, and log the hook
+# bodies it fires. Usage: python3 -I run.py <name> <cwd> <seconds> <prompt>
+#        [--norc] [--perm MODE] [--allow TOOLS] [--http PORT] [--followup SEC:TEXT]...
+import os, pty, sys, time, select, signal, json, struct, fcntl, termios, argparse
+ap = argparse.ArgumentParser()
+ap.add_argument("name"); ap.add_argument("cwd"); ap.add_argument("secs", type=int); ap.add_argument("prompt")
+ap.add_argument("--norc", action="store_true"); ap.add_argument("--http", type=int)
+ap.add_argument("--perm"); ap.add_argument("--allow"); ap.add_argument("--followup", action="append", default=[])
+a = ap.parse_args()
+S = os.path.dirname(os.path.abspath(__file__)); out = f"{S}/{a.name}"; os.makedirs(out, exist_ok=True)
+hook = f"python3 -I {S}/hook.py {out}/hooks.ndjson"        # hook.py appends {t, body} per stdin body
+settings = {"hooks": {ev: [{"hooks": [{"type": "command", "command": hook}]}]
+            for ev in ("Stop", "PermissionRequest", "UserPromptSubmit", "SessionEnd", "SessionStart")}}
+if a.http:   # the same events over an `http` hook, the transport Harnu's hook bridge uses
+    settings = {"hooks": {ev: [{"hooks": [{"type": "http", "url": f"http://127.0.0.1:{a.http}/hook/T/{ev}/_",
+                "timeout": 10}]}] for ev in ("UserPromptSubmit", "Stop", "SessionStart", "SessionEnd")}}
+if a.norc: settings["remoteControlAtStartup"] = False
+env = {k: os.environ[k] for k in ("HOME", "PATH", "USER", "LANG") if k in os.environ}; env["TERM"] = "xterm-256color"
+argv = ["claude", "--model", "haiku", "--settings", json.dumps(settings)]
+if a.perm: argv += ["--permission-mode", a.perm]
+if a.allow: argv += ["--allowedTools=" + a.allow]
+argv += [a.prompt]
 pid, fd = pty.fork()
 if pid == 0:
-    os.chdir(cwd)
-    os.execve(binp, [binp, "--model", "haiku", "--allowedTools", "Bash(sleep *)", PROMPT], env)
+    os.chdir(a.cwd); os.execvpe("claude", argv, env)
 fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
-t0 = time.time(); buf = b""; events = []; trusted = False; idle_from = None
-def rd(timeout):
-    global buf
-    r, _, _ = select.select([fd], [], [], timeout)
-    if not r: return b""
-    try: d = os.read(fd, 65536)
-    except OSError: return b""
-    buf += d; events.append((time.time() - t0, len(d))); return d
-end = t0 + 230
-while time.time() < end:
-    d = rd(0.5)
+t0 = time.time(); buf = b""; events = []; trusted = False
+fu = sorted((int(x.split(":", 1)[0]), x.split(":", 1)[1]) for x in a.followup)
+while time.time() - t0 < a.secs:
+    r, _, _ = select.select([fd], [], [], 0.5)
+    if r:
+        try: d = os.read(fd, 65536)
+        except OSError: break
+        buf += d; events.append((round(time.time() - t0, 2), len(d)))
     low = buf[-4000:].lower()
-    if not trusted and (b"trust" in low and b"folder" in low):
+    if not trusted and b"trust" in low and b"folder" in low:
         time.sleep(1); os.write(fd, b"\r"); trusted = True
-    if idle_from is None and b"started" in buf[-20000:] and b"background" in buf.lower():
-        pass
-# summarise per 10 s window
+    while fu and time.time() - t0 >= fu[0][0]:                  # a typed follow-up prompt
+        _, txt = fu.pop(0); os.write(fd, txt.encode()); time.sleep(0.5); os.write(fd, b"\r")
 wins = {}
 for t, n in events:
     w = int(t // 10) * 10; wins[w] = wins.get(w, 0) + n
-open(logp + ".raw", "wb").write(buf)
-json.dump({"windows": wins, "events": len(events)}, open(logp, "w"), indent=1)
-os.kill(pid, signal.SIGTERM); time.sleep(1)
+open(f"{out}/raw.bin", "wb").write(buf)
+json.dump({"windows": wins, "events": events}, open(f"{out}/events.json", "w"))
+try: os.killpg(os.getpgid(pid), signal.SIGTERM)
+except Exception: pass
+time.sleep(1)
 try: os.kill(pid, signal.SIGKILL)
 except ProcessLookupError: pass
 print(json.dumps(wins))
 ```
+
+The run commands (each in its own scratch folder, `--norc` where stated):
+
+| Run           | Prompt (abridged)                                                        | Flags                                         |
+| ------------- | ------------------------------------------------------------------------ | --------------------------------------------- |
+| `a1-rc`       | Bash `sleep 300`, `run_in_background`, "then reply: started"             | 240 s, `--allow 'Bash(sleep *)'`              |
+| `a1-norc`     | the same                                                                 | 240 s, same, `--norc`                         |
+| `a1-agent`    | Agent, `run_in_background`, subagent runs `sleep 150`                    | 200 s, `--allow Agent --norc`                 |
+| `a1-agent2`   | Agent, `run_in_background`, subagent runs `sleep 130` in the foreground  | 170 s, `--allow Agent --norc`                 |
+| `a1-agent3`   | Agent, `run_in_background`, "finishing early is a failure: `sleep 140`"  | 175 s, `--allow Agent --norc`                 |
+| `a1b-cron`    | `CronCreate` one-shot 5 min away, "then reply: scheduled"                | 235 s, `--allow CronCreate`                   |
+| `a1b-loop`    | typed `/loop … call ScheduleWakeup with delaySeconds 300`                | 215 s, `--norc`, `--followup 10:/loop …`      |
+| `a2`          | Bash `sleep 25`, `run_in_background`                                     | 120 s, `--allow 'Bash(sleep *)' --norc`       |
+| `a2-edge`     | background `bash -c 'sleep 12; exit 3'` and `sleep 600`; then `TaskStop` | 110 s, `--followup 45:… TaskStop`, `--norc`   |
+| `a2-extkill`  | background `sleep 601`, `kill -9` from outside at about 25 s             | 90 s, `--allow 'Bash(sleep *)' --norc`        |
+| `a7-default`  | Bash `touch /tmp/…` (no allow rule)                                      | 75 s, `--perm default`                        |
+| `a7-auto`     | the same                                                                 | 75 s, `--perm auto`                           |
+| `a7-auto-net` | Bash `curl -s -o /tmp/… https://example.com`                             | 90 s, `--perm auto --norc`                    |
+| `a8-http`     | argv prompt, a typed prompt at 14 s, a typed `/loop … 60 s` at 28 s      | 215 s, `--norc --http 9444` (local HTTP sink) |
+
+`hook.py` is five lines: it reads stdin and appends `{"t": time.time(), "body": <json>}` to the log path
+in `argv[1]`. The HTTP sink for `a8-http` is a 10-line `http.server` that appends the same record for every
+POST. A stray `git push --force` run was blocked by the operator's own Sentinel hook before it reached the
+CLI; it was dropped and not retried, and `a7-auto-net` replaced it.
+
+### P4.2 The probe mod (A3, A4, A8)
+
+A hooks module of 40 lines, loaded with `--plugin-dir`, written to a scratch folder (never to the staged
+companion). `claude plugin validate` passes with warnings (no `author`; a hook without `.catch`). It writes one
+file per event to `/tmp/w0-probe-out/` (`$.fs.write` only overwrites, so each event gets its own file):
+
+```ts
+import type { Register } from 'claude-code'
+
+const OUT = '/tmp/w0-probe-out'
+let n = 0
+async function log($: any, kind: string, body: unknown) {
+  n += 1
+  const stamp = Date.now()
+  await $.fs.write(
+    `${OUT}/${stamp}-${String(n).padStart(3, '0')}-${kind}.json`,
+    JSON.stringify({ t: stamp, kind, body })
+  )
+}
+
+export const register: Register = (on) => {
+  on('session.start', async ($, e, next) => {
+    await log($, 'session.start', { surfaces: await $.session.surfaces() })
+    return next(e)
+  })
+  on('session.end', async ($, e, next) => {
+    await log($, 'session.end', { reason: e.reason, sessionId: e.sessionId })
+    return next(e)
+  })
+  on('session.attach', async ($, e, next) => {
+    await log($, 'session.attach', { e, surfaces: await $.session.surfaces() })
+    return next(e)
+  })
+  on('session.detach', async ($, e, next) => {
+    await log($, 'session.detach', { e, surfaces: await $.session.surfaces() })
+    return next(e)
+  })
+  on('classic.UserPromptSubmit', async ($, e, next) => {
+    await log($, 'UserPromptSubmit', {
+      source: (e as any).source ?? null,
+      keys: Object.keys(e),
+      surfaces: await $.session.surfaces()
+    })
+    return next(e)
+  })
+  on('classic.PermissionRequest', async ($, e, next) => {
+    await log($, 'PermissionRequest', { tool: (e as any).tool_name })
+    return next(e)
+  })
+  on('classic.Stop', async ($, e, next) => {
+    await log($, 'Stop', { bg: (e as any).background_tasks, crons: (e as any).session_crons })
+    return next(e)
+  })
+}
+```
+
+How the isolated instance was driven (recipe: `docs/dev/live-verify-second-instance.md`; the built renderer served
+on `:5174`, `--user-data-dir=/tmp/hv1`, `--remote-debugging-port=9333`, started with `electron .`):
+
+```js
+// spawn through Harnu's own pty:create path, with the probe mod added through the Claude Boot extraArgs
+await window.api.ptyCreate({
+  cwd,
+  cols: 120,
+  rows: 40,
+  kind: 'claude-new',
+  sessionKey: 'w0-a3',
+  claudeSessionId: crypto.randomUUID(),
+  bootOverride: { extraArgs: '--plugin-dir <probe-mod>' }
+})
+await window.api.ptyWrite(id, 'a prompt') // then, 600 ms later, ptyWrite(id, '\r'): a typed prompt
+await window.api.ptyPark('w0-a3') // pty:park → hibernateSession → rec.pty.kill()
+```
+
+The instance was torn down by PID. **Side effect to know about (observed, not fully traced):** with the
+user's own Harnu running, the isolated instance wrote its `statusLine` command
+(`sh "/tmp/hv1/statusline/statusline-writer.sh"`) into the real `~/.claude/settings.json`, and on exit
+the file came back with no `statusLine` key at all (`settings.json.backup` held the in-between copy).
+`mergeStatusLine` replaces any `…/harnu/statusline/…` writer as "ours" (`statusline-install.ts`), and the
+exit cleanup removes exactly the instance's own command. So a production Harnu's `statusLine` entry
+is lost until it restarts. That the production entry was there before is an inference. The recipe page
+`docs/dev/live-verify-second-instance.md` does not mention it.

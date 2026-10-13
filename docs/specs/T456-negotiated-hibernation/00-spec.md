@@ -186,8 +186,13 @@ an interactive `claude` idle at its prompt emits no PTY bytes. If it redrew a st
 `lastActivityAt` would stay fresh and those sessions would never reach the policy. Rows 2 and 3 rest
 on **A1b**, the same claim for a pending wakeup with nothing running. A1b is close to the measured
 case ("an IDLE `claude` emits ZERO bytes … 130 s of a parked prompt", `pty.ts:359-366`), but that
-spike had no wakeup scheduled. Neither is measured: the spawn that would measure them was refused in
-this session (§12).
+spike had no wakeup scheduled.
+
+**W0 measured both** (§12.1, 2026-10-13, Claude Code 2.1.296). Rows 1, 2 and 3 hold: an idle session
+with a background shell or a pending wakeup emitted no PTY bytes for 196 to 229 s. **Row 4 does not
+hold as written.** While a background subagent runs, the footer redraws about once a second (about
+100 B/s), so `lastActivityAt` stays fresh and that session is never cold. Once the subagent has
+reported back and only shells remain, the PTY is silent again.
 
 ## 4. What the session knows that Harnu does not (C-1)
 
@@ -753,17 +758,140 @@ P4W4, when built, plugs in as the coordinator's second stage with no change to W
 
 ## 12. Assumptions (the W0 spike)
 
-| #   | Assumption                                                                                                                | Why it matters                                                                                                                                                                          | How W0 settles it                                                                                                                                                                                                                                                                       |
-| --- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A1  | An interactive `claude` idle at its prompt with a background task or subagent running emits no PTY bytes                  | §3.6 rows 1 and 4 reach the policy only if it holds. If it fails, the background-task case was already safe and T456's value narrows to wakeups, remote surfaces and the `working` hour | Spawn `claude --model haiku` under a PTY in a scratch folder, prompt it to `sleep 300` with `run_in_background`, and count bytes per 10 s for 4 min. **Tried for this spec: the session's permission classifier refused to spawn a live agent.** The script is in `01-prototype.md` §P4 |
-| A1b | The same, for a session with only a pending wakeup (`ScheduleWakeup`, `CronCreate`)                                       | §3.6 rows 2 and 3                                                                                                                                                                       | Same harness, with `ScheduleWakeup` 300 s and nothing else                                                                                                                                                                                                                              |
-| A2  | A finished background task always produces a main turn, and so a fresh `classic.Stop`                                     | If not, `idle` over-reports busy until the next turn. The bound still holds                                                                                                             | Same harness: let the `sleep` finish and check for a Stop with an empty list                                                                                                                                                                                                            |
-| A3  | Harnu's bare `pty.kill()` (SIGHUP) reaches each mod's `session.end` (reason `other`; `ExitReason`, TYPES 4809)            | §7.1 relies on it for `$.store` flushes                                                                                                                                                 | A test mod writes a marker from `session.end`; park it in the isolated instance                                                                                                                                                                                                         |
-| A4  | `$.session.surfaces()` is `['terminal']` in a Harnu PTY, and gains `mobile` while a Remote Control client is attached     | A false `remote-surface` would defer every session                                                                                                                                      | Read it from the isolated instance, before and after attaching a client                                                                                                                                                                                                                 |
-| A5  | `os.freemem()` on macOS and Windows is comparable to Linux `MemAvailable`                                                 | The pressure override is off there until it is settled                                                                                                                                  | Compare `os.freemem()` with `vm_stat` / the Windows "Available" counter                                                                                                                                                                                                                 |
-| A7  | `classic.PermissionRequest` fires only when a dialog is put to a person, not when auto mode's classifier settles the call | A false `permission` reason would defer a session nobody is answering                                                                                                                   | Run a tool that asks under auto mode and under default mode in the harness; count `PermissionRequest`                                                                                                                                                                                   |
-| A8  | This CLI fills `UserPromptSubmit.source` ("may omit it while the field rolls out", TYPES 14665)                           | An absent `source` never resets an episode; only focus does                                                                                                                             | Log the hook bridge's `UserPromptSubmit` bodies in the isolated instance for a typed prompt and a `/loop` wakeup                                                                                                                                                                        |
-| A6  | The poll-delivered round trip fits in 5 s under load                                                                      | A slower answer reads as `silent` and today's park                                                                                                                                      | Count `silent` outcomes in the W4 live run. P2W1's LV run held 355 polls over 5 sessions in 30 min (commit `eb92cdf`)                                                                                                                                                                   |
+| #   | Assumption                                                                                                                | Why it matters                                                                                                                                                                          | How W0 settles it                                                                                                                                                                                                            |
+| --- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A1  | An interactive `claude` idle at its prompt with a background task or subagent running emits no PTY bytes                  | §3.6 rows 1 and 4 reach the policy only if it holds. If it fails, the background-task case was already safe and T456's value narrows to wakeups, remote surfaces and the `working` hour | Spawn `claude --model haiku` under a PTY in a scratch folder, prompt it to `sleep 300` with `run_in_background`, and count bytes per 10 s for 4 min. **Run in W0: results in §12.1.** The script is in `01-prototype.md` §P4 |
+| A1b | The same, for a session with only a pending wakeup (`ScheduleWakeup`, `CronCreate`)                                       | §3.6 rows 2 and 3                                                                                                                                                                       | Same harness, with `ScheduleWakeup` 300 s and nothing else                                                                                                                                                                   |
+| A2  | A finished background task always produces a main turn, and so a fresh `classic.Stop`                                     | If not, `idle` over-reports busy until the next turn. The bound still holds                                                                                                             | Same harness: let the `sleep` finish and check for a Stop with an empty list                                                                                                                                                 |
+| A3  | Harnu's bare `pty.kill()` (SIGHUP) reaches each mod's `session.end` (reason `other`; `ExitReason`, TYPES 4809)            | §7.1 relies on it for `$.store` flushes                                                                                                                                                 | A test mod writes a marker from `session.end`; park it in the isolated instance                                                                                                                                              |
+| A4  | `$.session.surfaces()` is `['terminal']` in a Harnu PTY, and gains `mobile` while a Remote Control client is attached     | A false `remote-surface` would defer every session                                                                                                                                      | Read it from the isolated instance, before and after attaching a client                                                                                                                                                      |
+| A5  | `os.freemem()` on macOS and Windows is comparable to Linux `MemAvailable`                                                 | The pressure override is off there until it is settled                                                                                                                                  | Compare `os.freemem()` with `vm_stat` / the Windows "Available" counter                                                                                                                                                      |
+| A7  | `classic.PermissionRequest` fires only when a dialog is put to a person, not when auto mode's classifier settles the call | A false `permission` reason would defer a session nobody is answering                                                                                                                   | Run a tool that asks under auto mode and under default mode in the harness; count `PermissionRequest`                                                                                                                        |
+| A8  | This CLI fills `UserPromptSubmit.source` ("may omit it while the field rolls out", TYPES 14665)                           | An absent `source` never resets an episode; only focus does                                                                                                                             | Log the hook bridge's `UserPromptSubmit` bodies in the isolated instance for a typed prompt and a `/loop` wakeup                                                                                                             |
+| A6  | The poll-delivered round trip fits in 5 s under load                                                                      | A slower answer reads as `silent` and today's park                                                                                                                                      | Count `silent` outcomes in the W4 live run. P2W1's LV run held 355 polls over 5 sessions in 30 min (commit `eb92cdf`)                                                                                                        |
+
+### 12.1 W0 results (2026-10-13, Claude Code 2.1.296)
+
+Run on Linux (kernel 7.0.0) with the harness and the probe mod in `01-prototype.md` §P4, which lists every
+run's command. `claude --model haiku`, in `auto` permission mode (the user's default) unless stated. The
+user's settings turn Remote Control on at startup, so a run says `--norc` when it switched that off. Byte
+counts are PTY output bytes per 10 s window (`0` is seconds 0 to 10); a window that is not listed had no
+bytes. `+N s` is seconds since the run's first hook. The scratch files (raw PTY bytes, hook logs) were not kept
+in the repo.
+
+| #   | Answer                                                                | One line                                                                                                          |
+| --- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| A1  | **Holds for a shell. Fails for a running subagent.**                  | A background shell: 0 bytes for 222 to 229 s. A running subagent: about 100 B/s, once a second, until it reports  |
+| A1b | **Holds**                                                             | A pending `CronCreate` or `ScheduleWakeup`: 0 bytes for 196 to 221 s. A wakeup shows up in `session_crons`        |
+| A2  | **Holds in the 5 endings tried**                                      | Each ended in a notification prompt, then a fresh Stop with the right list. Not shown for "always"                |
+| A3  | **Holds**                                                             | `ptyPark` reached the mod's `session.end` (`reason: "other"`) 1.06 s later                                        |
+| A4  | **Half answered**                                                     | `["terminal"]` before, and still `["terminal"]` with a claude.ai web page open on the session. A phone not tested |
+| A5  | **Linux: holds, exactly. macOS and Windows: not runnable here, open** | `os.freemem()` equals `MemAvailable` to the kB                                                                    |
+| A7  | **Holds for the cases run**                                           | `PermissionRequest`: 1 in `default` mode, 0 in `auto` (including a network download)                              |
+| A8  | **No: `source` is never filled**                                      | No `source` in any `UserPromptSubmit` body, on three transports, for typed, `/loop`, wakeup and system prompts    |
+
+**A1 (PTY bytes with background work).**
+
+- A background shell, Remote Control on (`a1-rc`, 240 s): `{0: 10817, 10: 92}`. The Stop at +8.2 s listed
+  `sleep 300` as `running`. The last byte came at 10.71 s, then **229.3 s of silence** to the end.
+- The same with `--norc` (`a1-norc`): `{0: 12220, 10: 6955}`, two `sleep 300` running (the model started a second),
+  Stop at +15.2 s, last byte 17.54 s, **222.5 s of silence**.
+- A background subagent (`a1-agent`, `--norc`): `{0: 10657, 10: 1260, 20: 4311, 30: 6611, 160: 4331, 170: 4097,
+190: 71}`. The Stop at +6.9 s listed the subagent `running`. From +8 s to +26 s every second carried 97 to 282 B:
+  a 43 B and a 58 B write, a footer timer redrawing (`6`, `7`, …). The subagent's task-notification arrived at
+  +27.9 s, two shells were left running, and the PTY was then **silent for 132.0 s** (32.21 s to 164.23 s) until
+  one of them ended. The 71 B at 190 s is the harness's own SIGTERM.
+- Two more subagent runs show the same shape. `a1-agent2`: the Stop at +7.8 s listed the subagent, 97 to 222 B
+  every second from 9 s to 15 s, the agent finished at about +16 s and the ticks stopped. `a1-agent3`: the Stop at
+  +8.6 s listed the subagent, 101 to 280 B every second from 10 s to 35 s, the notification came at +36.5 s, and
+  with two shells left the PTY was **silent for 117.1 s** (41.7 s to 158.8 s).
+- **The limit of this evidence:** the model-run subagents all ended within 9 to 28 s (they move their own
+  `sleep` to a background shell and report). So "the redraw lasts as long as a subagent runs" is the pattern of
+  three runs, with the ticks stopping at the moment each agent reported. It is not a measured 15 minutes.
+- A baseline for reference: an idle session with no background work emits 92 B at about 10 s and nothing after
+  (`a1`, a first run whose prompt was not submitted, `{0: 1715, 10: 92}`).
+
+**A1b (pending wakeups).**
+
+- `CronCreate` one-shot, 5 min out (`a1b-cron`, 235 s): `{0: 10101, 10: 4241}`. The Stop at +13.0 s listed
+  `session_crons: [{schedule: "08 20 13 10 *", recurring: false}]`. Last byte 13.74 s, **221.3 s of silence**.
+- A typed `/loop … ScheduleWakeup delaySeconds 300` (`a1b-loop`, `--norc`, 215 s): `{0: 3449, 10: 12259}`. The Stop
+  at +18.2 s listed `session_crons: [{schedule: "12 20 * * *", recurring: false, prompt: "/loop …"}]`. Last byte
+  18.96 s, **196.0 s of silence**.
+- **Extra:** a `ScheduleWakeup` is a one-shot `session_crons` entry, with the `/loop` text as its prompt. So the
+  `session_crons` read in §4 covers `/loop` and `ScheduleWakeup`, not only `CronCreate`.
+
+**A2 (a finished background task yields a fresh main Stop).** Five endings, each followed by a Stop whose
+`background_tasks` was exact:
+
+| Run          | Ending                                       | Sequence                                                                                              |
+| ------------ | -------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `a2`         | `sleep 25` ends by itself                    | Stop +8.0 s (1 running), notification prompt +31.6 s, **Stop +34.0 s with `[]`**                      |
+| `a2-edge`    | `bash -c 'sleep 12; exit 3'` fails           | Stop +11.3 s (2 running), notification +18.4 s, **Stop +20.7 s with only the other task**             |
+| `a2-edge`    | the other task stopped with `TaskStop`       | prompt +45.2 s, **Stop +55.8 s with `[]`** (this one is inside a turn)                                |
+| `a2-extkill` | `kill -9` of the `sleep 601` from outside    | Stop +8.1 s, notification +24.3 s, **Stop +27.1 s with `[]`**                                         |
+| `a1-agent`   | a subagent's shells end, subagent hands back | notification +27.9 s, Stop +30.0 s (2 shells), hand-back prompt +168.4 s, **Stop +169.6 s with `[]`** |
+
+The finished task always arrives as a `UserPromptSubmit` whose prompt is a `<task-notification>` (or an
+`<agent-message>` for a subagent), which starts a turn and ends in the Stop. Not tried: a monitor, a workflow or
+an MCP task ending, and a session that is held at a permission dialog when its task ends. So A2 holds for
+shells and subagents. "Always" is not shown.
+
+**A3 (a park reaches `session.end`).** In the isolated instance (`--user-data-dir=/tmp/hv1`, the real `pty:create`
+path, `kind: 'claude-new'`, the probe mod through the Claude Boot `extraArgs`), `ptyPark('w0-a3')` was called at
+`1791932410.102` and the mod's `session.end` marker was written at `1791932411.158`: **1.06 s later**, `reason:
+"other"`, the session's own id. A second parked session (`w0-a4`) wrote its marker the same way. No process was
+left behind (`ps` after each). The marker took 1.06 s because the engine runs the `SessionEnd` settings hooks
+first, and the whole end chain shares a 1.5 s bound (`SessionEndInput`, 2.1.296 TYPES 11053-11055). §7.1's "no Harnu
+mechanism needed" holds for a small `$.store` flush, and a flush that needs much more than 0.4 s after that
+point risks being cut.
+
+**A4 (`$.session.surfaces()` in a Harnu PTY).**
+
+- **Before:** `["terminal"]`, read at `session.start` of three sessions Harnu spawned in the isolated instance,
+  and at each of their `UserPromptSubmit` events. Those sessions had Remote Control connected (`/rc` shown in
+  the footer, no client attached).
+- **After:** a session with `/remote-control` active, its `https://claude.ai/code/session_…` URL opened in Chrome
+  (the page showed "Connected via Remote Control"), and a prompt typed in the PTY while the page was open: still
+  `["terminal"]`, no `session.attach` event, and no `session.detach` on the park. A plain web page open on the
+  session is **not** a remote surface.
+- **Not answered:** whether a client that draws (the phone app, the desktop app) joins the list as `mobile`. No
+  phone was available. A prompt typed into the web page did not reach the session (the page showed "No messages
+  yet" and the PTY saw no `UserPromptSubmit`), so an interacting web client was not exercised either. The
+  positive half of A4 stays open. The session's own claude.ai page stays in the user's account as an idle
+  session titled "Surfaces".
+
+**A5 (`os.freemem()` against `MemAvailable`).** Linux, in Harnu's own runtime (Electron 39.8.10, Node 22.22.1,
+libuv 1.51.0): `os.freemem()` = 18 084 876 kB and `/proc/meminfo` `MemAvailable` = 18 084 876 kB, read together;
+`MemFree` was 1 685 320 kB, so `freemem()` is not `MemFree`. Plain Node 22.22.2 gave 20 656 MB against 20 656 MB on
+three reads. macOS and Windows are **not runnable on this machine** and stay open: the pressure override remains
+off there until someone runs the `vm_stat` and "Available" comparison.
+
+**A7 (`PermissionRequest` under auto and default mode).** `a7-default` (`--perm default`, a Bash `touch` with no
+allow rule): `PermissionRequest` fired once, `tool_name: "Bash"`, `permission_mode: "default"`, and the command did
+not run while the dialog was open. `a7-auto` (`--perm auto`, the same command): **0** `PermissionRequest`, the command ran.
+`a7-auto-net` (`--perm auto`, `curl -s -o … https://example.com`): **0**, the file was written. Not observed: a call
+the auto classifier blocks. A force-push meant for that was stopped by the operator's own Sentinel hook before it
+reached the CLI, and was not retried.
+
+**A8 (`UserPromptSubmit.source`).** Never present on 2.1.296. The body's keys are `session_id`, `transcript_path`,
+`cwd`, `scratchpad_dir`, `prompt_id`, `permission_mode`, `agent_id`, `agent_type`, `effort`, `hook_event_name`,
+`prompt`, `session_title`. Checked on three transports: the mod's `classic.UserPromptSubmit` (Harnu-spawned session:
+a typed prompt, a typed `/loop`, two `/loop` wakeups, all with no `source`); a command settings hook (every run
+above); and an `http` settings hook, the bridge's own transport (`a8-http`: four bodies, the argv prompt, a typed
+prompt, a typed `/loop` and its wakeup at +131.7 s, none with `source`). System prompts (a task notification, a
+subagent hand-back) lack it too. A wakeup arrives with the same text as the typed `/loop`, so content does not
+tell them apart either. `SessionStart.source` is filled (`startup`).
+
+**What W0 changes in the design.** Two answers move it, and neither breaks it. First, A8 is "no": on this CLI the
+second closing edge of §6.1 (`source: 'user'`) never fires, so only the focus push closes an episode. The spec
+already counts an absent `source` as "does not reset", so the shipped behaviour is the designed one. But that
+branch of AC-T456-11 can only be tested with a faked payload, and a prompt typed from a phone into an unfocused
+session will not reset the episode. Second, A1 fails for a running background subagent: that session is not
+cold (§3.6 row 4 does not occur), so T456 neither helps nor harms it. The value of T456 on the background-work side
+narrows to shells, monitors and wakeups (§3.6 rows 1 to 3), and to a session whose subagent has already
+reported, which is silent again. The rest holds as written: A1b, A2, A3 and A7 are confirmed for the cases run,
+A5 on Linux, and A4's idle-viewer case does not flip `remote-surface`, so Q7 keeps its default.
 
 ## 13. Open questions (C-7)
 
@@ -785,7 +913,7 @@ P4W4, when built, plugs in as the coordinator's second stage with no change to W
 | Risk                                                                                        | Sev    | Mitigation                                                                                |
 | ------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------- |
 | A recurring cron keeps a session asking to stay and RAM climbs                              | Medium | a wakeup never resets the episode, so `maxDeferMs` holds (§6.1, tested); the memory floor |
-| `idle` stale after a background task ends without a turn (A2)                               | Low    | the bounds; W0 measures it                                                                |
+| `idle` stale after a background task ends without a turn (A2)                               | Low    | the bounds; W0 measured it (§12.1)                                                        |
 | The cap stays over `maxLive` while every candidate declines                                 | Medium | the same stance as T119 §3.5; the floor reclaims under real pressure                      |
 | A future mod change makes `park.query`'s handler write something                            | Medium | a contract test that `runParkQuery` makes no `$` call but `session.surfaces`              |
 | A session that keeps writing PTY bytes is never cold, so never asked and never floored      | Medium | pre-existing; not opened by T456; Q10                                                     |
