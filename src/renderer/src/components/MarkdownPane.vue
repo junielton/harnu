@@ -700,7 +700,13 @@ function onToggleMaximize(): void {
       :aria-label="$t('markdownPane.editMode')"
       @keydown="onEditorKeydown"
     ></textarea>
-    <div v-else class="scrollable min-h-0 flex-1 overflow-y-auto" style="padding: 14px 16px">
+    <!-- `select-text` opts the file body back into selection: `body` sets
+         `user-select: none` app-wide, which left rendered/plain files uncopyable. -->
+    <div
+      v-else
+      class="scrollable min-h-0 flex-1 select-text overflow-y-auto"
+      style="padding: 14px 16px"
+    >
       <div v-if="state.status === 'loading'" class="text-text-3" style="font-size: 12px">
         {{ $t('markdownPane.loading') }}
       </div>

@@ -52,6 +52,9 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **A symlinked worktree no longer keeps subfolder ghost rows.** Rows are matched under both the real and the as-given spelling, and the folder list is read once per cleanup instead of once per row.
 - **Cleaning many leftovers at once costs one scan, not one per item.** Volumes, transcript folders and stack leftovers in one request share a single fresh look.
 - **A worktree removed from the sidebar now leaves its Docker leftovers visible too.** Its compose stack's containers and network are offered under "Left by removed worktrees" in Cleanup, as for one Cleanup removed.
+- **You can select and copy text in files opened in the side pane.** Markdown, plain-text
+  files and lessons opened in a helper pane now let you highlight any part of the file and
+  copy it with the usual shortcut; before, selection was blocked across the whole pane.
 
 ## 2026-10-09
 

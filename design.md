@@ -3734,7 +3734,9 @@ animation (it's removed the instant Reload or a save resolves the conflict).
 
 **Body (prose).** A container with vertical scroll (`.scrollable`, `overflow-y-auto`),
 `padding: 14px 16px`, below the header (the host carries `padding-top: 24px` like the
-other panes). The sanitized HTML is injected via `v-html` into a `.md-prose` wrapper;
+other panes). The body is **`user-select: text`** (`select-text`) for every file
+kind — prose, plain text, lessons — overriding the app-wide `user-select: none` on
+`body`, so the reader can highlight and copy any part of the file. The sanitized HTML is injected via `v-html` into a `.md-prose` wrapper;
 the styles below are **CSS scoped with `:deep()`** (`v-html` doesn't get the scope
 attribute), mapped **only to §9 tokens** — no raw color:
 
