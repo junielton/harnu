@@ -34,8 +34,8 @@ interface Host {
   rig: Rig
   /** Commands the host hands over on the next poll. */
   pending: unknown[]
-  /** What `$.session.surfaces()` reads beneath the plugin. */
-  surfaces: { value: Surface[] | 'throw' }
+  /** What `$.session.surfaces()` reads beneath the plugin, and how often it was read. */
+  surfaces: { value: Surface[] | 'throw'; reads: number }
 }
 
 function parkHost(on: any, opts: { enable?: string[]; surfaces?: Surface[] } = {}): Host {
@@ -50,8 +50,9 @@ function parkHost(on: any, opts: { enable?: string[]; surfaces?: Surface[] } = {
     return defaultScript(route, body, n)
   }
   const rig = installRig(on, { script })
-  const surfaces: Host['surfaces'] = { value: opts.surfaces ?? ['terminal'] }
+  const surfaces: Host['surfaces'] = { value: opts.surfaces ?? ['terminal'], reads: 0 }
   on('session.surfaces', async () => {
+    surfaces.reads++
     if (surfaces.value === 'throw') throw new Error('surfaces unavailable')
     return { value: surfaces.value }
   })
@@ -280,7 +281,7 @@ test('fleet.idle lives in $.state, so a reload keeps the answer', async ($, on) 
     }
   })
   on('session.surfaces', async () => ({ value: ['terminal'] as Surface[] }))
-  const h: Host = { rig, pending, surfaces: { value: ['terminal'] } }
+  const h: Host = { rig, pending, surfaces: { value: ['terminal'], reads: 0 } }
   await boot($, h)
   expect((await probe(h)).busy).toEqual([{ kind: 'background-task', count: 1, types: ['monitor'] }])
 })
@@ -301,15 +302,10 @@ test('at most four task type labels leave the mod', async ($, on) => {
 
 test('without act.park enabled the mod answers FEATURE_DISABLED and reads nothing', async ($, on) => {
   const h = parkHost(on, { enable: [...FLEET_FEATURES, 'act.channel'], surfaces: ['mobile'] })
-  let read = 0
-  on('session.surfaces', async () => {
-    read++
-    return { value: ['mobile'] as Surface[] }
-  })
   await boot($, h)
   const r = await query(h)
   expect(r).toEqual({ cmd: r.cmd, ok: false, code: 'FEATURE_DISABLED' })
-  expect(read).toBe(0)
+  expect(h.surfaces.reads).toBe(0)
 })
 
 test('a late park.query is refused CMD_EXPIRED and never answered', async ($, on) => {
@@ -330,18 +326,16 @@ test('a throwing surfaces read is CMD_FAILED, which the host reads as silent', a
   expect(r.data).toBeUndefined()
 })
 
-test('a malformed Stop fails toward less busy and the event passes', async ($, on) => {
+test('a throwing Stop hook passes the event and misses the fact: less busy (spec §9.2)', async ($, on) => {
   const h = parkHost(on)
   await boot($, h)
-  await $.classic.Stop(stop([{ id: 'b1', type: 'shell', status: 'running', description: 'x' }]))
   // A `null` entry makes the sensor step throw: the hook reports it and returns next(e).
-  const out = await $.classic.Stop({
-    ...base,
-    stop_hook_active: false,
-    background_tasks: [null as never]
-  })
-  expect(out).toEqual({})
-  const a = await probe(h)
-  expect(a.busy.length).toBeLessThanOrEqual(1)
+  const malformed = { ...base, stop_hook_active: false, background_tasks: [null as never] }
+  expect(await $.classic.Stop(malformed)).toEqual({})
+  expect(await probe(h)).toEqual({ busy: [] })
   expect(h.rig.events().some((e) => e.t === 'mod.error')).toBe(true)
+  // After a good Stop, a throwing one changes nothing: the last good facts stand until replaced.
+  await $.classic.Stop(stop([{ id: 'b1', type: 'shell', status: 'running', description: 'x' }]))
+  expect(await $.classic.Stop(malformed)).toEqual({})
+  expect((await probe(h)).busy).toEqual([{ kind: 'background-task', count: 1, types: ['shell'] }])
 })

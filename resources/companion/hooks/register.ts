@@ -52,6 +52,7 @@ import {
   type ChannelState
 } from './lib/command-core'
 import { toAdmitted, type Admitted } from './lib/admitted'
+import { answerParkQuery } from './lib/park-query'
 import { createRing } from './lib/ring'
 import { measurePayload, readPayload } from './lib/usage-sensor'
 import { endpointUrl, parseEndpoint, type Endpoint } from './lib/rendezvous-parse'
@@ -391,9 +392,17 @@ function persistFleet($: Dollar): void {
   void Promise.resolve($.state.set(FLEET, fleet)).catch(noop)
 }
 
-/** True while at least one of the three sensor features is enabled. */
+/**
+ * True while at least one of the three sensor features is enabled, or `act.park` (T456), whose
+ * answer is built from the same kept facts.
+ */
 function senseOn(): boolean {
-  return enabled('sense.turn') || enabled('sense.attention') || enabled('sense.subagent')
+  return (
+    enabled('sense.turn') ||
+    enabled('sense.attention') ||
+    enabled('sense.subagent') ||
+    enabled('act.park')
+  )
 }
 
 /** Runs one step of the core and emits what it returns. A throw is the caller's to catch (MOD-2). */
@@ -995,6 +1004,17 @@ function runToast($: Dollar, c: Command<'ui.toast'>): Handled {
   return okResult()
 }
 
+/**
+ * T456 `park.query`: may Harnu park this session now? The handler makes ONE `$` call, the read of
+ * the surfaces at ask time, and answers from the fleet sensor's kept facts; it writes nothing
+ * (a contract test pins it, spec §14). The executor around it owns the channel state as for every
+ * command. A throw is mapped by the executor to `CMD_FAILED`, which the host reads as `silent`.
+ */
+async function runParkQuery($: Dollar): Promise<HandlerResult> {
+  const surfaces = await $.session.surfaces()
+  return okResult(answerParkQuery(fleet, surfaces))
+}
+
 function runStatus($: Dollar, c: Command<'ui.status'>): Handled {
   const text = c.args.text
   if (text !== null && (typeof text !== 'string' || text.length > UI_TEXT_MAX)) {
@@ -1023,6 +1043,8 @@ function runHandler($: Dollar, c: Command): Handled {
       return runToast($, c as Command<'ui.toast'>)
     case 'ui.status':
       return runStatus($, c as Command<'ui.status'>)
+    case 'park.query':
+      return runParkQuery($)
     default:
       return { ok: false, code: 'CMD_UNSUPPORTED' }
   }
@@ -1294,7 +1316,9 @@ export const register: Register = (on) => {
 
   hook('classic.Stop', () => {
     on('classic.Stop', async ($, e, next) => {
-      await classic($, 'classic.Stop', e, () => feed($, { k: 'stop', tasks: e.background_tasks }))
+      await classic($, 'classic.Stop', e, () =>
+        feed($, { k: 'stop', tasks: e.background_tasks, crons: e.session_crons })
+      )
       return next(e)
     })
   })
@@ -1367,6 +1391,19 @@ export const register: Register = (on) => {
   }
   if (all('classic.SubagentStart', 'classic.SubagentStop')) features.push('sense.subagent')
   if (all('session.measure')) features.push('sense.usage')
+  // T456: `park.query` answers from the turn and the last Stop (the dialog and subagent facts are
+  // shared hooks; without them the answer is less busy, never wrong the other way).
+  if (
+    all(
+      'session.start',
+      'session.end',
+      'classic.SessionStart',
+      'turn.start',
+      'turn.complete',
+      'classic.Stop'
+    )
+  )
+    features.push('act.park')
   declared = features
 
   // sense.mods:begin (the CLI suite of P4W1 strips exactly this block to price the hook, AC-P4W1-16)
