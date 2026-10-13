@@ -461,6 +461,8 @@ describe('mods-audit-core', () => {
       'gate'
     ])
     expect(chips('validate-tool-call.json')).toEqual(['tool-calls'])
+    // a real report for a mod that only hooks `session.append`
+    expect(chips('validate-transcript.json')).toEqual(['transcript'])
     expect(chips('validate-diff.json')).toEqual([
       'process',
       'files',
