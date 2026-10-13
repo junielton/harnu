@@ -1,0 +1,41 @@
+{
+  "success": true,
+  "strict": false,
+  "target": "/plugins/transcript/.claude-plugin/plugin.json",
+  "manifest": {
+    "file": "/plugins/transcript/.claude-plugin/plugin.json",
+    "type": "plugin",
+    "errors": [],
+    "warnings": [
+      {
+        "path": "author",
+        "message": "No author information provided. Consider adding author details for plugin attribution",
+        "code": null
+      }
+    ],
+    "notes": [],
+    "gatingHooks": []
+  },
+  "contents": [
+    {
+      "file": "/plugins/transcript/hooks/hooks.json",
+      "type": "hooks",
+      "errors": [],
+      "warnings": [],
+      "notes": [
+        "./register.ts hooks: session.append",
+        "./register.ts gating hook without .catch: session.append",
+        "./register.ts calls: nothing on $"
+      ],
+      "gatingHooks": [
+        {
+          "module": "./register.ts",
+          "pattern": "session.append",
+          "hook": "session.append",
+          "hasCatch": false
+        }
+      ]
+    }
+  ],
+  "advice": []
+}

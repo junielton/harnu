@@ -24,6 +24,7 @@ export type CapabilityId =
   | 'network'
   | 'files'
   | 'prompts'
+  | 'transcript'
   | 'system-prompt'
   | 'tool-calls'
   | 'permissions'
@@ -42,6 +43,7 @@ export const CAPABILITY_ORDER: readonly CapabilityId[] = [
   'network',
   'files',
   'prompts',
+  'transcript',
   'system-prompt',
   'tool-calls',
   'permissions',
@@ -377,6 +379,9 @@ export function deriveCapabilities(facts: CapabilityFacts): CapabilityId[] {
     network: calls('http.fetch'),
     files: facts.calls.some((c) => c.op.startsWith('fs.')),
     prompts: hooks('prompt.submit', 'turn.start', 'classic.UserPromptSubmit'),
+    // One chip for reading AND rewriting the conversation: a static read cannot tell the two
+    // apart (both are `on('session.append')`). Shared by every mod that touches the transcript.
+    transcript: hooks('session.append', 'session.compact') || calls('session.messages'),
     'system-prompt': hooks('prompt.compose', 'prompt.section', 'prompt.context'),
     'tool-calls': hooks('tool.call', 'classic.PreToolUse'),
     permissions: hooks('tool.check', 'classic.PermissionRequest'),
@@ -685,6 +690,23 @@ export function emptyCache(): CacheFile {
   return { v: 1, entries: {} }
 }
 
+/**
+ * The chips are derived from the stored hooks, calls and env, so an entry written before a
+ * rule existed would keep the old set until its hash or the CLI version changed. Derive them
+ * again on every read; an entry whose facts are not readable keeps what it stored.
+ */
+function withCurrentCapabilities(a: ModAnalysis): ModAnalysis {
+  const { hooks, calls, env } = a
+  const readable =
+    Array.isArray(hooks) &&
+    hooks.every((h) => !!h && typeof h.event === 'string') &&
+    Array.isArray(calls) &&
+    calls.every((c) => !!c && typeof c.op === 'string') &&
+    !!env &&
+    Array.isArray(env.reads)
+  return readable ? { ...a, capabilities: deriveCapabilities({ hooks, calls, env }) } : a
+}
+
 /** A corrupt or foreign file is an empty cache; a bad entry is dropped, not the file. */
 export function parseCacheFile(text: string): CacheFile {
   let raw: unknown
@@ -710,7 +732,7 @@ export function parseCacheFile(text: string): CacheFile {
       typeof a.hash === 'string' &&
       typeof a.analysedAt === 'number'
     ) {
-      entries[k] = { rowKey: e.rowKey, analysis: a }
+      entries[k] = { rowKey: e.rowKey, analysis: withCurrentCapabilities(a) }
     }
   }
   return { v: 1, entries }

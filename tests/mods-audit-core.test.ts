@@ -390,6 +390,7 @@ describe('mods-audit-core', () => {
         hook('tool.call'),
         hook('prompt.compose'),
         hook('prompt.submit'),
+        hook('session.append'),
         hook('x.y', true)
       ],
       [
@@ -403,7 +404,50 @@ describe('mods-audit-core', () => {
       { reads: ['HOME'], writes: [] }
     )
     expect(everything).toEqual([...CAPABILITY_ORDER])
-    expect(CAPABILITY_ORDER).toHaveLength(15)
+    expect(CAPABILITY_ORDER).toHaveLength(16)
+  })
+
+  it('shows one transcript chip for a hook on session.append or session.compact, or a call to session.messages', () => {
+    const noEnv = { reads: [], writes: [] }
+    const hook = (event: string): { file: string; event: string; opaque: boolean } => ({
+      file: './r.ts',
+      event,
+      opaque: false
+    })
+    const call = (op: string): { file: string; op: string } => ({ file: './r.ts', op })
+    const cap = (hooks: ReturnType<typeof hook>[], calls: ReturnType<typeof call>[]): string[] =>
+      deriveCapabilities({ hooks, calls, env: noEnv })
+
+    // AC-1: the three triggers
+    expect(cap([hook('session.append')], [])).toEqual(['transcript'])
+    expect(cap([hook('session.compact')], [])).toEqual(['transcript'])
+    expect(cap([], [call('session.messages')])).toEqual(['transcript'])
+    // a glob that covers them counts too
+    expect(cap([hook('session.*')], [])).toEqual(['transcript'])
+
+    // one chip however many triggers a mod has
+    expect(
+      cap([hook('session.append'), hook('session.compact')], [call('session.messages')])
+    ).toEqual(['transcript'])
+
+    // AC-2: nothing else under session.* adds it, and neither does a mod that hooks none of them
+    for (const e of ['session.start', 'session.snapshot', 'session.end', 'session.rebound']) {
+      expect(cap([hook(e)], []), e).toEqual([])
+    }
+    for (const op of ['session.id', 'session.title', 'session.cwd']) {
+      expect(cap([], [call(op)]), op).toEqual([])
+    }
+    expect(cap([hook('turn.complete')], [call('ui.status')])).toEqual([])
+    expect(cap([], [])).toEqual([])
+    // session.send is the existing `submit` chip, not this one
+    expect(cap([], [call('session.send')])).toEqual(['submit'])
+  })
+
+  it('places the transcript chip in the fixed order, beside the prompt chips', () => {
+    expect(CAPABILITY_ORDER).toContain('transcript')
+    const order = CAPABILITY_ORDER as readonly string[]
+    expect(order.indexOf('transcript')).toBeGreaterThan(order.indexOf('prompts'))
+    expect(order.indexOf('transcript')).toBeLessThan(order.indexOf('permissions'))
   })
 
   it('derives chips for real reports', () => {
@@ -417,10 +461,14 @@ describe('mods-audit-core', () => {
       'gate'
     ])
     expect(chips('validate-tool-call.json')).toEqual(['tool-calls'])
+    // a real report for a mod that only hooks `session.append`
+    expect(chips('validate-transcript.json')).toEqual(['transcript'])
     expect(chips('validate-diff.json')).toEqual([
       'process',
       'files',
       'prompts',
+      // this report calls `session.messages`
+      'transcript',
       'tool-calls',
       'env',
       'terminal',
@@ -577,6 +625,55 @@ describe('mods-audit-core', () => {
       JSON.stringify({ v: 1, entries: { k: { rowKey: 'r', analysis: analysis() } } })
     )
     expect(Object.keys(ok.entries)).toEqual(['k'])
+  })
+
+  it('re-derives chips from the stored facts when a cache file is read', () => {
+    // an entry written before the `transcript` rule: the old chip set, same hooks and calls
+    const stale = (over: Partial<ModAnalysis>): { rowKey: string; analysis: ModAnalysis } => ({
+      rowKey: 'r',
+      analysis: analysis({ capabilities: ['prompts'], ...over })
+    })
+    const text = JSON.stringify({
+      v: 1,
+      entries: {
+        hook: stale({
+          hooks: [
+            { file: './r.ts', event: 'prompt.submit', opaque: false },
+            { file: './r.ts', event: 'session.append', opaque: false }
+          ]
+        }),
+        call: stale({ calls: [{ file: './r.ts', op: 'session.messages' }] }),
+        // nothing the new rule covers: the stored chips are unchanged
+        plain: stale({ hooks: [{ file: './r.ts', event: 'prompt.submit', opaque: false }] }),
+        // a mod that lost nothing and gained nothing, but whose stored chips were wrong
+        wrong: stale({ capabilities: ['gate'], hooks: [], calls: [] }),
+        // no report was ever produced: no facts, no chips
+        failed: stale({ status: 'failed', hasModule: false, capabilities: [] })
+      }
+    })
+    const read = parseCacheFile(text).entries
+    expect(read['hook']!.analysis.capabilities).toEqual(['prompts', 'transcript'])
+    expect(read['call']!.analysis.capabilities).toEqual(['transcript'])
+    expect(read['plain']!.analysis.capabilities).toEqual(['prompts'])
+    expect(read['wrong']!.analysis.capabilities).toEqual([])
+    expect(read['failed']!.analysis.capabilities).toEqual([])
+    // everything else in the stored analysis is carried through as written
+    expect(read['hook']!.analysis.hash).toBe('h1')
+    expect(read['hook']!.analysis.analysedAt).toBe(1000)
+  })
+
+  it('keeps an old cache entry whose facts are missing or malformed', () => {
+    const text = JSON.stringify({
+      v: 1,
+      entries: {
+        k: {
+          rowKey: 'r',
+          analysis: { ...analysis({ capabilities: ['prompts'] }), hooks: 'nope', calls: null }
+        }
+      }
+    })
+    const read = parseCacheFile(text).entries['k']!.analysis
+    expect(read.capabilities).toEqual(['prompts'])
   })
 
   it('evicts the oldest cache entries first', () => {

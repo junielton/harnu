@@ -32,23 +32,24 @@ Each row is one mod: its name, where it came from (**installed · user**, **skil
 folder**, **--plugin-dir**, or **Harnu mod**), its version, and a row of chips. Every
 chip says what the source **can** do:
 
-| Chip                            | Meaning                                                           |
-| ------------------------------- | ----------------------------------------------------------------- |
-| can run processes               | It calls a process API.                                           |
-| can use the network             | It calls the HTTP fetch API.                                      |
-| can read and write files        | It calls a file API.                                              |
-| can read every prompt           | It hooks prompt submission.                                       |
-| can change the system prompt    | It hooks how the system prompt is composed.                       |
-| can rewrite or block tool calls | It hooks tool calls.                                              |
-| can decide permissions          | It hooks permission checks.                                       |
-| can submit prompts              | It can send a prompt or run a command on its own.                 |
-| can call the model              | It can ask the model for a completion.                            |
-| can call MCP tools              | It can call a tool on a connected MCP server.                     |
-| can read other mods' calls      | It hooks a low-level operation (files, network, environment, …).  |
-| can refuse other mods           | It hooks mod registration.                                        |
-| can read environment variables  | It declares reading at least one environment variable.            |
-| draws in the terminal           | It draws something in the terminal UI.                            |
-| has matchers Harnu cannot read  | One of its hooks filters on a value that is not a plain constant. |
+| Chip                                 | Meaning                                                                                                                                            |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| can run processes                    | It calls a process API.                                                                                                                            |
+| can use the network                  | It calls the HTTP fetch API.                                                                                                                       |
+| can read and write files             | It calls a file API.                                                                                                                               |
+| can read every prompt                | It hooks prompt submission.                                                                                                                        |
+| can read or rewrite the conversation | It hooks the conversation as it is written or compacted, or reads its messages. Harnu cannot tell reading from rewriting, so the chip covers both. |
+| can change the system prompt         | It hooks how the system prompt is composed.                                                                                                        |
+| can rewrite or block tool calls      | It hooks tool calls.                                                                                                                               |
+| can decide permissions               | It hooks permission checks.                                                                                                                        |
+| can submit prompts                   | It can send a prompt or run a command on its own.                                                                                                  |
+| can call the model                   | It can ask the model for a completion.                                                                                                             |
+| can call MCP tools                   | It can call a tool on a connected MCP server.                                                                                                      |
+| can read other mods' calls           | It hooks a low-level operation (files, network, environment, …).                                                                                   |
+| can refuse other mods                | It hooks mod registration.                                                                                                                         |
+| can read environment variables       | It declares reading at least one environment variable.                                                                                             |
+| draws in the terminal                | It draws something in the terminal UI.                                                                                                             |
+| has matchers Harnu cannot read       | One of its hooks filters on a value that is not a plain constant.                                                                                  |
 
 Click a row to see the details: each hook with its matcher, each call, the environment
 and state names it reads and writes, anything the parser did not recognise (shown
