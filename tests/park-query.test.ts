@@ -286,7 +286,32 @@ describe('parkQueryAnswer: the mod’s answer is untrusted (SEC-3b)', () => {
         'scheduled-wakeup',
         'remote-surface'
       ],
-      retryAfterMs: 120_000
+      retryAfterMs: 120_000,
+      counts: {
+        turn: 1,
+        permission: 1,
+        'background-task': 2,
+        'background-subagent': 1,
+        'scheduled-wakeup': 1,
+        'remote-surface': 1
+      }
+    })
+  })
+
+  it('counts are display-only, untrusted and clamped to 1..256', () => {
+    const a = parkQueryAnswer(
+      resulted({
+        busy: [
+          { kind: 'background-task', count: 10_000, types: ['shell'] },
+          { kind: 'permission', count: -3 },
+          { kind: 'scheduled-wakeup', count: 'many', recurring: 0 }
+        ]
+      })
+    )
+    expect(a).toEqual({
+      kind: 'busy',
+      reasons: ['background-task', 'permission', 'scheduled-wakeup'],
+      counts: { 'background-task': 256, permission: 1, 'scheduled-wakeup': 1 }
     })
   })
 
@@ -325,7 +350,7 @@ describe('parkQueryAnswer: the mod’s answer is untrusted (SEC-3b)', () => {
       expect(
         parkQueryAnswer(resulted({ busy: [{ kind: 'turn' }], retryAfterMs })),
         String(retryAfterMs)
-      ).toEqual({ kind: 'busy', reasons: ['turn'] })
+      ).toEqual({ kind: 'busy', reasons: ['turn'], counts: { turn: 1 } })
     }
   })
 })

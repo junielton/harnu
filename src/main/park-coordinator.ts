@@ -109,7 +109,7 @@ export function registerParkQueryPolicies(): void {
   })
   registerFeaturePolicy(
     'act.park',
-    () => prefsKey<ParkMode>('park') === 'ask' && prefsKey<ChannelMode>('channel') === 'active'
+    () => parkModeNow() === 'ask' && prefsKey<ChannelMode>('channel') === 'active'
   )
 }
 registerParkQueryPolicies()
@@ -138,15 +138,32 @@ export function parkQueryAnswer(outcome: CommandOutcome | null | undefined): Ans
   const data = outcome.data
   if (!isObject(data) || !Array.isArray(data.busy) || data.busy.length > BUSY_MAX) return silent
   const reasons: string[] = []
+  const counts: Record<string, number> = {}
   for (const r of data.busy) {
     if (!isObject(r) || typeof r.kind !== 'string') return silent
-    if (BUSY_KINDS.has(r.kind) && !reasons.includes(r.kind)) reasons.push(r.kind)
+    if (!BUSY_KINDS.has(r.kind) || reasons.includes(r.kind)) continue
+    reasons.push(r.kind)
+    counts[r.kind] = reasonCount(r)
   }
   if (reasons.length === 0) return { kind: 'free' }
   const hint = data.retryAfterMs
   return typeof hint === 'number' && Number.isFinite(hint) && hint >= 0
-    ? { kind: 'busy', reasons, retryAfterMs: hint }
-    : { kind: 'busy', reasons }
+    ? { kind: 'busy', reasons, retryAfterMs: hint, counts }
+    : { kind: 'busy', reasons, counts }
+}
+
+/** The host clamps a count it did not compute (contract §9 counters, untrusted): 1 to 256. */
+const COUNT_MAX = 256
+
+/**
+ * How many of one reason, for display: `count` where the reason carries one, the number of
+ * remote surfaces, and 1 for a turn. Clamped; a missing or junk count reads 1, never 0, since the
+ * reason itself was given.
+ */
+function reasonCount(r: Record<string, unknown>): number {
+  const raw = r.kind === 'remote-surface' && Array.isArray(r.surfaces) ? r.surfaces.length : r.count
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return 1
+  return Math.min(COUNT_MAX, Math.max(1, Math.trunc(raw)))
 }
 
 type SendParkQuery = (req: EnqueueRequest<'park.query'>) => EnqueueResult
