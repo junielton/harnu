@@ -140,7 +140,14 @@ describe('BUG-186 App.vue wiring', () => {
     const layout = useLayoutStore()
     helpers.addShellHelper('/repo/a', '/repo/a')
     layout.setHelperCollapsed(true)
-    expect(layout.helperCollapsed).toBe(true) // nothing in the stores re-opens it by itself
-    expect(helpers.paneRevealTick).toBeGreaterThanOrEqual(0)
+    const tick = helpers.paneRevealTick
+    // Toggling/collapsing touches only layout — the reveal tick (App's sole
+    // un-collapse trigger) stays put, so the collapse sticks until the next add.
+    layout.toggleHelper()
+    layout.toggleHelper()
+    expect(helpers.paneRevealTick).toBe(tick)
+    expect(layout.helperCollapsed).toBe(true)
+    helpers.addShellHelper('/repo/a', '/repo/a')
+    expect(helpers.paneRevealTick).toBe(tick + 1)
   })
 })

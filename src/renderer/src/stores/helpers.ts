@@ -354,14 +354,16 @@ export const useHelpersStore = defineStore('helpers', () => {
   }
 
   /**
-   * Bumped every time an agent-origin pane lands in the folder the operator is
-   * CURRENTLY looking at (BUG-29). `App.vue`'s reveal watcher normally clears
-   * `helperCollapsed` on the `hasHelpersForCurrentWorktree` false→true edge,
-   * but that edge never fires when the stack already has panes — a collapsed
-   * panel with existing panes would otherwise stay collapsed forever with no
-   * signal at all. App.vue watches this tick instead for that one case.
+   * Bumped every time a pane is added to — or re-focused by a dedup hit in —
+   * the folder the operator is CURRENTLY looking at, whatever its origin
+   * (BUG-29 agent panes, BUG-186 operator panes). `App.vue`'s reveal watcher
+   * normally clears `helperCollapsed` on the `hasHelpersForCurrentWorktree`
+   * false→true edge, but that edge never fires when the stack already has
+   * panes — a collapsed panel would otherwise swallow the new pane with no
+   * signal at all. App.vue watches this tick for that case. Never bumped by
+   * hydration, folder switches or terminal output.
    */
-  const agentPaneRevealTick = ref(0)
+  const paneRevealTick = ref(0)
 
   /**
    * Id of the explorer pane whose search field should take focus, or `null`.
@@ -511,18 +513,19 @@ export const useHelpersStore = defineStore('helpers', () => {
     })
   }
 
-  /** The one call site `addHelper` uses for `origin: 'agent'`. When the target
-   * folder is the one already visible there's nothing to badge or alert about,
-   * but the panel may still be collapsed (BUG-29) — bump the reveal tick
-   * instead so App.vue can un-collapse it. Off-screen folders keep the
-   * existing badge + coalesced-alert path. */
+  /** The one call site `addHelper` uses for `origin: 'agent'` panes that land
+   * OFF-screen: badge the folder and queue the coalesced alert. */
   function notifyAgentPaneAdded(worktreePath: string): void {
-    if (worktreePath === currentWorktreePath.value) {
-      agentPaneRevealTick.value++
-      return
-    }
     bumpUnseenAgentPanes(worktreePath)
     queuePaneAlert(worktreePath)
+  }
+
+  /** BUG-186: any pane add / dedup re-focus in the folder already on screen asks
+   * App.vue to un-collapse the helper panel. Off-screen folders never reveal. */
+  function revealIfVisible(worktreePath: string): boolean {
+    if (worktreePath !== currentWorktreePath.value) return false
+    paneRevealTick.value++
+    return true
   }
 
   // ── Hydration ─────────────────────────────────────────────────────────
@@ -651,7 +654,10 @@ export const useHelpersStore = defineStore('helpers', () => {
       const key = entry.dedupKey(pane)
       if (key !== undefined) {
         const dup = existing?.panes.find((p) => p.type === pane.type && entry.dedupKey!(p) === key)
-        if (dup) return dup.id
+        if (dup) {
+          revealIfVisible(worktreePath)
+          return dup.id
+        }
       }
     }
 
@@ -675,7 +681,11 @@ export const useHelpersStore = defineStore('helpers', () => {
     // means nothing NEW landed) from the agent path bumps the unseen counter
     // + queues the coalesced OS alert, but only when the target folder isn't
     // the one the operator is currently looking at.
-    if (opts?.origin === 'agent') notifyAgentPaneAdded(worktreePath)
+    // The visible folder reveals the panel (any origin, BUG-186); an off-screen
+    // agent pane takes the badge + alert path instead.
+    if (!revealIfVisible(worktreePath) && opts?.origin === 'agent') {
+      notifyAgentPaneAdded(worktreePath)
+    }
     return pane.id
   }
 
@@ -1174,7 +1184,7 @@ export const useHelpersStore = defineStore('helpers', () => {
     maximizePane,
     unseenAgentPanes,
     unseenAgentPaneCount,
-    agentPaneRevealTick,
+    paneRevealTick,
     explorerFocusRequest,
     consumeExplorerFocus,
     explorerRevealRequest,

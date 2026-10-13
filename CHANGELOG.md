@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-13
+
+### Fixed
+
+- **A collapsed helper panel now opens when you add a pane.** Collapsing the right panel and then choosing Split → new terminal (or opening a session in a new tab, the file explorer, a markdown viewer or a canvas) used to add the pane out of sight when the folder already had panes. Any pane opened in the folder you are looking at now reveals the panel, including re-opening one that was already there. Panes opened in a folder you aren't viewing still don't pop the panel open, and collapsing it by hand sticks until the next pane is opened.
+
 ## 2026-10-12
 
 ### Added
