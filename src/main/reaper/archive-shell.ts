@@ -201,6 +201,12 @@ export const defaultReflogIo: ReflogIo = {
  */
 export function createReflogArchiver(opts: { io?: ReflogIo; limit?: number } = {}): {
   archive(repoPath: string, refPrefix: string, worktreePath: string): Promise<string[]>
+  /**
+   * The same count and the same refusal as `archive`, read-only: throws `reflog-limit` when the
+   * worktree holds more tips than one removal keeps, and writes nothing otherwise. A dry run uses it
+   * so a removal that the archive step would stop is refused before anything is prepared.
+   */
+  check(repoPath: string, worktreePath: string): Promise<void>
 } {
   const io = opts.io ?? defaultReflogIo
   const limit = opts.limit ?? REFLOG_REF_LIMIT
@@ -244,25 +250,34 @@ export function createReflogArchiver(opts: { io?: ReflogIo; limit?: number } = {
     return unreachable.filter((sha) => !covered.has(sha))
   }
 
-  return {
-    async archive(repoPath, refPrefix, worktreePath) {
-      const log = await io.run(worktreePath, ['reflog', 'show', '--format=%H', 'HEAD'])
-      const entries = [
-        ...new Set(
-          log
-            .split('\n')
-            .map((l) => l.trim())
-            .filter(Boolean)
-        )
-      ]
-      if (entries.length === 0) return []
+  /** The tips this worktree's removal would have to keep; throws when there are more than the limit. */
+  const tipsToKeep = async (repoPath: string, worktreePath: string): Promise<string[]> => {
+    const log = await io.run(worktreePath, ['reflog', 'show', '--format=%H', 'HEAD'])
+    const entries = [
+      ...new Set(
+        log
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
+      )
+    ]
+    if (entries.length === 0) return []
 
-      const tips = await unreachableTips(repoPath, entries)
-      if (tips.length > limit) {
-        throw new Error(
-          `reflog-limit: this worktree's history holds ${tips.length} separate lines of commits that no branch, tag or ref reaches (one tip each), more than the ${limit} tips Harnu keeps for one removal. Nothing was removed. Keep the ones you want with git branch <name> <sha>, or remove the folder yourself.`
-        )
-      }
+    const tips = await unreachableTips(repoPath, entries)
+    if (tips.length > limit) {
+      throw new Error(
+        `reflog-limit: this worktree's history holds ${tips.length} separate lines of commits that no branch, tag or ref reaches (one tip each), more than the ${limit} tips Harnu keeps for one removal. Nothing was removed. Keep the ones you want with git branch <name> <sha>, or remove the folder yourself.`
+      )
+    }
+    return tips
+  }
+
+  return {
+    async check(repoPath, worktreePath) {
+      await tipsToKeep(repoPath, worktreePath)
+    },
+    async archive(repoPath, refPrefix, worktreePath) {
+      const tips = await tipsToKeep(repoPath, worktreePath)
       if (tips.length === 0) return []
       const refs = tips.map((sha) => `${refPrefix}/${sha.slice(0, 12)}`)
       await io.runIn(
@@ -283,3 +298,7 @@ export const archiveReflog = (
   refPrefix: string,
   worktreePath: string
 ): Promise<string[]> => reflogArchiver.archive(repoPath, refPrefix, worktreePath)
+
+/** See {@link createReflogArchiver}: the read-only count a dry run asks for. */
+export const checkReflog = (repoPath: string, worktreePath: string): Promise<void> =>
+  reflogArchiver.check(repoPath, worktreePath)

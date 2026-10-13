@@ -117,6 +117,12 @@ export function createDryReprobe(
     // guided action has parked a session it cannot un-park.
     try {
       await planPreserve(b, deps, at)
+      // A detached worktree also keeps the commits only its reflog reaches, and refuses past a limit.
+      // Count them now, read-only: the real run would stop at the archive step, and a guided action
+      // would have parked the session for nothing.
+      if (b.item.kind === 'detached-worktree' && b.item.path) {
+        await deps.executor.checkReflog?.(b.item.repoPath, b.item.path)
+      }
     } catch (err) {
       return { ok: false, reason: `archive-failed: ${messageOf(err)}` }
     }

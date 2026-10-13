@@ -70,6 +70,12 @@ export interface ExecutorDeps {
    * one place such a commit lives, and it goes with the folder.
    */
   archiveReflog(repoPath: string, refPrefix: string, worktreePath: string): Promise<string[]>
+  /**
+   * Read-only twin of `archiveReflog`: throws the same `reflog-limit` refusal when the worktree holds
+   * more reflog-only tips than one removal keeps, and writes nothing. Optional: a dry run without it
+   * judges as before.
+   */
+  checkReflog?(repoPath: string, worktreePath: string): Promise<void>
   detachSidebar(path: string): Promise<void>
   /**
    * Unregisters exactly this worktree from git: removes its own admin directory, found by the

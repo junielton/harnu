@@ -32,7 +32,7 @@ import type { ReapItem } from './reaper-core'
 import { cleanItem, sweep, type CleanResult, type ExecutorDeps } from './executor-core'
 import { appendTombstone, readJournal, type Tombstone } from './journal'
 import { canUnregister, removeWorktreeAdmin } from './worktree-admin-shell'
-import { archiveReflog, archiveTip, archiveWip } from './archive-shell'
+import { archiveReflog, archiveTip, archiveWip, checkReflog } from './archive-shell'
 import { defaultPrefs, normalizePrefs, readPrefs, writePrefs, type ReaperPrefs } from './prefs'
 import {
   dehydrateItem,
@@ -118,6 +118,7 @@ export function buildDeps(getWindow: () => BrowserWindow | null): ExecutorDeps {
     archiveTip,
     archiveWip,
     archiveReflog,
+    checkReflog,
     canUnregister: (repo, wt, opts) => canUnregister(repo, wt, git, opts),
     removeWorktreeAdmin: (repo, wt) => removeWorktreeAdmin(repo, wt, git),
     detachSidebar: async (p) => {
