@@ -40,14 +40,40 @@ vi.mock('../src/main/pty', () => {
         ptyId: 'p2',
         sessionKey: 'asked',
         ownsLiveMission: false,
-        episode: { firstDeclineAt: h.now, declines: 3, until: h.now + 9 * 60_000, reasons: ['x'] }
+        episode: {
+          firstDeclineAt: h.now,
+          declines: 3,
+          until: h.now + 9 * 60_000,
+          reasons: ['background-task'],
+          counts: { 'background-task': 2 }
+        }
       },
       { ...base, ptyId: 'p3', sessionKey: 'plain', ownsLiveMission: false, episode: null }
     ]
   }
 })
 
-vi.mock('../src/main/hibernation', () => ({ hibernatedKeys: () => new Set<string>() }))
+vi.mock('../src/main/hibernation', () => ({
+  hibernatedKeys: () => new Set<string>(['parked-neg', 'parked-plain', 'parked-woken']),
+  parkHistory: () => [
+    // An older, already-woken park of the same session must not be read as its current one.
+    {
+      sessionKey: 'parked-woken',
+      parkedAt: 1,
+      wokenAt: 2,
+      wakeGesture: 'select',
+      negotiation: { declines: 9, reasons: ['turn'], why: 'limit' }
+    },
+    {
+      sessionKey: 'parked-neg',
+      parkedAt: 3,
+      wokenAt: null,
+      wakeGesture: null,
+      negotiation: { declines: 8, reasons: ['background-task'], why: 'limit' }
+    },
+    { sessionKey: 'parked-plain', parkedAt: 4, wokenAt: null, wakeGesture: null }
+  ]
+}))
 
 type Mod = typeof import('../src/main/monitor/sampler')
 let mod: Mod
@@ -77,5 +103,56 @@ describe('sampler — the LiveSession it explains', () => {
     expect(reason('owner')).toBe('mission-owner')
     expect(reason('asked')).toBe('declined')
     expect(reason('plain')).toBe('hard-idle')
+  })
+})
+
+describe('sampler — T456 W3 payload', () => {
+  async function sample(): Promise<{
+    sessions: Array<Record<string, unknown> & { sessionKey: string }>
+  }> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mod.registerMonitorHandlers(getWindow as any)
+    await h.ipcHandlers.get('monitor:start')?.()
+    return send.mock.calls.find(([c]) => c === 'monitor:sample')![1]
+  }
+
+  it('hands a declined row what the chip needs: count, max, reasons, counts, wait', async () => {
+    const { sessions } = await sample()
+    const asked = sessions.find((s) => s.sessionKey === 'asked')!
+    expect(asked.declined).toEqual({
+      declines: 3,
+      max: 8,
+      reasons: ['background-task'],
+      counts: { 'background-task': 2 },
+      retryInMs: expect.any(Number)
+    })
+    const retry = (asked.declined as { retryInMs: number }).retryInMs
+    expect(retry).toBeGreaterThan(8 * 60_000)
+    expect(retry).toBeLessThanOrEqual(9 * 60_000)
+  })
+
+  it('a row that is not declining carries no `declined`', async () => {
+    const { sessions } = await sample()
+    for (const key of ['owner', 'plain']) {
+      expect(sessions.find((s) => s.sessionKey === key)!.declined ?? null).toBeNull()
+    }
+  })
+
+  it('a parked row carries the open ledger entry’s negotiation, never an older woken one', async () => {
+    const { sessions } = await sample()
+    const byKey = (k: string) => sessions.find((s) => s.sessionKey === k)!
+    expect(byKey('parked-neg').negotiation).toEqual({
+      declines: 8,
+      reasons: ['background-task'],
+      why: 'limit'
+    })
+    expect(byKey('parked-plain').negotiation ?? null).toBeNull()
+    expect(byKey('parked-woken').negotiation ?? null).toBeNull()
+  })
+
+  it('a declining session produces no toast, notification or sound — only the monitor sample (§6.5)', async () => {
+    await sample()
+    const channels = new Set(send.mock.calls.map(([c]) => c as string))
+    expect([...channels].every((c) => c.startsWith('monitor:'))).toBe(true)
   })
 })
