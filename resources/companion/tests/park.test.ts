@@ -223,6 +223,27 @@ test('an attached phone is busy, read at ask time', async ($, on) => {
 
 // ---- what the port adds ----------------------------------------------------------------------
 
+test('an ask verdict alone is not a dialog put to a person (A7: the classifier settles it)', async ($, on) => {
+  const h = parkHost(on)
+  await boot($, h)
+  h.rig.verdict.value = 'ask'
+  await $.tool.check({ tool: 'Bash', input: {}, tool_use_id: 'u7' })
+  await h.rig.clock.settle()
+  expect((h.rig.state.get('fleet') as any).open).toHaveLength(1) // the sensor recorded it
+  expect((await probe(h)).busy).toEqual([])
+  // The dialog that follows is the person's: now it counts, until the tool settles.
+  await $.classic.PermissionRequest({ ...base, tool_name: 'Bash', tool_input: {} })
+  expect((await probe(h)).busy).toEqual([{ kind: 'permission', count: 1 }])
+  await $.classic.PostToolUse({
+    ...base,
+    tool_name: 'Bash',
+    tool_input: {},
+    tool_response: {},
+    tool_use_id: 'u7'
+  })
+  expect((await probe(h)).busy).toEqual([])
+})
+
 test('the last Stop outlives the end of its turn (fleet.idle)', async ($, on) => {
   const h = parkHost(on)
   await boot($, h)
