@@ -144,10 +144,18 @@ describe('the `park` key', () => {
     expect(out.park).toBe('off')
   })
 
-  it('reads `facts` when the CLI is above the tested ceiling, whatever is stored (ARB-7b)', async () => {
+  it('reads `facts` when the CLI is above the tested ceiling and `ask` is stored (ARB-7b)', async () => {
     const { settings, prefs } = await load()
     settings.setNegotiationSettings({ park: 'ask' })
     prefs.setCompanionCliGate('above')
     expect(settings.getNegotiationSettings().park).toBe('facts')
+  })
+
+  it('the cap only lowers: a stored `off` stays `off` above the ceiling, so the switch can work', async () => {
+    const { settings, prefs } = await load()
+    prefs.setCompanionCliGate('above')
+    expect(settings.setNegotiationSettings({ park: 'off' }).park).toBe('off')
+    expect(settings.setNegotiationSettings({ park: 'facts' }).park).toBe('facts')
+    expect(settings.setNegotiationSettings({ park: 'ask' }).park).toBe('facts')
   })
 })
