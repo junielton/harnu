@@ -20,6 +20,7 @@ import { promisify } from 'node:util'
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { detachedArchiveKey, newestReusableStamp } from './archive-core'
 
 const runFile = promisify(execFile)
 
@@ -82,6 +83,34 @@ function siblingStamp(): string {
     .toISOString()
     .replace(/\.\d{3}Z$/, '')
     .replace(/[-:T]/g, '')
+}
+
+/**
+ * The stamp of the newest detached archive of this folder and commit that a retried removal should
+ * write into (see `newestReusableStamp`); null when there is none or git cannot say.
+ */
+export async function findDetachedArchiveAt(
+  repoPath: string,
+  worktreePath: string,
+  headSha: string,
+  now: number
+): Promise<number | null> {
+  const key = detachedArchiveKey(worktreePath, headSha)
+  try {
+    const out = await git(repoPath, [
+      'for-each-ref',
+      '--format=%(refname) %(objectname)',
+      `refs/archive/detached/*/${key}/tip`
+    ])
+    const tips = out
+      .split('\n')
+      .map((l) => l.trim().split(' '))
+      .filter((f) => f.length === 2)
+      .map(([ref, sha]) => ({ ref: ref!, sha: sha! }))
+    return newestReusableStamp(tips, key, now)
+  } catch {
+    return null
+  }
 }
 
 /** An all-zero object name: as the old value of `update-ref`, "this ref must not exist yet". */

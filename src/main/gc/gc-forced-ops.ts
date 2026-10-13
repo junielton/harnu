@@ -21,7 +21,12 @@
 import type { WorktreeBundle } from './bundle-core'
 import { createGcOps, type GcShellDeps } from './gc-shell'
 import type { GcOps } from './pipeline-core'
-import { planArchive, type ArchivePlan, type ArchiveRefPlan } from '../reaper/archive-core'
+import {
+  archiveAtFor,
+  planArchive,
+  type ArchivePlan,
+  type ArchiveRefPlan
+} from '../reaper/archive-core'
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
@@ -47,7 +52,11 @@ async function planPreserve(
   deps: GcShellDeps,
   at: number
 ): Promise<{ plan: ArchivePlan; tip: ArchiveRefPlan; wip: ArchiveRefPlan; sha: string }> {
-  const plan = planArchive(b.item, at)
+  // A retried removal writes into the archive its earlier attempt made (same folder, same commit).
+  const plan = planArchive(
+    b.item,
+    await archiveAtFor(b.item, at, deps.executor.findDetachedArchiveAt)
+  )
   // A folder that would be removed with nothing preserving it is never removed.
   if (!plan.tip || !plan.wip) throw new Error('nothing would preserve this worktree')
   const sha = await deps.executor.resolveSha(b.item.repoPath, plan.tip.rev!)
