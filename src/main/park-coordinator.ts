@@ -32,7 +32,7 @@ import {
 } from './park-negotiation-core'
 import { parkCandidates, type LiveSession, type Policy, type Trigger } from './fleet-policy'
 import type { ParkNegotiation } from './hibernation'
-import { prefsKey, registerPrefsKey } from './companion/companion-prefs'
+import { getCompanionPrefs, prefsKey, registerPrefsKey } from './companion/companion-prefs'
 
 export type { ParkNegotiation } from './hibernation'
 
@@ -61,8 +61,15 @@ export function registerParkPrefsKey(): void {
 }
 registerParkPrefsKey()
 
+/**
+ * The effective mode. `prefsKey` returns the observe cap (`facts`) above the tested CLI ceiling
+ * whatever the file holds, which would make an operator's `off` unreachable there; the cap exists
+ * to LOWER a mode, never to raise one, so a stored `off` stays `off` (T456 W3).
+ */
 export function parkModeNow(): ParkMode {
-  return prefsKey<ParkMode>('park')
+  const capped = prefsKey<ParkMode>('park')
+  const stored = getCompanionPrefs().keys['park']
+  return stored === 'off' ? 'off' : capped
 }
 
 // ---- legacy facts, kept from the hook bridge's request handler (spec §5.5) ------------------
