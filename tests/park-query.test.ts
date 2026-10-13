@@ -40,6 +40,7 @@ import {
   createParkCoordinator,
   createParkQuery,
   parkQueryAnswer,
+  parkModeNow,
   registerParkPrefsKey,
   registerParkQueryPolicies,
   type ParkCoordinator,
@@ -253,6 +254,17 @@ describe('the feature act.park: key `park` = ask AND key `channel` = active (ARB
     setPrefsKey('park', 'facts')
     expect(enable()).toEqual(['act.channel'])
     setPrefsKey('park', 'off')
+    expect(enable()).toEqual(['act.channel'])
+  })
+
+  it('above the ceiling a stored off stays off; the cap only lowers (W1 parkModeNow)', () => {
+    setPrefsKey('channel', 'active')
+    setPrefsKey('park', 'off')
+    setCompanionCliGate('above')
+    expect(parkModeNow()).toBe('off')
+    expect(enable()).toEqual(['act.channel'])
+    setCompanionCliGate('ok')
+    expect(parkModeNow()).toBe('off')
     expect(enable()).toEqual(['act.channel'])
   })
 
