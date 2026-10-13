@@ -57,11 +57,13 @@ interface BootOpts {
   policy?: EnablePolicy
   tokenHint?: string
   onBound?: () => Promise<void>
+  /** The clock both the table and the server read (rate bucket, leases). Defaults to real time. */
+  now?: () => number
 }
 
-function newTable(): SessionTable {
+function newTable(now: () => number = () => performance.now()): SessionTable {
   return new SessionTable({
-    now: () => performance.now(),
+    now,
     mintConn: () => `c_${randomBytes(16).toString('hex')}` as Conn,
     mintToken: () => `sp_${randomUUID()}` as never
   })
@@ -69,7 +71,7 @@ function newTable(): SessionTable {
 
 async function boot(opts: BootOpts = {}): Promise<Rig> {
   const dir = opts.dir ?? join(shortTmp('hc-s-'), 'companion')
-  const table = newTable()
+  const table = newTable(opts.now)
   const stats: ServerStat[] = []
   const hooks: ServerHooks = {
     enablePolicy: () => opts.policy ?? enableIdentity,
@@ -83,7 +85,8 @@ async function boot(opts: BootOpts = {}): Promise<Rig> {
     hooks,
     platform: opts.platform,
     tokenHint: opts.tokenHint,
-    onBound: opts.onBound
+    onBound: opts.onBound,
+    now: opts.now
   })
   const ep = JSON.parse(readFileSync(join(dir, 'endpoint.json'), 'utf8')) as EndpointFile
   let n = 0
@@ -526,25 +529,30 @@ describe('events', () => {
   })
 
   it('floods are answered SLOW_DOWN, and hello is exempt', async () => {
-    const rig = await boot()
+    // A frozen clock: the bucket refills continuously, so on real time a slow runner refills
+    // tokens faster than the loop spends them and no request is ever refused.
+    const rig = await boot({ now: () => 1_000 })
     const { conn, sid } = await rig.bind()
     const body = { ...rig.env(conn, sid), events: [] }
     // the hello above is exempt: the whole budget is still there
+    let firstSlowAt = -1
     let firstSlow: Reply | null = null
     let slow = 0
     for (let i = 0; i < RATE_MAX_REQUESTS + 5; i++) {
       const r = await rig.send('events', body)
       if (r.json.code === 'SLOW_DOWN') {
         slow++
-        firstSlow ??= r
+        if (!firstSlow) {
+          firstSlow = r
+          firstSlowAt = i
+        }
       }
     }
-    // The bucket refills continuously (one token per 50 ms), so how many of the extra requests
-    // are refused depends on the loop's speed; the exact 201st boundary is pinned in wire-core.
-    expect(slow).toBeGreaterThanOrEqual(1)
+    expect(firstSlowAt).toBe(RATE_MAX_REQUESTS)
+    expect(slow).toBe(5)
     expect(firstSlow?.json).toEqual({ ok: false, code: 'SLOW_DOWN', retryAfterMs: 1000 })
     expect(firstSlow?.status).toBe(200)
-    expect(rig.table.all()[0].counters.refused).toBeGreaterThanOrEqual(1)
+    expect(rig.table.all()[0].counters.refused).toBe(5)
     // a hello in the same window is served
     const token = rig.table.mint({
       owner: { kind: 'pty', ptyId: 'flood' },
