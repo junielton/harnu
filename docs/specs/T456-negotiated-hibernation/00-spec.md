@@ -168,13 +168,13 @@ reaped by the hibernation policy"). The reproduction is therefore built from the
 the snapshot `fleetSnapshot()` builds for these sessions (script and output in `01-prototype.md`
 §P3):
 
-| #   | Session                                                                                                    | Hub state (P1W5)                                                                                           | Result                                      | Rests on |
-| --- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------- | -------- |
-| 1   | Fleet at `maxLive` (5). One session cold for 16 min, with a background e2e run it started in its last turn | `idle`: a background **shell** does not hold the state (T389/P4W4 row E4, `P4W4-resume-micro-plan.md:119`) | `cap` victims `['bg-e2e']`, reason `lru`    | A1       |
-| 2   | Fleet at `maxLive`. A dynamic `/loop` session cold for 16 min, waiting on a `ScheduleWakeup`               | `idle`                                                                                                     | `cap` victims `['loop-wakeup']`             | A1b      |
-| 2′  | The same session alone, 60 min after its last turn (the longest a `ScheduleWakeup` can wait)               | `idle`                                                                                                     | `sweep` victims `[]`: the clamp protects it | —        |
-| 3   | A `CronCreate` job every 90 min, 61 min after its last fire                                                | `idle`                                                                                                     | `sweep` victims `['cron-every-90m']`        | A1b      |
-| 4   | A background subagent, PTY silent for 61 min                                                               | `working` (a background subagent holds it, `companion/ingest/task-state-map-core.ts:105-118`)              | `sweep` victims `['bg-agent']`              | A1       |
+| #   | Session                                                                                                    | Hub state (P1W5)                                                                                           | Result                                      | Rests on          |
+| --- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ----------------- |
+| 1   | Fleet at `maxLive` (5). One session cold for 16 min, with a background e2e run it started in its last turn | `idle`: a background **shell** does not hold the state (T389/P4W4 row E4, `P4W4-resume-micro-plan.md:119`) | `cap` victims `['bg-e2e']`, reason `lru`    | A1                |
+| 2   | Fleet at `maxLive`. A dynamic `/loop` session cold for 16 min, waiting on a `ScheduleWakeup`               | `idle`                                                                                                     | `cap` victims `['loop-wakeup']`             | A1b               |
+| 2′  | The same session alone, 60 min after its last turn (the longest a `ScheduleWakeup` can wait)               | `idle`                                                                                                     | `sweep` victims `[]`: the clamp protects it | —                 |
+| 3   | A `CronCreate` job every 90 min, 61 min after its last fire                                                | `idle`                                                                                                     | `sweep` victims `['cron-every-90m']`        | A1b               |
+| 4   | A background subagent, PTY silent for 61 min                                                               | `working` (a background subagent holds it, `companion/ingest/task-state-map-core.ts:105-118`)              | `sweep` victims `['bg-agent']`              | A1 (fails: §12.1) |
 
 The background state is invisible to the policy for a structural reason. `fleetSnapshot()` reads
 only the task state, focus and PTY bytes (`pty.ts:583-610`). The hub's background-task count, which
@@ -808,6 +808,8 @@ in the repo.
 - **The limit of this evidence:** the model-run subagents all ended within 9 to 28 s (they move their own
   `sleep` to a background shell and report). So "the redraw lasts as long as a subagent runs" is the pattern of
   three runs, with the ticks stopping at the moment each agent reported. It is not a measured 15 minutes.
+- **Also not tested:** a shell's silence was measured for 222 to 229 s, not for the 16 min or 61 min the §3.6 rows
+  assume. The rows rest on "silent for as long as nothing else happens", which these runs support but do not span.
 - A baseline for reference: an idle session with no background work emits 92 B at about 10 s and nothing after
   (`a1`, a first run whose prompt was not submitted, `{0: 1715, 10: 92}`).
 

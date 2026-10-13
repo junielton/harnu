@@ -15,7 +15,7 @@ run, so the blocks below are byte-for-byte what ran.
 - §P2 — the **host half's core** (pure): `decide`, `applyAnswer`, `resetEpisode`, `revalidate`,
   its vitest suite, and a mutation check of every guard.
 - §P3 — the **policy-level reproduction** of the failure (spec §3.6).
-- §P4 — the A1 measurement script, which was **not run** (refused in this session).
+- §P4 — the W0 spike: the PTY-byte harness and the probe mod, both run on 2026-10-13 (results in spec §12.1).
 
 ## P1. The mod half
 
