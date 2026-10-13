@@ -282,8 +282,8 @@ describe('a detached removal groups into one archive (AC-E2)', () => {
       ref('refs/archive/feat/login/20261002T101500Z/wip', sha('2'))
     ])
     expect(entries.map((e) => e.namespace).sort()).toEqual([
-      'refs/archive/feat/login/20261002T101500Z',
-      NS
+      NS,
+      'refs/archive/feat/login/20261002T101500Z'
     ])
   })
 

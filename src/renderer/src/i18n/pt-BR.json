@@ -2841,6 +2841,8 @@
         "tip": "tip {sha}",
         "wip": "tem estado de trabalho",
         "wipTitle": "Os arquivos não commitados e não rastreados da pasta removida também foram arquivados",
+        "reflog": "{n} commit do reflog | {n} commits do reflog",
+        "reflogTitle": "Commits que só o histórico da própria worktree removida alcançava também ficam guardados aqui",
         "expired": "expirado",
         "copyRestore": "Copiar comando de restauração",
         "copyWip": "Copiar comando do wip",

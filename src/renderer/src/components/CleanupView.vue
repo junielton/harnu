@@ -989,7 +989,13 @@ async function confirmExhaust(): Promise<void> {
   if (d.mode === 'delete') {
     await gc.deleteArchives(
       d.group.repoPath,
-      d.entries.map((e) => ({ namespace: e.namespace, tipSha: e.tipSha, wipSha: e.wipSha }))
+      d.entries.map((e) => ({
+        namespace: e.namespace,
+        tipSha: e.tipSha,
+        wipSha: e.wipSha,
+        // What the dialog listed: a ref that appeared since is a change, not an extra delete.
+        memberCount: e.members.length
+      }))
     )
   } else if (d.mode === 'gc') {
     await gc.runArchiveGc(d.group.repoPath, d.group.repoAlias)

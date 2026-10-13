@@ -160,12 +160,18 @@ function parseArchiveRequest(raw: unknown): ArchiveDeleteRequest {
   const sha = (v: unknown): string | null => (typeof v === 'string' && v ? v : null)
   return {
     repoPath: r.repoPath,
-    archives: r.archives.map((a: { namespace?: unknown; tipSha?: unknown; wipSha?: unknown }) => {
-      if (typeof a?.namespace !== 'string' || !a.namespace.startsWith('refs/archive/')) {
-        throw new Error('gc:archives:delete: not an archive namespace')
+    archives: r.archives.map(
+      (a: { namespace?: unknown; tipSha?: unknown; wipSha?: unknown; memberCount?: unknown }) => {
+        if (typeof a?.namespace !== 'string' || !a.namespace.startsWith('refs/archive/')) {
+          throw new Error('gc:archives:delete: not an archive namespace')
+        }
+        const count =
+          typeof a.memberCount === 'number' && Number.isInteger(a.memberCount) && a.memberCount >= 0
+            ? { memberCount: a.memberCount }
+            : {}
+        return { namespace: a.namespace, tipSha: sha(a.tipSha), wipSha: sha(a.wipSha), ...count }
       }
-      return { namespace: a.namespace, tipSha: sha(a.tipSha), wipSha: sha(a.wipSha) }
-    })
+    )
   }
 }
 

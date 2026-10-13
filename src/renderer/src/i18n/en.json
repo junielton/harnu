@@ -2841,6 +2841,8 @@
         "tip": "tip {sha}",
         "wip": "has working state",
         "wipTitle": "The uncommitted and untracked files of the removed folder are archived too",
+        "reflog": "{n} reflog commit | {n} reflog commits",
+        "reflogTitle": "Commits that only the removed worktree's own history reached are kept here too",
         "expired": "expired",
         "copyRestore": "Copy restore command",
         "copyWip": "Copy wip command",

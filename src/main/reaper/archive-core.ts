@@ -26,8 +26,8 @@ export interface ArchiveRefPlan {
 
 export interface ArchivePlan {
   /**
-   * `refs/archive/<branch>/<stamp>`, or `refs/archive/detached/<folder>-<shortsha>` for a detached
-   * worktree, or null when nothing can be archived.
+   * `refs/archive/<branch>/<stamp>`, or `refs/archive/detached/<stamp>/<folder>-<shortsha>` for a
+   * detached worktree, or null when nothing can be archived.
    */
   namespace: string | null
   tip: ArchiveRefPlan | null
@@ -85,13 +85,20 @@ function folderSlug(path: string): string {
 }
 
 /**
- * `refs/archive/detached/<folder>-<shortsha>` — the namespace of a detached worktree, keyed by what
- * identifies it: the folder it lived in and the commit it was on. There is no stamp: the key is
- * the identity, so removing the same folder at the same commit again lands on the same refs (the
- * tip is the very same commit; `archiveWip` keeps an earlier working state reachable).
+ * `refs/archive/detached/<stamp>/<folder>-<shortsha>` — the namespace of a detached worktree: WHEN it
+ * was archived, then what identifies it, the folder it lived in and the commit it was on. The stamp
+ * is what dates the archive (a ref's own commit date says when the commit was made, not when it was
+ * archived), so Cleanup can group every ref of one removal under it, show its age, and expire it with
+ * the retention like any other archive. One removal is one stamp: the forced reprobe and the executor
+ * share the run's time, so they write the very same refs. The same folder at the same commit removed
+ * on another day is a separate archive (`archiveWip` still keeps an earlier working state under a
+ * sibling ref when one run writes the same name twice).
+ *
+ * Before unit E the namespace was `refs/archive/detached/<folder>-<shortsha>`, with no time in it;
+ * those refs are still listed, as one archive of unknown age.
  */
-export function detachedArchiveNamespace(path: string, headSha: string): string {
-  return `${DETACHED_ARCHIVE_PREFIX}${folderSlug(path)}-${headSha.slice(0, SHORT_SHA_LENGTH)}`
+export function detachedArchiveNamespace(path: string, headSha: string, at: number): string {
+  return `${DETACHED_ARCHIVE_PREFIX}${formatArchiveStamp(at)}/${folderSlug(path)}-${headSha.slice(0, SHORT_SHA_LENGTH)}`
 }
 
 /** The revision a kind's tip is resolved from, or null when the kind has no local tip. */
@@ -123,7 +130,7 @@ export function planArchive(
   // do. Without either, nothing can be named or resolved, and the executor halts at the archive.
   if (item.kind === 'detached-worktree') {
     if (!item.path || !item.headSha) return { namespace: null, tip: null, wip: null, refs: [] }
-    const namespace = detachedArchiveNamespace(item.path, item.headSha)
+    const namespace = detachedArchiveNamespace(item.path, item.headSha, at)
     const tip: ArchiveRefPlan = { role: 'tip', ref: `${namespace}/tip`, rev: item.headSha }
     const wip: ArchiveRefPlan = { role: 'wip', ref: `${namespace}/wip`, worktreePath: item.path }
     return { namespace, tip, wip, refs: [tip, wip] }

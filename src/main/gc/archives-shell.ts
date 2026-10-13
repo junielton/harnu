@@ -13,6 +13,7 @@ import { promisify } from 'node:util'
 import {
   ARCHIVE_PREFIX,
   groupArchiveRefs,
+  membersOf,
   type ArchiveEntry,
   type ArchiveRefInfo
 } from './archives-core'
@@ -103,13 +104,10 @@ export async function deleteArchiveEntries(
 ): Promise<DeleteArchivesResult> {
   const result: DeleteArchivesResult = { deleted: [], archives: 0, failed: [] }
   for (const entry of entries) {
-    const targets: Array<{ ref: string | null; sha: string | null }> = [
-      { ref: entry.tipRef, sha: entry.tipSha },
-      { ref: entry.wipRef, sha: entry.wipSha }
-    ]
+    // Every ref of the entry: a detached removal is one archive of many refs, deleted as a whole.
+    const targets = membersOf(entry)
     const failedBefore = result.failed.length
     for (const { ref, sha } of targets) {
-      if (!ref) continue
       if (!ref.startsWith(ARCHIVE_PREFIX) || !sha) {
         result.failed.push({ ref, error: 'not an archive ref, or its sha is unknown' })
         continue
@@ -121,7 +119,7 @@ export async function deleteArchiveEntries(
         result.failed.push({ ref, error: messageOf(err) })
       }
     }
-    if (result.failed.length === failedBefore && entry.refs.length > 0) result.archives++
+    if (result.failed.length === failedBefore && targets.length > 0) result.archives++
   }
   return result
 }
