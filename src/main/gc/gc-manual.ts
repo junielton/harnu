@@ -106,8 +106,11 @@ export interface ManualCleanDeps {
   freshStackLeftovers?(): Promise<StackLeftoverItem[]>
   /** Removes exactly this item's stopped containers and networks (never a volume). */
   removeStackLeftovers?(item: StackLeftoverItem): Promise<StackCleanupResult>
-  /** Moves one `~/.claude/projects/<slug>` folder to the OS trash. Throws when it cannot. */
-  trashTranscripts?(slug: string): Promise<void>
+  /**
+   * Moves one `~/.claude/projects/<slug>` folder to the OS trash and records the move (its size
+   * and folder come from the item the operator was shown). Throws when it cannot.
+   */
+  trashTranscripts?(slug: string, facts: { bytes: number; folder: string }): Promise<void>
   /** Drops the sidebar's ghost rows for a folder that is gone (best-effort, never throws into the job). */
   reconcileFolder?(folder: string): Promise<void>
   /** `docker volume rm` for exactly these names. */
@@ -529,7 +532,7 @@ export function submitManualClean(
       if (!fresh) return refused(id, 'no-longer-orphan')
       if (transcriptsChangedSince(fresh, seen)) return refused(id, 'changed-since-confirm')
       try {
-        await deps.trashTranscripts(item.slug)
+        await deps.trashTranscripts(item.slug, { bytes: item.bytes, folder: item.folder })
       } catch (err) {
         return {
           id,
@@ -543,7 +546,9 @@ export function submitManualClean(
       await deps
         .reconcileFolder?.(item.folder)
         .catch((err) => console.warn('[gc] ghost-folder reconcile after transcripts failed', err))
-      return { id, ok: true, haltedAt: null, freedBytes: item.bytes }
+      // The folder only moved to the OS trash: its space comes back when the trash is emptied, so
+      // it is reported as in the trash, never as freed now.
+      return { id, ok: true, haltedAt: null, freedBytes: 0, trashedBytes: item.bytes }
     }
 
     const cleanStack = async (id: string): Promise<GcItemResult> => {
