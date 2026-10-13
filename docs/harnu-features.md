@@ -680,7 +680,8 @@ session whose last turn left work running in the background or a wakeup schedule
 background shell or Monitor, a background subagent, `CronCreate`, `ScheduleWakeup`, `/loop`)
 is deferred instead of parked and checked again later. The deferral is bounded, never a
 pin: after a fixed number of deferrals or a fixed total delay (defaults 8 and 2 hours), under
-memory pressure, or on the operator's "Park now", it is parked anyway, and its own wakeups
+memory pressure (Linux only for now; off on macOS and Windows), or on the operator's "Park
+now", it is parked anyway, and its own wakeups
 do not reset the count — only the operator selecting it or typing into it does. So a long
 background job CAN still be parked out from under a session you dispatched; nothing in
 `get_fleet` shows a deferral yet.
