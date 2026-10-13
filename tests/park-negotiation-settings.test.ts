@@ -32,6 +32,14 @@ beforeEach(() => {
 })
 
 describe('setNegotiationSettings — clamps', () => {
+  it('ignores a payload that is not a plain object', async () => {
+    const { settings } = await load()
+    const before = settings.getNegotiationSettings()
+    for (const bad of [null, undefined, 'x', 7, [1, 2]]) {
+      expect(settings.setNegotiationSettings(bad as never)).toEqual(before)
+    }
+  })
+
   it('starts at the spec defaults', async () => {
     const { settings } = await load()
     expect(settings.getNegotiationSettings()).toEqual({

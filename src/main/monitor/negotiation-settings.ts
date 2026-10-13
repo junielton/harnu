@@ -19,6 +19,10 @@ export function getNegotiationSettings(): ParkSettings {
 
 /** Unknown keys, non-finite numbers and a `park` outside the three modes are dropped. */
 export function setNegotiationSettings(patch: Partial<ParkSettings>): ParkSettings {
+  // The payload crosses IPC unvalidated: anything that is not a plain object is ignored.
+  if (typeof patch !== 'object' || patch === null || Array.isArray(patch)) {
+    return getNegotiationSettings()
+  }
   if (patch.park !== undefined && PARK_MODES.includes(patch.park)) {
     setPrefsKey('park', patch.park)
   }
