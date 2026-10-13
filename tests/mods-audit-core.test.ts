@@ -406,6 +406,49 @@ describe('mods-audit-core', () => {
     expect(CAPABILITY_ORDER).toHaveLength(15)
   })
 
+  it('shows one transcript chip for a hook on session.append or session.compact, or a call to session.messages', () => {
+    const noEnv = { reads: [], writes: [] }
+    const hook = (event: string): { file: string; event: string; opaque: boolean } => ({
+      file: './r.ts',
+      event,
+      opaque: false
+    })
+    const call = (op: string): { file: string; op: string } => ({ file: './r.ts', op })
+    const cap = (hooks: ReturnType<typeof hook>[], calls: ReturnType<typeof call>[]): string[] =>
+      deriveCapabilities({ hooks, calls, env: noEnv })
+
+    // AC-1: the three triggers
+    expect(cap([hook('session.append')], [])).toEqual(['transcript'])
+    expect(cap([hook('session.compact')], [])).toEqual(['transcript'])
+    expect(cap([], [call('session.messages')])).toEqual(['transcript'])
+    // a glob that covers them counts too
+    expect(cap([hook('session.*')], [])).toEqual(['transcript'])
+
+    // one chip however many triggers a mod has
+    expect(
+      cap([hook('session.append'), hook('session.compact')], [call('session.messages')])
+    ).toEqual(['transcript'])
+
+    // AC-2: nothing else under session.* adds it, and neither does a mod that hooks none of them
+    for (const e of ['session.start', 'session.snapshot', 'session.end', 'session.rebound']) {
+      expect(cap([hook(e)], []), e).toEqual([])
+    }
+    for (const op of ['session.id', 'session.title', 'session.cwd']) {
+      expect(cap([], [call(op)]), op).toEqual([])
+    }
+    expect(cap([hook('turn.complete')], [call('ui.status')])).toEqual([])
+    expect(cap([], [])).toEqual([])
+    // session.send is the existing `submit` chip, not this one
+    expect(cap([], [call('session.send')])).toEqual(['submit'])
+  })
+
+  it('places the transcript chip in the fixed order, beside the prompt chips', () => {
+    expect(CAPABILITY_ORDER).toContain('transcript')
+    const order = CAPABILITY_ORDER as readonly string[]
+    expect(order.indexOf('transcript')).toBeGreaterThan(order.indexOf('prompts'))
+    expect(order.indexOf('transcript')).toBeLessThan(order.indexOf('permissions'))
+  })
+
   it('derives chips for real reports', () => {
     const chips = (name: string): CapabilityId[] =>
       buildAnalysis(parseValidateReport(fixture(name)), { ...META, now: 5 }, null).capabilities

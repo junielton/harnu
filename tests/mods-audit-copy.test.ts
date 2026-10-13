@@ -74,6 +74,13 @@ describe('modsAudit copy', () => {
     }
   })
 
+  it('words the transcript chip as "can read or rewrite the conversation"', () => {
+    const cap = (en as unknown as { modsAudit: { cap: Record<string, string> } }).modsAudit.cap
+    const capPt = (ptBR as unknown as { modsAudit: { cap: Record<string, string> } }).modsAudit.cap
+    expect(cap['transcript']).toBe('can read or rewrite the conversation')
+    expect(capPt['transcript']).toBeTruthy()
+  })
+
   it('words the capability chips as facts', () => {
     const cap = (en as unknown as { modsAudit: { cap: Record<string, string> } }).modsAudit.cap
     for (const id of CAPABILITY_ORDER) {
