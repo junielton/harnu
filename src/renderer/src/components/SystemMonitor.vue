@@ -236,6 +236,8 @@ const headerHeapFillClass = computed(() => heapBarClass(monitor.lastHeap?.status
             :idle-ms="row.idleMs"
             :sweep-rank="row.sweepRank"
             :saved-bytes="row.savedBytes"
+            :declined="row.declined ?? null"
+            :negotiation="row.negotiation ?? null"
             :has-children="row.procs.length > 0"
             :expanded="expandedKeys.has(row.sessionKey)"
             :parkable="row.parkable"

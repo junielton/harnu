@@ -71,7 +71,7 @@ import type {
 } from '../main/usage-history'
 import type { UsageCostSummary } from '../main/usage-cost'
 import type { UsageBiSnapshot, UsageBiRange } from '../main/usage-bi'
-import type { HeapSample, MonitorSample } from '../main/monitor/types'
+import type { HeapSample, MonitorSample, ParkSettings } from '../main/monitor/types'
 import type { Policy } from '../main/fleet-policy'
 import type { ImageEntry } from '../main/image-cache'
 import type {
@@ -400,7 +400,15 @@ export type {
 // System Monitor wire types (T127 S1). `monitor/types.ts` is a pure module (no
 // node deps), so the renderer imports its shapes directly; `Policy` is likewise
 // plain data from the pure `fleet-policy.ts`.
-export type { HeapSample, ProcSample, SessionSample, MonitorSample } from '../main/monitor/types'
+export type {
+  HeapSample,
+  ProcSample,
+  SessionSample,
+  MonitorSample,
+  DeclinedView,
+  ParkSettings
+} from '../main/monitor/types'
+export type { ParkNegotiation } from '../main/hibernation'
 export type { Policy } from '../main/fleet-policy'
 export type { SessionAnatomy, EnrichedWindow, EnrichedWindowSession } from '../main/usage-bi-core'
 // Pasted-images gallery: `image-cache.ts` keeps its type next to the pure core.
@@ -2620,6 +2628,10 @@ const api = {
   monitorPolicyGet: (): Promise<Policy> => ipcRenderer.invoke('monitor:policyGet'),
   monitorPolicySet: (patch: Partial<Policy>): Promise<Policy> =>
     ipcRenderer.invoke('monitor:policySet', patch),
+  // T456 W3: "Ask before parking" — the `park` key + the three bounds (clamped in main).
+  monitorNegotiationGet: (): Promise<ParkSettings> => ipcRenderer.invoke('monitor:negotiationGet'),
+  monitorNegotiationSet: (patch: Partial<ParkSettings>): Promise<ParkSettings> =>
+    ipcRenderer.invoke('monitor:negotiationSet', patch),
 
   // ---- Scheduler workers (T294 / T291 U4) -----------------------------------
   // A worker runs one prompt in one folder on a cadence, headless (`claude -p`),

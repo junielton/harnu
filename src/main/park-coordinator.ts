@@ -46,7 +46,7 @@ export type { ParkNegotiation } from './hibernation'
  */
 export type ParkMode = 'off' | 'facts' | 'ask'
 
-const PARK_MODES: readonly ParkMode[] = ['off', 'facts', 'ask']
+export const PARK_MODES: readonly ParkMode[] = ['off', 'facts', 'ask']
 
 /**
  * Registered with `observeCap: 'facts'`, so ARB-7b's "every feature key capped at its observe
@@ -113,6 +113,8 @@ export interface LegacyParkFacts {
   noteHookBody(sessionKey: string, event: string, body: Record<string, unknown>, now: number): void
   /** The busy reasons the last main `Stop` implies, as `ParkBusyReason` kinds. */
   busy(sessionKey: string): string[]
+  /** How many of each busy reason that `Stop` reported (only the non-zero ones). T456 W3. */
+  counts(sessionKey: string): Record<string, number>
   /** The last main `UserPromptSubmit` edge of any source; `null` when none was seen. */
   lastPromptAt(sessionKey: string): number | null
   /** Every main `UserPromptSubmit`, with its `source` when it is a known label. */
@@ -124,6 +126,14 @@ export function createLegacyParkFacts(): LegacyParkFacts {
   const stops = new Map<string, { tasks: number; crons: number }>()
   const prompts = new Map<string, number>()
   const listeners = new Set<(sessionKey: string, source: PromptSource) => void>()
+  const counts = (sessionKey: string): Record<string, number> => {
+    const s = stops.get(sessionKey)
+    const out: Record<string, number> = {}
+    if (!s) return out
+    if (s.tasks > 0) out['background-task'] = s.tasks
+    if (s.crons > 0) out['scheduled-wakeup'] = s.crons
+    return out
+  }
   return {
     noteHookBody(sessionKey, event, body, now) {
       if (!sessionKey) return
@@ -146,14 +156,8 @@ export function createLegacyParkFacts(): LegacyParkFacts {
         }
       }
     },
-    busy(sessionKey) {
-      const s = stops.get(sessionKey)
-      if (!s) return []
-      const out: string[] = []
-      if (s.tasks > 0) out.push('background-task')
-      if (s.crons > 0) out.push('scheduled-wakeup')
-      return out
-    },
+    busy: (sessionKey) => Object.keys(counts(sessionKey)),
+    counts,
     lastPromptAt(sessionKey) {
       return prompts.get(sessionKey) ?? null
     },
@@ -358,8 +362,11 @@ export function createParkCoordinator(deps: ParkCoordinatorDeps): ParkCoordinato
     // coming back during the wait cancels it, and no decline is counted (§5.6).
     const check = revalidate(cause, requestedAt, before, deps.snapshot(sessionKey))
     if (!check.ok) return { kind: 'cancelled', why: check.why }
-    episodes.set(sessionKey, next)
-    return { kind: 'declined', episode: next }
+    // The counts are display-only and come from the same legacy Stop as the labels; a mod answer
+    // (W2) will fill them from its own. Frozen here: a later Stop does not rewrite this decline.
+    const declined: Episode = { ...next, counts: deps.facts.counts(sessionKey) }
+    episodes.set(sessionKey, declined)
+    return { kind: 'declined', episode: declined }
   }
 
   async function requestCapParks(candidates: readonly string[], slots: number): Promise<string[]> {

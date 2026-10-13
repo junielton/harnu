@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SettingHint from './ui/SettingHint.vue'
-import type { Policy } from '../../../preload'
+import ToggleSwitch from './ui/ToggleSwitch.vue'
+import type { ParkSettings, Policy } from '../../../preload'
 
 /**
  * Settings → Hibernation policy tab (T127 S4, design.md §6 → "Hibernation policy
@@ -18,6 +19,10 @@ import type { Policy } from '../../../preload'
  * `PushChannelsPane`'s `patch` pattern) and re-syncs from the server's response,
  * which clamps/rounds (`policy-store.ts`'s `applyPatch`), so the displayed value
  * always reflects what was actually persisted.
+ *
+ * T456: the "Ask before parking" group below the three fields — the `park` switch and the three
+ * bounds on a negotiated park (`monitor:negotiationGet`/`Set`, `negotiation-settings.ts`). Same
+ * debounce and re-sync; pending edits to different rows merge into one write.
  */
 
 const { t } = useI18n()
@@ -33,9 +38,66 @@ function applyPolicy(policy: Policy): void {
   hardMinutes.value = Math.round(policy.hardIdleMs / 60_000)
 }
 
+// ---- T456: Ask before parking ------------------------------------------------------------------
+const parkMode = ref<ParkSettings['park']>('ask')
+const maxDeclines = ref(8)
+const deferMinutes = ref(120)
+const floorMb = ref(1536)
+/** `off` is the only "off"; `facts` (facts only, no question sent) still counts as on. */
+const askEnabled = computed(() => parkMode.value !== 'off')
+
+function applyAsk(s: ParkSettings): void {
+  parkMode.value = s.park
+  maxDeclines.value = s.maxDeclines
+  deferMinutes.value = Math.round(s.maxDeferMs / 60_000)
+  floorMb.value = s.pressureFloorMb
+}
+
+let askTimer: ReturnType<typeof setTimeout> | null = null
+let askPending: Partial<ParkSettings> = {}
+function saveAskDebounced(patch: Partial<ParkSettings>): void {
+  askPending = { ...askPending, ...patch }
+  if (askTimer) clearTimeout(askTimer)
+  askTimer = setTimeout(() => {
+    askTimer = null
+    const out = askPending
+    askPending = {}
+    void window.api.monitorNegotiationSet(out).then(applyAsk)
+  }, 300)
+}
+
+function onAskToggle(on: boolean): void {
+  // On writes `ask`, off writes `off`. A stored `facts` is left alone until the operator toggles.
+  parkMode.value = on ? 'ask' : 'off'
+  saveAskDebounced({ park: parkMode.value })
+}
+function onMaxDeclinesInput(raw: string): void {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return
+  maxDeclines.value = n
+  saveAskDebounced({ maxDeclines: n })
+}
+function onDeferInput(raw: string): void {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return
+  deferMinutes.value = n
+  saveAskDebounced({ maxDeferMs: n * 60_000 })
+}
+function onFloorInput(raw: string): void {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return
+  floorMb.value = n
+  saveAskDebounced({ pressureFloorMb: n })
+}
+
 onMounted(async () => {
   try {
-    applyPolicy(await window.api.monitorPolicyGet())
+    const [policy, ask] = await Promise.all([
+      window.api.monitorPolicyGet(),
+      window.api.monitorNegotiationGet()
+    ])
+    applyPolicy(policy)
+    applyAsk(ask)
   } finally {
     loading.value = false
   }
@@ -174,6 +236,151 @@ function onHardInput(raw: string): void {
           />
           <span class="text-text-3" style="font-size: 11.5px">{{
             t('hibernationPolicy.minutesSuffix')
+          }}</span>
+        </div>
+      </div>
+    </section>
+
+    <section style="margin-top: 24px">
+      <div
+        class="text-text-3"
+        style="
+          font-size: 11px;
+          font-weight: 500;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          margin-bottom: 8px;
+        "
+      >
+        {{ t('hibernationPolicy.ask.eyebrow') }}
+      </div>
+      <p class="text-text-3" style="font-size: 11.5px; line-height: 1.5; margin-bottom: 14px">
+        {{ t('hibernationPolicy.ask.intro') }}
+      </p>
+
+      <div class="flex items-start justify-between" style="gap: 12px">
+        <div style="flex: 1; min-width: 0">
+          <div class="text-text-2" style="font-size: 12px">
+            {{ t('hibernationPolicy.ask.enabled.label') }}
+          </div>
+          <SettingHint>{{ t('hibernationPolicy.ask.enabled.hint') }}</SettingHint>
+          <SettingHint v-if="parkMode === 'facts'">{{
+            t('hibernationPolicy.ask.factsOnly')
+          }}</SettingHint>
+        </div>
+        <ToggleSwitch
+          :model-value="askEnabled"
+          :aria-label="t('hibernationPolicy.ask.enabled.label')"
+          @update:model-value="onAskToggle"
+        />
+      </div>
+
+      <div
+        class="flex items-start justify-between"
+        :class="askEnabled ? '' : 'opacity-40'"
+        style="gap: 12px; margin-top: 14px"
+      >
+        <div style="flex: 1; min-width: 0">
+          <div class="text-text-2" style="font-size: 12px">
+            {{ t('hibernationPolicy.ask.maxDeclines.label') }}
+          </div>
+          <SettingHint>{{ t('hibernationPolicy.ask.maxDeclines.hint') }}</SettingHint>
+        </div>
+        <div class="flex items-center" style="gap: 6px">
+          <input
+            type="number"
+            min="1"
+            max="100"
+            step="1"
+            class="bg-surface text-text"
+            style="
+              border: 1px solid var(--color-border);
+              border-radius: 5px;
+              padding: 5px 8px;
+              font-size: 12px;
+              width: 72px;
+              font-family: var(--font-mono);
+            "
+            :value="maxDeclines"
+            :disabled="!askEnabled"
+            :aria-label="t('hibernationPolicy.ask.maxDeclines.label')"
+            @input="onMaxDeclinesInput(($event.target as HTMLInputElement).value)"
+          />
+          <span class="text-text-3" style="font-size: 11.5px">{{
+            t('hibernationPolicy.ask.timesSuffix')
+          }}</span>
+        </div>
+      </div>
+
+      <div
+        class="flex items-start justify-between"
+        :class="askEnabled ? '' : 'opacity-40'"
+        style="gap: 12px; margin-top: 14px"
+      >
+        <div style="flex: 1; min-width: 0">
+          <div class="text-text-2" style="font-size: 12px">
+            {{ t('hibernationPolicy.ask.maxDeferMs.label') }}
+          </div>
+          <SettingHint>{{ t('hibernationPolicy.ask.maxDeferMs.hint') }}</SettingHint>
+        </div>
+        <div class="flex items-center" style="gap: 6px">
+          <input
+            type="number"
+            min="0"
+            max="1440"
+            step="1"
+            class="bg-surface text-text"
+            style="
+              border: 1px solid var(--color-border);
+              border-radius: 5px;
+              padding: 5px 8px;
+              font-size: 12px;
+              width: 72px;
+              font-family: var(--font-mono);
+            "
+            :value="deferMinutes"
+            :disabled="!askEnabled"
+            :aria-label="t('hibernationPolicy.ask.maxDeferMs.label')"
+            @input="onDeferInput(($event.target as HTMLInputElement).value)"
+          />
+          <span class="text-text-3" style="font-size: 11.5px">{{
+            t('hibernationPolicy.minutesSuffix')
+          }}</span>
+        </div>
+      </div>
+
+      <div
+        class="flex items-start justify-between"
+        :class="askEnabled ? '' : 'opacity-40'"
+        style="gap: 12px; margin-top: 14px"
+      >
+        <div style="flex: 1; min-width: 0">
+          <div class="text-text-2" style="font-size: 12px">
+            {{ t('hibernationPolicy.ask.pressureFloorMb.label') }}
+          </div>
+          <SettingHint>{{ t('hibernationPolicy.ask.pressureFloorMb.hint') }}</SettingHint>
+        </div>
+        <div class="flex items-center" style="gap: 6px">
+          <input
+            type="number"
+            min="0"
+            step="1"
+            class="bg-surface text-text"
+            style="
+              border: 1px solid var(--color-border);
+              border-radius: 5px;
+              padding: 5px 8px;
+              font-size: 12px;
+              width: 72px;
+              font-family: var(--font-mono);
+            "
+            :value="floorMb"
+            :disabled="!askEnabled"
+            :aria-label="t('hibernationPolicy.ask.pressureFloorMb.label')"
+            @input="onFloorInput(($event.target as HTMLInputElement).value)"
+          />
+          <span class="text-text-3" style="font-size: 11.5px">{{
+            t('hibernationPolicy.ask.mbSuffix')
           }}</span>
         </div>
       </div>

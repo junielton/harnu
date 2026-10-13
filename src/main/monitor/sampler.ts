@@ -4,11 +4,19 @@ import { createSampler, TICKS_PER_SEC, coreCount, type ProcRawSample } from './p
 import { cpuPercent, type CpuTimeSample } from './cpu-delta'
 import { aggregateSubtree, subtreePids, type ProcNode } from './aggregate'
 import { heapStatus } from './thresholds'
-import { getPolicy, setPolicy } from './policy-store'
+import { getNegotiationBounds, getPolicy, setPolicy } from './policy-store'
+import { getNegotiationSettings, setNegotiationSettings } from './negotiation-settings'
 import { livePtyDescriptors, type LivePtyDescriptor } from '../pty'
-import { hibernatedKeys } from '../hibernation'
+import { hibernatedKeys, parkHistory, type ParkNegotiation } from '../hibernation'
 import { explainFleet, type LiveSession, type Policy } from '../fleet-policy'
-import type { HeapSample, ProcSample, SessionSample, MonitorSample } from './types'
+import type {
+  DeclinedView,
+  HeapSample,
+  ProcSample,
+  SessionSample,
+  MonitorSample,
+  ParkSettings
+} from './types'
 
 /**
  * The System Monitor's two cadences (T127 spec §5) + the IPC surface (§6.3) that
@@ -143,6 +151,7 @@ function liveSessionRows(
     explainFleet(liveSessions, atMs, policy).map((e) => [e.sessionKey, e])
   )
 
+  const maxDeclines = getNegotiationBounds().maxDeclines
   return descriptors.map((d) => {
     const total = aggregateSubtree(nodes, d.pid)
     const explanation = explanationBySessionKey.get(d.sessionKey)
@@ -158,9 +167,38 @@ function liveSessionRows(
       parkable: explanation?.parkable ?? false,
       reason: explanation?.reason ?? 'active',
       sweepRank: explanation?.sweepRank ?? null,
-      savedBytes: null
+      savedBytes: null,
+      declined:
+        explanation?.reason === 'declined' && d.episode
+          ? declinedView(d.episode, maxDeclines, atMs)
+          : null
     }
   })
+}
+
+/** T456: the chip's data. No text from the session — labels, counts and times only (§5.3). */
+function declinedView(
+  episode: NonNullable<LivePtyDescriptor['episode']>,
+  max: number,
+  atMs: number
+): DeclinedView {
+  return {
+    declines: episode.declines,
+    max,
+    reasons: [...episode.reasons],
+    counts: { ...(episode.counts ?? {}) },
+    retryInMs: Math.max(0, episode.until - atMs)
+  }
+}
+
+/** The park ledger's OPEN entry for a session — the park it is in right now, if any. */
+function openNegotiation(sessionKey: string): ParkNegotiation | null {
+  const history = parkHistory()
+  for (let i = history.length - 1; i >= 0; i--) {
+    const e = history[i]
+    if (e.sessionKey === sessionKey && e.wokenAt === null) return e.negotiation ?? null
+  }
+  return null
 }
 
 function parkedSessionRows(): SessionSample[] {
@@ -177,7 +215,8 @@ function parkedSessionRows(): SessionSample[] {
     parkable: true,
     reason: 'parked',
     sweepRank: null,
-    savedBytes: lastKnownRssBySessionKey.get(sessionKey) ?? null
+    savedBytes: lastKnownRssBySessionKey.get(sessionKey) ?? null,
+    negotiation: openNegotiation(sessionKey)
   }))
 }
 
@@ -225,6 +264,11 @@ export function registerMonitorHandlers(getWindow: () => BrowserWindow | null): 
   // broadcast left the renderer's terminal never disposed).
   ipcMain.handle('monitor:policyGet', (): Policy => getPolicy())
   ipcMain.handle('monitor:policySet', (_e, patch: Partial<Policy>): Policy => setPolicy(patch))
+  // T456 W3: "Ask before parking" — the `park` key and the three bounds, clamped in main.
+  ipcMain.handle('monitor:negotiationGet', (): ParkSettings => getNegotiationSettings())
+  ipcMain.handle('monitor:negotiationSet', (_e, patch: Partial<ParkSettings>): ParkSettings =>
+    setNegotiationSettings(patch)
+  )
 
   stopHeartbeat()
   pushHeap(getWindow)

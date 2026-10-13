@@ -48,6 +48,8 @@ export interface ParkEpisodeView {
   /** No question and no park before this. */
   until: number
   reasons: readonly string[]
+  /** T456 W3: per-reason counts as last reported, for display only. */
+  counts?: Readonly<Record<string, number>>
 }
 
 export interface Policy {

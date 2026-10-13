@@ -10,6 +10,10 @@
  * Spec: docs/specs/T127-system-monitor.md §6.4.
  */
 
+import type { ParkNegotiation } from '../hibernation'
+
+export type { ParkNegotiation }
+
 /** Pushed on `monitor:heap` every 30s, always — the cheap always-on heartbeat. */
 export interface HeapSample {
   atMs: number
@@ -48,6 +52,33 @@ export interface SessionSample {
   sweepRank: number | null
   /** RSS reclaimed by parking, if known. `null` when never observed live this run. */
   savedBytes: number | null
+  /** T456: set only while `reason` is `'declined'`; what the "Asked to stay" chip shows. */
+  declined?: DeclinedView | null
+  /** T456: parked rows only — how the park came about, from the park ledger's open entry. */
+  negotiation?: ParkNegotiation | null
+}
+
+/**
+ * T456 (spec §6.5): a live session that said busy and holds a delay. `reasons` are the
+ * `ParkBusyReason` kinds, `counts` how many of each when known (labels and numbers only, never
+ * text from the session — §5.3). `retryInMs` is measured at sample time and never negative.
+ */
+export interface DeclinedView {
+  /** Questions asked so far in this cold episode. */
+  declines: number
+  /** The operator's `maxDeclines`: the park goes ahead at this count. */
+  max: number
+  reasons: string[]
+  counts: Record<string, number>
+  retryInMs: number
+}
+
+/** The operator-editable half of negotiation (spec §9.1): the `park` key plus the three bounds. */
+export interface ParkSettings {
+  park: 'off' | 'facts' | 'ask'
+  maxDeclines: number
+  maxDeferMs: number
+  pressureFloorMb: number
 }
 
 /**

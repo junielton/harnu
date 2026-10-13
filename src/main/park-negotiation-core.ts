@@ -24,6 +24,11 @@ export interface Episode {
   /** No question and no park before this. */
   until: number
   reasons: string[]
+  /**
+   * T456 W3: how many of each reason the session reported when it last declined (`background-task`
+   * -> 2). Display only, written by the coordinator; `applyAnswer` never reads or sets it.
+   */
+  counts?: Record<string, number>
 }
 
 export interface NegotiationSettings {

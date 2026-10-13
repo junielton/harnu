@@ -2092,6 +2092,68 @@
     "actions": {
       "park": "Park now",
       "close": "Close"
+    },
+    "declined": {
+      "chip": "Asked to stay · {reasons}",
+      "more": "+{count}",
+      "tooltipTitle": "Asked to stay. It said it is busy with:",
+      "attempts": "Asked {count} of {max} times",
+      "retry": "Asks again in {duration}",
+      "reason": {
+        "backgroundTask": {
+          "one": "{count} background task",
+          "other": "{count} background tasks"
+        },
+        "backgroundSubagent": {
+          "one": "{count} background subagent",
+          "other": "{count} background subagents"
+        },
+        "scheduledWakeup": {
+          "one": "{count} scheduled wakeup",
+          "other": "{count} scheduled wakeups"
+        },
+        "permission": {
+          "one": "{count} permission request",
+          "other": "{count} permission requests"
+        }
+      }
+    },
+    "reasonPlain": {
+      "backgroundTask": "background task",
+      "backgroundSubagent": "background subagent",
+      "scheduledWakeup": "scheduled wakeup",
+      "permission": "permission request",
+      "turn": "turn in progress",
+      "remoteSurface": "remote client attached",
+      "unknown": "busy"
+    },
+    "parked": {
+      "free": {
+        "none": "Parked; the session said it was free",
+        "after": {
+          "one": "Parked once the session was free, after {count} decline ({reasons})",
+          "other": "Parked once the session was free, after {count} declines ({reasons})"
+        }
+      },
+      "silent": {
+        "none": "Parked; no background work was reported",
+        "after": {
+          "one": "Parked after {count} decline ({reasons}); it then reported nothing busy",
+          "other": "Parked after {count} declines ({reasons}); it then reported nothing busy"
+        }
+      },
+      "limit": {
+        "one": "Parked after {count} decline ({reasons})",
+        "other": "Parked after {count} declines ({reasons})"
+      },
+      "memoryPressure": {
+        "none": "Parked under memory pressure",
+        "busy": "Parked under memory pressure; the session said busy"
+      },
+      "operator": {
+        "none": "Parked by you",
+        "override": "Parked by you; it had asked to stay ({reasons})"
+      }
     }
   },
   "hibernationPolicy": {
@@ -2109,7 +2171,30 @@
       "label": "Idle threshold (sweep)",
       "hint": "How long a session can sit idle before the periodic sweep parks it, regardless of the session count."
     },
-    "minutesSuffix": "min"
+    "minutesSuffix": "min",
+    "ask": {
+      "eyebrow": "Ask before parking",
+      "intro": "Before parking a cold session, Harnu checks whether it is still waiting on background work or a scheduled wakeup, and checks again later instead of killing it. These limits keep that from holding memory for good.",
+      "enabled": {
+        "label": "Ask the session before parking",
+        "hint": "Off parks as before, without checking."
+      },
+      "factsOnly": "Currently reading background tasks and wakeups only; the session itself is not asked.",
+      "maxDeclines": {
+        "label": "Max asks per session",
+        "hint": "How many times a session can ask to stay before it is parked anyway. Selecting it or typing into it resets the count."
+      },
+      "maxDeferMs": {
+        "label": "Longest delay",
+        "hint": "The most a session can be kept past its idle limit, whatever it answers."
+      },
+      "pressureFloorMb": {
+        "label": "Memory floor",
+        "hint": "Below this much available memory a session is parked at once, without being asked."
+      },
+      "timesSuffix": "times",
+      "mbSuffix": "MB"
+    }
   },
   "cleanup": {
     "title": "Cleanup",
