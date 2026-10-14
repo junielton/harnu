@@ -204,7 +204,7 @@ export type PtyKind = 'shell' | 'claude-new' | 'claude-resume' | 'claude-fork'
  */
 export type PtyExitReason = 'natural' | 'park'
 
-interface CreateOpts {
+export interface CreateOpts {
   cwd?: string
   cols: number
   rows: number
@@ -656,416 +656,9 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     return victims
   }
 
-  ipcMain.handle('pty:create', async (_e, opts: CreateOpts): Promise<string> => {
-    // Dedup (I1): if this logical session already has a live PTY, reuse it
-    // instead of spawning a duplicate `claude --resume`. This guard lives in
-    // the main process, so it survives a renderer reload — the case that
-    // produced two `claude --resume <uuid>` clones (2026-06-01 spec §1, Defect 3).
-    if (opts.sessionKey) {
-      const existing = sessionIndex.getPtyId(opts.sessionKey)
-      if (existing && ptys.has(existing)) return existing
-    }
-    // T119 cap: the fleet is about to grow, so park the coldest eligible session(s) to stay
-    // at/under maxLive. Runs AFTER the dedup guard (a reused PTY isn't growth). Yields —
-    // parks nobody and lets the spawn through — when nothing is eligible (spec §3.5).
-    if (opts.sessionKey) runPolicy('cap')
-
-    const id = randomUUID()
-    const kind: PtyKind = opts.kind ?? 'shell'
-
-    // Resolve binary + args per kind. `claude-*` paths surface a clear error
-    // when the CLI isn't on PATH so the renderer can show a useful message
-    // instead of `spawn ENOENT`.
-    let command: string
-    let args: string[]
-    // `ANTHROPIC_*` overrides from a resolved custom-endpoint provider (local
-    // model fallback). Empty for the Anthropic default; merged into the spawn
-    // env below. Only `claude-*` kinds carry a provider.
-    let providerEnv: Record<string, string> = {}
-    // T389: the companion mod's plan for THIS spawn (null → exactly as before), and the plugin
-    // dirs Harnu itself put on the argv (what the sideload retry may take off again).
-    let companionPlan: CompanionSpawnPlan | null = null
-    let injectedDirs: string[] = []
-    if (kind === 'claude-new' || kind === 'claude-resume' || kind === 'claude-fork') {
-      const claudePath = await resolveClaudePath()
-      if (!claudePath) {
-        throw new Error(
-          'Could not find the `claude` CLI on PATH or in common install locations. ' +
-            'Install it via `npm install -g @anthropic-ai/claude-code` (or your preferred method) and restart the app.'
-        )
-      }
-      command = claudePath
-      // App-managed base args per kind. User "Claude Boot" options (global +
-      // per-folder, resolved from `claude-boot.json` by cwd) are appended after
-      // these by `resolveClaudeBootArgs`, which also strips any session-breaking
-      // flags from the user's free-form escape hatch (see `claude-args.ts`).
-      let base: string[]
-      // T344: the effective claudeSessionId for THIS spawn — normally just
-      // `opts.claudeSessionId`, but the folder-default arm-at-spawn path
-      // (below) may mint one when the caller didn't supply any, so the
-      // `--session-id` argv and the `isArmed` check downstream both see the
-      // SAME id.
-      let effectiveClaudeSessionId = opts.claudeSessionId
-      if (kind === 'claude-new') {
-        // A caller-minted uuid (T245) is emitted as `--session-id`; without one
-        // this stays a bare `claude` and the CLI mints its own.
-        if (opts.claudeSessionId && !SESSION_UUID_RE.test(opts.claudeSessionId)) {
-          throw new Error(`Invalid claudeSessionId (expected a session uuid)`)
-        }
-        // T344 AC-2/AC-3: the per-folder "new sessions start as Orchestrator"
-        // default. Mint a uuid (if the caller didn't supply one) and arm it
-        // BEFORE spawn, so `isArmed` below — and the CLI's very first turn —
-        // both see it as already armed. `shouldArmAtSpawn` independently
-        // excludes every agent-dispatched shape (AC-3), so this can never
-        // fire for MCP `create_session`, a board/manifest dispatch, or a
-        // T245 read-only companion, regardless of the folder flag.
-        const folderDefaultOn = await getUserProjectOrchestratorDefault(opts.cwd ?? '')
-        if (
-          shouldArmAtSpawn({
-            kind,
-            agentControlled: !!opts.agentControlled,
-            readOnly: !!opts.readOnly,
-            spawnedBy: opts.spawnedBy,
-            folderDefaultOn
-          })
-        ) {
-          effectiveClaudeSessionId = effectiveClaudeSessionId ?? randomUUID()
-          await arm(effectiveClaudeSessionId, opts.cwd ?? '', 'default')
-        }
-        base = effectiveClaudeSessionId ? ['--session-id', effectiveClaudeSessionId] : []
-      } else if (kind === 'claude-resume') {
-        if (!opts.claudeSessionId) {
-          throw new Error('claudeSessionId is required when kind === "claude-resume"')
-        }
-        if (!SESSION_UUID_RE.test(opts.claudeSessionId)) {
-          throw new Error(`Invalid claudeSessionId (expected a session uuid)`)
-        }
-        base = ['--resume', opts.claudeSessionId]
-      } else {
-        // kind === 'claude-fork' — spawn claude --resume <orig> --fork-session.
-        // Claude loads the source session's full history-to-disk, then on first
-        // event line writes to a fresh UUID. The two sessions diverge from there.
-        if (!opts.claudeSessionId) {
-          throw new Error('claudeSessionId is required when kind === "claude-fork"')
-        }
-        if (!SESSION_UUID_RE.test(opts.claudeSessionId)) {
-          throw new Error(`Invalid claudeSessionId (expected a session uuid)`)
-        }
-        base = ['--resume', opts.claudeSessionId, '--fork-session']
-      }
-      // Harnu self-awareness preamble (T55): prepended to the effective
-      // --append-system-prompt when the feature is on (composeAppendSystemPrompt),
-      // never clobbering the user's append and never touching --system-prompt.
-      // Applied to every claude-* kind, agent and non-agent alike.
-      const harnuPreambleBase = harnuPreambleProvider()
-      // T98: this session's own contract, injected the SAME way (prepended ahead
-      // of the user's append), independent of the T55 preamble toggle — arming a
-      // session is an explicit per-session opt-in via "Promote to orchestrator",
-      // so the contract lands even when the general self-awareness doc is off.
-      const orchestratorArmed = effectiveClaudeSessionId
-        ? await isArmed(effectiveClaudeSessionId)
-        : false
-      // T106: the per-repo auto-organize toggle-awareness line, resolved fresh at
-      // every spawn (mirrors the T85 memory-language line) — coupled to the T55
-      // preamble toggle since it's guidance about the same "Roadmap board"
-      // capability that doc describes.
-      const autoOrganizeAwareness = harnuPreambleBase
-        ? autoOrganizeLine(await getUserProjectAutoOrganize(opts.cwd ?? ''))
-        : ''
-      // T138: resolves either the builtin registry (in-memory) or an
-      // installed extension's contributes.modes doc (read fresh from disk) —
-      // same "explicit opt-in, so the contract must always land" reasoning
-      // as the orchestrator doc, now id-agnostic to whether the mode is
-      // builtin or extension-contributed.
-      const modeDoc = await resolveModeContract(opts.mode)
-      const harnuPreamble = [
-        harnuPreambleBase,
-        orchestratorArmed ? HARNU_ORCHESTRATOR_DOC : '',
-        modeDoc,
-        autoOrganizeAwareness
-      ]
-        .filter(Boolean)
-        .join('\n\n')
-      const spawnCfg = await resolveClaudeBootArgs(opts.cwd, base, opts.bootOverride, harnuPreamble)
-      providerEnv = spawnCfg.env
-      if (opts.readOnly) {
-        // T245 read-only companion. Same shape as the agentControlled branch
-        // below — re-resolve the merged config, force it into read-only shape,
-        // rebuild argv from THAT, and withhold the app-managed --mcp-config —
-        // but for a different reason: not an untrusted caller, a deliberately
-        // weaker session. Rebuilding (rather than post-filtering `spawnCfg.args`)
-        // is what makes it airtight: the argv is derived from a config that no
-        // longer contains a way out.
-        const baseCfg = await getResolvedConfig(opts.cwd)
-        const merged = opts.bootOverride ? mergeBootConfig(baseCfg, opts.bootOverride) : baseCfg
-        // T247: the orientation goes on AFTER the read-only shape is fixed, so
-        // the prose describes a posture that is already true rather than one it
-        // is asserting. `withReviewCorrective` touches `appendSystemPrompt` and
-        // nothing else — no flag, no permission, no new spawn path.
-        const readOnlyCfg = forceReadOnlyPermission(merged)
-        args = buildClaudeArgs(
-          base,
-          opts.reviewCorrective
-            ? withReviewCorrective(readOnlyCfg, sanitizeCorrective(opts.reviewCorrective))
-            : readOnlyCfg,
-          harnuPreamble
-        )
-      } else if (opts.agentControlled) {
-        // MCP-spawned agent: untrusted. Re-resolve the merged boot cfg
-        // (global ⊕ folder ⊕ override) and strip any permission-bypass flag the
-        // user's own claude-boot.json may carry (forceDowngradePermission,
-        // defense-in-depth), rebuilding argv from the downgraded cfg. WITHHOLD
-        // the app-managed --mcp-config so the agent gets NO Harnu MCP server.
-        const baseCfg = await getResolvedConfig(opts.cwd)
-        const merged = opts.bootOverride ? mergeBootConfig(baseCfg, opts.bootOverride) : baseCfg
-        args = buildClaudeArgs(base, forceDowngradePermission(merged), harnuPreamble)
-      } else {
-        // Prepend Harnu's app-managed --mcp-config (when the MCP server is enabled)
-        // BEFORE the user's resolved Boot args so a user --mcp-config can't bury it.
-        args = orderMcpArgs(mcpArgsProvider(), spawnCfg.args)
-      }
-      // Every argv injector runs INSIDE `withOptionArgs`, which hands them only the
-      // OPTION portion and re-appends the bare `--` + positional pre-prompt tail
-      // afterwards. That ordering is load-bearing, not cosmetic: `resolveClaudeBootArgs`
-      // ends the argv with `-- <pre-prompt>`, and anything appended after that
-      // separator is a POSITIONAL argument the CLI never parses as a flag. BUG-86
-      // was exactly this — a freshly spawned session got neither `--settings` nor
-      // `--plugin-dir`, while resumed sessions (no pre-prompt, so no separator)
-      // worked. Add the NEXT injector inside this callback, never after it.
-      companionPlan = await companionSpawnProvider({
-        cwd: opts.cwd ?? '',
-        kind,
-        owner: { kind: 'pty', ptyId: id },
-        trust: trustFor({
-          readOnly: opts.readOnly,
-          agentControlled: opts.agentControlled,
-          spawnedBy: opts.spawnedBy
-        })
-      })
-      args = await withOptionArgs(args, async (optionArgs) => {
-        const before = [...optionArgs]
-        let out = optionArgs
-        // T92: inject per-session hook `--settings` so this Claude session POSTs its
-        // lifecycle to the Hook Bridge (event-driven fleet state) and Harnu owns
-        // notifications. Composes with any user `--settings` without clobbering it.
-        // Applied to agent + non-agent spawns alike; a `null` provider is a no-op.
-        const hookBlob = hookSettingsProvider()
-        if (hookBlob) out = injectHookSettings(out, hookBlob)
-        // T217: emit `--plugin-dir <staged>` for the bundled skills this FOLDER has
-        // switched on. A skill that is off is never staged, so it is absent from the
-        // session's catalog by construction; an empty enabled set emits nothing.
-        // T389: the companion is the FIRST `--plugin-dir`, inserted before the bundled-skills
-        // one (and before a user's own), inside this callback so it stays before the `--`.
-        out = applyCompanionArgv(out, companionPlan)
-        // A machine that blocks sideloaded plugins gets neither Harnu flag (§7.8).
-        if (!isSideloadBlocked()) out = await bundledSkillsArgsProvider(out, opts.cwd ?? '')
-        injectedDirs = injectedPluginDirs(before, out)
-        return out
-      })
-    } else {
-      command = opts.cmd ?? defaultShell()
-      args = opts.args ?? []
-    }
-
-    // Build the child env. `sanitizeSpawnEnv` strips AppImage-runtime pollution
-    // (mount-rooted PATH/LD_LIBRARY_PATH/… entries + APPDIR/APPIMAGE/ARGV0/OWD)
-    // so the spawned shell runs in the same environment a normal terminal would
-    // — without it, the AppImage's bundled libs/PATH leak into every session and
-    // break the user's tooling (e.g. mise: "<AppImage> is not a valid shim").
-    // No-op outside an AppImage. Then merge `CLAUDE_CODE_NO_FLICKER=1` when the
-    // per-session toggle is on (see `findings/04-pty-xterm-production.md` §4).
-    const env: Record<string, string> = {
-      ...sanitizeSpawnEnv(process.env as Record<string, string | undefined>, {
-        execPath: process.execPath
-      }),
-      ...(opts.noFlicker ? { CLAUDE_CODE_NO_FLICKER: '1' } : {}),
-      // Custom-endpoint provider overrides (ANTHROPIC_BASE_URL / _MODEL / auth).
-      // Last so they win over any inherited Anthropic env from the parent.
-      ...providerEnv
-    }
-    // Restore the user's real toolchain on PATH. A GUI/AppImage launch never
-    // sourced `.zshrc`/`mise activate`, so `node` (mise) and `rtk` (~/.local/bin)
-    // are missing — spawned `claude` sessions then fail their `command` hooks
-    // with `… not found`. Fold the login-shell PATH (captured once) ahead of the
-    // sanitized base. Best-effort: a failed capture leaves PATH untouched.
-    const mergedPath = mergeLoginPath(env.PATH, await loginPathOnce())
-    if (mergedPath) env.PATH = mergedPath
-    // Stale-directory guard for claude kinds. The session UUID is registered
-    // under the slug derived from its ORIGINAL cwd; if that directory was
-    // deleted (worktree pruned, project moved), `claude --resume` looks in
-    // a different slug and prints a confusing "No conversation found" error.
-    // We catch this earlier and show a clear message instead of letting the
-    // user think the app is broken.
-    let runCommand = command
-    let runArgs = args
-    let runCwd = resolveCwd(opts.cwd)
-    const wantedDirMissing =
-      (kind === 'claude-resume' || kind === 'claude-new' || kind === 'claude-fork') &&
-      !!opts.cwd &&
-      !existsSync(opts.cwd)
-    if (wantedDirMissing) {
-      const notice = buildMissingDirNotice(opts.cwd ?? '')
-      runCommand = notice.command
-      runArgs = notice.args
-      runCwd = os.homedir()
-    }
-
-    // T389: the spawn token. It never survives from the parent env, and is minted only when
-    // `claude` really runs (the missing-directory notice replaces the command, so it gets none).
-    const companionOwner: SpawnOwner = { kind: 'pty', ptyId: id }
-    applyCompanionEnv(env, {
-      plan: companionPlan,
-      owner: companionOwner,
-      dirMissing: wantedDirMissing
-    })
-    // The retry below only ever applies to a spawn that carried the COMPANION's plugin dir.
-    const companionInjected =
-      !!companionPlan && !wantedDirMissing && injectedDirs.includes(companionPlan.pluginDir)
-    const spawnOpts = {
-      name: 'xterm-256color',
-      cwd: runCwd,
-      cols: opts.cols,
-      rows: opts.rows,
-      env
-    }
-
-    const pty = spawn(runCommand, runArgs, spawnOpts)
-
-    const spawnedAt = Date.now()
-    const rec: PtyRec = {
-      pty,
-      flush: { buf: '', size: 0, timer: null },
-      ring: new RingBuffer(RING_CAP_BYTES),
-      seq: 0,
-      sessionKey: opts.sessionKey,
-      kind,
-      cols: opts.cols,
-      rows: opts.rows,
-      startedAt: spawnedAt,
-      lastActivityAt: spawnedAt,
-      // T215: fail closed — an unstamped spawn is treated as the operator's.
-      spawnedBy: opts.spawnedBy === 'agent' ? 'agent' : 'operator',
-      cwd: runCwd
-    }
-    ptys.set(id, rec)
-    if (opts.sessionKey) {
-      // Waking clears the parked flag, so a session with a live PTY can never stay
-      // flagged as hibernated (T119, spec §5.1 — self-healing by construction).
-      clearHibernated(opts.sessionKey)
-      // BUG-70 §4: record the wake against the ledger instead of letting the
-      // clear above erase the only trace a park happened. A no-op when this
-      // key has no open park entry (the common "brand-new session" case).
-      recordWake(opts.sessionKey, spawnedAt, opts.wakeGesture ?? 'unknown')
-      // Seed focus so a just-spawned session is never instantly the coldest victim.
-      lastFocusedAt.set(opts.sessionKey, spawnedAt)
-      sessionIndex.register(opts.sessionKey, id)
-      sessionSpawnOrigins.set(opts.sessionKey, rec.spawnedBy ?? 'operator')
-      // Announce session readiness on a single channel (payload carries the
-      // sessionKey) so the renderer can blanket-subscribe (`onSessionReady`)
-      // and gate agent-prompt injection without knowing keys ahead of time.
-      // `ptyId` rides along for the MCP fleet view (resolve without polling).
-      getWindow()?.webContents.send('pty:sessionReady', { sessionKey: opts.sessionKey, ptyId: id })
-      // T215: settle any main-process waiter parked on this key. The wake path
-      // (`message_session` on a parked recipient) has to know the resume
-      // actually landed before it resolves a socket — a live PTY is not yet a
-      // bound socket, but it is the precondition for one.
-      resolveSessionReadyWaiters(opts.sessionKey)
-    }
-
-    // T389: the process behind `rec.pty` can be replaced ONCE by the sideload retry (below), so
-    // the data and exit handlers are attached per process rather than once per record.
-    let launchedAt = spawnedAt
-    let firstTail = ''
-    let blockedTimer: ReturnType<typeof setTimeout> | null = null
-
-    const wire = (proc: IPty, isRetry: boolean): void => {
-      proc.onData((data) => {
-        if (!isRetry && companionInjected) firstTail = (firstTail + data).slice(-2048)
-        const s = rec.flush
-        s.buf += data
-        s.size += Buffer.byteLength(data, 'utf8')
-        if (s.size >= HIGH_WATERMARK) {
-          flushNow(id)
-        } else if (!s.timer) {
-          s.timer = setTimeout(() => flushNow(id), COALESCE_MS)
-        }
-      })
-
-      proc.onExit((evt) => {
-        // Drain any buffered bytes before the exit event so the renderer sees
-        // every byte the child produced.
-        flushNow(id)
-        if (blockedTimer) clearTimeout(blockedTimer)
-
-        // T389 §7.8: a spawn that carried Harnu's plugin dir and died at once without the mod
-        // ever saying hello is retried ONCE without Harnu's own `--plugin-dir` flags and without
-        // the token; `pty:exit` is not forwarded for the first process. Never for a spawn that
-        // was not injected, a park or a destroy.
-        if (
-          !isRetry &&
-          companionInjected &&
-          ptys.get(id) === rec &&
-          !isParking(id) &&
-          shouldRetryWithoutSideload({
-            injected: true,
-            exitCode: evt.exitCode,
-            livedMs: Date.now() - launchedAt,
-            helloSeen: companionHelloSeen(companionOwner),
-            retried: false
-          })
-        ) {
-          try {
-            reportCompanionSideloadExit(companionOwner, firstTail)
-            releaseCompanionSpawn(companionOwner, 'spawn-aborted')
-            rec.flush.buf += '\x1b[2mHarnu: restarted without bundled plugins.\x1b[0m\r\n'
-            flushNow(id)
-            const retryEnv = { ...env }
-            delete retryEnv.HARNU_SPAWN_TOKEN
-            const second = spawn(runCommand, stripInjectedPluginDirs(runArgs, injectedDirs), {
-              ...spawnOpts,
-              env: retryEnv
-            })
-            launchedAt = Date.now()
-            rec.pty = second
-            wire(second, true)
-            // Living past the window means the CLI ran without the flags: this machine blocks
-            // sideloaded plugins. In memory for the app run; later spawns skip both flags.
-            blockedTimer = setTimeout(() => {
-              if (ptys.get(id) === rec && rec.pty === second) markSideloadBlocked(firstTail)
-            }, RETRY_WINDOW_MS)
-            return
-          } catch {
-            // could not respawn: forward the first process's exit as today
-          }
-        }
-
-        releaseCompanionSpawn(companionOwner, 'pty-exit')
-        // BUG-70 §3.2: the fact travels WITH the event rather than suppressing it —
-        // other `pty:exit` consumers (pre-prompt gate, prompt submitter, helper-pane
-        // watch) still need the cancel signal on a park. `reason` absent on the wire
-        // means natural (a stale preload/renderer pair keeps today's behavior).
-        const reason: PtyExitReason = isParking(id) ? 'park' : 'natural'
-        clearParking(id)
-        getWindow()?.webContents.send('pty:exit', {
-          id,
-          exitCode: evt.exitCode,
-          signal: evt.signal,
-          reason
-        })
-        const r = ptys.get(id)
-        if (r?.flush.timer) clearTimeout(r.flush.timer)
-        ptys.delete(id)
-        // Prune the dead session's hook state (T13/BUG-1) before dropping the index
-        // entry — resolve the key while the reverse lookup still holds it.
-        const exitedKey = sessionIndex.getSessionKey(id)
-        if (exitedKey) pruneTaskState(exitedKey)
-        sessionIndex.removeByPtyId(id)
-      })
-    }
-    wire(pty, false)
-
-    return id
-  })
+  ipcMain.handle('pty:create', (_e, opts: CreateOpts): Promise<string> =>
+    createPty(opts, { getWindow, flushNow, runPolicy })
+  )
 
   ipcMain.on('pty:write', (_e, id: string, data: string) => {
     ptys.get(id)?.pty.write(data)
@@ -1429,4 +1022,432 @@ export function livePtyDescriptors(): LivePtyDescriptor[] {
     })
   }
   return out
+}
+
+/**
+ * What `createPty` needs from `registerPtyHandlers`' closure. Everything else it touches is
+ * module-level state (`ptys`, `sessionIndex`, …), so it can be called without an IPC event.
+ */
+export interface CreatePtyDeps {
+  getWindow: () => BrowserWindow | null
+  /** Drain one PTY's coalesced buffer to the renderer (and the ring). */
+  flushNow: (id: string) => void
+  /** Run the hibernation policy for a trigger, parking whatever it names. */
+  runPolicy: (trigger: Trigger) => string[]
+}
+
+/**
+ * Spawn a PTY and register it. The body of the `pty:create` IPC handler, extracted
+ * unchanged (T475) so main can create PTYs without a renderer round-trip.
+ */
+export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<string> {
+  const { getWindow, flushNow, runPolicy } = deps
+  // Dedup (I1): if this logical session already has a live PTY, reuse it
+  // instead of spawning a duplicate `claude --resume`. This guard lives in
+  // the main process, so it survives a renderer reload — the case that
+  // produced two `claude --resume <uuid>` clones (2026-06-01 spec §1, Defect 3).
+  if (opts.sessionKey) {
+    const existing = sessionIndex.getPtyId(opts.sessionKey)
+    if (existing && ptys.has(existing)) return existing
+  }
+  // T119 cap: the fleet is about to grow, so park the coldest eligible session(s) to stay
+  // at/under maxLive. Runs AFTER the dedup guard (a reused PTY isn't growth). Yields —
+  // parks nobody and lets the spawn through — when nothing is eligible (spec §3.5).
+  if (opts.sessionKey) runPolicy('cap')
+
+  const id = randomUUID()
+  const kind: PtyKind = opts.kind ?? 'shell'
+
+  // Resolve binary + args per kind. `claude-*` paths surface a clear error
+  // when the CLI isn't on PATH so the renderer can show a useful message
+  // instead of `spawn ENOENT`.
+  let command: string
+  let args: string[]
+  // `ANTHROPIC_*` overrides from a resolved custom-endpoint provider (local
+  // model fallback). Empty for the Anthropic default; merged into the spawn
+  // env below. Only `claude-*` kinds carry a provider.
+  let providerEnv: Record<string, string> = {}
+  // T389: the companion mod's plan for THIS spawn (null → exactly as before), and the plugin
+  // dirs Harnu itself put on the argv (what the sideload retry may take off again).
+  let companionPlan: CompanionSpawnPlan | null = null
+  let injectedDirs: string[] = []
+  if (kind === 'claude-new' || kind === 'claude-resume' || kind === 'claude-fork') {
+    const claudePath = await resolveClaudePath()
+    if (!claudePath) {
+      throw new Error(
+        'Could not find the `claude` CLI on PATH or in common install locations. ' +
+          'Install it via `npm install -g @anthropic-ai/claude-code` (or your preferred method) and restart the app.'
+      )
+    }
+    command = claudePath
+    // App-managed base args per kind. User "Claude Boot" options (global +
+    // per-folder, resolved from `claude-boot.json` by cwd) are appended after
+    // these by `resolveClaudeBootArgs`, which also strips any session-breaking
+    // flags from the user's free-form escape hatch (see `claude-args.ts`).
+    let base: string[]
+    // T344: the effective claudeSessionId for THIS spawn — normally just
+    // `opts.claudeSessionId`, but the folder-default arm-at-spawn path
+    // (below) may mint one when the caller didn't supply any, so the
+    // `--session-id` argv and the `isArmed` check downstream both see the
+    // SAME id.
+    let effectiveClaudeSessionId = opts.claudeSessionId
+    if (kind === 'claude-new') {
+      // A caller-minted uuid (T245) is emitted as `--session-id`; without one
+      // this stays a bare `claude` and the CLI mints its own.
+      if (opts.claudeSessionId && !SESSION_UUID_RE.test(opts.claudeSessionId)) {
+        throw new Error(`Invalid claudeSessionId (expected a session uuid)`)
+      }
+      // T344 AC-2/AC-3: the per-folder "new sessions start as Orchestrator"
+      // default. Mint a uuid (if the caller didn't supply one) and arm it
+      // BEFORE spawn, so `isArmed` below — and the CLI's very first turn —
+      // both see it as already armed. `shouldArmAtSpawn` independently
+      // excludes every agent-dispatched shape (AC-3), so this can never
+      // fire for MCP `create_session`, a board/manifest dispatch, or a
+      // T245 read-only companion, regardless of the folder flag.
+      const folderDefaultOn = await getUserProjectOrchestratorDefault(opts.cwd ?? '')
+      if (
+        shouldArmAtSpawn({
+          kind,
+          agentControlled: !!opts.agentControlled,
+          readOnly: !!opts.readOnly,
+          spawnedBy: opts.spawnedBy,
+          folderDefaultOn
+        })
+      ) {
+        effectiveClaudeSessionId = effectiveClaudeSessionId ?? randomUUID()
+        await arm(effectiveClaudeSessionId, opts.cwd ?? '', 'default')
+      }
+      base = effectiveClaudeSessionId ? ['--session-id', effectiveClaudeSessionId] : []
+    } else if (kind === 'claude-resume') {
+      if (!opts.claudeSessionId) {
+        throw new Error('claudeSessionId is required when kind === "claude-resume"')
+      }
+      if (!SESSION_UUID_RE.test(opts.claudeSessionId)) {
+        throw new Error(`Invalid claudeSessionId (expected a session uuid)`)
+      }
+      base = ['--resume', opts.claudeSessionId]
+    } else {
+      // kind === 'claude-fork' — spawn claude --resume <orig> --fork-session.
+      // Claude loads the source session's full history-to-disk, then on first
+      // event line writes to a fresh UUID. The two sessions diverge from there.
+      if (!opts.claudeSessionId) {
+        throw new Error('claudeSessionId is required when kind === "claude-fork"')
+      }
+      if (!SESSION_UUID_RE.test(opts.claudeSessionId)) {
+        throw new Error(`Invalid claudeSessionId (expected a session uuid)`)
+      }
+      base = ['--resume', opts.claudeSessionId, '--fork-session']
+    }
+    // Harnu self-awareness preamble (T55): prepended to the effective
+    // --append-system-prompt when the feature is on (composeAppendSystemPrompt),
+    // never clobbering the user's append and never touching --system-prompt.
+    // Applied to every claude-* kind, agent and non-agent alike.
+    const harnuPreambleBase = harnuPreambleProvider()
+    // T98: this session's own contract, injected the SAME way (prepended ahead
+    // of the user's append), independent of the T55 preamble toggle — arming a
+    // session is an explicit per-session opt-in via "Promote to orchestrator",
+    // so the contract lands even when the general self-awareness doc is off.
+    const orchestratorArmed = effectiveClaudeSessionId
+      ? await isArmed(effectiveClaudeSessionId)
+      : false
+    // T106: the per-repo auto-organize toggle-awareness line, resolved fresh at
+    // every spawn (mirrors the T85 memory-language line) — coupled to the T55
+    // preamble toggle since it's guidance about the same "Roadmap board"
+    // capability that doc describes.
+    const autoOrganizeAwareness = harnuPreambleBase
+      ? autoOrganizeLine(await getUserProjectAutoOrganize(opts.cwd ?? ''))
+      : ''
+    // T138: resolves either the builtin registry (in-memory) or an
+    // installed extension's contributes.modes doc (read fresh from disk) —
+    // same "explicit opt-in, so the contract must always land" reasoning
+    // as the orchestrator doc, now id-agnostic to whether the mode is
+    // builtin or extension-contributed.
+    const modeDoc = await resolveModeContract(opts.mode)
+    const harnuPreamble = [
+      harnuPreambleBase,
+      orchestratorArmed ? HARNU_ORCHESTRATOR_DOC : '',
+      modeDoc,
+      autoOrganizeAwareness
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+    const spawnCfg = await resolveClaudeBootArgs(opts.cwd, base, opts.bootOverride, harnuPreamble)
+    providerEnv = spawnCfg.env
+    if (opts.readOnly) {
+      // T245 read-only companion. Same shape as the agentControlled branch
+      // below — re-resolve the merged config, force it into read-only shape,
+      // rebuild argv from THAT, and withhold the app-managed --mcp-config —
+      // but for a different reason: not an untrusted caller, a deliberately
+      // weaker session. Rebuilding (rather than post-filtering `spawnCfg.args`)
+      // is what makes it airtight: the argv is derived from a config that no
+      // longer contains a way out.
+      const baseCfg = await getResolvedConfig(opts.cwd)
+      const merged = opts.bootOverride ? mergeBootConfig(baseCfg, opts.bootOverride) : baseCfg
+      // T247: the orientation goes on AFTER the read-only shape is fixed, so
+      // the prose describes a posture that is already true rather than one it
+      // is asserting. `withReviewCorrective` touches `appendSystemPrompt` and
+      // nothing else — no flag, no permission, no new spawn path.
+      const readOnlyCfg = forceReadOnlyPermission(merged)
+      args = buildClaudeArgs(
+        base,
+        opts.reviewCorrective
+          ? withReviewCorrective(readOnlyCfg, sanitizeCorrective(opts.reviewCorrective))
+          : readOnlyCfg,
+        harnuPreamble
+      )
+    } else if (opts.agentControlled) {
+      // MCP-spawned agent: untrusted. Re-resolve the merged boot cfg
+      // (global ⊕ folder ⊕ override) and strip any permission-bypass flag the
+      // user's own claude-boot.json may carry (forceDowngradePermission,
+      // defense-in-depth), rebuilding argv from the downgraded cfg. WITHHOLD
+      // the app-managed --mcp-config so the agent gets NO Harnu MCP server.
+      const baseCfg = await getResolvedConfig(opts.cwd)
+      const merged = opts.bootOverride ? mergeBootConfig(baseCfg, opts.bootOverride) : baseCfg
+      args = buildClaudeArgs(base, forceDowngradePermission(merged), harnuPreamble)
+    } else {
+      // Prepend Harnu's app-managed --mcp-config (when the MCP server is enabled)
+      // BEFORE the user's resolved Boot args so a user --mcp-config can't bury it.
+      args = orderMcpArgs(mcpArgsProvider(), spawnCfg.args)
+    }
+    // Every argv injector runs INSIDE `withOptionArgs`, which hands them only the
+    // OPTION portion and re-appends the bare `--` + positional pre-prompt tail
+    // afterwards. That ordering is load-bearing, not cosmetic: `resolveClaudeBootArgs`
+    // ends the argv with `-- <pre-prompt>`, and anything appended after that
+    // separator is a POSITIONAL argument the CLI never parses as a flag. BUG-86
+    // was exactly this — a freshly spawned session got neither `--settings` nor
+    // `--plugin-dir`, while resumed sessions (no pre-prompt, so no separator)
+    // worked. Add the NEXT injector inside this callback, never after it.
+    companionPlan = await companionSpawnProvider({
+      cwd: opts.cwd ?? '',
+      kind,
+      owner: { kind: 'pty', ptyId: id },
+      trust: trustFor({
+        readOnly: opts.readOnly,
+        agentControlled: opts.agentControlled,
+        spawnedBy: opts.spawnedBy
+      })
+    })
+    args = await withOptionArgs(args, async (optionArgs) => {
+      const before = [...optionArgs]
+      let out = optionArgs
+      // T92: inject per-session hook `--settings` so this Claude session POSTs its
+      // lifecycle to the Hook Bridge (event-driven fleet state) and Harnu owns
+      // notifications. Composes with any user `--settings` without clobbering it.
+      // Applied to agent + non-agent spawns alike; a `null` provider is a no-op.
+      const hookBlob = hookSettingsProvider()
+      if (hookBlob) out = injectHookSettings(out, hookBlob)
+      // T217: emit `--plugin-dir <staged>` for the bundled skills this FOLDER has
+      // switched on. A skill that is off is never staged, so it is absent from the
+      // session's catalog by construction; an empty enabled set emits nothing.
+      // T389: the companion is the FIRST `--plugin-dir`, inserted before the bundled-skills
+      // one (and before a user's own), inside this callback so it stays before the `--`.
+      out = applyCompanionArgv(out, companionPlan)
+      // A machine that blocks sideloaded plugins gets neither Harnu flag (§7.8).
+      if (!isSideloadBlocked()) out = await bundledSkillsArgsProvider(out, opts.cwd ?? '')
+      injectedDirs = injectedPluginDirs(before, out)
+      return out
+    })
+  } else {
+    command = opts.cmd ?? defaultShell()
+    args = opts.args ?? []
+  }
+
+  // Build the child env. `sanitizeSpawnEnv` strips AppImage-runtime pollution
+  // (mount-rooted PATH/LD_LIBRARY_PATH/… entries + APPDIR/APPIMAGE/ARGV0/OWD)
+  // so the spawned shell runs in the same environment a normal terminal would
+  // — without it, the AppImage's bundled libs/PATH leak into every session and
+  // break the user's tooling (e.g. mise: "<AppImage> is not a valid shim").
+  // No-op outside an AppImage. Then merge `CLAUDE_CODE_NO_FLICKER=1` when the
+  // per-session toggle is on (see `findings/04-pty-xterm-production.md` §4).
+  const env: Record<string, string> = {
+    ...sanitizeSpawnEnv(process.env as Record<string, string | undefined>, {
+      execPath: process.execPath
+    }),
+    ...(opts.noFlicker ? { CLAUDE_CODE_NO_FLICKER: '1' } : {}),
+    // Custom-endpoint provider overrides (ANTHROPIC_BASE_URL / _MODEL / auth).
+    // Last so they win over any inherited Anthropic env from the parent.
+    ...providerEnv
+  }
+  // Restore the user's real toolchain on PATH. A GUI/AppImage launch never
+  // sourced `.zshrc`/`mise activate`, so `node` (mise) and `rtk` (~/.local/bin)
+  // are missing — spawned `claude` sessions then fail their `command` hooks
+  // with `… not found`. Fold the login-shell PATH (captured once) ahead of the
+  // sanitized base. Best-effort: a failed capture leaves PATH untouched.
+  const mergedPath = mergeLoginPath(env.PATH, await loginPathOnce())
+  if (mergedPath) env.PATH = mergedPath
+  // Stale-directory guard for claude kinds. The session UUID is registered
+  // under the slug derived from its ORIGINAL cwd; if that directory was
+  // deleted (worktree pruned, project moved), `claude --resume` looks in
+  // a different slug and prints a confusing "No conversation found" error.
+  // We catch this earlier and show a clear message instead of letting the
+  // user think the app is broken.
+  let runCommand = command
+  let runArgs = args
+  let runCwd = resolveCwd(opts.cwd)
+  const wantedDirMissing =
+    (kind === 'claude-resume' || kind === 'claude-new' || kind === 'claude-fork') &&
+    !!opts.cwd &&
+    !existsSync(opts.cwd)
+  if (wantedDirMissing) {
+    const notice = buildMissingDirNotice(opts.cwd ?? '')
+    runCommand = notice.command
+    runArgs = notice.args
+    runCwd = os.homedir()
+  }
+
+  // T389: the spawn token. It never survives from the parent env, and is minted only when
+  // `claude` really runs (the missing-directory notice replaces the command, so it gets none).
+  const companionOwner: SpawnOwner = { kind: 'pty', ptyId: id }
+  applyCompanionEnv(env, {
+    plan: companionPlan,
+    owner: companionOwner,
+    dirMissing: wantedDirMissing
+  })
+  // The retry below only ever applies to a spawn that carried the COMPANION's plugin dir.
+  const companionInjected =
+    !!companionPlan && !wantedDirMissing && injectedDirs.includes(companionPlan.pluginDir)
+  const spawnOpts = {
+    name: 'xterm-256color',
+    cwd: runCwd,
+    cols: opts.cols,
+    rows: opts.rows,
+    env
+  }
+
+  const pty = spawn(runCommand, runArgs, spawnOpts)
+
+  const spawnedAt = Date.now()
+  const rec: PtyRec = {
+    pty,
+    flush: { buf: '', size: 0, timer: null },
+    ring: new RingBuffer(RING_CAP_BYTES),
+    seq: 0,
+    sessionKey: opts.sessionKey,
+    kind,
+    cols: opts.cols,
+    rows: opts.rows,
+    startedAt: spawnedAt,
+    lastActivityAt: spawnedAt,
+    // T215: fail closed — an unstamped spawn is treated as the operator's.
+    spawnedBy: opts.spawnedBy === 'agent' ? 'agent' : 'operator',
+    cwd: runCwd
+  }
+  ptys.set(id, rec)
+  if (opts.sessionKey) {
+    // Waking clears the parked flag, so a session with a live PTY can never stay
+    // flagged as hibernated (T119, spec §5.1 — self-healing by construction).
+    clearHibernated(opts.sessionKey)
+    // BUG-70 §4: record the wake against the ledger instead of letting the
+    // clear above erase the only trace a park happened. A no-op when this
+    // key has no open park entry (the common "brand-new session" case).
+    recordWake(opts.sessionKey, spawnedAt, opts.wakeGesture ?? 'unknown')
+    // Seed focus so a just-spawned session is never instantly the coldest victim.
+    lastFocusedAt.set(opts.sessionKey, spawnedAt)
+    sessionIndex.register(opts.sessionKey, id)
+    sessionSpawnOrigins.set(opts.sessionKey, rec.spawnedBy ?? 'operator')
+    // Announce session readiness on a single channel (payload carries the
+    // sessionKey) so the renderer can blanket-subscribe (`onSessionReady`)
+    // and gate agent-prompt injection without knowing keys ahead of time.
+    // `ptyId` rides along for the MCP fleet view (resolve without polling).
+    getWindow()?.webContents.send('pty:sessionReady', { sessionKey: opts.sessionKey, ptyId: id })
+    // T215: settle any main-process waiter parked on this key. The wake path
+    // (`message_session` on a parked recipient) has to know the resume
+    // actually landed before it resolves a socket — a live PTY is not yet a
+    // bound socket, but it is the precondition for one.
+    resolveSessionReadyWaiters(opts.sessionKey)
+  }
+
+  // T389: the process behind `rec.pty` can be replaced ONCE by the sideload retry (below), so
+  // the data and exit handlers are attached per process rather than once per record.
+  let launchedAt = spawnedAt
+  let firstTail = ''
+  let blockedTimer: ReturnType<typeof setTimeout> | null = null
+
+  const wire = (proc: IPty, isRetry: boolean): void => {
+    proc.onData((data) => {
+      if (!isRetry && companionInjected) firstTail = (firstTail + data).slice(-2048)
+      const s = rec.flush
+      s.buf += data
+      s.size += Buffer.byteLength(data, 'utf8')
+      if (s.size >= HIGH_WATERMARK) {
+        flushNow(id)
+      } else if (!s.timer) {
+        s.timer = setTimeout(() => flushNow(id), COALESCE_MS)
+      }
+    })
+
+    proc.onExit((evt) => {
+      // Drain any buffered bytes before the exit event so the renderer sees
+      // every byte the child produced.
+      flushNow(id)
+      if (blockedTimer) clearTimeout(blockedTimer)
+
+      // T389 §7.8: a spawn that carried Harnu's plugin dir and died at once without the mod
+      // ever saying hello is retried ONCE without Harnu's own `--plugin-dir` flags and without
+      // the token; `pty:exit` is not forwarded for the first process. Never for a spawn that
+      // was not injected, a park or a destroy.
+      if (
+        !isRetry &&
+        companionInjected &&
+        ptys.get(id) === rec &&
+        !isParking(id) &&
+        shouldRetryWithoutSideload({
+          injected: true,
+          exitCode: evt.exitCode,
+          livedMs: Date.now() - launchedAt,
+          helloSeen: companionHelloSeen(companionOwner),
+          retried: false
+        })
+      ) {
+        try {
+          reportCompanionSideloadExit(companionOwner, firstTail)
+          releaseCompanionSpawn(companionOwner, 'spawn-aborted')
+          rec.flush.buf += '\x1b[2mHarnu: restarted without bundled plugins.\x1b[0m\r\n'
+          flushNow(id)
+          const retryEnv = { ...env }
+          delete retryEnv.HARNU_SPAWN_TOKEN
+          const second = spawn(runCommand, stripInjectedPluginDirs(runArgs, injectedDirs), {
+            ...spawnOpts,
+            env: retryEnv
+          })
+          launchedAt = Date.now()
+          rec.pty = second
+          wire(second, true)
+          // Living past the window means the CLI ran without the flags: this machine blocks
+          // sideloaded plugins. In memory for the app run; later spawns skip both flags.
+          blockedTimer = setTimeout(() => {
+            if (ptys.get(id) === rec && rec.pty === second) markSideloadBlocked(firstTail)
+          }, RETRY_WINDOW_MS)
+          return
+        } catch {
+          // could not respawn: forward the first process's exit as today
+        }
+      }
+
+      releaseCompanionSpawn(companionOwner, 'pty-exit')
+      // BUG-70 §3.2: the fact travels WITH the event rather than suppressing it —
+      // other `pty:exit` consumers (pre-prompt gate, prompt submitter, helper-pane
+      // watch) still need the cancel signal on a park. `reason` absent on the wire
+      // means natural (a stale preload/renderer pair keeps today's behavior).
+      const reason: PtyExitReason = isParking(id) ? 'park' : 'natural'
+      clearParking(id)
+      getWindow()?.webContents.send('pty:exit', {
+        id,
+        exitCode: evt.exitCode,
+        signal: evt.signal,
+        reason
+      })
+      const r = ptys.get(id)
+      if (r?.flush.timer) clearTimeout(r.flush.timer)
+      ptys.delete(id)
+      // Prune the dead session's hook state (T13/BUG-1) before dropping the index
+      // entry — resolve the key while the reverse lookup still holds it.
+      const exitedKey = sessionIndex.getSessionKey(id)
+      if (exitedKey) pruneTaskState(exitedKey)
+      sessionIndex.removeByPtyId(id)
+    })
+  }
+  wire(pty, false)
+
+  return id
 }
