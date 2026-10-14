@@ -534,16 +534,42 @@ describe('AC-B5-6 — operatorTyped, othersWrote, FIFO, BUSY, RATE_LIMIT', () =>
 
   it('another MCP write during the call sets othersWrote on the call that was open', async () => {
     const { id, proc } = await spawnAgent()
-    const first = send({ terminalId: id, input: 'one' })
-    // `second` starts once `first` has written, so which call was open when is not a race.
-    while (proc.writes.length < 1) await new Promise((r) => setTimeout(r, 2))
-    const second = send({ terminalId: id, input: 'two' })
-    const [a, b] = [body(await first), body(await second)]
-    expect(writesOf(proc)).toEqual(['one', 'two'])
-    // `first` was still settling when `second` wrote: it saw someone else write.
-    expect(a.othersWrote).toBe(true)
-    // `second` was admitted after `first`'s write and wrote last; nobody wrote during it.
-    expect(b.othersWrote).toBe(false)
+    // Explicit gates, no timing: `second` starts only after `first` wrote, and `first` may not
+    // read its screen back (so it stays open) until `second` has written.
+    const gate = (): { promise: Promise<void>; open: () => void } => {
+      let open!: () => void
+      const promise = new Promise<void>((resolve) => (open = resolve))
+      return { promise, open }
+    }
+    const firstWrote = gate()
+    const secondWrote = gate()
+    const realWrite = proc.write
+    proc.write = (data: string): void => {
+      realWrite(data)
+      if (proc.writes.length === 1) firstWrote.open()
+      if (proc.writes.length === 2) secondWrote.open()
+    }
+    const model = screenModelFor(id)!
+    const realRead = model.read.bind(model)
+    let reads = 0
+    const spy = vi.spyOn(model, 'read').mockImplementation(async (opts) => {
+      // The first read-back is `first`'s (`second` has not written yet): hold it.
+      if (++reads === 1) await secondWrote.promise
+      return realRead(opts)
+    })
+    try {
+      const first = send({ terminalId: id, input: 'one' })
+      await firstWrote.promise
+      const second = send({ terminalId: id, input: 'two' })
+      const [a, b] = [body(await first), body(await second)]
+      expect(writesOf(proc)).toEqual(['one', 'two'])
+      // `first` was still open when `second` wrote: it saw someone else write.
+      expect(a.othersWrote).toBe(true)
+      // `second` was admitted after `first`'s write and wrote last; nobody wrote during it.
+      expect(b.othersWrote).toBe(false)
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it('writes to one terminal are FIFO: calls queued behind a holder write in arrival order', async () => {
