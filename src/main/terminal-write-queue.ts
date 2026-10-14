@@ -297,20 +297,27 @@ export const SETTLE_CAP_MS = 1000
  * Wait for the terminal to go quiet after a send: {@link SETTLE_QUIET_MS} with no output, capped
  * at {@link SETTLE_CAP_MS}. `lastOutputAt` is read fresh each turn (the registry stamps it as
  * bytes arrive); the quiet clock never starts before `sentAt`. Returns how long it waited.
+ *
+ * `abort` ends the wait AT ONCE when it fires — the operator pressed Disconnect (spec §6.4):
+ * `is()` is checked every turn and `wake()` resolves the moment it fires, so a sleep in progress
+ * is cut short instead of running out its timer.
  */
 export async function settleAfterSend(io: {
   now: () => number
   sleep: (ms: number) => Promise<void>
   lastOutputAt: () => number
   sentAt: number
+  abort?: { is: () => boolean; wake: () => Promise<void> }
 }): Promise<number> {
   const started = io.now()
   for (;;) {
     const now = io.now()
     const elapsed = now - started
+    if (io.abort?.is()) return elapsed
     const quiet = now - Math.max(io.lastOutputAt(), io.sentAt)
     if (quiet >= SETTLE_QUIET_MS || elapsed >= SETTLE_CAP_MS) return elapsed
-    await io.sleep(Math.min(SETTLE_QUIET_MS - quiet, SETTLE_CAP_MS - elapsed, 50))
+    const nap = io.sleep(Math.min(SETTLE_QUIET_MS - quiet, SETTLE_CAP_MS - elapsed, 50))
+    await (io.abort ? Promise.race([nap, io.abort.wake()]) : nap)
   }
 }
 

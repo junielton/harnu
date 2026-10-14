@@ -245,8 +245,46 @@ export class ScreenModel {
     return this.readScreen(opts, true)
   }
 
-  private async readScreen(opts: ReadOptions, withCursor: boolean): Promise<ScreenReadResult> {
-    const approximate = (await this.barrier()) || this.seededApproximate
+  /**
+   * Run `fn` at the barrier, INSIDE the callback that reports it: the writes queued before the
+   * call are parsed, and none queued after it are. Reading after `await barrier()` is not the
+   * same: xterm parses its queue in one synchronous slice, so chunks queued behind the barrier
+   * can already be on the screen by the time the awaiting code resumes. `fn` gets whether the
+   * barrier timed out (the answer may be stale).
+   */
+  private atBarrier<T>(fn: (timedOut: boolean) => T): Promise<T> {
+    if (this.disposed || this.pendingBytes === 0) {
+      try {
+        return Promise.resolve(fn(false))
+      } catch (err) {
+        return Promise.reject(err)
+      }
+    }
+    return new Promise<T>((resolve, reject) => {
+      let settled = false
+      const run = (timedOut: boolean): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        try {
+          resolve(fn(timedOut))
+        } catch (err) {
+          reject(err)
+        }
+      }
+      const timer = setTimeout(() => run(true), this.barrierMs)
+      this.term.write('', () => run(false))
+    })
+  }
+
+  private readScreen(opts: ReadOptions, withCursor: boolean): Promise<ScreenReadResult> {
+    return this.atBarrier((timedOut) =>
+      this.readNow(opts, withCursor, timedOut || this.seededApproximate)
+    )
+  }
+
+  /** The synchronous half of a read: the screen exactly as it stands this tick. */
+  private readNow(opts: ReadOptions, withCursor: boolean, approximate: boolean): ScreenReadResult {
     this.sweepCursors()
     const buf = this.term.buffer.active
     const altScreen = buf.type === 'alternate'

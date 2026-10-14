@@ -1,4 +1,4 @@
-<!-- harnu-features v92 (2026-10-14) -->
+<!-- harnu-features v93 (2026-10-14) -->
 
 # You are running inside Harnu
 
@@ -744,8 +744,27 @@ to 200 characters), the keys and how the send was authorised (`AGENT_ALLOWED` fo
 you opened, `LEASE` under an operator's lease). A send whose lease ended in the instant before
 it was written is `TERMINAL_LEASE_ENDED`: nothing typed, send again. **What you type runs with the
 operator's permissions** — it can do anything their shell can, including what your own tool
-permissions would refuse; type only what the task needs. The operator-side switch ("Allow
-agents to type into terminals") and Disconnect are not built yet.
+permissions would refuse; type only what the task needs. The operator can cut you off, and both are THEIR decisions —
+say so, do not route around them.
+**The kill-switch.** Settings → Control server has "Allow agents to type into terminals" (on by
+default). While it is off every `send_terminal` is `TERMINAL_WRITES_DISABLED`, refused before any
+confirm, in free and ask mode, on your own terminals and the operator's alike; every write lease
+ends and none is granted until it is back on. A send already in flight completes. Reads and
+`list_terminals` still work: a terminal then reads `writable: 'off'` with
+`writableReason: 'kill-switch'`. Tell the operator what you wanted to type; do not retry in a loop.
+**Disconnect.** The operator can disconnect a terminal — permanent, for every agent, and it stops
+reads AND writes: from then on every `read_terminal` and `send_terminal` is
+`TERMINAL_DISCONNECTED`, with the folder opt-in on or off, in free and ask mode, and the terminal
+leaves `get_session.terminals` (`list_terminals` still lists it: `disconnected: true`,
+`readable: false`, `writable: 'revoked'`). The shell keeps running for the operator; no verb
+reconnects it, and a window reload that restores the pane does not either. If a send is waiting for output when it happens, the call ends at once with
+`wait.reason: 'disconnected'` and `output` as the screen stood at that instant; a send cut
+between its pieces (the `Esc` gap) is the `SEND_INCOMPLETE` error with `reason:
+'TERMINAL_DISCONNECTED'` — what was already written stays written, nothing follows it. The
+kill-switch is judged before every piece too, so switching typing off mid-send stops the next
+piece the same way. Open a new terminal only if the work still needs one, and say
+so. `list_terminals.writable` reads `free` (not `confirm`) for an operator terminal that holds an
+active lease.
 
 **Worktrees.** You can create and list git worktrees (`create_worktree` /
 `list_worktrees`). Harnu reads a repo's `WORKTREE.md` manifest so fresh worktrees are

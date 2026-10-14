@@ -1217,6 +1217,11 @@ export async function removeUserProject(targetPath: string): Promise<UserProject
 
   if (!removedProject) return next
 
+  // T474: the folder's read opt-in went with it, and a write lease rides on that opt-in. Ending
+  // the leases here means removing the folder, re-adding it and opting in again cannot revive an
+  // approval the operator gave before they removed it.
+  terminalLeases.revokeFolder(removedProject.path)
+
   // Cascade: helpers entries for this project's root path AND each of
   // its worktrees must also go. Best-effort — failures here are logged
   // but do not roll back the project removal (the user already saw the

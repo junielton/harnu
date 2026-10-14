@@ -373,6 +373,7 @@ describe('AC-B6-2 / AC-B6-8 — ask mode: the lease promotes confirm to allow, a
       ownerSessionId: null,
       leaseActive: true,
       writeDenied: false,
+      writesEnabled: true,
       ...over
     })
     const plan = (

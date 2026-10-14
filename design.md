@@ -6245,6 +6245,14 @@ connected }`, never the secret, so the pane cannot reveal or copy the raw
   freely; every call is in the audit log below) and what ON buys (a confirmation in
   front of every action). Writes the global `ask` pref (`mcpAskSet`), read live at
   every gate decision — no restart.
+- **Allow agents to type into terminals** (`mcpServer.agentTerminalWrites`, T474 B7):
+  a second **`ToggleSwitch`** row directly below "Ask before agent actions" — same
+  row anatomy, no new variant — **default ON**. Label + a `SettingHint`
+  (`mcpServer.agentTerminalWritesHint`) saying what OFF means: agents can still read
+  the terminals you allow, but every attempt to type is refused. Writes the global
+  `agentTerminalWrites` pref (`mcpAgentTerminalWritesSet`), read live at every gate
+  decision — no restart. Turning it OFF also ends every write lease; a send already
+  in flight completes.
 - **Per-folder block list** (`mcpServer.allowFolders`): sub-block titled "Folders the
   agent can act in", with a `SettingHint` stating the default ("Agents can act in
   every folder by default. Turn one off to block them there and in everything under

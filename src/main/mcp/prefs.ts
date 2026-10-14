@@ -16,7 +16,8 @@
  * mutating verb; it does NOT resurrect the per-folder allowlist, which is gone.
  *
  * The file lives at `<userData>/mcp-prefs.json`:
- * `{ "enabled"?: boolean, "ask"?: boolean, "autoRegister"?: boolean }`.
+ * `{ "enabled"?: boolean, "ask"?: boolean, "autoRegister"?: boolean,
+ * "agentTerminalWrites"?: boolean }`.
  *
  * env-bound (electron `app` + `node:fs`) ⇒ e2e-only per ADR-0001 (no unit test;
  * goes in coverage.exclude). The pure policy math lives in `policy-assemble.ts`;
@@ -47,6 +48,11 @@ interface McpPrefsFile {
   ask?: boolean
   /** T93: auto-register opt-out. Default ON — only an explicit `false` opts out. */
   autoRegister?: boolean
+  /**
+   * T474 B7: the global write kill-switch ("Allow agents to type into terminals"). Default ON —
+   * only an explicit `false` makes every `send_terminal` refuse `TERMINAL_WRITES_DISABLED`.
+   */
+  agentTerminalWrites?: boolean
 }
 
 /** Read + parse the prefs object, or `{}` on a missing/corrupt/unreadable file. */
@@ -123,4 +129,32 @@ export async function readMcpAutoRegister(): Promise<boolean> {
 /** Persist the auto-register opt-out (read-merge-write; preserves `enabled`). */
 export async function writeMcpAutoRegister(autoRegister: boolean): Promise<void> {
   await mergePrefs({ autoRegister })
+}
+
+/**
+ * The kill-switch is asked on EVERY terminal verb (plan, handler, again after the queue wait), so
+ * the value is kept in memory once read: after the first read a call costs a microtask, not a
+ * file read. {@link writeAgentTerminalWrites} keeps it current; it is keyed by the prefs path so
+ * a different `userData` (a test, a second profile) never sees another file's answer.
+ */
+let terminalWritesCache: { file: string; value: boolean } | null = null
+
+/**
+ * Whether agents may type into terminals at all (T474 B7, spec §6.5). Defaults to **`true`**:
+ * agent-spawned terminals are free by the operator's decision, and a missing or corrupt file
+ * must not silently change that. Only an explicit `{ "agentTerminalWrites": false }` switches
+ * typing off. Read at every gate resolution, so it takes effect on the next call.
+ */
+export async function readAgentTerminalWrites(): Promise<boolean> {
+  const file = mcpPrefsPath()
+  if (terminalWritesCache?.file === file) return terminalWritesCache.value
+  const value = (await readPrefs()).agentTerminalWrites !== false
+  terminalWritesCache = { file, value }
+  return value
+}
+
+/** Persist the typing kill-switch (read-merge-write; preserves the rest). */
+export async function writeAgentTerminalWrites(enabled: boolean): Promise<void> {
+  await mergePrefs({ agentTerminalWrites: enabled })
+  terminalWritesCache = { file: mcpPrefsPath(), value: enabled }
 }

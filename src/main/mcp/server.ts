@@ -71,6 +71,8 @@ import {
   writeMcpEnabled,
   readMcpAsk,
   writeMcpAsk,
+  readAgentTerminalWrites,
+  writeAgentTerminalWrites,
   readMcpAutoRegister,
   writeMcpAutoRegister
 } from './prefs'
@@ -125,7 +127,7 @@ import { gateTerminalOp, type TerminalGateState } from '../terminal-gate-core'
 import { resolveTerminalGate } from '../terminal-gate'
 import { terminalLeases } from '../terminal-lease'
 import { terminalRegistry } from '../terminal-registry'
-import { escapeForAudit } from '../terminal-keys'
+import { auditField } from '../terminal-keys'
 import { terminalWriteQueue } from '../terminal-write-queue'
 import { escapeForConfirm, shortPaneId } from '../terminal-confirm-text'
 import { shapeDenial } from './deny-hint'
@@ -1169,10 +1171,14 @@ async function runToolCall(
     // Only a send that actually happened is logged as running under the lease.
     if (ackIsSuccess(res)) {
       pushShadowEntry({
-        sessionId: strField(args, 'ownerSessionId') ?? '',
+        // `ownerSessionId` is optional on the verb: fall back to who the terminal is connected to.
+        sessionId:
+          strField(args, 'ownerSessionId') ??
+          terminalRegistry.get(plan.leaseAllow.terminalId)?.ownerSessionId ??
+          '',
         event: `mcp:${def.op}`,
         by: 'lease',
-        summary: `${def.op} ${escapeForAudit(plan.leaseAllow.terminalId)} (write lease)`,
+        summary: `${def.op} ${auditField(plan.leaseAllow.terminalId)} (write lease)`,
         ts: Date.now()
       })
     }
@@ -1193,11 +1199,19 @@ async function runToolCall(
       denyFolders: policy.denyFolders ?? [],
       bridge: deps?.bridge
     })
+    // A send to a leased operator terminal rides this path in free mode; its audit row says
+    // LEASE, so the shadow entry must too.
+    const underLease = plan.auditRecord.result.startsWith('LEASE:')
     pushShadowEntry({
-      sessionId: strField(args, 'sessionId') ?? '',
+      sessionId:
+        strField(args, 'sessionId') ??
+        (underLease ? strField(args, 'ownerSessionId') : undefined) ??
+        '',
       event: `mcp:${def.op}`,
-      by: 'agent-allowed',
-      summary: `${def.op} ${folder} (agent-allowed folder)`,
+      by: underLease ? 'lease' : 'agent-allowed',
+      summary: underLease
+        ? `${def.op} ${auditField(strField(args, 'terminalId') ?? '')} (write lease)`
+        : `${def.op} ${folder} (agent-allowed folder)`,
       ts: Date.now()
     })
     return res
@@ -1449,14 +1463,14 @@ async function grantTerminalLease(
     folder,
     verdict: 'allow',
     disclosedPayloadSummary: 'none',
-    result: `LEASE_GRANTED: ${escapeForAudit(terminalId)}`
+    result: `LEASE_GRANTED: ${auditField(terminalId)}`
   })
   auditPersister.schedule()
   pushShadowEntry({
     sessionId: strField(args, 'ownerSessionId') ?? '',
     event: 'mcp:send_terminal',
     by: 'operator-allow',
-    summary: `send_terminal ${escapeForAudit(terminalId)} (write lease granted; nothing typed)`,
+    summary: `send_terminal ${auditField(terminalId)} (write lease granted; nothing typed)`,
     ts: Date.now()
   })
   const denial = shapeDenial('TERMINAL_APPROVED_RESEND', { folder })
@@ -1815,6 +1829,16 @@ export async function registerMcpServer(
   ipcMain.handle('mcp:ask:set', async (_e, ask: boolean) => {
     await writeMcpAsk(ask === true)
     return readMcpAsk()
+  })
+
+  // T474 B7: the typing kill-switch ("Allow agents to type into terminals"). Default ON. Read
+  // live at every gate resolution, so it takes effect on the next call; turning it OFF also ends
+  // every write lease (spec §6.5). A send already in flight completes.
+  ipcMain.handle('mcp:agentTerminalWrites:get', () => readAgentTerminalWrites())
+  ipcMain.handle('mcp:agentTerminalWrites:set', async (_e, enabled: boolean) => {
+    await writeAgentTerminalWrites(enabled === true)
+    if (enabled !== true) terminalLeases.revokeAll()
+    return readAgentTerminalWrites()
   })
 
   // T44 S5: mission-grant management — list live grants + revoke.

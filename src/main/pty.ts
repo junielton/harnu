@@ -355,6 +355,12 @@ export interface CreateOpts {
     folder: string
     origin: TerminalOrigin
     ownerSessionId?: string | null
+    /**
+     * Main-only: the record this one replaces was disconnected by the operator. Disconnect is
+     * permanent for the terminal id, so the replacement is born disconnected (spec §6.4). The
+     * `pty:create` handler builds this object itself, so a renderer can never set it.
+     */
+    disconnected?: boolean
   }
 }
 
@@ -743,7 +749,10 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
           terminalId: named.terminalId,
           folder: await normalizeFolderPath(opts.cwd),
           origin: 'operator',
-          ownerSessionId: null
+          ownerSessionId: null,
+          // T487 F1: a pane restored under a Disconnected id must stay Disconnected, or a window
+          // reload would hand every agent its access back.
+          ...(held?.disconnected ? { disconnected: true } : {})
         }
       }
     }
@@ -1652,6 +1661,7 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
       folder: opts.terminal.folder,
       origin: opts.terminal.origin,
       ownerSessionId: opts.terminal.ownerSessionId ?? null,
+      ...(opts.terminal.disconnected ? { disconnected: true } : {}),
       size: { cols: opts.cols, rows: opts.rows }
     })
     // T480: an agent terminal is exact from byte 0, so its screen model is born with it. An

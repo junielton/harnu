@@ -53,14 +53,17 @@ describe('HARNU_MCP_INSTRUCTIONS_BODY content sanity', () => {
     expect(HARNU_MCP_INSTRUCTIONS_BODY).toMatch(/Ask before agent actions/i)
   })
 
-  it('advertises exactly the terminal surface that exists after B5 (T478, T480, T482)', () => {
+  it('advertises exactly the terminal surface that exists after B7 (T478, T480, T482, T487)', () => {
     expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('spawn_terminal')
     expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('list_terminals')
     expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('read_terminal')
     expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('ownerSessionId')
-    // AC-B5-9: `send_terminal` is advertised, and nothing about the kill-switch (unit B7) yet.
     expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('send_terminal')
-    expect(HARNU_MCP_INSTRUCTIONS_BODY).not.toMatch(/kill-?switch|disconnect|lease/i)
+    // AC-B7-7: the operator can switch typing off, and what the refusals mean.
+    expect(HARNU_MCP_INSTRUCTIONS_BODY).toMatch(/switch agent typing off in Settings/i)
+    expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('TERMINAL_WRITES_DISABLED')
+    expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('TERMINAL_DISCONNECTED')
+    expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('TERMINAL_APPROVED_RESEND')
   })
 
   it('stays a primer — non-empty and ≤80 lines', () => {

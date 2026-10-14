@@ -12,7 +12,8 @@
  * B4 owns the READ half. B5 added `TERMINAL_EXITED`. B6 adds `TERMINAL_WRITE_DENIED` (the
  * operator's Deny cooldown) and carries the lease in the state: whether a send needs a confirm is
  * NOT decided here — `planToolCall` promotes or narrows the verdict from `origin` and
- * `leaseActive`. `TERMINAL_WRITES_DISABLED` is the kill-switch of unit B7.
+ * `leaseActive`. B7 adds `TERMINAL_WRITES_DISABLED`, the global kill-switch, which refuses every
+ * send before any confirm, in every mode, for every origin.
  *
  * Pure (ADR-0001): no electron, no fs, no clock.
  */
@@ -24,6 +25,7 @@ export type TerminalDenyReason =
   | 'NOT_A_TERMINAL'
   | 'TERMINAL_DISCONNECTED'
   | 'TERMINAL_EXITED'
+  | 'TERMINAL_WRITES_DISABLED'
   | 'TERMINAL_READ_NOT_ENABLED'
   | 'TERMINAL_WRITE_DENIED'
 
@@ -61,6 +63,8 @@ export interface TerminalGateState {
   leaseActive: boolean
   /** The operator denied typing here less than 5 minutes ago (spec §6.3). */
   writeDenied: boolean
+  /** The global kill-switch `agentTerminalWrites` (spec §6.5): false refuses every send. */
+  writesEnabled: boolean
 }
 
 /** What an id the registry does not know resolves to: the gate fails closed on it. */
@@ -73,14 +77,16 @@ export const UNKNOWN_TERMINAL: TerminalGateState = {
   readable: false,
   ownerSessionId: null,
   leaseActive: false,
-  writeDenied: false
+  writeDenied: false,
+  writesEnabled: true
 }
 
 /**
  * Resolve the gate state of one terminal from its record and the operator's prefs.
  * `readOptIn` is the folder's `agentTerminalRead`; `writesEnabled` is the global kill-switch
- * (unit B7 — until it lands the caller passes `true`, its default). `lease` is what the shell read
- * from the lease table; a lease on a terminal that has exited or been disconnected does not count.
+ * `agentTerminalWrites` (spec §6.5). `lease` is what the shell read from the lease table; a lease
+ * on a terminal that has exited or been disconnected, or while the kill-switch is off, does not
+ * count.
  */
 export function resolveTerminalGateState(
   rec: Pick<TerminalRecord, 'origin' | 'disconnected' | 'state' | 'ownerSessionId'> | undefined,
@@ -96,8 +102,10 @@ export function resolveTerminalGateState(
     state: rec.state,
     readable: terminalAccess(rec, prefs).readable,
     ownerSessionId: rec.ownerSessionId,
-    leaseActive: lease.active && !rec.disconnected && rec.state === 'running',
-    writeDenied: lease.denied
+    leaseActive:
+      lease.active && !rec.disconnected && rec.state === 'running' && prefs.writesEnabled,
+    writeDenied: lease.denied,
+    writesEnabled: prefs.writesEnabled
   }
 }
 
@@ -114,7 +122,7 @@ export type WriteStopReason =
  * `rec` is the registry record read just now (`undefined`: it was swept). `ctx` carries what a
  * record cannot say: whether the terminal's folder is blocked right now, whether the tool
  * deadline fired, and the folder's read opt-in. Any further condition on writing (the operator-
- * terminal lease, the kill-switch) belongs HERE, so every write is judged by the same rules.
+ * terminal lease, the kill-switch, Disconnect) belongs HERE, so every write is judged by the same rules.
  * Order: deadline → not found → blocked folder → the gate's own order.
  */
 export function canStillWrite(
@@ -123,6 +131,12 @@ export function canStillWrite(
     folderBlocked: boolean
     deadlineFired: boolean
     readOptIn: boolean
+    /**
+     * The global kill-switch `agentTerminalWrites`, read just now. Judged before EVERY write, so
+     * switching typing off stops the next piece of a multi-piece send (an `Esc` and what follows
+     * it); a piece already handed to the PTY stays written.
+     */
+    writesEnabled: boolean
     /**
      * The send rides on the operator's write lease (an operator-opened terminal, or any terminal
      * the plan let through on a lease), and whether that lease is active right now for the PTY
@@ -138,7 +152,7 @@ export function canStillWrite(
   if (ctx.folderBlocked) return 'FOLDER_NOT_ALLOWED'
   const refusal = gateTerminalOp(
     'send_terminal',
-    resolveTerminalGateState(rec, { readOptIn: ctx.readOptIn, writesEnabled: true })
+    resolveTerminalGateState(rec, { readOptIn: ctx.readOptIn, writesEnabled: ctx.writesEnabled })
   )
   if (refusal) return refusal
   return ctx.leaseNeeded && !ctx.leaseActive ? 'TERMINAL_LEASE_ENDED' : null
@@ -147,7 +161,8 @@ export function canStillWrite(
 /**
  * The flat refusal for `op` against `state`, or `null` to continue. Order (spec §6.2):
  * `TERMINAL_NOT_FOUND` → `NOT_A_TERMINAL` → `TERMINAL_DISCONNECTED` → (writes only)
- * `TERMINAL_EXITED` → `TERMINAL_READ_NOT_ENABLED` → (writes only) `TERMINAL_WRITE_DENIED`.
+ * `TERMINAL_EXITED` → (writes only) `TERMINAL_WRITES_DISABLED` → `TERMINAL_READ_NOT_ENABLED` →
+ * (writes only) `TERMINAL_WRITE_DENIED`.
  * A disconnected terminal is refused as disconnected even when its folder opt-in is off: the
  * operator's Disconnect is the more specific fact. An exited terminal stays readable for its
  * tombstone window but nothing can be typed into it.
@@ -159,6 +174,9 @@ export function gateTerminalOp(op: string, state: TerminalGateState): TerminalDe
   if (state.disconnected) return 'TERMINAL_DISCONNECTED'
   const writes = WRITE_OPS.has(op)
   if (writes && state.state === 'exited') return 'TERMINAL_EXITED'
+  // The operator's global switch: a send is refused here, before any confirm, whoever opened the
+  // terminal. Reads are unaffected.
+  if (writes && !state.writesEnabled) return 'TERMINAL_WRITES_DISABLED'
   if (!state.readable) return 'TERMINAL_READ_NOT_ENABLED'
   // The operator's Deny cooldown (spec §6.3): refused outright, so no new prompt is raised.
   if (writes && state.writeDenied) return 'TERMINAL_WRITE_DENIED'

@@ -74,7 +74,7 @@ export interface TerminalRecord {
   origin: TerminalOrigin
   /** Attribution only (spec §3.3). */
   ownerSessionId: string | null
-  /** The operator pressed Disconnect — permanent (spec §6.4). Set by unit B7; read from B1. */
+  /** The operator pressed Disconnect — permanent (spec §6.4). Only {@link TerminalRegistry.disconnect} sets it. */
   disconnected: boolean
   state: TerminalState
   exit?: TerminalExit
@@ -108,6 +108,8 @@ export interface RegisterTerminalInput {
   folder: string
   origin: TerminalOrigin
   ownerSessionId?: string | null
+  /** Born disconnected: the record replaces one the operator disconnected (T487 F1). */
+  disconnected?: boolean
   size: { cols: number; rows: number }
 }
 
@@ -122,8 +124,9 @@ export type TerminalAccess =
 /**
  * Per-terminal access, from the registry record plus the two operator prefs that live outside
  * it. `readOptIn` is the folder's `agentTerminalRead` (unit B4); `writesEnabled` is the global
- * kill-switch `agentTerminalWrites` (unit B7). Until those land the caller passes `false` /
- * `true`, which is exactly their defaults.
+ * kill-switch `agentTerminalWrites` (unit B7). `leaseActive` is whether the operator's write
+ * lease on this terminal is live (unit B6): an operator-opened terminal under a lease takes sends
+ * with no prompt, so it reads `free` rather than `confirm` (spec §6.1).
  *
  * `free` — a send runs with no prompt. `confirm` — a send raises the operator confirm (unit B6).
  * `revoked` — the operator disconnected it. `off` — writes are not possible right now, and
@@ -131,14 +134,17 @@ export type TerminalAccess =
  */
 export function terminalAccess(
   rec: Pick<TerminalRecord, 'origin' | 'disconnected' | 'state'>,
-  prefs: { readOptIn: boolean; writesEnabled: boolean }
+  prefs: { readOptIn: boolean; writesEnabled: boolean; leaseActive?: boolean }
 ): TerminalAccess {
   if (rec.disconnected) return { readable: false, writable: 'revoked' }
   const readable = rec.origin === 'agent' || prefs.readOptIn
   if (!readable) return { readable, writable: 'off', writableReason: 'read-not-enabled' }
   if (rec.state === 'exited') return { readable, writable: 'off', writableReason: 'exited' }
   if (!prefs.writesEnabled) return { readable, writable: 'off', writableReason: 'kill-switch' }
-  return { readable, writable: rec.origin === 'agent' ? 'free' : 'confirm' }
+  return {
+    readable,
+    writable: rec.origin === 'agent' || prefs.leaseActive === true ? 'free' : 'confirm'
+  }
 }
 
 /** Matches one complete terminal-generated reply (see {@link isTerminalReply}). */
@@ -195,6 +201,11 @@ export class TerminalRegistry {
   private readonly oscCarry = new Map<string, string>()
   /** Agent-terminal slots promised to a spawn that has not registered yet, per folder. */
   private readonly pending = new Map<string, number>()
+  /** Calls in flight that must learn of a Disconnect at once (spec §6.4). */
+  private readonly disconnectListeners = new Map<string, Set<() => void>>()
+  private readonly activityListeners = new Set<
+    (terminalId: string, kind: 'read' | 'write') => void
+  >()
 
   constructor(private readonly now: () => number = Date.now) {}
 
@@ -207,7 +218,7 @@ export class TerminalRegistry {
       folder: input.folder,
       origin: input.origin === 'agent' ? 'agent' : 'operator',
       ownerSessionId: input.ownerSessionId ?? null,
-      disconnected: false,
+      disconnected: input.disconnected === true,
       state: 'running',
       size: { ...input.size },
       title: null,
@@ -231,6 +242,7 @@ export class TerminalRegistry {
     this.byPty.delete(rec.ptyId)
     this.closing.delete(rec.ptyId)
     this.oscCarry.delete(rec.ptyId)
+    this.disconnectListeners.delete(terminalId)
   }
 
   /** Drop tombstones past their window. Called by every read so no timer is needed. */
@@ -337,13 +349,75 @@ export class TerminalRegistry {
   /** An agent read this terminal (spec §4.3). A no-op for an unknown id. */
   noteAgentRead(terminalId: string): void {
     const rec = this.get(terminalId)
-    if (rec) rec.lastAgentReadAt = this.now()
+    if (!rec) return
+    rec.lastAgentReadAt = this.now()
+    this.emitActivity(terminalId, 'read')
   }
 
   /** An agent typed into this terminal (spec §4.4). A no-op for an unknown id. */
   noteAgentWrite(terminalId: string): void {
     const rec = this.get(terminalId)
-    if (rec) rec.lastAgentWriteAt = this.now()
+    if (!rec) return
+    rec.lastAgentWriteAt = this.now()
+    this.emitActivity(terminalId, 'write')
+  }
+
+  /**
+   * The operator pressed Disconnect (spec §6.4): permanent, and it stops reads AND writes from
+   * here on. Fires the listeners of any call in flight, so a wait ends at once. The PTY is not
+   * touched. Returns false for an unknown id; disconnecting twice is a harmless no-op (true).
+   */
+  disconnect(terminalId: string): boolean {
+    const rec = this.get(terminalId)
+    if (!rec) return false
+    if (rec.disconnected) return true
+    rec.disconnected = true
+    for (const cb of [...(this.disconnectListeners.get(terminalId) ?? [])]) {
+      try {
+        cb()
+      } catch {
+        // A listener that throws must not stop the others from learning of the disconnect.
+      }
+    }
+    this.disconnectListeners.delete(terminalId)
+    return true
+  }
+
+  /**
+   * Call `cb` once when `terminalId` is disconnected. Fires at once if it already is. Returns an
+   * unsubscribe, to be called when the call that listened is over.
+   */
+  onDisconnect(terminalId: string, cb: () => void): () => void {
+    const rec = this.byId.get(terminalId)
+    if (rec?.disconnected) {
+      cb()
+      return () => {}
+    }
+    let set = this.disconnectListeners.get(terminalId)
+    if (!set) this.disconnectListeners.set(terminalId, (set = new Set()))
+    set.add(cb)
+    return () => {
+      set.delete(cb)
+      if (set.size === 0 && this.disconnectListeners.get(terminalId) === set) {
+        this.disconnectListeners.delete(terminalId)
+      }
+    }
+  }
+
+  /** Call `cb` on every agent read or write (the chip's live signal, spec §7.3). */
+  onAgentActivity(cb: (terminalId: string, kind: 'read' | 'write') => void): () => void {
+    this.activityListeners.add(cb)
+    return () => this.activityListeners.delete(cb)
+  }
+
+  private emitActivity(terminalId: string, kind: 'read' | 'write'): void {
+    for (const cb of this.activityListeners) {
+      try {
+        cb(terminalId, kind)
+      } catch {
+        // Activity is a display signal; a broken listener must never fail a verb.
+      }
+    }
   }
 
   /** The renderer's xterm for this terminal was disposed (unload / explicit close). */

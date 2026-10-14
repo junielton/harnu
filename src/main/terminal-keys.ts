@@ -310,7 +310,7 @@ export function escapeForAudit(text: string, strict = false): string {
 const AUDIT_FIELD_MAX_CHARS = 80
 
 /** A bare field value of the audit line: escaped strictly and bounded. */
-function auditField(value: string): string {
+export function auditField(value: string): string {
   const chars = [...value]
   const cut = chars.length > AUDIT_FIELD_MAX_CHARS
   return escapeForAudit(chars.slice(0, AUDIT_FIELD_MAX_CHARS).join(''), true) + (cut ? '…' : '')

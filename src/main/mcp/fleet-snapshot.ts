@@ -520,8 +520,10 @@ export interface TerminalListingOptions {
   home: string
   /** The folder's `agentTerminalRead` opt-in (unit B4). */
   readOptIn: (folder: string) => boolean
-  /** The global kill-switch (unit B7). */
+  /** The global kill-switch `agentTerminalWrites` (unit B7). */
   writesEnabled: boolean
+  /** Whether the operator's write lease on a terminal is live (unit B6): it then reads `free`. */
+  leaseActive?: (rec: TerminalRecord) => boolean
   /** Canonical folder path to narrow to, when the caller passed `folder`. */
   folder?: string
   ownerSessionId?: string
@@ -539,7 +541,8 @@ export function toTerminalListing(
     .map((r) => {
       const access = terminalAccess(r, {
         readOptIn: opts.readOptIn(r.folder),
-        writesEnabled: opts.writesEnabled
+        writesEnabled: opts.writesEnabled,
+        leaseActive: opts.leaseActive?.(r) ?? false
       })
       const alias = basename(r.folder) || r.folder
       return {

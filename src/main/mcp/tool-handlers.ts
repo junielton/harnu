@@ -65,13 +65,19 @@ import {
   terminalRegistry
 } from '../terminal-registry'
 import { canStillWrite, gateTerminalOp } from '../terminal-gate-core'
+import { readAgentTerminalWrites } from './prefs'
 import { resolveTerminalGate } from '../terminal-gate'
 import { terminalLeases } from '../terminal-lease'
 import { scrubTerminalText } from '../scrub-terminal'
 import { paneSplitFor } from '../terminal-lifecycle'
 import { buildSend } from '../terminal-keys'
 import { settleAfterSend, terminalWriteQueue, writeSegments } from '../terminal-write-queue'
-import { TERMINAL_NOTE, pruneScreenModels, type ReadMode } from '../terminal-screen'
+import {
+  TERMINAL_NOTE,
+  pruneScreenModels,
+  type ReadMode,
+  type ReadOptions
+} from '../terminal-screen'
 import { peerAddressForSession, sendPeerMessage } from '../messaging'
 import {
   activityDescription,
@@ -1046,8 +1052,9 @@ const listTerminalsHandler: Handler = async (args, ctx) => {
     denyFolders: ctx.denyFolders,
     home: os.homedir(),
     readOptIn: (f) => optedIn.has(f),
-    // The kill-switch (B7) is not wired yet; this is its default.
-    writesEnabled: true,
+    // The global kill-switch (spec §6.5): off reads `writable: 'off'` + `writableReason`.
+    writesEnabled: await readAgentTerminalWrites(),
+    leaseActive: (r) => terminalLeases.isActive(r.terminalId, r.ptyId),
     ...(folder !== undefined ? { folder } : {}),
     ...(strField(args, 'ownerSessionId') !== undefined
       ? { ownerSessionId: strField(args, 'ownerSessionId') }
@@ -1195,12 +1202,15 @@ const sendTerminalHandler: Handler = async (args, ctx) => {
           const optedIn =
             folder === undefined ? new Set<string>() : await terminalReadOptIns(file, [folder])
           // Nothing awaits between here and the `pty.write`: the record is read last.
+          const writesEnabled = await readAgentTerminalWrites()
           const rec = terminalRegistry.get(terminalId)
           const blocked = file.projects.filter((p) => p.agentDenied === true).map((p) => p.path)
           stopped = canStillWrite(rec, {
             folderBlocked: rec !== undefined && isFolderDenied(rec.folder, blocked, os.homedir()),
             deadlineFired: ctx.deadlineFlag?.fired === true,
             readOptIn: rec !== undefined && optedIn.has(rec.folder),
+            // The kill-switch, read just now with the record (spec §6.5).
+            writesEnabled,
             // The lease table answers synchronously, so it is read here, last, with the record.
             leaseNeeded: rec !== undefined && needsLease(rec, ctx),
             leaseActive: rec !== undefined && terminalLeases.isActive(terminalId, rec.ptyId)
@@ -1265,23 +1275,49 @@ const sendTerminalHandler: Handler = async (args, ctx) => {
         }
       }
 
-      const waitedMs = await settleAfterSend({
-        now: Date.now,
-        sleep: sleepMs,
-        lastOutputAt: () => terminalRegistry.get(terminalId)?.lastOutputAt ?? 0,
-        sentAt
-      })
-
       const home = os.homedir()
       const scrub = (text: string): string => scrubTerminalText(text, home)
       // The line the cursor sat on at the send, read back to the end. A full-screen program has no
       // such line: its whole screen is the answer (spec §4.4, "Alternate screen").
-      let read = await model.read(
+      const readOpts: ReadOptions =
         prep.altScreen || prep.cursor === null
           ? { mode: 'screen', scrub }
           : { mode: 'since', since: prep.cursor, scrub }
-      )
-      if (!read.ok) read = await model.read({ mode: 'tail', lines: 500, scrub })
+
+      // Disconnect while the call is waiting for output (spec §6.4): the wait ends at once and the
+      // output is what the screen showed AT THAT INSTANT, so the read is started inside the
+      // listener, in the same tick as the disconnect, not after the call has woken up.
+      const liveModel = model
+      const cut: {
+        read: ReturnType<typeof liveModel.read> | null
+        /** The tail read, started at the same instant, for when the send's line scrolled away. */
+        tail: ReturnType<typeof liveModel.read> | null
+      } = { read: null, tail: null }
+      let wake: () => void = () => {}
+      const woken = new Promise<void>((resolve) => {
+        wake = resolve
+      })
+      const unwatch = terminalRegistry.onDisconnect(terminalId, () => {
+        cut.read ??= liveModel.read(readOpts)
+        cut.tail ??= liveModel.read({ mode: 'tail', lines: 500, scrub })
+        wake()
+      })
+      let waitedMs: number
+      try {
+        waitedMs = await settleAfterSend({
+          now: Date.now,
+          sleep: sleepMs,
+          lastOutputAt: () => terminalRegistry.get(terminalId)?.lastOutputAt ?? 0,
+          sentAt,
+          abort: { is: () => cut.read !== null, wake: () => woken }
+        })
+      } finally {
+        unwatch()
+      }
+      const disconnected = cut.read !== null
+
+      let read = await (cut.read ?? model.read(readOpts))
+      if (!read.ok) read = await (cut.tail ?? model.read({ mode: 'tail', lines: 500, scrub }))
       if (!read.ok) return steerError('CURSOR_EXPIRED', ctx.folder)
 
       const rec = terminalRegistry.get(terminalId)
@@ -1292,7 +1328,7 @@ const sendTerminalHandler: Handler = async (args, ctx) => {
         state: rec?.state ?? 'exited',
         ...(rec?.exit ? { exit: { code: rec.exit.code, reason: rec.exit.reason } } : {}),
         sent,
-        wait: { reason: 'none', waitedMs },
+        wait: { reason: disconnected ? 'disconnected' : 'none', waitedMs },
         output: screen.text,
         truncated: screen.truncated,
         droppedLines: screen.droppedLines,
