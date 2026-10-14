@@ -379,6 +379,12 @@ function consult(deps: ParkCoordinatorDeps, sessionKey: string, cause: ParkCause
 export function createParkCoordinator(deps: ParkCoordinatorDeps): ParkCoordinator {
   const episodes = new Map<string, Episode>()
   const inFlight = new Set<string>()
+  /**
+   * Bumped each time a session is handed to the killer. A question that was pending when the
+   * session got parked (by "Park now", which never waits behind it) sees the change when its answer
+   * lands and discards that answer: it must not reopen an episode on a parked session.
+   */
+  const parkEpoch = new Map<string, number>()
 
   const offPrompt = deps.facts.onPrompt((sessionKey, source) => {
     const ep = episodes.get(sessionKey)
@@ -405,6 +411,7 @@ export function createParkCoordinator(deps: ParkCoordinatorDeps): ParkCoordinato
     if (!check.ok) return { kind: 'cancelled', why: check.why }
     // [P4W4 capture stage goes here: after the revalidation, before the kill.]
     episodes.delete(sessionKey)
+    parkEpoch.set(sessionKey, (parkEpoch.get(sessionKey) ?? 0) + 1)
     deps.hibernate(sessionKey, negotiation)
     return { kind: 'parked', negotiation }
   }
@@ -423,7 +430,9 @@ export function createParkCoordinator(deps: ParkCoordinatorDeps): ParkCoordinato
   }
 
   async function requestPark(sessionKey: string, cause: ParkCause): Promise<ParkOutcome> {
-    if (inFlight.has(sessionKey)) return { kind: 'in-flight' }
+    // "Park now" always wins (§6.4): it never waits behind a question that is still pending. That
+    // question's answer is discarded when it lands (`parkEpoch`).
+    if (cause !== 'manual' && inFlight.has(sessionKey)) return { kind: 'in-flight' }
     const before = deps.snapshot(sessionKey)
     if (!before) return { kind: 'cancelled', why: 'gone' }
     const requestedAt = deps.now()
@@ -454,6 +463,7 @@ export function createParkCoordinator(deps: ParkCoordinatorDeps): ParkCoordinato
     // `ask`: consult the session (`park.query`) or, failing that, the legacy facts.
     let answer: Answer = { kind: 'silent' }
     if (mode === 'ask' && deps.ask) {
+      const epoch = parkEpoch.get(sessionKey) ?? 0
       inFlight.add(sessionKey)
       try {
         answer = await consult(deps, sessionKey, cause)
@@ -462,6 +472,8 @@ export function createParkCoordinator(deps: ParkCoordinatorDeps): ParkCoordinato
       } finally {
         inFlight.delete(sessionKey)
       }
+      // Parked while the question was pending (the operator's "Park now"): this answer is moot.
+      if ((parkEpoch.get(sessionKey) ?? 0) !== epoch) return { kind: 'cancelled', why: 'gone' }
     }
 
     let next: Episode | null
@@ -487,8 +499,13 @@ export function createParkCoordinator(deps: ParkCoordinatorDeps): ParkCoordinato
     // The counts are display-only. A `park.query` answer carries its own, from the same answer as
     // the labels; otherwise they come from the same legacy Stop as the labels. Frozen here: a later
     // Stop does not rewrite this decline.
-    const counts =
-      answer.kind === 'busy' && answer.counts ? answer.counts : deps.facts.counts(sessionKey)
+    let counts: Record<string, number>
+    try {
+      counts =
+        answer.kind === 'busy' && answer.counts ? answer.counts : deps.facts.counts(sessionKey)
+    } catch {
+      counts = {} // display only: a failure here never turns into a rejected requestPark
+    }
     const declined: Episode = { ...next, counts }
     episodes.set(sessionKey, declined)
     return { kind: 'declined', episode: declined }
