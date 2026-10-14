@@ -79,6 +79,7 @@ import {
 } from './fleet-policy'
 import { getTaskStates } from './hook-bridge'
 import { getPolicy } from './monitor/policy-store'
+import { AGENT_TERMINAL_SIZE, terminalRegistry, type TerminalOrigin } from './terminal-registry'
 
 /**
  * Resolve a requested cwd to a directory that actually exists on disk.
@@ -324,6 +325,18 @@ export interface CreateOpts {
    * operator's own session to agent traffic.
    */
   spawnedBy?: SpawnOrigin
+  /**
+   * T474: register this PTY as an agent-addressable terminal. Only honored when
+   * `kind === 'shell'`; the PTY still gets NO `sessionKey`, so hibernation, `pty:list`
+   * and `livePtyDescriptors()` never see it. `terminalId` is the helper pane id.
+   */
+  terminal?: {
+    terminalId: string
+    /** Canonical folder path — the gate anchor. */
+    folder: string
+    origin: TerminalOrigin
+    ownerSessionId?: string | null
+  }
 }
 
 // One coalescing window per PTY: 16 ms timer + 256 KB high-watermark burst flush.
@@ -656,12 +669,24 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     return victims
   }
 
+  // T474: main spawns agent terminals itself, so `createTerminalPty` needs the same deps the
+  // IPC handler injects.
+  const deps: CreatePtyDeps = { getWindow, flushNow, runPolicy }
+  ptyDeps = deps
+
+  // `terminal` is main's own door (`createTerminalPty`): a renderer-supplied one is dropped, so
+  // nothing but the MCP handler can register an agent-origin terminal.
   ipcMain.handle('pty:create', (_e, opts: CreateOpts): Promise<string> =>
-    createPty(opts, { getWindow, flushNow, runPolicy })
+    createPty({ ...opts, terminal: undefined }, deps)
   )
 
   ipcMain.on('pty:write', (_e, id: string, data: string) => {
-    ptys.get(id)?.pty.write(data)
+    const rec = ptys.get(id)
+    if (!rec) return
+    // T474: a registered terminal remembers when the operator last typed. Every other PTY
+    // pays one Map lookup and nothing else.
+    if (terminalRegistry.hasPty(id)) terminalRegistry.noteOperatorWrite(id, data)
+    rec.pty.write(data)
   })
 
   ipcMain.on('pty:resize', (_e, id: string, cols: number, rows: number) => {
@@ -671,6 +696,7 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     const safeRows = Math.max(1, rows)
     rec.cols = safeCols
     rec.rows = safeRows
+    if (terminalRegistry.hasPty(id)) terminalRegistry.noteResize(id, safeCols, safeRows)
     try {
       rec.pty.resize(safeCols, safeRows)
     } catch {
@@ -696,6 +722,9 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     // Flush remaining buffer so callers don't lose data on rapid create/destroy.
     flushNow(id)
     if (rec.flush.timer) clearTimeout(rec.flush.timer)
+    // T474: the exit that follows is the operator's close, not a natural end. Must be set
+    // BEFORE kill() — onExit reads it.
+    terminalRegistry.markClosing(id)
     try {
       rec.pty.kill()
     } catch {
@@ -762,6 +791,8 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     // recognizes) — and the System Monitor keeps showing `synthetic-<uuid>` forever.
     const rec = ptyId ? ptys.get(ptyId) : undefined
     if (rec) applyRekeyToRecord(rec, toKey)
+    // T474: a terminal that named the synthetic session as its owner now names the real one.
+    terminalRegistry.rekeyOwner(fromKey, toKey)
     // T389 P1W3: the binding of this PTY now reads the new key; a claim for it is satisfied.
     if (ptyId) companionHost.notifySessionKeyChange({ kind: 'pty', ptyId })
   })
@@ -1022,6 +1053,56 @@ export function livePtyDescriptors(): LivePtyDescriptor[] {
     })
   }
   return out
+}
+
+let ptyDeps: CreatePtyDeps | null = null
+
+/**
+ * T474: spawn the shell PTY of an agent terminal from main (spec §4.1 step 4) — at the verb,
+ * not when a pane happens to mount, because a folder nobody is viewing never mounts one.
+ * Returns the internal ptyId (never exposed to agents). Throws before
+ * {@link registerPtyHandlers} has run, which cannot happen once the MCP server is up.
+ */
+export function createTerminalPty(input: {
+  terminalId: string
+  folder: string
+  ownerSessionId: string | null
+}): Promise<string> {
+  if (!ptyDeps) throw new Error('PTY handlers are not registered yet')
+  return createPty(
+    {
+      kind: 'shell',
+      cwd: input.folder,
+      cols: AGENT_TERMINAL_SIZE.cols,
+      rows: AGENT_TERMINAL_SIZE.rows,
+      terminal: {
+        terminalId: input.terminalId,
+        folder: input.folder,
+        origin: 'agent',
+        ownerSessionId: input.ownerSessionId
+      }
+    },
+    ptyDeps
+  )
+}
+
+/**
+ * T474: undo a terminal PTY that was created but never made it to the operator (the
+ * `pane.split` dispatch failed after `createPty` succeeded). Kills the process and removes
+ * every trace — the registry record included, so no tombstone is left for a terminal nobody
+ * ever saw. A no-op for an unknown ptyId.
+ */
+export function discardTerminalPty(ptyId: string): void {
+  const rec = ptys.get(ptyId)
+  terminalRegistry.forget(terminalRegistry.getByPtyId(ptyId)?.terminalId ?? '')
+  if (!rec) return
+  if (rec.flush.timer) clearTimeout(rec.flush.timer)
+  ptys.delete(ptyId)
+  try {
+    rec.pty.kill()
+  } catch {
+    // already dead
+  }
 }
 
 /**
@@ -1333,6 +1414,17 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
     cwd: runCwd
   }
   ptys.set(id, rec)
+  // T474: a terminal PTY is a plain shell the registry knows about. No `sessionKey`.
+  if (opts.terminal && kind === 'shell') {
+    terminalRegistry.register({
+      terminalId: opts.terminal.terminalId,
+      ptyId: id,
+      folder: opts.terminal.folder,
+      origin: opts.terminal.origin,
+      ownerSessionId: opts.terminal.ownerSessionId ?? null,
+      size: { cols: opts.cols, rows: opts.rows }
+    })
+  }
   if (opts.sessionKey) {
     // Waking clears the parked flag, so a session with a live PTY can never stay
     // flagged as hibernated (T119, spec §5.1 — self-healing by construction).
@@ -1365,6 +1457,7 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
 
   const wire = (proc: IPty, isRetry: boolean): void => {
     proc.onData((data) => {
+      if (terminalRegistry.hasPty(id)) terminalRegistry.noteOutput(id, data)
       if (!isRetry && companionInjected) firstTail = (firstTail + data).slice(-2048)
       const s = rec.flush
       s.buf += data
@@ -1431,6 +1524,8 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
       // means natural (a stale preload/renderer pair keeps today's behavior).
       const reason: PtyExitReason = isParking(id) ? 'park' : 'natural'
       clearParking(id)
+      // T474: keep the record as a tombstone; `closed` iff `pty:destroy` ran first.
+      terminalRegistry.markExited(id, evt.exitCode ?? null)
       getWindow()?.webContents.send('pty:exit', {
         id,
         exitCode: evt.exitCode,
