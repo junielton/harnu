@@ -584,23 +584,65 @@ export const useHelpersStore = defineStore('helpers', () => {
   // ── Hydration ─────────────────────────────────────────────────────────
 
   /**
-   * Load persisted state for the given worktree if not already in memory.
-   * Idempotent — repeated calls for the same path are no-ops. Call this
-   * on worktree-switch (typically from a watcher on `currentWorktreePath`
-   * inside the App shell).
+   * Worktrees whose saved state (`helpers.json`) has been read and folded into memory. A
+   * worktree can enter `byWorktree` BEFORE that happens — a pane added headlessly (an MCP
+   * `pane.split`, or main re-announcing an agent terminal right after a reload) creates its
+   * in-memory state from scratch — so "present in memory" does NOT mean "loaded". Only this set
+   * says the saved panes are safe to overwrite.
+   */
+  const hydrated = new Set<string>()
+  const hydrating = new Map<string, Promise<void>>()
+
+  /**
+   * Saved panes first, then the live ones. A pane the live state already holds wins (it may
+   * carry transient fields the saved copy never had); a saved pane the live state lacks is
+   * kept. The split ratio is the operator's saved one.
+   */
+  function mergeSavedUnderLive(
+    saved: InMemoryWorktreeState,
+    live: InMemoryWorktreeState
+  ): InMemoryWorktreeState {
+    const liveIds = new Set(live.panes.map((p) => p.id))
+    const panes = rebalanceRatios([
+      ...saved.panes.filter((p) => !liveIds.has(p.id)),
+      ...live.panes
+    ]) as AnyHelperPane[]
+    return {
+      splitVisible: panes.length > 0 && (saved.splitVisible || live.splitVisible),
+      splitRatio: saved.splitRatio,
+      panes
+    }
+  }
+
+  async function hydrate(worktreePath: string): Promise<void> {
+    const persisted = await window.api.helpersGet({ worktreePath })
+    // Read the live state AFTER the await (T20): a pane added for this worktree during the IPC
+    // round-trip (an MCP pane.split, addForkHelper, a New terminal) already populated it, and
+    // overwriting it with the saved shape would silently drop that live pane.
+    if (persisted) {
+      const saved = fromPersistShape(persisted)
+      const live = byWorktree.value.get(worktreePath)
+      const next = new Map(byWorktree.value)
+      next.set(worktreePath, live ? mergeSavedUnderLive(saved, live) : saved)
+      byWorktree.value = next
+    }
+    hydrated.add(worktreePath)
+  }
+
+  /**
+   * Fold the saved state for the given worktree into memory, once. Idempotent — repeated and
+   * concurrent calls for the same path share one read. A worktree that already has live panes
+   * (a headless add that landed first) keeps them, with the saved panes merged under. Call this
+   * on worktree-switch (typically from a watcher on `currentWorktreePath` inside the App shell).
    */
   async function ensureLoaded(worktreePath: string): Promise<void> {
-    if (byWorktree.value.has(worktreePath)) return
-    const persisted = await window.api.helpersGet({ worktreePath })
-    if (!persisted) return
-    // Re-check AFTER the await (T20): a pane added for this worktree during the
-    // IPC round-trip (an MCP pane.split, addForkHelper, a New
-    // terminal) already populated it — overwriting with the persisted shape would
-    // silently drop that live pane.
-    if (byWorktree.value.has(worktreePath)) return
-    const next = new Map(byWorktree.value)
-    next.set(worktreePath, fromPersistShape(persisted))
-    byWorktree.value = next
+    if (hydrated.has(worktreePath)) return
+    let pending = hydrating.get(worktreePath)
+    if (!pending) {
+      pending = hydrate(worktreePath).finally(() => hydrating.delete(worktreePath))
+      hydrating.set(worktreePath, pending)
+    }
+    await pending
   }
 
   // ── Persistence (debounced) ───────────────────────────────────────────
@@ -631,12 +673,26 @@ export const useHelpersStore = defineStore('helpers', () => {
     }, 500)
   }
 
-  async function flush(worktreePath: string): Promise<void> {
+  /**
+   * Write one worktree's state. Never before its saved state has been read: a worktree created
+   * in memory by a headless add holds only the live panes, and writing that would erase the
+   * operator's saved ones. If the saved state cannot be read, nothing is written.
+   */
+  async function persistWorktree(worktreePath: string): Promise<void> {
+    try {
+      await ensureLoaded(worktreePath)
+    } catch (err) {
+      console.warn('[helpers] not saving', worktreePath, '— its saved state could not be read', err)
+      return
+    }
     const state = byWorktree.value.get(worktreePath)
     if (!state) return
-    const persisted = toPersistShape(state)
+    await window.api.helpersSet({ worktreePath, state: toPersistShape(state) })
+  }
+
+  async function flush(worktreePath: string): Promise<void> {
     try {
-      await window.api.helpersSet({ worktreePath, state: persisted })
+      await persistWorktree(worktreePath)
     } catch (err) {
       console.warn('[helpers] flush failed for', worktreePath, err)
     }
@@ -652,10 +708,9 @@ export const useHelpersStore = defineStore('helpers', () => {
     if (flushTimer) clearTimeout(flushTimer)
     flushTimer = null
     pendingFlushPath = null
-    for (const [path, state] of byWorktree.value) {
-      const persisted = toPersistShape(state)
+    for (const path of [...byWorktree.value.keys()]) {
       try {
-        await window.api.helpersSet({ worktreePath: path, state: persisted })
+        await persistWorktree(path)
       } catch {
         /* swallow — best effort */
       }
@@ -1160,6 +1215,7 @@ export const useHelpersStore = defineStore('helpers', () => {
     const map = new Map(byWorktree.value)
     map.delete(worktreePath)
     byWorktree.value = map
+    hydrated.delete(worktreePath)
     if (maximizedByWorktree.value.has(worktreePath)) {
       const nextMax = new Map(maximizedByWorktree.value)
       nextMax.delete(worktreePath)
@@ -1291,6 +1347,16 @@ export const useHelpersStore = defineStore('helpers', () => {
     let settled = false
     const t = i18n.global.t
 
+    // Main has no such terminal (a spawn that was rolled back, or one past its tombstone): the
+    // pane is a ghost, and there is nothing to toast about.
+    const removeGhost = (): void => {
+      if (settled) return
+      settled = true
+      terminalExitWatches.get(paneId)?.()
+      terminalExitWatches.delete(paneId)
+      removeHelper(worktreePath, paneId)
+    }
+
     const onExited = (exitedAt: number, code: number | null, snapshot?: string): void => {
       if (settled) return
       settled = true
@@ -1322,7 +1388,8 @@ export const useHelpersStore = defineStore('helpers', () => {
       void window.api
         .terminalStatus(paneId)
         .then((status) => {
-          if (status.known && status.state === 'exited') {
+          if (!status.known) removeGhost()
+          else if (status.state === 'exited') {
             onExited(
               status.exit?.at ?? Date.now(),
               status.exit?.code ?? evt.exitCode,
@@ -1341,11 +1408,7 @@ export const useHelpersStore = defineStore('helpers', () => {
       .then((status) => {
         if (settled) return
         if (!status.known) {
-          // Main has no such terminal (rolled back, or past its tombstone): the pane is a ghost.
-          settled = true
-          terminalExitWatches.get(paneId)?.()
-          terminalExitWatches.delete(paneId)
-          removeHelper(worktreePath, paneId)
+          removeGhost()
           return
         }
         if (status.state === 'exited') {

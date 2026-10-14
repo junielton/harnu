@@ -36,6 +36,7 @@ let api: {
   terminalStatus: ReturnType<typeof vi.fn>
   terminalClose: ReturnType<typeof vi.fn>
   helpersSet: ReturnType<typeof vi.fn>
+  helpersGet: ReturnType<typeof vi.fn>
 }
 
 /** Let the store's promise chains (status → handler) settle. */
@@ -77,7 +78,9 @@ beforeEach(() => {
     }),
     terminalStatus: vi.fn(async () => status),
     terminalClose: vi.fn(async () => true),
-    helpersSet: vi.fn(async () => {})
+    helpersSet: vi.fn(async () => {}),
+    // nothing saved on disk, unless a test says otherwise
+    helpersGet: vi.fn(async () => null)
   }
   ;(window as unknown as { api: unknown }).api = api
 })
@@ -308,5 +311,62 @@ describe('persistence (AC-B2-7)', () => {
     for (const key of ['origin', 'terminalId', 'ptyId', 'ownerSessionId', 'spawnedAt', 'exited']) {
       expect(json).not.toContain(`"${key}"`)
     }
+  })
+})
+
+describe("a reload re-dispatch must not wipe the operator's saved panes (D1)", () => {
+  const saved = {
+    splitVisible: true,
+    splitRatio: 0.55,
+    panes: [{ id: 'h-op', type: 'shell', cwd: WT, ratio: 1 }]
+  }
+
+  it('ensureLoaded after a re-dispatched agent pane merges the saved panes under the live one', async () => {
+    api.helpersGet.mockResolvedValue(saved)
+    const helpers = useHelpersStore()
+    split() // main re-announces the terminal BEFORE the worktree was ever loaded
+    await helpers.ensureLoaded(WT)
+    expect(panes().map((p) => (p as { id: string }).id)).toEqual(['h-op', 'h-a'])
+    expect(helpers.byWorktree.get(WT)?.splitRatio).toBe(0.55)
+  })
+
+  it('the flush that follows writes the saved pane back, never panes: []', async () => {
+    api.helpersGet.mockResolvedValue(saved)
+    const helpers = useHelpersStore()
+    split()
+    await helpers.flushNow()
+    const written = api.helpersSet.mock.calls.at(-1)![0].state.panes as Array<{ id: string }>
+    expect(written.map((p) => p.id)).toEqual(['h-op'])
+  })
+
+  it('a worktree whose saved state cannot be read is not overwritten', async () => {
+    api.helpersGet.mockRejectedValue(new Error('disk'))
+    const helpers = useHelpersStore()
+    split()
+    await helpers.flushNow()
+    expect(api.helpersSet).not.toHaveBeenCalled()
+  })
+
+  it('a pane the live state already holds is not doubled by the merge', async () => {
+    const helpers = useHelpersStore()
+    const opId = helpers.addShellHelper(WT, WT)
+    api.helpersGet.mockResolvedValue({
+      ...saved,
+      panes: [{ id: opId, type: 'shell', cwd: WT, ratio: 1 }]
+    })
+    await helpers.ensureLoaded(WT)
+    expect(panes()).toHaveLength(1)
+  })
+})
+
+describe('a rolled-back spawn that exits at once leaves no ghost (D2)', () => {
+  it('an exit event whose status answer is "unknown" removes the pane and raises no toast', async () => {
+    split({ spawnedAt: NOW - 500 })
+    await settle()
+    status = { known: false }
+    exitCbs.get('pty-a')!({ exitCode: 1 })
+    await settle()
+    expect(panes()).toHaveLength(0)
+    expect(useUiStore().toasts.filter((t) => t.kind === 'danger')).toHaveLength(0)
   })
 })
