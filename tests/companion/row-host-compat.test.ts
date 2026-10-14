@@ -122,7 +122,7 @@ const row = (over: Partial<EventPayloads['session.row']> = {}): EventPayloads['s
   subagentToolCalls: 0,
   userRows: 2,
   lastRowAt: 1_790_000_000_500,
-  lastUuid: 'row-0001',
+  lastUuid: 'uuid-of-last-row',
   ...over
 })
 
