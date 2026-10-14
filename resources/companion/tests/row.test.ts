@@ -2,17 +2,28 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import { HEARTBEAT_MS, ROW_DEBOUNCE_MS, ROW_MAX_WAIT_MS } from '../hooks/contract'
-import { FIXTURE_SID } from './fixtures/hello'
+import { FIXTURE_CONN, FIXTURE_SID } from './fixtures/hello'
 import {
   PROBE_TURN_COMPLETE_AT,
   attachment,
+  clearCommandRows,
+  hookContext,
   probeAfterTurn,
   probeStream,
   responseText,
   typed,
   type TraceRow
 } from './fixtures/row-traces'
-import { START, ackAll, defaultScript, helloOk, installRig, type Rig } from './support/rig'
+import {
+  BOOT,
+  CONN_2,
+  START,
+  ackAll,
+  defaultScript,
+  helloOk,
+  installRig,
+  type Rig
+} from './support/rig'
 
 /**
  * T455 W1 (spec §5.4, AC-4): the `session.row` coalescer, on the kit's held clock. A trailing
@@ -229,4 +240,198 @@ test('nothing is sent while the host has not enabled sense.row', async ($: any, 
   await rig.clock.advance(ROW_MAX_WAIT_MS)
   await drain(rig)
   expect(rows(rig).length).toBe(0)
+})
+
+// ---- AC-5: the wire (spec §5.3) ----------------------------------------------------------------
+
+const PATH = `/tmp/example-project/${FIXTURE_SID}.jsonl`
+const snapshots = (rig: Rig): { d: any }[] => rig.events().filter((e) => e.t === 'session.snapshot')
+
+test('the hello declares sense.row; the hello snapshot carries the start facts', async ($: any, on) => {
+  const rig = rowRig(on)
+  await start($, rig)
+  const hello = rig.of('hello')[0]!.body
+  expect(hello.declared).toContain('sense.row')
+  expect(hello.declared.at(-1)).toBe('sense.mods')
+  expect(snapshots(rig)[0]!.d.start).toEqual({ source: 'startup', transcriptPath: PATH })
+})
+
+test('M8: a classic.SessionStart still running at session.start: the hello carries its start', async ($: any, on) => {
+  const rig = rowRig(on)
+  // the engine dispatches session.start before the classic handler passes its first await
+  const classic = $.classic.SessionStart({
+    source: 'fork',
+    session_id: FIXTURE_SID,
+    transcript_path: PATH
+  })
+  await $.session.start(START)
+  await classic
+  await drain(rig)
+  expect(snapshots(rig)[0]!.d.start).toEqual({ source: 'fork', transcriptPath: PATH })
+})
+
+test('M8: a hello that went out first is followed by a probe snapshot with the start', async ($: any, on) => {
+  const rig = rowRig(on)
+  await $.session.start(START)
+  await drain(rig)
+  expect(snapshots(rig).every((s) => s.d.start === undefined)).toBe(true)
+  await $.classic.SessionStart({ source: 'resume', session_id: FIXTURE_SID, transcript_path: PATH })
+  await drain(rig)
+  const last = snapshots(rig).at(-1)!.d
+  expect(last.reason).toBe('probe')
+  expect(last.start).toEqual({ source: 'resume', transcriptPath: PATH })
+})
+
+test('a path over 4,096 chars is never sent', async ($: any, on) => {
+  const rig = rowRig(on)
+  await $.classic.SessionStart({
+    source: 'startup',
+    session_id: FIXTURE_SID,
+    transcript_path: `/${'p'.repeat(4_096)}.jsonl`
+  })
+  await $.session.start(START)
+  await drain(rig)
+  expect(snapshots(rig)[0]!.d).not.toHaveProperty('start')
+})
+
+test('a /clear: the rebound names the new file and a fresh fold starts under the new id', async ($: any, on) => {
+  const NEW = '22222222-2222-4222-8222-222222222222'
+  const NEW_PATH = `/tmp/example-project/${NEW}.jsonl`
+  const rig = rowRig(on)
+  await start($, rig)
+  await append($, typed('before the clear'))
+  await $.turn.complete(turnComplete())
+  await drain(rig)
+  await $.session.end({
+    reason: 'clear',
+    sessionId: FIXTURE_SID,
+    resume: { sessionId: FIXTURE_SID }
+  })
+  // W0 §2.1: the /clear command rows are appended before the new conversation's classic hook
+  for (const r of clearCommandRows()) await append($, r)
+  rig.sid.value = NEW
+  await $.classic.SessionStart({ source: 'clear', session_id: NEW, transcript_path: NEW_PATH })
+  await append($, hookContext('hook_success'))
+  await drain(rig)
+  const rebound = rig.events().find((e) => e.t === 'session.rebound')!
+  expect(rebound.d).toEqual({
+    prevSid: FIXTURE_SID,
+    sid: NEW,
+    cause: 'clear',
+    transcriptPath: NEW_PATH
+  })
+  const after = rig.events().filter((e) => e.seq > rebound.seq && e.t === 'session.row')
+  expect(after.length).toBe(1)
+  expect(after[0]!.d).toMatchObject({
+    firstPrompt: '/clear',
+    lastPrompt: null,
+    userRows: 3,
+    toolCalls: 0
+  })
+  // the envelope of everything after the rebound names the new conversation
+  const lastEvents = rig.of('events').at(-1)!.body
+  expect(lastEvents.sid).toBe(NEW)
+})
+
+test('the title is the latest session_title of a classic hook (recorded only)', async ($: any, on) => {
+  const rig = rowRig(on)
+  await start($, rig)
+  await $.classic.UserPromptSubmit({ prompt: 'x', session_title: 'a custom title' })
+  await $.turn.complete(turnComplete())
+  await drain(rig)
+  expect(rows(rig).at(-1)!.d.title).toBe('a custom title')
+})
+
+// ---- AC-6: no text at rest (spec §5.5 rule 1) ----------------------------------------------------
+
+test('a reload keeps the counts, never stores text', async ($: any, on) => {
+  const saved = {
+    sid: FIXTURE_SID,
+    counts: { toolCalls: 7, subagentToolCalls: 1, userRows: 4, lastRowAt: 5, lastUuid: 'u9' }
+  }
+  const rig = rowRig(on, {
+    savedState: { conn: FIXTURE_CONN, bootId: BOOT, sid: FIXTURE_SID, boot: START, row: saved },
+    script: (route, body, n) =>
+      route === 'hello' ? helloOk(ROW_FEATURES, CONN_2) : defaultScript(route, body, n)
+  })
+  // a reload: register runs again and session.start fires again, with no classic.SessionStart
+  await $.session.start(START)
+  await drain(rig)
+  const first = rows(rig)[0]!.d
+  expect(first).toMatchObject({ toolCalls: 7, subagentToolCalls: 1, userRows: 4, lastUuid: 'u9' })
+  for (const k of ['firstPrompt', 'lastPrompt', 'lastAssistant', 'title'])
+    expect(first).not.toHaveProperty(k) // absent: unknown, the host keeps what it had
+  await append($, typed('secret-looking prompt'))
+  await append($, responseText('secret-looking answer'))
+  await $.turn.complete(turnComplete())
+  await drain(rig)
+  expect(rows(rig).at(-1)!.d).toMatchObject({
+    lastPrompt: 'secret-looking prompt',
+    lastAssistant: 'secret-looking answer',
+    userRows: 5
+  })
+  expect(rows(rig).at(-1)!.d).not.toHaveProperty('firstPrompt')
+  const kept = rig.state.get('row') as any
+  expect(kept).toEqual({
+    sid: FIXTURE_SID,
+    counts: {
+      toolCalls: 7,
+      subagentToolCalls: 1,
+      userRows: 5,
+      lastRowAt: expect.any(Number),
+      lastUuid: expect.any(String)
+    }
+  })
+  const all = JSON.stringify([...rig.state.entries()])
+  expect(all).not.toContain('secret-looking')
+})
+
+test('a resume starts empty: its history is the host baseline, never restored', async ($: any, on) => {
+  const saved = {
+    sid: FIXTURE_SID,
+    counts: { toolCalls: 7, subagentToolCalls: 0, userRows: 4, lastRowAt: 5, lastUuid: 'u9' }
+  }
+  const rig = rowRig(on, { savedState: { row: saved } })
+  await $.classic.SessionStart({ source: 'resume', session_id: FIXTURE_SID, transcript_path: PATH })
+  await $.session.start(START)
+  await drain(rig)
+  expect(rows(rig)[0]!.d).toMatchObject({
+    firstPrompt: null,
+    lastPrompt: null,
+    userRows: 0,
+    toolCalls: 0,
+    lastUuid: null
+  })
+})
+
+// ---- AC-3 / AC-7: fail open (spec §10.2) ---------------------------------------------------------
+
+test('the step folds the row as stored, after the hooks beneath rewrote it', async ($: any, on) => {
+  const rig = installRig(on, {
+    script: (route, body, n) =>
+      route === 'hello' ? helloOk(ROW_FEATURES) : defaultScript(route, body, n)
+  })
+  on('classic.UserPromptSubmit', async () => ({}))
+  // a rewriting plugin beneath (T450's scrubber): the step must fold the RESULT of next(e)
+  on('session.append', async (_$: any, e: any, next: any) =>
+    next({
+      ...e,
+      message: { ...e.message, content: [{ type: 'text', text: 'scrubbed by the store' }] }
+    })
+  )
+  await start($, rig)
+  await append($, typed('raw text the store rewrote'))
+  await $.turn.complete(turnComplete())
+  await drain(rig)
+  expect(rows(rig).at(-1)!.d.lastPrompt).toBe('scrubbed by the store')
+})
+
+test('outside Harnu (dormant) nothing is folded or sent', async ($: any, on) => {
+  const rig = rowRig(on, { token: false })
+  await $.session.start({ ...START, isInteractive: false })
+  await append($, typed('hello'))
+  await rig.clock.advance(ROW_MAX_WAIT_MS)
+  await drain(rig)
+  expect(rig.sent).toEqual([])
+  expect(rig.state.has('row')).toBe(false)
 })
