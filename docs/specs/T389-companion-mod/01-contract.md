@@ -720,19 +720,23 @@ Rules for every event:
   matched first: a deliberate hardening over T450's `detect`, which skips the later match and
   leaves the rest of a larger secret raw (the rule sources are T450's, unchanged). A field is sent
   `null` only when the redaction pass throws, a cut finds no word boundary, or (`firstPrompt`) the
-  raw cap leaves a meta wrapper open. What still goes out as written (T455 spec §5.5, SEC-8 as
+  raw cap leaves a meta wrapper open or keeps only meta text. What still goes out as written (T455 spec §5.5, SEC-8 as
   amended): any secret no rule matches (a password in prose, an unknown format, a high-entropy key
   with no known prefix), and inherited limits of T450's rules: a token glued to another word (no
   `\b` before it, e.g. two provider tokens run together), a JWT wrapped across lines (collapsing
   the whitespace splits it), and a token with a zero-width character inside it. Where the bounds
   make `firstPrompt` differ from the legacy reader: a first word over 8 KiB (or a raw word over
-  64 KiB) sends `null` where the reader shows its start; a meta wrapper whose closing lies past
-  `RAW_MAX` sends `null` (and the row still counts as the first) where the reader shows what
-  follows it; a `<command-name>` past `RAW_MAX` is found anyway (one linear scan), as the reader
-  finds it. An attachment row is not hooked, so `lastUuid` and `lastRowAt` stop at the last
-  non-attachment row: a `lastUuid` behind the file's tail is "not yet aligned", never a
-  divergence. A door the fold does not know is not folded (CLI 2.1.299 appends a queued
-  `-p` prompt on a `queue` door and never writes it). Worst case, a `session.row` is
+  64 KiB) sends `null` where the reader shows its start; a row the raw cap cuts so that what it
+  keeps reads as meta-only or leaves a meta wrapper open sends `null` where the reader shows the
+  text past the cut, and the row still counts as the first, so the value is `null`, never the next
+  row's prompt or a wrapper's content (a wrapper never closed in a row over `RAW_MAX` gives the
+  same `null`); a `<command-name>` past `RAW_MAX` is found anyway (one linear scan), as the reader
+  finds it. Below the cap a literal unclosed tag in a short prompt keeps its text. An attachment row
+  is not hooked, so `lastUuid` and `lastRowAt` stop at the last non-attachment row: the host's
+  alignment MUST treat a `lastUuid` behind the file's tail as "not yet aligned", as it treats one
+  absent from the file, never as a divergence. A door the fold does not know is not folded:
+  defence in depth, since the engine raises a 2.1.299 `queue` row (a queued `-p` prompt it never
+  writes) only for a registration matching that door, and the `door` array does not. Worst case, a `session.row` is
   about 1.5 KB: four texts of at most 300 bytes and about 250 bytes of keys and counts. `guard.denied.path` is relative to the session
   cwd. `session.snapshot.start.transcriptPath` and `session.rebound.transcriptPath` are paths,
   not text, and the host validates them.

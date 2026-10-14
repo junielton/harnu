@@ -101,13 +101,21 @@ scripts/ci/render-secret-rules.mjs`; `tests/companion/secret-rules-staged.test.t
   its 2 MiB head cap and shows the first 120 characters):
   - **one first word longer than 8 KiB** (or longer than 64 KiB in the raw text), even well under
     the raw cap: the mod sends `null`, the reader shows the word's start;
-  - **a meta wrapper (`<system-reminder>`, `<local-command-stdout>`, …) whose closing lies past
-    `RAW_MAX`**: the mod sends `null` and still counts that row as the first, so the next row is
-    never taken in its place; the reader strips the wrapper and shows what follows it;
+  - **a row the raw cap cuts so that what it keeps reads as meta-only or leaves a meta wrapper
+    open** (`<system-reminder>`, `<command-message>`, `<command-args>`, `<local-command-stdout>`,
+    `<local-command-caveat>`): the mod sends `null` and still counts that row as the first, so the
+    next row is never taken in its place; the reader strips the wrapper and shows the text past
+    the cut. Three shapes are pinned by tests: a wrapper closing just before the cut with the
+    prompt's first word straddling it; a 60 KiB wrapper followed by 8 KiB of newlines, then the
+    prompt; a wrapper ending at the cut with a second one opening past it. A wrapper that is never
+    closed in a row over `RAW_MAX` gives `null` too (the reader would show the raw tag text): the
+    same harmless `null` class;
   - **a `<command-name>` first appearing past `RAW_MAX`**: no divergence, the mod looks for the
     command name in the whole text (one linear scan) and names the command as the reader does.
-    A W2 parity rule can class the first two as explained (the mod's value is `null`, never another
-    text).
+    A W2 parity rule can class the first two as explained: in both the mod's value is `null`,
+    never another row's text and never a wrapper's content. Below the cap nothing is withheld for
+    a wrapper: a short prompt that merely contains a literal, unclosed tag keeps its text, as the
+    reader's does.
 - Overlapping rule matches are merged and the union is redacted under the rule that matched first.
   T450's `detect` skips the later match instead, which leaves the rest of a larger secret raw; the
   merge is a deliberate hardening for T450 to adopt. The rule sources are T450's, unchanged.
@@ -153,8 +161,9 @@ longer move `lastUuid` or `lastRowAt`. Both stop at the last non-attachment row:
 
 - **Alignment.** `lastUuid` is still a row of the transcript, but it can sit behind the file's
   last row (attachments the engine adds right after a prompt or a tool result, until the next
-  response). Spec M1's rule covers it: a `lastUuid` behind the file's tail, or absent from it, is
-  "not yet aligned", never a divergence; the next non-attachment row realigns it.
+  response). **The host's alignment (W2) must therefore treat a `lastUuid` BEHIND the file's tail
+  as "not yet aligned", exactly as spec M1 treats one ABSENT from the file**: never a divergence.
+  The next non-attachment row realigns it.
 - **Activity.** `lastRowAt` can lag the file's mtime by the time between that row and the trailing
   attachments, normally milliseconds (they are written in the same burst), inside the activity
   group's ±2,500 ms match window. A long stretch in which the engine appends only attachments
@@ -165,8 +174,12 @@ longer move `lastUuid` or `lastRowAt`. Both stop at the last non-attachment row:
 **Doors the engine adds later.** The fold reads only the doors in `FOLDED_DOORS` (`row-fold.ts`,
 also the registration's matcher). CLI 2.1.299 appends a queued `claude -p` prompt on a new `queue`
 door before `session.start` and never writes it (the prompt row that follows is the one the
-transcript keeps); counting it put `userRows` one above the transcript. Such a row reached the hook
-in spite of the `door` array, so the fold itself skips any door it does not know.
+transcript keeps); counting it would put `userRows` one above the transcript. The engine raises
+that row only when a registration matches `{ door: 'queue' }` (its code checks for one first), and
+the `door` array does not name it, so it does not reach the hook; a verifier's four runs with the
+array saw none. The fold's own skip of any door it does not know is defence in depth for a door a
+later CLI adds. (One run of mine counted such a row; it was not reproduced, and the array alone
+accounts for the verifier's result.)
 
 Tests: `resources/companion/tests/row.test.ts` (the kit, with the golden traces of
 `tests/fixtures/row-traces.ts`), and in `npm test` `tests/companion/row-fold.test.ts`,
