@@ -132,8 +132,11 @@ export function buildDispatchActions(): CommandRouterActions {
     // HelperStack drag-drop all call the store directly). `origin: 'agent'`
     // is free to stamp here (2026-07-13 agent-pane-routing design §Origin);
     // the store uses it to drive the unseen-panes badge + coalesced alert.
-    addShellHelper: (worktreePath, cwd) =>
-      helpers.addShellHelper(worktreePath, cwd, { origin: 'agent' }),
+    addShellHelper: (worktreePath, cwd, terminal) =>
+      helpers.addShellHelper(worktreePath, cwd, {
+        origin: 'agent',
+        ...(terminal ? { terminal } : {})
+      }),
     addResumeHelper: (worktreePath, sessionId, cwd) =>
       helpers.addResumeHelper(worktreePath, sessionId, cwd, { origin: 'agent' }),
     // T74 `open_file`: headless, background markdown viewer append (dedup + cap in the store).

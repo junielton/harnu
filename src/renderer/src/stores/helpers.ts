@@ -12,7 +12,11 @@ import {
   mostRecentlyActive
 } from '../lib/pane-alert'
 import type { WorktreeHelperState, HelperPane } from '../../../preload'
+import type { AgentTerminalSplit } from './command-router'
 import { UNKNOWN_CORRECTIVE, type ReviewCorrective } from '../../../main/review-corrective'
+
+/** An exit sooner than this after spawn means the helper never really started (stale session). */
+export const STALE_EXIT_WINDOW_MS = 2000
 
 /** Passed by the agent-dispatch shim (`command-dispatch.ts`) only — never by a
  * human call site. Drives the unseen-panes badge + coalesced OS alert
@@ -20,6 +24,11 @@ import { UNKNOWN_CORRECTIVE, type ReviewCorrective } from '../../../main/review-
  * persisted on the pane itself. */
 export interface AddHelperOpts {
   origin?: 'agent'
+  /**
+   * T474: main already spawned this shell's PTY (an agent terminal). The pane takes
+   * `terminal.paneId` as its id and adopts `terminal.ptyId` instead of minting its own.
+   */
+  terminal?: AgentTerminalSplit
 }
 
 /**
@@ -140,13 +149,57 @@ export interface ExplorerRevealRequest {
  */
 export type HelperPaneCanvas = HelperPane & { type: 'canvas'; filePath: string }
 
+/**
+ * An agent terminal's pane (T474 §3.1). A `shell` pane whose PTY main spawned: `id` and
+ * `terminalId` are the same string, `ptyId` is the PTY the pane adopts instead of creating.
+ *
+ * Every field beyond the persisted pane shape is TRANSIENT (see {@link TRANSIENT_PANE_FIELDS}):
+ * `toPersistShape` drops the whole pane, so no agent-held id ever comes back under a different
+ * shell after a restart.
+ */
+export type HelperPaneAgentTerminal = HelperPane & {
+  type: 'shell'
+  origin: 'agent'
+  terminalId: string
+  ptyId: string
+  ownerSessionId: string | null
+  /** Epoch ms the PTY was spawned; the 2 s "exited too soon" window starts here. */
+  spawnedAt: number
+  /**
+   * Set when the PTY ended before the operator ever looked (an early exit keeps the pane): the
+   * pane adopts nothing on mount and paints `snapshot` plus a "process exited" line instead.
+   */
+  exited?: { code: number | null; snapshot?: string }
+}
+
+/** The keys a {@link HelperPaneAgentTerminal} carries beyond the persisted pane shape. */
+export const TRANSIENT_PANE_FIELDS = [
+  'origin',
+  'terminalId',
+  'ptyId',
+  'ownerSessionId',
+  'spawnedAt',
+  'exited'
+] as const
+
+/** Narrow a pane to an agent terminal. */
+export function isAgentTerminalPane(pane: AnyHelperPane): pane is HelperPaneAgentTerminal {
+  return pane.type === 'shell' && (pane as { terminalId?: unknown }).terminalId !== undefined
+}
+
 /** Union of persisted + transient pane shapes. */
-export type AnyHelperPane = HelperPane | HelperPanePending | HelperPaneReviewCompanion
+export type AnyHelperPane =
+  HelperPane | HelperPanePending | HelperPaneReviewCompanion | HelperPaneAgentTerminal
 
 interface InMemoryWorktreeState {
   splitVisible: boolean
   splitRatio: number
   panes: AnyHelperPane[]
+}
+
+function stripTransientFields<T extends object>(pane: T): T {
+  for (const key of TRANSIENT_PANE_FIELDS) delete (pane as Record<string, unknown>)[key]
+  return pane
 }
 
 /**
@@ -172,7 +225,10 @@ function toPersistShape(state: InMemoryWorktreeState): WorktreeHelperState {
     splitRatio: rawState.splitRatio,
     panes: rawState.panes
       .filter((p) => paneRegistry[p.type]?.persistable ?? true)
-      .map((p) => ({ ...toRaw(p) }) as HelperPane)
+      // T474: an agent terminal's id is held by an agent and its PTY dies with the app, so
+      // the pane must not come back after a restart backed by a different shell.
+      .filter((p) => (p as { origin?: unknown }).origin !== 'agent')
+      .map((p) => stripTransientFields({ ...toRaw(p) }) as HelperPane)
   }
 }
 
@@ -684,8 +740,41 @@ export const useHelpersStore = defineStore('helpers', () => {
    * pane id (also used as the PTY identifier).
    */
   function addShellHelper(worktreePath: string, cwd: string, opts?: AddHelperOpts): string {
+    const terminal = opts?.terminal
+    if (terminal) return addAgentTerminalHelper(worktreePath, cwd, terminal, opts)
     const id = `h-${crypto.randomUUID()}`
     return addHelper(worktreePath, { id, type: 'shell', cwd, ratio: 0 }, opts)
+  }
+
+  /**
+   * T474: the pane of a terminal whose PTY main already spawned (spec §4.1 step 5). The pane id
+   * IS the `terminalId`. A pane the stack already holds is returned as it is — a reload's
+   * re-dispatch must never double it — and the exit watch is armed HERE, when the pane lands,
+   * not when it mounts: a folder nobody is viewing never mounts one (spec §8 case 5).
+   */
+  function addAgentTerminalHelper(
+    worktreePath: string,
+    cwd: string,
+    terminal: NonNullable<AddHelperOpts['terminal']>,
+    opts: AddHelperOpts
+  ): string {
+    const held = byWorktree.value.get(worktreePath)?.panes.find((p) => p.id === terminal.paneId)
+    if (held) return held.id
+    const pane: HelperPaneAgentTerminal = {
+      id: terminal.paneId,
+      type: 'shell',
+      cwd,
+      ratio: 0,
+      origin: 'agent',
+      terminalId: terminal.paneId,
+      ptyId: terminal.ptyId,
+      ownerSessionId: terminal.ownerSessionId,
+      spawnedAt: terminal.spawnedAt
+    }
+    // A re-announced terminal is not news: skip the unseen badge and the OS alert.
+    const id = addHelper(worktreePath, pane, terminal.redispatch ? {} : opts)
+    armTerminalExitWatch(worktreePath, pane)
+    return id
   }
 
   /**
@@ -954,6 +1043,10 @@ export const useHelpersStore = defineStore('helpers', () => {
    * worktree via the user-projects cascade.
    */
   function removeHelper(worktreePath: string, helperId: string): void {
+    // T474: main owns an agent terminal's PTY, so removal asks main to kill it — whether or not
+    // the pane ever mounted (an unmounted pane has no live helper to dispose it).
+    const removed = byWorktree.value.get(worktreePath)?.panes.find((p) => p.id === helperId)
+    if (removed) closeAgentTerminal(removed)
     mutateWorktree(worktreePath, (s) => {
       const remaining = s.panes.filter((p) => p.id !== helperId)
       const updated = rebalanceRatios(remaining) as AnyHelperPane[]
@@ -1060,7 +1153,10 @@ export const useHelpersStore = defineStore('helpers', () => {
     // The worktree is gone — dispose every live terminal it owned so their
     // PTYs don't linger in the background (issue #10's detach-not-dispose
     // means unmount alone no longer kills them).
-    for (const pane of state.panes) notifyPaneRemoved(pane.id)
+    for (const pane of state.panes) {
+      closeAgentTerminal(pane)
+      notifyPaneRemoved(pane.id)
+    }
     const map = new Map(byWorktree.value)
     map.delete(worktreePath)
     byWorktree.value = map
@@ -1132,7 +1228,7 @@ export const useHelpersStore = defineStore('helpers', () => {
   function watchPaneForExit(worktreePath: string, paneId: string, ptyId: string): () => void {
     const timer = setTimeout(() => {
       stalePaneTimers.delete(paneId)
-    }, 2000)
+    }, STALE_EXIT_WINDOW_MS)
     stalePaneTimers.set(paneId, timer)
 
     const t = i18n.global.t
@@ -1158,6 +1254,122 @@ export const useHelpersStore = defineStore('helpers', () => {
       off()
     })
     return off
+  }
+
+  // ── Agent terminals: exit watch at split time, main-owned teardown (T474) ──
+
+  /** Disposers of the exit watches armed at split time, keyed by pane (= terminal) id. */
+  const terminalExitWatches = new Map<string, () => void>()
+
+  /** Replace the pane `paneId` in `worktreePath` with `next(pane)`; a no-op if it is gone. */
+  function patchPane(
+    worktreePath: string,
+    paneId: string,
+    next: (pane: AnyHelperPane) => AnyHelperPane
+  ): void {
+    const state = byWorktree.value.get(worktreePath)
+    if (!state?.panes.some((p) => p.id === paneId)) return
+    mutateWorktree(worktreePath, (s) => ({
+      ...s,
+      panes: s.panes.map((p) => (p.id === paneId ? next(p) : p))
+    }))
+  }
+
+  /**
+   * Arm the exit watch of an agent terminal the moment its pane lands. Subscribes to the PTY's
+   * exit FIRST and only then asks main for its status, so an exit that already happened —
+   * between the spawn and this dispatch landing — is caught by the status answer and one that
+   * happens after is caught by the subscription. Whichever reports first wins; the other is
+   * ignored.
+   *
+   * Same rule as {@link watchPaneForExit}, but measured from the PTY's spawn (carried in the
+   * dispatch) instead of from "now": an exit ≥ 2 s after spawn removes the pane at once, mounted
+   * or not; an earlier one keeps it, flagged `exited`, with the stale toast.
+   */
+  function armTerminalExitWatch(worktreePath: string, pane: HelperPaneAgentTerminal): void {
+    const { id: paneId, spawnedAt } = pane
+    let settled = false
+    const t = i18n.global.t
+
+    const onExited = (exitedAt: number, code: number | null, snapshot?: string): void => {
+      if (settled) return
+      settled = true
+      terminalExitWatches.get(paneId)?.()
+      terminalExitWatches.delete(paneId)
+      if (exitedAt - spawnedAt >= STALE_EXIT_WINDOW_MS) {
+        removeHelper(worktreePath, paneId)
+        return
+      }
+      patchPane(worktreePath, paneId, (p) => ({
+        ...p,
+        exited: { code, ...(snapshot !== undefined ? { snapshot } : {}) }
+      }))
+      ui.pushToast({
+        title: t('helperPane.staleSession.title'),
+        kind: 'danger',
+        timeoutMs: 0,
+        action: {
+          label: t('helperPane.staleSession.remove'),
+          handler: () => removeHelper(worktreePath, paneId)
+        }
+      })
+    }
+
+    const off = window.api.onPtyExit(pane.ptyId, (evt) => {
+      if (settled) return
+      // The live exit carries no timestamp; main has already recorded the tombstone, so the
+      // status answer holds both the real exit time and the snapshot the pane will paint.
+      void window.api
+        .terminalStatus(paneId)
+        .then((status) => {
+          if (status.known && status.state === 'exited') {
+            onExited(
+              status.exit?.at ?? Date.now(),
+              status.exit?.code ?? evt.exitCode,
+              status.snapshot
+            )
+          } else {
+            onExited(Date.now(), evt.exitCode)
+          }
+        })
+        .catch(() => onExited(Date.now(), evt.exitCode))
+    })
+    terminalExitWatches.set(paneId, off)
+
+    void window.api
+      .terminalStatus(paneId)
+      .then((status) => {
+        if (settled) return
+        if (!status.known) {
+          // Main has no such terminal (rolled back, or past its tombstone): the pane is a ghost.
+          settled = true
+          terminalExitWatches.get(paneId)?.()
+          terminalExitWatches.delete(paneId)
+          removeHelper(worktreePath, paneId)
+          return
+        }
+        if (status.state === 'exited') {
+          onExited(status.exit?.at ?? Date.now(), status.exit?.code ?? null, status.snapshot)
+        }
+      })
+      .catch(() => {
+        /* the subscription still covers every exit from here on */
+      })
+  }
+
+  /**
+   * Tear down an agent terminal's main-side half: stop its exit watch and ask main to kill the
+   * PTY. Safe to call for any pane (a no-op unless it is an agent terminal) and for a terminal
+   * that already ended. The renderer-side xterm is disposed separately, through
+   * {@link notifyPaneRemoved}, and only if the pane was ever mounted.
+   */
+  function closeAgentTerminal(pane: AnyHelperPane): void {
+    if (!isAgentTerminalPane(pane)) return
+    terminalExitWatches.get(pane.id)?.()
+    terminalExitWatches.delete(pane.id)
+    void Promise.resolve(window.api.terminalClose(pane.terminalId)).catch(() => {
+      /* main already forgot it */
+    })
   }
 
   return {

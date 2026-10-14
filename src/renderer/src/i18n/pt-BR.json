@@ -143,6 +143,7 @@
     "claudeTitle": "Claude",
     "forkTitle": "Claude (fork)",
     "spawnFailed": "Falha ao iniciar painel",
+    "processExited": "Processo encerrado",
     "staleSession": {
       "title": "Sessão do painel não existe mais",
       "remove": "Remover painel"
