@@ -16,6 +16,8 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
+  Pin,
+  PinOff,
   Play,
   Square,
   Trash2,
@@ -134,6 +136,12 @@ function onTimeoutChange(e: Event): void {
   const raw = Number((e.target as HTMLInputElement).value)
   if (!Number.isFinite(raw) || raw <= 0) return
   scheduler.save(props.worker.id, { timeoutSeconds: Math.round(raw) })
+}
+
+// ── pin (T483) ───────────────────────────────────────────────────────────
+const pinned = computed(() => typeof props.worker.pinnedAt === 'number')
+function onPinToggle(): void {
+  void scheduler.setPinned(props.worker.id, !pinned.value)
 }
 
 // ── run/stop ─────────────────────────────────────────────────────────────
@@ -338,6 +346,23 @@ const NOTIFY_OPTIONS = computed<{ value: NotifyOn; label: string }[]>(() => [
           {{ worker.model }} · {{ worker.effort }}
         </span>
         <span class="flex-1" />
+        <button
+          type="button"
+          class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border transition"
+          :class="
+            pinned
+              ? 'border-accent-line bg-accent-soft text-accent'
+              : 'border-border bg-surface text-text-3 hover:bg-surface-2 hover:text-text'
+          "
+          data-action="detail-pin"
+          :aria-pressed="pinned"
+          :aria-label="pinned ? t('scheduler.detail.unpin') : t('scheduler.detail.pin')"
+          :title="pinned ? t('scheduler.detail.unpin') : t('scheduler.detail.pin')"
+          @click="onPinToggle"
+        >
+          <PinOff v-if="pinned" :size="12" :stroke-width="1.6" />
+          <Pin v-else :size="12" :stroke-width="1.6" />
+        </button>
         <button
           v-if="!running"
           type="button"

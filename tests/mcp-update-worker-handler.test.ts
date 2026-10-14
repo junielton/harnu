@@ -188,6 +188,63 @@ describe('update_worker / delete_worker handlers (T316)', () => {
     expect(payload.mode).toBe('observe')
   })
 
+  // T483 AC-9 — pinning is the operator's curation: an agent can neither set nor clear it.
+  it('T483 AC-9: update_worker refuses pinnedAt and preserves an existing pin through an edit', async () => {
+    const { WIRED_TOOLS } = await loadHandlers()
+    const shell = await import('../src/main/scheduler-shell')
+    const createWorker = WIRED_TOOLS.find((t) => t.op === 'create_worker')!.handler!
+    const updateWorker = WIRED_TOOLS.find((t) => t.op === 'update_worker')!.handler!
+
+    const created = payloadOf(
+      await createWorker(
+        { folder, name: 'w', prompt: 'p', everyMinutes: 20 },
+        { ...baseCtx, folder }
+      )
+    )
+    const readStored = async (): Promise<Array<{ id: string; pinnedAt?: number }>> =>
+      (
+        JSON.parse(await fs.readFile(path.join(h.userDataDir, 'schedulers.json'), 'utf8')) as {
+          workers: Array<{ id: string; pinnedAt?: number }>
+        }
+      ).workers
+
+    // `pinnedAt` alone is not a recognized field: the verb refuses, nothing is pinned.
+    const refused = await updateWorker(
+      { id: created.id, set: { pinnedAt: 123 } },
+      { ...baseCtx, folder }
+    )
+    expect(refused.isError).toBe(true)
+    expect((await readStored()).find((w) => w.id === created.id)?.pinnedAt).toBeUndefined()
+
+    // Alongside a valid field it is ignored, not applied.
+    await updateWorker(
+      { id: created.id, set: { prompt: 'q', pinnedAt: 123 } },
+      {
+        ...baseCtx,
+        folder
+      }
+    )
+    expect((await readStored()).find((w) => w.id === created.id)?.pinnedAt).toBeUndefined()
+
+    // The operator pins it; a later agent edit must keep the pin.
+    await shell.setWorkerPinned(created.id as string, true)
+    const pinnedAt = (await readStored()).find((w) => w.id === created.id)?.pinnedAt
+    expect(typeof pinnedAt).toBe('number')
+    await updateWorker(
+      { id: created.id, set: { everyMinutes: 45, enabled: true } },
+      {
+        ...baseCtx,
+        folder
+      }
+    )
+    const after = (await readStored()).find((w) => w.id === created.id)
+    expect(after?.pinnedAt).toBe(pinnedAt)
+
+    // And the operator's own unpin removes it.
+    await shell.setWorkerPinned(created.id as string, false)
+    expect((await readStored()).find((w) => w.id === created.id)?.pinnedAt).toBeUndefined()
+  })
+
   it('AC-6: warns when the new prompt names a skill mention that resolves to nothing', async () => {
     const { WIRED_TOOLS } = await loadHandlers()
     const createWorker = WIRED_TOOLS.find((t) => t.op === 'create_worker')!.handler!
