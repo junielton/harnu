@@ -38,7 +38,7 @@ describe('terminalChipFor', () => {
       size: { cols: 80, rows: 24 }
     })
     expect(terminalChipFor(reg, leases, 'h-op')?.leaseActive).toBe(false)
-    leases.grant('h-op', '/f')
+    leases.grant('h-op', '/f', 'p')
     expect(terminalChipFor(reg, leases, 'h-op')?.leaseActive).toBe(true)
     clock.t = LEASE_IDLE_MS
     expect(terminalChipFor(reg, leases, 'h-op')?.leaseActive).toBe(false)

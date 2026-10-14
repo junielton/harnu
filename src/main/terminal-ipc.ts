@@ -84,7 +84,7 @@ export function terminalChipFor(
 ): TerminalChipState | null {
   if (typeof terminalId !== 'string') return null
   const rec = registry.get(terminalId)
-  return rec ? terminalChipState(rec, leases.isActive(terminalId)) : null
+  return rec ? terminalChipState(rec, leases.isActive(terminalId, rec.ptyId)) : null
 }
 
 const watched = new WeakSet<WebContents>()
