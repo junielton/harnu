@@ -316,6 +316,34 @@ describe('the parity stream end to end (AC-7)', () => {
     }
   })
 
+  it("aligns on a lastUuid that is the turn's trailing system row (found by the AC-8 real run)", async () => {
+    const x = await rig()
+    writeTranscript(x.transcript, 1_790_000_000_000)
+    // what the CLI appends after the answer: attachments, then system rows the fold also folds
+    const tail = [
+      { type: 'attachment', uuid: 'aaaaaaaa-0000-4000-8000-000000000003', isSidechain: false },
+      {
+        type: 'system',
+        subtype: 'turn_duration',
+        uuid: 'aaaaaaaa-0000-4000-8000-000000000004',
+        isSidechain: false
+      },
+      { type: 'last-prompt', lastPrompt: `plan the ${WORDS[0]} migration`, sessionId: S1 }
+    ]
+    writeFileSync(
+      x.transcript,
+      readFileSync(x.transcript, 'utf8') + tail.map((l) => JSON.stringify(l)).join('\n') + '\n'
+    )
+    utimesSync(x.transcript, 1_790_000_000, 1_790_000_000)
+    await x.start()
+    await x.send(S1, 'session.row', row({ lastUuid: 'aaaaaaaa-0000-4000-8000-000000000004' }))
+    await x.send(S1, 'turn.completed', { reason: 'answer', backgroundSubagents: 0 })
+    await tick()
+    await x.settle()
+    for (const r of x.ledger.read('row'))
+      expect({ k: r.k, v: r.d?.verdict }).toEqual({ k: r.k, v: 'match' })
+  })
+
   it("a subagent's turn end writes nothing", async () => {
     const x = await rig()
     writeTranscript(x.transcript, 1_790_000_000_000)

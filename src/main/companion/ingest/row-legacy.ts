@@ -159,13 +159,23 @@ export function createRowLegacySource(deps: {
     async tail(path, lastUuid) {
       const r = await readRange(path, TAIL_WINDOW_BYTES, TAIL_WINDOW_BYTES)
       if (!r) return null
-      const entries = parseLines(r.text, r.start > 0).filter((e) => !isNoiseEntry(e))
+      const lines = parseLines(r.text, r.start > 0)
+      const entries = lines.filter((e) => !isNoiseEntry(e))
       let lastAssistant: string | null = null
+      // The push's `lastUuid` can be ANY folded row, a `system` one included (the turn's
+      // `turn_duration`), so it is looked for on every line; what follows it and matters to the
+      // comparison is a user or assistant row the push has not folded yet (M1).
       let found = -1
+      let rowsAfter = 0
       const recent: { text: string; shape: StoredShape }[] = []
-      const main = entries.filter(isMainRow)
-      main.forEach((e, i) => {
-        if (lastUuid !== null && e.uuid === lastUuid) found = i
+      lines.forEach((e, i) => {
+        const isLast = lastUuid !== null && e.uuid === lastUuid
+        if (isLast) {
+          found = i
+          rowsAfter = 0
+        }
+        if (!isMainRow(e)) return
+        if (found >= 0 && !isLast) rowsAfter++
         if (e.type === 'assistant') {
           const t = assistantText(e.message)
           if (t.trim() !== '') lastAssistant = t
@@ -182,7 +192,7 @@ export function createRowLegacySource(deps: {
         size: r.size,
         lastAssistant,
         uuidFound: lastUuid === null ? null : found >= 0,
-        rowsAfter: found >= 0 ? main.length - 1 - found : 0,
+        rowsAfter,
         recentPrompts: recent,
         toolCalls5m: deriveStagnation(entries).calls
       }
