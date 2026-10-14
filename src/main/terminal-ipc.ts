@@ -9,7 +9,8 @@
  * `TERMINAL_LIMIT` (spec §8 case 11).
  *
  * T474 B7 adds the operator's Disconnect (`terminal:disconnect`, permanent, stops reads and writes;
- * the button is unit U1's) and the `terminal:activity` stream the chip's live signal reads.
+ * the pane's button is U1's) and the `terminal:activity` stream the chip's live signal reads;
+ * T474 U1 adds `terminal:chip`, the chip's read-only view of a terminal.
  *
  * The handlers are plain functions over an injected registry and close function, so the
  * lifecycle is testable without electron; {@link registerTerminalIpc} only binds them.
@@ -19,7 +20,13 @@ import { closeTerminalPty } from './pty'
 import { TerminalActivityCoalescer, type TerminalActivityEvent } from './terminal-activity'
 import { disconnectTerminal } from './terminal-gate'
 import { redispatchLiveTerminals, terminalStatus, type TerminalStatus } from './terminal-lifecycle'
-import { terminalRegistry, type TerminalRegistry } from './terminal-registry'
+import { terminalLeases, type TerminalLeases } from './terminal-lease'
+import {
+  terminalChipState,
+  terminalRegistry,
+  type TerminalChipState,
+  type TerminalRegistry
+} from './terminal-registry'
 import { screenModelFor } from './terminal-screen'
 
 /**
@@ -66,6 +73,32 @@ export function wireTerminalActivity(
   }
 }
 
+/**
+ * Tell the renderer to re-read a terminal's chip whenever its write lease is granted or ends
+ * (Disconnect, folder block, kill-switch, Deny, idle-out found on a check), so "An agent can type
+ * here" never lingers after the lease is gone. Returns the disposer.
+ */
+export function wireTerminalChipChanged(
+  leases: TerminalLeases,
+  send: (event: { terminalId: string }) => void
+): () => void {
+  return leases.onChange((terminalId) => send({ terminalId }))
+}
+
+/**
+ * `terminal:chip`: what the pane's connection chip renders for `terminalId` (spec §7.3), or null
+ * for an unknown id. Read-only; the lease is asked live, so an idled-out lease reads false.
+ */
+export function terminalChipFor(
+  registry: TerminalRegistry,
+  leases: TerminalLeases,
+  terminalId: unknown
+): TerminalChipState | null {
+  if (typeof terminalId !== 'string') return null
+  const rec = registry.get(terminalId)
+  return rec ? terminalChipState(rec, leases.isActive(terminalId, rec.ptyId)) : null
+}
+
 const watched = new WeakSet<WebContents>()
 
 /**
@@ -107,10 +140,20 @@ export function registerTerminalIpc(
     typeof terminalId === 'string' ? closeTerminalPty(terminalId) : false
   )
 
+  ipcMain.handle('terminal:chip', (_e, terminalId: unknown) =>
+    terminalChipFor(terminalRegistry, terminalLeases, terminalId)
+  )
+
   // The operator's Disconnect (spec §6.4). Permanent: there is no reconnect handler on purpose.
   ipcMain.handle('terminal:disconnect', (_e, terminalId: unknown): boolean =>
     typeof terminalId === 'string' ? disconnectTerminal(terminalId) : false
   )
+
+  wireTerminalChipChanged(terminalLeases, (event) => {
+    for (const wc of webContents.getAllWebContents()) {
+      if (wc.getType() === 'window' && !wc.isDestroyed()) wc.send('terminal:chipChanged', event)
+    }
+  })
 
   wireTerminalActivity(terminalRegistry, (event) => {
     for (const wc of webContents.getAllWebContents()) {

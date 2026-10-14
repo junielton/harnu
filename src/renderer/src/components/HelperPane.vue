@@ -92,6 +92,7 @@ import { themeFromCss } from '../lib/terminalTheme'
 import { installTerminalKeymap } from '../lib/terminalKeymap'
 import { composeReviewCorrective, type ReviewCorrective } from '../../../main/review-corrective'
 import { registerFileLinkProvider } from '../lib/terminal-file-links'
+import AgentConnectionChip from './AgentConnectionChip.vue'
 
 /**
  * Per-helper xterm host. One instance per pane in the right-side split
@@ -725,6 +726,11 @@ const paneIcon = computed<LucideIcon>(() => {
  * whether the thing beside the diff can change the diff is exactly the
  * uncertainty this feature exists to remove.
  */
+/** The pane as an agent terminal (T474), or null for an operator-opened one. */
+const agentTerminalPane = computed(() =>
+  isAgentTerminalPane(props.pane) && props.pane.origin === 'agent' ? props.pane : null
+)
+
 const isReviewCompanion = computed<boolean>(() => props.pane.type === 'review-companion')
 
 /**
@@ -812,7 +818,7 @@ function onPromote(): void {
       </span>
     </div>
     <header
-      class="absolute inset-x-0 top-0 z-10 flex h-6 items-center gap-1.5 border-b border-border bg-surface px-2 text-[11px] text-text-2 transition-colors"
+      class="@container absolute inset-x-0 top-0 z-10 flex h-6 items-center gap-1.5 border-b border-border bg-surface px-2 text-[11px] text-text-2 transition-colors"
       :class="
         resizable ? 'cursor-row-resize border-t border-t-border-2 hover:border-t-accent-line' : ''
       "
@@ -865,6 +871,15 @@ function onPromote(): void {
       <template v-else>
         <component :is="paneIcon" :size="12" :stroke-width="1.6" class="shrink-0 text-text-3" />
         <span class="min-w-0 flex-1 truncate" :title="pane.cwd">{{ paneName }}</span>
+        <!-- T474 U1: who is connected to this terminal, what they are doing, and Disconnect.
+             Shell panes only: the chip renders nothing unless an agent can reach the terminal. -->
+        <AgentConnectionChip
+          v-if="pane.type === 'shell'"
+          :terminal-id="pane.id"
+          :origin="agentTerminalPane ? 'agent' : undefined"
+          :owner-session-id="agentTerminalPane?.ownerSessionId ?? null"
+          :exited="!!agentTerminalPane?.exited"
+        />
       </template>
       <button
         class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"

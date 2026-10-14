@@ -405,7 +405,8 @@ _another_ folder.
 | `clock`                                  | History, recents                                                                                                                                                                                                                       |
 | `cloud`                                  | Cloud/bridge session (conversation lives on claude.ai, no resumable local transcript)                                                                                                                                                  |
 | `check`                                  | Confirmation, checkbox, agent completed (`done`) / transient "copied" state on a `copy` button                                                                                                                                         |
-| `bot`                                    | Subagent (agent row nested under the session) / agent-control badge on the folder row                                                                                                                                                  |
+| `bot`                                    | Subagent (agent row nested under the session) / agent-control badge on the folder row / agent connection chip (T474)                                                                                                                   |
+| `unplug`                                 | Agent connection chip → Disconnect (T474)                                                                                                                                                                                              |
 | `puzzle`                                 | Extension-origin badge (theme picker swatch, T137)                                                                                                                                                                                     |
 | `users`                                  | Teammate count chip (leader row) / icon on the synthetic "Team session-… · N" header                                                                                                                                                   |
 | `corner-down-right`                      | Nesting connector (agent → parent session / teammate → leader)                                                                                                                                                                         |
@@ -634,6 +635,11 @@ scale (0.43 for the 6px default, 5px → 0.38, 8px → 0.5), and non-square elem
   z-index: -1;
 }
 ```
+
+**Accent variant** (T474) — `.anim-pulse-dot--accent` changes **only** the halo colour:
+`.anim-pulse-dot--accent::after { background: var(--color-accent-soft) }`. Same keyframe,
+same geometry, same reduced-motion behaviour. Used by the agent connection chip's leading
+dot (§6); the dot itself carries `bg-accent`.
 
 Attention blink (`needs-input` state) — opacity, not box-shadow, to read as
 "blinking, needs you" without competing with the `active` green halo. Helper
@@ -3670,6 +3676,75 @@ directly, no need to restore first. Drag-to-resize is disabled on every pane
 while one is maximized (ratios are meaningless in that state). The maximized
 pane id is **ephemeral, per-worktree state** — never persisted to `helpers.json`
 — so it resets to the normal split on a worktree switch or app restart.
+
+#### Agent connection chip (helper pane header)
+
+`AgentConnectionChip.vue`. A terminal an agent can reach shows **who** is connected,
+**when** the agent reads or types, and a one-click way to cut it off (T474, spec
+`docs/specs/T474-agent-terminals/spec.md` §7). It sits in the default pane header
+(the 24px strip above), between the cwd label and the maximize button:
+
+```
+▸_ app-api   ● Connected to ‹Fix login bug› · typing   ⏏  ⤢ ✕
+```
+
+- **Chip** — a `<button>` (a plain `<span>` when there is nothing to click through to),
+  `rounded-full border border-accent-line bg-accent-soft text-accent`,
+  `padding: 1px 7px`, 10px: the review-companion pill's geometry with **accent**
+  tokens (accent, **not** green — green means "working"). A 6px leading dot (it
+  pulses only while the live word shows), then the `bot` glyph 10px.
+- **Label** — `$t('agentTerminal.connectedTo')`, the session's display title,
+  truncating. The chip's native `title` carries the full label (with "(parked)")
+  plus "— Go to session" when it is clickable, so a truncated name can be
+  recovered on hover. **Click → select that session** (an explicit operator
+  gesture; an _agent_ still never moves the view). With no known session the chip
+  renders the same pill without a click action.
+- **Live word** — a 10px `--text-3` suffix after a `·`: empty when idle, `reading`
+  or `typing` while active (and omitted when the label already says "reading").
+  A word, never a glyph alone. An `aria-live="polite"` visually hidden node
+  announces it; it sits **outside** the button so the button's accessible name
+  does not repeat the word.
+- **Disconnect** — an 18×18 icon-only button, `unplug` glyph 12px, `--text-3` →
+  `hover:bg-surface-2 hover:text-text`, `mousedown.stop`, `aria-label` =
+  `$t('agentTerminal.disconnect')`, `title` = `$t('agentTerminal.disconnectHint')`.
+  **No confirm** — revoking is the safe direction — and it is **permanent** for
+  that terminal. The chip goes at once and a toast (`agentTerminal.disconnected`)
+  confirms, with no undo. It stops **reads and writes**; the shell keeps running.
+  **If main does not confirm** (it answers `false`, or the call throws), the agent
+  still has access: the chip comes back and a `danger` toast
+  (`agentTerminal.disconnectFailed`) says so — never the success toast.
+- **After Disconnect** — chip and button disappear; the header reads as an ordinary
+  terminal.
+- **Overflow** — the cwd label truncates first, the chip second, the buttons never.
+  The cwd label is `min-w-0 flex-1 truncate`; the chip is `min-w-0 shrink
+overflow-hidden` with a `truncate` label; Disconnect, maximize and close are
+  `shrink-0`. The header is a container (`@container`): below **180px** of header
+  width the label, "(parked)" and the live word are hidden (`@max-[180px]:hidden`),
+  leaving dot + glyph, so the chip never shows half a glyph — the `title` still
+  carries the full label.
+
+| State                                         | Chip                                                                                                                               |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Agent-spawned, owner known                    | "Connected to ‹session›" (+ "(parked)" when the owner's PTY is parked); clicks through to the session                              |
+| Agent-spawned, owner gone / unknown           | "Connected to a closed session" / "Connected to an agent" — no click target                                                        |
+| Operator-opened, an agent holds a write lease | always "An agent can type here" (a lease records no grantee); Disconnect ends it for good                                          |
+| Operator-opened, an agent reads (opt-in on)   | transient "An agent is reading" while reads happen; **no** Disconnect (the reader is unidentifiable; opt-in is in the folder menu) |
+| Disconnected, or exited                       | no chip                                                                                                                            |
+
+**Live signal.** Main emits `terminal:activity { terminalId, kind, at }` per agent
+read/write, coalesced to one event per 250ms per terminal. The word is held for at
+least **1.2s** and clears **3s** after the last event; `write` outranks `read`.
+Typing is also visible for free: the bytes echo through the PTY into the pane.
+
+**Lease changes.** Main also emits `terminal:chipChanged { terminalId }` whenever a write
+lease is granted or ends (Disconnect, folder block, kill-switch, Deny), and the chip
+re-reads its state, so "An agent can type here" never outlives the lease. A lease that
+idles out after 10 minutes has no such moment; while a lease chip is shown it is
+re-checked every 5s.
+
+**Motion.** The leading dot uses `.anim-pulse-dot.anim-pulse-dot--accent` (§7 — Agent
+activity pulse). Under `prefers-reduced-motion` there is no pulse; the word carries
+the signal.
 
 #### Review companion pane
 
@@ -11718,6 +11793,7 @@ it ran too long.**
 | Overlay (dialog/menu)   | 140ms        | ease-out    | Fade + translateY 2px → 0                                                                                                                                                                                 |
 | Divider hover           | 140ms        | ease-out    | Background `--border-2` → `--accent-line` (width follows the pointer with no easing)                                                                                                                      |
 | Pulse (active status)   | 1.8s loop    | ease-in-out | Breathing halo (`pulse-ring`)                                                                                                                                                                             |
+| Agent activity pulse    | 1.8s loop    | ease-in-out | `pulse-ring` on the agent connection chip's dot while `reading`/`typing`; `.anim-pulse-dot--accent` swaps the halo to `--accent-soft`, no new keyframe. Reduced motion: no pulse                          |
 | Terminal cursor         | 1s           | steps(1)    | Blinking accent block                                                                                                                                                                                     |
 | Chart bar (BI)          | `--dur`      | `--ease`    | Bar height animates when the period/data changes (`UsageChart`)                                                                                                                                           |
 | Copy button reveal      | `--dur-fast` | `--ease`    | Opacity 0 → 1 on block hover / button focus-visible (T121 copy affordance)                                                                                                                                |

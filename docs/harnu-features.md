@@ -1,4 +1,4 @@
-<!-- harnu-features v94 (2026-10-14) -->
+<!-- harnu-features v95 (2026-10-14) -->
 
 # You are running inside Harnu
 
@@ -785,6 +785,12 @@ kill-switch is judged before every piece too, so switching typing off mid-send s
 piece the same way. Open a new terminal only if the work still needs one, and say
 so. `list_terminals.writable` reads `free` (not `confirm`) for an operator terminal that holds an
 active lease.
+**The connection chip.** A terminal an agent can reach shows a chip in its pane header: "Connected
+to ‹the session you named in `ownerSessionId`›", plus the word `reading` or `typing` while you
+work, and the operator's Disconnect button. Pass your own `ownerSessionId` to `spawn_terminal` so it
+names you; if the operator asks how to cut you off, point at that button. A session that
+leaves `ownerSessionId` out shows as "an agent"; an operator terminal you may type into (lease)
+shows "An agent can type here"; one you only read shows "An agent is reading" with no button.
 
 **Worktrees.** You can create and list git worktrees (`create_worktree` /
 `list_worktrees`). Harnu reads a repo's `WORKTREE.md` manifest so fresh worktrees are
