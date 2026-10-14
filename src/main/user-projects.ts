@@ -899,6 +899,9 @@ export async function setUserProjectTerminalRead(
   return withFileLock(userProjectsPath(), async () => {
     const file = await readUserProjects()
     const normalizedPath = await normalizePath(targetPath)
+    // T484 F5: closing the read door ends the write leases behind it, so turning it back on
+    // can never revive an approval the operator gave before they changed their mind.
+    if (!enabled) terminalLeases.revokeFolder(normalizedPath)
     const idx = file.projects.findIndex((p) => p.path === normalizedPath)
     if (idx === -1) {
       const created: UserProject = {

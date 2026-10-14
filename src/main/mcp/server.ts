@@ -127,6 +127,7 @@ import { terminalLeases } from '../terminal-lease'
 import { terminalRegistry } from '../terminal-registry'
 import { escapeForAudit } from '../terminal-keys'
 import { terminalWriteQueue } from '../terminal-write-queue'
+import { escapeForConfirm, shortPaneId } from '../terminal-confirm-text'
 import { shapeDenial } from './deny-hint'
 import { isFolderDenied } from './permission-core'
 import { previewWorktreeCommands, worktreeInheritOfferForTarget } from '../worktree-ipc'
@@ -492,8 +493,11 @@ async function buildConfirmDisclosure(
     case 'send_terminal': {
       // T474 B6 (spec §6.3): what the operator needs to decide — which terminal, where, and the
       // exact first send. Everything about the terminal comes from the registry, never from the
-      // agent's arguments, and the program-set title (untrusted, R14) is NEVER shown.
-      const rec = terminalRegistry.get(strField(args, 'terminalId') ?? '')
+      // agent's arguments, and the program-set title (untrusted, R14) is NEVER shown. The agent's
+      // text is shown IN FULL, with invisible and direction-changing characters spelled out, and
+      // with its length, so a padded or reordered line cannot pass for something shorter.
+      const terminalId = strField(args, 'terminalId') ?? ''
+      const rec = terminalRegistry.get(terminalId)
       const home = os.homedir()
       const tilde = (p: string): string =>
         p === home || p.startsWith(home + path.sep) ? '~' + p.slice(home.length) : p
@@ -502,13 +506,14 @@ async function buildConfirmDisclosure(
       const where = rec ? rec.folder : folder
       const prompt =
         `An agent wants to type into a terminal.\n\n` +
-        `Terminal: ${path.basename(where) || where}\n` +
+        `Terminal: ${path.basename(where) || where} (${escapeForConfirm(shortPaneId(terminalId))})\n` +
         `Working directory: ${tilde(where)}\n` +
         `Folder: ${tilde(folder)}\n\n` +
         `The first thing it would type:\n` +
-        `  Text: ${input === '' ? '(none)' : `"${escapeForAudit(input)}"`}\n` +
-        `  Keys: ${keys.length === 0 ? '(none)' : keys.join(', ')}\n\n` +
-        `Allow lets this agent type into this terminal until it has had no writes for 10 minutes. ` +
+        `  Text (${[...input].length} characters): ${input === '' ? '(none)' : `"${escapeForConfirm(input)}"`}\n` +
+        `  Keys (${keys.length}): ${keys.length === 0 ? '(none)' : keys.map(escapeForConfirm).join(', ')}\n\n` +
+        `Allow lets agents type into this terminal until it has had no writes for 10 minutes. ` +
+        `The permission belongs to the terminal, not to the agent that asked. ` +
         `Nothing is typed when you Allow: the agent is told to look at the screen and send again. ` +
         `Deny blocks sends to this terminal for 5 minutes.`
       return { prompt, permissionMode: 'default', nonDefaultFlags: [], commands: [] }
@@ -1157,15 +1162,20 @@ async function runToolCall(
       folder,
       folders,
       denyFolders: policy.denyFolders ?? [],
-      bridge: deps?.bridge
+      bridge: deps?.bridge,
+      // The handler re-checks the lease right before it writes, whatever the terminal's origin.
+      opts: { viaLease: true }
     })
-    pushShadowEntry({
-      sessionId: strField(args, 'ownerSessionId') ?? '',
-      event: `mcp:${def.op}`,
-      by: 'lease',
-      summary: `${def.op} ${plan.leaseAllow.terminalId} (write lease)`,
-      ts: Date.now()
-    })
+    // Only a send that actually happened is logged as running under the lease.
+    if (ackIsSuccess(res)) {
+      pushShadowEntry({
+        sessionId: strField(args, 'ownerSessionId') ?? '',
+        event: `mcp:${def.op}`,
+        by: 'lease',
+        summary: `${def.op} ${escapeForAudit(plan.leaseAllow.terminalId)} (write lease)`,
+        ts: Date.now()
+      })
+    }
     return res
   }
 
@@ -1276,6 +1286,11 @@ async function parkMutationConfirm(
     disclosure.alwaysAllowOffer = true
     disclosure.alwaysAllowDefault = !def.dangerousAlwaysAllow
   }
+  // T474 F1: which shell the operator is being asked about, fixed at the moment of asking.
+  const parkedPtyId =
+    def.op === 'send_terminal'
+      ? terminalRegistry.get(strField(args, 'terminalId') ?? '')?.ptyId
+      : undefined
   const parked = deps.confirm.park(disclosure)
 
   // Immediate fail-closed (no operator surface / saturated) — nothing parked.
@@ -1327,7 +1342,7 @@ async function parkMutationConfirm(
     // T474 B6 (spec §6.3): for a keystroke verb an Allow GRANTS the lease and never types the call
     // that asked — on the parked path that call may be minutes old, and its keys would land on
     // whatever the screen shows by then. The agent is told to look and send again.
-    if (def.op === 'send_terminal') return grantTerminalLease(args, folder)
+    if (def.op === 'send_terminal') return grantTerminalLease(args, folder, parkedPtyId)
     if (inheritDiscovery) {
       await applyInheritDiscoveryScope(outcome.inheritScope ?? 'once', inheritDiscovery)
     }
@@ -1409,33 +1424,39 @@ async function parkMutationConfirm(
  */
 async function grantTerminalLease(
   args: Record<string, unknown>,
-  folder: string
+  folder: string,
+  parkedPtyId: string | undefined
 ): Promise<CallToolResult> {
   const terminalId = strField(args, 'terminalId') ?? ''
   const { rec, state } = await resolveTerminalGate(terminalId)
   const refusal = gateTerminalOp('send_terminal', state)
   if (refusal || !rec) return steerError(refusal ?? 'TERMINAL_NOT_FOUND', folder)
+  // The operator answered about ONE shell. If the id now names a different process (a pane
+  // restored under the same id), that Allow says nothing about the new one.
+  if (parkedPtyId === undefined || rec.ptyId !== parkedPtyId) {
+    return steerError('TERMINAL_EXITED', folder)
+  }
   const denyFolders = (await readUserProjects()).projects
     .filter((p) => p.agentDenied === true)
     .map((p) => p.path)
   if (isFolderDenied(rec.folder, denyFolders, os.homedir())) {
     return steerError('FOLDER_NOT_ALLOWED', folder)
   }
-  terminalLeases.grant(terminalId, rec.folder)
+  terminalLeases.grant(terminalId, rec.folder, rec.ptyId)
   appendAudit({
     ts: Date.now(),
     tool: 'send_terminal',
     folder,
     verdict: 'allow',
     disclosedPayloadSummary: 'none',
-    result: `LEASE_GRANTED: ${terminalId}`
+    result: `LEASE_GRANTED: ${escapeForAudit(terminalId)}`
   })
   auditPersister.schedule()
   pushShadowEntry({
     sessionId: strField(args, 'ownerSessionId') ?? '',
     event: 'mcp:send_terminal',
     by: 'operator-allow',
-    summary: `send_terminal ${terminalId} (write lease granted; nothing typed)`,
+    summary: `send_terminal ${escapeForAudit(terminalId)} (write lease granted; nothing typed)`,
     ts: Date.now()
   })
   const denial = shapeDenial('TERMINAL_APPROVED_RESEND', { folder })

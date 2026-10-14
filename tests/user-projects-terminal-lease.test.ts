@@ -14,7 +14,11 @@ vi.mock('electron', () => ({
   ipcMain: { handle: (): void => {} }
 }))
 
-import { addUserProject, setUserProjectAgentDenied } from '../src/main/user-projects'
+import {
+  addUserProject,
+  setUserProjectAgentDenied,
+  setUserProjectTerminalRead
+} from '../src/main/user-projects'
 import { terminalLeases } from '../src/main/terminal-lease'
 
 describe('the folder block toggle ends write leases', () => {
@@ -37,33 +41,51 @@ describe('the folder block toggle ends write leases', () => {
   })
 
   it('blocking the folder ends its leases and the leases of terminals below it only', async () => {
-    terminalLeases.grant('h-repo', repo)
-    terminalLeases.grant('h-wt', path.join(repo, '.claude', 'worktrees', 'wt'))
-    terminalLeases.grant('h-elsewhere', '/somewhere/else')
+    terminalLeases.grant('h-repo', repo, 'p-h-repo')
+    terminalLeases.grant('h-wt', path.join(repo, '.claude', 'worktrees', 'wt'), 'p-h-wt')
+    terminalLeases.grant('h-elsewhere', '/somewhere/else', 'p-h-elsewhere')
     await setUserProjectAgentDenied(repo, true)
-    expect(terminalLeases.isActive('h-repo')).toBe(false)
-    expect(terminalLeases.isActive('h-wt')).toBe(false)
-    expect(terminalLeases.isActive('h-elsewhere')).toBe(true)
+    expect(terminalLeases.isActive('h-repo', 'p-h-repo')).toBe(false)
+    expect(terminalLeases.isActive('h-wt', 'p-h-wt')).toBe(false)
+    expect(terminalLeases.isActive('h-elsewhere', 'p-h-elsewhere')).toBe(true)
   })
 
   it('unblocking does not bring a lease back', async () => {
-    terminalLeases.grant('h-repo', repo)
+    terminalLeases.grant('h-repo', repo, 'p-h-repo')
     await setUserProjectAgentDenied(repo, true)
     await setUserProjectAgentDenied(repo, false)
-    expect(terminalLeases.isActive('h-repo')).toBe(false)
+    expect(terminalLeases.isActive('h-repo', 'p-h-repo')).toBe(false)
   })
 
   it('a block that is already on still ends a lease granted in the meantime', async () => {
     await setUserProjectAgentDenied(repo, true)
-    terminalLeases.grant('h-repo', repo)
+    terminalLeases.grant('h-repo', repo, 'p-h-repo')
     await setUserProjectAgentDenied(repo, true)
-    expect(terminalLeases.isActive('h-repo')).toBe(false)
+    expect(terminalLeases.isActive('h-repo', 'p-h-repo')).toBe(false)
   })
 
   it('unblocking never ends a lease', async () => {
     await setUserProjectAgentDenied(repo, true)
-    terminalLeases.grant('h-repo', repo)
+    terminalLeases.grant('h-repo', repo, 'p-h-repo')
     await setUserProjectAgentDenied(repo, false)
-    expect(terminalLeases.isActive('h-repo')).toBe(true)
+    expect(terminalLeases.isActive('h-repo', 'p-h-repo')).toBe(true)
+  })
+
+  it('T484 F5: turning the read opt-in OFF ends that folder’s leases, and turning it on never revives them', async () => {
+    await setUserProjectTerminalRead(repo, true)
+    terminalLeases.grant('h-repo', repo, 'p-h-repo')
+    terminalLeases.grant('h-sub', path.join(repo, 'sub'), 'p-h-sub')
+    await setUserProjectTerminalRead(repo, false)
+    expect(terminalLeases.isActive('h-repo', 'p-h-repo')).toBe(false)
+    // The opt-in is exact-folder, so a terminal in a subfolder is not this folder's business.
+    expect(terminalLeases.isActive('h-sub', 'p-h-sub')).toBe(true)
+    await setUserProjectTerminalRead(repo, true)
+    expect(terminalLeases.isActive('h-repo', 'p-h-repo')).toBe(false)
+  })
+
+  it('T484 F5: turning the opt-in ON does not end a lease', async () => {
+    terminalLeases.grant('h-repo', repo, 'p-h-repo')
+    await setUserProjectTerminalRead(repo, true)
+    expect(terminalLeases.isActive('h-repo', 'p-h-repo')).toBe(true)
   })
 })

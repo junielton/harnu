@@ -108,7 +108,8 @@ import {
 import { terminalRegistry } from '../src/main/terminal-registry'
 import { terminalLeases, LEASE_IDLE_MS, DENY_COOLDOWN_MS } from '../src/main/terminal-lease'
 import { resolveTerminalGate } from '../src/main/terminal-gate'
-import { dropScreenModel } from '../src/main/terminal-screen'
+import { ScreenModel, dropScreenModel } from '../src/main/terminal-screen'
+import { clearShadowLog, getShadowLog } from '../src/main/responder-registry'
 import { terminalWriteQueue } from '../src/main/terminal-write-queue'
 import { writeMcpAsk } from '../src/main/mcp/prefs'
 import { getAuditLog, clearAuditLog } from '../src/main/mcp/audit-log'
@@ -171,6 +172,9 @@ async function openOperatorShell(terminalId: string, folder = h.open): Promise<P
   )
   return h.procs[h.procs.length - 1]!
 }
+
+/** The PTY id the registry holds for `terminalId` (a lease is bound to it). */
+const ptyOf = (terminalId: string): string => terminalRegistry.get(terminalId)?.ptyId ?? ''
 
 const writesOf = (proc: Proc): string[] => proc.writes.map((w) => w.data)
 const auditResults = (): string[] => getAuditLog().map((r) => r.result)
@@ -275,7 +279,7 @@ describe('AC-B6-1 — operator terminal, free mode: confirm once, then a lease',
     const proc = await openOperatorShell('h-op2')
     const first = await confirmAndAnswer({ terminalId: 'h-op2', input: 'echo one' }, 'allow')
     expect(first).toMatchObject({ ok: false, error: 'TERMINAL_APPROVED_RESEND' })
-    expect(terminalLeases.isActive('h-op2')).toBe(true)
+    expect(terminalLeases.isActive('h-op2', ptyOf('h-op2'))).toBe(true)
 
     const second = body(await send({ terminalId: 'h-op2', input: 'echo two', keys: ['Enter'] }))
     expect(second.ok).toBe(true)
@@ -352,7 +356,7 @@ describe('AC-B6-2 / AC-B6-8 — ask mode: the lease promotes confirm to allow, a
       origin: 'agent',
       size: { cols: 80, rows: 24 }
     })
-    terminalLeases.grant('h-blocked', blocked)
+    terminalLeases.grant('h-blocked', blocked, ptyOf('h-blocked'))
     const res = await send({ terminalId: 'h-blocked', input: 'x' })
     expect(body(res).error).toBe('FOLDER_NOT_ALLOWED')
     expect(wires).toHaveLength(0)
@@ -498,7 +502,7 @@ describe('AC-B6-3 / AC-B6-9 — Allow never types the call that asked', () => {
         result: { ok: false, error: 'TERMINAL_APPROVED_RESEND' }
       })
       expect(proc.writes).toEqual([])
-      expect(terminalLeases.isActive('h-parked')).toBe(true)
+      expect(terminalLeases.isActive('h-parked', ptyOf('h-parked'))).toBe(true)
     })
 
     it('after the parked Allow, the next send_terminal runs under the lease with no new confirm', async () => {
@@ -547,7 +551,7 @@ describe('AC-B6-3 / AC-B6-9 — Allow never types the call that asked', () => {
       await vi.advanceTimersByTimeAsync(2_000)
       expect(await approval(approvalId)).toMatchObject({ status: 'denied', reason: 'TTL_EXPIRED' })
       expect(proc.writes).toEqual([])
-      expect(terminalLeases.isActive('h-ttl')).toBe(false)
+      expect(terminalLeases.isActive('h-ttl', ptyOf('h-ttl'))).toBe(false)
     })
 
     it('a parked Deny starts the cooldown and the handle says TERMINAL_WRITE_DENIED', async () => {
@@ -578,7 +582,7 @@ describe('AC-B6-3 / AC-B6-9 — Allow never types the call that asked', () => {
     proc.emitExit(0)
     confirm.respond(wire.id, 'allow')
     expect(body(await call).error).toBe('TERMINAL_EXITED')
-    expect(terminalLeases.isActive('h-late')).toBe(false)
+    expect(terminalLeases.isActive('h-late', ptyOf('h-late'))).toBe(false)
   })
 
   it('an Allow that arrives after the folder was blocked grants nothing', async () => {
@@ -598,7 +602,7 @@ describe('AC-B6-3 / AC-B6-9 — Allow never types the call that asked', () => {
     h.denied = [blocked]
     confirm.respond(wire.id, 'allow')
     expect(body(await call).error).toBe('FOLDER_NOT_ALLOWED')
-    expect(terminalLeases.isActive('h-late2')).toBe(false)
+    expect(terminalLeases.isActive('h-late2', ptyOf('h-late2'))).toBe(false)
   })
 })
 
@@ -648,7 +652,7 @@ describe('AC-B6-4 — what ends a lease', () => {
       size: { cols: 80, rows: 24 }
     })
     h.denied = []
-    terminalLeases.grant('h-block', blocked)
+    terminalLeases.grant('h-block', blocked, ptyOf('h-block'))
     h.denied = [blocked]
     expect(body(await send({ terminalId: 'h-block', input: 'x' })).error).toBe('FOLDER_NOT_ALLOWED')
     // (the toggle itself revokes: see tests/user-projects-terminal-lease.test.ts)
@@ -660,7 +664,7 @@ describe('AC-B6-4 — what ends a lease', () => {
   it('app quit / control server stopped: every lease is gone and a send confirms again', async () => {
     const proc = await openOperatorShell('h-quit')
     await confirmAndAnswer({ terminalId: 'h-quit', input: 'a' }, 'allow')
-    expect(terminalLeases.isActive('h-quit')).toBe(true)
+    expect(terminalLeases.isActive('h-quit', ptyOf('h-quit'))).toBe(true)
     await closeMcpServer()
     expect(terminalLeases.activeIds()).toEqual([])
     await registerMcpServer(() => null, {
@@ -794,5 +798,204 @@ describe('AC-B6-7 — send_terminal is not grantable and not always-allowable', 
     expect(wire.alwaysAllowOffer).toBe(false)
     confirm.respond(wire.id, 'deny')
     await call
+  })
+})
+
+describe('T484 F1 — a lease never survives into a new shell under the same terminal id', () => {
+  it('probe P1: Allow → the shell exits → the pane is reopened under the same id → a send asks again and types nothing', async () => {
+    const oldProc = await openOperatorShell('h-reuse')
+    await confirmAndAnswer({ terminalId: 'h-reuse', input: 'a' }, 'allow')
+    expect(terminalLeases.activeIds()).toContain('h-reuse')
+    oldProc.emitExit(0)
+    // The exit itself ends the approval, not only the state check.
+    expect(terminalLeases.activeIds()).not.toContain('h-reuse')
+
+    const newProc = await openOperatorShell('h-reuse')
+    expect(newProc).not.toBe(oldProc)
+    const call = send({ terminalId: 'h-reuse', input: 'echo NEW-SHELL', keys: ['Enter'] })
+    const wire = await confirmRaised(2)
+    expect(newProc.writes).toEqual([])
+    confirm.respond(wire.id, 'deny')
+    await call
+    expect(newProc.writes).toEqual([])
+  })
+
+  it('a lease cannot be revived by re-registration even if the exit event was missed', async () => {
+    const proc = await openOperatorShell('h-reuse2')
+    await confirmAndAnswer({ terminalId: 'h-reuse2', input: 'a' }, 'allow')
+    // A pane restored over a record that still looked live: same id, new PTY.
+    terminalRegistry.forget('h-reuse2')
+    const fresh = await openOperatorShell('h-reuse2')
+    expect((await resolveTerminalGate('h-reuse2')).state.leaseActive).toBe(false)
+    const call = send({ terminalId: 'h-reuse2', input: 'x' })
+    const wire = await confirmRaised(2)
+    confirm.respond(wire.id, 'deny')
+    await call
+    expect(proc.writes).toEqual([])
+    expect(fresh.writes).toEqual([])
+  })
+
+  it('an Allow that lands after the pane was replaced mints no lease on the new shell', async () => {
+    const oldProc = await openOperatorShell('h-reuse3')
+    const call = send({ terminalId: 'h-reuse3', input: 'y' })
+    const wire = await confirmRaised(1)
+    oldProc.emitExit(0)
+    const newProc = await openOperatorShell('h-reuse3')
+    confirm.respond(wire.id, 'allow')
+    expect(body(await call).error).toBe('TERMINAL_EXITED')
+    expect(terminalLeases.activeIds()).not.toContain('h-reuse3')
+    // …and the next send asks, instead of typing under an approval for a shell nobody saw.
+    const again = send({ terminalId: 'h-reuse3', input: 'z' })
+    const wire2 = await confirmRaised(2)
+    confirm.respond(wire2.id, 'deny')
+    await again
+    expect(newProc.writes).toEqual([])
+  })
+
+  it('the Deny cooldown carries over to the reopened pane', async () => {
+    const oldProc = await openOperatorShell('h-reuse4')
+    await confirmAndAnswer({ terminalId: 'h-reuse4', input: 'a' }, 'deny')
+    oldProc.emitExit(0)
+    await openOperatorShell('h-reuse4')
+    expect(body(await send({ terminalId: 'h-reuse4', input: 'b' })).error).toBe(
+      'TERMINAL_WRITE_DENIED'
+    )
+    expect(wires).toHaveLength(1)
+  })
+})
+
+describe('T484 F3 / F6 — the lease is checked again right before every write', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  /** Run `during` inside the barrier, i.e. after every check of the handler and before the write. */
+  const duringBarrier = (during: () => void): void => {
+    const original = ScreenModel.prototype.prepareSend
+    vi.spyOn(ScreenModel.prototype, 'prepareSend').mockImplementationOnce(async function (
+      this: InstanceType<typeof ScreenModel>
+    ) {
+      during()
+      return original.call(this)
+    })
+  }
+
+  it('a lease that ends during the barrier: TERMINAL_LEASE_ENDED, zero bytes written', async () => {
+    const proc = await openOperatorShell('h-race')
+    await confirmAndAnswer({ terminalId: 'h-race', input: 'a' }, 'allow')
+    duringBarrier(() => terminalLeases.revokeAll())
+    const res = await send({ terminalId: 'h-race', input: 'rm -rf x', keys: ['Enter'] })
+    expect(body(res).error).toBe('TERMINAL_LEASE_ENDED')
+    expect(proc.writes).toEqual([])
+  })
+
+  it('a folder block landing during the barrier writes nothing either', async () => {
+    const proc = await openOperatorShell('h-race2')
+    await confirmAndAnswer({ terminalId: 'h-race2', input: 'a' }, 'allow')
+    duringBarrier(() => terminalLeases.revokeUnder(h.open)) // what the folder-block toggle does
+    expect(body(await send({ terminalId: 'h-race2', input: 'x' })).error).toBe(
+      'TERMINAL_LEASE_ENDED'
+    )
+    expect(proc.writes).toEqual([])
+  })
+
+  it('a lease that ends in the Esc gap: only the Esc is typed, and the caller is told so', async () => {
+    const proc = await openOperatorShell('h-race3')
+    await confirmAndAnswer({ terminalId: 'h-race3', input: 'a' }, 'allow')
+    proc.respond = () => null
+    // `Esc` followed by more bytes goes out as two writes 50 ms apart.
+    const call = send({ terminalId: 'h-race3', keys: ['Esc', 'Enter'] })
+    await vi.waitFor(() => expect(proc.writes.length).toBe(1))
+    terminalLeases.revokeAll()
+    const res = await call
+    expect(res.isError).toBe(true)
+    expect(JSON.stringify(res.content)).toContain('TERMINAL_LEASE_ENDED')
+    expect(writesOf(proc)).toEqual(['\x1b'])
+  })
+
+  it('ask mode, an agent terminal: the lease is re-checked too, zero bytes', async () => {
+    await writeMcpAsk(true)
+    const { id, proc } = await spawnAgent()
+    await confirmAndAnswer({ terminalId: id, input: 'a' }, 'allow')
+    duringBarrier(() => terminalLeases.revokeAll())
+    expect(body(await send({ terminalId: id, input: 'x' })).error).toBe('TERMINAL_LEASE_ENDED')
+    expect(proc.writes).toEqual([])
+  })
+
+  it('free mode, an agent terminal needs no lease and is not re-checked', async () => {
+    const { id, proc } = await spawnAgent()
+    terminalLeases.revokeAll()
+    expect(body(await send({ terminalId: id, input: 'x' })).ok).toBe(true)
+    expect(writesOf(proc)).toEqual(['x'])
+  })
+
+  it('the shadow log records a lease send only when it was typed', async () => {
+    await writeMcpAsk(true)
+    const { id } = await spawnAgent()
+    await confirmAndAnswer({ terminalId: id, input: 'a' }, 'allow')
+    clearShadowLog()
+    duringBarrier(() => terminalLeases.revokeAll())
+    await send({ terminalId: id, input: 'x' })
+    expect(getShadowLog().filter((e) => e.by === 'lease')).toHaveLength(0)
+  })
+
+  it('the shadow log does record a lease send that went out', async () => {
+    await writeMcpAsk(true)
+    const { id } = await spawnAgent()
+    await confirmAndAnswer({ terminalId: id, input: 'a' }, 'allow')
+    clearShadowLog()
+    expect(body(await send({ terminalId: id, input: 'y' })).ok).toBe(true)
+    expect(getShadowLog().filter((e) => e.by === 'lease')).toHaveLength(1)
+  })
+})
+
+describe('T484 F4 — the confirm cannot be made to say less than what would be typed', () => {
+  const U = (...cps: number[]): string => String.fromCodePoint(...cps)
+
+  it('shows the length, the short pane id, and the FULL text (no 200-character cut)', async () => {
+    await openOperatorShell('h-f4aaaaaaaaaaaaaaaa')
+    const long = 'echo ' + 'a'.repeat(400) + ' END-MARKER'
+    const call = send({ terminalId: 'h-f4aaaaaaaaaaaaaaaa', input: long })
+    const wire = await confirmRaised(1)
+    expect(wire.prompt).toContain(`Text (${[...long].length} characters)`)
+    expect(wire.prompt).toContain('END-MARKER')
+    expect(wire.prompt).toContain('(h-f4aaaaaa)')
+    expect(wire.prompt).not.toContain('h-f4aaaaaaaaaaaaaaaa')
+    confirm.respond(wire.id, 'deny')
+    await call
+  })
+
+  it('spells out a right-to-left override and zero-width characters instead of obeying them', async () => {
+    await openOperatorShell('h-f4b')
+    const tricky = `echo safe${U(0x202e)} tfel gnirts${U(0x200b)}${U(0x2028)} tail`
+    const call = send({ terminalId: 'h-f4b', input: tricky })
+    const wire = await confirmRaised(1)
+    for (const cp of [0x202e, 0x200b, 0x2028]) {
+      expect(wire.prompt).not.toContain(U(cp))
+      expect(wire.prompt).toContain(`\\u{${cp.toString(16)}}`)
+    }
+    confirm.respond(wire.id, 'deny')
+    await call
+  })
+
+  it('padding with no-break spaces is made visible, not a way to push the command out of view', async () => {
+    await openOperatorShell('h-f4c')
+    const padded = 'ls' + U(0xa0).repeat(120) + 'danger-command'
+    const call = send({ terminalId: 'h-f4c', input: padded })
+    const wire = await confirmRaised(1)
+    expect(wire.prompt).not.toContain(U(0xa0))
+    expect(wire.prompt.split('\\u{a0}')).toHaveLength(121)
+    expect(wire.prompt).toContain('danger-command')
+    confirm.respond(wire.id, 'deny')
+    await call
+  })
+
+  it('the audit summary still cuts at 200 characters', async () => {
+    const proc = await openOperatorShell('h-f4d')
+    await confirmAndAnswer({ terminalId: 'h-f4d', input: 'a' }, 'allow')
+    await send({ terminalId: 'h-f4d', input: 'b'.repeat(500) })
+    const row = getAuditLog().find((r) => r.result === 'LEASE: h-f4d')!
+    expect(row.disclosedPayloadSummary.length).toBeLessThan(400)
+    expect(proc.writes).toHaveLength(1)
   })
 })

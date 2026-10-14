@@ -60,7 +60,7 @@ import {
   isTerminalGatedOp,
   type TerminalGateState
 } from '../terminal-gate-core'
-import { checkSendContent, summarizeSend } from '../terminal-keys'
+import { checkSendContent, escapeForAudit, summarizeSend } from '../terminal-keys'
 import type { SendTerminalArgs } from './validate'
 
 /**
@@ -466,7 +466,7 @@ export function planToolCall({
         : // T474 B6: a send covered by a lease says so — in `ask` mode via `leaseAllow`, in free
           // mode on the silent-allow path — so it can be told apart from a free agent-terminal send.
           def.op === 'send_terminal' && shouldDispatch && terminal?.leaseActive
-          ? `LEASE: ${(parsed.value as SendTerminalArgs).terminalId}`
+          ? `LEASE: ${escapeForAudit((parsed.value as SendTerminalArgs).terminalId)}`
           : silentAllowInAgentFolder
             ? // Free mode: the mutation ran without asking. The audit row is the
               // operator's ONLY trace of it, so it says so plainly — this is what

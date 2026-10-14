@@ -700,8 +700,11 @@ exactly what you would type), and **an Allow types nothing** — your call retur
 `{ ok: false, error: 'TERMINAL_APPROVED_RESEND' }`, even when the confirm was parked and you
 read it later through `get_approval` (`status: 'allowed'` with that `result`: read `result.ok`,
 not just the status). Call `read_terminal` to see the screen as it is now, then `send_terminal`
-again: that send, and every later one, runs without asking until the terminal has had no writes
-for 10 minutes (or it exits, the operator disconnects it, blocks the folder, or the app quits).
+again: that send, and every later one — yours or any other connected agent's, the permission
+belongs to the terminal — runs without asking until the terminal has had no writes for 10
+minutes (or it exits, the operator disconnects it, blocks the folder, turns the folder's read
+switch off, or the app quits). A pane reopened under the same id is a NEW shell: it needs its own
+confirm.
 The same confirm-then-lease applies to ANY terminal under "Ask before agent actions". A Deny is
 `TERMINAL_WRITE_DENIED`, and every send to that terminal is refused the same way for 5 minutes
 without a new prompt. While a confirm is parked its pending text says nothing will be typed on

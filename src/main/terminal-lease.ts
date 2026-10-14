@@ -26,6 +26,11 @@ export const DENY_COOLDOWN_MS = 5 * 60_000
 interface Lease {
   /** The terminal's folder, so a block of that folder can end the lease. */
   folder: string
+  /**
+   * The PTY the operator approved. A lease counts only while the terminal id still names THAT
+   * process: a pane restored under the same id is a new shell the operator never saw.
+   */
+  ptyId: string
   /** Epoch ms of the grant or of the last write, whichever is later. */
   lastWriteAt: number
 }
@@ -43,18 +48,21 @@ export class TerminalLeases {
 
   constructor(private readonly now: () => number = () => Date.now()) {}
 
-  /** Start (or restart) the lease on `terminalId`. */
-  grant(terminalId: string, folder: string): void {
-    this.leases.set(terminalId, { folder, lastWriteAt: this.now() })
+  /** Start (or restart) the lease on `terminalId`, bound to the PTY `ptyId` that runs it now. */
+  grant(terminalId: string, folder: string, ptyId: string): void {
+    this.leases.set(terminalId, { folder, ptyId, lastWriteAt: this.now() })
     // An Allow overrides an earlier Deny: the operator changed their mind.
     this.denied.delete(terminalId)
   }
 
-  /** Whether `terminalId` holds a lease that has not idled out. Drops an expired one. */
-  isActive(terminalId: string): boolean {
+  /**
+   * Whether `terminalId` holds a lease that has not idled out and was granted for the PTY
+   * `ptyId` that runs it now. Drops an expired or stale one.
+   */
+  isActive(terminalId: string, ptyId: string): boolean {
     const lease = this.leases.get(terminalId)
     if (!lease) return false
-    if (this.now() - lease.lastWriteAt >= LEASE_IDLE_MS) {
+    if (lease.ptyId !== ptyId || this.now() - lease.lastWriteAt >= LEASE_IDLE_MS) {
       this.leases.delete(terminalId)
       return false
     }
@@ -77,6 +85,11 @@ export class TerminalLeases {
     for (const [id, lease] of this.leases) {
       if (within(lease.folder, folder)) this.leases.delete(id)
     }
+  }
+
+  /** End the leases on terminals whose folder is exactly `folder` (the read opt-in turned off). */
+  revokeFolder(folder: string): void {
+    for (const [id, lease] of this.leases) if (lease.folder === folder) this.leases.delete(id)
   }
 
   /** End every lease (the control server stopped, or the app is quitting). */
@@ -109,7 +122,9 @@ export class TerminalLeases {
 
   /** Terminals that currently hold a lease (for tests and diagnostics). */
   activeIds(): string[] {
-    return [...this.leases.keys()].filter((id) => this.isActive(id))
+    return [...this.leases.entries()]
+      .filter(([, lease]) => this.now() - lease.lastWriteAt < LEASE_IDLE_MS)
+      .map(([id]) => id)
   }
 }
 

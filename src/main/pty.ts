@@ -90,6 +90,7 @@ import {
   terminalRegistry,
   type TerminalOrigin
 } from './terminal-registry'
+import { terminalLeases } from './terminal-lease'
 import {
   ScreenModel,
   dropScreenModel,
@@ -732,6 +733,9 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
       const held = terminalRegistry.get(named.terminalId)
       if (!held || reusableOperatorRecord(held)) {
         if (held) {
+          // T484 F1: the shell behind this id is being replaced; an approval for the old one
+          // must not carry over. (The Deny cooldown deliberately does.)
+          terminalLeases.revoke(held.terminalId)
           terminalRegistry.forget(held.terminalId)
           dropScreenModel(held.terminalId)
         }
@@ -1126,6 +1130,8 @@ function destroyPty(id: string, flushNow: (id: string) => void): string | undefi
   const output = rec.ring.snapshot()
   // T474: the exit that follows is the operator's close, not a natural end. Must be set
   // BEFORE kill() — onExit reads it.
+  const closingTerminal = terminalRegistry.getByPtyId(id)?.terminalId
+  if (closingTerminal) terminalLeases.revoke(closingTerminal)
   terminalRegistry.markClosing(id)
   try {
     rec.pty.kill()
@@ -1242,6 +1248,7 @@ export async function dropOperatorScreenModels(folder: string): Promise<void> {
 export function closeTerminalPty(terminalId: string): boolean {
   const rec = terminalRegistry.get(terminalId)
   if (!rec || rec.state === 'exited') return false
+  terminalLeases.revoke(terminalId)
   const output = ptyDeps ? destroyPty(rec.ptyId, ptyDeps.flushNow) : undefined
   terminalRegistry.markExited(rec.ptyId, null, tailSnapshot(output ?? ''))
   scheduleScreenModelDrop(terminalId, TOMBSTONE_MS)
@@ -1314,6 +1321,7 @@ export function createTerminalPty(input: {
 export function discardTerminalPty(ptyId: string): void {
   const rec = ptys.get(ptyId)
   const terminalId = terminalRegistry.getByPtyId(ptyId)?.terminalId ?? ''
+  terminalLeases.revoke(terminalId)
   terminalRegistry.forget(terminalId)
   dropScreenModel(terminalId)
   if (!rec) return
@@ -1760,6 +1768,9 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
       // means natural (a stale preload/renderer pair keeps today's behavior).
       const reason: PtyExitReason = isParking(id) ? 'park' : 'natural'
       clearParking(id)
+      // T484 F1: the shell ended, so the operator's approval to type into it ends with it.
+      const endedTerminal = terminalRegistry.getByPtyId(id)?.terminalId
+      if (endedTerminal) terminalLeases.revoke(endedTerminal)
       // T474: keep the record as a tombstone; `closed` iff `pty:destroy` ran first.
       terminalRegistry.markExited(
         id,

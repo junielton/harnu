@@ -37,7 +37,7 @@ export async function resolveTerminalGate(
       { readOptIn, writesEnabled: true },
       rec
         ? {
-            active: terminalLeases.isActive(rec.terminalId),
+            active: terminalLeases.isActive(rec.terminalId, rec.ptyId),
             denied: terminalLeases.isDenied(rec.terminalId)
           }
         : undefined
