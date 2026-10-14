@@ -1,4 +1,4 @@
-<!-- harnu-features v90 (2026-10-14) -->
+<!-- harnu-features v91 (2026-10-14) -->
 
 # You are running inside Harnu
 
@@ -698,10 +698,10 @@ read it: typing into the operator's own terminals is not available yet). It runs
 in free mode; under "Ask before agent actions" it confirms, and a mission grant or an
 "always allow" can never cover it. `input` is typed text exactly as a person would type it: `\n`
 is sent as Enter, a tab stays a tab, and every other control character is refused `BAD_ARGS` —
-use `keys` instead. `keys` (≤ 64) are pressed in order AFTER `input`: `Enter`, `Tab`, `Esc`,
+use `keys` instead. `keys` (≤ 64, each name ≤ 16 characters) are pressed in order AFTER `input`: `Enter`, `Tab`, `Esc`,
 `Backspace`, `Delete`, `Space`, `Up`, `Down`, `Left`, `Right`, `Home`, `End`, `PageUp`,
 `PageDown`, `F1`–`F12` and `Ctrl+A` … `Ctrl+Z` (`Ctrl+C` interrupts, `Ctrl+D` ends input);
-any other name is `KEY_UNKNOWN`. So a command is `input: "npm test", keys: ["Enter"]`. Arrows
+any other name is `KEY_UNKNOWN` (the name is echoed back escaped and cut, never raw). So a command is `input: "npm test", keys: ["Enter"]`. Arrows
 follow the program's cursor-key mode by themselves. `paste: true` sends `input` as one
 bracketed paste when the program asked for it and as plain typing otherwise (`sent.pasted`
 says which). A line over 4,000 bytes or an `input` over 8 KiB is `INPUT_TOO_LARGE`; these
@@ -712,7 +712,12 @@ twice: this verb is never replayed. Sends to one terminal run one at a time in a
 call that waits more than 10 s behind others is `TERMINAL_BUSY` (nothing typed), and more than
 60 sends a minute per terminal is `TERMINAL_RATE_LIMIT`. Both steer you to `read_terminal`
 and to batching keystrokes into one send. An exited terminal is `TERMINAL_EXITED`, one the
-operator disconnected `TERMINAL_DISCONNECTED`. The call returns once the output settles — about
+operator disconnected `TERMINAL_DISCONNECTED`. Those are judged again right before every write,
+and a folder the operator blocks meanwhile is `FOLDER_NOT_ALLOWED`, so a call that was queued or
+waiting on the screen never types into a terminal that stopped being yours. When that happens
+BETWEEN the two writes of an `Esc` send, the result is an error `SEND_INCOMPLETE` with the
+`reason` and `sent` listing ONLY what reached the terminal (read the terminal before sending
+again). On Windows `Ctrl+D` does not end input in cmd or PowerShell. The call returns once the output settles — about
 150 ms after the last byte, 1 s at most; a command that is still running is NOT waited for, so
 `read_terminal` again. The result: `terminalId`, `state` (+ `exit`), `sent` (`inputChars`,
 `keys`, `pasted`), `wait` (`reason: 'none'`, `waitedMs`), `output` (the resolved screen from the

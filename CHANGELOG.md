@@ -18,6 +18,13 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **You can let sessions read the terminals you open yourself — one folder at a time.** Right-click a folder and choose **"Let agents read terminals I open"** (it is off by default, and a worktree of an opted-in folder does not inherit it). Until you turn it on, a session that asks to read one of your terminals is refused and told why; the terminal still shows up in its list, marked as not readable, but with its title, last-output time and exit code left out. Turning it back off closes the door again at once. This lets a session read only — typing into a terminal is not available yet.
 - **Everything a session reads from a terminal is scrubbed of secrets first.** Your home folder becomes `~`, and AWS key ids, `Bearer` tokens, `Authorization` values, the password in a `scheme://user:password@host` address, secret-looking `NAME=value` pairs and private-key blocks become `<redacted>`, in the screen text and in the terminal's title, on terminals a session opened as well as on yours. It is a best-effort filter, not a guarantee: a secret in a shape it doesn't recognise can still get through, and a value that merely looks like a secret may be hidden even if the session printed it itself. Scheduled read-only workers can now list and read terminals too, under the same rules.
 
+### Fixed
+
+- **Sends to one terminal now go out in the order they were made.** Two sessions typing into the same terminal at the same moment could swap places depending on whose prefs read finished first; each send now takes its place the instant it arrives.
+- **A send no longer types into a terminal that stopped being yours while it waited.** Whether the terminal ended, you disconnected it or you blocked its folder, it is checked again right before every write — and if an `Esc` send is cut short between its two writes, the result says exactly which keys went out instead of claiming all of them.
+- **The audit line for a send can't be forged by what was typed, and key names are bounded.** Quotes, text-direction overrides, zero-width characters and line separators in the typed text are escaped, the owner id is escaped and cut, a key name is at most 16 characters, and an unknown key is shown escaped instead of passed through.
+- **A send no longer uses up two of a session's read cursors.** It used to evict the oldest cursor a session was still holding.
+
 ## 2026-10-13
 
 ### Added
