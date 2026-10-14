@@ -104,6 +104,58 @@ describe('adoptPtyStream', () => {
     expect(written.join('')).toBe('queuedafter')
   })
 
+  it('T480: hands the replay write a done callback, and reports it parsed only when it fires', async () => {
+    const pty = fakePty()
+    pty.emit('history\r\n')
+    const dones: Array<(() => void) | undefined> = []
+    const writes: string[] = []
+    let parsed = 0
+    const p = adoptPtyStream(
+      pty.api,
+      'p1',
+      (d, done) => {
+        writes.push(d)
+        dones.push(done)
+      },
+      () => parsed++
+    )
+    pty.resolveReplay()
+    await p
+    // The replay write carries the callback; the pane has not been told it is parsed yet.
+    expect(writes).toEqual(['history\r\n'])
+    expect(dones[0]).toBeTypeOf('function')
+    expect(parsed).toBe(0)
+    pty.emit('live\r\n')
+    expect(dones[1]).toBeUndefined() // live chunks are not part of the replay
+    dones[0]!()
+    expect(parsed).toBe(1)
+  })
+
+  it('T480: with no replay (empty or failed) the pane is told at once', async () => {
+    const empty = fakePty()
+    let parsed = 0
+    const p1 = adoptPtyStream(
+      empty.api,
+      'p1',
+      () => {},
+      () => parsed++
+    )
+    empty.resolveReplay()
+    await p1
+    expect(parsed).toBe(1)
+
+    const failing = fakePty()
+    const p2 = adoptPtyStream(
+      failing.api,
+      'p2',
+      () => {},
+      () => parsed++
+    )
+    failing.failReplay()
+    await p2
+    expect(parsed).toBe(2)
+  })
+
   it('returns the unsubscribe for the live stream', async () => {
     const pty = fakePty()
     const p = adoptPtyStream(pty.api, 'p1', () => {})

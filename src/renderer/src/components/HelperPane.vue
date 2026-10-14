@@ -460,10 +460,21 @@ async function createLiveHelper(
   // Data wiring — single-channel pty:data multiplexer is in preload; the
   // returned disposer removes our callback from the per-id Set. Kept on
   // `ioDisposers` so it survives detach (the PTY keeps filling the buffer).
+  // T480: main's screen model answers the queries inside the replay; this xterm must not.
+  let replaying = agentTerminal !== undefined
   if (agentTerminal) {
     // Adopt: subscribe first, replay, dedupe (see `adoptPtyStream`). The store armed this
     // terminal's exit watch when its pane landed, so none is wired here.
-    live.ioDisposers.push(await adoptPtyStream(window.api, ptyId, (data) => term.write(data)))
+    live.ioDisposers.push(
+      await adoptPtyStream(
+        window.api,
+        ptyId,
+        (data, done) => term.write(data, done),
+        () => {
+          replaying = false
+        }
+      )
+    )
     // Main spawned it at 120x30; tell it the size this pane really has.
     window.api.ptyResize(ptyId, term.cols, term.rows)
   } else {
@@ -481,7 +492,9 @@ async function createLiveHelper(
   }
 
   // Match TerminalPane's call style: positional args, not an object payload.
-  term.onData((data) => window.api.ptyWrite(ptyId, data))
+  term.onData((data) => {
+    if (!replaying) window.api.ptyWrite(ptyId, data)
+  })
   term.onResize(({ cols, rows }) => window.api.ptyResize(ptyId, cols, rows))
 
   // Clipboard, word/char-delete, and font-size chords (design.md §6) — same

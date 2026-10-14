@@ -21,12 +21,17 @@ export interface AdoptApi {
  * gate shut — the queue would grow without bound and nothing would ever paint — so it falls
  * back to an empty replay and the queued chunks all go through.
  *
+ * `onReplayParsed` fires once the replay has been fully written to (and parsed by) the terminal
+ * — `write` is handed a `done` callback for exactly that one call — or at once when there is no
+ * replay.
+ *
  * Resolves to the unsubscribe function for the live stream.
  */
 export async function adoptPtyStream(
   api: AdoptApi,
   ptyId: string,
-  write: (data: string) => void
+  write: (data: string, done?: () => void) => void,
+  onReplayParsed?: () => void
 ): Promise<() => void> {
   let queue: SeqChunk[] | null = []
   const off = api.onPtyData(ptyId, (data, seq) => {
@@ -40,7 +45,11 @@ export async function adoptPtyStream(
   } catch {
     // no history available: follow the live stream from here
   }
-  if (replay.data) write(replay.data)
+  // T480: the replay's bytes were already answered by main's screen model (spec §5.4), so the
+  // pane's xterm must stay silent while it parses them. `done` fires once the parse is over;
+  // the chunks queued after it are live bytes only this xterm answers.
+  if (replay.data) write(replay.data, onReplayParsed)
+  else onReplayParsed?.()
   const queued: SeqChunk[] = queue
   queue = null
   for (const chunk of dedupeAfterSeq(queued, replay.seq)) write(chunk.data)
