@@ -115,6 +115,7 @@ import {
 import { getAuditLog, clearAuditLog } from '../src/main/mcp/audit-log'
 import { planToolCall } from '../src/main/mcp/plan-tool-call'
 import { buildPlanInput } from '../src/main/mcp/plan-input'
+import { auditField } from '../src/main/terminal-keys'
 import { _resetIdempotencyRegistry } from '../src/main/mcp/idempotency-registry'
 import { _resetInflightRegistry } from '../src/main/mcp/inflight-session-registry'
 
@@ -217,6 +218,7 @@ afterEach(() => {
 })
 
 const listDef = def('list_terminals')
+const getSessionHandler = def('get_session').handler!
 const readDef = def('read_terminal')
 
 const rowOf = async (id: string): Promise<Record<string, unknown>> => {
@@ -233,6 +235,13 @@ const setKillSwitch = (enabled: boolean): unknown =>
  */
 const firstWrite = (proc: Proc): Promise<void> =>
   vi.waitFor(() => expect(proc.writes.length).toBe(1), { interval: 1, timeout: 2000 })
+
+/** Whether `text` holds a control character, a DEL or a bidi override. */
+const hasControl = (text: string): boolean =>
+  [...text].some((c) => {
+    const n = c.codePointAt(0)!
+    return n < 0x20 || n === 0x7f || n === 0x202e
+  })
 
 const PTY = (id: string): string => terminalRegistry.get(id)?.ptyId ?? ''
 
@@ -580,5 +589,229 @@ describe('write helpers — the pure side of the abort', () => {
     }, 20)
     await p
     expect(Date.now() - t0).toBeLessThan(200)
+  })
+})
+
+describe('T487 F1 — Disconnect survives a pane restore under the same id', () => {
+  for (const ask of [false, true]) {
+    it(`${ask ? 'ask' : 'free'} mode: destroy + re-pty:create of a disconnected operator terminal stays disconnected`, async () => {
+      await writeMcpAsk(ask)
+      const first = await openOperatorShell('h-reload')
+      terminalLeases.grant('h-reload', h.open, terminalRegistry.get('h-reload')!.ptyId)
+      disconnectTerminal('h-reload')
+      // The window reload: `beforeunload` destroys the PTY, helpers.json brings the pane back.
+      await h.ipc.get('pty:destroy')!({}, terminalRegistry.get('h-reload')!.ptyId)
+      const second = await openOperatorShell('h-reload')
+      expect(second).not.toBe(first)
+      const rec = terminalRegistry.get('h-reload')!
+      expect(rec.disconnected).toBe(true)
+      expect(body(await handleToolCall(readDef, { terminalId: 'h-reload' })).error).toBe(
+        'TERMINAL_DISCONNECTED'
+      )
+      expect(body(await send({ terminalId: 'h-reload', input: 'x' })).error).toBe(
+        'TERMINAL_DISCONNECTED'
+      )
+      expect(second.writes).toEqual([])
+      expect(wires).toEqual([])
+      expect(await rowOf('h-reload')).toMatchObject({
+        disconnected: true,
+        readable: false,
+        writable: 'revoked'
+      })
+    })
+  }
+
+  it('a terminal that was never disconnected still restores connected', async () => {
+    await openOperatorShell('h-plain')
+    await h.ipc.get('pty:destroy')!({}, terminalRegistry.get('h-plain')!.ptyId)
+    await openOperatorShell('h-plain')
+    expect(terminalRegistry.get('h-plain')!.disconnected).toBe(false)
+    expect(body(await handleToolCall(readDef, { terminalId: 'h-plain' })).ok).toBe(true)
+  })
+
+  it('the renderer cannot ask for a disconnected record, and an agent terminal is never replaced', async () => {
+    await h.ipc.get('pty:create')!(
+      {},
+      {
+        kind: 'shell',
+        cwd: h.open,
+        cols: 80,
+        rows: 24,
+        terminal: { terminalId: 'h-forged', folder: h.open, disconnected: true }
+      }
+    )
+    expect(terminalRegistry.get('h-forged')!.disconnected).toBe(false)
+    const { id } = await spawnAgent()
+    disconnectTerminal(id)
+    await h.ipc.get('pty:create')!(
+      {},
+      {
+        kind: 'shell',
+        cwd: h.open,
+        cols: 80,
+        rows: 24,
+        terminal: { terminalId: id, folder: h.open }
+      }
+    )
+    expect(terminalRegistry.get(id)!.origin).toBe('agent')
+    expect(terminalRegistry.get(id)!.disconnected).toBe(true)
+  })
+})
+
+describe('T487 F2 — the output of a cut wait is the screen at the instant, even with bytes pending', () => {
+  // 1500 lines keep the send's line in the scrollback; 4000 scroll it out (the tail fallback).
+  it.each([1500, 4000])(
+    'chunks queued after the Disconnect never appear, though earlier ones were still unparsed (%i lines)',
+    async (lines) => {
+      const { id, proc } = await spawnAgent()
+      proc.respond = () => null
+      const p = send({ terminalId: id, input: 'run', keys: ['Enter'] })
+      await firstWrite(proc)
+      await sleep(30)
+      // A fat chunk keeps the parser busy, so bytes are PENDING when the Disconnect lands.
+      const filler = Array.from({ length: lines }, (_, i) => `line ${i} of the build\r\n`).join('')
+      proc.emitData(filler + 'BEFORE-DISCONNECT\r\n')
+      disconnectTerminal(id)
+      proc.emitData('AFTER-DISCONNECT\r\n')
+      const out = body(await p)
+      expect(out).toMatchObject({ ok: true, wait: { reason: 'disconnected' } })
+      expect(out.output).toContain('BEFORE-DISCONNECT')
+      expect(out.output).not.toContain('AFTER-DISCONNECT')
+    }
+  )
+})
+
+describe('T487 — kill-switch re-checks the tests above did not cover', () => {
+  it('a send queued behind another gets TERMINAL_WRITES_DISABLED after its wait, with zero bytes', async () => {
+    const { id, proc } = await spawnAgent()
+    proc.respond = () => null
+    const holder = send({ terminalId: id, keys: ['Esc', 'Enter'] })
+    await firstWrite(proc)
+    const queued = send({ terminalId: id, input: 'queued' })
+    await sleep(5)
+    await setKillSwitch(false)
+    await holder
+    expect(body(await queued).error).toBe('TERMINAL_WRITES_DISABLED')
+    // Only the holder's first piece ever reached the PTY.
+    expect(writesOf(proc)).toEqual(['\x1b'])
+  })
+
+  it('an operator-terminal send under a lease, kill-switch flipped mid-send: the reason is the kill-switch', async () => {
+    const proc = await openOperatorShell('h-opkill')
+    proc.respond = () => null
+    terminalLeases.grant('h-opkill', h.open, terminalRegistry.get('h-opkill')!.ptyId)
+    const p = send({ terminalId: 'h-opkill', keys: ['Esc', 'Enter'] })
+    await firstWrite(proc)
+    await setKillSwitch(false) // also ends the lease
+    const out = body(await p)
+    expect(out).toMatchObject({
+      ok: false,
+      error: 'SEND_INCOMPLETE',
+      reason: 'TERMINAL_WRITES_DISABLED'
+    })
+    expect(writesOf(proc)).toEqual(['\x1b'])
+  })
+
+  it('get_session.terminals drops a terminal once the operator disconnects it (through the verb)', async () => {
+    const ctxFor = {
+      folder: h.open,
+      folders: [
+        {
+          path: h.open,
+          alias: path.basename(h.open),
+          sessions: [
+            {
+              sessionId: 'sess-b7',
+              fullPath: '',
+              fileMtime: 0,
+              firstPrompt: '',
+              summary: '',
+              messageCount: 0,
+              created: '',
+              modified: '',
+              gitBranch: '',
+              projectPath: h.open,
+              isSidechain: false,
+              status: 'active',
+              agents: [],
+              resumable: true
+            }
+          ]
+        }
+      ],
+      denyFolders: [],
+      bridge: { dispatch: vi.fn(async () => ({})) }
+    } as unknown as Ctx
+    const mk = async (): Promise<string> =>
+      body(await spawnHandler({ folder: h.open, ownerSessionId: 'sess-b7' }, ctxFor))
+        .terminalId as string
+    const keep = await mk()
+    const gone = await mk()
+    const terminalsOf = async (): Promise<string[]> =>
+      (
+        body(await getSessionHandler({ sessionId: 'sess-b7' }, ctxFor)).session as {
+          terminals: Array<{ terminalId: string }>
+        }
+      ).terminals.map((t) => t.terminalId)
+    expect(await terminalsOf()).toEqual([keep, gone])
+    disconnectTerminal(gone)
+    expect(await terminalsOf()).toEqual([keep])
+  })
+})
+
+describe('T487 F5-bis — a lease is ended whenever its terminal is seen with the opt-in off', () => {
+  it('opt-in off → lease gone; opt-in on again → the next send must confirm again', async () => {
+    const proc = await openOperatorShell('h-optout')
+    terminalLeases.grant('h-optout', h.open, terminalRegistry.get('h-optout')!.ptyId)
+    // The operator closed the read door by some path that did not end the lease itself.
+    h.optedIn = []
+    expect(body(await send({ terminalId: 'h-optout', input: 'x' })).error).toBe(
+      'TERMINAL_READ_NOT_ENABLED'
+    )
+    expect(terminalLeases.isActive('h-optout', PTY('h-optout'))).toBe(false)
+    h.optedIn = [h.open]
+    const call = send({ terminalId: 'h-optout', input: 'x' })
+    await vi.waitFor(() => expect(wires.length).toBe(1))
+    confirm.respond(wires[0]!.id, 'deny')
+    expect(body(await call).error).toBe('TERMINAL_WRITE_DENIED')
+    expect(proc.writes).toEqual([])
+  })
+})
+
+describe('T487 — the lease audit ids are strict and bounded', () => {
+  it('auditField escapes control characters, and caps the SOURCE at 80 characters', () => {
+    expect(hasControl(auditField('h-\n\x1b[31mred\u202e'))).toBe(false)
+    expect(auditField('h-\nx')).toContain('\\n')
+    expect(auditField('x'.repeat(200))).toBe('x'.repeat(80) + '…')
+    expect(auditField('x'.repeat(80))).toBe('x'.repeat(80))
+    expect(auditField('h-short')).toBe('h-short')
+  })
+
+  it('a LEASE: audit result carries the escaped, capped id', () => {
+    const id = 'h-\n\x1b[31mevil' + 'y'.repeat(200)
+    const plan = planToolCall({
+      tool: 'send_terminal',
+      input: buildPlanInput('send_terminal', { terminalId: id, input: 'x' }, '/work/app'),
+      policy: { serverEnabled: true, ask: true, denyFolders: [], knownRoots: ['/work'] },
+      now: 1,
+      terminal: {
+        known: true,
+        isTerminal: true,
+        origin: 'operator',
+        disconnected: false,
+        state: 'running',
+        readable: true,
+        ownerSessionId: null,
+        leaseActive: true,
+        writeDenied: false,
+        writesEnabled: true
+      }
+    })
+    const result = plan.auditRecord.result
+    expect(result.startsWith('LEASE: ')).toBe(true)
+    expect(hasControl(result)).toBe(false)
+    // 200 `y`s in the id, 80 kept.
+    expect(result).not.toContain('y'.repeat(81))
+    expect(result.endsWith('…')).toBe(true)
   })
 })

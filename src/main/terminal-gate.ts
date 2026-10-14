@@ -35,6 +35,10 @@ export async function resolveTerminalGate(
   const readOptIn = rec
     ? (await terminalReadOptIns(file ?? (await readUserProjects()), [rec.folder])).has(rec.folder)
     : false
+  // A write lease on an operator terminal rides on the folder's read opt-in. Whenever the opt-in
+  // is seen OFF the lease is ended, whatever turned it off, so turning it back on later cannot
+  // revive an old approval.
+  if (rec && rec.origin === 'operator' && !readOptIn) terminalLeases.revoke(rec.terminalId)
   return {
     rec,
     state: resolveTerminalGateState(

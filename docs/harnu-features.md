@@ -757,7 +757,7 @@ reads AND writes: from then on every `read_terminal` and `send_terminal` is
 `TERMINAL_DISCONNECTED`, with the folder opt-in on or off, in free and ask mode, and the terminal
 leaves `get_session.terminals` (`list_terminals` still lists it: `disconnected: true`,
 `readable: false`, `writable: 'revoked'`). The shell keeps running for the operator; no verb
-reconnects it. If a send is waiting for output when it happens, the call ends at once with
+reconnects it, and a window reload that restores the pane does not either. If a send is waiting for output when it happens, the call ends at once with
 `wait.reason: 'disconnected'` and `output` as the screen stood at that instant; a send cut
 between its pieces (the `Esc` gap) is the `SEND_INCOMPLETE` error with `reason:
 'TERMINAL_DISCONNECTED'` — what was already written stays written, nothing follows it. The

@@ -16,6 +16,7 @@ vi.mock('electron', () => ({
 
 import {
   addUserProject,
+  removeUserProject,
   setUserProjectAgentDenied,
   setUserProjectTerminalRead
 } from '../src/main/user-projects'
@@ -86,6 +87,30 @@ describe('the folder block toggle ends write leases', () => {
   it('T484 F5: turning the opt-in ON does not end a lease', async () => {
     terminalLeases.grant('h-repo', repo, 'p-h-repo')
     await setUserProjectTerminalRead(repo, true)
+    expect(terminalLeases.isActive('h-repo', 'p-h-repo')).toBe(true)
+  })
+
+  it('T487 F5-bis: removing the folder ends its leases; re-adding and opting in again never revives one', async () => {
+    await setUserProjectTerminalRead(repo, true)
+    terminalLeases.grant('h-repo', repo, 'p-h-repo')
+    terminalLeases.grant('h-sub', path.join(repo, 'sub'), 'p-h-sub')
+    await removeUserProject(repo)
+    expect(terminalLeases.isActive('h-repo', 'p-h-repo')).toBe(false)
+    // Exact folder, like the opt-in itself: a terminal in a subfolder is another folder's business.
+    expect(terminalLeases.isActive('h-sub', 'p-h-sub')).toBe(true)
+    await addUserProject({
+      path: repo,
+      alias: 'repo',
+      addedAt: new Date(0).toISOString(),
+      worktrees: []
+    })
+    await setUserProjectTerminalRead(repo, true)
+    expect(terminalLeases.isActive('h-repo', 'p-h-repo')).toBe(false)
+  })
+
+  it('removing a folder that is not there leaves other leases alone', async () => {
+    terminalLeases.grant('h-repo', repo, 'p-h-repo')
+    await removeUserProject('/not/a/pinned/folder')
     expect(terminalLeases.isActive('h-repo', 'p-h-repo')).toBe(true)
   })
 })

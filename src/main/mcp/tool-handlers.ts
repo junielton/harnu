@@ -1288,13 +1288,18 @@ const sendTerminalHandler: Handler = async (args, ctx) => {
       // output is what the screen showed AT THAT INSTANT, so the read is started inside the
       // listener, in the same tick as the disconnect, not after the call has woken up.
       const liveModel = model
-      const cut: { read: ReturnType<typeof liveModel.read> | null } = { read: null }
+      const cut: {
+        read: ReturnType<typeof liveModel.read> | null
+        /** The tail read, started at the same instant, for when the send's line scrolled away. */
+        tail: ReturnType<typeof liveModel.read> | null
+      } = { read: null, tail: null }
       let wake: () => void = () => {}
       const woken = new Promise<void>((resolve) => {
         wake = resolve
       })
       const unwatch = terminalRegistry.onDisconnect(terminalId, () => {
         cut.read ??= liveModel.read(readOpts)
+        cut.tail ??= liveModel.read({ mode: 'tail', lines: 500, scrub })
         wake()
       })
       let waitedMs: number
@@ -1312,7 +1317,7 @@ const sendTerminalHandler: Handler = async (args, ctx) => {
       const disconnected = cut.read !== null
 
       let read = await (cut.read ?? model.read(readOpts))
-      if (!read.ok) read = await model.read({ mode: 'tail', lines: 500, scrub })
+      if (!read.ok) read = await (cut.tail ?? model.read({ mode: 'tail', lines: 500, scrub }))
       if (!read.ok) return steerError('CURSOR_EXPIRED', ctx.folder)
 
       const rec = terminalRegistry.get(terminalId)

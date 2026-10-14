@@ -108,6 +108,8 @@ export interface RegisterTerminalInput {
   folder: string
   origin: TerminalOrigin
   ownerSessionId?: string | null
+  /** Born disconnected: the record replaces one the operator disconnected (T487 F1). */
+  disconnected?: boolean
   size: { cols: number; rows: number }
 }
 
@@ -216,7 +218,7 @@ export class TerminalRegistry {
       folder: input.folder,
       origin: input.origin === 'agent' ? 'agent' : 'operator',
       ownerSessionId: input.ownerSessionId ?? null,
-      disconnected: false,
+      disconnected: input.disconnected === true,
       state: 'running',
       size: { ...input.size },
       title: null,
