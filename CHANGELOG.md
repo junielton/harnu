@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-13
+
+### Added
+
+- **Sessions can now keep track of the terminals they open.** `spawn_terminal` returns a `terminalId`, tells you which session the terminal is connected to, and starts the shell straight away — even in a folder you aren't looking at. A new `list_terminals` verb lists every terminal with its owner, state and size (paths are shortened, and a terminal in a folder you blocked is left out), and `get_session` lists the terminals a session owns. Each folder holds at most four live agent terminals. Two identical `spawn_terminal` calls now open two terminals instead of returning the first one's answer again. Reading and typing into a terminal come in a later release.
+
 ## 2026-10-12
 
 ### Added

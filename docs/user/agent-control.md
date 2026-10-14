@@ -32,7 +32,7 @@ If a session tells you it was refused, it hit #2 or #3 — those are the only th
 
 - Start a new session in a folder, optionally with a starting prompt
 - Create a git worktree for a task (seeded from the repo's `WORKTREE.md`, same as if you'd made it by hand — see [Folders and worktrees](folders-and-worktrees.md)). By default the new branch forks from the remote default branch, but a session can name an explicit base branch to **stack one task's worktree on top of another** — e.g. a dependent PR that needs to build on a branch that hasn't merged yet. Naming a base that doesn't actually exist is refused outright rather than quietly falling back to the default. If a branch or worktree already exists whose name looks like it's for the same task (e.g. a stale attempt from an earlier dispatch), the session is told so — a warning, not a refusal, since starting fresh is sometimes exactly right, but it gives the session a chance to notice duplicate work before spawning a second one. If the repo's setup step fails instead (a missing tool, a failing command), the half-made worktree and its branch are always cleaned up automatically — and, whether it's a session or you creating it, the error now says exactly what failed, whether the tool was simply missing or actually ran and errored, and confirms the cleanup happened, instead of a bare, hard-to-read error line.
-- Spawn a plain shell in a folder
+- Spawn a plain shell in a folder — see "Terminals a session opens" below
 - Pin an existing folder into your sidebar
 - Clean up a "ghost" folder — one whose directory is already gone but whose entry (and its now-broken session) still lingers in your sidebar
 - Write an entry to project memory (a decision, a session summary, or a refreshed "where we left off" note)
@@ -57,6 +57,16 @@ A session can also archive or delete a card. Archiving is treated the same as ev
 **Cleaning up ghost folders — sidebar bookkeeping only, never disk.** If a folder's directory gets deleted — by Reaper's sweep, by a manual worktree removal, or by something outside Harnu entirely (an `rm -rf` you ran yourself) — but Harnu's sidebar hasn't caught up yet, a session can reconcile it directly: it un-pins the folder and drops it (and its sessions) from the sidebar, no restart needed. This ONLY ever touches Harnu's own bookkeeping — it's refused outright if the directory is actually still there, so it can never be used to hide a folder whose data is still real and reachable. There's still no way for a session to delete a worktree, branch, or file on disk; that stays something only you (or Reaper, which you configure) does.
 
 **"Session says" — a notice from any session, without switching tabs.** A session can post a short notice ("Session says") into the same Activity history the [Activity bell](approval-inbox.md#activity-bell) already keeps — visible from whichever window you're actually looking at, not just the one that sent it. It's meant for something worth a heads-up (a finding, a progress update) that doesn't need your Allow/Deny. The notice stays in the bell's list until you clear it — clicking it (or its **Go to session** action, when the sending session included its own id) jumps you straight there and removes it; hovering it lets you dismiss it without navigating anywhere. Either way, it's always your call — nothing switches on its own.
+
+## Terminals a session opens
+
+When a session spawns a shell in a folder, the shell now starts immediately — even if you aren't looking at that folder — and the session gets a `terminalId` it can use to refer to it again. The session can also say which session the terminal belongs to (its own); that is a label for you and for the audit trail, not a permission.
+
+A session can list every terminal Harnu knows about: who opened it (the agent or you), which session it belongs to, whether it is still running or has exited, and its size. Folder paths are shortened to the folder's name, and a terminal in a folder you blocked is left out. An exited terminal stays in the list for ten minutes. The title a program sets on its terminal is shown to the session as program text it shouldn't trust. A session's own details also list the terminals it owns.
+
+A few limits keep this from running away: a folder holds at most four live agent terminals (a fifth is refused until one is closed), and opening two terminals in a row really opens two.
+
+For now a session can open and list terminals but not read what is in one or type into one — those come later, with their own switches for you.
 
 ## Sessions talking out loud
 
