@@ -1308,6 +1308,15 @@ export const useSessionsStore = defineStore('sessions', () => {
   const orchestratorDefaultPaths = ref<Set<string>>(new Set())
 
   /**
+   * Set of normalized absolute paths whose operator-opened terminals agents may read (the
+   * `agentTerminalRead` flag in `projects.json#projects[]`, T481). Track-the-ON-set like
+   * `orchestratorDefaultPaths` (default OFF). EXACT-PATH ONLY — a linked worktree never
+   * inherits a path's membership. Hydrated from `userProjectsList()` on `reloadModel()` and
+   * mirrored from every `userProjects:setTerminalRead` response.
+   */
+  const terminalReadPaths = ref<Set<string>>(new Set())
+
+  /**
    * Close-handlers registered by panes that own a live xterm for a session.
    * When `closeSession()` fires the store dispatches to every registered
    * handler so each pane can tear down its own resources. Multi-subscriber
@@ -3698,6 +3707,19 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   /**
+   * Toggle the per-folder "let agents read terminals I open" opt-in (T481). Writes the
+   * `agentTerminalRead` flag through `userProjectsSetTerminalRead` and mirrors the resulting set
+   * back into `terminalReadPaths`. EXACT-PATH ONLY — never touches any other folder.
+   */
+  async function setFolderTerminalRead(path: string, enabled: boolean): Promise<UserProject[]> {
+    const payload = await window.api.userProjectsSetTerminalRead(path, enabled)
+    terminalReadPaths.value = new Set(
+      payload.projects.filter((p) => p.agentTerminalRead).map((p) => p.path)
+    )
+    return payload.projects
+  }
+
+  /**
    * Toggle the per-repo "auto-organize conversation into draft cards" opt-out
    * (T106/D6). Writes the `autoOrganizeCards` flag through
    * `userProjectsSetAutoOrganize` and mirrors the resulting OFF set back into
@@ -4777,6 +4799,10 @@ export const useSessionsStore = defineStore('sessions', () => {
     orchestratorDefaultPaths.value = new Set(
       userProjects.filter((p) => p.orchestratorDefault).map((p) => p.path)
     )
+    // The "agents may read terminals I open" mirror (T481): EXACT-PATH only too.
+    terminalReadPaths.value = new Set(
+      userProjects.filter((p) => p.agentTerminalRead).map((p) => p.path)
+    )
 
     // Re-inject synthetics into matching folders (match by folder path).
     //
@@ -5750,6 +5776,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     autoOrganizeOffPaths,
     orchestratorSessionIds,
     orchestratorDefaultPaths,
+    terminalReadPaths,
     selectedId,
     selectedFolderPath,
     activeFolderPath,
@@ -5867,6 +5894,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     setFolderAutoOrganize,
     isFolderAutoOrganizeOn,
     setFolderOrchestratorDefault,
+    setFolderTerminalRead,
     setFolderBornFrom,
     listBornFromCandidates,
     setSessionSort,

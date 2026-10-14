@@ -80,6 +80,21 @@ export function deriveCallId(
 }
 
 /**
+ * The call id `server.ts`'s `actuate` registers for this call, or `undefined` when the call
+ * does not go through the registry at all: a read never does, and neither does a verb that
+ * declares `replayable: false` (T474 — `spawn_terminal`, whose repeat must act again).
+ */
+export function callIdFor(
+  def: { op: McpOp | string; mutates: boolean; replayable?: boolean },
+  folder: string,
+  args: Record<string, unknown>
+): string | undefined {
+  if (!def.mutates || def.replayable === false) return undefined
+  const key = args.idempotencyKey
+  return deriveCallId(def.op, folder, args, typeof key === 'string' && key ? key : undefined)
+}
+
+/**
  * Begin a call: if `callId` is unknown (or its previous entry expired), marks
  * it `in-flight` and returns `undefined` — the caller proceeds to actuate. If
  * it is already known and live with status `in-flight` or `applied`, returns

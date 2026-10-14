@@ -54,7 +54,8 @@ import {
   setHarnuPreambleProvider,
   setHookSettingsProvider,
   setBundledSkillsArgsProvider,
-  setCompanionSpawnProvider
+  setCompanionSpawnProvider,
+  dropOperatorScreenModels
 } from './pty'
 import { registerMonitorHandlers, stopHeartbeat, stopFullSamplerForced } from './monitor/sampler'
 import { registerHarnuFeaturesHandlers, harnuPreamble } from './harnu-features'
@@ -96,6 +97,7 @@ import {
   setUserProjectAutoOrganize,
   getUserProjectOrchestratorDefault,
   setUserProjectOrchestratorDefault,
+  setUserProjectTerminalRead,
   interceptActivePaths,
   setUserProjectBornFrom,
   listBornFromCandidates,
@@ -176,6 +178,7 @@ import { registerExternal } from './external'
 // server composes; `worktree-ipc` owns git worktree add + auto-adopt; `mcp/server`
 // is the loopback HTTP MCP surface itself. Registration order matters — see below.
 import { registerCommandBridge, closeCommandBridge } from './command-bridge-ipc'
+import { registerTerminalIpc } from './terminal-ipc'
 import { registerManifestDrain } from './manifest-drain-shell'
 import { registerMcpConfirm, closeMcpConfirm } from './mcp/confirm-resolver'
 import { registerWorktreeHandlers, adoptExistingFolder } from './worktree-ipc'
@@ -690,6 +693,9 @@ app.whenReady().then(async () => {
   // it overrides pty's `--mcp-config` provider, so it must run AFTER
   // `registerPtyHandlers` set the default (order satisfied above).
   const cmdBridge = registerCommandBridge(() => mainWindow)
+  // T474: terminal lifecycle IPC. After the bridge, so its `renderer:ready` listener runs once
+  // the bridge's own has opened the dispatch gate.
+  registerTerminalIpc(cmdBridge.bridge, isRendererUrl)
   const dataDirNotices = { dispatch: (c: string, p: unknown) => cmdBridge.bridge.dispatch(c, p) }
   setDataDirNoticeSink(dataDirNotices)
   void flushDataDirConflictNotices(dataDirNotices)
@@ -995,6 +1001,18 @@ app.whenReady().then(async () => {
     'userProjects:setOrchestratorDefault',
     async (_e, { targetPath, enabled }: { targetPath: string; enabled: boolean }) => {
       return toUserProjectsPayload(await setUserProjectOrchestratorDefault(targetPath, enabled))
+    }
+  )
+
+  // T481: "let agents read terminals I open" per-folder opt-in (FolderMenu toggle). EXACT-PATH
+  // ONLY, like the Orchestrator default above. The gate that reads it is `terminal-gate-core.ts`.
+  ipcMain.handle(
+    'userProjects:setTerminalRead',
+    async (_e, { targetPath, enabled }: { targetPath: string; enabled: boolean }) => {
+      const payload = toUserProjectsPayload(await setUserProjectTerminalRead(targetPath, enabled))
+      // Turning it off ends the lazy screen models of the operator's terminals there at once.
+      if (!enabled) await dropOperatorScreenModels(targetPath)
+      return payload
     }
   )
 

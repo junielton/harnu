@@ -135,6 +135,22 @@
     "hide": "Hide panel",
     "show": "Show panel"
   },
+  "agentTerminal": {
+    "connectedTo": "Connected to {session}",
+    "connectedToClosed": "Connected to a closed session",
+    "connectedToAgent": "Connected to an agent",
+    "parked": "parked",
+    "canType": "An agent can type here",
+    "readingAnon": "An agent is reading",
+    "reading": "reading",
+    "typing": "typing",
+    "disconnect": "Disconnect",
+    "disconnectHint": "Stop agent access to this terminal",
+    "disconnected": "Agent disconnected from this terminal",
+    "disconnectFailed": "Could not disconnect the agent from this terminal",
+    "disconnectFailedHint": "The agent still has access. Try again.",
+    "goToSession": "Go to session"
+  },
   "helperPane": {
     "close": "Close helper",
     "maximize": "Maximize",
@@ -143,6 +159,7 @@
     "claudeTitle": "Claude",
     "forkTitle": "Claude (fork)",
     "spawnFailed": "Helper failed to start",
+    "processExited": "Process exited",
     "staleSession": {
       "title": "Helper session no longer exists",
       "remove": "Remove helper"
@@ -289,6 +306,8 @@
     "autoOrganizeOff": "Turn off auto-organize",
     "orchestratorDefaultOn": "New sessions start as Orchestrator",
     "orchestratorDefaultOff": "Stop starting sessions as Orchestrator",
+    "terminalReadOn": "Let agents read terminals I open",
+    "terminalReadOff": "Stop agents reading terminals I open",
     "newWorktree": "New worktree…",
     "removeWorktree": "Remove worktree",
     "createWorktreeMd": "Create WORKTREE.md",
@@ -1719,7 +1738,9 @@
     "ask": {
       "label": "Ask before agent actions",
       "description": "Put a confirmation in front of every agent action — creating a session, spawning a terminal, a worktree, writing to memory. Off by default: agents act freely and every call is recorded in the audit log below. Turn this on if you'd rather approve each one."
-    }
+    },
+    "agentTerminalWrites": "Allow agents to type into terminals",
+    "agentTerminalWritesHint": "When off, agents can still read terminals you allow, but every attempt to type is refused."
   },
   "bundledSkills": {
     "title": "Bundled skills",

@@ -172,3 +172,37 @@ describe('the T215 peer-socket path (§3.7 — inside the redaction contract)', 
     expect(twice.redactionCount).toBe(0)
   })
 })
+
+describe('redactTranscript — URL credentials (T481)', () => {
+  it('redacts the password of a scheme://user:pass@host URL, keeping user and host', () => {
+    const r = redactTranscript('psql postgres://admin:S3cret@db.internal:5432/prod', { home: HOME })
+    expect(r.text).toBe('psql postgres://admin:<redacted>@db.internal:5432/prod')
+    expect(r.redactionCount).toBe(1)
+  })
+
+  it('handles https clone URLs and a password that contains an @', () => {
+    expect(
+      redactTranscript('git clone https://bot:ghp_abc123@github.com/o/r.git', { home: HOME }).text
+    ).toBe('git clone https://bot:<redacted>@github.com/o/r.git')
+    expect(redactTranscript('redis://u:p@ss@cache:6379', { home: HOME }).text).toBe(
+      'redis://u:<redacted>@cache:6379'
+    )
+  })
+
+  it('leaves a URL with no password, and plain user@host text, alone', () => {
+    const t = 'https://github.com/o/r and ssh://git@host/x and me@example.com'
+    expect(redactTranscript(t, { home: HOME })).toEqual({ text: t, redactionCount: 0 })
+  })
+
+  it('is idempotent', () => {
+    const once = redactTranscript('mongodb://root:hunter2@m:27017', { home: HOME })
+    const twice = redactTranscript(once.text, { home: HOME })
+    expect(twice.text).toBe(once.text)
+    expect(twice.redactionCount).toBe(0)
+  })
+
+  it('a sensitive KEY=URL value is redacted whole, once', () => {
+    const r = redactTranscript('API_TOKEN=https://u:p@h/x', { home: HOME })
+    expect(r.text).toBe('API_TOKEN=<redacted>')
+  })
+})

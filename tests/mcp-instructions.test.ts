@@ -53,6 +53,19 @@ describe('HARNU_MCP_INSTRUCTIONS_BODY content sanity', () => {
     expect(HARNU_MCP_INSTRUCTIONS_BODY).toMatch(/Ask before agent actions/i)
   })
 
+  it('advertises exactly the terminal surface that exists after B7 (T478, T480, T482, T487)', () => {
+    expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('spawn_terminal')
+    expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('list_terminals')
+    expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('read_terminal')
+    expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('ownerSessionId')
+    expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('send_terminal')
+    // AC-B7-7: the operator can switch typing off, and what the refusals mean.
+    expect(HARNU_MCP_INSTRUCTIONS_BODY).toMatch(/switch agent typing off in Settings/i)
+    expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('TERMINAL_WRITES_DISABLED')
+    expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('TERMINAL_DISCONNECTED')
+    expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('TERMINAL_APPROVED_RESEND')
+  })
+
   it('stays a primer — non-empty and ≤80 lines', () => {
     const lines = HARNU_MCP_INSTRUCTIONS_BODY.split('\n')
     expect(lines.length).toBeGreaterThan(0)

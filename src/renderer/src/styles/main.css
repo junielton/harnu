@@ -247,6 +247,11 @@ textarea,
   background: inherit;
   z-index: -1;
 }
+/* Accent halo variant (design.md §7 — Agent activity pulse): ONLY the halo colour changes —
+   same keyframe, geometry and reduced-motion behaviour. Used by the agent connection chip. */
+.anim-pulse-dot--accent::after {
+  background: var(--color-accent-soft);
+}
 .anim-shimmer-dot {
   animation: shimmer-dot 1.2s ease-in-out infinite;
 }

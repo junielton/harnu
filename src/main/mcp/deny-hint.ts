@@ -48,6 +48,35 @@ export function shapeDenial(
   ctx: { folder?: string; syntheticId?: string } = {}
 ): SteerableDenial | null {
   const at = ctx.folder ? ` (${ctx.folder})` : ''
+  // T482 B5: a refused send names the offending key or line in its detail.
+  const content = /^(KEY_UNKNOWN|INPUT_TOO_LARGE|WAIT_PATTERN_INVALID): ([\s\S]*)$/.exec(result)
+  if (content) {
+    return {
+      error: content[1]!,
+      message: content[2]!,
+      nextActions:
+        content[1] === 'KEY_UNKNOWN'
+          ? [
+              {
+                do: 'Press keys by name in `keys`; put typed text in `input`.',
+                why: 'Control actions are named keys so the operator and the audit see exactly what was pressed.'
+              }
+            ]
+          : content[1] === 'WAIT_PATTERN_INVALID'
+            ? [
+                {
+                  do: 'Give `waitFor.pattern` as a JavaScript regex source of at most 200 characters that does not match the empty string, or drop it and use `idleMs`.',
+                  why: 'Nothing was typed: a pattern is checked before the send, because a send cannot be undone.'
+                }
+              ]
+            : [
+                {
+                  do: 'Send the text in smaller pieces, or write it to a file and run the file.',
+                  why: 'A terminal cuts a line at about 4 KiB without saying so.'
+                }
+              ]
+    }
+  }
   switch (result) {
     case 'FOLDER_NOT_ALLOWED':
       return {
@@ -68,6 +97,159 @@ export function shapeDenial(
           {
             do: 'Target a path inside a folder Harnu already tracks — a pinned repo or one of its worktrees.',
             why: 'Containment is only enforced in guarded mode; in the default free mode this call would not have been refused for this reason.'
+          }
+        ]
+      }
+    // T474: the per-folder cap on live agent terminals — a loop-abandon backstop, not a quota.
+    case 'TERMINAL_LIMIT':
+      return {
+        error: result,
+        message: `This folder${at} already has 4 live agent terminals, so Harnu will not open a fifth.`,
+        nextActions: [
+          {
+            do: 'Call list_terminals and reuse one that is still running, or ask the operator to close some.',
+            why: 'A terminal that outlived its task still counts against the cap; reusing one is cheaper than asking for another.'
+          }
+        ]
+      }
+    // T474 B3: reading a terminal.
+    case 'TERMINAL_NOT_FOUND':
+      return {
+        error: result,
+        message:
+          'No terminal with that id exists — it never did, or it ended more than 10 minutes ago.',
+        nextActions: [
+          {
+            do: 'Call list_terminals for the ids that exist, or open a new one with spawn_terminal.',
+            why: 'Terminals do not survive an app restart, and an exited one is forgotten after 10 minutes.'
+          }
+        ]
+      }
+    case 'NOT_A_TERMINAL':
+      return {
+        error: result,
+        message: 'That id names a pane that is not a terminal, so there is nothing to read.',
+        nextActions: [
+          {
+            do: 'Call list_terminals for the ids of real terminals, or open one with spawn_terminal.',
+            why: 'Only shell terminals can be read; other panes have no screen an agent may address.'
+          }
+        ]
+      }
+    case 'TERMINAL_READ_NOT_ENABLED':
+      return {
+        error: result,
+        message: `That terminal${at} was opened by the operator, and they have not let agents read the terminals they open.`,
+        nextActions: [
+          {
+            do: 'Open your own terminal with spawn_terminal and work there, or ask the operator to enable "Let agents read terminals I open" in the folder menu.',
+            why: 'Reading a terminal the operator opened is their opt-in per folder; an agent-spawned terminal needs no opt-in.'
+          }
+        ]
+      }
+    case 'TERMINAL_DISCONNECTED':
+      return {
+        error: result,
+        message: `The operator disconnected that terminal${at}: agents may no longer read or type in it.`,
+        nextActions: [
+          {
+            do: "Treat this as the operator's decision, not a fault. Open a new terminal with spawn_terminal only if the work still needs one, and tell the operator you did.",
+            why: 'Disconnect is permanent for that terminal; a new terminal is visible and shows its connection again.'
+          }
+        ]
+      }
+    // T482 B5: typing into a terminal.
+    case 'TERMINAL_EXITED':
+      return {
+        error: result,
+        message: `That terminal${at} has ended, so nothing can be typed into it.`,
+        nextActions: [
+          {
+            do: 'Call read_terminal to see its last output, then open a new one with spawn_terminal if the work continues.',
+            why: 'An exited terminal stays readable for 10 minutes but a program that ended cannot receive keys.'
+          }
+        ]
+      }
+    // T487 B7: the global kill-switch.
+    case 'TERMINAL_WRITES_DISABLED':
+      return {
+        error: result,
+        message: `The operator turned off typing into terminals, so nothing can be typed into that terminal${at}. Reading still works.`,
+        nextActions: [
+          {
+            do: 'Tell the operator what you wanted to type, and that they can turn "Allow agents to type into terminals" back on in Settings → Control server. Use read_terminal for anything that only needs a look.',
+            why: "This is the operator's global decision, not a fault: it refuses every send, in every terminal, until they switch it on again."
+          }
+        ]
+      }
+    // T484 B6: the operator-terminal write gate.
+    case 'TERMINAL_APPROVED_RESEND':
+      return {
+        error: result,
+        message:
+          'Nothing was typed. The operator approved typing in this terminal. Call read_terminal to see the screen as it is now, then call send_terminal again.',
+        nextActions: [
+          {
+            do: 'Call read_terminal to see the screen as it is now, then call send_terminal again with what you still want typed.',
+            why: 'An approval only grants typing in this terminal; the call that asked is never replayed, because the screen may have changed while it waited.'
+          }
+        ]
+      }
+    case 'TERMINAL_WRITE_DENIED':
+      return {
+        error: result,
+        message: `The operator declined typing into that terminal${at}. Sends to it are refused for 5 minutes.`,
+        nextActions: [
+          {
+            do: 'Stop sending to this terminal. Open your own terminal with spawn_terminal, or ask the operator to run the command or to allow typing.',
+            why: 'A Deny starts a 5-minute cooldown; asking again right away only gets refused.'
+          }
+        ]
+      }
+    case 'TERMINAL_LEASE_ENDED':
+      return {
+        error: result,
+        message: `The operator's permission to type into that terminal${at} ended just before this send. Nothing was typed.`,
+        nextActions: [
+          {
+            do: 'Send again: the operator will be asked once more.',
+            why: 'A lease ends 10 minutes after the last write, or when the terminal ends or its folder is blocked.'
+          }
+        ]
+      }
+    case 'TERMINAL_BUSY':
+      return {
+        error: result,
+        message:
+          'Other writes to that terminal were still going out after 10 seconds, so this one gave up. Nothing was typed.',
+        nextActions: [
+          {
+            do: 'Call read_terminal to see the screen as it is now, then send again.',
+            why: 'Sends to one terminal run one at a time; a long queue means something else is typing there.'
+          }
+        ]
+      }
+    case 'TERMINAL_RATE_LIMIT':
+      return {
+        error: result,
+        message:
+          'That terminal has received 60 sends in the last minute, the most it accepts. Nothing was typed.',
+        nextActions: [
+          {
+            do: 'Wait a few seconds, and put several keystrokes into one send: `input` plus a `keys` list.',
+            why: 'One send can carry a whole command and up to 64 keys, so the limit should not get in the way of normal work.'
+          }
+        ]
+      }
+    case 'CURSOR_EXPIRED':
+      return {
+        error: result,
+        message:
+          'That cursor no longer points at a line: it scrolled out of the terminal, sat unused for 10 minutes, or was never issued.',
+        nextActions: [
+          {
+            do: "Call read_terminal again with mode 'tail' and use the fresh `cursor` it returns.",
+            why: 'A cursor tracks one line through scrolling; once the line is gone there is nothing to resume from.'
           }
         ]
       }

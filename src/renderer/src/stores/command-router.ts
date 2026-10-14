@@ -103,8 +103,12 @@ export interface CommandRouterActions {
     prePrompt?: string,
     bootOverride?: { model?: string; effort?: string }
   ): void
-  /** Headless: append a shell helper to a worktree's stack; returns the pane id. */
-  addShellHelper(worktreePath: string, cwd: string): string
+  /**
+   * Headless: append a shell helper to a worktree's stack; returns the pane id. `terminal` is
+   * present when main already spawned the PTY (T474): the pane takes that id and adopts that PTY
+   * instead of minting its own, and an id the stack already holds is returned, not duplicated.
+   */
+  addShellHelper(worktreePath: string, cwd: string, terminal?: AgentTerminalSplit): string
   /** Headless: append a `claude --resume` helper to a worktree; returns the pane id. */
   addResumeHelper(worktreePath: string, sessionId: string, cwd: string): string
   /**
@@ -219,6 +223,20 @@ export interface SessionCreatedResult {
   correlationId: string
 }
 
+/**
+ * What main hands over with a `pane.split` for an agent terminal (T474 §4.1 step 5): the pane
+ * id IS the `terminalId`, and the PTY already exists.
+ */
+export interface AgentTerminalSplit {
+  paneId: string
+  ptyId: string
+  ownerSessionId: string | null
+  /** Epoch ms the PTY was spawned; the 2 s "exited too soon" window starts here. */
+  spawnedAt: number
+  /** A reload re-announcing a terminal that may already be known: no badge, no alert. */
+  redispatch?: true
+}
+
 /** Success of `pane.split`: the appended helper pane's id. */
 export interface PaneSplitResult {
   paneId: string
@@ -331,6 +349,29 @@ function handleSessionCreate(actions: CommandRouterActions, payload: unknown): D
 }
 
 /**
+ * The T474 fields of a shell `pane.split`. None present → a plain shell pane (`undefined`).
+ * `paneId` and `ptyId` travel together: one without the other is a malformed call, not a
+ * half-adopted terminal.
+ */
+function parseAgentTerminalSplit(
+  payload: Record<string, unknown>
+): AgentTerminalSplit | undefined | 'invalid' {
+  const { paneId, ptyId } = payload
+  if (paneId === undefined && ptyId === undefined) return undefined
+  if (!isNonEmptyString(paneId) || !isNonEmptyString(ptyId)) return 'invalid'
+  const owner = payload.ownerSessionId
+  if (owner !== undefined && owner !== null && !isNonEmptyString(owner)) return 'invalid'
+  const spawnedAt = payload.spawnedAt
+  return {
+    paneId,
+    ptyId,
+    ownerSessionId: typeof owner === 'string' ? owner : null,
+    spawnedAt: typeof spawnedAt === 'number' && Number.isFinite(spawnedAt) ? spawnedAt : Date.now(),
+    ...(payload.redispatch === true ? { redispatch: true as const } : {})
+  }
+}
+
+/**
  * `pane.split`: append a helper to the TARGET worktree's stack HEADLESSLY — the
  * worktree need not be (and usually isn't) the selected one; the router calls
  * the helper action directly and never selects it first. `kind:'claude'`
@@ -346,7 +387,13 @@ function handlePaneSplit(actions: CommandRouterActions, payload: unknown): Dispa
   const cwd = isNonEmptyString(payload.cwd) ? payload.cwd : worktreePath
 
   if (payload.kind === 'shell') {
-    return { paneId: actions.addShellHelper(worktreePath, cwd) }
+    const terminal = parseAgentTerminalSplit(payload)
+    if (terminal === 'invalid') return BAD_ARGS
+    return {
+      paneId: terminal
+        ? actions.addShellHelper(worktreePath, cwd, terminal)
+        : actions.addShellHelper(worktreePath, cwd)
+    }
   }
   if (payload.kind === 'claude') {
     if (!isNonEmptyString(payload.sessionId)) return BAD_ARGS

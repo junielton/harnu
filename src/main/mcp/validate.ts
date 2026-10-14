@@ -23,6 +23,8 @@ import { z } from 'zod'
 import { sanitizeAgentBootOverride, type AgentBootOverride } from './agent-boot'
 import { SAFE_GRANT_VERBS, toolByName, type McpOp } from './tool-catalog'
 import { MESSAGE_MAX_CHARS } from '../messaging-socket'
+import { MAX_KEYS, MAX_KEY_NAME_CHARS } from '../terminal-keys'
+import { IDLE_MAX_MS, IDLE_MIN_MS, TIMEOUT_MAX_MS, TIMEOUT_MIN_MS } from '../terminal-wait'
 import { SPEAK_MAX_CHARS } from '../speech-text'
 import { MEMORY_ENTRY_MAX_CHARS, parseMemoryPage, validateEntry } from './memory-core'
 import { MAX_CANVAS_IMAGES_PER_CALL, MAX_CANVAS_OPS_PER_CALL } from './canvas-ops'
@@ -66,6 +68,8 @@ export interface SpawnTerminalArgs {
   kind: 'shell' | 'claude'
   /** Required when `kind === 'claude'`: the Claude session to attach. */
   sessionId?: string
+  /** T474: the session the terminal is connected to — attribution only. */
+  ownerSessionId?: string
 }
 
 /** Validated args for the `create_worktree` tool. */
@@ -186,7 +190,8 @@ const SpawnTerminalSchema = z
     target: z.enum(['tab', 'split']).default('split'),
     cwd: absolutePathSchema.optional(),
     kind: z.enum(['shell', 'claude']).default('shell'),
-    sessionId: z.string().min(1).optional()
+    sessionId: z.string().min(1).optional(),
+    ownerSessionId: z.string().min(1).optional()
   })
   .refine((v) => v.kind !== 'claude' || (v.sessionId !== undefined && v.sessionId.length > 0), {
     message: "kind 'claude' requires a sessionId",
@@ -204,7 +209,7 @@ const SpawnTerminalSchema = z
 export function parseSpawnTerminal(input: unknown): ParseResult<SpawnTerminalArgs> {
   const parsed = SpawnTerminalSchema.safeParse(input)
   if (!parsed.success) return fromZod(parsed.error)
-  const { worktreePath, target, cwd, kind, sessionId } = parsed.data
+  const { worktreePath, target, cwd, kind, sessionId, ownerSessionId } = parsed.data
 
   const value: SpawnTerminalArgs = {
     worktreePath,
@@ -213,6 +218,7 @@ export function parseSpawnTerminal(input: unknown): ParseResult<SpawnTerminalArg
     kind
   }
   if (sessionId !== undefined) value.sessionId = sessionId
+  if (ownerSessionId !== undefined) value.ownerSessionId = ownerSessionId
   return { ok: true, value }
 }
 
@@ -895,6 +901,110 @@ export function parseListWorkers(input: unknown): ParseResult<ListWorkersArgs> {
   return { ok: true, value }
 }
 
+/** Validated args for the `list_terminals` read tool (T474). */
+export interface ListTerminalsArgs {
+  folder?: string
+  ownerSessionId?: string
+}
+
+const ListTerminalsSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  ownerSessionId: z.string().min(1).optional()
+})
+
+/** Validate `list_terminals` args (T474): both filters are optional. */
+export function parseListTerminals(input: unknown): ParseResult<ListTerminalsArgs> {
+  const parsed = ListTerminalsSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const value: ListTerminalsArgs = {}
+  if (parsed.data.folder !== undefined) value.folder = parsed.data.folder
+  if (parsed.data.ownerSessionId !== undefined) value.ownerSessionId = parsed.data.ownerSessionId
+  return { ok: true, value }
+}
+
+/** Validated args for the `read_terminal` read tool (T474 B3). */
+export interface ReadTerminalArgs {
+  folder?: string
+  terminalId: string
+  mode?: 'tail' | 'screen' | 'since'
+  lines?: number
+  since?: string
+  maxChars?: number
+}
+
+const ReadTerminalSchema = z
+  .object({
+    folder: absolutePathSchema.optional(),
+    terminalId: z.string().min(1),
+    mode: z.enum(['tail', 'screen', 'since']).optional(),
+    lines: z.number().int().min(1).max(500).optional(),
+    since: z.string().min(1).optional(),
+    maxChars: z.number().int().min(1).max(50000).optional()
+  })
+  .refine((v) => v.mode !== 'since' || v.since !== undefined, {
+    message: "since is required when mode is 'since'",
+    path: ['since']
+  })
+
+/** Validate `read_terminal` args (T474 B3): the cursor is mandatory for `mode: 'since'`. */
+export function parseReadTerminal(input: unknown): ParseResult<ReadTerminalArgs> {
+  const parsed = ReadTerminalSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: parsed.data as ReadTerminalArgs }
+}
+
+/** Validated args for the `send_terminal` verb (T482 B5). */
+export interface SendTerminalArgs {
+  folder?: string
+  terminalId: string
+  input?: string
+  keys?: string[]
+  paste?: boolean
+  ownerSessionId?: string
+  waitFor?: { pattern?: string; idleMs?: number; timeoutMs?: number }
+}
+
+/**
+ * `waitFor` (T489 B8, spec §4.4). The bounds are structural (`BAD_ARGS`); the pattern's own
+ * length and compilability are `checkWaitFor`'s, so they keep their code (`WAIT_PATTERN_INVALID`).
+ */
+const WaitForSchema = z
+  .object({
+    pattern: z.string().optional(),
+    idleMs: z.number().int().min(IDLE_MIN_MS).max(IDLE_MAX_MS).optional(),
+    timeoutMs: z.number().int().min(TIMEOUT_MIN_MS).max(TIMEOUT_MAX_MS).optional()
+  })
+  .strict()
+  .refine((v) => v.pattern !== undefined || v.idleMs !== undefined || v.timeoutMs !== undefined, {
+    message: 'waitFor needs at least one of pattern, idleMs, timeoutMs'
+  })
+
+const SendTerminalSchema = z
+  .object({
+    folder: absolutePathSchema.optional(),
+    terminalId: z.string().min(1),
+    input: z.string().optional(),
+    keys: z.array(z.string().min(1).max(MAX_KEY_NAME_CHARS)).max(MAX_KEYS).optional(),
+    paste: z.boolean().optional(),
+    ownerSessionId: z.string().min(1).optional(),
+    waitFor: WaitForSchema.optional()
+  })
+  .refine((v) => (v.input !== undefined && v.input.length > 0) || (v.keys?.length ?? 0) > 0, {
+    message: 'send_terminal needs `input`, `keys`, or both',
+    path: ['input']
+  })
+
+/**
+ * Validate `send_terminal` args (T482 B5): structure only. What the typed CONTENT may contain
+ * (control characters, size, key names) is `checkSendContent`'s, which `planToolCall` runs next so
+ * each failure keeps its own code (`BAD_ARGS` / `INPUT_TOO_LARGE` / `KEY_UNKNOWN`).
+ */
+export function parseSendTerminal(input: unknown): ParseResult<SendTerminalArgs> {
+  const parsed = SendTerminalSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: parsed.data as SendTerminalArgs }
+}
+
 /** Validated args for the `list_containers` read tool (T328). */
 export type ListContainersArgs = ListWorkersArgs
 
@@ -1162,6 +1272,9 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   create_session: parseCreateSession,
   create_worktree: parseCreateWorktree,
   spawn_terminal: parseSpawnTerminal,
+  list_terminals: parseListTerminals,
+  read_terminal: parseReadTerminal,
+  send_terminal: parseSendTerminal,
   adopt_folder: parseAdoptFolder,
   // BUG-56: same `{ folder }` shape as adopt_folder.
   remove_folder: parseAdoptFolder,

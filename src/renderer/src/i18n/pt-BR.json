@@ -135,6 +135,22 @@
     "hide": "Ocultar painel",
     "show": "Mostrar painel"
   },
+  "agentTerminal": {
+    "connectedTo": "Conectado a {session}",
+    "connectedToClosed": "Conectado a uma sessão fechada",
+    "connectedToAgent": "Conectado a um agente",
+    "parked": "parada",
+    "canType": "Um agente pode digitar aqui",
+    "readingAnon": "Um agente está lendo",
+    "reading": "lendo",
+    "typing": "digitando",
+    "disconnect": "Desconectar",
+    "disconnectHint": "Impedir o acesso do agente a este terminal",
+    "disconnected": "Agente desconectado deste terminal",
+    "disconnectFailed": "Não foi possível desconectar o agente deste terminal",
+    "disconnectFailedHint": "O agente continua com acesso. Tente de novo.",
+    "goToSession": "Ir para a sessão"
+  },
   "helperPane": {
     "close": "Fechar painel",
     "maximize": "Maximizar",
@@ -143,6 +159,7 @@
     "claudeTitle": "Claude",
     "forkTitle": "Claude (fork)",
     "spawnFailed": "Falha ao iniciar painel",
+    "processExited": "Processo encerrado",
     "staleSession": {
       "title": "Sessão do painel não existe mais",
       "remove": "Remover painel"
@@ -289,6 +306,8 @@
     "autoOrganizeOff": "Desligar auto-organização",
     "orchestratorDefaultOn": "Novas sessões começam como Orquestrador",
     "orchestratorDefaultOff": "Parar de iniciar sessões como Orquestrador",
+    "terminalReadOn": "Deixar agentes lerem os terminais que eu abro",
+    "terminalReadOff": "Parar de deixar agentes lerem os terminais que eu abro",
     "newWorktree": "Nova worktree…",
     "removeWorktree": "Remover worktree",
     "createWorktreeMd": "Criar WORKTREE.md",
@@ -1719,7 +1738,9 @@
     "ask": {
       "label": "Confirmar antes das ações do agente",
       "description": "Coloca uma confirmação na frente de toda ação do agente — criar sessão, abrir terminal, worktree, escrever na memória. Desligado por padrão: os agentes agem livremente e toda chamada fica registrada no log de auditoria abaixo. Ligue se preferir aprovar uma a uma."
-    }
+    },
+    "agentTerminalWrites": "Permitir que agentes digitem em terminais",
+    "agentTerminalWritesHint": "Desligado, os agentes ainda podem ler os terminais que você permitir, mas toda tentativa de digitar é recusada."
   },
   "bundledSkills": {
     "title": "Skills inclusas",

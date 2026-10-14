@@ -277,6 +277,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Brand mark (§1)                                    | `src/renderer/src/components/BrandMark.vue`                                      |
 | Helper stack (split right side)                    | `src/renderer/src/components/HelperStack.vue`                                    |
 | Helper pane (one cell)                             | `src/renderer/src/components/HelperPane.vue`                                     |
+| Agent connection chip (pane header, T474 U1)       | `src/renderer/src/components/AgentConnectionChip.vue` + `lib/agent-chip.ts`      |
 | Image lightbox (Pasted-images gallery, §6)         | `src/renderer/src/components/ImageLightbox.vue`                                  |
 | Markdown pane (file-backed viewer, §6 — T74)       | `src/renderer/src/components/MarkdownPane.vue`                                   |
 | Markdown renderer (string→prose, reusable)         | `src/renderer/src/components/MarkdownRenderer.vue` + `lib/markdown.ts` seam      |

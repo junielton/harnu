@@ -342,6 +342,25 @@ async function onToggleOrchestratorDefault(folderPath: string): Promise<void> {
 }
 
 /**
+ * Whether the menu's target folder lets agents read the terminals the operator opens
+ * (T481 — default OFF, per exact folder, no worktree inheritance — see
+ * `terminalReadPaths`'s own doc comment).
+ */
+const isTerminalReadOn = computed<boolean>(() => {
+  const path = menuState.value.projectPath
+  return path ? sessions.terminalReadPaths.has(path) : false
+})
+
+/** Toggle the `agentTerminalRead` flag for the target folder. Non-destructive. */
+async function onToggleTerminalRead(folderPath: string): Promise<void> {
+  try {
+    await sessions.setFolderTerminalRead(folderPath, !isTerminalReadOn.value)
+  } catch {
+    /* Swallow: the mirror simply won't flip — no destructive state to undo. */
+  }
+}
+
+/**
  * Whether the target folder has the auto-alias opt-in on (T52) — its label falls
  * back to the git branch when the dir-name differs. Mirrors `aliasFromBranchPaths`.
  */
@@ -601,6 +620,16 @@ const entries = computed<MenuItem[]>(() => [
       : t('folderMenu.orchestratorDefaultOn'),
     icon: Crown,
     onSelect: onToggleOrchestratorDefault
+  },
+  // T481: per EXACT folder, never inherited — same rule as the entry above. Lets agents
+  // `read_terminal` the shells the operator opens here; says nothing about typing.
+  {
+    id: 'terminal-read',
+    label: isTerminalReadOn.value
+      ? t('folderMenu.terminalReadOff')
+      : t('folderMenu.terminalReadOn'),
+    icon: SquareTerminal,
+    onSelect: onToggleTerminalRead
   },
   isHidden.value
     ? {

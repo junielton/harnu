@@ -19,6 +19,8 @@ import type { UsageSnapshot } from '../main/usage-parse'
 import type { TelemetryPayload } from '../main/statusline'
 import type { TaskState, FailureReason } from '../main/hook-state'
 import type { PtyExitReason } from '../main/pty'
+import type { TerminalStatus } from '../main/terminal-lifecycle'
+import type { TerminalChipState } from '../main/terminal-registry'
 import type { ReviewCorrective } from '../main/review-corrective'
 import type { ResponderMode } from '../main/responder-dispatch'
 import type { ShadowEntry } from '../main/responder-registry'
@@ -556,6 +558,13 @@ interface PtyCreateOpts {
    * treats it as `'operator'` (fail closed).
    */
   spawnedBy?: 'operator' | 'agent'
+  /**
+   * T481: the operator's shell pane naming itself, so main's terminal registry knows it and an
+   * agent may read it once the folder opts in. Only honored for `kind === 'shell'` with a `cwd`;
+   * main forces the origin to `operator`, takes the folder from `cwd`, and refuses an id it holds
+   * unless that is a dead operator record (a pane restored after a reload).
+   */
+  terminal?: { terminalId: string }
   /**
    * BUG-70 §4 park ledger: how this session is being woken. Threaded through
    * so an AGENT-driven wake (`message_session` on a parked recipient, T215) is
@@ -1160,6 +1169,45 @@ const api = {
   /** Snapshot a PTY's scrollback by sessionKey (Fleet status board last-line). */
   ptyReplayForSession: (sessionKey: string): Promise<PtyReplay> =>
     ipcRenderer.invoke('pty:replayForSession', sessionKey),
+  /**
+   * T474: what main knows about an agent terminal — whether its PTY already ended, and the
+   * tail of its output if so. Asked right after subscribing to the PTY's exit, so an exit that
+   * happened before the pane landed is never lost.
+   */
+  terminalStatus: (terminalId: string): Promise<TerminalStatus> =>
+    ipcRenderer.invoke('terminal:status', terminalId),
+  /** T474: main owns teardown — kill the terminal's PTY whether or not its pane ever mounted. */
+  terminalClose: (terminalId: string): Promise<boolean> =>
+    ipcRenderer.invoke('terminal:close', terminalId),
+  /**
+   * T474 B7: the operator's Disconnect — permanent, stops agent reads AND writes on this
+   * terminal; the PTY keeps running. Resolves false for an unknown terminal. There is no
+   * reconnect. (The pane's button is unit U1's.)
+   */
+  terminalDisconnect: (terminalId: string): Promise<boolean> =>
+    ipcRenderer.invoke('terminal:disconnect', terminalId),
+  /**
+   * T474 U1: what the pane's connection chip renders for a terminal — origin, owner, whether it
+   * was disconnected or exited, and whether an agent holds a write lease. Null for an unknown id.
+   */
+  terminalChip: (terminalId: string): Promise<TerminalChipState | null> =>
+    ipcRenderer.invoke('terminal:chip', terminalId),
+  /**
+   * T474 U1: a terminal's write lease was granted or ended — re-read its chip. Main sends it from
+   * the lease table, so a lease that ends with no agent activity still clears the pane chip.
+   */
+  onTerminalChipChanged: (cb: (e: { terminalId: string }) => void): (() => void) =>
+    subscribe('terminal:chipChanged', cb),
+  /**
+   * T474 B7: an agent read or typed into a terminal — coalesced by main to one event per
+   * terminal per 250 ms. Feeds the pane chip's live signal (unit U1).
+   */
+  onTerminalActivity: (
+    cb: (e: { terminalId: string; kind: 'read' | 'write'; at: number }) => void
+  ): (() => void) => subscribe('terminal:activity', cb),
+  /** T474: this terminal's renderer xterm was disposed (the PTY stays alive). */
+  terminalXtermGone: (terminalId: string): void =>
+    ipcRenderer.send('terminal:xtermGone', terminalId),
   onPtyData: (id: string, cb: (data: string, seq: number) => void): (() => void) => {
     let set = ptyDataListeners.get(id)
     if (!set) {
@@ -2261,6 +2309,11 @@ const api = {
   // action. Default OFF (agents act freely). Global — not per folder.
   mcpAskGet: (): Promise<boolean> => ipcRenderer.invoke('mcp:ask:get'),
   mcpAskSet: (ask: boolean): Promise<boolean> => ipcRenderer.invoke('mcp:ask:set', ask),
+  // T474 B7: the global "Allow agents to type into terminals" kill-switch (default ON).
+  mcpAgentTerminalWritesGet: (): Promise<boolean> =>
+    ipcRenderer.invoke('mcp:agentTerminalWrites:get'),
+  mcpAgentTerminalWritesSet: (enabled: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('mcp:agentTerminalWrites:set', enabled),
   // T31: the Sentinel auto-denied a catastrophic command — surface it prominently.
   onSentinelBlocked: (cb: (p: { reason: string; sessionId: string }) => void): (() => void) =>
     subscribe('sentinel:blocked', cb),
@@ -2304,6 +2357,13 @@ const api = {
     enabled: boolean
   ): Promise<UserProjectsPayload> =>
     ipcRenderer.invoke('userProjects:setOrchestratorDefault', { targetPath, enabled }),
+  // T481: per-folder "let agents read terminals I open" opt-in (FolderMenu toggle).
+  // EXACT-PATH ONLY — a linked worktree never inherits its parent repo's value.
+  userProjectsSetTerminalRead: (
+    targetPath: string,
+    enabled: boolean
+  ): Promise<UserProjectsPayload> =>
+    ipcRenderer.invoke('userProjects:setTerminalRead', { targetPath, enabled }),
   // T191: "Set parent folder" / "Clear parent folder" (folder menu) — the manual
   // override for the `bornFrom` lineage edge. Pass `null` to clear.
   userProjectsSetBornFrom: (

@@ -16,7 +16,7 @@
 import * as path from 'node:path'
 import * as os from 'node:os'
 import { promises as fs, constants as fsConstants } from 'node:fs'
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 
 import { MCP_TOOLS, type McpOp, type McpToolDef } from './tool-catalog'
@@ -50,11 +50,47 @@ import {
 import type { PrEntry } from '../pr-stack-core'
 import { getScreenStates, getShellSessions } from '../detect/screen-detect'
 import {
+  createTerminalPty,
+  discardTerminalPty,
+  ensureTerminalScreenModel,
   liveSessionKeys,
   sessionOwnedByHarnu,
   spawnOriginForSession,
-  waitForSessionReady
+  waitForSessionReady,
+  writeTerminalPty
 } from '../pty'
+import {
+  AGENT_TERMINAL_SIZE,
+  MAX_AGENT_TERMINALS_PER_FOLDER,
+  terminalRegistry
+} from '../terminal-registry'
+import { canStillWrite, gateTerminalOp } from '../terminal-gate-core'
+import { readAgentTerminalWrites } from './prefs'
+import { resolveTerminalGate } from '../terminal-gate'
+import { terminalLeases } from '../terminal-lease'
+import { scrubTerminalText } from '../scrub-terminal'
+import { paneSplitFor } from '../terminal-lifecycle'
+import { buildSend } from '../terminal-keys'
+import {
+  SETTLE_CAP_MS,
+  settleAfterSend,
+  terminalWriteQueue,
+  writeSegments
+} from '../terminal-write-queue'
+import { BARRIER_TIMEOUT_MS } from '../terminal-screen'
+import {
+  matchSurface,
+  redactMatch,
+  TIMEOUT_DEFAULT_MS,
+  waitForOutput,
+  type WaitSpec
+} from '../terminal-wait'
+import {
+  TERMINAL_NOTE,
+  pruneScreenModels,
+  type ReadMode,
+  type ReadOptions
+} from '../terminal-screen'
 import { peerAddressForSession, sendPeerMessage } from '../messaging'
 import {
   activityDescription,
@@ -105,6 +141,8 @@ import {
   buildFleetSnapshot,
   buildMissionFleetProjection,
   filterFleetSnapshot,
+  terminalsOfSession,
+  toTerminalListing,
   type FleetFolderInput,
   type MissionChildState,
   type FleetSessionInput,
@@ -119,7 +157,7 @@ import {
 } from '../worktree-ipc'
 import { toWorktreeListing } from '../worktree-core'
 import { provisionErrorPayload, WorktreeProvisionError } from '../worktree-manifest'
-import { readUserProjects } from '../user-projects'
+import { readUserProjects, terminalReadOptIns } from '../user-projects'
 import {
   appendMemoryEntry,
   queryMemory,
@@ -260,6 +298,11 @@ export interface ToolHandlerCtx {
    * `server.ts`'s `parkMutationConfirm`/`runOptsFor` for how these are built.
    */
   opts?: {
+    /**
+     * T474 B6: the call was let through by the operator's write lease (the ask-mode path). The
+     * handler checks that lease again right before it writes, for any terminal origin.
+     */
+    viaLease?: boolean
     worktreeInherit?: { optedOut: boolean }
     manifest?: {
       resolved: ManifestCardDisclosure[]
@@ -547,7 +590,12 @@ const getSessionHandler: Handler = async (args, ctx) => {
     const inFlightFolder = inFlightFolderFor(sessionId)
     if (inFlightFolder) {
       return textResult({
-        session: { sessionId, status: 'spawning', folderAlias: path.basename(inFlightFolder) },
+        session: {
+          sessionId,
+          status: 'spawning',
+          folderAlias: path.basename(inFlightFolder),
+          terminals: sessionTerminals(sessionId, ctx)
+        },
         preview: ''
       })
     }
@@ -568,7 +616,22 @@ const getSessionHandler: Handler = async (args, ctx) => {
   const found = ctx.folders.flatMap((f) => f.sessions).find((s) => s.sessionId === sessionId)
   const raw = found ? [found.firstPrompt, found.summary].filter(Boolean).join('\n') : ''
   const preview = redactTranscript(raw, { home: os.homedir() }).text
-  return textResult({ session: snap.sessions[0] ?? null, preview })
+  const row = snap.sessions[0]
+  return textResult({
+    session: row ? { ...row, terminals: sessionTerminals(sessionId, ctx) } : null,
+    preview
+  })
+}
+
+/** T474: the connected terminals a session owns, none from a folder the operator blocked. */
+function sessionTerminals(
+  sessionId: string,
+  ctx: ToolHandlerCtx
+): ReturnType<typeof terminalsOfSession> {
+  return terminalsOfSession(terminalRegistry.list(), sessionId, {
+    denyFolders: ctx.denyFolders,
+    home: os.homedir()
+  })
 }
 
 const getFleetHandler: Handler = async (args, ctx) => {
@@ -916,17 +979,440 @@ const createSessionHandler: Handler = async (args, ctx) => {
   )
 }
 
-const spawnTerminalHandler: Handler = async (_args, ctx) => {
+/** Whether Harnu knows `sessionId`: the scan, or either in-flight registry (a live born-synthetic). */
+function sessionKnown(sessionId: string, ctx: ToolHandlerCtx): boolean {
+  const onDisk = ctx.folders.some((f) => f.sessions.some((sn) => sn.sessionId === sessionId))
+  return (
+    onDisk ||
+    listInflightSessions().some((e) => e.syntheticId === sessionId) ||
+    inFlightFolderFor(sessionId) !== undefined
+  )
+}
+
+/**
+ * T474: open a shell terminal an agent can address. Main spawns the PTY itself (the pane
+ * cannot back a `terminalId` for a folder nobody is viewing), registers it, then asks the
+ * renderer to show it. Any failure after the PTY exists kills it and leaves no record.
+ */
+const spawnTerminalHandler: Handler = async (args, ctx) => {
   if (!ctx.bridge) return errorResult('NO_BRIDGE')
   const targetFolder = resolvePaneFolder(ctx)
   if (!targetFolder) return steerError('PANE_FOLDER_UNKNOWN', ctx.folder)
-  const result = await ctx.bridge.dispatch('pane.split', {
-    target: 'split',
-    worktreePath: targetFolder,
-    cwd: targetFolder,
-    kind: 'shell'
+  const ownerSessionId = strField(args, 'ownerSessionId') ?? null
+  // Attribution only (spec §3.3): any KNOWN session may be named, the operator's own included.
+  if (ownerSessionId !== null && !sessionKnown(ownerSessionId, ctx)) {
+    return steerError('SESSION_NOT_FOUND', ctx.folder)
+  }
+  // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — do not spawn a shell nobody
+  // will ever be told about.
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  // The slot is claimed synchronously: `createTerminalPty` is async, and `spawn_terminal` is not
+  // replayable, so parallel calls would otherwise all pass a count that only moves on register.
+  if (!terminalRegistry.reserveSlot(targetFolder, MAX_AGENT_TERMINALS_PER_FOLDER)) {
+    return steerError('TERMINAL_LIMIT', ctx.folder)
+  }
+
+  const terminalId = `h-${randomUUID()}`
+  let ptyId: string
+  try {
+    ptyId = await createTerminalPty({ terminalId, folder: targetFolder, ownerSessionId })
+  } finally {
+    // Registered by now (or the spawn failed): the record, not the reservation, holds the slot.
+    terminalRegistry.releaseSlot(targetFolder)
+  }
+  let result: unknown
+  try {
+    const rec = terminalRegistry.get(terminalId)
+    if (!rec) throw new Error('terminal record missing right after its PTY was created')
+    result = await ctx.bridge.dispatch('pane.split', paneSplitFor(rec))
+  } catch (err) {
+    discardTerminalPty(ptyId)
+    throw err
+  }
+  if (!dispatchSucceeded(result)) {
+    discardTerminalPty(ptyId)
+    return textResult({ ok: true, op: 'spawn_terminal', result })
+  }
+  return textResult({
+    ok: true,
+    op: 'spawn_terminal',
+    terminalId,
+    ownerSessionId,
+    state: 'running',
+    size: { ...AGENT_TERMINAL_SIZE },
+    result
   })
-  return textResult({ ok: true, op: 'spawn_terminal', result })
+}
+
+/** T474: the terminals Harnu knows about, redacted like every fleet read. */
+const listTerminalsHandler: Handler = async (args, ctx) => {
+  const folderArg = strField(args, 'folder')
+  const folder =
+    folderArg === undefined
+      ? undefined
+      : (resolveKnownFolder(
+          folderArg,
+          ctx.folders.map((f) => f.path)
+        ) ?? folderArg)
+  const records = terminalRegistry.list()
+  // The folder opt-in (T481): which of these terminals' folders let agents read what the
+  // operator opens. Exact folder only.
+  const optedIn = await terminalReadOptIns(
+    await readUserProjects(),
+    records.map((r) => r.folder)
+  )
+  const terminals = toTerminalListing(records, {
+    denyFolders: ctx.denyFolders,
+    home: os.homedir(),
+    readOptIn: (f) => optedIn.has(f),
+    // The global kill-switch (spec §6.5): off reads `writable: 'off'` + `writableReason`.
+    writesEnabled: await readAgentTerminalWrites(),
+    leaseActive: (r) => terminalLeases.isActive(r.terminalId, r.ptyId),
+    ...(folder !== undefined ? { folder } : {}),
+    ...(strField(args, 'ownerSessionId') !== undefined
+      ? { ownerSessionId: strField(args, 'ownerSessionId') }
+      : {})
+  })
+  return textResult({ terminals })
+}
+
+/**
+ * T474 B3/B4: read the resolved screen of a terminal (spec §4.3). The access rules run at PLAN
+ * level first (`terminal-gate-core`, spec §6.2); the same pure gate runs again here as the
+ * last line, because the state it judged can change between the plan and the dispatch (the
+ * operator turns the opt-in off, a terminal ends and is swept). The text is scrubbed (§4.5) on
+ * every terminal, whoever opened it.
+ */
+const readTerminalHandler: Handler = async (args, ctx) => {
+  const terminalId = strField(args, 'terminalId') ?? ''
+  const mode = (strField(args, 'mode') ?? 'tail') as ReadMode
+  const since = strField(args, 'since')
+  if (mode === 'since' && since === undefined) {
+    return errorResult("BAD_ARGS: since is required when mode is 'since'")
+  }
+  // A swept tombstone's model has no reader left; drop it before looking one up.
+  pruneScreenModels((id) => terminalRegistry.get(id) !== undefined)
+  const { rec, state } = await resolveTerminalGate(terminalId)
+  const refusal = gateTerminalOp('read_terminal', state)
+  if (refusal || !rec) return steerError(refusal ?? 'TERMINAL_NOT_FOUND', ctx.folder)
+  // An agent terminal is born with its model (spec §5.2); an operator one is built now, from the
+  // ring. Neither exists only if the record is being torn down.
+  const model = ensureTerminalScreenModel(terminalId)
+  if (!model) return steerError('TERMINAL_NOT_FOUND', ctx.folder)
+  const home = os.homedir()
+
+  const numArg = (key: string): number | undefined =>
+    typeof args[key] === 'number' ? (args[key] as number) : undefined
+  const read = await model.read({
+    mode,
+    ...(since !== undefined ? { since } : {}),
+    ...(numArg('lines') !== undefined ? { lines: numArg('lines') } : {}),
+    ...(numArg('maxChars') !== undefined ? { maxChars: numArg('maxChars') } : {}),
+    scrub: (text) => scrubTerminalText(text, home)
+  })
+  if (!read.ok) return steerError(read.error, ctx.folder)
+  terminalRegistry.noteAgentRead(terminalId)
+  const { ok: _ok, ...screen } = read
+  return textResult({
+    ok: true,
+    terminalId,
+    state: rec.state,
+    ...(rec.exit ? { exit: { code: rec.exit.code, reason: rec.exit.reason } } : {}),
+    ...screen,
+    note: TERMINAL_NOTE
+  })
+}
+
+/**
+ * T484: whether a send to `rec` must be covered by the operator's lease. Always for a terminal
+ * the operator opened; for an agent terminal only when the plan let the call through on a lease
+ * (`ask` mode). A free agent terminal needs none.
+ */
+const needsLease = (rec: { origin: string }, ctx: ToolHandlerCtx): boolean =>
+  rec.origin === 'operator' || ctx.opts?.viaLease === true
+
+const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * T482 B5: type into a terminal (spec §4.4). The access rules ran at PLAN level; the same pure gate
+ * runs again here as the last line, and once more after the queue wait, because the terminal can
+ * end or be disconnected while a call waits its turn. Right before EACH `pty.write` the state is
+ * judged once more (exited, disconnected, folder blocked since, deadline fired): the barrier and
+ * the 50 ms gap after an `Esc` are real time in which the operator can act.
+ *
+ * Order: take the place in line (synchronously, on entry: arrival order) → admit (rate limit) →
+ * wait for the head of this terminal's line (≤ 10 s) → barrier, read the input modes and mark the
+ * cursor line → write (ONE `pty.write`, two when an `Esc` is followed by more bytes) → release the
+ * line → settle → read the screen since the mark. The line is held only while bytes go out;
+ * settling does not hold it. Output is scrubbed on every terminal. Without `waitFor` the call
+ * returns after the settle (≤ 1 s); with it, on the first of pattern / idle / timeout / exit /
+ * disconnect (unit B8, spec §4.4). The matcher sees unscrubbed text, the result never does.
+ *
+ * A send that stopped after some of its bytes went out (the terminal ended or was disconnected
+ * between two writes) says so: `SEND_INCOMPLETE`, with `sent` listing only what was written.
+ */
+const sendTerminalHandler: Handler = async (args, ctx) => {
+  const terminalId = strField(args, 'terminalId') ?? ''
+  // First, before any `await`: this call's place in the line is when it ARRIVED (see the queue).
+  const ticket = terminalWriteQueue.claim(args, terminalId)
+  const input = typeof args.input === 'string' ? args.input : undefined
+  const keys = Array.isArray(args.keys) ? (args.keys as string[]) : []
+  const known = (id: string): boolean => terminalRegistry.get(id) !== undefined
+  let model: ReturnType<typeof ensureTerminalScreenModel>
+  let sendMark: string | null = null
+  try {
+    pruneScreenModels(known)
+    terminalWriteQueue.prune(known)
+    terminalLeases.prune(known)
+
+    const first = await resolveTerminalGate(terminalId)
+    const refusal = gateTerminalOp('send_terminal', first.state)
+    if (refusal || !first.rec) return steerError(refusal ?? 'TERMINAL_NOT_FOUND', ctx.folder)
+    // Last line of defence for the operator's say-so (spec §6.3): the plan lets a send through
+    // only under an active lease. If it ended in the gap between the plan and now, nothing is typed.
+    if (needsLease(first.rec, ctx) && !first.state.leaseActive) {
+      return steerError('TERMINAL_LEASE_ENDED', ctx.folder)
+    }
+    model = ensureTerminalScreenModel(terminalId)
+    if (!model) return steerError('TERMINAL_NOT_FOUND', ctx.folder)
+
+    const admitted = terminalWriteQueue.admit(terminalId, ticket)
+    if (!admitted.ok) return steerError(admitted.error, ctx.folder)
+    const scope = admitted.scope
+    try {
+      if (!(await terminalWriteQueue.acquire(terminalId, scope))) {
+        return steerError('TERMINAL_BUSY', ctx.folder)
+      }
+      let sentAt = 0
+      let prep: Awaited<ReturnType<typeof model.prepareSend>>
+      let built: Extract<ReturnType<typeof buildSend>, { ok: true }>
+      let stopped = null as string | null
+      let written: { written: number; complete: boolean }
+      try {
+        // The terminal may have ended or been disconnected while this call waited its turn.
+        const again = await resolveTerminalGate(terminalId)
+        const lateRefusal = gateTerminalOp('send_terminal', again.state)
+        if (lateRefusal) return steerError(lateRefusal, ctx.folder)
+        // …and the lease may have ended while this call waited its turn (after the ticket wait).
+        if (again.rec && needsLease(again.rec, ctx) && !again.state.leaseActive) {
+          return steerError('TERMINAL_LEASE_ENDED', ctx.folder)
+        }
+        prep = await model.prepareSend()
+        sendMark = prep.cursor
+        const b = buildSend(
+          { input, keys, paste: args.paste === true },
+          {
+            applicationCursorKeys: prep.applicationCursorKeys,
+            bracketedPaste: prep.bracketedPaste
+          }
+        )
+        if (!b.ok) return errorResult(`${b.error}: ${b.detail}`)
+        built = b
+        // The state judged right before one `pty.write`: it is read fresh, every time, because the
+        // plan, the queue wait and the barrier all ran before it.
+        const mayWrite = async (): Promise<boolean> => {
+          const file = await readUserProjects()
+          const folder = terminalRegistry.get(terminalId)?.folder
+          const optedIn =
+            folder === undefined ? new Set<string>() : await terminalReadOptIns(file, [folder])
+          // Nothing awaits between here and the `pty.write`: the record is read last.
+          const writesEnabled = await readAgentTerminalWrites()
+          const rec = terminalRegistry.get(terminalId)
+          const blocked = file.projects.filter((p) => p.agentDenied === true).map((p) => p.path)
+          stopped = canStillWrite(rec, {
+            folderBlocked: rec !== undefined && isFolderDenied(rec.folder, blocked, os.homedir()),
+            deadlineFired: ctx.deadlineFlag?.fired === true,
+            readOptIn: rec !== undefined && optedIn.has(rec.folder),
+            // The kill-switch, read just now with the record (spec §6.5).
+            writesEnabled,
+            // The lease table answers synchronously, so it is read here, last, with the record.
+            leaseNeeded: rec !== undefined && needsLease(rec, ctx),
+            leaseActive: rec !== undefined && terminalLeases.isActive(terminalId, rec.ptyId)
+          })
+          return stopped === null
+        }
+        written = await writeSegments(built.segments, {
+          write: async (data) => {
+            if (!(await mayWrite())) return false
+            const ok = writeTerminalPty(terminalId, data)
+            if (ok) {
+              terminalWriteQueue.noteWrite(terminalId, scope)
+              // A write under a lease keeps it alive: it ends 10 minutes after the LAST write.
+              terminalLeases.noteWrite(terminalId)
+            } else {
+              // The PTY ended, or the operator disconnected, between the check and the write.
+              stopped = terminalRegistry.get(terminalId)?.disconnected
+                ? 'TERMINAL_DISCONNECTED'
+                : 'TERMINAL_EXITED'
+            }
+            return ok
+          },
+          sleep: sleepMs
+        })
+        sentAt = Date.now()
+      } finally {
+        terminalWriteQueue.release(terminalId, scope)
+      }
+
+      // What actually reached the PTY, never what was asked for.
+      const wrote = built.parts.slice(0, written.written)
+      const inputWritten = wrote.some((part) => part.input)
+      const sent = {
+        inputChars: inputWritten && input !== undefined ? [...input].length : 0,
+        keys: keys.slice(
+          0,
+          wrote.reduce((n, part) => n + part.keys, 0)
+        ),
+        pasted: inputWritten && built.pasted
+      }
+      if (!written.complete) {
+        const reason = stopped ?? 'TERMINAL_EXITED'
+        // Nothing reached the PTY: an ordinary refusal.
+        if (written.written === 0) {
+          return reason === 'DEADLINE_FIRED'
+            ? errorResult('DEADLINE_FIRED')
+            : steerError(reason, ctx.folder)
+        }
+        // Some bytes are out and the rest is not (e.g. an `Esc`, then the terminal ended).
+        return {
+          ...textResult({
+            ok: false,
+            error: 'SEND_INCOMPLETE',
+            reason,
+            terminalId,
+            sent,
+            message:
+              'Only part of this send reached the terminal; `sent` lists exactly what did. ' +
+              'Read the terminal before sending again.'
+          }),
+          isError: true
+        }
+      }
+
+      const home = os.homedir()
+      const scrub = (text: string): string => scrubTerminalText(text, home)
+      const waitSpec = (args.waitFor ?? undefined) as WaitSpec | undefined
+      // Everything after the write has to fit inside this: the settle's 1 s, or the caller's
+      // `timeoutMs`. A stalled model may not push the call past it (spec §4.4, the total bound).
+      const postDeadline =
+        sentAt + (waitSpec ? (waitSpec.timeoutMs ?? TIMEOUT_DEFAULT_MS) : SETTLE_CAP_MS)
+      const barrierBudget = (): number =>
+        Math.max(50, Math.min(BARRIER_TIMEOUT_MS, postDeadline - Date.now()))
+      // The line the cursor sat on at the send, read back to the end. A full-screen program has no
+      // such line: its whole screen is the answer (spec §4.4, "Alternate screen").
+      const readOpts = (barrierMs?: number): ReadOptions => ({
+        ...(prep.altScreen || prep.cursor === null
+          ? { mode: 'screen' as const }
+          : { mode: 'since' as const, since: prep.cursor }),
+        scrub,
+        ...(barrierMs !== undefined ? { barrierMs } : {})
+      })
+
+      // Disconnect while the call is waiting for output (spec §6.4): the wait ends at once and the
+      // output is what the screen showed AT THAT INSTANT, so the read is started inside the
+      // listener, in the same tick as the disconnect, not after the call has woken up. It keeps the
+      // full barrier: a short budget would resolve it late, and a late read shows later output.
+      const liveModel = model
+      const cut: {
+        read: ReturnType<typeof liveModel.read> | null
+        /** The tail read, started at the same instant, for when the send's line scrolled away. */
+        tail: ReturnType<typeof liveModel.read> | null
+      } = { read: null, tail: null }
+      let wake: () => void = () => {}
+      const woken = new Promise<void>((resolve) => {
+        wake = resolve
+      })
+      const unwatch = terminalRegistry.onDisconnect(terminalId, () => {
+        cut.read ??= liveModel.read(readOpts())
+        cut.tail ??= liveModel.read({ mode: 'tail', lines: 500, scrub })
+        wake()
+      })
+      const abort = { is: () => cut.read !== null, wake: () => woken }
+      let wait: { reason: string; waitedMs: number; match?: string; patternDisabled?: true }
+      try {
+        if (waitSpec) {
+          // What a pattern may match: the program's output after the send, minus the echo of
+          // `input`, read without scrubbing and without taking a cursor.
+          const surface = async (budgetMs: number): Promise<string> => {
+            const barrierMs = Math.min(BARRIER_TIMEOUT_MS, budgetMs)
+            const r = await liveModel.matchText({
+              since: prep.cursor,
+              altRows: prep.altRows,
+              barrierMs
+            })
+            if (!r.ok) return '' // the send's anchor is gone: nothing is safely "since the send"
+            return r.altScreen
+              ? r.text
+              : matchSurface(r.text, r.onCursorRow ? prep.cursorOffset : 0, input)
+          }
+          const result = await waitForOutput(
+            {
+              now: Date.now,
+              sleep: sleepMs,
+              sentAt,
+              lastOutputAt: () => terminalRegistry.get(terminalId)?.lastOutputAt ?? 0,
+              hasExited: () => (terminalRegistry.get(terminalId)?.state ?? 'exited') === 'exited',
+              surface,
+              abort
+            },
+            waitSpec
+          )
+          wait = {
+            reason: result.reason,
+            waitedMs: result.waitedMs,
+            ...(result.match !== undefined
+              ? { match: redactMatch(result.match, result.matchLine ?? result.match, scrub) }
+              : {}),
+            ...(result.patternDisabled ? { patternDisabled: true as const } : {})
+          }
+        } else {
+          const waitedMs = await settleAfterSend({
+            now: Date.now,
+            sleep: sleepMs,
+            lastOutputAt: () => terminalRegistry.get(terminalId)?.lastOutputAt ?? 0,
+            sentAt,
+            abort
+          })
+          wait = { reason: cut.read !== null ? 'disconnected' : 'none', waitedMs }
+        }
+      } finally {
+        unwatch()
+      }
+
+      let read = await (cut.read ?? model.read(readOpts(barrierBudget())))
+      // The send's anchor is gone: the last 500 lines are the best left, and not exact.
+      const lostAnchor = !read.ok
+      if (!read.ok) read = await (cut.tail ?? model.read({ mode: 'tail', lines: 500, scrub }))
+      if (!read.ok) return steerError('CURSOR_EXPIRED', ctx.folder)
+
+      const rec = terminalRegistry.get(terminalId)
+      const { ok: _ok, cursorPos: _cursorPos, size: _size, ...screen } = read
+      return textResult({
+        ok: true,
+        terminalId,
+        state: rec?.state ?? 'exited',
+        ...(rec?.exit ? { exit: { code: rec.exit.code, reason: rec.exit.reason } } : {}),
+        sent,
+        wait,
+        output: screen.text,
+        truncated: screen.truncated,
+        droppedLines: screen.droppedLines,
+        altScreen: screen.altScreen,
+        approximate: screen.approximate || prep.approximate || lostAnchor,
+        othersWrote: scope.othersWrote,
+        operatorTyped:
+          rec?.lastOperatorWriteAt != null && rec.lastOperatorWriteAt >= scope.startedAt,
+        note: TERMINAL_NOTE,
+        cursor: screen.cursor
+      })
+    } finally {
+      terminalWriteQueue.finish(terminalId, scope)
+    }
+  } finally {
+    // The mark was private to this call; the agent's cursor is the one the read returned.
+    model?.releaseSend(sendMark)
+    terminalWriteQueue.abandonTicket(terminalId, ticket)
+  }
 }
 
 const createWorktreeHandler: Handler = async (args, ctx) => {
@@ -1871,11 +2357,7 @@ const messageSessionHandler: Handler = async (args, ctx) => {
   // 1. Known at all? The scan lists sessions with a transcript on disk; a
   //    live born-synthetic has none, so both in-flight registries are consulted
   //    too — the same widening the gate folder needed.
-  const onDisk = ctx.folders.some((f) => f.sessions.some((sn) => sn.sessionId === sessionId))
-  const inflight =
-    listInflightSessions().some((e) => e.syntheticId === sessionId) ||
-    inFlightFolderFor(sessionId) !== undefined
-  if (!onDisk && !inflight) return steerError('SESSION_NOT_FOUND', ctx.folder)
+  if (!sessionKnown(sessionId, ctx)) return steerError('SESSION_NOT_FOUND', ctx.folder)
 
   // 3. The recipient predicate. An index hit is causal proof Harnu spawned the
   //    process and it is still alive; the parked arm covers the gap
@@ -4660,6 +5142,9 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   create_session: createSessionHandler,
   create_worktree: createWorktreeHandler,
   spawn_terminal: spawnTerminalHandler,
+  list_terminals: listTerminalsHandler,
+  read_terminal: readTerminalHandler,
+  send_terminal: sendTerminalHandler,
   adopt_folder: adoptFolderHandler,
   remove_folder: removeFolderHandler,
   plan_mission: planMissionHandler,

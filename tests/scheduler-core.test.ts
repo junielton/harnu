@@ -52,6 +52,9 @@ const ALLOWED_VERBS = [
   'list_cleanup',
   'mission_get',
   'mission_list',
+  // T481 (agent terminals B4): the two terminal READ verbs.
+  'list_terminals',
+  'read_terminal',
   'create_card',
   'update_card',
   'notify'
@@ -61,6 +64,8 @@ const DENIED_VERBS = [
   'create_session',
   'create_worktree',
   'spawn_terminal',
+  // T482 (B4 carry-in): typing into a terminal is never an observe tick's.
+  'send_terminal',
   'submit_manifest',
   'adopt_folder',
   'remove_folder',

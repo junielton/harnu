@@ -1,6 +1,13 @@
 import { basename } from 'node:path'
 import { isFolderDenied } from './permission-core'
 import { redactTranscript } from './transcript-redact'
+import { scrubTerminalText } from '../scrub-terminal'
+import {
+  terminalAccess,
+  type TerminalAccess,
+  type TerminalRecord,
+  type WritableReason
+} from '../terminal-registry'
 import type { TaskState, FailureReason } from '../hook-state'
 
 /**
@@ -474,4 +481,108 @@ export function filterFleetSnapshot(
   const out: FilteredFleetSnapshot = { folders: snap.folders, sessions: shown }
   if (shown.length < total) out.truncated = { shown: shown.length, total }
   return out
+}
+
+// ---- T474: terminals ---------------------------------------------------------
+
+/** One row of the `list_terminals` read. Never carries an absolute path. */
+export interface TerminalListingRow {
+  terminalId: string
+  /** The pane's own label — the cwd basename. */
+  label: string
+  folderAlias: string
+  origin: TerminalRecord['origin']
+  ownerSessionId: string | null
+  disconnected: boolean
+  state: TerminalRecord['state']
+  exit?: { code: number | null; reason: 'natural' | 'closed' }
+  size: { cols: number; rows: number }
+  /**
+   * Whatever the program set with an OSC escape — scrubbed, and UNTRUSTED. `null` while the
+   * terminal is not `readable`: a title is the command line of a shell prompt framework, which
+   * is exactly the content the operator has not let agents see (T481).
+   */
+  title: string | null
+  /** Always `'program'`: Harnu does not vouch for this text. */
+  titleSource: 'program'
+  createdAt: number
+  /** `null` while the terminal is not `readable`: when it prints is activity on a private terminal. */
+  lastOutputAt: number | null
+  readable: boolean
+  writable: TerminalAccess['writable']
+  /** Present exactly when `writable` is `'off'`. */
+  writableReason?: WritableReason
+}
+
+export interface TerminalListingOptions {
+  /** Folders the operator blocked: their terminals are absent, not marked. */
+  denyFolders: readonly string[]
+  home: string
+  /** The folder's `agentTerminalRead` opt-in (unit B4). */
+  readOptIn: (folder: string) => boolean
+  /** The global kill-switch `agentTerminalWrites` (unit B7). */
+  writesEnabled: boolean
+  /** Whether the operator's write lease on a terminal is live (unit B6): it then reads `free`. */
+  leaseActive?: (rec: TerminalRecord) => boolean
+  /** Canonical folder path to narrow to, when the caller passed `folder`. */
+  folder?: string
+  ownerSessionId?: string
+}
+
+/** Pure projection of the registry into the `list_terminals` payload (spec §4.2). */
+export function toTerminalListing(
+  records: readonly TerminalRecord[],
+  opts: TerminalListingOptions
+): TerminalListingRow[] {
+  return records
+    .filter((r) => !isFolderDenied(r.folder, opts.denyFolders, opts.home))
+    .filter((r) => opts.folder === undefined || r.folder === opts.folder)
+    .filter((r) => opts.ownerSessionId === undefined || r.ownerSessionId === opts.ownerSessionId)
+    .map((r) => {
+      const access = terminalAccess(r, {
+        readOptIn: opts.readOptIn(r.folder),
+        writesEnabled: opts.writesEnabled,
+        leaseActive: opts.leaseActive?.(r) ?? false
+      })
+      const alias = basename(r.folder) || r.folder
+      return {
+        terminalId: r.terminalId,
+        label: alias,
+        folderAlias: alias,
+        origin: r.origin,
+        ownerSessionId: r.ownerSessionId,
+        disconnected: r.disconnected,
+        state: r.state,
+        // What a private terminal reveals is its existence and whether it still runs — nothing
+        // it printed or did: no title, no output time, no exit code (T481, spec §4.2).
+        ...(r.exit
+          ? { exit: { code: access.readable ? r.exit.code : null, reason: r.exit.reason } }
+          : {}),
+        size: r.size,
+        title: access.readable && r.title !== null ? scrubTerminalText(r.title, opts.home) : null,
+        titleSource: 'program' as const,
+        createdAt: r.createdAt,
+        lastOutputAt: access.readable ? r.lastOutputAt : null,
+        readable: access.readable,
+        writable: access.writable,
+        ...(access.writable === 'off' ? { writableReason: access.writableReason } : {})
+      }
+    })
+    .sort((a, b) => a.createdAt - b.createdAt)
+}
+
+/**
+ * `get_session.terminals`: exactly the CONNECTED terminals a session owns — a disconnected one
+ * is the operator's decision and a terminal in a blocked folder is not the agent's to see.
+ */
+export function terminalsOfSession(
+  records: readonly TerminalRecord[],
+  sessionId: string,
+  opts: { denyFolders: readonly string[]; home: string }
+): Array<{ terminalId: string; state: TerminalRecord['state'] }> {
+  return records
+    .filter((r) => r.ownerSessionId === sessionId && !r.disconnected)
+    .filter((r) => !isFolderDenied(r.folder, opts.denyFolders, opts.home))
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .map((r) => ({ terminalId: r.terminalId, state: r.state }))
 }

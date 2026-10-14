@@ -50,6 +50,7 @@ export default defineConfig({
         'src/main/companion/staging.ts', // T389 P1W2: fs + Electron `app` glue for the immutable staging (every decision — allowlist, digest, stage key, GC, dev-mode lock — is pure in staging-core.ts, tested; the shell is also exercised against real temp dirs in staging-core.test.ts)
         'src/main/companion/spawn-inject.ts', // T389 P1W2: wires mode + version gate + staging + the host's token minting into the spawn path (the gate is pure in version-gate.ts, argv insertion in staging-core.ts, the retry decision in sideload-retry-core.ts, all tested)
         'src/main/command-bridge-ipc.ts', // CommandBridge ↔ webContents/ipcMain
+        'src/main/terminal-ipc.ts', // T474 B2: ipcMain binding of terminal:status/close/xtermGone + the renderer:ready re-dispatch; every decision is pure in terminal-lifecycle.ts (tested)
         'src/main/manifest-drain-shell.ts', // T113: real drain deps (webContents + fs + git); the pure driver in manifest-drain.ts is tested
         'src/main/worktree-ipc.ts', // execFile git worktree add + adopt + IPC
         'src/main/pr-stack.ts', // T198: execFile gh/git + IPC shell (graph, roles, layout and zoom are pure in pr-stack-core, tested)

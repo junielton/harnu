@@ -40,6 +40,7 @@ const READ_TOOLS = [
   'list_workers',
   'list_containers',
   'list_cleanup',
+  'list_terminals',
   // T358 S3: the Mission reads (design §4 "read, no gate").
   'mission_get',
   'mission_list'
@@ -257,6 +258,8 @@ describe('T120 declarative gate fields — the def is the single source of truth
     'create_session',
     'create_worktree',
     'spawn_terminal',
+    // T482 B5: free to type into a terminal the agent opened; NOT grantable, NOT always-allowable.
+    'send_terminal',
     'adopt_folder',
     'remove_folder',
     'memory_append',
@@ -352,18 +355,25 @@ describe('T120 declarative gate fields — the def is the single source of truth
     expect([...actual].sort()).toEqual([...bootstrapExpected].sort())
   })
 
-  it('discloses is get_session:transcript, get_fleet/list_containers/list_cleanup:paths, everything else undefined', () => {
+  it('discloses is get_session:transcript, get_fleet/list_containers/list_cleanup/list_terminals:paths, everything else undefined', () => {
     for (const t of MCP_TOOLS) {
       if (t.op === 'get_session') expect(t.discloses).toBe('transcript')
-      else if (t.op === 'get_fleet' || t.op === 'list_containers' || t.op === 'list_cleanup')
+      else if (
+        t.op === 'get_fleet' ||
+        t.op === 'list_containers' ||
+        t.op === 'list_cleanup' ||
+        t.op === 'list_terminals'
+      )
         expect(t.discloses).toBe('paths')
       else expect(t.discloses).toBeUndefined()
     }
   })
 
-  it('disclosesTranscript is get_session/memory_read/memory_query only', () => {
+  it('disclosesTranscript is get_session/memory_read/memory_query/read_terminal only', () => {
     const actual = MCP_TOOLS.filter((t) => t.disclosesTranscript).map((t) => t.op)
-    expect([...actual].sort()).toEqual(['get_session', 'memory_query', 'memory_read'].sort())
+    expect([...actual].sort()).toEqual(
+      ['get_session', 'memory_query', 'memory_read', 'read_terminal'].sort()
+    )
   })
 
   it('HARD INVARIANT: submit_manifest is NEVER grantable — but IS silently allowed (T187)', () => {

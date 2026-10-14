@@ -379,6 +379,11 @@ const OBSERVE_ALLOW_VERBS: readonly string[] = [
   // `stale` flag. Every mission WRITE verb is on the deny list below.
   'mission_get',
   'mission_list',
+  // T481 (agent terminals B4, D5): the two terminal READ verbs. What a tick gets is scrubbed, and
+  // an operator-opened terminal still needs its folder's opt-in. `spawn_terminal` and
+  // `send_terminal` stay on the derived deny list below.
+  'list_terminals',
+  'read_terminal',
   'create_card',
   'update_card',
   'notify'
