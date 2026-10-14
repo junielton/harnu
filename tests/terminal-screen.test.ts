@@ -335,7 +335,34 @@ describe('AC-B3-9: backpressure watermarks', () => {
     const chunk = 'a'.repeat(64 * 1024)
     while (model.backlogBytes <= BACKLOG_HIGH_BYTES) model.write(chunk, false)
     expect(backlog).toEqual([true])
-    await model.barrier()
+    // A barrier that times out (it answers `true`) leaves part of the backlog unparsed; on a
+    // loaded runner that happens mid-parse. Re-arm until the queue has fully drained.
+    while (await model.barrier()) {
+      /* still parsing */
+    }
+    expect(model.backlogBytes).toBeLessThan(BACKLOG_LOW_BYTES)
+    expect(backlog).toEqual([true, false])
+  })
+
+  it('resumes strictly below 1 MiB: exactly 1 MiB still holds the PTY (spec §5.5)', () => {
+    // Parse completions are fired by hand, so the backlog lands on the mark exactly.
+    const done: Array<() => void> = []
+    const { model, backlog } = make({
+      createTerminal: (o) => {
+        const term = new Terminal({ ...o, allowProposedApi: true })
+        term.write = ((_d: string | Uint8Array, cb?: () => void) => {
+          if (cb) done.push(cb)
+        }) as typeof term.write
+        return term
+      }
+    })
+    const chunk = 'a'.repeat(64 * 1024)
+    while (model.backlogBytes <= BACKLOG_HIGH_BYTES) model.write(chunk, false)
+    expect(backlog).toEqual([true])
+    while (model.backlogBytes > BACKLOG_LOW_BYTES) done.shift()!()
+    expect(model.backlogBytes).toBe(BACKLOG_LOW_BYTES)
+    expect(backlog).toEqual([true]) // exactly 1 MiB: not below it yet
+    done.shift()!()
     expect(model.backlogBytes).toBeLessThan(BACKLOG_LOW_BYTES)
     expect(backlog).toEqual([true, false])
   })

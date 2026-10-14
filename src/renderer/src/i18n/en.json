@@ -290,6 +290,8 @@
     "autoOrganizeOff": "Turn off auto-organize",
     "orchestratorDefaultOn": "New sessions start as Orchestrator",
     "orchestratorDefaultOff": "Stop starting sessions as Orchestrator",
+    "terminalReadOn": "Let agents read terminals I open",
+    "terminalReadOff": "Stop agents reading terminals I open",
     "newWorktree": "New worktree…",
     "removeWorktree": "Remove worktree",
     "createWorktreeMd": "Create WORKTREE.md",

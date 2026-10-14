@@ -168,6 +168,17 @@ export interface UserProject {
    * excludes every agent-dispatched spawn regardless of this flag).
    */
   orchestratorDefault?: boolean
+  /**
+   * T481 (agent terminals B4): agents may `read_terminal` the shell panes the OPERATOR opens in
+   * this folder. Default OFF. It says nothing about typing — the write gate is a separate,
+   * later layer — and agent-spawned terminals never need it.
+   *
+   * EXACT-PATH ONLY, like {@link orchestratorDefault}: a linked worktree of an opted-in repo is
+   * NOT itself opted in (`getUserProjectTerminalRead` never consults
+   * `canonicalWorktreeParentRepo`). Reading someone's terminal is a per-folder consent; a
+   * worktree is a different place with its own shells.
+   */
+  agentTerminalRead?: boolean
 }
 
 /** On-disk schema for `<userData>/projects.json`. */
@@ -836,6 +847,75 @@ export async function setUserProjectOrchestratorDefault(
       projects: file.projects.map((p, i) =>
         i === idx ? { ...p, orchestratorDefault: enabled } : p
       ),
+      hiddenPaths: file.hiddenPaths ?? []
+    }
+    await writeUserProjects(next)
+    return next
+  })
+}
+
+/**
+ * Resolve the `agentTerminalRead` flag (T481) for `targetPath` — its own explicit value, else
+ * `false`. EXACT-PATH ONLY (see the field's doc comment on {@link UserProject}).
+ */
+export async function getUserProjectTerminalRead(targetPath: string): Promise<boolean> {
+  return (await terminalReadOptIns(await readUserProjects(), [targetPath])).has(targetPath)
+}
+
+/**
+ * Which of `folders` have the operator's terminal-read opt-in on (T481). Both sides go through
+ * {@link normalizePath}, so a symlinked or `~`-spelled folder still matches its record; the
+ * returned set holds the folders EXACTLY as the caller spelled them. Exact path only — no
+ * worktree inheritance.
+ */
+export async function terminalReadOptIns(
+  file: UserProjectsFile,
+  folders: readonly string[]
+): Promise<Set<string>> {
+  const on = new Set(file.projects.filter((p) => p.agentTerminalRead === true).map((p) => p.path))
+  const out = new Set<string>()
+  if (on.size === 0) return out
+  for (const folder of folders) {
+    if (on.has(await normalizePath(folder))) out.add(folder)
+  }
+  return out
+}
+
+/**
+ * Set the `agentTerminalRead` flag (T481) on a project by `path` — always the folder the user
+ * right-clicked, never resolved to a parent repo (per exact folder, no propagation to
+ * worktrees). If NO record exists (an auto-discovered folder) one is CREATED, same contract as
+ * {@link setUserProjectOrchestratorDefault}, so the opt-in survives a restart. Idempotent: no
+ * write when the value already matches. Returns the new (or unchanged) file.
+ */
+export async function setUserProjectTerminalRead(
+  targetPath: string,
+  enabled: boolean
+): Promise<UserProjectsFile> {
+  return withFileLock(userProjectsPath(), async () => {
+    const file = await readUserProjects()
+    const normalizedPath = await normalizePath(targetPath)
+    const idx = file.projects.findIndex((p) => p.path === normalizedPath)
+    if (idx === -1) {
+      const created: UserProject = {
+        path: normalizedPath,
+        alias: path.basename(normalizedPath),
+        addedAt: new Date().toISOString(),
+        worktrees: [],
+        agentTerminalRead: enabled
+      }
+      const next: UserProjectsFile = {
+        version: 1,
+        projects: [...file.projects, created],
+        hiddenPaths: (file.hiddenPaths ?? []).filter((p) => p !== normalizedPath)
+      }
+      await writeUserProjects(next)
+      return next
+    }
+    if ((file.projects[idx].agentTerminalRead ?? false) === enabled) return file // unchanged
+    const next: UserProjectsFile = {
+      version: 1,
+      projects: file.projects.map((p, i) => (i === idx ? { ...p, agentTerminalRead: enabled } : p)),
       hiddenPaths: file.hiddenPaths ?? []
     }
     await writeUserProjects(next)

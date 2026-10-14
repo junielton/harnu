@@ -121,7 +121,8 @@ import type { FolderEntry } from '../folder-model'
 import { scanFolders } from '../claude-reader'
 import { readUserProjects, setUserProjectInheritAgentControl } from '../user-projects'
 import { setMcpArgsProvider } from '../pty'
-import { terminalRegistry } from '../terminal-registry'
+import type { TerminalGateState } from '../terminal-gate-core'
+import { resolveTerminalGate } from '../terminal-gate'
 import { previewWorktreeCommands, worktreeInheritOfferForTarget } from '../worktree-ipc'
 import { writeWorktreeInheritControl } from './worktree-inherit-prefs'
 
@@ -977,6 +978,7 @@ export async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise
   // id, so its owning folder is resolved from the scan (else the transcript gate
   // fails CLOSED with FOLDER_NOT_ALLOWED).
   let gateFolder = strField(args, 'folder')
+  let terminal: TerminalGateState | undefined
   if (def.op === 'get_session') {
     gateFolder = findSessionFolder(folders, strField(args, 'sessionId') ?? '')
   } else if (
@@ -995,10 +997,13 @@ export async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise
     // owning folder is the anchor, never a caller-supplied one.
     gateFolder = resolveSessionGateFolder(folders, strField(args, 'sessionId') ?? '')
   } else if (def.op === 'read_terminal') {
-    // T474 B3: the verb carries only a `terminalId`, so the gate anchor is the terminal's OWN
-    // folder, from the registry. An unknown id leaves it undefined; the handler answers
-    // TERMINAL_NOT_FOUND (a read never raises a confirm, so there is nothing to pre-empt).
-    gateFolder = terminalRegistry.get(strField(args, 'terminalId') ?? '')?.folder
+    // T474 B3/B4: the verb carries only a `terminalId`, so the gate anchor is the terminal's OWN
+    // folder, from the registry, and its access state is resolved HERE so `planToolCall` can
+    // refuse at plan level (spec §6.2). An unknown id leaves the folder undefined and resolves
+    // to a state the gate answers `TERMINAL_NOT_FOUND`.
+    const resolved = await resolveTerminalGate(strField(args, 'terminalId') ?? '', projectsFile)
+    gateFolder = resolved.rec?.folder
+    terminal = resolved.state
   } else if (def.op === 'update_worker' || def.op === 'delete_worker') {
     // T316: same reasoning as the block above, applied to a worker instead of
     // a session — the verb carries only `id`, so the gate anchor is the
@@ -1015,7 +1020,8 @@ export async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise
     now,
     grants: snapshotGrants(), // T44 S5: live mission grants may auto-allow in scope
     inheritOnce: snapshotInheritOnce(), // T72: worktrees allowed "Only this" this session
-    homeDir: os.homedir()
+    homeDir: os.homedir(),
+    ...(terminal ? { terminal } : {}) // T474 B4: the terminal a terminal verb addresses
   })
   appendAudit(plan.auditRecord)
   auditPersister.schedule()

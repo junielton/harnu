@@ -52,6 +52,9 @@ const ALLOWED_VERBS = [
   'list_cleanup',
   'mission_get',
   'mission_list',
+  // T481 (agent terminals B4): the two terminal READ verbs.
+  'list_terminals',
+  'read_terminal',
   'create_card',
   'update_card',
   'notify'

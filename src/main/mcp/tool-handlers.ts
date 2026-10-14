@@ -52,6 +52,7 @@ import { getScreenStates, getShellSessions } from '../detect/screen-detect'
 import {
   createTerminalPty,
   discardTerminalPty,
+  ensureTerminalScreenModel,
   liveSessionKeys,
   sessionOwnedByHarnu,
   spawnOriginForSession,
@@ -60,11 +61,13 @@ import {
 import {
   AGENT_TERMINAL_SIZE,
   MAX_AGENT_TERMINALS_PER_FOLDER,
-  terminalAccess,
   terminalRegistry
 } from '../terminal-registry'
+import { gateTerminalOp } from '../terminal-gate-core'
+import { resolveTerminalGate } from '../terminal-gate'
+import { scrubTerminalText } from '../scrub-terminal'
 import { paneSplitFor } from '../terminal-lifecycle'
-import { TERMINAL_NOTE, pruneScreenModels, screenModelFor, type ReadMode } from '../terminal-screen'
+import { TERMINAL_NOTE, pruneScreenModels, type ReadMode } from '../terminal-screen'
 import { peerAddressForSession, sendPeerMessage } from '../messaging'
 import {
   activityDescription,
@@ -131,7 +134,7 @@ import {
 } from '../worktree-ipc'
 import { toWorktreeListing } from '../worktree-core'
 import { provisionErrorPayload, WorktreeProvisionError } from '../worktree-manifest'
-import { readUserProjects } from '../user-projects'
+import { readUserProjects, terminalReadOptIns } from '../user-projects'
 import {
   appendMemoryEntry,
   queryMemory,
@@ -1023,11 +1026,18 @@ const listTerminalsHandler: Handler = async (args, ctx) => {
           folderArg,
           ctx.folders.map((f) => f.path)
         ) ?? folderArg)
-  const terminals = toTerminalListing(terminalRegistry.list(), {
+  const records = terminalRegistry.list()
+  // The folder opt-in (T481): which of these terminals' folders let agents read what the
+  // operator opens. Exact folder only.
+  const optedIn = await terminalReadOptIns(
+    await readUserProjects(),
+    records.map((r) => r.folder)
+  )
+  const terminals = toTerminalListing(records, {
     denyFolders: ctx.denyFolders,
     home: os.homedir(),
-    // The folder opt-in (B4) and the kill-switch (B7) are not wired yet; these are their defaults.
-    readOptIn: () => false,
+    readOptIn: (f) => optedIn.has(f),
+    // The kill-switch (B7) is not wired yet; this is its default.
     writesEnabled: true,
     ...(folder !== undefined ? { folder } : {}),
     ...(strField(args, 'ownerSessionId') !== undefined
@@ -1038,9 +1048,11 @@ const listTerminalsHandler: Handler = async (args, ctx) => {
 }
 
 /**
- * T474 B3: read the resolved screen of a terminal (spec §4.3). The refusals here are
- * handler-level because a read never raises a confirm, so there is nothing for a plan-level
- * deny to pre-empt; unit B4 moves them into the plan layer with the folder opt-in.
+ * T474 B3/B4: read the resolved screen of a terminal (spec §4.3). The access rules run at PLAN
+ * level first (`terminal-gate-core`, spec §6.2); the same pure gate runs again here as the
+ * last line, because the state it judged can change between the plan and the dispatch (the
+ * operator turns the opt-in off, a terminal ends and is swept). The text is scrubbed (§4.5) on
+ * every terminal, whoever opened it.
  */
 const readTerminalHandler: Handler = async (args, ctx) => {
   const terminalId = strField(args, 'terminalId') ?? ''
@@ -1051,18 +1063,14 @@ const readTerminalHandler: Handler = async (args, ctx) => {
   }
   // A swept tombstone's model has no reader left; drop it before looking one up.
   pruneScreenModels((id) => terminalRegistry.get(id) !== undefined)
-  const rec = terminalRegistry.get(terminalId)
-  if (!rec) return steerError('TERMINAL_NOT_FOUND', ctx.folder)
-  if (rec.disconnected) return steerError('TERMINAL_DISCONNECTED', ctx.folder)
-  // The folder opt-in (B4) is not wired yet: its default is off, so only agent-spawned
-  // terminals are readable.
-  if (!terminalAccess(rec, { readOptIn: false, writesEnabled: true }).readable) {
-    return steerError('TERMINAL_READ_NOT_ENABLED', ctx.folder)
-  }
-  // Every agent terminal is born with its model (spec §5.2); one missing means the record is
-  // being torn down.
-  const model = screenModelFor(terminalId)
+  const { rec, state } = await resolveTerminalGate(terminalId)
+  const refusal = gateTerminalOp('read_terminal', state)
+  if (refusal || !rec) return steerError(refusal ?? 'TERMINAL_NOT_FOUND', ctx.folder)
+  // An agent terminal is born with its model (spec §5.2); an operator one is built now, from the
+  // ring. Neither exists only if the record is being torn down.
+  const model = ensureTerminalScreenModel(terminalId)
   if (!model) return steerError('TERMINAL_NOT_FOUND', ctx.folder)
+  const home = os.homedir()
 
   const numArg = (key: string): number | undefined =>
     typeof args[key] === 'number' ? (args[key] as number) : undefined
@@ -1070,7 +1078,8 @@ const readTerminalHandler: Handler = async (args, ctx) => {
     mode,
     ...(since !== undefined ? { since } : {}),
     ...(numArg('lines') !== undefined ? { lines: numArg('lines') } : {}),
-    ...(numArg('maxChars') !== undefined ? { maxChars: numArg('maxChars') } : {})
+    ...(numArg('maxChars') !== undefined ? { maxChars: numArg('maxChars') } : {}),
+    scrub: (text) => scrubTerminalText(text, home)
   })
   if (!read.ok) return steerError(read.error, ctx.folder)
   terminalRegistry.noteAgentRead(terminalId)

@@ -13,7 +13,11 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 
-const h = vi.hoisted(() => ({ userDataDir: '', denied: [] as string[] }))
+const h = vi.hoisted(() => ({
+  userDataDir: '',
+  denied: [] as string[],
+  optedIn: [] as string[]
+}))
 
 vi.mock('electron', () => ({
   app: {
@@ -35,13 +39,18 @@ vi.mock('../src/main/claude-reader', async (importOriginal) => ({
 vi.mock('../src/main/user-projects', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   readUserProjects: async (): Promise<unknown> => ({
-    projects: h.denied.map((p) => ({ path: p, agentDenied: true }))
+    // `open` is pinned, so the guarded (ask) mode's containment check knows it.
+    projects: [
+      ...h.denied.map((p) => ({ path: p, agentDenied: true })),
+      { path: open, ...(h.optedIn.includes(open) ? { agentTerminalRead: true } : {}) }
+    ]
   })
 }))
 
 import { handleToolCall } from '../src/main/mcp/server'
 import { WIRED_TOOLS } from '../src/main/mcp/tool-handlers'
 import { terminalRegistry } from '../src/main/terminal-registry'
+import { writeMcpAsk } from '../src/main/mcp/prefs'
 import { ScreenModel, dropScreenModel, setScreenModel } from '../src/main/terminal-screen'
 
 const readDef = WIRED_TOOLS.find((t) => t.op === 'read_terminal')!
@@ -56,12 +65,17 @@ function body(res: CallToolResult): Record<string, unknown> {
 }
 
 /** An agent terminal with a model holding `text`, so an UNGATED read would succeed. */
-function seedTerminal(terminalId: string, folder: string, text: string): void {
+function seedTerminal(
+  terminalId: string,
+  folder: string,
+  text: string,
+  origin: 'agent' | 'operator' = 'agent'
+): void {
   terminalRegistry.register({
     terminalId,
     ptyId: `p-${terminalId}`,
     folder,
-    origin: 'agent',
+    origin,
     size: { cols: 80, rows: 24 }
   })
   const model = new ScreenModel({ cols: 80, rows: 24, onReply: () => {}, onBacklog: () => {} })
@@ -76,7 +90,9 @@ beforeAll(async () => {
   h.denied = [blocked]
 })
 
-afterEach(() => {
+afterEach(async () => {
+  h.optedIn = []
+  await writeMcpAsk(false)
   for (const r of terminalRegistry.list()) {
     terminalRegistry.forget(r.terminalId)
     dropScreenModel(r.terminalId)
@@ -126,5 +142,58 @@ describe('read_terminal gate folder, resolved from the registry', () => {
     seedTerminal('h-b2', blocked, 'x')
     await handleToolCall(readDef, { terminalId: 'h-b2' })
     expect(terminalRegistry.get('h-b2')!.lastAgentReadAt).toBeNull()
+  })
+})
+
+// T481 (AC-B4-2): the access refusals run at PLAN level, so a refused read never reaches the
+// handler (nothing stamped, no screen model built) and never raises a confirm — in the guarded
+// "Ask before agent actions" mode too.
+describe('read_terminal access refusals are plan-level (T481)', () => {
+  for (const ask of [false, true]) {
+    describe(ask ? 'ask mode' : 'free mode', () => {
+      it('an operator terminal in a folder that has not opted in is TERMINAL_READ_NOT_ENABLED', async () => {
+        await writeMcpAsk(ask)
+        seedTerminal('h-op', open, 'operator secret', 'operator')
+        const res = await handleToolCall(readDef, { terminalId: 'h-op' })
+        expect(res.isError).toBe(true)
+        // A refusal, not a parked confirm (`NOT_READY` / "denied (…)") and not a read.
+        expect(body(res).error).toBe('TERMINAL_READ_NOT_ENABLED')
+        expect(JSON.stringify(res)).not.toContain('operator secret')
+        expect(terminalRegistry.get('h-op')!.lastAgentReadAt).toBeNull()
+      })
+
+      it('the same terminal reads once its folder opted in', async () => {
+        await writeMcpAsk(ask)
+        h.optedIn = [open]
+        seedTerminal('h-op2', open, 'operator output', 'operator')
+        const res = await handleToolCall(readDef, { terminalId: 'h-op2' })
+        expect(res.isError).toBeFalsy()
+        expect(body(res)).toMatchObject({ ok: true, text: 'operator output' })
+      })
+
+      it('a disconnected terminal is TERMINAL_DISCONNECTED even when its folder opted in', async () => {
+        await writeMcpAsk(ask)
+        h.optedIn = [open]
+        seedTerminal('h-dc', open, 'x', 'operator')
+        terminalRegistry.get('h-dc')!.disconnected = true
+        expect(body(await handleToolCall(readDef, { terminalId: 'h-dc' })).error).toBe(
+          'TERMINAL_DISCONNECTED'
+        )
+      })
+
+      it('an unknown id is TERMINAL_NOT_FOUND', async () => {
+        await writeMcpAsk(ask)
+        expect(body(await handleToolCall(readDef, { terminalId: 'h-nope' })).error).toBe(
+          'TERMINAL_NOT_FOUND'
+        )
+      })
+    })
+  }
+
+  it('an explicit folder block still outranks every terminal refusal', async () => {
+    seedTerminal('h-both', blocked, 'x', 'operator')
+    expect(body(await handleToolCall(readDef, { terminalId: 'h-both' })).error).toBe(
+      'FOLDER_NOT_ALLOWED'
+    )
   })
 })

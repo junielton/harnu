@@ -112,7 +112,13 @@ async function spawnTerminal(
 }
 
 /** Let the model parse everything fed so far (and so emit its replies). */
-const settle = (id = 'h-a'): Promise<boolean> => screen.screenModelFor(id)!.barrier()
+const settle = async (id = 'h-a'): Promise<void> => {
+  // One barrier gives up after BARRIER_TIMEOUT_MS (it answers `true`), which on a loaded runner
+  // can land mid-parse of a multi-MiB backlog. Re-arm until it reports a full drain.
+  while (await screen.screenModelFor(id)!.barrier()) {
+    /* still parsing */
+  }
+}
 const replies = (proc: FakeProc): string[] => proc.write.mock.calls.map((c) => c[0] as string)
 
 beforeAll(async () => {

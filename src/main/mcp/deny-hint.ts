@@ -96,6 +96,17 @@ export function shapeDenial(
           }
         ]
       }
+    case 'NOT_A_TERMINAL':
+      return {
+        error: result,
+        message: 'That id names a pane that is not a terminal, so there is nothing to read.',
+        nextActions: [
+          {
+            do: 'Call list_terminals for the ids of real terminals, or open one with spawn_terminal.',
+            why: 'Only shell terminals can be read; other panes have no screen an agent may address.'
+          }
+        ]
+      }
     case 'TERMINAL_READ_NOT_ENABLED':
       return {
         error: result,

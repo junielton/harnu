@@ -55,7 +55,11 @@ import { sanitizeSpawnEnv, mergeLoginPath, loginPathOnce } from './appimage-env'
 import { arm, isArmed, shouldArmAtSpawn } from './orchestrator-guard'
 import { HARNU_ORCHESTRATOR_DOC } from './harnu-orchestrator'
 import { resolveModeContract } from './extensions/extensions-loader'
-import { getUserProjectAutoOrganize, getUserProjectOrchestratorDefault } from './user-projects'
+import {
+  getUserProjectAutoOrganize,
+  getUserProjectOrchestratorDefault,
+  normalizePath as normalizeFolderPath
+} from './user-projects'
 import { autoOrganizeLine } from './auto-organize-line'
 import {
   clearHibernated,
@@ -708,11 +712,39 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
   const deps: CreatePtyDeps = { getWindow, flushNow, runPolicy }
   ptyDeps = deps
 
-  // `terminal` is main's own door (`createTerminalPty`): a renderer-supplied one is dropped, so
-  // nothing but the MCP handler can register an agent-origin terminal.
-  ipcMain.handle('pty:create', (_e, opts: CreateOpts): Promise<string> =>
-    createPty({ ...opts, terminal: undefined }, deps)
-  )
+  // The agent-origin `terminal` is main's own door (`createTerminalPty`): the renderer can never
+  // register one. What it MAY do (T481) is say that the shell pane it is opening is a terminal,
+  // so the registry knows the OPERATOR's terminal. Main decides the rest: the origin is always
+  // `operator`, and the folder is where the PTY actually runs (`cwd`), never a renderer claim.
+  // An id the registry holds is refused — unless it is a dead operator record (see
+  // `reusableOperatorRecord`), which is what a pane restored after a window reload finds.
+  ipcMain.handle('pty:create', async (_e, opts: CreateOpts): Promise<string> => {
+    const named = opts.terminal
+    let terminal: CreateOpts['terminal'] | undefined
+    if (
+      (opts.kind ?? 'shell') === 'shell' &&
+      named &&
+      typeof named.terminalId === 'string' &&
+      named.terminalId !== '' &&
+      typeof opts.cwd === 'string' &&
+      opts.cwd !== ''
+    ) {
+      const held = terminalRegistry.get(named.terminalId)
+      if (!held || reusableOperatorRecord(held)) {
+        if (held) {
+          terminalRegistry.forget(held.terminalId)
+          dropScreenModel(held.terminalId)
+        }
+        terminal = {
+          terminalId: named.terminalId,
+          folder: await normalizeFolderPath(opts.cwd),
+          origin: 'operator',
+          ownerSessionId: null
+        }
+      }
+    }
+    return createPty({ ...opts, terminal }, deps)
+  })
 
   ipcMain.on('pty:write', (_e, id: string, data: string) => {
     const rec = ptys.get(id)
@@ -1108,6 +1140,100 @@ function destroyPty(id: string, flushNow: (id: string) => void): string | undefi
 }
 
 /**
+ * T481: whether a held record may be replaced by a new registration under the same id. Only an
+ * OPERATOR record whose PTY is gone — an exited tombstone, or one whose ptyId is no longer live.
+ * That is what a helper pane restored after a window reload leaves behind: `beforeunload` destroys
+ * the old PTY, and `helpers.json` brings the pane back under the same id. An agent-origin record
+ * and any running record are never replaced, so the renderer cannot take over a live terminal.
+ */
+function reusableOperatorRecord(rec: {
+  origin: TerminalOrigin
+  state: 'running' | 'exited'
+  ptyId: string
+}): boolean {
+  return rec.origin === 'operator' && (rec.state === 'exited' || !ptys.has(rec.ptyId))
+}
+
+/**
+ * The headless screen model of one PTY (spec §5). Its query replies go to the PTY and its write
+ * backlog pauses the PTY, exactly as for an agent terminal born with its model.
+ */
+function buildScreenModel(rec: PtyRec, cols: number, rows: number): ScreenModel {
+  return new ScreenModel({
+    cols,
+    rows,
+    // Queries are only the model's to answer while no renderer xterm exists (spec §5.4);
+    // `write` stamps each chunk with that, so this only ever sees stamped replies.
+    onReply: (reply) => {
+      try {
+        rec.pty.write(reply)
+      } catch {
+        // the PTY is gone
+      }
+    },
+    onBacklog: (over) => {
+      rec.modelPaused = over
+      applyFlow(rec)
+    }
+  })
+}
+
+/**
+ * T481 (spec §5.2): the screen model of a terminal an agent is allowed to read, built on demand.
+ * An agent terminal already has one; an operator-opened terminal gets it here, seeded by
+ * replaying the PTY's ring — exact unless the ring has wrapped, in which case every read says
+ * `approximate`. An exited terminal is seeded from its tombstone's raw tail, which is always
+ * approximate. Returns `undefined` for an id the registry does not know.
+ *
+ * Synchronous on purpose: the coalesce buffer is drained into the ring, the ring is replayed and
+ * the model registered in one tick, so no `onData` chunk can fall between the seed and the live
+ * feed (it would be missed) or land in both (it would be doubled).
+ */
+export function ensureTerminalScreenModel(terminalId: string): ScreenModel | undefined {
+  const existing = screenModelFor(terminalId)
+  if (existing) return existing
+  const trec = terminalRegistry.get(terminalId)
+  if (!trec) return undefined
+  const prec = trec.state === 'running' ? ptys.get(trec.ptyId) : undefined
+  if (prec) {
+    ptyDeps?.flushNow(trec.ptyId)
+    const model = buildScreenModel(prec, prec.cols, prec.rows)
+    const seed = prec.ring.snapshot()
+    // The renderer's xterm saw these bytes and answered their queries: replay answers nothing.
+    if (seed) model.write(seed, false)
+    if (prec.ring.wrapped) model.markApproximate()
+    setScreenModel(terminalId, model)
+    return model
+  }
+  if (trec.state === 'exited' && trec.finalSnapshot !== undefined) {
+    const model = new ScreenModel({
+      cols: trec.size.cols,
+      rows: trec.size.rows,
+      onReply: () => {},
+      onBacklog: () => {}
+    })
+    model.write(trec.finalSnapshot, false)
+    model.markApproximate()
+    setScreenModel(terminalId, model)
+    return model
+  }
+  return undefined
+}
+
+/**
+ * T481: the operator turned the folder's read opt-in OFF. Frees the lazily built models of their
+ * terminals there, so a closed door stops costing parse work on main's thread. Agent terminals
+ * keep theirs (they never depended on the opt-in). The next permitted read rebuilds from the ring.
+ */
+export async function dropOperatorScreenModels(folder: string): Promise<void> {
+  const target = await normalizeFolderPath(folder)
+  for (const rec of terminalRegistry.list()) {
+    if (rec.origin !== 'operator') continue
+    if ((await normalizeFolderPath(rec.folder)) === target) dropScreenModel(rec.terminalId)
+  }
+}
+
+/**
  * T474 B2: main owns an agent terminal's teardown. Kills the PTY of `terminalId` — mounted
  * in a pane or not — and tombstones the record as `closed` AT ONCE, so its `TERMINAL_LIMIT`
  * slot is free the moment this returns instead of whenever the kernel reports the exit.
@@ -1487,7 +1613,6 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
   ptys.set(id, rec)
   // T474: a terminal PTY is a plain shell the registry knows about. No `sessionKey`.
   let terminalRec: ReturnType<typeof terminalRegistry.register> | undefined
-  let screen: ScreenModel | undefined
   if (opts.terminal && kind === 'shell') {
     terminalRec = terminalRegistry.register({
       terminalId: opts.terminal.terminalId,
@@ -1497,26 +1622,14 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
       ownerSessionId: opts.terminal.ownerSessionId ?? null,
       size: { cols: opts.cols, rows: opts.rows }
     })
-    // T480: an agent terminal is exact from byte 0, so its screen model is born with it.
+    // T480: an agent terminal is exact from byte 0, so its screen model is born with it. An
+    // operator one gets its model lazily, on the first permitted read (T481, spec §5.2).
     if (terminalRec.origin === 'agent') {
-      screen = new ScreenModel({
-        cols: opts.cols,
-        rows: opts.rows,
-        // Queries are only the model's to answer while no renderer xterm exists (spec §5.4);
-        // `write` stamps each chunk with that, so this only ever sees stamped replies.
-        onReply: (reply) => {
-          try {
-            rec.pty.write(reply)
-          } catch {
-            // the PTY is gone
-          }
-        },
-        onBacklog: (over) => {
-          rec.modelPaused = over
-          applyFlow(rec)
-        }
-      })
-      setScreenModel(opts.terminal.terminalId, screen)
+      setScreenModel(opts.terminal.terminalId, buildScreenModel(rec, opts.cols, opts.rows))
+    } else {
+      // The operator's pane built its xterm BEFORE asking for this PTY, so a renderer xterm
+      // already answers terminal queries (spec §5.4): the model must never answer too.
+      terminalRec.rendererAttached = true
     }
   }
   if (opts.sessionKey) {
@@ -1553,7 +1666,10 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
     proc.onData((data) => {
       if (terminalRegistry.hasPty(id)) terminalRegistry.noteOutput(id, data)
       // Fed before coalescing (spec §5): the model sees every byte the PTY produced.
-      screen?.write(data, terminalRec?.rendererAttached !== true)
+      // Looked up per chunk because an operator terminal's model can appear mid-life (T481).
+      if (terminalRec) {
+        screenModelFor(terminalRec.terminalId)?.write(data, terminalRec.rendererAttached !== true)
+      }
       if (!isRetry && companionInjected) firstTail = (firstTail + data).slice(-2048)
       const s = rec.flush
       s.buf += data

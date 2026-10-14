@@ -10,6 +10,13 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-14
+
+### Added
+
+- **You can let sessions read the terminals you open yourself — one folder at a time.** Right-click a folder and choose **"Let agents read terminals I open"** (it is off by default, and a worktree of an opted-in folder does not inherit it). Until you turn it on, a session that asks to read one of your terminals is refused and told why; the terminal still shows up in its list, marked as not readable, but with its title, last-output time and exit code left out. Turning it back off closes the door again at once. This lets a session read only — typing into a terminal is not available yet.
+- **Everything a session reads from a terminal is scrubbed of secrets first.** Your home folder becomes `~`, and AWS key ids, `Bearer` tokens, `Authorization` values, the password in a `scheme://user:password@host` address, secret-looking `NAME=value` pairs and private-key blocks become `<redacted>`, in the screen text and in the terminal's title, on terminals a session opened as well as on yours. It is a best-effort filter, not a guarantee: a secret in a shape it doesn't recognise can still get through, and a value that merely looks like a secret may be hidden even if the session printed it itself. Scheduled read-only workers can now list and read terminals too, under the same rules.
+
 ## 2026-10-13
 
 ### Added

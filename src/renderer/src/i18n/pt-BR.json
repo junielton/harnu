@@ -290,6 +290,8 @@
     "autoOrganizeOff": "Desligar auto-organização",
     "orchestratorDefaultOn": "Novas sessões começam como Orquestrador",
     "orchestratorDefaultOff": "Parar de iniciar sessões como Orquestrador",
+    "terminalReadOn": "Deixar agentes lerem os terminais que eu abro",
+    "terminalReadOff": "Parar de deixar agentes lerem os terminais que eu abro",
     "newWorktree": "Nova worktree…",
     "removeWorktree": "Remover worktree",
     "createWorktreeMd": "Criar WORKTREE.md",
