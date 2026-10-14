@@ -471,9 +471,10 @@ describe('AC-B8-4 — the total time bound', () => {
   it('and not even a stalled model (a barrier that never clears) stretches it past ~1 s', async () => {
     const { id, proc } = await spawnAgent()
     proc.respond = () => null
-    vi.spyOn(screenModelFor(id)!, 'barrier').mockImplementation((ms) =>
-      ms === undefined ? Promise.resolve(false) : new Promise((r) => setTimeout(() => r(true), ms))
-    )
+    // A read waits at the barrier through xterm's own write callback (`atBarrier`), so the stall
+    // is simulated there: chunks queue up (pendingBytes > 0) and none is ever reported parsed.
+    const term = (screenModelFor(id) as unknown as { term: { write: unknown } }).term
+    term.write = (): void => {}
     const chatter = setInterval(() => proc.emitData('noise\r\n'), 10)
     const t0 = Date.now()
     const out = body(await send({ terminalId: id, input: 'x' }))
