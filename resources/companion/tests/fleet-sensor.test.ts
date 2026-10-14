@@ -107,7 +107,8 @@ test('rebound resets fleet', async ($, on) => {
     lastStop: null,
     pendingFailure: null,
     agents: {},
-    stopped: []
+    stopped: [],
+    idle: null // T456: a new conversation has no last Stop either
   })
   expect(rig.state.get('permissionMode')).toBe('acceptEdits')
 })

@@ -28,6 +28,8 @@ declare module 'claude-code' {
           toolUseId?: string
           tool?: string
           agentId?: string
+          /** T456: a `classic.PermissionRequest` put this dialog to a person. */
+          asked?: true
         }[]
         checks: {
           toolUseId: string
@@ -44,6 +46,12 @@ declare module 'claude-code' {
         agents: Record<string, string>
         /** The ids of subagents that already stopped: the CLI still lists them as `running`. */
         stopped: string[]
+        /**
+         * T456: the last main `Stop`'s in-flight background work, read by `park.query` after the
+         * turn ended. Ids and type labels only; replaced by the next `Stop`, never cleared at a
+         * turn's end; `null` before the first one.
+         */
+        idle: { tasks: { id: string; type: string }[]; crons: { recurring: boolean }[] } | null
       }
       /**
        * P2W1: the command dedupe (contract §22). `cursor` acknowledges delivery, `resulted` execution;

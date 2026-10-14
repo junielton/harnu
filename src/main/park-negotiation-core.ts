@@ -15,7 +15,18 @@ export type ParkCause = 'cap' | 'sweep' | 'manual'
 
 /** What the session said, or that it said nothing. */
 export type Answer =
-  { kind: 'busy'; reasons: string[]; retryAfterMs?: number } | { kind: 'free' } | { kind: 'silent' } // timeout, NO_BINDING, MODE_SHADOW, CMD_* — anything but a result
+  | {
+      kind: 'busy'
+      reasons: string[]
+      retryAfterMs?: number
+      /**
+       * How many of each reason the session reported (`background-task` -> 2), for display only;
+       * the bounds never read it. Filled from a `park.query` answer (T456 W2).
+       */
+      counts?: Record<string, number>
+    }
+  | { kind: 'free' }
+  | { kind: 'silent' } // timeout, NO_BINDING, MODE_SHADOW, CMD_* — anything but a result
 
 /** One cold episode of one session: opened by the first decline, closed by a reset edge. */
 export interface Episode {

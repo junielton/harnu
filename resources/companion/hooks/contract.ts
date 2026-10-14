@@ -416,9 +416,39 @@ export interface CommandArgs {
   'sentinel.set': { tools: string[] }
   'ui.band.set': { line: string | null; parts?: BandParts; link?: BandLink }
   'plan.capture': { title?: boolean }
+  'park.query': { cause: ParkCause } // no text, no path (SEC-5a)
 }
 
 export type CommandName = keyof CommandArgs
+
+/** T456: why the host wants to park the session (a `cap` slot, the `sweep`, "Park now"). */
+export type ParkCause = 'cap' | 'sweep' | 'manual'
+
+/** The surfaces `$.session.surfaces()` names; the engine's `RenderSurface`. */
+export type ParkSurface = 'terminal' | 'desktop' | 'mobile' | 'vscode'
+
+/**
+ * T456: one reason a session gives for not being parked now. Counts and type labels only: a
+ * background shell's command and a cron's prompt never leave the mod (SEC-8).
+ */
+export type ParkBusyReason =
+  | { kind: 'turn' }
+  | { kind: 'permission'; count: number }
+  | { kind: 'background-task'; count: number; types: string[] } // at most PARK_TYPES_MAX labels
+  | { kind: 'background-subagent'; count: number }
+  | { kind: 'scheduled-wakeup'; count: number; recurring: number }
+  | { kind: 'remote-surface'; surfaces: ParkSurface[] } // never 'terminal'
+
+/** `busy: []` means "park me". `retryAfterMs` is a hint the host clamps. */
+export interface ParkQueryData {
+  busy: ParkBusyReason[]
+  retryAfterMs?: number
+}
+
+/** At most this many `BackgroundTaskSummary.type` labels in one `background-task` reason. */
+export const PARK_TYPES_MAX = 4
+/** `park.query`'s own TTL: the host's wait for its answer, so a late answer is `CMD_EXPIRED`. */
+export const PARK_QUERY_TTL_MS = 5_000
 
 export interface SubmitResultData {
   submitted: true | false | 'unknown'
@@ -441,6 +471,7 @@ export interface CommandResultData {
   'message.deliver': SubmitResultData & { reason?: 'permission-mode' }
   'guard.set': { armed: boolean }
   'plan.capture': PlanCaptureData
+  'park.query': ParkQueryData
 }
 
 // ---- §10 Asks (mod → host) ------------------------------------------------------------------

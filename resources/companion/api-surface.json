@@ -33,6 +33,7 @@
     "$.session.compact",
     "$.session.id",
     "$.session.model",
+    "$.session.surfaces",
     "$.session.usage",
     "$.session.version",
     "$.state.get",

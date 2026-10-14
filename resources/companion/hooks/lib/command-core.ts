@@ -87,7 +87,8 @@ export const COMMAND_FEATURE: Readonly<Record<CommandName, FeatureId>> = {
   'guard.set': 'gate.guard',
   'sentinel.set': 'gate.sentinel',
   'ui.band.set': 'ui.band',
-  'plan.capture': 'act.plan'
+  'plan.capture': 'act.plan',
+  'park.query': 'act.park'
 }
 
 /**
@@ -100,7 +101,8 @@ export const IMPLEMENTED_COMMANDS: ReadonlySet<string> = new Set([
   'turn.abort',
   'session.compact',
   'ui.toast',
-  'ui.status'
+  'ui.status',
+  'park.query'
 ])
 
 /** The tokenless second lock (contract §9): every other command is `CMD_UNSUPPORTED` without a token. */

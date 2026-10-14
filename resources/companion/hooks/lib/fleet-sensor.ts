@@ -17,6 +17,22 @@ export interface OpenItem {
   toolUseId?: string
   tool?: string
   agentId?: string
+  /**
+   * T456: a `classic.PermissionRequest` confirmed this item, so a dialog was put to a person. An
+   * item opened only by a `tool.check` verdict of `ask` is not one: in auto mode the classifier
+   * settles it (spec A7).
+   */
+  asked?: true
+}
+
+/**
+ * T456: the in-flight background work of the last main `Stop` (contract §22, `fleet.idle`). Ids and
+ * type labels only, never a task's `command` or a cron's `prompt` (SEC-8). Replaced by the next
+ * `Stop`, never cleared at a turn's end: `park.query` asks after the turn.
+ */
+export interface IdleFacts {
+  tasks: { id: string; type: string }[]
+  crons: { recurring: boolean }[]
 }
 
 /** The one shared record list of contract §22 (`tool.check` → `ask`); P3W1 fills `inputKey`, `claimedBy`. */
@@ -46,6 +62,8 @@ export interface FleetSensorState {
    * 2.1.291: the task id is the agent id), so a hold must not count it.
    */
   stopped: string[]
+  /** T456: the last main `Stop`'s background work; `null` before the first one. */
+  idle: IdleFacts | null
 }
 
 export type SensorInput =
@@ -63,7 +81,11 @@ export type SensorInput =
   | { k: 'permission.request'; tool: string; agentId?: string }
   | { k: 'notification'; type: string }
   | { k: 'post-tool'; toolUseId?: string; tool?: string; agentId?: string; failed: boolean }
-  | { k: 'stop'; tasks: readonly { type: string; status?: string; id?: string }[] | undefined }
+  | {
+      k: 'stop'
+      tasks: readonly { type: string; status?: string; id?: string }[] | undefined
+      crons?: readonly { recurring?: boolean }[] | undefined
+    }
   | { k: 'stop-failure'; error: string }
   | {
       k: 'turn.complete'
@@ -89,6 +111,8 @@ export type OutEvent =
 /** The host treats counters as untrusted and clamps at 256 (§9); the sensor never exceeds it. */
 const COUNT_MAX = 256
 const STOPPED_MAX = 64
+/** `fleet.idle` keeps at most this many tasks and crons; the count past it is not needed. */
+const IDLE_MAX = 64
 
 /** Statuses of a background task that has stopped running (types L641 name the field; Q12 the values). */
 const FINISHED = new Set(['completed', 'failed', 'killed', 'stopped', 'cancelled', 'error'])
@@ -103,8 +127,27 @@ export function neutralFleet(): FleetSensorState {
     lastStop: null,
     pendingFailure: null,
     agents: {},
-    stopped: []
+    stopped: [],
+    idle: null
   }
+}
+
+/** What `$.state` held as `fleet.idle`, made safe. */
+function sanitizeIdle(raw: unknown): IdleFacts | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const r = raw as { tasks?: unknown; crons?: unknown }
+  if (!Array.isArray(r.tasks) || !Array.isArray(r.crons)) return null
+  const tasks: IdleFacts['tasks'] = []
+  for (const t of r.tasks.slice(0, IDLE_MAX)) {
+    if (typeof t !== 'object' || t === null) continue
+    const { id, type } = t as { id?: unknown; type?: unknown }
+    if (typeof id === 'string' && typeof type === 'string') tasks.push({ id, type })
+  }
+  const crons = r.crons
+    .slice(0, IDLE_MAX)
+    .filter((c) => typeof c === 'object' && c !== null)
+    .map((c) => ({ recurring: (c as { recurring?: unknown }).recurring === true }))
+  return { tasks, crons }
 }
 
 /** What `$.state` returned, made safe: a value this sensor did not write reads as the neutral state. */
@@ -125,7 +168,8 @@ export function sanitizeFleet(raw: unknown): FleetSensorState {
         kind: i.kind,
         ...(typeof i.toolUseId === 'string' ? { toolUseId: i.toolUseId } : {}),
         ...(typeof i.tool === 'string' ? { tool: i.tool } : {}),
-        ...(typeof i.agentId === 'string' ? { agentId: i.agentId } : {})
+        ...(typeof i.agentId === 'string' ? { agentId: i.agentId } : {}),
+        ...(i.asked === true ? { asked: true as const } : {})
       })
     }
   }
@@ -163,6 +207,7 @@ export function sanitizeFleet(raw: unknown): FleetSensorState {
   if (Array.isArray(r.stopped)) {
     out.stopped = r.stopped.filter((x): x is string => typeof x === 'string').slice(-STOPPED_MAX)
   }
+  out.idle = sanitizeIdle(r.idle)
   return out
 }
 
@@ -234,7 +279,8 @@ export function step(
     open: [...s.open],
     checks: [...s.checks],
     agents: { ...s.agents },
-    stopped: [...s.stopped]
+    stopped: [...s.stopped],
+    idle: s.idle
   }
 
   switch (input.k) {
@@ -297,12 +343,23 @@ export function step(
             ? o.toolUseId === id
             : o.toolUseId === undefined && o.tool === input.tool)
       )
-      if (!known) {
+      if (known) {
+        // the item a check opened (or a notification) is now a dialog put to a person
+        next.open = next.open.map((o) =>
+          o.kind === 'permission' &&
+          (id !== undefined
+            ? o.toolUseId === id
+            : o.toolUseId === undefined && o.tool === input.tool)
+            ? { ...o, asked: true as const }
+            : o
+        )
+      } else {
         next.open.push({
           kind: 'permission',
           tool: input.tool,
           ...(id !== undefined ? { toolUseId: id } : {}),
-          ...(input.agentId !== undefined ? { agentId: input.agentId } : {})
+          ...(input.agentId !== undefined ? { agentId: input.agentId } : {}),
+          asked: true
         })
       }
       events.push({
@@ -363,6 +420,22 @@ export function step(
             !FINISHED.has(String(t.status)) &&
             !(typeof t.id === 'string' && next.stopped.includes(t.id))
         ).length
+      }
+      // T456: the work `park.query` reads after the turn has ended (`fleet.idle`)
+      next.idle = {
+        tasks: tasks
+          .filter(
+            (t) =>
+              !FINISHED.has(String(t.status)) &&
+              typeof t.id === 'string' &&
+              typeof t.type === 'string'
+          )
+          .slice(0, IDLE_MAX)
+          .map((t) => ({ id: t.id as string, type: t.type })),
+        crons: (Array.isArray(input.crons) ? input.crons : [])
+          .slice(0, IDLE_MAX)
+          .filter((c) => typeof c === 'object' && c !== null)
+          .map((c) => ({ recurring: c.recurring === true }))
       }
       break
     }
