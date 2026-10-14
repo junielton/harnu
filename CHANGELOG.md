@@ -20,6 +20,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **A terminal a session opens now lives with the app, not with the pane.** The shell is started when the session asks for it and the pane picks it up when you first look at that folder, so nothing is started twice. Closing the pane (or the folder going away) always ends that shell and frees its slot, even if you never opened the pane. A shell that quits on its own after a couple of seconds closes its pane, whether or not you were looking; one that dies straight away stays, with what it printed and a note that it ended. Reloading the window keeps the terminals you could see running, and the panes come back on their own. Terminals a session opened are never saved across a restart, so a pane never comes back showing a different shell.
 
+### Fixed
+
+- **Reloading the window no longer wipes the helper panes you had saved for a folder.** If a session had a terminal open in that folder, the pane list could be saved as empty before your own saved panes were read back. Saved panes are now always read first and kept alongside the live ones.
+
 ## 2026-10-12
 
 ### Added
