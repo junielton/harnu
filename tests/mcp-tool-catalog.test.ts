@@ -258,6 +258,8 @@ describe('T120 declarative gate fields — the def is the single source of truth
     'create_session',
     'create_worktree',
     'spawn_terminal',
+    // T482 B5: free to type into a terminal the agent opened; NOT grantable, NOT always-allowable.
+    'send_terminal',
     'adopt_folder',
     'remove_folder',
     'memory_append',

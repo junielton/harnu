@@ -193,6 +193,32 @@ export class ScreenModel {
     })
   }
 
+  /**
+   * What `send_terminal` needs to know the instant before it writes (spec §4.4, §5.1): the
+   * program's input modes, whether a full-screen program owns the display, and a cursor on the
+   * line the terminal's cursor sits on, so the output SINCE the send can be read back. The
+   * barrier runs first, so none of it describes a half-parsed chunk. The cursor is `null` on the
+   * alternate screen, which has no markers: there the whole screen is the answer.
+   */
+  async prepareSend(): Promise<{
+    applicationCursorKeys: boolean
+    bracketedPaste: boolean
+    altScreen: boolean
+    cursor: string | null
+    approximate: boolean
+  }> {
+    const approximate = (await this.barrier()) || this.seededApproximate
+    this.sweepCursors()
+    const altScreen = this.term.buffer.active.type === 'alternate'
+    return {
+      applicationCursorKeys: this.term.modes.applicationCursorKeysMode,
+      bracketedPaste: this.term.modes.bracketedPasteMode,
+      altScreen,
+      cursor: altScreen || this.disposed ? null : this.takeCursor(),
+      approximate
+    }
+  }
+
   /** Read the screen after the barrier. See spec §4.3 for the three modes. */
   read(opts: ReadOptions): Promise<ScreenReadResult> {
     return this.readScreen(opts, true)

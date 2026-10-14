@@ -36,6 +36,17 @@ describe('TerminalRegistry', () => {
     expect(() => reg.noteAgentRead('h-nope')).not.toThrow()
   })
 
+  it('noteAgentWrite stamps lastAgentWriteAt and never the operator stamp (T482)', () => {
+    const { reg, clock } = make()
+    const rec = reg.register(input())
+    expect(rec.lastAgentWriteAt).toBeNull()
+    clock.t = 7_000
+    reg.noteAgentWrite('h-1')
+    expect(rec.lastAgentWriteAt).toBe(7_000)
+    expect(rec.lastOperatorWriteAt).toBeNull()
+    expect(() => reg.noteAgentWrite('h-nope')).not.toThrow()
+  })
+
   it('registers a running record that is addressable by terminal id and by pty id', () => {
     const { reg } = make()
     const rec = reg.register(input())

@@ -56,7 +56,8 @@ import {
   liveSessionKeys,
   sessionOwnedByHarnu,
   spawnOriginForSession,
-  waitForSessionReady
+  waitForSessionReady,
+  writeTerminalPty
 } from '../pty'
 import {
   AGENT_TERMINAL_SIZE,
@@ -67,6 +68,8 @@ import { gateTerminalOp } from '../terminal-gate-core'
 import { resolveTerminalGate } from '../terminal-gate'
 import { scrubTerminalText } from '../scrub-terminal'
 import { paneSplitFor } from '../terminal-lifecycle'
+import { buildSend } from '../terminal-keys'
+import { settleAfterSend, terminalWriteQueue, writeSegments } from '../terminal-write-queue'
 import { TERMINAL_NOTE, pruneScreenModels, type ReadMode } from '../terminal-screen'
 import { peerAddressForSession, sendPeerMessage } from '../messaging'
 import {
@@ -1092,6 +1095,123 @@ const readTerminalHandler: Handler = async (args, ctx) => {
     ...screen,
     note: TERMINAL_NOTE
   })
+}
+
+const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * T482 B5: type into a terminal (spec §4.4). The access rules ran at PLAN level; the same pure gate
+ * runs again here as the last line, and once more after the queue wait, because the terminal can
+ * end or be disconnected while a call waits its turn.
+ *
+ * Order: admit (rate limit) → wait for the head of this terminal's line (≤ 10 s) → barrier, read
+ * the input modes and mark the cursor line → write (ONE `pty.write`, two when an `Esc` is followed
+ * by more bytes) → release the line → settle → read the screen since the mark. The line is held
+ * only while bytes go out; settling does not hold it. Output is scrubbed on every terminal.
+ * `waitFor` is unit B8's: a send here always returns after the settle.
+ */
+const sendTerminalHandler: Handler = async (args, ctx) => {
+  const terminalId = strField(args, 'terminalId') ?? ''
+  const input = typeof args.input === 'string' ? args.input : undefined
+  const keys = Array.isArray(args.keys) ? (args.keys as string[]) : []
+  const known = (id: string): boolean => terminalRegistry.get(id) !== undefined
+  pruneScreenModels(known)
+  terminalWriteQueue.prune(known)
+
+  const first = await resolveTerminalGate(terminalId)
+  const refusal = gateTerminalOp('send_terminal', first.state)
+  if (refusal || !first.rec) return steerError(refusal ?? 'TERMINAL_NOT_FOUND', ctx.folder)
+  const model = ensureTerminalScreenModel(terminalId)
+  if (!model) return steerError('TERMINAL_NOT_FOUND', ctx.folder)
+
+  const admitted = terminalWriteQueue.admit(terminalId)
+  if (!admitted.ok) return steerError(admitted.error, ctx.folder)
+  const scope = admitted.scope
+  try {
+    if (!(await terminalWriteQueue.acquire(terminalId, scope))) {
+      return steerError('TERMINAL_BUSY', ctx.folder)
+    }
+    let sentAt = 0
+    let prep: Awaited<ReturnType<typeof model.prepareSend>>
+    let pasted = false
+    try {
+      // The terminal may have ended or been disconnected while this call waited its turn.
+      const again = await resolveTerminalGate(terminalId)
+      const lateRefusal = gateTerminalOp('send_terminal', again.state)
+      if (lateRefusal) return steerError(lateRefusal, ctx.folder)
+      prep = await model.prepareSend()
+      const built = buildSend(
+        { input, keys, paste: args.paste === true },
+        {
+          applicationCursorKeys: prep.applicationCursorKeys,
+          bracketedPaste: prep.bracketedPaste
+        }
+      )
+      if (!built.ok) return errorResult(`${built.error}: ${built.detail}`)
+      pasted = built.pasted
+      // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — never type for a caller that
+      // can no longer be told what happened.
+      if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+      const written = await writeSegments(built.segments, {
+        write: (data) => {
+          const ok = writeTerminalPty(terminalId, data)
+          if (ok) terminalWriteQueue.noteWrite(terminalId, scope)
+          return ok
+        },
+        sleep: sleepMs
+      })
+      sentAt = Date.now()
+      // Nothing reached the PTY: it ended between the gate and the write.
+      if (written.written === 0) return steerError('TERMINAL_EXITED', ctx.folder)
+    } finally {
+      terminalWriteQueue.release(terminalId, scope)
+    }
+
+    const waitedMs = await settleAfterSend({
+      now: Date.now,
+      sleep: sleepMs,
+      lastOutputAt: () => terminalRegistry.get(terminalId)?.lastOutputAt ?? 0,
+      sentAt
+    })
+
+    const home = os.homedir()
+    const scrub = (text: string): string => scrubTerminalText(text, home)
+    // The line the cursor sat on at the send, read back to the end. A full-screen program has no
+    // such line: its whole screen is the answer (spec §4.4, "Alternate screen").
+    let read = await model.read(
+      prep.altScreen || prep.cursor === null
+        ? { mode: 'screen', scrub }
+        : { mode: 'since', since: prep.cursor, scrub }
+    )
+    if (!read.ok) read = await model.read({ mode: 'tail', lines: 500, scrub })
+    if (!read.ok) return steerError('CURSOR_EXPIRED', ctx.folder)
+
+    const rec = terminalRegistry.get(terminalId)
+    const { ok: _ok, cursorPos: _cursorPos, size: _size, ...screen } = read
+    return textResult({
+      ok: true,
+      terminalId,
+      state: rec?.state ?? 'exited',
+      ...(rec?.exit ? { exit: { code: rec.exit.code, reason: rec.exit.reason } } : {}),
+      sent: {
+        inputChars: input === undefined ? 0 : [...input].length,
+        keys,
+        pasted
+      },
+      wait: { reason: 'none', waitedMs },
+      output: screen.text,
+      truncated: screen.truncated,
+      droppedLines: screen.droppedLines,
+      altScreen: screen.altScreen,
+      approximate: screen.approximate || prep.approximate,
+      othersWrote: scope.othersWrote,
+      operatorTyped: rec?.lastOperatorWriteAt != null && rec.lastOperatorWriteAt >= scope.startedAt,
+      note: TERMINAL_NOTE,
+      cursor: screen.cursor
+    })
+  } finally {
+    terminalWriteQueue.finish(terminalId, scope)
+  }
 }
 
 const createWorktreeHandler: Handler = async (args, ctx) => {
@@ -4823,6 +4943,7 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   spawn_terminal: spawnTerminalHandler,
   list_terminals: listTerminalsHandler,
   read_terminal: readTerminalHandler,
+  send_terminal: sendTerminalHandler,
   adopt_folder: adoptFolderHandler,
   remove_folder: removeFolderHandler,
   plan_mission: planMissionHandler,

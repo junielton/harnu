@@ -123,6 +123,7 @@ import { readUserProjects, setUserProjectInheritAgentControl } from '../user-pro
 import { setMcpArgsProvider } from '../pty'
 import type { TerminalGateState } from '../terminal-gate-core'
 import { resolveTerminalGate } from '../terminal-gate'
+import { escapeForAudit } from '../terminal-keys'
 import { previewWorktreeCommands, worktreeInheritOfferForTarget } from '../worktree-ipc'
 import { writeWorktreeInheritControl } from './worktree-inherit-prefs'
 
@@ -697,6 +698,20 @@ async function buildConfirmDisclosure(
       const prompt = containersConfirmPrompt(op, args, snap)
       return { prompt, permissionMode: 'default', nonDefaultFlags: [], commands: [] }
     }
+    // T482 B5: reachable only in the `ask` mode (a send to a terminal the agent opened runs free).
+    // Names the terminal and EXACTLY what would be typed, never the program-set title. Unit B6
+    // replaces the "Allow types it" semantics with the per-terminal lease.
+    case 'send_terminal': {
+      const terminalId = strField(args, 'terminalId') ?? '(unknown)'
+      const keys = Array.isArray(args.keys) ? (args.keys as unknown[]).map(String) : []
+      const typed = typeof args.input === 'string' ? args.input : ''
+      const prompt =
+        `Type into terminal ${terminalId} in:\n  ${folder}\n\n` +
+        (typed ? `Input:\n${escapeForAudit(typed)}\n\n` : '') +
+        (keys.length ? `Keys: ${keys.join(', ')}\n\n` : '') +
+        'What an agent types runs with your permissions.'
+      return { prompt, permissionMode: 'default', nonDefaultFlags: [], commands: [] }
+    }
     case 'delete_worker': {
       // T316: unlike update_worker (silent-allowed), this verb ALWAYS reaches
       // this confirm — the only safety net before an irreversible delete that
@@ -996,8 +1011,8 @@ export async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise
     // session the SAME way `message_session` targets a recipient — the TARGET's
     // owning folder is the anchor, never a caller-supplied one.
     gateFolder = resolveSessionGateFolder(folders, strField(args, 'sessionId') ?? '')
-  } else if (def.op === 'read_terminal') {
-    // T474 B3/B4: the verb carries only a `terminalId`, so the gate anchor is the terminal's OWN
+  } else if (def.op === 'read_terminal' || def.op === 'send_terminal') {
+    // T474 B3/B4/B5: the verb carries only a `terminalId`, so the gate anchor is the terminal's OWN
     // folder, from the registry, and its access state is resolved HERE so `planToolCall` can
     // refuse at plan level (spec §6.2). An unknown id leaves the folder undefined and resolves
     // to a state the gate answers `TERMINAL_NOT_FOUND`.

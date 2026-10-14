@@ -1,4 +1,4 @@
-<!-- harnu-features v89 (2026-10-14) -->
+<!-- harnu-features v90 (2026-10-14) -->
 
 # You are running inside Harnu
 
@@ -25,7 +25,7 @@ same verbs, old name; call the `mcp__harnu__` one). The core verbs are available
 `get_fleet`, `get_session`, `memory_read`, `memory_query`, `plan_mission`,
 `open_file`. The rest surface when you search your tools for them: `list_worktrees`,
 `get_approval`, `create_session`, `create_worktree`, `spawn_terminal`,
-`list_terminals`, `read_terminal`, `adopt_folder`, `remove_folder`, `memory_append`, `create_card`, `update_card`,
+`list_terminals`, `read_terminal`, `send_terminal`, `adopt_folder`, `remove_folder`, `memory_append`, `create_card`, `update_card`,
 `move_card`, `archive_card`, `delete_card`, `submit_manifest`, `draw_canvas`,
 `notify`, `speak`, `message_session`, `create_worker`, `list_workers`,
 `list_containers`, `stop_containers`, `start_containers`, `remove_containers`,
@@ -627,7 +627,7 @@ deleted: false, message }` says where it landed (`bucketAfter`) and why (`reason
   is never cleaned) and `NOT_A_WORKTREE` (the cleanup scan does not know it — call
   `list_cleanup` and pass the `id` it lists). Not open to a Scheduler `observe` worker.
 
-**Terminals you open — `spawn_terminal`, `list_terminals`, `read_terminal`.** `spawn_terminal({ folder,
+**Terminals you open — `spawn_terminal`, `list_terminals`, `read_terminal`, `send_terminal`.** `spawn_terminal({ folder,
 ownerSessionId? })` opens a shell pane in the folder's split stack, in the background, and
 its ACK now carries the handle for it: `terminalId` (the same id as `result.paneId`),
 `ownerSessionId`, `state: 'running'` and `size: { cols: 120, rows: 30 }`. Pass YOUR OWN
@@ -689,9 +689,43 @@ become `<redacted>` — also a value that only _looks_ like
 one, even if you printed it yourself. It is not a security boundary: a secret in a shape it
 does not know passes through. Scrubbing runs before the `maxChars` cut. A Scheduler `observe`
 tick may call `list_terminals` and `read_terminal` (same opt-in rule); `spawn_terminal` and
-every later terminal write stay denied there. Programs that ask the terminal questions (`nvim`, `fzf`) are answered by
-Harnu while no pane shows the terminal, so an unviewed terminal does not hang them. Today you
-can open, list and read a terminal; typing into one is not available yet.
+`send_terminal` stay denied there. Programs that ask the terminal questions (`nvim`, `fzf`) are answered by
+Harnu while no pane shows the terminal, so an unviewed terminal does not hang them.
+**Typing — `send_terminal`.** `send_terminal({ terminalId, input?, keys?, paste?, ownerSessionId? })`
+types into a terminal YOU opened with `spawn_terminal` — never one the operator opened (that is
+refused `TERMINAL_READ_NOT_ENABLED`, or `TERMINAL_WRITE_NOT_ENABLED` when its folder lets agents
+read it: typing into the operator's own terminals is not available yet). It runs with no confirm
+in free mode; under "Ask before agent actions" it confirms, and a mission grant or an
+"always allow" can never cover it. `input` is typed text exactly as a person would type it: `\n`
+is sent as Enter, a tab stays a tab, and every other control character is refused `BAD_ARGS` —
+use `keys` instead. `keys` (≤ 64) are pressed in order AFTER `input`: `Enter`, `Tab`, `Esc`,
+`Backspace`, `Delete`, `Space`, `Up`, `Down`, `Left`, `Right`, `Home`, `End`, `PageUp`,
+`PageDown`, `F1`–`F12` and `Ctrl+A` … `Ctrl+Z` (`Ctrl+C` interrupts, `Ctrl+D` ends input);
+any other name is `KEY_UNKNOWN`. So a command is `input: "npm test", keys: ["Enter"]`. Arrows
+follow the program's cursor-key mode by themselves. `paste: true` sends `input` as one
+bracketed paste when the program asked for it and as plain typing otherwise (`sent.pasted`
+says which). A line over 4,000 bytes or an `input` over 8 KiB is `INPUT_TOO_LARGE`; these
+content refusals, like every access refusal, come back before any confirm. One send is ONE
+write to the terminal, so the operator's own typing can't land inside it — except `Esc`
+followed by more bytes, which goes out as two writes 50 ms apart. Two identical calls type
+twice: this verb is never replayed. Sends to one terminal run one at a time in arrival order; a
+call that waits more than 10 s behind others is `TERMINAL_BUSY` (nothing typed), and more than
+60 sends a minute per terminal is `TERMINAL_RATE_LIMIT`. Both steer you to `read_terminal`
+and to batching keystrokes into one send. An exited terminal is `TERMINAL_EXITED`, one the
+operator disconnected `TERMINAL_DISCONNECTED`. The call returns once the output settles — about
+150 ms after the last byte, 1 s at most; a command that is still running is NOT waited for, so
+`read_terminal` again. The result: `terminalId`, `state` (+ `exit`), `sent` (`inputChars`,
+`keys`, `pasted`), `wait` (`reason: 'none'`, `waitedMs`), `output` (the resolved screen from the
+line the cursor was on when you sent, scrubbed like `read_terminal.text`), `truncated`,
+`droppedLines`, `altScreen`, `approximate`, `othersWrote` (another session wrote to it during
+the call), `operatorTyped` (the operator typed in the pane during the call — the screen may
+not show only what you sent), the fixed untrusted-output `note`, and `cursor` (pass it to
+`read_terminal` as `since`; `null` on the alternate screen, where `output` is the whole
+screen). The audit log records the terminal, its owner, the typed text (scrubbed, escaped, cut
+to 200 characters), the keys and how the send was authorised. **What you type runs with the
+operator's permissions** — it can do anything their shell can, including what your own tool
+permissions would refuse; type only what the task needs. The operator-side switch ("Allow
+agents to type into terminals") and Disconnect are not built yet.
 
 **Worktrees.** You can create and list git worktrees (`create_worktree` /
 `list_worktrees`). Harnu reads a repo's `WORKTREE.md` manifest so fresh worktrees are

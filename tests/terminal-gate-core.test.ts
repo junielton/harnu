@@ -53,11 +53,13 @@ describe('gateTerminalOp — the documented order', () => {
     origin: 'operator',
     disconnected: false,
     state: 'running',
-    readable: true
+    readable: true,
+    ownerSessionId: null
   }
 
-  it('only speaks for read_terminal', () => {
+  it('speaks for read_terminal and send_terminal only', () => {
     expect(isTerminalGatedOp('read_terminal')).toBe(true)
+    expect(isTerminalGatedOp('send_terminal')).toBe(true)
     expect(isTerminalGatedOp('list_terminals')).toBe(false)
     expect(gateTerminalOp('get_fleet', UNKNOWN_TERMINAL)).toBeNull()
   })
@@ -98,10 +100,100 @@ describe('gateTerminalOp — the documented order', () => {
       'TERMINAL_NOT_FOUND',
       'NOT_A_TERMINAL',
       'TERMINAL_DISCONNECTED',
-      'TERMINAL_READ_NOT_ENABLED'
+      'TERMINAL_READ_NOT_ENABLED',
+      'TERMINAL_EXITED',
+      'TERMINAL_WRITE_NOT_ENABLED',
+      'TERMINAL_BUSY',
+      'TERMINAL_RATE_LIMIT'
     ]) {
       expect(shapeDenial(code, { folder: '/x' }), code).not.toBeNull()
     }
+  })
+})
+
+// T482 (B5): the write half. Order: NOT_FOUND → NOT_A_TERMINAL → DISCONNECTED → EXITED →
+// READ_NOT_ENABLED → WRITE_NOT_ENABLED (transitional until the lease of B6).
+describe('gateTerminalOp — send_terminal (B5)', () => {
+  const agentState: TerminalGateState = {
+    known: true,
+    isTerminal: true,
+    origin: 'agent',
+    disconnected: false,
+    state: 'running',
+    readable: true,
+    ownerSessionId: 's'
+  }
+
+  it('an agent-spawned, connected, running terminal continues', () => {
+    expect(gateTerminalOp('send_terminal', agentState)).toBeNull()
+  })
+
+  it('an exited terminal is still readable but cannot be typed into', () => {
+    const s = { ...agentState, state: 'exited' as const }
+    expect(gateTerminalOp('read_terminal', s)).toBeNull()
+    expect(gateTerminalOp('send_terminal', s)).toBe('TERMINAL_EXITED')
+  })
+
+  it('TERMINAL_DISCONNECTED outranks TERMINAL_EXITED', () => {
+    const s = { ...agentState, state: 'exited' as const, disconnected: true, readable: false }
+    expect(gateTerminalOp('send_terminal', s)).toBe('TERMINAL_DISCONNECTED')
+  })
+
+  it('TERMINAL_EXITED outranks the read opt-in refusal', () => {
+    const s = {
+      ...agentState,
+      origin: 'operator' as const,
+      state: 'exited' as const,
+      readable: false
+    }
+    expect(gateTerminalOp('send_terminal', s)).toBe('TERMINAL_EXITED')
+  })
+
+  it('an operator terminal whose folder has not opted in is TERMINAL_READ_NOT_ENABLED', () => {
+    const s = { ...agentState, origin: 'operator' as const, readable: false }
+    expect(gateTerminalOp('send_terminal', s)).toBe('TERMINAL_READ_NOT_ENABLED')
+  })
+
+  it('an operator terminal that IS readable is still refused for writes until B6', () => {
+    const s = { ...agentState, origin: 'operator' as const, readable: true }
+    expect(gateTerminalOp('read_terminal', s)).toBeNull()
+    expect(gateTerminalOp('send_terminal', s)).toBe('TERMINAL_WRITE_NOT_ENABLED')
+  })
+
+  it('an unresolved state fails closed', () => {
+    expect(gateTerminalOp('send_terminal', UNKNOWN_TERMINAL)).toBe('TERMINAL_NOT_FOUND')
+  })
+
+  it.each(['TERMINAL_EXITED', 'TERMINAL_WRITE_NOT_ENABLED'])(
+    '%s is a plan-level deny that never confirms, in ask mode too',
+    (code) => {
+      const state: TerminalGateState =
+        code === 'TERMINAL_EXITED'
+          ? { ...agentState, state: 'exited' }
+          : { ...agentState, origin: 'operator' }
+      for (const ask of [false, true]) {
+        const plan = planToolCall({
+          tool: 'send_terminal',
+          input: buildPlanInput('send_terminal', { terminalId: 'h-1', input: 'x' }, '/work/app'),
+          policy: { serverEnabled: true, ask, denyFolders: [], knownRoots: ['/work'] },
+          now: 1,
+          terminal: state
+        })
+        expect(plan).toMatchObject({ verdict: 'deny', shouldConfirm: false, shouldDispatch: false })
+        expect(plan.auditRecord.result).toBe(code)
+        expect(plan.auditRecord.disclosedPayloadSummary).toBe('none')
+      }
+    }
+  )
+
+  it('an unresolved terminal in the plan fails closed for a send as well', () => {
+    const plan = planToolCall({
+      tool: 'send_terminal',
+      input: buildPlanInput('send_terminal', { terminalId: 'h-1', input: 'x' }, '/work/app'),
+      policy: { serverEnabled: true, ask: false, denyFolders: [], knownRoots: ['/work'] },
+      now: 1
+    })
+    expect(plan.auditRecord.result).toBe('TERMINAL_NOT_FOUND')
   })
 })
 
@@ -123,6 +215,7 @@ describe('AC-B4-2 — refusals are plan-level denies, before any confirm', () =>
     disconnected: false,
     state: 'running',
     readable: false,
+    ownerSessionId: null,
     ...over
   })
 
@@ -239,11 +332,12 @@ describe('AC-B4-4 — block, kill-switch, and the observe allowlist', () => {
     }
   )
 
-  it('the deny list stays derived: spawn_terminal is denied, and a send_terminal never allowed', () => {
+  it('the deny list stays derived: spawn_terminal and send_terminal are denied (AC-B4-4 carry-in)', () => {
     for (const prefix of ['mcp__harnu__', 'mcp__capy__']) {
       expect(OBSERVE_MCP_DENY).toContain(`${prefix}spawn_terminal`)
-      // `send_terminal` joins the catalog in B5. The deny list is the catalog minus the allow
-      // list, so keeping it OUT of the allow list is what keeps it denied when it lands.
+      // B5: the verb now exists. The deny list is the catalog minus the allow list, so keeping
+      // it OUT of the allow list is what keeps it denied.
+      expect(OBSERVE_MCP_DENY).toContain(`${prefix}send_terminal`)
       expect(OBSERVE_MCP_ALLOW).not.toContain(`${prefix}send_terminal`)
     }
     // And every catalog verb that is not allowed is denied — nothing falls between the lists.

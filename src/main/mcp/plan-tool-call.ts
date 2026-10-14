@@ -60,6 +60,8 @@ import {
   isTerminalGatedOp,
   type TerminalGateState
 } from '../terminal-gate-core'
+import { checkSendContent, summarizeSend } from '../terminal-keys'
+import type { SendTerminalArgs } from './validate'
 
 /**
  * How a disclosed payload must be scrubbed before it leaves the server.
@@ -227,6 +229,14 @@ export function planToolCall({
     return denyPlan(tool, folder ?? '', now, `BAD_ARGS: ${parsed.detail}`, redact)
   }
 
+  // T482 B5: what a send may CONTAIN (control characters, size, key names) is judged here too, so
+  // a bad call is refused before any confirm and keeps its own code. The detail rides on the
+  // result so the agent is told which character or which key.
+  if (def.op === 'send_terminal') {
+    const bad = checkSendContent(parsed.value as SendTerminalArgs)
+    if (bad) return denyPlan(tool, folder ?? '', now, `${bad.error}: ${bad.detail}`, redact)
+  }
+
   // Classify via the catalog `mutates` flag (T5) and assemble the gate call.
   const call: ToolCall = { tool, kind: def.mutates ? 'mutation' : 'read' }
   if (folder !== undefined) call.folder = folder
@@ -392,7 +402,22 @@ export function planToolCall({
 
   // redact-on-reads: only a dispatched read discloses a payload, and its summary
   // names the redaction applied (`full` when there is nothing to scrub).
-  const disclosedPayloadSummary = shouldDispatch ? (redact === 'none' ? 'full' : redact) : 'none'
+  let disclosedPayloadSummary = shouldDispatch ? (redact === 'none' ? 'full' : redact) : 'none'
+  // T482 B5 (spec §6.5): a send is audited with WHAT it typed — terminal, owner, the input
+  // scrubbed/escaped/cut to 200 chars, the keys and how it was authorised. Only a call that is
+  // going ahead (or waiting on the operator) says so; a refusal typed nothing.
+  if (def.op === 'send_terminal' && verdict !== 'deny') {
+    const a = parsed.value as SendTerminalArgs
+    disclosedPayloadSummary = summarizeSend({
+      terminalId: a.terminalId,
+      owner: a.ownerSessionId ?? terminal?.ownerSessionId ?? null,
+      input: a.input,
+      keys: a.keys,
+      // B6 adds `lease` and `confirmed`; until then a send is either free or waiting on a confirm.
+      gate: shouldDispatch ? 'free' : 'confirm',
+      home: homeDir ?? homedir()
+    })
+  }
 
   const auditRecord: AuditRecord = {
     ts: now,

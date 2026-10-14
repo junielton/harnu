@@ -64,6 +64,8 @@ const DENIED_VERBS = [
   'create_session',
   'create_worktree',
   'spawn_terminal',
+  // T482 (B4 carry-in): typing into a terminal is never an observe tick's.
+  'send_terminal',
   'submit_manifest',
   'adopt_folder',
   'remove_folder',
