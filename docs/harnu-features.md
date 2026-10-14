@@ -734,8 +734,9 @@ again). On Windows `Ctrl+D` does not end input in cmd or PowerShell. Without `wa
 settles — about 150 ms after the last byte, 1 s at most; a command that is still running is NOT
 waited for, so `read_terminal` again. **`waitFor: { pattern?, idleMs?, timeoutMs? }`** makes the
 call wait for what you are after instead: it returns on the FIRST of `pattern` (a regex source,
-≤ 200 chars, flags fixed to `m`, matched against what the PROGRAM printed — never the echo of
-what you typed, so `grep failed log` with `pattern: "failed"` does not return at once),
+≤ 200 chars, flags fixed to `m`, matched against what the PROGRAM printed — Harnu skips the
+shell's echo of what you typed, a right prompt or autosuggestion on that line included, so
+`grep failed log` with `pattern: "failed"` does not return at once),
 `idleMs` (50–30000, no output for that long, counted from the last byte of the send), `timeoutMs`
 (100–90000, default 15000, a hard stop that is NOT an error), the terminal exiting, or the
 operator disconnecting it. `wait.reason` says which — `pattern`, `idle`, `timeout`, `exited`,
@@ -746,8 +747,11 @@ not compile or one that matches the empty string is `WAIT_PATTERN_INVALID` — r
 anything is typed; `timeoutMs` over 90000, `idleMs` out of range or an empty `waitFor` is
 `BAD_ARGS`. The matcher sees at most 64 KiB, at most every 100 ms, and each run has a 50 ms
 budget: a pattern that blows it is switched off for the call (`wait.patternDisabled: true`) and
-the wait ends on idle or timeout. On the alternate screen the pattern is matched against the rows
-the program changed. The whole call is bounded (queue ≤ 10 s + barrier ≤ 2 s + `timeoutMs`),
+the wait ends on idle or timeout. `wait.match` is scrubbed in its line: a pattern that matches only a secret's value
+(`(?<=Bearer )\S+`) comes back `<redacted>`. On the alternate screen the pattern is matched
+against the rows the program changed, and the echo is NOT skipped there (text typed into a field
+is matchable). If Harnu loses where the send began (a screen clear), `output` is the tail with
+`approximate: true` and the pattern matches nothing. The whole call is bounded (queue ≤ 10 s + barrier ≤ 2 s + `timeoutMs`),
 under the 120 s tool deadline. The result: `terminalId`, `state` (+ `exit`), `sent` (`inputChars`,
 `keys`, `pasted`), `wait` (`reason`, `waitedMs`, `match?`), `output` (the resolved screen from the
 line the cursor was on when you sent, scrubbed like `read_terminal.text`), `truncated`,

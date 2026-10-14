@@ -78,7 +78,13 @@ import {
   writeSegments
 } from '../terminal-write-queue'
 import { BARRIER_TIMEOUT_MS } from '../terminal-screen'
-import { matchSurface, TIMEOUT_DEFAULT_MS, waitForOutput, type WaitSpec } from '../terminal-wait'
+import {
+  matchSurface,
+  redactMatch,
+  TIMEOUT_DEFAULT_MS,
+  waitForOutput,
+  type WaitSpec
+} from '../terminal-wait'
 import {
   TERMINAL_NOTE,
   pruneScreenModels,
@@ -1354,7 +1360,9 @@ const sendTerminalHandler: Handler = async (args, ctx) => {
           wait = {
             reason: result.reason,
             waitedMs: result.waitedMs,
-            ...(result.match !== undefined ? { match: scrub(result.match) } : {}),
+            ...(result.match !== undefined
+              ? { match: redactMatch(result.match, result.matchLine ?? result.match, scrub) }
+              : {}),
             ...(result.patternDisabled ? { patternDisabled: true as const } : {})
           }
         } else {

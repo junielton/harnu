@@ -12,6 +12,7 @@ import {
   checkWaitFor,
   compileWaitPattern,
   matchSurface,
+  redactMatch,
   skipEcho,
   tailBytes,
   vmExec,
@@ -393,5 +394,62 @@ describe('AC-B8-2 — the match surface skips the echo of what was typed', () =>
 
   it('a cursor offset past the end of the text cuts everything', () => {
     expect(matchSurface('$', 5, undefined)).toBe('')
+  })
+})
+
+describe('F1 — a right prompt or an autosuggestion ghost on the echo line is still echo', () => {
+  const rprompt = (cmd: string): string => `${cmd}${' '.repeat(20)}[10:24]`
+
+  it('zsh RPROMPT: `% cmd      [10:24]` is echo', () => {
+    const screen = [`% ${rprompt('grep failed log')}`, 'nothing here', '% '].join('\n')
+    expect(matchSurface(screen, 2, 'grep failed log')).toBe('nothing here\n% ')
+    // After a transient redraw too.
+    const redrawn = [
+      rprompt('grep failed log'),
+      `❯ ${rprompt('grep failed log')}`,
+      '2 failed'
+    ].join('\n')
+    expect(matchSurface(redrawn, 2, 'grep failed log')).toBe('2 failed')
+  })
+
+  it('one space is not a right prompt: `cmd extra` is program output', () => {
+    expect(skipEcho('% ls\nls extra\n% ', 2, 'ls')).toBe('ls extra\n% ')
+  })
+
+  it('an autosuggestion ghost on the line still being edited is echo (no echo of it is matchable)', () => {
+    // Typed `grep failed`, history suggests ` log`: the whole line is on screen, ghost included.
+    expect(matchSurface('% grep failed log', 2, 'grep failed')).toBe('')
+    expect(matchSurface('x\n% grep failed log', 0, 'grep failed')).toBe(
+      'x\n% grep failed log'.slice(0)
+    )
+  })
+
+  it('but once Enter has been pressed, a line that merely starts with the input is output', () => {
+    // The line is no longer the last one: no ghost can be on it.
+    expect(skipEcho('% grep failed\ngrep failed: 3 matches\n% ', 2, 'grep failed')).toBe(
+      'grep failed: 3 matches\n% '
+    )
+  })
+})
+
+describe('F3 — wait.match never carries what the scrubber would have hidden', () => {
+  // A stand-in scrubber with the real one’s shape: it recognises a secret by its context.
+  const scrub = (t: string): string =>
+    t
+      .replace(/(API_TOKEN=)\S+/g, '$1<redacted>')
+      .replace(/(Bearer )[A-Za-z0-9._-]{8,}/g, '$1<redacted>')
+
+  it('a lookbehind that matches only the value is withheld', () => {
+    expect(redactMatch('s3cr3tvalue99', 'API_TOKEN=s3cr3tvalue99', scrub)).toBe('<redacted>')
+    expect(redactMatch('abcdef0123456789', 'Authorization: Bearer abcdef0123456789', scrub)).toBe(
+      '<redacted>'
+    )
+  })
+
+  it('a match that includes the context comes back scrubbed, and a plain match is untouched', () => {
+    expect(redactMatch('API_TOKEN=s3cr3tvalue99', 'API_TOKEN=s3cr3tvalue99', scrub)).toBe(
+      'API_TOKEN=<redacted>'
+    )
+    expect(redactMatch('3 passed', 'summary: 3 passed in 2s', scrub)).toBe('3 passed')
   })
 })

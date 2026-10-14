@@ -58,6 +58,8 @@ export interface WaitResult {
   waitedMs: number
   /** The matched text, UNSCRUBBED — the caller scrubs it on the way out. `pattern` only. */
   match?: string
+  /** The whole line(s) of the surface the match sits in, UNSCRUBBED: what {@link redactMatch} needs. */
+  matchLine?: string
   /** The pattern blew the per-run budget and was switched off; the wait ended on something else. */
   patternDisabled?: true
 }
@@ -184,7 +186,7 @@ export function skipEcho(text: string, offset: number, input: string): string {
   for (; i < lines.length; i++) {
     const line = lines[i]!
     if (line.trim() === '') continue
-    if (typed.some((t) => isEchoLine(line, t, maxPrompt))) {
+    if (typed.some((t) => isEchoLine(line, t, maxPrompt, i === lines.length - 1))) {
       sawEcho = true
       continue
     }
@@ -205,10 +207,19 @@ export function skipEcho(text: string, offset: number, input: string): string {
   return [rest, ...lines.slice(1)].join('\n')
 }
 
-/** `<a short prompt>` + `typed` and nothing after it. */
-function isEchoLine(line: string, typed: string, maxPrompt: number): boolean {
+/**
+ * `<a short prompt>` + `typed`, then nothing, or a right prompt (zsh `RPROMPT`: a clock, a branch)
+ * set off by two or more spaces. On the LAST line, the one still being edited, whatever follows is
+ * an autosuggestion ghost (zsh-autosuggestions, fish): it is gone once Enter is pressed.
+ */
+function isEchoLine(line: string, typed: string, maxPrompt: number, isLast: boolean): boolean {
   const body = line.trimEnd()
-  return body.endsWith(typed) && body.length - typed.length <= maxPrompt
+  for (let k = 0; k <= Math.min(maxPrompt, body.length - typed.length); k++) {
+    if (!body.startsWith(typed, k)) continue
+    const rest = body.slice(k + typed.length)
+    if (rest === '' || rest.startsWith('  ') || isLast) return true
+  }
+  return false
 }
 
 /** The unterminated last line holds a prompt and the first part of `typed`. */
@@ -219,6 +230,23 @@ function isPartialEcho(line: string, typed: string, maxPrompt: number): boolean 
     if (typed.startsWith(body.slice(k))) return true
   }
   return false
+}
+
+/**
+ * `wait.match` as it may leave main. The scrubber recognises a secret by its CONTEXT (`API_TOKEN=`,
+ * `Bearer `), so a pattern that matches only the value (`(?<=Bearer )\S+`) would otherwise come
+ * back raw while `output` shows `<redacted>`. So the match is judged inside its own line: if, once
+ * the line is scrubbed, the scrubbed match is no longer in it, the scrubber changed something
+ * inside the match and the whole of it is withheld.
+ */
+export function redactMatch(
+  match: string,
+  matchLine: string,
+  scrub: (text: string) => string
+): string {
+  const line = scrub(matchLine)
+  const scrubbed = scrub(match)
+  return line.includes(scrubbed) ? scrubbed : '<redacted>'
 }
 
 export interface WaitIo {
@@ -253,6 +281,7 @@ export async function waitForOutput(io: WaitIo, spec: WaitSpec): Promise<WaitRes
   const compiled = spec.pattern === undefined ? null : compileWaitPattern(spec.pattern)
   const re = compiled?.ok ? compiled.re : null
   let disabled = false
+  let lastLine = ''
   // When the matcher last STARTED a run (its surface was read after this), and the output stamp
   // it has seen. `null` = it has not run yet.
   let lastRunAt: number | null = null
@@ -272,7 +301,12 @@ export async function waitForOutput(io: WaitIo, spec: WaitSpec): Promise<WaitRes
       disabled = true
       return null
     }
-    return m === null ? null : m[0].slice(0, MATCH_TEXT_MAX_CHARS)
+    if (m === null) return null
+    const at = m.index ?? 0
+    const from = text.lastIndexOf('\n', at - 1) + 1
+    const nl = text.indexOf('\n', at + m[0].length)
+    lastLine = text.slice(from, nl === -1 ? text.length : nl)
+    return m[0].slice(0, MATCH_TEXT_MAX_CHARS)
   }
   const dueToRun = (): boolean => {
     if (!re || disabled) return false
@@ -290,7 +324,7 @@ export async function waitForOutput(io: WaitIo, spec: WaitSpec): Promise<WaitRes
         ? await Promise.race([tryMatch(), io.abort.wake().then(() => 'abort' as const)])
         : await tryMatch()
       if (raced === 'abort') return finish({ reason: 'disconnected' })
-      if (raced !== null) return finish({ reason: 'pattern', match: raced })
+      if (raced !== null) return finish({ reason: 'pattern', match: raced, matchLine: lastLine })
     }
     const now = io.now()
     if (io.abort?.is()) return finish({ reason: 'disconnected' })

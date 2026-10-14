@@ -632,3 +632,83 @@ describe('the catalog advertises waitFor', () => {
     expect(schema.safeParse({ ...base, waitFor: { idleMs: 49 } }).success).toBe(false)
   })
 })
+
+describe('F1 — right prompts and autosuggestion ghosts are not program output (pipeline)', () => {
+  it('zsh RPROMPT on the accepted line: `% cmd      [10:24]` does not match', async () => {
+    const { id, proc } = await spawnAgent()
+    proc.emitData('% ')
+    // The accepted line comes back with the right prompt at the far end.
+    proc.respond = (data) => `${data.replace(/\r/g, '')}${' '.repeat(20)}[10:24]\r\n% `
+    const out = body(
+      await send({
+        terminalId: id,
+        input: 'grep failed log',
+        keys: ['Enter'],
+        waitFor: { pattern: 'failed', idleMs: 250 }
+      })
+    )
+    expect(waitObj(out)).toMatchObject({ reason: 'idle' })
+    expect(out.output).toContain('grep failed log') // the echo is still in the output
+  })
+
+  it('an autosuggestion ghost after the typed text does not match', async () => {
+    const { id, proc } = await spawnAgent()
+    proc.emitData('% ')
+    // Typed `grep failed`; the shell paints its history suggestion ` log` behind it.
+    proc.respond = (data) => `${data} log`
+    const out = body(
+      await send({
+        terminalId: id,
+        input: 'grep failed',
+        waitFor: { pattern: 'failed log', idleMs: 250 }
+      })
+    )
+    expect(waitObj(out)).toMatchObject({ reason: 'idle' })
+  })
+
+  it('and the program line after such an echo still matches', async () => {
+    const { id, proc } = await spawnAgent()
+    proc.emitData('% ')
+    proc.respond = (data) => {
+      setTimeout(() => proc.emitData('2 tests failed\r\n% '), 250)
+      return `${data.replace(/\r/g, '')}${' '.repeat(20)}[10:24]\r\n`
+    }
+    const out = body(
+      await send({
+        terminalId: id,
+        input: 'grep failed log',
+        keys: ['Enter'],
+        waitFor: { pattern: 'failed' }
+      })
+    )
+    expect(waitObj(out)).toMatchObject({ reason: 'pattern', match: 'failed' })
+    expect(waitObj(out).waitedMs as number).toBeGreaterThanOrEqual(200)
+  })
+})
+
+describe('F3 — wait.match is scrubbed in its line, not alone (pipeline)', () => {
+  it.each([
+    [
+      'API_TOKEN lookbehind',
+      'API_TOKEN=s3cr3tvalue9876543',
+      '(?<=API_TOKEN=)\\S+',
+      's3cr3tvalue9876543'
+    ],
+    [
+      'Bearer lookbehind',
+      'Authorization: Bearer abcdef0123456789abcdef',
+      '(?<=Bearer )\\S+',
+      'abcdef0123456789abcdef'
+    ]
+  ])('%s', async (_label, printed, pattern, secret) => {
+    const { id, proc } = await spawnAgent()
+    answer(proc, `${printed}\r\n`, 120)
+    const out = body(
+      await send({ terminalId: id, input: 'env', keys: ['Enter'], waitFor: { pattern } })
+    )
+    expect(waitObj(out)).toMatchObject({ reason: 'pattern' })
+    expect(JSON.stringify(out)).not.toContain(secret)
+    expect(waitObj(out).match).toBe('<redacted>')
+    expect(String(out.output)).toContain('<redacted>')
+  })
+})

@@ -193,3 +193,30 @@ describe('a prompt that erases itself on Enter (powerlevel10k transient prompt, 
     })
   })
 })
+
+describe('F2 — a marker that outlived a screen clear is not an anchor', () => {
+  /** A stale line sits just above the prompt block, scrolled into scrollback by one more line. */
+  async function clearedScreen(): Promise<{ m: ScreenModel; prep: { cursor: string | null } }> {
+    const m = make({ cols: 40, rows: 5 })
+    await feed(m, 'one\r\ntwo\r\nthree\r\nSTALE-16 failed\r\nf1\r\nf2\r\nf3\r\nf4\r\n$ ')
+    const prep = await m.prepareSend()
+    // One line of output scrolls the top marker into scrollback, then a clear WITHOUT the
+    // scrollback erase (`tput clear` on some terminfo, `printf '\e[2J'`, watch tools).
+    await feed(m, 'go\r\nsome output\r\n')
+    await feed(m, '\x1b[H\x1b[2Jfresh output\r\n')
+    return { m, prep }
+  }
+
+  it('reading since the send does not return the stale line; the anchor is lost', async () => {
+    const { m, prep } = await clearedScreen()
+    expect(await m.read({ mode: 'since', since: prep.cursor! })).toEqual({
+      ok: false,
+      error: 'CURSOR_EXPIRED'
+    })
+  })
+
+  it('and the matcher gets nothing, so the stale "failed" cannot match', async () => {
+    const { m, prep } = await clearedScreen()
+    expect(await m.matchText({ since: prep.cursor, altRows: null })).toEqual({ ok: false })
+  })
+})

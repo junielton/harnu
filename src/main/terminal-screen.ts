@@ -113,6 +113,8 @@ interface Cursor {
 interface SendMark {
   /** `markers[k]` sits `k` rows above the row the cursor was on. */
   markers: IMarker[]
+  /** What each of those rows held at the send. A fallback marker is only trusted if its row changed. */
+  rows: string[]
 }
 
 /** Rows above the cursor row a send mark also watches (a two-line prompt plus its spacer). */
@@ -473,14 +475,16 @@ export class ScreenModel {
     const buf = this.term.buffer.active
     const here = buf.baseY + buf.cursorY
     const markers: IMarker[] = []
+    const rows: string[] = []
     for (let k = 0; k <= SEND_MARK_ROWS_ABOVE && k <= here; k++) {
       const m = this.term.registerMarker(-k)
       if (!m) break
       markers.push(m)
+      rows.push(buf.getLine(here - k)?.translateToString(true) ?? '')
     }
     if (markers.length === 0) return null
     const id = `s${++this.cursorSeq}`
-    this.sendMarks.set(id, { markers })
+    this.sendMarks.set(id, { markers, rows })
     return id
   }
 
@@ -502,7 +506,14 @@ export class ScreenModel {
     if (!mark) return null
     for (let k = 0; k < mark.markers.length; k++) {
       const m = mark.markers[k]!
-      if (!m.isDisposed) return { line: m.line, onCursorRow: k === 0 }
+      if (m.isDisposed) continue
+      if (k === 0) return { line: m.line, onCursorRow: true }
+      // A row ABOVE the cursor row can be the start of an erased block that was redrawn (the echo
+      // of a transient prompt) — then its text changed. One that still reads as it did at the send
+      // is just a line that outlived a screen clear: it says nothing about where the send began,
+      // and reading from it would return output from before the send.
+      const now = this.term.buffer.active.getLine(m.line)?.translateToString(true) ?? ''
+      return now !== mark.rows[k] ? { line: m.line, onCursorRow: false } : null
     }
     return null
   }
