@@ -21,7 +21,7 @@ import { redactForWire } from './redact-wire'
  */
 
 export const ROW_FOLD_VERSION = 1
-/** Every text field's cap in UTF-16 units, after whitespace is collapsed (spec §5.3). */
+/** Every text field's cap in 16-bit code units, after whitespace is collapsed (spec §5.3). */
 export const TEXT_MAX = ROW_TEXT_MAX
 /** How much of a text is redacted before the cap: a secret near the cut is never halved. */
 export const REDACT_WINDOW = 8_192
@@ -240,7 +240,7 @@ function jsonBytes(cp: number): number {
 }
 
 /**
- * Collapses whitespace and caps the text at TEXT_MAX UTF-16 units and TEXT_MAX_BYTES bytes, never
+ * Collapses whitespace and caps the text at TEXT_MAX 16-bit code units and TEXT_MAX_BYTES bytes, never
  * inside a surrogate pair; a cut text ends in '…'.
  */
 export function clip(s: string): string {

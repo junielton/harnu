@@ -101,7 +101,7 @@ scripts/ci/render-secret-rules.mjs`; `tests/companion/secret-rules-staged.test.t
 - Overlapping rule matches are merged and the union is redacted under the rule that matched first.
   T450's `detect` skips the later match instead, which leaves the rest of a larger secret raw; the
   merge is a deliberate hardening for T450 to adopt. The rule sources are T450's, unchanged.
-- Each text is capped at 240 UTF-16 units AND `ROW_TEXT_MAX_BYTES` (300) UTF-8 bytes as JSON writes
+- Each text is capped at 240 16-bit code units AND `ROW_TEXT_MAX_BYTES` (300) UTF-8 bytes as JSON writes
   it, after control characters are stripped and lone surrogates replaced, so a `session.row` stays
   at or under ~1.5 KB in any script.
 - The `classic.SessionStart` body runs the identity step (P1W3) in a block of its own; no T455 step
