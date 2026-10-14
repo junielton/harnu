@@ -2716,6 +2716,9 @@ const api = {
   schedulerList: (): Promise<Worker[]> => ipcRenderer.invoke('scheduler:list'),
   schedulerSave: (worker: Partial<Worker>): Promise<Worker[]> =>
     ipcRenderer.invoke('scheduler:save', worker),
+  // T483: pin/unpin is its own call — `schedulerSave` never moves a pin.
+  schedulerSetPinned: (id: string, pinned: boolean): Promise<Worker[]> =>
+    ipcRenderer.invoke('scheduler:setPinned', id, pinned),
   schedulerDelete: (id: string): Promise<Worker[]> => ipcRenderer.invoke('scheduler:delete', id),
   schedulerRunNow: (id: string): Promise<void> => ipcRenderer.invoke('scheduler:runNow', id),
   schedulerStop: (id: string): Promise<void> => ipcRenderer.invoke('scheduler:stop', id),

@@ -113,9 +113,10 @@ describe('Pinned group (AC-1, AC-4, AC-5)', () => {
   })
 
   it('a pinned OFF worker stays in Pinned, still dimmed and still labelled off (AC-4)', async () => {
-    state = [worker('a', true), worker('b', false, 10)]
+    state = [worker('a', true, 5), worker('b', false, 10)]
     const w = await mountView()
-    const row = w.get('[data-group="pinned"] [role="option"]')
+    // `a` is the default selection; `b` is the unselected pinned-off row.
+    const row = w.findAll('[data-group="pinned"] [role="option"]')[1]
     expect(row.text()).toContain('worker-b')
     expect(row.classes()).toContain('opacity-[0.55]')
     expect(row.attributes('data-dsqa')).toContain('off')

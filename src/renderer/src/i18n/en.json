@@ -3847,6 +3847,7 @@
     "footerNote": "Checks every 30s · max 2 workers at once · nothing runs while Harnu is closed",
     "emptyTitle": "No workers yet",
     "emptyBody": "A worker runs one prompt in one folder, on a cadence, without opening a session. Good for watching a repo, answering review comments, or checking something on a timer.",
+    "groupPinned": "Pinned · {n}",
     "groupEnabled": "Enabled · {n}",
     "groupOff": "Off · {n}",
     "row": {
@@ -3858,7 +3859,9 @@
       "nextIn": "next in {countdown}",
       "failedStreak": "failed · {n} in a row",
       "disabledStreak": "disabled · {n} failures",
-      "off": "off"
+      "off": "off",
+      "pin": "Pin worker",
+      "unpin": "Unpin worker"
     },
     "tabs": {
       "runs": "Runs",
@@ -3892,7 +3895,9 @@
         "skipped": "skipped",
         "stopped": "stopped",
         "running": "running"
-      }
+      },
+      "pin": "Pin worker",
+      "unpin": "Unpin worker"
     },
     "settings": {
       "identity": "Identity",

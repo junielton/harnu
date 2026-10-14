@@ -43,10 +43,11 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useNow } from '@vueuse/core'
-import { Clock, Plus } from 'lucide-vue-next'
+import { ChevronDown, Clock, Plus } from 'lucide-vue-next'
 import { useSchedulerStore } from '../stores/scheduler'
 import { useSessionsStore } from '../stores/sessions'
 import SchedulerWorkerRow from './SchedulerWorkerRow.vue'
+import { defaultSelectionId, groupWorkers } from './scheduler-format'
 import SchedulerWorkerDetail from './SchedulerWorkerDetail.vue'
 import Button from './ui/Button.vue'
 import type { Run, Worker } from '../../../preload'
@@ -111,12 +112,22 @@ watch(
   }
 )
 
-// ── selection: keep it valid, default to the first worker ──────────────────
+// ── grouping (T483) — "Pinned" (any state, by pin time), then "Enabled", then
+// "Off". A worker is in exactly one group; a disabled-by-streak worker is still
+// `enabled === false`, so it groups under "Off" alongside a worker the operator
+// switched off — the row itself is what tells the two apart. ────────────────
+const groups = computed(() => groupWorkers(scheduler.workers))
+const pinnedWorkers = computed(() => groups.value.pinned)
+const enabledWorkers = computed(() => groups.value.enabled)
+const offWorkers = computed(() => groups.value.off)
+
+// ── selection: keep it valid, default to the first VISIBLE row (the first
+// pinned worker when any is pinned) ────────────────────────────────────────
 watch(
   () => scheduler.workers,
   (workers) => {
     if (scheduler.selectedId && workers.some((w) => w.id === scheduler.selectedId)) return
-    scheduler.selectedId = workers[0]?.id ?? null
+    scheduler.selectedId = defaultSelectionId(groups.value)
   },
   { immediate: true }
 )
@@ -125,11 +136,26 @@ const selectedWorker = computed<Worker | undefined>(() =>
   scheduler.workers.find((w) => w.id === scheduler.selectedId)
 )
 
-// ── grouping (Task 9) — "Enabled" then "Off"; a disabled-by-streak worker is
-// still `enabled === false`, so it groups under "Off" alongside a worker the
-// operator switched off — the row itself is what tells the two apart. ──────
-const enabledWorkers = computed(() => scheduler.workers.filter((w) => w.enabled))
-const offWorkers = computed(() => scheduler.workers.filter((w) => !w.enabled))
+// ── Off group collapse (T483) — a per-viewer convenience, never load-bearing:
+// every storage access is guarded and the view renders correctly without it.
+// Collapsing never touches `selectedId`. ───────────────────────────────────
+const OFF_COLLAPSED_KEY = 'om2tab.scheduler.offCollapsed'
+function readOffCollapsed(): boolean {
+  try {
+    return localStorage.getItem(OFF_COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+const offCollapsed = ref(readOffCollapsed())
+function toggleOff(): void {
+  offCollapsed.value = !offCollapsed.value
+  try {
+    localStorage.setItem(OFF_COLLAPSED_KEY, offCollapsed.value ? '1' : '0')
+  } catch {
+    /* storage unavailable — the in-memory state still works for this viewer */
+  }
+}
 
 function folderAliasFor(path: string): string {
   return sessions.folders.find((f) => f.path === path)?.alias || path || '—'
@@ -151,6 +177,9 @@ function lastStatusFor(worker: Worker): Run['status'] | undefined {
 // ── actions ──────────────────────────────────────────────────────────────
 function selectWorker(id: string): void {
   scheduler.selectedId = id
+}
+function togglePin(w: Worker): void {
+  void scheduler.setPinned(w.id, typeof w.pinnedAt !== 'number')
 }
 function runNow(id: string): void {
   void scheduler.runNow(id)
@@ -218,8 +247,35 @@ async function createWorker(): Promise<void> {
           role="listbox"
           :aria-label="t('scheduler.title')"
         >
-          <template v-if="enabledWorkers.length > 0">
+          <div v-if="pinnedWorkers.length > 0" data-group="pinned">
             <div
+              data-group-header="pinned"
+              class="flex h-6 items-center bg-surface px-3 text-[11px] uppercase tracking-wide text-text-3"
+            >
+              {{ t('scheduler.groupPinned', { n: pinnedWorkers.length }) }}
+            </div>
+            <SchedulerWorkerRow
+              v-for="w in pinnedWorkers"
+              :key="w.id"
+              :worker="w"
+              :selected="w.id === scheduler.selectedId"
+              :running="scheduler.runningIds.includes(w.id)"
+              :last-status="lastStatusFor(w)"
+              :next-at="nextAtFor(w)"
+              :running-since-ms="runningSinceById[w.id]"
+              :now-ms="nowMs"
+              :folder-label="folderAliasFor(w.folder)"
+              :branch-label="folderBranchFor(w.folder)"
+              @select="selectWorker(w.id)"
+              @pin="togglePin(w)"
+              @run-now="runNow(w.id)"
+              @stop="stopWorker(w.id)"
+              @delete="deleteWorker(w.id)"
+            />
+          </div>
+          <div v-if="enabledWorkers.length > 0" data-group="enabled">
+            <div
+              data-group-header="enabled"
               class="flex h-6 items-center bg-surface px-3 text-[11px] uppercase tracking-wide text-text-3"
             >
               {{ t('scheduler.groupEnabled', { n: enabledWorkers.length }) }}
@@ -237,35 +293,53 @@ async function createWorker(): Promise<void> {
               :folder-label="folderAliasFor(w.folder)"
               :branch-label="folderBranchFor(w.folder)"
               @select="selectWorker(w.id)"
+              @pin="togglePin(w)"
               @run-now="runNow(w.id)"
               @stop="stopWorker(w.id)"
               @delete="deleteWorker(w.id)"
             />
-          </template>
-          <template v-if="offWorkers.length > 0">
-            <div
-              class="flex h-6 items-center bg-surface px-3 text-[11px] uppercase tracking-wide text-text-3"
+          </div>
+          <div v-if="offWorkers.length > 0" data-group="off">
+            <button
+              type="button"
+              data-group-header="off"
+              class="flex h-6 w-full items-center gap-1 bg-surface px-3 text-left text-[11px] uppercase tracking-wide text-text-3 transition-colors hover:text-text"
+              :aria-expanded="!offCollapsed"
+              @click="toggleOff"
             >
+              <ChevronDown
+                :size="11"
+                :stroke-width="1.6"
+                class="shrink-0 text-text-4 transition-transform"
+                :class="offCollapsed ? '-rotate-90' : ''"
+                style="
+                  transition-duration: var(--dur-fast);
+                  transition-timing-function: var(--ease);
+                "
+              />
               {{ t('scheduler.groupOff', { n: offWorkers.length }) }}
-            </div>
-            <SchedulerWorkerRow
-              v-for="w in offWorkers"
-              :key="w.id"
-              :worker="w"
-              :selected="w.id === scheduler.selectedId"
-              :running="scheduler.runningIds.includes(w.id)"
-              :last-status="lastStatusFor(w)"
-              :next-at="nextAtFor(w)"
-              :running-since-ms="runningSinceById[w.id]"
-              :now-ms="nowMs"
-              :folder-label="folderAliasFor(w.folder)"
-              :branch-label="folderBranchFor(w.folder)"
-              @select="selectWorker(w.id)"
-              @run-now="runNow(w.id)"
-              @stop="stopWorker(w.id)"
-              @delete="deleteWorker(w.id)"
-            />
-          </template>
+            </button>
+            <template v-if="!offCollapsed">
+              <SchedulerWorkerRow
+                v-for="w in offWorkers"
+                :key="w.id"
+                :worker="w"
+                :selected="w.id === scheduler.selectedId"
+                :running="scheduler.runningIds.includes(w.id)"
+                :last-status="lastStatusFor(w)"
+                :next-at="nextAtFor(w)"
+                :running-since-ms="runningSinceById[w.id]"
+                :now-ms="nowMs"
+                :folder-label="folderAliasFor(w.folder)"
+                :branch-label="folderBranchFor(w.folder)"
+                @select="selectWorker(w.id)"
+                @pin="togglePin(w)"
+                @run-now="runNow(w.id)"
+                @stop="stopWorker(w.id)"
+                @delete="deleteWorker(w.id)"
+              />
+            </template>
+          </div>
         </div>
 
         <SchedulerWorkerDetail
