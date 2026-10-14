@@ -1073,6 +1073,7 @@ const readTerminalHandler: Handler = async (args, ctx) => {
     ...(numArg('maxChars') !== undefined ? { maxChars: numArg('maxChars') } : {})
   })
   if (!read.ok) return steerError(read.error, ctx.folder)
+  terminalRegistry.noteAgentRead(terminalId)
   const { ok: _ok, ...screen } = read
   return textResult({
     ok: true,

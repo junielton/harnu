@@ -55,3 +55,45 @@ export async function adoptPtyStream(
   for (const chunk of dedupeAfterSeq(queued, replay.seq)) write(chunk.data)
   return off
 }
+
+/** The slice of an xterm `Terminal` adoption needs. Narrowed so a test can fake it. */
+export interface AdoptTerm {
+  /** `done` fires once this chunk has been parsed (xterm's own write callback). */
+  write(data: string, done?: () => void): void
+  onData(cb: (data: string) => void): { dispose(): void }
+}
+
+/**
+ * Adopt a PTY AND wire the pane's keyboard/replies to it, in one place (T480, spec §5.4).
+ *
+ * An xterm answers terminal queries (DSR, DA) by itself through `onData`. The replay's bytes
+ * were already answered by main's screen model while no xterm existed, so everything the xterm
+ * emits while it PARSES the replay is a duplicate and must not reach the PTY; the chunks queued
+ * behind the replay are live bytes only this xterm answers, so they must. The gate opens when
+ * the replay write's callback fires — not when `adoptPtyStream` resolves, which is earlier —
+ * and it lives here, next to the adoption, so a pane cannot adopt and forget it.
+ *
+ * Resolves to one disposer for both the live stream and the input wiring.
+ */
+export async function adoptTerminal(
+  api: AdoptApi & { ptyWrite(id: string, data: string): void },
+  ptyId: string,
+  term: AdoptTerm
+): Promise<() => void> {
+  let replaying = true
+  const input = term.onData((data) => {
+    if (!replaying) api.ptyWrite(ptyId, data)
+  })
+  const off = await adoptPtyStream(
+    api,
+    ptyId,
+    (data, done) => term.write(data, done),
+    () => {
+      replaying = false
+    }
+  )
+  return () => {
+    off()
+    input.dispose()
+  }
+}

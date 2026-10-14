@@ -27,6 +27,15 @@ function make(): { reg: TerminalRegistry; clock: { t: number } } {
 }
 
 describe('TerminalRegistry', () => {
+  it('noteAgentRead stamps lastAgentReadAt, and is a no-op for an unknown id (T480)', () => {
+    const { reg, clock } = make()
+    const rec = reg.register(input())
+    clock.t = 5_000
+    reg.noteAgentRead('h-1')
+    expect(rec.lastAgentReadAt).toBe(5_000)
+    expect(() => reg.noteAgentRead('h-nope')).not.toThrow()
+  })
+
   it('registers a running record that is addressable by terminal id and by pty id', () => {
     const { reg } = make()
     const rec = reg.register(input())
@@ -38,6 +47,7 @@ describe('TerminalRegistry', () => {
       state: 'running',
       size: SIZE,
       title: null,
+      lastAgentReadAt: null,
       lastOperatorWriteAt: null
     })
     expect(reg.get('h-1')).toBe(rec)

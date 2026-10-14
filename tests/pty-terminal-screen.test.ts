@@ -11,6 +11,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vite
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { Terminal } from '@xterm/headless'
 
 interface FakeProc {
   write: ReturnType<typeof vi.fn>
@@ -82,6 +83,7 @@ let pty: typeof import('../src/main/pty')
 let registry: typeof import('../src/main/terminal-registry').terminalRegistry
 let screen: typeof import('../src/main/terminal-screen')
 let ipc: typeof import('../src/main/terminal-ipc')
+const TOMBSTONE_MS = 10 * 60_000
 
 const deps = (): Parameters<typeof import('../src/main/pty').createPty>[1] => ({
   getWindow: () => ({ webContents: { send: vi.fn() } }) as never,
@@ -121,7 +123,9 @@ beforeAll(async () => {
   screen = await import('../src/main/terminal-screen')
   ipc = await import('../src/main/terminal-ipc')
   pty.registerPtyHandlers(() => null)
-  ipc.registerTerminalIpc({ dispatch: vi.fn(async () => undefined) })
+  ipc.registerTerminalIpc({ dispatch: vi.fn(async () => undefined) }, (url) =>
+    url.startsWith('file:///app/')
+  )
 })
 
 beforeEach(() => {
@@ -232,19 +236,35 @@ describe('AC-B3-11: rendererAttached is reset on reload and crash', () => {
     expect(replies(a.proc).filter((r) => CPR.test(r))).toHaveLength(1)
   })
 
-  it('a main-frame navigation (a reload) resets; a same-document or sub-frame one does not', async () => {
+  it('a main-frame navigation to the renderer (a reload) resets; same-document and sub-frame ones do not', async () => {
     const a = await spawnTerminal('h-a')
     const win = fakeWindow()
+    const url = 'file:///app/index.html'
     for (const details of [
-      { isMainFrame: true, isSameDocument: true },
-      { isMainFrame: false, isSameDocument: false }
+      { isMainFrame: true, isSameDocument: true, url },
+      { isMainFrame: false, isSameDocument: false, url }
     ]) {
       await h.handlers.get('pty:replay')!({}, a.ptyId)
       win.emit('did-start-navigation', details)
       expect(registry.get('h-a')!.rendererAttached).toBe(true)
     }
-    win.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+    win.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false, url })
     expect(registry.get('h-a')!.rendererAttached).toBe(false)
+  })
+
+  it('a navigation Harnu is about to BLOCK (a dropped file) does not reset: the xterms are still alive', async () => {
+    const a = await spawnTerminal('h-a')
+    const win = fakeWindow()
+    await h.handlers.get('pty:replay')!({}, a.ptyId)
+    win.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: false,
+      url: 'file:///home/u/dropped.html'
+    })
+    expect(registry.get('h-a')!.rendererAttached).toBe(true)
+    a.proc.emitData('\x1b[6n') // still only the renderer's xterm answers
+    await settle('h-a')
+    expect(replies(a.proc)).toEqual([])
   })
 
   it('once the new pane adopts there is exactly one answerer again', async () => {
@@ -306,7 +326,24 @@ describe('the tombstone snapshot is the resolved screen', () => {
     proc.emitData('\x1b[31mred\x1b[0m\r\nprogress 1%\rprogress 100%\r\n')
     proc.emitExit(1)
     const status = await ipc.terminalStatusResolved(registry, 'h-a')
-    expect(status).toMatchObject({ known: true, state: 'exited', snapshot: 'red\nprogress 100%' })
+    // CRLF, because the pane writes it into an xterm with no convertEol (a bare LF would stair-step).
+    expect(status).toMatchObject({
+      known: true,
+      state: 'exited',
+      snapshot: 'red\r\nprogress 100%'
+    })
+  })
+
+  it('painted into an xterm, every line starts at column 0 (no staircase)', async () => {
+    const { proc } = await spawnTerminal()
+    proc.emitData('red\r\nprogress 100%\r\nthird\r\n')
+    proc.emitExit(1)
+    const status = await ipc.terminalStatusResolved(registry, 'h-a')
+    const pane = new Terminal({ cols: 40, rows: 5, allowProposedApi: true })
+    await new Promise<void>((r) => pane.write((status as { snapshot: string }).snapshot, r))
+    const rows = [0, 1, 2].map((y) => pane.buffer.active.getLine(y)!.translateToString(true))
+    expect(rows).toEqual(['red', 'progress 100%', 'third'])
+    pane.dispose()
   })
 
   it('a running terminal carries no snapshot', async () => {
@@ -314,5 +351,37 @@ describe('the tombstone snapshot is the resolved screen', () => {
     const status = await ipc.terminalStatusResolved(registry, 'h-a')
     expect(status).toMatchObject({ known: true, state: 'running' })
     expect(status).not.toHaveProperty('snapshot')
+  })
+})
+
+describe('the model is freed when the tombstone window ends (T480)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('a natural exit drops the model at exit + the tombstone window, not before', async () => {
+    vi.useFakeTimers()
+    const { proc } = await spawnTerminal()
+    proc.emitExit(0)
+    vi.advanceTimersByTime(TOMBSTONE_MS - 1)
+    expect(screen.screenModelFor('h-a')).toBeDefined()
+    vi.advanceTimersByTime(2)
+    expect(screen.screenModelFor('h-a')).toBeUndefined()
+  })
+
+  it('an operator close drops it on the same clock', async () => {
+    vi.useFakeTimers()
+    await spawnTerminal()
+    expect(pty.closeTerminalPty('h-a')).toBe(true)
+    expect(screen.screenModelFor('h-a')).toBeDefined() // the tombstone is still readable
+    vi.advanceTimersByTime(TOMBSTONE_MS + 1)
+    expect(screen.screenModelFor('h-a')).toBeUndefined()
+  })
+
+  it('a terminal that has not exited keeps its model', async () => {
+    vi.useFakeTimers()
+    await spawnTerminal()
+    vi.advanceTimersByTime(TOMBSTONE_MS * 3)
+    expect(screen.screenModelFor('h-a')).toBeDefined()
   })
 })

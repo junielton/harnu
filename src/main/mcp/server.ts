@@ -935,7 +935,12 @@ export async function actuate(
   return raced.value
 }
 
-async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise<CallToolResult> {
+/**
+ * The whole per-call pipeline: policy snapshot → gate folder → plan → audit → actuate/confirm.
+ * Exported so a test can drive a verb through the REAL gate (the gate-folder resolution above
+ * `planToolCall` is where a read of a blocked folder is stopped).
+ */
+export async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise<CallToolResult> {
   const args = asRecord(rawArgs)
   const now = Date.now()
 

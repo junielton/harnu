@@ -177,7 +177,11 @@ export class ScreenModel {
   }
 
   /** Read the screen after the barrier. See spec §4.3 for the three modes. */
-  async read(opts: ReadOptions): Promise<ScreenReadResult> {
+  read(opts: ReadOptions): Promise<ScreenReadResult> {
+    return this.readScreen(opts, true)
+  }
+
+  private async readScreen(opts: ReadOptions, withCursor: boolean): Promise<ScreenReadResult> {
     const approximate = await this.barrier()
     this.sweepCursors()
     const buf = this.term.buffer.active
@@ -214,13 +218,17 @@ export class ScreenModel {
       cursorPos: { row: buf.cursorY, col: buf.cursorX },
       ...capped,
       approximate,
-      cursor: altScreen ? null : this.takeCursor()
+      cursor: altScreen || !withCursor ? null : this.takeCursor()
     }
   }
 
   /** The last {@link TOMBSTONE_LINES} resolved lines — what a finished terminal's pane paints. */
   async tombstoneText(): Promise<string> {
-    const r = await this.read({ mode: 'tail', lines: MAX_TAIL_LINES, maxChars: MAX_MAX_CHARS })
+    // A pane painting its tombstone is not an agent read: it must not take a cursor.
+    const r = await this.readScreen(
+      { mode: 'tail', lines: MAX_TAIL_LINES, maxChars: MAX_MAX_CHARS },
+      false
+    )
     return r.ok ? r.text.split('\n').slice(-TOMBSTONE_LINES).join('\n') : ''
   }
 
@@ -353,8 +361,26 @@ export function setScreenModel(terminalId: string, model: ScreenModel): void {
 }
 
 export function dropScreenModel(terminalId: string): void {
+  const timer = dropTimers.get(terminalId)
+  if (timer) clearTimeout(timer)
+  dropTimers.delete(terminalId)
   models.get(terminalId)?.dispose()
   models.delete(terminalId)
+}
+
+const dropTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+/**
+ * The terminal ended: free its model once its tombstone window is over, instead of waiting for
+ * the next spawn or read to prune it (a model holds ~2–3 MB). Calling it again restarts the
+ * clock; the timer never keeps the process alive.
+ */
+export function scheduleScreenModelDrop(terminalId: string, afterMs: number): void {
+  const prev = dropTimers.get(terminalId)
+  if (prev) clearTimeout(prev)
+  const timer = setTimeout(() => dropScreenModel(terminalId), afterMs)
+  timer.unref?.()
+  dropTimers.set(terminalId, timer)
 }
 
 /** Dispose the models whose terminal record is gone (a swept tombstone, a rolled-back spawn). */

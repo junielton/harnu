@@ -357,6 +357,17 @@ describe('AC-B3-9: backpressure watermarks', () => {
 })
 
 describe('tombstone text', () => {
+  it('is not an agent read: it takes no cursor', async () => {
+    const { model } = make()
+    model.write('painted by a pane\r\n', false)
+    await model.tombstoneText()
+    // A cursor taken by the tombstone would be reused only while the cursor row stays put; move
+    // it, so a stray cursor shows up as the agent's first id being m2.
+    model.write('more output\r\n', false)
+    await model.tombstoneText()
+    expect(ok(await model.read({ mode: 'tail' })).cursor).toBe('m1')
+  })
+
   it('is the resolved tail, at most 200 lines', async () => {
     const { model } = make()
     for (let i = 0; i < 300; i++) model.write(`t${i}\r\n`, false)

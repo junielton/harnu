@@ -81,6 +81,7 @@ import { getTaskStates } from './hook-bridge'
 import { getPolicy } from './monitor/policy-store'
 import {
   AGENT_TERMINAL_SIZE,
+  TOMBSTONE_MS,
   tailSnapshot,
   terminalRegistry,
   type TerminalOrigin
@@ -89,6 +90,7 @@ import {
   ScreenModel,
   dropScreenModel,
   pruneScreenModels,
+  scheduleScreenModelDrop,
   screenModelFor,
   setScreenModel
 } from './terminal-screen'
@@ -1116,6 +1118,7 @@ export function closeTerminalPty(terminalId: string): boolean {
   if (!rec || rec.state === 'exited') return false
   const output = ptyDeps ? destroyPty(rec.ptyId, ptyDeps.flushNow) : undefined
   terminalRegistry.markExited(rec.ptyId, null, tailSnapshot(output ?? ''))
+  scheduleScreenModelDrop(terminalId, TOMBSTONE_MS)
   return true
 }
 
@@ -1623,6 +1626,7 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
         evt.exitCode ?? null,
         terminalRegistry.hasPty(id) ? tailSnapshot(ptys.get(id)?.ring.snapshot() ?? '') : undefined
       )
+      if (terminalRec) scheduleScreenModelDrop(terminalRec.terminalId, TOMBSTONE_MS)
       getWindow()?.webContents.send('pty:exit', {
         id,
         exitCode: evt.exitCode,

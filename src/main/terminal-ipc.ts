@@ -39,7 +39,9 @@ export async function terminalStatusResolved(
   if (!status.known || status.state !== 'exited' || typeof terminalId !== 'string') return status
   const model = screenModelFor(terminalId)
   if (!model) return status
-  return { ...status, snapshot: await model.tombstoneText() }
+  // The pane writes this straight into an xterm without `convertEol`: a bare LF would not
+  // return to column 0 and the text would paint as a staircase.
+  return { ...status, snapshot: (await model.tombstoneText()).replace(/\r?\n/g, '\r\n') }
 }
 
 const watched = new WeakSet<WebContents>()
@@ -49,13 +51,20 @@ const watched = new WeakSet<WebContents>()
  * `did-start-navigation` for the main frame, not same-document: `will-navigate` (the only
  * navigation hook `index.ts` has) does NOT fire on a reload. `terminal:xtermGone` from
  * `beforeunload` stays the primary path; this is the net under it.
+ *
+ * `did-start-navigation` also fires for a navigation `index.ts` is about to BLOCK (a file
+ * dropped on the window, a redirect): the xterms survive that, so resetting would leave every
+ * query answered twice with nothing to restore the flag. Only a navigation to the renderer
+ * document itself counts.
  */
-function watchRenderer(wc: WebContents): void {
+function watchRenderer(wc: WebContents, isRendererUrl: (url: string) => boolean): void {
   if (watched.has(wc) || wc.getType() !== 'window') return
   watched.add(wc)
   wc.on('render-process-gone', () => resetRendererAttached(terminalRegistry))
   wc.on('did-start-navigation', (details) => {
-    if (details.isMainFrame && !details.isSameDocument) resetRendererAttached(terminalRegistry)
+    if (details.isMainFrame && !details.isSameDocument && isRendererUrl(details.url)) {
+      resetRendererAttached(terminalRegistry)
+    }
   })
 }
 
@@ -63,9 +72,11 @@ function watchRenderer(wc: WebContents): void {
  * Bind the handlers. Call it AFTER `registerCommandBridge`: its `renderer:ready` listener is the
  * one that opens the dispatch gate, and ours must run once the gate is open.
  */
-export function registerTerminalIpc(bridge: {
-  dispatch: (command: string, payload: unknown) => Promise<unknown>
-}): void {
+export function registerTerminalIpc(
+  bridge: { dispatch: (command: string, payload: unknown) => Promise<unknown> },
+  /** Whether a navigation target is the renderer document (`index.ts` owns the answer). */
+  isRendererUrl: (url: string) => boolean = () => true
+): void {
   ipcMain.handle('terminal:status', (_e, terminalId: unknown) =>
     terminalStatusResolved(terminalRegistry, terminalId)
   )
@@ -78,8 +89,8 @@ export function registerTerminalIpc(bridge: {
     if (typeof terminalId === 'string') terminalRegistry.setRendererAttached(terminalId, false)
   })
 
-  for (const wc of webContents.getAllWebContents()) watchRenderer(wc)
-  app.on('web-contents-created', (_e, wc) => watchRenderer(wc))
+  for (const wc of webContents.getAllWebContents()) watchRenderer(wc, isRendererUrl)
+  app.on('web-contents-created', (_e, wc) => watchRenderer(wc, isRendererUrl))
 
   ipcMain.on('renderer:ready', () => {
     void redispatchLiveTerminals(terminalRegistry, (c, p) => bridge.dispatch(c, p))
