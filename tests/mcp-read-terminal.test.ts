@@ -62,6 +62,7 @@ import { shapeDenial } from '../src/main/mcp/deny-hint'
 import { _resetIdempotencyRegistry } from '../src/main/mcp/idempotency-registry'
 import { _resetInflightRegistry } from '../src/main/mcp/inflight-session-registry'
 import { terminalRegistry } from '../src/main/terminal-registry'
+import { resolveTerminalGateState } from '../src/main/terminal-gate-core'
 import { dropScreenModel, screenModelFor, TERMINAL_NOTE } from '../src/main/terminal-screen'
 
 const tool = (op: string): NonNullable<(typeof WIRED_TOOLS)[number]['handler']> =>
@@ -260,7 +261,12 @@ describe('the gate', () => {
     })
     expect(blocked.verdict).toBe('deny')
     expect(blocked.auditRecord.result).toBe('FOLDER_NOT_ALLOWED')
-    const open = planToolCall({ tool: 'read_terminal', input, policy: policy(), now: 1 })
+    // T481: the plan consults the terminal's resolved state (an agent-spawned, running one here).
+    const terminal = resolveTerminalGateState(
+      { origin: 'agent', disconnected: false, state: 'running' },
+      { readOptIn: false, writesEnabled: true }
+    )
+    const open = planToolCall({ tool: 'read_terminal', input, policy: policy(), now: 1, terminal })
     expect(open.verdict).toBe('allow')
     expect(open.shouldDispatch).toBe(true)
   })

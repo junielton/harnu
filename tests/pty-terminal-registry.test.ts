@@ -238,8 +238,11 @@ describe('discardTerminalPty (AC-B1-4 building block)', () => {
   })
 })
 
-describe('pty:create (IPC) cannot register a terminal', () => {
-  it('drops a renderer-supplied `terminal` — only main registers agent terminals', async () => {
+describe('pty:create (IPC) cannot register an AGENT terminal', () => {
+  // T481: the renderer MAY name its own shell pane so the registry knows the operator's terminal
+  // (see `mcp-terminal-read-optin.test.ts`), but whatever origin it claims, the record is the
+  // operator's: only main registers an agent-origin terminal.
+  it('forces a renderer-supplied `terminal` to the operator origin', async () => {
     await h.handlers.get('pty:create')!(
       {},
       {
@@ -251,7 +254,10 @@ describe('pty:create (IPC) cannot register a terminal', () => {
         terminal: { terminalId: 'h-forged', folder: cwd, origin: 'agent' }
       }
     )
-    expect(registry.get('h-forged')).toBeUndefined()
-    expect(registry.list()).toEqual([])
+    const rec = registry.get('h-forged')!
+    expect(rec.origin).toBe('operator')
+    expect(rec.ownerSessionId).toBeNull()
+    expect(registry.liveAgentTerminals()).toEqual([])
+    expect(registry.liveAgentCount(cwd)).toBe(0)
   })
 })

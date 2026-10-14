@@ -1,6 +1,7 @@
 import { basename } from 'node:path'
 import { isFolderDenied } from './permission-core'
 import { redactTranscript } from './transcript-redact'
+import { scrubTerminalText } from '../scrub-terminal'
 import {
   terminalAccess,
   type TerminalAccess,
@@ -546,7 +547,7 @@ export function toTerminalListing(
         state: r.state,
         ...(r.exit ? { exit: { code: r.exit.code, reason: r.exit.reason } } : {}),
         size: r.size,
-        title: r.title === null ? null : redactTranscript(r.title, { home: opts.home }).text,
+        title: r.title === null ? null : scrubTerminalText(r.title, opts.home),
         titleSource: 'program' as const,
         createdAt: r.createdAt,
         lastOutputAt: r.lastOutputAt,

@@ -54,7 +54,8 @@ import {
   setHarnuPreambleProvider,
   setHookSettingsProvider,
   setBundledSkillsArgsProvider,
-  setCompanionSpawnProvider
+  setCompanionSpawnProvider,
+  dropOperatorScreenModels
 } from './pty'
 import { registerMonitorHandlers, stopHeartbeat, stopFullSamplerForced } from './monitor/sampler'
 import { registerHarnuFeaturesHandlers, harnuPreamble } from './harnu-features'
@@ -96,6 +97,7 @@ import {
   setUserProjectAutoOrganize,
   getUserProjectOrchestratorDefault,
   setUserProjectOrchestratorDefault,
+  setUserProjectTerminalRead,
   interceptActivePaths,
   setUserProjectBornFrom,
   listBornFromCandidates,
@@ -999,6 +1001,18 @@ app.whenReady().then(async () => {
     'userProjects:setOrchestratorDefault',
     async (_e, { targetPath, enabled }: { targetPath: string; enabled: boolean }) => {
       return toUserProjectsPayload(await setUserProjectOrchestratorDefault(targetPath, enabled))
+    }
+  )
+
+  // T481: "let agents read terminals I open" per-folder opt-in (FolderMenu toggle). EXACT-PATH
+  // ONLY, like the Orchestrator default above. The gate that reads it is `terminal-gate-core.ts`.
+  ipcMain.handle(
+    'userProjects:setTerminalRead',
+    async (_e, { targetPath, enabled }: { targetPath: string; enabled: boolean }) => {
+      const payload = toUserProjectsPayload(await setUserProjectTerminalRead(targetPath, enabled))
+      // Turning it off ends the lazy screen models of the operator's terminals there at once.
+      if (!enabled) await dropOperatorScreenModels(targetPath)
+      return payload
     }
   )
 

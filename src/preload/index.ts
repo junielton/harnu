@@ -558,6 +558,12 @@ interface PtyCreateOpts {
    */
   spawnedBy?: 'operator' | 'agent'
   /**
+   * T481: the operator's shell pane naming itself, so main's terminal registry knows it and an
+   * agent may read it once the folder opts in. Only honored for `kind === 'shell'`; main forces
+   * the origin to `operator` and ignores an id it already holds.
+   */
+  terminal?: { terminalId: string; folder: string }
+  /**
    * BUG-70 §4 park ledger: how this session is being woken. Threaded through
    * so an AGENT-driven wake (`message_session` on a parked recipient, T215) is
    * distinguishable from a human's selection in the ledger. Omitted ⇒
@@ -2318,6 +2324,13 @@ const api = {
     enabled: boolean
   ): Promise<UserProjectsPayload> =>
     ipcRenderer.invoke('userProjects:setOrchestratorDefault', { targetPath, enabled }),
+  // T481: per-folder "let agents read terminals I open" opt-in (FolderMenu toggle).
+  // EXACT-PATH ONLY — a linked worktree never inherits its parent repo's value.
+  userProjectsSetTerminalRead: (
+    targetPath: string,
+    enabled: boolean
+  ): Promise<UserProjectsPayload> =>
+    ipcRenderer.invoke('userProjects:setTerminalRead', { targetPath, enabled }),
   // T191: "Set parent folder" / "Clear parent folder" (folder menu) — the manual
   // override for the `bornFrom` lineage edge. Pass `null` to clear.
   userProjectsSetBornFrom: (

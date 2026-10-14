@@ -53,6 +53,12 @@ export interface ReadOptions {
   /** Required for `since`: a cursor an earlier read returned. */
   since?: string
   maxChars?: number
+  /**
+   * Scrub the text before it is capped (spec §4.5). It runs over the WHOLE selected text and
+   * before `maxChars`/`lines` cut it, so a cut can never land in the middle of a secret and
+   * leave half of it readable.
+   */
+  scrub?: (text: string) => string
 }
 
 export interface ScreenRead {
@@ -115,6 +121,8 @@ export class ScreenModel {
   private readonly cursors = new Map<string, Cursor>()
   private cursorSeq = 0
   private disposed = false
+  /** Seeded from output that may be incomplete (a wrapped ring): every read says so. */
+  private seededApproximate = false
 
   constructor(opts: ScreenModelOptions) {
     this.now = opts.now ?? Date.now
@@ -126,6 +134,15 @@ export class ScreenModel {
     this.term.onData((reply) => {
       if (this.queue[0]?.answer) this.onReply(reply)
     })
+  }
+
+  /**
+   * The model was seeded from a ring that had already dropped its oldest output, or from a
+   * tombstone's raw tail (spec §5.2): what it shows may miss what scrolled away before the seed,
+   * so every read reports `approximate`.
+   */
+  markApproximate(): void {
+    this.seededApproximate = true
   }
 
   /** Bytes fed and not yet parsed. */
@@ -182,7 +199,7 @@ export class ScreenModel {
   }
 
   private async readScreen(opts: ReadOptions, withCursor: boolean): Promise<ScreenReadResult> {
-    const approximate = await this.barrier()
+    const approximate = (await this.barrier()) || this.seededApproximate
     this.sweepCursors()
     const buf = this.term.buffer.active
     const altScreen = buf.type === 'alternate'
@@ -206,11 +223,10 @@ export class ScreenModel {
     }
     while (lines.length > 0 && lines[lines.length - 1]!.text.trim() === '') lines.pop()
 
-    const capped = capLines(
-      lines.map((l) => l.text),
-      maxLines,
-      maxChars
-    )
+    let texts = lines.map((l) => l.text)
+    // A scrub can merge lines (a PEM block becomes one marker), so it re-splits.
+    if (opts.scrub && texts.length > 0) texts = opts.scrub(texts.join('\n')).split('\n')
+    const capped = capLines(texts, maxLines, maxChars)
     return {
       ok: true,
       size: { cols: this.term.cols, rows: this.term.rows },

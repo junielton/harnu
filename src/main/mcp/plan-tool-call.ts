@@ -54,6 +54,12 @@ import { parseToolInput } from './validate'
 import { grantDecision, type MissionGrant } from './grant-core'
 import { canonicalWorktreeParentRepo } from '../worktree-core'
 import type { AuditRecord } from './audit-log'
+import {
+  UNKNOWN_TERMINAL,
+  gateTerminalOp,
+  isTerminalGatedOp,
+  type TerminalGateState
+} from '../terminal-gate-core'
 
 /**
  * How a disclosed payload must be scrubbed before it leaves the server.
@@ -89,6 +95,13 @@ export interface PlanInput {
   inheritOnce?: readonly string[]
   /** Home dir for path normalization in grant scope-matching; defaults to os.homedir(). */
   homeDir?: string
+  /**
+   * T474 B4: the state of the terminal a terminal verb addresses, resolved by the shell BEFORE
+   * planning (spec §6.2). Consulted only for verbs `terminal-gate-core` speaks for. ABSENT means
+   * "not resolved", which fails closed as an unknown terminal — a call site that forgets to
+   * resolve it can never skip the gate.
+   */
+  terminal?: TerminalGateState
 }
 
 /** The order-sensitive plan {@link planToolCall} returns for one tool call. */
@@ -193,7 +206,8 @@ export function planToolCall({
   now,
   grants,
   inheritOnce,
-  homeDir
+  homeDir,
+  terminal
 }: PlanInput): ToolCallPlan {
   const def = toolByName(tool)
 
@@ -239,6 +253,15 @@ export function planToolCall({
   // `bootstrapConfirmOnDeny` exemption, not the T72 inheritance discovery. Only
   // the kill switch outranks it. Every promotion block below is guarded on this.
   const explicitBlock = verdict === 'deny' && decision.reason === 'FOLDER_NOT_ALLOWED'
+
+  // T474 B4: terminal access rules, decided HERE and not in the handler, so a refused call never
+  // raises a confirm first (spec §6.2). Only a call the base gate let through gets this far: the
+  // explicit block and `SERVER_DISABLED` keep their own answer. The refusal is a plain deny —
+  // `shouldConfirm` and `shouldDispatch` are both false — whatever the `ask` mode says.
+  if (verdict !== 'deny' && isTerminalGatedOp(def.op)) {
+    const refusal = gateTerminalOp(def.op, terminal ?? UNKNOWN_TERMINAL)
+    if (refusal) return denyPlan(tool, folder ?? '', now, refusal, redact)
+  }
 
   // FREE BY DEFAULT — the base gate hands back `allow` for a mutation (unless the
   // operator turned on `ask`, which makes it `confirm`). Two verbs must face a
