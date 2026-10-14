@@ -62,6 +62,7 @@ import {
   emptyFold,
   foldAppend,
   foldTitle,
+  mergeRestored,
   restoredFold,
   sanitizeCounts,
   wireOf,
@@ -186,6 +187,7 @@ let rowFirstDirtyAt: number | null = null
 let rowLastChangeAt = 0
 
 function resetState(): void {
+  rowTimer?.cancel() // a register() run again in the same environment leaves no timer behind
   conn = null
   bootId = null
   proto = PROTOCOL_VERSION
@@ -843,9 +845,13 @@ async function rebound(
     t: 'session.rebound',
     d: { prevSid: prev, sid, cause, ...(transcriptPath !== undefined ? { transcriptPath } : {}) }
   })
-  // T455: a new conversation has a fresh fold (§6.4); its row follows the rebound at once.
-  rowMoveTo(sid)
-  flushRow($, true)
+  try {
+    // T455: a new conversation has a fresh fold (§6.4); its row follows the rebound at once.
+    rowMoveTo(sid)
+    flushRow($, true)
+  } catch (err) {
+    reportModError('session.row', err)
+  }
   await persistConn($) // CQ3: written again after every rebound
 }
 
@@ -868,8 +874,11 @@ function noteStart(e: { source?: unknown; transcript_path?: unknown }): void {
   classicStartSeen = true
   const source = e.source
   const path = validPath(e.transcript_path)
-  if (typeof source !== 'string' || !START_SOURCES.has(source) || path === undefined) return
-  startFacts = { source: source as SessionStartFacts['source'], transcriptPath: path }
+  // an invalid payload clears what an earlier conversation left: never a stale start (D6)
+  startFacts =
+    typeof source === 'string' && START_SOURCES.has(source) && path !== undefined
+      ? { source: source as SessionStartFacts['source'], transcriptPath: path }
+      : null
 }
 
 /** A transcript path the wire may carry (≤ TRANSCRIPT_PATH_MAX); the host validates it further. */
@@ -983,17 +992,18 @@ async function loadRow($: Dollar): Promise<void> {
   if (rowLoaded) return
   rowLoaded = true
   rowSid ??= sidBound ?? (await $.session.id())
-  const r = rowFold.row
-  const untouched = r.userRows === 0 && r.toolCalls === 0 && r.subagentToolCalls === 0
-  if (classicStartSeen || !untouched || r.lastUuid !== null) return
+  if (classicStartSeen) return
   const saved = await $.state.get(ROW)
   const v = saved.value
   if (v === undefined || v === null || v.sid !== rowSid) return
   const counts = sanitizeCounts(v.counts)
-  if (counts !== null) {
-    rowFold = restoredFold(counts)
-    rowPersisted = JSON.stringify({ sid: rowSid, counts })
-  }
+  if (counts === null) return
+  const r = rowFold.row
+  const untouched =
+    r.userRows === 0 && r.toolCalls === 0 && r.subagentToolCalls === 0 && r.lastUuid === null
+  // rows folded between the reload and this `session.start` add to the saved counts (D6)
+  rowFold = untouched ? restoredFold(counts) : mergeRestored(counts, rowFold)
+  rowPersisted = untouched ? JSON.stringify({ sid: rowSid, counts }) : null
 }
 
 // ---- bye --------------------------------------------------------------------------------------
@@ -1373,39 +1383,49 @@ export const register: Register = (on) => {
 
   hook('classic.SessionStart', () => {
     on('classic.SessionStart', async ($, e, next) => {
+      // T455 (W0 M8): the FIRST statement, before ANY await. The engine starts `session.start`
+      // before this handler reaches its first await, and that hello's snapshot carries this.
       try {
-        // T455 (W0 M8): before ANY await. `session.start` enters before this handler's first
-        // await, and its hello's snapshot carries what this records.
         noteStart(e)
       } catch (err) {
         reportModError('classic.SessionStart', err)
       }
+      const moves = e.source === 'clear' || e.source === 'resume'
+      const rebinds = moves && sidBound !== null && e.session_id !== sidBound
       try {
-        noteClassic($, e) // first: the drift check of ensureHello must see `probes.classic` (C10)
-        void ensureHello($) // not awaited: this hook is not on the first prompt's path
-        const moves = e.source === 'clear' || e.source === 'resume'
-        const rebinds = moves && sidBound !== null && e.session_id !== sidBound
-        // T455: the fold follows the conversation; a /clear or /resume starts a fresh one (§6.4)
+        // T455 `sense.row`, synchronous: the fold follows the conversation; a /clear or /resume
+        // starts a fresh one (§6.4)
         if (typeof e.session_id === 'string' && e.session_id !== '') {
           if (moves) rowMoveTo(e.session_id)
           else rowSid ??= e.session_id
         }
-        await rowTitle($, e.session_title)
+      } catch (err) {
+        reportModError('session.row', err)
+      }
+      // The identity step (P1W3), in a block of its own: no T455 step can ever skip it.
+      try {
+        noteClassic($, e) // first: the drift check of ensureHello must see `probes.classic` (C10)
+        void ensureHello($) // not awaited: this hook is not on the first prompt's path
         if (moves && e.session_id !== sidBound) {
           await rebound($, e.session_id, e.source, validPath(e.transcript_path))
           // a new conversation has no turn, no open item and no record (contract §22)
           fleet = neutralFleet()
           persistFleet($)
         }
-        // W0 M8: a hello that went out before these facts were known is followed by a probe
-        // snapshot that carries them (the host keeps the last `start` it received). A rebound
-        // carries the new conversation's path itself.
+      } catch (err) {
+        reportModError('classic.SessionStart', err)
+      }
+      try {
+        // T455 `sense.row`: the title, then (W0 M8) a hello that went out before the start facts
+        // were known is followed by a probe snapshot that carries them (the host keeps the last
+        // `start` it received). A rebound carries the new conversation's path itself.
+        await rowTitle($, e.session_title)
         const start = startFacts !== null ? JSON.stringify(startFacts) : null
         if (!rebinds && conn !== null && start !== null && start !== startSent) {
           snapshot($, 'probe')
         }
       } catch (err) {
-        reportModError('classic.SessionStart', err)
+        reportModError('session.row', err)
       }
       return next(e)
     })

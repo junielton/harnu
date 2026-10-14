@@ -2,8 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { redactForWire } from '../../resources/companion/hooks/lib/redact-wire'
 import {
   REDACT_WINDOW,
+  TEXT_MAX,
+  TEXT_MAX_BYTES,
   emptyFold,
   foldAppend,
+  foldTitle,
+  mergeRestored,
+  restoredFold,
+  wireOf,
   wireText,
   type AppendedRow
 } from '../../resources/companion/hooks/lib/row-fold'
@@ -202,5 +208,112 @@ describe('D3: overlapping matches are merged, the union redacted', () => {
     expect(redactForWire(`PASSWORD=${gh}.${oai} and nothing else`)).toBe(
       'PASSWORD=[REDACTED:github-token] and nothing else'
     )
+  })
+})
+
+describe('D6: the payload stays ~1.5 KB whatever the script', () => {
+  const jsonBytes = (v: unknown): number => Buffer.byteLength(JSON.stringify(v), 'utf8')
+
+  for (const [name, unit] of [
+    ['CJK', '漢'],
+    ['emoji', '😀'],
+    ['quotes', '"'],
+    ['backslashes', '\\'],
+    ['accents', 'é']
+  ] as const) {
+    it(`${name} at the cap: at most ${TEXT_MAX_BYTES} bytes and ${TEXT_MAX} units, cut with …`, () => {
+      const out = wireText(unit.repeat(500))!
+      expect(jsonBytes(out) - 2).toBeLessThanOrEqual(TEXT_MAX_BYTES)
+      expect(out.length).toBeLessThanOrEqual(TEXT_MAX)
+      expect(out.endsWith('…')).toBe(true)
+      expect(out).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])/) // no half of a pair
+    })
+  }
+
+  it('control characters that are not whitespace are stripped, before redaction', () => {
+    expect(wireText('a\u0001b\u007fc\u0085d')).toBe('abcd')
+    const gh = j('gh', 'p_', rep('a1B2', 9))
+    // a control inside a token cannot hide it from the rules
+    expect(wireText(`${gh.slice(0, 10)}\u0007${gh.slice(10)}`)).toBe('[REDACTED:github-token]')
+  })
+
+  it('a lone surrogate becomes U+FFFD', () => {
+    expect(wireText('a\ud800b')).toBe('a\ufffdb')
+  })
+
+  it('the worst-case row is at most 1,536 bytes of JSON', () => {
+    const f = emptyFold()
+    const worst = (c: string): string => wireText(c.repeat(1_000))!
+    f.row.firstPrompt = worst('漢')
+    f.row.lastPrompt = worst('"')
+    f.row.lastAssistant = worst('😀')
+    f.row.title = worst('é')
+    f.row.toolCalls = Number.MAX_SAFE_INTEGER
+    f.row.subagentToolCalls = Number.MAX_SAFE_INTEGER
+    f.row.userRows = Number.MAX_SAFE_INTEGER
+    f.row.lastRowAt = Number.MAX_SAFE_INTEGER
+    f.row.lastUuid = 'u'.repeat(64)
+    expect(jsonBytes(wireOf(f.row))).toBeLessThanOrEqual(1_536)
+  })
+
+  it('a title is capped the same way', () => {
+    const f = emptyFold()
+    foldTitle(f, '漢'.repeat(500))
+    expect(jsonBytes(f.row.title) - 2).toBeLessThanOrEqual(TEXT_MAX_BYTES)
+  })
+})
+
+describe('D6: uuids', () => {
+  const typed = (uuid: string): AppendedRow => ({
+    door: 'prompt',
+    origin: { kind: 'composer' },
+    uuid,
+    message: { type: 'user', role: 'user', content: [{ type: 'text', text: 'hello' }] }
+  })
+
+  it('a row whose uuid was folded already is not counted again', () => {
+    const f = emptyFold()
+    expect(foldAppend(f, typed('u-1'), T0)).toBe(true)
+    expect(foldAppend(f, typed('u-1'), T0 + 1)).toBe(false)
+    expect(f.row.userRows).toBe(1)
+    foldAppend(f, typed('u-2'), T0 + 2)
+    expect(f.row.userRows).toBe(2)
+  })
+
+  it('a uuid over 64 characters is not taken as lastUuid', () => {
+    const f = emptyFold()
+    foldAppend(f, typed('u-1'), T0)
+    foldAppend(f, typed('x'.repeat(65)), T0 + 1)
+    expect(f.row.lastUuid).toBe('u-1')
+  })
+})
+
+describe('D6: rows folded after a reload and before its session.start', () => {
+  it('add to the restored counts; texts seen stay, the first prompt stays unknown', () => {
+    const f = emptyFold()
+    foldAppend(
+      f,
+      {
+        door: 'prompt',
+        origin: { kind: 'composer' },
+        uuid: 'u-new',
+        message: { type: 'user', role: 'user', content: [{ type: 'text', text: 'after reload' }] }
+      },
+      T0 + 9
+    )
+    const m = mergeRestored(
+      { toolCalls: 3, subagentToolCalls: 1, userRows: 5, lastRowAt: T0, lastUuid: 'u-old' },
+      f
+    )
+    expect(wireOf(m.row)).toEqual({
+      fold: 1,
+      lastPrompt: 'after reload',
+      toolCalls: 3,
+      subagentToolCalls: 1,
+      userRows: 6,
+      lastRowAt: T0 + 9,
+      lastUuid: 'u-new'
+    })
+    expect(restoredFold(m.row as never).firstTaken).toBe(true)
   })
 })

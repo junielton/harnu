@@ -435,3 +435,40 @@ test('outside Harnu (dormant) nothing is folded or sent', async ($: any, on) => 
   expect(rig.sent).toEqual([])
   expect(rig.state.has('row')).toBe(false)
 })
+
+// ---- round 2, D6 -----------------------------------------------------------------------------------
+
+test('a classic.SessionStart with an invalid path clears the earlier start facts', async ($: any, on) => {
+  const rig = rowRig(on)
+  await $.classic.SessionStart({
+    source: 'startup',
+    session_id: FIXTURE_SID,
+    transcript_path: PATH
+  })
+  await $.classic.SessionStart({
+    source: 'compact',
+    session_id: FIXTURE_SID,
+    transcript_path: `/${'p'.repeat(4_096)}.jsonl`
+  })
+  await $.session.start(START)
+  await drain(rig)
+  expect(snapshots(rig)[0]!.d).not.toHaveProperty('start')
+})
+
+test('rows folded after a reload but before its session.start add to the restored counts', async ($: any, on) => {
+  const saved = {
+    sid: FIXTURE_SID,
+    counts: { toolCalls: 2, subagentToolCalls: 0, userRows: 4, lastRowAt: 5, lastUuid: 'u9' }
+  }
+  const rig = rowRig(on, {
+    savedState: { conn: FIXTURE_CONN, bootId: BOOT, sid: FIXTURE_SID, boot: START, row: saved },
+    script: (route, body, n) =>
+      route === 'hello' ? helloOk(ROW_FEATURES, CONN_2) : defaultScript(route, body, n)
+  })
+  await append($, typed('typed during the reload'))
+  await $.session.start(START)
+  await drain(rig)
+  const d = rows(rig)[0]!.d
+  expect(d).toMatchObject({ userRows: 5, toolCalls: 2, lastPrompt: 'typed during the reload' })
+  expect(d).not.toHaveProperty('firstPrompt')
+})

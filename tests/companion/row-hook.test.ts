@@ -220,99 +220,174 @@ describe('authoring rules (MOD-1, MOD-3, MOD-4)', () => {
   })
 })
 
-describe('W0 M8: the start facts reach the hello even when the two handlers overlap', () => {
-  it('classic.SessionStart records before its first await; the hello snapshot carries it', async () => {
-    const SID = '11111111-1111-4111-8111-111111111111'
-    const PATH = `/tmp/example-project/${SID}.jsonl`
-    const posted: any[] = []
-    let release: () => void = () => undefined
-    const held = new Promise<void>((r) => (release = r))
-    const timer = { cancel: () => undefined }
-    // A fake engine whose `$.clock.now` is slow (a worker hop the classic handler may await),
-    // while the hello path answers at once: the order the real engine showed in 6 of 6 starts.
-    const answer = async (path: string, args: any[]): Promise<any> => {
-      switch (path) {
-        case 'clock.now':
-          await held
-          return 1_790_000_000_000
-        case 'env.get':
-          return args[0] === 'HARNU_SPAWN_TOKEN'
-            ? 'sp_00000000-0000-4000-8000-000000000001'
-            : undefined
-        case 'fs.read':
-          return JSON.stringify({
-            v: 1,
-            transport: 'unix',
-            socketPath: '/nonexistent/companion/c.sock',
-            token: 'endpoint-token-fixture',
-            bootId: 'b_00000000-0000-4000-8000-0000000000b1',
-            protoMin: 1,
-            protoMax: 1,
-            writtenAt: 1
-          })
-        case 'http.fetch': {
-          const route = String(args[0]).split('/').at(-1)
-          const body = JSON.parse(args[1].body)
-          posted.push({ route, body })
-          const reply =
-            route === 'hello'
-              ? {
-                  ok: true,
-                  proto: 1,
-                  conn: 'c_00000000000000000000000000000001',
-                  bootId: 'b_00000000-0000-4000-8000-0000000000b1',
-                  sessionKey: null,
-                  profile: 'interactive',
-                  enable: ['sense.identity'],
-                  config: {}
-                }
-              : { ok: true, ackSeq: Math.max(0, ...(body.events ?? []).map((e: any) => e.seq)) }
-          return { status: 200, ok: true, headers: {}, text: JSON.stringify(reply) }
-        }
-        case 'state.get':
-          return { value: undefined, version: 0 }
-        case 'session.id':
-          return SID
-        case 'session.version':
-          return { version: '2.1.296' }
-        default:
-          return { isSet: true, version: 1 }
-      }
-    }
-    const $: any = new Proxy(
-      {},
-      {
-        get: (_t, noun: string) =>
-          new Proxy(
-            {},
-            {
-              get: (_u, method: string) => {
-                const path = `${noun}.${method}`
-                if (path === 'clock.after' || path === 'clock.every') return () => timer
-                return (...args: any[]) => answer(path, args)
+const SID = '11111111-1111-4111-8111-111111111111'
+const SID_2 = '22222222-2222-4222-8222-222222222222'
+const PATH = `/tmp/example-project/${SID}.jsonl`
+
+/**
+ * A fake engine with a live host behind it: the rendezvous file, a hello that answers ok, events
+ * acknowledged and recorded. `hold` delays every `$.clock.now` (a worker hop the classic handler
+ * may await); `failClock` makes it reject. `stateSets` records every `$.state.set` key.
+ */
+function liveEngine(opts: { hold?: Promise<void>; failClock?: () => boolean } = {}) {
+  const posted: any[] = []
+  const stateSets: string[] = []
+  const timer = { cancel: () => undefined }
+  const answer = async (path: string, args: any[]): Promise<any> => {
+    switch (path) {
+      case 'clock.now':
+        if (opts.failClock?.()) throw new Error('clock.now failed')
+        if (opts.hold) await opts.hold
+        return 1_790_000_000_000
+      case 'env.get':
+        return args[0] === 'HARNU_SPAWN_TOKEN'
+          ? 'sp_00000000-0000-4000-8000-000000000001'
+          : undefined
+      case 'fs.read':
+        return JSON.stringify({
+          v: 1,
+          transport: 'unix',
+          socketPath: '/nonexistent/companion/c.sock',
+          token: 'endpoint-token-fixture',
+          bootId: 'b_00000000-0000-4000-8000-0000000000b1',
+          protoMin: 1,
+          protoMax: 1,
+          writtenAt: 1
+        })
+      case 'http.fetch': {
+        const route = String(args[0]).split('/').at(-1)
+        const body = JSON.parse(args[1].body)
+        posted.push({ route, body })
+        const reply =
+          route === 'hello'
+            ? {
+                ok: true,
+                proto: 1,
+                conn: 'c_00000000000000000000000000000001',
+                bootId: 'b_00000000-0000-4000-8000-0000000000b1',
+                sessionKey: null,
+                profile: 'interactive',
+                enable: ['sense.identity', 'sense.turn', 'sense.row'],
+                config: {}
               }
-            }
-          )
+            : { ok: true, ackSeq: Math.max(0, ...(body.events ?? []).map((e: any) => e.seq)) }
+        return { status: 200, ok: true, headers: {}, text: JSON.stringify(reply) }
       }
-    )
-    const next = async (e: any) => e
-    // the engine dispatches both; session.start does not wait for the classic chain
-    const classic = reg('classic.SessionStart').fn(
-      $,
+      case 'state.get':
+        return { value: undefined, version: 0 }
+      case 'state.set':
+        stateSets.push(String(args[0]?.key))
+        return { isSet: true, version: 1 }
+      case 'session.id':
+        return SID
+      case 'session.version':
+        return { version: '2.1.296' }
+      default:
+        return undefined
+    }
+  }
+  const $: any = new Proxy(
+    {},
+    {
+      get: (_t, noun: string) =>
+        new Proxy(
+          {},
+          {
+            get: (_u, method: string) => {
+              const path = `${noun}.${method}`
+              if (path === 'clock.after' || path === 'clock.every') return () => timer
+              return (...args: any[]) => answer(path, args)
+            }
+          }
+        )
+    }
+  )
+  const events = (): any[] =>
+    posted.filter((p) => p.route === 'events').flatMap((p) => p.body.events)
+  return { $, posted, stateSets, events }
+}
+
+const settleAll = async (): Promise<void> => {
+  for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0))
+}
+const pass = async (e: any) => e
+const START_EVENT = { cwd: '/tmp/example-project', surface: 'terminal', isInteractive: true }
+
+describe('W0 M8: the start facts reach the hello even when the two handlers overlap', () => {
+  for (const title of [undefined, 'a renamed session']) {
+    it(`classic.SessionStart records before its first await (title: ${title ?? 'none'})`, async () => {
+      let release: () => void = () => undefined
+      const hold = new Promise<void>((r) => (release = r))
+      const x = liveEngine({ hold })
+      // the engine dispatches both; session.start does not wait for the classic chain
+      const classic = reg('classic.SessionStart').fn(
+        x.$,
+        {
+          source: 'startup',
+          session_id: SID,
+          transcript_path: PATH,
+          cwd: '/tmp/example-project',
+          ...(title !== undefined ? { session_title: title } : {})
+        },
+        pass
+      )
+      await reg('session.start').fn(x.$, START_EVENT, pass)
+      await settleAll()
+      const hello = x
+        .events()
+        .find((e: any) => e.t === 'session.snapshot' && e.d.reason === 'hello')
+      expect(hello).toBeDefined()
+      expect(hello.d.start).toEqual({ source: 'startup', transcriptPath: PATH })
+      release()
+      await classic
+    })
+  }
+
+  it('in the source, noteStart(e) comes before every await of the handler (any await, D5)', () => {
+    const src = readFileSync(join(HOOKS, 'register.ts'), 'utf8')
+    const at = src.indexOf("on('classic.SessionStart', async ($, e, next) => {")
+    expect(at).toBeGreaterThan(0)
+    const body = src.slice(at, src.indexOf('return next(e)', at))
+    const code = body.replace(/\/\/.*$/gm, '')
+    const record = code.indexOf('noteStart(e)')
+    const firstAwait = code.search(/\bawait\b/)
+    expect(record).toBeGreaterThan(0)
+    expect(firstAwait).toBeGreaterThan(record)
+  })
+})
+
+describe('D4: the T455 steps never skip the identity step of classic.SessionStart', () => {
+  it('a rejecting title step on a renamed-session /clear still rebinds and resets the fleet', async () => {
+    let clockDown = false
+    const x = liveEngine({ failClock: () => clockDown })
+    await reg('classic.SessionStart').fn(
+      x.$,
       { source: 'startup', session_id: SID, transcript_path: PATH, cwd: '/tmp/example-project' },
-      next
+      pass
     )
-    await reg('session.start').fn(
-      $,
-      { cwd: '/tmp/example-project', surface: 'terminal', isInteractive: true },
-      next
+    await reg('session.start').fn(x.$, START_EVENT, pass)
+    await settleAll()
+    const fleetWritesBefore = x.stateSets.filter((k) => k === 'fleet').length
+    clockDown = true // rowTitle's `$.clock.now()` rejects from here on
+    const result = { ok: true }
+    const out = await reg('classic.SessionStart').fn(
+      x.$,
+      {
+        source: 'clear',
+        session_id: SID_2,
+        transcript_path: `/tmp/example-project/${SID_2}.jsonl`,
+        session_title: 'a renamed session',
+        cwd: '/tmp/example-project'
+      },
+      async () => result
     )
-    for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0))
-    const events = posted.filter((p) => p.route === 'events').flatMap((p) => p.body.events)
-    const hello = events.find((e: any) => e.t === 'session.snapshot' && e.d.reason === 'hello')
-    expect(hello).toBeDefined()
-    expect(hello.d.start).toEqual({ source: 'startup', transcriptPath: PATH })
-    release()
-    await classic
+    await settleAll()
+    expect(out).toBe(result)
+    const rebound = x.events().find((e: any) => e.t === 'session.rebound')
+    expect(rebound?.d).toMatchObject({ prevSid: SID, sid: SID_2, cause: 'clear' })
+    expect(x.stateSets.filter((k) => k === 'fleet').length).toBeGreaterThan(fleetWritesBefore)
+    expect(x.events().some((e: any) => e.t === 'mod.error' && e.d.where === 'session.row')).toBe(
+      true
+    )
   })
 })

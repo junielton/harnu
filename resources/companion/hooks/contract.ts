@@ -81,6 +81,11 @@ export const ROW_DEBOUNCE_MS = 500
 export const ROW_MAX_WAIT_MS = 2_000
 /** T455: the cap of every `session.row` text field, after whitespace is collapsed (§5.3). */
 export const ROW_TEXT_MAX = 240
+/**
+ * T455 (round 2): the same fields' cap in UTF-8 bytes as JSON writes them, so the four texts keep
+ * a `session.row` at or under ~1.5 KB whatever the script (a 240-character CJK text is ~720 bytes).
+ */
+export const ROW_TEXT_MAX_BYTES = 300
 /** T455: the cap of `session.snapshot.start.transcriptPath` and `session.rebound.transcriptPath`. */
 export const TRANSCRIPT_PATH_MAX = 4_096
 

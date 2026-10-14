@@ -4,9 +4,9 @@ import { PLACEHOLDER_VALUE, SECRET_RULES } from './secret-rules.gen'
  * The wire redaction of the companion's text fields (T455 spec §5.5 rule 2). Pure and `$`-free.
  *
  * The rules are T450's deterministic table (`secret-rules.gen.ts`, one source for every mod that
- * stages it). Each match becomes `[REDACTED:<rule>]`: the bare rule id, never T450's
- * `#<tag>` (the tag needs T450's per-install salt, and a preview has no use for telling two
- * secrets apart). There is no entropy rule: it is the one rule that guesses, and its false
+ * stages it); overlapping matches are merged rather than skipped (see `spans`). Each match becomes
+ * `[REDACTED:<rule>]`: the bare rule id, never T450's `#<tag>` (the tag needs T450's per-install
+ * salt, and a preview has no use for telling two secrets apart). There is no entropy rule: it is the one rule that guesses, and its false
  * positives would blank ordinary prompts.
  *
  * Stated limit: a secret no deterministic rule matches (a password typed in prose, an unknown
@@ -44,14 +44,23 @@ interface Span {
   start: number
   end: number
   rule: string
+  /** When the span was found: rules run most specific first, so a lower number is more specific. */
+  order: number
 }
 
-/** T450's `detect` without the entropy pass, the vault and the allowlist: rules in order, the
- * most specific first; a span that overlaps a taken one is skipped. */
+/**
+ * T450's `detect` without the entropy pass, the vault and the allowlist: rules in order, the most
+ * specific first.
+ *
+ * One deliberate hardening over T450's `detect` (verifiers' D3): where `detect` SKIPS a match that
+ * overlaps a span already taken, this MERGES them and redacts the union, under the rule that
+ * matched first. Skipping left the rest of the larger secret raw (`PASSWORD=Hunter2x-` before a
+ * provider token, the parts of a URL password around one). The rule SOURCES are T450's, unchanged.
+ */
 function spans(text: string): Span[] {
   const { rules: all, placeholder } = rules()
   const found: Span[] = []
-  const taken = (s: number, e: number): boolean => found.some((f) => s < f.end && e > f.start)
+  let order = 0
   for (const rule of all) {
     rule.re.lastIndex = 0
     for (const m of text.matchAll(rule.re)) {
@@ -59,12 +68,26 @@ function spans(text: string): Span[] {
       if (value === undefined) continue
       const span = m.indices?.[rule.group]
       if (span === undefined) continue
-      const [start, end] = span
       if (rule.group !== 0 && (placeholder.test(value) || value.includes('${'))) continue
       if (rule.needs.includes('digit') && !DIGIT.test(value)) continue
       if (rule.needs.includes('letter') && !LETTER.test(value)) continue
-      if (taken(start, end)) continue
-      found.push({ start, end, rule: rule.id })
+      let next: Span = { start: span[0], end: span[1], rule: rule.id, order: order++ }
+      // absorb every span it touches, repeatedly: a union can reach a span neither part reached
+      for (let i = 0; i < found.length;) {
+        const f = found[i]!
+        if (next.start < f.end && next.end > f.start) {
+          const first = f.order < next.order ? f : next
+          next = {
+            start: Math.min(f.start, next.start),
+            end: Math.max(f.end, next.end),
+            rule: first.rule,
+            order: first.order
+          }
+          found.splice(i, 1)
+          i = 0
+        } else i++
+      }
+      found.push(next)
     }
   }
   return found.sort((a, b) => a.start - b.start)
