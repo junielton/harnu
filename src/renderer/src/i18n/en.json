@@ -143,6 +143,7 @@
     "claudeTitle": "Claude",
     "forkTitle": "Claude (fork)",
     "spawnFailed": "Helper failed to start",
+    "processExited": "Process exited",
     "staleSession": {
       "title": "Helper session no longer exists",
       "remove": "Remove helper"

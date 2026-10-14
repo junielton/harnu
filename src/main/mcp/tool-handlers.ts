@@ -62,6 +62,7 @@ import {
   MAX_AGENT_TERMINALS_PER_FOLDER,
   terminalRegistry
 } from '../terminal-registry'
+import { paneSplitFor } from '../terminal-lifecycle'
 import { peerAddressForSession, sendPeerMessage } from '../messaging'
 import {
   activityDescription,
@@ -988,15 +989,9 @@ const spawnTerminalHandler: Handler = async (args, ctx) => {
   }
   let result: unknown
   try {
-    result = await ctx.bridge.dispatch('pane.split', {
-      target: 'split',
-      worktreePath: targetFolder,
-      cwd: targetFolder,
-      kind: 'shell',
-      paneId: terminalId,
-      ptyId,
-      ownerSessionId
-    })
+    const rec = terminalRegistry.get(terminalId)
+    if (!rec) throw new Error('terminal record missing right after its PTY was created')
+    result = await ctx.bridge.dispatch('pane.split', paneSplitFor(rec))
   } catch (err) {
     discardTerminalPty(ptyId)
     throw err

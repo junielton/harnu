@@ -24,6 +24,29 @@ export const MAX_AGENT_TERMINALS_PER_FOLDER = 4
 /** Size an agent terminal is spawned at (spec §4.1 step 4). */
 export const AGENT_TERMINAL_SIZE = { cols: 120, rows: 30 } as const
 
+/** Lines of raw output a tombstone keeps (spec §8 case 4). */
+export const TOMBSTONE_SNAPSHOT_LINES = 200
+
+/** Byte ceiling on the snapshot, so a program that printed one enormous line cannot bloat it. */
+const TOMBSTONE_SNAPSHOT_MAX_CHARS = 64 * 1024
+
+/**
+ * The last {@link TOMBSTONE_SNAPSHOT_LINES} lines of `raw`, capped in size. Cuts on a line
+ * boundary where it can; an over-long single line keeps its tail.
+ */
+export function tailSnapshot(raw: string): string {
+  let text = raw
+  let nl = text.length
+  for (let i = 0; i < TOMBSTONE_SNAPSHOT_LINES; i++) {
+    nl = nl > 0 ? text.lastIndexOf('\n', nl - 1) : -1
+    if (nl < 0) break
+  }
+  if (nl >= 0) text = text.slice(nl + 1)
+  return text.length > TOMBSTONE_SNAPSHOT_MAX_CHARS
+    ? text.slice(text.length - TOMBSTONE_SNAPSHOT_MAX_CHARS)
+    : text
+}
+
 /** Longest program-set title kept; anything past it is cut. */
 const TITLE_MAX_CHARS = 200
 
@@ -62,6 +85,17 @@ export interface TerminalRecord {
   lastOutputAt: number
   /** Epoch ms of the operator's last real keystroke (terminal replies do not count). */
   lastOperatorWriteAt: number | null
+  /**
+   * A renderer xterm exists for this terminal (spec §5.4). Starts false and flips back to
+   * false on `terminal:xtermGone`; unit B3 sets it at the replay handover.
+   */
+  rendererAttached: boolean
+  /**
+   * The tail of the raw output, kept once the PTY ends so a pane that mounts after the exit
+   * (and a short-lived script's last words) still has something to paint (spec §8 cases 4, 5).
+   * Raw stream, not a resolved screen: unit B3 replaces it with the headless model's snapshot.
+   */
+  finalSnapshot?: string
 }
 
 export interface RegisterTerminalInput {
@@ -175,7 +209,8 @@ export class TerminalRegistry {
       title: null,
       createdAt: at,
       lastOutputAt: at,
-      lastOperatorWriteAt: null
+      lastOperatorWriteAt: null,
+      rendererAttached: false
     }
     this.byId.set(rec.terminalId, rec)
     this.byPty.set(rec.ptyId, rec.terminalId)
@@ -262,11 +297,12 @@ export class TerminalRegistry {
     if (this.byPty.has(ptyId)) this.closing.add(ptyId)
   }
 
-  /** The PTY ended. Keeps the record as a tombstone. */
-  markExited(ptyId: string, code: number | null): TerminalRecord | undefined {
+  /** The PTY ended. Keeps the record as a tombstone, with `snapshot` as its last output. */
+  markExited(ptyId: string, code: number | null, snapshot?: string): TerminalRecord | undefined {
     const rec = this.getByPtyId(ptyId)
     if (!rec || rec.state === 'exited') return rec
     rec.state = 'exited'
+    if (snapshot !== undefined) rec.finalSnapshot = snapshot
     rec.exit = {
       code,
       at: this.now(),
@@ -290,6 +326,17 @@ export class TerminalRegistry {
     if (title !== null) rec.title = title.slice(0, TITLE_MAX_CHARS)
     if (nextCarry) this.oscCarry.set(ptyId, nextCarry)
     else this.oscCarry.delete(ptyId)
+  }
+
+  /** The renderer's xterm for this terminal was disposed (unload / explicit close). */
+  setRendererAttached(terminalId: string, attached: boolean): void {
+    const rec = this.get(terminalId)
+    if (rec) rec.rendererAttached = attached
+  }
+
+  /** Live agent-origin terminals — what a reloaded renderer must be told about again. */
+  liveAgentTerminals(): TerminalRecord[] {
+    return this.list().filter((r) => r.origin === 'agent' && r.state === 'running')
   }
 
   noteResize(ptyId: string, cols: number, rows: number): void {

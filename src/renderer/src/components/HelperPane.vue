@@ -20,6 +20,11 @@ import { Terminal } from '@xterm/xterm'
 interface LiveHelper {
   term: Terminal
   ptyId: string
+  /**
+   * Set for an agent terminal (T474): main owns its PTY, so unload and removal never destroy it
+   * from here — see `releaseHelperPty`.
+   */
+  terminalId?: string
   /** IPC `onPtyData` / `onPtyExit` disposers — kept across detach so the PTY
    * keeps streaming into the xterm buffer while the pane is hidden. */
   ioDisposers: Array<() => void>
@@ -77,7 +82,9 @@ import {
 import { registerFocusedPane, unregisterFocusedPane } from '../composables/useTerminalFocus'
 import { useUiStore } from '../stores/ui'
 import { DEFAULT_TERMINAL_FONT_SIZE, useSettingsStore } from '../stores/settings'
-import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
+import { useHelpersStore, isAgentTerminalPane, type AnyHelperPane } from '../stores/helpers'
+import { adoptPtyStream } from '../lib/adopt-pty'
+import { releaseHelperPty } from '../lib/helper-pty-release'
 import { paneRegistry, type HelperPtyKind } from '../lib/pane-registry'
 import { useThemeStore } from '../stores/theme'
 import { ensureTerminalFontLoaded, measureCells, measureXtermCells } from '../lib/terminalMetrics'
@@ -299,7 +306,7 @@ function disposeLiveHelper(live: LiveHelper, paneId: string): void {
   }
   live.ioDisposers = []
   try {
-    window.api.ptyDestroy(live.ptyId)
+    releaseHelperPty(live, window.api)
   } catch {
     /* already dead */
   }
@@ -311,10 +318,12 @@ function disposeLiveHelper(live: LiveHelper, paneId: string): void {
 }
 
 /**
- * Window-unload disposer: kill every live helper PTY and dispose its xterm.
- * Unlike `TerminalPane` there is no re-adoption path for helper PTYs across a
- * renderer reload, so leaving them running would orphan them. Bound once (see
- * `unloadHandlerRegistered`) and covers every cached pane.
+ * Window-unload disposer: dispose every live helper xterm, and kill the PTY of each one the
+ * operator opened. Unlike `TerminalPane` there is no re-adoption path for those across a
+ * renderer reload, so leaving them running would orphan them. An agent terminal's PTY is
+ * main's: it stays alive, main re-announces its pane on `renderer:ready`, and the new pane
+ * adopts it (T474 §8 case 11). Bound once (see `unloadHandlerRegistered`) and covers every
+ * cached pane.
  */
 function onBeforeUnload(): void {
   for (const [paneId, live] of liveHelpers) {
@@ -378,23 +387,29 @@ async function createLiveHelper(
   const kind = paneKindToPtyKind(props.pane)
   const claudeSessionId = paneClaudeSessionId(props.pane)
 
+  // T474: an agent terminal's PTY already exists (main spawned it at `spawn_terminal`), so the
+  // pane adopts it instead of creating one — a second PTY here would orphan the first.
+  const agentTerminal = isAgentTerminalPane(props.pane) ? props.pane : undefined
+
   let ptyId: string
   try {
-    ptyId = await window.api.ptyCreate({
-      kind,
-      cwd: props.pane.cwd,
-      cols: term.cols,
-      rows: term.rows,
-      claudeSessionId,
-      // T245: read from the REGISTRY, not from a `type === 'review-companion'`
-      // literal here — the pane type is what knows it is read-only, and a
-      // future read-only type must not have to remember this call site.
-      readOnly: paneRegistry[props.pane.type]?.readOnly === true,
-      // T247: what the read-only stranger is told about the review it is sitting
-      // beside. Pane DATA, so it is read off the pane rather than the registry —
-      // a registry entry describes a type, and this differs per companion.
-      reviewCorrective: paneReviewCorrective(props.pane)
-    })
+    ptyId = agentTerminal
+      ? agentTerminal.ptyId
+      : await window.api.ptyCreate({
+          kind,
+          cwd: props.pane.cwd,
+          cols: term.cols,
+          rows: term.rows,
+          claudeSessionId,
+          // T245: read from the REGISTRY, not from a `type === 'review-companion'`
+          // literal here — the pane type is what knows it is read-only, and a
+          // future read-only type must not have to remember this call site.
+          readOnly: paneRegistry[props.pane.type]?.readOnly === true,
+          // T247: what the read-only stranger is told about the review it is sitting
+          // beside. Pane DATA, so it is read off the pane rather than the registry —
+          // a registry entry describes a type, and this differs per companion.
+          reviewCorrective: paneReviewCorrective(props.pane)
+        })
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
     ui.pushToast({
@@ -409,6 +424,7 @@ async function createLiveHelper(
   const live: LiveHelper = {
     term,
     ptyId,
+    ...(agentTerminal ? { terminalId: agentTerminal.terminalId } : {}),
     ioDisposers: [],
     resizeObserver: null,
     focusCleanup: null
@@ -429,20 +445,40 @@ async function createLiveHelper(
     })
   )
 
+  if (agentTerminal?.exited) {
+    // The PTY ended before the operator ever looked (T474 §8 case 5): there is nothing to adopt.
+    // Paint what it last printed and say it ended, then leave the pane for the operator to read
+    // and close. The stale toast was already raised when the exit happened.
+    if (agentTerminal.exited.snapshot) term.write(agentTerminal.exited.snapshot)
+    term.write(`\r\n\x1b[2m[${i18n('helperPane.processExited')}]\x1b[0m\r\n`)
+    liveHelpers.set(paneId, live)
+    attachResizeObserver(live, host)
+    live.focusCleanup = installFocusListeners(live, paneId)
+    return live
+  }
+
   // Data wiring — single-channel pty:data multiplexer is in preload; the
   // returned disposer removes our callback from the per-id Set. Kept on
   // `ioDisposers` so it survives detach (the PTY keeps filling the buffer).
-  live.ioDisposers.push(
-    window.api.onPtyData(ptyId, (data) => {
-      term.write(data)
-    })
-  )
-  // Exit handling lives in the store: a deliberate exit (the user typed
-  // `exit` / Ctrl-D / quit Claude) auto-closes the pane instead of parking it
-  // on a dead `[session ended]` line; an exit inside the first 2 s surfaces the
-  // stale-session toast and keeps the pane. The returned disposer is kept on
-  // `ioDisposers` so an explicit close (X button) tears the watch down too.
-  live.ioDisposers.push(helpers.watchPaneForExit(props.worktreePath, paneId, ptyId))
+  if (agentTerminal) {
+    // Adopt: subscribe first, replay, dedupe (see `adoptPtyStream`). The store armed this
+    // terminal's exit watch when its pane landed, so none is wired here.
+    live.ioDisposers.push(await adoptPtyStream(window.api, ptyId, (data) => term.write(data)))
+    // Main spawned it at 120x30; tell it the size this pane really has.
+    window.api.ptyResize(ptyId, term.cols, term.rows)
+  } else {
+    live.ioDisposers.push(
+      window.api.onPtyData(ptyId, (data) => {
+        term.write(data)
+      })
+    )
+    // Exit handling lives in the store: a deliberate exit (the user typed
+    // `exit` / Ctrl-D / quit Claude) auto-closes the pane instead of parking it
+    // on a dead `[session ended]` line; an exit inside the first 2 s surfaces the
+    // stale-session toast and keeps the pane. The returned disposer is kept on
+    // `ioDisposers` so an explicit close (X button) tears the watch down too.
+    live.ioDisposers.push(helpers.watchPaneForExit(props.worktreePath, paneId, ptyId))
+  }
 
   // Match TerminalPane's call style: positional args, not an object payload.
   term.onData((data) => window.api.ptyWrite(ptyId, data))

@@ -79,7 +79,12 @@ import {
 } from './fleet-policy'
 import { getTaskStates } from './hook-bridge'
 import { getPolicy } from './monitor/policy-store'
-import { AGENT_TERMINAL_SIZE, terminalRegistry, type TerminalOrigin } from './terminal-registry'
+import {
+  AGENT_TERMINAL_SIZE,
+  tailSnapshot,
+  terminalRegistry,
+  type TerminalOrigin
+} from './terminal-registry'
 
 /**
  * Resolve a requested cwd to a directory that actually exists on disk.
@@ -717,23 +722,7 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
   })
 
   ipcMain.on('pty:destroy', (_e, id: string) => {
-    const rec = ptys.get(id)
-    if (!rec) return
-    // Flush remaining buffer so callers don't lose data on rapid create/destroy.
-    flushNow(id)
-    if (rec.flush.timer) clearTimeout(rec.flush.timer)
-    // T474: the exit that follows is the operator's close, not a natural end. Must be set
-    // BEFORE kill() — onExit reads it.
-    terminalRegistry.markClosing(id)
-    try {
-      rec.pty.kill()
-    } catch {
-      // already dead
-    }
-    ptys.delete(id)
-    const destroyedKey = sessionIndex.getSessionKey(id)
-    if (destroyedKey) pruneTaskState(destroyedKey)
-    sessionIndex.removeByPtyId(id)
+    destroyPty(id, flushNow)
   })
 
   // Renderer-driven backpressure (T-3.6 wires the watermark math).
@@ -1053,6 +1042,47 @@ export function livePtyDescriptors(): LivePtyDescriptor[] {
     })
   }
   return out
+}
+
+/**
+ * Kill one PTY and drop it: the body of `pty:destroy`, shared with {@link closeTerminalPty}.
+ * A no-op for an unknown id. Returns the raw output the PTY had produced (what a tombstone
+ * keeps), or `undefined` when there was nothing to destroy.
+ */
+function destroyPty(id: string, flushNow: (id: string) => void): string | undefined {
+  const rec = ptys.get(id)
+  if (!rec) return undefined
+  // Flush remaining buffer so callers don't lose data on rapid create/destroy.
+  flushNow(id)
+  if (rec.flush.timer) clearTimeout(rec.flush.timer)
+  const output = rec.ring.snapshot()
+  // T474: the exit that follows is the operator's close, not a natural end. Must be set
+  // BEFORE kill() — onExit reads it.
+  terminalRegistry.markClosing(id)
+  try {
+    rec.pty.kill()
+  } catch {
+    // already dead
+  }
+  ptys.delete(id)
+  const destroyedKey = sessionIndex.getSessionKey(id)
+  if (destroyedKey) pruneTaskState(destroyedKey)
+  sessionIndex.removeByPtyId(id)
+  return output
+}
+
+/**
+ * T474 B2: main owns an agent terminal's teardown. Kills the PTY of `terminalId` — mounted
+ * in a pane or not — and tombstones the record as `closed` AT ONCE, so its `TERMINAL_LIMIT`
+ * slot is free the moment this returns instead of whenever the kernel reports the exit.
+ * Returns whether a live terminal was closed (false: unknown, or already exited).
+ */
+export function closeTerminalPty(terminalId: string): boolean {
+  const rec = terminalRegistry.get(terminalId)
+  if (!rec || rec.state === 'exited') return false
+  const output = ptyDeps ? destroyPty(rec.ptyId, ptyDeps.flushNow) : undefined
+  terminalRegistry.markExited(rec.ptyId, null, tailSnapshot(output ?? ''))
+  return true
 }
 
 let ptyDeps: CreatePtyDeps | null = null
@@ -1525,7 +1555,11 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
       const reason: PtyExitReason = isParking(id) ? 'park' : 'natural'
       clearParking(id)
       // T474: keep the record as a tombstone; `closed` iff `pty:destroy` ran first.
-      terminalRegistry.markExited(id, evt.exitCode ?? null)
+      terminalRegistry.markExited(
+        id,
+        evt.exitCode ?? null,
+        terminalRegistry.hasPty(id) ? tailSnapshot(ptys.get(id)?.ring.snapshot() ?? '') : undefined
+      )
       getWindow()?.webContents.send('pty:exit', {
         id,
         exitCode: evt.exitCode,

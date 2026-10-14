@@ -19,6 +19,7 @@ import type { UsageSnapshot } from '../main/usage-parse'
 import type { TelemetryPayload } from '../main/statusline'
 import type { TaskState, FailureReason } from '../main/hook-state'
 import type { PtyExitReason } from '../main/pty'
+import type { TerminalStatus } from '../main/terminal-lifecycle'
 import type { ReviewCorrective } from '../main/review-corrective'
 import type { ResponderMode } from '../main/responder-dispatch'
 import type { ShadowEntry } from '../main/responder-registry'
@@ -1160,6 +1161,19 @@ const api = {
   /** Snapshot a PTY's scrollback by sessionKey (Fleet status board last-line). */
   ptyReplayForSession: (sessionKey: string): Promise<PtyReplay> =>
     ipcRenderer.invoke('pty:replayForSession', sessionKey),
+  /**
+   * T474: what main knows about an agent terminal — whether its PTY already ended, and the
+   * tail of its output if so. Asked right after subscribing to the PTY's exit, so an exit that
+   * happened before the pane landed is never lost.
+   */
+  terminalStatus: (terminalId: string): Promise<TerminalStatus> =>
+    ipcRenderer.invoke('terminal:status', terminalId),
+  /** T474: main owns teardown — kill the terminal's PTY whether or not its pane ever mounted. */
+  terminalClose: (terminalId: string): Promise<boolean> =>
+    ipcRenderer.invoke('terminal:close', terminalId),
+  /** T474: this terminal's renderer xterm was disposed (the PTY stays alive). */
+  terminalXtermGone: (terminalId: string): void =>
+    ipcRenderer.send('terminal:xtermGone', terminalId),
   onPtyData: (id: string, cb: (data: string, seq: number) => void): (() => void) => {
     let set = ptyDataListeners.get(id)
     if (!set) {
