@@ -275,3 +275,94 @@ describe('a rejected ask', () => {
     }
   })
 })
+
+// ---- the hold is stamped at the question, not at the answer (W4 §4.2) ----------------------
+
+describe('a late answer does not stretch the hold by a sweep (T456 W4 §4.2)', () => {
+  const TICK = 60_000 // SWEEP_INTERVAL_MS
+  const T0 = 10 * 60 * MIN
+
+  /**
+   * Runs the sweep every TICK on a fake clock. Each question is answered busy after `latencyMs`
+   * of that clock (the mod's round trip), so `deps.now()` after the answer reads later than the
+   * tick. Returns the tick at which the session was parked, and how many questions it took.
+   */
+  async function sweepUntilParked(o: {
+    latencyMs: number
+    retryAfterMs?: number
+    bounds: { maxDeclines: number; maxDeferMs: number }
+    ticks?: number
+  }): Promise<{ parkedAt: number | null; asks: number[] }> {
+    const clock = { now: T0 }
+    const asks: number[] = []
+    let parkedAt: number | null = null
+    const snaps = new Map([['s1', snap()]])
+    const c = createParkCoordinator({
+      now: () => clock.now,
+      snapshot: (k) => snaps.get(k) ?? null,
+      hibernate: (k) => {
+        parkedAt = clock.now
+        snaps.delete(k)
+      },
+      parkMode: () => 'ask',
+      bounds: () => ({ ...o.bounds, pressureFloorMb: BOUNDS.pressureFloorMb }),
+      memAvailableMb: () => null,
+      facts: createLegacyParkFacts(),
+      ask: async () => {
+        asks.push(clock.now)
+        clock.now += o.latencyMs // the answer lands this much after the tick
+        return {
+          kind: 'busy',
+          reasons: ['background-task'],
+          ...(o.retryAfterMs !== undefined ? { retryAfterMs: o.retryAfterMs } : {})
+        }
+      }
+    })
+    open.push(c)
+    for (let i = 0; i <= (o.ticks ?? 20) && parkedAt === null; i++) {
+      const tick = T0 + i * TICK
+      clock.now = tick
+      // The policy's own skip, as `evaluateFleet` does it: a session inside `until` is no victim.
+      const ep = c.episodeFor('s1')
+      if (ep && tick < ep.until) continue
+      await c.requestPark('s1', 'sweep')
+      if (parkedAt !== null) parkedAt = tick // the park belongs to this tick
+    }
+    return { parkedAt, asks: asks.map((a) => a - T0) }
+  }
+
+  // 1 ms, 4 s, and the 5 s edge (an answer the wait still accepts).
+  const LATENCIES = [1, 4_000, NEG_QUERY_WAIT_MS - 1]
+
+  test('maxDeferMs: parked at the same tick whatever the answer latency', async () => {
+    const bounds = { maxDeclines: 100, maxDeferMs: 2 * MIN }
+    const base = await sweepUntilParked({ latencyMs: 0, retryAfterMs: TICK, bounds })
+    expect(base.parkedAt).toBe(T0 + 2 * MIN) // exactly maxDeferMs after the first decline
+    for (const latencyMs of LATENCIES) {
+      const got = await sweepUntilParked({ latencyMs, retryAfterMs: TICK, bounds })
+      expect(got.parkedAt, `latency ${latencyMs} ms`).toBe(base.parkedAt)
+      expect(got.asks, `latency ${latencyMs} ms`).toEqual(base.asks)
+    }
+  })
+
+  test('maxDeclines: parked at the same tick whatever the answer latency', async () => {
+    const bounds = { maxDeclines: 3, maxDeferMs: 60 * MIN }
+    const base = await sweepUntilParked({ latencyMs: 0, retryAfterMs: TICK, bounds })
+    expect(base.asks).toEqual([0, TICK, 2 * TICK]) // asked at every sweep
+    expect(base.parkedAt).toBe(T0 + 3 * TICK)
+    for (const latencyMs of LATENCIES) {
+      const got = await sweepUntilParked({ latencyMs, retryAfterMs: TICK, bounds })
+      expect(got.parkedAt, `latency ${latencyMs} ms`).toBe(base.parkedAt)
+      expect(got.asks, `latency ${latencyMs} ms`).toEqual(base.asks)
+    }
+  })
+
+  test('the default 10-minute retry re-asks at the first sweep at or after until, no drift', async () => {
+    const bounds = { maxDeclines: 3, maxDeferMs: 60 * MIN }
+    for (const latencyMs of [0, ...LATENCIES]) {
+      const got = await sweepUntilParked({ latencyMs, bounds, ticks: 35 })
+      expect(got.asks, `latency ${latencyMs} ms`).toEqual([0, 10 * MIN, 20 * MIN])
+      expect(got.parkedAt, `latency ${latencyMs} ms`).toBe(T0 + 30 * MIN)
+    }
+  })
+})

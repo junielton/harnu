@@ -478,7 +478,11 @@ export function createParkCoordinator(deps: ParkCoordinatorDeps): ParkCoordinato
 
     let next: Episode | null
     try {
-      next = applyAnswer(ep, answer, deps.facts.busy(sessionKey), deps.now(), settings)
+      // Stamped with the time the question was decided, not the answer's arrival: the answer may
+      // land up to NEG_QUERY_WAIT_MS after the sweep tick, and an `until` a few ms past the tick
+      // that is due to end it would slip the hold a whole sweep (T456 W4 §4.2). The facts path
+      // never awaits, so there the two times are the same.
+      next = applyAnswer(ep, answer, deps.facts.busy(sessionKey), requestedAt, settings)
     } catch {
       // The coordinator itself threw: revalidate, then park; the ledger reads `silent` (§9.2).
       return finish(sessionKey, cause, requestedAt, before, ledger(ep, 'silent'))
