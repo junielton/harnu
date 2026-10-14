@@ -14,6 +14,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Added
 
+- **Sessions can now read the terminals they open.** A new `read_terminal` verb returns the terminal as you would see it — a progress bar that redraws on one line comes back as its last state, colours are plain text, a wrapped line is one line — as the last few lines, just the visible screen (for a prompt, `vim` or `htop`), or everything since an earlier point. Harnu keeps the last 2,000 lines of each terminal for this, and a read never types anything. Terminals you opened yourself can't be read yet. While nobody has the pane open, Harnu answers the questions programs like `nvim` and `fzf` ask their terminal so they don't hang, and hands that job to the pane once you open it; a flood of output slows the program down instead of starving the app.
 - **Sessions can now keep track of the terminals they open.** `spawn_terminal` returns a `terminalId`, tells you which session the terminal is connected to, and starts the shell straight away — even in a folder you aren't looking at. A new `list_terminals` verb lists every terminal with its owner, state and size (paths are shortened, and a terminal in a folder you blocked is left out), and `get_session` lists the terminals a session owns. Each folder holds at most four live agent terminals. Two identical `spawn_terminal` calls now open two terminals instead of returning the first one's answer again. Reading and typing into a terminal come in a later release.
 
 ### Changed

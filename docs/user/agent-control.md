@@ -68,7 +68,11 @@ Because the shell belongs to Harnu and not to the pane, nothing is lost when you
 
 A few limits keep this from running away: a folder holds at most four live agent terminals (a fifth is refused until one is closed), and opening two terminals in a row really opens two.
 
-For now a session can open and list terminals but not read what is in one or type into one — those come later, with their own switches for you.
+A session can now **read** a terminal it opened. What it gets is the screen as you would see it, not the raw stream: a progress bar that redraws on one line comes back as its final state, colours are plain text, and a line the terminal wrapped is one line. It can ask for the last few lines, only what is on screen right now (the right choice for a prompt, `vim` or `htop`), or everything since a point it noted earlier — so it can run something, come back, and read just what is new. Harnu keeps the last 2,000 lines of each terminal for this. A read never types anything. Terminals you opened yourself can't be read yet; that comes later, behind a switch you control per folder.
+
+While a terminal is open but you haven't looked at it, Harnu answers the questions programs like `nvim` and `fzf` ask their terminal ("where is the cursor?", "what are you?") so they don't freeze waiting. Once you open the pane, the pane answers instead — never both. If the window reloads or crashes, Harnu takes over answering until a pane picks the terminal up again. A program that prints a flood of output is slowed down rather than allowed to starve the app.
+
+For now a session can open, list and read terminals but not type into one — typing comes later, with its own switches for you.
 
 ## Sessions talking out loud
 
