@@ -430,13 +430,15 @@ watch(
   }
 )
 
-// Reveal-on-agent-pane (BUG-29): an agent pane landing in the folder already
-// visible never crosses the false→true edge above when the stack already has
-// panes, so a collapsed panel would otherwise stay collapsed with zero signal.
-// `helpers.agentPaneRevealTick` is bumped only for that visible-folder case
-// (`notifyAgentPaneAdded` in the helpers store) — any change un-collapses.
+// Reveal-on-pane-add (BUG-29, BUG-186): a pane of ANY origin landing in — or
+// re-focused by a dedup hit in — the folder already visible never crosses the
+// false→true edge above when the stack already has panes, so a collapsed panel
+// would swallow it with zero signal. `helpers.paneRevealTick` is bumped only
+// for that visible-folder case (`revealIfVisible` in the helpers store) — any
+// change un-collapses. Hydration, folder switches and terminal output never
+// bump it, and a manual collapse afterwards sticks until the next add.
 watch(
-  () => helpers.agentPaneRevealTick,
+  () => helpers.paneRevealTick,
   () => layout.setHelperCollapsed(false)
 )
 

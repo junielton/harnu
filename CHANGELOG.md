@@ -17,6 +17,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **Pin the Scheduler workers you use every day.** Hover a worker's row and click the pin, or use the pin button next to **Run now** in the worker's detail: it moves into a **Pinned** group at the top of the list, whether it is on or off, in the order you pinned them. A pinned worker that is off keeps its dimmed "off" look, so your daily workers read at a glance. Unpin it and it returns to **Enabled** or **Off**. The **Pinned** header only appears once something is pinned, and the pin survives a restart. Sessions can't pin or unpin workers, and editing a pinned worker through an agent keeps its pin.
 - **Collapse the Off group.** Click the **Off** header to fold away the workers that are switched off; Harnu remembers it the next time you open the Scheduler. Collapsing never changes which worker you have selected, and opening the Scheduler now lands on the first worker in the list (the first pinned one when you have any).
 
+## 2026-10-13
+
+### Fixed
+
+- **A collapsed helper panel now opens when you add a pane.** Collapsing the right panel and then choosing Split → new terminal (or opening a session in a new tab, the file explorer, a markdown viewer or a canvas) used to add the pane out of sight when the folder already had panes. Any pane opened in the folder you are looking at now reveals the panel, including re-opening one that was already there. Panes opened in a folder you aren't viewing still don't pop the panel open, and collapsing it by hand sticks until the next pane is opened.
+
 ## 2026-10-12
 
 ### Added
