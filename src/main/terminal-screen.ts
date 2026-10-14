@@ -59,6 +59,8 @@ export interface ReadOptions {
    * leave half of it readable.
    */
   scrub?: (text: string) => string
+  /** How long the §5.1 barrier may wait for this read; default {@link BARRIER_TIMEOUT_MS}. */
+  barrierMs?: number
 }
 
 export interface ScreenRead {
@@ -102,6 +104,22 @@ interface Cursor {
   usedAt: number
 }
 
+/**
+ * Where a send started. A prompt that erases and redraws itself when Enter is pressed (powerlevel10k's
+ * transient prompt, fish, starship) makes xterm dispose a marker on the erased rows, and moves the
+ * echo ABOVE the row the cursor was on. So the mark is a column of markers, the cursor row and the
+ * rows above it: the lowest one still alive is where the erase began (and the echo was redrawn).
+ */
+interface SendMark {
+  /** `markers[k]` sits `k` rows above the row the cursor was on. */
+  markers: IMarker[]
+  /** What each of those rows held at the send. A fallback marker is only trusted if its row changed. */
+  rows: string[]
+}
+
+/** Rows above the cursor row a send mark also watches (a two-line prompt plus its spacer). */
+const SEND_MARK_ROWS_ABOVE = 5
+
 interface LogicalLine {
   text: string
   /** Absolute buffer row the line starts on. */
@@ -124,7 +142,7 @@ export class ScreenModel {
    * {@link prepareSend}). Not an agent cursor: it never counts against {@link MAX_CURSORS}, so a
    * send cannot evict the cursors an agent is holding.
    */
-  private readonly sendMarks = new Map<string, IMarker>()
+  private readonly sendMarks = new Map<string, SendMark>()
   private cursorSeq = 0
   private disposed = false
   /** Seeded from output that may be incomplete (a wrapped ring): every read says so. */
@@ -180,7 +198,7 @@ export class ScreenModel {
   }
 
   /** Resolves `true` when the barrier timed out (the answer may be stale). */
-  barrier(): Promise<boolean> {
+  barrier(timeoutMs: number = this.barrierMs): Promise<boolean> {
     if (this.disposed || this.pendingBytes === 0) return Promise.resolve(false)
     return new Promise((resolve) => {
       let settled = false
@@ -189,7 +207,7 @@ export class ScreenModel {
           settled = true
           resolve(true)
         }
-      }, this.barrierMs)
+      }, timeoutMs)
       this.term.write('', () => {
         if (settled) return
         settled = true
@@ -214,6 +232,10 @@ export class ScreenModel {
     bracketedPaste: boolean
     altScreen: boolean
     cursor: string | null
+    /** Characters of the cursor's line that sit before the cursor (the prompt). 0 on the alt screen. */
+    cursorOffset: number
+    /** The alternate screen's rows at this instant, to tell later which ones the program changed. */
+    altRows: string[] | null
     approximate: boolean
   }> {
     const approximate = (await this.barrier()) || this.seededApproximate
@@ -224,14 +246,57 @@ export class ScreenModel {
       bracketedPaste: this.term.modes.bracketedPasteMode,
       altScreen,
       cursor: altScreen || this.disposed ? null : this.takeSendMark(),
+      cursorOffset: altScreen || this.disposed ? 0 : this.cursorLineOffset(),
+      altRows: altScreen && !this.disposed ? this.screenRows() : null,
       approximate
+    }
+  }
+
+  /**
+   * What `waitFor` matches against (spec §4.4, "Match surface"), UNSCRUBBED and uncapped (the wait
+   * engine cuts it): on a normal screen, the logical lines from where `since` marks; on the
+   * alternate screen, the rows that differ from `altRows` (all of them when there is no snapshot,
+   * i.e. the program entered the alternate screen after the send). `onCursorRow` says the text
+   * starts on the very row the cursor sat on (so the prompt is still in front of it); it is false
+   * when the send mark had to fall back to the rows above it (see {@link SendMark}). Takes no
+   * cursor, and a read refreshes the cursor it uses so it cannot time out mid-wait.
+   */
+  async matchText(opts: {
+    since: string | null
+    altRows: string[] | null
+    barrierMs?: number
+  }): Promise<
+    { ok: true; text: string; altScreen: boolean; onCursorRow: boolean } | { ok: false }
+  > {
+    await this.barrier(opts.barrierMs)
+    const buf = this.term.buffer.active
+    if (buf.type === 'alternate') {
+      const rows = this.screenRows()
+      const base = opts.altRows
+      const changed = base ? rows.filter((row, i) => row !== (base[i] ?? '')) : rows
+      return {
+        ok: true,
+        text: changed.join('\n').replace(/\s+$/, ''),
+        altScreen: true,
+        onCursorRow: false
+      }
+    }
+    const start = opts.since === null ? null : this.sinceStart(opts.since)
+    if (start === null) return { ok: false }
+    const lines = this.logicalLines(start.line, buf.length)
+    while (lines.length > 0 && lines[lines.length - 1]!.text.trim() === '') lines.pop()
+    return {
+      ok: true,
+      text: lines.map((l) => l.text).join('\n'),
+      altScreen: false,
+      onCursorRow: start.onCursorRow
     }
   }
 
   /** Drop the mark {@link prepareSend} returned. Safe to call twice, or with `null`. */
   releaseSend(mark: string | null): void {
     if (mark === null) return
-    this.sendMarks.get(mark)?.dispose()
+    for (const m of this.sendMarks.get(mark)?.markers ?? []) m.dispose()
     this.sendMarks.delete(mark)
   }
 
@@ -252,7 +317,10 @@ export class ScreenModel {
    * can already be on the screen by the time the awaiting code resumes. `fn` gets whether the
    * barrier timed out (the answer may be stale).
    */
-  private atBarrier<T>(fn: (timedOut: boolean) => T): Promise<T> {
+  private atBarrier<T>(
+    fn: (timedOut: boolean) => T,
+    timeoutMs: number = this.barrierMs
+  ): Promise<T> {
     if (this.disposed || this.pendingBytes === 0) {
       try {
         return Promise.resolve(fn(false))
@@ -272,14 +340,15 @@ export class ScreenModel {
           reject(err)
         }
       }
-      const timer = setTimeout(() => run(true), this.barrierMs)
+      const timer = setTimeout(() => run(true), timeoutMs)
       this.term.write('', () => run(false))
     })
   }
 
   private readScreen(opts: ReadOptions, withCursor: boolean): Promise<ScreenReadResult> {
-    return this.atBarrier((timedOut) =>
-      this.readNow(opts, withCursor, timedOut || this.seededApproximate)
+    return this.atBarrier(
+      (timedOut) => this.readNow(opts, withCursor, timedOut || this.seededApproximate),
+      opts.barrierMs
     )
   }
 
@@ -293,15 +362,12 @@ export class ScreenModel {
     let lines: LogicalLine[]
     let maxLines: number | undefined
     if (opts.mode === 'since') {
-      const cur = opts.since === undefined ? undefined : this.cursors.get(opts.since)
-      const marker =
-        cur?.marker ?? (opts.since === undefined ? undefined : this.sendMarks.get(opts.since))
-      if (!marker || marker.isDisposed) {
+      const start = opts.since === undefined ? null : this.sinceStart(opts.since)
+      if (start === null) {
         if (opts.since !== undefined) this.dropCursor(opts.since)
         return { ok: false, error: 'CURSOR_EXPIRED' }
       }
-      if (cur) cur.usedAt = this.now()
-      lines = altScreen ? this.screenLines() : this.logicalLines(marker.line, buf.length)
+      lines = altScreen ? this.screenLines() : this.logicalLines(start.line, buf.length)
     } else if (opts.mode === 'screen') {
       lines = this.screenLines()
     } else {
@@ -340,8 +406,7 @@ export class ScreenModel {
     this.disposed = true
     for (const c of this.cursors.values()) c.marker.dispose()
     this.cursors.clear()
-    for (const m of this.sendMarks.values()) m.dispose()
-    this.sendMarks.clear()
+    for (const id of [...this.sendMarks.keys()]) this.releaseSend(id)
     this.term.dispose()
     if (this.over) {
       this.over = false
@@ -407,11 +472,75 @@ export class ScreenModel {
   }
 
   private takeSendMark(): string | null {
-    const marker = this.term.registerMarker(0)
-    if (!marker) return null
+    const buf = this.term.buffer.active
+    const here = buf.baseY + buf.cursorY
+    const markers: IMarker[] = []
+    const rows: string[] = []
+    for (let k = 0; k <= SEND_MARK_ROWS_ABOVE && k <= here; k++) {
+      const m = this.term.registerMarker(-k)
+      if (!m) break
+      markers.push(m)
+      rows.push(buf.getLine(here - k)?.translateToString(true) ?? '')
+    }
+    if (markers.length === 0) return null
     const id = `s${++this.cursorSeq}`
-    this.sendMarks.set(id, marker)
+    this.sendMarks.set(id, { markers, rows })
     return id
+  }
+
+  /**
+   * The row a `since` id starts reading from, or `null` when it is gone. An agent cursor is its
+   * marker's line. A send mark is the cursor row while that row is intact; when it was erased,
+   * the lowest marker that survived. xterm resets (and disposes the markers of) every row BELOW
+   * the one an erase-to-end starts on, and keeps the marker of that first row, which is exactly
+   * where a transient prompt then redraws the command: the echo.
+   */
+  private sinceStart(id: string): { line: number; onCursorRow: boolean } | null {
+    const cur = this.cursors.get(id)
+    if (cur) {
+      if (cur.marker.isDisposed) return null
+      cur.usedAt = this.now()
+      return { line: cur.marker.line, onCursorRow: true }
+    }
+    const mark = this.sendMarks.get(id)
+    if (!mark) return null
+    for (let k = 0; k < mark.markers.length; k++) {
+      const m = mark.markers[k]!
+      if (m.isDisposed) continue
+      if (k === 0) return { line: m.line, onCursorRow: true }
+      // A row ABOVE the cursor row can be the start of an erased block that was redrawn (the echo
+      // of a transient prompt) — then its text changed. One that still reads as it did at the send
+      // is just a line that outlived a screen clear: it says nothing about where the send began,
+      // and reading from it would return output from before the send.
+      const now = this.term.buffer.active.getLine(m.line)?.translateToString(true) ?? ''
+      return now !== mark.rows[k] ? { line: m.line, onCursorRow: false } : null
+    }
+    return null
+  }
+
+  /** The visible rows, right-trimmed, one string per row (no re-joining of wrapped lines). */
+  private screenRows(): string[] {
+    const buf = this.term.buffer.active
+    const rows: string[] = []
+    for (let r = 0; r < this.term.rows; r++) {
+      rows.push(buf.getLine(buf.baseY + r)?.translateToString(true) ?? '')
+    }
+    return rows
+  }
+
+  /**
+   * How many characters of the logical line the cursor is on come BEFORE the cursor, counting the
+   * continuation rows above it. `logicalLines` starts the cursor's line at its first row, so this
+   * is the offset into that text where "what the program printed after the send" begins.
+   */
+  private cursorLineOffset(): number {
+    const buf = this.term.buffer.active
+    const row = buf.baseY + buf.cursorY
+    let start = row
+    while (start > 0 && buf.getLine(start)?.isWrapped) start--
+    let offset = 0
+    for (let r = start; r < row; r++) offset += buf.getLine(r)?.translateToString(false).length ?? 0
+    return offset + (buf.getLine(row)?.translateToString(false, 0, buf.cursorX).length ?? 0)
   }
 
   private sweepCursors(): void {

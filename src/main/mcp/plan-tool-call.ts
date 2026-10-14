@@ -61,6 +61,7 @@ import {
   type TerminalGateState
 } from '../terminal-gate-core'
 import { auditField, checkSendContent, summarizeSend } from '../terminal-keys'
+import { checkWaitFor } from '../terminal-wait'
 import type { SendTerminalArgs } from './validate'
 
 /**
@@ -244,6 +245,10 @@ export function planToolCall({
   if (def.op === 'send_terminal') {
     const bad = checkSendContent(parsed.value as SendTerminalArgs)
     if (bad) return denyPlan(tool, folder ?? '', now, `${bad.error}: ${bad.detail}`, redact)
+    // T489 B8: a pattern that cannot be used is refused before anything is typed or asked.
+    const badWait = checkWaitFor((parsed.value as SendTerminalArgs).waitFor)
+    if (badWait)
+      return denyPlan(tool, folder ?? '', now, `WAIT_PATTERN_INVALID: ${badWait.detail}`, redact)
   }
 
   // Classify via the catalog `mutates` flag (T5) and assemble the gate call.
