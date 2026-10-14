@@ -119,6 +119,12 @@ export class ScreenModel {
   private pendingBytes = 0
   private over = false
   private readonly cursors = new Map<string, Cursor>()
+  /**
+   * The line a `send_terminal` started on, held only while that call reads back (see
+   * {@link prepareSend}). Not an agent cursor: it never counts against {@link MAX_CURSORS}, so a
+   * send cannot evict the cursors an agent is holding.
+   */
+  private readonly sendMarks = new Map<string, IMarker>()
   private cursorSeq = 0
   private disposed = false
   /** Seeded from output that may be incomplete (a wrapped ring): every read says so. */
@@ -193,6 +199,47 @@ export class ScreenModel {
     })
   }
 
+  /**
+   * What `send_terminal` needs to know the instant before it writes (spec §4.4, §5.1): the
+   * program's input modes, whether a full-screen program owns the display, and a mark on the line
+   * the terminal's cursor sits on, so the output SINCE the send can be read back. The barrier runs
+   * first, so none of it describes a half-parsed chunk. The mark is `null` on the alternate
+   * screen, which has no markers: there the whole screen is the answer.
+   *
+   * The mark is private to the call: pass it to {@link read} as `since`, then give it back with
+   * {@link releaseSend}. The only cursor a send hands the agent is the one that read returns.
+   */
+  async prepareSend(): Promise<{
+    applicationCursorKeys: boolean
+    bracketedPaste: boolean
+    altScreen: boolean
+    cursor: string | null
+    approximate: boolean
+  }> {
+    const approximate = (await this.barrier()) || this.seededApproximate
+    this.sweepCursors()
+    const altScreen = this.term.buffer.active.type === 'alternate'
+    return {
+      applicationCursorKeys: this.term.modes.applicationCursorKeysMode,
+      bracketedPaste: this.term.modes.bracketedPasteMode,
+      altScreen,
+      cursor: altScreen || this.disposed ? null : this.takeSendMark(),
+      approximate
+    }
+  }
+
+  /** Drop the mark {@link prepareSend} returned. Safe to call twice, or with `null`. */
+  releaseSend(mark: string | null): void {
+    if (mark === null) return
+    this.sendMarks.get(mark)?.dispose()
+    this.sendMarks.delete(mark)
+  }
+
+  /** Cursors an agent holds right now (the send marks are not among them). */
+  get cursorCount(): number {
+    return this.cursors.size
+  }
+
   /** Read the screen after the barrier. See spec §4.3 for the three modes. */
   read(opts: ReadOptions): Promise<ScreenReadResult> {
     return this.readScreen(opts, true)
@@ -209,12 +256,14 @@ export class ScreenModel {
     let maxLines: number | undefined
     if (opts.mode === 'since') {
       const cur = opts.since === undefined ? undefined : this.cursors.get(opts.since)
-      if (!cur || cur.marker.isDisposed) {
+      const marker =
+        cur?.marker ?? (opts.since === undefined ? undefined : this.sendMarks.get(opts.since))
+      if (!marker || marker.isDisposed) {
         if (opts.since !== undefined) this.dropCursor(opts.since)
         return { ok: false, error: 'CURSOR_EXPIRED' }
       }
-      cur.usedAt = this.now()
-      lines = altScreen ? this.screenLines() : this.logicalLines(cur.marker.line, buf.length)
+      if (cur) cur.usedAt = this.now()
+      lines = altScreen ? this.screenLines() : this.logicalLines(marker.line, buf.length)
     } else if (opts.mode === 'screen') {
       lines = this.screenLines()
     } else {
@@ -253,6 +302,8 @@ export class ScreenModel {
     this.disposed = true
     for (const c of this.cursors.values()) c.marker.dispose()
     this.cursors.clear()
+    for (const m of this.sendMarks.values()) m.dispose()
+    this.sendMarks.clear()
     this.term.dispose()
     if (this.over) {
       this.over = false
@@ -317,6 +368,14 @@ export class ScreenModel {
     return id
   }
 
+  private takeSendMark(): string | null {
+    const marker = this.term.registerMarker(0)
+    if (!marker) return null
+    const id = `s${++this.cursorSeq}`
+    this.sendMarks.set(id, marker)
+    return id
+  }
+
   private sweepCursors(): void {
     const cutoff = this.now() - CURSOR_TTL_MS
     for (const [id, c] of [...this.cursors]) {
@@ -327,6 +386,7 @@ export class ScreenModel {
   private dropCursor(id: string): void {
     this.cursors.get(id)?.marker.dispose()
     this.cursors.delete(id)
+    this.releaseSend(id)
   }
 }
 

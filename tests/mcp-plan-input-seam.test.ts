@@ -77,6 +77,7 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
   list_terminals: { folder: ALLOWED, ownerSessionId: 'sess-1' },
   // T474 B3: `folder` is the terminal's own folder, resolved by the server from the registry.
   read_terminal: { folder: ALLOWED, terminalId: 'h-1', mode: 'since', since: 'm1', maxChars: 500 },
+  send_terminal: { folder: ALLOWED, terminalId: 'h-1', input: 'ls', keys: ['Enter'], paste: false },
   // T445: the cleanup read and the release both gate on the `folder` arg.
   list_cleanup: { folder: ALLOWED },
   release_worktree: { folder: ALLOWED },

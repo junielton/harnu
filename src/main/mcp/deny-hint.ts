@@ -48,6 +48,28 @@ export function shapeDenial(
   ctx: { folder?: string; syntheticId?: string } = {}
 ): SteerableDenial | null {
   const at = ctx.folder ? ` (${ctx.folder})` : ''
+  // T482 B5: a refused send names the offending key or line in its detail.
+  const content = /^(KEY_UNKNOWN|INPUT_TOO_LARGE): ([\s\S]*)$/.exec(result)
+  if (content) {
+    return {
+      error: content[1]!,
+      message: content[2]!,
+      nextActions:
+        content[1] === 'KEY_UNKNOWN'
+          ? [
+              {
+                do: 'Press keys by name in `keys`; put typed text in `input`.',
+                why: 'Control actions are named keys so the operator and the audit see exactly what was pressed.'
+              }
+            ]
+          : [
+              {
+                do: 'Send the text in smaller pieces, or write it to a file and run the file.',
+                why: 'A terminal cuts a line at about 4 KiB without saying so.'
+              }
+            ]
+    }
+  }
   switch (result) {
     case 'FOLDER_NOT_ALLOWED':
       return {
@@ -126,6 +148,53 @@ export function shapeDenial(
           {
             do: "Treat this as the operator's decision, not a fault. Open a new terminal with spawn_terminal only if the work still needs one, and tell the operator you did.",
             why: 'Disconnect is permanent for that terminal; a new terminal is visible and shows its connection again.'
+          }
+        ]
+      }
+    // T482 B5: typing into a terminal.
+    case 'TERMINAL_EXITED':
+      return {
+        error: result,
+        message: `That terminal${at} has ended, so nothing can be typed into it.`,
+        nextActions: [
+          {
+            do: 'Call read_terminal to see its last output, then open a new one with spawn_terminal if the work continues.',
+            why: 'An exited terminal stays readable for 10 minutes but a program that ended cannot receive keys.'
+          }
+        ]
+      }
+    case 'TERMINAL_WRITE_NOT_ENABLED':
+      return {
+        error: result,
+        message: `That terminal${at} was opened by the operator. Agents can type only into terminals they opened themselves.`,
+        nextActions: [
+          {
+            do: 'Open your own terminal with spawn_terminal and work there, or ask the operator to run the command.',
+            why: 'Typing into a terminal the operator is using is not available to agents yet.'
+          }
+        ]
+      }
+    case 'TERMINAL_BUSY':
+      return {
+        error: result,
+        message:
+          'Other writes to that terminal were still going out after 10 seconds, so this one gave up. Nothing was typed.',
+        nextActions: [
+          {
+            do: 'Call read_terminal to see the screen as it is now, then send again.',
+            why: 'Sends to one terminal run one at a time; a long queue means something else is typing there.'
+          }
+        ]
+      }
+    case 'TERMINAL_RATE_LIMIT':
+      return {
+        error: result,
+        message:
+          'That terminal has received 60 sends in the last minute, the most it accepts. Nothing was typed.',
+        nextActions: [
+          {
+            do: 'Wait a few seconds, and put several keystrokes into one send: `input` plus a `keys` list.',
+            why: 'One send can carry a whole command and up to 64 keys, so the limit should not get in the way of normal work.'
           }
         ]
       }

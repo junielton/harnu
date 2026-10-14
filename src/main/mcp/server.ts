@@ -123,6 +123,8 @@ import { readUserProjects, setUserProjectInheritAgentControl } from '../user-pro
 import { setMcpArgsProvider } from '../pty'
 import type { TerminalGateState } from '../terminal-gate-core'
 import { resolveTerminalGate } from '../terminal-gate'
+import { escapeForAudit } from '../terminal-keys'
+import { terminalWriteQueue } from '../terminal-write-queue'
 import { previewWorktreeCommands, worktreeInheritOfferForTarget } from '../worktree-ipc'
 import { writeWorktreeInheritControl } from './worktree-inherit-prefs'
 
@@ -697,6 +699,20 @@ async function buildConfirmDisclosure(
       const prompt = containersConfirmPrompt(op, args, snap)
       return { prompt, permissionMode: 'default', nonDefaultFlags: [], commands: [] }
     }
+    // T482 B5: reachable only in the `ask` mode (a send to a terminal the agent opened runs free).
+    // Names the terminal and EXACTLY what would be typed, never the program-set title. Unit B6
+    // replaces the "Allow types it" semantics with the per-terminal lease.
+    case 'send_terminal': {
+      const terminalId = strField(args, 'terminalId') ?? '(unknown)'
+      const keys = Array.isArray(args.keys) ? (args.keys as unknown[]).map(String) : []
+      const typed = typeof args.input === 'string' ? args.input : ''
+      const prompt =
+        `Type into terminal ${terminalId} in:\n  ${folder}\n\n` +
+        (typed ? `Input:\n${escapeForAudit(typed)}\n\n` : '') +
+        (keys.length ? `Keys: ${keys.join(', ')}\n\n` : '') +
+        'What an agent types runs with your permissions.'
+      return { prompt, permissionMode: 'default', nonDefaultFlags: [], commands: [] }
+    }
     case 'delete_worker': {
       // T316: unlike update_worker (silent-allowed), this verb ALWAYS reaches
       // this confirm — the only safety net before an irreversible delete that
@@ -943,6 +959,24 @@ export async function actuate(
  */
 export async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise<CallToolResult> {
   const args = asRecord(rawArgs)
+  // T482 F1: a send's place in its terminal's line is decided HERE, synchronously, before the
+  // first `await` of the pipeline (prefs, project file, folder scan). Taken later, two sends could
+  // swap order depending on which one's I/O finished first.
+  const sendTerminalId = def.op === 'send_terminal' ? strField(args, 'terminalId') : undefined
+  if (sendTerminalId) terminalWriteQueue.reserve(args, sendTerminalId)
+  try {
+    return await runToolCall(def, args)
+  } finally {
+    // A call that never reached the handler (refused, parked for a confirm) must not hold the
+    // sends behind it. A no-op once the handler claimed the place.
+    terminalWriteQueue.drop(args)
+  }
+}
+
+async function runToolCall(
+  def: McpToolDef,
+  args: Record<string, unknown>
+): Promise<CallToolResult> {
   const now = Date.now()
 
   // T63/BUG-10: validate + normalize create_session's bootOverride at the border,
@@ -996,8 +1030,8 @@ export async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise
     // session the SAME way `message_session` targets a recipient — the TARGET's
     // owning folder is the anchor, never a caller-supplied one.
     gateFolder = resolveSessionGateFolder(folders, strField(args, 'sessionId') ?? '')
-  } else if (def.op === 'read_terminal') {
-    // T474 B3/B4: the verb carries only a `terminalId`, so the gate anchor is the terminal's OWN
+  } else if (def.op === 'read_terminal' || def.op === 'send_terminal') {
+    // T474 B3/B4/B5: the verb carries only a `terminalId`, so the gate anchor is the terminal's OWN
     // folder, from the registry, and its access state is resolved HERE so `planToolCall` can
     // refuse at plan level (spec §6.2). An unknown id leaves the folder undefined and resolves
     // to a state the gate answers `TERMINAL_NOT_FOUND`.
@@ -1025,6 +1059,8 @@ export async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise
   })
   appendAudit(plan.auditRecord)
   auditPersister.schedule()
+  // A send that is not going ahead now (denied, or waiting on the operator) has no place in line.
+  if (!plan.shouldDispatch) terminalWriteQueue.drop(args)
 
   // Reads: dispatch-on-allow. A dispatched MUTATION (grant-allowed T44 S5, or
   // inherit-once-allowed T72) is handled by the branches below, so gate this on the

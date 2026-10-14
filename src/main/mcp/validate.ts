@@ -23,6 +23,7 @@ import { z } from 'zod'
 import { sanitizeAgentBootOverride, type AgentBootOverride } from './agent-boot'
 import { SAFE_GRANT_VERBS, toolByName, type McpOp } from './tool-catalog'
 import { MESSAGE_MAX_CHARS } from '../messaging-socket'
+import { MAX_KEYS, MAX_KEY_NAME_CHARS } from '../terminal-keys'
 import { SPEAK_MAX_CHARS } from '../speech-text'
 import { MEMORY_ENTRY_MAX_CHARS, parseMemoryPage, validateEntry } from './memory-core'
 import { MAX_CANVAS_IMAGES_PER_CALL, MAX_CANVAS_OPS_PER_CALL } from './canvas-ops'
@@ -951,6 +952,41 @@ export function parseReadTerminal(input: unknown): ParseResult<ReadTerminalArgs>
   return { ok: true, value: parsed.data as ReadTerminalArgs }
 }
 
+/** Validated args for the `send_terminal` verb (T482 B5). */
+export interface SendTerminalArgs {
+  folder?: string
+  terminalId: string
+  input?: string
+  keys?: string[]
+  paste?: boolean
+  ownerSessionId?: string
+}
+
+const SendTerminalSchema = z
+  .object({
+    folder: absolutePathSchema.optional(),
+    terminalId: z.string().min(1),
+    input: z.string().optional(),
+    keys: z.array(z.string().min(1).max(MAX_KEY_NAME_CHARS)).max(MAX_KEYS).optional(),
+    paste: z.boolean().optional(),
+    ownerSessionId: z.string().min(1).optional()
+  })
+  .refine((v) => (v.input !== undefined && v.input.length > 0) || (v.keys?.length ?? 0) > 0, {
+    message: 'send_terminal needs `input`, `keys`, or both',
+    path: ['input']
+  })
+
+/**
+ * Validate `send_terminal` args (T482 B5): structure only. What the typed CONTENT may contain
+ * (control characters, size, key names) is `checkSendContent`'s, which `planToolCall` runs next so
+ * each failure keeps its own code (`BAD_ARGS` / `INPUT_TOO_LARGE` / `KEY_UNKNOWN`).
+ */
+export function parseSendTerminal(input: unknown): ParseResult<SendTerminalArgs> {
+  const parsed = SendTerminalSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: parsed.data as SendTerminalArgs }
+}
+
 /** Validated args for the `list_containers` read tool (T328). */
 export type ListContainersArgs = ListWorkersArgs
 
@@ -1220,6 +1256,7 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   spawn_terminal: parseSpawnTerminal,
   list_terminals: parseListTerminals,
   read_terminal: parseReadTerminal,
+  send_terminal: parseSendTerminal,
   adopt_folder: parseAdoptFolder,
   // BUG-56: same `{ folder }` shape as adopt_folder.
   remove_folder: parseAdoptFolder,

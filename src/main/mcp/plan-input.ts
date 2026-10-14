@@ -123,6 +123,22 @@ const translateReadTerminal: Translator = (args, gateFolder) => {
   return input
 }
 
+// T482 B5: like `read_terminal`, `folder` is the terminal's OWN folder from the registry. `input`
+// is passed through untouched (it is typed text: an empty or whitespace-only value is real), and so
+// is `keys`, so the validator and `checkSendContent` see the full call.
+const translateSendTerminal: Translator = (args, gateFolder) => {
+  const input: Record<string, unknown> = {}
+  if (gateFolder) input.folder = gateFolder
+  for (const key of ['terminalId', 'ownerSessionId'] as const) {
+    const v = strField(args, key)
+    if (v !== undefined) input[key] = v
+  }
+  if (typeof args.input === 'string') input.input = args.input
+  if (Array.isArray(args.keys)) input.keys = args.keys
+  if (typeof args.paste === 'boolean') input.paste = args.paste
+  return input
+}
+
 const translateAdoptFolder: Translator = (_args, gateFolder) => {
   const input: Record<string, unknown> = {}
   if (gateFolder) input.folder = gateFolder
@@ -427,6 +443,7 @@ const TRANSLATORS: { [K in McpOp]: Translator } = {
   spawn_terminal: translateSpawnTerminal,
   list_terminals: translateListTerminals,
   read_terminal: translateReadTerminal,
+  send_terminal: translateSendTerminal,
   adopt_folder: translateAdoptFolder,
   // BUG-56: same shape as adopt_folder — `folder` only.
   remove_folder: translateAdoptFolder,

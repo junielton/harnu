@@ -404,3 +404,56 @@ describe('tombstone text', () => {
     expect(lines[lines.length - 1]).toBe('t299')
   })
 })
+
+// T482 (B5): what `send_terminal` reads the instant before it writes.
+describe('ScreenModel.prepareSend', () => {
+  it('reports the program’s input modes after the barrier', async () => {
+    const { model } = make()
+    const idle = await model.prepareSend()
+    expect(idle).toMatchObject({
+      applicationCursorKeys: false,
+      bracketedPaste: false,
+      altScreen: false,
+      approximate: false
+    })
+    // Fed but not yet parsed: the barrier must wait for it, never answer from before it.
+    model.write('\x1b[?1h\x1b[?2004h', false)
+    expect(await model.prepareSend()).toMatchObject({
+      applicationCursorKeys: true,
+      bracketedPaste: true
+    })
+    model.write('\x1b[?1l\x1b[?2004l', false)
+    expect(await model.prepareSend()).toMatchObject({
+      applicationCursorKeys: false,
+      bracketedPaste: false
+    })
+    model.dispose()
+  })
+
+  it('gives a cursor on the cursor line, which `since` reads back inclusive', async () => {
+    const { model } = make()
+    model.write('old\r\n$ ', false)
+    const prep = await model.prepareSend()
+    expect(prep.altScreen).toBe(false)
+    expect(prep.cursor).toEqual(expect.any(String))
+    model.write('ls\r\nfile.txt\r\n$ ', false)
+    const r = await model.read({ mode: 'since', since: prep.cursor! })
+    expect(r.ok && r.text).toBe('$ ls\nfile.txt\n$ ')
+    model.dispose()
+  })
+
+  it('on the alternate screen there is no cursor, and altScreen is true', async () => {
+    const { model } = make()
+    model.write('\x1b[?1049hfull screen', false)
+    expect(await model.prepareSend()).toMatchObject({ altScreen: true, cursor: null })
+    model.dispose()
+  })
+
+  it('says approximate when the barrier timed out', async () => {
+    const { model, held } = make({ barrierTimeoutMs: 20 })
+    held.stall.on = true
+    model.write('x', false)
+    expect((await model.prepareSend()).approximate).toBe(true)
+    model.dispose()
+  })
+})

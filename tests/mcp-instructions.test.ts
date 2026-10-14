@@ -53,13 +53,14 @@ describe('HARNU_MCP_INSTRUCTIONS_BODY content sanity', () => {
     expect(HARNU_MCP_INSTRUCTIONS_BODY).toMatch(/Ask before agent actions/i)
   })
 
-  it('advertises exactly the terminal surface that exists after B3 (T478, T480)', () => {
+  it('advertises exactly the terminal surface that exists after B5 (T478, T480, T482)', () => {
     expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('spawn_terminal')
     expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('list_terminals')
     expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('read_terminal')
     expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('ownerSessionId')
-    // Later units: do not promise what does not exist yet.
-    expect(HARNU_MCP_INSTRUCTIONS_BODY).not.toMatch(/send_terminal|kill-?switch/i)
+    // AC-B5-9: `send_terminal` is advertised, and nothing about the kill-switch (unit B7) yet.
+    expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('send_terminal')
+    expect(HARNU_MCP_INSTRUCTIONS_BODY).not.toMatch(/kill-?switch|disconnect|lease/i)
   })
 
   it('stays a primer — non-empty and ≤80 lines', () => {
