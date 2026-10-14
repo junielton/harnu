@@ -11,20 +11,74 @@
  * The handlers are plain functions over an injected registry and close function, so the
  * lifecycle is testable without electron; {@link registerTerminalIpc} only binds them.
  */
-import { ipcMain } from 'electron'
+import { app, ipcMain, webContents, type WebContents } from 'electron'
 import { closeTerminalPty } from './pty'
-import { redispatchLiveTerminals, terminalStatus } from './terminal-lifecycle'
-import { terminalRegistry } from './terminal-registry'
+import { redispatchLiveTerminals, terminalStatus, type TerminalStatus } from './terminal-lifecycle'
+import { terminalRegistry, type TerminalRegistry } from './terminal-registry'
+import { screenModelFor } from './terminal-screen'
+
+/**
+ * The renderer's xterms are gone, so no pane answers terminal queries until a new one adopts
+ * (spec §5.4). A reload or a crash sends no `terminal:xtermGone` of its own, so main resets
+ * EVERY record: the screen model answers again from the next byte on.
+ */
+export function resetRendererAttached(registry: TerminalRegistry): void {
+  for (const rec of registry.list()) rec.rendererAttached = false
+}
+
+/**
+ * `terminal:status`, with the tombstone snapshot RESOLVED when a screen model exists: the
+ * raw output tail the registry keeps is escape codes and `\r` overwrites, which paint as
+ * garbage in a pane that mounts after the exit (spec §8 cases 4, 5).
+ */
+export async function terminalStatusResolved(
+  registry: TerminalRegistry,
+  terminalId: unknown
+): Promise<TerminalStatus> {
+  const status = terminalStatus(registry, terminalId)
+  if (!status.known || status.state !== 'exited' || typeof terminalId !== 'string') return status
+  const model = screenModelFor(terminalId)
+  if (!model) return status
+  // The pane writes this straight into an xterm without `convertEol`: a bare LF would not
+  // return to column 0 and the text would paint as a staircase.
+  return { ...status, snapshot: (await model.tombstoneText()).replace(/\r?\n/g, '\r\n') }
+}
+
+const watched = new WeakSet<WebContents>()
+
+/**
+ * Reset on the two ways a renderer vanishes without saying so. The reload event is
+ * `did-start-navigation` for the main frame, not same-document: `will-navigate` (the only
+ * navigation hook `index.ts` has) does NOT fire on a reload. `terminal:xtermGone` from
+ * `beforeunload` stays the primary path; this is the net under it.
+ *
+ * `did-start-navigation` also fires for a navigation `index.ts` is about to BLOCK (a file
+ * dropped on the window, a redirect): the xterms survive that, so resetting would leave every
+ * query answered twice with nothing to restore the flag. Only a navigation to the renderer
+ * document itself counts.
+ */
+function watchRenderer(wc: WebContents, isRendererUrl: (url: string) => boolean): void {
+  if (watched.has(wc) || wc.getType() !== 'window') return
+  watched.add(wc)
+  wc.on('render-process-gone', () => resetRendererAttached(terminalRegistry))
+  wc.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument && isRendererUrl(details.url)) {
+      resetRendererAttached(terminalRegistry)
+    }
+  })
+}
 
 /**
  * Bind the handlers. Call it AFTER `registerCommandBridge`: its `renderer:ready` listener is the
  * one that opens the dispatch gate, and ours must run once the gate is open.
  */
-export function registerTerminalIpc(bridge: {
-  dispatch: (command: string, payload: unknown) => Promise<unknown>
-}): void {
+export function registerTerminalIpc(
+  bridge: { dispatch: (command: string, payload: unknown) => Promise<unknown> },
+  /** Whether a navigation target is the renderer document (`index.ts` owns the answer). */
+  isRendererUrl: (url: string) => boolean = () => true
+): void {
   ipcMain.handle('terminal:status', (_e, terminalId: unknown) =>
-    terminalStatus(terminalRegistry, terminalId)
+    terminalStatusResolved(terminalRegistry, terminalId)
   )
 
   ipcMain.handle('terminal:close', (_e, terminalId: unknown): boolean =>
@@ -34,6 +88,9 @@ export function registerTerminalIpc(bridge: {
   ipcMain.on('terminal:xtermGone', (_e, terminalId: unknown) => {
     if (typeof terminalId === 'string') terminalRegistry.setRendererAttached(terminalId, false)
   })
+
+  for (const wc of webContents.getAllWebContents()) watchRenderer(wc, isRendererUrl)
+  app.on('web-contents-created', (_e, wc) => watchRenderer(wc, isRendererUrl))
 
   ipcMain.on('renderer:ready', () => {
     void redispatchLiveTerminals(terminalRegistry, (c, p) => bridge.dispatch(c, p))

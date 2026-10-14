@@ -108,6 +108,21 @@ const translateListTerminals: Translator = (args, gateFolder) => {
   return input
 }
 
+// T474 B3: `folder` is the terminal's OWN folder, resolved by `server.ts` from the registry (the
+// verb carries only an id); the rest passes through so the validator sees the full call.
+const translateReadTerminal: Translator = (args, gateFolder) => {
+  const input: Record<string, unknown> = {}
+  if (gateFolder) input.folder = gateFolder
+  for (const key of ['terminalId', 'mode', 'since'] as const) {
+    const v = strField(args, key)
+    if (v !== undefined) input[key] = v
+  }
+  for (const key of ['lines', 'maxChars'] as const) {
+    if (typeof args[key] === 'number') input[key] = args[key]
+  }
+  return input
+}
+
 const translateAdoptFolder: Translator = (_args, gateFolder) => {
   const input: Record<string, unknown> = {}
   if (gateFolder) input.folder = gateFolder
@@ -411,6 +426,7 @@ const TRANSLATORS: { [K in McpOp]: Translator } = {
   create_worktree: translateCreateWorktree,
   spawn_terminal: translateSpawnTerminal,
   list_terminals: translateListTerminals,
+  read_terminal: translateReadTerminal,
   adopt_folder: translateAdoptFolder,
   // BUG-56: same shape as adopt_folder — `folder` only.
   remove_folder: translateAdoptFolder,

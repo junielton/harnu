@@ -60,9 +60,11 @@ import {
 import {
   AGENT_TERMINAL_SIZE,
   MAX_AGENT_TERMINALS_PER_FOLDER,
+  terminalAccess,
   terminalRegistry
 } from '../terminal-registry'
 import { paneSplitFor } from '../terminal-lifecycle'
+import { TERMINAL_NOTE, pruneScreenModels, screenModelFor, type ReadMode } from '../terminal-screen'
 import { peerAddressForSession, sendPeerMessage } from '../messaging'
 import {
   activityDescription,
@@ -1033,6 +1035,54 @@ const listTerminalsHandler: Handler = async (args, ctx) => {
       : {})
   })
   return textResult({ terminals })
+}
+
+/**
+ * T474 B3: read the resolved screen of a terminal (spec §4.3). The refusals here are
+ * handler-level because a read never raises a confirm, so there is nothing for a plan-level
+ * deny to pre-empt; unit B4 moves them into the plan layer with the folder opt-in.
+ */
+const readTerminalHandler: Handler = async (args, ctx) => {
+  const terminalId = strField(args, 'terminalId') ?? ''
+  const mode = (strField(args, 'mode') ?? 'tail') as ReadMode
+  const since = strField(args, 'since')
+  if (mode === 'since' && since === undefined) {
+    return errorResult("BAD_ARGS: since is required when mode is 'since'")
+  }
+  // A swept tombstone's model has no reader left; drop it before looking one up.
+  pruneScreenModels((id) => terminalRegistry.get(id) !== undefined)
+  const rec = terminalRegistry.get(terminalId)
+  if (!rec) return steerError('TERMINAL_NOT_FOUND', ctx.folder)
+  if (rec.disconnected) return steerError('TERMINAL_DISCONNECTED', ctx.folder)
+  // The folder opt-in (B4) is not wired yet: its default is off, so only agent-spawned
+  // terminals are readable.
+  if (!terminalAccess(rec, { readOptIn: false, writesEnabled: true }).readable) {
+    return steerError('TERMINAL_READ_NOT_ENABLED', ctx.folder)
+  }
+  // Every agent terminal is born with its model (spec §5.2); one missing means the record is
+  // being torn down.
+  const model = screenModelFor(terminalId)
+  if (!model) return steerError('TERMINAL_NOT_FOUND', ctx.folder)
+
+  const numArg = (key: string): number | undefined =>
+    typeof args[key] === 'number' ? (args[key] as number) : undefined
+  const read = await model.read({
+    mode,
+    ...(since !== undefined ? { since } : {}),
+    ...(numArg('lines') !== undefined ? { lines: numArg('lines') } : {}),
+    ...(numArg('maxChars') !== undefined ? { maxChars: numArg('maxChars') } : {})
+  })
+  if (!read.ok) return steerError(read.error, ctx.folder)
+  terminalRegistry.noteAgentRead(terminalId)
+  const { ok: _ok, ...screen } = read
+  return textResult({
+    ok: true,
+    terminalId,
+    state: rec.state,
+    ...(rec.exit ? { exit: { code: rec.exit.code, reason: rec.exit.reason } } : {}),
+    ...screen,
+    note: TERMINAL_NOTE
+  })
 }
 
 const createWorktreeHandler: Handler = async (args, ctx) => {
@@ -4763,6 +4813,7 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   create_worktree: createWorktreeHandler,
   spawn_terminal: spawnTerminalHandler,
   list_terminals: listTerminalsHandler,
+  read_terminal: readTerminalHandler,
   adopt_folder: adoptFolderHandler,
   remove_folder: removeFolderHandler,
   plan_mission: planMissionHandler,

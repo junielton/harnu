@@ -83,7 +83,7 @@ import { registerFocusedPane, unregisterFocusedPane } from '../composables/useTe
 import { useUiStore } from '../stores/ui'
 import { DEFAULT_TERMINAL_FONT_SIZE, useSettingsStore } from '../stores/settings'
 import { useHelpersStore, isAgentTerminalPane, type AnyHelperPane } from '../stores/helpers'
-import { adoptPtyStream } from '../lib/adopt-pty'
+import { adoptTerminal } from '../lib/adopt-pty'
 import { releaseHelperPty } from '../lib/helper-pty-release'
 import { paneRegistry, type HelperPtyKind } from '../lib/pane-registry'
 import { useThemeStore } from '../stores/theme'
@@ -461,9 +461,11 @@ async function createLiveHelper(
   // returned disposer removes our callback from the per-id Set. Kept on
   // `ioDisposers` so it survives detach (the PTY keeps filling the buffer).
   if (agentTerminal) {
-    // Adopt: subscribe first, replay, dedupe (see `adoptPtyStream`). The store armed this
-    // terminal's exit watch when its pane landed, so none is wired here.
-    live.ioDisposers.push(await adoptPtyStream(window.api, ptyId, (data) => term.write(data)))
+    // Adopt: subscribe first, replay, dedupe (see `adoptTerminal`). The store armed this
+    // terminal's exit watch when its pane landed, so none is wired here. `adoptTerminal` also
+    // wires the pane's input and keeps its xterm's query replies out of the PTY while the
+    // replay parses (main's screen model already answered those, spec §5.4).
+    live.ioDisposers.push(await adoptTerminal(window.api, ptyId, term))
     // Main spawned it at 120x30; tell it the size this pane really has.
     window.api.ptyResize(ptyId, term.cols, term.rows)
   } else {
@@ -481,7 +483,7 @@ async function createLiveHelper(
   }
 
   // Match TerminalPane's call style: positional args, not an object payload.
-  term.onData((data) => window.api.ptyWrite(ptyId, data))
+  if (!agentTerminal) term.onData((data) => window.api.ptyWrite(ptyId, data))
   term.onResize(({ cols, rows }) => window.api.ptyResize(ptyId, cols, rows))
 
   // Clipboard, word/char-delete, and font-size chords (design.md §6) — same

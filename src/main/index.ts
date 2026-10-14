@@ -693,7 +693,7 @@ app.whenReady().then(async () => {
   const cmdBridge = registerCommandBridge(() => mainWindow)
   // T474: terminal lifecycle IPC. After the bridge, so its `renderer:ready` listener runs once
   // the bridge's own has opened the dispatch gate.
-  registerTerminalIpc(cmdBridge.bridge)
+  registerTerminalIpc(cmdBridge.bridge, isRendererUrl)
   const dataDirNotices = { dispatch: (c: string, p: unknown) => cmdBridge.bridge.dispatch(c, p) }
   setDataDirNoticeSink(dataDirNotices)
   void flushDataDirConflictNotices(dataDirNotices)

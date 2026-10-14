@@ -81,10 +81,19 @@ import { getTaskStates } from './hook-bridge'
 import { getPolicy } from './monitor/policy-store'
 import {
   AGENT_TERMINAL_SIZE,
+  TOMBSTONE_MS,
   tailSnapshot,
   terminalRegistry,
   type TerminalOrigin
 } from './terminal-registry'
+import {
+  ScreenModel,
+  dropScreenModel,
+  pruneScreenModels,
+  scheduleScreenModelDrop,
+  screenModelFor,
+  setScreenModel
+} from './terminal-screen'
 
 /**
  * Resolve a requested cwd to a directory that actually exists on disk.
@@ -389,6 +398,26 @@ interface PtyRec {
   spawnedBy?: SpawnOrigin
   /** T363: the directory the PTY runs in — locates the repo whose missions it may own. */
   cwd: string
+  /**
+   * T480: why the PTY is paused. It runs while neither is set, so a renderer that drained its
+   * queue cannot un-pause a PTY whose screen model is still behind, and vice versa (spec §5.5).
+   */
+  rendererPaused?: boolean
+  modelPaused?: boolean
+  paused?: boolean
+}
+
+/** Pause or resume the PTY to match its two backpressure reasons (T480). */
+function applyFlow(rec: PtyRec): void {
+  const want = rec.rendererPaused === true || rec.modelPaused === true
+  if (want === (rec.paused === true)) return
+  rec.paused = want
+  try {
+    if (want) rec.pty.pause()
+    else rec.pty.resume()
+  } catch {
+    // ignore: the PTY is already gone
+  }
 }
 
 /**
@@ -701,7 +730,11 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     const safeRows = Math.max(1, rows)
     rec.cols = safeCols
     rec.rows = safeRows
-    if (terminalRegistry.hasPty(id)) terminalRegistry.noteResize(id, safeCols, safeRows)
+    if (terminalRegistry.hasPty(id)) {
+      terminalRegistry.noteResize(id, safeCols, safeRows)
+      const tid = terminalRegistry.getByPtyId(id)?.terminalId
+      if (tid) screenModelFor(tid)?.resize(safeCols, safeRows)
+    }
     try {
       rec.pty.resize(safeCols, safeRows)
     } catch {
@@ -729,21 +762,15 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
   ipcMain.on('pty:flow:pause', (_e, id: string) => {
     const rec = ptys.get(id)
     if (!rec) return
-    try {
-      rec.pty.pause()
-    } catch {
-      // ignore
-    }
+    rec.rendererPaused = true
+    applyFlow(rec)
   })
 
   ipcMain.on('pty:flow:resume', (_e, id: string) => {
     const rec = ptys.get(id)
     if (!rec) return
-    try {
-      rec.pty.resume()
-    } catch {
-      // ignore
-    }
+    rec.rendererPaused = false
+    applyFlow(rec)
   })
 
   // Re-key the session index when a synthetic session migrates to its real
@@ -835,7 +862,16 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     const rec = ptys.get(ptyId)
     if (!rec) return { data: '', seq: 0 }
     flushNow(ptyId)
-    return { data: rec.ring.snapshot(), seq: rec.seq }
+    const snapshot = { data: rec.ring.snapshot(), seq: rec.seq }
+    // T480 handover (spec §5.4): from this synchronous instant a renderer xterm exists and
+    // receives every later byte live, so it answers their queries. Bytes up to `snapshot.seq`
+    // were fed to the screen model while it was the answerer; the adopting pane drops the
+    // replies its own xterm makes while parsing them.
+    if (terminalRegistry.hasPty(ptyId)) {
+      const tid = terminalRegistry.getByPtyId(ptyId)?.terminalId
+      if (tid) terminalRegistry.setRendererAttached(tid, true)
+    }
+    return snapshot
   })
 
   // Same snapshot, but keyed by sessionKey instead of ptyId — the Fleet status
@@ -1082,6 +1118,7 @@ export function closeTerminalPty(terminalId: string): boolean {
   if (!rec || rec.state === 'exited') return false
   const output = ptyDeps ? destroyPty(rec.ptyId, ptyDeps.flushNow) : undefined
   terminalRegistry.markExited(rec.ptyId, null, tailSnapshot(output ?? ''))
+  scheduleScreenModelDrop(terminalId, TOMBSTONE_MS)
   return true
 }
 
@@ -1099,6 +1136,8 @@ export function createTerminalPty(input: {
   ownerSessionId: string | null
 }): Promise<string> {
   if (!ptyDeps) throw new Error('PTY handlers are not registered yet')
+  // A swept tombstone's screen model has no reader left; free it before the next one is built.
+  pruneScreenModels((id) => terminalRegistry.get(id) !== undefined)
   return createPty(
     {
       kind: 'shell',
@@ -1124,7 +1163,9 @@ export function createTerminalPty(input: {
  */
 export function discardTerminalPty(ptyId: string): void {
   const rec = ptys.get(ptyId)
-  terminalRegistry.forget(terminalRegistry.getByPtyId(ptyId)?.terminalId ?? '')
+  const terminalId = terminalRegistry.getByPtyId(ptyId)?.terminalId ?? ''
+  terminalRegistry.forget(terminalId)
+  dropScreenModel(terminalId)
   if (!rec) return
   if (rec.flush.timer) clearTimeout(rec.flush.timer)
   ptys.delete(ptyId)
@@ -1445,8 +1486,10 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
   }
   ptys.set(id, rec)
   // T474: a terminal PTY is a plain shell the registry knows about. No `sessionKey`.
+  let terminalRec: ReturnType<typeof terminalRegistry.register> | undefined
+  let screen: ScreenModel | undefined
   if (opts.terminal && kind === 'shell') {
-    terminalRegistry.register({
+    terminalRec = terminalRegistry.register({
       terminalId: opts.terminal.terminalId,
       ptyId: id,
       folder: opts.terminal.folder,
@@ -1454,6 +1497,27 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
       ownerSessionId: opts.terminal.ownerSessionId ?? null,
       size: { cols: opts.cols, rows: opts.rows }
     })
+    // T480: an agent terminal is exact from byte 0, so its screen model is born with it.
+    if (terminalRec.origin === 'agent') {
+      screen = new ScreenModel({
+        cols: opts.cols,
+        rows: opts.rows,
+        // Queries are only the model's to answer while no renderer xterm exists (spec §5.4);
+        // `write` stamps each chunk with that, so this only ever sees stamped replies.
+        onReply: (reply) => {
+          try {
+            rec.pty.write(reply)
+          } catch {
+            // the PTY is gone
+          }
+        },
+        onBacklog: (over) => {
+          rec.modelPaused = over
+          applyFlow(rec)
+        }
+      })
+      setScreenModel(opts.terminal.terminalId, screen)
+    }
   }
   if (opts.sessionKey) {
     // Waking clears the parked flag, so a session with a live PTY can never stay
@@ -1488,6 +1552,8 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
   const wire = (proc: IPty, isRetry: boolean): void => {
     proc.onData((data) => {
       if (terminalRegistry.hasPty(id)) terminalRegistry.noteOutput(id, data)
+      // Fed before coalescing (spec §5): the model sees every byte the PTY produced.
+      screen?.write(data, terminalRec?.rendererAttached !== true)
       if (!isRetry && companionInjected) firstTail = (firstTail + data).slice(-2048)
       const s = rec.flush
       s.buf += data
@@ -1560,6 +1626,7 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
         evt.exitCode ?? null,
         terminalRegistry.hasPty(id) ? tailSnapshot(ptys.get(id)?.ring.snapshot() ?? '') : undefined
       )
+      if (terminalRec) scheduleScreenModelDrop(terminalRec.terminalId, TOMBSTONE_MS)
       getWindow()?.webContents.send('pty:exit', {
         id,
         exitCode: evt.exitCode,

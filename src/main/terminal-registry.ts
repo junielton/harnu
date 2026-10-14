@@ -83,6 +83,8 @@ export interface TerminalRecord {
   title: string | null
   createdAt: number
   lastOutputAt: number
+  /** Epoch ms of the last `read_terminal` by an agent (spec §4.3); the live signal reads it. */
+  lastAgentReadAt: number | null
   /** Epoch ms of the operator's last real keystroke (terminal replies do not count). */
   lastOperatorWriteAt: number | null
   /**
@@ -209,6 +211,7 @@ export class TerminalRegistry {
       title: null,
       createdAt: at,
       lastOutputAt: at,
+      lastAgentReadAt: null,
       lastOperatorWriteAt: null,
       rendererAttached: false
     }
@@ -326,6 +329,12 @@ export class TerminalRegistry {
     if (title !== null) rec.title = title.slice(0, TITLE_MAX_CHARS)
     if (nextCarry) this.oscCarry.set(ptyId, nextCarry)
     else this.oscCarry.delete(ptyId)
+  }
+
+  /** An agent read this terminal (spec §4.3). A no-op for an unknown id. */
+  noteAgentRead(terminalId: string): void {
+    const rec = this.get(terminalId)
+    if (rec) rec.lastAgentReadAt = this.now()
   }
 
   /** The renderer's xterm for this terminal was disposed (unload / explicit close). */
