@@ -1,7 +1,9 @@
 import type { EngineInterface, Register } from 'claude-code'
 
 // W0 probe: the 03-prototype.md §P.4 probe plus origin, tool_use names, a prompt-text
-// fingerprint (length + hash, never the text) and a monotonic sequence number.
+// fingerprint (length + hash, never the text), a monotonic sequence number and the mod clock.
+// Round 2: the lifecycle hooks log an `enter` entry BEFORE `next(e)`, so the order of the
+// entries is the order in which the handlers started (A-E2).
 const log: unknown[] = []
 let out = ''
 let seq = 0
@@ -37,6 +39,7 @@ function textOf(content: unknown): string {
 
 export const register: Register = (on) => {
   on('session.start', async ($, e, next) => {
+    log.push({ seq: seq++, ev: 'session.start:enter', at: await $.clock.now() })
     const r = await next(e)
     const msgs = await $.session.messages({ as: 'api' })
     log.push({
@@ -53,6 +56,7 @@ export const register: Register = (on) => {
     log.push({
       seq: seq++,
       ev: 'classic.SessionStart',
+      at: await $.clock.now(),
       session_id: e.session_id,
       source: e.source,
       transcript_path: e.transcript_path,
@@ -66,6 +70,7 @@ export const register: Register = (on) => {
     log.push({
       seq: seq++,
       ev: 'classic.UserPromptSubmit',
+      at: await $.clock.now(),
       session_id: e.session_id,
       session_title: e.session_title ?? null,
       source: e.source ?? null
@@ -106,6 +111,7 @@ export const register: Register = (on) => {
     log.push({
       seq: seq++,
       ev: 'turn.complete',
+      at: await $.clock.now(),
       reason: e.reason,
       agentId: e.agentId ?? null,
       sidNow: await $.session.id()

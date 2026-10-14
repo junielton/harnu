@@ -45,4 +45,5 @@ for f in files:
     if eligible(f):
         picked.append(f)
 open(out, 'w').write('\n'.join(picked) + '\n')
-print(json.dumps({'mode': mode, 'picked': len(picked), 'scanned': scanned}))
+print(json.dumps({'takenAt': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'corpusTopLevelTranscripts': len(glob.glob(PROJ + '/*/*.jsonl')),
+                  'mode': mode, 'picked': len(picked), 'scanned': scanned}))
