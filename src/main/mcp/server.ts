@@ -76,7 +76,7 @@ import {
 } from './prefs'
 import { appendAudit, getAuditLog, serializeForPersist, parseFromPersist } from './audit-log'
 import { withDeadline, TOOL_CALL_DEADLINE_MS, createDeadlineFlag } from './deadline'
-import { deriveCallId, beginCall, completeCall, wasRecentlyFailed } from './idempotency-registry'
+import { callIdFor, beginCall, completeCall, wasRecentlyFailed } from './idempotency-registry'
 import {
   MCP_SERVER_NAME,
   buildHarnuMcpConfig,
@@ -799,7 +799,7 @@ async function folderSettingsAllowsVerb(folder: string, op: McpOp): Promise<bool
  *  - A timed-out mutation writes a distinct `:timeout` shadow entry instead
  *    of the success entry it would otherwise never reach (AC4).
  */
-async function actuate(
+export async function actuate(
   def: McpToolDef,
   args: Record<string, unknown>,
   ctx: ToolHandlerCtx
@@ -808,9 +808,10 @@ async function actuate(
 
   // Reads never mutate, so they never derive a callId and skip the registry
   // entirely — dedup only ever applies to a MUTATING verb's retry.
-  let callId: string | undefined
-  if (def.mutates) {
-    callId = deriveCallId(def.op, ctx.folder, args, strField(args, 'idempotencyKey'))
+  // T474: a verb whose effect is "make another one" (`spawn_terminal`) opts out — a replay
+  // would hand back the ACK of a terminal that may be long dead.
+  const callId = callIdFor(def, ctx.folder, args)
+  if (callId) {
     // Peek BEFORE beginCall — beginCall re-arms a live 'failed' entry to
     // 'in-flight' as a side effect, so the "this is a retry-after-failure"
     // signal only exists to read right now.
@@ -863,11 +864,14 @@ async function actuate(
     const tool = def.name
     const folder = ctx.folder
     const op = def.op
+    // `callId` is the idempotency handle, NOT the "this is a mutation" signal: a verb that opts
+    // out of replay (`replayable: false`) has no callId but still owes its late-completion trail.
+    const mutates = def.mutates
     work
       .then((value) => {
-        if (!callId) return
+        if (!mutates) return
         const ok = ackIsSuccess(value)
-        completeCall(callId, ok ? 'applied' : 'failed', value)
+        if (callId) completeCall(callId, ok ? 'applied' : 'failed', value)
         appendAudit({
           ts: Date.now(),
           tool,
@@ -888,9 +892,9 @@ async function actuate(
       })
       .catch((e) => {
         console.debug(`[mcp] ${tool} rejected after TOOL_TIMEOUT:`, e)
-        if (!callId) return
+        if (!mutates) return
         const failResult = errorResult(`late failure: ${(e as Error).message}`)
-        completeCall(callId, 'failed', failResult)
+        if (callId) completeCall(callId, 'failed', failResult)
         appendAudit({
           ts: Date.now(),
           tool,
@@ -915,7 +919,7 @@ async function actuate(
     // AC4: a distinct timeout shadow entry so the operator sees the ambiguity
     // rather than a false success — the outer grant/silent-allow branches'
     // success-only pushShadowEntry never runs for this non-success ACK.
-    if (callId) {
+    if (def.mutates) {
       pushShadowEntry({
         sessionId: strField(args, 'sessionId') ?? '',
         event: `mcp:${def.op}:timeout`,

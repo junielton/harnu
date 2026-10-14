@@ -87,12 +87,24 @@ const translateCreateWorktree: Translator = (args, gateFolder) => {
   return input
 }
 
-const translateSpawnTerminal: Translator = (_args, gateFolder) => {
+const translateSpawnTerminal: Translator = (args, gateFolder) => {
   const input: Record<string, unknown> = {}
   if (gateFolder) {
     input.worktreePath = gateFolder
     input.folder = gateFolder
   }
+  // T474: attribution only — carried through so the validator and the confirm disclosure see it.
+  const ownerSessionId = strField(args, 'ownerSessionId')
+  if (ownerSessionId) input.ownerSessionId = ownerSessionId
+  return input
+}
+
+// T474: an optional `folder` gates the read; `ownerSessionId` is a pure filter the handler applies.
+const translateListTerminals: Translator = (args, gateFolder) => {
+  const input: Record<string, unknown> = {}
+  if (gateFolder) input.folder = gateFolder
+  const ownerSessionId = strField(args, 'ownerSessionId')
+  if (ownerSessionId) input.ownerSessionId = ownerSessionId
   return input
 }
 
@@ -398,6 +410,7 @@ const TRANSLATORS: { [K in McpOp]: Translator } = {
   create_session: translateCreateSession,
   create_worktree: translateCreateWorktree,
   spawn_terminal: translateSpawnTerminal,
+  list_terminals: translateListTerminals,
   adopt_folder: translateAdoptFolder,
   // BUG-56: same shape as adopt_folder — `folder` only.
   remove_folder: translateAdoptFolder,

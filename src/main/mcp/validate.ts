@@ -66,6 +66,8 @@ export interface SpawnTerminalArgs {
   kind: 'shell' | 'claude'
   /** Required when `kind === 'claude'`: the Claude session to attach. */
   sessionId?: string
+  /** T474: the session the terminal is connected to — attribution only. */
+  ownerSessionId?: string
 }
 
 /** Validated args for the `create_worktree` tool. */
@@ -186,7 +188,8 @@ const SpawnTerminalSchema = z
     target: z.enum(['tab', 'split']).default('split'),
     cwd: absolutePathSchema.optional(),
     kind: z.enum(['shell', 'claude']).default('shell'),
-    sessionId: z.string().min(1).optional()
+    sessionId: z.string().min(1).optional(),
+    ownerSessionId: z.string().min(1).optional()
   })
   .refine((v) => v.kind !== 'claude' || (v.sessionId !== undefined && v.sessionId.length > 0), {
     message: "kind 'claude' requires a sessionId",
@@ -204,7 +207,7 @@ const SpawnTerminalSchema = z
 export function parseSpawnTerminal(input: unknown): ParseResult<SpawnTerminalArgs> {
   const parsed = SpawnTerminalSchema.safeParse(input)
   if (!parsed.success) return fromZod(parsed.error)
-  const { worktreePath, target, cwd, kind, sessionId } = parsed.data
+  const { worktreePath, target, cwd, kind, sessionId, ownerSessionId } = parsed.data
 
   const value: SpawnTerminalArgs = {
     worktreePath,
@@ -213,6 +216,7 @@ export function parseSpawnTerminal(input: unknown): ParseResult<SpawnTerminalArg
     kind
   }
   if (sessionId !== undefined) value.sessionId = sessionId
+  if (ownerSessionId !== undefined) value.ownerSessionId = ownerSessionId
   return { ok: true, value }
 }
 
@@ -895,6 +899,27 @@ export function parseListWorkers(input: unknown): ParseResult<ListWorkersArgs> {
   return { ok: true, value }
 }
 
+/** Validated args for the `list_terminals` read tool (T474). */
+export interface ListTerminalsArgs {
+  folder?: string
+  ownerSessionId?: string
+}
+
+const ListTerminalsSchema = z.object({
+  folder: absolutePathSchema.optional(),
+  ownerSessionId: z.string().min(1).optional()
+})
+
+/** Validate `list_terminals` args (T474): both filters are optional. */
+export function parseListTerminals(input: unknown): ParseResult<ListTerminalsArgs> {
+  const parsed = ListTerminalsSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const value: ListTerminalsArgs = {}
+  if (parsed.data.folder !== undefined) value.folder = parsed.data.folder
+  if (parsed.data.ownerSessionId !== undefined) value.ownerSessionId = parsed.data.ownerSessionId
+  return { ok: true, value }
+}
+
 /** Validated args for the `list_containers` read tool (T328). */
 export type ListContainersArgs = ListWorkersArgs
 
@@ -1162,6 +1187,7 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   create_session: parseCreateSession,
   create_worktree: parseCreateWorktree,
   spawn_terminal: parseSpawnTerminal,
+  list_terminals: parseListTerminals,
   adopt_folder: parseAdoptFolder,
   // BUG-56: same `{ folder }` shape as adopt_folder.
   remove_folder: parseAdoptFolder,

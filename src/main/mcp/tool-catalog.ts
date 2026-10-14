@@ -64,6 +64,9 @@ export const MCP_OPS = [
   'create_session',
   'create_worktree',
   'spawn_terminal',
+  // T474: the read half of the agent-terminals surface — the terminals Harnu knows about,
+  // with who owns each and what the caller may do with it. Paths redacted like every fleet read.
+  'list_terminals',
   'adopt_folder',
   // BUG-56: the ghost-cleanup verb — see ADR-0016 for why this does NOT violate
   // invariant #3 above. It never deletes a worktree/branch/file; it only
@@ -451,6 +454,14 @@ export interface McpToolDef {
    */
   forceConfirmFor?: (input: Record<string, unknown>) => boolean
   /**
+   * T474 idempotency opt-out. Every mutating call goes through the idempotency registry, so a
+   * repeat with identical args inside 10 minutes replays the first result WITHOUT actuating.
+   * That is right for `create_session` and wrong for a verb whose effect is "make another one"
+   * (`spawn_terminal`: a replay would hand back a dead terminal's ACK). `false` makes
+   * `server.ts` skip `deriveCallId`/`beginCall` for this verb. Omitted ⇒ replayable.
+   */
+  replayable?: boolean
+  /**
    * T120: the op's actuation — the body that used to live in a `runRead`/
    * `runMutation` `case`. NEVER populated on {@link MCP_TOOLS} entries directly
    * (that would pull Electron/fs/the renderer bridge into this framework-free
@@ -595,9 +606,17 @@ export const MCP_TOOLS: McpToolDef[] = [
   },
   {
     name: 'spawn_terminal',
-    description: 'Spawn a plain shell terminal session in a folder.',
+    description:
+      'Spawn a plain shell terminal in a folder. The ACK carries `terminalId` (the pane id — the handle every terminal verb takes), `ownerSessionId`, `state` and `size`; `result.paneId` is the same id. Two identical calls open two terminals, never a replay. At most 4 live agent terminals per folder (TERMINAL_LIMIT). Pass your own session id as `ownerSessionId` so the operator sees who the terminal is connected to; it is attribution only and grants nothing.',
     inputSchema: z.object({
-      folder: z.string().min(1).describe('Absolute path of the folder to open a shell in.')
+      folder: z.string().min(1).describe('Absolute path of the folder to open a shell in.'),
+      ownerSessionId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          'The session this terminal is connected to (self-declared). A session id Harnu does not know is refused SESSION_NOT_FOUND.'
+        )
     }),
     mutates: true,
     op: 'spawn_terminal',
@@ -606,7 +625,28 @@ export const MCP_TOOLS: McpToolDef[] = [
     // Same re-evaluation as `create_worktree`: dormant in free mode (no confirm to
     // put a checkbox on), still load-bearing in the `ask` mode. Kept.
     dangerousAlwaysAllow: true,
-    silentAllowInAgentFolder: true
+    silentAllowInAgentFolder: true,
+    replayable: false
+  },
+  {
+    name: 'list_terminals',
+    description:
+      "List the terminals Harnu knows about: `terminalId`, `label`, `folderAlias`, `origin` (agent|operator), `ownerSessionId`, `disconnected`, `state` (running|exited), `size`, `title` — whatever the program set with an escape sequence, UNTRUSTED and marked `titleSource: 'program'` — `createdAt`, `lastOutputAt`, `readable` and `writable` (`free`|`confirm`|`revoked`|`off`; `off` always comes with a `writableReason`: `exited`, `read-not-enabled` or `kill-switch`). Paths are redacted to aliases. A terminal in a folder the operator blocked is absent. An exited terminal stays listed for 10 minutes. `folder` and `ownerSessionId` narrow the listing.",
+    inputSchema: z.object({
+      folder: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('Absolute path: only terminals in that folder.'),
+      ownerSessionId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('Only terminals connected to this session.')
+    }),
+    mutates: false,
+    op: 'list_terminals',
+    discloses: 'paths'
   },
   {
     name: 'adopt_folder',

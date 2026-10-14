@@ -16,7 +16,7 @@
 import * as path from 'node:path'
 import * as os from 'node:os'
 import { promises as fs, constants as fsConstants } from 'node:fs'
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 
 import { MCP_TOOLS, type McpOp, type McpToolDef } from './tool-catalog'
@@ -50,11 +50,18 @@ import {
 import type { PrEntry } from '../pr-stack-core'
 import { getScreenStates, getShellSessions } from '../detect/screen-detect'
 import {
+  createTerminalPty,
+  discardTerminalPty,
   liveSessionKeys,
   sessionOwnedByHarnu,
   spawnOriginForSession,
   waitForSessionReady
 } from '../pty'
+import {
+  AGENT_TERMINAL_SIZE,
+  MAX_AGENT_TERMINALS_PER_FOLDER,
+  terminalRegistry
+} from '../terminal-registry'
 import { peerAddressForSession, sendPeerMessage } from '../messaging'
 import {
   activityDescription,
@@ -105,6 +112,8 @@ import {
   buildFleetSnapshot,
   buildMissionFleetProjection,
   filterFleetSnapshot,
+  terminalsOfSession,
+  toTerminalListing,
   type FleetFolderInput,
   type MissionChildState,
   type FleetSessionInput,
@@ -547,7 +556,12 @@ const getSessionHandler: Handler = async (args, ctx) => {
     const inFlightFolder = inFlightFolderFor(sessionId)
     if (inFlightFolder) {
       return textResult({
-        session: { sessionId, status: 'spawning', folderAlias: path.basename(inFlightFolder) },
+        session: {
+          sessionId,
+          status: 'spawning',
+          folderAlias: path.basename(inFlightFolder),
+          terminals: sessionTerminals(sessionId, ctx)
+        },
         preview: ''
       })
     }
@@ -568,7 +582,22 @@ const getSessionHandler: Handler = async (args, ctx) => {
   const found = ctx.folders.flatMap((f) => f.sessions).find((s) => s.sessionId === sessionId)
   const raw = found ? [found.firstPrompt, found.summary].filter(Boolean).join('\n') : ''
   const preview = redactTranscript(raw, { home: os.homedir() }).text
-  return textResult({ session: snap.sessions[0] ?? null, preview })
+  const row = snap.sessions[0]
+  return textResult({
+    session: row ? { ...row, terminals: sessionTerminals(sessionId, ctx) } : null,
+    preview
+  })
+}
+
+/** T474: the connected terminals a session owns, none from a folder the operator blocked. */
+function sessionTerminals(
+  sessionId: string,
+  ctx: ToolHandlerCtx
+): ReturnType<typeof terminalsOfSession> {
+  return terminalsOfSession(terminalRegistry.list(), sessionId, {
+    denyFolders: ctx.denyFolders,
+    home: os.homedir()
+  })
 }
 
 const getFleetHandler: Handler = async (args, ctx) => {
@@ -916,17 +945,99 @@ const createSessionHandler: Handler = async (args, ctx) => {
   )
 }
 
-const spawnTerminalHandler: Handler = async (_args, ctx) => {
+/** Whether Harnu knows `sessionId`: the scan, or either in-flight registry (a live born-synthetic). */
+function sessionKnown(sessionId: string, ctx: ToolHandlerCtx): boolean {
+  const onDisk = ctx.folders.some((f) => f.sessions.some((sn) => sn.sessionId === sessionId))
+  return (
+    onDisk ||
+    listInflightSessions().some((e) => e.syntheticId === sessionId) ||
+    inFlightFolderFor(sessionId) !== undefined
+  )
+}
+
+/**
+ * T474: open a shell terminal an agent can address. Main spawns the PTY itself (the pane
+ * cannot back a `terminalId` for a folder nobody is viewing), registers it, then asks the
+ * renderer to show it. Any failure after the PTY exists kills it and leaves no record.
+ */
+const spawnTerminalHandler: Handler = async (args, ctx) => {
   if (!ctx.bridge) return errorResult('NO_BRIDGE')
   const targetFolder = resolvePaneFolder(ctx)
   if (!targetFolder) return steerError('PANE_FOLDER_UNKNOWN', ctx.folder)
-  const result = await ctx.bridge.dispatch('pane.split', {
-    target: 'split',
-    worktreePath: targetFolder,
-    cwd: targetFolder,
-    kind: 'shell'
+  const ownerSessionId = strField(args, 'ownerSessionId') ?? null
+  // Attribution only (spec §3.3): any KNOWN session may be named, the operator's own included.
+  if (ownerSessionId !== null && !sessionKnown(ownerSessionId, ctx)) {
+    return steerError('SESSION_NOT_FOUND', ctx.folder)
+  }
+  // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — do not spawn a shell nobody
+  // will ever be told about.
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  // The slot is claimed synchronously: `createTerminalPty` is async, and `spawn_terminal` is not
+  // replayable, so parallel calls would otherwise all pass a count that only moves on register.
+  if (!terminalRegistry.reserveSlot(targetFolder, MAX_AGENT_TERMINALS_PER_FOLDER)) {
+    return steerError('TERMINAL_LIMIT', ctx.folder)
+  }
+
+  const terminalId = `h-${randomUUID()}`
+  let ptyId: string
+  try {
+    ptyId = await createTerminalPty({ terminalId, folder: targetFolder, ownerSessionId })
+  } finally {
+    // Registered by now (or the spawn failed): the record, not the reservation, holds the slot.
+    terminalRegistry.releaseSlot(targetFolder)
+  }
+  let result: unknown
+  try {
+    result = await ctx.bridge.dispatch('pane.split', {
+      target: 'split',
+      worktreePath: targetFolder,
+      cwd: targetFolder,
+      kind: 'shell',
+      paneId: terminalId,
+      ptyId,
+      ownerSessionId
+    })
+  } catch (err) {
+    discardTerminalPty(ptyId)
+    throw err
+  }
+  if (!dispatchSucceeded(result)) {
+    discardTerminalPty(ptyId)
+    return textResult({ ok: true, op: 'spawn_terminal', result })
+  }
+  return textResult({
+    ok: true,
+    op: 'spawn_terminal',
+    terminalId,
+    ownerSessionId,
+    state: 'running',
+    size: { ...AGENT_TERMINAL_SIZE },
+    result
   })
-  return textResult({ ok: true, op: 'spawn_terminal', result })
+}
+
+/** T474: the terminals Harnu knows about, redacted like every fleet read. */
+const listTerminalsHandler: Handler = async (args, ctx) => {
+  const folderArg = strField(args, 'folder')
+  const folder =
+    folderArg === undefined
+      ? undefined
+      : (resolveKnownFolder(
+          folderArg,
+          ctx.folders.map((f) => f.path)
+        ) ?? folderArg)
+  const terminals = toTerminalListing(terminalRegistry.list(), {
+    denyFolders: ctx.denyFolders,
+    home: os.homedir(),
+    // The folder opt-in (B4) and the kill-switch (B7) are not wired yet; these are their defaults.
+    readOptIn: () => false,
+    writesEnabled: true,
+    ...(folder !== undefined ? { folder } : {}),
+    ...(strField(args, 'ownerSessionId') !== undefined
+      ? { ownerSessionId: strField(args, 'ownerSessionId') }
+      : {})
+  })
+  return textResult({ terminals })
 }
 
 const createWorktreeHandler: Handler = async (args, ctx) => {
@@ -1871,11 +1982,7 @@ const messageSessionHandler: Handler = async (args, ctx) => {
   // 1. Known at all? The scan lists sessions with a transcript on disk; a
   //    live born-synthetic has none, so both in-flight registries are consulted
   //    too — the same widening the gate folder needed.
-  const onDisk = ctx.folders.some((f) => f.sessions.some((sn) => sn.sessionId === sessionId))
-  const inflight =
-    listInflightSessions().some((e) => e.syntheticId === sessionId) ||
-    inFlightFolderFor(sessionId) !== undefined
-  if (!onDisk && !inflight) return steerError('SESSION_NOT_FOUND', ctx.folder)
+  if (!sessionKnown(sessionId, ctx)) return steerError('SESSION_NOT_FOUND', ctx.folder)
 
   // 3. The recipient predicate. An index hit is causal proof Harnu spawned the
   //    process and it is still alive; the parked arm covers the gap
@@ -4660,6 +4767,7 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   create_session: createSessionHandler,
   create_worktree: createWorktreeHandler,
   spawn_terminal: spawnTerminalHandler,
+  list_terminals: listTerminalsHandler,
   adopt_folder: adoptFolderHandler,
   remove_folder: removeFolderHandler,
   plan_mission: planMissionHandler,
