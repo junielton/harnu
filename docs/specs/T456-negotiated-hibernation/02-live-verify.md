@@ -70,7 +70,7 @@ env -i HOME=/tmp/hv4home PATH="$CLI_DIR:$HOME_REAL/.local/bin:/usr/local/bin:/us
 
 A Node 22 CDP driver (the `verify.mjs` pattern of the recipe) did the rest through `window.api`:
 
-- **Sessions.** Each scratch folder got a transcript from one headless seed
+- **Sessions.** Three scratch folders (`s1`, `s2`, `s3`) each got a transcript from one headless seed
   (`claude -p "Reply with the single word: ready" --model haiku --session-id <uuid>`, same throwaway
   `HOME`), then was resumed through the real `pty:create` path:
   `ptyCreate({ kind: 'claude-resume', claudeSessionId, sessionKey, cwd, cols: 120, rows: 36 })`.
@@ -109,14 +109,18 @@ and 3 is the official `@anthropic-ai/claude-code-linux-x64@2.1.292` npm package,
 session scratchpad and put first on the instance's `PATH`. Run 1's prefs file stored `ask` +
 `active` like run 2's; the instance read them as `facts` and `shadow` (§4.1).
 
-**Live sessions: 13** (`haiku` throughout): 3 headless seeds and 10 resumes (S1, S1b, S1c, S1d in
-run 1; S2a to S2e in run 2; S3 in run 3). That is one over the ~12 cap; the 13th was the optional
-fix re-test of §4.4.
+**Live sessions: 13** (`haiku` throughout): 3 headless seeds (one per scratch folder: `s1` before
+run 1, `s2` and `s3` before runs 2 and 3) and 10 resumes of those three transcripts (S1, S1b, S1c,
+S1d of `s1` in run 1; S2a, S2c, S2d of `s1` and S2b, S2e of `s2` in run 2; S3 of `s3` in run 3).
+Runs 1 and 2 used 11 (2 seeds, 9 resumes). The optional fix re-test of §4.4 added 2 more, the `s3`
+seed and S3, which were sessions 12 and 13 in time order: one over the ~12 cap.
 
 ## 2. Scenario results
 
 Times are epoch ms (run 1 starts at `1791937945` = 21:32:25 -03:00). "Sweep" ticks fell at
-`…x1.0` in run 1 and at `…x5.4` in runs 2 and 3, 60 s apart.
+`…x1.0` in run 1 (parks at `…030.987`, `…690.989`, `…930.990`) and at `…x5.4` in run 2 (questions
+at `…155.417`, `…395.415`, `…635.415`, `…935.419`, `…995.419`), 60 s apart. Run 3 was a fresh
+instance with its own phase: its one observed tick was at `1791940366.309` (`…x6.3`).
 
 | AC         | Path          | Session | Result                                                                                        |
 | ---------- | ------------- | ------- | --------------------------------------------------------------------------------------------- |
@@ -190,7 +194,9 @@ question takes 10 min, and `maxDeferMs` fired first in both runs.
 ### 2.3 AC-T456-9c — it parks under a lowered memory floor
 
 The floor was raised to 200 000 MB while the session was declining; `MemAvailable` was 23 264 552
-kB (run 1) and 25 366 624 kB (run 2), about 22.7 and 24.8 GB.
+kB (run 1) and 25 366 624 kB (run 2). Harnu's reading is `floor(kB / 1024)`
+(`parseMemAvailableMb`), so the coordinator compared 22 719 and 24 772 "MB" (MiB; about 22.2 and
+24.2 GiB) against the 200 000 floor.
 
 | Run, session  | Floor set       | Row at next sample            | Park (`hibernated`) | Ledger                                                            |
 | ------------- | --------------- | ----------------------------- | ------------------- | ----------------------------------------------------------------- |
@@ -281,12 +287,17 @@ hold against a 120 s `maxDeferMs`**. In run 1 (facts, no await) `until` equals t
 `maxDeferMs`, the later tick lands at or after it, and the hold was exactly 120.0 s.
 
 The sweep's own tick time is inferred from the 60 s phase of the audit rows (`…x5.415` to
-`…x5.419` all run long), not logged directly. If this holds, then on the
+`…x5.419` throughout run 2), not logged directly. If this holds, then on the
 `park.query` path any `until` that is a whole number of sweep intervals away is reached one tick
 late: the overrun is at most `SWEEP_INTERVAL_MS` (60 s) per deferral. That covers the 600 s default
 retry as well (an 11 min re-ask), which was not observed here. §6.6's "the most a session can be
 held past the policy's own park point is `maxDeferMs`" holds at sweep granularity, not to the ms.
 Reported as found, not tuned.
+
+**Status after the fixes.** W2 now carries a fix for this finding: `feat-t456-w2-park-query` at
+`1bf51a3` stamps the decline with the sweep tick captured when `requestPark` is entered, not with the
+time the answer arrives. **The live runs did not re-test it on that tip**: it is covered by
+fake-clock unit tests only. The measurements above are from `9fb7839` and stand as recorded.
 
 ### 4.3 What the chip looks like on a real session
 
@@ -316,8 +327,11 @@ Method: SIGSTOP the session's own `claude` process (a child of the isolated elec
 1791939463553  sample: live declined …retryInMs 536863
 ```
 
-`requestPark('manual')` returned `in-flight` while the sweep's question was pending, so the click
-did nothing. The question then expired, the silent answer fell back to the legacy facts
+The log shows only that the click's `ptyPark` call resolved and that no `pty:hibernated` followed;
+the coordinator's return value is not logged. That `requestPark('manual')` returned `in-flight`
+while the sweep's question was pending is **inferred from the code** on `9fb7839` (the `inFlight`
+check came before any test of `cause`), not observed. What was observed is that the click did
+nothing. The question then expired, the silent answer fell back to the legacy facts
 (`background-task`), and the session was deferred for another 10 min. This is the defect the
 orchestrator reported, reproduced live on `9fb7839`. S2b was later parked by the memory floor
 (§2.3).
@@ -329,6 +343,11 @@ silent at once, legacy facts, declined, with nothing pending. "Park now" at `179
 parked it (`hibernated` `…366326`, `{declines: 1, why: operator, override: true}`). That is the
 normal case again, not the in-flight one. A clean re-test needs the SIGSTOP placed less than ~30 s
 before the sweep, and a 14th session; it was not run.
+
+**Status after the fixes.** The fix for this finding is `5360047` on `feat-t456-w2-park-query`
+("Park now" never waits behind a pending `park.query`, and the late answer is discarded). As run 3
+shows, **the live runs did not re-test the in-flight case on that tip**: it is covered by
+fake-clock unit tests only. Run 2's measurements on `9fb7839` stand as recorded.
 
 ### 4.5 Smaller observations
 
@@ -369,7 +388,11 @@ deleted, the credentials copy first.
 
 ## 6. Not verified
 
-- **"Park now" during a pending question on the fixed tip** (§4.4, run 3 inconclusive).
+- **The fixed tips, live.** Neither fix was live-tested for the case it fixes: `5360047` ("Park
+  now" during a pending question; §4.4, run 3 inconclusive) and `1bf51a3` (the `maxDeferMs` hold
+  running one sweep long; §4.2, not run at all). Both rest on fake-clock unit tests only.
+- **Finding §4.1 is open.** Raising `lastVerifiedCli` past the current CLI, so a current install
+  reaches `park.query` at all, is the follow-up card T477.
 - **The `maxDeclines` count bound on its own**: `maxDeferMs` fired first in both limit runs (§2.2).
 - **A6 under load**: at most 2 concurrent sessions (§3).
 - **An explicit `park: facts` on an in-ceiling CLI**: run 1's facts path came from the ARB-7b cap,
