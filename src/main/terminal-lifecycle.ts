@@ -33,7 +33,7 @@ export interface TerminalPaneSplit {
   redispatch?: true
 }
 
-/** The `pane.split` payload for one terminal. Shared with the `spawn_terminal` handler's shape. */
+/** The `pane.split` payload for one terminal: used by `spawn_terminal` and by the reload re-dispatch. */
 export function paneSplitFor(rec: TerminalRecord): TerminalPaneSplit {
   return {
     target: 'split',
