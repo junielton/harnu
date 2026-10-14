@@ -91,11 +91,15 @@ describe('CleanupBulkConfirmDialog — what it discloses', () => {
     expect(rows[0].textContent).toContain('512 MB')
   })
 
-  it('bounds the list at the existing 280px cap and makes it focusable and scrollable', async () => {
+  it('lets the card body scroll the list (one scroll region) and keeps the list focusable', async () => {
     await open([row()])
+    const body = q('[data-testid="bulk-body"]')!
+    expect(body.className).toContain('overflow-y-auto')
+    expect(body.className).toContain('min-h-0')
     const list = q('[data-testid="bulk-list"]')!
-    expect(list.className).toContain('max-h-(--fv-rail-list-max-h)')
-    expect(list.className).toContain('overflow-y-auto')
+    expect(body.contains(list)).toBe(true)
+    expect(list.className).not.toContain('overflow-y-auto')
+    expect(list.className).not.toContain('max-h-')
     expect(list.getAttribute('tabindex')).toBe('0')
   })
 
@@ -495,5 +499,31 @@ describe('CleanupBulkConfirmDialog: the reason is the translated one for every c
       expect(q('[data-testid="bulk-detached"]')).toBeNull()
       expect(q('[data-testid="bulk-untracked"]')).toBeNull()
     })
+  })
+})
+
+describe('CleanupBulkConfirmDialog — the stale alert stays out of the scrolling body (BUG-184)', () => {
+  it('renders in the card, outside bulk-body, when stale — so it cannot scroll out of sight', async () => {
+    await open([row()], 'ready', true)
+    const alert = q('[data-testid="bulk-stale"]')!
+    expect(alert).not.toBeNull()
+    expect(alert.getAttribute('role')).toBe('alert')
+    expect(q('[data-testid="bulk-dialog"]')!.contains(alert)).toBe(true)
+    expect(q('[data-testid="bulk-body"]')!.contains(alert)).toBe(false)
+    expect(alert.className).toContain('shrink-0')
+  })
+
+  it('sits between the body and the footer', async () => {
+    await open([row()], 'ready', true)
+    const body = q('[data-testid="bulk-body"]')!
+    const alert = q('[data-testid="bulk-stale"]')!
+    const total = q('[data-testid="bulk-total"]')!
+    expect(body.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(alert.compareDocumentPosition(total) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('is absent when the dialog is not stale', async () => {
+    await open([row()], 'ready', false)
+    expect(q('[data-testid="bulk-stale"]')).toBeNull()
   })
 })

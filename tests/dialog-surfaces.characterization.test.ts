@@ -131,13 +131,11 @@ const TABLE: Record<string, Row> = {
 const KNOWN_DEVIATIONS: Record<string, readonly Deviation[]> = {
   'CardCreateModal.vue': ['no-trap', 'scrim-click-self'],
   'CardDetailModal.vue': ['no-trap', 'scrim-click-self'],
-  'CleanupBulkConfirmDialog.vue': ['no-cap'],
   'CleanupDockerConfirmDialog.vue': ['no-cap'],
   'CleanupExhaustDialog.vue': ['no-cap'],
   'CleanupGuidedDialog.vue': ['no-cap'],
   'CleanupTranscriptsConfirmDialog.vue': ['no-cap'],
   'CommandPalette.vue': ['aria-label-not-i18n', 'no-trap'],
-  'ContainersRemoveDialog.vue': ['no-cap'],
   'DehydrateConfirmDialog.vue': ['initial-focus-destructive'],
   // no-cap: a full-viewport viewer, never capped (D6: it adopts only the scrim/z tokens).
   'ImageLightbox.vue': ['esc-not-swallowed', 'no-cap', 'no-trap', 'scrim-click-self'],
