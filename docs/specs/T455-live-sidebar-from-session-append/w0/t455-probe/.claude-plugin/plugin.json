@@ -1,0 +1,6 @@
+{
+  "name": "t455-probe",
+  "version": "0.2.0",
+  "description": "T455 W0 probe: logs what the T455 design hinges on.",
+  "author": { "name": "Harnu" }
+}
