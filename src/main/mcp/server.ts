@@ -124,6 +124,7 @@ import { setMcpArgsProvider } from '../pty'
 import type { TerminalGateState } from '../terminal-gate-core'
 import { resolveTerminalGate } from '../terminal-gate'
 import { escapeForAudit } from '../terminal-keys'
+import { terminalWriteQueue } from '../terminal-write-queue'
 import { previewWorktreeCommands, worktreeInheritOfferForTarget } from '../worktree-ipc'
 import { writeWorktreeInheritControl } from './worktree-inherit-prefs'
 
@@ -958,6 +959,24 @@ export async function actuate(
  */
 export async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise<CallToolResult> {
   const args = asRecord(rawArgs)
+  // T482 F1: a send's place in its terminal's line is decided HERE, synchronously, before the
+  // first `await` of the pipeline (prefs, project file, folder scan). Taken later, two sends could
+  // swap order depending on which one's I/O finished first.
+  const sendTerminalId = def.op === 'send_terminal' ? strField(args, 'terminalId') : undefined
+  if (sendTerminalId) terminalWriteQueue.reserve(args, sendTerminalId)
+  try {
+    return await runToolCall(def, args)
+  } finally {
+    // A call that never reached the handler (refused, parked for a confirm) must not hold the
+    // sends behind it. A no-op once the handler claimed the place.
+    terminalWriteQueue.drop(args)
+  }
+}
+
+async function runToolCall(
+  def: McpToolDef,
+  args: Record<string, unknown>
+): Promise<CallToolResult> {
   const now = Date.now()
 
   // T63/BUG-10: validate + normalize create_session's bootOverride at the border,
@@ -1040,6 +1059,8 @@ export async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise
   })
   appendAudit(plan.auditRecord)
   auditPersister.schedule()
+  // A send that is not going ahead now (denied, or waiting on the operator) has no place in line.
+  if (!plan.shouldDispatch) terminalWriteQueue.drop(args)
 
   // Reads: dispatch-on-allow. A dispatched MUTATION (grant-allowed T44 S5, or
   // inherit-once-allowed T72) is handled by the branches below, so gate this on the

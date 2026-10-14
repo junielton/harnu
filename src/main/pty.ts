@@ -1253,11 +1253,13 @@ export function closeTerminalPty(terminalId: string): boolean {
  * send are handed over whole, so an operator keystroke arriving through `pty:write` can never
  * land in the middle of them. It does NOT go through `pty:write`: that door stamps
  * `lastOperatorWriteAt`, and an agent's bytes are not the operator typing. Stamps
- * `lastAgentWriteAt` instead. Returns false when the PTY is gone (exited, or never existed).
+ * `lastAgentWriteAt` instead. Returns false when the PTY is gone (exited, or never existed) or the operator disconnected the
+ * terminal.
  */
 export function writeTerminalPty(terminalId: string, data: string): boolean {
   const trec = terminalRegistry.get(terminalId)
-  if (!trec || trec.state !== 'running') return false
+  // The operator's Disconnect revokes agent access at once, whatever a call judged earlier.
+  if (!trec || trec.state !== 'running' || trec.disconnected) return false
   const prec = ptys.get(trec.ptyId)
   if (!prec) return false
   try {

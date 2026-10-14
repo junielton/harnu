@@ -88,6 +88,34 @@ export function resolveTerminalGateState(
   }
 }
 
+/** Why a send stopped before one of its writes: a gate refusal, or one of two live conditions. */
+export type WriteStopReason = TerminalDenyReason | 'FOLDER_NOT_ALLOWED' | 'DEADLINE_FIRED'
+
+/**
+ * The one question asked right before EVERY `pty.write` of a send, never earlier and never once
+ * per call: can this send still type into the terminal? The plan, the queue wait, the screen
+ * barrier and the 50 ms gap after an `Esc` are all real time in which the operator can end,
+ * disconnect or block the terminal, or the tool deadline can fire. `null` means go ahead.
+ *
+ * `rec` is the registry record read just now (`undefined`: it was swept). `ctx` carries what a
+ * record cannot say: whether the terminal's folder is blocked right now, whether the tool
+ * deadline fired, and the folder's read opt-in. Any further condition on writing (the operator-
+ * terminal lease, the kill-switch) belongs HERE, so every write is judged by the same rules.
+ * Order: deadline → not found → blocked folder → the gate's own order.
+ */
+export function canStillWrite(
+  rec: Pick<TerminalRecord, 'origin' | 'disconnected' | 'state' | 'ownerSessionId'> | undefined,
+  ctx: { folderBlocked: boolean; deadlineFired: boolean; readOptIn: boolean }
+): WriteStopReason | null {
+  if (ctx.deadlineFired) return 'DEADLINE_FIRED'
+  if (!rec) return 'TERMINAL_NOT_FOUND'
+  if (ctx.folderBlocked) return 'FOLDER_NOT_ALLOWED'
+  return gateTerminalOp(
+    'send_terminal',
+    resolveTerminalGateState(rec, { readOptIn: ctx.readOptIn, writesEnabled: true })
+  )
+}
+
 /**
  * The flat refusal for `op` against `state`, or `null` to continue. Order (spec §6.2):
  * `TERMINAL_NOT_FOUND` → `NOT_A_TERMINAL` → `TERMINAL_DISCONNECTED` → (writes only)

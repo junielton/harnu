@@ -3,7 +3,10 @@
  * what makes several agents typing into one terminal orderly.
  *
  *  - **FIFO per terminal.** Writes to one terminal are serialised in arrival order; different
- *    terminals do not wait on each other.
+ *    terminals do not wait on each other. "Arrival" is the moment the call reached the server, not
+ *    the moment it reached the queue: a call takes a TICKET synchronously on entry
+ *    ({@link reserve}), before any `await`, and the line honours ticket order. A call that did
+ *    async I/O (prefs, project file) on its way here can therefore never overtake an earlier one.
  *  - **Bounded wait.** A send that is not at the head of the line within {@link QUEUE_WAIT_MS}
  *    gives up with `TERMINAL_BUSY` and leaves the queue, so a stuck write cannot hold the
  *    120 s tool deadline hostage (queue ≤ 10 s + barrier ≤ 2 s + settle fits well inside it).
@@ -50,6 +53,8 @@ export interface WriteScope {
   othersWrote: boolean
   /** Epoch ms the call was admitted — what "during the call" is measured from. */
   readonly startedAt: number
+  /** Arrival order on this terminal: the line serves the lowest ticket first. */
+  readonly ticket: number
 }
 
 interface TerminalLine {
@@ -60,10 +65,15 @@ interface TerminalLine {
   open: Set<WriteScope>
   /** Admission times within the rolling window. */
   admitted: number[]
+  /** Last ticket handed out. */
+  lastTicket: number
+  /** Tickets taken whose call has not reached {@link TerminalWriteQueue.acquire} (or given up) yet. */
+  unarrived: Set<number>
 }
 
 export class TerminalWriteQueue {
   private readonly lines = new Map<string, TerminalLine>()
+  private readonly reserved = new WeakMap<object, { terminalId: string; ticket: number }>()
 
   constructor(
     private readonly deps: WriteQueueDeps = realDeps,
@@ -73,18 +83,76 @@ export class TerminalWriteQueue {
   private line(terminalId: string): TerminalLine {
     let l = this.lines.get(terminalId)
     if (!l) {
-      l = { holder: null, waiters: [], open: new Set(), admitted: [] }
+      l = {
+        holder: null,
+        waiters: [],
+        open: new Set(),
+        admitted: [],
+        lastTicket: 0,
+        unarrived: new Set()
+      }
       this.lines.set(terminalId, l)
     }
     return l
   }
 
   /**
-   * Admit one call to `terminalId`: rate-limit it, then open its scope. Returns the scope, or
+   * Take the next place in `terminalId`'s line for the call identified by `key` (its args object).
+   * Synchronous by contract: call it on entry, before any `await`, so the place reflects when the
+   * call ARRIVED. The call must {@link claim} it, or {@link drop} it if it never gets that far.
+   */
+  reserve(key: object, terminalId: string): void {
+    this.reserved.set(key, { terminalId, ticket: this.takeTicket(terminalId) })
+  }
+
+  /**
+   * The ticket reserved for `key`, or a fresh one when none was (a call that did not come through
+   * the server's entry point, e.g. an operator Allow actuating a parked call). Either way the
+   * caller owns it from here and must {@link abandonTicket} it when done (a no-op once used).
+   */
+  claim(key: object, terminalId: string): number {
+    const r = this.reserved.get(key)
+    if (r && r.terminalId === terminalId) {
+      this.reserved.delete(key)
+      return r.ticket
+    }
+    return this.takeTicket(terminalId)
+  }
+
+  /** Give up a reservation nobody claimed (the call was refused or parked before the handler). */
+  drop(key: object): void {
+    const r = this.reserved.get(key)
+    if (!r) return
+    this.reserved.delete(key)
+    this.abandonTicket(r.terminalId, r.ticket)
+  }
+
+  private takeTicket(terminalId: string): number {
+    const l = this.line(terminalId)
+    const ticket = ++l.lastTicket
+    l.unarrived.add(ticket)
+    return ticket
+  }
+
+  /**
+   * A ticket that will not reach {@link acquire}: stop holding the calls behind it back.
+   * Idempotent, and a no-op for a ticket that already arrived.
+   */
+  abandonTicket(terminalId: string, ticket: number): void {
+    const l = this.lines.get(terminalId)
+    if (!l) return
+    l.unarrived.delete(ticket)
+    this.pump(l)
+  }
+
+  /**
+   * Admit one call to `terminalId`: rate-limit it, then open its scope. `ticket` is the one
+   * {@link claim} returned; without it the call takes its place now. Returns the scope, or
    * `TERMINAL_RATE_LIMIT`. Every successful admit must be paired with one {@link finish}.
    */
   admit(
-    terminalId: string
+    terminalId: string,
+    ticket?: number
   ): { ok: true; scope: WriteScope } | { ok: false; error: 'TERMINAL_RATE_LIMIT' } {
     const l = this.line(terminalId)
     const now = this.deps.now()
@@ -94,19 +162,25 @@ export class TerminalWriteQueue {
       return { ok: false, error: 'TERMINAL_RATE_LIMIT' }
     }
     l.admitted.push(now)
-    const scope: WriteScope = { othersWrote: false, startedAt: now }
+    const scope: WriteScope = {
+      othersWrote: false,
+      startedAt: now,
+      ticket: ticket ?? ++l.lastTicket
+    }
     l.open.add(scope)
     return { ok: true, scope }
   }
 
   /**
-   * Wait for the head of the line on `terminalId`. Resolves `true` once the caller holds it (it
-   * must {@link release}), or `false` when {@link QUEUE_WAIT_MS} passed first (`TERMINAL_BUSY`;
-   * the caller is no longer queued).
+   * Wait for the head of the line on `terminalId`: the lowest ticket, once no earlier ticket is
+   * still on its way. Resolves `true` once the caller holds it (it must {@link release}), or
+   * `false` when {@link QUEUE_WAIT_MS} passed first (`TERMINAL_BUSY`; the caller is no longer
+   * queued).
    */
   acquire(terminalId: string, scope: WriteScope): Promise<boolean> {
     const l = this.line(terminalId)
-    if (l.holder === null && l.waiters.length === 0) {
+    l.unarrived.delete(scope.ticket)
+    if (l.holder === null && l.waiters.length === 0 && !this.earlierOnItsWay(l, scope.ticket)) {
       l.holder = scope
       return Promise.resolve(true)
     }
@@ -128,7 +202,11 @@ export class TerminalWriteQueue {
         l.waiters = l.waiters.filter((w) => w !== entry)
         resolve(false)
       }, this.opts.queueWaitMs ?? QUEUE_WAIT_MS)
-      l.waiters.push(entry)
+      // Sorted by ticket: the line serves arrival order, whatever order the calls got here in.
+      const at = l.waiters.findIndex((w) => w.scope.ticket > scope.ticket)
+      if (at === -1) l.waiters.push(entry)
+      else l.waiters.splice(at, 0, entry)
+      this.pump(l)
     })
   }
 
@@ -137,7 +215,21 @@ export class TerminalWriteQueue {
     const l = this.lines.get(terminalId)
     if (!l || l.holder !== scope) return
     l.holder = null
-    l.waiters.shift()?.grant()
+    this.pump(l)
+  }
+
+  private earlierOnItsWay(l: TerminalLine, ticket: number): boolean {
+    for (const t of l.unarrived) if (t < ticket) return true
+    return false
+  }
+
+  /** Grant the line to its first waiter when it is free and no earlier ticket is still coming. */
+  private pump(l: TerminalLine): void {
+    if (l.holder !== null) return
+    const head = l.waiters[0]
+    if (!head || this.earlierOnItsWay(l, head.scope.ticket)) return
+    l.waiters.shift()
+    head.grant()
   }
 
   /**
@@ -155,8 +247,11 @@ export class TerminalWriteQueue {
     const l = this.lines.get(terminalId)
     if (!l) return
     l.open.delete(scope)
-    // A scope that finished while still holding the line must not wedge it.
+    // A scope that finished while still holding the line must not wedge it, and a ticket that
+    // never reached the line (refused before it queued) must not hold the calls behind it.
+    l.unarrived.delete(scope.ticket)
     if (l.holder === scope) this.release(terminalId, scope)
+    else this.pump(l)
   }
 
   /** Calls waiting behind the head of `terminalId`'s line. */
@@ -167,27 +262,27 @@ export class TerminalWriteQueue {
   /** Drop the lines of terminals the registry no longer knows (a swept tombstone). */
   prune(isKnown: (terminalId: string) => boolean): void {
     for (const [id, l] of [...this.lines]) {
-      if (!isKnown(id) && l.open.size === 0) this.lines.delete(id)
+      if (!isKnown(id) && l.open.size === 0 && l.unarrived.size === 0) this.lines.delete(id)
     }
   }
 }
 
 /**
  * Write a send's pieces in order, {@link ESC_GAP_MS} apart (spec §4.4). `write` returns whether
- * the bytes reached the PTY; the first failure stops the send. Returns how many pieces were
+ * the bytes reached the PTY (it may check the terminal's state first, and so be async); the first failure stops the send. Returns how many pieces were
  * written, and whether all of them were.
  */
 export async function writeSegments(
   segments: readonly string[],
   io: {
-    write: (data: string) => boolean
+    write: (data: string) => boolean | Promise<boolean>
     sleep: (ms: number) => Promise<void>
   }
 ): Promise<{ written: number; complete: boolean }> {
   let written = 0
   for (let i = 0; i < segments.length; i++) {
     if (i > 0) await io.sleep(ESC_GAP_MS)
-    if (!io.write(segments[i]!)) return { written, complete: false }
+    if (!(await io.write(segments[i]!))) return { written, complete: false }
     written++
   }
   return { written, complete: true }

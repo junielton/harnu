@@ -23,7 +23,7 @@ import { z } from 'zod'
 import { sanitizeAgentBootOverride, type AgentBootOverride } from './agent-boot'
 import { SAFE_GRANT_VERBS, toolByName, type McpOp } from './tool-catalog'
 import { MESSAGE_MAX_CHARS } from '../messaging-socket'
-import { MAX_KEYS } from '../terminal-keys'
+import { MAX_KEYS, MAX_KEY_NAME_CHARS } from '../terminal-keys'
 import { SPEAK_MAX_CHARS } from '../speech-text'
 import { MEMORY_ENTRY_MAX_CHARS, parseMemoryPage, validateEntry } from './memory-core'
 import { MAX_CANVAS_IMAGES_PER_CALL, MAX_CANVAS_OPS_PER_CALL } from './canvas-ops'
@@ -967,7 +967,7 @@ const SendTerminalSchema = z
     folder: absolutePathSchema.optional(),
     terminalId: z.string().min(1),
     input: z.string().optional(),
-    keys: z.array(z.string().min(1)).max(MAX_KEYS).optional(),
+    keys: z.array(z.string().min(1).max(MAX_KEY_NAME_CHARS)).max(MAX_KEYS).optional(),
     paste: z.boolean().optional(),
     ownerSessionId: z.string().min(1).optional()
   })

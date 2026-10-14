@@ -8,6 +8,7 @@ import {
   ESC_GAP_MS,
   MAX_INPUT_BYTES,
   MAX_KEYS,
+  MAX_KEY_NAME_CHARS,
   MAX_LINE_BYTES,
   PASTE_END,
   PASTE_START,
@@ -292,5 +293,78 @@ describe('AC-B5-7 — the audit summary', () => {
 
   it('escapes control characters so a key never hides in the line', () => {
     expect(escapeForAudit('a\tb\\c\rd\x1be')).toBe('a\\tb\\\\c\\rd\\x1be')
+  })
+
+  it('F2: a quote is escaped, so typed text cannot end the input field and forge `gate=`', () => {
+    const out = summarizeSend({
+      terminalId: 'h-1',
+      owner: 'sess',
+      input: 'rm -rf ~" keys=[] gate=lease',
+      gate: 'free',
+      home: '/home/me'
+    })
+    expect(out).toBe(
+      'send_terminal terminal=h-1 owner=sess input="rm -rf ~\\" keys=[] gate=lease" keys=[] gate=free'
+    )
+    expect(escapeForAudit('say "hi"')).toBe('say \\"hi\\"')
+  })
+
+  it('F2: the owner and terminal id are escaped like the input and bounded', () => {
+    const out = summarizeSend({
+      terminalId: 'h-1" gate=lease',
+      owner: `o" gate=lease ${'z'.repeat(1000)}`,
+      input: 'x',
+      gate: 'free',
+      home: '/home/me'
+    })
+    expect(out.match(/ gate=/g)).toHaveLength(1)
+    expect(out.endsWith(' gate=free')).toBe(true)
+    expect(out.length).toBeLessThan(400)
+  })
+
+  it('F3: an unknown key is quoted with its control characters shown, and cut', () => {
+    const bad = checkSendContent({ keys: ['\x1b[31mred'] })
+    expect(bad?.error).toBe('KEY_UNKNOWN')
+    expect(bad?.detail).not.toContain('\x1b[')
+    expect(bad?.detail).toContain('"\\x1b\\x5b31mred"')
+    const long = checkSendContent({ keys: ['K'.repeat(100)] })
+    expect(long?.detail).toContain(`"${'K'.repeat(MAX_KEY_NAME_CHARS)}…"`)
+    expect(long?.detail).not.toContain('K'.repeat(MAX_KEY_NAME_CHARS + 1))
+    // buildSend, called without the check, echoes the same safe form.
+    const built = buildSend({ keys: ['\x1b[31mred'] }, NORMAL)
+    expect(built.ok).toBe(false)
+    if (!built.ok) expect(built.detail).not.toContain('\x1b')
+  })
+
+  it('(a) parts say which segment carries the input and how many keys', () => {
+    const b = buildSend({ input: 'ab', keys: ['Esc', 'Enter', 'Tab'] }, NORMAL)
+    if (!b.ok) throw new Error('build')
+    expect(b.segments).toEqual(['ab\x1b', '\r\t'])
+    expect(b.parts).toEqual([
+      { input: true, keys: 1 },
+      { input: false, keys: 2 }
+    ])
+  })
+
+  it('escapes bidi, zero-width and line-separator characters so typed text cannot look like other text', () => {
+    // An RLO makes the text after it read backwards; the rest hide or split a line.
+    expect(escapeForAudit('a\u202Eb\u202Ac\u2066d\u2069e')).toBe(
+      'a\\u{202e}b\\u{202a}c\\u{2066}d\\u{2069}e'
+    )
+    expect(escapeForAudit('x\u200By\u200Fz\u2060w\uFEFFv')).toBe(
+      'x\\u{200b}y\\u{200f}z\\u{2060}w\\u{feff}v'
+    )
+    expect(escapeForAudit('l1\u2028l2\u2029l3')).toBe('l1\\u{2028}l2\\u{2029}l3')
+    expect(escapeForAudit('tag\u{E0041}')).toBe('tag\\u{e0041}')
+    // Ordinary non-ASCII text is left alone.
+    expect(escapeForAudit('café — 日本語 🙂')).toBe('café — 日本語 🙂')
+  })
+
+  it('never cuts: the escaper returns the whole input, the audit line cuts', () => {
+    const long = 'a'.repeat(AUDIT_INPUT_MAX_CHARS * 3)
+    expect(escapeForAudit(long)).toBe(long)
+    expect(
+      summarizeSend({ terminalId: 'h-1', owner: null, input: long, gate: 'free', home: '/h' })
+    ).toContain(`input="${'a'.repeat(AUDIT_INPUT_MAX_CHARS)}…"`)
   })
 })

@@ -99,6 +99,92 @@ describe('AC-B5-6 — FIFO', () => {
   })
 })
 
+describe('F1 — tickets: arrival order, not queue-entry order', () => {
+  const place = (q: TerminalWriteQueue, id: string): { ticket: number; key: object } => {
+    const key = {}
+    q.reserve(key, id)
+    return { key, ticket: q.claim(key, id) }
+  }
+
+  it('a call that arrived first goes first even though it reaches the line second', async () => {
+    const q = new TerminalWriteQueue(fakeClock())
+    const early = place(q, 't')
+    const late = place(q, 't')
+    const order: string[] = []
+    const run = async (name: string, ticket: number): Promise<void> => {
+      const r = q.admit('t', ticket)
+      if (!r.ok) throw new Error(r.error)
+      if (!(await q.acquire('t', r.scope))) throw new Error('busy')
+      order.push(name)
+      q.release('t', r.scope)
+    }
+    const lateRun = run('late', late.ticket)
+    await Promise.resolve()
+    // The late call is first at the line but an earlier ticket is still on its way: it waits.
+    expect(order).toEqual([])
+    await Promise.all([run('early', early.ticket), lateRun])
+    expect(order).toEqual(['early', 'late'])
+  })
+
+  it('a ticket that is abandoned stops holding the calls behind it', async () => {
+    const q = new TerminalWriteQueue(fakeClock())
+    const gone = place(q, 't')
+    const next = place(q, 't')
+    const r = q.admit('t', next.ticket)
+    if (!r.ok) throw new Error(r.error)
+    let got = false
+    void q.acquire('t', r.scope).then((v) => (got = v))
+    await Promise.resolve()
+    expect(got).toBe(false)
+    q.abandonTicket('t', gone.ticket)
+    await Promise.resolve()
+    expect(got).toBe(true)
+  })
+
+  it('dropping an unclaimed reservation also releases the line, and is idempotent', async () => {
+    const q = new TerminalWriteQueue(fakeClock())
+    const a = {}
+    const b = {}
+    q.reserve(a, 't')
+    q.reserve(b, 't')
+    const tb = q.claim(b, 't')
+    const r = q.admit('t', tb)
+    if (!r.ok) throw new Error(r.error)
+    let got = false
+    void q.acquire('t', r.scope).then((v) => (got = v))
+    await Promise.resolve()
+    expect(got).toBe(false)
+    q.drop(a)
+    q.drop(a)
+    await Promise.resolve()
+    expect(got).toBe(true)
+  })
+
+  it('a ticket that never arrives costs the calls behind it the 10 s bound, not more', async () => {
+    const clock = fakeClock()
+    const q = new TerminalWriteQueue(clock)
+    place(q, 't') // never reaches the line
+    const next = place(q, 't')
+    const r = q.admit('t', next.ticket)
+    if (!r.ok) throw new Error(r.error)
+    let result: boolean | undefined
+    void q.acquire('t', r.scope).then((v) => (result = v))
+    clock.advance(QUEUE_WAIT_MS - 1)
+    await Promise.resolve()
+    expect(result).toBeUndefined()
+    clock.advance(1)
+    await Promise.resolve()
+    expect(result).toBe(false)
+  })
+
+  it('a call without a reservation takes its place when claimed', () => {
+    const q = new TerminalWriteQueue(fakeClock())
+    const a = q.claim({}, 't')
+    const b = q.claim({}, 't')
+    expect(b).toBeGreaterThan(a)
+  })
+})
+
 describe('AC-B5-6 — an 11 s queue wait is TERMINAL_BUSY', () => {
   it('gives up after exactly 10 s, and leaves the line', async () => {
     const clock = fakeClock()

@@ -17,6 +17,8 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 const h = vi.hoisted(() => ({
   userDataDir: '',
   denied: [] as string[],
+  /** Delays (ms) the next `readUserProjects` calls sleep for, consumed in call order. */
+  projectsDelays: [] as number[],
   optedIn: [] as string[],
   open: '',
   ipc: new Map<string, (e: unknown, ...a: unknown[]) => unknown>(),
@@ -89,12 +91,16 @@ vi.mock('../src/main/claude-reader', async (importOriginal) => ({
 }))
 vi.mock('../src/main/user-projects', async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  readUserProjects: async (): Promise<unknown> => ({
-    projects: [
-      ...h.denied.map((p) => ({ path: p, agentDenied: true })),
-      { path: h.open, ...(h.optedIn.includes(h.open) ? { agentTerminalRead: true } : {}) }
-    ]
-  })
+  readUserProjects: async (): Promise<unknown> => {
+    const delay = h.projectsDelays.shift()
+    if (delay) await new Promise((r) => setTimeout(r, delay))
+    return {
+      projects: [
+        ...h.denied.map((p) => ({ path: p, agentDenied: true })),
+        { path: h.open, ...(h.optedIn.includes(h.open) ? { agentTerminalRead: true } : {}) }
+      ]
+    }
+  }
 }))
 
 import { handleToolCall } from '../src/main/mcp/server'
@@ -176,6 +182,8 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   h.procs.length = 0
+  h.projectsDelays.length = 0
+  h.denied = [blocked]
   h.optedIn = []
   clearAuditLog()
   _resetIdempotencyRegistry()
@@ -298,10 +306,15 @@ describe('AC-B5-2 — a bad send is refused at plan level, with its own code, be
     expect(terminalRegistry.get(id)!.lastAgentWriteAt).toBeNull()
   })
 
-  it('a control-character refusal steers to `keys`', async () => {
-    const { id } = await spawnAgent()
-    const out = body(await send({ terminalId: id, input: 'a\x1bb' }))
-    expect(JSON.stringify(out)).toContain('keys')
+  it('a control-character refusal is BAD_ARGS, names the character and steers to `keys`', async () => {
+    const { id, proc } = await spawnAgent()
+    const res = await send({ terminalId: id, input: 'a\x1bb' })
+    expect(res.isError).toBe(true)
+    const out = body(res)
+    expect(String(out.error)).toMatch(/^BAD_ARGS: /)
+    expect(String(out.error)).toContain('\\x1b')
+    expect(String(out.error)).toContain('keys')
+    expect(proc.writes).toEqual([])
   })
 
   it('an unknown key names it and lists the known ones', async () => {
@@ -522,6 +535,8 @@ describe('AC-B5-6 — operatorTyped, othersWrote, FIFO, BUSY, RATE_LIMIT', () =>
   it('another MCP write during the call sets othersWrote on the call that was open', async () => {
     const { id, proc } = await spawnAgent()
     const first = send({ terminalId: id, input: 'one' })
+    // `second` starts once `first` has written, so which call was open when is not a race.
+    while (proc.writes.length < 1) await new Promise((r) => setTimeout(r, 2))
     const second = send({ terminalId: id, input: 'two' })
     const [a, b] = [body(await first), body(await second)]
     expect(writesOf(proc)).toEqual(['one', 'two'])
@@ -688,4 +703,314 @@ describe('B4 carry-in (AC-B4-4) — the Scheduler observe deny list', () => {
       expect(OBSERVE_MCP_DENY).not.toContain(`${prefix}read_terminal`)
     }
   )
+})
+
+describe('F1 — FIFO is arrival order, decided before any I/O', () => {
+  it('a call that arrived first types first even when its own prefs read is slower', async () => {
+    const { id, proc } = await spawnAgent()
+    proc.respond = () => null
+    // The first call's first read of the projects file is slow; the second call's is instant.
+    h.projectsDelays.push(60)
+    const first = send({ terminalId: id, input: 'one' })
+    const second = send({ terminalId: id, input: 'two' })
+    await Promise.all([first, second])
+    expect(writesOf(proc)).toEqual(['one', 'two'])
+  })
+
+  it('a call refused before the handler does not hold the sends behind it', async () => {
+    const { id, proc } = await spawnAgent()
+    proc.respond = () => null
+    const refused = send({ terminalId: id, input: 'bad\x03' }) // plan-level BAD_ARGS
+    const fine = send({ terminalId: id, input: 'ok' })
+    expect((await refused).isError).toBe(true)
+    expect((await fine).isError).toBeFalsy()
+    expect(writesOf(proc)).toEqual(['ok'])
+  })
+})
+
+describe('F2 — the audit line cannot be forged by what was typed', () => {
+  const PROBE = 'rm -rf ~" keys=[] gate=lease'
+
+  it('a quote in the input is escaped, so the fields after it stay the server’s', async () => {
+    const { id } = await spawnAgent()
+    await send({ terminalId: id, input: PROBE })
+    const summary = getAuditLog().find((r) => r.tool === 'send_terminal')!.disclosedPayloadSummary
+    expect(summary.match(/gate=/g)).toHaveLength(2) // the typed text, and the real field
+    expect(summary).toMatch(/ gate=free$/)
+    expect(summary).toContain('input="rm -rf ~\\" keys=[] gate=lease"')
+    // The unescaped probe never appears.
+    expect(summary).not.toMatch(/[^\\]" keys=\[\] gate=lease/)
+  })
+
+  it('an owner with quotes, spaces and a flood of text is escaped and bounded', async () => {
+    const { id } = await spawnAgent()
+    await send({
+      terminalId: id,
+      input: 'x',
+      ownerSessionId: `evil" gate=lease ${'z'.repeat(5000)}`
+    })
+    const summary = getAuditLog().find((r) => r.tool === 'send_terminal')!.disclosedPayloadSummary
+    expect(summary.match(/ gate=/g)).toHaveLength(1)
+    expect(summary).toMatch(/ gate=free$/)
+    expect(summary.length).toBeLessThan(500)
+  })
+})
+
+describe('F3 — a key name is bounded and never echoed raw', () => {
+  it('an unknown key with an escape sequence is KEY_UNKNOWN with the ESC shown, not sent through', async () => {
+    const { id, proc } = await spawnAgent()
+    const res = await send({ terminalId: id, keys: ['\x1b[31mred'] })
+    expect(res.isError).toBe(true)
+    const text = (res.content[0] as { text: string }).text
+    expect(text).toContain('KEY_UNKNOWN')
+    expect(text).not.toContain('\\u001b')
+    expect(text).toContain('\\\\x1b')
+    const row = getAuditLog().find((r) => r.tool === 'send_terminal')!
+    expect(row.result).toMatch(/^KEY_UNKNOWN/)
+    expect(row.result).not.toContain('\x1b')
+    expect(proc.writes).toEqual([])
+  })
+
+  it('a key name over 16 characters is BAD_ARGS', async () => {
+    const { id, proc } = await spawnAgent()
+    const res = await send({ terminalId: id, keys: ['K'.repeat(17)] })
+    expect(res.isError).toBe(true)
+    expect(JSON.stringify(body(res))).toContain('BAD_ARGS')
+    expect(proc.writes).toEqual([])
+  })
+})
+
+describe('F4 — the state is judged again right before each write', () => {
+  /** Run `change` once the call has passed its queue wait and is in the barrier. */
+  async function sendWithChangeInBarrier(
+    id: string,
+    change: () => void,
+    args: Record<string, unknown> = { input: 'x' }
+  ): Promise<CallToolResult> {
+    const model = screenModelFor(id)!
+    const real = model.prepareSend.bind(model)
+    const spy = vi.spyOn(model, 'prepareSend').mockImplementation(async () => {
+      const r = await real()
+      change()
+      return r
+    })
+    try {
+      return await send({ terminalId: id, ...args })
+    } finally {
+      spy.mockRestore()
+    }
+  }
+
+  it('a terminal disconnected in the barrier gets zero bytes', async () => {
+    const { id, proc } = await spawnAgent()
+    const res = await sendWithChangeInBarrier(id, () => {
+      terminalRegistry.get(id)!.disconnected = true
+    })
+    expect(res.isError).toBe(true)
+    expect(body(res).error).toBe('TERMINAL_DISCONNECTED')
+    expect(proc.writes).toEqual([])
+  })
+
+  it('a terminal that exited in the barrier gets zero bytes', async () => {
+    const { id, proc } = await spawnAgent()
+    const res = await sendWithChangeInBarrier(id, () => proc.emitExit(0))
+    expect(res.isError).toBe(true)
+    expect(body(res).error).toBe('TERMINAL_EXITED')
+    expect(proc.writes).toEqual([])
+  })
+
+  it('a folder blocked in the barrier gets zero bytes', async () => {
+    const { id, proc } = await spawnAgent()
+    const res = await sendWithChangeInBarrier(id, () => {
+      h.denied = [blocked, h.open]
+    })
+    expect(res.isError).toBe(true)
+    expect(body(res).error).toBe('FOLDER_NOT_ALLOWED')
+    expect(proc.writes).toEqual([])
+  })
+
+  it('a terminal disconnected, exited or blocked while the call is queued gets zero bytes', async () => {
+    for (const change of [
+      (id: string): void => {
+        terminalRegistry.get(id)!.disconnected = true
+      },
+      (_id: string, proc?: (typeof h.procs)[number]): void => proc?.emitExit(0),
+      (): void => {
+        h.denied = [blocked, h.open]
+      }
+    ]) {
+      h.denied = [blocked]
+      const { id, proc } = await spawnAgent()
+      const holder = terminalWriteQueue.admit(id)
+      if (!holder.ok) throw new Error('admit')
+      await terminalWriteQueue.acquire(id, holder.scope)
+      const p = send({ terminalId: id, input: 'queued' })
+      while (terminalWriteQueue.waiting(id) < 1) await new Promise((r) => setTimeout(r, 2))
+      change(id, proc)
+      terminalWriteQueue.release(id, holder.scope)
+      const res = await p
+      terminalWriteQueue.finish(id, holder.scope)
+      expect(res.isError).toBe(true)
+      expect(proc.writes).toEqual([])
+    }
+  })
+
+  it('stops between the two writes of an Esc send, and says what went out', async () => {
+    const { id, proc } = await spawnAgent()
+    const realWrite = proc.write
+    proc.write = (data: string): void => {
+      realWrite(data)
+      // The operator disconnects right after the first write.
+      terminalRegistry.get(id)!.disconnected = true
+    }
+    const res = await send({ terminalId: id, input: 'x', keys: ['Esc', 'Enter'] })
+    expect(res.isError).toBe(true)
+    expect(body(res)).toMatchObject({
+      ok: false,
+      error: 'SEND_INCOMPLETE',
+      reason: 'TERMINAL_DISCONNECTED',
+      sent: { inputChars: 1, keys: ['Esc'], pasted: false }
+    })
+    expect(writesOf(proc)).toEqual(['x\x1b'])
+  })
+
+  it('stops between the writes when the folder is blocked in the gap', async () => {
+    const { id, proc } = await spawnAgent()
+    const realWrite = proc.write
+    proc.write = (data: string): void => {
+      realWrite(data)
+      h.denied = [blocked, h.open]
+    }
+    const res = await send({ terminalId: id, keys: ['Esc', 'Enter'] })
+    expect(body(res)).toMatchObject({
+      error: 'SEND_INCOMPLETE',
+      reason: 'FOLDER_NOT_ALLOWED',
+      sent: { inputChars: 0, keys: ['Esc'] }
+    })
+    expect(writesOf(proc)).toEqual(['\x1b'])
+  })
+
+  it('(a) a PTY that dies after the Esc segment reports only the Esc as sent', async () => {
+    const { id, proc } = await spawnAgent()
+    let n = 0
+    const realWrite = proc.write
+    proc.write = (data: string): void => {
+      if (++n > 1) throw new Error('EIO')
+      realWrite(data)
+    }
+    const res = await send({ terminalId: id, keys: ['Esc', 'Enter', 'Tab'] })
+    expect(res.isError).toBe(true)
+    const out = body(res)
+    expect(out.ok).toBe(false)
+    expect(out.error).toBe('SEND_INCOMPLETE')
+    expect(out.sent).toEqual({ inputChars: 0, keys: ['Esc'], pasted: false })
+  })
+})
+
+describe('(b) DEADLINE_FIRED — a send never types for a caller already told TOOL_TIMEOUT', () => {
+  it('writes nothing when the deadline already fired', async () => {
+    const { id, proc } = await spawnAgent()
+    const res = await sendDef.handler!({ terminalId: id, input: 'x' }, {
+      ...spawnCtx(),
+      deadlineFlag: { fired: true }
+    } as Ctx)
+    expect(res.isError).toBe(true)
+    expect((res.content[0] as { text: string }).text).toBe('DEADLINE_FIRED')
+    expect(proc.writes).toEqual([])
+  })
+
+  it('stops between the writes of an Esc send when the deadline fires in the gap', async () => {
+    const { id, proc } = await spawnAgent()
+    const flag = { fired: false }
+    const realWrite = proc.write
+    proc.write = (data: string): void => {
+      realWrite(data)
+      flag.fired = true
+    }
+    const res = await sendDef.handler!({ terminalId: id, keys: ['Esc', 'Enter'] }, {
+      ...spawnCtx(),
+      deadlineFlag: flag
+    } as Ctx)
+    expect(body(res)).toMatchObject({
+      error: 'SEND_INCOMPLETE',
+      reason: 'DEADLINE_FIRED',
+      sent: { keys: ['Esc'] }
+    })
+    expect(writesOf(proc)).toEqual(['\x1b'])
+  })
+})
+
+describe('(d) the alternate screen is read as the screen, not through the tail fallback', () => {
+  const readModes = (id: string): { calls: string[]; restore: () => void } => {
+    const model = screenModelFor(id)!
+    const real = model.read.bind(model)
+    const calls: string[] = []
+    const spy = vi.spyOn(model, 'read').mockImplementation((opts) => {
+      calls.push(opts.mode)
+      return real(opts)
+    })
+    return { calls, restore: () => spy.mockRestore() }
+  }
+
+  it('a send into a program already full-screen reads once, in screen mode', async () => {
+    const { id, proc } = await spawnAgent()
+    proc.respond = () => null
+    proc.emitData('\x1b[?1049h\x1b[2J\x1b[Hfull screen UI')
+    await screenModelFor(id)!.barrier()
+    const spy = readModes(id)
+    const out = body(await send({ terminalId: id, keys: ['Down'] }))
+    spy.restore()
+    expect(spy.calls).toEqual(['screen'])
+    expect(out.altScreen).toBe(true)
+    expect(out.cursor).toBeNull()
+    expect(out.output).toContain('full screen UI')
+  })
+
+  it('a send that starts a full-screen program returns the new screen, with no fallback', async () => {
+    const { id, proc } = await spawnAgent()
+    proc.emitData('shell history line\r\n$ ')
+    await screenModelFor(id)!.barrier()
+    proc.respond = () => '\x1b[?1049h\x1b[2J\x1b[Hfull screen UI\r\nrow two'
+    const spy = readModes(id)
+    const out = body(await send({ terminalId: id, input: 'vim', keys: ['Enter'] }))
+    spy.restore()
+    expect(spy.calls).toEqual(['since'])
+    expect(out.altScreen).toBe(true)
+    expect(out.cursor).toBeNull()
+    expect(out.output).toContain('full screen UI')
+    expect(out.output).toContain('row two')
+    expect(out.output).not.toContain('shell history line')
+  })
+})
+
+describe('(e) a send registers one cursor, and never evicts the ones an agent holds', () => {
+  it('31 held cursors survive a send that moved the cursor line', async () => {
+    const { id, proc } = await spawnAgent()
+    const model = screenModelFor(id)!
+    const held: string[] = []
+    for (let i = 0; i < 31; i++) {
+      proc.emitData(`line ${i}\r\n`)
+      const r = await model.read({ mode: 'tail', lines: 5 })
+      if (!r.ok || !r.cursor) throw new Error('cursor')
+      held.push(r.cursor)
+    }
+    proc.emitData('one more\r\n')
+    await model.barrier()
+    expect(model.cursorCount).toBe(31)
+    const out = body(await send({ terminalId: id, input: 'x', keys: ['Enter'] }))
+    expect(typeof out.cursor).toBe('string')
+    expect(model.cursorCount).toBe(32)
+    const oldest = await model.read({ mode: 'since', since: held[0]! })
+    expect(oldest.ok).toBe(true)
+  })
+})
+
+describe('F4 — the PTY door itself refuses a disconnected terminal', () => {
+  it('writeTerminalPty writes nothing once the operator disconnected the terminal', async () => {
+    const { writeTerminalPty } = await import('../src/main/pty')
+    const { id, proc } = await spawnAgent()
+    terminalRegistry.get(id)!.disconnected = true
+    expect(writeTerminalPty(id, 'x')).toBe(false)
+    expect(proc.writes).toEqual([])
+  })
 })

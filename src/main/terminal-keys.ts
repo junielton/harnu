@@ -135,6 +135,21 @@ function firstForbiddenControl(text: string): string | null {
   return null
 }
 
+/** Longest key name the verb accepts (`PageDown`, `Ctrl+A` … are well under it). */
+export const MAX_KEY_NAME_CHARS = 16
+
+/**
+ * An agent-supplied key name, made safe to echo back and to audit: control characters shown, cut
+ * to {@link MAX_KEY_NAME_CHARS}, in quotes. The name is untrusted text and lands in an error that
+ * is rendered in a terminal and written to the audit log.
+ */
+function quoteKey(key: string): string {
+  const chars = [...key]
+  const cut = chars.length > MAX_KEY_NAME_CHARS
+  const shown = escapeForAudit(chars.slice(0, MAX_KEY_NAME_CHARS).join(''), true)
+  return `"${shown}${cut ? '…' : ''}"`
+}
+
 /**
  * Check the CONTENT of a send, with no terminal state needed: control characters, size and key
  * names. Runs at plan level so a bad call is refused before any confirm.
@@ -171,7 +186,7 @@ export function checkSendContent(input: {
     if (!isKnownKey(key)) {
       return {
         error: 'KEY_UNKNOWN',
-        detail: `"${key}" is not a key. Use one of: ${KEY_NAMES.join(', ')}.`
+        detail: `${quoteKey(key)} is not a key. Use one of: ${KEY_NAMES.join(', ')}.`
       }
     }
   }
@@ -182,6 +197,8 @@ export function checkSendContent(input: {
 export interface BuiltSend {
   /** Pieces to write in order, {@link ESC_GAP_MS} apart. Almost always exactly one. */
   segments: string[]
+  /** What each segment carries, parallel to {@link segments}: whether `input`, and how many keys. */
+  parts: { input: boolean; keys: number }[]
   /** `paste: true` was honoured: the program has bracketed paste on. */
   pasted: boolean
 }
@@ -199,36 +216,79 @@ export function buildSend(
   if (bad) return { ok: false, ...bad }
 
   // Tokens, so the Esc split lands on a key boundary and never inside an escape sequence.
-  const tokens: { bytes: string; esc: boolean }[] = []
+  const tokens: { bytes: string; esc: boolean; input: boolean }[] = []
   let pasted = false
   if (args.input !== undefined && args.input.length > 0) {
     // `\n` is what Enter produces in raw mode.
     const typed = args.input.replace(/\n/g, '\r')
     pasted = args.paste === true && modes.bracketedPaste
-    tokens.push({ bytes: pasted ? `${PASTE_START}${typed}${PASTE_END}` : typed, esc: false })
+    tokens.push({
+      bytes: pasted ? `${PASTE_START}${typed}${PASTE_END}` : typed,
+      esc: false,
+      input: true
+    })
   }
   for (const key of args.keys ?? []) {
     const bytes = keyBytes(key, modes)
-    if (bytes === null) return { ok: false, error: 'KEY_UNKNOWN', detail: `"${key}" is not a key.` }
-    tokens.push({ bytes, esc: key === 'Esc' })
+    if (bytes === null) {
+      return { ok: false, error: 'KEY_UNKNOWN', detail: `${quoteKey(key)} is not a key.` }
+    }
+    tokens.push({ bytes, esc: key === 'Esc', input: false })
   }
 
   const segments: string[] = []
+  const parts: { input: boolean; keys: number }[] = []
   let current = ''
+  let part = { input: false, keys: 0 }
   tokens.forEach((t, i) => {
     current += t.bytes
+    if (t.input) part.input = true
+    else part.keys++
     // An Esc followed by more bytes in the same send is cut off from them (spec §4.4).
     if (t.esc && i < tokens.length - 1) {
       segments.push(current)
+      parts.push(part)
       current = ''
+      part = { input: false, keys: 0 }
     }
   })
-  if (current.length > 0) segments.push(current)
-  return { ok: true, segments, pasted }
+  if (current.length > 0) {
+    segments.push(current)
+    parts.push(part)
+  }
+  return { ok: true, segments, parts, pasted }
 }
 
-/** `text` with every control character made visible, so an audit line shows what was typed. */
-export function escapeForAudit(text: string): string {
+/**
+ * Characters that draw nothing or reorder what is drawn around them: bidi controls (an RLO makes
+ * `evil` read as `live`), zero-width characters, line and paragraph separators, the BOM, soft
+ * hyphen and the invisible tag block. In an audit line or a confirm prompt they would let typed
+ * text look like something else, so they are shown as `\\u{hex}`.
+ */
+function isInvisibleFormat(c: number): boolean {
+  return (
+    c === 0x00ad ||
+    c === 0x061c ||
+    c === 0x180e ||
+    (c >= 0x200b && c <= 0x200f) ||
+    (c >= 0x2028 && c <= 0x202e) ||
+    (c >= 0x2060 && c <= 0x2064) ||
+    (c >= 0x2066 && c <= 0x2069) ||
+    c === 0xfeff ||
+    (c >= 0xfff9 && c <= 0xfffb) ||
+    (c >= 0xe0000 && c <= 0xe007f)
+  )
+}
+
+/**
+ * `text` with every control character made visible, so an audit line shows what was typed. The
+ * double quote is escaped too (the input sits between quotes: an unescaped one would end the field
+ * early and let typed text forge the fields after it), and so are the invisible and reordering
+ * characters of {@link isInvisibleFormat}. `strict` also escapes what separates fields (space, `=`,
+ * `,`, brackets), for values that sit bare in the line. It never cuts: the audit line cuts the
+ * input in {@link summarizeSend}, and a confirm prompt shows all of it.
+ */
+export function escapeForAudit(text: string, strict = false): string {
   let out = ''
   for (const ch of text) {
     const c = ch.codePointAt(0)!
@@ -236,11 +296,24 @@ export function escapeForAudit(text: string): string {
     else if (ch === '\r') out += '\\r'
     else if (ch === '\t') out += '\\t'
     else if (ch === '\\') out += '\\\\'
+    else if (ch === '"') out += '\\"'
+    else if (strict && ' =,[]'.includes(ch)) out += `\\x${c.toString(16).padStart(2, '0')}`
+    else if (isInvisibleFormat(c)) out += `\\u{${c.toString(16)}}`
     else if (c < 0x20 || c === 0x7f || (c >= 0x80 && c <= 0x9f)) {
       out += `\\x${c.toString(16).padStart(2, '0')}`
     } else out += ch
   }
   return out
+}
+
+/** Longest owner / terminal id the audit line carries; the rest is cut. */
+const AUDIT_FIELD_MAX_CHARS = 80
+
+/** A bare field value of the audit line: escaped strictly and bounded. */
+function auditField(value: string): string {
+  const chars = [...value]
+  const cut = chars.length > AUDIT_FIELD_MAX_CHARS
+  return escapeForAudit(chars.slice(0, AUDIT_FIELD_MAX_CHARS).join(''), true) + (cut ? '…' : '')
 }
 
 /** How a send was authorised (spec §6.5). The lease and the confirm join in unit B6. */
@@ -265,9 +338,9 @@ export function summarizeSend(args: {
   if (escaped.length > AUDIT_INPUT_MAX_CHARS) {
     escaped = `${escaped.slice(0, AUDIT_INPUT_MAX_CHARS)}…`
   }
-  const keys = (args.keys ?? []).join(',')
+  const keys = (args.keys ?? []).map((k) => auditField(k)).join(',')
   return (
-    `send_terminal terminal=${args.terminalId} owner=${args.owner ?? '-'} ` +
+    `send_terminal terminal=${auditField(args.terminalId)} owner=${args.owner === null ? '-' : auditField(args.owner)} ` +
     `input="${escaped}" keys=[${keys}] gate=${args.gate}`
   )
 }

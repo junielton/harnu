@@ -64,7 +64,7 @@ import {
   MAX_AGENT_TERMINALS_PER_FOLDER,
   terminalRegistry
 } from '../terminal-registry'
-import { gateTerminalOp } from '../terminal-gate-core'
+import { canStillWrite, gateTerminalOp } from '../terminal-gate-core'
 import { resolveTerminalGate } from '../terminal-gate'
 import { scrubTerminalText } from '../scrub-terminal'
 import { paneSplitFor } from '../terminal-lifecycle'
@@ -1102,115 +1102,185 @@ const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeo
 /**
  * T482 B5: type into a terminal (spec §4.4). The access rules ran at PLAN level; the same pure gate
  * runs again here as the last line, and once more after the queue wait, because the terminal can
- * end or be disconnected while a call waits its turn.
+ * end or be disconnected while a call waits its turn. Right before EACH `pty.write` the state is
+ * judged once more (exited, disconnected, folder blocked since, deadline fired): the barrier and
+ * the 50 ms gap after an `Esc` are real time in which the operator can act.
  *
- * Order: admit (rate limit) → wait for the head of this terminal's line (≤ 10 s) → barrier, read
- * the input modes and mark the cursor line → write (ONE `pty.write`, two when an `Esc` is followed
- * by more bytes) → release the line → settle → read the screen since the mark. The line is held
- * only while bytes go out; settling does not hold it. Output is scrubbed on every terminal.
- * `waitFor` is unit B8's: a send here always returns after the settle.
+ * Order: take the place in line (synchronously, on entry: arrival order) → admit (rate limit) →
+ * wait for the head of this terminal's line (≤ 10 s) → barrier, read the input modes and mark the
+ * cursor line → write (ONE `pty.write`, two when an `Esc` is followed by more bytes) → release the
+ * line → settle → read the screen since the mark. The line is held only while bytes go out;
+ * settling does not hold it. Output is scrubbed on every terminal. `waitFor` is unit B8's: a send
+ * here always returns after the settle.
+ *
+ * A send that stopped after some of its bytes went out (the terminal ended or was disconnected
+ * between two writes) says so: `SEND_INCOMPLETE`, with `sent` listing only what was written.
  */
 const sendTerminalHandler: Handler = async (args, ctx) => {
   const terminalId = strField(args, 'terminalId') ?? ''
+  // First, before any `await`: this call's place in the line is when it ARRIVED (see the queue).
+  const ticket = terminalWriteQueue.claim(args, terminalId)
   const input = typeof args.input === 'string' ? args.input : undefined
   const keys = Array.isArray(args.keys) ? (args.keys as string[]) : []
   const known = (id: string): boolean => terminalRegistry.get(id) !== undefined
-  pruneScreenModels(known)
-  terminalWriteQueue.prune(known)
-
-  const first = await resolveTerminalGate(terminalId)
-  const refusal = gateTerminalOp('send_terminal', first.state)
-  if (refusal || !first.rec) return steerError(refusal ?? 'TERMINAL_NOT_FOUND', ctx.folder)
-  const model = ensureTerminalScreenModel(terminalId)
-  if (!model) return steerError('TERMINAL_NOT_FOUND', ctx.folder)
-
-  const admitted = terminalWriteQueue.admit(terminalId)
-  if (!admitted.ok) return steerError(admitted.error, ctx.folder)
-  const scope = admitted.scope
+  let model: ReturnType<typeof ensureTerminalScreenModel>
+  let sendMark: string | null = null
   try {
-    if (!(await terminalWriteQueue.acquire(terminalId, scope))) {
-      return steerError('TERMINAL_BUSY', ctx.folder)
-    }
-    let sentAt = 0
-    let prep: Awaited<ReturnType<typeof model.prepareSend>>
-    let pasted = false
+    pruneScreenModels(known)
+    terminalWriteQueue.prune(known)
+
+    const first = await resolveTerminalGate(terminalId)
+    const refusal = gateTerminalOp('send_terminal', first.state)
+    if (refusal || !first.rec) return steerError(refusal ?? 'TERMINAL_NOT_FOUND', ctx.folder)
+    model = ensureTerminalScreenModel(terminalId)
+    if (!model) return steerError('TERMINAL_NOT_FOUND', ctx.folder)
+
+    const admitted = terminalWriteQueue.admit(terminalId, ticket)
+    if (!admitted.ok) return steerError(admitted.error, ctx.folder)
+    const scope = admitted.scope
     try {
-      // The terminal may have ended or been disconnected while this call waited its turn.
-      const again = await resolveTerminalGate(terminalId)
-      const lateRefusal = gateTerminalOp('send_terminal', again.state)
-      if (lateRefusal) return steerError(lateRefusal, ctx.folder)
-      prep = await model.prepareSend()
-      const built = buildSend(
-        { input, keys, paste: args.paste === true },
-        {
-          applicationCursorKeys: prep.applicationCursorKeys,
-          bracketedPaste: prep.bracketedPaste
+      if (!(await terminalWriteQueue.acquire(terminalId, scope))) {
+        return steerError('TERMINAL_BUSY', ctx.folder)
+      }
+      let sentAt = 0
+      let prep: Awaited<ReturnType<typeof model.prepareSend>>
+      let built: Extract<ReturnType<typeof buildSend>, { ok: true }>
+      let stopped = null as string | null
+      let written: { written: number; complete: boolean }
+      try {
+        // The terminal may have ended or been disconnected while this call waited its turn.
+        const again = await resolveTerminalGate(terminalId)
+        const lateRefusal = gateTerminalOp('send_terminal', again.state)
+        if (lateRefusal) return steerError(lateRefusal, ctx.folder)
+        prep = await model.prepareSend()
+        sendMark = prep.cursor
+        const b = buildSend(
+          { input, keys, paste: args.paste === true },
+          {
+            applicationCursorKeys: prep.applicationCursorKeys,
+            bracketedPaste: prep.bracketedPaste
+          }
+        )
+        if (!b.ok) return errorResult(`${b.error}: ${b.detail}`)
+        built = b
+        // The state judged right before one `pty.write`: it is read fresh, every time, because the
+        // plan, the queue wait and the barrier all ran before it.
+        const mayWrite = async (): Promise<boolean> => {
+          const file = await readUserProjects()
+          const folder = terminalRegistry.get(terminalId)?.folder
+          const optedIn =
+            folder === undefined ? new Set<string>() : await terminalReadOptIns(file, [folder])
+          // Nothing awaits between here and the `pty.write`: the record is read last.
+          const rec = terminalRegistry.get(terminalId)
+          const blocked = file.projects.filter((p) => p.agentDenied === true).map((p) => p.path)
+          stopped = canStillWrite(rec, {
+            folderBlocked: rec !== undefined && isFolderDenied(rec.folder, blocked, os.homedir()),
+            deadlineFired: ctx.deadlineFlag?.fired === true,
+            readOptIn: rec !== undefined && optedIn.has(rec.folder)
+          })
+          return stopped === null
         }
-      )
-      if (!built.ok) return errorResult(`${built.error}: ${built.detail}`)
-      pasted = built.pasted
-      // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — never type for a caller that
-      // can no longer be told what happened.
-      if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
-      const written = await writeSegments(built.segments, {
-        write: (data) => {
-          const ok = writeTerminalPty(terminalId, data)
-          if (ok) terminalWriteQueue.noteWrite(terminalId, scope)
-          return ok
-        },
-        sleep: sleepMs
+        written = await writeSegments(built.segments, {
+          write: async (data) => {
+            if (!(await mayWrite())) return false
+            const ok = writeTerminalPty(terminalId, data)
+            if (ok) terminalWriteQueue.noteWrite(terminalId, scope)
+            else {
+              // The PTY ended, or the operator disconnected, between the check and the write.
+              stopped = terminalRegistry.get(terminalId)?.disconnected
+                ? 'TERMINAL_DISCONNECTED'
+                : 'TERMINAL_EXITED'
+            }
+            return ok
+          },
+          sleep: sleepMs
+        })
+        sentAt = Date.now()
+      } finally {
+        terminalWriteQueue.release(terminalId, scope)
+      }
+
+      // What actually reached the PTY, never what was asked for.
+      const wrote = built.parts.slice(0, written.written)
+      const inputWritten = wrote.some((part) => part.input)
+      const sent = {
+        inputChars: inputWritten && input !== undefined ? [...input].length : 0,
+        keys: keys.slice(
+          0,
+          wrote.reduce((n, part) => n + part.keys, 0)
+        ),
+        pasted: inputWritten && built.pasted
+      }
+      if (!written.complete) {
+        const reason = stopped ?? 'TERMINAL_EXITED'
+        // Nothing reached the PTY: an ordinary refusal.
+        if (written.written === 0) {
+          return reason === 'DEADLINE_FIRED'
+            ? errorResult('DEADLINE_FIRED')
+            : steerError(reason, ctx.folder)
+        }
+        // Some bytes are out and the rest is not (e.g. an `Esc`, then the terminal ended).
+        return {
+          ...textResult({
+            ok: false,
+            error: 'SEND_INCOMPLETE',
+            reason,
+            terminalId,
+            sent,
+            message:
+              'Only part of this send reached the terminal; `sent` lists exactly what did. ' +
+              'Read the terminal before sending again.'
+          }),
+          isError: true
+        }
+      }
+
+      const waitedMs = await settleAfterSend({
+        now: Date.now,
+        sleep: sleepMs,
+        lastOutputAt: () => terminalRegistry.get(terminalId)?.lastOutputAt ?? 0,
+        sentAt
       })
-      sentAt = Date.now()
-      // Nothing reached the PTY: it ended between the gate and the write.
-      if (written.written === 0) return steerError('TERMINAL_EXITED', ctx.folder)
+
+      const home = os.homedir()
+      const scrub = (text: string): string => scrubTerminalText(text, home)
+      // The line the cursor sat on at the send, read back to the end. A full-screen program has no
+      // such line: its whole screen is the answer (spec §4.4, "Alternate screen").
+      let read = await model.read(
+        prep.altScreen || prep.cursor === null
+          ? { mode: 'screen', scrub }
+          : { mode: 'since', since: prep.cursor, scrub }
+      )
+      if (!read.ok) read = await model.read({ mode: 'tail', lines: 500, scrub })
+      if (!read.ok) return steerError('CURSOR_EXPIRED', ctx.folder)
+
+      const rec = terminalRegistry.get(terminalId)
+      const { ok: _ok, cursorPos: _cursorPos, size: _size, ...screen } = read
+      return textResult({
+        ok: true,
+        terminalId,
+        state: rec?.state ?? 'exited',
+        ...(rec?.exit ? { exit: { code: rec.exit.code, reason: rec.exit.reason } } : {}),
+        sent,
+        wait: { reason: 'none', waitedMs },
+        output: screen.text,
+        truncated: screen.truncated,
+        droppedLines: screen.droppedLines,
+        altScreen: screen.altScreen,
+        approximate: screen.approximate || prep.approximate,
+        othersWrote: scope.othersWrote,
+        operatorTyped:
+          rec?.lastOperatorWriteAt != null && rec.lastOperatorWriteAt >= scope.startedAt,
+        note: TERMINAL_NOTE,
+        cursor: screen.cursor
+      })
     } finally {
-      terminalWriteQueue.release(terminalId, scope)
+      terminalWriteQueue.finish(terminalId, scope)
     }
-
-    const waitedMs = await settleAfterSend({
-      now: Date.now,
-      sleep: sleepMs,
-      lastOutputAt: () => terminalRegistry.get(terminalId)?.lastOutputAt ?? 0,
-      sentAt
-    })
-
-    const home = os.homedir()
-    const scrub = (text: string): string => scrubTerminalText(text, home)
-    // The line the cursor sat on at the send, read back to the end. A full-screen program has no
-    // such line: its whole screen is the answer (spec §4.4, "Alternate screen").
-    let read = await model.read(
-      prep.altScreen || prep.cursor === null
-        ? { mode: 'screen', scrub }
-        : { mode: 'since', since: prep.cursor, scrub }
-    )
-    if (!read.ok) read = await model.read({ mode: 'tail', lines: 500, scrub })
-    if (!read.ok) return steerError('CURSOR_EXPIRED', ctx.folder)
-
-    const rec = terminalRegistry.get(terminalId)
-    const { ok: _ok, cursorPos: _cursorPos, size: _size, ...screen } = read
-    return textResult({
-      ok: true,
-      terminalId,
-      state: rec?.state ?? 'exited',
-      ...(rec?.exit ? { exit: { code: rec.exit.code, reason: rec.exit.reason } } : {}),
-      sent: {
-        inputChars: input === undefined ? 0 : [...input].length,
-        keys,
-        pasted
-      },
-      wait: { reason: 'none', waitedMs },
-      output: screen.text,
-      truncated: screen.truncated,
-      droppedLines: screen.droppedLines,
-      altScreen: screen.altScreen,
-      approximate: screen.approximate || prep.approximate,
-      othersWrote: scope.othersWrote,
-      operatorTyped: rec?.lastOperatorWriteAt != null && rec.lastOperatorWriteAt >= scope.startedAt,
-      note: TERMINAL_NOTE,
-      cursor: screen.cursor
-    })
   } finally {
-    terminalWriteQueue.finish(terminalId, scope)
+    // The mark was private to this call; the agent's cursor is the one the read returned.
+    model?.releaseSend(sendMark)
+    terminalWriteQueue.abandonTicket(terminalId, ticket)
   }
 }
 

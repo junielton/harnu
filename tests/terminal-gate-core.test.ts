@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   UNKNOWN_TERMINAL,
+  canStillWrite,
   gateTerminalOp,
   isTerminalGatedOp,
   resolveTerminalGateState,
@@ -346,5 +347,31 @@ describe('AC-B4-4 — block, kill-switch, and the observe allowlist', () => {
       const name = `mcp__harnu__${t.name}`
       expect(allowed.has(name) || OBSERVE_MCP_DENY.includes(name), t.name).toBe(true)
     }
+  })
+})
+
+describe('canStillWrite — the one check before every write of a send', () => {
+  const ok = { folderBlocked: false, deadlineFired: false, readOptIn: false }
+
+  it('lets a running, connected agent terminal be typed into', () => {
+    expect(canStillWrite(agent, ok)).toBeNull()
+  })
+
+  it('refuses in the documented order: deadline, swept, blocked folder, then the gate', () => {
+    const everything = { folderBlocked: true, deadlineFired: true, readOptIn: false }
+    expect(canStillWrite(undefined, everything)).toBe('DEADLINE_FIRED')
+    expect(canStillWrite(undefined, { ...everything, deadlineFired: false })).toBe(
+      'TERMINAL_NOT_FOUND'
+    )
+    expect(
+      canStillWrite({ ...agent, state: 'exited' }, { ...everything, deadlineFired: false })
+    ).toBe('FOLDER_NOT_ALLOWED')
+    expect(canStillWrite({ ...agent, state: 'exited' }, ok)).toBe('TERMINAL_EXITED')
+    expect(canStillWrite({ ...agent, disconnected: true }, ok)).toBe('TERMINAL_DISCONNECTED')
+  })
+
+  it('still refuses a terminal the operator opened (typing into those is unit B6)', () => {
+    expect(canStillWrite(operator, { ...ok, readOptIn: true })).toBe('TERMINAL_WRITE_NOT_ENABLED')
+    expect(canStillWrite(operator, ok)).toBe('TERMINAL_READ_NOT_ENABLED')
   })
 })
