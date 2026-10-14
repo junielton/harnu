@@ -631,7 +631,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'list_terminals',
     description:
-      "List the terminals Harnu knows about: `terminalId`, `label`, `folderAlias`, `origin` (agent|operator), `ownerSessionId`, `disconnected`, `state` (running|exited), `size`, `title` — whatever the program set with an escape sequence, UNTRUSTED and marked `titleSource: 'program'` — `createdAt`, `lastOutputAt`, `readable` and `writable` (`free`|`confirm`|`revoked`|`off`). Paths are redacted to aliases. A terminal in a folder the operator blocked is absent. An exited terminal stays listed for 10 minutes. `folder` and `ownerSessionId` narrow the listing.",
+      "List the terminals Harnu knows about: `terminalId`, `label`, `folderAlias`, `origin` (agent|operator), `ownerSessionId`, `disconnected`, `state` (running|exited), `size`, `title` — whatever the program set with an escape sequence, UNTRUSTED and marked `titleSource: 'program'` — `createdAt`, `lastOutputAt`, `readable` and `writable` (`free`|`confirm`|`revoked`|`off`; `off` always comes with a `writableReason`: `exited`, `read-not-enabled` or `kill-switch`). Paths are redacted to aliases. A terminal in a folder the operator blocked is absent. An exited terminal stays listed for 10 minutes. `folder` and `ownerSessionId` narrow the listing.",
     inputSchema: z.object({
       folder: z
         .string()

@@ -799,7 +799,7 @@ async function folderSettingsAllowsVerb(folder: string, op: McpOp): Promise<bool
  *  - A timed-out mutation writes a distinct `:timeout` shadow entry instead
  *    of the success entry it would otherwise never reach (AC4).
  */
-async function actuate(
+export async function actuate(
   def: McpToolDef,
   args: Record<string, unknown>,
   ctx: ToolHandlerCtx
@@ -864,11 +864,14 @@ async function actuate(
     const tool = def.name
     const folder = ctx.folder
     const op = def.op
+    // `callId` is the idempotency handle, NOT the "this is a mutation" signal: a verb that opts
+    // out of replay (`replayable: false`) has no callId but still owes its late-completion trail.
+    const mutates = def.mutates
     work
       .then((value) => {
-        if (!callId) return
+        if (!mutates) return
         const ok = ackIsSuccess(value)
-        completeCall(callId, ok ? 'applied' : 'failed', value)
+        if (callId) completeCall(callId, ok ? 'applied' : 'failed', value)
         appendAudit({
           ts: Date.now(),
           tool,
@@ -889,9 +892,9 @@ async function actuate(
       })
       .catch((e) => {
         console.debug(`[mcp] ${tool} rejected after TOOL_TIMEOUT:`, e)
-        if (!callId) return
+        if (!mutates) return
         const failResult = errorResult(`late failure: ${(e as Error).message}`)
-        completeCall(callId, 'failed', failResult)
+        if (callId) completeCall(callId, 'failed', failResult)
         appendAudit({
           ts: Date.now(),
           tool,
@@ -916,7 +919,7 @@ async function actuate(
     // AC4: a distinct timeout shadow entry so the operator sees the ambiguity
     // rather than a false success — the outer grant/silent-allow branches'
     // success-only pushShadowEntry never runs for this non-success ACK.
-    if (callId) {
+    if (def.mutates) {
       pushShadowEntry({
         sessionId: strField(args, 'sessionId') ?? '',
         event: `mcp:${def.op}:timeout`,

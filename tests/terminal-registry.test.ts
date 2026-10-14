@@ -3,6 +3,7 @@ import {
   TOMBSTONE_MS,
   TerminalRegistry,
   isTerminalReply,
+  terminalAccess,
   type RegisterTerminalInput
 } from '../src/main/terminal-registry'
 
@@ -169,7 +170,7 @@ describe('TerminalRegistry', () => {
       expect(reg.get('h-1')?.lastOperatorWriteAt).toBeNull()
     })
 
-    it('does not stamp when a reply is glued to a real key', () => {
+    it('stamps when a reply is glued to a real key (the payload is not wholly a reply)', () => {
       const { reg } = make()
       reg.register(input())
       expect(reg.noteOperatorWrite('pty-1', '\x1b[12;40Rl')).toBe(true)
@@ -209,6 +210,32 @@ describe('TerminalRegistry', () => {
     })
   })
 
+  describe('slot reservation (parallel spawns)', () => {
+    it('reserves up to the limit counting live terminals, then refuses', () => {
+      const { reg } = make()
+      reg.register(input({ terminalId: 'a', ptyId: 'pa' }))
+      expect(reg.reserveSlot('/work/app', 3)).toBe(true)
+      expect(reg.reserveSlot('/work/app', 3)).toBe(true)
+      expect(reg.reserveSlot('/work/app', 3)).toBe(false)
+    })
+
+    it('a released slot can be claimed again, and release never goes negative', () => {
+      const { reg } = make()
+      expect(reg.reserveSlot('/work/app', 1)).toBe(true)
+      expect(reg.reserveSlot('/work/app', 1)).toBe(false)
+      reg.releaseSlot('/work/app')
+      reg.releaseSlot('/work/app')
+      expect(reg.reserveSlot('/work/app', 1)).toBe(true)
+      expect(reg.reserveSlot('/work/app', 2)).toBe(true)
+    })
+
+    it('is per folder', () => {
+      const { reg } = make()
+      expect(reg.reserveSlot('/a', 1)).toBe(true)
+      expect(reg.reserveSlot('/b', 1)).toBe(true)
+    })
+  })
+
   it('noteResize keeps the reported size current', () => {
     const { reg } = make()
     reg.register(input())
@@ -245,5 +272,35 @@ describe('isTerminalReply', () => {
     ['a key then a reply', 'x\x1b[12;40R']
   ])('%s is not a reply', (_name, data) => {
     expect(isTerminalReply(data)).toBe(false)
+  })
+})
+
+describe('terminalAccess — writableReason is present iff writable is off', () => {
+  const on = { readOptIn: true, writesEnabled: true }
+  const base = { origin: 'agent', disconnected: false, state: 'running' } as const
+
+  it.each([
+    ['agent, running', base, on, { writable: 'free' }],
+    ['operator with opt-in', { ...base, origin: 'operator' }, on, { writable: 'confirm' }],
+    ['disconnected', { ...base, disconnected: true }, on, { writable: 'revoked' }],
+    ['exited', { ...base, state: 'exited' }, on, { writable: 'off', writableReason: 'exited' }],
+    [
+      'operator, no opt-in',
+      { ...base, origin: 'operator' },
+      { readOptIn: false, writesEnabled: true },
+      { writable: 'off', writableReason: 'read-not-enabled' }
+    ],
+    [
+      'kill-switch off',
+      base,
+      { readOptIn: true, writesEnabled: false },
+      { writable: 'off', writableReason: 'kill-switch' }
+    ]
+  ] as const)('%s', (_n, rec, prefs, expected) => {
+    const access = terminalAccess(rec, prefs)
+    expect(access).toMatchObject(expected)
+    expect('writableReason' in access && access.writableReason !== undefined).toBe(
+      access.writable === 'off'
+    )
   })
 })

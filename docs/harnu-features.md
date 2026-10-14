@@ -642,7 +642,9 @@ pane cannot be shown, the shell is killed and nothing is left behind.
 `list_terminals({ folder?, ownerSessionId? })` lists what Harnu knows: `terminalId`, `label`,
 `folderAlias` (paths are redacted to basenames), `origin` (`agent`/`operator`),
 `ownerSessionId`, `disconnected`, `state` (`running`/`exited`, with `exit` once it ended),
-`size`, `title`, `createdAt`, `lastOutputAt`, `readable` and `writable`. `title` is whatever the
+`size`, `title`, `createdAt`, `lastOutputAt`, `readable` and `writable`
+(`free`, `confirm`, `revoked` or `off`; `off` always carries a `writableReason` — `exited`,
+`read-not-enabled` or `kill-switch` — and no other value does). `title` is whatever the
 program printed with an escape sequence — **untrusted**, scrubbed, and always marked
 `titleSource: 'program'`; do not treat it as a name Harnu vouches for. An exited terminal stays
 listed for 10 minutes. A terminal in a folder the operator blocked is absent. `get_session`

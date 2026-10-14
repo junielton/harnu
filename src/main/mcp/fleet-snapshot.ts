@@ -1,7 +1,12 @@
 import { basename } from 'node:path'
 import { isFolderDenied } from './permission-core'
 import { redactTranscript } from './transcript-redact'
-import { terminalAccess, type TerminalAccess, type TerminalRecord } from '../terminal-registry'
+import {
+  terminalAccess,
+  type TerminalAccess,
+  type TerminalRecord,
+  type WritableReason
+} from '../terminal-registry'
 import type { TaskState, FailureReason } from '../hook-state'
 
 /**
@@ -499,6 +504,8 @@ export interface TerminalListingRow {
   lastOutputAt: number
   readable: boolean
   writable: TerminalAccess['writable']
+  /** Present exactly when `writable` is `'off'`. */
+  writableReason?: WritableReason
 }
 
 export interface TerminalListingOptions {
@@ -544,7 +551,8 @@ export function toTerminalListing(
         createdAt: r.createdAt,
         lastOutputAt: r.lastOutputAt,
         readable: access.readable,
-        writable: access.writable
+        writable: access.writable,
+        ...(access.writable === 'off' ? { writableReason: access.writableReason } : {})
       }
     })
     .sort((a, b) => a.createdAt - b.createdAt)

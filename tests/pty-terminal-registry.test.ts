@@ -125,7 +125,7 @@ describe('createPty with a terminal', () => {
     })
   })
 
-  it('registers nothing for an ordinary shell PTY, and not for a claude kind', async () => {
+  it('registers nothing for an ordinary shell PTY', async () => {
     await pty.createPty({ kind: 'shell', cmd: '/bin/sh', cwd, cols: 80, rows: 24 }, deps())
     expect(registry.list()).toEqual([])
   })

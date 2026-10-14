@@ -969,15 +969,23 @@ const spawnTerminalHandler: Handler = async (args, ctx) => {
   if (ownerSessionId !== null && !sessionKnown(ownerSessionId, ctx)) {
     return steerError('SESSION_NOT_FOUND', ctx.folder)
   }
-  if (terminalRegistry.liveAgentCount(targetFolder) >= MAX_AGENT_TERMINALS_PER_FOLDER) {
-    return steerError('TERMINAL_LIMIT', ctx.folder)
-  }
   // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — do not spawn a shell nobody
   // will ever be told about.
   if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  // The slot is claimed synchronously: `createTerminalPty` is async, and `spawn_terminal` is not
+  // replayable, so parallel calls would otherwise all pass a count that only moves on register.
+  if (!terminalRegistry.reserveSlot(targetFolder, MAX_AGENT_TERMINALS_PER_FOLDER)) {
+    return steerError('TERMINAL_LIMIT', ctx.folder)
+  }
 
   const terminalId = `h-${randomUUID()}`
-  const ptyId = await createTerminalPty({ terminalId, folder: targetFolder, ownerSessionId })
+  let ptyId: string
+  try {
+    ptyId = await createTerminalPty({ terminalId, folder: targetFolder, ownerSessionId })
+  } finally {
+    // Registered by now (or the spawn failed): the record, not the reservation, holds the slot.
+    terminalRegistry.releaseSlot(targetFolder)
+  }
   let result: unknown
   try {
     result = await ctx.bridge.dispatch('pane.split', {

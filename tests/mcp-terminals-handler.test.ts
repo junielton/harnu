@@ -306,6 +306,37 @@ describe('AC-B1-5 — TERMINAL_LIMIT', () => {
     ).toBeUndefined()
   })
 
+  it('6 parallel calls in one folder make exactly 4 terminals, 2 refusals and no leaked PTY', async () => {
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () => spawn({ folder: folderA }, ctx()))
+    )
+    const refused = results.filter((r) => r.isError)
+    expect(results.length - refused.length).toBe(4)
+    expect(refused).toHaveLength(2)
+    for (const r of refused) expect(body(r).error).toBe('TERMINAL_LIMIT')
+    expect(h.procs).toHaveLength(4)
+    for (const p of h.procs) expect(p.kill).not.toHaveBeenCalled()
+    expect(terminalRegistry.liveAgentCount(folderA)).toBe(4)
+    // The reservations were all given back: once one terminal exits, a new spawn fits.
+    h.procs[0].emitExit(0)
+    expect((await spawn({ folder: folderA }, ctx())).isError).toBeUndefined()
+  })
+
+  it('a failed spawn gives its reserved slot back', async () => {
+    const failing = {
+      dispatch: vi.fn(async () => Promise.reject(new CommandBridgeError('TIMEOUT')))
+    }
+    await Promise.all(
+      Array.from({ length: 4 }, () =>
+        spawn({ folder: folderA }, ctx({ bridge: failing })).catch(() => {})
+      )
+    )
+    expect(terminalRegistry.list()).toEqual([])
+    for (let i = 0; i < 4; i++) {
+      expect((await spawn({ folder: folderA }, ctx())).isError).toBeUndefined()
+    }
+  })
+
   it('an exited terminal frees its slot', async () => {
     for (let i = 0; i < 4; i++) await spawn({ folder: folderA }, ctx())
     h.procs[0].emitExit(0)
@@ -336,6 +367,7 @@ describe('AC-B1-6 — list_terminals and get_session.terminals', () => {
       readable: true,
       writable: 'free'
     })
+    expect(row).not.toHaveProperty('writableReason')
   })
 
   it('reports an operator-opened terminal as not readable (the folder opt-in is off)', async () => {
@@ -348,7 +380,12 @@ describe('AC-B1-6 — list_terminals and get_session.terminals', () => {
     })
     const rows = body(await list({}, ctx())).terminals as Array<Record<string, unknown>>
     expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({ origin: 'operator', readable: false, writable: 'off' })
+    expect(rows[0]).toMatchObject({
+      origin: 'operator',
+      readable: false,
+      writable: 'off',
+      writableReason: 'read-not-enabled'
+    })
   })
 
   it('reports a disconnected terminal as revoked and not readable', async () => {
@@ -356,6 +393,7 @@ describe('AC-B1-6 — list_terminals and get_session.terminals', () => {
     terminalRegistry.get(ack.terminalId as string)!.disconnected = true
     const [row] = body(await list({}, ctx())).terminals as Array<Record<string, unknown>>
     expect(row).toMatchObject({ disconnected: true, readable: false, writable: 'revoked' })
+    expect(row).not.toHaveProperty('writableReason')
   })
 
   it('omits terminals in a folder the operator blocked', async () => {
@@ -381,7 +419,12 @@ describe('AC-B1-6 — list_terminals and get_session.terminals', () => {
     await spawn({ folder: folderA }, ctx())
     h.procs[0].emitExit(7)
     const [row] = body(await list({}, ctx())).terminals as Array<Record<string, unknown>>
-    expect(row).toMatchObject({ state: 'exited', exit: { code: 7, reason: 'natural' } })
+    expect(row).toMatchObject({
+      state: 'exited',
+      exit: { code: 7, reason: 'natural' },
+      writable: 'off',
+      writableReason: 'exited'
+    })
   })
 
   it('get_session.terminals lists exactly the connected terminals that session owns', async () => {

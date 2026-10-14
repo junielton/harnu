@@ -73,23 +73,23 @@ export interface RegisterTerminalInput {
   size: { cols: number; rows: number }
 }
 
+/** Why `writable` is `'off'` (spec §4.2). Present exactly when it is. */
+export type WritableReason = 'exited' | 'read-not-enabled' | 'kill-switch'
+
 /** What the caller may do with a terminal right now (spec §6.1). */
-export interface TerminalAccess {
-  readable: boolean
-  /**
-   * `free` — send without asking. `confirm` — send after one operator confirm (unit B6).
-   * `revoked` — the operator disconnected it. `off` — writing is not available: the
-   * kill-switch is off, the terminal has exited, or it is an operator-opened terminal the
-   * folder has not opted in to.
-   */
-  writable: 'free' | 'confirm' | 'revoked' | 'off'
-}
+export type TerminalAccess =
+  | { readable: boolean; writable: 'free' | 'confirm' | 'revoked'; writableReason?: undefined }
+  | { readable: boolean; writable: 'off'; writableReason: WritableReason }
 
 /**
  * Per-terminal access, from the registry record plus the two operator prefs that live outside
  * it. `readOptIn` is the folder's `agentTerminalRead` (unit B4); `writesEnabled` is the global
  * kill-switch `agentTerminalWrites` (unit B7). Until those land the caller passes `false` /
  * `true`, which is exactly their defaults.
+ *
+ * `free` — a send runs with no prompt. `confirm` — a send raises the operator confirm (unit B6).
+ * `revoked` — the operator disconnected it. `off` — writes are not possible right now, and
+ * `writableReason` says why.
  */
 export function terminalAccess(
   rec: Pick<TerminalRecord, 'origin' | 'disconnected' | 'state'>,
@@ -97,8 +97,9 @@ export function terminalAccess(
 ): TerminalAccess {
   if (rec.disconnected) return { readable: false, writable: 'revoked' }
   const readable = rec.origin === 'agent' || prefs.readOptIn
-  if (!readable) return { readable: false, writable: 'off' }
-  if (rec.state === 'exited' || !prefs.writesEnabled) return { readable, writable: 'off' }
+  if (!readable) return { readable, writable: 'off', writableReason: 'read-not-enabled' }
+  if (rec.state === 'exited') return { readable, writable: 'off', writableReason: 'exited' }
+  if (!prefs.writesEnabled) return { readable, writable: 'off', writableReason: 'kill-switch' }
   return { readable, writable: rec.origin === 'agent' ? 'free' : 'confirm' }
 }
 
@@ -122,7 +123,6 @@ const REPLY_UNIT = [
   String.raw`\x1b\][^\x1b\x07]*(?:\x07|\x1b\\)`
 ].join('|')
 
-// eslint-disable-next-line no-control-regex
 const WHOLLY_REPLY_RE = new RegExp(`^(?:${REPLY_UNIT})+$`)
 
 /**
@@ -155,6 +155,8 @@ export class TerminalRegistry {
   /** `destroy` was requested for these ptyIds before the kill (spec §3.2, R19). */
   private readonly closing = new Set<string>()
   private readonly oscCarry = new Map<string, string>()
+  /** Agent-terminal slots promised to a spawn that has not registered yet, per folder. */
+  private readonly pending = new Map<string, number>()
 
   constructor(private readonly now: () => number = Date.now) {}
 
@@ -226,6 +228,25 @@ export class TerminalRegistry {
       if (r.origin === 'agent' && r.state === 'running' && r.folder === folder) n++
     }
     return n
+  }
+
+  /**
+   * Claim one of `max` live-agent-terminal slots in `folder`, synchronously. Spawning a PTY is
+   * asynchronous, so counting only registered terminals would let parallel calls all pass the
+   * limit before any of them registers; a reservation closes that window. Every successful
+   * reserve must be paired with exactly one {@link releaseSlot}.
+   */
+  reserveSlot(folder: string, max: number): boolean {
+    if (this.liveAgentCount(folder) + (this.pending.get(folder) ?? 0) >= max) return false
+    this.pending.set(folder, (this.pending.get(folder) ?? 0) + 1)
+    return true
+  }
+
+  /** Give a reserved slot back (the terminal is now registered, or the spawn failed). */
+  releaseSlot(folder: string): void {
+    const n = (this.pending.get(folder) ?? 0) - 1
+    if (n > 0) this.pending.set(folder, n)
+    else this.pending.delete(folder)
   }
 
   /** Every terminal a session owns, in creation order. */
