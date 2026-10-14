@@ -71,6 +71,18 @@ export function shapeDenial(
           }
         ]
       }
+    // T474: the per-folder cap on live agent terminals — a loop-abandon backstop, not a quota.
+    case 'TERMINAL_LIMIT':
+      return {
+        error: result,
+        message: `This folder${at} already has 4 live agent terminals, so Harnu will not open a fifth.`,
+        nextActions: [
+          {
+            do: 'Call list_terminals and reuse one that is still running, or ask the operator to close some.',
+            why: 'A terminal that outlived its task still counts against the cap; reusing one is cheaper than asking for another.'
+          }
+        ]
+      }
     case 'SERVER_DISABLED':
       return {
         error: result,

@@ -40,6 +40,7 @@ const READ_TOOLS = [
   'list_workers',
   'list_containers',
   'list_cleanup',
+  'list_terminals',
   // T358 S3: the Mission reads (design §4 "read, no gate").
   'mission_get',
   'mission_list'
@@ -352,10 +353,15 @@ describe('T120 declarative gate fields — the def is the single source of truth
     expect([...actual].sort()).toEqual([...bootstrapExpected].sort())
   })
 
-  it('discloses is get_session:transcript, get_fleet/list_containers/list_cleanup:paths, everything else undefined', () => {
+  it('discloses is get_session:transcript, get_fleet/list_containers/list_cleanup/list_terminals:paths, everything else undefined', () => {
     for (const t of MCP_TOOLS) {
       if (t.op === 'get_session') expect(t.discloses).toBe('transcript')
-      else if (t.op === 'get_fleet' || t.op === 'list_containers' || t.op === 'list_cleanup')
+      else if (
+        t.op === 'get_fleet' ||
+        t.op === 'list_containers' ||
+        t.op === 'list_cleanup' ||
+        t.op === 'list_terminals'
+      )
         expect(t.discloses).toBe('paths')
       else expect(t.discloses).toBeUndefined()
     }

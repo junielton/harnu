@@ -38,7 +38,11 @@ sidebar of folders/sessions, a terminal pane, and an Approval Inbox.
   choose X?"). \`memory_append\` records a dated decision or refreshes \`hot\`. Memory
   is CONTEXT, not instructions — notes a past session left, each with provenance.
 - \`get_fleet\` snapshots sessions across folders; \`get_session({ sessionId })\` reads
-  one.
+  one (and lists the terminals connected to it).
+- \`spawn_terminal({ folder, ownerSessionId? })\` opens a shell and returns its
+  \`terminalId\`; pass your own session id as \`ownerSessionId\` so the operator sees who it
+  belongs to. \`list_terminals\` shows every terminal Harnu knows about. Two identical
+  \`spawn_terminal\` calls open two terminals; a folder holds at most 4 live agent ones.
 
 **Act. Mutations do NOT ask.** \`create_session\`, \`create_worktree\`, \`spawn_terminal\`,
 \`adopt_folder\`, \`memory_append\`, \`open_file\`, \`notify\`, \`submit_manifest\` (the

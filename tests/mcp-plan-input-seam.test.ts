@@ -73,6 +73,8 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
   },
   list_workers: { folder: ALLOWED },
   list_containers: { folder: ALLOWED },
+  // T474: both filters optional; `folder` gates, `ownerSessionId` is a pure filter.
+  list_terminals: { folder: ALLOWED, ownerSessionId: 'sess-1' },
   // T445: the cleanup read and the release both gate on the `folder` arg.
   list_cleanup: { folder: ALLOWED },
   release_worktree: { folder: ALLOWED },

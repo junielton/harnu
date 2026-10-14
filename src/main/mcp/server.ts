@@ -76,7 +76,7 @@ import {
 } from './prefs'
 import { appendAudit, getAuditLog, serializeForPersist, parseFromPersist } from './audit-log'
 import { withDeadline, TOOL_CALL_DEADLINE_MS, createDeadlineFlag } from './deadline'
-import { deriveCallId, beginCall, completeCall, wasRecentlyFailed } from './idempotency-registry'
+import { callIdFor, beginCall, completeCall, wasRecentlyFailed } from './idempotency-registry'
 import {
   MCP_SERVER_NAME,
   buildHarnuMcpConfig,
@@ -808,9 +808,10 @@ async function actuate(
 
   // Reads never mutate, so they never derive a callId and skip the registry
   // entirely — dedup only ever applies to a MUTATING verb's retry.
-  let callId: string | undefined
-  if (def.mutates) {
-    callId = deriveCallId(def.op, ctx.folder, args, strField(args, 'idempotencyKey'))
+  // T474: a verb whose effect is "make another one" (`spawn_terminal`) opts out — a replay
+  // would hand back the ACK of a terminal that may be long dead.
+  const callId = callIdFor(def, ctx.folder, args)
+  if (callId) {
     // Peek BEFORE beginCall — beginCall re-arms a live 'failed' entry to
     // 'in-flight' as a side effect, so the "this is a retry-after-failure"
     // signal only exists to read right now.
