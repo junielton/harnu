@@ -405,6 +405,13 @@ describe('G1 / G2: a first row the raw cap reads as meta-only is withheld, never
     })
   }
 
+  it('a wrapper never closed in a row over RAW_MAX gives null, not its content', () => {
+    for (const tag of ['system-reminder', 'command-args', 'local-command-stdout']) {
+      const f = firstThenNext(`<${tag}>${filler(RAW_MAX + 100)} still inside it`)
+      expect(f.row.firstPrompt, tag).toBeNull()
+    }
+  })
+
   it('a <command-name> closing past RAW_MAX still names the command, as the reader does', () => {
     const f = firstThenNext(`<command-name>/hello</command-name> ${filler(RAW_MAX + 100)}`)
     expect(f.row.firstPrompt).toBe('/hello')

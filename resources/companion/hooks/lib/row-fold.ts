@@ -477,8 +477,10 @@ function openWrapper(s: string): boolean {
  *
  * The command name is looked for in the WHOLE text (one linear scan), so a `<command-name>` past
  * RAW_MAX still names the command as the reader's does. The rest is read from the text cut at
- * RAW_MAX; when that cut leaves a meta wrapper open (its closing lies past the cap), the reader
- * would strip it and show what follows, so the first prompt is withheld rather than wrong (F4).
+ * RAW_MAX. When that cut leaves a meta wrapper open (its closing lies past the cap), or what it
+ * kept is meta-only (the real text lies past the cut), the reader would show text this view does
+ * not have, so the first prompt is withheld rather than wrong (F4, G1): `null` is the only value
+ * a cut row can take in place of the reader's text, never another row's.
  */
 function firstCandidate(r: AppendedRow): string | null {
   const kind = r.origin?.kind
@@ -492,8 +494,11 @@ function firstCandidate(r: AppendedRow): string | null {
   if (cmd !== '') return cmd
   const bounded = wholeWords(text, RAW_MAX)
   if (bounded === null) return null
-  if (bounded.length < text.length && openWrapper(bounded)) return null
-  return stripMetaWrappers(bounded)
+  const stripped = stripMetaWrappers(bounded)
+  // Cut text that reads as meta-only, or leaves a wrapper open, has its real text past the cut:
+  // withheld, so the row still counts as the first and the next row's prompt is never taken (G1).
+  if (bounded.length < text.length && (stripped === '' || openWrapper(bounded))) return null
+  return stripped
 }
 
 /**
