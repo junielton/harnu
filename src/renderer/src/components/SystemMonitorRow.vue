@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, ChevronRight, TriangleAlert, Pause, RadioTower, X } from 'lucide-vue-next'
 import Button from './ui/Button.vue'
-import type { HeapSample } from '../../../preload'
+import type { DeclinedView, HeapSample, ParkNegotiation } from '../../../preload'
 import type { CompanionState } from '../../../main/companion/companion-state-core'
 import { monitorCell } from '../lib/companion-view'
 import {
@@ -12,7 +12,10 @@ import {
   formatIdle,
   heapPercent,
   heapBarClass,
-  isNoteworthyLiveReason
+  isNoteworthyLiveReason,
+  declinedChipText,
+  declinedTooltip,
+  parkedExplanation
 } from './system-monitor-format'
 
 /**
@@ -56,6 +59,10 @@ const props = withDefaults(
     isSelf?: boolean
     /** Session rows only — the Harnu mod state (T389 P1W4); null/absent renders nothing. */
     companion?: CompanionState | null
+    /** Live session rows only — set while `reason` is `declined` (T456): feeds the chip. */
+    declined?: DeclinedView | null
+    /** Parked session rows only — how the park came about, from the park ledger (T456). */
+    negotiation?: ParkNegotiation | null
   }>(),
   {
     path: null,
@@ -69,7 +76,9 @@ const props = withDefaults(
     expanded: false,
     parkable: false,
     isSelf: false,
-    companion: null
+    companion: null,
+    declined: null,
+    negotiation: null
   }
 )
 
@@ -80,9 +89,26 @@ const { t } = useI18n()
 const heapPct = computed(() => heapPercent(props.heap))
 const heapFillClass = computed(() => heapBarClass(props.heap?.status))
 
+/** T456: "Asked to stay · 2 background tasks" — replaces the mono reason chip for a declined row. */
+const declinedChip = computed(() =>
+  props.state === 'live' && props.reason === 'declined' && props.declined
+    ? {
+        text: declinedChipText(props.declined, t),
+        title: declinedTooltip(props.declined, t)
+      }
+    : null
+)
 /** Live rows only: a chip worth surfacing next to the state pip — see `isNoteworthyLiveReason`. */
 const showLiveReasonChip = computed(
-  () => props.state === 'live' && !!props.reason && isNoteworthyLiveReason(props.reason)
+  () =>
+    props.state === 'live' &&
+    !!props.reason &&
+    isNoteworthyLiveReason(props.reason) &&
+    props.reason !== 'declined'
+)
+/** T456: the parked row's explanation clause; absent when the ledger recorded nothing. */
+const parkedClause = computed(() =>
+  props.negotiation ? parkedExplanation(props.negotiation, t) : null
 )
 /** Live rows only: `Harnu mod live`, the reason in the tooltip. Quiet: never a warning colour. */
 const companionCell = computed(() =>
@@ -192,7 +218,20 @@ const showPingAction = computed(
         <span v-if="companionCell" class="text-[11px] text-text-3" :title="companionCell.title">{{
           companionCell.text
         }}</span>
-        <span v-if="showLiveReasonChip" class="flex items-center gap-1 text-[11px] text-text-3">
+        <span v-if="declinedChip" class="flex items-center gap-1 text-[11px] text-text-3">
+          <span
+            class="cursor-help rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-text-2"
+            :title="declinedChip.title"
+            >{{ declinedChip.text }}</span
+          >
+          <span v-if="idleMs > 0">{{
+            t('systemMonitor.idleFor', { duration: formatIdle(idleMs) })
+          }}</span>
+        </span>
+        <span
+          v-else-if="showLiveReasonChip"
+          class="flex items-center gap-1 text-[11px] text-text-3"
+        >
           <span class="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-text-2">{{
             reason
           }}</span>
@@ -253,6 +292,7 @@ const showPingAction = computed(
         class="mr-1.5 inline-block rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-text-2"
         >{{ reason }}</span
       >
+      <template v-if="parkedClause"> · {{ parkedClause }} </template>
       <template v-if="savedBytes !== null">
         ·
         <span class="text-green">{{

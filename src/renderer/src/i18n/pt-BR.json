@@ -2092,6 +2092,68 @@
     "actions": {
       "park": "Parar agora",
       "close": "Fechar"
+    },
+    "declined": {
+      "chip": "Pediu para ficar · {reasons}",
+      "more": "+{count}",
+      "tooltipTitle": "Pediu para ficar. Disse que está ocupada com:",
+      "attempts": "Perguntada {count} de {max} vezes",
+      "retry": "Pergunta de novo em {duration}",
+      "reason": {
+        "backgroundTask": {
+          "one": "{count} tarefa em segundo plano",
+          "other": "{count} tarefas em segundo plano"
+        },
+        "backgroundSubagent": {
+          "one": "{count} subagente em segundo plano",
+          "other": "{count} subagentes em segundo plano"
+        },
+        "scheduledWakeup": {
+          "one": "{count} despertar agendado",
+          "other": "{count} despertares agendados"
+        },
+        "permission": {
+          "one": "{count} pedido de permissão",
+          "other": "{count} pedidos de permissão"
+        }
+      }
+    },
+    "reasonPlain": {
+      "backgroundTask": "tarefa em segundo plano",
+      "backgroundSubagent": "subagente em segundo plano",
+      "scheduledWakeup": "despertar agendado",
+      "permission": "pedido de permissão",
+      "turn": "turno em andamento",
+      "remoteSurface": "cliente remoto conectado",
+      "unknown": "ocupada"
+    },
+    "parked": {
+      "free": {
+        "none": "Parada; a sessão disse que estava livre",
+        "after": {
+          "one": "Parada quando a sessão ficou livre, após {count} recusa ({reasons})",
+          "other": "Parada quando a sessão ficou livre, após {count} recusas ({reasons})"
+        }
+      },
+      "silent": {
+        "none": "Parada; nenhum trabalho em segundo plano foi informado",
+        "after": {
+          "one": "Parada após {count} recusa ({reasons}); depois não informou nada ocupado",
+          "other": "Parada após {count} recusas ({reasons}); depois não informou nada ocupado"
+        }
+      },
+      "limit": {
+        "one": "Parada após {count} recusa ({reasons})",
+        "other": "Parada após {count} recusas ({reasons})"
+      },
+      "memoryPressure": {
+        "none": "Parada por pressão de memória",
+        "busy": "Parada por pressão de memória; a sessão disse que estava ocupada"
+      },
+      "operator": {
+        "none": "Parada por você",
+        "override": "Parada por você; ela tinha pedido para ficar ({reasons})"
+      }
     }
   },
   "hibernationPolicy": {
@@ -2109,7 +2171,30 @@
       "label": "Limite de ociosidade (varredura)",
       "hint": "Por quanto tempo uma sessão pode ficar ociosa antes que a varredura periódica a hiberne, independente do número de sessões."
     },
-    "minutesSuffix": "min"
+    "minutesSuffix": "min",
+    "ask": {
+      "eyebrow": "Perguntar antes de hibernar",
+      "intro": "Antes de hibernar uma sessão fria, o Harnu verifica se ela ainda espera trabalho em segundo plano ou um despertar agendado e, em vez de encerrá-la, verifica de novo mais tarde. Estes limites impedem que isso prenda memória para sempre.",
+      "enabled": {
+        "label": "Perguntar à sessão antes de hibernar",
+        "hint": "Desligado hiberna como antes, sem verificar."
+      },
+      "factsOnly": "No momento só lê tarefas em segundo plano e despertares; a sessão em si não é consultada.",
+      "maxDeclines": {
+        "label": "Máximo de perguntas por sessão",
+        "hint": "Quantas vezes uma sessão pode pedir para ficar antes de ser hibernada mesmo assim. Selecioná-la zera a contagem."
+      },
+      "maxDeferMs": {
+        "label": "Maior adiamento",
+        "hint": "O máximo que uma sessão pode ficar além do limite de ociosidade, qualquer que seja a resposta."
+      },
+      "pressureFloorMb": {
+        "label": "Piso de memória",
+        "hint": "Abaixo desta memória disponível, a sessão é hibernada na hora, sem ser consultada."
+      },
+      "timesSuffix": "vezes",
+      "mbSuffix": "MB"
+    }
   },
   "cleanup": {
     "title": "Limpeza",

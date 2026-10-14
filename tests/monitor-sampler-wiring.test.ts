@@ -48,7 +48,8 @@ vi.mock('../src/main/pty', () => ({
 }))
 
 vi.mock('../src/main/hibernation', () => ({
-  hibernatedKeys: () => new Set(['sess-parked'])
+  hibernatedKeys: () => new Set(['sess-parked']),
+  parkHistory: () => []
 }))
 
 type Mod = typeof import('../src/main/monitor/sampler')
@@ -82,11 +83,18 @@ describe('registerMonitorHandlers — the always-on heartbeat', () => {
     expect(typeof payload.limitBytes).toBe('number')
   })
 
-  it('registers monitor:start/stop/policyGet/policySet handlers — monitor:park is GONE (BUG-69)', () => {
+  it('registers monitor:start/stop/policyGet/policySet/negotiationGet/negotiationSet handlers — monitor:park is GONE (BUG-69)', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mod.registerMonitorHandlers(getWindow as any)
     expect([...h.ipcHandlers.keys()].sort()).toEqual(
-      ['monitor:policyGet', 'monitor:policySet', 'monitor:start', 'monitor:stop'].sort()
+      [
+        'monitor:negotiationGet',
+        'monitor:negotiationSet',
+        'monitor:policyGet',
+        'monitor:policySet',
+        'monitor:start',
+        'monitor:stop'
+      ].sort()
     )
   })
 })

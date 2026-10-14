@@ -14,8 +14,9 @@ import { DEFAULT_NEGOTIATION } from '../park-negotiation-core'
  * restart, no rebuild.
  *
  * T456 (spec §9.1): the three negotiation bounds live in the same file beside the policy fields,
- * clamped the same way, and are read by the park coordinator on every decision. No UI edits them
- * yet (W3); a policy edit keeps whatever the file holds.
+ * clamped the same way, and are read by the park coordinator on every decision. Settings →
+ * Hibernation policy edits them through `negotiation-settings.ts` (W3); a policy edit keeps
+ * whatever the file holds.
  */
 
 /** The operator's bounds on a negotiated park (spec §6.2). */
@@ -120,6 +121,17 @@ export function setPolicy(patch: Partial<Policy>): Policy {
   cached = next
   persist(next)
   return next
+}
+
+/**
+ * T456 W3: set the negotiation bounds (the Settings → Hibernation policy group). Clamped like the
+ * rest and persisted beside the policy fields, which are left untouched.
+ */
+export function setNegotiationBounds(patch: Partial<NegotiationBounds>): NegotiationBounds {
+  const policy = load()
+  cachedBounds = applyBoundsPatch(patch, cachedBounds ?? DEFAULT_BOUNDS)
+  persist(policy)
+  return { ...cachedBounds }
 }
 
 /** T456: the negotiation bounds, read on every park decision (cached with the policy, so a hand edit of the file applies after a restart). */
