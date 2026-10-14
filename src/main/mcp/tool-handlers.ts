@@ -66,6 +66,7 @@ import {
 } from '../terminal-registry'
 import { canStillWrite, gateTerminalOp } from '../terminal-gate-core'
 import { resolveTerminalGate } from '../terminal-gate'
+import { terminalLeases } from '../terminal-lease'
 import { scrubTerminalText } from '../scrub-terminal'
 import { paneSplitFor } from '../terminal-lifecycle'
 import { buildSend } from '../terminal-keys'
@@ -278,6 +279,11 @@ export interface ToolHandlerCtx {
    * `server.ts`'s `parkMutationConfirm`/`runOptsFor` for how these are built.
    */
   opts?: {
+    /**
+     * T474 B6: the call was let through by the operator's write lease (the ask-mode path). The
+     * handler checks that lease again right before it writes, for any terminal origin.
+     */
+    viaLease?: boolean
     worktreeInherit?: { optedOut: boolean }
     manifest?: {
       resolved: ManifestCardDisclosure[]
@@ -1097,6 +1103,14 @@ const readTerminalHandler: Handler = async (args, ctx) => {
   })
 }
 
+/**
+ * T484: whether a send to `rec` must be covered by the operator's lease. Always for a terminal
+ * the operator opened; for an agent terminal only when the plan let the call through on a lease
+ * (`ask` mode). A free agent terminal needs none.
+ */
+const needsLease = (rec: { origin: string }, ctx: ToolHandlerCtx): boolean =>
+  rec.origin === 'operator' || ctx.opts?.viaLease === true
+
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
@@ -1128,10 +1142,16 @@ const sendTerminalHandler: Handler = async (args, ctx) => {
   try {
     pruneScreenModels(known)
     terminalWriteQueue.prune(known)
+    terminalLeases.prune(known)
 
     const first = await resolveTerminalGate(terminalId)
     const refusal = gateTerminalOp('send_terminal', first.state)
     if (refusal || !first.rec) return steerError(refusal ?? 'TERMINAL_NOT_FOUND', ctx.folder)
+    // Last line of defence for the operator's say-so (spec §6.3): the plan lets a send through
+    // only under an active lease. If it ended in the gap between the plan and now, nothing is typed.
+    if (needsLease(first.rec, ctx) && !first.state.leaseActive) {
+      return steerError('TERMINAL_LEASE_ENDED', ctx.folder)
+    }
     model = ensureTerminalScreenModel(terminalId)
     if (!model) return steerError('TERMINAL_NOT_FOUND', ctx.folder)
 
@@ -1152,6 +1172,10 @@ const sendTerminalHandler: Handler = async (args, ctx) => {
         const again = await resolveTerminalGate(terminalId)
         const lateRefusal = gateTerminalOp('send_terminal', again.state)
         if (lateRefusal) return steerError(lateRefusal, ctx.folder)
+        // …and the lease may have ended while this call waited its turn (after the ticket wait).
+        if (again.rec && needsLease(again.rec, ctx) && !again.state.leaseActive) {
+          return steerError('TERMINAL_LEASE_ENDED', ctx.folder)
+        }
         prep = await model.prepareSend()
         sendMark = prep.cursor
         const b = buildSend(
@@ -1176,7 +1200,10 @@ const sendTerminalHandler: Handler = async (args, ctx) => {
           stopped = canStillWrite(rec, {
             folderBlocked: rec !== undefined && isFolderDenied(rec.folder, blocked, os.homedir()),
             deadlineFired: ctx.deadlineFlag?.fired === true,
-            readOptIn: rec !== undefined && optedIn.has(rec.folder)
+            readOptIn: rec !== undefined && optedIn.has(rec.folder),
+            // The lease table answers synchronously, so it is read here, last, with the record.
+            leaseNeeded: rec !== undefined && needsLease(rec, ctx),
+            leaseActive: rec !== undefined && terminalLeases.isActive(terminalId, rec.ptyId)
           })
           return stopped === null
         }
@@ -1184,8 +1211,11 @@ const sendTerminalHandler: Handler = async (args, ctx) => {
           write: async (data) => {
             if (!(await mayWrite())) return false
             const ok = writeTerminalPty(terminalId, data)
-            if (ok) terminalWriteQueue.noteWrite(terminalId, scope)
-            else {
+            if (ok) {
+              terminalWriteQueue.noteWrite(terminalId, scope)
+              // A write under a lease keeps it alive: it ends 10 minutes after the LAST write.
+              terminalLeases.noteWrite(terminalId)
+            } else {
               // The PTY ended, or the operator disconnected, between the check and the write.
               stopped = terminalRegistry.get(terminalId)?.disconnected
                 ? 'TERMINAL_DISCONNECTED'

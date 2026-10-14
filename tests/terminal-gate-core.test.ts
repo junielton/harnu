@@ -382,14 +382,20 @@ describe('AC-B4-4 — block, kill-switch, and the observe allowlist', () => {
 })
 
 describe('canStillWrite — the one check before every write of a send', () => {
-  const ok = { folderBlocked: false, deadlineFired: false, readOptIn: false }
+  const ok = {
+    folderBlocked: false,
+    deadlineFired: false,
+    readOptIn: false,
+    leaseNeeded: false,
+    leaseActive: false
+  }
 
   it('lets a running, connected agent terminal be typed into', () => {
     expect(canStillWrite(agent, ok)).toBeNull()
   })
 
   it('refuses in the documented order: deadline, swept, blocked folder, then the gate', () => {
-    const everything = { folderBlocked: true, deadlineFired: true, readOptIn: false }
+    const everything = { ...ok, folderBlocked: true, deadlineFired: true }
     expect(canStillWrite(undefined, everything)).toBe('DEADLINE_FIRED')
     expect(canStillWrite(undefined, { ...everything, deadlineFired: false })).toBe(
       'TERMINAL_NOT_FOUND'
@@ -401,8 +407,21 @@ describe('canStillWrite — the one check before every write of a send', () => {
     expect(canStillWrite({ ...agent, disconnected: true }, ok)).toBe('TERMINAL_DISCONNECTED')
   })
 
-  it('still refuses a terminal the operator opened (typing into those is unit B6)', () => {
-    expect(canStillWrite(operator, { ...ok, readOptIn: true })).toBe('TERMINAL_WRITE_NOT_ENABLED')
+  it('an operator terminal needs its read opt-in AND a live lease (T484)', () => {
     expect(canStillWrite(operator, ok)).toBe('TERMINAL_READ_NOT_ENABLED')
+    const opted = { ...ok, readOptIn: true, leaseNeeded: true }
+    expect(canStillWrite(operator, opted)).toBe('TERMINAL_LEASE_ENDED')
+    expect(canStillWrite(operator, { ...opted, leaseActive: true })).toBeNull()
+  })
+
+  it('a lease that ends is refused for any origin that rides on one (ask mode)', () => {
+    expect(canStillWrite(agent, { ...ok, leaseNeeded: true })).toBe('TERMINAL_LEASE_ENDED')
+    expect(canStillWrite(agent, { ...ok, leaseNeeded: true, leaseActive: true })).toBeNull()
+  })
+
+  it('the lease check ranks below the gate: an exited terminal is TERMINAL_EXITED', () => {
+    expect(canStillWrite({ ...agent, state: 'exited' }, { ...ok, leaseNeeded: true })).toBe(
+      'TERMINAL_EXITED'
+    )
   })
 })

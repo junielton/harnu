@@ -102,7 +102,8 @@ export function resolveTerminalGateState(
 }
 
 /** Why a send stopped before one of its writes: a gate refusal, or one of two live conditions. */
-export type WriteStopReason = TerminalDenyReason | 'FOLDER_NOT_ALLOWED' | 'DEADLINE_FIRED'
+export type WriteStopReason =
+  TerminalDenyReason | 'FOLDER_NOT_ALLOWED' | 'DEADLINE_FIRED' | 'TERMINAL_LEASE_ENDED'
 
 /**
  * The one question asked right before EVERY `pty.write` of a send, never earlier and never once
@@ -118,15 +119,29 @@ export type WriteStopReason = TerminalDenyReason | 'FOLDER_NOT_ALLOWED' | 'DEADL
  */
 export function canStillWrite(
   rec: Pick<TerminalRecord, 'origin' | 'disconnected' | 'state' | 'ownerSessionId'> | undefined,
-  ctx: { folderBlocked: boolean; deadlineFired: boolean; readOptIn: boolean }
+  ctx: {
+    folderBlocked: boolean
+    deadlineFired: boolean
+    readOptIn: boolean
+    /**
+     * The send rides on the operator's write lease (an operator-opened terminal, or any terminal
+     * the plan let through on a lease), and whether that lease is active right now for the PTY
+     * that runs this terminal. The lease can end inside the barrier or the Esc gap: a folder
+     * block, a read opt-out, the app quitting.
+     */
+    leaseNeeded: boolean
+    leaseActive: boolean
+  }
 ): WriteStopReason | null {
   if (ctx.deadlineFired) return 'DEADLINE_FIRED'
   if (!rec) return 'TERMINAL_NOT_FOUND'
   if (ctx.folderBlocked) return 'FOLDER_NOT_ALLOWED'
-  return gateTerminalOp(
+  const refusal = gateTerminalOp(
     'send_terminal',
     resolveTerminalGateState(rec, { readOptIn: ctx.readOptIn, writesEnabled: true })
   )
+  if (refusal) return refusal
+  return ctx.leaseNeeded && !ctx.leaseActive ? 'TERMINAL_LEASE_ENDED' : null
 }
 
 /**

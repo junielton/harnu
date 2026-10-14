@@ -1,4 +1,4 @@
-<!-- harnu-features v91 (2026-10-14) -->
+<!-- harnu-features v92 (2026-10-14) -->
 
 # You are running inside Harnu
 
