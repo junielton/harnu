@@ -1,9 +1,11 @@
 # T485 — `list_keybindings` MCP verb + keybindings section in harnu-features
 
-> Written 2026-10-14. Card: roadmap/T485. Soft-depends on T486
-> (`docs/specs/T486-keybindings-coverage-pass.md`): ship after T486's table
-> expansion (unit U2) so the verb lists the full inventory. The verb itself works
-> on any table.
+> Written 2026-10-14; revision 2 the same day, after orchestrator review. Card:
+> roadmap/T485. **Ships after T486 U5b** (`docs/specs/T486-keybindings-coverage-pass.md`
+> §11). That is the one dependency, stated once. U5b is the last T486 unit that adds
+> table ids, so the verb lists the full inventory, and by then every T486 export it
+> reads exists: `labelKeyFor` and `group` (U1), `defaultKeysFor` and
+> `isNotInTerminal` (U5a).
 
 ## 1. Problem
 
@@ -97,14 +99,16 @@ Field rules:
 - `label` is read from `src/renderer/src/i18n/en.json` through the descriptor's
   `labelKey` (main already imports JSON — `resolveJsonModule` is on in the
   `@electron-toolkit` base config, and `src/main/companion/host.ts` imports a JSON
-  file). This depends on T486 U1 fixing `labelKey` so it resolves (T486 §4); before
-  that fix the label would be the raw key, so T485 ships after T486 U1 at minimum.
-  A missing label falls back to the id, never to the raw key.
+  file), resolving the `labelKey` that T486's `labelKeyFor` produces (T486 §4). A
+  missing label falls back to the id, never to the raw key.
 - `display` is `renderChordString(chord, { mac: true })` and `{ mac: false }`. Both
   are always returned: the session may be advising an operator on another machine.
-- `notInTerminal` is computed by the same exported predicate the Settings pane uses
-  (after T486: `!menu && !shield`). It inherits the pane's caveat (T486 §13 OQ-1):
-  on Linux/Windows a menu-backed Ctrl+letter chord can still be eaten by xterm.
+- `notInTerminal` is `isNotInTerminal(d)`, exported from `keybindings-core.ts` by T486
+  U5a (`!d.menu && !d.shield`), the same predicate the Settings pane badges. It is a
+  **best guess**, and T486 §7.1 states why: on Linux/Windows a menu-backed Ctrl+letter
+  chord may not fire over a focused terminal (xterm consumes it), and a renderer-only
+  Ctrl+Shift+letter chord may. If a follow-up makes the predicate platform-aware,
+  this field follows for free.
 - `warnings` is the resolve's `warnings` array verbatim. An unparseable file is one
   `not-array` warning with `detail: "invalid JSON"`; the defaults still apply.
 - Source of the table: `getResolvedKeybindings()` (the main-process cache the menu
@@ -158,9 +162,12 @@ from `design.md`: the user may have rebound it. Call `list_keybindings()` (no
 arguments). It returns every action `id` with its English `label`, the resolved
 chord in canonical form (`keys`) and as it renders on macOS and elsewhere
 (`display.mac` / `display.other`), the default, `source` (`default`, `override`,
-`unbound`), `reserved` (cannot be rebound), `notInTerminal` (a bound chord does not
-fire while the terminal has focus), `conflictsWith`, the absolute `path` of
-`keybindings.json` and the `warnings` Harnu raised reading it.
+`unbound`), `reserved` (cannot be rebound), `notInTerminal`, `conflictsWith`, the
+absolute `path` of `keybindings.json` and the `warnings` Harnu raised reading it.
+Treat `notInTerminal` as a best guess, not a promise: it is the Settings pane's
+marker. On Linux and Windows a Ctrl+letter chord may not fire while a terminal has
+focus even when it reads `false`, and a Ctrl+Shift+letter chord may fire even when it
+reads `true`. When it matters, tell the user to try it.
 
 To rebind, edit that file — there is no write verb. It is a JSON array (comments
 allowed) of `{ "key": "<chord>", "command": "<id>" }`, one entry per command, last one
@@ -229,13 +236,12 @@ Under `### Added` for the landing date:
 - [ ] AC-6 — No `label` is ever a raw i18n key (`keybindings.actions.…`) — verify: test
 - [ ] AC-7 — The verb takes no arguments and refuses unknown ones; it is never refused `FOLDER_NOT_ALLOWED` — verify: test
 - [ ] AC-8 — An `observe` Scheduler tick may call `list_keybindings`; the observe allowlist test passes — verify: test
-- [ ] AC-9 — No `set_keybinding` or `invoke_action` verb exists in `MCP_OPS` — verify: review
+- [ ] AC-9 — A test asserts `MCP_OPS` contains neither `set_keybinding` nor `invoke_action` — verify: test
 - [ ] AC-10 — `docs/harnu-features.md` carries the §6.2 section, lists the verb in the index, and its version marker is bumped — verify: test (verb roster) + review
 - [ ] AC-11 — `docs/user/agent-control.md` has the §7 section and `CHANGELOG.md` the §8 entry — verify: review
 - [ ] AC-12 — `npm run typecheck`, `npm run lint`, `npm run test` pass — verify: test
 
 ## 11. Open questions
 
-- **OQ-1 — `notInTerminal` accuracy on Linux/Windows.** Inherited from T486 §13 OQ-1.
-  The field mirrors the pane; if T486 later makes the predicate platform-aware, this
-  verb follows for free because it calls the same exported function.
+None. The former OQ-1 (`notInTerminal` accuracy) is now a stated fact in T486 §7.1,
+and §4.2 and §6.2 word the field as a best guess accordingly.

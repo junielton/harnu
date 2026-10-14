@@ -9,7 +9,8 @@
 T1 made Harnu's shortcuts rebindable, but only for the 26 actions that already had a
 chord or a Topbar button. Everything else the operator does in a day — open the
 jump palette, close a takeover, cycle between the terminal and a split pane, fork a
-session, rename a folder, open Cleanup, the Scheduler or the System Monitor — is
+session, rename a folder, open Cleanup, the Scheduler, the System Monitor or a given
+Settings tab — is
 **click-only**. There is no id to bind, so `keybindings.json` cannot reach it and the
 Settings pane cannot list it. An operator who lives in VS Code (F6, Shift+F10, F2,
 Ctrl+Enter, ``Ctrl+` ``) finds none of it.
@@ -20,7 +21,7 @@ Three defects make the surface worse than it looks:
    (`keybindings.actions.session.new`) instead of labels, in both locales. Every row
    is unreadable today.
 2. **The pane is a flat, unsearchable list.** At ~26 rows it is tolerable; at the
-   ~80 rows this card brings it is not. There is no way to ask "what holds Ctrl+J?".
+   113-row table this card brings (82 new ids) it is not. There is no way to ask "what holds Ctrl+J?".
 3. **The command palette carries six hand-written actions** that already drift from
    the real handlers (its "Resume last session" picks folder terminals; `App.vue`'s
    skips them). An unbound action is unreachable by keyboard because the palette
@@ -28,7 +29,8 @@ Three defects make the surface worse than it looks:
 
 And one documented behavior is false: `design.md` §6 says Esc dismisses a takeover
 through the App-level `closeAll()`. `closeAll()` has no caller; only the header X
-closes a takeover.
+closes a takeover. A second bug sits in the pane itself: pressing Esc while recording a
+chord closes Settings.
 
 ## 2. Who it's for
 
@@ -39,20 +41,22 @@ action by name — the palette becomes the discovery path for every unbound acti
 ## 3. What this delivers
 
 1. **Every user-invokable action has a stable id in the keybindings table**, including
-   the ones that ship unbound. The table, not the UI, is the inventory (re-derived
-   from code in the spec, §3).
+   the ones that ship unbound — 82 new ids, among them one per Settings tab. The
+   table, not the UI, is the inventory (re-derived from code in the spec, §3).
 2. **A small, deliberate set of new defaults**, chosen for VS Code parity and checked
    against xterm and the reserved set: `Cmd+Shift+F` jump palette, `Esc` close
    takeover, `F6`/`Shift+F6` pane focus, `Cmd+Shift+M` maximize the focused pane,
    `Cmd+Enter` open to the side, `Shift+F10` context menu, `F2` rename folder,
-   `Cmd+D` fork, `Cmd+Alt+S` Keyboard Shortcuts settings. Everything else ships
-   unbound.
+   `Cmd+Alt+S` Keyboard Shortcuts settings. Everything else ships unbound, including
+   fork (operator decision, 2026-10-14: Ctrl+D is EOF in every shell).
 3. **A terminal toggle** (`terminal.toggle`) with VS Code's Ctrl+J semantics, shipped
    **unbound** by operator decision, with the Ctrl+J/LF hazard documented in the pane
    hint and the user docs.
 4. **A searchable, grouped Keyboard Shortcuts pane** — search over label and chord,
    group headers, filter chips (Unbound / Conflicts / Customized) — and the raw-key
-   bug fixed for good, with a test that renders the real i18n catalog.
+   bug fixed for good, with a test that renders the real i18n catalog. The recorder
+   refuses chords that could never fire, and rows warn when a chord is taken from, or
+   kept by, the terminal.
 5. **A command palette generated from the table**: every palette-eligible action,
    with its resolved chord, reachable by typing its name.
 6. **Chords in tooltips** for buttons whose action has a chord, tracking rebinds live.
@@ -66,8 +70,8 @@ action by name — the palette becomes the discovery path for every unbound acti
   this card proves it does not need them.
 - Redesigning the palette's visuals; per-folder overrides; `when`-clauses; rebinding
   `terminalKeymap.ts` (copy/paste, Shift+Enter, font size).
-- Making the "not in terminal" marker platform-accurate (a finding of the spec, filed
-  as an open question, not built here).
+- Making the "not in terminal" marker platform-accurate. The spec proves it is wrong
+  off macOS and centralizes it in one predicate; the fix is a follow-up.
 - Localizing the native menu labels (they are English literals today).
 
 ## 5. How we know it worked
@@ -88,21 +92,24 @@ Harnu ships no product analytics, so success is verifiable by construction:
 
 ## 6. Cost & risk
 
-- **Cost:** six stacked PRs (spec §11), each ≤ ~500 lines. The table expansion and
-  the i18n labels for ~55 new ids are the bulk; the shield and the pane-focus model
-  are the subtle parts.
+- **Cost:** eight stacked PRs (spec §11), each ≤ ~500 lines. The table expansion and
+  the i18n labels for 82 new ids are the bulk; the Esc gating, the shield and the
+  pane-focus model are the subtle parts.
 - **Risk — stealing terminal keys.** Any capture-phase shield takes a chord from xterm
-  for good. Mitigated: only four actions are shielded (`pane.focusNext/Prev`,
-  `terminal.toggle`, `nav.back/forward`); F6 has no common TUI use; `terminal.toggle`
+  for good. Mitigated: only five actions are shielded (`pane.focusNext`,
+  `pane.focusPrev`, `terminal.toggle`, `nav.back`, `nav.forward`); F6 has no common TUI use; `terminal.toggle`
   is unbound; the pane hint names the hazard when a user binds a shielded action to a
   Ctrl+letter.
-- **Risk — Esc fights a takeover's own Esc.** Mitigated: the binding yields to any
-  text-entry target and to the `'modal'` scope, and takeovers with inner Esc
-  surfaces must stop propagation (spec §6.1 lists them).
+- **Risk — Esc fights a takeover's own Esc.** One Esc must close one layer. Mitigated:
+  the binding is disabled while any popover is open (popover state moves into the `ui`
+  store), yields to text fields and to the `'modal'` scope, and every takeover-internal
+  Esc handler that consumes Esc stops propagation, from a window capture listener the
+  way dialogs already do (spec §6.1 lists them). Unit tests cannot see this listener
+  ordering, so the Esc criteria also require a live check.
 - **Risk — Linux menu accelerators are weaker than T1 assumed.** On Linux/Windows an
   Electron accelerator only fires for a key the page left unhandled, and xterm
   handles every Ctrl+letter. Mitigated for this card by choosing defaults xterm leaves
   alone; the broader correction to T1's "menu-backed fires over the terminal" claim
-  is an open question (spec §13).
+  is stated in the spec (§7.1) and left to a follow-up.
 - **Risk — table bloat in the native menu.** New actions are `menu: false` unless the
   spec names a menu item; only one native item is added (`view.settings.keybindings`).
