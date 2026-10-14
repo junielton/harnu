@@ -37,6 +37,13 @@ vi.mock('electron', () => ({
   }
 }))
 
+// `claude-new` runs the real `createPty`, which needs the `claude` CLI: pin the resolver so the
+// test does not depend on it being installed (CI has none).
+vi.mock('../src/main/claude-cli', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  resolveClaudePath: async (): Promise<string> => '/usr/bin/claude'
+}))
+
 vi.mock('node-pty', () => ({
   spawn: (): unknown => {
     const dataCbs: Array<(d: string) => void> = []
