@@ -121,6 +121,7 @@ import type { FolderEntry } from '../folder-model'
 import { scanFolders } from '../claude-reader'
 import { readUserProjects, setUserProjectInheritAgentControl } from '../user-projects'
 import { setMcpArgsProvider } from '../pty'
+import { terminalRegistry } from '../terminal-registry'
 import { previewWorktreeCommands, worktreeInheritOfferForTarget } from '../worktree-ipc'
 import { writeWorktreeInheritControl } from './worktree-inherit-prefs'
 
@@ -988,6 +989,11 @@ async function handleToolCall(def: McpToolDef, rawArgs: unknown): Promise<CallTo
     // session the SAME way `message_session` targets a recipient — the TARGET's
     // owning folder is the anchor, never a caller-supplied one.
     gateFolder = resolveSessionGateFolder(folders, strField(args, 'sessionId') ?? '')
+  } else if (def.op === 'read_terminal') {
+    // T474 B3: the verb carries only a `terminalId`, so the gate anchor is the terminal's OWN
+    // folder, from the registry. An unknown id leaves it undefined; the handler answers
+    // TERMINAL_NOT_FOUND (a read never raises a confirm, so there is nothing to pre-empt).
+    gateFolder = terminalRegistry.get(strField(args, 'terminalId') ?? '')?.folder
   } else if (def.op === 'update_worker' || def.op === 'delete_worker') {
     // T316: same reasoning as the block above, applied to a worker instead of
     // a session — the verb carries only `id`, so the gate anchor is the

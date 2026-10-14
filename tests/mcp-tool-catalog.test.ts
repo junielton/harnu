@@ -367,9 +367,11 @@ describe('T120 declarative gate fields — the def is the single source of truth
     }
   })
 
-  it('disclosesTranscript is get_session/memory_read/memory_query only', () => {
+  it('disclosesTranscript is get_session/memory_read/memory_query/read_terminal only', () => {
     const actual = MCP_TOOLS.filter((t) => t.disclosesTranscript).map((t) => t.op)
-    expect([...actual].sort()).toEqual(['get_session', 'memory_query', 'memory_read'].sort())
+    expect([...actual].sort()).toEqual(
+      ['get_session', 'memory_query', 'memory_read', 'read_terminal'].sort()
+    )
   })
 
   it('HARD INVARIANT: submit_manifest is NEVER grantable — but IS silently allowed (T187)', () => {

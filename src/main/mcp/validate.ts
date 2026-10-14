@@ -920,6 +920,37 @@ export function parseListTerminals(input: unknown): ParseResult<ListTerminalsArg
   return { ok: true, value }
 }
 
+/** Validated args for the `read_terminal` read tool (T474 B3). */
+export interface ReadTerminalArgs {
+  folder?: string
+  terminalId: string
+  mode?: 'tail' | 'screen' | 'since'
+  lines?: number
+  since?: string
+  maxChars?: number
+}
+
+const ReadTerminalSchema = z
+  .object({
+    folder: absolutePathSchema.optional(),
+    terminalId: z.string().min(1),
+    mode: z.enum(['tail', 'screen', 'since']).optional(),
+    lines: z.number().int().min(1).max(500).optional(),
+    since: z.string().min(1).optional(),
+    maxChars: z.number().int().min(1).max(50000).optional()
+  })
+  .refine((v) => v.mode !== 'since' || v.since !== undefined, {
+    message: "since is required when mode is 'since'",
+    path: ['since']
+  })
+
+/** Validate `read_terminal` args (T474 B3): the cursor is mandatory for `mode: 'since'`. */
+export function parseReadTerminal(input: unknown): ParseResult<ReadTerminalArgs> {
+  const parsed = ReadTerminalSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  return { ok: true, value: parsed.data as ReadTerminalArgs }
+}
+
 /** Validated args for the `list_containers` read tool (T328). */
 export type ListContainersArgs = ListWorkersArgs
 
@@ -1188,6 +1219,7 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   create_worktree: parseCreateWorktree,
   spawn_terminal: parseSpawnTerminal,
   list_terminals: parseListTerminals,
+  read_terminal: parseReadTerminal,
   adopt_folder: parseAdoptFolder,
   // BUG-56: same `{ folder }` shape as adopt_folder.
   remove_folder: parseAdoptFolder,

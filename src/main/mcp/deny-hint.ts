@@ -83,6 +83,53 @@ export function shapeDenial(
           }
         ]
       }
+    // T474 B3: reading a terminal.
+    case 'TERMINAL_NOT_FOUND':
+      return {
+        error: result,
+        message:
+          'No terminal with that id exists — it never did, or it ended more than 10 minutes ago.',
+        nextActions: [
+          {
+            do: 'Call list_terminals for the ids that exist, or open a new one with spawn_terminal.',
+            why: 'Terminals do not survive an app restart, and an exited one is forgotten after 10 minutes.'
+          }
+        ]
+      }
+    case 'TERMINAL_READ_NOT_ENABLED':
+      return {
+        error: result,
+        message: `That terminal${at} was opened by the operator, and they have not let agents read the terminals they open.`,
+        nextActions: [
+          {
+            do: 'Open your own terminal with spawn_terminal and work there, or ask the operator to enable "Let agents read terminals I open" in the folder menu.',
+            why: 'Reading a terminal the operator opened is their opt-in per folder; an agent-spawned terminal needs no opt-in.'
+          }
+        ]
+      }
+    case 'TERMINAL_DISCONNECTED':
+      return {
+        error: result,
+        message: `The operator disconnected that terminal${at}: agents may no longer read or type in it.`,
+        nextActions: [
+          {
+            do: "Treat this as the operator's decision, not a fault. Open a new terminal with spawn_terminal only if the work still needs one, and tell the operator you did.",
+            why: 'Disconnect is permanent for that terminal; a new terminal is visible and shows its connection again.'
+          }
+        ]
+      }
+    case 'CURSOR_EXPIRED':
+      return {
+        error: result,
+        message:
+          'That cursor no longer points at a line: it scrolled out of the terminal, sat unused for 10 minutes, or was never issued.',
+        nextActions: [
+          {
+            do: "Call read_terminal again with mode 'tail' and use the fresh `cursor` it returns.",
+            why: 'A cursor tracks one line through scrolling; once the line is gone there is nothing to resume from.'
+          }
+        ]
+      }
     case 'SERVER_DISABLED':
       return {
         error: result,

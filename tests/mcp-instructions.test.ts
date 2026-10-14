@@ -53,12 +53,13 @@ describe('HARNU_MCP_INSTRUCTIONS_BODY content sanity', () => {
     expect(HARNU_MCP_INSTRUCTIONS_BODY).toMatch(/Ask before agent actions/i)
   })
 
-  it('advertises exactly the terminal surface that exists after B1 (T478)', () => {
+  it('advertises exactly the terminal surface that exists after B3 (T478, T480)', () => {
     expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('spawn_terminal')
     expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('list_terminals')
+    expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('read_terminal')
     expect(HARNU_MCP_INSTRUCTIONS_BODY).toContain('ownerSessionId')
     // Later units: do not promise what does not exist yet.
-    expect(HARNU_MCP_INSTRUCTIONS_BODY).not.toMatch(/read_terminal|send_terminal|kill-?switch/i)
+    expect(HARNU_MCP_INSTRUCTIONS_BODY).not.toMatch(/send_terminal|kill-?switch/i)
   })
 
   it('stays a primer — non-empty and ≤80 lines', () => {
