@@ -9,10 +9,10 @@
  * refusal or `null` (continue). The explicit folder block and `SERVER_DISABLED` outrank it —
  * `planToolCall` only asks once those have passed.
  *
- * B4 owns the READ half. B5 adds the first write refusals: `TERMINAL_EXITED`, and — for now —
- * `TERMINAL_WRITE_NOT_ENABLED` on every terminal an agent did not open itself. The operator-
- * terminal path (confirm once → lease, `TERMINAL_WRITE_DENIED`) is unit B6, which retires that
- * transitional code; `TERMINAL_WRITES_DISABLED` is the kill-switch of unit B7.
+ * B4 owns the READ half. B5 added `TERMINAL_EXITED`. B6 adds `TERMINAL_WRITE_DENIED` (the
+ * operator's Deny cooldown) and carries the lease in the state: whether a send needs a confirm is
+ * NOT decided here — `planToolCall` promotes or narrows the verdict from `origin` and
+ * `leaseActive`. `TERMINAL_WRITES_DISABLED` is the kill-switch of unit B7.
  *
  * Pure (ADR-0001): no electron, no fs, no clock.
  */
@@ -25,7 +25,7 @@ export type TerminalDenyReason =
   | 'TERMINAL_DISCONNECTED'
   | 'TERMINAL_EXITED'
   | 'TERMINAL_READ_NOT_ENABLED'
-  | 'TERMINAL_WRITE_NOT_ENABLED'
+  | 'TERMINAL_WRITE_DENIED'
 
 /** Verbs that address one terminal by id and therefore pass this gate. */
 const GATED_OPS: ReadonlySet<string> = new Set(['read_terminal', 'send_terminal'])
@@ -54,6 +54,13 @@ export interface TerminalGateState {
   readable: boolean
   /** Who the terminal is connected to — attribution for the audit line, never authority. */
   ownerSessionId: string | null
+  /**
+   * The operator allowed typing here and the lease has not ended (spec §6.3). Already false for
+   * an exited or disconnected terminal: the shell resolves it from the registry state too.
+   */
+  leaseActive: boolean
+  /** The operator denied typing here less than 5 minutes ago (spec §6.3). */
+  writeDenied: boolean
 }
 
 /** What an id the registry does not know resolves to: the gate fails closed on it. */
@@ -64,17 +71,21 @@ export const UNKNOWN_TERMINAL: TerminalGateState = {
   disconnected: false,
   state: 'running',
   readable: false,
-  ownerSessionId: null
+  ownerSessionId: null,
+  leaseActive: false,
+  writeDenied: false
 }
 
 /**
  * Resolve the gate state of one terminal from its record and the operator's prefs.
  * `readOptIn` is the folder's `agentTerminalRead`; `writesEnabled` is the global kill-switch
- * (unit B7 — until it lands the caller passes `true`, its default).
+ * (unit B7 — until it lands the caller passes `true`, its default). `lease` is what the shell read
+ * from the lease table; a lease on a terminal that has exited or been disconnected does not count.
  */
 export function resolveTerminalGateState(
   rec: Pick<TerminalRecord, 'origin' | 'disconnected' | 'state' | 'ownerSessionId'> | undefined,
-  prefs: { readOptIn: boolean; writesEnabled: boolean }
+  prefs: { readOptIn: boolean; writesEnabled: boolean },
+  lease: { active: boolean; denied: boolean } = { active: false, denied: false }
 ): TerminalGateState {
   if (!rec) return UNKNOWN_TERMINAL
   return {
@@ -84,7 +95,9 @@ export function resolveTerminalGateState(
     disconnected: rec.disconnected,
     state: rec.state,
     readable: terminalAccess(rec, prefs).readable,
-    ownerSessionId: rec.ownerSessionId
+    ownerSessionId: rec.ownerSessionId,
+    leaseActive: lease.active && !rec.disconnected && rec.state === 'running',
+    writeDenied: lease.denied
   }
 }
 
@@ -119,7 +132,7 @@ export function canStillWrite(
 /**
  * The flat refusal for `op` against `state`, or `null` to continue. Order (spec §6.2):
  * `TERMINAL_NOT_FOUND` → `NOT_A_TERMINAL` → `TERMINAL_DISCONNECTED` → (writes only)
- * `TERMINAL_EXITED` → `TERMINAL_READ_NOT_ENABLED` → (writes only) `TERMINAL_WRITE_NOT_ENABLED`.
+ * `TERMINAL_EXITED` → `TERMINAL_READ_NOT_ENABLED` → (writes only) `TERMINAL_WRITE_DENIED`.
  * A disconnected terminal is refused as disconnected even when its folder opt-in is off: the
  * operator's Disconnect is the more specific fact. An exited terminal stays readable for its
  * tombstone window but nothing can be typed into it.
@@ -132,7 +145,7 @@ export function gateTerminalOp(op: string, state: TerminalGateState): TerminalDe
   const writes = WRITE_OPS.has(op)
   if (writes && state.state === 'exited') return 'TERMINAL_EXITED'
   if (!state.readable) return 'TERMINAL_READ_NOT_ENABLED'
-  // B5: only a terminal the agent opened itself can be typed into. B6 opens the rest.
-  if (writes && state.origin !== 'agent') return 'TERMINAL_WRITE_NOT_ENABLED'
+  // The operator's Deny cooldown (spec §6.3): refused outright, so no new prompt is raised.
+  if (writes && state.writeDenied) return 'TERMINAL_WRITE_DENIED'
   return null
 }

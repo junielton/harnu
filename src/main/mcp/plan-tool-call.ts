@@ -138,6 +138,15 @@ export interface ToolCallPlan {
    */
   inheritOnceAllow?: boolean
   /**
+   * Set (T474 B6, spec §6.2 step 4) when a `send_terminal` that would have confirmed was let
+   * through because the operator's lease on that terminal is active. This is the ask-mode lease
+   * path: it needs a dispatch branch of its own in the shell, or the allow would fall through to
+   * `steerError`. The shell actuates it directly — no budget, no confirm — and writes a shadow-log
+   * entry; the audit result is `LEASE`. Mutually exclusive with `grantAllow` (a grant wins; and
+   * `send_terminal` is not grantable, so in practice only this can arm).
+   */
+  leaseAllow?: { terminalId: string }
+  /**
    * Set when this mutation ran FREE — no human confirm — which post-reversal is
    * the DEFAULT for every mutating verb that carries `silentAllowInAgentFolder`
    * (i.e. all of them except `submit_manifest` and `plan_mission`). The name is
@@ -255,6 +264,7 @@ export function planToolCall({
   let inheritDiscovery: { repoRoot: string; worktree: string } | undefined
   let inheritOnceAllow = false
   let silentAllowInAgentFolder = false
+  let leaseAllow: { terminalId: string } | undefined
 
   // THE BLOCK IS ABSOLUTE. `FOLDER_NOT_ALLOWED` no longer means "not granted yet"
   // (there is no allowlist left to be absent from) — post-reversal it can only
@@ -293,7 +303,13 @@ export function planToolCall({
     // create_worker's `mode: 'act'`). It is consulted only here, only on a base
     // `allow` for a mutation, so it can never loosen anything — a verb without
     // `silentAllowInAgentFolder` already confirms regardless of this field.
-    const forcedConfirm = def.forceConfirmFor?.(parsed.value as Record<string, unknown>) ?? false
+    //
+    // T474 B6: `confirmWhen` is the same narrowing for a rule that depends on the state of what the
+    // call addresses — a `send_terminal` to an operator-opened terminal without a lease.
+    const forcedConfirm =
+      (def.forceConfirmFor?.(parsed.value as Record<string, unknown>) ?? false) ||
+      (def.confirmWhen?.(parsed.value as Record<string, unknown>, terminal ?? UNKNOWN_TERMINAL) ??
+        false)
     if (def.silentAllowInAgentFolder && !forcedConfirm) silentAllowInAgentFolder = true
     else verdict = 'confirm'
   }
@@ -335,6 +351,23 @@ export function planToolCall({
         verdict = 'confirm' // park for a human — never a dry deny (invariant 6)
       }
       // 'none' → keep the base verdict
+    }
+
+    // T474 B6 (spec §6.2 step 4): the write LEASE — the same family as the grant block above, and
+    // like it only ever confirm→allow. In `ask` mode the base verdict starts at `confirm`, so this
+    // is what lets a send to a leased terminal through; in free mode `confirmWhen` already stood
+    // down while the lease was active, so the ordinary silent-allow carries the call and this is
+    // inert. Scoped to the one `terminalId` the gate resolved, and guarded by `!explicitBlock`
+    // (the enclosing `if`) so a blocked folder outranks any lease. A grant that already allowed
+    // the call keeps it: the two never both arm.
+    if (
+      verdict === 'confirm' &&
+      def.op === 'send_terminal' &&
+      terminal?.leaseActive === true &&
+      grantAllow === undefined
+    ) {
+      verdict = 'allow'
+      leaseAllow = { terminalId: (parsed.value as SendTerminalArgs).terminalId }
     }
 
     // bootstrapConfirmOnDeny (S1/S5): the verbs that BOOTSTRAP membership
@@ -413,8 +446,9 @@ export function planToolCall({
       owner: a.ownerSessionId ?? terminal?.ownerSessionId ?? null,
       input: a.input,
       keys: a.keys,
-      // B6 adds `lease` and `confirmed`; until then a send is either free or waiting on a confirm.
-      gate: shouldDispatch ? 'free' : 'confirm',
+      // `confirmed` never appears: an Allow types nothing, so the send that follows it runs under
+      // the lease it created.
+      gate: !shouldDispatch ? 'confirm' : terminal?.leaseActive ? 'lease' : 'free',
       home: homeDir ?? homedir()
     })
   }
@@ -429,12 +463,16 @@ export function planToolCall({
       ? `grant ${grantAllow.grantId}`
       : inheritOnceAllow
         ? 'INHERIT_ONCE'
-        : silentAllowInAgentFolder
-          ? // Free mode: the mutation ran without asking. The audit row is the
-            // operator's ONLY trace of it, so it says so plainly — this is what
-            // they scan when they want to know what the fleet did unattended.
-            'AGENT_ALLOWED'
-          : (decision.reason ?? verdict)
+        : // T474 B6: a send covered by a lease says so — in `ask` mode via `leaseAllow`, in free
+          // mode on the silent-allow path — so it can be told apart from a free agent-terminal send.
+          def.op === 'send_terminal' && shouldDispatch && terminal?.leaseActive
+          ? `LEASE: ${(parsed.value as SendTerminalArgs).terminalId}`
+          : silentAllowInAgentFolder
+            ? // Free mode: the mutation ran without asking. The audit row is the
+              // operator's ONLY trace of it, so it says so plainly — this is what
+              // they scan when they want to know what the fleet did unattended.
+              'AGENT_ALLOWED'
+            : (decision.reason ?? verdict)
   }
 
   // Optional fields are assigned only when set (exactOptionalPropertyTypes): a
@@ -445,6 +483,7 @@ export function planToolCall({
   if (grantAllow) result.grantAllow = grantAllow
   if (inheritDiscovery) result.inheritDiscovery = inheritDiscovery
   if (inheritOnceAllow) result.inheritOnceAllow = true
+  if (leaseAllow) result.leaseAllow = leaseAllow
   if (silentAllowInAgentFolder) result.silentAllowInAgentFolder = true
   return result
 }

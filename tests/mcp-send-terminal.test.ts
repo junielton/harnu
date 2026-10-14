@@ -432,15 +432,6 @@ describe('AC-B5-4 / B5 gate — only an agent-spawned, connected, running termin
         expect(proc.writes).toEqual([])
       })
 
-      it('an operator terminal, folder opt-in on: TERMINAL_WRITE_NOT_ENABLED, nothing typed', async () => {
-        await writeMcpAsk(ask)
-        h.optedIn = [h.open]
-        const proc = await openOperatorShell('h-op2', h.open)
-        const res = await send({ terminalId: 'h-op2', input: 'rm -rf x' })
-        expect(body(res).error).toBe('TERMINAL_WRITE_NOT_ENABLED')
-        expect(proc.writes).toEqual([])
-      })
-
       it('a disconnected terminal is TERMINAL_DISCONNECTED', async () => {
         await writeMcpAsk(ask)
         const { id, proc } = await spawnAgent()

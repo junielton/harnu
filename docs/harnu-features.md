@@ -692,11 +692,21 @@ tick may call `list_terminals` and `read_terminal` (same opt-in rule); `spawn_te
 `send_terminal` stay denied there. Programs that ask the terminal questions (`nvim`, `fzf`) are answered by
 Harnu while no pane shows the terminal, so an unviewed terminal does not hang them.
 **Typing — `send_terminal`.** `send_terminal({ terminalId, input?, keys?, paste?, ownerSessionId? })`
-types into a terminal YOU opened with `spawn_terminal` — never one the operator opened (that is
-refused `TERMINAL_READ_NOT_ENABLED`, or `TERMINAL_WRITE_NOT_ENABLED` when its folder lets agents
-read it: typing into the operator's own terminals is not available yet). It runs with no confirm
-in free mode; under "Ask before agent actions" it confirms, and a mission grant or an
-"always allow" can never cover it. `input` is typed text exactly as a person would type it: `\n`
+types into a terminal. A terminal YOU opened with `spawn_terminal` takes input at once in free
+mode; under "Ask before agent actions" it confirms. A terminal the OPERATOR opened is refused
+`TERMINAL_READ_NOT_ENABLED` unless its folder lets agents read it, and then needs the operator's
+say-so: your first send raises a confirm (it shows the pane name, its directory, the folder and
+exactly what you would type), and **an Allow types nothing** — your call returns
+`{ ok: false, error: 'TERMINAL_APPROVED_RESEND' }`, even when the confirm was parked and you
+read it later through `get_approval` (`status: 'allowed'` with that `result`: read `result.ok`,
+not just the status). Call `read_terminal` to see the screen as it is now, then `send_terminal`
+again: that send, and every later one, runs without asking until the terminal has had no writes
+for 10 minutes (or it exits, the operator disconnects it, blocks the folder, or the app quits).
+The same confirm-then-lease applies to ANY terminal under "Ask before agent actions". A Deny is
+`TERMINAL_WRITE_DENIED`, and every send to that terminal is refused the same way for 5 minutes
+without a new prompt. While a confirm is parked its pending text says nothing will be typed on
+Allow; an unanswered one is denied after 30 minutes. A mission grant or an "always allow" can
+never cover this verb. `input` is typed text exactly as a person would type it: `\n`
 is sent as Enter, a tab stays a tab, and every other control character is refused `BAD_ARGS` —
 use `keys` instead. `keys` (≤ 64, each name ≤ 16 characters) are pressed in order AFTER `input`: `Enter`, `Tab`, `Esc`,
 `Backspace`, `Delete`, `Space`, `Up`, `Down`, `Left`, `Right`, `Home`, `End`, `PageUp`,
@@ -727,7 +737,9 @@ the call), `operatorTyped` (the operator typed in the pane during the call — t
 not show only what you sent), the fixed untrusted-output `note`, and `cursor` (pass it to
 `read_terminal` as `since`; `null` on the alternate screen, where `output` is the whole
 screen). The audit log records the terminal, its owner, the typed text (scrubbed, escaped, cut
-to 200 characters), the keys and how the send was authorised. **What you type runs with the
+to 200 characters), the keys and how the send was authorised (`AGENT_ALLOWED` for a terminal
+you opened, `LEASE` under an operator's lease). A send whose lease ended in the instant before
+it was written is `TERMINAL_LEASE_ENDED`: nothing typed, send again. **What you type runs with the
 operator's permissions** — it can do anything their shell can, including what your own tool
 permissions would refuse; type only what the task needs. The operator-side switch ("Allow
 agents to type into terminals") and Disconnect are not built yet.

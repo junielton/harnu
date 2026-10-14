@@ -55,7 +55,9 @@ describe('gateTerminalOp — the documented order', () => {
     disconnected: false,
     state: 'running',
     readable: true,
-    ownerSessionId: null
+    ownerSessionId: null,
+    leaseActive: false,
+    writeDenied: false
   }
 
   it('speaks for read_terminal and send_terminal only', () => {
@@ -103,7 +105,9 @@ describe('gateTerminalOp — the documented order', () => {
       'TERMINAL_DISCONNECTED',
       'TERMINAL_READ_NOT_ENABLED',
       'TERMINAL_EXITED',
-      'TERMINAL_WRITE_NOT_ENABLED',
+      'TERMINAL_WRITE_DENIED',
+      'TERMINAL_APPROVED_RESEND',
+      'TERMINAL_LEASE_ENDED',
       'TERMINAL_BUSY',
       'TERMINAL_RATE_LIMIT'
     ]) {
@@ -112,8 +116,8 @@ describe('gateTerminalOp — the documented order', () => {
   })
 })
 
-// T482 (B5): the write half. Order: NOT_FOUND → NOT_A_TERMINAL → DISCONNECTED → EXITED →
-// READ_NOT_ENABLED → WRITE_NOT_ENABLED (transitional until the lease of B6).
+// T482 (B5) / T484 (B6): the write half. Order: NOT_FOUND → NOT_A_TERMINAL → DISCONNECTED →
+// EXITED → READ_NOT_ENABLED → WRITE_DENIED. Whether a send needs a confirm is the plan's call.
 describe('gateTerminalOp — send_terminal (B5)', () => {
   const agentState: TerminalGateState = {
     known: true,
@@ -122,7 +126,9 @@ describe('gateTerminalOp — send_terminal (B5)', () => {
     disconnected: false,
     state: 'running',
     readable: true,
-    ownerSessionId: 's'
+    ownerSessionId: 's',
+    leaseActive: false,
+    writeDenied: false
   }
 
   it('an agent-spawned, connected, running terminal continues', () => {
@@ -155,23 +161,48 @@ describe('gateTerminalOp — send_terminal (B5)', () => {
     expect(gateTerminalOp('send_terminal', s)).toBe('TERMINAL_READ_NOT_ENABLED')
   })
 
-  it('an operator terminal that IS readable is still refused for writes until B6', () => {
+  it('a readable operator terminal continues to the plan, which decides confirm vs lease', () => {
     const s = { ...agentState, origin: 'operator' as const, readable: true }
     expect(gateTerminalOp('read_terminal', s)).toBeNull()
-    expect(gateTerminalOp('send_terminal', s)).toBe('TERMINAL_WRITE_NOT_ENABLED')
+    expect(gateTerminalOp('send_terminal', s)).toBeNull()
+  })
+
+  it('a Deny cooldown refuses writes, never reads, and ranks below the read opt-in', () => {
+    const denied = { ...agentState, origin: 'operator' as const, writeDenied: true }
+    expect(gateTerminalOp('send_terminal', denied)).toBe('TERMINAL_WRITE_DENIED')
+    expect(gateTerminalOp('read_terminal', denied)).toBeNull()
+    expect(gateTerminalOp('send_terminal', { ...denied, readable: false })).toBe(
+      'TERMINAL_READ_NOT_ENABLED'
+    )
+    expect(gateTerminalOp('send_terminal', { ...denied, state: 'exited' })).toBe('TERMINAL_EXITED')
+  })
+
+  it('a lease does not survive the terminal ending or being disconnected', () => {
+    const live = resolveTerminalGateState(operator, prefs(true), { active: true, denied: false })
+    expect(live.leaseActive).toBe(true)
+    const exited = resolveTerminalGateState({ ...operator, state: 'exited' }, prefs(true), {
+      active: true,
+      denied: false
+    })
+    expect(exited.leaseActive).toBe(false)
+    const gone = resolveTerminalGateState({ ...operator, disconnected: true }, prefs(true), {
+      active: true,
+      denied: false
+    })
+    expect(gone.leaseActive).toBe(false)
   })
 
   it('an unresolved state fails closed', () => {
     expect(gateTerminalOp('send_terminal', UNKNOWN_TERMINAL)).toBe('TERMINAL_NOT_FOUND')
   })
 
-  it.each(['TERMINAL_EXITED', 'TERMINAL_WRITE_NOT_ENABLED'])(
+  it.each(['TERMINAL_EXITED', 'TERMINAL_WRITE_DENIED'])(
     '%s is a plan-level deny that never confirms, in ask mode too',
     (code) => {
       const state: TerminalGateState =
         code === 'TERMINAL_EXITED'
           ? { ...agentState, state: 'exited' }
-          : { ...agentState, origin: 'operator' }
+          : { ...agentState, origin: 'operator', writeDenied: true }
       for (const ask of [false, true]) {
         const plan = planToolCall({
           tool: 'send_terminal',
