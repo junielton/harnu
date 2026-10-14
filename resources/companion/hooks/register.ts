@@ -10,6 +10,9 @@ import {
   DRIFT_CHECK_MIN_MS,
   PROTOCOL_VERSION,
   RING_MAX,
+  ROW_DEBOUNCE_MS,
+  ROW_MAX_WAIT_MS,
+  TRANSCRIPT_PATH_MAX,
   type ByeRequest,
   type CmdId,
   type Command,
@@ -23,6 +26,7 @@ import {
   type ErrorCode,
   type FeatureId,
   type HelloRequest,
+  type SessionStartFacts,
   type Sid
 } from './contract'
 import { MOD_VERSION, RENDEZVOUS_PATH } from './coords.gen'
@@ -53,12 +57,24 @@ import {
 } from './lib/command-core'
 import { toAdmitted, type Admitted } from './lib/admitted'
 import { createRing } from './lib/ring'
+import {
+  countsOf,
+  emptyFold,
+  foldAppend,
+  foldTitle,
+  restoredFold,
+  sanitizeCounts,
+  wireOf,
+  type AppendedRow,
+  type Fold
+} from './lib/row-fold'
 import { measurePayload, readPayload } from './lib/usage-sensor'
 import { endpointUrl, parseEndpoint, type Endpoint } from './lib/rendezvous-parse'
 
 /**
- * The Harnu companion mod: the handshake and the identity facts (spec P1W3) and the fleet
- * sensors (spec P1W5: turns, attention, subagents; the cores are in `lib/fleet-sensor.ts`).
+ * The Harnu companion mod: the handshake and the identity facts (spec P1W3), the fleet
+ * sensors (spec P1W5: turns, attention, subagents; the cores are in `lib/fleet-sensor.ts`) and
+ * the live row (T455 W1: `session.row`, folded from `session.append` in `lib/row-fold.ts`).
  *
  * Every function that takes `$` is declared here, at the top of the module (MOD-1); helpers under
  * `lib/` are `$`-free. Every hook body is wrapped and ends in `next(e)`: a failure here must never
@@ -79,6 +95,7 @@ const PROBES = { plugin: 'harnu-companion', key: 'probes' } as const
 const FLEET = { plugin: 'harnu-companion', key: 'fleet' } as const
 const PERMISSION_MODE = { plugin: 'harnu-companion', key: 'permissionMode' } as const
 const CHANNEL = { plugin: 'harnu-companion', key: 'channel' } as const
+const ROW = { plugin: 'harnu-companion', key: 'row' } as const
 
 /** The feature an event type belongs to. `null`: reportable whenever the channel is alive. */
 const EVENT_FEATURE: Partial<Record<EventName, FeatureId | null>> = {
@@ -93,6 +110,7 @@ const EVENT_FEATURE: Partial<Record<EventName, FeatureId | null>> = {
   'subagent.stopped': 'sense.subagent',
   'usage.measured': 'sense.usage',
   'mod.admitted': 'sense.mods',
+  'session.row': 'sense.row',
   'mod.error': null,
   // The answer to a command is owed whatever the command's own feature says (also FEATURE_DISABLED).
   'command.result': null
@@ -144,6 +162,29 @@ let pendingAdmitted: Admitted[] = []
 /** At most this many admissions wait for the first hello; a session loads a handful of mods. */
 const PENDING_ADMITTED_MAX = 64
 
+// T455 W1, `sense.row`. Texts live here, in module memory, and die with a reload; `$.state` key
+// `row` holds counts only (spec §5.5 rule 1: any co-loaded mod can read `$.state`).
+/** `classic.SessionStart`'s facts, recorded synchronously at the handler's entry (W0 M8). */
+let startFacts: SessionStartFacts | null = null
+/** The `start` the last `session.snapshot` carried, as JSON: a newer one is sent as a probe. */
+let startSent: string | null = null
+/** A `classic.SessionStart` ran in this load: a new process (a resume, a fork), never a reload. */
+let classicStartSeen = false
+let rowFold: Fold = emptyFold()
+/** The conversation the fold belongs to; null between a `/clear` and its new id. */
+let rowSid: Sid | null = null
+let rowLoaded = false
+/** The last `session.row` payload sent, as JSON: an unchanged row is not sent again. */
+let rowLastSent: string | null = null
+/** The last `{ sid, counts }` written to `$.state`, as JSON. */
+let rowPersisted: string | null = null
+let rowTimer: Timer | null = null
+/** When the armed timer fires, on the mod clock. */
+let rowTimerDue = 0
+/** The first change not yet sent (the max-wait anchor), and the latest (the debounce anchor). */
+let rowFirstDirtyAt: number | null = null
+let rowLastChangeAt = 0
+
 function resetState(): void {
   conn = null
   bootId = null
@@ -179,6 +220,18 @@ function resetState(): void {
   inFlight.clear()
   pollStale = 0
   pendingAdmitted = []
+  startFacts = null
+  startSent = null
+  classicStartSeen = false
+  rowFold = emptyFold()
+  rowSid = null
+  rowLoaded = false
+  rowLastSent = null
+  rowPersisted = null
+  rowTimer = null
+  rowTimerDue = 0
+  rowFirstDirtyAt = null
+  rowLastChangeAt = 0
 }
 
 // ---- runtime helpers other waves call ---------------------------------------------------------
@@ -345,16 +398,21 @@ const DORMANT_CODES: ReadonlySet<string> = new Set([
 ])
 
 function snapshot($: Dollar, reason: EventPayloads['session.snapshot']['reason']): void {
+  const start = startFacts
   emit($, {
     t: 'session.snapshot',
     d: {
       reason,
       ...snapshotFields(fleet),
-      probes: { classic: probes.classic, toolCheck: probes.toolCheck }
+      probes: { classic: probes.classic, toolCheck: probes.toolCheck },
+      ...(start !== null ? { start: { ...start } } : {})
     }
   })
+  if (start !== null) startSent = JSON.stringify(start)
   // A state re-send after a hello, a resync or a flush (`sense.usage`, P1W6 §7.1). Un-awaited.
   if (reason !== 'probe') void readUsage($)
+  // ...and of the row (T455 §5.4): sent whether or not it changed, the host may have lost it.
+  if (reason !== 'probe') flushRow($, true)
 }
 
 /**
@@ -775,13 +833,167 @@ async function maybeDriftCheck($: Dollar): Promise<void> {
 async function rebound(
   $: Dollar,
   sid: Sid,
-  cause: EventPayloads['session.rebound']['cause']
+  cause: EventPayloads['session.rebound']['cause'],
+  transcriptPath?: string
 ): Promise<void> {
   const prev = sidBound
   if (prev === null || prev === sid) return
   sidBound = sid // the payload is the source of truth; `$.session.id()` can be stale (C10)
-  emit($, { t: 'session.rebound', d: { prevSid: prev, sid, cause } })
+  emit($, {
+    t: 'session.rebound',
+    d: { prevSid: prev, sid, cause, ...(transcriptPath !== undefined ? { transcriptPath } : {}) }
+  })
+  // T455: a new conversation has a fresh fold (§6.4); its row follows the rebound at once.
+  rowMoveTo(sid)
+  flushRow($, true)
   await persistConn($) // CQ3: written again after every rebound
+}
+
+// ---- the live row (T455 W1, `sense.row`) -----------------------------------------------------
+
+const START_SOURCES: ReadonlySet<string> = new Set([
+  'startup',
+  'resume',
+  'clear',
+  'compact',
+  'fork'
+])
+
+/**
+ * The first step of `classic.SessionStart`, SYNCHRONOUS and before any await (W0 M8): the engine
+ * dispatches `session.start` before this handler passes its first await, so whatever it records
+ * later may not be visible to the hello that `session.start` sends.
+ */
+function noteStart(e: { source?: unknown; transcript_path?: unknown }): void {
+  classicStartSeen = true
+  const source = e.source
+  const path = validPath(e.transcript_path)
+  if (typeof source !== 'string' || !START_SOURCES.has(source) || path === undefined) return
+  startFacts = { source: source as SessionStartFacts['source'], transcriptPath: path }
+}
+
+/** A transcript path the wire may carry (≤ TRANSCRIPT_PATH_MAX); the host validates it further. */
+function validPath(p: unknown): string | undefined {
+  return typeof p === 'string' && p !== '' && p.length <= TRANSCRIPT_PATH_MAX ? p : undefined
+}
+
+/** The fold now belongs to `sid`. A different conversation starts a fresh fold (§6.4). */
+function rowMoveTo(sid: Sid): void {
+  if (rowSid === sid) return
+  if (rowSid !== null) resetRow()
+  rowSid = sid
+  rowLastSent = null
+}
+
+/** A new conversation: no row yet, nothing pending, nothing sent. */
+function resetRow(): void {
+  rowFold = emptyFold()
+  rowTimer?.cancel()
+  rowTimer = null
+  rowFirstDirtyAt = null
+  rowLastSent = null
+  rowPersisted = null
+}
+
+/** Counts only, never a text (§5.5 rule 1); written when they changed. Never awaited. */
+function persistRow($: Dollar): void {
+  if (rowSid === null) return
+  const value = { sid: rowSid, counts: countsOf(rowFold.row) }
+  const key = JSON.stringify(value)
+  if (key === rowPersisted) return
+  rowPersisted = key
+  void Promise.resolve($.state.set(ROW, value)).catch(noop)
+}
+
+/**
+ * Sends the row now. `force` sends it even unchanged (after a hello, a resync, a flush command or a
+ * rebound); otherwise a row equal to the last one sent is not sent again (§5.4). Synchronous.
+ */
+function flushRow($: Dollar, force: boolean): void {
+  rowTimer?.cancel()
+  rowTimer = null
+  rowFirstDirtyAt = null
+  if (rowSid === null) return
+  persistRow($)
+  // the envelope carries the bound sid: a fold of another conversation waits for its rebound
+  if (rowSid !== sidBound || !enabled('sense.row')) return
+  const d = wireOf(rowFold.row)
+  const key = JSON.stringify(d)
+  if (!force && key === rowLastSent) return
+  rowLastSent = key
+  emit($, { t: 'session.row', d })
+}
+
+/**
+ * A row changed a field worth a push, at `at` (mod clock). One timer at a time: it fires after
+ * ROW_DEBOUNCE_MS and re-arms itself until the last change is ROW_DEBOUNCE_MS old or the first
+ * unsent one is ROW_MAX_WAIT_MS old, so a burst costs one `$.clock.after`, not one per row.
+ */
+function noteRowChange($: Dollar, at: number): void {
+  rowLastChangeAt = at
+  if (rowFirstDirtyAt === null) rowFirstDirtyAt = at
+  if (rowTimer === null) armRow($, at, ROW_DEBOUNCE_MS)
+}
+
+function armRow($: Dollar, now: number, ms: number): void {
+  rowTimerDue = now + ms
+  rowTimer = $.clock.after(ms, () => {
+    rowTimer = null
+    try {
+      if (rowFirstDirtyAt === null) return
+      const due = Math.min(rowLastChangeAt + ROW_DEBOUNCE_MS, rowFirstDirtyAt + ROW_MAX_WAIT_MS)
+      if (rowTimerDue >= due) flushRow($, false)
+      else armRow($, rowTimerDue, due - rowTimerDue)
+    } catch (err) {
+      reportModError('session.row', err)
+    }
+  })
+}
+
+/** The fold step of `session.append`, on the row AS STORED (the scrubbed row, with T450). */
+async function rowAppend(
+  $: Dollar,
+  e: { door: string; origin: unknown; agentId?: string },
+  stored: { uuid: string; message: AppendedRow['message'] }
+): Promise<void> {
+  if (dormant || inert) return
+  const at = await $.clock.now()
+  const row: AppendedRow = {
+    door: e.door,
+    origin: e.origin as AppendedRow['origin'],
+    uuid: stored.uuid,
+    message: stored.message,
+    ...(e.agentId !== undefined ? { agentId: e.agentId } : {})
+  }
+  if (foldAppend(rowFold, row, at)) noteRowChange($, at)
+}
+
+/** `classic.*`'s `session_title` (M2: a custom title only); recorded for parity. */
+async function rowTitle($: Dollar, title: unknown): Promise<void> {
+  if (dormant || inert) return
+  if (foldTitle(rowFold, title)) noteRowChange($, await $.clock.now())
+}
+
+/**
+ * Once per load, at `session.start`. A reload finds its counts in `$.state` and its texts unknown;
+ * a new process (a `classic.SessionStart` ran in this load: a resume, a fork) starts empty, since
+ * its history is the host's cold baseline and loads raise no append (§6.2).
+ */
+async function loadRow($: Dollar): Promise<void> {
+  if (rowLoaded) return
+  rowLoaded = true
+  rowSid ??= sidBound ?? (await $.session.id())
+  const r = rowFold.row
+  const untouched = r.userRows === 0 && r.toolCalls === 0 && r.subagentToolCalls === 0
+  if (classicStartSeen || !untouched || r.lastUuid !== null) return
+  const saved = await $.state.get(ROW)
+  const v = saved.value
+  if (v === undefined || v === null || v.sid !== rowSid) return
+  const counts = sanitizeCounts(v.counts)
+  if (counts !== null) {
+    rowFold = restoredFold(counts)
+    rowPersisted = JSON.stringify({ sid: rowSid, counts })
+  }
 }
 
 // ---- bye --------------------------------------------------------------------------------------
@@ -803,11 +1015,11 @@ async function sayBye($: Dollar, reason: string): Promise<void> {
 }
 
 /** A sensor body: never throws, never awaited beyond the first hello (and the first state read). */
-async function sense($: Dollar, where: string, run: () => void): Promise<void> {
+async function sense($: Dollar, where: string, run: () => void | Promise<void>): Promise<void> {
   try {
     await ensureHello($)
     await loadFleet($)
-    run()
+    await run()
   } catch (err) {
     reportModError(where, err)
   }
@@ -818,7 +1030,7 @@ async function classic(
   $: Dollar,
   where: string,
   e: { permission_mode?: string },
-  run: () => void
+  run: () => void | Promise<void>
 ): Promise<void> {
   try {
     noteClassic($, e)
@@ -1146,6 +1358,15 @@ export const register: Register = (on) => {
       } catch (err) {
         reportModError('session.start', err)
       }
+      try {
+        // T455 `sense.row`: the counts a reload left, then the row at once (§5.4)
+        if (!dormant && !inert) {
+          await loadRow($)
+          flushRow($, false)
+        }
+      } catch (err) {
+        reportModError('session.start', err)
+      }
       return next(e)
     })
   })
@@ -1153,13 +1374,35 @@ export const register: Register = (on) => {
   hook('classic.SessionStart', () => {
     on('classic.SessionStart', async ($, e, next) => {
       try {
+        // T455 (W0 M8): before ANY await. `session.start` enters before this handler's first
+        // await, and its hello's snapshot carries what this records.
+        noteStart(e)
+      } catch (err) {
+        reportModError('classic.SessionStart', err)
+      }
+      try {
         noteClassic($, e) // first: the drift check of ensureHello must see `probes.classic` (C10)
         void ensureHello($) // not awaited: this hook is not on the first prompt's path
-        if ((e.source === 'clear' || e.source === 'resume') && e.session_id !== sidBound) {
-          await rebound($, e.session_id, e.source)
+        const moves = e.source === 'clear' || e.source === 'resume'
+        const rebinds = moves && sidBound !== null && e.session_id !== sidBound
+        // T455: the fold follows the conversation; a /clear or /resume starts a fresh one (§6.4)
+        if (typeof e.session_id === 'string' && e.session_id !== '') {
+          if (moves) rowMoveTo(e.session_id)
+          else rowSid ??= e.session_id
+        }
+        await rowTitle($, e.session_title)
+        if (moves && e.session_id !== sidBound) {
+          await rebound($, e.session_id, e.source, validPath(e.transcript_path))
           // a new conversation has no turn, no open item and no record (contract §22)
           fleet = neutralFleet()
           persistFleet($)
+        }
+        // W0 M8: a hello that went out before these facts were known is followed by a probe
+        // snapshot that carries them (the host keeps the last `start` it received). A rebound
+        // carries the new conversation's path itself.
+        const start = startFacts !== null ? JSON.stringify(startFacts) : null
+        if (!rebinds && conn !== null && start !== null && start !== startSent) {
+          snapshot($, 'probe')
         }
       } catch (err) {
         reportModError('classic.SessionStart', err)
@@ -1171,9 +1414,16 @@ export const register: Register = (on) => {
   hook('session.end', () => {
     on('session.end', async ($, e, next) => {
       try {
+        // T455: what the old conversation folded goes out under its own sid, before the bye
+        flushRow($, false)
         // `clear` and `resume` are followed by a classic.SessionStart: not a goodbye. No hello
         // here: the end hook has a short budget of its own.
-        if (e.reason !== 'clear' && e.reason !== 'resume') await sayBye($, e.reason)
+        if (e.reason === 'clear' || e.reason === 'resume') {
+          // the rows that follow (the /clear command rows) belong to the next conversation,
+          // whose id the classic.SessionStart names (W0 §2.1, A-E4)
+          resetRow()
+          rowSid = null
+        } else await sayBye($, e.reason)
       } catch (err) {
         reportModError('session.end', err)
       }
@@ -1229,6 +1479,33 @@ export const register: Register = (on) => {
           ...(e.agentId !== undefined ? { agentId: e.agentId } : {})
         })
       })
+      // T455 `sense.row`: a main-loop turn boundary is never late (§5.4)
+      await sense($, 'turn.complete', () => {
+        if (e.agentId === undefined && !dormant && !inert) flushRow($, false)
+      })
+      return next(e)
+    })
+  })
+
+  // T455 `sense.row`: the one `session.append` registration (MOD-4). `next(e)` FIRST, the fold on
+  // the row as stored after it, and `.catch` replays what `next` settled to: a throw here never
+  // refuses or delays the row (spec §10.2, fail open).
+  hook('session.append', () => {
+    on('session.append', async ($, e, next) => {
+      const stored = await next(e)
+      try {
+        if (stored.deny === undefined) await rowAppend($, e, stored)
+      } catch (err) {
+        reportModError('session.append', err)
+      }
+      return stored
+    }).catch(($, e, next) => next(e))
+  })
+
+  // T455 `sense.row`: the latest `session_title` (recorded for parity only, M2).
+  hook('classic.UserPromptSubmit', () => {
+    on('classic.UserPromptSubmit', async ($, e, next) => {
+      await classic($, 'classic.UserPromptSubmit', e, () => rowTitle($, e.session_title))
       return next(e)
     })
   })
@@ -1367,6 +1644,7 @@ export const register: Register = (on) => {
   }
   if (all('classic.SubagentStart', 'classic.SubagentStop')) features.push('sense.subagent')
   if (all('session.measure')) features.push('sense.usage')
+  if (all('session.append')) features.push('sense.row')
   declared = features
 
   // sense.mods:begin (the CLI suite of P4W1 strips exactly this block to price the hook, AC-P4W1-16)
