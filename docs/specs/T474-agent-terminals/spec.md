@@ -177,7 +177,7 @@ ACK (additive — `result.paneId` is kept):
 list_terminals({ folder?: string, ownerSessionId?: string })
 ```
 
-Returns `terminals: [{ terminalId, label, folderAlias, origin, ownerSessionId, disconnected, state, size, title, titleSource: 'program', createdAt, lastOutputAt, readable, writable }]`. Paths are reduced to basenames like every fleet read. `label` is the pane's own label (cwd basename). `title` is whatever the program set with an OSC escape — **untrusted**, scrubbed (§4.5), and marked `titleSource: 'program'` so an agent does not treat it as a name Harnu vouches for (R14). `readable` is true for a connected agent-spawned terminal and for an operator-opened one in a folder with the opt-in on, else false (the terminal is **listed** so the agent can tell the operator why; its content is not). `writable` is `'free' | 'confirm' | 'revoked' | 'off'` (`off` = the kill-switch).
+Returns `terminals: [{ terminalId, label, folderAlias, origin, ownerSessionId, disconnected, state, size, title, titleSource: 'program', createdAt, lastOutputAt, readable, writable }]`. Paths are reduced to basenames like every fleet read. `label` is the pane's own label (cwd basename). `title` is whatever the program set with an OSC escape — **untrusted**, scrubbed (§4.5), and marked `titleSource: 'program'` so an agent does not treat it as a name Harnu vouches for (R14). `readable` is true for a connected agent-spawned terminal and for an operator-opened one in a folder with the opt-in on, else false (the terminal is **listed** so the agent can tell the operator why; its content is not). `writable` is `'free' | 'confirm' | 'revoked' | 'off'`: `free` = a send runs with no prompt, `confirm` = a send raises the §6.3 confirm (operator-opened terminal, no lease), `revoked` = the operator disconnected it (permanent), and **`off` = writes are not possible right now**, with a **`writableReason`** that says why: `'exited'` (the PTY ended), `'read-not-enabled'` (operator-opened terminal in a folder without the read opt-in, §6.2), or `'kill-switch'` (Settings → Control server, §6.5). `writableReason` is present exactly when `writable` is `'off'`. Unit B1 reports `off` + `'exited'` (and `'read-not-enabled'` only once B4's opt-in exists; until then every operator-opened terminal is `off` + `'read-not-enabled'`); B4 owns the `read-not-enabled` value and B7 the `kill-switch` value, each with a test.
 
 Gate: `folder` given → the usual folder gate. Omitted → the listing is filtered to folders the agent may act in; blocked folders are absent (as in `list_worktrees`).
 
@@ -340,17 +340,17 @@ The model's `write` queue is unbounded by default. Main tracks bytes written min
 
 ### 6.1 Matrix
 
-| Terminal                                             | `list_terminals`                                 | `read_terminal`             | `send_terminal`                                                    |
-| ---------------------------------------------------- | ------------------------------------------------ | --------------------------- | ------------------------------------------------------------------ |
-| **Agent-spawned, connected**                         | free                                             | free                        | free                                                               |
-| **Operator-opened**, folder opt-in **off** (default) | listed, `readable: false`                        | `TERMINAL_READ_NOT_ENABLED` | `TERMINAL_READ_NOT_ENABLED`                                        |
-| **Operator-opened**, folder opt-in **on**            | listed                                           | free                        | **confirm once → lease** (§6.3)                                    |
-| **Disconnected** (any origin, §6.4)                  | listed, `readable: false`, `writable: 'revoked'` | `TERMINAL_DISCONNECTED`     | `TERMINAL_DISCONNECTED`, permanently, no confirm offered           |
-| Kill-switch **off** (§6.5)                           | listed, `writable: 'off'`                        | free                        | `TERMINAL_WRITES_DISABLED`, before any confirm                     |
-| Folder blocked by the operator                       | absent / `FOLDER_NOT_ALLOWED`                    | `FOLDER_NOT_ALLOWED`        | `FOLDER_NOT_ALLOWED`                                               |
-| Control server off                                   | `SERVER_DISABLED`                                | `SERVER_DISABLED`           | `SERVER_DISABLED`                                                  |
-| Scheduler `observe` tick                             | allowed (D5)                                     | allowed (D5)                | **denied by derivation** (F8)                                      |
-| "Ask before agent actions" is on                     | free                                             | free (reads never confirm)  | confirm once per terminal → lease (the §6.3 mechanism, any origin) |
+| Terminal                                             | `list_terminals`                                                  | `read_terminal`             | `send_terminal`                                                    |
+| ---------------------------------------------------- | ----------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------ |
+| **Agent-spawned, connected**                         | free                                                              | free                        | free                                                               |
+| **Operator-opened**, folder opt-in **off** (default) | listed, `readable: false`, `writable: 'off'` (`read-not-enabled`) | `TERMINAL_READ_NOT_ENABLED` | `TERMINAL_READ_NOT_ENABLED`                                        |
+| **Operator-opened**, folder opt-in **on**            | listed                                                            | free                        | **confirm once → lease** (§6.3)                                    |
+| **Disconnected** (any origin, §6.4)                  | listed, `readable: false`, `writable: 'revoked'`                  | `TERMINAL_DISCONNECTED`     | `TERMINAL_DISCONNECTED`, permanently, no confirm offered           |
+| Kill-switch **off** (§6.5)                           | listed, `writable: 'off'` + `writableReason: 'kill-switch'`       | free                        | `TERMINAL_WRITES_DISABLED`, before any confirm                     |
+| Folder blocked by the operator                       | absent / `FOLDER_NOT_ALLOWED`                                     | `FOLDER_NOT_ALLOWED`        | `FOLDER_NOT_ALLOWED`                                               |
+| Control server off                                   | `SERVER_DISABLED`                                                 | `SERVER_DISABLED`           | `SERVER_DISABLED`                                                  |
+| Scheduler `observe` tick                             | allowed (D5)                                                      | allowed (D5)                | **denied by derivation** (F8)                                      |
+| "Ask before agent actions" is on                     | free                                                              | free (reads never confirm)  | confirm once per terminal → lease (the §6.3 mechanism, any origin) |
 
 The block is absolute (`explicitBlock`, `plan-tool-call.ts:241`): no lease, grant or opt-in outranks it, and blocking a folder also ends every lease in it.
 
@@ -519,7 +519,7 @@ Ten stacked units. Each is estimated at **≤ ~500 lines of non-test, non-doc ch
 
 The chain is linear up to B7 because each unit's gate depends on the previous one's state. **After B7 the graph forks:** B8 (`waitFor`) and U1 (chip) are independent — U1 needs ownership (B1), activity events and Disconnect (B7), and no U1 AC uses the `disconnected` wait reason — so they can be built in parallel (wave 9 = { B8 ∥ U1 }), each cut from B7.
 
-**Merge gate.** `feat/agent-terminals` must **not** merge to `main` before **B7**: B5 without B6 re-opens the parked-Allow hazard (§6.3), and B5/B6 without B7 ship typing with no kill-switch and no Disconnect. B0–B4 are safe to merge on their own (nothing can type yet).
+**Merge gate.** `feat/agent-terminals` must **not** merge to `main` before **B7**: B5 without B6 re-opens the parked-Allow hazard (§6.3), and B5/B6 without B7 ship typing with no kill-switch and no Disconnect. **B1 and B2 must merge together:** in B1 the real renderer still mints its own pane id and PTY (`command-router.ts:347`, `helpers.ts:687`), so every `spawn_terminal` would orphan a main-side shell until B2 makes the pane adopt it — B1 alone is **not mergeable** into `feat/agent-terminals` (stack B1 and B2 in one PR, or hold B1 unmerged until B2 is ready). B0 and B3–B4 each merge on their own (nothing can type yet), and nothing reaches `main` before B7.
 
 **Split seams** (used if a unit crosses ~500 at review): B1 → listing (`list_terminals`, `get_session.terminals`) vs registry + spawn · B2 → adopt/exit watch vs teardown/reload recovery · B3 → backpressure + query handover vs model + `read_terminal` · B4 → scrubbing vs opt-in + read gate · B5 → `terminal-keys` + write queue vs the verb · B6 → lease/cooldown core vs the parked-confirm rule · B7 → Disconnect vs kill-switch + Settings · B8 → none (smallest) · U1 → live signal vs chip. **B1 and B3 are the borderline ones.**
 
@@ -751,15 +751,16 @@ Two points the operator may still want to weigh in on, neither blocking B0–B2:
 
 ## 13. Re-verification log (round 2, against `f7251cd`)
 
-| #   | Item                                                                  | Resolved in                                    |
-| --- | --------------------------------------------------------------------- | ---------------------------------------------- |
-| N1  | the ask-mode lease had no dispatch path                               | §6.2 items 4–5; AC-B6-8                        |
-| N2  | a reload kills viewed agent terminals; `rendererAttached` never reset | §5.4, §8 case 11; AC-B2-8, AC-B3-11            |
-| N3  | stale ADR-0020 unit/AC references                                     | ADR-0020 §4                                    |
-| N4  | `instructions.ts` advertised verbs before they exist                  | §4 intro; AC-B1-11, AC-B3-12, AC-B5-9, AC-B7-7 |
-| N5  | renderer query replies would set a false `operatorTyped`              | §3.2; AC-B1-10                                 |
-| N6  | `waitFor` schema lives in the catalog entry                           | §9 B8 scope                                    |
-| N7  | `AC-B6-4` needs a folder-block hook                                   | §9 B6 scope (`user-projects.ts`)               |
-| N8  | merge gate, split seams, `spawnedAt` in the dispatch payload          | §9 (merge gate, split seams), §4.1 step 5      |
-| N9  | park TTL is 30 min; handle shape; wrong pending text                  | §6.3; AC-B6-9                                  |
-| —   | plan graph: U1 depends on B7, wave 9 = { B8 ∥ U1 }                    | §9 table and note                              |
+| #   | Item                                                                            | Resolved in                                    |
+| --- | ------------------------------------------------------------------------------- | ---------------------------------------------- |
+| N1  | the ask-mode lease had no dispatch path                                         | §6.2 items 4–5; AC-B6-8                        |
+| N2  | a reload kills viewed agent terminals; `rendererAttached` never reset           | §5.4, §8 case 11; AC-B2-8, AC-B3-11            |
+| N3  | stale ADR-0020 unit/AC references                                               | ADR-0020 §4                                    |
+| N4  | `instructions.ts` advertised verbs before they exist                            | §4 intro; AC-B1-11, AC-B3-12, AC-B5-9, AC-B7-7 |
+| N5  | renderer query replies would set a false `operatorTyped`                        | §3.2; AC-B1-10                                 |
+| N6  | `waitFor` schema lives in the catalog entry                                     | §9 B8 scope                                    |
+| N7  | `AC-B6-4` needs a folder-block hook                                             | §9 B6 scope (`user-projects.ts`)               |
+| N8  | merge gate, split seams, `spawnedAt` in the dispatch payload                    | §9 (merge gate, split seams), §4.1 step 5      |
+| N9  | park TTL is 30 min; handle shape; wrong pending text                            | §6.3; AC-B6-9                                  |
+| —   | plan graph: U1 depends on B7, wave 9 = { B8 ∥ U1 }                              | §9 table and note                              |
+| A4  | merge gate: B1 and B2 must merge together; `writable: 'off'` + `writableReason` | §9 merge gate; §4.2; §6.1                      |
