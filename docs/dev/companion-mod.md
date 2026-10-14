@@ -71,8 +71,9 @@ rest by `tests/companion/api-surface.test.ts` on the source.
 The mod folds every row the conversation keeps (`session.append`, the row **as stored**, so a
 rewriting mod beneath such as T450's scrubber is honoured) into a compact row and sends it as
 `session.row`. Spec: `docs/specs/T455-live-sidebar-from-session-append/` (`00-spec.md` §5, with the
-amendments of `04-w0-findings.md` §8). Host side: T455 W2; until it lands no host enables
-`sense.row`, so the mod folds in memory and sends nothing.
+amendments of `04-w0-findings.md` §8). Host side: T455 W2, below (`sense.row` is enabled while
+the `row` family is not `off`; a host without the row adapter never enables it, and the mod then
+folds in memory and sends nothing).
 
 - `hooks/lib/row-fold.ts` is the pure fold: first and last prompt, last assistant text, title, tool
   calls (main loop and subagents apart), user rows, last row time and uuid. `lastPrompt` takes only
@@ -173,6 +174,80 @@ Tests: `resources/companion/tests/row.test.ts` (the kit, with the golden traces 
 `redact-wire.test.ts`, `row-hook.test.ts` (the real `register()` under a fake engine: ordering and
 fail open) and `row-host-compat.test.ts` (the W1 events against the current host). Every row in
 them is synthetic, and every token in the redaction tests is built at runtime.
+
+## The host ingest (T455 W2, the `row` family in shadow)
+
+The host half of the live row. **Shadow means nothing user-visible changes**: the sidebar,
+`claude:session:updated`, the fleet model, `get_fleet` and `get_session` read exactly what they
+read without the mod. Consumers are W3, the slug-pass demotion W4, the flip W6.
+`tests/companion/row-shadow.test.ts` proves it: a burst of rows through the real host, adapters,
+reader and ledger leaves the model, the task-state hub and the renderer's identity push identical
+to a run with no mod.
+
+- **The `row` family** (`mode.ts`, `arbitration-core.ts`): `FAMILY_FEATURES.row =
+['sense.identity', 'sense.row']`, shipped `shadow`, `companion-prefs.json` `families.row` honoured
+  (`off` / `shadow` / `active`). Its design-time partition is data, `ROW_PARTITION`: `prompt`,
+  `count`, `activity` and `assistant` go to the companion once the family is owned; `title` and
+  `tools` stay with their legacy writers. `rowGroupOwner(group, familyOwner)` is the only way to
+  ask, so the family flips as one. In W2, `active` only makes the arbiter report the family owned
+  (the Settings → Mods state line counts it, as for any family); nothing applies a pushed value.
+- **Wire caps** (`wire-core.ts`): `validateSessionRow` copies only the contract's fields; texts at
+  most 240 chars and 300 UTF-8 bytes, counts non-negative integers, `fold: 1`, `lastUuid` at most
+  64 chars. `validateStartFacts` checks the snapshot's `start` shape and its path length (4,096).
+- **The row adapter** (`ingest/row-adapter.ts`): registers `session.row` and the `sense.row` policy
+  (`registerRowFeaturePolicy`, not in the external profile's ceiling). It keeps the newest values
+  per conversation in memory (`latest(sid)`): an absent text keeps the host's value, `null` means
+  none seen. A malformed row is counted and dropped; the third in one binding calls
+  `revokeProof('sense.row')` and the arbiter makes `row` sticky-legacy for the binding. A rebound
+  or the binding's end drops the values. Diagnostics are counts only.
+- **Claim facts** (`identity-adapter.ts`, `transcript-path.ts`): the identity adapter reads
+  `session.snapshot.start` and `session.rebound.transcriptPath`. A path is kept only as
+  `<~/.claude/projects>/<slug>/<sid>.jsonl`: lexical checks first (type, length, NUL, absolute, no
+  `.`/`..`/empty segment, under the root, that exact depth and basename) with no file-system call,
+  then `realpath` of the root, the slug dir and the file when they exist, each still under the
+  root. Every drop is counted by reason (`pathDrops()`); the last kept start survives a snapshot
+  without one. `claimFacts()` carries `transcriptPath` and `lineage`; the renderer push and the
+  diagnostics keep their P1W3 shape until a consumer exists, so no path reaches the renderer.
+- **Lineage** (`pty.ts`, `lineage-store.ts`): `PtyRec.spawnSourceSid` is set for `claude-resume`
+  and `claude-fork` from `opts.claudeSessionId`, read through `setCompanionSpawnSourceResolver`.
+  The identity adapter joins `{ kind, from }` from that record (a fork, a resume) or from its own
+  rebound bookkeeping (`/clear` → `new` from the left sid, `/resume` → `resume` from it), never from
+  the mod, and freezes it at the conversation's first sight (a migration rewrites a fork record's
+  kind to `claude-resume`). The first time a lineage names another session it is written to
+  `<userData>/companion/lineage.json`: `{ v: 1, entries: [{ sid, kind, from, at }] }`, ids only,
+  atomic (temp file + rename), mode 0600, at most 10,000 entries, oldest dropped. `loadLineage`
+  reads it; nothing reads it in W2 (`forkedFrom` is W3).
+- **The parity stream** `<userData>/companion/parity/row.ndjson` (`ingest/row-parity-core.ts`,
+  `ingest/row-legacy.ts`, `parity-row-rule.ts`). Two seconds after each main-loop `turn.completed`
+  (the `taskState` rule's +2 s side), the adapter compares the newest push, composed over the cold
+  baseline (frozen when the path is first known: a resume's own file minus the rows already
+  pushed, a fork's source file, none for a new conversation), against the legacy twin, and writes
+  one record per group: `k = group:<group>`, `d = { group, verdict, cls, lenPush, lenLegacy }`, no
+  text. The twin is the reader's own cached header scrape (first prompt, `last-prompt` line,
+  custom title, user rows; `host.ts` calls the reader's `__scrapeHeaderWithStatForTests`, the only
+  export of that scrape), plus one 512 KB tail read (last assistant text, the push's `lastUuid`, the
+  rows a `last-prompt` line can name, `stall-detect`'s calls), plus the head's first prompt row when
+  a first-prompt divergence needs a class. Texts go through `firstRealPrompt` (and a trailing-space
+  trim) first. Verdicts: `match`, `diverge`, `unaligned` (M1: `lastUuid` absent from the tail, or
+  user/assistant rows after it), `unknown` (an absent push text), `no-legacy` (no kept path, no
+  file). Named classes: `E-HEAD`, `E-ORIGIN` (peer, task notification), `E-TEAMMATE`,
+  `E-SCHEDULED` (a `/loop` re-fire), `E-PLUGIN-BRIDGE` (an origin the fold skips by default),
+  `E-HEADLESS` (`claude -p`), `E-RAWCAP` and `E-RAWCAP-WINDOW` (the two first-prompt bounds above),
+  `E-REDACT` (the push holds `[REDACTED:<rule>]` where the reader shows the text, everything before
+  it equal; added by W2), `E-STOPLESS`, and for `tools` only `E-TAIL` and `E-SUBAGENT`. Anything
+  else is `unexplained`. The prompt group's class names its field (`last:…`, `first:…`, joined by
+  `+`). Every record is `record-only` in W2. `rowGateRecords(records)` is the gate's input (the
+  four companion groups, comparisons only); `parityReport('row', …)` names each explained class as
+  `<group>:<class>`. The gate's thresholds and its tolerance for `unexplained` are the operator's
+  decision, not code.
+- **What a turn end costs in shadow**: the reader's incremental header advance (shared with the
+  slug pass's cache) and one read of at most 512 KB, per bound session with `sense.row`.
+
+Tests: `tests/companion/row-wire.test.ts` (caps, revocation), `row-family.test.ts`,
+`identity-start.test.ts` (hostile paths, claim facts, lineage), `lineage-store.test.ts`,
+`row-parity.test.ts` (one test per class, and the mutation that drops it),
+`row-adapter.test.ts` (the merge rule, no text at rest, end to end against the real reader) and
+`row-shadow.test.ts`. Every transcript in them is synthetic.
 
 ## Running the checks
 
