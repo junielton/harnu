@@ -91,6 +91,51 @@ scripts/ci/render-secret-rules.mjs`; `tests/companion/secret-rules-staged.test.t
 - `classic.SessionStart` records `{ source, transcriptPath }` before its first await, because the
   engine starts `session.start` before that handler gets there (W0 M8). The hello's snapshot carries
   it as `start`; when the hello went out first, a `probe` snapshot follows with it.
+- Every text is bounded twice before it ships. The row's raw text is cut at `RAW_MAX` (64 KiB) on a
+  whole word before any parsing; the wrapper scans are linear `indexOf` loops, not lazy regexes, so
+  a 1 MB row of unclosed tags folds in milliseconds (a lazy regex took 2–26 s, and a hook that
+  blocks 5 s is unloaded). Then redaction runs on `REDACT_WINDOW` (8 KiB), cut on a whole word too:
+  a token the cut would split is dropped whole, so nothing past the window ever ships, however much
+  redaction shrinks what precedes it. A text with no word boundary to cut at is withheld (`null`).
+  Above the raw cap the first prompt can differ from the legacy reader's (it reads up to 2 MiB).
+- Overlapping rule matches are merged and the union is redacted under the rule that matched first.
+  T450's `detect` skips the later match instead, which leaves the rest of a larger secret raw; the
+  merge is a deliberate hardening for T450 to adopt. The rule sources are T450's, unchanged.
+- Each text is capped at 240 UTF-16 units AND `ROW_TEXT_MAX_BYTES` (300) UTF-8 bytes as JSON writes
+  it, after control characters are stripped and lone surrogates replaced, so a `session.row` stays
+  at or under ~1.5 KB in any script.
+- The `classic.SessionStart` body runs the identity step (P1W3) in a block of its own; no T455 step
+  can skip the rebound or the fleet reset.
+
+### Known engine effect: a `session.append` hook slows the rows it receives
+
+Registering any `session.append` hook routes every matching row through the module's worker before
+it is stored (the fold costs 0.3–1.8 ms per row, `03-prototype.md` §P.3). That shifts races
+between loops. The reproducible case is `tests/cli/fleet-state.cli.test.ts` › "teammate is not a
+subagent" (`claude -p`, a scripted endpoint, one `Agent` call whose subagent answers at once). It
+fails 3 of 3 with any `session.append` hook, a bare `($, e, next) => next(e)` included, and passes
+3 of 3 with none:
+
+- without the hook: `turn.started → subagent.started → subagent.stopped → turn.completed (sub) →
+turn.completed (main, backgroundSubagents 0) → turn.started → turn.completed (main, 0)`;
+- with it: `turn.started → subagent.started → turn.completed (main, backgroundSubagents 1) →
+subagent.stopped → turn.completed (sub) → turn.started → turn.completed (main, 0)`.
+
+The subagent now finishes a few ms after the main turn ends instead of before it. The order the mod
+reports is the engine's: the subagent really was still running. The taskState map then does what
+D12 prescribes. A main `turn.completed` with `backgroundSubagents > 0` holds 'working' (`heldIdle`),
+and the last `subagent.stopped` releases it with a Stop. The companion's shadow fold is therefore
+'working' for as long as the subagent outlives the turn (milliseconds here), where it went idle
+before. A legacy fold that idles at the main Stop disagrees for that window: parity noise of the
+same kind every long background subagent already produces. A subagent that runs for minutes outlives
+the turn with or without the hook, so only near-simultaneous endings change. The stuck timer is
+not reached in a window of milliseconds.
+
+A narrower registration avoids it: a bare hook with the matcher `{ door: 'response' }` or
+`{ door: 'tool-result' }` restores the old order 3 of 3. But the fold needs `prompt`, `command`,
+`response`, `tool-result` and `note` rows (prompts, user rows, assistant text), and a bare hook on a
+RegExp matcher over those five doors still fails 3 of 3. Whether the engine honours a RegExp `door`
+matcher was not established. No workaround that keeps the fold whole was found.
 
 Tests: `resources/companion/tests/row.test.ts` (the kit, with the golden traces of
 `tests/fixtures/row-traces.ts`), and in `npm test` `tests/companion/row-fold.test.ts`,

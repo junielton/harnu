@@ -407,35 +407,36 @@ them or because another wave reads them; they never travel.
 
 ### 7.1 Transport, lease, batching
 
-| Constant                 | Value     | Meaning                                                                             | Wave    | Evidence                                                               |
-| ------------------------ | --------- | ----------------------------------------------------------------------------------- | ------- | ---------------------------------------------------------------------- |
-| `FETCH_HARD_CAP_MS`      | 30 000    | Engine abort of any single `$.http.fetch`                                           | P0      | smoke B1.1, C2 (`no complete answer within 30000ms`); not configurable |
-| `POLL_HOLD_MS`           | 25 000    | Host hold of one `poll` (_config_ `pollHoldMs`)                                     | P0      | smoke C2: 25 s holds ran for minutes; 25–30 s untested (CQ7)           |
-| `ASK_TRANCHE_MS`         | 20 000    | Host hold of one `permission` tranche (_config_ `askHoldMs`)                        | P0      | smoke B1.2, B1.7: 20 s tranches held 15 min                            |
-| `HELLO_SLA_MS`           | 2 000     | Host must answer `hello`                                                            | P0      | design; hello blocks the first prompt (smoke A2)                       |
-| `HELLO_WAIT_MS`          | 2 500     | Mod: longest a hook waits for a hello before returning `next(e)`                    | P1W3    | design; a 4 s hold delayed the prompt to 4.8 s (smoke A2)              |
-| `SPAWN_REDEEM_WINDOW_MS` | 600 000   | Host: an unredeemed spawn token is dead after this                                  | P1W3    | design                                                                 |
-| `DRIFT_CHECK_MIN_MS`     | 1 000     | Mod: floor between two `$.session.id()` drift reads (§15)                           | P1W3    | design                                                                 |
-| `BYE_BUDGET_MS`          | 1 000     | Mod budget for `bye`; designed for the 1.5 s bound                                  | P0      | types L10329 (1.5 s); smoke C2 read 5 000 ms; unresolved, C13 (CQ1)    |
-| `LEASE_TTL_MS`           | 20 000    | Lease freshness window (§11.3)                                                      | P0      | D4; covers a hot reload (0.6–10 s, smoke A5, C2)                       |
-| `LEASE_SWEEP_MS`         | 5 000     | Host: period of the lease edge detection                                            | P1W1    | design                                                                 |
-| `HEARTBEAT_MS`           | 10 000    | Empty `events` when nothing else renews the lease (_config_)                        | P0      | design; `$.clock.every` does not delay `-p` exit (smoke C2)            |
-| `FLUSH_MS`               | 250       | Max age of a queued event (_config_ `flushMs`)                                      | P0      | design; one POST costs 2 ms median, 14 ms p90 (smoke A4)               |
-| `BATCH_MAX_EVENTS`       | 32        | Events per batch (_config_)                                                         | P0      | design                                                                 |
-| `BATCH_MAX_BYTES`        | 65 536    | Bytes per batch (_config_)                                                          | P0      | design                                                                 |
-| `RING_MAX`               | 256       | Unacknowledged events kept by the mod (_config_)                                    | P0      | design                                                                 |
-| `BODY_MAX_BYTES`         | 1 048 576 | Host body cap                                                                       | P0      | design                                                                 |
-| `SOCKET_PATH_MAX_BYTES`  | 90        | Longest Unix socket path before the TCP fallback                                    | P1W1    | types L4897 ("near 100 B"); 90 is a design margin (CQ6)                |
-| `RATE_WINDOW_MS`         | 10 000    | Host rate bucket window                                                             | P1W1    | design (settles CQ11)                                                  |
-| `RATE_MAX_REQUESTS`      | 200       | Requests per binding per window; `hello` exempt                                     | P1W1    | design (settles CQ11)                                                  |
-| `BACKOFF_MIN_MS`         | 500       | First reconnect delay                                                               | P0      | design                                                                 |
-| `BACKOFF_MAX_MS`         | 15 000    | Reconnect delay ceiling                                                             | P0      | design                                                                 |
-| `ROW_DEBOUNCE_MS`        | 500       | Mod: trailing debounce of `session.row` after a row changed a field                 | T455 W1 | T455 spec §5.4; 26 rows → 4 events (T455 `03-prototype.md` §P.3)       |
-| `ROW_MAX_WAIT_MS`        | 2 000     | Mod: longest a changed `session.row` waits during a stream of rows                  | T455 W1 | T455 spec §5.4                                                         |
-| `ROW_TEXT_MAX`           | 240       | Cap of every `session.row` text field, whitespace collapsed                         | T455 W1 | T455 spec §5.3                                                         |
-| `TRANSCRIPT_PATH_MAX`    | 4 096     | Cap of `session.snapshot.start.transcriptPath` and `session.rebound.transcriptPath` | T455 W1 | T455 spec §5.3                                                         |
-| `HOOK_BUDGET_MS`         | 10 000    | Engine budget per dispatch; stops during a `$` call                                 | —       | types L4776; smoke B1.2                                                |
-| `WEDGE_MS`               | 5 000     | Engine heartbeat: a spinning hook unloads its mod                                   | —       | smoke B6                                                               |
+| Constant                 | Value     | Meaning                                                                                                          | Wave    | Evidence                                                               |
+| ------------------------ | --------- | ---------------------------------------------------------------------------------------------------------------- | ------- | ---------------------------------------------------------------------- |
+| `FETCH_HARD_CAP_MS`      | 30 000    | Engine abort of any single `$.http.fetch`                                                                        | P0      | smoke B1.1, C2 (`no complete answer within 30000ms`); not configurable |
+| `POLL_HOLD_MS`           | 25 000    | Host hold of one `poll` (_config_ `pollHoldMs`)                                                                  | P0      | smoke C2: 25 s holds ran for minutes; 25–30 s untested (CQ7)           |
+| `ASK_TRANCHE_MS`         | 20 000    | Host hold of one `permission` tranche (_config_ `askHoldMs`)                                                     | P0      | smoke B1.2, B1.7: 20 s tranches held 15 min                            |
+| `HELLO_SLA_MS`           | 2 000     | Host must answer `hello`                                                                                         | P0      | design; hello blocks the first prompt (smoke A2)                       |
+| `HELLO_WAIT_MS`          | 2 500     | Mod: longest a hook waits for a hello before returning `next(e)`                                                 | P1W3    | design; a 4 s hold delayed the prompt to 4.8 s (smoke A2)              |
+| `SPAWN_REDEEM_WINDOW_MS` | 600 000   | Host: an unredeemed spawn token is dead after this                                                               | P1W3    | design                                                                 |
+| `DRIFT_CHECK_MIN_MS`     | 1 000     | Mod: floor between two `$.session.id()` drift reads (§15)                                                        | P1W3    | design                                                                 |
+| `BYE_BUDGET_MS`          | 1 000     | Mod budget for `bye`; designed for the 1.5 s bound                                                               | P0      | types L10329 (1.5 s); smoke C2 read 5 000 ms; unresolved, C13 (CQ1)    |
+| `LEASE_TTL_MS`           | 20 000    | Lease freshness window (§11.3)                                                                                   | P0      | D4; covers a hot reload (0.6–10 s, smoke A5, C2)                       |
+| `LEASE_SWEEP_MS`         | 5 000     | Host: period of the lease edge detection                                                                         | P1W1    | design                                                                 |
+| `HEARTBEAT_MS`           | 10 000    | Empty `events` when nothing else renews the lease (_config_)                                                     | P0      | design; `$.clock.every` does not delay `-p` exit (smoke C2)            |
+| `FLUSH_MS`               | 250       | Max age of a queued event (_config_ `flushMs`)                                                                   | P0      | design; one POST costs 2 ms median, 14 ms p90 (smoke A4)               |
+| `BATCH_MAX_EVENTS`       | 32        | Events per batch (_config_)                                                                                      | P0      | design                                                                 |
+| `BATCH_MAX_BYTES`        | 65 536    | Bytes per batch (_config_)                                                                                       | P0      | design                                                                 |
+| `RING_MAX`               | 256       | Unacknowledged events kept by the mod (_config_)                                                                 | P0      | design                                                                 |
+| `BODY_MAX_BYTES`         | 1 048 576 | Host body cap                                                                                                    | P0      | design                                                                 |
+| `SOCKET_PATH_MAX_BYTES`  | 90        | Longest Unix socket path before the TCP fallback                                                                 | P1W1    | types L4897 ("near 100 B"); 90 is a design margin (CQ6)                |
+| `RATE_WINDOW_MS`         | 10 000    | Host rate bucket window                                                                                          | P1W1    | design (settles CQ11)                                                  |
+| `RATE_MAX_REQUESTS`      | 200       | Requests per binding per window; `hello` exempt                                                                  | P1W1    | design (settles CQ11)                                                  |
+| `BACKOFF_MIN_MS`         | 500       | First reconnect delay                                                                                            | P0      | design                                                                 |
+| `BACKOFF_MAX_MS`         | 15 000    | Reconnect delay ceiling                                                                                          | P0      | design                                                                 |
+| `ROW_DEBOUNCE_MS`        | 500       | Mod: trailing debounce of `session.row` after a row changed a field                                              | T455 W1 | T455 spec §5.4; 26 rows → 4 events (T455 `03-prototype.md` §P.3)       |
+| `ROW_MAX_WAIT_MS`        | 2 000     | Mod: longest a changed `session.row` waits during a stream of rows                                               | T455 W1 | T455 spec §5.4                                                         |
+| `ROW_TEXT_MAX`           | 240       | Cap of every `session.row` text field, whitespace collapsed                                                      | T455 W1 | T455 spec §5.3                                                         |
+| `ROW_TEXT_MAX_BYTES`     | 300       | The same fields' cap in UTF-8 bytes as JSON writes them: a `session.row` stays at or under ~1.5 KB in any script | T455 W1 | T455 W1 round 2 (a CJK text at 240 units is ~720 bytes)                |
+| `TRANSCRIPT_PATH_MAX`    | 4 096     | Cap of `session.snapshot.start.transcriptPath` and `session.rebound.transcriptPath`                              | T455 W1 | T455 spec §5.3                                                         |
+| `HOOK_BUDGET_MS`         | 10 000    | Engine budget per dispatch; stops during a `$` call                                                              | —       | types L4776; smoke B1.2                                                |
+| `WEDGE_MS`               | 5 000     | Engine heartbeat: a spinning hook unloads its mod                                                                | —       | smoke B6                                                               |
 
 ### 7.2 Commands and asks
 
@@ -531,7 +532,7 @@ interface EventPayloads {
   // unknown (the mod reloaded; texts are never persisted). Texts are named fields (rule below).
   'session.row': {
     fold: 1 // the fold's rule version
-    firstPrompt?: string | null // ≤ ROW_TEXT_MAX
+    firstPrompt?: string | null // ≤ ROW_TEXT_MAX units and ROW_TEXT_MAX_BYTES bytes
     lastPrompt?: string | null // ≤ ROW_TEXT_MAX
     lastAssistant?: string | null // ≤ ROW_TEXT_MAX
     title?: string | null // ≤ ROW_TEXT_MAX; the latest custom session_title; parity only
@@ -710,10 +711,17 @@ Rules for every event:
   above names the field. The named exceptions are `compact.done.summary`, an ask's `input`, the
   `text` and `title` of `plan.capture`'s result, and (T455 W1) `session.row`'s `firstPrompt`,
   `lastPrompt`, `lastAssistant` and `title`. Those four are whitespace-collapsed, capped at
-  `ROW_TEXT_MAX`, never kept in `$.state`, and pass the wire redaction first: T450's 17
-  deterministic rules, each match replaced by `[REDACTED:<rule>]`, no entropy rule. A field is
-  sent `null` only when the redaction pass itself throws; a secret no rule matches goes out as
-  written (T455 spec §5.5, SEC-8 as amended). `guard.denied.path` is relative to the session
+  `ROW_TEXT_MAX` units and `ROW_TEXT_MAX_BYTES` UTF-8 bytes (as JSON writes them, after
+  non-whitespace control characters are stripped and lone surrogates replaced), never kept in
+  `$.state`, and pass the wire redaction first: T450's 17 deterministic rules, each match replaced
+  by `[REDACTED:<rule>]`, no entropy rule. The mod reads at most `RAW_MAX` (64 KiB) of a row and
+  redacts at most `REDACT_WINDOW` (8 KiB), each cut on a whole word, so no output derives from a
+  token a cut split. Overlapping matches are merged and the union redacted under the rule that
+  matched first: a deliberate hardening over T450's `detect`, which skips the later match and
+  leaves the rest of a larger secret raw (the rule sources are T450's, unchanged). A field is sent
+  `null` only when the redaction pass throws or a cut finds no word boundary; a secret no rule
+  matches goes out as written (T455 spec §5.5, SEC-8 as amended). Worst case, a `session.row` is
+  about 1.5 KB: four texts of at most 300 bytes and about 250 bytes of keys and counts. `guard.denied.path` is relative to the session
   cwd. `session.snapshot.start.transcriptPath` and `session.rebound.transcriptPath` are paths,
   not text, and the host validates them.
 - The host MUST ignore an unknown `t` (counting it) and unknown fields.
@@ -1053,7 +1061,8 @@ its feature is enabled.
 T455 W1 adds `sense.row` steps to four existing bodies: `classic.SessionStart` records
 `{ source, transcriptPath }` **synchronously, before any await** (the engine dispatches
 `session.start` before this handler passes its first await, T455 W0 M8), moves the fold to the new
-conversation on `clear` / `resume` and sends the path on `session.rebound`; `session.start` restores
+conversation on `clear` / `resume` and sends the path on `session.rebound`, each T455 step in a
+try block of its own so that none can skip the identity step (rebound, fleet reset); `session.start` restores
 the `row` counts after a reload (never in a new process) and sends the row; a main-loop
 `turn.complete` flushes it; `session.end` flushes it before the bye, and on `clear` / `resume`
 starts a fresh fold whose id the next `classic.SessionStart` names.
