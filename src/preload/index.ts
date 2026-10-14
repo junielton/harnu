@@ -20,6 +20,7 @@ import type { TelemetryPayload } from '../main/statusline'
 import type { TaskState, FailureReason } from '../main/hook-state'
 import type { PtyExitReason } from '../main/pty'
 import type { TerminalStatus } from '../main/terminal-lifecycle'
+import type { TerminalChipState } from '../main/terminal-registry'
 import type { ReviewCorrective } from '../main/review-corrective'
 import type { ResponderMode } from '../main/responder-dispatch'
 import type { ShadowEntry } from '../main/responder-registry'
@@ -1185,6 +1186,12 @@ const api = {
    */
   terminalDisconnect: (terminalId: string): Promise<boolean> =>
     ipcRenderer.invoke('terminal:disconnect', terminalId),
+  /**
+   * T474 U1: what the pane's connection chip renders for a terminal — origin, owner, whether it
+   * was disconnected or exited, and whether an agent holds a write lease. Null for an unknown id.
+   */
+  terminalChip: (terminalId: string): Promise<TerminalChipState | null> =>
+    ipcRenderer.invoke('terminal:chip', terminalId),
   /**
    * T474 B7: an agent read or typed into a terminal — coalesced by main to one event per
    * terminal per 250 ms. Feeds the pane chip's live signal (unit U1).

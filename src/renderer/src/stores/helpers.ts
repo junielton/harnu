@@ -1223,12 +1223,34 @@ export const useHelpersStore = defineStore('helpers', () => {
     }
   }
 
+  /**
+   * T474 U1 (spec §3.3, R13): an agent terminal's `ownerSessionId` may be a `synthetic-…` id of
+   * a session still being born. When the transcript lands that id becomes the real one, and the
+   * pane must follow it — otherwise the connection chip would read "Connected to a closed
+   * session" the moment the migration happens. Main rekeys its own copy off `pty:rekey`.
+   */
+  function rekeyAgentTerminalOwners(oldId: string, newId: string): void {
+    let next: Map<string, InMemoryWorktreeState> | null = null
+    for (const [path, state] of byWorktree.value) {
+      if (!state.panes.some((p) => isAgentTerminalPane(p) && p.ownerSessionId === oldId)) continue
+      next ??= new Map(byWorktree.value)
+      next.set(path, {
+        ...state,
+        panes: state.panes.map((p) =>
+          isAgentTerminalPane(p) && p.ownerSessionId === oldId ? { ...p, ownerSessionId: newId } : p
+        )
+      })
+    }
+    if (next) byWorktree.value = next
+  }
+
   // ── Fork-pending resolution via R1's multi-sub migrate handler ────────
 
   // Register a migrate handler. R1 made this multi-sub-safe so we coexist
   // with TerminalPane's own registration. The returned unregister fn is
   // not used here (Pinia stores are app-lifetime singletons).
   sessions.registerMigrateHandler((oldId, newId) => {
+    rekeyAgentTerminalOwners(oldId, newId)
     for (const [path, state] of byWorktree.value) {
       const idx = state.panes.findIndex(
         (p) => p.type === 'claude-fork-pending' && (p as HelperPanePending).pendingSynthId === oldId

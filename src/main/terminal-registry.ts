@@ -147,6 +147,40 @@ export function terminalAccess(
   }
 }
 
+/**
+ * What a pane's connection chip needs to know about its terminal (spec §7.3), projected from the
+ * record plus whether the operator's write lease is live. Only the fields the chip renders — the
+ * pty id, folder and gate prefs stay in main. The renderer asks for it over `terminal:chip`.
+ */
+export interface TerminalChipState {
+  terminalId: string
+  origin: TerminalOrigin
+  /** Attribution for the chip label (rekeyed on synth→real); null when the opener named none. */
+  ownerSessionId: string | null
+  /** The operator pressed Disconnect: the chip is gone for good. */
+  disconnected: boolean
+  /** The shell ended — nothing is connected to a dead terminal. */
+  exited: boolean
+  /** An operator-opened terminal an agent may type into without a prompt (spec §6.3). */
+  leaseActive: boolean
+}
+
+/** Project a registry record to the chip's view of it. */
+export function terminalChipState(
+  rec: Pick<TerminalRecord, 'terminalId' | 'origin' | 'ownerSessionId' | 'disconnected' | 'state'>,
+  leaseActive: boolean
+): TerminalChipState {
+  return {
+    terminalId: rec.terminalId,
+    origin: rec.origin,
+    ownerSessionId: rec.ownerSessionId,
+    disconnected: rec.disconnected,
+    exited: rec.state === 'exited',
+    // A lease is only meaningful on a terminal an agent did not open itself and can still write.
+    leaseActive: leaseActive && !rec.disconnected && rec.state === 'running'
+  }
+}
+
 /** Matches one complete terminal-generated reply (see {@link isTerminalReply}). */
 const REPLY_UNIT = [
   // CPR `ESC [ r ; c R`, and the DEC-private variant `ESC [ ? r ; c R`.
