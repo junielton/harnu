@@ -713,25 +713,36 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
   ptyDeps = deps
 
   // The agent-origin `terminal` is main's own door (`createTerminalPty`): the renderer can never
-  // register one. What it MAY do (T481) is name the shell pane it is opening so the registry
-  // knows the OPERATOR's terminal — origin is forced to `operator` here, and an id the registry
-  // already holds is ignored, so a renderer cannot take over an agent terminal's record.
+  // register one. What it MAY do (T481) is say that the shell pane it is opening is a terminal,
+  // so the registry knows the OPERATOR's terminal. Main decides the rest: the origin is always
+  // `operator`, and the folder is where the PTY actually runs (`cwd`), never a renderer claim.
+  // An id the registry holds is refused — unless it is a dead operator record (see
+  // `reusableOperatorRecord`), which is what a pane restored after a window reload finds.
   ipcMain.handle('pty:create', async (_e, opts: CreateOpts): Promise<string> => {
     const named = opts.terminal
-    const terminal =
+    let terminal: CreateOpts['terminal'] | undefined
+    if (
       (opts.kind ?? 'shell') === 'shell' &&
       named &&
       typeof named.terminalId === 'string' &&
-      typeof named.folder === 'string' &&
       named.terminalId !== '' &&
-      !terminalRegistry.get(named.terminalId)
-        ? {
-            terminalId: named.terminalId,
-            folder: await normalizeFolderPath(named.folder),
-            origin: 'operator' as const,
-            ownerSessionId: null
-          }
-        : undefined
+      typeof opts.cwd === 'string' &&
+      opts.cwd !== ''
+    ) {
+      const held = terminalRegistry.get(named.terminalId)
+      if (!held || reusableOperatorRecord(held)) {
+        if (held) {
+          terminalRegistry.forget(held.terminalId)
+          dropScreenModel(held.terminalId)
+        }
+        terminal = {
+          terminalId: named.terminalId,
+          folder: await normalizeFolderPath(opts.cwd),
+          origin: 'operator',
+          ownerSessionId: null
+        }
+      }
+    }
     return createPty({ ...opts, terminal }, deps)
   })
 
@@ -1126,6 +1137,21 @@ function destroyPty(id: string, flushNow: (id: string) => void): string | undefi
   if (destroyedKey) pruneTaskState(destroyedKey)
   sessionIndex.removeByPtyId(id)
   return output
+}
+
+/**
+ * T481: whether a held record may be replaced by a new registration under the same id. Only an
+ * OPERATOR record whose PTY is gone — an exited tombstone, or one whose ptyId is no longer live.
+ * That is what a helper pane restored after a window reload leaves behind: `beforeunload` destroys
+ * the old PTY, and `helpers.json` brings the pane back under the same id. An agent-origin record
+ * and any running record are never replaced, so the renderer cannot take over a live terminal.
+ */
+function reusableOperatorRecord(rec: {
+  origin: TerminalOrigin
+  state: 'running' | 'exited'
+  ptyId: string
+}): boolean {
+  return rec.origin === 'operator' && (rec.state === 'exited' || !ptys.has(rec.ptyId))
 }
 
 /**

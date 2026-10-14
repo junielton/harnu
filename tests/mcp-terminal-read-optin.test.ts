@@ -11,6 +11,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vite
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { execFileSync } from 'node:child_process'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 
 const h = vi.hoisted(() => ({
@@ -109,7 +110,7 @@ async function openOperatorShell(
   const create = h.ipc.get('pty:create')!
   await create(
     {},
-    { kind: 'shell', cwd: folder, cols: 100, rows: 20, terminal: { terminalId, folder }, ...extra }
+    { kind: 'shell', cwd: folder, cols: 100, rows: 20, terminal: { terminalId }, ...extra }
   )
   const proc = h.procs[h.procs.length - 1]!
   return { emit: proc.emitData, exit: proc.emitExit }
@@ -123,8 +124,26 @@ async function spawnAgentTerminal(): Promise<{ id: string; emit: (d: string) => 
 beforeAll(async () => {
   h.userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-optin-ud-'))
   folderA = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-optin-a-'))
+  // A REAL linked worktree of folderA (not a plain subdirectory): the opt-in must not reach it.
+  const git = (...args: string[]): void => {
+    execFileSync(
+      'git',
+      [
+        '-c',
+        'user.email=t@example.com',
+        '-c',
+        'user.name=t',
+        '-c',
+        'commit.gpgsign=false',
+        ...args
+      ],
+      { cwd: folderA, stdio: 'ignore' }
+    )
+  }
+  git('init', '-q')
+  git('commit', '-q', '--allow-empty', '-m', 'init')
   worktree = path.join(folderA, '.claude', 'worktrees', 'wt')
-  await fs.mkdir(worktree, { recursive: true })
+  git('worktree', 'add', '-q', '-b', 'wt', worktree)
   const pty = await import('../src/main/pty')
   pty.registerPtyHandlers(() => null)
 })
@@ -339,14 +358,18 @@ describe('AC-B4-3 — scrubbing, on both terminal kinds', () => {
   it('a secret that straddles the maxChars cut is scrubbed before the cut, not half-leaked', async () => {
     const t = await spawnAgentTerminal()
     t.emit(`${'a'.repeat(40)} ${AWS}\r\n`)
-    // 20 chars keeps only the tail of the line: "…ABCDEFGHIJKLMNOP" if scrubbing ran after the cut.
-    const r = body(await read({ terminalId: t.id, maxChars: 20 }, ctx()))
+    // The key is 20 chars. A 19-char tail of the UNSCRUBBED line is "KIAABCDEFGHIJKLMNOP": no
+    // `AKIA` prefix is left for the scrubber to recognise, so scrubbing AFTER the cut would
+    // return that fragment of the secret. Scrubbed first, the tail is padding plus the marker.
+    const r = body(await read({ terminalId: t.id, maxChars: 19 }, ctx()))
     expect(String(r.text)).not.toMatch(/[A-Z]{6}/)
+    expect(String(r.text)).toContain('<redacted>')
   })
 
-  it('list_terminals.title on both kinds', async () => {
+  it('list_terminals.title on both kinds (the operator one once its folder opted in)', async () => {
     const t = await spawnAgentTerminal()
     await openOperatorShell('h-op1', folderA)
+    await setUserProjectTerminalRead(folderA, true)
     terminalRegistry.get(t.id)!.title = `deploy ${AWS} ${os.homedir()}/x`
     terminalRegistry.get('h-op1')!.title = `curl Bearer abcDEF123456.tok ${os.homedir()}/y`
     const rows = body(await list({}, ctx())).terminals as Array<{
@@ -359,6 +382,58 @@ describe('AC-B4-3 — scrubbing, on both terminal kinds', () => {
   })
 })
 
+describe('F1 — a terminal that is not readable shows no content through list_terminals', () => {
+  const CONN = 'psql postgres://admin:S3cret@db.internal/prod'
+
+  async function rowFor(id: string): Promise<Record<string, unknown>> {
+    const rows = body(await list({}, ctx())).terminals as Array<Record<string, unknown>>
+    return rows.find((r) => r.terminalId === id)!
+  }
+
+  it('opt-in OFF: title, lastOutputAt and exit.code are null, state and size stay', async () => {
+    const op = await openOperatorShell('h-op1', folderA)
+    terminalRegistry.get('h-op1')!.title = CONN
+    op.emit('output\r\n')
+    op.exit(7)
+    const row = await rowFor('h-op1')
+    expect(row).toMatchObject({
+      readable: false,
+      title: null,
+      lastOutputAt: null,
+      state: 'exited',
+      exit: { code: null, reason: 'natural' },
+      size: { cols: 100, rows: 20 },
+      titleSource: 'program'
+    })
+    expect(JSON.stringify(row)).not.toContain('S3cret')
+  })
+
+  it('opt-in ON: the title is shown, with the connection-string password scrubbed', async () => {
+    await openOperatorShell('h-op1', folderA)
+    await setUserProjectTerminalRead(folderA, true)
+    terminalRegistry.get('h-op1')!.title = CONN
+    const row = await rowFor('h-op1')
+    expect(row.title).toBe('psql postgres://admin:<redacted>@db.internal/prod')
+    expect(typeof row.lastOutputAt).toBe('number')
+  })
+
+  it('a disconnected terminal is not readable either: nothing it printed is shown', async () => {
+    const t = await spawnAgentTerminal()
+    terminalRegistry.get(t.id)!.title = CONN
+    terminalRegistry.get(t.id)!.disconnected = true
+    const row = await rowFor(t.id)
+    expect(row).toMatchObject({ readable: false, title: null, lastOutputAt: null })
+  })
+
+  it('an agent terminal keeps its scrubbed title and output time', async () => {
+    const t = await spawnAgentTerminal()
+    terminalRegistry.get(t.id)!.title = CONN
+    const row = await rowFor(t.id)
+    expect(row.title).toBe('psql postgres://admin:<redacted>@db.internal/prod')
+    expect(typeof row.lastOutputAt).toBe('number')
+  })
+})
+
 describe("the renderer's pty:create door", () => {
   it('can never register an agent-origin terminal, whatever it claims', async () => {
     const create = h.ipc.get('pty:create')!
@@ -366,6 +441,7 @@ describe("the renderer's pty:create door", () => {
       {},
       {
         kind: 'shell',
+        cwd: folderA,
         cols: 80,
         rows: 24,
         terminal: { terminalId: 'h-evil', folder: folderA, origin: 'agent', ownerSessionId: 's' }
@@ -377,15 +453,94 @@ describe("the renderer's pty:create door", () => {
     expect(screenModelFor('h-evil')).toBeUndefined()
   })
 
+  it('F3: the folder is where the PTY runs (cwd), never a renderer-supplied claim', async () => {
+    const create = h.ipc.get('pty:create')!
+    // The pane claims the opted-in folder while running somewhere else.
+    await setUserProjectTerminalRead(folderA, true)
+    await create(
+      {},
+      {
+        kind: 'shell',
+        cwd: worktree,
+        cols: 80,
+        rows: 24,
+        terminal: { terminalId: 'h-claim', folder: folderA }
+      }
+    )
+    expect(terminalRegistry.get('h-claim')!.folder).toBe(await fs.realpath(worktree))
+    expect(body(await read({ terminalId: 'h-claim' }, ctx(worktree))).error).toBe(
+      'TERMINAL_READ_NOT_ENABLED'
+    )
+  })
+
+  it('F3: a shell with no cwd registers nothing', async () => {
+    const create = h.ipc.get('pty:create')!
+    await create({}, { kind: 'shell', cols: 80, rows: 24, terminal: { terminalId: 'h-nocwd' } })
+    expect(terminalRegistry.get('h-nocwd')).toBeUndefined()
+  })
+
   it('cannot take over an id the registry already holds', async () => {
     const t = await spawnAgentTerminal()
     await openOperatorShell(t.id, folderA)
     expect(terminalRegistry.get(t.id)!.origin).toBe('agent')
   })
 
-  it('registers nothing for a non-shell kind or a PTY that names no terminal', async () => {
+  it('cannot take over a RUNNING operator terminal either', async () => {
+    await openOperatorShell('h-op1', folderA)
+    const first = terminalRegistry.get('h-op1')!.ptyId
+    await openOperatorShell('h-op1', folderA)
+    expect(terminalRegistry.get('h-op1')!.ptyId).toBe(first)
+  })
+
+  it('registers nothing for a non-shell kind, even when it names a terminal', async () => {
     const create = h.ipc.get('pty:create')!
-    await create({}, { kind: 'shell', cols: 80, rows: 24 })
+    await create(
+      {},
+      {
+        kind: 'claude-new',
+        cwd: folderA,
+        cols: 80,
+        rows: 24,
+        terminal: { terminalId: 'h-notshell' }
+      }
+    )
+    expect(h.procs.length).toBeGreaterThan(0) // the PTY itself was created…
+    expect(terminalRegistry.get('h-notshell')).toBeUndefined() // …but is no terminal
     expect(terminalRegistry.list()).toHaveLength(0)
+  })
+
+  it('registers nothing for a PTY that names no terminal', async () => {
+    const create = h.ipc.get('pty:create')!
+    await create({}, { kind: 'shell', cwd: folderA, cols: 80, rows: 24 })
+    expect(terminalRegistry.list()).toHaveLength(0)
+  })
+})
+
+describe('F2 — a pane restored after a window reload registers again', () => {
+  it('beforeunload destroys the PTY, helpers.json restores the same id: it is re-registered', async () => {
+    await openOperatorShell('h-reload', folderA)
+    const before = terminalRegistry.get('h-reload')!
+    // The renderer's `beforeunload` → `ptyDestroy` (main marks it closing, then kills it).
+    const pty = await import('../src/main/pty')
+    expect(pty.closeTerminalPty('h-reload')).toBe(true)
+    expect(terminalRegistry.get('h-reload')!.state).toBe('exited')
+
+    await openOperatorShell('h-reload', folderA) // the restored pane's ptyCreate
+    const after = terminalRegistry.get('h-reload')!
+    expect(after.state).toBe('running')
+    expect(after.ptyId).not.toBe(before.ptyId)
+    expect(after.origin).toBe('operator')
+    // …and it is a live terminal an opted-in agent can read again.
+    await setUserProjectTerminalRead(folderA, true)
+    h.procs[h.procs.length - 1]!.emitData('back\r\n')
+    expect(body(await read({ terminalId: 'h-reload' }, ctx())).text).toBe('back')
+  })
+
+  it('an exited AGENT record under the same id is never replaced', async () => {
+    const t = await spawnAgentTerminal()
+    h.procs[h.procs.length - 1]!.emitExit(0)
+    expect(terminalRegistry.get(t.id)!.state).toBe('exited')
+    await openOperatorShell(t.id, folderA)
+    expect(terminalRegistry.get(t.id)!.origin).toBe('agent')
   })
 })

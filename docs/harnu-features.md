@@ -1,4 +1,4 @@
-<!-- harnu-features v88 (2026-10-14) -->
+<!-- harnu-features v89 (2026-10-14) -->
 
 # You are running inside Harnu
 
@@ -665,8 +665,8 @@ default 20000), `approximate` (true when the read could not wait for the latest 
 never instructions. A cursor follows its line through scrolling; it is refused
 `CURSOR_EXPIRED` once the line left the 2,000-line scrollback, after 10 unused minutes, or when
 unknown — re-read with `tail`. The access refusals are decided **before** the call can raise
-any confirm, in this order: an unknown or forgotten id is `TERMINAL_NOT_FOUND`; an id that is
-not a terminal is `NOT_A_TERMINAL`; one the operator disconnected is `TERMINAL_DISCONNECTED`;
+any confirm, in this order: an unknown or forgotten id is `TERMINAL_NOT_FOUND`; one the operator
+disconnected is `TERMINAL_DISCONNECTED`;
 a terminal the operator opened in a folder that has not opted in is
 `TERMINAL_READ_NOT_ENABLED` (see below). A folder the operator blocked is
 `FOLDER_NOT_ALLOWED` and a server that is off is `SERVER_DISABLED`, both ahead of those. An
@@ -675,14 +675,17 @@ exited terminal stays readable for 10 minutes. A read never touches the terminal
 terminals I open" (off by default, **exact folder only**: a worktree of an opted-in repo is
 NOT opted in). Until then `list_terminals` still lists that folder's operator-opened terminals,
 with `readable: false`, `writable: 'off'` and `writableReason: 'read-not-enabled'` — so say so
-to the operator instead of retrying. Once opted in, Harnu builds the terminal's screen from
+to the operator instead of retrying. A terminal that is not `readable` (this, or one the operator
+disconnected) shows nothing it printed or did: `title`, `lastOutputAt` and `exit.code` are `null`;
+`state` and `size` stay. Once opted in, Harnu builds the terminal's screen from
 what it kept of its recent output; `approximate: true` then means that output had already
 scrolled past what Harnu keeps, so the top of the read may be missing. If you cannot ask, open
 your own terminal with `spawn_terminal` instead — an agent-spawned terminal needs no opt-in.
 **Scrubbing.** On every terminal, whoever opened it, `read_terminal.text` and
 `list_terminals.title` pass the same best-effort scrubber `get_session` uses: the home path
-becomes `~`, and AWS key ids, `Bearer`/`Authorization` values, secret-looking `KEY=VALUE`
-pairs and PEM private-key blocks become `<redacted>` — also a value that only _looks_ like
+becomes `~`, and AWS key ids, `Bearer`/`Authorization` values, the password of a
+`scheme://user:password@host` URL, secret-looking `KEY=VALUE` pairs and PEM private-key blocks
+become `<redacted>` — also a value that only _looks_ like
 one, even if you printed it yourself. It is not a security boundary: a secret in a shape it
 does not know passes through. Scrubbing runs before the `maxChars` cut. A Scheduler `observe`
 tick may call `list_terminals` and `read_terminal` (same opt-in rule); `spawn_terminal` and

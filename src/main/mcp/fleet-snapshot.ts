@@ -497,12 +497,17 @@ export interface TerminalListingRow {
   state: TerminalRecord['state']
   exit?: { code: number | null; reason: 'natural' | 'closed' }
   size: { cols: number; rows: number }
-  /** Whatever the program set with an OSC escape — scrubbed, and UNTRUSTED. */
+  /**
+   * Whatever the program set with an OSC escape — scrubbed, and UNTRUSTED. `null` while the
+   * terminal is not `readable`: a title is the command line of a shell prompt framework, which
+   * is exactly the content the operator has not let agents see (T481).
+   */
   title: string | null
   /** Always `'program'`: Harnu does not vouch for this text. */
   titleSource: 'program'
   createdAt: number
-  lastOutputAt: number
+  /** `null` while the terminal is not `readable`: when it prints is activity on a private terminal. */
+  lastOutputAt: number | null
   readable: boolean
   writable: TerminalAccess['writable']
   /** Present exactly when `writable` is `'off'`. */
@@ -545,12 +550,16 @@ export function toTerminalListing(
         ownerSessionId: r.ownerSessionId,
         disconnected: r.disconnected,
         state: r.state,
-        ...(r.exit ? { exit: { code: r.exit.code, reason: r.exit.reason } } : {}),
+        // What a private terminal reveals is its existence and whether it still runs — nothing
+        // it printed or did: no title, no output time, no exit code (T481, spec §4.2).
+        ...(r.exit
+          ? { exit: { code: access.readable ? r.exit.code : null, reason: r.exit.reason } }
+          : {}),
         size: r.size,
-        title: r.title === null ? null : scrubTerminalText(r.title, opts.home),
+        title: access.readable && r.title !== null ? scrubTerminalText(r.title, opts.home) : null,
         titleSource: 'program' as const,
         createdAt: r.createdAt,
-        lastOutputAt: r.lastOutputAt,
+        lastOutputAt: access.readable ? r.lastOutputAt : null,
         readable: access.readable,
         writable: access.writable,
         ...(access.writable === 'off' ? { writableReason: access.writableReason } : {})

@@ -559,10 +559,11 @@ interface PtyCreateOpts {
   spawnedBy?: 'operator' | 'agent'
   /**
    * T481: the operator's shell pane naming itself, so main's terminal registry knows it and an
-   * agent may read it once the folder opts in. Only honored for `kind === 'shell'`; main forces
-   * the origin to `operator` and ignores an id it already holds.
+   * agent may read it once the folder opts in. Only honored for `kind === 'shell'` with a `cwd`;
+   * main forces the origin to `operator`, takes the folder from `cwd`, and refuses an id it holds
+   * unless that is a dead operator record (a pane restored after a reload).
    */
-  terminal?: { terminalId: string; folder: string }
+  terminal?: { terminalId: string }
   /**
    * BUG-70 §4 park ledger: how this session is being woken. Threaded through
    * so an AGENT-driven wake (`message_session` on a parked recipient, T215) is

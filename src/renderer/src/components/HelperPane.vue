@@ -411,9 +411,7 @@ async function createLiveHelper(
           reviewCorrective: paneReviewCorrective(props.pane),
           // T481: an operator-opened shell registers under its pane id, so an agent can read it
           // once the folder opts in. Every other pane type is not a terminal.
-          ...(props.pane.type === 'shell'
-            ? { terminal: { terminalId: props.pane.id, folder: props.pane.cwd } }
-            : {})
+          ...(props.pane.type === 'shell' ? { terminal: { terminalId: props.pane.id } } : {})
         })
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)

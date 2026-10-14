@@ -8,6 +8,7 @@
  *   - AWS access key ids (`AKIA…` / `ASIA…`),
  *   - `Bearer <token>` credentials and `Authorization:` header values,
  *   - sensitive `KEY=VALUE` env dumps (key name looks like a secret),
+ *   - the password of a `scheme://user:password@host` URL (a connection string, a clone URL),
  *   - PEM `PRIVATE KEY` blocks.
  *
  * IMPORTANT — this is **best-effort**, not a security boundary. It is a regex /
@@ -117,7 +118,18 @@ export function redactTranscript(text: string, { home }: RedactOptions): RedactR
     return `${key}=${REDACTED}`
   })
 
-  // 6. Home-dir aliasing — last, so any secret value containing the home path was
+  // 6. URL credentials — `scheme://user:password@host`: keep the user and the host, redact the
+  //    password (greedy up to the LAST `@` of the token, so a password holding an `@` goes whole). After the KEY=VALUE pass so a sensitive key's whole value goes first. The
+  //    lookahead keeps a second pass from re-redacting the marker.
+  out = out.replace(
+    /(\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s:/@<>]+:)(?!<redacted>)[^\s/<>]+(?=@)/g,
+    (_m, prefix: string) => {
+      count++
+      return `${prefix}${REDACTED}`
+    }
+  )
+
+  // 7. Home-dir aliasing — last, so any secret value containing the home path was
   //    already redacted above. Skipped when home is empty or root.
   if (home && home !== '/' && home.length > 1) {
     const homeRe = new RegExp(escapeRegExp(home), 'g')
