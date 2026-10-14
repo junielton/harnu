@@ -64,6 +64,8 @@ When a session spawns a shell in a folder, the shell now starts immediately — 
 
 A session can list every terminal Harnu knows about: who opened it (the agent or you), which session it belongs to, whether it is still running or has exited, and its size. Folder paths are shortened to the folder's name, and a terminal in a folder you blocked is left out. An exited terminal stays in the list for ten minutes. The title a program sets on its terminal is shown to the session as program text it shouldn't trust. A session's own details also list the terminals it owns.
 
+Because the shell belongs to Harnu and not to the pane, nothing is lost when you look away or reload. If you open the folder later, the pane picks up the shell that is already running, with everything it printed so far. If you reload the window, the terminals a session opened keep running and their panes come back by themselves. Closing the pane ends the shell, even if you never opened the pane. A shell that exits on its own after a couple of seconds closes its pane; one that exits right away stays in the stack, showing what it printed and a "Process exited" line, until you remove it. These panes are not saved when you quit Harnu — after a restart they are gone, along with their shells.
+
 A few limits keep this from running away: a folder holds at most four live agent terminals (a fifth is refused until one is closed), and opening two terminals in a row really opens two.
 
 For now a session can open and list terminals but not read what is in one or type into one — those come later, with their own switches for you.
