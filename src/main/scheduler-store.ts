@@ -104,7 +104,12 @@ function normalizeWorker(w: Worker): Worker {
     allowNetwork: w.allowNetwork === true,
     ...(Array.isArray(w.extraReadCommands) ? { extraReadCommands: w.extraReadCommands } : {}),
     ...(typeof w.systemPrompt === 'string' ? { systemPrompt: w.systemPrompt } : {}),
-    failureStreak: typeof w.failureStreak === 'number' ? w.failureStreak : 0
+    failureStreak: typeof w.failureStreak === 'number' ? w.failureStreak : 0,
+    // T483: the pin is part of the definition. Whitelisted here or the first load after a restart
+    // strips it. Only a finite number counts; anything else resolves to unpinned.
+    ...(typeof w.pinnedAt === 'number' && Number.isFinite(w.pinnedAt)
+      ? { pinnedAt: w.pinnedAt }
+      : {})
   }
 }
 

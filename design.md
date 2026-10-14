@@ -10766,9 +10766,26 @@ still catches it.
 `width: 300px; border-right border-border; bg-sidebar; overflow-y: auto` —
 the same shell as the sidebar itself, because a worker list reads like a
 second sidebar, not a table. Grouped under two `wgroup` headers (`24px`,
-`bg-surface`, 11px uppercase `--text-3`, `0.04em` tracking): **Enabled · {n}**
-then **Off · {n}** — off workers sink into their own group instead of
-interleaving, so a quiet list reads at a glance.
+`bg-surface`, 11px uppercase `--text-3`, `0.04em` tracking): **Pinned · {n}**
+(T483), then **Enabled · {n}**, then **Off · {n}** — off workers sink into
+their own group instead of interleaving, so a quiet list reads at a glance.
+
+**Pinned group (T483).** Holds every pinned worker, enabled or off, ordered by
+`pinnedAt` ascending (first pinned stays first — no drag-reorder in v1). A
+worker appears in exactly ONE group: pinning moves it out of Enabled/Off, so
+counts never double-count. A pinned **off** worker keeps its own row state —
+`off` label and the 55% dim — it just lives on top. The **Pinned** header is
+not rendered at all when nothing is pinned, so an uncurated Scheduler looks
+exactly as before. The default selection is the first visible row (the first
+pinned worker when any).
+
+**Collapsible Off group (T483).** The **Off · {n}** header is a `<button>`
+(same 24px / `bg-surface` / 11px uppercase `--text-3` strip) with a leading
+`ChevronDown` (11px, `--text-4`; rotated −90° when collapsed, `--dur-fast`
+`--ease`). Collapsed, only the header and its count remain. State is a
+per-viewer convenience in `localStorage` (`om2tab.scheduler.offCollapsed`,
+try/catch, default expanded). Collapsing never changes the selection: the
+detail stays on the selected worker even when its row is hidden.
 
 **Row anatomy** (`46px`, `padding: 0 10px 0 12px`, `border-bottom
 border-border`, `cursor: pointer`, `position: relative`):
@@ -10817,10 +10834,12 @@ the list column has no per-row rounding — would still shift every row's
 content box by its own width the instant it toggled on. The rail is a sibling
 layer instead, so selecting a row costs zero reflow.
 
-**Row actions — hover-revealed, two icon buttons.** `.wrow-actions { opacity:
+**Row actions — hover-revealed, three icon buttons.** `.wrow-actions { opacity:
 0; transition: opacity var(--dur) var(--ease) }`, revealed on `:hover` or
 `.is-hovered` (keyboard/touch parity, the same idiom every other hover-gated
-row action in this app follows): **Run now** (`Play`, `.iconbtn`) and
+row action in this app follows): **Pin / Unpin** (T483 — `Pin` when unpinned,
+`PinOff` when pinned, `.iconbtn`, `--text-3` at rest, `--text` on hover),
+**Run now** (`Play`, `.iconbtn`) and
 **Delete** (`Trash2`, `.iconbtn.is-danger` — `--text-3` at rest, `--red` on
 hover). `22×22px`, `hover:bg-surface-2`. The actions cluster and the state
 column share the same slot at the row's trailing edge; hovering (or the
@@ -10833,8 +10852,11 @@ column share the same slot at the row's trailing edge; hovering (or the
 
 - **Title row:** the worker's name (13px/600) + its mode badge (`observe`
   shown in the frozen spec → Badge **Accent**, §6 Badges) + a model·effort
-  badge (Badge **Default**, e.g. `haiku · low`) → spacer → **Run now**
-  (`btn-sm`) → the enable `ToggleSwitch`.
+  badge (Badge **Default**, e.g. `haiku · low`) → spacer → **Pin / Unpin**
+  (T483 — a 24×24 `.iconbtn`, `Pin` icon; pinned state is the filled-accent
+  variant: `--accent` icon on `bg-accent-soft` with a `border-accent-line`
+  border, so the detail tells the truth about the pin even when the row is
+  out of view) → **Run now** (`btn-sm`) → the enable `ToggleSwitch`.
 - **Tabs:** `Runs` / `Settings`, `border-bottom border-border`, the active tab
   underlined in `--accent` (`margin-bottom: -1px`, overlapping the row's own
   border) — the standard tab idiom, no new pattern.

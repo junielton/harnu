@@ -3868,6 +3868,7 @@
     "footerNote": "Verifica a cada 30s · no máximo 2 workers por vez · nada roda com o Harnu fechado",
     "emptyTitle": "Nenhum worker ainda",
     "emptyBody": "Um worker roda um prompt em uma pasta, numa cadência, sem abrir uma sessão. Bom para observar um repositório, responder comentários de review ou checar algo periodicamente.",
+    "groupPinned": "Fixados · {n}",
     "groupEnabled": "Ativos · {n}",
     "groupOff": "Desligados · {n}",
     "row": {
@@ -3879,7 +3880,9 @@
       "nextIn": "próxima em {countdown}",
       "failedStreak": "falhou · {n} seguidas",
       "disabledStreak": "desativado · {n} falhas",
-      "off": "desligado"
+      "off": "desligado",
+      "pin": "Fixar worker",
+      "unpin": "Desafixar worker"
     },
     "tabs": {
       "runs": "Execuções",
@@ -3913,7 +3916,9 @@
         "skipped": "pulada",
         "stopped": "parada",
         "running": "rodando"
-      }
+      },
+      "pin": "Fixar worker",
+      "unpin": "Desafixar worker"
     },
     "settings": {
       "identity": "Identidade",

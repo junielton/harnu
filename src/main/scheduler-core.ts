@@ -81,6 +81,25 @@ export interface Worker {
   systemPrompt?: string
   /** Consecutive failures. Three disables the worker. */
   failureStreak: number
+  /**
+   * T483: epoch-ms the operator pinned this worker; present = pinned, and the value orders the
+   * Pinned group. Pure curation — it never changes whether, when or how the worker runs. Only the
+   * operator sets it (`scheduler:setPinned`); `update_worker` can neither set nor clear it.
+   */
+  pinnedAt?: number
+}
+
+/** T483: pin `w` at `now`. Already pinned keeps its original time, so the order never jumps. */
+export function pinWorker(w: Worker, now: number): Worker {
+  return typeof w.pinnedAt === 'number' ? w : { ...w, pinnedAt: now }
+}
+
+/** T483: unpin `w` — the key is removed, not set to `undefined`, so it never reaches the file. */
+export function unpinWorker(w: Worker): Worker {
+  if (!('pinnedAt' in w)) return w
+  const { pinnedAt: _pinnedAt, ...rest } = w
+  void _pinnedAt
+  return rest
 }
 
 export interface Run {

@@ -143,7 +143,7 @@ describe('agent-pane-routing — origin + unseen badge', () => {
     expect(helpers.unseenAgentPaneCount('/repo/a')).toBe(0)
   })
 
-  it('BUG-29: an agent-origin pane into the CURRENTLY visible folder bumps agentPaneRevealTick instead, so a collapsed panel can still reveal', () => {
+  it('BUG-29: an agent-origin pane into the CURRENTLY visible folder bumps paneRevealTick instead, so a collapsed panel can still reveal', () => {
     const sessions = useSessionsStore()
     const helpers = useHelpersStore()
     sessions.folders = [
@@ -155,13 +155,13 @@ describe('agent-pane-routing — origin + unseen badge', () => {
     // Stack already has a pane (the BUG-29 precondition — no false→true edge
     // exists for the second add) before the agent pane lands.
     helpers.addShellHelper('/repo/a', '/repo/a')
-    const tickBefore = helpers.agentPaneRevealTick
+    const tickBefore = helpers.paneRevealTick
     actions.addMarkdownHelper('/repo/a', '/repo/a/x.md', '/repo/a')
 
-    expect(helpers.agentPaneRevealTick).toBe(tickBefore + 1)
+    expect(helpers.paneRevealTick).toBe(tickBefore + 1)
   })
 
-  it('an agent-origin pane into a NON-visible folder never bumps agentPaneRevealTick', () => {
+  it('an agent-origin pane into a NON-visible folder never bumps paneRevealTick', () => {
     const sessions = useSessionsStore()
     const helpers = useHelpersStore()
     sessions.folders = [
@@ -174,13 +174,13 @@ describe('agent-pane-routing — origin + unseen badge', () => {
     sessions.select('s-b') // visible folder is B
 
     const actions = buildDispatchActions()
-    const tickBefore = helpers.agentPaneRevealTick
+    const tickBefore = helpers.paneRevealTick
     actions.addMarkdownHelper('/repo/a', '/repo/a/x.md', '/repo/a')
 
-    expect(helpers.agentPaneRevealTick).toBe(tickBefore)
+    expect(helpers.paneRevealTick).toBe(tickBefore)
   })
 
-  it('a HUMAN-origin pane into the visible folder never bumps agentPaneRevealTick', () => {
+  it('BUG-186: a HUMAN-origin pane into the visible folder bumps paneRevealTick too (but never the unseen badge)', () => {
     const sessions = useSessionsStore()
     const helpers = useHelpersStore()
     sessions.folders = [
@@ -188,11 +188,12 @@ describe('agent-pane-routing — origin + unseen badge', () => {
     ]
     sessions.select('s-a')
 
-    const tickBefore = helpers.agentPaneRevealTick
+    const tickBefore = helpers.paneRevealTick
     // Direct store call, no `origin` opt — the shape every human call site uses.
     helpers.addMarkdownHelper('/repo/a', '/repo/a/x.md', '/repo/a')
 
-    expect(helpers.agentPaneRevealTick).toBe(tickBefore)
+    expect(helpers.paneRevealTick).toBe(tickBefore + 1)
+    expect(helpers.unseenAgentPaneCount('/repo/a')).toBe(0)
   })
 
   it('a HUMAN-origin pane (no opts) never bumps the counter, even into a non-visible folder', () => {

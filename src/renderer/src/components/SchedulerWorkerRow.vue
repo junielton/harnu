@@ -10,14 +10,14 @@
  * - An `off` row dims to 55% opacity as a WHOLE, including its state text —
  *   `opacity` on the root, not a muted color on individual children.
  *
- * Row actions (Run now / Stop / Delete) are always in the DOM at `opacity-0`
+ * Row actions (Pin / Run now / Stop / Delete) are always in the DOM at `opacity-0`
  * and revealed by real `:hover` via Tailwind's `group`/`group-hover` — the
  * mockup's static `is-hovered` variant is a screenshot aid, not a distinct
  * runtime state.
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Play, Square, Trash2 } from 'lucide-vue-next'
+import { Pin, PinOff, Play, Square, Trash2 } from 'lucide-vue-next'
 import { workerState, formatCountdown, formatDuration } from './scheduler-format'
 import type { RunStatus, Worker } from '../../../preload'
 
@@ -45,12 +45,15 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   select: []
+  pin: []
   'run-now': []
   stop: []
   delete: []
 }>()
 
 const { t } = useI18n()
+
+const pinned = computed(() => typeof props.worker.pinnedAt === 'number')
 
 const state = computed(() =>
   workerState(props.worker, {
@@ -142,6 +145,18 @@ const stateLabel = computed(() => {
     </div>
 
     <div class="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+      <button
+        type="button"
+        class="flex h-[22px] w-[22px] items-center justify-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
+        data-action="pin"
+        :aria-label="pinned ? t('scheduler.row.unpin') : t('scheduler.row.pin')"
+        :title="pinned ? t('scheduler.row.unpin') : t('scheduler.row.pin')"
+        :aria-pressed="pinned"
+        @click.stop="emit('pin')"
+      >
+        <PinOff v-if="pinned" :size="11" :stroke-width="1.6" />
+        <Pin v-else :size="11" :stroke-width="1.6" />
+      </button>
       <button
         v-if="!running"
         type="button"

@@ -77,3 +77,29 @@ export function formatDuration(ms: number): string {
   const seconds = totalSeconds % 60
   return `${minutes}m ${seconds}s`
 }
+
+/** T483: the list's three groups. A worker is in exactly one. */
+export interface WorkerGroups {
+  /** Every pinned worker (enabled or off), by `pinnedAt` ascending. */
+  pinned: Worker[]
+  /** Unpinned and `enabled`, in storage order. */
+  enabled: Worker[]
+  /** Unpinned and not `enabled`, in storage order. */
+  off: Worker[]
+}
+
+export function groupWorkers(workers: readonly Worker[]): WorkerGroups {
+  const isPinned = (w: Worker): boolean => typeof w.pinnedAt === 'number'
+  return {
+    pinned: workers
+      .filter(isPinned)
+      .sort((a, b) => (a.pinnedAt as number) - (b.pinnedAt as number)),
+    enabled: workers.filter((w) => !isPinned(w) && w.enabled),
+    off: workers.filter((w) => !isPinned(w) && !w.enabled)
+  }
+}
+
+/** T483: the default selection is the first row in display order (Pinned, then Enabled, then Off). */
+export function defaultSelectionId(groups: WorkerGroups): string | null {
+  return (groups.pinned[0] ?? groups.enabled[0] ?? groups.off[0])?.id ?? null
+}
