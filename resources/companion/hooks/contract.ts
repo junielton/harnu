@@ -75,6 +75,20 @@ export const EXTERNAL_MAX_BINDINGS = 32
 /** An external binding not corroborated this long after its first `turn.started` is dropped (§21 item 6). */
 export const EXTERNAL_CORROBORATE_MS = 30_000
 
+/** T455 `session.row` coalescing (spec §5.4): trailing debounce after a row changed a field. */
+export const ROW_DEBOUNCE_MS = 500
+/** T455: the longest a changed row waits during a steady stream of rows. */
+export const ROW_MAX_WAIT_MS = 2_000
+/** T455: the cap of every `session.row` text field, after whitespace is collapsed (§5.3). */
+export const ROW_TEXT_MAX = 240
+/**
+ * T455 (round 2): the same fields' cap in UTF-8 bytes as JSON writes them, so the four texts keep
+ * a `session.row` at or under ~1.5 KB whatever the script (a 240-character CJK text is ~720 bytes).
+ */
+export const ROW_TEXT_MAX_BYTES = 300
+/** T455: the cap of `session.snapshot.start.transcriptPath` and `session.rebound.transcriptPath`. */
+export const TRANSCRIPT_PATH_MAX = 4_096
+
 export const STAMP_ARG = '_harnuCaller'
 export const STAMP_PROOF_VERSION = 'v1'
 
@@ -277,8 +291,48 @@ export interface EventPayloads {
     openAttention: { kind: AttentionKind; toolUseId?: string }[]
     runningSubagents: number
     probes: { classic: boolean; toolCheck: boolean }
+    /**
+     * T455: the start of this conversation, from `classic.SessionStart`. Absent until a classic hook
+     * has run; held in module memory only, so a reload's re-hello omits it and the host keeps the
+     * last `start` it received for the binding (it never clears it on an absent field).
+     */
+    start?: SessionStartFacts
   }
-  'session.rebound': { prevSid: Sid; sid: Sid; cause: 'clear' | 'resume' | 'unknown' }
+  'session.rebound': {
+    prevSid: Sid
+    sid: Sid
+    cause: 'clear' | 'resume' | 'unknown'
+    /** T455: the new conversation's transcript (`classic.SessionStart.transcript_path`). */
+    transcriptPath?: string
+  }
+  /**
+   * T455, feature `sense.row`: a snapshot of process-local facts folded from `session.append`. The
+   * newest replaces the last, so a lost or coalesced one costs nothing (every field is a full
+   * value).
+   *
+   * Text fields: `null` = none seen by this process; ABSENT = unknown to the mod (it reloaded, and
+   * texts are never persisted); the host keeps what it had. Every text is whitespace-collapsed,
+   * capped at ROW_TEXT_MAX and has passed the wire redaction (spec §5.5): this is a payload that
+   * NAMES its text fields, as §8's prompt-text rule requires.
+   */
+  'session.row': {
+    /** The fold's rule version, so parity compares like with like. */
+    fold: 1
+    firstPrompt?: string | null
+    lastPrompt?: string | null
+    lastAssistant?: string | null
+    /** The latest custom `session_title`; recorded for parity only. */
+    title?: string | null
+    /** `tool_use` blocks of main-loop responses since this process started; parity only. */
+    toolCalls: number
+    subagentToolCalls: number
+    /** Main-loop user rows since this process started, tool results included. */
+    userRows: number
+    /** Epoch ms of the last folded row, the mod's clock; null before the first. */
+    lastRowAt: number | null
+    /** The uuid of the last folded row (never a `hook-context` row): aligns parity. */
+    lastUuid: string | null
+  }
   'session.end': { reason: string }
   'mod.error': {
     where: string
@@ -378,6 +432,13 @@ export interface EventPayloads {
       state: { reads: { plugin: string; key: string }[]; writes: { plugin: string; key: string }[] }
     }
   }
+}
+
+/** T455: `classic.SessionStart`'s facts, carried by `session.snapshot.start`. */
+export interface SessionStartFacts {
+  source: 'startup' | 'resume' | 'clear' | 'compact' | 'fork'
+  /** `transcript_path`; at most TRANSCRIPT_PATH_MAX chars; validated by the host. */
+  transcriptPath: string
 }
 
 export type EventName = keyof EventPayloads

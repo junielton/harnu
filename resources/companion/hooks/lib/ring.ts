@@ -6,11 +6,12 @@ import type { EventName, WireEvent } from '../contract'
  * removed on send. Pure and `$`-free.
  *
  * Over `max` the ring drops coalescable events first (`usage.measured`: keep the newest, every
- * figure in it is cumulative), then the oldest, and counts what it dropped.
+ * figure in it is cumulative; `session.row`: every field is a full value), then the oldest, and
+ * counts what it dropped.
  */
 
 /** Event types whose newest instance supersedes every older one. */
-const COALESCABLE: ReadonlySet<EventName> = new Set<EventName>(['usage.measured'])
+const COALESCABLE: ReadonlySet<EventName> = new Set<EventName>(['usage.measured', 'session.row'])
 
 export type NewEvent = Omit<WireEvent, 'seq'>
 

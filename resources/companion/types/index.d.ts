@@ -56,6 +56,20 @@ declare module 'claude-code' {
         resulted: string[]
         turnId: string | null
       }
+      /**
+       * T455 W1: the live row's counts and the conversation they belong to, read back after a
+       * reload. COUNTS ONLY, never a text: any co-loaded mod can read `$.state` (spec §5.5 rule 1).
+       */
+      row: {
+        sid: string
+        counts: {
+          toolCalls: number
+          subagentToolCalls: number
+          userRows: number
+          lastRowAt: number | null
+          lastUuid: string | null
+        }
+      }
     }
   }
 }
