@@ -484,9 +484,12 @@ export function createParkCoordinator(deps: ParkCoordinatorDeps): ParkCoordinato
     // coming back during the wait cancels it, and no decline is counted (§5.6).
     const check = revalidate(cause, requestedAt, before, deps.snapshot(sessionKey))
     if (!check.ok) return { kind: 'cancelled', why: check.why }
-    // The counts are display-only and come from the same legacy Stop as the labels; a mod answer
-    // (W2) will fill them from its own. Frozen here: a later Stop does not rewrite this decline.
-    const declined: Episode = { ...next, counts: deps.facts.counts(sessionKey) }
+    // The counts are display-only. A `park.query` answer carries its own, from the same answer as
+    // the labels; otherwise they come from the same legacy Stop as the labels. Frozen here: a later
+    // Stop does not rewrite this decline.
+    const counts =
+      answer.kind === 'busy' && answer.counts ? answer.counts : deps.facts.counts(sessionKey)
+    const declined: Episode = { ...next, counts }
     episodes.set(sessionKey, declined)
     return { kind: 'declined', episode: declined }
   }

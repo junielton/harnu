@@ -415,6 +415,39 @@ describe('createParkQuery over the real command channel', () => {
     expect(w.parked).toEqual([])
   })
 
+  it('a busy answer fills Episode.counts from its own counts, not the legacy Stop (W3 chip)', async () => {
+    const r = await rig()
+    const { conn } = await r.hello()
+    const w = world(r)
+    legacyCron(w) // the legacy Stop says one cron: the answer must win over it
+    const pending = w.coordinator.requestPark(KEY, 'sweep')
+    await sleep(10)
+    const [c] = (await r.poll(conn)).json.commands as { cmd: string }[]
+    await r.result(conn, {
+      cmd: c?.cmd,
+      ok: true,
+      data: {
+        busy: [
+          { kind: 'background-task', count: 3, types: ['shell'] },
+          { kind: 'permission', count: 2 }
+        ]
+      }
+    })
+    const out = await pending
+    expect(out.kind).toBe('declined')
+    expect(w.coordinator.episodeFor(KEY)?.counts).toEqual({ 'background-task': 3, permission: 2 })
+    expect(w.coordinator.episodeFor(KEY)?.reasons).toEqual(['background-task', 'permission'])
+  })
+
+  it('a silent answer keeps the legacy Stop counts on the episode', async () => {
+    const r = await rig({ mode: 'shadow' })
+    await r.hello()
+    const w = world(r)
+    legacyCron(w)
+    expect((await w.coordinator.requestPark(KEY, 'sweep')).kind).toBe('declined')
+    expect(w.coordinator.episodeFor(KEY)?.counts).toEqual({ 'scheduled-wakeup': 1 })
+  })
+
   it('AC-T456-8: in shadow the coordinator’s park.query is refused MODE_SHADOW and decided on legacy facts', async () => {
     // A binding enabled while the channel was active, then the operator set it back to shadow.
     const r = await rig({ mode: 'shadow' })
