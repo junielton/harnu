@@ -343,6 +343,74 @@ describe('F4: first prompts the bounds cannot read like the legacy reader', () =
   })
 })
 
+describe('G1 / G2: a first row the raw cap reads as meta-only is withheld, never replaced', () => {
+  const typed = (text: string, uuid: string): AppendedRow => ({
+    door: 'prompt',
+    origin: { kind: 'composer' },
+    uuid,
+    message: { type: 'user', role: 'user', content: [{ type: 'text', text }] }
+  })
+  const OPEN = '<system-reminder>'
+  const CLOSE = '</system-reminder>'
+  /** `n` characters of spaced filler. */
+  const filler = (n: number): string => 'word '.repeat(Math.ceil(n / 5)).slice(0, n)
+
+  /** Folds the first row, then a second typed prompt; returns the fold. */
+  function firstThenNext(first: string): ReturnType<typeof emptyFold> {
+    const f = emptyFold()
+    foldAppend(f, typed(first, 'u-1'), T0)
+    foldAppend(f, typed('the next prompt', 'u-2'), T0 + 1)
+    return f
+  }
+
+  it('(A) a reminder closing at RAW_MAX-4, the first word of the prompt straddling the cut', () => {
+    const pair = OPEN + filler(RAW_MAX - 4 - OPEN.length - CLOSE.length) + CLOSE
+    expect(pair.length).toBe(RAW_MAX - 4)
+    const f = firstThenNext(`${pair} straddlingfirstword and the rest of the real prompt`)
+    expect(f.row.firstPrompt).toBeNull()
+    expect(f.row.lastPrompt).toBe('the next prompt')
+  })
+
+  it('(B) a 60 KiB wrapper, then 8 KiB of newlines, then the prompt', () => {
+    const pair = OPEN + filler(60 * 1024) + CLOSE
+    const f = firstThenNext(`${pair}${'\n'.repeat(8 * 1024)}the real prompt`)
+    expect(f.row.firstPrompt).toBeNull()
+  })
+
+  it('(C) the first wrapper ends at the cut, a second one opens past it', () => {
+    const pair = OPEN + filler(RAW_MAX - 1 - OPEN.length - CLOSE.length) + CLOSE
+    expect(pair.length).toBe(RAW_MAX - 1)
+    const f = firstThenNext(
+      `${pair} <local-command-caveat>a caveat</local-command-caveat> the real prompt`
+    )
+    expect(f.row.firstPrompt).toBeNull()
+  })
+
+  it('M22: a small prompt with a literal unclosed tag keeps its text (nothing was cut)', () => {
+    const f = emptyFold()
+    foldAppend(f, typed('please explain what the <command-args> tag is for', 'u-1'), T0)
+    expect(f.row.firstPrompt).toBe('please explain what the <command-args> tag is for')
+  })
+
+  for (const tag of [
+    'system-reminder',
+    'command-message',
+    'command-args',
+    'local-command-stdout',
+    'local-command-caveat'
+  ]) {
+    it(`M23: a <${tag}> closing past RAW_MAX withholds the first prompt`, () => {
+      const f = firstThenNext(`<${tag}>${filler(RAW_MAX + 100)}</${tag}> the real prompt`)
+      expect(f.row.firstPrompt).toBeNull()
+    })
+  }
+
+  it('a <command-name> closing past RAW_MAX still names the command, as the reader does', () => {
+    const f = firstThenNext(`<command-name>/hello</command-name> ${filler(RAW_MAX + 100)}`)
+    expect(f.row.firstPrompt).toBe('/hello')
+  })
+})
+
 describe('D3: overlapping matches are merged, the union redacted', () => {
   it('a provider token inside an assigned value redacts the whole value', () => {
     const oai = j('sk', '-proj-', rep('Qw3r', 6))
