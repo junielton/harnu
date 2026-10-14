@@ -175,7 +175,9 @@ describe('AC-B1-1 — the spawn_terminal ACK', () => {
       kind: 'shell',
       paneId: ack.terminalId,
       ptyId: terminalRegistry.get(ack.terminalId as string)!.ptyId,
-      ownerSessionId: 'sess-1'
+      ownerSessionId: 'sess-1',
+      // T479: the renderer measures its 2 s early-exit window from the spawn, not the landing
+      spawnedAt: terminalRegistry.get(ack.terminalId as string)!.createdAt
     })
   })
 

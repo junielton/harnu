@@ -176,6 +176,7 @@ import { registerExternal } from './external'
 // server composes; `worktree-ipc` owns git worktree add + auto-adopt; `mcp/server`
 // is the loopback HTTP MCP surface itself. Registration order matters — see below.
 import { registerCommandBridge, closeCommandBridge } from './command-bridge-ipc'
+import { registerTerminalIpc } from './terminal-ipc'
 import { registerManifestDrain } from './manifest-drain-shell'
 import { registerMcpConfirm, closeMcpConfirm } from './mcp/confirm-resolver'
 import { registerWorktreeHandlers, adoptExistingFolder } from './worktree-ipc'
@@ -690,6 +691,9 @@ app.whenReady().then(async () => {
   // it overrides pty's `--mcp-config` provider, so it must run AFTER
   // `registerPtyHandlers` set the default (order satisfied above).
   const cmdBridge = registerCommandBridge(() => mainWindow)
+  // T474: terminal lifecycle IPC. After the bridge, so its `renderer:ready` listener runs once
+  // the bridge's own has opened the dispatch gate.
+  registerTerminalIpc(cmdBridge.bridge)
   const dataDirNotices = { dispatch: (c: string, p: unknown) => cmdBridge.bridge.dispatch(c, p) }
   setDataDirNoticeSink(dataDirNotices)
   void flushDataDirConflictNotices(dataDirNotices)

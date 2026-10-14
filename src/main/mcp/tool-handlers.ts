@@ -995,7 +995,10 @@ const spawnTerminalHandler: Handler = async (args, ctx) => {
       kind: 'shell',
       paneId: terminalId,
       ptyId,
-      ownerSessionId
+      ownerSessionId,
+      // The renderer measures its 2 s "exited too soon" window from the spawn, not from
+      // whenever the pane happens to land or mount (spec §8 case 5).
+      spawnedAt: terminalRegistry.get(terminalId)?.createdAt ?? Date.now()
     })
   } catch (err) {
     discardTerminalPty(ptyId)
