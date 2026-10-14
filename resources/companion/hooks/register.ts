@@ -59,6 +59,7 @@ import { toAdmitted, type Admitted } from './lib/admitted'
 import { createRing } from './lib/ring'
 import {
   countsOf,
+  FOLDED_DOORS,
   emptyFold,
   foldAppend,
   foldTitle,
@@ -1416,16 +1417,22 @@ export const register: Register = (on) => {
         reportModError('classic.SessionStart', err)
       }
       try {
-        // T455 `sense.row`: the title, then (W0 M8) a hello that went out before the start facts
-        // were known is followed by a probe snapshot that carries them (the host keeps the last
-        // `start` it received). A rebound carries the new conversation's path itself.
+        // T455 `sense.row`: the latest custom title (recorded for parity only)
         await rowTitle($, e.session_title)
+      } catch (err) {
+        reportModError('session.row', err)
+      }
+      try {
+        // W0 M8: a hello that went out before the start facts were known is followed by a probe
+        // snapshot that carries them (the host keeps the last `start` it received). A rebound
+        // carries the new conversation's path itself. A block of its own: a failed title step
+        // must not leave the host with a stale `start` (verifiers' F3).
         const start = startFacts !== null ? JSON.stringify(startFacts) : null
         if (!rebinds && conn !== null && start !== null && start !== startSent) {
           snapshot($, 'probe')
         }
       } catch (err) {
-        reportModError('session.row', err)
+        reportModError('classic.SessionStart', err)
       }
       return next(e)
     })
@@ -1510,8 +1517,14 @@ export const register: Register = (on) => {
   // T455 `sense.row`: the one `session.append` registration (MOD-4). `next(e)` FIRST, the fold on
   // the row as stored after it, and `.catch` replays what `next` settled to: a throw here never
   // refuses or delays the row (spec §10.2, fail open).
+  //
+  // Every door but `attachment`: routing a row through this hook costs a worker hop, and the
+  // `attachment` rows are the ones whose hops tip the race between a background subagent and the
+  // main turn (the main `turn.completed` then lands before `subagent.stopped`; docs/dev/
+  // companion-mod.md, "Known engine effect"). The fold reads nothing from an attachment but its
+  // uuid and time, so the cost is that `lastUuid` / `lastRowAt` stop at the last non-attachment row.
   hook('session.append', () => {
-    on('session.append', async ($, e, next) => {
+    on('session.append', { door: [...FOLDED_DOORS] }, async ($, e, next) => {
       const stored = await next(e)
       try {
         if (stored.deny === undefined) await rowAppend($, e, stored)

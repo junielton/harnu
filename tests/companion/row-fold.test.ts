@@ -284,12 +284,21 @@ describe('row fold: lastUuid and lastRowAt (M1)', () => {
     expect(f.row.lastRowAt).toBe(T0 + 5)
   })
 
-  it('an attachment or a notice moves them, but is not a change worth a push', () => {
+  it('a notice moves them, but is not a change worth a push', () => {
     const f = run([typed('go')])
-    const att = attachment()
-    expect(foldAppend(f, att, T0 + 50)).toBe(false)
-    expect(f.row.lastUuid).toBe(att.uuid)
+    const n = notice()
+    expect(foldAppend(f, n, T0 + 50)).toBe(false)
+    expect(f.row.lastUuid).toBe(n.uuid)
     expect(f.row.lastRowAt).toBe(T0 + 50)
+  })
+
+  it('an attachment, and a door the fold does not know (2.1.299 `queue`), change nothing', () => {
+    const f = run([typed('go')])
+    const before = JSON.stringify(f.row)
+    expect(foldAppend(f, attachment(), T0 + 60)).toBe(false)
+    const queued: TraceRow = { ...typed('the queued -p prompt'), door: 'queue' }
+    expect(foldAppend(f, queued, T0 + 70)).toBe(false)
+    expect(JSON.stringify(f.row)).toBe(before)
   })
 
   it('the /clear reorder: the new conversation aligns on its last command row', () => {
