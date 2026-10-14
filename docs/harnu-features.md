@@ -764,7 +764,7 @@ to 200 characters), the keys and how the send was authorised (`AGENT_ALLOWED` fo
 you opened, `LEASE` under an operator's lease). A send whose lease ended in the instant before
 it was written is `TERMINAL_LEASE_ENDED`: nothing typed, send again. **What you type runs with the
 operator's permissions** — it can do anything their shell can, including what your own tool
-permissions would refuse; type only what the task needs. The operator can cut you off, and both are THEIR decisions —
+permissions would refuse; type only what the task needs. The operator can switch agent typing off or Disconnect a terminal; both are their decisions —
 say so, do not route around them.
 **The kill-switch.** Settings → Control server has "Allow agents to type into terminals" (on by
 default). While it is off every `send_terminal` is `TERMINAL_WRITES_DISABLED`, refused before any
