@@ -55,6 +55,25 @@ export interface IdentityClaim {
   act: boolean
 }
 
+/**
+ * T455 §6.3: where a session came from, joined from Harnu's PTY record and the host's own rebound
+ * bookkeeping, NEVER from the mod. `from` is the session it names (`null` for a new session).
+ */
+export interface Lineage {
+  kind: 'new' | 'resume' | 'fork'
+  from: Sid | null
+}
+
+/**
+ * T455 W2: a claim with the facts the host joined to it. `transcriptPath` is the validated path
+ * (`transcript-path.ts`), `null` when none was kept. Host-side only in W2: the renderer push and
+ * the diagnostics keep the P1W3 `IdentityClaim` shape until a consumer exists (W3/W4).
+ */
+export interface IdentityClaimFacts extends IdentityClaim {
+  transcriptPath: string | null
+  lineage: Lineage | null
+}
+
 /** The identity part of the companion diagnostics. Counts and claims only: no id of a transcript. */
 export interface IdentityDiagnostics {
   claims: IdentityClaim[]

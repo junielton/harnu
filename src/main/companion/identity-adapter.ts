@@ -11,18 +11,27 @@
  *  - A closed or ended binding has no claim and produces no push, so a late request from a dying
  *    process cannot re-animate a parked row (the companion-side twin of ARB-5).
  *  - Nothing here edits a row. The renderer decides, at `session:added`, whether to honour `act`.
+ *
+ * T455 W2 joins two facts to a claim (`claimFacts`), host-side only while the `row` family is in
+ * shadow: the conversation's `transcriptPath`, from `session.snapshot.start` or
+ * `session.rebound.transcriptPath` and kept only after `transcript-path.ts` accepted it, and its
+ * `lineage`, from the PTY record (`spawnKind`, `spawnSource`) or the host's own rebound
+ * bookkeeping, never from the mod. A lineage naming another session is handed to `onLineage`
+ * (persisted in `lineage.json`). The renderer push and the diagnostics keep their P1W3 shape.
  */
 
-import type { Sid } from './contract'
+import type { SessionStartFacts, Sid } from './contract'
 import type { CompanionHostFacade } from './host-core'
 import {
   classifyIdentity,
   mayAct,
   type IdentityCause,
   type IdentityClaim,
+  type IdentityClaimFacts,
   type IdentityDiagnostics,
   type IdentityFact,
-  type IdentityOutcome
+  type IdentityOutcome,
+  type Lineage
 } from './identity-core'
 import {
   compareIdentity,
@@ -34,7 +43,9 @@ import {
 } from './identity-parity-core'
 import type { CompanionMode } from './mode'
 import type { BindingView } from './session-table'
+import { checkTranscriptPath, type PathFs, type TranscriptPathRefusal } from './transcript-path'
 import type { CliGate } from './version-gate'
+import { validateStartFacts } from './wire-core'
 
 export interface IdentityAdapterDeps {
   host: Pick<
@@ -54,10 +65,36 @@ export interface IdentityAdapterDeps {
   spawnKind?(owner: NonNullable<BindingView['owner']>): string | null
   /** P1W4: every comparison also goes to the persisted parity ledger (the in-memory ring stays). */
   onParity?(rec: IdentityParityRecord): void
+  /** T455: the session id a `claude-resume` / `claude-fork` PTY was spawned from (`PtyRec`). */
+  spawnSource?(owner: NonNullable<BindingView['owner']>): string | null
+  /** T455: `~/.claude/projects`; without it no transcript path is ever kept. */
+  projectsRoot?(): string | null
+  /** T455: tests only, to see every path the validation touches. */
+  pathFs?: PathFs
+  /** T455: a bound session's lineage names another session (persist it; ids only). */
+  onLineage?(e: { sid: Sid; kind: Lineage['kind']; from: Sid }): void
 }
+
+/** What the host kept of a conversation's start (T455 §5.3): the path only once validated. */
+export interface StartFacts {
+  source: SessionStartFacts['source']
+  transcriptPath: string | null
+}
+
+export type PathDrop = TranscriptPathRefusal | 'no-root' | 'malformed'
 
 export interface IdentityAdapter {
   claims(): IdentityClaim[]
+  /** T455: the claims with their transcript path and lineage (host-side only in W2). */
+  claimFacts(): IdentityClaimFacts[]
+  /** T455: the validated transcript of the binding's CURRENT conversation, or null. */
+  transcriptPathOf(b: BindingView): string | null
+  /** T455: the last `start` kept for the binding's current conversation, or null. */
+  startOf(b: BindingView): StartFacts | null
+  /** T455: where the binding's current conversation came from; null for a tick. */
+  lineageOf(b: BindingView): Lineage | null
+  /** T455: transcript paths dropped, by reason (counts only). */
+  pathDrops(): Partial<Record<PathDrop, number>>
   /** The renderer's report after a migration: feeds the parity record (spec §7.7, §13). */
   recordOutcome(o: IdentityOutcome): void
   diagnostics(): IdentityDiagnostics
@@ -87,6 +124,86 @@ export function createIdentityAdapter(deps: IdentityAdapterDeps): IdentityAdapte
     }
   }
   let lastPushed = '[]'
+  /** T455: per binding, the start of its current conversation (`sid` is the one it belongs to). */
+  const starts = new Map<number, StartFacts & { sid: Sid }>()
+  /** T455: per binding, the in-session rebound that started its current conversation. */
+  const rebounds = new Map<number, { cause: IdentityCause; from: Sid; sid: Sid }>()
+  const savedLineage = new Set<string>()
+  const drops: Partial<Record<PathDrop, number>> = {}
+  const drop = (why: PathDrop): void => void (drops[why] = (drops[why] ?? 0) + 1)
+
+  /** Keeps `raw` as the conversation's transcript only if it passes the checks for `sid`. */
+  function keepPath(raw: unknown, sid: Sid): string | null {
+    const root = deps.projectsRoot?.() ?? null
+    if (root === null) {
+      drop('no-root')
+      return null
+    }
+    const r = checkTranscriptPath(raw, sid, root, deps.pathFs)
+    if (r.ok) return r.path
+    drop(r.why)
+    return null
+  }
+
+  /** Per binding, the lineage of its current conversation, frozen the first time it is read. */
+  const lineages = new Map<number, { sid: Sid; lineage: Lineage | null }>()
+
+  /**
+   * Read from the PTY record at the first sight of a conversation and then frozen: a synth→real
+   * migration later rewrites a `claude-fork` record's kind to `claude-resume` (`pty.ts`), which
+   * must not turn a fork into a resume.
+   */
+  function lineageOf(b: BindingView): Lineage | null {
+    const memo = lineages.get(b.key)
+    if (memo && memo.sid === b.sid) return memo.lineage
+    const lineage = deriveLineage(b)
+    lineages.set(b.key, { sid: b.sid, lineage })
+    return lineage
+  }
+
+  function deriveLineage(b: BindingView): Lineage | null {
+    if (b.owner === null || b.owner.kind === 'tick') return null
+    const rb = rebounds.get(b.key)
+    if (rb && rb.sid === b.sid) {
+      return { kind: rb.cause === 'clear' ? 'new' : 'resume', from: rb.from }
+    }
+    const kind = deps.spawnKind?.(b.owner) ?? null
+    if (kind === 'claude-fork') return { kind: 'fork', from: deps.spawnSource?.(b.owner) ?? null }
+    if (kind === 'claude-resume') {
+      return { kind: 'resume', from: deps.spawnSource?.(b.owner) ?? null }
+    }
+    return { kind: 'new', from: null }
+  }
+
+  /** §6.3 step 2: the first time a bound conversation's lineage names ANOTHER session. */
+  function noteLineage(b: BindingView): void {
+    const l = lineageOf(b)
+    if (!l || l.from === null || l.from === b.sid) return
+    const id = `${b.sid}\u0000${l.kind}\u0000${l.from}`
+    if (savedLineage.has(id)) return
+    savedLineage.add(id)
+    try {
+      deps.onLineage?.({ sid: b.sid, kind: l.kind, from: l.from })
+    } catch {
+      // lineage is evidence for a later wave, never a dependency of identity
+    }
+  }
+
+  function onSnapshot(b: BindingView, d: unknown): void {
+    if (b.state !== 'bound' || typeof d !== 'object' || d === null) return
+    const raw = (d as Record<string, unknown>).start
+    if (raw === undefined) return // a reload's re-hello: keep the last start (§5.3)
+    const facts = validateStartFacts(raw)
+    if (!facts) {
+      drop('malformed')
+      return
+    }
+    const path = keepPath(facts.transcriptPath, b.sid)
+    const prev = starts.get(b.key)
+    // a bad path never clears a good one kept for the same conversation
+    if (path === null && prev && prev.sid === b.sid && prev.transcriptPath !== null) return
+    starts.set(b.key, { sid: b.sid, source: facts.source, transcriptPath: path })
+  }
 
   /** A companion fact waiting for the legacy side (or the end of its binding). */
   interface Seen {
@@ -212,9 +329,13 @@ export function createIdentityAdapter(deps: IdentityAdapterDeps): IdentityAdapte
     if (b.state !== 'bound' || b.owner === null) {
       claims.delete(b.key)
       conflicted.delete(b.key)
+      starts.delete(b.key)
+      rebounds.delete(b.key)
+      lineages.delete(b.key)
       flushSeen(b.key)
       return
     }
+    noteLineage(b)
     const fact: IdentityFact = classifyIdentity({
       key: b.sessionKey,
       sid: b.sid,
@@ -265,6 +386,15 @@ export function createIdentityAdapter(deps: IdentityAdapterDeps): IdentityAdapte
     if (prevSid !== b.sid) stats.reboundGap++ // an earlier rebound was lost: accept this one anyway
     stats.rebounds++
     causes.set(b.key, cause as IdentityCause)
+    // T455: a new conversation. Its lineage names the sid the HOST had bound (never the mod's
+    // `prevSid`), and its start is the rebound's path, checked against the NEW sid.
+    rebounds.set(b.key, { cause: cause as IdentityCause, from: b.sid, sid })
+    const raw = (d as Record<string, unknown>).transcriptPath
+    starts.set(b.key, {
+      sid,
+      source: cause === 'clear' ? 'clear' : 'resume',
+      transcriptPath: raw === undefined ? null : keepPath(raw, sid)
+    })
     deps.host.rebind(b, sid) // fires onBindingChange, which recomputes
   }
 
@@ -285,6 +415,8 @@ export function createIdentityAdapter(deps: IdentityAdapterDeps): IdentityAdapte
       if (ev.t === 'session.rebound') {
         onRebound(b, ev.d)
         push()
+      } else if (ev.t === 'session.snapshot') {
+        onSnapshot(b, ev.d)
       }
     }),
     deps.host.bus.on('lease', (b) => {
@@ -301,8 +433,29 @@ export function createIdentityAdapter(deps: IdentityAdapterDeps): IdentityAdapte
     })
   ]
 
+  const startFor = (b: BindingView): (StartFacts & { sid: Sid }) | null => {
+    const st = starts.get(b.key)
+    return st && st.sid === b.sid ? st : null
+  }
+
   return {
     claims: list,
+    claimFacts: () =>
+      [...claims].map(([key, c]) => {
+        const v = views.get(key)
+        return {
+          ...c,
+          transcriptPath: v ? (startFor(v)?.transcriptPath ?? null) : null,
+          lineage: v ? lineageOf(v) : null
+        }
+      }),
+    transcriptPathOf: (b) => startFor(b)?.transcriptPath ?? null,
+    startOf: (b) => {
+      const st = startFor(b)
+      return st ? { source: st.source, transcriptPath: st.transcriptPath } : null
+    },
+    lineageOf,
+    pathDrops: () => ({ ...drops }),
     recordOutcome,
     diagnostics: () => ({
       claims: list(),

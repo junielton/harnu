@@ -30,6 +30,8 @@ export type FactFamily =
   | 'guard'
   | 'startPrompt'
   | 'message'
+  /** T455: the live sidebar row (first/last prompt, user rows, activity, last assistant text). */
+  | 'row'
 
 /**
  * Sync and cached. `off` when the kill switch is off or the CLI gate is `below` or `unknown`;

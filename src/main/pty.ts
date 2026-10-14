@@ -46,7 +46,8 @@ import {
   companionHost,
   setCompanionSessionKeyResolver,
   setCompanionSessionOwnedResolver,
-  setCompanionSpawnKindResolver
+  setCompanionSpawnKindResolver,
+  setCompanionSpawnSourceResolver
 } from './companion/host'
 import { pruneTaskState } from './hook-bridge'
 import { RingBuffer } from './pty-ring-buffer'
@@ -371,6 +372,12 @@ interface PtyRec {
   spawnedBy?: SpawnOrigin
   /** T363: the directory the PTY runs in — locates the repo whose missions it may own. */
   cwd: string
+  /**
+   * T455 §6.3: the session a `claude-resume` / `claude-fork` PTY was spawned from
+   * (`opts.claudeSessionId`). The companion's identity adapter joins it as the claim's lineage;
+   * it lives as long as the PTY (persisted past it in `lineage.json`).
+   */
+  spawnSourceSid?: string
 }
 
 /**
@@ -545,6 +552,10 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
   )
   setCompanionSpawnKindResolver((owner) =>
     owner.kind === 'pty' ? (ptys.get(owner.ptyId)?.kind ?? null) : null
+  )
+  // T455 §6.3: the session a resume or fork PTY was spawned from, for the claim's lineage.
+  setCompanionSpawnSourceResolver((owner) =>
+    owner.kind === 'pty' ? (ptys.get(owner.ptyId)?.spawnSourceSid ?? null) : null
   )
   // T389 P4W3: a tokenless claim for a session Harnu spawned (live or parked) is UNAUTHORIZED.
   setCompanionSessionOwnedResolver((sid) => sessionOwnedByHarnu(sid))
@@ -943,7 +954,10 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
       lastActivityAt: spawnedAt,
       // T215: fail closed — an unstamped spawn is treated as the operator's.
       spawnedBy: opts.spawnedBy === 'agent' ? 'agent' : 'operator',
-      cwd: runCwd
+      cwd: runCwd,
+      ...((kind === 'claude-resume' || kind === 'claude-fork') && opts.claudeSessionId
+        ? { spawnSourceSid: opts.claudeSessionId }
+        : {})
     }
     ptys.set(id, rec)
     if (opts.sessionKey) {

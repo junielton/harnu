@@ -65,7 +65,9 @@ export const FAMILY_FEATURES: Readonly<Record<FactFamily, readonly FeatureId[]>>
   approval: ['gate.approval'],
   guard: ['gate.guard'],
   startPrompt: ['act.prompt'],
-  message: ['act.message']
+  message: ['act.message'],
+  // T455 §7.1: the row's facts are keyed by the binding that identity proves
+  row: ['sense.identity', 'sense.row']
 }
 
 /** Shipped default (OD-1): every family loads in `shadow`. Only overrides are persisted. */
@@ -77,7 +79,32 @@ export const DEFAULT_FAMILY_MODE: Readonly<Record<FactFamily, CompanionMode>> = 
   approval: 'shadow',
   guard: 'shadow',
   startPrompt: 'shadow',
-  message: 'shadow'
+  message: 'shadow',
+  row: 'shadow'
+}
+
+/** The groups of the `row` family (T455 spec §7.1). */
+export type RowGroup = 'prompt' | 'count' | 'activity' | 'assistant' | 'title' | 'tools'
+
+/**
+ * The `row` family's design-time partition (T455 spec §7.1, the way ARB-2(c) partitions
+ * `telemetry`): which writer keeps each group once the FAMILY is owned. There is no per-group
+ * mode: the family flips as one, and a `legacy` group stays with its legacy writer even then
+ * (`title` on the tail, `tools` with `stall-detect`; both are pushed and recorded for parity only).
+ * Moving a group is a spec amendment, never a setting.
+ */
+export const ROW_PARTITION: Readonly<Record<RowGroup, FactSource>> = {
+  prompt: 'companion',
+  count: 'companion',
+  activity: 'companion',
+  assistant: 'companion',
+  title: 'legacy',
+  tools: 'legacy'
+}
+
+/** Who writes a row group, given who owns the `row` family for the session (`ownerOf`). */
+export function rowGroupOwner(group: RowGroup, familyOwner: FactSource): FactSource {
+  return familyOwner === 'companion' ? ROW_PARTITION[group] : 'legacy'
 }
 
 const MODES: ReadonlySet<string> = new Set(['off', 'shadow', 'active'])

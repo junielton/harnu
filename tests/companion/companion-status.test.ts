@@ -107,6 +107,7 @@ describe('buildCompanionStatus', () => {
       'identity',
       'message',
       'planUsage',
+      'row',
       'startPrompt',
       'taskState',
       'telemetry'
@@ -214,7 +215,7 @@ describe('an outside session (P4W3)', () => {
     const { deps } = rig({ spawned: [], external: [outside()] })
     const s = buildCompanionStatus(deps)
     expect(s.sessions['outside-sid'].state).toEqual({ state: 'live', outside: true })
-    expect(Object.keys(s.sessions['outside-sid'].ownership)).toHaveLength(8)
+    expect(Object.keys(s.sessions['outside-sid'].ownership)).toHaveLength(9)
   })
 
   it('an uncorroborated, ended, inert or lease-lost binding has no line at all', () => {

@@ -50,7 +50,7 @@ function base(): RowCompareInput {
       size: 10_000,
       lastAssistant: 'Finished.',
       uuidFound: true,
-      userAfter: 0,
+      rowsAfter: 0,
       recentPrompts: [
         { text: 'list the files', shape: 'typed' },
         { text: '/hello world', shape: 'command' }
@@ -143,14 +143,15 @@ describe('compareRowGroups: shape and matches (AC-7)', () => {
     expect(rec(out, 'count')).toMatchObject({ verdict: 'match', lenPush: 12, lenLegacy: 12 })
   })
 
-  it('counts align on lastUuid: legacy rows written after it are not a divergence', () => {
+  it('M1 (W1 round 3): a lastUuid behind the file\'s last row is "not yet aligned" too', () => {
+    // a user or assistant row the push has not folded yet sits after it in the file
     const out = compareRowGroups(
       input((x) => {
         x.legacy!.userMessageCount = 6
-        x.legacy!.userAfter = 2
+        x.legacy!.rowsAfter = 2
       })
     )
-    expect(rec(out, 'count')).toMatchObject({ verdict: 'match', lenPush: 4, lenLegacy: 4 })
+    for (const r of out) expect(r).toMatchObject({ verdict: 'unaligned', cls: 'none' })
   })
 
   it(`activity: |Δ| ≤ ${ACTIVITY_MATCH_MS} ms is a match, beyond it a divergence`, () => {

@@ -151,7 +151,7 @@ describe('checkTranscriptPath (AC-5)', () => {
 
 // ---- the identity adapter: start, rebound, claim facts and lineage ------------------------------
 
-async function rig(opts: { kind?: string; source?: string | null } = {}) {
+async function rig(opts: { kind?: string | (() => string); source?: string | null } = {}) {
   const { root, slug, outside } = projectsRoot()
   const dir = join(shortTmp('hc-is-'), 'companion')
   dirs.push(join(dir, '..'))
@@ -172,7 +172,7 @@ async function rig(opts: { kind?: string; source?: string | null } = {}) {
     getMode: m.mode.getMode,
     gateOf: () => 'ok',
     push: (c) => void pushes.push(c),
-    spawnKind: () => opts.kind ?? 'claude-new',
+    spawnKind: () => (typeof opts.kind === 'function' ? opts.kind() : (opts.kind ?? 'claude-new')),
     spawnSource: () => opts.source ?? null,
     projectsRoot: () => root,
     onLineage: (e) => void lineage.push(e)
@@ -350,5 +350,17 @@ describe('lineage from the PTY record, never from the mod (AC-6)', () => {
     await tick()
     expect(x.adapter.lineageOf(x.binding())).toEqual({ kind: 'new', from: null })
     expect(x.lineage).toEqual([])
+  })
+})
+
+describe('lineage is frozen at the first sight of a conversation (AC-6)', () => {
+  it('a migration that rewrites the PTY kind (fork → resume) does not turn a fork into a resume', async () => {
+    const kind = { value: 'claude-fork' }
+    const x = await rig({ kind: () => kind.value, source: SRC })
+    await tick()
+    expect(x.adapter.lineageOf(x.binding())).toEqual({ kind: 'fork', from: SRC })
+    kind.value = 'claude-resume' // what `pty.ts` does to the record at the synth→real re-key
+    expect(x.adapter.lineageOf(x.binding())).toEqual({ kind: 'fork', from: SRC })
+    expect(x.lineage).toEqual([{ sid: S1, kind: 'fork', from: SRC }])
   })
 })

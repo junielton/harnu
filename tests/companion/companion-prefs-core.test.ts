@@ -159,7 +159,8 @@ describe('the mode seam', () => {
         approval: 'off',
         guard: 'off',
         startPrompt: 'off',
-        message: 'off'
+        message: 'off',
+        row: 'off'
       } as const
     }
     expect(listenerWantedFor(allOff)).toBe(false)

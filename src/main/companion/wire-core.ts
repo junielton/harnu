@@ -12,12 +12,17 @@ import {
   ENDPOINT_NAMES,
   RATE_MAX_REQUESTS,
   RATE_WINDOW_MS,
+  ROW_TEXT_MAX,
+  ROW_TEXT_MAX_BYTES,
+  TRANSCRIPT_PATH_MAX,
   type ByeRequest,
   type Conn,
   type Envelope,
   type EndpointName,
   type EventsRequest,
+  type EventPayloads,
   type HelloRequest,
+  type SessionStartFacts,
   type WireEvent
 } from './contract'
 
@@ -193,6 +198,82 @@ export function validateBye(body: unknown): Result<ByeRequest> {
     value.events = events.value
   }
   return { ok: true, value }
+}
+
+// ---- T455 payload caps (spec §5.3 host-side, §10.2) -----------------------------------------
+
+/** A row's uuid as the mod folds it (`row-fold.ts` UUID_MAX). */
+export const MAX_ROW_UUID_LEN = 64
+
+export type SessionRowPayload = EventPayloads['session.row']
+
+/** Field-level result: the name of the first field that broke a cap, never its value. */
+export type FieldResult<T> = { ok: true; value: T } | { ok: false; field: string }
+
+const ROW_TEXTS = ['firstPrompt', 'lastPrompt', 'lastAssistant', 'title'] as const
+const ROW_COUNTS = ['toolCalls', 'subagentToolCalls', 'userRows'] as const
+
+const isCount = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isSafeInteger(v) && v >= 0
+
+/**
+ * A row text: at most ROW_TEXT_MAX chars and ROW_TEXT_MAX_BYTES UTF-8 bytes. The mod caps the
+ * bytes as JSON writes them, which is never below the raw UTF-8 length, so no row it sends is
+ * refused here.
+ */
+const isRowText = (v: unknown): v is string =>
+  typeof v === 'string' &&
+  v.length <= ROW_TEXT_MAX &&
+  Buffer.byteLength(v, 'utf8') <= ROW_TEXT_MAX_BYTES
+
+/**
+ * `session.row`, closed on what it reads: only the contract's fields are copied, so an unknown
+ * field never travels further (contract §8, last rule). A text field that is ABSENT stays absent
+ * (unknown to the mod: the host keeps what it had); `null` stays `null` (none seen).
+ */
+export function validateSessionRow(d: unknown): FieldResult<SessionRowPayload> {
+  if (!isRec(d)) return { ok: false, field: 'd' }
+  if (d.fold !== 1) return { ok: false, field: 'fold' }
+  for (const k of ROW_COUNTS) if (!isCount(d[k])) return { ok: false, field: k }
+  const at = d.lastRowAt
+  if (at !== null && !(typeof at === 'number' && Number.isFinite(at) && at >= 0)) {
+    return { ok: false, field: 'lastRowAt' }
+  }
+  const uuid = d.lastUuid
+  if (uuid !== null && !isStr(uuid, MAX_ROW_UUID_LEN)) return { ok: false, field: 'lastUuid' }
+  const value: SessionRowPayload = {
+    fold: 1,
+    toolCalls: d.toolCalls as number,
+    subagentToolCalls: d.subagentToolCalls as number,
+    userRows: d.userRows as number,
+    lastRowAt: at as number | null,
+    lastUuid: uuid as string | null
+  }
+  for (const k of ROW_TEXTS) {
+    if (!(k in d) || d[k] === undefined) continue
+    const v = d[k]
+    if (v !== null && !isRowText(v)) return { ok: false, field: k }
+    value[k] = v as string | null
+  }
+  return { ok: true, value }
+}
+
+const START_SOURCES: ReadonlySet<string> = new Set([
+  'startup',
+  'resume',
+  'clear',
+  'compact',
+  'fork'
+])
+
+/**
+ * `session.snapshot.start`: its shape and length only. Whether the path may be KEPT is the
+ * identity adapter's question (`transcript-path.ts`); this never touches the file system.
+ */
+export function validateStartFacts(d: unknown): SessionStartFacts | null {
+  if (!isRec(d) || typeof d.source !== 'string' || !START_SOURCES.has(d.source)) return null
+  if (!isStr(d.transcriptPath, TRANSCRIPT_PATH_MAX)) return null
+  return { source: d.source as SessionStartFacts['source'], transcriptPath: d.transcriptPath }
 }
 
 // ---- sequence rule --------------------------------------------------------------------------

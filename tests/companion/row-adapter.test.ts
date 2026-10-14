@@ -60,7 +60,7 @@ function allFiles(d: string): string[] {
   for (const e of readdirSync(d, { withFileTypes: true })) {
     const p = join(d, e.name)
     if (e.isDirectory()) out.push(...allFiles(p))
-    else out.push(p)
+    else if (e.isFile()) out.push(p) // not the socket
   }
   return out
 }

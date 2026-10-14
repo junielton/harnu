@@ -9,6 +9,7 @@
  */
 
 import { app, powerMonitor, type BrowserWindow } from 'electron'
+import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { sanitizeSpawnEnv } from '../appimage-env'
@@ -44,6 +45,9 @@ import { setModsAuditCompanionProvider, setModsAuditPolicyProvider } from '../mo
 import { ensureStaged, pinStagedDir } from './staging'
 import manifest from '../../../resources/companion/.claude-plugin/plugin.json'
 import { createIdentityAdapter, type IdentityAdapter } from './identity-adapter'
+import { createRowAdapter, type RowAdapter } from './ingest/row-adapter'
+import { createRowLegacySource } from './ingest/row-legacy'
+import { createLineageStore } from './lineage-store'
 import { createTaskStateAdapter, type TaskStateAdapter } from './ingest/task-state-adapter'
 import { createTelemetryAdapter, type TelemetryAdapter } from './ingest/telemetry-adapter'
 import { telemetryStore } from '../telemetry-store'
@@ -110,6 +114,7 @@ export function setCompanionSessionKeyResolver(
 }
 
 let identity: IdentityAdapter | null = null
+let row: RowAdapter | null = null
 let taskState: TaskStateAdapter | null = null
 let telemetry: TelemetryAdapter | null = null
 let turnLedger: TurnLedger | null = null
@@ -146,6 +151,39 @@ export function setCompanionSpawnKindResolver(
   fn: ((owner: SpawnOwner) => string | null) | null
 ): void {
   spawnKindOf = fn
+}
+
+let spawnSourceOf: ((owner: SpawnOwner) => string | null) | null = null
+
+/** T455 §6.3: the session a resume or fork PTY was spawned from (`PtyRec.spawnSourceSid`). */
+export function setCompanionSpawnSourceResolver(
+  fn: ((owner: SpawnOwner) => string | null) | null
+): void {
+  spawnSourceOf = fn
+}
+
+/**
+ * T455 W2: the reader's own header for a transcript, through the slug pass's cached incremental
+ * scrape (only the bytes appended since its last pass are read). The reader exports that scrape
+ * only as a test hook today; W2 may not touch the reader, so it calls the hook (W0's scripts do
+ * the same). Lazy: the reader is not on the companion's boot path.
+ */
+async function readerHeader(path: string): Promise<{
+  firstPrompt: string
+  lastPrompt: string
+  customTitle: string
+  userMessageCount: number
+} | null> {
+  const { __scrapeHeaderWithStatForTests: scrape } = await import('../claude-reader')
+  const h = await scrape(path, await stat(path))
+  return h
+    ? {
+        firstPrompt: h.firstPrompt,
+        lastPrompt: h.lastPrompt,
+        customTitle: h.customTitle,
+        userMessageCount: h.userMessageCount
+      }
+    : null
 }
 
 /** One identity comparison (P1W3's `IdentityParityRecord`) as a ledger row; hashes only. */
@@ -286,15 +324,43 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
     debug,
     record: (sid, k, d) => recordFact('channel', 'companion', sid, k, d)
   })
+  // T455 §6.3: lineage that names another session outlives the PTY (ids only; W3 reads it)
+  const lineage = createLineageStore({
+    path: join(userData, 'companion', 'lineage.json'),
+    now: () => Date.now()
+  })
   identity = createIdentityAdapter({
     host: core.facade,
     getMode: getCompanionMode,
     gateOf: (b) => gateForCli(b.cliVersion, surface.lastVerifiedCli),
     spawnKind: (owner) => spawnKindOf?.(owner) ?? null,
+    spawnSource: (owner) => spawnSourceOf?.(owner) ?? null,
+    projectsRoot: () => join(homedir(), '.claude', 'projects'),
+    onLineage: (e) => {
+      try {
+        lineage.record(e.sid, { kind: e.kind, from: e.from })
+      } catch (err) {
+        console.warn(
+          `[companion] lineage.json unwritable (${(err as { code?: string }).code ?? 'error'})`
+        )
+      }
+    },
     push: (claims) => getWindow()?.webContents.send('companion:identity', { claims }),
     onParity: recordIdentityParity
   })
   core.facade.setIdentityDiagnostics(identity.diagnostics)
+  // T455 W2: the `row` family in shadow. Registered AFTER identity, so a snapshot's `start` and a
+  // rebound are applied before the row adapter reads them. It writes the `row` ledger stream only.
+  row?.dispose()
+  row = createRowAdapter({
+    host: core.facade,
+    transcriptPathOf: (b) => identity?.transcriptPathOf(b) ?? null,
+    lineageOf: (b) => identity?.lineageOf(b) ?? null,
+    legacy: createRowLegacySource({ header: readerHeader }),
+    // W2 applies no pushed value in any mode, so every record is `record-only`, `active` included
+    recordFact: (sid, k, d, ts) =>
+      recordFact('row', 'companion', sid, k, d, { ts, disposition: 'record-only' })
+  })
   // P1W6 S3: the per-turn ledger, one per instance under <userData>/companion/turns/. It honours
   // usage history's opt-out and retention, and it is written in `shadow` and `active` alike.
   turnLedger = createTurnLedger({
@@ -480,6 +546,8 @@ export function closeCompanionHost(): Promise<void> {
   setPlanUsagePollObserver(null)
   telemetry?.dispose()
   telemetry = null
+  row?.dispose()
+  row = null
   flushParityLedger()
   external?.stop()
   return core.close()

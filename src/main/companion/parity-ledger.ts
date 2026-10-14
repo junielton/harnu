@@ -38,6 +38,7 @@ import {
 } from './parity-core'
 import './parity-identity-rule' // registers the `identity` rule
 import './parity-taskstate-rule' // registers the `taskState` rule
+import './parity-row-rule' // registers the `row` rule (T455)
 
 export interface LedgerDeps {
   /** `<userData>/companion`. */
