@@ -36,6 +36,7 @@ const { register } = await import('../../resources/companion/hooks/register')
 
 interface Reg {
   event: string
+  matcher?: any
   fn: (...a: any[]) => Promise<any>
   catchFn?: (...a: any[]) => any
 }
@@ -45,7 +46,7 @@ let regs: Reg[] = []
 function load(): void {
   regs = []
   const on = (event: string, a: any, b?: any): any => {
-    const reg: Reg = { event, fn: typeof a === 'function' ? a : b }
+    const reg: Reg = typeof a === 'function' ? { event, fn: a } : { event, matcher: a, fn: b }
     regs.push(reg)
     const handle = {
       catch(c: (...x: any[]) => any) {
@@ -389,5 +390,91 @@ describe('D4: the T455 steps never skip the identity step of classic.SessionStar
     expect(x.events().some((e: any) => e.t === 'mod.error' && e.d.where === 'session.row')).toBe(
       true
     )
+  })
+})
+
+describe('F2: the session.append registration leaves the attachment door out', () => {
+  it('one registration, every door but attachment (the door that tips the subagent race)', () => {
+    const r = reg('session.append')
+    expect(r.matcher).toEqual({
+      door: [
+        'prompt',
+        'command',
+        'response',
+        'tool-result',
+        'tool-message',
+        'delivery',
+        'hook-context',
+        'note',
+        'compaction',
+        'notice'
+      ]
+    })
+  })
+})
+
+describe('F3: a failing title step never suppresses the start probe', () => {
+  it('a compact SessionStart with a title, while $.clock.now rejects, still sends probe:compact', async () => {
+    let clockDown = false
+    const x = liveEngine({ failClock: () => clockDown })
+    await reg('classic.SessionStart').fn(
+      x.$,
+      { source: 'startup', session_id: SID, transcript_path: PATH, cwd: '/tmp/example-project' },
+      pass
+    )
+    await reg('session.start').fn(x.$, START_EVENT, pass)
+    await settleAll()
+    clockDown = true
+    await reg('classic.SessionStart').fn(
+      x.$,
+      {
+        source: 'compact',
+        session_id: SID,
+        transcript_path: PATH,
+        session_title: 'a renamed session',
+        cwd: '/tmp/example-project'
+      },
+      pass
+    )
+    await settleAll()
+    const probe = x
+      .events()
+      .filter((e: any) => e.t === 'session.snapshot' && e.d.reason === 'probe')
+      .at(-1)
+    expect(probe?.d.start).toEqual({ source: 'compact', transcriptPath: PATH })
+  })
+})
+
+describe('F6: a register() run again cancels the row timer it leaves behind', () => {
+  it('the armed timer is cancelled by the next load', async () => {
+    const timers: { cancelled: boolean }[] = []
+    const $: any = new Proxy(
+      {},
+      {
+        get: (_t, noun: string) =>
+          new Proxy(
+            {},
+            {
+              get: (_u, method: string) => {
+                if (noun === 'clock' && (method === 'after' || method === 'every')) {
+                  return () => {
+                    const t = { cancelled: false, cancel: () => void (t.cancelled = true) }
+                    if (method === 'after') timers.push(t)
+                    return t
+                  }
+                }
+                return async () => (noun === 'clock' ? 1_790_000_000_000 : undefined)
+              }
+            }
+          )
+      }
+    )
+    await reg('session.append').fn($, appendEvent, async (e: any) => ({
+      uuid: e.uuid,
+      message: e.message
+    }))
+    expect(timers.length).toBe(1) // the coalescer armed its debounce
+    load() // a hot reload's register() in the same environment
+    expect(timers[0]!.cancelled).toBe(true)
   })
 })

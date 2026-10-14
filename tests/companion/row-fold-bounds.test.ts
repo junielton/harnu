@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { redactForWire } from '../../resources/companion/hooks/lib/redact-wire'
 import {
+  RAW_MAX,
   REDACT_WINDOW,
+  commandName,
+  stripMetaWrappers,
+  stripPastedContent,
   TEXT_MAX,
   TEXT_MAX_BYTES,
   emptyFold,
@@ -82,7 +86,9 @@ function straddle(
 
 function assertNoLeak(out: string | null, secret: string, where: string): void {
   if (out === null) return // withheld: nothing shipped
-  for (const g of grams(secret)) expect(out.includes(g), `${where}: "${g}" leaked`).toBe(false)
+  // a placeholder, whole or cut at 240 (`[REDACTED:gith…`), is not the secret
+  const shipped = out.replace(/\[REDACTED:[a-z-]*(\]|…)?/g, ' ')
+  for (const g of grams(secret)) expect(shipped.includes(g), `${where}: "${g}" leaked`).toBe(false)
 }
 
 describe('D1: a token cut by the redaction window never ships, not even a prefix', () => {
@@ -153,17 +159,19 @@ describe('D2: the fold is bounded on adversarial rows', () => {
     uuid: 'u-big',
     message: { type: 'user', role: 'user', content: [{ type: 'text', text }] }
   })
+  // Every fill is SPACED, so the row is cut on a word at RAW_MAX and the scans really run (a fill
+  // with no whitespace is withheld before any scan, which would prove nothing about them).
   const cases: [string, AppendedRow][] = [
-    ['unclosed <command-name> (command door)', row('command', fill('<command-name>'))],
-    ['unclosed <command-name> (prompt door)', row('prompt', fill('<command-name>'))],
+    ['unclosed <command-name> (command door)', row('command', fill('<command-name> '))],
+    ['unclosed <command-name> (prompt door)', row('prompt', fill('<command-name> '))],
     [
       'unclosed <command-args>',
-      row('command', `<command-name>/x</command-name>${fill('<command-args>')}`)
+      row('command', `<command-name>/x</command-name> ${fill('<command-args> ')}`)
     ],
-    ['unclosed <pasted_content', row('prompt', fill('<pasted_content'))],
-    ['unclosed <system-reminder>', row('note', fill('<system-reminder>'))],
-    ['unclosed <local-command-stdout>', row('note', fill('<local-command-stdout>'))],
-    ['a 1 MB run the secret-assignment name scans', row('prompt', fill('aB3_'))],
+    ['unclosed <pasted_content', row('prompt', fill('<pasted_content '))],
+    ['unclosed <system-reminder>', row('note', fill('<system-reminder> '))],
+    ['unclosed <local-command-stdout>', row('note', fill('<local-command-stdout> '))],
+    ['a run the secret-assignment name scans', row('prompt', fill('aB3_aB3_aB3_aB3_ '))],
     ['many private-key openings', row('prompt', fill('-----BEGIN A PRIVATE KEY----- '))]
   ]
   for (const [name, r] of cases) {
@@ -176,16 +184,162 @@ describe('D2: the fold is bounded on adversarial rows', () => {
 
   it('the redaction pass itself is bounded on its window', () => {
     for (const unit of [
-      'aB3_',
+      'aB3_aB3_aB3_aB3_ ',
       '-----BEGIN A PRIVATE KEY----- ',
-      'postgres://u:',
+      'postgres://u: ',
       'Authorization: Bearer ',
-      'eyJabcdefgh.'
+      'eyJabcdefgh.eyJ '
     ]) {
       const t = performance.now()
       wireText(unit.repeat(Math.ceil(REDACT_WINDOW / unit.length)))
       expect(performance.now() - t, unit).toBeLessThan(200)
     }
+  })
+})
+
+describe('D2 / F6: each defence is pinned on its own', () => {
+  const MB = 1 << 20
+  const fill = (unit: string): string => unit.repeat(Math.ceil(MB / unit.length))
+
+  // The wrapper scans are linear on their own, with no RAW_MAX in front of them (kills a lazy
+  // regex even where the raw cap would have hidden it).
+  const helpers: [string, () => unknown][] = [
+    ['commandName over unclosed <command-name>', () => commandName(fill('<command-name>'))],
+    [
+      'stripMetaWrappers over unclosed <system-reminder>',
+      () => stripMetaWrappers(fill('<system-reminder>'))
+    ],
+    [
+      'stripMetaWrappers over unclosed <command-args>',
+      () => stripMetaWrappers(fill('<command-args>'))
+    ],
+    [
+      'stripMetaWrappers over unclosed <local-command-stdout>',
+      () => stripMetaWrappers(fill('<local-command-stdout>'))
+    ],
+    [
+      'stripPastedContent over unclosed <pasted_content',
+      () => stripPastedContent(fill('<pasted_content'))
+    ]
+  ]
+  for (const [name, run] of helpers) {
+    it(`${name}: 1 MB in well under a second`, { timeout: 120_000 }, () => {
+      const t = performance.now()
+      run()
+      expect(performance.now() - t).toBeLessThan(250)
+    })
+  }
+
+  // RAW_MAX on its own: a wrapper that closes only past the cap is not stripped as if the fold had
+  // read the whole row (F4: the field is withheld instead).
+  it('a system-reminder closing past RAW_MAX is never read through', () => {
+    const f = emptyFold()
+    const text = `<system-reminder>${' word'.repeat(RAW_MAX / 4)}</system-reminder> the real prompt`
+    foldAppend(
+      f,
+      {
+        door: 'prompt',
+        origin: { kind: 'composer' },
+        uuid: 'u-1',
+        message: { type: 'user', role: 'user', content: [{ type: 'text', text }] }
+      },
+      T0
+    )
+    expect(f.row.firstPrompt).toBeNull()
+  })
+})
+
+describe('F1: a single word longer than a cut is withheld, never cut', () => {
+  // the samples whose match is one word (no whitespace inside it)
+  const ONE_WORD = SECRET_SAMPLES.filter((s) => !/\s/.test(s.text.slice(s.start, s.end)))
+
+  it('covers most rules', () => expect(ONE_WORD.length).toBeGreaterThanOrEqual(14))
+
+  for (const sample of ONE_WORD) {
+    it(`${sample.rule}: a word straddling REDACT_WINDOW from the start of the text is null`, () => {
+      const token = sample.text.slice(sample.start, sample.end)
+      for (const k of edges(token.length)) {
+        // `sk-x…x,` is redacted whole (openai-key): the shrink would pull a cut token into view
+        const head = `sk-${'x'.repeat(REDACT_WINDOW - k - 4)},`
+        const text = `${head}${token} and more words`
+        expect(text.indexOf(token)).toBe(REDACT_WINDOW - k)
+        const out = wireText(text)
+        assertNoLeak(out, sample.secret, `${sample.rule} k=${k}`)
+        expect(out, `${sample.rule} k=${k}`).toBeNull()
+      }
+    })
+  }
+
+  it('a word straddling the 240-character cut is redacted before the cut', () => {
+    for (const sample of ONE_WORD) {
+      const token = sample.text.slice(sample.start, sample.end)
+      for (const k of edges(token.length)) {
+        // a comma, not a letter, before the token: glued to a word it would match no rule at all (F7)
+        const text = `${'q'.repeat(240 - k - 1)},${token}`
+        assertNoLeak(wireText(text), sample.secret, `${sample.rule} k=${k}`)
+      }
+    }
+  })
+
+  it('a word straddling RAW_MAX behind a stripped wrapper is withheld (first prompt)', () => {
+    const sample = SECRET_SAMPLES.find((s) => s.rule === 'github-token')!
+    for (const k of edges(sample.secret.length)) {
+      // one word: the wrapper pair strips to a space and would pull the cut token into view
+      const open = '<system-reminder>'
+      const close = '</system-reminder>'
+      const pad = RAW_MAX - k - open.length - close.length - 4
+      const text = `${open}${'x'.repeat(pad)}${close}abc,${sample.secret} tail`
+      expect(text.indexOf(sample.secret)).toBe(RAW_MAX - k)
+      const f = emptyFold()
+      foldAppend(
+        f,
+        {
+          door: 'prompt',
+          origin: { kind: 'composer' },
+          uuid: 'u-1',
+          message: { type: 'user', role: 'user', content: [{ type: 'text', text }] }
+        },
+        T0
+      )
+      assertNoLeak(f.row.firstPrompt ?? null, sample.secret, `firstPrompt k=${k}`)
+      assertNoLeak(f.row.lastPrompt ?? null, sample.secret, `lastPrompt k=${k}`)
+      expect(f.row.firstPrompt).toBeNull()
+      expect(f.row.lastPrompt).toBeNull()
+    }
+  })
+})
+
+describe('F4: first prompts the bounds cannot read like the legacy reader', () => {
+  const typed = (text: string, uuid: string): AppendedRow => ({
+    door: 'prompt',
+    origin: { kind: 'composer' },
+    uuid,
+    message: { type: 'user', role: 'user', content: [{ type: 'text', text }] }
+  })
+
+  it('a first word over 8 KiB is withheld (the reader would show its start)', () => {
+    const f = emptyFold()
+    foldAppend(f, typed('w'.repeat(9 * 1024), 'u-1'), T0)
+    expect(f.row.firstPrompt).toBeNull()
+  })
+
+  it('an oversized system-reminder withholds the first prompt; the next row is NOT taken', () => {
+    const f = emptyFold()
+    foldAppend(
+      f,
+      typed(`<system-reminder>${' word'.repeat(RAW_MAX / 4)}</system-reminder> real`, 'u-1'),
+      T0
+    )
+    foldAppend(f, typed('the next prompt', 'u-2'), T0 + 1)
+    expect(f.row.firstPrompt).toBeNull()
+    expect(f.row.lastPrompt).toBe('the next prompt')
+  })
+
+  it('a <command-name> first seen past RAW_MAX still names the command, as the reader does', () => {
+    const f = emptyFold()
+    const text = `${'word '.repeat(RAW_MAX / 4)}<command-name>/hello</command-name>`
+    foldAppend(f, typed(text, 'u-1'), T0)
+    expect(f.row.firstPrompt).toBe('/hello')
   })
 })
 

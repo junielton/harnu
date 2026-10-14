@@ -97,7 +97,17 @@ scripts/ci/render-secret-rules.mjs`; `tests/companion/secret-rules-staged.test.t
   blocks 5 s is unloaded). Then redaction runs on `REDACT_WINDOW` (8 KiB), cut on a whole word too:
   a token the cut would split is dropped whole, so nothing past the window ever ships, however much
   redaction shrinks what precedes it. A text with no word boundary to cut at is withheld (`null`).
-  Above the raw cap the first prompt can differ from the legacy reader's (it reads up to 2 MiB).
+- Where the bounds make the first prompt differ from the legacy reader (which reads a line under
+  its 2 MiB head cap and shows the first 120 characters):
+  - **one first word longer than 8 KiB** (or longer than 64 KiB in the raw text), even well under
+    the raw cap: the mod sends `null`, the reader shows the word's start;
+  - **a meta wrapper (`<system-reminder>`, `<local-command-stdout>`, …) whose closing lies past
+    `RAW_MAX`**: the mod sends `null` and still counts that row as the first, so the next row is
+    never taken in its place; the reader strips the wrapper and shows what follows it;
+  - **a `<command-name>` first appearing past `RAW_MAX`**: no divergence, the mod looks for the
+    command name in the whole text (one linear scan) and names the command as the reader does.
+    A W2 parity rule can class the first two as explained (the mod's value is `null`, never another
+    text).
 - Overlapping rule matches are merged and the union is redacted under the rule that matched first.
   T450's `detect` skips the later match instead, which leaves the rest of a larger secret raw; the
   merge is a deliberate hardening for T450 to adopt. The rule sources are T450's, unchanged.
@@ -107,22 +117,23 @@ scripts/ci/render-secret-rules.mjs`; `tests/companion/secret-rules-staged.test.t
 - The `classic.SessionStart` body runs the identity step (P1W3) in a block of its own; no T455 step
   can skip the rebound or the fleet reset.
 
-### Known engine effect: a `session.append` hook slows the rows it receives
+### Known engine effect: hooking `attachment` rows slows a subagent
 
-Registering any `session.append` hook routes every matching row through the module's worker before
-it is stored (the fold costs 0.3–1.8 ms per row, `03-prototype.md` §P.3). That shifts races
+A `session.append` hook routes every row its matcher takes through the module's worker before the
+row is stored (the fold costs 0.3–1.8 ms per row, `03-prototype.md` §P.3), and that can shift a race
 between loops. The reproducible case is `tests/cli/fleet-state.cli.test.ts` › "teammate is not a
-subagent" (`claude -p`, a scripted endpoint, one `Agent` call whose subagent answers at once). It
-fails 3 of 3 with any `session.append` hook, a bare `($, e, next) => next(e)` included, and passes
-3 of 3 with none:
+subagent" (`claude -p`, a scripted endpoint, one `Agent` call whose subagent answers at once). With a
+hook on every door, a bare `($, e, next) => next(e)` included, it fails 3 of 3; with no hook it passes
+3 of 3. Hooking one door at a time, only `attachment` reproduces it (a bare `{ door: 'attachment' }`
+fails 3 of 3; `response` alone and `tool-result` alone pass):
 
 - without the hook: `turn.started → subagent.started → subagent.stopped → turn.completed (sub) →
 turn.completed (main, backgroundSubagents 0) → turn.started → turn.completed (main, 0)`;
 - with it: `turn.started → subagent.started → turn.completed (main, backgroundSubagents 1) →
 subagent.stopped → turn.completed (sub) → turn.started → turn.completed (main, 0)`.
 
-The subagent now finishes a few ms after the main turn ends instead of before it. The order the mod
-reports is the engine's: the subagent really was still running. The taskState map then does what
+With the hook on attachments, the subagent finishes a few ms after the main turn ends instead of
+before it. The order the mod reports is the engine's: the subagent really was still running. The taskState map then does what
 D12 prescribes. A main `turn.completed` with `backgroundSubagents > 0` holds 'working' (`heldIdle`),
 and the last `subagent.stopped` releases it with a Stop. The companion's shadow fold is therefore
 'working' for as long as the subagent outlives the turn (milliseconds here), where it went idle
@@ -131,11 +142,31 @@ same kind every long background subagent already produces. A subagent that runs 
 the turn with or without the hook, so only near-simultaneous endings change. The stuck timer is
 not reached in a window of milliseconds.
 
-A narrower registration avoids it: a bare hook with the matcher `{ door: 'response' }` or
-`{ door: 'tool-result' }` restores the old order 3 of 3. But the fold needs `prompt`, `command`,
-`response`, `tool-result` and `note` rows (prompts, user rows, assistant text), and a bare hook on a
-RegExp matcher over those five doors still fails 3 of 3. Whether the engine honours a RegExp `door`
-matcher was not established. No workaround that keeps the fold whole was found.
+**What the registration does about it.** The one `session.append` registration takes every door
+but `attachment` (a `door` array: `prompt`, `command`, `response`, `tool-result`, `tool-message`,
+`delivery`, `hook-context`, `note`, `compaction`, `notice`). With it the CLI suite passes 3 of 3 (and
+the handshake suite 8 of 8). An earlier attempt with a RegExp `door` matcher failed like the
+all-doors hook, consistent with a RegExp not narrowing that key.
+
+**Its cost.** The fold reads nothing from an attachment but its uuid and time, so attachments no
+longer move `lastUuid` or `lastRowAt`. Both stop at the last non-attachment row:
+
+- **Alignment.** `lastUuid` is still a row of the transcript, but it can sit behind the file's
+  last row (attachments the engine adds right after a prompt or a tool result, until the next
+  response). Spec M1's rule covers it: a `lastUuid` behind the file's tail, or absent from it, is
+  "not yet aligned", never a divergence; the next non-attachment row realigns it.
+- **Activity.** `lastRowAt` can lag the file's mtime by the time between that row and the trailing
+  attachments, normally milliseconds (they are written in the same burst), inside the activity
+  group's ±2,500 ms match window. A long stretch in which the engine appends only attachments
+  would show as a later `modified` in the legacy value; none was observed.
+- Counts, prompts and the assistant text are unaffected: an attachment is never a user row (its
+  type is `attachment`) and carries no prompt.
+
+**Doors the engine adds later.** The fold reads only the doors in `FOLDED_DOORS` (`row-fold.ts`,
+also the registration's matcher). CLI 2.1.299 appends a queued `claude -p` prompt on a new `queue`
+door before `session.start` and never writes it (the prompt row that follows is the one the
+transcript keeps); counting it put `userRows` one above the transcript. Such a row reached the hook
+in spite of the `door` array, so the fold itself skips any door it does not know.
 
 Tests: `resources/companion/tests/row.test.ts` (the kit, with the golden traces of
 `tests/fixtures/row-traces.ts`), and in `npm test` `tests/companion/row-fold.test.ts`,

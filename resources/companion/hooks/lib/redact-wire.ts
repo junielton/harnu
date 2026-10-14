@@ -72,9 +72,11 @@ function spans(text: string): Span[] {
       if (rule.needs.includes('digit') && !DIGIT.test(value)) continue
       if (rule.needs.includes('letter') && !LETTER.test(value)) continue
       let next: Span = { start: span[0], end: span[1], rule: rule.id, order: order++ }
-      // absorb every span it touches, repeatedly: a union can reach a span neither part reached
-      for (let i = 0; i < found.length;) {
-        const f = found[i]!
+      // The stored spans are disjoint, so one pass finds every span this one touches: whatever
+      // the union reaches beyond `next` lies inside a span it absorbed, and no other stored span
+      // overlaps that one. The union keeps the rule found first.
+      const kept: Span[] = []
+      for (const f of found) {
         if (next.start < f.end && next.end > f.start) {
           const first = f.order < next.order ? f : next
           next = {
@@ -83,10 +85,10 @@ function spans(text: string): Span[] {
             rule: first.rule,
             order: first.order
           }
-          found.splice(i, 1)
-          i = 0
-        } else i++
+        } else kept.push(f)
       }
+      found.length = 0
+      found.push(...kept)
       found.push(next)
     }
   }

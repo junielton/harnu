@@ -187,6 +187,30 @@ export function sanitizeCounts(raw: unknown): RowCounts | null {
 export const RAW_MAX = 65_536
 /** Every text field's cap in UTF-8 bytes as JSON writes it, so four texts stay ~1.5 KB (D6). */
 export const TEXT_MAX_BYTES = ROW_TEXT_MAX_BYTES
+/**
+ * The doors the fold reads, and the `session.append` registration's matcher (register.ts): every
+ * door of the engine's `SessionAppendDoor` (2.1.295 types) but `attachment`. An attachment row is
+ * not hooked: routing it through the worker tips the race between a background subagent and the
+ * main turn (docs/dev/companion-mod.md, "Known engine effect"), and the fold reads nothing from it
+ * but its uuid and time. A door the engine adds later is not folded: 2.1.299 appends a queued
+ * `claude -p` prompt on a `queue` door before `session.start` and never writes it (the prompt row
+ * that follows is the one the transcript keeps), so counting it would add a user row the file
+ * does not have.
+ */
+export const FOLDED_DOORS = [
+  'prompt',
+  'command',
+  'response',
+  'tool-result',
+  'tool-message',
+  'delivery',
+  'hook-context',
+  'note',
+  'compaction',
+  'notice'
+] as const
+const FOLDED: ReadonlySet<string> = new Set(FOLDED_DOORS)
+
 /** The newest uuids folded, kept to drop a row seen twice (D6). */
 const RECENT_UUIDS = 64
 /** A uuid longer than this is not one: `lastUuid` stays as it was. */
@@ -426,27 +450,50 @@ export function stripPastedContent(text: string): string {
 
 // ---- the fold --------------------------------------------------------------------------------
 
-/** The row's text, bounded before any parsing (D2); `null` when it cannot be cut on a word. */
-function rawOf(r: AppendedRow): string | null {
-  return wholeWords(textOf(r.message.content, ''), RAW_MAX)
+/** The meta wrappers `stripMetaWrappers` removes, in the reader's order. */
+const META_TAGS = [
+  'system-reminder',
+  'command-message',
+  'command-name',
+  'command-args',
+  'local-command-stdout',
+  'local-command-caveat'
+] as const
+
+/**
+ * True when a meta wrapper is still open once every closed pair is gone: in text the raw cap cut,
+ * its closing may lie past the cut, and what the reader would strip is still here.
+ */
+function openWrapper(s: string): boolean {
+  let t = s
+  for (const tag of META_TAGS) t = stripPairs(t, tag)
+  return META_TAGS.some((tag) => t.includes(`<${tag}>`))
 }
 
 /**
  * The `firstPrompt` candidate of a main-loop user row (M3b), before the wire pass: '' = no text,
- * `null` = there is one but it cannot be shipped safely (the field is withheld).
+ * `null` = there is one but it cannot be shipped safely or read as the reader reads it (the field
+ * is withheld, and the row still counts as the first: the next row is never taken in its place).
+ *
+ * The command name is looked for in the WHOLE text (one linear scan), so a `<command-name>` past
+ * RAW_MAX still names the command as the reader's does. The rest is read from the text cut at
+ * RAW_MAX; when that cut leaves a meta wrapper open (its closing lies past the cap), the reader
+ * would strip it and show what follows, so the first prompt is withheld rather than wrong (F4).
  */
 function firstCandidate(r: AppendedRow): string | null {
   const kind = r.origin?.kind
   if (kind === 'peer') return ''
   if (kind === 'plugin' && r.message.isMeta === true) return '' // plugin-meta: not a prompt
-  const raw = rawOf(r)
-  if (raw === null) return null
-  if (kind === 'plugin') {
-    // P2W2 §7.7 also skips a `harnu-peer` row (a plugin row opening with the peer envelope); that
-    // envelope is P2W3's and not specified yet, so no such row exists to skip.
-    return realPrompt(r.origin?.asUser === true ? raw : stripPluginFrame(raw))
-  }
-  return realPrompt(raw)
+  const full = textOf(r.message.content, '')
+  // P2W2 §7.7 also skips a `harnu-peer` row (a plugin row opening with the peer envelope); that
+  // envelope is P2W3's and not specified yet, so no such row exists to skip.
+  const text = kind === 'plugin' && r.origin?.asUser !== true ? stripPluginFrame(full) : full
+  const cmd = commandName(text)
+  if (cmd !== '') return cmd
+  const bounded = wholeWords(text, RAW_MAX)
+  if (bounded === null) return null
+  if (bounded.length < text.length && openWrapper(bounded)) return null
+  return stripMetaWrappers(bounded)
 }
 
 /**
@@ -464,15 +511,15 @@ function lastCandidate(r: AppendedRow): string | null | undefined {
   if (r.origin?.kind !== 'composer') return undefined
   if (r.door === 'prompt') {
     if (r.message.isMeta === true) return undefined
-    const raw = rawOf(r)
+    const raw = wholeWords(textOf(r.message.content, ''), RAW_MAX)
     return raw === null ? null : stripPastedContent(raw)
   }
   if (r.door === 'command') {
-    const raw = rawOf(r)
-    if (raw === null) return null
-    const name = commandName(raw)
+    // the command's name and args, found in the whole text (linear), as for the first prompt
+    const full = textOf(r.message.content, '')
+    const name = commandName(full)
     if (name === '') return undefined
-    const args = commandArgs(raw)
+    const args = commandArgs(full)
     const slash = name.startsWith('/') ? name : `/${name}`
     return args === '' ? slash : `${slash} ${args}`
   }
@@ -492,6 +539,7 @@ export function foldAppend(
   at: number,
   redact: (t: string) => string = redactForWire
 ): boolean {
+  if (!FOLDED.has(r.door)) return false // not hooked, or a door this fold does not know
   const row = fold.row
   const m = r.message
   const uuid =
