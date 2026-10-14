@@ -1,3 +1,4 @@
+/* eslint-disable no-control-regex -- the assertions match terminal escape replies (ESC [ …) */
 /**
  * T480 (agent terminals B3) — the PTY layer's side of the screen model, with the real
  * `registerPtyHandlers` / `createPty` and only electron's `ipcMain`/`app`/`webContents` and

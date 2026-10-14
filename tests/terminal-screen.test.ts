@@ -1,3 +1,4 @@
+/* eslint-disable no-control-regex -- the assertions match terminal escape replies (ESC [ …) */
 /**
  * T480 (agent terminals B3) — the headless screen model, without any PTY or electron.
  * AC-B3-2 (tail), AC-B3-3 (screen / alt screen), AC-B3-4 (since + cursors), AC-B3-5 (caps),

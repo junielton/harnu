@@ -1,3 +1,4 @@
+/* eslint-disable no-control-regex -- the assertions match terminal escape replies (ESC [ …) */
 // AC-B3-1 — pins the five `@xterm/headless@6.0.0` behaviours that spec §5.3
 // builds the screen model on. These tests talk to the library alone (no Harnu
 // code): if one fails, the spec is wrong and must be amended before any verb
