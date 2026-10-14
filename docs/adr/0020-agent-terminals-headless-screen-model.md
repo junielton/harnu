@@ -1,6 +1,6 @@
 # ADR-0020 — Agent terminals read a resolved screen model (`@xterm/headless` in main) and are spawned by main, not by the pane
 
-**Status:** Proposed
+**Status:** Proposed (dependency and Disconnect semantics approved by the operator, 2026-10-13)
 **Date:** 2026-10-13
 **Author:** agent (T474)
 **Technical context:** `docs/specs/T474-agent-terminals/spec.md`, `src/main/pty.ts`, `src/main/pty-ring-buffer.ts`, `src/renderer/src/components/HelperPane.vue`, ADR-0013
@@ -32,7 +32,7 @@ An agent that opens a terminal today cannot see what happens in it, and cannot t
 | **`xterm-addon-serialize` in the renderer**             | Same dependency on a mounted pane, plus an IPC round trip per read and per `waitFor` poll.                                                                                                                                          |
 | **Keep the renderer as PTY creator; return `starting`** | An agent would have to poll an unbounded wait for a human to navigate. A `terminalId` that is not yet backed by a process is a promise the system cannot keep.                                                                      |
 | **Authenticate the owner** (per-session token)          | The transport carries one shared token by design (ADR-0013, `2026-07-13-agent-pane-routing-design.md`). A per-session identity is a separate, larger project; this feature must not depend on it.                                   |
-| **Reconnectable Disconnect**                            | A second consent door. The operator's "stop" must be unconditional; an agent that still needs a shell opens a new, visible terminal.                                                                                                |
+| **Reconnectable Disconnect**                            | A second consent door; the operator decided Disconnect is permanent and stops reads and writes (2026-10-13). An agent that still needs a shell opens a new, visible terminal.                                                       |
 
 ## 4. Consequences
 
@@ -42,5 +42,9 @@ An agent that opens a terminal today cannot see what happens in it, and cannot t
 - **Terminal PTYs must never gain a `sessionKey`.** It would make them fleet rows and parkable. A test pins it (`AC-B1-7`).
 - **An agent-spawned terminal does not survive a restart** and its pane is not persisted: an id that an agent holds must never come back bound to a different process.
 - **Ownership spoofing is possible and harmless:** a caller can claim any owner. The worst outcome is a misleading chip label; it gains no access. The spec says so rather than pretending to a check, as `message_session` does.
-- **Typing into a terminal is a side door around Claude Code's own Bash permission rules.** The decision keeps Harnu's existing posture (free unless the operator blocks the folder or turns on `ask`) and compensates with an audit line per send, a visible chip and a one-click Disconnect. A global kill-switch is a deliberate, cheap follow-up if the operator wants one.
+- **Typing into a terminal is a side door around Claude Code's own Bash permission rules.** The operator decided (2026-10-13) to keep Harnu's existing posture — free unless the folder is blocked or `ask` is on — and added a **global kill-switch** (Settings → Control server, "Allow agents to type into terminals", default on; off refuses every `send_terminal` before any confirm). An audit line per send, a visible chip and a permanent, one-click Disconnect remain.
 - **`send_terminal` must opt out of the idempotency registry** (a new catalog field, `replayable: false`), or two identical keystrokes collapse into one. This is a general property of any non-idempotent verb the catalog may gain later.
+- **Everything an agent receives is scrubbed** (`redactTranscript`, best-effort, both terminal kinds), while `waitFor` matches on unscrubbed text so a pattern matches reality.
+- **Terminal queries need exactly one answerer.** An unmounted terminal has no renderer xterm to answer `nvim`/`fzf` queries, so the headless model answers until the adopting pane takes the replay snapshot; from that instant the renderer answers and the model stays silent. A pane that adopts must drop the replies its xterm generates while the replay is being written.
+- **Access rules are decided in the plan layer** from a terminal state `server.ts` resolves first. A handler-level refusal would fire after a confirm was raised in `ask` mode. A write lease is a documented confirm→allow promotion scoped to one terminal, and for `send_terminal` an Allow never types the call that asked (a parked confirm could otherwise type minutes later).
+- **Main owns teardown.** A PTY a pane never mounted is still killed when the pane is removed, and re-dispatched to a reloaded renderer, so no writable, invisible terminal survives a reload.
