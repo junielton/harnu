@@ -8,6 +8,7 @@
  */
 import { resolveTerminalGateState, type TerminalGateState } from './terminal-gate-core'
 import { terminalRegistry, type TerminalRecord } from './terminal-registry'
+import { terminalLeases } from './terminal-lease'
 import { readUserProjects, terminalReadOptIns, type UserProjectsFile } from './user-projects'
 
 export interface ResolvedTerminalGate {
@@ -31,6 +32,15 @@ export async function resolveTerminalGate(
   return {
     rec,
     // The kill-switch (B7) does not exist yet; its default is on, and a read ignores it anyway.
-    state: resolveTerminalGateState(rec, { readOptIn, writesEnabled: true })
+    state: resolveTerminalGateState(
+      rec,
+      { readOptIn, writesEnabled: true },
+      rec
+        ? {
+            active: terminalLeases.isActive(rec.terminalId, rec.ptyId),
+            denied: terminalLeases.isDenied(rec.terminalId)
+          }
+        : undefined
+    )
   }
 }

@@ -163,14 +163,38 @@ export function shapeDenial(
           }
         ]
       }
-    case 'TERMINAL_WRITE_NOT_ENABLED':
+    // T484 B6: the operator-terminal write gate.
+    case 'TERMINAL_APPROVED_RESEND':
       return {
         error: result,
-        message: `That terminal${at} was opened by the operator. Agents can type only into terminals they opened themselves.`,
+        message:
+          'Nothing was typed. The operator approved typing in this terminal. Call read_terminal to see the screen as it is now, then call send_terminal again.',
         nextActions: [
           {
-            do: 'Open your own terminal with spawn_terminal and work there, or ask the operator to run the command.',
-            why: 'Typing into a terminal the operator is using is not available to agents yet.'
+            do: 'Call read_terminal to see the screen as it is now, then call send_terminal again with what you still want typed.',
+            why: 'An approval only grants typing in this terminal; the call that asked is never replayed, because the screen may have changed while it waited.'
+          }
+        ]
+      }
+    case 'TERMINAL_WRITE_DENIED':
+      return {
+        error: result,
+        message: `The operator declined typing into that terminal${at}. Sends to it are refused for 5 minutes.`,
+        nextActions: [
+          {
+            do: 'Stop sending to this terminal. Open your own terminal with spawn_terminal, or ask the operator to run the command or to allow typing.',
+            why: 'A Deny starts a 5-minute cooldown; asking again right away only gets refused.'
+          }
+        ]
+      }
+    case 'TERMINAL_LEASE_ENDED':
+      return {
+        error: result,
+        message: `The operator's permission to type into that terminal${at} ended just before this send. Nothing was typed.`,
+        nextActions: [
+          {
+            do: 'Send again: the operator will be asked once more.',
+            why: 'A lease ends 10 minutes after the last write, or when the terminal ends or its folder is blocked.'
           }
         ]
       }

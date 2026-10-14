@@ -9,6 +9,7 @@ import { scanFolders } from './claude-reader'
 import { recordRemovedFolder } from './gc/gc-removed-folders'
 import { fsPathExistence } from './gc/gc-orphan-existence'
 import { migrateFolderDataDirLazily } from './migrations/data-dir-boot'
+import { terminalLeases } from './terminal-lease'
 
 /**
  * One worktree entry in a persisted project record. Vestigial under the
@@ -431,6 +432,9 @@ export async function setUserProjectAgentDenied(
     const normalizedPath = await normalizePath(targetPath)
     const idx = file.projects.findIndex((p) => p.path === normalizedPath)
     if (idx === -1) return file // not a tracked project — nothing to flag
+    // T474 B6: a block ends every terminal write lease in the folder and below it, even when the
+    // flag was already set — a lease must never survive to be revived by a later unblock.
+    if (denied) terminalLeases.revokeUnder(normalizedPath)
     if ((file.projects[idx].agentDenied ?? false) === denied) return file // unchanged
     const next: UserProjectsFile = {
       version: 1,
@@ -895,6 +899,9 @@ export async function setUserProjectTerminalRead(
   return withFileLock(userProjectsPath(), async () => {
     const file = await readUserProjects()
     const normalizedPath = await normalizePath(targetPath)
+    // T484 F5: closing the read door ends the write leases behind it, so turning it back on
+    // can never revive an approval the operator gave before they changed their mind.
+    if (!enabled) terminalLeases.revokeFolder(normalizedPath)
     const idx = file.projects.findIndex((p) => p.path === normalizedPath)
     if (idx === -1) {
       const created: UserProject = {
