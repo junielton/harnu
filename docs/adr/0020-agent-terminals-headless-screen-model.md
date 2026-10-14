@@ -36,8 +36,8 @@ An agent that opens a terminal today cannot see what happens in it, and cannot t
 
 ## 4. Consequences
 
-- **A new runtime dependency** (`@xterm/headless`, same major as the shipped `@xterm/xterm`), and PTY output is now parsed twice: once in the renderer, once in main — only for agent-readable terminals, bounded at 2,000 lines of scrollback each. Measured in unit B2 (`AC-B2-10`).
-- **`pty.ts` gains an exported `createPty`.** The IPC handler delegates to it; behaviour for every existing caller must stay byte-identical (`AC-B1-10`).
+- **A new runtime dependency** (`@xterm/headless`, same major as the shipped `@xterm/xterm`), and PTY output is now parsed twice: once in the renderer, once in main — only for agent-readable terminals, bounded at 2,000 lines of scrollback each. Measured in unit B3 (`AC-B3-9`).
+- **`pty.ts` gains an exported `createPty`.** The IPC handler delegates to it; behaviour for every existing caller must stay byte-identical (`AC-B0-1`).
 - **The pane no longer always owns its PTY.** `HelperPane.vue` has one new branch (adopt vs create). The module-level `liveHelpers`/`creatingHelpers` guards still apply.
 - **Terminal PTYs must never gain a `sessionKey`.** It would make them fleet rows and parkable. A test pins it (`AC-B1-7`).
 - **An agent-spawned terminal does not survive a restart** and its pane is not persisted: an id that an agent holds must never come back bound to a different process.
