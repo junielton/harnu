@@ -13,7 +13,7 @@ on both the legacy-facts path and the real `park.query` path. A session idle at 
 background `sleep` declines the sweep and stays live; it parks at the limit, under the memory
 floor, and on "Park now", with the ledger reason the spec names. Three findings came out of the
 runs: the shipped CLI is above the mod's tested ceiling, so `park.query` never runs on a current
-install (§4.1); "Park now" during a pending question is lost on `9fb7839` (§4.4, reproduced live);
+install (§4.1); "Park now" during a pending question is lost on `9fb7839` (§4.4, reproduced live; the re-test on the fixed tip `5360047` was inconclusive);
 and on the `park.query` path a `maxDeferMs` hold can overrun by one sweep interval (§4.2).
 
 ## 1. Method
@@ -82,7 +82,7 @@ A Node 22 CDP driver (the `verify.mjs` pattern of the recipe) did the rest throu
 - **Policy.** `monitorPolicySet({ lruIdleMs: 60000, hardIdleMs: 60000 })`. The sweep reads
   `hardIdleMs`, not `lruIdleMs` (`parkCandidates`, trigger `sweep`), so both were set to 1 min.
   Both were raised to 1 h while a session was being prepared, and lowered once its shell was
-  running, so the session could not be parked mid-setup (the first attempt was: §3, B0).
+  running, so the session could not be parked mid-setup (the first attempt was: §2.1, B0).
 - **Sweep.** There is no IPC to force a sweep. The 60 s `setInterval` in `pty.ts` is the trigger,
   so "a forced sweep" here is the next tick after the session has been silent for 60 s.
 - **Bounds.** `monitorNegotiationSet({ maxDeclines, maxDeferMs, pressureFloorMb })`, read back from
@@ -251,7 +251,7 @@ Every `park.query` of runs 2 and 3, from the isolated audit log (`decision` row 
 | (run 3)         | S3      | `1791940366309` | refused `NO_LEASE`, not queued | 0 (induced, §4.4)        |
 
 **4 natural questions, 8 to 13 ms, 0 natural `silent`.** The two silent outcomes were both caused by
-this run's own SIGSTOP of the session. So 5 s holds with three orders of magnitude to spare, but
+this run's own SIGSTOP of the session. So the 5 s bound holds with more than two orders of magnitude to spare, but
 only at the load measured here: at most 2 live sessions on the instance, idle machine. A6 asks
 "under load", and that was **not** measured, so §12's A6 row is left as it is.
 
