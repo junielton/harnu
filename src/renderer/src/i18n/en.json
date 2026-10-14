@@ -1722,7 +1722,9 @@
     "ask": {
       "label": "Ask before agent actions",
       "description": "Put a confirmation in front of every agent action — creating a session, spawning a terminal, a worktree, writing to memory. Off by default: agents act freely and every call is recorded in the audit log below. Turn this on if you'd rather approve each one."
-    }
+    },
+    "agentTerminalWrites": "Allow agents to type into terminals",
+    "agentTerminalWritesHint": "When off, agents can still read terminals you allow, but every attempt to type is refused."
   },
   "bundledSkills": {
     "title": "Bundled skills",

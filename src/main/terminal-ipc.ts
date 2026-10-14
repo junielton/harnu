@@ -8,11 +8,16 @@
  * reload never strands a writable, invisible terminal that still counts against
  * `TERMINAL_LIMIT` (spec §8 case 11).
  *
+ * T474 B7 adds the operator's Disconnect (`terminal:disconnect`, permanent, stops reads and writes;
+ * the button is unit U1's) and the `terminal:activity` stream the chip's live signal reads.
+ *
  * The handlers are plain functions over an injected registry and close function, so the
  * lifecycle is testable without electron; {@link registerTerminalIpc} only binds them.
  */
 import { app, ipcMain, webContents, type WebContents } from 'electron'
 import { closeTerminalPty } from './pty'
+import { TerminalActivityCoalescer, type TerminalActivityEvent } from './terminal-activity'
+import { disconnectTerminal } from './terminal-gate'
 import { redispatchLiveTerminals, terminalStatus, type TerminalStatus } from './terminal-lifecycle'
 import { terminalRegistry, type TerminalRegistry } from './terminal-registry'
 import { screenModelFor } from './terminal-screen'
@@ -42,6 +47,23 @@ export async function terminalStatusResolved(
   // The pane writes this straight into an xterm without `convertEol`: a bare LF would not
   // return to column 0 and the text would paint as a staircase.
   return { ...status, snapshot: (await model.tombstoneText()).replace(/\r?\n/g, '\r\n') }
+}
+
+/**
+ * Wire the registry's agent-activity notifications to `send`, coalesced to one event per
+ * terminal per 250 ms (spec §7.3). Returns the disposer.
+ */
+export function wireTerminalActivity(
+  registry: TerminalRegistry,
+  send: (event: TerminalActivityEvent) => void,
+  deps?: ConstructorParameters<typeof TerminalActivityCoalescer>[1]
+): () => void {
+  const coalescer = new TerminalActivityCoalescer(send, deps)
+  const off = registry.onAgentActivity((terminalId, kind) => coalescer.note(terminalId, kind))
+  return () => {
+    off()
+    coalescer.dispose()
+  }
 }
 
 const watched = new WeakSet<WebContents>()
@@ -84,6 +106,17 @@ export function registerTerminalIpc(
   ipcMain.handle('terminal:close', (_e, terminalId: unknown): boolean =>
     typeof terminalId === 'string' ? closeTerminalPty(terminalId) : false
   )
+
+  // The operator's Disconnect (spec §6.4). Permanent: there is no reconnect handler on purpose.
+  ipcMain.handle('terminal:disconnect', (_e, terminalId: unknown): boolean =>
+    typeof terminalId === 'string' ? disconnectTerminal(terminalId) : false
+  )
+
+  wireTerminalActivity(terminalRegistry, (event) => {
+    for (const wc of webContents.getAllWebContents()) {
+      if (wc.getType() === 'window' && !wc.isDestroyed()) wc.send('terminal:activity', event)
+    }
+  })
 
   ipcMain.on('terminal:xtermGone', (_e, terminalId: unknown) => {
     if (typeof terminalId === 'string') terminalRegistry.setRendererAttached(terminalId, false)

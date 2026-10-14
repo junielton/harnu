@@ -163,6 +163,18 @@ export function shapeDenial(
           }
         ]
       }
+    // T487 B7: the global kill-switch.
+    case 'TERMINAL_WRITES_DISABLED':
+      return {
+        error: result,
+        message: `The operator turned off typing into terminals, so nothing can be typed into that terminal${at}. Reading still works.`,
+        nextActions: [
+          {
+            do: 'Tell the operator what you wanted to type, and that they can turn "Allow agents to type into terminals" back on in Settings → Control server. Use read_terminal for anything that only needs a look.',
+            why: "This is the operator's global decision, not a fault: it refuses every send, in every terminal, until they switch it on again."
+          }
+        ]
+      }
     // T484 B6: the operator-terminal write gate.
     case 'TERMINAL_APPROVED_RESEND':
       return {

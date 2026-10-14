@@ -6,6 +6,7 @@
  * read never raises a confirm (spec §6.2), and the verb handler resolves it again as the last
  * line of defence, because what it judged can change between the plan and the dispatch.
  */
+import { readAgentTerminalWrites } from './mcp/prefs'
 import { resolveTerminalGateState, type TerminalGateState } from './terminal-gate-core'
 import { terminalRegistry, type TerminalRecord } from './terminal-registry'
 import { terminalLeases } from './terminal-lease'
@@ -26,15 +27,19 @@ export async function resolveTerminalGate(
   file?: UserProjectsFile
 ): Promise<ResolvedTerminalGate> {
   const rec = terminalRegistry.get(terminalId)
+  // The kill-switch (spec §6.5) is read live, so flipping it takes effect on the very next call.
+  const writesEnabled = await readAgentTerminalWrites()
+  // Switching typing off ends every lease. The Settings toggle does that itself; doing it here
+  // too covers a pref flipped some other way, and costs nothing while the switch is on.
+  if (!writesEnabled) terminalLeases.revokeAll()
   const readOptIn = rec
     ? (await terminalReadOptIns(file ?? (await readUserProjects()), [rec.folder])).has(rec.folder)
     : false
   return {
     rec,
-    // The kill-switch (B7) does not exist yet; its default is on, and a read ignores it anyway.
     state: resolveTerminalGateState(
       rec,
-      { readOptIn, writesEnabled: true },
+      { readOptIn, writesEnabled },
       rec
         ? {
             active: terminalLeases.isActive(rec.terminalId, rec.ptyId),
@@ -43,4 +48,17 @@ export async function resolveTerminalGate(
         : undefined
     )
   }
+}
+
+/**
+ * The operator's Disconnect (spec §6.4), main side: permanent, for that terminal and every agent,
+ * and it stops reads AND writes. Marks the record, ends its lease and wakes any call waiting on
+ * the terminal (its wait ends at once). The PTY, its output and the screen model are untouched:
+ * the operator keeps their shell. There is no inverse — no verb and no IPC reconnects.
+ * Returns whether the terminal exists (an already-disconnected one is a harmless no-op).
+ */
+export function disconnectTerminal(terminalId: string): boolean {
+  if (!terminalRegistry.disconnect(terminalId)) return false
+  terminalLeases.revoke(terminalId)
+  return true
 }

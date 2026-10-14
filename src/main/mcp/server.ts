@@ -71,6 +71,8 @@ import {
   writeMcpEnabled,
   readMcpAsk,
   writeMcpAsk,
+  readAgentTerminalWrites,
+  writeAgentTerminalWrites,
   readMcpAutoRegister,
   writeMcpAutoRegister
 } from './prefs'
@@ -1815,6 +1817,16 @@ export async function registerMcpServer(
   ipcMain.handle('mcp:ask:set', async (_e, ask: boolean) => {
     await writeMcpAsk(ask === true)
     return readMcpAsk()
+  })
+
+  // T474 B7: the typing kill-switch ("Allow agents to type into terminals"). Default ON. Read
+  // live at every gate resolution, so it takes effect on the next call; turning it OFF also ends
+  // every write lease (spec §6.5). A send already in flight completes.
+  ipcMain.handle('mcp:agentTerminalWrites:get', () => readAgentTerminalWrites())
+  ipcMain.handle('mcp:agentTerminalWrites:set', async (_e, enabled: boolean) => {
+    await writeAgentTerminalWrites(enabled === true)
+    if (enabled !== true) terminalLeases.revokeAll()
+    return readAgentTerminalWrites()
   })
 
   // T44 S5: mission-grant management — list live grants + revoke.

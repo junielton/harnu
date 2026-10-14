@@ -57,7 +57,8 @@ describe('gateTerminalOp — the documented order', () => {
     readable: true,
     ownerSessionId: null,
     leaseActive: false,
-    writeDenied: false
+    writeDenied: false,
+    writesEnabled: true
   }
 
   it('speaks for read_terminal and send_terminal only', () => {
@@ -105,6 +106,7 @@ describe('gateTerminalOp — the documented order', () => {
       'TERMINAL_DISCONNECTED',
       'TERMINAL_READ_NOT_ENABLED',
       'TERMINAL_EXITED',
+      'TERMINAL_WRITES_DISABLED',
       'TERMINAL_WRITE_DENIED',
       'TERMINAL_APPROVED_RESEND',
       'TERMINAL_LEASE_ENDED',
@@ -128,7 +130,8 @@ describe('gateTerminalOp — send_terminal (B5)', () => {
     readable: true,
     ownerSessionId: 's',
     leaseActive: false,
-    writeDenied: false
+    writeDenied: false,
+    writesEnabled: true
   }
 
   it('an agent-spawned, connected, running terminal continues', () => {
@@ -386,6 +389,7 @@ describe('canStillWrite — the one check before every write of a send', () => {
     folderBlocked: false,
     deadlineFired: false,
     readOptIn: false,
+    writesEnabled: true,
     leaseNeeded: false,
     leaseActive: false
   }
@@ -423,5 +427,72 @@ describe('canStillWrite — the one check before every write of a send', () => {
     expect(canStillWrite({ ...agent, state: 'exited' }, { ...ok, leaseNeeded: true })).toBe(
       'TERMINAL_EXITED'
     )
+  })
+
+  it('the kill-switch and Disconnect stop the NEXT piece of a send (T487)', () => {
+    expect(canStillWrite(agent, { ...ok, writesEnabled: false })).toBe('TERMINAL_WRITES_DISABLED')
+    expect(canStillWrite({ ...agent, disconnected: true }, { ...ok, writesEnabled: false })).toBe(
+      'TERMINAL_DISCONNECTED'
+    )
+    expect(canStillWrite(agent, { ...ok, writesEnabled: true })).toBeNull()
+  })
+})
+
+describe('T487 B7 — TERMINAL_WRITES_DISABLED, the kill-switch', () => {
+  const off = { readOptIn: false, writesEnabled: false }
+
+  it('refuses a send on any origin, and leaves reads alone', () => {
+    const s = resolveTerminalGateState(agent, off)
+    expect(s.writesEnabled).toBe(false)
+    expect(gateTerminalOp('send_terminal', s)).toBe('TERMINAL_WRITES_DISABLED')
+    expect(gateTerminalOp('read_terminal', s)).toBeNull()
+    const op = resolveTerminalGateState(operator, { ...off, readOptIn: true })
+    expect(gateTerminalOp('send_terminal', op)).toBe('TERMINAL_WRITES_DISABLED')
+  })
+
+  it('sits after EXITED and before READ_NOT_ENABLED / WRITE_DENIED, and behind DISCONNECTED', () => {
+    const op = operator
+    expect(
+      gateTerminalOp(
+        'send_terminal',
+        resolveTerminalGateState({ ...agent, disconnected: true }, off)
+      )
+    ).toBe('TERMINAL_DISCONNECTED')
+    expect(
+      gateTerminalOp('send_terminal', resolveTerminalGateState({ ...agent, state: 'exited' }, off))
+    ).toBe('TERMINAL_EXITED')
+    // Operator terminal, opt-in off: the kill-switch is the reason, not the opt-in.
+    expect(gateTerminalOp('send_terminal', resolveTerminalGateState(op, off))).toBe(
+      'TERMINAL_WRITES_DISABLED'
+    )
+    expect(
+      gateTerminalOp(
+        'send_terminal',
+        resolveTerminalGateState(agent, off, { active: false, denied: true })
+      )
+    ).toBe('TERMINAL_WRITES_DISABLED')
+  })
+
+  it('a lease never counts while the switch is off', () => {
+    const s = resolveTerminalGateState(
+      operator,
+      { readOptIn: true, writesEnabled: false },
+      {
+        active: true,
+        denied: false
+      }
+    )
+    expect(s.leaseActive).toBe(false)
+  })
+
+  it('the default state still lets a send through', () => {
+    const s = resolveTerminalGateState(agent, { readOptIn: false, writesEnabled: true })
+    expect(gateTerminalOp('send_terminal', s)).toBeNull()
+  })
+
+  it('has its own deny hint pointing at Settings', () => {
+    const hint = shapeDenial('TERMINAL_WRITES_DISABLED', { folder: '/f' })
+    expect(hint.error).toBe('TERMINAL_WRITES_DISABLED')
+    expect(JSON.stringify(hint)).toContain('Allow agents to type into terminals')
   })
 })

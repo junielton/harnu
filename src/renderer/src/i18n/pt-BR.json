@@ -1722,7 +1722,9 @@
     "ask": {
       "label": "Confirmar antes das ações do agente",
       "description": "Coloca uma confirmação na frente de toda ação do agente — criar sessão, abrir terminal, worktree, escrever na memória. Desligado por padrão: os agentes agem livremente e toda chamada fica registrada no log de auditoria abaixo. Ligue se preferir aprovar uma a uma."
-    }
+    },
+    "agentTerminalWrites": "Permitir que agentes digitem em terminais",
+    "agentTerminalWritesHint": "Desligado, os agentes ainda podem ler os terminais que você permitir, mas toda tentativa de digitar é recusada."
   },
   "bundledSkills": {
     "title": "Skills inclusas",

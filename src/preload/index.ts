@@ -1178,6 +1178,20 @@ const api = {
   /** T474: main owns teardown — kill the terminal's PTY whether or not its pane ever mounted. */
   terminalClose: (terminalId: string): Promise<boolean> =>
     ipcRenderer.invoke('terminal:close', terminalId),
+  /**
+   * T474 B7: the operator's Disconnect — permanent, stops agent reads AND writes on this
+   * terminal; the PTY keeps running. Resolves false for an unknown terminal. There is no
+   * reconnect. (The pane's button is unit U1's.)
+   */
+  terminalDisconnect: (terminalId: string): Promise<boolean> =>
+    ipcRenderer.invoke('terminal:disconnect', terminalId),
+  /**
+   * T474 B7: an agent read or typed into a terminal — coalesced by main to one event per
+   * terminal per 250 ms. Feeds the pane chip's live signal (unit U1).
+   */
+  onTerminalActivity: (
+    cb: (e: { terminalId: string; kind: 'read' | 'write'; at: number }) => void
+  ): (() => void) => subscribe('terminal:activity', cb),
   /** T474: this terminal's renderer xterm was disposed (the PTY stays alive). */
   terminalXtermGone: (terminalId: string): void =>
     ipcRenderer.send('terminal:xtermGone', terminalId),
@@ -2282,6 +2296,11 @@ const api = {
   // action. Default OFF (agents act freely). Global — not per folder.
   mcpAskGet: (): Promise<boolean> => ipcRenderer.invoke('mcp:ask:get'),
   mcpAskSet: (ask: boolean): Promise<boolean> => ipcRenderer.invoke('mcp:ask:set', ask),
+  // T474 B7: the global "Allow agents to type into terminals" kill-switch (default ON).
+  mcpAgentTerminalWritesGet: (): Promise<boolean> =>
+    ipcRenderer.invoke('mcp:agentTerminalWrites:get'),
+  mcpAgentTerminalWritesSet: (enabled: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('mcp:agentTerminalWrites:set', enabled),
   // T31: the Sentinel auto-denied a catastrophic command — surface it prominently.
   onSentinelBlocked: (cb: (p: { reason: string; sessionId: string }) => void): (() => void) =>
     subscribe('sentinel:blocked', cb),
