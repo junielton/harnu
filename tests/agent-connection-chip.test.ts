@@ -136,6 +136,8 @@ describe('AC-U1-2 — the states', () => {
     activityCb?.({ terminalId: T, kind: 'read', at: 1 })
     await flushPromises()
     expect(label(w)).toBe('An agent is reading')
+    // The label says it already: no second "· reading" beside it.
+    expect(w.find('[data-testid="agent-chip-word"]').exists()).toBe(false)
     expect(w.find('[data-testid="agent-disconnect"]').exists()).toBe(false)
   })
 

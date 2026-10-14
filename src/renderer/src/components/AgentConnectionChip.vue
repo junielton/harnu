@@ -71,7 +71,10 @@ const view = computed(() => chipView(terminal.value, owner.value, word.value))
 const label = computed(() =>
   view.value ? t(`agentTerminal.${view.value.labelKey}`, view.value.params ?? {}) : ''
 )
-const wordText = computed(() => (word.value ? t(`agentTerminal.${word.value}`) : ''))
+// "An agent is reading" already says it: a second `· reading` would only repeat the label.
+const wordText = computed(() =>
+  word.value && view.value?.labelKey !== 'readingAnon' ? t(`agentTerminal.${word.value}`) : ''
+)
 
 function onChipClick(): void {
   const id = view.value?.clickSessionId
@@ -111,7 +114,7 @@ function onDisconnect(): void {
       <span v-if="view.parked" class="shrink-0 text-text-3" data-testid="agent-chip-parked"
         >({{ t('agentTerminal.parked') }})</span
       >
-      <span v-if="word" class="shrink-0 text-text-3" data-testid="agent-chip-word"
+      <span v-if="wordText" class="shrink-0 text-text-3" data-testid="agent-chip-word"
         >· {{ wordText }}</span
       >
       <span class="sr-only" aria-live="polite" data-testid="agent-chip-live">{{ wordText }}</span>
