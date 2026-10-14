@@ -5091,6 +5091,20 @@ Right-click menu on a project row (`FolderMenu.vue`). Items:
   operator-started `claude-new` session is eligible
   (`shouldArmAtSpawn`, `orchestrator-guard.ts`).
 
+- **Toggle "Let agents read terminals I open"** (icon `square-terminal`, T481), right
+  after the Orchestrator toggle — the per-FOLDER opt-in that lets an agent
+  `read_terminal` the shell panes the operator opens here (an agent-spawned
+  terminal never needs it). It says nothing about typing. **Default OFF.**
+  Alternates like the items above:
+  - Disabled → **"Let agents read terminals I open"** → turns it on.
+  - Enabled → **"Stop agents reading terminals I open"** → back to the
+    default (agents are refused `TERMINAL_READ_NOT_ENABLED`).
+
+  **Per EXACT folder, never inherited** — same rule as the Orchestrator
+  toggle: a linked worktree does not pick up its main worktree's value, and
+  the entry is shown for every folder, worktree or not, each independently
+  toggleable. Non-destructive, no `window.confirm`. No sidebar indicator.
+
 - Toggle Hide / Unhide, which **flips** according to the project's state:
   - Visible project → **Hide** (icon `eye-off`) → hides the project.
   - Already hidden project → **Unhide** (icon `eye`) → reveals the project.

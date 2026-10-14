@@ -408,7 +408,12 @@ async function createLiveHelper(
           // T247: what the read-only stranger is told about the review it is sitting
           // beside. Pane DATA, so it is read off the pane rather than the registry —
           // a registry entry describes a type, and this differs per companion.
-          reviewCorrective: paneReviewCorrective(props.pane)
+          reviewCorrective: paneReviewCorrective(props.pane),
+          // T481: an operator-opened shell registers under its pane id, so an agent can read it
+          // once the folder opts in. Every other pane type is not a terminal.
+          ...(props.pane.type === 'shell'
+            ? { terminal: { terminalId: props.pane.id, folder: props.pane.cwd } }
+            : {})
         })
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
