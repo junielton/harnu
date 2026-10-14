@@ -71,6 +71,15 @@ const view = computed(() => chipView(terminal.value, owner.value, word.value))
 const label = computed(() =>
   view.value ? t(`agentTerminal.${view.value.labelKey}`, view.value.params ?? {}) : ''
 )
+// Hover recovers what truncation hides: the full label (parked included), plus what a click does.
+const fullLabel = computed(() =>
+  view.value?.parked ? `${label.value} (${t('agentTerminal.parked')})` : label.value
+)
+const chipTitle = computed(() =>
+  view.value?.clickSessionId
+    ? `${fullLabel.value} — ${t('agentTerminal.goToSession')}`
+    : fullLabel.value
+)
 // "An agent is reading" already says it: a second `· reading` would only repeat the label.
 const wordText = computed(() =>
   word.value && view.value?.labelKey !== 'readingAnon' ? t(`agentTerminal.${word.value}`) : ''
@@ -92,12 +101,14 @@ function onDisconnect(): void {
     class="flex min-w-0 shrink items-center gap-1"
     data-testid="agent-connection-chip"
   >
+    <!-- `overflow-hidden` + the container-query hides below: at the narrowest stack the chip gives
+         way (label, then the whole pill) before the buttons do, and never leaves half a glyph. -->
     <component
       :is="view.clickSessionId ? 'button' : 'span'"
-      class="flex min-w-0 shrink items-center gap-1 rounded-full border border-accent-line bg-accent-soft text-accent"
+      class="flex min-w-0 shrink items-center gap-1 overflow-hidden rounded-full border border-accent-line bg-accent-soft text-accent"
       :class="view.clickSessionId ? 'cursor-pointer transition-colors hover:border-accent' : ''"
       style="padding: 1px 7px; font-size: 10px"
-      :title="view.clickSessionId ? t('agentTerminal.goToSession') : label"
+      :title="chipTitle"
       data-testid="agent-chip"
       v-bind="view.clickSessionId ? { type: 'button' } : {}"
       @mousedown.stop
@@ -110,15 +121,25 @@ function onDisconnect(): void {
         aria-hidden="true"
       />
       <Bot :size="10" :stroke-width="1.6" class="shrink-0" aria-hidden="true" />
-      <span class="min-w-0 truncate" data-testid="agent-chip-label">{{ label }}</span>
-      <span v-if="view.parked" class="shrink-0 text-text-3" data-testid="agent-chip-parked"
+      <span class="min-w-0 truncate @max-[180px]:hidden" data-testid="agent-chip-label">{{
+        label
+      }}</span>
+      <span
+        v-if="view.parked"
+        class="shrink-0 text-text-3 @max-[180px]:hidden"
+        data-testid="agent-chip-parked"
         >({{ t('agentTerminal.parked') }})</span
       >
-      <span v-if="wordText" class="shrink-0 text-text-3" data-testid="agent-chip-word"
+      <span
+        v-if="wordText"
+        class="shrink-0 text-text-3 @max-[180px]:hidden"
+        data-testid="agent-chip-word"
         >· {{ wordText }}</span
       >
-      <span class="sr-only" aria-live="polite" data-testid="agent-chip-live">{{ wordText }}</span>
     </component>
+    <!-- Outside the button on purpose: inside it the word would join the button's accessible name
+         and be read twice ("… typing typing"). -->
+    <span class="sr-only" aria-live="polite" data-testid="agent-chip-live">{{ wordText }}</span>
     <button
       v-if="view.disconnectable"
       type="button"

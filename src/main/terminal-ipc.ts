@@ -74,6 +74,18 @@ export function wireTerminalActivity(
 }
 
 /**
+ * Tell the renderer to re-read a terminal's chip whenever its write lease is granted or ends
+ * (Disconnect, folder block, kill-switch, Deny, idle-out found on a check), so "An agent can type
+ * here" never lingers after the lease is gone. Returns the disposer.
+ */
+export function wireTerminalChipChanged(
+  leases: TerminalLeases,
+  send: (event: { terminalId: string }) => void
+): () => void {
+  return leases.onChange((terminalId) => send({ terminalId }))
+}
+
+/**
  * `terminal:chip`: what the pane's connection chip renders for `terminalId` (spec §7.3), or null
  * for an unknown id. Read-only; the lease is asked live, so an idled-out lease reads false.
  */
@@ -136,6 +148,12 @@ export function registerTerminalIpc(
   ipcMain.handle('terminal:disconnect', (_e, terminalId: unknown): boolean =>
     typeof terminalId === 'string' ? disconnectTerminal(terminalId) : false
   )
+
+  wireTerminalChipChanged(terminalLeases, (event) => {
+    for (const wc of webContents.getAllWebContents()) {
+      if (wc.getType() === 'window' && !wc.isDestroyed()) wc.send('terminal:chipChanged', event)
+    }
+  })
 
   wireTerminalActivity(terminalRegistry, (event) => {
     for (const wc of webContents.getAllWebContents()) {

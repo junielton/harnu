@@ -445,7 +445,7 @@ The default header of `HelperPane.vue` (`:823-825`: type icon + cwd basename + m
 | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Agent-spawned, owner known                   | "Connected to ‹session›" (+ "(parked)" when the owner's PTY is parked)                                                                                         |
 | Agent-spawned, owner unknown or session gone | "Connected to a closed session" / "Connected to an agent" (no click target)                                                                                    |
-| Operator-opened with a live lease            | "‹session› can type here" / "An agent can type here"; Disconnect ends it for good                                                                              |
+| Operator-opened with a live lease            | always "An agent can type here" (a lease records no grantee — U1 review L1); Disconnect ends it for good                                                       |
 | Operator-opened, an agent reads (opt-in on)  | transient "An agent is reading" — only while reads happen; **no** Disconnect button (the reader is unidentifiable; the folder opt-in lives in the folder menu) |
 | Disconnected, or exited                      | no chip                                                                                                                                                        |
 
@@ -461,7 +461,7 @@ The default header of `HelperPane.vue` (`:823-825`: type icon + cwd basename + m
 
 ### 7.5 i18n keys (added to `en.json` **and** `pt-BR.json` in the same change; the schema is `typeof en`)
 
-`agentTerminal.connectedTo` "Connected to {session}" · `.connectedToClosed` "Connected to a closed session" · `.connectedToAgent` "Connected to an agent" · `.parked` "parked" · `.canType` "{session} can type here" · `.canTypeAnon` "An agent can type here" · `.readingAnon` "An agent is reading" · `.reading` "reading" · `.typing` "typing" · `.disconnect` "Disconnect" · `.disconnectHint` "Stop agent access to this terminal" · `.disconnected` "Agent disconnected from this terminal" · `.goToSession` "Go to session" · `folderMenu.agentTerminalRead` "Let agents read terminals I open" · `folderMenu.agentTerminalReadHint` "Agents can read terminals you open here. They still need your OK to type."
+`agentTerminal.connectedTo` "Connected to {session}" · `.connectedToClosed` "Connected to a closed session" · `.connectedToAgent` "Connected to an agent" · `.parked` "parked" · `.canType` "An agent can type here" · `.readingAnon` "An agent is reading" · `.reading` "reading" · `.typing` "typing" · `.disconnect` "Disconnect" · `.disconnectHint` "Stop agent access to this terminal" · `.disconnected` "Agent disconnected from this terminal" · `.disconnectFailed` "Could not disconnect the agent from this terminal" · `.disconnectFailedHint` "The agent still has access. Try again." · `.goToSession` "Go to session" · `folderMenu.agentTerminalRead` "Let agents read terminals I open" · `folderMenu.agentTerminalReadHint` "Agents can read terminals you open here. They still need your OK to type."
 
 The disconnect copy says what is true: Disconnect stops **reads and writes**, permanently (the hint above does not promise less than it does).
 

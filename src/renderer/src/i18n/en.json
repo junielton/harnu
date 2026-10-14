@@ -140,14 +140,15 @@
     "connectedToClosed": "Connected to a closed session",
     "connectedToAgent": "Connected to an agent",
     "parked": "parked",
-    "canType": "{session} can type here",
-    "canTypeAnon": "An agent can type here",
+    "canType": "An agent can type here",
     "readingAnon": "An agent is reading",
     "reading": "reading",
     "typing": "typing",
     "disconnect": "Disconnect",
     "disconnectHint": "Stop agent access to this terminal",
     "disconnected": "Agent disconnected from this terminal",
+    "disconnectFailed": "Could not disconnect the agent from this terminal",
+    "disconnectFailedHint": "The agent still has access. Try again.",
     "goToSession": "Go to session"
   },
   "helperPane": {

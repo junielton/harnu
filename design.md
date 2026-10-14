@@ -3688,33 +3688,46 @@ pane id is **ephemeral, per-worktree state** — never persisted to `helpers.jso
 ▸_ app-api   ● Connected to ‹Fix login bug› · typing   ⏏  ⤢ ✕
 ```
 
-- **Chip** — a `<button>`, `rounded-full border border-accent-line bg-accent-soft
-text-accent`, `padding: 1px 7px`, 10px: the review-companion pill's geometry with
-  **accent** tokens (accent, **not** green — green means "working"). Leading `bot`
-  glyph 10px, then a 6px leading dot that pulses only while the live word shows.
+- **Chip** — a `<button>` (a plain `<span>` when there is nothing to click through to),
+  `rounded-full border border-accent-line bg-accent-soft text-accent`,
+  `padding: 1px 7px`, 10px: the review-companion pill's geometry with **accent**
+  tokens (accent, **not** green — green means "working"). A 6px leading dot (it
+  pulses only while the live word shows), then the `bot` glyph 10px.
 - **Label** — `$t('agentTerminal.connectedTo')`, the session's display title,
-  truncating. **Click → select that session** (an explicit operator gesture; an
-  _agent_ still never moves the view). With no known session the chip is not a
-  button-with-a-target: it renders the same pill without a click action.
-- **Live word** — a 10px `--text-3` suffix after a `·`: empty when idle, `reading` or
-  `typing` while active. A word, never a glyph alone. An `aria-live="polite"`
-  visually hidden node announces it.
+  truncating. The chip's native `title` carries the full label (with "(parked)")
+  plus "— Go to session" when it is clickable, so a truncated name can be
+  recovered on hover. **Click → select that session** (an explicit operator
+  gesture; an _agent_ still never moves the view). With no known session the chip
+  renders the same pill without a click action.
+- **Live word** — a 10px `--text-3` suffix after a `·`: empty when idle, `reading`
+  or `typing` while active (and omitted when the label already says "reading").
+  A word, never a glyph alone. An `aria-live="polite"` visually hidden node
+  announces it; it sits **outside** the button so the button's accessible name
+  does not repeat the word.
 - **Disconnect** — an 18×18 icon-only button, `unplug` glyph 12px, `--text-3` →
   `hover:bg-surface-2 hover:text-text`, `mousedown.stop`, `aria-label` =
-  `$t('agentTerminal.disconnect')`, `title` = `$t('agentTerminal.disconnectHint')`. **No confirm** — revoking is the safe direction —
-  and it is **permanent** for that terminal. A toast (`agentTerminal.disconnected`)
+  `$t('agentTerminal.disconnect')`, `title` = `$t('agentTerminal.disconnectHint')`.
+  **No confirm** — revoking is the safe direction — and it is **permanent** for
+  that terminal. The chip goes at once and a toast (`agentTerminal.disconnected`)
   confirms, with no undo. It stops **reads and writes**; the shell keeps running.
+  **If main does not confirm** (it answers `false`, or the call throws), the agent
+  still has access: the chip comes back and a `danger` toast
+  (`agentTerminal.disconnectFailed`) says so — never the success toast.
 - **After Disconnect** — chip and button disappear; the header reads as an ordinary
   terminal.
-- **Overflow** — the label truncates first, the chip second, the buttons never
-  (`min-w-0` + `truncate` on the cwd label and on the chip's label; the chip is
-  `shrink` with a floor, maximize/close are `shrink-0`).
+- **Overflow** — the cwd label truncates first, the chip second, the buttons never.
+  The cwd label is `min-w-0 flex-1 truncate`; the chip is `min-w-0 shrink
+overflow-hidden` with a `truncate` label; Disconnect, maximize and close are
+  `shrink-0`. The header is a container (`@container`): below **180px** of header
+  width the label, "(parked)" and the live word are hidden (`@max-[180px]:hidden`),
+  leaving dot + glyph, so the chip never shows half a glyph — the `title` still
+  carries the full label.
 
 | State                                         | Chip                                                                                                                               |
 | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Agent-spawned, owner known                    | "Connected to ‹session›" (+ "(parked)" when the owner's PTY is parked); clicks through to the session                              |
 | Agent-spawned, owner gone / unknown           | "Connected to a closed session" / "Connected to an agent" — no click target                                                        |
-| Operator-opened, an agent holds a write lease | "‹session› can type here" / "An agent can type here"; Disconnect ends it for good                                                  |
+| Operator-opened, an agent holds a write lease | always "An agent can type here" (a lease records no grantee); Disconnect ends it for good                                          |
 | Operator-opened, an agent reads (opt-in on)   | transient "An agent is reading" while reads happen; **no** Disconnect (the reader is unidentifiable; opt-in is in the folder menu) |
 | Disconnected, or exited                       | no chip                                                                                                                            |
 
@@ -3722,6 +3735,12 @@ text-accent`, `padding: 1px 7px`, 10px: the review-companion pill's geometry wit
 read/write, coalesced to one event per 250ms per terminal. The word is held for at
 least **1.2s** and clears **3s** after the last event; `write` outranks `read`.
 Typing is also visible for free: the bytes echo through the PTY into the pane.
+
+**Lease changes.** Main also emits `terminal:chipChanged { terminalId }` whenever a write
+lease is granted or ends (Disconnect, folder block, kill-switch, Deny), and the chip
+re-reads its state, so "An agent can type here" never outlives the lease. A lease that
+idles out after 10 minutes has no such moment; while a lease chip is shown it is
+re-checked every 5s.
 
 **Motion.** The leading dot uses `.anim-pulse-dot.anim-pulse-dot--accent` (§7 — Agent
 activity pulse). Under `prefers-reduced-motion` there is no pulse; the word carries

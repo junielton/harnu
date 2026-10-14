@@ -2,6 +2,7 @@ import { computed, ref, toRaw, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useSessionsStore } from './sessions'
 import { useUiStore } from './ui'
+import { useAgentTerminalsStore } from './agent-terminals'
 import { i18n } from '../i18n'
 import { paneRegistry } from '../lib/pane-registry'
 import { displayAlias } from '../components/folder-alias'
@@ -1449,6 +1450,8 @@ export const useHelpersStore = defineStore('helpers', () => {
    * {@link notifyPaneRemoved}, and only if the pane was ever mounted.
    */
   function closeAgentTerminal(pane: AnyHelperPane): void {
+    // The chip state held for ANY shell pane (an operator terminal can carry a lease chip too).
+    if (pane.type === 'shell') useAgentTerminalsStore().forget(pane.id)
     if (!isAgentTerminalPane(pane)) return
     terminalExitWatches.get(pane.id)?.()
     terminalExitWatches.delete(pane.id)

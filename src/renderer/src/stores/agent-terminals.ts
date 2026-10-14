@@ -14,8 +14,12 @@ export interface ChipState {
   leaseActive: boolean
 }
 
-/** How often a displayed lease is re-checked: it idles out in main with no event to say so. */
-export const LEASE_RECHECK_MS = 60_000
+/**
+ * How often a displayed lease is re-checked. Main pushes `terminal:chipChanged` whenever a lease is
+ * granted or revoked, so this only covers the one ending nobody announces: a lease that idles
+ * out after 10 minutes with no call to notice it. Cheap (one IPC), and only while one is shown.
+ */
+export const LEASE_RECHECK_MS = 5_000
 
 /**
  * Renderer state behind the agent connection chip (T474 U1): the live word per terminal, the
@@ -44,6 +48,9 @@ export const useAgentTerminalsStore = defineStore('agentTerminals', () => {
 
   const leaseTimers = new Map<string, ReturnType<typeof setTimeout>>()
   let offActivity: (() => void) | null = null
+  let offChipChanged: (() => void) | null = null
+  /** Disconnects awaiting main's answer — a second click meanwhile is ignored. */
+  const disconnecting = new Set<string>()
 
   /** Ask main for a terminal's chip state; keeps the lease re-check going while one shows. */
   async function refreshChip(terminalId: string): Promise<ChipState | null> {
@@ -86,6 +93,11 @@ export const useAgentTerminalsStore = defineStore('agentTerminals', () => {
   function start(): void {
     if (offActivity) return
     offActivity = window.api.onTerminalActivity(onActivity)
+    // A lease was granted or ended: re-read the chip (only terminals this window already shows,
+    // or has just learned about, matter — an unknown id answers null and changes nothing).
+    offChipChanged = window.api.onTerminalChipChanged((e) => {
+      void refreshChip(e.terminalId)
+    })
   }
 
   function wordOf(terminalId: string): LiveWord {
@@ -93,25 +105,45 @@ export const useAgentTerminalsStore = defineStore('agentTerminals', () => {
   }
 
   /**
-   * The operator's Disconnect. No confirm (revoking is the safe direction): the chip goes at
-   * once, main is told, and a toast says so. Main refuses every later read and write.
+   * The operator's Disconnect. No confirm (revoking is the safe direction): the chip goes at once
+   * and main is told. Main's answer is checked — a Disconnect that main did not apply (`false`, or
+   * the call threw) leaves agents with access, so the chip comes back and an error toast says so
+   * instead of the success one. Main then refuses every later read and write.
    */
   async function disconnect(terminalId: string): Promise<void> {
+    if (disconnecting.has(terminalId)) return
+    disconnecting.add(terminalId)
+    const previousChip = chips.value[terminalId]
     disconnectedIds.value = { ...disconnectedIds.value, [terminalId]: true }
     tracker.forget(terminalId)
     const armed = leaseTimers.get(terminalId)
     if (armed) clearTimeout(armed)
     leaseTimers.delete(terminalId)
-    const known = chips.value[terminalId]
-    if (known) chips.value = { ...chips.value, [terminalId]: { ...known, disconnected: true } }
-    try {
-      await window.api.terminalDisconnect(terminalId)
-    } catch {
-      // The chip is already gone; main's flag is what refuses agents. Nothing to roll back.
+    if (previousChip) {
+      chips.value = { ...chips.value, [terminalId]: { ...previousChip, disconnected: true } }
     }
+    let applied = false
+    try {
+      applied = (await window.api.terminalDisconnect(terminalId)) === true
+    } catch {
+      applied = false
+    }
+    disconnecting.delete(terminalId)
+    const t = i18n.global.t
+    if (applied) {
+      useUiStore().pushToast({ kind: 'success', title: t('agentTerminal.disconnected') })
+      return
+    }
+    // Main did not set the flag: the agent still has access. Put the chip back.
+    const next = { ...disconnectedIds.value }
+    delete next[terminalId]
+    disconnectedIds.value = next
+    if (previousChip) chips.value = { ...chips.value, [terminalId]: previousChip }
+    void refreshChip(terminalId)
     useUiStore().pushToast({
-      kind: 'success',
-      title: i18n.global.t('agentTerminal.disconnected')
+      kind: 'danger',
+      title: t('agentTerminal.disconnectFailed'),
+      description: t('agentTerminal.disconnectFailedHint')
     })
   }
 
@@ -129,6 +161,8 @@ export const useAgentTerminalsStore = defineStore('agentTerminals', () => {
   function dispose(): void {
     offActivity?.()
     offActivity = null
+    offChipChanged?.()
+    offChipChanged = null
     tracker.dispose()
     for (const t of leaseTimers.values()) clearTimeout(t)
     leaseTimers.clear()

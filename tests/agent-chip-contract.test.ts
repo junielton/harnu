@@ -27,13 +27,14 @@ describe('AC-U1-6 — i18n and the pulse variant', () => {
     'connectedToAgent',
     'parked',
     'canType',
-    'canTypeAnon',
     'readingAnon',
     'reading',
     'typing',
     'disconnect',
     'disconnectHint',
     'disconnected',
+    'disconnectFailed',
+    'disconnectFailedHint',
     'goToSession'
   ]
 

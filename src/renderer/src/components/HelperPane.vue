@@ -818,7 +818,7 @@ function onPromote(): void {
       </span>
     </div>
     <header
-      class="absolute inset-x-0 top-0 z-10 flex h-6 items-center gap-1.5 border-b border-border bg-surface px-2 text-[11px] text-text-2 transition-colors"
+      class="@container absolute inset-x-0 top-0 z-10 flex h-6 items-center gap-1.5 border-b border-border bg-surface px-2 text-[11px] text-text-2 transition-colors"
       :class="
         resizable ? 'cursor-row-resize border-t border-t-border-2 hover:border-t-accent-line' : ''
       "

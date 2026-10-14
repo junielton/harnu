@@ -24,13 +24,7 @@ export interface ChipOwner {
 
 export interface ChipView {
   /** `agentTerminal.*` key of the label. */
-  labelKey:
-    | 'connectedTo'
-    | 'connectedToClosed'
-    | 'connectedToAgent'
-    | 'canType'
-    | 'canTypeAnon'
-    | 'readingAnon'
+  labelKey: 'connectedTo' | 'connectedToClosed' | 'connectedToAgent' | 'canType' | 'readingAnon'
   /** Params for the label (`{ session }`), when it has any. */
   params?: { session: string }
   /** Show `(parked)` after the label. */
@@ -63,11 +57,9 @@ export function chipView(
     return view('connectedTo', { session: owner.title }, owner.parked, t.ownerSessionId, true)
   }
 
-  if (t.leaseActive) {
-    return owner && t.ownerSessionId
-      ? view('canType', { session: owner.title }, owner.parked, t.ownerSessionId, true)
-      : view('canTypeAnon', undefined, false, null, true)
-  }
+  // The lease records no grantee (it is granted to "whoever asks" on that one terminal), so the
+  // chip can only say that an agent can type — never which one.
+  if (t.leaseActive) return view('canType', undefined, false, null, true)
   // Reads on an operator terminal: transient, and unidentifiable, so nothing to disconnect.
   if (word === 'reading' || word === 'typing') {
     return view('readingAnon', undefined, false, null, false)

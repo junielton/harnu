@@ -17,7 +17,11 @@ import AgentConnectionChip from '../src/renderer/src/components/AgentConnectionC
 import { i18n } from '@renderer/i18n'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
 import { useHelpersStore, type HelperPaneAgentTerminal } from '../src/renderer/src/stores/helpers'
-import { useAgentTerminalsStore, type ChipState } from '../src/renderer/src/stores/agent-terminals'
+import {
+  LEASE_RECHECK_MS,
+  useAgentTerminalsStore,
+  type ChipState
+} from '../src/renderer/src/stores/agent-terminals'
 import { useUiStore } from '../src/renderer/src/stores/ui'
 import { TerminalLeases } from '../src/main/terminal-lease'
 import { TerminalRegistry, terminalChipState } from '../src/main/terminal-registry'
@@ -27,6 +31,7 @@ const T = 'h-term'
 
 let chip: ChipState | null
 let activityCb: ((e: { terminalId: string; kind: 'read' | 'write'; at: number }) => void) | null
+let chipChangedCb: ((e: { terminalId: string }) => void) | null
 let disconnect: ReturnType<typeof vi.fn>
 
 function installApi(): void {
@@ -39,6 +44,15 @@ function installApi(): void {
         activityCb = null
       }
     }),
+    onTerminalChipChanged: vi.fn((cb: typeof chipChangedCb) => {
+      chipChangedCb = cb
+      return () => {
+        chipChangedCb = null
+      }
+    }),
+    terminalClose: vi.fn(async () => true),
+    helpersGet: vi.fn(async () => ({ splitVisible: false, splitRatio: 0.5, panes: [] })),
+    helpersSet: vi.fn(async () => undefined),
     hooksStateFor: vi.fn(),
     foldersLoad: vi.fn(async () => [])
   }
@@ -81,6 +95,7 @@ beforeEach(() => {
   setActivePinia(createPinia())
   chip = agentChip()
   activityCb = null
+  chipChangedCb = null
   disconnect = vi.fn(async () => true)
   installApi()
   seedSessions([{ sessionId: 'sess-1', summary: 'Fix login bug' }])
@@ -122,10 +137,11 @@ describe('AC-U1-2 — the states', () => {
     expect(w.find('[data-testid="agent-disconnect"]').exists()).toBe(true)
   })
 
-  it('an operator-opened terminal with a lease and a known owner names the session', async () => {
+  it('a lease never names a session: even a projection that carries an owner reads "An agent"', async () => {
     chip = agentChip({ origin: 'operator', ownerSessionId: 'sess-1', leaseActive: true })
     const w = await mountChip({ origin: undefined, ownerSessionId: null })
-    expect(label(w)).toBe('Fix login bug can type here')
+    expect(label(w)).toBe('An agent can type here')
+    expect(w.find('button[data-testid="agent-chip"]').exists()).toBe(false)
   })
 
   it('an operator-opened terminal shows nothing until an agent reads it, then "reading" with NO Disconnect', async () => {
@@ -242,7 +258,7 @@ describe('AC-U1-3 — click and Disconnect', () => {
       return [gateTerminalOp('read_terminal', state), gateTerminalOp('send_terminal', state)]
     }
     expect(gate()).toEqual([null, null])
-    chip = terminalChipState(reg.get(T)!, leases.isActive(T))
+    chip = terminalChipState(reg.get(T)!, leases.isActive(T, 'p'))
     // The preload's `terminalDisconnect` lands on the registry (main's `disconnectTerminal`).
     disconnect = vi.fn(async (id: string) => reg.disconnect(id))
     installApi()
@@ -284,5 +300,180 @@ describe('AC-U1-4 — the live word', () => {
     activityCb?.({ terminalId: 'h-other', kind: 'write', at: 1 })
     await flushPromises()
     expect(w.find('[data-testid="agent-chip-word"]').exists()).toBe(false)
+  })
+})
+
+describe('Disconnect that main did not apply (L2: a safety control must not fail open)', () => {
+  async function failing(
+    how: 'false' | 'throw'
+  ): Promise<{ w: Awaited<ReturnType<typeof mountChip>>; toast: ReturnType<typeof vi.spyOn> }> {
+    disconnect = vi.fn(async () => {
+      if (how === 'throw') throw new Error('ipc gone')
+      return false
+    })
+    installApi()
+    const toast = vi.spyOn(useUiStore(), 'pushToast')
+    const w = await mountChip()
+    await w.find('[data-testid="agent-disconnect"]').trigger('click')
+    await flushPromises()
+    return { w, toast }
+  }
+
+  for (const how of ['false', 'throw'] as const) {
+    it(`main answers ${how === 'false' ? 'false' : 'with a throw'}: the chip comes back and the toast is the error one`, async () => {
+      const { w, toast } = await failing(how)
+      expect(disconnect).toHaveBeenCalledWith(T)
+      expect(w.find('[data-testid="agent-connection-chip"]').exists()).toBe(true)
+      expect(w.find('[data-testid="agent-disconnect"]').exists()).toBe(true)
+      expect(useAgentTerminalsStore().disconnectedIds[T]).toBeUndefined()
+      expect(toast).toHaveBeenCalledTimes(1)
+      expect(toast.mock.calls[0]![0]).toMatchObject({
+        kind: 'danger',
+        title: 'Could not disconnect the agent from this terminal',
+        description: 'The agent still has access. Try again.'
+      })
+      expect(JSON.stringify(toast.mock.calls)).not.toContain(
+        'Agent disconnected from this terminal'
+      )
+    })
+  }
+
+  it('after a failure the operator can try again, and a success then sticks', async () => {
+    const { w } = await failing('false')
+    disconnect = vi.fn(async () => true)
+    installApi()
+    await w.find('[data-testid="agent-disconnect"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="agent-connection-chip"]').exists()).toBe(false)
+  })
+
+  it('a second click while main is still answering is ignored', async () => {
+    let release: (v: boolean) => void = () => {}
+    disconnect = vi.fn(() => new Promise<boolean>((r) => (release = r)))
+    installApi()
+    const w = await mountChip()
+    const store = useAgentTerminalsStore()
+    void store.disconnect(T)
+    void store.disconnect(T)
+    release(true)
+    await flushPromises()
+    expect(disconnect).toHaveBeenCalledTimes(1)
+    expect(w.find('[data-testid="agent-connection-chip"]').exists()).toBe(false)
+  })
+})
+
+describe('accessibility and truncation recovery (L4, L5)', () => {
+  it('the title is the full label plus where a click goes, "(parked)" included', async () => {
+    seedSessions([{ sessionId: 'sess-1', summary: 'Fix login bug', hibernated: true }])
+    const w = await mountChip()
+    expect(w.find('[data-testid="agent-chip"]').attributes('title')).toBe(
+      'Connected to Fix login bug (parked) — Go to session'
+    )
+  })
+
+  it('a chip with no click target has the label alone as its title', async () => {
+    const w = await mountChip({ ownerSessionId: null })
+    expect(w.find('[data-testid="agent-chip"]').attributes('title')).toBe('Connected to an agent')
+  })
+
+  it('the aria-live node is OUTSIDE the button, so its name does not repeat the word', async () => {
+    const w = await mountChip()
+    activityCb?.({ terminalId: T, kind: 'write', at: 1 })
+    await flushPromises()
+    const live = w.find('[data-testid="agent-chip-live"]')
+    expect(live.text()).toBe('typing')
+    const chipEl = w.find('button[data-testid="agent-chip"]').element
+    expect(chipEl.contains(live.element)).toBe(false)
+  })
+
+  it('narrow: the label, "(parked)" and the word hide with the header container; the chip clips instead of overflowing', async () => {
+    seedSessions([{ sessionId: 'sess-1', summary: 'Fix login bug', hibernated: true }])
+    const w = await mountChip()
+    activityCb?.({ terminalId: T, kind: 'read', at: 1 })
+    await flushPromises()
+    for (const id of ['agent-chip-label', 'agent-chip-parked', 'agent-chip-word']) {
+      expect(w.find(`[data-testid="${id}"]`).classes()).toContain('@max-[180px]:hidden')
+    }
+    expect(w.find('[data-testid="agent-chip"]').classes()).toEqual(
+      expect.arrayContaining(['min-w-0', 'shrink', 'overflow-hidden'])
+    )
+  })
+})
+
+describe('lease changes reach the chip (L3)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('terminal:chipChanged re-reads the chip: a lease that ended removes "An agent can type here" at once', async () => {
+    chip = agentChip({ origin: 'operator', ownerSessionId: null, leaseActive: true })
+    const w = await mountChip({ origin: undefined, ownerSessionId: null })
+    expect(label(w)).toBe('An agent can type here')
+
+    chip = agentChip({ origin: 'operator', ownerSessionId: null, leaseActive: false })
+    chipChangedCb?.({ terminalId: T })
+    await flushPromises()
+    expect(w.find('[data-testid="agent-connection-chip"]').exists()).toBe(false)
+  })
+
+  it('a lease granted later shows up on the event, before any agent call', async () => {
+    chip = agentChip({ origin: 'operator', ownerSessionId: null })
+    const w = await mountChip({ origin: undefined, ownerSessionId: null })
+    expect(w.find('[data-testid="agent-connection-chip"]').exists()).toBe(false)
+    chip = agentChip({ origin: 'operator', ownerSessionId: null, leaseActive: true })
+    chipChangedCb?.({ terminalId: T })
+    await flushPromises()
+    expect(label(w)).toBe('An agent can type here')
+  })
+
+  it('an idle-out announces nothing, so a shown lease is re-checked every LEASE_RECHECK_MS', async () => {
+    chip = agentChip({ origin: 'operator', ownerSessionId: null, leaseActive: true })
+    const w = await mountChip({ origin: undefined, ownerSessionId: null })
+    expect(LEASE_RECHECK_MS).toBe(5_000)
+    chip = agentChip({ origin: 'operator', ownerSessionId: null, leaseActive: false })
+    await vi.advanceTimersByTimeAsync(LEASE_RECHECK_MS - 1)
+    expect(label(w)).toBe('An agent can type here')
+    await vi.advanceTimersByTimeAsync(1)
+    await flushPromises()
+    expect(w.find('[data-testid="agent-connection-chip"]').exists()).toBe(false)
+  })
+})
+
+describe('forget on pane removal (L6)', () => {
+  it('removing the pane drops the chip state, the live word and the lease re-check', async () => {
+    vi.useFakeTimers()
+    try {
+      chip = agentChip({ origin: 'operator', ownerSessionId: null, leaseActive: true })
+      await mountChip({ origin: undefined, ownerSessionId: null })
+      const store = useAgentTerminalsStore()
+      activityCb?.({ terminalId: T, kind: 'read', at: 1 })
+      await flushPromises()
+      expect(store.chips[T]).toBeDefined()
+      expect(store.words[T]).toBe('reading')
+
+      const helpers = useHelpersStore()
+      helpers.byWorktree = new Map([
+        [
+          '/repo',
+          {
+            splitVisible: true,
+            splitRatio: 0.5,
+            panes: [{ id: T, type: 'shell', cwd: '/repo', ratio: 1 }]
+          }
+        ]
+      ])
+      helpers.removeHelper('/repo', T)
+
+      expect(store.chips[T]).toBeUndefined()
+      expect(store.words[T]).toBeUndefined()
+      const calls = (window.api.terminalChip as ReturnType<typeof vi.fn>).mock.calls.length
+      await vi.advanceTimersByTimeAsync(LEASE_RECHECK_MS * 3)
+      expect((window.api.terminalChip as ReturnType<typeof vi.fn>).mock.calls.length).toBe(calls)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

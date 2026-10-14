@@ -1193,6 +1193,12 @@ const api = {
   terminalChip: (terminalId: string): Promise<TerminalChipState | null> =>
     ipcRenderer.invoke('terminal:chip', terminalId),
   /**
+   * T474 U1: a terminal's write lease was granted or ended — re-read its chip. Main sends it from
+   * the lease table, so a lease that ends with no agent activity still clears the pane chip.
+   */
+  onTerminalChipChanged: (cb: (e: { terminalId: string }) => void): (() => void) =>
+    subscribe('terminal:chipChanged', cb),
+  /**
    * T474 B7: an agent read or typed into a terminal — coalesced by main to one event per
    * terminal per 250 ms. Feeds the pane chip's live signal (unit U1).
    */
