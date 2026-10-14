@@ -1,4 +1,4 @@
-<!-- harnu-features v93 (2026-10-14) -->
+<!-- harnu-features v94 (2026-10-14) -->
 
 # You are running inside Harnu
 
@@ -691,7 +691,7 @@ does not know passes through. Scrubbing runs before the `maxChars` cut. A Schedu
 tick may call `list_terminals` and `read_terminal` (same opt-in rule); `spawn_terminal` and
 `send_terminal` stay denied there. Programs that ask the terminal questions (`nvim`, `fzf`) are answered by
 Harnu while no pane shows the terminal, so an unviewed terminal does not hang them.
-**Typing — `send_terminal`.** `send_terminal({ terminalId, input?, keys?, paste?, ownerSessionId? })`
+**Typing — `send_terminal`.** `send_terminal({ terminalId, input?, keys?, paste?, ownerSessionId?, waitFor? })`
 types into a terminal. A terminal YOU opened with `spawn_terminal` takes input at once in free
 mode; under "Ask before agent actions" it confirms. A terminal the OPERATOR opened is refused
 `TERMINAL_READ_NOT_ENABLED` unless its folder lets agents read it, and then needs the operator's
@@ -730,10 +730,26 @@ and a folder the operator blocks meanwhile is `FOLDER_NOT_ALLOWED`, so a call th
 waiting on the screen never types into a terminal that stopped being yours. When that happens
 BETWEEN the two writes of an `Esc` send, the result is an error `SEND_INCOMPLETE` with the
 `reason` and `sent` listing ONLY what reached the terminal (read the terminal before sending
-again). On Windows `Ctrl+D` does not end input in cmd or PowerShell. The call returns once the output settles — about
-150 ms after the last byte, 1 s at most; a command that is still running is NOT waited for, so
-`read_terminal` again. The result: `terminalId`, `state` (+ `exit`), `sent` (`inputChars`,
-`keys`, `pasted`), `wait` (`reason: 'none'`, `waitedMs`), `output` (the resolved screen from the
+again). On Windows `Ctrl+D` does not end input in cmd or PowerShell. Without `waitFor` the call returns once the output
+settles — about 150 ms after the last byte, 1 s at most; a command that is still running is NOT
+waited for, so `read_terminal` again. **`waitFor: { pattern?, idleMs?, timeoutMs? }`** makes the
+call wait for what you are after instead: it returns on the FIRST of `pattern` (a regex source,
+≤ 200 chars, flags fixed to `m`, matched against what the PROGRAM printed — never the echo of
+what you typed, so `grep failed log` with `pattern: "failed"` does not return at once),
+`idleMs` (50–30000, no output for that long, counted from the last byte of the send), `timeoutMs`
+(100–90000, default 15000, a hard stop that is NOT an error), the terminal exiting, or the
+operator disconnecting it. `wait.reason` says which — `pattern`, `idle`, `timeout`, `exited`,
+`disconnected` (output cut at that instant) or `none` — with `wait.match` (the matched text,
+scrubbed) on a `pattern`. So `input: "npm test", keys: ["Enter"], waitFor: { pattern:
+"passed|failed" }` returns the summary line in one call. A pattern over 200 chars, one that does
+not compile or one that matches the empty string is `WAIT_PATTERN_INVALID` — refused before
+anything is typed; `timeoutMs` over 90000, `idleMs` out of range or an empty `waitFor` is
+`BAD_ARGS`. The matcher sees at most 64 KiB, at most every 100 ms, and each run has a 50 ms
+budget: a pattern that blows it is switched off for the call (`wait.patternDisabled: true`) and
+the wait ends on idle or timeout. On the alternate screen the pattern is matched against the rows
+the program changed. The whole call is bounded (queue ≤ 10 s + barrier ≤ 2 s + `timeoutMs`),
+under the 120 s tool deadline. The result: `terminalId`, `state` (+ `exit`), `sent` (`inputChars`,
+`keys`, `pasted`), `wait` (`reason`, `waitedMs`, `match?`), `output` (the resolved screen from the
 line the cursor was on when you sent, scrubbed like `read_terminal.text`), `truncated`,
 `droppedLines`, `altScreen`, `approximate`, `othersWrote` (another session wrote to it during
 the call), `operatorTyped` (the operator typed in the pane during the call — the screen may

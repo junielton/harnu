@@ -24,6 +24,7 @@ import { sanitizeAgentBootOverride, type AgentBootOverride } from './agent-boot'
 import { SAFE_GRANT_VERBS, toolByName, type McpOp } from './tool-catalog'
 import { MESSAGE_MAX_CHARS } from '../messaging-socket'
 import { MAX_KEYS, MAX_KEY_NAME_CHARS } from '../terminal-keys'
+import { IDLE_MAX_MS, IDLE_MIN_MS, TIMEOUT_MAX_MS, TIMEOUT_MIN_MS } from '../terminal-wait'
 import { SPEAK_MAX_CHARS } from '../speech-text'
 import { MEMORY_ENTRY_MAX_CHARS, parseMemoryPage, validateEntry } from './memory-core'
 import { MAX_CANVAS_IMAGES_PER_CALL, MAX_CANVAS_OPS_PER_CALL } from './canvas-ops'
@@ -960,7 +961,23 @@ export interface SendTerminalArgs {
   keys?: string[]
   paste?: boolean
   ownerSessionId?: string
+  waitFor?: { pattern?: string; idleMs?: number; timeoutMs?: number }
 }
+
+/**
+ * `waitFor` (T489 B8, spec §4.4). The bounds are structural (`BAD_ARGS`); the pattern's own
+ * length and compilability are `checkWaitFor`'s, so they keep their code (`WAIT_PATTERN_INVALID`).
+ */
+const WaitForSchema = z
+  .object({
+    pattern: z.string().optional(),
+    idleMs: z.number().int().min(IDLE_MIN_MS).max(IDLE_MAX_MS).optional(),
+    timeoutMs: z.number().int().min(TIMEOUT_MIN_MS).max(TIMEOUT_MAX_MS).optional()
+  })
+  .strict()
+  .refine((v) => v.pattern !== undefined || v.idleMs !== undefined || v.timeoutMs !== undefined, {
+    message: 'waitFor needs at least one of pattern, idleMs, timeoutMs'
+  })
 
 const SendTerminalSchema = z
   .object({
@@ -969,7 +986,8 @@ const SendTerminalSchema = z
     input: z.string().optional(),
     keys: z.array(z.string().min(1).max(MAX_KEY_NAME_CHARS)).max(MAX_KEYS).optional(),
     paste: z.boolean().optional(),
-    ownerSessionId: z.string().min(1).optional()
+    ownerSessionId: z.string().min(1).optional(),
+    waitFor: WaitForSchema.optional()
   })
   .refine((v) => (v.input !== undefined && v.input.length > 0) || (v.keys?.length ?? 0) > 0, {
     message: 'send_terminal needs `input`, `keys`, or both',

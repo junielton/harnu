@@ -49,7 +49,7 @@ export function shapeDenial(
 ): SteerableDenial | null {
   const at = ctx.folder ? ` (${ctx.folder})` : ''
   // T482 B5: a refused send names the offending key or line in its detail.
-  const content = /^(KEY_UNKNOWN|INPUT_TOO_LARGE): ([\s\S]*)$/.exec(result)
+  const content = /^(KEY_UNKNOWN|INPUT_TOO_LARGE|WAIT_PATTERN_INVALID): ([\s\S]*)$/.exec(result)
   if (content) {
     return {
       error: content[1]!,
@@ -62,12 +62,19 @@ export function shapeDenial(
                 why: 'Control actions are named keys so the operator and the audit see exactly what was pressed.'
               }
             ]
-          : [
-              {
-                do: 'Send the text in smaller pieces, or write it to a file and run the file.',
-                why: 'A terminal cuts a line at about 4 KiB without saying so.'
-              }
-            ]
+          : content[1] === 'WAIT_PATTERN_INVALID'
+            ? [
+                {
+                  do: 'Give `waitFor.pattern` as a JavaScript regex source of at most 200 characters that does not match the empty string, or drop it and use `idleMs`.',
+                  why: 'Nothing was typed: a pattern is checked before the send, because a send cannot be undone.'
+                }
+              ]
+            : [
+                {
+                  do: 'Send the text in smaller pieces, or write it to a file and run the file.',
+                  why: 'A terminal cuts a line at about 4 KiB without saying so.'
+                }
+              ]
     }
   }
   switch (result) {

@@ -71,7 +71,14 @@ import { terminalLeases } from '../terminal-lease'
 import { scrubTerminalText } from '../scrub-terminal'
 import { paneSplitFor } from '../terminal-lifecycle'
 import { buildSend } from '../terminal-keys'
-import { settleAfterSend, terminalWriteQueue, writeSegments } from '../terminal-write-queue'
+import {
+  SETTLE_CAP_MS,
+  settleAfterSend,
+  terminalWriteQueue,
+  writeSegments
+} from '../terminal-write-queue'
+import { BARRIER_TIMEOUT_MS } from '../terminal-screen'
+import { matchSurface, TIMEOUT_DEFAULT_MS, waitForOutput, type WaitSpec } from '../terminal-wait'
 import {
   TERMINAL_NOTE,
   pruneScreenModels,
@@ -1131,8 +1138,9 @@ const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeo
  * wait for the head of this terminal's line (≤ 10 s) → barrier, read the input modes and mark the
  * cursor line → write (ONE `pty.write`, two when an `Esc` is followed by more bytes) → release the
  * line → settle → read the screen since the mark. The line is held only while bytes go out;
- * settling does not hold it. Output is scrubbed on every terminal. `waitFor` is unit B8's: a send
- * here always returns after the settle.
+ * settling does not hold it. Output is scrubbed on every terminal. Without `waitFor` the call
+ * returns after the settle (≤ 1 s); with it, on the first of pattern / idle / timeout / exit /
+ * disconnect (unit B8, spec §4.4). The matcher sees unscrubbed text, the result never does.
  *
  * A send that stopped after some of its bytes went out (the terminal ended or was disconnected
  * between two writes) says so: `SEND_INCOMPLETE`, with `sent` listing only what was written.
@@ -1277,16 +1285,27 @@ const sendTerminalHandler: Handler = async (args, ctx) => {
 
       const home = os.homedir()
       const scrub = (text: string): string => scrubTerminalText(text, home)
+      const waitSpec = (args.waitFor ?? undefined) as WaitSpec | undefined
+      // Everything after the write has to fit inside this: the settle's 1 s, or the caller's
+      // `timeoutMs`. A stalled model may not push the call past it (spec §4.4, the total bound).
+      const postDeadline =
+        sentAt + (waitSpec ? (waitSpec.timeoutMs ?? TIMEOUT_DEFAULT_MS) : SETTLE_CAP_MS)
+      const barrierBudget = (): number =>
+        Math.max(50, Math.min(BARRIER_TIMEOUT_MS, postDeadline - Date.now()))
       // The line the cursor sat on at the send, read back to the end. A full-screen program has no
       // such line: its whole screen is the answer (spec §4.4, "Alternate screen").
-      const readOpts: ReadOptions =
-        prep.altScreen || prep.cursor === null
-          ? { mode: 'screen', scrub }
-          : { mode: 'since', since: prep.cursor, scrub }
+      const readOpts = (barrierMs?: number): ReadOptions => ({
+        ...(prep.altScreen || prep.cursor === null
+          ? { mode: 'screen' as const }
+          : { mode: 'since' as const, since: prep.cursor }),
+        scrub,
+        ...(barrierMs !== undefined ? { barrierMs } : {})
+      })
 
       // Disconnect while the call is waiting for output (spec §6.4): the wait ends at once and the
       // output is what the screen showed AT THAT INSTANT, so the read is started inside the
-      // listener, in the same tick as the disconnect, not after the call has woken up.
+      // listener, in the same tick as the disconnect, not after the call has woken up. It keeps the
+      // full barrier: a short budget would resolve it late, and a late read shows later output.
       const liveModel = model
       const cut: {
         read: ReturnType<typeof liveModel.read> | null
@@ -1298,25 +1317,63 @@ const sendTerminalHandler: Handler = async (args, ctx) => {
         wake = resolve
       })
       const unwatch = terminalRegistry.onDisconnect(terminalId, () => {
-        cut.read ??= liveModel.read(readOpts)
+        cut.read ??= liveModel.read(readOpts())
         cut.tail ??= liveModel.read({ mode: 'tail', lines: 500, scrub })
         wake()
       })
-      let waitedMs: number
+      const abort = { is: () => cut.read !== null, wake: () => woken }
+      let wait: { reason: string; waitedMs: number; match?: string; patternDisabled?: true }
       try {
-        waitedMs = await settleAfterSend({
-          now: Date.now,
-          sleep: sleepMs,
-          lastOutputAt: () => terminalRegistry.get(terminalId)?.lastOutputAt ?? 0,
-          sentAt,
-          abort: { is: () => cut.read !== null, wake: () => woken }
-        })
+        if (waitSpec) {
+          // What a pattern may match: the program's output after the send, minus the echo of
+          // `input`, read without scrubbing and without taking a cursor.
+          const surface = async (budgetMs: number): Promise<string> => {
+            const barrierMs = Math.min(BARRIER_TIMEOUT_MS, budgetMs)
+            const r = await liveModel.matchText({
+              since: prep.cursor,
+              altRows: prep.altRows,
+              barrierMs
+            })
+            if (!r.ok) return '' // the send's anchor is gone: nothing is safely "since the send"
+            return r.altScreen
+              ? r.text
+              : matchSurface(r.text, r.onCursorRow ? prep.cursorOffset : 0, input)
+          }
+          const result = await waitForOutput(
+            {
+              now: Date.now,
+              sleep: sleepMs,
+              sentAt,
+              lastOutputAt: () => terminalRegistry.get(terminalId)?.lastOutputAt ?? 0,
+              hasExited: () => (terminalRegistry.get(terminalId)?.state ?? 'exited') === 'exited',
+              surface,
+              abort
+            },
+            waitSpec
+          )
+          wait = {
+            reason: result.reason,
+            waitedMs: result.waitedMs,
+            ...(result.match !== undefined ? { match: scrub(result.match) } : {}),
+            ...(result.patternDisabled ? { patternDisabled: true as const } : {})
+          }
+        } else {
+          const waitedMs = await settleAfterSend({
+            now: Date.now,
+            sleep: sleepMs,
+            lastOutputAt: () => terminalRegistry.get(terminalId)?.lastOutputAt ?? 0,
+            sentAt,
+            abort
+          })
+          wait = { reason: cut.read !== null ? 'disconnected' : 'none', waitedMs }
+        }
       } finally {
         unwatch()
       }
-      const disconnected = cut.read !== null
 
-      let read = await (cut.read ?? model.read(readOpts))
+      let read = await (cut.read ?? model.read(readOpts(barrierBudget())))
+      // The send's anchor is gone: the last 500 lines are the best left, and not exact.
+      const lostAnchor = !read.ok
       if (!read.ok) read = await (cut.tail ?? model.read({ mode: 'tail', lines: 500, scrub }))
       if (!read.ok) return steerError('CURSOR_EXPIRED', ctx.folder)
 
@@ -1328,12 +1385,12 @@ const sendTerminalHandler: Handler = async (args, ctx) => {
         state: rec?.state ?? 'exited',
         ...(rec?.exit ? { exit: { code: rec.exit.code, reason: rec.exit.reason } } : {}),
         sent,
-        wait: { reason: disconnected ? 'disconnected' : 'none', waitedMs },
+        wait,
         output: screen.text,
         truncated: screen.truncated,
         droppedLines: screen.droppedLines,
         altScreen: screen.altScreen,
-        approximate: screen.approximate || prep.approximate,
+        approximate: screen.approximate || prep.approximate || lostAnchor,
         othersWrote: scope.othersWrote,
         operatorTyped:
           rec?.lastOperatorWriteAt != null && rec.lastOperatorWriteAt >= scope.startedAt,

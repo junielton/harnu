@@ -136,6 +136,8 @@ const translateSendTerminal: Translator = (args, gateFolder) => {
   if (typeof args.input === 'string') input.input = args.input
   if (Array.isArray(args.keys)) input.keys = args.keys
   if (typeof args.paste === 'boolean') input.paste = args.paste
+  // Passed whole so the validator sees every key (a stray one is BAD_ARGS, not silently dropped).
+  if (args.waitFor !== undefined) input.waitFor = args.waitFor
   return input
 }
 
