@@ -109,7 +109,7 @@ export interface RowLegacyView {
   lastAssistant: string | null
   /** Whether the push's `lastUuid` is a row of the tail; null when the push has none. */
   uuidFound: boolean | null
-  /** User and assistant rows after that uuid (M1: the push is behind the file). */
+  /** Main-loop rows with a uuid after that one, attachments included (M1: the push is behind). */
   rowsAfter: number
   /** The tail's main-loop user rows with text, oldest first, as the CLI would name them. */
   recentPrompts: readonly { text: string; shape: StoredShape }[]
@@ -200,8 +200,8 @@ export function compareRowGroups(
   ): RowGroupRecord => ({ group, verdict, cls, lenPush, lenLegacy })
 
   if (L === null) return GROUP_ORDER.map((g) => record(g, 'no-legacy'))
-  // M1: the push has folded a row the file does not hold yet, or the file holds rows the push has
-  // not folded yet. Either way the two are not comparable at this turn end.
+  // M1 (widened after W1 round 3): the push has folded a row the file does not hold yet, or its
+  // uuid sits behind the file's last row. Either way this sample is skipped, never a divergence.
   if (P.lastUuid !== null && (L.uuidFound === false || L.rowsAfter > 0)) {
     return GROUP_ORDER.map((g) => record(g, 'unaligned'))
   }

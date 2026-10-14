@@ -344,6 +344,33 @@ describe('the parity stream end to end (AC-7)', () => {
       expect({ k: r.k, v: r.d?.verdict }).toEqual({ k: r.k, v: 'match' })
   })
 
+  it('M1: a lastUuid absent from the file, or behind its last row, is never a divergence', async () => {
+    for (const [name, lastUuid, trailing] of [
+      ['absent', 'aaaaaaaa-0000-4000-8000-0000000000ff', false],
+      ['behind a trailing attachment', 'aaaaaaaa-0000-4000-8000-000000000002', true]
+    ] as const) {
+      const x = await rig()
+      writeTranscript(x.transcript, 1_790_000_000_000)
+      if (trailing) {
+        const att = {
+          type: 'attachment',
+          uuid: 'aaaaaaaa-0000-4000-8000-000000000005',
+          isSidechain: false
+        }
+        writeFileSync(x.transcript, readFileSync(x.transcript, 'utf8') + JSON.stringify(att) + '\n')
+        utimesSync(x.transcript, 1_790_000_000, 1_790_000_000)
+      }
+      await x.start()
+      await x.send(S1, 'session.row', row({ lastUuid }))
+      await x.send(S1, 'turn.completed', { reason: 'answer', backgroundSubagents: 0 })
+      await tick()
+      await x.settle()
+      const recs = x.ledger.read('row')
+      expect({ name, n: recs.length }).toEqual({ name, n: 6 })
+      for (const r of recs) expect({ name, v: r.d?.verdict }).toEqual({ name, v: 'unaligned' })
+    }
+  })
+
   it("a subagent's turn end writes nothing", async () => {
     const x = await rig()
     writeTranscript(x.transcript, 1_790_000_000_000)

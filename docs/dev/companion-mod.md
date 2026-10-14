@@ -229,7 +229,8 @@ to a run with no mod.
   rows a `last-prompt` line can name, `stall-detect`'s calls), plus the head's first prompt row when
   a first-prompt divergence needs a class. Texts go through `firstRealPrompt` (and a trailing-space
   trim) first. Verdicts: `match`, `diverge`, `unaligned` (M1: `lastUuid` absent from the tail, or
-  user/assistant rows after it), `unknown` (an absent push text), `no-legacy` (no kept path, no
+  behind its last row: any main-loop row with a uuid after it, a trailing attachment included; the
+  sample is skipped, never a divergence), `unknown` (an absent push text), `no-legacy` (no kept path, no
   file). Named classes: `E-HEAD`, `E-ORIGIN` (peer, task notification), `E-TEAMMATE`,
   `E-SCHEDULED` (a `/loop` re-fire), `E-PLUGIN-BRIDGE` (an origin the fold skips by default),
   `E-HEADLESS` (`claude -p`), `E-RAWCAP` and `E-RAWCAP-WINDOW` (the two first-prompt bounds above),

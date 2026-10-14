@@ -163,8 +163,10 @@ export function createRowLegacySource(deps: {
       const entries = lines.filter((e) => !isNoiseEntry(e))
       let lastAssistant: string | null = null
       // The push's `lastUuid` can be ANY folded row, a `system` one included (the turn's
-      // `turn_duration`), so it is looked for on every line; what follows it and matters to the
-      // comparison is a user or assistant row the push has not folded yet (M1).
+      // `turn_duration`), so it is looked for on every line. M1, as widened after W1 round 3: a
+      // uuid absent from the tail, or BEHIND it (any main-loop row with a uuid follows it, a
+      // trailing attachment included), is "not yet aligned". Metadata lines with no uuid
+      // (`last-prompt`, `ai-title`, `mode`) are not rows and do not count.
       let found = -1
       let rowsAfter = 0
       const recent: { text: string; shape: StoredShape }[] = []
@@ -173,9 +175,10 @@ export function createRowLegacySource(deps: {
         if (isLast) {
           found = i
           rowsAfter = 0
+        } else if (found >= 0 && typeof e.uuid === 'string' && e.isSidechain !== true) {
+          rowsAfter++
         }
         if (!isMainRow(e)) return
-        if (found >= 0 && !isLast) rowsAfter++
         if (e.type === 'assistant') {
           const t = assistantText(e.message)
           if (t.trim() !== '') lastAssistant = t
