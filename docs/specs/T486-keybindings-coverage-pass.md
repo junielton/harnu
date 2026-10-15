@@ -60,7 +60,7 @@ localizing native menu labels; making the "not in terminal" marker platform-accu
   and the operator accepted on 2026-10-14: `Cmd+Alt+S` (`view.settings.keybindings`),
   `Cmd+Shift+M` (`pane.toggleMaximize`), `Cmd+Enter` (`session.openToSide`, Ctrl+Enter
   off macOS). `session.fork` ships unbound (operator decision, same day).
-- **Scope** — the T1 terminal marker the pane shows, computed by `isNotInTerminal(d)`
+- **Terminal** — the T1 terminal marker the pane shows (not the `useShortcuts` scope of §6.1), computed by `isNotInTerminal(d)`
   (`!d.menu && !d.shield`, exported from `keybindings-core.ts` in U5a): `global` = the
   descriptor is menu-backed or shielded (§7.4), so the action is designed to fire while
   a terminal holds focus; `not-in-terminal` = renderer-only. §7.1 states why `global`
@@ -74,7 +74,7 @@ Paths are under `src/renderer/src/` unless they start with `src/main/`.
 
 ### 3.2 Sessions
 
-| Id                           | Label (en)                       | Handler / where it lives                                                                                                | Default       | Scope           | Menu |
+| Id                           | Label (en)                       | Handler / where it lives                                                                                                | Default       | Terminal        | Menu |
 | ---------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------- | --------------- | ---- |
 | `session.new`                | New session                      | `App.vue:489-502` → `sessions.newSessionInCurrentContext()`                                                             | `Cmd+N`       | global          | yes  |
 | `session.newInFolder`        | New session in this folder…      | `Topbar.vue:399` (`onNewSessionClick` :211), `SidebarFolder.vue:638` → `ui.openNewSession(folder)` (`stores/ui.ts:596`) | unbound       | not-in-terminal | no   |
@@ -98,7 +98,7 @@ Paths are under `src/renderer/src/` unless they start with `src/main/`.
 
 ### 3.3 Sidebar
 
-| Id                                                               | Label (en)                     | Handler / where it lives                                                                                                   | Default                                                        | Scope            | Menu |
+| Id                                                               | Label (en)                     | Handler / where it lives                                                                                                   | Default                                                        | Terminal         | Menu |
 | ---------------------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ---------------- | ---- |
 | `sidebar.jump`                                                   | Jump to a folder or session    | `Sidebar.vue:207-210` (`onSearchClick`) → `ui.openSidebarJumpPalette()` (`stores/ui.ts:747`) / `closeSidebarJumpPalette()` | `Cmd+Shift+F`                                                  | not-in-terminal¹ | no   |
 | `sidebar.rescan`                                                 | Rescan folders                 | `Sidebar.vue:185` (click :272) → `sessions.rescan()`                                                                       | unbound                                                        | not-in-terminal  | no   |
@@ -128,7 +128,7 @@ Two rules for `sidebar.jump`, both required:
 Folder actions target the active folder (§3.10); `folder.rename` targets the cursor row
 first.
 
-| Id                                 | Label (en)                                  | Handler / where it lives                                                                                | Default | Scope           | Menu |
+| Id                                 | Label (en)                                  | Handler / where it lives                                                                                | Default | Terminal        | Menu |
 | ---------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------- | --------------- | ---- |
 | `folder.add`                       | Add folder                                  | `App.vue:586-591` → `ui.openDialog('addFolder')`                                                        | `Cmd+O` | global          | yes  |
 | `folder.browseFiles`               | Browse files                                | `App.vue:647-653` → `useFolderActions.browseFiles` (`composables/useFolderActions.ts:106`)              | unbound | global          | yes  |
@@ -160,7 +160,7 @@ first.
 
 ### 3.5 Views (layout and popovers)
 
-| Id                          | Label (en)                       | Handler / where it lives                                                                   | Default       | Scope           | Menu                |
+| Id                          | Label (en)                       | Handler / where it lives                                                                   | Default       | Terminal        | Menu                |
 | --------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------ | ------------- | --------------- | ------------------- |
 | `view.toggleSidebar`        | Toggle the left sidebar          | `App.vue:534-546` → `layout.toggleSidebar()`                                               | `Cmd+B`       | global          | yes                 |
 | `view.toggleHelper`         | Toggle the right split panel     | `App.vue:547-556` → `layout.toggleHelper()`                                                | `Cmd+Alt+B`   | global          | yes                 |
@@ -196,7 +196,7 @@ rather than switching tabs.
 
 ### 3.6 Takeovers
 
-| Id                    | Label (en)                        | Handler / where it lives                                                                           | Default       | Scope           | Menu |
+| Id                    | Label (en)                        | Handler / where it lives                                                                           | Default       | Terminal        | Menu |
 | --------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------- | ------------- | --------------- | ---- |
 | `view.closeTakeover`  | Close the open view               | `TakeoverShell.vue:45` → `TakeoverHost.vue:69` → `ui.closeAllTakeovers()` (`stores/ui.ts:393`)     | `Escape`      | not-in-terminal | no   |
 | `view.roadmap`        | Toggle the roadmap board          | `App.vue:612-618` → `useFolderActions.toggleRoadmap` (:46)                                         | unbound       | global          | yes  |
@@ -210,7 +210,7 @@ rather than switching tabs.
 
 ### 3.7 Panes
 
-| Id                    | Label (en)                           | Handler / where it lives                                                                                                                                                                                                  | Default       | Scope            | Menu |
+| Id                    | Label (en)                           | Handler / where it lives                                                                                                                                                                                                  | Default       | Terminal         | Menu |
 | --------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ---------------- | ---- |
 | `pane.focusNext`      | Focus the next pane                  | new — §8.1                                                                                                                                                                                                                | `F6`          | global (shield)  | no   |
 | `pane.focusPrev`      | Focus the previous pane              | new — §8.1                                                                                                                                                                                                                | `Shift+F6`    | global (shield)  | no   |
@@ -223,7 +223,7 @@ xterm lets bubble (§7.1).
 
 ### 3.8 App
 
-| Id                                                            | Label (en)                        | Handler / where it lives                                               | Default                                           | Scope                     | Menu |
+| Id                                                            | Label (en)                        | Handler / where it lives                                               | Default                                           | Terminal                  | Menu |
 | ------------------------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------- | ------------------------- | ---- |
 | `app.search`                                                  | Open command palette              | `App.vue:503-508` → `ui.openPalette()`                                 | `Cmd+K`                                           | global                    | yes  |
 | `project.switch`                                              | Switch project                    | `App.vue:578-585` → `ui.openPalette()` (`palette: false`)              | `Cmd+Shift+P`                                     | global                    | yes  |
@@ -354,12 +354,17 @@ arrive in U5a (§7.4, §10); until then the pane keeps its inline `!b.menu`
 
 - **Search box** at the top of the pane (autofocus when the tab opens). Two match
   modes, picked per query:
-  - **Chord mode** — if the trimmed query parses with `parseChord` and names a
-    modifier or a non-letter key (`Ctrl+J`, `ctrl+shift+f`, `F6`, `Esc`), or contains a
+  - **Chord mode** — if the trimmed query parses with `parseChord` and has a `+`, a
+    modifier, an F-key or `Esc` (`Ctrl+J`, `ctrl+shift+f`, `F6`, `Esc`), or contains a
     macOS symbol (`⌘⇧⌥⌃`, which the matcher maps back to tokens), it is canonicalized
     and rows are kept whose **resolved** chord is equal under the platform fold
     (`scopeChordKey`, so `Ctrl+B` finds `Cmd+B` off macOS). This answers "what holds
     Ctrl+J?" exactly.
+  - **Bare named key** — `parseChord` also accepts words like `delete`, `left`,
+    `right`, `tab`, `home`, `end` and `space` as a chord with no modifier. Those are
+    ambiguous with ordinary search words ("delete" must still find "Delete the
+    session…", even though `session.delete` is unbound), so such a query returns the
+    **union** of the chord-mode and text-mode result sets.
   - **Text mode** — otherwise, a case-insensitive substring match against the row's
     label (active locale), its rendered chord, and its id.
 - **Group headers** in fixed order: Sessions, Sidebar, Folders, Views, Panes,
@@ -553,6 +558,21 @@ From `@xterm/xterm` 6.0.0 (`src/common/input/Keyboard.ts`, `src/browser/CoreBrow
 | `F2` rename folder           | Program gets F2                         | same                            | No                                                                     |
 | `Cmd+Alt+S` settings tab     | Program gets ESC+^S; menu does not fire | Native menu fires               | No                                                                     |
 
+On a Mac keyboard the F-key defaults (`F2`, `F6`, `Shift+F6`, `Shift+F10`) fire only
+with **Fn** held unless the user turned on "Use F1, F2, etc. keys as standard function
+keys" (F2 is brightness, F6 Do Not Disturb on Apple Silicon, F10 mute). None collides
+with a system shortcut, so they stay as defaults; `docs/user/sessions.md` and the pane's
+macOS hint say "Fn+F6". `F2` is not VS Code parity on macOS (VS Code renames with
+Enter there); it stays because Enter is `sidebar.cursor.activate`. `F11`
+(`app.fullscreen`, reserved, from T1) is Show Desktop with Fn on macOS and never
+fires; a `Ctrl+Cmd+F` mac default is cheap once `defaultKeysMac` lands (U5a) and is a
+follow-up, not part of this card. A mac-specific default for the F-key actions would
+need `defaultKeysMac` earlier than U5a; this card does not take that on.
+
+`Cmd+Alt+S` is not VS Code parity either (Save All there on macOS), and Ctrl+Alt is
+AltGr on some Windows layouts (Polish AltGr+S types ś); it is already accepted, and
+the Windows manual pass (AC-48) checks it on such a layout.
+
 `session.fork` ships unbound, so it has no row here. A user who binds `Cmd+D` gets
 Ctrl+D (EOF) inside a terminal on Linux/Windows, a fork elsewhere, and on macOS a fork
 over the terminal too (⌘D bubbles); the Diagram pane's own ⌘D wins inside that pane
@@ -577,7 +597,10 @@ must know:
   `chordFromEvent`), so on a non-US layout it is the key in the US backquote position;
   a dead-key layout cannot break it.
 - The pane shows the shield hint (§5.2) on the row once a chord is bound; the user docs
-  (`docs/user/sessions.md`) get the same warning.
+  (`docs/user/sessions.md`) get the same warning. The docs write the safe chord as
+  ``Ctrl+` `` and never ``Cmd+` ``: every default in this spec is written `Cmd+…`, so
+  readers copy it, and ⌘` is macOS's "move focus to next window" and never reaches
+  Harnu.
 
 ### 7.4 The generic shield (U5a)
 
@@ -752,7 +775,7 @@ from the table:
 
 Every button below appends its action's resolved chord to its native `title`
 (Harnu's tooltips are all native `title` attributes — there is no tooltip component):
-`"Roadmap board (Ctrl+Shift+R)"` style, via `keybindings.withChord(label, id)` →
+`"Toggle the left sidebar (Ctrl+B)"` style (`⌘B` on macOS), via `keybindings.withChord(label, id)` →
 `t('keybindings.withChord', { label, chord })` = `"{label} ({chord})"`; with no chord,
 the plain label. Reactive on `keybindings.resolved`, so a rebind updates every tooltip
 live.
@@ -796,7 +819,8 @@ single chord. So `Ctrl+K Ctrl+S` cannot be a default. `view.settings.keybindings
 the single chord **`Cmd+Alt+S`** (proposed by the spec, accepted by the operator
 2026-10-14) (S for shortcuts; next
 to the reserved `Cmd+Alt+K` that opens the raw file), **menu-backed**: a new native
-**View → "Keyboard Shortcuts…"** item. The existing View item that opens the JSON
+**"Keyboard Shortcuts…"** item (under **View** on Linux/Windows; on macOS right after
+`Settings…` in the app menu, `menu.ts:94-105`, where Mac users look for preferences). The existing View item that opens the JSON
 (`menu.ts:297-304`, `app.openKeybindings`) is relabeled **"Open keybindings.json"**,
 mirroring VS Code's "Keyboard Shortcuts" vs "Keyboard Shortcuts (JSON)". Menu-backed
 also sidesteps a renderer trap on macOS: Option changes `e.key` for letters, which can
@@ -874,8 +898,8 @@ palette and tooltips cover the whole table.
 - [ ] AC-1 — Every Settings → Keyboard Shortcuts row, conflict badge and capture `aria-label` shows the human label in `en` and `pt-BR`; no rendered text starts with `keybindings.actions.` — verify: test
 - [ ] AC-2 — Every descriptor's `labelKey` comes from `labelKeyFor`, resolves to a non-key string in both locales, and is unique — verify: test
 - [ ] AC-3 — Esc while a row is recording cancels the recording and leaves Settings open — verify: test
-- [ ] AC-4 — Typing text in the pane's search keeps only rows whose label (active locale), rendered chord or id contains it, case-insensitively — verify: test
-- [ ] AC-5 — Typing a chord (`Ctrl+J`, `ctrl+shift+f`, `F6`, `⌘K`) keeps exactly the rows whose resolved chord equals it under the platform fold — verify: test
+- [ ] AC-4 — Typing text in the pane's search keeps only rows whose label (active locale), rendered chord or id contains it, case-insensitively; `delete` finds "Delete the session…" although `session.delete` is unbound — verify: test
+- [ ] AC-5 — Typing a chord (`Ctrl+J`, `ctrl+shift+f`, `F6`, `⌘K`) keeps exactly the rows whose resolved chord equals it under the platform fold; a bare named key (`delete`, `left`) returns the union of the chord and text matches — verify: test
 - [ ] AC-6 — Rows appear under Sessions, Sidebar, Folders, Views, Panes, Takeovers, App, in that order; empty groups are hidden — verify: test
 - [ ] AC-7 — The Unbound, Conflicts and Customized chips each filter by their rule, show a whole-table count, and AND with each other and the search — verify: test
 - [ ] AC-8 — A search with no match shows "No shortcut matches." — verify: test
@@ -904,7 +928,7 @@ palette and tooltips cover the whole table.
 - [ ] AC-31 — The Ctrl+J/LF hazard and the safe ``Ctrl+` `` alternative are documented in `docs/user/sessions.md` — verify: review
 - [ ] AC-32 — `session.fork` ships with no default chord; once bound, it forks the selected session with the Session menu's behavior (toasts on failure), does nothing on a key press in a text field or inside the Diagram pane (whose own ⌘D duplicates), and bound to `Cmd+D` on Linux lets Ctrl+D in a focused terminal still reach the PTY — verify: test + manual
 - [ ] AC-33 — `Cmd+Enter` (Ctrl+Enter off macOS) opens the cursor session (else the selected one) to the side through `addResumeHelper`, with its no-op rules — verify: test
-- [ ] AC-34 — `Shift+F10` opens the Session menu or Folder menu for the §3.10 target, anchored at the row's rect, keyboard-navigable, and exactly one menu opens per press — verify: test + manual
+- [ ] AC-34 — `Shift+F10` opens the Session menu or Folder menu for the §3.10 target, anchored at the row's rect, keyboard-navigable, and exactly one menu opens per press, on Linux and Windows (Chromium synthesizes `contextmenu` on both) — verify: test + manual
 - [ ] AC-35 — `F2` opens Rename folder for the cursor folder row, else the active folder, and does nothing on a session or group cursor row — verify: test
 - [ ] AC-36 — `Cmd+Alt+S` and View → "Keyboard Shortcuts…" open Settings on the Keyboard Shortcuts tab; the JSON menu item and the `app.openKeybindings` label read "Open keybindings.json" in `en` (and its translation in `pt-BR`) — verify: test + manual
 - [ ] AC-37 — Each new session / folder / sidebar / view id runs the same function its button or menu item runs (a shared composable, no copied handler) — verify: review
@@ -918,7 +942,7 @@ palette and tooltips cover the whole table.
 - [ ] AC-45 — `onNavKeydown` is gone; the generic shield is the only capture-phase key handler for shielded actions — verify: review
 - [ ] AC-46 — Each unit adds its `CHANGELOG.md` entry, its `design.md` §6 edits (named in §5.3, §6.1, §8.1, §9, §10) before the UI, and its `docs/user/` edits — including the palette paragraph of `docs/user/sessions.md:89-91` (U6), `docs/user/cleanup.md:13` and `docs/user/canvas.md:73` (U4b) — verify: review
 - [ ] AC-47 — `npm run typecheck`, `npm run lint`, the unit tests and `npm run build` pass on every unit — verify: test
-- [ ] AC-48 — Linux manual pass before merge: new hints render `Ctrl`/`Shift`/`Alt`; `Ctrl+Shift+F`, `F6` and `Ctrl+Shift+M` fire over a focused terminal; the rebuilt GTK menu shows the new View item — verify: manual
+- [ ] AC-48 — Linux manual pass before merge: new hints render `Ctrl`/`Shift`/`Alt`; `Ctrl+Shift+F`, `F6` and `Ctrl+Shift+M` fire over a focused terminal; the rebuilt GTK menu shows the new View item. Windows manual pass: Shift+F10 opens one menu, and `Cmd+Alt+S` (Ctrl+Alt+S) fires on an AltGr layout — verify: manual
 - [ ] AC-49 — Every `SettingsTabId` has a `view.settings.<tab>` id (only `keybindings` bound, to `Cmd+Alt+S`) that opens Settings on that tab through `ui.openSettings(tab)`; a test asserts `SETTINGS_TAB_IDS` equals the union — verify: test
 - [ ] AC-50 — The recorder refuses a chord that can never fire for that action (Shift+punctuation, or Option+letter on macOS, for a renderer-only action), keeps the previous chord and shows the refusal line — verify: test
 - [ ] AC-51 — A non-shielded row bound to a chord `terminalKeymap.ts` swallows shows the terminal-keeps hint, read from `TERMINAL_KEYMAP_CHORDS` — verify: test
@@ -931,7 +955,8 @@ palette and tooltips cover the whole table.
 Still open — each needs a live check during its implementing unit:
 
 - **OQ-3 — Shift+F10 and Chromium's synthesized `contextmenu`.** Unknown whether
-  Electron's Chromium on Linux dispatches a `contextmenu` event for Shift+F10 at the
+  Electron's Chromium on Linux **and Windows** (we ship `build:win`; Chromium on
+  Windows synthesizes `contextmenu` for Shift+F10) dispatches a `contextmenu` event for Shift+F10 at the
   focused element. The `ui` menu mutex caps it at one menu; confirm in U2's manual
   pass (AC-34).
 - **OQ-8 — F6 in Electron.** Assumed to have no built-in Chromium focus-traversal

@@ -12,7 +12,7 @@ jump palette, close a takeover, cycle between the terminal and a split pane, for
 session, rename a folder, open Cleanup, the Scheduler, the System Monitor or a given
 Settings tab — is
 **click-only**. There is no id to bind, so `keybindings.json` cannot reach it and the
-Settings pane cannot list it. An operator who lives in VS Code (F6, Shift+F10, F2,
+Settings pane cannot list it. An operator who lives in VS Code (F6, Shift+F10,
 Ctrl+Enter, ``Ctrl+` ``) finds none of it.
 
 Three defects make the surface worse than it looks:
@@ -43,7 +43,7 @@ action by name — the palette becomes the discovery path for every unbound acti
 1. **Every user-invokable action has a stable id in the keybindings table**, including
    the ones that ship unbound — 82 new ids, among them one per Settings tab. The
    table, not the UI, is the inventory (re-derived from code in the spec, §3).
-2. **A small, deliberate set of new defaults**, chosen for VS Code parity and checked
+2. **A small, deliberate set of new defaults**, chosen for VS Code parity where VS Code has one (F2 and `Cmd+Alt+S` are not parity on macOS) and checked
    against xterm and the reserved set: `Cmd+Shift+F` jump palette, `Esc` close
    takeover, `F6`/`Shift+F6` pane focus, `Cmd+Shift+M` maximize the focused pane,
    `Cmd+Enter` open to the side, `Shift+F10` context menu, `F2` rename folder,

@@ -101,8 +101,13 @@ Field rules:
   `@electron-toolkit` base config, and `src/main/companion/host.ts` imports a JSON
   file), resolving the `labelKey` that T486's `labelKeyFor` produces (T486 §4). A
   missing label falls back to the id, never to the raw key.
-- `display` is `renderChordString(chord, { mac: true })` and `{ mac: false }`. Both
-  are always returned: the session may be advising an operator on another machine.
+- `display` is the chord rendered for both platforms: `renderChordString(chord, { mac: true })`
+  and `{ mac: false }`. Both are always returned: the session may be advising an operator
+  on another machine. `keys` / `defaultKeys` are resolved for the **host**, so for a row
+  still on its default `display` renders each platform's own default (T486 U5a's
+  `defaultKeysFor(d, mac)`: `nav.back` is `⌥←` on Linux and `⌘[` on macOS, whichever
+  host answers); for a user override it is the host's chord rendered both ways, which is
+  the best the file can say, since `keybindings.json` holds one chord per id.
 - `notInTerminal` is `isNotInTerminal(d)`, exported from `keybindings-core.ts` by T486
   U5a (`!d.menu && !d.shield`), the same predicate the Settings pane badges. It is a
   **best guess**, and T486 §7.1 states why: on Linux/Windows a menu-backed Ctrl+letter
