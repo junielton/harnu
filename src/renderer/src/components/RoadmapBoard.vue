@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   Bot,
   ChevronLeft,
+  Clock,
   GitBranch,
   KanbanSquare,
   Rocket,
@@ -18,6 +19,7 @@ import Button from './ui/Button.vue'
 import CardDetailModal from './CardDetailModal.vue'
 import CardCreateModal from './CardCreateModal.vue'
 import RoadmapFilterBar from './RoadmapFilterBar.vue'
+import RoadmapWipChip from './RoadmapWipChip.vue'
 import {
   useRoadmapStore,
   COLUMN_ORDER,
@@ -92,9 +94,6 @@ const sessions = useSessionsStore()
 const helpers = useHelpersStore()
 const ui = useUiStore()
 const missionGrants = useMissionGrants()
-
-/** Cummings supervision ceiling as a board rule (§3.5) — soft cap on In Progress. */
-const WIP_LIMIT = 5
 
 // ---- Mission-grant strip (T80 S2 §3.4) -------------------------------------
 // A board grant is just a T44 grant scoped to this repo. The AUTHORITATIVE
@@ -290,6 +289,17 @@ async function onMoveToReview(card: RoadmapCard): Promise<void> {
   if (!res.ok) ui.pushToast({ kind: 'danger', title: writeError(res.code) })
 }
 
+/**
+ * BUG-197: the one-click fix on a stale In Progress card. Goes through the same human
+ * `roadmap:setStatus` writer as a drag — Review or Backlog only, never Done.
+ */
+async function onMoveStale(card: RoadmapCard, status: 'review' | 'backlog'): Promise<void> {
+  const res = await roadmap.setStatus(card.slug, status)
+  if (!res.ok) {
+    ui.pushToast({ kind: 'danger', title: t('roadmap.cardStale.moveFailed', { code: res.code }) })
+  }
+}
+
 /** Localized labels handed to the SERVER-SIDE boot-prompt builder (§6.2/§3.5). */
 function bootLabels(): BootPromptLabels {
   return {
@@ -440,6 +450,10 @@ watch([activeKinds, groupMode, hideDone], () => {
 
 // Load the board for the folder the operator opened it on; re-load if the store's
 // target folder changes while the board stays mounted (re-open on another repo).
+// BUG-197: a session can stop (or be parked, or go quiet for a week) without any card
+// event, so re-ask main for the live/stale verdict while the board is open.
+const WIP_REFRESH_MS = 30_000
+let wipRefreshTimer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
   if (ui.roadmap.folderPath) {
     void roadmap.open(ui.roadmap.folderPath)
@@ -447,6 +461,11 @@ onMounted(() => {
     void loadLocalBranches(ui.roadmap.folderPath)
   }
   void refreshGrant()
+  wipRefreshTimer = setInterval(() => void roadmap.refreshWip(), WIP_REFRESH_MS)
+})
+onBeforeUnmount(() => {
+  if (wipRefreshTimer) clearInterval(wipRefreshTimer)
+  wipRefreshTimer = null
 })
 watch(
   () => ui.roadmap.folderPath,
@@ -496,12 +515,13 @@ function onDragLeave(col: ColumnKey): void {
  * the move always proceeds — this only warns (an explicit, visible override).
  */
 function wipWouldExceed(): boolean {
-  return roadmap.inProgressCount + 1 > WIP_LIMIT
+  // BUG-197: only LIVE In Progress cards hold a slot, against the repo's own limit.
+  return roadmap.liveInProgressCount + 1 > roadmap.wipLimit
 }
 function warnWip(): void {
   ui.pushToast({
     kind: 'warning',
-    title: t('roadmap.wipExceeded', { limit: WIP_LIMIT }),
+    title: t('roadmap.wipExceeded', { limit: roadmap.wipLimit }),
     description: t('roadmap.wipExceededHint')
   })
 }
@@ -1187,6 +1207,16 @@ async function doClose(card: RoadmapCard): Promise<void> {
                 >
                   {{ $t('roadmap.card.blocked') }}
                 </span>
+                <!-- BUG-197: the bound session is not live work, so this card does not
+                       count toward the WIP ceiling. The fix is one click away (row 3). -->
+                <span
+                  v-if="roadmap.staleReason(card.slug)"
+                  class="inline-flex items-center gap-0.5 rounded-sm bg-surface-2 px-1 py-px text-[10px] font-medium text-text-3"
+                  :title="$t(`roadmap.cardStale.reason.${roadmap.staleReason(card.slug)}`)"
+                  data-testid="stale-badge"
+                >
+                  <Clock :size="10" :stroke-width="1.8" />{{ $t('roadmap.cardStale.badge') }}
+                </span>
                 <span v-if="card.deps.length" class="inline-flex items-center gap-0.5">
                   <GitBranch :size="10" :stroke-width="1.6" />{{ card.deps.length }}
                 </span>
@@ -1298,6 +1328,22 @@ async function doClose(card: RoadmapCard): Promise<void> {
                 >
                   <Rocket :size="11" :stroke-width="1.7" />{{ $t('roadmap.card.dispatch') }}
                 </button>
+                <template v-if="roadmap.staleReason(card.slug)">
+                  <button
+                    class="inline-flex h-6 items-center rounded-sm px-1.5 text-[11px] text-text-3 transition hover:bg-surface-2 hover:text-text"
+                    data-testid="stale-to-review"
+                    @click.stop="onMoveStale(card, 'review')"
+                  >
+                    {{ $t('roadmap.cardStale.moveReview') }}
+                  </button>
+                  <button
+                    class="inline-flex h-6 items-center rounded-sm px-1.5 text-[11px] text-text-3 transition hover:bg-surface-2 hover:text-text"
+                    data-testid="stale-to-backlog"
+                    @click.stop="onMoveStale(card, 'backlog')"
+                  >
+                    {{ $t('roadmap.cardStale.moveBacklog') }}
+                  </button>
+                </template>
                 <button
                   v-if="card.session"
                   class="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] text-text-3 transition hover:bg-surface-2 hover:text-text"
@@ -1492,13 +1538,7 @@ async function doClose(card: RoadmapCard): Promise<void> {
     <span class="eyebrow text-text-4">
       {{ $t('roadmap.headerCounts', { cards: headerCardsCount, working: headerWorkingCount }) }}
     </span>
-    <!-- WIP hint (In Progress vs the supervision ceiling, §3.5) -->
-    <span
-      class="rounded-sm px-1.5 py-0.5 text-[11px] tabular-nums"
-      :class="roadmap.inProgressCount > WIP_LIMIT ? 'bg-red-soft text-warning' : 'text-text-4'"
-      :title="$t('roadmap.wipHint')"
-    >
-      {{ $t('roadmap.wip', { count: roadmap.inProgressCount, limit: WIP_LIMIT }) }}
-    </span>
+    <!-- WIP chip (BUG-197): live In Progress vs the repo's limit, with the holders + stepper -->
+    <RoadmapWipChip />
   </Teleport>
 </template>

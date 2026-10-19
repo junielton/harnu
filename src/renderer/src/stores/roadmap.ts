@@ -5,8 +5,10 @@ import type {
   ColumnKey,
   CardStatus,
   RoadmapWriteCode,
-  GeneratorPromptLabels
+  GeneratorPromptLabels,
+  RoadmapWipVerdict
 } from '../../../preload'
+import { useRoadmapDrainStore } from './roadmap-drain'
 
 /**
  * Roadmap Kanban store (T80 S1). The renderer projection of a repo's
@@ -158,6 +160,14 @@ function emptyColumns(): ColumnMap {
   return { backlog: [], ready: [], 'in-progress': [], review: [], done: [] }
 }
 
+/**
+ * The per-repo WIP limit's default and bounds. Mirror of `roadmap-core.WIP_LIMIT` /
+ * `WIP_LIMIT_MIN` / `WIP_LIMIT_MAX` (the renderer cannot import `src/main`); main
+ * clamps every write, so these only shape the stepper.
+ */
+export const WIP_LIMIT_BOUNDS = { min: 1, max: 10, default: 5 } as const
+const DEFAULT_WIP_LIMIT = WIP_LIMIT_BOUNDS.default
+
 export const useRoadmapStore = defineStore('roadmap', () => {
   /** Flat card set for the currently-open board (reconciled by slug). */
   const cards = ref<RoadmapCard[]>([])
@@ -178,8 +188,70 @@ export const useRoadmapStore = defineStore('roadmap', () => {
     return cols
   })
 
-  /** Count of cards currently in the In Progress column (for the WIP hint, §3.5). */
+  /** Count of cards currently in the In Progress column (raw — stale cards included). */
   const inProgressCount = computed(() => columns.value['in-progress'].length)
+
+  /**
+   * BUG-197 (ADR-0021): main's verdict on the In Progress WIP ceiling — the repo's
+   * limit, the live count and which cards are stale. Computed by the SAME pure
+   * function the manifest drain acts on; the board only draws it. `null` until the
+   * first answer (and when the preload is older), in which case everything below
+   * falls back to the raw column length and the default limit.
+   */
+  const wip = ref<RoadmapWipVerdict | null>(null)
+  /** The repo's WIP limit (default 5 until main answers). */
+  const wipLimit = computed(() => wip.value?.limit ?? DEFAULT_WIP_LIMIT)
+  /** In Progress cards that hold a slot — the number the ceiling is measured on. */
+  const liveInProgressCount = computed(() => wip.value?.liveCount ?? inProgressCount.value)
+  /** In Progress cards the verdict calls stale (not counted; badge + one-click fix). */
+  const staleSlugs = computed(() => new Set(wip.value?.staleSlugs ?? []))
+  /** Why a card is stale (`no-session`, `unmaterialized`, `unknown-session`, `inactive`). */
+  function staleReason(slug: string): string | null {
+    const card = cards.value.find((c) => c.slug === slug)
+    if (!card || card.status !== 'in-progress') return null
+    const h = wip.value?.holders.find((x) => x.slug === slug)
+    return h && !h.live ? h.reason : null
+  }
+  /** Live In Progress cards, for the chip popover's "Holding the slots" list. */
+  const liveHolders = computed(() =>
+    (wip.value?.holders ?? []).filter(
+      (h) => h.live && cards.value.some((c) => c.slug === h.slug && c.status === 'in-progress')
+    )
+  )
+
+  let wipTimer: ReturnType<typeof setTimeout> | null = null
+
+  /** Ask main for the current verdict for the open board (ignores a stale answer). */
+  async function refreshWip(): Promise<void> {
+    const path = folderPath.value
+    if (!path || typeof window.api?.roadmapWipState !== 'function') return
+    try {
+      const verdict = await window.api.roadmapWipState(path)
+      if (folderPath.value !== path) return
+      wip.value = verdict
+      // The pause is over once a slot is free — forget it so the next one notifies.
+      if (!verdict.atCeiling) useRoadmapDrainStore().clearWipPause(path)
+    } catch {
+      /* keep the last verdict; the next refresh retries */
+    }
+  }
+
+  /** Coalesce bursts of card events (a drain writes several) into one refresh. */
+  function scheduleWipRefresh(): void {
+    if (wipTimer) clearTimeout(wipTimer)
+    wipTimer = setTimeout(() => {
+      wipTimer = null
+      void refreshWip()
+    }, 250)
+  }
+
+  /** Persist the repo's WIP limit (clamped by main) and redraw from the new verdict. */
+  async function setWipLimit(limit: number): Promise<void> {
+    const path = folderPath.value
+    if (!path) return
+    await window.api.userProjectsSetWipLimit(path, limit)
+    await refreshWip()
+  }
 
   /** Reconcile a single card add/change (ignore events from a since-closed board). */
   function upsertCard(eventRepoKey: string, card: RoadmapCard): void {
@@ -187,11 +259,13 @@ export const useRoadmapStore = defineStore('roadmap', () => {
     const idx = cards.value.findIndex((c) => c.slug === card.slug)
     if (idx === -1) cards.value.push(card)
     else cards.value.splice(idx, 1, card)
+    scheduleWipRefresh()
   }
 
   function removeCard(eventRepoKey: string, slug: string): void {
     if (repoKey.value !== null && eventRepoKey !== repoKey.value) return
     cards.value = cards.value.filter((c) => c.slug !== slug)
+    scheduleWipRefresh()
   }
 
   /** Subscribe once to the watcher stream (guarded for an older preload). */
@@ -213,10 +287,12 @@ export const useRoadmapStore = defineStore('roadmap', () => {
     // Drop the previous board's cards so a slow load doesn't show stale columns.
     cards.value = []
     repoKey.value = null
+    wip.value = null
     try {
       const res = await window.api.roadmapLoad(path)
       repoKey.value = res.repoKey
       cards.value = res.cards
+      void refreshWip()
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
       cards.value = []
@@ -573,6 +649,14 @@ export const useRoadmapStore = defineStore('roadmap', () => {
     error,
     columns,
     inProgressCount,
+    wip,
+    wipLimit,
+    liveInProgressCount,
+    staleSlugs,
+    staleReason,
+    liveHolders,
+    refreshWip,
+    setWipLimit,
     open,
     findCard,
     setStatus,
