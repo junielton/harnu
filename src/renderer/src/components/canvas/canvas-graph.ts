@@ -148,6 +148,14 @@ export function registerCanvasHtmlShapes(): void {
   }
 }
 
+/**
+ * Graphs built with `editable: true`. {@link setCanvasRubberband} consults it
+ * before ARMING the rubberband: X6 cannot tell a viewer from an editor on its
+ * own (see the guard's comment). A WeakSet, so a disposed graph is not kept
+ * alive by being recorded here.
+ */
+const editableGraphs = new WeakSet<Graph>()
+
 export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
   const { container, palette } = opts
   const editable = opts.editable === true
@@ -244,6 +252,7 @@ export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
       : {})
   })
   self = graph
+  if (editable) editableGraphs.add(graph)
 
   // Rubberband is OFF in U2, and `showNodeSelectionBox` with it. The plugin is
   // still INSTALLED — that is what {@link missingCanvasPlugins} guards, and it
@@ -323,12 +332,22 @@ export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
  *
  * Disarm it in any tool whose blank drag is not a selection (Hand pans, the
  * shape tools draw), or X6 runs both over the same gesture — the conflict U2
- * observed live. `Selection.rubberbandDisabled` also reads `enabled`, so this
- * never re-arms a selection that is switched off (a read-only graph).
+ * observed live.
+ *
+ * **Arming is refused on a graph not built `editable`.** X6 alone would not
+ * refuse it: a read-only graph's Selection still has `enabled: true` (the
+ * plugin defaults it on; only `rubberband` is off), so `enableRubberband()`
+ * would switch blank-drag selection on in a viewer and break the U2 contract
+ * that nothing the pointer does may change a read-only board. Disarming is
+ * allowed on any graph — turning an input off can never violate that.
  */
 export function setCanvasRubberband(graph: Graph, enabled: boolean): void {
-  if (enabled) graph.enableRubberband()
-  else graph.disableRubberband()
+  if (!enabled) {
+    graph.disableRubberband()
+    return
+  }
+  if (!editableGraphs.has(graph)) return
+  graph.enableRubberband()
 }
 
 /**

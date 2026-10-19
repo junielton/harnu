@@ -401,6 +401,23 @@ describe('the editing affordances the ACs name (U3-1, U3-2)', () => {
     g.dispose()
   })
 
+  it('setCanvasRubberband never arms a read-only graph, but may still disarm it', () => {
+    const g = createCanvasGraph({ container: svgHost(), palette, width: 400, height: 300 })
+    expect(g.isRubberbandEnabled()).toBe(false)
+    // A viewer's Selection keeps `enabled: true` (only `rubberband` is off), so
+    // X6's own `enableRubberband()` WOULD arm blank-drag selection in it — the
+    // U2 contract says nothing the pointer does may change a read-only board.
+    setCanvasRubberband(g, true)
+    expect(g.isRubberbandEnabled()).toBe(false)
+    expect(
+      (g.getPlugin('selection') as unknown as { options: Record<string, unknown> }).options
+        .rubberband
+    ).toBe(false)
+    setCanvasRubberband(g, false)
+    expect(g.isRubberbandEnabled()).toBe(false)
+    g.dispose()
+  })
+
   it('a read-only graph still arms none of them (the U2 contract is intact)', () => {
     const g = createCanvasGraph({ container: svgHost(), palette, width: 400, height: 300 })
     const selection = g.getPlugin('selection') as unknown as { options: Record<string, unknown> }
