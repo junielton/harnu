@@ -497,8 +497,24 @@ async function openSeededBoard(): Promise<void> {
   await expect(pane).toBeVisible({ timeout: STARTUP_TIMEOUT })
   await expect(pane.getByTestId('canvas-toolbar')).toBeVisible({ timeout: STARTUP_TIMEOUT })
   await expect(pane.locator('g.x6-node')).toHaveCount(SEED.length, { timeout: STARTUP_TIMEOUT })
+  await dismissToasts()
   // The pane settles (first-open fit) before any geometry is measured.
   await expectStableGeometry(idOf.A)
+}
+
+/**
+ * Close every toast on screen. A fresh profile gets the sticky first-run "Harnu mod"
+ * disclosure (`timeoutMs: 0`) in the bottom-right corner, and in CI's layout it lies over
+ * the lower right of the canvas pane, so a gesture aimed there would land on the toast.
+ * Whether it overlaps depends on the machine's layout, which is why this is not a wait for
+ * one specific toast: it clears whatever is showing.
+ */
+async function dismissToasts(): Promise<void> {
+  const dismiss = page
+    .locator('[role="region"][aria-live="polite"]')
+    .getByRole('button', { name: 'Dismiss', exact: true })
+  while ((await dismiss.count()) > 0) await dismiss.first().click()
+  await expect(dismiss).toHaveCount(0)
 }
 
 /**
