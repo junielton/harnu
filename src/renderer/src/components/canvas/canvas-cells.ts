@@ -192,8 +192,9 @@ export function toX6Node(
     // `kind` rides along for the same reason: almost every document shape is
     // drawn as an X6 `rect` (and `diamond` as a generic `polygon`), so the graph
     // alone cannot say whether a cell was a `text` annotation, a `box`, or a
-    // `harnu/<name>` this build does not know. Without it, U3's read-back would flatten every annotation into
-    // a box on the first Save — a silent, permanent edit nobody asked for.
+    // `harnu/<name>` this build does not know. Without it, U3's read-back would
+    // flatten every annotation into a box on the first Save — a silent, permanent
+    // edit nobody asked for.
     data: {
       origin: node.origin,
       kind: node.shape,
