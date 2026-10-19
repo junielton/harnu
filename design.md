@@ -4758,7 +4758,8 @@ the zoom cluster: `bg-surface`, 1px `--border`, `--shadow-pop`, `--radius`.
   else the letter — Excalidraw idiom) and a native tooltip, e.g. "Rectangle — R or 2".
 - Corner key label: 8px / 1, `--text-4`; an exception to the type scale because it sits in a
   28px hit target beside a 16px glyph; decorative, since the tooltip and `aria-label` carry
-  the real name.
+  the real name. Its offset is a second exception: 1px from the button's bottom edge and
+  3px from its right edge (`bottom-px`, `right-[3px]`), so it clears the glyph.
 - Lock pressed: closed padlock, `text-accent`. Lock idle: open padlock.
 - **One muted hint line** under the bar for the active tool (`--text-4`, 11px), e.g.
   Select: "Drag to select · Space+drag to pan". It hides once that tool has been used
@@ -4772,7 +4773,10 @@ the zoom cluster: `bg-surface`, 1px `--border`, `--shadow-pop`, `--radius`.
 - The tool is per pane, held in memory, never saved to the file. A new pane starts on
   **Select**. After a creation the tool reverts to Select unless Lock is on. `Esc`
   cancels a creation in progress, else leaves the tool for Select, else clears the
-  selection. Holding `Space` is a temporary Hand. Right-button drag pans in every tool.
+  selection. Holding `Space` is a temporary Hand; because the tool switches to Hand,
+  pressing `Space` mid-gesture also cancels the gesture in flight (a rectangle, arrow or
+  erase stroke), exactly as `Esc` does. `Space` on a focused toolbar button activates that
+  button instead and never pans. Right-button drag pans in every tool.
   Letter shortcuts fire only without `ctrl`/`⌘`/`alt`, only with focus inside this pane,
   and never while the rename input is focused.
 
@@ -4784,7 +4788,7 @@ is the contract for the pane and for `canvas-tools.ts`:
 | **Select**                             | clear selection                                 | **rubberband select** (no modifier); `shift`+drag adds to the selection                                                           | select it; `shift`+click **or** `ctrl`/`⌘`+click toggles it in the selection | move it (and the rest of the selection)                                                                       |
 | **Hand**                               | nothing                                         | pan                                                                                                                               | nothing                                                                      | pan (nodes do not move)                                                                                       |
 | **Rectangle** (Diamond, Ellipse in U2) | place a default-size shape centred on the click | draw it to the drag's footprint (floored at 48×32)                                                                                | same as blank: shapes may overlap                                            | same as blank                                                                                                 |
-| **Arrow**                              | nothing                                         | nothing (no free arrows in v1; a hint says "Start on a shape")                                                                    | start an arrow from that node                                                | rubber-band line follows the pointer; release on another node creates a bound edge, release elsewhere cancels |
+| **Arrow**                              | nothing                                         | nothing (no free arrows in v1; the hint reads "Drag from one shape to another")                                                   | start an arrow from that node                                                | rubber-band line follows the pointer; release on another node creates a bound edge, release elsewhere cancels |
 | **Text**                               | place a `text` node with the rename input open  | same as click (drag size ignored)                                                                                                 | if the node is a `text`, edit it; else place a new text on top               | —                                                                                                             |
 | **Eraser**                             | nothing                                         | every node and edge the pointer crosses is marked (dimmed); release deletes them all as **one** undo step; `Esc` mid-drag cancels | delete it                                                                    | as drag on blank                                                                                              |
 
