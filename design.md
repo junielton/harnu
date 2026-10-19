@@ -4765,7 +4765,9 @@ the zoom cluster: `bg-surface`, 1px `--border`, `--shadow-pop`, `--radius`.
   successfully in the pane's lifetime.
 - **Narrow panes.** The canvas is a helper pane and can be ~320px wide. The bar never
   overlaps the zoom cluster and never clips: below the width where both fit on one row,
-  the bar drops to a second row under the zoom cluster, left-aligned.
+  the bar drops to a second row under the zoom cluster, left-aligned. Below the width where
+  the full bar fits (≈237px), buttons wrap onto additional rows; the bar is never wider
+  than the pane and never clips. The hint wraps to the bar's width.
 - Every button is `@mousedown.stop`, so it never starts a canvas gesture or a pane resize.
 - The tool is per pane, held in memory, never saved to the file. A new pane starts on
   **Select**. After a creation the tool reverts to Select unless Lock is on. `Esc`
