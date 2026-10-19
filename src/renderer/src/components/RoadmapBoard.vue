@@ -1320,7 +1320,7 @@ async function doClose(card: RoadmapCard): Promise<void> {
               </div>
 
               <!-- Row 3: actions -->
-              <div class="flex items-center gap-1.5">
+              <div class="flex flex-wrap items-center gap-1.5">
                 <button
                   v-if="!card.session && (col === 'backlog' || col === 'ready')"
                   class="inline-flex items-center gap-1 rounded-sm bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-accent transition hover:brightness-110"
