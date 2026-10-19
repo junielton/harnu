@@ -357,10 +357,31 @@ describe('the editing affordances the ACs name (U3-1, U3-2)', () => {
     // Shift joins ctrl/meta: shift+click toggles a node in the selection.
     expect(selection.options.multipleSelectionModifiers).toEqual(['ctrl', 'meta', 'shift'])
     const transform = g.getPlugin('transform') as unknown as {
-      options: { resizing: { enabled: boolean; minWidth: number } }
+      options: { resizing: { enabled: () => boolean; minWidth: number } }
     }
-    expect(transform.options.resizing.enabled).toBe(true)
+    // A function since T536 U1: handles open only while nodes are interactive
+    // (the Select tool). With the default `nodesInteractive`, that is always.
+    expect(transform.options.resizing.enabled()).toBe(true)
     expect(transform.options.resizing.minWidth).toBe(CANVAS_MIN_NODE_SIZE.width)
+    g.dispose()
+  })
+
+  it('resize handles follow nodesInteractive: none while another tool owns the press', () => {
+    let interactive = true
+    const g = createCanvasGraph({
+      container: svgHost(),
+      palette,
+      width: 800,
+      height: 600,
+      editable: true,
+      nodesInteractive: () => interactive
+    })
+    const transform = g.getPlugin('transform') as unknown as {
+      options: { resizing: { enabled: () => boolean } }
+    }
+    expect(transform.options.resizing.enabled()).toBe(true)
+    interactive = false
+    expect(transform.options.resizing.enabled()).toBe(false)
     g.dispose()
   })
 

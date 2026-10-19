@@ -693,3 +693,276 @@ describe('DiagramPane tools — Select with shift', () => {
     expect(doc.nodes.map((n) => n.id)).toEqual(['n-a', 'n-c'])
   })
 })
+
+describe('DiagramPane tools — Arrow', () => {
+  // World points inside each seeded node (the jsdom CTM is the identity).
+  const IN_A: [number, number] = [60, 60]
+  const IN_B: [number, number] = [340, 220]
+  const IN_C: [number, number] = [60, 230]
+
+  const newEdges = (doc: CanvasDocument): CanvasDocument['edges'] =>
+    doc.edges.filter((e) => e.id !== 'e-1')
+  const preview = (w: VueWrapper): boolean =>
+    w.find('[data-testid="diagram-arrow-preview"]').exists()
+
+  /** Press on `from`'s node, move through the midpoint, release on `to`'s element. */
+  function dragArrow(
+    w: VueWrapper,
+    fromId: string,
+    from: [number, number],
+    to: [number, number],
+    toEl?: Element
+  ): void {
+    down(nodeEl(w, fromId), from)
+    move([(from[0] + to[0]) / 2, (from[1] + to[1]) / 2])
+    move(to)
+    const target = toEl ?? document
+    target.dispatchEvent(
+      new MouseEvent('mouseup', { bubbles: true, button: 0, clientX: to[0], clientY: to[1] })
+    )
+  }
+
+  /**
+   * jsdom does no layout, so the body's rect is all zeros and every release
+   * would read as "outside the pane". Pin the pane's body to 0,0 → right,bottom.
+   */
+  function pinBody(w: VueWrapper, right: number, bottom: number): void {
+    bodyOf(w).getBoundingClientRect = () =>
+      ({
+        left: 0,
+        top: 0,
+        right,
+        bottom,
+        width: right,
+        height: bottom,
+        x: 0,
+        y: 0,
+        toJSON: () => ({})
+      }) as DOMRect
+  }
+
+  async function armArrow(w: VueWrapper): Promise<void> {
+    pinBody(w, 1000, 800)
+    focusPane(w)
+    key('a')
+    await settle()
+    expect(pressed(w)).toEqual(['arrow'])
+  }
+
+  it('a, drag n-a → n-c: ONE operator edge n-a → n-c, and the tool is back on Select', async () => {
+    const w = mountPane()
+    await settle()
+    await armArrow(w)
+    dragArrow(w, 'n-a', IN_A, IN_C, nodeEl(w, 'n-c'))
+    await settle()
+    expect(pressed(w)).toEqual(['select'])
+
+    const doc = await saveAndRead(w)
+    const edges = newEdges(doc)
+    expect(edges).toHaveLength(1)
+    expect(edges[0]).toMatchObject({ source: 'n-a', target: 'n-c', origin: 'operator' })
+    // Nothing else changed: no node was added on the way.
+    expect(created(doc)).toHaveLength(0)
+    expect(validateCanvasDocument(doc).ok).toBe(true)
+  })
+
+  it('the reverse of an existing edge (n-b → n-a) is a new edge', async () => {
+    const w = mountPane()
+    await settle()
+    await armArrow(w)
+    dragArrow(w, 'n-b', IN_B, IN_A, nodeEl(w, 'n-a'))
+    await settle()
+    expect(newEdges(await saveAndRead(w))).toMatchObject([
+      { source: 'n-b', target: 'n-a', origin: 'operator' }
+    ])
+  })
+
+  it('n-a → n-b again (already connected that way) creates nothing', async () => {
+    const w = mountPane()
+    await settle()
+    await armArrow(w)
+    dragArrow(w, 'n-a', IN_A, IN_B, nodeEl(w, 'n-b'))
+    await settle()
+    expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
+    // No creation: the tool stays armed.
+    expect(pressed(w)).toEqual(['arrow'])
+  })
+
+  it('n-a → blank board creates nothing', async () => {
+    const w = mountPane()
+    await settle()
+    await armArrow(w)
+    dragArrow(w, 'n-a', IN_A, [600, 500], svgOf(w))
+    await settle()
+    expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
+    expect(pressed(w)).toEqual(['arrow'])
+  })
+
+  it('n-a → n-a (released on its own source) creates nothing', async () => {
+    const w = mountPane()
+    await settle()
+    await armArrow(w)
+    dragArrow(w, 'n-a', IN_A, [100, 70], nodeEl(w, 'n-a'))
+    await settle()
+    expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
+  })
+
+  it('the preview line is shown mid-drag, from the source centre, and gone after the release', async () => {
+    const w = mountPane()
+    await settle()
+    await armArrow(w)
+    down(nodeEl(w, 'n-a'), IN_A)
+    move([200, 150])
+    await settle()
+    const line = w.find('[data-testid="diagram-arrow-preview"] line')
+    expect(line.exists()).toBe(true)
+    // n-a is 40,40 132×52 → centre (106, 66); the pointer is at (200, 150).
+    // The body sits at the jsdom origin, so body coordinates are client ones.
+    expect(Number(line.attributes('x1'))).toBeCloseTo(106)
+    expect(Number(line.attributes('y1'))).toBeCloseTo(66)
+    expect(Number(line.attributes('x2'))).toBeCloseTo(200)
+    expect(Number(line.attributes('y2'))).toBeCloseTo(150)
+    // An overlay, never a cell: nothing entered the graph, so nothing is dirty.
+    expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
+
+    up([200, 150])
+    await settle()
+    expect(preview(w)).toBe(false)
+  })
+
+  it('Esc mid-drag cancels: no preview, and the later release creates nothing', async () => {
+    const w = mountPane()
+    await settle()
+    await armArrow(w)
+    down(nodeEl(w, 'n-a'), IN_A)
+    move(IN_C)
+    await settle()
+    expect(preview(w)).toBe(true)
+    key('Escape')
+    await settle()
+    expect(preview(w)).toBe(false)
+    // The gesture was cancelled, not the tool: Esc's first job is the gesture.
+    expect(pressed(w)).toEqual(['arrow'])
+    nodeEl(w, 'n-c').dispatchEvent(
+      new MouseEvent('mouseup', { bubbles: true, button: 0, clientX: IN_C[0], clientY: IN_C[1] })
+    )
+    await settle()
+    expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
+  })
+
+  it('a window blur mid-drag cancels the arrow and its preview', async () => {
+    const w = mountPane()
+    await settle()
+    await armArrow(w)
+    down(nodeEl(w, 'n-a'), IN_A)
+    move(IN_C)
+    await settle()
+    window.dispatchEvent(new Event('blur'))
+    await settle()
+    expect(preview(w)).toBe(false)
+    up(IN_C)
+    await settle()
+    expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
+  })
+
+  it('a tool switch mid-drag cancels the arrow and its preview', async () => {
+    const w = mountPane()
+    await settle()
+    await armArrow(w)
+    down(nodeEl(w, 'n-a'), IN_A)
+    move(IN_C)
+    await settle()
+    key('v')
+    await settle()
+    expect(preview(w)).toBe(false)
+    up(IN_C)
+    await settle()
+    expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
+  })
+
+  it('a release outside the pane body cancels, even over a node in world space', async () => {
+    const w = mountPane()
+    await settle()
+    await armArrow(w)
+    // A pane only 200px tall: n-c (world 40,220 → 200,244, not yet connected
+    // to n-a) lies past its bottom edge, so the operator cannot see the node
+    // the release lands on.
+    pinBody(w, 500, 200)
+    down(nodeEl(w, 'n-a'), IN_A)
+    move(IN_C)
+    nodeEl(w, 'n-c').dispatchEvent(
+      new MouseEvent('mouseup', { bubbles: true, button: 0, clientX: IN_C[0], clientY: IN_C[1] })
+    )
+    await settle()
+    expect(preview(w)).toBe(false)
+    expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
+  })
+
+  it('a press on blank board in Arrow shows nothing and creates nothing', async () => {
+    const w = mountPane()
+    await settle()
+    await armArrow(w)
+    down(svgOf(w), [600, 500])
+    move([340, 220])
+    await settle()
+    expect(preview(w)).toBe(false)
+    up([340, 220])
+    await settle()
+    expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
+  })
+
+  it('a press on an EDGE in Arrow does nothing: the edge is not selected', async () => {
+    const w = mountPane()
+    await settle()
+    focusPane(w)
+    // Select n-c in Select first.
+    down(nodeEl(w, 'n-c'), IN_C)
+    up(IN_C)
+    await settle()
+    await armArrow(w)
+    const edge = nodeEl(w, 'e-1')
+    expect(edge).toBeTruthy()
+    down(edge, [250, 150])
+    edge.dispatchEvent(
+      new MouseEvent('mouseup', { bubbles: true, button: 0, clientX: 250, clientY: 150 })
+    )
+    edge.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, button: 0, clientX: 250, clientY: 150 })
+    )
+    await settle()
+    expect(preview(w)).toBe(false)
+    // Delete removes whatever is selected: still n-c, never the edge.
+    key('Delete')
+    await settle()
+    const doc = await saveAndRead(w)
+    expect(doc.nodes.map((n) => n.id)).toEqual(['n-a', 'n-b'])
+    expect(doc.edges.map((e) => e.id)).toEqual(['e-1'])
+  })
+
+  it('a selected node shows resize handles in Select only; Arrow hides them', async () => {
+    const w = mountPane()
+    await settle()
+    focusPane(w)
+    const handles = (): number => w.element.querySelectorAll('.x6-widget-transform').length
+    // A real click is mousedown + mouseup + click; X6 opens the handles on `click`.
+    const clickNode = (id: string, at: [number, number]): void => {
+      down(nodeEl(w, id), at)
+      nodeEl(w, id).dispatchEvent(
+        new MouseEvent('mouseup', { bubbles: true, button: 0, clientX: at[0], clientY: at[1] })
+      )
+      nodeEl(w, id).dispatchEvent(
+        new MouseEvent('click', { bubbles: true, button: 0, clientX: at[0], clientY: at[1] })
+      )
+    }
+    clickNode('n-a', IN_A)
+    await settle()
+    expect(handles()).toBe(1)
+
+    await armArrow(w)
+    expect(handles()).toBe(0)
+    // A click on a node in Arrow (an arrow onto itself) does not bring them back.
+    clickNode('n-b', IN_B)
+    await settle()
+    expect(handles()).toBe(0)
+  })
+})

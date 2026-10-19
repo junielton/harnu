@@ -1,4 +1,4 @@
-import { Graph, Shape } from '@antv/x6'
+import { Graph, Shape, type Edge } from '@antv/x6'
 import { Selection } from '@antv/x6-plugin-selection'
 import { History } from '@antv/x6-plugin-history'
 import { Transform } from '@antv/x6-plugin-transform'
@@ -233,20 +233,7 @@ export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
             // THE operator-edge creation path (AC U3-3). X6 mints the edge
             // mid-gesture, so the stamp has to go on here — there is no later
             // point where "this edge is new" is still knowable.
-            createEdge: () =>
-              (self as Graph).createEdge({
-                shape: 'edge',
-                data: operatorEdgeData(),
-                router: { name: 'manhattan' },
-                connector: { name: 'rounded', args: { radius: 8 } },
-                attrs: {
-                  line: {
-                    stroke: palette.accent,
-                    strokeWidth: 1.5,
-                    targetMarker: { name: 'block', width: 8, height: 6 }
-                  }
-                }
-              })
+            createEdge: () => (self as Graph).createEdge(operatorEdgeSpec(palette))
           }
         }
       : {})
@@ -287,7 +274,10 @@ export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
     new Transform({
       resizing: editable
         ? {
-            enabled: true,
+            // Read per node click, like `interacting`: a node clicked in any
+            // tool but Select gets no handles (T536 U1). Handles already open
+            // when the tool changes are closed by `hideCanvasResizeHandles`.
+            enabled: () => nodesInteractive(),
             minWidth: CANVAS_MIN_NODE_SIZE.width,
             minHeight: CANVAS_MIN_NODE_SIZE.height,
             orthogonal: false,
@@ -300,6 +290,40 @@ export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
   graph.use(new Snapline({ enabled: true, sharp: true }))
 
   return graph
+}
+
+/**
+ * The edge an OPERATOR draws, without its ends: stamped `operator` (AC U3-3),
+ * routed and styled the same way whichever gesture made it. Both creation paths
+ * mint through this one spec, a port drag in Select (`connecting.createEdge`)
+ * and the Arrow tool (T536 U1), so the two can never drift apart. A fresh object
+ * per call, so no two edges share a `data` bag.
+ */
+export function operatorEdgeSpec(palette: CanvasPalette): Edge.Metadata {
+  return {
+    shape: 'edge',
+    data: operatorEdgeData(),
+    router: { name: 'manhattan' },
+    connector: { name: 'rounded', args: { radius: 8 } },
+    attrs: {
+      line: {
+        stroke: palette.accent,
+        strokeWidth: 1.5,
+        targetMarker: { name: 'block', width: 8, height: 6 }
+      }
+    }
+  }
+}
+
+/**
+ * Close any open resize handles. The pane calls it when the tool leaves Select
+ * (T536 U1): a handle left on screen in Arrow or Eraser would still resize the
+ * node on a press, so the press would not belong to the active tool. New
+ * handles stay closed because `resizing.enabled` reads `nodesInteractive()`.
+ */
+export function hideCanvasResizeHandles(graph: Graph): void {
+  const transform = graph.getPlugin('transform') as Transform | undefined
+  transform?.clearWidgets()
 }
 
 /**

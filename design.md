@@ -4792,6 +4792,16 @@ is the contract for the pane and for `canvas-tools.ts`:
   node removes it, on a framed shape keeps it unlabelled.
 - The Arrow tool starts from anywhere on a node, not only from the four ports. The hover
   ports stay, and dragging from a port still creates an edge in Select mode.
+- **Arrow preview.** While an arrow is in flight, a 1.5px dashed `--accent-line` line runs
+  from the source node's centre to the pointer. It is an overlay above the board, never a
+  graph cell, so it never enters the undo history; it disappears on release, `Esc`, a
+  tool switch and a window blur. The edge a release creates is the same accent edge a
+  port drag creates in Select. A release on blank board, on the source node, or on a
+  node the source already points at creates nothing.
+- **Edges and resize handles outside Select.** In Hand, Rectangle, Text and Arrow, a press
+  on an edge counts as a press on blank board and never selects the edge (the Eraser
+  erases it). A selected node's resize handles show only in Select; switching to any
+  other tool hides them.
 - Right-button drag pans in every tool; `ctrl`/`⌘` + wheel zooms (0.2–3), unchanged.
 - **Eraser mark (`.canvas-erase-mark`).** A node or edge the eraser has crossed but not yet
   deleted is drawn dimmed: the marked cell gets `opacity: 0.3`, no other change. It is

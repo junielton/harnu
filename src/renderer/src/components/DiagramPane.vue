@@ -23,13 +23,16 @@ import {
   applyCanvasPalette,
   createCanvasGraph,
   fitCanvas,
+  hideCanvasResizeHandles,
   missingCanvasPlugins,
+  operatorEdgeSpec,
   renderCanvasDocument,
   setCanvasPortsVisible,
   setCanvasRubberband,
   zoomCanvasBy
 } from './canvas/canvas-graph'
 import { canvasImageSources, toX6Node, type ResolvedImages } from './canvas/canvas-cells'
+import { arrowEdgeEnds, pointInRect, topmostNodeId } from './canvas/canvas-arrow'
 import {
   buildCanvasDocumentFromCells,
   duplicateOperatorNode,
@@ -289,6 +292,7 @@ function wireEditing(g: Graph): void {
   g.on('blank:dblclick', onBlankDblClick)
   g.on('blank:mousedown', onBlankMouseDown)
   g.on('node:mousedown', onNodeMouseDown)
+  g.on('edge:mousedown', onEdgeMouseDown)
 
   // These run AFTER the Selection plugin's own listeners on the same events
   // (it registered at graph construction, before this function), which is the
@@ -356,7 +360,12 @@ function setToolState(next: ToolState): void {
  */
 function applyToolToGraph(): void {
   const g = graph.value
-  if (g) setCanvasRubberband(g, activeTool.value === 'select')
+  if (!g) return
+  const select = activeTool.value === 'select'
+  setCanvasRubberband(g, select)
+  // Resize handles belong to Select too: one left open in another tool would
+  // resize the node on a press that should go to that tool.
+  if (!select) hideCanvasResizeHandles(g)
 }
 
 function markUsed(tool: CanvasTool): void {
@@ -457,6 +466,11 @@ type Gesture =
       origin: { tx: number; ty: number }
       moved: boolean
     }
+  | {
+      kind: 'arrow'
+      /** The node the arrow starts from. */
+      source: string
+    }
 let gesture: Gesture | null = null
 
 /** The in-flight Rectangle draw, in graph-local coordinates; `null` when not drawing. */
@@ -487,6 +501,32 @@ const drawPreviewStyle = computed<Record<string, string> | null>(() => {
 })
 
 /**
+ * The in-flight Arrow, in graph-local coordinates: from the source node's
+ * centre to the pointer. Drawn as an overlay, never as a graph cell, so the
+ * preview can never enter the undo history or reach a Save.
+ */
+const arrowFrom = ref<{ x: number; y: number } | null>(null)
+const arrowNow = ref<{ x: number; y: number } | null>(null)
+
+/** The preview line in the BODY's coordinate space, projected like the draw preview. */
+const arrowPreviewLine = computed<{ x1: number; y1: number; x2: number; y2: number } | null>(() => {
+  const g = graph.value
+  const a = arrowFrom.value
+  const b = arrowNow.value
+  const box = bodyEl.value
+  if (!g || !a || !b || !box) return null
+  const from = g.localToClient(a.x, a.y)
+  const to = g.localToClient(b.x, b.y)
+  const host = box.getBoundingClientRect()
+  return {
+    x1: from.x - host.left,
+    y1: from.y - host.top,
+    x2: to.x - host.left,
+    y2: to.y - host.top
+  }
+})
+
+/**
  * CAPTURE phase, and that is not a detail. X6 handles the drag's `mouseup` on
  * `document` and stops its propagation, so a bubble-phase listener on `window`
  * — the last hop in the bubble chain — never sees the release: the preview rect
@@ -510,6 +550,8 @@ function endGesture(): void {
   gesture = null
   drawStart.value = null
   drawNow.value = null
+  arrowFrom.value = null
+  arrowNow.value = null
   panning.value = false
 }
 
@@ -542,6 +584,21 @@ function onNodeMouseDown({ e, node }: { e: MouseEvent; node: Node }): void {
   startToolGesture(tool, { id: node.id, shape: nodeKind(node) })
 }
 
+/**
+ * A press on an EDGE. Select keeps X6's own handling (select the edge). In
+ * every other tool an edge is not a target, so the press is a press on blank
+ * board: Hand pans, Rectangle and Text place, Arrow does nothing. Either way
+ * the tool owns it, so X6 must not select the edge on the release
+ * (`pendingSelection`, set in `startToolGesture`).
+ */
+function onEdgeMouseDown({ e }: { e: MouseEvent }): void {
+  if (e.button !== 0) return
+  const tool = activeTool.value
+  if (tool === 'select') return
+  focusBody()
+  startToolGesture(tool, null)
+}
+
 function startToolGesture(tool: CanvasTool, node: { id: string; shape: string } | null): void {
   const g = graph.value
   if (!g) return
@@ -570,8 +627,20 @@ function startToolGesture(tool: CanvasTool, node: { id: string; shape: string } 
       // No preview: a text is placed at the press point whatever the drag.
       beginGesture({ kind: 'create', tool, start: { x, y }, node })
       return
+    case 'arrow': {
+      // Only a node starts an arrow (spec §5: no free arrows in v1). A press
+      // on blank board shows nothing; the toolbar hint already says why.
+      if (!node || nodeIntent(tool, 'press', node.shape) !== 'start-arrow') return
+      const cell = g.getCellById(node.id)
+      if (!cell || !cell.isNode()) return
+      const centre = cell.getBBox().getCenter()
+      beginGesture({ kind: 'arrow', source: node.id })
+      arrowFrom.value = { x: centre.x, y: centre.y }
+      arrowNow.value = { x, y }
+      return
+    }
     default:
-      // Arrow and Eraser gestures land in their own units (T536 U1 tasks 5-6).
+      // The Eraser gesture lands in its own unit (T536 U1 task 6).
       return
   }
 }
@@ -587,6 +656,11 @@ function onGestureMove(ev: MouseEvent): void {
     g.translate(gs.origin.tx + dx, gs.origin.ty + dy)
     return
   }
+  if (gs.kind === 'arrow') {
+    const p = g.clientToLocal(ev.clientX, ev.clientY)
+    arrowNow.value = { x: p.x, y: p.y }
+    return
+  }
   if (gs.tool === 'rectangle') {
     const p = g.clientToLocal(ev.clientX, ev.clientY)
     drawNow.value = { x: p.x, y: p.y }
@@ -600,6 +674,10 @@ function onGestureUp(ev: MouseEvent): void {
   if (!g || !gs) return
   if (gs.kind === 'pan') {
     if (gs.moved) markUsed('hand')
+    return
+  }
+  if (gs.kind === 'arrow') {
+    finishArrow(g, gs.source, ev)
     return
   }
   const a = gs.start
@@ -632,6 +710,38 @@ function onGestureUp(ev: MouseEvent): void {
     default:
       return
   }
+}
+
+/**
+ * The Arrow's release: an operator edge from `source` to the node on top under
+ * the pointer, or nothing (see `arrowEdgeEnds`). A release outside the pane's
+ * body is "elsewhere" even when a node lies under that point in world space,
+ * hidden past the pane's edge: the operator cannot see it, so cannot mean it.
+ */
+function finishArrow(g: Graph, source: string, ev: MouseEvent): void {
+  const box = bodyEl.value
+  if (!box || !pointInRect({ x: ev.clientX, y: ev.clientY }, box.getBoundingClientRect())) return
+  const p = g.clientToLocal(ev.clientX, ev.clientY)
+  const hits = g.getNodesFromPoint(p.x, p.y).map((n) => ({ id: n.id, zIndex: n.getZIndex() ?? 0 }))
+  const sourceCell = g.getCellById(source)
+  const outgoing = sourceCell?.isNode() ? (g.getOutgoingEdges(sourceCell) ?? []) : []
+  const ends = arrowEdgeEnds(
+    source,
+    topmostNodeId(hits),
+    outgoing.map((e) => ({ source: e.getSourceCellId(), target: e.getTargetCellId() }))
+  )
+  if (!ends) return
+  const edge = g.addEdge({
+    ...operatorEdgeSpec(palette),
+    source: { cell: ends.source },
+    target: { cell: ends.target }
+  })
+  // Selected, like a new shape: a Delete right after takes a mistake back.
+  g.cleanSelection()
+  g.select(edge)
+  pendingSelection = [edge.id]
+  markUsed('arrow')
+  setToolState(afterCreate(toolState.value))
 }
 
 /**
@@ -1608,6 +1718,24 @@ function onHeaderMouseDown(ev: MouseEvent): void {
         class="pointer-events-none absolute rounded border border-dashed border-accent-line bg-accent-soft"
         :style="drawPreviewStyle"
       ></div>
+
+      <!-- The in-flight Arrow: a dashed line from the source's centre to the
+           pointer. An overlay, not a cell, so it never reaches the undo history. -->
+      <svg
+        v-if="arrowPreviewLine"
+        data-testid="diagram-arrow-preview"
+        class="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+      >
+        <line
+          :x1="arrowPreviewLine.x1"
+          :y1="arrowPreviewLine.y1"
+          :x2="arrowPreviewLine.x2"
+          :y2="arrowPreviewLine.y2"
+          class="stroke-accent-line"
+          stroke-width="1.5"
+          stroke-dasharray="4 3"
+        />
+      </svg>
 
       <!-- Inline rename. Positioned over the node itself rather than in a
            dialog: renaming a box is a one-word edit, and moving the operator's
