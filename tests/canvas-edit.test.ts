@@ -24,6 +24,7 @@ import {
   normalizeCellLabel,
   operatorEdgeData,
   operatorNode,
+  placedRect,
   rectFromDrag
 } from '../src/renderer/src/components/canvas/canvas-edit'
 import { readCanvasPalette } from '../src/renderer/src/components/canvas/canvas-theme'
@@ -538,6 +539,23 @@ describe('the pure drag geometry', () => {
   it('operatorEdgeData is the stamp and nothing else', () => {
     expect(operatorEdgeData()).toEqual({ origin: 'operator' })
   })
+
+  it('placedRect centres a shape-default footprint on the click (T536 U1)', () => {
+    expect(placedRect(300, 300, 'box')).toEqual({ x: 234, y: 274, width: 132, height: 52 })
+    expect(placedRect(300, 300, 'text')).toEqual({ x: 220, y: 288, width: 160, height: 24 })
+    // An unknown shape falls back to the box footprint, as the renderer does.
+    expect(placedRect(0, 0, 'nope')).toEqual({ x: -66, y: -26, width: 132, height: 52 })
+  })
+
+  it('operatorNode mints a box by default and a text when asked, both stamped operator', () => {
+    const rect = { x: 1, y: 2, width: 160, height: 24 }
+    expect(operatorNode(rect, new Set()).shape).toBe('box')
+    expect(operatorNode(rect, new Set(), 'hi', 'text')).toMatchObject({
+      shape: 'text',
+      label: 'hi',
+      origin: 'operator'
+    })
+  })
 })
 
 // ── The pane, end to end ──────────────────────────────────────────────────
@@ -616,6 +634,16 @@ function dragOnBlankCanvas(root: Element, from: [number, number], to: [number, n
   window.dispatchEvent(new MouseEvent('mouseup', { clientX: to[0], clientY: to[1] }))
 }
 
+/**
+ * A plain blank drag no longer draws (T536 U1: Select is the default tool and
+ * the drag belongs to the rubberband). Every test below that drew a box with a
+ * plain drag now arms the Rectangle tool first; its assertions are unchanged.
+ */
+function armRectangle(root: Element): void {
+  ;(root.querySelector('[data-testid="diagram-canvas-host"]')!.parentElement as HTMLElement).focus()
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }))
+}
+
 describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
   it('the dirty dot and Save are absent on a freshly loaded board', async () => {
     const w = mountPane()
@@ -629,6 +657,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     const w = mountPane()
     await settle()
 
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
 
@@ -669,6 +698,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     }))
     const w = mountPane()
     await settle()
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
     await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
@@ -684,6 +714,8 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
   })
 
   it('a short drag on the blank board is a click — it does not litter it with boxes', async () => {
+    // Deliberately in the default Select tool: there a click is a click. (With
+    // Rectangle armed a click PLACES a box, by design — spec §5.)
     const w = mountPane()
     await settle()
     dragOnBlankCanvas(w.element, [200, 200], [202, 201])
@@ -697,6 +729,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     const w = mountPane()
     await settle()
     expect(canvasRead).toHaveBeenCalledTimes(1)
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
     await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
@@ -729,6 +762,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     const helpers = (await import('../src/renderer/src/stores/helpers')).useHelpersStore()
     const removed = vi.spyOn(helpers, 'removeHelper')
 
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
     await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
@@ -750,6 +784,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
   it('pressing Close twice leaves ONE warning, not a stack of permanent ones', async () => {
     const w = mountPane()
     await settle()
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
     await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
@@ -785,6 +820,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
   it('U3-2 — Delete removes the selection, and ⌘Z puts it back', async () => {
     const w = mountPane()
     await settle()
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
     await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })

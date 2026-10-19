@@ -14,7 +14,8 @@ import {
   Undo2,
   X
 } from 'lucide-vue-next'
-import type { Graph } from '@antv/x6'
+import type { Graph, Node } from '@antv/x6'
+import CanvasToolbar from './CanvasToolbar.vue'
 import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
 import { useThemeStore } from '../stores/theme'
 import { useUiStore } from '../stores/ui'
@@ -25,6 +26,7 @@ import {
   missingCanvasPlugins,
   renderCanvasDocument,
   setCanvasPortsVisible,
+  setCanvasRubberband,
   zoomCanvasBy
 } from './canvas/canvas-graph'
 import { canvasImageSources, toX6Node, type ResolvedImages } from './canvas/canvas-cells'
@@ -35,10 +37,28 @@ import {
   isDrawGesture,
   operatorImageNode,
   operatorNode,
+  placedRect,
   rectFromDrag,
   type CanvasDocumentDraft
 } from './canvas/canvas-edit'
 import { readCanvasPalette, type CanvasPalette } from './canvas/canvas-theme'
+import {
+  CANVAS_TOOLS,
+  INITIAL_TOOL_STATE,
+  afterCreate,
+  blankIntent,
+  effectiveTool,
+  escapeOutcome,
+  nodeIntent,
+  pressSpace,
+  releaseSpace,
+  selectTool,
+  toggleLock,
+  toolForKey,
+  toolbarNeedsOwnRow,
+  type CanvasTool,
+  type ToolState
+} from './canvas/canvas-tools'
 import type { CanvasDocument } from '../../../main/canvas-core'
 import type { HelperPane } from '../../../preload'
 
@@ -204,6 +224,10 @@ function ensureGraph(): Graph | null {
     container: host,
     palette,
     editable: true,
+    // Read per gesture by X6: nodes move and their ports connect only in
+    // Select (spec §5) — in every other tool a press on a node belongs to that
+    // tool, and Space-held Hand must pan over a node rather than drag it.
+    nodesInteractive: () => activeTool.value === 'select',
     // Explicit size from the PARENT: X6 would otherwise read the host's own
     // `clientWidth`, which is 0 before layout settles and would leave the graph
     // sized to nothing.
@@ -223,6 +247,7 @@ function ensureGraph(): Graph | null {
 
   wireEditing(g)
   graph.value = g
+  applyToolToGraph()
   return g
 }
 
@@ -256,8 +281,26 @@ function wireEditing(g: Graph): void {
     withoutTracking(() => setCanvasPortsVisible(g, node.id, false))
   })
 
-  g.on('node:dblclick', ({ node }) => startRename(node.id))
+  g.on('node:dblclick', ({ node }) => {
+    if (nodeIntent(activeTool.value, 'dblclick', nodeKind(node)) === 'rename-node') {
+      startRename(node.id)
+    }
+  })
+  g.on('blank:dblclick', onBlankDblClick)
   g.on('blank:mousedown', onBlankMouseDown)
+  g.on('node:mousedown', onNodeMouseDown)
+
+  // These run AFTER the Selection plugin's own listeners on the same events
+  // (it registered at graph construction, before this function), which is the
+  // whole point: they repair what the plugin just did to the selection.
+  g.on('blank:mouseup', onBlankMouseUp)
+  g.on('blank:click', restorePendingSelection)
+  g.on('cell:mouseup', restorePendingSelection)
+  g.on('selection:changed', ({ selected }: { selected: unknown[] }) => {
+    if (!repairingSelection && activeTool.value === 'select' && selected.length > 0) {
+      markUsed('select')
+    }
+  })
 }
 
 function refreshHistoryFlags(): void {
@@ -273,8 +316,150 @@ function takenIds(): Set<string> {
   return new Set(g.getCells().map((c) => c.id))
 }
 
-// ── Drag on blank canvas draws a box (AC U3-1) ────────────────────────────
-/** The in-flight draw, in graph-local coordinates; `null` when not drawing. */
+// ── Tool modes (T536 U1, spec §4.3, §5) ───────────────────────────────────
+/**
+ * The pane's tool, in memory and never saved to the file. One per pane
+ * instance, so two canvases open side by side keep independent tools.
+ */
+const toolState = ref<ToolState>({ ...INITIAL_TOOL_STATE })
+/** Tools used successfully in this pane's lifetime; the toolbar hides their hint. */
+const usedTools = ref(new Set<CanvasTool>())
+/** The tool that actually owns gestures — Space held is a temporary Hand. */
+const activeTool = computed<CanvasTool>(() => effectiveTool(toolState.value))
+/** A Hand gesture is in flight (the cursor reads `grabbing`). */
+const panning = ref(false)
+const bodyCursor = computed<string>(() =>
+  panning.value
+    ? 'grabbing'
+    : (CANVAS_TOOLS.find((t) => t.id === activeTool.value)?.cursor ?? 'default')
+)
+
+/**
+ * Every tool change goes through here. A change of the EFFECTIVE tool cancels
+ * whatever gesture was in flight (Review Focus 2: no preview left behind) and
+ * re-arms the graph for the new owner of a blank drag.
+ */
+function setToolState(next: ToolState): void {
+  const before = effectiveTool(toolState.value)
+  toolState.value = next
+  if (effectiveTool(next) !== before) {
+    cancelGesture()
+    applyToolToGraph()
+  }
+}
+
+/**
+ * A blank drag goes to EXACTLY ONE owner. X6's rubberband starts on any plain
+ * left drag while it is armed (`modifiers: null`) and is checked before
+ * panning, so every tool but Select must switch it off — or one drag would
+ * both rubberband and draw/pan (the Task 2 spike, measured live).
+ */
+function applyToolToGraph(): void {
+  const g = graph.value
+  if (g) setCanvasRubberband(g, activeTool.value === 'select')
+}
+
+function markUsed(tool: CanvasTool): void {
+  if (!usedTools.value.has(tool)) usedTools.value.add(tool)
+}
+
+function onToolbarSelect(tool: CanvasTool): void {
+  setToolState(selectTool(toolState.value, tool))
+  focusBody()
+}
+function onToolbarToggleLock(): void {
+  setToolState(toggleLock(toolState.value))
+  focusBody()
+}
+
+/** The document shape of a node (`box`, `text`, …), as `canvas-cells` stamps it. */
+function nodeKind(node: Node): string {
+  const data = node.getData() as { kind?: unknown } | undefined
+  return typeof data?.kind === 'string' ? data.kind : node.shape
+}
+
+// ── Selection bookkeeping around X6's own mouseup handling ────────────────
+/**
+ * The selection as it stood just BEFORE this press, captured on the body in
+ * the capture phase — i.e. before X6 sees the event. It has to be that early:
+ * X6's rubberband `clean()`s the selection as it starts, inside the very
+ * `blank:mousedown` dispatch the pane listens to.
+ */
+let preGestureSelection: string[] = []
+/** `shift`+drag in Select: union this back in once the rubberband finishes. */
+let additiveSelection: string[] | null = null
+/**
+ * What the selection must be once X6 finishes the current release. A tool
+ * other than Select owns its gesture, but X6's Selection plugin still reacts
+ * to the same mouseup — `cell:mouseup` selects the pressed node and
+ * `blank:click` clears everything. Both run after the pane's capture-phase
+ * release, so the pane re-applies its answer after them.
+ */
+let pendingSelection: string[] | null = null
+/** The pane, not the operator, is re-selecting: not a use of the Select tool. */
+let repairingSelection = false
+/**
+ * The press point in CLIENT pixels, read off the native event. The point X6
+ * hands its `blank:mousedown`/`node:mousedown` listeners is snapped to the
+ * 16px grid, which would put a placed shape up to 8px off the click and make a
+ * pan jump on its first move — so every tool gesture starts from this instead.
+ */
+let pressClient = { x: 0, y: 0 }
+
+function onBodyMouseDownCapture(ev: MouseEvent): void {
+  const g = graph.value
+  pressClient = { x: ev.clientX, y: ev.clientY }
+  preGestureSelection = g ? g.getSelectedCells().map((c) => c.id) : []
+  additiveSelection = null
+  pendingSelection = null
+}
+
+function selectIds(g: Graph, ids: readonly string[]): void {
+  const cells = ids.map((id) => g.getCellById(id)).filter((c) => c !== null)
+  if (cells.length > 0) g.select(cells)
+}
+
+function restorePendingSelection(): void {
+  const g = graph.value
+  const ids = pendingSelection
+  pendingSelection = null
+  if (!g || !ids) return
+  repairingSelection = true
+  try {
+    g.cleanSelection()
+    selectIds(g, ids)
+  } finally {
+    repairingSelection = false
+  }
+}
+
+/** The rubberband has just replaced the selection; with shift, add the old one back. */
+function onBlankMouseUp(): void {
+  const g = graph.value
+  const ids = additiveSelection
+  additiveSelection = null
+  if (g && ids) selectIds(g, ids)
+}
+
+// ── Gestures: draw, place, pan ────────────────────────────────────────────
+/** A tool gesture in flight, in graph-local coordinates where it matters. */
+type Gesture =
+  | {
+      kind: 'create'
+      tool: 'rectangle' | 'text'
+      start: { x: number; y: number }
+      /** The node the press landed on, or `null` for empty board. */
+      node: { id: string; shape: string } | null
+    }
+  | {
+      kind: 'pan'
+      client: { x: number; y: number }
+      origin: { tx: number; ty: number }
+      moved: boolean
+    }
+let gesture: Gesture | null = null
+
+/** The in-flight Rectangle draw, in graph-local coordinates; `null` when not drawing. */
 const drawStart = ref<{ x: number; y: number } | null>(null)
 const drawNow = ref<{ x: number; y: number } | null>(null)
 
@@ -309,56 +494,174 @@ const drawPreviewStyle = computed<Record<string, string> | null>(() => {
  * → target, so it lands before X6 can swallow it. Found in the real app;
  * jsdom's dispatch reaches the listener either way, so it does not reproduce
  * there. `removeEventListener` must be given the same flag or it removes
- * nothing.
+ * nothing. Every tool gesture (draw, place, pan) ends through it.
  */
 const DRAW_LISTENER = { capture: true } as const
 
-function onBlankMouseDown({ e, x, y }: { e: MouseEvent; x: number; y: number }): void {
-  // Left button only, and never while shift is held: shift+drag belongs to the
-  // rubberband, right-drag belongs to panning (see `canvas-graph.ts`).
-  if (e.button !== 0 || e.shiftKey) return
-  focusBody()
-  drawStart.value = { x, y }
-  drawNow.value = { x, y }
-  window.addEventListener('mousemove', onDrawMove, DRAW_LISTENER)
-  window.addEventListener('mouseup', onDrawUp, DRAW_LISTENER)
+function beginGesture(next: Gesture): void {
+  gesture = next
+  window.addEventListener('mousemove', onGestureMove, DRAW_LISTENER)
+  window.addEventListener('mouseup', onGestureUp, DRAW_LISTENER)
 }
 
-function onDrawMove(ev: MouseEvent): void {
-  const g = graph.value
-  if (!g || !drawStart.value) return
-  const p = g.clientToLocal(ev.clientX, ev.clientY)
-  drawNow.value = { x: p.x, y: p.y }
-}
-
-function onDrawUp(ev: MouseEvent): void {
-  window.removeEventListener('mousemove', onDrawMove, DRAW_LISTENER)
-  window.removeEventListener('mouseup', onDrawUp, DRAW_LISTENER)
-  const g = graph.value
-  const a = drawStart.value
+function endGesture(): void {
+  window.removeEventListener('mousemove', onGestureMove, DRAW_LISTENER)
+  window.removeEventListener('mouseup', onGestureUp, DRAW_LISTENER)
+  gesture = null
   drawStart.value = null
   drawNow.value = null
-  if (!g || !a) return
-  const p = g.clientToLocal(ev.clientX, ev.clientY)
-  // A short drag is a CLICK on empty board: clear the selection, draw nothing.
-  // BOTH ends are world coordinates measured through the graph's own transform,
-  // and the threshold is converted with `g.zoom()`. Reading `e.clientX` off the
-  // mousedown instead is what the first version did, and X6's wrapped event
-  // object carries no `clientX` in Electron — the comparison silently became
-  // `NaN >= 6`, so every drag was classified as a click and no box was ever
-  // created. jsdom did not reproduce it; the real app did.
-  if (!isDrawGesture(a.x, a.y, p.x, p.y, g.zoom())) {
-    g.cleanSelection()
+  panning.value = false
+}
+
+/** Esc mid-gesture, or a tool switch: drop the gesture, create nothing. */
+function cancelGesture(): void {
+  if (gesture) endGesture()
+}
+
+function onBlankMouseDown({ e }: { e: MouseEvent }): void {
+  // Left button only: right-drag belongs to panning in every tool (see
+  // `canvas-graph.ts`).
+  if (e.button !== 0) return
+  focusBody()
+  const tool = activeTool.value
+  if (tool === 'select') {
+    // The plugin owns the drag (rubberband) and the click (clear selection).
+    // `shift` makes the drag ADD to the selection — X6 replaces it natively.
+    if (e.shiftKey) additiveSelection = [...preGestureSelection]
     return
   }
-  const node = operatorNode(rectFromDrag(a.x, a.y, p.x, p.y), takenIds())
+  startToolGesture(tool, null)
+}
+
+function onNodeMouseDown({ e, node }: { e: MouseEvent; node: Node }): void {
+  if (e.button !== 0) return
+  const tool = activeTool.value
+  // Select: X6's own select/move — nodes are interactive only in this tool.
+  if (tool === 'select') return
+  focusBody()
+  startToolGesture(tool, { id: node.id, shape: nodeKind(node) })
+}
+
+function startToolGesture(tool: CanvasTool, node: { id: string; shape: string } | null): void {
+  const g = graph.value
+  if (!g) return
+  // Whatever X6's Selection plugin does on this release, a non-Select tool
+  // leaves the selection as it was unless it creates something.
+  pendingSelection = [...preGestureSelection]
+  const { x, y } = g.clientToLocal(pressClient.x, pressClient.y)
+  switch (tool) {
+    case 'hand': {
+      const t = g.translate()
+      beginGesture({
+        kind: 'pan',
+        client: { ...pressClient },
+        origin: { tx: t.tx, ty: t.ty },
+        moved: false
+      })
+      panning.value = true
+      return
+    }
+    case 'rectangle':
+      beginGesture({ kind: 'create', tool, start: { x, y }, node })
+      drawStart.value = { x, y }
+      drawNow.value = { x, y }
+      return
+    case 'text':
+      // No preview: a text is placed at the press point whatever the drag.
+      beginGesture({ kind: 'create', tool, start: { x, y }, node })
+      return
+    default:
+      // Arrow and Eraser gestures land in their own units (T536 U1 tasks 5-6).
+      return
+  }
+}
+
+function onGestureMove(ev: MouseEvent): void {
+  const g = graph.value
+  const gs = gesture
+  if (!g || !gs) return
+  if (gs.kind === 'pan') {
+    const dx = ev.clientX - gs.client.x
+    const dy = ev.clientY - gs.client.y
+    if (dx !== 0 || dy !== 0) gs.moved = true
+    g.translate(gs.origin.tx + dx, gs.origin.ty + dy)
+    return
+  }
+  if (gs.tool === 'rectangle') {
+    const p = g.clientToLocal(ev.clientX, ev.clientY)
+    drawNow.value = { x: p.x, y: p.y }
+  }
+}
+
+function onGestureUp(ev: MouseEvent): void {
+  const gs = gesture
+  endGesture()
+  const g = graph.value
+  if (!g || !gs) return
+  if (gs.kind === 'pan') {
+    if (gs.moved) markUsed('hand')
+    return
+  }
+  const a = gs.start
+  const p = g.clientToLocal(ev.clientX, ev.clientY)
+  // Click or drag? BOTH ends are world coordinates measured through the
+  // graph's own transform from NATIVE client points, and the threshold is
+  // converted with `g.zoom()`. X6's wrapped event object is not a reliable
+  // source of `clientX` in Electron — an earlier version read it there and
+  // the comparison silently became `NaN >= 6`, so every drag was classified as
+  // a click. jsdom did not reproduce it; the real app did.
+  const dragged = isDrawGesture(a.x, a.y, p.x, p.y, g.zoom())
+  const intent = gs.node
+    ? nodeIntent(gs.tool, dragged ? 'drag' : 'press', gs.node.shape)
+    : blankIntent(gs.tool, dragged ? 'drag' : 'click')
+  switch (intent) {
+    case 'place-shape':
+      createNode(operatorNode(placedRect(a.x, a.y, 'box'), takenIds()), gs.tool)
+      return
+    case 'draw-shape':
+      createNode(operatorNode(rectFromDrag(a.x, a.y, p.x, p.y), takenIds()), gs.tool)
+      return
+    case 'place-text':
+      createNode(operatorNode(placedRect(a.x, a.y, 'text'), takenIds(), '', 'text'), gs.tool)
+      return
+    case 'edit-text':
+      // On the RELEASE, not the press: a press's default action moves focus to
+      // the body, which would blur — and so commit — a rename opened on it.
+      if (gs.node) startRename(gs.node.id)
+      return
+    default:
+      return
+  }
+}
+
+/**
+ * Add a node the operator just made, select it, and open its rename: a new
+ * shape is always unlabelled, and making them double-click the thing they are
+ * already looking at is a step with no decision in it. Then the tool reverts
+ * to Select unless Lock is on (spec §4.3).
+ */
+function createNode(node: ReturnType<typeof operatorNode>, tool: CanvasTool): void {
+  const g = graph.value
+  if (!g) return
   const cell = g.addNode(toX6Node(node, palette, images.value))
   g.cleanSelection()
   g.select(cell)
-  // Straight into rename: a box the operator just drew is always unlabelled,
-  // and making them double-click the thing they are already looking at is a
-  // step with no decision in it.
+  pendingSelection = [node.id]
+  markUsed(tool)
+  setToolState(afterCreate(toolState.value))
   void nextTick(() => startRename(node.id))
+}
+
+/**
+ * Double-click on empty board: in Select, place a text (Excalidraw idiom),
+ * centred on the second press — the raw point, not X6's grid-snapped one.
+ */
+function onBlankDblClick(): void {
+  const g = graph.value
+  if (!g || rename.value) return
+  if (blankIntent(activeTool.value, 'dblclick') !== 'place-text') return
+  const { x, y } = g.clientToLocal(pressClient.x, pressClient.y)
+  createNode(operatorNode(placedRect(x, y, 'text'), takenIds(), '', 'text'), 'text')
 }
 
 // ── Double-click renames (AC U3-1) ────────────────────────────────────────
@@ -415,12 +718,28 @@ function commitRename(): void {
   if (!g || !r) return
   const cell = g.getCellById(r.id)
   if (!cell || !cell.isNode()) return
+  // A text node IS its label: committed empty, it would be an invisible node
+  // nobody can find again, so it goes (spec §5). A framed shape stays,
+  // unlabelled.
+  if (nodeKind(cell) === 'text' && r.value.trim() === '') {
+    g.removeCell(cell)
+    return
+  }
   cell.attr({ text: { text: r.value }, label: { text: r.value } })
 }
 
 function cancelRename(): void {
+  const r = rename.value
   rename.value = null
   void nextTick(focusBody)
+  // Esc on a text that was never given a label (a fresh Text-tool placement)
+  // leaves nothing behind, for the same reason an empty commit does not.
+  const g = graph.value
+  const cell = g && r ? g.getCellById(r.id) : null
+  if (g && cell && cell.isNode() && nodeKind(cell) === 'text') {
+    const label = String(cell.attr('label/text') ?? cell.attr('text/text') ?? '')
+    if (label.trim() === '') g.removeCell(cell)
+  }
 }
 
 // ── Selection, delete, duplicate, undo/redo ───────────────────────────────
@@ -767,6 +1086,8 @@ async function handleCanvasChanged(payload: { path: string }): Promise<void> {
 onMounted(async () => {
   unsubscribeCanvasChanged = window.api.onCanvasChanged(handleCanvasChanged)
   window.addEventListener('keydown', onWindowKeydown)
+  window.addEventListener('keyup', onWindowKeyup)
+  window.addEventListener('blur', onWindowBlur)
   void window.api.canvasWatchStart(filePath.value)
   await load(filePath.value, true)
   // Follow the pane as the operator drags the inter-pane divider or maximizes.
@@ -780,15 +1101,19 @@ onMounted(async () => {
       if (g && box.clientWidth > 0 && box.clientHeight > 0) {
         g.resize(box.clientWidth, box.clientHeight)
       }
+      measureToolbar()
     })
     resizeObserver.observe(box)
   }
+  await nextTick()
+  measureToolbar()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onWindowKeydown)
-  window.removeEventListener('mousemove', onDrawMove, DRAW_LISTENER)
-  window.removeEventListener('mouseup', onDrawUp, DRAW_LISTENER)
+  window.removeEventListener('keyup', onWindowKeyup)
+  window.removeEventListener('blur', onWindowBlur)
+  endGesture()
   unsubscribeCanvasChanged?.()
   void window.api.canvasWatchStop(filePath.value)
   resizeObserver?.disconnect()
@@ -892,6 +1217,38 @@ async function save(): Promise<void> {
   }
 }
 
+// ── Toolbar placement (design.md §6 "Diagram pane → Toolbar") ────────────
+const clusterEl = ref<HTMLElement | null>(null)
+const toolbarEl = ref<HTMLElement | null>(null)
+/** The pane is too narrow for bar and zoom cluster on one row. */
+const toolbarOwnRow = ref(false)
+
+/**
+ * Measured on the body's existing ResizeObserver: the bar is centred, and drops
+ * to its own row under the zoom cluster once its left edge would come within
+ * 8px of the cluster. The BAR is measured, not the hint under it, so the hint
+ * appearing or hiding never flips the row.
+ */
+function measureToolbar(): void {
+  const box = bodyEl.value
+  const cluster = clusterEl.value
+  const bar = toolbarEl.value?.querySelector<HTMLElement>('[role="toolbar"]')
+  if (!box || !cluster || !bar) return
+  toolbarOwnRow.value = toolbarNeedsOwnRow(
+    box.clientWidth,
+    bar.offsetWidth,
+    cluster.offsetLeft + cluster.offsetWidth
+  )
+}
+watch(
+  () => state.value.status,
+  async (status) => {
+    if (status !== 'ready') return
+    await nextTick()
+    measureToolbar()
+  }
+)
+
 // ── Keyboard ──────────────────────────────────────────────────────────────
 /** Does the focus sit inside THIS pane? Several panes can be open at once, so
  *  a shortcut must never reach the one the operator is not looking at. */
@@ -942,7 +1299,40 @@ function onWindowKeydown(ev: KeyboardEvent): void {
     deleteSelection()
     return
   }
-  if (ev.key === 'Escape') graph.value?.cleanSelection()
+  // Space held = a temporary Hand from any tool (spec §4.3). Below the rename
+  // early return, so typing a space into a label never pans.
+  if (ev.key === ' ') {
+    ev.preventDefault()
+    if (!toolState.value.spaceHeld) setToolState(pressSpace(toolState.value))
+    return
+  }
+  if (ev.key === 'Escape') {
+    const outcome = escapeOutcome(toolState.value, gesture !== null)
+    if (outcome === 'cancel-gesture') cancelGesture()
+    else if (outcome === 'to-select') setToolState(selectTool(toolState.value, 'select'))
+    else graph.value?.cleanSelection()
+    return
+  }
+  const pick = toolForKey(ev)
+  if (!pick) return
+  ev.preventDefault()
+  // Ignored while Space is held: switching then would make the release
+  // "restore" a tool the operator never chose to return to.
+  if (toolState.value.spaceHeld) return
+  setToolState(pick === 'lock' ? toggleLock(toolState.value) : selectTool(toolState.value, pick))
+}
+
+/** Releasing Space restores the tool. Not focus-gated: a release must always land. */
+function onWindowKeyup(ev: KeyboardEvent): void {
+  if (ev.key !== ' ' || !toolState.value.spaceHeld) return
+  ev.preventDefault()
+  setToolState(releaseSpace(toolState.value))
+}
+
+/** The window lost focus while Space was down: the keyup will never arrive here
+ *  (Review Focus 3), so the pane must not stay stuck in Hand. */
+function onWindowBlur(): void {
+  if (toolState.value.spaceHeld) setToolState(releaseSpace(toolState.value))
 }
 
 // ── Header actions ────────────────────────────────────────────────────────
@@ -1122,6 +1512,8 @@ function onHeaderMouseDown(ev: MouseEvent): void {
       ref="bodyEl"
       tabindex="0"
       class="relative min-h-0 flex-1 overflow-hidden outline-none"
+      :style="{ cursor: bodyCursor }"
+      @mousedown.capture="onBodyMouseDownCapture"
       @pointerdown="focusBody"
       @paste="onPaste"
       @dragover="onDragOver"
@@ -1199,6 +1591,7 @@ function onHeaderMouseDown(ev: MouseEvent): void {
            pans nor scales — the anatomy PrStackCanvas established (design.md §6). -->
       <div
         v-if="state.status === 'ready'"
+        ref="clusterEl"
         class="absolute left-3 top-3 inline-flex items-center gap-0.5 rounded border border-border bg-surface p-1 shadow-pop"
         @pointerdown.stop
         @mousedown.stop
@@ -1233,6 +1626,24 @@ function onHeaderMouseDown(ev: MouseEvent): void {
         >
           <Plus :size="13" />
         </button>
+      </div>
+
+      <!-- Tool bar: top-centre of the VIEWPORT (neither pans nor zooms), or its
+           own row under the zoom cluster when the pane is too narrow for both
+           (design.md §6). 56px = the cluster's 12px inset + 36px height + 8px. -->
+      <div
+        v-if="state.status === 'ready'"
+        ref="toolbarEl"
+        class="absolute"
+        :class="toolbarOwnRow ? 'left-3 top-14' : 'left-1/2 top-3 -translate-x-1/2'"
+      >
+        <CanvasToolbar
+          :tool="toolState.tool"
+          :locked="toolState.locked"
+          :used="usedTools"
+          @select="onToolbarSelect"
+          @toggle-lock="onToolbarToggleLock"
+        />
       </div>
     </div>
   </div>
