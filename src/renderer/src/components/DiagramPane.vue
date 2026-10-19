@@ -14,7 +14,7 @@ import {
   Undo2,
   X
 } from 'lucide-vue-next'
-import type { Graph, Node } from '@antv/x6'
+import type { Cell, Graph, Node } from '@antv/x6'
 import CanvasToolbar from './CanvasToolbar.vue'
 import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
 import { useThemeStore } from '../stores/theme'
@@ -33,6 +33,13 @@ import {
 } from './canvas/canvas-graph'
 import { canvasImageSources, toX6Node, type ResolvedImages } from './canvas/canvas-cells'
 import { arrowEdgeEnds, pointInRect, topmostNodeId } from './canvas/canvas-arrow'
+import {
+  ERASE_REACH_PX,
+  edgeWithinReach,
+  eraseReach,
+  eraseRemovalOrder,
+  strokeSamples
+} from './canvas/canvas-erase'
 import {
   buildCanvasDocumentFromCells,
   duplicateOperatorNode,
@@ -431,7 +438,11 @@ function selectIds(g: Graph, ids: readonly string[]): void {
 function restorePendingSelection(): void {
   const g = graph.value
   const ids = pendingSelection
-  pendingSelection = null
+  // NOT consumed here: one release can reach X6 as BOTH `cell:mouseup` and
+  // `blank:click` — an Eraser press removes the very view it landed on, so X6
+  // reads the rest of that release as blank board and clears the selection
+  // again after the first repair. It is reset by the next press instead
+  // (`onBodyMouseDownCapture`).
   if (!g || !ids) return
   repairingSelection = true
   try {
@@ -470,6 +481,19 @@ type Gesture =
       kind: 'arrow'
       /** The node the arrow starts from. */
       source: string
+    }
+  | {
+      kind: 'erase'
+      /** What the press landed on: a blank press that never drags erases nothing. */
+      on: 'blank' | 'cell'
+      /** The press, graph-local, for the click-or-drag test. */
+      start: { x: number; y: number }
+      /** The last CLIENT point the stroke was probed at. */
+      last: { x: number; y: number }
+      /** Past the click threshold: from here on every move is probed. */
+      dragged: boolean
+      /** Everything the stroke has crossed, in marking order. */
+      marked: Map<string, 'node' | 'edge'>
     }
 let gesture: Gesture | null = null
 
@@ -547,6 +571,7 @@ function beginGesture(next: Gesture): void {
 function endGesture(): void {
   window.removeEventListener('mousemove', onGestureMove, DRAW_LISTENER)
   window.removeEventListener('mouseup', onGestureUp, DRAW_LISTENER)
+  if (gesture?.kind === 'erase') clearEraseMarks(gesture)
   gesture = null
   drawStart.value = null
   drawNow.value = null
@@ -585,21 +610,25 @@ function onNodeMouseDown({ e, node }: { e: MouseEvent; node: Node }): void {
 }
 
 /**
- * A press on an EDGE. Select keeps X6's own handling (select the edge). In
- * every other tool an edge is not a target, so the press is a press on blank
- * board: Hand pans, Rectangle and Text place, Arrow does nothing. Either way
- * the tool owns it, so X6 must not select the edge on the release
- * (`pendingSelection`, set in `startToolGesture`).
+ * A press on an EDGE. Select keeps X6's own handling (select the edge). The
+ * Eraser erases it. In every other tool an edge is not a target, so the press
+ * is a press on blank board: Hand pans, Rectangle and Text place, Arrow does
+ * nothing. Either way the tool owns it, so X6 must not select the edge on the
+ * release (`pendingSelection`, set in `startToolGesture`).
  */
-function onEdgeMouseDown({ e }: { e: MouseEvent }): void {
+function onEdgeMouseDown({ e, edge }: { e: MouseEvent; edge: Cell }): void {
   if (e.button !== 0) return
   const tool = activeTool.value
   if (tool === 'select') return
   focusBody()
-  startToolGesture(tool, null)
+  startToolGesture(tool, null, tool === 'eraser' ? edge.id : null)
 }
 
-function startToolGesture(tool: CanvasTool, node: { id: string; shape: string } | null): void {
+function startToolGesture(
+  tool: CanvasTool,
+  node: { id: string; shape: string } | null,
+  edgeId: string | null = null
+): void {
   const g = graph.value
   if (!g) return
   // Whatever X6's Selection plugin does on this release, a non-Select tool
@@ -639,10 +668,118 @@ function startToolGesture(tool: CanvasTool, node: { id: string; shape: string } 
       arrowNow.value = { x, y }
       return
     }
+    case 'eraser': {
+      const gs: Gesture = {
+        kind: 'erase',
+        on: node || edgeId ? 'cell' : 'blank',
+        start: { x, y },
+        last: { ...pressClient },
+        dragged: false,
+        marked: new Map()
+      }
+      beginGesture(gs)
+      // A press on a node or an edge erases it even without a drag (spec §5),
+      // so it is marked at once. A blank press marks nothing until it drags.
+      const pressedCell = g.getCellById(node?.id ?? edgeId ?? '')
+      if (pressedCell) markForErase(g, gs, pressedCell)
+      return
+    }
     default:
-      // The Eraser gesture lands in its own unit (T536 U1 task 6).
       return
   }
+}
+
+// ── Eraser (spec §5) ──────────────────────────────────────────────────────
+/**
+ * The dimming a crossed-but-not-yet-erased cell gets (`design.md` §6, Eraser
+ * mark). A class on the cell's VIEW, never a cell attribute: marking is not an
+ * edit, so it never lights the dirty dot or enters the undo history.
+ */
+const ERASE_MARK = 'canvas-erase-mark'
+/** The eraser's history batch: one stroke, one undo step. */
+const ERASE_BATCH = 'erase'
+
+type EraseGesture = Extract<Gesture, { kind: 'erase' }>
+
+function markForErase(g: Graph, gs: EraseGesture, cell: Cell): void {
+  if (gs.marked.has(cell.id)) return
+  const view = g.findViewByCell(cell)
+  if (!view) return
+  view.addClass(ERASE_MARK)
+  gs.marked.set(cell.id, cell.isEdge() ? 'edge' : 'node')
+}
+
+function clearEraseMarks(gs: EraseGesture): void {
+  const g = graph.value
+  if (!g) return
+  for (const id of gs.marked.keys()) {
+    const cell = g.getCellById(id)
+    const view = cell ? g.findViewByCell(cell) : null
+    view?.removeClass(ERASE_MARK)
+  }
+}
+
+/**
+ * Mark what lies under one CLIENT point of the stroke: every node there, and
+ * every edge whose rendered path passes within `ERASE_REACH_PX` screen pixels.
+ * A point outside the pane's body probes nothing — what lies there in world
+ * space is hidden past the pane's edge, so the operator cannot mean it.
+ */
+function probeErase(g: Graph, gs: EraseGesture, client: { x: number; y: number }): void {
+  const box = bodyEl.value
+  if (!box || !pointInRect(client, box.getBoundingClientRect())) return
+  const p = g.clientToLocal(client.x, client.y)
+  for (const n of g.getNodesFromPoint(p.x, p.y)) markForErase(g, gs, n)
+  const reach = eraseReach(g.zoom())
+  for (const edge of g.getEdges()) {
+    if (gs.marked.has(edge.id)) continue
+    const view = g.findViewByCell(edge)
+    const closest = view?.isEdgeView() ? view.getClosestPoint(p) : null
+    if (edgeWithinReach(p, closest, reach)) markForErase(g, gs, edge)
+  }
+}
+
+function moveErase(g: Graph, gs: EraseGesture, ev: MouseEvent): void {
+  const client = { x: ev.clientX, y: ev.clientY }
+  if (!gs.dragged) {
+    const p = g.clientToLocal(client.x, client.y)
+    // Under the click threshold the stroke is still a press: nothing beyond
+    // the pressed cell is marked, so a plain press erases just that.
+    if (!isDrawGesture(gs.start.x, gs.start.y, p.x, p.y, g.zoom())) return
+    gs.dragged = true
+    probeErase(g, gs, gs.last)
+  }
+  for (const s of strokeSamples(gs.last, client, ERASE_REACH_PX)) probeErase(g, gs, s)
+  gs.last = client
+}
+
+/**
+ * The release: remove everything the stroke marked as ONE undo step, edges
+ * attached to an erased node included (X6 removes them with it, inside the
+ * same batch). A blank press that never dragged erases nothing. The release
+ * may land outside the pane or the window: the marks were made while the
+ * operator could see them, so they are honoured either way.
+ */
+function finishErase(g: Graph, gs: EraseGesture): void {
+  if (gs.on === 'blank' && blankIntent('eraser', gs.dragged ? 'drag' : 'click') !== 'erase') return
+  const ids = eraseRemovalOrder(gs.marked)
+  if (ids.length === 0) return
+  // Never nest: a placed text's batch is closed by its rename, which a press
+  // elsewhere has already blurred — this only guards the impossible case.
+  endPlaceTextBatch()
+  g.startBatch(ERASE_BATCH)
+  try {
+    for (const id of ids) {
+      const cell = g.getCellById(id)
+      if (cell) g.removeCell(cell)
+    }
+  } finally {
+    g.stopBatch(ERASE_BATCH)
+  }
+  // X6's Selection drops removed cells itself; the repair it runs after this
+  // release must not bring one back.
+  if (pendingSelection) pendingSelection = pendingSelection.filter((id) => g.getCellById(id))
+  markUsed('eraser')
 }
 
 function onGestureMove(ev: MouseEvent): void {
@@ -659,6 +796,10 @@ function onGestureMove(ev: MouseEvent): void {
   if (gs.kind === 'arrow') {
     const p = g.clientToLocal(ev.clientX, ev.clientY)
     arrowNow.value = { x: p.x, y: p.y }
+    return
+  }
+  if (gs.kind === 'erase') {
+    moveErase(g, gs, ev)
     return
   }
   if (gs.tool === 'rectangle') {
@@ -678,6 +819,10 @@ function onGestureUp(ev: MouseEvent): void {
   }
   if (gs.kind === 'arrow') {
     finishArrow(g, gs.source, ev)
+    return
+  }
+  if (gs.kind === 'erase') {
+    finishErase(g, gs)
     return
   }
   const a = gs.start

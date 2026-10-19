@@ -966,3 +966,346 @@ describe('DiagramPane tools — Arrow', () => {
     expect(handles()).toBe(0)
   })
 })
+
+describe('DiagramPane tools — Eraser', () => {
+  const IN_A: [number, number] = [60, 60]
+  const IN_B: [number, number] = [340, 220]
+  const IN_C: [number, number] = [60, 230]
+
+  const marks = (w: VueWrapper): string[] =>
+    [...w.element.querySelectorAll('.canvas-erase-mark')].map(
+      (el) => el.getAttribute('data-cell-id') ?? '?'
+    )
+  const isDirty = (w: VueWrapper): boolean => w.find('[data-testid="diagram-dirty-dot"]').exists()
+
+  function pinBody(w: VueWrapper, right: number, bottom: number): void {
+    bodyOf(w).getBoundingClientRect = () =>
+      ({
+        left: 0,
+        top: 0,
+        right,
+        bottom,
+        width: right,
+        height: bottom,
+        x: 0,
+        y: 0,
+        toJSON: () => ({})
+      }) as DOMRect
+  }
+
+  async function armEraser(w: VueWrapper): Promise<void> {
+    pinBody(w, 1000, 800)
+    focusPane(w)
+    key('e')
+    await settle()
+    expect(pressed(w)).toEqual(['eraser'])
+  }
+
+  /** Release on the board's SVG, as a real click does: X6's own release handling runs. */
+  function upOnSvg(w: VueWrapper, at: [number, number]): void {
+    svgOf(w).dispatchEvent(
+      new MouseEvent('mouseup', { bubbles: true, button: 0, clientX: at[0], clientY: at[1] })
+    )
+  }
+
+  /**
+   * A point on e-1's rendered path: the middle of its longest straight run,
+   * read off the `d` X6 wrote, and which way that run goes.
+   */
+  function pointOnEdge(w: VueWrapper): { p: [number, number]; horizontal: boolean } {
+    const path = w.element.querySelector('[data-cell-id="e-1"] path[d]')!
+    const nums = (path.getAttribute('d') ?? '').match(/-?\d+(\.\d+)?/g)!.map(Number)
+    const pts: [number, number][] = []
+    for (let i = 0; i + 1 < nums.length; i += 2) pts.push([nums[i], nums[i + 1]])
+    let best = 0
+    let bestLen = -1
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const len = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1])
+      if (len > bestLen) {
+        bestLen = len
+        best = i
+      }
+    }
+    const [a, b] = [pts[best], pts[best + 1]]
+    return {
+      p: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2],
+      horizontal: Math.abs(b[1] - a[1]) < Math.abs(b[0] - a[0])
+    }
+  }
+
+  it('e, drag across n-a and n-b: both gone with their edge; ONE ⌘Z brings all back', async () => {
+    const w = mountPane()
+    await settle()
+    await armEraser(w)
+    down(nodeEl(w, 'n-a'), IN_A)
+    move([200, 140])
+    move(IN_B)
+    await settle()
+    // Marked mid-stroke, as a class on the VIEW: no edit, no dirty dot yet.
+    expect(marks(w)).toEqual(expect.arrayContaining(['n-a', 'n-b']))
+    expect(isDirty(w)).toBe(false)
+    upOnSvg(w, IN_B)
+    await settle()
+    expect(marks(w)).toEqual([])
+    // Erasing is not a creation: the tool stays on Eraser.
+    expect(pressed(w)).toEqual(['eraser'])
+
+    let doc = await saveAndRead(w)
+    expect(doc.nodes.map((n) => n.id)).toEqual(['n-c'])
+    expect(doc.edges).toEqual([])
+
+    key('z', { ctrlKey: true })
+    await settle()
+    doc = await saveAndRead(w)
+    expect(doc.nodes.map((n) => n.id).sort()).toEqual(['n-a', 'n-b', 'n-c'])
+    expect(doc.edges.map((e) => e.id)).toEqual(['e-1'])
+  })
+
+  it('a stroke from blank board across n-a and n-b is ONE undo step too', async () => {
+    // A press on a node runs inside X6's own per-gesture batch, which would
+    // hide a missing erase batch; a stroke that starts on blank board has none.
+    const w = mountPane()
+    await settle()
+    await armEraser(w)
+    down(svgOf(w), [20, 20])
+    move(IN_A)
+    move(IN_B)
+    move([480, 300])
+    await settle()
+    expect(marks(w)).toEqual(expect.arrayContaining(['n-a', 'n-b']))
+    upOnSvg(w, [480, 300])
+    await settle()
+    expect((await saveAndRead(w)).nodes.map((n) => n.id)).toEqual(['n-c'])
+    key('z', { ctrlKey: true })
+    await settle()
+    const doc = await saveAndRead(w)
+    expect(doc.nodes.map((n) => n.id).sort()).toEqual(SEEDED)
+    expect(doc.edges.map((e) => e.id)).toEqual(['e-1'])
+  })
+
+  it('Esc mid-drag clears the marks and erases nothing; the pane stays clean', async () => {
+    const w = mountPane()
+    await settle()
+    await armEraser(w)
+    down(nodeEl(w, 'n-a'), IN_A)
+    move([200, 140])
+    await settle()
+    expect(marks(w)).toContain('n-a')
+    key('Escape')
+    await settle()
+    expect(marks(w)).toEqual([])
+    // Esc's first job is the gesture, not the tool.
+    expect(pressed(w)).toEqual(['eraser'])
+    move(IN_B)
+    upOnSvg(w, IN_B)
+    await settle()
+    expect(marks(w)).toEqual([])
+    expect(w.element.querySelectorAll('.canvas-erase-mark')).toHaveLength(0)
+    expect(isDirty(w)).toBe(false)
+    expect(SEEDED.every((id) => w.element.querySelector(`[data-cell-id="${id}"]`))).toBe(true)
+  })
+
+  it('a window blur mid-drag clears the marks and erases nothing', async () => {
+    const w = mountPane()
+    await settle()
+    await armEraser(w)
+    down(nodeEl(w, 'n-a'), IN_A)
+    move(IN_B)
+    await settle()
+    expect(marks(w).length).toBeGreaterThan(0)
+    window.dispatchEvent(new Event('blur'))
+    await settle()
+    expect(marks(w)).toEqual([])
+    up(IN_B)
+    await settle()
+    expect(isDirty(w)).toBe(false)
+  })
+
+  it('a tool switch mid-drag clears the marks and erases nothing', async () => {
+    const w = mountPane()
+    await settle()
+    await armEraser(w)
+    down(nodeEl(w, 'n-a'), IN_A)
+    move(IN_B)
+    await settle()
+    expect(marks(w).length).toBeGreaterThan(0)
+    key('v')
+    await settle()
+    expect(marks(w)).toEqual([])
+    up(IN_B)
+    await settle()
+    expect(isDirty(w)).toBe(false)
+  })
+
+  it('a plain press on a node erases just it', async () => {
+    const w = mountPane()
+    await settle()
+    await armEraser(w)
+    down(nodeEl(w, 'n-c'), IN_C)
+    nodeEl(w, 'n-c').dispatchEvent(
+      new MouseEvent('mouseup', { bubbles: true, button: 0, clientX: IN_C[0], clientY: IN_C[1] })
+    )
+    await settle()
+    const doc = await saveAndRead(w)
+    expect(doc.nodes.map((n) => n.id)).toEqual(['n-a', 'n-b'])
+    expect(doc.edges.map((e) => e.id)).toEqual(['e-1'])
+  })
+
+  it('a plain press on an EDGE erases just that edge', async () => {
+    const w = mountPane()
+    await settle()
+    await armEraser(w)
+    const { p } = pointOnEdge(w)
+    const edge = nodeEl(w, 'e-1')
+    down(edge, p)
+    edge.dispatchEvent(
+      new MouseEvent('mouseup', { bubbles: true, button: 0, clientX: p[0], clientY: p[1] })
+    )
+    await settle()
+    const doc = await saveAndRead(w)
+    expect(doc.nodes.map((n) => n.id)).toEqual(SEEDED)
+    expect(doc.edges).toEqual([])
+  })
+
+  it('a blank stroke across an edge erases the edge and leaves the nodes', async () => {
+    const w = mountPane()
+    await settle()
+    await armEraser(w)
+    const { p, horizontal } = pointOnEdge(w)
+    // Cross the run at right angles, from 20px on one side to 20px on the other.
+    const from: [number, number] = horizontal ? [p[0], p[1] - 20] : [p[0] - 20, p[1]]
+    const to: [number, number] = horizontal ? [p[0], p[1] + 20] : [p[0] + 20, p[1]]
+    down(svgOf(w), from)
+    move(to)
+    await settle()
+    expect(marks(w)).toEqual(['e-1'])
+    upOnSvg(w, to)
+    await settle()
+    const doc = await saveAndRead(w)
+    expect(doc.nodes.map((n) => n.id)).toEqual(SEEDED)
+    expect(doc.edges).toEqual([])
+  })
+
+  it('a blank stroke that passes far from the edge erases nothing', async () => {
+    const w = mountPane()
+    await settle()
+    await armEraser(w)
+    down(svgOf(w), [600, 600])
+    move([700, 700])
+    upOnSvg(w, [700, 700])
+    await settle()
+    expect(isDirty(w)).toBe(false)
+  })
+
+  it('a click on blank board erases nothing', async () => {
+    const w = mountPane()
+    await settle()
+    await armEraser(w)
+    down(svgOf(w), [600, 500])
+    upOnSvg(w, [600, 500])
+    await settle()
+    expect(isDirty(w)).toBe(false)
+    expect(marks(w)).toEqual([])
+  })
+
+  it('a release outside the pane ends the stroke: no stuck marks, nothing off-pane marked', async () => {
+    const w = mountPane()
+    await settle()
+    await armEraser(w)
+    // A pane only 300px wide: n-b (world x 320 → 452) lies past its right edge.
+    pinBody(w, 300, 400)
+    down(nodeEl(w, 'n-a'), IN_A)
+    move([200, 140])
+    move(IN_B)
+    await settle()
+    expect(marks(w)).toContain('n-a')
+    expect(marks(w)).not.toContain('n-b')
+    up(IN_B)
+    await settle()
+    expect(marks(w)).toEqual([])
+    const doc = await saveAndRead(w)
+    // n-a went, and e-1 with it; n-b lay only under the off-pane part.
+    expect(doc.nodes.map((n) => n.id)).toEqual(['n-b', 'n-c'])
+    expect(doc.edges).toEqual([])
+  })
+
+  it('the selection never holds an erased cell: Delete afterwards takes only what is left', async () => {
+    const w = mountPane()
+    await settle()
+    focusPane(w)
+    // Everything selected, then n-a erased out from under the selection.
+    key('a', { ctrlKey: true })
+    await settle()
+    await armEraser(w)
+    down(nodeEl(w, 'n-a'), IN_A)
+    nodeEl(w, 'n-a').dispatchEvent(
+      new MouseEvent('mouseup', { bubbles: true, button: 0, clientX: IN_A[0], clientY: IN_A[1] })
+    )
+    await settle()
+    key('v')
+    await settle()
+    key('Delete')
+    await settle()
+    expect((await saveAndRead(w)).nodes).toEqual([])
+    // ONE undo takes back the Delete only: n-b and n-c return, n-a (and e-1,
+    // which went with it) stay erased. Had the selection still held the
+    // erased cells, the Delete would have re-removed them inside its own step.
+    key('z', { ctrlKey: true })
+    await settle()
+    const doc = await saveAndRead(w)
+    expect(doc.nodes.map((n) => n.id).sort()).toEqual(['n-b', 'n-c'])
+    expect(doc.edges).toEqual([])
+  })
+
+  it('an erase right after a placed text is its own undo step', async () => {
+    const w = mountPane()
+    await settle()
+    focusPane(w)
+    key('t')
+    clickBlank(w, [600, 500])
+    await settle()
+    const input = w.find('[data-testid="diagram-rename-input"]')
+    await input.setValue('kept')
+    await input.trigger('keydown', { key: 'Enter' })
+    await settle()
+    await armEraser(w)
+    down(nodeEl(w, 'n-b'), IN_B)
+    upOnSvg(w, IN_B)
+    await settle()
+    expect((await saveAndRead(w)).nodes.map((n) => n.id)).not.toContain('n-b')
+    key('z', { ctrlKey: true })
+    await settle()
+    const doc = await saveAndRead(w)
+    expect(doc.nodes.map((n) => n.id).sort()).toEqual(['n-1', 'n-a', 'n-b', 'n-c'])
+    expect(doc.nodes.find((n) => n.id === 'n-1')?.label).toBe('kept')
+  })
+
+  it('resize handles hide in Eraser, and a press on a node erases rather than resizes', async () => {
+    const w = mountPane()
+    await settle()
+    focusPane(w)
+    const handles = (): number => w.element.querySelectorAll('.x6-widget-transform').length
+    down(nodeEl(w, 'n-b'), IN_B)
+    nodeEl(w, 'n-b').dispatchEvent(
+      new MouseEvent('mouseup', { bubbles: true, button: 0, clientX: IN_B[0], clientY: IN_B[1] })
+    )
+    nodeEl(w, 'n-b').dispatchEvent(
+      new MouseEvent('click', { bubbles: true, button: 0, clientX: IN_B[0], clientY: IN_B[1] })
+    )
+    await settle()
+    expect(handles()).toBe(1)
+    await armEraser(w)
+    expect(handles()).toBe(0)
+  })
+
+  it('a double-click on a node in Eraser opens no rename', async () => {
+    const w = mountPane()
+    await settle()
+    await armEraser(w)
+    nodeEl(w, 'n-c').dispatchEvent(
+      new MouseEvent('dblclick', { bubbles: true, clientX: IN_C[0], clientY: IN_C[1] })
+    )
+    await settle()
+    expect(w.find('[data-testid="diagram-rename-input"]').exists()).toBe(false)
+  })
+})
