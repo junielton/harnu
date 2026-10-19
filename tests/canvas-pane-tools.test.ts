@@ -431,24 +431,25 @@ describe('DiagramPane tools — Escape and node double-click', () => {
     expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(true)
   })
 
-  it('double-click renames in every tool but Eraser', async () => {
+  // In Rectangle and Text the press itself creates a shape, so a bare double-click is not a
+  // rename there (design.md §6); Eraser deletes on the first press.
+  it.each([
+    ['v', 'Select', true],
+    ['h', 'Hand', true],
+    ['a', 'Arrow', true],
+    ['r', 'Rectangle', false],
+    ['t', 'Text', false],
+    ['e', 'Eraser', false]
+  ] as const)('double-click on a node with %s (%s) renames: %s', async (k, _name, renames) => {
     const w = mountPane()
     await settle()
     focusPane(w)
-    key('e')
+    key(k)
     nodeEl(w, 'n-a').dispatchEvent(
       new MouseEvent('dblclick', { bubbles: true, button: 0, clientX: 60, clientY: 60 })
     )
     await settle()
-    expect(w.find('[data-testid="diagram-rename-input"]').exists()).toBe(false)
-
-    focusPane(w)
-    key('v')
-    nodeEl(w, 'n-a').dispatchEvent(
-      new MouseEvent('dblclick', { bubbles: true, button: 0, clientX: 60, clientY: 60 })
-    )
-    await settle()
-    expect(w.find('[data-testid="diagram-rename-input"]').exists()).toBe(true)
+    expect(w.find('[data-testid="diagram-rename-input"]').exists()).toBe(renames)
   })
 })
 
@@ -523,6 +524,19 @@ describe('DiagramPane tools — Review Focus 1-4', () => {
     await settle()
     expect(pressed(w)).toEqual(['select'])
     expect(bodyOf(w).style.cursor).toBe('default')
+  })
+
+  it('Space on a focused toolbar button activates it and never starts a pan', async () => {
+    const w = mountPane()
+    await settle()
+    const btn = w.get('[data-testid="canvas-tool-rectangle"]').element as HTMLButtonElement
+    btn.focus()
+    const ev = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
+    window.dispatchEvent(ev)
+    await settle()
+    expect(ev.defaultPrevented).toBe(false)
+    expect(bodyOf(w).style.cursor).toBe('default')
+    expect(pressed(w)).toEqual(['select'])
   })
 
   it('Space is ignored while the rename input is open', async () => {

@@ -100,6 +100,33 @@ describe('CanvasToolbar', () => {
     expect(idle.get('[data-testid="canvas-tool-lock"]').attributes('aria-pressed')).toBe('false')
   })
 
+  it('gives the lock a stable accessible name and lets aria-pressed carry the state', () => {
+    const idle = mountBar({ locked: false }).get('[data-testid="canvas-tool-lock"]')
+    const on = mountBar({ locked: true }).get('[data-testid="canvas-tool-lock"]')
+    expect(idle.attributes('aria-label')).toBe('Keep tool active')
+    expect(on.attributes('aria-label')).toBe('Keep tool active')
+    expect(idle.attributes('aria-pressed')).toBe('false')
+    expect(on.attributes('aria-pressed')).toBe('true')
+    // The state-dependent wording lives in the tooltip only.
+    expect(idle.attributes('title')).toBe('Keep tool active')
+    expect(on.attributes('title')).toBe('Return to Select after drawing')
+  })
+
+  it('marks the separator vertical and ties the hint to the toolbar', () => {
+    const w = mountBar({ tool: 'select' })
+    expect(w.get('[role="separator"]').attributes('aria-orientation')).toBe('vertical')
+    const hint = w.get('[data-testid="canvas-tool-hint"]')
+    const id = hint.attributes('id')
+    expect(id).toBeTruthy()
+    expect(w.get('[role="toolbar"]').attributes('aria-describedby')).toBe(id)
+  })
+
+  it('does not point aria-describedby at a hint that is hidden', () => {
+    const w = mountBar({ tool: 'select', used: new Set<CanvasTool>(['select']) })
+    expect(w.find('[data-testid="canvas-tool-hint"]').exists()).toBe(false)
+    expect(w.get('[role="toolbar"]').attributes('aria-describedby')).toBeUndefined()
+  })
+
   it('titles each button with the localized name and key', () => {
     const w = mountBar()
     for (const t of CANVAS_TOOLS) {

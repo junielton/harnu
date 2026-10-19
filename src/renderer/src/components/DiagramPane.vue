@@ -1623,6 +1623,9 @@ function onWindowKeydown(ev: KeyboardEvent): void {
   // Space held = a temporary Hand from any tool (spec §4.3). Below the rename
   // early return, so typing a space into a label never pans.
   if (ev.key === ' ') {
+    // Space on a focused toolbar button activates that button, as a keyboard user expects.
+    const focused = document.activeElement
+    if (focused instanceof HTMLElement && focused.closest('[role="toolbar"]')) return
     ev.preventDefault()
     if (!toolState.value.spaceHeld) setToolState(pressSpace(toolState.value))
     return

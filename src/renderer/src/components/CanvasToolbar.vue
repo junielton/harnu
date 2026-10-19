@@ -3,7 +3,7 @@
 // Toolbar"). Presentational only: the pane owns the tool state (canvas-tools.ts)
 // and this component reports intent as events. Placement (top-centre, or the
 // second row on a narrow pane) is the parent's job.
-import { computed, type Component } from 'vue'
+import { computed, useId, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   Eraser,
@@ -66,7 +66,10 @@ const buttons = computed<ToolButton[]>(() =>
   })
 )
 
-const lockLabel = computed(() => t(props.locked ? 'diagramPane.unlock' : 'diagramPane.lock'))
+// The accessible name stays put and aria-pressed carries the state; only the tooltip
+// describes what the next press does.
+const lockTitle = computed(() => t(props.locked ? 'diagramPane.unlock' : 'diagramPane.lock'))
+const hintId = useId()
 
 const showHint = computed(() => !props.used.has(props.tool))
 
@@ -85,14 +88,15 @@ const IDLE = 'text-text-3 hover:bg-surface-2 hover:text-text'
     <div
       role="toolbar"
       :aria-label="$t('diagramPane.toolbar')"
+      :aria-describedby="showHint ? hintId : undefined"
       class="inline-flex max-w-full flex-wrap items-center gap-0.5 rounded border border-border bg-surface p-1 shadow-pop"
     >
       <button
         data-testid="canvas-tool-lock"
         type="button"
         :class="[BTN, locked ? ACTIVE : IDLE]"
-        :title="lockLabel"
-        :aria-label="lockLabel"
+        :title="lockTitle"
+        :aria-label="$t('diagramPane.lock')"
         :aria-pressed="locked"
         @mousedown.stop
         @click="$emit('toggle-lock')"
@@ -122,11 +126,17 @@ const IDLE = 'text-text-3 hover:bg-surface-2 hover:text-text'
             >{{ b.cornerKey }}</span
           >
         </button>
-        <div v-if="b.id === 'hand'" role="separator" class="mx-0.5 h-5 w-px bg-border" />
+        <div
+          v-if="b.id === 'hand'"
+          role="separator"
+          aria-orientation="vertical"
+          class="mx-0.5 h-5 w-px bg-border"
+        />
       </template>
     </div>
     <p
       v-if="showHint"
+      :id="hintId"
       data-testid="canvas-tool-hint"
       class="max-w-full px-1 text-caption text-text-4"
     >

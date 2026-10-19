@@ -131,8 +131,11 @@ export function blankIntent(tool: CanvasTool, g: BlankGesture): GestureIntent {
 
 /** What a gesture on a node means under `tool` (spec §5). `nodeShape` is the node's shape. */
 export function nodeIntent(tool: CanvasTool, g: NodeGesture, nodeShape: string): GestureIntent {
-  // Double-click renames a node in every tool except Eraser (spec §5).
-  if (g === 'dblclick') return tool === 'eraser' ? 'none' : 'rename-node'
+  // Double-click renames a node in Select, Hand and Arrow. In Rectangle and Text the press
+  // itself creates a shape, so a double-click is not a rename there; Eraser deletes on the
+  // first press (design.md §6).
+  if (g === 'dblclick')
+    return tool === 'select' || tool === 'hand' || tool === 'arrow' ? 'rename-node' : 'none'
   switch (tool) {
     case 'select':
       return g === 'press' ? 'select-node' : 'move-node'

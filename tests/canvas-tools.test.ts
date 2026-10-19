@@ -191,7 +191,7 @@ describe('nodeIntent (spec §5)', () => {
     ['hand', 'dblclick', 'box', 'rename-node'],
     ['rectangle', 'press', 'box', 'place-shape'],
     ['rectangle', 'drag', 'box', 'draw-shape'],
-    ['rectangle', 'dblclick', 'box', 'rename-node'],
+    ['rectangle', 'dblclick', 'box', 'none'],
     ['arrow', 'press', 'box', 'start-arrow'],
     ['arrow', 'drag', 'box', 'start-arrow'],
     ['arrow', 'dblclick', 'box', 'rename-node'],
@@ -199,8 +199,8 @@ describe('nodeIntent (spec §5)', () => {
     ['text', 'press', 'box', 'place-text'],
     ['text', 'drag', 'text', 'none'],
     ['text', 'drag', 'box', 'none'],
-    ['text', 'dblclick', 'text', 'rename-node'],
-    ['text', 'dblclick', 'box', 'rename-node'],
+    ['text', 'dblclick', 'text', 'none'],
+    ['text', 'dblclick', 'box', 'none'],
     ['eraser', 'press', 'box', 'erase'],
     ['eraser', 'drag', 'box', 'erase'],
     ['eraser', 'dblclick', 'box', 'none']
@@ -215,8 +215,12 @@ describe('node double-click', () => {
     expect(nodeIntent(tool, 'dblclick', 'text')).toBe(nodeIntent(tool, 'dblclick', 'box'))
   })
 
-  it.each(CANVAS_TOOLS.map((t) => t.id))('%s renames, except eraser', (tool) => {
-    expect(nodeIntent(tool, 'dblclick', 'box')).toBe(tool === 'eraser' ? 'none' : 'rename-node')
+  // In Rectangle and Text the press itself creates a shape, so a double-click is not a rename
+  // there (design.md §6); Eraser deletes on the first press.
+  it.each(CANVAS_TOOLS.map((t) => t.id))('%s renames only in select, hand and arrow', (tool) => {
+    expect(nodeIntent(tool, 'dblclick', 'box')).toBe(
+      ['select', 'hand', 'arrow'].includes(tool) ? 'rename-node' : 'none'
+    )
   })
 })
 
