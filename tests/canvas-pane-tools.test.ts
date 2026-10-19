@@ -8,6 +8,7 @@ import { DEFAULT_NODE_SIZE } from '../src/renderer/src/components/canvas/canvas-
 import { validateCanvasDocument, type CanvasDocument } from '../src/main/canvas-core'
 import { i18n } from '@renderer/i18n'
 import { installJsdomSvgShim } from './helpers/jsdom-svg'
+import { useThemeStore } from '../src/renderer/src/stores/theme'
 
 installJsdomSvgShim()
 
@@ -158,8 +159,16 @@ function down(el: Element, at: [number, number], init: MouseEventInit = {}): voi
  * event first on its way down.
  */
 function move(at: [number, number], init: MouseEventInit = {}): void {
+  // `buttons: 1`: a drag holds the primary button down. A move with no button
+  // held means the release was lost, and the Eraser cancels on it.
   document.dispatchEvent(
-    new MouseEvent('mousemove', { bubbles: true, clientX: at[0], clientY: at[1], ...init })
+    new MouseEvent('mousemove', {
+      bubbles: true,
+      buttons: 1,
+      clientX: at[0],
+      clientY: at[1],
+      ...init
+    })
   )
 }
 function up(at: [number, number], init: MouseEventInit = {}): void {
@@ -1195,6 +1204,92 @@ describe('DiagramPane tools — Eraser', () => {
     upOnSvg(w, [700, 700])
     await settle()
     expect(isDirty(w)).toBe(false)
+  })
+
+  it('a theme switch mid-stroke re-renders the board: the stroke is cancelled, nothing erased', async () => {
+    const w = mountPane()
+    await settle()
+    await armEraser(w)
+    down(nodeEl(w, 'n-a'), IN_A)
+    move(IN_B)
+    await settle()
+    expect(marks(w)).toContain('n-a')
+    // The re-render recreates every view, dropping the dimming: the operator
+    // now sees an undimmed board, so the release must not erase anything.
+    const theme = useThemeStore()
+    theme.set('light')
+    try {
+      await settle()
+      upOnSvg(w, IN_B)
+      await settle()
+      expect(marks(w)).toEqual([])
+      expect(isDirty(w)).toBe(false)
+      expect(SEEDED.every((id) => w.element.querySelector(`[data-cell-id="${id}"]`))).toBe(true)
+    } finally {
+      // The store persists the choice; leave the next test on the default.
+      theme.set('default-dark')
+    }
+  })
+
+  it('a reload from disk mid-stroke cancels the stroke: nothing erased', async () => {
+    let changed: ((p: { path: string }) => void) | null = null
+    ;(window as unknown as { api: Record<string, unknown> }).api.onCanvasChanged = (
+      cb: (p: { path: string }) => void
+    ) => {
+      changed = cb
+      return () => {}
+    }
+    const w = mountPane()
+    await settle()
+    await armEraser(w)
+    down(nodeEl(w, 'n-a'), IN_A)
+    move(IN_B)
+    await settle()
+    expect(marks(w)).toContain('n-a')
+    expect(changed).not.toBeNull()
+    changed!({ path: '/wt/board.harnucanvas.json' })
+    await settle()
+    upOnSvg(w, IN_B)
+    await settle()
+    expect(marks(w)).toEqual([])
+    expect(isDirty(w)).toBe(false)
+    expect(SEEDED.every((id) => w.element.querySelector(`[data-cell-id="${id}"]`))).toBe(true)
+  })
+
+  it('a move with no button held (the release was lost) cancels the stroke', async () => {
+    const w = mountPane()
+    await settle()
+    await armEraser(w)
+    down(nodeEl(w, 'n-a'), IN_A)
+    move([200, 140])
+    await settle()
+    expect(marks(w)).toContain('n-a')
+    // The button came up somewhere the pane never heard about.
+    move(IN_B, { buttons: 0 })
+    await settle()
+    expect(marks(w)).toEqual([])
+    // A later release is not the end of a stroke any more.
+    upOnSvg(w, IN_B)
+    await settle()
+    expect(isDirty(w)).toBe(false)
+  })
+
+  it('a right-button release mid-stroke does not end it; the left release does', async () => {
+    const w = mountPane()
+    await settle()
+    await armEraser(w)
+    down(nodeEl(w, 'n-a'), IN_A)
+    move(IN_B)
+    await settle()
+    expect(marks(w)).toEqual(expect.arrayContaining(['n-a', 'n-b']))
+    up(IN_B, { button: 2 })
+    await settle()
+    // Still mid-stroke: nothing erased, the marks still shown.
+    expect(isDirty(w)).toBe(false)
+    expect(marks(w)).toEqual(expect.arrayContaining(['n-a', 'n-b']))
+    upOnSvg(w, IN_B)
+    await settle()
+    expect((await saveAndRead(w)).nodes.map((n) => n.id)).toEqual(['n-c'])
   })
 
   it('a click on blank board erases nothing', async () => {

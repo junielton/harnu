@@ -799,6 +799,13 @@ function onGestureMove(ev: MouseEvent): void {
     return
   }
   if (gs.kind === 'erase') {
+    // No button held: the release landed somewhere the pane never heard about
+    // (a native menu, say). Hovering on must not keep marking, and the next
+    // release must not commit a stroke the operator already let go of.
+    if (ev.buttons === 0) {
+      cancelGesture()
+      return
+    }
     moveErase(g, gs, ev)
     return
   }
@@ -810,6 +817,9 @@ function onGestureMove(ev: MouseEvent): void {
 
 function onGestureUp(ev: MouseEvent): void {
   const gs = gesture
+  // A right or middle release mid-stroke is not the end of an erase: only the
+  // primary button that started it can commit it.
+  if (gs?.kind === 'erase' && ev.button !== 0) return
   endGesture()
   const g = graph.value
   if (!g || !gs) return
@@ -1263,6 +1273,11 @@ async function resolveImages(document_: CanvasDocument, dir: string): Promise<Re
 async function draw(source: CanvasDocument, fit = false): Promise<void> {
   const g = ensureGraph()
   if (!g) return
+  // A render recreates every cell view, so a gesture in flight would outlive
+  // what it shows: an Eraser stroke's dimming dies with the old views while
+  // its marked ids survive, and the release would delete cells the operator
+  // sees undimmed. Coordinates and previews of the other gestures go stale too.
+  cancelGesture()
   endPlaceTextBatch()
   // A render REPLACES every cell, so it must never reach dirty tracking or the
   // undo stack: rebuilding the board is the pane's own bookkeeping, not an edit
