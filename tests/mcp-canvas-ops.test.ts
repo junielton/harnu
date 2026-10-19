@@ -332,6 +332,29 @@ describe('U5-1 — each of the seven ops applies correctly and in order (§8.2)'
     expect(res.ok && res.doc.edges[0]).toMatchObject({ label: 'is', router: 'orth', source: 'a' })
   })
 
+  it('T536 U2 — agent edits leave an edge’s props untouched', () => {
+    const props = { style: { tone: 'green' } }
+    const doc = docWith(
+      [
+        { id: 'a', shape: 'box', x: 0, y: 0, origin: 'agent' },
+        { id: 'b', shape: 'box', x: 9, y: 9, origin: 'agent' }
+      ],
+      [{ id: 'e1', source: 'a', target: 'b', label: 'was', props, origin: 'agent' }]
+    )
+    const relabelled = applyCanvasOps({
+      doc,
+      ops: [{ op: 'update_edge', id: 'e1', label: 'is' }],
+      mintId: counterMinter()
+    })
+    expect(relabelled.ok && relabelled.doc.edges[0]).toMatchObject({ label: 'is', props })
+    const moved = applyCanvasOps({
+      doc,
+      ops: [{ op: 'update_node', id: 'a', x: 40 }],
+      mintId: counterMinter()
+    })
+    expect(moved.ok && moved.doc.edges[0].props).toEqual(props)
+  })
+
   it('remove_edge removes exactly one edge', () => {
     const doc = docWith(
       [
