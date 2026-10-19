@@ -7,10 +7,10 @@ import type { Graph } from '@antv/x6'
 import DiagramPane from '../src/renderer/src/components/DiagramPane.vue'
 import {
   CANVAS_MIN_NODE_SIZE,
-  CANVAS_RUBBERBAND_MODIFIER,
   createCanvasGraph,
   renderCanvasDocument,
-  setCanvasPortsVisible
+  setCanvasPortsVisible,
+  setCanvasRubberband
 } from '../src/renderer/src/components/canvas/canvas-graph'
 import { CANVAS_PORT_IDS, toX6Node } from '../src/renderer/src/components/canvas/canvas-cells'
 import {
@@ -345,14 +345,59 @@ describe('the editing affordances the ACs name (U3-1, U3-2)', () => {
     const g = makeGraph()
     const selection = g.getPlugin('selection') as unknown as { options: Record<string, unknown> }
     expect(selection.options.rubberband).toBe(true)
-    // Shift, so the plain drag stays free to DRAW — the three-way conflict
-    // (pan / rubberband / draw) resolved explicitly rather than by luck.
-    expect(selection.options.modifiers).toBe(CANVAS_RUBBERBAND_MODIFIER)
+    // No modifier: in the Select tool the plain drag IS the rubberband (T536
+    // §5). The pane decides per tool whether it is armed — see
+    // `setCanvasRubberband` — so the graph no longer splits it by a key.
+    expect(selection.options.modifiers).toBeNull()
+    // Shift joins ctrl/meta: shift+click toggles a node in the selection.
+    expect(selection.options.multipleSelectionModifiers).toEqual(['ctrl', 'meta', 'shift'])
     const transform = g.getPlugin('transform') as unknown as {
       options: { resizing: { enabled: boolean; minWidth: number } }
     }
     expect(transform.options.resizing.enabled).toBe(true)
     expect(transform.options.resizing.minWidth).toBe(CANVAS_MIN_NODE_SIZE.width)
+    g.dispose()
+  })
+
+  it('setCanvasRubberband switches the rubberband off and on again at runtime', () => {
+    const g = makeGraph()
+    expect(g.isRubberbandEnabled()).toBe(true)
+    setCanvasRubberband(g, false)
+    expect(g.isRubberbandEnabled()).toBe(false)
+    setCanvasRubberband(g, true)
+    expect(g.isRubberbandEnabled()).toBe(true)
+    g.dispose()
+  })
+
+  it('nodes are movable and connectable by default', () => {
+    const g = makeGraph()
+    const view = g.findViewByCell(g.getCellById('n-a')!)!
+    expect(view.can('nodeMovable')).toBe(true)
+    expect(view.can('magnetConnectable')).toBe(true)
+    g.dispose()
+  })
+
+  it('nodesInteractive() is read per gesture: false freezes nodes and their ports', () => {
+    let interactive = false
+    const g = createCanvasGraph({
+      container: svgHost(),
+      palette,
+      width: 800,
+      height: 600,
+      editable: true,
+      nodesInteractive: () => interactive
+    })
+    renderCanvasDocument(g, DOC, palette)
+    const view = g.findViewByCell(g.getCellById('n-a')!)!
+    expect(view.can('nodeMovable')).toBe(false)
+    expect(view.can('magnetConnectable')).toBe(false)
+    // Read at gesture time, not captured at construction: a tool switch needs
+    // no graph rebuild.
+    interactive = true
+    expect(view.can('nodeMovable')).toBe(true)
+    expect(view.can('magnetConnectable')).toBe(true)
+    // Edges stay pinned to their endpoints whatever the tool (§4.3 schema).
+    expect(view.can('edgeMovable')).toBe(false)
     g.dispose()
   })
 

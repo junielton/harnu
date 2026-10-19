@@ -75,6 +75,15 @@ export interface CreateCanvasGraphOptions {
    * U2 viewer contract: nothing the pointer does may change the document.
    */
   editable?: boolean
+  /**
+   * Whether nodes take pointer input right now (T536 U1). Read on EVERY
+   * gesture through X6's `interacting` hook, never captured, so a tool switch
+   * (Select → Hand) needs no graph rebuild. `false` means a node does not move
+   * and its ports do not start an edge; the press falls through to whatever
+   * the active tool does with it. Defaults to `() => true`. Ignored on a
+   * read-only graph, where nothing is interactive anyway.
+   */
+  nodesInteractive?: () => boolean
 }
 
 /**
@@ -83,26 +92,6 @@ export interface CreateCanvasGraphOptions {
  * cannot resize back to is an inconsistency the operator would read as a bug.
  */
 export const CANVAS_MIN_NODE_SIZE = { width: 48, height: 32 } as const
-
-/**
- * How the three blank-area gestures are split (T218 U3).
- *
- * A blank drag is claimed by THREE things at once — pan, rubberband select and
- * draw-a-box — and X6 will happily run two of them over the same gesture (U2
- * verified exactly that in the real app: one drag panned AND left a selection
- * box behind it). So the split is explicit and asserted:
- *
- *  - **plain left drag → draw a box** (AC U3-1: "drag on empty canvas creates
- *    a box"). The most-used gesture gets the unmodified drag.
- *  - **shift + left drag → rubberband select** (AC U3-2). X6's Selection
- *    plugin owns this one, gated on the modifier.
- *  - **right-button drag → pan.** design.md's "panning moves to a held
- *    modifier" resolved to a held BUTTON instead: every keyboard modifier was
- *    already spoken for (shift by rubberband, ctrl/meta by zoom and by
- *    multi-select), and the pane has no context menu for a right-drag to
- *    collide with. Fit and the zoom cluster remain the discoverable path.
- */
-export const CANVAS_RUBBERBAND_MODIFIER = 'shift'
 
 /**
  * Build the graph and install the four plugins.
@@ -162,6 +151,7 @@ export function registerCanvasHtmlShapes(): void {
 export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
   const { container, palette } = opts
   const editable = opts.editable === true
+  const nodesInteractive = opts.nodesInteractive ?? (() => true)
   // Before the graph exists, and therefore before anything can `fromJSON` a
   // document holding one: an unregistered `harnu/<name>` THROWS on add.
   registerCanvasHtmlShapes()
@@ -181,8 +171,10 @@ export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
       args: { color: palette.border2, thickness: CANVAS_GRID_DOT }
     },
     // U2: drag-to-pan on empty canvas, because there is nothing to create.
-    // U3: the plain drag DRAWS, so panning moves to the right button — see
-    // {@link CANVAS_RUBBERBAND_MODIFIER} for why not a keyboard modifier.
+    // Editable: the plain left drag belongs to the active tool (T536 §5 —
+    // rubberband in Select, draw in a shape tool), so panning stays on the
+    // right button in EVERY tool. A keyboard modifier would not do: shift is
+    // add-to-selection and ctrl/meta are zoom and multi-select.
     panning: editable ? { enabled: true, eventTypes: ['rightMouseDown'] } : { enabled: true },
     // Ctrl/Cmd-wheel only: a bare wheel belongs to whatever is scrolling around
     // the pane, and stealing it makes the canvas fight the helper stack.
@@ -200,17 +192,21 @@ export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
     // an edge as source + target, with no waypoints and no label geometry) —
     // an operator dragging one would watch their work vanish on the next
     // reload.
+    //
+    // A FUNCTION, not an object (T536 U1): X6 calls it per gesture (`CellView.
+    // can`), so `nodesInteractive()` is read live and a tool switch takes
+    // effect on the next press without rebuilding the graph.
     interacting: editable
-      ? {
-          nodeMovable: true,
-          magnetConnectable: true,
+      ? () => ({
+          nodeMovable: nodesInteractive(),
+          magnetConnectable: nodesInteractive(),
           edgeMovable: false,
           edgeLabelMovable: false,
           arrowheadMovable: false,
           vertexMovable: false,
           vertexAddable: false,
           vertexDeletable: false
-        }
+        })
       : false,
     // Edge drawing, armed only when editing. `allowBlank: false` — an edge must
     // land on a node, because §4.3 refuses a dangling edge outright, so letting
@@ -254,10 +250,9 @@ export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
   // is what U3 switches on — but its blank-area drag competes with panning for
   // the same gesture, and selecting a node in a read-only pane leads nowhere.
   // Verified in the real app: with both on, one drag panned AND left a
-  // selection box behind it. U3 resolves the conflict the way the spike did —
-  // rubberband takes the plain drag and panning moves to a held modifier —
-  // which is a change worth making when there is something to do with a
-  // selection, not before.
+  // selection box behind it. Editable, panning lives on the right button, and
+  // the plain left drag is the rubberband — armed or not per tool by the pane
+  // through {@link setCanvasRubberband}.
   graph.use(
     new Selection(
       editable
@@ -265,9 +260,13 @@ export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
             enabled: true,
             multiple: true,
             rubberband: true,
-            // Gated on shift so the plain drag stays free for drawing — the
-            // conflict U2 observed live, resolved rather than left to luck.
-            modifiers: CANVAS_RUBBERBAND_MODIFIER,
+            // No modifier: in the Select tool the plain drag IS the
+            // rubberband (T536 §5). Which tool owns the drag is the pane's call,
+            // made through `setCanvasRubberband` — not a key split in here.
+            modifiers: null,
+            // Shift joins ctrl/meta so shift+click toggles a node in the
+            // selection, as in Excalidraw.
+            multipleSelectionModifiers: ['ctrl', 'meta', 'shift'],
             showNodeSelectionBox: true,
             pointerEvents: 'none'
           }
@@ -292,6 +291,44 @@ export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
   graph.use(new Snapline({ enabled: true, sharp: true }))
 
   return graph
+}
+
+/**
+ * Arm or disarm the rubberband (the blank-area drag-select) at runtime.
+ *
+ * Spike, 2026-10-19 (T536 U1, ≤1h, real app): an isolated second Harnu
+ * instance, a live editable canvas pane, real pointer input through CDP
+ * `Input.dispatchMouseEvent` (not jsdom), with the pane's own draw-a-box
+ * listener detached so only X6 was measured. Findings, on X6 2.19.2 +
+ * x6-plugin-selection 2.x:
+ *
+ *  - **A Selection built with `modifiers: null` rubberbands on a plain left
+ *    drag.** The band rendered mid-drag and the release selected exactly the
+ *    two nodes it covered.
+ *  - **`disableRubberband()` / `enableRubberband()` toggle at runtime.** After
+ *    `disableRubberband()` the same plain drag showed no band and selected
+ *    nothing; after `enableRubberband()` it selected the two nodes again. No
+ *    graph rebuild, no plugin re-install: the plugin reads
+ *    `options.rubberband` on every `blank:mousedown`.
+ *  - **shift + drag still rubberbands with these options, but REPLACES the
+ *    selection.** `Selection.startSelecting` calls `clean()` before the band
+ *    starts, so a shift-drag over A and B with C selected ended on {A, B}, not
+ *    {A, B, C}. "shift+drag adds to the selection" (§5) needs the pane to
+ *    re-add the prior selection itself — X6 will not.
+ *  - shift+click adds a node and ctrl+click toggles it, with
+ *    `multipleSelectionModifiers: ['ctrl', 'meta', 'shift']`.
+ *  - With the pane's current draw-a-box listener still attached, one plain
+ *    drag both drew a box AND ran the band, and ended with nothing selected:
+ *    a blank drag must belong to exactly one tool.
+ *
+ * Disarm it in any tool whose blank drag is not a selection (Hand pans, the
+ * shape tools draw), or X6 runs both over the same gesture — the conflict U2
+ * observed live. `Selection.rubberbandDisabled` also reads `enabled`, so this
+ * never re-arms a selection that is switched off (a read-only graph).
+ */
+export function setCanvasRubberband(graph: Graph, enabled: boolean): void {
+  if (enabled) graph.enableRubberband()
+  else graph.disableRubberband()
 }
 
 /**
