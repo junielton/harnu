@@ -131,20 +131,22 @@ export function blankIntent(tool: CanvasTool, g: BlankGesture): GestureIntent {
 
 /** What a gesture on a node means under `tool` (spec §5). `nodeShape` is the node's shape. */
 export function nodeIntent(tool: CanvasTool, g: NodeGesture, nodeShape: string): GestureIntent {
+  // Double-click renames a node in every tool except Eraser (spec §5).
+  if (g === 'dblclick') return tool === 'eraser' ? 'none' : 'rename-node'
   switch (tool) {
     case 'select':
-      return g === 'press' ? 'select-node' : g === 'drag' ? 'move-node' : 'rename-node'
+      return g === 'press' ? 'select-node' : 'move-node'
     case 'hand':
       return g === 'drag' ? 'pan' : 'none'
     case 'rectangle':
-      return g === 'press' ? 'place-shape' : g === 'drag' ? 'draw-shape' : 'none'
+      return g === 'press' ? 'place-shape' : 'draw-shape'
     case 'arrow':
-      return g === 'dblclick' ? 'rename-node' : 'start-arrow'
+      return 'start-arrow'
     case 'text':
       if (g === 'press') return nodeShape === 'text' ? 'edit-text' : 'place-text'
-      return g === 'dblclick' ? 'rename-node' : 'none'
+      return 'none'
     case 'eraser':
-      return g === 'dblclick' ? 'none' : 'erase'
+      return 'erase'
   }
 }
 

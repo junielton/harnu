@@ -188,10 +188,10 @@ describe('nodeIntent (spec §5)', () => {
     ['select', 'dblclick', 'box', 'rename-node'],
     ['hand', 'press', 'box', 'none'],
     ['hand', 'drag', 'box', 'pan'],
-    ['hand', 'dblclick', 'box', 'none'],
+    ['hand', 'dblclick', 'box', 'rename-node'],
     ['rectangle', 'press', 'box', 'place-shape'],
     ['rectangle', 'drag', 'box', 'draw-shape'],
-    ['rectangle', 'dblclick', 'box', 'none'],
+    ['rectangle', 'dblclick', 'box', 'rename-node'],
     ['arrow', 'press', 'box', 'start-arrow'],
     ['arrow', 'drag', 'box', 'start-arrow'],
     ['arrow', 'dblclick', 'box', 'rename-node'],
@@ -207,6 +207,16 @@ describe('nodeIntent (spec §5)', () => {
   ]
   it.each(rows)('%s + node %s (%s) => %s', (tool, gesture, shape, expected) => {
     expect(nodeIntent(tool, gesture, shape)).toBe(expected)
+  })
+})
+
+describe('node double-click', () => {
+  it.each(CANVAS_TOOLS.map((t) => t.id))('%s ignores the node shape', (tool) => {
+    expect(nodeIntent(tool, 'dblclick', 'text')).toBe(nodeIntent(tool, 'dblclick', 'box'))
+  })
+
+  it.each(CANVAS_TOOLS.map((t) => t.id))('%s renames, except eraser', (tool) => {
+    expect(nodeIntent(tool, 'dblclick', 'box')).toBe(tool === 'eraser' ? 'none' : 'rename-node')
   })
 })
 
