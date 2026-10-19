@@ -32,9 +32,9 @@
  * The agent discovers the names three ways, none of them guessing (§5.2):
  *  1. every `draw_canvas` ACK carries {@link CANVAS_SHAPE_CATALOG};
  *  2. an unknown shape is refused BY NAME, listing the valid set;
- *  3. `docs/harnu-features.md` says the catalog is discoverable from the ACK —
- *     it deliberately does NOT enumerate the shapes, because this list changes
- *     with the code and a doc that drifts is worse than one that points.
+ *  3. `docs/harnu-features.md` says the catalog is discoverable from the ACK and
+ *     names the built-ins in passing; the ACK stays the authority, because this
+ *     list changes with the code and a doc that drifts is worse than one that points.
  */
 
 /** One entry in the shape catalog — what the agent is told about a shape. */
@@ -70,7 +70,7 @@ const DEFAULT_FRAMED_SIZE = { width: 132, height: 52 } as const
 const DEFAULT_TEXT_SIZE = { width: 160, height: 24 } as const
 
 /**
- * The four built-in kinds of §5.1. `frame`/container is deliberately absent —
+ * The built-in kinds of §5.1 (plus `ellipse` and `diamond`, T536 U2). `frame`/container is deliberately absent —
  * deferred to v2 because X6's `embedding` was never exercised in the spike.
  */
 export const CANVAS_BUILTIN_SHAPES: readonly CanvasShapeSpec[] = [
@@ -78,6 +78,18 @@ export const CANVAS_BUILTIN_SHAPES: readonly CanvasShapeSpec[] = [
     name: 'box',
     description: 'Rounded rectangle with a centred label. The default.',
     defaultSize: DEFAULT_FRAMED_SIZE,
+    props: []
+  },
+  {
+    name: 'ellipse',
+    description: 'Ellipse with a centred label — for states, start/end points.',
+    defaultSize: { width: 132, height: 64 },
+    props: []
+  },
+  {
+    name: 'diamond',
+    description: 'Diamond with a centred label — for decisions in a flow.',
+    defaultSize: { width: 132, height: 80 },
     props: []
   },
   {
