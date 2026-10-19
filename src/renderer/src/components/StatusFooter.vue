@@ -51,7 +51,8 @@ import {
   Image,
   ExternalLink,
   Recycle,
-  Clock
+  Clock,
+  RotateCw
 } from 'lucide-vue-next'
 import { useUsageStore } from '../stores/usage'
 import { useSessionsStore } from '../stores/sessions'
@@ -61,6 +62,7 @@ import { useReaperStore } from '../stores/reaper'
 import { useSchedulerStore } from '../stores/scheduler'
 import { useContainersStore } from '../stores/containers'
 import { useGcStore } from '../stores/gc'
+import { useStatuslineHealStore } from '../stores/statusline-heal'
 import { useUiStore } from '../stores/ui'
 import { useSessionImages } from '../composables/useSessionImages'
 import UsagePanel from './UsagePanel.vue'
@@ -75,7 +77,12 @@ import {
   type FooterChip,
   type FooterChipKey
 } from './footer-format'
-import { footerPctClass, footerWindowCountdown, formatCostUsd } from './usage-format'
+import {
+  footerPctClass,
+  footerWindowCountdown,
+  formatCostUsd,
+  humanizeDuration
+} from './usage-format'
 import { formatBytes } from './system-monitor-format'
 
 const { t } = useI18n()
@@ -87,6 +94,7 @@ const scheduler = useSchedulerStore()
 const containers = useContainersStore()
 const gc = useGcStore()
 const ui = useUiStore()
+const statuslineHeal = useStatuslineHealStore()
 
 // Cleanup footer pill (T443, design.md "Workspace GC — unified Cleanup / Footer pill"): ONE pill
 // replaces the old Cleanup and Containers pills and is fed by the Workspace GC store, so the footer
@@ -106,6 +114,8 @@ onMounted(() => {
   void scheduler.init()
   void containers.init()
   void gc.init()
+  // The Activity notice for a statusLine self-heal must fire whatever view is open (BUG-196).
+  statuslineHeal.init()
 })
 
 /** The single Cleanup pill's content; null hides it (nothing to reclaim, nothing running or failed). */
@@ -155,17 +165,64 @@ watch(
 )
 const schedulerRunningCount = computed(() => scheduler.runningIds.length)
 
+// Tick once a minute so the fleet-chip countdowns stay live-ish — same
+// granularity UsagePanel's "resets in X" lines use, no second timer. Declared before the
+// footer state below, which reads it inside an immediate watcher (BUG-196).
+const now = useNow({ interval: 60_000 })
 const sess = computed(() => sessions.selectedSession)
 // Correlate by the Session object, not the raw id: a still-synthetic new session
 // has telemetry keyed by the real Claude uuid, so a fallback-by-cwd inside
 // `telemetryForSession` surfaces the footer chips before the synth→real migration
 // (BUG-8 — otherwise the footer is empty until the first turn).
-const tele = computed(() => usage.telemetryForSession(sess.value))
+//
+// BUG-196: the left cluster never goes silently blank. `footerState` is the live record, else the
+// last-known one (dimmed, aged), else what the transcript holds; the 24 h TTL is judged against the
+// minute clock below, so a record that ages out while the app runs turns dimmed instead of staying
+// "live".
+const footerState = computed(() => usage.footerStateFor(sess.value, now.value.getTime()))
+const tele = computed(() => (footerState.value.kind === 'none' ? null : footerState.value.tele))
+const dimmed = computed(() => footerState.value.kind === 'stale')
 const chips = computed(() => footerSessionChips(tele.value, sess.value))
+// Why the chips are dimmed (or absent): a one-word label after them, with a sentence as tooltip.
+// A synthetic session is about to receive its first blob, so no reason is shown for it.
+const reason = computed<{ label: string; aria: string } | null>(() => {
+  const st = footerState.value
+  if (st.kind === 'stale') {
+    return st.reason === 'expired'
+      ? { label: t('footer.reasonExpired'), aria: t('footer.a11yReasonExpired') }
+      : { label: t('footer.reasonNone'), aria: t('footer.a11yReasonNone') }
+  }
+  if (st.kind === 'none' && sessions.selectedId && !sess.value?.synthetic) {
+    return { label: t('footer.reasonNone'), aria: t('footer.a11yReasonEmpty') }
+  }
+  return null
+})
+const ageSuffix = computed(() => {
+  const st = footerState.value
+  return st.kind === 'stale' ? t('footer.lastSeen', { age: humanizeDuration(st.ageMs) }) : ''
+})
+// With no record at all, ask main for what the transcript holds (once a minute at most).
+watch(
+  () => [sess.value?.sessionId, footerState.value.kind] as const,
+  () => {
+    if (footerState.value.kind === 'none') void usage.ensureTranscriptFallback(sess.value)
+  },
+  { immediate: true }
+)
+// A live session that answered but whose telemetry did not follow: offer the restart.
+const silent = computed(
+  () =>
+    !!sess.value &&
+    sessions.isSessionLive(sess.value.sessionId) &&
+    usage.isSessionSilent(sess.value, now.value.getTime())
+)
+function restartSilentSession(): void {
+  if (sess.value) sessions.reloadSession(sess.value.sessionId)
+}
 // Which `/compact`-proximity condition fired (or null) — drives the warning
 // chip's visible label, color, and tooltip. `'pct'` → red "near /compact",
 // `'over200k'` → accent ">200k tokens".
-const warnReason = computed(() => nearCompactReason(tele.value))
+const warnReason = computed(() => (dimmed.value ? null : nearCompactReason(tele.value)))
 const warnLabel = computed(() =>
   warnReason.value === 'pct' ? t('footer.nearCompact') : t('footer.over200k')
 )
@@ -193,10 +250,16 @@ function chipClass(key: FooterChipKey): string {
   // Every chip sits at the model tone (`text-text-2`); context only diverges to
   // a signal color (accent/red) near the `/compact` ceiling — same rule as the
   // 5h/7d fleet chips on the right (`footerPctClass`).
+  // Last-known values read quiet and carry no alarm color: a stale percentage must not raise one.
+  if (dimmed.value) return 'text-text-4'
   if (key === 'context') return footerPctClass(tele.value?.contextPercent ?? 0)
   return 'text-text-2'
 }
 function chipAria(chip: FooterChip): string {
+  const base = chipAriaBase(chip)
+  return ageSuffix.value ? `${base} · ${ageSuffix.value}` : base
+}
+function chipAriaBase(chip: FooterChip): string {
   switch (chip.key) {
     case 'model':
       return t('footer.a11yModel', { model: chip.value })
@@ -222,9 +285,6 @@ const fleet = computed(() => usage.fleetSummary)
 const rl = computed(() => usage.rateLimits)
 const fiveHourPct = computed(() => rl.value?.fiveHour?.usedPercent ?? null)
 const sevenDayPct = computed(() => rl.value?.sevenDay?.usedPercent ?? null)
-// Tick once a minute so the fleet-chip countdowns stay live-ish — same
-// granularity UsagePanel's "resets in X" lines use, no second timer.
-const now = useNow({ interval: 60_000 })
 const fiveHourCountdown = computed(() =>
   footerWindowCountdown(rl.value?.fiveHour?.resetsAtMs ?? null, now.value.getTime())
 )
@@ -419,6 +479,28 @@ function openFullDashboard(): void {
     </template>
     <span v-else-if="sessions.selectedId" class="truncate text-text-4">{{ fallbackLabel }}</span>
     <span v-else class="text-text-4">{{ t('footer.noSession') }}</span>
+    <!-- BUG-196: why the chips are dimmed or absent (design.md §6 — Last-known state) -->
+    <span
+      v-if="reason"
+      class="whitespace-nowrap text-text-4"
+      data-testid="footer-telemetry-reason"
+      :aria-label="reason.aria"
+      :title="reason.aria"
+      >{{ reason.label }}</span
+    >
+    <!-- BUG-196: a live session that answered but sent no telemetry — restart it -->
+    <button
+      v-if="silent"
+      type="button"
+      data-testid="footer-silent-hint"
+      class="flex items-center gap-1 whitespace-nowrap rounded-sm px-1.5 text-warning transition-colors hover:bg-surface-2"
+      :aria-label="t('footer.a11ySilentHint')"
+      :title="t('footer.a11ySilentHint')"
+      @click="restartSilentSession"
+    >
+      <RotateCw :size="12" :stroke-width="1.6" class="shrink-0" />
+      <span>{{ t('footer.silentHint') }}</span>
+    </button>
 
     <!-- Pasted-images pill (hide-when-zero) — left of the ml-auto cluster -->
     <div v-if="imageCount > 0" ref="imagesRef" class="relative">

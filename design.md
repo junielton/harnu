@@ -7542,6 +7542,40 @@ seconds after spawn, via `telemetryForSession`'s `cwd` fallback, without
 waiting for the 1st-turn synth→real migration. At the migration, the exact-id
 path takes over, without flicker.
 
+**Last-known state (BUG-196) — the left cluster never goes silently blank.** When the
+selected session has no _fresh_ statusLine telemetry (the record is older than the 24 h TTL,
+or none arrived in this run) the chips do not vanish; they render the last known values in a
+**dimmed** state, followed by a one-word reason:
+
+- **Source order:** fresh live record → newest retained record for the session (kept past the
+  TTL, never served as live) → values derived from the session transcript (model and
+  context % only; no branch/effort/cost, since the transcript does not carry them). A
+  transcript-derived chip set is dimmed exactly like a stale record.
+- **Dimmed chip:** same icon and layout as a live chip, tone `text-text-4` (the existing
+  quiet tone — no new token). The context chip drops its 80/95 signal colors when dimmed:
+  a stale percentage must not raise an alarm. The near-/compact chip is **not** shown for
+  dimmed values.
+- **Age tooltip:** every dimmed chip's `title`/`aria-label` appends the age, e.g.
+  `Opus 4.8 · last seen 3 days ago` (`footer.lastSeen`, via `humanizeDuration`).
+- **Reason label:** one trailing `text-text-4` label after the chips, `footer.reasonExpired`
+  ("telemetry expired") for a retained record older than the TTL, `footer.reasonNone`
+  ("no live telemetry") when only the transcript could supply values. Its tooltip explains
+  in a sentence. It is a label, not a button.
+- With **nothing** to show (no record, an empty transcript) the session title stays, followed
+  by the same `footer.reasonNone` label, so the footer is never an unexplained title.
+
+**Silent-session hint (BUG-196).** A live session whose transcript gained an assistant turn
+but whose statusLine telemetry has not updated within **2 minutes** of it is flagged. The
+hint is a button in the left cluster, after the chips and the reason label:
+`RotateCw` icon 12px + `footer.silentHint` ("Not reporting — restart session"), tone
+`text-warning`, `hover:bg-surface-2`, `rounded-sm px-1.5`, no animation (a persistent
+fault, not a transient event). Click restarts the session through the existing "Restart
+session" path (`reloadSession`, `claude --resume`). The flag clears on the next telemetry
+payload for the session. It is not shown for synthetic sessions, parked/non-live sessions,
+or when the statusLine switch is off or a foreign statusLine is preserved (no telemetry
+is expected then). When the hint is shown the near-/compact chip and the dimmed reason
+label stay as they are; the hint is additive.
+
 **Images pill** (left of the `ml-auto` cluster): `🖼 N` for the active session
 (`~/.claude/image-cache/<uuid>/`), **hide-when-zero** — disappears when N === 0 / the session is
 synthetic / nothing is selected. Click → gallery popover. Full detail in

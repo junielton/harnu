@@ -118,3 +118,27 @@ describe('subagent:updated payload (AC-20)', () => {
     })
   })
 })
+
+describe('session:updated assistantTurn flag (BUG-196 AC-2)', () => {
+  it('is set when the delta holds an assistant turn of the session', () => {
+    const p = buildSessionUpdate('s', 'i', [
+      { type: 'assistant', message: { role: 'assistant', content: 'hi' } }
+    ])
+    expect(p.assistantTurn).toBe(true)
+  })
+
+  it('is omitted for user-only, metadata-only and sidechain-only deltas', () => {
+    expect(
+      buildSessionUpdate('s', 'i', [{ type: 'user', message: { role: 'user', content: 'q' } }])
+        .assistantTurn
+    ).toBeUndefined()
+    expect(
+      buildSessionUpdate('s', 'i', [{ type: 'ai-title', aiTitle: 't' }]).assistantTurn
+    ).toBeUndefined()
+    expect(
+      buildSessionUpdate('s', 'i', [
+        { type: 'assistant', isSidechain: true, message: { role: 'assistant', content: 'x' } }
+      ]).assistantTurn
+    ).toBeUndefined()
+  })
+})

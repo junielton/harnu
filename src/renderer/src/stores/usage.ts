@@ -8,6 +8,12 @@ import type {
   FleetTelemetry
 } from '../../../preload'
 import { mergeRateWindows, type MergedRateLimits } from '../components/usage-format'
+import {
+  isSilentSession,
+  selectFooterTelemetry,
+  type FooterTelemetryState,
+  type TranscriptFallback
+} from '../lib/footer-telemetry'
 
 /**
  * Usage + telemetry store. Holds two sources:
@@ -25,10 +31,33 @@ export const useUsageStore = defineStore('usage', () => {
   const snapshot = ref<UsageSnapshot | null>(null)
   const telemetryBySession = ref<Map<string, SessionTelemetry>>(new Map())
   const fleet = ref<FleetTelemetry | null>(null)
+  /** Records main kept past the 24 h TTL (BUG-196): last-known values, never served as live. */
+  const lastKnownBySession = ref<Map<string, SessionTelemetry>>(new Map())
+  /** Renderer clock of each session's latest assistant turn this run (BUG-196 silent hint). */
+  const assistantTurnAt = ref<Map<string, number>>(new Map())
+  /** Transcript-derived readings by session; `null` = looked, nothing to read. */
+  const transcriptBySession = ref<Map<string, TranscriptFallback | null>>(new Map())
+  const transcriptFetchedAt = new Map<string, number>()
+  /**
+   * Whether statusLine telemetry is expected at all: the switch is on and no foreign statusLine is
+   * preserved. Off, nothing is delivered by design, so a silent session is not a fault.
+   */
+  const telemetryExpected = ref(true)
 
   let started = false
   let unsubscribeUsage: (() => void) | null = null
   let unsubscribeTelemetry: (() => void) | null = null
+  let unsubscribeSessionUpdates: (() => void) | null = null
+
+  function adoptTelemetry(p: {
+    perSession: SessionTelemetry[]
+    lastKnown?: SessionTelemetry[]
+    fleet: FleetTelemetry
+  }): void {
+    telemetryBySession.value = new Map(p.perSession.map((t) => [t.sessionId, t]))
+    lastKnownBySession.value = new Map((p.lastKnown ?? []).map((t) => [t.sessionId, t]))
+    fleet.value = p.fleet
+  }
 
   /** Adopt the cached snapshot + telemetry and subscribe to live pushes. Idempotent. */
   async function init(): Promise<void> {
@@ -38,13 +67,26 @@ export const useUsageStore = defineStore('usage', () => {
     unsubscribeUsage = window.api.onUsageUpdated((s) => {
       snapshot.value = s
     })
-    const payload = await window.api.telemetryGet()
-    telemetryBySession.value = new Map(payload.perSession.map((t) => [t.sessionId, t]))
-    fleet.value = payload.fleet
-    unsubscribeTelemetry = window.api.onTelemetryUpdated((p) => {
-      telemetryBySession.value = new Map(p.perSession.map((t) => [t.sessionId, t]))
-      fleet.value = p.fleet
+    adoptTelemetry(await window.api.telemetryGet())
+    unsubscribeTelemetry = window.api.onTelemetryUpdated(adoptTelemetry)
+    // A session answered: the silent-session hint compares this against its telemetry (BUG-196).
+    unsubscribeSessionUpdates = window.api.onSessionUpdated((e) => {
+      if (!e.assistantTurn) return
+      const next = new Map(assistantTurnAt.value)
+      next.set(e.sessionId, Date.now())
+      assistantTurnAt.value = next
     })
+    void refreshTelemetryExpected()
+  }
+
+  /** Re-read whether the statusLine switch is on and un-preempted by a foreign statusLine. */
+  async function refreshTelemetryExpected(): Promise<void> {
+    try {
+      const st = await window.api.statuslineStatus()
+      telemetryExpected.value = st.enabled && !st.foreignPreserved
+    } catch {
+      /* keep the previous answer */
+    }
   }
 
   /** Force a fresh `/usage` spawn and adopt the result. */
@@ -80,6 +122,68 @@ export const useUsageStore = defineStore('usage', () => {
       }
     }
     return best
+  }
+
+  /**
+   * What the footer's left cluster shows for a session (BUG-196 AC-1): the live record, else the
+   * last-known one (dimmed, aged), else the transcript's model and context %. `now` is passed in so
+   * the 24 h TTL is judged against a ticking clock, not the moment the record arrived.
+   */
+  function footerStateFor(
+    session: { sessionId: string; projectPath: string; synthetic?: boolean } | null,
+    now: number
+  ): FooterTelemetryState {
+    if (!session) return { kind: 'none' }
+    return selectFooterTelemetry({
+      live: telemetryForSession(session),
+      lastKnown: lastKnownBySession.value.get(session.sessionId) ?? null,
+      transcript: transcriptBySession.value.get(session.sessionId) ?? null,
+      now,
+      sessionId: session.sessionId,
+      cwd: session.projectPath
+    })
+  }
+
+  /**
+   * Read the session's model and context % from its transcript, once per minute at most, for the
+   * footer to fall back on. A synthetic session has no transcript yet.
+   */
+  async function ensureTranscriptFallback(
+    session: { sessionId: string; fullPath: string; synthetic?: boolean } | null
+  ): Promise<void> {
+    if (!session || session.synthetic || !session.fullPath) return
+    const id = session.sessionId
+    const at = transcriptFetchedAt.get(id)
+    if (at !== undefined && Date.now() - at < 60_000) return
+    transcriptFetchedAt.set(id, Date.now())
+    let reading: TranscriptFallback | null = null
+    try {
+      reading = await window.api.telemetryTranscriptFallback(id, session.fullPath)
+    } catch {
+      reading = null
+    }
+    const next = new Map(transcriptBySession.value)
+    next.set(id, reading)
+    transcriptBySession.value = next
+  }
+
+  /**
+   * Whether a LIVE session answered but its statusLine telemetry did not follow (BUG-196 AC-2).
+   * The caller gates on the session being live and not synthetic; this adds the telemetry switch.
+   */
+  function isSessionSilent(
+    session: { sessionId: string; projectPath: string; synthetic?: boolean } | null,
+    now: number
+  ): boolean {
+    if (!session || session.synthetic || !telemetryExpected.value) return false
+    const live = telemetryBySession.value.get(session.sessionId)
+    const old = lastKnownBySession.value.get(session.sessionId)
+    const lastPayloadAtMs = Math.max(live?.updatedAtMs ?? -Infinity, old?.updatedAtMs ?? -Infinity)
+    return isSilentSession({
+      lastAssistantAtMs: assistantTurnAt.value.get(session.sessionId) ?? null,
+      lastPayloadAtMs: Number.isFinite(lastPayloadAtMs) ? lastPayloadAtMs : null,
+      now
+    })
   }
 
   /** Context-window used % for a session, or null when unknown (never a fake 0). */
@@ -152,8 +256,10 @@ export const useUsageStore = defineStore('usage', () => {
   function dispose(): void {
     unsubscribeUsage?.()
     unsubscribeTelemetry?.()
+    unsubscribeSessionUpdates?.()
     unsubscribeUsage = null
     unsubscribeTelemetry = null
+    unsubscribeSessionUpdates = null
     started = false
   }
 
@@ -170,6 +276,12 @@ export const useUsageStore = defineStore('usage', () => {
     fleetSummary,
     telemetryFor,
     telemetryForSession,
+    lastKnownBySession,
+    telemetryExpected,
+    footerStateFor,
+    ensureTranscriptFallback,
+    isSessionSilent,
+    refreshTelemetryExpected,
     contextPercentFor,
     init,
     refresh,

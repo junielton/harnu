@@ -10,6 +10,14 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-19
+
+### Fixed
+
+- The footer no longer goes silently blank when a session has no live statusLine telemetry. It now shows the session's last known model, context and cost, dimmed, with how long ago they were seen on hover and a short reason beside them ("telemetry expired" or "no live telemetry"). Sessions Harnu has never heard from still show their model and context, read from the transcript. Stale values are never presented as live.
+- A session that keeps answering but stops sending statusLine telemetry is now flagged in the footer with "Not reporting — restart session"; clicking it restarts the session (the conversation is kept) and the hint clears on the next telemetry.
+- When Harnu finds the `statusLine` setting removed from `~/.claude/settings.json` it re-installs it as before, and now also records what it found (time, the file's last-change time, the running `claude` processes) in `heal-log.ndjson` next to the telemetry cache, and posts one Activity notice naming the sessions that started before the repair and need a restart.
+
 ## 2026-10-14
 
 ### Added

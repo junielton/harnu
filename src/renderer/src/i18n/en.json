@@ -1581,7 +1581,21 @@
     "supervisionLoad": "{count} active",
     "supervisionLoadHint": "{count} sessions working or awaiting you. Comfortable supervision tops out around 4–5.",
     "openFullDashboard": "Open full dashboard",
-    "a11yHeapGauge": "Heap {pct}% — click to open System Monitor"
+    "a11yHeapGauge": "Heap {pct}% — click to open System Monitor",
+    "lastSeen": "last seen {age} ago",
+    "reasonExpired": "telemetry expired",
+    "reasonNone": "no live telemetry",
+    "a11yReasonExpired": "No live telemetry for over 24 hours — showing the last known values",
+    "a11yReasonNone": "This session has not reported telemetry — showing what its transcript holds",
+    "a11yReasonEmpty": "No telemetry has arrived for this session yet",
+    "silentHint": "Not reporting — restart session",
+    "a11ySilentHint": "This session answered but sent no statusLine telemetry. Click to restart it; the conversation is kept."
+  },
+  "statuslineHeal": {
+    "title": "Claude Code's statusLine setting was removed — re-installed",
+    "description": "Sessions started before {time} need a restart: {sessions}.",
+    "descriptionNone": "No running session was affected.",
+    "more": "+{n} more"
   },
   "images": {
     "title": "Pasted images",

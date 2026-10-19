@@ -1872,6 +1872,19 @@ const api = {
   telemetryGet: (): Promise<TelemetryPayload> => ipcRenderer.invoke('telemetry:get'),
   onTelemetryUpdated: (cb: (payload: TelemetryPayload) => void): (() => void) =>
     subscribe('telemetry:updated', cb),
+  /**
+   * Model + context % read from the tail of a session's own transcript (BUG-196): what the footer
+   * shows, dimmed, when no telemetry record exists. `null` when it cannot be read or has no turn.
+   */
+  telemetryTranscriptFallback: (
+    sessionId: string,
+    fullPath: string
+  ): Promise<{ modelId: string; contextPercent: number | null; atMs: number } | null> =>
+    ipcRenderer.invoke('telemetry:transcriptFallback', sessionId, fullPath),
+  /** The self-heal re-installed a removed statusLine; these sessions started before it (BUG-196). */
+  onStatuslineHealed: (
+    cb: (payload: { atMs: number; sessionKeys: string[] }) => void
+  ): (() => void) => subscribe('statusline:healed', cb),
   statuslineStatus: (): Promise<{ enabled: boolean; foreignPreserved: boolean }> =>
     ipcRenderer.invoke('statusline:status'),
   statuslineSetEnabled: (enabled: boolean): Promise<{ enabled: boolean }> =>

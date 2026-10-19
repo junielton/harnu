@@ -1581,7 +1581,21 @@
     "supervisionLoad": "{count} ativas",
     "supervisionLoadHint": "{count} sessões trabalhando ou te esperando. A supervisão confortável fica em torno de 4–5.",
     "openFullDashboard": "Abrir dashboard completo",
-    "a11yHeapGauge": "Heap {pct}% — clique para abrir o System Monitor"
+    "a11yHeapGauge": "Heap {pct}% — clique para abrir o System Monitor",
+    "lastSeen": "visto há {age}",
+    "reasonExpired": "telemetria expirada",
+    "reasonNone": "sem telemetria ao vivo",
+    "a11yReasonExpired": "Sem telemetria ao vivo há mais de 24 horas — mostrando os últimos valores conhecidos",
+    "a11yReasonNone": "Esta sessão não enviou telemetria — mostrando o que o transcript guarda",
+    "a11yReasonEmpty": "Ainda não chegou telemetria desta sessão",
+    "silentHint": "Sem reportar — reinicie a sessão",
+    "a11ySilentHint": "Esta sessão respondeu, mas não enviou telemetria do statusLine. Clique para reiniciá-la; a conversa é mantida."
+  },
+  "statuslineHeal": {
+    "title": "A configuração statusLine do Claude Code foi removida — reinstalada",
+    "description": "Sessões iniciadas antes de {time} precisam ser reiniciadas: {sessions}.",
+    "descriptionNone": "Nenhuma sessão em execução foi afetada.",
+    "more": "+{n} mais"
   },
   "images": {
     "title": "Imagens coladas",
