@@ -59,14 +59,17 @@ import {
   blankIntent,
   effectiveTool,
   escapeOutcome,
+  isShapeTool,
   nodeIntent,
   pressSpace,
   releaseSpace,
   selectTool,
+  shapeForTool,
   toggleLock,
   toolForKey,
   toolbarNeedsOwnRow,
   type CanvasTool,
+  type ShapeTool,
   type ToolState
 } from './canvas/canvas-tools'
 import type { CanvasDocument } from '../../../main/canvas-core'
@@ -466,7 +469,7 @@ function onBlankMouseUp(): void {
 type Gesture =
   | {
       kind: 'create'
-      tool: 'rectangle' | 'text'
+      tool: ShapeTool | 'text'
       start: { x: number; y: number }
       /** The node the press landed on, or `null` for empty board. */
       node: { id: string; shape: string } | null
@@ -651,6 +654,8 @@ function startToolGesture(
       return
     }
     case 'rectangle':
+    case 'diamond':
+    case 'ellipse':
       beginGesture({ kind: 'create', tool, start: { x, y }, node })
       drawStart.value = { x, y }
       drawNow.value = { x, y }
@@ -812,7 +817,7 @@ function onGestureMove(ev: MouseEvent): void {
     moveErase(g, gs, ev)
     return
   }
-  if (gs.tool === 'rectangle') {
+  if (isShapeTool(gs.tool)) {
     const p = g.clientToLocal(ev.clientX, ev.clientY)
     drawNow.value = { x: p.x, y: p.y }
   }
@@ -852,10 +857,23 @@ function onGestureUp(ev: MouseEvent): void {
     : blankIntent(gs.tool, dragged ? 'drag' : 'click')
   switch (intent) {
     case 'place-shape':
-      createNode(operatorNode(placedRect(a.x, a.y, 'box'), takenIds()), gs.tool)
+      if (gs.tool === 'text') return
+      createNode(
+        operatorNode(
+          placedRect(a.x, a.y, shapeForTool(gs.tool)),
+          takenIds(),
+          '',
+          shapeForTool(gs.tool)
+        ),
+        gs.tool
+      )
       return
     case 'draw-shape':
-      createNode(operatorNode(rectFromDrag(a.x, a.y, p.x, p.y), takenIds()), gs.tool)
+      if (gs.tool === 'text') return
+      createNode(
+        operatorNode(rectFromDrag(a.x, a.y, p.x, p.y), takenIds(), '', shapeForTool(gs.tool)),
+        gs.tool
+      )
       return
     case 'place-text':
       createNode(operatorNode(placedRect(a.x, a.y, 'text'), takenIds(), '', 'text'), gs.tool)

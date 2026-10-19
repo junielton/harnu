@@ -4,7 +4,10 @@ import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick } from 'vue'
 import DiagramPane from '../src/renderer/src/components/DiagramPane.vue'
-import { DEFAULT_NODE_SIZE } from '../src/renderer/src/components/canvas/canvas-cells'
+import {
+  DEFAULT_ELLIPSE_SIZE,
+  DEFAULT_NODE_SIZE
+} from '../src/renderer/src/components/canvas/canvas-cells'
 import { validateCanvasDocument, type CanvasDocument } from '../src/main/canvas-core'
 import { i18n } from '@renderer/i18n'
 import { installJsdomSvgShim } from './helpers/jsdom-svg'
@@ -331,6 +334,91 @@ describe('DiagramPane tools — Rectangle', () => {
     })
     expect(box.x! + box.width! / 2).toBe(300)
     expect(box.y! + box.height! / 2).toBe(300)
+  })
+})
+
+describe('DiagramPane tools — Diamond and Ellipse (T536 U2)', () => {
+  it('d, then a blank drag: one operator diamond, and the tool is back on Select', async () => {
+    const w = mountPane()
+    await settle()
+    focusPane(w)
+    key('d')
+    await settle()
+    expect(pressed(w)).toEqual(['diamond'])
+
+    dragOnBlankCanvas(w, [200, 200], [400, 320])
+    await settle()
+    await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await settle()
+    expect(pressed(w)).toEqual(['select'])
+
+    const doc = await saveAndRead(w)
+    const shapes = created(doc)
+    expect(shapes).toHaveLength(1)
+    expect(shapes[0]).toMatchObject({
+      shape: 'diamond',
+      origin: 'operator',
+      width: 200,
+      height: 120
+    })
+    expect(validateCanvasDocument(doc).ok).toBe(true)
+  })
+
+  it('o, then a short click: one default-size ellipse centred on the click', async () => {
+    const w = mountPane()
+    await settle()
+    focusPane(w)
+    key('o')
+    await settle()
+    expect(pressed(w)).toEqual(['ellipse'])
+    clickBlank(w, [300, 300])
+    await settle()
+    await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await settle()
+
+    const shapes = created(await saveAndRead(w))
+    expect(shapes).toHaveLength(1)
+    const [ell] = shapes
+    expect(ell).toMatchObject({
+      shape: 'ellipse',
+      origin: 'operator',
+      width: DEFAULT_ELLIPSE_SIZE.width,
+      height: DEFAULT_ELLIPSE_SIZE.height
+    })
+    expect(ell.x! + ell.width! / 2).toBe(300)
+    expect(ell.y! + ell.height! / 2).toBe(300)
+  })
+
+  it('the digit keys 3 and 4 arm Diamond and Ellipse', async () => {
+    const w = mountPane()
+    await settle()
+    focusPane(w)
+    key('3')
+    await settle()
+    expect(pressed(w)).toEqual(['diamond'])
+    key('4')
+    await settle()
+    expect(pressed(w)).toEqual(['ellipse'])
+  })
+
+  it('q then d keeps Diamond armed across two clicks', async () => {
+    const w = mountPane()
+    await settle()
+    focusPane(w)
+    key('q')
+    key('d')
+    await settle()
+    clickBlank(w, [300, 300])
+    await settle()
+    await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await settle()
+    clickBlank(w, [600, 400])
+    await settle()
+    await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await settle()
+
+    expect(pressed(w)).toEqual(['diamond'])
+    expect(created(await saveAndRead(w)).map((n) => n.shape)).toEqual(['diamond', 'diamond'])
   })
 })
 

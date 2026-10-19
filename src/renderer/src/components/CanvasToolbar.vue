@@ -6,6 +6,8 @@
 import { computed, useId, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
+  Circle,
+  Diamond,
   Eraser,
   Hand,
   Lock,
@@ -35,6 +37,8 @@ const ICONS: Record<CanvasTool, Component> = {
   hand: Hand,
   select: MousePointer2,
   rectangle: Square,
+  diamond: Diamond,
+  ellipse: Circle,
   arrow: MoveRight,
   text: Type,
   eraser: Eraser

@@ -5,7 +5,10 @@
 // gesture mean under the active tool?". Everything here is a plain function over
 // plain objects so the gesture contract (spec §5) can be tested as a table.
 
-export type CanvasTool = 'hand' | 'select' | 'rectangle' | 'arrow' | 'text' | 'eraser'
+import type { OperatorShape } from './canvas-edit'
+
+export type CanvasTool =
+  'hand' | 'select' | 'rectangle' | 'diamond' | 'ellipse' | 'arrow' | 'text' | 'eraser'
 
 export interface CanvasToolSpec {
   id: CanvasTool
@@ -15,18 +18,32 @@ export interface CanvasToolSpec {
   digit: string | null
   cursor: 'grab' | 'default' | 'crosshair' | 'text' | 'cell'
   /** What a successful gesture with this tool creates, if anything. */
-  creates: 'box' | 'text' | null
+  creates: OperatorShape | null
 }
 
-/** The v1 tools in toolbar order. Digits 3 and 4 are reserved for U2 (diamond, ellipse). */
+/** The tools in toolbar order. */
 export const CANVAS_TOOLS: readonly CanvasToolSpec[] = [
   { id: 'hand', key: 'h', digit: null, cursor: 'grab', creates: null },
   { id: 'select', key: 'v', digit: '1', cursor: 'default', creates: null },
   { id: 'rectangle', key: 'r', digit: '2', cursor: 'crosshair', creates: 'box' },
+  { id: 'diamond', key: 'd', digit: '3', cursor: 'crosshair', creates: 'diamond' },
+  { id: 'ellipse', key: 'o', digit: '4', cursor: 'crosshair', creates: 'ellipse' },
   { id: 'arrow', key: 'a', digit: '5', cursor: 'crosshair', creates: null },
   { id: 'text', key: 't', digit: '6', cursor: 'text', creates: 'text' },
   { id: 'eraser', key: 'e', digit: '0', cursor: 'cell', creates: null }
 ]
+
+/** The tools that draw a shape: click places the default size, a drag sizes it. */
+export type ShapeTool = 'rectangle' | 'diamond' | 'ellipse'
+
+export function isShapeTool(tool: CanvasTool): tool is ShapeTool {
+  return tool === 'rectangle' || tool === 'diamond' || tool === 'ellipse'
+}
+
+/** The document shape a shape tool creates (`rectangle` makes a `box`). */
+export function shapeForTool(tool: ShapeTool): OperatorShape {
+  return CANVAS_TOOLS.find((t) => t.id === tool)?.creates ?? 'box'
+}
 
 /** Toggles "keep the tool active after a creation". */
 export const LOCK_KEY = 'q'
@@ -119,6 +136,8 @@ export function blankIntent(tool: CanvasTool, g: BlankGesture): GestureIntent {
     case 'hand':
       return g === 'drag' ? 'pan' : 'none'
     case 'rectangle':
+    case 'diamond':
+    case 'ellipse':
       return g === 'click' ? 'place-shape' : g === 'drag' ? 'draw-shape' : 'none'
     case 'arrow':
       return 'none'
@@ -131,7 +150,7 @@ export function blankIntent(tool: CanvasTool, g: BlankGesture): GestureIntent {
 
 /** What a gesture on a node means under `tool` (spec §5). `nodeShape` is the node's shape. */
 export function nodeIntent(tool: CanvasTool, g: NodeGesture, nodeShape: string): GestureIntent {
-  // Double-click renames a node in Select, Hand and Arrow. In Rectangle and Text the press
+  // Double-click renames a node in Select, Hand and Arrow. In the shape tools and Text the press
   // itself creates a shape, so a double-click is not a rename there; Eraser deletes on the
   // first press (design.md §6).
   if (g === 'dblclick')
@@ -142,6 +161,8 @@ export function nodeIntent(tool: CanvasTool, g: NodeGesture, nodeShape: string):
     case 'hand':
       return g === 'drag' ? 'pan' : 'none'
     case 'rectangle':
+    case 'diamond':
+    case 'ellipse':
       return g === 'press' ? 'place-shape' : 'draw-shape'
     case 'arrow':
       return 'start-arrow'

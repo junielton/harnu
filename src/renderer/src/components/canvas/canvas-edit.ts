@@ -371,7 +371,10 @@ function edgeFromCell(cell: Record<string, unknown>, base?: CanvasEdge): CanvasE
     ...readOrigin(data),
     // Same reasoning as zIndex above: an omitted router renders as `manhattan`
     // (`toX6Edge`), so a new edge needs no field written for it.
-    ...(base?.router === undefined ? {} : { router: base.router })
+    ...(base?.router === undefined ? {} : { router: base.router }),
+    // Edge props are the document's too: the pane never edits them, so a Save after
+    // an unrelated edit writes back exactly what the file (or an agent) put there.
+    ...(base?.props === undefined ? {} : { props: base.props })
   }
 }
 
