@@ -882,7 +882,12 @@ function finishArrow(g: Graph, source: string, ev: MouseEvent): void {
   const p = g.clientToLocal(ev.clientX, ev.clientY)
   const hits = g.getNodesFromPoint(p.x, p.y).map((n) => ({ id: n.id, zIndex: n.getZIndex() ?? 0 }))
   const sourceCell = g.getCellById(source)
-  const outgoing = sourceCell?.isNode() ? (g.getOutgoingEdges(sourceCell) ?? []) : []
+  // The source can vanish mid-drag: a reload keeps an Arrow in flight (an
+  // agent's write, a Save's echo), and the new document may no longer hold
+  // it. An edge from a missing node would dangle. The preview is already gone
+  // (`endGesture` ran before this).
+  if (!sourceCell || !sourceCell.isNode()) return
+  const outgoing = g.getOutgoingEdges(sourceCell) ?? []
   const ends = arrowEdgeEnds(
     source,
     topmostNodeId(hits),

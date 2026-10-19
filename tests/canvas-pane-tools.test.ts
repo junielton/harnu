@@ -907,6 +907,37 @@ describe('DiagramPane tools — Arrow', () => {
     expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
   })
 
+  it('a reload that removes the source mid-drag: the release on a live node creates no edge', async () => {
+    const changed = captureCanvasChanged()
+    const w = mountPane()
+    await settle()
+    await armArrow(w)
+    down(nodeEl(w, 'n-a'), IN_A)
+    move(IN_C)
+    await settle()
+    expect(preview(w)).toBe(true)
+    // An agent's write lands on a clean board: n-a (and e-1, which needs it) is gone.
+    canvasRead.mockResolvedValueOnce({
+      ok: true as const,
+      path: '/wt/board.harnucanvas.json',
+      doc: { ...DOC, nodes: DOC.nodes.filter((n) => n.id !== 'n-a'), edges: [] }
+    })
+    changed()!({ path: '/wt/board.harnucanvas.json' })
+    await settle()
+    // The reload re-reads, resolves images and re-renders: wait until it lands.
+    for (let i = 0; i < 10 && !w.element.querySelector('[data-cell-id="n-c"]'); i++) await settle()
+    expect(w.element.querySelector('[data-cell-id="n-c"]')).not.toBeNull()
+    expect(w.element.querySelector('[data-cell-id="n-a"]')).toBeNull()
+    nodeEl(w, 'n-c').dispatchEvent(
+      new MouseEvent('mouseup', { bubbles: true, button: 0, clientX: IN_C[0], clientY: IN_C[1] })
+    )
+    await settle()
+    expect(preview(w)).toBe(false)
+    // No edge at all: one from the missing n-a would be a dangling edge.
+    expect(w.element.querySelectorAll('g.x6-edge')).toHaveLength(0)
+    expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
+  })
+
   it('a press on blank board in Arrow shows nothing and creates nothing', async () => {
     const w = mountPane()
     await settle()
