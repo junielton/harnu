@@ -745,7 +745,32 @@ export interface RoadmapDrainEvent {
   /** BUG-62: which cards failed and why — a rolled-back worktree is never silent. */
   failedCards: Array<{ slug: string; reason: string }>
   wipBlocked: number
+  /**
+   * BUG-197: present on a terminal tick that left stamped cards unattempted at the
+   * ceiling — the ceiling, the live count and the live cards holding the slots.
+   */
+  wipPause?: {
+    limit: number
+    live: number
+    holders: Array<{ slug: string; id: string }>
+  }
   active: boolean
+}
+
+/**
+ * BUG-197 (ADR-0021): main's verdict on a board's In Progress WIP ceiling — computed
+ * by the same pure function the manifest drain acts on, so the board never keeps a
+ * second copy of the live/stale rule. Mirror of `roadmap-core.WipVerdict`.
+ */
+export interface RoadmapWipVerdict {
+  limit: number
+  /** In Progress cards whose bound session is live — what the ceiling is measured on. */
+  liveCount: number
+  staleCount: number
+  holders: Array<{ slug: string; id: string; live: boolean; reason: string }>
+  staleSlugs: string[]
+  atCeiling: boolean
+  over: boolean
 }
 interface SubagentRemovedEvent {
   slug: string
@@ -1542,6 +1567,10 @@ const api = {
     status: CardStatus
   }): Promise<{ ok: true } | { ok: false; code: RoadmapWriteCode }> =>
     ipcRenderer.invoke('roadmap:setStatus', args),
+  // BUG-197: main's live/stale verdict for a board's In Progress cards + the repo's
+  // WIP limit (ADR-0021). The renderer draws it; it never re-derives it.
+  roadmapWipState: (folder: string): Promise<RoadmapWipVerdict> =>
+    ipcRenderer.invoke('roadmap:wipState', { folder }),
   // Bind a dispatched session to a card + flip it to in-progress (§3.3 step 5).
   // T97: `dispatchedWith` ("model·effort") is appended as an audit body line
   // when present — see `roadmap-ipc.ts#roadmap:bindSession`.
@@ -2360,6 +2389,12 @@ const api = {
     enabled: boolean
   ): Promise<UserProjectsPayload> =>
     ipcRenderer.invoke('userProjects:setAutoOrganize', { targetPath, enabled }),
+  // BUG-197: per-repo In Progress WIP ceiling (default 5, clamped 1…10). `get` is the
+  // effective value (own, else the parent repo's); `set` returns the new effective one.
+  userProjectsGetWipLimit: (targetPath: string): Promise<number> =>
+    ipcRenderer.invoke('userProjects:getWipLimit', targetPath),
+  userProjectsSetWipLimit: (targetPath: string, limit: number): Promise<number> =>
+    ipcRenderer.invoke('userProjects:setWipLimit', { targetPath, limit }),
   // T344: per-folder "new sessions start as Orchestrator" default (FolderMenu
   // toggle). EXACT-PATH ONLY — unlike auto-organize, `get` never inherits a
   // parent repo's value for a linked worktree (AC-5).

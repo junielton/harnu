@@ -1,6 +1,15 @@
-import type { BrowserWindow } from 'electron'
+import { promises as fs } from 'node:fs'
+import { ipcMain, type BrowserWindow } from 'electron'
 import type { CommandBridge } from './command-bridge'
-import { WIP_LIMIT, type BootPromptLabels } from './roadmap-core'
+import {
+  computeWipVerdict,
+  resolveWipSessionFacts,
+  type BootPromptLabels,
+  type WipCardInput,
+  type WipLivenessEnv,
+  type WipSessionFacts,
+  type WipVerdict
+} from './roadmap-core'
 import {
   runDrainPass,
   createDrainScheduler,
@@ -14,6 +23,10 @@ import { resolveFolderRouting } from './routing-policy'
 import { release } from './mcp/grant-registry'
 import { createWorktree, rollbackWorktree } from './worktree-ipc'
 import { probeGitMeta } from './git-probe'
+import { getFleetFolders } from './fleet-model'
+import { isHibernated } from './hibernation'
+import { liveSessionKeys, resolveSessionAlias } from './pty'
+import { getUserProjectWipLimit } from './user-projects'
 
 /**
  * T113 — the env-bound shell wiring the pure drain driver (`manifest-drain.ts`)
@@ -39,28 +52,95 @@ function isLabels(v: unknown): v is BootPromptLabels {
   )
 }
 
+/**
+ * BUG-197 (ADR-0021): the transcript-activity map the live-work rule reads —
+ * `sessionId → newest activity (ms)`. `null` when the fleet model cannot be read
+ * (the caller then fails toward counting every card, as before this change).
+ */
+async function transcriptActivity(): Promise<Map<string, number | null> | null> {
+  try {
+    const out = new Map<string, number | null>()
+    for (const folder of await getFleetFolders()) {
+      for (const s of folder.sessions) {
+        const t = Math.max(s.fileMtime || 0, Date.parse(s.modified) || 0)
+        out.set(s.sessionId, t > 0 ? t : null)
+      }
+    }
+    return out
+  } catch {
+    return null
+  }
+}
+
+/** Everything a drain pass or the board needs about one folder's WIP ceiling. */
+export interface FolderWipState {
+  cards: Array<DrainCardView & WipCardInput>
+  verdict: WipVerdict
+}
+
+/**
+ * Read a folder's board, judge each In Progress card against the live-work rule and
+ * measure the live count against the repo's configured limit. The ONE entry point
+ * both the manifest drain (`loadState`) and the board (`roadmap:wipState`) go
+ * through, so the two can never disagree about what counts.
+ */
+export async function loadFolderWip(folder: string, now = Date.now()): Promise<FolderWipState> {
+  const slugs = await listCardSlugs(folder)
+  const cards: Array<DrainCardView & WipCardInput> = []
+  for (const slug of slugs) {
+    const res = await readCard(folder, slug)
+    if (!res.ok) continue
+    const c = res.card
+    let touchedAtMs: number | null = null
+    if (c.status === 'in-progress') {
+      try {
+        touchedAtMs = (await fs.stat(res.file)).mtimeMs
+      } catch {
+        touchedAtMs = null
+      }
+    }
+    cards.push({
+      slug: c.slug,
+      id: c.id,
+      status: c.status,
+      touchedAtMs,
+      ...(c.kind ? { kind: c.kind } : {}),
+      ...(c.approved ? { approved: c.approved } : {}),
+      ...(c.session ? { session: c.session } : {}),
+      ...(c.substrate ? { substrate: c.substrate } : {})
+    })
+  }
+  const limit = await getUserProjectWipLimit(folder)
+  const activity = await transcriptActivity()
+  const live = liveSessionKeys()
+  const env: WipLivenessEnv = {
+    resolveAlias: resolveSessionAlias,
+    isLive: (k) => live.has(k),
+    isParked: isHibernated,
+    transcriptActivityMs: (id) => activity?.get(id)
+  }
+  const factsFor = (session: string): WipSessionFacts | null =>
+    activity ? resolveWipSessionFacts(session, env) : null
+  const verdict = computeWipVerdict(cards, limit, factsFor, now)
+  const stale = new Set(verdict.staleSlugs)
+  for (const c of cards) if (stale.has(c.slug)) c.stale = true
+  return { cards, verdict }
+}
+
 export function registerManifestDrain(
   bridge: CommandBridge,
   getWindow: () => BrowserWindow | null
 ): void {
+  // BUG-197: the board draws the SAME verdict the drain acts on — it asks main
+  // instead of keeping a second copy of the live/stale rule in the renderer.
+  ipcMain.handle('roadmap:wipState', async (_e, args: { folder?: string }): Promise<WipVerdict> => {
+    return (await loadFolderWip(args?.folder ?? '')).verdict
+  })
+
   const deps: DrainPassDeps = {
     loadState: async (folder) => {
-      const slugs = await listCardSlugs(folder)
-      const cards: DrainCardView[] = []
-      for (const slug of slugs) {
-        const res = await readCard(folder, slug)
-        if (!res.ok) continue
-        const c = res.card
-        cards.push({
-          slug: c.slug,
-          status: c.status,
-          ...(c.kind ? { kind: c.kind } : {}),
-          ...(c.approved ? { approved: c.approved } : {}),
-          ...(c.session ? { session: c.session } : {}),
-          ...(c.substrate ? { substrate: c.substrate } : {})
-        })
-      }
-      return { cards, wipLimit: WIP_LIMIT }
+      const { cards, verdict } = await loadFolderWip(folder)
+      return { cards, wipLimit: verdict.limit }
     },
 
     plan: async (folder, slug): Promise<DrainPlanResult> => {

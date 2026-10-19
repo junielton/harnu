@@ -968,6 +968,15 @@ export function liveSessionKeys(): ReadonlySet<string> {
 }
 
 /**
+ * The current session key for a possibly re-keyed one (BUG-197): a roadmap card stays
+ * bound to its `synthetic-…` id forever, so the WIP liveness check follows the alias to
+ * the real key. Identity when the key was never re-keyed.
+ */
+export function resolveSessionAlias(sessionKey: string): string {
+  return sessionIndex.resolveAlias(sessionKey)
+}
+
+/**
  * The parking transaction `registerPtyHandlers` owns (`hibernateSession`), reachable from the Cleanup
  * guided "Close session and remove". Parking keeps the conversation on disk; only the process goes.
  * `false` when handlers are not registered yet or Harnu holds no live process for the key.

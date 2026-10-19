@@ -578,6 +578,189 @@ export function wouldExceedWip(currentCount: number, limit: number = WIP_LIMIT):
   return Math.max(0, currentCount) + 1 > limit
 }
 
+// ---- WIP ceiling counts live work only (BUG-197, ADR-0021) -------------------
+
+/** The per-repo limit's lower bound — a limit of 0 would stop the drain for good. */
+export const WIP_LIMIT_MIN = 1
+/** The per-repo limit's upper bound — past this the supervision brake is gone. */
+export const WIP_LIMIT_MAX = 10
+
+/**
+ * Normalize a stored/requested WIP limit: anything that is not a finite number
+ * falls back to {@link WIP_LIMIT}; a number is rounded and clamped to
+ * `WIP_LIMIT_MIN…WIP_LIMIT_MAX`. Applied on read AND write, so a hand-edited
+ * `user-projects.json` can never yield a limit that disables the brake.
+ */
+export function clampWipLimit(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return WIP_LIMIT
+  return Math.min(WIP_LIMIT_MAX, Math.max(WIP_LIMIT_MIN, Math.round(value)))
+}
+
+/**
+ * A real transcript with no process and no activity for this many days is no
+ * longer supervised work (ADR-0021 D-2). Long enough that a long weekend never
+ * flips live work to stale.
+ */
+export const WIP_STALE_AFTER_DAYS = 7
+
+/**
+ * How long a freshly bound `synthetic-…` id may take to boot before it counts as
+ * "never materialized". Same backstop as the in-flight session registry
+ * (`inflight-session-registry.ts`, ADR-0003).
+ */
+export const WIP_SPAWN_BACKSTOP_MS = 60 * 60 * 1000
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** What main knows about one bound session. Gathered by the shell; this core stays pure. */
+export interface WipSessionFacts {
+  /** A PTY process is attached under this session (or its materialized alias). */
+  hasProcess: boolean
+  /** Hibernated: process killed to reclaim memory, conversation intact. */
+  parked: boolean
+  /** A transcript for the (resolved) session id exists on disk. */
+  hasTranscript: boolean
+  /** Newest transcript activity (ms epoch), or null when unknown. */
+  lastActivityMs: number | null
+}
+
+export type WipLiveReason = 'process' | 'parked' | 'recent' | 'spawning' | 'unknown'
+export type WipStaleReason = 'no-session' | 'unmaterialized' | 'unknown-session' | 'inactive'
+
+export type WipClassification =
+  { live: true; reason: WipLiveReason } | { live: false; reason: WipStaleReason }
+
+/**
+ * Is an In Progress card's bound session live work? (AC-1.) The ONE decision the
+ * manifest drain and the board share:
+ *
+ * 1. no session → stale (`no-session`);
+ * 2. facts unavailable → counts (`unknown`) — fail toward the pre-BUG-197 behavior;
+ * 3. a process, or a parked session → live;
+ * 4. a transcript → live while its activity is inside {@link WIP_STALE_AFTER_DAYS},
+ *    else stale (`inactive`);
+ * 5. no transcript: a `synthetic-…` id is `spawning` until the backstop passes, then
+ *    stale (`unmaterialized`); a real id with no transcript is stale (`unknown-session`).
+ */
+export function classifyWipCard(
+  card: { session?: string; touchedAtMs?: number | null },
+  facts: WipSessionFacts | null,
+  now: number
+): WipClassification {
+  if (!card.session) return { live: false, reason: 'no-session' }
+  if (!facts) return { live: true, reason: 'unknown' }
+  if (facts.hasProcess) return { live: true, reason: 'process' }
+  if (facts.parked) return { live: true, reason: 'parked' }
+  if (facts.hasTranscript) {
+    if (facts.lastActivityMs === null) return { live: true, reason: 'unknown' }
+    return now - facts.lastActivityMs <= WIP_STALE_AFTER_DAYS * DAY_MS
+      ? { live: true, reason: 'recent' }
+      : { live: false, reason: 'inactive' }
+  }
+  if (card.session.startsWith('synthetic-')) {
+    const touched = card.touchedAtMs
+    if (typeof touched !== 'number') return { live: true, reason: 'unknown' }
+    return now - touched < WIP_SPAWN_BACKSTOP_MS
+      ? { live: true, reason: 'spawning' }
+      : { live: false, reason: 'unmaterialized' }
+  }
+  return { live: false, reason: 'unknown-session' }
+}
+
+/** The main-process state {@link resolveWipSessionFacts} reads — injected by the shell. */
+export interface WipLivenessEnv {
+  /** Follow a `synthetic → real` re-key (identity when the key was never re-keyed). */
+  resolveAlias(sessionKey: string): string
+  /** A PTY process is registered under this key. */
+  isLive(sessionKey: string): boolean
+  /** The session is parked (hibernated). */
+  isParked(sessionKey: string): boolean
+  /**
+   * Newest transcript activity for a real session id (ms epoch); `null` when the
+   * transcript exists but its time is unknown; `undefined` when there is none.
+   */
+  transcriptActivityMs(sessionId: string): number | null | undefined
+}
+
+/**
+ * Compose the {@link WipSessionFacts} for a card's bound session. A card keeps its
+ * `synthetic-…` id after the session migrates to a real uuid, so every lookup is
+ * made under both the bound id and its alias.
+ */
+export function resolveWipSessionFacts(session: string, env: WipLivenessEnv): WipSessionFacts {
+  const keys = [...new Set([session, env.resolveAlias(session)])]
+  const activities = keys.map((k) => env.transcriptActivityMs(k)).filter((v) => v !== undefined)
+  return {
+    hasProcess: keys.some((k) => env.isLive(k)),
+    parked: keys.some((k) => env.isParked(k)),
+    hasTranscript: activities.length > 0,
+    lastActivityMs: activities.find((v): v is number => typeof v === 'number') ?? null
+  }
+}
+
+/** The narrowed card view {@link computeWipVerdict} reads. */
+export interface WipCardInput {
+  slug: string
+  id?: string
+  status: string
+  session?: string
+  /** When the card file was last written (ms epoch) — a synthetic id's bind time. */
+  touchedAtMs?: number | null
+}
+
+/** One In Progress card with its verdict. */
+export interface WipHolder {
+  slug: string
+  id: string
+  live: boolean
+  reason: WipLiveReason | WipStaleReason
+}
+
+/** The In Progress WIP verdict for a board: what the chip, the badge and the drain read. */
+export interface WipVerdict {
+  limit: number
+  /** In Progress cards whose session is live — the number the ceiling is measured on. */
+  liveCount: number
+  staleCount: number
+  /** Every In Progress card, in input order, each flagged live or stale. */
+  holders: WipHolder[]
+  staleSlugs: string[]
+  /** `liveCount >= limit`. */
+  atCeiling: boolean
+  /** `liveCount > limit`. */
+  over: boolean
+}
+
+/**
+ * Judge every In Progress card against the live-work rule and measure the live
+ * count against `limit`. `factsFor` returns `null` for "cannot tell" (see
+ * {@link classifyWipCard}). Pure — the shell supplies the facts and `now`.
+ */
+export function computeWipVerdict(
+  cards: readonly WipCardInput[],
+  limit: number,
+  factsFor: (session: string) => WipSessionFacts | null,
+  now: number
+): WipVerdict {
+  const holders: WipHolder[] = []
+  for (const card of cards) {
+    if (card.status !== 'in-progress') continue
+    const verdict = classifyWipCard(card, card.session ? factsFor(card.session) : null, now)
+    holders.push({ slug: card.slug, id: card.id ?? card.slug, ...verdict })
+  }
+  const liveCount = holders.filter((h) => h.live).length
+  const status = wipStatus(liveCount, limit)
+  return {
+    limit,
+    liveCount,
+    staleCount: holders.length - liveCount,
+    holders,
+    staleSlugs: holders.filter((h) => !h.live).map((h) => h.slug),
+    atCeiling: status.atCeiling,
+    over: status.over
+  }
+}
+
 // ---- Manifest drain sequencing (T104 §2.5) -----------------------------------
 
 /** The minimal shape {@link sortManifestQueue}/{@link planManifestDrain} need. */
