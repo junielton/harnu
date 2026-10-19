@@ -4789,7 +4789,10 @@ is the contract for the pane and for `canvas-tools.ts`:
 | **Eraser**                             | nothing                                         | every node and edge the pointer crosses is marked (dimmed); release deletes them all as **one** undo step; `Esc` mid-drag cancels | delete it                                                                    | as drag on blank                                                                                              |
 
 - **Double-click blank** in Select places a text node (Excalidraw idiom).
-- **Double-click a node** renames it in every tool except Eraser.
+- **Double-click a node** renames it in Select, Hand and Arrow. In Rectangle and Text the
+  press itself creates, so a double-click there places and edits a new shape rather than
+  renaming the one underneath; rename an existing shape from Select, Hand or Arrow. In
+  Eraser the first press deletes the node.
 - A newly created shape opens its rename input immediately; an empty commit on a **text**
   node removes it, on a framed shape keeps it unlabelled.
 - The Arrow tool starts from anywhere on a node, not only from the four ports. The hover
