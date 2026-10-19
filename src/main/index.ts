@@ -55,7 +55,8 @@ import {
   setHookSettingsProvider,
   setBundledSkillsArgsProvider,
   setCompanionSpawnProvider,
-  dropOperatorScreenModels
+  dropOperatorScreenModels,
+  livePtyDescriptors
 } from './pty'
 import { registerMonitorHandlers, stopHeartbeat, stopFullSamplerForced } from './monitor/sampler'
 import { registerHarnuFeaturesHandlers, harnuPreamble } from './harnu-features'
@@ -743,9 +744,14 @@ app.whenReady().then(async () => {
   // statusLine command into ~/.claude/settings.json that dumps per-turn JSON to
   // <userData>/statusline/inbox/; we tail it for zero-token per-tab cost/context/
   // rate-limit telemetry. Opt-out, async, best-effort (degrades to the /usage poll).
-  void registerStatusLineHandlers(() => mainWindow).catch((err) =>
-    console.error('[statusline] register failed', err)
-  )
+  void registerStatusLineHandlers(() => mainWindow, {
+    liveProcs: () =>
+      livePtyDescriptors().map((d) => ({
+        sessionKey: d.sessionKey,
+        pid: d.pid,
+        startedAtMs: d.startedAt
+      }))
+  }).catch((err) => console.error('[statusline] register failed', err))
   // Usage-history + BI (issue #19). Persists the per-turn statusLine telemetry
   // (otherwise discarded) to daily-rotated JSONL; serves rollups, a deterministic
   // plan-fit projection, and an on-demand chat over the aggregated data. Capture

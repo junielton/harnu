@@ -1,10 +1,11 @@
 import { app, ipcMain, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
-import { readFile, writeFile, mkdir, chmod, rm, unlink } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, chmod, rm, unlink, stat } from 'node:fs/promises'
 import { copyFileSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { updateClaudeSettings, claudeSettingsPath } from './claude-settings'
 import { parseStatusLineBlob } from './statusline-parse'
+import { readTranscriptFallback } from './statusline-fallback'
 import {
   configureTelemetryStore,
   getTelemetryPayload,
@@ -18,6 +19,13 @@ import {
   buildWriterScript,
   isWriterStale
 } from './statusline-install'
+import {
+  runHealTick,
+  trimHealLog,
+  type HealNotice,
+  type HealNoticeState,
+  type LiveClaudeProc
+} from './statusline-heal-core'
 
 /**
  * statusLine telemetry bridge (spec `2026-06-17-statusline-telemetry-design.md`).
@@ -41,6 +49,11 @@ import {
 export type { TelemetryPayload }
 export { getTelemetryPayload }
 
+export interface StatusLineOptions {
+  /** The live `claude` processes Harnu owns (pid + spawn time), for the heal evidence and nudge. */
+  liveProcs?: () => LiveClaudeProc[]
+}
+
 /**
  * Self-heal cadence. The installed `statusLine` key can vanish while we run —
  * historically another Harnu instance (dev / verify, different userData) quitting
@@ -54,6 +67,12 @@ const SELF_HEAL_MS = 60_000
 let watcher: FSWatcher | null = null
 let healTimer: NodeJS.Timeout | null = null
 let lastForeignPreserved = false
+/** True once this run installed our statusLine, so a different value is a `replaced` finding. */
+let installedByUs = false
+let liveProcsProvider: () => LiveClaudeProc[] = () => []
+/** De-dup state for the "statusLine removed" Activity notice; lives for the process lifetime. */
+const healNoticeState: HealNoticeState = { lastKey: null, lastAtMs: 0 }
+let sendHealNotice: (n: HealNotice) => void = () => {}
 
 function statuslineDir(): string {
   return join(app.getPath('userData'), 'statusline')
@@ -71,6 +90,10 @@ function writerPath(): string {
 function ourCommand(): string {
   const p = writerPath()
   return process.platform === 'win32' ? `cmd /c "${p}"` : `sh "${p}"`
+}
+/** Evidence of every self-heal that found the statusLine key gone (bounded, ndjson). */
+function healLogPath(): string {
+  return join(statuslineDir(), 'heal-log.ndjson')
 }
 function prefsPath(): string {
   return join(app.getPath('userData'), 'statusline-prefs.json')
@@ -113,11 +136,24 @@ async function installStatusLine(): Promise<void> {
   await updateClaudeSettings(claudeSettingsPath(), (settings) => {
     const { next, foreignPreserved } = mergeStatusLine(settings, ourCommand())
     lastForeignPreserved = foreignPreserved
+    if (!foreignPreserved) installedByUs = true
     return next
   })
 }
 
+async function appendHealLog(line: string): Promise<void> {
+  let existing = ''
+  try {
+    existing = await readFile(healLogPath(), 'utf8')
+  } catch {
+    /* first entry */
+  }
+  await mkdir(statuslineDir(), { recursive: true })
+  await writeFile(healLogPath(), trimHealLog(existing + line), 'utf8')
+}
+
 async function uninstallStatusLine(): Promise<void> {
+  installedByUs = false
   await updateClaudeSettings(claudeSettingsPath(), (settings) => stripStatusLine(settings))
 }
 
@@ -166,20 +202,47 @@ function removeOwnStatusLineSync(): void {
  */
 async function selfHealTick(): Promise<void> {
   try {
-    if (!(await readEnabled())) return
-    let statusLine: unknown = null
-    try {
-      const parsed: unknown = JSON.parse(await readFile(claudeSettingsPath(), 'utf8'))
-      if (!parsed || typeof parsed !== 'object') return // corrupt — never RMW over it
-      statusLine = (parsed as Record<string, unknown>).statusLine
-    } catch (err) {
-      // Missing file → heal (install recreates it); unreadable/corrupt → leave it.
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return
-    }
-    if (statusLine != null) return
-    await ensureWriterScript()
-    await installStatusLine()
-    console.error('[statusline] self-heal: statusLine key was missing — re-installed')
+    await runHealTick({
+      now: () => Date.now(),
+      enabled: readEnabled,
+      readSettings: async () => {
+        const path = claudeSettingsPath()
+        try {
+          const parsed: unknown = JSON.parse(await readFile(path, 'utf8'))
+          if (!parsed || typeof parsed !== 'object') return { kind: 'unreadable' } // corrupt
+          const mtimeMs = await stat(path).then(
+            (st) => st.mtimeMs,
+            () => null
+          )
+          return {
+            kind: 'ok',
+            statusLine: (parsed as Record<string, unknown>).statusLine,
+            mtimeMs
+          }
+        } catch (err) {
+          // Missing file → heal (install recreates it); unreadable/corrupt → leave it.
+          if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return { kind: 'unreadable' }
+          return { kind: 'ok', statusLine: undefined, mtimeMs: null }
+        }
+      },
+      reinstall: async () => {
+        await ensureWriterScript()
+        await installStatusLine()
+        console.error('[statusline] self-heal: statusLine key was missing — re-installed')
+      },
+      appendLog: appendHealLog,
+      liveProcs: () => {
+        try {
+          return liveProcsProvider()
+        } catch {
+          return []
+        }
+      },
+      notice: (n) => sendHealNotice(n),
+      wasOurs: () => installedByUs,
+      ourCommand,
+      noticeState: healNoticeState
+    })
   } catch (err) {
     console.error('[statusline] self-heal failed:', err)
   }
@@ -215,8 +278,14 @@ function registerExitCleanup(): void {
 }
 
 export async function registerStatusLineHandlers(
-  getWindow: () => BrowserWindow | null
+  getWindow: () => BrowserWindow | null,
+  options: StatusLineOptions = {}
 ): Promise<void> {
+  if (options.liveProcs) liveProcsProvider = options.liveProcs
+  sendHealNotice = (n) => {
+    const win = getWindow()
+    if (win && !win.isDestroyed()) win.webContents.send('statusline:healed', n)
+  }
   configureTelemetryStore({
     cachePath,
     send: (payload) => {
@@ -237,6 +306,9 @@ export async function registerStatusLineHandlers(
   healTimer = setInterval(() => void selfHealTick(), SELF_HEAL_MS)
 
   ipcMain.handle('telemetry:get', (): TelemetryPayload => getTelemetryPayload())
+  ipcMain.handle('telemetry:transcriptFallback', (_e, sessionId: string, fullPath: string) =>
+    readTranscriptFallback(sessionId, fullPath)
+  )
   ipcMain.handle('statusline:status', async () => ({
     enabled: await readEnabled(),
     foreignPreserved: lastForeignPreserved

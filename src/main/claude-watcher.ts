@@ -538,6 +538,12 @@ export interface SessionUpdatePayload {
   ctxPct?: number
   awaySummary?: string
   stagnation?: StagnationVerdict
+  /**
+   * `true` when the delta holds an assistant turn of the session itself (not a sidechain). Lets
+   * the renderer tell "the session answered" from "the file was touched", which the footer's
+   * silent-session hint needs (BUG-196). Omitted otherwise.
+   */
+  assistantTurn?: true
 }
 
 /** Subagent metadata read from its transcript lines — first defined value per field. */
@@ -604,6 +610,7 @@ export function buildSessionUpdate(
   let renameTitle = ''
   let aiTitle = ''
   const userTexts: string[] = []
+  let assistantTurn = false
   for (const raw of newLines) {
     if (!raw || typeof raw !== 'object') continue
     const line = raw as Record<string, unknown>
@@ -620,9 +627,12 @@ export function buildSessionUpdate(
     } else if (line.type === 'user' && line.isSidechain !== true) {
       const text = messageText(line.message)
       if (text) userTexts.push(text)
+    } else if (line.type === 'assistant' && line.isSidechain !== true) {
+      assistantTurn = true
     }
   }
   const out: SessionUpdatePayload = { slug, sessionId }
+  if (assistantTurn) out.assistantTurn = true
   if (renameTitle) out.renameTitle = capJsonBytes(renameTitle, TITLE_MAX_BYTES)
   if (aiTitle) out.aiTitle = capJsonBytes(aiTitle, TITLE_MAX_BYTES)
   const firstPrompt = firstRealPrompt(userTexts)
@@ -708,7 +718,8 @@ const LATEST_WINS_KEYS = [
   'transcriptState',
   'ctxPct',
   'awaySummary',
-  'stagnation'
+  'stagnation',
+  'assistantTurn'
 ] as const
 
 /** Merge `next` into `prev` per C3: latest defined wins, except `firstPromptCandidate` (first wins). */
