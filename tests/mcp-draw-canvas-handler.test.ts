@@ -115,7 +115,7 @@ describe('drawCanvasHandler — U5-2: a refused batch writes NOTHING', () => {
       y: 0,
       label: `n${i}`
     }))
-    ops[16] = { op: 'add_node', shape: 'diamond', x: 0, y: 0 }
+    ops[16] = { op: 'add_node', shape: 'hexagon', x: 0, y: 0 }
 
     const res = await drawCanvasHandler({ folder, ops }, ctxFor())
 
@@ -260,6 +260,45 @@ describe('drawCanvasHandler — the ACK, and what DOES land', () => {
     expect(onDisk.nodes.map((n) => n.origin)).toEqual(['operator', 'agent', 'agent'])
     expect(onDisk.meta.updatedAt).not.toBe(NOW)
     expect(onDisk.meta.createdAt).toBe(NOW)
+  })
+
+  it('T536 U2: ellipse and diamond land stamped "agent" and the ACK advertises their default sizes', async () => {
+    const res = await drawCanvasHandler(
+      {
+        folder,
+        ops: [
+          { op: 'add_node', shape: 'ellipse', x: 0, y: 100, label: 'Start' },
+          { op: 'add_node', shape: 'diamond', x: 200, y: 100, label: 'Valid?' }
+        ]
+      },
+      ctxFor()
+    )
+    expect(res.isError).toBeFalsy()
+    const shapes = payload(res).shapes as { name: string; defaultSize: object }[]
+    expect(shapes.find((s) => s.name === 'ellipse')?.defaultSize).toEqual({
+      width: 132,
+      height: 64
+    })
+    expect(shapes.find((s) => s.name === 'diamond')?.defaultSize).toEqual({
+      width: 132,
+      height: 80
+    })
+    const onDisk = JSON.parse(readFileSync(canvasPath, 'utf8')) as CanvasDocument
+    expect(onDisk.nodes.slice(1).map((n) => [n.shape, n.origin])).toEqual([
+      ['ellipse', 'agent'],
+      ['diamond', 'agent']
+    ])
+  })
+
+  it('T536 U2: props on a diamond are refused BAD_PROPS and nothing is written', async () => {
+    const before = readFileSync(canvasPath)
+    const res = await drawCanvasHandler(
+      { folder, ops: [{ op: 'add_node', shape: 'diamond', x: 0, y: 0, props: { x: 1 } }] },
+      ctxFor()
+    )
+    expect(res.isError).toBe(true)
+    expect(errorText(res)).toContain('BAD_PROPS')
+    expect(readFileSync(canvasPath).equals(before)).toBe(true)
   })
 
   it('an edge can bind two nodes minted in the SAME call', async () => {
