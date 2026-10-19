@@ -221,6 +221,8 @@
       "hand": "Hand",
       "select": "Select",
       "rectangle": "Rectangle",
+      "diamond": "Diamond",
+      "ellipse": "Ellipse",
       "arrow": "Arrow",
       "text": "Text",
       "eraser": "Eraser"
@@ -233,6 +235,8 @@
       "select": "Drag to select · Space+drag to pan",
       "hand": "Drag to move the board",
       "rectangle": "Click to place, or drag to size it",
+      "diamond": "Click to place, or drag to size it",
+      "ellipse": "Click to place, or drag to size it",
       "arrow": "Drag from one shape to another",
       "text": "Click anywhere to type",
       "eraser": "Drag across anything to erase it"
