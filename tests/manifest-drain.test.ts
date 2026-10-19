@@ -406,6 +406,81 @@ describe('runDrainPass', () => {
   })
 })
 
+describe('runDrainPass — the ceiling counts live work only (BUG-197)', () => {
+  it('does not count a stale In Progress card toward the ceiling (AC-1)', async () => {
+    // 2 of the 3 In Progress cards are stale; ceiling 3 ⇒ one live slot used, room for 2.
+    const cards = [
+      card({ slug: 'dead1', status: 'in-progress', stale: true }),
+      card({ slug: 'dead2', status: 'in-progress', stale: true }),
+      card({ slug: 'live', status: 'in-progress', session: 's1' }),
+      card({ slug: 'a', approved: '1' }),
+      card({ slug: 'b', approved: '2' }),
+      card({ slug: 'c', approved: '3' })
+    ]
+    const { deps, calls } = makeDeps(cards, 3)
+    const res = await runDrainPass('/repo', deps)
+    expect(calls.spawned.map((s) => s.prompt)).toEqual(['boot:a', 'boot:b'])
+    expect(res).toMatchObject({ dispatched: 2, wipBlocked: 1 })
+  })
+
+  it('keeps the declared drain order and the internal-substrate exclusion (AC-6)', async () => {
+    const cards = [
+      card({ slug: 'dead', status: 'in-progress', stale: true }),
+      card({ slug: 'b', approved: '2' }),
+      card({ slug: 'i', approved: '3', substrate: 'internal' }),
+      card({ slug: 'a', approved: '1' })
+    ]
+    const { deps, calls } = makeDeps(cards, 1)
+    await runDrainPass('/repo', deps)
+    expect(calls.planned).toEqual(['a'])
+  })
+
+  it('the terminal event of a paused pass names the ceiling, the live count and the holders (AC-3)', async () => {
+    const cards = [
+      card({ slug: 'w1', id: 'T1', status: 'in-progress', session: 's1' }),
+      card({ slug: 'w2', id: 'T2', status: 'in-progress', session: 's2' }),
+      card({ slug: 'dead', id: 'T0', status: 'in-progress', stale: true }),
+      card({ slug: 'q1', approved: '1' })
+    ]
+    const { deps, calls } = makeDeps(cards, 2)
+    await runDrainPass('/repo', deps)
+    expect(calls.events.at(-1)).toMatchObject({
+      active: false,
+      wipBlocked: 1,
+      wipPause: {
+        limit: 2,
+        live: 2,
+        holders: [
+          { slug: 'w1', id: 'T1' },
+          { slug: 'w2', id: 'T2' }
+        ]
+      }
+    })
+  })
+
+  it('counts cards this pass dispatched as holders of the pause (AC-3)', async () => {
+    const cards = [
+      card({ slug: 'w1', id: 'T1', status: 'in-progress', session: 's1' }),
+      card({ slug: 'a', id: 'TA', approved: '1' }),
+      card({ slug: 'b', id: 'TB', approved: '2' })
+    ]
+    const { deps, calls } = makeDeps(cards, 2)
+    await runDrainPass('/repo', deps)
+    const last = calls.events.at(-1) as { wipPause?: { live: number; holders: unknown[] } }
+    expect(last.wipPause?.live).toBe(2)
+    expect(last.wipPause?.holders).toEqual([
+      { slug: 'w1', id: 'T1' },
+      { slug: 'a', id: 'TA' }
+    ])
+  })
+
+  it('emits no wipPause when nothing is held back', async () => {
+    const { deps, calls } = makeDeps([card({ slug: 'a', approved: '1' })], 5)
+    await runDrainPass('/repo', deps)
+    expect(calls.events.at(-1)).not.toHaveProperty('wipPause')
+  })
+})
+
 describe('createDrainScheduler', () => {
   beforeEach(() => {
     vi.useFakeTimers()
