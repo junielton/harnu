@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
+  CANVAS_PORT_IDS,
+  DEFAULT_DIAMOND_SIZE,
+  DEFAULT_ELLIPSE_SIZE,
   DEFAULT_IMAGE_SIZE,
   DEFAULT_NODE_SIZE,
   DEFAULT_TEXT_SIZE,
@@ -204,6 +207,81 @@ describe('toX6Edge', () => {
 
   it('carries the origin stamp (§4.4)', () => {
     expect((toX6Edge(edge, PALETTE).data as { origin: string }).origin).toBe('agent')
+  })
+})
+
+describe('toX6Node — ellipse and diamond (T536 U2)', () => {
+  const DIAMOND_POINTS = '0.5,0 1,0.5 0.5,1 0,0.5'
+
+  it('exports the default footprints', () => {
+    expect(DEFAULT_ELLIPSE_SIZE).toEqual({ width: 132, height: 64 })
+    expect(DEFAULT_DIAMOND_SIZE).toEqual({ width: 132, height: 80 })
+  })
+
+  it('an ellipse is an X6 ellipse stamped kind ellipse, framed like a box', () => {
+    const cell = toX6Node(node({ shape: 'ellipse', label: 'Start' }), PALETTE)
+    expect(cell.shape).toBe('ellipse')
+    expect((cell.data as { kind: string }).kind).toBe('ellipse')
+    expect(cell.width).toBe(DEFAULT_ELLIPSE_SIZE.width)
+    expect(cell.height).toBe(DEFAULT_ELLIPSE_SIZE.height)
+    const ports = cell.ports as { items: Array<{ id: string }> }
+    expect(ports.items.map((p) => p.id)).toEqual([...CANVAS_PORT_IDS])
+    const attrs = cell.attrs as Record<string, Record<string, unknown>>
+    expect(attrs.body.fill).toBe(PALETTE.surface)
+    expect(attrs.body.stroke).toBe(PALETTE.border2)
+    expect(attrs.body.strokeDasharray).toBeUndefined()
+    expect(attrs.body.rx).toBeUndefined()
+    expect(attrs.text.text).toBe('Start')
+    expect(attrs.label.text).toBe('Start')
+  })
+
+  it('a diamond is an X6 polygon on the four midpoints, framed like a box', () => {
+    const cell = toX6Node(node({ shape: 'diamond', label: 'Ok?' }), PALETTE)
+    expect(cell.shape).toBe('polygon')
+    expect((cell.data as { kind: string }).kind).toBe('diamond')
+    expect(cell.width).toBe(DEFAULT_DIAMOND_SIZE.width)
+    expect(cell.height).toBe(DEFAULT_DIAMOND_SIZE.height)
+    const ports = cell.ports as { items: Array<{ id: string }> }
+    expect(ports.items.map((p) => p.id)).toEqual([...CANVAS_PORT_IDS])
+    const attrs = cell.attrs as Record<string, Record<string, unknown>>
+    expect(attrs.body.refPoints).toBe(DIAMOND_POINTS)
+    expect(attrs.body.fill).toBe(PALETTE.surface)
+    expect(attrs.body.stroke).toBe(PALETTE.border2)
+    expect(attrs.body.strokeDasharray).toBeUndefined()
+    expect(attrs.body.rx).toBeUndefined()
+    expect(attrs.text.text).toBe('Ok?')
+    expect(attrs.label.text).toBe('Ok?')
+  })
+
+  it('a small diamond still carries its label attrs on both paths', () => {
+    const cell = toX6Node(node({ shape: 'diamond', width: 48, height: 32, label: 'x' }), PALETTE)
+    expect(cell.width).toBe(48)
+    expect(cell.height).toBe(32)
+    const attrs = cell.attrs as Record<string, Record<string, unknown>>
+    expect(attrs.text).toMatchObject({ text: 'x', fill: PALETTE.text })
+    expect(attrs.label).toMatchObject({ text: 'x', fill: PALETTE.text })
+  })
+
+  it('an unknown shape still falls back to a DASHED box (§3 C2)', () => {
+    const cell = toX6Node(node({ shape: 'hexagon' }), PALETTE)
+    expect(cell.shape).toBe('rect')
+    const attrs = cell.attrs as Record<string, Record<string, unknown>>
+    expect(attrs.body.strokeDasharray).toBe('4 3')
+  })
+
+  it('both bodies take their stroke and fill from the palette they were rendered with', () => {
+    const other: CanvasPalette = {
+      ...PALETTE,
+      border2: '#other-border2',
+      surface: '#other-surface'
+    }
+    for (const shape of ['ellipse', 'diamond']) {
+      const a = toX6Node(node({ shape }), PALETTE).attrs as Record<string, Record<string, unknown>>
+      const b = toX6Node(node({ shape }), other).attrs as Record<string, Record<string, unknown>>
+      expect(a.body.stroke).toBe('#border2')
+      expect(b.body.stroke).toBe('#other-border2')
+      expect(b.body.fill).toBe('#other-surface')
+    }
   })
 })
 

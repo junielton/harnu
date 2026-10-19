@@ -188,8 +188,8 @@ export function placedRect(cx: number, cy: number, shape: string): DrawnRect {
   return { x: cx - size.width / 2, y: cy - size.height / 2, width: size.width, height: size.height }
 }
 
-/** The shapes the pane's creation tools can mint. U2 widens it (diamond, ellipse). */
-export type OperatorShape = 'box' | 'text'
+/** The shapes the pane's creation tools can mint. */
+export type OperatorShape = 'box' | 'text' | 'ellipse' | 'diamond'
 
 /**
  * A node the operator just created — a drawn or placed box, or a text. **Stamped
