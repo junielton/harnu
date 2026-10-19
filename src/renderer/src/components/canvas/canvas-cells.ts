@@ -46,6 +46,10 @@ export const DEFAULT_TEXT_SIZE = { width: 160, height: 24 } as const
 /** An `image` node is a picture, so its fallback is a picture's footprint —
  *  not the box's, which would letterbox every un-sized asset. */
 export const DEFAULT_IMAGE_SIZE = { width: 240, height: 160 } as const
+/** An `ellipse` is a wider-than-tall oval; a `diamond` needs more height than a
+ *  box so its label clears the slanted edges (T536 U2). */
+export const DEFAULT_ELLIPSE_SIZE = { width: 132, height: 64 } as const
+export const DEFAULT_DIAMOND_SIZE = { width: 132, height: 80 } as const
 
 /**
  * Per-shape size fallbacks, keyed by DOCUMENT shape. Anything absent from this
@@ -66,12 +70,14 @@ export const DEFAULT_SIZE_BY_SHAPE: Readonly<
   box: DEFAULT_NODE_SIZE,
   text: DEFAULT_TEXT_SIZE,
   image: DEFAULT_IMAGE_SIZE,
+  ellipse: DEFAULT_ELLIPSE_SIZE,
+  diamond: DEFAULT_DIAMOND_SIZE,
   [MOCKUP_CARD_SHAPE]: MOCKUP_CARD_DEFAULT_SIZE,
   [LEGACY_MOCKUP_CARD_SHAPE]: MOCKUP_CARD_DEFAULT_SIZE
 }
 
 /** The §5.1 kinds this unit draws. Anything else falls back to a box (below). */
-const BUILTIN_KINDS = new Set(['box', 'text', 'image'])
+const BUILTIN_KINDS = new Set(['box', 'text', 'image', 'ellipse', 'diamond'])
 
 /**
  * The registered HTML components this build knows (§5.2, T218 U7) — the shape
@@ -183,10 +189,10 @@ export function toX6Node(
     // on a round-trip through the pane would erase the "what did the human
     // contribute" answer the field exists to give.
     //
-    // `kind` rides along for the same reason: EVERY document shape except
-    // `image` is drawn as an X6 `rect`, so the graph alone cannot say whether a
-    // cell was a `text` annotation, a `box`, or a `harnu/<name>` this build does
-    // not know. Without it, U3's read-back would flatten every annotation into
+    // `kind` rides along for the same reason: almost every document shape is
+    // drawn as an X6 `rect` (and `diamond` as a generic `polygon`), so the graph
+    // alone cannot say whether a cell was a `text` annotation, a `box`, or a
+    // `harnu/<name>` this build does not know. Without it, U3's read-back would flatten every annotation into
     // a box on the first Save — a silent, permanent edit nobody asked for.
     data: {
       origin: node.origin,
@@ -309,28 +315,52 @@ export function toX6Node(
     }
   }
 
-  // `box` — and the fallback for any shape this unit does not draw, which today
-  // means a `harnu/<name>` component from a NEWER Harnu than this one. Falling
-  // back is not politeness: `graph.addNode({ shape: 'harnu/foo' })` THROWS on an
-  // unregistered name, so an agent-written shape this build does not know would
-  // take the whole pane down instead of rendering as an unremarkable box.
+  // `box`, `ellipse`, `diamond` — and the fallback for any shape this unit does
+  // not draw, which today means a `harnu/<name>` component from a NEWER Harnu
+  // than this one. Falling back is not politeness: `graph.addNode({ shape:
+  // 'harnu/foo' })` THROWS on an unregistered name, so an agent-written shape
+  // this build does not know would take the whole pane down instead of
+  // rendering as an unremarkable box.
   const known = BUILTIN_KINDS.has(node.shape)
+  const bodyAttrs = {
+    fill: palette.surface,
+    stroke: palette.border2,
+    strokeWidth: 1.5
+  }
+  const labelled = {
+    text: { ...labelAttrs.text, fill: palette.text, fontSize: 12, fontFamily: palette.fontSans },
+    label: { ...labelAttrs.label, fill: palette.text, fontSize: 12, fontFamily: palette.fontSans }
+  }
+
+  if (node.shape === 'ellipse') {
+    // Same tokens and ports as a box; only the X6 shape differs. No `rx`/`ry`:
+    // on an ellipse those would be unrelated radii attributes, not a corner.
+    return { ...common, shape: 'ellipse', attrs: { body: bodyAttrs, ...labelled } }
+  }
+
+  if (node.shape === 'diamond') {
+    // A polygon through the four edge midpoints, in the node's own fractional
+    // box (`refPoints`), so it follows a resize without recomputing points.
+    return {
+      ...common,
+      shape: 'polygon',
+      attrs: { body: { ...bodyAttrs, refPoints: '0.5,0 1,0.5 0.5,1 0,0.5' }, ...labelled }
+    }
+  }
+
   return {
     ...common,
     shape: 'rect',
     attrs: {
       body: {
-        fill: palette.surface,
-        stroke: palette.border2,
-        strokeWidth: 1.5,
+        ...bodyAttrs,
         rx: 7,
         ry: 7,
         // An unknown shape reads as a box, but a dashed outline says so rather
         // than pretending the document rendered exactly as written.
         ...(known ? {} : { strokeDasharray: '4 3' })
       },
-      text: { ...labelAttrs.text, fill: palette.text, fontSize: 12, fontFamily: palette.fontSans },
-      label: { ...labelAttrs.label, fill: palette.text, fontSize: 12, fontFamily: palette.fontSans }
+      ...labelled
     }
   }
 }

@@ -572,6 +572,49 @@ describe('the pure drag geometry', () => {
     expect(placedRect(0, 0, 'nope')).toEqual({ x: -66, y: -26, width: 132, height: 52 })
   })
 
+  it('placedRect centres the ellipse and diamond default footprints (T536 U2)', () => {
+    expect(placedRect(300, 300, 'ellipse')).toEqual({ x: 234, y: 268, width: 132, height: 64 })
+    expect(placedRect(300, 300, 'diamond')).toEqual({ x: 234, y: 260, width: 132, height: 80 })
+  })
+
+  it('operatorNode mints ellipse and diamond stamped operator (T536 U2)', () => {
+    const rect = { x: 1, y: 2, width: 132, height: 80 }
+    expect(operatorNode(rect, new Set(), '', 'ellipse')).toMatchObject({
+      shape: 'ellipse',
+      origin: 'operator'
+    })
+    expect(operatorNode(rect, new Set(), '', 'diamond')).toMatchObject({
+      shape: 'diamond',
+      origin: 'operator'
+    })
+  })
+
+  it('ellipse and diamond round-trip through a real graph with kind and origin intact (T536 U2)', () => {
+    const doc: CanvasDocument = {
+      ...DOC,
+      nodes: [
+        ...DOC.nodes,
+        { id: 'n-e', shape: 'ellipse', x: 10, y: 400, label: 'Start', origin: 'agent' },
+        { id: 'n-d', shape: 'diamond', x: 200, y: 400, width: 90, height: 60, origin: 'operator' }
+      ]
+    }
+    const g = makeGraph(doc)
+    expect(g.getCellById('n-e')?.shape).toBe('ellipse')
+    expect(g.getCellById('n-d')?.shape).toBe('polygon')
+    const draft = draftOf(g, doc)
+    expect(draft.nodes.find((n) => n.id === 'n-e')).toMatchObject({
+      shape: 'ellipse',
+      label: 'Start',
+      origin: 'agent'
+    })
+    expect(draft.nodes.find((n) => n.id === 'n-d')).toMatchObject({
+      shape: 'diamond',
+      width: 90,
+      height: 60,
+      origin: 'operator'
+    })
+  })
+
   it('operatorNode mints a box by default and a text when asked, both stamped operator', () => {
     const rect = { x: 1, y: 2, width: 160, height: 24 }
     expect(operatorNode(rect, new Set()).shape).toBe('box')
