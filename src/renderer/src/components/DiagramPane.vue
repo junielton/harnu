@@ -643,6 +643,9 @@ function onGestureUp(ev: MouseEvent): void {
 function createNode(node: ReturnType<typeof operatorNode>, tool: CanvasTool): void {
   const g = graph.value
   if (!g) return
+  // A text is only finished once it has a label, so the add and whatever its
+  // rename does (label it, or remove it again) are ONE undo step.
+  if (node.shape === 'text') beginPlaceTextBatch(g)
   const cell = g.addNode(toX6Node(node, palette, images.value))
   g.cleanSelection()
   g.select(cell)
@@ -650,6 +653,29 @@ function createNode(node: ReturnType<typeof operatorNode>, tool: CanvasTool): vo
   markUsed(tool)
   setToolState(afterCreate(toolState.value))
   void nextTick(() => startRename(node.id))
+}
+
+/**
+ * The history batch a placed text holds open until its rename ends. Without
+ * it the add and the rename's label (or its removal, on an empty commit) are
+ * two undo steps, and one ⌘Z brings back an invisible empty text that a Save
+ * would then write. Closed by `commitRename`/`cancelRename`, and defensively
+ * by every path that could otherwise leave it open: a re-render (reload, a
+ * disk change, a theme switch) and unmount.
+ */
+const PLACE_TEXT_BATCH = 'place-text'
+let placeTextBatch: Graph | null = null
+
+function beginPlaceTextBatch(g: Graph): void {
+  endPlaceTextBatch()
+  g.startBatch(PLACE_TEXT_BATCH)
+  placeTextBatch = g
+}
+
+function endPlaceTextBatch(): void {
+  const g = placeTextBatch
+  placeTextBatch = null
+  g?.stopBatch(PLACE_TEXT_BATCH)
 }
 
 /**
@@ -707,6 +733,14 @@ function startRename(nodeId: string): void {
  * operator two presses of undo to take back one rename.
  */
 function commitRename(): void {
+  try {
+    applyRename()
+  } finally {
+    endPlaceTextBatch()
+  }
+}
+
+function applyRename(): void {
   const r = rename.value
   rename.value = null
   // The input is about to leave the DOM, taking focus to `<body>` with it —
@@ -740,6 +774,7 @@ function cancelRename(): void {
     const label = String(cell.attr('label/text') ?? cell.attr('text/text') ?? '')
     if (label.trim() === '') g.removeCell(cell)
   }
+  endPlaceTextBatch()
 }
 
 // ── Selection, delete, duplicate, undo/redo ───────────────────────────────
@@ -973,6 +1008,7 @@ async function resolveImages(document_: CanvasDocument, dir: string): Promise<Re
 async function draw(source: CanvasDocument, fit = false): Promise<void> {
   const g = ensureGraph()
   if (!g) return
+  endPlaceTextBatch()
   // A render REPLACES every cell, so it must never reach dirty tracking or the
   // undo stack: rebuilding the board is the pane's own bookkeeping, not an edit
   // the operator made and could take back.
@@ -1114,6 +1150,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keyup', onWindowKeyup)
   window.removeEventListener('blur', onWindowBlur)
   endGesture()
+  endPlaceTextBatch()
   unsubscribeCanvasChanged?.()
   void window.api.canvasWatchStop(filePath.value)
   resizeObserver?.disconnect()
@@ -1263,6 +1300,10 @@ function focusBody(): void {
 
 function onWindowKeydown(ev: KeyboardEvent): void {
   if (!hasFocus()) return
+  // Already handled on its way here — the rename input's own Enter/Esc
+  // (`.prevent`). Without this an Esc that cancels a rename would ALSO run
+  // `escapeOutcome` below and drop a locked tool back to Select.
+  if (ev.defaultPrevented) return
   const mod = ev.metaKey || ev.ctrlKey
   if (mod && (ev.key === 's' || ev.key === 'S')) {
     ev.preventDefault()
@@ -1329,9 +1370,12 @@ function onWindowKeyup(ev: KeyboardEvent): void {
   setToolState(releaseSpace(toolState.value))
 }
 
-/** The window lost focus while Space was down: the keyup will never arrive here
- *  (Review Focus 3), so the pane must not stay stuck in Hand. */
+/** The window lost focus: a Space keyup will never arrive here (Review Focus 3),
+ *  so the pane must not stay stuck in Hand. */
 function onWindowBlur(): void {
+  // A gesture in flight may never see its release either (it can land in
+  // another window), so it goes too — no preview left on screen.
+  cancelGesture()
   if (toolState.value.spaceHeld) setToolState(releaseSpace(toolState.value))
 }
 

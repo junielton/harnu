@@ -506,6 +506,101 @@ describe('DiagramPane tools — Review Focus 1-4', () => {
   })
 })
 
+describe('DiagramPane tools — undo, Esc and blur (fix round 1)', () => {
+  async function placeText(w: VueWrapper, at: [number, number], label: string): Promise<void> {
+    focusPane(w)
+    key('t')
+    clickBlank(w, at)
+    await settle()
+    const input = w.find('[data-testid="diagram-rename-input"]')
+    expect(input.exists()).toBe(true)
+    if (label) await input.setValue(label)
+    await input.trigger('keydown', { key: 'Enter' })
+    await settle()
+  }
+
+  it('an empty text placement is ONE undo step: ⌘Z leaves no invisible text behind', async () => {
+    const w = mountPane()
+    await settle()
+    await placeText(w, [300, 300], '')
+    key('z', { ctrlKey: true })
+    await settle()
+
+    const doc = await saveAndRead(w)
+    expect(doc.nodes.map((n) => n.id)).toEqual(SEEDED)
+    expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
+  })
+
+  it('a labelled text placement is ONE undo step: one ⌘Z removes the node, not just its label', async () => {
+    const w = mountPane()
+    await settle()
+    await placeText(w, [300, 300], 'note')
+    key('z', { ctrlKey: true })
+    await settle()
+
+    const doc = await saveAndRead(w)
+    expect(created(doc)).toHaveLength(0)
+  })
+
+  it('a placed box stays selected through X6 own release handling (Delete removes it)', async () => {
+    const w = mountPane()
+    await settle()
+    focusPane(w)
+    key('r')
+    // Released ON the board, as a real click is: only then does X6 run its own
+    // `blank:click` (which clears the selection) after the pane created the box.
+    down(svgOf(w), [300, 300])
+    svgOf(w).dispatchEvent(
+      new MouseEvent('mouseup', { bubbles: true, button: 0, clientX: 300, clientY: 300 })
+    )
+    await settle()
+    await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await settle()
+    key('Delete')
+    await settle()
+
+    const doc = await saveAndRead(w)
+    expect(created(doc)).toHaveLength(0)
+  })
+
+  it('Esc in the rename input cancels the rename only: a locked tool stays armed', async () => {
+    const w = mountPane()
+    await settle()
+    focusPane(w)
+    key('q')
+    key('r')
+    clickBlank(w, [300, 300])
+    await settle()
+    const input = w.find('[data-testid="diagram-rename-input"]')
+    expect(input.exists()).toBe(true)
+    input.element.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    )
+    await settle()
+    expect(w.find('[data-testid="diagram-rename-input"]').exists()).toBe(false)
+    expect(pressed(w)).toEqual(['rectangle'])
+  })
+
+  it('the window losing focus mid-draw cancels the draw and its preview', async () => {
+    const w = mountPane()
+    await settle()
+    focusPane(w)
+    key('r')
+    down(svgOf(w), [200, 200])
+    move([400, 320])
+    await settle()
+    expect(w.find('[data-testid="diagram-draw-preview"]').exists()).toBe(true)
+
+    window.dispatchEvent(new Event('blur'))
+    await settle()
+    expect(w.find('[data-testid="diagram-draw-preview"]').exists()).toBe(false)
+    up([400, 320])
+    await settle()
+    expect(w.find('[data-testid="diagram-rename-input"]').exists()).toBe(false)
+    expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
+  })
+})
+
 describe('DiagramPane tools — Select with shift', () => {
   /**
    * jsdom does no layout, so the rubberband element X6 sizes through inline

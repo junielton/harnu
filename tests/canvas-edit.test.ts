@@ -12,7 +12,11 @@ import {
   setCanvasPortsVisible,
   setCanvasRubberband
 } from '../src/renderer/src/components/canvas/canvas-graph'
-import { CANVAS_PORT_IDS, toX6Node } from '../src/renderer/src/components/canvas/canvas-cells'
+import {
+  CANVAS_PORT_IDS,
+  DEFAULT_NODE_SIZE,
+  toX6Node
+} from '../src/renderer/src/components/canvas/canvas-cells'
 import {
   DRAW_THRESHOLD,
   MIN_DRAWN_NODE_SIZE,
@@ -714,14 +718,26 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
   })
 
   it('a short drag on the blank board is a click — it does not litter it with boxes', async () => {
-    // Deliberately in the default Select tool: there a click is a click. (With
-    // Rectangle armed a click PLACES a box, by design — spec §5.)
+    // Under Rectangle (T536 U1) a sub-threshold drag is still a CLICK, and a
+    // click places ONE default-size box — not a floored 48×32 "drawn" one, and
+    // not one per jittery pixel.
     const w = mountPane()
     await settle()
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [202, 201])
     await settle()
-    expect(w.find('[data-testid="diagram-rename-input"]').exists()).toBe(false)
-    expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
+    await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await settle()
+    await w.find('[data-testid="diagram-save"]').trigger('click')
+    await settle()
+    const doc = (canvasWrite.mock.calls[0] as unknown as [string, CanvasDocument])[1]
+    const boxes = doc.nodes.filter((n) => !['n-a', 'n-b', 'n-c'].includes(n.id))
+    expect(boxes).toHaveLength(1)
+    expect(boxes[0]).toMatchObject({
+      shape: 'box',
+      width: DEFAULT_NODE_SIZE.width,
+      height: DEFAULT_NODE_SIZE.height
+    })
     w.unmount()
   })
 
