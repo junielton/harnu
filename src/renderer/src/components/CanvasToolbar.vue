@@ -78,14 +78,14 @@ const IDLE = 'text-text-3 hover:bg-surface-2 hover:text-text'
 <template>
   <div
     data-testid="canvas-toolbar"
-    class="inline-flex flex-col items-start gap-1"
+    class="inline-flex max-w-full flex-col items-start gap-1"
     @pointerdown.stop
     @mousedown.stop
   >
     <div
       role="toolbar"
       :aria-label="$t('diagramPane.toolbar')"
-      class="inline-flex items-center gap-0.5 rounded border border-border bg-surface p-1 shadow-pop"
+      class="inline-flex max-w-full flex-wrap items-center gap-0.5 rounded border border-border bg-surface p-1 shadow-pop"
     >
       <button
         data-testid="canvas-tool-lock"
@@ -125,7 +125,11 @@ const IDLE = 'text-text-3 hover:bg-surface-2 hover:text-text'
         <div v-if="b.id === 'hand'" role="separator" class="mx-0.5 h-5 w-px bg-border" />
       </template>
     </div>
-    <p v-if="showHint" data-testid="canvas-tool-hint" class="px-1 text-caption text-text-4">
+    <p
+      v-if="showHint"
+      data-testid="canvas-tool-hint"
+      class="max-w-full px-1 text-caption text-text-4"
+    >
       {{ $t(`diagramPane.toolHint.${tool}`) }}
     </p>
   </div>

@@ -233,6 +233,17 @@ describe('DiagramPane tools — Select is the default (T536 U1)', () => {
   })
 })
 
+describe('DiagramPane tools — toolbar placement (design.md §6 Narrow panes)', () => {
+  it('caps the toolbar at the pane width minus its inset, so it wraps rather than clips', async () => {
+    const w = mountPane()
+    await settle()
+    const place = w.get('[data-testid="canvas-toolbar"]').element.parentElement as HTMLElement
+    // The cap is the pane minus the bar's 12px left inset (`left-3`, a spacing token), so
+    // the full 225px bar still fits on one row down to ≈237px (design.md §6).
+    expect(place.className).toContain('max-w-[calc(100%-var(--spacing)*3)]')
+  })
+})
+
 describe('DiagramPane tools — Rectangle', () => {
   it('r, then a blank drag: one operator box, and the tool is back on Select', async () => {
     const w = mountPane()

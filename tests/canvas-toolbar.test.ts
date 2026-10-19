@@ -133,6 +133,22 @@ describe('CanvasToolbar', () => {
     expect(hint()).toBe('Drag from one shape to another')
   })
 
+  // design.md §6 "Narrow panes": below the width where the full bar fits, the buttons
+  // wrap onto more rows and the hint wraps with them, so the bar never clips. jsdom has
+  // no layout, so this pins the classes that do it; the live matrix measures the boxes.
+  it('wraps its buttons and hint within the width it is given instead of overflowing', () => {
+    const w = mountBar({ tool: 'select' })
+    const root = w.get('[data-testid="canvas-toolbar"]')
+    const bar = w.get('[data-testid="canvas-toolbar"] [role="toolbar"]')
+    const hint = w.get('[data-testid="canvas-tool-hint"]')
+    expect(root.classes()).toContain('max-w-full')
+    expect(bar.classes()).toEqual(expect.arrayContaining(['flex-wrap', 'max-w-full']))
+    expect(bar.classes()).not.toContain('flex-nowrap')
+    expect(hint.classes()).toContain('max-w-full')
+    expect(hint.classes()).not.toContain('whitespace-nowrap')
+    expect(hint.classes()).not.toContain('truncate')
+  })
+
   it('stops mousedown so a press never starts a canvas gesture or a pane resize', () => {
     const host = document.createElement('div')
     document.body.appendChild(host)

@@ -1972,11 +1972,14 @@ function onHeaderMouseDown(ev: MouseEvent): void {
 
       <!-- Tool bar: top-centre of the VIEWPORT (neither pans nor zooms), or its
            own row under the zoom cluster when the pane is too narrow for both
-           (design.md §6). 56px = the cluster's 12px inset + 36px height + 8px. -->
+           (design.md §6). 56px = the cluster's 12px inset + 36px height + 8px.
+           Capped at the pane minus its 12px left inset, so the full bar fits down
+           to ≈237px; below that its buttons wrap onto more rows instead of
+           clipping (design.md §6 "Narrow panes"). -->
       <div
         v-if="state.status === 'ready'"
         ref="toolbarEl"
-        class="absolute"
+        class="absolute max-w-[calc(100%-var(--spacing)*3)]"
         :class="toolbarOwnRow ? 'left-3 top-14' : 'left-1/2 top-3 -translate-x-1/2'"
       >
         <CanvasToolbar
