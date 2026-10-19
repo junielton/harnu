@@ -213,6 +213,15 @@ describe('toX6Edge', () => {
 describe('toX6Node — ellipse and diamond (T536 U2)', () => {
   const DIAMOND_POINTS = '0.5,0 1,0.5 0.5,1 0,0.5'
 
+  /** Every port group sits on its own side: top/right/bottom/left (spec §6 vertex ports). */
+  function expectSidePorts(cell: Record<string, unknown>): void {
+    const ports = cell.ports as { groups: Record<string, { position: string }> }
+    expect(Object.keys(ports.groups)).toEqual(['top', 'right', 'bottom', 'left'])
+    for (const side of ['top', 'right', 'bottom', 'left']) {
+      expect(ports.groups[side].position).toBe(side)
+    }
+  }
+
   it('exports the default footprints', () => {
     expect(DEFAULT_ELLIPSE_SIZE).toEqual({ width: 132, height: 64 })
     expect(DEFAULT_DIAMOND_SIZE).toEqual({ width: 132, height: 80 })
@@ -226,6 +235,7 @@ describe('toX6Node — ellipse and diamond (T536 U2)', () => {
     expect(cell.height).toBe(DEFAULT_ELLIPSE_SIZE.height)
     const ports = cell.ports as { items: Array<{ id: string }> }
     expect(ports.items.map((p) => p.id)).toEqual([...CANVAS_PORT_IDS])
+    expectSidePorts(cell)
     const attrs = cell.attrs as Record<string, Record<string, unknown>>
     expect(attrs.body.fill).toBe(PALETTE.surface)
     expect(attrs.body.stroke).toBe(PALETTE.border2)
@@ -243,6 +253,7 @@ describe('toX6Node — ellipse and diamond (T536 U2)', () => {
     expect(cell.height).toBe(DEFAULT_DIAMOND_SIZE.height)
     const ports = cell.ports as { items: Array<{ id: string }> }
     expect(ports.items.map((p) => p.id)).toEqual([...CANVAS_PORT_IDS])
+    expectSidePorts(cell)
     const attrs = cell.attrs as Record<string, Record<string, unknown>>
     expect(attrs.body.refPoints).toBe(DIAMOND_POINTS)
     expect(attrs.body.fill).toBe(PALETTE.surface)
