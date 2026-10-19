@@ -35,7 +35,7 @@ describe('tool registry', () => {
     expect(INITIAL_TOOL_STATE).toEqual({ tool: 'select', locked: false, spaceHeld: false })
   })
 
-  it('lists the v1 tools in toolbar order', () => {
+  it('lists the eight tools in toolbar order', () => {
     expect(CANVAS_TOOLS.map((t) => t.id)).toEqual([
       'hand',
       'select',

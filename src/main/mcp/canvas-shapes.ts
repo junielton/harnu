@@ -64,14 +64,17 @@ export interface CanvasShapeSpec {
  * rather than importing them: that module pulls the palette/port types the
  * pane needs, and this manifest must stay importable from `src/main`. The
  * duplication is pinned by a drift test (`tests/mcp-canvas-ops.test.ts`), so
- * the two cannot silently disagree about how big an un-sized node is.
+ * the two cannot silently disagree about how big an un-sized node is. The
+ * `ellipse` and `diamond` sizes in the catalog below are inline literals,
+ * covered by the same drift test.
  */
 const DEFAULT_FRAMED_SIZE = { width: 132, height: 52 } as const
 const DEFAULT_TEXT_SIZE = { width: 160, height: 24 } as const
 
 /**
- * The built-in kinds of §5.1 (plus `ellipse` and `diamond`, T536 U2). `frame`/container is deliberately absent —
- * deferred to v2 because X6's `embedding` was never exercised in the spike.
+ * The built-in kinds of §5.1 (plus `ellipse` and `diamond`, T536 U2).
+ * `frame`/container is deliberately absent — deferred to v2 because X6's
+ * `embedding` was never exercised in the spike.
  */
 export const CANVAS_BUILTIN_SHAPES: readonly CanvasShapeSpec[] = [
   {
