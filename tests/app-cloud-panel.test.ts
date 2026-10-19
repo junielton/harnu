@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import App from '../src/renderer/src/App.vue'
+import CloudSessionPanel from '../src/renderer/src/components/CloudSessionPanel.vue'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
 import { i18n } from '@renderer/i18n'
 
@@ -146,6 +147,42 @@ describe('BUG-198: App.vue cloud-panel predicate', () => {
 
     // What the next reconcile does when the transcript gains its first turn.
     store.folders[0].sessions[0].resumable = true
+    await wrapper.vm.$nextTick()
+    expect(panel(wrapper).exists()).toBe(false)
+  })
+})
+
+describe('BUG-198 AC-4: the cloud panel "Resume anyway" action', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    mockApi()
+  })
+
+  it('shows the action and pressing it lifts the cloud classification for that session', async () => {
+    const store = useSessionsStore()
+    seedZeroTurnSession(store)
+    store.select('s1')
+    const wrapper = mount(CloudSessionPanel, {
+      props: { session: store.folders[0].sessions[0] },
+      global: { plugins: [i18n] }
+    })
+    const button = wrapper.find('[data-test="cloud-resume-anyway"]')
+    expect(button.exists()).toBe(true)
+    expect(button.text()).toBe('Resume anyway')
+
+    await button.trigger('click')
+    expect(store.folders[0].sessions[0].resumeAnyway).toBe(true)
+  })
+
+  it('App.vue yields to the terminal once the operator resumes anyway', async () => {
+    const store = useSessionsStore()
+    seedZeroTurnSession(store)
+    store.select('s1')
+    const wrapper = mountApp()
+    await wrapper.vm.$nextTick()
+    expect(panel(wrapper).exists()).toBe(true)
+
+    store.resumeAnyway('s1')
     await wrapper.vm.$nextTick()
     expect(panel(wrapper).exists()).toBe(false)
   })

@@ -13,15 +13,24 @@ export interface CloudStubInput {
   resumeAnyway?: boolean
 }
 
-/** Whether the selected session should render `CloudSessionPanel` instead of the terminal. */
+/**
+ * Whether the selected session should render `CloudSessionPanel` instead of the
+ * terminal. Only a row with no live terminal in this app run qualifies: while
+ * the process that will write the turns is alive, disk's turn count says
+ * nothing (G1). "Resume anyway" lifts the classification for good (G4).
+ */
 export function isCloudStub(
   session: CloudStubInput | null | undefined,
-  _hasLiveTerminal: boolean
+  hasLiveTerminal: boolean
 ): boolean {
-  return session?.resumable === false && !session?.isShellTerminal
+  if (!session || session.resumable !== false) return false
+  return !session.isShellTerminal && !session.resumeAnyway && !hasLiveTerminal
 }
 
-/** Whether `TerminalPane` must refuse to spawn `claude --resume` for this row. */
+/**
+ * Whether `TerminalPane` must refuse to spawn `claude --resume` for this row
+ * (a doomed process: "No conversation found …"). Lifted by "Resume anyway".
+ */
 export function isSpawnRefused(session: CloudStubInput | null | undefined): boolean {
-  return session?.resumable === false
+  return session?.resumable === false && !session.resumeAnyway
 }

@@ -465,8 +465,8 @@ describe('scanFolders — bridge/cloud + large-file naming', () => {
         originalPath: ROOT_CWD,
         entries: [
           {
-            sessionId: 'idx-zero-turn-001',
-            fullPath: `${ROOT_CWD}/idx-zero-turn-001.jsonl`,
+            sessionId: 'idx-zero-turns',
+            fullPath: `${ROOT_CWD}/idx-zero-turns.jsonl`,
             fileMtime: 1000,
             firstPrompt: '',
             summary: '',
@@ -482,7 +482,7 @@ describe('scanFolders — bridge/cloud + large-file naming', () => {
     )
     const folders = await scanFolders({ rootDir: root })
     const s = folderFor(folders, ROOT_CWD).sessions[0]
-    expect(s.sessionId).toBe('idx-zero-turn-001')
+    expect(s.sessionId).toBe('idx-zero-turns')
     expect(s.resumable).toBe(true)
   })
 

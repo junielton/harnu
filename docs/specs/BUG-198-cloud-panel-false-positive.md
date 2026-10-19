@@ -95,3 +95,30 @@ index update flips `resumable` to true and the terminal pane re-attaches the cac
 
 Sidebar cloud affordance (§6 Session status → cloud), hibernation, `sessions-index.json`
 fast path beyond mirroring G3's rule, any refactor of `reconcileSessions`.
+
+## Findings (appended by the executor)
+
+### Q2 / AC-7 — does `claude --resume` fail on a zero-turn local transcript? (2026-10-19, CLI 2.1.304)
+
+**Yes, it fails.** A synthetic JSONL holding only metadata lines (`last-prompt`, `mode`,
+`permission-mode`; no `user`/`assistant` line, no `bridge-session`) was written to a
+throwaway project dir (a `/tmp` scratch path's slug under `~/.claude/projects/`, removed
+afterwards). Then, with that directory as cwd:
+
+```
+$ claude --resume 66fab35a-44d0-4ce6-b2d8-7188c40fad21 -p "reply with the single word ok"
+No conversation found with session ID: 66fab35a-44d0-4ce6-b2d8-7188c40fad21
+$ script -qc "claude --resume 66fab35a-…" /dev/null     # interactive, same result
+No conversation found with session ID: 66fab35a-44d0-4ce6-b2d8-7188c40fad21
+```
+
+So the panel's original justification still holds on 2.1.304: a zero-turn local file is
+not resumable by the CLI, bridge line or not. The follow-up card Q2 anticipated ("drop the
+local-file cloud classification entirely") is **not** warranted.
+
+Consequence of G3 worth knowing: after an app restart, a zero-turn file with no bridge
+line (a session that was opened but never prompted) is now `resumable:true`, so selecting
+it spawns `claude --resume` and the terminal shows the CLI's "No conversation found …"
+instead of a panel. That is the trade the spec chose (visible CLI error over a silent
+dead end); the alternative — a plain `claude` spawn for zero-turn local files — is a
+possible follow-up, deliberately not done here.
