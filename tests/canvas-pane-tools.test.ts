@@ -119,6 +119,30 @@ async function settle(): Promise<void> {
   }
 }
 
+/**
+ * Settle until `done()` holds, bounded by wall time rather than by a tick count. A reload
+ * from disk clears the board and re-renders it across several macrotasks (re-read, image
+ * resolution, draw), and how many it takes depends on how busy the run is — a fixed
+ * number of `settle()`s flaked about one full-file run in four. The caller's own
+ * assertions report a condition that never came true.
+ */
+async function settleUntil(done: () => boolean, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!done() && Date.now() < deadline) await settle()
+}
+
+/**
+ * A reload from disk has LANDED: node `id`, which the reloaded document keeps, is rendered
+ * again by a new view (`before` is its element from before the reload). Right after the
+ * watcher fires the board is mid-redraw and `id` has no view at all.
+ */
+function reloadLanded(w: VueWrapper, id: string, before: Element | null): () => boolean {
+  return () => {
+    const now = w.element.querySelector(`[data-cell-id="${id}"]`)
+    return now !== null && now !== before
+  }
+}
+
 function svgOf(w: VueWrapper): Element {
   return w.element.querySelector('[data-testid="diagram-canvas-host"] svg')!
 }
@@ -933,16 +957,28 @@ describe('DiagramPane tools — Arrow', () => {
       path: '/wt/board.harnucanvas.json',
       doc: { ...DOC, nodes: DOC.nodes.filter((n) => n.id !== 'n-a'), edges: [] }
     })
+    const viewBefore = w.element.querySelector('[data-cell-id="n-c"]')
     changed()!({ path: '/wt/board.harnucanvas.json' })
-    await settle()
     // The reload re-reads, resolves images and re-renders: wait until it lands.
-    for (let i = 0; i < 10 && !w.element.querySelector('[data-cell-id="n-c"]'); i++) await settle()
+    const landed = reloadLanded(w, 'n-c', viewBefore)
+    await settleUntil(() => landed() && !w.element.querySelector('[data-cell-id="n-a"]'))
     expect(w.element.querySelector('[data-cell-id="n-c"]')).not.toBeNull()
     expect(w.element.querySelector('[data-cell-id="n-a"]')).toBeNull()
-    nodeEl(w, 'n-c').dispatchEvent(
-      new MouseEvent('mouseup', { bubbles: true, button: 0, clientX: IN_C[0], clientY: IN_C[1] })
-    )
-    await settle()
+    // jsdom reports an exception thrown by a listener as a window `error` event, never
+    // to the test: trap it, or a release handler that crashes on the missing source
+    // would pass below as "no edge was made".
+    const thrown: unknown[] = []
+    const trap = (e: ErrorEvent): void => void thrown.push(e.error ?? e.message)
+    window.addEventListener('error', trap)
+    try {
+      nodeEl(w, 'n-c').dispatchEvent(
+        new MouseEvent('mouseup', { bubbles: true, button: 0, clientX: IN_C[0], clientY: IN_C[1] })
+      )
+      await settle()
+    } finally {
+      window.removeEventListener('error', trap)
+    }
+    expect(thrown).toEqual([])
     expect(preview(w)).toBe(false)
     // No edge at all: one from the missing n-a would be a dangling edge.
     expect(w.element.querySelectorAll('g.x6-edge')).toHaveLength(0)
@@ -1044,8 +1080,9 @@ describe('DiagramPane tools — gestures across a reload from disk (fix round 2)
     expect(w.find('[data-testid="diagram-draw-preview"]').exists()).toBe(true)
     // An agent's write (or the echo of a Save) reloads a clean board, keeping
     // the viewport (`fit=false`), so the draw is still valid.
+    const viewBefore = nodeEl(w, 'n-c')
     changed()!({ path: '/wt/board.harnucanvas.json' })
-    await settle()
+    await settleUntil(reloadLanded(w, 'n-c', viewBefore))
     expect(w.find('[data-testid="diagram-draw-preview"]').exists()).toBe(true)
     move([800, 640])
     up([800, 640])
@@ -1064,8 +1101,9 @@ describe('DiagramPane tools — gestures across a reload from disk (fix round 2)
     move([620, 510])
     await settle()
     expect(bodyOf(w).style.cursor).toBe('grabbing')
+    const viewBefore = nodeEl(w, 'n-c')
     changed()!({ path: '/wt/board.harnucanvas.json' })
-    await settle()
+    await settleUntil(reloadLanded(w, 'n-c', viewBefore))
     expect(bodyOf(w).style.cursor).toBe('grabbing')
     up([640, 520])
     await settle()
@@ -1337,8 +1375,9 @@ describe('DiagramPane tools — Eraser', () => {
     move(IN_B)
     await settle()
     expect(marks(w)).toContain('n-a')
+    const viewBefore = nodeEl(w, 'n-c')
     changed()!({ path: '/wt/board.harnucanvas.json' })
-    await settle()
+    await settleUntil(reloadLanded(w, 'n-c', viewBefore))
     upOnSvg(w, IN_B)
     await settle()
     expect(marks(w)).toEqual([])
