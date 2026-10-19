@@ -50,6 +50,12 @@ import { randomUUID } from 'node:crypto'
 
 const WIDTH = 1280
 const HEIGHT = 800
+/**
+ * Waits that cover Electron START-UP (window shown, renderer mounted, fleet scanned, pane
+ * loaded) get this, not the 5s default: a cold CI runner can take longer than that just to
+ * boot. Gesture assertions keep the default — they react to input that was just sent.
+ */
+const STARTUP_TIMEOUT = 30_000
 
 /** Seeded boxes in world units. No edges, so any A→B pair is free for the Arrow step. */
 const SEED = [
@@ -241,6 +247,7 @@ test.describe('canvas tools in the built app (T536 U1, spec §9.3)', () => {
       await test.step('1. Select: click blank creates nothing; drag blank rubberbands', async () => {
         const blank = await blankAt(0.85, 0.85)
         await page.mouse.click(blank.x, blank.y)
+        await expectSavedBoardIsSeed('after a Select click on blank')
         await expect(nodes).toHaveCount(4)
         await expect(rename).toHaveCount(0)
         await expect(pane.getByTestId('diagram-dirty-dot')).toHaveCount(0)
@@ -251,6 +258,7 @@ test.describe('canvas tools in the built app (T536 U1, spec §9.3)', () => {
         const from = { x: a.x - 12 * zoom, y: a.y - 12 * zoom }
         const to = { x: b.x + b.width + 12 * zoom, y: b.y + b.height + 12 * zoom }
         await drag(from, to)
+        await expectSavedBoardIsSeed('after a Select drag on blank')
         await expect(nodes).toHaveCount(4)
         await expect(selected).toHaveCount(2)
         expect(await selectedIds()).toEqual([idOf.A, idOf.B].sort())
@@ -414,7 +422,10 @@ async function openSeededBoard(): Promise<void> {
   // produces no frames, and Playwright's actionability checks wait on frames, so nothing
   // is touched before the app has shown it at its default 1280×800.
   await expect
-    .poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible()))
+    .poll(
+      () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible()),
+      { timeout: STARTUP_TIMEOUT }
+    )
     .toBe(true)
 
   // `firstWindow()` can hand back the page before `loadFile` commits (an `about:blank` has a
@@ -425,13 +436,16 @@ async function openSeededBoard(): Promise<void> {
   // sidebar row being on screen proves the command bridge is live. Calling the verb any
   // earlier answers `opened: false`.
   const folderRow = page.getByText(basename(folder), { exact: true }).first()
-  await expect(folderRow).toBeVisible()
+  await expect(folderRow).toBeVisible({ timeout: STARTUP_TIMEOUT })
   await expect
-    .poll(() => page.evaluate(() => [window.innerWidth, window.innerHeight]))
+    .poll(() => page.evaluate(() => [window.innerWidth, window.innerHeight]), {
+      timeout: STARTUP_TIMEOUT
+    })
     .toEqual([WIDTH, HEIGHT])
   await expect
-    .poll(() =>
-      page.evaluate(() => new Promise<boolean>((r) => requestAnimationFrame(() => r(true))))
+    .poll(
+      () => page.evaluate(() => new Promise<boolean>((r) => requestAnimationFrame(() => r(true)))),
+      { timeout: STARTUP_TIMEOUT }
     )
     .toBe(true)
 
@@ -452,7 +466,9 @@ async function openSeededBoard(): Promise<void> {
   // The fleet model scans `~/.claude/projects` asynchronously after boot; until it has, the
   // seeded folder is not a session folder yet and `draw_canvas` could not open its pane.
   await expect
-    .poll(async () => JSON.stringify(await mcp.call('get_fleet', {})))
+    .poll(async () => JSON.stringify(await mcp.call('get_fleet', {})), {
+      timeout: STARTUP_TIMEOUT
+    })
     .toContain(`"folderAlias":"${basename(folder)}"`)
   const drawn = await mcp.call('draw_canvas', {
     folder,
@@ -478,9 +494,9 @@ async function openSeededBoard(): Promise<void> {
   // selecting it (a real click on its sidebar row) puts the stack on screen.
   await folderRow.click()
   const pane = page.getByTestId('diagram-pane')
-  await expect(pane).toBeVisible()
-  await expect(pane.getByTestId('canvas-toolbar')).toBeVisible()
-  await expect(pane.locator('g.x6-node')).toHaveCount(SEED.length)
+  await expect(pane).toBeVisible({ timeout: STARTUP_TIMEOUT })
+  await expect(pane.getByTestId('canvas-toolbar')).toBeVisible({ timeout: STARTUP_TIMEOUT })
+  await expect(pane.locator('g.x6-node')).toHaveCount(SEED.length, { timeout: STARTUP_TIMEOUT })
   // The pane settles (first-open fit) before any geometry is measured.
   await expectStableGeometry(idOf.A)
 }
@@ -569,6 +585,22 @@ async function expectStableGeometry(id: string): Promise<void> {
       return same
     })
     .toBe(true)
+}
+
+/**
+ * Prove FROM DISK that the board still holds exactly the seeded nodes and no edge. Save is
+ * a no-op on a clean board (`save()` returns early unless dirty), so this presses Ctrl+S
+ * anyway: a gesture that wrongly created a node made the board dirty, the press writes that
+ * node, and the read below fails naming the step. A clean board leaves the file as seeded.
+ */
+async function expectSavedBoardIsSeed(when: string): Promise<void> {
+  await page.keyboard.press('Control+s')
+  await expect(page.getByTestId('diagram-pane').getByTestId('diagram-dirty-dot')).toHaveCount(0)
+  const doc = JSON.parse(readFileSync(boardPath, 'utf8')) as SavedDoc
+  expect(doc.nodes.map((n) => n.id).sort(), `${when}: saved nodes are exactly the seed`).toEqual(
+    SEED.map((s) => idOf[s.key]).sort()
+  )
+  expect(doc.edges, `${when}: saved edges`).toEqual([])
 }
 
 /** Ctrl+S, wait for the dirty dot to clear, and read the board back from disk. */
