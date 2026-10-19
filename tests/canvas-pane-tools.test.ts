@@ -976,6 +976,61 @@ describe('DiagramPane tools — Arrow', () => {
   })
 })
 
+/** Capture the pane's file-watch callback before mounting; call it to simulate a clean reload. */
+function captureCanvasChanged(): () => ((p: { path: string }) => void) | null {
+  let changed: ((p: { path: string }) => void) | null = null
+  ;(window as unknown as { api: Record<string, unknown> }).api.onCanvasChanged = (
+    cb: (p: { path: string }) => void
+  ) => {
+    changed = cb
+    return () => {}
+  }
+  return () => changed
+}
+
+describe('DiagramPane tools — gestures across a reload from disk (fix round 2)', () => {
+  it('a Rectangle drag in flight survives a clean reload: preview kept, release creates the box', async () => {
+    const changed = captureCanvasChanged()
+    const w = mountPane()
+    await settle()
+    focusPane(w)
+    key('r')
+    await settle()
+    down(svgOf(w), [600, 500])
+    move([700, 600])
+    await settle()
+    expect(w.find('[data-testid="diagram-draw-preview"]').exists()).toBe(true)
+    // An agent's write (or the echo of a Save) reloads a clean board, keeping
+    // the viewport (`fit=false`), so the draw is still valid.
+    changed()!({ path: '/wt/board.harnucanvas.json' })
+    await settle()
+    expect(w.find('[data-testid="diagram-draw-preview"]').exists()).toBe(true)
+    move([800, 640])
+    up([800, 640])
+    await settle()
+    expect(created(await saveAndRead(w))).toHaveLength(1)
+  })
+
+  it('a Hand pan in flight survives a clean reload: still grabbing, and the pan goes on', async () => {
+    const changed = captureCanvasChanged()
+    const w = mountPane()
+    await settle()
+    focusPane(w)
+    key('h')
+    await settle()
+    down(svgOf(w), [600, 500])
+    move([620, 510])
+    await settle()
+    expect(bodyOf(w).style.cursor).toBe('grabbing')
+    changed()!({ path: '/wt/board.harnucanvas.json' })
+    await settle()
+    expect(bodyOf(w).style.cursor).toBe('grabbing')
+    up([640, 520])
+    await settle()
+    expect(bodyOf(w).style.cursor).toBe('grab')
+  })
+})
+
 describe('DiagramPane tools — Eraser', () => {
   const IN_A: [number, number] = [60, 60]
   const IN_B: [number, number] = [340, 220]
@@ -1232,13 +1287,7 @@ describe('DiagramPane tools — Eraser', () => {
   })
 
   it('a reload from disk mid-stroke cancels the stroke: nothing erased', async () => {
-    let changed: ((p: { path: string }) => void) | null = null
-    ;(window as unknown as { api: Record<string, unknown> }).api.onCanvasChanged = (
-      cb: (p: { path: string }) => void
-    ) => {
-      changed = cb
-      return () => {}
-    }
+    const changed = captureCanvasChanged()
     const w = mountPane()
     await settle()
     await armEraser(w)
@@ -1246,8 +1295,7 @@ describe('DiagramPane tools — Eraser', () => {
     move(IN_B)
     await settle()
     expect(marks(w)).toContain('n-a')
-    expect(changed).not.toBeNull()
-    changed!({ path: '/wt/board.harnucanvas.json' })
+    changed()!({ path: '/wt/board.harnucanvas.json' })
     await settle()
     upOnSvg(w, IN_B)
     await settle()
@@ -1290,6 +1338,30 @@ describe('DiagramPane tools — Eraser', () => {
     upOnSvg(w, IN_B)
     await settle()
     expect((await saveAndRead(w)).nodes.map((n) => n.id)).toEqual(['n-c'])
+  })
+
+  it('a new press while a stroke is still open (left release lost) leaves no marks behind', async () => {
+    const w = mountPane()
+    await settle()
+    await armEraser(w)
+    down(nodeEl(w, 'n-a'), IN_A)
+    move(IN_B)
+    await settle()
+    expect(marks(w)).toEqual(expect.arrayContaining(['n-a', 'n-b']))
+    // X6 ignores presses until it sees a release, so the way back into
+    // `beginGesture` mid-stroke is a right-button release: X6 ends its drag on
+    // it, the Eraser deliberately does not. The left release is then lost
+    // (no move arrives to notice it), and a new left press starts a gesture.
+    up(IN_B, { button: 2 })
+    await settle()
+    expect(marks(w)).toEqual(expect.arrayContaining(['n-a', 'n-b']))
+    down(svgOf(w), [600, 500])
+    await settle()
+    expect(marks(w)).toEqual([])
+    upOnSvg(w, [600, 500])
+    await settle()
+    expect(isDirty(w)).toBe(false)
+    expect(w.element.querySelectorAll('.canvas-erase-mark')).toHaveLength(0)
   })
 
   it('a click on blank board erases nothing', async () => {

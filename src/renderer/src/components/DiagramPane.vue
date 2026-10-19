@@ -563,6 +563,9 @@ const arrowPreviewLine = computed<{ x1: number; y1: number; x2: number; y2: numb
 const DRAW_LISTENER = { capture: true } as const
 
 function beginGesture(next: Gesture): void {
+  // A press after a lost release: end the old gesture first, or its listeners
+  // stay doubled and an erase stroke's marks are left on the board for good.
+  cancelGesture()
   gesture = next
   window.addEventListener('mousemove', onGestureMove, DRAW_LISTENER)
   window.addEventListener('mouseup', onGestureUp, DRAW_LISTENER)
@@ -1273,11 +1276,13 @@ async function resolveImages(document_: CanvasDocument, dir: string): Promise<Re
 async function draw(source: CanvasDocument, fit = false): Promise<void> {
   const g = ensureGraph()
   if (!g) return
-  // A render recreates every cell view, so a gesture in flight would outlive
-  // what it shows: an Eraser stroke's dimming dies with the old views while
-  // its marked ids survive, and the release would delete cells the operator
-  // sees undimmed. Coordinates and previews of the other gestures go stale too.
-  cancelGesture()
+  // A render recreates every cell view. An Eraser stroke's dimming dies with
+  // the old views while its marked ids survive, so its release would delete
+  // cells the operator sees undimmed: it ends here. Every other gesture
+  // survives — a reload keeps the viewport (`fit=false`), so a draw, an arrow
+  // or a pan in flight is still valid across an agent's write or the echo of
+  // a Save.
+  if (gesture?.kind === 'erase') cancelGesture()
   endPlaceTextBatch()
   // A render REPLACES every cell, so it must never reach dirty tracking or the
   // undo stack: rebuilding the board is the pane's own bookkeeping, not an edit
