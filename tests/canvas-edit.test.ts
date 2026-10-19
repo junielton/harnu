@@ -841,7 +841,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     }))
     const w = mountPane()
     await settle()
-    expect(w.text()).toContain('Drag anywhere to draw a box')
+    expect(w.text()).toContain('Pick a shape from the toolbar')
     w.unmount()
   })
 })
