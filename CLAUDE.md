@@ -360,6 +360,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Scheduler worker row                               | `src/renderer/src/components/SchedulerWorkerRow.vue`                             |
 | Scheduler prompt field (skill mentions, T305)      | `src/renderer/src/components/SchedulerPromptField.vue` + `scheduler-mentions.ts` |
 | Scheduler worker detail                            | `src/renderer/src/components/SchedulerWorkerDetail.vue`                          |
+| Roadmap WIP chip + limit stepper (§6 — BUG-197)    | `src/renderer/src/components/RoadmapWipChip.vue`                                 |
 | Mission progress pill (Topbar, §6 — T370)          | `src/renderer/src/components/MissionPill.vue` + `lib/mission-view.ts`            |
 | Mission progress popover (§6 — T370)               | `src/renderer/src/components/MissionPopover.vue` + `stores/missions.ts`          |
 | Mission step rail (§6 — T370)                      | `src/renderer/src/components/MissionStepRail.vue`                                |

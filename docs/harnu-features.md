@@ -946,7 +946,10 @@ cards in drain order. The server builds the disclosure from disk (title, kind/co
 readiness gaps, boot prompt, body fingerprint); a missing, `done`, or secret-looking card
 refuses the WHOLE batch, naming the slug. With "Ask before agent actions" OFF (default) and
 the folder unblocked, every card is stamped `approved` + fingerprint IN THE SAME CALL and
-drains automatically in order, pausing visibly at the WIP ceiling; a shadow-log entry and a
+drains automatically in order, pausing visibly at the WIP ceiling — which counts only LIVE In
+Progress cards (a card whose session is dead, never started or silent for a week is stale and
+holds no slot) against a per-repo limit (default 5); a paused pass raises ONE Activity notice
+naming the ceiling and the cards holding the slots; a shadow-log entry and a
 notification record the self-approval. With it ON, the disclosure parks in the Approval
 Inbox as a checklist; the operator may uncheck cards (left exactly as they were) and only
 that Allow stamps. No other route stamps `approved`. A stale or missing stamp falls back to
