@@ -1186,7 +1186,9 @@
         "customized": "Personalizados"
       },
       "noMatch": "Nenhum atalho encontrado.",
-      "unreachable": "{chord} nunca dispara para esta ação. Escolha outro atalho."
+      "unreachable": "{chord} nunca dispara para esta ação. Escolha outro atalho.",
+      "shieldHint": "Tomado do terminal: o programa que roda nele nunca recebe {chord}.",
+      "terminalKeepsHint": "O terminal fica com {chord}: o atalho não dispara enquanto um terminal tem o foco."
     },
     "actions": {
       "session_new": "Nova sessão",
@@ -1290,6 +1292,8 @@
       "view_settings_cleanup": "Abrir Configurações: Limpeza",
       "view_settings_containers": "Abrir Configurações: Containers",
       "view_settings_prStack": "Abrir Configurações: PR Stack",
+      "nav_back": "Voltar à sessão anterior",
+      "nav_forward": "Avançar para a próxima sessão",
       "app_reload": "Recarregar a janela",
       "app_devtools": "Alternar o DevTools",
       "app_quit": "Sair do Harnu",
