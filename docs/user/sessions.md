@@ -98,6 +98,29 @@ The area to the right of your main terminal can hold a vertical stack of extra p
 
 Drag a pane's header to resize it. Split panes follow the same rule as the main terminal — a shell running in a split (say, `npm run dev`) keeps running in the background even if you switch to a different worktree or session. Every pane's header also has a maximize button: click it to grow that pane to fill the split while the others collapse to a thin header strip (still running in the background); click it again, or a different pane's maximize button, to restore or switch.
 
+### Moving between panes from the keyboard
+
+- `F6` moves focus to the next pane: the main terminal, then each split pane from top to bottom, then back to the main terminal. `Shift+F6` goes the other way. Both work while a terminal has focus, so the program running there no longer receives `F6`. A collapsed split, and the panes hidden behind a maximized one, are skipped; when a view such as the Roadmap covers the main terminal, only the split panes are visited. With a dialog, the command palette or a menu open, they do nothing. On most Mac keyboards press `Fn+F6` and `Fn+Shift+F6`.
+- A Markdown, Memory, file-browser or canvas pane shows a thin accent outline while it has focus. Terminal panes don't: their cursor already tells you.
+- `Cmd/Ctrl+Shift+M` maximizes the focused split pane, or restores it if it's already maximized. With no split pane focused, it restores whichever pane is maximized.
+- **Close the focused pane** has no shortcut out of the box (command id `pane.close`). Once you bind one, it closes the pane that has focus exactly like its header's close button: a Markdown or canvas pane with unsaved changes still asks before discarding them. Focus then moves to the next pane.
+
+### The terminal toggle
+
+**Toggle the terminal pane** (command id `terminal.toggle`) has no shortcut out of the box. Once you bind one, each press does one of three things in the current folder:
+
+1. No shell pane in the split → it opens one.
+2. A shell pane exists but doesn't have focus → it shows the split (if you had collapsed it), restores a maximized pane so the shell is visible, and focuses the shell. If a view such as Cleanup or the usage overview covers the screen, it closes that view first; the Roadmap and Review stay open, since the split sits beside them.
+3. The shell pane already has focus → it collapses the whole split panel and puts focus back on the main terminal.
+
+It always reuses the first shell pane in the split. Split → **New shell** still adds another shell every time.
+
+The toggle's chord is taken from every terminal before the program sees it, so it works from inside the shell pane (that's how the third press collapses it). That also means the chord never reaches any program running in a terminal. **Pick a chord no terminal program needs:**
+
+- **Don't bind `Ctrl+J`.** `Ctrl+J` is LF, the line-feed character. In Claude Code it inserts a newline; in bash and zsh it runs the command, like Enter; in vim's insert mode it starts a new line. Bound to the toggle, it stops doing all of that in every terminal. (`Shift+Enter` still sends a newline to Claude Code.) The same goes for `Cmd+J` on Linux and Windows, where `Cmd` means `Ctrl`.
+- **``Ctrl+` ``** (Control and the backquote key) is safe on every platform: terminals send nothing for it. Harnu matches the physical key, so on a non-US layout it's the key where the backquote sits on a US keyboard, left of `1`. In `keybindings.json` write it as ``"key": "Ctrl+`"`` — Control, also on a Mac. Don't write ``Cmd+` ``: on macOS, ``⌘` `` moves focus to your next window and never reaches Harnu.
+- On macOS, `Cmd+J` is also safe: terminals ignore `⌘J`.
+
 ## The command palette
 
 `Cmd/Ctrl+K` opens a spotlight-style search over your recent sessions, folders, and available actions. It's the fastest way to jump around once you have more than a couple of folders pinned. It shows your most recent sessions first, then fuzzy-matches everything else as you type — folders by name, sessions by their summary or first prompt, and a fixed set of actions (new session, add folder, resume your last session, toggle the Fleet rail, open the Approval Inbox). Arrow keys move the selection, Enter activates it, Esc closes it.
@@ -144,6 +167,8 @@ a binding written as `Cmd+K` is `⌘K` on a Mac and `Ctrl+K` elsewhere.
 | `Cmd/Ctrl+Enter`   | Open the cursor session (or the selected one) in a split beside the current one |
 | `Shift+F10`        | Open the right-click menu for the cursor row (`Fn+Shift+F10` on a Mac)          |
 | `F2`               | Rename the cursor folder row, or the active folder (`Fn+F2` on a Mac)           |
+| `F6` / `Shift+F6`  | Focus the next / previous pane, even from a terminal (`Fn+F6` on a Mac)         |
+| `Cmd/Ctrl+Shift+M` | Maximize or restore the focused split pane                                      |
 | `Alt+←` / `Cmd+[`  | Back to the previous session you viewed                                         |
 | `Alt+→` / `Cmd+]`  | Forward again after going back                                                  |
 | Arrow keys / Enter | Move and activate the keyboard cursor in the sidebar                            |
@@ -243,15 +268,20 @@ has focus. On Linux and Windows the menu only gets a key the terminal didn't use
 so a `Ctrl+letter` chord (`Ctrl+N`, `Ctrl+B`, `Ctrl+W`, …) pressed in a terminal
 goes to the program running there as a control character instead (`Ctrl+W`
 deletes the previous word in a shell); click outside the terminal first, or use
-the menu. `Ctrl+Shift+letter` chords are not affected. Back and Forward are
-**shielded**: their chord is taken before the terminal sees it, on every
-platform.
+the menu. `Ctrl+Shift+letter` chords are not affected. Back and Forward, `F6` /
+`Shift+F6` and the terminal toggle are **shielded**: their chord is taken before
+the terminal sees it, on every platform.
+
+On Linux and Windows, if you bind `F6`, `Shift+F6` or the terminal toggle to an
+`Alt` chord, the menu bar may appear when you release `Alt`. Back and Forward
+don't have this problem: they are native menu items, so their `Alt` chord stays
+with the menu.
 
 A shortcut fires only with exactly its modifiers held: `F7` does not fire on
 `Shift+F7`, and `Ctrl+K` does not fire on `Ctrl+Shift+K`.
 
-On most Mac keyboards the F-keys (`F2`, `Shift+F10`, …) need **Fn** held — `F2`
-is brightness, `F10` mute — unless you set "Use F1, F2, etc. keys as standard
+On most Mac keyboards the F-keys (`F2`, `F6`, `Shift+F10`, …) need **Fn** held —
+`F2` is brightness, `F6` Do Not Disturb, `F10` mute — unless you set "Use F1, F2, etc. keys as standard
 function keys" in System Settings → Keyboard.
 
 ### Customizing shortcuts
