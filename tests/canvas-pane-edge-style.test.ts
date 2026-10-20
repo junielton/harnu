@@ -4,6 +4,7 @@ import type { VueWrapper } from '@vue/test-utils'
 import type { Cell, Graph } from '@antv/x6'
 import { setActivePinia, createPinia } from 'pinia'
 import type { CanvasDocument } from '../src/main/canvas-core'
+import CanvasPropertiesPanel from '../src/renderer/src/components/CanvasPropertiesPanel.vue'
 import { MOCKUP_CARD_SHAPE } from '../src/renderer/src/components/canvas/shapes/mockup-card'
 import { useThemeStore } from '../src/renderer/src/stores/theme'
 import { installJsdomSvgShim } from './helpers/jsdom-svg'
@@ -337,7 +338,14 @@ describe('DiagramPane arrow styles — a pick restyles the arrow and saves into 
     const w = mountPane()
     await settle()
     await select(w, 'e-1')
-    await pick(w, 'tone', 'default')
+    // The panel itself returns early for the value already in force, so emit straight
+    // from it: this reaches the pane's own equality skip in applyStylePatch.
+    // X6 ignores a setData that changes nothing, so the pane's skip is observable only
+    // as "setData is never called".
+    const setData = vi.spyOn(graphOf(w).getCellById('e-1')!, 'setData')
+    w.findComponent(CanvasPropertiesPanel).vm.$emit('change', { tone: 'default' })
+    await settle()
+    expect(setData).not.toHaveBeenCalled()
     expect(isDirty(w)).toBe(false)
   })
 })

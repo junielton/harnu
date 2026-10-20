@@ -871,7 +871,8 @@ export function canvasShapeCatalogAck(): {
 }
 
 /** T536 U5 — what an arrow's `style` takes, exactly as the ACK carries it
- *  (`edgeStyle`): key → allowed values. A copy, so a caller cannot edit the table. */
+ *  (`edgeStyle`): key → allowed values. A shallow copy: a caller cannot add or drop
+ *  keys on the table, but the value arrays are shared and must be treated as read-only. */
 export function canvasEdgeStyleAck(): Record<string, readonly CanvasStyleValue[]> {
   return { ...CANVAS_EDGE_STYLE } as Record<string, readonly CanvasStyleValue[]>
 }
