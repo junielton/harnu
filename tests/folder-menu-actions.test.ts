@@ -195,8 +195,8 @@ describe('AC-35 — folder.rename (F2)', () => {
     const reg = src.slice(start, src.indexOf("id: '", start + 5))
     expect(reg).toContain("keys: kb('folder.rename')")
     expect(reg).toContain('keysGuard: notInTextEntry')
-    expect(reg).toContain('folderActions.renameTarget()')
-    expect(reg).toContain('folderActions.run.rename(')
+    expect(reg).toContain('folderMenuActions.renameTarget()')
+    expect(reg).toContain('folderMenuActions.run.rename(')
   })
 })
 
@@ -326,6 +326,11 @@ describe('AC-37 — the menus and the bindings share one function', () => {
       'sessions.dismissFolder('
     ])
       expect(menu, call).not.toContain(call)
+
+    // The folder row's older / archived peek runs the same function too.
+    const row = read('src/renderer/src/components/SidebarFolder.vue')
+    expect(row).toContain('folderMenuActions.run.toggleOlder(')
+    expect(row).not.toContain('sessions.toggleRevealOlder(')
   })
 
   it('every §3.4 registration in App.vue runs the composable', () => {
@@ -344,7 +349,7 @@ describe('AC-37 — the menus and the bindings share one function', () => {
     for (const id of mine) {
       const start = src.indexOf(`id: '${id}'`)
       const reg = src.slice(start, src.indexOf("id: '", start + 5))
-      expect(reg, id).toMatch(/folderActions\.|onActiveFolder\(|onGroup\(/)
+      expect(reg, id).toMatch(/folderMenuActions\.|onActiveFolder\(|onGroup\(/)
       expect(reg, id).toContain('keysGuard: notInTextEntry')
     }
   })
