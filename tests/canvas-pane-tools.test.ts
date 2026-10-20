@@ -1,16 +1,28 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
+import type { VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
-import { nextTick } from 'vue'
-import DiagramPane from '../src/renderer/src/components/DiagramPane.vue'
 import {
   DEFAULT_ELLIPSE_SIZE,
   DEFAULT_NODE_SIZE
 } from '../src/renderer/src/components/canvas/canvas-cells'
 import { validateCanvasDocument, type CanvasDocument } from '../src/main/canvas-core'
-import { i18n } from '@renderer/i18n'
 import { installJsdomSvgShim } from './helpers/jsdom-svg'
+import {
+  bodyOf,
+  down,
+  focusPane,
+  key,
+  keyUp,
+  mountPane,
+  move,
+  nodeEl,
+  saveAndRead,
+  settle,
+  svgOf,
+  unmountPanes,
+  up
+} from './helpers/canvas-pane-harness'
 import { useThemeStore } from '../src/renderer/src/stores/theme'
 
 installJsdomSvgShim()
@@ -96,31 +108,10 @@ if (!('elementFromPoint' in document)) {
   ;(document as unknown as { elementFromPoint: () => null }).elementFromPoint = () => null
 }
 
-const mounted: VueWrapper[] = []
 afterEach(() => {
-  while (mounted.length) mounted.pop()!.unmount()
+  unmountPanes()
   document.body.innerHTML = ''
 })
-
-function mountPane(id = 'h-canvas', file = '/wt/board.harnucanvas.json'): VueWrapper {
-  const w = mount(DiagramPane, {
-    props: {
-      pane: { id, type: 'canvas' as const, cwd: '/wt', ratio: 1, filePath: file },
-      worktreePath: '/wt'
-    },
-    global: { plugins: [i18n] },
-    attachTo: document.body
-  })
-  mounted.push(w)
-  return w
-}
-
-async function settle(): Promise<void> {
-  for (let i = 0; i < 6; i++) {
-    await flushPromises()
-    await nextTick()
-  }
-}
 
 /**
  * Settle until `done()` holds, bounded by wall time rather than by a tick count. A reload
@@ -146,64 +137,6 @@ function reloadLanded(w: VueWrapper, id: string, before: Element | null): () => 
   }
 }
 
-function svgOf(w: VueWrapper): Element {
-  return w.element.querySelector('[data-testid="diagram-canvas-host"] svg')!
-}
-function bodyOf(w: VueWrapper): HTMLElement {
-  return w.element.querySelector('[data-testid="diagram-canvas-host"]')!
-    .parentElement as HTMLElement
-}
-function nodeEl(w: VueWrapper, id: string): Element {
-  return w.element.querySelector(`[data-cell-id="${id}"]`)!
-}
-
-/** Focus inside the pane — every shortcut is gated on it. */
-function focusPane(w: VueWrapper): void {
-  bodyOf(w).focus()
-}
-function key(k: string, init: KeyboardEventInit = {}): void {
-  window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, ...init }))
-}
-function keyUp(k: string): void {
-  window.dispatchEvent(new KeyboardEvent('keyup', { key: k, bubbles: true }))
-}
-
-function down(el: Element, at: [number, number], init: MouseEventInit = {}): void {
-  el.dispatchEvent(
-    new MouseEvent('mousedown', {
-      bubbles: true,
-      button: 0,
-      clientX: at[0],
-      clientY: at[1],
-      ...init
-    })
-  )
-}
-/**
- * Moves and the release go to `document`, as in the real app: X6 listens there
- * for the rest of a drag (and stops listening for the NEXT press until it sees
- * the release), while the pane's capture-phase `window` listener sees the same
- * event first on its way down.
- */
-function move(at: [number, number], init: MouseEventInit = {}): void {
-  // `buttons: 1`: a drag holds the primary button down. A move with no button
-  // held means the release was lost, and the Eraser cancels on it.
-  document.dispatchEvent(
-    new MouseEvent('mousemove', {
-      bubbles: true,
-      buttons: 1,
-      clientX: at[0],
-      clientY: at[1],
-      ...init
-    })
-  )
-}
-function up(at: [number, number], init: MouseEventInit = {}): void {
-  document.dispatchEvent(
-    new MouseEvent('mouseup', { bubbles: true, button: 0, clientX: at[0], clientY: at[1], ...init })
-  )
-}
-
 /** A blank drag: press on the board, move and release through `document`. */
 function dragOnBlankCanvas(w: VueWrapper, from: [number, number], to: [number, number]): void {
   down(svgOf(w), from)
@@ -221,14 +154,6 @@ function pressed(w: VueWrapper): string[] {
     .findAll('[data-testid^="canvas-tool-"][aria-pressed="true"]')
     .map((b) => b.attributes('data-testid')!.replace('canvas-tool-', ''))
     .filter((id) => id !== 'lock')
-}
-
-async function saveAndRead(w: VueWrapper): Promise<CanvasDocument> {
-  await w.find('[data-testid="diagram-save"]').trigger('click')
-  await settle()
-  const calls = canvasWrite.mock.calls as unknown as [string, CanvasDocument][]
-  expect(calls.length).toBeGreaterThan(0)
-  return calls[calls.length - 1][1]
 }
 
 const created = (doc: CanvasDocument): CanvasDocument['nodes'] =>
@@ -641,8 +566,8 @@ describe('DiagramPane tools — Review Focus 1-4', () => {
   })
 
   it('RF4: two panes keep independent tools', async () => {
-    const first = mountPane('h-one', '/wt/one.harnucanvas.json')
-    const second = mountPane('h-two', '/wt/two.harnucanvas.json')
+    const first = mountPane({ id: 'h-one', filePath: '/wt/one.harnucanvas.json' })
+    const second = mountPane({ id: 'h-two', filePath: '/wt/two.harnucanvas.json' })
     await settle()
     focusPane(first)
     key('r')
