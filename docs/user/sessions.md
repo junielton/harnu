@@ -165,10 +165,10 @@ still starting, for example). Remote Control and Promote to Orchestrator stay
 click-only on purpose: they show a disclosure you should read first.
 
 `Cmd/Ctrl+Shift+F` opens the jump palette even while a terminal has focus, and
-shows the sidebar first if you had collapsed it. Other renderer-only shortcuts
-(`Cmd/Ctrl+Shift+A`, `+Shift+B`, `+Shift+D`, `Cmd/Ctrl+Enter`, `Shift+F10`, and
-the sidebar arrow keys) don't fire while the terminal pane has keyboard focus —
-the terminal gets those keys. Shortcuts that act on the sidebar or on a
+shows the sidebar first if you had collapsed it. The terminal sends nothing for a
+`Cmd/Ctrl+Shift+letter` chord, so `Cmd/Ctrl+Shift+A`, `+Shift+B` and `+Shift+D`
+also fire over it. `Cmd/Ctrl+Enter`, `Shift+F10` and the sidebar arrow keys don't
+fire while the terminal pane has keyboard focus — the terminal gets those keys. Shortcuts that act on the sidebar or on a
 selection also leave a key you type in a text field alone. The rest are bound in
 the native menu and work everywhere.
 
