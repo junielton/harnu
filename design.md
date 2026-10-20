@@ -5262,22 +5262,23 @@ document, so it inherits the tokens for free rather than through an iframe.
 
 Node and edge treatment, tokens only — **no raw hex anywhere in the component**:
 
-| Element              | Fill / stroke                                                                |
-| -------------------- | ---------------------------------------------------------------------------- |
-| `box` body           | `--color-surface` fill, `--color-border-2` 1.5px stroke, `--radius` rx/ry    |
-| `ellipse` body       | as `box`: `--color-surface` fill, `--color-border-2` 1.5px stroke (T536 U2)  |
-| `diamond` body       | as `box`, on a four-vertex polygon; ports sit at the vertices (T536 U2)      |
-| `box` / `text` label | `--color-text`, 12px, `--font-sans`                                          |
-| `text` node          | no body — label only, `--color-text-2`                                       |
-| `image` node         | the asset, on a `--color-surface` ground                                     |
-| styled node (U3)     | the keys of "Node styles" below; a node with none renders as the rows above  |
-| `text` node tone     | label coloured by the tone's stroke column; `default` stays `--color-text-2` |
-| node `opacity`       | 0.25 / 0.5 / 0.75 / 1 on body, label and image; ports are not dimmed         |
-| node stacking (U4)   | `zIndex` 1..n, higher on top; a node without one stacks at 1 in file order   |
-| edge stacking        | always under every node, never restacked                                     |
-| edge line            | `--color-accent` 1.5px, `block` target marker, manhattan router              |
-| edge label           | `--color-text-3` 11px on a `--color-bg` plate                                |
-| grid dot             | `--color-border-2`, 2px dot, 16px pitch                                      |
+| Element              | Fill / stroke                                                                 |
+| -------------------- | ----------------------------------------------------------------------------- |
+| `box` body           | `--color-surface` fill, `--color-border-2` 1.5px stroke, `--radius` rx/ry     |
+| `ellipse` body       | as `box`: `--color-surface` fill, `--color-border-2` 1.5px stroke (T536 U2)   |
+| `diamond` body       | as `box`, on a four-vertex polygon; ports sit at the vertices (T536 U2)       |
+| `box` / `text` label | `--color-text`, 12px, `--font-sans`                                           |
+| `text` node          | no body — label only, `--color-text-2`                                        |
+| `image` node         | the asset, on a `--color-surface` ground                                      |
+| styled node (U3)     | the keys of "Node styles" below; a node with none renders as the rows above   |
+| `text` node tone     | label coloured by the tone's stroke column; `default` stays `--color-text-2`  |
+| node `opacity`       | 0.25 / 0.5 / 0.75 / 1 on body, label and image; ports are not dimmed          |
+| node stacking (U4)   | `zIndex` 1..n, higher on top; a node without one stacks at 1 in file order    |
+| edge stacking        | always under every node, never restacked                                      |
+| edge line            | `--color-accent` 1.5px, `block` target marker, manhattan router               |
+| styled arrow (U5)    | the keys of "Arrow styles" below; an arrow with none renders as the row above |
+| edge label           | `--color-text-3` 11px on a `--color-bg` plate                                 |
+| grid dot             | `--color-border-2`, 2px dot, 16px pitch                                       |
 
 **Theme (spec §6.4).** The palette is **resolved from CSS variables at mount and
 re-resolved on every theme switch**, then pushed back onto every live cell and onto the
@@ -5409,8 +5410,33 @@ Which shapes take which keys: `box` all seven; `ellipse` and `diamond` all but `
 `harnu/mockup-card` none; an unknown kind none (it keeps the dashed fallback and ignores
 any style).
 
+**Arrow styles (T536 U5).** An arrow carries an optional `style` of two keys, written to the
+file as the spelling in the first column, in the edge's `props.style` (never a new
+top-level edge key). A key that is absent renders as its default, so a board drawn before U5
+looks exactly as it did. No new colour: every tone is an existing token. Width stays 1.5px.
+
+| Key      | Values (file spelling)                  | Default   | Renders as                                         |
+| -------- | --------------------------------------- | --------- | -------------------------------------------------- |
+| `tone`   | `default` `green` `amber` `red` `muted` | `default` | line and arrowhead colour, table below             |
+| `stroke` | `solid` `dashed` `dotted`               | `solid`   | `strokeDasharray`: none / `6 4` / `2 3` (as nodes) |
+
+| Arrow tone | Line and arrowhead |
+| ---------- | ------------------ |
+| `default`  | `--accent`         |
+| `green`    | `--green`          |
+| `amber`    | `--warning`        |
+| `red`      | `--red`            |
+| `muted`    | `--text-3`         |
+
+`default` is today's arrow, so no existing board changes. There is no `accent` value: it
+would draw exactly like `default`. `muted` uses `--text-3`, not the node `muted` stroke
+(`--border`), which is near-invisible as a 1.5px line on `--bg` in the dark themes. The
+arrowhead takes the line's colour and is never dashed. The label stays `--text-3` on its
+`--bg` plate whatever the tone. A **selected arrow** shows X6's edge selection box, the
+same treatment as a selected node.
+
 **Properties panel (T536 U3).** A floating panel that edits the style of the selected
-nodes. Component: `CanvasPropertiesPanel.vue`, over the pure `canvas/canvas-style.ts`
+nodes and arrows. Component: `CanvasPropertiesPanel.vue`, over the pure `canvas/canvas-style.ts`
 module. Absolute to the viewport, so it neither pans nor zooms.
 
 - **Placement.** Left edge of the viewport (`left-3`), 8px below the zoom cluster, or 8px
@@ -5425,12 +5451,17 @@ module. Absolute to the viewport, so it neither pans nor zooms.
   style and width show a 16px inline line glyph in `currentColor` with the canvas
   dasharray and width. Corners use `square` / `square-round-corner`; align uses
   `align-left` / `align-center` / `align-right`; size shows S / M / L / XL; opacity shows
-  the percentage.
+  the percentage. With **only arrows** selected, the Color options are 16px line glyphs in
+  the tone's text utility (`text-accent`, `text-green`, `text-warning`, `text-red`,
+  `text-text-3`) instead of fill swatches.
 - **Visibility.** Only while the tool is Select (the chosen tool, so holding `Space` does
-  not hide it) and the selection holds **at least one node**. The style groups show only
-  the controls every selected node accepts (U3's rule, unchanged); the Layers group shows
-  for any node selection, every kind included, so a box plus a mockup card, or `Ctrl+A`,
-  shows the Layers group alone. Selected edges are ignored by both.
+  not hide it) and the selection holds **at least one node or arrow**. The style groups
+  show only the keys **and values** every selected element accepts: an arrow alone shows
+  Color (five tones) and Stroke; a box plus an arrow shows Color without `accent`, and
+  Stroke; a box plus an arrow plus a mockup card shows no style group. The Layers group
+  shows for any selection holding a node, every kind included, so a box plus a mockup
+  card, or `Ctrl+A`, shows the Layers group alone; it acts on the selected nodes only, and
+  an arrow-only selection shows no Layers.
 - **Mixed selection.** When the selected nodes disagree on a key, no option in that group
   is checked.
 - **Undo.** Each change is one undo step.
