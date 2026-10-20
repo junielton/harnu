@@ -170,6 +170,13 @@ const FONT_PX: Readonly<Record<string, number>> = { s: 11, m: 12, l: 15, xl: 20 
 const BOX_RADIUS = 7
 /** How far `align: left | right` sits from the frame's edge, in world units. */
 const ALIGN_INSET = 8
+/**
+ * A diamond is a point at its bounding box's left and right edges, so an 8px inset
+ * there would put a left/right label past the slanted frame. It aligns to its
+ * inscribed box instead: a quarter of the width in, where the frame is half its
+ * height tall (`design.md` §6 "Node styles").
+ */
+const DIAMOND_ALIGN_REF = { left: '25%', right: '75%' } as const
 
 /**
  * A node's {@link CanvasStyle} as X6 attributes — the ONE place a style value
@@ -209,7 +216,12 @@ function styledAttrs(
     body.ry = radius
   }
   if (typeof style.fontSize === 'string') label.fontSize = FONT_PX[style.fontSize]
-  if (style.align === 'left') {
+  if (kind === 'diamond' && (style.align === 'left' || style.align === 'right')) {
+    Object.assign(label, {
+      textAnchor: style.align === 'left' ? 'start' : 'end',
+      refX: DIAMOND_ALIGN_REF[style.align]
+    })
+  } else if (style.align === 'left') {
     Object.assign(label, { textAnchor: 'start', refX: '0%', refX2: ALIGN_INSET })
   } else if (style.align === 'right') {
     Object.assign(label, { textAnchor: 'end', refX: '100%', refX2: -ALIGN_INSET })

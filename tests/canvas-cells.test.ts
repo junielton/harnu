@@ -376,7 +376,7 @@ describe('toX6Node — node styles (T536 U3)', () => {
   })
 
   it('align left anchors the text at the start with an 8px inset, on both paths', () => {
-    for (const shape of ['box', 'ellipse', 'diamond', 'text']) {
+    for (const shape of ['box', 'ellipse', 'text']) {
       const a = attrsOf(styled({ align: 'left' }, { shape }))
       for (const path of ['text', 'label']) {
         expect(a[path].textAnchor, `${shape}.${path}`).toBe('start')
@@ -392,6 +392,23 @@ describe('toX6Node — node styles (T536 U3)', () => {
       expect(a[path].textAnchor).toBe('end')
       expect(a[path].refX).toBe('100%')
       expect(a[path].refX2).toBe(-8)
+    }
+  })
+
+  // Live matrix (T536 U3, row S4): 8px from the bounding box is where a diamond is a
+  // point, so a left/right label poked past its slanted edges at every size. A diamond
+  // aligns to its inscribed box instead: a quarter of the width in, where the frame is
+  // half its height tall.
+  it('a diamond aligns left/right to its inscribed box, a quarter of the width in', () => {
+    const left = attrsOf(styled({ align: 'left' }, { shape: 'diamond' }))
+    const right = attrsOf(styled({ align: 'right' }, { shape: 'diamond' }))
+    for (const path of ['text', 'label']) {
+      expect(left[path].textAnchor, path).toBe('start')
+      expect(left[path].refX, path).toBe('25%')
+      expect(left[path].refX2 ?? 0, path).toBe(0)
+      expect(right[path].textAnchor, path).toBe('end')
+      expect(right[path].refX, path).toBe('75%')
+      expect(right[path].refX2 ?? 0, path).toBe(0)
     }
   })
 
