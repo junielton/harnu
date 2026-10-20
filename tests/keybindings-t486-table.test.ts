@@ -25,7 +25,7 @@ import {
  *
  * Each later unit appends its own §3 rows to `SPEC_ROWS`.
  * U2 added §3.2 + §3.3, U3 §3.4, U4a §3.5's inbox and popover ids, U4b §3.6
- * and the §3.5 Settings-tab ids.
+ * and the §3.5 Settings-tab ids, U5b §3.7.
  */
 
 interface SpecRow {
@@ -129,7 +129,20 @@ const SPEC_ROWS: Record<string, SpecRow> = {
       `view.settings.${tab}`,
       unbound('views')
     ])
-  )
+  ),
+
+  // §3.7 Panes — U5b. F6 / Shift+F6 and the terminal toggle are shielded so they
+  // work while a terminal holds focus; the toggle ships unbound (AC-28).
+  'pane.focusNext': { group: 'panes', defaultKeys: 'F6', menu: false, shield: true },
+  'pane.focusPrev': { group: 'panes', defaultKeys: 'Shift+F6', menu: false, shield: true },
+  'pane.toggleMaximize': {
+    group: 'panes',
+    defaultKeys: 'Cmd+Shift+M',
+    menu: false,
+    shield: false
+  },
+  'pane.close': unbound('panes'),
+  'terminal.toggle': { group: 'panes', defaultKeys: null, menu: false, shield: true }
 }
 
 /** How many rows each unit adds (§11) — a row dropped from `SPEC_ROWS` fails here. */
@@ -137,6 +150,7 @@ const U2_IDS = 20
 const U3_IDS = 21
 const U4A_IDS = 9
 const U4B_IDS = 5 + 20
+const U5B_IDS = 5
 
 describe('AC-11 — the §3 ids exist with their §3 values', () => {
   for (const [id, row] of Object.entries(SPEC_ROWS)) {
@@ -152,8 +166,17 @@ describe('AC-11 — the §3 ids exist with their §3 values', () => {
     })
   }
 
-  it('adds the 20 §3.2 + §3.3 ids, 21 §3.4, 9 §3.5 popover, 5 §3.6 and 20 Settings-tab ids', () => {
-    expect(Object.keys(SPEC_ROWS)).toHaveLength(U2_IDS + U3_IDS + U4A_IDS + U4B_IDS)
+  it('adds the 20 §3.2 + §3.3 ids, 21 §3.4, 9 §3.5 popover, 5 §3.6, 20 Settings-tab and 5 §3.7 ids', () => {
+    expect(Object.keys(SPEC_ROWS)).toHaveLength(U2_IDS + U3_IDS + U4A_IDS + U4B_IDS + U5B_IDS)
+  })
+
+  // §9.1: the four focus-dependent pane ids are never listed in the palette (its
+  // focus trap moves focus, so "the focused pane" is unknowable at activation).
+  it('the focus-dependent pane ids stay out of the palette; terminal.toggle is in it', () => {
+    for (const id of ['pane.focusNext', 'pane.focusPrev', 'pane.toggleMaximize', 'pane.close']) {
+      expect(DESCRIPTOR_BY_ID[id as keyof typeof DESCRIPTOR_BY_ID].palette, id).toBe(false)
+    }
+    expect(DESCRIPTOR_BY_ID['terminal.toggle'].palette).toBe(true)
   })
 
   // §9.1: the palette's empty query keeps today's set, which includes "Open approvals".
