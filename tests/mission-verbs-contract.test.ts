@@ -143,7 +143,7 @@ const LinkSignal = z.discriminatedUnion('kind', [
     exists: z.boolean(),
     branch: z.string().nullable(),
     head: z.object({ sha: z.string(), subject: z.string(), at: z.string() }).nullable(),
-    // T547: commits beyond the default branch; absent when git could not count.
+    // T547: commits beyond the open PR's base, else the default branch; absent when git could not count.
     commits: z.number().int().min(0).optional(),
     prs: z.array(PrSummary)
   }),

@@ -3929,7 +3929,7 @@ export type MissionLinkSignal =
       exists: boolean
       branch: string | null
       head: { sha: string; subject: string; at: string } | null
-      /** T547: commits on the branch since the repo's default branch; absent when git could not count. */
+      /** T547: commits beyond the open PR's base, else the repo's default branch; absent when git could not count. */
       commits?: number
       prs: MissionPrSummary[]
       /**

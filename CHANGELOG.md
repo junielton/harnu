@@ -14,7 +14,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Added
 
-- The mission popover now shows movement **inside** the current step — for example **21 commits · active 2m ago** — so a long step no longer looks like a stuck one. It counts the commits on the step's linked worktree beyond your default branch and the time of the newest sign of life (a commit, the helper session, or its subagents). After 15 minutes without any, the line turns amber: **no activity for 45m**. "Step N of M" is unchanged; the pill's tooltip repeats the line.
+- The mission popover now shows movement **inside** the current step — for example **21 commits · active 2m ago** — so a long step no longer looks like a stuck one. It counts the commits on the step's linked worktree beyond the branch it was cut from (its pull request's base, or your default branch) and the time of the newest sign of life (a commit, the helper session, or its subagents). After 15 minutes without any, the line turns amber: **no activity for 45m**. "Step N of M" is unchanged; the pill's tooltip repeats the line.
 - A step that links a pull request now lists it with its CI state in the popover: **PR #7 · open · CI running**.
 
 ### Changed
