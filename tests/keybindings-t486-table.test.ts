@@ -22,6 +22,7 @@ import {
  *    chord, on both platform folds.
  *
  * Each later unit appends its own §3 rows to `SPEC_ROWS`.
+ * U2 added §3.2 + §3.3, U3 §3.4.
  */
 
 interface SpecRow {
@@ -65,8 +66,35 @@ const SPEC_ROWS: Record<string, SpecRow> = {
   'sidebar.rescan': unbound('sidebar'),
   'sidebar.cycleDrillDepth': unbound('sidebar'),
   'sidebar.toggleCollapseAll': unbound('sidebar'),
-  'sidebar.hiddenFolders': unbound('sidebar')
+  'sidebar.hiddenFolders': unbound('sidebar'),
+
+  // §3.4 Folders and repo groups — the ids U3 adds. Only F2 has a default.
+  'folder.rename': { group: 'folders', defaultKeys: 'F2', menu: false, shield: false },
+  'folder.newFolderTerminal': unbound('folders'),
+  'folder.toggleBranchAlias': unbound('folders'),
+  'folder.bootOptions': unbound('folders'),
+  'folder.projectMemory': unbound('folders'),
+  'folder.memoryLocation': unbound('folders'),
+  'folder.newSubfolder': unbound('folders'),
+  'folder.openSubfolder': unbound('folders'),
+  'folder.newWorktree': unbound('folders'),
+  'folder.worktreeMd': unbound('folders'),
+  'folder.askAgentWorktreeMd': unbound('folders'),
+  'folder.toggleIntercept': unbound('folders'),
+  'folder.toggleAutoOrganize': unbound('folders'),
+  'folder.toggleOrchestratorDefault': unbound('folders'),
+  'folder.toggleHidden': unbound('folders'),
+  'folder.removeWorktree': unbound('folders'),
+  'folder.toggleOlder': unbound('folders'),
+  'folder.toggleArchived': unbound('folders'),
+  'repoGroup.rename': unbound('folders'),
+  'repoGroup.resetName': unbound('folders'),
+  'repoGroup.cleanup': unbound('folders')
 }
+
+/** How many rows each unit adds (§11) — a row dropped from `SPEC_ROWS` fails here. */
+const U2_IDS = 20
+const U3_IDS = 21
 
 describe('AC-11 — the §3 ids exist with their §3 values', () => {
   for (const [id, row] of Object.entries(SPEC_ROWS)) {
@@ -83,9 +111,32 @@ describe('AC-11 — the §3 ids exist with their §3 values', () => {
     })
   }
 
-  it('adds exactly the 20 §3.2 + §3.3 ids', () => {
-    expect(Object.keys(SPEC_ROWS)).toHaveLength(20)
+  it('adds exactly the 20 §3.2 + §3.3 ids and the 21 §3.4 ids', () => {
+    expect(Object.keys(SPEC_ROWS)).toHaveLength(U2_IDS + U3_IDS)
   })
+})
+
+/**
+ * §3.4's six T1 rows keep their T1 values (menu-backed, so they fire over a
+ * focused terminal); only `folder.add` has a default.
+ */
+describe('AC-11 — the §3.4 rows T1 already shipped', () => {
+  const T1_FOLDER_ROWS: Record<string, string | null> = {
+    'folder.add': 'Cmd+O',
+    'folder.browseFiles': null,
+    'folder.newTerminal': null,
+    'folder.openInFileManager': null,
+    'folder.openInVSCode': null,
+    'folder.openGithubPulls': null
+  }
+  for (const [id, defaultKeys] of Object.entries(T1_FOLDER_ROWS)) {
+    it(id, () => {
+      const d = DESCRIPTOR_BY_ID[id as keyof typeof DESCRIPTOR_BY_ID]
+      expect(d.group).toBe('folders')
+      expect(d.defaultKeys).toBe(defaultKeys)
+      expect(d.menu).toBe(true)
+    })
+  }
 })
 
 /**
