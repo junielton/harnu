@@ -177,6 +177,7 @@ import { dedupeAfterSeq } from '../lib/adoptDedupe'
 import { installTerminalKeymap } from '../lib/terminalKeymap'
 import { registerWriter, unregisterWriter } from '../lib/terminal-bus'
 import { pasteAndSubmit } from './prompt-inject'
+import { isSpawnRefused } from '../lib/cloud-session'
 import {
   acquireInjectionTargetWithRetry,
   createInjectGate,
@@ -566,7 +567,8 @@ async function createLiveTerminal(
   // already routes these to `CloudSessionPanel` instead of mounting us, but if
   // some other path (e.g. open-in-new-tab) ever asks us to mount one, refuse to
   // spawn rather than thrash a doomed process. Dispose the xterm we just opened.
-  if (sessionEntry && sessionEntry.resumable === false) {
+  // "Resume anyway" (BUG-198 G4) is the operator overriding exactly this.
+  if (isSpawnRefused(sessionEntry)) {
     t.dispose()
     return undefined
   }
@@ -1676,6 +1678,20 @@ watch(
     await activate(id)
   },
   { immediate: true }
+)
+
+// BUG-198 G4/G5: `activate()` above refuses to spawn a cloud-stub row, and it only
+// runs when the selection changes. When the SAME selected row stops being refused
+// — the operator pressed "Resume anyway", or the next disk reconcile says the
+// transcript gained its first turn — activate it again: a cached `LiveTerminal`
+// re-attaches, otherwise `claude --resume` spawns.
+watch(
+  () => [sessions.selectedId, !isSpawnRefused(sessions.selectedSession ?? undefined)] as const,
+  async ([id, allowed], [prevId, prevAllowed]) => {
+    if (!id || id !== prevId || !allowed || prevAllowed) return
+    if (!termEl.value) await nextTick()
+    await activate(id)
+  }
 )
 
 /**

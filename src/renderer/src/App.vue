@@ -8,6 +8,7 @@ import StatusFooter from './components/StatusFooter.vue'
 import EmptyState from './components/EmptyState.vue'
 import FolderView from './components/FolderView.vue'
 import CloudSessionPanel from './components/CloudSessionPanel.vue'
+import { isCloudStub } from './lib/cloud-session'
 import Onboarding from './components/Onboarding.vue'
 import AddFolderDialog from './components/AddFolderDialog.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
@@ -326,13 +327,14 @@ const showActiveView = computed(
  * The selected session is a cloud/bridge stub with no local transcript to
  * resume — render `CloudSessionPanel` instead of `TerminalPane` so we never
  * spawn a doomed `claude --resume` (which ends with "No conversation found …").
- * Synthetics are always resumable, so a freshly-created session never hits this.
+ * A session whose terminal is alive in this app run never qualifies (BUG-198 G1:
+ * a fresh session's JSONL briefly reads zero-turn), and "Resume anyway" lifts it.
  * Folder terminals ARE resumable (a shell is its own live process), so the
  * `!isShellTerminal` clause is defence-in-depth: a terminal must always render
  * in `TerminalPane`, never the cloud panel, even if `resumable` ever flips.
  */
-const showCloudSession = computed(
-  () => sessions.selectedSession?.resumable === false && !sessions.selectedSession?.isShellTerminal
+const showCloudSession = computed(() =>
+  isCloudStub(sessions.selectedSession, sessions.isSessionLive(sessions.selectedId ?? ''))
 )
 
 /**

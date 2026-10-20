@@ -7098,15 +7098,25 @@ modal). Opened via `⌘K` (Cmd+K / Ctrl+K).
 ### Cloud session panel
 
 Shown in place of the terminal when the selected session is **cloud/bridge with no
-a resumable local transcript** (`resumable === false`; see §6 Session status →
+resumable local transcript** (`resumable === false`; see §6 Session status →
 **cloud**). Avoids firing a doomed `claude --resume` (which would return
 "No conversation found …" and end the PTY).
+
+The panel is **never** shown for a session whose terminal is alive in this app run
+(a fresh session's transcript briefly reads as zero-turn — BUG-198), and it is never
+a dead end: the "Resume anyway" action below always lets the operator through.
 
 - Container: vertical+horizontal centered in the right panel (`--bg`), same as the Empty state.
 - `cloud` icon 28px `--text-4`, `margin-bottom: 14px`.
 - Title: the session's name (§"Session name"), Inter 15px 500, `--text-2`.
 - Body: 1–2 lines `--text-4` 12.5px, centered, `max-width: 420px` — explains that the conversation lives on claude.ai and there's no local transcript to resume.
-- No clickable actions in v1 (informational). Copy via i18n (`cloudSession.*`).
+- Action: one **Ghost** `Button` (§6 Buttons), label **Resume anyway** (`cloudSession.resumeAnyway`),
+  `margin-top: 16px`, centered under the body. It is the only action — secondary by
+  design, because the panel's default reading is "nothing to resume here". Pressing it
+  marks the row as overridden for this app run (renderer-only; the next disk scan does
+  not undo it) and the panel yields to the terminal, which spawns `claude --resume` and
+  shows the CLI's own output — including its error, if there is one.
+- Copy via i18n (`cloudSession.*`).
 
 ### Floating surfaces (z-order)
 

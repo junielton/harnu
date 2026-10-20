@@ -260,6 +260,12 @@ export interface Session {
    */
   resumable: boolean
   /**
+   * Renderer-only (BUG-198 G4): the operator pressed "Resume anyway" on the
+   * cloud panel, so this row mounts its terminal even though `resumable` is
+   * `false`. Never on disk; survives reconciles (`RENDERER_ONLY_SESSION_KEYS`).
+   */
+  resumeAnyway?: boolean
+  /**
    * Mirrors `SessionEntry.bridged` — `true` when the session is mirrored to a
    * claude.ai cloud session. Drives the sidebar cloud affordance; orthogonal to
    * `resumable`. Synthetics are `false` until reconciliation pulls disk truth.
@@ -1973,6 +1979,16 @@ export const useSessionsStore = defineStore('sessions', () => {
   function clearHibernated(sessionId: string): void {
     const s = allSessions.value.find((x) => x.sessionId === sessionId)
     if (s) s.hibernated = undefined
+  }
+
+  /**
+   * BUG-198 G4: the operator chose "Resume anyway" on the cloud panel. Marks the
+   * row so the panel yields to the terminal and `TerminalPane` stops refusing to
+   * spawn it. Disk truth (`resumable`) is left alone; the flag is renderer-only.
+   */
+  function resumeAnyway(sessionId: string): void {
+    const s = allSessions.value.find((x) => x.sessionId === sessionId)
+    if (s) s.resumeAnyway = true
   }
 
   /** Resolve a session's canonical live-activity verdict (working / stuck / idle)
@@ -4334,7 +4350,8 @@ export const useSessionsStore = defineStore('sessions', () => {
     'bootOverride', // New session dialog + remoteControl toggle
     'agentControlled', // MCP agent-created session (withhold mcp-config + downgrade)
     'mode', // T123: Modes ▸ Learning teaching contract, read on every claude-resume spawn
-    'spawnedBy' // T215: who caused this session to exist — gates message_session's recipient scope
+    'spawnedBy', // T215: who caused this session to exist — gates message_session's recipient scope
+    'resumeAnyway' // BUG-198 G4: the operator's "Resume anyway" override of a cloud-stub classification
   ])
 
   function reconcileSessions(curArr: Session[], nextArr: Session[]): void {
@@ -4365,6 +4382,18 @@ export const useSessionsStore = defineStore('sessions', () => {
           // lacks the key (a real value on disk would still win — none of these
           // ever appears there).
           if (RENDERER_ONLY_SESSION_KEYS.has(key) && !(key in nsRec)) continue
+          // BUG-198 G2: a fresh session's JSONL exists seconds before its first
+          // turn, so the reader briefly says `resumable:false`. Disk may UPGRADE
+          // a row born synthetic in this run, never downgrade it — the process
+          // that will write the turns is ours and alive. (After a restart the
+          // row is no longer "born synthetic" and disk truth applies again.)
+          if (
+            key === 'resumable' &&
+            exRec[key] === true &&
+            nsRec[key] === false &&
+            bornSyntheticIds.has(ns.sessionId)
+          )
+            continue
           // Assigning an unchanged value is a no-op for Vue reactivity, so only
           // genuine field changes notify dependents.
           if (exRec[key] !== nsRec[key]) exRec[key] = nsRec[key]
@@ -5121,6 +5150,9 @@ export const useSessionsStore = defineStore('sessions', () => {
     if (realRow.spawnedBy === undefined && synth.spawnedBy !== undefined) {
       realRow.spawnedBy = synth.spawnedBy
     }
+    // BUG-198: the reader may have surfaced this id as a zero-turn stub before
+    // the first prompt landed; the synthetic's process is alive, so it is not.
+    if (synth.resumable && !realRow.resumable) realRow.resumable = true
     const live = folders.value.find((f) => f.path === folderPath)
     const idx = live ? live.sessions.indexOf(synth) : -1
     if (live && idx !== -1) live.sessions.splice(idx, 1)
@@ -5926,6 +5958,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     archivedSessionCount,
     markHibernated,
     clearHibernated,
+    resumeAnyway,
     registryStates,
     getPrefs,
     toggleNoFlicker,

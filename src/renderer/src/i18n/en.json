@@ -898,7 +898,8 @@
   "cloudSession": {
     "title": "This session lives in the cloud",
     "body": "Its conversation is mirrored to claude.ai and has no local transcript to resume here. Open it on claude.ai/code to continue.",
-    "bodyNoBridge": "This session has no local conversation to resume — there's nothing recorded on disk yet."
+    "bodyNoBridge": "This session has no local conversation to resume — there's nothing recorded on disk yet.",
+    "resumeAnyway": "Resume anyway"
   },
   "preview": {
     "label": "Session preview",
