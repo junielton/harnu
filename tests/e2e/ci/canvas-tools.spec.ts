@@ -12,10 +12,11 @@ import { basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 /**
- * T536 U1 + U2 — every canvas tool, driven with REAL mouse input in the BUILT app (spec
- * §9.3, items 1–8). The toolbar holds eight tools — Hand, Select, Rectangle, Diamond,
+ * T536 U1 + U2 + U3 — every canvas tool, driven with REAL mouse input in the BUILT app (spec
+ * §9.3, items 1–9). The toolbar holds eight tools — Hand, Select, Rectangle, Diamond,
  * Ellipse, Arrow, Text, Eraser — and step 8 (U2) covers the two shape tools added after
- * U1: Ellipse (`o`/`4`) and Diamond (`d`/`3`).
+ * U1: Ellipse (`o`/`4`) and Diamond (`d`/`3`). Step 9 (U3) sets every node style from the
+ * properties panel and from the agent (`draw_canvas` `style`).
  *
  * jsdom cannot reproduce X6's gesture handling: X6 listens for the release on `document`,
  * takes its own `mousedown` listener away until it sees one, and hit-tests through
@@ -78,6 +79,7 @@ interface SavedNode {
   height?: number
   label?: string
   origin: string
+  props?: { style?: Record<string, unknown> } & Record<string, unknown>
 }
 interface SavedEdge {
   id: string
@@ -105,6 +107,8 @@ const centre = (b: Box): { x: number; y: number } => ({
 
 interface McpClient {
   call(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>>
+  /** A call the server is expected to REFUSE: returns the refusal text (`CODE: message`). */
+  callRefused(name: string, args: Record<string, unknown>): Promise<string>
 }
 
 /** A streamable-HTTP response is either plain JSON or an SSE stream of `data:` lines. */
@@ -151,27 +155,38 @@ async function connectMcp(port: number, token: string): Promise<McpClient> {
   }).then((r) => r.text())
 
   let id = 1
+  const send = async (
+    name: string,
+    args: Record<string, unknown>
+  ): Promise<{ isError: boolean; text: string }> => {
+    id += 1
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id,
+        method: 'tools/call',
+        params: { name, arguments: args }
+      })
+    })
+    const rpc = parseRpc(await res.text()) as {
+      result?: { isError?: boolean; content?: { type: string; text: string }[] }
+      error?: unknown
+    }
+    expect(rpc.error, `${name} RPC error`).toBeUndefined()
+    return { isError: !!rpc.result?.isError, text: rpc.result?.content?.[0]?.text ?? '' }
+  }
   return {
     async call(name, args) {
-      id += 1
-      const res = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id,
-          method: 'tools/call',
-          params: { name, arguments: args }
-        })
-      })
-      const rpc = parseRpc(await res.text()) as {
-        result?: { isError?: boolean; content?: { type: string; text: string }[] }
-        error?: unknown
-      }
-      expect(rpc.error, `${name} RPC error`).toBeUndefined()
-      const text = rpc.result?.content?.[0]?.text ?? ''
-      expect(rpc.result?.isError, `${name} refused: ${text}`).toBeFalsy()
+      const { isError, text } = await send(name, args)
+      expect(isError, `${name} refused: ${text}`).toBe(false)
       return JSON.parse(text) as Record<string, unknown>
+    },
+    async callRefused(name, args) {
+      const { isError, text } = await send(name, args)
+      expect(isError, `${name} was expected to be refused, answered: ${text}`).toBe(true)
+      return text
     }
   }
 }
@@ -183,9 +198,10 @@ let page: Page
 let userData: string
 let folder: string
 let boardPath: string
+let mcp: McpClient
 const idOf: Record<string, string> = {}
 
-test.describe('canvas tools in the built app (T536 U1 + U2, spec §9.3)', () => {
+test.describe('canvas tools in the built app (T536 U1 + U2 + U3, spec §9.3)', () => {
   test.beforeAll(async () => {
     userData = mkdtempSync(join(tmpdir(), 'harnu-ci-canvas-'))
     folder = mkdtempSync(join(tmpdir(), 'harnu-ci-board-'))
@@ -521,6 +537,149 @@ test.describe('canvas tools in the built app (T536 U1 + U2, spec §9.3)', () => 
         expect(diamonds.every((n) => n.origin === 'operator')).toBe(true)
         expect(diamonds.every((n) => n.width === 132 && n.height === 80)).toBe(true)
       })
+
+      await test.step('9. Node styles: panel and agent', async () => {
+        const undo = pane.getByTestId('diagram-undo')
+        const redo = pane.getByTestId('diagram-redo')
+        const option = (key: string, value: string): Locator =>
+          pane.getByTestId(`canvas-prop-${key}-${value}`)
+        /** Click a panel option, opening the collapsed panel first when it is folded away. */
+        const pick = async (key: string, value: string): Promise<void> => {
+          const opt = option(key, value)
+          if (!(await opt.isVisible())) await pane.getByTestId('canvas-properties-toggle').click()
+          await opt.click()
+          await expect(opt).toHaveAttribute('aria-checked', 'true')
+        }
+        const transformHandles = pane.locator('.x6-widget-transform-resize')
+        const handlesFor = async (id: string, when: string): Promise<void> => {
+          await expect(selected, `${when}: one selection box`).toHaveCount(1)
+          expect(await selectedIds(), `${when}: the box is A's`).toEqual([id])
+          await expect(
+            pane.locator('.x6-widget-transform'),
+            `${when}: the transform widget`
+          ).toHaveCount(1)
+          expect(await transformHandles.count(), `${when}: resize handles`).toBeGreaterThan(0)
+        }
+
+        // Select A (Select is the armed tool) and pick every style once.
+        await page.mouse.click(...xy(centre(await nodeBox(idOf.A))))
+        await handlesFor(idOf.A, 'A selected, before any pick')
+        const handleCount = await transformHandles.count()
+
+        await pick('tone', 'green')
+        await handlesFor(idOf.A, 'after the first pick')
+        expect(await transformHandles.count(), 'resize handle count after a pick').toBe(handleCount)
+        for (const [key, value] of [
+          ['stroke', 'dashed'],
+          ['strokeWidth', 'bold'],
+          ['corners', 'sharp'],
+          ['fontSize', 'l'],
+          ['align', 'left'],
+          ['opacity', '50']
+        ] as const) {
+          await pick(key, value)
+        }
+        await handlesFor(idOf.A, 'after the last pick')
+
+        const styleOf = (doc: SavedDoc, id: string): Record<string, unknown> | undefined =>
+          doc.nodes.find((n) => n.id === id)?.props?.style
+        const all = {
+          tone: 'green',
+          stroke: 'dashed',
+          strokeWidth: 'bold',
+          corners: 'sharp',
+          fontSize: 'l',
+          align: 'left',
+          opacity: 50
+        }
+        let doc = await saveAndRead()
+        expect(styleOf(doc, idOf.A)).toEqual(all)
+        const rootVar = (name: string): Promise<string> =>
+          page.evaluate(
+            (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim(),
+            name
+          )
+        const green = await rootVar('--color-green')
+        expect(green, '--color-green resolves').not.toBe('')
+        expect(await bodyStroke(idOf.A), "A's outline is the green tone").toBe(green)
+
+        // One undo step per panel change: a single Ctrl+Z takes back only the last pick.
+        await page.keyboard.press('Control+z')
+        await handlesFor(idOf.A, 'after Ctrl+Z')
+        doc = await saveAndRead()
+        const { opacity: _taken, ...withoutOpacity } = all
+        expect(styleOf(doc, idOf.A)).toEqual(withoutOpacity)
+        await page.keyboard.press('Control+y')
+        await handlesFor(idOf.A, 'after Ctrl+Y')
+        await page.keyboard.press('Control+z')
+        await handlesFor(idOf.A, 'after Ctrl+Z again')
+        doc = await saveAndRead()
+        expect(styleOf(doc, idOf.A)).toEqual(withoutOpacity)
+
+        // The agent: `style` merges per key; null removes one. The file is the contract.
+        const red = await rootVar('--color-red')
+        await mcp.call('draw_canvas', {
+          folder,
+          ops: [{ op: 'update_node', id: idOf.A, style: { tone: 'red', stroke: null } }]
+        })
+        const { stroke: _removed, ...agentStyle } = withoutOpacity
+        doc = JSON.parse(readFileSync(boardPath, 'utf8')) as SavedDoc
+        expect(styleOf(doc, idOf.A)).toEqual({ ...agentStyle, tone: 'red' })
+
+        // Close the pane and reopen the board (as `open_file` does for an agent): the
+        // reopened pane loads the file and draws A's outline in the new tone.
+        await page.getByRole('button', { name: 'Close helper', exact: true }).click()
+        await expect(pane).toHaveCount(0)
+        await mcp.call('open_file', { folder, path: boardPath })
+        await expect(pane).toBeVisible({ timeout: STARTUP_TIMEOUT })
+        await expect(nodes).not.toHaveCount(0, { timeout: STARTUP_TIMEOUT })
+        await expectStableGeometry(idOf.A)
+        await expect.poll(() => bodyStroke(idOf.A)).toBe(red)
+
+        // Hovering is not an edit: a reopened board has a fresh history, and sweeping the
+        // pointer across every node adds no undo step and dirties nothing.
+        await expect(undo, 'a reopened board has nothing to undo').toBeDisabled()
+        for (const n of await allNodeBoxes().then(Object.values)) {
+          await page.mouse.move(...xy(centre(n)), { steps: 4 })
+        }
+        await expect(undo, 'hovering added no undo step').toBeDisabled()
+        await expect(redo).toBeDisabled()
+        await expect(pane.getByTestId('diagram-dirty-dot')).toHaveCount(0)
+
+        // A style the shape does not take, or one in the wrong place, is refused and
+        // changes nothing on disk.
+        const before = readFileSync(boardPath, 'utf8')
+        const refusal = await mcp.callRefused('draw_canvas', {
+          folder,
+          ops: [
+            {
+              op: 'add_node',
+              shape: 'box',
+              x: 700,
+              y: 40,
+              props: { style: { tone: 'red' } }
+            }
+          ]
+        })
+        expect(refusal).toMatch(/^BAD_PROPS/)
+        expect(readFileSync(boardPath, 'utf8'), 'a refused call leaves the file alone').toBe(before)
+
+        // A mixed selection offers only the groups every selected node takes.
+        const text = doc.nodes.find((n) => n.shape === 'text')
+        expect(text, 'the text node from step 4').toBeDefined()
+        await page.mouse.click(...xy(centre(await nodeBox(idOf.A))))
+        await expect(selected).toHaveCount(1)
+        const textAt = centre(await nodeBox((text as SavedNode).id))
+        await page.keyboard.down('Shift')
+        await page.mouse.click(...xy(textAt))
+        await page.keyboard.up('Shift')
+        await expect(selected).toHaveCount(2)
+        if (!(await option('tone', 'green').isVisible()))
+          await pane.getByTestId('canvas-properties-toggle').click()
+        await expect(option('tone', 'green')).toBeVisible()
+        await expect(option('corners', 'sharp')).toHaveCount(0)
+        await expect(option('stroke', 'dashed')).toHaveCount(0)
+      })
     } catch (err) {
       failed = true
       await page?.screenshot({ path: testInfo.outputPath('failure.png') }).catch(() => {})
@@ -580,7 +739,7 @@ async function openSeededBoard(): Promise<void> {
   }
   const token = String(cfg.mcpServers.harnu?.headers?.Authorization ?? '').replace(/^Bearer /, '')
   expect(token).not.toBe('')
-  const mcp = await connectMcp(status.port, token)
+  mcp = await connectMcp(status.port, token)
 
   await mcp.call('adopt_folder', { folder })
   // The fleet model scans `~/.claude/projects` asynchronously after boot; until it has, the
@@ -746,4 +905,26 @@ async function saveAndRead(): Promise<SavedDoc> {
   await page.keyboard.press('Control+s')
   await expect(pane.getByTestId('diagram-dirty-dot')).toHaveCount(0)
   return JSON.parse(readFileSync(boardPath, 'utf8')) as SavedDoc
+}
+
+/** A point as spread-able `[x, y]` arguments for `page.mouse`. */
+function xy(p: { x: number; y: number }): [number, number] {
+  return [p.x, p.y]
+}
+
+/**
+ * The `stroke` attribute of a node's body element, as X6 painted it. The body is the
+ * node's first SVG child (`<rect>`, `<ellipse>` or `<polygon>`) — X6 leaves no selector
+ * attribute in the DOM — and the label `<text>` and the ports come after it.
+ */
+async function bodyStroke(id: string): Promise<string | null> {
+  return page.evaluate(
+    (cellId) =>
+      document
+        .querySelector(
+          `[data-testid="diagram-pane"] g.x6-node[data-cell-id="${cellId}"] > :first-child`
+        )
+        ?.getAttribute('stroke') ?? null,
+    id
+  )
 }
