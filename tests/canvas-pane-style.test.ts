@@ -4,6 +4,7 @@ import type { VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import type { CanvasDocument } from '../src/main/canvas-core'
 import CanvasPropertiesPanel from '../src/renderer/src/components/CanvasPropertiesPanel.vue'
+import { stylePanelTop } from '../src/renderer/src/components/canvas/canvas-style'
 import { MOCKUP_CARD_SHAPE } from '../src/renderer/src/components/canvas/shapes/mockup-card'
 import { useThemeStore } from '../src/renderer/src/stores/theme'
 import { installJsdomSvgShim } from './helpers/jsdom-svg'
@@ -543,5 +544,61 @@ describe('DiagramPane properties panel — narrow panes', () => {
     await w.find('[data-testid="canvas-properties-toggle"]').trigger('click')
     await settle()
     expect(groups(w)).toContain('tone')
+  })
+
+  it('when the toolbar drops to its own row, the panel moves under it — not under its old place', async () => {
+    let tick: (() => void) | null = null
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          tick = cb
+        }
+        observe = vi.fn()
+        disconnect = vi.fn()
+      }
+    )
+    const w = mountPane()
+    await settle()
+
+    // jsdom has no layout: give the chrome the geometry the real app measures.
+    const pin = (el: Element, props: Record<string, () => number>): void => {
+      for (const [name, get] of Object.entries(props)) {
+        Object.defineProperty(el, name, { configurable: true, get })
+      }
+    }
+    let width = 1000
+    pin(bodyOf(w), { clientWidth: () => width })
+    const cluster = w.get('[data-testid="diagram-zoom"]').element.parentElement!
+    pin(cluster, {
+      offsetLeft: () => 12,
+      offsetWidth: () => 120,
+      offsetTop: () => 12,
+      offsetHeight: () => 36
+    })
+    pin(w.get('[role="toolbar"]').element, { offsetWidth: () => 300 })
+    // The toolbar's slot: centred at the top, or `top-14` on its own row.
+    const slot = w.get('[data-testid="canvas-toolbar"]').element.parentElement!
+    pin(slot, {
+      offsetTop: () => (slot.className.includes('top-14') ? 56 : 12),
+      offsetHeight: () => 36
+    })
+    const panelTop = (): number =>
+      parseFloat(
+        (w.get('[data-testid="canvas-properties"]').element.parentElement as HTMLElement).style.top
+      )
+
+    tick!()
+    await settle()
+    await select(w, 'n-a')
+    expect(panelTop()).toBe(stylePanelTop(48, false, 48))
+
+    // One resize step across the own-row threshold, still wide enough for the panel.
+    width = 400
+    tick!()
+    await settle()
+    expect(slot.className).toContain('top-14')
+    expect(panelTop()).toBe(stylePanelTop(48, true, 56 + 36))
+    expect(panelTop()).toBeGreaterThan(56 + 36)
   })
 })
