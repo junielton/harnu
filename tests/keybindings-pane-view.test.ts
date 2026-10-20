@@ -216,7 +216,12 @@ describe('search (AC-4, AC-5)', () => {
   it('text mode reads the label in the active locale', async () => {
     i18n.global.locale.value = 'pt-BR'
     const w = await mountPane()
-    await searchFor(w, 'nova sessão')
+    const ptLabel = i18n.global.t(DESCRIPTOR_BY_ID['session.new'].labelKey)
+    // The pt-BR label is not the en one, so a match proves the active locale is read.
+    expect(ptLabel).not.toBe(
+      i18n.global.t(DESCRIPTOR_BY_ID['session.new'].labelKey, {}, { locale: 'en' })
+    )
+    await searchFor(w, ptLabel.toUpperCase())
     expect(rowIds(w)).toEqual(['session.new'])
   })
 
