@@ -4919,7 +4919,8 @@ label, `--text-4`). Component: `CanvasPropertiesPanel.vue`, over the pure
 - **Front / back.** The selected nodes move above / below every other node and keep their
   order among themselves.
 - **Forward.** Each selected node, from the top down, moves just above the nearest
-  unselected node above it whose bounds overlap it. With no such node it stays.
+  unselected node above it whose bounds overlap it (overlap by area; boxes that only touch
+  do not overlap). With no such node it stays.
   **Backward** is the mirror.
 - **Arrows.** Edges always draw under every node and are never restacked.
 - **No-op.** A move that changes nothing writes nothing: no undo step, no dirty dot.
