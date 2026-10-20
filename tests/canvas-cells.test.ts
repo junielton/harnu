@@ -557,3 +557,41 @@ describe('toX6Node — node styles (T536 U3)', () => {
     expect(attrsOf(styled({ tone: 'green' }), other).body.stroke).toBe('#other-green')
   })
 })
+
+describe('toX6Cells stacking (T536 U4)', () => {
+  const box = (id: string, zIndex?: number): CanvasNode => ({
+    id,
+    shape: 'box',
+    x: 0,
+    y: 0,
+    ...(zIndex === undefined ? {} : { zIndex })
+  })
+  const doc = (nodes: CanvasNode[]): CanvasDocument => ({
+    capycanvas: 1,
+    meta: {},
+    nodes,
+    edges: [{ id: 'e-1', source: nodes[0].id, target: nodes[1].id }]
+  })
+  const zOf = (d: CanvasDocument): Record<string, unknown> =>
+    Object.fromEntries(
+      toX6Cells(d, PALETTE).cells.map((c) => [c.id, (c as { zIndex?: unknown }).zIndex])
+    )
+
+  it('renders an unstacked document as ranks 1, 2, 3 in file order, edges at 0', () => {
+    expect(zOf(doc([box('a'), box('b'), box('c')]))).toEqual({ a: 1, b: 2, c: 3, 'e-1': 0 })
+  })
+
+  it('renders distinct positive zIndex values verbatim', () => {
+    expect(zOf(doc([box('a', 9), box('b', 4), box('c', 6)]))).toEqual({
+      a: 9,
+      b: 4,
+      c: 6,
+      'e-1': 0
+    })
+  })
+
+  it('ranks a partly stacked document in the order the load z gives it', () => {
+    // b{5} sits above the unstacked a and c (z 1); the tie keeps file order.
+    expect(zOf(doc([box('a'), box('b', 5), box('c')]))).toEqual({ a: 1, b: 3, c: 2, 'e-1': 0 })
+  })
+})

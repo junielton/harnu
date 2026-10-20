@@ -6,6 +6,7 @@ import type {
   CanvasOrigin
 } from '../../../../main/canvas-core'
 import { DEFAULT_NODE_SIZE, DEFAULT_SIZE_BY_SHAPE } from './canvas-cells'
+import { CANVAS_LOAD_Z, liveStackOrder, savedZIndexes } from './canvas-layers'
 
 /**
  * PURE edit model for the canvas pane (T218 U3, spec §4.4 + §7.2). No DOM, no
@@ -332,6 +333,9 @@ function isEdgeCell(cell: Record<string, unknown>): boolean {
   return cell.shape === 'edge' || cell.source !== undefined || cell.target !== undefined
 }
 
+/** 'save': the Save rule (savedZIndexes). 'live': every node carries its cell's exact z — for a redraw only, never written. */
+export type CanvasStackMode = 'save' | 'live'
+
 /**
  * One X6 node cell (`node.toJSON()`, or an entry of `graph.toJSON().cells`) → the
  * document node it stands for. `base` is the node as the document last had it,
@@ -360,10 +364,10 @@ export function nodeDraftFromCell(
     ...(typeof size.height === 'number' ? { height: size.height } : {}),
     ...(label === undefined ? {} : { label }),
     ...readOrigin(data),
-    // zIndex is preserved only when the DOCUMENT already carried one: X6 hands
-    // every cell an automatic z, and writing those back would add a field to
-    // every node on the first Save for a stacking order nothing in U3 can even
-    // change.
+    // zIndex is the BASE document's only: the z a cell renders at is never written
+    // (it would add a field to every node on the first Save). The stacking order
+    // is applied on top of this at the document level, by the Save rule in
+    // `buildCanvasDocumentFromCells`.
     ...(base?.zIndex === undefined ? {} : { zIndex: base.zIndex }),
     ...(props === undefined ? {} : { props })
   }
@@ -388,6 +392,28 @@ function edgeFromCell(cell: Record<string, unknown>, base?: CanvasEdge): CanvasE
   }
 }
 
+/** A cell's z as X6 holds it; one without (a hand-built cell) sits at the load z. */
+function cellZ(cell: Record<string, unknown>): number {
+  return typeof cell.zIndex === 'number' && Number.isFinite(cell.zIndex)
+    ? cell.zIndex
+    : CANVAS_LOAD_Z
+}
+
+/** Applies the stacking order to the drafted nodes, in place. */
+function stackNodes(
+  nodes: CanvasNodeDraft[],
+  nodeCells: ReadonlyMap<string, Record<string, unknown>>,
+  stack: CanvasStackMode
+): void {
+  const live = [...nodeCells].map(([id, cell]) => ({ id, z: cellZ(cell) }))
+  if (stack === 'live') {
+    for (const node of nodes) node.zIndex = cellZ(nodeCells.get(node.id)!)
+    return
+  }
+  const ranks = savedZIndexes(nodes, liveStackOrder(live))
+  if (ranks) for (const node of nodes) node.zIndex = ranks.get(node.id)
+}
+
 /**
  * `graph.toJSON().cells` → the document to hand the confined writer (§7.2
  * steps 1–3). `base` supplies everything the graph does not carry — `meta`, the
@@ -399,11 +425,18 @@ function edgeFromCell(cell: Record<string, unknown>, base?: CanvasEdge): CanvasE
  * free to hand cells back in whatever order its model holds them; taking that
  * order verbatim would reshuffle a file on a Save that changed nothing, which
  * is exactly the churn AC U3-5 forbids.
+ *
+ * **Stacking (T536 U4).** The live order is read from the node cells as given (X6's
+ * collection order, already sorted by z) and their `zIndex`. `'save'` hands it to the
+ * Save rule ({@link savedZIndexes}): untouched unless the order differs from the one
+ * the file renders in. `'live'` stamps every node with its cell's exact z, for a
+ * redraw only — never for the file.
  */
 export function buildCanvasDocumentFromCells(
   rawCells: readonly unknown[],
   base: CanvasDocument,
-  nowIso: string
+  nowIso: string,
+  stack: CanvasStackMode = 'save'
 ): CanvasDocumentDraft {
   const cells = rawCells.filter(isPlainObject)
   const nodeCells = new Map<string, Record<string, unknown>>()
@@ -442,6 +475,8 @@ export function buildCanvasDocumentFromCells(
     if (seenEdges.has(id)) continue
     edges.push(edgeFromCell(cell, baseEdges.get(id)))
   }
+
+  stackNodes(nodes, nodeCells, stack)
 
   const extras: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(base)) {

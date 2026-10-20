@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { promises as fs, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -5,11 +6,24 @@ import { join } from 'node:path'
 
 import { readCanvasFile } from '../src/main/canvas-read'
 import { writeCanvasFile } from '../src/main/canvas-write'
-import { serializeCanvasDocument, type CanvasDocument } from '../src/main/canvas-core'
+import {
+  serializeCanvasDocument,
+  validateCanvasDocument,
+  type CanvasDocument
+} from '../src/main/canvas-core'
 import { __resetCanvasWatchStateForTests } from '../src/main/canvas-watch'
 import { buildCanvasDocumentFromCells } from '../src/renderer/src/components/canvas/canvas-edit'
 import { toX6Cells } from '../src/renderer/src/components/canvas/canvas-cells'
+import {
+  createCanvasGraph,
+  renderCanvasDocument
+} from '../src/renderer/src/components/canvas/canvas-graph'
+import { readCanvasPalette } from '../src/renderer/src/components/canvas/canvas-theme'
 import type { CanvasPalette } from '../src/renderer/src/components/canvas/canvas-theme'
+import type { Graph } from '@antv/x6'
+import { installJsdomSvgShim, svgHost } from './helpers/jsdom-svg'
+
+installJsdomSvgShim()
 
 /**
  * T218 U3, the two ACs that are only true if you look at the BYTES on disk:
@@ -351,5 +365,130 @@ describe('U3-5 — repeated Saves with no edits do not grow the file (§4.1)', (
     const draft = buildCanvasDocumentFromCells(cellsFor(read.doc), read.doc, NOW)
     await writeCanvasFile(file, draft)
     expect(JSON.parse(await bytes()).layouts).toEqual({ hint: 'newer Harnu' })
+  })
+})
+
+describe('stacking survives a pane Save (T536 U4)', () => {
+  const palette = readCanvasPalette()
+  const box = (id: string, zIndex?: number): CanvasDocument['nodes'][number] => ({
+    id,
+    shape: 'box',
+    x: 40,
+    y: 40,
+    width: 132,
+    height: 52,
+    label: id,
+    origin: 'agent',
+    ...(zIndex === undefined ? {} : { zIndex })
+  })
+  const board = (nodes: CanvasDocument['nodes']): CanvasDocument => ({
+    capycanvas: 1,
+    meta: { title: 'Board', createdAt: '2026-08-01T00:00:00.000Z' },
+    nodes,
+    edges: [{ id: 'e-1', source: nodes[0].id, target: nodes[1].id, origin: 'agent' }]
+  })
+  const graphOf = (doc: CanvasDocument): Graph => {
+    const g = createCanvasGraph({
+      container: svgHost(),
+      palette,
+      width: 800,
+      height: 600,
+      editable: true
+    })
+    renderCanvasDocument(g, doc, palette)
+    return g
+  }
+  const cellsOf = (g: Graph): unknown[] => (g.toJSON() as { cells?: unknown[] }).cells ?? []
+  const zs = (d: { nodes: { id: string; zIndex?: number }[] }): (number | undefined)[] =>
+    d.nodes.map((n) => n.zIndex)
+
+  it('writes no zIndex for an unstacked board after a move, a restyle or an added box (Review Focus 1)', () => {
+    const doc = board([box('a'), box('b'), box('c')])
+    const g = graphOf(doc)
+    g.getCellById('b')!.setProp('position', { x: 300, y: 300 })
+    expect(zs(buildCanvasDocumentFromCells(cellsOf(g), doc, NOW))).toEqual([
+      undefined,
+      undefined,
+      undefined
+    ])
+
+    g.getCellById('a')!.setData({ props: { style: { tone: 'green' } } }, { deep: false })
+    expect(zs(buildCanvasDocumentFromCells(cellsOf(g), doc, NOW))).toEqual([
+      undefined,
+      undefined,
+      undefined
+    ])
+
+    g.addNode({ id: 'n-new', shape: 'rect', x: 0, y: 0, width: 10, height: 10 })
+    const added = buildCanvasDocumentFromCells(cellsOf(g), doc, NOW)
+    expect(added.nodes.map((n) => n.id)).toContain('n-new')
+    expect(added.nodes.some((n) => n.zIndex !== undefined)).toBe(false)
+  })
+
+  it('keeps exactly the file zIndex values after a move on a partly stacked board', () => {
+    const doc = board([box('a'), box('b', 7), box('c', 2)])
+    const g = graphOf(doc)
+    g.getCellById('a')!.setProp('position', { x: 99, y: 99 })
+    expect(zs(buildCanvasDocumentFromCells(cellsOf(g), doc, NOW))).toEqual([undefined, 7, 2])
+  })
+
+  it('writes every rank once a node was put on top, and the draft validates', () => {
+    const doc = board([box('a'), box('b'), box('c')])
+    const g = graphOf(doc)
+    g.startBatch('layer')
+    g.getCellById('a')!.setZIndex(3)
+    g.getCellById('b')!.setZIndex(1)
+    g.getCellById('c')!.setZIndex(2)
+    g.stopBatch('layer')
+    const draft = buildCanvasDocumentFromCells(cellsOf(g), doc, NOW)
+    expect(Object.fromEntries(draft.nodes.map((n) => [n.id, n.zIndex]))).toEqual({
+      a: 3,
+      b: 1,
+      c: 2
+    })
+    expect(validateCanvasDocument(draft).ok).toBe(true)
+  })
+
+  it('returns the file to no zIndex once the rendered z values are restored (an undo)', () => {
+    const doc = board([box('a'), box('b'), box('c')])
+    const g = graphOf(doc)
+    g.getCellById('a')!.setZIndex(3)
+    g.getCellById('c')!.setZIndex(1)
+    expect(
+      zs(buildCanvasDocumentFromCells(cellsOf(g), doc, NOW)).every((z) => z !== undefined)
+    ).toBe(true)
+    g.getCellById('a')!.setZIndex(1)
+    g.getCellById('b')!.setZIndex(2)
+    g.getCellById('c')!.setZIndex(3)
+    const draft = buildCanvasDocumentFromCells(cellsOf(g), doc, NOW)
+    expect(zs(draft)).toEqual([undefined, undefined, undefined])
+    expect(serializeCanvasDocument(draft as unknown as CanvasDocument)).toBe(
+      serializeCanvasDocument({
+        ...doc,
+        meta: { ...doc.meta, updatedAt: NOW }
+      })
+    )
+  })
+
+  it('gives a node added to a stacked board the top rank and re-ranks the rest (Review Focus 2)', () => {
+    const doc = board([box('a', 3), box('b', 1), box('c', 2)])
+    const g = graphOf(doc)
+    g.addNode({ id: 'n-new', shape: 'rect', x: 0, y: 0, width: 10, height: 10 })
+    const draft = buildCanvasDocumentFromCells(cellsOf(g), doc, NOW)
+    expect(Object.fromEntries(draft.nodes.map((n) => [n.id, n.zIndex]))).toEqual({
+      b: 1,
+      c: 2,
+      a: 3,
+      'n-new': 4
+    })
+    const again = graphOf(draft as unknown as CanvasDocument)
+    expect(again.getNodes().map((n) => n.id)).toEqual(['b', 'c', 'a', 'n-new'])
+  })
+
+  it("stack: 'live' carries every cell's exact z, the unstacked ones included", () => {
+    const doc = board([box('a'), box('b'), box('c')])
+    const g = graphOf(doc)
+    const draft = buildCanvasDocumentFromCells(cellsOf(g), doc, NOW, 'live')
+    expect(zs(draft)).toEqual([1, 2, 3])
   })
 })

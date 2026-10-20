@@ -646,3 +646,30 @@ describe('props.style survives the released reader (T536 U3)', () => {
     expect(serializeCanvasDocument(parsed.doc)).toBe(text)
   })
 })
+
+describe('node zIndex round-trips byte for byte (T536 U4)', () => {
+  const node = (id: string, zIndex?: number): Record<string, unknown> => ({
+    id,
+    shape: 'box',
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 50,
+    origin: 'agent',
+    ...(zIndex === undefined ? {} : { zIndex })
+  })
+  const text = (nodes: Record<string, unknown>[]): string =>
+    `${JSON.stringify({ capycanvas: 1, meta: { title: 'Z' }, nodes, edges: [] }, null, 2)}\n`
+
+  it.each([
+    ['ranks 1..n on every node', [node('a', 3), node('b', 1), node('c', 2)]],
+    ['zIndex on two nodes only', [node('a'), node('b', 7), node('c', 2)]]
+  ])('keeps %s', (_name, nodes) => {
+    const input = text(nodes)
+    const parsed = parseCanvasDocument(input)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.doc.nodes.map((n) => n.zIndex)).toEqual(nodes.map((n) => n.zIndex))
+    expect(serializeCanvasDocument(parsed.doc)).toBe(input)
+  })
+})
