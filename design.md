@@ -6403,7 +6403,7 @@ under their captions (`11px`, `line-height: 1.5`, `margin-top: 3px`,
 headline never changes and the pill's position is never recomputed from it:
 
 - **Commits** — "{n} commit(s)": commits on the step's linked worktree branches
-  beyond the repo's default branch. Left out when git could not count, and when
+  beyond the base the step branched from (the branch its open PR merges into, else the repo's default branch — a stacked unit counts only its own commits). Left out when git could not count, and when
   the count is `0`.
 - **Activity** — the newest sign of life: a commit, the child's last
   transition, a write to its transcript, or a hook of its own subagents. Fresh
