@@ -561,3 +561,62 @@ Implementation rulings:
 - **Pre-existing issue found by the e2e (out of scope):** `draw_canvas` writes arm the
   pane's self-write suppression, so a clean open pane never reloads the agent's write.
   Operators use the Reload button.
+
+## Implementation notes (U5)
+
+What shipped in U5 (arrow tone and stroke style, panel and agent) where this spec is silent,
+or disagrees with itself or the code. The rules above are unchanged.
+
+1. **No `accent` tone on arrows.** An arrow's default already is the accent line, so an
+   `accent` choice would be a second identical swatch. Arrows take `default`, `green`,
+   `amber`, `red`, `muted`; the agent refuses `accent` on an arrow with `BAD_PROPS` listing
+   those five. A box plus an arrow offers only the intersection, so no `accent`.
+2. **No stroke width on arrows.** P8 says "tone + dashed" and §8 says "tone + stroke
+   style"; neither names width. Left out to stay inside the spec; cheap to add later.
+3. **`dotted` is included.** Same `stroke` key, same values and same dasharrays as nodes
+   (one shared table), because §8 says "stroke style", which U3 defined as solid, dashed or
+   dotted.
+4. **`muted` arrows use `--text-3`**, not the node `muted` stroke (`--border`), which is
+   near-invisible as a 1.5 px line on `--bg` in the dark themes. Existing token, no §9
+   change.
+5. **Layers ignores arrows.** A box plus an arrow shows Layers acting on the box; an arrow
+   alone shows no Layers. Arrows have no stacking (U4 note 3).
+6. **Selected arrows show a selection box** (`showEdgeSelectionBox`). Before U5 a selected
+   arrow showed nothing; once the panel edits arrows, an invisible selection is a usability
+   bug. The spec was silent.
+7. **The merge gate needs U4 Task 4 as well as U2.** U2's reader alone still lost edge
+   `props` on delete, Save, undo, Save. The gate is a release containing both the edge-props
+   reader (U2) and the arrow-data-through-the-graph fix (U4 Task 4).
+8. **Row A is the accepted window.** A build older than U2's reader (Harnu 0.3.46 and
+   earlier) drops arrow styles, and only those, when it saves a styled board. That is the
+   window §7.3 accepted; it cannot be closed from a newer build. User docs, the CHANGELOG and
+   `docs/harnu-features.md` say so plainly.
+
+Implementation rulings:
+
+- **Cell data is authoritative for edge `props`.** The panel writes `data.props.style`; Save,
+  the theme redraw and undo all read the cell, never the base document. A reset to `default`
+  deletes the key, and the arrow's `props` disappears when emptied, so the file is
+  byte-identical to a never-styled arrow. Unknown style keys and values (a newer build, a
+  hand edit) are kept verbatim through a pick, an agent merge, a theme redraw and a Save.
+- **Arrows are a pseudo-kind (`@edge`) in the style tables.** The renderer's
+  `PANE_EDGE_STYLE` mirrors the main process's `CANVAS_EDGE_STYLE`; a parity test fails if
+  they drift, and the shared merge fixture runs against `update_edge`.
+- **X6 2.19.2: `connection: true` lives on the `lines` selector group, not on `line`.** The
+  `Edge` class defaults are `attrs.lines = { connection: true, strokeLinejoin: 'round' }`
+  (shared by `line` and `wrap`) plus `wrap = { strokeWidth: 10 }`. A restyle therefore merges
+  over `getDefaults().attrs` instead of replacing `attrs`, otherwise the path loses its
+  geometry and the wide transparent hit path (U3's 0x0 lesson, on edges). The arrowhead
+  follows the line colour and is never dashed.
+- **Data-loss audit at U5 start, rows A to J.** A is open and accepted (note 8). B (delete,
+  Save, undo, Save) and C (a pick or reset never reaching the file) are closed by U4 Task 4
+  and pinned again here. D (theme redraw), E (agent `update_edge` without `style`), F (agent
+  merge over unknown keys), G (unknown tone or stroke value) are pinned by tests. H
+  (cascade, `clear`, Eraser) is intentional deletion. I (Save after the stale banner) is
+  last-write-wins by design. J (a U2 to U4 build opening a styled board) is safe: arrows
+  draw in accent and `props.style` round-trips.
+- **Agent surface.** `add_edge` and `update_edge` accept `style` with the node merge rules
+  (`mergeNodeStyle`, `null` clears a key, `{}` and non-objects are refused); the ACK gains
+  `edgeStyle`, the values an arrow takes. Refusal text for a bad node style is unchanged.
+- **Timing note for tests:** X6 repaints an edge line a frame after the model changes, so an
+  assertion on a stroke right after undo or redo must poll.

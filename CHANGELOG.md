@@ -14,6 +14,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Added
 
+- **Colour and dash the arrows on a canvas.** Select an arrow (or arrows together with shapes) and the Properties panel offers **Color** (default, green, amber, red, muted) and **Stroke** (solid, dashed, dotted). The arrowhead follows the line colour, one pick is one undo step, and colours follow the theme. Arrows have no Accent choice because accent is already how an arrow looks by default. Heads up: Harnu 0.3.46 and earlier drops arrow colours and line styles (only those) when it saves a board that has them; the first release with this feature keeps them.
+- **Sessions can style the arrows they draw.** `draw_canvas` accepts a `style` field (a colour and a line pattern) when adding or updating an arrow, merged into what is there, so changing an arrow's label no longer risks undoing the dashes you gave it.
 - **Layer controls in the canvas Properties panel.** Select one or more shapes and use **Send to back**, **Send backward**, **Bring forward** and **Bring to front** at the bottom of the panel. Forward and backward step past the next shape that overlaps the selection, arrows always stay under shapes, and each move is one undo step. Stacking values are written to the file only after you restack, or when you add a shape to a board that already has them; a board without any that you only move, resize, rename or restyle is saved with no new keys.
 - **Sessions can set stacking on the canvas.** `draw_canvas` accepts a `zIndex` (a whole number from 1) when adding or updating a node, so an agent can put one shape in front of another.
 
