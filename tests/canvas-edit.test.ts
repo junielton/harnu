@@ -105,7 +105,7 @@ const DOC: CanvasDocument = {
 
 const NOW = '2026-08-23T12:00:00.000Z'
 
-function makeGraph(doc: CanvasDocument = DOC): Graph {
+function makeGraph(doc: CanvasDocument = DOC, images: Record<string, string> = {}): Graph {
   const g = createCanvasGraph({
     container: svgHost(),
     palette,
@@ -113,7 +113,7 @@ function makeGraph(doc: CanvasDocument = DOC): Graph {
     height: 600,
     editable: true
   })
-  renderCanvasDocument(g, doc, palette)
+  renderCanvasDocument(g, doc, palette, images)
   return g
 }
 
@@ -560,6 +560,86 @@ describe('the editing affordances the ACs name (U3-1, U3-2)', () => {
     expect(box.attr('body/refHeight')).toBe('100%')
     g.dispose()
     fresh.dispose()
+  })
+
+  // Final review M4: `image` is the one class whose constructor adds something outside the
+  // derived attrs (`xlink:href`, through the `imageUrl` hook), so pin it on its own: the
+  // RENDERED `<image>` is compared, because `xlinkHref` and `xlink:href` differ as keys
+  // but not on screen.
+  it('a restyled image, resolved or not, renders exactly as a fresh render of that style (T536 U3)', async () => {
+    const style = { opacity: 50 }
+    const images = { 'a.png': 'data:image/png;base64,AAAA' }
+    const base = (id: string, src: string): CanvasDocument['nodes'][number] => ({
+      id,
+      shape: 'image',
+      x: 40,
+      y: 40,
+      width: 200,
+      height: 100,
+      label: id,
+      origin: 'agent' as const,
+      props: { src }
+    })
+    const plain: CanvasDocument = {
+      ...DOC,
+      nodes: [base('n-img', 'a.png'), base('n-gone', 'missing.png')],
+      edges: []
+    }
+    const styledDoc: CanvasDocument = {
+      ...plain,
+      nodes: plain.nodes.map((n) => ({ ...n, props: { ...n.props, style } }))
+    }
+    const g = makeGraph(plain, images)
+    const fresh = makeGraph(styledDoc, images)
+    const imageOf = (graph: Graph, id: string): Element | null =>
+      (
+        graph.findViewByCell(graph.getCellById(id)!)?.container as Element | undefined
+      )?.querySelector('image') ?? null
+
+    for (const id of ['n-img', 'n-gone']) {
+      const node = g.getCellById(id)!
+      node.setData(
+        { ...node.getData(), props: { ...node.getData().props, style } },
+        { overwrite: true, silent: true }
+      )
+      restyleCanvasNode(node as never, palette, images)
+    }
+    // X6 paints on a frame: let both graphs flush before reading the SVG.
+    await new Promise((r) => setTimeout(r, 100))
+
+    // Resolved: the same `<image>` element attributes (href, size, opacity).
+    const got = imageOf(g, 'n-img')!
+    const want = imageOf(fresh, 'n-img')!
+    expect(got).not.toBeNull()
+    for (const name of ['xlink:href', 'href', 'width', 'height', 'opacity']) {
+      expect(got.getAttribute(name), name).toBe(want.getAttribute(name))
+    }
+    expect(got.getAttribute('opacity')).toBe('0.5')
+    expect(got.getAttribute('width')).toBe('200')
+    expect(got.getAttribute('height')).toBe('100')
+
+    // Unresolved placeholder: a rect with the same attrs as a fresh render.
+    expect(g.getCellById('n-gone')!.getAttrs()).toEqual(fresh.getCellById('n-gone')!.getAttrs())
+    g.dispose()
+    fresh.dispose()
+  })
+
+  it("applying a style leaves a node's ports exactly as they were (T536 U3)", () => {
+    const g = makeGraph()
+    const node = g.getCellById('n-a') as never as {
+      getPorts: () => unknown[]
+      getData: () => Record<string, unknown>
+      setData: (d: unknown, o: unknown) => void
+    }
+    const before = JSON.parse(JSON.stringify(node.getPorts()))
+    expect(before).toHaveLength(CANVAS_PORT_IDS.length)
+    node.setData(
+      { ...node.getData(), props: { style: { tone: 'red', stroke: 'dashed' } } },
+      { overwrite: true, silent: true }
+    )
+    restyleCanvasNode(node as never, palette, {})
+    expect(JSON.parse(JSON.stringify(node.getPorts()))).toEqual(before)
+    g.dispose()
   })
 
   it('deleting a node deletes the edges that hung off it, so the file stays valid', () => {
