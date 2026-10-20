@@ -367,6 +367,40 @@ describe('drawCanvasHandler — the ACK, and what DOES land', () => {
   })
 })
 
+describe('drawCanvasHandler — T536 U3 node style', () => {
+  it('every ACK shapes entry carries a style table', async () => {
+    const res = await drawCanvasHandler(
+      { folder, ops: [{ op: 'add_node', shape: 'box', x: 0, y: 100 }] },
+      ctxFor()
+    )
+    expect(res.isError).toBeFalsy()
+    const shapes = payload(res).shapes as { name: string; style: Record<string, unknown[]> }[]
+    expect(shapes.length).toBeGreaterThan(0)
+    for (const s of shapes) expect(typeof s.style, s.name).toBe('object')
+    expect(shapes.find((s) => s.name === 'box')?.style.opacity).toEqual([25, 50, 75, 100])
+  })
+
+  it('update_node with style writes the merged style to the file', async () => {
+    const add = await drawCanvasHandler(
+      {
+        folder,
+        ops: [{ op: 'add_node', shape: 'box', x: 0, y: 100, style: { tone: 'green' } }]
+      },
+      ctxFor()
+    )
+    const id = (payload(add).applied as { id: string }[])[0].id
+    const res = await drawCanvasHandler(
+      { folder, ops: [{ op: 'update_node', id, style: { stroke: 'dashed' } }] },
+      ctxFor()
+    )
+    expect(res.isError).toBeFalsy()
+    const onDisk = JSON.parse(readFileSync(canvasPath, 'utf8')) as CanvasDocument
+    expect(onDisk.nodes.find((n) => n.id === id)?.props).toEqual({
+      style: { tone: 'green', stroke: 'dashed' }
+    })
+  })
+})
+
 describe('drawCanvasHandler — opening the pane', () => {
   const knownFolderCtx = (dispatch: ReturnType<typeof vi.fn>) =>
     ctxFor({

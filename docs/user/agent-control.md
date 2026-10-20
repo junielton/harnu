@@ -127,7 +127,7 @@ The important half: **an explicit per-folder mute beats the global.** If you sil
 
 ## Drawing on a canvas
 
-Some answers are a picture, not a paragraph. A session can draw one directly: an **architecture map, a flow, a dependency graph, a plan laid out in boxes** — on a canvas that opens in a pane next to the session, where you can grab a box and move it, rename it, wire two boxes together, delete what's wrong, and Save. Besides plain boxes it can draw ellipses (for states, starts and ends) and diamonds (for decisions in a flow), so a flowchart reads like one.
+Some answers are a picture, not a paragraph. A session can draw one directly: an **architecture map, a flow, a dependency graph, a plan laid out in boxes** — on a canvas that opens in a pane next to the session, where you can grab a box and move it, rename it, wire two boxes together, delete what's wrong, and Save. Besides plain boxes it can draw ellipses (for states, starts and ends) and diamonds (for decisions in a flow), so a flowchart reads like one. It can also colour and style the shapes it draws — a tone, a dashed outline, a heavier stroke, a font size, an opacity — and when it edits a box later, your colours and styles stay put.
 
 By default a session draws on that folder's own board, stored inside the folder at `.harnu/out/canvas/board.harnucanvas.json`. That file is gitignored and lives in the worktree, so each branch gets its own scratch board and nothing lands in a commit by accident. A session can also name a different canvas — but only under `.harnu/out/canvas/` or `docs/canvas/`; anywhere else is refused rather than quietly redirected. `docs/canvas/` is the one to ask for when the diagram is a deliverable you want committed with the branch.
 
