@@ -403,7 +403,9 @@ export function openCanvasResizeHandleId(graph: Graph): string | null {
   const widgets = transform?.widgets
   if (!(widgets instanceof Map)) return null
   for (const node of widgets.keys()) {
-    if (node instanceof Node) return node.id
+    // A node deleted and brought back by undo is a different instance under the same
+    // id: its stale widget entry is not an open handle on anything on the board.
+    if (node instanceof Node && graph.getCellById(node.id) === node) return node.id
   }
   return null
 }
