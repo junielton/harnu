@@ -9,6 +9,7 @@ import {
   type CanvasStyleKey,
   type CanvasStyleValue
 } from '../src/renderer/src/components/canvas/canvas-style'
+import { LAYER_MOVES } from '../src/renderer/src/components/canvas/canvas-layers'
 import { i18n } from '@renderer/i18n'
 
 /**
@@ -25,6 +26,7 @@ function mountPanel(
     values?: Values
     collapsed?: boolean
     open?: boolean
+    layers?: boolean
   } = {}
 ): ReturnType<typeof mount> {
   return mount(CanvasPropertiesPanel, {
@@ -32,7 +34,8 @@ function mountPanel(
       keys: props.keys ?? CANVAS_STYLE_KEYS,
       values: props.values ?? {},
       collapsed: props.collapsed ?? false,
-      open: props.open ?? false
+      open: props.open ?? false,
+      layers: props.layers ?? false
     },
     global: { plugins: [i18n] }
   })
@@ -148,7 +151,7 @@ describe('CanvasPropertiesPanel', () => {
     parent.addEventListener('pointerdown', () => seen.push('pointerdown'))
     document.body.appendChild(parent)
     const w = mount(CanvasPropertiesPanel, {
-      props: { keys: CANVAS_STYLE_KEYS, values: {}, collapsed: true, open: true },
+      props: { keys: CANVAS_STYLE_KEYS, values: {}, collapsed: true, open: true, layers: false },
       global: { plugins: [i18n] },
       attachTo: parent
     })
@@ -197,5 +200,88 @@ describe('CanvasPropertiesPanel', () => {
     expect(option(w, 'tone', 'green').classes()).toEqual(
       expect.arrayContaining(['text-text-3', 'hover:bg-surface-2', 'hover:text-text'])
     )
+  })
+})
+
+describe('CanvasPropertiesPanel — Layers (T536 U4)', () => {
+  const layerButtons = (w: ReturnType<typeof mount>) =>
+    w.get('[data-testid="canvas-layers"]').findAll('button')
+
+  it('layers with no style keys renders only the Layers group, four buttons in move order', () => {
+    const w = mountPanel({ keys: [], layers: true })
+    expect(w.findAll('[role="radiogroup"]')).toHaveLength(0)
+    const group = w.get('[data-testid="canvas-layers"]')
+    expect(group.attributes('role')).toBe('group')
+    expect(group.attributes('aria-label')).toBe('Layers')
+    expect(layerButtons(w).map((b) => b.attributes('data-testid'))).toEqual(
+      LAYER_MOVES.map((m) => `canvas-layer-${m}`)
+    )
+  })
+
+  it('shows the Layers group after the style groups', () => {
+    const w = mountPanel({ keys: ['tone'], layers: true })
+    const tested = w
+      .findAll('[data-testid="canvas-prop-group-tone"], [data-testid="canvas-layers"]')
+      .map((g) => g.attributes('data-testid'))
+    expect(tested).toEqual(['canvas-prop-group-tone', 'canvas-layers'])
+  })
+
+  it('emits layer with the clicked move', async () => {
+    const w = mountPanel({ keys: [], layers: true })
+    await w.get('[data-testid="canvas-layer-front"]').trigger('click')
+    await w.get('[data-testid="canvas-layer-backward"]').trigger('click')
+    expect(w.emitted('layer')).toEqual([['front'], ['backward']])
+    expect(w.emitted('change')).toBeUndefined()
+  })
+
+  it('layers false renders no Layers group', () => {
+    const w = mountPanel({ layers: false })
+    expect(w.find('[data-testid="canvas-layers"]').exists()).toBe(false)
+    expect(w.find('[data-testid^="canvas-layer-"]').exists()).toBe(false)
+  })
+
+  it('the buttons are actions: no radio role and no aria-checked', () => {
+    const w = mountPanel({ keys: [], layers: true })
+    for (const b of layerButtons(w)) {
+      expect(b.attributes('role')).toBeUndefined()
+      expect(b.attributes('aria-checked')).toBeUndefined()
+      expect(b.attributes('type')).toBe('button')
+      expect(b.classes()).toEqual(
+        expect.arrayContaining(['text-text-3', 'hover:bg-surface-2', 'hover:text-text'])
+      )
+    }
+  })
+
+  it('gives every Layers button a localized title and aria-label', () => {
+    const w = mountPanel({ keys: [], layers: true })
+    const labels = layerButtons(w).map((b) => {
+      expect(b.attributes('title')).toBe(b.attributes('aria-label'))
+      return b.attributes('aria-label')
+    })
+    expect(labels).toEqual(['Send to back', 'Send backward', 'Bring forward', 'Bring to front'])
+  })
+
+  it('a press on a Layers button does not reach the parent', async () => {
+    const seen: string[] = []
+    const parent = document.createElement('div')
+    parent.addEventListener('mousedown', () => seen.push('mousedown'))
+    parent.addEventListener('pointerdown', () => seen.push('pointerdown'))
+    document.body.appendChild(parent)
+    const w = mount(CanvasPropertiesPanel, {
+      props: { keys: [], values: {}, collapsed: false, open: false, layers: true },
+      global: { plugins: [i18n] },
+      attachTo: parent
+    })
+    await w.get('[data-testid="canvas-layer-back"]').trigger('mousedown')
+    await w.get('[data-testid="canvas-layer-back"]').trigger('pointerdown')
+    expect(seen).toEqual([])
+    w.unmount()
+    parent.remove()
+  })
+
+  it('collapsed and closed hides the Layers group with the rest', () => {
+    const w = mountPanel({ keys: [], layers: true, collapsed: true, open: false })
+    expect(w.find('[data-testid="canvas-properties-toggle"]').exists()).toBe(true)
+    expect(w.find('[data-testid="canvas-layers"]').exists()).toBe(false)
   })
 })

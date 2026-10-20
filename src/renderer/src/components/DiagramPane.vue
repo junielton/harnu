@@ -53,8 +53,16 @@ import {
   operatorNode,
   placedRect,
   rectFromDrag,
-  type CanvasDocumentDraft
+  type CanvasDocumentDraft,
+  type CanvasStackMode
 } from './canvas/canvas-edit'
+import {
+  liveStackOrder,
+  reorderStack,
+  stackRanks,
+  type LayerMove,
+  type StackNode
+} from './canvas/canvas-layers'
 import { readCanvasPalette, type CanvasPalette } from './canvas/canvas-theme'
 import {
   mergeCanvasStyle,
@@ -453,7 +461,7 @@ function nodeProps(node: Node): Record<string, unknown> | undefined {
     : undefined
 }
 
-/** The selected NODES — edges in the selection are ignored in U3. */
+/** The selected NODES — edges in the selection are ignored by the style and Layers groups. */
 const panelNodes = computed<Node[]>(() => {
   void styleRevision.value
   const g = graph.value
@@ -469,13 +477,14 @@ const panelStyleValues = computed(() =>
 )
 /**
  * The CHOSEN tool, not the effective one: holding Space is a temporary Hand, and
- * the panel stays put through it.
+ * the panel stays put through it. Any selected node shows it: the Layers group
+ * (T536 U4) takes every kind, even one with no shared style key.
  */
 const panelVisible = computed<boolean>(
   () =>
     state.value.status === 'ready' &&
     toolState.value.tool === 'select' &&
-    panelKeys.value.length > 0
+    panelNodes.value.length > 0
 )
 
 watch(
@@ -525,6 +534,41 @@ function applyStylePatch(patch: CanvasStylePatch): void {
     for (const [node, data] of writes) node.setData(data, { overwrite: true })
   } finally {
     g.stopBatch(STYLE_BATCH)
+  }
+}
+
+/** The Layers group's history batch: one move, one undo step. */
+const LAYER_BATCH = 'layer'
+
+/**
+ * A Layers move (T536 U4). The new order is computed on node ids by the pure
+ * `reorderStack` and written back as dense ranks 1..n — never X6's `toFront` /
+ * `toBack`, which rank against the edges too (see `canvas-layers.ts`). Only the
+ * nodes whose z actually changes are written, in ONE history batch, so a move is
+ * one undo step and a move that changes nothing writes nothing: no undo step, no
+ * dirty dot. Edges keep z 0 and are never touched.
+ */
+function applyLayerMove(move: LayerMove): void {
+  const g = graph.value
+  if (!g) return
+  const nodes = g.getNodes()
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const live = nodes.map((n) => ({ id: n.id, z: n.getZIndex() ?? 0 }))
+  const stack: StackNode[] = liveStackOrder(live).map((id) => {
+    const node = byId.get(id)!
+    const { x, y, width, height } = node.getBBox()
+    return { id, z: node.getZIndex() ?? 0, bbox: { x, y, width, height } }
+  })
+  const order = reorderStack(stack, new Set(panelNodes.value.map((n) => n.id)), move)
+  if (order === null) return
+  const ranks = stackRanks(order)
+  const writes = order.filter((id) => byId.get(id)!.getZIndex() !== ranks.get(id))
+  if (writes.length === 0) return
+  g.startBatch(LAYER_BATCH)
+  try {
+    for (const id of writes) byId.get(id)!.setZIndex(ranks.get(id)!)
+  } finally {
+    g.stopBatch(LAYER_BATCH)
   }
 }
 
@@ -1464,10 +1508,14 @@ async function draw(source: CanvasDocument, fit = false): Promise<void> {
  * preserved unknown top-level keys, and the edge labels the document rather
  * than X6 is the author of.
  */
-function currentDraft(base: CanvasDocument, nowIso?: string): CanvasDocumentDraft {
+function currentDraft(
+  base: CanvasDocument,
+  nowIso?: string,
+  stack: CanvasStackMode = 'save'
+): CanvasDocumentDraft {
   const g = graph.value
   const cells = g ? ((g.toJSON() as { cells?: unknown[] }).cells ?? []) : []
-  return buildCanvasDocumentFromCells(cells, base, nowIso ?? base.meta.updatedAt ?? '')
+  return buildCanvasDocumentFromCells(cells, base, nowIso ?? base.meta.updatedAt ?? '', stack)
 }
 
 async function load(path: string, fit: boolean): Promise<void> {
@@ -1533,7 +1581,9 @@ watch(
     // The emptied selection would fold the opened panel shut (the length watch);
     // remember it and put it back after the re-select.
     const wasPanelOpen = panelOpen.value
-    await draw(currentDraft(base) as CanvasDocument, false)
+    // `'live'`: every node keeps its exact z, so the undo stack — which records z
+    // values, not an order — still describes the board after the redraw (T536 U4).
+    await draw(currentDraft(base, undefined, 'live') as CanvasDocument, false)
     dirty.value = wasDirty
     repairingSelection = true
     try {
@@ -2202,14 +2252,17 @@ function onHeaderMouseDown(ev: MouseEvent): void {
 
       <!-- Properties panel (T536 U3): left edge of the VIEWPORT, under the zoom
            cluster (or the toolbar, when it has its own row). Shown only in the
-           chosen Select tool, for a selection whose nodes share a style key. -->
+           chosen Select tool, for a selection that holds a node: the style groups
+           it shares, then Layers (T536 U4). -->
       <div v-if="panelVisible" class="absolute left-3" :style="{ top: `${panelTop}px` }">
         <CanvasPropertiesPanel
           :keys="panelKeys"
           :values="panelStyleValues"
           :collapsed="panelCollapsed"
           :open="panelOpen"
+          :layers="panelNodes.length > 0"
           @change="applyStylePatch"
+          @layer="applyLayerMove"
           @toggle="onPanelToggle"
         />
       </div>
