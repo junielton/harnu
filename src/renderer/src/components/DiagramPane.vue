@@ -1523,8 +1523,17 @@ watch(
     // unsaved edit the operator has made. `dirty` is untouched: recolouring is
     // not an edit.
     const wasDirty = dirty.value
+    // The redraw replaces every cell, which empties the selection — and would
+    // close the properties panel under the operator. Put it back: same ids.
+    const kept = g.getSelectedCells().map((c) => c.id)
     await draw(currentDraft(base) as CanvasDocument, false)
     dirty.value = wasDirty
+    repairingSelection = true
+    try {
+      selectIds(g, kept)
+    } finally {
+      repairingSelection = false
+    }
   }
 )
 
