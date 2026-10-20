@@ -7,6 +7,7 @@ import {
   applyCanvasOps,
   canvasAssetsDir,
   canvasShapeCatalogAck,
+  canvasEdgeStyleAck,
   canvasShapeNames,
   canvasVerbCode,
   defaultCanvasPath,
@@ -21,6 +22,7 @@ import {
 import {
   CANVAS_SHAPE_CATALOG,
   canvasShapeSpec,
+  CANVAS_EDGE_STYLE,
   CANVAS_HTML_SHAPES,
   CANVAS_STYLE_DEFAULTS,
   CANVAS_STYLE_KEYS,
@@ -1366,6 +1368,191 @@ describe('T536 U3 — node style', () => {
     expect(box.style.tone).toEqual(['default', 'accent', 'green', 'amber', 'red', 'muted'])
     expect(box.style.opacity).toEqual([25, 50, 75, 100])
     expect(ack.find((s) => s.name === 'harnu/mockup-card')!.style).toEqual({})
+  })
+})
+
+// ------------------------------------------------ T536 U5: edge style ---------
+
+describe('T536 U5 — edge style', () => {
+  function run(
+    ops: Record<string, unknown>[],
+    doc: CanvasDocument = docWith()
+  ): ReturnType<typeof applyCanvasOps> {
+    return applyCanvasOps({ doc, ops, mintId: counterMinter() })
+  }
+
+  const ENDS: CanvasDocument['nodes'] = [
+    { id: 'a', shape: 'box', x: 0, y: 0, origin: 'operator' },
+    { id: 'b', shape: 'box', x: 200, y: 0, origin: 'operator' }
+  ]
+
+  function docWithEdge(props: Record<string, unknown> | undefined): CanvasDocument {
+    return docWith(ENDS, [
+      {
+        id: 'e1',
+        source: 'a',
+        target: 'b',
+        origin: 'operator',
+        ...(props === undefined ? {} : { props })
+      }
+    ])
+  }
+
+  it('add_edge stores the style under props, stamped agent', () => {
+    const res = run(
+      [{ op: 'add_edge', source: 'a', target: 'b', style: { tone: 'green', stroke: 'dashed' } }],
+      docWith(ENDS)
+    )
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.doc.edges[0].props).toEqual({ style: { tone: 'green', stroke: 'dashed' } })
+    expect(res.doc.edges[0].origin).toBe('agent')
+  })
+
+  it('add_edge without style writes no props; a default-valued style writes none either', () => {
+    const plain = run([{ op: 'add_edge', source: 'a', target: 'b' }], docWith(ENDS))
+    expect(plain.ok).toBe(true)
+    if (plain.ok) expect('props' in plain.doc.edges[0]).toBe(false)
+    const reset = run(
+      [{ op: 'add_edge', source: 'a', target: 'b', style: { tone: 'default', stroke: 'solid' } }],
+      docWith(ENDS)
+    )
+    expect(reset.ok).toBe(true)
+    if (reset.ok) expect('props' in reset.doc.edges[0]).toBe(false)
+  })
+
+  it('add_edge refuses accent (an arrow has no accent tone), listing the five edge tones', () => {
+    const res = run(
+      [{ op: 'add_edge', source: 'a', target: 'b', style: { tone: 'accent' } }],
+      docWith(ENDS)
+    )
+    expect(res).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    if (res.ok) return
+    for (const t of ['default', 'green', 'amber', 'red', 'muted']) {
+      expect(res.error).toContain(`"${t}"`)
+    }
+    expect(res.error).not.toContain('"accent",')
+    expect('doc' in res).toBe(false)
+  })
+
+  it('add_edge refuses a node-only key, naming what an edge takes', () => {
+    const res = run(
+      [{ op: 'add_edge', source: 'a', target: 'b', style: { strokeWidth: 'bold' } }],
+      docWith(ENDS)
+    )
+    expect(res).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    if (res.ok) return
+    expect(res.error).toContain('an edge does not take style key')
+    expect(res.error).toContain('"strokeWidth"')
+    expect(res.error).toContain('it takes tone, stroke')
+    expect('doc' in res).toBe(false)
+  })
+
+  it('add_edge refuses a bad stroke, an empty style and a non-object style, with no doc', () => {
+    const wavy = run(
+      [{ op: 'add_edge', source: 'a', target: 'b', style: { stroke: 'wavy' } }],
+      docWith(ENDS)
+    )
+    expect(wavy).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    expect('doc' in wavy).toBe(false)
+    const empty = run([{ op: 'add_edge', source: 'a', target: 'b', style: {} }], docWith(ENDS))
+    expect(empty).toMatchObject({ ok: false, code: 'BAD_ARGS' })
+    expect('doc' in empty).toBe(false)
+    const str = run([{ op: 'add_edge', source: 'a', target: 'b', style: 'red' }], docWith(ENDS))
+    expect(str).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    expect('doc' in str).toBe(false)
+  })
+
+  it('update_edge with only style merges per key, keeps other props, and counts as a change', () => {
+    const doc = docWithEdge({ style: { tone: 'red' }, weight: 2 })
+    const res = run([{ op: 'update_edge', id: 'e1', style: { stroke: 'dotted' } }], doc)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.doc.edges[0].props).toEqual({
+      style: { tone: 'red', stroke: 'dotted' },
+      weight: 2
+    })
+  })
+
+  it('update_edge style null removes the key; the last key out removes style and props', () => {
+    const res = run(
+      [{ op: 'update_edge', id: 'e1', style: { tone: null } }],
+      docWithEdge({ style: { tone: 'red' } })
+    )
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect('props' in res.doc.edges[0]).toBe(false)
+  })
+
+  it('update_edge writing the default removes the key and keeps unrelated props', () => {
+    const res = run(
+      [{ op: 'update_edge', id: 'e1', style: { tone: 'default' } }],
+      docWithEdge({ style: { tone: 'red' }, weight: 2 })
+    )
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.doc.edges[0].props).toEqual({ weight: 2 })
+  })
+
+  it('update_edge keeps style keys the file holds that this build does not know', () => {
+    const res = run(
+      [{ op: 'update_edge', id: 'e1', style: { tone: 'amber' } }],
+      docWithEdge({ style: { glow: 1, tone: 'red' } })
+    )
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.doc.edges[0].props).toEqual({ style: { glow: 1, tone: 'amber' } })
+  })
+
+  it('update_edge refuses a bad value with no doc, leaving the input untouched', () => {
+    const doc = docWithEdge({ style: { tone: 'red' } })
+    const before = JSON.stringify(doc)
+    const res = run([{ op: 'update_edge', id: 'e1', style: { tone: 'accent' } }], doc)
+    expect(res).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    expect('doc' in res).toBe(false)
+    expect(JSON.stringify(doc)).toBe(before)
+  })
+
+  it('update_edge with no field still says it needs one, and style counts', () => {
+    const res = run([{ op: 'update_edge', id: 'e1' }], docWithEdge(undefined))
+    expect(res).toMatchObject({ ok: false, code: 'BAD_ARGS' })
+    const ok = run(
+      [{ op: 'update_edge', id: 'e1', style: { tone: 'green' } }],
+      docWithEdge(undefined)
+    )
+    expect(ok.ok).toBe(true)
+    if (ok.ok) expect(ok.doc.edges[0].props).toEqual({ style: { tone: 'green' } })
+  })
+
+  it('update_edge on label alone leaves a styled edge props byte-equal', () => {
+    const props = { style: { tone: 'red', stroke: 'dashed' }, weight: 2 }
+    const res = run([{ op: 'update_edge', id: 'e1', label: 'x' }], docWithEdge(props))
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(JSON.stringify(res.doc.edges[0].props)).toBe(JSON.stringify(props))
+    expect(res.doc.edges[0].label).toBe('x')
+  })
+
+  it('a node still refuses a bad key with the exact text it always did (regression)', () => {
+    const res = run([{ op: 'add_node', shape: 'ellipse', x: 0, y: 0, style: { corners: 'sharp' } }])
+    expect(res).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    if (res.ok) return
+    expect(res.error).toBe(
+      'ops[0]: shape "ellipse" does not take style key "corners" — it takes tone, stroke, strokeWidth, fontSize, align, opacity'
+    )
+  })
+
+  it('canvasEdgeStyleAck mirrors CANVAS_EDGE_STYLE, and every value is one the node table knows', () => {
+    expect(canvasEdgeStyleAck()).toEqual(CANVAS_EDGE_STYLE)
+    expect(canvasEdgeStyleAck().tone).toEqual(['default', 'green', 'amber', 'red', 'muted'])
+    expect(canvasEdgeStyleAck().stroke).toEqual(['solid', 'dashed', 'dotted'])
+    for (const [key, values] of Object.entries(CANVAS_EDGE_STYLE)) {
+      const allowed = CANVAS_STYLE_VALUES[key as keyof typeof CANVAS_STYLE_VALUES]
+      for (const v of values ?? []) expect(allowed, `${key}=${String(v)}`).toContain(v)
+      expect(values, key).toContain(
+        CANVAS_STYLE_DEFAULTS[key as keyof typeof CANVAS_STYLE_DEFAULTS]
+      )
+    }
   })
 })
 
