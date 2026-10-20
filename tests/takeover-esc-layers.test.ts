@@ -125,7 +125,12 @@ describe('AC-20 — Roadmap dispatch confirm', () => {
     expect(overlay).toContain('ref="dispatchConfirmEl"')
     expect(overlay).toContain('tabindex="-1"')
     expect(board).toMatch(
-      /watch\(\s*dispatchConfirm[\s\S]{0,400}dispatchConfirmEl\.value\?\.focus\(\)/
+      /watch\(\s*dispatchConfirm[\s\S]{0,600}dispatchConfirmEl\.value\?\.focus\(\)/
     )
+  })
+
+  it('gives focus back to what held it before (the Dispatch button) when it closes', () => {
+    expect(board).toMatch(/confirmReturnFocus\s*=\s*document\.activeElement/)
+    expect(board).toMatch(/confirmReturnFocus[\s\S]{0,200}isConnected[\s\S]{0,200}\.focus\(\)/)
   })
 })

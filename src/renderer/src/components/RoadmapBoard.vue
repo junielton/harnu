@@ -853,12 +853,20 @@ function cancelDispatch(): void {
 }
 
 // The confirm takes focus when it opens, so Esc lands on it — and stops there,
-// leaving the board open behind it until the next Esc (T486 §6.1).
+// leaving the board open behind it until the next Esc (T486 §6.1). On close,
+// focus goes back to what held it (the card's Dispatch button), if still there.
 const dispatchConfirmEl = ref<HTMLElement | null>(null)
+let confirmReturnFocus: HTMLElement | null = null
 watch(dispatchConfirm, async (dc, prev) => {
-  if (!dc || prev) return
-  await nextTick()
-  dispatchConfirmEl.value?.focus()
+  if (dc && !prev) {
+    confirmReturnFocus = document.activeElement as HTMLElement | null
+    await nextTick()
+    dispatchConfirmEl.value?.focus()
+  } else if (!dc && prev) {
+    const el = confirmReturnFocus
+    confirmReturnFocus = null
+    if (el?.isConnected) el.focus()
+  }
 })
 
 /** On Allow: spawn a fresh session with the boot prompt, bind it, reveal it. */
