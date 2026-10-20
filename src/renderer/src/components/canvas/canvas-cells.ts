@@ -1,5 +1,6 @@
 import type { CanvasDocument, CanvasEdge, CanvasNode } from '../../../../main/canvas-core'
 import type { CanvasPalette } from './canvas-theme'
+import { renderStackZ } from './canvas-layers'
 import { readCanvasStyle, toneColors, type CanvasStyle } from './canvas-style'
 import {
   LEGACY_MOCKUP_CARD_SHAPE,
@@ -523,15 +524,21 @@ export function toX6Edge(edge: CanvasEdge, palette: CanvasPalette): X6CellSpec {
   }
 }
 
-/** The whole document as one `fromJSON` payload — nodes first, then edges. */
+/**
+ * The whole document as one `fromJSON` payload — nodes first, then edges. Every node is
+ * rendered at its {@link renderStackZ} (distinct, always >= 1), so the order on screen
+ * never depends on X6's tie-breaking; edges stay at 0 under the nodes. Those z values
+ * are for the screen only: the file's own `zIndex` is read from the base document.
+ */
 export function toX6Cells(
   doc: CanvasDocument,
   palette: CanvasPalette,
   images: ResolvedImages = {}
 ): { cells: X6CellSpec[] } {
+  const z = renderStackZ(doc.nodes)
   return {
     cells: [
-      ...doc.nodes.map((n) => toX6Node(n, palette, images)),
+      ...doc.nodes.map((n) => toX6Node({ ...n, zIndex: z.get(n.id) }, palette, images)),
       ...doc.edges.map((e) => toX6Edge(e, palette))
     ]
   }
