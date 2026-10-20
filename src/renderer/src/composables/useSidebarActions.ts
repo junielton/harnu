@@ -1,4 +1,4 @@
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, type ComputedRef, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
@@ -13,7 +13,16 @@ import { useLayoutStore } from '../stores/layout'
 /** Drives the rescan icon's spin while a scan is in flight (design.md §7). */
 const rescanning = ref(false)
 
-export function useSidebarActions() {
+export interface SidebarActions {
+  rescanning: Ref<boolean>
+  anyExpanded: ComputedRef<boolean>
+  rescan: () => Promise<void>
+  toggleCollapseAll: () => void
+  toggleJump: () => void
+  toggleHiddenFolders: () => Promise<void>
+}
+
+export function useSidebarActions(): SidebarActions {
   const sessions = useSessionsStore()
   const ui = useUiStore()
   const layout = useLayoutStore()

@@ -99,7 +99,19 @@ function rowSelector(kind: string, id: string): string {
   return `[data-sidebar-row="${`${kind}:${id}`.replace(/["\\]/g, '\\$&')}"]`
 }
 
-export function useSessionActions() {
+export interface SessionActions {
+  /** Every action, keyed by name; each takes the target session id. */
+  run: Record<SessionAction, (sessionId: string) => void>
+  /** Whether the Session menu would show `action` for this session. */
+  visible: (action: SessionAction, sessionId: string) => boolean
+  selectedFor: (action: SessionAction) => string | null
+  openToSideTarget: () => string | null
+  contextMenuTarget: () => ContextMenuTarget | null
+  contextMenuEnabled: () => boolean
+  openContextMenu: () => void
+}
+
+export function useSessionActions(): SessionActions {
   const ui = useUiStore()
   const sessions = useSessionsStore()
   const helpers = useHelpersStore()

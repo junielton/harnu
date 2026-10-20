@@ -223,7 +223,7 @@ describe('search (AC-4, AC-5)', () => {
       i18n.global.t(DESCRIPTOR_BY_ID['session.new'].labelKey, {}, { locale: 'en' })
     )
     await searchFor(w, ptLabel.toUpperCase())
-    // "Nova sessão nesta pasta…" contains "Nova sessão" — a substring match.
+    // The pt-BR label of `session.newInFolder` starts with this one — a substring match.
     expect(rowIds(w)).toEqual(['session.new', 'session.newInFolder'])
   })
 
