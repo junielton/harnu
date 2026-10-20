@@ -12,10 +12,11 @@ import {
   down,
   focusPane,
   key,
-  mountPane,
+  mountPaneReady,
   nodeEl,
   saveAndRead,
   settle,
+  settleUntil,
   svgOf,
   unmountPanes,
   up
@@ -62,6 +63,9 @@ const DOC: CanvasDocument = {
     { id: 'e-2', source: 'n-b', target: 'n-a', origin: 'operator' }
   ]
 }
+
+/** Every cell the board seeds: a test drives nothing before all of them are drawn. */
+const BOARD = [...DOC.nodes, ...DOC.edges].map((c) => c.id)
 
 const AT: Record<string, [number, number]> = {
   'n-a': [100, 60],
@@ -150,12 +154,6 @@ async function select(w: VueWrapper, ...ids: string[]): Promise<void> {
   await settle()
 }
 
-async function settleUntil(done: () => boolean, timeoutMs = 5000): Promise<void> {
-  const deadline = Date.now() + timeoutMs
-  do await settle()
-  while (!done() && Date.now() < deadline)
-}
-
 function selectedIds(w: VueWrapper): string[] {
   return [...svgOf(w).querySelectorAll('.x6-node-selected, .x6-edge-selected')]
     .map((el) => el.getAttribute('data-cell-id') ?? '?')
@@ -227,8 +225,7 @@ async function switchTheme(w: VueWrapper, vars: Record<string, string>): Promise
 // ── the panel for a selected arrow ──────────────────────────────────────────
 describe('DiagramPane arrow styles — the panel for a selected arrow (T536 U5)', () => {
   it('an arrow alone shows Color (five options, line glyphs) and Stroke, and no Layers', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'e-1')
     expect(selectedIds(w)).toEqual(['e-1'])
     expect(panel(w)).toBe(true)
@@ -254,8 +251,7 @@ describe('DiagramPane arrow styles — the panel for a selected arrow (T536 U5)'
   })
 
   it('a mousedown on an option keeps the arrow selected (no selection:changed to empty)', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'e-1')
     const seen: number[] = []
     graphOf(w).on('selection:changed', ({ selected }: { selected: Cell[] }) => {
@@ -271,8 +267,7 @@ describe('DiagramPane arrow styles — the panel for a selected arrow (T536 U5)'
 // ── a pick on an arrow ──────────────────────────────────────────────────────
 describe('DiagramPane arrow styles — a pick restyles the arrow and saves into props.style', () => {
   it('Review Focus 1, 4: red paints line and arrowhead, and Save keeps the other props', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'e-1')
     expect(isDirty(w)).toBe(false)
     await pick(w, 'tone', 'red')
@@ -302,8 +297,7 @@ describe('DiagramPane arrow styles — a pick restyles the arrow and saves into 
       ]
     }
     canvasRead.mockImplementation(async (p: string) => ({ ok: true, path: p, doc }))
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'e-1')
     await expectStroke(w, 'e-1', DARK['--color-red'])
     await pick(w, 'tone', 'default')
@@ -313,8 +307,7 @@ describe('DiagramPane arrow styles — a pick restyles the arrow and saves into 
   })
 
   it('a stroke pick on two arrows is ONE undo step, and redo puts both back', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'e-1', 'e-2')
     expect(selectedIds(w)).toEqual(['e-1', 'e-2'])
     await pick(w, 'stroke', 'dashed')
@@ -335,8 +328,7 @@ describe('DiagramPane arrow styles — a pick restyles the arrow and saves into 
   })
 
   it('picking the value already in force changes nothing: clean', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'e-1')
     // The panel itself returns early for the value already in force, so emit straight
     // from it: this reaches the pane's own equality skip in applyStylePatch.
@@ -353,8 +345,7 @@ describe('DiagramPane arrow styles — a pick restyles the arrow and saves into 
 // ── Review Focus 3: a mixed selection ───────────────────────────────────────
 describe('DiagramPane arrow styles — Review Focus 3: nodes and arrows together', () => {
   it('offers only what both take, writes it to both, and leaves Layers to the nodes', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'n-a', 'e-1')
     expect(selectedIds(w)).toEqual(['e-1', 'n-a'])
     expect(groups(w)).toEqual(['tone', 'stroke'])
@@ -370,8 +361,7 @@ describe('DiagramPane arrow styles — Review Focus 3: nodes and arrows together
   })
 
   it('the pane filters a patch per cell: accent never reaches an arrow, nor strokeWidth', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'n-a', 'e-1')
     const panelVm = w.findComponent({ name: 'CanvasPropertiesPanel' })
     panelVm.vm.$emit('change', { tone: 'accent', strokeWidth: 'bold' })
@@ -382,8 +372,7 @@ describe('DiagramPane arrow styles — Review Focus 3: nodes and arrows together
   })
 
   it('ctrl+a (boxes, card, arrows) shows Layers alone, and back never restacks an arrow', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('a', { ctrlKey: true })
     await settle()
@@ -407,8 +396,7 @@ describe('DiagramPane arrow styles — Review Focus 5: a theme switch never stra
   afterEach(() => useThemeStore().set('default-dark'))
 
   it('a switch recolours a styled arrow, stays dirty, and the pick survives a Save', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'e-1')
     await pick(w, 'tone', 'green')
     await expectStroke(w, 'e-1', DARK['--color-green'])
@@ -422,8 +410,7 @@ describe('DiagramPane arrow styles — Review Focus 5: a theme switch never stra
   })
 
   it('undo and redo after a switch resolve the NEW palette, and keep the redo stack', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'e-1')
     await pick(w, 'tone', 'green')
     await switchTheme(w, LIGHT)
@@ -456,8 +443,7 @@ describe('DiagramPane arrow styles — Review Focus 2: a restyled arrow stays a 
   }
 
   it('after a pick and after its undo the path has geometry and a press still selects it', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'e-1')
     await pick(w, 'stroke', 'dotted')
     await settleUntil(() => lineOf(w, 'e-1')?.getAttribute('stroke-dasharray') === '2 3')
@@ -476,8 +462,7 @@ describe('DiagramPane arrow styles — Review Focus 2: a restyled arrow stays a 
 // ── audit row B ─────────────────────────────────────────────────────────────
 describe('DiagramPane arrow styles — an arrow restored by undo after a Save keeps its style', () => {
   it('writes the style and the other props in the second Save', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'e-1')
     await pick(w, 'tone', 'red')
     await select(w, 'e-1')
@@ -495,8 +480,7 @@ describe('DiagramPane arrow styles — an arrow restored by undo after a Save ke
 // ── hardening: edge cases the reviews flagged ───────────────────────────────
 describe('DiagramPane arrow styles — hardening (T536 U5)', () => {
   it('a tone pick on a box and an arrow is ONE undo step: neither stays green', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await select(w, 'n-a', 'e-1')
     await pick(w, 'tone', 'green')
     let doc = await saveAndRead(w)
@@ -528,8 +512,7 @@ describe('DiagramPane arrow styles — hardening (T536 U5)', () => {
     })
 
     it('a tone pick keeps the unknown style key, the other known key and the other props', async () => {
-      const w = mountPane()
-      await settle()
+      const w = await mountPaneReady(BOARD)
       await select(w, 'e-1')
       await pick(w, 'tone', 'green')
       const doc = await saveAndRead(w)
@@ -540,8 +523,7 @@ describe('DiagramPane arrow styles — hardening (T536 U5)', () => {
     })
 
     it('a stroke-only pick keeps the unknown tone verbatim in the saved file', async () => {
-      const w = mountPane()
-      await settle()
+      const w = await mountPaneReady(BOARD)
       await select(w, 'e-1')
       await pick(w, 'stroke', 'dotted')
       const doc = await saveAndRead(w)

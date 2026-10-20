@@ -64,6 +64,33 @@ export async function settle(): Promise<void> {
 }
 
 /**
+ * Settle until `done()` holds, bounded by wall time: X6 draws a view update in
+ * time-sliced jobs, so how many ticks a repaint takes depends on how busy the run
+ * is. The caller's own assertion reports a condition that never came true.
+ */
+export async function settleUntil(done: () => boolean, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  do await settle()
+  while (!done() && Date.now() < deadline)
+}
+
+/**
+ * Mount a canvas pane and wait until every cell in `ids` (nodes AND edges) has an
+ * element. One `settle()` is not enough on a loaded runner, where X6 spreads the
+ * first render over several jobs; a test that drives the board by element must not
+ * start before the element exists.
+ */
+export async function mountPaneReady(
+  ids: readonly string[],
+  pane: Partial<CanvasPaneProps> = {},
+  opts: { attachTo?: Element } = {}
+): Promise<VueWrapper> {
+  const w = mountPane(pane, opts)
+  await settleUntil(() => ids.every((id) => nodeEl(w, id) !== null))
+  return w
+}
+
+/**
  * Press Save and return the document the pane handed the confined writer — the
  * very bytes a Save would put on disk. Reads the `canvasWrite` spy off
  * `window.api`, which every pane test's mock defines.
