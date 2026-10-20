@@ -104,7 +104,7 @@ Drag a pane's header to resize it. Split panes follow the same rule as the main 
 
 ## Going back and forward
 
-Harnu remembers the sessions you viewed, like a browser's history. Press the mouse's **back** side button, or `Alt+←` (`Cmd+[` on macOS), to return to the session you were just in; the **forward** side button, or `Alt+→` (`Cmd+]` on macOS), goes the other way after a Back. It works whether or not the terminal has focus, and the side-button clicks never reach the running program.
+Harnu remembers the sessions you viewed, like a browser's history. Press the mouse's **back** side button, or `Alt+←` (`Cmd+[` on macOS), to return to the session you were just in; the **forward** side button, or `Alt+→` (`Cmd+]` on macOS), goes the other way after a Back. It works whether or not the terminal has focus, and the side-button clicks never reach the running program. Both keys can be rebound (command ids `nav.back` and `nav.forward`); whatever chord they hold gets the same treatment.
 
 - Opening a session after going back clears the forward history, exactly like following a new link in a browser.
 - Only sessions are in the history. If you're on a folder's Folder View or a takeover (Board, PR Stack, Cleanup, Usage Dashboard, System Monitor), the first Back takes you to the session you left.
@@ -113,7 +113,7 @@ Harnu remembers the sessions you viewed, like a browser's history. Press the mou
 - Nothing navigates while a dialog or the command palette is open.
 - The history lives in memory: it holds your last 50 sessions and starts empty after a restart.
 
-> **Trade-off:** `Alt+←` / `Alt+→` are taken by navigation, so they no longer reach the terminal (where they would jump a word left/right). `Ctrl+←` / `Ctrl+→` usually do the same word jump and are unaffected.
+> **Trade-off:** the Back / Forward chords are taken from the terminal before it sees them, so `Alt+←` / `Alt+→` no longer reach the program running there (where they would jump a word left/right). `Ctrl+←` / `Ctrl+→` usually do the same word jump and are unaffected. Settings → Keyboard Shortcuts says so under the two rows ("Taken from the terminal: …"). On Linux and Windows the Alt release does not open the menu bar.
 >
 > **Only verified on Linux.** macOS and Windows haven't been tested live yet. On Windows, a mouse driver that sends the side buttons only as system "browser back/forward" commands won't navigate (the keyboard still will); on macOS, a mouse whose side buttons aren't exposed as standard back/forward buttons relies on its vendor tool mapping them to `Cmd+[` / `Cmd+]`.
 
@@ -236,8 +236,23 @@ shows the sidebar first if you had collapsed it. The terminal sends nothing for 
 `Cmd/Ctrl+Shift+letter` chord, so `Cmd/Ctrl+Shift+A`, `+Shift+B` and `+Shift+D`
 also fire over it. `Cmd/Ctrl+Enter`, `Shift+F10`, `F2` and the sidebar arrow keys don't
 fire while the terminal pane has keyboard focus — the terminal gets those keys. Shortcuts that act on the sidebar or on a
-selection also leave a key you type in a text field alone. The rest are bound in
-the native menu and work everywhere.
+selection also leave a key you type in a text field alone.
+
+The rest are bound in the native menu. On macOS they fire even while a terminal
+has focus. On Linux and Windows the menu only gets a key the terminal didn't use,
+so a `Ctrl+letter` chord (`Ctrl+N`, `Ctrl+B`, `Ctrl+W`, …) pressed in a terminal
+goes to the program running there as a control character instead (`Ctrl+W`
+deletes the previous word in a shell); click outside the terminal first, or use
+the menu. `Ctrl+Shift+letter` chords are not affected. Back and Forward are
+**shielded**: their chord is taken before the terminal sees it, on every
+platform.
+
+A shortcut fires only with exactly its modifiers held: `F7` does not fire on
+`Shift+F7`, and `Ctrl+K` does not fire on `Ctrl+Shift+K`.
+
+On most Mac keyboards the F-keys (`F2`, `Shift+F10`, …) need **Fn** held — `F2`
+is brightness, `F10` mute — unless you set "Use F1, F2, etc. keys as standard
+function keys" in System Settings → Keyboard.
 
 ### Customizing shortcuts
 
@@ -274,8 +289,11 @@ The Topbar's folder actions have no default chord. Their command ids are
 - A handful of actions are reserved and can't be rebound: quit, reload,
   toggle DevTools, toggle fullscreen, and "Open keybindings.json"
   (`Cmd/Ctrl+Alt+K`).
-- [Back and forward](#going-back-and-forward) (`Alt+←` / `Alt+→`, `Cmd+[` /
-  `Cmd+]` on macOS) can't be rebound yet either.
+- [Back and forward](#going-back-and-forward) are `nav.back` and `nav.forward`.
+  Their default depends on the platform — `Alt+Left` / `Alt+Right` on Linux and
+  Windows, `Cmd+[` / `Cmd+]` on macOS — and an entry written on one platform
+  loads unchanged on the other. A new chord moves both the **Session** menu
+  item and the key the terminal no longer sees.
 - Prefer not to edit JSON by hand? **Settings → Keyboard Shortcuts** is a
   point-and-click editor for this same file — see
   [Settings → Keyboard Shortcuts](settings.md#keyboard-shortcuts)
@@ -295,5 +313,9 @@ These apply while a terminal pane has focus:
 | `Shift+Enter`                | Insert a soft newline without submitting       |
 | `Ctrl+Backspace`             | Delete the previous word                       |
 | `Cmd/Ctrl` + `=` / `-` / `0` | Increase / decrease / reset terminal font size |
+
+The terminal keeps these chords (and `Shift+Backspace`) for itself. If you give an
+app action one of them, it won't fire while a terminal has focus, and Settings →
+Keyboard Shortcuts says so under that row ("The terminal keeps …").
 
 > **Not built yet:** `Cmd/Ctrl+Shift+P` is wired to a "Switch project" action, but today it just reopens the plain command palette — a dedicated project-filter mode hasn't shipped yet.
