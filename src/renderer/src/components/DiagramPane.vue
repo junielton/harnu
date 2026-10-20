@@ -14,8 +14,9 @@ import {
   Undo2,
   X
 } from 'lucide-vue-next'
-import type { Cell, Graph, Node } from '@antv/x6'
+import { ObjectExt, type Cell, type Graph, type Node } from '@antv/x6'
 import CanvasToolbar from './CanvasToolbar.vue'
+import CanvasPropertiesPanel from './CanvasPropertiesPanel.vue'
 import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
 import { useThemeStore } from '../stores/theme'
 import { useUiStore } from '../stores/ui'
@@ -27,6 +28,7 @@ import {
   missingCanvasPlugins,
   operatorEdgeSpec,
   renderCanvasDocument,
+  restyleCanvasNode,
   setCanvasPortsVisible,
   setCanvasRubberband,
   zoomCanvasBy
@@ -52,6 +54,16 @@ import {
   type CanvasDocumentDraft
 } from './canvas/canvas-edit'
 import { readCanvasPalette, type CanvasPalette } from './canvas/canvas-theme'
+import {
+  mergeCanvasStyle,
+  panelValues,
+  sharedStyleKeys,
+  stylePanelCollapsed,
+  stylePanelTop,
+  styleKeysFor,
+  type CanvasStyleKey,
+  type CanvasStylePatch
+} from './canvas/canvas-style'
 import {
   CANVAS_TOOLS,
   INITIAL_TOOL_STATE,
@@ -310,11 +322,30 @@ function wireEditing(g: Graph): void {
   g.on('blank:mouseup', onBlankMouseUp)
   g.on('blank:click', restorePendingSelection)
   g.on('cell:mouseup', restorePendingSelection)
-  g.on('selection:changed', ({ selected }: { selected: unknown[] }) => {
+  g.on('selection:changed', ({ selected }: { selected: Cell[] }) => {
+    selectedIds.value = selected.map((c) => c.id)
     if (!repairingSelection && activeTool.value === 'select' && selected.length > 0) {
       markUsed('select')
     }
   })
+
+  // Node styles (T536 U3): `data` is the only style state, and the only part of
+  // a style change History records. The attrs are re-derived from it here on
+  // every data write — the panel's, its undo and its redo alike — in the palette
+  // in force now, and that re-derive never enters the undo stack (see
+  // `restyleCanvasNode`). So undo after a theme switch restores a STYLE, never
+  // the colours the previous theme resolved it to (U3 Review Focus 1).
+  g.on('cell:change:data', ({ cell }: { cell: Cell }) => {
+    if (cell.isNode() && styleKeysFor(nodeKind(cell)).length > 0) {
+      restyleCanvasNode(cell, palette, images.value)
+    }
+    styleRevision.value++
+  })
+  const restyled = (): void => {
+    styleRevision.value++
+  }
+  g.on('history:undo', restyled)
+  g.on('history:redo', restyled)
 }
 
 function refreshHistoryFlags(): void {
@@ -395,6 +426,107 @@ function onToolbarToggleLock(): void {
 function nodeKind(node: Node): string {
   const data = node.getData() as { kind?: unknown } | undefined
   return typeof data?.kind === 'string' ? data.kind : node.shape
+}
+
+// ── Properties panel (T536 U3, design.md §6 "Properties panel") ───────────
+/** The selection, mirrored from X6's `selection:changed` so the panel can react. */
+const selectedIds = ref<string[]>([])
+/**
+ * Bumped on every `data` write and every undo/redo. The graph is not reactive,
+ * so this is what makes the panel re-read the selected nodes' styles — after a
+ * pick, and after an undo puts an old one back.
+ */
+const styleRevision = ref(0)
+/** Collapsed form only: whether the `palette` button has opened the panel. */
+const panelOpen = ref(false)
+/** The pane is too narrow for the panel beside a usable board. */
+const panelCollapsed = ref(false)
+/** Measured top offset, in px from the top of the body. */
+const panelTop = ref(stylePanelTop(0, false, 0))
+
+function nodeProps(node: Node): Record<string, unknown> | undefined {
+  const props = (node.getData() as { props?: unknown } | undefined)?.props
+  return typeof props === 'object' && props !== null && !Array.isArray(props)
+    ? (props as Record<string, unknown>)
+    : undefined
+}
+
+/** The selected NODES — edges in the selection are ignored in U3. */
+const panelNodes = computed<Node[]>(() => {
+  void styleRevision.value
+  const g = graph.value
+  if (!g) return []
+  return selectedIds.value
+    .map((id) => g.getCellById(id))
+    .filter((c): c is Node => c !== null && c.isNode())
+})
+/** Only the keys EVERY selected node takes (U3 Review Focus 4). */
+const panelKeys = computed<CanvasStyleKey[]>(() => sharedStyleKeys(panelNodes.value.map(nodeKind)))
+const panelStyleValues = computed(() =>
+  panelValues(panelNodes.value.map((n) => ({ kind: nodeKind(n), props: nodeProps(n) })))
+)
+/**
+ * The CHOSEN tool, not the effective one: holding Space is a temporary Hand, and
+ * the panel stays put through it.
+ */
+const panelVisible = computed<boolean>(
+  () =>
+    state.value.status === 'ready' &&
+    toolState.value.tool === 'select' &&
+    panelKeys.value.length > 0
+)
+
+watch(
+  () => selectedIds.value.length,
+  (n) => {
+    if (n === 0) panelOpen.value = false
+  }
+)
+watch(panelVisible, async (visible) => {
+  if (!visible) return
+  await nextTick()
+  measureStylePanel()
+})
+
+/** The properties panel's history batch: one pick, one undo step. */
+const STYLE_BATCH = 'style'
+
+/**
+ * A panel pick. Each node keeps only the patch keys its kind takes, so a mixed
+ * selection never writes `corners` onto an ellipse or anything onto a mockup
+ * card; a node whose props would come out unchanged is skipped. Whatever does
+ * change is written in ONE history batch: one pick, one undo step, however many
+ * nodes it styled. The attrs follow through `cell:change:data`.
+ */
+function applyStylePatch(patch: CanvasStylePatch): void {
+  const g = graph.value
+  if (!g) return
+  const writes: [Node, Record<string, unknown>][] = []
+  for (const node of panelNodes.value) {
+    const allowed = styleKeysFor(nodeKind(node))
+    const own: CanvasStylePatch = {}
+    for (const key of Object.keys(patch) as CanvasStyleKey[]) {
+      if (allowed.includes(key)) own[key] = patch[key]
+    }
+    if (Object.keys(own).length === 0) continue
+    const props = nodeProps(node)
+    const next = mergeCanvasStyle(props, own)
+    if (ObjectExt.isEqual(next, props)) continue
+    const { props: _old, ...rest } = (node.getData() ?? {}) as Record<string, unknown>
+    void _old
+    writes.push([node, next === undefined ? rest : { ...rest, props: next }])
+  }
+  if (writes.length === 0) return
+  g.startBatch(STYLE_BATCH)
+  try {
+    for (const [node, data] of writes) node.setData(data, { overwrite: true })
+  } finally {
+    g.stopBatch(STYLE_BATCH)
+  }
+}
+
+function onPanelToggle(): void {
+  panelOpen.value = !panelOpen.value
 }
 
 // ── Selection bookkeeping around X6's own mouseup handling ────────────────
@@ -1565,6 +1697,7 @@ const toolbarOwnRow = ref(false)
  * appearing or hiding never flips the row.
  */
 function measureToolbar(): void {
+  measureStylePanel()
   const box = bodyEl.value
   const cluster = clusterEl.value
   const bar = toolbarEl.value?.querySelector<HTMLElement>('[role="toolbar"]')
@@ -1583,6 +1716,28 @@ watch(
     measureToolbar()
   }
 )
+
+/**
+ * The properties panel's slot (design.md §6): collapsed below 384px of pane, and
+ * 8px under the zoom cluster — or under the toolbar once it has its own row. The
+ * width is read now; the top after a tick, once a toolbar row change measured in
+ * the same pass has been rendered. A body with no layout (0 wide) collapses
+ * nothing: there is no width to judge by.
+ */
+function measureStylePanel(): void {
+  const box = bodyEl.value
+  if (box && box.clientWidth > 0) panelCollapsed.value = stylePanelCollapsed(box.clientWidth)
+  void nextTick(() => {
+    const cluster = clusterEl.value
+    if (!cluster) return
+    const bar = toolbarEl.value
+    panelTop.value = stylePanelTop(
+      cluster.offsetTop + cluster.offsetHeight,
+      toolbarOwnRow.value,
+      bar ? bar.offsetTop + bar.offsetHeight : 0
+    )
+  })
+}
 
 // ── Keyboard ──────────────────────────────────────────────────────────────
 /** Does the focus sit inside THIS pane? Several panes can be open at once, so
@@ -1641,9 +1796,15 @@ function onWindowKeydown(ev: KeyboardEvent): void {
   // Space held = a temporary Hand from any tool (spec §4.3). Below the rename
   // early return, so typing a space into a label never pans.
   if (ev.key === ' ') {
-    // Space on a focused toolbar button activates that button, as a keyboard user expects.
+    // Space on a focused toolbar or properties-panel button activates that
+    // button, as a keyboard user expects — it never pans.
     const focused = document.activeElement
-    if (focused instanceof HTMLElement && focused.closest('[role="toolbar"]')) return
+    if (
+      focused instanceof HTMLElement &&
+      focused.closest('[role="toolbar"], [data-canvas-chrome]')
+    ) {
+      return
+    }
     ev.preventDefault()
     if (!toolState.value.spaceHeld) setToolState(pressSpace(toolState.value))
     return
@@ -2009,6 +2170,20 @@ function onHeaderMouseDown(ev: MouseEvent): void {
           :used="usedTools"
           @select="onToolbarSelect"
           @toggle-lock="onToolbarToggleLock"
+        />
+      </div>
+
+      <!-- Properties panel (T536 U3): left edge of the VIEWPORT, under the zoom
+           cluster (or the toolbar, when it has its own row). Shown only in the
+           chosen Select tool, for a selection whose nodes share a style key. -->
+      <div v-if="panelVisible" class="absolute left-3" :style="{ top: `${panelTop}px` }">
+        <CanvasPropertiesPanel
+          :keys="panelKeys"
+          :values="panelStyleValues"
+          :collapsed="panelCollapsed"
+          :open="panelOpen"
+          @change="applyStylePatch"
+          @toggle="onPanelToggle"
         />
       </div>
     </div>

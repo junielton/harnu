@@ -332,7 +332,17 @@ function isEdgeCell(cell: Record<string, unknown>): boolean {
   return cell.shape === 'edge' || cell.source !== undefined || cell.target !== undefined
 }
 
-function nodeFromCell(cell: Record<string, unknown>, base?: CanvasNode): CanvasNodeDraft {
+/**
+ * One X6 node cell (`node.toJSON()`, or an entry of `graph.toJSON().cells`) → the
+ * document node it stands for. `base` is the node as the document last had it,
+ * for what the graph does not carry (an explicit `zIndex`, and the shape when the
+ * cell lost its `kind` stamp). Exported for the pane's style re-derive (T536 U3),
+ * which rebuilds a node's attrs from exactly what a Save would write.
+ */
+export function nodeDraftFromCell(
+  cell: Record<string, unknown>,
+  base?: CanvasNode
+): CanvasNodeDraft {
   const data = readData(cell)
   const position = isPlainObject(cell.position) ? cell.position : {}
   const size = isPlainObject(cell.size) ? cell.size : {}
@@ -412,12 +422,12 @@ export function buildCanvasDocumentFromCells(
   for (const n of base.nodes) {
     const cell = nodeCells.get(n.id)
     if (!cell) continue // deleted in the pane
-    nodes.push(nodeFromCell(cell, n))
+    nodes.push(nodeDraftFromCell(cell, n))
     seenNodes.add(n.id)
   }
   for (const [id, cell] of nodeCells) {
     if (seenNodes.has(id)) continue
-    nodes.push(nodeFromCell(cell, baseNodes.get(id)))
+    nodes.push(nodeDraftFromCell(cell, baseNodes.get(id)))
   }
 
   const edges: CanvasEdgeDraft[] = []

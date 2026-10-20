@@ -1,11 +1,11 @@
-import { Graph, Shape, type Edge } from '@antv/x6'
+import { Graph, Shape, type Edge, type Node } from '@antv/x6'
 import { Selection } from '@antv/x6-plugin-selection'
 import { History } from '@antv/x6-plugin-history'
 import { Transform } from '@antv/x6-plugin-transform'
 import { Snapline } from '@antv/x6-plugin-snapline'
-import type { CanvasDocument } from '../../../../main/canvas-core'
-import { toX6Cells, type ResolvedImages } from './canvas-cells'
-import { operatorEdgeData } from './canvas-edit'
+import type { CanvasDocument, CanvasNode } from '../../../../main/canvas-core'
+import { toX6Cells, toX6Node, type ResolvedImages } from './canvas-cells'
+import { nodeDraftFromCell, operatorEdgeData } from './canvas-edit'
 import type { CanvasPalette } from './canvas-theme'
 import {
   MOCKUP_CARD_DEFAULT_SIZE,
@@ -269,7 +269,16 @@ export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
         : { rubberband: false, showNodeSelectionBox: false }
     )
   )
-  graph.use(new History({ enabled: true }))
+  graph.use(
+    new History({
+      enabled: true,
+      // A change marked derived is the pane re-deriving attrs from `data` (T536
+      // U3, {@link restyleCanvasNode}): never a command of its own. Returning
+      // `false` here stops it before X6's `push`, which is also what would
+      // otherwise empty the redo stack.
+      beforeAddCommand: (_event, args) => !isDerivedChange(args)
+    })
+  )
   graph.use(
     new Transform({
       resizing: editable
@@ -290,6 +299,56 @@ export function createCanvasGraph(opts: CreateCanvasGraphOptions): Graph {
   graph.use(new Snapline({ enabled: true, sharp: true }))
 
   return graph
+}
+
+/**
+ * The option a write carries when it is DERIVED state, not an edit (T536 U3).
+ * Node styles live in `data` (`props.style`); the colours, dasharray and sizes
+ * they turn into are attrs computed from it with the current palette. Only the
+ * `data` write may enter the undo history: if the attrs did too, an undo after a
+ * theme switch would restore colours resolved for the theme before it (U3
+ * Review Focus 1). The History plugin installed by {@link createCanvasGraph}
+ * drops any change whose options carry this key.
+ */
+export const CANVAS_DERIVED_CHANGE = 'harnuDerived'
+
+function isDerivedChange(args: unknown): boolean {
+  if (typeof args !== 'object' || args === null) return false
+  const options = (args as { options?: unknown }).options
+  return (
+    typeof options === 'object' &&
+    options !== null &&
+    (options as Record<string, unknown>)[CANVAS_DERIVED_CHANGE] === true
+  )
+}
+
+/**
+ * Re-derive a node's attrs from its own cell — its `data` (kind, props, style),
+ * its label and its size — exactly as a render from the file would draw it. The
+ * pane calls this on every `cell:change:data`, so a style write, its undo and its
+ * redo all repaint from the style alone, in the palette in force NOW.
+ *
+ * The write is marked {@link CANVAS_DERIVED_CHANGE} (never recorded in history)
+ * and `dirty` (X6 re-renders the view instead of patching it, so an attribute the
+ * new attrs no longer carry — a dasharray after a reset to `solid` — is removed
+ * from the SVG rather than left behind). It runs inside X6's own `change:data`
+ * dispatch, so it also lands during an undo, while History is not recording.
+ */
+export function restyleCanvasNode(
+  node: Node,
+  palette: CanvasPalette,
+  images: ResolvedImages
+): void {
+  const draft = nodeDraftFromCell(node.toJSON() as Record<string, unknown>)
+  // `origin` is only read into `data`, which this does not write: the cast
+  // invents nothing that reaches the file.
+  const attrs = toX6Node(draft as CanvasNode, palette, images).attrs
+  if (typeof attrs !== 'object' || attrs === null) return
+  node.setAttrs(attrs as Node.Properties['attrs'], {
+    overwrite: true,
+    dirty: true,
+    [CANVAS_DERIVED_CHANGE]: true
+  })
 }
 
 /**
@@ -385,7 +444,11 @@ export function setCanvasPortsVisible(graph: Graph, nodeId: string, visible: boo
   if (!node || !node.isNode()) return
   for (const port of node.getPorts()) {
     if (!port.id) continue
-    node.setPortProp(port.id, 'attrs/circle/style/visibility', visible ? 'visible' : 'hidden')
+    // Chrome, not an edit: marked derived so a hover never becomes an undo step
+    // (and never empties the redo stack — X6 clears it on every recorded change).
+    node.setPortProp(port.id, 'attrs/circle/style/visibility', visible ? 'visible' : 'hidden', {
+      [CANVAS_DERIVED_CHANGE]: true
+    })
   }
 }
 
