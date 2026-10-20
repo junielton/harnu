@@ -18,7 +18,9 @@ import { randomUUID } from 'node:crypto'
  * U1: Ellipse (`o`/`4`) and Diamond (`d`/`3`). Step 9 (U3) sets every node style from the
  * properties panel and from the agent (`draw_canvas` `style`). Step 10 (U4) restacks nodes
  * from the panel's Layers group and from the agent (`zIndex`), reading the REAL paint order
- * from X6's DOM (`paintOrder()`), which jsdom cannot prove.
+ * from X6's DOM (`paintOrder()`), which jsdom cannot prove. Step 11 (U5) styles an arrow
+ * from the panel and from the agent (`draw_canvas` `add_edge`/`update_edge` `style`),
+ * selecting it with a real click on its drawn line.
  *
  * jsdom cannot reproduce X6's gesture handling: X6 listens for the release on `document`,
  * takes its own `mousedown` listener away until it sees one, and hit-tests through
@@ -90,6 +92,7 @@ interface SavedEdge {
   target: string
   origin: string
   zIndex?: number
+  props?: { style?: Record<string, unknown> } & Record<string, unknown>
 }
 interface SavedDoc {
   nodes: SavedNode[]
@@ -985,6 +988,159 @@ test.describe('canvas tools in the built app (T536 U1 + U2 + U3 + U4, spec §9.3
         await expect(pane.getByTestId('canvas-layers')).toBeVisible()
         await expect(pane.locator('[data-testid^="canvas-prop-group-"]')).toHaveCount(0)
       })
+
+      await test.step('11. Arrow styles: panel and agent', async () => {
+        const undo = pane.getByTestId('diagram-undo')
+        const option = (key: string, value: string): Locator =>
+          pane.getByTestId(`canvas-prop-${key}-${value}`)
+        /** Click a panel option, opening the collapsed panel first when it is folded away. */
+        const pick = async (key: string, value: string): Promise<void> => {
+          const opt = option(key, value)
+          if (!(await opt.isVisible())) await pane.getByTestId('canvas-properties-toggle').click()
+          await opt.click()
+          await expect(opt).toHaveAttribute('aria-checked', 'true')
+        }
+        const groupKeys = async (): Promise<string[]> =>
+          (
+            await pane
+              .locator('[data-testid^="canvas-prop-group-"]')
+              .evaluateAll((els) => els.map((el) => el.getAttribute('data-testid') ?? ''))
+          )
+            .map((t) => t.replace('canvas-prop-group-', ''))
+            .sort()
+        const rootVar = (name: string): Promise<string> =>
+          page.evaluate(
+            (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim(),
+            name
+          )
+        const styleOf = (doc: SavedDoc, id: string): Record<string, unknown> | undefined =>
+          doc.edges.find((e) => e.id === id)?.props?.style
+        const onDisk = (): SavedDoc => JSON.parse(readFileSync(boardPath, 'utf8')) as SavedDoc
+        /**
+         * Show the board as it is on disk, through the operator's Reload button (an agent's
+         * write does not reach a clean open pane live; see step 10), and wait for every
+         * edge view to be drawn again.
+         */
+        const reloadBoard = async (): Promise<void> => {
+          await page.evaluate(() =>
+            document
+              .querySelectorAll('[data-testid="diagram-pane"] g.x6-edge')
+              .forEach((el) => el.setAttribute('data-pre-redraw', '1'))
+          )
+          await pane.getByRole('button', { name: 'Reload canvas', exact: true }).click()
+          await expect(
+            pane.locator('g.x6-edge[data-pre-redraw]'),
+            'Reload: every edge view was drawn again'
+          ).toHaveCount(0, { timeout: STARTUP_TIMEOUT })
+          await expect(edges).toHaveCount(onDisk().edges.length, { timeout: STARTUP_TIMEOUT })
+        }
+        /** Select the arrow with a real click on the middle of its drawn line. */
+        const clickEdge = async (id: string): Promise<void> => {
+          const at = await edgeMidpoint(id)
+          await page.mouse.click(at.x, at.y)
+          await expect.poll(selectedIds, 'the arrow is selected').toEqual([id])
+        }
+
+        const warning = await rootVar('--color-warning')
+        const red = await rootVar('--color-red')
+        expect(warning, '--color-warning resolves').not.toBe('')
+        expect(red, '--color-red resolves').not.toBe('')
+        await expect(tool('select')).toHaveAttribute('aria-pressed', 'true')
+
+        // The agent draws an amber arrow C → D (A → B holds the operator's arrow from
+        // step 3, and a second one there would lie over it).
+        await mcp.call('draw_canvas', {
+          folder,
+          ops: [
+            {
+              op: 'add_edge',
+              source: idOf.C,
+              target: idOf.D,
+              style: { tone: 'amber' }
+            }
+          ]
+        })
+        const seededEdge = onDisk().edges.find((e) => e.source === idOf.C && e.target === idOf.D)
+        expect(seededEdge, 'the agent added C → D').toBeDefined()
+        const edgeId = (seededEdge as SavedEdge).id
+        expect(styleOf(onDisk(), edgeId)).toEqual({ tone: 'amber' })
+        await reloadBoard()
+        await expect.poll(() => edgeStroke(edgeId), 'the reloaded arrow is amber').toBe(warning)
+        expect(await edgeDash(edgeId), 'a styled-by-tone arrow is solid').toBeNull()
+
+        // A click on the middle of the arrow selects it, and the panel offers an arrow's
+        // groups only: tone and stroke, no Layers, and no accent tone.
+        await clickEdge(edgeId)
+        if (!(await option('tone', 'amber').isVisible()))
+          await pane.getByTestId('canvas-properties-toggle').click()
+        await expect(pane.getByTestId('canvas-prop-group-tone')).toBeVisible()
+        await expect(pane.getByTestId('canvas-prop-group-stroke')).toBeVisible()
+        expect(await groupKeys(), 'an arrow takes tone and stroke only').toEqual(['stroke', 'tone'])
+        await expect(pane.getByTestId('canvas-layers')).toHaveCount(0)
+        await expect(option('tone', 'accent')).toHaveCount(0)
+        await expect(option('tone', 'amber')).toHaveAttribute('aria-checked', 'true')
+
+        // Two panel picks: dotted, then red. The file holds both; the line is drawn.
+        await pick('stroke', 'dotted')
+        await pick('tone', 'red')
+        let doc = await saveAndRead()
+        expect(styleOf(doc, edgeId)).toEqual({ tone: 'red', stroke: 'dotted' })
+        expect(await edgePathD(edgeId), 'the arrow still has a path').not.toBe('')
+        expect(await edgeStroke(edgeId), "the arrow's line is the red tone").toBe(red)
+        expect(await edgeDash(edgeId), "the arrow's line is dotted").toBe('2 3')
+
+        // One undo step per pick: a single Ctrl+Z takes back the tone only.
+        await page.keyboard.press('Control+z')
+        doc = await saveAndRead()
+        expect(styleOf(doc, edgeId)).toEqual({ tone: 'amber', stroke: 'dotted' })
+        // The line is repainted from the model after the undo, not in the same tick.
+        await expect
+          .poll(() => edgeStroke(edgeId), 'Ctrl+Z gave the line its amber tone back')
+          .toBe(warning)
+        expect(await edgeDash(edgeId), 'the undo kept the dotted stroke').toBe('2 3')
+        expect(await edgePathD(edgeId), 'the arrow still has a path after Ctrl+Z').not.toBe('')
+
+        // The agent clears the stroke with the pane clean: the file keeps the tone alone,
+        // and the reloaded pane draws the arrow solid.
+        await expect(pane.getByTestId('diagram-dirty-dot')).toHaveCount(0)
+        await mcp.call('draw_canvas', {
+          folder,
+          ops: [{ op: 'update_edge', id: edgeId, style: { stroke: null } }]
+        })
+        expect(styleOf(onDisk(), edgeId)).toEqual({ tone: 'amber' })
+        await reloadBoard()
+        await expect.poll(() => edgeStroke(edgeId), 'the reloaded arrow is amber').toBe(warning)
+        expect(await edgeDash(edgeId), 'the reloaded arrow is solid').toBeNull()
+        await expect(undo, 'a reloaded board has nothing to undo').toBeDisabled()
+
+        // `accent` is not an arrow tone: the verb refuses it and the file is untouched.
+        const before = readFileSync(boardPath, 'utf8')
+        const refusal = await mcp.callRefused('draw_canvas', {
+          folder,
+          ops: [{ op: 'update_edge', id: edgeId, style: { tone: 'accent' } }]
+        })
+        expect(refusal).toMatch(/^BAD_PROPS/)
+        expect(readFileSync(boardPath, 'utf8'), 'a refused call leaves the file alone').toBe(before)
+
+        // A mixed selection (the arrow and box A) offers only what both take: tone and
+        // stroke, plus Layers.
+        await clickEdge(edgeId)
+        const a = centre(await nodeBox(idOf.A))
+        await page.keyboard.down('Shift')
+        await page.mouse.click(a.x, a.y)
+        await page.keyboard.up('Shift')
+        await expect
+          .poll(selectedIds, 'the arrow and A are selected')
+          .toEqual([edgeId, idOf.A].sort())
+        if (!(await pane.getByTestId('canvas-layers').isVisible()))
+          await pane.getByTestId('canvas-properties-toggle').click()
+        await expect(pane.getByTestId('canvas-layers')).toBeVisible()
+        expect(await groupKeys(), 'a mixed selection offers tone and stroke').toEqual([
+          'stroke',
+          'tone'
+        ])
+        await expect(option('tone', 'accent')).toHaveCount(0)
+      })
     } catch (err) {
       failed = true
       await page?.screenshot({ path: testInfo.outputPath('failure.png') }).catch(() => {})
@@ -1239,6 +1395,73 @@ async function bodySize(id: string): Promise<{ width: number; height: number }> 
     const r = el?.getBoundingClientRect()
     return { width: Math.round(r?.width ?? 0), height: Math.round(r?.height ?? 0) }
   }, id)
+}
+
+/**
+ * The arrow's visible line: the `line` selector's `<path>`, the one that carries the
+ * arrowhead (`marker-end`). X6 also draws a wide transparent `wrap` path for hit-testing,
+ * which has no marker; the `lines` group around them is a `<g>`.
+ */
+const EDGE_LINE = 'path[marker-end]'
+
+/** The `stroke` attribute of an arrow's visible line, as X6 painted it. */
+async function edgeStroke(id: string): Promise<string | null> {
+  return page.evaluate(
+    ([cellId, sel]) =>
+      document
+        .querySelector(`[data-testid="diagram-pane"] g.x6-edge[data-cell-id="${cellId}"] ${sel}`)
+        ?.getAttribute('stroke') ?? null,
+    [id, EDGE_LINE]
+  )
+}
+
+/** The `stroke-dasharray` attribute of an arrow's visible line; null when it is solid. */
+async function edgeDash(id: string): Promise<string | null> {
+  return page.evaluate(
+    ([cellId, sel]) =>
+      document
+        .querySelector(`[data-testid="diagram-pane"] g.x6-edge[data-cell-id="${cellId}"] ${sel}`)
+        ?.getAttribute('stroke-dasharray') ?? null,
+    [id, EDGE_LINE]
+  )
+}
+
+/** The `d` attribute of an arrow's visible line; the empty string when it has no path. */
+async function edgePathD(id: string): Promise<string> {
+  return page.evaluate(
+    ([cellId, sel]) =>
+      document
+        .querySelector(`[data-testid="diagram-pane"] g.x6-edge[data-cell-id="${cellId}"] ${sel}`)
+        ?.getAttribute('d') ?? '',
+    [id, EDGE_LINE]
+  )
+}
+
+/**
+ * The screen point half way along an arrow's drawn line, measured on the path itself
+ * (not its bounding box, which is off the line for a bent route). Checked rather than
+ * assumed to be this arrow's: the topmost element there must belong to the edge, so a
+ * layout change that put a node or the panel over it fails here with a clear message.
+ */
+async function edgeMidpoint(id: string): Promise<{ x: number; y: number }> {
+  const hit = await page.evaluate(
+    ([cellId, sel]) => {
+      const path = document.querySelector(
+        `[data-testid="diagram-pane"] g.x6-edge[data-cell-id="${cellId}"] ${sel}`
+      ) as SVGGeometryElement | null
+      const ctm = path?.getScreenCTM()
+      if (!path || !ctm) return null
+      const p = path.getPointAtLength(path.getTotalLength() / 2)
+      const x = ctm.a * p.x + ctm.c * p.y + ctm.e
+      const y = ctm.b * p.x + ctm.d * p.y + ctm.f
+      const top = document.elementFromPoint(x, y)
+      return { x, y, owner: top?.closest('g.x6-cell')?.getAttribute('data-cell-id') ?? null }
+    },
+    [id, EDGE_LINE]
+  )
+  expect(hit, `arrow ${id} has a drawn line`).not.toBeNull()
+  expect(hit?.owner, `the arrow's midpoint is on the arrow, not under something else`).toBe(id)
+  return { x: (hit as { x: number }).x, y: (hit as { y: number }).y }
 }
 
 /**
