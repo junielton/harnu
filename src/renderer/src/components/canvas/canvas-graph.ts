@@ -1,4 +1,4 @@
-import { Graph, Shape, type Edge, type Node } from '@antv/x6'
+import { Graph, ObjectExt, Shape, type Edge, Node } from '@antv/x6'
 import { Selection } from '@antv/x6-plugin-selection'
 import { History } from '@antv/x6-plugin-history'
 import { Transform } from '@antv/x6-plugin-transform'
@@ -344,7 +344,13 @@ export function restyleCanvasNode(
   // invents nothing that reaches the file.
   const attrs = toX6Node(draft as CanvasNode, palette, images).attrs
   if (typeof attrs !== 'object' || attrs === null) return
-  node.setAttrs(attrs as Node.Properties['attrs'], {
+  // `overwrite` replaces the WHOLE attrs object, including what the X6 shape class
+  // itself contributes at construction (a rect's `refWidth`/`refHeight`, an
+  // ellipse's `refRx`, the label's centring `refX`/`refY`): without them a box
+  // collapses to 0×0 and its label jumps to the corner. So lay the derived attrs
+  // over the class defaults, exactly as the constructor does on a fresh render.
+  const defaults = (node.constructor as typeof Node).getDefaults().attrs ?? {}
+  node.setAttrs(ObjectExt.merge({}, defaults, attrs) as Node.Properties['attrs'], {
     overwrite: true,
     dirty: true,
     [CANVAS_DERIVED_CHANGE]: true
