@@ -45,6 +45,7 @@ import {
   type CanvasNode
 } from '../canvas-core'
 import {
+  CANVAS_EDGE_STYLE,
   CANVAS_SHAPE_CATALOG,
   canvasShapeNames,
   canvasShapeSpec,
@@ -311,9 +312,9 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  *  something it did not. */
 const OP_KEYS: Record<CanvasOpName, readonly string[]> = {
   add_node: ['op', 'shape', 'x', 'y', 'width', 'height', 'label', 'props', 'style', 'zIndex'],
-  add_edge: ['op', 'source', 'target', 'label', 'router'],
+  add_edge: ['op', 'source', 'target', 'label', 'router', 'style'],
   update_node: ['op', 'id', 'x', 'y', 'width', 'height', 'label', 'props', 'style', 'zIndex'],
-  update_edge: ['op', 'id', 'label', 'router'],
+  update_edge: ['op', 'id', 'label', 'router', 'style'],
   remove_node: ['op', 'id'],
   remove_edge: ['op', 'id'],
   clear: ['op']
@@ -395,20 +396,25 @@ function checkProps(
   return { props }
 }
 
-/** The style keys `spec` takes, for a refusal that names them. */
-function styleKeysText(spec: CanvasShapeSpec): string {
-  const keys = Object.keys(spec.style)
+/** The style keys a `table` takes, for a refusal that names them. */
+function styleKeysText(
+  table: Readonly<Partial<Record<CanvasStyleKey, readonly CanvasStyleValue[]>>>
+): string {
+  const keys = Object.keys(table)
   return keys.length === 0 ? 'no style' : keys.join(', ')
 }
 
 /**
- * T536 U3 — the `style` field of `add_node` / `update_node`. Every key must be
- * one the node's shape takes and every value one of that key's allowed values
+ * T536 U3 / U5 — the `style` field of `add_node` / `update_node` (and, with
+ * {@link CANVAS_EDGE_STYLE}, of `add_edge` / `update_edge`). Every key must be
+ * one the owner's `table` takes and every value one of that key's allowed values
  * (strictly: `"50"` is not `50`); `null` is always allowed and means "remove".
- * Returns the patch for {@link mergeNodeStyle}.
+ * `owner` names the owner in a refusal (`shape "box"`, `an edge`). Returns the
+ * patch for {@link mergeNodeStyle}.
  */
 function checkStyle(
-  spec: CanvasShapeSpec,
+  table: Readonly<Partial<Record<CanvasStyleKey, readonly CanvasStyleValue[]>>>,
+  owner: string,
   style: unknown,
   at: string
 ): { style: Record<string, CanvasStyleValue | null> } | CanvasVerbErr {
@@ -417,21 +423,21 @@ function checkStyle(
   if (keys.length === 0) {
     return deny('BAD_ARGS', `${at}: "style" must name at least one key`)
   }
-  const table = spec.style as Readonly<Record<string, readonly CanvasStyleValue[] | undefined>>
+  const allowedByKey = table as Readonly<Record<string, readonly CanvasStyleValue[] | undefined>>
   // Own keys only: `constructor`, `toString`, `__proto__` … are inherited names, not style keys.
-  const undeclared = keys.filter((k) => !Object.hasOwn(table, k))
+  const undeclared = keys.filter((k) => !Object.hasOwn(allowedByKey, k))
   if (undeclared.length > 0) {
     return deny(
       'BAD_PROPS',
-      `${at}: shape "${spec.name}" does not take style key${undeclared.length === 1 ? '' : 's'} ${undeclared
+      `${at}: ${owner} does not take style key${undeclared.length === 1 ? '' : 's'} ${undeclared
         .map((k) => JSON.stringify(k))
-        .join(', ')} — it takes ${styleKeysText(spec)}`
+        .join(', ')} — it takes ${styleKeysText(table)}`
     )
   }
   const patch: Record<string, CanvasStyleValue | null> = {}
   for (const key of keys) {
     const value = style[key]
-    const allowed = table[key] as readonly CanvasStyleValue[] // own: checked above
+    const allowed = allowedByKey[key] as readonly CanvasStyleValue[] // own: checked above
     if (value !== null && !allowed.some((a) => a === value)) {
       return deny(
         'BAD_PROPS',
@@ -594,7 +600,7 @@ export function applyCanvasOps(input: ApplyCanvasOpsInput): ApplyCanvasOpsResult
           props = checked.props
         }
         if (raw.style !== undefined) {
-          const checked = checkStyle(spec, raw.style, at)
+          const checked = checkStyle(spec.style, `shape "${spec.name}"`, raw.style, at)
           if (isErr(checked)) return checked
           props = mergeNodeStyle(props, checked.style)
         }
@@ -639,6 +645,12 @@ export function applyCanvasOps(input: ApplyCanvasOpsInput): ApplyCanvasOpsResult
         if (raw.router !== undefined && typeof raw.router !== 'string') {
           return deny('BAD_ARGS', `${at}: "router" must be a string`)
         }
+        let props: Record<string, unknown> | undefined
+        if (raw.style !== undefined) {
+          const checked = checkStyle(CANVAS_EDGE_STYLE, 'an edge', raw.style, at)
+          if (isErr(checked)) return checked
+          props = mergeNodeStyle(undefined, checked.style)
+        }
         const id = nextId('e')
         if (isErr(id)) return id
         edges.push({
@@ -647,7 +659,8 @@ export function applyCanvasOps(input: ApplyCanvasOpsInput): ApplyCanvasOpsResult
           target: raw.target as string,
           ...(raw.label === undefined ? {} : { label: raw.label as string }),
           origin: 'agent',
-          ...(raw.router === undefined ? {} : { router: raw.router as string })
+          ...(raw.router === undefined ? {} : { router: raw.router as string }),
+          ...(props === undefined ? {} : { props })
         })
         applied.push({ op: name, id })
         break
@@ -702,7 +715,7 @@ export function applyCanvasOps(input: ApplyCanvasOpsInput): ApplyCanvasOpsResult
             propsChanged = true
           }
           if (raw.style !== undefined) {
-            const checked = checkStyle(spec, raw.style, at)
+            const checked = checkStyle(spec.style, `shape "${spec.name}"`, raw.style, at)
             if (isErr(checked)) return checked
             props = mergeNodeStyle(props, checked.style)
             propsChanged = true
@@ -739,7 +752,7 @@ export function applyCanvasOps(input: ApplyCanvasOpsInput): ApplyCanvasOpsResult
         }
         const idx = edges.findIndex((e) => e.id === id)
         if (idx < 0) return deny('UNKNOWN_ID', `${at}: no edge ${JSON.stringify(id)}`)
-        const touched = ['label', 'router'].filter((k) => raw[k] !== undefined)
+        const touched = ['label', 'router', 'style'].filter((k) => raw[k] !== undefined)
         if (touched.length === 0) {
           return deny('BAD_ARGS', `${at}: update_edge needs at least one field to change`)
         }
@@ -748,11 +761,24 @@ export function applyCanvasOps(input: ApplyCanvasOpsInput): ApplyCanvasOpsResult
             return deny('BAD_ARGS', `${at}: "${key}" must be a string`)
           }
         }
-        edges[idx] = {
+        let merged: Record<string, unknown> | undefined
+        if (raw.style !== undefined) {
+          const checked = checkStyle(CANVAS_EDGE_STYLE, 'an edge', raw.style, at)
+          if (isErr(checked)) return checked
+          merged = mergeNodeStyle(edges[idx].props, checked.style)
+        }
+        const nextEdge: CanvasEdge = {
           ...edges[idx],
           ...(raw.label === undefined ? {} : { label: raw.label as string }),
           ...(raw.router === undefined ? {} : { router: raw.router as string })
         }
+        // Assigned (not spread) so an existing `props` keeps its key position in
+        // the file, and removed only when the style merge emptied it.
+        if (raw.style !== undefined) {
+          if (merged === undefined) delete nextEdge.props
+          else nextEdge.props = merged
+        }
+        edges[idx] = nextEdge
         applied.push({ op: name, id })
         break
       }
@@ -842,6 +868,12 @@ export function canvasShapeCatalogAck(): {
     defaultSize: s.defaultSize,
     style: { ...s.style } as Record<string, readonly CanvasStyleValue[]>
   }))
+}
+
+/** T536 U5 — what an arrow's `style` takes, exactly as the ACK carries it
+ *  (`edgeStyle`): key → allowed values. A copy, so a caller cannot edit the table. */
+export function canvasEdgeStyleAck(): Record<string, readonly CanvasStyleValue[]> {
+  return { ...CANVAS_EDGE_STYLE } as Record<string, readonly CanvasStyleValue[]>
 }
 
 export { canvasShapeNames }

@@ -80,6 +80,19 @@ export const CANVAS_STYLE_DEFAULTS: Readonly<Record<CanvasStyleKey, CanvasStyleV
   opacity: 100
 }
 
+/**
+ * T536 U5 — the style keys an ARROW takes: the node model applied to edges
+ * (`design.md` §6 "Arrow styles"). Only `tone` and `stroke`, and the tone list
+ * has no `accent` because an arrow's default already is the accent colour.
+ * Stored in `edge.props.style` like a node's, merged per key, default removes.
+ */
+export const CANVAS_EDGE_STYLE: Readonly<
+  Partial<Record<CanvasStyleKey, readonly CanvasStyleValue[]>>
+> = {
+  tone: ['default', 'green', 'amber', 'red', 'muted'],
+  stroke: CANVAS_STYLE_VALUES.stroke
+}
+
 /** Build a shape's `style` table from the keys it takes, in {@link CANVAS_STYLE_KEYS} order. */
 function styleOf(...keys: CanvasStyleKey[]): CanvasShapeSpec['style'] {
   return Object.fromEntries(

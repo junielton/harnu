@@ -197,6 +197,7 @@ import { writeCanvasFile } from '../canvas-write'
 import {
   applyCanvasOps,
   canvasAssetsDir,
+  canvasEdgeStyleAck,
   canvasShapeCatalogAck,
   canvasVerbCode,
   planCanvasAssets,
@@ -1718,7 +1719,8 @@ const drawCanvasHandler: Handler = async (args, ctx) => {
     applied: applied.applied,
     ...(assetSrcs.length > 0 ? { assets: assetSrcs } : {}),
     opened,
-    shapes: canvasShapeCatalogAck()
+    shapes: canvasShapeCatalogAck(),
+    edgeStyle: canvasEdgeStyleAck()
   })
 }
 
