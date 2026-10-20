@@ -4859,6 +4859,10 @@ A `text` node has no frame, so its tone colours the **label** with the stroke co
 `default` keeps `--text-2`, `muted` is `--text-3`, and the other four use `--accent`,
 `--green`, `--warning` and `--red`.
 
+A `diamond` narrows to a point at its bounding box's left and right edges, so its
+`left`/`right` label aligns to the diamond's inscribed box instead of the 8px inset: a
+quarter of its width in (`refX` 25% / 75%), where the frame is still half its height tall.
+
 Which shapes take which keys: `box` all seven; `ellipse` and `diamond` all but `corners`;
 `text` `tone`, `fontSize`, `align` and `opacity`; `image` `opacity` only;
 `harnu/mockup-card` none; an unknown kind none (it keeps the dashed fallback and ignores
