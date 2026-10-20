@@ -433,7 +433,7 @@ _another_ folder.
 | `palette`                                | Canvas properties panel → the collapsed 28px button that opens it on a narrow pane (T536 U3)                                                                                                                                           |
 | `square-round-corner`                    | Canvas properties panel → Corners: round (`square` is sharp) (T536 U3)                                                                                                                                                                 |
 | `align-left`                             | Canvas properties panel → Align left (T536 U3)                                                                                                                                                                                         |
-| `align-center`                           | Canvas properties panel → Align centre (T536 U3)                                                                                                                                                                                       |
+| `align-center`                           | Canvas properties panel → Align center (T536 U3)                                                                                                                                                                                       |
 | `align-right`                            | Canvas properties panel → Align right (T536 U3)                                                                                                                                                                                        |
 
 ### Novelty dot (on an icon button)
@@ -4886,8 +4886,9 @@ module. Absolute to the viewport, so it neither pans nor zooms.
   `align-left` / `align-center` / `align-right`; size shows S / M / L / XL; opacity shows
   the percentage.
 - **Visibility.** Only while the tool is Select (the chosen tool, so holding `Space` does
-  not hide it) and at least one selected **node** takes at least one key. Selected edges
-  are ignored in U3.
+  not hide it) and the selected nodes **share** at least one key: the panel shows only
+  the controls every selected node accepts, so a box plus a mockup card hides it.
+  Selected edges are ignored in U3.
 - **Mixed selection.** When the selected nodes disagree on a key, no option in that group
   is checked.
 - **Undo.** Each change is one undo step.
