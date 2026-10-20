@@ -125,7 +125,7 @@ describe('CanvasPropertiesPanel', () => {
     const w = mountPanel({ collapsed: true, open: false })
     const toggle = w.get('[data-testid="canvas-properties-toggle"]')
     expect(toggle.attributes('aria-expanded')).toBe('false')
-    expect(toggle.attributes('title')).toBe('Show style options')
+    expect(toggle.attributes('title')).toBe('Show properties')
     expect(w.findAll('[role="radiogroup"]')).toHaveLength(0)
     await toggle.trigger('click')
     expect(w.emitted('toggle')).toHaveLength(1)
@@ -261,22 +261,31 @@ describe('CanvasPropertiesPanel — Layers (T536 U4)', () => {
     expect(labels).toEqual(['Send to back', 'Send backward', 'Bring forward', 'Bring to front'])
   })
 
-  it('a press on a Layers button does not reach the parent', async () => {
+  it('each Layers button stops its own press, before the panel root could', async () => {
+    // The listeners sit on the Layers group, INSIDE the panel root: the root's own
+    // `.stop` cannot shield them, so only each button's modifier keeps them silent.
+    const w = mountPanel({ keys: [], layers: true })
+    const group = w.get('[data-testid="canvas-layers"]').element
     const seen: string[] = []
-    const parent = document.createElement('div')
-    parent.addEventListener('mousedown', () => seen.push('mousedown'))
-    parent.addEventListener('pointerdown', () => seen.push('pointerdown'))
-    document.body.appendChild(parent)
-    const w = mount(CanvasPropertiesPanel, {
-      props: { keys: [], values: {}, collapsed: false, open: false, layers: true },
-      global: { plugins: [i18n] },
-      attachTo: parent
-    })
-    await w.get('[data-testid="canvas-layer-back"]').trigger('mousedown')
-    await w.get('[data-testid="canvas-layer-back"]').trigger('pointerdown')
+    group.addEventListener('mousedown', () => seen.push('mousedown'))
+    group.addEventListener('pointerdown', () => seen.push('pointerdown'))
+    for (const move of LAYER_MOVES) {
+      await w.get(`[data-testid="canvas-layer-${move}"]`).trigger('mousedown')
+      await w.get(`[data-testid="canvas-layer-${move}"]`).trigger('pointerdown')
+    }
     expect(seen).toEqual([])
-    w.unmount()
-    parent.remove()
+    // The probe can hear: a press on the group itself reaches it.
+    await w.get('[data-testid="canvas-layers"]').trigger('mousedown')
+    expect(seen).toEqual(['mousedown'])
+  })
+
+  it('collapsed and open with only Layers renders the toggle and the Layers group (narrow pane)', () => {
+    const w = mountPanel({ keys: [], layers: true, collapsed: true, open: true })
+    expect(w.get('[data-testid="canvas-properties-toggle"]').attributes('aria-expanded')).toBe(
+      'true'
+    )
+    expect(w.findAll('[role="radiogroup"]')).toHaveLength(0)
+    expect(w.get('[data-testid="canvas-layers"]').findAll('button')).toHaveLength(4)
   })
 
   it('collapsed and closed hides the Layers group with the rest', () => {

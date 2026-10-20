@@ -1583,6 +1583,9 @@ watch(
     const wasPanelOpen = panelOpen.value
     // `'live'`: every node keeps its exact z, so the undo stack — which records z
     // values, not an order — still describes the board after the redraw (T536 U4).
+    // That holds only while the live node z are distinct and > 0 (else renderStackZ
+    // re-ranks them), which they are: a load gives 1..n or the file's distinct
+    // positive values, a new node takes max + 1, and undo is LIFO.
     await draw(currentDraft(base, undefined, 'live') as CanvasDocument, false)
     dirty.value = wasDirty
     repairingSelection = true

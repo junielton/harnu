@@ -276,8 +276,8 @@
       "front": "Trazer para a frente"
     },
     "style": {
-      "panel": "Estilo",
-      "show": "Mostrar opções de estilo",
+      "panel": "Propriedades",
+      "show": "Mostrar propriedades",
       "group": {
         "tone": "Cor",
         "stroke": "Traço",

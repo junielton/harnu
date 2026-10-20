@@ -1201,15 +1201,26 @@ describe('X6 stacking on a fresh render (T536 U4)', () => {
   })
 
   it('keeps the file order after a batched restack is undone (the tie trap)', () => {
+    // The stack is read off `getCells()`, the collection X6 re-sorts on every z
+    // change. `getNodes()` reads an insertion-order cache that never moves on a z
+    // change, so an order claim made with it after a restack could not fail.
+    const stack = (g: Graph): string[] =>
+      g
+        .getCells()
+        .filter((c) => c.isNode())
+        .map((c) => c.id)
     const g = makeGraph(DOC)
     const fileOrder = DOC.nodes.map((n) => n.id)
-    expect(g.getNodes().map((n) => n.id)).toEqual(fileOrder)
+    expect(stack(g)).toEqual(fileOrder)
     g.startBatch('layer')
     g.getCellById('n-a')!.setZIndex(3)
     g.getCellById('n-b')!.setZIndex(1)
     g.getCellById('n-c')!.setZIndex(2)
     g.stopBatch('layer')
+    // The restack really moved the order, so the equality after undo is not trivial.
+    expect(stack(g)).toEqual(['n-b', 'n-c', 'n-a'])
     g.undo()
-    expect(g.getNodes().map((n) => n.id)).toEqual(fileOrder)
+    // Undo restores distinct render z, not ties a stable re-sort would leave as n-b, n-c, n-a.
+    expect(stack(g)).toEqual(fileOrder)
   })
 })
