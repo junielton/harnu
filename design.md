@@ -560,6 +560,8 @@ Examples: `⌘K` / `Ctrl+K` (search), `⌘N` / `Ctrl+N` (new session), `⌘⇧P`
 | `⌘⌥S`              | Open Settings on the Keyboard Shortcuts tab                                                                                                                                                                                | global   | Native menu: macOS app menu after Settings…, View elsewhere. Inert while Settings is open. On Windows layouts where Ctrl+Alt is AltGr (Polish: AltGr+S types ś) the chord may type a character instead                                                                                                                                                                                                           |
 | `⌘⇧B`              | Toggle the Fleet rail                                                                                                                                                                                                      | global   | Renderer-only (no menu item), but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter)                                                                                                                                                                                                                                                                                                    |
 | `⌘⇧D`              | Review the active folder's branch                                                                                                                                                                                          | global   | Renderer-only; opens the Review pane (T164)                                                                                                                                                                                                                                                                                                                                                                      |
+| `F6` / `⇧F6`       | Focus the next / previous pane: the main terminal, then the helper panes in stack order, wrapping                                                                                                                          | global   | **Shielded** (`pane.focusNext` / `pane.focusPrev`): works while a terminal holds focus, so the program there no longer gets F6. Inert while a dialog, palette or menu is open. On a Mac keyboard: Fn+F6 / Fn+⇧F6. See "Pane focus"                                                                                                                                                                               |
+| `⌘⇧M`              | Maximize or restore the focused helper pane; with none focused, restore the maximized one                                                                                                                                  | global   | Renderer-only (`pane.toggleMaximize`), but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter)                                                                                                                                                                                                                                                                                           |
 | `⌘C` / `⌃⇧C`       | Copy terminal selection                                                                                                                                                                                                    | terminal | Only with a selection; reads `term.getSelection()` (xterm's selection isn't a native DOM selection). On Mac, `editMenu` may intercept `⌘C` before xterm — see `menu.ts`                                                                                                                                                                                                                                          |
 | `⌘V` / `⌃⇧V`       | Paste into the terminal                                                                                                                                                                                                    | terminal | Via `term.paste()` — respects _bracketed paste_, so a multi-line paste doesn't auto-submit in the Claude TUI                                                                                                                                                                                                                                                                                                     |
 | `⇧↩`               | Line break (without sending)                                                                                                                                                                                               | terminal | Sends `\u000a` (LF, = Ctrl+J) to the PTY — Claude treats it as a newline; `Enter` alone (`\r`) sends. xterm's default ignores `Shift` and would send                                                                                                                                                                                                                                                             |
@@ -572,7 +574,8 @@ Shortcuts scoped to `terminal` are handled by `installTerminalKeymap`
 `attachCustomKeyEventHandler` — **not** by the native menu — and only
 fire while the terminal (main or helper) is focused.
 
-**The shield (T486 U5a).** An action marked `shield` (Back / Forward today) keeps its
+**The shield (T486 U5a).** An action marked `shield` (Back / Forward, `F6` / `⇧F6` pane
+focus and the unbound terminal toggle) keeps its
 chord away from every terminal: one window **capture** `keydown` listener in `App.vue`
 matches the press against each shielded action's resolved chord, while no dialog,
 palette or menu holds the keys. A menu-backed action off macOS is only stopped (its
@@ -1266,7 +1269,9 @@ component.**
 - **Shield hint** (T486 U5a) — on a shielded action with a chord: "Taken from the
   terminal: the program running there never sees {chord}." `{chord}` is the row's
   resolved chord, rendered for the platform (`Alt+←` off macOS, `⌘[` on a Mac). Today
-  the shielded rows are Back and Forward (`nav.*`). A user who binds a shielded,
+  the shielded rows are Back and Forward (`nav.*`), the pane focus pair
+  (`pane.focusNext` / `pane.focusPrev`) and the terminal toggle (`terminal.toggle`). A
+  user who binds a shielded,
   renderer-only action to an Alt chord off macOS may see the menu bar toggle on the Alt
   release — `docs/user/sessions.md` says so.
 - **Terminal-keeps hint** (T486 U5a) — on a non-shielded action bound to a chord the
@@ -3791,6 +3796,41 @@ directly, no need to restore first. Drag-to-resize is disabled on every pane
 while one is maximized (ratios are meaningless in that state). The maximized
 pane id is **ephemeral, per-worktree state** — never persisted to `helpers.json`
 — so it resets to the normal split on a worktree switch or app restart.
+
+#### Pane focus (T486 U5b)
+
+The main terminal and every helper pane are **focus regions**. Each root carries
+`data-focus-region="<id>"` (`main` for the main terminal, the pane id otherwise) and
+registers with the pane-focus registry (`composables/useTerminalFocus.ts`); the region
+holding `document.activeElement` is the focused one.
+
+- **The ring** (`lib/pane-ring.ts`) is what `F6` / `⇧F6` walk: the main terminal when it
+  is the foreground layer (not covered by a takeover or the Folder View), then the
+  current folder's helper panes in stack order when the panel is shown and not
+  collapsed. While a pane is maximized, the ring holds only that pane (the others are
+  24px headers). Focus outside the ring goes to the first region (`F6`) or the last
+  (`⇧F6`); an empty ring does nothing.
+- **What takes focus.** An xterm pane focuses its terminal. The Markdown, Memory and
+  Explorer panes focus their root (`tabindex="-1"`); the Diagram pane focuses its canvas
+  body, where its own keys live.
+- **Focus indicator.** A focused non-xterm pane (Markdown, Memory, Explorer, Diagram)
+  draws a **1px `--accent-line` outline inset on its root** (`outline-offset: -1px`, so
+  the stack's `overflow-hidden` never clips it) while focus is anywhere inside it
+  (`:focus-within`). Utilities: `focus-within:outline focus-within:outline-1
+focus-within:-outline-offset-1 focus-within:outline-accent-line`. It replaces the
+  UA focus ring on the root. No motion — it appears and disappears with focus. xterm
+  panes (shell, `claude`, the main terminal) draw none: their blinking cursor is the
+  indicator.
+- **Close and maximize from the keyboard.** `⌘⇧M` toggles maximize on the focused
+  helper pane (focus stays in it); with no helper pane focused it restores a maximized
+  pane. `pane.close` (unbound) runs the focused pane's own close — a dirty Markdown or
+  Diagram pane still shows its discard toast first — then focuses the next region.
+- **Terminal toggle** (`terminal.toggle`, unbound, shielded). No shell pane in the
+  current folder → open one. One exists but is not focused → reveal the panel (restore
+  any other maximized pane, close a takeover that does not host the stack) and focus
+  the first shell pane. It already holds focus → collapse the whole helper panel and
+  focus the main terminal. It reuses the first shell pane; Split ▸ New shell still
+  always adds another.
 
 #### Agent connection chip (helper pane header)
 
