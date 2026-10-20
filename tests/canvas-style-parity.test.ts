@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
+  EDGE_STYLE_KIND,
+  PANE_EDGE_STYLE,
   CANVAS_STYLE_DEFAULTS,
   CANVAS_STYLE_KEYS,
   CANVAS_STYLE_VALUES,
@@ -11,6 +13,7 @@ import {
   CANVAS_STYLE_DEFAULTS as MAIN_DEFAULTS,
   CANVAS_STYLE_KEYS as MAIN_KEYS,
   CANVAS_STYLE_VALUES as MAIN_VALUES,
+  CANVAS_EDGE_STYLE,
   CANVAS_SHAPE_CATALOG,
   LEGACY_CANVAS_SHAPE_NAMES,
   canvasShapeSpec
@@ -96,6 +99,80 @@ describe('the merge — renderer vs. the agent path, one fixture table', () => {
       expect(res.ok).toBe(true)
       if (!res.ok) return
       const viaAgent = res.doc.nodes[0].props
+      const viaPane = mergeCanvasStyle(c.props, c.patch)
+      expect(viaPane).toEqual(viaAgent)
+      expect(JSON.stringify(viaPane)).toBe(JSON.stringify(viaAgent))
+      expect(viaAgent).toEqual(c.expected)
+    })
+  }
+})
+
+describe('arrow styles — renderer mirror vs. the agent catalog (T536 U5)', () => {
+  it("the pane's arrow table deep-equals the agent's", () => {
+    expect(PANE_EDGE_STYLE).toEqual(CANVAS_EDGE_STYLE)
+    expect(Object.keys(PANE_EDGE_STYLE)).toEqual(Object.keys(CANVAS_EDGE_STYLE))
+  })
+
+  it('every arrow value is a value the node tables know, so a node option can name it', () => {
+    for (const [key, values] of Object.entries(PANE_EDGE_STYLE)) {
+      const known = MAIN_VALUES[key as keyof typeof MAIN_VALUES] as readonly unknown[]
+      for (const v of values ?? []) expect(known, `${key}=${String(v)}`).toContain(v)
+    }
+  })
+
+  it('the pseudo-kind is never a document shape name', () => {
+    const names = new Set<string>([
+      ...CANVAS_SHAPE_CATALOG.map((s) => s.name),
+      ...Object.keys(LEGACY_CANVAS_SHAPE_NAMES)
+    ])
+    expect(names.has(EDGE_STYLE_KIND)).toBe(false)
+  })
+})
+
+describe('the merge — renderer vs. the agent path, on an EDGE (T536 U5)', () => {
+  const mint: CanvasIdMinter = (prefix, attempt) => `${prefix}-${attempt}`
+  // The table's patches are written for a box. The agent refuses a key or value an
+  // arrow does not take, so only the cases an arrow can receive run here.
+  const arrowTakes = (patch: Record<string, string | number | null>): boolean =>
+    Object.entries(patch).every(
+      ([key, value]) =>
+        Object.hasOwn(CANVAS_EDGE_STYLE, key) &&
+        (value === null ||
+          (CANVAS_EDGE_STYLE[key as keyof typeof CANVAS_EDGE_STYLE] ?? []).includes(value))
+    )
+  const ARROW_CASES = STYLE_MERGE_CASES.filter((c) => arrowTakes(c.patch))
+
+  it('runs most of the table, so the filter cannot hollow the test out', () => {
+    expect(ARROW_CASES.length).toBeGreaterThanOrEqual(10)
+    expect(ARROW_CASES.length).toBeLessThan(STYLE_MERGE_CASES.length)
+  })
+
+  for (const c of ARROW_CASES) {
+    it(c.name, () => {
+      const doc: CanvasDocument = {
+        ...emptyCanvasDocument('2026-10-19T12:00:00.000Z'),
+        nodes: [
+          { id: 'a', shape: 'box', x: 0, y: 0, origin: 'operator' },
+          { id: 'b', shape: 'box', x: 200, y: 0, origin: 'operator' }
+        ],
+        edges: [
+          {
+            id: 'e',
+            source: 'a',
+            target: 'b',
+            origin: 'operator',
+            ...(c.props === undefined ? {} : { props: c.props })
+          }
+        ]
+      }
+      const res = applyCanvasOps({
+        doc,
+        ops: [{ op: 'update_edge', id: 'e', style: c.patch }],
+        mintId: mint
+      })
+      expect(res.ok).toBe(true)
+      if (!res.ok) return
+      const viaAgent = res.doc.edges[0].props
       const viaPane = mergeCanvasStyle(c.props, c.patch)
       expect(viaPane).toEqual(viaAgent)
       expect(JSON.stringify(viaPane)).toBe(JSON.stringify(viaAgent))

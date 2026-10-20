@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick } from 'vue'
-import type { Graph } from '@antv/x6'
+import { Shape, type Graph } from '@antv/x6'
 import DiagramPane from '../src/renderer/src/components/DiagramPane.vue'
 import {
   CANVAS_DERIVED_CHANGE,
@@ -11,6 +11,7 @@ import {
   createCanvasGraph,
   operatorEdgeSpec,
   renderCanvasDocument,
+  restyleCanvasEdge,
   restyleCanvasNode,
   setCanvasPortsVisible,
   setCanvasRubberband
@@ -1352,5 +1353,127 @@ describe('X6 stacking on a fresh render (T536 U4)', () => {
     g.undo()
     // Undo restores distinct render z, not ties a stable re-sort would leave as n-b, n-c, n-a.
     expect(stack(g)).toEqual(fileOrder)
+  })
+})
+
+// Arrow styles (T536 U5). Same shape as the node restyle above: the style lives in
+// the edge's `data.props.style`, the line attrs are derived from it, and only the
+// `data` write is an undo step.
+describe('restyleCanvasEdge — arrow styles (T536 U5)', () => {
+  const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 100))
+  const styleData = (g: Graph, style: Record<string, unknown> | undefined): void => {
+    const edge = g.getCellById('e-1')!
+    const { props: _old, ...rest } = edge.getData() as Record<string, unknown>
+    void _old
+    // Written `silent` where a test wants to run the restyle by hand.
+    edge.setData(style === undefined ? rest : { ...rest, props: { style } }, { overwrite: true })
+  }
+  const linePath = (g: Graph): Element =>
+    g.findViewByCell(g.getCellById('e-1')!)!.container.querySelector('[stroke-width="1.5"]')!
+
+  it('re-derives the line from the edge data and keeps the class defaults (Review Focus 2)', () => {
+    const g = makeGraph()
+    const edge = g.getCellById('e-1') as never as import('@antv/x6').Edge
+    const defaults = (Shape.Edge.getDefaults().attrs ?? {}) as Record<string, never>
+    // X6's Edge puts `connection: true` on the `lines` group, which both the visible
+    // `line` and the hit-path `wrap` belong to: lose it and the arrow stops following its route.
+    expect(edge.attr('lines/connection')).toBe(true)
+    styleData(g, { tone: 'red' })
+    restyleCanvasEdge(edge, palette)
+    expect(edge.attr('line/stroke')).toBe(palette.red)
+    expect(edge.attr('lines')).toEqual(defaults.lines)
+    expect(edge.attr('lines/connection')).toBe(true)
+    // The wide transparent hit path survives: it is what makes a 1.5px line clickable.
+    expect(edge.attr('wrap')).toEqual(defaults.wrap)
+    expect(edge.attr('wrap/strokeWidth')).toBe(10)
+    expect(edge.attr('line/strokeWidth')).toBe(1.5)
+    expect(edge.attr('line/targetMarker')).toEqual({ name: 'block', width: 8, height: 6 })
+    g.dispose()
+  })
+
+  it('draws the same attrs a fresh render of that style gives the arrow', () => {
+    const style = { tone: 'amber', stroke: 'dotted' }
+    const styledDoc: CanvasDocument = {
+      ...DOC,
+      edges: [{ ...DOC.edges[0], props: { style } }]
+    }
+    const g = makeGraph()
+    const fresh = makeGraph(styledDoc)
+    const edge = g.getCellById('e-1') as never as import('@antv/x6').Edge
+    styleData(g, style)
+    restyleCanvasEdge(edge, palette)
+    expect(edge.getAttrs()).toEqual(fresh.getCellById('e-1')!.getAttrs())
+    g.dispose()
+    fresh.dispose()
+  })
+
+  it('removes the dasharray from the rendered path after a reset to solid', async () => {
+    const g = makeGraph()
+    const edge = g.getCellById('e-1') as never as import('@antv/x6').Edge
+    styleData(g, { stroke: 'dashed' })
+    restyleCanvasEdge(edge, palette)
+    await settle()
+    expect(linePath(g).getAttribute('stroke-dasharray')).toBe('6 4')
+    styleData(g, undefined)
+    restyleCanvasEdge(edge, palette)
+    await settle()
+    expect(linePath(g).hasAttribute('stroke-dasharray')).toBe(false)
+    expect(linePath(g).getAttribute('stroke')).toBe(palette.accent)
+    g.dispose()
+  })
+
+  it('keeps the data write in history and drops the restyle', () => {
+    const g = makeGraph()
+    g.cleanHistory()
+    const edge = g.getCellById('e-1') as never as import('@antv/x6').Edge
+    styleData(g, { tone: 'green' })
+    restyleCanvasEdge(edge, palette)
+    expect(g.canUndo()).toBe(true)
+    g.undo()
+    // The one undo step was the data write; the restyle left nothing behind it.
+    expect(g.canUndo()).toBe(false)
+    expect(g.canRedo()).toBe(true)
+    expect((edge.getData() as { props?: unknown }).props).toBeUndefined()
+    // A derived write neither records nor empties the redo stack.
+    restyleCanvasEdge(edge, palette)
+    expect(g.canRedo()).toBe(true)
+    expect(g.canUndo()).toBe(false)
+    expect(edge.attr('line/stroke')).toBe(palette.accent)
+    g.dispose()
+  })
+
+  it('repaints in the palette in force now, not the one the style was written in', () => {
+    const g = makeGraph()
+    const edge = g.getCellById('e-1') as never as import('@antv/x6').Edge
+    styleData(g, { tone: 'green' })
+    restyleCanvasEdge(edge, palette)
+    const other = { ...palette, green: '#0a0b0c' }
+    restyleCanvasEdge(edge, other)
+    expect(edge.attr('line/stroke')).toBe('#0a0b0c')
+    g.dispose()
+  })
+
+  it('leaves the label, router and endpoints alone', () => {
+    const g = makeGraph()
+    const edge = g.getCellById('e-1') as never as import('@antv/x6').Edge
+    const before = JSON.stringify([edge.getLabels(), edge.getRouter(), edge.getSource()])
+    styleData(g, { tone: 'red', stroke: 'dashed' })
+    restyleCanvasEdge(edge, palette)
+    expect(JSON.stringify([edge.getLabels(), edge.getRouter(), edge.getSource()])).toBe(before)
+    g.dispose()
+  })
+
+  it('a clicked arrow joins the selection and shows the selection box', () => {
+    const g = makeGraph()
+    const edge = g.getCellById('e-1')!
+    const selection = g.getPlugin('selection') as unknown as { options: Record<string, unknown> }
+    expect(selection.options.showEdgeSelectionBox).toBe(true)
+    expect(selection.options.showNodeSelectionBox).toBe(true)
+    // The plugin's own click handler, driven the way X6 does on a cell mouseup.
+    g.trigger('cell:mouseup', { e: new MouseEvent('mouseup'), cell: edge })
+    expect(g.getSelectedCells().map((c) => c.id)).toEqual(['e-1'])
+    // The view container carries data-cell-id too, so the box is picked by its own class.
+    expect(g.container.querySelector('.x6-widget-selection-box[data-cell-id="e-1"]')).not.toBeNull()
+    g.dispose()
   })
 })
