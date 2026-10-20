@@ -609,3 +609,91 @@ describe('toX6Cells stacking (T536 U4)', () => {
     expect(zOf(doc([box('a'), box('b', 5), box('c')]))).toEqual({ a: 1, b: 3, c: 2, 'e-1': 0 })
   })
 })
+
+describe('toX6Edge — arrow styles (T536 U5)', () => {
+  const edge = { id: 'e1', source: 'n1', target: 'n2', origin: 'agent' as const }
+  const attrsOf = (e: Parameters<typeof toX6Edge>[0], palette = PALETTE): unknown =>
+    toX6Edge(e, palette).attrs
+  const lineOf = (e: Parameters<typeof toX6Edge>[0], palette = PALETTE): Record<string, unknown> =>
+    (toX6Edge(e, palette).attrs as { line: Record<string, unknown> }).line
+  const U4_ATTRS = {
+    line: {
+      stroke: PALETTE.accent,
+      strokeWidth: 1.5,
+      targetMarker: { name: 'block', width: 8, height: 6 }
+    }
+  }
+
+  it('an unstyled arrow renders exactly as it did before U5', () => {
+    expect(attrsOf(edge)).toEqual(U4_ATTRS)
+    expect(attrsOf({ ...edge, props: { weight: 2 } })).toEqual(U4_ATTRS)
+    expect(attrsOf({ ...edge, props: { style: {} } })).toEqual(U4_ATTRS)
+  })
+
+  it('tone colours the line from the palette', () => {
+    const tones: [string, string][] = [
+      ['default', PALETTE.accent],
+      ['green', PALETTE.green],
+      ['amber', PALETTE.warning],
+      ['red', PALETTE.red],
+      ['muted', PALETTE.text3]
+    ]
+    for (const [tone, stroke] of tones) {
+      expect(lineOf({ ...edge, props: { style: { tone } } }).stroke, tone).toBe(stroke)
+    }
+  })
+
+  it('stroke sets the dasharray, and solid sets none', () => {
+    expect(lineOf({ ...edge, props: { style: { stroke: 'dashed' } } }).strokeDasharray).toBe('6 4')
+    expect(lineOf({ ...edge, props: { style: { stroke: 'dotted' } } }).strokeDasharray).toBe('2 3')
+    expect('strokeDasharray' in lineOf({ ...edge, props: { style: { stroke: 'solid' } } })).toBe(
+      false
+    )
+  })
+
+  it('the arrowhead is never dashed and keeps its size', () => {
+    const line = lineOf({ ...edge, props: { style: { tone: 'red', stroke: 'dashed' } } })
+    expect(line.targetMarker).toEqual({ name: 'block', width: 8, height: 6 })
+    expect(line.strokeWidth).toBe(1.5)
+  })
+
+  it('renders from the palette in force, not a remembered one (a theme switch)', () => {
+    const styled = { ...edge, props: { style: { tone: 'green' } } }
+    const other: CanvasPalette = { ...PALETTE, green: '#other-green' }
+    expect(lineOf(styled).stroke).toBe('#green')
+    expect(lineOf(styled, other).stroke).toBe('#other-green')
+  })
+
+  // Review Focus 4: a file written by a newer Harnu, or by hand.
+  it('renders what it cannot read as the default, and keeps the props verbatim in data', () => {
+    const odd = [
+      { style: { tone: 'purple', stroke: 40 }, weight: 2 },
+      { style: 'red' },
+      { style: { tone: 'accent' } },
+      { style: ['tone', 'red'] },
+      { style: { glow: 'max' } }
+    ]
+    for (const props of odd) {
+      const cell = toX6Edge({ ...edge, props }, PALETTE)
+      expect(cell.attrs, JSON.stringify(props)).toEqual(U4_ATTRS)
+      expect((cell.data as { props: unknown }).props).toEqual(props)
+    }
+  })
+
+  it('a known key still renders beside an unknown one', () => {
+    const line = lineOf({ ...edge, props: { style: { tone: 'purple', stroke: 'dashed' } } })
+    expect(line.stroke).toBe(PALETTE.accent)
+    expect(line.strokeDasharray).toBe('6 4')
+  })
+
+  it('does not touch the label plate, router or connector', () => {
+    const plain = toX6Edge({ ...edge, label: 'IPC' }, PALETTE)
+    const styled = toX6Edge(
+      { ...edge, label: 'IPC', props: { style: { tone: 'red', stroke: 'dotted' } } },
+      PALETTE
+    )
+    expect(styled.labels).toEqual(plain.labels)
+    expect(styled.router).toEqual(plain.router)
+    expect(styled.connector).toEqual(plain.connector)
+  })
+})

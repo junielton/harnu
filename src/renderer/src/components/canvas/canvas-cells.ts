@@ -1,7 +1,13 @@
 import type { CanvasDocument, CanvasEdge, CanvasNode } from '../../../../main/canvas-core'
 import type { CanvasPalette } from './canvas-theme'
 import { renderStackZ } from './canvas-layers'
-import { readCanvasStyle, toneColors, type CanvasStyle } from './canvas-style'
+import {
+  DASH_BY_STROKE,
+  edgeLineAttrs,
+  readCanvasStyle,
+  toneColors,
+  type CanvasStyle
+} from './canvas-style'
 import {
   LEGACY_MOCKUP_CARD_SHAPE,
   MOCKUP_CARD_DEFAULT_SIZE,
@@ -161,8 +167,6 @@ function sizeFor(node: CanvasNode): { width: number; height: number } {
   }
 }
 
-/** `style.stroke` → `strokeDasharray`; `solid` (and an absent key) draws none. */
-const DASH_BY_STROKE: Readonly<Record<string, string>> = { dashed: '6 4', dotted: '2 3' }
 /** `style.strokeWidth` → px (`regular` is today's 1.5). */
 const WIDTH_BY_STROKE_WIDTH: Readonly<Record<string, number>> = { thin: 1, regular: 1.5, bold: 2.5 }
 /** `style.fontSize` → px: Caption, today's canvas 12, Subtitle, Title (`design.md` §3). */
@@ -504,13 +508,8 @@ export function toX6Edge(edge: CanvasEdge, palette: CanvasPalette): X6CellSpec {
     },
     router: { name: edge.router ?? 'manhattan' },
     connector: { name: 'rounded', args: { radius: 8 } },
-    attrs: {
-      line: {
-        stroke: palette.accent,
-        strokeWidth: 1.5,
-        targetMarker: { name: 'block', width: 8, height: 6 }
-      }
-    },
+    // Tone and stroke come from `props.style` (T536 U5); an unstyled arrow draws as before.
+    attrs: { line: edgeLineAttrs(edge.props, palette) },
     ...(edge.label
       ? {
           labels: [

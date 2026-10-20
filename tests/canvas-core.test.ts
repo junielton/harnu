@@ -673,3 +673,46 @@ describe('node zIndex round-trips byte for byte (T536 U4)', () => {
     expect(serializeCanvasDocument(parsed.doc)).toBe(input)
   })
 })
+
+describe('arrow style props round-trip byte for byte (T536 U5)', () => {
+  const edges = [
+    // A known value.
+    {
+      id: 'e-1',
+      source: 'a',
+      target: 'b',
+      origin: 'agent',
+      props: { style: { tone: 'green', stroke: 'dashed' } }
+    },
+    // An unknown value, an unknown key, and an extra props key beside style.
+    {
+      id: 'e-2',
+      source: 'b',
+      target: 'a',
+      origin: 'operator',
+      router: 'orth',
+      props: { style: { tone: 'purple', glow: 'max' }, weight: 2 }
+    },
+    // A value of the wrong type and a style that is not an object.
+    { id: 'e-3', source: 'a', target: 'a', origin: 'agent', props: { style: { stroke: 40 } } },
+    { id: 'e-4', source: 'b', target: 'b', origin: 'agent', props: { style: 'red' } }
+  ]
+  const nodes = ['a', 'b'].map((id, i) => ({
+    id,
+    shape: 'box',
+    x: i * 200,
+    y: 0,
+    width: 100,
+    height: 50,
+    origin: 'agent'
+  }))
+  const text = `${JSON.stringify({ capycanvas: 1, meta: { title: 'Z' }, nodes, edges }, null, 2)}\n`
+
+  it('reads and writes the same bytes, whatever the style says', () => {
+    const parsed = parseCanvasDocument(text)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.doc.edges.map((e) => e.props)).toEqual(edges.map((e) => e.props))
+    expect(serializeCanvasDocument(parsed.doc)).toBe(text)
+  })
+})
