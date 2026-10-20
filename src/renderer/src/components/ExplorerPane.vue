@@ -492,12 +492,14 @@ function onToggleMaximize(): void {
   helpers.toggleMaximizePane(props.worktreePath, props.pane.id)
 }
 
-// T486 U5b — a region of the pane focus ring: F6 focuses its root, `pane.close`
-// runs the header X's close. The root draws the design.md §6
+// T486 U5b — a region of the pane focus ring: F6 focuses its scroll body (focusing
+// the overflow-hidden root would leave PageDown / arrows with no scroller to drive),
+// `pane.close` runs the header X's close. The root draws the design.md §6
 // "Pane focus" outline while focus is inside.
 const rootEl = ref<HTMLDivElement | null>(null)
+const bodyEl = ref<HTMLDivElement | null>(null)
 useFocusRegion(props.pane.id, rootEl, {
-  focus: () => rootEl.value?.focus(),
+  focus: () => bodyEl.value?.focus(),
   close: onClose
 })
 </script>
@@ -507,7 +509,6 @@ useFocusRegion(props.pane.id, rootEl, {
   <div
     ref="rootEl"
     class="flex h-full w-full flex-col overflow-hidden bg-bg no-default-ring focus-within:outline focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-accent-line"
-    tabindex="-1"
     :data-focus-region="pane.id"
     :aria-label="$t('explorerPane.label')"
   >
@@ -592,7 +593,12 @@ useFocusRegion(props.pane.id, rootEl, {
       </button>
     </div>
 
-    <div class="scrollable min-h-0 flex-1 overflow-y-auto" style="padding: 6px 4px">
+    <div
+      ref="bodyEl"
+      class="scrollable no-default-ring min-h-0 flex-1 overflow-y-auto outline-none"
+      tabindex="-1"
+      style="padding: 6px 4px"
+    >
       <!-- ── Search results mode (Cluster F) — flat, project-wide finder ── -->
       <template v-if="isSearching">
         <!-- In-flight spinner (until the first result set lands) -->

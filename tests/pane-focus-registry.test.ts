@@ -117,7 +117,7 @@ describe('non-xterm panes register themselves (AC-25, AC-27)', () => {
 
   const MD = { id: 'h-md', type: 'markdown' as const, cwd: '/wt', ratio: 1, filePath: '/wt/a.md' }
 
-  it('MarkdownPane: a focusable root carrying data-focus-region, focused through the registry', async () => {
+  it('MarkdownPane: the root carries data-focus-region; F6 focuses the scroll body', async () => {
     const w = mount(MarkdownPane, {
       props: { pane: { ...MD }, worktreePath: '/wt' },
       global: { plugins: [i18n] },
@@ -125,9 +125,14 @@ describe('non-xterm panes register themselves (AC-25, AC-27)', () => {
     })
     await settle()
     const root = w.get('[data-focus-region="h-md"]')
-    expect(root.attributes('tabindex')).toBe('-1')
+    // The root is NOT focusable: a focused overflow-hidden root leaves PageDown /
+    // arrows with no scroller to drive (Chromium walks up from the focused node).
+    expect(root.attributes('tabindex')).toBeUndefined()
     expect(focusRegion('h-md')).toBe(true)
     expect(focusedRegionId()).toBe('h-md')
+    // F6 lands on the scroll body, so keyboard scrolling keeps working.
+    expect(document.activeElement).toBe(root.get('.scrollable').element)
+    expect(root.get('.scrollable').attributes('tabindex')).toBe('-1')
     w.unmount()
     expect(focusRegion('h-md')).toBe(false)
   })
@@ -150,6 +155,21 @@ describe('non-xterm panes register themselves (AC-25, AC-27)', () => {
     w.unmount()
   })
 
+  it('MarkdownPane: in edit mode F6 focuses the editor', async () => {
+    const w = mount(MarkdownPane, {
+      props: { pane: { ...MD }, worktreePath: '/wt' },
+      global: { plugins: [i18n] },
+      attachTo: document.body
+    })
+    await settle()
+    await w.get('button[aria-label="Edit"]').trigger('click')
+    await nextTick()
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    expect(focusRegion('h-md')).toBe(true)
+    expect(document.activeElement).toBe(w.get('textarea').element)
+    w.unmount()
+  })
+
   it('MarkdownPane: a clean pane closes through removeHelper', async () => {
     const helpers = useHelpersStore()
     const remove = vi.spyOn(helpers, 'removeHelper').mockImplementation(() => {})
@@ -164,7 +184,7 @@ describe('non-xterm panes register themselves (AC-25, AC-27)', () => {
     w.unmount()
   })
 
-  it('MemoryPane registers a focusable root', async () => {
+  it('MemoryPane registers its root and focuses its scroll body', async () => {
     const w = mount(MemoryPane, {
       props: {
         pane: { id: 'h-mem', type: 'memory' as const, cwd: '/wt', ratio: 1, folder: '/wt' },
@@ -174,9 +194,11 @@ describe('non-xterm panes register themselves (AC-25, AC-27)', () => {
       attachTo: document.body
     })
     await settle()
-    expect(w.get('[data-focus-region="h-mem"]').attributes('tabindex')).toBe('-1')
+    const root = w.get('[data-focus-region="h-mem"]')
+    expect(root.attributes('tabindex')).toBeUndefined()
     expect(focusRegion('h-mem')).toBe(true)
     expect(focusedRegionId()).toBe('h-mem')
+    expect(document.activeElement).toBe(root.get('.scrollable').element)
     w.unmount()
   })
 })
@@ -202,6 +224,11 @@ describe('focus indicator classes (AC-25)', () => {
     for (const f of ['HelperPane.vue', 'TerminalPane.vue']) {
       expect(read(f), f).not.toContain(INDICATOR)
     }
+    // A helper pane whose terminal is not live yet takes focus on its root: the
+    // outline shows for the root itself only, never while the xterm is focused.
+    expect(read('HelperPane.vue')).toContain(
+      'focus:outline focus:outline-1 focus:-outline-offset-1 focus:outline-accent-line'
+    )
   })
 
   it('all six focus regions register through useFocusRegion and mark their root', async () => {
