@@ -103,9 +103,34 @@ describe('toX6Node — colours come only from the palette', () => {
       string,
       Record<string, unknown>
     >
-    expect(attrs.body.fill).toBe('none')
+    expect(attrs.body.fill).toBe('transparent')
     expect(attrs.body.stroke).toBe('none')
     expect(attrs.label.fill).toBe(PALETTE.text2)
+  })
+
+  it('a text node keeps a transparent full-frame hit area, so a press anywhere in its frame hits it (X4b)', () => {
+    // SVG hit-tests a shape only where its fill is painted: `fill: none` lets a
+    // press at the centre of a left/right aligned label fall through to the board.
+    // `transparent` is painted for hit-testing and invisible on screen.
+    for (const style of [undefined, { align: 'left' }, { align: 'right', fontSize: 's' }]) {
+      const cell = toX6Node(
+        node({ shape: 'text', width: 132, height: 40, ...(style ? { props: { style } } : {}) }),
+        PALETTE
+      )
+      const body = (cell.attrs as Record<string, Record<string, unknown>>).body
+      // The X6 rect's body spans the whole node (its class default refWidth/refHeight
+      // 100%); nothing here shrinks it.
+      expect(cell.shape).toBe('rect')
+      expect(body).not.toHaveProperty('width')
+      expect(body).not.toHaveProperty('height')
+      expect(body).not.toHaveProperty('refWidth')
+      expect(body).not.toHaveProperty('refHeight')
+      expect(body).not.toHaveProperty('pointerEvents')
+      // Hit-testable, yet nothing visible: no colour, no outline.
+      expect(body.fill).toBe('transparent')
+      expect(body.stroke).toBe('none')
+      expect(body).not.toHaveProperty('fillOpacity')
+    }
   })
 
   it('every emitted colour is a palette value — no raw hex leaks from the mapper (U2-3)', () => {
@@ -459,7 +484,7 @@ describe('toX6Node — node styles (T536 U3)', () => {
     const a = attrsOf(styled({ tone: 'red' }, { shape: 'text' }))
     expect(a.text.fill).toBe('#red')
     expect(a.label.fill).toBe('#red')
-    expect(a.body).toEqual({ fill: 'none', stroke: 'none' })
+    expect(a.body).toEqual({ fill: 'transparent', stroke: 'none' })
   })
 
   it('a text node with no tone keeps --text-2', () => {

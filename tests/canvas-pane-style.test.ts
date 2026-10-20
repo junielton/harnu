@@ -709,3 +709,61 @@ describe('DiagramPane properties panel — narrow panes', () => {
     expect(panelTop()).toBeGreaterThan(56 + 36)
   })
 })
+
+// ── a text node is clickable anywhere in its frame (live row X4b) ───────────
+describe('DiagramPane — a left or right aligned text node is clickable anywhere in its frame', () => {
+  /**
+   * Four bare text nodes, 132×40 with a short label, as in the live row: aligned
+   * left or right, the glyphs sit against one edge and leave the frame centre
+   * (x = 66) uncovered.
+   */
+  const TEXTS: CanvasDocument['nodes'] = [
+    ['t-sl', 's', 'left'],
+    ['t-sr', 's', 'right'],
+    ['t-ml', undefined, 'left'],
+    ['t-mr', undefined, 'right']
+  ].map(([id, fontSize, align], i) => ({
+    id: id as string,
+    shape: 'text',
+    x: 40,
+    y: 40 + i * 80,
+    width: 132,
+    height: 40,
+    label: 'Text note',
+    origin: 'operator' as const,
+    props: { style: { align: align as string, ...(fontSize ? { fontSize } : {}) } }
+  }))
+  const TEXT_DOC: CanvasDocument = { ...DOC, nodes: TEXTS, edges: [] }
+
+  /**
+   * jsdom does not hit-test, so this applies the SVG rule the browser does
+   * (`pointer-events: visiblePainted`): a point inside a shape hits it only where
+   * its fill is painted, and `fill="none"` is not painted. With the label away
+   * from the centre, the only shape that can cover the frame centre is a
+   * full-frame rect; when it paints nothing, the press lands on the blank board.
+   */
+  function hitAtFrameCentre(w: VueWrapper, n: CanvasDocument['nodes'][number]): Element {
+    const rect = [...(nodeEl(w, n.id)?.querySelectorAll('rect') ?? [])].find(
+      (r) =>
+        r.getAttribute('width') === String(n.width) && r.getAttribute('height') === String(n.height)
+    )
+    const fill = rect?.getAttribute('fill')
+    const painted =
+      rect !== undefined && fill !== 'none' && rect.getAttribute('pointer-events') !== 'none'
+    return painted ? rect : svgOf(w)
+  }
+
+  for (const n of TEXTS) {
+    const style = (n.props as { style: Record<string, string> }).style
+    it(`size ${style.fontSize ?? 'm'}, align ${style.align}: a press at the frame centre selects it`, async () => {
+      canvasRead.mockImplementation(async (p: string) => ({ ok: true, path: p, doc: TEXT_DOC }))
+      const w = mountPane()
+      await settle()
+      const centre: [number, number] = [n.x + n.width! / 2, n.y + n.height! / 2]
+      down(hitAtFrameCentre(w, n), centre)
+      up(centre)
+      await settle()
+      expect(selectedIds(w)).toEqual([n.id])
+    })
+  }
+})

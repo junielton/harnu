@@ -282,11 +282,17 @@ export function toX6Node(
   if (node.shape === 'text') {
     // No frame, no fill — a bare label. `--text-2` rather than `--text`: with no
     // body behind it, a callout that shouts competes with the boxes.
+    //
+    // The body is still a full-frame rect filled `transparent`, not `none`: SVG
+    // hit-tests a shape only where its fill is painted, so with `none` a press at
+    // the centre of a left/right aligned label fell through to the board and the
+    // node could not be selected there. `transparent` is painted for hit-testing
+    // and invisible on screen, in every theme.
     return {
       ...common,
       shape: 'rect',
       attrs: {
-        body: { fill: 'none', stroke: 'none', ...styled.body },
+        body: { fill: 'transparent', stroke: 'none', ...styled.body },
         text: {
           ...labelAttrs.text,
           fill: palette.text2,
