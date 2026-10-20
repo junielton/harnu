@@ -708,3 +708,15 @@ describe('drawCanvasHandler — U7-1: a generated image lands as an image node',
     expect(raw.length).toBeLessThan(2000)
   })
 })
+
+describe('drawCanvasHandler — T536 U4: zIndex', () => {
+  it('update_node { id, zIndex } is written to the file on disk', async () => {
+    const res = await drawCanvasHandler(
+      { folder, ops: [{ op: 'update_node', id: 'human-1', zIndex: 9 }] },
+      ctxFor()
+    )
+    expect(res.isError).toBeFalsy()
+    const doc = JSON.parse(readFileSync(canvasPath, 'utf8')) as CanvasDocument
+    expect(doc.nodes.find((n) => n.id === 'human-1')!.zIndex).toBe(9)
+  })
+})

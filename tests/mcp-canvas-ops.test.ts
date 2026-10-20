@@ -1368,3 +1368,105 @@ describe('T536 U3 — node style', () => {
     expect(ack.find((s) => s.name === 'harnu/mockup-card')!.style).toEqual({})
   })
 })
+
+describe('T536 U4 — zIndex', () => {
+  function run(
+    ops: Record<string, unknown>[],
+    doc: CanvasDocument = docWith()
+  ): ReturnType<typeof applyCanvasOps> {
+    return applyCanvasOps({ doc, ops, mintId: counterMinter() })
+  }
+
+  function stacked(zIndex?: number): CanvasDocument['nodes'][number] {
+    return {
+      id: 's',
+      shape: 'image',
+      x: 0,
+      y: 0,
+      origin: 'operator',
+      ...(zIndex === undefined ? {} : { zIndex }),
+      props: { src: 'assets/a.png' }
+    }
+  }
+
+  it('add_node stores the zIndex as given, stamped agent', () => {
+    const res = run([{ op: 'add_node', shape: 'box', x: 0, y: 0, zIndex: 3 }])
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.doc.nodes[0].zIndex).toBe(3)
+    expect(res.doc.nodes[0].origin).toBe('agent')
+  })
+
+  it('add_node without a zIndex writes no zIndex key', () => {
+    const res = run([{ op: 'add_node', shape: 'box', x: 0, y: 0 }])
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect('zIndex' in res.doc.nodes[0]).toBe(false)
+  })
+
+  it.each([[0], [-1], [2.5], ['3'], [NaN], [Infinity]])(
+    'refuses zIndex %j with BAD_ARGS naming zIndex, and returns no doc',
+    (zIndex) => {
+      for (const op of [
+        { op: 'add_node', shape: 'box', x: 0, y: 0, zIndex },
+        { op: 'update_node', id: 's', zIndex }
+      ]) {
+        const res = run([op], docWith([stacked()]))
+        expect(res).toMatchObject({ ok: false, code: 'BAD_ARGS' })
+        if (res.ok) continue
+        expect(res.error).toContain('zIndex')
+        expect('doc' in res).toBe(false)
+      }
+    }
+  )
+
+  it('update_node with only a zIndex is a valid change and touches nothing else', () => {
+    const before = stacked()
+    const res = run([{ op: 'update_node', id: 's', zIndex: 4 }], docWith([before]))
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.doc.nodes[0]).toEqual({ ...before, zIndex: 4 })
+  })
+
+  it('update_node zIndex null removes the field', () => {
+    const res = run([{ op: 'update_node', id: 's', zIndex: null }], docWith([stacked(4)]))
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect('zIndex' in res.doc.nodes[0]).toBe(false)
+  })
+
+  it('add_node refuses a null zIndex (there is nothing to remove)', () => {
+    const res = run([{ op: 'add_node', shape: 'box', x: 0, y: 0, zIndex: null }])
+    expect(res).toMatchObject({ ok: false, code: 'BAD_ARGS' })
+    if (res.ok) return
+    expect(res.error).toContain('zIndex')
+  })
+
+  it('a props replace keeps the zIndex (it is not a prop)', () => {
+    const res = run(
+      [{ op: 'update_node', id: 's', props: { src: 'assets/b.png' } }],
+      docWith([stacked(5)])
+    )
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.doc.nodes[0].zIndex).toBe(5)
+    expect(res.doc.nodes[0].props).toEqual({ src: 'assets/b.png' })
+  })
+
+  it('the serialized node places zIndex after origin and before props', () => {
+    const res = run([{ op: 'update_node', id: 's', zIndex: 2 }], docWith([stacked()]))
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    const node = (JSON.parse(serializeCanvasDocument(res.doc)) as CanvasDocument).nodes[0]
+    const keys = Object.keys(node)
+    expect(keys.indexOf('zIndex')).toBe(keys.indexOf('origin') + 1)
+    expect(keys.indexOf('props')).toBe(keys.indexOf('zIndex') + 1)
+  })
+
+  it('does not mutate the input document', () => {
+    const doc = docWith([stacked(2)])
+    const before = JSON.stringify(doc)
+    run([{ op: 'update_node', id: 's', zIndex: 9 }], doc)
+    expect(JSON.stringify(doc)).toBe(before)
+  })
+})
