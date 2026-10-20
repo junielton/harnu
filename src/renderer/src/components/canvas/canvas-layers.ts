@@ -66,12 +66,15 @@ export function documentStackOrder(nodes: readonly DocumentNode[]): string[] {
 }
 
 /**
- * The z each node is RENDERED with: the file's values when every node has one and they
- * are distinct, else the ranks of {@link documentStackOrder} (1..n). Never written to
- * the file.
+ * The z each node is RENDERED with: the file's values when every node has a positive,
+ * finite one and they are distinct, else the ranks of {@link documentStackOrder}
+ * (1..n). A zero or negative z would draw a node at or under the edges (z 0), so it
+ * is never used as is. Never written to the file.
  */
 export function renderStackZ(nodes: readonly DocumentNode[]): Map<string, number> {
-  const verbatim = nodes.every(hasZ) && new Set(nodes.map((n) => n.zIndex)).size === nodes.length
+  const verbatim =
+    nodes.every((n) => hasZ(n) && n.zIndex > 0) &&
+    new Set(nodes.map((n) => n.zIndex)).size === nodes.length
   if (verbatim) return new Map(nodes.map((n) => [n.id, n.zIndex as number]))
   return stackRanks(documentStackOrder(nodes))
 }
@@ -153,6 +156,8 @@ export function savedZIndexes(
 ): Map<string, number> | null {
   const base = documentStackOrder(draftNodes)
   const known = new Set(base)
+  // Defensive tolerance: in the pane `live` comes from the same graph as the draft, so
+  // the two should agree on ids. Unknown ids are dropped, missing ones go on top.
   const current = live.filter((id) => known.has(id))
   const seen = new Set(current)
   const order = [...current, ...base.filter((id) => !seen.has(id))]
