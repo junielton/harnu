@@ -877,7 +877,8 @@
   "cloudSession": {
     "title": "Esta sessão vive na cloud",
     "body": "A conversa está espelhada no claude.ai e não tem transcript local pra retomar aqui. Abra em claude.ai/code pra continuar.",
-    "bodyNoBridge": "Esta sessão não tem conversa local pra retomar — ainda não há nada gravado em disco."
+    "bodyNoBridge": "Esta sessão não tem conversa local pra retomar — ainda não há nada gravado em disco.",
+    "resumeAnyway": "Retomar mesmo assim"
   },
   "preview": {
     "label": "Prévia da sessão",

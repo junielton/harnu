@@ -40,6 +40,14 @@ This gallery is **read-only and temporary**: Harnu only shows what's on disk rig
 
 Harnu caps how many `claude` processes it keeps alive at once (each one holds real memory). When a session has been idle for a while and you're over that cap, Harnu quietly kills its process to free memory — this is called **hibernating** a session. Nothing is lost: the conversation is intact on disk, and clicking the session's row respawns it exactly like a normal resume. A hibernated session just briefly shows no live status until you reopen it.
 
+### Cloud sessions and "Resume anyway"
+
+Some sessions have no conversation on your disk to resume — their transcript lives on claude.ai (a Remote Control / cloud session). Selecting one shows a quiet **"This session lives in the cloud"** panel instead of a terminal, because running `claude --resume` on it would only print "No conversation found".
+
+Harnu only shows that panel when it is sure: the transcript must hold no conversation, be linked to claude.ai, and have been left untouched for over a minute. A session you have just opened in Harnu never lands there — its terminal is alive, and a brand-new transcript that simply hasn't recorded your first prompt yet is treated as a normal session.
+
+If the panel ever shows for a session you want to open, press **Resume anyway**. The terminal opens and runs `claude --resume` regardless, so you see exactly what Claude Code says — including its error, if there is one. The choice lasts until you quit Harnu. If the transcript later gains a conversation, the panel gives way to the terminal on its own.
+
 ## Jump from the transcript to a file
 
 When Claude mentions a file — `src/main/pty.ts`, or `src/main/pty.ts:42` — you
