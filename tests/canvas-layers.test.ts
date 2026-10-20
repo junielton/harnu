@@ -71,6 +71,14 @@ describe('renderStackZ', () => {
     expect(obj(renderStackZ([withZ('a', 7), withZ('b', 2)]))).toEqual({ a: 7, b: 2 })
   })
 
+  it('re-ranks a zero zIndex so the node stays above the edges', () => {
+    expect(obj(renderStackZ([withZ('a', 0), withZ('b', 2)]))).toEqual({ a: 1, b: 2 })
+  })
+
+  it('re-ranks a negative zIndex so the node stays above the edges', () => {
+    expect(obj(renderStackZ([withZ('a', -3), withZ('b', 2)]))).toEqual({ a: 1, b: 2 })
+  })
+
   it('re-ranks a tie', () => {
     expect(obj(renderStackZ([withZ('a', 2), withZ('b', 2)]))).toEqual({ a: 1, b: 2 })
   })
@@ -272,6 +280,11 @@ describe('savedZIndexes', () => {
     const draft = [withZ('a', 3), withZ('b', 1), withZ('c', 2), { id: 'n' }]
     const saved = savedZIndexes(draft, ['b', 'c', 'a', 'n'])
     expect(saved && obj(saved)).toEqual({ b: 1, c: 2, a: 3, n: 4 })
+  })
+
+  it('puts a draft node missing from live on top', () => {
+    const saved = savedZIndexes(ids('a', 'b', 'c'), ['b', 'c'])
+    expect(saved && obj(saved)).toEqual({ b: 1, c: 2, a: 3 })
   })
 
   it('ranks only the nodes the draft holds', () => {
