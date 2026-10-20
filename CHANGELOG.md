@@ -28,6 +28,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **`F6` / `Shift+F6` move focus between panes** — the main terminal, then each split pane top to bottom, wrapping around — even while a terminal has focus (the program there no longer gets `F6`). A collapsed split and the panes behind a maximized one are skipped. On most Mac keyboards press `Fn+F6`. A focused Markdown, Memory, file-browser or canvas pane now shows a thin accent outline.
 - **`Cmd/Ctrl+Shift+M` maximizes or restores the focused split pane**; with no split pane focused it restores the maximized one. **Close the focused pane** can be given a shortcut too; a pane with unsaved changes still asks first.
 - **A terminal toggle you can bind** (`terminal.toggle`, no shortcut out of the box): it opens a shell pane if the folder has none, otherwise shows and focuses the existing one, and collapses the split when that shell already has focus. It reuses your shell instead of adding a new one each time, and never takes over a terminal an agent opened. Bind it to ``Ctrl+` ``, not `Ctrl+J`: the toggle's chord never reaches a terminal, and `Ctrl+J` is the newline / Enter key there.
+- **The command palette lists every action.** `Cmd/Ctrl+K` now finds any action from Settings → Keyboard Shortcuts by name — including the ones with no shortcut, like Rename the folder…, Fork the session or Close the open view — whenever it can run right now, and shows each action's shortcut, updated when you rebind it. Empty, it still shows only a short list of everyday actions.
+- **Tooltips show the shortcut.** Hovering a Topbar, sidebar, footer, Fleet rail, view close or split-pane button now reads like "Hide sidebar (Ctrl+B)" (`⌘B` on macOS), following your rebinds; a button whose action has no shortcut keeps its plain tooltip. The session and folder right-click menus show each item's shortcut too, once it has one (Rename folder shows `F2`).
 
 ### Changed
 
@@ -38,6 +40,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **Settings → Keyboard Shortcuts shows action names again** instead of raw keys like `keybindings.actions.session.new`, in English and Portuguese, including the conflict badges and the screen-reader labels.
 - Pressing `Esc` while recording a shortcut now cancels just the recording; it no longer closes Settings.
 - A shortcut now fires only when exactly its modifiers are held: a shortcut on `F7` no longer also fires on `Shift+F7`, nor one on `Ctrl+K` on `Ctrl+Shift+K`.
+- The command palette's **Resume last session** no longer picks a folder terminal; it resumes your most recent Claude session, like `Cmd/Ctrl+Shift+R`.
 
 ## 2026-10-19
 
