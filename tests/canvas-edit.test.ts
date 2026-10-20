@@ -6,9 +6,11 @@ import { nextTick } from 'vue'
 import type { Graph } from '@antv/x6'
 import DiagramPane from '../src/renderer/src/components/DiagramPane.vue'
 import {
+  CANVAS_DERIVED_CHANGE,
   CANVAS_MIN_NODE_SIZE,
   createCanvasGraph,
   renderCanvasDocument,
+  restyleCanvasNode,
   setCanvasPortsVisible,
   setCanvasRubberband
 } from '../src/renderer/src/components/canvas/canvas-graph'
@@ -25,6 +27,7 @@ import {
   duplicateOperatorNode,
   isDrawGesture,
   mintCanvasId,
+  nodeDraftFromCell,
   normalizeCellLabel,
   operatorEdgeData,
   operatorNode,
@@ -470,6 +473,48 @@ describe('the editing affordances the ACs name (U3-1, U3-2)', () => {
     g.dispose()
   })
 
+  it('history drops a change marked CANVAS_DERIVED_CHANGE and keeps an ordinary one (T536 U3)', () => {
+    const g = makeGraph()
+    g.cleanHistory()
+    const node = g.getCellById('n-a')!
+    node.setAttrs({ body: { stroke: '#123456' } }, { [CANVAS_DERIVED_CHANGE]: true })
+    expect(node.attr('body/stroke')).toBe('#123456')
+    expect(g.canUndo()).toBe(false)
+    node.setAttrs({ body: { stroke: '#654321' } })
+    expect(g.canUndo()).toBe(true)
+    g.dispose()
+  })
+
+  it('a derived change neither records nor clears the redo stack (T536 U3)', () => {
+    const g = makeGraph()
+    g.cleanHistory()
+    const node = g.getCellById('n-a')!
+    node.setData({ ...node.getData(), props: { style: { tone: 'red' } } }, { overwrite: true })
+    g.undo()
+    expect(g.canRedo()).toBe(true)
+    restyleCanvasNode(node as never, palette, {})
+    expect(g.canRedo()).toBe(true)
+    expect(g.canUndo()).toBe(false)
+    g.dispose()
+  })
+
+  it('restyleCanvasNode re-derives the attrs from the node data, label and all (T536 U3)', () => {
+    const g = makeGraph()
+    const node = g.getCellById('n-a')!
+    node.attr({ text: { text: 'Renamed' }, label: { text: 'Renamed' } })
+    // Written with `silent`, so nothing re-derives behind the test's back.
+    node.setData(
+      { ...node.getData(), props: { style: { tone: 'red', stroke: 'dashed' } } },
+      { overwrite: true, silent: true }
+    )
+    restyleCanvasNode(node as never, palette, {})
+    expect(node.attr('body/stroke')).toBe(palette.red)
+    expect(node.attr('body/strokeDasharray')).toBe('6 4')
+    expect(node.attr('label/text')).toBe('Renamed')
+    expect(nodeDraftFromCell(node.toJSON() as Record<string, unknown>).label).toBe('Renamed')
+    g.dispose()
+  })
+
   it('deleting a node deletes the edges that hung off it, so the file stays valid', () => {
     const g = makeGraph()
     g.removeCell(g.getCellById('n-a')!)
@@ -499,6 +544,19 @@ describe('the editing affordances the ACs name (U3-1, U3-2)', () => {
     expect(
       (g.getCellById('n-c') as never as { getPorts: () => unknown[] }).getPorts()
     ).toHaveLength(0)
+    g.dispose()
+  })
+
+  it('revealing ports on hover is not an undo step, so it never empties the redo stack (T536 U3)', () => {
+    const g = makeGraph()
+    g.cleanHistory()
+    g.getCellById('n-b')!.setAttrs({ body: { stroke: '#654321' } })
+    g.undo()
+    expect(g.canRedo()).toBe(true)
+    setCanvasPortsVisible(g, 'n-a', true)
+    setCanvasPortsVisible(g, 'n-a', false)
+    expect(g.canUndo()).toBe(false)
+    expect(g.canRedo()).toBe(true)
     g.dispose()
   })
 
