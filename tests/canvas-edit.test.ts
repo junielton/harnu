@@ -687,6 +687,27 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     w.unmount()
   })
 
+  it('T486 AC-27 — pane.close (closeRegion) on a dirty canvas keeps the discard guard', async () => {
+    const { closeRegion } = await import('../src/renderer/src/composables/useTerminalFocus')
+    const w = mountPane()
+    await settle()
+    const helpers = (await import('../src/renderer/src/stores/helpers')).useHelpersStore()
+    const removed = vi.spyOn(helpers, 'removeHelper')
+
+    dragOnBlankCanvas(w.element, [200, 200], [400, 320])
+    await settle()
+    await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await settle()
+
+    expect(closeRegion('h-canvas')).toBe(true)
+    await settle()
+    // Held by the guard: the discard toast decides, not the chord.
+    expect(removed).not.toHaveBeenCalled()
+    const ui = (await import('../src/renderer/src/stores/ui')).useUiStore()
+    expect(ui.toasts.some((t) => t.action)).toBe(true)
+    w.unmount()
+  })
+
   it('pressing Close twice leaves ONE warning, not a stack of permanent ones', async () => {
     const w = mountPane()
     await settle()
