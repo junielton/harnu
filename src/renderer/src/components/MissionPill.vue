@@ -11,7 +11,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { onClickOutside, onKeyStroke } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { Check, ListChecks } from 'lucide-vue-next'
-import { headlineText, PILL_TONE_CLASS, type MissionState } from '../lib/mission-view'
+import { headlineText, PILL_TONE_CLASS, pulseText, type MissionState } from '../lib/mission-view'
 import { useMissionsStore } from '../stores/missions'
 import { useUiStore } from '../stores/ui'
 import { useKeybindingsStore } from '../stores/keybindings'
@@ -99,14 +99,22 @@ const done = computed(
   () => model.value?.headline.kind === 'done' || view.value?.mission.status === 'delivered'
 )
 
-const title = computed(() =>
-  view.value && model.value
-    ? t('mission.pillTitle', {
-        title: view.value.title,
-        state: t(`mission.state.${STATE_KEY[model.value.state]}`)
-      })
-    : ''
-)
+// T547: the first current step's pulse rides on the tooltip; the label stays the headline.
+const pulse = computed(() => {
+  const p = model.value?.steps.find((s) => s.firstCurrent)?.pulse
+  return p ? pulseText(t, p) : ''
+})
+
+const title = computed(() => {
+  if (!view.value || !model.value) return ''
+  const named = {
+    title: view.value.title,
+    state: t(`mission.state.${STATE_KEY[model.value.state]}`)
+  }
+  return pulse.value
+    ? t('mission.pillTitleWithPulse', { ...named, pulse: pulse.value })
+    : t('mission.pillTitle', named)
+})
 </script>
 
 <template>

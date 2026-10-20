@@ -793,7 +793,7 @@
       "pr": {
         "merged": "merged",
         "closed": "fechada",
-        "draft": "rascunho",
+        "isDraft": "rascunho",
         "changesRequested": "mudanças pedidas",
         "approved": "aprovada",
         "inReview": "em review"
@@ -4307,6 +4307,7 @@
   },
   "mission": {
     "pillTitle": "Missão “{title}” — {state}. Clique para ver o progresso",
+    "pillTitleWithPulse": "Missão “{title}” — {state} · {pulse}. Clique para ver o progresso",
     "progress": "Progresso",
     "headline": {
       "single": "Passo {n} de {m}",
@@ -4419,8 +4420,29 @@
     "markVerified": "Marcar verificado",
     "unmark": "Desmarcar",
     "openQuestions": "Perguntas em aberto",
+    "pulse": {
+      "commits": "{n} commit | {n} commits",
+      "active": "ativa há {age}",
+      "activeNow": "ativa agora",
+      "quiet": "sem atividade há {age}",
+      "quietNever": "nenhuma atividade ainda"
+    },
+    "pr": {
+      "line": "PR #{n} · {state}",
+      "state": {
+        "open": "aberta",
+        "draft": "rascunho",
+        "merged": "mergeada"
+      },
+      "ci": {
+        "passing": "CI verde",
+        "failing": "CI vermelho",
+        "pending": "CI rodando"
+      }
+    },
     "child": {
       "working": "trabalhando",
+      "workingHelpers": "trabalhando · subagentes",
       "needsInput": "precisa de input",
       "idle": "ociosa",
       "parked": "hibernada",

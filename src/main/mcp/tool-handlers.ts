@@ -39,6 +39,8 @@ import type { CommandBridge } from '../command-bridge'
 import type { FolderEntry } from '../folder-model'
 import type { TaskState, FailureReason } from '../hook-state'
 import { addTaskEventObserver, getTaskStates } from '../hook-bridge'
+import { lastSubagentActivity } from '../subagent-activity'
+import { buildStepPulse, withHelperActivity, type MissionStepPulse } from '../mission-pulse'
 import { listPendingApprovals } from '../approval-resolver'
 import { findPrsForWorktrees, type MissionPrJoin } from '../pr-stack'
 import {
@@ -3870,8 +3872,9 @@ function missionLogTimestamps(log: string): string[] {
  *           && every linked session's taskState != 'working'
  *
  * `lastEvidenceAt` = max of the mission's `updatedAt`, its steps' and blockers'
- * own timestamps, every `mission_log` entry, and every linked session's last
- * `taskState` transition. The verdict lives only in `mission_get`'s `derived`
+ * own timestamps, every `mission_log` entry, every linked session's last
+ * `taskState` transition and its subagents' last hook, and (T547) the newest
+ * commit on each linked worktree. The verdict lives only in `mission_get`'s `derived`
  * block — `stale` is never written to the stored status (§3), so the rule
  * always reads the operator-approved `active`, and `draft`/`delivered`/`closed`
  * never go stale. Pure; `now` is injected.
@@ -3879,8 +3882,13 @@ function missionLogTimestamps(log: string): string[] {
 export function evaluateMissionStall(
   mission: Mission,
   log: string,
-  children: readonly Pick<MissionChildState, 'sessionId' | 'taskState' | 'lastTransitionAt'>[],
-  now: number
+  children: readonly Pick<
+    MissionChildState,
+    'sessionId' | 'taskState' | 'lastTransitionAt' | 'helperActivityAt'
+  >[],
+  now: number,
+  /** T547: extra evidence timestamps (ISO) — the commits landed on linked worktrees. */
+  extraEvidence: readonly string[] = []
 ): MissionStall {
   const stamps = [
     mission.updatedAt,
@@ -3890,7 +3898,10 @@ export function evaluateMissionStall(
       ...s.blockers.map((b) => b.raisedAt)
     ]),
     ...missionLogTimestamps(log),
-    ...children.flatMap((c) => (c.lastTransitionAt ? [c.lastTransitionAt] : []))
+    ...children.flatMap(
+      (c) => [c.lastTransitionAt, c.helperActivityAt].filter((t) => !!t) as string[]
+    ),
+    ...extraEvidence
   ]
   const last = stamps.map((t) => Date.parse(t)).filter(Number.isFinite)
   const lastMs = last.length > 0 ? Math.max(...last) : null
@@ -3939,6 +3950,8 @@ export type MissionLinkSignal =
       exists: boolean
       branch: string | null
       head: { sha: string; subject: string; at: string } | null
+      /** T547: commits on the branch since the repo's default branch; absent when git could not count. */
+      commits?: number
       prs: MissionPrSummary[]
       /**
        * Mission v3 §3.7 — the path is gone, but its branch was seen with this
@@ -3982,6 +3995,8 @@ export interface MissionStepSignals {
   links: MissionLinkSignal[]
   /** Computed proof for an `existence`-level step; `null` for any other level. */
   existence: { proven: boolean; reason?: string } | null
+  /** T547 — signs of movement inside the step: commits landed and the newest activity. */
+  pulse: MissionStepPulse
 }
 
 /** The PR number a `pr` link names: `owner/repo#123`, `#123`, `123` or a `/pull/123` URL. */
@@ -4144,7 +4159,7 @@ async function missionChildren(
     const t = lastTransitions.get(id)
     if (t) lastTransitionAt[id] = t.at
   }
-  return buildMissionFleetProjection(
+  const projected = buildMissionFleetProjection(
     missionId,
     ids,
     {
@@ -4158,6 +4173,9 @@ async function missionChildren(
     },
     { redactPaths: true, denyFolders: ctx.denyFolders, home: os.homedir() }
   ).sessions
+  // T547: an idle main thread whose own subagents are still calling tools is working.
+  const now = Date.now()
+  return projected.map((c) => withHelperActivity(c, lastSubagentActivity(c.sessionId), now))
 }
 
 /**
@@ -4260,6 +4278,7 @@ export async function deriveMissionSignals(
         exists: onDisk,
         branch: w?.branch ?? null,
         head: w?.head ?? null,
+        ...(w?.commits !== undefined ? { commits: w.commits } : {}),
         prs: (w?.prs ?? []).map(prSummary)
       }
     }
@@ -4337,15 +4356,17 @@ export async function deriveMissionSignals(
   const steps = mission.steps.map((s): MissionStepSignals => {
     const resolved = s.links.map(resolve).filter((l): l is MissionLinkSignal => l !== null)
     const unfit = s === fixedStart ? unfitOf(resolved) : undefined
+    const stepChildren = s.links
+      .filter((l) => l.kind === 'session')
+      .flatMap((l) => {
+        const c = childById.get(l.ref)
+        return c ? [c] : []
+      })
     return {
       stepId: s.id,
-      children: s.links
-        .filter((l) => l.kind === 'session')
-        .flatMap((l) => {
-          const c = childById.get(l.ref)
-          return c ? [c] : []
-        }),
+      children: stepChildren,
       links: resolved,
+      pulse: buildStepPulse(resolved, stepChildren),
       existence:
         s.verification !== 'existence'
           ? null
@@ -4354,7 +4375,12 @@ export async function deriveMissionSignals(
             : existenceOf(resolved, join.ghAvailable)
     }
   })
-  const stall = evaluateMissionStall(mission, log, children, now)
+  // T547: a commit landing on a linked worktree is evidence the work moves, even
+  // while the child session itself reads idle.
+  const commitEvidence = steps.flatMap((st) =>
+    st.pulse.lastCommitAt ? [st.pulse.lastCommitAt] : []
+  )
+  const stall = evaluateMissionStall(mission, log, children, now, commitEvidence)
   const progress: MissionProgress = computeProgress(
     mission,
     steps.map((s) => ({

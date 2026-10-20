@@ -6396,13 +6396,45 @@ text-warning border-warning-line`. Blocked (`triangle-alert`) — "**Blocked** �
 Re-scope (`triangle-alert`) — "**End changed, awaiting approval.**" + `was:` /
 `now:` lines under the end step.
 
+**Step pulse (T547).** "Step N of M" counts units, so a long unit used to look
+exactly like a stalled one. The **current** steps therefore carry one muted line
+under their captions (`11px`, `line-height: 1.5`, `margin-top: 3px`,
+`tabular-nums`, parts joined by `·`) built from `derived.steps[].pulse` — the
+headline never changes and the pill's position is never recomputed from it:
+
+- **Commits** — "{n} commit(s)": commits on the step's linked worktree branches
+  beyond the repo's default branch. Left out when git could not count, and when
+  the count is `0`.
+- **Activity** — the newest sign of life: a commit, the child's last
+  transition, a write to its transcript, or a hook of its own subagents. Fresh
+  (≤ **15 min**, `PULSE_QUIET_AFTER_MS`) → "active {age} ago" / "active just now"
+  in `text-text-3`. Older → "no activity for {age}" in `text-warning`; never any
+  → "no activity seen yet" in `text-warning`. A step whose child is `working`
+  always reads fresh.
+- **Not rendered** when the step links neither a session nor a worktree — there is
+  nothing to watch, so nothing is claimed.
+
+A genuinely stalled step keeps reading stalled: the warning wording above, plus
+the mission-level Stale callout once the newest evidence is over an hour old. The pill
+itself stays byte-identical; its tooltip appends the first current step's pulse
+("… · 21 commits · active 2m ago").
+
+**PR line (T547).** A step that links a PR — directly, or through a linked
+worktree or card — shows one line per **open or merged** PR under the pulse
+(`11px`, newest first, at most 3): "PR #{n} · {open|draft|merged} · CI
+{green|red|running}". CI is `text-green` when passing, `text-red` when failing,
+`text-text-3` while running, and left out when unknown. Closed-unmerged PRs are
+noise and are not shown.
+
 **Child session rows** (a step's `session` links, from the derived
 projection): `bg-surface-2`, `rounded-sm`, `padding: 4px 8px`, `margin: 5px 0 0
 2px`, `gap: 6px`, `11.5px` — `corner-down-right` 11px `text-text-4`, a 6px
 status dot reusing §6 Session status verbatim (`working` green +
 `.anim-pulse-dot`, `needs-input` warning + `.anim-attention-dot`, anything else
 static `bg-text-4`), the session label in `font-mono 11px text-text-2`
-truncated, a short state word (`10.5px text-text-4`), and a **go-to-session**
+truncated, a short state word (`10.5px text-text-4`; "Working · helpers" for a
+session that is idle only because its own subagents are still working — it never
+reads "Idle" then), and a **go-to-session**
 icon button (`log-in` 12px, `text-text-4 hover:text-text-2`, label "Go to
 session") that selects the session in-app. **A session row appears once**: on
 the step where it is running, else on its last linked step. Every other step it

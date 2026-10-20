@@ -301,6 +301,12 @@ export interface WorktreePrJoin {
   /** `null` for a detached HEAD or a path git cannot read. */
   branch: string | null
   head: { sha: string; subject: string; at: string } | null
+  /**
+   * T547: commits on this worktree's HEAD beyond the repo's default branch (a
+   * stacked branch counts its stack's commits too). Absent when git could not
+   * count — never `0` for "unknown".
+   */
+  commits?: number
   prs: PrEntry[]
 }
 
@@ -312,6 +318,29 @@ export interface MissionPrJoin {
   branches: Record<string, PrEntry[]>
   /** `null` for a number not in the repo's recent PRs (or when `gh` is unavailable). */
   numbers: Record<number, PrEntry | null>
+}
+
+/**
+ * Commits HEAD holds beyond the default branch, or `undefined` when no base ref
+ * resolves (a fresh clone with neither `origin/<default>` nor the local branch).
+ * `origin/<default>` wins over the local branch: the local one may have moved.
+ */
+async function commitsAhead(worktreePath: string): Promise<number | undefined> {
+  const base = await defaultBranchOf(worktreePath)
+  for (const ref of [`origin/${base}`, base]) {
+    try {
+      const { stdout } = await runFile(
+        'git',
+        ['-C', worktreePath, 'rev-list', '--count', `${ref}..HEAD`],
+        GIT_OPTS
+      )
+      const n = Number(stdout.trim())
+      if (Number.isInteger(n) && n >= 0) return n
+    } catch {
+      /* this base ref does not exist here — try the next */
+    }
+  }
+  return undefined
 }
 
 /** Branch + head commit of one worktree path; `exists: false` when git cannot read it. */
@@ -335,7 +364,13 @@ async function worktreeHead(worktreePath: string): Promise<Omit<WorktreePrJoin, 
     } catch {
       /* unborn or unreadable HEAD — no branch to join on */
     }
-    return { exists: true, branch, head: sha ? { sha, subject, at } : null }
+    const commits = sha ? await commitsAhead(worktreePath) : undefined
+    return {
+      exists: true,
+      branch,
+      head: sha ? { sha, subject, at } : null,
+      ...(commits !== undefined ? { commits } : {})
+    }
   } catch {
     return { exists: false, branch: null, head: null }
   }
