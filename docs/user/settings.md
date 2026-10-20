@@ -47,7 +47,7 @@ The per-session state is in the hover preview and in the [System Monitor](system
 - **Reset all** (top right) clears every override at once.
 - If two actions end up on the same chord, both get a **conflict** badge naming the other. The chord still fires once — the first-registered action wins and the other stays inert — so nothing breaks silently, but you'll want to rebind one.
 - Actions marked **not in terminal** have no native menu item, so a custom chord for them won't fire while the terminal pane has keyboard focus.
-- Five actions — quit, reload, toggle DevTools, fullscreen, and "open Keyboard Shortcuts" (`Cmd/Ctrl+Alt+K`) — are reserved and aren't listed. Session back/forward isn't listed either; it can't be rebound yet.
+- Five actions — quit, reload, toggle DevTools, fullscreen, and "Open keybindings.json" (`Cmd/Ctrl+Alt+K`) — are reserved and aren't listed. Session back/forward isn't listed either; it can't be rebound yet.
 - **Open keybindings.json** (top right, or **View → Open keybindings.json**, or `Cmd/Ctrl+Alt+K`) opens the raw file in a split-pane editor when you'd rather edit the JSON directly. It needs an active folder to open the pane in.
 
 Every edit writes `keybindings.json` immediately and applies live, so this pane and a hand-edited file always agree.

@@ -279,7 +279,8 @@ The Topbar's folder actions have no default chord. Their command ids are
 - Prefer not to edit JSON by hand? **Settings → Keyboard Shortcuts** is a
   point-and-click editor for this same file — see
   [Settings → Keyboard Shortcuts](settings.md#keyboard-shortcuts)
-  (`Cmd/Ctrl+Alt+S`, or **View → Keyboard Shortcuts…**). To jump straight to
+  (`Cmd/Ctrl+Alt+S`, or **View → Keyboard Shortcuts…**; on macOS, in the
+  **Harnu** menu right after **Settings…**). To jump straight to
   the raw file, use **View → Open keybindings.json** or `Cmd/Ctrl+Alt+K` — it
   opens `keybindings.json` in a split-pane editor.
 

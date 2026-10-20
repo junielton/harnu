@@ -1798,7 +1798,7 @@ pill's popover (§6 — "Footer / status bar", already opens `UsagePanel`) gets
 a link/button at the bottom of the popover (`text-11px text-accent`,
 `ExternalLink` icon 12px): "Open full dashboard". Clicking it closes the
 popover and calls `ui.openUsageDashboard()`. Closing: the header's `X`
-button, Esc (via `closeAll()`, same rule as the board), or navigating to
+button, Esc (via the `view.closeTakeover` binding, same rule as the board), or navigating to
 another view.
 
 **Data source: one call, one snapshot.** `window.api.usageBiSnapshot({
@@ -2980,7 +2980,7 @@ replaces the `<main>` content (sidebar and topbar stay visible), fixed 40px
 header (`h-10 border-b border-border bg-surface`), close `X` top-right. It
 joins the SAME single-takeover mutex those three already share (`stores/
 ui.ts`) — opening the meta-board force-closes any other open takeover and
-vice-versa; Esc via `closeAll()`. Entry point: a link in the Footer fleet
+vice-versa; Esc via the `view.closeTakeover` binding. Entry point: a link in the Footer fleet
 pill's popover, alongside the existing "Open full dashboard" — not a
 per-folder `FolderMenu.vue` entry, since the meta-board has no single
 `folderPath` to scope to (exactly like `Usage Dashboard`).
@@ -4447,7 +4447,8 @@ them for free by being added to the registry, not by re-implementing them:
 
   It never fires from a text field (the binding's key guard reads where the key was
   **pressed**, so a field that blurs itself on Esc — the Topbar title rename — still
-  keeps the takeover) or from a focused terminal: a helper xterm beside Roadmap or
+  keeps the takeover; a focused checkbox, radio, button or other input that takes
+  no typed text is not a text field and does not hold Esc) or from a focused terminal: a helper xterm beside Roadmap or
   Review sends ESC to its program and cancels the event. The Folder View is not a
   takeover and ignores it. `ui.closeAll()` is gone: it was never wired.
 
@@ -5456,7 +5457,7 @@ silently instead.
   flip via `column-reverse`.
 - Card: `role="status"`.
 - Close button: translated `aria-label` (`toast.dismiss`).
-- `closeAll()` (the global Esc handler) does **not** clear toasts by design —
+- Esc (`view.closeTakeover` and each surface's own listener) does **not** clear toasts by design —
   an "Update ready" notification shouldn't be wiped out by an Esc in the
   middle of another task.
 
