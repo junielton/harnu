@@ -22,6 +22,9 @@ import {
   CANVAS_SHAPE_CATALOG,
   canvasShapeSpec,
   CANVAS_HTML_SHAPES,
+  CANVAS_STYLE_DEFAULTS,
+  CANVAS_STYLE_KEYS,
+  CANVAS_STYLE_VALUES,
   LEGACY_CANVAS_SHAPE_NAMES
 } from '../src/main/mcp/canvas-shapes'
 import {
@@ -92,11 +95,11 @@ describe('shape manifest (§5.2)', () => {
     for (const s of CANVAS_HTML_SHAPES) expect(s.name.startsWith('harnu/')).toBe(true)
   })
 
-  it('the ACK catalog is name + one-line description + defaultSize, nothing else', () => {
+  it('the ACK catalog is name + one-line description + defaultSize + style, nothing else', () => {
     const ack = canvasShapeCatalogAck()
     expect(ack).toHaveLength(CANVAS_SHAPE_CATALOG.length)
     for (const entry of ack) {
-      expect(Object.keys(entry).sort()).toEqual(['defaultSize', 'description', 'name'])
+      expect(Object.keys(entry).sort()).toEqual(['defaultSize', 'description', 'name', 'style'])
       expect(entry.description.length).toBeGreaterThan(0)
       expect(entry.defaultSize.width).toBeGreaterThan(0)
       expect(entry.defaultSize.height).toBeGreaterThan(0)
@@ -1123,5 +1126,206 @@ describe('U5-2 — no partial apply: the FILE is byte-identical after a rejected
     if (!read.ok) return
     await writeCanvasFile(canvasPath, read.doc)
     expect(readFileSync(canvasPath).equals(first)).toBe(true)
+  })
+})
+
+// ------------------------------------------------- T536 U3: node style -------
+
+describe('T536 U3 — node style', () => {
+  const styleKeysOf = (name: string): string[] => Object.keys(canvasShapeSpec(name)!.style)
+
+  function run(
+    ops: Record<string, unknown>[],
+    doc: CanvasDocument = docWith()
+  ): ReturnType<typeof applyCanvasOps> {
+    return applyCanvasOps({ doc, ops, mintId: counterMinter() })
+  }
+
+  function styledNode(
+    props: Record<string, unknown> | undefined,
+    shape = 'box'
+  ): CanvasDocument['nodes'][number] {
+    return {
+      id: 's',
+      shape,
+      x: 0,
+      y: 0,
+      origin: 'operator',
+      ...(props === undefined ? {} : { props })
+    }
+  }
+
+  it('the catalog: every shape lists a subset of the style keys, in order, with the table values', () => {
+    for (const spec of CANVAS_SHAPE_CATALOG) {
+      const keys = Object.keys(spec.style)
+      const expected = CANVAS_STYLE_KEYS.filter((k) => keys.includes(k))
+      expect(keys, spec.name).toEqual(expected)
+      for (const k of keys) {
+        expect(spec.style[k as keyof typeof spec.style], `${spec.name}.${k}`).toEqual(
+          CANVAS_STYLE_VALUES[k as keyof typeof CANVAS_STYLE_VALUES]
+        )
+      }
+      expect(spec.props, spec.name).not.toContain('style')
+    }
+  })
+
+  it('the catalog: which shape takes which keys (design.md §6 Node styles)', () => {
+    expect(styleKeysOf('box')).toEqual([...CANVAS_STYLE_KEYS])
+    const all = [...CANVAS_STYLE_KEYS]
+    expect(styleKeysOf('ellipse')).toEqual(all.filter((k) => k !== 'corners'))
+    expect(styleKeysOf('diamond')).toEqual(all.filter((k) => k !== 'corners'))
+    expect(styleKeysOf('text')).toEqual(['tone', 'fontSize', 'align', 'opacity'])
+    expect(styleKeysOf('image')).toEqual(['opacity'])
+    expect(canvasShapeSpec('harnu/mockup-card')!.style).toEqual({})
+  })
+
+  it('the table: every default is a member of its value list', () => {
+    for (const k of CANVAS_STYLE_KEYS) {
+      expect(CANVAS_STYLE_VALUES[k], k).toContain(CANVAS_STYLE_DEFAULTS[k])
+    }
+  })
+
+  it('add_node stores the style under props, stamped agent', () => {
+    const res = run([
+      { op: 'add_node', shape: 'box', x: 0, y: 0, style: { tone: 'green', stroke: 'dashed' } }
+    ])
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.doc.nodes[0].props).toEqual({ style: { tone: 'green', stroke: 'dashed' } })
+    expect(res.doc.nodes[0].origin).toBe('agent')
+  })
+
+  it('add_node refuses a value outside the key list, listing the six tones, and returns no doc', () => {
+    const res = run([{ op: 'add_node', shape: 'box', x: 0, y: 0, style: { tone: 'purple' } }])
+    expect(res).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    if (res.ok) return
+    for (const t of ['default', 'accent', 'green', 'amber', 'red', 'muted']) {
+      expect(res.error).toContain(t)
+    }
+    expect('doc' in res).toBe(false)
+  })
+
+  it('add_node refuses a key the shape does not take, naming the keys it takes', () => {
+    const res = run([{ op: 'add_node', shape: 'ellipse', x: 0, y: 0, style: { corners: 'sharp' } }])
+    expect(res).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    if (res.ok) return
+    expect(res.error).toContain('"corners"')
+    expect(res.error).toContain('tone, stroke, strokeWidth, fontSize, align, opacity')
+  })
+
+  it('a shape with no style table says it takes no style', () => {
+    const res = run([
+      { op: 'add_node', shape: 'harnu/mockup-card', x: 0, y: 0, style: { tone: 'red' } }
+    ])
+    expect(res).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    if (res.ok) return
+    expect(res.error).toContain('takes no style')
+  })
+
+  it('opacity is a JSON number from the list: 50 is ok, "50" and 40 are BAD_PROPS', () => {
+    const ok = run([{ op: 'add_node', shape: 'image', x: 0, y: 0, style: { opacity: 50 } }])
+    expect(ok.ok).toBe(true)
+    if (ok.ok) expect(ok.doc.nodes[0].props).toEqual({ style: { opacity: 50 } })
+    for (const bad of ['50', 40]) {
+      const res = run([{ op: 'add_node', shape: 'image', x: 0, y: 0, style: { opacity: bad } }])
+      expect(res, String(bad)).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    }
+  })
+
+  it('a style inside props is refused and pointed at the style field', () => {
+    const res = run([
+      { op: 'add_node', shape: 'box', x: 0, y: 0, props: { style: { tone: 'red' } } }
+    ])
+    expect(res).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    if (res.ok) return
+    expect(res.error).toContain('"style" field')
+  })
+
+  it('style must be a non-empty plain object', () => {
+    expect(run([{ op: 'add_node', shape: 'box', x: 0, y: 0, style: {} }])).toMatchObject({
+      ok: false,
+      code: 'BAD_ARGS'
+    })
+    expect(run([{ op: 'add_node', shape: 'box', x: 0, y: 0, style: 'red' }])).toMatchObject({
+      ok: false,
+      code: 'BAD_PROPS'
+    })
+    expect(run([{ op: 'add_node', shape: 'box', x: 0, y: 0, style: ['red'] }])).toMatchObject({
+      ok: false,
+      code: 'BAD_PROPS'
+    })
+  })
+
+  it('update_node with only style merges per key, and counts as a change', () => {
+    const doc = docWith([styledNode({ style: { tone: 'green' } })])
+    const res = run([{ op: 'update_node', id: 's', style: { stroke: 'dotted' } }], doc)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.doc.nodes[0].props).toEqual({ style: { tone: 'green', stroke: 'dotted' } })
+  })
+
+  it('update_node style null removes the key; the last key out removes style and props', () => {
+    const doc = docWith([styledNode({ style: { tone: 'green' } })])
+    const res = run([{ op: 'update_node', id: 's', style: { tone: null } }], doc)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect('props' in res.doc.nodes[0]).toBe(false)
+  })
+
+  it('update_node writing the default value removes the key (a reset equals never styled)', () => {
+    const doc = docWith([styledNode({ style: { tone: 'green', stroke: 'dashed' } })])
+    const res = run([{ op: 'update_node', id: 's', style: { tone: 'default' } }], doc)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.doc.nodes[0].props).toEqual({ style: { stroke: 'dashed' } })
+
+    const add = run([{ op: 'add_node', shape: 'box', x: 0, y: 0, style: { tone: 'default' } }])
+    expect(add.ok).toBe(true)
+    if (add.ok) expect('props' in add.doc.nodes[0]).toBe(false)
+  })
+
+  it('update_node keeps keys the file holds that this build does not know', () => {
+    const doc = docWith([styledNode({ style: { glow: true, tone: 'green' } })])
+    const res = run([{ op: 'update_node', id: 's', style: { tone: 'red' } }], doc)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.doc.nodes[0].props).toEqual({ style: { glow: true, tone: 'red' } })
+  })
+
+  it('update_node props replace keeps the existing style (Review Focus 2)', () => {
+    const doc = docWith([styledNode({ src: 'assets/a.png', style: { opacity: 50 } }, 'image')])
+    const res = run([{ op: 'update_node', id: 's', props: { src: 'assets/b.png' } }], doc)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.doc.nodes[0].props).toEqual({ src: 'assets/b.png', style: { opacity: 50 } })
+
+    const both = run(
+      [{ op: 'update_node', id: 's', props: { src: 'assets/b.png' }, style: { opacity: null } }],
+      doc
+    )
+    expect(both.ok).toBe(true)
+    if (!both.ok) return
+    expect(both.doc.nodes[0].props).toEqual({ src: 'assets/b.png' })
+  })
+
+  it("update_node validates style against the node's own shape", () => {
+    const doc = docWith([styledNode(undefined, 'image')])
+    const res = run([{ op: 'update_node', id: 's', style: { tone: 'red' } }], doc)
+    expect(res).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+  })
+
+  it('does not mutate the input document', () => {
+    const doc = docWith([styledNode({ style: { tone: 'green' } })])
+    const before = JSON.stringify(doc)
+    run([{ op: 'update_node', id: 's', style: { tone: 'red' } }], doc)
+    expect(JSON.stringify(doc)).toBe(before)
+  })
+
+  it("the ACK catalog carries each shape's style table", () => {
+    const ack = canvasShapeCatalogAck()
+    const box = ack.find((s) => s.name === 'box')!
+    expect(box.style.tone).toEqual(['default', 'accent', 'green', 'amber', 'red', 'muted'])
+    expect(box.style.opacity).toEqual([25, 50, 75, 100])
+    expect(ack.find((s) => s.name === 'harnu/mockup-card')!.style).toEqual({})
   })
 })

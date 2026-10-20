@@ -18,6 +18,8 @@
  *  - rule 4  1..200 ops;
  *  - rule 5  shape names, refused BY NAME listing the valid set;
  *  - rule 6  `props` keys must be declared by the shape's manifest entry;
+ *  - T536 U3 `style` keys and values must be declared by the manifest entry's
+ *            `style` table, and merge per key rather than replacing;
  *  - rule 7  geometry, checked per-op so the refusal names which op;
  *  - rule 8  referential integrity AS THE DOCUMENT STANDS after the preceding
  *            ops in the same call;
@@ -46,7 +48,10 @@ import {
   CANVAS_SHAPE_CATALOG,
   canvasShapeNames,
   canvasShapeSpec,
-  type CanvasShapeSpec
+  CANVAS_STYLE_DEFAULTS,
+  type CanvasShapeSpec,
+  type CanvasStyleKey,
+  type CanvasStyleValue
 } from './canvas-shapes'
 import { buildCardAssetFilename, resolveCardAssetSource } from '../roadmap-core'
 
@@ -305,9 +310,9 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  *  a typo'd field must not be silently ignored, or the agent believes it set
  *  something it did not. */
 const OP_KEYS: Record<CanvasOpName, readonly string[]> = {
-  add_node: ['op', 'shape', 'x', 'y', 'width', 'height', 'label', 'props'],
+  add_node: ['op', 'shape', 'x', 'y', 'width', 'height', 'label', 'props', 'style'],
   add_edge: ['op', 'source', 'target', 'label', 'router'],
-  update_node: ['op', 'id', 'x', 'y', 'width', 'height', 'label', 'props'],
+  update_node: ['op', 'id', 'x', 'y', 'width', 'height', 'label', 'props', 'style'],
   update_edge: ['op', 'id', 'label', 'router'],
   remove_node: ['op', 'id'],
   remove_edge: ['op', 'id'],
@@ -345,6 +350,14 @@ function checkProps(
   at: string
 ): { props: Record<string, unknown> } | CanvasVerbErr {
   if (!isRecord(props)) return deny('BAD_PROPS', `${at}: "props" must be an object`)
+  // `style` is its own op field (T536 U3): it merges per key and survives a
+  // `props` replace, neither of which a key inside `props` could do.
+  if ('style' in props) {
+    return deny(
+      'BAD_PROPS',
+      `${at}: "style" is not a prop — set it with the "style" field, which merges per key`
+    )
+  }
   const undeclared = Object.keys(props).filter((k) => !spec.props.includes(k))
   if (undeclared.length > 0) {
     return deny(
@@ -355,6 +368,84 @@ function checkProps(
     )
   }
   return { props }
+}
+
+/** The style keys `spec` takes, for a refusal that names them. */
+function styleKeysText(spec: CanvasShapeSpec): string {
+  const keys = Object.keys(spec.style)
+  return keys.length === 0 ? 'no style' : keys.join(', ')
+}
+
+/**
+ * T536 U3 — the `style` field of `add_node` / `update_node`. Every key must be
+ * one the node's shape takes and every value one of that key's allowed values
+ * (strictly: `"50"` is not `50`); `null` is always allowed and means "remove".
+ * Returns the patch for {@link mergeNodeStyle}.
+ */
+function checkStyle(
+  spec: CanvasShapeSpec,
+  style: unknown,
+  at: string
+): { style: Record<string, CanvasStyleValue | null> } | CanvasVerbErr {
+  if (!isRecord(style)) return deny('BAD_PROPS', `${at}: "style" must be an object`)
+  const keys = Object.keys(style)
+  if (keys.length === 0) {
+    return deny('BAD_ARGS', `${at}: "style" must name at least one key`)
+  }
+  const table = spec.style as Readonly<Record<string, readonly CanvasStyleValue[] | undefined>>
+  const undeclared = keys.filter((k) => table[k] === undefined)
+  if (undeclared.length > 0) {
+    return deny(
+      'BAD_PROPS',
+      `${at}: shape "${spec.name}" does not take style key${undeclared.length === 1 ? '' : 's'} ${undeclared
+        .map((k) => JSON.stringify(k))
+        .join(', ')} — it takes ${styleKeysText(spec)}`
+    )
+  }
+  const patch: Record<string, CanvasStyleValue | null> = {}
+  for (const key of keys) {
+    const value = style[key]
+    const allowed = table[key] as readonly CanvasStyleValue[]
+    if (value !== null && !allowed.some((a) => a === value)) {
+      return deny(
+        'BAD_PROPS',
+        `${at}: style "${key}" must be one of ${allowed
+          .map((a) => JSON.stringify(a))
+          .join(', ')} (or null to remove it) — got ${JSON.stringify(value)}`
+      )
+    }
+    patch[key] = value as CanvasStyleValue | null
+  }
+  return { style: patch }
+}
+
+/**
+ * Merge a checked style `patch` into a node's `props.style`, per key. `null`
+ * removes a key, and so does a value equal to the key's default — a reset node
+ * is then byte-identical to one that was never styled. Keys already in the file
+ * and not named in the patch are kept verbatim, even ones this build does not
+ * know. An emptied `style` is deleted; `props` is deleted only if that emptied
+ * it. Pure: `props` is never mutated.
+ */
+export function mergeNodeStyle(
+  props: Record<string, unknown> | undefined,
+  patch: Readonly<Record<string, CanvasStyleValue | null>>
+): Record<string, unknown> | undefined {
+  const existing = isRecord(props?.style) ? (props.style as Record<string, unknown>) : undefined
+  const merged: Record<string, unknown> = { ...existing }
+  for (const [key, value] of Object.entries(patch)) {
+    const isDefault =
+      Object.hasOwn(CANVAS_STYLE_DEFAULTS, key) &&
+      CANVAS_STYLE_DEFAULTS[key as CanvasStyleKey] === value
+    if (value === null || isDefault) delete merged[key]
+    else merged[key] = value
+  }
+  const { style: _old, ...rest } = props ?? {}
+  void _old
+  if (Object.keys(merged).length > 0) return { ...rest, style: merged }
+  if (props === undefined) return undefined
+  // Only drop `props` if losing its style is what emptied it.
+  return existing !== undefined && Object.keys(rest).length === 0 ? undefined : rest
 }
 
 function isErr(v: unknown): v is CanvasVerbErr {
@@ -468,6 +559,11 @@ export function applyCanvasOps(input: ApplyCanvasOpsInput): ApplyCanvasOpsResult
           if (isErr(checked)) return checked
           props = checked.props
         }
+        if (raw.style !== undefined) {
+          const checked = checkStyle(spec, raw.style, at)
+          if (isErr(checked)) return checked
+          props = mergeNodeStyle(props, checked.style)
+        }
         const id = nextId('n')
         if (isErr(id)) return id
         nodes.push({
@@ -523,7 +619,7 @@ export function applyCanvasOps(input: ApplyCanvasOpsInput): ApplyCanvasOpsResult
         }
         const idx = nodes.findIndex((n) => n.id === id)
         if (idx < 0) return deny('UNKNOWN_ID', `${at}: no node ${JSON.stringify(id)}`)
-        const touched = ['x', 'y', 'width', 'height', 'label', 'props'].filter(
+        const touched = ['x', 'y', 'width', 'height', 'label', 'props', 'style'].filter(
           (k) => raw[k] !== undefined
         )
         if (touched.length === 0) {
@@ -535,8 +631,9 @@ export function applyCanvasOps(input: ApplyCanvasOpsInput): ApplyCanvasOpsResult
           return deny('BAD_ARGS', `${at}: "label" must be a string`)
         }
         const node = nodes[idx]
-        let props: Record<string, unknown> | undefined
-        if (raw.props !== undefined) {
+        let props: Record<string, unknown> | undefined = node.props
+        let propsChanged = false
+        if (raw.props !== undefined || raw.style !== undefined) {
           // Validated against the node's OWN shape — a node keeps its shape for
           // life; there is no `shape` field on `update_node` by design (§8.2).
           const spec = specFor(node.shape)
@@ -546,22 +643,39 @@ export function applyCanvasOps(input: ApplyCanvasOpsInput): ApplyCanvasOpsResult
               `${at}: node ${JSON.stringify(id)} has unknown shape ${JSON.stringify(node.shape)} — valid shapes are ${shapeNames.join(', ')}`
             )
           }
-          const checked = checkProps(spec, raw.props, at)
-          if (isErr(checked)) return checked
-          props = checked.props
+          if (raw.props !== undefined) {
+            const checked = checkProps(spec, raw.props, at)
+            if (isErr(checked)) return checked
+            // `props` REPLACES rather than merges: a merge has no way to express
+            // "remove this key", and a silent merge is how stale props outlive
+            // the shape that read them. The one thing it keeps is `style`, which
+            // is not a prop: the `style` field is its only writer (T536 U3).
+            const oldStyle = node.props?.style
+            props = oldStyle === undefined ? checked.props : { ...checked.props, style: oldStyle }
+            propsChanged = true
+          }
+          if (raw.style !== undefined) {
+            const checked = checkStyle(spec, raw.style, at)
+            if (isErr(checked)) return checked
+            props = mergeNodeStyle(props, checked.style)
+            propsChanged = true
+          }
         }
-        // `props` REPLACES rather than merges: a merge has no way to express
-        // "remove this key", and a silent merge is how stale props outlive the
-        // shape that read them.
-        nodes[idx] = {
+        const next: CanvasNode = {
           ...node,
           ...(raw.x === undefined ? {} : { x: raw.x as number }),
           ...(raw.y === undefined ? {} : { y: raw.y as number }),
           ...(raw.width === undefined ? {} : { width: raw.width as number }),
           ...(raw.height === undefined ? {} : { height: raw.height as number }),
-          ...(raw.label === undefined ? {} : { label: raw.label as string }),
-          ...(props === undefined ? {} : { props })
+          ...(raw.label === undefined ? {} : { label: raw.label as string })
         }
+        // Assigned (not spread) so an existing `props` keeps its key position in
+        // the file, and removed only when the style merge emptied it.
+        if (propsChanged) {
+          if (props === undefined) delete next.props
+          else next.props = props
+        }
+        nodes[idx] = next
         applied.push({ op: name, id })
         break
       }
@@ -662,16 +776,19 @@ export function applyCanvasOps(input: ApplyCanvasOpsInput): ApplyCanvasOpsResult
 }
 
 /** The catalog exactly as the ACK carries it (§8.1) — names, one-line
- *  descriptions and default sizes, so one call teaches the vocabulary. */
+ *  descriptions, default sizes and (T536 U3) each shape's `style` table, so one
+ *  call teaches the whole vocabulary, styling included. */
 export function canvasShapeCatalogAck(): {
   name: string
   description: string
   defaultSize: { width: number; height: number }
+  style: Record<string, readonly CanvasStyleValue[]>
 }[] {
   return CANVAS_SHAPE_CATALOG.map((s) => ({
     name: s.name,
     description: s.description,
-    defaultSize: s.defaultSize
+    defaultSize: s.defaultSize,
+    style: { ...s.style } as Record<string, readonly CanvasStyleValue[]>
   }))
 }
 
