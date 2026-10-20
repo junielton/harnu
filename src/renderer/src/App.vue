@@ -36,12 +36,19 @@ import TakeoverHost from './components/TakeoverHost.vue'
 import { useThemeStore } from './stores/theme'
 import { useSessionsStore } from './stores/sessions'
 import { formatWindowTitle } from './stores/attention'
-import { useUiStore } from './stores/ui'
+import { useUiStore, SETTINGS_TAB_IDS } from './stores/ui'
 import { useHelpersStore } from './stores/helpers'
 import { useLayoutStore, helperPanelVisible, inboxRailWidthFor } from './stores/layout'
 import { useClaudeChangelogStore } from './stores/claudeChangelog'
 import { useCompanionStore } from './stores/companion'
-import { useShortcuts, pushScope, popScope, activeScope } from './composables/useShortcuts'
+import {
+  useShortcuts,
+  pushScope,
+  popScope,
+  activeScope,
+  type ShortcutBinding
+} from './composables/useShortcuts'
+import { closeTakeoverBinding, installKeyOrigin } from './lib/takeover-esc'
 import { isMac } from './lib/platform'
 import { useKeybindingsStore } from './stores/keybindings'
 import { useFolderActions } from './composables/useFolderActions'
@@ -529,6 +536,11 @@ function onGroup(action: RepoGroupAction): { enabled: () => boolean; handler: ()
   }
 }
 
+// T486 §6.1 — records where each key press starts (window capture, ahead of every
+// field), so `view.closeTakeover`'s key guard can tell an Esc typed in a text field
+// even when that field blurs itself on Esc before the binding runs.
+onUnmounted(installKeyOrigin())
+
 function kb(id: ShortcutActionId): string | undefined {
   return keybindings.chordFor(id) ?? DESCRIPTOR_BY_ID[id].defaultKeys ?? undefined
 }
@@ -558,7 +570,7 @@ useShortcuts(
     {
       // T1 P5 — open keybindings.json in a MarkdownPane helper pane. Reserved
       // (its chord can't be rebound), but the open is renderer work. The native
-      // View → "Keyboard Shortcuts…" item emits the same id over `shortcut:fired`.
+      // View → "Open keybindings.json" item emits the same id over `shortcut:fired`.
       id: 'app.openKeybindings',
       scope: 'global',
       keys: kb('app.openKeybindings'),
@@ -785,6 +797,16 @@ useShortcuts(
       keys: kb('view.settings'),
       handler: () => ui.openSettings()
     },
+    // T486 §3.5 — one id per Settings tab, generated from `SETTINGS_TAB_IDS` so a
+    // new tab cannot ship without one. Only Keyboard Shortcuts is bound (⌘⌥S /
+    // Ctrl+Alt+S, its native menu item emits the same id). With Settings already
+    // open the `'modal'` scope blocks them: the dialog reads its tab only on open.
+    ...SETTINGS_TAB_IDS.map((tab): ShortcutBinding => ({
+      id: `view.settings.${tab}`,
+      scope: 'global',
+      keys: kb(`view.settings.${tab}`),
+      handler: () => ui.openSettings(tab)
+    })),
     {
       // Toggles the Usage Dashboard takeover — same gesture as the Topbar's
       // per-repo views. No default chord.
@@ -792,6 +814,42 @@ useShortcuts(
       scope: 'global',
       keys: kb('view.usageDashboard'),
       handler: () => ui.toggleUsageDashboard()
+    },
+    // T486 §3.6 — Esc closes the open takeover exactly like its X (§6.1). Off
+    // while a footer / Topbar popover is open (its own Esc closes it first), and
+    // a press made in a text field is left to the field. Dialogs, palettes,
+    // menus and the takeovers' own state take Esc before it in capture.
+    {
+      id: 'view.closeTakeover',
+      scope: 'global',
+      keys: kb('view.closeTakeover'),
+      ...closeTakeoverBinding(ui)
+    },
+    // The footer takeovers' own toggles (the Cleanup and Scheduler pills, the heap
+    // gauge; Containers has no button since T443). Unbound.
+    {
+      id: 'view.cleanup',
+      scope: 'global',
+      keys: kb('view.cleanup'),
+      handler: () => ui.toggleCleanup()
+    },
+    {
+      id: 'view.scheduler',
+      scope: 'global',
+      keys: kb('view.scheduler'),
+      handler: () => ui.toggleScheduler()
+    },
+    {
+      id: 'view.systemMonitor',
+      scope: 'global',
+      keys: kb('view.systemMonitor'),
+      handler: () => ui.toggleSystemMonitor()
+    },
+    {
+      id: 'view.containers',
+      scope: 'global',
+      keys: kb('view.containers'),
+      handler: () => ui.toggleContainers()
     },
     {
       id: 'session.resumeLast',

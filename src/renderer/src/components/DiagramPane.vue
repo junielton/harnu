@@ -767,6 +767,7 @@ async function handleCanvasChanged(payload: { path: string }): Promise<void> {
 onMounted(async () => {
   unsubscribeCanvasChanged = window.api.onCanvasChanged(handleCanvasChanged)
   window.addEventListener('keydown', onWindowKeydown)
+  window.addEventListener('keydown', onEscCapture, true)
   void window.api.canvasWatchStart(filePath.value)
   await load(filePath.value, true)
   // Follow the pane as the operator drags the inter-pane divider or maximizes.
@@ -787,6 +788,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onWindowKeydown)
+  window.removeEventListener('keydown', onEscCapture, true)
   window.removeEventListener('mousemove', onDrawMove, DRAW_LISTENER)
   window.removeEventListener('mouseup', onDrawUp, DRAW_LISTENER)
   unsubscribeCanvasChanged?.()
@@ -942,7 +944,19 @@ function onWindowKeydown(ev: KeyboardEvent): void {
     deleteSelection()
     return
   }
-  if (ev.key === 'Escape') graph.value?.cleanSelection()
+}
+
+/**
+ * Esc clears the selection — in the window CAPTURE phase, and stopped, so a Roadmap
+ * or Review takeover behind this pane stays open until the next Esc (T486 §6.1).
+ * With nothing selected the key passes on to `view.closeTakeover`.
+ */
+function onEscCapture(ev: KeyboardEvent): void {
+  if (ev.key !== 'Escape' || !hasFocus() || rename.value) return
+  const g = graph.value
+  if (!g || g.getSelectedCells().length === 0) return
+  g.cleanSelection()
+  ev.stopPropagation()
 }
 
 // ── Header actions ────────────────────────────────────────────────────────

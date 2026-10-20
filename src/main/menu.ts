@@ -87,6 +87,14 @@ export function buildAppMenu(
   // unbound action drops the `accelerator` key entirely.
   const a = (id: KeybindingActionId): string | undefined => accel(id, resolved)
 
+  // T486 §10 — Settings on its Keyboard Shortcuts tab (⌘⌥S / Ctrl+Alt+S). One
+  // item, placed once per platform, so the accelerator has a single owner.
+  const keyboardShortcutsItem: MenuItemConstructorOptions = {
+    label: 'Keyboard Shortcuts…',
+    accelerator: a('view.settings.keybindings'),
+    click: (): void => emit('view.settings.keybindings')
+  }
+
   const template: MenuItemConstructorOptions[] = [
     // macOS application menu — only present on darwin. The `appMenu` role
     // would auto-populate this, but we want the explicit Quit accelerator
@@ -103,6 +111,9 @@ export function buildAppMenu(
                 accelerator: a('view.settings'),
                 click: (): void => emit('view.settings')
               },
+              // T486 §10 — next to Settings…, where Mac users look for
+              // preferences. View holds it on Linux / Windows instead.
+              keyboardShortcutsItem,
               { type: 'separator' },
               { role: 'services' },
               { type: 'separator' },
@@ -294,11 +305,13 @@ export function buildAppMenu(
           click: (): void => emit('view.usageDashboard')
         },
         { type: 'separator' },
+        // T486 §10 — the Settings tab itself; in the app menu on macOS.
+        ...(isMac ? [] : [keyboardShortcutsItem]),
         {
           // T1 P5 — opens keybindings.json in the MarkdownPane helper pane. The
           // renderer's `useShortcuts` handler does the actual open; this item
           // just owns the ⌘⌥K / Ctrl+Alt+K accelerator at the OS level.
-          label: 'Keyboard Shortcuts…',
+          label: 'Open keybindings.json',
           accelerator: a('app.openKeybindings'),
           click: (): void => emit('app.openKeybindings')
         },
