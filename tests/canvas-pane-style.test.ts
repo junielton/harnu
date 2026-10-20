@@ -460,6 +460,20 @@ describe('DiagramPane properties panel — Review Focus 1: undo never paints an 
     expect(w.find('[data-testid="diagram-undo"]').attributes('disabled')).toBeUndefined()
   })
 
+  // Live matrix (T536 U3, row TH1): the theme redraw rebuilds every cell, which used to
+  // drop the selection — and the properties panel with it — mid-edit.
+  it('a theme switch keeps the selection, so the panel stays open on the same nodes', async () => {
+    const w = mountPane()
+    await settle()
+    await select(w, 'n-a', 'n-b')
+    expect(panel(w)).toBe(true)
+
+    await switchTheme(w, LIGHT)
+    await settle()
+    expect(selectedIds(w)).toEqual(['n-a', 'n-b'])
+    expect(panel(w)).toBe(true)
+  })
+
   it('a theme switch recolours a styled board and leaves the pane clean', async () => {
     const styled: CanvasDocument = {
       ...DOC,
