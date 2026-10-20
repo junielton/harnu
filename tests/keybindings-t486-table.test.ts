@@ -22,7 +22,7 @@ import {
  *    chord, on both platform folds.
  *
  * Each later unit appends its own §3 rows to `SPEC_ROWS`.
- * U2 added §3.2 + §3.3, U3 §3.4.
+ * U2 added §3.2 + §3.3, U3 §3.4, U4a §3.5's inbox and popover ids.
  */
 
 interface SpecRow {
@@ -89,12 +89,24 @@ const SPEC_ROWS: Record<string, SpecRow> = {
   'folder.toggleArchived': unbound('folders'),
   'repoGroup.rename': unbound('folders'),
   'repoGroup.resetName': unbound('folders'),
-  'repoGroup.cleanup': unbound('folders')
+  'repoGroup.cleanup': unbound('folders'),
+
+  // §3.5 Views — the inbox and popover ids U4a adds. All unbound.
+  'inbox.open': unbound('views'),
+  'inbox.toggleOrder': unbound('views'),
+  'inbox.filter': unbound('views'),
+  'inbox.showAll': unbound('views'),
+  'view.activity': unbound('views'),
+  'view.missionProgress': unbound('views'),
+  'view.pastedImages': unbound('views'),
+  'view.claudeStatus': unbound('views'),
+  'view.usagePanel': unbound('views')
 }
 
 /** How many rows each unit adds (§11) — a row dropped from `SPEC_ROWS` fails here. */
 const U2_IDS = 20
 const U3_IDS = 21
+const U4A_IDS = 9
 
 describe('AC-11 — the §3 ids exist with their §3 values', () => {
   for (const [id, row] of Object.entries(SPEC_ROWS)) {
@@ -111,8 +123,13 @@ describe('AC-11 — the §3 ids exist with their §3 values', () => {
     })
   }
 
-  it('adds exactly the 20 §3.2 + §3.3 ids and the 21 §3.4 ids', () => {
-    expect(Object.keys(SPEC_ROWS)).toHaveLength(U2_IDS + U3_IDS)
+  it('adds exactly the 20 §3.2 + §3.3 ids, the 21 §3.4 ids and the 9 §3.5 ids', () => {
+    expect(Object.keys(SPEC_ROWS)).toHaveLength(U2_IDS + U3_IDS + U4A_IDS)
+  })
+
+  // §9.1: the palette's empty query keeps today's set, which includes "Open approvals".
+  it('inbox.open is featured in the empty palette', () => {
+    expect(DESCRIPTOR_BY_ID['inbox.open'].paletteFeatured).toBe(true)
   })
 })
 
