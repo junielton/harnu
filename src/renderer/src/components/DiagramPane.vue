@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { useFocusRegion } from '../composables/useTerminalFocus'
 import { useI18n } from 'vue-i18n'
 import {
   Maximize2,
@@ -1000,12 +1001,23 @@ function onClose(): void {
 function onHeaderMouseDown(ev: MouseEvent): void {
   if (props.resizable) emit('headerMouseDown', ev)
 }
+
+// T486 U5b — a region of the pane focus ring: F6 focuses its canvas body (where its own keys live), `pane.close`
+// runs the header X's close (the discard guard holds). The root draws the design.md §6
+// "Pane focus" outline while focus is inside.
+const rootEl = ref<HTMLDivElement | null>(null)
+useFocusRegion(props.pane.id, rootEl, {
+  focus: () => focusBody(),
+  close: onClose
+})
 </script>
 
 <template>
   <div
+    ref="rootEl"
     data-testid="diagram-pane"
-    class="flex h-full w-full flex-col overflow-hidden bg-bg"
+    class="flex h-full w-full flex-col overflow-hidden bg-bg focus-within:outline focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-accent-line"
+    :data-focus-region="pane.id"
     :aria-label="$t('diagramPane.label')"
   >
     <header

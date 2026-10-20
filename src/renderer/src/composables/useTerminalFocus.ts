@@ -1,4 +1,4 @@
-import { computed, ref, type ComputedRef } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, type ComputedRef, type Ref } from 'vue'
 
 /**
  * Pane id used by `TerminalPane.vue` (the main Claude session terminal).
@@ -8,6 +8,11 @@ import { computed, ref, type ComputedRef } from 'vue'
 export const MAIN_PANE_ID = 'main'
 
 /**
+ * Two things live here. The set below tracks which xterm panes hold focus (the
+ * `terminalFocused` predicate). The pane-focus registry at the bottom of the file
+ * (T486 U5b) knows every focus region, xterm or not, for F6 / ⇧F6, `pane.close`,
+ * `pane.toggleMaximize` and the terminal toggle (`lib/pane-ring.ts`).
+ *
  * Tracks the set of pane ids whose xterm.js terminal currently owns DOM
  * focus. Replaces the pre-R2 singleton bool so that multiple panes (split
  * helpers + main TerminalPane) can each contribute independently.
@@ -65,4 +70,91 @@ export function unregisterFocusedPane(id: string): void {
  */
 export function resetTerminalFocusForTests(): void {
   focusedPanes.value = new Set()
+}
+
+// ── Pane-focus registry (T486 U5b, spec §8.1) ───────────────────────────────
+
+/**
+ * A focus region: the main terminal (`MAIN_PANE_ID`) or one helper pane (its pane
+ * id). `el` is the region's root, which carries `data-focus-region="<id>"`.
+ * `focus` puts the keyboard in the region (an xterm pane focuses its terminal, a
+ * non-xterm pane its root or body). `close` is the pane's OWN close handler, so a
+ * dirty Markdown or Diagram pane keeps its discard guard; the main terminal has
+ * none (`pane.close` leaves it alone).
+ */
+export interface FocusRegion {
+  id: string
+  el: HTMLElement
+  focus: () => void
+  close?: () => void
+}
+
+/** Plain map: the registry is read on a key press, never rendered. */
+const regions = new Map<string, FocusRegion>()
+
+/**
+ * Register a region. Returns a disposer that removes THIS registration only, so a
+ * pane remounted under the same id before the old instance unmounted keeps the
+ * newer one.
+ */
+export function registerFocusRegion(region: FocusRegion): () => void {
+  regions.set(region.id, region)
+  return () => {
+    if (regions.get(region.id) === region) regions.delete(region.id)
+  }
+}
+
+/**
+ * The registered region holding `active` (default `document.activeElement`), or
+ * `null` — focus in the sidebar, the Topbar, a takeover body or `<body>`.
+ */
+export function focusedRegionId(
+  active: Element | null = typeof document === 'undefined' ? null : document.activeElement
+): string | null {
+  const root = active?.closest('[data-focus-region]')
+  const id = root?.getAttribute('data-focus-region')
+  if (!id) return null
+  return regions.get(id)?.el === root ? id : null
+}
+
+/** Focus region `id`. False when no such region is registered. */
+export function focusRegion(id: string): boolean {
+  const r = regions.get(id)
+  if (!r) return false
+  r.focus()
+  return true
+}
+
+/** Run region `id`'s own close. False when it is unknown or has no close path. */
+export function closeRegion(id: string): boolean {
+  const r = regions.get(id)
+  if (!r?.close) return false
+  r.close()
+  return true
+}
+
+/**
+ * Register the calling component as a focus region for its lifetime: on mount,
+ * once `el` is bound, and off again before unmount. The component also binds
+ * `:data-focus-region` on that root.
+ */
+export function useFocusRegion(
+  id: string,
+  el: Readonly<Ref<HTMLElement | null>>,
+  handlers: { focus: () => void; close?: () => void }
+): void {
+  let dispose: (() => void) | null = null
+  onMounted(() => {
+    if (!el.value) return
+    dispose = registerFocusRegion({ id, el: el.value, ...handlers })
+  })
+  onBeforeUnmount(() => {
+    dispose?.()
+    dispose = null
+  })
+}
+
+/** Test-only: forget every registered region. */
+export function resetFocusRegionsForTests(): void {
+  regions.clear()
 }

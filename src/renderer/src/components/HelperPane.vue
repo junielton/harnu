@@ -79,7 +79,11 @@ import {
   X,
   type LucideIcon
 } from 'lucide-vue-next'
-import { registerFocusedPane, unregisterFocusedPane } from '../composables/useTerminalFocus'
+import {
+  registerFocusedPane,
+  unregisterFocusedPane,
+  useFocusRegion
+} from '../composables/useTerminalFocus'
 import { useUiStore } from '../stores/ui'
 import { DEFAULT_TERMINAL_FONT_SIZE, useSettingsStore } from '../stores/settings'
 import { useHelpersStore, isAgentTerminalPane, type AnyHelperPane } from '../stores/helpers'
@@ -142,6 +146,17 @@ const settings = useSettingsStore()
 const helpers = useHelpersStore()
 const theme = useThemeStore()
 const hostRef = useTemplateRef<HTMLDivElement>('host')
+const rootRef = useTemplateRef<HTMLDivElement>('root')
+// T486 U5b — a region of the pane focus ring: F6 focuses the terminal (or the
+// root while a fork is still pending), `pane.close` runs the header X's close.
+useFocusRegion(props.pane.id, rootRef, {
+  focus: () => {
+    const live = liveHelpers.get(props.pane.id)
+    if (live) live.term.focus()
+    else rootRef.value?.focus()
+  },
+  close: onClose
+})
 
 // WebLinksAddon's default handler calls `window.open()` with no URL, which
 // Electron's `setWindowOpenHandler` always denies (about:blank isn't
@@ -795,7 +810,10 @@ function onPromote(): void {
     the grid still sizes correctly below the bar.
   -->
   <div
-    class="relative h-full w-full overflow-hidden bg-bg"
+    ref="root"
+    class="relative h-full w-full overflow-hidden bg-bg outline-none"
+    tabindex="-1"
+    :data-focus-region="pane.id"
     @dragover="onDragOver"
     @dragleave="onDragLeave"
     @drop="onDrop"

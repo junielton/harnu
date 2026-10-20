@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Sidebar from './components/Sidebar.vue'
 import TerminalPane from './components/TerminalPane.vue'
@@ -70,7 +70,20 @@ import {
   defaultKeysFor,
   type ShortcutActionId
 } from '../../main/keybindings-core'
-import { useTerminalFocus } from './composables/useTerminalFocus'
+import {
+  useTerminalFocus,
+  focusedRegionId,
+  focusRegion,
+  closeRegion
+} from './composables/useTerminalFocus'
+import {
+  paneRing,
+  focusPaneStep,
+  togglePaneMaximize,
+  closeFocusedPane,
+  toggleTerminal,
+  type PaneCommandDeps
+} from './lib/pane-ring'
 import type { Session } from './stores/sessions'
 import type { UserProject } from '../../preload'
 
@@ -546,6 +559,39 @@ function onGroup(action: RepoGroupAction): { enabled: () => boolean; handler: ()
 // even when that field blurs itself on Esc before the binding runs.
 onUnmounted(installKeyOrigin())
 
+/**
+ * T486 U5b — what the pane commands (`lib/pane-ring.ts`) act through: the ring
+ * over what is on screen, the pane-focus registry, and the helpers / layout / ui
+ * stores. `afterRender` waits a tick, so a pane revealed or restored by the same
+ * command is mounted (and registered) before it is focused.
+ */
+const paneDeps: PaneCommandDeps = {
+  ring: () =>
+    paneRing({
+      mainForeground: showTerminalForeground.value,
+      stackShown: showHelperStack.value,
+      helperCollapsed: layout.helperCollapsed,
+      paneIds: helpers.panesForCurrentWorktree.map((p) => p.id),
+      maximizedId: helpers.maximizedPaneIdForCurrentWorktree
+    }),
+  current: () => focusedRegionId(),
+  focus: (id) => void focusRegion(id),
+  close: (id) => closeRegion(id),
+  worktree: () => helpers.currentWorktreePath,
+  panes: () => helpers.panesForCurrentWorktree,
+  maximizedId: () => helpers.maximizedPaneIdForCurrentWorktree,
+  toggleMaximize: (wt, id) => helpers.toggleMaximizePane(wt, id),
+  addShell: (wt) => void helpers.addShellHelper(wt, wt),
+  setHelperCollapsed: (collapsed) => layout.setHelperCollapsed(collapsed),
+  // §8.2: Roadmap and Review host the helper stack; any other takeover covers it.
+  closeCoveringTakeover: () => {
+    const view = ui.activeView?.id
+    if (view && view !== 'roadmap' && view !== 'review') ui.closeAllTakeovers()
+  },
+  blur: () => (document.activeElement as HTMLElement | null)?.blur(),
+  afterRender: (fn) => void nextTick(fn)
+}
+
 function kb(id: ShortcutActionId): string | undefined {
   return keybindings.chordFor(id) ?? defaultKeysFor(DESCRIPTOR_BY_ID[id], isMac) ?? undefined
 }
@@ -707,6 +753,44 @@ useShortcuts(
       scope: 'global',
       keys: kb('nav.forward'),
       handler: () => sessions.goForward()
+    },
+    // T486 §3.7 / §8 — the pane focus ring. F6 / ⇧F6 and the terminal toggle are
+    // shielded: the shield listener below is their only key path, so they work
+    // from inside a terminal (and from a text field). Inert under `'modal'`.
+    {
+      id: 'pane.focusNext',
+      scope: 'global',
+      keys: kb('pane.focusNext'),
+      handler: () => focusPaneStep(paneDeps, 1)
+    },
+    {
+      id: 'pane.focusPrev',
+      scope: 'global',
+      keys: kb('pane.focusPrev'),
+      handler: () => focusPaneStep(paneDeps, -1)
+    },
+    {
+      // ⌘⇧M / Ctrl+Shift+M — bubbles out of xterm, so no shield is needed.
+      id: 'pane.toggleMaximize',
+      scope: 'global',
+      keys: kb('pane.toggleMaximize'),
+      handler: () => togglePaneMaximize(paneDeps)
+    },
+    {
+      // Unbound. Runs the focused pane's own close (discard guards hold).
+      id: 'pane.close',
+      scope: 'global',
+      keys: kb('pane.close'),
+      handler: () => closeFocusedPane(paneDeps)
+    },
+    {
+      // Unbound. Add → reveal and focus → collapse the first shell pane (§8.2);
+      // Split ▸ New shell (`folder.newTerminal`) still always appends one.
+      id: 'terminal.toggle',
+      scope: 'global',
+      keys: kb('terminal.toggle'),
+      enabled: () => !!helpers.currentWorktreePath,
+      handler: () => toggleTerminal(paneDeps)
     },
     {
       id: 'project.switch',

@@ -232,15 +232,15 @@ describe('search (AC-4, AC-5)', () => {
 
   it('chord mode keeps exactly the rows on that chord under the platform fold', async () => {
     const w = await mountPane([
-      // Cmd+Shift+F is `sidebar.jump`'s default (T486 U2); G is free.
-      { command: 'view.roadmap', key: 'Cmd+Shift+G' },
-      { command: 'view.review', key: 'F6' }
+      // Cmd+Shift+F is `sidebar.jump`'s default (T486 U2); G is free. F6 is
+      // `pane.focusNext`'s default since U5b.
+      { command: 'view.roadmap', key: 'Cmd+Shift+G' }
     ])
     const cases: Array<[string, string[]]> = [
       ['Ctrl+K', ['app.search']],
       ['⌘K', ['app.search']],
       ['ctrl+shift+g', ['view.roadmap']],
-      ['F6', ['view.review']],
+      ['F6', ['pane.focusNext']],
       ['Ctrl+B', ['view.toggleSidebar']],
       ['Ctrl+J', []]
     ]
@@ -273,10 +273,18 @@ describe('groups (AC-6)', () => {
     const present = KEYBINDING_GROUPS.filter((g) =>
       list().some((b) => DESCRIPTOR_BY_ID[b.id].group === g)
     )
-    // No action is in Panes yet (U5b adds them): its header must not render.
-    expect(present).not.toContain('panes')
+    // Every group has rows since U5b added Panes; the search case below proves an
+    // emptied group's header is hidden.
     expect(groupIds(w)).toEqual(present)
-    expect(groupIds(w)).toEqual(['sessions', 'sidebar', 'folders', 'views', 'takeovers', 'app'])
+    expect(groupIds(w)).toEqual([
+      'sessions',
+      'sidebar',
+      'folders',
+      'views',
+      'panes',
+      'takeovers',
+      'app'
+    ])
     expect(w.find('[data-kb-group="sessions"]').text()).toContain('Sessions')
   })
 
@@ -318,9 +326,9 @@ describe('chips (AC-7)', () => {
     const unbound = list().filter((b) => b.keys === null).length
     const conflicts = list().filter((b) => b.conflictsWith.length > 0).length
     const customized = list().filter((b) => b.source !== 'default').length
-    expect([unbound, conflicts, customized]).toEqual([77, 2, 3])
+    expect([unbound, conflicts, customized]).toEqual([79, 2, 3])
     await searchFor(w, 'zzz')
-    expect(chip(w, 'unbound').text()).toBe('Unbound 77')
+    expect(chip(w, 'unbound').text()).toBe('Unbound 79')
     expect(chip(w, 'conflicts').text()).toBe('Conflicts 2')
     expect(chip(w, 'customized').text()).toBe('Customized 3')
   })
@@ -509,7 +517,8 @@ describe('shield hint (AC-9)', () => {
     const shielded = w
       .findAll('[data-kb-shield-hint]')
       .map((h) => h.element.closest('[data-kb-row]')?.getAttribute('data-kb-row'))
-    expect(shielded.sort()).toEqual(['nav.back', 'nav.forward'])
+    // `terminal.toggle` is shielded too, but unbound: no chord, no hint.
+    expect(shielded.sort()).toEqual(['nav.back', 'nav.forward', 'pane.focusNext', 'pane.focusPrev'])
   })
 
   it('reads the pt-BR copy in pt-BR', async () => {

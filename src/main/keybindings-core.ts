@@ -140,6 +140,11 @@ export type ShortcutActionId =
   | 'app.openKeybindings'
   | 'nav.back'
   | 'nav.forward'
+  | 'pane.focusNext'
+  | 'pane.focusPrev'
+  | 'pane.toggleMaximize'
+  | 'pane.close'
+  | 'terminal.toggle'
 
 export type ShortcutScope = 'global' | 'sidebar' | 'terminal' | 'modal'
 
@@ -421,6 +426,18 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   // unhandled, so the shield keeps the chord from the terminal (§7.4).
   def('nav.back', 'app', 'Alt+ArrowLeft', { ...MENU, shield: true, mac: 'Cmd+[' }),
   def('nav.forward', 'app', 'Alt+ArrowRight', { ...MENU, shield: true, mac: 'Cmd+]' }),
+  // T486 §3.7 — the pane focus ring (§8). F6 / ⇧F6 are shielded so they work
+  // while a terminal holds focus (the program there loses F6). ⌘⇧M / Ctrl+Shift+M
+  // needs no shield: xterm lets a Ctrl/⌘+Shift+letter chord bubble. The four
+  // focus-dependent ids stay out of the palette: its focus trap moves focus, so
+  // "the focused pane" is unknowable at activation (§9.1). The terminal toggle
+  // ships unbound (operator decision) and is shielded, because its third state
+  // ("already focused → collapse") happens while a terminal has focus (§7.3).
+  def('pane.focusNext', 'panes', 'F6', { shield: true, palette: false }),
+  def('pane.focusPrev', 'panes', 'Shift+F6', { shield: true, palette: false }),
+  def('pane.toggleMaximize', 'panes', 'Cmd+Shift+M', { palette: false }),
+  def('pane.close', 'panes', null, { palette: false }),
+  def('terminal.toggle', 'panes', null, { shield: true }),
   // Reserved — un-rebindable. Handled entirely in the main process, so none of
   // them has a renderer handler the palette could run.
   def('app.reload', 'app', 'F5', { ...MENU, reserved: true, palette: false }),

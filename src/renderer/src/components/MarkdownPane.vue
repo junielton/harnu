@@ -37,6 +37,7 @@ export function __resetMarkdownDraftCacheForTests(): void {
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useFocusRegion } from '../composables/useTerminalFocus'
 import { useI18n } from 'vue-i18n'
 import {
   Check,
@@ -563,6 +564,15 @@ const isMaximized = computed(() => helpers.maximizedPaneId(props.worktreePath) =
 function onToggleMaximize(): void {
   helpers.toggleMaximizePane(props.worktreePath, props.pane.id)
 }
+
+// T486 U5b — a region of the pane focus ring: F6 focuses its root, `pane.close`
+// runs the header X's close (the discard guard holds). The root draws the design.md §6
+// "Pane focus" outline while focus is inside.
+const rootEl = ref<HTMLDivElement | null>(null)
+useFocusRegion(props.pane.id, rootEl, {
+  focus: () => rootEl.value?.focus(),
+  close: onClose
+})
 </script>
 
 <template>
@@ -570,7 +580,10 @@ function onToggleMaximize(): void {
        Unlike HelperPane the body is a normal scroll container (no xterm host),
        so it needs no padding-top hack — the header sits in flow at the top. -->
   <div
-    class="flex h-full w-full flex-col overflow-hidden bg-bg"
+    ref="rootEl"
+    class="flex h-full w-full flex-col overflow-hidden bg-bg focus-within:outline focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-accent-line"
+    tabindex="-1"
+    :data-focus-region="pane.id"
     :aria-label="$t('markdownPane.label')"
   >
     <header
