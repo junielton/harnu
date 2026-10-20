@@ -565,9 +565,18 @@ test.describe('canvas tools in the built app (T536 U1 + U2 + U3, spec §9.3)', (
         await page.mouse.click(...xy(centre(await nodeBox(idOf.A))))
         await handlesFor(idOf.A, 'A selected, before any pick')
         const handleCount = await transformHandles.count()
+        // The body's own size, not the stroke attribute: a repaint that dropped the shape's
+        // sizing attrs collapsed the box to 0×0 while every style attribute still read right.
+        const bodyBefore = await bodySize(idOf.A)
+        expect(bodyBefore.width, "A's body has a width").toBeGreaterThan(0)
+        expect(bodyBefore.height, "A's body has a height").toBeGreaterThan(0)
+        const sameBody = async (when: string): Promise<void> => {
+          expect(await bodySize(idOf.A), `A's body size ${when}`).toEqual(bodyBefore)
+        }
 
         await pick('tone', 'green')
         await handlesFor(idOf.A, 'after the first pick')
+        await sameBody('after the first pick')
         expect(await transformHandles.count(), 'resize handle count after a pick').toBe(handleCount)
         for (const [key, value] of [
           ['stroke', 'dashed'],
@@ -578,6 +587,7 @@ test.describe('canvas tools in the built app (T536 U1 + U2 + U3, spec §9.3)', (
           ['opacity', '50']
         ] as const) {
           await pick(key, value)
+          await sameBody(`after picking ${key} ${value}`)
         }
         await handlesFor(idOf.A, 'after the last pick')
 
@@ -606,6 +616,7 @@ test.describe('canvas tools in the built app (T536 U1 + U2 + U3, spec §9.3)', (
         // One undo step per panel change: a single Ctrl+Z takes back only the last pick.
         await page.keyboard.press('Control+z')
         await handlesFor(idOf.A, 'after Ctrl+Z')
+        await sameBody('after Ctrl+Z')
         doc = await saveAndRead()
         const { opacity: _taken, ...withoutOpacity } = all
         expect(styleOf(doc, idOf.A)).toEqual(withoutOpacity)
@@ -910,6 +921,21 @@ async function saveAndRead(): Promise<SavedDoc> {
 /** A point as spread-able `[x, y]` arguments for `page.mouse`. */
 function xy(p: { x: number; y: number }): [number, number] {
   return [p.x, p.y]
+}
+
+/**
+ * The on-screen size of a node's body element (its first SVG child, as in `bodyStroke`),
+ * rounded to the pixel. The body's own box ignores the stroke width, so a style change that
+ * leaves the geometry alone leaves this unchanged, and a body collapsed to nothing reads 0×0.
+ */
+async function bodySize(id: string): Promise<{ width: number; height: number }> {
+  return page.evaluate((cellId) => {
+    const el = document.querySelector(
+      `[data-testid="diagram-pane"] g.x6-node[data-cell-id="${cellId}"] > :first-child`
+    )
+    const r = el?.getBoundingClientRect()
+    return { width: Math.round(r?.width ?? 0), height: Math.round(r?.height ?? 0) }
+  }, id)
 }
 
 /**
