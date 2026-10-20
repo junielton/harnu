@@ -333,7 +333,7 @@ describe('CanvasPropertiesPanel — Layers (T536 U4)', () => {
         edgeOnly: true
       })
       const expected = {
-        default: 'text-text-3',
+        default: 'text-accent',
         green: 'text-green',
         amber: 'text-warning',
         red: 'text-red',
@@ -345,6 +345,16 @@ describe('CanvasPropertiesPanel — Layers (T536 U4)', () => {
         expect(glyph.attributes('width')).toBe('16')
         expect(glyph.classes()).toContain(expected[v])
       }
+    })
+
+    it('edgeOnly: default is the accent line and differs from muted', () => {
+      const w = mountPanel({ keys: ['tone'], options: { tone: [...ARROW_TONES] }, edgeOnly: true })
+      const cls = (v: string): string[] =>
+        option(w, 'tone', v).get('[data-testid="canvas-prop-glyph"]').classes()
+      expect(cls('default')).toContain('text-accent')
+      expect(cls('muted')).toContain('text-text-3')
+      expect(cls('default')).not.toContain('text-text-3')
+      expect(cls('muted')).not.toContain('text-accent')
     })
 
     it('edgeOnly maps the accent tone to text-accent', () => {
