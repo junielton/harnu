@@ -15,6 +15,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ### Added
 
 - **Settings → Keyboard Shortcuts is searchable, grouped and filterable.** Type words to find an action by name, chord or id, or type a key combo (`Ctrl+K`, `F6`, `⌘K`) to see exactly what is on it; a single key name like `delete` matches both ways. Rows are grouped under Sessions, Sidebar, Folders, Views, Panes, Takeovers and App, and the Unbound, Conflicts and Customized chips (each with its total count) narrow the list further.
+- **Keyboard access to sessions and the sidebar.** `Cmd/Ctrl+Shift+F` opens the sidebar's jump palette (and closes it again), even from a focused terminal and with the sidebar collapsed. `Cmd/Ctrl+Enter` opens the session under the sidebar's keyboard cursor in a split beside the current one. `Shift+F10` opens the right-click menu for that row, anchored to it.
+- Every item of the session right-click menu, closing a folder terminal, starting a new session in the active folder and the sidebar header's buttons can now be given a shortcut in Settings → Keyboard Shortcuts. They ship without one.
 - The shortcut recorder now refuses a combo that could never fire for that action — Shift plus punctuation, or Option plus a letter on macOS, on actions with no menu item — keeps the old one and says why under the row.
 
 ### Fixed
