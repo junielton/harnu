@@ -69,8 +69,9 @@ const TONE_SWATCH: Readonly<Record<string, string>> = {
 
 // An arrow has no fill, so its tone reads as the line colour: the same stroke tokens as
 // the swatch borders above, spelled as text utilities because the glyph strokes currentColor.
+// An arrow's `default` tone is the accent line (design.md "Arrow styles"), `muted` the quiet one.
 const TONE_LINE: Readonly<Record<string, string>> = {
-  default: 'text-text-3',
+  default: 'text-accent',
   accent: 'text-accent',
   green: 'text-green',
   amber: 'text-warning',
