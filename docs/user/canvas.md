@@ -131,7 +131,7 @@ Undo history is **per pane and not saved**. Close the canvas or reload it and th
 
 ## Styling shapes
 
-Select one or more shapes in **Select** and a small **Style** panel appears at the left edge of the board, under the zoom controls (or under the toolbar when the toolbar has wrapped onto its own row). Click an option and it applies to everything you have selected, straight away. It is a floating panel, so it stays put when you pan or zoom.
+Select one or more shapes in **Select** and a small **Properties** panel appears at the left edge of the board, under the zoom controls (or under the toolbar when the toolbar has wrapped onto its own row). Click an option and it applies to everything you have selected, straight away. The panel shows for any selection of shapes, even ones that take no styling: those get the Layers buttons described below. It is a floating panel, so it stays put when you pan or zoom.
 
 | Group            | Options                                         | What it changes                                                                 |
 | ---------------- | ----------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -155,7 +155,7 @@ The first option of each group (Default, Solid, Regular, Round, Medium, Center, 
 | **Image**            | Opacity only.                                           |
 | **Card**             | Nothing: a card always draws in Harnu's own card style. |
 
-Select a box and a text label together and you get Color, Text size, Align and Opacity, the groups both accept. Add a card to that selection and the panel disappears, because a card accepts nothing. Select only arrows and it is not shown either; arrows that are part of a larger selection are simply left out, because arrows cannot be styled yet.
+Select a box and a text label together and you get Color, Text size, Align and Opacity, the groups both accept. Add a card to that selection and the style groups are left out of the panel, because a card accepts nothing; only Layers remains. A card on its own, or **Ctrl/⌘ + A**, shows Layers alone for the same reason. Select only arrows and the panel is not shown; arrows that are part of a larger selection are simply left out, because arrows cannot be styled or restacked yet.
 
 A few things worth knowing:
 
@@ -165,10 +165,30 @@ A few things worth knowing:
 - **Colours follow the theme.** A tone is stored as a name (`green`, not a hex colour), so the same board looks right in dark and light, and switching theme keeps your selection and its resize handles.
 - **Labels do not wrap.** A long label on a small shape can run past its edge, more so at Large and Extra large. Make the shape bigger or the text smaller. A diamond is the tightest: its left and right labels line up inside the diamond's inner area, but a long word can still stick out of its slanted sides.
 - **Tinted shapes are slightly see-through**, so the dot grid, or an arrow passing behind a shape, shows through the tint.
-- **In a narrow pane** (under about 384 px wide) the panel folds into a single **palette** button. Click it to open the panel in place and click it again to fold it away.
+- **In a narrow pane** (under about 384 px wide) the panel folds into a single **palette** button (**Show properties**). Click it to open the panel in place and click it again to fold it away. Layers is in there too.
 - **Hovering is not an edit.** Moving the pointer over shapes adds no undo step and never marks the board as having unsaved changes.
 
 Styles are saved in the board file when you press **Save**, with the shape they belong to. A session can set the same styles when it draws or edits (see [Agent control](agent-control.md#drawing-on-a-canvas)), and it merges them into what is there, so asking it to recolour a box does not undo the dashed outline you gave it. A board with styles still opens in an older Harnu, which shows the shapes in their default look and keeps the styles if you save it there. An agent in an older build that rewrites a shape's `props` wholesale can drop them, though.
+
+### Layers
+
+When shapes overlap, the one drawn on top is the one in front. The **Layers** group, at the bottom of the Properties panel, changes that for whatever you have selected. It has four buttons:
+
+| Button             | What it does                                                 |
+| ------------------ | ------------------------------------------------------------ |
+| **Send to back**   | Puts the selection behind every other shape.                 |
+| **Send backward**  | Moves the selection back past the next shape it overlaps.    |
+| **Bring forward**  | Moves the selection forward past the next shape it overlaps. |
+| **Bring to front** | Puts the selection in front of every other shape.            |
+
+A few things worth knowing:
+
+- **Forward and backward step past a shape you can see.** They skip shapes that do not overlap the selection, so one click always changes what is on screen. Two boxes that only touch along an edge do not count as overlapping.
+- **Arrows always draw under shapes.** They are never restacked, and there is no layer button for them; sending a box to the back still leaves it above every arrow.
+- **One move is one undo step**, also when you restack several shapes at once, and the selection keeps its own order. A move that would change nothing (the shape is already in front, or nothing overlaps it) does nothing: no undo step and no unsaved dot.
+- **A board you never restack keeps its file unchanged.** Moving a shape or renaming it and saving does not add stacking data. The stacking order is written only after you have actually restacked something, and then it is written for every shape.
+- **A session can do the same.** `draw_canvas` accepts a `zIndex` on a node; see [Agent control](agent-control.md#drawing-on-a-canvas).
+- **Older Harnu versions keep the order.** A restacked board opens in an older Harnu with the same look. A shape drawn there on such a board has no stacking value and shows up near the bottom after you reload it; restack it here to fix that.
 
 ## Images
 
@@ -209,7 +229,7 @@ Because nothing is written until you save:
 - **Closing a canvas with unsaved edits does not close it.** You get a toast saying there are unsaved edits, with a **Discard** action. Only pressing Discard actually closes the pane. Reload and re-targeting the pane go through the same guard.
 - **An agent reading the file sees the last thing you saved**, never your work in progress. That is deliberate — an unsaved edit is not a decision yet.
 
-Saving also keeps any extra data stored inside an arrow's `props`. If an arrow in the file carries such data (styling, for example), opening the board, editing something else and saving writes it back untouched, rather than quietly dropping it. Extra data anywhere else on an arrow is not kept.
+Saving also keeps any extra data stored inside an arrow's `props`. If an arrow in the file carries such data (styling, for example), opening the board, editing something else and saving writes it back untouched, rather than quietly dropping it. Extra data anywhere else on an arrow is not kept. An arrow you delete, save, and then bring back with undo and save again keeps its label, its routing and that extra data.
 
 If a save is refused, the pane says why and **the file on disk is left exactly as it was** — your work is still in front of you, nothing was half-written. The usual reason is something the board cannot represent; see the refusal table below.
 
@@ -248,5 +268,4 @@ The pane refuses rather than guessing, and says which of these it is:
 - **Diamonds and ellipses are hit as rectangles.** The Eraser and the Arrow treat them as the rectangle around them, so a press or stroke in the empty corner just outside the outline still counts as the shape.
 - **Copy and paste between canvases** isn't there; **Ctrl/⌘ + D** duplicates within one board.
 - **Arrows cannot be styled.** Colour, dashes and weight apply to shapes only; an arrow always draws in the accent colour.
-- **Stacking order** (bring to front / send to back) has no gesture, so there are no layer controls in the panel; a board written with one keeps it.
 - **A node kind Harnu doesn't know** — a component from a _newer_ build than yours — renders as a dashed box, so an unfamiliar board still opens instead of failing. You can move and delete it, and saving keeps it the kind it was, so opening it in the newer build shows it properly again.
