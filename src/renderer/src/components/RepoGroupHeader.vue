@@ -120,6 +120,7 @@ onBeforeUnmount(() => {
     class="sidebar-row group flex w-full cursor-pointer items-center text-left text-text transition hover:bg-surface"
     style="height: 26px; padding: 0 12px 0 8px; gap: 4px; font-size: 12.5px; font-weight: 500"
     :data-focused="focused ? 'true' : null"
+    :data-sidebar-row="`group:${group.key}`"
     @click="toggle"
     @contextmenu="openMenu"
   >

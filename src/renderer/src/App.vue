@@ -45,6 +45,9 @@ import { useShortcuts, pushScope, popScope, activeScope } from './composables/us
 import { isMac } from './lib/platform'
 import { useKeybindingsStore } from './stores/keybindings'
 import { useFolderActions } from './composables/useFolderActions'
+import { useSessionActions, type SessionAction } from './composables/useSessionActions'
+import { useSidebarActions } from './composables/useSidebarActions'
+import { notInTextEntry, focusWithin } from './lib/text-entry'
 import { DESCRIPTOR_BY_ID, type ShortcutActionId } from '../../main/keybindings-core'
 import { useTerminalFocus } from './composables/useTerminalFocus'
 import type { Session } from './stores/sessions'
@@ -64,6 +67,9 @@ const companion = useCompanionStore()
 // `useShortcuts` below re-keys its renderer watchers whenever `resolved` changes.
 const keybindings = useKeybindingsStore()
 const folderActions = useFolderActions()
+// T486 §3.2 / §3.3: the Session menu's and the sidebar header's own functions.
+const sessionActions = useSessionActions()
+const sidebarActions = useSidebarActions()
 
 // T22: any interactive overlay shadows global shortcuts. One aggregate boolean
 // (NOT per-surface pushes) so exactly one 'modal' is ever on the stack — the
@@ -85,23 +91,6 @@ watch(anyOverlayOpen, (open) => {
   if (open) pushScope('modal')
   else popScope('modal')
 })
-
-// T22: never drive the sidebar cursor while a text-entry surface owns focus.
-// Scope gating (above) covers overlays; this catches the non-modal Topbar
-// inline-rename contenteditable, which pushes no scope. The xterm hidden input
-// is a <textarea class="xterm-helper-textarea"> — explicitly NOT treated as text
-// entry so terminal arrow handling (xterm + lib/terminalKeymap) is unchanged.
-function isTextEntryTarget(): boolean {
-  const el = document.activeElement as HTMLElement | null
-  if (!el) return false
-  if (el.isContentEditable) return true
-  const tag = el.tagName
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
-    if (el.closest('.xterm')) return false
-    return true
-  }
-  return false
-}
 
 /**
  * Arrow-key / Enter sidebar cursor navigation walks `visibleFolders` (the
@@ -482,6 +471,20 @@ function mostRecentSession(): Session | null {
  * The second argument to `useShortcuts` keeps the renderer-level chord watchers
  * re-keyed as overrides change at runtime.
  */
+/**
+ * `enabled` + `handler` for a Session-menu action on the SELECTED session:
+ * enabled only when the menu would show that item for it (§3.10).
+ */
+function onSelected(action: SessionAction): { enabled: () => boolean; handler: () => void } {
+  return {
+    enabled: () => sessionActions.selectedFor(action) !== null,
+    handler: () => {
+      const id = sessionActions.selectedFor(action)
+      if (id) sessionActions.run[action](id)
+    }
+  }
+}
+
 function kb(id: ShortcutActionId): string | undefined {
   return keybindings.chordFor(id) ?? DESCRIPTOR_BY_ID[id].defaultKeys ?? undefined
 }
@@ -712,6 +715,177 @@ useShortcuts(
       // model entry stay intact; ⌘W is "close current tab", not "delete".
       handler: () => sessions.clearSelection()
     },
+    // --- T486 §3.2: the Session menu's items, on the SELECTED session. ---
+    // Unbound by default. Each runs the menu item's own function and is
+    // enabled only when the menu would show that item for the selection
+    // (`sessionActionVisible`). A key press from a text field is left alone.
+    {
+      id: 'session.newInFolder',
+      scope: 'global',
+      keys: kb('session.newInFolder'),
+      keysGuard: notInTextEntry,
+      enabled: () => !!sessions.activeFolderPath,
+      handler: () => {
+        const folder = sessions.activeFolderPath
+        if (folder) ui.openNewSession(folder)
+      }
+    },
+    {
+      id: 'session.fork',
+      scope: 'global',
+      keys: kb('session.fork'),
+      // Also yields inside the Diagram pane, whose own ⌘D / Ctrl+D duplicates
+      // the selection (§3.10).
+      keysGuard: () => notInTextEntry() && !focusWithin('[data-testid="diagram-pane"]'),
+      ...onSelected('fork')
+    },
+    {
+      // ⌘↩ / Ctrl+↩ — the cursor's session row, else the selection (§3.10).
+      id: 'session.openToSide',
+      scope: 'global',
+      keys: kb('session.openToSide'),
+      keysGuard: notInTextEntry,
+      enabled: () => sessionActions.openToSideTarget() !== null,
+      handler: () => {
+        const id = sessionActions.openToSideTarget()
+        if (id) sessionActions.run.openToSide(id)
+      }
+    },
+    {
+      // ⇧F10 — the Session or Folder menu for the cursor row, else the
+      // selection, else the active folder, anchored at the row (§8.3).
+      id: 'session.contextMenu',
+      scope: 'global',
+      keys: kb('session.contextMenu'),
+      keysGuard: notInTextEntry,
+      enabled: () => sessionActions.contextMenuTarget() !== null,
+      handler: () => sessionActions.openContextMenu()
+    },
+    {
+      id: 'session.restart',
+      scope: 'global',
+      keys: kb('session.restart'),
+      keysGuard: notInTextEntry,
+      ...onSelected('restart')
+    },
+    {
+      id: 'session.copyId',
+      scope: 'global',
+      keys: kb('session.copyId'),
+      keysGuard: notInTextEntry,
+      ...onSelected('copyId')
+    },
+    {
+      id: 'session.copyTranscriptPath',
+      scope: 'global',
+      keys: kb('session.copyTranscriptPath'),
+      keysGuard: notInTextEntry,
+      ...onSelected('copyTranscriptPath')
+    },
+    {
+      id: 'session.copyResumeCommand',
+      scope: 'global',
+      keys: kb('session.copyResumeCommand'),
+      keysGuard: notInTextEntry,
+      ...onSelected('copyResumeCommand')
+    },
+    {
+      id: 'session.copyContextDigest',
+      scope: 'global',
+      keys: kb('session.copyContextDigest'),
+      keysGuard: notInTextEntry,
+      ...onSelected('copyContextDigest')
+    },
+    {
+      id: 'session.toggleNoFlicker',
+      scope: 'global',
+      keys: kb('session.toggleNoFlicker'),
+      keysGuard: notInTextEntry,
+      ...onSelected('toggleNoFlicker')
+    },
+    {
+      id: 'session.toggleArchived',
+      scope: 'global',
+      keys: kb('session.toggleArchived'),
+      keysGuard: notInTextEntry,
+      ...onSelected('toggleArchived')
+    },
+    {
+      id: 'session.delete',
+      scope: 'global',
+      keys: kb('session.delete'),
+      keysGuard: notInTextEntry,
+      ...onSelected('delete')
+    },
+    {
+      id: 'session.retryBoot',
+      scope: 'global',
+      keys: kb('session.retryBoot'),
+      keysGuard: notInTextEntry,
+      ...onSelected('retryBoot')
+    },
+    {
+      id: 'session.dismiss',
+      scope: 'global',
+      keys: kb('session.dismiss'),
+      keysGuard: notInTextEntry,
+      ...onSelected('dismiss')
+    },
+    {
+      // The folder terminal row's X (SidebarFolder.vue), on the selected terminal.
+      id: 'session.closeTerminal',
+      scope: 'global',
+      keys: kb('session.closeTerminal'),
+      keysGuard: notInTextEntry,
+      enabled: () => sessions.selectedSession?.isShellTerminal === true,
+      handler: () => {
+        const id = sessions.selectedId
+        if (id) sessions.closeFolderTerminal(id)
+      }
+    },
+    // --- T486 §3.3: the sidebar header's buttons. ---
+    {
+      // ⌘⇧F / Ctrl+Shift+F — toggles like the search button. No keysGuard on
+      // purpose: the second press must close the palette while its own input
+      // holds focus. Expands a collapsed sidebar first (`toggleJump`).
+      id: 'sidebar.jump',
+      scope: 'global',
+      keys: kb('sidebar.jump'),
+      handler: () => sidebarActions.toggleJump()
+    },
+    {
+      id: 'sidebar.rescan',
+      scope: 'global',
+      keys: kb('sidebar.rescan'),
+      keysGuard: notInTextEntry,
+      enabled: () => sessions.folders.length > 0,
+      handler: () => sidebarActions.rescan()
+    },
+    {
+      id: 'sidebar.cycleDrillDepth',
+      scope: 'global',
+      keys: kb('sidebar.cycleDrillDepth'),
+      keysGuard: notInTextEntry,
+      enabled: () => sessions.folders.length > 0,
+      handler: () => sessions.cycleDrillDepth()
+    },
+    {
+      id: 'sidebar.toggleCollapseAll',
+      scope: 'global',
+      keys: kb('sidebar.toggleCollapseAll'),
+      keysGuard: notInTextEntry,
+      // The button is hidden at the deepest drill level.
+      enabled: () => sessions.folders.length > 0 && sessions.drillDepth < 2,
+      handler: () => sidebarActions.toggleCollapseAll()
+    },
+    {
+      id: 'sidebar.hiddenFolders',
+      scope: 'global',
+      keys: kb('sidebar.hiddenFolders'),
+      keysGuard: notInTextEntry,
+      enabled: () => sessions.folders.length > 0,
+      handler: () => sidebarActions.toggleHiddenFolders()
+    },
     // --- Sidebar arrow-key navigation (T-4.6). ---
     // The four arrow keys + Enter walk the flattened visible tree
     // (`folders → worktrees → sessions`). Scope stays `'global'` rather than
@@ -740,39 +914,44 @@ useShortcuts(
       id: 'sidebar.cursor.down',
       scope: 'global',
       keys: kb('sidebar.cursor.down'),
-      enabled: () => !isTextEntryTarget() && sidebarCursorNavAllowed(),
+      enabled: sidebarCursorNavAllowed,
+      keysGuard: notInTextEntry,
       handler: () => sessions.cursorDown()
     },
     {
       id: 'sidebar.cursor.up',
       scope: 'global',
       keys: kb('sidebar.cursor.up'),
-      enabled: () => !isTextEntryTarget() && sidebarCursorNavAllowed(),
+      enabled: sidebarCursorNavAllowed,
+      keysGuard: notInTextEntry,
       handler: () => sessions.cursorUp()
     },
     {
       id: 'sidebar.cursor.right',
       scope: 'global',
       keys: kb('sidebar.cursor.right'),
-      enabled: () => !isTextEntryTarget() && sidebarCursorNavAllowed(),
+      enabled: sidebarCursorNavAllowed,
+      keysGuard: notInTextEntry,
       handler: () => sessions.cursorRight()
     },
     {
       id: 'sidebar.cursor.left',
       scope: 'global',
       keys: kb('sidebar.cursor.left'),
-      enabled: () => !isTextEntryTarget() && sidebarCursorNavAllowed(),
+      enabled: sidebarCursorNavAllowed,
+      keysGuard: notInTextEntry,
       handler: () => sessions.cursorLeft()
     },
     {
       id: 'sidebar.cursor.activate',
       scope: 'global',
       keys: kb('sidebar.cursor.activate'),
-      // Only fire when the cursor is on a row AND no text-entry surface owns focus
-      // (T22 — the Topbar inline-rename contenteditable pushes no scope, so scope
-      // gating alone wouldn't catch it). The store also no-ops on a null cursor.
-      enabled: () =>
-        sessions.keyboardCursor !== null && !isTextEntryTarget() && sidebarCursorNavAllowed(),
+      // Only fire when the cursor is on a row. A key press from a text-entry
+      // surface is left alone (T22 — the Topbar inline-rename contenteditable
+      // pushes no scope, so scope gating alone wouldn't catch it). The store
+      // also no-ops on a null cursor.
+      enabled: () => sessions.keyboardCursor !== null && sidebarCursorNavAllowed(),
+      keysGuard: notInTextEntry,
       handler: () => sessions.cursorActivate()
     }
   ],

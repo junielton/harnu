@@ -34,6 +34,7 @@ import {
 } from 'lucide-vue-next'
 import FolderDropOverlay from './ui/FolderDropOverlay.vue'
 import { useFolderDrop } from '../composables/useFolderDrop'
+import { useSidebarActions } from '../composables/useSidebarActions'
 import { macWindowControlsInset } from '../lib/platform'
 
 const sessions = useSessionsStore()
@@ -70,7 +71,6 @@ function toggleLineage(motherPath: string): void {
   lineageCollapsed.toggle(motherPath)
 }
 
-const hiddenTriggerRef = ref<HTMLButtonElement | null>(null)
 const filterInputRef = ref<HTMLInputElement | null>(null)
 const asideRef = ref<HTMLElement | null>(null)
 
@@ -145,7 +145,9 @@ watch(
   }
 )
 
-const anyExpanded = computed<boolean>(() => sessions.folders.some((f) => f.expanded === true))
+// The header buttons and their keyboard bindings (App.vue) run the same functions.
+const { rescanning, anyExpanded, rescan, toggleCollapseAll, toggleJump, toggleHiddenFolders } =
+  useSidebarActions()
 
 /**
  * Drill button label. At depth 0 it names the action ("turn on"); at 1–2 it
@@ -156,58 +158,6 @@ const drillLabel = computed(() =>
     ? t('sidebar.toolbar.drillOn')
     : t('sidebar.toolbar.drillLevel', { level: sessions.drillDepth, max: 2 })
 )
-
-function onHiddenClick(): void {
-  if (ui.sidebarHiddenPopover.open) {
-    ui.closeSidebarHiddenPopover()
-    return
-  }
-  const btn = hiddenTriggerRef.value
-  if (!btn) return
-  const rect = btn.getBoundingClientRect()
-  ui.openSidebarHiddenPopover({
-    left: rect.left,
-    top: rect.top,
-    right: rect.right,
-    bottom: rect.bottom
-  })
-}
-
-/**
- * Rescan folders (BUG-55 AC6) — the manual refresh affordance / escape hatch
- * for any watcher gap. Carried over from the old `⋯` menu's first item when
- * that menu was replaced by this toolbar (design.md §6). `rescanning` drives
- * the icon's spin while the scan is in flight (design.md §7 Motion) — the
- * only feedback `sessions.rescan()` otherwise gives.
- */
-const rescanning = ref(false)
-
-async function onRescanClick(): Promise<void> {
-  rescanning.value = true
-  try {
-    await sessions.rescan()
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e)
-    ui.pushToast({ kind: 'danger', title: t('sidebar.menu.rescanFailed'), description: message })
-  } finally {
-    rescanning.value = false
-  }
-}
-
-function onCollapseAllClick(): void {
-  if (anyExpanded.value) sessions.collapseAll()
-  else sessions.expandAll()
-}
-
-/**
- * The header's search button (T288). It opens the JUMP PALETTE — search means
- * "take me there", not "filter the tree". The inline filter morph is still
- * reachable, but only through the palette's explicit `⇥` fallback.
- */
-function onSearchClick(): void {
-  if (ui.sidebarJumpPalette.open) ui.closeSidebarJumpPalette()
-  else ui.openSidebarJumpPalette()
-}
 
 // `⇥` in the jump palette flips `filterActive` on from outside this component;
 // focus the input once it renders so the operator can keep typing.
@@ -238,6 +188,7 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
 <template>
   <aside
     ref="asideRef"
+    data-sidebar
     class="scrollable relative flex shrink-0 select-none flex-col bg-sidebar"
     :style="{ width: layout.sidebarWidth + 'px' }"
     @dragover="onDragOver"
@@ -269,7 +220,7 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
             style="width: 26px; height: 26px"
             :title="$t('sidebar.menu.rescan')"
             :aria-label="$t('sidebar.menu.rescan')"
-            @click="onRescanClick()"
+            @click="rescan()"
           >
             <RefreshCw :size="14" :stroke-width="1.7" :class="rescanning ? 'anim-spin' : ''" />
           </button>
@@ -298,13 +249,12 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
             :aria-label="
               anyExpanded ? $t('sidebar.menu.collapseAll') : $t('sidebar.menu.expandAll')
             "
-            @click="onCollapseAllClick"
+            @click="toggleCollapseAll"
           >
             <ChevronsDownUp v-if="anyExpanded" :size="14" :stroke-width="1.7" />
             <ChevronsUpDown v-else :size="14" :stroke-width="1.7" />
           </button>
           <button
-            ref="hiddenTriggerRef"
             data-sidebar-hidden-trigger
             class="flex items-center rounded text-text-4 transition hover:bg-surface hover:text-text"
             :class="ui.sidebarHiddenPopover.open ? 'bg-surface text-text' : ''"
@@ -312,7 +262,7 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
             :title="$t('sidebar.menu.hidden', { count: sessions.dismissedFolders.length })"
             :aria-label="$t('sidebar.menu.hidden', { count: sessions.dismissedFolders.length })"
             :aria-expanded="ui.sidebarHiddenPopover.open"
-            @click.stop="onHiddenClick"
+            @click.stop="toggleHiddenFolders"
             @keydown.enter.stop
             @keydown.space.stop
           >
@@ -343,7 +293,7 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
           :title="$t('sidebar.jump.label')"
           :aria-label="$t('sidebar.jump.label')"
           :aria-expanded="ui.sidebarJumpPalette.open"
-          @click.stop="onSearchClick"
+          @click.stop="toggleJump"
         >
           <Search :size="14" :stroke-width="1.5" />
         </button>
