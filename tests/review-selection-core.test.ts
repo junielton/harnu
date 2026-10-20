@@ -27,7 +27,9 @@ describe('U1-AC-1 — rows → §3 fields', () => {
   it.each([
     ['context', 0, { line: 10, side: 'RIGHT' }],
     ['del', 1, { line: 11, side: 'LEFT' }],
-    ['add', 2, { line: 11, side: 'RIGHT' }]
+    ['add', 2, { line: 11, side: 'RIGHT' }],
+    // old 12 / new 13: the one row where a context→oldLine mutant gives a different answer
+    ['context (oldLine ≠ newLine)', 4, { line: 13, side: 'RIGHT' }]
   ])('a %s row anchors per the table', (_kind, row, expected) => {
     expect(anchorOfRow(speech.hunks[0].rows[row])).toEqual(expected)
   })
@@ -47,7 +49,9 @@ describe('U1-AC-1 — rows → §3 fields', () => {
     // mixed: del (LEFT) → add (RIGHT), rendered order
     [1, 3, { line: 12, side: 'RIGHT', startLine: 11, startSide: 'LEFT' }],
     // context → del is impossible in order, but context(0) → del(1) is mixed too
-    [0, 1, { line: 11, side: 'LEFT', startLine: 10, startSide: 'RIGHT' }]
+    [0, 1, { line: 11, side: 'LEFT', startLine: 10, startSide: 'RIGHT' }],
+    // an add row then a context row whose old and new numbers differ: both RIGHT
+    [3, 4, { line: 13, side: 'RIGHT', startLine: 12, startSide: 'RIGHT' }]
   ])('rows %i..%i map to %j', (from, to, expected) => {
     expect(rangeFields(speech.hunks[0].rows, from, to)).toEqual(expected)
   })

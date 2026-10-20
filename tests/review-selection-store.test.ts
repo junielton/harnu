@@ -261,11 +261,36 @@ describe('U1-AC-5 — §4.2, one test per row', () => {
   it('restore() puts a cancelled drag back, and a later shift-click extends from it', () => {
     const { selection } = setup()
     selection.select(SPEECH, 0, 1)
-    const prev = selection.live
+    const prev = selection.capture()
     selection.select(SPEECH, 1, 0)
     selection.restore(prev)
-    expect(selection.live).toBe(prev)
+    expect(selection.live).toBe(prev.sel)
     selection.extend(SPEECH, 0, 3)
     expect(selection.live).toMatchObject({ rowFrom: 1, rowTo: 3 })
+  })
+
+  it('restore() keeps the anchor of a REVERSED range, not its first row', () => {
+    const { selection } = setup()
+    selection.select(SPEECH, 0, 3)
+    selection.extend(SPEECH, 0, 1) // shift-click upward: rows 1..3, anchored at 3
+    expect(selection.live).toMatchObject({ rowFrom: 1, rowTo: 3 })
+    const prev = selection.capture()
+
+    selection.select(SPEECH, 0, 0) // a drag starts…
+    selection.restore(prev) // …and Esc cancels it
+    expect(selection.live).toBe(prev.sel)
+
+    selection.extend(SPEECH, 0, 5) // the next shift-click still pivots on row 3
+    expect(selection.live).toMatchObject({ rowFrom: 3, rowTo: 5 })
+  })
+
+  it('restoring "nothing" leaves no anchor to extend from', () => {
+    const { selection } = setup()
+    const none = selection.capture()
+    selection.select(SPEECH, 0, 2)
+    selection.restore(none)
+    expect(selection.live).toBeNull()
+    selection.extend(SPEECH, 0, 4) // no anchor → a plain select
+    expect(selection.live).toMatchObject({ rowFrom: 4, rowTo: 4 })
   })
 })

@@ -304,7 +304,18 @@ describe('U1-AC-9 — the bar is not a receipt and shows no count', () => {
     expect(bar().exists()).toBe(true)
     const evidenceHeader = wrapper.get('section')
     expect(evidenceHeader.element.contains(bar().element)).toBe(false)
-    expect(bar().element.closest('section')).toBe(bar().element) // not nested in any other section
+    // Its host is the review body, which sits inside no <section> at all — in particular
+    // not the evidence header, whose own <section> must not be its ancestor.
+    expect(bar().element.parentElement?.closest('section')).toBeNull()
+    expect(bar().element.closest('section')).toBe(bar().element)
+  })
+
+  it('the Clear selection button clears it and takes the bar away', async () => {
+    await press(gutters()[2])
+    await wrapper.get('[data-test="selection-clear"]').trigger('click')
+    expect(selection().live).toBeNull()
+    expect(selection().lastCleared).toBe('user')
+    expect(bar().exists()).toBe(false)
   })
 
   it('renders nothing at all with no selection and no notice', () => {

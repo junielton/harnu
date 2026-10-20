@@ -64,7 +64,7 @@ import {
 import type { DiffFile, DiffHunk, DiffRow } from '../../../main/review-core'
 import { correctiveFromSnapshot, UNKNOWN_CORRECTIVE } from '../../../main/review-corrective'
 import { gutterKeyAction, stepRow, type RowPos } from '../lib/review-selection'
-import type { LocalSelectionState } from '../lib/review-selection'
+import type { CapturedSelection } from '../stores/review-selection'
 
 const { t } = useI18n()
 const ui = useUiStore()
@@ -296,7 +296,7 @@ function onGutterFocus(path: string, hi: number, ri: number): void {
 
 /** A press that has not been released yet. */
 let drag: {
-  previous: LocalSelectionState | null
+  previous: CapturedSelection
   start: RowPos
   path: string
   moved: boolean
@@ -314,7 +314,7 @@ function endDrag(): void {
 
 /** Was the press made on a row that was already the only selected one? */
 function wasOnly(d: NonNullable<typeof drag>): boolean {
-  const p = d.previous
+  const p = d.previous.sel
   return (
     !!p &&
     p.subjectType === 'LINE' &&
@@ -345,7 +345,7 @@ function onGutterDown(e: MouseEvent, file: DiffFile, hi: number, ri: number): vo
     return
   }
   drag = {
-    previous: sel,
+    previous: selection.capture(),
     start: { hunk: hi, row: ri },
     path: file.path,
     moved: false,

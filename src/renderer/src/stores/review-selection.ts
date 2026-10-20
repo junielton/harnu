@@ -29,6 +29,12 @@ import {
   type SelectionNotice
 } from '../lib/review-selection'
 
+/** What {@link capture} returns and {@link restore} takes back. */
+export interface CapturedSelection {
+  sel: LocalSelectionState | null
+  anchor: RowPos | null
+}
+
 /** Why the selection went away — recorded so a test (and a reader) can tell. */
 export type ClearReason = 'user' | 'toggle' | 'esc' | 'collapse' | 'snapshot' | 'context' | 'reset'
 
@@ -155,13 +161,20 @@ export const useReviewSelectionStore = defineStore('reviewSelection', () => {
     return live.value?.subjectType === 'FILE' && live.value.path === path
   }
 
-  /** Put back what a cancelled drag started from. */
-  function restore(prev: LocalSelectionState | null): void {
-    live.value = prev
-    anchor =
-      prev && prev.subjectType === 'LINE' && prev.hunkIndex !== null && prev.rowFrom !== null
-        ? { hunk: prev.hunkIndex, row: prev.rowFrom }
-        : null
+  /**
+   * The selection AND where its range began, for a drag that may be cancelled.
+   * The anchor is not recoverable from the selection: a range made by shift-
+   * clicking upward starts at its LAST row, so rebuilding it from `rowFrom`
+   * would silently move the anchor.
+   */
+  function capture(): CapturedSelection {
+    return { sel: live.value, anchor }
+  }
+
+  /** Put back what a cancelled drag started from, anchor included. */
+  function restore(prev: CapturedSelection): void {
+    live.value = prev.sel
+    anchor = prev.sel ? prev.anchor : null
     notice.value = null
   }
 
@@ -232,6 +245,7 @@ export const useReviewSelectionStore = defineStore('reviewSelection', () => {
     toggleFile,
     isFileSelected,
     isOnlyRow,
+    capture,
     restore,
     clear,
     dismissNotice,

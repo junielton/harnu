@@ -10806,21 +10806,26 @@ standard `focus-visible` accent ring, inset.
   the four light ones (`light`, `catppuccin-latte`, `github-light`, `gruvbox-light`) are
   where it washes out first. Verified in at least `dark`, `github-light` and one more.
 
-**The selection bar.** A sibling of the diff split, anchored `sticky bottom-0` at the
-end of the review body: `rounded border border-border bg-surface`, `px-3 py-2`,
-12px text, `.anim-fade-in` on enter (§7). **Never** inside the evidence header or the
-discrepancy strip — those are receipts, and this bar will eventually carry a
-conversation's delivery state. Layout, left to right: a 2px accent bar, the path
-(mono, truncating from the right, full path in `title`), the range text, then the
-actions, then the hint.
+**The selection bar.** A sibling of the diff split, the last child of the review body,
+`sticky -bottom-4 z-[4]`: `rounded border border-border bg-surface`, `px-3 py-2`,
+12px text, `shadow-pop` (it floats over the diff), `.anim-fade-in` on enter (§7).
+**`-bottom-4`, not `bottom-0`, on purpose:** a sticky child pins inside its scroller's
+padding, and the review body carries `pb-7` (28px), so `bottom-0` would hold the bar
+28px above the pane edge with the diff scrolling visibly through the gap; `-bottom-4`
+leaves it 12px off the edge. `z-[4]` puts it above the sticky file headers (`z-[2]`).
+**Never** inside the evidence header or the discrepancy strip — those are receipts,
+and this bar will eventually carry a conversation's delivery state. Layout, left to
+right: a 2px accent bar, the path (mono, truncating from the right, full path in
+`title`), the range text, then the actions, then the hint on a row of its own.
 
 - **Range text** — `L85` (one row), `L85–92` (same side), `old L85–92` (left side),
   `old L85 – new L92` (mixed), `whole file`.
 - **Actions** — U1: `Clear selection` only (a `.btn` ghost, `h-26px`). The `actions`
   slot before it is empty in U1 and is where `Ask about this` and `Copy as text` land
   in U2b.
-- **Hint** — transient, one line, `role="status"`, `--text-3`: `A range stays inside
-one hunk` after a clamp; `The head moved (a1b2c3d → e4f5a6b). Selection cleared.`
+- **Hint** — transient, one line, `role="status"`, 11.5px `--text-3` (the same
+  size as the submit confirm's boundary line), on its own full-width row and
+  absent from layout while empty: `A range stays inside one hunk` after a clamp; `The head moved (a1b2c3d → e4f5a6b). Selection cleared.`
   after a refresh moved the head (SHAs short, never ref names). With no selection and
   a hint the bar shows the hint and a `Dismiss` button.
 - **Below ~1000px** (`NARROW_PX`, measured on the pane body) the bar wraps to two
