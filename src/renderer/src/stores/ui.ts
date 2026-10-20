@@ -178,6 +178,38 @@ export interface SidebarJumpPaletteState {
 }
 
 /**
+ * The anchored popovers whose open flag lives here (T486 U4a, spec §3.5 / §6.1):
+ * the Topbar's Activity bell and Mission pill, the footer's pasted images,
+ * Claude service status and plan usage, and the Fleet rail's state filter. Each
+ * component keeps its own Esc and click-outside handlers; the flag moved here so
+ * a keybinding can open the popover and so `anyPopoverOpen` can tell the App's
+ * Esc binding (U4b `view.closeTakeover`) that a popover owns this Esc.
+ *
+ * They sit OUTSIDE the floating-surface mutex below, as they did when the flags
+ * were component-local: opening one never closes the palette or a dialog, and
+ * only the footer pair (pasted images ↔ plan usage) close each other.
+ */
+export const POPOVER_IDS = [
+  'activity',
+  'missionProgress',
+  'pastedImages',
+  'claudeStatus',
+  'usagePanel',
+  'inboxFilter'
+] as const
+export type PopoverId = (typeof POPOVER_IDS)[number]
+
+function popoverFlags(): Record<PopoverId, boolean> {
+  return Object.fromEntries(POPOVER_IDS.map((id) => [id, false])) as Record<PopoverId, boolean>
+}
+
+/** The footer popovers that close each other when one opens. */
+const POPOVER_MUTEX: Partial<Record<PopoverId, PopoverId>> = {
+  pastedImages: 'usagePanel',
+  usagePanel: 'pastedImages'
+}
+
+/**
  * Hover preview state. The preview is anchored to the trigger row's bounding
  * rectangle and shows after a 400 ms delay (see `useHoverPreview`).
  */
@@ -325,6 +357,19 @@ export const useUiStore = defineStore('ui', () => {
   const palette = ref<PaletteState>({ open: false })
   const sidebarHiddenPopover = ref<SidebarHiddenPopoverState>({ open: false, anchorRect: null })
   const sidebarJumpPalette = ref<SidebarJumpPaletteState>({ open: false })
+
+  // T486 U4a — the anchored popovers (see `POPOVER_IDS`). `popoverAnchors[id]`
+  // is whether the button the popover hangs off is rendered right now; its
+  // component reports it. A popover cannot open without its anchor, and losing
+  // the anchor closes it, so `anyPopoverOpen` never stays true with nothing on
+  // screen (it would swallow every later Esc).
+  const popovers = ref<Record<PopoverId, boolean>>(popoverFlags())
+  const popoverAnchors = ref<Record<PopoverId, boolean>>(popoverFlags())
+  // The pasted-images lightbox (a tile in that popover opens it). `null` = closed.
+  const imageLightboxIndex = ref<number | null>(null)
+  const anyPopoverOpen = computed<boolean>(
+    () => POPOVER_IDS.some((id) => popovers.value[id]) || imageLightboxIndex.value !== null
+  )
 
   // NOTE (T83 S0): the Approval Inbox used to be a first-level floating surface
   // here (`inbox: { open }`). It is now the Inbox rail — a persistent fourth
@@ -759,6 +804,44 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   /**
+   * Open popover `id` — what its button and its keybinding both run (through
+   * {@link togglePopover}). Refused (returns false) while its anchor is not
+   * rendered. Opening a footer popover closes its mutex peer.
+   */
+  function openPopover(id: PopoverId): boolean {
+    if (!popoverAnchors.value[id]) return false
+    const peer = POPOVER_MUTEX[id]
+    if (peer) closePopover(peer)
+    popovers.value[id] = true
+    return true
+  }
+
+  /** Close popover `id`. Closing pasted images ends its lightbox too. */
+  function closePopover(id: PopoverId): void {
+    popovers.value[id] = false
+    if (id === 'pastedImages') imageLightboxIndex.value = null
+  }
+
+  function togglePopover(id: PopoverId): void {
+    if (popovers.value[id]) closePopover(id)
+    else openPopover(id)
+  }
+
+  /** A popover's component reports whether its anchor button is rendered. */
+  function setPopoverAnchor(id: PopoverId, present: boolean): void {
+    popoverAnchors.value[id] = present
+    if (!present && popovers.value[id]) closePopover(id)
+  }
+
+  function openImageLightbox(index: number): void {
+    imageLightboxIndex.value = index
+  }
+
+  function closeImageLightbox(): void {
+    imageLightboxIndex.value = null
+  }
+
+  /**
    * Open the Roadmap Kanban board for a folder (T80 §4). Not part of the floating
    * mutex — it is a main-pane view. Thin wrapper over `openView` (T297/T299):
    * kept as its own named export so the ~47 call sites outside this store never
@@ -1065,6 +1148,10 @@ export const useUiStore = defineStore('ui', () => {
     palette,
     sidebarHiddenPopover,
     sidebarJumpPalette,
+    popovers,
+    popoverAnchors,
+    imageLightboxIndex,
+    anyPopoverOpen,
     activeView,
     activeViewTitleKey,
     roadmap,
@@ -1104,6 +1191,12 @@ export const useUiStore = defineStore('ui', () => {
     closeSidebarHiddenPopover,
     openSidebarJumpPalette,
     closeSidebarJumpPalette,
+    openPopover,
+    closePopover,
+    togglePopover,
+    setPopoverAnchor,
+    openImageLightbox,
+    closeImageLightbox,
     openRoadmap,
     closeRoadmap,
     openUsageDashboard,

@@ -41,7 +41,7 @@
  * the terminal when it appears. If this ever starts stealing focus, it has
  * become the modal we deleted.
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { sessionTitle } from '../lib/session-label'
 import { onClickOutside, onKeyStroke } from '@vueuse/core'
@@ -58,6 +58,7 @@ import {
 } from 'lucide-vue-next'
 import { useSessionsStore, type Session } from '../stores/sessions'
 import { useLayoutStore, INBOX_RAIL_FILTERABLE_STATES } from '../stores/layout'
+import { useUiStore } from '../stores/ui'
 import { relativeTime } from '../composables/useRelativeTime'
 import { useMissionGrants } from '../composables/useMissionGrants'
 import ApprovalRow from './ApprovalRow.vue'
@@ -69,6 +70,7 @@ import type { ResponderMode, ShadowEntry } from '../../../preload'
 
 const sessions = useSessionsStore()
 const layout = useLayoutStore()
+const ui = useUiStore()
 const { t } = useI18n()
 
 // Minimized-strip minicards reuse the EXACT interactions the expanded cards
@@ -170,9 +172,14 @@ const orderLabel = computed(() =>
 const hasActiveStateFilter = computed(() => layout.inboxRailHiddenStates.size > 0)
 
 const filterAnchorRef = ref<HTMLElement | null>(null)
-const filterPopoverOpen = ref(false)
-onClickOutside(filterAnchorRef, () => (filterPopoverOpen.value = false))
-onKeyStroke('Escape', () => (filterPopoverOpen.value = false))
+// The open flag lives in the ui store (T486 U4a) so `inbox.filter` opens it and
+// the App's Esc binding can see it. Its button is in the expanded header only;
+// minimizing the rail (or unmounting it) takes the anchor away and closes it.
+const filterPopoverOpen = computed(() => ui.popovers.inboxFilter)
+watch(minimized, (m) => ui.setPopoverAnchor('inboxFilter', !m), { immediate: true })
+onBeforeUnmount(() => ui.setPopoverAnchor('inboxFilter', false))
+onClickOutside(filterAnchorRef, () => ui.closePopover('inboxFilter'))
+onKeyStroke('Escape', () => ui.closePopover('inboxFilter'))
 
 /** `BoardState` → the existing `board.state.*` i18n key (FleetBoardCard's
  *  own dot labels) — reused verbatim so the popover's legend copy never
@@ -453,7 +460,7 @@ onMounted(() => {
             :title="$t('approvalInbox.filter.title')"
             :aria-label="$t('approvalInbox.filter.title')"
             :aria-expanded="filterPopoverOpen"
-            @click="filterPopoverOpen = !filterPopoverOpen"
+            @click="ui.togglePopover('inboxFilter')"
           >
             <ListFilter :size="14" :stroke-width="1.7" />
             <span

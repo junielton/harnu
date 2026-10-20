@@ -94,6 +94,15 @@ export type ShortcutActionId =
   | 'repoGroup.rename'
   | 'repoGroup.resetName'
   | 'repoGroup.cleanup'
+  | 'inbox.open'
+  | 'inbox.toggleOrder'
+  | 'inbox.filter'
+  | 'inbox.showAll'
+  | 'view.activity'
+  | 'view.missionProgress'
+  | 'view.pastedImages'
+  | 'view.claudeStatus'
+  | 'view.usagePanel'
   | 'sidebar.cursor.down'
   | 'sidebar.cursor.up'
   | 'sidebar.cursor.right'
@@ -289,6 +298,18 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('repoGroup.rename', 'folders', null),
   def('repoGroup.resetName', 'folders', null),
   def('repoGroup.cleanup', 'folders', null),
+  // T486 §3.5 — the Fleet rail's header buttons and the Topbar / footer
+  // popovers (their open flags live in `stores/ui.ts`). All unbound.
+  // "Open approvals" stays in the empty palette, as it was before T486.
+  def('inbox.open', 'views', null, { paletteFeatured: true }),
+  def('inbox.toggleOrder', 'views', null),
+  def('inbox.filter', 'views', null),
+  def('inbox.showAll', 'views', null),
+  def('view.activity', 'views', null),
+  def('view.missionProgress', 'views', null),
+  def('view.pastedImages', 'views', null),
+  def('view.claudeStatus', 'views', null),
+  def('view.usagePanel', 'views', null),
   // Reserved — un-rebindable. Handled entirely in the main process, so none of
   // them has a renderer handler the palette could run.
   def('app.reload', 'app', 'F5', { ...MENU, reserved: true, palette: false }),
