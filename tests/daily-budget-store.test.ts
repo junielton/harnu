@@ -198,6 +198,31 @@ describe('daily-budget store', () => {
       expect(mock()).toHaveBeenCalledTimes(2)
     })
 
+    it('a failed re-read keeps the last good baseline and stays recoverable', async () => {
+      mock().mockResolvedValue({ baselinePct: 53, dayKey: todayKey() })
+      const budget = useDailyBudgetStore()
+      await budget.init()
+      const usage = useUsageStore()
+      const resetsAtMs = Date.now() + 3 * DAY
+      usage.snapshot = snapshotWith(55, resetsAtMs)
+      await flush()
+
+      // Live usage dropped below the baseline, but the re-read fails transiently.
+      mock().mockRejectedValue(new Error('x'))
+      usage.snapshot = snapshotWith(16, resetsAtMs)
+      await flush()
+      expect(mock()).toHaveBeenCalledTimes(2)
+      expect(budget.baselinePct).toBe(53)
+      expect(budget.budget.state).not.toBe('unavailable')
+
+      // A later trigger (the window's reset time moved) recovers the right value.
+      mock().mockResolvedValue({ baselinePct: 12, dayKey: todayKey() })
+      usage.snapshot = snapshotWith(16, Date.now() + 10 * DAY)
+      await flush()
+      expect(mock()).toHaveBeenCalledTimes(3)
+      expect(budget.baselinePct).toBe(12)
+    })
+
     it('does not re-fetch for ordinary telemetry pushes', async () => {
       const budget = useDailyBudgetStore()
       await budget.init()
