@@ -444,6 +444,83 @@ describe('DiagramPane layers — Review Focus 5: who gets the Layers group', () 
   })
 })
 
+// ── arrows drawn in the pane stay under every shape ─────────────────────────
+describe('DiagramPane layers — an arrow drawn in the pane sits at z 0', () => {
+  /** jsdom does no layout: pin the pane body so a release reads as inside the pane. */
+  function pinBody(w: VueWrapper): void {
+    const body = w.element.querySelector('[data-testid="diagram-canvas-host"]')!
+      .parentElement as HTMLElement
+    body.getBoundingClientRect = () =>
+      ({
+        left: 0,
+        top: 0,
+        right: 1000,
+        bottom: 800,
+        width: 1000,
+        height: 800,
+        x: 0,
+        y: 0,
+        toJSON: () => ({})
+      }) as DOMRect
+  }
+
+  /** Arrow tool: press on `from`, move, release on `to`'s element. */
+  async function drawArrow(w: VueWrapper, from: string, to: string): Promise<void> {
+    pinBody(w)
+    focusPane(w)
+    key('a')
+    await settle()
+    down(nodeEl(w, from), AT[from])
+    move([(AT[from][0] + AT[to][0]) / 2, (AT[from][1] + AT[to][1]) / 2])
+    move(AT[to])
+    nodeEl(w, to).dispatchEvent(
+      new MouseEvent('mouseup', {
+        bubbles: true,
+        button: 0,
+        clientX: AT[to][0],
+        clientY: AT[to][1]
+      })
+    )
+    await settle()
+  }
+
+  it('the Arrow tool mints the edge at z 0, and shapes added or restacked after it stay above it', async () => {
+    const w = mountPane()
+    await settle()
+    await drawArrow(w, 'n-m', 'n-c')
+    const drawn = graphOf(w)
+      .getEdges()
+      .filter((e) => e.id !== 'e-1')
+    expect(drawn).toHaveLength(1)
+    expect(drawn[0].getZIndex()).toBe(0)
+
+    // A box drawn afterwards takes max + 1 over the NODES, distinct from every one.
+    focusPane(w)
+    key('r')
+    await settle()
+    down(svgOf(w), [400, 300])
+    move([500, 380])
+    up([500, 380])
+    await settle()
+    const box = stack(w).at(-1)!
+    expect(FILE_ORDER).not.toContain(box)
+    const z = zOf(w)
+    for (const id of FILE_ORDER) expect(z[box]!, id).toBeGreaterThan(z[id]!)
+
+    // Bring to front keeps every node (z >= 1) above both arrows (z 0).
+    focusPane(w)
+    key('v')
+    await settle()
+    await select(w, 'n-a')
+    await layer(w, 'front')
+    expect(stack(w).at(-1)).toBe('n-a')
+    const after = zOf(w)
+    expect(after[drawn[0].id]).toBe(0)
+    expect(after['e-1']).toBe(0)
+    for (const id of stack(w)) expect(after[id]!, id).toBeGreaterThanOrEqual(1)
+  })
+})
+
 // ── creation paths and the agent ────────────────────────────────────────────
 describe('DiagramPane layers — duplicates and agent writes', () => {
   it('ctrl+d after a back puts the copy on top of the stack', async () => {

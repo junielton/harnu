@@ -517,7 +517,10 @@ this spec is silent, or disagrees with itself or the code. The rules above are u
 1. **Ranks for every node once restacked.** A minimal write is not expressible: unstacked
    nodes all load at z 1 and tie by file order. After the first real restack Save writes
    `zIndex` 1..n on every node, so an agent's `zIndex: 100` becomes its rank. Order is kept,
-   values are not. A board never restacked is saved with no `zIndex` added.
+   values are not. Adding a node to a board that already carries `zIndex` also ranks every
+   node (the new node has none, so the file no longer renders in the live order). A board
+   with no `zIndex` at all that is only moved, resized, renamed or restyled is saved with no
+   `zIndex` added.
 2. **Forward and backward step past the nearest overlapping node**, not one slot in the
    global list. Overlap is by area; boxes that only touch do not overlap.
 3. **Arrows are not layered.** Edges stay at 0, nodes at `>= 1`, so arrows always draw under
