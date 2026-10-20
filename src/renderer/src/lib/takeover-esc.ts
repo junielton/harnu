@@ -13,15 +13,40 @@
  * binding (Chromium runs a microtask checkpoint after each listener), so the
  * binding steps aside while `ui.anyPopoverOpen` is true.
  */
-import { isTextEntryTarget, notInTextEntry } from './text-entry'
+import { isTextEntryTarget } from './text-entry'
 import type { useUiStore } from '../stores/ui'
+
+/**
+ * `<input>` types that take no typed text. A focused one does not own Esc: the
+ * Needs-review checkbox in Cleanup keeps focus after a click, and Esc must still
+ * close the takeover. `isTextEntryTarget` (shared with every other binding) counts
+ * any input, so this binding narrows it here.
+ */
+const NON_TEXT_INPUT_TYPES = new Set([
+  'checkbox',
+  'radio',
+  'button',
+  'submit',
+  'reset',
+  'range',
+  'color',
+  'file',
+  'image'
+])
+
+/** Whether focus is in a field that takes typed text — Esc then belongs to it. */
+function inTypingField(): boolean {
+  if (!isTextEntryTarget()) return false
+  const el = document.activeElement
+  return !(el instanceof HTMLInputElement && NON_TEXT_INPUT_TYPES.has(el.type))
+}
 
 /** Whether the last key press started in a text field. */
 let lastKeyInTextEntry = false
 
 function recordKeyOrigin(): void {
   // Window capture: no field has reacted yet, so the focus is where the key was pressed.
-  lastKeyInTextEntry = isTextEntryTarget()
+  lastKeyInTextEntry = inTypingField()
 }
 
 /**
@@ -40,7 +65,7 @@ export function installKeyOrigin(): () => void {
  * `body` and the takeover would close under the user's cancelled edit.
  */
 export function keyNotFromTextEntry(): boolean {
-  return notInTextEntry() && !lastKeyInTextEntry
+  return !inTypingField() && !lastKeyInTextEntry
 }
 
 type UiStore = ReturnType<typeof useUiStore>

@@ -215,4 +215,31 @@ describe('AC-19 — Esc in a text field inside a takeover never closes it', () =
     await pressEsc(document.body)
     expect(ui.activeView).toBeNull()
   })
+  // A focused control that types nothing (Cleanup's Needs-review checkbox keeps
+  // focus after a click) is not a text field: Esc still closes the takeover.
+  for (const type of ['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color', 'file']) {
+    it(`an <input type="${type}"> does not hold the takeover`, async () => {
+      const ui = useUiStore()
+      open(ui, 'cleanup')
+      const el = document.createElement('input')
+      el.type = type
+      document.body.appendChild(el)
+      el.focus()
+      await pressEsc(el)
+      expect(ui.activeView).toBeNull()
+    })
+  }
+
+  for (const type of ['text', 'search', 'number', 'email', 'password', 'url', 'date']) {
+    it(`an <input type="${type}"> keeps it`, async () => {
+      const ui = useUiStore()
+      open(ui, 'cleanup')
+      const el = document.createElement('input')
+      el.type = type
+      document.body.appendChild(el)
+      el.focus()
+      await pressEsc(el)
+      expect(ui.activeView?.id).toBe('cleanup')
+    })
+  }
 })
