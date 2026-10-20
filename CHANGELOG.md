@@ -24,6 +24,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ### Fixed
 
 - An arrow you delete, save and then bring back with undo is now saved with its label, routing and extra data, instead of losing them.
+- An arrow you draw in the canvas pane now stays under the shapes it connects, instead of painting over them until the board was reopened.
 
 ## 2026-10-19
 
