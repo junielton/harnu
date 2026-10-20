@@ -204,6 +204,7 @@ The pane refuses rather than guessing, and says which of these it is:
 - **Unused images are never cleaned up.** Delete an image node, or paste one and never save, and its file stays in `assets/`. Under `.harnu/out/canvas/` — the default board — that folder is gitignored, so it costs you nothing but disk. Under `docs/canvas/` it is **not**: that is a tracked path, so its `assets/` is tracked too, and stale binaries there will follow you into a commit unless you delete them.
 - **Arrows cannot float free.** An arrow always joins two shapes; there is no way to draw one that starts or ends on empty board.
 - **A small set of shapes.** Boxes, ellipses, diamonds and text labels; there are no other outlines (triangles, cylinders, and so on) yet.
+- **Diamonds and ellipses are hit as rectangles.** The Eraser and the Arrow treat them as the rectangle around them, so a press or stroke in the empty corner just outside the outline still counts as the shape.
 - **Copy and paste between canvases** isn't there; **Ctrl/⌘ + D** duplicates within one board.
 - **Stacking order** (bring to front / send to back) has no gesture; a board written with one keeps it.
 - **A node kind Harnu doesn't know** — a component from a _newer_ build than yours — renders as a dashed box, so an unfamiliar board still opens instead of failing. You can move and delete it, and saving keeps it the kind it was, so opening it in the newer build shows it properly again.
