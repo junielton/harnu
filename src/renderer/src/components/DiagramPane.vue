@@ -512,9 +512,10 @@ function applyStylePatch(patch: CanvasStylePatch): void {
     const props = nodeProps(node)
     const next = mergeCanvasStyle(props, own)
     if (ObjectExt.isEqual(next, props)) continue
-    const { props: _old, ...rest } = (node.getData() ?? {}) as Record<string, unknown>
-    void _old
-    writes.push([node, next === undefined ? rest : { ...rest, props: next }])
+    const data: Record<string, unknown> = { ...(node.getData() as Record<string, unknown>) }
+    if (next === undefined) delete data.props
+    else data.props = next
+    writes.push([node, data])
   }
   if (writes.length === 0) return
   g.startBatch(STYLE_BATCH)
@@ -1697,16 +1698,22 @@ const toolbarOwnRow = ref(false)
  * appearing or hiding never flips the row.
  */
 function measureToolbar(): void {
-  measureStylePanel()
-  const box = bodyEl.value
-  const cluster = clusterEl.value
-  const bar = toolbarEl.value?.querySelector<HTMLElement>('[role="toolbar"]')
-  if (!box || !cluster || !bar) return
-  toolbarOwnRow.value = toolbarNeedsOwnRow(
-    box.clientWidth,
-    bar.offsetWidth,
-    cluster.offsetLeft + cluster.offsetWidth
-  )
+  try {
+    const box = bodyEl.value
+    const cluster = clusterEl.value
+    const bar = toolbarEl.value?.querySelector<HTMLElement>('[role="toolbar"]')
+    if (!box || !cluster || !bar) return
+    toolbarOwnRow.value = toolbarNeedsOwnRow(
+      box.clientWidth,
+      bar.offsetWidth,
+      cluster.offsetLeft + cluster.offsetWidth
+    )
+  } finally {
+    // AFTER the row write, on every path: the `nextTick` inside then chains behind
+    // the re-render that write queued, so the panel measures the toolbar where it
+    // now sits rather than where it was (it would overlap a freshly own-row bar).
+    measureStylePanel()
+  }
 }
 watch(
   () => state.value.status,
@@ -1720,9 +1727,11 @@ watch(
 /**
  * The properties panel's slot (design.md §6): collapsed below 384px of pane, and
  * 8px under the zoom cluster — or under the toolbar once it has its own row. The
- * width is read now; the top after a tick, once a toolbar row change measured in
- * the same pass has been rendered. A body with no layout (0 wide) collapses
- * nothing: there is no width to judge by.
+ * width is read now; the top after a tick. Callers that change `toolbarOwnRow`
+ * must call this AFTER that write (see `measureToolbar`): Vue's `nextTick` then
+ * resolves after the re-render the write queued, so the toolbar's offsets are
+ * its new ones. A body with no layout (0 wide) collapses nothing: there is no
+ * width to judge by.
  */
 function measureStylePanel(): void {
   const box = bodyEl.value
