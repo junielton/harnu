@@ -201,6 +201,16 @@ async function settleUntil(done: () => boolean, timeoutMs = 5000): Promise<void>
   while (!done() && Date.now() < deadline)
 }
 
+/**
+ * Mount the pane and wait until every node of the board has rendered. One `settle()`
+ * is not always enough on a loaded CI runner: X6 renders in time-sliced jobs.
+ */
+async function mountReady(): Promise<VueWrapper> {
+  const w = mountPane()
+  await settleUntil(() => FILE_ORDER.every((id) => nodeEl(w, id) !== null))
+  return w
+}
+
 /** Simulate the file watcher (an agent's write) and wait for the reload to land. */
 async function reloadFromDisk(w: VueWrapper): Promise<void> {
   const before = nodeEl(w, 'n-a')
@@ -211,8 +221,7 @@ async function reloadFromDisk(w: VueWrapper): Promise<void> {
 // ── a move, Save and undo ───────────────────────────────────────────────────
 describe('DiagramPane layers — a move restacks, saves and undoes as one step', () => {
   it('front on the bottom box puts it on top, dirties the pane, and Save writes every rank', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountReady()
     expect(stack(w)).toEqual(FILE_ORDER)
     await select(w, 'n-a')
     await layer(w, 'front')
@@ -227,8 +236,7 @@ describe('DiagramPane layers — a move restacks, saves and undoes as one step',
   })
 
   it('one ctrl+z restores the file order and Save then writes no zIndex; ctrl+y restacks', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountReady()
     await select(w, 'n-a')
     await layer(w, 'front')
     expect(stack(w).at(-1)).toBe('n-a')
@@ -245,8 +253,7 @@ describe('DiagramPane layers — a move restacks, saves and undoes as one step',
   })
 
   it('multi-select front keeps the selection order: n-c, n-a, n-b, and one undo restores it', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountReady()
     await select(w, 'n-a', 'n-b')
     expect(selectedIds(w)).toEqual(['n-a', 'n-b'])
     await layer(w, 'front')
@@ -261,8 +268,7 @@ describe('DiagramPane layers — a move restacks, saves and undoes as one step',
 // ── Review Focus 4: a no-op writes nothing; z never reaches the edges ───────
 describe('DiagramPane layers — Review Focus 4: no-ops and the floor at 1', () => {
   it('front and forward on the top node write nothing; back keeps every z >= 1 and the edge at 0', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountReady()
     expect(stack(w).at(-1)).toBe('n-c')
     await select(w, 'n-c')
     await layer(w, 'front')
@@ -280,8 +286,7 @@ describe('DiagramPane layers — Review Focus 4: no-ops and the floor at 1', () 
   })
 
   it('a move on a clean board that changes nothing leaves it clean with Undo disabled', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountReady()
     await select(w, 'n-m')
     await layer(w, 'back')
     await layer(w, 'backward')
@@ -293,8 +298,7 @@ describe('DiagramPane layers — Review Focus 4: no-ops and the floor at 1', () 
 // ── Review Focus 2: a node drawn after a restack lands on top after a reload ─
 describe('DiagramPane layers — Review Focus 2: Save, draw, Save, reload', () => {
   it('a box drawn after a saved restack is the top node once the file is read back', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountReady()
     await select(w, 'n-a')
     await layer(w, 'front')
     await saveAndRead(w)
@@ -322,8 +326,7 @@ describe('DiagramPane layers — Review Focus 3: a theme switch', () => {
   afterEach(() => useThemeStore().set('default-dark'))
 
   it('keeps the live order and z, and undo/redo after it still walk the same steps', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountReady()
     await select(w, 'n-a')
     await layer(w, 'front')
     const order = stack(w)
@@ -362,8 +365,7 @@ describe('DiagramPane layers — Review Focus 3: a theme switch', () => {
       }))
     }
     canvasRead.mockImplementation(async (p: string) => ({ ok: true, path: p, doc: gapped }))
-    const w = mountPane()
-    await settle()
+    const w = await mountReady()
     focusPane(w)
     key('r')
     await settle()
@@ -403,8 +405,7 @@ describe('DiagramPane layers — Review Focus 3: a theme switch', () => {
 // ── Review Focus 5: every node kind, edges ignored ──────────────────────────
 describe('DiagramPane layers — Review Focus 5: who gets the Layers group', () => {
   it('the mockup card alone shows Layers and no style group', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountReady()
     await select(w, 'n-m')
     expect(selectedIds(w)).toEqual(['n-m'])
     expect(layersShown(w)).toBe(true)
@@ -412,8 +413,7 @@ describe('DiagramPane layers — Review Focus 5: who gets the Layers group', () 
   })
 
   it('ctrl+a shows Layers, and back restacks the nodes but never the edge', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountReady()
     focusPane(w)
     key('a', { ctrlKey: true })
     await settle()
@@ -436,8 +436,7 @@ describe('DiagramPane layers — Review Focus 5: who gets the Layers group', () 
   })
 
   it('an edge alone shows no panel', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountReady()
     await select(w, 'e-1')
     expect(selectedIds(w)).toEqual(['e-1'])
     expect(w.find('[data-testid="canvas-properties"]').exists()).toBe(false)
@@ -485,8 +484,7 @@ describe('DiagramPane layers — an arrow drawn in the pane sits at z 0', () => 
   }
 
   it('the Arrow tool mints the edge at z 0, and shapes added or restacked after it stay above it', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountReady()
     await drawArrow(w, 'n-m', 'n-c')
     const drawn = graphOf(w)
       .getEdges()
@@ -524,8 +522,7 @@ describe('DiagramPane layers — an arrow drawn in the pane sits at z 0', () => 
 // ── creation paths and the agent ────────────────────────────────────────────
 describe('DiagramPane layers — duplicates and agent writes', () => {
   it('ctrl+d after a back puts the copy on top of the stack', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountReady()
     await select(w, 'n-a')
     await layer(w, 'back')
     expect(stack(w)[0]).toBe('n-a')
@@ -537,8 +534,7 @@ describe('DiagramPane layers — duplicates and agent writes', () => {
   })
 
   it('an agent write with zIndex 10 on n-a, while clean, reloads with n-a on top', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountReady()
     expect(stack(w)).toEqual(FILE_ORDER)
     const written: CanvasDocument = {
       ...DOC,
@@ -559,8 +555,7 @@ describe('DiagramPane — an arrow deleted, saved and restored by undo', () => {
       edges: [{ ...DOC.edges[0], label: 'IPC', router: 'normal', props: { weight: 2 } }]
     }
     canvasRead.mockImplementation(async (p: string) => ({ ok: true, path: p, doc: labelled }))
-    const w = mountPane()
-    await settle()
+    const w = await mountReady()
     await select(w, 'e-1')
     expect(selectedIds(w)).toEqual(['e-1'])
     focusPane(w)
