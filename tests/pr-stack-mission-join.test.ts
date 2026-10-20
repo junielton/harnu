@@ -113,6 +113,18 @@ describe('findPrsForWorktrees', () => {
     expect(w.prs.map((p) => p.number).sort()).toEqual([7, 9])
   })
 
+  it('counts the commits the worktree branch holds beyond the default branch (T547)', async () => {
+    const { findPrsForWorktrees } = await import('../src/main/pr-stack')
+    const j = await findPrsForWorktrees(repo, { worktrees: [wt], branches: [], numbers: [] })
+    expect(j.worktrees[wt].commits).toBe(1)
+  })
+
+  it('leaves the commit count out for the main checkout itself — nothing beyond its own branch (T547)', async () => {
+    const { findPrsForWorktrees } = await import('../src/main/pr-stack')
+    const j = await findPrsForWorktrees(repo, { worktrees: [repo], branches: [], numbers: [] })
+    expect(j.worktrees[repo].commits).toBe(0)
+  })
+
   it('joins bare branches and PR numbers from ONE gh call', async () => {
     const { findPrsForWorktrees } = await import('../src/main/pr-stack')
     const j = await findPrsForWorktrees(repo, {

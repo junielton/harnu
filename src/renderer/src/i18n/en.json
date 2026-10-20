@@ -704,7 +704,7 @@
       "pr": {
         "merged": "merged",
         "closed": "closed",
-        "draft": "draft",
+        "isDraft": "draft",
         "changesRequested": "changes requested",
         "approved": "approved",
         "inReview": "in review"
@@ -4000,6 +4000,7 @@
   },
   "mission": {
     "pillTitle": "Mission “{title}” — {state}. Click for progress",
+    "pillTitleWithPulse": "Mission “{title}” — {state} · {pulse}. Click for progress",
     "progress": "Progress",
     "headline": {
       "single": "Step {n} of {m}",
@@ -4112,8 +4113,29 @@
     "markVerified": "Mark verified",
     "unmark": "Unmark",
     "openQuestions": "Open questions",
+    "pulse": {
+      "commits": "{n} commit | {n} commits",
+      "active": "active {age} ago",
+      "activeNow": "active just now",
+      "quiet": "no activity for {age}",
+      "quietNever": "no activity seen yet"
+    },
+    "pr": {
+      "line": "PR #{n} · {state}",
+      "state": {
+        "open": "open",
+        "draft": "draft",
+        "merged": "merged"
+      },
+      "ci": {
+        "passing": "CI green",
+        "failing": "CI red",
+        "pending": "CI running"
+      }
+    },
     "child": {
       "working": "working",
+      "workingHelpers": "working · helpers",
       "needsInput": "needs-input",
       "idle": "idle",
       "parked": "parked",
