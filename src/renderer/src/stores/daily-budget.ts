@@ -48,6 +48,10 @@ export const useDailyBudgetStore = defineStore('dailyBudget', () => {
       baselinePct.value = b.baselinePct
       baselineDayKey.value = b.dayKey
     } catch {
+      // A failed RE-read (the reset watch below) keeps the baseline already
+      // fetched for today: a transient IPC error must not blank a good number,
+      // and the watch retries on its next trigger.
+      if (baselineDayKey.value === dayKey.value) return
       // Nothing trustworthy to show: drop the stamp too, so the row reads
       // `unavailable` rather than pairing a null baseline with a stale day.
       baselinePct.value = null
