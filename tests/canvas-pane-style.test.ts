@@ -474,6 +474,31 @@ describe('DiagramPane properties panel — Review Focus 1: undo never paints an 
     expect(panel(w)).toBe(true)
   })
 
+  it('a theme switch keeps open resize handles on their node', async () => {
+    const w = mountPane()
+    await settle()
+    const handles = (): Element[] => [...w.element.querySelectorAll('.x6-widget-transform')]
+    // A real click is mousedown + mouseup + click; X6 opens the handles on `click`.
+    const at = AT['n-a']
+    focusPane(w)
+    down(nodeEl(w, 'n-a'), at)
+    for (const type of ['mouseup', 'click']) {
+      nodeEl(w, 'n-a').dispatchEvent(
+        new MouseEvent(type, { bubbles: true, button: 0, clientX: at[0], clientY: at[1] })
+      )
+    }
+    await settle()
+    expect(handles()).toHaveLength(1)
+    const before = handles()[0]
+
+    await switchTheme(w, LIGHT)
+    await settle()
+    expect(handles()).toHaveLength(1)
+    // A NEW widget, on the new view of the same node.
+    expect(handles()[0]).not.toBe(before)
+    expect(selectedIds(w)).toEqual(['n-a'])
+  })
+
   it('a theme switch recolours a styled board and leaves the pane clean', async () => {
     const styled: CanvasDocument = {
       ...DOC,

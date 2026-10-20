@@ -392,6 +392,34 @@ export function hideCanvasResizeHandles(graph: Graph): void {
 }
 
 /**
+ * The id of the node whose resize handles are open, or `null` (T536 U3). A
+ * redraw (a theme switch) replaces every cell and closes the handles with them;
+ * this is what lets the pane reopen them on the same node. X6 keeps its open
+ * widgets keyed by node in a field it does not type as public, so it is read
+ * defensively: an X6 without it reports none, and the handles simply stay closed.
+ */
+export function openCanvasResizeHandleId(graph: Graph): string | null {
+  const transform = graph.getPlugin('transform') as { widgets?: unknown } | undefined
+  const widgets = transform?.widgets
+  if (!(widgets instanceof Map)) return null
+  for (const node of widgets.keys()) {
+    if (node instanceof Node) return node.id
+  }
+  return null
+}
+
+/**
+ * Open the resize handles on node `id`, as a click on it in Select would. The
+ * plugin's own `resizing.enabled` still decides, so outside Select this opens
+ * nothing.
+ */
+export function showCanvasResizeHandles(graph: Graph, id: string): void {
+  const cell = graph.getCellById(id)
+  const transform = graph.getPlugin('transform') as Transform | undefined
+  if (transform && cell?.isNode()) transform.createWidget(cell)
+}
+
+/**
  * Arm or disarm the rubberband (the blank-area drag-select) at runtime.
  *
  * Spike, 2026-10-19 (T536 U1, ≤1h, real app): an isolated second Harnu
