@@ -238,8 +238,8 @@ the operator edits and Saves, the `origin` field is what tells you what they add
 no unsaved edits, it redraws to your version by itself (their view does not move) and
 their next Save keeps your change. If they DO have unsaved edits the pane does not touch
 them and raises its "changed on disk" strip instead. So a successful ACK means the file
-changed, not that the operator has seen it; and a Save made in the ~100 ms before their
-pane hears your write overwrites it (last writer wins), so re-read before building on it.
+changed, not that the operator has seen it; and a Save made in the fraction of a second (roughly
+100–250 ms) before their pane hears your write overwrites it (last writer wins), so re-read before building on it.
 
 **Shape names come from the ACK, never from guessing.** Every `draw_canvas` ACK carries
 `shapes` — the full catalog as `{ name, description, defaultSize, style }` — plus `path`,
