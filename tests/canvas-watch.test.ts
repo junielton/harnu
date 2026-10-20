@@ -100,6 +100,25 @@ describe('canvas-watch self-write suppression', () => {
     expect(consumeCanvasSuppression('/repo/b.harnucanvas.json', bytes('saved'))).toBe(false)
     expect(consumeCanvasSuppression(A, bytes('saved'))).toBe(true)
   })
+
+  it('forgets the pane’s write once the last pane on the path closes', () => {
+    // Pane Saves, closes, the file changes while nothing watches it, the pane
+    // reopens on the new content — then something restores exactly the old
+    // bytes (`git checkout`). That event is NOT the pane's echo and must arrive.
+    addCanvasRef(A)
+    recordCanvasSelfWrite(A, 'saved')
+    expect(removeCanvasRef(A)).toBe('last')
+    addCanvasRef(A)
+    expect(consumeCanvasSuppression(A, bytes('saved'))).toBe(false)
+  })
+
+  it('keeps the pane’s write while another pane still has the path open', () => {
+    addCanvasRef(A)
+    addCanvasRef(A)
+    recordCanvasSelfWrite(A, 'saved')
+    expect(removeCanvasRef(A)).toBe('more')
+    expect(consumeCanvasSuppression(A, bytes('saved'))).toBe(true)
+  })
 })
 
 /** U1-8 — an external change emits a watch event carrying the path. */

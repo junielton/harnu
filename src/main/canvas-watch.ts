@@ -62,6 +62,10 @@ export function removeCanvasRef(path: string): 'last' | 'more' | 'none' {
   const next = current - 1
   if (next === 0) {
     refCounts.delete(path)
+    // Nothing watches the path any more, so changes made from now on are never
+    // seen — a fingerprint kept past this point could later swallow somebody
+    // else's write that happens to restore the same bytes.
+    selfWrites.delete(path)
     return 'last'
   }
   refCounts.set(path, next)
