@@ -3817,8 +3817,10 @@ holding `document.activeElement` is the focused one.
   draws a **1px `--accent-line` outline inset on its root** (`outline-offset: -1px`, so
   the stack's `overflow-hidden` never clips it) while focus is anywhere inside it
   (`:focus-within`). Utilities: `focus-within:outline focus-within:outline-1
-focus-within:-outline-offset-1 focus-within:outline-accent-line`. It replaces the
-  UA focus ring on the root. No motion — it appears and disappears with focus. xterm
+focus-within:-outline-offset-1 focus-within:outline-accent-line`. The root (and the
+  Diagram pane's canvas body) carries `.no-default-ring`, opting out of the global
+  `:focus-visible` ring (`main.css`): that ring sits 1px OUTSIDE the box, where the
+  stack's `overflow-hidden` clips it, and it would draw a second ring. No motion — it appears and disappears with focus. xterm
   panes (shell, `claude`, the main terminal) draw none: their blinking cursor is the
   indicator.
 - **Close and maximize from the keyboard.** `⌘⇧M` toggles maximize on the focused

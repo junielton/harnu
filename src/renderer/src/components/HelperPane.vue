@@ -811,7 +811,7 @@ function onPromote(): void {
   -->
   <div
     ref="root"
-    class="relative h-full w-full overflow-hidden bg-bg outline-none"
+    class="no-default-ring relative h-full w-full overflow-hidden bg-bg"
     tabindex="-1"
     :data-focus-region="pane.id"
     @dragover="onDragOver"

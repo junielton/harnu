@@ -193,7 +193,11 @@ describe('focus indicator classes (AC-25)', () => {
       readFileSync(resolve(__dirname, '../src/renderer/src/components', f), 'utf8')
     const INDICATOR = 'focus-within:outline-accent-line'
     for (const f of ['MarkdownPane.vue', 'MemoryPane.vue', 'ExplorerPane.vue', 'DiagramPane.vue']) {
-      expect(read(f), f).toContain(INDICATOR)
+      // The global :focus-visible ring sits outside the box (clipped by the stack)
+      // and would win over the layered utility, so the root opts out of it.
+      const rootClass = /class="([^"]*focus-within:outline-accent-line[^"]*)"/.exec(read(f))?.[1]
+      expect(rootClass, f).toContain('no-default-ring')
+      expect(rootClass, f).toContain('focus-within:-outline-offset-1')
     }
     for (const f of ['HelperPane.vue', 'TerminalPane.vue']) {
       expect(read(f), f).not.toContain(INDICATOR)

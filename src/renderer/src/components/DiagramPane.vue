@@ -1016,7 +1016,7 @@ useFocusRegion(props.pane.id, rootEl, {
   <div
     ref="rootEl"
     data-testid="diagram-pane"
-    class="flex h-full w-full flex-col overflow-hidden bg-bg focus-within:outline focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-accent-line"
+    class="flex h-full w-full flex-col overflow-hidden bg-bg no-default-ring focus-within:outline focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-accent-line"
     :data-focus-region="pane.id"
     :aria-label="$t('diagramPane.label')"
   >
@@ -1149,7 +1149,7 @@ useFocusRegion(props.pane.id, rootEl, {
     <div
       ref="bodyEl"
       tabindex="0"
-      class="relative min-h-0 flex-1 overflow-hidden outline-none"
+      class="no-default-ring relative min-h-0 flex-1 overflow-hidden outline-none"
       @pointerdown="focusBody"
       @paste="onPaste"
       @dragover="onDragOver"

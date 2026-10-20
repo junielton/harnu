@@ -581,7 +581,7 @@ useFocusRegion(props.pane.id, rootEl, {
        so it needs no padding-top hack — the header sits in flow at the top. -->
   <div
     ref="rootEl"
-    class="flex h-full w-full flex-col overflow-hidden bg-bg focus-within:outline focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-accent-line"
+    class="flex h-full w-full flex-col overflow-hidden bg-bg no-default-ring focus-within:outline focus-within:outline-1 focus-within:-outline-offset-1 focus-within:outline-accent-line"
     tabindex="-1"
     :data-focus-region="pane.id"
     :aria-label="$t('markdownPane.label')"
