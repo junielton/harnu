@@ -29,7 +29,9 @@ function stubApi(): void {
         releases: [],
         lastReadVersion: '',
         lastFetchedAt: 0
-      }))
+      })),
+      // The real Topbar resolves the selected session's provider on mount.
+      claudeConfigGetResolved: vi.fn(async () => ({}))
     } as Record<string, unknown>,
     {
       get: (target, key: string) => {
@@ -173,5 +175,45 @@ describe('AC-38 — guarded actions run from the palette (real App registrations
     expect(ui.activeView).not.toBeNull()
     await runFromPalette('view.closeTakeover')
     expect(ui.activeView).toBeNull()
+  })
+})
+
+describe('palette "Rename the selected session" keeps focus on the title', () => {
+  it('the Topbar title holds focus after the palette closes', async () => {
+    const sessions = useSessionsStore()
+    sessions.folders.push({
+      path: '/repo/alpha',
+      alias: 'alpha',
+      expanded: true,
+      sessions: [
+        {
+          sessionId: 'claude-1',
+          projectPath: '/repo/alpha',
+          summary: 'a claude session',
+          firstPrompt: '',
+          modified: '2026-10-01T00:00:00Z',
+          resumable: true
+        }
+      ]
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any)
+    sessions.select('claude-1')
+    // The real Topbar owns the rename-focus watcher; everything else stays stubbed.
+    wrapper = mount(App, {
+      attachTo: document.body,
+      global: { plugins: [i18n], stubs: { ...STUBS, Topbar: false } }
+    })
+    await flushPromises()
+    // Focus starts outside the title, so the palette's focus trap has somewhere
+    // else to restore it to on close.
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    outside.focus()
+
+    await runFromPalette('session.rename')
+
+    const title = document.body.querySelector<HTMLElement>('[contenteditable="true"]')
+    expect(title).not.toBeNull()
+    expect(document.activeElement).toBe(title)
   })
 })

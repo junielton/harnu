@@ -82,6 +82,10 @@ const isOrchestrator = computed<boolean>(() => {
  * `true`. We focus the contenteditable title and immediately reset the flag
  * — the signal is single-shot, not a sticky toggle. See T-4.4 spec + the
  * Pinia ref pattern documented in `stores/ui.ts`.
+ *
+ * `flush: 'post'`: run from the command palette, the palette closes in the
+ * same tick and its focus trap restores the previously focused element in a
+ * pre-flush watcher. Focusing after that flush keeps the title focused.
  */
 watch(
   () => ui.requestRenameFocus,
@@ -89,7 +93,8 @@ watch(
     if (!focus) return
     titleEl.value?.focus()
     ui.requestRenameFocus = false
-  }
+  },
+  { flush: 'post' }
 )
 
 // Display title: the shared `sessionTitle` (BUG-78) — the same name the sidebar
