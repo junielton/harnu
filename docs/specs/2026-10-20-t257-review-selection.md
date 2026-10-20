@@ -663,11 +663,11 @@ The card asks this spec to state how `T275` (a **count chip** of unresolved revi
 - **O-2 — moved head.** Clear with notice and defer re-anchor to U3 (P6, recommended), or build the disclosed re-anchor now. §4.2.
 - **O-3 — channel gate.** A (inert until the global flip) or B (narrow carve-out, recommended) — also gate G-2. §6.7.
 
-**To be answered by live-verify (U2a-ii), recorded here when known:**
+**Answered by the U2a-ii live-verify** (2026-10-20, real `claude` 2.1.305, second isolated instance built from the U2a-ii worktree, a fixture repo with a `feature/speech-fix` → `main` diff; evidence under `.harnu/out/u2a-proof/` in that worktree):
 
-- **LV-1.** Does the band render inside Harnu's xterm.js at the supported widths? (P4W2 AC-14 left it untested; the band is useless to this feature if not.)
-- **LV-2.** Is a `Link`-free band accepted in a `read-only` plan-mode session?
-- **LV-3.** What does `$.session.append` do mid-turn — join the running turn or wait for the next? §9.3 assumes "next" and counts only turns that start after `delivered`.
+- **LV-1 — answered: yes.** The band renders inside Harnu's xterm.js, above the prompt, beside the engine's `[-]`. Measured from the xterm DOM rows at the PTY's own width: **80 columns** → `◆ Harnu ⧉ speech.ts L85–92` (lead only); **110** → the same (lead only); **144** → `◆ Harnu ⧉ speech.ts L85–92 · src/main` (lead and detail); **152** → `◆ Harnu ⧉ speech.ts L85–92 · src/main · ask your question below` (all three). The tiers follow `bodyColumns`, which is the PTY width less the engine's five cells, exactly as P4W2 §7.4 specifies: the lead-and-detail tier starts at 115 terminal columns and the full line at 149, not at 110 and 144. The `⧉` glyph is drawn by font fallback. After the model answered, the host's `line: null` removed the band; after `/clear`, `session.rebound` arrived and the host cleared the band for the new sid.
+- **LV-2 — answered: yes.** A `Link`-free band is accepted in a `read-only` plan-mode session (`--permission-mode plan`, footer `plan mode on`); the engine drew it with no refusal line.
+- **LV-3 — answered: it joins the running turn.** A selection sent 4 s into a three-`Read` turn was stored at 23:00:10.872, between the prompt (23:00:06.661) and the first assistant reply; the model request that followed the first tool result (23:00:18.7) carried the new row, while the request already in flight at the append (23:00:06.7) did not. So `$.session.append` mid-turn lands at the **next model request of the running turn**, not on the next turn. **§9.3's assumption ("next") is wrong in the safe direction:** the chip counts only turns that start after `delivered`, so a mid-turn selection that the running turn already used reads `delivered` until a later turn answers it. Nothing claims an answer that did not happen. U2b may want the chip to say so; U2a-i's tracker needs no change.
 
 **Risks:**
 
