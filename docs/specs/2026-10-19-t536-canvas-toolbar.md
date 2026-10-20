@@ -529,7 +529,10 @@ this spec is silent, or disagrees with itself or the code. The rules above are u
    changed on purpose.
 6. **Older builds and new shapes.** An older Harnu opens a restacked board with the same
    order, but a shape drawn there has no `zIndex`, loads at 1 and reappears near the bottom
-   after reload. Not data loss; the next save here rewrites ranks.
+   after reload. Not data loss. A plain move and Save here leaves it without a `zIndex` (Save
+   writes ranks only when the live order differs from the order the file already renders
+   in); it stays near the bottom until the operator restacks in this build, which then ranks
+   every node.
 7. **The edge-data fix lives in U4.** Delete, Save, undo, Save used to drop a restored
    arrow's `label`, `router` and `props`. U5 is reader-first, so the fix ships before it.
 8. **No keyboard shortcuts for layers.** The panel only; `Ctrl+]` and `Ctrl+[` are left for a

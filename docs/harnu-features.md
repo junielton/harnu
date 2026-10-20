@@ -260,7 +260,9 @@ higher draws on top. A node without one stacks at 1, in file order. Arrows alway
 under every node, whatever its `zIndex`. `null` on `update_node` removes it; `null` on
 `add_node` is `BAD_ARGS`, as is 0, a negative, a fraction or a string. When the operator
 restacks in the pane, their Save rewrites every node's `zIndex` to `1..n` — read the file
-before relying on a value you set earlier.
+before relying on a value you set earlier. When you add onto a board the operator may have
+restacked, pass a `zIndex` above the highest one you read from the file, or the new node
+sits at 1, under theirs.
 
 Other refusals: `BAD_ARGS` (op shape, op count, an undeclared field, an empty `style`, a bad `zIndex`),
 `BAD_GEOMETRY` (non-finite `x`/`y`, non-positive `width`/`height`),
