@@ -6,10 +6,12 @@
  *  - a ref count per absolute path (how many mounted DiagramPanes have this
  *    canvas open right now); the watcher only subscribes chokidar to paths with
  *    a ref > 0.
- *  - a one-shot self-write suppression flag per path — `canvas-write.ts` arms it
- *    immediately before its atomic rename, so the `change` event that same
- *    rename fires does not loop back to the pane that just saved as a false
- *    "changed on disk" push.
+ *  - a self-write fingerprint per path — when the PANE's own Save writes a
+ *    canvas, `canvas-write.ts` records a hash of the exact bytes it wrote, so the
+ *    `change` event that same rename fires does not loop back to the pane that
+ *    just saved as a false "changed on disk" push. Only the pane's own Save
+ *    records one; an agent's `draw_canvas` never does, so an open pane always
+ *    hears about it (BUG-202).
  *
  * The state is deliberately SEPARATE from the markdown watcher's rather than
  * shared: the two panes have different channels and different reload semantics
@@ -24,12 +26,19 @@
 
 import chokidar, { type FSWatcher } from 'chokidar'
 import { ipcMain, type BrowserWindow } from 'electron'
+import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { markdownKnownRoots } from './markdown-read'
 import { checkCanvasPathAllowed } from './canvas-read'
 
 const refCounts = new Map<string, number>()
-const suppressed = new Set<string>()
+/** Hash of the bytes the pane's own last Save wrote, per path. */
+const selfWrites = new Map<string, string>()
+
+function fingerprint(bytes: string | Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex')
+}
 
 /** Current ref count for `path` (0 if never registered). */
 export function canvasRefCount(path: string): number {
@@ -59,23 +68,38 @@ export function removeCanvasRef(path: string): 'last' | 'more' | 'none' {
   return 'more'
 }
 
-/** Arm a one-shot suppression for the NEXT change event on `path`. */
-export function suppressNextCanvasChange(path: string): void {
-  suppressed.add(path)
+/**
+ * Record that the pane itself is about to write `body` to `path`, so the change
+ * event that write fires can be recognised as the pane's own and swallowed.
+ *
+ * This is a CONTENT fingerprint, not a one-shot flag, on purpose. chokidar's
+ * `awaitWriteFinish` folds writes that land inside its settle window into one
+ * event, and a flag armed by the Save would swallow that merged event even when
+ * an agent's write was part of it — silently losing the agent's change. Judging
+ * by what is actually on disk when the event is handled cannot make that mistake.
+ */
+export function recordCanvasSelfWrite(path: string, body: string): void {
+  selfWrites.set(path, fingerprint(body))
 }
 
-/** Consume (and clear) the suppression flag for `path`. True at most once per
- *  `suppressNextCanvasChange` call. */
-export function consumeCanvasSuppression(path: string): boolean {
-  if (!suppressed.has(path)) return false
-  suppressed.delete(path)
-  return true
+/**
+ * Is `current` — what is on disk right now — exactly what the pane last wrote to
+ * `path`? True means the event is the pane's own echo and should be swallowed.
+ * Anything else (including a missing file) is somebody else's change, and it
+ * clears the fingerprint: from then on the pane's last write is history.
+ */
+export function consumeCanvasSuppression(path: string, current: Buffer | null): boolean {
+  const mine = selfWrites.get(path)
+  if (mine === undefined) return false
+  if (current !== null && fingerprint(current) === mine) return true
+  selfWrites.delete(path)
+  return false
 }
 
 /** Test-only: reset all module state between test cases. */
 export function __resetCanvasWatchStateForTests(): void {
   refCounts.clear()
-  suppressed.clear()
+  selfWrites.clear()
 }
 
 let watcher: FSWatcher | null = null
@@ -108,7 +132,11 @@ export async function notifyCanvasChanged(
   const gate = checkCanvasPathAllowed(resolve(resolvedPath), await markdownKnownRoots())
   if (!gate.ok) return gate.code
   if (canvasRefCount(resolvedPath) <= 0) return 'not-open'
-  if (consumeCanvasSuppression(resolvedPath)) return 'ok' // our own Save: swallow
+  // Read what is on disk NOW: the event is the pane's own echo only if it is
+  // still exactly the bytes the pane's Save wrote. A file that has since
+  // vanished (or been replaced) is somebody else's change.
+  const onDisk = await readFile(resolvedPath).catch(() => null)
+  if (consumeCanvasSuppression(resolvedPath, onDisk)) return 'ok' // our own Save: swallow
   const win = windowGetter?.()
   if (win && !win.isDestroyed()) win.webContents.send('canvas:changed', { path: resolvedPath })
   return 'ok'

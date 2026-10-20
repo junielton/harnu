@@ -139,6 +139,8 @@ By default a session draws on that folder's own board, stored inside the folder 
 - A session can't claim it was you. It's refused outright from stamping anything as yours, rather than being trusted not to.
 - After you edit the board and Save, the session can read it back and tell exactly what you changed — "you deleted three of my boxes, drew two of your own, and renamed this one" — instead of seeing an undifferentiated pile of shapes. That round trip is the point of the feature: the canvas is a place you and a session work on the same thing, not a picture it hands you.
 
+**It shows up live.** If the board is already open when a session draws on it and you have no unsaved edits, the pane redraws by itself and your view stays where it is — no Reload. If you do have unsaved edits, the pane leaves them alone and shows the "This canvas changed on disk" strip instead, so you decide. Either way your next Save can't silently undo the session's change.
+
 Deleting a box also deletes the arrows attached to it, whoever drew them — an arrow with nothing on one end isn't a thing the board can store.
 
 **Nothing lands half-done.** A drawing call is a batch of edits, and it's all-or-nothing: if any single edit in the batch is wrong, the file is left exactly as it was, byte for byte. You will never open a board and find half a diagram.

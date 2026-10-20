@@ -23,6 +23,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- **A session's drawing on an open canvas no longer disappears the next time you Save.** When a session changed a board that was already open in a pane, the pane never heard about it: it kept showing the old drawing, and your next Save wrote that old state back over the session's change (an arrow it added, a label it renamed) without any warning. The pane now redraws to the session's version straight away when you have no unsaved edits, with your view where you left it, and shows the "This canvas changed on disk" strip when you do. Your own Save still doesn't refresh the pane that made it, and a session's write that lands in the same fraction of a second as your Save is now noticed too. One narrow case remains: if you press Save in the ~100 ms before the pane has heard about a session's write, your Save wins, as it does when you Save over the strip.
 - An arrow you delete, save and then bring back with undo is now saved with its label, routing and extra data, instead of losing them.
 - An arrow you draw in the canvas pane now stays under the shapes it connects, instead of painting over them until the board was reopened.
 
