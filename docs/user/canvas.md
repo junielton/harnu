@@ -131,7 +131,7 @@ Undo history is **per pane and not saved**. Close the canvas or reload it and th
 
 ## Styling shapes and arrows
 
-Select one or more shapes in **Select** and a small **Properties** panel appears at the left edge of the board, under the zoom controls (or under the toolbar when the toolbar has wrapped onto its own row). Click an option and it applies to everything you have selected, straight away. The panel shows for any selection of shapes, even ones that take no styling: those get the Layers buttons described below. It is a floating panel, so it stays put when you pan or zoom.
+Select one or more shapes or arrows in **Select** and a small **Properties** panel appears at the left edge of the board, under the zoom controls (or under the toolbar when the toolbar has wrapped onto its own row). Click an option and it applies to everything you have selected, straight away. The panel shows for any selection of shapes, even ones that take no styling: those get the Layers buttons described below. It is a floating panel, so it stays put when you pan or zoom. The groups below are for shapes; arrows take a shorter list, described under [Styling arrows](#styling-arrows).
 
 | Group            | Options                                         | What it changes                                                                 |
 | ---------------- | ----------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -190,7 +190,7 @@ A few things worth knowing:
 
 Arrow styles are saved with the arrow when you press **Save**. **Arrow width and arrow stacking are not available:** you cannot make an arrow thicker, and arrows are never moved in front of shapes.
 
-> **Older Harnu versions drop arrow styles.** A board with styled arrows still opens in an older Harnu, and the arrows draw in the default accent colour. But if you **save** that board there, Harnu 0.3.46 and earlier removes the arrow colours and line styles (and nothing else) from the file. The first release that includes arrow styling keeps them. If a board is shared with people who have not updated, expect to restyle the arrows after one of them saves it.
+> **Older Harnu versions drop arrow styles.** A board with styled arrows still opens in an older Harnu, and the arrows draw in the default accent colour. But in Harnu 0.3.46 and earlier, **saving** that board, or a session running in that version drawing on it, removes the arrow colours and line styles (and nothing else) from the file. The first release that includes arrow styling keeps them. If a board is shared with people who have not updated, expect to restyle the arrows after one of them saves or draws on it.
 
 ### Layers
 
@@ -251,7 +251,7 @@ Because nothing is written until you save:
 - **Closing a canvas with unsaved edits does not close it.** You get a toast saying there are unsaved edits, with a **Discard** action. Only pressing Discard actually closes the pane. Reload and re-targeting the pane go through the same guard.
 - **An agent reading the file sees the last thing you saved**, never your work in progress. That is deliberate — an unsaved edit is not a decision yet.
 
-Saving also keeps any extra data stored inside an arrow's `props`. If an arrow in the file carries such data (styling, for example), opening the board, editing something else and saving writes it back untouched, rather than quietly dropping it. Extra data anywhere else on an arrow is not kept. An arrow you delete, save, and then bring back with undo and save again keeps its label, its routing and that extra data. That only holds in a Harnu version that knows about arrow styles: Harnu 0.3.46 and earlier drops arrow colours and line styles (and nothing else) when it saves a board that has them. The first release that includes arrow styling keeps them.
+Saving also keeps any extra data stored inside an arrow's `props`. If an arrow in the file carries such data (styling, for example), opening the board, editing something else and saving writes it back untouched, rather than quietly dropping it. Extra data anywhere else on an arrow is not kept. An arrow you delete, save, and then bring back with undo and save again keeps its label, its routing and that extra data. That only holds in a Harnu version that knows about arrow styles: Harnu 0.3.46 and earlier drops arrow colours and line styles (and nothing else) when it saves a board that has them, or when a session running in that version draws on it. The first release that includes arrow styling keeps them.
 
 If a save is refused, the pane says why and **the file on disk is left exactly as it was** — your work is still in front of you, nothing was half-written. The usual reason is something the board cannot represent; see the refusal table below.
 
