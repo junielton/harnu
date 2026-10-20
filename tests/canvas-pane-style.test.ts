@@ -193,6 +193,7 @@ const groups = (w: VueWrapper): string[] =>
   w
     .findAll('[data-testid^="canvas-prop-group-"]')
     .map((g) => g.attributes('data-testid')!.replace('canvas-prop-group-', ''))
+const layers = (w: VueWrapper): boolean => w.find('[data-testid="canvas-layers"]').exists()
 const isDirty = (w: VueWrapper): boolean => w.find('[data-testid="diagram-dirty-dot"]').exists()
 
 async function pick(w: VueWrapper, key: string, value: string | number): Promise<void> {
@@ -320,11 +321,22 @@ describe('DiagramPane properties panel — when it shows', () => {
     await settle()
 
     // Everything, edge included: the mockup card takes no key, so none is shared.
+    // T536 U4 changed this ON PURPOSE: it used to show no panel at all; now the
+    // panel shows for any node selection, with the Layers group and no style group.
     focusPane(w)
     key('a', { ctrlKey: true })
     await settle()
     expect(selectedIds(w)).toContain('n-m')
-    expect(panel(w)).toBe(false)
+    expect(panel(w)).toBe(true)
+    expect(layers(w)).toBe(true)
+    expect(groups(w)).toEqual([])
+
+    // A box plus the mockup card: no shared key, so again Layers alone (T536 U4).
+    await select(w, 'n-a', 'n-m')
+    expect(selectedIds(w)).toEqual(['n-a', 'n-m'])
+    expect(panel(w)).toBe(true)
+    expect(layers(w)).toBe(true)
+    expect(groups(w)).toEqual([])
 
     // A box, an ellipse and the edge: the ellipse has no corners; the edge is ignored.
     await select(w, 'n-a', 'n-e', 'e-1')

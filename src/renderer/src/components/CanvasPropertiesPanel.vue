@@ -3,12 +3,17 @@
 // pane → Properties panel"). Presentational only: the pane resolves which keys the
 // selection shares and what value each has (canvas/canvas-style.ts `panelValues`),
 // and this component reports the user's pick as a `change` patch. It never reads
-// the graph and never writes the file. Placement is the parent's job.
+// the graph and never writes the file. Placement is the parent's job. The Layers
+// group (T536 U4) is the same deal: it reports a `layer` move, the pane restacks.
 import { useI18n } from 'vue-i18n'
 import {
   AlignCenter,
   AlignLeft,
   AlignRight,
+  ArrowDown,
+  ArrowDownToLine,
+  ArrowUp,
+  ArrowUpToLine,
   Palette,
   Square,
   SquareRoundCorner
@@ -20,6 +25,7 @@ import {
   type CanvasStylePatch,
   type CanvasStyleValue
 } from './canvas/canvas-style'
+import { LAYER_MOVES, type LayerMove } from './canvas/canvas-layers'
 
 const props = defineProps<{
   /** The keys to offer, in `CANVAS_STYLE_KEYS` order. */
@@ -30,10 +36,13 @@ const props = defineProps<{
   collapsed: boolean
   /** While collapsed, whether the button has opened the panel. */
   open: boolean
+  /** The selection holds a node: offer the Layers group. */
+  layers: boolean
 }>()
 
 const emit = defineEmits<{
   change: [patch: CanvasStylePatch]
+  layer: [move: LayerMove]
   toggle: []
 }>()
 
@@ -61,7 +70,15 @@ const SIZE_TEXT: Readonly<Record<string, string>> = { s: 'S', m: 'M', l: 'L', xl
 
 const ALIGN_ICON = { left: AlignLeft, center: AlignCenter, right: AlignRight } as const
 
-const showGroups = (): boolean => !props.collapsed || props.open
+const LAYER_ICON = {
+  back: ArrowDownToLine,
+  backward: ArrowDown,
+  forward: ArrowUp,
+  front: ArrowUpToLine
+} as const
+
+const showGroups = (): boolean =>
+  (!props.collapsed || props.open) && (props.keys.length > 0 || props.layers)
 
 function label(key: CanvasStyleKey, value: CanvasStyleValue): string {
   return t(`diagramPane.style.value.${key}.${value}`)
@@ -164,6 +181,31 @@ const IDLE = 'text-text-3 hover:bg-surface-2 hover:text-text'
               SIZE_TEXT[value]
             }}</span>
             <span v-else class="text-caption leading-none">{{ value }}%</span>
+          </button>
+        </div>
+      </div>
+      <!-- Layers (T536 U4): actions, not radios — nothing is ever checked. -->
+      <div v-if="layers" class="flex flex-col gap-1">
+        <span class="eyebrow text-text-4">{{ $t('diagramPane.layers.group') }}</span>
+        <div
+          role="group"
+          data-testid="canvas-layers"
+          :aria-label="$t('diagramPane.layers.group')"
+          class="flex flex-wrap gap-0.5"
+        >
+          <button
+            v-for="move in LAYER_MOVES"
+            :key="move"
+            :data-testid="`canvas-layer-${move}`"
+            type="button"
+            :class="[BTN, IDLE]"
+            :title="$t(`diagramPane.layers.${move}`)"
+            :aria-label="$t(`diagramPane.layers.${move}`)"
+            @mousedown.stop
+            @pointerdown.stop
+            @click="emit('layer', move)"
+          >
+            <component :is="LAYER_ICON[move]" :size="16" />
           </button>
         </div>
       </div>
