@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
-import { computed, nextTick, ref } from 'vue'
+import { computed, defineComponent, nextTick, ref } from 'vue'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { setActivePinia, createPinia } from 'pinia'
@@ -19,6 +19,7 @@ import UsagePanel from '../src/renderer/src/components/UsagePanel.vue'
 import FooterImagePopover from '../src/renderer/src/components/FooterImagePopover.vue'
 import ImageLightbox from '../src/renderer/src/components/ImageLightbox.vue'
 import { fixtureView } from './helpers/mission-v3-view'
+import { useShortcuts, resetScopesForTests } from '../src/renderer/src/composables/useShortcuts'
 
 /**
  * T486 U4a — the footer / Topbar / Fleet-rail popovers' open flags live in
@@ -70,6 +71,16 @@ const esc = async (): Promise<void> => {
   await nextTick()
 }
 
+/** Press and release Alt+F the way a keyboard does, so `useMagicKeys` sees it. */
+const pressAltF = async (): Promise<void> => {
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Alt', code: 'AltLeft', altKey: true }))
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', altKey: true }))
+  await nextTick()
+  window.dispatchEvent(new KeyboardEvent('keyup', { key: 'f', code: 'KeyF', altKey: true }))
+  window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Alt', code: 'AltLeft' }))
+  await nextTick()
+}
+
 let wrapper: VueWrapper | null = null
 
 beforeEach(() => {
@@ -81,6 +92,7 @@ beforeEach(() => {
   images.loadThumbs = vi.fn(async () => {})
   images.clearThumbs = vi.fn()
   stubApi()
+  resetScopesForTests()
 })
 
 afterEach(() => {
@@ -420,6 +432,44 @@ describe('AC-54 — Fleet rail filter', () => {
     expect(popover(w).exists()).toBe(true)
   })
 
+  it('a bound chord opens it through useShortcuts, and does nothing once the rail is minimized', async () => {
+    const w = await mountRail()
+    const ui = useUiStore()
+    const handler = vi.fn(() => ui.togglePopover('inboxFilter'))
+    // The registration App.vue makes for `inbox.filter`, with a chord bound to it.
+    const Harness = defineComponent({
+      setup() {
+        useShortcuts([
+          {
+            id: 'inbox.filter',
+            scope: 'global',
+            keys: 'Alt+F',
+            enabled: () => ui.popoverAnchors.inboxFilter,
+            handler
+          }
+        ])
+        return () => null
+      }
+    })
+    const harness = mount(Harness)
+    try {
+      await pressAltF()
+      expect(popover(w).exists()).toBe(true)
+      await pressAltF()
+      expect(popover(w).exists()).toBe(false)
+
+      useLayoutStore().setInboxRailState('minimized')
+      await nextTick()
+      await pressAltF()
+      // enabled() stops it before the handler — no button, no binding.
+      expect(handler).toHaveBeenCalledTimes(2)
+      expect(ui.popovers.inboxFilter).toBe(false)
+      expect(ui.anyPopoverOpen).toBe(false)
+    } finally {
+      harness.unmount()
+    }
+  })
+
   it('minimizing the rail removes the anchor and closes the popover', async () => {
     await mountRail()
     const ui = useUiStore()
@@ -473,7 +523,16 @@ describe('AC-37 — each binding runs its button’s function', () => {
     })
   }
 
-  it('inbox.showAll is enabled only while a state is filtered out (its button shows then)', () => {
-    expect(registration('inbox.showAll')).toContain('layout.inboxRailHiddenStates.size > 0')
+  it('inbox.showAll is enabled only in the expanded rail while a state is filtered out (its buttons show then)', () => {
+    const reg = registration('inbox.showAll')
+    expect(reg).toContain('inboxRailExpanded.value')
+    expect(reg).toContain('layout.inboxRailHiddenStates.size > 0')
+  })
+
+  it('inbox.toggleOrder is enabled only in the expanded rail (its button is in that header)', () => {
+    expect(registration('inbox.toggleOrder')).toContain('enabled: () => inboxRailExpanded.value')
+    expect(app).toMatch(
+      /const inboxRailExpanded = computed\(\s*\(\) => showInboxRail\.value && layout\.inboxRailState === 'expanded'\s*\)/
+    )
   })
 })

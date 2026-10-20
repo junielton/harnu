@@ -419,6 +419,11 @@ const showHelperStack = computed(
  * Suppressed during Onboarding only, where there is no fleet to have a queue for.
  */
 const showInboxRail = computed(() => !showOnboarding.value && layout.inboxRailState !== 'hidden')
+// The rail's full header (order toggle, filter, "Show all") renders only here —
+// the minimized strip and the hidden rail have none of those buttons.
+const inboxRailExpanded = computed(
+  () => showInboxRail.value && layout.inboxRailState === 'expanded'
+)
 const inboxRailPx = computed(() => inboxRailWidthFor(layout.inboxRailState, layout.inboxRailWidth))
 
 // Reveal-on-appear: spawning the first pane into an empty worktree (Split, fork,
@@ -587,9 +592,11 @@ useShortcuts(
       handler: () => layout.setInboxRailState('expanded')
     },
     {
+      // Its button is in the expanded rail's header only.
       id: 'inbox.toggleOrder',
       scope: 'global',
       keys: kb('inbox.toggleOrder'),
+      enabled: () => inboxRailExpanded.value,
       handler: () => layout.toggleInboxRailOrder()
     },
     {
@@ -600,11 +607,12 @@ useShortcuts(
       handler: () => ui.togglePopover('inboxFilter')
     },
     {
-      // The "Show all" buttons render only while a state is filtered out.
+      // The "Show all" buttons render only in the expanded rail, while a state
+      // is filtered out.
       id: 'inbox.showAll',
       scope: 'global',
       keys: kb('inbox.showAll'),
-      enabled: () => layout.inboxRailHiddenStates.size > 0,
+      enabled: () => inboxRailExpanded.value && layout.inboxRailHiddenStates.size > 0,
       handler: () => layout.clearInboxRailStateFilter()
     },
     {
