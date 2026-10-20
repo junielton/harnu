@@ -49,14 +49,21 @@ const execFileAsync = promisify(execFile)
 const BLOB_MAX_BYTES = 8 * 1024 * 1024
 const GIT_TIMEOUT_MS = 15_000
 
-/** Everything the handlers reach for, injected so the tests run without Electron's app or a repo. */
-export interface SelectionDeps {
-  bindingForSid(sid: string): BindingView | null
-  enqueue: typeof channelEnqueue
+/**
+ * What composing a selection needs, and all it needs: git. **Copy as text** must work with no mod,
+ * no binding and no companion host (U2b-AC-2), so `review:selection:compose` takes only this.
+ */
+export interface GitDeps {
   /** `git rev-parse --verify --quiet <ref>^{commit}` in `folder`, or `null`. */
   resolveCommit(folder: string, ref: string): Promise<string | null>
   /** `git show <sha>:<path>` in `folder`, or `null` when it cannot be read. */
   readBlob(folder: string, sha: string, path: string): Promise<string | null>
+}
+
+/** Everything the send reaches for, injected so the tests run without Electron's app or a repo. */
+export interface SelectionDeps extends GitDeps {
+  bindingForSid(sid: string): BindingView | null
+  enqueue: typeof channelEnqueue
   /** Why the companion with this sid has no binding (the inject decision of its PTY). */
   noBindingReason(sid: string): NoBindingReason
   tracker: Pick<SelectionTracker, 'track'>
@@ -89,7 +96,7 @@ function prepare(raw: unknown, extraKeys: readonly string[]): Prepared | Selecti
 /** Head guard, blob read and compose: the one path both the send and the compose take. */
 async function composeFor(
   p: Prepared,
-  deps: SelectionDeps
+  deps: GitDeps
 ): Promise<{ ok: true; text: string } | SelectionFailure> {
   const { coords, ref } = p
   const [headSha, baseSha] = await Promise.all([
@@ -111,7 +118,7 @@ async function composeFor(
 /** `review:selection:compose`: the text a send would carry, with the same guard. Sends nothing. */
 export async function composeSelectionText(
   raw: unknown,
-  deps: SelectionDeps
+  deps: GitDeps
 ): Promise<SelectionComposeResult> {
   const p = prepare(raw, [])
   if ('ok' in p) return p
@@ -190,6 +197,17 @@ async function git(
   }
 }
 
+/** The real git reads. Nothing here touches the host, the channel or Electron. */
+export const gitDeps: GitDeps = {
+  resolveCommit: async (folder, ref) => {
+    const out = await git(folder, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], 65_536)
+    const sha = out?.trim() ?? ''
+    return sha.length > 0 ? sha : null
+  },
+  // Read-only: `show` of one blob at a pinned commit. Nothing is checked out or written.
+  readBlob: (folder, sha, path) => git(folder, ['show', `${sha}:${path}`], BLOB_MAX_BYTES)
+}
+
 async function liveDeps(emit: (channel: string, payload: unknown) => void): Promise<SelectionDeps> {
   // Lazy: `host.ts` pulls the whole companion host in, and it imports this module's registrar.
   const { companionHost } = await import('./host')
@@ -201,15 +219,9 @@ async function liveDeps(emit: (channel: string, payload: unknown) => void): Prom
   })
   createBandDriver().attach(tracker)
   return {
+    ...gitDeps,
     bindingForSid: (sid) => companionHost.bindingForSid(sid),
     enqueue: channelEnqueue,
-    resolveCommit: async (folder, ref) => {
-      const out = await git(folder, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], 65_536)
-      const sha = out?.trim() ?? ''
-      return sha.length > 0 ? sha : null
-    },
-    // Read-only: `show` of one blob at a pinned commit. Nothing is checked out or written.
-    readBlob: (folder, sha, path) => git(folder, ['show', `${sha}:${path}`], BLOB_MAX_BYTES),
     noBindingReason: (sid) => {
       const ptyId = ptyIdForClaudeSession(sid)
       return noBindingReason(
@@ -233,7 +245,7 @@ export function registerReviewSelectionHandlers(getWindow: () => BrowserWindow |
       return null
     }
   }
-  // These handlers never reject: a runtime that cannot start is the same refusal as no binding.
+  // These handlers never reject: a send whose runtime cannot start is the same refusal as no binding.
   const notReady = failure('NO_BINDING', { reason: 'unknown' })
 
   ipcMain.handle(
@@ -248,8 +260,8 @@ export function registerReviewSelectionHandlers(getWindow: () => BrowserWindow |
   ipcMain.handle(
     'review:selection:compose',
     async (_e, req: unknown): Promise<SelectionComposeResult> => {
-      const d = await deps()
-      return d ? composeSelectionText(req, d) : notReady
+      // No host, no binding, no mod: compose reads git and nothing else.
+      return composeSelectionText(req, gitDeps)
     }
   )
 }

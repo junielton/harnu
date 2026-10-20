@@ -20,13 +20,39 @@ export type FeatureRule = (b: BindingView) => boolean
 
 const rules = new Map<FeatureId, FeatureRule>()
 
+/**
+ * Rules that survive a later registration of the same feature (T257). A second
+ * `registerFeaturePolicy` replaces the first, which would silently switch off a class another wave
+ * depends on; a reserved rule is kept and ORed with the newcomer, so a later wave *extends* the
+ * set of bindings a feature is enabled for and can never take the reserved ones away.
+ */
+const reservedRules = new Map<FeatureId, FeatureRule>()
+
+const merged = (reserved: FeatureRule, rule: FeatureRule): FeatureRule => {
+  return (b) => {
+    try {
+      if (reserved(b)) return true
+    } catch {
+      // a throwing reserved rule enables nothing by itself; the newcomer still decides
+    }
+    return rule(b)
+  }
+}
+
 /** One row of the table (contract §11.1, "Enabled by"). A second registration replaces the first. */
 export function registerFeaturePolicy(feature: FeatureId, rule: FeatureRule): void {
+  const reserved = reservedRules.get(feature)
+  rules.set(feature, reserved ? merged(reserved, rule) : rule)
+}
+
+function reserveFeaturePolicy(feature: FeatureId, rule: FeatureRule): void {
+  reservedRules.set(feature, rule)
   rules.set(feature, rule)
 }
 
 export function resetFeaturePoliciesForTests(): void {
   rules.clear()
+  reservedRules.clear()
 }
 
 const folderOf = (b: BindingView): string | null => (b.cwd ? normalizeFolder(b.cwd) : null)
@@ -58,11 +84,11 @@ registerP1FeaturePolicies()
 export function registerReviewSelectionPolicies(): void {
   const reviewCompanion: FeatureRule = (b) =>
     b.profile === 'interactive' && b.trust === 'read-only' && getCompanionMode() !== 'off'
-  registerFeaturePolicy(
+  reserveFeaturePolicy(
     'act.context',
     (b) => reviewCompanion(b) && prefsKey<string>('channel') !== 'off'
   )
-  registerFeaturePolicy('ui.band', reviewCompanion)
+  reserveFeaturePolicy('ui.band', reviewCompanion)
 }
 registerReviewSelectionPolicies()
 

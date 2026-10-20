@@ -3,7 +3,9 @@
  * checks, the codes they return, the gesture's reach, and the whole path against a fake mod over a
  * real host core and a real socket.
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EnqueueResult } from '../../src/main/companion/command-channel'
@@ -24,6 +26,11 @@ vi.mock('electron', () => ({
     on: (): void => undefined
   }
 }))
+
+// The companion host failing to start: `host.ts` cannot be loaded. Compose must not care.
+vi.mock('../../src/main/companion/host', () => {
+  throw new Error('host failed to start')
+})
 
 import {
   composeSelectionText,
@@ -687,5 +694,82 @@ describe('against a fake mod: the whole path, in channel mode shadow', () => {
       })
     ])
     expect(emitted.map((e) => e.state)).toEqual(['queued', 'delivered', 'cleared'])
+  })
+})
+
+describe('U2b-AC-2 groundwork — compose needs git and nothing else', () => {
+  const dirs: string[] = []
+  afterEach(() => {
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
+  })
+
+  function repo(): { dir: string; base: string; head: string } {
+    const dir = mkdtempSync(join(tmpdir(), 'hc-rs-git-'))
+    dirs.push(dir)
+    const git = (...a: string[]): string =>
+      execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...a], {
+        cwd: dir,
+        encoding: 'utf8'
+      }).trim()
+    git('init', '-q')
+    writeFileSync(join(dir, 'speech.ts'), blob)
+    git('add', '.')
+    git('commit', '-q', '-m', 'one')
+    const base = git('rev-parse', 'HEAD')
+    writeFileSync(join(dir, 'speech.ts'), blob + 'const tail = 1\n')
+    git('commit', '-q', '-am', 'two')
+    return { dir, base, head: git('rev-parse', 'HEAD') }
+  }
+
+  it('compose returns the text with the host unable to start, no binding and no mod', async () => {
+    const { dir, base, head } = repo()
+    registerReviewSelectionHandlers(() => null)
+    const compose = handlers.get('review:selection:compose')!
+    const res = (await compose(
+      {},
+      {
+        folder: dir,
+        headRef: 'HEAD',
+        base: 'HEAD~1',
+        selection: selection({ path: 'speech.ts', headSha: head, baseSha: base })
+      }
+    )) as { ok: boolean; text?: string }
+    expect(res.ok).toBe(true)
+    expect(res.text).toContain('selection: lines 85-92 of the new file (RIGHT)')
+    expect(res.text).toContain(' 85 |   const v85 = 85')
+    expect(res.text).toContain(`review: base ${base} head ${head} (PR 250)`)
+  })
+
+  it('compose still runs the head guard when it reads git for itself', async () => {
+    const { dir, base } = repo()
+    registerReviewSelectionHandlers(() => null)
+    const compose = handlers.get('review:selection:compose')!
+    const res = await compose(
+      {},
+      {
+        folder: dir,
+        headRef: 'HEAD',
+        base: 'HEAD~1',
+        selection: selection({ path: 'speech.ts', headSha: 'f'.repeat(40), baseSha: base })
+      }
+    )
+    expect(res).toMatchObject({ ok: false, refusal: 'head-moved' })
+  })
+
+  it('the send, which does need the host, reports NO_BINDING unknown instead of rejecting', async () => {
+    registerReviewSelectionHandlers(() => null)
+    const send = handlers.get('review:selection:send')!
+    expect(await send({}, request())).toMatchObject({
+      ok: false,
+      refusal: 'NO_BINDING',
+      reason: 'unknown'
+    })
+  })
+
+  it('compose never imports the host, the channel or the arbiter', () => {
+    const src = readFileSync(join(REPO, 'src/main/companion/review-selection-ipc.ts'), 'utf8')
+    const compose = src.slice(src.search(/ipcMain\.handle\(\s*'review:selection:compose'/))
+    expect(compose).toContain('composeSelectionText(req, gitDeps)')
+    expect(compose).not.toMatch(/deps\(\)|liveDeps|companionHost|sessionArbiter/)
   })
 })

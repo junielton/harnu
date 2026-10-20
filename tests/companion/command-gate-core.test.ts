@@ -347,6 +347,37 @@ describe('T257 U2a-i — the review selection rows (AC-6, AC-7)', () => {
     expect(checkOrigin('context.append', REVIEW, { debug: false }).ok).toBe(true)
   })
 
+  it('the review key is refused for every other cause, whatever that cause’s own validator says', () => {
+    // shadow admits this key on the key alone (O-3); the validator is the second lock
+    registerGateRow('context.append', {
+      feature: 'act.context',
+      internal: ['contextInjector'],
+      operator: ['card.dispatch'],
+      validate: () => true
+    })
+    for (const cause of [
+      { kind: 'internal', subsystem: 'contextInjector' },
+      { kind: 'operator', gesture: 'card.dispatch' }
+    ] as CommandCause[]) {
+      expect(checkOrigin('context.append', cause, { debug: false }).ok).toBe(true)
+      expect(validateArgs('context.append', append(), cause)).toEqual({
+        ok: false,
+        reason: 'BAD_ARGS'
+      })
+      expect(validateArgs('context.append', append({ key: 'harnu.orchestrator' }), cause).ok).toBe(
+        true
+      )
+    }
+    // and its own cause is untouched
+    expect(validateArgs('context.append', append(), REVIEW).ok).toBe(true)
+    // a row registered without a validator never opens the review key either
+    registerGateRow('context.append', { feature: 'act.context', internal: ['contextInjector'] })
+    expect(
+      validateArgs('context.append', append(), { kind: 'internal', subsystem: 'contextInjector' })
+        .ok
+    ).toBe(false)
+  })
+
   it('no other cause opens either row', () => {
     for (const cause of [
       { kind: 'verb', verb: 'message_session' },

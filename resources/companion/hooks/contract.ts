@@ -24,7 +24,13 @@ export type CmdId = `cmd_${string}`
 export type AskId = string
 /** Dotted lower-case `<class>.<name>` (§11). */
 export type FeatureId = string
-export type ContextKey = 'harnu.orchestrator' | 'harnu.mission' | 'harnu.review-selection'
+/** The closed set of context keys, as a runtime value so a test can pin it. */
+export const CONTEXT_KEYS = [
+  'harnu.orchestrator',
+  'harnu.mission',
+  'harnu.review-selection'
+] as const
+export type ContextKey = (typeof CONTEXT_KEYS)[number]
 
 // ---- §7 Constants ---------------------------------------------------------------------------
 

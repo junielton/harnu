@@ -1024,7 +1024,9 @@ What runs while a family, or the command channel, is in `shadow`:
 - every sensor event, recorded and never applied;
 - the poll loop, so its reliability can be measured;
 - the observe-only commands of §9 (`flush`, `config.update`, `guard.set {enforce: false}`,
-  `sentinel.set`, `ui.band.set`);
+  `sentinel.set`, `ui.band.set`), **and `context.append` for the key `'harnu.review-selection'`
+  only** (T257, option B of §9: no legacy path competes with a selection; every other
+  `context.append` is still `MODE_SHADOW`);
 - the `observe` level of `stamp.mcp`: the mod stamps, the server resolves and records, handlers
   use the declared argument;
 - parity recording, including a `permission` ask answered `released` with reason `shadow`;

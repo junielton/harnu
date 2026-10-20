@@ -12,7 +12,7 @@
 
 import { sanitizeCorrective } from '../review-corrective'
 import { headPinRefusal } from '../review-submit-core'
-import { frameContext, sanitizeFragment, stripControl } from './context-registry'
+import { CONTROL_PATTERN, frameContext, sanitizeFragment, stripControl } from './context-registry'
 import type { CompanionInjectDecision } from './arbitration-core'
 import type { CommandCause, CommandOutcome, DropWhy, EnqueueRefusal } from './command-types'
 import {
@@ -367,17 +367,29 @@ export interface LivePins {
  * `headPinRefusal` of `review-submit-core.ts`, the same one the submit gate calls; only the base
  * half (a commit against a commit, not a name against a PR's base) is decided here.
  */
+const FULL_SHA_LENGTH = 40
+
+/**
+ * A pin the pane sent, ready to compare with the commit it resolves to now. Two full 40-hex SHAs
+ * are compared **exactly**: a different commit is a different commit, whatever its prefix. The one
+ * place a prefix match is allowed is an *abbreviated* pin (7 to 39 hex, which the shared SHA
+ * predicate accepts because the corrective's does) against the full SHA `rev-parse` returns: that
+ * is the same commit written short, and refusing it would make a short pin unsendable. The pane
+ * itself sends full SHAs (`snapshot.head.sha`), so in practice every comparison is exact.
+ */
+function expandPin(pinned: string, live: string | null): string {
+  if (live === null || pinned.length >= FULL_SHA_LENGTH) return pinned
+  return live.length === FULL_SHA_LENGTH && live.startsWith(pinned) ? live : pinned
+}
+
 export function pinRefusal(
   c: Pick<SelectionCoordinates, 'headSha' | 'baseSha'>,
   live: LivePins
 ): { refusal: 'head-moved' | 'head-unreadable' | 'base-mismatch'; detail?: string } | null {
-  // A pin may be an abbreviation of the live commit; that is the same commit, not a move.
-  const pinnedHead =
-    live.headSha !== null && live.headSha.startsWith(c.headSha) ? live.headSha : c.headSha
-  const head = headPinRefusal(pinnedHead, live.headSha)
+  const head = headPinRefusal(expandPin(c.headSha, live.headSha), live.headSha)
   if (head) return head
   if (live.baseSha === null) return { refusal: 'head-unreadable' }
-  if (!live.baseSha.startsWith(c.baseSha)) {
+  if (expandPin(c.baseSha, live.baseSha) !== live.baseSha) {
     return {
       refusal: 'base-mismatch',
       detail: `${c.baseSha.slice(0, 7)} → ${live.baseSha.slice(0, 7)}`
@@ -499,7 +511,7 @@ export function validReviewSelectionAppend(args: unknown, cause: CommandCause): 
   )
 }
 
-const CONTROL_TEST = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f]/ // eslint-disable-line no-control-regex
+const CONTROL_TEST = CONTROL_PATTERN
 
 const partOk = (v: unknown, max: number, required: boolean): boolean =>
   v === undefined

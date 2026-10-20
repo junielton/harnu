@@ -14,11 +14,12 @@ import type { ContextKey } from './contract'
 export const FRAME_TAG = 'harnu-context'
 
 /**
- * C0 controls except tab, DEL and C1. The ESC that starts a terminal sequence is in the range, and
- * so is the newline: a field or a quoted line is exactly one line.
+ * C0 controls except tab, DEL, C1, and the Unicode line and paragraph separators (U+2028, U+2029).
+ * The ESC that starts a terminal sequence is in the range, and so is the newline: a field or a
+ * quoted line is exactly one line, to a reader that breaks lines on the separators too.
  */
-// eslint-disable-next-line no-control-regex
-const CONTROL_RE = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f]/g
+export const CONTROL_PATTERN = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f\u2028\u2029]/ // eslint-disable-line no-control-regex
+const CONTROL_RE = new RegExp(CONTROL_PATTERN.source, 'g')
 
 export const stripControl = (s: string): string => s.replace(CONTROL_RE, '')
 

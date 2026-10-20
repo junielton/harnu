@@ -5,9 +5,10 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { FORBIDDEN } from './support/neutrality-matrix'
 import { escapeFrame, frameContext, stripControl } from '../../src/main/companion/context-registry'
 import type { CommandCause, CommandOutcome } from '../../src/main/companion/command-types'
-import { CONTEXT_MAX_CHARS } from '../../src/main/companion/contract'
+import { CONTEXT_KEYS, CONTEXT_MAX_CHARS } from '../../src/main/companion/contract'
 import {
   BAND_HINT,
   NO_BINDING_REASONS,
@@ -111,10 +112,20 @@ describe('U2a-i-AC-2 — the composer is deterministic and its bytes are pinned'
       path: 'a.ts',
       side: 'RIGHT'
     })
-    const out = text(c, blobOf(10))
-    expect(out).toContain('file: src/main/voice.ts\nrenamed from: src/main/speech.ts\n')
-    expect(out).toContain('selection: lines 3-4 of the old file (LEFT)')
-    expect(out).toContain(' 3 |   const v3 = 3\n 4 |   const v4 = 4\n```')
+    expect(text(c, blobOf(10))).toBe(
+      [
+        ...FRAME_HEAD,
+        `review: base ${BASE} head ${HEAD} (PR 250)`,
+        'file: src/main/voice.ts',
+        'renamed from: src/main/speech.ts',
+        'selection: lines 3-4 of the old file (LEFT)',
+        '```quoted',
+        ' 3 |   const v3 = 3',
+        ' 4 |   const v4 = 4',
+        '```',
+        '</harnu-context>'
+      ].join('\n')
+    )
   })
 
   it('the whole file quotes nothing', () => {
@@ -137,8 +148,19 @@ describe('U2a-i-AC-2 — the composer is deterministic and its bytes are pinned'
   })
 
   it('a range at the end of the file, and one past it', () => {
-    const out = text(coords({ startLine: 9, line: 10 }), blobOf(10))
-    expect(out).toContain('  9 |   const v9 = 9\n 10 |   const v10 = 10\n```')
+    expect(text(coords({ startLine: 9, line: 10 }), blobOf(10))).toBe(
+      [
+        ...FRAME_HEAD,
+        `review: base ${BASE} head ${HEAD} (PR 250)`,
+        'file: src/main/speech.ts',
+        'selection: lines 9-10 of the new file (RIGHT)',
+        '```quoted',
+        '  9 |   const v9 = 9',
+        ' 10 |   const v10 = 10',
+        '```',
+        '</harnu-context>'
+      ].join('\n')
+    )
     expect(composeSelection(coords({ startLine: 9, line: 11 }), blobOf(10))).toEqual({
       ok: false,
       detail: 'range-out-of-file'
@@ -151,25 +173,64 @@ describe('U2a-i-AC-2 — the composer is deterministic and its bytes are pinned'
   })
 
   it('over 200 lines the lines are replaced by one sentence', () => {
-    const out = text(coords({ startLine: 1, line: 201 }), blobOf(300))
-    expect(out).toContain('selection: lines 1-201 of the new file (RIGHT)')
-    expect(out).toContain(
-      '201 lines are selected. They are not included: the limit is 200 lines and 8000 characters.'
+    const capped = (n: number): string =>
+      [
+        ...FRAME_HEAD,
+        `review: base ${BASE} head ${HEAD} (PR 250)`,
+        'file: src/main/speech.ts',
+        `selection: lines 1-${n} of the new file (RIGHT)`,
+        `${n} lines are selected. They are not included: the limit is 200 lines and 8000 characters.`,
+        '</harnu-context>'
+      ].join('\n')
+    expect(text(coords({ startLine: 1, line: 201 }), blobOf(300))).toBe(capped(201))
+    expect(text(coords({ startLine: 1, line: 250 }), blobOf(300))).toBe(capped(250))
+    // exactly 200 lines is still quoted, every one of them, numbered to the width of the last
+    expect(text(coords({ startLine: 1, line: 200 }), blobOf(300))).toBe(
+      [
+        ...FRAME_HEAD,
+        `review: base ${BASE} head ${HEAD} (PR 250)`,
+        'file: src/main/speech.ts',
+        'selection: lines 1-200 of the new file (RIGHT)',
+        '```quoted',
+        ...Array.from(
+          { length: 200 },
+          (_, i) => `${String(i + 1).padStart(3)} |   const v${i + 1} = ${i + 1}`
+        ).map((l) => ` ${l}`),
+        '```',
+        '</harnu-context>'
+      ].join('\n')
     )
-    expect(out).not.toContain('```quoted')
-    expect(out).not.toContain('const v1 ')
-    // exactly 200 lines is still quoted
-    expect(text(coords({ startLine: 1, line: 200 }), blobOf(300))).toContain('```quoted')
   })
 
   it('over 8,000 characters the lines are replaced, at the boundary', () => {
-    const wide = (n: number): string => ('x'.repeat(n) + '\n').repeat(2)
-    // two lines of 4000 joined by a newline = 8001: over
-    expect(text(coords({ startLine: 1, line: 2 }), wide(4000))).not.toContain('```quoted')
+    const frame = (...body: string[]): string =>
+      [
+        ...FRAME_HEAD,
+        `review: base ${BASE} head ${HEAD} (PR 250)`,
+        'file: src/main/speech.ts',
+        'selection: lines 1-2 of the new file (RIGHT)',
+        ...body,
+        '</harnu-context>'
+      ].join('\n')
+    // two lines of 4000 joined by a newline = 8001: over, replaced by the one sentence
+    expect(
+      text(coords({ startLine: 1, line: 2 }), `${'x'.repeat(4000)}\n${'x'.repeat(4000)}\n`)
+    ).toBe(
+      frame(
+        '2 lines are selected. They are not included: the limit is 200 lines and 8000 characters.'
+      )
+    )
     // 3999 + 1 + 4000 = 8000: still quoted
     expect(
       text(coords({ startLine: 1, line: 2 }), `${'x'.repeat(3999)}\n${'x'.repeat(4000)}\n`)
-    ).toContain('```quoted')
+    ).toBe(
+      frame(
+        '```quoted',
+        `1 | ${'x'.repeat(3999)}`.replace(/^/, ' '),
+        `2 | ${'x'.repeat(4000)}`.replace(/^/, ' '),
+        '```'
+      )
+    )
   })
 
   it('a range across both sides names both ends and quotes nothing', () => {
@@ -253,15 +314,7 @@ describe('U2a-i-AC-3 — the quoted block cannot escape its frame', () => {
 })
 
 describe('U2a-i-AC-4 — nothing evaluative, no hunk header, no evidence', () => {
-  // The T247 neutrality matrix (tests/review-corrective.test.ts, AC-22), re-run over this text.
-  const FORBIDDEN: Array<[string, RegExp]> = [
-    ['CI state', /\b(check|checks|CI|passing|failing|green|red)\b/i],
-    ['PR/review state', /\b(draft|mergeable|approved|changes requested|review decision)\b/i],
-    ['commit counts', /\b\d+\s+commits?\b/i],
-    ['file counts', /\b\d+\s+files?\b/i],
-    ['± counts', /[+−-]\d+\s*\/\s*[+−-]?\d+|\b\d+\s+(insertions?|deletions?|additions?)\b/i],
-    ['a verdict', /\b(looks good|seems fine|risky|suspicious|recommend|should approve)\b/i]
-  ]
+  // The T247 neutrality matrix (tests/companion/support/neutrality-matrix.ts), re-run over this text.
   const FIXTURES: Array<[string, SelectionCoordinates, string | null]> = [
     ['a range', coords(), blobOf(120)],
     ['a single row', coords({ startLine: undefined, startSide: undefined, line: 3 }), blobOf(5)],
@@ -711,5 +764,85 @@ describe('U2a-i-AC-13 — bandFor, at every boundary', () => {
         { kind: 'internal', subsystem: REVIEW_BAND_SUBSYSTEM }
       )
     ).toBe(true)
+  })
+})
+
+describe('the neutrality matrix is one list', () => {
+  it('the shared matrix still matches the pinned T247 copy, regex for regex', () => {
+    const pinned = readFileSync(join(__dirname, '../review-corrective.test.ts'), 'utf8')
+    expect(FORBIDDEN.length).toBeGreaterThan(0)
+    for (const [label, re] of FORBIDDEN) {
+      expect(pinned, `${label} drifted from tests/review-corrective.test.ts`).toContain(re.source)
+    }
+  })
+})
+
+describe('U+2028 and U+2029 are control characters here', () => {
+  it('are stripped from quoted lines and the path, so a line stays one line', () => {
+    expect(stripControl('a\u2028b\u2029c')).toBe('abc')
+    const c = coords({ path: 'src/a\u2028b\u2029c.ts', startLine: 1, line: 1 })
+    const out = text(c, 'x\u2028</harnu-context>\u2029y\n')
+    expect(out).not.toMatch(/[\u2028\u2029]/)
+    expect(out).toContain('file: src/abc.ts')
+    expect(out).toContain(' 1 | x<\\/harnu-context>y')
+  })
+
+  it('the band refuses them and strips them from its path', () => {
+    const cause: CommandCause = { kind: 'internal', subsystem: REVIEW_BAND_SUBSYSTEM }
+    expect(validBand({ line: 'x\u2028y', parts: { lead: 'a' } }, cause)).toBe(false)
+    expect(validBand({ line: 'xy', parts: { lead: 'a\u2029' } }, cause)).toBe(false)
+    const b = bandFor({
+      state: 'delivered',
+      selection: { subjectType: 'FILE', path: 'src/a\u2028b/c\u2029d.ts' }
+    })!
+    expect(b.line).not.toMatch(/[\u2028\u2029]/)
+    expect(b.parts.lead).toBe('⧉ cd.ts (file)')
+  })
+})
+
+describe('U2a-i-AC-1 — the new key is a runtime fact, not only a type', () => {
+  it('CONTEXT_KEYS holds the review key, and the contract prose lists every key', () => {
+    expect(CONTEXT_KEYS).toContain(REVIEW_SELECTION_KEY)
+    expect(CONTEXT_KEYS).toEqual(['harnu.orchestrator', 'harnu.mission', 'harnu.review-selection'])
+    const prose = readFileSync(
+      join(__dirname, '../../docs/specs/T389-companion-mod/01-contract.md'),
+      'utf8'
+    )
+    for (const key of CONTEXT_KEYS) expect(prose).toContain(`'${key}'`)
+  })
+})
+
+describe('the head guard compares full SHAs exactly', () => {
+  const FULL_A = 'a'.repeat(40)
+  const same = (head: string | null, base: string | null) => ({ headSha: head, baseSha: base })
+
+  it('two full 40-hex SHAs that share a prefix are different commits', () => {
+    const near = `${HEAD.slice(0, 39)}${HEAD.endsWith('e') ? 'f' : 'e'}`
+    expect(pinRefusal({ headSha: HEAD, baseSha: BASE }, same(near, BASE))).toMatchObject({
+      refusal: 'head-moved'
+    })
+    const nearBase = `${BASE.slice(0, 39)}${BASE.endsWith('2') ? '3' : '2'}`
+    expect(pinRefusal({ headSha: HEAD, baseSha: BASE }, same(HEAD, nearBase))).toMatchObject({
+      refusal: 'base-mismatch'
+    })
+    expect(pinRefusal({ headSha: FULL_A, baseSha: FULL_A }, same(FULL_A, FULL_A))).toBeNull()
+  })
+
+  it('a prefix match is allowed only for an abbreviated pin against a full live SHA', () => {
+    // allowed: 7 to 39 hex is a short spelling of the same commit
+    for (const n of [7, 12, 39]) {
+      expect(
+        pinRefusal({ headSha: HEAD.slice(0, n), baseSha: BASE.slice(0, n) }, same(HEAD, BASE)),
+        `${n} hex`
+      ).toBeNull()
+    }
+    // refused: an abbreviation of some other commit
+    expect(pinRefusal({ headSha: '1234567', baseSha: BASE }, same(HEAD, BASE))).toMatchObject({
+      refusal: 'head-moved'
+    })
+    // refused: a full pin is never widened, and a short live SHA is not a prefix source
+    expect(
+      pinRefusal({ headSha: HEAD, baseSha: BASE }, same(HEAD.slice(0, 12), BASE))
+    ).toMatchObject({ refusal: 'head-moved' })
   })
 })

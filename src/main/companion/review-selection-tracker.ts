@@ -117,9 +117,14 @@ export function createSelectionTracker(deps: TrackerDeps): SelectionTracker {
     if (rec.state === 'queued') move(rec, 'delivered')
   }
 
+  /** True while `rec` is the binding's live selection and has not moved past `queued`. */
+  const awaiting = (rec: TrackedRecord): boolean =>
+    recs.get(rec.bindingKey) === rec && rec.state === 'queued'
+
   function onSettled(rec: TrackedRecord, outcome: CommandOutcome): void {
-    // A newer selection took the slot, or the row already reached `delivered` through its result.
-    if (rec.state !== 'queued') return
+    // A newer selection took the slot (its result must not move the chip or the band), or the row
+    // already reached `delivered` through its own `command.result`.
+    if (!awaiting(rec)) return
     const v = outcomeVerdict(outcome)
     if (v.delivered) return delivered(rec)
     move(rec, 'not-delivered', { code: v.code, next: OUTCOME_NEXT[v.code] })
@@ -191,7 +196,11 @@ export function createSelectionTracker(deps: TrackerDeps): SelectionTracker {
       move(rec, 'queued')
       void t.settled.then(
         (o) => onSettled(rec, o),
-        () => undefined
+        // A `settled` that rejects is a failure with a defined state, never a chip stuck on queued.
+        () => {
+          if (awaiting(rec))
+            move(rec, 'not-delivered', { code: 'CMD_FAILED', next: OUTCOME_NEXT.CMD_FAILED })
+        }
       )
     },
     onTransition(fn) {

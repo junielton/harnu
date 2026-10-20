@@ -125,7 +125,34 @@ describe('U2a-i-AC-7 — the review companion class, and no other', () => {
     expect(got).toEqual(['sense.identity'])
   })
 
-  it('a later wave replacing a rule is a deliberate act: the reset helper restores ours', () => {
+  it('a later registration extends the rule and never replaces it (the replace hazard)', () => {
+    // P2W4 and P4W2 register these same two features for their own binding classes
+    registerFeaturePolicy('act.context', () => false)
+    registerFeaturePolicy('ui.band', (b) => b.trust === 'agent')
+    registerFeaturePolicy('act.context', () => {
+      throw new Error('boom')
+    })
+    // the review companion keeps both, whatever the newcomers say, even a throwing one
+    expect(enable('read-only')).toEqual(expect.arrayContaining(['act.context', 'ui.band']))
+    // the newcomer's own class is added, not the review class removed
+    expect(enable('agent')).toContain('ui.band')
+    expect(enable('agent')).not.toContain('act.context')
+    // a class neither rule names still gets nothing
+    expect(enable('operator')).not.toContain('ui.band')
+    expect(enable('tick')).not.toContain('act.context')
+  })
+
+  it('the reserved rule still obeys the kill switch and channel off after being extended', async () => {
+    registerFeaturePolicy('act.context', () => false)
+    setPrefsKey('channel', 'off')
+    expect(enable('read-only')).not.toContain('act.context')
+    setPrefsKey('channel', 'shadow')
+    await setCompanionEnabled(false)
+    expect(enable('read-only')).toEqual([])
+  })
+
+  it('the reset helper clears the reservation too, and re-registering restores it', () => {
+    resetFeaturePoliciesForTests()
     registerFeaturePolicy('act.context', () => false)
     expect(enable('read-only')).not.toContain('act.context')
     resetFeaturePoliciesForTests()

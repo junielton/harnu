@@ -4,7 +4,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CommandOutcome } from '../../src/main/companion/command-types'
 import type { WireEvent } from '../../src/main/companion/contract'
-import type { SelectionStateEvent } from '../../src/main/companion/review-selection-core'
+import type {
+  BandSelection,
+  SelectionStateEvent
+} from '../../src/main/companion/review-selection-core'
 import {
   createBandDriver,
   createSelectionTracker,
@@ -75,7 +78,7 @@ function rig() {
   })
   const states = (): string[] => events.map((e) => e.state)
   let n = 0
-  const track = (outcome?: Promise<CommandOutcome>, key = 7) => {
+  const track = (outcome?: Promise<CommandOutcome>, key = 7, selection: BandSelection = SEL) => {
     const id = `sel_${++n}`
     let resolve!: (o: CommandOutcome) => void
     const settled = outcome ?? new Promise<CommandOutcome>((r) => (resolve = r))
@@ -85,7 +88,7 @@ function rig() {
       sid: 'sid-1',
       cmd: `cmd_${n}`,
       settled,
-      selection: SEL
+      selection
     })
     return { id, cmd: `cmd_${n}`, resolve }
   }
@@ -258,6 +261,56 @@ describe('U2a-i-AC-12 — the tracker emits review:selection:state per §9.2', (
     expect(r.events.at(-1)).toMatchObject({ selectionId: b.id, state: 'delivered' })
   })
 
+  it('a replaced selection whose settled resolves after the newer one was delivered moves nothing', async () => {
+    const r = rig()
+    const a = r.track()
+    const b = r.track()
+    r.ok(b.cmd)
+    a.resolve({ state: 'resulted', ok: true }) // A's late success
+    await flush()
+    expect(r.events.map((e) => `${e.selectionId}:${e.state}`)).toEqual([
+      `${a.id}:queued`,
+      `${b.id}:queued`,
+      `${b.id}:delivered`
+    ])
+    expect(r.tracker.current(7)?.selectionId).toBe(b.id)
+  })
+
+  it('a replaced selection’s late failure is ignored too, and cannot end the live one', async () => {
+    const r = rig()
+    const a = r.track()
+    const b = r.track()
+    a.resolve({ state: 'dropped', why: 'rebound', delivered: false })
+    await flush()
+    expect(r.events.map((e) => e.state)).toEqual(['queued', 'queued'])
+    r.ok(b.cmd)
+    expect(r.events.at(-1)).toMatchObject({ selectionId: b.id, state: 'delivered' })
+  })
+
+  it('a settled that rejects lands in not-delivered, not stuck on queued', async () => {
+    const r = rig()
+    const t = r.track(Promise.reject(new Error('channel exploded')))
+    await flush()
+    expect(r.events.at(-1)).toMatchObject({
+      selectionId: t.id,
+      state: 'not-delivered',
+      code: 'CMD_FAILED',
+      next: ['try-again', 'copy']
+    })
+    expect(JSON.stringify(r.events)).not.toContain('exploded')
+    expect(r.tracker.current(7)).toBeNull()
+  })
+
+  it('a rejected settled of a replaced selection is ignored', async () => {
+    const r = rig()
+    let reject!: (e: Error) => void
+    const a = r.track(new Promise<CommandOutcome>((_, rej) => (reject = rej)))
+    r.track()
+    reject(new Error('x'))
+    await flush()
+    expect(r.events.filter((e) => e.selectionId === a.id).map((e) => e.state)).toEqual(['queued'])
+  })
+
   it('terminal states end tracking; late events are ignored', () => {
     const r = rig()
     const t = r.track()
@@ -407,6 +460,19 @@ describe('U2a-i-AC-13 — the band driver', () => {
     vi.advanceTimersByTime(500)
     // same line text as before: nothing flickers, nothing is re-sent
     expect(r.sent).toHaveLength(1)
+  })
+  it('a replaced selection’s late result never puts its line back over the newer one', async () => {
+    const r = bandRig()
+    const other: BandSelection = { ...SEL, path: 'src/other/voice.ts', startLine: 3, line: 4 }
+    const a = r.track(undefined, 7, SEL)
+    const b = r.track(undefined, 7, other)
+    r.ok(b.cmd)
+    a.resolve({ state: 'resulted', ok: true })
+    await vi.advanceTimersByTimeAsync(5_000)
+    const lines = r.sent.map((s) => String(s.args.line))
+    expect(lines.length).toBeGreaterThan(0)
+    expect(lines.every((l) => l.includes('voice.ts L3–4'))).toBe(true)
+    expect(lines.some((l) => l.includes('speech.ts'))).toBe(false)
   })
   it('a replaced selection that never delivers leaves the band cleared', () => {
     const r = standing()

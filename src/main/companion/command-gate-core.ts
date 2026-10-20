@@ -70,6 +70,11 @@ const rows = new Map<CommandName, GateRow>()
 interface ReservedGrant {
   operator?: string[]
   internal?: string[]
+  /**
+   * An argument `key` that only this grant's causes may carry. A later registration's validator
+   * never sees it: shadow admits the key on its own (O-3), so the validator is the second lock.
+   */
+  exclusiveKey?: string
   validate: (args: unknown, cause: CommandCause) => boolean
 }
 
@@ -91,8 +96,16 @@ function withReserved(name: CommandName, row: GateRow): GateRow {
     ...row,
     ...(operator ? { operator } : {}),
     ...(internal ? { internal } : {}),
-    validate: (args, cause) =>
-      isReservedCause(g, cause) ? g.validate(args, cause) : (own?.(args, cause) ?? false)
+    validate: (args, cause) => {
+      if (isReservedCause(g, cause)) return g.validate(args, cause)
+      if (
+        g.exclusiveKey !== undefined &&
+        (args as { key?: unknown } | null)?.key === g.exclusiveKey
+      ) {
+        return false
+      }
+      return own?.(args, cause) ?? false
+    }
   }
 }
 
@@ -130,6 +143,7 @@ registerP2W1Rows()
 function registerReviewSelectionRows(): void {
   reserved.set('context.append', {
     operator: [REVIEW_SELECTION_GESTURE],
+    exclusiveKey: REVIEW_SELECTION_KEY,
     validate: validReviewSelectionAppend
   })
   reserved.set('ui.band.set', { internal: [REVIEW_BAND_SUBSYSTEM], validate: validBand })
