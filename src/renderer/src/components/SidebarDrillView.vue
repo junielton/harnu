@@ -16,6 +16,7 @@ import {
 } from 'lucide-vue-next'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
+import { useFolderMenuActions, type RepoGroupAction } from '../composables/useFolderMenuActions'
 import { displayAlias } from './folder-alias'
 import SidebarFolder from './SidebarFolder.vue'
 import { isFolderGroup, type FolderGroup } from '../stores/folder-zones'
@@ -45,6 +46,8 @@ import type { Folder } from '../stores/sessions'
 const sessions = useSessionsStore()
 const ui = useUiStore()
 const { t } = useI18n()
+// T486 §3.4: the group menu's items, shared with RepoGroupHeader and the keybindings.
+const groupActions = useFolderMenuActions()
 
 type RootNode = Folder | FolderGroup<Folder>
 
@@ -145,8 +148,9 @@ function openFolderMenuAt(e: Event, folderPath: string): void {
  * The repo/path group menu (Rename group / Reset name / Cleanup), rendered
  * locally here rather than reached through `RepoGroupHeader`: that menu lives
  * inside the header component itself, and this screen never mounts a
- * `RepoGroupHeader` (the back row plays that role). Same items, same store
- * actions, same dismissal idiom — no behavior forked, only the host.
+ * `RepoGroupHeader` (the back row plays that role). Same items, the same
+ * `useFolderMenuActions` functions, same dismissal idiom — no behavior forked,
+ * only the host.
  */
 const groupMenu = ref<{ open: boolean; x: number; y: number; key: string | null }>({
   open: false,
@@ -161,10 +165,11 @@ const groupMenuTarget = computed<FolderGroup<Folder> | null>(() =>
   groupMenu.value.key ? sessions.groupInVisible(groupMenu.value.key) : null
 )
 
-/** Whether the targeted group carries a custom alias (gates "Reset name"). */
-const groupMenuHasAlias = computed<boolean>(() =>
-  groupMenu.value.key ? !!sessions.groupAliases[groupMenu.value.key] : false
-)
+/** Whether the group menu shows `action` for its target (alias / repo rules). */
+function groupMenuShows(action: RepoGroupAction): boolean {
+  const group = groupMenuTarget.value
+  return group ? groupActions.groupVisible(action, group) : false
+}
 
 function openGroupMenuAt(e: Event, key: string): void {
   e.preventDefault()
@@ -198,28 +203,10 @@ function onGroupMenuKeydown(e: KeyboardEvent): void {
   }
 }
 
-function renameGroup(): void {
+/** Run a group-menu item on the menu's target through the shared function, then close. */
+function runGroupAction(action: RepoGroupAction): void {
   const group = groupMenuTarget.value
-  if (group) ui.openRenameRepo(group.key, group.derivedLabel)
-  closeGroupMenu()
-}
-
-function resetGroupName(): void {
-  const group = groupMenuTarget.value
-  if (group) sessions.setGroupAlias(group.key, '')
-  closeGroupMenu()
-}
-
-/**
- * The Reaper snapshot groups by main-worktree folder path, not by the group's
- * own key — so the Cleanup takeover's scroll target is that folder's path.
- * Only a REPO group has a meaningful target (a path group is an arbitrary set
- * of sibling directories with no shared git history to sweep).
- */
-function openGroupCleanup(): void {
-  const group = groupMenuTarget.value
-  const mainPath = group?.folders.find((f) => f.isMainWorktree)?.path ?? group?.folders[0]?.path
-  if (mainPath) ui.openCleanup(mainPath)
+  if (group) groupActions.group[action](group)
   closeGroupMenu()
 }
 
@@ -545,27 +532,27 @@ function onPeekClick(kind: 'older' | 'archived'): void {
           role="menuitem"
           class="flex w-full items-center text-left text-text-2 transition hover:bg-surface-2 hover:text-text focus:bg-surface-2 focus:text-text focus:outline-none"
           style="gap: 9px; padding: 6px 8px; font-size: 12px; border-radius: 4px; outline: none"
-          @click="renameGroup"
+          @click="runGroupAction('rename')"
         >
           <PencilLine :size="13" :stroke-width="1.6" class="shrink-0" />
           <span class="flex-1 truncate">{{ t('repoGroup.rename') }}</span>
         </button>
         <button
-          v-if="groupMenuHasAlias"
+          v-if="groupMenuShows('resetName')"
           role="menuitem"
           class="flex w-full items-center text-left text-text-2 transition hover:bg-surface-2 hover:text-text focus:bg-surface-2 focus:text-text focus:outline-none"
           style="gap: 9px; padding: 6px 8px; font-size: 12px; border-radius: 4px; outline: none"
-          @click="resetGroupName"
+          @click="runGroupAction('resetName')"
         >
           <RotateCcw :size="13" :stroke-width="1.6" class="shrink-0" />
           <span class="flex-1 truncate">{{ t('repoGroup.resetName') }}</span>
         </button>
         <button
-          v-if="groupMenuTarget.source === 'repo'"
+          v-if="groupMenuShows('cleanup')"
           role="menuitem"
           class="flex w-full items-center text-left text-text-2 transition hover:bg-surface-2 hover:text-text focus:bg-surface-2 focus:text-text focus:outline-none"
           style="gap: 9px; padding: 6px 8px; font-size: 12px; border-radius: 4px; outline: none"
-          @click="openGroupCleanup"
+          @click="runGroupAction('cleanup')"
         >
           <Trash2 :size="13" :stroke-width="1.6" class="shrink-0" />
           <span class="flex-1 truncate">{{ t('repoGroup.cleanup') }}</span>

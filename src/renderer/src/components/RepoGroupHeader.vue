@@ -10,7 +10,7 @@ import {
 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useSessionsStore } from '../stores/sessions'
-import { useUiStore } from '../stores/ui'
+import { useFolderMenuActions } from '../composables/useFolderMenuActions'
 import type { FolderGroup } from '../stores/folder-zones'
 import type { Folder } from '../stores/sessions'
 
@@ -30,7 +30,8 @@ import type { Folder } from '../stores/sessions'
 const props = defineProps<{ group: FolderGroup<Folder> }>()
 
 const sessions = useSessionsStore()
-const ui = useUiStore()
+// T486 §3.4: the menu items' functions, shared with their keybindings (AC-37).
+const actions = useFolderMenuActions()
 const { t } = useI18n()
 
 const focused = computed(
@@ -44,8 +45,9 @@ function toggle(): void {
 // ── Context menu (T88 — Rename repo / Reset name) ─────────────────────────
 const menu = ref<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 })
 const menuRef = ref<HTMLElement | null>(null)
-/** Whether this group currently has a custom alias (gates "Reset name"). */
-const hasAlias = computed<boolean>(() => !!sessions.groupAliases[props.group.key])
+/** Whether the menu shows Reset name (an alias exists) / Clean up (a repo group). */
+const showsResetName = computed<boolean>(() => actions.groupVisible('resetName', props.group))
+const showsCleanup = computed<boolean>(() => actions.groupVisible('cleanup', props.group))
 
 function openMenu(e: MouseEvent): void {
   e.preventDefault()
@@ -85,26 +87,17 @@ function onMenuKeydown(e: KeyboardEvent): void {
 }
 
 function rename(): void {
-  ui.openRenameRepo(props.group.key, props.group.derivedLabel)
+  actions.group.rename(props.group)
   closeMenu()
 }
 
 function resetName(): void {
-  sessions.setGroupAlias(props.group.key, '')
+  actions.group.resetName(props.group)
   closeMenu()
 }
 
-/**
- * The Reaper snapshot groups by main-worktree folder path (`repoPath`), not
- * by `repoId` (folder-zones' own git-derived key) — so the Cleanup takeover's
- * scroll target has to be that folder's path, not the group's id. Only a REPO
- * group has a meaningful target: a path group is an arbitrary set of sibling
- * directories with no shared git history to sweep.
- */
 function openCleanup(): void {
-  const mainPath =
-    props.group.folders.find((f) => f.isMainWorktree)?.path ?? props.group.folders[0]?.path
-  if (mainPath) ui.openCleanup(mainPath)
+  actions.group.cleanup(props.group)
   closeMenu()
 }
 
@@ -207,7 +200,7 @@ onBeforeUnmount(() => {
         <span class="flex-1 truncate">{{ t('repoGroup.rename') }}</span>
       </button>
       <button
-        v-if="hasAlias"
+        v-if="showsResetName"
         role="menuitem"
         class="flex w-full items-center text-left text-text-2 transition hover:bg-surface-2 hover:text-text focus:bg-surface-2 focus:text-text focus:outline-none"
         style="gap: 9px; padding: 6px 8px; font-size: 12px; border-radius: 4px; outline: none"
@@ -217,7 +210,7 @@ onBeforeUnmount(() => {
         <span class="flex-1 truncate">{{ t('repoGroup.resetName') }}</span>
       </button>
       <button
-        v-if="group.source === 'repo'"
+        v-if="showsCleanup"
         role="menuitem"
         class="flex w-full items-center text-left text-text-2 transition hover:bg-surface-2 hover:text-text focus:bg-surface-2 focus:text-text focus:outline-none"
         style="gap: 9px; padding: 6px 8px; font-size: 12px; border-radius: 4px; outline: none"

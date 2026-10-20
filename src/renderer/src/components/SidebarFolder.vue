@@ -7,6 +7,7 @@ import { sessionTitle } from '../lib/session-label'
 import { useHelpersStore } from '../stores/helpers'
 import { useHoverPreview } from '../composables/useHoverPreview'
 import { useContextMenu } from '../composables/useContextMenu'
+import { useFolderMenuActions } from '../composables/useFolderMenuActions'
 import { useUiStore } from '../stores/ui'
 import { useMissionsStore } from '../stores/missions'
 import { headlineText, TONE_TEXT_CLASS, type MissionModel } from '../lib/mission-view'
@@ -88,6 +89,8 @@ const hoverPreview = useHoverPreview()
 const contextMenu = useContextMenu()
 const ui = useUiStore()
 const { t } = useI18n()
+// T486 §3.4: the peeks' function, shared with `folder.toggleOlder` / `.toggleArchived`.
+const folderMenuActions = useFolderMenuActions()
 
 /**
  * Whether this folder is currently dismissed (manually hidden). Only ever true
@@ -349,16 +352,12 @@ function toggleLineage(): void {
 }
 
 /**
- * Inline folder-row peek (older / archived). A collapsed folder expands first
- * (revealing inside a closed folder would be invisible); the toggle then reveals.
- * Collapsing clears the peek (store `forgetPeeks`), so a collapsed folder is
- * always un-revealed here and the toggle stays unambiguous (spec 2026-06-24 §4).
+ * Inline folder-row peek (older / archived): expands a collapsed folder, then
+ * reveals (spec 2026-06-24 §4). The same function its keybinding runs.
  */
 function peek(kind: 'older' | 'archived'): void {
-  const path = props.folder.path
-  if (!props.folder.expanded) sessions.toggleFolder(path)
-  if (kind === 'older') sessions.toggleRevealOlder(path)
-  else sessions.toggleRevealArchived(path)
+  if (kind === 'older') folderMenuActions.run.toggleOlder(props.folder.path)
+  else folderMenuActions.run.toggleArchived(props.folder.path)
 }
 
 /** Inline "+" — expand the folder so the new synthetic row is visible, then open. */

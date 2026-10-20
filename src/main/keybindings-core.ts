@@ -73,6 +73,27 @@ export type ShortcutActionId =
   | 'sidebar.cycleDrillDepth'
   | 'sidebar.toggleCollapseAll'
   | 'sidebar.hiddenFolders'
+  | 'folder.rename'
+  | 'folder.newFolderTerminal'
+  | 'folder.toggleBranchAlias'
+  | 'folder.bootOptions'
+  | 'folder.projectMemory'
+  | 'folder.memoryLocation'
+  | 'folder.newSubfolder'
+  | 'folder.openSubfolder'
+  | 'folder.newWorktree'
+  | 'folder.worktreeMd'
+  | 'folder.askAgentWorktreeMd'
+  | 'folder.toggleIntercept'
+  | 'folder.toggleAutoOrganize'
+  | 'folder.toggleOrchestratorDefault'
+  | 'folder.toggleHidden'
+  | 'folder.removeWorktree'
+  | 'folder.toggleOlder'
+  | 'folder.toggleArchived'
+  | 'repoGroup.rename'
+  | 'repoGroup.resetName'
+  | 'repoGroup.cleanup'
   | 'sidebar.cursor.down'
   | 'sidebar.cursor.up'
   | 'sidebar.cursor.right'
@@ -243,6 +264,31 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('sidebar.cursor.right', 'sidebar', 'ArrowRight', { palette: false }),
   def('sidebar.cursor.left', 'sidebar', 'ArrowLeft', { palette: false }),
   def('sidebar.cursor.activate', 'sidebar', 'Enter', { palette: false }),
+  // T486 §3.4 — the Folder menu's items, the folder row's older / archived peeks
+  // and the repo-group menu. Unbound except F2, which renames the cursor folder
+  // row (else the active folder). Block agents, Modes ▸ and Set / Clear parent
+  // folder stay click-only (§3.9).
+  def('folder.rename', 'folders', 'F2'),
+  def('folder.newFolderTerminal', 'folders', null),
+  def('folder.toggleBranchAlias', 'folders', null),
+  def('folder.bootOptions', 'folders', null),
+  def('folder.projectMemory', 'folders', null),
+  def('folder.memoryLocation', 'folders', null),
+  def('folder.newSubfolder', 'folders', null),
+  def('folder.openSubfolder', 'folders', null),
+  def('folder.newWorktree', 'folders', null),
+  def('folder.worktreeMd', 'folders', null),
+  def('folder.askAgentWorktreeMd', 'folders', null),
+  def('folder.toggleIntercept', 'folders', null),
+  def('folder.toggleAutoOrganize', 'folders', null),
+  def('folder.toggleOrchestratorDefault', 'folders', null),
+  def('folder.toggleHidden', 'folders', null),
+  def('folder.removeWorktree', 'folders', null),
+  def('folder.toggleOlder', 'folders', null),
+  def('folder.toggleArchived', 'folders', null),
+  def('repoGroup.rename', 'folders', null),
+  def('repoGroup.resetName', 'folders', null),
+  def('repoGroup.cleanup', 'folders', null),
   // Reserved — un-rebindable. Handled entirely in the main process, so none of
   // them has a renderer handler the palette could run.
   def('app.reload', 'app', 'F5', { ...MENU, reserved: true, palette: false }),
