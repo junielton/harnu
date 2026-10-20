@@ -147,7 +147,7 @@ What this binding does and does not establish is in §17.
 | `msgId`                          | `msg_<ulid>`                                                                                                       | host      | P2W3       |
 | `Ticket`                         | `o_<22 base64url chars>` (128 random bits): the open-link ticket; correlation only                                 | host      | P4W2       |
 | Stamp proof                      | `v1.<handle>.<nonce>.<mac>`, at most 160 chars (§24)                                                               | mod       | P2W5       |
-| `ContextKey`                     | closed union: `'harnu.orchestrator' \| 'harnu.mission'`                                                            | contract  | P2W4, P4W5 |
+| `ContextKey`                     | closed union: `'harnu.orchestrator' \| 'harnu.mission' \| 'harnu.review-selection'`                                | contract  | P2W4, P4W5 |
 | `turnId`, `agentId`, `toolUseId` | opaque CLI strings, passed through unchanged                                                                       | CLI       | —          |
 | Event identity                   | `<conn>:<seq>`                                                                                                     | mod       | P1W1       |
 | `FeatureId`                      | dotted lower-case, `<class>.<name>` (§11)                                                                          | contract  | —          |
@@ -783,8 +783,14 @@ Rules for every command:
 - A `/`-prefixed start prompt travels as `prompt.submit` with `via: 'command'`. There is no
   separate "run command" wire command (D13).
 - **Observe-only commands** are `flush`, `config.update`, `guard.set` with `enforce: false`,
-  `sentinel.set` and `ui.band.set` (display-only, with no legacy rival). They are the only commands
-  the host may issue while the command channel is in `shadow` (§11.5).
+  `sentinel.set` and `ui.band.set` (display-only, with no legacy rival), **and `context.append`
+  when `args.key` is `'harnu.review-selection'` (T257, decision O-3 option B)**. They are the only
+  commands the host may issue while the command channel is in `shadow` (§11.5). The carve-out is
+  one key, not the command: every other `context.append` is `MODE_SHADOW` in `shadow`. It is
+  defensible because `shadow` exists to measure poll reliability before an actuator competes with
+  a legacy path, and a review selection has no legacy path (no PTY paste is permitted, T245 AC-4);
+  the gesture is operator-initiated per selection, the target is a `read-only` binding, and the
+  row is non-durable.
 
 ## 10. Asks (mod → host)
 

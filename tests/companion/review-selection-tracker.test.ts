@@ -1,0 +1,456 @@
+/**
+ * T257 U2a-i — the delivery tracker (§9) and the band driver (§8), driven by a fake host bus.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { CommandOutcome } from '../../src/main/companion/command-types'
+import type { WireEvent } from '../../src/main/companion/contract'
+import type { SelectionStateEvent } from '../../src/main/companion/review-selection-core'
+import {
+  createBandDriver,
+  createSelectionTracker,
+  type BandSender,
+  type SelectionTracker
+} from '../../src/main/companion/review-selection-tracker'
+import type { BindingView } from '../../src/main/companion/session-table'
+
+type Listener = (...a: never[]) => void
+
+function fakeHost() {
+  const handlers = new Map<string, Set<Listener>>()
+  return {
+    bus: {
+      on(type: string, fn: Listener) {
+        if (!handlers.has(type)) handlers.set(type, new Set())
+        handlers.get(type)!.add(fn)
+        return () => void handlers.get(type)!.delete(fn)
+      }
+    } as never,
+    fire(type: string, ...args: unknown[]) {
+      for (const fn of [...(handlers.get(type) ?? [])]) (fn as (...a: unknown[]) => void)(...args)
+    },
+    listeners: (type: string) => handlers.get(type)?.size ?? 0
+  }
+}
+
+const binding = (over: Partial<BindingView> = {}): BindingView =>
+  ({
+    key: 7,
+    owner: { kind: 'pty', ptyId: 'pty-9' },
+    trust: 'read-only',
+    sid: 'sid-1',
+    sessionKey: null,
+    cwd: '/work/example-web',
+    profile: 'interactive',
+    cliVersion: '2.1.290',
+    modVersion: '0.1.0',
+    declared: [],
+    enabled: ['act.channel', 'act.context', 'ui.band', 'sense.turn'],
+    proven: [],
+    lease: 'live',
+    state: 'bound',
+    helloAfterSpawnMs: 0,
+    ...over
+  }) as BindingView
+
+let seq = 0
+const ev = (t: WireEvent['t'], d: Record<string, unknown>, turnId?: string): WireEvent =>
+  ({ seq: ++seq, t, ts: 1, ...(turnId ? { turnId } : {}), d }) as WireEvent
+
+const SEL = {
+  subjectType: 'LINE',
+  path: 'src/main/speech.ts',
+  line: 92,
+  side: 'RIGHT',
+  startLine: 85,
+  startSide: 'RIGHT'
+} as const
+
+function rig() {
+  const host = fakeHost()
+  const events: SelectionStateEvent[] = []
+  const tracker = createSelectionTracker({
+    host,
+    emit: (e) => void events.push(e),
+    now: () => 1_000
+  })
+  const states = (): string[] => events.map((e) => e.state)
+  let n = 0
+  const track = (outcome?: Promise<CommandOutcome>, key = 7) => {
+    const id = `sel_${++n}`
+    let resolve!: (o: CommandOutcome) => void
+    const settled = outcome ?? new Promise<CommandOutcome>((r) => (resolve = r))
+    tracker.track({
+      selectionId: id,
+      bindingKey: key,
+      sid: 'sid-1',
+      cmd: `cmd_${n}`,
+      settled,
+      selection: SEL
+    })
+    return { id, cmd: `cmd_${n}`, resolve }
+  }
+  const ok = (cmd: string) => host.fire('event', binding(), ev('command.result', { cmd, ok: true }))
+  const turnStarted = (origin: string, turnId: string, b = binding()) =>
+    host.fire('event', b, ev('turn.started', { origin }, turnId))
+  const turnDone = (turnId: string, reason: string, b = binding()) =>
+    host.fire('event', b, ev('turn.completed', { reason, isAborted: false, durationMs: 1 }, turnId))
+  return { host, tracker, events, states, track, ok, turnStarted, turnDone }
+}
+
+const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
+
+describe('U2a-i-AC-12 — the tracker emits review:selection:state per §9.2', () => {
+  it('queued → delivered → asked → answered', () => {
+    const r = rig()
+    const t = r.track()
+    expect(r.states()).toEqual(['queued'])
+    r.ok(t.cmd)
+    r.turnStarted('human', 'turn-1')
+    r.turnDone('turn-1', 'answer')
+    expect(r.states()).toEqual(['queued', 'delivered', 'asked', 'answered'])
+    expect(r.events.every((e) => e.selectionId === t.id)).toBe(true)
+  })
+
+  it('delivered comes only from a result with ok:true, never from the settled promise alone being something else', async () => {
+    const r = rig()
+    const t = r.track(Promise.resolve({ state: 'resulted', ok: true }))
+    await flush()
+    expect(r.states()).toEqual(['queued', 'delivered'])
+    // a second ok for the same cmd moves nothing
+    r.ok(t.cmd)
+    expect(r.states()).toEqual(['queued', 'delivered'])
+  })
+
+  it('a result for another cmd, or ok:false, is not a delivery', () => {
+    const r = rig()
+    r.track()
+    r.ok('cmd_other')
+    r.host.fire('event', binding(), ev('command.result', { cmd: 'cmd_1', ok: false }))
+    expect(r.states()).toEqual(['queued'])
+  })
+
+  it('origin other than human never advances', () => {
+    const r = rig()
+    const t = r.track()
+    r.ok(t.cmd)
+    for (const origin of ['peer', 'plugin', 'unknown']) r.turnStarted(origin, `t-${origin}`)
+    expect(r.states()).toEqual(['queued', 'delivered'])
+    // a human turn after those still counts
+    r.turnStarted('human', 'turn-h')
+    expect(r.states()).toEqual(['queued', 'delivered', 'asked'])
+  })
+
+  it('a turn that started before delivered never counts', () => {
+    const r = rig()
+    const t = r.track()
+    r.turnStarted('human', 'early') // before the result
+    r.ok(t.cmd)
+    r.turnDone('early', 'answer') // its completion is not ours either
+    expect(r.states()).toEqual(['queued', 'delivered'])
+  })
+
+  it('a turn completion for another turn does not answer', () => {
+    const r = rig()
+    const t = r.track()
+    r.ok(t.cmd)
+    r.turnStarted('human', 'turn-1')
+    r.turnDone('turn-other', 'answer')
+    expect(r.states()).toEqual(['queued', 'delivered', 'asked'])
+    r.turnDone('turn-1', 'answer')
+    expect(r.states().at(-1)).toBe('answered')
+  })
+
+  it('aborted, refusal and error are three distinct states', () => {
+    const outcomes = { aborted: 'turn-stopped', refusal: 'turn-declined', error: 'turn-failed' }
+    const seen = new Set<string>()
+    for (const [reason, state] of Object.entries(outcomes)) {
+      const r = rig()
+      const t = r.track()
+      r.ok(t.cmd)
+      r.turnStarted('human', 'turn-1')
+      r.turnDone('turn-1', reason)
+      expect(r.states().at(-1)).toBe(state)
+      seen.add(state)
+    }
+    expect(seen.size).toBe(3)
+  })
+
+  it('session.rebound of every cause gives cleared, after delivered', () => {
+    for (const cause of ['clear', 'resume', 'unknown']) {
+      const r = rig()
+      const t = r.track()
+      r.ok(t.cmd)
+      r.host.fire(
+        'event',
+        binding(),
+        ev('session.rebound', { prevSid: 'sid-1', sid: 'sid-2', cause })
+      )
+      expect(r.states(), cause).toEqual(['queued', 'delivered', 'cleared'])
+    }
+  })
+
+  it('a rebound while still queued is not "cleared": the queue drop speaks for it', async () => {
+    const r = rig()
+    const t = r.track()
+    r.host.fire(
+      'event',
+      binding(),
+      ev('session.rebound', { prevSid: 'a', sid: 'b', cause: 'clear' })
+    )
+    expect(r.states()).toEqual(['queued'])
+    t.resolve({ state: 'dropped', why: 'rebound', delivered: false })
+    await flush()
+    expect(r.events.at(-1)).toMatchObject({ state: 'not-delivered', code: 'dropped-rebound' })
+  })
+
+  it('the binding ending gives ended, after delivered or asked', () => {
+    for (const asked of [false, true]) {
+      const r = rig()
+      const t = r.track()
+      r.ok(t.cmd)
+      if (asked) r.turnStarted('human', 'turn-1')
+      r.host.fire('end', binding({ state: 'ended' }), 'bye')
+      expect(r.states().at(-1)).toBe('ended')
+    }
+  })
+
+  it('with no sense.turn it stops at delivered and infers nothing', () => {
+    const r = rig()
+    const t = r.track()
+    const noTurn = binding({ enabled: ['act.channel', 'act.context'] })
+    r.host.fire('event', noTurn, ev('command.result', { cmd: t.cmd, ok: true }))
+    r.turnStarted('human', 'turn-1', noTurn)
+    r.turnDone('turn-1', 'answer', noTurn)
+    expect(r.states()).toEqual(['queued', 'delivered'])
+  })
+
+  it('every non-delivery is not-delivered with its code and its next steps', async () => {
+    const cases: Array<[CommandOutcome, string]> = [
+      [{ state: 'resulted', ok: false, code: 'CMD_PRECONDITION' }, 'CMD_PRECONDITION'],
+      [{ state: 'expired' }, 'expired'],
+      [{ state: 'lost' }, 'lost'],
+      [{ state: 'dropped', why: 'lease-lost', delivered: false }, 'dropped-lease-lost']
+    ]
+    for (const [outcome, code] of cases) {
+      const r = rig()
+      r.track(Promise.resolve(outcome))
+      await flush()
+      expect(r.events.at(-1)).toMatchObject({ state: 'not-delivered', code })
+      expect(Array.isArray(r.events.at(-1)!.next)).toBe(true)
+      expect(r.states()).not.toContain('delivered')
+    }
+  })
+
+  it('an unconfirmed send is never shown as sent', async () => {
+    const r = rig()
+    r.track(Promise.resolve({ state: 'lost' }))
+    await flush()
+    expect(r.states()).not.toContain('delivered')
+  })
+
+  it('a newer selection on the same binding replaces the older one', () => {
+    const r = rig()
+    const a = r.track()
+    const b = r.track()
+    r.ok(a.cmd) // the old row's result no longer moves anything
+    expect(r.events.filter((e) => e.selectionId === a.id).map((e) => e.state)).toEqual(['queued'])
+    r.ok(b.cmd)
+    expect(r.events.at(-1)).toMatchObject({ selectionId: b.id, state: 'delivered' })
+  })
+
+  it('terminal states end tracking; late events are ignored', () => {
+    const r = rig()
+    const t = r.track()
+    r.ok(t.cmd)
+    r.turnStarted('human', 'turn-1')
+    r.turnDone('turn-1', 'answer')
+    const n = r.events.length
+    r.turnStarted('human', 'turn-2')
+    r.turnDone('turn-2', 'answer')
+    expect(r.events.length).toBe(n)
+    expect(r.tracker.current(7)).toBeNull()
+  })
+
+  it('an event of another binding is ignored', () => {
+    const r = rig()
+    const t = r.track()
+    r.host.fire('event', binding({ key: 99 }), ev('command.result', { cmd: t.cmd, ok: true }))
+    expect(r.states()).toEqual(['queued'])
+  })
+
+  it('dispose unsubscribes', () => {
+    const r = rig()
+    expect(r.host.listeners('event')).toBe(1)
+    r.tracker.dispose()
+    expect(r.host.listeners('event')).toBe(0)
+    expect(r.host.listeners('end')).toBe(0)
+  })
+
+  it('reads no word the model wrote: the state events hold only closed fields', () => {
+    const r = rig()
+    const t = r.track()
+    r.ok(t.cmd)
+    r.turnStarted('human', 'turn-1')
+    r.host.fire(
+      'event',
+      binding(),
+      ev(
+        'turn.completed',
+        { reason: 'answer', isAborted: false, durationMs: 1, text: 'You are right!' },
+        'turn-1'
+      )
+    )
+    for (const e of r.events) {
+      expect(
+        Object.keys(e).every((k) => ['selectionId', 'state', 'at', 'code', 'next'].includes(k))
+      ).toBe(true)
+    }
+    expect(JSON.stringify(r.events)).not.toContain('right')
+  })
+})
+
+describe('U2a-i-AC-13 — the band driver', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  function bandRig() {
+    const r = rig()
+    const sent: Array<{ sid: string; args: Record<string, unknown> }> = []
+    const send: BandSender = (req) => {
+      sent.push({ sid: req.sid, args: req.args as never })
+      return { ok: true }
+    }
+    const driver = createBandDriver({ send, log: () => undefined })
+    driver.attach(r.tracker as SelectionTracker)
+    return { ...r, sent, driver }
+  }
+
+  it('sets on delivered, after the 500 ms debounce, with the §8 line', () => {
+    const r = bandRig()
+    const t = r.track()
+    r.ok(t.cmd)
+    expect(r.sent).toEqual([])
+    vi.advanceTimersByTime(499)
+    expect(r.sent).toEqual([])
+    vi.advanceTimersByTime(1)
+    expect(r.sent).toHaveLength(1)
+    expect(r.sent[0]).toEqual({
+      sid: 'sid-1',
+      args: {
+        line: '⧉ speech.ts L85–92 · src/main · ask your question below',
+        parts: { lead: '⧉ speech.ts L85–92', detail: 'src/main', hint: 'ask your question below' }
+      }
+    })
+    expect(JSON.stringify(r.sent)).not.toContain('"link"')
+  })
+
+  it('refreshes every 60 s while delivered or asked, under the mod’s 90 s lifetime', () => {
+    const r = bandRig()
+    const t = r.track()
+    r.ok(t.cmd)
+    vi.advanceTimersByTime(500)
+    expect(r.sent).toHaveLength(1)
+    vi.advanceTimersByTime(60_000)
+    expect(r.sent).toHaveLength(2)
+    r.turnStarted('human', 'turn-1') // asked keeps the same line: no flicker, no extra send
+    vi.advanceTimersByTime(600)
+    expect(r.sent).toHaveLength(2)
+    vi.advanceTimersByTime(60_000)
+    expect(r.sent).toHaveLength(3)
+    expect(r.sent.every((s) => s.args.line !== null)).toBe(true)
+    expect(60_000).toBeLessThan(90_000)
+  })
+
+  const cleared = (r: ReturnType<typeof bandRig>): void => {
+    vi.advanceTimersByTime(500)
+    expect(r.sent.at(-1)!.args).toEqual({ line: null })
+    const n = r.sent.length
+    vi.advanceTimersByTime(180_000)
+    expect(r.sent.length).toBe(n) // and the refresh stopped
+  }
+  const standing = () => {
+    const r = bandRig()
+    const t = r.track()
+    r.ok(t.cmd)
+    vi.advanceTimersByTime(500)
+    return r
+  }
+
+  it('clears on answered', () => {
+    const r = standing()
+    r.turnStarted('human', 'turn-1')
+    r.turnDone('turn-1', 'answer')
+    cleared(r)
+  })
+  it('clears on stopped, declined and failed turns', () => {
+    for (const reason of ['aborted', 'refusal', 'error']) {
+      const r = standing()
+      r.turnStarted('human', 'turn-1')
+      r.turnDone('turn-1', reason)
+      cleared(r)
+    }
+  })
+  it('clears on cleared (session.rebound), and to the NEW sid', () => {
+    const r = standing()
+    r.host.fire(
+      'event',
+      binding(),
+      ev('session.rebound', { prevSid: 'sid-1', sid: 'sid-2', cause: 'clear' })
+    )
+    cleared(r)
+    expect(r.sent.at(-1)!.sid).toBe('sid-2')
+  })
+  it('clears when a newer selection replaces it, and sets the new line once', () => {
+    const r = standing()
+    const b = r.track() // replaces: wants null...
+    r.ok(b.cmd) // ...then the new delivery wants the new line inside the same debounce
+    vi.advanceTimersByTime(500)
+    // same line text as before: nothing flickers, nothing is re-sent
+    expect(r.sent).toHaveLength(1)
+  })
+  it('a replaced selection that never delivers leaves the band cleared', () => {
+    const r = standing()
+    r.track()
+    cleared(r)
+  })
+  it('stops timers on ended and sends nothing to a binding that is gone', () => {
+    const r = standing()
+    r.host.fire('end', binding({ state: 'ended' }), 'bye')
+    const n = r.sent.length
+    vi.advanceTimersByTime(300_000)
+    expect(r.sent.length).toBe(n)
+  })
+  it('a quick clear-then-set inside the debounce sends once, not twice', () => {
+    const r = bandRig()
+    const a = r.track()
+    r.ok(a.cmd)
+    vi.advanceTimersByTime(100)
+    r.turnStarted('human', 'turn-1')
+    r.turnDone('turn-1', 'answer') // wants null
+    vi.advanceTimersByTime(100)
+    const b = r.track()
+    r.ok(b.cmd) // wants the line again, still inside 500 ms of the first
+    vi.advanceTimersByTime(600)
+    expect(r.sent).toHaveLength(1)
+    expect(r.sent[0].args.line).not.toBeNull()
+  })
+  it('a refused band send is logged and does not throw or stop the timers', () => {
+    const r = rig()
+    const logs: string[] = []
+    const driver = createBandDriver({
+      send: () => ({ ok: false, reason: 'FEATURE_OFF' }) as never,
+      log: (m) => void logs.push(m)
+    })
+    driver.attach(r.tracker)
+    const t = r.track()
+    r.ok(t.cmd)
+    vi.advanceTimersByTime(500 + 60_000)
+    expect(logs.length).toBe(2)
+  })
+  it('never sends for a selection that was not delivered', async () => {
+    const r = bandRig()
+    r.track(Promise.resolve({ state: 'expired' }))
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(r.sent).toEqual([])
+  })
+})

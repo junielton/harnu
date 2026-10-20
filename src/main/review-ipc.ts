@@ -54,6 +54,7 @@ import {
   type ReviewHead
 } from './review-head'
 import { checkSubmittable, type ReviewVerdict, type SubmitRefusal } from './review-submit-core'
+import { registerReviewSelectionHandlers } from './companion/review-selection-ipc'
 import {
   planPendingPushes,
   resolveViewed,
@@ -920,4 +921,6 @@ export function registerReviewHandlers(getWindow: () => BrowserWindow | null): v
       return saved
     }
   )
+  // T257: send a selection to the review companion, or compose the text of one. Operator-only.
+  registerReviewSelectionHandlers(getWindow)
 }

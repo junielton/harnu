@@ -24,7 +24,7 @@ export type CmdId = `cmd_${string}`
 export type AskId = string
 /** Dotted lower-case `<class>.<name>` (§11). */
 export type FeatureId = string
-export type ContextKey = 'harnu.orchestrator' | 'harnu.mission'
+export type ContextKey = 'harnu.orchestrator' | 'harnu.mission' | 'harnu.review-selection'
 
 // ---- §7 Constants ---------------------------------------------------------------------------
 
@@ -56,6 +56,18 @@ export const WEDGE_MS = 5_000
 
 export const CMD_TTL_MS = 30_000
 export const CMD_QUEUE_MAX = 64
+/** Largest `context.append.text`, durable or not (contract §9). */
+export const CONTEXT_MAX_CHARS = 20_000
+/** The mod clears a band line this long after it was set (contract §9, P4W2). */
+export const BAND_TTL_MS = 90_000
+/** Host keep-alive re-send of a standing band line. Under `BAND_TTL_MS`, so a live line never lapses. */
+export const BAND_REFRESH_MS = 60_000
+/** Host debounce before a changed band line is sent. */
+export const BAND_DEBOUNCE_MS = 500
+/** `BandParts` length caps. The host checks them and the mod checks them again. */
+export const BAND_LEAD_MAX = 32
+export const BAND_DETAIL_MAX = 48
+export const BAND_HINT_MAX = 32
 export const CMD_DONE_MAX = 64
 /** Host wait for a result after `expiresAt`, unless the command has its own (§7.2). */
 export const CMD_RESULT_GRACE_DEFAULT_MS = 5_000

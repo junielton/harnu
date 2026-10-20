@@ -12,6 +12,7 @@
 import { normalizeFolder, type RolloutView } from './arbitration-core'
 import { gateForCli } from './enable-policy'
 import type { FeatureId } from './contract'
+import { prefsKey } from './companion-prefs'
 import { familyMode, getCompanionMode } from './mode'
 import type { BindingView, EnablePolicy, TrustClass } from './session-table'
 
@@ -43,8 +44,27 @@ export function registerP1FeaturePolicies(): void {
       familyMode('telemetry', folderOf(b)) !== 'off' ||
       familyMode('planUsage', folderOf(b)) !== 'off'
   )
+  registerReviewSelectionPolicies()
 }
 registerP1FeaturePolicies()
+
+/**
+ * T257: the review companion's two actuator features. Both are limited to its binding class on
+ * purpose: an interactive `read-only` binding (the helper-pane `claude` the review pane opens).
+ * An `operator`, `agent` or `tick` binding gets neither, so these rows turn the orchestrator
+ * contract and every mission band on for nobody. Channel `off` is the only key state that closes
+ * `act.context`; under the O-3 carve-out the review key needs no `active`.
+ */
+export function registerReviewSelectionPolicies(): void {
+  const reviewCompanion: FeatureRule = (b) =>
+    b.profile === 'interactive' && b.trust === 'read-only' && getCompanionMode() !== 'off'
+  registerFeaturePolicy(
+    'act.context',
+    (b) => reviewCompanion(b) && prefsKey<string>('channel') !== 'off'
+  )
+  registerFeaturePolicy('ui.band', reviewCompanion)
+}
+registerReviewSelectionPolicies()
 
 /** The external profile's ceiling (contract §21 item 3); each rule still has to pass. */
 const EXTERNAL_ALLOWED: ReadonlySet<FeatureId> = new Set([

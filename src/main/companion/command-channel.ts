@@ -90,8 +90,13 @@ registerChannelPolicies()
 export type ChannelRefusal = EnqueueRefusal | 'AUDIT_FAILED'
 
 export interface EnqueueRequest<N extends CommandName> {
-  sessionKey: string | null // null only for an external binding
-  sid?: Sid // names an external binding
+  sessionKey: string | null // null for a binding with no session key: an external one, or a helper pane
+  /**
+   * Names a binding that has no session key: an external one, or a helper-pane PTY (the review
+   * companion, T257), which is addressed by the `--session-id` Harnu minted for it. Giving such a
+   * pane a session key would enrol a read-only helper in hibernation and the fleet.
+   */
+  sid?: Sid
   name: N
   args: CommandArgs[N]
   cause: CommandCause
@@ -450,7 +455,7 @@ export function createCommandChannel(deps: ChannelDeps): CommandChannel {
     const target = targetRefusal(req.cause, b)
     if (target) return refuse(req, b, target)
     // 6. Arguments.
-    const args = validateArgs(req.name, req.args)
+    const args = validateArgs(req.name, req.args, req.cause)
     if (!args.ok) return refuse(req, b, args.reason)
     // 7. Audit, then queue.
     return queueIt(req, b, st)

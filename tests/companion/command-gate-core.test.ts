@@ -32,12 +32,15 @@ const MATRIX: Partial<
   'turn.abort': { debug: true },
   'session.compact': { debug: true },
   'ui.toast': { operator: ['diagnostics.ping'] },
-  'ui.status': { internal: ['arbitration'], debug: true }
+  'ui.status': { internal: ['arbitration'], debug: true },
+  // T257 (U2a-i): the two rows the review selection registers. Nothing else opens them.
+  'context.append': { operator: ['review.selection.send'] },
+  'ui.band.set': { internal: ['reviewSelectionBand'] }
 }
 
-const GESTURES = ['diagnostics.ping', 'debug', 'bogus', '']
+const GESTURES = ['diagnostics.ping', 'debug', 'review.selection.send', 'bogus', '']
 const VERBS = ['message_session', 'orchestrator_arm', 'notify', 'bogus']
-const SUBSYSTEMS = ['arbitration', 'parity', 'prefs', 'bogus']
+const SUBSYSTEMS = ['arbitration', 'parity', 'prefs', 'reviewSelectionBand', 'bogus']
 
 function expected(name: CommandName, cause: CommandCause, debugOn: boolean): boolean {
   const row = MATRIX[name]
@@ -86,7 +89,8 @@ describe('origin gate', () => {
   })
 
   it('unregistered rows: a command with no row is ORIGIN_DENIED for every cause', () => {
-    for (const name of ['prompt.submit', 'message.deliver', 'guard.set', 'ui.band.set'] as const) {
+    // `ui.band.set` left this list when T257 registered its row (U2a-i); `context.append` likewise.
+    for (const name of ['prompt.submit', 'message.deliver', 'guard.set'] as const) {
       expect(
         checkOrigin(name, { kind: 'internal', subsystem: 'arbitration' }, { debug: true })
       ).toEqual({
@@ -163,6 +167,25 @@ describe('the channel key', () => {
     expect(shadowRefusal('shadow', 'guard.set', { armed: true, enforce: false })).toBeNull()
   })
 
+  it('shadow also admits context.append for the review selection key, and only that (O-3, option B)', () => {
+    const append = (key: unknown) => ({ key, text: 'x', durable: false })
+    expect(shadowRefusal('shadow', 'context.append', append('harnu.review-selection'))).toBeNull()
+    expect(shadowRefusal('shadow', 'context.append', append('harnu.orchestrator'))).toBe(
+      'MODE_SHADOW'
+    )
+    expect(shadowRefusal('shadow', 'context.append', append('harnu.mission'))).toBe('MODE_SHADOW')
+    expect(shadowRefusal('shadow', 'context.append', append(undefined))).toBe('MODE_SHADOW')
+    expect(shadowRefusal('shadow', 'context.append', null)).toBe('MODE_SHADOW')
+    expect(shadowRefusal('shadow', 'context.append', {})).toBe('MODE_SHADOW')
+    // the carve-out is the key, not the command, and it is not a way past `off`
+    expect(shadowRefusal('shadow', 'context.drop', { key: 'harnu.review-selection' })).toBe(
+      'MODE_SHADOW'
+    )
+    expect(shadowRefusal('off', 'context.append', append('harnu.review-selection'))).toBe(
+      'FEATURE_OFF'
+    )
+  })
+
   it('shadow refuses the rest as MODE_SHADOW', () => {
     expect(shadowRefusal('shadow', 'guard.set', { armed: true })).toBe('MODE_SHADOW')
     expect(shadowRefusal('shadow', 'guard.set', { armed: true, enforce: true })).toBe('MODE_SHADOW')
@@ -234,5 +257,115 @@ describe('arguments', () => {
     })
     expect(validateArgs('sentinel.set', { tools: [] }).ok).toBe(true)
     expect(validateArgs('sentinel.set', { tools: 'x' }).ok).toBe(false)
+  })
+})
+
+describe('T257 U2a-i — the review selection rows (AC-6, AC-7)', () => {
+  const REVIEW: CommandCause = { kind: 'operator', gesture: 'review.selection.send' }
+  const BAND: CommandCause = { kind: 'internal', subsystem: 'reviewSelectionBand' }
+  const append = (over: Record<string, unknown> = {}) => ({
+    key: 'harnu.review-selection',
+    text: 'hello',
+    durable: false,
+    ...over
+  })
+
+  it('registers context.append on act.context and ui.band.set on ui.band', () => {
+    expect(gateRowFor('context.append')?.feature).toBe('act.context')
+    expect(gateRowFor('ui.band.set')?.feature).toBe('ui.band')
+    expect(checkOrigin('context.append', REVIEW, { debug: false }).ok).toBe(true)
+    expect(checkOrigin('ui.band.set', BAND, { debug: false }).ok).toBe(true)
+  })
+
+  it('validate takes the cause: an operator cause with any other key is BAD_ARGS', () => {
+    expect(validateArgs('context.append', append(), REVIEW).ok).toBe(true)
+    for (const key of ['harnu.orchestrator', 'harnu.mission', 'harnu.nope']) {
+      expect(validateArgs('context.append', append({ key }), REVIEW)).toEqual({
+        ok: false,
+        reason: 'BAD_ARGS'
+      })
+    }
+    expect(validateArgs('context.append', append({ durable: true }), REVIEW).ok).toBe(false)
+    expect(validateArgs('context.append', append()).ok).toBe(false) // no cause, no validator to say yes
+  })
+
+  it('the band row takes the limits and never a link', () => {
+    const parts = {
+      lead: '⧉ speech.ts L85–92',
+      detail: 'src/main',
+      hint: 'ask your question below'
+    }
+    expect(validateArgs('ui.band.set', { line: null }, BAND).ok).toBe(true)
+    expect(validateArgs('ui.band.set', { line: 'a · b', parts }, BAND).ok).toBe(true)
+    expect(
+      validateArgs('ui.band.set', { line: 'a', parts: { lead: 'x'.repeat(33) } }, BAND).ok
+    ).toBe(false)
+    expect(
+      validateArgs(
+        'ui.band.set',
+        { line: 'a', parts, link: { label: 'Open', href: 'http://localhost:1/o/t' } },
+        BAND
+      ).ok
+    ).toBe(false)
+  })
+
+  it('a second registration of either row keeps the review gesture (the replace hazard)', () => {
+    // P2W4 and P4W2 register these same two commands for their own sources.
+    registerGateRow('context.append', {
+      feature: 'act.context',
+      internal: ['contextInjector'],
+      validate: (a) => (a as { key?: unknown }).key === 'harnu.orchestrator'
+    })
+    registerGateRow('ui.band.set', {
+      feature: 'ui.band',
+      internal: ['missionBand'],
+      validate: () => true
+    })
+    // the later wave's own cause is open, with its own validator...
+    const injector: CommandCause = { kind: 'internal', subsystem: 'contextInjector' }
+    expect(checkOrigin('context.append', injector, { debug: false }).ok).toBe(true)
+    expect(validateArgs('context.append', append({ key: 'harnu.orchestrator' }), injector).ok).toBe(
+      true
+    )
+    expect(validateArgs('context.append', append(), injector).ok).toBe(false)
+    // ...and the review gesture survives, with the review validator, not the later one
+    expect(checkOrigin('context.append', REVIEW, { debug: false }).ok).toBe(true)
+    expect(validateArgs('context.append', append(), REVIEW).ok).toBe(true)
+    expect(validateArgs('context.append', append({ key: 'harnu.orchestrator' }), REVIEW).ok).toBe(
+      false
+    )
+    expect(checkOrigin('ui.band.set', BAND, { debug: false }).ok).toBe(true)
+    expect(
+      validateArgs('ui.band.set', { line: 'x', parts: { lead: 'y'.repeat(40) } }, BAND).ok
+    ).toBe(false)
+    expect(
+      checkOrigin('ui.band.set', { kind: 'internal', subsystem: 'missionBand' }, { debug: false })
+        .ok
+    ).toBe(true)
+    // a registration that lists nothing still keeps it
+    registerGateRow('context.append', { feature: 'act.context' })
+    expect(checkOrigin('context.append', REVIEW, { debug: false }).ok).toBe(true)
+  })
+
+  it('no other cause opens either row', () => {
+    for (const cause of [
+      { kind: 'verb', verb: 'message_session' },
+      { kind: 'verb', verb: 'review.selection.send' },
+      { kind: 'operator', gesture: 'debug' },
+      { kind: 'operator', gesture: 'diagnostics.ping' },
+      { kind: 'internal', subsystem: 'review.selection.send' }
+    ] as CommandCause[]) {
+      expect(checkOrigin('context.append', cause, { debug: true }).ok).toBe(false)
+    }
+    expect(checkOrigin('ui.band.set', REVIEW, { debug: true }).ok).toBe(false)
+    expect(
+      checkOrigin('ui.band.set', { kind: 'internal', subsystem: 'arbitration' }, { debug: true }).ok
+    ).toBe(false)
+  })
+
+  it('resetGateRowsForTests restores the review rows', () => {
+    resetGateRowsForTests()
+    expect(gateRowFor('context.append')?.feature).toBe('act.context')
+    expect(checkOrigin('ui.band.set', BAND, { debug: false }).ok).toBe(true)
   })
 })
