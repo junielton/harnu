@@ -10,6 +10,7 @@ import type { GcJobInfo, GcSnapshot } from '../src/main/gc/gc-wire'
 import { refusalFor } from '../src/main/gc/autopilot-core'
 import { ipcFn } from './helpers/ipc-clone'
 import { GIB, MIB, reviewReason, snapshotOf, volume, wt } from './helpers/cleanup-gc-fixtures'
+import { mountCloseTakeover, pressEsc } from './helpers/close-takeover-harness'
 
 /**
  * The assembled Cleanup screen against a stubbed `window.api`: the hero's one confirm, the selection
@@ -250,6 +251,31 @@ describe('Cleanup screen — multi-select on Needs review', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await flushPromises()
     expect(dom('[data-testid="block-panel"]').exists()).toBe(false)
+  })
+
+  // T486 AC-20: the selection and the panel each take one Esc; only then does
+  // `view.closeTakeover` close the takeover. Cleanup listens in the window
+  // capture phase and stops what it consumed, so the binding never sees it.
+  it('Esc peels the selection, then the panel, then closes Cleanup', async () => {
+    install(snap())
+    const harness = mountCloseTakeover()
+    const ui = useUiStore()
+    ui.openCleanup()
+    await mountView()
+    const review = domAll('[data-testid="treemap-block"][data-bucket="review"]')
+    await review[0].trigger('click', { shiftKey: true })
+    await review[1].trigger('click')
+    await flushPromises()
+
+    await pressEsc(document.body)
+    expect(dom('[data-testid="sel-remove"]').exists()).toBe(false)
+    expect(ui.activeView?.id).toBe('cleanup')
+    await pressEsc(document.body)
+    expect(dom('[data-testid="block-panel"]').exists()).toBe(false)
+    expect(ui.activeView?.id).toBe('cleanup')
+    await pressEsc(document.body)
+    expect(ui.activeView).toBeNull()
+    harness.unmount()
   })
 })
 

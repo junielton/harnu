@@ -35,6 +35,8 @@ import {
 } from '../src/main/canvas-core'
 import { i18n } from '@renderer/i18n'
 import { installJsdomSvgShim, svgHost } from './helpers/jsdom-svg'
+import { useUiStore } from '../src/renderer/src/stores/ui'
+import { mountCloseTakeover, pressEsc } from './helpers/close-takeover-harness'
 
 installJsdomSvgShim()
 
@@ -781,5 +783,50 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     await settle()
     expect(w.text()).toContain('Drag anywhere to draw a box')
     w.unmount()
+  })
+})
+
+// T486 AC-20 — a Diagram pane beside Roadmap or Review: Esc clears its
+// selection first (window capture, stopped), and only the next Esc reaches
+// `view.closeTakeover`.
+describe('DiagramPane — Esc peels the selection before the takeover', () => {
+  it('first Esc clears the selection, the second closes the Roadmap', async () => {
+    const harness = mountCloseTakeover()
+    const ui = useUiStore()
+    ui.openRoadmap('/wt', 'wt')
+    const w = mountPane()
+    await settle()
+    const body = w.find('[data-testid="diagram-canvas-host"]').element.parentElement as HTMLElement
+    body.focus()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true }))
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', ctrlKey: true, bubbles: true }))
+    await settle()
+
+    await pressEsc(body)
+    await settle()
+    expect(ui.activeView?.id).toBe('roadmap')
+    // Selection empty now: Delete has nothing to remove, so Save stays absent.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }))
+    await settle()
+    expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
+
+    await pressEsc(body)
+    expect(ui.activeView).toBeNull()
+    w.unmount()
+    harness.unmount()
+  })
+
+  it('with nothing selected the first Esc closes the takeover', async () => {
+    const harness = mountCloseTakeover()
+    const ui = useUiStore()
+    ui.openReview('/wt', null)
+    const w = mountPane()
+    await settle()
+    const body = w.find('[data-testid="diagram-canvas-host"]').element.parentElement as HTMLElement
+    body.focus()
+    await pressEsc(body)
+    expect(ui.activeView).toBeNull()
+    w.unmount()
+    harness.unmount()
   })
 })

@@ -94,11 +94,11 @@ describe('buildAppMenu — threads the resolved table into every item', () => {
     expect(newSession?.accelerator).toBe('CmdOrCtrl+N')
   })
 
-  it('adds the View → "Keyboard Shortcuts…" item (T1 P5)', () => {
+  it('adds the View → "Open keybindings.json" item (T1 P5, relabeled in T486)', () => {
     const template = buildAppMenu(() => null) as unknown as MenuItemConstructorOptions[]
     const view = template.find((m) => m.label === '&View')
     const item = (view?.submenu as MenuItemConstructorOptions[]).find(
-      (i) => i.label === 'Keyboard Shortcuts…'
+      (i) => i.label === 'Open keybindings.json'
     )
     expect(item?.accelerator).toBe('CmdOrCtrl+Alt+K')
   })
@@ -129,5 +129,72 @@ describe('buildAppMenu — threads the resolved table into every item', () => {
     const resolved = resolveKeybindings([{ key: 'Cmd+Shift+M', command: 'view.roadmap' }])
     const bound = buildAppMenu(() => null, resolved) as unknown as MenuItemConstructorOptions[]
     expect(folderItem(bound, 'Roadmap Board')?.accelerator).toBe('CmdOrCtrl+Shift+M')
+  })
+})
+
+/**
+ * T486 §10 / AC-36 — "Keyboard Shortcuts…" opens Settings on its tab
+ * (`view.settings.keybindings`, ⌘⌥S / Ctrl+Alt+S); the item that opens the raw
+ * file is relabeled "Open keybindings.json". On macOS the new item sits right
+ * after Settings… in the app menu (where Mac users look for preferences); View
+ * elsewhere. Never both: one accelerator, one owner.
+ */
+describe('buildAppMenu — Keyboard Shortcuts… and Open keybindings.json (T486 U4b)', () => {
+  type Item = MenuItemConstructorOptions
+  const items = (template: Item[], label: string): Item[] =>
+    (template.find((m) => m.label === label)?.submenu as Item[]) ?? []
+  const labels = (list: Item[]): Array<string | undefined> => list.map((i) => i.label)
+
+  function build(): { template: Item[]; sent: string[] } {
+    const sent: string[] = []
+    const win = { webContents: { send: (_ch: string, id: string) => sent.push(id) } }
+    const template = buildAppMenu(() => win as never) as unknown as Item[]
+    return { template, sent }
+  }
+
+  it('resolves ⌘⌥S / Ctrl+Alt+S for view.settings.keybindings', () => {
+    expect(accel('view.settings.keybindings')).toBe('CmdOrCtrl+Alt+S')
+  })
+
+  it('Linux / Windows: View holds Keyboard Shortcuts… then Open keybindings.json', () => {
+    const { template, sent } = build()
+    const view = items(template, '&View')
+    const shortcuts = view.find((i) => i.label === 'Keyboard Shortcuts…')
+    const json = view.find((i) => i.label === 'Open keybindings.json')
+    expect(shortcuts?.accelerator).toBe('CmdOrCtrl+Alt+S')
+    expect(json?.accelerator).toBe('CmdOrCtrl+Alt+K')
+    expect(labels(view).indexOf('Open keybindings.json')).toBe(
+      labels(view).indexOf('Keyboard Shortcuts…') + 1
+    )
+    ;(shortcuts?.click as unknown as () => void)()
+    ;(json?.click as unknown as () => void)()
+    expect(sent).toEqual(['view.settings.keybindings', 'app.openKeybindings'])
+  })
+
+  it('macOS: right after Settings… in the app menu, and not under View', async () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
+    vi.resetModules()
+    try {
+      const mac = await import('../src/main/menu')
+      const sent: string[] = []
+      const win = { webContents: { send: (_ch: string, id: string) => sent.push(id) } }
+      const template = mac.buildAppMenu(() => win as never) as unknown as Item[]
+      const appMenu = items(template, 'Harnu')
+      const at = labels(appMenu).indexOf('Settings…')
+      expect(at).toBeGreaterThan(-1)
+      const shortcuts = appMenu[at + 1]
+      expect(shortcuts.label).toBe('Keyboard Shortcuts…')
+      expect(shortcuts.accelerator).toBe('CmdOrCtrl+Alt+S')
+      ;(shortcuts.click as unknown as () => void)()
+      expect(sent).toEqual(['view.settings.keybindings'])
+
+      const view = items(template, '&View')
+      expect(labels(view)).not.toContain('Keyboard Shortcuts…')
+      expect(labels(view)).toContain('Open keybindings.json')
+    } finally {
+      Object.defineProperty(process, 'platform', platform)
+      vi.resetModules()
+    }
   })
 })
