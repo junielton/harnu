@@ -3810,9 +3810,11 @@ holding `document.activeElement` is the focused one.
   collapsed. While a pane is maximized, the ring holds only that pane (the others are
   24px headers). Focus outside the ring goes to the first region (`F6`) or the last
   (`⇧F6`); an empty ring does nothing.
-- **What takes focus.** An xterm pane focuses its terminal. The Markdown, Memory and
-  Explorer panes focus their root (`tabindex="-1"`); the Diagram pane focuses its canvas
-  body, where its own keys live.
+- **What takes focus.** An xterm pane focuses its terminal (its root, `tabindex="-1"`,
+  while the terminal is not live yet). The Markdown, Memory and Explorer panes focus
+  their scroll body (`tabindex="-1"`; the Markdown editor in edit mode) — never the
+  `overflow-hidden` root, where Chromium would find no scroller for `PageDown` / arrows;
+  the Diagram pane focuses its canvas body, where its own keys live.
 - **Focus indicator.** A focused non-xterm pane (Markdown, Memory, Explorer, Diagram)
   draws a **1px `--accent-line` outline inset on its root** (`outline-offset: -1px`, so
   the stack's `overflow-hidden` never clips it) while focus is anywhere inside it
@@ -3822,7 +3824,8 @@ focus-within:-outline-offset-1 focus-within:outline-accent-line`. The root (and 
   `:focus-visible` ring (`main.css`): that ring sits 1px OUTSIDE the box, where the
   stack's `overflow-hidden` clips it, and it would draw a second ring. No motion — it appears and disappears with focus. xterm
   panes (shell, `claude`, the main terminal) draw none: their blinking cursor is the
-  indicator.
+  indicator. The one exception is a helper pane whose root itself holds focus (its
+  terminal is not live yet): the same outline, on `:focus` rather than `:focus-within`.
 - **Close and maximize from the keyboard.** `⌘⇧M` toggles maximize on the focused
   helper pane (focus stays in it); with no helper pane focused it restores a maximized
   pane. `pane.close` (unbound) runs the focused pane's own close — a dirty Markdown or
@@ -3831,7 +3834,8 @@ focus-within:-outline-offset-1 focus-within:outline-accent-line`. The root (and 
   current folder → open one. One exists but is not focused → reveal the panel (restore
   any other maximized pane, close a takeover that does not host the stack) and focus
   the first shell pane. It already holds focus → collapse the whole helper panel and
-  focus the main terminal. It reuses the first shell pane; Split ▸ New shell still
+  focus the main terminal, or leave focus on `<body>` when a takeover or the Folder
+  View covers the main terminal. It reuses the first shell pane; Split ▸ New shell still
   always adds another. "Shell pane" here means an **operator** shell: an agent terminal
   (T474) stays in the `F6` ring, but the toggle never takes it — with only agent
   terminals in the stack, the toggle opens a new shell.
