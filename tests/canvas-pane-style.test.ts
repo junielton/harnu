@@ -499,6 +499,40 @@ describe('DiagramPane properties panel — Review Focus 1: undo never paints an 
     expect(selectedIds(w)).toEqual(['n-a'])
   })
 
+  // Final review M2: X6 keeps a Transform widget entry for a node that was deleted, so a
+  // later theme switch used to reopen handles on a node that undo had brought back as a
+  // NEW instance — with nothing selected.
+  it('a theme switch does not reopen handles on a node deleted and restored by undo', async () => {
+    const w = mountPane()
+    await settle()
+    const handles = (): Element[] => [...w.element.querySelectorAll('.x6-widget-transform')]
+    const at = AT['n-a']
+    focusPane(w)
+    down(nodeEl(w, 'n-a'), at)
+    for (const type of ['mouseup', 'click']) {
+      nodeEl(w, 'n-a').dispatchEvent(
+        new MouseEvent(type, { bubbles: true, button: 0, clientX: at[0], clientY: at[1] })
+      )
+    }
+    await settle()
+    expect(handles()).toHaveLength(1)
+
+    focusPane(w)
+    key('Delete')
+    await settle()
+    expect(handles()).toHaveLength(0)
+    focusPane(w)
+    key('z', { ctrlKey: true })
+    await settle()
+    expect(handles()).toHaveLength(0)
+    expect(selectedIds(w)).toEqual([])
+
+    await switchTheme(w, LIGHT)
+    await settle()
+    expect(handles()).toHaveLength(0)
+    expect(selectedIds(w)).toEqual([])
+  })
+
   it('a theme switch recolours a styled board and leaves the pane clean', async () => {
     const styled: CanvasDocument = {
       ...DOC,
