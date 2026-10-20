@@ -413,11 +413,11 @@ function stackNodes(
   nodeCells: ReadonlyMap<string, Record<string, unknown>>,
   stack: CanvasStackMode
 ): void {
-  const live = [...nodeCells].map(([id, cell]) => ({ id, z: cellZ(cell) }))
   if (stack === 'live') {
     for (const node of nodes) node.zIndex = cellZ(nodeCells.get(node.id)!)
     return
   }
+  const live = [...nodeCells].map(([id, cell]) => ({ id, z: cellZ(cell) }))
   const ranks = savedZIndexes(nodes, liveStackOrder(live))
   if (ranks) for (const node of nodes) node.zIndex = ranks.get(node.id)
 }

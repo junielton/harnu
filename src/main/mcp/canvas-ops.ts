@@ -718,7 +718,9 @@ export function applyCanvasOps(input: ApplyCanvasOpsInput): ApplyCanvasOpsResult
         }
         // Assigned (not spread) so an existing `props` keeps its key position in
         // the file, and removed only when the style merge emptied it.
-        // An existing `zIndex` keeps its key position; `null` removes it.
+        // A number sets `zIndex`, `null` removes it. Where the key lands in the file is
+        // not decided here: serialization writes every node's keys in a fixed order
+        // (`orderedNode` in canvas-core.ts).
         if (zIndex === null) delete next.zIndex
         else if (zIndex !== undefined) next.zIndex = zIndex
         if (propsChanged) {

@@ -276,8 +276,8 @@
       "front": "Bring to front"
     },
     "style": {
-      "panel": "Style",
-      "show": "Show style options",
+      "panel": "Properties",
+      "show": "Show properties",
       "group": {
         "tone": "Color",
         "stroke": "Stroke",
