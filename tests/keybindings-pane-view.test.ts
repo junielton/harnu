@@ -18,7 +18,8 @@ import {
   resolveKeybindings,
   scopeChordKey,
   type RawOverrideEntry,
-  type ResolvedBinding
+  type ResolvedBinding,
+  type ShortcutActionId
 } from '../src/main/keybindings-core'
 
 /**
@@ -274,6 +275,18 @@ describe('groups (AC-6)', () => {
     expect(groupIds(w)).toEqual(present)
     expect(groupIds(w)).toEqual(['sessions', 'sidebar', 'folders', 'views', 'takeovers', 'app'])
     expect(w.find('[data-kb-group="sessions"]').text()).toContain('Sessions')
+  })
+
+  it('puts every row under its own group header', async () => {
+    const w = await mountPane()
+    for (const g of groupIds(w)) {
+      const rows = w.findAll(`[data-kb-group="${g}"] [data-kb-row]`)
+      expect(rows.length, g).toBeGreaterThan(0)
+      for (const r of rows) {
+        const id = r.attributes('data-kb-row') as ShortcutActionId
+        expect(DESCRIPTOR_BY_ID[id].group, id).toBe(g)
+      }
+    }
   })
 
   it('keeps table order inside a group', async () => {
