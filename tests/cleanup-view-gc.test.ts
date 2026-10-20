@@ -244,17 +244,17 @@ describe('Cleanup screen — multi-select on Needs review', () => {
     await review[0].trigger('click', { shiftKey: true })
     await review[1].trigger('click')
     await flushPromises()
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await flushPromises()
     expect(dom('[data-testid="sel-remove"]').exists()).toBe(false)
     expect(dom('[data-testid="block-panel"]').exists()).toBe(true)
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await flushPromises()
     expect(dom('[data-testid="block-panel"]').exists()).toBe(false)
   })
 
   // T486 AC-20: the selection and the panel each take one Esc; only then does
-  // `view.closeTakeover` close the takeover. Cleanup listens in the window
+  // `view.closeTakeover` close the takeover. Cleanup listens in the document
   // capture phase and stops what it consumed, so the binding never sees it.
   it('Esc peels the selection, then the panel, then closes Cleanup', async () => {
     install(snap())
@@ -276,6 +276,44 @@ describe('Cleanup screen — multi-select on Needs review', () => {
     await pressEsc(document.body)
     expect(ui.activeView).toBeNull()
     harness.unmount()
+  })
+
+  // A surface opened OVER Cleanup (Settings from "Autopilot settings", the command
+  // palette, a context menu) registers its window capture listener after Cleanup's
+  // and stops Esc. Its Esc must close that surface only, keeping the checked set.
+  it('Esc owned by a later window-capture surface leaves the selection alone', async () => {
+    install(snap())
+    await mountView()
+    const review = domAll('[data-testid="treemap-block"][data-bucket="review"]')
+    await review[0].trigger('click', { shiftKey: true })
+    await review[1].trigger('click')
+    await flushPromises()
+    let surfaceOpen = true
+    const surface = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return
+      surfaceOpen = false
+      e.stopPropagation()
+    }
+    window.addEventListener('keydown', surface, true)
+    await pressEsc(document.body)
+    window.removeEventListener('keydown', surface, true)
+    expect(surfaceOpen).toBe(false)
+    expect(dom('[data-testid="sel-remove"]').exists()).toBe(true)
+  })
+
+  it('Esc with a footer / Topbar popover open closes the popover, not the selection', async () => {
+    install(snap())
+    await mountView()
+    const ui = useUiStore()
+    const review = domAll('[data-testid="treemap-block"][data-bucket="review"]')
+    await review[0].trigger('click', { shiftKey: true })
+    await review[1].trigger('click')
+    await flushPromises()
+    ui.setPopoverAnchor('usagePanel', true)
+    expect(ui.openPopover('usagePanel')).toBe(true)
+    await pressEsc(document.body)
+    expect(dom('[data-testid="sel-remove"]').exists()).toBe(true)
+    ui.closePopover('usagePanel')
   })
 })
 

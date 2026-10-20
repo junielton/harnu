@@ -767,7 +767,7 @@ async function handleCanvasChanged(payload: { path: string }): Promise<void> {
 onMounted(async () => {
   unsubscribeCanvasChanged = window.api.onCanvasChanged(handleCanvasChanged)
   window.addEventListener('keydown', onWindowKeydown)
-  window.addEventListener('keydown', onEscCapture, true)
+  document.addEventListener('keydown', onEscCapture, true)
   void window.api.canvasWatchStart(filePath.value)
   await load(filePath.value, true)
   // Follow the pane as the operator drags the inter-pane divider or maximizes.
@@ -788,7 +788,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onWindowKeydown)
-  window.removeEventListener('keydown', onEscCapture, true)
+  document.removeEventListener('keydown', onEscCapture, true)
   window.removeEventListener('mousemove', onDrawMove, DRAW_LISTENER)
   window.removeEventListener('mouseup', onDrawUp, DRAW_LISTENER)
   unsubscribeCanvasChanged?.()
@@ -947,8 +947,10 @@ function onWindowKeydown(ev: KeyboardEvent): void {
 }
 
 /**
- * Esc clears the selection — in the window CAPTURE phase, and stopped, so a Roadmap
+ * Esc clears the selection — in the document CAPTURE phase, and stopped, so a Roadmap
  * or Review takeover behind this pane stays open until the next Esc (T486 §6.1).
+ * Document, not window: a dialog or menu opened later listens in window capture
+ * and stops Esc, so it keeps its Esc instead of sharing it with this pane.
  * With nothing selected the key passes on to `view.closeTakeover`.
  */
 function onEscCapture(ev: KeyboardEvent): void {

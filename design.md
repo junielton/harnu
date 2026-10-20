@@ -4438,8 +4438,10 @@ them for free by being added to the registry, not by re-implementing them:
      a microtask checkpoint after each listener, so the binding runs **before** the
      popover's listener and still sees the flag set);
   3. the takeover's own state — Cleanup's selection then its block panel, a Diagram
-     pane's selection (both a window **capture** listener that stops only what it
-     consumed), the PR Stack filter, the Roadmap dispatch confirm (element-level, with
+     pane's selection (both a **document capture** listener that stops only what it
+     consumed — document, so a dialog, palette or menu opened over them keeps its
+     own window-capture Esc; Cleanup also steps aside while a popover is open), the
+     PR Stack filter, the Roadmap dispatch confirm (element-level, with
      `stopPropagation`; the confirm takes focus when it opens so Esc lands on it);
   4. the takeover itself.
 

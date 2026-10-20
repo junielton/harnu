@@ -6,7 +6,8 @@
  *
  * What wins Esc before this binding does is NOT decided here: dialogs, the
  * palettes and the context menus take it in the window capture phase and stop
- * it; Cleanup and the Diagram pane do the same for their own selection; the PR
+ * it; Cleanup and the Diagram pane do the same for their own selection, on
+ * `document` so those window-capture surfaces still win over them; the PR
  * Stack filter and the Roadmap dispatch confirm stop it on their element. The
  * footer / Topbar popovers close on a bubble listener that runs AFTER this
  * binding (Chromium runs a microtask checkpoint after each listener), so the

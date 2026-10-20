@@ -787,7 +787,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
 })
 
 // T486 AC-20 — a Diagram pane beside Roadmap or Review: Esc clears its
-// selection first (window capture, stopped), and only the next Esc reaches
+// selection first (document capture, stopped), and only the next Esc reaches
 // `view.closeTakeover`.
 describe('DiagramPane — Esc peels the selection before the takeover', () => {
   it('first Esc clears the selection, the second closes the Roadmap', async () => {
