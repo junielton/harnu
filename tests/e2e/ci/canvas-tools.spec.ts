@@ -321,6 +321,18 @@ test.describe('canvas tools in the built app (T536 U1 + U2 + U3 + U4, spec §9.3
 
         await page.mouse.click(blank.x, blank.y)
         await expect(selected).toHaveCount(0)
+
+        // The first Save of a board nobody has restacked: a plain move of D, Save, and the
+        // file gains no `zIndex` at all (the file is as hand-written as the agent left it).
+        const seedD = readFileSync(boardPath, 'utf8')
+        const d = centre(await nodeBox(idOf.D))
+        await drag(d, { x: d.x + 24, y: d.y })
+        const movedDoc = await saveAndRead()
+        expect(readFileSync(boardPath, 'utf8'), 'the move was saved').not.toBe(seedD)
+        expect(
+          movedDoc.nodes.filter((n) => 'zIndex' in n).map((n) => n.id),
+          'the first Save of an untouched board writes no zIndex'
+        ).toEqual([])
       })
 
       await test.step('2. Rectangle: drag draws a box of that size, then back to Select', async () => {
@@ -726,14 +738,50 @@ test.describe('canvas tools in the built app (T536 U1 + U2 + U3 + U4, spec §9.3
         }
 
         /**
-         * Show the board as it is on disk. An agent's write is not pushed into an open pane
-         * (it arms the same one-shot self-write suppression the pane's own Save does, so the
-         * watcher swallows it), so the operator's Reload button re-reads the file; the viewport
-         * is kept by a reload, so Fit brings the new boxes into view.
+         * Mark every node element now on screen, then wait until none of the marked ones is
+         * left: X6 drew every node view again. A DOM-order assertion that was already true
+         * before a redraw proves nothing, so each redraw below is awaited this way first.
+         */
+        const tagNodes = (): Promise<void> =>
+          page.evaluate(() =>
+            document
+              .querySelectorAll('[data-testid="diagram-pane"] g.x6-node')
+              .forEach((el) => el.setAttribute('data-pre-redraw', '1'))
+          )
+        const expectRedrawn = async (what: string): Promise<void> => {
+          await expect(
+            pane.locator('g.x6-node[data-pre-redraw]'),
+            `${what}: every node view was drawn again`
+          ).toHaveCount(0, { timeout: STARTUP_TIMEOUT })
+        }
+        /** Switch the app theme through its store, and wait for the pane to redraw. */
+        const setTheme = async (name: string): Promise<void> => {
+          await tagNodes()
+          await page.evaluate((t) => {
+            const app = (
+              document.querySelector('#app') as unknown as {
+                __vue_app__: {
+                  config: { globalProperties: { $pinia: { _s: Map<string, unknown> } } }
+                }
+              }
+            ).__vue_app__
+            ;(app.config.globalProperties.$pinia._s.get('theme') as { set(t: string): void }).set(t)
+          }, name)
+          await expect(page.locator('html')).toHaveAttribute('data-theme', name)
+          await expectRedrawn(`theme ${name}`)
+        }
+        /**
+         * Show the board as it is on disk, through the operator's Reload button. (Live
+         * propagation of an agent's write into a clean open pane is a known pre-existing gap:
+         * `writeCanvasFile` arms the pane's one-shot self-write suppression, so the watcher
+         * swallows the change. It is not covered here.) The viewport is kept by a reload, so
+         * Fit brings the new boxes into view.
          */
         const reloadBoard = async (): Promise<SavedDoc> => {
           const onDisk = JSON.parse(readFileSync(boardPath, 'utf8')) as SavedDoc
+          await tagNodes()
           await pane.getByRole('button', { name: 'Reload canvas', exact: true }).click()
+          await expectRedrawn('Reload')
           await expect(nodes).toHaveCount(onDisk.nodes.length, { timeout: STARTUP_TIMEOUT })
           await pane.getByRole('button', { name: 'Fit to view', exact: true }).click()
           await expectStableGeometry(onDisk.nodes[0].id)
@@ -742,7 +790,7 @@ test.describe('canvas tools in the built app (T536 U1 + U2 + U3 + U4, spec §9.3
 
         // The earlier steps' Saves ranked every node (operator-drawn nodes broke file order),
         // so the agent first clears those ranks with `zIndex: null`, then adds three boxes
-        // overlapping in that order: the board is a file nobody has restacked.
+        // overlapping in that order: a board whose file holds no rank at all.
         await expect(tool('select')).toHaveAttribute('aria-pressed', 'true')
         const ranked = (JSON.parse(readFileSync(boardPath, 'utf8')) as SavedDoc).nodes.filter(
           (n) => typeof n.zIndex === 'number'
@@ -786,7 +834,9 @@ test.describe('canvas tools in the built app (T536 U1 + U2 + U3 + U4, spec §9.3
           doc.nodes.filter((n) => 'zIndex' in n),
           'the agent left no zIndex in the file'
         ).toEqual([])
-        for (const n of doc.nodes) if (n.label && n.label in L) L[n.label as keyof typeof L] = n.id
+        for (const n of doc.nodes)
+          if (n.label !== undefined && Object.hasOwn(L, n.label))
+            L[n.label as keyof typeof L] = n.id
         expect(ids().every(Boolean), 'the agent added L1, L2 and L3').toBe(true)
         doc = await reloadBoard()
         await expectStableGeometry(L.L3)
@@ -795,7 +845,7 @@ test.describe('canvas tools in the built app (T536 U1 + U2 + U3 + U4, spec §9.3
           'a fresh load paints L1, L2, L3 in file order'
         ).toEqual(ids())
 
-        // A move of L3 alone never writes a zIndex: the file nobody restacked stays unstacked.
+        // A move of L3 alone never writes a zIndex: an unranked file stays unranked.
         const l3 = await inside(L.L3, BOX_W - 6, BOX_H / 2)
         await drag(l3, { x: l3.x + 20 * l3.s, y: l3.y })
         doc = await saveAndRead()
@@ -807,48 +857,27 @@ test.describe('canvas tools in the built app (T536 U1 + U2 + U3 + U4, spec §9.3
         // L1 to the front from the panel: it paints last, and a click on the overlap hits it.
         const l1 = await inside(L.L1, 8, BOX_H / 2)
         await page.mouse.click(l1.x, l1.y)
-        expect(await selectedIds(), 'L1 is selected').toEqual([L.L1])
+        await expect.poll(selectedIds, 'L1 is selected').toEqual([L.L1])
         await layer('front')
         await expect.poll(async () => (await paintOrder()).at(-1)).toBe(L.L1)
         const blank = await blankRect(10, 10)
         await page.mouse.click(blank.x + 5, blank.y + 5)
-        expect(await selectedIds(), 'nothing selected after a blank click').toEqual([])
+        await expect.poll(selectedIds, 'nothing selected after a blank click').toEqual([])
         const overlap = await sharedCentre()
         await page.mouse.click(overlap.x, overlap.y)
-        expect(await selectedIds(), 'a click on the overlap selects the front box').toEqual([L.L1])
+        await expect
+          .poll(selectedIds, 'a click on the overlap selects the front box')
+          .toEqual([L.L1])
 
         // A theme switch redraws the pane: L1 stays in front, and the history survives it.
-        await page.evaluate(() => {
-          const app = (
-            document.querySelector('#app') as unknown as {
-              __vue_app__: {
-                config: { globalProperties: { $pinia: { _s: Map<string, unknown> } } }
-              }
-            }
-          ).__vue_app__
-          ;(app.config.globalProperties.$pinia._s.get('theme') as { set(t: string): void }).set(
-            'light'
-          )
-        })
-        await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+        await setTheme('light')
         await expect.poll(async () => (await paintOrder()).at(-1)).toBe(L.L1)
         await page.mouse.click(overlap.x, overlap.y)
         await page.keyboard.press('Control+z')
         await expect.poll(stack, 'Ctrl+Z puts L1 back under L2 and L3').toEqual(ids())
         await page.keyboard.press('Control+y')
         await expect.poll(stack, 'Ctrl+Y puts L1 on top again').toEqual([L.L2, L.L3, L.L1])
-        await page.evaluate(() => {
-          const app = (
-            document.querySelector('#app') as unknown as {
-              __vue_app__: {
-                config: { globalProperties: { $pinia: { _s: Map<string, unknown> } } }
-              }
-            }
-          ).__vue_app__
-          ;(app.config.globalProperties.$pinia._s.get('theme') as { set(t: string): void }).set(
-            'default-dark'
-          )
-        })
+        await setTheme('default-dark')
 
         // Saving writes a rank on every node, L1 the highest, and none on an edge.
         doc = await saveAndRead()
@@ -856,8 +885,18 @@ test.describe('canvas tools in the built app (T536 U1 + U2 + U3 + U4, spec §9.3
           doc.nodes.every((n) => typeof n.zIndex === 'number'),
           'every node has a zIndex'
         ).toBe(true)
-        expect(doc.nodes.find((n) => n.id === L.L1)?.zIndex).toBe(
-          Math.max(...doc.nodes.map((n) => n.zIndex ?? 0))
+        const l1Rank = doc.nodes.find((n) => n.id === L.L1)?.zIndex ?? 0
+        expect(
+          doc.nodes.filter((n) => n.id !== L.L1).every((n) => (n.zIndex ?? 0) < l1Rank),
+          "L1's rank is strictly above every other node's"
+        ).toBe(true)
+        const rankOf = (d: SavedDoc, id: string): number =>
+          d.nodes.find((n) => n.id === id)?.zIndex ?? Number.NaN
+        const ranksAlong = async (d: SavedDoc): Promise<number[]> =>
+          (await paintOrder()).map((id) => rankOf(d, id))
+        const strictlyUp = (r: number[]): boolean => r.every((v, i) => i === 0 || v > r[i - 1])
+        expect(strictlyUp(await ranksAlong(doc)), 'saved ranks rise along the paint order').toBe(
+          true
         )
         expect(doc.edges.length, 'the board still has its edge').toBeGreaterThan(0)
         expect(
@@ -882,11 +921,20 @@ test.describe('canvas tools in the built app (T536 U1 + U2 + U3 + U4, spec §9.3
         const drawn = doc.nodes.filter((n) => n.label === 'N')
         expect(drawn).toHaveLength(1)
         await expect.poll(async () => (await paintOrder()).at(-1)).toBe(drawn[0].id)
-        await pane.getByRole('button', { name: 'Reload canvas', exact: true }).click()
-        await expect(nodes).toHaveCount(doc.nodes.length, { timeout: STARTUP_TIMEOUT })
+        expect(
+          doc.nodes
+            .filter((n) => n.id !== drawn[0].id)
+            .every((n) => (n.zIndex ?? 0) < (drawn[0].zIndex ?? 0)),
+          "N's saved rank is strictly above every other node's"
+        ).toBe(true)
+        await reloadBoard()
         await expect
           .poll(async () => (await paintOrder()).at(-1), 'N paints last after a reload')
           .toBe(drawn[0].id)
+        expect(
+          strictlyUp(await ranksAlong(doc)),
+          'saved ranks rise along the reloaded paint order'
+        ).toBe(true)
 
         // The agent: zIndex below 1 is refused and changes nothing; a high one restacks.
         const onDisk = readFileSync(boardPath, 'utf8')
@@ -931,7 +979,7 @@ test.describe('canvas tools in the built app (T536 U1 + U2 + U3 + U4, spec §9.3
         await reloadBoard()
         await expectStableGeometry((card as SavedNode).id)
         await page.mouse.click(...xy(centre(await nodeBox((card as SavedNode).id))))
-        expect(await selectedIds()).toEqual([(card as SavedNode).id])
+        await expect.poll(selectedIds).toEqual([(card as SavedNode).id])
         if (!(await pane.getByTestId('canvas-layers').isVisible()))
           await pane.getByTestId('canvas-properties-toggle').click()
         await expect(pane.getByTestId('canvas-layers')).toBeVisible()
