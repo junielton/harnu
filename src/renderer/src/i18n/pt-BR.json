@@ -267,6 +267,35 @@
     "changedOnDisk": {
       "title": "Este canvas mudou no disco.",
       "reload": "Recarregar"
+    },
+    "style": {
+      "panel": "Estilo",
+      "show": "Mostrar opções de estilo",
+      "group": {
+        "tone": "Cor",
+        "stroke": "Traço",
+        "strokeWidth": "Espessura do traço",
+        "corners": "Cantos",
+        "fontSize": "Tamanho do texto",
+        "align": "Alinhamento",
+        "opacity": "Opacidade"
+      },
+      "value": {
+        "tone": {
+          "default": "Padrão",
+          "accent": "Destaque",
+          "green": "Verde",
+          "amber": "Âmbar",
+          "red": "Vermelho",
+          "muted": "Neutro"
+        },
+        "stroke": { "solid": "Contínuo", "dashed": "Tracejado", "dotted": "Pontilhado" },
+        "strokeWidth": { "thin": "Fino", "regular": "Normal", "bold": "Grosso" },
+        "corners": { "sharp": "Retos", "round": "Arredondados" },
+        "fontSize": { "s": "Pequeno", "m": "Médio", "l": "Grande", "xl": "Extra grande" },
+        "align": { "left": "Esquerda", "center": "Centro", "right": "Direita" },
+        "opacity": { "25": "25%", "50": "50%", "75": "75%", "100": "100%" }
+      }
     }
   },
   "markdownRenderer": {
