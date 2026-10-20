@@ -64,31 +64,41 @@ const enabledFlags = new Map<string, ReturnType<typeof ref<boolean>>>()
  * input is a text field), so a listed + runnable row proves the guard is not
  * consulted for the palette.
  */
-function mountPalette(ids: readonly ShortcutActionId[] = ELIGIBLE): VueWrapper {
-  handlers.clear()
-  enabledFlags.clear()
+/**
+ * The one host component every test mounts: it registers `bindings()` in its
+ * setup (so they unregister on unmount) and renders the palette, plus the
+ * Activity bell when `withBell` is set.
+ */
+function mountHost(bindings: () => ShortcutBinding[], withBell = false): VueWrapper {
   const keybindings = useKeybindingsStore()
   const Host = defineComponent({
     setup() {
-      const bindings: ShortcutBinding[] = ids.map((id) => {
-        const handler = vi.fn()
-        const flag = ref(true)
-        handlers.set(id, handler)
-        enabledFlags.set(id, flag)
-        return {
-          id,
-          scope: 'global',
-          enabled: () => flag.value === true,
-          keysGuard: () => false,
-          handler
-        }
-      })
-      useShortcuts(bindings, () => keybindings.resolved)
-      return () => h(CommandPalette)
+      useShortcuts(bindings(), () => keybindings.resolved)
+      return () => (withBell ? h('div', [h(ActivityBell), h(CommandPalette)]) : h(CommandPalette))
     }
   })
   wrapper = mount(Host, { attachTo: document.body, global: { plugins: [i18n] } })
   return wrapper
+}
+
+function mountPalette(ids: readonly ShortcutActionId[] = ELIGIBLE): VueWrapper {
+  handlers.clear()
+  enabledFlags.clear()
+  return mountHost(() =>
+    ids.map((id) => {
+      const handler = vi.fn()
+      const flag = ref(true)
+      handlers.set(id, handler)
+      enabledFlags.set(id, flag)
+      return {
+        id,
+        scope: 'global',
+        enabled: () => flag.value === true,
+        keysGuard: () => false,
+        handler
+      }
+    })
+  )
 }
 
 async function openPalette(): Promise<void> {
@@ -308,26 +318,20 @@ describe('Forward risk — a popover action chosen by mouse click stays open', (
     await flushPromises()
   }
 
+  /** The Activity bell's toggle, enabled once the bell has registered its anchor. */
+  function activityBinding(): ShortcutBinding {
+    const ui = useUiStore()
+    return {
+      id: 'view.activity',
+      scope: 'global',
+      enabled: () => ui.popoverAnchors.activity,
+      handler: () => ui.togglePopover('activity')
+    }
+  }
+
   it('view.activity: the bell popover opens and is still open after the click', async () => {
     const ui = useUiStore()
-    const keybindings = useKeybindingsStore()
-    const Host = defineComponent({
-      setup() {
-        useShortcuts(
-          [
-            {
-              id: 'view.activity',
-              scope: 'global',
-              enabled: () => ui.popoverAnchors.activity,
-              handler: () => ui.togglePopover('activity')
-            }
-          ],
-          () => keybindings.resolved
-        )
-        return () => h('div', [h(ActivityBell), h(CommandPalette)])
-      }
-    })
-    wrapper = mount(Host, { attachTo: document.body, global: { plugins: [i18n] } })
+    mountHost(() => [activityBinding()], true)
     await flushPromises()
     await openPalette()
     await type(label('view.activity'))
@@ -341,24 +345,7 @@ describe('Forward risk — a popover action chosen by mouse click stays open', (
 
   it('Enter on the same row opens it too', async () => {
     const ui = useUiStore()
-    const keybindings = useKeybindingsStore()
-    const Host = defineComponent({
-      setup() {
-        useShortcuts(
-          [
-            {
-              id: 'view.activity',
-              scope: 'global',
-              enabled: () => ui.popoverAnchors.activity,
-              handler: () => ui.togglePopover('activity')
-            }
-          ],
-          () => keybindings.resolved
-        )
-        return () => h('div', [h(ActivityBell), h(CommandPalette)])
-      }
-    })
-    wrapper = mount(Host, { attachTo: document.body, global: { plugins: [i18n] } })
+    mountHost(() => [activityBinding()], true)
     await flushPromises()
     await openPalette()
     await type(label('view.activity'))
