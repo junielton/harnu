@@ -113,6 +113,107 @@ describe('findPrsForWorktrees', () => {
     expect(w.prs.map((p) => p.number).sort()).toEqual([7, 9])
   })
 
+  it('counts the commits the worktree branch holds beyond the default branch (T547)', async () => {
+    const { findPrsForWorktrees } = await import('../src/main/pr-stack')
+    const j = await findPrsForWorktrees(repo, { worktrees: [wt], branches: [], numbers: [] })
+    expect(j.worktrees[wt].commits).toBe(1)
+  })
+
+  it('counts zero commits for the main checkout itself — nothing beyond its own branch (T547)', async () => {
+    const { findPrsForWorktrees } = await import('../src/main/pr-stack')
+    const j = await findPrsForWorktrees(repo, { worktrees: [repo], branches: [], numbers: [] })
+    expect(j.worktrees[repo].commits).toBe(0)
+  })
+
+  describe('a stacked step counts only its own commits (T547)', () => {
+    let stacked = ''
+
+    /** feat/base: 20 commits over main; feat/stacked: 5 more on top of feat/base. */
+    beforeAll(async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-prjoin-stack-'))
+      const base = path.join(dir, 'base')
+      stacked = path.join(dir, 'stacked')
+      const commit = (cwd: string, n: number): void => {
+        for (let i = 0; i < n; i++)
+          git(
+            cwd,
+            '-c',
+            'user.email=t@t',
+            '-c',
+            'user.name=t',
+            'commit',
+            '-q',
+            '--allow-empty',
+            '-m',
+            `c${i}`
+          )
+      }
+      git(repo, 'worktree', 'add', '-q', '-b', 'feat/base', base)
+      commit(base, 20)
+      git(repo, 'worktree', 'add', '-q', '-b', 'feat/stacked', stacked, 'feat/base')
+      commit(stacked, 5)
+    })
+
+    it('counts from the open PR base when the branch has a PR', async () => {
+      gh.stdout = JSON.stringify([
+        {
+          number: 20,
+          headRefName: 'feat/stacked',
+          baseRefName: 'feat/base',
+          state: 'OPEN',
+          url: 'u20'
+        }
+      ])
+      const { findPrsForWorktrees } = await import('../src/main/pr-stack')
+      const j = await findPrsForWorktrees(repo, { worktrees: [stacked], branches: [], numbers: [] })
+      expect(j.worktrees[stacked].commits).toBe(5)
+    })
+
+    it('falls back to the default branch when there is no PR', async () => {
+      gh.stdout = '[]'
+      const { findPrsForWorktrees } = await import('../src/main/pr-stack')
+      const j = await findPrsForWorktrees(repo, { worktrees: [stacked], branches: [], numbers: [] })
+      expect(j.worktrees[stacked].commits).toBe(25)
+    })
+
+    it('falls back to the default branch when gh is absent', async () => {
+      gh.mode = 'absent'
+      const { findPrsForWorktrees } = await import('../src/main/pr-stack')
+      const j = await findPrsForWorktrees(repo, { worktrees: [stacked], branches: [], numbers: [] })
+      expect(j.worktrees[stacked].commits).toBe(25)
+    })
+
+    it('ignores a closed PR — only an open one names the base', async () => {
+      gh.stdout = JSON.stringify([
+        {
+          number: 21,
+          headRefName: 'feat/stacked',
+          baseRefName: 'feat/base',
+          state: 'CLOSED',
+          url: 'u21'
+        }
+      ])
+      const { findPrsForWorktrees } = await import('../src/main/pr-stack')
+      const j = await findPrsForWorktrees(repo, { worktrees: [stacked], branches: [], numbers: [] })
+      expect(j.worktrees[stacked].commits).toBe(25)
+    })
+
+    it('falls back when the PR base is not a ref git knows here', async () => {
+      gh.stdout = JSON.stringify([
+        {
+          number: 22,
+          headRefName: 'feat/stacked',
+          baseRefName: 'gone/branch',
+          state: 'OPEN',
+          url: 'u22'
+        }
+      ])
+      const { findPrsForWorktrees } = await import('../src/main/pr-stack')
+      const j = await findPrsForWorktrees(repo, { worktrees: [stacked], branches: [], numbers: [] })
+      expect(j.worktrees[stacked].commits).toBe(25)
+    })
+  })
+
   it('joins bare branches and PR numbers from ONE gh call', async () => {
     const { findPrsForWorktrees } = await import('../src/main/pr-stack')
     const j = await findPrsForWorktrees(repo, {

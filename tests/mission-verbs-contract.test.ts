@@ -117,7 +117,10 @@ const ChildState = z
     peer: z.object({ pid: z.number(), socket: z.string() }).optional(),
     modified: z.string().optional(),
     pendingApprovals: z.number().int().min(0),
-    lastTransitionAt: z.iso.datetime().optional()
+    lastTransitionAt: z.iso.datetime().optional(),
+    // T547: hook activity of the session's own subagents; set when they keep an idle parent working.
+    helperActivityAt: z.iso.datetime().optional(),
+    waitingOnHelpers: z.literal(true).optional()
   })
   .strict()
 
@@ -140,6 +143,8 @@ const LinkSignal = z.discriminatedUnion('kind', [
     exists: z.boolean(),
     branch: z.string().nullable(),
     head: z.object({ sha: z.string(), subject: z.string(), at: z.string() }).nullable(),
+    // T547: commits beyond the open PR's base, else the default branch; absent when git could not count.
+    commits: z.number().int().min(0).optional(),
     prs: z.array(PrSummary)
   }),
   z.object({
@@ -455,7 +460,15 @@ const CONTRACT: ContractRow[] = [
                   existence: z
                     .object({ proven: z.boolean(), reason: z.string().optional() })
                     .strict()
-                    .nullable()
+                    .nullable(),
+                  // T547: signs of movement inside the step.
+                  pulse: z
+                    .object({
+                      commits: z.number().int().min(0).nullable(),
+                      lastCommitAt: z.string().nullable(),
+                      lastActivityAt: z.string().nullable()
+                    })
+                    .strict()
                 })
                 .strict()
             )

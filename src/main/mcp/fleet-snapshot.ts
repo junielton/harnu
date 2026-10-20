@@ -362,6 +362,13 @@ export interface MissionChildState {
   pendingApprovals: number
   /** ISO time of the session's last `taskState` transition, when one was observed. */
   lastTransitionAt?: string
+  /** ISO time of the newest hook one of this session's own subagents fired (T547). */
+  helperActivityAt?: string
+  /**
+   * T547: the session's main thread is idle only because its own subagents are
+   * still working — `taskState` is reported `working` for it.
+   */
+  waitingOnHelpers?: true
 }
 
 /** The scoped projection: exactly the mission's linked sessions, in link order. */

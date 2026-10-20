@@ -257,6 +257,7 @@ interface GetAck {
       children: Array<{ sessionId: string; pendingApprovals: number } & Record<string, unknown>>
       links: Array<Record<string, unknown>>
       existence: { proven: boolean; reason?: string } | null
+      pulse: { commits: number | null; lastCommitAt: string | null; lastActivityAt: string | null }
     }>
   }
 }
@@ -300,9 +301,16 @@ describe('mission_get — derived live signals (design §7)', () => {
         stepId: 'stp-1',
         children: [],
         links: [],
-        existence: { proven: false, reason: expect.any(String) }
+        existence: { proven: false, reason: expect.any(String) },
+        pulse: { commits: null, lastCommitAt: null, lastActivityAt: null }
       },
-      { stepId: 'stp-2', children: [], links: [], existence: null }
+      {
+        stepId: 'stp-2',
+        children: [],
+        links: [],
+        existence: null,
+        pulse: { commits: null, lastCommitAt: null, lastActivityAt: null }
+      }
     ])
     expect(h.joinCalls).toBe(0) // nothing to join → gh never asked
   })
@@ -854,6 +862,97 @@ describe('mission_get — deterministic stall detection (design §8)', () => {
     )
     await get(id)
     expect(readMissionLog((await onDisk(id)).raw)).toBe('# Seeded\n\n## Log\nkeep me\n')
+  })
+})
+
+// ---- T547: the step pulse -------------------------------------------------------
+
+describe('mission_get — the step pulse (T547)', () => {
+  /** A join whose every worktree is on feat/x with `commits` commits, the newest `headAgo` old. */
+  const joinWith =
+    (commits: number, headAgo: number) =>
+    (refs: Parameters<NonNullable<typeof h.join>>[0]): MissionPrJoin => {
+      const base = defaultJoin(refs)
+      for (const w of Object.values(base.worktrees)) {
+        if (!w.exists) continue
+        w.commits = commits
+        w.head = { sha: 'b'.repeat(40), subject: 'unit work', at: iso(headAgo) }
+      }
+      return base
+    }
+  const unit = (): MissionStep[] => [
+    step('stp-1', 'fixed-start', 'existence'),
+    step('stp-2', 'custom', 'verifier', [
+      { kind: 'session', ref: CHILD },
+      { kind: 'worktree', ref: root }
+    ]),
+    step('stp-3', 'fixed-end', 'verifier')
+  ]
+
+  it('AC-1: reports the commits landed and the newest activity of the current step', async () => {
+    h.join = joinWith(21, 3 * 60_000)
+    h.taskStates.set(CHILD, 'idle')
+    h.live = new Set([CHILD])
+    const id = await seed({ steps: unit() })
+    const p = await get(id)
+    const pulse = p.derived.steps.find((s) => s.stepId === 'stp-2')!.pulse
+    expect(pulse.commits).toBe(21)
+    expect(Date.parse(pulse.lastCommitAt!)).toBeGreaterThan(Date.now() - 4 * 60_000)
+    expect(Date.parse(pulse.lastActivityAt!)).toBeGreaterThanOrEqual(
+      Date.parse(pulse.lastCommitAt!)
+    )
+  })
+
+  it('AC-2: a child idle only because its own subagents are active reads working', async () => {
+    h.taskStates.set(CHILD, 'idle')
+    h.live = new Set([CHILD])
+    const { noteSubagentActivity } = await import('../src/main/subagent-activity')
+    noteSubagentActivity(CHILD, Date.now() - 30_000)
+    const id = await seed({ updatedAt: iso(5 * HOUR), steps: unit() })
+    const p = await get(id)
+    const child = p.derived.steps.find((s) => s.stepId === 'stp-2')!.children[0]
+    expect(child).toMatchObject({ taskState: 'working', waitingOnHelpers: true })
+    expect(p.derived.stall.workingSessions).toEqual([CHILD])
+    expect(p.derived.stale).toBe(false)
+    expect(
+      (p.derived as unknown as { progress: { states: Record<string, string> } }).progress.states[
+        'stp-2'
+      ]
+    ).toBe('running')
+  })
+
+  it('AC-2: once the subagents went quiet the child reads idle again', async () => {
+    h.taskStates.set(CHILD, 'idle')
+    h.live = new Set([CHILD])
+    const { noteSubagentActivity } = await import('../src/main/subagent-activity')
+    noteSubagentActivity(CHILD, Date.now() - 10 * 60_000)
+    const id = await seed({ steps: unit() })
+    const child = (await get(id)).derived.steps.find((s) => s.stepId === 'stp-2')!.children[0]
+    expect(child.taskState).toBe('idle')
+    expect(child.waitingOnHelpers).toBeUndefined()
+  })
+
+  it('AC-4: a step with no commits and no activity still reads stalled', async () => {
+    h.join = joinWith(0, 6 * HOUR)
+    h.taskStates.set(CHILD, 'idle')
+    h.live = new Set([CHILD])
+    const id = await seed({ updatedAt: iso(6 * HOUR), steps: unit() })
+    const p = await get(id)
+    expect(p.derived.stale).toBe(true)
+    const pulse = p.derived.steps.find((s) => s.stepId === 'stp-2')!.pulse
+    expect(pulse.commits).toBe(0)
+    // the newest sign of life is the child's own 3h-old transcript write
+    expect(Date.parse(pulse.lastActivityAt!)).toBeLessThan(Date.now() - 2 * HOUR)
+  })
+
+  it('a recent commit is evidence: the mission is not stale while the unit keeps committing', async () => {
+    h.join = joinWith(21, 10 * 60_000)
+    h.taskStates.set(CHILD, 'idle')
+    h.live = new Set([CHILD])
+    const id = await seed({ updatedAt: iso(4 * HOUR), steps: unit() })
+    const p = await get(id)
+    expect(p.derived.stale).toBe(false)
+    expect(Date.parse(p.derived.stall.lastEvidenceAt)).toBeGreaterThan(Date.now() - 11 * 60_000)
   })
 })
 
