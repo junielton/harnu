@@ -585,6 +585,40 @@ describe('DiagramPane properties panel — narrow panes', () => {
     expect(groups(w)).toContain('tone')
   })
 
+  // Final review I1: the redraw empties the selection for a tick, which used to fold the
+  // opened panel shut — and the folded toggle is the default layout (about 243px).
+  it('a theme switch keeps the folded panel open below 384px', async () => {
+    let tick: (() => void) | null = null
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          tick = cb
+        }
+        observe = vi.fn()
+        disconnect = vi.fn()
+      }
+    )
+    const w = mountPane()
+    await settle()
+    Object.defineProperty(bodyOf(w), 'clientWidth', { configurable: true, value: 320 })
+    tick!()
+    await settle()
+
+    await select(w, 'n-a')
+    await w.find('[data-testid="canvas-properties-toggle"]').trigger('click')
+    await settle()
+    expect(groups(w)).toContain('tone')
+
+    await switchTheme(w, LIGHT)
+    await settle()
+    expect(selectedIds(w)).toEqual(['n-a'])
+    expect(groups(w)).toContain('tone')
+    expect(w.find('[data-testid="canvas-properties-toggle"]').attributes('aria-expanded')).toBe(
+      'true'
+    )
+  })
+
   it('when the toolbar drops to its own row, the panel moves under it — not under its old place', async () => {
     let tick: (() => void) | null = null
     vi.stubGlobal(
