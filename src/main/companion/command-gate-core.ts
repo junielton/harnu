@@ -19,6 +19,7 @@ import {
   type HelloProfile
 } from './contract'
 import type { CommandCause, EnqueueRefusal } from './command-types'
+import type { TrustClass } from './session-table'
 import {
   REVIEW_BAND_SUBSYSTEM,
   REVIEW_SELECTION_GESTURE,
@@ -75,6 +76,12 @@ interface ReservedGrant {
    * never sees it: shadow admits the key on its own (O-3), so the validator is the second lock.
    */
   exclusiveKey?: string
+  /**
+   * The trust class the target binding must have *at enqueue time*, for this grant's causes. A
+   * handler's own check runs before its awaits; this one runs on the binding the channel resolves
+   * itself, so a binding that changes in between is still refused.
+   */
+  requireTrust?: TrustClass
   validate: (args: unknown, cause: CommandCause) => boolean
 }
 
@@ -83,6 +90,20 @@ const reserved = new Map<CommandName, ReservedGrant>()
 const isReservedCause = (g: ReservedGrant, cause: CommandCause): boolean =>
   (cause.kind === 'operator' && g.operator?.includes(cause.gesture) === true) ||
   (cause.kind === 'internal' && g.internal?.includes(cause.subsystem) === true)
+
+/**
+ * `TARGET_DENIED` when a reserved grant's cause aims at a binding of the wrong trust class. Read at
+ * enqueue time from the binding the channel just resolved, never from what a caller checked earlier.
+ */
+export function trustRefusal(
+  name: CommandName,
+  cause: CommandCause,
+  trust: TrustClass
+): 'TARGET_DENIED' | null {
+  const g = reserved.get(name)
+  if (!g || g.requireTrust === undefined || !isReservedCause(g, cause)) return null
+  return trust === g.requireTrust ? null : 'TARGET_DENIED'
+}
 
 function withReserved(name: CommandName, row: GateRow): GateRow {
   const g = reserved.get(name)
@@ -144,9 +165,14 @@ function registerReviewSelectionRows(): void {
   reserved.set('context.append', {
     operator: [REVIEW_SELECTION_GESTURE],
     exclusiveKey: REVIEW_SELECTION_KEY,
+    requireTrust: 'read-only',
     validate: validReviewSelectionAppend
   })
-  reserved.set('ui.band.set', { internal: [REVIEW_BAND_SUBSYSTEM], validate: validBand })
+  reserved.set('ui.band.set', {
+    internal: [REVIEW_BAND_SUBSYSTEM],
+    requireTrust: 'read-only',
+    validate: validBand
+  })
   registerGateRow('context.append', { feature: 'act.context' })
   registerGateRow('ui.band.set', { feature: 'ui.band' })
 }

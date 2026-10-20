@@ -470,9 +470,8 @@ describe('U2a-i-AC-5 — validation', () => {
 
 describe('the head guard calls the shared comparison', () => {
   const pins = { headSha: HEAD, baseSha: BASE }
-  it('passes when both commits are what the pane read, abbreviations included', () => {
+  it('passes when both commits are exactly what the pane read', () => {
     expect(pinRefusal({ headSha: HEAD, baseSha: BASE }, pins)).toBeNull()
-    expect(pinRefusal({ headSha: HEAD.slice(0, 7), baseSha: BASE.slice(0, 12) }, pins)).toBeNull()
   })
   it('names the three refusals of the submit gate', () => {
     expect(
@@ -768,12 +767,32 @@ describe('U2a-i-AC-13 — bandFor, at every boundary', () => {
 })
 
 describe('the neutrality matrix is one list', () => {
-  it('the shared matrix still matches the pinned T247 copy, regex for regex', () => {
-    const pinned = readFileSync(join(__dirname, '../review-corrective.test.ts'), 'utf8')
-    expect(FORBIDDEN.length).toBeGreaterThan(0)
-    for (const [label, re] of FORBIDDEN) {
-      expect(pinned, `${label} drifted from tests/review-corrective.test.ts`).toContain(re.source)
-    }
+  /** The pinned guard's rows, read as written: `['label', /pattern/flags],` one per line. */
+  const pinnedRows = (): Array<[string, string]> => {
+    const src = readFileSync(join(__dirname, '../review-corrective.test.ts'), 'utf8')
+    const start = src.indexOf('const FORBIDDEN: Array<[string, RegExp]> = [')
+    expect(start, 'the pinned FORBIDDEN block moved').toBeGreaterThan(-1)
+    const block = src.slice(start, src.indexOf('\n  ]\n', start))
+    return [...block.matchAll(/^\s*\['([^']+)',\s*(\/.+\/[a-z]*)\],?\s*$/gm)].map((m) => [
+      m[1],
+      m[2]
+    ])
+  }
+
+  it('is the full row set, labels, patterns and flags, in order', () => {
+    const shared = FORBIDDEN.map(([label, re]): [string, string] => [label, String(re)])
+    expect(pinnedRows()).toEqual(shared)
+    // and the flags are really there to be compared: every row is case-insensitive
+    expect(FORBIDDEN.every(([, re]) => re.flags === 'i')).toBe(true)
+  })
+
+  it('notices a row added to, dropped from or changed in either copy', () => {
+    const shared = FORBIDDEN.map(([label, re]): [string, string] => [label, String(re)])
+    const pinned = pinnedRows()
+    expect(pinned.length).toBe(shared.length)
+    expect([...pinned, ['extra', '/x/i']]).not.toEqual(shared)
+    expect(pinned.slice(1)).not.toEqual(shared)
+    expect(pinned.map(([l, r]) => [l, r.replace(/i$/, '')])).not.toEqual(shared)
   })
 })
 
@@ -828,21 +847,39 @@ describe('the head guard compares full SHAs exactly', () => {
     expect(pinRefusal({ headSha: FULL_A, baseSha: FULL_A }, same(FULL_A, FULL_A))).toBeNull()
   })
 
-  it('a prefix match is allowed only for an abbreviated pin against a full live SHA', () => {
-    // allowed: 7 to 39 hex is a short spelling of the same commit
+  it('no prefix match anywhere: an abbreviated pin is not accepted as a spelling of the live commit', () => {
     for (const n of [7, 12, 39]) {
       expect(
-        pinRefusal({ headSha: HEAD.slice(0, n), baseSha: BASE.slice(0, n) }, same(HEAD, BASE)),
-        `${n} hex`
-      ).toBeNull()
+        pinRefusal({ headSha: HEAD.slice(0, n), baseSha: BASE }, same(HEAD, BASE)),
+        `${n} hex head`
+      ).toMatchObject({ refusal: 'head-moved' })
+      expect(
+        pinRefusal({ headSha: HEAD, baseSha: BASE.slice(0, n) }, same(HEAD, BASE)),
+        `${n} hex base`
+      ).toMatchObject({ refusal: 'base-mismatch' })
     }
-    // refused: an abbreviation of some other commit
-    expect(pinRefusal({ headSha: '1234567', baseSha: BASE }, same(HEAD, BASE))).toMatchObject({
-      refusal: 'head-moved'
-    })
-    // refused: a full pin is never widened, and a short live SHA is not a prefix source
+    // and a short live SHA never matches a full pin
     expect(
       pinRefusal({ headSha: HEAD, baseSha: BASE }, same(HEAD.slice(0, 12), BASE))
     ).toMatchObject({ refusal: 'head-moved' })
+  })
+
+  it('validation requires 40-hex SHAs: an abbreviation is BAD_ARGS before it can be compared', () => {
+    for (const n of [7, 12, 39]) {
+      for (const field of ['headSha', 'baseSha']) {
+        expect(
+          validateCoordinates({ ...coords(), [field]: HEAD.slice(0, n) }),
+          `${field} ${n}`
+        ).toEqual({
+          ok: false,
+          detail: 'sha'
+        })
+      }
+    }
+    expect(validateCoordinates(coords()).ok).toBe(true)
+    expect(validateCoordinates({ ...coords(), headSha: `${HEAD}0` })).toEqual({
+      ok: false,
+      detail: 'sha'
+    })
   })
 })

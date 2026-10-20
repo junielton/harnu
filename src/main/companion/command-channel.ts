@@ -31,6 +31,7 @@ import {
   gateRowFor,
   profileRefusal,
   shadowRefusal,
+  trustRefusal,
   validateArgs,
   type ChannelMode
 } from './command-gate-core'
@@ -452,7 +453,7 @@ export function createCommandChannel(deps: ChannelDeps): CommandChannel {
     const origin = checkOrigin(req.name, req.cause, { debug: deps.debug === true })
     if (!origin.ok) return refuse(req, b, origin.reason)
     // 5. Target.
-    const target = targetRefusal(req.cause, b)
+    const target = targetRefusal(req.cause, b) ?? trustRefusal(req.name, req.cause, b.trust)
     if (target) return refuse(req, b, target)
     // 6. Arguments.
     const args = validateArgs(req.name, req.args, req.cause)

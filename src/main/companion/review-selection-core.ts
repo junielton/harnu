@@ -240,9 +240,14 @@ export const failure = (
 type Rec = Record<string, unknown>
 const isRec = (v: unknown): v is Rec => typeof v === 'object' && v !== null && !Array.isArray(v)
 
+const FULL_SHA_LENGTH = 40
+
 /** The SHA predicate of `review-corrective.ts` (`^[0-9a-f]{7,40}$`), reached through its sanitiser. */
 export const isSha = (v: unknown): v is string =>
   typeof v === 'string' && sanitizeCorrective({ headSha: v }).headSha === v
+
+/** The pane sends the commits it resolved, so a pin is a full SHA: no abbreviation to widen. */
+const isFullSha = (v: unknown): v is string => isSha(v) && v.length === FULL_SHA_LENGTH
 
 const isLineNumber = (v: unknown): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= SELECTION_MAX_LINE_NUMBER
@@ -299,7 +304,7 @@ export function validateCoordinates(raw: unknown): CoordinatesResult {
   if (raw.subjectType !== 'LINE' && raw.subjectType !== 'FILE') return bad('subject-type')
   if (!validPath(raw.path)) return bad('path')
   if (raw.oldPath !== null && !validPath(raw.oldPath)) return bad('old-path')
-  if (!isSha(raw.baseSha) || !isSha(raw.headSha)) return bad('sha')
+  if (!isFullSha(raw.baseSha) || !isFullSha(raw.headSha)) return bad('sha')
   const pr = raw.prNumber
   if (pr !== null && !(typeof pr === 'number' && Number.isInteger(pr) && pr > 0)) {
     return bad('pr-number')
@@ -367,29 +372,15 @@ export interface LivePins {
  * `headPinRefusal` of `review-submit-core.ts`, the same one the submit gate calls; only the base
  * half (a commit against a commit, not a name against a PR's base) is decided here.
  */
-const FULL_SHA_LENGTH = 40
-
-/**
- * A pin the pane sent, ready to compare with the commit it resolves to now. Two full 40-hex SHAs
- * are compared **exactly**: a different commit is a different commit, whatever its prefix. The one
- * place a prefix match is allowed is an *abbreviated* pin (7 to 39 hex, which the shared SHA
- * predicate accepts because the corrective's does) against the full SHA `rev-parse` returns: that
- * is the same commit written short, and refusing it would make a short pin unsendable. The pane
- * itself sends full SHAs (`snapshot.head.sha`), so in practice every comparison is exact.
- */
-function expandPin(pinned: string, live: string | null): string {
-  if (live === null || pinned.length >= FULL_SHA_LENGTH) return pinned
-  return live.length === FULL_SHA_LENGTH && live.startsWith(pinned) ? live : pinned
-}
-
 export function pinRefusal(
   c: Pick<SelectionCoordinates, 'headSha' | 'baseSha'>,
   live: LivePins
 ): { refusal: 'head-moved' | 'head-unreadable' | 'base-mismatch'; detail?: string } | null {
-  const head = headPinRefusal(expandPin(c.headSha, live.headSha), live.headSha)
+  // Pins are full SHAs (validated), so both comparisons are exact: no prefix match anywhere.
+  const head = headPinRefusal(c.headSha, live.headSha)
   if (head) return head
   if (live.baseSha === null) return { refusal: 'head-unreadable' }
-  if (expandPin(c.baseSha, live.baseSha) !== live.baseSha) {
+  if (c.baseSha !== live.baseSha) {
     return {
       refusal: 'base-mismatch',
       detail: `${c.baseSha.slice(0, 7)} → ${live.baseSha.slice(0, 7)}`

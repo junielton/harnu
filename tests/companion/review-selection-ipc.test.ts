@@ -624,6 +624,64 @@ describe('against a fake mod: the whole path, in channel mode shadow', () => {
     expect((await r.poll(conn, { cursor: 0 })).json.commands).toEqual([])
   })
 
+  it('a binding that stops being read-only during the await is refused at the gate, nothing queued', async () => {
+    const { r, deps } = await modRig({ trust: 'operator', pollHoldMs: 50 })
+    const { conn } = await r.hello()
+    const real = r.core.facade.bindingForSid(SID)!
+    expect(real.trust).toBe('operator')
+    // the handler's own check runs first and sees a read-only binding; by the time the channel
+    // resolves the binding itself (after the git reads) it is an operator's session
+    let seen = 0
+    const swapped: SelectionDeps = {
+      ...deps,
+      bindingForSid: () => (seen++ === 0 ? ({ ...real, trust: 'read-only' } as BindingView) : real),
+      readBlob: async () => {
+        await wait(5)
+        return blob
+      }
+    }
+    const res = await sendSelection(request(), CAUSE, swapped)
+    expect(res).toMatchObject({ ok: false, refusal: 'TARGET_DENIED' })
+    expect((await r.poll(conn, { cursor: 0 })).json.commands).toEqual([])
+    expect(r.channel.inspect().live).toBe(0)
+    expect(JSON.stringify(r.rows)).toContain('TARGET_DENIED')
+  })
+
+  it('the channel itself refuses both review causes on any binding that is not read-only', async () => {
+    for (const trust of ['operator', 'agent', 'tick'] as const) {
+      const { r } = await modRig({ trust })
+      await r.hello()
+      const append = r.channel.enqueue({
+        sessionKey: null,
+        sid: SID,
+        name: 'context.append',
+        args: { key: 'harnu.review-selection', text: 'x', durable: false },
+        cause: CAUSE
+      })
+      expect(append, trust).toEqual({ ok: false, reason: 'TARGET_DENIED' })
+      const band = r.channel.enqueue({
+        sessionKey: null,
+        sid: SID,
+        name: 'ui.band.set',
+        args: { line: null },
+        cause: { kind: 'internal', subsystem: 'reviewSelectionBand' }
+      })
+      expect(band, trust).toEqual({ ok: false, reason: 'TARGET_DENIED' })
+    }
+    // and the read-only companion is let through by the same gate
+    const { r } = await modRig()
+    await r.hello()
+    expect(
+      r.channel.enqueue({
+        sessionKey: null,
+        sid: SID,
+        name: 'ui.band.set',
+        args: { line: null },
+        cause: { kind: 'internal', subsystem: 'reviewSelectionBand' }
+      }).ok
+    ).toBe(true)
+  })
+
   it('a mod not enabled for act.context is FEATURE_OFF', async () => {
     const { r, deps } = await modRig({ enable: ['sense.identity', 'act.channel'] })
     await r.hello()
