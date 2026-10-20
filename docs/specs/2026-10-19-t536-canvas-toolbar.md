@@ -588,8 +588,11 @@ or disagrees with itself or the code. The rules above are unchanged.
    `props` on delete, Save, undo, Save. The gate is a release containing both the edge-props
    reader (U2) and the arrow-data-through-the-graph fix (U4 Task 4).
 8. **Row A is the accepted window.** A build older than U2's reader (Harnu 0.3.46 and
-   earlier) drops arrow styles, and only those, when it saves a styled board. That is the
-   window §7.3 accepted; it cannot be closed from a newer build. User docs, the CHANGELOG and
+   earlier) drops the whole `props` object of every arrow (arrow colours and line styles, plus any
+   other extra arrow properties), and nothing else, on any write through its canvas core:
+   the operator pressing Save, or a session in that version calling `draw_canvas` on the
+   board. Nodes, labels, routers and node styles are kept (checked live against the public
+   v0.3.46 build). That is the window §7.3 accepted; it cannot be closed from a newer build. User docs, the CHANGELOG and
    `docs/harnu-features.md` say so plainly.
 
 Implementation rulings:
@@ -620,3 +623,12 @@ Implementation rulings:
   `edgeStyle`, the values an arrow takes. Refusal text for a bad node style is unchanged.
 - **Timing note for tests:** X6 repaints an edge line a frame after the model changes, so an
   assertion on a stroke right after undo or redo must poll.
+- **A rubberband never selects arrows** (live matrix). X6's Selection plugin has no
+  `rubberEdge`, so arrows join a selection by click or Shift-click only. Any wording in this
+  spec implying that a rubberband catches arrows does not hold.
+- **The selection box of a straight arrow** spans node centre to node centre, above the
+  nodes, and can cover the centred labels of the two shapes it joins while the arrow is
+  selected. Cosmetic; follow-up.
+- **Known, visual only:** undoing the deletion of an arrow after a theme switch brings it
+  back in the previous theme's colours until the next redraw. The restyle hangs on
+  `cell:change:data`, the same as nodes since U3.

@@ -259,8 +259,8 @@ style, and a `style` inside `props` is refused `BAD_PROPS`.
 Arrows take `style` on `add_edge` / `update_edge`, with the same merge rules: `tone` (`default`,
 `green`, `amber`, `red`, `muted` — no `accent`, because an arrow's default already is the accent)
 and `stroke` (`solid`, `dashed`, `dotted`). The ACK's `edgeStyle` lists them. `update_edge` with only
-`style` is a valid change, and other edge props are kept. A Harnu build older than this one drops arrow
-styles when it saves, so do not rely on them on a board shared with old builds.
+`style` is a valid change, and other edge props are kept. In Harnu 0.3.46 and earlier, saving a board, or a
+session there calling `draw_canvas` on it, drops arrow styles (only those), so do not rely on them on a board shared with old builds.
 
 **Stacking with `zIndex`.** `zIndex` on `add_node` / `update_node` is an integer ≥ 1;
 higher draws on top. A node without one stacks at 1, in file order. Arrows always draw
