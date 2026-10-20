@@ -6,6 +6,7 @@ import {
   topmostNodeId
 } from '../src/renderer/src/components/canvas/canvas-arrow'
 import { operatorEdgeSpec } from '../src/renderer/src/components/canvas/canvas-graph'
+import { edgeLineAttrs } from '../src/renderer/src/components/canvas/canvas-style'
 import type { CanvasPalette } from '../src/renderer/src/components/canvas/canvas-theme'
 
 /** T536 U1 — the Arrow tool's pure decisions: where it lands, and whether it may. */
@@ -92,6 +93,10 @@ describe('operatorEdgeSpec — the ONE operator edge shape', () => {
         }
       }
     })
+  })
+
+  it('draws its line exactly as an unstyled arrow is drawn (one source of the attrs)', () => {
+    expect(operatorEdgeSpec(palette).attrs).toEqual({ line: edgeLineAttrs(undefined, palette) })
   })
 
   it('is a fresh object each call, so one edge can never share data with another', () => {
