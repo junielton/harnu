@@ -761,7 +761,7 @@ useShortcuts(
       scope: 'global',
       keys: kb('session.contextMenu'),
       keysGuard: notInTextEntry,
-      enabled: () => sessionActions.contextMenuTarget() !== null,
+      enabled: () => sessionActions.contextMenuEnabled(),
       handler: () => sessionActions.openContextMenu()
     },
     {

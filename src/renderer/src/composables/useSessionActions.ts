@@ -355,15 +355,25 @@ export function useSessionActions() {
     return { x: rect.left, y: fromRow ? rect.bottom : rect.top }
   }
 
+  /**
+   * The keyboard opener owns the press whenever the cursor is on a row, even a
+   * row with no menu (a repo group, a folder terminal): otherwise Chromium's
+   * own `contextmenu` would open the menu of whatever row holds DOM focus, and
+   * the documented no-op would not be one.
+   */
+  function contextMenuEnabled(): boolean {
+    return cursorRow() !== null || contextMenuTarget() !== null
+  }
+
   /** Open the Session or Folder menu for `contextMenuTarget()` from the keyboard. */
   function openContextMenu(): void {
-    const target = contextMenuTarget()
-    if (!target) return
     if (!contextMenuGuardInstalled) {
       window.addEventListener('contextmenu', onWindowContextMenu, true)
       contextMenuGuardInstalled = true
     }
     suppressContextMenuUntil = Date.now() + SYNTHETIC_CONTEXTMENU_MS
+    const target = contextMenuTarget()
+    if (!target) return
     const { x, y } = anchorFor(target)
     if (target.kind === 'session') ui.openMenu({ sessionId: target.id, x, y })
     else ui.openFolderMenu({ projectPath: target.id, x, y })
@@ -375,6 +385,7 @@ export function useSessionActions() {
     selectedFor,
     openToSideTarget,
     contextMenuTarget,
+    contextMenuEnabled,
     openContextMenu
   }
 }

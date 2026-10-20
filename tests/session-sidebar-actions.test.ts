@@ -240,7 +240,13 @@ describe('AC-34 — session.contextMenu (Shift+F10)', () => {
     const actions = withSetup(() => useSessionActions())
     sessions.keyboardCursor = { kind: 'group', id: 'repo:/repos/alpha' }
     expect(actions.contextMenuTarget()).toBeNull()
+    // Still owned by the binding, so Chromium's synthesized contextmenu for the
+    // press cannot open the menu of whichever row holds DOM focus instead.
+    expect(actions.contextMenuEnabled()).toBe(true)
     actions.openContextMenu()
+    const synthesized = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    window.dispatchEvent(synthesized)
+    expect(synthesized.defaultPrevented).toBe(true)
     expect(ui.menu.open || ui.folderMenu.open).toBe(false)
   })
 
