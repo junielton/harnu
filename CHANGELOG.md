@@ -20,7 +20,13 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **`F2` renames a folder.** With the sidebar's keyboard cursor on a folder row, `F2` opens Rename folder for it; with no cursor row, it renames the active folder. On a session or repo-group row it does nothing. On most Mac keyboards press `Fn+F2`.
 - Every item of the folder right-click menu (except block agents, letting agents read terminals, Modes and the parent-folder pick), the folder row's show older / show archived toggles, and the repo-group menu (rename, reset name, clean up) can now be given a shortcut in Settings → Keyboard Shortcuts. They ship without one and act on the active folder, or for a group on the cursor's group row, else the active folder's group.
 - The Fleet rail's header buttons (open approvals, flip the order, filter states, show all) and the popovers in the Topbar and footer (Activity, mission progress, pasted images, Claude service status, plan usage) can now be given a shortcut in Settings → Keyboard Shortcuts. They ship without one; a popover's shortcut works while its button is on screen, and pressing it again or `Esc` closes the popover.
+- **`Esc` closes the open view** — the Roadmap board, PR Stack, Review, Cleanup, the Scheduler, the System Monitor, Containers or the usage overview — exactly like its close button, one layer at a time: a dialog, menu or popover on top closes first, then the view's own selection or filter (Cleanup's checked blocks and side panel, a PR Stack filter, the Roadmap's dispatch confirm, a canvas selection beside the view), and only the next `Esc` closes the view. `Esc` in a text field or a terminal still goes there. It can be rebound in Settings → Keyboard Shortcuts.
+- **`Cmd/Ctrl+Alt+S` opens Settings on the Keyboard Shortcuts tab**, also as **View → Keyboard Shortcuts…** (on macOS, right after Settings… in the Harnu menu). Every other Settings tab, and the Cleanup, Scheduler, System Monitor and Containers views, can now be given a shortcut too; they ship without one.
 - The shortcut recorder now refuses a combo that could never fire for that action — Shift plus punctuation, or Option plus a letter on macOS, on actions with no menu item — keeps the old one and says why under the row.
+
+### Changed
+
+- The menu item and shortcut that open the raw shortcuts file now read **Open keybindings.json** (they used to say "Keyboard Shortcuts…", a name that now opens the Settings tab).
 
 ### Fixed
 

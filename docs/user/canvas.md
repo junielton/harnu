@@ -57,20 +57,20 @@ Fit runs when the board first opens, and when you press it. It does **not** run 
 
 ## Drawing
 
-| To do this          | Do this                                                                                |
-| ------------------- | -------------------------------------------------------------------------------------- |
-| Draw a box          | Drag on empty board. The box appears with its name field already open — just type.     |
-| Rename something    | Double-click it. **Enter** keeps the new name, **Esc** throws it away.                 |
-| Connect two things  | Hover a box, then drag from one of the four dots on its edge onto another box.         |
-| Select one thing    | Click it.                                                                              |
-| Select several      | **Shift + drag** a rectangle around them, or **Ctrl/⌘ + A** for everything.            |
-| Resize              | Select a box and drag one of its handles.                                              |
-| Move                | Drag it. Arrows stay attached and re-route themselves around whatever is in the way.   |
-| Delete              | Select, then **Delete** or **Backspace**. Arrows attached to a deleted box go with it. |
-| Duplicate           | Select, then **Ctrl/⌘ + D**.                                                           |
-| Add an image        | Paste a screenshot onto the board, or drag an image file onto it.                      |
-| Undo / redo         | **Ctrl/⌘ + Z** and **Ctrl/⌘ + Shift + Z**, or the two arrows in the header.            |
-| Clear the selection | **Esc**, or a plain click on empty board.                                              |
+| To do this          | Do this                                                                                                                                       |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Draw a box          | Drag on empty board. The box appears with its name field already open — just type.                                                            |
+| Rename something    | Double-click it. **Enter** keeps the new name, **Esc** throws it away.                                                                        |
+| Connect two things  | Hover a box, then drag from one of the four dots on its edge onto another box.                                                                |
+| Select one thing    | Click it.                                                                                                                                     |
+| Select several      | **Shift + drag** a rectangle around them, or **Ctrl/⌘ + A** for everything.                                                                   |
+| Resize              | Select a box and drag one of its handles.                                                                                                     |
+| Move                | Drag it. Arrows stay attached and re-route themselves around whatever is in the way.                                                          |
+| Delete              | Select, then **Delete** or **Backspace**. Arrows attached to a deleted box go with it.                                                        |
+| Duplicate           | Select, then **Ctrl/⌘ + D**.                                                                                                                  |
+| Add an image        | Paste a screenshot onto the board, or drag an image file onto it.                                                                             |
+| Undo / redo         | **Ctrl/⌘ + Z** and **Ctrl/⌘ + Shift + Z**, or the two arrows in the header.                                                                   |
+| Clear the selection | **Esc**, or a plain click on empty board. Beside a Roadmap or Review, that first Esc only clears the selection; the next one closes the view. |
 
 A short drag on empty board counts as a click, not a box — you can click around without littering the canvas.
 

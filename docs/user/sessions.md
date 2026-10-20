@@ -129,6 +129,8 @@ a binding written as `Cmd+K` is `⌘K` on a Mac and `Ctrl+K` elsewhere.
 | `Cmd/Ctrl+K`       | Open command palette                                                            |
 | `Cmd/Ctrl+O`       | Add folder                                                                      |
 | `Cmd/Ctrl+,`       | Open Settings                                                                   |
+| `Cmd/Ctrl+Alt+S`   | Open Settings on the Keyboard Shortcuts tab                                     |
+| `Esc`              | Close the open view (Roadmap, PR Stack, Cleanup, …) — one layer at a time       |
 | `Cmd/Ctrl+R`       | Rename the selected session                                                     |
 | `Cmd/Ctrl+Shift+R` | Resume your most-recently-modified session                                      |
 | `Cmd/Ctrl+W`       | Close/deselect the current session tab                                          |
@@ -202,6 +204,33 @@ pill only while the session has an open mission, the plan-usage meters only
 while plan usage is available, and the order, filter and **Show all** buttons
 only while the Fleet rail is expanded.
 
+Every Settings tab has a command id too: `view.settings.general`,
+`view.settings.keybindings`, `view.settings.appearance` and so on, one per tab in
+the Settings sidebar ("Open Settings: General" in the shortcut list). Only
+Keyboard Shortcuts has one out of the box, `Cmd/Ctrl+Alt+S`, also under
+**View → Keyboard Shortcuts…** (on macOS, in the **Harnu** menu right after
+**Settings…**). With Settings already open these shortcuts do nothing; switch
+tabs from the sidebar. On some Windows keyboard layouts `Ctrl+Alt` acts as
+`AltGr` and `Ctrl+Alt+S` types a character instead (a Polish layout types `ś`);
+rebind it there if it doesn't open Settings. The footer's views have ids with no
+shortcut out of the box: `view.cleanup`, `view.scheduler`, `view.systemMonitor`
+and `view.containers`, each opening the view or closing it again, like its
+footer button.
+
+#### Closing a view with Esc
+
+`Esc` closes whatever covers the session — the Roadmap board, PR Stack, Review,
+Cleanup, the Scheduler, the System Monitor, Containers or the usage overview —
+exactly like its **X**, including the review's side pane. It peels **one layer
+per press**: a dialog, the command palette, a right-click menu or a footer /
+Topbar popover open over the view closes first; then the view's own state —
+Cleanup's selection, then its side panel, a PR Stack filter, the Roadmap's
+dispatch confirm, or a selection on a canvas pane beside the view; only the next
+`Esc` closes the view. `Esc` typed in a text field stays with the field, and in
+a terminal pane it goes to the program running there (Claude Code uses it to
+cancel), so the view stays open. The command id is `view.closeTakeover`; you can
+rebind it like any other.
+
 `Cmd/Ctrl+Shift+F` opens the jump palette even while a terminal has focus, and
 shows the sidebar first if you had collapsed it. The terminal sends nothing for a
 `Cmd/Ctrl+Shift+letter` chord, so `Cmd/Ctrl+Shift+A`, `+Shift+B` and `+Shift+D`
@@ -243,15 +272,16 @@ The Topbar's folder actions have no default chord. Their command ids are
   malformed file is ignored with a toast and the defaults stay active, so you
   can't lock yourself out.
 - A handful of actions are reserved and can't be rebound: quit, reload,
-  toggle DevTools, toggle fullscreen, and "open Keyboard Shortcuts"
+  toggle DevTools, toggle fullscreen, and "Open keybindings.json"
   (`Cmd/Ctrl+Alt+K`).
 - [Back and forward](#going-back-and-forward) (`Alt+←` / `Alt+→`, `Cmd+[` /
   `Cmd+]` on macOS) can't be rebound yet either.
 - Prefer not to edit JSON by hand? **Settings → Keyboard Shortcuts** is a
   point-and-click editor for this same file — see
-  [Settings → Keyboard Shortcuts](settings.md#keyboard-shortcuts). To jump
-  straight to the raw file, use **View → Keyboard Shortcuts…** or
-  `Cmd/Ctrl+Alt+K` — it opens `keybindings.json` in a split-pane editor.
+  [Settings → Keyboard Shortcuts](settings.md#keyboard-shortcuts)
+  (`Cmd/Ctrl+Alt+S`, or **View → Keyboard Shortcuts…**). To jump straight to
+  the raw file, use **View → Open keybindings.json** or `Cmd/Ctrl+Alt+K` — it
+  opens `keybindings.json` in a split-pane editor.
 
 ### Terminal shortcuts
 
