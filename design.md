@@ -430,6 +430,11 @@ _another_ folder.
 | `undo-2`                                 | Mission progress — the step rail's `left-behind` glyph (↩, Mission v3)                                                                                                                                                                 |
 | `circle-check`                           | Mission progress — the step rail's `done` glyph (✓ hollow, Mission v3)                                                                                                                                                                 |
 | `flag`                                   | Mission progress — the popover footer's "End mission…" button (Mission v3)                                                                                                                                                             |
+| `palette`                                | Canvas properties panel → the collapsed 28px button that opens it on a narrow pane (T536 U3)                                                                                                                                           |
+| `square-round-corner`                    | Canvas properties panel → Corners: round (`square` is sharp) (T536 U3)                                                                                                                                                                 |
+| `align-left`                             | Canvas properties panel → Align left (T536 U3)                                                                                                                                                                                         |
+| `align-center`                           | Canvas properties panel → Align centre (T536 U3)                                                                                                                                                                                       |
+| `align-right`                            | Canvas properties panel → Align right (T536 U3)                                                                                                                                                                                        |
 
 ### Novelty dot (on an icon button)
 
@@ -4718,17 +4723,20 @@ document, so it inherits the tokens for free rather than through an iframe.
 
 Node and edge treatment, tokens only — **no raw hex anywhere in the component**:
 
-| Element              | Fill / stroke                                                               |
-| -------------------- | --------------------------------------------------------------------------- |
-| `box` body           | `--color-surface` fill, `--color-border-2` 1.5px stroke, `--radius` rx/ry   |
-| `ellipse` body       | as `box`: `--color-surface` fill, `--color-border-2` 1.5px stroke (T536 U2) |
-| `diamond` body       | as `box`, on a four-vertex polygon; ports sit at the vertices (T536 U2)     |
-| `box` / `text` label | `--color-text`, 12px, `--font-sans`                                         |
-| `text` node          | no body — label only, `--color-text-2`                                      |
-| `image` node         | the asset, on a `--color-surface` ground                                    |
-| edge line            | `--color-accent` 1.5px, `block` target marker, manhattan router             |
-| edge label           | `--color-text-3` 11px on a `--color-bg` plate                               |
-| grid dot             | `--color-border-2`, 2px dot, 16px pitch                                     |
+| Element              | Fill / stroke                                                                |
+| -------------------- | ---------------------------------------------------------------------------- |
+| `box` body           | `--color-surface` fill, `--color-border-2` 1.5px stroke, `--radius` rx/ry    |
+| `ellipse` body       | as `box`: `--color-surface` fill, `--color-border-2` 1.5px stroke (T536 U2)  |
+| `diamond` body       | as `box`, on a four-vertex polygon; ports sit at the vertices (T536 U2)      |
+| `box` / `text` label | `--color-text`, 12px, `--font-sans`                                          |
+| `text` node          | no body — label only, `--color-text-2`                                       |
+| `image` node         | the asset, on a `--color-surface` ground                                     |
+| styled node (U3)     | the keys of "Node styles" below; a node with none renders as the rows above  |
+| `text` node tone     | label coloured by the tone's stroke column; `default` stays `--color-text-2` |
+| node `opacity`       | 0.25 / 0.5 / 0.75 / 1 on body, label and image; ports are not dimmed         |
+| edge line            | `--color-accent` 1.5px, `block` target marker, manhattan router              |
+| edge label           | `--color-text-3` 11px on a `--color-bg` plate                                |
+| grid dot             | `--color-border-2`, 2px dot, 16px pitch                                      |
 
 **Theme (spec §6.4).** The palette is **resolved from CSS variables at mount and
 re-resolved on every theme switch**, then pushed back onto every live cell and onto the
@@ -4822,6 +4830,67 @@ is the contract for the pane and for `canvas-tools.ts`:
 
 Panning on a plain left drag is now the Hand tool's job (or `Space` held) rather than
 a held button; the right-button drag is kept so nobody loses the old habit.
+
+**Node styles (T536 U3).** A node carries an optional `style` of seven keys, written to the
+file as the spelling in the first column. A key that is absent renders as its default, so
+a canvas drawn before U3 looks exactly as it did. No new colour: every tone is an
+existing token pair.
+
+| Key           | Values (file spelling)                           | Default   | Renders as                                                         |
+| ------------- | ------------------------------------------------ | --------- | ------------------------------------------------------------------ |
+| `tone`        | `default` `accent` `green` `amber` `red` `muted` | `default` | tone table below                                                   |
+| `stroke`      | `solid` `dashed` `dotted`                        | `solid`   | `strokeDasharray`: none / `6 4` / `2 3`                            |
+| `strokeWidth` | `thin` `regular` `bold`                          | `regular` | 1 / 1.5 / 2.5 px                                                   |
+| `corners`     | `sharp` `round` (box only)                       | `round`   | `rx`/`ry` 0 / 7 (`--radius`)                                       |
+| `fontSize`    | `s` `m` `l` `xl`                                 | `m`       | 11 / 12 / 15 / 20 px (Caption, today's canvas 12, Subtitle, Title) |
+| `align`       | `left` `center` `right`                          | `center`  | `textAnchor` start / middle / end, 8px inset from the frame's edge |
+| `opacity`     | `25` `50` `75` `100` (JSON numbers)              | `100`     | `opacity` 0.25 … 1 on body, label and image; ports unchanged       |
+
+| Tone      | Stroke       | Fill             | Label      |
+| --------- | ------------ | ---------------- | ---------- |
+| `default` | `--border-2` | `--surface`      | `--text`   |
+| `accent`  | `--accent`   | `--accent-soft`  | `--text`   |
+| `green`   | `--green`    | `--green-soft`   | `--text`   |
+| `amber`   | `--warning`  | `--warning-soft` | `--text`   |
+| `red`     | `--red`      | `--red-soft`     | `--text`   |
+| `muted`   | `--border`   | `--bg`           | `--text-3` |
+
+A `text` node has no frame, so its tone colours the **label** with the stroke column:
+`default` keeps `--text-2`, `muted` is `--text-3`, and the other four use `--accent`,
+`--green`, `--warning` and `--red`.
+
+Which shapes take which keys: `box` all seven; `ellipse` and `diamond` all but `corners`;
+`text` `tone`, `fontSize`, `align` and `opacity`; `image` `opacity` only;
+`harnu/mockup-card` none; an unknown kind none (it keeps the dashed fallback and ignores
+any style).
+
+**Properties panel (T536 U3).** A floating panel that edits the style of the selected
+nodes. Component: `CanvasPropertiesPanel.vue`, over the pure `canvas/canvas-style.ts`
+module. Absolute to the viewport, so it neither pans nor zooms.
+
+- **Placement.** Left edge of the viewport (`left-3`), 8px below the zoom cluster, or 8px
+  below the toolbar when the toolbar has dropped to its own row.
+- **Surface.** The toolbar's: `bg-surface`, 1px `--border`, `--shadow-pop`, `--radius`.
+  **184px wide**, 8px padding.
+- **Groups.** One group per key, each headed by an Eyebrow label (`.eyebrow`, `--text-4`).
+  Options are 24px buttons: active `bg-accent-soft text-accent` + `aria-checked="true"`,
+  idle `text-text-3`, hover `bg-surface-2 text-text`.
+- **Option glyphs.** Tone swatches are 16px squares in the tone's own fill and stroke
+  utilities (`bg-green-soft border-green`, …; `bg-bg border-border` for muted). Stroke
+  style and width show a 16px inline line glyph in `currentColor` with the canvas
+  dasharray and width. Corners use `square` / `square-round-corner`; align uses
+  `align-left` / `align-center` / `align-right`; size shows S / M / L / XL; opacity shows
+  the percentage.
+- **Visibility.** Only while the tool is Select (the chosen tool, so holding `Space` does
+  not hide it) and at least one selected **node** takes at least one key. Selected edges
+  are ignored in U3.
+- **Mixed selection.** When the selected nodes disagree on a key, no option in that group
+  is checked.
+- **Undo.** Each change is one undo step.
+- **Narrow panes.** Below 184 + 200 = **384px** the panel collapses to a single 28px
+  `palette` button in the panel's slot (`aria-expanded`) that opens the panel in place.
+- Every control is `@mousedown.stop @pointerdown.stop`, so it never starts a canvas gesture
+  or a pane resize.
 
 **Other edit gestures.** Double-click a node to rename it in place (an inline input over
 the node itself, `--surface` on an `--accent-line` border; `Enter` commits, `Esc`
