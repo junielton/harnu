@@ -10,6 +10,18 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-20
+
+### Added
+
+- **Settings → Keyboard Shortcuts is searchable, grouped and filterable.** Type words to find an action by name, chord or id, or type a key combo (`Ctrl+K`, `F6`, `⌘K`) to see exactly what is on it; a single key name like `delete` matches both ways. Rows are grouped under Sessions, Sidebar, Folders, Views, Panes, Takeovers and App, and the Unbound, Conflicts and Customized chips (each with its total count) narrow the list further.
+- The shortcut recorder now refuses a combo that could never fire for that action — Shift plus punctuation, or Option plus a letter on macOS, on actions with no menu item — keeps the old one and says why under the row.
+
+### Fixed
+
+- **Settings → Keyboard Shortcuts shows action names again** instead of raw keys like `keybindings.actions.session.new`, in English and Portuguese, including the conflict badges and the screen-reader labels.
+- Pressing `Esc` while recording a shortcut now cancels just the recording; it no longer closes Settings.
+
 ## 2026-10-19
 
 ### Fixed

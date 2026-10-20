@@ -50,6 +50,13 @@ export const useKeybindingsStore = defineStore('keybindings', () => {
   // resolve so the `Ctrl`/`Cmd` fold matches this platform (keybindings-core).
   const resolved = ref<ResolvedKeybindings>(resolveKeybindings(null, { mac: isMac }))
   const path = ref<string>('')
+  /**
+   * The Settings pane row currently recording a chord, or null (T486 §4). It
+   * lives here, not in the pane, so `SettingsDialog`'s own window-capture Esc
+   * handler — registered first, so it runs first — can stand down while a
+   * recording is armed: Esc then cancels only the recording.
+   */
+  const recordingId = ref<ShortcutActionId | null>(null)
 
   // Serialize `keybindings:save` calls: two quick clicks (Reset all then a
   // rebind) must land on disk in issue order, or the chokidar watch reconciles
@@ -204,11 +211,13 @@ export const useKeybindingsStore = defineStore('keybindings', () => {
     unsubscribe = null
     started = false
     lastWarningSig = ''
+    recordingId.value = null
   }
 
   return {
     resolved,
     path,
+    recordingId,
     init,
     reload,
     chordFor,
