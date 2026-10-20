@@ -129,6 +129,47 @@ A short drag counts as a click, not a box — you can click around without litte
 
 Undo history is **per pane and not saved**. Close the canvas or reload it and the history is gone; the file holds a drawing, not a timeline. The same goes for the tool: each pane starts on Select, and your choice is not written into the file.
 
+## Styling shapes
+
+Select one or more shapes in **Select** and a small **Style** panel appears at the left edge of the board, under the zoom controls (or under the toolbar when the toolbar has wrapped onto its own row). Click an option and it applies to everything you have selected, straight away. It is a floating panel, so it stays put when you pan or zoom.
+
+| Group            | Options                                         | What it changes                                                                 |
+| ---------------- | ----------------------------------------------- | ------------------------------------------------------------------------------- |
+| **Color**        | Default, Accent, Green, Amber, Red, Muted       | The outline, a soft tint inside the shape, and the label colour where it helps. |
+| **Stroke**       | Solid, Dashed, Dotted                           | The outline pattern.                                                            |
+| **Stroke width** | Thin, Regular, Bold                             | How heavy the outline is.                                                       |
+| **Corners**      | Sharp, Round                                    | Square or rounded corners (boxes only).                                         |
+| **Text size**    | Small, Medium, Large, Extra large (11 to 20 px) | The size of the label.                                                          |
+| **Align**        | Left, Center, Right                             | Where the label sits across the shape.                                          |
+| **Opacity**      | 25%, 50%, 75%, 100%                             | How see-through the shape and its label are.                                    |
+
+The first option of each group (Default, Solid, Regular, Round, Medium, Center, 100%) is how a shape looks before you style it, so a board drawn earlier looks exactly as it did.
+
+**The panel only shows what every selected shape accepts.** Not every shape takes every group:
+
+| Shape                | Takes                                                   |
+| -------------------- | ------------------------------------------------------- |
+| **Box**              | Everything.                                             |
+| **Ellipse, diamond** | Everything except Corners.                              |
+| **Text**             | Color, Text size, Align and Opacity.                    |
+| **Image**            | Opacity only.                                           |
+| **Card**             | Nothing: a card always draws in Harnu's own card style. |
+
+Select a box and a text label together and you get Color, Text size, Align and Opacity, the groups both accept. Add a card to that selection and the panel disappears, because a card accepts nothing. Select only arrows and it is not shown either; arrows that are part of a larger selection are simply left out, because arrows cannot be styled yet.
+
+A few things worth knowing:
+
+- **A text label has no frame**, so its Color changes the colour of the words themselves. Default keeps the usual grey; Muted is a dimmer grey.
+- **When the selected shapes disagree** about a group (one dashed, one solid), none of that group's options is highlighted. Click one and every selected shape takes it.
+- **One change is one undo step.** **Ctrl/⌘ + Z** takes back the last pick, whatever it was and however many shapes it touched.
+- **Colours follow the theme.** A tone is stored as a name (`green`, not a hex colour), so the same board looks right in dark and light, and switching theme keeps your selection and its resize handles.
+- **Labels do not wrap.** A long label on a small shape can run past its edge, more so at Large and Extra large. Make the shape bigger or the text smaller. A diamond is the tightest: its left and right labels line up inside the diamond's inner area, but a long word can still stick out of its slanted sides.
+- **Tinted shapes are slightly see-through**, so the dot grid, or an arrow passing behind a shape, shows through the tint.
+- **In a narrow pane** (under about 384 px wide) the panel folds into a single **palette** button. Click it to open the panel in place and click it again to fold it away.
+- **Hovering is not an edit.** Moving the pointer over shapes adds no undo step and never marks the board as having unsaved changes.
+
+Styles are saved in the board file when you press **Save**, with the shape they belong to. A session can set the same styles when it draws or edits (see [Agent control](agent-control.md#drawing-on-a-canvas)), and it merges them into what is there, so asking it to recolour a box does not undo the dashed outline you gave it. A board with styles still opens in an older Harnu, which shows the shapes in their default look and keeps the styles if you save it there. An agent in an older build that rewrites a shape's `props` wholesale can drop them, though.
+
 ## Images
 
 Paste a screenshot (**Ctrl/⌘ + V**) or drag an image file onto the board and it becomes an image node. Both gestures do exactly the same thing.
@@ -181,7 +222,7 @@ Harnu watches the file. What happens next depends on whether you have unsaved ed
 
 Every node and edge records whether **you** or **the agent** created it, and that record is written the moment you draw the thing. Copying an agent's box makes the copy yours; moving or renaming an agent's box does not — the stamp says who first put it there, not who touched it last.
 
-Themes apply live: switch theme with a canvas open and it recolours in place. Nothing reloads, the view does not move, and unsaved edits are kept.
+Themes apply live: switch theme with a canvas open and it recolours in place. Nothing reloads, the view does not move, your selection stays, and unsaved edits are kept.
 
 ## When it can't open a file
 
@@ -206,5 +247,6 @@ The pane refuses rather than guessing, and says which of these it is:
 - **A small set of shapes.** Boxes, ellipses, diamonds and text labels; there are no other outlines (triangles, cylinders, and so on) yet.
 - **Diamonds and ellipses are hit as rectangles.** The Eraser and the Arrow treat them as the rectangle around them, so a press or stroke in the empty corner just outside the outline still counts as the shape.
 - **Copy and paste between canvases** isn't there; **Ctrl/⌘ + D** duplicates within one board.
-- **Stacking order** (bring to front / send to back) has no gesture; a board written with one keeps it.
+- **Arrows cannot be styled.** Colour, dashes and weight apply to shapes only; an arrow always draws in the accent colour.
+- **Stacking order** (bring to front / send to back) has no gesture, so there are no layer controls in the panel; a board written with one keeps it.
 - **A node kind Harnu doesn't know** — a component from a _newer_ build than yours — renders as a dashed box, so an unfamiliar board still opens instead of failing. You can move and delete it, and saving keeps it the kind it was, so opening it in the newer build shows it properly again.
