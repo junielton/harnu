@@ -186,7 +186,7 @@ A few things worth knowing:
 - **Forward and backward step past a shape you can see.** They skip shapes that do not overlap the selection, so one click always changes what is on screen. Two boxes that only touch along an edge do not count as overlapping.
 - **Arrows always draw under shapes.** They are never restacked, and there is no layer button for them; sending a box to the back still leaves it above every arrow.
 - **One move is one undo step**, also when you restack several shapes at once, and the selection keeps its own order. A move that would change nothing (the shape is already in front, or nothing overlaps it) does nothing: no undo step and no unsaved dot.
-- **A board you never restack keeps its file unchanged.** Moving a shape or renaming it and saving does not add stacking data. The stacking order is written only after you have actually restacked something, and then it is written for every shape.
+- **Stacking values are written only when they have to be.** They go into the file after you restack something, or when you add a shape to a board that already has stacking values, and then every shape gets one. A board without any stacking values that you only move, resize, rename or restyle is saved with no new keys.
 - **A session can do the same.** `draw_canvas` accepts a `zIndex` on a node; see [Agent control](agent-control.md#drawing-on-a-canvas).
 - **Older Harnu versions keep the order.** A restacked board opens in an older Harnu with the same look. A shape drawn there on such a board has no stacking value and shows up near the bottom after you reload it; restack it here to fix that.
 

@@ -14,7 +14,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Added
 
-- **Layer controls in the canvas Properties panel.** Select one or more shapes and use **Send to back**, **Send backward**, **Bring forward** and **Bring to front** at the bottom of the panel. Forward and backward step past the next shape that overlaps the selection, arrows always stay under shapes, and each move is one undo step. A board you never restack is saved exactly as before.
+- **Layer controls in the canvas Properties panel.** Select one or more shapes and use **Send to back**, **Send backward**, **Bring forward** and **Bring to front** at the bottom of the panel. Forward and backward step past the next shape that overlaps the selection, arrows always stay under shapes, and each move is one undo step. Stacking values are written to the file only after you restack, or when you add a shape to a board that already has them; a board without any that you only move, resize, rename or restyle is saved with no new keys.
 - **Sessions can set stacking on the canvas.** `draw_canvas` accepts a `zIndex` (a whole number from 1) when adding or updating a node, so an agent can put one shape in front of another.
 
 ### Changed

@@ -9,6 +9,7 @@ import {
   CANVAS_DERIVED_CHANGE,
   CANVAS_MIN_NODE_SIZE,
   createCanvasGraph,
+  operatorEdgeSpec,
   renderCanvasDocument,
   restyleCanvasNode,
   setCanvasPortsVisible,
@@ -1149,6 +1150,36 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     await settle()
     expect(w.text()).toContain('Pick a shape from the toolbar')
     w.unmount()
+  })
+})
+
+describe('an operator edge is minted at z 0 (T536 U4)', () => {
+  it('operatorEdgeSpec carries zIndex 0, so X6 never stamps it max + 1', () => {
+    expect(operatorEdgeSpec(palette).zIndex).toBe(0)
+  })
+
+  it('a port drag adds the new edge at z 0 (the z X6 restores when the drag ends)', async () => {
+    // The real X6 path: a mousedown on a port runs `startConnectting` →
+    // `createEdgeFromMagnet` → the graph's `connecting.createEdge` hook → `addTo`
+    // the model. X6 then lifts the edge to the front for the drag and restores the z
+    // it had here on release (`beforeArrowheadDragging` / `afterArrowheadDragging`).
+    // jsdom cannot finish the release (the snap search needs layout), so the added z
+    // is what is asserted.
+    const g = makeGraph()
+    const portOf = (): Element | null =>
+      g.findViewByCell(g.getCellById('n-a')!)?.container.querySelector('[magnet="true"]') ?? null
+    // X6 draws the views in time-sliced jobs: wait (bounded) for the ports to exist.
+    const deadline = Date.now() + 2000
+    while (!portOf() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10))
+    const added: number[] = []
+    g.on('edge:added', ({ edge }) => added.push(edge.getZIndex() as number))
+    const port = portOf()
+    expect(port, 'n-a has no port').not.toBeNull()
+    port!.dispatchEvent(
+      new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 60, clientY: 40 })
+    )
+    expect(added).toEqual([0])
+    g.dispose()
   })
 })
 
