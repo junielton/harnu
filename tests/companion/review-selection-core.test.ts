@@ -694,7 +694,7 @@ describe('U2a-i-AC-13 — bandFor, at every boundary', () => {
   })
 
   it('never cuts a surrogate pair in half', () => {
-    const name = '😀'.repeat(20) + '.ts' // 43 UTF-16 units
+    const name = '😀'.repeat(20) + '.ts' // 43 16-bit code units
     const lead = band(sel({ path: name }))!.parts.lead
     expect(lead.length).toBeLessThanOrEqual(32)
     expect(lead).not.toMatch(

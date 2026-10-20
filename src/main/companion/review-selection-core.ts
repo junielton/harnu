@@ -547,7 +547,7 @@ export const BAND_HINT = 'ask your question below'
 const ELLIPSIS = '…'
 const DASH = '–'
 
-/** The last `n` UTF-16 units of `s`, never starting inside a surrogate pair. */
+/** The last `n` 16-bit code units of `s`, never starting inside a surrogate pair. */
 function tail(s: string, n: number): string {
   let t = s.slice(s.length - n)
   const first = t.charCodeAt(0)
