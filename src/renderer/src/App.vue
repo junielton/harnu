@@ -886,7 +886,7 @@ useShortcuts(
       scope: 'global',
       keys: kb('sidebar.hiddenFolders'),
       keysGuard: notInTextEntry,
-      enabled: () => sessions.folders.length > 0,
+      enabled: sidebarActions.hiddenFoldersAvailable,
       handler: () => sidebarActions.toggleHiddenFolders()
     },
     // --- Sidebar arrow-key navigation (T-4.6). ---

@@ -285,6 +285,25 @@ describe('AC-34 — session.contextMenu (Shift+F10)', () => {
   })
 })
 
+describe('sidebar.hiddenFolders', () => {
+  it('is unavailable while the filter bar replaces the header toolbar (no button to anchor to)', () => {
+    const sessions = useSessionsStore()
+    const sidebar = withSetup(() => useSidebarActions())
+    expect(sidebar.hiddenFoldersAvailable()).toBe(true)
+    sessions.setFilterActive(true)
+    expect(sidebar.hiddenFoldersAvailable()).toBe(false)
+    sessions.setFilterActive(false)
+    expect(sidebar.hiddenFoldersAvailable()).toBe(true)
+  })
+
+  it('is the enabled() of its App.vue registration', () => {
+    const src = readFileSync(resolve(__dirname, '../src/renderer/src/App.vue'), 'utf8')
+    const start = src.indexOf("id: 'sidebar.hiddenFolders'")
+    const reg = src.slice(start, src.indexOf("id: '", start + 5))
+    expect(reg).toContain('enabled: sidebarActions.hiddenFoldersAvailable')
+  })
+})
+
 describe('AC-15 — sidebar.jump', () => {
   it('toggles the jump palette like the search button', () => {
     const ui = useUiStore()

@@ -20,6 +20,7 @@ export interface SidebarActions {
   toggleCollapseAll: () => void
   toggleJump: () => void
   toggleHiddenFolders: () => Promise<void>
+  hiddenFoldersAvailable: () => boolean
 }
 
 export function useSidebarActions(): SidebarActions {
@@ -66,6 +67,15 @@ export function useSidebarActions(): SidebarActions {
   }
 
   /**
+   * Whether the header's Hidden button is rendered — the popover anchors to it.
+   * The header toolbar needs at least one folder, and the inline filter bar
+   * replaces it while a filter is active (`Sidebar.vue`).
+   */
+  function hiddenFoldersAvailable(): boolean {
+    return sessions.folders.length > 0 && !sessions.filterActive
+  }
+
+  /**
    * Open or close the Hidden popover, anchored under the header's Hidden button.
    * A collapsed sidebar is expanded first so the button has a rect to anchor to.
    */
@@ -89,5 +99,13 @@ export function useSidebarActions(): SidebarActions {
     })
   }
 
-  return { rescanning, anyExpanded, rescan, toggleCollapseAll, toggleJump, toggleHiddenFolders }
+  return {
+    rescanning,
+    anyExpanded,
+    rescan,
+    toggleCollapseAll,
+    toggleJump,
+    toggleHiddenFolders,
+    hiddenFoldersAvailable
+  }
 }
