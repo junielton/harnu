@@ -550,3 +550,37 @@ describe('DiagramPane layers — duplicates and agent writes', () => {
     expect(zOf(w)['e-1']).toBe(0)
   })
 })
+
+// ── an arrow restored by undo after a Save keeps its data ───────────────────
+describe('DiagramPane — an arrow deleted, saved and restored by undo', () => {
+  it('is saved again with its label, router and props', async () => {
+    const labelled: CanvasDocument = {
+      ...DOC,
+      edges: [{ ...DOC.edges[0], label: 'IPC', router: 'normal', props: { weight: 2 } }]
+    }
+    canvasRead.mockImplementation(async (p: string) => ({ ok: true, path: p, doc: labelled }))
+    const w = mountPane()
+    await settle()
+    await select(w, 'e-1')
+    expect(selectedIds(w)).toEqual(['e-1'])
+    focusPane(w)
+    key('Delete')
+    await settle()
+    expect(graphOf(w).getCellById('e-1')).toBeNull()
+    const deleted = await saveAndRead(w)
+    expect(deleted.edges).toEqual([])
+
+    // The Save made the edge-less draft the base: only the cell's own data can
+    // carry the label back.
+    await undo(w)
+    expect(graphOf(w).getCellById('e-1')).not.toBeNull()
+    const restored = await saveAndRead(w)
+    expect(restored.edges).toHaveLength(1)
+    expect(restored.edges[0]).toMatchObject({
+      id: 'e-1',
+      label: 'IPC',
+      router: 'normal',
+      props: { weight: 2 }
+    })
+  })
+})
