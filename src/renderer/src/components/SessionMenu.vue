@@ -23,8 +23,6 @@ import { useUiStore } from '../stores/ui'
 import { useSessionsStore } from '../stores/sessions'
 import { useKeybindingsStore } from '../stores/keybindings'
 import { useSessionActions, type SessionAction } from '../composables/useSessionActions'
-import { DESCRIPTOR_BY_ID, renderKeysString } from '../../../main/keybindings-core'
-import { isMac } from '../lib/platform'
 
 /**
  * Session right-click context menu — see `design.md` §3.8 (anatomy) and §6
@@ -205,19 +203,6 @@ function isOrchestratorOn(sessionId: string): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * Rename accelerator hint, derived from the one canonical chord table
- * (`keybindings-core.ts`) and rendered for the current platform — `⌘R` on
- * macOS, `Ctrl+R` elsewhere. Reads the RESOLVED table from the keybindings
- * store (T1 P3), so a `keybindings.json` rebind updates it live; `''` when the
- * action is unbound (the hint is then hidden).
- */
-const renameAccelerator = computed(() => {
-  const rb = keybindings.resolved.byId['session.rename']
-  const chord = rb ? rb.keys : DESCRIPTOR_BY_ID['session.rename'].defaultKeys
-  return renderKeysString(chord, { mac: isMac }).join(isMac ? '' : '+')
-})
-
-/**
  * The items that are keybindable session actions, and the action each runs —
  * their visibility is `sessionActionVisible`, the one rule the bindings share.
  */
@@ -255,7 +240,15 @@ const entries = computed<MenuEntry[]>(() => {
     extra: Partial<MenuItem> = {}
   ): MenuItem => {
     const action = ACTION_OF[itemId]
-    return { id: itemId, kind: 'item', label, icon, onSelect: actions.run[action], ...extra }
+    return {
+      id: itemId,
+      kind: 'item',
+      label,
+      icon,
+      shortcut: keybindings.chordLabel(`session.${action}`) || undefined,
+      onSelect: actions.run[action],
+      ...extra
+    }
   }
   const all: MenuEntry[] = [
     // BUG-23/24: a dead synthetic (boot never produced a PTY, or the process
@@ -268,10 +261,9 @@ const entries = computed<MenuEntry[]>(() => {
       kind: 'item',
       label: t('actions.rename'),
       icon: Edit3,
-      shortcut: renameAccelerator.value || undefined,
+      shortcut: keybindings.chordLabel('session.rename') || undefined,
       onSelect: onRename
     },
-    // No `shortcut` hint until U6 reads the resolved chord for every item.
     item('fork', t('actions.fork'), Copy),
     item('restart', t('actions.restart'), RotateCcw),
     item('open-in-new-tab', t('actions.openInNewTab'), ExternalLink),
@@ -518,6 +510,7 @@ onBeforeUnmount(() => {
           <span class="flex-1 truncate">{{ entry.label }}</span>
           <span
             v-if="entry.shortcut"
+            data-menu-shortcut
             class="font-mono text-text-4 tabular-nums"
             style="font-size: 10.5px; letter-spacing: 0.02em"
             >{{ entry.shortcut }}</span

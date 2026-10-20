@@ -59,6 +59,7 @@ import {
 import { useSessionsStore, type Session } from '../stores/sessions'
 import { useLayoutStore, INBOX_RAIL_FILTERABLE_STATES } from '../stores/layout'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { relativeTime } from '../composables/useRelativeTime'
 import { useMissionGrants } from '../composables/useMissionGrants'
 import ApprovalRow from './ApprovalRow.vue'
@@ -71,6 +72,7 @@ import type { ResponderMode, ShadowEntry } from '../../../preload'
 const sessions = useSessionsStore()
 const layout = useLayoutStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const { t } = useI18n()
 
 // Minimized-strip minicards reuse the EXACT interactions the expanded cards
@@ -296,9 +298,12 @@ onMounted(() => {
         :class="sessions.inboxCount > 0 ? 'text-accent' : ''"
         style="height: 42px; width: 100%"
         :title="
-          sessions.inboxCount > 0
-            ? $t('approvalInbox.open', { count: sessions.inboxCount })
-            : $t('approvalInbox.rail.expand')
+          keybindings.withChord(
+            sessions.inboxCount > 0
+              ? $t('approvalInbox.open', { count: sessions.inboxCount })
+              : $t('approvalInbox.rail.expand'),
+            'inbox.open'
+          )
         "
         :aria-label="$t('approvalInbox.rail.expand')"
         @click="layout.setInboxRailState('expanded')"
@@ -435,7 +440,7 @@ onMounted(() => {
           class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 22px; height: 22px"
           data-dsqa="fleet-rail-order-button"
-          :title="orderLabel"
+          :title="keybindings.withChord(orderLabel, 'inbox.toggleOrder')"
           :aria-label="orderLabel"
           @click="layout.toggleInboxRailOrder()"
         >
@@ -542,7 +547,7 @@ onMounted(() => {
           type="button"
           class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 22px; height: 22px"
-          :title="$t('approvalInbox.rail.minimize')"
+          :title="keybindings.withChord($t('approvalInbox.rail.minimize'), 'inbox.toggle')"
           :aria-label="$t('approvalInbox.rail.minimize')"
           @click="layout.setInboxRailState('minimized')"
         >

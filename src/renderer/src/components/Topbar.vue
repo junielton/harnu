@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useSessionsStore } from '../stores/sessions'
 import { sessionTitle } from '../lib/session-label'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { useHelpersStore } from '../stores/helpers'
 import { useLayoutStore } from '../stores/layout'
 import { useClaudeBootStore } from '../stores/claudeBoot'
@@ -33,6 +34,7 @@ import {
 
 const sessions = useSessionsStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const helpers = useHelpersStore()
 const layout = useLayoutStore()
 const boot = useClaudeBootStore()
@@ -276,7 +278,12 @@ function onKeydown(e: KeyboardEvent): void {
     <button
       class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
       style="width: 26px; height: 26px; margin-left: -4px; -webkit-app-region: no-drag"
-      :title="layout.sidebarCollapsed ? $t('sidebar.show') : $t('sidebar.hide')"
+      :title="
+        keybindings.withChord(
+          layout.sidebarCollapsed ? $t('sidebar.show') : $t('sidebar.hide'),
+          'view.toggleSidebar'
+        )
+      "
       :aria-label="layout.sidebarCollapsed ? $t('sidebar.show') : $t('sidebar.hide')"
       @click="layout.toggleSidebar()"
     >
@@ -393,7 +400,7 @@ function onKeydown(e: KeyboardEvent): void {
           v-if="folderOnly"
           class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 26px; height: 26px"
-          :title="$t('topbar.newSessionHere')"
+          :title="keybindings.withChord($t('topbar.newSessionHere'), 'session.newInFolder')"
           :aria-label="$t('topbar.newSessionHere')"
           data-test="topbar-new-session"
           @click="onNewSessionClick"
@@ -410,7 +417,7 @@ function onKeydown(e: KeyboardEvent): void {
               : 'text-text-3 hover:bg-surface hover:text-text'
           "
           style="width: 26px; height: 26px"
-          :title="$t('topbar.roadmapBoard')"
+          :title="keybindings.withChord($t('topbar.roadmapBoard'), 'view.roadmap')"
           :aria-label="$t('topbar.roadmapBoard')"
           :aria-pressed="roadmapActive"
           data-test="topbar-roadmap"
@@ -426,7 +433,7 @@ function onKeydown(e: KeyboardEvent): void {
               : 'text-text-3 hover:bg-surface hover:text-text'
           "
           style="width: 26px; height: 26px"
-          :title="$t('topbar.prStack')"
+          :title="keybindings.withChord($t('topbar.prStack'), 'view.prStack')"
           :aria-label="$t('topbar.prStack')"
           :aria-pressed="prStackActive"
           data-test="topbar-pr-stack"
@@ -444,7 +451,7 @@ function onKeydown(e: KeyboardEvent): void {
               : 'text-text-3 hover:bg-surface hover:text-text'
           "
           style="width: 26px; height: 26px"
-          :title="$t('topbar.review')"
+          :title="keybindings.withChord($t('topbar.review'), 'view.review')"
           :aria-label="$t('topbar.review')"
           :aria-pressed="reviewActive"
           data-test="topbar-review"
@@ -455,7 +462,7 @@ function onKeydown(e: KeyboardEvent): void {
         <button
           class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 26px; height: 26px"
-          :title="$t('topbar.openFolder')"
+          :title="keybindings.withChord($t('topbar.openFolder'), 'folder.openInFileManager')"
           :aria-label="$t('topbar.openFolder')"
           data-test="topbar-open-folder"
           @click="folderActions.openInFileManager()"
@@ -465,7 +472,7 @@ function onKeydown(e: KeyboardEvent): void {
         <button
           class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 26px; height: 26px"
-          :title="$t('topbar.openInVSCode')"
+          :title="keybindings.withChord($t('topbar.openInVSCode'), 'folder.openInVSCode')"
           :aria-label="$t('topbar.openInVSCode')"
           data-test="topbar-vscode"
           @click="folderActions.openInVSCode()"
@@ -478,7 +485,7 @@ function onKeydown(e: KeyboardEvent): void {
           v-if="githubPullsUrl"
           class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 26px; height: 26px"
-          :title="$t('topbar.githubPulls')"
+          :title="keybindings.withChord($t('topbar.githubPulls'), 'folder.openGithubPulls')"
           :aria-label="$t('topbar.githubPulls')"
           data-test="topbar-github-pulls"
           @click="onGithubPullsClick"
@@ -488,7 +495,7 @@ function onKeydown(e: KeyboardEvent): void {
         <button
           class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 26px; height: 26px"
-          :title="$t('topbar.openExplorer')"
+          :title="keybindings.withChord($t('topbar.openExplorer'), 'folder.browseFiles')"
           :aria-label="$t('topbar.openExplorer')"
           data-test="topbar-explorer"
           @click="folderActions.browseFiles()"
@@ -498,7 +505,7 @@ function onKeydown(e: KeyboardEvent): void {
         <button
           class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 26px; height: 26px"
-          :title="$t('topbar.split')"
+          :title="keybindings.withChord($t('topbar.split'), 'folder.newTerminal')"
           :aria-label="$t('topbar.split')"
           data-test="topbar-split"
           @click="folderActions.newTerminal()"
@@ -512,7 +519,12 @@ function onKeydown(e: KeyboardEvent): void {
           v-if="helpers.hasHelpersForCurrentWorktree"
           class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface hover:text-text"
           style="width: 26px; height: 26px"
-          :title="layout.helperCollapsed ? $t('helperStack.show') : $t('helperStack.hide')"
+          :title="
+            keybindings.withChord(
+              layout.helperCollapsed ? $t('helperStack.show') : $t('helperStack.hide'),
+              'view.toggleHelper'
+            )
+          "
           :aria-label="layout.helperCollapsed ? $t('helperStack.show') : $t('helperStack.hide')"
           @click="layout.toggleHelper()"
         >

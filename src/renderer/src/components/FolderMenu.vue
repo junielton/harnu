@@ -31,6 +31,8 @@ import { useI18n } from 'vue-i18n'
 import { useUiStore } from '../stores/ui'
 import { useSessionsStore } from '../stores/sessions'
 import { useModesStore } from '../stores/modes'
+import { useKeybindingsStore } from '../stores/keybindings'
+import type { ShortcutActionId } from '../../../main/keybindings-core'
 import { useFolderMenuActions, type FolderAction } from '../composables/useFolderMenuActions'
 
 /**
@@ -63,6 +65,7 @@ const MODE_ICONS: Record<string, typeof EyeOff> = {
  */
 
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 const sessions = useSessionsStore()
 const modes = useModesStore()
 const { t } = useI18n()
@@ -150,6 +153,36 @@ interface MenuItem {
   badge?: { icon: typeof EyeOff; title: string }
   /** Absent when the row only opens a flyout (`children`). */
   onSelect?: (projectPath: string) => void | Promise<void>
+}
+
+/**
+ * The table action each item runs (T486 §3.4) — its resolved chord shows in the
+ * item's trailing hint (§9.2), and only while it has one. Roadmap / PR Stack
+ * open this menu's folder, not the active one, so they carry no hint.
+ */
+const SHORTCUT_OF: Record<string, ShortcutActionId> = {
+  'new-terminal': 'folder.newFolderTerminal',
+  rename: 'folder.rename',
+  'alias-from-branch': 'folder.toggleBranchAlias',
+  boot: 'folder.bootOptions',
+  'project-memory': 'folder.projectMemory',
+  'memory-location': 'folder.memoryLocation',
+  'new-folder': 'folder.newSubfolder',
+  'open-subfolder': 'folder.openSubfolder',
+  'new-worktree': 'folder.newWorktree',
+  'worktree-md': 'folder.worktreeMd',
+  'worktree-md-agent': 'folder.askAgentWorktreeMd',
+  intercept: 'folder.toggleIntercept',
+  'auto-organize': 'folder.toggleAutoOrganize',
+  'orchestrator-default': 'folder.toggleOrchestratorDefault',
+  hide: 'folder.toggleHidden',
+  unhide: 'folder.toggleHidden',
+  'remove-worktree': 'folder.removeWorktree'
+}
+
+function shortcutFor(itemId: string): string {
+  const id = SHORTCUT_OF[itemId]
+  return id ? keybindings.chordLabel(id) : ''
 }
 
 /** Id of the row whose flyout is open (T123). Only one at a time. */
@@ -863,6 +896,13 @@ onBeforeUnmount(() => {
         >
           <component :is="entry.icon" :size="13" :stroke-width="1.6" class="shrink-0" />
           <span class="flex-1 truncate">{{ entry.label }}</span>
+          <span
+            v-if="shortcutFor(entry.id)"
+            data-menu-shortcut
+            class="font-mono text-text-4 tabular-nums"
+            style="font-size: 10.5px; letter-spacing: 0.02em"
+            >{{ shortcutFor(entry.id) }}</span
+          >
         </button>
       </template>
     </div>

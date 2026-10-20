@@ -15,6 +15,7 @@ import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
 import { useMemoryStore } from '../stores/memory'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
+import { useKeybindingsStore } from '../stores/keybindings'
 import MarkdownRenderer from './MarkdownRenderer.vue'
 import type { HelperPane, MemoryPaneData, DigestMeta } from '../../../preload'
 
@@ -43,6 +44,7 @@ const helpers = useHelpersStore()
 const memory = useMemoryStore()
 const sessions = useSessionsStore()
 const ui = useUiStore()
+const keybindings = useKeybindingsStore()
 
 /** The repo folder this pane shows memory for (HelperStack guarantees `memory`). */
 const paneFolder = computed<string>(() => (props.pane as HelperPane).folder ?? '')
@@ -205,7 +207,12 @@ useFocusRegion(props.pane.id, rootEl, {
       <button
         class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
-        :title="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
+        :title="
+          keybindings.withChord(
+            isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize'),
+            'pane.toggleMaximize'
+          )
+        "
         :aria-label="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
         @mousedown.stop
         @click="onToggleMaximize"
@@ -216,7 +223,7 @@ useFocusRegion(props.pane.id, rootEl, {
       <button
         class="-mr-1 flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
-        :title="$t('helperPane.close')"
+        :title="keybindings.withChord($t('helperPane.close'), 'pane.close')"
         :aria-label="$t('helperPane.close')"
         @mousedown.stop
         @click="onClose"
