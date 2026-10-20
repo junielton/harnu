@@ -5,6 +5,7 @@ import { isMac } from '../lib/platform'
 import { useUiStore } from './ui'
 import { useHelpersStore } from './helpers'
 import {
+  renderKeysString,
   resolveKeybindings,
   type ResolvedKeybindings,
   type ShortcutActionId
@@ -115,6 +116,24 @@ export const useKeybindingsStore = defineStore('keybindings', () => {
   }
 
   /**
+   * The resolved chord for `id` rendered for this platform (`⌘B` on macOS,
+   * `Ctrl+B` elsewhere — design.md §6 `<kbd>`), or `''` when unbound. Reactive
+   * on `resolved`, so a rebind updates every hint that reads it.
+   */
+  function chordLabel(id: ShortcutActionId): string {
+    return renderKeysString(chordFor(id) ?? null, { mac: isMac }).join(isMac ? '' : '+')
+  }
+
+  /**
+   * A button tooltip with its action's chord appended — "Hide sidebar (Ctrl+B)"
+   * (T486 §9.2) — or the plain label when the action is unbound.
+   */
+  function withChord(label: string, id: ShortcutActionId): string {
+    const chord = chordLabel(id)
+    return chord ? i18n.global.t('keybindings.withChord', { label, chord }) : label
+  }
+
+  /**
    * The override set a resolved table implies — every row that is not a plain
    * default. This is the SANITIZED set: an entry the resolver rejected (reserved
    * chord, non-accelerator chord) never reaches `source: 'override'`, so it is
@@ -221,6 +240,8 @@ export const useKeybindingsStore = defineStore('keybindings', () => {
     init,
     reload,
     chordFor,
+    chordLabel,
+    withChord,
     setBinding,
     resetBinding,
     resetAll,

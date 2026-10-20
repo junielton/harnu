@@ -2,23 +2,24 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import {
   Clock,
-  CornerDownLeft,
+  Command,
   Folder as FolderIcon,
-  FolderPlus,
-  Inbox,
   LayoutGrid,
-  Repeat,
+  Maximize2,
+  PanelRight,
   Search,
   Sparkles,
   Terminal as TerminalIcon
 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useUiStore } from '../stores/ui'
-import { useLayoutStore } from '../stores/layout'
 import { useSessionsStore } from '../stores/sessions'
+import { useKeybindingsStore } from '../stores/keybindings'
 import { sessionTitle } from '../lib/session-label'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import { useFuzzyMatcher } from '../composables/useJumpSearch'
+import { invokeShortcut, isShortcutEnabled } from '../composables/useShortcuts'
+import { KEYBINDINGS, type KeybindingGroup } from '../../../main/keybindings-core'
 import type { Folder, Session } from '../stores/sessions'
 
 /**
@@ -31,7 +32,7 @@ import type { Folder, Session } from '../stores/sessions'
  *
  * Sections (in order):
  *  1. Recents — top 3 sessions by `modified` desc, only while the input is empty
- *  2. Actions — static list of palette-level commands
+ *  2. Actions — generated from the keybindings table (T486 §9.1)
  *  3. Folders — fuzzy-matched on `alias`
  *  4. Sessions — fuzzy-matched on `summary || firstPrompt`
  *
@@ -47,8 +48,8 @@ import type { Folder, Session } from '../stores/sessions'
  */
 
 const ui = useUiStore()
-const layout = useLayoutStore()
 const sessions = useSessionsStore()
+const keybindings = useKeybindingsStore()
 const { t } = useI18n()
 
 const isOpen = computed(() => ui.palette.open)
@@ -79,16 +80,7 @@ useFocusTrap({
  * action (select a session, open a dialog, toggle a view, …) on activation.
  */
 type Section = 'recents' | 'actions' | 'folders' | 'sessions'
-type IconKey =
-  | 'clock'
-  | 'sparkles'
-  | 'folderPlus'
-  | 'repeat'
-  | 'cornerDown'
-  | 'folder'
-  | 'terminal'
-  | 'layoutGrid'
-  | 'inbox'
+type IconKey = 'clock' | 'folder' | 'terminal' | KeybindingGroup
 
 interface Item {
   /** Unique id used for `:key` and cursor tracking. */
@@ -103,16 +95,18 @@ interface Item {
   handler: () => void
 }
 
+/** One icon per table group for action rows (design.md §6 "Command palette"). */
 const ICONS = {
   clock: Clock,
-  sparkles: Sparkles,
-  folderPlus: FolderPlus,
-  repeat: Repeat,
-  cornerDown: CornerDownLeft,
   folder: FolderIcon,
   terminal: TerminalIcon,
-  layoutGrid: LayoutGrid,
-  inbox: Inbox
+  sessions: Sparkles,
+  sidebar: Search,
+  folders: FolderIcon,
+  views: LayoutGrid,
+  panes: PanelRight,
+  takeovers: Maximize2,
+  app: Command
 } as const
 
 /**
@@ -127,20 +121,6 @@ function sessionLabel(s: Session): string {
   // The shared session name (BUG-78, trimmed there); the id keeps a nameless
   // session searchable.
   return sessionTitle(s, sessions.allSessions, t) || s.sessionId
-}
-
-/**
- * Resolve the most recently modified session across every project/worktree.
- * Used by the palette's "resume last" action — mirrors the logic in
- * `App.vue`'s `mostRecentSession()` (kept inline to avoid spinning up a
- * shared utility for two callsites).
- */
-function mostRecentSession(): Session | null {
-  let best: Session | null = null
-  for (const s of sessions.allSessions) {
-    if (!best || s.modified > best.modified) best = s
-  }
-  return best
 }
 
 /**
@@ -167,71 +147,30 @@ const recents = computed<Item[]>(() => {
 })
 
 /**
- * Static palette-level actions. Each handler is the renderer-side action that
- * the OS-menu accelerator would fire (kept in lockstep with `App.vue`'s
- * `useShortcuts(...)` table). Activating an action in the palette closes the
- * palette first — the parent `activate()` does that — and then runs the
- * handler, so the dialog/topbar gets a clean focus environment.
+ * Every table action the palette may list (T486 §9.1): `palette !== false`, a
+ * `'global'` registration exists, and its `enabled()` context holds now — so a
+ * disabled action is not shown. `keysGuard` is not consulted: the palette's
+ * input has focus, which must not hide an action guarded against text fields.
+ * Activation runs the registered handler (`invokeShortcut`), the same one the
+ * chord and the native menu run — never a palette-local copy.
  */
-const actions = computed<Item[]>(() => [
-  {
-    id: 'action:newSession',
-    label: t('palette.actions.newSession'),
+const actions = computed<Item[]>(() =>
+  KEYBINDINGS.filter((d) => d.palette !== false && isShortcutEnabled(d.id)).map<Item>((d) => ({
+    id: `action:${d.id}`,
+    label: t(d.labelKey),
+    accelerator: keybindings.chordLabel(d.id) || undefined,
     section: 'actions',
-    iconKey: 'sparkles',
-    // U-1.5: same helper the ⌘N shortcut in App.vue uses. Resolves a worktree
-    // from current selection / first project and calls `createNewSession()` —
-    // the terminal pane spawns `claude` (no args) there on the next tick.
+    iconKey: d.group,
     handler: () => {
-      sessions.newSessionInCurrentContext()
+      invokeShortcut(d.id)
     }
-  },
-  {
-    id: 'action:addFolder',
-    label: t('palette.actions.addFolder'),
-    section: 'actions',
-    iconKey: 'folderPlus',
-    handler: () => ui.openDialog('addFolder')
-  },
-  {
-    id: 'action:switchProject',
-    label: t('palette.actions.switchProject'),
-    section: 'actions',
-    iconKey: 'repeat',
-    // v1: re-opens the palette plain (the user is already in it; this is
-    // effectively a no-op but matches the menu's `project.switch` semantics).
-    // v1.1 will pre-filter to the Projects section via a `>p ` prefix.
-    handler: () => ui.openPalette()
-  },
-  {
-    id: 'action:resumeLast',
-    label: t('palette.actions.resumeLast'),
-    section: 'actions',
-    iconKey: 'cornerDown',
-    handler: () => {
-      const target = mostRecentSession()
-      if (target) sessions.select(target.sessionId)
-    }
-  },
-  {
-    id: 'action:toggleFleetRail',
-    label: t('palette.actions.toggleFleetRail'),
-    section: 'actions',
-    iconKey: 'layoutGrid',
-    // T153: the sidebar's folders↔board toggle was removed — same helper
-    // `⌘⇧B`/`⌘⇧A` call.
-    handler: () => layout.toggleInboxRail()
-  },
-  {
-    id: 'action:openInbox',
-    label: t('palette.actions.openInbox'),
-    section: 'actions',
-    iconKey: 'inbox',
-    // T83 S0: expand (never toggle) — arriving here via "Open approvals" always
-    // means "show me the queue", so a minimized rail must open, not close.
-    handler: () => layout.setInboxRailState('expanded')
-  }
-])
+  }))
+)
+
+/** The empty-query view lists only the featured actions, not the whole table. */
+const featuredIds = new Set(
+  KEYBINDINGS.filter((d) => d.paletteFeatured).map((d) => `action:${d.id}`)
+)
 
 /** All folders, mapped to palette items. */
 const folders = computed<Item[]>(() => {
@@ -281,7 +220,11 @@ const matchActions = useFuzzyMatcher(() => actions.value)
 const matchFolders = useFuzzyMatcher(() => folders.value)
 const matchSessions = useFuzzyMatcher(() => allSessionItems.value)
 
-const filteredActions = computed(() => matchActions(query.value))
+const filteredActions = computed(() =>
+  query.value.trim().length === 0
+    ? actions.value.filter((a) => featuredIds.has(a.id))
+    : matchActions(query.value)
+)
 const filteredFolders = computed(() => matchFolders(query.value))
 const filteredSessions = computed(() => matchSessions(query.value))
 
@@ -328,6 +271,12 @@ function sectionLabel(s: Section): string {
 // Activation + keyboard
 // ---------------------------------------------------------------------------
 
+/**
+ * Run the row, then close (§9.1 keeps that order). A mouse click that opens an
+ * anchored popover (Activity, pasted images, …) leaves it open: the popovers'
+ * click-outside (`onClickOutside`) listens in the window CAPTURE phase, so it
+ * handles this click before the row's handler opens the popover.
+ */
 function activate(item: Item): void {
   item.handler()
   close()
@@ -484,6 +433,7 @@ onBeforeUnmount(() => {
               padding: flatItems.indexOf(item) === cursor ? '8px 16px 8px 14px' : '8px 16px',
               borderLeft: flatItems.indexOf(item) === cursor ? undefined : '2px solid transparent'
             }"
+            :data-palette-item="item.id"
             @mouseenter="cursor = flatItems.indexOf(item)"
             @click="activate(item)"
           >
@@ -491,6 +441,7 @@ onBeforeUnmount(() => {
             <span class="flex-1 truncate" style="font-size: 12.5px">{{ item.label }}</span>
             <span
               v-if="item.accelerator"
+              data-palette-accelerator
               class="font-mono text-text-4 tabular-nums"
               style="font-size: 10.5px"
               >{{ item.accelerator }}</span

@@ -1144,6 +1144,7 @@
     }
   },
   "keybindings": {
+    "withChord": "{label} ({chord})",
     "toast": {
       "warnings": {
         "title": "Some shortcuts in keybindings.json were ignored",
@@ -1754,14 +1755,6 @@
       "actions": "Actions",
       "folders": "Folders",
       "sessions": "Sessions"
-    },
-    "actions": {
-      "newSession": "New session",
-      "addFolder": "Add folder",
-      "switchProject": "Switch project",
-      "resumeLast": "Resume last session",
-      "toggleFleetRail": "Toggle Fleet rail",
-      "openInbox": "Open approvals"
     }
   },
   "sentinel": {
