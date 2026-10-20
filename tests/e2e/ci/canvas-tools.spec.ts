@@ -16,7 +16,9 @@ import { randomUUID } from 'node:crypto'
  * §9.3, items 1–9). The toolbar holds eight tools — Hand, Select, Rectangle, Diamond,
  * Ellipse, Arrow, Text, Eraser — and step 8 (U2) covers the two shape tools added after
  * U1: Ellipse (`o`/`4`) and Diamond (`d`/`3`). Step 9 (U3) sets every node style from the
- * properties panel and from the agent (`draw_canvas` `style`).
+ * properties panel and from the agent (`draw_canvas` `style`). Step 10 (U4) restacks nodes
+ * from the panel's Layers group and from the agent (`zIndex`), reading the REAL paint order
+ * from X6's DOM (`paintOrder()`), which jsdom cannot prove.
  *
  * jsdom cannot reproduce X6's gesture handling: X6 listens for the release on `document`,
  * takes its own `mousedown` listener away until it sees one, and hit-tests through
@@ -79,6 +81,7 @@ interface SavedNode {
   height?: number
   label?: string
   origin: string
+  zIndex?: number
   props?: { style?: Record<string, unknown> } & Record<string, unknown>
 }
 interface SavedEdge {
@@ -86,6 +89,7 @@ interface SavedEdge {
   source: string
   target: string
   origin: string
+  zIndex?: number
 }
 interface SavedDoc {
   nodes: SavedNode[]
@@ -201,7 +205,7 @@ let boardPath: string
 let mcp: McpClient
 const idOf: Record<string, string> = {}
 
-test.describe('canvas tools in the built app (T536 U1 + U2 + U3, spec §9.3)', () => {
+test.describe('canvas tools in the built app (T536 U1 + U2 + U3 + U4, spec §9.3)', () => {
   test.beforeAll(async () => {
     userData = mkdtempSync(join(tmpdir(), 'harnu-ci-canvas-'))
     folder = mkdtempSync(join(tmpdir(), 'harnu-ci-board-'))
@@ -691,6 +695,248 @@ test.describe('canvas tools in the built app (T536 U1 + U2 + U3, spec §9.3)', (
         await expect(option('corners', 'sharp')).toHaveCount(0)
         await expect(option('stroke', 'dashed')).toHaveCount(0)
       })
+
+      await test.step('10. Layers: panel and agent', async () => {
+        const L = { L1: '', L2: '', L3: '' }
+        const ids = (): string[] => [L.L1, L.L2, L.L3]
+        /** The three boxes' relative paint order, bottom → top. */
+        const stack = async (): Promise<string[]> =>
+          (await paintOrder()).filter((id) => ids().includes(id))
+        const layer = async (move: 'back' | 'backward' | 'forward' | 'front'): Promise<void> => {
+          const btn = pane.getByTestId(`canvas-layer-${move}`)
+          if (!(await btn.isVisible())) await pane.getByTestId('canvas-properties-toggle').click()
+          await btn.click()
+        }
+        /** A screen point `dx`,`dy` world units inside a node's box (zoom from its width). */
+        const inside = async (id: string, dx: number, dy: number, w = BOX_W) => {
+          const b = await nodeBox(id)
+          const s = b.width / w
+          return { x: b.x + dx * s, y: b.y + dy * s, s }
+        }
+        /** The centre of the screen rectangle the three boxes share. */
+        const sharedCentre = async (): Promise<{ x: number; y: number }> => {
+          const boxes = await Promise.all(ids().map((id) => nodeBox(id)))
+          const left = Math.max(...boxes.map((b) => b.x))
+          const top = Math.max(...boxes.map((b) => b.y))
+          const right = Math.min(...boxes.map((b) => b.x + b.width))
+          const bottom = Math.min(...boxes.map((b) => b.y + b.height))
+          expect(right - left, 'the three boxes share some width').toBeGreaterThan(4)
+          expect(bottom - top, 'the three boxes share some height').toBeGreaterThan(4)
+          return { x: (left + right) / 2, y: (top + bottom) / 2 }
+        }
+
+        /**
+         * Show the board as it is on disk. An agent's write is not pushed into an open pane
+         * (it arms the same one-shot self-write suppression the pane's own Save does, so the
+         * watcher swallows it), so the operator's Reload button re-reads the file; the viewport
+         * is kept by a reload, so Fit brings the new boxes into view.
+         */
+        const reloadBoard = async (): Promise<SavedDoc> => {
+          const onDisk = JSON.parse(readFileSync(boardPath, 'utf8')) as SavedDoc
+          await pane.getByRole('button', { name: 'Reload canvas', exact: true }).click()
+          await expect(nodes).toHaveCount(onDisk.nodes.length, { timeout: STARTUP_TIMEOUT })
+          await pane.getByRole('button', { name: 'Fit to view', exact: true }).click()
+          await expectStableGeometry(onDisk.nodes[0].id)
+          return onDisk
+        }
+
+        // The earlier steps' Saves ranked every node (operator-drawn nodes broke file order),
+        // so the agent first clears those ranks with `zIndex: null`, then adds three boxes
+        // overlapping in that order: the board is a file nobody has restacked.
+        await expect(tool('select')).toHaveAttribute('aria-pressed', 'true')
+        const ranked = (JSON.parse(readFileSync(boardPath, 'utf8')) as SavedDoc).nodes.filter(
+          (n) => typeof n.zIndex === 'number'
+        )
+        expect(ranked.length, 'the earlier steps left ranked nodes to clear').toBeGreaterThan(0)
+        await mcp.call('draw_canvas', {
+          folder,
+          ops: [
+            ...ranked.map((n) => ({ op: 'update_node', id: n.id, zIndex: null })),
+            {
+              op: 'add_node',
+              shape: 'box',
+              x: 700,
+              y: 500,
+              width: BOX_W,
+              height: BOX_H,
+              label: 'L1'
+            },
+            {
+              op: 'add_node',
+              shape: 'box',
+              x: 716,
+              y: 506,
+              width: BOX_W,
+              height: BOX_H,
+              label: 'L2'
+            },
+            {
+              op: 'add_node',
+              shape: 'box',
+              x: 732,
+              y: 512,
+              width: BOX_W,
+              height: BOX_H,
+              label: 'L3'
+            }
+          ]
+        })
+        let doc = JSON.parse(readFileSync(boardPath, 'utf8')) as SavedDoc
+        expect(
+          doc.nodes.filter((n) => 'zIndex' in n),
+          'the agent left no zIndex in the file'
+        ).toEqual([])
+        for (const n of doc.nodes) if (n.label && n.label in L) L[n.label as keyof typeof L] = n.id
+        expect(ids().every(Boolean), 'the agent added L1, L2 and L3').toBe(true)
+        doc = await reloadBoard()
+        await expectStableGeometry(L.L3)
+        expect(
+          (await paintOrder()).slice(-3),
+          'a fresh load paints L1, L2, L3 in file order'
+        ).toEqual(ids())
+
+        // A move of L3 alone never writes a zIndex: the file nobody restacked stays unstacked.
+        const l3 = await inside(L.L3, BOX_W - 6, BOX_H / 2)
+        await drag(l3, { x: l3.x + 20 * l3.s, y: l3.y })
+        doc = await saveAndRead()
+        expect(
+          doc.nodes.filter((n) => 'zIndex' in n).map((n) => n.id),
+          'no node carries a zIndex after a plain move'
+        ).toEqual([])
+
+        // L1 to the front from the panel: it paints last, and a click on the overlap hits it.
+        const l1 = await inside(L.L1, 8, BOX_H / 2)
+        await page.mouse.click(l1.x, l1.y)
+        expect(await selectedIds(), 'L1 is selected').toEqual([L.L1])
+        await layer('front')
+        await expect.poll(async () => (await paintOrder()).at(-1)).toBe(L.L1)
+        const blank = await blankRect(10, 10)
+        await page.mouse.click(blank.x + 5, blank.y + 5)
+        expect(await selectedIds(), 'nothing selected after a blank click').toEqual([])
+        const overlap = await sharedCentre()
+        await page.mouse.click(overlap.x, overlap.y)
+        expect(await selectedIds(), 'a click on the overlap selects the front box').toEqual([L.L1])
+
+        // A theme switch redraws the pane: L1 stays in front, and the history survives it.
+        await page.evaluate(() => {
+          const app = (
+            document.querySelector('#app') as unknown as {
+              __vue_app__: {
+                config: { globalProperties: { $pinia: { _s: Map<string, unknown> } } }
+              }
+            }
+          ).__vue_app__
+          ;(app.config.globalProperties.$pinia._s.get('theme') as { set(t: string): void }).set(
+            'light'
+          )
+        })
+        await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+        await expect.poll(async () => (await paintOrder()).at(-1)).toBe(L.L1)
+        await page.mouse.click(overlap.x, overlap.y)
+        await page.keyboard.press('Control+z')
+        await expect.poll(stack, 'Ctrl+Z puts L1 back under L2 and L3').toEqual(ids())
+        await page.keyboard.press('Control+y')
+        await expect.poll(stack, 'Ctrl+Y puts L1 on top again').toEqual([L.L2, L.L3, L.L1])
+        await page.evaluate(() => {
+          const app = (
+            document.querySelector('#app') as unknown as {
+              __vue_app__: {
+                config: { globalProperties: { $pinia: { _s: Map<string, unknown> } } }
+              }
+            }
+          ).__vue_app__
+          ;(app.config.globalProperties.$pinia._s.get('theme') as { set(t: string): void }).set(
+            'default-dark'
+          )
+        })
+
+        // Saving writes a rank on every node, L1 the highest, and none on an edge.
+        doc = await saveAndRead()
+        expect(
+          doc.nodes.every((n) => typeof n.zIndex === 'number'),
+          'every node has a zIndex'
+        ).toBe(true)
+        expect(doc.nodes.find((n) => n.id === L.L1)?.zIndex).toBe(
+          Math.max(...doc.nodes.map((n) => n.zIndex ?? 0))
+        )
+        expect(doc.edges.length, 'the board still has its edge').toBeGreaterThan(0)
+        expect(
+          doc.edges.some((e) => 'zIndex' in e),
+          'no edge has a zIndex'
+        ).toBe(false)
+
+        // A box drawn over the stack is the newest: it paints last, saved and reloaded.
+        const union = await Promise.all(ids().map((id) => nodeBox(id)))
+        const from = {
+          x: Math.min(...union.map((b) => b.x)) - 12,
+          y: Math.min(...union.map((b) => b.y)) - 12
+        }
+        const to = await sharedCentre()
+        await page.keyboard.press('r')
+        await expect(tool('rectangle')).toHaveAttribute('aria-pressed', 'true')
+        await drag(from, to)
+        await expect(rename).toBeFocused()
+        await rename.fill('N')
+        await rename.press('Enter')
+        doc = await saveAndRead()
+        const drawn = doc.nodes.filter((n) => n.label === 'N')
+        expect(drawn).toHaveLength(1)
+        await expect.poll(async () => (await paintOrder()).at(-1)).toBe(drawn[0].id)
+        await pane.getByRole('button', { name: 'Reload canvas', exact: true }).click()
+        await expect(nodes).toHaveCount(doc.nodes.length, { timeout: STARTUP_TIMEOUT })
+        await expect
+          .poll(async () => (await paintOrder()).at(-1), 'N paints last after a reload')
+          .toBe(drawn[0].id)
+
+        // The agent: zIndex below 1 is refused and changes nothing; a high one restacks.
+        const onDisk = readFileSync(boardPath, 'utf8')
+        const refused = await mcp.callRefused('draw_canvas', {
+          folder,
+          ops: [{ op: 'update_node', id: L.L2, zIndex: 0 }]
+        })
+        expect(refused).toMatch(/^BAD_ARGS/)
+        expect(readFileSync(boardPath, 'utf8'), 'a refused zIndex leaves the file alone').toBe(
+          onDisk
+        )
+        await expect(pane.getByTestId('diagram-dirty-dot')).toHaveCount(0)
+        await mcp.call('draw_canvas', {
+          folder,
+          ops: [{ op: 'update_node', id: L.L2, zIndex: 999 }]
+        })
+        expect(
+          (JSON.parse(readFileSync(boardPath, 'utf8')) as SavedDoc).nodes.find((n) => n.id === L.L2)
+            ?.zIndex
+        ).toBe(999)
+        await reloadBoard()
+        await expect
+          .poll(async () => (await paintOrder()).at(-1), 'zIndex 999 paints L2 last')
+          .toBe(L.L2)
+
+        // A mockup card takes Layers but none of the style groups.
+        await mcp.call('draw_canvas', {
+          folder,
+          ops: [
+            {
+              op: 'add_node',
+              shape: 'harnu/mockup-card',
+              x: 400,
+              y: 600,
+              props: { title: 'Layers card' }
+            }
+          ]
+        })
+        doc = JSON.parse(readFileSync(boardPath, 'utf8')) as SavedDoc
+        const card = doc.nodes.find((n) => n.shape === 'harnu/mockup-card')
+        expect(card, 'the mockup card was added').toBeDefined()
+        await reloadBoard()
+        await expectStableGeometry((card as SavedNode).id)
+        await page.mouse.click(...xy(centre(await nodeBox((card as SavedNode).id))))
+        expect(await selectedIds()).toEqual([(card as SavedNode).id])
+        if (!(await pane.getByTestId('canvas-layers').isVisible()))
+          await pane.getByTestId('canvas-properties-toggle').click()
+        await expect(pane.getByTestId('canvas-layers')).toBeVisible()
+        await expect(pane.locator('[data-testid^="canvas-prop-group-"]')).toHaveCount(0)
+      })
     } catch (err) {
       failed = true
       await page?.screenshot({ path: testInfo.outputPath('failure.png') }).catch(() => {})
@@ -870,6 +1116,15 @@ async function allNodeBoxes(): Promise<Record<string, Box>> {
     })
     return out
   })
+}
+
+/** The `data-cell-id` of every node in DOM order: the real paint order, bottom → top. */
+async function paintOrder(): Promise<string[]> {
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll('[data-testid="diagram-pane"] g.x6-node')).map(
+      (el) => el.getAttribute('data-cell-id') ?? ''
+    )
+  )
 }
 
 async function selectedIds(): Promise<string[]> {
