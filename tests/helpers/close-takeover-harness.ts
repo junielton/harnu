@@ -1,8 +1,17 @@
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, type PropType } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
-import { useShortcuts } from '../../src/renderer/src/composables/useShortcuts'
+import { useShortcuts, type ShortcutBinding } from '../../src/renderer/src/composables/useShortcuts'
 import { closeTakeoverBinding, installKeyOrigin } from '../../src/renderer/src/lib/takeover-esc'
 import { useUiStore } from '../../src/renderer/src/stores/ui'
+
+/** Registers `bindings` for as long as it is mounted, as `App.vue` does. */
+const Shortcuts = defineComponent({
+  props: { bindings: { type: Array as PropType<ShortcutBinding[]>, required: true } },
+  setup(props) {
+    useShortcuts(props.bindings)
+    return () => h('div')
+  }
+})
 
 let primed = false
 
@@ -16,14 +25,7 @@ let primed = false
 function primeMagicKeys(): void {
   if (primed) return
   primed = true
-  mount(
-    defineComponent({
-      setup() {
-        useShortcuts([])
-        return () => h('div')
-      }
-    })
-  )
+  mount(Shortcuts, { props: { bindings: [] } })
 }
 
 /**
@@ -36,21 +38,18 @@ function primeMagicKeys(): void {
 export function mountCloseTakeover(): { unmount: () => void } {
   primeMagicKeys()
   const stopOrigin = installKeyOrigin()
-  const harness = mount(
-    defineComponent({
-      setup() {
-        useShortcuts([
-          {
-            id: 'view.closeTakeover',
-            scope: 'global',
-            keys: 'Escape',
-            ...closeTakeoverBinding(useUiStore())
-          }
-        ])
-        return () => h('div')
-      }
-    })
-  )
+  const harness = mount(Shortcuts, {
+    props: {
+      bindings: [
+        {
+          id: 'view.closeTakeover',
+          scope: 'global',
+          keys: 'Escape',
+          ...closeTakeoverBinding(useUiStore())
+        }
+      ]
+    }
+  })
   return {
     unmount: () => {
       harness.unmount()
