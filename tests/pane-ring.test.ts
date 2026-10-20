@@ -99,7 +99,7 @@ describe('stepRing (AC-22, AC-23)', () => {
 
 /** A fake world for the commands: a stack, a focused region, a collapsed flag. */
 function world(init: {
-  panes?: Array<{ id: string; type: string }>
+  panes?: Array<{ id: string; type: string; agentOwned?: boolean }>
   current?: string | null
   maximizedId?: string | null
   collapsed?: boolean
@@ -305,6 +305,25 @@ describe('toggleTerminal (AC-29)', () => {
     expect(s.collapsed).toBe(true)
     expect(calls.blur).toHaveBeenCalled()
     expect(calls.focus).not.toHaveBeenCalled()
+  })
+
+  it('never grabs an agent terminal: skips it, and adds an operator shell when only agents have one', () => {
+    const agentFirst = world({
+      panes: [{ id: 'agent', type: 'shell', agentOwned: true }, ...STACK],
+      current: MAIN_REGION
+    })
+    toggleTerminal(agentFirst.deps)
+    expect(agentFirst.s.current).toBe('sh') // the first OPERATOR shell
+    expect(agentFirst.calls.addShell).not.toHaveBeenCalled()
+
+    const onlyAgent = world({
+      panes: [{ id: 'agent', type: 'shell', agentOwned: true }],
+      current: MAIN_REGION
+    })
+    toggleTerminal(onlyAgent.deps)
+    expect(onlyAgent.calls.addShell).toHaveBeenCalledWith('/wt')
+    // The agent terminal stays in the F6 ring.
+    expect(onlyAgent.deps.ring()).toContain('agent')
   })
 
   it('does nothing without a current worktree', () => {

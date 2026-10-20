@@ -37,7 +37,7 @@ import { useThemeStore } from './stores/theme'
 import { useSessionsStore } from './stores/sessions'
 import { formatWindowTitle } from './stores/attention'
 import { useUiStore, SETTINGS_TAB_IDS } from './stores/ui'
-import { useHelpersStore } from './stores/helpers'
+import { useHelpersStore, isAgentTerminalPane } from './stores/helpers'
 import { useLayoutStore, helperPanelVisible, inboxRailWidthFor } from './stores/layout'
 import { useClaudeChangelogStore } from './stores/claudeChangelog'
 import { useCompanionStore } from './stores/companion'
@@ -578,7 +578,12 @@ const paneDeps: PaneCommandDeps = {
   focus: (id) => void focusRegion(id),
   close: (id) => closeRegion(id),
   worktree: () => helpers.currentWorktreePath,
-  panes: () => helpers.panesForCurrentWorktree,
+  panes: () =>
+    helpers.panesForCurrentWorktree.map((p) => ({
+      id: p.id,
+      type: p.type,
+      agentOwned: isAgentTerminalPane(p)
+    })),
   maximizedId: () => helpers.maximizedPaneIdForCurrentWorktree,
   toggleMaximize: (wt, id) => helpers.toggleMaximizePane(wt, id),
   addShell: (wt) => void helpers.addShellHelper(wt, wt),

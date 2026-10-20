@@ -64,8 +64,11 @@ export interface PaneCommandDeps {
   close: (id: string) => boolean
   /** `helpers.currentWorktreePath`. */
   worktree: () => string | null
-  /** The current folder's helper panes, in stack order. */
-  panes: () => ReadonlyArray<{ id: string; type: string }>
+  /**
+   * The current folder's helper panes, in stack order. `agentOwned` marks an agent
+   * terminal (T474): it stays in the ring, but the terminal toggle never takes it.
+   */
+  panes: () => ReadonlyArray<{ id: string; type: string; agentOwned?: boolean }>
   maximizedId: () => string | null
   toggleMaximize: (worktree: string, paneId: string) => void
   /** Append a shell pane to `worktree`'s stack, with `worktree` as its cwd. */
@@ -128,7 +131,8 @@ export function closeFocusedPane(d: PaneCommandDeps): void {
 }
 
 /**
- * `terminal.toggle` (§8.2), on the first `shell` pane of the current folder:
+ * `terminal.toggle` (§8.2), on the first operator `shell` pane of the current folder
+ * (an agent terminal is never taken — with only agent terminals, a new shell is added):
  *  1. none → add one (the add reveals a collapsed panel; the new xterm focuses itself);
  *  2. it holds focus → collapse the helper panel, focus main (or leave focus on `<body>`);
  *  3. otherwise → reveal the panel, restore another maximized pane, focus it.
@@ -137,7 +141,7 @@ export function closeFocusedPane(d: PaneCommandDeps): void {
 export function toggleTerminal(d: PaneCommandDeps): void {
   const wt = d.worktree()
   if (!wt) return
-  const shell = d.panes().find((p) => p.type === 'shell')
+  const shell = d.panes().find((p) => p.type === 'shell' && !p.agentOwned)
   if (!shell) {
     d.closeCoveringTakeover()
     d.addShell(wt)

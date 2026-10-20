@@ -3832,7 +3832,9 @@ focus-within:-outline-offset-1 focus-within:outline-accent-line`. The root (and 
   any other maximized pane, close a takeover that does not host the stack) and focus
   the first shell pane. It already holds focus → collapse the whole helper panel and
   focus the main terminal. It reuses the first shell pane; Split ▸ New shell still
-  always adds another.
+  always adds another. "Shell pane" here means an **operator** shell: an agent terminal
+  (T474) stays in the `F6` ring, but the toggle never takes it — with only agent
+  terminals in the stack, the toggle opens a new shell.
 
 #### Agent connection chip (helper pane header)
 

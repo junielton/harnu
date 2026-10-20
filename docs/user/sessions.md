@@ -113,7 +113,7 @@ Drag a pane's header to resize it. Split panes follow the same rule as the main 
 2. A shell pane exists but doesn't have focus → it shows the split (if you had collapsed it), restores a maximized pane so the shell is visible, and focuses the shell. If a view such as Cleanup or the usage overview covers the screen, it closes that view first; the Roadmap and Review stay open, since the split sits beside them.
 3. The shell pane already has focus → it collapses the whole split panel and puts focus back on the main terminal.
 
-It always reuses the first shell pane in the split. Split → **New shell** still adds another shell every time.
+It always reuses the first shell pane in the split. Split → **New shell** still adds another shell every time. A terminal an agent opened is never taken by the toggle (you can still reach it with F6): if the only shells in the split belong to agents, the toggle opens a new one for you.
 
 The toggle's chord is taken from every terminal before the program sees it, so it works from inside the shell pane (that's how the third press collapses it). That also means the chord never reaches any program running in a terminal. **Pick a chord no terminal program needs:**
 
