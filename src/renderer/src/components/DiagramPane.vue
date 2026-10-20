@@ -1530,6 +1530,9 @@ watch(
     // Put them back: same ids.
     const kept = g.getSelectedCells().map((c) => c.id)
     const handles = openCanvasResizeHandleId(g)
+    // The emptied selection would fold the opened panel shut (the length watch);
+    // remember it and put it back after the re-select.
+    const wasPanelOpen = panelOpen.value
     await draw(currentDraft(base) as CanvasDocument, false)
     dirty.value = wasDirty
     repairingSelection = true
@@ -1538,6 +1541,7 @@ watch(
     } finally {
       repairingSelection = false
     }
+    panelOpen.value = wasPanelOpen
     if (handles !== null) showCanvasResizeHandles(g, handles)
   }
 )
