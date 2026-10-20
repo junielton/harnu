@@ -10,11 +10,19 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-10-26
+
+### Added
+
+- **Colour and dash the arrows on a canvas.** Select an arrow (or arrows together with shapes) and the Properties panel offers **Color** (default, green, amber, red, muted) and **Stroke** (solid, dashed, dotted). The arrowhead follows the line colour, one pick is one undo step, and colours follow the theme. Arrows have no Accent choice because accent is already how an arrow looks by default. Heads up: Harnu 0.3.46 and earlier drops arrow colours and line styles (only those) when it saves a board that has them; the first release with this feature keeps them.
+- **Sessions can style the arrows they draw.** `draw_canvas` accepts a `style` field (a colour and a line pattern) when adding or updating an arrow, merged into what is there, so changing an arrow's label no longer risks undoing the dashes you gave it.
+
 ## 2026-10-20
 
 ### Fixed
 
 - **The daily budget is no longer wrong the day after a weekly reset.** When your weekly window reset during the previous day, "Today" in the Plan usage panel measured spending against the old week's peak, so it showed too small an allowance and 0% spent (for example 0% of 8% instead of 4% of 15%). It now starts from where the new week stood after the reset. A reset that happens while Harnu is open also refreshes the budget straight away instead of waiting until midnight.
+
 ## 2026-10-23
 
 ### Changed

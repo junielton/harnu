@@ -129,7 +129,7 @@ A short drag counts as a click, not a box — you can click around without litte
 
 Undo history is **per pane and not saved**. Close the canvas or reload it and the history is gone; the file holds a drawing, not a timeline. The same goes for the tool: each pane starts on Select, and your choice is not written into the file.
 
-## Styling shapes
+## Styling shapes and arrows
 
 Select one or more shapes in **Select** and a small **Properties** panel appears at the left edge of the board, under the zoom controls (or under the toolbar when the toolbar has wrapped onto its own row). Click an option and it applies to everything you have selected, straight away. The panel shows for any selection of shapes, even ones that take no styling: those get the Layers buttons described below. It is a floating panel, so it stays put when you pan or zoom.
 
@@ -155,7 +155,7 @@ The first option of each group (Default, Solid, Regular, Round, Medium, Center, 
 | **Image**            | Opacity only.                                           |
 | **Card**             | Nothing: a card always draws in Harnu's own card style. |
 
-Select a box and a text label together and you get Color, Text size, Align and Opacity, the groups both accept. Add a card to that selection and the style groups are left out of the panel, because a card accepts nothing; only Layers remains. A card on its own, or **Ctrl/⌘ + A**, shows Layers alone for the same reason. Select only arrows and the panel is not shown; arrows that are part of a larger selection are simply left out, because arrows cannot be styled or restacked yet.
+Select a box and a text label together and you get Color, Text size, Align and Opacity, the groups both accept. Add a card to that selection and the style groups are left out of the panel, because a card accepts nothing; only Layers remains. A card on its own, or **Ctrl/⌘ + A**, shows Layers alone for the same reason. Arrows have their own, shorter list; see [Styling arrows](#styling-arrows) below.
 
 A few things worth knowing:
 
@@ -168,7 +168,29 @@ A few things worth knowing:
 - **In a narrow pane** (under about 384 px wide) the panel folds into a single **palette** button (**Show properties**). Click it to open the panel in place and click it again to fold it away. Layers is in there too.
 - **Hovering is not an edit.** Moving the pointer over shapes adds no undo step and never marks the board as having unsaved changes.
 
-Styles are saved in the board file when you press **Save**, with the shape they belong to. A session can set the same styles when it draws or edits (see [Agent control](agent-control.md#drawing-on-a-canvas)), and it merges them into what is there, so asking it to recolour a box does not undo the dashed outline you gave it. A board with styles still opens in an older Harnu, which shows the shapes in their default look and keeps the styles if you save it there. An agent in an older build that rewrites a shape's `props` wholesale can drop them, though.
+Styles are saved in the board file when you press **Save**, with the shape they belong to. A session can set the same styles when it draws or edits (see [Agent control](agent-control.md#drawing-on-a-canvas)), and it merges them into what is there, so asking it to recolour a box does not undo the dashed outline you gave it. A board with styles still opens in an older Harnu, which shows the shapes in their default look and keeps the styles if you save it there. An agent in an older build that rewrites a shape's `props` wholesale can drop them, though. Arrow styles are the exception, see [Styling arrows](#styling-arrows).
+
+### Styling arrows
+
+Select an arrow in **Select** (click on the line) and the same **Properties** panel appears with two groups:
+
+| Group      | Options                           | What it changes                                              |
+| ---------- | --------------------------------- | ------------------------------------------------------------ |
+| **Color**  | Default, Green, Amber, Red, Muted | The colour of the line. The arrowhead takes the same colour. |
+| **Stroke** | Solid, Dashed, Dotted             | The line pattern. The arrowhead itself is always solid.      |
+
+A few things worth knowing:
+
+- **There is no Accent choice for arrows**, because accent is already what an arrow looks like before you style it. Default is that accent line. When only arrows are selected, the colour buttons are drawn as short coloured lines rather than swatches, so Default (accent) and Muted look different.
+- **A selected arrow shows a selection box**, so you can see which arrow the panel is editing. Dashed and dotted arrows are still easy to click: the whole line counts, not only the painted dashes.
+- **Arrows together with shapes.** Select arrows alongside boxes, ellipses or diamonds and the panel offers only what everything selected accepts: Color (without Accent) and Stroke. A pick changes the arrows and the shapes in one go. If the selection also holds shapes, the **Layers** buttons show and act on the shapes only; an arrow on its own has no Layers, because arrows always draw under shapes. Add a card and only Layers is left, as before.
+- **One change is one undo step**, however many arrows and shapes it touched. Picking Default or Solid puts the arrow back exactly as it was before you styled it, and the saved file carries nothing extra for it.
+- **Colours follow the theme.** An arrow's colour is stored as a name, so a green arrow is the right green in dark and light, and switching theme keeps your selection and any unsaved styling.
+- **A session can do the same.** `draw_canvas` accepts a `style` on an arrow, with the same colours and line patterns (see [Agent control](agent-control.md#drawing-on-a-canvas)). It merges into what is there, so asking it to change an arrow's label does not undo the dashes you gave it.
+
+Arrow styles are saved with the arrow when you press **Save**. **Arrow width and arrow stacking are not available:** you cannot make an arrow thicker, and arrows are never moved in front of shapes.
+
+> **Older Harnu versions drop arrow styles.** A board with styled arrows still opens in an older Harnu, and the arrows draw in the default accent colour. But if you **save** that board there, Harnu 0.3.46 and earlier removes the arrow colours and line styles (and nothing else) from the file. The first release that includes arrow styling keeps them. If a board is shared with people who have not updated, expect to restyle the arrows after one of them saves it.
 
 ### Layers
 
@@ -229,7 +251,7 @@ Because nothing is written until you save:
 - **Closing a canvas with unsaved edits does not close it.** You get a toast saying there are unsaved edits, with a **Discard** action. Only pressing Discard actually closes the pane. Reload and re-targeting the pane go through the same guard.
 - **An agent reading the file sees the last thing you saved**, never your work in progress. That is deliberate — an unsaved edit is not a decision yet.
 
-Saving also keeps any extra data stored inside an arrow's `props`. If an arrow in the file carries such data (styling, for example), opening the board, editing something else and saving writes it back untouched, rather than quietly dropping it. Extra data anywhere else on an arrow is not kept. An arrow you delete, save, and then bring back with undo and save again keeps its label, its routing and that extra data.
+Saving also keeps any extra data stored inside an arrow's `props`. If an arrow in the file carries such data (styling, for example), opening the board, editing something else and saving writes it back untouched, rather than quietly dropping it. Extra data anywhere else on an arrow is not kept. An arrow you delete, save, and then bring back with undo and save again keeps its label, its routing and that extra data. That only holds in a Harnu version that knows about arrow styles: Harnu 0.3.46 and earlier drops arrow colours and line styles (and nothing else) when it saves a board that has them. The first release that includes arrow styling keeps them.
 
 If a save is refused, the pane says why and **the file on disk is left exactly as it was** — your work is still in front of you, nothing was half-written. The usual reason is something the board cannot represent; see the refusal table below.
 
@@ -282,5 +304,5 @@ The pane refuses rather than guessing, and says which of these it is:
 - **A small set of shapes.** Boxes, ellipses, diamonds and text labels; there are no other outlines (triangles, cylinders, and so on) yet.
 - **Diamonds and ellipses are hit as rectangles.** The Eraser and the Arrow treat them as the rectangle around them, so a press or stroke in the empty corner just outside the outline still counts as the shape.
 - **Copy and paste between canvases** isn't there; **Ctrl/⌘ + D** duplicates within one board.
-- **Arrows cannot be styled.** Colour, dashes and weight apply to shapes only; an arrow always draws in the accent colour.
+- **Arrows take only a colour and a line pattern.** There is no arrow width, no Accent colour (it is already the default) and no arrowhead choice; the arrowhead follows the line colour. Arrows cannot be restacked either, so they always draw under shapes.
 - **A node kind Harnu doesn't know** — a component from a _newer_ build than yours — renders as a dashed box, so an unfamiliar board still opens instead of failing. You can move and delete it, and saving keeps it the kind it was, so opening it in the newer build shows it properly again.
