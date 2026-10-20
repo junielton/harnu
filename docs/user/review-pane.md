@@ -458,6 +458,46 @@ list, and re-flags live if the list changes while the pane is open.
 
 ---
 
+## Selecting lines
+
+You can select lines in the diff — one row, a range, or a whole file — and the
+pane shows exactly what you picked. **In this release a selection is only
+highlighted: nothing is sent to the companion session or anywhere else.**
+Sending a selection to the companion comes in a later release.
+
+- **Click** a line number (the gutter on the left of a row) to select that row.
+  Click the only selected row again to clear it.
+- **Shift-click** another line number, or **press and drag** across line
+  numbers, to select a range. A range stays inside one hunk: if you go past the
+  edge of the hunk, the selection stops at that edge and the bar at the bottom
+  says _A range stays inside one hunk_. A range that crosses a removed line and
+  an added line is fine, and reads like `old L85 – new L92`.
+- **The select-file button** (the small text-selection icon in a file's header,
+  next to the "read" tick) selects the whole file. It works on binary and
+  deleted files too, which have no lines to select. Press it again to clear.
+- **From the keyboard:** Tab to a file's line numbers, then use the arrow keys to
+  move, **Shift+arrow** to extend, **Enter** or **Space** to select, and
+  **Esc** to clear. Each file is one Tab stop, not one per row.
+
+The text of the code itself is still ordinary selectable text: drag across the
+code to copy it as usual. Only the line numbers select for the review.
+
+The bar at the bottom of the review names the file and the lines (`L85–92`,
+`old L85–92`, `whole file`) and has a **Clear selection** button. On a narrow
+window it wraps onto two rows rather than hiding anything. It never shows a
+count of selections or any "progress" — there is only ever one selection.
+
+**When the selection goes away.** There is one selection at a time; picking
+something else replaces it. It also clears when you collapse its file (including
+by marking the file read), when you switch to another folder, card or PR, and
+when you close the review. If a refresh brings in a **different head or base
+commit**, the selection is cleared and the bar tells you so — for example _The
+head moved (a1b2c3d → e4f5a6b). Selection cleared._ — because a range picked on
+the old commit would no longer mean the same lines. Selections are not carried
+over to the new commit in this release; pick again.
+
+---
+
 ## What is not built yet
 
 Named here so you know they are missing rather than broken:
@@ -472,10 +512,10 @@ Named here so you know they are missing rather than broken:
 - **Expanding a `⋯ n unchanged lines` gap.** The count is accurate; clicking it
   does nothing, because the pane only has the lines git put in the diff.
 - **An editor for the sensitive-path list** (above).
-- **Asking about specific lines.** The companion session reads the branch, but
-  you cannot select lines in the diff and ask about _those_ lines yet — that is
-  a later step, deliberately left until the plain conversation has been lived
-  with for a while.
+- **Asking about specific lines.** You can select lines in the diff (see above),
+  but sending that selection to the companion session — "ask about this" — is
+  not in this release. It is a later step, deliberately left until the plain
+  conversation has been lived with for a while.
 - **Inline review comments on specific lines.** The review you submit is a
   single body against the whole pull request; you cannot yet attach a comment to
   a line in the diff. That is a later step, and it will go through the same
