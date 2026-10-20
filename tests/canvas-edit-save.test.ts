@@ -104,7 +104,13 @@ function cellsFor(doc: CanvasDocument): unknown[] {
       shape: 'edge',
       source: { cell: e.source, port: 'right' },
       target: { cell: e.target, port: 'left' },
-      data: { origin: e.origin }
+      // Mirrors the document, as `toX6Edge` does.
+      data: {
+        origin: e.origin,
+        ...(e.label === undefined ? {} : { label: e.label }),
+        ...(e.router === undefined ? {} : { router: e.router }),
+        ...(e.props === undefined ? {} : { props: e.props })
+      }
     }))
   ]
 }
@@ -142,11 +148,54 @@ describe('edge props survive a pane Save (T536 U2)', () => {
     expect('props' in draft.edges[0]).toBe(false)
   })
 
-  it('takes props from the base document, never from the cell', () => {
+  // Changed ON PURPOSE (T536 U4). U2 pinned the opposite: props came from the base
+  // document only. Cell `data` now mirrors the document (`toX6Edge`), so an arrow
+  // restored by undo after a Save, which is absent from `base`, is not stripped.
+  it('takes props from the cell, which mirrors the document', () => {
     const cells = cellsFor(WITH_PROPS) as { id: string; data?: Record<string, unknown> }[]
     cells.find((c) => c.id === 'e-1')!.data!.props = { style: { tone: 'red' } }
     const draft = buildCanvasDocumentFromCells(cells, WITH_PROPS, NOW)
-    expect(draft.edges[0].props).toEqual({ style: { tone: 'green' }, weight: 2 })
+    expect(draft.edges[0].props).toEqual({ style: { tone: 'red' } })
+  })
+
+  it('writes no props for a cell without data.props, whatever the base holds', () => {
+    // Every edge cell is rendered by toX6Edge or minted by operatorEdgeSpec, so its
+    // data is complete: a reset-to-default (U5) must be able to remove the props.
+    const draft = buildCanvasDocumentFromCells(cellsFor(SAVED), WITH_PROPS, NOW)
+    expect('props' in draft.edges[0]).toBe(false)
+  })
+
+  it('writes label, router and props of an edge cell absent from the base (undo after a Save)', async () => {
+    const cells = cellsFor(SAVED) as { id: string; data?: Record<string, unknown> }[]
+    cells.find((c) => c.id === 'e-1')!.data = {
+      origin: 'agent',
+      label: 'IPC',
+      router: 'normal',
+      props: { weight: 2 }
+    }
+    const emptyBase: CanvasDocument = { ...SAVED, edges: [] }
+    const draft = buildCanvasDocumentFromCells(cells, emptyBase, NOW)
+    expect(draft.edges[0]).toMatchObject({
+      id: 'e-1',
+      label: 'IPC',
+      router: 'normal',
+      props: { weight: 2 }
+    })
+    expect(draft.edges.some((e) => 'zIndex' in e)).toBe(false)
+    expect((await writeCanvasFile(file, draft)).ok).toBe(true)
+    const onDisk = JSON.parse(await bytes()) as CanvasDocument
+    expect(onDisk.edges[0]).toMatchObject({ label: 'IPC', router: 'normal', props: { weight: 2 } })
+  })
+
+  it('falls back to the base label and router when the cell data carries none', () => {
+    const base: CanvasDocument = {
+      ...SAVED,
+      edges: [{ ...SAVED.edges[0], label: 'IPC', router: 'orth' }]
+    }
+    const cells = cellsFor(SAVED) as { id: string; data?: Record<string, unknown> }[]
+    cells.find((c) => c.id === 'e-1')!.data = { origin: 'agent' }
+    const draft = buildCanvasDocumentFromCells(cells, base, NOW)
+    expect(draft.edges[0]).toMatchObject({ label: 'IPC', router: 'orth' })
   })
 })
 
@@ -447,6 +496,7 @@ describe('stacking survives a pane Save (T536 U4)', () => {
       c: 2
     })
     expect(validateCanvasDocument(draft).ok).toBe(true)
+    expect(draft.edges.some((e) => 'zIndex' in e)).toBe(false)
   })
 
   it('returns the file to no zIndex once the rendered z values are restored (an undo)', () => {

@@ -240,6 +240,20 @@ describe('toX6Edge', () => {
   it('carries the origin stamp (§4.4)', () => {
     expect((toX6Edge(edge, PALETTE).data as { origin: string }).origin).toBe('agent')
   })
+
+  it('carries the document label, router and props in data (T536 U4)', () => {
+    const full = { ...edge, label: 'IPC', router: 'normal', props: { weight: 2 } }
+    expect(toX6Edge(full, PALETTE).data).toEqual({
+      origin: 'agent',
+      label: 'IPC',
+      router: 'normal',
+      props: { weight: 2 }
+    })
+  })
+
+  it('carries nothing but the origin when the edge has no label, router or props', () => {
+    expect(toX6Edge(edge, PALETTE).data).toEqual({ origin: 'agent' })
+  })
 })
 
 describe('toX6Node — ellipse and diamond (T536 U2)', () => {

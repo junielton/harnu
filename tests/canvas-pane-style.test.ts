@@ -241,6 +241,53 @@ async function switchTheme(w: VueWrapper, vars: Record<string, string>): Promise
   await settleUntil(() => nodeEl(w, 'n-a') !== null && nodeEl(w, 'n-a') !== before)
 }
 
+// ── an arrow through delete, Save and undo ─────────────────────────────────
+describe('DiagramPane — an arrow restored by undo after a Save (T536 U4)', () => {
+  it('keeps its label, router and props in the second Save', async () => {
+    const doc: CanvasDocument = {
+      ...DOC,
+      edges: [
+        {
+          id: 'e-1',
+          source: 'n-a',
+          target: 'n-b',
+          label: 'IPC',
+          router: 'normal',
+          origin: 'agent',
+          props: { weight: 2 }
+        }
+      ]
+    }
+    canvasRead.mockImplementation(async (p: string) => ({ ok: true, path: p, doc }))
+    const w = mountPane()
+    await settle()
+    await select(w, 'e-1')
+    expect(selectedIds(w)).toEqual(['e-1'])
+    focusPane(w)
+    key('Delete')
+    await settle()
+    expect((await saveAndRead(w)).edges).toEqual([])
+
+    // Save keeps the undo history, and the pane's own write is not echoed back, so
+    // the graph restores the arrow while the base document no longer has it.
+    focusPane(w)
+    key('z', { ctrlKey: true })
+    await settle()
+    const saved = await saveAndRead(w)
+    expect(saved.edges).toEqual([
+      {
+        id: 'e-1',
+        source: 'n-a',
+        target: 'n-b',
+        label: 'IPC',
+        router: 'normal',
+        origin: 'agent',
+        props: { weight: 2 }
+      }
+    ])
+  })
+})
+
 // ── visibility ──────────────────────────────────────────────────────────────
 describe('DiagramPane properties panel — when it shows', () => {
   it('shows for a selected node in Select only, and holding Space keeps it', async () => {

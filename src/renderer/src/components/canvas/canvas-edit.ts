@@ -36,13 +36,15 @@ import { CANVAS_LOAD_Z, liveStackOrder, savedZIndexes } from './canvas-layers'
  * `canvas-core.ts` reads an edge's label straight from `raw.label` — in-spec,
  * because §4.5 scopes normalization to NODES. U2 kept that safe by rendering
  * `labels[]` from the document and never reading it back. U3 keeps the same
- * property by a different route: the pane offers no edge-label editing, and
- * {@link buildCanvasDocumentFromCells} takes an edge's label from the BASE
- * DOCUMENT by id rather than from the graph. So an agent-written edge label
- * survives an operator's Save untouched, and no rename can ever reach
- * `labels[]` to go stale there. A node label — which the operator CAN edit —
- * goes the other way: it is normalized out of the graph across both attribute
- * paths by {@link normalizeCellLabel}, exactly as §4.5 requires.
+ * property: the pane offers no edge-label editing, and
+ * {@link buildCanvasDocumentFromCells} takes an edge's label from the cell's
+ * `data.label` — the document's own copy, carried through the graph by
+ * `toX6Edge` (U4), so an arrow restored by undo after a Save is not stripped —
+ * and falls back to the BASE DOCUMENT by id, never to `labels[]`. So an
+ * agent-written edge label survives an operator's Save untouched, and no rename
+ * can ever reach `labels[]` to go stale there. A node label — which the operator
+ * CAN edit — goes the other way: it is normalized out of the graph across both
+ * attribute paths by {@link normalizeCellLabel}, exactly as §4.5 requires.
  */
 
 /**
@@ -375,20 +377,26 @@ export function nodeDraftFromCell(
 
 function edgeFromCell(cell: Record<string, unknown>, base?: CanvasEdge): CanvasEdgeDraft {
   const data = readData(cell)
+  // `toX6Edge` mirrors the document's label, router and props into `data`, so an
+  // arrow absent from `base` (restored by undo after a Save) keeps them. The base
+  // only fills in what a cell's data lacks.
+  const label = typeof data.label === 'string' ? data.label : base?.label
+  const router = typeof data.router === 'string' ? data.router : base?.router
+  // No base fallback for props: every edge cell is rendered by `toX6Edge` or minted
+  // by `operatorEdgeSpec`, so its data is complete, and a reset-to-default (U5)
+  // must be able to remove them.
+  const props = isPlainObject(data.props) ? (data.props as Record<string, unknown>) : undefined
   return {
     id: String(cell.id),
     source: endpointId(cell.source),
     target: endpointId(cell.target),
-    // The document is the author (see this module's header): an edge label comes
-    // from the base document, NEVER from X6's `labels[]`.
-    ...(base?.label === undefined ? {} : { label: base.label }),
+    // The label is the document's own copy from `data.label`, NEVER X6's `labels[]`.
+    ...(label === undefined ? {} : { label }),
     ...readOrigin(data),
     // Same reasoning as zIndex above: an omitted router renders as `manhattan`
     // (`toX6Edge`), so a new edge needs no field written for it.
-    ...(base?.router === undefined ? {} : { router: base.router }),
-    // Edge props are the document's too: the pane never edits them, so a Save after
-    // an unrelated edit writes back exactly what the file (or an agent) put there.
-    ...(base?.props === undefined ? {} : { props: base.props })
+    ...(router === undefined ? {} : { router }),
+    ...(props === undefined ? {} : { props })
   }
 }
 

@@ -484,6 +484,10 @@ export function toX6Node(
  * editing, and the moment a rename can reach `labels[]` the stale-label trap
  * reopens ON EDGES — so U3 must either normalize the edge label on the way out
  * or keep the document authoritative the way this does.
+ *
+ * `data.label` (with `router` and `props`) is the document's own copy, carried
+ * through the graph so an arrow restored by undo after a Save keeps them (U4). It
+ * is never X6's `labels[]`, which stays derived and is never read back.
  */
 export function toX6Edge(edge: CanvasEdge, palette: CanvasPalette): X6CellSpec {
   return {
@@ -492,7 +496,12 @@ export function toX6Edge(edge: CanvasEdge, palette: CanvasPalette): X6CellSpec {
     source: edge.source,
     target: edge.target,
     zIndex: 0,
-    data: { origin: edge.origin },
+    data: {
+      origin: edge.origin,
+      ...(edge.label === undefined ? {} : { label: edge.label }),
+      ...(edge.router === undefined ? {} : { router: edge.router }),
+      ...(edge.props === undefined ? {} : { props: edge.props })
+    },
     router: { name: edge.router ?? 'manhattan' },
     connector: { name: 'rounded', args: { radius: 8 } },
     attrs: {
