@@ -515,6 +515,53 @@ describe('the editing affordances the ACs name (U3-1, U3-2)', () => {
     g.dispose()
   })
 
+  // Live matrix (T536 U3, row S1/S3): `overwrite` dropped the X6 shape's own default
+  // attrs (a rect's `refWidth`/`refHeight`, an ellipse's `refRx`, the label's centring
+  // `refX`/`refY`/`textAnchor`), so a box collapsed to 0×0 and its label jumped to the
+  // corner after any pick — invisible to an attr-only assertion. A restyled node must
+  // carry exactly the attrs a fresh render of the same style gives it.
+  it('a restyled node carries exactly the attrs a fresh render of that style gives it (T536 U3)', () => {
+    const style = { tone: 'green', stroke: 'dashed', fontSize: 'xl', align: 'left', opacity: 50 }
+    const kinds: [string, number, number][] = [
+      ['box', 132, 52],
+      ['ellipse', 132, 64],
+      ['diamond', 132, 80],
+      ['text', 132, 40]
+    ]
+    const plain: CanvasDocument = {
+      ...DOC,
+      nodes: kinds.map(([shape, width, height], i) => ({
+        id: `n-${shape}`,
+        shape,
+        x: 40 + i * 180,
+        y: 40,
+        width,
+        height,
+        label: shape,
+        origin: 'agent' as const
+      })),
+      edges: []
+    }
+    const styledDoc: CanvasDocument = {
+      ...plain,
+      nodes: plain.nodes.map((n) => ({ ...n, props: { style } }))
+    }
+    const g = makeGraph(plain)
+    const fresh = makeGraph(styledDoc)
+    for (const [shape] of kinds) {
+      const node = g.getCellById(`n-${shape}`)!
+      node.setData({ ...node.getData(), props: { style } }, { overwrite: true, silent: true })
+      restyleCanvasNode(node as never, palette, {})
+      expect(node.getAttrs(), shape).toEqual(fresh.getCellById(`n-${shape}`)!.getAttrs())
+    }
+    // The shape defaults themselves, spelled out for the box.
+    const box = g.getCellById('n-box')!
+    expect(box.attr('body/refWidth')).toBe('100%')
+    expect(box.attr('body/refHeight')).toBe('100%')
+    g.dispose()
+    fresh.dispose()
+  })
+
   it('deleting a node deletes the edges that hung off it, so the file stays valid', () => {
     const g = makeGraph()
     g.removeCell(g.getCellById('n-a')!)
