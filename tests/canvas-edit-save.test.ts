@@ -260,6 +260,76 @@ describe('node styles survive a pane Save (T536 U3)', () => {
   })
 })
 
+describe('arrow styles survive a pane Save (T536 U5)', () => {
+  const palette = readCanvasPalette()
+  const ODD_PROPS = {
+    style: { tone: 'purple', stroke: 40, glow: 'max' }, // unknown value, wrong type, unknown key
+    weight: 2,
+    extra: { list: [1, { k: null }] }
+  }
+  /** A real graph rendered from `doc`; its `toJSON().cells` are what the pane hands Save. */
+  function graphOf(doc: CanvasDocument): Graph {
+    const g = createCanvasGraph({
+      container: svgHost(),
+      palette,
+      width: 800,
+      height: 600,
+      editable: true
+    })
+    renderCanvasDocument(g, doc, palette, {})
+    return g
+  }
+  const cellsOf = (g: Graph): unknown[] => (g.toJSON() as { cells?: unknown[] }).cells ?? []
+
+  it('an arrow set to green writes exactly props.style.tone (Review Focus 1)', async () => {
+    const g = graphOf(SAVED)
+    const edge = g.getCellById('e-1')!
+    edge.setData({ ...edge.getData(), props: { style: { tone: 'green' } } }, { overwrite: true })
+    const draft = buildCanvasDocumentFromCells(cellsOf(g), SAVED, NOW)
+    expect(draft.edges[0].props).toEqual({ style: { tone: 'green' } })
+    expect((await writeCanvasFile(file, draft)).ok).toBe(true)
+    const onDisk = JSON.parse(await bytes()) as CanvasDocument
+    expect(onDisk.edges[0].props).toEqual({ style: { tone: 'green' } })
+    g.dispose()
+  })
+
+  it('a styled arrow reset to default writes no props at all', () => {
+    const styled: CanvasDocument = {
+      ...SAVED,
+      edges: [{ ...SAVED.edges[0], props: { style: { tone: 'red', stroke: 'dashed' } } }]
+    }
+    const g = graphOf(styled)
+    const edge = g.getCellById('e-1')!
+    const { props: _gone, ...rest } = edge.getData() as Record<string, unknown>
+    void _gone
+    edge.setData(rest, { overwrite: true })
+    const draft = buildCanvasDocumentFromCells(cellsOf(g), styled, NOW)
+    expect('props' in draft.edges[0]).toBe(false)
+    g.dispose()
+  })
+
+  it('an unrelated node move writes every arrow props back unchanged', async () => {
+    const doc: CanvasDocument = {
+      ...SAVED,
+      edges: [
+        { ...SAVED.edges[0], props: ODD_PROPS },
+        { id: 'e-2', source: 'n-b', target: 'n-a', origin: 'operator' }
+      ]
+    }
+    const g = graphOf(doc)
+    g.getCellById('n-b')!.setPosition(500, 260)
+    const draft = buildCanvasDocumentFromCells(cellsOf(g), doc, NOW)
+    expect(draft.edges[0].props).toEqual(ODD_PROPS)
+    expect(JSON.stringify(draft.edges[0].props)).toBe(JSON.stringify(ODD_PROPS))
+    expect('props' in draft.edges[1]).toBe(false)
+    expect((await writeCanvasFile(file, draft)).ok).toBe(true)
+    const onDisk = JSON.parse(await bytes()) as CanvasDocument
+    expect(onDisk.edges[0].props).toEqual(ODD_PROPS)
+    expect(onDisk.nodes.find((n) => n.id === 'n-b')).toMatchObject({ x: 500, y: 260 })
+    g.dispose()
+  })
+})
+
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'harnu-canvas-u3-'))
   file = join(dir, '.harnu', 'out', 'canvas', 'board.harnucanvas.json')

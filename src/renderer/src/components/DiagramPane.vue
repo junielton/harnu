@@ -29,6 +29,7 @@ import {
   openCanvasResizeHandleId,
   operatorEdgeSpec,
   renderCanvasDocument,
+  restyleCanvasEdge,
   restyleCanvasNode,
   setCanvasPortsVisible,
   showCanvasResizeHandles,
@@ -65,14 +66,17 @@ import {
 } from './canvas/canvas-layers'
 import { readCanvasPalette, type CanvasPalette } from './canvas/canvas-theme'
 import {
+  EDGE_STYLE_KIND,
   mergeCanvasStyle,
   panelValues,
-  sharedStyleKeys,
+  sharedStyleOptions,
   stylePanelCollapsed,
   stylePanelTop,
   styleKeysFor,
+  styleOptionsFor,
   type CanvasStyleKey,
-  type CanvasStylePatch
+  type CanvasStylePatch,
+  type StyleOptions
 } from './canvas/canvas-style'
 import {
   CANVAS_TOOLS,
@@ -339,15 +343,18 @@ function wireEditing(g: Graph): void {
     }
   })
 
-  // Node styles (T536 U3): `data` is the only style state, and the only part of
-  // a style change History records. The attrs are re-derived from it here on
-  // every data write — the panel's, its undo and its redo alike — in the palette
-  // in force now, and that re-derive never enters the undo stack (see
-  // `restyleCanvasNode`). So undo after a theme switch restores a STYLE, never
-  // the colours the previous theme resolved it to (U3 Review Focus 1).
+  // Node and arrow styles (T536 U3, U5): `data` is the only style state, and the
+  // only part of a style change History records. The attrs are re-derived from it
+  // here on every data write — the panel's, its undo and its redo alike — in the
+  // palette in force now, and that re-derive never enters the undo stack (see
+  // `restyleCanvasNode` / `restyleCanvasEdge`). So undo after a theme switch
+  // restores a STYLE, never the colours the previous theme resolved it to (U3
+  // Review Focus 1).
   g.on('cell:change:data', ({ cell }: { cell: Cell }) => {
     if (cell.isNode() && styleKeysFor(nodeKind(cell)).length > 0) {
       restyleCanvasNode(cell, palette, images.value)
+    } else if (cell.isEdge()) {
+      restyleCanvasEdge(cell, palette)
     }
     styleRevision.value++
   })
@@ -454,37 +461,52 @@ const panelCollapsed = ref(false)
 /** Measured top offset, in px from the top of the body. */
 const panelTop = ref(stylePanelTop(0, false, 0))
 
-function nodeProps(node: Node): Record<string, unknown> | undefined {
-  const props = (node.getData() as { props?: unknown } | undefined)?.props
+/** What a cell is in the selection maths: its node kind, or {@link EDGE_STYLE_KIND} for an arrow. */
+function cellKind(cell: Cell): string {
+  return cell.isNode() ? nodeKind(cell) : EDGE_STYLE_KIND
+}
+
+function cellProps(cell: Cell): Record<string, unknown> | undefined {
+  const props = (cell.getData() as { props?: unknown } | undefined)?.props
   return typeof props === 'object' && props !== null && !Array.isArray(props)
     ? (props as Record<string, unknown>)
     : undefined
 }
 
-/** The selected NODES — edges in the selection are ignored by the style and Layers groups. */
-const panelNodes = computed<Node[]>(() => {
+/** The selected cells, nodes AND arrows (T536 U5): what the style groups act on. */
+const panelCells = computed<Cell[]>(() => {
   void styleRevision.value
   const g = graph.value
   if (!g) return []
-  return selectedIds.value
-    .map((id) => g.getCellById(id))
-    .filter((c): c is Node => c !== null && c.isNode())
+  return selectedIds.value.map((id) => g.getCellById(id)).filter((c): c is Cell => c !== null)
 })
-/** Only the keys EVERY selected node takes (U3 Review Focus 4). */
-const panelKeys = computed<CanvasStyleKey[]>(() => sharedStyleKeys(panelNodes.value.map(nodeKind)))
+/** The selected NODES only: Layers acts on nodes, never on an arrow (T536 U4). */
+const panelNodes = computed<Node[]>(() => panelCells.value.filter((c): c is Node => c.isNode()))
+/** What EVERY selected cell takes, per key (U3 Review Focus 4, U5 Review Focus 3). */
+const panelOptions = computed<StyleOptions>(() =>
+  sharedStyleOptions(panelCells.value.map(cellKind))
+)
+const panelKeys = computed<CanvasStyleKey[]>(
+  () => Object.keys(panelOptions.value) as CanvasStyleKey[]
+)
+/** Every selected cell is an arrow: the panel draws line glyphs for its tones. */
+const panelEdgeOnly = computed<boolean>(
+  () => panelCells.value.length > 0 && panelCells.value.every((c) => c.isEdge())
+)
 const panelStyleValues = computed(() =>
-  panelValues(panelNodes.value.map((n) => ({ kind: nodeKind(n), props: nodeProps(n) })))
+  panelValues(panelCells.value.map((c) => ({ kind: cellKind(c), props: cellProps(c) })))
 )
 /**
  * The CHOSEN tool, not the effective one: holding Space is a temporary Hand, and
- * the panel stays put through it. Any selected node shows it: the Layers group
- * (T536 U4) takes every kind, even one with no shared style key.
+ * the panel stays put through it. It shows for a selection with a shared style
+ * key (an arrow alone has two) or a node (the Layers group, T536 U4, takes every
+ * kind, even one with no shared style key).
  */
 const panelVisible = computed<boolean>(
   () =>
     state.value.status === 'ready' &&
     toolState.value.tool === 'select' &&
-    panelNodes.value.length > 0
+    (panelKeys.value.length > 0 || panelNodes.value.length > 0)
 )
 
 watch(
@@ -503,35 +525,41 @@ watch(panelVisible, async (visible) => {
 const STYLE_BATCH = 'style'
 
 /**
- * A panel pick. Each node keeps only the patch keys its kind takes, so a mixed
- * selection never writes `corners` onto an ellipse or anything onto a mockup
- * card; a node whose props would come out unchanged is skipped. Whatever does
- * change is written in ONE history batch: one pick, one undo step, however many
- * nodes it styled. The attrs follow through `cell:change:data`.
+ * A panel pick. Each cell keeps only the patch keys AND values its kind takes
+ * (an arrow takes no `accent` tone and no `strokeWidth`), so a mixed selection
+ * never writes `corners` onto an ellipse or anything onto a mockup card; a cell
+ * whose props would come out unchanged is skipped. Whatever does change is
+ * written in ONE history batch: one pick, one undo step, however many cells it
+ * styled. The attrs follow through `cell:change:data`. A reset removes the props
+ * from the cell data, so a Save writes none.
  */
 function applyStylePatch(patch: CanvasStylePatch): void {
   const g = graph.value
   if (!g) return
-  const writes: [Node, Record<string, unknown>][] = []
-  for (const node of panelNodes.value) {
-    const allowed = styleKeysFor(nodeKind(node))
+  const writes: [Cell, Record<string, unknown>][] = []
+  for (const cell of panelCells.value) {
+    const allowed = styleOptionsFor(cellKind(cell))
     const own: CanvasStylePatch = {}
     for (const key of Object.keys(patch) as CanvasStyleKey[]) {
-      if (allowed.includes(key)) own[key] = patch[key]
+      const value = patch[key]
+      // `null` removes the key: always fine for a key the cell takes.
+      const options = allowed[key]
+      if (options === undefined) continue
+      if (value === null || value === undefined || options.includes(value)) own[key] = value
     }
     if (Object.keys(own).length === 0) continue
-    const props = nodeProps(node)
+    const props = cellProps(cell)
     const next = mergeCanvasStyle(props, own)
     if (ObjectExt.isEqual(next, props)) continue
-    const data: Record<string, unknown> = { ...(node.getData() as Record<string, unknown>) }
+    const data: Record<string, unknown> = { ...(cell.getData() as Record<string, unknown>) }
     if (next === undefined) delete data.props
     else data.props = next
-    writes.push([node, data])
+    writes.push([cell, data])
   }
   if (writes.length === 0) return
   g.startBatch(STYLE_BATCH)
   try {
-    for (const [node, data] of writes) node.setData(data, { overwrite: true })
+    for (const [cell, data] of writes) cell.setData(data, { overwrite: true })
   } finally {
     g.stopBatch(STYLE_BATCH)
   }
@@ -2255,11 +2283,13 @@ function onHeaderMouseDown(ev: MouseEvent): void {
 
       <!-- Properties panel (T536 U3): left edge of the VIEWPORT, under the zoom
            cluster (or the toolbar, when it has its own row). Shown only in the
-           chosen Select tool, for a selection that holds a node: the style groups
-           it shares, then Layers (T536 U4). -->
+           chosen Select tool, for a selection that holds a node or an arrow: the
+           style groups it shares, then Layers for the nodes (T536 U4, U5). -->
       <div v-if="panelVisible" class="absolute left-3" :style="{ top: `${panelTop}px` }">
         <CanvasPropertiesPanel
           :keys="panelKeys"
+          :options="panelOptions"
+          :edge-only="panelEdgeOnly"
           :values="panelStyleValues"
           :collapsed="panelCollapsed"
           :open="panelOpen"

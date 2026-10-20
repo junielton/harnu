@@ -1,11 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import {
+  EDGE_STYLE_KIND,
   MIXED,
   STYLE_PANEL_WIDTH,
   mergeCanvasStyle,
+  edgeLineAttrs,
+  edgeToneStroke,
   panelValues,
   readCanvasStyle,
   sharedStyleKeys,
+  sharedStyleOptions,
+  styleOptionsFor,
   styleKeysFor,
   stylePanelCollapsed,
   stylePanelTop,
@@ -211,5 +216,110 @@ describe('toneColors', () => {
     expect(toneColors('muted', 'text', P).label).toBe(P.text3)
     expect(toneColors(undefined, 'text', P).label).toBe(P.text2)
     expect(toneColors('default', 'text', P).label).toBe(P.text2)
+  })
+})
+
+describe('arrow styles — the pseudo-kind (T536 U5)', () => {
+  const TONES = ['default', 'green', 'amber', 'red', 'muted']
+  const STROKES = ['solid', 'dashed', 'dotted']
+
+  it('styleOptionsFor an arrow is its own table, with no accent tone', () => {
+    expect(styleOptionsFor(EDGE_STYLE_KIND)).toEqual({ tone: TONES, stroke: STROKES })
+    expect(styleKeysFor(EDGE_STYLE_KIND)).toEqual(['tone', 'stroke'])
+  })
+
+  it('styleOptionsFor a shape is its keys with the full value lists, and {} for the rest', () => {
+    expect(Object.keys(styleOptionsFor('box'))).toEqual([...styleKeysFor('box')])
+    expect(styleOptionsFor('box').tone).toContain('accent')
+    expect(styleOptionsFor('image')).toEqual({ opacity: [25, 50, 75, 100] })
+    expect(styleOptionsFor('harnu/mockup-card')).toEqual({})
+    expect(styleOptionsFor('hexagon')).toEqual({})
+    expect(styleOptionsFor('constructor')).toEqual({})
+  })
+
+  it('sharedStyleOptions intersects the values, not only the keys (Review Focus 3)', () => {
+    expect(sharedStyleOptions(['box', EDGE_STYLE_KIND])).toEqual({
+      tone: ['default', 'green', 'amber', 'red', 'muted'],
+      stroke: ['solid', 'dashed', 'dotted']
+    })
+    expect(sharedStyleOptions(['text', EDGE_STYLE_KIND])).toEqual({ tone: TONES })
+    expect(sharedStyleOptions(['harnu/mockup-card', EDGE_STYLE_KIND])).toEqual({})
+    expect(sharedStyleOptions([])).toEqual({})
+  })
+
+  it('sharedStyleOptions over shapes alone keeps every value, in table order', () => {
+    expect(sharedStyleOptions(['box', 'text'])).toEqual({
+      tone: ['default', 'accent', 'green', 'amber', 'red', 'muted'],
+      fontSize: ['s', 'm', 'l', 'xl'],
+      align: ['left', 'center', 'right'],
+      opacity: [25, 50, 75, 100]
+    })
+    expect(Object.keys(sharedStyleOptions(['box', 'text']))).toEqual(
+      sharedStyleKeys(['box', 'text'])
+    )
+  })
+
+  it('sharedStyleKeys is the keys of sharedStyleOptions', () => {
+    expect(sharedStyleKeys(['box', EDGE_STYLE_KIND])).toEqual(['tone', 'stroke'])
+    expect(sharedStyleKeys([EDGE_STYLE_KIND])).toEqual(['tone', 'stroke'])
+  })
+
+  it('readCanvasStyle on an arrow ignores a value the arrow table lacks', () => {
+    expect(
+      readCanvasStyle({ style: { tone: 'accent', stroke: 'dashed' } }, EDGE_STYLE_KIND)
+    ).toEqual({ stroke: 'dashed' })
+    expect(
+      readCanvasStyle({ style: { tone: 'red', strokeWidth: 'bold' } }, EDGE_STYLE_KIND)
+    ).toEqual({ tone: 'red' })
+    // The same value on a node still reads: only the arrow table drops accent.
+    expect(readCanvasStyle({ style: { tone: 'accent' } }, 'box')).toEqual({ tone: 'accent' })
+  })
+
+  it('panelValues accepts arrow entries next to nodes', () => {
+    expect(
+      panelValues([
+        { kind: EDGE_STYLE_KIND, props: { style: { tone: 'red' } } },
+        { kind: 'box', props: { style: { tone: 'red' } } }
+      ]).tone
+    ).toBe('red')
+    expect(panelValues([{ kind: EDGE_STYLE_KIND }]).tone).toBe('default')
+    expect(Object.keys(panelValues([{ kind: EDGE_STYLE_KIND }]))).toEqual(['tone', 'stroke'])
+    expect(
+      panelValues([{ kind: EDGE_STYLE_KIND, props: { style: { tone: 'green' } } }, { kind: 'box' }])
+        .tone
+    ).toBe(MIXED)
+  })
+
+  it('edgeToneStroke maps each tone to its token; unknown and absent are the accent', () => {
+    expect(edgeToneStroke(undefined, P)).toBe(P.accent)
+    expect(edgeToneStroke('default', P)).toBe(P.accent)
+    expect(edgeToneStroke('green', P)).toBe(P.green)
+    expect(edgeToneStroke('amber', P)).toBe(P.warning)
+    expect(edgeToneStroke('red', P)).toBe(P.red)
+    expect(edgeToneStroke('muted', P)).toBe(P.text3)
+    expect(edgeToneStroke('purple', P)).toBe(P.accent)
+    expect(edgeToneStroke('accent', P)).toBe(P.accent)
+    expect(edgeToneStroke(40, P)).toBe(P.accent)
+    expect(edgeToneStroke('constructor', P)).toBe(P.accent)
+  })
+
+  it('edgeLineAttrs: the unstyled line, then tone and stroke from props.style', () => {
+    const base = {
+      stroke: P.accent,
+      strokeWidth: 1.5,
+      targetMarker: { name: 'block', width: 8, height: 6 }
+    }
+    expect(edgeLineAttrs(undefined, P)).toEqual(base)
+    expect(edgeLineAttrs({ style: { tone: 'green' } }, P)).toEqual({ ...base, stroke: P.green })
+    expect(edgeLineAttrs({ style: { stroke: 'dashed' } }, P)).toEqual({
+      ...base,
+      strokeDasharray: '6 4'
+    })
+    expect(edgeLineAttrs({ style: { stroke: 'dotted' } }, P).strokeDasharray).toBe('2 3')
+    expect('strokeDasharray' in edgeLineAttrs({ style: { stroke: 'solid' } }, P)).toBe(false)
+    // The arrowhead is never dashed, whatever the line does.
+    expect(edgeLineAttrs({ style: { stroke: 'dashed' } }, P).targetMarker).toEqual(
+      base.targetMarker
+    )
   })
 })

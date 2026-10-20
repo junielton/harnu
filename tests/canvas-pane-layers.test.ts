@@ -435,11 +435,14 @@ describe('DiagramPane layers — Review Focus 5: who gets the Layers group', () 
     expect(doc.edges[0].zIndex).toBeUndefined()
   })
 
-  it('an edge alone shows no panel', async () => {
+  // T536 U5 changed this ON PURPOSE: an arrow alone used to show no panel at all; it now
+  // shows Color and Stroke, but Layers still acts on nodes only, so it stays hidden.
+  it('an edge alone shows no Layers group (T536 U5: its style groups show)', async () => {
     const w = await mountReady()
     await select(w, 'e-1')
     expect(selectedIds(w)).toEqual(['e-1'])
-    expect(w.find('[data-testid="canvas-properties"]').exists()).toBe(false)
+    expect(w.find('[data-testid="canvas-properties"]').exists()).toBe(true)
+    expect(layersShown(w)).toBe(false)
   })
 })
 

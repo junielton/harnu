@@ -15,6 +15,7 @@ import {
   key,
   keyUp,
   mountPane,
+  mountPaneReady,
   move,
   nodeEl,
   saveAndRead,
@@ -77,6 +78,8 @@ const DOC: CanvasDocument = {
   edges: [{ id: 'e-1', source: 'n-a', target: 'n-b', label: 'IPC', origin: 'agent' }]
 }
 const SEEDED = ['n-a', 'n-b', 'n-c']
+/** Every cell the board seeds (nodes AND the edge): drive nothing before all are drawn. */
+const BOARD = [...SEEDED, 'e-1']
 
 const canvasRead = vi.fn(async (p: string) => ({ ok: true as const, path: p, doc: DOC }))
 const canvasWrite = vi.fn(async (p: string) => ({ ok: true as const, path: p, bytes: 1 }))
@@ -161,8 +164,7 @@ const created = (doc: CanvasDocument): CanvasDocument['nodes'] =>
 
 describe('DiagramPane tools — Select is the default (T536 U1)', () => {
   it('a fresh pane is on Select, and a blank drag creates nothing', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     expect(pressed(w)).toEqual(['select'])
 
     dragOnBlankCanvas(w, [200, 200], [400, 320])
@@ -178,8 +180,7 @@ describe('DiagramPane tools — Select is the default (T536 U1)', () => {
   })
 
   it('clicking a toolbar button switches the tool', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await w.find('[data-testid="canvas-tool-rectangle"]').trigger('click')
     expect(pressed(w)).toEqual(['rectangle'])
   })
@@ -187,8 +188,7 @@ describe('DiagramPane tools — Select is the default (T536 U1)', () => {
 
 describe('DiagramPane tools — toolbar placement (design.md §6 Narrow panes)', () => {
   it('caps the toolbar at the pane width minus its inset, so it wraps rather than clips', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     const place = w.get('[data-testid="canvas-toolbar"]').element.parentElement as HTMLElement
     // The cap is the pane minus the bar's 12px left inset (`left-3`, a spacing token), so
     // the full 225px bar still fits on one row down to ≈237px (design.md §6).
@@ -198,8 +198,7 @@ describe('DiagramPane tools — toolbar placement (design.md §6 Narrow panes)',
 
 describe('DiagramPane tools — Rectangle', () => {
   it('r, then a blank drag: one operator box, and the tool is back on Select', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('r')
     await settle()
@@ -219,8 +218,7 @@ describe('DiagramPane tools — Rectangle', () => {
   })
 
   it('q then r keeps Rectangle armed across two drags', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('q')
     key('r')
@@ -241,8 +239,7 @@ describe('DiagramPane tools — Rectangle', () => {
   })
 
   it('r, then a short click: one default-size box centred on the click', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('r')
     clickBlank(w, [300, 300])
@@ -264,8 +261,7 @@ describe('DiagramPane tools — Rectangle', () => {
 
 describe('DiagramPane tools — Diamond and Ellipse (T536 U2)', () => {
   it('d, then a blank drag: one operator diamond, and the tool is back on Select', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('d')
     await settle()
@@ -290,8 +286,7 @@ describe('DiagramPane tools — Diamond and Ellipse (T536 U2)', () => {
   })
 
   it('o, then a short click: one default-size ellipse centred on the click', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('o')
     await settle()
@@ -315,8 +310,7 @@ describe('DiagramPane tools — Diamond and Ellipse (T536 U2)', () => {
   })
 
   it('the digit keys 3 and 4 arm Diamond and Ellipse', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('3')
     await settle()
@@ -327,8 +321,7 @@ describe('DiagramPane tools — Diamond and Ellipse (T536 U2)', () => {
   })
 
   it('q then d keeps Diamond armed across two clicks', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('q')
     key('d')
@@ -349,8 +342,7 @@ describe('DiagramPane tools — Diamond and Ellipse (T536 U2)', () => {
 
 describe('DiagramPane tools — Text', () => {
   it('t, click, type, Enter: a text node; an empty commit adds nothing', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('t')
     clickBlank(w, [300, 300])
@@ -378,8 +370,7 @@ describe('DiagramPane tools — Text', () => {
   })
 
   it('pressing an existing text node edits it instead of adding one', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('t')
     down(nodeEl(w, 'n-c'), [60, 230])
@@ -398,8 +389,7 @@ describe('DiagramPane tools — Text', () => {
   })
 
   it('double-click on blank board in Select places a text node', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     svgOf(w).dispatchEvent(
       new MouseEvent('dblclick', { bubbles: true, button: 0, clientX: 300, clientY: 300 })
     )
@@ -415,8 +405,7 @@ describe('DiagramPane tools — Text', () => {
 
 describe('DiagramPane tools — Escape and node double-click', () => {
   it('Esc leaves a tool for Select, and a second Esc clears the selection', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('a', { ctrlKey: true })
     key('t')
@@ -433,8 +422,7 @@ describe('DiagramPane tools — Escape and node double-click', () => {
   })
 
   it('the first Esc does not clear the selection', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('a', { ctrlKey: true })
     key('t')
@@ -454,8 +442,7 @@ describe('DiagramPane tools — Escape and node double-click', () => {
     ['t', 'Text', false],
     ['e', 'Eraser', false]
   ] as const)('double-click on a node with %s (%s) renames: %s', async (k, _name, renames) => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key(k)
     nodeEl(w, 'n-a').dispatchEvent(
@@ -468,8 +455,7 @@ describe('DiagramPane tools — Escape and node double-click', () => {
 
 describe('DiagramPane tools — Review Focus 1-4', () => {
   it('RF1: a letter typed outside the pane never switches the tool', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     const textarea = document.createElement('textarea')
     document.body.appendChild(textarea)
     textarea.focus()
@@ -480,8 +466,7 @@ describe('DiagramPane tools — Review Focus 1-4', () => {
   })
 
   it('RF1: a letter typed into the rename input never switches the tool', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     nodeEl(w, 'n-a').dispatchEvent(
       new MouseEvent('dblclick', { bubbles: true, button: 0, clientX: 60, clientY: 60 })
     )
@@ -496,8 +481,7 @@ describe('DiagramPane tools — Review Focus 1-4', () => {
   })
 
   it('RF2: switching tool mid-draw cancels it and leaves no preview', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('r')
     down(svgOf(w), [200, 200])
@@ -515,8 +499,7 @@ describe('DiagramPane tools — Review Focus 1-4', () => {
   })
 
   it('RF3: the window losing focus while Space is held releases the Hand', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key(' ')
     await settle()
@@ -528,8 +511,7 @@ describe('DiagramPane tools — Review Focus 1-4', () => {
   })
 
   it('tool keys are ignored while Space is held', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key(' ')
     key('r')
@@ -540,8 +522,7 @@ describe('DiagramPane tools — Review Focus 1-4', () => {
   })
 
   it('Space on a focused toolbar button activates it and never starts a pan', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     const btn = w.get('[data-testid="canvas-tool-rectangle"]').element as HTMLButtonElement
     btn.focus()
     const ev = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
@@ -553,8 +534,7 @@ describe('DiagramPane tools — Review Focus 1-4', () => {
   })
 
   it('Space is ignored while the rename input is open', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     nodeEl(w, 'n-a').dispatchEvent(
       new MouseEvent('dblclick', { bubbles: true, button: 0, clientX: 60, clientY: 60 })
     )
@@ -591,8 +571,7 @@ describe('DiagramPane tools — undo, Esc and blur (fix round 1)', () => {
   }
 
   it('an empty text placement is ONE undo step: ⌘Z leaves no invisible text behind', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await placeText(w, [300, 300], '')
     key('z', { ctrlKey: true })
     await settle()
@@ -603,8 +582,7 @@ describe('DiagramPane tools — undo, Esc and blur (fix round 1)', () => {
   })
 
   it('a labelled text placement is ONE undo step: one ⌘Z removes the node, not just its label', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await placeText(w, [300, 300], 'note')
     key('z', { ctrlKey: true })
     await settle()
@@ -614,8 +592,7 @@ describe('DiagramPane tools — undo, Esc and blur (fix round 1)', () => {
   })
 
   it('a placed box stays selected through X6 own release handling (Delete removes it)', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('r')
     // Released ON the board, as a real click is: only then does X6 run its own
@@ -635,8 +612,7 @@ describe('DiagramPane tools — undo, Esc and blur (fix round 1)', () => {
   })
 
   it('Esc in the rename input cancels the rename only: a locked tool stays armed', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('q')
     key('r')
@@ -653,8 +629,7 @@ describe('DiagramPane tools — undo, Esc and blur (fix round 1)', () => {
   })
 
   it('the window losing focus mid-draw cancels the draw and its preview', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('r')
     down(svgOf(w), [200, 200])
@@ -723,8 +698,7 @@ describe('DiagramPane tools — Select with shift', () => {
   }
 
   it('shift+drag adds the rubberband catch to the current selection', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     // Select n-a with a plain click.
     down(nodeEl(w, 'n-a'), [60, 60])
@@ -745,8 +719,7 @@ describe('DiagramPane tools — Select with shift', () => {
   })
 
   it('a plain drag still replaces the selection', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     down(nodeEl(w, 'n-a'), [60, 60])
     up([60, 60])
@@ -821,8 +794,7 @@ describe('DiagramPane tools — Arrow', () => {
   }
 
   it('a, drag n-a → n-c: ONE operator edge n-a → n-c, and the tool is back on Select', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armArrow(w)
     dragArrow(w, 'n-a', IN_A, IN_C, nodeEl(w, 'n-c'))
     await settle()
@@ -838,8 +810,7 @@ describe('DiagramPane tools — Arrow', () => {
   })
 
   it('the reverse of an existing edge (n-b → n-a) is a new edge', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armArrow(w)
     dragArrow(w, 'n-b', IN_B, IN_A, nodeEl(w, 'n-a'))
     await settle()
@@ -849,8 +820,7 @@ describe('DiagramPane tools — Arrow', () => {
   })
 
   it('n-a → n-b again (already connected that way) creates nothing', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armArrow(w)
     dragArrow(w, 'n-a', IN_A, IN_B, nodeEl(w, 'n-b'))
     await settle()
@@ -860,8 +830,7 @@ describe('DiagramPane tools — Arrow', () => {
   })
 
   it('n-a → blank board creates nothing', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armArrow(w)
     dragArrow(w, 'n-a', IN_A, [600, 500], svgOf(w))
     await settle()
@@ -870,8 +839,7 @@ describe('DiagramPane tools — Arrow', () => {
   })
 
   it('n-a → n-a (released on its own source) creates nothing', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armArrow(w)
     dragArrow(w, 'n-a', IN_A, [100, 70], nodeEl(w, 'n-a'))
     await settle()
@@ -879,8 +847,7 @@ describe('DiagramPane tools — Arrow', () => {
   })
 
   it('the preview line is shown mid-drag, from the source centre, and gone after the release', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armArrow(w)
     down(nodeEl(w, 'n-a'), IN_A)
     move([200, 150])
@@ -902,8 +869,7 @@ describe('DiagramPane tools — Arrow', () => {
   })
 
   it('Esc mid-drag cancels: no preview, and the later release creates nothing', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armArrow(w)
     down(nodeEl(w, 'n-a'), IN_A)
     move(IN_C)
@@ -922,8 +888,7 @@ describe('DiagramPane tools — Arrow', () => {
   })
 
   it('a window blur mid-drag cancels the arrow and its preview', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armArrow(w)
     down(nodeEl(w, 'n-a'), IN_A)
     move(IN_C)
@@ -937,8 +902,7 @@ describe('DiagramPane tools — Arrow', () => {
   })
 
   it('a tool switch mid-drag cancels the arrow and its preview', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armArrow(w)
     down(nodeEl(w, 'n-a'), IN_A)
     move(IN_C)
@@ -952,8 +916,7 @@ describe('DiagramPane tools — Arrow', () => {
   })
 
   it('a release outside the pane body cancels, even over a node in world space', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armArrow(w)
     // A pane only 200px tall: n-c (world 40,220 → 200,244, not yet connected
     // to n-a) lies past its bottom edge, so the operator cannot see the node
@@ -971,8 +934,7 @@ describe('DiagramPane tools — Arrow', () => {
 
   it('a reload that removes the source mid-drag: the release on a live node creates no edge', async () => {
     const changed = captureCanvasChanged()
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armArrow(w)
     down(nodeEl(w, 'n-a'), IN_A)
     move(IN_C)
@@ -1013,8 +975,7 @@ describe('DiagramPane tools — Arrow', () => {
   })
 
   it('a press on blank board in Arrow shows nothing and creates nothing', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armArrow(w)
     down(svgOf(w), [600, 500])
     move([340, 220])
@@ -1026,8 +987,7 @@ describe('DiagramPane tools — Arrow', () => {
   })
 
   it('a press on an EDGE in Arrow does nothing: the edge is not selected', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     // Select n-c in Select first.
     down(nodeEl(w, 'n-c'), IN_C)
@@ -1054,8 +1014,7 @@ describe('DiagramPane tools — Arrow', () => {
   })
 
   it('a selected node shows resize handles in Select only; Arrow hides them', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     const handles = (): number => w.element.querySelectorAll('.x6-widget-transform').length
     // A real click is mousedown + mouseup + click; X6 opens the handles on `click`.
@@ -1096,8 +1055,7 @@ function captureCanvasChanged(): () => ((p: { path: string }) => void) | null {
 describe('DiagramPane tools — gestures across a reload from disk (fix round 2)', () => {
   it('a Rectangle drag in flight survives a clean reload: preview kept, release creates the box', async () => {
     const changed = captureCanvasChanged()
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('r')
     await settle()
@@ -1119,8 +1077,7 @@ describe('DiagramPane tools — gestures across a reload from disk (fix round 2)
 
   it('a Hand pan in flight survives a clean reload: still grabbing, and the pan goes on', async () => {
     const changed = captureCanvasChanged()
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('h')
     await settle()
@@ -1205,8 +1162,7 @@ describe('DiagramPane tools — Eraser', () => {
   }
 
   it('e, drag across n-a and n-b: both gone with their edge; ONE ⌘Z brings all back', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armEraser(w)
     down(nodeEl(w, 'n-a'), IN_A)
     move([200, 140])
@@ -1235,8 +1191,7 @@ describe('DiagramPane tools — Eraser', () => {
   it('a stroke from blank board across n-a and n-b is ONE undo step too', async () => {
     // A press on a node runs inside X6's own per-gesture batch, which would
     // hide a missing erase batch; a stroke that starts on blank board has none.
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armEraser(w)
     down(svgOf(w), [20, 20])
     move(IN_A)
@@ -1255,8 +1210,7 @@ describe('DiagramPane tools — Eraser', () => {
   })
 
   it('Esc mid-drag clears the marks and erases nothing; the pane stays clean', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armEraser(w)
     down(nodeEl(w, 'n-a'), IN_A)
     move([200, 140])
@@ -1277,8 +1231,7 @@ describe('DiagramPane tools — Eraser', () => {
   })
 
   it('a window blur mid-drag clears the marks and erases nothing', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armEraser(w)
     down(nodeEl(w, 'n-a'), IN_A)
     move(IN_B)
@@ -1293,8 +1246,7 @@ describe('DiagramPane tools — Eraser', () => {
   })
 
   it('a tool switch mid-drag clears the marks and erases nothing', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armEraser(w)
     down(nodeEl(w, 'n-a'), IN_A)
     move(IN_B)
@@ -1309,8 +1261,7 @@ describe('DiagramPane tools — Eraser', () => {
   })
 
   it('a plain press on a node erases just it', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armEraser(w)
     down(nodeEl(w, 'n-c'), IN_C)
     nodeEl(w, 'n-c').dispatchEvent(
@@ -1323,8 +1274,7 @@ describe('DiagramPane tools — Eraser', () => {
   })
 
   it('a plain press on an EDGE erases just that edge', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armEraser(w)
     const { p } = pointOnEdge(w)
     const edge = nodeEl(w, 'e-1')
@@ -1339,8 +1289,7 @@ describe('DiagramPane tools — Eraser', () => {
   })
 
   it('a blank stroke across an edge erases the edge and leaves the nodes', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armEraser(w)
     const { p, horizontal } = pointOnEdge(w)
     // Cross the run at right angles, from 20px on one side to 20px on the other.
@@ -1358,8 +1307,7 @@ describe('DiagramPane tools — Eraser', () => {
   })
 
   it('a blank stroke that passes far from the edge erases nothing', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armEraser(w)
     down(svgOf(w), [600, 600])
     move([700, 700])
@@ -1369,8 +1317,7 @@ describe('DiagramPane tools — Eraser', () => {
   })
 
   it('a theme switch mid-stroke re-renders the board: the stroke is cancelled, nothing erased', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armEraser(w)
     down(nodeEl(w, 'n-a'), IN_A)
     move(IN_B)
@@ -1395,8 +1342,7 @@ describe('DiagramPane tools — Eraser', () => {
 
   it('a reload from disk mid-stroke cancels the stroke: nothing erased', async () => {
     const changed = captureCanvasChanged()
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armEraser(w)
     down(nodeEl(w, 'n-a'), IN_A)
     move(IN_B)
@@ -1413,8 +1359,7 @@ describe('DiagramPane tools — Eraser', () => {
   })
 
   it('a move with no button held (the release was lost) cancels the stroke', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armEraser(w)
     down(nodeEl(w, 'n-a'), IN_A)
     move([200, 140])
@@ -1431,8 +1376,7 @@ describe('DiagramPane tools — Eraser', () => {
   })
 
   it('a right-button release mid-stroke does not end it; the left release does', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armEraser(w)
     down(nodeEl(w, 'n-a'), IN_A)
     move(IN_B)
@@ -1449,8 +1393,7 @@ describe('DiagramPane tools — Eraser', () => {
   })
 
   it('a new press while a stroke is still open (left release lost) leaves no marks behind', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armEraser(w)
     down(nodeEl(w, 'n-a'), IN_A)
     move(IN_B)
@@ -1473,8 +1416,7 @@ describe('DiagramPane tools — Eraser', () => {
   })
 
   it('a click on blank board erases nothing', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armEraser(w)
     down(svgOf(w), [600, 500])
     upOnSvg(w, [600, 500])
@@ -1484,8 +1426,7 @@ describe('DiagramPane tools — Eraser', () => {
   })
 
   it('a release outside the pane ends the stroke: no stuck marks, nothing off-pane marked', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armEraser(w)
     // A pane only 300px wide: n-b (world x 320 → 452) lies past its right edge.
     pinBody(w, 300, 400)
@@ -1505,8 +1446,7 @@ describe('DiagramPane tools — Eraser', () => {
   })
 
   it('the selection never holds an erased cell: Delete afterwards takes only what is left', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     // Everything selected, then n-a erased out from under the selection.
     key('a', { ctrlKey: true })
@@ -1533,8 +1473,7 @@ describe('DiagramPane tools — Eraser', () => {
   })
 
   it('an erase right after a placed text is its own undo step', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     key('t')
     clickBlank(w, [600, 500])
@@ -1556,8 +1495,7 @@ describe('DiagramPane tools — Eraser', () => {
   })
 
   it('resize handles hide in Eraser, and a press on a node erases rather than resizes', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     focusPane(w)
     const handles = (): number => w.element.querySelectorAll('.x6-widget-transform').length
     down(nodeEl(w, 'n-b'), IN_B)
@@ -1574,8 +1512,7 @@ describe('DiagramPane tools — Eraser', () => {
   })
 
   it('a double-click on a node in Eraser opens no rename', async () => {
-    const w = mountPane()
-    await settle()
+    const w = await mountPaneReady(BOARD)
     await armEraser(w)
     nodeEl(w, 'n-c').dispatchEvent(
       new MouseEvent('dblclick', { bubbles: true, clientX: IN_C[0], clientY: IN_C[1] })

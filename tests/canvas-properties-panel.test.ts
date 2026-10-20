@@ -7,7 +7,8 @@ import {
   CANVAS_STYLE_VALUES,
   MIXED,
   type CanvasStyleKey,
-  type CanvasStyleValue
+  type CanvasStyleValue,
+  type StyleOptions
 } from '../src/renderer/src/components/canvas/canvas-style'
 import { LAYER_MOVES } from '../src/renderer/src/components/canvas/canvas-layers'
 import { i18n } from '@renderer/i18n'
@@ -27,6 +28,8 @@ function mountPanel(
     collapsed?: boolean
     open?: boolean
     layers?: boolean
+    options?: StyleOptions
+    edgeOnly?: boolean
   } = {}
 ): ReturnType<typeof mount> {
   return mount(CanvasPropertiesPanel, {
@@ -35,7 +38,9 @@ function mountPanel(
       values: props.values ?? {},
       collapsed: props.collapsed ?? false,
       open: props.open ?? false,
-      layers: props.layers ?? false
+      layers: props.layers ?? false,
+      ...(props.options !== undefined ? { options: props.options } : {}),
+      ...(props.edgeOnly !== undefined ? { edgeOnly: props.edgeOnly } : {})
     },
     global: { plugins: [i18n] }
   })
@@ -292,5 +297,100 @@ describe('CanvasPropertiesPanel — Layers (T536 U4)', () => {
     const w = mountPanel({ keys: [], layers: true, collapsed: true, open: false })
     expect(w.find('[data-testid="canvas-properties-toggle"]').exists()).toBe(true)
     expect(w.find('[data-testid="canvas-layers"]').exists()).toBe(false)
+  })
+
+  describe('per-key options and arrow glyphs (T536 U5)', () => {
+    const ARROW_TONES = ['default', 'green', 'amber', 'red', 'muted'] as const
+
+    it('renders only the offered tone values and no accent', () => {
+      const w = mountPanel({ keys: ['tone'], options: { tone: ARROW_TONES } })
+      const tones = w.findAll('[data-testid^="canvas-prop-tone-"]')
+      expect(tones.map((t) => t.attributes('data-testid'))).toEqual(
+        ARROW_TONES.map((v) => `canvas-prop-tone-${v}`)
+      )
+      expect(w.find('[data-testid="canvas-prop-tone-accent"]').exists()).toBe(false)
+    })
+
+    it('without options renders the six U3 tones', () => {
+      const w = mountPanel({ keys: ['tone'] })
+      expect(w.findAll('[data-testid^="canvas-prop-tone-"]')).toHaveLength(
+        CANVAS_STYLE_VALUES.tone.length
+      )
+      expect(w.find('[data-testid="canvas-prop-tone-accent"]').exists()).toBe(true)
+    })
+
+    it('a key absent from options falls back to its full value list', () => {
+      const w = mountPanel({ keys: ['tone', 'stroke'], options: { tone: ARROW_TONES } })
+      for (const value of CANVAS_STYLE_VALUES.stroke) {
+        expect(w.find(`[data-testid="canvas-prop-stroke-${value}"]`).exists()).toBe(true)
+      }
+    })
+
+    it('edgeOnly draws each tone as a line glyph in the tone text class, not a swatch', () => {
+      const w = mountPanel({
+        keys: ['tone'],
+        options: { tone: [...ARROW_TONES] },
+        edgeOnly: true
+      })
+      const expected = {
+        default: 'text-accent',
+        green: 'text-green',
+        amber: 'text-warning',
+        red: 'text-red',
+        muted: 'text-text-3'
+      } as const
+      expect(w.find('[data-testid="canvas-prop-swatch"]').exists()).toBe(false)
+      for (const v of ARROW_TONES) {
+        const glyph = option(w, 'tone', v).get('[data-testid="canvas-prop-glyph"]')
+        expect(glyph.attributes('width')).toBe('16')
+        expect(glyph.classes()).toContain(expected[v])
+      }
+    })
+
+    it('edgeOnly: default is the accent line and differs from muted', () => {
+      const w = mountPanel({ keys: ['tone'], options: { tone: [...ARROW_TONES] }, edgeOnly: true })
+      const cls = (v: string): string[] =>
+        option(w, 'tone', v).get('[data-testid="canvas-prop-glyph"]').classes()
+      expect(cls('default')).toContain('text-accent')
+      expect(cls('muted')).toContain('text-text-3')
+      expect(cls('default')).not.toContain('text-text-3')
+      expect(cls('muted')).not.toContain('text-accent')
+    })
+
+    it('edgeOnly maps the accent tone to text-accent', () => {
+      const w = mountPanel({ keys: ['tone'], edgeOnly: true })
+      expect(
+        option(w, 'tone', 'accent').get('[data-testid="canvas-prop-glyph"]').classes()
+      ).toContain('text-accent')
+    })
+
+    it('without edgeOnly tones keep the fill swatch', () => {
+      const w = mountPanel({ keys: ['tone'], edgeOnly: false })
+      expect(w.findAll('[data-testid="canvas-prop-swatch"]')).toHaveLength(
+        CANVAS_STYLE_VALUES.tone.length
+      )
+      expect(option(w, 'tone', 'green').find('[data-testid="canvas-prop-glyph"]').exists()).toBe(
+        false
+      )
+    })
+
+    it('layers: false with tone and stroke renders no Layers group', () => {
+      const w = mountPanel({ keys: ['tone', 'stroke'], layers: false, edgeOnly: true })
+      expect(w.find('[data-testid="canvas-layers"]').exists()).toBe(false)
+      expect(w.findAll('[role="radiogroup"]')).toHaveLength(2)
+    })
+
+    it('no option carries an inline colour style', () => {
+      const w = mountPanel({
+        keys: ['tone', 'stroke'],
+        options: { tone: ARROW_TONES },
+        edgeOnly: true
+      })
+      for (const el of w.findAll(
+        '[data-testid^="canvas-prop-"] , [data-testid^="canvas-prop-"] *'
+      )) {
+        expect(el.attributes('style')).toBeUndefined()
+      }
+    })
   })
 })

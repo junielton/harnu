@@ -1,4 +1,4 @@
-<!-- harnu-features v98 (2026-10-20) -->
+<!-- harnu-features v99 (2026-10-20) -->
 
 # You are running inside Harnu
 
@@ -215,8 +215,8 @@ but the pane opening by itself is what actually puts it in front of them, so lea
 
 **Ops, not a redraw.** `ops` is 1..200 incremental ops applied IN ORDER and
 ALL-OR-NOTHING: `add_node{shape,x,y,width?,height?,label?,props?,style?,zIndex?}` (returns the id it
-assigned), `add_edge{source,target,label?,router?}`, `update_node{id, any of
-x,y,width,height,label,props,style,zIndex}`, `update_edge{id, any of label,router}`,
+assigned), `add_edge{source,target,label?,router?,style?}`, `update_node{id, any of
+x,y,width,height,label,props,style,zIndex}`, `update_edge{id, any of label,router,style}`,
 `remove_node{id}` — which CASCADES to every edge touching it — `remove_edge{id}`, and
 `clear{}`. If any op is invalid, NOTHING is written and the file is byte-identical to
 what it was: you never have to reason about how far a rejected batch got. Reference an
@@ -235,7 +235,8 @@ with your ordinary file tools**: a canvas is plain JSON in the working tree, and
 the operator edits and Saves, the `origin` field is what tells you what they added.
 
 **Shape names come from the ACK, never from guessing.** Every `draw_canvas` ACK carries
-`shapes` — the full catalog as `{ name, description, defaultSize, style }` — plus `path`,
+`shapes` — the full catalog as `{ name, description, defaultSize, style }` — and
+`edgeStyle` (the `style` an arrow takes), plus `path`,
 `nodeCount`, `edgeCount`, `applied` (one entry per op, with the id each `add_*`
 assigned) and `opened`. An unknown shape is refused `UNKNOWN_SHAPE` listing the valid
 set, so one call teaches you the vocabulary: `box`, `ellipse` (states, start/end
@@ -245,7 +246,7 @@ points), `diamond` (decisions in a flow), `text`, `image`, `harnu/mockup-card`.
 declared keys: a key the shape does not read is `BAD_PROPS`, not silent junk in the
 file.
 
-**Style a node with `style`, never inside `props`.** Each catalog entry's `style` lists
+**Style a node or an arrow with `style`, never inside `props`.** Each catalog entry's `style` lists
 the style keys that shape takes, each with its allowed values (`box` takes `tone`,
 `stroke`, `strokeWidth`, `corners`, `fontSize`, `align` and `opacity`;
 `harnu/mockup-card` takes none). A key the shape does not take, or a value outside the
@@ -254,6 +255,14 @@ key: `null` — or the key's default value — removes it, so a reset node is id
 never styled, and keys you do not name stay as they were, the operator's included.
 `update_node` with only `style` is a valid change, a `props` replace never touches the
 style, and a `style` inside `props` is refused `BAD_PROPS`.
+
+Arrows take `style` on `add_edge` / `update_edge`, with the same merge rules: `tone` (`default`,
+`green`, `amber`, `red`, `muted` — no `accent`, because an arrow's default already is the accent)
+and `stroke` (`solid`, `dashed`, `dotted`). The ACK's `edgeStyle` lists them. `update_edge` with only
+`style` is a valid change, and other edge props are kept. Harnu 0.3.46 and earlier drops all of an arrow's extra
+data (its style and any other `props` keys) on any write, both a pane Save and a session's `draw_canvas`
+there; shapes, node styles, text, labels, routes and ids survive. So do not rely on arrow styles on a
+board shared with old builds.
 
 **Stacking with `zIndex`.** `zIndex` on `add_node` / `update_node` is an integer ≥ 1;
 higher draws on top. A node without one stacks at 1, in file order. Arrows always draw
