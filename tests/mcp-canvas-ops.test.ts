@@ -1284,6 +1284,45 @@ describe('T536 U3 — node style', () => {
     if (add.ok) expect('props' in add.doc.nodes[0]).toBe(false)
   })
 
+  it.each([
+    ['constructor', { constructor: 'x' }],
+    ['toString', { toString: null }],
+    ['hasOwnProperty', { hasOwnProperty: 'x' }],
+    ['__proto__', JSON.parse('{"__proto__":"x"}')]
+  ])('an inherited property name (%s) is an undeclared style key, never a throw', (_n, style) => {
+    const add = run([{ op: 'add_node', shape: 'box', x: 0, y: 0, style }])
+    expect(add).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    expect('doc' in add).toBe(false)
+    if (!add.ok) expect(add.error).toContain('takes')
+
+    const noStyle = run([{ op: 'add_node', shape: 'harnu/mockup-card', x: 0, y: 0, style }])
+    expect(noStyle).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    if (!noStyle.ok) expect(noStyle.error).toContain('takes no style')
+
+    const upd = run([{ op: 'update_node', id: 's', style }], docWith([styledNode(undefined)]))
+    expect(upd).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    expect('doc' in upd).toBe(false)
+  })
+
+  it('a file whose style already holds __proto__ / constructor keys survives a merge intact', () => {
+    const fileStyle = JSON.parse('{"__proto__":{"x":1},"constructor":"c","tone":"green"}')
+    const doc = docWith([styledNode({ style: fileStyle })])
+    const res = run([{ op: 'update_node', id: 's', style: { tone: 'red' } }], doc)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    const out = (res.doc.nodes[0].props as { style: Record<string, unknown> }).style
+    expect(Object.keys(out).sort()).toEqual(['__proto__', 'constructor', 'tone'])
+    expect(out.tone).toBe('red')
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype)
+  })
+
+  it('update_node refusals return no doc (no partial apply)', () => {
+    const doc = docWith([styledNode({ style: { tone: 'green' } })])
+    const res = run([{ op: 'update_node', id: 's', style: { tone: 'purple' } }], doc)
+    expect(res).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    expect('doc' in res).toBe(false)
+  })
+
   it('update_node keeps keys the file holds that this build does not know', () => {
     const doc = docWith([styledNode({ style: { glow: true, tone: 'green' } })])
     const res = run([{ op: 'update_node', id: 's', style: { tone: 'red' } }], doc)

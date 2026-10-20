@@ -393,7 +393,8 @@ function checkStyle(
     return deny('BAD_ARGS', `${at}: "style" must name at least one key`)
   }
   const table = spec.style as Readonly<Record<string, readonly CanvasStyleValue[] | undefined>>
-  const undeclared = keys.filter((k) => table[k] === undefined)
+  // Own keys only: `constructor`, `toString`, `__proto__` … are inherited names, not style keys.
+  const undeclared = keys.filter((k) => !Object.hasOwn(table, k))
   if (undeclared.length > 0) {
     return deny(
       'BAD_PROPS',
@@ -405,7 +406,7 @@ function checkStyle(
   const patch: Record<string, CanvasStyleValue | null> = {}
   for (const key of keys) {
     const value = style[key]
-    const allowed = table[key] as readonly CanvasStyleValue[]
+    const allowed = table[key] as readonly CanvasStyleValue[] // own: checked above
     if (value !== null && !allowed.some((a) => a === value)) {
       return deny(
         'BAD_PROPS',
@@ -438,7 +439,15 @@ export function mergeNodeStyle(
       Object.hasOwn(CANVAS_STYLE_DEFAULTS, key) &&
       CANVAS_STYLE_DEFAULTS[key as CanvasStyleKey] === value
     if (value === null || isDefault) delete merged[key]
-    else merged[key] = value
+    else {
+      // defineProperty, not assignment: a key named `__proto__` must land as data.
+      Object.defineProperty(merged, key, {
+        value,
+        enumerable: true,
+        writable: true,
+        configurable: true
+      })
+    }
   }
   const { style: _old, ...rest } = props ?? {}
   void _old
