@@ -92,10 +92,11 @@ chips, same words. It is always the first row. It appears only when Harnu's mod 
 staged by this build of Harnu; when none is staged there is simply no row.
 
 Its row carries the chips **can use the network**, **can read and write files**, **can
-read every prompt**, **can decide permissions**, **can refuse other mods** and **can read
-environment variables**. They are what the source declares: it talks to Harnu on this
-machine, reads session state, and watches prompts, permission requests and mod
-registration. The registration hook only watches which mods a session admits; it never
+read every prompt**, **can decide permissions**, **can refuse other mods**, **can read
+environment variables** and **draws in the terminal**. They are what the source declares:
+it talks to Harnu on this machine, reads session state, watches prompts, permission
+requests and mod registration, and draws one line above the prompt of a review companion
+(the selection you sent from the Review pane). The registration hook only watches which mods a session admits; it never
 refuses one, and a test in Harnu's repository fails if it ever does. The static read
 cannot tell a watcher from a gate, so the chips are shown anyway, the same as for any mod
 with those hooks.
