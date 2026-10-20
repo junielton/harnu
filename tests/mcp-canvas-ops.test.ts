@@ -1428,10 +1428,9 @@ describe('T536 U5 — edge style', () => {
     )
     expect(res).toMatchObject({ ok: false, code: 'BAD_PROPS' })
     if (res.ok) return
-    for (const t of ['default', 'green', 'amber', 'red', 'muted']) {
-      expect(res.error).toContain(`"${t}"`)
-    }
-    expect(res.error).not.toContain('"accent",')
+    expect(res.error).toContain(
+      'style "tone" must be one of "default", "green", "amber", "red", "muted"'
+    )
     expect('doc' in res).toBe(false)
   })
 
@@ -1511,6 +1510,36 @@ describe('T536 U5 — edge style', () => {
     expect(res).toMatchObject({ ok: false, code: 'BAD_PROPS' })
     expect('doc' in res).toBe(false)
     expect(JSON.stringify(doc)).toBe(before)
+  })
+
+  it('update_edge refuses an empty, string, null or accent style, with the refusals update_node gives', () => {
+    const doc = docWithEdge({ style: { tone: 'red' } })
+    const empty = run([{ op: 'update_edge', id: 'e1', style: {} }], doc)
+    expect(empty).toMatchObject({ ok: false, code: 'BAD_ARGS' })
+    expect('doc' in empty).toBe(false)
+
+    const str = run([{ op: 'update_edge', id: 'e1', style: 'red' }], doc)
+    expect(str).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    expect('doc' in str).toBe(false)
+
+    // `null` is not a style object: the same refusal update_node gives it.
+    const nul = run([{ op: 'update_edge', id: 'e1', style: null }], doc)
+    expect(nul).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    expect('doc' in nul).toBe(false)
+    const node = run([{ op: 'update_node', id: 'a', style: null }], docWith(ENDS))
+    expect(node).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    if (!nul.ok && !node.ok) {
+      expect(nul.error.replace('ops[0]:', '')).toBe(node.error.replace('ops[0]:', ''))
+    }
+
+    const accent = run([{ op: 'update_edge', id: 'e1', style: { tone: 'accent' } }], doc)
+    expect(accent).toMatchObject({ ok: false, code: 'BAD_PROPS' })
+    expect('doc' in accent).toBe(false)
+    if (!accent.ok) {
+      expect(accent.error).toContain(
+        'style "tone" must be one of "default", "green", "amber", "red", "muted"'
+      )
+    }
   })
 
   it('update_edge with no field still says it needs one, and style counts', () => {

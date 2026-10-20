@@ -483,3 +483,64 @@ describe('DiagramPane arrow styles — an arrow restored by undo after a Save ke
     expect(edgeOf(saved, 'e-1').props).toEqual({ weight: 2, style: { tone: 'red' } })
   })
 })
+
+// ── hardening: edge cases the reviews flagged ───────────────────────────────
+describe('DiagramPane arrow styles — hardening (T536 U5)', () => {
+  it('a tone pick on a box and an arrow is ONE undo step: neither stays green', async () => {
+    const w = mountPane()
+    await settle()
+    await select(w, 'n-a', 'e-1')
+    await pick(w, 'tone', 'green')
+    let doc = await saveAndRead(w)
+    expect(nodeOf(doc, 'n-a').props).toEqual({ style: { tone: 'green' } })
+    expect(edgeOf(doc, 'e-1').props).toEqual({ weight: 2, style: { tone: 'green' } })
+
+    await undo(w)
+    doc = await saveAndRead(w)
+    expect(nodeOf(doc, 'n-a').props).toBeUndefined()
+    expect(edgeOf(doc, 'e-1').props).toEqual({ weight: 2 })
+  })
+
+  describe('a file written by a newer build', () => {
+    const NEWER: CanvasDocument = {
+      ...DOC,
+      edges: [
+        {
+          id: 'e-1',
+          source: 'n-a',
+          target: 'n-b',
+          origin: 'agent',
+          props: { style: { glow: 1, tone: 'purple', stroke: 'dashed' }, weight: 2 }
+        },
+        DOC.edges[1]
+      ]
+    }
+    beforeEach(() => {
+      canvasRead.mockImplementation(async (p: string) => ({ ok: true, path: p, doc: NEWER }))
+    })
+
+    it('a tone pick keeps the unknown style key, the other known key and the other props', async () => {
+      const w = mountPane()
+      await settle()
+      await select(w, 'e-1')
+      await pick(w, 'tone', 'green')
+      const doc = await saveAndRead(w)
+      expect(edgeOf(doc, 'e-1').props).toEqual({
+        style: { glow: 1, tone: 'green', stroke: 'dashed' },
+        weight: 2
+      })
+    })
+
+    it('a stroke-only pick keeps the unknown tone verbatim in the saved file', async () => {
+      const w = mountPane()
+      await settle()
+      await select(w, 'e-1')
+      await pick(w, 'stroke', 'dotted')
+      const doc = await saveAndRead(w)
+      expect(edgeOf(doc, 'e-1').props).toEqual({
+        style: { glow: 1, tone: 'purple', stroke: 'dotted' },
+        weight: 2
+      })
+    })
+  })
+})

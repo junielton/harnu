@@ -401,13 +401,8 @@ export function operatorEdgeSpec(palette: CanvasPalette): Edge.Metadata {
     zIndex: 0,
     router: { name: 'manhattan' },
     connector: { name: 'rounded', args: { radius: 8 } },
-    attrs: {
-      line: {
-        stroke: palette.accent,
-        strokeWidth: 1.5,
-        targetMarker: { name: 'block', width: 8, height: 6 }
-      }
-    }
+    // The same attrs an unstyled arrow draws with, from the one source (T536 U5).
+    attrs: { line: edgeLineAttrs(undefined, palette) }
   }
 }
 
