@@ -80,13 +80,18 @@ export function forkKeysGuard(): boolean {
  * of its own for the same Shift+F10 press, at the focused element (T486 OQ-3).
  * A focused sidebar row would then reopen the menu on ITSELF, which may not be
  * the cursor target. Swallow that one event; one press opens exactly one menu.
- * The window is generous because Windows sends it on key-up.
+ * The window is generous because Windows sends it on key-up. Only a
+ * keyboard-made event is swallowed (it carries `button: -1`; a mouse
+ * right-click carries `2`), so where no event is synthesized (macOS) a genuine
+ * right-click inside the window still opens its menu.
  */
 const SYNTHETIC_CONTEXTMENU_MS = 1000
 let suppressContextMenuUntil = 0
 let contextMenuGuardInstalled = false
+const RIGHT_BUTTON = 2
 function onWindowContextMenu(e: MouseEvent): void {
   if (Date.now() > suppressContextMenuUntil) return
+  if (e.button === RIGHT_BUTTON) return
   suppressContextMenuUntil = 0
   e.preventDefault()
   e.stopPropagation()

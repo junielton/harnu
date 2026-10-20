@@ -283,6 +283,34 @@ describe('AC-34 — session.contextMenu (Shift+F10)', () => {
     focused.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
     expect(reopen).toHaveBeenCalledTimes(1)
   })
+
+  it('never swallows a mouse right-click, even inside the window (no synthesized event on macOS)', () => {
+    const sessions = useSessionsStore()
+    const ui = useUiStore()
+    const actions = withSetup(() => useSessionActions())
+    const focused = row('session:s-a', { left: 0, top: 0, bottom: 26 })
+    const reopen = vi.fn(() => ui.openMenu({ sessionId: 's-a', x: 0, y: 0 }))
+    focused.addEventListener('contextmenu', reopen)
+    row('session:s-b', { left: 12, top: 100, bottom: 126 })
+    sessions.keyboardCursor = { kind: 'session', id: 's-b' }
+
+    actions.openContextMenu()
+    // A real right-click right after the press: button 2, not keyboard-made.
+    const click = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })
+    focused.dispatchEvent(click)
+    expect(click.defaultPrevented).toBe(false)
+    expect(reopen).toHaveBeenCalledTimes(1)
+
+    // The keyboard-made twin (button -1) is still swallowed if it arrives late.
+    const synthesized = new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+      button: -1
+    })
+    focused.dispatchEvent(synthesized)
+    expect(synthesized.defaultPrevented).toBe(true)
+    expect(reopen).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('sidebar.hiddenFolders', () => {
