@@ -435,6 +435,10 @@ _another_ folder.
 | `align-left`                             | Canvas properties panel → Align left (T536 U3)                                                                                                                                                                                         |
 | `align-center`                           | Canvas properties panel → Align center (T536 U3)                                                                                                                                                                                       |
 | `align-right`                            | Canvas properties panel → Align right (T536 U3)                                                                                                                                                                                        |
+| `arrow-down-to-line`                     | Canvas properties panel → Layers: Send to back (T536 U4)                                                                                                                                                                               |
+| `arrow-down`                             | Canvas properties panel → Layers: Send backward (T536 U4)                                                                                                                                                                              |
+| `arrow-up`                               | Canvas properties panel → Layers: Bring forward (T536 U4)                                                                                                                                                                              |
+| `arrow-up-to-line`                       | Canvas properties panel → Layers: Bring to front (T536 U4)                                                                                                                                                                             |
 
 ### Novelty dot (on an icon button)
 
@@ -4734,6 +4738,8 @@ Node and edge treatment, tokens only — **no raw hex anywhere in the component*
 | styled node (U3)     | the keys of "Node styles" below; a node with none renders as the rows above  |
 | `text` node tone     | label coloured by the tone's stroke column; `default` stays `--color-text-2` |
 | node `opacity`       | 0.25 / 0.5 / 0.75 / 1 on body, label and image; ports are not dimmed         |
+| node stacking (U4)   | `zIndex` 1..n, higher on top; a node without one stacks at 1 in file order   |
+| edge stacking        | always under every node, never restacked                                     |
 | edge line            | `--color-accent` 1.5px, `block` target marker, manhattan router              |
 | edge label           | `--color-text-3` 11px on a `--color-bg` plate                                |
 | grid dot             | `--color-border-2`, 2px dot, 16px pitch                                      |
@@ -4886,9 +4892,10 @@ module. Absolute to the viewport, so it neither pans nor zooms.
   `align-left` / `align-center` / `align-right`; size shows S / M / L / XL; opacity shows
   the percentage.
 - **Visibility.** Only while the tool is Select (the chosen tool, so holding `Space` does
-  not hide it) and the selected nodes **share** at least one key: the panel shows only
-  the controls every selected node accepts, so a box plus a mockup card hides it.
-  Selected edges are ignored in U3.
+  not hide it) and the selection holds **at least one node**. The style groups show only
+  the controls every selected node accepts (U3's rule, unchanged); the Layers group shows
+  for any node selection, every kind included, so a box plus a mockup card, or `Ctrl+A`,
+  shows the Layers group alone. Selected edges are ignored by both.
 - **Mixed selection.** When the selected nodes disagree on a key, no option in that group
   is checked.
 - **Undo.** Each change is one undo step.
@@ -4896,6 +4903,30 @@ module. Absolute to the viewport, so it neither pans nor zooms.
   `palette` button in the panel's slot (`aria-expanded`) that opens the panel in place.
 - Every control is `@mousedown.stop @pointerdown.stop`, so it never starts a canvas gesture
   or a pane resize.
+
+**Layers (T536 U4).** The last group of the Properties panel, headed "Layers" (Eyebrow
+label, `--text-4`). Component: `CanvasPropertiesPanel.vue`, over the pure
+`canvas/canvas-layers.ts` module. It restacks the selected nodes.
+
+- **Buttons.** Four 24px **action** buttons, in this order: Send to back
+  (`arrow-down-to-line`), Send backward (`arrow-down`), Bring forward (`arrow-up`), Bring to
+  front (`arrow-up-to-line`). They are actions, not radios: nothing is ever "checked", so
+  there is no `aria-checked` and no active state. Idle `text-text-3`, hover
+  `bg-surface-2 text-text`. Each has a native tooltip and an `aria-label`.
+- **Visibility.** Whenever the panel shows and the selection holds a node (see
+  "Properties panel" → Visibility). Every node kind takes it, the mockup card and unknown
+  kinds included.
+- **Front / back.** The selected nodes move above / below every other node and keep their
+  order among themselves.
+- **Forward.** Each selected node, from the top down, moves just above the nearest
+  unselected node above it whose bounds overlap it. With no such node it stays.
+  **Backward** is the mirror.
+- **Arrows.** Edges always draw under every node and are never restacked.
+- **No-op.** A move that changes nothing writes nothing: no undo step, no dirty dot.
+- **Undo.** Each move that changes something is one undo step.
+- **Persistence.** The order is the node's `zIndex`, 1..n, higher on top. A node without
+  one stacks at 1, in file order.
+- Every control is `@mousedown.stop @pointerdown.stop`, like the rest of the panel.
 
 **Other edit gestures.** Double-click a node to rename it in place (an inline input over
 the node itself, `--surface` on an `--accent-line` border; `Enter` commits, `Esc`
