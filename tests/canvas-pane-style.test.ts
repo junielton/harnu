@@ -316,7 +316,7 @@ describe('DiagramPane properties panel — when it shows', () => {
     await settle()
   })
 
-  it('Review Focus 4: shows only the keys every selected node takes, and ignores edges', async () => {
+  it('Review Focus 4: shows only the keys every selected cell takes, arrows included (T536 U5)', async () => {
     const w = mountPane()
     await settle()
 
@@ -338,16 +338,18 @@ describe('DiagramPane properties panel — when it shows', () => {
     expect(layers(w)).toBe(true)
     expect(groups(w)).toEqual([])
 
-    // A box, an ellipse and the edge: the ellipse has no corners; the edge is ignored.
+    // A box, an ellipse and the edge. T536 U5 changed this ON PURPOSE: the arrow used to
+    // be ignored by the style groups (so the groups were the box and ellipse's); now it
+    // counts, and only what an arrow takes is shared: tone and stroke.
     await select(w, 'n-a', 'n-e', 'e-1')
     expect(selectedIds(w)).toEqual(['e-1', 'n-a', 'n-e'])
-    expect(groups(w)).toEqual(['tone', 'stroke', 'strokeWidth', 'fontSize', 'align', 'opacity'])
+    expect(groups(w)).toEqual(['tone', 'stroke'])
 
-    await pick(w, 'fontSize', 'l')
+    await pick(w, 'tone', 'red')
     const doc = await saveAndRead(w)
-    expect(nodeOf(doc, 'n-a').props).toEqual({ style: { fontSize: 'l' } })
-    expect(nodeOf(doc, 'n-e').props).toEqual({ style: { fontSize: 'l' } })
-    expect(doc.edges[0].props).toBeUndefined()
+    expect(nodeOf(doc, 'n-a').props).toEqual({ style: { tone: 'red' } })
+    expect(nodeOf(doc, 'n-e').props).toEqual({ style: { tone: 'red' } })
+    expect(doc.edges[0].props).toEqual({ style: { tone: 'red' } })
   })
 
   it('Review Focus 4: a key one node takes is never written onto another that does not', async () => {
@@ -378,12 +380,16 @@ describe('DiagramPane properties panel — when it shows', () => {
     expect(nodeOf(doc, 'n-a').props).toEqual({ style: { corners: 'sharp', tone: 'red' } })
   })
 
-  it('an edge alone shows no panel', async () => {
+  // T536 U5 changed this ON PURPOSE: an arrow alone used to show no panel; it now shows
+  // Color and Stroke (and no Layers, which acts on nodes only).
+  it('an edge alone shows the panel with its style groups and no Layers (T536 U5)', async () => {
     const w = mountPane()
     await settle()
     await select(w, 'e-1')
     expect(selectedIds(w)).toEqual(['e-1'])
-    expect(panel(w)).toBe(false)
+    expect(panel(w)).toBe(true)
+    expect(groups(w)).toEqual(['tone', 'stroke'])
+    expect(layers(w)).toBe(false)
   })
 
   it('a mixed value checks no option in its group', async () => {
