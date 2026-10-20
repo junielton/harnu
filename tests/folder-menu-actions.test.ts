@@ -251,6 +251,27 @@ describe('folder actions target the active folder (§3.10)', () => {
     expect(reveal).toHaveBeenCalledWith('/plain/beta')
   })
 
+  it('in drill mode toggleOlder reveals without flipping the classic tree', () => {
+    const sessions = useSessionsStore()
+    const actions = withSetup(() => useFolderMenuActions())
+    sessions.drillDepth = 1
+    const toggleFolder = vi.spyOn(sessions, 'toggleFolder')
+    const reveal = vi.spyOn(sessions, 'toggleRevealOlder')
+    sessions.findFolderByPath('/plain/beta')!.expanded = false
+    actions.run.toggleOlder('/plain/beta')
+    expect(toggleFolder).not.toHaveBeenCalled()
+    expect(reveal).toHaveBeenCalledWith('/plain/beta')
+  })
+
+  it('a path the store does not hold keeps the items that need no git or session facts', () => {
+    const actions = withSetup(() => useFolderMenuActions())
+    expect(actions.visible('toggleAutoOrganize', '/not/loaded')).toBe(true)
+    expect(actions.visible('bootOptions', '/not/loaded')).toBe(true)
+    expect(actions.visible('newWorktree', '/not/loaded')).toBe(false)
+    expect(actions.visible('removeWorktree', '/not/loaded')).toBe(false)
+    expect(actions.visible('toggleOlder', '/not/loaded')).toBe(false)
+  })
+
   it('removeWorktree opens the confirm dialog with the branch', () => {
     const ui = useUiStore()
     const actions = withSetup(() => useFolderMenuActions())
@@ -327,10 +348,18 @@ describe('AC-37 — the menus and the bindings share one function', () => {
     ])
       expect(menu, call).not.toContain(call)
 
-    // The folder row's older / archived peek runs the same function too.
-    const row = read('src/renderer/src/components/SidebarFolder.vue')
-    expect(row).toContain('folderMenuActions.run.toggleOlder(')
-    expect(row).not.toContain('sessions.toggleRevealOlder(')
+    // The folder row's and the drill folder screen's older / archived peeks run
+    // the same function too.
+    for (const p of [
+      'src/renderer/src/components/SidebarFolder.vue',
+      'src/renderer/src/components/SidebarDrillView.vue'
+    ]) {
+      const src = read(p)
+      expect(src, p).toContain('folderMenuActions.run.toggleOlder(')
+      expect(src, p).toContain('folderMenuActions.run.toggleArchived(')
+      expect(src, p).not.toContain('sessions.toggleRevealOlder(')
+      expect(src, p).not.toContain('sessions.toggleRevealArchived(')
+    }
   })
 
   it('every §3.4 registration in App.vue runs the composable', () => {

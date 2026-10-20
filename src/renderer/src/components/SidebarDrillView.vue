@@ -46,8 +46,9 @@ import type { Folder } from '../stores/sessions'
 const sessions = useSessionsStore()
 const ui = useUiStore()
 const { t } = useI18n()
-// T486 §3.4: the group menu's items, shared with RepoGroupHeader and the keybindings.
-const groupActions = useFolderMenuActions()
+// T486 §3.4: the group menu's items and the folder screen's peeks, shared with
+// RepoGroupHeader, SidebarFolder and the keybindings.
+const folderMenuActions = useFolderMenuActions()
 
 type RootNode = Folder | FolderGroup<Folder>
 
@@ -168,7 +169,7 @@ const groupMenuTarget = computed<FolderGroup<Folder> | null>(() =>
 /** Whether the group menu shows `action` for its target (alias / repo rules). */
 function groupMenuShows(action: RepoGroupAction): boolean {
   const group = groupMenuTarget.value
-  return group ? groupActions.groupVisible(action, group) : false
+  return group ? folderMenuActions.groupVisible(action, group) : false
 }
 
 function openGroupMenuAt(e: Event, key: string): void {
@@ -206,7 +207,7 @@ function onGroupMenuKeydown(e: KeyboardEvent): void {
 /** Run a group-menu item on the menu's target through the shared function, then close. */
 function runGroupAction(action: RepoGroupAction): void {
   const group = groupMenuTarget.value
-  if (group) groupActions.group[action](group)
+  if (group) folderMenuActions.group[action](group)
   closeGroupMenu()
 }
 
@@ -292,8 +293,8 @@ const peekActions = computed(() => {
 function onPeekClick(kind: 'older' | 'archived'): void {
   const path = folderScreen.value?.path
   if (!path) return
-  if (kind === 'older') sessions.toggleRevealOlder(path)
-  else sessions.toggleRevealArchived(path)
+  if (kind === 'older') folderMenuActions.run.toggleOlder(path)
+  else folderMenuActions.run.toggleArchived(path)
 }
 </script>
 

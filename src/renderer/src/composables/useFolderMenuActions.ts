@@ -126,14 +126,18 @@ export function useFolderMenuActions(): FolderMenuActions {
     return !!f && typeof f.repoId === 'string' && f.repoId.length > 0 && f.isMainWorktree !== true
   }
 
+  /**
+   * A path the store does not hold reads as a plain non-git folder with nothing
+   * to reveal — the facts the menu has always assumed for it — so the items that
+   * need no git or session facts (auto-organize among them) still show.
+   */
   function visible(action: FolderAction, folderPath: string): boolean {
     const f = sessions.findFolderByPath(folderPath)
-    if (!f) return false
     return folderActionVisible(action, {
       gitFolder: isGitFolder(folderPath),
       linkedWorktree: isLinkedWorktree(folderPath),
-      olderCount: action === 'toggleOlder' ? sessions.olderSessionCount(f) : 0,
-      archivedCount: action === 'toggleArchived' ? sessions.archivedSessionCount(f) : 0
+      olderCount: f && action === 'toggleOlder' ? sessions.olderSessionCount(f) : 0,
+      archivedCount: f && action === 'toggleArchived' ? sessions.archivedSessionCount(f) : 0
     })
   }
 
@@ -223,11 +227,13 @@ export function useFolderMenuActions(): FolderMenuActions {
    * The folder row's older / archived peek. A collapsed folder expands first
    * (revealing inside a closed folder would be invisible); the toggle then
    * reveals. Collapsing clears the peek (store `forgetPeeks`), so a collapsed
-   * folder is always un-revealed and the toggle stays unambiguous.
+   * folder is always un-revealed and the toggle stays unambiguous. In drill mode
+   * the folder screen shows its sessions whatever `expanded` says, so the classic
+   * tree's state is left alone.
    */
   function peek(folderPath: string, kind: 'older' | 'archived'): void {
     const folder = sessions.findFolderByPath(folderPath)
-    if (folder && !folder.expanded) sessions.toggleFolder(folderPath)
+    if (folder && !folder.expanded && !sessions.drillModeEnabled) sessions.toggleFolder(folderPath)
     if (kind === 'older') sessions.toggleRevealOlder(folderPath)
     else sessions.toggleRevealArchived(folderPath)
   }
