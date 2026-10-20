@@ -12,6 +12,8 @@ import {
   type StackBox,
   type StackNode
 } from '../src/renderer/src/components/canvas/canvas-layers'
+import { CANVAS_MIN_AGENT_Z, applyCanvasOps } from '../src/main/mcp/canvas-ops'
+import { emptyCanvasDocument } from '../src/main/canvas-core'
 
 const ids = (...list: string[]): { id: string; zIndex?: number }[] => list.map((id) => ({ id }))
 const withZ = (id: string, zIndex: number): { id: string; zIndex?: number } => ({ id, zIndex })
@@ -290,5 +292,27 @@ describe('savedZIndexes', () => {
   it('ranks only the nodes the draft holds', () => {
     const saved = savedZIndexes(ids('a', 'b'), ['b', 'gone', 'a'])
     expect(saved && obj(saved)).toEqual({ b: 1, a: 2 })
+  })
+})
+
+describe('parity with the draw_canvas zIndex rule (T536 U4)', () => {
+  it('the verb floor is the load z', () => {
+    expect(CANVAS_MIN_AGENT_Z).toBe(CANVAS_LOAD_Z)
+  })
+
+  it('stackRanks never returns a value the verb would refuse', () => {
+    const ranks = [...stackRanks(['a', 'b', 'c', 'd', 'e']).values()]
+    const doc = {
+      ...emptyCanvasDocument('2026-08-24T12:00:00.000Z'),
+      nodes: [{ id: 's', shape: 'box', x: 0, y: 0, origin: 'operator' as const }]
+    }
+    for (const zIndex of ranks) {
+      const res = applyCanvasOps({
+        doc,
+        ops: [{ op: 'update_node', id: 's', zIndex }],
+        mintId: (p) => `${p}-0`
+      })
+      expect(res.ok, `zIndex ${zIndex}`).toBe(true)
+    }
   })
 })

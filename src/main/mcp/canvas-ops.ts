@@ -310,9 +310,9 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  *  a typo'd field must not be silently ignored, or the agent believes it set
  *  something it did not. */
 const OP_KEYS: Record<CanvasOpName, readonly string[]> = {
-  add_node: ['op', 'shape', 'x', 'y', 'width', 'height', 'label', 'props', 'style'],
+  add_node: ['op', 'shape', 'x', 'y', 'width', 'height', 'label', 'props', 'style', 'zIndex'],
   add_edge: ['op', 'source', 'target', 'label', 'router'],
-  update_node: ['op', 'id', 'x', 'y', 'width', 'height', 'label', 'props', 'style'],
+  update_node: ['op', 'id', 'x', 'y', 'width', 'height', 'label', 'props', 'style', 'zIndex'],
   update_edge: ['op', 'id', 'label', 'router'],
   remove_node: ['op', 'id'],
   remove_edge: ['op', 'id'],
@@ -341,6 +341,31 @@ function checkGeometry(raw: Record<string, unknown>, at: string): CanvasVerbErr 
     }
   }
   return undefined
+}
+
+/** T536 U4 — the lowest `zIndex` the verb accepts. It equals the pane's load z
+ *  (`CANVAS_LOAD_Z`, pinned by `tests/canvas-layers.test.ts`): a node with no
+ *  `zIndex` stacks there, and the pane's Save ranks run 1..n. */
+export const CANVAS_MIN_AGENT_Z = 1
+
+/**
+ * T536 U4 — the `zIndex` field of `add_node` / `update_node`: an integer of at
+ * least {@link CANVAS_MIN_AGENT_Z}, written as given (no re-ranking here).
+ * `null` means "remove" and is only meaningful on `update_node`.
+ */
+function checkZIndex(
+  v: unknown,
+  at: string,
+  allowNull: boolean
+): { zIndex: number | null } | CanvasVerbErr {
+  if (v === null && allowNull) return { zIndex: null }
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < CANVAS_MIN_AGENT_Z) {
+    return deny(
+      'BAD_ARGS',
+      `${at}: "zIndex" must be an integer of at least ${CANVAS_MIN_AGENT_Z}; higher draws on top, arrows always draw under nodes`
+    )
+  }
+  return { zIndex: v }
 }
 
 /** §8.3 rule 6 — only the keys the shape's manifest entry declares. */
@@ -573,6 +598,12 @@ export function applyCanvasOps(input: ApplyCanvasOpsInput): ApplyCanvasOpsResult
           if (isErr(checked)) return checked
           props = mergeNodeStyle(props, checked.style)
         }
+        let zIndex: number | undefined
+        if (raw.zIndex !== undefined) {
+          const checked = checkZIndex(raw.zIndex, at, false)
+          if (isErr(checked)) return checked
+          zIndex = checked.zIndex ?? undefined
+        }
         const id = nextId('n')
         if (isErr(id)) return id
         nodes.push({
@@ -584,6 +615,7 @@ export function applyCanvasOps(input: ApplyCanvasOpsInput): ApplyCanvasOpsResult
           height: (raw.height as number | undefined) ?? spec.defaultSize.height,
           ...(raw.label === undefined ? {} : { label: raw.label as string }),
           origin: 'agent',
+          ...(zIndex === undefined ? {} : { zIndex }),
           ...(props === undefined ? {} : { props })
         })
         applied.push({ op: name, id })
@@ -628,7 +660,7 @@ export function applyCanvasOps(input: ApplyCanvasOpsInput): ApplyCanvasOpsResult
         }
         const idx = nodes.findIndex((n) => n.id === id)
         if (idx < 0) return deny('UNKNOWN_ID', `${at}: no node ${JSON.stringify(id)}`)
-        const touched = ['x', 'y', 'width', 'height', 'label', 'props', 'style'].filter(
+        const touched = ['x', 'y', 'width', 'height', 'label', 'props', 'style', 'zIndex'].filter(
           (k) => raw[k] !== undefined
         )
         if (touched.length === 0) {
@@ -638,6 +670,12 @@ export function applyCanvasOps(input: ApplyCanvasOpsInput): ApplyCanvasOpsResult
         if (geo) return geo
         if (raw.label !== undefined && typeof raw.label !== 'string') {
           return deny('BAD_ARGS', `${at}: "label" must be a string`)
+        }
+        let zIndex: number | null | undefined
+        if (raw.zIndex !== undefined) {
+          const checked = checkZIndex(raw.zIndex, at, true)
+          if (isErr(checked)) return checked
+          zIndex = checked.zIndex
         }
         const node = nodes[idx]
         let props: Record<string, unknown> | undefined = node.props
@@ -680,6 +718,9 @@ export function applyCanvasOps(input: ApplyCanvasOpsInput): ApplyCanvasOpsResult
         }
         // Assigned (not spread) so an existing `props` keeps its key position in
         // the file, and removed only when the style merge emptied it.
+        // An existing `zIndex` keeps its key position; `null` removes it.
+        if (zIndex === null) delete next.zIndex
+        else if (zIndex !== undefined) next.zIndex = zIndex
         if (propsChanged) {
           if (props === undefined) delete next.props
           else next.props = props

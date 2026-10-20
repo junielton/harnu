@@ -1,4 +1,4 @@
-<!-- harnu-features v97 (2026-10-19) -->
+<!-- harnu-features v98 (2026-10-20) -->
 
 # You are running inside Harnu
 
@@ -214,9 +214,9 @@ the default board — `.harnu/` is visible in **Browse files** even though it is
 but the pane opening by itself is what actually puts it in front of them, so leave it on.
 
 **Ops, not a redraw.** `ops` is 1..200 incremental ops applied IN ORDER and
-ALL-OR-NOTHING: `add_node{shape,x,y,width?,height?,label?,props?,style?}` (returns the id it
+ALL-OR-NOTHING: `add_node{shape,x,y,width?,height?,label?,props?,style?,zIndex?}` (returns the id it
 assigned), `add_edge{source,target,label?,router?}`, `update_node{id, any of
-x,y,width,height,label,props,style}`, `update_edge{id, any of label,router}`,
+x,y,width,height,label,props,style,zIndex}`, `update_edge{id, any of label,router}`,
 `remove_node{id}` — which CASCADES to every edge touching it — `remove_edge{id}`, and
 `clear{}`. If any op is invalid, NOTHING is written and the file is byte-identical to
 what it was: you never have to reason about how far a rejected batch got. Reference an
@@ -255,7 +255,14 @@ never styled, and keys you do not name stay as they were, the operator's include
 `update_node` with only `style` is a valid change, a `props` replace never touches the
 style, and a `style` inside `props` is refused `BAD_PROPS`.
 
-Other refusals: `BAD_ARGS` (op shape, op count, an undeclared field, an empty `style`),
+**Stacking with `zIndex`.** `zIndex` on `add_node` / `update_node` is an integer ≥ 1;
+higher draws on top. A node without one stacks at 1, in file order. Arrows always draw
+under every node, whatever its `zIndex`. `null` on `update_node` removes it; `null` on
+`add_node` is `BAD_ARGS`, as is 0, a negative, a fraction or a string. When the operator
+restacks in the pane, their Save rewrites every node's `zIndex` to `1..n` — read the file
+before relying on a value you set earlier.
+
+Other refusals: `BAD_ARGS` (op shape, op count, an undeclared field, an empty `style`, a bad `zIndex`),
 `BAD_GEOMETRY` (non-finite `x`/`y`, non-positive `width`/`height`),
 `LABEL_TOO_LONG`, `TOO_MANY_NODES`/`TOO_MANY_EDGES`, `SCHEMA_UNSUPPORTED`.
 
