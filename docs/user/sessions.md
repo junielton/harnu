@@ -188,17 +188,19 @@ others need you to pick from a list.
 
 The Fleet rail's header buttons and the popovers in the Topbar and the footer
 can be given a shortcut as well, again with none out of the box:
-`inbox.open` (Open approvals — expands a minimized rail), `inbox.toggleOrder`
-(flip the rail's newest-first / oldest-first order), `inbox.filter` (the
-**Filter states** popover), `inbox.showAll` (**Show all**, while a state is
-filtered out), `view.activity` (the Activity bell), `view.missionProgress` (the
-mission's "Step N of M" pill), `view.pastedImages` (the pasted-images pill),
-`view.claudeStatus` (the Claude service status dot) and `view.usagePanel` (the
-plan-usage meters). Pressing a popover's shortcut again closes it, and `Esc`
-closes it exactly as when you opened it with a click. A popover's shortcut only
-works while its button is on screen — the pasted-images pill shows only once the
-session has screenshots, the mission pill only while the session has an open
-mission, and the filter only while the Fleet rail is expanded.
+`inbox.open` (Open approvals — expands the rail, whether it was minimized or
+hidden), `inbox.toggleOrder` (flip the rail's newest-first / oldest-first
+order), `inbox.filter` (the **Filter states** popover), `inbox.showAll` (**Show
+all**, while a state is filtered out), `view.activity` (the Activity bell),
+`view.missionProgress` (the mission's "Step N of M" pill), `view.pastedImages`
+(the pasted-images pill), `view.claudeStatus` (the Claude service status dot)
+and `view.usagePanel` (the plan-usage meters). Pressing a popover's shortcut
+again closes it, and `Esc` closes it exactly as when you opened it with a
+click. These shortcuts only work while their button is on screen — the
+pasted-images pill shows only once the session has screenshots, the mission
+pill only while the session has an open mission, the plan-usage meters only
+while plan usage is available, and the order, filter and **Show all** buttons
+only while the Fleet rail is expanded.
 
 `Cmd/Ctrl+Shift+F` opens the jump palette even while a terminal has focus, and
 shows the sidebar first if you had collapsed it. The terminal sends nothing for a
