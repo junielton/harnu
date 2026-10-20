@@ -7,12 +7,16 @@ import type { Graph } from '@antv/x6'
 import DiagramPane from '../src/renderer/src/components/DiagramPane.vue'
 import {
   CANVAS_MIN_NODE_SIZE,
-  CANVAS_RUBBERBAND_MODIFIER,
   createCanvasGraph,
   renderCanvasDocument,
-  setCanvasPortsVisible
+  setCanvasPortsVisible,
+  setCanvasRubberband
 } from '../src/renderer/src/components/canvas/canvas-graph'
-import { CANVAS_PORT_IDS, toX6Node } from '../src/renderer/src/components/canvas/canvas-cells'
+import {
+  CANVAS_PORT_IDS,
+  DEFAULT_NODE_SIZE,
+  toX6Node
+} from '../src/renderer/src/components/canvas/canvas-cells'
 import {
   DRAW_THRESHOLD,
   MIN_DRAWN_NODE_SIZE,
@@ -24,6 +28,7 @@ import {
   normalizeCellLabel,
   operatorEdgeData,
   operatorNode,
+  placedRect,
   rectFromDrag
 } from '../src/renderer/src/components/canvas/canvas-edit'
 import { readCanvasPalette } from '../src/renderer/src/components/canvas/canvas-theme'
@@ -345,14 +350,97 @@ describe('the editing affordances the ACs name (U3-1, U3-2)', () => {
     const g = makeGraph()
     const selection = g.getPlugin('selection') as unknown as { options: Record<string, unknown> }
     expect(selection.options.rubberband).toBe(true)
-    // Shift, so the plain drag stays free to DRAW — the three-way conflict
-    // (pan / rubberband / draw) resolved explicitly rather than by luck.
-    expect(selection.options.modifiers).toBe(CANVAS_RUBBERBAND_MODIFIER)
+    // No modifier: in the Select tool the plain drag IS the rubberband (T536
+    // §5). The pane decides per tool whether it is armed — see
+    // `setCanvasRubberband` — so the graph no longer splits it by a key.
+    expect(selection.options.modifiers).toBeNull()
+    // Shift joins ctrl/meta: shift+click toggles a node in the selection.
+    expect(selection.options.multipleSelectionModifiers).toEqual(['ctrl', 'meta', 'shift'])
     const transform = g.getPlugin('transform') as unknown as {
-      options: { resizing: { enabled: boolean; minWidth: number } }
+      options: { resizing: { enabled: () => boolean; minWidth: number } }
     }
-    expect(transform.options.resizing.enabled).toBe(true)
+    // A function since T536 U1: handles open only while nodes are interactive
+    // (the Select tool). With the default `nodesInteractive`, that is always.
+    expect(transform.options.resizing.enabled()).toBe(true)
     expect(transform.options.resizing.minWidth).toBe(CANVAS_MIN_NODE_SIZE.width)
+    g.dispose()
+  })
+
+  it('resize handles follow nodesInteractive: none while another tool owns the press', () => {
+    let interactive = true
+    const g = createCanvasGraph({
+      container: svgHost(),
+      palette,
+      width: 800,
+      height: 600,
+      editable: true,
+      nodesInteractive: () => interactive
+    })
+    const transform = g.getPlugin('transform') as unknown as {
+      options: { resizing: { enabled: () => boolean } }
+    }
+    expect(transform.options.resizing.enabled()).toBe(true)
+    interactive = false
+    expect(transform.options.resizing.enabled()).toBe(false)
+    g.dispose()
+  })
+
+  it('setCanvasRubberband switches the rubberband off and on again at runtime', () => {
+    const g = makeGraph()
+    expect(g.isRubberbandEnabled()).toBe(true)
+    setCanvasRubberband(g, false)
+    expect(g.isRubberbandEnabled()).toBe(false)
+    setCanvasRubberband(g, true)
+    expect(g.isRubberbandEnabled()).toBe(true)
+    g.dispose()
+  })
+
+  it('nodes are movable and connectable by default', () => {
+    const g = makeGraph()
+    const view = g.findViewByCell(g.getCellById('n-a')!)!
+    expect(view.can('nodeMovable')).toBe(true)
+    expect(view.can('magnetConnectable')).toBe(true)
+    g.dispose()
+  })
+
+  it('nodesInteractive() is read per gesture: false freezes nodes and their ports', () => {
+    let interactive = false
+    const g = createCanvasGraph({
+      container: svgHost(),
+      palette,
+      width: 800,
+      height: 600,
+      editable: true,
+      nodesInteractive: () => interactive
+    })
+    renderCanvasDocument(g, DOC, palette)
+    const view = g.findViewByCell(g.getCellById('n-a')!)!
+    expect(view.can('nodeMovable')).toBe(false)
+    expect(view.can('magnetConnectable')).toBe(false)
+    // Read at gesture time, not captured at construction: a tool switch needs
+    // no graph rebuild.
+    interactive = true
+    expect(view.can('nodeMovable')).toBe(true)
+    expect(view.can('magnetConnectable')).toBe(true)
+    // Edges stay pinned to their endpoints whatever the tool (§4.3 schema).
+    expect(view.can('edgeMovable')).toBe(false)
+    g.dispose()
+  })
+
+  it('setCanvasRubberband never arms a read-only graph, but may still disarm it', () => {
+    const g = createCanvasGraph({ container: svgHost(), palette, width: 400, height: 300 })
+    expect(g.isRubberbandEnabled()).toBe(false)
+    // A viewer's Selection keeps `enabled: true` (only `rubberband` is off), so
+    // X6's own `enableRubberband()` WOULD arm blank-drag selection in it — the
+    // U2 contract says nothing the pointer does may change a read-only board.
+    setCanvasRubberband(g, true)
+    expect(g.isRubberbandEnabled()).toBe(false)
+    expect(
+      (g.getPlugin('selection') as unknown as { options: Record<string, unknown> }).options
+        .rubberband
+    ).toBe(false)
+    setCanvasRubberband(g, false)
+    expect(g.isRubberbandEnabled()).toBe(false)
     g.dispose()
   })
 
@@ -476,6 +564,23 @@ describe('the pure drag geometry', () => {
   it('operatorEdgeData is the stamp and nothing else', () => {
     expect(operatorEdgeData()).toEqual({ origin: 'operator' })
   })
+
+  it('placedRect centres a shape-default footprint on the click (T536 U1)', () => {
+    expect(placedRect(300, 300, 'box')).toEqual({ x: 234, y: 274, width: 132, height: 52 })
+    expect(placedRect(300, 300, 'text')).toEqual({ x: 220, y: 288, width: 160, height: 24 })
+    // An unknown shape falls back to the box footprint, as the renderer does.
+    expect(placedRect(0, 0, 'nope')).toEqual({ x: -66, y: -26, width: 132, height: 52 })
+  })
+
+  it('operatorNode mints a box by default and a text when asked, both stamped operator', () => {
+    const rect = { x: 1, y: 2, width: 160, height: 24 }
+    expect(operatorNode(rect, new Set()).shape).toBe('box')
+    expect(operatorNode(rect, new Set(), 'hi', 'text')).toMatchObject({
+      shape: 'text',
+      label: 'hi',
+      origin: 'operator'
+    })
+  })
 })
 
 // ── The pane, end to end ──────────────────────────────────────────────────
@@ -554,6 +659,16 @@ function dragOnBlankCanvas(root: Element, from: [number, number], to: [number, n
   window.dispatchEvent(new MouseEvent('mouseup', { clientX: to[0], clientY: to[1] }))
 }
 
+/**
+ * A plain blank drag no longer draws (T536 U1: Select is the default tool and
+ * the drag belongs to the rubberband). Every test below that drew a box with a
+ * plain drag now arms the Rectangle tool first; its assertions are unchanged.
+ */
+function armRectangle(root: Element): void {
+  ;(root.querySelector('[data-testid="diagram-canvas-host"]')!.parentElement as HTMLElement).focus()
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }))
+}
+
 describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
   it('the dirty dot and Save are absent on a freshly loaded board', async () => {
     const w = mountPane()
@@ -567,6 +682,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     const w = mountPane()
     await settle()
 
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
 
@@ -607,6 +723,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     }))
     const w = mountPane()
     await settle()
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
     await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
@@ -622,12 +739,26 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
   })
 
   it('a short drag on the blank board is a click — it does not litter it with boxes', async () => {
+    // Under Rectangle (T536 U1) a sub-threshold drag is still a CLICK, and a
+    // click places ONE default-size box — not a floored 48×32 "drawn" one, and
+    // not one per jittery pixel.
     const w = mountPane()
     await settle()
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [202, 201])
     await settle()
-    expect(w.find('[data-testid="diagram-rename-input"]').exists()).toBe(false)
-    expect(w.find('[data-testid="diagram-dirty-dot"]').exists()).toBe(false)
+    await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
+    await settle()
+    await w.find('[data-testid="diagram-save"]').trigger('click')
+    await settle()
+    const doc = (canvasWrite.mock.calls[0] as unknown as [string, CanvasDocument])[1]
+    const boxes = doc.nodes.filter((n) => !['n-a', 'n-b', 'n-c'].includes(n.id))
+    expect(boxes).toHaveLength(1)
+    expect(boxes[0]).toMatchObject({
+      shape: 'box',
+      width: DEFAULT_NODE_SIZE.width,
+      height: DEFAULT_NODE_SIZE.height
+    })
     w.unmount()
   })
 
@@ -635,6 +766,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     const w = mountPane()
     await settle()
     expect(canvasRead).toHaveBeenCalledTimes(1)
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
     await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
@@ -667,6 +799,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     const helpers = (await import('../src/renderer/src/stores/helpers')).useHelpersStore()
     const removed = vi.spyOn(helpers, 'removeHelper')
 
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
     await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
@@ -688,6 +821,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
   it('pressing Close twice leaves ONE warning, not a stack of permanent ones', async () => {
     const w = mountPane()
     await settle()
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
     await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
@@ -723,6 +857,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
   it('U3-2 — Delete removes the selection, and ⌘Z puts it back', async () => {
     const w = mountPane()
     await settle()
+    armRectangle(w.element)
     dragOnBlankCanvas(w.element, [200, 200], [400, 320])
     await settle()
     await w.find('[data-testid="diagram-rename-input"]').trigger('keydown', { key: 'Enter' })
@@ -779,7 +914,7 @@ describe('DiagramPane — the edit loop (U3-1, U3-3, U3-8)', () => {
     }))
     const w = mountPane()
     await settle()
-    expect(w.text()).toContain('Drag anywhere to draw a box')
+    expect(w.text()).toContain('Pick a shape from the toolbar')
     w.unmount()
   })
 })

@@ -5,7 +5,7 @@ import type {
   CanvasNode,
   CanvasOrigin
 } from '../../../../main/canvas-core'
-import { DEFAULT_NODE_SIZE } from './canvas-cells'
+import { DEFAULT_NODE_SIZE, DEFAULT_SIZE_BY_SHAPE } from './canvas-cells'
 
 /**
  * PURE edit model for the canvas pane (T218 U3, spec §4.4 + §7.2). No DOM, no
@@ -179,13 +179,31 @@ export function isDrawGesture(x0: number, y0: number, x1: number, y1: number, sc
 }
 
 /**
- * A box the operator just drew. **Stamped `operator` at creation** — the U3-3
- * contract, on the drag-to-create path.
+ * A rect of `shape`'s default size centred on (`cx`, `cy`) — what a click (not
+ * a drag) with a creation tool places (T536 U1, spec §5). Unknown shapes fall
+ * back to the box footprint, as the renderer does.
  */
-export function operatorNode(rect: DrawnRect, taken: ReadonlySet<string>, label = ''): CanvasNode {
+export function placedRect(cx: number, cy: number, shape: string): DrawnRect {
+  const size = DEFAULT_SIZE_BY_SHAPE[shape] ?? DEFAULT_NODE_SIZE
+  return { x: cx - size.width / 2, y: cy - size.height / 2, width: size.width, height: size.height }
+}
+
+/** The shapes the pane's creation tools can mint. U2 widens it (diamond, ellipse). */
+export type OperatorShape = 'box' | 'text'
+
+/**
+ * A node the operator just created — a drawn or placed box, or a text. **Stamped
+ * `operator` at creation** — the U3-3 contract, on every tool's create path.
+ */
+export function operatorNode(
+  rect: DrawnRect,
+  taken: ReadonlySet<string>,
+  label = '',
+  shape: OperatorShape = 'box'
+): CanvasNode {
   return {
     id: mintCanvasId('n', taken),
-    shape: 'box',
+    shape,
     x: Math.round(rect.x),
     y: Math.round(rect.y),
     width: Math.round(rect.width),

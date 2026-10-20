@@ -12,6 +12,21 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-10-19
 
+### Added
+
+- **The canvas has a toolbar with six tools.** A small bar floats at the top of the board: **Hand** (drag to move the board), **Select**, **Rectangle** (click to place a box, or drag to size one), **Arrow** (drag from one shape to another), **Text** (click anywhere and type) and **Eraser** (drag across boxes and arrows to delete them all in a single undo step; **Esc** cancels the stroke). Each has a letter shortcut (**H V R A T E**), and most also have a number shortcut; both are shown on the button and in its tooltip, and a short hint underneath explains the active tool until you have used it once. After you create something the canvas goes back to Select.
+- **Lock keeps a tool active.** The padlock at the left of the toolbar (or **Q**) stops the canvas returning to Select after each shape, so you can place several boxes or labels in a row.
+- **Hold Space to pan from any tool,** and let go to carry on with the tool you had. Right-drag still pans in every tool, and **Ctrl/⌘ + scroll** still zooms.
+- **Double-click empty board in Select to place a text label** and start typing.
+- **The toolbar wraps in narrow panes.** In a pane too narrow for one row, the buttons wrap onto extra rows instead of running off the edge or covering the zoom controls.
+
+### Changed
+
+- **A click or drag on an empty canvas no longer draws a box.** Select is now the default tool, so a drag on empty board draws a selection rectangle; pick Rectangle (or press **R**) to draw a box.
+- **Selecting several things no longer needs Shift.** Dragging on empty board in Select selects everything inside the rectangle; hold **Shift** to add to the current selection.
+- **Shift-click or Ctrl/⌘-click toggles a box** in or out of the selection.
+- **Renaming moved to the non-drawing tools.** Double-click a box in Select, Hand or Arrow to rename it. In Rectangle and Text the first click already places a shape, so a double-click there places and edits a new shape instead.
+
 ### Fixed
 
 - The footer no longer goes silently blank when a session has no live statusLine telemetry. It now shows the session's last known model, context and cost, dimmed, with how long ago they were seen on hover and a short reason beside them ("telemetry expired" or "no live telemetry"). Sessions Harnu has never heard from still show their model and context, read from the transcript. Stale values are never presented as live.

@@ -325,8 +325,15 @@ describe('DiagramPane', () => {
     const svg = w.find('[data-testid="diagram-canvas-host"] svg')
     expect(svg.exists()).toBe(true)
     // Every node's label reaches the DOM — "renders its nodes" is the AC, and a
-    // graph object with the right cell count would not prove it.
-    const text = w.find('[data-testid="diagram-canvas-host"]').text()
+    // graph object with the right cell count would not prove it. X6 renders cells
+    // in time-sliced jobs (it yields after ~33ms and resumes on a timer), so on a
+    // busy runner the last cells land a few macrotasks after the first: wait for
+    // them, bounded by wall time, before reading.
+    const hostText = (): string => w.find('[data-testid="diagram-canvas-host"]').text()
+    const labels = ['Browser', 'Main', 'annotation', 'reads']
+    const deadline = Date.now() + 5000
+    while (!labels.every((l) => hostText().includes(l)) && Date.now() < deadline) await settle()
+    const text = hostText()
     expect(text).toContain('Browser')
     expect(text).toContain('Main')
     expect(text).toContain('annotation')

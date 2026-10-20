@@ -4742,22 +4742,83 @@ buttons. It holds **Fit** (`scan`), **zoom −** (`minus`), the current percenta
 **0.2–3**; the wheel zooms with `ctrl`/`meta` held and the canvas pans on drag, so a
 plain scroll gesture never fights the pane's own scrolling.
 
-**The three blank-area gestures, and how they are split (U3).** A drag on empty board is
-claimed by three things at once — pan, rubberband select, and draw-a-box — and X6 will
-run two of them over one gesture if they are left to overlap (verified in the real app
-during U2: a single drag panned _and_ left a selection box behind it). The split:
+**Toolbar (T536 U1).** A floating bar of explicit tool modes, **top-centre of the
+viewport**, absolute to the viewport so it neither pans nor zooms. Component:
+`CanvasToolbar.vue`, over the pure `canvas/canvas-tools.ts` state module. Same surface as
+the zoom cluster: `bg-surface`, 1px `--border`, `--shadow-pop`, `--radius`.
 
-| Gesture                  | Does                                                               |
-| ------------------------ | ------------------------------------------------------------------ |
-| plain left drag on blank | **draws a box** — the footprint follows the drag, floored at 48×32 |
-| `shift` + left drag      | **rubberband select**                                              |
-| right-button drag        | **pans**                                                           |
-| `ctrl`/`⌘` + wheel       | zooms (0.2–3), unchanged from U2                                   |
+- 28px square buttons, 16px lucide icons, 2px gap, and a 1px `--border` separator
+  between Lock|Hand and the rest.
+- Order: Lock (`Q`), Hand (`H`), then Select (`V`, `1`), Rectangle (`R`, `2`), Arrow
+  (`A`, `5`), Text (`T`, `6`), Eraser (`E`, `0`). Digits 3 and 4 are reserved for the
+  Diamond and Ellipse tools (U2); U1 draws no placeholder for them.
+- Active tool: `bg-accent-soft` + `text-accent`, `aria-pressed="true"`. Idle: `text-text-3`,
+  hover `bg-surface-2 text-text`.
+- Each button shows its key as a tiny `--text-4` corner label (the digit when it has one,
+  else the letter — Excalidraw idiom) and a native tooltip, e.g. "Rectangle — R or 2".
+- Corner key label: 8px / 1, `--text-4`; an exception to the type scale because it sits in a
+  28px hit target beside a 16px glyph; decorative, since the tooltip and `aria-label` carry
+  the real name. Its offset is a second exception: 1px from the button's bottom edge and
+  3px from its right edge (`bottom-px`, `right-[3px]`), so it clears the glyph.
+- Lock pressed: closed padlock, `text-accent`. Lock idle: open padlock.
+- **One muted hint line** under the bar for the active tool (`--text-4`, 11px), e.g.
+  Select: "Drag to select · Space+drag to pan". It hides once that tool has been used
+  successfully in the pane's lifetime.
+- **Narrow panes.** The canvas is a helper pane and can be ~320px wide. The bar never
+  overlaps the zoom cluster and never clips: below the width where both fit on one row,
+  the bar drops to a second row under the zoom cluster, left-aligned. Below the width where
+  the full bar fits (≈237px), buttons wrap onto additional rows; the bar is never wider
+  than the pane and never clips. The hint wraps to the bar's width.
+- Every button is `@mousedown.stop`, so it never starts a canvas gesture or a pane resize.
+- The tool is per pane, held in memory, never saved to the file. A new pane starts on
+  **Select**. After a creation the tool reverts to Select unless Lock is on. `Esc`
+  cancels a creation in progress, else leaves the tool for Select, else clears the
+  selection. Holding `Space` is a temporary Hand; because the tool switches to Hand,
+  pressing `Space` mid-gesture also cancels the gesture in flight (a rectangle, arrow or
+  erase stroke), exactly as `Esc` does. `Space` on a focused toolbar button activates that
+  button instead and never pans. Right-button drag pans in every tool.
+  Letter shortcuts fire only without `ctrl`/`⌘`/`alt`, only with focus inside this pane,
+  and never while the rename input is focused.
 
-Panning moved to a held **button** rather than a held key because every modifier was
-already spoken for: `shift` by the rubberband, `ctrl`/`⌘` by zoom and multi-select. The
-pane has no context menu for a right-drag to collide with, and **Fit** plus the zoom
-cluster remain the discoverable way to move the view.
+**Per-tool gestures (T536 U1).** The pointer does what the active tool says. This table
+is the contract for the pane and for `canvas-tools.ts`:
+
+| Tool                                   | Click blank                                     | Drag on blank                                                                                                                     | Press on a node                                                              | Drag on a node                                                                                                |
+| -------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Select**                             | clear selection                                 | **rubberband select** (no modifier); `shift`+drag adds to the selection                                                           | select it; `shift`+click **or** `ctrl`/`⌘`+click toggles it in the selection | move it (and the rest of the selection)                                                                       |
+| **Hand**                               | nothing                                         | pan                                                                                                                               | nothing                                                                      | pan (nodes do not move)                                                                                       |
+| **Rectangle** (Diamond, Ellipse in U2) | place a default-size shape centred on the click | draw it to the drag's footprint (floored at 48×32)                                                                                | same as blank: shapes may overlap                                            | same as blank                                                                                                 |
+| **Arrow**                              | nothing                                         | nothing (no free arrows in v1; the hint reads "Drag from one shape to another")                                                   | start an arrow from that node                                                | rubber-band line follows the pointer; release on another node creates a bound edge, release elsewhere cancels |
+| **Text**                               | place a `text` node with the rename input open  | same as click (drag size ignored)                                                                                                 | if the node is a `text`, edit it; else place a new text on top               | —                                                                                                             |
+| **Eraser**                             | nothing                                         | every node and edge the pointer crosses is marked (dimmed); release deletes them all as **one** undo step; `Esc` mid-drag cancels | delete it                                                                    | as drag on blank                                                                                              |
+
+- **Double-click blank** in Select places a text node (Excalidraw idiom).
+- **Double-click a node** renames it in Select, Hand and Arrow. In Rectangle and Text the
+  press itself creates, so a double-click there places and edits a new shape rather than
+  renaming the one underneath; rename an existing shape from Select, Hand or Arrow. In
+  Eraser the first press deletes the node.
+- A newly created shape opens its rename input immediately; an empty commit on a **text**
+  node removes it, on a framed shape keeps it unlabelled.
+- The Arrow tool starts from anywhere on a node, not only from the four ports. The hover
+  ports stay, and dragging from a port still creates an edge in Select mode.
+- **Arrow preview.** While an arrow is in flight, a 1.5px dashed `--accent-line` line runs
+  from the source node's centre to the pointer. It is an overlay above the board, never a
+  graph cell, so it never enters the undo history; it disappears on release, `Esc`, a
+  tool switch and a window blur. The edge a release creates is the same accent edge a
+  port drag creates in Select. A release on blank board, on the source node, or on a
+  node the source already points at creates nothing.
+- **Edges and resize handles outside Select.** In Hand, Rectangle, Text and Arrow, a press
+  on an edge counts as a press on blank board and never selects the edge (the Eraser
+  erases it). A selected node's resize handles show only in Select; switching to any
+  other tool hides them.
+- Right-button drag pans in every tool; `ctrl`/`⌘` + wheel zooms (0.2–3), unchanged.
+- **Eraser mark (`.canvas-erase-mark`).** A node or edge the eraser has crossed but not yet
+  deleted is drawn dimmed: the marked cell gets `opacity: 0.3`, no other change. It is
+  removed when the stroke is cancelled and on release the marked cells are deleted. No new
+  colour — the dimming is the whole treatment.
+
+Panning on a plain left drag is now the Hand tool's job (or `Space` held) rather than
+a held button; the right-button drag is kept so nobody loses the old habit.
 
 **Other edit gestures.** Double-click a node to rename it in place (an inline input over
 the node itself, `--surface` on an `--accent-line` border; `Enter` commits, `Esc`
