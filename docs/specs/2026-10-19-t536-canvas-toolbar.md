@@ -447,3 +447,64 @@ built app (a 78-row gesture matrix; see the PR).
 - **Arrow hint.** §5 says a blank drag in Arrow shows "Start on a shape". What shipped is
   the generic toolbar hint "Drag from one shape to another", which hides after the first
   successful arrow.
+
+## Implementation notes (U3)
+
+What shipped in U3 (node styles and the properties panel) where this spec is silent, or
+disagrees with itself or the code. The rules above are unchanged. Each call was checked in
+the built app (a 31-row live matrix, rows cited below; see the PR).
+
+1. **`props.style`, not `props.tone`.** §7.1's table names flat keys (`props.tone`,
+   `props.stroke`, ...); §7.5 says one nested `props.style`. U3 follows §7.5, the later and
+   reasoned rule: it survives `update_node`'s whole-object `props` replace.
+2. **Text tone.** §7.2's Label column is `--text` for four of the six tones, so a coloured
+   text node would not change colour under "label colour only" (§7.6). A text node's label
+   takes the Stroke column instead; `default` keeps `--text-2`, `muted` is `--text-3`.
+3. **Edges in the selection.** §7.4 says "controls that apply to every selected element".
+   Edges take nothing until U5, so read literally every rubberband that caught an arrow
+   would hide the panel. U3 ignores selected edges; an edge-only selection shows no panel
+   (rows M3, M3b, M4b).
+4. **Value spellings.** `align` is `left|center|right` (US spelling, matching CSS and SVG;
+   the spec says "centre"). `fontSize` is `s|m|l|xl` = 11/12/15/20 px, with M = today's
+   12 px so no existing board changes. `opacity` is the JSON numbers 25/50/75/100.
+   `strokeWidth` is 1/1.5/2.5 px with regular = today's 1.5.
+5. **Default equals absent.** Setting a key to `null` or to its default removes it, on both
+   the verb and the pane, so a node styled and then reset is byte-identical to one never
+   styled.
+6. **Translucent soft fills.** The `--*-soft` tokens are 10 to 18% alpha, so the dot grid
+   and an edge under a tinted node show through. The grid reads fine in both themes, but
+   the live matrix (row T3) showed an edge running under a tinted node strikes through its
+   label, clearly in the light theme. The opaque ground layer is therefore a recorded
+   follow-up, not built in U3.
+7. **Dashed versus unknown.** A user-dashed box could read as the dashed "unknown kind"
+   fallback (`4 3`). Dashed is `6 4`, dotted `2 3`, and unknown kinds ignore style, so the
+   fallback stays plain.
+8. **Older builds.** Opening and saving a styled board in the previous release keeps every
+   `props.style` byte for byte (row P1). But an older build's agent `update_node` with
+   `props` still replaces the whole object and drops `props.style`; only this build's verb
+   keeps it. Documented, not fixable from here.
+9. **ACK scope.** The `draw_canvas` ACK gains `shapes[].style` only. It does not also start
+   listing `props` keys, which it never has; that is out of U3's scope.
+10. **Undo after a theme switch.** Attrs are derived from `data` and kept out of history
+    through X6 History's `beforeAddCommand`, so Ctrl+Z restores the style, not stale
+    colours. A theme switch also now re-selects the same ids and reopens the resize
+    handles, so the panel stays open mid-edit (it used to empty the selection).
+
+Outcomes the live matrix added:
+
+- **`restyleCanvasNode` overlays derived attrs on the shape class's defaults.** Overwriting
+  the whole attrs object dropped what the X6 shape class contributes at construction (a
+  rect's `refWidth`/`refHeight`, an ellipse's radii, the label's centring), so a box
+  collapsed to 0x0 after any pick, undo or redo. The derived attrs are now laid over
+  `getDefaults().attrs`, and a restyled node equals a fresh render of the same style. The
+  e2e asserts the body's size after each panel pick, because an attribute-only check could
+  not see this.
+- **Label length is an open design question.** Labels never wrap, so a long label at L or
+  XL can overflow a small box (row S5: "Approve the release" at XL overflows a 132x52 box
+  by 27 px each side), and "Diamond" at XL (86 px) exceeds the diamond's inscribed box
+  (66 px), even centred. Wrapping, shrinking or accepting it is undecided; none of it
+  changes an existing board, since M is today's size.
+- **Diamond and ellipse label alignment.** A left or right label on a diamond poked past
+  the slanted edge at every size, so it now aligns to the diamond's inscribed box
+  (`refX` 25% / 75%). The ellipse keeps an 8 px inset, which measured inside (worst case
+  0.992 of the chord at XL). `design.md` §6 says so.
