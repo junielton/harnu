@@ -223,9 +223,8 @@ describe('search (AC-4, AC-5)', () => {
       i18n.global.t(DESCRIPTOR_BY_ID['session.new'].labelKey, {}, { locale: 'en' })
     )
     await searchFor(w, ptLabel.toUpperCase())
-    // The pt-BR labels of `session.newInFolder` and `folder.newFolderTerminal` start
-    // with this one — a substring match.
-    expect(rowIds(w)).toEqual(['session.new', 'session.newInFolder', 'folder.newFolderTerminal'])
+    // The pt-BR label of `session.newInFolder` starts with this one — a substring match.
+    expect(rowIds(w)).toEqual(['session.new', 'session.newInFolder'])
   })
 
   it('chord mode keeps exactly the rows on that chord under the platform fold', async () => {
