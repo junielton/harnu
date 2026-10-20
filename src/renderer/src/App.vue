@@ -45,9 +45,13 @@ import { useShortcuts, pushScope, popScope, activeScope } from './composables/us
 import { isMac } from './lib/platform'
 import { useKeybindingsStore } from './stores/keybindings'
 import { useFolderActions } from './composables/useFolderActions'
-import { useSessionActions, type SessionAction } from './composables/useSessionActions'
+import {
+  useSessionActions,
+  forkKeysGuard,
+  type SessionAction
+} from './composables/useSessionActions'
 import { useSidebarActions } from './composables/useSidebarActions'
-import { notInTextEntry, focusWithin } from './lib/text-entry'
+import { notInTextEntry } from './lib/text-entry'
 import { DESCRIPTOR_BY_ID, type ShortcutActionId } from '../../main/keybindings-core'
 import { useTerminalFocus } from './composables/useTerminalFocus'
 import type { Session } from './stores/sessions'
@@ -734,9 +738,8 @@ useShortcuts(
       id: 'session.fork',
       scope: 'global',
       keys: kb('session.fork'),
-      // Also yields inside the Diagram pane, whose own ⌘D / Ctrl+D duplicates
-      // the selection (§3.10).
-      keysGuard: () => notInTextEntry() && !focusWithin('[data-testid="diagram-pane"]'),
+      // Also yields inside the Diagram pane, whose own ⌘D duplicates (§3.10).
+      keysGuard: forkKeysGuard,
       ...onSelected('fork')
     },
     {

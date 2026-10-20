@@ -7,6 +7,7 @@ import { sessionTitle } from '../lib/session-label'
 import { buildContextDigest } from '../lib/context-digest'
 import { shouldShowRestart } from '../components/session-menu-core'
 import type { TaskState } from '../../../preload'
+import { focusWithin, notInTextEntry } from '../lib/text-entry'
 
 /**
  * The Session menu's actions, shared by `SessionMenu.vue` and the keyboard
@@ -63,6 +64,15 @@ export function sessionActionVisible(action: SessionAction, ctx: SessionActionCo
     default:
       return !ctx.synthetic
   }
+}
+
+/**
+ * `session.fork`'s `keysGuard`: not from a text field, and not inside the
+ * Diagram pane, whose own ⌘D / Ctrl+D duplicates the selection on a window
+ * listener — a user who binds `Cmd+D` to fork would otherwise get both (§3.10).
+ */
+export function forkKeysGuard(): boolean {
+  return notInTextEntry() && !focusWithin('[data-testid="diagram-pane"]')
 }
 
 /**
