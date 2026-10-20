@@ -29,6 +29,13 @@ const PALETTE: CanvasPalette = {
   text2: '#text2',
   text3: '#text3',
   accent: '#accent',
+  accentSoft: '#accentSoft',
+  green: '#green',
+  greenSoft: '#greenSoft',
+  warning: '#warning',
+  warningSoft: '#warningSoft',
+  red: '#red',
+  redSoft: '#redSoft',
   fontSans: 'TestSans'
 }
 
@@ -310,5 +317,201 @@ describe('toX6Cells', () => {
 
   it('an empty document emits no cells', () => {
     expect(toX6Cells({ capycanvas: 1, meta: {}, nodes: [], edges: [] }, PALETTE).cells).toEqual([])
+  })
+})
+
+describe('toX6Node — node styles (T536 U3)', () => {
+  type Attrs = Record<string, Record<string, unknown>>
+  const attrsOf = (n: CanvasNode, palette: CanvasPalette = PALETTE): Attrs =>
+    toX6Node(n, palette).attrs as Attrs
+  const styled = (style: unknown, over: Partial<CanvasNode> = {}): CanvasNode =>
+    node({ props: { style: style as Record<string, unknown> }, ...over })
+
+  it('tone green: stroke and fill from the green pair, the label stays --text', () => {
+    const a = attrsOf(styled({ tone: 'green' }))
+    expect(a.body.stroke).toBe('#green')
+    expect(a.body.fill).toBe('#greenSoft')
+    expect(a.text.fill).toBe('#text')
+    expect(a.label.fill).toBe('#text')
+  })
+
+  it('tone muted: --border / --bg / --text-3', () => {
+    const a = attrsOf(styled({ tone: 'muted' }))
+    expect(a.body.stroke).toBe('#border')
+    expect(a.body.fill).toBe('#bg')
+    expect(a.text.fill).toBe('#text3')
+    expect(a.label.fill).toBe('#text3')
+  })
+
+  it('stroke style maps to a dasharray; solid adds none', () => {
+    expect(attrsOf(styled({ stroke: 'dashed' })).body.strokeDasharray).toBe('6 4')
+    expect(attrsOf(styled({ stroke: 'dotted' })).body.strokeDasharray).toBe('2 3')
+    expect(attrsOf(styled({ stroke: 'solid' })).body).not.toHaveProperty('strokeDasharray')
+  })
+
+  it('strokeWidth maps to 1 / 1.5 / 2.5', () => {
+    expect(attrsOf(styled({ strokeWidth: 'thin' })).body.strokeWidth).toBe(1)
+    expect(attrsOf(styled({ strokeWidth: 'regular' })).body.strokeWidth).toBe(1.5)
+    expect(attrsOf(styled({ strokeWidth: 'bold' })).body.strokeWidth).toBe(2.5)
+  })
+
+  it('corners sharp zeroes the radius on a box; an ellipse never gets one', () => {
+    const box = attrsOf(styled({ corners: 'sharp' }))
+    expect(box.body.rx).toBe(0)
+    expect(box.body.ry).toBe(0)
+    expect(attrsOf(styled({ corners: 'sharp' }, { shape: 'ellipse' })).body).not.toHaveProperty(
+      'rx'
+    )
+    expect(attrsOf(styled({ corners: 'round' })).body.rx).toBe(7)
+  })
+
+  it('fontSize reaches BOTH label attribute paths', () => {
+    for (const n of [styled({ fontSize: 'xl' }), styled({ fontSize: 'xl' }, { shape: 'text' })]) {
+      const a = attrsOf(n)
+      expect(a.text.fontSize).toBe(20)
+      expect(a.label.fontSize).toBe(20)
+    }
+    expect(attrsOf(styled({ fontSize: 's' })).text.fontSize).toBe(11)
+    expect(attrsOf(styled({ fontSize: 'l' })).text.fontSize).toBe(15)
+  })
+
+  it('align left anchors the text at the start with an 8px inset, on both paths', () => {
+    for (const shape of ['box', 'ellipse', 'diamond', 'text']) {
+      const a = attrsOf(styled({ align: 'left' }, { shape }))
+      for (const path of ['text', 'label']) {
+        expect(a[path].textAnchor, `${shape}.${path}`).toBe('start')
+        expect(a[path].refX, `${shape}.${path}`).toBe('0%')
+        expect(a[path].refX2, `${shape}.${path}`).toBe(8)
+      }
+    }
+  })
+
+  it('align right anchors at the end, inset from the far edge', () => {
+    const a = attrsOf(styled({ align: 'right' }))
+    for (const path of ['text', 'label']) {
+      expect(a[path].textAnchor).toBe('end')
+      expect(a[path].refX).toBe('100%')
+      expect(a[path].refX2).toBe(-8)
+    }
+  })
+
+  it('align center adds nothing', () => {
+    const a = attrsOf(styled({ align: 'center' }))
+    expect(a.text).not.toHaveProperty('textAnchor')
+    expect(a.text).not.toHaveProperty('refX')
+  })
+
+  it('opacity lands on the body and both label paths', () => {
+    const a = attrsOf(styled({ opacity: 50 }))
+    expect(a.body.opacity).toBe(0.5)
+    expect(a.text.opacity).toBe(0.5)
+    expect(a.label.opacity).toBe(0.5)
+    expect(attrsOf(styled({ opacity: 100 })).body).not.toHaveProperty('opacity')
+  })
+
+  it('opacity on a resolved image lands on the picture and its caption', () => {
+    const cell = toX6Node(
+      styled(
+        { opacity: 25 },
+        { shape: 'image', props: { src: 'assets/a.png', style: { opacity: 25 } } }
+      ),
+      PALETTE,
+      { 'assets/a.png': 'data:image/png;base64,AA' }
+    )
+    const a = cell.attrs as Attrs
+    expect(a.image.opacity).toBe(0.25)
+    expect(a.label.opacity).toBe(0.25)
+  })
+
+  it('an image ignores every style key but opacity', () => {
+    const src = 'assets/a.png'
+    const images = { [src]: 'data:image/png;base64,AA' }
+    const plain = toX6Node(node({ shape: 'image', props: { src } }), PALETTE, images)
+    const noisy = toX6Node(
+      node({
+        shape: 'image',
+        props: { src, style: { tone: 'red', align: 'left', fontSize: 'xl' } }
+      }),
+      PALETTE,
+      images
+    )
+    expect(noisy.attrs).toEqual(plain.attrs)
+  })
+
+  it('a text node: tone colours the label, the body stays invisible', () => {
+    const a = attrsOf(styled({ tone: 'red' }, { shape: 'text' }))
+    expect(a.text.fill).toBe('#red')
+    expect(a.label.fill).toBe('#red')
+    expect(a.body).toEqual({ fill: 'none', stroke: 'none' })
+  })
+
+  it('a text node with no tone keeps --text-2', () => {
+    expect(attrsOf(styled({ fontSize: 'l' }, { shape: 'text' })).text.fill).toBe('#text2')
+  })
+
+  it('an ellipse and a diamond take tone and stroke too', () => {
+    for (const shape of ['ellipse', 'diamond']) {
+      const a = attrsOf(styled({ tone: 'amber', stroke: 'dashed' }, { shape }))
+      expect(a.body.stroke).toBe('#warning')
+      expect(a.body.fill).toBe('#warningSoft')
+      expect(a.body.strokeDasharray).toBe('6 4')
+    }
+  })
+
+  it('the mockup card ignores a style entirely', () => {
+    const plain = toX6Node(node({ shape: 'harnu/mockup-card' }), PALETTE)
+    const withStyle = toX6Node(
+      styled({ tone: 'green', opacity: 25, fontSize: 'xl' }, { shape: 'harnu/mockup-card' }),
+      PALETTE
+    )
+    expect(withStyle.attrs).toEqual(plain.attrs)
+  })
+
+  it('an unknown kind keeps its dashed fallback and ignores the style', () => {
+    const a = attrsOf(styled({ tone: 'green', stroke: 'dotted' }, { shape: 'hexagon' }))
+    expect(a.body.stroke).toBe('#border2')
+    expect(a.body.strokeDasharray).toBe('4 3')
+  })
+
+  it('REVIEW FOCUS 3: unknown values and a non-object style render exactly like no style', () => {
+    for (const shape of ['box', 'ellipse', 'diamond', 'text', 'image']) {
+      const plain = toX6Node(node({ shape, props: { src: 'assets/a.png' } }), PALETTE)
+      for (const style of [{ tone: 'purple', fontSize: 40 }, 'red', null, ['tone'], 7]) {
+        const odd = toX6Node(
+          node({ shape, props: { src: 'assets/a.png', style: style as never } }),
+          PALETTE
+        )
+        expect(odd.attrs, `${shape} ${JSON.stringify(style)}`).toEqual(plain.attrs)
+        expect(odd.shape).toBe(plain.shape)
+      }
+    }
+  })
+
+  it('an explicit default-valued style renders like no style', () => {
+    const plain = attrsOf(node())
+    const explicit = attrsOf(
+      styled({
+        tone: 'default',
+        stroke: 'solid',
+        strokeWidth: 'regular',
+        corners: 'round',
+        fontSize: 'm',
+        align: 'center',
+        opacity: 100
+      })
+    )
+    expect(explicit).toEqual(plain)
+  })
+
+  it('the style never leaks into the cell data beyond the props the document carried', () => {
+    const cell = toX6Node(styled({ tone: 'green' }), PALETTE)
+    expect(cell.data).toMatchObject({ props: { style: { tone: 'green' } } })
+    expect(cell.ports).toBeDefined()
+  })
+
+  it('is re-resolved per palette: a theme switch recolours a styled node', () => {
+    const other: CanvasPalette = { ...PALETTE, green: '#other-green' }
+    expect(attrsOf(styled({ tone: 'green' })).body.stroke).toBe('#green')
+    expect(attrsOf(styled({ tone: 'green' }), other).body.stroke).toBe('#other-green')
   })
 })

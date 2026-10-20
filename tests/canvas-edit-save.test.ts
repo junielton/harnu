@@ -8,6 +8,8 @@ import { writeCanvasFile } from '../src/main/canvas-write'
 import { serializeCanvasDocument, type CanvasDocument } from '../src/main/canvas-core'
 import { __resetCanvasWatchStateForTests } from '../src/main/canvas-watch'
 import { buildCanvasDocumentFromCells } from '../src/renderer/src/components/canvas/canvas-edit'
+import { toX6Cells } from '../src/renderer/src/components/canvas/canvas-cells'
+import type { CanvasPalette } from '../src/renderer/src/components/canvas/canvas-theme'
 
 /**
  * T218 U3, the two ACs that are only true if you look at the BYTES on disk:
@@ -131,6 +133,67 @@ describe('edge props survive a pane Save (T536 U2)', () => {
     cells.find((c) => c.id === 'e-1')!.data!.props = { style: { tone: 'red' } }
     const draft = buildCanvasDocumentFromCells(cells, WITH_PROPS, NOW)
     expect(draft.edges[0].props).toEqual({ style: { tone: 'green' }, weight: 2 })
+  })
+})
+
+describe('node styles survive a pane Save (T536 U3)', () => {
+  const STYLES: Record<string, Record<string, unknown>> = {
+    'n-box': { tone: 'green', stroke: 'dashed', corners: 'sharp' },
+    'n-ell': { tone: 'purple' }, // a value this build does not know
+    'n-dia': { glow: 'max', opacity: 50 }, // a key this build does not know
+    'n-txt': { fontSize: 'xl', align: 'left' },
+    'n-img': { opacity: 25 }
+  }
+  const STYLED: CanvasDocument = {
+    ...SAVED,
+    nodes: [
+      { id: 'n-box', shape: 'box', x: 0, y: 0, width: 132, height: 52, origin: 'agent' },
+      { id: 'n-ell', shape: 'ellipse', x: 200, y: 0, origin: 'agent' },
+      { id: 'n-dia', shape: 'diamond', x: 400, y: 0, origin: 'operator' },
+      { id: 'n-txt', shape: 'text', x: 0, y: 200, label: 'note', origin: 'agent' },
+      {
+        id: 'n-img',
+        shape: 'image',
+        x: 200,
+        y: 200,
+        origin: 'agent',
+        props: { src: 'assets/a.png' }
+      }
+    ].map((n) => ({
+      ...n,
+      props: { ...((n as { props?: object }).props ?? {}), style: STYLES[n.id] }
+    })),
+    edges: []
+  }
+  const PALETTE = new Proxy({}, { get: (_t, k) => `#${String(k)}` }) as unknown as CanvasPalette
+
+  /** What the pane hands Save: the RENDERED cells, in `graph.toJSON()`'s shape. */
+  function renderedCells(): { id: string; position: { x: number; y: number } }[] {
+    return (toX6Cells(STYLED, PALETTE).cells as Record<string, unknown>[]).map((c) => ({
+      ...c,
+      position: { x: c.x as number, y: c.y as number },
+      size: { width: c.width as number, height: c.height as number }
+    })) as never
+  }
+
+  it('writes every props.style back unchanged after one node is moved', async () => {
+    const cells = renderedCells()
+    cells.find((c) => c.id === 'n-box')!.position = { x: 40, y: 60 }
+    const draft = buildCanvasDocumentFromCells(cells, STYLED, NOW)
+    for (const n of draft.nodes) {
+      expect((n.props as { style?: unknown }).style, n.id).toEqual(STYLES[n.id])
+    }
+    const r = await writeCanvasFile(file, draft)
+    expect(r.ok).toBe(true)
+    const onDisk = JSON.parse(await bytes()) as CanvasDocument
+    for (const n of onDisk.nodes) {
+      expect(n.props?.style, n.id).toEqual(STYLES[n.id])
+    }
+    expect(onDisk.nodes.find((n) => n.id === 'n-box')).toMatchObject({ x: 40, y: 60 })
+    expect(onDisk.nodes.find((n) => n.id === 'n-img')!.props).toEqual({
+      src: 'assets/a.png',
+      style: { opacity: 25 }
+    })
   })
 })
 
