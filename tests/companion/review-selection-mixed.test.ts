@@ -304,6 +304,17 @@ describe('U2c-AC-3 — rows that cannot be located are never guessed', () => {
     none(coords({ startLine: 99 }))
   })
 
+  it('refuses a LEFT end that lands on a context row by its old number, whatever comes before it (U2d-AC-5)', () => {
+    // new L8 (context `a`) to old L10: the row with old number 10 is the context row `c`, which the
+    // model anchors on the new side only. The start precedes it, so a context row that also
+    // anchored on LEFT would be found here, and the older case above (start AFTER end) hides it.
+    none(coords({ startSide: 'RIGHT', startLine: 8, side: 'LEFT', line: 10 }))
+    // and the same for a context row after the change block, where old and new numbers differ
+    none(coords({ startSide: 'RIGHT', startLine: 8, side: 'LEFT', line: 13 }))
+    // the mirror image: a RIGHT start can never be a deleted row's number
+    none(coords({ startSide: 'LEFT', startLine: 8, side: 'RIGHT', line: 12 }))
+  })
+
   it('refuses a file that is not in the diff, and one with no rows', () => {
     none(coords({ path: 'src/main/other.ts' }))
     const bin = parseUnifiedDiff(
@@ -579,6 +590,14 @@ describe('U2c-AC-3 — the handler refuses with a defined code', () => {
 
   it('rows-not-found when the range is not in the diff', async () => {
     const res = await compose(gitFake(DIFF), coords({ line: 99 }))
+    expect(res).toMatchObject({ ok: false, refusal: 'BAD_ARGS', detail: 'rows-not-found' })
+  })
+
+  it('rows-not-found for new L8 to old L10, where old L10 is a context row (U2d-AC-5)', async () => {
+    const res = await compose(
+      gitFake(DIFF),
+      coords({ startSide: 'RIGHT', startLine: 8, side: 'LEFT', line: 10 })
+    )
     expect(res).toMatchObject({ ok: false, refusal: 'BAD_ARGS', detail: 'rows-not-found' })
   })
 

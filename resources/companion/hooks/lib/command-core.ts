@@ -344,16 +344,47 @@ export const bandFeatures = (
 /** The band sweep: how often a standing line is checked against its `expiresAt`. */
 export const BAND_SWEEP_MS = 30_000
 
-const BAND_MIN_COLUMNS = 40
+/** Below this the band is the compact line (the range alone); at it and above, the full one. */
+export const BAND_MIN_COLUMNS = 40
 const BAND_MARK = '\u25c6 Harnu '
 
 /**
- * The text of the one row, fitted to `bodyColumns` (P4W2 §7.4): below 40 nothing, 40-79 the lead,
- * 80-109 the lead (no link), 110-143 lead and detail, 144 and up lead, detail and hint. A part that
- * is not there leaves no separator. Cut at the width with an ellipsis, never wider.
+ * The range at the end of a band lead the host built (`⧉ speech.ts L85–92`, `⧉ speech.ts old L85
+ * – new L92`, `⧉ L85`, `⧉ speech.ts (file)`), or `null` when the lead does not end in one. The host
+ * already puts the range in the lead, so the compact line needs no new field and no contract change.
+ * The longest form is tried first, so a range across both sides is not read as its last half.
+ */
+// Built from strings: the API-surface scan reads a `$` in code as the engine's `$` (MOD-1).
+const RANGE_TAIL = new RegExp(
+  '(?:^| )((?:old|new) L\\d+ \\u2013 (?:old|new) L\\d+|(?:old )?L\\d+(?:\\u2013\\d+)?|\\(file\\))$'
+)
+
+const MIXED_RANGE = new RegExp('^(?:old|new) L(\\d+) \\u2013 (?:old|new) L(\\d+)$')
+
+/**
+ * The compact line, for a pane under {@link BAND_MIN_COLUMNS}: `⧉ L21`, `⧉ L21–24`, `⧉ (file)`, and
+ * for a range across both sides its explicit form `⧉ old L85 – new L92`, shortened to `⧉ L85–L92`
+ * when that does not fit. No mark, no file name. The first form that fits is returned; when none
+ * does (the shortest is 4 columns, `⧉ L9`) nothing is drawn: a cut-off range would name the wrong
+ * lines.
+ */
+function fitCompact(lead: string, columns: number): string | null {
+  const range = RANGE_TAIL.exec(lead)?.[1]
+  if (range === undefined) return null
+  const mixed = MIXED_RANGE.exec(range)
+  const forms = [`\u29c9 ${range}`, ...(mixed ? [`\u29c9 L${mixed[1]}\u2013L${mixed[2]}`] : [])]
+  return forms.find((f) => f.length <= columns) ?? null
+}
+
+/**
+ * The text of the one row, fitted to `bodyColumns` (P4W2 §7.4): under 40 the compact line (range
+ * only, {@link fitCompact}), 40-79 the lead, 80-109 the lead (no link), 110-143 lead and detail, 144
+ * and up lead, detail and hint. A part that is not there leaves no separator. Cut at the width with
+ * an ellipsis, never wider.
  */
 export function fitBand(b: BandState, columns: number): string | null {
-  if (!Number.isFinite(columns) || columns < BAND_MIN_COLUMNS) return null
+  if (!Number.isFinite(columns) || columns < 0) return null
+  if (columns < BAND_MIN_COLUMNS) return fitCompact(b.lead, columns)
   const parts = [b.lead]
   if (columns >= 110 && b.detail !== undefined) parts.push(b.detail)
   if (columns >= 144 && b.hint !== undefined) parts.push(b.hint)

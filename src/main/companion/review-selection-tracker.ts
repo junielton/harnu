@@ -5,14 +5,21 @@
  *
  * **The tracker** turns what the mod reports into the chip's closed vocabulary and nothing else:
  * `queued` when `enqueue` accepted, `delivered` on a `command.result` with `ok: true`, `asked` on
- * the first operator-typed turn after that, `answered` when that very turn completes with reason
- * `answer`. *Answered* means a turn completed, never that it was relevant: the tracker reads no
+ * an operator-typed turn after that, `answered` (or stopped, declined, failed) when that very turn
+ * completes. *Answered* means a turn completed, never that it was relevant: the tracker reads no
  * word the model wrote and infers nothing. With `sense.turn` off no turn event arrives and the
  * state stops at `delivered`.
  *
+ * **A row is followed for as long as it is the companion's current one.** A turn that ended does
+ * not end the tracking: the next question moves it to `asked` again, so "is a turn running?" is
+ * always answered for the binding (U2d). Only the row going away ends it: replaced by a newer row,
+ * the conversation cleared (`session.rebound`), or the binding ending.
+ *
  * **The band driver** keeps the one-line band above the companion's prompt in step with it: set
  * when a selection is delivered, re-sent every `BAND_REFRESH_MS` so the mod's `BAND_TTL_MS` never
- * lapses a live line, cleared when the selection stops being the live one, and debounced.
+ * lapses a live line, cleared when the row stops being the companion's current one (or says that
+ * nothing is selected), and debounced. A turn that answered does not clear it, and neither does a
+ * newer selection that has not been delivered yet.
  */
 
 import { enqueue as channelEnqueue, type EnqueueResult } from './command-channel'
@@ -39,7 +46,8 @@ export interface TrackedSelection {
   sid: string
   cmd: string
   settled: Promise<CommandOutcome>
-  selection: BandSelection
+  /** `null` for the row that says nothing is selected. */
+  selection: BandSelection | null
 }
 
 export interface TrackedRecord {
@@ -48,7 +56,7 @@ export interface TrackedRecord {
   /** The binding's current sid; follows `session.rebound`. */
   sid: string
   cmd: string
-  selection: BandSelection
+  selection: BandSelection | null
   state: DeliveryState
   turnId?: string
 }
@@ -72,15 +80,20 @@ export interface SelectionTracker {
   dispose(): void
 }
 
-const TERMINAL: ReadonlySet<DeliveryState> = new Set([
+/** The row is gone or never arrived: nothing follows it any more. */
+const TERMINAL: ReadonlySet<DeliveryState> = new Set(['cleared', 'ended', 'not-delivered'])
+
+/** The row is in the companion's context and no turn of the operator's is running. */
+const IDLE: ReadonlySet<DeliveryState> = new Set([
+  'delivered',
   'answered',
   'turn-stopped',
   'turn-declined',
-  'turn-failed',
-  'cleared',
-  'ended',
-  'not-delivered'
+  'turn-failed'
 ])
+
+/** The row is in the companion's context, whatever the turns around it are doing. */
+const LIVE: ReadonlySet<DeliveryState> = new Set([...IDLE, 'asked'])
 
 export function createSelectionTracker(deps: TrackerDeps): SelectionTracker {
   const now = deps.now ?? ((): number => Date.now())
@@ -144,13 +157,14 @@ export function createSelectionTracker(deps: TrackerDeps): SelectionTracker {
         case 'session.rebound':
           if (typeof d.sid === 'string') rec.sid = d.sid
           // `clear`, `resume` and `unknown` alike: the conversation the row lived in is gone.
-          if (rec.state === 'delivered' || rec.state === 'asked') move(rec, 'cleared')
+          if (LIVE.has(rec.state)) move(rec, 'cleared')
           return
         case 'turn.started':
           if (!b.enabled.includes('sense.turn')) return
-          // The first operator-typed turn after delivery. A peer's, a plugin's or an unknown
-          // origin is not the operator asking, and a turn that started earlier is not counted.
-          if (rec.state === 'delivered' && d.origin === 'human' && typeof ev.turnId === 'string') {
+          // An operator-typed turn after delivery, the first or a later one. A peer's, a plugin's
+          // or an unknown origin is not the operator asking, a turn that started before delivery
+          // is not counted, and a second start while one runs is not a second turn.
+          if (IDLE.has(rec.state) && d.origin === 'human' && typeof ev.turnId === 'string') {
             rec.turnId = ev.turnId
             move(rec, 'asked')
           }
@@ -176,7 +190,7 @@ export function createSelectionTracker(deps: TrackerDeps): SelectionTracker {
     deps.host.bus.on('end', (b) => {
       const rec = recs.get(b.key)
       // A row still queued ends as `dropped-session-end` through its own outcome, not here.
-      if (rec && (rec.state === 'delivered' || rec.state === 'asked')) move(rec, 'ended')
+      if (rec && LIVE.has(rec.state)) move(rec, 'ended')
     })
   ]
 
@@ -318,10 +332,19 @@ export function createBandDriver(deps: BandDriverDeps = {}): BandDriver {
     attach(tracker) {
       return tracker.onTransition((t) => {
         const rec = t.rec
-        if (t.type === 'replaced') return want(rec.bindingKey, rec.sid, null)
+        // A newer selection took the slot. The companion still holds the old row until the new
+        // one lands, so the band keeps saying so: blanking it here cancelled a pending set and
+        // left it empty for as long as the replacement took. The replacement's own delivery sets
+        // its line (or clears it, for the row that says nothing is selected).
+        if (t.type === 'replaced') return
         switch (t.ev.state) {
           case 'delivered':
           case 'asked':
+          case 'answered':
+          case 'turn-stopped':
+          case 'turn-declined':
+          case 'turn-failed':
+            // The row is still the companion's current one, whether or not a turn just ended.
             return want(
               rec.bindingKey,
               rec.sid,
@@ -338,7 +361,7 @@ export function createBandDriver(deps: BandDriverDeps = {}): BandDriver {
           case 'not-delivered':
             return
           default:
-            // answered, stopped, declined, failed, cleared: the selection is no longer the live one.
+            // cleared: the conversation the row lived in is gone.
             return want(rec.bindingKey, rec.sid, null)
         }
       })
@@ -346,6 +369,57 @@ export function createBandDriver(deps: BandDriverDeps = {}): BandDriver {
     dispose() {
       for (const st of states.values()) stopTimers(st)
       states.clear()
+    }
+  }
+}
+
+// ---- following a companion through /clear ---------------------------------------------------------
+
+export interface SidFollower {
+  /** The id the companion's conversation has now, for the id it was spawned with (or an earlier one). */
+  resolve(sid: string): string
+  dispose(): void
+}
+
+/** More rebounds than this in a row is a loop, not a conversation. */
+const MAX_HOPS = 16
+
+/**
+ * The renderer addresses the review companion by the `--session-id` it minted at spawn, and keeps
+ * doing so after `/clear` or a resume gave the conversation a new id: `session.rebound` re-keys the
+ * binding, so a lookup by the minted id finds nothing and every later row was refused `NO_BINDING`.
+ * This learns each `prevSid → sid` the mod reports and resolves a minted id to the current one.
+ * It forgets a binding when it ends, so an id is never followed into a conversation that is gone.
+ */
+export function createSidFollower(deps: { host: TrackerHost }): SidFollower {
+  const next = new Map<string, { sid: string; key: number }>()
+
+  const offs = [
+    deps.host.bus.on('event', (b, ev) => {
+      if (ev.t !== 'session.rebound') return
+      const d = ev.d as unknown as Record<string, unknown>
+      if (typeof d.prevSid !== 'string' || typeof d.sid !== 'string') return
+      if (d.prevSid === d.sid) return
+      next.set(d.prevSid, { sid: d.sid, key: b.key })
+    }),
+    deps.host.bus.on('end', (b) => {
+      for (const [prev, to] of [...next]) if (to.key === b.key) next.delete(prev)
+    })
+  ]
+
+  return {
+    resolve(sid) {
+      let cur = sid
+      for (let hop = 0; hop < MAX_HOPS; hop++) {
+        const to = next.get(cur)
+        if (!to) return cur
+        cur = to.sid
+      }
+      return cur
+    },
+    dispose() {
+      for (const off of offs) off()
+      next.clear()
     }
   }
 }

@@ -10896,11 +10896,10 @@ Decisions the build needed beyond what U1 wrote:
   the same function: `L85`, `L85–92`, `old L85–92`, `old L85 – new L92`, `whole file`. A range
   whose two ends are on different sides is always spelled out in full; a same-side range that
   merely crosses a changed block is `L7–12`, because it names new-file lines.
-- **A mixed-side range is honest about the lines.** `main` cannot recover the rows between a
-  removed line and an added line, so the text it sends (and Copy as text) names both ends and
-  quotes no lines. The bar says so while such a selection is live and the companion sees it:
-  `Lines not included — the range spans both sides` (`text-3`, beside the buttons / after the
-  chip state). A fact about the payload, not a warning: no icon, no colour.
+- **A mixed-side range needs no note.** `main` reads the diff rows between a removed line and
+  an added line and quotes them (U2c), so the text it sends (and Copy as text) carries the
+  lines. The bar adds nothing beside the buttons or the chip for it: the range reads
+  `old L85 – new L92`, like any other.
 - **No second source of words.** Every sentence is a `review.selection.*` key picked by a
   stable code; a code the renderer does not know falls back to
   `review.selection.outcome.unknown`, never to the code or any text from main.
@@ -12192,8 +12191,7 @@ text`, `Dismiss`, and the clamp hint `A range stays inside one hunk`); complete 
   only whether the companion **sees** the selection on screen (`Updating…`, `Companion sees
 this`) — never that a question was asked or answered, and nothing is ever "reviewed", "done"
   or "ok". `diff`, `hunk`, `head` and `base` stay untranslated. Also `Copied` (the Copy label
-  for 2s), `Couldn't copy to the clipboard`, `Lines not included — the range spans both sides`
-  (a fact about the payload, in `text-3`), `Open "Ask a fresh session" first` (quiet, no error
+  for 2s), `Couldn't copy to the clipboard`, `Open "Ask a fresh session" first` (quiet, no error
   styling), `Use “Re-read the branch” in the review header` and `Close this companion, then use
 “Ask a fresh session” in the review header` (guidance that names a control Harnu cannot press
   for the operator), and the fallback `Harnu couldn't complete that send`, which stands in for

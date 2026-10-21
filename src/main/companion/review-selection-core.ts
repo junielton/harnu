@@ -75,10 +75,23 @@ export interface SelectionComposeRequest extends SelectionReviewRef {
   selection: SelectionCoordinates
 }
 
-export interface SelectionSendRequest extends SelectionComposeRequest {
+export interface SelectionSelectRequest extends SelectionComposeRequest {
   /** The companion pane's minted `--session-id`. `null` when no companion is open. */
   companionSid: string | null
 }
+
+/**
+ * The selection went away: the companion's row is replaced by one that says nothing is selected.
+ * There are no coordinates and no git ref, because there is nothing to read (U2d). `id` follows the
+ * row through `review:selection:state`, like a selection's does.
+ */
+export interface SelectionClearRequest {
+  companionSid: string | null
+  selection: null
+  id: string
+}
+
+export type SelectionSendRequest = SelectionSelectRequest | SelectionClearRequest
 
 // ---- refusals and outcomes: stable codes, never sentences ---------------------------------------
 
@@ -482,7 +495,8 @@ const PREAMBLE: readonly string[] = [
 ]
 
 export type ComposeResult =
-  { ok: true; text: string } | { ok: false; detail: 'range-out-of-file' | 'text-too-long' }
+  | { ok: true; text: string }
+  | { ok: false; detail: 'range-out-of-file' | 'text-too-long' | 'rows-not-found' }
 
 /** The one sentence that replaces a quote past either cap, for a same-side and a mixed range alike. */
 const capNote = (count: number): string =>
@@ -511,8 +525,7 @@ function quoteRows(rows: readonly DiffRow[]): { quoted: string[]; chars: number 
  * Deterministic: the same coordinates, blob and rows give the same bytes. `blob` is the text of
  * {@link lineSource}'s file for a same-side line range. `diffRows` are the rows
  * {@link locateDiffRows} found for a multi-row range; a range that {@link quotesDiffRows} is quoted
- * from them. Without them a mixed range names its two ends and quotes nothing (the IPC never
- * composes one that way: it refuses instead).
+ * from them. Without them a mixed range is refused `rows-not-found` (the IPC refuses it earlier).
  */
 export function composeSelection(
   c: SelectionCoordinates,
@@ -561,14 +574,10 @@ export function composeSelection(
     return finish(frame(selection, { note: ROW_LEGEND, quoted }), omitted)
   }
 
-  if (startSide !== side) {
-    const selection = `selection: from line ${startLine} of the ${fileOf(startSide)} file (${startSide}) to line ${line} of the ${fileOf(side)} file (${side})`
-    return finish(
-      frame(selection, {
-        note: 'This range spans both sides of the diff, so its lines are not included.'
-      })
-    )
-  }
+  // A range across both sides has no one file to slice: it is quoted as diff rows or not at all.
+  // The IPC refuses before it gets here without them; a caller that skips that gets a refusal, not
+  // a frame that names two ends and quotes nothing.
+  if (startSide !== side) return { ok: false, detail: 'rows-not-found' }
 
   const single = startLine === line
   const selection = single
@@ -590,6 +599,22 @@ export function composeSelection(
   const width = String(line).length
   const quoted = picked.map((text, i) => ` ${String(startLine + i).padStart(width)} | ${text}`)
   return finish(frame(selection, { quoted }), omitted)
+}
+
+/**
+ * The row that replaces the selection's when nothing is selected any more (spec §9, U2d). Same key,
+ * same frame, so the companion's most recent block with this key is always the truth. It takes no
+ * input: there is no path, no number and no caller text in it, so there is nothing to escape.
+ */
+export function composeCleared(): string {
+  return frameContext({
+    key: REVIEW_SELECTION_KEY,
+    rev: SELECTION_REV,
+    state: 'active',
+    preamble: PREAMBLE.slice(0, 2),
+    fields: ['selection: none'],
+    note: 'Nothing is selected in the review right now.'
+  })
 }
 
 // ---- the gate validators (§6.6) --------------------------------------------------------------------
@@ -646,8 +671,23 @@ export interface BandSelection {
 
 export interface BandDelivery {
   state: DeliveryState
-  selection: BandSelection
+  /** `null` for the row that says nothing is selected: it has no line to show. */
+  selection: BandSelection | null
 }
+
+/**
+ * The states in which the selection's row is in the companion's context, so the band has a line:
+ * delivered, and every turn state after it. A turn that ended never takes the row away (U2d), so
+ * none of them takes the band away either.
+ */
+const BAND_LIVE: ReadonlySet<DeliveryState> = new Set([
+  'delivered',
+  'asked',
+  'answered',
+  'turn-stopped',
+  'turn-declined',
+  'turn-failed'
+])
 
 export interface BandLine {
   line: string
@@ -687,11 +727,12 @@ export function bandRange(s: BandSelection): string {
 }
 
 /**
- * The line the companion's terminal shows while a selection is held, or `null` (spec §8.1): only
- * while the selection is `delivered` or `asked`. No link, ever.
+ * The line the companion's terminal shows while a selection is held, or `null` (spec §8.1): while
+ * its row is in the companion's context ({@link BAND_LIVE}), never for the row that says nothing is
+ * selected. No link, ever.
  */
 export function bandFor(d: BandDelivery | null): BandLine | null {
-  if (!d || (d.state !== 'delivered' && d.state !== 'asked')) return null
+  if (!d || d.selection === null || !BAND_LIVE.has(d.state)) return null
   const path = stripControl(d.selection.path)
   const slash = path.lastIndexOf('/')
   const base = slash >= 0 ? path.slice(slash + 1) : path

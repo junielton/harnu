@@ -18,6 +18,7 @@ import {
   REVIEW_SELECTION_GESTURE,
   REVIEW_SELECTION_KEY,
   bandFor,
+  composeCleared,
   composeSelection,
   fitTail,
   lineSource,
@@ -233,15 +234,10 @@ describe('U2a-i-AC-2 — the composer is deterministic and its bytes are pinned'
     )
   })
 
-  it('a range across both sides names both ends and quotes nothing', () => {
+  it('a range across both sides without diff rows is refused, never a frame that quotes nothing', () => {
     const c = coords({ startSide: 'LEFT', startLine: 85, side: 'RIGHT', line: 92 })
     expect(lineSource(c)).toBeNull()
-    const out = text(c, null)
-    expect(out).toContain(
-      'selection: from line 85 of the old file (LEFT) to line 92 of the new file (RIGHT)'
-    )
-    expect(out).toContain('This range spans both sides of the diff, so its lines are not included.')
-    expect(out).not.toContain('```quoted')
+    expect(composeSelection(c, null)).toEqual({ ok: false, detail: 'rows-not-found' })
   })
 
   it('stays under the contract cap even with 4,096-character paths and escaping at its worst', () => {
@@ -335,7 +331,7 @@ describe('U2a-i-AC-4 — nothing evaluative, no hunk header, no evidence', () =>
       null
     ],
     ['a capped range', coords({ startLine: 1, line: 250 }), blobOf(300)],
-    ['a mixed range', coords({ startSide: 'LEFT' }), null],
+    // A range across both sides is quoted as diff rows: its neutrality is run in review-selection-mixed.test.ts.
     ['no PR', coords({ prNumber: null }), blobOf(120)]
   ]
   for (const [name, c, blob] of FIXTURES) {
@@ -692,19 +688,29 @@ describe('U2a-i-AC-13 — bandFor, at every boundary', () => {
     ).toBe('⧉ speech.ts (file)')
   })
 
-  it('only delivered and asked show a line', () => {
-    expect(band(sel(), 'asked')).not.toBeNull()
+  it('a line shows for as long as the row is live: delivered, asked and every turn that ended', () => {
+    // U2d-AC-2: the band says what the companion SEES, so a turn that answered, was stopped,
+    // declined or failed does not take it away. Only the row going away does.
     for (const state of [
-      'queued',
+      'delivered',
+      'asked',
       'answered',
       'turn-stopped',
-      'cleared',
-      'ended',
-      'not-delivered'
+      'turn-declined',
+      'turn-failed'
     ] as const) {
-      expect(bandFor({ state, selection: sel() })).toBeNull()
+      expect(bandFor({ state, selection: sel() }), state).not.toBeNull()
+    }
+    for (const state of ['queued', 'cleared', 'ended', 'not-delivered'] as const) {
+      expect(bandFor({ state, selection: sel() }), state).toBeNull()
     }
     expect(bandFor(null)).toBeNull()
+  })
+
+  it('the row that says nothing is selected has no line, in any state', () => {
+    for (const state of ['delivered', 'asked', 'answered'] as const) {
+      expect(bandFor({ state, selection: null }), state).toBeNull()
+    }
   })
 
   it('lead is at most 32 at every length of basename, and the range always survives', () => {
@@ -881,5 +887,54 @@ describe('the head guard compares full SHAs exactly', () => {
       ok: false,
       detail: 'sha'
     })
+  })
+})
+
+describe('U2d-AC-1 — the row that says nothing is selected', () => {
+  const EXPECTED = [
+    '<harnu-context key="harnu.review-selection" rev="v1" state="active">',
+    "Sent by Harnu, the app hosting this session, at the operator's request. The most recent",
+    "block with this key is the operator's current selection; earlier blocks are history.",
+    'selection: none',
+    'Nothing is selected in the review right now.',
+    '</harnu-context>'
+  ].join('\n')
+
+  it('is pinned byte for byte', () => {
+    expect(composeCleared()).toBe(EXPECTED)
+  })
+
+  it('takes no input, so there is nowhere for caller text to come from', () => {
+    expect(composeCleared.length).toBe(0)
+    expect(composeCleared()).toBe(composeCleared())
+  })
+
+  it('is one frame that cannot be closed or reopened from inside', () => {
+    const out = composeCleared()
+    expect(out.match(/<harnu-context/g)).toHaveLength(1)
+    expect(out.match(/<\/harnu-context>/g)).toHaveLength(1)
+    expect(out.startsWith('<harnu-context ')).toBe(true)
+    expect(out.endsWith('</harnu-context>')).toBe(true)
+    expect(out).not.toContain('```')
+  })
+
+  it('says nothing evaluative, and carries no path, SHA or number', () => {
+    const out = composeCleared()
+    for (const [label, re] of FORBIDDEN) expect(out, label).not.toMatch(re)
+    const body = out.split('\n').slice(1, -1).join('\n')
+    expect(body).not.toMatch(/[0-9a-f]{7,40}/)
+    expect(body).not.toMatch(/\d/)
+    expect(body).not.toMatch(/\//)
+  })
+
+  it('is accepted by the same gate validator as a selection, and by nothing else', () => {
+    const args = { key: REVIEW_SELECTION_KEY, text: composeCleared(), durable: false }
+    const operator: CommandCause = { kind: 'operator', gesture: REVIEW_SELECTION_GESTURE }
+    expect(validReviewSelectionAppend(args, operator)).toBe(true)
+    expect(validReviewSelectionAppend(args, { kind: 'operator', gesture: 'something.else' })).toBe(
+      false
+    )
+    expect(validReviewSelectionAppend({ ...args, durable: true }, operator)).toBe(false)
+    expect(composeCleared().length).toBeLessThanOrEqual(CONTEXT_MAX_CHARS)
   })
 })

@@ -10,6 +10,7 @@ import {
 } from '../hooks/contract'
 import {
   BAND_SWEEP_MS,
+  BAND_MIN_COLUMNS,
   REVIEW_SELECTION_KEY,
   applyBand,
   bandFeatures,
@@ -22,8 +23,10 @@ import {
 import { judgeCommand } from '../hooks/lib/commands'
 import { FIXTURE_CONN } from './fixtures/hello'
 import {
+  BOOT,
   START,
   defaultScript,
+  endpointText,
   helloOk,
   installRig,
   type Answer,
@@ -399,10 +402,10 @@ test('the band row fits bodyColumns and wraps another plugin’s tree without re
       props: props({ bodyColumns })
     } as never)
     expect(await textsOf(ui, /other plugin/)).toBe('other plugin') // wrapped, never replaced
-    rows[bodyColumns] = await textsOf(ui, /Harnu/)
+    rows[bodyColumns] = await textsOf(ui, /Harnu|⧉/)
     await ui.unmount()
   }
-  expect(rows[39]).toBeUndefined()
+  expect(rows[39]).toBe('⧉ L85–92') // below 40: the compact line, no mark, no file name
   expect(rows[40]).toBe(`◆ Harnu ${ROW}`)
   expect(rows[109]).toBe(`◆ Harnu ${ROW}`)
   expect(rows[110]).toBe(`◆ Harnu ${ROW} · …src/main`)
@@ -460,4 +463,228 @@ test('bandFeatures: neither feature without the hook or without the base set', (
   expect(bandFeatures({}, true)).toEqual([])
   expect(bandFeatures({ 'ui.render': false }, true)).toEqual([])
   expect(bandFeatures({ 'ui.render': true }, false)).toEqual([])
+})
+
+// ---- band delta: a restarted host, the truth of the result, the redraw (U2d) ----------------------
+
+const NEW_BOOT = 'b_00000000-0000-4000-8000-0000000000b2'
+
+/** Records every `$.ui.invalidate` the mod makes, and answers like the engine would. */
+const watchInvalidate = (on: any): any[] => {
+  const calls: any[] = []
+  on('ui.invalidate', async (_$: any, e: any) => {
+    calls.push(e)
+    return { value: undefined }
+  })
+  return calls
+}
+
+test('a band set after the host restarted is applied: a new boot restarts n, so the mod forgets the old one', async ($, on) => {
+  const old = band({ parts: { lead: '⧉ before.ts L1' } }, 50)
+  const fresh = mk(
+    'ui.band.set',
+    { line: `⧉ after.ts L2 · ask`, parts: { lead: '⧉ after.ts L2' } },
+    {
+      n: 1,
+      cmd: 'cmd_fresh_1'
+    }
+  )
+  let restarted = false
+  const rig = installRig(on, {
+    script: (route, body, n) => {
+      if (route === 'hello') {
+        const base = helloOk(ENABLE)
+        return restarted && base.kind === 'body'
+          ? { kind: 'body', body: { ...(base.body as object), bootId: NEW_BOOT } }
+          : base
+      }
+      if (route === 'poll' && n === 1) return withCommands(old)
+      if (route === 'poll' && n === 2)
+        return { kind: 'after', ms: 5_000, body: { ok: true, commands: [], resync: true } }
+      if (route === 'poll' && body.bootId === NEW_BOOT && n === 3) return withCommands(fresh)
+      return defaultScript(route, body, n)
+    }
+  })
+  await boot($, rig)
+  expect((rig.state.get('band') as any).n).toBe(50)
+  // the host restarts: its queue numbers from 1 again
+  restarted = true
+  rig.endpoint.text = endpointText({ bootId: NEW_BOOT })
+  await rig.clock.advance(6_000)
+  expect(rig.of('hello').length).toBe(2)
+  expect(results(rig).map((r) => [r.cmd, r.ok])).toEqual([
+    ['cmd_50', true],
+    ['cmd_fresh_1', true]
+  ])
+  expect(rig.state.get('band')).toMatchObject({ lead: '⧉ after.ts L2', n: 1 })
+})
+
+test('a mod reloaded under a new boot does not keep the line of the old one', async ($, on) => {
+  const rig = installRig(on, {
+    script: channelScript(),
+    savedState: {
+      band: { v: 1, lead: '⧉ stale.ts L9', n: 90, expiresAt: NOW + BAND_TTL_MS },
+      channel: { bootId: 'b_an-older-boot', cursor: 41, started: [], resulted: [], turnId: null }
+    }
+  })
+  const calls = watchInvalidate(on)
+  await boot($, rig)
+  expect(rig.state.get('band')).toBeNull()
+  expect(calls.length).toBeGreaterThan(0)
+})
+
+test('the same boot keeps the band: a re-hello is not a restart', async ($, on) => {
+  const rig = installRig(on, {
+    script: channelScript(),
+    savedState: {
+      band: { v: 1, lead: ROW, n: 90, expiresAt: NOW + BAND_TTL_MS },
+      channel: { bootId: BOOT, cursor: 3, started: [], resulted: [], turnId: null }
+    }
+  })
+  await boot($, rig)
+  expect(rig.state.get('band')).toMatchObject({ lead: ROW, n: 90 })
+})
+
+test('ui.band.set that is refused as older says so: CMD_PRECONDITION, not ok', async ($, on) => {
+  const high = band({ parts: { lead: '⧉ new.ts L2' } }, 505)
+  const low = band({ parts: { lead: '⧉ old.ts L1' } }, 503)
+  const rig = installRig(on, {
+    script: channelScript([
+      withCommands(high),
+      { kind: 'after', ms: 1_000, body: { ok: true, commands: [low] } }
+    ])
+  })
+  await boot($, rig)
+  await rig.clock.advance(1_100)
+  const [first, second] = results(rig)
+  expect(first).toMatchObject({ cmd: 'cmd_505', ok: true })
+  expect(second).toMatchObject({ cmd: 'cmd_503', ok: false, code: 'CMD_PRECONDITION' })
+  expect((rig.state.get('band') as any).lead).toBe('⧉ new.ts L2')
+})
+
+test('every band set, clear and expiry asks the engine to redraw ui.render', async ($, on) => {
+  const set = band({}, 601)
+  const clear = mk('ui.band.set', { line: null }, { n: 602, cmd: 'cmd_602' })
+  const rig = installRig(on, {
+    script: channelScript([
+      withCommands(set),
+      { kind: 'after', ms: 1_000, body: { ok: true, commands: [clear] } },
+      { kind: 'after', ms: 1_000, body: { ok: true, commands: [band({}, 603)] } }
+    ])
+  })
+  const calls = watchInvalidate(on)
+  await boot($, rig)
+  expect(calls).toHaveLength(1) // the set
+  expect(JSON.stringify(calls[0])).toContain('ui.render')
+  await rig.clock.advance(1_100)
+  expect(calls).toHaveLength(2) // the clear
+  await rig.clock.advance(1_100)
+  expect(calls).toHaveLength(3) // a new set
+  await rig.clock.advance(BAND_TTL_MS + BAND_SWEEP_MS)
+  expect(rig.state.get('band')).toBeNull()
+  expect(calls).toHaveLength(4) // the sweep clearing an expired line
+})
+
+test('a refused older set and a missing engine call never break the band', async ($, on) => {
+  const rig = installRig(on, { script: channelScript([withCommands(band({}, 701))]) })
+  on('ui.invalidate', async () => {
+    throw new Error('not in this engine')
+  })
+  await boot($, rig)
+  expect(results(rig)).toEqual([{ cmd: 'cmd_701', ok: true }])
+  expect(rig.state.get('band')).not.toBeNull()
+})
+
+test('a render that returns early still reads the band, so the engine knows to redraw it later', async ($, on) => {
+  const rig = installRig(on, { savedState: { band: STORED } })
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  for (const over of [{ hasSurvey: true }, { maxRows: 0 }]) {
+    rig.stateReads.length = 0
+    const ui = await $.ui.mount({ ...ABOVE, surface: 'terminal', props: props(over) } as never)
+    expect(rig.stateReads).toContain('band')
+    expect(await textsOf(ui, /Harnu/)).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+// ---- the compact band, below BAND_MIN_COLUMNS (U2d) ----------------------------------------------
+
+const bandOf = (lead: string, over: Partial<BandState> = {}): BandState => ({
+  v: 1,
+  lead,
+  n: 1,
+  expiresAt: NOW + BAND_TTL_MS,
+  ...over
+})
+
+test('fitBand: every width boundary of the compact line, for every shape of range', () => {
+  // [lead the host builds, the compact rows it may become from the widest down]
+  const table: Array<[string, string[]]> = [
+    ['⧉ speech.ts L21', ['⧉ L21']],
+    ['⧉ speech.ts L21–24', ['⧉ L21–24']],
+    ['⧉ speech.ts old L21', ['⧉ old L21']],
+    ['⧉ speech.ts old L21–24', ['⧉ old L21–24']],
+    ['⧉ speech.ts (file)', ['⧉ (file)']],
+    ['⧉ …peech.ts old L85 – new L92', ['⧉ old L85 – new L92', '⧉ L85–L92']],
+    ['⧉ old L85 – new L92', ['⧉ old L85 – new L92', '⧉ L85–L92']], // a lead with no name left
+    ['⧉ new L3 – old L7', ['⧉ new L3 – old L7', '⧉ L3–L7']]
+  ]
+  for (const [lead, forms] of table) {
+    const b = bandOf(lead, { detail: 'src/main', hint: 'ask your question below' })
+    // from the narrowest form's width up to just below 40: the widest form that fits, no mark
+    const narrowest = forms[forms.length - 1].length
+    for (let columns = 0; columns < BAND_MIN_COLUMNS; columns++) {
+      const want = columns < narrowest ? null : forms.find((f) => f.length <= columns)
+      expect(fitBand(b, columns), `${lead} @ ${columns}`).toBe(want ?? null)
+    }
+    // never wider than the body, never a mark, a file name, a detail or a hint
+    for (let columns = narrowest; columns < BAND_MIN_COLUMNS; columns++) {
+      const row = fitBand(b, columns)!
+      expect(row.length).toBeLessThanOrEqual(columns)
+      expect(row).not.toMatch(/Harnu|speech|src|ask/)
+    }
+  }
+})
+
+test('fitBand: at BAND_MIN_COLUMNS and above the line is the full one, as before', () => {
+  const b = bandOf(ROW, { detail: '…src/main', hint: 'ask your question below' })
+  expect(BAND_MIN_COLUMNS).toBe(40)
+  expect(fitBand(b, 39)).toBe('⧉ L85–92')
+  expect(fitBand(b, 40)).toBe(`◆ Harnu ${ROW}`)
+  expect(fitBand(b, 80)).toBe(`◆ Harnu ${ROW}`)
+})
+
+test('fitBand: a lead that carries no range the mod recognises shows nothing below 40, never a guess', () => {
+  for (const lead of ['hello', '⧉ speech.ts', '⧉ speech.ts L', '⧉ speech.ts L21 and more', '']) {
+    expect(fitBand(bandOf(lead || 'x'), 30), lead).toBeNull()
+  }
+  // another plugin's junk with a range-shaped tail is still only a range: no file name leaks
+  expect(fitBand(bandOf('<script> L5'), 30)).toBe('⧉ L5')
+})
+
+test('the view draws the compact row in a narrow pane and nothing in a pane too narrow for it', async ($, on) => {
+  installRig(on, { savedState: { band: { ...STORED, lead: '⧉ speech.ts L21–24' } } })
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>other plugin</Text>
+  })
+  const row = async (bodyColumns: number) => {
+    const ui = await $.ui.mount({
+      ...ABOVE,
+      surface: 'terminal',
+      props: props({ bodyColumns })
+    } as never)
+    expect(await textsOf(ui, /other plugin/)).toBe('other plugin') // wrapped, never replaced
+    const out = await textsOf(ui, /⧉/)
+    await ui.unmount()
+    return out
+  }
+  expect(await row(31)).toBe('⧉ L21–24')
+  expect(await row(20)).toBe('⧉ L21–24')
+  expect(await row(8)).toBe('⧉ L21–24')
+  expect(await row(7)).toBeUndefined()
+  expect(await row(0)).toBeUndefined()
 })

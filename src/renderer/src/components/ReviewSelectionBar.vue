@@ -89,21 +89,6 @@ const hint = computed(() => {
 
 const rec = computed(() => (selection.live ? selection.last : null))
 const chip = computed(() => (rec.value ? chipOf(rec.value) : null))
-/** A mixed-side range sends no lines (main cannot recover the rows between its two ends). */
-const liveMixed = computed(() => !!selection.live && rangeLabelOf(selection.live).kind === 'mixed')
-/** The companion has the row, whatever has happened in its conversation since. */
-const SEEN_PHASES = new Set([
-  'delivered',
-  'asked',
-  'answered',
-  'turn-stopped',
-  'turn-declined',
-  'turn-failed'
-])
-const sentMixed = computed(
-  () => !!rec.value && rec.value.range.kind === 'mixed' && SEEN_PHASES.has(rec.value.phase)
-)
-
 /** With no companion open nothing is sent: a quiet line says so, no error styling. */
 const noCompanion = computed(() => !!selection.live && selection.companionSid === null)
 const copyDisabled = computed(() => !selection.live || copyWithheld(rec.value))
@@ -161,9 +146,6 @@ onBeforeUnmount(() => {
               : t('review.selection.action.copy')
           }}
         </Button>
-        <span v-if="liveMixed" class="text-[11.5px] text-text-3" data-test="selection-mixed">{{
-          t('review.selection.mixedNote')
-        }}</span>
         <span
           v-if="noCompanion"
           class="text-[11.5px] text-text-3"
@@ -196,9 +178,6 @@ onBeforeUnmount(() => {
         <span data-test="delivery-state">{{ t(chip.key) }}</span>
         <span v-if="chip.reasonKey" class="text-[11.5px] text-text-3" data-test="delivery-reason">{{
           t(chip.reasonKey)
-        }}</span>
-        <span v-if="sentMixed" class="text-[11.5px] text-text-3" data-test="delivery-mixed">{{
-          t('review.selection.mixedNote')
         }}</span>
         <Button
           v-if="showTryAgain"

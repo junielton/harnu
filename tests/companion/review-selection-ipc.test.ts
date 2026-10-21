@@ -13,6 +13,7 @@ import type { CommandCause, EnqueueRefusal } from '../../src/main/companion/comm
 import {
   REFUSAL_NEXT,
   REVIEW_SELECTION_GESTURE,
+  composeCleared,
   type SelectionCoordinates,
   type SelectionStateEvent
 } from '../../src/main/companion/review-selection-core'
@@ -40,7 +41,8 @@ import {
 } from '../../src/main/companion/review-selection-ipc'
 import {
   createBandDriver,
-  createSelectionTracker
+  createSelectionTracker,
+  createSidFollower
 } from '../../src/main/companion/review-selection-tracker'
 import type { BindingView } from '../../src/main/companion/session-table'
 
@@ -572,7 +574,7 @@ const wire = (t: string, d: Record<string, unknown>, turnId?: string) => ({
 
 describe('against a fake mod: the whole path, in channel mode shadow', () => {
   it('delivers the row, reports delivered, then asked, then answered, with the band alongside', async () => {
-    const { r, emitted, deps } = await modRig()
+    const { r, emitted, bandSent, deps } = await modRig({ pollHoldMs: 50 })
     const { conn } = await r.hello()
 
     const res = await sendSelection(request(), CAUSE, deps)
@@ -619,8 +621,10 @@ describe('against a fake mod: the whole path, in channel mode shadow', () => {
     ])
     expect(emitted.map((e) => e.state)).toEqual(['queued', 'delivered', 'asked', 'answered'])
     await wait(60)
-    const cleared = (await r.poll(conn, { cursor: band[0].n })).json.commands
-    expect(cleared[0]).toMatchObject({ name: 'ui.band.set', args: { line: null } })
+    // the answer does not take the band away: the row is still in the companion's context (U2d-AC-2)
+    const after = (await r.poll(conn, { cursor: band[0].n })).json.commands
+    expect(after).toEqual([])
+    expect(bandSent).toHaveLength(1)
   })
 
   it('every send is audited with the operator gesture and no text', async () => {
@@ -861,5 +865,216 @@ describe('U2b-AC-2 groundwork — compose needs git and nothing else', () => {
     const compose = src.slice(src.search(/ipcMain\.handle\(\s*'review:selection:compose'/))
     expect(compose).toContain('composeSelectionText(req, gitDeps)')
     expect(compose).not.toMatch(/deps\(\)|liveDeps|companionHost|sessionArbiter/)
+  })
+})
+
+// ---- T257 U2d: the row that says nothing is selected, and a companion after /clear ------------------
+
+const clearRequest = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+  companionSid: SID,
+  selection: null,
+  id: 'sel_0002',
+  ...over
+})
+
+describe('U2d-AC-1 — clearing the selection tells the companion', () => {
+  it('queues the cleared row through the same gesture, key and trust, and reads no git', async () => {
+    const f = fake()
+    const res = await sendSelection(clearRequest(), CAUSE, f.deps)
+    expect(res).toEqual({ ok: true, selectionId: 'sel_0002', cmd: 'cmd_1', n: 3 })
+    expect(f.enqueue).toHaveBeenCalledTimes(1)
+    const sent = f.enqueue.mock.calls[0][0] as Record<string, unknown>
+    expect(sent).toMatchObject({ sessionKey: null, sid: SID, name: 'context.append', cause: CAUSE })
+    expect(sent.args).toEqual({
+      key: 'harnu.review-selection',
+      text: composeCleared(),
+      durable: false
+    })
+    expect(f.reads).toEqual([])
+    expect(f.track.mock.calls[0][0]).toMatchObject({
+      selectionId: 'sel_0002',
+      bindingKey: 7,
+      cmd: 'cmd_1',
+      selection: null
+    })
+  })
+
+  it('needs no folder, ref or head: nothing is read, so nothing can be moved', async () => {
+    const f = fake({
+      resolveCommit: async () => {
+        throw new Error('git must not be read for a clear')
+      }
+    })
+    expect(await sendSelection(clearRequest(), CAUSE, f.deps)).toMatchObject({ ok: true })
+  })
+
+  it('refuses anything but the id and the sid beside a null selection', async () => {
+    for (const extra of [{ folder: '/work/example-web' }, { text: 'hi' }, { headRef: 'x' }]) {
+      const res = await sendSelection(clearRequest(extra), CAUSE, fake().deps)
+      expect(res, JSON.stringify(extra)).toMatchObject({ ok: false, refusal: 'BAD_ARGS' })
+    }
+    for (const id of [undefined, '', 'x', 'sel_', `sel_${'a'.repeat(65)}`, 7]) {
+      const res = await sendSelection(clearRequest({ id }), CAUSE, fake().deps)
+      expect(res, String(id)).toMatchObject({ ok: false, refusal: 'BAD_ARGS' })
+    }
+  })
+
+  it('a send with no selection key at all is still BAD_ARGS, not a clear', async () => {
+    const raw = clearRequest()
+    delete raw.selection
+    const f = fake()
+    expect(await sendSelection(raw, CAUSE, f.deps)).toMatchObject({
+      ok: false,
+      refusal: 'BAD_ARGS'
+    })
+    expect(f.enqueue).not.toHaveBeenCalled()
+  })
+
+  it('no companion is no-companion, and a binding that is not read-only is TARGET_DENIED', async () => {
+    for (const companionSid of [null, undefined, '']) {
+      const res = await sendSelection(clearRequest({ companionSid }), CAUSE, fake().deps)
+      expect(res).toMatchObject({ ok: false, refusal: 'no-companion' })
+    }
+    for (const trust of ['operator', 'agent', 'tick'] as const) {
+      const f = fake({ bindingForSid: () => binding({ trust }) })
+      expect(await sendSelection(clearRequest(), CAUSE, f.deps)).toMatchObject({
+        ok: false,
+        refusal: 'TARGET_DENIED'
+      })
+      expect(f.enqueue).not.toHaveBeenCalled()
+    }
+  })
+
+  it('a refusal at the channel is the same code a selection gets', async () => {
+    const f = fake()
+    f.enqueue.mockReturnValueOnce({ ok: false, reason: 'NO_BINDING' })
+    expect(await sendSelection(clearRequest(), CAUSE, f.deps)).toMatchObject({
+      ok: false,
+      refusal: 'NO_BINDING',
+      reason: 'cli-too-old'
+    })
+    f.enqueue.mockReturnValueOnce({ ok: false, reason: 'FEATURE_OFF' })
+    expect(await sendSelection(clearRequest(), CAUSE, f.deps)).toMatchObject({
+      ok: false,
+      refusal: 'FEATURE_OFF'
+    })
+    expect(f.track).not.toHaveBeenCalled()
+  })
+
+  it('against a fake mod: the mod polls the cleared row, delivered follows, and the band goes away', async () => {
+    const { r, emitted, bandSent, deps } = await modRig()
+    const { conn } = await r.hello()
+    await sendSelection(request(), CAUSE, deps)
+    const first = (await r.poll(conn, { cursor: 0 })).json.commands[0]
+    await r.result(conn, { cmd: first.cmd, ok: true })
+    await wait(60)
+    expect(bandSent.at(-1)).toMatchObject({ parts: { lead: '⧉ speech.ts L85–92' } })
+
+    const res = await sendSelection(clearRequest(), CAUSE, deps)
+    expect(res).toMatchObject({ ok: true, selectionId: 'sel_0002' })
+    const polled = (await r.poll(conn, { cursor: first.n })).json.commands
+    const row = polled.find((c: { name: string }) => c.name === 'context.append')
+    expect(row.args).toEqual({
+      key: 'harnu.review-selection',
+      text: composeCleared(),
+      durable: false
+    })
+    await r.result(conn, { cmd: row.cmd, ok: true })
+    expect(emitted.at(-1)).toMatchObject({ selectionId: 'sel_0002', state: 'delivered' })
+    await wait(60)
+    expect(bandSent.at(-1)).toEqual({ line: null })
+    expect(JSON.stringify(r.rows)).toContain('review.selection.send')
+  })
+})
+
+describe('U2d-AC-3 — after /clear the companion is still reachable', () => {
+  /** What the app wires: the same companion, addressed by the id it was spawned with. */
+  async function followingRig() {
+    const rig = await modRig()
+    const follower = createSidFollower({ host: rig.r.core.facade })
+    open.push({ close: async () => follower.dispose() })
+    const sids: string[] = []
+    const deps: SelectionDeps = {
+      ...rig.deps,
+      followSid: follower.resolve,
+      enqueue: ((req: { sid?: string }) => {
+        if (req.sid !== undefined) sids.push(req.sid)
+        return rig.r.channel.enqueue(req as never)
+      }) as never
+    }
+    return { ...rig, deps, sids }
+  }
+
+  const rebound = (r: Awaited<ReturnType<typeof modRig>>['r'], conn: string, sid: string) =>
+    r.events(conn, [wire('session.rebound', { prevSid: SID, sid, cause: 'clear' })])
+
+  it('send, rebound, send: the second row is queued for the NEW sid, not NO_BINDING', async () => {
+    const { r, emitted, deps, sids } = await followingRig()
+    const { conn } = await r.hello()
+    const NEW = '22222222-2222-4222-8222-222222222222'
+
+    const first = await sendSelection(request(), CAUSE, deps)
+    expect(first).toMatchObject({ ok: true })
+    const cmd = (await r.poll(conn, { cursor: 0 })).json.commands[0]
+    await r.result(conn, { cmd: cmd.cmd, ok: true })
+
+    await rebound(r, conn, NEW)
+    expect(r.core.facade.bindingForSid(NEW)?.sid).toBe(NEW)
+    expect(r.core.facade.bindingForSid(SID)).toBeNull() // the minted id no longer finds it
+    expect(emitted.at(-1)).toMatchObject({ selectionId: 'sel_0001', state: 'cleared' })
+
+    const second = await sendSelection(
+      request({ selection: selection({ id: 'sel_0003' }) }),
+      CAUSE,
+      deps
+    )
+    expect(second).toMatchObject({ ok: true, selectionId: 'sel_0003' })
+    expect(sids).toEqual([SID, NEW])
+    expect(emitted.at(-1)).toMatchObject({ selectionId: 'sel_0003', state: 'queued' })
+  })
+
+  it('without the follower the same sequence is the NO_BINDING it was (the bug)', async () => {
+    const { r, deps } = await followingRig()
+    const { conn } = await r.hello()
+    await sendSelection(request(), CAUSE, deps)
+    await rebound(r, conn, '22222222-2222-4222-8222-222222222222')
+    const res = await sendSelection(request(), CAUSE, { ...deps, followSid: undefined })
+    expect(res).toMatchObject({ ok: false, refusal: 'NO_BINDING' })
+  })
+
+  it('a clear after a rebound reaches the new sid too', async () => {
+    const { r, deps, sids } = await followingRig()
+    const { conn } = await r.hello()
+    const NEW = '33333333-3333-4333-8333-333333333333'
+    await rebound(r, conn, NEW)
+    expect(await sendSelection(clearRequest(), CAUSE, deps)).toMatchObject({ ok: true })
+    expect(sids).toEqual([NEW])
+  })
+
+  it('the trust check follows the binding it found: an operator session stays TARGET_DENIED', async () => {
+    const { r, deps, sids } = await (async () => {
+      const rig = await modRig({ trust: 'operator', pollHoldMs: 50 })
+      const follower = createSidFollower({ host: rig.r.core.facade })
+      open.push({ close: async () => follower.dispose() })
+      const sids: string[] = []
+      return {
+        ...rig,
+        sids,
+        deps: { ...rig.deps, followSid: follower.resolve } as SelectionDeps
+      }
+    })()
+    const { conn } = await r.hello()
+    await rebound(r, conn, '44444444-4444-4444-8444-444444444444')
+    expect(await sendSelection(request(), CAUSE, deps)).toMatchObject({
+      ok: false,
+      refusal: 'TARGET_DENIED'
+    })
+    expect(sids).toEqual([])
+  })
+
+  it('the live runtime wires the follower in', () => {
+    const src = readFileSync(join(REPO, 'src/main/companion/review-selection-ipc.ts'), 'utf8')
+    expect(src).toMatch(/createSidFollower\(\{ host: companionHost \}\)/)
+    expect(src).toMatch(/followSid: follower\.resolve/)
   })
 })

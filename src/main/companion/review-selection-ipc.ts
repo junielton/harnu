@@ -24,6 +24,7 @@ import {
   REVIEW_DIFF_FLAGS,
   REVIEW_SELECTION_GESTURE,
   REVIEW_SELECTION_KEY,
+  composeCleared,
   composeSelection,
   failure,
   lineSource,
@@ -44,6 +45,7 @@ import {
 import {
   createBandDriver,
   createSelectionTracker,
+  createSidFollower,
   type SelectionTracker
 } from './review-selection-tracker'
 import type { BindingView } from './session-table'
@@ -75,6 +77,12 @@ export interface GitDeps {
 /** Everything the send reaches for, injected so the tests run without Electron's app or a repo. */
 export interface SelectionDeps extends GitDeps {
   bindingForSid(sid: string): BindingView | null
+  /**
+   * The id the companion's conversation has NOW for the id it was spawned with: `/clear` and a
+   * resume re-key the binding, and the renderer keeps addressing the minted one (U2d). Absent, or
+   * an id nothing was reported for, it is the id itself.
+   */
+  followSid?(sid: string): string
   enqueue: typeof channelEnqueue
   /** Why the companion with this sid has no binding (the inject decision of its PTY). */
   noBindingReason(sid: string): NoBindingReason
@@ -158,27 +166,53 @@ export async function sendSelection(
   deps: SelectionDeps
 ): Promise<SelectionSendResult> {
   const log = deps.log ?? ((m: string): void => console.warn(`[review-selection] ${m}`))
-  const p = prepare(raw, ['companionSid'])
-  if ('ok' in p) return p
+  // `selection: null` is the operator clearing it: the companion's row is replaced by the one that
+  // says nothing is selected. Anything else is a selection, and `undefined` is not null.
+  const clearing = isRec(raw) && raw.selection === null
+  let rowId: string
+  let prepared: Prepared | null = null
+  if (clearing) {
+    if (Object.keys(raw).some((k) => !['companionSid', 'selection', 'id'].includes(k))) {
+      return failure('BAD_ARGS', { detail: 'unknown-field' })
+    }
+    if (typeof raw.id !== 'string' || !/^sel_[A-Za-z0-9_-]{1,64}$/.test(raw.id)) {
+      return failure('BAD_ARGS', { detail: 'id' })
+    }
+    rowId = raw.id
+  } else {
+    const p = prepare(raw, ['companionSid'])
+    if ('ok' in p) return p
+    prepared = p
+    rowId = p.coords.id
+  }
   const sid = (raw as Rec).companionSid
   if (sid === null || sid === undefined || sid === '') return failure('no-companion')
   if (typeof sid !== 'string' || !COMPANION_SID_RE.test(sid)) {
     return failure('BAD_ARGS', { detail: 'companion-sid' })
   }
+  // The renderer addresses the companion by the id it was spawned with; after /clear the binding
+  // has another. Everything below addresses the binding, the minted id is only for the PTY lookup.
+  const live = deps.followSid ? deps.followSid(sid) : sid
   // The gesture can never be aimed at an operator's working session by passing its sid.
-  const existing = deps.bindingForSid(sid)
+  const existing = deps.bindingForSid(live)
   if (existing && existing.trust !== 'read-only') return failure('TARGET_DENIED')
 
-  const composed = await composeFor(p, deps)
-  if (!composed.ok) return composed
+  let text: string
+  if (prepared) {
+    const composed = await composeFor(prepared, deps)
+    if (!composed.ok) return composed
+    text = composed.text
+  } else {
+    text = composeCleared()
+  }
 
   const sent = deps.enqueue({
     sessionKey: null,
-    sid,
+    sid: live,
     name: 'context.append',
-    args: { key: REVIEW_SELECTION_KEY, text: composed.text, durable: false },
+    args: { key: REVIEW_SELECTION_KEY, text, durable: false },
     cause,
-    meta: { selection: p.coords.subjectType }
+    meta: { selection: prepared ? prepared.coords.subjectType : 'NONE' }
   })
   if (!sent.ok) {
     if (sent.reason === 'ORIGIN_DENIED') log('the review selection gate row is missing or drifted')
@@ -186,18 +220,18 @@ export async function sendSelection(
       ? failure('NO_BINDING', { reason: deps.noBindingReason(sid) })
       : failure(sent.reason)
   }
-  const bound = deps.bindingForSid(sid)
+  const bound = deps.bindingForSid(live)
   if (bound) {
     deps.tracker.track({
-      selectionId: p.coords.id,
+      selectionId: rowId,
       bindingKey: bound.key,
       sid: bound.sid,
       cmd: sent.cmd,
       settled: sent.settled,
-      selection: p.coords
+      selection: prepared ? prepared.coords : null
     })
   }
-  return { ok: true, selectionId: p.coords.id, cmd: sent.cmd, n: sent.n }
+  return { ok: true, selectionId: rowId, cmd: sent.cmd, n: sent.n }
 }
 
 // ---- the real dependencies ------------------------------------------------------------------------
@@ -243,9 +277,11 @@ async function liveDeps(emit: (channel: string, payload: unknown) => void): Prom
     emit: (ev) => emit('review:selection:state', ev)
   })
   createBandDriver().attach(tracker)
+  const follower = createSidFollower({ host: companionHost })
   return {
     ...gitDeps,
     bindingForSid: (sid) => companionHost.bindingForSid(sid),
+    followSid: follower.resolve,
     enqueue: channelEnqueue,
     noBindingReason: (sid) => {
       const ptyId = ptyIdForClaudeSession(sid)
@@ -270,6 +306,10 @@ export function registerReviewSelectionHandlers(getWindow: () => BrowserWindow |
       return null
     }
   }
+  // Start the runtime once the app has loaded, not at the first gesture: the follower can only
+  // learn a `/clear` it was listening for, and the operator may clear the companion before ever
+  // selecting a line. A failed start leaves `runtime` empty and the first gesture tries again.
+  setTimeout(() => void deps(), 0)
   // These handlers never reject: a send whose runtime cannot start is the same refusal as no binding.
   const notReady = failure('NO_BINDING', { reason: 'unknown' })
 
