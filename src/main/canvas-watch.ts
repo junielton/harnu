@@ -31,8 +31,8 @@
 import chokidar, { type FSWatcher } from 'chokidar'
 import { ipcMain, type BrowserWindow } from 'electron'
 import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { readFile, stat } from 'node:fs/promises'
+import { basename, dirname, resolve } from 'node:path'
 import { markdownKnownRoots } from './markdown-read'
 import { checkCanvasPathAllowed } from './canvas-read'
 
@@ -160,6 +160,11 @@ function ensureWatcher(): FSWatcher {
   })
   watcher.on('change', (p) => void notifyCanvasChanged(p))
   watcher.on('unlink', (p) => void notifyCanvasChanged(p))
+  // An OS that refuses the watch (inotify limit, ENOSPC) surfaces here, after
+  // chokidar already lists the file: the open wait cannot tell, so say so.
+  watcher.on('error', (err) =>
+    console.warn('[canvas-watch] watcher error; changes may be missed:', err)
+  )
   return watcher
 }
 
@@ -202,6 +207,104 @@ export async function notifyCanvasChanged(
   return 'ok'
 }
 
+/** How long `startCanvasWatch` waits for chokidar before giving up and resolving anyway. */
+const WATCH_READY_TIMEOUT_MS = 3000
+const WATCH_READY_POLL_MS = 5
+/** After a missed deadline, how long the background re-check keeps waiting for the watch. */
+const WATCH_LATE_LIMIT_MS = 60_000
+const WATCH_LATE_POLL_MS = 50
+
+let watchReadyTimeoutMs = WATCH_READY_TIMEOUT_MS
+
+/** Test-only: shorten the readiness deadline (`undefined` restores the default). */
+export function __setWatchReadyTimeoutForTests(ms: number | undefined): void {
+  watchReadyTimeoutMs = ms ?? WATCH_READY_TIMEOUT_MS
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Does a `getWatched()` listing include `path`? `FSWatcher.add` returns at once
+ * and its `ready` event fires only for the FIRST batch of paths, so there is no
+ * per-path signal to await. chokidar lists a file under its directory in the
+ * same synchronous step that attaches the OS watch, which is the moment a write
+ * starts producing events. chokidar keys directories with forward slashes on
+ * every platform, so a Windows `C:\…` path is matched in that form too.
+ */
+export function isCanvasWatched(watched: Record<string, string[]>, path: string): boolean {
+  if ((watched[dirname(path)] ?? []).includes(basename(path))) return true
+  const unix = path.replace(/\\/g, '/')
+  const cut = unix.lastIndexOf('/')
+  return (watched[unix.slice(0, cut)] ?? []).includes(unix.slice(cut + 1))
+}
+
+function isWatching(w: FSWatcher, path: string): boolean {
+  return isCanvasWatched(w.getWatched(), path)
+}
+
+async function whenWatching(w: FSWatcher, path: string): Promise<void> {
+  // A file that does not exist is never watched; the pane shows its own error.
+  if (
+    !(await stat(path).then(
+      () => true,
+      () => false
+    ))
+  )
+    return
+  const deadline = Date.now() + watchReadyTimeoutMs
+  while (watcher === w && !isWatching(w, path) && Date.now() < deadline) {
+    await sleep(WATCH_READY_POLL_MS)
+  }
+  if (watcher !== w || isWatching(w, path)) return
+  // The deadline passed: the pane reads now rather than hang, which reopens the
+  // gap a write can fall into. Remember the bytes it is about to read and
+  // compare once the watch is live, so such a write still reaches the panes.
+  console.warn(
+    `[canvas-watch] watch on ${path} not live after ${watchReadyTimeoutMs} ms; reading anyway`
+  )
+  const before = await readFile(path).then(fingerprint, () => null)
+  void recheckOnceWatching(w, path, before)
+}
+
+async function recheckOnceWatching(
+  w: FSWatcher,
+  path: string,
+  before: string | null
+): Promise<void> {
+  const deadline = Date.now() + WATCH_LATE_LIMIT_MS
+  while (watcher === w && canvasRefCount(path) > 0 && !isWatching(w, path)) {
+    if (Date.now() >= deadline) {
+      console.warn(`[canvas-watch] watch on ${path} never went live; changes may be missed`)
+      return
+    }
+    await sleep(WATCH_LATE_POLL_MS)
+  }
+  if (watcher !== w || canvasRefCount(path) <= 0) return
+  const now = await readFile(path).then(fingerprint, () => null)
+  if (now !== before) await notifyCanvasChanged(path)
+}
+
+/**
+ * Register one pane's interest in `rawPath` and resolve only once the file is
+ * being watched (BUG-210). The pane reads the canvas AFTER this resolves, so a
+ * write can no longer fall between its read and the watch going live: it is
+ * either in the read or produces an event. Resolving early used to leave that
+ * gap, and the operator's next Save reverted the write that fell into it.
+ */
+export async function startCanvasWatch(rawPath: unknown, paneId?: string): Promise<void> {
+  if (typeof rawPath !== 'string' || rawPath.length === 0) return
+  const p = resolve(rawPath)
+  // IPC payloads cross the trust boundary — confine against the SAME gate as
+  // canvas:read before ever subscribing chokidar to a renderer-supplied path.
+  const gate = checkCanvasPathAllowed(p, await markdownKnownRoots())
+  if (!gate.ok) return
+  const first = addCanvasRef(p, paneId) === 'first'
+  const w = ensureWatcher()
+  if (first) w.add(p)
+  // A second pane on the file waits too: the first pane's add may still be pending.
+  await whenWatching(w, p)
+}
+
 /**
  * Wire the two per-pane lifecycle IPC handlers a mounted `DiagramPane` calls,
  * and stash the window getter `notifyCanvasChanged` broadcasts through. Call
@@ -209,16 +312,9 @@ export async function notifyCanvasChanged(
  */
 export function registerCanvasWatchHandlers(getWindow: () => BrowserWindow | null): void {
   windowGetter = getWindow
-  ipcMain.handle('canvas:watchStart', async (_e, args: { path: string; paneId?: unknown }) => {
-    const raw = args?.path
-    if (typeof raw !== 'string' || raw.length === 0) return
-    const p = resolve(raw)
-    // IPC payloads cross the trust boundary — confine against the SAME gate as
-    // canvas:read before ever subscribing chokidar to a renderer-supplied path.
-    const gate = checkCanvasPathAllowed(p, await markdownKnownRoots())
-    if (!gate.ok) return
-    if (addCanvasRef(p, paneIdOf(args)) === 'first') ensureWatcher().add(p)
-  })
+  ipcMain.handle('canvas:watchStart', (_e, args: { path: string; paneId?: unknown }) =>
+    startCanvasWatch(args?.path, paneIdOf(args))
+  )
   ipcMain.handle('canvas:watchStop', (_e, args: { path: string; paneId?: unknown }) => {
     const raw = args?.path
     if (typeof raw !== 'string' || raw.length === 0) return

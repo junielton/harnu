@@ -1480,7 +1480,8 @@ const api = {
   canvasAttachAssets: (path: string, images: CanvasAttachInput[]): Promise<CanvasAttachResult> =>
     ipcRenderer.invoke('canvas:attachAssets', { path, images }),
   // T218 U1: register/unregister a DiagramPane's live-reload watch. Ref-counted
-  // in main (multiple panes on the same path share one watcher).
+  // in main (multiple panes on the same path share one watcher). Resolves only
+  // once the file is actually being watched — the pane reads after that (BUG-210).
   // `paneId` (the pane's `writerId`) lets main tell whether a Save echo has other listeners.
   canvasWatchStart: (path: string, paneId?: string): Promise<void> =>
     ipcRenderer.invoke('canvas:watchStart', { path, paneId }),
